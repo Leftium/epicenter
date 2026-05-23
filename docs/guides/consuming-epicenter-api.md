@@ -3,7 +3,7 @@
 > **Historical note.** Earlier drafts of this guide described a
 > `createWorkspace(definition).withEncryption().withExtension(...)` builder
 > chain, and later an owner factory that wrapped the encryption, local
-> storage, and per-subject wipe paths behind a single object. Both shapes
+> storage, and per-owner wipe paths behind a single object. Both shapes
 > are gone. There is one pattern today: a per-app browser opener that calls
 > every `attach*` primitive inline against a `Y.Doc`, plus
 > `openCollaboration` for sync, server-owned presence, and HTTP dispatch.

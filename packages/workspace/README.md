@@ -116,11 +116,11 @@ refcounting, and the `gcTime` grace period between last dispose and teardown.
 
 ### Plaintext vs encrypted
 
-Both variants ship from this package. Plaintext (`attachTable`, `attachTables`, `attachKv`) binds a typed helper directly to the Y.Doc. Encrypted: the methods on the `EncryptionAttachment` coordinator returned by `attachEncryption(ydoc, { keyring })` (`encryption.attachTable`, `encryption.attachTables`, `encryption.attachKv`) additionally register their backing store with that coordinator. The coordinator reads `keyring()` synchronously at each registration site, derives the per-workspace keyring, and activates the store before handing it back. Already-attached encrypted stores keep their derived keyring; same-subject key rotation needs a re-attach to affect those stores.
+Both variants ship from this package. Plaintext (`attachTable`, `attachTables`, `attachKv`) binds a typed helper directly to the Y.Doc. Encrypted: the methods on the `EncryptionAttachment` coordinator returned by `attachEncryption(ydoc, { keyring })` (`encryption.attachTable`, `encryption.attachTables`, `encryption.attachKv`) additionally register their backing store with that coordinator. The coordinator reads `keyring()` synchronously at each registration site, derives the per-workspace keyring, and activates the store before handing it back. Already-attached encrypted stores keep their derived keyring; same-owner key rotation needs a re-attach to affect those stores.
 
 Don't mix plaintext and encrypted wrappers on the same slot name: Yjs hands both calls the same underlying `Y.Array` and you get a silent plaintext-over-ciphertext race. The verb (`encryption.attachTable` vs plain `attachTable`) is the primary defense; review call sites accordingly. One slot name, one attach site, one intent.
 
-Minimal encrypted browser workspace: encryption + subject-scoped IndexedDB + cross-tab + collaboration (sync + presence + dispatch) wired together:
+Minimal encrypted browser workspace: encryption + owner-scoped IndexedDB + cross-tab + collaboration (sync + presence + dispatch) wired together:
 
 ```typescript
 import {

@@ -197,7 +197,7 @@ The recipient side is `runInboundDispatch`: the supervisor routes inbound text f
 
 ## URLs and routing
 
-A cloud document is owned by the authenticated subject (the user's identity) and addressed by its own `ydoc.guid`. The client builds the URL from `(baseURL, owner, guid, installationId)`:
+A cloud document is owned by the authenticated user and addressed by its own `ydoc.guid`. The client builds the URL from `(baseURL, owner, guid, installationId)`:
 
 ```ts
 roomWsUrl({
@@ -209,12 +209,12 @@ roomWsUrl({
 // -> wss://api.epicenter.so/api/users/<userId>/rooms/<guid>?installationId=<id>
 ```
 
-The relay takes the subject from the auth token, validates `:userId === c.var.user.id` in personal mode, and builds the internal Durable Object name `users:${userId}:rooms:${room}`. There is no workspace lookup and no membership check at the relay layer: the route's auth middleware is the whole authorization story, because you cannot fail to be yourself.
+The relay takes the user from the auth token, validates `:userId === c.var.user.id` in personal mode, and builds the internal Durable Object name `users/${userId}/rooms/${room}`. There is no workspace lookup and no membership check at the relay layer: the route's auth middleware is the whole authorization story, because you cannot fail to be yourself.
 
 This is the consumer Google Docs model and the first of three account layers, introduced over time:
 
-- **Layer 1 (this)**: personal content. `users:${userId}` owns the doc.
-- **Layer 1.5 (future)**: sharing. A per-document ACL grants other subjects access; the owner's DO name does not change.
+- **Layer 1 (this)**: personal content. `users/${userId}` owns the doc.
+- **Layer 1.5 (future)**: sharing. A per-document ACL grants other users access; the owner's DO name does not change.
 - **Layer 2 (future)**: shared-drive content. An org owns a namespace so content survives a departing employee.
 - **Layer 3 (future)**: tenancy and billing. An organization groups user accounts for one invoice and admin policy; it never owns a document.
 

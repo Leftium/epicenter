@@ -111,7 +111,7 @@
 		"lint": "biome lint --write",
 		"lint:check": "biome lint",
 		"release": "changeset version && changeset publish",
-		"typecheck": "turbo run typecheck",
+		"typecheck": "turbo run typecheck && bun x tsc --noEmit -p scripts/tsconfig.json",
 		"test": "turbo run test",
 		"bench": "turbo run bench",
 		"check:ui-boundary": "bun run scripts/check-ui-boundary.ts",

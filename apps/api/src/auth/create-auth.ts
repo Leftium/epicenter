@@ -116,7 +116,7 @@ export function createAuth({
 							.where(eq(schema.asset.userId, user.id));
 
 						if (assets.length > 0) {
-							const keys = assets.map((a) => `${user.id}/${a.id}`);
+							const keys = assets.map((a) => a.id);
 							await env.ASSETS_BUCKET.delete(keys);
 						}
 

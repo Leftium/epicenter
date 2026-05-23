@@ -1,4 +1,5 @@
 import type { SchemaClient } from '@better-auth/oauth-provider';
+import { APPS } from '#apps';
 
 /**
  * Better Auth calls server-side confidential clients `web`.
@@ -38,10 +39,10 @@ type TrustedPublicOAuthClientDefinition = {
  * The CLI uses an out-of-band (OOB) authorization-code + PKCE flow against
  * the same `/auth/oauth2/token` endpoint the browser uses. After sign-in
  * on the hosted portal, Better Auth redirects to
- * `https://api.epicenter.so/auth/cli-callback`, which renders the one-time
- * code; the user pastes it into the terminal. This identifies the CLI app
- * type, not a user, machine, install, or secret. Every CLI install uses
- * the same value.
+ * the API origin's `/auth/cli-callback`, which renders the one-time code;
+ * the user pastes it into the terminal. This identifies the CLI app type,
+ * not a user, machine, install, or secret. Every CLI install uses the same
+ * value.
  */
 export const EPICENTER_CLI_OAUTH_CLIENT_ID = 'epicenter-cli';
 
@@ -62,6 +63,8 @@ export const EPICENTER_OAUTH_SCOPES = [
 ] as const;
 
 export const EPICENTER_OAUTH_SCOPE = EPICENTER_OAUTH_SCOPES.join(' ');
+
+const LOCAL_API_URL = `http://localhost:${APPS.API.port}`;
 
 export const EPICENTER_TRUSTED_OAUTH_CLIENTS = [
 	{
@@ -120,6 +123,9 @@ export const EPICENTER_TRUSTED_OAUTH_CLIENTS = [
 		clientId: EPICENTER_CLI_OAUTH_CLIENT_ID,
 		name: 'Epicenter CLI',
 		type: 'native',
-		redirectUris: ['https://api.epicenter.so/auth/cli-callback'],
+		redirectUris: [
+			`${APPS.API.urls[0]}/auth/cli-callback`,
+			`${LOCAL_API_URL}/auth/cli-callback`,
+		],
 	},
 ] as const satisfies readonly TrustedPublicOAuthClientDefinition[];

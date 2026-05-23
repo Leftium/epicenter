@@ -12,8 +12,10 @@
 
 import { expect, test } from 'bun:test';
 import {
+	EPICENTER_CLI_OAUTH_CLIENT_ID,
 	EPICENTER_FUJI_OAUTH_CLIENT_ID,
 	EPICENTER_OAUTH_SCOPES,
+	EPICENTER_TRUSTED_OAUTH_CLIENTS,
 } from '@epicenter/constants/oauth';
 import { betterAuth } from 'better-auth';
 import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
@@ -110,6 +112,27 @@ test('trusted OAuth client exchanges code for API-origin access token', async ()
 	expect(payload.iss).toBe(`${setup.baseURL}/auth`);
 });
 
+test('trusted CLI OAuth client accepts the local API callback redirect', async () => {
+	const cliClient = EPICENTER_TRUSTED_OAUTH_CLIENTS.find(
+		(client) => client.clientId === EPICENTER_CLI_OAUTH_CLIENT_ID,
+	);
+	if (!cliClient) throw new Error('Expected trusted CLI OAuth client');
+	const localCliRedirectUri = 'http://localhost:8787/auth/cli-callback';
+	expect(cliClient.redirectUris).toContain(localCliRedirectUri);
+
+	const setup = createTrustedClientTestAuth({
+		trustedClientDefinition: cliClient,
+	});
+	const cookie = await signUpTestUser(setup.auth, setup.baseURL);
+	const code = await authorize(setup, {
+		clientId: setup.trustedClientId,
+		cookie,
+		redirectUri: localCliRedirectUri,
+	});
+
+	expect(code).toBeTruthy();
+});
+
 test('registered non-trusted OAuth client requires consent', async () => {
 	const setup = createTrustedClientTestAuth();
 
@@ -127,9 +150,16 @@ test('registered non-trusted OAuth client requires consent', async () => {
 	);
 });
 
-function createTrustedClientTestAuth() {
+function createTrustedClientTestAuth({
+	trustedClientDefinition:
+		inputTrustedClientDefinition = trustedClientDefinition,
+}: {
+	trustedClientDefinition?: (typeof EPICENTER_TRUSTED_OAUTH_CLIENTS)[number];
+} = {}) {
 	const baseURL = 'http://localhost:47878';
-	const trustedClient = projectTrustedOAuthClientToRow(trustedClientDefinition);
+	const trustedClient = projectTrustedOAuthClientToRow(
+		inputTrustedClientDefinition,
+	);
 	const registeredClient = {
 		...projectTrustedOAuthClientToRow({
 			clientId: 'registered-client-1',
@@ -185,23 +215,29 @@ async function signUpTestUser(
 
 async function authorize(
 	setup: ReturnType<typeof createTrustedClientTestAuth>,
-	input: { clientId: string; cookie: string },
+	input: { clientId: string; cookie: string; redirectUri?: string },
 ) {
 	const response = await authorizeResponse(setup, input);
 	const location = response.headers.get('location');
 	expect(location).toBeTruthy();
-	return new URL(location ?? redirectUri).searchParams.get('code');
+	return new URL(location ?? input.redirectUri ?? redirectUri).searchParams.get(
+		'code',
+	);
 }
 
 async function authorizeResponse(
 	{ auth, baseURL }: ReturnType<typeof createTrustedClientTestAuth>,
-	{ clientId, cookie }: { clientId: string; cookie: string },
+	{
+		clientId,
+		cookie,
+		redirectUri: inputRedirectUri = redirectUri,
+	}: { clientId: string; cookie: string; redirectUri?: string },
 ) {
 	const authorizeUrl = new URL(`${baseURL}/auth/oauth2/authorize`);
 	for (const [key, value] of Object.entries({
 		response_type: 'code',
 		client_id: clientId,
-		redirect_uri: redirectUri,
+		redirect_uri: inputRedirectUri,
 		scope: 'openid profile email offline_access',
 		state: 'state-1',
 		code_challenge: await generateCodeChallenge(verifier),

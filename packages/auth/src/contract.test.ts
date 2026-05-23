@@ -131,7 +131,7 @@ test('signed-out by default; AuthClient satisfies the public contract', () => {
 	auth[Symbol.dispose]();
 });
 
-test('cold-boot signed-in exposes localIdentity immediately without profile data', () => {
+test('cold-boot signed-in exposes owner and keyring immediately without profile data', () => {
 	const setup = createStorage(cell());
 	const auth = createOAuthAppAuth({
 		baseURL: 'http://localhost:8787',
@@ -480,7 +480,7 @@ test('stale /api/session verification after owner-switch sign-in cannot replace 
 	auth[Symbol.dispose]();
 });
 
-test('refresh writes ONLY the grant section; localIdentity byte-identical', async () => {
+test('refresh writes ONLY the grant section; owner and keyring byte-identical', async () => {
 	const initial = cell({ grant: grant({ accessTokenExpiresAt: now + 1 }) });
 	const setup = createStorage(initial);
 	const auth = createOAuthAppAuth({
@@ -578,13 +578,13 @@ test('same-owner /api/session preserves state when keyring is unchanged', async 
 
 	await auth.fetch('http://localhost:8787/resource');
 	expect(setup.current).toEqual(cell());
-	// No localIdentity write should have happened: keyring unchanged.
+	// No owner/keyring write should have happened: keyring unchanged.
 	expect(setup.saved).toEqual([]);
 	expect(auth.state).toMatchObject({ status: 'signed-in' });
 	auth[Symbol.dispose]();
 });
 
-test('keyring rotation updates persisted localIdentity', async () => {
+test('keyring rotation updates persisted keyring', async () => {
 	const setup = createStorage(cell());
 	const rotated: SubjectKeyring = [
 		{
@@ -722,7 +722,7 @@ test('network gate: no WebSocket bearer protocol until /api/session confirms sam
 	auth[Symbol.dispose]();
 });
 
-test('cold-boot offline keeps signed-in with localIdentity and no profile field', async () => {
+test('cold-boot offline keeps signed-in with cached owner and keyring and no profile field', async () => {
 	const setup = createStorage(cell());
 	const auth = createOAuthAppAuth({
 		baseURL: 'http://localhost:8787',
@@ -1021,7 +1021,7 @@ test('/api/session response after signOut is discarded without corrupting state'
 	auth[Symbol.dispose]();
 });
 
-test('/api/session key update after signOut is discarded without writing localIdentity', async () => {
+test('/api/session key update after signOut is discarded without writing owner or keyring', async () => {
 	const setup = createStorage(cell());
 	const rotated: SubjectKeyring = [
 		{
@@ -1076,13 +1076,13 @@ test('/api/session key update after signOut is discarded without writing localId
 describe('removed legacy surface', () => {
 	test('requireIdentity / requireSession / OAuthSession are not exported', async () => {
 		const mod = await import('./index.js');
-		// @ts-expect-error: requireIdentity removed; reach for state.localIdentity.
+		// @ts-expect-error: requireIdentity removed; reach for state.owner / state.keyring.
 		expect(mod.requireIdentity).toBeUndefined();
 		// @ts-expect-error: requireSession removed.
 		expect(mod.requireSession).toBeUndefined();
 		// @ts-expect-error: OAuthSession deleted; use PersistedAuth.
 		expect(mod.OAuthSession).toBeUndefined();
-		// @ts-expect-error: LocalUnlockBundle replaced by LocalIdentity.
+		// @ts-expect-error: LocalUnlockBundle replaced by PersistedAuth.{owner,keyring}.
 		expect(mod.LocalUnlockBundle).toBeUndefined();
 	});
 });

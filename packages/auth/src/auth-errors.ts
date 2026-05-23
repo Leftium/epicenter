@@ -15,8 +15,8 @@ export const AuthError = defineErrors({
 	}),
 	/**
 	 * `/api/session` failed during sign-in or cold boot. Non-fatal on cold boot:
-	 * the cached `localIdentity` keeps the user signed-in and able to decrypt
-	 * local Yjs data.
+	 * the cached `owner` and `keyring` keep the user signed-in and able to
+	 * decrypt local Yjs data.
 	 */
 	VerifyIdentityFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to verify identity: ${extractErrorMessage(cause)}`,

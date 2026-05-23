@@ -19,7 +19,7 @@ import { parseOAuthTokenGrant } from './oauth-token-response.js';
 import { ownerId } from './owner.js';
 
 /**
- * Storage adapter for the single `PersistedAuth` cell (grant + localIdentity).
+ * Storage adapter for the single `PersistedAuth` cell (grant + owner + keyring).
  * Two methods, no watch hook: cross-context sign-out propagates via the
  * server (next bearer-bearing call hits a revoked token and reauth-requires
  * organically). The server is the authority; brief cross-tab desync is
@@ -104,9 +104,10 @@ type ApiSessionRequestResult = Result<
  * Use this once per runtime around one persisted auth record. The returned
  * client exposes capabilities (`fetch`, `openWebSocket`) instead of raw tokens:
  * it refreshes grants, verifies `/api/session` before attaching a bearer, and
- * keeps `localIdentity` available when network auth pauses. That preserves the
- * local-first invariant: offline workspace boot can continue, but server access
- * fails closed until the current persisted auth has been verified by the API.
+ * keeps the cached `owner` and `keyring` available when network auth pauses.
+ * That preserves the local-first invariant: offline workspace boot can continue,
+ * but server access fails closed until the current persisted auth has been
+ * verified by the API.
  */
 export function createOAuthAppAuth({
 	baseURL = EPICENTER_API_URL,
@@ -293,7 +294,7 @@ export function createOAuthAppAuth({
 	 * Refuses to attach unless `/api/session` has confirmed the current persisted
 	 * auth in this runtime. Cold boot online: refresh grant if
 	 * stale, call `/api/session`, then attach. Offline: fails closed; local
-	 * workspace decrypt continues via `localIdentity`.
+	 * workspace decrypt continues via the cached `keyring`.
 	 */
 	async function bearerForNetwork(force: boolean): Promise<string | null> {
 		if (authSession.persistedAuth === null || authSession.networkAuthPaused) {

@@ -123,16 +123,6 @@ const WS_READY_OPEN = 1;
 // ============================================================================
 
 /**
- * Per-connection metadata held by `RoomCore`'s `connections` map.
- *
- * Currently just the installationId. Defined as its own type so future
- * extension (e.g. join timestamps) does not change every reference.
- */
-type ConnectionData = {
-	installationId: string;
-};
-
-/**
  * In-flight dispatch routing entry. The relay holds one of these for each
  * dispatch awaiting a response: the caller socket the result returns to,
  * the recipient socket the call is waiting on, and the safety timeout
@@ -175,7 +165,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	const doc = new Y.Doc({ gc: true });
 
 	/** Open connections, mapped to their per-connection metadata. */
-	const connections = new Map<RoomSocket, ConnectionData>();
+	const connections = new Map<RoomSocket, { installationId: string }>();
 
 	/**
 	 * Pending debounced presence rebroadcast, or `null` if none is armed.

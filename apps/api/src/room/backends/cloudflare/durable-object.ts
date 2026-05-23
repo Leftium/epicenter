@@ -37,17 +37,6 @@ import { createDurableObjectUpdateLog } from './update-log';
 const COMPACTION_DELAY_MS = 30_000;
 
 /**
- * Per-connection metadata persisted via `ws.serializeAttachment` so it
- * survives DO hibernation.
- *
- * - `installationId`: URL-stamped at upgrade, the address used by
- *   dispatch and the only identity the relay carries for a socket.
- */
-type WsAttachment = {
-	installationId: string;
-};
-
-/**
  * Yjs sync + dispatch room backed by a Cloudflare Durable Object.
  *
  * Owns the Hibernation API integration (`acceptWebSocket`,
@@ -113,7 +102,9 @@ export class Room extends DurableObject {
 			// upgrade or close drives the next presence delta the same way
 			// it would on a never-hibernated DO.
 			for (const ws of ctx.getWebSockets()) {
-				const attachment = ws.deserializeAttachment() as WsAttachment | null;
+				const attachment = ws.deserializeAttachment() as
+					| { installationId: string }
+					| null;
 				if (!attachment) continue;
 				this.core.addConnection(ws, attachment.installationId);
 			}
@@ -157,7 +148,7 @@ export class Room extends DurableObject {
 		this.ctx.acceptWebSocket(server);
 
 		// Stash installationId so it survives hibernation.
-		server.serializeAttachment({ installationId } satisfies WsAttachment);
+		server.serializeAttachment({ installationId });
 
 		// Register with the core. addConnection sends the initial
 		// SyncStep1 and presence snapshot, and rebroadcasts presence to

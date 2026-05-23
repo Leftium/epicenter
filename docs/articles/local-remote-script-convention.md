@@ -93,19 +93,23 @@ Inside that script: `infisical run --silent --path=/api -- wrangler dev` with th
 
 The production worker never uses `DATABASE_URL` directly. It uses `env.HYPERDRIVE` — the Cloudflare binding — which handles connection pooling and routing through Hyperdrive's edge network. So there's no single URL that can target production directly from drizzle-kit. That's intentional.
 
-## Remote Doesn't Mean Production
+## Who `:remote` Is For
 
-This is important: `:remote` targets a **development branch** of your database, not production. If you use a database provider with branching — PlanetScale, Supabase, Neon — your Infisical `DATABASE_URL` should point to the dev branch. That's the whole point. You get a real Postgres environment with the same engine and extensions as production, but it's isolated. Schema changes on the dev branch don't touch production data.
+`:remote` is not "development on a remote branch." It is production administration. The `infisical run --env=prod --path=/api --` prefix injects the live `DATABASE_URL`, and the script runs against the same Postgres that real users hit. Treat every `:remote` command as a deploy-class action.
+
+That means `:remote` is for team members with Infisical prod access only. Outside contributors run `:local` scripts against their own Postgres, write migrations, open PRs. A maintainer with prod access applies the migration via `db:migrate:remote`.
 
 The flow looks like this:
 
 ```
-:local   → localhost Postgres       → your machine only
-:remote  → dev branch Postgres      → shared dev environment
-deploy   → Hyperdrive → production  → real users
+:local   → localhost Postgres                       → your machine only
+:remote  → production Postgres (Infisical prod env) → team members only
+deploy   → Hyperdrive → production runtime          → real users
 ```
 
-Three environments, three levels of blast radius. `:local` can't break anything beyond your machine. `:remote` can break the shared dev branch but not production. And production is only reachable through Hyperdrive at runtime — no URL you can accidentally paste into a drizzle-kit command.
+Three environments, three levels of blast radius. `:local` can't break anything beyond your machine. `:remote` reaches prod data and is admin-only. And the production worker itself only reaches prod through Hyperdrive at runtime: no URL you can accidentally paste into a drizzle-kit command from the running app.
+
+If you want a shared dev branch (PlanetScale, Supabase, Neon), add a third environment in Infisical and a separate suffix (`db:migrate:dev`, for example). Don't blur it into `:remote`. The suffix names the blast radius; making `:remote` mean two different things defeats the whole point.
 
 ## The Contributor Experience
 

@@ -69,9 +69,8 @@ export function createDurableObjectUpdateLog(storage: DurableObjectStorage) {
 
 		/** Row count via `SELECT COUNT(*)`. Used to skip no-op compactions. */
 		entryCount(): number {
-			return storage.sql
-				.exec('SELECT COUNT(*) as count FROM updates')
-				.one().count as number;
+			return storage.sql.exec('SELECT COUNT(*) as count FROM updates').one()
+				.count as number;
 		},
 	} satisfies RoomUpdateLog;
 }

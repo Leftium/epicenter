@@ -102,9 +102,9 @@ export class Room extends DurableObject {
 			// upgrade or close drives the next presence delta the same way
 			// it would on a never-hibernated DO.
 			for (const ws of ctx.getWebSockets()) {
-				const attachment = ws.deserializeAttachment() as
-					| { installationId: string }
-					| null;
+				const attachment = ws.deserializeAttachment() as {
+					installationId: string;
+				} | null;
 				if (!attachment) continue;
 				this.core.addConnection(ws, attachment.installationId);
 			}

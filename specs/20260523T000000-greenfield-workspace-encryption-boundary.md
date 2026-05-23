@@ -1,8 +1,19 @@
 # Greenfield workspace encryption boundary: primitives + per-app openers
 
-Status: ready
+Status: partially superseded (see note below)
 Owner: braden
 Date: 2026-05-22
+
+> **Superseded**: the `openEncryptedDoc({ id, keyring, clientId? })` bundle
+> proposed in §3.1 was reverted on 2026-05-23. It owned Y.Doc construction
+> and exposed `ws.ydoc`, which every caller immediately unbundled to thread
+> into `attachLocalStorage`, `openCollaboration`, and the daemon
+> materializers. The shipped shape restores `attachEncryption(ydoc, { keyring })`:
+> the caller constructs the Y.Doc, the factory binds the per-workspace
+> keyring across `attachTable`/`attachKv`. Everything else in this spec
+> still applies: `LocalOwner` removal, `attachLocalStorage` and
+> `wipeLocalStorage` as free primitives, flat `SignedIn` value,
+> `DaemonWorkspaceContext.keyring`, per-app openers with inline composition.
 
 ## 1. Goal
 

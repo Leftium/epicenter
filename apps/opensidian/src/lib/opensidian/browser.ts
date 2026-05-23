@@ -4,7 +4,7 @@
  * Single source of truth for "how Opensidian mounts in a browser." Calls
  * Tier 1 primitives inline so every line is visible top-to-bottom:
  *
- *  1. workspace root doc (encrypted tables + KV via openEncryptedDoc)
+ *  1. workspace root doc (encrypted tables + KV via attachEncryption)
  *  2. local storage + cloud sync for root (attachLocalStorage + openCollaboration)
  *  3. per-file child content docs (plaintext timeline + encrypted IDB storage)
  *  4. file system, sqlite index, bash, and action registry
@@ -24,12 +24,12 @@ import {
 } from '@epicenter/filesystem';
 import type { SignedIn } from '@epicenter/svelte';
 import {
+	attachEncryption,
 	attachLocalStorage,
 	attachTimeline,
 	createDisposableCache,
 	onLocalUpdate,
 	openCollaboration,
-	openEncryptedDoc,
 	roomWsUrl,
 	wipeLocalStorage,
 } from '@epicenter/workspace';
@@ -49,33 +49,34 @@ export function openOpensidianBrowser({
 	signedIn: SignedIn;
 	installationId: string;
 }) {
-	const ws = openEncryptedDoc({ id: OPENSIDIAN_ID, keyring: signedIn.keyring });
-	const tables = ws.attachTables(opensidianTables);
-	const kv = ws.attachKv({});
+	const ydoc = new Y.Doc({ guid: OPENSIDIAN_ID, gc: true });
+	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
+	const tables = encryption.attachTables(opensidianTables);
+	const kv = encryption.attachKv({});
 
-	const idb = attachLocalStorage(ws.ydoc, signedIn);
+	const idb = attachLocalStorage(ydoc, signedIn);
 
 	const fileContentDocs = createDisposableCache((fileId: FileId) => {
-		const ydoc = new Y.Doc({
+		const childYdoc = new Y.Doc({
 			guid: opensidianFileContentDocGuid(fileId),
 			gc: true,
 		});
-		onLocalUpdate(ydoc, () =>
+		onLocalUpdate(childYdoc, () =>
 			tables.files.update(fileId, { updatedAt: Date.now() }),
 		);
-		const childIdb = attachLocalStorage(ydoc, signedIn);
+		const childIdb = attachLocalStorage(childYdoc, signedIn);
 		// File bodies sync through Cloud so device loss doesn't drop the largest
 		// data class.
-		const childSync = openCollaboration(ydoc, {
-			url: roomWsUrl(APP_URLS.API, ydoc.guid),
+		const childSync = openCollaboration(childYdoc, {
+			url: roomWsUrl(APP_URLS.API, childYdoc.guid),
 			openWebSocket: signedIn.auth.openWebSocket,
 			waitFor: childIdb.whenLoaded,
 			installationId,
 			actions: {},
 		});
 		return {
-			ydoc,
-			content: attachTimeline(ydoc),
+			ydoc: childYdoc,
+			content: attachTimeline(childYdoc),
 			idb: childIdb,
 			sync: childSync,
 			/**
@@ -84,7 +85,7 @@ export function openOpensidianBrowser({
 			 * storage deletion.
 			 */
 			[Symbol.dispose]() {
-				ydoc.destroy();
+				childYdoc.destroy();
 			},
 		};
 	});
@@ -112,7 +113,7 @@ export function openOpensidianBrowser({
 		tables,
 	});
 	const sqliteIndexExports = sqliteIndex.exports;
-	const fs = attachYjsFileSystem(ws.ydoc, tables.files, fileContent);
+	const fs = attachYjsFileSystem(ydoc, tables.files, fileContent);
 	const bash = new Bash({ fs, cwd: '/' });
 	const actions = createOpensidianActions({
 		fs,
@@ -120,8 +121,8 @@ export function openOpensidianBrowser({
 		bash,
 	});
 
-	const collaboration = openCollaboration(ws.ydoc, {
-		url: roomWsUrl(APP_URLS.API, ws.ydoc.guid),
+	const collaboration = openCollaboration(ydoc, {
+		url: roomWsUrl(APP_URLS.API, ydoc.guid),
 		openWebSocket: signedIn.auth.openWebSocket,
 		waitFor: idb.whenLoaded,
 		installationId,
@@ -147,11 +148,11 @@ export function openOpensidianBrowser({
 		docsTornDown = true;
 		fileContentDocs[Symbol.dispose]();
 		sqliteIndex[Symbol.dispose]();
-		ws[Symbol.dispose]();
+		ydoc.destroy();
 	}
 
 	return {
-		ydoc: ws.ydoc,
+		ydoc,
 		tables,
 		kv,
 		idb,

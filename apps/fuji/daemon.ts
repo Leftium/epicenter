@@ -7,13 +7,14 @@
  * paths inline rather than calling this; see `examples/fuji/epicenter.config.ts`.
  *
  * What this does:
- *   1. workspace root doc (encrypted tables + KV via openEncryptedDoc)
+ *   1. workspace root doc (encrypted tables + KV via attachEncryption)
  *   2. SQLite materializer at `sqlitePath(projectDir, workspaceId)`
  *   3. Markdown materializer at `markdownPath(projectDir, workspaceId)`
  *   4. infrastructure: Yjs log persistence + cloud sync via
  *      `attachDaemonInfrastructure`
  */
 
+import { attachEncryption } from '@epicenter/workspace';
 import type { DaemonWorkspaceContext } from '@epicenter/workspace/daemon';
 import {
 	attachMarkdownMaterializer,
@@ -26,8 +27,8 @@ import {
 	openWriterSqlite,
 	sqlitePath,
 } from '@epicenter/workspace/node';
-import { openEncryptedDoc } from '@epicenter/workspace';
 import { createLogger } from 'wellcrafted/logger';
+import * as Y from 'yjs';
 import {
 	createFujiActions,
 	FUJI_ID,
@@ -35,27 +36,25 @@ import {
 } from './src/lib/workspace.js';
 
 export function openFujiDaemon(ctx: DaemonWorkspaceContext) {
-	const ws = openEncryptedDoc({
-		id: FUJI_ID,
-		keyring: ctx.keyring,
-		clientId: ctx.clientId,
-	});
-	const tables = ws.attachTables(fujiTables);
-	ws.attachKv({});
+	const ydoc = new Y.Doc({ guid: FUJI_ID, gc: true });
+	ydoc.clientID = ctx.clientId;
+	const encryption = attachEncryption(ydoc, { keyring: ctx.keyring });
+	const tables = encryption.attachTables(fujiTables);
+	encryption.attachKv({});
 	const actions = createFujiActions(tables);
 
 	const sqliteDb = openWriterSqlite({
-		filePath: sqlitePath(ctx.projectDir, ws.ydoc.guid),
+		filePath: sqlitePath(ctx.projectDir, ydoc.guid),
 		log: createLogger(`${ctx.route}-sqlite`),
 	});
-	ws.ydoc.once('destroy', () => sqliteDb.close());
+	ydoc.once('destroy', () => sqliteDb.close());
 
-	attachSqliteMaterializer(ws.ydoc, { db: sqliteDb }).table(tables.entries);
-	attachMarkdownMaterializer(ws.ydoc, {
-		dir: markdownPath(ctx.projectDir, ws.ydoc.guid),
+	attachSqliteMaterializer(ydoc, { db: sqliteDb }).table(tables.entries);
+	attachMarkdownMaterializer(ydoc, {
+		dir: markdownPath(ctx.projectDir, ydoc.guid),
 	}).table(tables.entries, { filename: slugFilename('title') });
 
-	return attachDaemonInfrastructure(ws.ydoc, {
+	return attachDaemonInfrastructure(ydoc, {
 		projectDir: ctx.projectDir,
 		openWebSocket: ctx.openWebSocket,
 		installationId: ctx.installationId,

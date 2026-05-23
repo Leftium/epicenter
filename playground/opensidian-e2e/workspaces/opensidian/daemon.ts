@@ -14,12 +14,12 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileContentDocGuid } from '@epicenter/filesystem';
 import {
+	attachEncryption,
 	attachTimeline,
 	createDisposableCache,
 	defineActions,
 	defineMutation,
 	openCollaboration,
-	openEncryptedDoc,
 	roomWsUrl,
 } from '@epicenter/workspace';
 import {
@@ -44,15 +44,13 @@ const SERVER_URL = process.env.EPICENTER_SERVER ?? 'https://api.epicenter.so';
 const WORKSPACE_ID = 'opensidian';
 
 async function openOpensidianPlayground(ctx: DaemonWorkspaceContext) {
-	const ws = openEncryptedDoc({
-		id: WORKSPACE_ID,
-		keyring: ctx.keyring,
-		clientId: ctx.clientId,
-	});
-	const tables = ws.attachTables(opensidianTables);
-	const kv = ws.attachKv({});
+	const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
+	ydoc.clientID = ctx.clientId;
+	const encryption = attachEncryption(ydoc, { keyring: ctx.keyring });
+	const tables = encryption.attachTables(opensidianTables);
+	const kv = encryption.attachKv({});
 
-	const persistence = attachYjsLog(ws.ydoc, {
+	const persistence = attachYjsLog(ydoc, {
 		filePath: yjsPath(ctx.projectDir, WORKSPACE_ID),
 	});
 
@@ -95,15 +93,15 @@ async function openOpensidianPlayground(ctx: DaemonWorkspaceContext) {
 		}),
 	});
 
-	const collaboration = openCollaboration(ws.ydoc, {
-		url: roomWsUrl(SERVER_URL, ws.ydoc.guid),
+	const collaboration = openCollaboration(ydoc, {
+		url: roomWsUrl(SERVER_URL, ydoc.guid),
 		openWebSocket: ctx.openWebSocket,
 		installationId: ctx.installationId,
 		actions,
 	});
 
 	const whenReady = collaboration.whenConnected;
-	const markdown = attachMarkdownMaterializer(ws.ydoc, {
+	const markdown = attachMarkdownMaterializer(ydoc, {
 		dir: markdownPath(ctx.projectDir, WORKSPACE_ID),
 		waitFor: whenReady,
 	}).table(tables.files, {
@@ -141,23 +139,23 @@ async function openOpensidianPlayground(ctx: DaemonWorkspaceContext) {
 
 	const sqliteFile = sqlitePath(ctx.projectDir, WORKSPACE_ID);
 	mkdirSync(dirname(sqliteFile), { recursive: true });
-	const sqlite = attachSqliteMaterializer(ws.ydoc, {
+	const sqlite = attachSqliteMaterializer(ydoc, {
 		db: new Database(sqliteFile),
 		waitFor: whenReady,
 	}).table(tables.files, { fts: ['name'] });
 
 	return {
-		workspaceId: ws.ydoc.guid,
+		workspaceId: ydoc.guid,
 		whenReady,
 		actions,
 		collaboration,
 		async [Symbol.asyncDispose]() {
 			fileContentDocs[Symbol.dispose]();
-			ws[Symbol.dispose]();
+			ydoc.destroy();
 			await collaboration.whenDisposed;
 		},
 		id: WORKSPACE_ID,
-		ydoc: ws.ydoc,
+		ydoc,
 		tables,
 		kv,
 		persistence,

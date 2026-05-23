@@ -4,7 +4,7 @@
  * Single source of truth for "how Honeycrisp mounts in a browser." Calls
  * Tier 1 primitives inline so every line is visible top-to-bottom:
  *
- *  1. workspace root doc (encrypted tables + KV via openEncryptedDoc)
+ *  1. workspace root doc (encrypted tables + KV via attachEncryption)
  *  2. local storage + cloud sync for root (attachLocalStorage + openCollaboration)
  *  3. per-note rich-text body sub-docs (plaintext Y.XmlFragment + encrypted IDB)
  *  4. reconnect listener for the root and every live child sync
@@ -17,13 +17,13 @@
 import { APP_URLS } from '@epicenter/constants/vite';
 import type { SignedIn } from '@epicenter/svelte';
 import {
+	attachEncryption,
 	attachLocalStorage,
 	attachRichText,
 	createDisposableCache,
 	DateTimeString,
 	onLocalUpdate,
 	openCollaboration,
-	openEncryptedDoc,
 	roomWsUrl,
 	wipeLocalStorage,
 } from '@epicenter/workspace';
@@ -43,14 +43,15 @@ export function openHoneycrispBrowser({
 	signedIn: SignedIn;
 	installationId: string;
 }) {
-	const ws = openEncryptedDoc({ id: HONEYCRISP_ID, keyring: signedIn.keyring });
-	const tables = ws.attachTables(honeycrispTables);
-	const kv = ws.attachKv({});
+	const ydoc = new Y.Doc({ guid: HONEYCRISP_ID, gc: true });
+	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
+	const tables = encryption.attachTables(honeycrispTables);
+	const kv = encryption.attachKv({});
 	const actions = createHoneycrispActions(tables);
 
-	const idb = attachLocalStorage(ws.ydoc, signedIn);
-	const collaboration = openCollaboration(ws.ydoc, {
-		url: roomWsUrl(APP_URLS.API, ws.ydoc.guid),
+	const idb = attachLocalStorage(ydoc, signedIn);
+	const collaboration = openCollaboration(ydoc, {
+		url: roomWsUrl(APP_URLS.API, ydoc.guid),
 		openWebSocket: signedIn.auth.openWebSocket,
 		waitFor: idb.whenLoaded,
 		installationId,
@@ -58,25 +59,28 @@ export function openHoneycrispBrowser({
 	});
 
 	const noteBodyDocs = createDisposableCache((noteId: NoteId) => {
-		const ydoc = new Y.Doc({ guid: noteBodyDocGuid(noteId), gc: true });
-		const body = attachRichText(ydoc);
-		const childIdb = attachLocalStorage(ydoc, signedIn);
-		const childSync = openCollaboration(ydoc, {
-			url: roomWsUrl(APP_URLS.API, ydoc.guid),
+		const childYdoc = new Y.Doc({
+			guid: noteBodyDocGuid(noteId),
+			gc: true,
+		});
+		const body = attachRichText(childYdoc);
+		const childIdb = attachLocalStorage(childYdoc, signedIn);
+		const childSync = openCollaboration(childYdoc, {
+			url: roomWsUrl(APP_URLS.API, childYdoc.guid),
 			openWebSocket: signedIn.auth.openWebSocket,
 			waitFor: childIdb.whenLoaded,
 			installationId,
 			actions: {},
 		});
 
-		onLocalUpdate(ydoc, () => {
+		onLocalUpdate(childYdoc, () => {
 			tables.notes.update(noteId, {
 				updatedAt: DateTimeString.now(),
 			});
 		});
 
 		return {
-			ydoc,
+			ydoc: childYdoc,
 			body,
 			idb: childIdb,
 			sync: childSync,
@@ -86,7 +90,7 @@ export function openHoneycrispBrowser({
 			 * storage deletion.
 			 */
 			[Symbol.dispose]() {
-				ydoc.destroy();
+				childYdoc.destroy();
 			},
 		};
 	});
@@ -104,7 +108,7 @@ export function openHoneycrispBrowser({
 	});
 
 	return {
-		ydoc: ws.ydoc,
+		ydoc,
 		tables,
 		kv,
 		actions,
@@ -113,14 +117,14 @@ export function openHoneycrispBrowser({
 		collaboration,
 		async wipe() {
 			noteBodyDocs[Symbol.dispose]();
-			ws[Symbol.dispose]();
+			ydoc.destroy();
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
 			await wipeLocalStorage({ subject: signedIn.subject });
 		},
 		[Symbol.dispose]() {
 			unsubscribeAuth();
 			noteBodyDocs[Symbol.dispose]();
-			ws[Symbol.dispose]();
+			ydoc.destroy();
 		},
 	};
 }

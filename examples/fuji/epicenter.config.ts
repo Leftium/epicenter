@@ -24,7 +24,7 @@ import {
 	FUJI_ID,
 	fujiTables,
 } from '@epicenter/fuji';
-import { defineWorkspace, openEncryptedDoc } from '@epicenter/workspace';
+import { attachEncryption, defineWorkspace } from '@epicenter/workspace';
 import {
 	attachMarkdownMaterializer,
 	slugFilename,
@@ -35,16 +35,15 @@ import {
 	openWriterSqlite,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
+import * as Y from 'yjs';
 
 export default defineWorkspace({
 	open(ctx) {
-		const ws = openEncryptedDoc({
-			id: FUJI_ID,
-			keyring: ctx.keyring,
-			clientId: ctx.clientId,
-		});
-		const tables = ws.attachTables(fujiTables);
-		ws.attachKv({});
+		const ydoc = new Y.Doc({ guid: FUJI_ID, gc: true });
+		ydoc.clientID = ctx.clientId;
+		const encryption = attachEncryption(ydoc, { keyring: ctx.keyring });
+		const tables = encryption.attachTables(fujiTables);
+		encryption.attachKv({});
 		const actions = createFujiActions(tables);
 
 		// Runtime cache: hidden under .epicenter/ at the project root.
@@ -53,19 +52,19 @@ export default defineWorkspace({
 			filePath: join(ctx.projectDir, '.epicenter', 'sqlite.db'),
 			log: createLogger(`${ctx.route}-sqlite`),
 		});
-		ws.ydoc.once('destroy', () => sqliteDb.close());
+		ydoc.once('destroy', () => sqliteDb.close());
 
-		attachSqliteMaterializer(ws.ydoc, { db: sqliteDb }).table(tables.entries);
+		attachSqliteMaterializer(ydoc, { db: sqliteDb }).table(tables.entries);
 
 		// Markdown: visible at project root, one directory per table.
 		// Committed to git as the source of truth. The materializer appends
 		// the table name to `dir`, so `dir: projectDir` produces
 		// `<projectDir>/entries/<slug>.md` for the `entries` table.
-		attachMarkdownMaterializer(ws.ydoc, {
+		attachMarkdownMaterializer(ydoc, {
 			dir: ctx.projectDir,
 		}).table(tables.entries, { filename: slugFilename('title') });
 
-		return attachDaemonInfrastructure(ws.ydoc, {
+		return attachDaemonInfrastructure(ydoc, {
 			projectDir: ctx.projectDir,
 			openWebSocket: ctx.openWebSocket,
 			installationId: ctx.installationId,

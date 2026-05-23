@@ -11,9 +11,9 @@
 
 import { tabManagerTables } from '@epicenter/tab-manager';
 import {
+	attachEncryption,
 	defineActions,
 	openCollaboration,
-	openEncryptedDoc,
 	roomWsUrl,
 } from '@epicenter/workspace';
 import { defineDaemonWorkspace } from '@epicenter/workspace/daemon';
@@ -22,35 +22,34 @@ import {
 	slugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachYjsLog, markdownPath, yjsPath } from '@epicenter/workspace/node';
+import * as Y from 'yjs';
 
 const SERVER_URL = 'https://api.epicenter.so';
 const WORKSPACE_ID = 'epicenter.tab-manager';
 
 export default defineDaemonWorkspace({
 	async open(ctx) {
-		const ws = openEncryptedDoc({
-			id: WORKSPACE_ID,
-			keyring: ctx.keyring,
-			clientId: ctx.clientId,
-		});
-		const tables = ws.attachTables(tabManagerTables);
-		const kv = ws.attachKv({});
+		const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
+		ydoc.clientID = ctx.clientId;
+		const encryption = attachEncryption(ydoc, { keyring: ctx.keyring });
+		const tables = encryption.attachTables(tabManagerTables);
+		const kv = encryption.attachKv({});
 
-		const persistence = attachYjsLog(ws.ydoc, {
+		const persistence = attachYjsLog(ydoc, {
 			filePath: yjsPath(ctx.projectDir, WORKSPACE_ID),
 		});
 
 		const actions = defineActions({});
 
-		const collaboration = openCollaboration(ws.ydoc, {
-			url: roomWsUrl(SERVER_URL, ws.ydoc.guid),
+		const collaboration = openCollaboration(ydoc, {
+			url: roomWsUrl(SERVER_URL, ydoc.guid),
 			openWebSocket: ctx.openWebSocket,
 			installationId: ctx.installationId,
 			actions,
 		});
 
 		const whenReady = collaboration.whenConnected;
-		const markdown = attachMarkdownMaterializer(ws.ydoc, {
+		const markdown = attachMarkdownMaterializer(ydoc, {
 			dir: markdownPath(ctx.projectDir, WORKSPACE_ID),
 			waitFor: whenReady,
 		})
@@ -60,16 +59,16 @@ export default defineDaemonWorkspace({
 			.kv(kv);
 
 		return {
-			workspaceId: ws.ydoc.guid,
+			workspaceId: ydoc.guid,
 			whenReady,
 			actions,
 			collaboration,
 			async [Symbol.asyncDispose]() {
-				ws[Symbol.dispose]();
+				ydoc.destroy();
 				await collaboration.whenDisposed;
 			},
 			id: WORKSPACE_ID,
-			ydoc: ws.ydoc,
+			ydoc,
 			tables,
 			kv,
 			persistence,

@@ -34,8 +34,7 @@ export type SubjectKeyring = typeof SubjectKeyring.infer;
  *
  * Each entry maps a key version to the raw 32-byte workspace key derived via
  * `deriveWorkspaceKey(subjectKey, workspaceId)`. The map is rebuilt at every
- * `openEncryptedDoc` registration site so workspace key bytes do not outlive
- * the Y.Doc.
+ * `attachEncryption` site so workspace key bytes do not outlive the Y.Doc.
  *
  * The version axis equals the version axis of the source `SubjectKeyring`:
  * one workspace key per subject keyring entry, never persisted.

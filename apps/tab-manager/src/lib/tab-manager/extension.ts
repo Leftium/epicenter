@@ -4,7 +4,7 @@
  * Single source of truth for "how Tab Manager mounts in a browser extension."
  * Calls Tier 1 primitives inline so every line is visible top-to-bottom:
  *
- *  1. workspace root doc (encrypted tables + KV via openEncryptedDoc)
+ *  1. workspace root doc (encrypted tables + KV via attachEncryption)
  *  2. local storage for the root (attachLocalStorage)
  *  3. actions wired against tables + Y.Doc transaction batching
  *
@@ -20,10 +20,11 @@
 
 import type { SignedIn } from '@epicenter/svelte';
 import {
+	attachEncryption,
 	attachLocalStorage,
-	openEncryptedDoc,
 	wipeLocalStorage,
 } from '@epicenter/workspace';
+import * as Y from 'yjs';
 import { createTabManagerActions } from '$lib/workspace/actions';
 import {
 	type DeviceId,
@@ -45,34 +46,32 @@ export function openTabManagerBrowser({
 	signedIn: SignedIn;
 	installationId: DeviceId;
 }) {
-	const ws = openEncryptedDoc({
-		id: TAB_MANAGER_ID,
-		keyring: signedIn.keyring,
-	});
-	const tables = ws.attachTables(tabManagerTables);
-	const kv = ws.attachKv({});
+	const ydoc = new Y.Doc({ guid: TAB_MANAGER_ID, gc: true });
+	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
+	const tables = encryption.attachTables(tabManagerTables);
+	const kv = encryption.attachKv({});
 	const actions = createTabManagerActions({
 		tables,
-		batch: (fn) => ws.ydoc.transact(fn),
+		batch: (fn) => ydoc.transact(fn),
 		deviceId: installationId,
 	});
 
-	const idb = attachLocalStorage(ws.ydoc, signedIn);
+	const idb = attachLocalStorage(ydoc, signedIn);
 
 	return {
 		installationId,
-		ydoc: ws.ydoc,
+		ydoc,
 		tables,
 		kv,
 		idb,
 		actions,
 		async wipe() {
-			ws[Symbol.dispose]();
+			ydoc.destroy();
 			await idb.whenDisposed;
 			await wipeLocalStorage({ subject: signedIn.subject });
 		},
 		[Symbol.dispose]() {
-			ws[Symbol.dispose]();
+			ydoc.destroy();
 		},
 	};
 }

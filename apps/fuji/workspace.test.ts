@@ -1,12 +1,13 @@
 /**
  * Behavior tests for the Fuji schema and its mounted shape via
- * `openEncryptedDoc`. Pins the canonical workspace id and the encrypted
+ * `attachEncryption`. Pins the canonical workspace id and the encrypted
  * tables/kv surface that browser and daemon compositions both build on.
  */
 
 import { describe, expect, test } from 'bun:test';
 import { bytesToBase64, type SubjectKeyring } from '@epicenter/encryption';
-import { openEncryptedDoc } from '@epicenter/workspace';
+import { attachEncryption } from '@epicenter/workspace';
+import * as Y from 'yjs';
 import {
 	createFujiActions,
 	type EntryId,
@@ -21,55 +22,53 @@ const testKeyring: SubjectKeyring = [
 ];
 
 function openFujiForTest({ clientId }: { clientId?: number } = {}) {
-	const ws = openEncryptedDoc({
-		id: FUJI_ID,
-		keyring: () => testKeyring,
-		clientId,
-	});
-	const tables = ws.attachTables(fujiTables);
-	const kv = ws.attachKv({});
+	const ydoc = new Y.Doc({ guid: FUJI_ID, gc: true });
+	if (clientId !== undefined) ydoc.clientID = clientId;
+	const encryption = attachEncryption(ydoc, { keyring: () => testKeyring });
+	const tables = encryption.attachTables(fujiTables);
+	const kv = encryption.attachKv({});
 	const actions = createFujiActions(tables);
-	return { ws, tables, kv, actions };
+	return { ydoc, encryption, tables, kv, actions };
 }
 
 describe('Fuji workspace mount', () => {
-	test('openEncryptedDoc constructs a gc:true Y.Doc with FUJI_ID as guid', () => {
-		const { ws } = openFujiForTest();
-		expect(ws.ydoc.guid).toBe(FUJI_ID);
-		expect(ws.ydoc.gc).toBe(true);
-		ws[Symbol.dispose]();
+	test('constructs a gc:true Y.Doc with FUJI_ID as guid', () => {
+		const { ydoc } = openFujiForTest();
+		expect(ydoc.guid).toBe(FUJI_ID);
+		expect(ydoc.gc).toBe(true);
+		ydoc.destroy();
 	});
 
 	test('applies optional clientId', () => {
-		const { ws } = openFujiForTest({ clientId: 1234 });
-		expect(ws.ydoc.clientID).toBe(1234);
-		ws[Symbol.dispose]();
+		const { ydoc } = openFujiForTest({ clientId: 1234 });
+		expect(ydoc.clientID).toBe(1234);
+		ydoc.destroy();
 	});
 
 	test('does not pin clientId when omitted', () => {
 		const a = openFujiForTest();
 		const b = openFujiForTest();
-		expect(typeof a.ws.ydoc.clientID).toBe('number');
-		expect(typeof b.ws.ydoc.clientID).toBe('number');
-		a.ws[Symbol.dispose]();
-		b.ws[Symbol.dispose]();
+		expect(typeof a.ydoc.clientID).toBe('number');
+		expect(typeof b.ydoc.clientID).toBe('number');
+		a.ydoc.destroy();
+		b.ydoc.destroy();
 	});
 
 	test('attaches encrypted tables and kv that accept writes', () => {
-		const { ws, tables, kv } = openFujiForTest();
+		const { ydoc, tables, kv } = openFujiForTest();
 		expect(tables.entries).toBeDefined();
 		expect(kv).toBeDefined();
 		expect(tables.entries.count()).toBe(0);
-		ws[Symbol.dispose]();
+		ydoc.destroy();
 	});
 
 	test('createFujiActions produces an action surface', () => {
-		const { ws, actions } = openFujiForTest();
+		const { ydoc, actions } = openFujiForTest();
 		expect(actions).toBeDefined();
 		expect(actions.entries_count).toBeDefined();
 		expect(actions.entries_get).toBeDefined();
 		expect(actions.entries_create).toBeDefined();
-		ws[Symbol.dispose]();
+		ydoc.destroy();
 	});
 });
 
@@ -84,7 +83,6 @@ describe('Fuji schema helpers', () => {
 	});
 
 	test('entryContentDocGuid bakes in FUJI_ID as the workspace label', () => {
-		// Sanity: a different workspace label would produce a different guid.
 		const guid = entryContentDocGuid('entry-1' as EntryId);
 		expect(typeof guid).toBe('string');
 		expect(guid.length).toBeGreaterThan(0);

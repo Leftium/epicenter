@@ -30,14 +30,15 @@ import type { DaemonRuntime } from './types.js';
  *   the same string with logs, materializers, and installation ids.
  * - `clientId` is the deterministic Y.Doc clientID for this daemon (derived
  *   from `projectDir` so two daemons in different projects produce distinct
- *   update streams). Pass it to the workspace opener via
- *   `openEncryptedDoc({ id, keyring, clientId })`.
+ *   update streams). Pin it on the Y.Doc with `ydoc.clientID = ctx.clientId`
+ *   right after construction.
  * - `installationId` is the conventional collaboration installationId for the daemon
  *   side of this route (`<route>-daemon`). Pass it to `openCollaboration`.
  * - `keyring` is the lazy reader for the current subject keyring. Pass it to
- *   `openEncryptedDoc({ id, keyring })`. The host's closure throws when auth
- *   is signed-out, so a late sign-out turns into a thrown error at the next
- *   encrypted-write or registration site rather than silent ciphertext loss.
+ *   `attachEncryption(ydoc, { keyring })`. The host's closure throws when
+ *   auth is signed-out, so a late sign-out turns into a thrown error at the
+ *   next encrypted-write or registration site rather than silent ciphertext
+ *   loss.
  * - `openWebSocket` is the auth-bound WebSocket factory for
  *   `openCollaboration`.
  */

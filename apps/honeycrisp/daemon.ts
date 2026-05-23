@@ -6,7 +6,7 @@
  * paths.
  *
  * What this does:
- *   1. workspace root doc (encrypted tables + KV via openEncryptedDoc)
+ *   1. workspace root doc (encrypted tables + KV via attachEncryption)
  *   2. SQLite materializer at `sqlitePath(projectDir, workspaceId)` for
  *      folders + notes
  *   3. Markdown materializer at `markdownPath(projectDir, workspaceId)` for
@@ -15,6 +15,7 @@
  *      `attachDaemonInfrastructure`
  */
 
+import { attachEncryption } from '@epicenter/workspace';
 import type { DaemonWorkspaceContext } from '@epicenter/workspace/daemon';
 import {
 	attachMarkdownMaterializer,
@@ -27,8 +28,8 @@ import {
 	openWriterSqlite,
 	sqlitePath,
 } from '@epicenter/workspace/node';
-import { openEncryptedDoc } from '@epicenter/workspace';
 import { createLogger } from 'wellcrafted/logger';
+import * as Y from 'yjs';
 import {
 	createHoneycrispActions,
 	HONEYCRISP_ID,
@@ -36,30 +37,28 @@ import {
 } from './workspace.js';
 
 export function openHoneycrispDaemon(ctx: DaemonWorkspaceContext) {
-	const ws = openEncryptedDoc({
-		id: HONEYCRISP_ID,
-		keyring: ctx.keyring,
-		clientId: ctx.clientId,
-	});
-	const tables = ws.attachTables(honeycrispTables);
-	ws.attachKv({});
+	const ydoc = new Y.Doc({ guid: HONEYCRISP_ID, gc: true });
+	ydoc.clientID = ctx.clientId;
+	const encryption = attachEncryption(ydoc, { keyring: ctx.keyring });
+	const tables = encryption.attachTables(honeycrispTables);
+	encryption.attachKv({});
 	const actions = createHoneycrispActions(tables);
 
 	const sqliteDb = openWriterSqlite({
-		filePath: sqlitePath(ctx.projectDir, ws.ydoc.guid),
+		filePath: sqlitePath(ctx.projectDir, ydoc.guid),
 		log: createLogger(`${ctx.route}-sqlite`),
 	});
-	ws.ydoc.once('destroy', () => sqliteDb.close());
+	ydoc.once('destroy', () => sqliteDb.close());
 
-	const sqlite = attachSqliteMaterializer(ws.ydoc, { db: sqliteDb });
+	const sqlite = attachSqliteMaterializer(ydoc, { db: sqliteDb });
 	sqlite.table(tables.folders);
 	sqlite.table(tables.notes);
 
-	attachMarkdownMaterializer(ws.ydoc, {
-		dir: markdownPath(ctx.projectDir, ws.ydoc.guid),
+	attachMarkdownMaterializer(ydoc, {
+		dir: markdownPath(ctx.projectDir, ydoc.guid),
 	}).table(tables.notes, { filename: slugFilename('title') });
 
-	return attachDaemonInfrastructure(ws.ydoc, {
+	return attachDaemonInfrastructure(ydoc, {
 		projectDir: ctx.projectDir,
 		openWebSocket: ctx.openWebSocket,
 		installationId: ctx.installationId,

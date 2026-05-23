@@ -3,7 +3,7 @@
  *
  * Static checks only. Asserts that the schema module is pure data + factories
  * with no Y.Doc construction or encryption attach, and that the browser /
- * daemon openers compose from the new Tier 1 primitives (`openEncryptedDoc`,
+ * daemon openers compose from the Tier 1 primitives (`attachEncryption`,
  * `attachLocalStorage`, `openCollaboration`). Behavior tests live in
  * `workspace.test.ts`.
  */
@@ -35,34 +35,34 @@ describe('Fuji workspace architecture', () => {
 		expect(workspaceSource).not.toContain('openFujiWorkspace');
 		expect(workspaceSource).not.toContain('attachFujiWorkspace');
 		expect(workspaceSource).not.toContain('new Y.Doc');
-		expect(workspaceSource).not.toContain('openEncryptedDoc');
 		expect(workspaceSource).not.toContain('attachEncryption');
 		expect(packageJson.exports['.']).toBe('./src/lib/workspace.ts');
 	});
 
-	test('browser opener composes from new primitives', () => {
+	test('browser opener composes ydoc + attachEncryption + free primitives', () => {
 		expect(browserSource).toContain('export function openFujiBrowser');
-		expect(browserSource).toContain('openEncryptedDoc');
-		expect(browserSource).toContain('attachLocalStorage');
-		expect(browserSource).toContain('openCollaboration');
+		expect(browserSource).toContain('new Y.Doc({ guid: FUJI_ID');
+		expect(browserSource).toContain('attachEncryption(ydoc, { keyring:');
+		expect(browserSource).toContain('attachLocalStorage(ydoc, signedIn)');
+		expect(browserSource).toContain('openCollaboration(ydoc,');
 		expect(browserSource).toContain('wipeLocalStorage');
-		// No LocalOwner / attachEncryption / wipeLocalYjsData carry-over.
+		// No LocalOwner / openEncryptedDoc / wipeLocalYjsData carry-over.
 		expect(browserSource).not.toContain('LocalOwner');
-		expect(browserSource).not.toContain('attachEncryption');
+		expect(browserSource).not.toContain('openEncryptedDoc');
 		expect(browserSource).not.toContain('wipeLocalYjsData');
 		expect(browserSource).not.toContain('owner.attachLocal');
 		expect(browserSource).not.toContain('connectDaemonActions');
 	});
 
-	test('daemon opener composes from new primitives + materializers', () => {
+	test('daemon opener composes ydoc + attachEncryption + materializers', () => {
 		expect(daemonSource).toContain('export function openFujiDaemon');
-		expect(daemonSource).toContain('openEncryptedDoc');
+		expect(daemonSource).toContain('new Y.Doc({ guid: FUJI_ID');
+		expect(daemonSource).toContain('attachEncryption(ydoc, { keyring: ctx.keyring')
 		expect(daemonSource).toContain('attachDaemonInfrastructure');
 		expect(daemonSource).toContain('attachSqliteMaterializer');
 		expect(daemonSource).toContain('attachMarkdownMaterializer');
-		expect(daemonSource).toContain('ctx.keyring');
 		expect(daemonSource).toContain('ctx.clientId');
-		expect(daemonSource).not.toContain('attachEncryption');
+		expect(daemonSource).not.toContain('openEncryptedDoc');
 		expect(daemonSource).not.toContain('openFujiWorkspace');
 		expect(packageJson.exports['./daemon']).toBe('./daemon.ts');
 	});

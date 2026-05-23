@@ -282,8 +282,8 @@ export type ToolTrust = InferTableRow<typeof toolTrustTable>;
 
 /**
  * Table definitions for the tab-manager workspace. Composed in
- * `lib/tab-manager/extension.ts` via `ws.attachTables(tabManagerTables)`
- * against an `openEncryptedDoc({ id: TAB_MANAGER_ID, keyring })` bundle.
+ * `lib/tab-manager/extension.ts` via `encryption.attachTables(tabManagerTables)`
+ * against an `attachEncryption(ydoc, { keyring })` attachment.
  * Kept separate so actions and future consumers can derive their input
  * types from one source of truth.
  */

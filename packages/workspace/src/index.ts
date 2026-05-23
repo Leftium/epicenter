@@ -178,14 +178,14 @@ export type {
 } from './document/internal/sync-supervisor.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 export {
+	type AttachEncryptionOptions,
+	attachEncryption,
+	type EncryptionAttachment,
+} from './document/attach-encryption.js';
+export {
 	type Collaboration,
 	openCollaboration,
 } from './document/open-collaboration.js';
-export {
-	type EncryptedDoc,
-	openEncryptedDoc,
-	type OpenEncryptedDocOptions,
-} from './document/open-encrypted-doc.js';
 export { wipeLocalStorage } from './document/wipe-local-storage.js';
 // Transport URL builder.
 //

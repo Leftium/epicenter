@@ -1,12 +1,13 @@
 /**
  * Behavior tests for the Honeycrisp schema and its mounted shape via
- * `openEncryptedDoc`. Pins the canonical workspace id and the encrypted
+ * `attachEncryption`. Pins the canonical workspace id and the encrypted
  * tables/kv surface that browser and daemon compositions both build on.
  */
 
 import { describe, expect, test } from 'bun:test';
 import { bytesToBase64, type SubjectKeyring } from '@epicenter/encryption';
-import { openEncryptedDoc } from '@epicenter/workspace';
+import { attachEncryption } from '@epicenter/workspace';
+import * as Y from 'yjs';
 import {
 	createHoneycrispActions,
 	HONEYCRISP_ID,
@@ -21,55 +22,53 @@ const testKeyring: SubjectKeyring = [
 ];
 
 function openHoneycrispForTest({ clientId }: { clientId?: number } = {}) {
-	const ws = openEncryptedDoc({
-		id: HONEYCRISP_ID,
-		keyring: () => testKeyring,
-		clientId,
-	});
-	const tables = ws.attachTables(honeycrispTables);
-	const kv = ws.attachKv({});
+	const ydoc = new Y.Doc({ guid: HONEYCRISP_ID, gc: true });
+	if (clientId !== undefined) ydoc.clientID = clientId;
+	const encryption = attachEncryption(ydoc, { keyring: () => testKeyring });
+	const tables = encryption.attachTables(honeycrispTables);
+	const kv = encryption.attachKv({});
 	const actions = createHoneycrispActions(tables);
-	return { ws, tables, kv, actions };
+	return { ydoc, encryption, tables, kv, actions };
 }
 
 describe('Honeycrisp workspace mount', () => {
-	test('openEncryptedDoc constructs a gc:true Y.Doc with HONEYCRISP_ID as guid', () => {
-		const { ws } = openHoneycrispForTest();
-		expect(ws.ydoc.guid).toBe(HONEYCRISP_ID);
-		expect(ws.ydoc.gc).toBe(true);
-		ws[Symbol.dispose]();
+	test('constructs a gc:true Y.Doc with HONEYCRISP_ID as guid', () => {
+		const { ydoc } = openHoneycrispForTest();
+		expect(ydoc.guid).toBe(HONEYCRISP_ID);
+		expect(ydoc.gc).toBe(true);
+		ydoc.destroy();
 	});
 
 	test('applies optional clientId', () => {
-		const { ws } = openHoneycrispForTest({ clientId: 1234 });
-		expect(ws.ydoc.clientID).toBe(1234);
-		ws[Symbol.dispose]();
+		const { ydoc } = openHoneycrispForTest({ clientId: 1234 });
+		expect(ydoc.clientID).toBe(1234);
+		ydoc.destroy();
 	});
 
 	test('does not pin clientId when omitted', () => {
 		const a = openHoneycrispForTest();
 		const b = openHoneycrispForTest();
-		expect(typeof a.ws.ydoc.clientID).toBe('number');
-		expect(typeof b.ws.ydoc.clientID).toBe('number');
-		a.ws[Symbol.dispose]();
-		b.ws[Symbol.dispose]();
+		expect(typeof a.ydoc.clientID).toBe('number');
+		expect(typeof b.ydoc.clientID).toBe('number');
+		a.ydoc.destroy();
+		b.ydoc.destroy();
 	});
 
 	test('attaches encrypted tables and kv that accept writes', () => {
-		const { ws, tables, kv } = openHoneycrispForTest();
+		const { ydoc, tables, kv } = openHoneycrispForTest();
 		expect(tables.folders).toBeDefined();
 		expect(tables.notes).toBeDefined();
 		expect(kv).toBeDefined();
 		expect(tables.folders.count()).toBe(0);
 		expect(tables.notes.count()).toBe(0);
-		ws[Symbol.dispose]();
+		ydoc.destroy();
 	});
 
 	test('createHoneycrispActions produces an action surface', () => {
-		const { ws, actions } = openHoneycrispForTest();
+		const { ydoc, actions } = openHoneycrispForTest();
 		expect(actions).toBeDefined();
 		expect(actions.folders_delete).toBeDefined();
-		ws[Symbol.dispose]();
+		ydoc.destroy();
 	});
 });
 

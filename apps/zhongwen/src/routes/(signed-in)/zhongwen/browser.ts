@@ -4,7 +4,7 @@
  * Single source of truth for "how Zhongwen mounts in a browser." Calls Tier 1
  * primitives inline so every line is visible top-to-bottom:
  *
- *  1. workspace root doc (encrypted tables + KV via openEncryptedDoc)
+ *  1. workspace root doc (encrypted tables + KV via attachEncryption)
  *  2. local storage + cloud sync for root (attachLocalStorage + openCollaboration)
  *  3. reconnect listener for the root sync on auth transitions
  *
@@ -17,13 +17,14 @@
 import { APP_URLS } from '@epicenter/constants/vite';
 import type { SignedIn } from '@epicenter/svelte';
 import {
+	attachEncryption,
 	attachLocalStorage,
 	openCollaboration,
-	openEncryptedDoc,
 	roomWsUrl,
 	wipeLocalStorage,
 } from '@epicenter/workspace';
 import { ZHONGWEN_ID, zhongwenKv, zhongwenTables } from '@epicenter/zhongwen';
+import * as Y from 'yjs';
 
 export function openZhongwenBrowser({
 	signedIn,
@@ -32,13 +33,14 @@ export function openZhongwenBrowser({
 	signedIn: SignedIn;
 	installationId: string;
 }) {
-	const ws = openEncryptedDoc({ id: ZHONGWEN_ID, keyring: signedIn.keyring });
-	const tables = ws.attachTables(zhongwenTables);
-	const kv = ws.attachKv(zhongwenKv);
+	const ydoc = new Y.Doc({ guid: ZHONGWEN_ID, gc: true });
+	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
+	const tables = encryption.attachTables(zhongwenTables);
+	const kv = encryption.attachKv(zhongwenKv);
 
-	const idb = attachLocalStorage(ws.ydoc, signedIn);
-	const collaboration = openCollaboration(ws.ydoc, {
-		url: roomWsUrl(APP_URLS.API, ws.ydoc.guid),
+	const idb = attachLocalStorage(ydoc, signedIn);
+	const collaboration = openCollaboration(ydoc, {
+		url: roomWsUrl(APP_URLS.API, ydoc.guid),
 		openWebSocket: signedIn.auth.openWebSocket,
 		waitFor: idb.whenLoaded,
 		installationId,
@@ -50,19 +52,19 @@ export function openZhongwenBrowser({
 	});
 
 	return {
-		ydoc: ws.ydoc,
+		ydoc,
 		tables,
 		kv,
 		idb,
 		collaboration,
 		async wipe() {
-			ws[Symbol.dispose]();
+			ydoc.destroy();
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
 			await wipeLocalStorage({ subject: signedIn.subject });
 		},
 		[Symbol.dispose]() {
 			unsubscribeAuth();
-			ws[Symbol.dispose]();
+			ydoc.destroy();
 		},
 	};
 }

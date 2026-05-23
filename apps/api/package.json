@@ -9,7 +9,7 @@
 		"./billing-contract": "./src/billing-contract.ts",
 		"./billing-plans": "./src/billing-plans.ts"
 	},
-	"license": "AGPL-3.0",
+	"license": "AGPL-3.0-or-later",
 	"scripts": {
 		"test": "bun test",
 		"typecheck": "tsc --noEmit",

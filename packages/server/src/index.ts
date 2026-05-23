@@ -17,14 +17,10 @@ export {
 	requireCookieOrBearerUser,
 } from './middleware/require-auth.js';
 export { requireUrlUserIdMatchesAuth } from './middleware/require-url-user-id-matches-auth.js';
-export type {
-	AssetR2Key,
-	Owner,
-	OwnerKind,
-	OwnerPath,
-	RoomDoName,
-} from './owner.js';
-// Owner concept and durable-identifier derivations.
+// Server-only durable-identifier derivations. The `Owner` type itself
+// lives in `@epicenter/auth` because it flows through `/api/session` and
+// every client; consumers that need it should import it from there.
+export type { AssetR2Key, OwnerPath, RoomDoName } from './owner.js';
 export { assetKey, doName, ownerPath } from './owner.js';
 // Re-export the Cloudflare Durable Object class so each deployment's
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.

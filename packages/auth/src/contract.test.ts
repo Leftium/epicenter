@@ -2,12 +2,12 @@
  * Auth Client Contract Tests
  *
  * Covers:
- * - PersistedAuth = { grant, localIdentity } shape
+ * - PersistedAuth = { grant, owner, keyring } shape
  * - AuthState three variants; profile data is absent from state
- * - Refresh writes only grant, localIdentity byte-identical
- * - Same-subject guard at /api/session response
- * - Network gate: bearer not attached until /api/session confirms same subject
- * - Cold-boot offline keeps signed-in with localIdentity and no profile field
+ * - Refresh writes only grant, owner + keyring byte-identical
+ * - Same-owner guard at /api/session response
+ * - Network gate: bearer not attached until /api/session confirms same owner
+ * - Cold-boot offline keeps signed-in with owner + keyring and no profile field
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -40,15 +40,15 @@ function grant({
 }
 
 function cell({
-	subject = 'user-1',
+	userId = 'user-1',
 	grant: g = grant(),
 }: {
-	subject?: string;
+	userId?: string;
 	grant?: OAuthTokenGrant;
 } = {}): PersistedAuth {
 	return {
 		grant: g,
-		owner: { kind: 'personal' as const, userId: subject },
+		owner: { kind: 'personal' as const, userId },
 		keyring: [...keyring],
 	};
 }
@@ -98,10 +98,10 @@ function oauthTokenResponse({
 	return json(body);
 }
 
-function apiSessionBody(subject = 'user-1') {
+function apiSessionBody(userId = 'user-1') {
 	return {
-		user: { id: subject, email: `${subject}@example.com` },
-		owner: { kind: 'personal' as const, userId: subject },
+		user: { id: userId, email: `${userId}@example.com` },
+		owner: { kind: 'personal' as const, userId },
 		keyring: [...keyring],
 	};
 }
@@ -191,8 +191,8 @@ test('startSignIn calls /api/session and writes both sections', async () => {
 	auth[Symbol.dispose]();
 });
 
-test('startSignIn publishes signed-out before installing a different subject', async () => {
-	const setup = createStorage(cell({ subject: 'alice' }));
+test('startSignIn publishes signed-out before installing a different owner', async () => {
+	const setup = createStorage(cell({ userId: 'alice' }));
 	const states: string[] = [];
 	const auth = createOAuthAppAuth({
 		baseURL: 'http://localhost:8787',
@@ -418,8 +418,8 @@ test('/api/session 503 leaves local auth signed-in without attaching a bearer', 
 	auth[Symbol.dispose]();
 });
 
-test('stale /api/session verification after subject-switch sign-in cannot replace the new subject', async () => {
-	const setup = createStorage(cell({ subject: 'alice' }));
+test('stale /api/session verification after owner-switch sign-in cannot replace the new owner', async () => {
+	const setup = createStorage(cell({ userId: 'alice' }));
 	let resolveOldApiSession!: (response: Response) => void;
 	const oldApiSessionPromise = new Promise<Response>((r) => {
 		resolveOldApiSession = r;
@@ -539,8 +539,8 @@ test('refresh keeps existing refresh token when token response omits rotation', 
 	auth[Symbol.dispose]();
 });
 
-test('same-subject guard wipes the cell when /api/session returns a different subject', async () => {
-	const setup = createStorage(cell({ subject: 'alice' }));
+test('same-owner guard wipes the cell when /api/session returns a different owner', async () => {
+	const setup = createStorage(cell({ userId: 'alice' }));
 	const auth = createOAuthAppAuth({
 		baseURL: 'http://localhost:8787',
 		clientId: 'client-1',
@@ -561,7 +561,7 @@ test('same-subject guard wipes the cell when /api/session returns a different su
 	auth[Symbol.dispose]();
 });
 
-test('same-subject /api/session preserves state when keyring is unchanged', async () => {
+test('same-owner /api/session preserves state when keyring is unchanged', async () => {
 	const setup = createStorage(cell());
 	const auth = createOAuthAppAuth({
 		baseURL: 'http://localhost:8787',
@@ -624,7 +624,7 @@ test('keyring rotation updates persisted localIdentity', async () => {
 	auth[Symbol.dispose]();
 });
 
-test('network gate: no Authorization header until /api/session confirms same subject', async () => {
+test('network gate: no Authorization header until /api/session confirms same owner', async () => {
 	const setup = createStorage(cell());
 	const seenAuth: Array<string | null> = [];
 	let resolveApiSession!: (response: Response) => void;
@@ -686,7 +686,7 @@ test('auth.fetch resolves relative API paths against the auth base URL', async (
 	auth[Symbol.dispose]();
 });
 
-test('network gate: no WebSocket bearer protocol until /api/session confirms same subject', async () => {
+test('network gate: no WebSocket bearer protocol until /api/session confirms same owner', async () => {
 	const setup = createStorage(cell());
 	const { openings, WebSocketRecorder } = createWebSocketRecorder();
 	let resolveApiSession!: (response: Response) => void;

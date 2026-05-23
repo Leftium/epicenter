@@ -25,13 +25,14 @@ import { customAlphabet } from 'nanoid';
 const generateGuid = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 15);
 
 import { and, desc, eq, sql } from 'drizzle-orm';
+import type { Owner } from '@epicenter/auth';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { describeRoute } from 'hono-openapi';
 import { defineErrors } from 'wellcrafted/error';
 import { MAX_ASSET_BYTES } from './constants.js';
 import * as schema from './db/schema/index.js';
-import { assetKey, type Owner } from './owner.js';
+import { assetKey } from './owner.js';
 import type { Env } from './types.js';
 
 const ALLOWED_MIME_TYPES = new Set([

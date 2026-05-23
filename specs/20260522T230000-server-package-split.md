@@ -202,15 +202,19 @@ lifespan is the client's concern.
 {
   user: AuthUser,                   // who is signed in
   owner: Owner,                     // discriminated union
-  ownerPath: OwnerPath,             // `users/<userId>` or ''
   keyring: SubjectKeyring,          // crypto material
 }
 ```
 
-Flat top-level shape. `ownerPath` is included so clients can persist local
-state under `${origin}/${ownerPath}/<resource>/<id>` without importing
-helpers from `@epicenter/server`. Two self-hosted team deployments do not
-collide on the client because the client keys by `${origin}` too.
+Flat top-level shape. The wire carries the `Owner` value, not its derived
+forms. Clients that need a stable local key call `ownerId(owner)` from
+`@epicenter/auth`; servers that need a partition path call
+`ownerPath(owner)` from `@epicenter/server`. They agree by construction
+(`users/<userId>` for personal, `''` for team) so `kind: 'team'` is the
+sole place the word `team` ever appears as a value. The two helpers stay
+in their own packages because their consumers do; they are not unified
+into one helper. Two self-hosted team deployments do not collide on the
+client because the client keys by `${origin}` too.
 
 The old `localIdentity.subject` field retires.
 
@@ -674,8 +678,9 @@ value. Until that exists, the meaningful gradient is `open` or `disabled`.
 packages/server/
   owner.test.ts                ownerPath, doName, assetKey, keyringLabel
                                produce expected strings for both kinds
-  session.test.ts              /api/session returns owner, ownerPath, keyring
-                               personal: omits userId; team: same shape, '' path
+  session.test.ts              /api/session returns user, owner, keyring
+                               personal: owner.userId == auth user id
+                               team:     owner is the bare { kind: 'team' }
   rooms.test.ts                personal: requires URL userId == auth userId
                                team: no userId in URL
                                WS upgrade carries clientId

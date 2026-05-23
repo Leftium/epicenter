@@ -16,13 +16,13 @@
  * and `autumnStorageGate`; team wraps with `requireCookieOrBearerUser` alone.
  */
 
+import type { Owner } from '@epicenter/auth';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import {
 	createAssetAuthedRoutes,
 	createAssetPublicRoutes,
 } from '../asset-routes.js';
-import type { Owner } from '../owner.js';
 import type { Env, ServerOptions } from '../types.js';
 
 export function createAssetsApp(opts: ServerOptions): Hono<Env> {

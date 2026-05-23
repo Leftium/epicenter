@@ -35,16 +35,15 @@ export type OwnerKind = Owner['kind'];
 /**
  * Stable string identifier for the owner.
  *
- * Personal: `users/<userId>` (matches the storage partition prefix the
- *            server writes for DO names, R2 keys, and HKDF labels).
- * Team:      the literal `team` (a fixed sentinel so local storage on a
- *            machine connected to two different team servers can be
- *            disambiguated by combining `${origin}/${ownerId}`).
- *
- * Use this anywhere you previously read `localIdentity.subject`. The name
- * change reflects what the value actually carries now: an OWNER identifier,
- * not a Better-Auth subject.
+ * Personal: `users/<userId>` (matches the partition prefix the server
+ *            writes for DO names, R2 keys, and local IDB names).
+ * Team:      `''` (empty string). Team mode has no partition, so there
+ *            is nothing to identify. Disambiguation across two team
+ *            servers on the same machine comes from the API origin
+ *            (`${origin}/${ownerId}`), not from a sentinel inside this
+ *            string. `kind: 'team'` remains the sole place the word
+ *            `team` appears as a value.
  */
 export function ownerId(owner: Owner): string {
-	return owner.kind === 'personal' ? `users/${owner.userId}` : 'team';
+	return owner.kind === 'personal' ? `users/${owner.userId}` : '';
 }

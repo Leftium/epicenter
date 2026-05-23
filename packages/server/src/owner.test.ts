@@ -6,8 +6,9 @@
  * blob keyed on the old shape becomes orphaned. They are contracts.
  */
 
+import type { Owner } from '@epicenter/auth';
 import { describe, expect, test } from 'bun:test';
-import { assetKey, doName, type Owner, ownerPath } from './owner.js';
+import { assetKey, doName, ownerPath } from './owner.js';
 
 const personal: Owner = { kind: 'personal', userId: 'abc' };
 const team: Owner = { kind: 'team' };

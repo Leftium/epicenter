@@ -16,13 +16,14 @@
  * captures the actor regardless of mode (provenance), not the data owner.
  */
 
+import type { Owner } from '@epicenter/auth';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
 import { MAX_PAYLOAD_BYTES } from '../constants.js';
 import * as schema from '../db/schema/index.js';
 import { isWebSocketUpgrade } from '../is-websocket-upgrade.js';
-import { doName, type Owner } from '../owner.js';
+import { doName } from '../owner.js';
 import type { Env, ServerOptions } from '../types.js';
 
 type Db = NodePgDatabase<typeof schema>;

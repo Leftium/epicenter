@@ -7,12 +7,11 @@
  * `opts.ownerKind`.
  */
 
-import type { AuthUser } from '@epicenter/auth';
+import type { AuthUser, OwnerKind } from '@epicenter/auth';
 import type { ActionManifest } from '@epicenter/workspace';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { createAuth } from './auth/create-auth.js';
 import type * as schema from './db/schema/index.js';
-import type { OwnerKind } from './owner.js';
 import type { Rooms } from './room/contracts.js';
 
 /**

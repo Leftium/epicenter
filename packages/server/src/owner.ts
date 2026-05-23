@@ -1,5 +1,11 @@
 /**
- * The Owner concept and every durable identifier derived from it.
+ * Server-only derived identifiers built from an `Owner`.
+ *
+ * `Owner` itself lives in `@epicenter/auth` because it flows through
+ * `/api/session`, the persisted auth cell, and every client (browser,
+ * extension, CLI, daemon). What lives here are the durable strings only
+ * a server cares about: Durable Object names, R2 object keys, and the
+ * partition path segment they all share.
  *
  * Personal mode and team mode are the same product. Personal mode
  * partitions data by user. Team mode does not partition at all.
@@ -12,18 +18,15 @@
  * Every durable string follows the rule:
  *   `<partition>/<resource type>/<id>`
  * where `<partition>` is omitted when there is no partition.
- */
-
-/**
- * Who owns the data this request touches.
  *
- * Personal: a single user; their userId is the partition key.
- * Team:     the deployment itself; no partition.
+ * Note: clients that need a stable owner key call `ownerId(owner)` from
+ * `@epicenter/auth`. It returns the same string as `ownerPath(owner)`
+ * here (`users/<userId>` for personal, `''` for team). They are not
+ * unified into one helper because they belong to different consumers,
+ * but they agree on the value by construction.
  */
-export type Owner = { kind: 'personal'; userId: string } | { kind: 'team' };
 
-/** The set of valid `kind` discriminators. */
-export type OwnerKind = Owner['kind'];
+import type { Owner } from '@epicenter/auth';
 
 /**
  * The partition segment that prefixes durable identifiers.

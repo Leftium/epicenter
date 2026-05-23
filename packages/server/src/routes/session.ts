@@ -33,10 +33,13 @@ export function createSessionApp(opts: ServerOptions): Hono<Env> {
 					: { kind: 'team' };
 			// HKDF label: personal mode uses the bare user id (byte-pinned to
 			// the pre-split derivation, so any existing keyring stays valid);
-			// team mode uses the literal `team`, shared across the deployment.
+			// team mode uses the empty string, matching `ownerPath(team) === ''`
+			// and keeping `kind: 'team'` as the sole place the word `team`
+			// appears as a value. Domain separation across deployments comes
+			// from each deployment's `ENCRYPTION_SECRETS`, not from this label.
 			// Not routed through an Owner-aware helper on purpose: the bytes
 			// are the contract, and a helper would invite drift.
-			const hkdfLabel = owner.kind === 'personal' ? owner.userId : 'team';
+			const hkdfLabel = owner.kind === 'personal' ? owner.userId : '';
 			const keyring = await deriveSubjectKeyring(hkdfLabel);
 			return c.json({
 				user: c.var.user,

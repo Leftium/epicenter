@@ -5,10 +5,10 @@ export {
 	type LogoutResult,
 	loginWithOob,
 	logout,
-	machineAuthFilePath,
 	MachineAuthRequestError,
 	MachineAuthStorageError,
 	type MachineIdentity,
+	machineAuthFilePath,
 	type StatusResult,
 	status,
 } from './node/machine-auth.js';

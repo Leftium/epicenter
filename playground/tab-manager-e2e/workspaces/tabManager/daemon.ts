@@ -20,11 +20,7 @@ import {
 	attachMarkdownMaterializer,
 	slugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
-import {
-	attachYjsLog,
-	markdownPath,
-	yjsPath,
-} from '@epicenter/workspace/node';
+import { attachYjsLog, markdownPath, yjsPath } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
 
 const SERVER_URL = 'https://api.epicenter.so';

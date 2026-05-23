@@ -26,7 +26,10 @@ const FORBIDDEN_PATTERNS: { pattern: RegExp; label: string }[] = [
 	{ pattern: /\bfrom\s+['"]fs['"]/, label: "import from 'fs'" },
 	{ pattern: /\bfrom\s+['"]path['"]/, label: "import from 'path'" },
 	{ pattern: /\bfrom\s+['"]os['"]/, label: "import from 'os'" },
-	{ pattern: /\bfrom\s+['"]child_process['"]/, label: "import from 'child_process'" },
+	{
+		pattern: /\bfrom\s+['"]child_process['"]/,
+		label: "import from 'child_process'",
+	},
 	{ pattern: /\bBun\s*\./, label: 'reference to Bun.*' },
 	{ pattern: /\bprocess\s*\.\s*env\b/, label: 'reference to process.env' },
 ];

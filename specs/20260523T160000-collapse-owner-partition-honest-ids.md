@@ -20,8 +20,11 @@ This is greenfield. No back-compat shims. No "renamed but kept the old export." 
 
 ### 2.1 Branded ids
 
+Dual-declared as both type AND runtime callable, matching `packages/filesystem/src/ids.ts` and `apps/tab-manager/src/lib/workspace/definition.ts`:
+
 ```ts
 // packages/auth/src/ids.ts (new file)
+import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 
 /**
@@ -30,6 +33,7 @@ import type { Brand } from 'wellcrafted/brand';
  * they do not. The brand prevents accidental cross-assignment.
  */
 export type UserId = string & Brand<'UserId'>;
+export const UserId = type('string').as<UserId>();
 
 /**
  * Workspace partition key. In personal mode equals the signed-in user's
@@ -38,6 +42,7 @@ export type UserId = string & Brand<'UserId'>;
  * HKDF derivation label all use this one value.
  */
 export type OwnerId = string & Brand<'OwnerId'>;
+export const OwnerId = type('string').as<OwnerId>();
 
 /**
  * Deployment-static product shape. Set once at server construction
@@ -46,9 +51,28 @@ export type OwnerId = string & Brand<'OwnerId'>;
  * shape offline. Drives URL pattern, sign-up policy, and team-aware UI.
  */
 export type OwnershipMode = 'personal' | 'team';
+export const OwnershipMode = type("'personal' | 'team'");
 ```
 
-The brands fit this codebase's pattern (see `packages/filesystem/src/ids.ts`, `apps/whispering/.../local-shortcut-manager.ts`, every `apps/*/workspace.ts`). UserId and OwnerId are the only pair in the system where one's bytes can be the other's bytes in one mode but not another, which is exactly what the brand catches.
+Call sites use the constructor, not raw `as` casts. The constructor is a callable arktype validator that returns the branded value:
+
+```ts
+// PREFERRED — explicit, searchable, readable
+const ownerId = OwnerId(c.var.user.id);
+const userId  = UserId(rawUserId);
+
+// AVOID — silent cast, harder to grep, less obvious at the boundary
+const ownerId = c.var.user.id as OwnerId;
+```
+
+Generator helpers stay as bare casts because they're producing fresh values from trusted sources, not lifting external strings:
+
+```ts
+// fine — internal generator
+export const generateOwnerId = (): OwnerId => generateId() as OwnerId;
+```
+
+The brand fits this codebase's pattern (see every `apps/*/workspace.ts`, `packages/filesystem/src/ids.ts`). UserId and OwnerId are the only pair in the system where one's bytes can be the other's bytes in one mode but not another, which is exactly what the brand catches.
 
 ### 2.2 `ApiSessionResponse`
 
@@ -56,26 +80,33 @@ The brands fit this codebase's pattern (see `packages/filesystem/src/ids.ts`, `a
 // packages/auth/src/auth-types.ts (rewritten)
 import { type } from 'arktype';
 import { Keyring } from '@epicenter/encryption';
+import { OwnerId, OwnershipMode, UserId } from './ids.js';
 
 export const ApiSessionResponse = type({
   '+': 'delete',
   user: {
-    id: 'string',                // typed as UserId at the boundary
+    id: UserId,                  // arktype callable validates AND brands
     email: 'string',
   },
-  ownerId: 'string',             // typed as OwnerId at the boundary
+  ownerId: OwnerId,
   keyring: Keyring,
-  mode: "'personal' | 'team'",
+  mode: OwnershipMode,
 });
-export type ApiSessionResponse = {
-  user: { id: UserId; email: string };
-  ownerId: OwnerId;
-  keyring: Keyring;
-  mode: OwnershipMode;
-};
+export type ApiSessionResponse = typeof ApiSessionResponse.infer;
 ```
 
 Two facts deliberately not nested under an `owner` object: only `id` and `keyring` are session-time owner-scoped facts and grouping them adds an indirection without earning it. Future presentational owner facts (display name, avatar, quota) live in dedicated endpoints, not in the session boot manifest.
+
+Construction at boundaries uses `satisfies`, never colon annotation, so inferred literal types stay narrow:
+
+```ts
+return c.json({
+  user: { id: UserId(c.var.user.id), email: c.var.user.email },
+  ownerId,
+  keyring,
+  mode,
+} satisfies ApiSessionResponse);
+```
 
 ### 2.3 `PersistedAuth`
 
@@ -83,18 +114,12 @@ Two facts deliberately not nested under an `owner` object: only `id` and `keyrin
 export const PersistedAuth = type({
   '+': 'delete',
   grant: OAuthTokenGrant,
-  userId: 'string',              // typed as UserId
-  ownerId: 'string',             // typed as OwnerId
+  userId: UserId,
+  ownerId: OwnerId,
   keyring: Keyring,
-  mode: "'personal' | 'team'",
+  mode: OwnershipMode,
 });
-export type PersistedAuth = {
-  grant: OAuthTokenGrant;
-  userId: UserId;
-  ownerId: OwnerId;
-  keyring: Keyring;
-  mode: OwnershipMode;
-};
+export type PersistedAuth = typeof PersistedAuth.infer;
 ```
 
 Differs from `ApiSessionResponse` by exactly two fields:
@@ -265,11 +290,11 @@ bun run --filter @epicenter/auth test
 
 Commit at the end of phase 1: "refactor(auth,encryption)!: collapse Owner partition into branded OwnerId + OwnershipMode".
 
-### Phase 2 — Parallel consumers (3 agents)
+### Phase 2 — Parallel consumers (4 agents)
 
-All three depend on phase 1 finishing. They do not touch each other's files.
+All four depend on phase 1 finishing. They do not touch each other's files. They DO NOT commit; the orchestrator commits the union after they all return and the monorepo typechecks.
 
-**Agent A — `@epicenter/server`** (paths, routes, middleware)
+**Agent 2A — `@epicenter/server`** (paths, routes, middleware)
 
 ```text
 packages/server/src/
@@ -344,13 +369,24 @@ bun run --filter @epicenter/workspace typecheck
 bun run --filter @epicenter/workspace test
 ```
 
-**Agent C — `@epicenter/auth-svelte` + `@epicenter/svelte-utils`** (svelte re-exports)
+**Agent 2C — `@epicenter/auth-svelte`** (svelte re-exports)
 
 ```text
 packages/auth-svelte/src/
   index.ts                 update re-exports — drop ownerId, Owner;
                            add UserId, OwnerId, OwnershipMode
   create-auth.svelte.ts    update Owner references; new session shape
+```
+
+Verification:
+
+```bash
+bun run --filter @epicenter/auth-svelte typecheck
+```
+
+**Agent 2D — `@epicenter/svelte-utils`** (session helpers)
+
+```text
 packages/svelte-utils/src/
   session.svelte.ts        consume new ApiSessionResponse shape
   session.svelte.test.ts   update fixtures
@@ -359,20 +395,28 @@ packages/svelte-utils/src/
 Verification:
 
 ```bash
-bun run --filter @epicenter/auth-svelte typecheck
 bun run --filter @epicenter/svelte-utils typecheck
 bun run --filter @epicenter/svelte-utils test
 ```
 
-Commit at end of phase 2: "refactor(server,workspace,svelte)!: uniform owners/:ownerId/ paths and consume branded ids".
+After all four phase-2 agents return, the orchestrator commits with: "refactor(server,workspace,svelte)!: uniform owners/:ownerId/ paths and consume branded ids".
 
-### Phase 3 — Parallel apps (2 agents)
+### Phase 3 — Parallel apps (8 agents)
 
-**Agent D — `apps/api` + `packages/cli`**
+Each phase-3 agent owns ONE app or one closely-related grouping. They do not commit; the orchestrator commits the union after all return and the monorepo typechecks.
+
+**Agent 3D — `apps/api`**
 
 ```text
 apps/api/src/index.ts      createServer({ mode: 'personal', ... });
                            middleware path update '/owners/:ownerId/...'
+```
+
+Verification: `bun run --filter api typecheck`
+
+**Agent 3E — `packages/cli`**
+
+```text
 packages/cli/src/commands/up.ts
                            update Owner references
 packages/cli/src/commands/up.test.ts
@@ -380,33 +424,108 @@ packages/cli/test/e2e-up-cross-peer.test.ts
                            update fixtures
 ```
 
-**Agent E — Browser/Tauri/Extension apps**
+Verification: `bun run --filter @epicenter/cli typecheck` and `bun run --filter @epicenter/cli test`
+
+**Agent 3F — `apps/dashboard` + `apps/zhongwen`** (single auth file each)
 
 ```text
 apps/dashboard/src/lib/platform/auth/auth.ts
+apps/zhongwen/src/lib/platform/auth/auth.ts
+```
+
+Verification: `bun run --filter dashboard typecheck` and `bun run --filter zhongwen typecheck`
+
+**Agent 3G — `apps/fuji`**
+
+```text
 apps/fuji/src/lib/auth.ts
 apps/fuji/workspace.test.ts
+```
+
+Verification: `bun run --filter fuji typecheck` and the workspace test.
+
+**Agent 3H — `apps/honeycrisp`**
+
+```text
 apps/honeycrisp/src/lib/platform/auth/auth.ts
 apps/honeycrisp/workspace.test.ts
+```
+
+Verification: `bun run --filter honeycrisp typecheck` and the workspace test.
+
+**Agent 3I — `apps/opensidian`**
+
+```text
 apps/opensidian/src/lib/platform/auth/auth.ts
 apps/opensidian/src/lib/chat/chat-state.svelte.ts
+```
+
+Verification: `bun run --filter opensidian typecheck`.
+
+**Agent 3J — `apps/tab-manager`**
+
+```text
 apps/tab-manager/src/lib/session.svelte.ts
 apps/tab-manager/src/lib/chat/chat-state.svelte.ts
-apps/zhongwen/src/lib/platform/auth/auth.ts
+```
+
+Verification: `bun run --filter tab-manager typecheck`.
+
+**Agent 3K — examples + playground**
+
+```text
 examples/notes-cross-peer/notes.ts
 playground/opensidian-e2e/workspace.test.ts
-                           consume ApiSessionResponse new shape;
-                           replace any Owner type references
 ```
 
-Verification:
+Verification: typecheck affected packages.
+
+After all eight phase-3 agents return, the orchestrator runs the whole-monorepo typecheck + test:
 
 ```bash
-bun run typecheck      # whole monorepo
-bun run test           # whole monorepo
+bun run typecheck
+bun run test
 ```
 
-Commit at end of phase 3: "refactor(apps)!: adopt branded ids and ownership mode across consumers".
+Then commits: "refactor(apps)!: adopt branded ids and ownership mode across consumers".
+
+## 3a. Style rules every agent follows
+
+These are not negotiable; the post-implementation review will grep for violations.
+
+```text
+RULE                            EXAMPLE
+────────────────────────────────────────────────────────────────────────────
+Value literals use `satisfies`, return c.json({
+not colon annotation. Keeps      ...
+inferred type narrow and lets    } satisfies ApiSessionResponse);
+the call site type-test against  // NOT: const x: ApiSessionResponse = {...}
+the contract.
+
+Brand application uses the       const ownerId = OwnerId(rawString);
+callable constructor, not `as`   // NOT: const ownerId = rawString as OwnerId;
+casts at consumer sites.         (Internal generators producing fresh ids
+                                  may still use `as`.)
+
+Function parameter and field     function doName(ownerId: OwnerId, ...)
+declarations still use `:`.      type X = { ownerId: OwnerId; ... }
+`satisfies` only applies to
+value expressions.
+
+Type aliases derive from         export type ApiSessionResponse =
+factories via `typeof X.infer`     typeof ApiSessionResponse.infer;
+when the arktype validator is    // NOT: declare the shape twice
+the source of truth.
+
+No em or en dashes anywhere      Use a colon, comma, semicolon, or
+(prose, JSDoc, comments,         sentence break instead.
+errors). Repo-wide rule from
+AGENTS.md.
+
+Stage specific files only;        git add path/to/file
+never `git add -A` or             // NOT: git add . / git add -A
+`git add .`.
+```
 
 ## 4. Decisions log
 

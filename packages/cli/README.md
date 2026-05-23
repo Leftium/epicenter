@@ -89,7 +89,7 @@ The imported module exports a route-agnostic daemon workspace definition. The ro
 import { defineWorkspace } from '@epicenter/workspace';
 
 export default defineWorkspace({
-	async open({ keyring, openWebSocket, projectDir, route, clientId, installationId }) {
+	async open({ keyring, openWebSocket, projectDir, route, owner, clientId, yDocClientId }) {
 		// Open the long-lived local runtime.
 		// `route` was supplied by epicenter.config.ts (or derived from the
 		// project directory's basename in single-workspace projects).

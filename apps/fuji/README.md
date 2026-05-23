@@ -21,7 +21,7 @@ Workspace ID: `FUJI_ID` (`epicenter.fuji`). Rich-text content and entry metadata
 
 ### Client wiring
 
-Fuji's root workspace is built once per signed-in session by `createSession`. `openFujiBrowser()` owns the `new Y.Doc(...)` call, composes every Tier 1 primitive inline, and returns the bundle directly. The session module receives a `SignedIn` from `createSession` and passes it into the browser factory. `SignedIn` carries `{ subject, keyring, auth }`; `attachEncryption` reads the keyring, `attachLocalStorage` reads both the subject (for the IDB database name) and the keyring, and `openCollaboration` takes the live `auth` client so it can open sockets through `auth.openWebSocket` and reconnect on `auth.onStateChange` without per-app glue.
+Fuji's root workspace is built once per signed-in session by `createSession`. `openFujiBrowser()` owns the `new Y.Doc(...)` call, composes every Tier 1 primitive inline, and returns the bundle directly. The session module receives a `SignedIn` from `createSession` and passes it into the browser factory. `SignedIn` carries `{ server, owner, keyring, auth }`; `attachEncryption` reads the keyring, `attachLocalStorage` reads the server + owner (for the IDB database name) and the keyring, and `openCollaboration` takes `auth.openWebSocket` and `auth.onStateChange` directly so it can open sockets and reconnect without per-app glue.
 
 ```ts
 import { openFujiBrowser } from '$lib/browser';
@@ -34,7 +34,7 @@ export const session = createSession({
   build: (signedIn) =>
     openFujiBrowser({
       signedIn,
-      installationId: createInstallationId({ storage: localStorage }),
+      clientId: createInstallationId({ storage: localStorage }),
     }),
 });
 ```
@@ -44,10 +44,10 @@ Inside `openFujiBrowser`, the composition is fully visible top-to-bottom:
 ```ts
 export function openFujiBrowser({
   signedIn,
-  installationId,
+  clientId,
 }: {
   signedIn: SignedIn;
-  installationId: string;
+  clientId: string;
 }) {
   const ydoc = new Y.Doc({ guid: FUJI_ID, gc: true });
   const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
@@ -55,12 +55,21 @@ export function openFujiBrowser({
   const kv = encryption.attachKv({});
   const actions = createFujiActions(tables);
 
-  const idb = attachLocalStorage(ydoc, signedIn);
+  const idb = attachLocalStorage(ydoc, {
+    server: signedIn.server,
+    owner: signedIn.owner,
+    keyring: signedIn.keyring,
+  });
   const collaboration = openCollaboration(ydoc, {
-    url: roomWsUrl(APP_URLS.API, ydoc.guid),
-    auth: signedIn.auth,
+    url: roomWsUrl({
+      baseURL: signedIn.auth.baseURL,
+      owner: signedIn.owner,
+      guid: ydoc.guid,
+      clientId,
+    }),
+    openWebSocket: signedIn.auth.openWebSocket,
+    onAuthChange: signedIn.auth.onStateChange,
     waitFor: idb.whenLoaded,
-    installationId,
     actions,
   });
   // ... per-entry child docs, wipe(), dispose
@@ -68,7 +77,7 @@ export function openFujiBrowser({
 }
 ```
 
-The browser bundle exposes concrete resources like `idb`, `collaboration`, and child document collections. Auth state flows through `session.current`; when present, it carries the Fuji bundle, and pages reach it via the module-level `requireFuji()` exported from `$lib/session` (throws if called without an authenticated session). Local cleanup runs through `bundle.wipe()`, which destroys the live Y.Docs and then calls `wipeLocalStorage({ subject: signedIn.subject })` to drop every encrypted IDB database for that subject. It is a separate explicit action, not part of sign-out.
+The browser bundle exposes concrete resources like `idb`, `collaboration`, and child document collections. Auth state flows through `session.current`; when present, it carries the Fuji bundle, and pages reach it via the module-level `requireFuji()` exported from `$lib/session` (throws if called without an authenticated session). Local cleanup runs through `bundle.wipe()`, which destroys the live Y.Docs and then calls `wipeLocalStorage({ server: signedIn.server, owner: signedIn.owner })` to drop every encrypted IDB database for that owner. It is a separate explicit action, not part of sign-out.
 
 For a sibling example of the same pattern (plus a Tauri-side materializer), see `apps/whispering/src/lib/whispering/client.ts`.
 

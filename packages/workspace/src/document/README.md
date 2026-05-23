@@ -17,8 +17,8 @@ The pattern: a vanilla `openX()` function constructs the workspace's `Y.Doc`, co
 | attachTable / attachTables / attachKv                          |
 | attachEncryption -> .attachTable / .attachTables / .attachKv    |
 | attachIndexedDb / attachYjsLog / attachBroadcastChannel        |
-| attachLocalStorage(ydoc, { subject, keyring })  // encrypted IDB + scoped BC |
-| wipeLocalStorage({ subject })                   // delete local data for subject |
+| attachLocalStorage(ydoc, { server, owner, keyring })  // encrypted IDB + scoped BC |
+| wipeLocalStorage({ server, owner })             // delete local data for owner |
 | openCollaboration (sync + presence + dispatch)                 |
 | attachSqliteMaterializer                                       |
 +----------------------------------------------------------------+
@@ -85,7 +85,7 @@ function openBlog({ keyring }: { keyring: () => SubjectKeyring }) {
 ### Persistence + collaboration
 
 Auth belongs to the app. The workspace factory receives the signed-in identity
-(subject + keyring + auth) and a WebSocket opener, then passes them to
+(owner + keyring + auth) and a WebSocket opener, then passes them to
 `attachLocalStorage` and `openCollaboration`. `openCollaboration` wraps the
 sync supervisor, mirrors the relay's server-owned presence channel as
 `devices`, and runs inbound dispatch frames against the local action registry.
@@ -102,23 +102,32 @@ import {
 
 function openBlog({
   signedIn,
-  installationId,
+  clientId,
 }: {
   signedIn: SignedIn;
-  installationId: string;
+  clientId: string;
 }) {
   const ydoc = new Y.Doc({ guid: 'blog' });
   const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
   const tables = encryption.attachTables(myTables);
 
-  // Subject-scoped encrypted IDB + cross-tab BroadcastChannel in one call.
-  const idb = attachLocalStorage(ydoc, signedIn);
+  // Server + owner scoped encrypted IDB + cross-tab BroadcastChannel in one call.
+  const idb = attachLocalStorage(ydoc, {
+    server: signedIn.server,
+    owner: signedIn.owner,
+    keyring: signedIn.keyring,
+  });
 
   const collaboration = openCollaboration(ydoc, {
-    url: roomWsUrl('https://api.example.com', ydoc.guid),
-    auth: signedIn.auth,
+    url: roomWsUrl({
+      baseURL: signedIn.auth.baseURL,
+      owner: signedIn.owner,
+      guid: ydoc.guid,
+      clientId,
+    }),
+    openWebSocket: signedIn.auth.openWebSocket,
+    onAuthChange: signedIn.auth.onStateChange,
     waitFor: idb.whenLoaded,
-    installationId,
     actions: {},
   });
 
@@ -127,19 +136,22 @@ function openBlog({
     async wipe() {
       ydoc.destroy();
       await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
-      await wipeLocalStorage({ subject: signedIn.subject });
+      await wipeLocalStorage({
+        server: signedIn.server,
+        owner: signedIn.owner,
+      });
     },
     [Symbol.dispose]() { ydoc.destroy(); },
   };
 }
 ```
 
-`attachLocalStorage(ydoc, { subject, keyring })` derives the IDB database name
-and BroadcastChannel key from `subject` + `ydoc.guid` under a single durable
-prefix, so two signed-in subjects on the same browser profile never share
-local storage or exchange plaintext cross-tab updates. `wipeLocalStorage`
-deletes every database under that prefix in one call: no explicit guid list
-to maintain.
+`attachLocalStorage(ydoc, { server, owner, keyring })` derives the IDB database
+name and BroadcastChannel key from `server` + `owner` + `ydoc.guid` under a
+single durable prefix, so two signed-in owners on the same browser profile
+never share local storage or exchange plaintext cross-tab updates.
+`wipeLocalStorage` deletes every database under that prefix in one call: no
+explicit guid list to maintain.
 
 For content documents (rich-text bodies, attachments) that only need bytes-on-the-wire, use `openCollaboration` with an empty `actions: {}` registry. Inbound dispatch frames reply `ActionNotFound`; the byte transport and presence channel are identical.
 

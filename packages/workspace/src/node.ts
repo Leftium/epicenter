@@ -47,7 +47,6 @@ export {
 	leasePathFor,
 	logPathFor,
 	metadataPathFor,
-	runtimeDir,
 	socketPathFor,
 } from './daemon/paths.js';
 export {

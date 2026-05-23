@@ -60,7 +60,7 @@ const FIXTURE_DIR = join(import.meta.dir, 'fixtures/inline-actions');
 const BIN_PATH = join(import.meta.dir, '..', 'src', 'bin.ts');
 
 type EnvOverrides = Disposable & {
-	/** Stable `runtimeDir()` root: $XDG_RUNTIME_DIR/epicenter. */
+	/** Stable `epicenterEnv.runtimeDir` root: $XDG_RUNTIME_DIR/epicenter. */
 	xdgRoot: string;
 	/** Stable home; user logs resolve from this HOME via env-paths. */
 	home: string;

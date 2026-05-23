@@ -19,7 +19,7 @@
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import { createEpicenterEnv } from '@epicenter/constants/node';
+import { epicenterEnv } from '@epicenter/constants/node';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import type { SubjectKeyring } from '@epicenter/encryption';
 import {
@@ -51,14 +51,14 @@ import { createOobOAuthLauncher } from './oob-launcher.js';
  * `<dataDir>/auth/localhost_8787.json`. Different targets cannot trample
  * each other.
  *
- * `dataDir` defaults to `createEpicenterEnv().dataDir` (which honours
+ * `dataDir` defaults to `epicenterEnv.dataDir` (which honours
  * `EPICENTER_DATA_DIR` and falls back to the env-paths data directory)
  * and exists only as an override for tests; production callers should
  * never pass it.
  */
 export function machineAuthFilePath({
 	baseURL = EPICENTER_API_URL,
-	dataDir = createEpicenterEnv().dataDir,
+	dataDir = epicenterEnv.dataDir,
 }: {
 	baseURL?: string;
 	dataDir?: string;

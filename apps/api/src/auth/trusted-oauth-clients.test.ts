@@ -12,17 +12,19 @@
 
 import { expect, test } from 'bun:test';
 import {
+	buildTrustedOAuthClients,
 	EPICENTER_CLI_OAUTH_CLIENT_ID,
 	EPICENTER_FUJI_OAUTH_CLIENT_ID,
 	EPICENTER_OAUTH_SCOPES,
-	EPICENTER_TRUSTED_OAUTH_CLIENTS,
-	expandTrustedClientRedirectUris,
 } from '@epicenter/constants/oauth';
 import { betterAuth } from 'better-auth';
 import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
 import { generateCodeChallenge } from 'better-auth/oauth2';
 import { authPlugins } from './plugins.js';
-import { projectTrustedOAuthClientToRow } from './trusted-oauth-clients.js';
+import {
+	projectTrustedOAuthClientToRow,
+	type TrustedOAuthClientInput,
+} from './trusted-oauth-clients.js';
 
 const trustedClientFixture = {
 	clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,
@@ -32,18 +34,11 @@ const trustedClientFixture = {
 		'http://localhost:5174/auth/callback',
 		'https://fuji.epicenter.so/auth/callback',
 	],
-} as const;
+} as const satisfies TrustedOAuthClientInput;
 const redirectUri = trustedClientFixture.redirectUris[0];
 
-type TestTrustedClient = {
-	clientId: string;
-	name: string;
-	type: 'native' | 'user-agent-based';
-	redirectUris: readonly string[];
-};
-
-function findCliClient() {
-	const cliClient = EPICENTER_TRUSTED_OAUTH_CLIENTS.find(
+function findCliClient(baseURL: string) {
+	const cliClient = buildTrustedOAuthClients(baseURL).find(
 		(client) => client.clientId === EPICENTER_CLI_OAUTH_CLIENT_ID,
 	);
 	if (!cliClient) throw new Error('Expected trusted CLI OAuth client');
@@ -128,37 +123,32 @@ test('trusted OAuth client exchanges code for API-origin access token', async ()
 	expect(payload.iss).toBe(`${setup.baseURL}/auth`);
 });
 
-test('expandTrustedClientRedirectUris derives the CLI callback from any deployment baseURL', () => {
-	const cliClient = findCliClient();
-	for (const apiBaseURL of [
+test('buildTrustedOAuthClients gives the CLI a callback at each deployment baseURL', () => {
+	for (const baseURL of [
 		'https://api.epicenter.so',
 		'http://localhost:8787',
 		'http://localhost:9999',
 		'https://api.acme.example',
 	]) {
-		const redirectUris = expandTrustedClientRedirectUris(cliClient, {
-			apiBaseURL,
-		});
-		expect(redirectUris).toEqual([`${apiBaseURL}/auth/cli-callback`]);
+		const cliClient = findCliClient(baseURL);
+		expect(cliClient.redirectUris).toEqual([`${baseURL}/auth/cli-callback`]);
 	}
 });
 
-test('trusted CLI OAuth client (expanded against test baseURL) is accepted by Better Auth', async () => {
-	const cliClient = findCliClient();
+test('every trusted client has at least one redirect URI', () => {
+	for (const client of buildTrustedOAuthClients('https://api.epicenter.so')) {
+		expect(client.redirectUris.length).toBeGreaterThan(0);
+	}
+});
+
+test('trusted CLI OAuth client (built for test baseURL) is accepted by Better Auth', async () => {
 	const baseURL = 'http://localhost:47878';
-	const redirectUris = expandTrustedClientRedirectUris(cliClient, {
-		apiBaseURL: baseURL,
-	});
+	const cliClient = findCliClient(baseURL);
 	const expectedRedirectUri = `${baseURL}/auth/cli-callback`;
-	expect(redirectUris).toContain(expectedRedirectUri);
+	expect(cliClient.redirectUris).toContain(expectedRedirectUri);
 
 	const setup = createTrustedClientTestAuth({
-		trustedClient: {
-			clientId: cliClient.clientId,
-			name: cliClient.name,
-			type: cliClient.type,
-			redirectUris,
-		},
+		trustedClient: cliClient,
 		baseURL,
 	});
 	const cookie = await signUpTestUser(setup.auth, setup.baseURL);
@@ -192,7 +182,7 @@ function createTrustedClientTestAuth({
 	trustedClient: inputTrustedClient = trustedClientFixture,
 	baseURL = 'http://localhost:47878',
 }: {
-	trustedClient?: TestTrustedClient;
+	trustedClient?: TrustedOAuthClientInput;
 	baseURL?: string;
 } = {}) {
 	const trustedClient = projectTrustedOAuthClientToRow(inputTrustedClient);
@@ -256,9 +246,7 @@ async function authorize(
 	const response = await authorizeResponse(setup, input);
 	const location = response.headers.get('location');
 	expect(location).toBeTruthy();
-	return new URL(location ?? input.redirectUri ?? redirectUri).searchParams.get(
-		'code',
-	);
+	return new URL(location ?? redirectUri).searchParams.get('code');
 }
 
 async function authorizeResponse(

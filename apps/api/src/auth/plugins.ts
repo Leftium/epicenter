@@ -1,14 +1,10 @@
 import { oauthProvider } from '@better-auth/oauth-provider';
 import {
+	buildTrustedOAuthClients,
 	EPICENTER_OAUTH_SCOPES,
-	EPICENTER_TRUSTED_OAUTH_CLIENTS,
 } from '@epicenter/constants/oauth';
 import type { BetterAuthOptions } from 'better-auth';
 import { jwt } from 'better-auth/plugins/jwt';
-
-const trustedOAuthClientIds = new Set(
-	EPICENTER_TRUSTED_OAUTH_CLIENTS.map((client) => client.clientId),
-);
 
 /**
  * Build the Better Auth plugins that define Epicenter's OAuth server boundary.
@@ -16,9 +12,14 @@ const trustedOAuthClientIds = new Set(
  * Use this only from the API auth factory, where the request URL is known. The
  * `resourceAudience` must be the API base URL that clients pass as OAuth
  * `resource`; keeping those values equal is what prevents access tokens minted
- * for one resource server from being replayed against another.
+ * for one resource server from being replayed against another. The same base
+ * URL feeds `buildTrustedOAuthClients`, so the trusted-client-id set matches
+ * the clients the seeder will install for this deployment.
  */
 export function authPlugins(resourceAudience: string) {
+	const trustedOAuthClientIds = new Set(
+		buildTrustedOAuthClients(resourceAudience).map((client) => client.clientId),
+	);
 	return [
 		// ES256 (P-256 ECDSA) signs the id_token and JWT access tokens. The
 		// jose default would be EdDSA (Ed25519); pinning ES256 gives the

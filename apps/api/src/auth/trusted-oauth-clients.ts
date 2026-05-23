@@ -1,15 +1,20 @@
 import type { SchemaClient } from '@better-auth/oauth-provider';
 import {
+	buildTrustedOAuthClients,
 	EPICENTER_OAUTH_SCOPES,
-	EPICENTER_TRUSTED_OAUTH_CLIENTS,
-	expandTrustedClientRedirectUris,
 } from '@epicenter/constants/oauth';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../db/schema';
 
 let trustedOAuthClientsSeed: Promise<void> | null = null;
 
-type TrustedOAuthClientInput = {
+/**
+ * The shape `projectTrustedOAuthClientToRow` accepts: a flat trusted client
+ * with concrete `redirectUris`, as produced by `buildTrustedOAuthClients` for
+ * a specific deployment. Exported so tests can declare fixtures without
+ * recreating the type.
+ */
+export type TrustedOAuthClientInput = {
 	[K in 'clientId' | 'name']-?: NonNullable<SchemaClient[K]>;
 } & {
 	type: Extract<
@@ -75,9 +80,9 @@ export function projectTrustedOAuthClientToRow(
 /**
  * Upsert the first-party OAuth clients Better Auth is allowed to trust.
  *
- * Call this before handling OAuth requests in a fresh database. Redirect
- * URIs are expanded against `baseURL` so Epicenter Cloud, a self-host, and
- * `wrangler dev` each seed their own callbacks without sharing config.
+ * Call this before handling OAuth requests in a fresh database. The trusted
+ * client list is built against `baseURL` so Epicenter Cloud, a self-host,
+ * and `wrangler dev` each seed their own callbacks without sharing config.
  *
  * The module-level promise makes concurrent workers share one seed attempt;
  * if the attempt fails, the cache is cleared so a later request can retry
@@ -89,11 +94,8 @@ export async function ensureTrustedOAuthClients(
 	baseURL: string,
 ) {
 	trustedOAuthClientsSeed ??= (async () => {
-		for (const client of EPICENTER_TRUSTED_OAUTH_CLIENTS) {
-			const redirectUris = expandTrustedClientRedirectUris(client, {
-				apiBaseURL: baseURL,
-			});
-			const row = projectTrustedOAuthClientToRow({ ...client, redirectUris });
+		for (const client of buildTrustedOAuthClients(baseURL)) {
+			const row = projectTrustedOAuthClientToRow(client);
 			await db
 				.insert(schema.oauthClient)
 				.values(row)

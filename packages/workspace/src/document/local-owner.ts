@@ -3,19 +3,18 @@
 /**
  * Browser-local owner facade for an authenticated workspace session.
  *
- * Auth calls the server-issued identity label a `subject` because it derives
- * a `SubjectKeyring`. This package calls the same value `ownerId` once it is
- * used to name IndexedDB, BroadcastChannel, and wipe boundaries.
+ * Holds the `(server, owner)` pair used to scope every browser-local
+ * IndexedDB and BroadcastChannel name. Two signed-in accounts on the
+ * same browser profile, or one account signed into two different team
+ * servers on the same machine, never collide because both the server
+ * origin and the owner partition appear in every local key.
  *
- * Auth exposes this value as `auth.state.localIdentity.subject`. The workspace
- * layer receives the same string as `ownerId`. The rename is intentional: auth
- * names where the value comes from, while workspace names what the value owns
- * locally.
- *
- * Daemons do not construct an owner. They call `attachEncryption` directly
- * with `keyring` and persist through the filesystem instead of IndexedDB.
+ * Daemons do not construct a local owner. They call `attachEncryption`
+ * directly with `keyring` and persist through the filesystem instead of
+ * IndexedDB.
  */
 
+import type { Owner } from '@epicenter/auth';
 import type { SubjectKeyring } from '@epicenter/encryption';
 import { clearDocument } from 'y-indexeddb';
 import type * as Y from 'yjs';
@@ -27,18 +26,22 @@ import { createOwnedYjsKey, getOwnedYjsPrefix } from './local-yjs-key.js';
 export type LocalOwner = ReturnType<typeof createLocalOwner>;
 
 export function createLocalOwner({
-	ownerId,
+	server,
+	owner,
 	keyring,
 }: {
 	/**
-	 * Stable owner label for browser-local workspace data.
-	 *
-	 * The auth package exposes this value as `localIdentity.subject`; workspace
-	 * code receives the same string as `ownerId`. This scopes IndexedDB
-	 * databases, BroadcastChannel names, and wipe boundaries so two accounts in
-	 * the same browser profile do not share local workspace data.
+	 * API origin this session is signed into. Used as a path segment in
+	 * every local storage key so two team servers on the same machine
+	 * stay distinct.
 	 */
-	ownerId: string;
+	server: string;
+	/**
+	 * Discriminated owner the session resolves through. Personal owners
+	 * partition local storage by user id; team owners share one local
+	 * partition per `server` (the deployment IS the team).
+	 */
+	owner: Owner;
 	keyring: () => SubjectKeyring;
 }) {
 	return {
@@ -52,17 +55,17 @@ export function createLocalOwner({
 		},
 		/**
 		 * Attach owner-scoped browser-local Yjs wiring: encrypted IndexedDB
-		 * persistence plus cross-tab BroadcastChannel sync. Both names are
-		 * `createOwnedYjsKey(ownerId, ydoc.guid)`, so two signed-in subjects in
-		 * the same browser profile neither share local storage nor exchange
-		 * plaintext updates over BroadcastChannel.
+		 * persistence plus cross-tab BroadcastChannel sync. Both names use
+		 * `createOwnedYjsKey(server, owner, ydoc.guid)`, so two signed-in
+		 * accounts in the same browser profile neither share local storage
+		 * nor exchange plaintext updates over BroadcastChannel.
 		 *
 		 * Always paired in browser bundles, so the facade exposes one call
 		 * instead of two. Returns the IDB attachment for `whenLoaded` /
 		 * `whenDisposed` barriers.
 		 */
 		attachLocal(ydoc: Y.Doc) {
-			const databaseName = createOwnedYjsKey(ownerId, ydoc.guid);
+			const databaseName = createOwnedYjsKey(server, owner, ydoc.guid);
 			const idb = attachEncryptedIndexedDb(ydoc, { databaseName, keyring });
 			attachBroadcastChannel(ydoc, databaseName);
 			return idb;
@@ -70,15 +73,15 @@ export function createLocalOwner({
 		/**
 		 * Delete every owner-scoped IndexedDB database currently visible to
 		 * this browser profile, plus any explicitly named ones. Use from
-		 * `wipe()` paths on sign-out so the next signed-in subject starts
+		 * `wipe()` paths on sign-out so the next signed-in owner starts
 		 * from a clean slate.
 		 */
 		async wipeLocalYjsData(ydocGuids: Iterable<string> = []) {
-			const prefix = getOwnedYjsPrefix(ownerId);
+			const prefix = getOwnedYjsPrefix(server, owner);
 			const names = new Set<string>();
 
 			for (const guid of ydocGuids) {
-				names.add(createOwnedYjsKey(ownerId, guid));
+				names.add(createOwnedYjsKey(server, owner, guid));
 			}
 
 			if ('databases' in indexedDB) {

@@ -59,6 +59,7 @@ function createAuthHarness(initial: AuthState) {
 		get state() {
 			return state;
 		},
+		baseURL: 'https://api.test',
 		onStateChange(fn) {
 			listeners.add(fn);
 			return () => {

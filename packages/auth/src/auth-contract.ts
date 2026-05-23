@@ -31,6 +31,13 @@ export type AuthState =
 export type AuthClient = {
 	state: AuthState;
 	/**
+	 * Origin of the API this client signs into. Exposed so client-side
+	 * partitioning (local storage keys, BroadcastChannel names) can scope by
+	 * `(server, owner)` and stay distinct across two signed-in deployments on
+	 * the same machine. Mirrors the `baseURL` passed at construction.
+	 */
+	baseURL: string;
+	/**
 	 * Subscribe to future state changes.
 	 *
 	 * Read `state` once before registering when bootstrap state matters. The

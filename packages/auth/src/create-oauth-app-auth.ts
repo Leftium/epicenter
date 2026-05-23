@@ -377,6 +377,7 @@ export function createOAuthAppAuth({
 		get state() {
 			return authSession.state;
 		},
+		baseURL,
 		onStateChange(fn) {
 			return authSession.onStateChange(fn);
 		},

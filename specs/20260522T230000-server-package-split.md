@@ -798,3 +798,148 @@ apps/api/
   apps/api/src/auth/encryption.ts, apps/api/src/auth/resource-boundary.ts,
   apps/api/src/room/backends/cloudflare/durable-object.ts
 ```
+
+## A. Implementation status (waves)
+
+This spec landed in three waves on branch `braden-w/buffalo`. Each wave is
+intentionally small enough to review on its own but is part of the same
+design described above. A reader picking up this branch should read the
+status here first, then the sections it points at.
+
+### Wave 1: server package split                        LANDED
+
+What changed in code:
+
+```
+NEW   packages/server/                        @epicenter/server library
+NEW   apps/api/src/index.ts                   cloud composition (~30 lines)
+NEW   apps/api/src/autumn-gates.ts            ensurePlanId, autumnAiGate, autumnStorageGate
+NEW   apps/api/src/admin-routes.ts            reconcile (admin-only)
+MOVE  apps/api/src/{auth,room,db,...}         -> packages/server/src/
+DEL   apps/api/src/app.ts                     replaced by index.ts
+DEL   apps/api/src/ai-chat.ts                 replaced by library + autumnAiGate
+DEL   apps/api/src/app.rooms.test.ts          will be rebuilt against new shape
+```
+
+Spec sections that describe Wave 1: 1, 2, 3 (server-side derivations
+only), 4, 5, 6, 8, 10, 11, 12, 13, 14, 15, 16.
+
+### Wave 2: session shape flatten                       LANDED
+
+The deferred Task #5 from Wave 1, executed by a sibling agent on the
+same branch. Removed `LocalIdentity` from the wire and from every
+consumer; introduced `Owner` in `@epicenter/auth` as the shared
+vocabulary.
+
+```
+MOVED Owner type:    @epicenter/server/src/owner.ts (Wave 1)
+                     -> @epicenter/auth/src/owner.ts (Wave 2)
+                     @epicenter/server now imports Owner from auth.
+
+CHANGED wire shape:
+  ApiSessionResponse  was: { user, localIdentity: { subject, keyring } }
+                      now: { user, owner, keyring }
+  PersistedAuth       was: { grant, localIdentity }
+                      now: { grant, owner, keyring }
+
+CHANGED AuthState:
+  signed-in           was: { localIdentity }
+                      now: { owner, keyring }
+  reauth-required     same
+```
+
+Files touched in Wave 2:
+
+```
+packages/auth/src/owner.ts                NEW (Owner + ownerId)
+packages/auth/src/auth-types.ts           flattened
+packages/auth/src/auth-contract.ts        flattened
+packages/auth/src/create-oauth-app-auth.ts cascaded
+packages/auth/src/node/machine-auth.ts    cascaded
+packages/svelte-utils/src/session.svelte.ts cascaded
+packages/svelte-utils/src/account-popover/...svelte cascaded
+plus tests
+```
+
+Spec sections that describe Wave 2: 3 (the auth/server split), 7
+(`/api/session` actually returns the flat shape now).
+
+### Wave 3: client local-Yjs prefix greenfield          AHEAD
+
+What this wave does:
+
+```
+EDIT  packages/workspace/src/document/local-yjs-key.ts
+      Signature: getOwnedYjsPrefix(ownerId: string)
+              -> getOwnedYjsPrefix(server: string, owner: Owner)
+      Shape:    epicenter.owner.<id>.yjs.
+              -> epicenter/<server>/users/<id>/      (personal)
+              -> epicenter/<server>/                  (team)
+
+EDIT  packages/workspace/src/document/local-owner.ts
+      Pass (server, owner) instead of ownerId string.
+
+EDIT  packages/workspace/src/document/attach-local-storage.ts
+      Accept server in options; pass (server, owner) down.
+
+EDIT  packages/workspace/src/document/wipe-local-storage.ts
+      Accept server in options; pass (server, owner) down.
+
+EDIT  packages/workspace/src/document/local-yjs-key.test.ts
+      Update literal-shape assertions.
+
+EDIT  packages/workspace/src/document/attach-local-storage.test.ts
+      Update prefix assertions.
+
+EDIT  packages/svelte-utils/src/session.svelte.ts
+      Thread the auth client's server origin into ownerId callers.
+```
+
+Spec section that describes Wave 3 in full: 9.
+
+Trigger to start Wave 3: Wave 2 is fully landed and the whole monorepo
+typechecks. Verify with:
+
+```
+bun install
+bun run --filter '*' typecheck       (or per-package, see Wave 2 list above)
+```
+
+### Why three waves on one branch
+
+Each wave is reviewable on its own diff:
+
+```
+Wave 1   isolates the cloud product from the library
+Wave 2   makes the client speak the same Owner vocabulary as the server
+Wave 3   makes local storage partition match server partition
+```
+
+All three converge on one sentence: every owner has their own isolated
+data, identified by the same `(server, owner)` tuple on the wire and on
+disk. The waves split the work along package boundaries so the diffs
+stay readable, not because the design has phases.
+
+### Documented refusals
+
+```
+Refused:  preserve the old `epicenter.owner.<subject>.yjs.` IndexedDB
+          format and `LocalIdentity.subject` wire field
+Reason:   greenfield; no users with persisted data we cannot ask to
+          re-sync; the shape was muddied by a decorative `owner` segment
+          and a duplicate `yjs.` segment that y-indexeddb adds itself
+User loss: none under the greenfield assumption
+Trigger to revisit: a real customer reports persisted data they cannot
+          afford to re-sync
+```
+
+```
+Refused:  add `LocalIdentity.subject` aliases for backwards compatibility
+Reason:   the old field name was a holdover from Better-Auth's
+          "subject" vocabulary; the new value carries Owner identity,
+          not a Better-Auth subject. An alias would lie about the shape.
+User loss: clients with pinned old @epicenter/auth versions stop
+          compiling; they update along with the cascade
+Trigger to revisit: never (clean break by design)
+```
+

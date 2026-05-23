@@ -9,7 +9,6 @@
  * ```
  */
 
-import { join } from 'node:path';
 import { tabManagerTables } from '@epicenter/tab-manager';
 import {
 	defineActions,
@@ -21,11 +20,14 @@ import {
 	attachMarkdownMaterializer,
 	slugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
-import { attachYjsLog, yjsPath } from '@epicenter/workspace/node';
+import {
+	attachYjsLog,
+	markdownPath,
+	yjsPath,
+} from '@epicenter/workspace/node';
 import * as Y from 'yjs';
 
 const SERVER_URL = 'https://api.epicenter.so';
-const MARKDOWN_DIR = join(import.meta.dir, 'data');
 const WORKSPACE_ID = 'epicenter.tab-manager';
 
 export default defineDaemonWorkspace({
@@ -50,7 +52,7 @@ export default defineDaemonWorkspace({
 
 		const whenReady = collaboration.whenConnected;
 		const markdown = attachMarkdownMaterializer(ydoc, {
-			dir: MARKDOWN_DIR,
+			dir: markdownPath(projectDir, WORKSPACE_ID),
 			waitFor: whenReady,
 		})
 			.table(tables.savedTabs, { filename: slugFilename('title') })

@@ -67,15 +67,21 @@ bun run scripts/list-files.ts
 playground/opensidian-e2e/
 ├── workspaces/
 │   └── opensidian/
-│       └── daemon.ts                # Folder-routed daemon extension
-├── .epicenter/
-│   └── persistence/
-│       └── opensidian.db            # SQLite persistence (files table)
-└── data/
-    └── files/
-        ├── my-first-note-abc123.md  # Materialized file
-        └── meeting-notes-def456.md  # Materialized file
+│       └── daemon.ts                  # Folder-routed daemon extension
+└── .epicenter/
+    ├── yjs/
+    │   ├── opensidian.db              # Yjs CRDT update log (source of truth)
+    │   └── <contentDocGuid>.db        # One log per file content document
+    ├── sqlite/
+    │   └── opensidian.db              # Queryable SQLite mirror (sqlite3 / FTS5)
+    └── md/
+        └── opensidian/
+            └── files/
+                ├── my-first-note-abc123.md
+                └── meeting-notes-def456.md
 ```
+
+The Yjs log is the source of truth; SQLite and markdown are projections the materializer keeps in sync. See `packages/workspace/src/document/workspace-paths.ts`.
 
 Each `.md` file looks like:
 

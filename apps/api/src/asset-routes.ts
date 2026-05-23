@@ -131,10 +131,14 @@ export const assetAuthedRoutes = new Hono<Env>()
 			}
 
 			// -- Store in R2 + Postgres --
+			// The R2 key is just the assetId. Ownership is tracked on the
+			// `asset` row, not in the key path: the unguessable 15-char
+			// nanoid IS the read credential, so embedding the userId in
+			// the key would only leak identity into the URL the row
+			// already implies.
 			const assetId = generateGuid();
-			const key = `${c.var.user.id}/${assetId}`;
 
-			await c.env.ASSETS_BUCKET.put(key, file.stream(), {
+			await c.env.ASSETS_BUCKET.put(assetId, file.stream(), {
 				httpMetadata: {
 					contentType: file.type,
 					contentDisposition: `inline; filename="${sanitizedFilename}"`,
@@ -152,7 +156,7 @@ export const assetAuthedRoutes = new Hono<Env>()
 				});
 			} catch (dbError) {
 				// Compensating delete — don't leave orphaned R2 objects
-				await c.env.ASSETS_BUCKET.delete(key).catch((r2Err) =>
+				await c.env.ASSETS_BUCKET.delete(assetId).catch((r2Err) =>
 					console.error('[upload] R2 cleanup failed:', r2Err),
 				);
 				throw dbError;
@@ -170,7 +174,7 @@ export const assetAuthedRoutes = new Hono<Env>()
 			return c.json(
 				{
 					id: assetId,
-					url: `/api/assets/${c.var.user.id}/${assetId}`,
+					url: `/api/assets/${assetId}`,
 					contentType: file.type,
 					size: file.size,
 					originalName: sanitizedFilename,
@@ -241,8 +245,7 @@ export const assetAuthedRoutes = new Hono<Env>()
 				return c.json(AssetError.NotFound(), 404);
 			}
 
-			const key = `${c.var.user.id}/${assetId}`;
-			await c.env.ASSETS_BUCKET.delete(key);
+			await c.env.ASSETS_BUCKET.delete(assetId);
 
 			// Credit storage back (fire-and-forget after response)
 			const autumn = createAutumn(c.env);
@@ -307,20 +310,26 @@ export const assetAuthedRoutes = new Hono<Env>()
 // Public routes (mounted without requireSession in app.ts)
 // ---------------------------------------------------------------------------
 
-/** Public routes (read). Mounted without requireSession in app.ts. */
+/**
+ * Public routes (read). Mounted without requireSession in app.ts.
+ *
+ * The `:assetId` param is constrained to the exact 15-char lowercase
+ * alphanumeric pattern produced by `generateGuid` so the route does not
+ * shadow sibling management endpoints (`/usage`, `/reconcile`, `/`)
+ * mounted under the same `/api/assets` prefix.
+ */
 export const assetPublicRoutes = new Hono<Env>()
-	// GET /:userId/:assetId — Read (unauthenticated, unguessable URL)
+	// GET /:assetId — Read (unauthenticated; the unguessable 15-char id IS the credential)
 	.get(
-		'/:userId/:assetId',
+		'/:assetId{[a-z0-9]{15}}',
 		describeRoute({
 			description: 'Read an asset by ID (unauthenticated)',
 			tags: ['assets'],
 		}),
 		async (c) => {
-			const { userId, assetId } = c.req.param();
-			const key = `${userId}/${assetId}`;
+			const { assetId } = c.req.param();
 
-			const object = await c.env.ASSETS_BUCKET.get(key, {
+			const object = await c.env.ASSETS_BUCKET.get(assetId, {
 				onlyIf: c.req.raw.headers,
 				range: c.req.raw.headers,
 			});
@@ -334,6 +343,7 @@ export const assetPublicRoutes = new Hono<Env>()
 				const headers = new Headers();
 				object.writeHttpMetadata(headers);
 				headers.set('etag', object.httpEtag);
+				headers.set('referrer-policy', 'no-referrer');
 				return new Response(null, { status: 304, headers });
 			}
 
@@ -343,6 +353,10 @@ export const assetPublicRoutes = new Hono<Env>()
 			headers.set('etag', object.httpEtag);
 			headers.set('accept-ranges', 'bytes');
 			headers.set('x-content-type-options', 'nosniff');
+			// Capability URL: do not let outgoing sub-resource requests carry
+			// the asset URL as a Referer. The unguessable id is the credential;
+			// keep it out of third-party logs and analytics.
+			headers.set('referrer-policy', 'no-referrer');
 			if (object.uploaded) {
 				headers.set('last-modified', object.uploaded.toUTCString());
 			}

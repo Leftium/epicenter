@@ -43,7 +43,7 @@ import * as schema from './db/schema';
 import { isWebSocketUpgrade } from './is-websocket-upgrade';
 import { createDurableObjectRooms } from './room/backends/cloudflare/registry';
 import type { Rooms } from './room/contracts';
-import { TRUSTED_ORIGINS, WRANGLER_DEV_API_ORIGIN } from './trusted-origins';
+import { TRUSTED_ORIGINS } from './trusted-origins';
 
 // Re-export so wrangler types generates DurableObjectNamespace<Room>.
 export { Room } from './room/backends/cloudflare/durable-object';
@@ -63,6 +63,11 @@ type OAuthAuthServerConfigAuth = Parameters<
 
 const PRODUCTION_API_ORIGIN = APPS.API.urls[0];
 const LOCAL_API_ORIGIN = localUrl(APPS.API);
+// Wrangler dev serves the API custom domain over plain HTTP, so requests it
+// makes report `Origin: http://api.epicenter.so`. Production Cloudflare
+// upgrades the domain to HTTPS, so a real browser never sends this Origin
+// against the deployed worker; it is a dev-loop artifact.
+const WRANGLER_DEV_API_ORIGIN = `http://${new URL(PRODUCTION_API_ORIGIN).host}`;
 
 /**
  * Create a queue for fire-and-forget promises that run after the HTTP response.

@@ -39,10 +39,10 @@ import {
 
 export function openHoneycrispBrowser({
 	signedIn,
-	installationId,
+	clientId,
 }: {
 	signedIn: SignedIn;
-	installationId: string;
+	clientId: string;
 }) {
 	const ydoc = new Y.Doc({ guid: HONEYCRISP_ID, gc: true });
 	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
@@ -50,12 +50,21 @@ export function openHoneycrispBrowser({
 	const kv = encryption.attachKv({});
 	const actions = createHoneycrispActions(tables);
 
-	const idb = attachLocalStorage(ydoc, signedIn);
+	const idb = attachLocalStorage(ydoc, {
+		server: signedIn.server,
+		owner: signedIn.owner,
+		keyring: signedIn.keyring,
+	});
 	const collaboration = openCollaboration(ydoc, {
-		url: roomWsUrl(signedIn.auth.baseURL, ydoc.guid),
-		auth: signedIn.auth,
+		url: roomWsUrl({
+			baseURL: signedIn.auth.baseURL,
+			owner: signedIn.owner,
+			guid: ydoc.guid,
+			clientId,
+		}),
+		openWebSocket: signedIn.auth.openWebSocket,
+		onAuthChange: signedIn.auth.onStateChange,
 		waitFor: idb.whenLoaded,
-		installationId,
 		actions,
 	});
 
@@ -65,12 +74,21 @@ export function openHoneycrispBrowser({
 			gc: true,
 		});
 		const body = attachRichText(childYdoc);
-		const childIdb = attachLocalStorage(childYdoc, signedIn);
+		const childIdb = attachLocalStorage(childYdoc, {
+			server: signedIn.server,
+			owner: signedIn.owner,
+			keyring: signedIn.keyring,
+		});
 		const childSync = openCollaboration(childYdoc, {
-			url: roomWsUrl(signedIn.auth.baseURL, childYdoc.guid),
-			auth: signedIn.auth,
+			url: roomWsUrl({
+				baseURL: signedIn.auth.baseURL,
+				owner: signedIn.owner,
+				guid: childYdoc.guid,
+				clientId,
+			}),
+			openWebSocket: signedIn.auth.openWebSocket,
+			onAuthChange: signedIn.auth.onStateChange,
 			waitFor: childIdb.whenLoaded,
-			installationId,
 			actions: {},
 		});
 
@@ -108,7 +126,10 @@ export function openHoneycrispBrowser({
 			noteBodyDocs[Symbol.dispose]();
 			ydoc.destroy();
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
-			await wipeLocalStorage(signedIn);
+			await wipeLocalStorage({
+				server: signedIn.server,
+				owner: signedIn.owner,
+			});
 		},
 		[Symbol.dispose]() {
 			noteBodyDocs[Symbol.dispose]();

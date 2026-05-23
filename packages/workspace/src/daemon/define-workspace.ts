@@ -13,7 +13,7 @@
  * See `specs/20260522T220000-workspace-project-layout.md`.
  */
 
-import type { AuthClient } from '@epicenter/auth';
+import type { Owner } from '@epicenter/auth';
 import type { SubjectKeyring } from '@epicenter/encryption';
 import type { MaybePromise, ProjectDir } from '../shared/types.js';
 import type { DaemonRuntime } from './types.js';
@@ -23,36 +23,48 @@ import type { DaemonRuntime } from './types.js';
  *
  * The host owns auth: it refuses to call `open` when machine auth is
  * signed-out, exposes the keyring lookup (with a late-sign-out guard baked
- * into the closure), and passes the auth client through for cloud sync.
+ * into the closure), and passes the auth-derived function refs through for
+ * cloud sync.
  *
  * - `projectDir` is the resolved project root (same value the daemon lease
  *   owns). Disk-writing helpers like `yjsPath` derive every absolute path
  *   from it.
  * - `route` is the config route-map key. Pinned here so routes can share
- *   the same string with logs, materializers, and installation ids.
- * - `clientId` is the deterministic Y.Doc clientID for this daemon (derived
- *   from `projectDir` so two daemons in different projects produce distinct
- *   update streams). Pin it on the Y.Doc with `ydoc.clientID = ctx.clientId`
- *   right after construction.
- * - `installationId` is the conventional collaboration installationId for the daemon
- *   side of this route (`<route>-daemon`). Pass it to `openCollaboration`.
+ *   the same string with logs, materializers, and client ids.
+ * - `yDocClientId` is the deterministic Y.Doc CRDT `clientID` for this
+ *   daemon (derived from `projectDir` so two daemons in different projects
+ *   produce distinct update streams). Pin it on the Y.Doc with
+ *   `ydoc.clientID = ctx.yDocClientId` right after construction.
+ * - `clientId` is the conventional collaboration WebSocket client id for
+ *   the daemon side of this route (`<route>-daemon`). Pass it through
+ *   `roomWsUrl` so it shows up in the upgrade URL as `?clientId=...`.
+ * - `owner` is the workspace owner snapshotted at startup. The host refuses
+ *   to start when auth is signed-out, so this value is stable for the
+ *   lifetime of the daemon process; routes use it for partitioned URLs.
  * - `keyring` is the lazy reader for the current subject keyring. Pass it to
  *   `attachEncryption(ydoc, { keyring })`. The host's closure throws when
  *   auth is signed-out, so a late sign-out turns into a thrown error at the
  *   next encrypted-write or registration site rather than silent ciphertext
  *   loss.
- * - `auth` is the auth client for `openCollaboration({ auth })`. The host
- *   refused to start when auth was signed-out, so this client is identity-
- *   bearing at hand-off; openCollaboration subscribes internally to its
- *   `onStateChange` for reconnect-on-token-refresh.
+ * - `openWebSocket` opens the relay socket for `openCollaboration`. The
+ *   host wires it to `auth.openWebSocket`, which carries the bearer
+ *   subprotocol.
+ * - `onAuthChange` subscribes to auth-state transitions that should trigger
+ *   a sync reconnect (token refresh, sign-in after sign-out). The host
+ *   wires it to `auth.onStateChange`.
  */
 export type DaemonWorkspaceContext = {
 	projectDir: ProjectDir;
 	route: string;
-	clientId: number;
-	installationId: string;
+	yDocClientId: number;
+	clientId: string;
+	owner: Owner;
 	keyring: () => SubjectKeyring;
-	auth: AuthClient;
+	openWebSocket: (
+		url: string | URL,
+		protocols?: string[],
+	) => Promise<WebSocket> | WebSocket;
+	onAuthChange: (fn: () => void) => () => void;
 };
 
 /**

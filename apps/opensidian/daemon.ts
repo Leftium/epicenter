@@ -23,21 +23,25 @@ import { OPENSIDIAN_ID, opensidianTables } from './workspace.js';
 
 export function openOpensidianDaemon({
 	projectDir,
+	yDocClientId,
 	clientId,
-	installationId,
+	owner,
 	keyring,
-	auth,
+	openWebSocket,
+	onAuthChange,
 }: DaemonWorkspaceContext) {
 	const ydoc = new Y.Doc({ guid: OPENSIDIAN_ID, gc: true });
-	ydoc.clientID = clientId;
+	ydoc.clientID = yDocClientId;
 	const encryption = attachEncryption(ydoc, { keyring });
 	encryption.attachTables(opensidianTables);
 	encryption.attachKv({});
 
 	return attachDaemonInfrastructure(ydoc, {
 		projectDir,
-		auth,
-		installationId,
+		owner,
+		clientId,
+		openWebSocket,
+		onAuthChange,
 		actions: {},
 	});
 }

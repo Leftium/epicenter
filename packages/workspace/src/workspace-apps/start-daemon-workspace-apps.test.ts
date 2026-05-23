@@ -39,7 +39,15 @@ function disposeMarkerPath(route: string): string {
 }
 
 function stubAuthClient(): AuthClient {
-	return { state: { status: 'signed-in' } } as AuthClient;
+	return {
+		state: {
+			status: 'signed-in',
+			owner: { kind: 'personal', userId: 'test-user' },
+			keyring: [] as never,
+		},
+		openWebSocket: () => Promise.resolve({} as WebSocket),
+		onStateChange: () => () => {},
+	} as unknown as AuthClient;
 }
 
 function testRuntime(

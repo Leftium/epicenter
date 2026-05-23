@@ -3,12 +3,12 @@
  *
  * Each peer's `daemon.ts` calls `openNotes(ctx-derived-args)` so both peers
  * agree on the workspace id, the table schema, and the action set; the only
- * thing that differs between peers is the `installationId` (the daemon ctx default
- * is `${route}-daemon`, but cross-peer sync requires distinct installationIds for
+ * thing that differs between peers is the `clientId` (the daemon ctx default
+ * is `${route}-daemon`, but cross-peer sync requires distinct clientIds for
  * the same workspace, so each peer hard-codes its own).
  */
 
-import type { AuthClient } from '@epicenter/auth';
+import type { Owner } from '@epicenter/auth';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachTables,
@@ -30,11 +30,18 @@ const WORKSPACE_ID = 'epicenter.notes-repro';
 const Note = defineTable(type({ id: 'string', body: 'string', _v: '1' }));
 
 export function openNotes({
-	installationId,
-	auth,
+	clientId,
+	owner,
+	openWebSocket,
+	onAuthChange,
 }: {
-	installationId: string;
-	auth: AuthClient;
+	clientId: string;
+	owner: Owner;
+	openWebSocket: (
+		url: string | URL,
+		protocols?: string[],
+	) => Promise<WebSocket> | WebSocket;
+	onAuthChange: (fn: () => void) => () => void;
 }) {
 	const ydoc = new Y.Doc({ guid: WORKSPACE_ID });
 	const tables = attachTables(ydoc, { notes: Note });
@@ -55,9 +62,14 @@ export function openNotes({
 	};
 
 	const collaboration = openCollaboration(ydoc, {
-		url: roomWsUrl(EPICENTER_API_URL, ydoc.guid),
-		auth,
-		installationId,
+		url: roomWsUrl({
+			baseURL: EPICENTER_API_URL,
+			owner,
+			guid: ydoc.guid,
+			clientId,
+		}),
+		openWebSocket,
+		onAuthChange,
 		actions,
 	});
 

@@ -131,7 +131,7 @@ export function createAiChatState({
 			initialMessages: loadMessages(conversationId),
 			tools: sessionAiTools.tools,
 			connection: fetchServerSentEvents(`${APP_URLS.API}/ai/chat`, async () => {
-				const deviceId = tabManager.installationId;
+				const deviceId = tabManager.clientId;
 				return {
 					fetchClient: createAiChatFetch(auth.fetch),
 					body: {

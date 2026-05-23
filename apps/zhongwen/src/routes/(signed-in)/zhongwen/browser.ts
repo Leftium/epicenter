@@ -27,22 +27,31 @@ import * as Y from 'yjs';
 
 export function openZhongwenBrowser({
 	signedIn,
-	installationId,
+	clientId,
 }: {
 	signedIn: SignedIn;
-	installationId: string;
+	clientId: string;
 }) {
 	const ydoc = new Y.Doc({ guid: ZHONGWEN_ID, gc: true });
 	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
 	const tables = encryption.attachTables(zhongwenTables);
 	const kv = encryption.attachKv(zhongwenKv);
 
-	const idb = attachLocalStorage(ydoc, signedIn);
+	const idb = attachLocalStorage(ydoc, {
+		server: signedIn.server,
+		owner: signedIn.owner,
+		keyring: signedIn.keyring,
+	});
 	const collaboration = openCollaboration(ydoc, {
-		url: roomWsUrl(signedIn.auth.baseURL, ydoc.guid),
-		auth: signedIn.auth,
+		url: roomWsUrl({
+			baseURL: signedIn.auth.baseURL,
+			owner: signedIn.owner,
+			guid: ydoc.guid,
+			clientId,
+		}),
+		openWebSocket: signedIn.auth.openWebSocket,
+		onAuthChange: signedIn.auth.onStateChange,
 		waitFor: idb.whenLoaded,
-		installationId,
 		actions: {},
 	});
 
@@ -55,7 +64,10 @@ export function openZhongwenBrowser({
 		async wipe() {
 			ydoc.destroy();
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
-			await wipeLocalStorage(signedIn);
+			await wipeLocalStorage({
+				server: signedIn.server,
+				owner: signedIn.owner,
+			});
 		},
 		[Symbol.dispose]() {
 			ydoc.destroy();

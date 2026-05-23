@@ -24,7 +24,6 @@
  * online discovery.
  */
 
-import type { AuthClient } from '@epicenter/auth';
 import type { Logger } from 'wellcrafted/logger';
 import type { Result } from 'wellcrafted/result';
 import * as Y from 'yjs';
@@ -42,35 +41,58 @@ import type {
 } from './dispatch-protocol.js';
 import {
 	createSyncSupervisor,
-	type OpenWebSocket,
 	type SyncStatus,
 } from './internal/sync-supervisor.js';
 
 const DISPATCH_RESPONSE_CEILING_MS = 90_000;
+
+/**
+ * Parse `clientId` out of the WebSocket URL the caller built. The URL is the
+ * single source of truth: `roomWsUrl` (or any custom builder) embeds the
+ * id as a query parameter, and `openCollaboration` reads it back without
+ * threading a separate field.
+ */
+function extractClientId(url: string): string {
+	const parsed = new URL(url);
+	const clientId = parsed.searchParams.get('clientId');
+	if (!clientId) {
+		throw new Error(
+			`[openCollaboration] url is missing required ?clientId= query parameter: ${url}`,
+		);
+	}
+	return clientId;
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // PUBLIC TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
 export type OpenCollaborationConfig<TActions extends ActionRegistry> = {
+	/**
+	 * Opaque WebSocket URL the supervisor connects to. Callers build this
+	 * via {@link roomWsUrl} (or any custom builder) and pass it verbatim.
+	 * `openCollaboration` does not mutate or augment the URL.
+	 */
 	url: string;
 	/**
-	 * Auth client whose `openWebSocket` opens the relay socket and whose
-	 * `onStateChange` triggers reconnect on auth transitions (token refresh,
-	 * sign-in after reauth-required, sign-out followed by sign-in). The
-	 * subscription's unsubscribe is wired into `whenDisposed`, so callers do
-	 * not write reconnect glue.
+	 * Opens the relay socket. Pass the auth client's bearer-aware opener
+	 * (`auth.openWebSocket`) or any function with the same shape; the
+	 * supervisor calls this on every connect and reconnect.
 	 */
-	auth: AuthClient;
+	openWebSocket: (
+		url: string | URL,
+		protocols?: string[],
+	) => Promise<WebSocket> | WebSocket;
+	/**
+	 * Subscribe to auth-state transitions that should trigger a reconnect
+	 * (token refresh, sign-in after reauth-required, sign-out then sign-in).
+	 * Pass `auth.onStateChange` or any function with the same shape. The
+	 * unsubscribe is wired into `whenDisposed`, so callers do not write
+	 * reconnect glue.
+	 */
+	onAuthChange: (fn: () => void) => () => void;
 	waitFor?: Promise<unknown>;
 	log?: Logger;
-	/**
-	 * Install-stable identity. Identifies "this install" across reconnects
-	 * and tabs. Multiple tabs on the same install publish the same
-	 * `installationId`; the relay routes inbound dispatch to the most-
-	 * recently-connected socket for that id.
-	 */
-	installationId: string;
 	/**
 	 * Local action registry. Pass `{}` for content docs and consume-only
 	 * participants. When the registry is empty, inbound `dispatch_inbound`
@@ -80,7 +102,13 @@ export type OpenCollaborationConfig<TActions extends ActionRegistry> = {
 };
 
 export type Collaboration<TActions extends ActionRegistry = ActionRegistry> = {
-	readonly installationId: string;
+	/**
+	 * Per-client identity parsed out of {@link OpenCollaborationConfig.url}'s
+	 * `clientId` query parameter. The relay routes inbound dispatch to the
+	 * most-recently-connected socket for this id; multiple tabs of the same
+	 * install share this id and the most recent tab wins.
+	 */
+	readonly clientId: string;
 	readonly actions: TActions;
 
 	readonly status: SyncStatus;
@@ -138,7 +166,7 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		}
 	}
 
-	const installationId = config.installationId;
+	const clientId = extractClientId(config.url);
 	const pendingDispatches = new Map<
 		string,
 		(result: Result<unknown, DispatchError>) => void
@@ -201,18 +229,10 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		return true;
 	}
 
-	// Wrap auth's opener so every connect (including reconnects) carries
-	// `?installationId=` without callers re-encoding the URL.
-	const openWebSocket: OpenWebSocket = (rawUrl, protocols) => {
-		const url = new URL(rawUrl.toString());
-		url.searchParams.set('installationId', installationId);
-		return config.auth.openWebSocket(url, protocols);
-	};
-
 	const supervisor = createSyncSupervisor(ydoc, {
 		url: config.url,
 		waitFor: config.waitFor,
-		openWebSocket,
+		openWebSocket: config.openWebSocket,
 		log: config.log,
 		// Text frames carry two unrelated server-to-client channels:
 		// presence (the full install list) and dispatch. Try presence first,
@@ -234,10 +254,10 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	});
 
 	// Auth transitions: tell the live socket to retry. Token refresh,
-	// reauth-required → signed-in, and sign-in after sign-out all surface as
-	// state changes; the supervisor's own state machine decides whether a
-	// reconnect actually does anything.
-	const unsubscribeAuth = config.auth.onStateChange(() => {
+	// reauth-required to signed-in, and sign-in after sign-out all surface
+	// as state changes; the supervisor's own state machine decides whether
+	// a reconnect actually does anything.
+	const unsubscribeAuth = config.onAuthChange(() => {
 		supervisor.reconnect();
 	});
 
@@ -261,7 +281,7 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	};
 
 	return {
-		installationId,
+		clientId,
 		actions: userActions,
 		get status() {
 			return supervisor.status;

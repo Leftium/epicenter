@@ -43,13 +43,15 @@ const WORKSPACE_ID = 'opensidian';
 
 async function openOpensidianPlayground({
 	projectDir,
+	yDocClientId,
 	clientId,
-	installationId,
+	owner,
 	keyring,
-	auth,
+	openWebSocket,
+	onAuthChange,
 }: DaemonWorkspaceContext) {
 	const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
-	ydoc.clientID = clientId;
+	ydoc.clientID = yDocClientId;
 	const encryption = attachEncryption(ydoc, { keyring });
 	const tables = encryption.attachTables(opensidianTables);
 	const kv = encryption.attachKv({});
@@ -98,9 +100,14 @@ async function openOpensidianPlayground({
 	});
 
 	const collaboration = openCollaboration(ydoc, {
-		url: roomWsUrl(SERVER_URL, ydoc.guid),
-		auth,
-		installationId,
+		url: roomWsUrl({
+			baseURL: SERVER_URL,
+			owner,
+			guid: ydoc.guid,
+			clientId,
+		}),
+		openWebSocket,
+		onAuthChange,
 		actions,
 	});
 

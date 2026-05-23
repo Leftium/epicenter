@@ -21,27 +21,27 @@
  *   openCollaboration,
  *   roomWsUrl,
  * } from '@epicenter/workspace';
- * import type { AuthClient } from '@epicenter/auth';
+ * import type { AuthClient, Owner } from '@epicenter/auth';
  * import { type } from 'arktype';
  * import * as Y from 'yjs';
  *
  * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
  * declare const auth: AuthClient;
+ * declare const owner: Owner;
  *
- * const apiUrl = 'https://api.example.com';
- * const installationId = createInstallationId({ storage: localStorage });
+ * const clientId = createInstallationId({ storage: localStorage });
  *
  * // A cloud doc is owned by the authenticated subject and addressed by its
- * // Y.Doc guid: `roomWsUrl(apiUrl, ydoc.guid)` resolves to the room
- * // `subject:${userId}:rooms:${ydoc.guid}` server-side.
+ * // Y.Doc guid: `roomWsUrl({ baseURL, owner, guid, clientId })` builds the
+ * // partitioned room URL the server expects.
  * const ydoc = new Y.Doc({ guid: 'notes' });
  * const tables = attachTables(ydoc, { posts });
  * const idb = attachIndexedDb(ydoc);
  * const collaboration = openCollaboration(ydoc, {
- *   url: roomWsUrl(apiUrl, ydoc.guid),
- *   auth,
+ *   url: roomWsUrl({ baseURL: auth.baseURL, owner, guid: ydoc.guid, clientId }),
+ *   openWebSocket: auth.openWebSocket,
+ *   onAuthChange: auth.onStateChange,
  *   waitFor: idb.whenLoaded,
- *   installationId,
  *   actions: {},
  * });
  *
@@ -60,10 +60,15 @@
  *     });
  *     const bodyIdb = attachIndexedDb(bodyYdoc);
  *     const bodySync = openCollaboration(bodyYdoc, {
- *       url: roomWsUrl(apiUrl, bodyYdoc.guid),
- *       auth,
+ *       url: roomWsUrl({
+ *         baseURL: auth.baseURL,
+ *         owner,
+ *         guid: bodyYdoc.guid,
+ *         clientId,
+ *       }),
+ *       openWebSocket: auth.openWebSocket,
+ *       onAuthChange: auth.onStateChange,
  *       waitFor: bodyIdb.whenLoaded,
- *       installationId,
  *       actions: {},
  *     });
  *     return {
@@ -176,8 +181,8 @@ export {
 export { wipeLocalStorage } from './document/wipe-local-storage.js';
 // Transport URL builder.
 //
-// `roomWsUrl(apiUrl, ydoc.guid)` builds the WebSocket URL for `/rooms/:room`.
-// A cloud doc is owned by the authenticated subject; the room id is the
-// Y.Doc guid and the server resolves it to `subject:${userId}:rooms:${room}`.
-// Both browser apps and the daemon use this one builder.
-export { roomWsUrl } from './document/transport.js';
+// `roomWsUrl({ baseURL, owner, guid, clientId })` builds the WebSocket URL
+// for the partitioned `/api/users/:userId/rooms/:roomId` (personal) or
+// `/api/rooms/:roomId` (team) endpoint. Both browser apps and the daemon
+// use this one builder.
+export { roomWsUrl, type RoomWsUrlOptions } from './document/transport.js';

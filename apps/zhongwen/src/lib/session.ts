@@ -8,7 +8,7 @@ export const session = createSession({
 	build: (signedIn) =>
 		openZhongwenBrowser({
 			signedIn,
-			installationId: createInstallationId({ storage: localStorage }),
+			clientId: createInstallationId({ storage: localStorage }),
 		}),
 });
 

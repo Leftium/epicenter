@@ -45,17 +45,21 @@ import { createOpensidianActions } from './actions';
 
 export function openOpensidianBrowser({
 	signedIn,
-	installationId,
+	clientId,
 }: {
 	signedIn: SignedIn;
-	installationId: string;
+	clientId: string;
 }) {
 	const ydoc = new Y.Doc({ guid: OPENSIDIAN_ID, gc: true });
 	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
 	const tables = encryption.attachTables(opensidianTables);
 	const kv = encryption.attachKv({});
 
-	const idb = attachLocalStorage(ydoc, signedIn);
+	const idb = attachLocalStorage(ydoc, {
+		server: signedIn.server,
+		owner: signedIn.owner,
+		keyring: signedIn.keyring,
+	});
 
 	const fileContentDocs = createDisposableCache((fileId: FileId) => {
 		const childYdoc = new Y.Doc({
@@ -65,14 +69,23 @@ export function openOpensidianBrowser({
 		onLocalUpdate(childYdoc, () =>
 			tables.files.update(fileId, { updatedAt: Date.now() }),
 		);
-		const childIdb = attachLocalStorage(childYdoc, signedIn);
+		const childIdb = attachLocalStorage(childYdoc, {
+			server: signedIn.server,
+			owner: signedIn.owner,
+			keyring: signedIn.keyring,
+		});
 		// File bodies sync through Cloud so device loss doesn't drop the largest
 		// data class.
 		const childSync = openCollaboration(childYdoc, {
-			url: roomWsUrl(signedIn.auth.baseURL, childYdoc.guid),
-			auth: signedIn.auth,
+			url: roomWsUrl({
+				baseURL: signedIn.auth.baseURL,
+				owner: signedIn.owner,
+				guid: childYdoc.guid,
+				clientId,
+			}),
+			openWebSocket: signedIn.auth.openWebSocket,
+			onAuthChange: signedIn.auth.onStateChange,
 			waitFor: childIdb.whenLoaded,
-			installationId,
 			actions: {},
 		});
 		return {
@@ -123,10 +136,15 @@ export function openOpensidianBrowser({
 	});
 
 	const collaboration = openCollaboration(ydoc, {
-		url: roomWsUrl(signedIn.auth.baseURL, ydoc.guid),
-		auth: signedIn.auth,
+		url: roomWsUrl({
+			baseURL: signedIn.auth.baseURL,
+			owner: signedIn.owner,
+			guid: ydoc.guid,
+			clientId,
+		}),
+		openWebSocket: signedIn.auth.openWebSocket,
+		onAuthChange: signedIn.auth.onStateChange,
 		waitFor: idb.whenLoaded,
-		installationId,
 		actions,
 	});
 
@@ -154,7 +172,10 @@ export function openOpensidianBrowser({
 		async wipe() {
 			teardownDocs();
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
-			await wipeLocalStorage(signedIn);
+			await wipeLocalStorage({
+				server: signedIn.server,
+				owner: signedIn.owner,
+			});
 		},
 		[Symbol.dispose]() {
 			teardownDocs();

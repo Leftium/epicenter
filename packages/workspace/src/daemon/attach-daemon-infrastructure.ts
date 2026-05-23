@@ -3,14 +3,15 @@
  *
  * `attachDaemonInfrastructure(ydoc, opts)` is the recipe every config-routed
  * daemon extension needs: persist the Y.Doc update log to disk under
- * `yjsPath(projectDir, guid)`, join the cloud room at `roomWsUrl(apiUrl, guid)`,
- * and own the ordered async dispose (destroy first so writes flush before
- * sockets close, then await both `whenDisposed` promises).
+ * `yjsPath(projectDir, guid)`, join the cloud room at the partitioned
+ * `roomWsUrl({ baseURL, owner, guid, clientId })`, and own the ordered async
+ * dispose (destroy first so writes flush before sockets close, then await
+ * both `whenDisposed` promises).
  *
  * A cloud doc is owned by the authenticated subject and addressed by its
  * `ydoc.guid`. The daemon and browser apps build the same URL with
- * `roomWsUrl(apiUrl, ydoc.guid)`, so syncing the same guid means sharing one
- * room.
+ * `roomWsUrl({ baseURL, owner, guid, clientId })`, so syncing the same guid
+ * for the same owner means sharing one room.
  *
  * The helper takes the ydoc and the daemon ctx capabilities directly so the
  * caller stays explicit about its `actions` choice: app workspaces with
@@ -23,7 +24,7 @@
  * compose materializers around the same ydoc.
  */
 
-import type { AuthClient } from '@epicenter/auth';
+import type { Owner } from '@epicenter/auth';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import type * as Y from 'yjs';
 
@@ -43,8 +44,13 @@ import type { ProjectDir } from '../shared/types.js';
 export type AttachDaemonInfrastructureOptions<TActions extends ActionRegistry> =
 	{
 		projectDir: ProjectDir;
-		auth: AuthClient;
-		installationId: string;
+		owner: Owner;
+		clientId: string;
+		openWebSocket: (
+			url: string | URL,
+			protocols?: string[],
+		) => Promise<WebSocket> | WebSocket;
+		onAuthChange: (fn: () => void) => () => void;
 		actions: TActions;
 		/** Defaults to `EPICENTER_API_URL`. Override for self-hosted hubs. */
 		apiUrl?: string;
@@ -60,8 +66,10 @@ export function attachDaemonInfrastructure<TActions extends ActionRegistry>(
 	ydoc: Y.Doc,
 	{
 		projectDir,
-		auth,
-		installationId,
+		owner,
+		clientId,
+		openWebSocket,
+		onAuthChange,
 		actions,
 		apiUrl = EPICENTER_API_URL,
 	}: AttachDaemonInfrastructureOptions<TActions>,
@@ -71,9 +79,14 @@ export function attachDaemonInfrastructure<TActions extends ActionRegistry>(
 	});
 
 	const collaboration = openCollaboration(ydoc, {
-		url: roomWsUrl(apiUrl, ydoc.guid),
-		auth,
-		installationId,
+		url: roomWsUrl({
+			baseURL: apiUrl,
+			owner,
+			guid: ydoc.guid,
+			clientId,
+		}),
+		openWebSocket,
+		onAuthChange,
 		actions,
 	});
 

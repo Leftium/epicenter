@@ -15,21 +15,25 @@ import { ZHONGWEN_ID, zhongwenKv, zhongwenTables } from './workspace.js';
 
 export function openZhongwenDaemon({
 	projectDir,
+	yDocClientId,
 	clientId,
-	installationId,
+	owner,
 	keyring,
-	auth,
+	openWebSocket,
+	onAuthChange,
 }: DaemonWorkspaceContext) {
 	const ydoc = new Y.Doc({ guid: ZHONGWEN_ID, gc: true });
-	ydoc.clientID = clientId;
+	ydoc.clientID = yDocClientId;
 	const encryption = attachEncryption(ydoc, { keyring });
 	encryption.attachTables(zhongwenTables);
 	encryption.attachKv(zhongwenKv);
 
 	return attachDaemonInfrastructure(ydoc, {
 		projectDir,
-		auth,
-		installationId,
+		owner,
+		clientId,
+		openWebSocket,
+		onAuthChange,
 		actions: {},
 	});
 }

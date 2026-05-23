@@ -43,15 +43,23 @@ describe('Fuji workspace architecture', () => {
 		expect(browserSource).toContain('export function openFujiBrowser');
 		expect(browserSource).toContain('new Y.Doc({ guid: FUJI_ID');
 		expect(browserSource).toContain('attachEncryption(ydoc, { keyring:');
-		expect(browserSource).toContain('attachLocalStorage(ydoc, signedIn)');
+		expect(browserSource).toContain('attachLocalStorage(ydoc, {');
+		expect(browserSource).toContain('server: signedIn.server,');
+		expect(browserSource).toContain('owner: signedIn.owner,');
 		expect(browserSource).toContain('openCollaboration(ydoc,');
-		expect(browserSource).toContain('wipeLocalStorage');
+		expect(browserSource).toContain('openWebSocket: signedIn.auth.openWebSocket');
+		expect(browserSource).toContain('onAuthChange: signedIn.auth.onStateChange');
+		expect(browserSource).toContain('wipeLocalStorage({');
 		// No LocalOwner / openEncryptedDoc / wipeLocalYjsData carry-over.
 		expect(browserSource).not.toContain('LocalOwner');
 		expect(browserSource).not.toContain('openEncryptedDoc');
 		expect(browserSource).not.toContain('wipeLocalYjsData');
 		expect(browserSource).not.toContain('owner.attachLocal');
 		expect(browserSource).not.toContain('connectDaemonActions');
+		// No more duck-typed `attachLocalStorage(ydoc, signedIn)` shape.
+		expect(browserSource).not.toContain('attachLocalStorage(ydoc, signedIn)');
+		// No more inline `auth: signedIn.auth` on openCollaboration.
+		expect(browserSource).not.toContain('auth: signedIn.auth');
 	});
 
 	test('daemon opener composes ydoc + attachEncryption + materializers', () => {
@@ -61,13 +69,16 @@ describe('Fuji workspace architecture', () => {
 		expect(daemonSource).toContain('attachDaemonInfrastructure');
 		expect(daemonSource).toContain('attachSqliteMaterializer');
 		expect(daemonSource).toContain('attachMarkdownMaterializer');
-		// Destructured ctx, with `auth` for cloud sync (openCollaboration
-		// internal subscribe) and `clientId` pinned on the Y.Doc.
-		expect(daemonSource).toContain('ydoc.clientID = clientId');
-		expect(daemonSource).toContain('auth,');
+		// Destructured ctx: `yDocClientId` pins the Y.Doc CRDT clientID;
+		// `openWebSocket` and `onAuthChange` thread through to the daemon
+		// infrastructure for cloud sync.
+		expect(daemonSource).toContain('ydoc.clientID = yDocClientId');
+		expect(daemonSource).toContain('openWebSocket,');
+		expect(daemonSource).toContain('onAuthChange,');
 		expect(daemonSource).not.toContain('openEncryptedDoc');
 		expect(daemonSource).not.toContain('openFujiWorkspace');
-		expect(daemonSource).not.toContain('openWebSocket');
+		// Old shape: `auth,` passed as a single AuthClient is gone.
+		expect(daemonSource).not.toContain(' auth,\n');
 		expect(packageJson.exports['./daemon']).toBe('./daemon.ts');
 	});
 });

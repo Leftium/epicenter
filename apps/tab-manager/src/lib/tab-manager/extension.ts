@@ -34,17 +34,17 @@ import {
 
 /**
  * Build the tab-manager binding. Synchronous: callers must resolve the
- * installation id before invoking (the extension's installation id comes from
+ * client id before invoking (the extension's client id comes from
  * `chrome.storage.local` via `createDeviceProfile()` in `device.ts`).
  *
  * Consumers gate UI render on `tabManager.idb.whenLoaded`.
  */
 export function openTabManagerBrowser({
 	signedIn,
-	installationId,
+	clientId,
 }: {
 	signedIn: SignedIn;
-	installationId: DeviceId;
+	clientId: DeviceId;
 }) {
 	const ydoc = new Y.Doc({ guid: TAB_MANAGER_ID, gc: true });
 	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
@@ -53,13 +53,17 @@ export function openTabManagerBrowser({
 	const actions = createTabManagerActions({
 		tables,
 		batch: (fn) => ydoc.transact(fn),
-		deviceId: installationId,
+		deviceId: clientId,
 	});
 
-	const idb = attachLocalStorage(ydoc, signedIn);
+	const idb = attachLocalStorage(ydoc, {
+		server: signedIn.server,
+		owner: signedIn.owner,
+		keyring: signedIn.keyring,
+	});
 
 	return {
-		installationId,
+		clientId,
 		ydoc,
 		tables,
 		kv,
@@ -68,7 +72,10 @@ export function openTabManagerBrowser({
 		async wipe() {
 			ydoc.destroy();
 			await idb.whenDisposed;
-			await wipeLocalStorage(signedIn);
+			await wipeLocalStorage({
+				server: signedIn.server,
+				owner: signedIn.owner,
+			});
 		},
 		[Symbol.dispose]() {
 			ydoc.destroy();

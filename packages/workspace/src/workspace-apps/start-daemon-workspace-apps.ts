@@ -13,7 +13,7 @@
  */
 
 import { resolve } from 'node:path';
-import type { AuthClient } from '@epicenter/auth';
+import type { AuthClient, Owner } from '@epicenter/auth';
 import type { SubjectKeyring } from '@epicenter/encryption';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 
@@ -57,9 +57,14 @@ export async function startDaemonWorkspaceApps(
 		return WorkspaceAppError.WorkspaceRouteRejected(routeIssue);
 	}
 
+	// Sign-out is guarded above, so `auth.state.owner` is stable here. Pin it
+	// to each route's context so daemons build URLs without re-reading auth
+	// state.
+	const owner = auth.state.owner;
+
 	const settled = await Promise.allSettled(
 		routeEntries.map(([route, definition]) =>
-			openOneDaemonRoute({ route, definition, projectDir, auth }),
+			openOneDaemonRoute({ route, definition, projectDir, auth, owner }),
 		),
 	);
 
@@ -97,19 +102,23 @@ async function openOneDaemonRoute({
 	definition,
 	projectDir,
 	auth,
+	owner,
 }: {
 	route: string;
 	definition: DaemonWorkspaceDefinition;
 	projectDir: ProjectDir;
 	auth: AuthClient;
+	owner: Owner;
 }): Promise<Result<StartedDaemonRoute, WorkspaceAppError>> {
 	const ctx: DaemonWorkspaceContext = {
 		projectDir,
 		route,
-		clientId: hashClientId(projectDir),
-		installationId: `${route}-daemon`,
+		yDocClientId: hashClientId(projectDir),
+		clientId: `${route}-daemon`,
+		owner,
 		keyring: createDaemonKeyringReader({ auth, route }),
-		auth,
+		openWebSocket: auth.openWebSocket.bind(auth),
+		onAuthChange: auth.onStateChange.bind(auth),
 	};
 	try {
 		const runtime = await definition.open(ctx);

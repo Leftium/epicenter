@@ -11,7 +11,12 @@ import type { AuthClient, AuthState } from './auth-contract.js';
  * @example
  * ```ts
  * const auth = createTestAuth({ openWebSocket: fakeWebSocket });
- * const collaboration = openCollaboration(ydoc, { url, auth, ... });
+ * const collaboration = openCollaboration(ydoc, {
+ *   url,
+ *   openWebSocket: auth.openWebSocket,
+ *   onAuthChange: auth.onStateChange,
+ *   actions: {},
+ * });
  * ```
  */
 export function createTestAuth(overrides: Partial<AuthClient> = {}): AuthClient {

@@ -41,13 +41,15 @@ export default defineWorkspace({
 	open({
 		projectDir,
 		route,
+		yDocClientId,
 		clientId,
-		installationId,
+		owner,
 		keyring,
-		auth,
+		openWebSocket,
+		onAuthChange,
 	}) {
 		const ydoc = new Y.Doc({ guid: FUJI_ID, gc: true });
-		ydoc.clientID = clientId;
+		ydoc.clientID = yDocClientId;
 		const encryption = attachEncryption(ydoc, { keyring });
 		const tables = encryption.attachTables(fujiTables);
 		encryption.attachKv({});
@@ -73,8 +75,10 @@ export default defineWorkspace({
 
 		return attachDaemonInfrastructure(ydoc, {
 			projectDir,
-			auth,
-			installationId,
+			owner,
+			clientId,
+			openWebSocket,
+			onAuthChange,
 			actions,
 		});
 	},

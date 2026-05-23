@@ -1,9 +1,9 @@
 /**
  * Device identity helpers for the tab-manager extension.
  *
- * The extension publishes an `installationId` in presence (install-stable id)
- * and seeds a row in the local `devices` table with a human-readable name.
- * Installation id is the wire concept; the device row is the app's product
+ * The extension publishes a `clientId` in presence (install-stable id) and
+ * seeds a row in the local `devices` table with a human-readable name. The
+ * client id is the wire concept; the device row is the app's product
  * concept (display name, last seen, browser kind).
  */
 
@@ -13,12 +13,12 @@ import type { TabManagerBrowser } from './tab-manager/extension';
 import type { DeviceId } from './workspace/definition';
 
 /**
- * Compute the extension's installation id and default device label.
+ * Compute the extension's client id and default device label.
  *
- * The installation id is read from (or created in) `chrome.storage.local`. The
+ * The client id is read from (or created in) `chrome.storage.local`. The
  * default name combines the browser brand and the host OS (e.g.
  * "Chrome on macOS") and is used to seed the device row when no row exists
- * yet; subsequent renames live on the row, not the installation id.
+ * yet; subsequent renames live on the row, not the client id.
  */
 export async function createDeviceProfile() {
 	const [id, defaultName] = await Promise.all([
@@ -33,7 +33,7 @@ export async function createDeviceProfile() {
 		generateDefaultDeviceName(),
 	]);
 	return {
-		installationId: id as DeviceId,
+		clientId: id as DeviceId,
 		defaultName,
 	};
 }
@@ -47,7 +47,7 @@ export async function registerDevice(
 	tabManager: TabManagerBrowser,
 	defaultName: string,
 ): Promise<void> {
-	const id = tabManager.installationId;
+	const id = tabManager.clientId;
 	const { data: existing, error } = tabManager.tables.devices.get(id);
 	const existingName = !error && existing ? existing.name : null;
 	tabManager.tables.devices.set({

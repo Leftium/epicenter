@@ -48,4 +48,15 @@ describe('examples/fuji follows the project layout spec', () => {
 		expect(src).not.toContain('markdownPath(');
 		expect(src).not.toContain('sqlitePath(');
 	});
+
+	test('epicenter.config.ts uses defineWorkspace (single-workspace shape)', () => {
+		const src = readFileSync(join(DIR, 'epicenter.config.ts'), 'utf-8');
+		// Single-workspace shape: defineWorkspace default-exported directly,
+		// not wrapped in defineConfig({ daemon: { routes: { ... } } }).
+		expect(src).toContain('defineWorkspace');
+		expect(src).toContain('export default defineWorkspace(');
+		expect(src).not.toContain('defineConfig(');
+		expect(src).not.toContain('daemon.routes');
+		expect(src).not.toContain('daemon: { routes');
+	});
 });

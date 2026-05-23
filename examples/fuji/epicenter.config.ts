@@ -8,13 +8,15 @@
  *     yjs.db                  Yjs persistence
  *     sqlite.db               SQL materializer
  *
- * This uses the current `defineConfig({ daemon: { routes: { ... } } })` API
- * with a single route. The spec's target API is `defineWorkspace({...})` as
- * the direct default export; that rename is a separate refactor.
+ * The default export is a single `defineWorkspace({...})` call. The loader
+ * wraps it as `{ daemon: { routes: { <basename>: ... } } }` internally,
+ * deriving the route name from this project directory's name. For the
+ * `examples/fuji` directory the route name is `fuji`, so CLI commands
+ * address it as `fuji.<action>` exactly as they did under the previous
+ * `defineConfig({ daemon: { routes: { fuji } } })` shape.
  */
 
-import { defineConfig } from '@epicenter/workspace';
-import { defineDaemonWorkspace } from '@epicenter/workspace/daemon';
+import { defineWorkspace } from '@epicenter/workspace';
 import {
 	attachMarkdownMaterializer,
 	slugFilename,
@@ -28,7 +30,7 @@ import { openFujiWorkspace } from '@epicenter/fuji';
 import { join } from 'node:path';
 import { createLogger } from 'wellcrafted/logger';
 
-const fuji = defineDaemonWorkspace({
+export default defineWorkspace({
 	async open({
 		projectDir,
 		route,
@@ -68,11 +70,5 @@ const fuji = defineDaemonWorkspace({
 		}).table(workspace.tables.entries, { filename: slugFilename('title') });
 
 		return infra;
-	},
-});
-
-export default defineConfig({
-	daemon: {
-		routes: { fuji },
 	},
 });

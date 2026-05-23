@@ -69,11 +69,11 @@ export const session = createSession({
 		}),
 });
 ```
-`SignedIn` is `{ subject: string; keyring: () => SubjectKeyring; openWebSocket; onAuthStateChange }`. `subject` is the auth `localIdentity.subject` and stays stable for the lifetime of a single `SignedIn` payload. `keyring` is a callback that reads the current `localIdentity.keyring` from `auth.state`, so same-subject rotations (e.g. `reauth-required` -> identity-bearing) are picked up on the next call without rebuilding the payload. A different-subject sign-in publishes a `signed-out` gap first, which disposes the payload and rebuilds with the new subject.
+`SignedIn` is `{ subject: string; keyring: () => SubjectKeyring; auth: AuthClient }`. `subject` is the auth `localIdentity.subject` and stays stable for the lifetime of a single `SignedIn` payload. `keyring` is a callback that reads the current `localIdentity.keyring` from `auth.state`, so same-subject rotations (e.g. `reauth-required` -> identity-bearing) are picked up on the next call without rebuilding the payload. `auth` is the live `AuthClient`; `openCollaboration({ auth })` uses its `openWebSocket` to open the relay socket and subscribes to `onStateChange` internally to drive reconnect, so per-app openers do not write reconnect glue. A different-subject sign-in publishes a `signed-out` gap first, which disposes the payload and rebuilds with the new subject.
 
 Same-subject identity updates do not remount the workspace. Auth callbacks read `auth.state` at the boundary that asks for them: sync can see refreshed bearer tokens on connection attempts, encrypted-store registrations re-derive on each new `attachTable` / `attachKv` call, and `attachLocalStorage`'s IDB writes pick up rotated keys on the next persisted update. Already-attached encrypted tables and KVs keep the keyring they derived when they were attached.
 
-Daemon-side openers receive the same shape via `DaemonWorkspaceContext`: `{ projectDir, route, clientId, installationId, keyring: () => SubjectKeyring, openWebSocket }`. The host's `keyring` closure throws when auth is signed-out, so a late sign-out becomes a thrown error at the next encrypted-write or registration site rather than silent ciphertext loss.
+Daemon-side openers receive the same shape via `DaemonWorkspaceContext`: `{ projectDir, route, clientId, installationId, keyring: () => SubjectKeyring, auth: AuthClient }`. The host's `keyring` closure throws when auth is signed-out, so a late sign-out becomes a thrown error at the next encrypted-write or registration site rather than silent ciphertext loss. The `auth` field flows through to `attachDaemonInfrastructure({ auth })` for cloud sync.
 
 ## Browser local persistence
 Authenticated browser workspaces open local IndexedDB only after auth has settled into an identity-bearing state. The session module guarantees that boundary: it builds the workspace lazily once auth produces a `SignedIn` payload and disposes it on sign-out.
@@ -99,7 +99,7 @@ export function openFujiBrowser({
 	const idb = attachLocalStorage(ydoc, signedIn);
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl(APP_URLS.API, ydoc.guid),
-		openWebSocket: signedIn.openWebSocket,
+		auth: signedIn.auth,
 		waitFor: idb.whenLoaded,
 		installationId,
 		actions,

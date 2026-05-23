@@ -74,7 +74,7 @@ export function openMyAppBrowser({
 	const idb = attachLocalStorage(ydoc, signedIn);
 	const collab = openCollaboration(ydoc, {
 		url: roomWsUrl('https://api.epicenter.so', ydoc.guid),
-		openWebSocket: signedIn.openWebSocket,
+		auth: signedIn.auth,
 		waitFor: idb.whenLoaded,
 		installationId,
 		actions,

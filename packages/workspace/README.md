@@ -154,7 +154,7 @@ export function openApp({
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl('https://api.epicenter.so', ydoc.guid),
 		waitFor: idb.whenLoaded,
-		openWebSocket: signedIn.openWebSocket,
+		auth: signedIn.auth,
 		installationId,
 		actions: {},
 	});

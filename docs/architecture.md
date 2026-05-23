@@ -236,7 +236,7 @@ const opensidian = defineDocument((id: string) => {
 	});
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl(APP_URLS.API, ydoc.guid),
-		openWebSocket: auth.openWebSocket,
+		auth,
 		waitFor: idb.whenLoaded,
 		installationId: 'browser',
 		actions,

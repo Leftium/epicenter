@@ -116,7 +116,7 @@ function openBlog({
 
   const collaboration = openCollaboration(ydoc, {
     url: roomWsUrl('https://api.example.com', ydoc.guid),
-    openWebSocket: signedIn.openWebSocket,
+    auth: signedIn.auth,
     waitFor: idb.whenLoaded,
     installationId,
     actions: {},

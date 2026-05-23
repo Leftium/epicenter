@@ -41,10 +41,12 @@ import { billingRoutes } from './billing-routes';
 import { MAX_PAYLOAD_BYTES } from './constants';
 import * as schema from './db/schema';
 import { isWebSocketUpgrade } from './is-websocket-upgrade';
+import { createDurableObjectRoomRegistry } from './room/backends/cloudflare/registry';
+import type { RoomRegistry } from './room/contracts';
 import { TRUSTED_ORIGINS, WRANGLER_DEV_API_ORIGIN } from './trusted-origins';
 
 // Re-export so wrangler types generates DurableObjectNamespace<Room>.
-export { Room } from './room';
+export { Room } from './room/backends/cloudflare/durable-object';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -108,6 +110,12 @@ export type Env = {
 		authBaseURL: string;
 		user: AuthUser;
 		afterResponse: AfterResponseQueue;
+		/**
+		 * Runtime-specific room registry. Set by middleware on `/rooms/*`
+		 * so the route handlers stay backend-agnostic (they call
+		 * `c.var.rooms.getRoom(name)` instead of touching `c.env.ROOM`).
+		 */
+		rooms: RoomRegistry;
 		/** Current plan ID. Only set by ensureAutumnCustomer middleware on /ai/* routes. */
 		planId: string | undefined;
 	};
@@ -386,6 +394,15 @@ const requireOAuthUser = factory.createMiddleware(async (c, next) => {
 
 app.use('/ai/*', requireOAuthUser);
 app.use('/rooms/*', requireOAuthUser);
+
+// Inject the runtime-specific RoomRegistry so /rooms/* handlers stay
+// backend-agnostic. The Cloudflare registry wraps `env.ROOM`; a future
+// Bun backend wires its own InProcessRoomRegistry here instead.
+app.use('/rooms/*', async (c, next) => {
+	c.set('rooms', createDurableObjectRoomRegistry(c.env.ROOM));
+	await next();
+});
+
 app.use('/api/billing/*', requireCookieOrBearerUser);
 app.use('/api/assets/*', requireCookieOrBearerUser);
 
@@ -523,7 +540,7 @@ app.get(
 	}),
 	async (c) => {
 		const { roomName, room } = resolveSubjectRoom(c);
-		const roomStub = c.env.ROOM.get(c.env.ROOM.idFromName(roomName));
+		const roomHandle = c.var.rooms.getRoom(roomName);
 
 		if (isWebSocketUpgrade(c)) {
 			c.var.afterResponse.push(
@@ -533,10 +550,10 @@ app.get(
 					doName: roomName,
 				}),
 			);
-			return roomStub.fetch(c.req.raw);
+			return roomHandle.handleUpgrade(c.req.raw);
 		}
 
-		const { data, storageBytes } = await roomStub.getDoc();
+		const { data, storageBytes } = await roomHandle.getDoc();
 		c.var.afterResponse.push(
 			upsertDoInstance(c.var.db, {
 				userId: c.var.user.id,
@@ -562,8 +579,8 @@ app.post(
 			return new Response('Payload too large', { status: 413 });
 		}
 
-		const roomStub = c.env.ROOM.get(c.env.ROOM.idFromName(roomName));
-		const { data: synced, error } = await roomStub.sync(body);
+		const roomHandle = c.var.rooms.getRoom(roomName);
+		const { data: synced, error } = await roomHandle.sync(body);
 		if (error) {
 			return new Response('Malformed sync body', { status: 400 });
 		}

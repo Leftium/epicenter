@@ -59,8 +59,20 @@ mock.module('drizzle-orm/node-postgres', () => ({
 	}),
 }));
 
-mock.module('./room', () => ({
-	Room: class {},
+// Mock `cloudflare:workers` so the real Room class loads without trying to
+// resolve the Workers runtime module. The Room is re-exported by app.ts but
+// never constructed in these route-boundary tests. We mock at the runtime
+// layer (not at the Room module) so the mock cannot leak into
+// `room/backends/cloudflare/durable-object.test.ts` and replace its `Room`.
+mock.module('cloudflare:workers', () => ({
+	DurableObject: class {
+		ctx: unknown;
+		env: unknown;
+		constructor(ctx: unknown, env: unknown) {
+			this.ctx = ctx;
+			this.env = env;
+		}
+	},
 }));
 
 mock.module('./auth/create-auth', () => ({

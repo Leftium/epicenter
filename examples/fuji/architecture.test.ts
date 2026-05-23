@@ -8,9 +8,9 @@
  * `specs/20260522T220000-workspace-project-layout.md`.
  */
 
+import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, test } from 'bun:test';
 
 const DIR = import.meta.dir;
 

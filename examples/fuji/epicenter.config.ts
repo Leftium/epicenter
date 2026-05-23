@@ -16,6 +16,8 @@
  * `defineConfig({ daemon: { routes: { fuji } } })` shape.
  */
 
+import { join } from 'node:path';
+import { openFujiWorkspace } from '@epicenter/fuji';
 import { defineWorkspace } from '@epicenter/workspace';
 import {
 	attachMarkdownMaterializer,
@@ -26,8 +28,6 @@ import {
 	attachDaemonInfrastructure,
 	openWriterSqlite,
 } from '@epicenter/workspace/node';
-import { openFujiWorkspace } from '@epicenter/fuji';
-import { join } from 'node:path';
 import { createLogger } from 'wellcrafted/logger';
 
 export default defineWorkspace({

@@ -9,7 +9,7 @@ export const session = createSession({
 	build: (signedIn) => {
 		const fuji = openFujiBrowser({
 			signedIn,
-			clientId: createInstallationId({ storage: localStorage }),
+			installationId: createInstallationId({ storage: localStorage }),
 		});
 		const entries = createEntriesState(fuji);
 		return {

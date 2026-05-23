@@ -42,7 +42,7 @@ export default defineWorkspace({
 		projectDir,
 		route,
 		yDocClientId,
-		clientId,
+		installationId,
 		owner,
 		keyring,
 		openWebSocket,
@@ -76,7 +76,7 @@ export default defineWorkspace({
 		return attachDaemonInfrastructure(ydoc, {
 			projectDir,
 			owner,
-			clientId,
+			installationId,
 			openWebSocket,
 			onReconnectSignal,
 			actions,

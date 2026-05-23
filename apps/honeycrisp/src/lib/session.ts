@@ -9,7 +9,7 @@ export const session = createSession({
 	build: (signedIn) => {
 		const honeycrisp = openHoneycrispBrowser({
 			signedIn,
-			clientId: createInstallationId({ storage: localStorage }),
+			installationId: createInstallationId({ storage: localStorage }),
 		});
 		const state = createHoneycrispState(honeycrisp);
 		return {

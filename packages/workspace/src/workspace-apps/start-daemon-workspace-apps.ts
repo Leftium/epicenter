@@ -114,7 +114,7 @@ async function openOneDaemonRoute({
 		projectDir,
 		route,
 		yDocClientId: hashYDocClientId(projectDir),
-		clientId: `${route}-daemon`,
+		installationId: `${route}-daemon`,
 		owner,
 		keyring: createDaemonKeyringReader({ auth, route }),
 		// `auth.openWebSocket` / `auth.onStateChange` are closure-based on

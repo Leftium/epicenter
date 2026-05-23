@@ -42,7 +42,7 @@ export type ServerOptions = {
  * Per-connection identity, stamped onto the Cloudflare Durable Object
  * WebSocket attachment so presence survives hibernation.
  *
- * `clientId` identifies one running instance of any app (browser tab,
+ * `installationId` identifies one running instance of any app (browser tab,
  * Tauri window, extension service worker, CLI process). The client
  * generates and persists its own; lifespan is the client's concern.
  *
@@ -53,7 +53,7 @@ export type ServerOptions = {
  */
 export type ConnectionId = {
 	userId: string;
-	clientId: string;
+	installationId: string;
 };
 
 /**

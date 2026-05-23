@@ -27,10 +27,10 @@ import * as Y from 'yjs';
 
 export function openZhongwenBrowser({
 	signedIn,
-	clientId,
+	installationId,
 }: {
 	signedIn: SignedIn;
-	clientId: string;
+	installationId: string;
 }) {
 	const ydoc = new Y.Doc({ guid: ZHONGWEN_ID, gc: true });
 	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
@@ -47,7 +47,7 @@ export function openZhongwenBrowser({
 			baseURL: signedIn.auth.baseURL,
 			owner: signedIn.owner,
 			guid: ydoc.guid,
-			clientId,
+			installationId,
 		}),
 		openWebSocket: signedIn.auth.openWebSocket,
 		onReconnectSignal: signedIn.auth.onStateChange,

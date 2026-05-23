@@ -4,13 +4,13 @@
  * `attachDaemonInfrastructure(ydoc, opts)` is the recipe every config-routed
  * daemon extension needs: persist the Y.Doc update log to disk under
  * `yjsPath(projectDir, guid)`, join the cloud room at the partitioned
- * `roomWsUrl({ baseURL, owner, guid, clientId })`, and own the ordered async
+ * `roomWsUrl({ baseURL, owner, guid, installationId })`, and own the ordered async
  * dispose (destroy first so writes flush before sockets close, then await
  * both `whenDisposed` promises).
  *
  * A cloud doc is owned by the authenticated subject and addressed by its
  * `ydoc.guid`. The daemon and browser apps build the same URL with
- * `roomWsUrl({ baseURL, owner, guid, clientId })`, so syncing the same guid
+ * `roomWsUrl({ baseURL, owner, guid, installationId })`, so syncing the same guid
  * for the same owner means sharing one room.
  *
  * The helper takes the ydoc and the daemon ctx capabilities directly so the
@@ -47,7 +47,7 @@ export type AttachDaemonInfrastructureOptions<TActions extends ActionRegistry> =
 	{
 		projectDir: ProjectDir;
 		owner: Owner;
-		clientId: string;
+		installationId: string;
 		openWebSocket: OpenWebSocketFn;
 		onReconnectSignal: OnReconnectSignal;
 		actions: TActions;
@@ -66,7 +66,7 @@ export function attachDaemonInfrastructure<TActions extends ActionRegistry>(
 	{
 		projectDir,
 		owner,
-		clientId,
+		installationId,
 		openWebSocket,
 		onReconnectSignal,
 		actions,
@@ -82,7 +82,7 @@ export function attachDaemonInfrastructure<TActions extends ActionRegistry>(
 			baseURL,
 			owner,
 			guid: ydoc.guid,
-			clientId,
+			installationId,
 		}),
 		openWebSocket,
 		onReconnectSignal,

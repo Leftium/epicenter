@@ -9,7 +9,7 @@
  * - `guid` is `encodeURIComponent`-encoded.
  * - Trailing slashes on `baseURL` are stripped.
  * - `http` origins become `ws`; `https` origins become `wss`.
- * - `clientId` is appended as a query parameter.
+ * - `installationId` is appended as a query parameter.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -22,10 +22,10 @@ describe('roomWsUrl', () => {
 				baseURL: 'https://api.example.com',
 				owner: { kind: 'personal', userId: 'alice' },
 				guid: 'epicenter.fuji',
-				clientId: 'client-1',
+				installationId: 'client-1',
 			}),
 		).toBe(
-			'wss://api.example.com/api/users/alice/rooms/epicenter.fuji?clientId=client-1',
+			'wss://api.example.com/api/users/alice/rooms/epicenter.fuji?installationId=client-1',
 		);
 	});
 
@@ -35,10 +35,10 @@ describe('roomWsUrl', () => {
 				baseURL: 'https://team.example.com',
 				owner: { kind: 'team' },
 				guid: 'epicenter.fuji',
-				clientId: 'client-1',
+				installationId: 'client-1',
 			}),
 		).toBe(
-			'wss://team.example.com/api/rooms/epicenter.fuji?clientId=client-1',
+			'wss://team.example.com/api/rooms/epicenter.fuji?installationId=client-1',
 		);
 	});
 
@@ -48,10 +48,10 @@ describe('roomWsUrl', () => {
 				baseURL: 'https://api.example.com/',
 				owner: { kind: 'team' },
 				guid: 'a/b?c#d',
-				clientId: 'client-1',
+				installationId: 'client-1',
 			}),
 		).toBe(
-			'wss://api.example.com/api/rooms/a%2Fb%3Fc%23d?clientId=client-1',
+			'wss://api.example.com/api/rooms/a%2Fb%3Fc%23d?installationId=client-1',
 		);
 	});
 
@@ -61,10 +61,10 @@ describe('roomWsUrl', () => {
 				baseURL: 'http://localhost:8787',
 				owner: { kind: 'team' },
 				guid: 'epicenter.fuji',
-				clientId: 'client-1',
+				installationId: 'client-1',
 			}),
 		).toBe(
-			'ws://localhost:8787/api/rooms/epicenter.fuji?clientId=client-1',
+			'ws://localhost:8787/api/rooms/epicenter.fuji?installationId=client-1',
 		);
 	});
 });

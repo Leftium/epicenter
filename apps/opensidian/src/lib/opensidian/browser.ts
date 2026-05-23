@@ -45,10 +45,10 @@ import { createOpensidianActions } from './actions';
 
 export function openOpensidianBrowser({
 	signedIn,
-	clientId,
+	installationId,
 }: {
 	signedIn: SignedIn;
-	clientId: string;
+	installationId: string;
 }) {
 	const ydoc = new Y.Doc({ guid: OPENSIDIAN_ID, gc: true });
 	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
@@ -81,7 +81,7 @@ export function openOpensidianBrowser({
 				baseURL: signedIn.auth.baseURL,
 				owner: signedIn.owner,
 				guid: childYdoc.guid,
-				clientId,
+				installationId,
 			}),
 			openWebSocket: signedIn.auth.openWebSocket,
 			onReconnectSignal: signedIn.auth.onStateChange,
@@ -140,7 +140,7 @@ export function openOpensidianBrowser({
 			baseURL: signedIn.auth.baseURL,
 			owner: signedIn.owner,
 			guid: ydoc.guid,
-			clientId,
+			installationId,
 		}),
 		openWebSocket: signedIn.auth.openWebSocket,
 		onReconnectSignal: signedIn.auth.onStateChange,

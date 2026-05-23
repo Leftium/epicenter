@@ -44,7 +44,7 @@ const WORKSPACE_ID = 'opensidian';
 async function openOpensidianPlayground({
 	projectDir,
 	yDocClientId,
-	clientId,
+	installationId,
 	owner,
 	keyring,
 	openWebSocket,
@@ -104,7 +104,7 @@ async function openOpensidianPlayground({
 			baseURL: SERVER_URL,
 			owner,
 			guid: ydoc.guid,
-			clientId,
+			installationId,
 		}),
 		openWebSocket,
 		onReconnectSignal,

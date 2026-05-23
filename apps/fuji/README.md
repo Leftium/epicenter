@@ -34,7 +34,7 @@ export const session = createSession({
   build: (signedIn) =>
     openFujiBrowser({
       signedIn,
-      clientId: createInstallationId({ storage: localStorage }),
+      installationId: createInstallationId({ storage: localStorage }),
     }),
 });
 ```
@@ -44,10 +44,10 @@ Inside `openFujiBrowser`, the composition is fully visible top-to-bottom:
 ```ts
 export function openFujiBrowser({
   signedIn,
-  clientId,
+  installationId,
 }: {
   signedIn: SignedIn;
-  clientId: string;
+  installationId: string;
 }) {
   const ydoc = new Y.Doc({ guid: FUJI_ID, gc: true });
   const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
@@ -65,7 +65,7 @@ export function openFujiBrowser({
       baseURL: signedIn.auth.baseURL,
       owner: signedIn.owner,
       guid: ydoc.guid,
-      clientId,
+      installationId,
     }),
     openWebSocket: signedIn.auth.openWebSocket,
     onReconnectSignal: signedIn.auth.onStateChange,

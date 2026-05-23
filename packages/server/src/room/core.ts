@@ -217,7 +217,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	// ==========================================================================
 
 	/**
-	 * Deduped snapshot of currently-connected `clientId`s. Pass `exclude`
+	 * Deduped snapshot of currently-connected `installationId`s. Pass `exclude`
 	 * to omit the caller's own socket; if the caller's client still has
 	 * other open sockets (multi-tab one-client edge case), those siblings
 	 * are excluded too. The result is "remote clients" from the
@@ -225,26 +225,26 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	 */
 	function snapshotClients(exclude?: RoomSocket): string[] {
 		const excludeClient = exclude
-			? connections.get(exclude)?.clientId
+			? connections.get(exclude)?.installationId
 			: undefined;
 		const seen = new Set<string>();
-		for (const [ws, { clientId }] of connections) {
+		for (const [ws, { installationId }] of connections) {
 			if (ws === exclude) continue;
-			if (excludeClient && clientId === excludeClient) continue;
-			seen.add(clientId);
+			if (excludeClient && installationId === excludeClient) continue;
+			seen.add(installationId);
 		}
 		return Array.from(seen).sort();
 	}
 
 	/**
-	 * Count OPEN sockets currently associated with `clientId`. Used to
+	 * Count OPEN sockets currently associated with `installationId`. Used to
 	 * detect the first socket for a client (on connect) and the last (on
 	 * close): the two events that change room membership.
 	 */
-	function countClientSockets(clientId: string): number {
+	function countClientSockets(installationId: string): number {
 		let count = 0;
 		for (const [, data] of connections) {
-			if (data.clientId === clientId) count++;
+			if (data.installationId === installationId) count++;
 		}
 		return count;
 	}
@@ -302,14 +302,14 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	}
 
 	/**
-	 * Resolve a recipient `clientId` to the most-recently-connected open
+	 * Resolve a recipient `installationId` to the most-recently-connected open
 	 * socket, if any. `Map` iteration is insertion order, so the LAST
 	 * matching socket in a forward scan is the newest.
 	 */
-	function pickRecipient(clientId: string): RoomSocket | null {
+	function pickRecipient(installationId: string): RoomSocket | null {
 		let newest: RoomSocket | null = null;
 		for (const [ws, data] of connections) {
-			if (data.clientId === clientId && ws.readyState === WS_READY_OPEN) {
+			if (data.installationId === installationId && ws.readyState === WS_READY_OPEN) {
 				newest = ws;
 			}
 		}
@@ -379,7 +379,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	 * or the entry was lost to hibernation) and is dropped.
 	 */
 	function handleDispatchResponse(
-		clientId: string,
+		installationId: string,
 		frame: Record<string, unknown>,
 	): void {
 		const id = typeof frame.id === 'string' ? frame.id : null;
@@ -401,7 +401,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 			// Recipient sent a non-`Result` payload; treat it as offline so
 			// the caller gets a usable `Result` instead of waiting for its
 			// ceiling.
-			sendDispatchResult(pending.callerWs, id, recipientOffline(clientId));
+			sendDispatchResult(pending.callerWs, id, recipientOffline(installationId));
 			return;
 		}
 
@@ -449,7 +449,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	 */
 	function handleTextFrame(
 		ws: RoomSocket,
-		clientId: string,
+		installationId: string,
 		message: string,
 	): void {
 		let parsed: unknown;
@@ -476,7 +476,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 				handleDispatchRequest(ws, frame);
 				return;
 			case 'dispatch_response':
-				handleDispatchResponse(clientId, frame);
+				handleDispatchResponse(installationId, frame);
 				return;
 			default:
 				ws.close(4400, 'protocol-error');
@@ -494,7 +494,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 		 *
 		 * Sends the new socket its initial Yjs `SyncStep1` and a client
 		 * snapshot (the receiver's "remote clients"). If this is the FIRST
-		 * socket for `clientId`, room membership changed, so peers are
+		 * socket for `installationId`, room membership changed, so peers are
 		 * rebroadcast the live list. Subsequent tabs of the same client
 		 * leave the list unchanged and need no rebroadcast.
 		 *
@@ -504,8 +504,8 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 		 * @param socket - The accepted WebSocket. The backend is
 		 *   responsible for the runtime-specific accept (hibernation API
 		 *   or `Bun.serve` upgrade) before calling this.
-		 * @param connectionId - The (userId, clientId) pair URL-stamped at
-		 *   upgrade. `clientId` is the address dispatch routes to; `userId`
+		 * @param connectionId - The (userId, installationId) pair URL-stamped at
+		 *   upgrade. `installationId` is the address dispatch routes to; `userId`
 		 *   is broadcast with presence so clients can render names.
 		 */
 		addConnection(socket: RoomSocket, connectionId: ConnectionId): void {
@@ -519,7 +519,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 				} satisfies PresenceFrame),
 			);
 
-			if (countClientSockets(connectionId.clientId) === 1) {
+			if (countClientSockets(connectionId.installationId) === 1) {
 				cancelPendingRebroadcast();
 				broadcastPresence(socket);
 			}
@@ -551,7 +551,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 					sendDispatchResult(
 						pending.callerWs,
 						id,
-						recipientOffline(data.clientId),
+						recipientOffline(data.installationId),
 					);
 				} else if (pending.callerWs === socket) {
 					clearTimeout(pending.timeout);
@@ -561,7 +561,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 
 			connections.delete(socket);
 
-			if (countClientSockets(data.clientId) === 0) {
+			if (countClientSockets(data.installationId) === 0) {
 				if (code === CLOSE_CODE_AUTH_FAILED) {
 					cancelPendingRebroadcast();
 					broadcastPresence();
@@ -595,7 +595,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 			}
 
 			if (typeof message === 'string') {
-				handleTextFrame(socket, data.clientId, message);
+				handleTextFrame(socket, data.installationId, message);
 				return;
 			}
 

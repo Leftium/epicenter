@@ -16,7 +16,7 @@ export const session = createSession({
 	build: (signedIn) => {
 		const opensidian = openOpensidianBrowser({
 			signedIn,
-			clientId: createInstallationId({ storage: localStorage }),
+			installationId: createInstallationId({ storage: localStorage }),
 		});
 		const editor = createEditorState();
 		const files = createFilesState({ binding: opensidian });

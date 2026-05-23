@@ -39,9 +39,9 @@ import type { DaemonRuntime } from './types.js';
  *   daemon (derived from `projectDir` so two daemons in different projects
  *   produce distinct update streams). Pin it on the Y.Doc with
  *   `ydoc.clientID = ctx.yDocClientId` right after construction.
- * - `clientId` is the conventional collaboration WebSocket client id for
+ * - `installationId` is the conventional collaboration WebSocket client id for
  *   the daemon side of this route (`<route>-daemon`). Pass it through
- *   `roomWsUrl` so it shows up in the upgrade URL as `?clientId=...`.
+ *   `roomWsUrl` so it shows up in the upgrade URL as `?installationId=...`.
  * - `owner` is the workspace owner snapshotted at startup. The host refuses
  *   to start when auth is signed-out, so this value is stable for the
  *   lifetime of the daemon process; routes use it for partitioned URLs.
@@ -61,7 +61,7 @@ export type DaemonWorkspaceContext = {
 	projectDir: ProjectDir;
 	route: string;
 	yDocClientId: number;
-	clientId: string;
+	installationId: string;
 	owner: Owner;
 	keyring: () => SubjectKeyring;
 	openWebSocket: OpenWebSocketFn;

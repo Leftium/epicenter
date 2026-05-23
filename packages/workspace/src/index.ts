@@ -29,16 +29,16 @@
  * declare const auth: AuthClient;
  * declare const owner: Owner;
  *
- * const clientId = createInstallationId({ storage: localStorage });
+ * const installationId = createInstallationId({ storage: localStorage });
  *
  * // A cloud doc is owned by the authenticated subject and addressed by its
- * // Y.Doc guid: `roomWsUrl({ baseURL, owner, guid, clientId })` builds the
+ * // Y.Doc guid: `roomWsUrl({ baseURL, owner, guid, installationId })` builds the
  * // partitioned room URL the server expects.
  * const ydoc = new Y.Doc({ guid: 'notes' });
  * const tables = attachTables(ydoc, { posts });
  * const idb = attachIndexedDb(ydoc);
  * const collaboration = openCollaboration(ydoc, {
- *   url: roomWsUrl({ baseURL: auth.baseURL, owner, guid: ydoc.guid, clientId }),
+ *   url: roomWsUrl({ baseURL: auth.baseURL, owner, guid: ydoc.guid, installationId }),
  *   openWebSocket: auth.openWebSocket,
  *   onReconnectSignal: auth.onStateChange,
  *   waitFor: idb.whenLoaded,
@@ -64,7 +64,7 @@
  *         baseURL: auth.baseURL,
  *         owner,
  *         guid: bodyYdoc.guid,
- *         clientId,
+ *         installationId,
  *       }),
  *       openWebSocket: auth.openWebSocket,
  *       onReconnectSignal: auth.onStateChange,
@@ -184,7 +184,7 @@ export {
 export { wipeLocalStorage } from './document/wipe-local-storage.js';
 // Transport URL builder.
 //
-// `roomWsUrl({ baseURL, owner, guid, clientId })` builds the WebSocket URL
+// `roomWsUrl({ baseURL, owner, guid, installationId })` builds the WebSocket URL
 // for the partitioned `/api/users/:userId/rooms/:roomId` (personal) or
 // `/api/rooms/:roomId` (team) endpoint. Both browser apps and the daemon
 // use this one builder.

@@ -73,7 +73,7 @@ export type OpenCollaborationConfig<TActions extends ActionRegistry> = {
 	/**
 	 * WebSocket URL the supervisor connects to, used verbatim. Callers
 	 * build it via {@link roomWsUrl} (or any custom builder); the wire
-	 * `?clientId=` query that the relay routes by lives in this URL.
+	 * `?installationId=` query that the relay routes by lives in this URL.
 	 * `openCollaboration` does not parse, mutate, or augment it.
 	 */
 	url: string;

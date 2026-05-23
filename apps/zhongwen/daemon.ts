@@ -16,7 +16,7 @@ import { ZHONGWEN_ID, zhongwenKv, zhongwenTables } from './workspace.js';
 export function openZhongwenDaemon({
 	projectDir,
 	yDocClientId,
-	clientId,
+	installationId,
 	owner,
 	keyring,
 	openWebSocket,
@@ -31,7 +31,7 @@ export function openZhongwenDaemon({
 	return attachDaemonInfrastructure(ydoc, {
 		projectDir,
 		owner,
-		clientId,
+		installationId,
 		openWebSocket,
 		onReconnectSignal,
 		actions: {},

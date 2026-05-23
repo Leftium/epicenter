@@ -8,7 +8,7 @@
  * The Durable Object name is the owner-partitioned identifier produced by
  * {@link doName}; nothing here interpolates strings inline. The DO itself
  * is owner-blind: every connection is identified by the
- * `(userId, clientId)` pair stamped onto its WebSocket attachment.
+ * `(userId, installationId)` pair stamped onto its WebSocket attachment.
  *
  * Each HTTP/WS access pushes a fire-and-forget upsert into
  * `c.var.afterResponse` so the platform-level `durableObjectInstance`

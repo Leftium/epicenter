@@ -39,7 +39,7 @@ export function openFujiDaemon({
 	projectDir,
 	route,
 	yDocClientId,
-	clientId,
+	installationId,
 	owner,
 	keyring,
 	openWebSocket,
@@ -66,7 +66,7 @@ export function openFujiDaemon({
 	return attachDaemonInfrastructure(ydoc, {
 		projectDir,
 		owner,
-		clientId,
+		installationId,
 		openWebSocket,
 		onReconnectSignal,
 		actions,

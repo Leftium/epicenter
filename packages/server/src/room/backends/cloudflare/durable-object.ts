@@ -117,10 +117,10 @@ export class Room extends DurableObject {
 	 * / {@link Room.getDoc}), avoiding the overhead of constructing and
 	 * parsing Request/Response objects for binary payloads.
 	 *
-	 * The `userId` and `clientId` query parameters are required: together
+	 * The `userId` and `installationId` query parameters are required: together
 	 * they form the {@link ConnectionId} stamped on the socket attachment
 	 * for the lifetime of the connection. `userId` is what presence carries
-	 * to peers; `clientId` is the address `dispatch({ to })` routes to. No
+	 * to peers; `installationId` is the address `dispatch({ to })` routes to. No
 	 * round-trip validation: the URL stamp is the binding.
 	 *
 	 * Cancels any pending compaction alarm: a new client just connected,
@@ -137,9 +137,9 @@ export class Room extends DurableObject {
 
 		const url = new URL(request.url);
 		const userId = url.searchParams.get('userId');
-		const clientId = url.searchParams.get('clientId');
-		if (!userId || !clientId) {
-			return new Response('missing userId or clientId', { status: 400 });
+		const installationId = url.searchParams.get('installationId');
+		if (!userId || !installationId) {
+			return new Response('missing userId or installationId', { status: 400 });
 		}
 
 		void this.ctx.storage.deleteAlarm();
@@ -149,8 +149,8 @@ export class Room extends DurableObject {
 
 		this.ctx.acceptWebSocket(server);
 
-		// Stash the (userId, clientId) pair so it survives hibernation.
-		const attachment: ConnectionId = { userId, clientId };
+		// Stash the (userId, installationId) pair so it survives hibernation.
+		const attachment: ConnectionId = { userId, installationId };
 		server.serializeAttachment(attachment);
 
 		// Register with the core. addConnection sends the initial

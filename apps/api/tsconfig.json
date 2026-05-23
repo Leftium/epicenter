@@ -5,5 +5,5 @@
 		"jsxImportSource": "hono/jsx",
 		"types": ["bun", "./worker-configuration.d.ts"]
 	},
-	"include": ["src", "dev.ts", "env.d.ts"]
+	"include": ["src", "scripts", "env.d.ts"]
 }

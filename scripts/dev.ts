@@ -11,7 +11,7 @@ const repoRoot = resolve(import.meta.dir, '..');
 
 const workflows: Record<string, DevCommand[]> = {
 	'tab-manager': [
-		{ label: 'api', cwd: 'apps/api', args: ['bun', 'run', 'dev:local'] },
+		{ label: 'api', cwd: 'apps/api', args: ['bun', 'run', 'dev'] },
 		{
 			label: 'tab-manager',
 			cwd: 'apps/tab-manager',

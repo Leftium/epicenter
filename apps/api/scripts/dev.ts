@@ -1,8 +1,9 @@
 import { unlink } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
-const apiRoot = import.meta.dir;
-const dashboardBuild = `${apiRoot}/../dashboard/build/dashboard/`;
-const devVars = `${apiRoot}/.dev.vars`;
+const apiRoot = resolve(import.meta.dir, '..');
+const dashboardBuild = resolve(apiRoot, '../dashboard/build/dashboard');
+const devVars = resolve(apiRoot, '.dev.vars');
 
 await Bun.$`mkdir -p ${dashboardBuild}`;
 

@@ -8,8 +8,10 @@
  *  2. local storage + cloud sync for root (attachLocalStorage + openCollaboration)
  *  3. per-file child content docs (plaintext timeline + encrypted IDB storage)
  *  4. file system, sqlite index, bash, and action registry
- *  5. reconnect listener for the root and every live child sync
- *  6. wipe / dispose teardown
+ *  5. wipe / dispose teardown
+ *
+ * `openCollaboration` owns reconnect-on-auth-change internally, so this file
+ * has no per-app onStateChange listener.
  *
  * The bundle's `wipe()` drops every encrypted IDB database for this subject;
  * `Symbol.dispose` tears down the root + cached child Y.Docs without touching
@@ -69,7 +71,7 @@ export function openOpensidianBrowser({
 		// data class.
 		const childSync = openCollaboration(childYdoc, {
 			url: roomWsUrl(APP_URLS.API, childYdoc.guid),
-			openWebSocket: signedIn.auth.openWebSocket,
+			auth: signedIn.auth,
 			waitFor: childIdb.whenLoaded,
 			installationId,
 			actions: {},
@@ -123,22 +125,10 @@ export function openOpensidianBrowser({
 
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl(APP_URLS.API, ydoc.guid),
-		openWebSocket: signedIn.auth.openWebSocket,
+		auth: signedIn.auth,
 		waitFor: idb.whenLoaded,
 		installationId,
 		actions,
-	});
-
-	// Auth transitions: tell live sockets to retry.
-	// Sign-in: a previously-rejected socket reconnects with the new token.
-	// Sign-out: the server closes the existing socket on its own (4401);
-	//   reconnect() ensures the supervisor doesn't sit in 'failed' if the
-	//   user signs back in.
-	const unsubscribeAuth = signedIn.auth.onStateChange(() => {
-		collaboration.reconnect();
-		for (const child of fileContentDocs.values()) {
-			child.sync.reconnect();
-		}
 	});
 
 	let docsTornDown = false;
@@ -168,7 +158,6 @@ export function openOpensidianBrowser({
 			await wipeLocalStorage({ subject: signedIn.subject });
 		},
 		[Symbol.dispose]() {
-			unsubscribeAuth();
 			teardownDocs();
 		},
 	};

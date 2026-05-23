@@ -64,17 +64,10 @@ function buildSession(
 
 			const collaboration = openCollaboration(tabManager.ydoc, {
 				url: roomWsUrl(APP_URLS.API, tabManager.ydoc.guid),
-				openWebSocket: auth.openWebSocket,
+				auth,
 				waitFor: tabManager.idb.whenLoaded,
 				installationId: profile.installationId,
 				actions: tabManager.actions,
-			});
-
-			// Auth transitions: tell the live socket to retry. Sign-in
-			// reconnects with the new token; sign-out lets the supervisor
-			// recover if the user signs back in.
-			const unsubscribeAuth = auth.onStateChange(() => {
-				collaboration.reconnect();
 			});
 
 			const sessionAiTools = actionsToAiTools(tabManager.actions);
@@ -95,7 +88,6 @@ function buildSession(
 				state,
 				sessionAiTools,
 				[Symbol.dispose]() {
-					unsubscribeAuth();
 					aiChat[Symbol.dispose]();
 					toolTrust[Symbol.dispose]();
 					bookmarks[Symbol.dispose]();

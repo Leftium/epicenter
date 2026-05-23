@@ -13,6 +13,7 @@
  * supervisor so the test process exits cleanly.
  */
 
+import { createTestAuth } from '@epicenter/auth';
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
 import {
@@ -49,7 +50,7 @@ function setup<TActions extends ActionRegistry = ActionRegistry>(
 	const ydoc = new Y.Doc({ guid: 'open-collab-test' });
 	const collaboration = openCollaboration<TActions>(ydoc, {
 		url: 'wss://ignored.invalid/',
-		openWebSocket: fakeWebSocket,
+		auth: createTestAuth({ openWebSocket: fakeWebSocket }),
 		installationId,
 		actions,
 	});

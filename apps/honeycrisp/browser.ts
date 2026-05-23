@@ -7,7 +7,9 @@
  *  1. workspace root doc (encrypted tables + KV via attachEncryption)
  *  2. local storage + cloud sync for root (attachLocalStorage + openCollaboration)
  *  3. per-note rich-text body sub-docs (plaintext Y.XmlFragment + encrypted IDB)
- *  4. reconnect listener for the root and every live child sync
+ *
+ * `openCollaboration` owns reconnect-on-auth-change internally, so this file
+ * has no per-app onStateChange listener.
  *
  * The bundle's `wipe()` drops every encrypted IDB database for this subject;
  * `Symbol.dispose` tears down the root + cached child Y.Docs without touching
@@ -52,7 +54,7 @@ export function openHoneycrispBrowser({
 	const idb = attachLocalStorage(ydoc, signedIn);
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl(APP_URLS.API, ydoc.guid),
-		openWebSocket: signedIn.auth.openWebSocket,
+		auth: signedIn.auth,
 		waitFor: idb.whenLoaded,
 		installationId,
 		actions,
@@ -67,7 +69,7 @@ export function openHoneycrispBrowser({
 		const childIdb = attachLocalStorage(childYdoc, signedIn);
 		const childSync = openCollaboration(childYdoc, {
 			url: roomWsUrl(APP_URLS.API, childYdoc.guid),
-			openWebSocket: signedIn.auth.openWebSocket,
+			auth: signedIn.auth,
 			waitFor: childIdb.whenLoaded,
 			installationId,
 			actions: {},
@@ -95,18 +97,6 @@ export function openHoneycrispBrowser({
 		};
 	});
 
-	// Auth transitions: tell live sockets to retry.
-	// Sign-in: a previously-rejected socket reconnects with the new token.
-	// Sign-out: the server closes the existing socket on its own (4401);
-	//   reconnect() ensures the supervisor doesn't sit in 'failed' if the
-	//   user signs back in.
-	const unsubscribeAuth = signedIn.auth.onStateChange(() => {
-		collaboration.reconnect();
-		for (const child of noteBodyDocs.values()) {
-			child.sync.reconnect();
-		}
-	});
-
 	return {
 		ydoc,
 		tables,
@@ -122,7 +112,6 @@ export function openHoneycrispBrowser({
 			await wipeLocalStorage({ subject: signedIn.subject });
 		},
 		[Symbol.dispose]() {
-			unsubscribeAuth();
 			noteBodyDocs[Symbol.dispose]();
 			ydoc.destroy();
 		},

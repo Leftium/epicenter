@@ -24,6 +24,7 @@
  * online discovery.
  */
 
+import type { AuthClient } from '@epicenter/auth';
 import type { Logger } from 'wellcrafted/logger';
 import type { Result } from 'wellcrafted/result';
 import * as Y from 'yjs';
@@ -53,8 +54,15 @@ const DISPATCH_RESPONSE_CEILING_MS = 90_000;
 
 export type OpenCollaborationConfig<TActions extends ActionRegistry> = {
 	url: string;
+	/**
+	 * Auth client whose `openWebSocket` opens the relay socket and whose
+	 * `onStateChange` triggers reconnect on auth transitions (token refresh,
+	 * sign-in after reauth-required, sign-out followed by sign-in). The
+	 * subscription's unsubscribe is wired into `whenDisposed`, so callers do
+	 * not write reconnect glue.
+	 */
+	auth: AuthClient;
 	waitFor?: Promise<unknown>;
-	openWebSocket?: OpenWebSocket;
 	log?: Logger;
 	/**
 	 * Install-stable identity. Identifies "this install" across reconnects
@@ -193,13 +201,12 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		return true;
 	}
 
-	// Wrap the user-supplied opener so every connect (including reconnects)
-	// carries `?installationId=` without callers re-encoding the URL.
-	const userOpen = config.openWebSocket;
+	// Wrap auth's opener so every connect (including reconnects) carries
+	// `?installationId=` without callers re-encoding the URL.
 	const openWebSocket: OpenWebSocket = (rawUrl, protocols) => {
 		const url = new URL(rawUrl.toString());
 		url.searchParams.set('installationId', installationId);
-		return userOpen ? userOpen(url, protocols) : new WebSocket(url, protocols);
+		return config.auth.openWebSocket(url, protocols);
 	};
 
 	const supervisor = createSyncSupervisor(ydoc, {
@@ -225,8 +232,18 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		if (status.phase === 'connected') return;
 		settlePendingDispatches(new Error('Dispatch connection lost'));
 	});
+
+	// Auth transitions: tell the live socket to retry. Token refresh,
+	// reauth-required → signed-in, and sign-in after sign-out all surface as
+	// state changes; the supervisor's own state machine decides whether a
+	// reconnect actually does anything.
+	const unsubscribeAuth = config.auth.onStateChange(() => {
+		supervisor.reconnect();
+	});
+
 	void supervisor.whenDisposed.then(() => {
 		unsubscribeDispatchSweep();
+		unsubscribeAuth();
 		settlePendingDispatches(new Error('Dispatch connection disposed'));
 	});
 

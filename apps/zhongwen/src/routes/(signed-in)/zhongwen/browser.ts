@@ -6,12 +6,12 @@
  *
  *  1. workspace root doc (encrypted tables + KV via attachEncryption)
  *  2. local storage + cloud sync for root (attachLocalStorage + openCollaboration)
- *  3. reconnect listener for the root sync on auth transitions
  *
  * Zhongwen has no child docs and no daemon actions; the root doc is the
- * entire workspace surface. The bundle's `wipe()` drops every encrypted IDB
- * database for this subject; `Symbol.dispose` tears down the root Y.Doc
- * without touching local storage.
+ * entire workspace surface. `openCollaboration` owns reconnect-on-auth-change
+ * internally, so this file has no per-app onStateChange listener. The
+ * bundle's `wipe()` drops every encrypted IDB database for this subject;
+ * `Symbol.dispose` tears down the root Y.Doc without touching local storage.
  */
 
 import { APP_URLS } from '@epicenter/constants/vite';
@@ -41,14 +41,10 @@ export function openZhongwenBrowser({
 	const idb = attachLocalStorage(ydoc, signedIn);
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl(APP_URLS.API, ydoc.guid),
-		openWebSocket: signedIn.auth.openWebSocket,
+		auth: signedIn.auth,
 		waitFor: idb.whenLoaded,
 		installationId,
 		actions: {},
-	});
-
-	const unsubscribeAuth = signedIn.auth.onStateChange(() => {
-		collaboration.reconnect();
 	});
 
 	return {
@@ -63,7 +59,6 @@ export function openZhongwenBrowser({
 			await wipeLocalStorage({ subject: signedIn.subject });
 		},
 		[Symbol.dispose]() {
-			unsubscribeAuth();
 			ydoc.destroy();
 		},
 	};

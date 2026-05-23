@@ -27,5 +27,4 @@ jobs:
       - name: Lint check
         run: bun run lint:check
       - name: Type check
-        if: always()
         run: bun run typecheck

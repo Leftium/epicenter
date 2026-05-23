@@ -343,6 +343,7 @@ export const assetPublicRoutes = new Hono<Env>()
 				const headers = new Headers();
 				object.writeHttpMetadata(headers);
 				headers.set('etag', object.httpEtag);
+				headers.set('referrer-policy', 'no-referrer');
 				return new Response(null, { status: 304, headers });
 			}
 
@@ -352,6 +353,10 @@ export const assetPublicRoutes = new Hono<Env>()
 			headers.set('etag', object.httpEtag);
 			headers.set('accept-ranges', 'bytes');
 			headers.set('x-content-type-options', 'nosniff');
+			// Capability URL: do not let outgoing sub-resource requests carry
+			// the asset URL as a Referer. The unguessable id is the credential;
+			// keep it out of third-party logs and analytics.
+			headers.set('referrer-policy', 'no-referrer');
 			if (object.uploaded) {
 				headers.set('last-modified', object.uploaded.toUTCString());
 			}

@@ -29,14 +29,14 @@
  *
  * Presence is server-owned: the `connections` map is the source of truth.
  * On every connection change a `presence` text frame is broadcast carrying
- * the FULL install list (computed per-recipient, self excluded), so
- * clients store `devices.list()` verbatim with no delta reassembly.
+ * the FULL client list (computed per-recipient, self excluded), so clients
+ * store the list verbatim with no delta reassembly.
  *
  * ## Adapter contract
  *
  * Backends drive `RoomCore` through six entry points:
  *
- *   - `addConnection(socket, installationId)`  on accept
+ *   - `addConnection(socket, connectionId)`    on accept
  *   - `removeConnection(socket, code)`         on close
  *   - `handleMessage(socket, message)`         on inbound frame
  *   - `sync(body)` / `getDoc()`                for HTTP RPC
@@ -63,8 +63,9 @@ import type { PresenceFrame } from '@epicenter/workspace/document/presence';
 import * as decoding from 'lib0/decoding';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 import * as Y from 'yjs';
-import { MAX_PAYLOAD_BYTES } from '../constants';
-import { RoomError, type RoomSocket, type RoomUpdateLog } from './contracts';
+import { MAX_PAYLOAD_BYTES } from '../constants.js';
+import type { ConnectionId } from '../types.js';
+import { RoomError, type RoomSocket, type RoomUpdateLog } from './contracts.js';
 
 // ============================================================================
 // Constants
@@ -82,10 +83,10 @@ const MAX_COMPACTED_BYTES = 2 * 1024 * 1024;
 
 /**
  * Grace window before the debounced presence rebroadcast fires after the
- * last socket for an install closes.
+ * last socket for a client closes.
  *
  * A graceful tab handoff (T1 closes, T2 connects within a few hundred ms)
- * would otherwise broadcast the install as gone and then back, even though
+ * would otherwise broadcast the client as gone and then back, even though
  * it was continuously present from the user's perspective. The debounce
  * lets a reconnecting socket supersede the pending rebroadcast before
  * peers ever see the flap.
@@ -93,7 +94,7 @@ const MAX_COMPACTED_BYTES = 2 * 1024 * 1024;
  * Close-code policy: WebSocket close code 4401 (permanent auth failure)
  * bypasses the debounce and rebroadcasts immediately. There is no
  * legitimate handoff for an auth-failed socket, and forcing peers to wait
- * 300 ms to learn an install is permanently offline yields no benefit.
+ * 300 ms to learn a client is permanently offline yields no benefit.
  * All other close codes (1000, 1006, 1009, 1011, 4400, ...) respect the
  * window.
  */
@@ -110,7 +111,7 @@ const DISPATCH_INTERNAL_TIMEOUT_MS = 60_000;
 /**
  * WebSocket close code emitted by the auth layer when the connection's
  * credentials are permanently invalid. Bypasses the presence grace window:
- * peers see the install drop immediately instead of waiting 300 ms for a
+ * peers see the client drop immediately instead of waiting 300 ms for a
  * handoff that cannot happen.
  */
 const CLOSE_CODE_AUTH_FAILED = 4401;
@@ -164,12 +165,12 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	/** The shared Yjs document for this room. Always `gc: true`. */
 	const doc = new Y.Doc({ gc: true });
 
-	/** Open connections, mapped to their per-connection metadata. */
-	const connections = new Map<RoomSocket, { installationId: string }>();
+	/** Open connections, mapped to their per-connection {@link ConnectionId}. */
+	const connections = new Map<RoomSocket, ConnectionId>();
 
 	/**
 	 * Pending debounced presence rebroadcast, or `null` if none is armed.
-	 * Armed when the last socket for an install closes; cleared by the
+	 * Armed when the last socket for a client closes; cleared by the
 	 * timer firing (real disconnect) or by a connect superseding it
 	 * (handoff).
 	 */
@@ -216,34 +217,34 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	// ==========================================================================
 
 	/**
-	 * Deduped snapshot of currently-connected `installationId`s. Pass
-	 * `exclude` to omit the caller's own socket; if the caller's
-	 * installation still has other open sockets, those siblings are
-	 * excluded too. The result is "remote installs" from the perspective
-	 * of the receiver.
+	 * Deduped snapshot of currently-connected `clientId`s. Pass `exclude`
+	 * to omit the caller's own socket; if the caller's client still has
+	 * other open sockets (multi-tab one-client edge case), those siblings
+	 * are excluded too. The result is "remote clients" from the
+	 * perspective of the receiver.
 	 */
-	function snapshotInstalls(exclude?: RoomSocket): string[] {
-		const excludeInstall = exclude
-			? connections.get(exclude)?.installationId
+	function snapshotClients(exclude?: RoomSocket): string[] {
+		const excludeClient = exclude
+			? connections.get(exclude)?.clientId
 			: undefined;
 		const seen = new Set<string>();
-		for (const [ws, { installationId }] of connections) {
+		for (const [ws, { clientId }] of connections) {
 			if (ws === exclude) continue;
-			if (excludeInstall && installationId === excludeInstall) continue;
-			seen.add(installationId);
+			if (excludeClient && clientId === excludeClient) continue;
+			seen.add(clientId);
 		}
 		return Array.from(seen).sort();
 	}
 
 	/**
-	 * Count OPEN sockets currently associated with `installationId`. Used
-	 * to detect the first socket for an install (on connect) and the last
-	 * (on close): the two events that change room membership.
+	 * Count OPEN sockets currently associated with `clientId`. Used to
+	 * detect the first socket for a client (on connect) and the last (on
+	 * close): the two events that change room membership.
 	 */
-	function countInstallSockets(installationId: string): number {
+	function countClientSockets(clientId: string): number {
 		let count = 0;
 		for (const [, data] of connections) {
-			if (data.installationId === installationId) count++;
+			if (data.clientId === clientId) count++;
 		}
 		return count;
 	}
@@ -262,7 +263,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 				peer.send(
 					JSON.stringify({
 						type: 'presence',
-						installs: snapshotInstalls(peer),
+						installs: snapshotClients(peer),
 					} satisfies PresenceFrame),
 				);
 			} catch {
@@ -273,7 +274,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 
 	/**
 	 * Arm the debounced presence rebroadcast after the grace window.
-	 * Called when the last socket for an install closes. A single shared
+	 * Called when the last socket for a client closes. A single shared
 	 * timer: if one is already pending, leave it, so a burst of departures
 	 * is announced at most one grace window after the FIRST departure.
 	 * When it fires it broadcasts the then-current full list, reflecting
@@ -292,7 +293,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	 * connect path broadcasts the live list immediately, which supersedes
 	 * whatever the debounced timer would have sent. A graceful tab handoff
 	 * lands here (T1 closes and arms the timer, T2 connects and cancels
-	 * it), so peers never observe the install leave.
+	 * it), so peers never observe the client leave.
 	 */
 	function cancelPendingRebroadcast(): void {
 		if (!pendingRebroadcast) return;
@@ -301,17 +302,14 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	}
 
 	/**
-	 * Resolve a recipient `installationId` to the most-recently-connected
-	 * open socket, if any. `Map` iteration is insertion order, so the
-	 * LAST matching socket in a forward scan is the newest.
+	 * Resolve a recipient `clientId` to the most-recently-connected open
+	 * socket, if any. `Map` iteration is insertion order, so the LAST
+	 * matching socket in a forward scan is the newest.
 	 */
-	function pickRecipient(installationId: string): RoomSocket | null {
+	function pickRecipient(clientId: string): RoomSocket | null {
 		let newest: RoomSocket | null = null;
 		for (const [ws, data] of connections) {
-			if (
-				data.installationId === installationId &&
-				ws.readyState === WS_READY_OPEN
-			) {
+			if (data.clientId === clientId && ws.readyState === WS_READY_OPEN) {
 				newest = ws;
 			}
 		}
@@ -381,7 +379,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	 * or the entry was lost to hibernation) and is dropped.
 	 */
 	function handleDispatchResponse(
-		installationId: string,
+		clientId: string,
 		frame: Record<string, unknown>,
 	): void {
 		const id = typeof frame.id === 'string' ? frame.id : null;
@@ -403,11 +401,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 			// Recipient sent a non-`Result` payload; treat it as offline so
 			// the caller gets a usable `Result` instead of waiting for its
 			// ceiling.
-			sendDispatchResult(
-				pending.callerWs,
-				id,
-				recipientOffline(installationId),
-			);
+			sendDispatchResult(pending.callerWs, id, recipientOffline(clientId));
 			return;
 		}
 
@@ -455,7 +449,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	 */
 	function handleTextFrame(
 		ws: RoomSocket,
-		installationId: string,
+		clientId: string,
 		message: string,
 	): void {
 		let parsed: unknown;
@@ -482,7 +476,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 				handleDispatchRequest(ws, frame);
 				return;
 			case 'dispatch_response':
-				handleDispatchResponse(installationId, frame);
+				handleDispatchResponse(clientId, frame);
 				return;
 			default:
 				ws.close(4400, 'protocol-error');
@@ -498,11 +492,11 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 		 * Register a newly-accepted socket and run the connect-time
 		 * presence flow.
 		 *
-		 * Sends the new socket its initial Yjs `SyncStep1` and an install
-		 * snapshot (the receiver's "remote installs"). If this is the
-		 * FIRST socket for `installationId`, room membership changed, so
-		 * peers are rebroadcast the live list. Subsequent tabs of the
-		 * same install leave the list unchanged and need no rebroadcast.
+		 * Sends the new socket its initial Yjs `SyncStep1` and a client
+		 * snapshot (the receiver's "remote clients"). If this is the FIRST
+		 * socket for `clientId`, room membership changed, so peers are
+		 * rebroadcast the live list. Subsequent tabs of the same client
+		 * leave the list unchanged and need no rebroadcast.
 		 *
 		 * A connect supersedes any pending debounced rebroadcast (the
 		 * graceful tab handoff case).
@@ -510,22 +504,22 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 		 * @param socket - The accepted WebSocket. The backend is
 		 *   responsible for the runtime-specific accept (hibernation API
 		 *   or `Bun.serve` upgrade) before calling this.
-		 * @param installationId - URL-stamped at upgrade; the address used
-		 *   by dispatch and the only identity the relay carries for a
-		 *   socket.
+		 * @param connectionId - The (userId, clientId) pair URL-stamped at
+		 *   upgrade. `clientId` is the address dispatch routes to; `userId`
+		 *   is broadcast with presence so clients can render names.
 		 */
-		addConnection(socket: RoomSocket, installationId: string): void {
-			connections.set(socket, { installationId });
+		addConnection(socket: RoomSocket, connectionId: ConnectionId): void {
+			connections.set(socket, connectionId);
 
 			socket.send(encodeSyncStep1({ doc }));
 			socket.send(
 				JSON.stringify({
 					type: 'presence',
-					installs: snapshotInstalls(socket),
+					installs: snapshotClients(socket),
 				} satisfies PresenceFrame),
 			);
 
-			if (countInstallSockets(installationId) === 1) {
+			if (countClientSockets(connectionId.clientId) === 1) {
 				cancelPendingRebroadcast();
 				broadcastPresence(socket);
 			}
@@ -538,7 +532,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 		 *   recipient answers the caller `RecipientOffline`; a closed
 		 *   caller just drops the entry (nobody to answer).
 		 * - Removes the socket from `connections`.
-		 * - If this was the LAST socket for the install, schedules the
+		 * - If this was the LAST socket for the client, schedules the
 		 *   debounced presence rebroadcast (or fires it immediately on
 		 *   close code 4401, permanent auth failure).
 		 *
@@ -557,7 +551,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 					sendDispatchResult(
 						pending.callerWs,
 						id,
-						recipientOffline(data.installationId),
+						recipientOffline(data.clientId),
 					);
 				} else if (pending.callerWs === socket) {
 					clearTimeout(pending.timeout);
@@ -567,7 +561,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 
 			connections.delete(socket);
 
-			if (countInstallSockets(data.installationId) === 0) {
+			if (countClientSockets(data.clientId) === 0) {
 				if (code === CLOSE_CODE_AUTH_FAILED) {
 					cancelPendingRebroadcast();
 					broadcastPresence();
@@ -601,7 +595,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 			}
 
 			if (typeof message === 'string') {
-				handleTextFrame(socket, data.installationId, message);
+				handleTextFrame(socket, data.clientId, message);
 				return;
 			}
 

@@ -1,6 +1,6 @@
 import { createMiddleware } from 'hono/factory';
 import { TRUSTED_ORIGINS } from '../trusted-origins.js';
-import { parseBearer } from './resource-boundary.js';
+import { parseBearer } from '../auth/resource-boundary.js';
 
 /**
  * CSRF guard for state-changing cookie-auth requests on `/api/*`. Cookies ride

@@ -44,7 +44,7 @@ import { isWebSocketUpgrade } from './is-websocket-upgrade';
 import { TRUSTED_ORIGINS, WRANGLER_DEV_API_ORIGIN } from './trusted-origins';
 
 // Re-export so wrangler types generates DurableObjectNamespace<Room>.
-export { Room } from './room';
+export { Room } from './room/backends/cloudflare/durable-object';
 
 // ---------------------------------------------------------------------------
 // Types

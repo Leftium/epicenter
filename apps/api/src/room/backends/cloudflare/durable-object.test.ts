@@ -219,7 +219,7 @@ type RoomLike = any;
 
 async function makeRoom(): Promise<{ room: RoomLike; ctx: StubCtx }> {
 	// Dynamic import so the cloudflare:workers mock is in place.
-	const { Room } = await import('./room.js');
+	const { Room } = await import('./durable-object.js');
 	const ctx = makeCtx();
 	// biome-ignore lint/suspicious/noExplicitAny: env unused in our scenarios
 	const room = new Room(ctx as any, {} as any) as RoomLike;
@@ -443,7 +443,7 @@ describe('Room presence: hibernation/wake', () => {
 		// `ctx.getWebSockets()`. The new Room must rebuild `connections`
 		// from the surviving sockets without emitting spurious presence
 		// transitions to them.
-		const { Room } = await import('./room.js');
+		const { Room } = await import('./durable-object.js');
 		const ctx = makeCtx();
 		// biome-ignore lint/suspicious/noExplicitAny: env unused
 		const r1 = new Room(ctx as any, {} as any);

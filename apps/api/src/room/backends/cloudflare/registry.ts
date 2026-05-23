@@ -8,8 +8,8 @@
  * never touches `c.env.ROOM` directly.
  */
 
-import type { Room } from '../../../room';
 import type { RoomHandle, RoomRegistry } from '../../contracts';
+import type { Room } from './durable-object';
 
 /**
  * Build a {@link RoomRegistry} that resolves opaque room names to

@@ -21,7 +21,7 @@ Workspace ID: `FUJI_ID` (`epicenter.fuji`). Rich-text content and entry metadata
 
 ### Client wiring
 
-Fuji's root workspace is built once per signed-in session by `createSession`. `openFujiBrowser()` owns the `new Y.Doc(...)` call, composes every Tier 1 primitive inline, and returns the bundle directly. The session module receives a `SignedIn` from `createSession` and passes it into the browser factory. `SignedIn` carries `{ subject, keyring, auth }`; `attachEncryption` reads the keyring, `attachLocalStorage` reads both the subject (for the IDB database name) and the keyring, and `openCollaboration` opens sockets through `auth.openWebSocket` on connection attempts.
+Fuji's root workspace is built once per signed-in session by `createSession`. `openFujiBrowser()` owns the `new Y.Doc(...)` call, composes every Tier 1 primitive inline, and returns the bundle directly. The session module receives a `SignedIn` from `createSession` and passes it into the browser factory. `SignedIn` carries `{ subject, keyring, auth }`; `attachEncryption` reads the keyring, `attachLocalStorage` reads both the subject (for the IDB database name) and the keyring, and `openCollaboration` takes the live `auth` client so it can open sockets through `auth.openWebSocket` and reconnect on `auth.onStateChange` without per-app glue.
 
 ```ts
 import { openFujiBrowser } from '$lib/browser';
@@ -58,12 +58,12 @@ export function openFujiBrowser({
   const idb = attachLocalStorage(ydoc, signedIn);
   const collaboration = openCollaboration(ydoc, {
     url: roomWsUrl(APP_URLS.API, ydoc.guid),
-    openWebSocket: signedIn.openWebSocket,
+    auth: signedIn.auth,
     waitFor: idb.whenLoaded,
     installationId,
     actions,
   });
-  // ... per-entry child docs, auth reconnect listener, wipe(), dispose
+  // ... per-entry child docs, wipe(), dispose
   return { ydoc, tables, kv, actions, idb, collaboration, /* ... */ };
 }
 ```

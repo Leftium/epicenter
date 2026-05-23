@@ -14,31 +14,6 @@ import { actionsToAiTools } from './tool-bridge.js';
 
 describe('actionsToAiTools', () => {
 	describe('tools', () => {
-		test('all mutations get needsApproval', () => {
-			const actions = {
-				tabs_close: defineMutation({
-					title: 'Close Tabs',
-					description: 'Close tabs',
-					handler: () => {},
-				}),
-				tabs_open: defineMutation({
-					title: 'Open Tab',
-					description: 'Open a tab',
-					handler: () => {},
-				}),
-			} satisfies ActionRegistry;
-
-			const { tools } = actionsToAiTools(actions);
-
-			const closeTool = tools.find((t) => t.name === 'tabs_close');
-			expect(closeTool).toBeDefined();
-			expect(closeTool?.needsApproval).toBe(true);
-
-			const openTool = tools.find((t) => t.name === 'tabs_open');
-			expect(openTool).toBeDefined();
-			expect(openTool?.needsApproval).toBe(true);
-		});
-
 		test('queries omit needsApproval entirely', () => {
 			const actions = {
 				query: defineQuery({

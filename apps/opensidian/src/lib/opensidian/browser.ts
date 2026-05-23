@@ -155,7 +155,7 @@ export function openOpensidianBrowser({
 		async wipe() {
 			teardownDocs();
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
-			await wipeLocalStorage({ subject: signedIn.subject });
+			await wipeLocalStorage({ server: signedIn.server, owner: signedIn.owner });
 		},
 		[Symbol.dispose]() {
 			teardownDocs();

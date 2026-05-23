@@ -18,6 +18,7 @@ export function createTestAuth(overrides: Partial<AuthClient> = {}): AuthClient 
 	const signedOut: AuthState = { status: 'signed-out' };
 	return {
 		state: signedOut,
+		baseURL: 'https://api.test',
 		onStateChange: () => () => {},
 		startSignIn: () => {
 			throw new Error('[test-auth] startSignIn not stubbed');

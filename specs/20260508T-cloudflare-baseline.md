@@ -65,13 +65,13 @@ fails the script loudly.
    - TTL: ~90 days. The token only gets used on demand, so a short TTL keeps
      the blast radius small if it ever leaks.
 2. Store the token value as `CLOUDFLARE_ZONE_TOKEN` in Infisical under
-   `/scripts` in the `prod` environment. Leave the value empty in `dev` and
+   `/ops` in the `prod` environment. Leave the value empty in `dev` and
    `staging`; this token rewrites production DNS and has no business sitting
    in a non-prod environment. The env var name uses SCREAMING_SNAKE_CASE
    because it's an env var; the dashboard name uses `kebab-case` because it's
    a dashboard label. Two different audiences, two different conventions.
 3. `bun run cf:plan` previews; `bun run cf:apply` writes. The npm scripts pin
-   `--env=prod --path=/scripts` so the token only resolves under those
+   `--env=prod --path=/ops` so the token only resolves under those
    coordinates.
 4. After apply, paste any printed DS record at the registrar for zones not
    registered at Cloudflare.

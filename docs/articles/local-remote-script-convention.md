@@ -27,17 +27,15 @@ Name every database-touching script with an explicit `:local` or `:remote` suffi
     "db:generate": "drizzle-kit generate",
     "db:drop": "drizzle-kit drop",
     "db:push:local": "drizzle-kit push",
-    "db:push:remote": "infisical run --path=/api -- drizzle-kit push",
-    "db:migrate:local": "drizzle-kit migrate",
-    "db:migrate:remote": "infisical run --path=/api -- drizzle-kit migrate",
+    "db:migrate:remote": "infisical run --env=prod --path=/api -- drizzle-kit migrate",
     "db:studio:local": "drizzle-kit studio",
-    "db:studio:remote": "infisical run --path=/api -- drizzle-kit studio"
+    "db:studio:remote": "infisical run --env=prod --path=/api -- drizzle-kit studio"
 }
 ```
 
 `db:generate` and `db:drop` have no suffix because they never touch a database. `db:generate` diffs your schema files and produces SQL. `db:drop` deletes a local migration file. Both are pure filesystem operations. Suffixing them would be noise.
 
-Everything else gets a suffix. No exceptions.
+Everything that connects to a database gets a suffix. Not every command needs both halves: `db:push:local` exists for fast iteration, but the corresponding `:remote` push is intentionally absent because schema changes against production go through versioned migrations (`db:migrate:remote`), not ad-hoc pushes.
 
 ## The Implementation
 
@@ -61,22 +59,25 @@ If `DATABASE_URL` isn't set in the environment, drizzle-kit falls through to the
 
 ### `:remote` scripts
 
-`:remote` scripts are prefixed with `infisical run --path=/api --`:
+`:remote` scripts are prefixed with `infisical run --env=prod --path=/api --`:
 
 ```
-infisical run --path=/api -- drizzle-kit push
+infisical run --env=prod --path=/api -- drizzle-kit migrate
 ```
 
-Infisical injects `DATABASE_URL` before the command runs. That URL points to the dev-branch or production Postgres, depending on your Infisical environment. drizzle-kit picks it up because it takes priority over the `LOCAL_DATABASE_URL` fallback.
+Infisical injects `DATABASE_URL` (and any other secrets) before the command runs. That URL points to the production Postgres. drizzle-kit picks it up because `process.env.DATABASE_URL` takes priority over the `LOCAL_DATABASE_URL` fallback.
 
-The same pattern applies to `dev`:
+### Why there is no `dev:remote`
+
+You might expect a parallel `dev:remote` that wraps `wrangler dev` with `infisical run`. There isn't one, by design. A development server pointing at production data is a category error: there's no use case for it that isn't better served by either (a) running real migrations against prod via `db:migrate:remote`, or (b) deploying.
+
+The bare `dev` script is the single sensible local workflow. It still requires Infisical login because the API needs dev secrets like API keys and the auth secret, but it never touches production data at runtime: Wrangler's Hyperdrive binding (`localConnectionString` from `wrangler.jsonc`) routes the connection to local Postgres. Secrets pipe through `process.env` via `CLOUDFLARE_INCLUDE_PROCESS_ENV=true`; no `.dev.vars` file is produced.
 
 ```json
-"dev:local": "wrangler dev",
-"dev:remote": "infisical run --watch --path=/api -- wrangler dev",
+"dev": "bun scripts/dev.ts"
 ```
 
-`dev:remote` adds `--watch` so Infisical refreshes secrets if they rotate during a long session.
+Inside that script: `infisical run --silent --path=/api -- wrangler dev` with the env var set. One command, one workflow, no `:remote` variant.
 
 ## The Three-Layer Strategy
 
@@ -117,13 +118,13 @@ docker run -d -p 5432:5432 -e POSTGRES_DB=epicenter postgres
 # Push the schema locally
 bun run db:push:local
 
-# Start the dev server
-bun run dev:local
+# Open Drizzle Studio against the local DB
+bun run db:studio:local
 ```
 
-Zero secrets. Zero environment setup. The `:local` scripts work because the fallback is hardcoded in `drizzle.config.ts`. They can develop locally, write migrations, and open PRs without ever touching Infisical.
+Zero secrets. Zero environment setup. The `:local` scripts work because the fallback is hardcoded in `drizzle.config.ts`. They can write migrations and inspect schema locally without ever touching Infisical.
 
-When they need to test against the real dev database, they get Infisical access and switch to `:remote`. The workflow is the same, the scripts just have different names.
+Running the full API server (`bun run dev`) still requires Infisical access because the app needs real API keys and the auth secret. But schema work, migration authoring, and Drizzle Studio against a clean local DB are all available before the contributor is added to Infisical. When they're ready to write a real migration against production, they get Infisical prod access and use `db:migrate:remote`.
 
 ## The Pattern This Replaces
 
@@ -144,10 +145,10 @@ Or worse, there's just one script and the URL is controlled entirely by which `.
 
 ```json
 "db:push:local": "drizzle-kit push",
-"db:push:remote": "infisical run --path=/api -- drizzle-kit push",
+"db:migrate:remote": "infisical run --env=prod --path=/api -- drizzle-kit migrate",
 ```
 
-Now the command is self-documenting. `db:push:local` cannot accidentally hit the remote database — drizzle-kit will only see `LOCAL_DATABASE_URL`. `db:push:remote` cannot accidentally hit local — Infisical injects the real URL and that takes priority.
+Now the command is self-documenting. `db:push:local` cannot accidentally hit the remote database — drizzle-kit will only see `LOCAL_DATABASE_URL`. `db:migrate:remote` cannot accidentally hit local — Infisical injects the real URL and that takes priority. The asymmetry between `push:local` and `migrate:remote` is intentional: fast ad-hoc pushes are fine for the schema you can nuke, but production gets versioned migrations.
 
 The suffix is not just a label. It enforces the behavior.
 

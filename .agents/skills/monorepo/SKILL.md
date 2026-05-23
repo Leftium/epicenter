@@ -44,15 +44,19 @@ Use this pattern when you need to:
 
 ## Dev Scripts
 
-Every app uses explicit `dev:local` / `dev:remote` naming:
+Apps use either a single `dev` script (when there is only one sensible local
+workflow) or a `dev:local` alias (kept for symmetry with `:remote` db scripts).
+The suffix convention applies primarily to database commands:
 
 | Script | Meaning |
 | --- | --- |
-| `dev:local` | Local everything:local API, local secrets |
-| `dev:remote` | Local app, remote/prod resources |
-| `dev` | Alias for `dev:local` (convenience) |
+| `dev` | The default local workflow. May still require Infisical login for app secrets (e.g. API keys), but only ever talks to local infrastructure at runtime. |
+| `dev:local` | Used when an app keeps the `dev` -> `dev:local` alias for explicit naming. Equivalent to `dev`. |
+| `db:*:local` | Runs against local Postgres. Works without Infisical login. |
+| `db:*:remote` | Wraps with `infisical run --env=prod`. Production data; treat as admin. |
 
-Not every app has `dev:remote`:only add it when there's a real use case.
+There is no `dev:remote`. Production data is reached only through `:remote` db
+scripts and `deploy`, never through a development server.
 
 ## CLI (`epicenter`)
 

@@ -56,7 +56,6 @@
 		"@types/bun": "catalog:",
 		"@types/pg": "^8.18.0",
 		"atmn": "^1.1.5",
-		"dotenv": "^17.3.1",
 		"drizzle-kit": "catalog:",
 		"jsonc-parser": "^3.3.1",
 		"typescript": "catalog:",

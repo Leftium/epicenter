@@ -487,6 +487,21 @@
         "vite": "catalog:",
       },
     },
+    "examples/fuji": {
+      "name": "@examples/fuji",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/cli": "workspace:*",
+        "@epicenter/fuji": "workspace:*",
+        "@epicenter/workspace": "workspace:*",
+        "wellcrafted": "catalog:",
+        "yjs": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "examples/notes-cross-peer": {
       "name": "@examples/notes-cross-peer",
       "version": "0.0.1",
@@ -1124,6 +1139,8 @@
     "@esbuild/win32-ia32": ["@esbuild/win32-ia32@0.25.12", "", { "os": "win32", "cpu": "ia32" }, "sha512-HkqnmmBoCbCwxUKKNPBixiWDGCpQGVsrQfJoVGYLPT41XWF8lHuE5N6WhVia2n4o5QK5M4tYr21827fNhi4byQ=="],
 
     "@esbuild/win32-x64": ["@esbuild/win32-x64@0.25.12", "", { "os": "win32", "cpu": "x64" }, "sha512-alJC0uCZpTFrSL0CCDjcgleBXPnCrEAhTBILpeAp7M/OFgoqtAetfBzX0xM00MUsVVPpVjlPuMbREqnZCXaTnA=="],
+
+    "@examples/fuji": ["@examples/fuji@workspace:examples/fuji"],
 
     "@examples/notes-cross-peer": ["@examples/notes-cross-peer@workspace:examples/notes-cross-peer"],
 

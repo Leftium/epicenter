@@ -8,9 +8,9 @@
  * `specs/20260522T220000-workspace-project-layout.md`.
  */
 
+import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, test } from 'bun:test';
 
 const DIR = import.meta.dir;
 
@@ -47,5 +47,16 @@ describe('examples/fuji follows the project layout spec', () => {
 		// Legacy per-workspaceId helpers must not be used here.
 		expect(src).not.toContain('markdownPath(');
 		expect(src).not.toContain('sqlitePath(');
+	});
+
+	test('epicenter.config.ts uses defineWorkspace (single-workspace shape)', () => {
+		const src = readFileSync(join(DIR, 'epicenter.config.ts'), 'utf-8');
+		// Single-workspace shape: defineWorkspace default-exported directly,
+		// not wrapped in defineConfig({ daemon: { routes: { ... } } }).
+		expect(src).toContain('defineWorkspace');
+		expect(src).toContain('export default defineWorkspace(');
+		expect(src).not.toContain('defineConfig(');
+		expect(src).not.toContain('daemon.routes');
+		expect(src).not.toContain('daemon: { routes');
 	});
 });

@@ -14,7 +14,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 
 import { loadProjectConfig } from './load-project-config.js';
 
@@ -59,6 +59,23 @@ describe('loadProjectConfig', () => {
 		const { data, error } = await loadProjectConfig(projectDir);
 		if (error !== null) throw new Error(error.message);
 		expect(data.daemon?.routes?.demo?.open).toBeFunction();
+	});
+
+	test('wraps a defineWorkspace default export under a single derived route', async () => {
+		// Direct workspace definition (the shape `defineWorkspace` returns):
+		// the loader wraps it as `{ daemon: { routes: { <basename>: def } } }`,
+		// keying the route by the project directory's basename so the CLI
+		// addresses it under the name the developer typed.
+		writeConfig('export default { open() {} };\n');
+
+		const { data, error } = await loadProjectConfig(projectDir);
+		if (error !== null) throw new Error(error.message);
+
+		const routes = data.daemon?.routes;
+		expect(routes).toBeDefined();
+		const routeNames = Object.keys(routes ?? {});
+		expect(routeNames).toEqual([basename(projectDir)]);
+		expect(routes?.[routeNames[0]!]?.open).toBeFunction();
 	});
 
 	test('throws with the config path when the default export is invalid', async () => {

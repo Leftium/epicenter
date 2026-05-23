@@ -59,7 +59,10 @@ import type {
 	DispatchInboundFrame,
 	DispatchResultFrame,
 } from '@epicenter/workspace/document/dispatch-protocol';
-import type { PresenceFrame } from '@epicenter/workspace/document/presence';
+import type {
+	PresenceDevice,
+	PresenceFrame,
+} from '@epicenter/workspace/document/presence';
 import * as decoding from 'lib0/decoding';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 import * as Y from 'yjs';
@@ -217,31 +220,42 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	// ==========================================================================
 
 	/**
-	 * Deduped snapshot of currently-connected `installationId`s. Pass `exclude`
-	 * to omit the caller's own socket; if the caller's client still has
-	 * other open sockets (multi-tab one-client edge case), those siblings
-	 * are excluded too. The result is "remote clients" from the
-	 * perspective of the receiver.
+	 * Deduped snapshot of currently-connected devices, newest-wins per
+	 * `installationId`. Pass `exclude` to omit the caller's own socket; if the
+	 * caller's install still has other open sockets (multi-tab one-install
+	 * edge case), those siblings are excluded too. The result is "remote
+	 * devices" from the perspective of the receiver, sorted by
+	 * `installationId` for deterministic output.
 	 */
-	function snapshotClients(exclude?: RoomSocket): string[] {
-		const excludeClient = exclude
+	function snapshotDevices(exclude?: RoomSocket): PresenceDevice[] {
+		const excludeInstall = exclude
 			? connections.get(exclude)?.installationId
 			: undefined;
-		const seen = new Set<string>();
-		for (const [ws, { installationId }] of connections) {
+		const seen = new Map<string, PresenceDevice>();
+		for (const [ws, attachment] of connections) {
 			if (ws === exclude) continue;
-			if (excludeClient && installationId === excludeClient) continue;
-			seen.add(installationId);
+			if (excludeInstall && attachment.installationId === excludeInstall) {
+				continue;
+			}
+			const existing = seen.get(attachment.installationId);
+			if (existing && existing.connectedAt >= attachment.connectedAt) continue;
+			seen.set(attachment.installationId, {
+				installationId: attachment.installationId,
+				connectedAt: attachment.connectedAt,
+				actions: attachment.actions,
+			});
 		}
-		return Array.from(seen).sort();
+		return Array.from(seen.values()).sort((a, b) =>
+			a.installationId.localeCompare(b.installationId),
+		);
 	}
 
 	/**
 	 * Count OPEN sockets currently associated with `installationId`. Used to
-	 * detect the first socket for a client (on connect) and the last (on
+	 * detect the first socket for an install (on connect) and the last (on
 	 * close): the two events that change room membership.
 	 */
-	function countClientSockets(installationId: string): number {
+	function countInstallationSockets(installationId: string): number {
 		let count = 0;
 		for (const [, data] of connections) {
 			if (data.installationId === installationId) count++;
@@ -263,7 +277,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 				peer.send(
 					JSON.stringify({
 						type: 'presence',
-						installs: snapshotClients(peer),
+						devices: snapshotDevices(peer),
 					} satisfies PresenceFrame),
 				);
 			} catch {
@@ -439,13 +453,39 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	}
 
 	/**
-	 * Route a client -> relay text frame. Valid types are
-	 * `dispatch_request` (a caller starting a dispatch) and
-	 * `dispatch_response` (a recipient answering one). Unparseable JSON
-	 * or an unknown frame type is a genuine protocol desync and closes
-	 * the socket with `4400 protocol-error`; a recognized frame with
-	 * malformed fields is dropped without closing, because one bad
-	 * dispatch frame must not tear down sync and presence.
+	 * Device -> relay: publish this socket's action manifest. The relay stores
+	 * the manifest against the connection attachment, persists it via
+	 * `serializeAttachment` when the runtime supports hibernation, and
+	 * rebroadcasts presence so peers see the update. A malformed payload is
+	 * dropped silently: the relay never trusts client input but never tears
+	 * down a sync socket for one bad manifest publish either.
+	 */
+	function handlePresencePublish(
+		socket: RoomSocket,
+		frame: Record<string, unknown>,
+	): void {
+		const actions = frame.actions;
+		if (!actions || typeof actions !== 'object' || Array.isArray(actions)) {
+			return;
+		}
+		const existing = connections.get(socket);
+		if (!existing) return;
+		const updated: ConnectionId = {
+			...existing,
+			actions: actions as ConnectionId['actions'],
+		};
+		connections.set(socket, updated);
+		socket.serializeAttachment?.(updated);
+		broadcastPresence();
+	}
+
+	/**
+	 * Route a client -> relay text frame. Valid types are `dispatch_request`,
+	 * `dispatch_response`, and `presence_publish`. Unparseable JSON or an
+	 * unknown frame type is a genuine protocol desync and closes the socket
+	 * with `4400 protocol-error`; a recognized frame with malformed fields is
+	 * dropped without closing, because one bad text frame must not tear down
+	 * sync and presence.
 	 */
 	function handleTextFrame(
 		ws: RoomSocket,
@@ -478,6 +518,9 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 			case 'dispatch_response':
 				handleDispatchResponse(installationId, frame);
 				return;
+			case 'presence_publish':
+				handlePresencePublish(ws, frame);
+				return;
 			default:
 				ws.close(4400, 'protocol-error');
 		}
@@ -492,10 +535,10 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 		 * Register a newly-accepted socket and run the connect-time
 		 * presence flow.
 		 *
-		 * Sends the new socket its initial Yjs `SyncStep1` and a client
-		 * snapshot (the receiver's "remote clients"). If this is the FIRST
+		 * Sends the new socket its initial Yjs `SyncStep1` and a device
+		 * snapshot (the receiver's "remote devices"). If this is the FIRST
 		 * socket for `installationId`, room membership changed, so peers are
-		 * rebroadcast the live list. Subsequent tabs of the same client
+		 * rebroadcast the live list. Subsequent tabs of the same install
 		 * leave the list unchanged and need no rebroadcast.
 		 *
 		 * A connect supersedes any pending debounced rebroadcast (the
@@ -504,9 +547,10 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 		 * @param socket - The accepted WebSocket. The backend is
 		 *   responsible for the runtime-specific accept (hibernation API
 		 *   or `Bun.serve` upgrade) before calling this.
-		 * @param connectionId - The (userId, installationId) pair URL-stamped at
-		 *   upgrade. `installationId` is the address dispatch routes to; `userId`
-		 *   is broadcast with presence so clients can render names.
+		 * @param connectionId - The connection attachment URL-stamped at
+		 *   upgrade. `installationId` is the dispatch address; `userId`
+		 *   is the auth principal; `connectedAt` and `actions` are mirrored
+		 *   on the wire so receivers can render device affordances.
 		 */
 		addConnection(socket: RoomSocket, connectionId: ConnectionId): void {
 			connections.set(socket, connectionId);
@@ -515,11 +559,11 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 			socket.send(
 				JSON.stringify({
 					type: 'presence',
-					installs: snapshotClients(socket),
+					devices: snapshotDevices(socket),
 				} satisfies PresenceFrame),
 			);
 
-			if (countClientSockets(connectionId.installationId) === 1) {
+			if (countInstallationSockets(connectionId.installationId) === 1) {
 				cancelPendingRebroadcast();
 				broadcastPresence(socket);
 			}
@@ -561,7 +605,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 
 			connections.delete(socket);
 
-			if (countClientSockets(data.installationId) === 0) {
+			if (countInstallationSockets(data.installationId) === 0) {
 				if (code === CLOSE_CODE_AUTH_FAILED) {
 					cancelPendingRebroadcast();
 					broadcastPresence();

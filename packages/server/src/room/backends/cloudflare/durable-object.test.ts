@@ -257,7 +257,12 @@ async function upgrade(
 	return serverSocket;
 }
 
-type PresenceFrame = { type: 'presence'; installs: string[] };
+type WireDevice = {
+	installationId: string;
+	connectedAt: number;
+	actions: Record<string, unknown>;
+};
+type PresenceFrame = { type: 'presence'; devices: WireDevice[] };
 
 /** Parse text frames of a given `type` off the wire. */
 function jsonFrames(
@@ -279,8 +284,14 @@ function jsonFrames(
 /** Parse all `presence` text frames out of the wire. */
 function presenceFrames(ws: StubWebSocket): PresenceFrame[] {
 	return jsonFrames(ws, 'presence').filter((p): p is PresenceFrame =>
-		Array.isArray(p.installs),
+		Array.isArray((p as { devices?: unknown }).devices),
 	);
+}
+
+/** Project a presence frame down to just its installationIds, for assertions
+ *  that don't care about connectedAt timestamps or action manifests. */
+function installs(frame: PresenceFrame): string[] {
+	return frame.devices.map((d) => d.installationId);
 }
 
 /** Wrap a frame as the `ArrayBuffer` `webSocketMessage` expects for binary input. */
@@ -304,17 +315,17 @@ function frameWithSyncType(
 // ────────────────────────────────────────────────────────────────────────────
 
 describe('Room presence: directed frame on upgrade', () => {
-	test('first socket receives an empty install list', async () => {
+	test('first socket receives an empty device list', async () => {
 		const { room } = await makeRoom();
 		const ws = await upgrade(room, 'A');
-		expect(presenceFrames(ws)).toEqual([{ type: 'presence', installs: [] }]);
+		expect(presenceFrames(ws).map(installs)).toEqual([[]]);
 	});
 
 	test('second install upgrade sees the first install in its directed frame', async () => {
 		const { room } = await makeRoom();
 		await upgrade(room, 'A');
 		const ws = await upgrade(room, 'B');
-		expect(presenceFrames(ws)).toEqual([{ type: 'presence', installs: ['A'] }]);
+		expect(presenceFrames(ws).map(installs)).toEqual([['A']]);
 	});
 
 	test('directed frame to a new tab excludes the receiver own install', async () => {
@@ -323,10 +334,20 @@ describe('Room presence: directed frame on upgrade', () => {
 		await upgrade(room, 'B');
 		const ws = await upgrade(room, 'A'); // second A tab
 		// The new tab's only frame is the directed one; it lists B, not A.
-		expect(presenceFrames(ws)[0]).toEqual({
-			type: 'presence',
-			installs: ['B'],
-		});
+		expect(installs(presenceFrames(ws)[0]!)).toEqual(['B']);
+	});
+
+	test('directed frame entries include connectedAt and an empty actions manifest by default', async () => {
+		const { room } = await makeRoom();
+		await upgrade(room, 'A');
+		const ws = await upgrade(room, 'B');
+		const [frame] = presenceFrames(ws);
+		expect(frame).toBeDefined();
+		const [deviceA] = frame!.devices;
+		expect(deviceA).toBeDefined();
+		expect(deviceA!.installationId).toBe('A');
+		expect(typeof deviceA!.connectedAt).toBe('number');
+		expect(deviceA!.actions).toEqual({});
 	});
 });
 
@@ -337,7 +358,7 @@ describe('Room presence: first-socket rebroadcast', () => {
 		const before = presenceFrames(wsA).length;
 		await upgrade(room, 'B');
 		const after = presenceFrames(wsA).slice(before);
-		expect(after).toEqual([{ type: 'presence', installs: ['B'] }]);
+		expect(after.map(installs)).toEqual([['B']]);
 	});
 
 	test('subsequent socket for the SAME install does NOT rebroadcast', async () => {
@@ -361,9 +382,7 @@ describe('Room presence: rebroadcast on close', () => {
 		expect(presenceFrames(wsA).slice(beforeClose)).toEqual([]);
 
 		await new Promise((r) => setTimeout(r, 350));
-		expect(presenceFrames(wsA).slice(beforeClose)).toEqual([
-			{ type: 'presence', installs: [] },
-		]);
+		expect(presenceFrames(wsA).slice(beforeClose).map(installs)).toEqual([[]]);
 	});
 
 	test('intermediate socket close (multi-tab) emits NO rebroadcast', async () => {
@@ -384,9 +403,7 @@ describe('Room presence: rebroadcast on close', () => {
 		const before = presenceFrames(wsA).length;
 		await room.webSocketClose(wsB, 1000, 'bye', true);
 		await new Promise((r) => setTimeout(r, 350));
-		expect(presenceFrames(wsA).slice(before)).toEqual([
-			{ type: 'presence', installs: [] },
-		]);
+		expect(presenceFrames(wsA).slice(before).map(installs)).toEqual([[]]);
 	});
 });
 
@@ -410,7 +427,7 @@ describe('Room presence: graceful handoff', () => {
 		// Peer A may receive the reconnect's rebroadcast, but every frame
 		// still lists B: the install never disappears.
 		for (const frame of frames) {
-			expect(frame.installs).toContain('B');
+			expect(installs(frame)).toContain('B');
 		}
 	});
 
@@ -428,16 +445,14 @@ describe('Room presence: graceful handoff', () => {
 
 		// No "B gone" frame: the replacement cancelled the debounce.
 		for (const frame of presenceFrames(wsA).slice(baseline)) {
-			expect(frame.installs).toContain('B');
+			expect(installs(frame)).toContain('B');
 		}
 
 		// Now close B2 with no replacement.
 		const afterMid = presenceFrames(wsA).length;
 		await room.webSocketClose(wsB2, 1000, 'gone', true);
 		await new Promise((r) => setTimeout(r, 350));
-		expect(presenceFrames(wsA).slice(afterMid)).toEqual([
-			{ type: 'presence', installs: [] },
-		]);
+		expect(presenceFrames(wsA).slice(afterMid).map(installs)).toEqual([[]]);
 	});
 });
 
@@ -463,10 +478,7 @@ describe('Room presence: hibernation/wake', () => {
 
 		// A new upgrade post-wake should see both A and B in its directed frame.
 		const wsC = await upgrade(r2, 'C');
-		expect(presenceFrames(wsC)[0]).toEqual({
-			type: 'presence',
-			installs: ['A', 'B'],
-		});
+		expect(installs(presenceFrames(wsC)[0]!)).toEqual(['A', 'B']);
 	});
 });
 
@@ -479,9 +491,7 @@ describe('Room presence: 4401 bypasses grace', () => {
 
 		await room.webSocketClose(wsB, 4401, 'auth expired', false);
 		// No grace wait.
-		expect(presenceFrames(wsA).slice(before)).toEqual([
-			{ type: 'presence', installs: [] },
-		]);
+		expect(presenceFrames(wsA).slice(before).map(installs)).toEqual([[]]);
 	});
 
 	test('close code 4401 cancels a pending debounced rebroadcast', async () => {
@@ -497,9 +507,7 @@ describe('Room presence: 4401 bypasses grace', () => {
 		const before = presenceFrames(wsA).length;
 		await room.webSocketClose(wsC, 4401, 'auth expired', false);
 		await new Promise((r) => setTimeout(r, 350));
-		expect(presenceFrames(wsA).slice(before)).toEqual([
-			{ type: 'presence', installs: [] },
-		]);
+		expect(presenceFrames(wsA).slice(before).map(installs)).toEqual([[]]);
 	});
 });
 
@@ -517,13 +525,10 @@ describe('Room presence: broadcast resilience', () => {
 		// A's wedged socket recorded nothing past wedging, but B must have
 		// received a rebroadcast listing C.
 		const bFrames = presenceFrames(wsB);
-		expect(bFrames[bFrames.length - 1]?.installs).toContain('C');
+		expect(installs(bFrames[bFrames.length - 1]!)).toContain('C');
 
 		// C's own directed frame saw A and B (sent before any wedged send).
-		expect(presenceFrames(wsC)[0]).toEqual({
-			type: 'presence',
-			installs: ['A', 'B'],
-		});
+		expect(installs(presenceFrames(wsC)[0]!)).toEqual(['A', 'B']);
 	});
 });
 

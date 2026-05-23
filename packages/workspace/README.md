@@ -1559,7 +1559,7 @@ import {
 } from '@epicenter/workspace';
 ```
 
-`openCollaboration` returns a `Collaboration`. Online installs:
+`openCollaboration` returns a `Collaboration`. Online devices (relay-owned presence, with each device's `installationId`, `connectedAt`, and published `actions` manifest):
 
 - `collaboration.devices.list()`: `LiveDevice[]`, the local install excluded
 - `collaboration.devices.subscribe(fn)`: returns an unsubscribe function

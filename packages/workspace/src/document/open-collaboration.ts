@@ -1,33 +1,40 @@
 /**
  * `openCollaboration`: the one collaboration primitive on a document.
  *
- * Connects a Yjs document to the relay, derives per-peer liveness from
- * the server-owned presence channel, and wires inbound dispatch text
- * frames to the local action registry. Caller-side dispatch also rides
- * this socket: it sends `dispatch_request` and resolves from
- * `dispatch_result`.
+ * Connects a Yjs document to the relay, derives per-peer liveness and action
+ * manifests from the server-owned presence channel, and wires inbound dispatch
+ * text frames to the local action registry. Caller-side dispatch also rides
+ * this socket: it sends `dispatch_request` and resolves from `dispatch_result`.
  *
  * Two wire surfaces ride one auth context:
  *
  *   binary WS frames  -> standard y-protocols SYNC.
- *   text WS frames    -> presence (server -> client, the full install
- *                        list on every connection change) and
- *                        dispatch_request / dispatch_result plus
- *                        dispatch_inbound / dispatch_response.
+ *   text WS frames    -> server -> client: presence (the full device list
+ *                        including each device's action manifest, sent on
+ *                        every membership or manifest change);
+ *                        client -> server: presence_publish (this device's
+ *                        manifest, sent once per connect) and
+ *                        dispatch_request / dispatch_response;
+ *                        server -> client: dispatch_inbound / dispatch_result.
  *
  * The Y.Doc holds durable workspace state; presence lives on the relay's
  * `connections` map; dispatch lives on the authenticated WebSocket.
  *
- * Content docs (rich-text bodies, attachments, nested independently-
- * syncing docs) use the same primitive with `actions: {}`: dispatch
- * handlers stay inert, presence still flows in over the socket for
- * online discovery.
+ * Content docs (rich-text bodies, attachments, nested independently-syncing
+ * docs) use the same primitive with `actions: {}`: dispatch handlers stay
+ * inert, the published manifest is empty, presence still flows in over the
+ * socket for online discovery.
  */
 
 import type { Logger } from 'wellcrafted/logger';
 import type { Result } from 'wellcrafted/result';
 import * as Y from 'yjs';
-import { ACTION_KEY_PATTERN, type ActionRegistry } from '../shared/actions.js';
+import {
+	ACTION_KEY_PATTERN,
+	type ActionManifest,
+	type ActionRegistry,
+	toActionMeta,
+} from '../shared/actions.js';
 import {
 	DispatchError,
 	type DispatchRequest,
@@ -43,6 +50,7 @@ import {
 	createSyncSupervisor,
 	type SyncStatus,
 } from './internal/sync-supervisor.js';
+import type { PresencePublishFrame } from './presence-protocol.js';
 
 const DISPATCH_RESPONSE_CEILING_MS = 90_000;
 
@@ -170,12 +178,13 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		}
 	}
 
-	// Server-owned presence: the relay pushes the full install list as a
-	// `presence` text frame on every connection change. The client stores
-	// the latest list and notifies subscribers; there is no delta protocol
-	// and no client-side reassembly. The relay dedupes multi-tab
-	// same-install and excludes the receiver's own install, so the client
-	// stores `installs` verbatim.
+	// Server-owned presence: the relay pushes the full device list as a
+	// `presence` text frame on every membership or manifest change. Each entry
+	// carries the device's installationId, connectedAt, and published action
+	// manifest. The client stores the latest list and notifies subscribers;
+	// there is no delta protocol and no client-side reassembly. The relay
+	// dedupes multi-tab same-install (newest-wins by connectedAt) and excludes
+	// the receiver's own install, so the client stores `devices` verbatim.
 	let remoteDevices: LiveDevice[] = [];
 	const presenceListeners = new Set<(devices: LiveDevice[]) => void>();
 
@@ -190,16 +199,36 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		}
 		if (!parsed || typeof parsed !== 'object') return false;
 		if ((parsed as { type?: unknown }).type !== 'presence') return false;
-		const installs = (parsed as { installs?: unknown }).installs;
-		if (!Array.isArray(installs)) return false;
-		remoteDevices = installs
-			.filter((id): id is string => typeof id === 'string')
-			.map((deviceInstallationId) => ({
-				installationId: deviceInstallationId,
-			}));
+		const devices = (parsed as { devices?: unknown }).devices;
+		if (!Array.isArray(devices)) return false;
+		remoteDevices = devices.filter(isLiveDevice);
 		for (const listener of presenceListeners) listener(remoteDevices);
 		return true;
 	}
+
+	function isLiveDevice(value: unknown): value is LiveDevice {
+		if (!value || typeof value !== 'object') return false;
+		const v = value as Record<string, unknown>;
+		return (
+			typeof v.installationId === 'string' &&
+			typeof v.connectedAt === 'number' &&
+			typeof v.actions === 'object' &&
+			v.actions !== null &&
+			!Array.isArray(v.actions)
+		);
+	}
+
+	// Build the manifest once at construction time. The action registry is
+	// fixed for the lifetime of this Collaboration, so we cache the JSON form
+	// and publish it on every (re)connect.
+	const ownManifest: ActionManifest = {};
+	for (const [key, action] of Object.entries(userActions)) {
+		ownManifest[key] = toActionMeta(action);
+	}
+	const presencePublishFrame = JSON.stringify({
+		type: 'presence_publish',
+		actions: ownManifest,
+	} satisfies PresencePublishFrame);
 
 	function handleDispatchResultFrame(text: string): boolean {
 		let parsed: unknown;
@@ -239,22 +268,29 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		},
 	});
 
-	const unsubscribeDispatchSweep = supervisor.onStatusChange((status) => {
-		if (status.phase === 'connected') return;
+	const unsubscribeStatusListener = supervisor.onStatusChange((status) => {
+		if (status.phase === 'connected') {
+			// Publish this device's action manifest on every (re)connect. The
+			// relay stores it against the new socket and rebroadcasts presence
+			// so peers see it.
+			supervisor.send(presencePublishFrame);
+			return;
+		}
 		settlePendingDispatches(new Error('Dispatch connection lost'));
 	});
 
-	// Auth transitions: tell the live socket to retry. Token refresh,
-	// reauth-required to signed-in, and sign-in after sign-out all surface
-	// as state changes; the supervisor's own state machine decides whether
-	// a reconnect actually does anything.
-	const unsubscribeAuth = config.onReconnectSignal(() => {
+	// Reconnect wake: tell the live socket to retry whenever the caller signals
+	// that credentials may have changed. Today the only producer is
+	// `auth.onStateChange` (token refresh, reauth-required to signed-in,
+	// sign-in after sign-out); the supervisor's own state machine decides
+	// whether the reconnect actually does anything.
+	const unsubscribeReconnectSignal = config.onReconnectSignal(() => {
 		supervisor.reconnect();
 	});
 
 	void supervisor.whenDisposed.then(() => {
-		unsubscribeDispatchSweep();
-		unsubscribeAuth();
+		unsubscribeStatusListener();
+		unsubscribeReconnectSignal();
 		settlePendingDispatches(new Error('Dispatch connection disposed'));
 	});
 

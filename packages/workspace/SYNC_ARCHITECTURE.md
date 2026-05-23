@@ -94,27 +94,32 @@ Standard Yjs sync: STEP1 (state vector), STEP2 (missing updates), UPDATE (increm
 
 ### Presence plane (server-owned)
 
-The relay tracks live WebSocket connections in a `connections` Map. That map is the source of truth for "who is online." On every connection change it broadcasts one server-to-client text frame carrying the whole list:
+The relay tracks live WebSocket connections in a `connections` Map. That map is the source of truth for "who is online." On every membership or manifest change it broadcasts one server-to-client text frame carrying the whole list:
 
 ```ts
-type PresenceFrame = { type: 'presence'; installs: string[] };
+type PresenceFrame = { type: 'presence'; devices: PresenceDevice[] };
+type PresenceDevice = {
+    installationId: string;   // dispatch address
+    connectedAt: number;      // relay-stamped connect timestamp (ms since epoch)
+    actions: ActionManifest;  // published manifest, or `{}` if none
+};
 ```
 
-- The frame is sent to a freshly-upgraded socket, and rebroadcast to every other socket whenever an install joins or leaves.
-- `installs` is computed per recipient with the receiver's own install excluded, so the client stores it verbatim.
+- The frame is sent to a freshly-upgraded socket, and rebroadcast to every other socket whenever a device joins, leaves, or republishes its manifest.
+- `devices` is computed per recipient with the receiver's own install excluded (newest-wins by `connectedAt` across multi-tab siblings), so the client stores the list verbatim.
 - The first socket for an install triggers a rebroadcast; a second tab for an install already present does not (the list is unchanged).
 - A last-socket close arms a short debounced rebroadcast. A reconnecting socket inside that window supersedes the pending rebroadcast, so a graceful tab handoff produces no wire-visible transition.
 
-There is no delta protocol. The relay owns the whole truth and ships the whole truth on every change; the client never reassembles `added` / `removed` events. Clients never SEND presence frames either: connecting is the publish, and the URL-stamped `installationId` is the address.
+There is no delta protocol. The relay owns the whole truth and ships the whole truth on every change; the client never reassembles `added` / `removed` events. Clients send exactly one kind of presence frame, `presence_publish`, on every (re)connect to advertise their local action manifest; the relay stores it against the socket and rebroadcasts presence so peers see the update.
 
-`openCollaboration` parses the frame inline and stores `installs` as the `LiveDevice[]` behind `devices`:
+`openCollaboration` parses the frame inline and exposes `devices` as `LiveDevice[]`:
 
 ```ts
 collaboration.devices.list();        // LiveDevice[], the latest relay-pushed list
 collaboration.devices.subscribe(fn); // fires on every `presence` frame
 ```
 
-`LiveDevice` is exactly `{ installationId: string }`. Display names, cursors, and capability lists are app concerns and live in app-owned tables, not on the presence wire.
+`LiveDevice` matches the wire shape: `{ installationId, connectedAt, actions }`. Display names, cursors, and richer capability metadata are app concerns and live in app-owned tables.
 
 `devices` is a display mirror, not a decision input. The client never reads it to decide whether a call will reach a peer; "is this install reachable" is answered authoritatively by the relay on every dispatch (see below). The daemon's run-handler used to keep a local pre-check against this list; it now just maps the relay's `RecipientOffline` to `PeerNotFound`.
 

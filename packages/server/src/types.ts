@@ -8,6 +8,7 @@
  */
 
 import type { AuthUser } from '@epicenter/auth';
+import type { ActionManifest } from '@epicenter/workspace';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { createAuth } from './auth/create-auth.js';
 import type * as schema from './db/schema/index.js';
@@ -39,21 +40,31 @@ export type ServerOptions = {
 };
 
 /**
- * Per-connection identity, stamped onto the Cloudflare Durable Object
- * WebSocket attachment so presence survives hibernation.
+ * Per-connection identity and runtime state, stamped onto the Cloudflare
+ * Durable Object WebSocket attachment so presence survives hibernation.
  *
  * `installationId` identifies one running instance of any app (browser tab,
- * Tauri window, extension service worker, CLI process). The client
- * generates and persists its own; lifespan is the client's concern.
+ * Tauri window, extension service worker, CLI process). The client generates
+ * and persists its own; lifespan is the client's concern.
  *
- * In personal mode every connection to a given DO shares the same
- * `userId` (the DO name partitions by user). In team mode connections
- * carry different `userId` values because every member shares the DO.
- * The DO never branches on which mode it is in.
+ * `connectedAt` is stamped at upgrade time and surfaced in presence frames so
+ * receivers can render an "online since" affordance and tie-break multi-tab
+ * same-install (newest wins).
+ *
+ * `actions` is the published action manifest for this socket. Starts as `{}`
+ * at upgrade; updated to the device's manifest when `presence_publish` arrives.
+ * Relay treats the value as opaque (it forwards JSON to peers, never inspects).
+ *
+ * In personal mode every connection to a given DO shares the same `userId`
+ * (the DO name partitions by user). In team mode connections carry different
+ * `userId` values because every member shares the DO. The DO never branches
+ * on which mode it is in.
  */
 export type ConnectionId = {
 	userId: string;
 	installationId: string;
+	connectedAt: number;
+	actions: ActionManifest;
 };
 
 /**

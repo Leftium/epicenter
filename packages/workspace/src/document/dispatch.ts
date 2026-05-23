@@ -22,6 +22,7 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
 	ACTION_KEY_PATTERN,
+	type ActionManifest,
 	type ActionRegistry,
 	invokeAction,
 } from '../shared/actions.js';
@@ -36,12 +37,23 @@ import type {
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * The wire shape of "an online device" is exactly one field. The relay
- * carries `installationId` and nothing else; product-level concerns like
- * display name or capability list live in app-owned state (see
- * `tab-manager`'s `devices` table for an example).
+ * The wire shape of "an online device": its routing identity, when it
+ * connected, and its published action manifest.
+ *
+ * `installationId` is the dispatch address. `connectedAt` is the relay-stamped
+ * connect timestamp (ms since epoch). `actions` is whatever the device
+ * published via `presence_publish`, or `{}` if the device has not (yet)
+ * published a manifest.
+ *
+ * Product-level concerns like display name or icon still live in app-owned
+ * state (see `tab-manager`'s `devices` table for an example); this shape only
+ * carries what the relay knows from the live socket.
  */
-export type LiveDevice = { installationId: string };
+export type LiveDevice = {
+	installationId: string;
+	connectedAt: number;
+	actions: ActionManifest;
+};
 
 /**
  * Per-call options. Required: `to`, `action`. Optional: `input` (omit

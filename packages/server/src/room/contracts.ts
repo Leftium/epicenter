@@ -89,6 +89,14 @@ export type RoomSocket = {
 	close(code: number, reason: string): void;
 	/** WebSocket-spec readyState (CONNECTING=0, OPEN=1, CLOSING=2, CLOSED=3). */
 	readonly readyState: number;
+	/**
+	 * Persist per-connection state across the runtime's hibernate cycle.
+	 * Cloudflare's hibernation API provides this; Bun and other backends
+	 * with in-memory connection sets leave it undefined. The core calls it
+	 * (if present) whenever the in-memory `ConnectionId` changes, so peer
+	 * state survives a DO eviction.
+	 */
+	serializeAttachment?(value: unknown): void;
 };
 
 // ============================================================================

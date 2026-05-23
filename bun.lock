@@ -8,6 +8,7 @@
       },
       "devDependencies": {
         "@biomejs/biome": "catalog:",
+        "@types/bun": "catalog:",
         "jsrepo": "^3.6.2",
         "turbo": "^2.8.19",
       },

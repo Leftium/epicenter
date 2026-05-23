@@ -248,7 +248,7 @@ packages/cli/src/commands/auth.ts
   │    └─ getSession()
   │
   └─ @epicenter/workspace/node createSessionStore()
-       └─ ~/.epicenter/auth/sessions.json
+       └─ env-paths('epicenter').data/auth/<host>.json
             { [normalizedServer]: {
               accessToken,
               expiresAt,
@@ -675,13 +675,13 @@ export function createDefaultCredentialStore({
 }
 ```
 
-The default path changes to:
+The default machine-auth path now follows the top-level path cleanup rule:
 
 ```txt
-$EPICENTER_HOME/auth/credentials.json
+env-paths('epicenter').data/auth/<host>.json
 ```
 
-Every normal Node consumer uses the same file by default. Tests and custom daemon hosts pass a different path. The old `$EPICENTER_HOME/auth/sessions.json` file is no longer read by the credential store.
+Every normal Node consumer derives the file from the API host by default. Tests and custom daemon hosts pass a different path. The old `$EPICENTER_HOME/auth/sessions.json` file is no longer read by the credential store, and new code must not reintroduce `EPICENTER_HOME`.
 
 ### Token And Key Reads
 
@@ -774,7 +774,7 @@ The local credential store protects against common local mistakes, not a fully c
 | --- | --- | --- |
 | Another Unix user reads the file | Protected by `0600` if the filesystem honors it | Protected by `0600` metadata plus keychain access control |
 | Credential file is copied into a support bundle or dotfiles repo | Bearer token and encryption keys leak | Only metadata and keychain references leak |
-| Laptop backup includes `$EPICENTER_HOME` | Bearer token and encryption keys are in the backup | Secrets stay in OS credential storage if the backup excludes keychain material |
+| Laptop backup includes the env-paths data directory | Bearer token and encryption keys are in the backup | Secrets stay in OS credential storage if the backup excludes keychain material |
 | Malicious process running as the same OS user | Compromised | Usually compromised too, because the process can ask the keychain for the same item |
 | Bearer token leaks while valid | Account access leaks, and `/auth/get-session` can expose encryption keys | Same unless the bearer token is also in keychain |
 
@@ -966,7 +966,7 @@ Please challenge this:
 ```txt
 Repository: better-auth/better-auth
 
-The spec stores credential metadata in $EPICENTER_HOME/auth/credentials.json. In file mode, bearer token, Better Auth session token, and Epicenter encryption keys are inline with owner-only permissions and atomic writes. In keychain mode, those secrets move to OS credential storage and the JSON file contains only references.
+The spec stores credential metadata under `env-paths('epicenter').data/auth/<host>.json`. In file mode, bearer token, Better Auth session token, and Epicenter encryption keys are inline with owner-only permissions and atomic writes. In keychain mode, those secrets move to OS credential storage and the JSON file contains only references.
 
 Please challenge this from Better Auth's threat model:
 - Are bearer tokens expected to be stored by CLI clients?
@@ -1001,8 +1001,8 @@ Must do:
 - Keep session.session.token as part of the Better Auth session snapshot, not as the canonical bearer cache field.
 - Initialize bearerToken from /auth/device/token access_token.
 - Treat set-auth-token as the immediate bearer rotation signal for bearerToken.
-- Store credential metadata at $EPICENTER_HOME/auth/credentials.json unless the caller passes a custom path.
-- Treat $EPICENTER_HOME/auth/sessions.json as unsupported legacy state. Do not read it.
+- Store credential metadata at `env-paths('epicenter').data/auth/<host>.json` unless the caller passes a custom path.
+- Treat `$EPICENTER_HOME/auth/sessions.json` as unsupported legacy state. Do not read it, and do not add a new `EPICENTER_HOME` fallback.
 - In keychain mode, store bearerToken, session.session.token, and encryptionKeys outside the JSON file.
 - If secure storage is requested and unavailable, fail closed unless plaintext file storage is explicitly enabled.
 - Use factory signatures shaped as createSomething(dependencies, options?).

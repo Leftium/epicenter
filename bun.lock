@@ -9,6 +9,7 @@
       },
       "devDependencies": {
         "@biomejs/biome": "catalog:",
+        "@types/bun": "catalog:",
         "jsrepo": "^3.6.2",
         "turbo": "^2.8.19",
       },
@@ -47,7 +48,6 @@
         "@types/bun": "catalog:",
         "@types/pg": "^8.18.0",
         "atmn": "^1.1.5",
-        "dotenv": "^17.3.1",
         "drizzle-kit": "catalog:",
         "jsonc-parser": "^3.3.1",
         "typescript": "catalog:",
@@ -574,6 +574,7 @@
       "name": "@epicenter/constants",
       "version": "0.1.0",
       "dependencies": {
+        "env-paths": "^3.0.0",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
@@ -750,7 +751,6 @@
         "diff": "^8.0.3",
         "drizzle-orm": "catalog:",
         "elysia": "^1.2.25",
-        "env-paths": "^3.0.0",
         "fflate": "catalog:",
         "hono": "catalog:",
         "lib0": "catalog:",

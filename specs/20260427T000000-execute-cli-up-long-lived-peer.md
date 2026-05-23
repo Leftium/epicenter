@@ -2,6 +2,8 @@
 
 **Status:** superseded in part by `specs/20260428T140000-cli-mandatory-daemon-collapse.md`. Wave 6 (the `*Core` extraction) and the `tryGetDaemon`/cold-path dispatch in run/list/peers were reverted there; the rest of this spec (socket layout, lifecycle, ps/down/logs, security model, Invariants 1 to 7) still applies.
 
+> **Path note (2026-05-22):** The `epicenterPaths` and `$EPICENTER_HOME` instructions that resolve daemon files under `~/.epicenter/` are superseded. Do not copy them into new implementation prompts. Use the current daemon path owner from `packages/workspace/src/daemon/paths.ts`.
+
 **Originally:** queued
 **For an implementer with no prior conversation context.** Self-contained brief.
 

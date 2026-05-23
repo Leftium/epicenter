@@ -1,7 +1,7 @@
 # Dev Script Conventions
 
 **Date**: 2026-05-11
-**Status**: Implemented
+**Status**: Superseded by `ef68955e1` (workflow runner replaced by `turbo run dev --filter=...`) and `c4269c9b2` (Infisical secrets pipe through `process.env`, no `.dev.vars` produced)
 **Author**: Codex
 **Branch**: codex/5028-auth-bearer-main-sync
 

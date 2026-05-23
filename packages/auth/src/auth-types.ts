@@ -64,9 +64,10 @@ export type LocalIdentity = typeof LocalIdentity.infer;
  * The single persisted auth cell. Two clearly-labeled sections.
  *
  * Browser persists to localStorage, extension to chrome.storage.local, CLI
- * to `~/.epicenter/auth.json` (mode 0o600). All three cells validate against
- * this arktype, which satisfies StandardSchemaV1 natively via `~standard`,
- * so it plugs straight into Standard-Schema consumers like createPersistedState.
+ * to a per-API-target file under the platform data directory (mode 0o600);
+ * see {@link machineAuthFilePath}. All three cells validate against this
+ * arktype, which satisfies StandardSchemaV1 natively via `~standard`, so it
+ * plugs straight into Standard-Schema consumers like createPersistedState.
  * Profile data is intentionally absent; application surfaces fetch it when
  * they display it.
  */

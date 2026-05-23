@@ -18,7 +18,11 @@
 
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { createMachineAuthClient } from '@epicenter/auth/node';
+import type { AuthClient } from '@epicenter/auth';
+import {
+	createMachineAuthClient,
+	type MachineAuthStorageError,
+} from '@epicenter/auth/node';
 import type { StartedDaemonRoute } from '@epicenter/workspace/daemon';
 import {
 	claimDaemonLease,
@@ -63,6 +67,13 @@ type UpOptions = {
 	projectDir: string;
 	quiet: boolean;
 	cliVersion?: string;
+	/**
+	 * Factory that constructs the daemon's auth client. Production uses the
+	 * default (`createMachineAuthClient`, which reads the persisted cell from
+	 * disk). Tests pass a stub or a deliberately-failing factory to exercise
+	 * the auth-construction seam without seeding files or mutating env vars.
+	 */
+	createAuthClient?: () => Promise<Result<AuthClient, MachineAuthStorageError>>;
 };
 
 /**
@@ -96,7 +107,12 @@ type UpHandle = {
  */
 export async function runUp(
 	options: UpOptions,
-): Promise<Result<UpHandle, WorkspaceAppError | StartupErrorType>> {
+): Promise<
+	Result<
+		UpHandle,
+		WorkspaceAppError | StartupErrorType | MachineAuthStorageError
+	>
+> {
 	const projectDir = realpathSync(resolveProjectForUp(options.projectDir));
 	provisionProject(projectDir);
 
@@ -120,7 +136,10 @@ export async function runUp(
 	await using stack = new AsyncDisposableStack();
 	stack.defer(() => lease.release());
 
-	const auth = await createMachineAuthClient();
+	const createAuthClient = options.createAuthClient ?? createMachineAuthClient;
+	const authResult = await createAuthClient();
+	if (authResult.error) return authResult;
+	const auth = authResult.data;
 	stack.defer(() => auth[Symbol.dispose]());
 
 	const { data: config, error: configError } =

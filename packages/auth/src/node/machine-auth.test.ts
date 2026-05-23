@@ -1,10 +1,11 @@
 /**
  * Machine auth tests.
  *
- * Covers loginWithOob / status / logout / createMachineAuthClient against
- * tmpfile-backed `~/.epicenter/auth.json` cells. Stubs `fetch` for both
- * `/auth/oauth2/token` (launcher) and `/api/session` (createOAuthAppAuth's
- * identity probe).
+ * Covers the full machine auth surface: path resolution, file IO
+ * mechanics (mode, atomic write, corrupt blob, permissions guard), and
+ * the loginWithOob / status / logout / createMachineAuthClient flows.
+ * Stubs `fetch` for both `/auth/oauth2/token` (launcher) and
+ * `/api/session` (createOAuthAppAuth's identity probe).
  */
 
 import { afterEach, expect, test } from 'bun:test';
@@ -12,19 +13,26 @@ import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { expectOk } from 'wellcrafted/testing';
+import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { PersistedAuth } from '../auth-types.js';
 import type { AuthFetch } from '../create-oauth-app-auth.js';
 import {
 	createMachineAuthClient,
 	loginWithOob,
 	logout,
+	machineAuthFilePath,
 	status,
 } from './machine-auth.js';
-import {
-	loadMachineTokens,
-	saveMachineTokens,
-} from './machine-tokens-store.js';
+
+async function writeCell(filePath: string, cell: PersistedAuth) {
+	await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
+	await fs.writeFile(filePath, JSON.stringify(cell), { mode: 0o600 });
+}
+
+async function readCellRaw(filePath: string): Promise<unknown> {
+	const raw = await fs.readFile(filePath, 'utf-8');
+	return JSON.parse(raw);
+}
 
 const BASE_URL = 'http://localhost:8787';
 const CLIENT_ID = 'epicenter-cli';
@@ -38,6 +46,7 @@ const keyring = [
 ] as const;
 
 const cleanupPaths: string[] = [];
+const cleanupDirs: string[] = [];
 
 function tmpAuthPath() {
 	const filePath = path.join(
@@ -46,6 +55,12 @@ function tmpAuthPath() {
 	);
 	cleanupPaths.push(filePath);
 	return filePath;
+}
+
+function tmpDataDir() {
+	const dirPath = path.join(os.tmpdir(), `epicenter-data-${randomUUID()}`);
+	cleanupDirs.push(dirPath);
+	return dirPath;
 }
 
 afterEach(async () => {
@@ -58,6 +73,14 @@ afterEach(async () => {
 		}
 		try {
 			await fs.unlink(`${filePath}.tmp`);
+		} catch {
+			// best effort
+		}
+	}
+	while (cleanupDirs.length) {
+		const dirPath = cleanupDirs.pop()!;
+		try {
+			await fs.rm(dirPath, { recursive: true, force: true });
 		} catch {
 			// best effort
 		}
@@ -153,6 +176,22 @@ function apiSessionOk(subject = 'user-1'): Route {
 		});
 }
 
+test('machineAuthFilePath uses <dataDir>/auth/<host>.json for every API target', () => {
+	const dataDir = path.join(os.tmpdir(), `epicenter-data-${randomUUID()}`);
+	expect(
+		machineAuthFilePath({
+			baseURL: 'https://api.epicenter.so',
+			dataDir,
+		}),
+	).toBe(path.join(dataDir, 'auth', 'api.epicenter.so.json'));
+	expect(
+		machineAuthFilePath({
+			baseURL: 'http://localhost:8787',
+			dataDir,
+		}),
+	).toBe(path.join(dataDir, 'auth', 'localhost_8787.json'));
+});
+
 test('loginWithOob writes PersistedAuth and returns identity', async () => {
 	const filePath = tmpAuthPath();
 	const { fetch } = createFetch({
@@ -176,7 +215,7 @@ test('loginWithOob writes PersistedAuth and returns identity', async () => {
 		email: 'user-1@example.com',
 	});
 
-	const loaded = expectOk(await loadMachineTokens({ filePath }));
+	const loaded = (await readCellRaw(filePath)) as PersistedAuth;
 	expect(loaded).toEqual({
 		grant: {
 			accessToken: 'access-1',
@@ -190,6 +229,32 @@ test('loginWithOob writes PersistedAuth and returns identity', async () => {
 		const stat = await fs.stat(filePath);
 		expect(stat.mode & 0o777).toBe(0o600);
 	}
+});
+
+test('loginWithOob writes to the API-target-specific default path under the data dir', async () => {
+	const dataDir = tmpDataDir();
+	const filePath = machineAuthFilePath({ baseURL: BASE_URL, dataDir });
+
+	const { fetch } = createFetch({
+		tokenRoute: tokenSuccess(),
+		apiSessionRoute: apiSessionOk('user-1'),
+	});
+
+	const result = await loginWithOob({
+		baseURL: BASE_URL,
+		clientId: CLIENT_ID,
+		filePath,
+		fetch,
+		now: () => NOW,
+		print: () => {},
+		openBrowser: () => {},
+		readCode: async () => 'CODE',
+	});
+	expectOk(result);
+
+	const loaded = (await readCellRaw(filePath)) as PersistedAuth;
+	expect(loaded.grant.accessToken).toBe('access-1');
+	expect(filePath).toBe(path.join(dataDir, 'auth', 'localhost_8787.json'));
 });
 
 test('loginWithOob with empty paste writes no file', async () => {
@@ -253,8 +318,7 @@ async function preWriteCell(filePath: string, subject = 'user-1') {
 		},
 		localIdentity: { subject, keyring: [...keyring] },
 	};
-	const { error } = await saveMachineTokens(cell, { filePath });
-	if (error) throw error;
+	await writeCell(filePath, cell);
 	return cell;
 }
 
@@ -317,8 +381,41 @@ test('status unverified on network failure preserves cell', async () => {
 	});
 	const data = expectOk(result);
 	expect(data.status).toBe('unverified');
-	const stillThere = expectOk(await loadMachineTokens({ filePath }));
+	const stillThere = (await readCellRaw(filePath)) as PersistedAuth;
 	expect(stillThere).toEqual(cell);
+});
+
+test('status returns signedOut when the persisted cell is corrupt JSON', async () => {
+	const filePath = tmpAuthPath();
+	await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
+	await fs.writeFile(filePath, '{not valid json', { mode: 0o600 });
+	const { fetch } = createFetch();
+	const result = await status({
+		baseURL: BASE_URL,
+		clientId: CLIENT_ID,
+		filePath,
+		fetch,
+		now: () => NOW,
+	});
+	const data = expectOk(result);
+	expect(data).toEqual({ status: 'signedOut' });
+});
+
+test('status refuses to load when the persisted cell is world-readable', async () => {
+	if (process.platform === 'win32') return;
+	const filePath = tmpAuthPath();
+	await preWriteCell(filePath, 'user-1');
+	await fs.chmod(filePath, 0o644);
+	const { fetch } = createFetch();
+	const result = await status({
+		baseURL: BASE_URL,
+		clientId: CLIENT_ID,
+		filePath,
+		fetch,
+		now: () => NOW,
+	});
+	const error = expectErr(result);
+	expect(error.name).toBe('PermissionsTooOpen');
 });
 
 test('status signedOut when no file', async () => {
@@ -409,23 +506,20 @@ test('logout survives revoke failure and still deletes the file', async () => {
 	expect(exists).toBe(false);
 });
 
-test('createMachineAuthClient throws when no file', async () => {
+test('createMachineAuthClient returns NoSavedSession when no file', async () => {
 	const filePath = tmpAuthPath();
 	const { fetch } = createFetch();
-	let thrown: unknown = null;
-	try {
-		await createMachineAuthClient({
-			baseURL: BASE_URL,
-			clientId: CLIENT_ID,
-			filePath,
-			fetch,
-			now: () => NOW,
-		});
-	} catch (cause) {
-		thrown = cause;
-	}
-	expect(thrown).toBeInstanceOf(Error);
-	expect((thrown as Error).message).toContain('epicenter auth login');
+	const result = await createMachineAuthClient({
+		baseURL: BASE_URL,
+		clientId: CLIENT_ID,
+		filePath,
+		fetch,
+		now: () => NOW,
+	});
+	const error = expectErr(result);
+	expect(error.name).toBe('NoSavedSession');
+	expect(error.message).toContain(filePath);
+	expect(error.message).toContain(BASE_URL);
 });
 
 test('createMachineAuthClient loads file and attaches Bearer after gate', async () => {
@@ -465,13 +559,14 @@ test('createMachineAuthClient loads file and attaches Bearer after gate', async 
 		return new Response(null, { status: 404 });
 	};
 
-	const auth = await createMachineAuthClient({
+	const result = await createMachineAuthClient({
 		baseURL: BASE_URL,
 		clientId: CLIENT_ID,
 		filePath,
 		fetch: fetchImpl,
 		now: () => NOW,
 	});
+	const auth = expectOk(result);
 	const response = await auth.fetch('/api/something');
 	expect(response.status).toBe(200);
 

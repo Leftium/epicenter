@@ -29,7 +29,7 @@ bun run cli:local   http://localhost:8787
 ## Refused
 
 - A `resolveApiEndpoint()` resolver, a `packages/cli/src/util/api-url.ts` module, and a 9-test file. Replaced by the env-aware constant.
-- Per-host token files (`auth.<host>.json`). The same-subject guard wiping `~/.epicenter/auth.json` on identity change is the correct behavior, not a foot-gun.
+- A separate CLI resolver for per-host token files. Machine auth already belongs under `env-paths('epicenter').data/auth/<host>.json`; the same-subject guard wiping a mismatched cell on identity change remains correct.
 - A `Using API at <url>.` stderr log. Untestable as user-visible behavior; required a test-only module-state reset hatch.
 - Trailing-slash stripping and upfront `URL.canParse` validation. Downstream fetch errors are clear enough.
 - A `--api-url` flag. Env var subsumes it.

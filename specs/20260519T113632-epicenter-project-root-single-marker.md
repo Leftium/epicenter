@@ -1,6 +1,6 @@
 # Epicenter project root: single `.epicenter/` marker
 
-**Status**: Superseded
+**Status**: Superseded. Do not implement.
 
 Superseded by `specs/20260519T150000-epicenter-project-as-first-class.md`. This draft fixed the immediate dual-marker bug, but the later spec chooses `epicenter.config.ts` as the project marker and route registry.
 

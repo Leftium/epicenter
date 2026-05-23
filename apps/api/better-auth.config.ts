@@ -12,17 +12,17 @@
  *   bun run auth:generate
  *
  * Env strategy:
- *   - `BETTER_AUTH_SECRET` comes from `.dev.vars` (loaded via dotenv) or Infisical.
- *   - `DATABASE_URL` falls back to the local Postgres URL parsed from `wrangler.jsonc`
- *     by `env.ts`.
+ *   - `BETTER_AUTH_SECRET` is required in `process.env`, injected by
+ *     `infisical run --env=prod` when invoked via `bun run auth:generate`.
+ *   - `DATABASE_URL` is read from `process.env` if set (the `:remote` path)
+ *     and otherwise falls back to the local Postgres URL parsed from
+ *     `wrangler.jsonc` by `env.ts`.
  */
 
-import { fileURLToPath } from 'node:url';
 import { APPS } from '@epicenter/constants/apps';
 import { type } from 'arktype';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { config } from 'dotenv';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import { LOCAL_DATABASE_URL } from './env';
@@ -30,7 +30,6 @@ import { BASE_AUTH_CONFIG } from './src/auth/base-config';
 import { authPlugins } from './src/auth/plugins';
 import * as schema from './src/db/schema';
 
-config({ path: fileURLToPath(new URL('.dev.vars', import.meta.url)) });
 const env = type({
 	BETTER_AUTH_SECRET: 'string',
 	'DATABASE_URL?': 'string',

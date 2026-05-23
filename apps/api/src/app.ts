@@ -4,7 +4,7 @@ import {
 } from '@better-auth/oauth-provider';
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
 import { type ApiSessionResponse, AuthUser } from '@epicenter/auth';
-import { APPS } from '@epicenter/constants/apps';
+import { APPS, localUrl } from '@epicenter/constants/apps';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -62,7 +62,7 @@ type OAuthAuthServerConfigAuth = Parameters<
 >[0];
 
 const PRODUCTION_API_ORIGIN = APPS.API.urls[0];
-const LOCAL_API_ORIGIN = `http://localhost:${APPS.API.port}`;
+const LOCAL_API_ORIGIN = localUrl(APPS.API);
 
 /**
  * Create a queue for fire-and-forget promises that run after the HTTP response.
@@ -177,7 +177,7 @@ const factory = createFactory<Env>({
 				origin === LOCAL_API_ORIGIN || origin === WRANGLER_DEV_API_ORIGIN
 					? LOCAL_API_ORIGIN
 					: PRODUCTION_API_ORIGIN;
-			await ensureTrustedOAuthClients(c.var.db);
+			await ensureTrustedOAuthClients(c.var.db, baseURL);
 			c.set('authBaseURL', baseURL);
 			c.set('auth', createAuth({ db: c.var.db, env: c.env, baseURL }));
 			await next();

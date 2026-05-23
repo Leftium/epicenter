@@ -34,6 +34,15 @@ export const APPS = {
 export type AppId = keyof typeof APPS;
 
 /**
+ * Local dev URL for an app, derived from its `port`. Single owner for the
+ * `http://localhost:<port>` shape: CORS trusted origins, the API runtime's
+ * dev classifier, and the OAuth seed all read this.
+ */
+export function localUrl(app: { port: number }): string {
+	return `http://localhost:${app.port}`;
+}
+
+/**
  * Default API base URL for Node consumers (CLI, daemon, tests). The constant
  * resolves to `process.env.EPICENTER_API_URL` when set, else
  * {@link PRODUCTION_API_URL}. Browsers and Workers lack `process.env`, so

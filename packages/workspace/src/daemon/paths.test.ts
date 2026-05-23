@@ -3,7 +3,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { dirHash, runtimeDir, socketPathFor } from './paths.js';
+import { dirHash, socketPathFor } from './paths.js';
 
 describe('daemon/paths', () => {
 	const originalXdg = process.env.XDG_RUNTIME_DIR;
@@ -48,13 +48,5 @@ describe('daemon/paths', () => {
 		} finally {
 			rmSync(longRuntimeDir, { recursive: true, force: true });
 		}
-	});
-
-	test('runtimeDir honors XDG_RUNTIME_DIR when set, falls back to tmpdir when unset', () => {
-		process.env.XDG_RUNTIME_DIR = '/tmp/fake-xdg';
-		expect(runtimeDir()).toBe(join('/tmp/fake-xdg', 'epicenter'));
-
-		delete process.env.XDG_RUNTIME_DIR;
-		expect(runtimeDir()).toBe(join(tmpdir(), 'epicenter'));
 	});
 });

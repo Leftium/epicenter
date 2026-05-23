@@ -77,9 +77,9 @@ API keys for AI providers are environment secrets (`wrangler secret put`). They 
 
 ## Development
 
-Prerequisites: Bun, local PostgreSQL, and Infisical CLI access to the API dev
-environment. `dev:local` exports secrets from Infisical before Wrangler starts,
-so Postgres alone is not enough.
+Prerequisites: Bun, local PostgreSQL, and Infisical CLI authentication
+(`infisical login`). `bun run dev` pipes secrets from Infisical's dev
+environment into Wrangler via `process.env`, so Postgres alone is not enough.
 
 ### Local Postgres setup
 
@@ -103,16 +103,16 @@ There are three layers, each with a different URL source:
 
 | Layer | Source | Used by |
 |---|---|---|
-| Local dev (runtime) | `wrangler.jsonc` Hyperdrive `localConnectionString` | `bun dev:local` (wrangler) |
-| Local dev (drizzle-kit) | `DATABASE_URL` from `.dev.vars` (generated from Infisical dev env) | `db:push:local`, `db:studio:local` |
+| Local dev (runtime) | `wrangler.jsonc` Hyperdrive `localConnectionString` | `bun dev` (wrangler) |
+| Local dev (drizzle-kit) | `LOCAL_DATABASE_URL` parsed from `wrangler.jsonc` | `db:push:local`, `db:studio:local` |
 | Remote admin | `DATABASE_URL` injected by `infisical run` | `db:migrate:remote`, `db:studio:remote` |
 
-`dev:local` regenerates `.dev.vars` from Infisical's dev environment on every run. Infisical dev has `DATABASE_URL` set to the local Postgres URL, so `.dev.vars` always points to local. Remote database commands use `infisical run` and should be treated as admin operations, not dev mode.
+`bun run dev` runs `infisical run -- wrangler dev` with `CLOUDFLARE_INCLUDE_PROCESS_ENV=true`, so Wrangler reads secrets directly from the spawned process. No `.dev.vars` file is produced. Remote database commands use `infisical run` against the prod environment and should be treated as admin operations, not dev mode.
 
 ### Running the server
 
 ```bash
-bun dev:local        # Local dev server (uses local Postgres)
+bun dev              # Local dev server (uses local Postgres)
 bun deploy           # Deploy to Cloudflare Workers
 bun run typecheck    # Type check
 bun test             # Run tests

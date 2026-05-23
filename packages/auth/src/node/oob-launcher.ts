@@ -53,8 +53,6 @@ export const OobLauncherError = defineErrors({
 
 export type OobLauncherError = InferErrors<typeof OobLauncherError>;
 
-const DEFAULT_SCOPES = EPICENTER_OAUTH_SCOPES;
-
 export type CreateOobOAuthLauncherConfig = {
 	baseURL?: string;
 	clientId: string;
@@ -81,7 +79,7 @@ export function createOobOAuthLauncher({
 	baseURL = EPICENTER_API_URL,
 	clientId,
 	redirectUri = `${baseURL}/auth/cli-callback`,
-	scopes = DEFAULT_SCOPES,
+	scopes = EPICENTER_OAUTH_SCOPES,
 	openBrowser = defaultOpenBrowser,
 	readCode = defaultReadCode,
 	print = (line) => console.log(line),

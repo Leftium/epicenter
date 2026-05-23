@@ -11,7 +11,7 @@
 
 import { Database } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname } from 'node:path';
 import { fileContentDocGuid } from '@epicenter/filesystem';
 import {
 	attachTimeline,
@@ -28,23 +28,25 @@ import {
 import { attachMarkdownMaterializer } from '@epicenter/workspace/document/materializer/markdown';
 import { attachSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import { toSlugFilename } from '@epicenter/workspace/markdown';
-import { attachYjsLog, epicenterPaths } from '@epicenter/workspace/node';
+import {
+	attachYjsLog,
+	markdownPath,
+	sqlitePath,
+	yjsPath,
+} from '@epicenter/workspace/node';
 import { opensidianTables } from 'opensidian';
 import Type from 'typebox';
 import * as Y from 'yjs';
 import { prepareMarkdownFiles } from '../../prepare-markdown-files';
 
 const SERVER_URL = process.env.EPICENTER_SERVER ?? 'https://api.epicenter.so';
-const MARKDOWN_DIR = join(import.meta.dir, 'data');
-const MATERIALIZER_DIR = join(import.meta.dir, '.epicenter', 'materializer');
 const WORKSPACE_ID = 'opensidian';
-
-mkdirSync(MATERIALIZER_DIR, { recursive: true });
 
 async function openOpensidianPlayground({
 	installationId,
 	attachEncryption,
 	openWebSocket,
+	projectDir,
 }: DaemonWorkspaceContext) {
 	const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
 	const encryption = attachEncryption(ydoc);
@@ -52,15 +54,9 @@ async function openOpensidianPlayground({
 	const kv = encryption.attachKv({});
 
 	const persistence = attachYjsLog(ydoc, {
-		filePath: epicenterPaths.persistence(WORKSPACE_ID),
+		filePath: yjsPath(projectDir, WORKSPACE_ID),
 	});
 
-	const contentDir = join(
-		epicenterPaths.home(),
-		'persistence',
-		WORKSPACE_ID,
-		'content',
-	);
 	const fileContentDocs = createDisposableCache(
 		(fileId: string) => {
 			const contentYdoc = new Y.Doc({
@@ -71,7 +67,7 @@ async function openOpensidianPlayground({
 				gc: true,
 			});
 			const contentPersistence = attachYjsLog(contentYdoc, {
-				filePath: join(contentDir, `${contentYdoc.guid}.db`),
+				filePath: yjsPath(projectDir, contentYdoc.guid),
 			});
 			return {
 				ydoc: contentYdoc,
@@ -109,7 +105,7 @@ async function openOpensidianPlayground({
 
 	const whenReady = collaboration.whenConnected;
 	const markdown = attachMarkdownMaterializer(ydoc, {
-		dir: MARKDOWN_DIR,
+		dir: markdownPath(projectDir, WORKSPACE_ID),
 		waitFor: whenReady,
 	}).table(tables.files, {
 		filename: (row) =>
@@ -144,8 +140,10 @@ async function openOpensidianPlayground({
 		},
 	});
 
+	const sqliteFile = sqlitePath(projectDir, WORKSPACE_ID);
+	mkdirSync(dirname(sqliteFile), { recursive: true });
 	const sqlite = attachSqliteMaterializer(ydoc, {
-		db: new Database(join(MATERIALIZER_DIR, 'opensidian.db')),
+		db: new Database(sqliteFile),
 		waitFor: whenReady,
 	}).table(tables.files, { fts: ['name'] });
 

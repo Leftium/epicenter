@@ -2,6 +2,8 @@
 
 **Status**: Worth committing
 
+**Path policy (2026-05-22)**: Aligned with `specs/20260522T203209-top-level-epicenter-path-cleanup.md`. The `~/.epicenter/` references in this spec argue for *deleting* that directory; user-global state lives under `env-paths('epicenter')` and daemon runtime files use the OS runtime dir. No new top-level `~/.epicenter/` writes are introduced.
+
 Supersedes `specs/20260519T113632-epicenter-project-root-single-marker.md`. That
 spec was a local fix (one marker, walk-up, `daemon up` auto-creates). This
 spec is a wider clean break: the project marker becomes a config file, the

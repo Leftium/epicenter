@@ -13,6 +13,7 @@
 	"exports": {
 		"./apps": "./src/apps.ts",
 		"./auth": "./src/auth.ts",
+		"./node": "./src/node.ts",
 		"./oauth": "./src/oauth.ts",
 		"./vite": "./src/vite.ts",
 		"./versions": "./src/versions.ts",
@@ -25,6 +26,7 @@
 		"vite": "catalog:"
 	},
 	"dependencies": {
+		"env-paths": "^3.0.0",
 		"wellcrafted": "catalog:"
 	},
 	"scripts": {

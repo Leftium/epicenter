@@ -16,6 +16,8 @@ External grounding: When external library behavior affects correctness, verify a
 
 Git hygiene: Stage specific files only. Never use `git add .` or `git add -A`. Do not include AI or tool attribution in commits.
 
+Script suffix convention: `:local` suffix scripts work on a fresh clone without Infisical login (they read committed config like `wrangler.jsonc`). `:remote` suffix scripts wrap with `infisical run --env=prod` and require Infisical authentication; treat them as production admin operations.
+
 Library logging: Do not use direct `console.*` in library code. Use `wellcrafted/logger`, except in CLIs, tests, and benchmarks.
 
 Svelte UI: Prefer local `@epicenter/ui` components before one-off loading, empty, spinner, skeleton, tooltip, and pending states.

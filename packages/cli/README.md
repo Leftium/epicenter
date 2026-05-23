@@ -27,7 +27,9 @@ When you iterate on `apps/api`, you want CLI commands hitting your local server,
 | Use the published binary (end user) | `epicenter auth login` |
 | Override the target anywhere | `EPICENTER_API_URL=https://staging.example.com bun run cli auth login` |
 
-Tokens are stored per host so prod and local sessions coexist. The prod host writes `~/.epicenter/auth.json`; any other host writes `~/.epicenter/auth.<host>.json` with `:` replaced by `_`. So `http://localhost:8787` lands at `~/.epicenter/auth.localhost_8787.json`, and a fresh `cli:local auth login` will not overwrite your existing prod session. When the env var is set, the CLI prints `Using API at <url>.` to stderr once per process. The daemon freezes its target at boot; to retarget, `daemon down` then `daemon up` again.
+Tokens are stored per API target so prod and local sessions coexist. Each target writes one file at `<dataDir>/auth/<host>.json`, where `<dataDir>` is the platform user-data directory from `env-paths('epicenter')` and `<host>` is the API host with `:` replaced by `_`. A fresh `cli:local auth login` will not overwrite your prod session. When `EPICENTER_API_URL` is set, the CLI prints `Using API at <url>.` to stderr once per process. The daemon freezes its target at boot; to retarget, `daemon down` then `daemon up` again.
+
+`EPICENTER_DATA_DIR=<path>` overrides `<dataDir>` itself (the user-data directory above; today the only user-global state stored there is cached credentials). Escape hatch for Nix, snap, ephemeral homes, and the test suite.
 
 The same env var and scripts apply to every command that talks to the API, including `daemon`, not just `auth`.
 

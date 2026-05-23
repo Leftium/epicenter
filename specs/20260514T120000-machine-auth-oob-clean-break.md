@@ -23,11 +23,11 @@ Reality on `main` after the `/api/me` spec's Waves 1-4 landed (2026-05-14):
 
 The persisted-shape and identity-source decisions below are **superseded by the api-me spec**. Where this spec says `OAuthSession`, read `PersistedAuth`. Where it says `/workspace-identity`, read `/api/me`. Where it says `machine-session-store.ts`, read `machine-tokens-store.ts`. The narrative below is preserved with these substitutions called out inline.
 
-The conceptual goal of this spec is still correct: an OOB code paste flow against `/auth/oauth2/token`, file-backed persistence at `~/.epicenter/auth.json` (mode 0o600), no Bun.secrets dependency. Only the shape on disk and the identity endpoint name changed under us, and both changed for the better.
+The conceptual goal of this spec is still correct: an OOB code paste flow against `/auth/oauth2/token`, file-backed persistence under `env-paths('epicenter').data/auth/<host>.json` (mode 0o600), no Bun.secrets dependency. Only the path owner, shape on disk, and identity endpoint name changed under us, and all changed for the better.
 
 ## One Sentence
 
-`epicenter auth login` prints an OAuth 2.1 authorize URL, the user signs in on the hosted portal, copies the displayed code, pastes it into the terminal, the CLI exchanges the code at `/auth/oauth2/token` and calls `/api/me` for the local-unlock bundle, then a `PersistedAuth` cell (`{ grant, unlock }`) lands at `~/.epicenter/auth.json` (0600); every daemon and script reads that file through `createOAuthAppAuth` like every other client.
+`epicenter auth login` prints an OAuth 2.1 authorize URL, the user signs in on the hosted portal, copies the displayed code, pastes it into the terminal, the CLI exchanges the code at `/auth/oauth2/token` and calls `/api/me` for the local-unlock bundle, then a `PersistedAuth` cell (`{ grant, unlock }`) lands under `env-paths('epicenter').data/auth/<host>.json` (0600); every daemon and script reads that file through `createOAuthAppAuth` like every other client.
 
 This is the cohesion test for the spec. Anything that does not protect that sentence (one flow, one file, one auth surface, identity from the same source every other client uses) belongs elsewhere. Specifically excluded: keychain storage, loopback listener, device-grant restoration, personal access tokens, per-platform fallback logic, id_token-borne capability claims, and any CLI-specific identity-decode path.
 
@@ -35,7 +35,7 @@ This is the cohesion test for the spec. Anything that does not protect that sent
 
 The `apps/api` server speaks OAuth 2.1 through Better Auth's `oauthProvider` plugin (authorize, token, revoke, introspect, userinfo). The CLI in `packages/auth/src/node/machine-auth.ts` and the daemons under `apps/*/blocks/daemon-route.ts` are the only consumers of machine auth.
 
-Today the CLI calls dead endpoints (`/auth/device/code`, `/auth/device/token`, `/auth/get-session`) and persists through `Bun.secrets`, which fails on every server-class Linux environment we care about. This spec replaces the entire CLI auth surface with a single OOB (out-of-band) paste flow against the existing OAuth 2.1 endpoints, and replaces the keychain with a single file at `~/.epicenter/auth.json`. No backend abstraction, no opt-in mode, no platform branch.
+Today the CLI calls dead endpoints (`/auth/device/code`, `/auth/device/token`, `/auth/get-session`) and persists through `Bun.secrets`, which fails on every server-class Linux environment we care about. This spec replaces the entire CLI auth surface with a single OOB (out-of-band) paste flow against the existing OAuth 2.1 endpoints, and replaces the keychain with a single env-paths data file keyed by API host. No backend abstraction, no opt-in mode, no platform branch.
 
 The daemon path (`createMachineAuthClient` -> `createOAuthAppAuth`) already works and stays unchanged in shape; only the storage layer it composes with is rewritten.
 
@@ -113,7 +113,7 @@ On macOS, the same binary running via SSH without a console session triggers `er
 ### Desired State
 
 ```txt
-~/.epicenter/auth.json (mode 0o600)   --- shape per api-me spec ---
+env-paths('epicenter').data/auth/<host>.json (mode 0o600)   --- shape per api-me spec ---
   grant
     accessToken            string  JWT bearer for /api/*
     refreshToken           string  opaque rotation key
@@ -129,7 +129,7 @@ On macOS, the same binary running via SSH without a console session triggers `er
 createOAuthAppAuth(
   baseURL,
   clientId,
-  persistedAuthStorage = file at ~/.epicenter/auth.json,
+  persistedAuthStorage = file at env-paths('epicenter').data/auth/<host>.json,
   launcher = OOB paste launcher,
   refreshOAuthToken = POST /auth/oauth2/token,
   revokeOAuthRefreshToken = POST /auth/oauth2/revoke,
@@ -152,7 +152,7 @@ AuthClient
 4. Reads the code from stdin.
 5. Exchanges at `/auth/oauth2/token` with `grant_type=authorization_code`. The response is `{ access_token, refresh_token, expires_in, token_type }`. The CLI writes the `grant` section of `PersistedAuth`.
 6. Calls `GET /api/me` with the new access token to load `{ user, encryptionKeys }`. Same identity source every browser / extension client uses (`createOAuthAppAuth.fetchProfile`).
-7. Writes the `unlock` section (`userId` + `encryptionKeys`) to `~/.epicenter/auth.json`. `profile.email` from the response is held in memory only and surfaced through `auth.state.profile`.
+7. Writes the `unlock` section (`userId` + `encryptionKeys`) to the machine auth file under `env-paths('epicenter').data/auth/<host>.json`. `profile.email` from the response is held in memory only and surfaced through `auth.state.profile`.
 
 The `unlock` section persists so daemons and scripts can decrypt local Yjs data on cold boot without a network round-trip. This matches the browser's `localStorage` behavior (browser and extension persist the same `PersistedAuth` arktype) and preserves local-first offline use.
 
@@ -208,7 +208,7 @@ Verified against `cloudflare/cloudflare-docs` via DeepWiki:
 | Redirect URI | 1 evidence | `https://api.epicenter.so/auth/cli-callback` (exact, HTTPS, claimed-HTTPS-native) | DeepWiki-confirmed `oauthProvider` accepts HTTPS redirects for native clients. Auth server itself renders the code page. No localhost binding. No port matching. No DNS surprise. |
 | Identity source | 2 coherence | `GET /workspace-identity` once at sign-in; cached in `OAuthSession.identity` | Same identity surface as every browser/extension client (`createOAuthAppAuth.loadIdentity`). No CLI-specific identity path. One HTTP round-trip per login is acceptable; identity does not change inside a session for any reason that matters (encryption keys rotate only on server-side `BETTER_AUTH_SECRET` rotation, which is an incident, not routine). Persisted on disk so cold-boot offline can still decrypt local data. A future cosmetic rename to `/api/me` (aligning with REST convention used by GitHub/Stripe/Notion/Linear/etc.) is tracked separately and does not change this design. |
 | Persisted shape on disk | 2 coherence | `OAuthSession = { tokens: { accessToken, refreshToken, accessTokenExpiresAt }, identity: { user, encryptionKeys } }` | Same arktype the browser writes to localStorage and the extension writes to chrome.storage. One schema, three storage cells. Identity nested under the session so local-first offline cold-boot still works (persisted `encryptionKeys` are what lets the daemon decrypt local Yjs state when offline). Refused: per-platform variants, separated tokens-only vs identity-only files. |
-| Token storage location | 2 coherence | `~/.epicenter/auth.json`, mode 0o600 | Matches `~/.aws/credentials`, `~/.gcloud/credentials.db`, `~/.codex/auth.json`, `~/.config/gh/hosts.yml`. Disk-at-rest protection is provided by FileVault/BitLocker/LUKS at the OS layer in 2026. |
+| Token storage location | 2 coherence | `env-paths('epicenter').data/auth/<host>.json`, mode 0o600 | Keeps machine auth in the platform data directory and separates API hosts without reintroducing top-level `~/.epicenter`. Disk-at-rest protection is provided by FileVault/BitLocker/LUKS at the OS layer in 2026. |
 | Token storage backend | 2 coherence | File only. No OS keychain. No backend abstraction. | The macOS keychain ACL only meaningfully gates by code signature; the published CLI binary is unsigned. Linux libsecret and Windows DPAPI both gate per-user, the same protection as `chmod 0o600`. Keeping both is speculative complexity for a security delta that depends on shipping signed binaries we do not ship. |
 | Logout semantics | 1 evidence | `POST /auth/oauth2/revoke` with the refresh token, then delete the file | RFC 7009. Revoking the refresh token also invalidates issued access tokens (DeepWiki-confirmed). Old `signOut` path was misleading. |
 | Refresh path | 0 (no change) | `createOAuthAppAuth` default (`POST /auth/oauth2/token`) | Already works for browser clients. Reused unchanged. |
@@ -279,7 +279,7 @@ response: { user: { id, email }, encryptionKeys: [...] }
    via createOAuthAppAuth.loadIdentity)
         |
         v
-write OAuthSession to ~/.epicenter/auth.json (mode 0o600)
+write OAuthSession to env-paths('epicenter').data/auth/<host>.json (mode 0o600)
   { tokens: { accessToken, refreshToken, accessTokenExpiresAt },
     identity: { user, encryptionKeys } }
         |
@@ -334,7 +334,7 @@ apps/*/blocks/daemon-route.ts
         v
 createMachineAuthClient()
         |
-        +-- loadMachineSession() ── reads ~/.epicenter/auth.json
+        +-- loadMachineSession() ── reads env-paths('epicenter').data/auth/<host>.json
         |
         v
 createOAuthAppAuth({
@@ -356,7 +356,7 @@ createOAuthAppAuth({
 ### File Layout
 
 ```txt
-~/.epicenter/auth.json (mode 0o600)
+env-paths('epicenter').data/auth/<host>.json (mode 0o600)
   shape: OAuthSession = {
     tokens: {
       accessToken: string,
@@ -442,7 +442,7 @@ What landed:
   ```ts
   import { OAuthSession } from '../auth-types.js';
 
-  const DEFAULT_AUTH_FILE_PATH = path.join(os.homedir(), '.epicenter', 'auth.json');
+  const DEFAULT_AUTH_FILE_PATH = machineAuthFilePath({ baseURL });
 
   export async function loadMachineSession({
       filePath = DEFAULT_AUTH_FILE_PATH,
@@ -461,7 +461,7 @@ What landed:
   - `fs.readFile(filePath, 'utf-8')`. ENOENT -> `Ok(null)`.
   - Other I/O errors -> `Err(StorageFailed)`.
   - JSON parse failure or `OAuthSession.assert` failure -> log a warning, treat as `Ok(null)` (corrupt blob is signed-out, same as the current keychain path).
-  - Optional: on Unix, check `fs.stat(filePath).mode & 0o077`; if non-zero (group/world readable), refuse to load and tell the user to `chmod 600 ~/.epicenter/auth.json`. This is a paranoia layer; gcloud/aws do not enforce it. Decision: include the check, refuse to load, print a one-line remediation. Cost is ~6 lines; benefit is real for users who accidentally `cp -r ~/` to a sharing host.
+  - Optional: on Unix, check `fs.stat(filePath).mode & 0o077`; if non-zero (group/world readable), refuse to load and tell the user to `chmod 600 <machine auth file>`. This is a paranoia layer; gcloud/aws do not enforce it. Decision: include the check, refuse to load, print a one-line remediation. Cost is ~6 lines; benefit is real for users who accidentally `cp -r ~/` to a sharing host.
 - [ ] **2.4** Tests in `packages/auth/src/node/machine-session-store.test.ts`:
   - Round trip: write then read returns the same `OAuthSession` (tokens + identity).
   - File mode: written file has mode `0o600`.
@@ -472,7 +472,7 @@ What landed:
   - Schema-mismatch: write a valid JSON object that lacks the `identity` field; `load` returns `Ok(null)` and logs a warning (treat as signed-out; user re-logs in to populate identity).
   - Atomic: simulate a write that throws after writing the `.tmp` (e.g. inject a fake `fs.rename` that throws). The original `auth.json` (if present before the write) remains intact.
   - Permission-too-open: pre-write the file with mode `0o644` and assert `load` refuses with a clear error.
-  Use `Bun.tmpdir()` for `filePath` in every test so nothing touches `~/.epicenter`.
+  Use `Bun.tmpdir()` for `filePath` in every test so nothing touches the real env-paths data directory.
 
 Acceptance: `bun --cwd packages/auth test machine-session-store` passes; the test suite does not require `Bun.secrets` or any keyring availability.
 
@@ -625,7 +625,7 @@ const persisted: PersistedAuth = {
       if (error) throw error;
       if (!loaded) {
           throw new Error(
-              '[machine-auth] no saved session at ~/.epicenter/auth.json. ' +
+              '[machine-auth] no saved session in the Epicenter machine auth data directory. ' +
               'Run `epicenter auth login` first.',
           );
       }
@@ -689,7 +689,7 @@ examples/notes-cross-peer/notes.ts:47
 
 These do not change in this spec because their import shape (`createMachineAuthClient`) is unchanged. The `apps/*/blocks/script.ts` divergence from the Fuji rule (script.ts is a thin snapshot reader + IPC actions client) is a separate concern tracked in a follow-up spec; do not bundle it here.
 
-- [ ] **5.1** Smoke each daemon entrypoint after Phase 4 lands: `bun --cwd apps/fuji run daemon` (etc.) confirms the daemon loads `~/.epicenter/auth.json` and reaches `/workspace-identity` successfully.
+- [ ] **5.1** Smoke each daemon entrypoint after Phase 4 lands: `bun --cwd apps/fuji run daemon` (etc.) confirms the daemon loads the env-paths machine auth file and reaches `/workspace-identity` successfully.
 - [ ] **5.2** No code change in this phase. This is verification that the contract preservation held.
 
 ### Phase 6: Documentation
@@ -700,15 +700,15 @@ These do not change in this spec because their import shape (`createMachineAuthC
   ## Authentication
 
   `epicenter auth login` prints a URL, you sign in on the hosted portal, and
-  paste the displayed code back into the terminal. The refresh token lives at
-  `~/.epicenter/auth.json` with file mode 0o600. This is the same shape as
-  `~/.aws/credentials` and `~/.codex/auth.json`.
+  paste the displayed code back into the terminal. The refresh token lives in
+  `env-paths('epicenter').data/auth/<host>.json` with file mode 0o600.
 
-  Sign out with `epicenter auth login` -- this calls `/auth/oauth2/revoke` and
+  Sign out with `epicenter auth logout`: this calls `/auth/oauth2/revoke` and
   deletes the file.
 
-  Project-local `.epicenter/` directories hold daemon runtime state (sockets,
-  PIDs, logs) and never contain credentials.
+  Project-local `.epicenter/` directories hold generated workspace data and
+  never contain credentials. Runtime socket, metadata, and lease files use
+  `runtimeDir()`. Logs use `env-paths('epicenter').log`.
   ```
 - [ ] **6.3** Update `specs/20260512T111335-post-oauth-audit-remediation.md`: in the Phase 4 section, prepend a "Superseded by 20260514T120000-machine-auth-oob-clean-break.md" notice and link.
 - [ ] **6.4** Add a JSDoc note on `EPICENTER_CLI_OAUTH_CLIENT_ID` in `packages/constants/src/oauth.ts` describing the OOB flow and the canonical redirect URI.
@@ -739,13 +739,13 @@ CI provides the code via stdin redirection or environment-variable-fed input. Th
 
 ### Two `epicenter auth login` invocations run concurrently
 
-Each launcher generates its own `code_verifier` and `state`. Each writes to `~/.epicenter/auth.json` via atomic rename. The last writer wins; whichever access token is in the file is valid. Refresh-token rotation on the next API call will invalidate the loser's token. No file corruption.
+Each launcher generates its own `code_verifier` and `state`. Each writes to the env-paths machine auth file via atomic rename. The last writer wins; whichever access token is in the file is valid. Refresh-token rotation on the next API call will invalidate the loser's token. No file corruption.
 
 ### File permissions get too permissive
 
-If the file is `0o644` (or worse), `loadMachineSession` refuses to load and prints `chmod 0o600 ~/.epicenter/auth.json`. The user fixes it once. Subsequent loads pass.
+If the file is `0o644` (or worse), `loadMachineSession` refuses to load and prints a `chmod 0o600 <machine auth file>` hint. The user fixes it once. Subsequent loads pass.
 
-### `~/.epicenter` exists but is owned by another user (multi-user host)
+### Machine auth data directory exists but is owned by another user (multi-user host)
 
 `fs.mkdir(dir, { recursive: true, mode: 0o700 })` succeeds because the directory exists; writing the file fails with EACCES. The user gets a clear filesystem error pointing at the path. No silent fallback to `/tmp`.
 
@@ -787,7 +787,7 @@ Required coverage:
 
 ```txt
 Dev API (bun --cwd apps/api dev):
-  1. rm -f ~/.epicenter/auth.json
+  1. rm -f "$MACHINE_AUTH_FILE"
   2. epicenter auth login
      - prints authorize URL
      - opens browser (best-effort)
@@ -795,13 +795,13 @@ Dev API (bun --cwd apps/api dev):
      - page renders code in monospace block, Copy button works
      - paste into terminal
      - "Signed in as user@example.com"
-  3. stat -f "%Lp" ~/.epicenter/auth.json    # macOS, or `stat -c '%a' ~/.epicenter/auth.json` on Linux
+  3. stat -f "%Lp" "$MACHINE_AUTH_FILE"    # macOS, or `stat -c '%a' "$MACHINE_AUTH_FILE"` on Linux
      -> 600
   4. epicenter auth status
      -> "Signed in (verified)"
-  5. chmod 644 ~/.epicenter/auth.json && epicenter auth status
+  5. chmod 644 "$MACHINE_AUTH_FILE" && epicenter auth status
      -> refuses with "chmod 600" message
-  6. chmod 600 ~/.epicenter/auth.json
+  6. chmod 600 "$MACHINE_AUTH_FILE"
   7. epicenter auth logout
      -> network call to /auth/oauth2/revoke seen in apps/api logs
      -> file deleted
@@ -815,13 +815,13 @@ Headless smoke (SSH from a host with no DISPLAY):
   4. Sign in there; copy the code from /auth/cli-callback
   5. Paste back into the SSH session
   6. Login succeeds
-  7. ~/.epicenter/auth.json on the server has the session
+  7. The env-paths machine auth file on the server has the session
 
 Docker smoke:
-  1. docker run -it --rm -v $HOME/.epicenter:/root/.epicenter epicenter-cli auth login
+  1. docker run -it --rm -v "$HOST_EPICENTER_DATA_DIR:/root/.local/share/epicenter" epicenter-cli auth login
   2. Open the URL on the host; paste in container
-  3. File persists in the host's ~/.epicenter via the bind mount
-  4. Subsequent `docker run --rm -v $HOME/.epicenter:/root/.epicenter epicenter-fuji-daemon`
+  3. File persists in the host's env-paths data directory via the bind mount
+  4. Subsequent `docker run --rm -v "$HOST_EPICENTER_DATA_DIR:/root/.local/share/epicenter" epicenter-fuji-daemon`
      loads the session and connects to apps/api
 
 Cloudflare smoke (against a deployed apps/api):

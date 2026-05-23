@@ -8,8 +8,8 @@
  * the same workspace, so each peer hard-codes its own).
  */
 
+import type { AuthClient } from '@epicenter/auth';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import type { OpenWebSocket } from '@epicenter/workspace';
 import {
 	attachTables,
 	defineMutation,
@@ -31,10 +31,10 @@ const Note = defineTable(type({ id: 'string', body: 'string', _v: '1' }));
 
 export function openNotes({
 	installationId,
-	openWebSocket,
+	auth,
 }: {
 	installationId: string;
-	openWebSocket: OpenWebSocket;
+	auth: AuthClient;
 }) {
 	const ydoc = new Y.Doc({ guid: WORKSPACE_ID });
 	const tables = attachTables(ydoc, { notes: Note });
@@ -56,7 +56,7 @@ export function openNotes({
 
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl(EPICENTER_API_URL, ydoc.guid),
-		openWebSocket,
+		auth,
 		installationId,
 		actions,
 	});

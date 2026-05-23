@@ -26,7 +26,7 @@ export function openOpensidianDaemon({
 	clientId,
 	installationId,
 	keyring,
-	openWebSocket,
+	auth,
 }: DaemonWorkspaceContext) {
 	const ydoc = new Y.Doc({ guid: OPENSIDIAN_ID, gc: true });
 	ydoc.clientID = clientId;
@@ -36,7 +36,7 @@ export function openOpensidianDaemon({
 
 	return attachDaemonInfrastructure(ydoc, {
 		projectDir,
-		openWebSocket,
+		auth,
 		installationId,
 		actions: {},
 	});

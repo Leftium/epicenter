@@ -41,7 +41,7 @@ export function openFujiDaemon({
 	clientId,
 	installationId,
 	keyring,
-	openWebSocket,
+	auth,
 }: DaemonWorkspaceContext) {
 	const ydoc = new Y.Doc({ guid: FUJI_ID, gc: true });
 	ydoc.clientID = clientId;
@@ -63,7 +63,7 @@ export function openFujiDaemon({
 
 	return attachDaemonInfrastructure(ydoc, {
 		projectDir,
-		openWebSocket,
+		auth,
 		installationId,
 		actions,
 	});

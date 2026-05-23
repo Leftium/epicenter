@@ -39,7 +39,7 @@
  * const idb = attachIndexedDb(ydoc);
  * const collaboration = openCollaboration(ydoc, {
  *   url: roomWsUrl(apiUrl, ydoc.guid),
- *   openWebSocket: auth.openWebSocket,
+ *   auth,
  *   waitFor: idb.whenLoaded,
  *   installationId,
  *   actions: {},
@@ -61,7 +61,7 @@
  *     const bodyIdb = attachIndexedDb(bodyYdoc);
  *     const bodySync = openCollaboration(bodyYdoc, {
  *       url: roomWsUrl(apiUrl, bodyYdoc.guid),
- *       openWebSocket: auth.openWebSocket,
+ *       auth,
  *       waitFor: bodyIdb.whenLoaded,
  *       installationId,
  *       actions: {},
@@ -162,10 +162,7 @@ export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
 export { DispatchError } from './document/dispatch.js';
 export { docGuid } from './document/doc-guid.js';
-export type {
-	OpenWebSocket,
-	SyncStatus,
-} from './document/internal/sync-supervisor.js';
+export type { SyncStatus } from './document/internal/sync-supervisor.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 export {
 	type AttachEncryptionOptions,

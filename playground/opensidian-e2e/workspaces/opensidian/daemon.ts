@@ -46,7 +46,7 @@ async function openOpensidianPlayground({
 	clientId,
 	installationId,
 	keyring,
-	openWebSocket,
+	auth,
 }: DaemonWorkspaceContext) {
 	const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
 	ydoc.clientID = clientId;
@@ -99,7 +99,7 @@ async function openOpensidianPlayground({
 
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl(SERVER_URL, ydoc.guid),
-		openWebSocket,
+		auth,
 		installationId,
 		actions,
 	});

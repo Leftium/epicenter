@@ -13,8 +13,8 @@
  * See `specs/20260522T220000-workspace-project-layout.md`.
  */
 
+import type { AuthClient } from '@epicenter/auth';
 import type { SubjectKeyring } from '@epicenter/encryption';
-import type { OpenWebSocket } from '../document/internal/sync-supervisor.js';
 import type { MaybePromise, ProjectDir } from '../shared/types.js';
 import type { DaemonRuntime } from './types.js';
 
@@ -23,9 +23,7 @@ import type { DaemonRuntime } from './types.js';
  *
  * The host owns auth: it refuses to call `open` when machine auth is
  * signed-out, exposes the keyring lookup (with a late-sign-out guard baked
- * into the closure), and passes the WebSocket opener through. Daemon code
- * never touches the auth client directly; it composes a workspace runtime
- * out of the capabilities below and returns it.
+ * into the closure), and passes the auth client through for cloud sync.
  *
  * - `projectDir` is the resolved project root (same value the daemon lease
  *   owns). Disk-writing helpers like `yjsPath` derive every absolute path
@@ -43,8 +41,10 @@ import type { DaemonRuntime } from './types.js';
  *   auth is signed-out, so a late sign-out turns into a thrown error at the
  *   next encrypted-write or registration site rather than silent ciphertext
  *   loss.
- * - `openWebSocket` is the auth-bound WebSocket factory for
- *   `openCollaboration`.
+ * - `auth` is the auth client for `openCollaboration({ auth })`. The host
+ *   refused to start when auth was signed-out, so this client is identity-
+ *   bearing at hand-off; openCollaboration subscribes internally to its
+ *   `onStateChange` for reconnect-on-token-refresh.
  */
 export type DaemonWorkspaceContext = {
 	projectDir: ProjectDir;
@@ -52,7 +52,7 @@ export type DaemonWorkspaceContext = {
 	clientId: number;
 	installationId: string;
 	keyring: () => SubjectKeyring;
-	openWebSocket: OpenWebSocket;
+	auth: AuthClient;
 };
 
 /**

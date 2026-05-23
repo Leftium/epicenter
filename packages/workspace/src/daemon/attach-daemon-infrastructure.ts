@@ -23,6 +23,7 @@
  * compose materializers around the same ydoc.
  */
 
+import type { AuthClient } from '@epicenter/auth';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import type * as Y from 'yjs';
 
@@ -30,7 +31,6 @@ import {
 	attachYjsLog,
 	type YjsLogAttachment,
 } from '../document/attach-yjs-log.js';
-import type { OpenWebSocket } from '../document/internal/sync-supervisor.js';
 import {
 	type Collaboration,
 	openCollaboration,
@@ -43,7 +43,7 @@ import type { ProjectDir } from '../shared/types.js';
 export type AttachDaemonInfrastructureOptions<TActions extends ActionRegistry> =
 	{
 		projectDir: ProjectDir;
-		openWebSocket: OpenWebSocket;
+		auth: AuthClient;
 		installationId: string;
 		actions: TActions;
 		/** Defaults to `EPICENTER_API_URL`. Override for self-hosted hubs. */
@@ -60,7 +60,7 @@ export function attachDaemonInfrastructure<TActions extends ActionRegistry>(
 	ydoc: Y.Doc,
 	{
 		projectDir,
-		openWebSocket,
+		auth,
 		installationId,
 		actions,
 		apiUrl = EPICENTER_API_URL,
@@ -72,7 +72,7 @@ export function attachDaemonInfrastructure<TActions extends ActionRegistry>(
 
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl(apiUrl, ydoc.guid),
-		openWebSocket,
+		auth,
 		installationId,
 		actions,
 	});

@@ -42,7 +42,7 @@ export function openHoneycrispDaemon({
 	clientId,
 	installationId,
 	keyring,
-	openWebSocket,
+	auth,
 }: DaemonWorkspaceContext) {
 	const ydoc = new Y.Doc({ guid: HONEYCRISP_ID, gc: true });
 	ydoc.clientID = clientId;
@@ -67,7 +67,7 @@ export function openHoneycrispDaemon({
 
 	return attachDaemonInfrastructure(ydoc, {
 		projectDir,
-		openWebSocket,
+		auth,
 		installationId,
 		actions,
 	});

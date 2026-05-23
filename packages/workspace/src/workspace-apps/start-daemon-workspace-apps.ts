@@ -6,11 +6,10 @@
  * return the started runtimes or dispose the successfully opened ones if any
  * sibling failed.
  *
- * The host owns auth. It refuses to start when machine auth is signed-out,
- * then builds a per-route `DaemonWorkspaceContext` where `keyring` and
- * `openWebSocket` already carry the auth bindings. Daemon code never touches
- * the auth client directly: it consumes the capabilities in the context and
- * composes a runtime.
+ * The host owns auth lifecycle. It refuses to start when machine auth is
+ * signed-out, then builds a per-route `DaemonWorkspaceContext` carrying the
+ * lazy `keyring` reader (with a sign-out guard) plus the auth client itself
+ * for `openCollaboration({ auth })`.
  */
 
 import { resolve } from 'node:path';
@@ -110,7 +109,7 @@ async function openOneDaemonRoute({
 		clientId: hashClientId(projectDir),
 		installationId: `${route}-daemon`,
 		keyring: createDaemonKeyringReader({ auth, route }),
-		openWebSocket: auth.openWebSocket,
+		auth,
 	};
 	try {
 		const runtime = await definition.open(ctx);

@@ -28,7 +28,7 @@ const SERVER_URL = 'https://api.epicenter.so';
 const WORKSPACE_ID = 'epicenter.tab-manager';
 
 export default defineWorkspace({
-	async open({ projectDir, clientId, installationId, keyring, openWebSocket }) {
+	async open({ projectDir, clientId, installationId, keyring, auth }) {
 		const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
 		ydoc.clientID = clientId;
 		const encryption = attachEncryption(ydoc, { keyring });
@@ -43,7 +43,7 @@ export default defineWorkspace({
 
 		const collaboration = openCollaboration(ydoc, {
 			url: roomWsUrl(SERVER_URL, ydoc.guid),
-			openWebSocket,
+			auth,
 			installationId,
 			actions,
 		});

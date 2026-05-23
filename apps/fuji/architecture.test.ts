@@ -57,13 +57,17 @@ describe('Fuji workspace architecture', () => {
 	test('daemon opener composes ydoc + attachEncryption + materializers', () => {
 		expect(daemonSource).toContain('export function openFujiDaemon');
 		expect(daemonSource).toContain('new Y.Doc({ guid: FUJI_ID');
-		expect(daemonSource).toContain('attachEncryption(ydoc, { keyring: ctx.keyring')
+		expect(daemonSource).toContain('attachEncryption(ydoc, { keyring })');
 		expect(daemonSource).toContain('attachDaemonInfrastructure');
 		expect(daemonSource).toContain('attachSqliteMaterializer');
 		expect(daemonSource).toContain('attachMarkdownMaterializer');
-		expect(daemonSource).toContain('ctx.clientId');
+		// Destructured ctx, with `auth` for cloud sync (openCollaboration
+		// internal subscribe) and `clientId` pinned on the Y.Doc.
+		expect(daemonSource).toContain('ydoc.clientID = clientId');
+		expect(daemonSource).toContain('auth,');
 		expect(daemonSource).not.toContain('openEncryptedDoc');
 		expect(daemonSource).not.toContain('openFujiWorkspace');
+		expect(daemonSource).not.toContain('openWebSocket');
 		expect(packageJson.exports['./daemon']).toBe('./daemon.ts');
 	});
 });

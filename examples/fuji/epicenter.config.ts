@@ -44,7 +44,7 @@ export default defineWorkspace({
 		clientId,
 		installationId,
 		keyring,
-		openWebSocket,
+		auth,
 	}) {
 		const ydoc = new Y.Doc({ guid: FUJI_ID, gc: true });
 		ydoc.clientID = clientId;
@@ -73,7 +73,7 @@ export default defineWorkspace({
 
 		return attachDaemonInfrastructure(ydoc, {
 			projectDir,
-			openWebSocket,
+			auth,
 			installationId,
 			actions,
 		});

@@ -14,7 +14,7 @@
  * - {@link RoomSocket}: the minimal per-connection WebSocket surface.
  *   Structural by design so both Cloudflare's hibernation `WebSocket` and
  *   Bun's `ServerWebSocket` satisfy it natively, no wrapper required.
- * - {@link RoomHandle} / {@link RoomRegistry}: name-to-room routing
+ * - {@link ResolvedRoom} / {@link Rooms}: name-to-room routing
  *   consumed by route middleware in `app.ts`.
  * - {@link RoomError}: error variants surfaced across the room's
  *   untrusted-input boundaries (HTTP sync body, binary WebSocket frame).
@@ -92,17 +92,18 @@ export type RoomSocket = {
 };
 
 // ============================================================================
-// RoomHandle / RoomRegistry
+// ResolvedRoom / Rooms
 // ============================================================================
 
 /**
- * Per-room operations exposed to route middleware.
+ * One room resolved by name, exposing the per-room operations route
+ * middleware calls.
  *
  * All methods are async because some backends (Cloudflare Durable Object
  * stubs) cross an isolate boundary. Bun's backend returns
  * `Promise.resolve` of synchronous results, satisfying the same contract.
  */
-export type RoomHandle = {
+export type ResolvedRoom = {
 	/**
 	 * HTTP sync RPC. Apply the client's update to this room's doc and
 	 * return the diff the client is missing (`null` if already in sync),
@@ -138,9 +139,9 @@ export type RoomHandle = {
  * `app.ts` as `subject:<userId>:rooms:<guid>`. This contract treats the
  * name as opaque.
  */
-export type RoomRegistry = {
+export type Rooms = {
 	/** Resolve a room by its opaque host-owned name. */
-	getRoom(name: string): RoomHandle;
+	get(name: string): ResolvedRoom;
 };
 
 // ============================================================================

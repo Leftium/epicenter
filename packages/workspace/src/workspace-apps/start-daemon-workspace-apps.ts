@@ -23,7 +23,7 @@ import type {
 } from '../daemon/define-workspace.js';
 import type { StartedDaemonRoute } from '../daemon/index.js';
 import { validateDaemonRouteNames } from '../daemon/route-validation.js';
-import { hashClientId } from '../shared/client-id.js';
+import { hashYDocClientId } from '../shared/client-id.js';
 import type { ProjectDir } from '../shared/types.js';
 import { WorkspaceAppError } from './errors.js';
 
@@ -113,12 +113,15 @@ async function openOneDaemonRoute({
 	const ctx: DaemonWorkspaceContext = {
 		projectDir,
 		route,
-		yDocClientId: hashClientId(projectDir),
+		yDocClientId: hashYDocClientId(projectDir),
 		clientId: `${route}-daemon`,
 		owner,
 		keyring: createDaemonKeyringReader({ auth, route }),
-		openWebSocket: auth.openWebSocket.bind(auth),
-		onAuthChange: auth.onStateChange.bind(auth),
+		// `auth.openWebSocket` / `auth.onStateChange` are closure-based on
+		// the auth client and do not read `this`, so passing the method
+		// reference directly is safe (no `.bind(auth)` needed).
+		openWebSocket: auth.openWebSocket,
+		onAuthChange: auth.onStateChange,
 	};
 	try {
 		const runtime = await definition.open(ctx);

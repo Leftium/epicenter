@@ -176,7 +176,10 @@ export {
 } from './document/attach-encryption.js';
 export {
 	type Collaboration,
+	type OnAuthChange,
+	type OpenCollaborationConfig,
 	openCollaboration,
+	type OpenWebSocketFn,
 } from './document/open-collaboration.js';
 export { wipeLocalStorage } from './document/wipe-local-storage.js';
 // Transport URL builder.

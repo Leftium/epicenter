@@ -15,7 +15,9 @@ import {
 	defineMutation,
 	defineQuery,
 	defineTable,
+	type OnAuthChange,
 	openCollaboration,
+	type OpenWebSocketFn,
 	roomWsUrl,
 } from '@epicenter/workspace';
 import { type } from 'arktype';
@@ -37,11 +39,8 @@ export function openNotes({
 }: {
 	clientId: string;
 	owner: Owner;
-	openWebSocket: (
-		url: string | URL,
-		protocols?: string[],
-	) => Promise<WebSocket> | WebSocket;
-	onAuthChange: (fn: () => void) => () => void;
+	openWebSocket: OpenWebSocketFn;
+	onAuthChange: OnAuthChange;
 }) {
 	const ydoc = new Y.Doc({ guid: WORKSPACE_ID });
 	const tables = attachTables(ydoc, { notes: Note });

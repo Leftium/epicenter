@@ -46,43 +46,43 @@ import {
 
 const DISPATCH_RESPONSE_CEILING_MS = 90_000;
 
-/**
- * Parse `clientId` out of the WebSocket URL the caller built. The URL is the
- * single source of truth: `roomWsUrl` (or any custom builder) embeds the
- * id as a query parameter, and `openCollaboration` reads it back without
- * threading a separate field.
- */
-function extractClientId(url: string): string {
-	const parsed = new URL(url);
-	const clientId = parsed.searchParams.get('clientId');
-	if (!clientId) {
-		throw new Error(
-			`[openCollaboration] url is missing required ?clientId= query parameter: ${url}`,
-		);
-	}
-	return clientId;
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // PUBLIC TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Function that opens a WebSocket to the relay. Matches the shape of
+ * `AuthClient.openWebSocket`: the auth client's bearer-aware opener is the
+ * canonical implementation, but any function with this shape works (tests
+ * pass fakes, alternative deployments may use plain WebSockets).
+ */
+export type OpenWebSocketFn = (
+	url: string | URL,
+	protocols?: string[],
+) => Promise<WebSocket> | WebSocket;
+
+/**
+ * Subscribe to auth-state transitions that should trigger a sync reconnect.
+ * The callback receives no argument: consumers only need to know that a
+ * transition happened. Returns an unsubscribe. Matches the shape of
+ * `AuthClient.onStateChange` (the state argument is discarded).
+ */
+export type OnAuthChange = (fn: () => void) => () => void;
+
 export type OpenCollaborationConfig<TActions extends ActionRegistry> = {
 	/**
-	 * Opaque WebSocket URL the supervisor connects to. Callers build this
-	 * via {@link roomWsUrl} (or any custom builder) and pass it verbatim.
-	 * `openCollaboration` does not mutate or augment the URL.
+	 * WebSocket URL the supervisor connects to, used verbatim. Callers
+	 * build it via {@link roomWsUrl} (or any custom builder); the wire
+	 * `?clientId=` query that the relay routes by lives in this URL.
+	 * `openCollaboration` does not parse, mutate, or augment it.
 	 */
 	url: string;
 	/**
-	 * Opens the relay socket. Pass the auth client's bearer-aware opener
-	 * (`auth.openWebSocket`) or any function with the same shape; the
-	 * supervisor calls this on every connect and reconnect.
+	 * Opens the relay socket. Pass `auth.openWebSocket` or any function
+	 * with the same shape; the supervisor calls this on every connect and
+	 * reconnect.
 	 */
-	openWebSocket: (
-		url: string | URL,
-		protocols?: string[],
-	) => Promise<WebSocket> | WebSocket;
+	openWebSocket: OpenWebSocketFn;
 	/**
 	 * Subscribe to auth-state transitions that should trigger a reconnect
 	 * (token refresh, sign-in after reauth-required, sign-out then sign-in).
@@ -90,7 +90,7 @@ export type OpenCollaborationConfig<TActions extends ActionRegistry> = {
 	 * unsubscribe is wired into `whenDisposed`, so callers do not write
 	 * reconnect glue.
 	 */
-	onAuthChange: (fn: () => void) => () => void;
+	onAuthChange: OnAuthChange;
 	waitFor?: Promise<unknown>;
 	log?: Logger;
 	/**
@@ -102,13 +102,6 @@ export type OpenCollaborationConfig<TActions extends ActionRegistry> = {
 };
 
 export type Collaboration<TActions extends ActionRegistry = ActionRegistry> = {
-	/**
-	 * Per-client identity parsed out of {@link OpenCollaborationConfig.url}'s
-	 * `clientId` query parameter. The relay routes inbound dispatch to the
-	 * most-recently-connected socket for this id; multiple tabs of the same
-	 * install share this id and the most recent tab wins.
-	 */
-	readonly clientId: string;
 	readonly actions: TActions;
 
 	readonly status: SyncStatus;
@@ -166,7 +159,6 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		}
 	}
 
-	const clientId = extractClientId(config.url);
 	const pendingDispatches = new Map<
 		string,
 		(result: Result<unknown, DispatchError>) => void
@@ -281,7 +273,6 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	};
 
 	return {
-		clientId,
 		actions: userActions,
 		get status() {
 			return supervisor.status;

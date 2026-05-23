@@ -15,6 +15,10 @@
 
 import type { Owner } from '@epicenter/auth';
 import type { SubjectKeyring } from '@epicenter/encryption';
+import type {
+	OnAuthChange,
+	OpenWebSocketFn,
+} from '../document/open-collaboration.js';
 import type { MaybePromise, ProjectDir } from '../shared/types.js';
 import type { DaemonRuntime } from './types.js';
 
@@ -60,11 +64,8 @@ export type DaemonWorkspaceContext = {
 	clientId: string;
 	owner: Owner;
 	keyring: () => SubjectKeyring;
-	openWebSocket: (
-		url: string | URL,
-		protocols?: string[],
-	) => Promise<WebSocket> | WebSocket;
-	onAuthChange: (fn: () => void) => () => void;
+	openWebSocket: OpenWebSocketFn;
+	onAuthChange: OnAuthChange;
 };
 
 /**

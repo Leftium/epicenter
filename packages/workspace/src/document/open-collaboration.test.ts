@@ -4,10 +4,10 @@
  * The fake `openWebSocket` resolves immediately with a socket that stays in
  * `CONNECTING` (we never call `onopen`), so the supervisor parks in
  * `attemptConnection`. That means these tests only cover the synchronous
- * setup of `openCollaboration`: the action-key guard, identity pass-through,
- * and the `Symbol.dispose` sugar. Socket-coupled behavior (presence routing,
- * dispatch result routing, disconnect settling) is intentionally out of
- * scope here and needs a different fake.
+ * setup of `openCollaboration`: the action-key guard and the `Symbol.dispose`
+ * sugar. Socket-coupled behavior (presence routing, dispatch result routing,
+ * disconnect settling) is intentionally out of scope here and needs a
+ * different fake.
  *
  * The fake's `close() -> onclose` is what lets `ydoc.destroy()` unpark the
  * supervisor so the test process exits cleanly.
@@ -22,8 +22,7 @@ import {
 } from '../shared/actions.js';
 import { openCollaboration } from './open-collaboration.js';
 
-const clientId = 'self';
-const url = `wss://ignored.invalid/api/rooms/test?clientId=${clientId}`;
+const url = 'wss://ignored.invalid/api/rooms/test?clientId=self';
 
 /**
  * Minimal fake WebSocket. Stays in CONNECTING (readyState 0) until `close()`
@@ -58,11 +57,10 @@ function setup<TActions extends ActionRegistry = ActionRegistry>(
 }
 
 describe('openCollaboration', () => {
-	test('exposes the clientId parsed from the url and the user actions', () => {
+	test('exposes the user actions verbatim', () => {
 		const list = defineQuery({ handler: () => [] });
 		const { ydoc, collaboration } = setup({ tabs_list: list });
 		try {
-			expect(collaboration.clientId).toBe(clientId);
 			expect(collaboration.actions).toEqual({ tabs_list: list });
 		} finally {
 			ydoc.destroy();
@@ -86,22 +84,6 @@ describe('openCollaboration', () => {
 		ydoc.once('destroy', () => destroyed++);
 		collaboration[Symbol.dispose]();
 		expect(destroyed).toBe(1);
-	});
-
-	test('throws when the url is missing ?clientId=', () => {
-		const ydoc = new Y.Doc({ guid: 'open-collab-test-missing' });
-		try {
-			expect(() =>
-				openCollaboration(ydoc, {
-					url: 'wss://ignored.invalid/api/rooms/test',
-					openWebSocket: fakeWebSocket,
-					onAuthChange: () => () => {},
-					actions: {},
-				}),
-			).toThrow(/missing required \?clientId=/);
-		} finally {
-			ydoc.destroy();
-		}
 	});
 });
 

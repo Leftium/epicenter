@@ -35,6 +35,8 @@ import {
 import {
 	type Collaboration,
 	openCollaboration,
+	type OnAuthChange,
+	type OpenWebSocketFn,
 } from '../document/open-collaboration.js';
 import { roomWsUrl } from '../document/transport.js';
 import { yjsPath } from '../document/workspace-paths.js';
@@ -46,14 +48,11 @@ export type AttachDaemonInfrastructureOptions<TActions extends ActionRegistry> =
 		projectDir: ProjectDir;
 		owner: Owner;
 		clientId: string;
-		openWebSocket: (
-			url: string | URL,
-			protocols?: string[],
-		) => Promise<WebSocket> | WebSocket;
-		onAuthChange: (fn: () => void) => () => void;
+		openWebSocket: OpenWebSocketFn;
+		onAuthChange: OnAuthChange;
 		actions: TActions;
 		/** Defaults to `EPICENTER_API_URL`. Override for self-hosted hubs. */
-		apiUrl?: string;
+		baseURL?: string;
 	};
 
 export type DaemonInfrastructure<TActions extends ActionRegistry> = {
@@ -71,7 +70,7 @@ export function attachDaemonInfrastructure<TActions extends ActionRegistry>(
 		openWebSocket,
 		onAuthChange,
 		actions,
-		apiUrl = EPICENTER_API_URL,
+		baseURL = EPICENTER_API_URL,
 	}: AttachDaemonInfrastructureOptions<TActions>,
 ): DaemonInfrastructure<TActions> {
 	const yjsLog = attachYjsLog(ydoc, {
@@ -80,7 +79,7 @@ export function attachDaemonInfrastructure<TActions extends ActionRegistry>(
 
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl({
-			baseURL: apiUrl,
+			baseURL,
 			owner,
 			guid: ydoc.guid,
 			clientId,

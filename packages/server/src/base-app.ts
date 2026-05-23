@@ -20,11 +20,16 @@ import { corsMiddleware } from './middleware/cors.js';
 import { requireOriginForCookieMutations } from './middleware/require-origin-for-cookie-mutations.js';
 import { singleCredential } from './middleware/single-credential.js';
 import { createDurableObjectRooms } from './room/backends/cloudflare/registry.js';
-import { WRANGLER_DEV_API_ORIGIN } from './trusted-origins.js';
 import type { AfterResponseQueue, Env, ServerOptions } from './types.js';
 
 const PRODUCTION_API_ORIGIN = APPS.API.urls[0];
 const LOCAL_API_ORIGIN = localUrl(APPS.API);
+// Wrangler dev serves the API custom domain over plain HTTP, so requests it
+// makes report `Origin: http://api.epicenter.so`. Production Cloudflare
+// upgrades the domain to HTTPS, so a real browser never sends this Origin
+// against the deployed worker; it is a dev-loop artifact. Inlined here, the
+// only consumer, rather than exported from trusted-origins.
+const WRANGLER_DEV_API_ORIGIN = `http://${new URL(PRODUCTION_API_ORIGIN).host}`;
 
 /**
  * Build the queue every base-app middleware installs on `c.var.afterResponse`.

@@ -5,6 +5,7 @@
     "": {
       "name": "epicenter",
       "dependencies": {
+        "@epicenter/constants": "workspace:*",
         "tinyexec": "^1.0.4",
       },
       "devDependencies": {

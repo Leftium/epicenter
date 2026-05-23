@@ -104,7 +104,7 @@
 		"check": "bun run format:check && bun run lint:check && bun run typecheck",
 		"dev": "bun run dev:tab-manager",
 		"dev:api": "bun run --cwd apps/api dev",
-		"dev:tab-manager": "bun run scripts/dev.ts tab-manager",
+		"dev:tab-manager": "turbo run dev --filter=@epicenter/api --filter=@epicenter/tab-manager",
 		"dev:tab-manager:ui": "bun run --cwd apps/tab-manager dev:local",
 		"format": "biome check --write --linter-enabled=false",
 		"format:check": "biome ci --linter-enabled=false",

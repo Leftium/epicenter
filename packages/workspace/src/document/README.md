@@ -17,7 +17,8 @@ The pattern: a vanilla `openX()` function constructs the workspace's `Y.Doc`, co
 | attachTable / attachTables / attachKv                          |
 | attachEncryption -> .attachTable / .attachTables / .attachKv    |
 | attachIndexedDb / attachYjsLog / attachBroadcastChannel        |
-| LocalOwner -> attachIndexedDb / attachBroadcastChannel / wipe   |
+| attachLocalStorage(ydoc, { subject, keyring })  // encrypted IDB + scoped BC |
+| wipeLocalStorage({ subject })                   // delete local data for subject |
 | openCollaboration (sync + presence + dispatch)                 |
 | attachSqliteMaterializer                                       |
 +----------------------------------------------------------------+
@@ -83,46 +84,62 @@ function openBlog({ keyring }: { keyring: () => SubjectKeyring }) {
 
 ### Persistence + collaboration
 
-Auth belongs to the app. The workspace factory receives an auth-owned WebSocket
-opener and passes it to `openCollaboration`, which wraps the sync supervisor,
-mirrors the relay's server-owned presence channel as `devices`, and runs
-inbound dispatch frames against the local action registry.
+Auth belongs to the app. The workspace factory receives the signed-in identity
+(subject + keyring + auth) and a WebSocket opener, then passes them to
+`attachLocalStorage` and `openCollaboration`. `openCollaboration` wraps the
+sync supervisor, mirrors the relay's server-owned presence channel as
+`devices`, and runs inbound dispatch frames against the local action registry.
 
 ```typescript
+import type { SignedIn } from '@epicenter/svelte';
 import {
-  type LocalOwner,
+  attachEncryption,
+  attachLocalStorage,
   openCollaboration,
   roomWsUrl,
+  wipeLocalStorage,
 } from '@epicenter/workspace';
 
 function openBlog({
-  owner,
-  openWebSocket,
+  signedIn,
+  installationId,
 }: {
-  owner: LocalOwner;
-  openWebSocket?: (
-    url: string | URL,
-    protocols?: string[],
-  ) => WebSocket | Promise<WebSocket>;
+  signedIn: SignedIn;
+  installationId: string;
 }) {
   const ydoc = new Y.Doc({ guid: 'blog' });
-  const tables = attachTables(ydoc, myTables);
-  const idb = owner.attachIndexedDb(ydoc);
-  owner.attachBroadcastChannel(ydoc);
+  const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
+  const tables = encryption.attachTables(myTables);
+
+  // Subject-scoped encrypted IDB + cross-tab BroadcastChannel in one call.
+  const idb = attachLocalStorage(ydoc, signedIn);
+
   const collaboration = openCollaboration(ydoc, {
     url: roomWsUrl('https://api.example.com', ydoc.guid),
-    openWebSocket,
+    openWebSocket: signedIn.openWebSocket,
     waitFor: idb.whenLoaded,
-    installationId: 'browser',
+    installationId,
     actions: {},
   });
 
   return {
     ydoc, tables, idb, collaboration,
+    async wipe() {
+      ydoc.destroy();
+      await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
+      await wipeLocalStorage({ subject: signedIn.subject });
+    },
     [Symbol.dispose]() { ydoc.destroy(); },
   };
 }
 ```
+
+`attachLocalStorage(ydoc, { subject, keyring })` derives the IDB database name
+and BroadcastChannel key from `subject` + `ydoc.guid` under a single durable
+prefix, so two signed-in subjects on the same browser profile never share
+local storage or exchange plaintext cross-tab updates. `wipeLocalStorage`
+deletes every database under that prefix in one call: no explicit guid list
+to maintain.
 
 For content documents (rich-text bodies, attachments) that only need bytes-on-the-wire, use `openCollaboration` with an empty `actions: {}` registry. Inbound dispatch frames reply `ActionNotFound`; the byte transport and presence channel are identical.
 

@@ -58,7 +58,7 @@ export function openFujiBrowser({
   const idb = attachLocalStorage(ydoc, signedIn);
   const collaboration = openCollaboration(ydoc, {
     url: roomWsUrl(APP_URLS.API, ydoc.guid),
-    openWebSocket: signedIn.auth.openWebSocket,
+    openWebSocket: signedIn.openWebSocket,
     waitFor: idb.whenLoaded,
     installationId,
     actions,

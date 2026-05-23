@@ -120,42 +120,41 @@ Both variants ship from this package. Plaintext (`attachTable`, `attachTables`, 
 
 Don't mix plaintext and encrypted wrappers on the same slot name: Yjs hands both calls the same underlying `Y.Array` and you get a silent plaintext-over-ciphertext race. The verb (`encryption.attachTable` vs plain `attachTable`) is the primary defense; review call sites accordingly. One slot name, one attach site, one intent.
 
-Minimal encrypted browser workspace: encryption + IndexedDB + cross-tab + collaboration (sync + presence + dispatch) wired together:
+Minimal encrypted browser workspace: encryption + subject-scoped IndexedDB + cross-tab + collaboration (sync + presence + dispatch) wired together:
 
 ```typescript
 import {
+	attachEncryption,
+	attachLocalStorage,
 	createInstallationId,
-	type LocalOwner,
-	type OpenWebSocket,
 	openCollaboration,
 	roomWsUrl,
+	wipeLocalStorage,
 } from '@epicenter/workspace';
-import { createSession } from '@epicenter/svelte';
+import { createSession, type SignedIn } from '@epicenter/svelte';
 import * as Y from 'yjs';
 import { auth } from '$lib/auth';
 import { appTables } from '$lib/workspace/definition';
 
 export function openApp({
-	owner,
+	signedIn,
 	installationId,
-	openWebSocket,
 }: {
-	owner: LocalOwner;
+	signedIn: SignedIn;
 	installationId: string;
-	openWebSocket?: OpenWebSocket;
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: true });
 
-	const encryption = owner.attachEncryption(ydoc);
+	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
 	const tables = encryption.attachTables(appTables);
 
-	const idb = owner.attachIndexedDb(ydoc);
-	owner.attachBroadcastChannel(ydoc);
+	// Subject-scoped encrypted IDB + cross-tab BroadcastChannel in one call.
+	const idb = attachLocalStorage(ydoc, signedIn);
 
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl('https://api.epicenter.so', ydoc.guid),
 		waitFor: idb.whenLoaded,
-		openWebSocket,
+		openWebSocket: signedIn.openWebSocket,
 		installationId,
 		actions: {},
 	});
@@ -170,6 +169,11 @@ export function openApp({
 		idb,
 		collaboration,
 		batch: (fn: () => void) => ydoc.transact(fn),
+		async wipe() {
+			ydoc.destroy();
+			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
+			await wipeLocalStorage({ subject: signedIn.subject });
+		},
 		[Symbol.dispose]() {
 			ydoc.destroy();
 		},
@@ -178,14 +182,15 @@ export function openApp({
 
 export const session = createSession({
 	auth,
-	build: ({ owner }) =>
+	build: ({ signedIn }) =>
 		openApp({
-			owner,
+			signedIn,
 			installationId: createInstallationId({ storage: localStorage }),
-			openWebSocket: auth.openWebSocket,
 		}),
 });
 ```
+
+`attachLocalStorage(ydoc, { subject, keyring })` pairs the encrypted IndexedDB store with a subject-scoped BroadcastChannel: two tabs of the same subject share both persisted state and live updates, while two different subjects on the same browser profile never see each other's data. The `signedIn` value from `createSession` is structurally `{ subject, keyring, ... }`, so you can pass it directly. On sign-out, call `wipeLocalStorage({ subject })` to delete every subject-scoped local database.
 
 `openCollaboration` is the workspace primitive: it wraps the sync supervisor, mirrors the relay's server-owned presence channel as `collaboration.devices`, and runs inbound dispatch frames against the local action registry. Find an online install with `workspace.collaboration.devices.list().find((d) => d.installationId === installationId)`, then call it with `workspace.collaboration.dispatch(...)`. Content documents use the same primitive with `actions: {}`. See [SYNC_ARCHITECTURE.md](./SYNC_ARCHITECTURE.md) for the full model.
 
@@ -789,14 +794,15 @@ import { attachYjsLog } from '@epicenter/workspace/node';
 
 ### Persistence
 
-Browser apps use `attachIndexedDb(ydoc)`. Bun/Node daemons use `attachYjsLog(ydoc, { filePath })`. Both bind to the Y.Doc and tear down on `ydoc.destroy()`.
+Browser apps use `attachIndexedDb(ydoc)` for unauthenticated docs, or `attachLocalStorage(ydoc, { subject, keyring })` for an authenticated workspace that needs encrypted persistence plus cross-tab pairing. Bun/Node daemons use `attachYjsLog(ydoc, { filePath })`. All bind to the Y.Doc and tear down on `ydoc.destroy()`.
 
 | Primitive | Runtime | Barrier | Other | Purpose |
 |---|---|---|---|---|
 | `attachIndexedDb(ydoc)` | browser | `whenLoaded`, `whenDisposed` | `clearLocal()` | Local Yjs persistence via `y-indexeddb` |
+| `attachLocalStorage(ydoc, { subject, keyring })` | browser | `whenLoaded`, `whenDisposed` | paired BroadcastChannel | Subject-scoped encrypted IDB plus cross-tab pairing |
 | `attachYjsLog(ydoc, { filePath })` | Bun/Node | `whenDisposed` (sync replay; no `whenLoaded` needed) | `clearLocal()` | Append-log SQLite file the daemon writes |
 
-Authenticated browser workspaces usually receive a `LocalOwner` from `createSession`. Call `owner.wipeLocalYjsData(ydocGuids)` after disposal to delete owner-scoped local Yjs databases.
+For authenticated apps, call `await wipeLocalStorage({ subject })` after disposing the bundle to delete every subject-scoped encrypted IDB database on the current browser profile (sign-out, "delete my local data", account switch).
 
 `attachSqliteMaterializer` and `attachMarkdownMaterializer` are not persistence: they project workspace rows into queryable SQLite tables or `.md` files. See the materializer subsections below.
 
@@ -830,7 +836,7 @@ void openNotes;
 
 ### Sync
 
-One primitive wraps the WebSocket transport: `openCollaboration`. The workspace document passes a real `actions` registry; content documents that only need bytes-on-the-wire pass `actions: {}`. Compose it with `attachBroadcastChannel(ydoc)` for local-only documents, or `owner.attachBroadcastChannel(ydoc)` for authenticated browser workspaces opened through `createSession`.
+One primitive wraps the WebSocket transport: `openCollaboration`. The workspace document passes a real `actions` registry; content documents that only need bytes-on-the-wire pass `actions: {}`. Compose it with `attachBroadcastChannel(ydoc)` for unauthenticated local-only documents. Authenticated browser workspaces use `attachLocalStorage(ydoc, { subject, keyring })`, which pairs encrypted IDB with a subject-scoped BroadcastChannel in one call.
 
 ```typescript
 import * as Y from 'yjs';

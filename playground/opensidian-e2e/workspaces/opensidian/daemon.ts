@@ -19,13 +19,11 @@ import {
 	createDisposableCache,
 	defineActions,
 	defineMutation,
+	defineWorkspace,
 	openCollaboration,
 	roomWsUrl,
 } from '@epicenter/workspace';
-import {
-	type DaemonWorkspaceContext,
-	defineDaemonWorkspace,
-} from '@epicenter/workspace/daemon';
+import type { DaemonWorkspaceContext } from '@epicenter/workspace/daemon';
 import { attachMarkdownMaterializer } from '@epicenter/workspace/document/materializer/markdown';
 import { attachSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import { toSlugFilename } from '@epicenter/workspace/markdown';
@@ -43,15 +41,21 @@ import { prepareMarkdownFiles } from '../../prepare-markdown-files';
 const SERVER_URL = process.env.EPICENTER_SERVER ?? 'https://api.epicenter.so';
 const WORKSPACE_ID = 'opensidian';
 
-async function openOpensidianPlayground(ctx: DaemonWorkspaceContext) {
+async function openOpensidianPlayground({
+	projectDir,
+	clientId,
+	installationId,
+	keyring,
+	openWebSocket,
+}: DaemonWorkspaceContext) {
 	const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
-	ydoc.clientID = ctx.clientId;
-	const encryption = attachEncryption(ydoc, { keyring: ctx.keyring });
+	ydoc.clientID = clientId;
+	const encryption = attachEncryption(ydoc, { keyring });
 	const tables = encryption.attachTables(opensidianTables);
 	const kv = encryption.attachKv({});
 
 	const persistence = attachYjsLog(ydoc, {
-		filePath: yjsPath(ctx.projectDir, WORKSPACE_ID),
+		filePath: yjsPath(projectDir, WORKSPACE_ID),
 	});
 
 	const fileContentDocs = createDisposableCache(
@@ -64,7 +68,7 @@ async function openOpensidianPlayground(ctx: DaemonWorkspaceContext) {
 				gc: true,
 			});
 			const contentPersistence = attachYjsLog(contentYdoc, {
-				filePath: yjsPath(ctx.projectDir, contentYdoc.guid),
+				filePath: yjsPath(projectDir, contentYdoc.guid),
 			});
 			return {
 				ydoc: contentYdoc,
@@ -95,14 +99,14 @@ async function openOpensidianPlayground(ctx: DaemonWorkspaceContext) {
 
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl(SERVER_URL, ydoc.guid),
-		openWebSocket: ctx.openWebSocket,
-		installationId: ctx.installationId,
+		openWebSocket,
+		installationId,
 		actions,
 	});
 
 	const whenReady = collaboration.whenConnected;
 	const markdown = attachMarkdownMaterializer(ydoc, {
-		dir: markdownPath(ctx.projectDir, WORKSPACE_ID),
+		dir: markdownPath(projectDir, WORKSPACE_ID),
 		waitFor: whenReady,
 	}).table(tables.files, {
 		filename: (row) =>
@@ -137,7 +141,7 @@ async function openOpensidianPlayground(ctx: DaemonWorkspaceContext) {
 		},
 	});
 
-	const sqliteFile = sqlitePath(ctx.projectDir, WORKSPACE_ID);
+	const sqliteFile = sqlitePath(projectDir, WORKSPACE_ID);
 	mkdirSync(dirname(sqliteFile), { recursive: true });
 	const sqlite = attachSqliteMaterializer(ydoc, {
 		db: new Database(sqliteFile),
@@ -169,6 +173,6 @@ export type OpensidianPlaygroundRuntime = Awaited<
 	ReturnType<typeof openOpensidianPlayground>
 >;
 
-export default defineDaemonWorkspace({
+export default defineWorkspace({
 	open: openOpensidianPlayground,
 });

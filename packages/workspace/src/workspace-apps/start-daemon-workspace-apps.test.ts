@@ -19,7 +19,7 @@ import { expectErr, expectOk } from 'wellcrafted/testing';
 import type {
 	DaemonWorkspaceContext,
 	DaemonWorkspaceDefinition,
-} from '../daemon/define-daemon-workspace.js';
+} from '../daemon/define-workspace.js';
 import type { DaemonRuntime } from '../daemon/types.js';
 
 import { startDaemonWorkspaceApps } from './start-daemon-workspace-apps.js';

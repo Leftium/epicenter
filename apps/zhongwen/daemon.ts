@@ -13,17 +13,23 @@ import { attachDaemonInfrastructure } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
 import { ZHONGWEN_ID, zhongwenKv, zhongwenTables } from './workspace.js';
 
-export function openZhongwenDaemon(ctx: DaemonWorkspaceContext) {
+export function openZhongwenDaemon({
+	projectDir,
+	clientId,
+	installationId,
+	keyring,
+	openWebSocket,
+}: DaemonWorkspaceContext) {
 	const ydoc = new Y.Doc({ guid: ZHONGWEN_ID, gc: true });
-	ydoc.clientID = ctx.clientId;
-	const encryption = attachEncryption(ydoc, { keyring: ctx.keyring });
+	ydoc.clientID = clientId;
+	const encryption = attachEncryption(ydoc, { keyring });
 	encryption.attachTables(zhongwenTables);
 	encryption.attachKv(zhongwenKv);
 
 	return attachDaemonInfrastructure(ydoc, {
-		projectDir: ctx.projectDir,
-		openWebSocket: ctx.openWebSocket,
-		installationId: ctx.installationId,
+		projectDir,
+		openWebSocket,
+		installationId,
 		actions: {},
 	});
 }

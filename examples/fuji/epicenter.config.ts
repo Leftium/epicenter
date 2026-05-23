@@ -38,10 +38,17 @@ import { createLogger } from 'wellcrafted/logger';
 import * as Y from 'yjs';
 
 export default defineWorkspace({
-	open(ctx) {
+	open({
+		projectDir,
+		route,
+		clientId,
+		installationId,
+		keyring,
+		openWebSocket,
+	}) {
 		const ydoc = new Y.Doc({ guid: FUJI_ID, gc: true });
-		ydoc.clientID = ctx.clientId;
-		const encryption = attachEncryption(ydoc, { keyring: ctx.keyring });
+		ydoc.clientID = clientId;
+		const encryption = attachEncryption(ydoc, { keyring });
 		const tables = encryption.attachTables(fujiTables);
 		encryption.attachKv({});
 		const actions = createFujiActions(tables);
@@ -49,8 +56,8 @@ export default defineWorkspace({
 		// Runtime cache: hidden under .epicenter/ at the project root.
 		// Inlined so the canonical layout stays visible at the project root.
 		const sqliteDb = openWriterSqlite({
-			filePath: join(ctx.projectDir, '.epicenter', 'sqlite.db'),
-			log: createLogger(`${ctx.route}-sqlite`),
+			filePath: join(projectDir, '.epicenter', 'sqlite.db'),
+			log: createLogger(`${route}-sqlite`),
 		});
 		ydoc.once('destroy', () => sqliteDb.close());
 
@@ -61,13 +68,13 @@ export default defineWorkspace({
 		// the table name to `dir`, so `dir: projectDir` produces
 		// `<projectDir>/entries/<slug>.md` for the `entries` table.
 		attachMarkdownMaterializer(ydoc, {
-			dir: ctx.projectDir,
+			dir: projectDir,
 		}).table(tables.entries, { filename: slugFilename('title') });
 
 		return attachDaemonInfrastructure(ydoc, {
-			projectDir: ctx.projectDir,
-			openWebSocket: ctx.openWebSocket,
-			installationId: ctx.installationId,
+			projectDir,
+			openWebSocket,
+			installationId,
 			actions,
 		});
 	},

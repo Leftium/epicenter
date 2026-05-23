@@ -1,12 +1,16 @@
 /**
- * `defineDaemonWorkspace`: typed entry contract for a daemon route definition.
- * A project config imports these definitions and assigns them to
- * `daemon.routes`; the host calls `open(ctx)` once on `epicenter daemon up`.
+ * `defineWorkspace`: typed entry contract for a daemon workspace definition.
  *
- * The returned runtime shape matches `DaemonRuntime` so the socket app does
- * not branch on route origin.
+ * The canonical single-workspace shape default-exports `defineWorkspace({...})`
+ * directly from `epicenter.config.ts`; the loader assigns the route name from
+ * the project directory's basename. Multi-route monorepo configs assign these
+ * definitions to `defineConfig({ daemon: { routes: { ... } } })`.
  *
- * See `specs/20260520T120000-code-composed-daemon-route-map.md`.
+ * The host calls `open(ctx)` once on `epicenter daemon up`. The returned
+ * runtime shape matches `DaemonRuntime` so the socket app does not branch
+ * on route origin.
+ *
+ * See `specs/20260522T220000-workspace-project-layout.md`.
  */
 
 import type { SubjectKeyring } from '@epicenter/encryption';
@@ -65,11 +69,11 @@ export type DaemonWorkspaceDefinition<
 };
 
 /**
- * Define a daemon route. Pure identity at the value level; the
- * useful work is the type binding so route `daemon.ts` files get
- * IntelliSense for the context fields and the runtime return shape.
+ * Define a daemon workspace. Pure identity at the value level; the useful
+ * work is the type binding so `epicenter.config.ts` files get IntelliSense
+ * for the context fields and the runtime return shape.
  */
-export function defineDaemonWorkspace<TRuntime extends DaemonRuntime>(
+export function defineWorkspace<TRuntime extends DaemonRuntime>(
 	definition: DaemonWorkspaceDefinition<TRuntime>,
 ): DaemonWorkspaceDefinition<TRuntime> {
 	return definition;

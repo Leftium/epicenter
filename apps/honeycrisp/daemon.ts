@@ -36,17 +36,24 @@ import {
 	honeycrispTables,
 } from './workspace.js';
 
-export function openHoneycrispDaemon(ctx: DaemonWorkspaceContext) {
+export function openHoneycrispDaemon({
+	projectDir,
+	route,
+	clientId,
+	installationId,
+	keyring,
+	openWebSocket,
+}: DaemonWorkspaceContext) {
 	const ydoc = new Y.Doc({ guid: HONEYCRISP_ID, gc: true });
-	ydoc.clientID = ctx.clientId;
-	const encryption = attachEncryption(ydoc, { keyring: ctx.keyring });
+	ydoc.clientID = clientId;
+	const encryption = attachEncryption(ydoc, { keyring });
 	const tables = encryption.attachTables(honeycrispTables);
 	encryption.attachKv({});
 	const actions = createHoneycrispActions(tables);
 
 	const sqliteDb = openWriterSqlite({
-		filePath: sqlitePath(ctx.projectDir, ydoc.guid),
-		log: createLogger(`${ctx.route}-sqlite`),
+		filePath: sqlitePath(projectDir, ydoc.guid),
+		log: createLogger(`${route}-sqlite`),
 	});
 	ydoc.once('destroy', () => sqliteDb.close());
 
@@ -55,13 +62,13 @@ export function openHoneycrispDaemon(ctx: DaemonWorkspaceContext) {
 	sqlite.table(tables.notes);
 
 	attachMarkdownMaterializer(ydoc, {
-		dir: markdownPath(ctx.projectDir, ydoc.guid),
+		dir: markdownPath(projectDir, ydoc.guid),
 	}).table(tables.notes, { filename: slugFilename('title') });
 
 	return attachDaemonInfrastructure(ydoc, {
-		projectDir: ctx.projectDir,
-		openWebSocket: ctx.openWebSocket,
-		installationId: ctx.installationId,
+		projectDir,
+		openWebSocket,
+		installationId,
 		actions,
 	});
 }

@@ -13,10 +13,10 @@ import { tabManagerTables } from '@epicenter/tab-manager';
 import {
 	attachEncryption,
 	defineActions,
+	defineWorkspace,
 	openCollaboration,
 	roomWsUrl,
 } from '@epicenter/workspace';
-import { defineDaemonWorkspace } from '@epicenter/workspace/daemon';
 import {
 	attachMarkdownMaterializer,
 	slugFilename,
@@ -27,30 +27,30 @@ import * as Y from 'yjs';
 const SERVER_URL = 'https://api.epicenter.so';
 const WORKSPACE_ID = 'epicenter.tab-manager';
 
-export default defineDaemonWorkspace({
-	async open(ctx) {
+export default defineWorkspace({
+	async open({ projectDir, clientId, installationId, keyring, openWebSocket }) {
 		const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
-		ydoc.clientID = ctx.clientId;
-		const encryption = attachEncryption(ydoc, { keyring: ctx.keyring });
+		ydoc.clientID = clientId;
+		const encryption = attachEncryption(ydoc, { keyring });
 		const tables = encryption.attachTables(tabManagerTables);
 		const kv = encryption.attachKv({});
 
 		const persistence = attachYjsLog(ydoc, {
-			filePath: yjsPath(ctx.projectDir, WORKSPACE_ID),
+			filePath: yjsPath(projectDir, WORKSPACE_ID),
 		});
 
 		const actions = defineActions({});
 
 		const collaboration = openCollaboration(ydoc, {
 			url: roomWsUrl(SERVER_URL, ydoc.guid),
-			openWebSocket: ctx.openWebSocket,
-			installationId: ctx.installationId,
+			openWebSocket,
+			installationId,
 			actions,
 		});
 
 		const whenReady = collaboration.whenConnected;
 		const markdown = attachMarkdownMaterializer(ydoc, {
-			dir: markdownPath(ctx.projectDir, WORKSPACE_ID),
+			dir: markdownPath(projectDir, WORKSPACE_ID),
 			waitFor: whenReady,
 		})
 			.table(tables.savedTabs, { filename: slugFilename('title') })

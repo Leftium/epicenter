@@ -3,10 +3,10 @@
  * so peer-A is distinguishable from peer-B in the same workspace.
  */
 
-import { defineDaemonWorkspace } from '@epicenter/workspace/daemon';
+import { defineWorkspace } from '@epicenter/workspace';
 import { openNotes } from '../../../notes';
 
-export default defineDaemonWorkspace({
+export default defineWorkspace({
 	open: ({ openWebSocket }) =>
 		openNotes({
 			installationId: 'notes-repro-peer-a',

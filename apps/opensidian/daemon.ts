@@ -21,17 +21,23 @@ import { attachDaemonInfrastructure } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
 import { OPENSIDIAN_ID, opensidianTables } from './workspace.js';
 
-export function openOpensidianDaemon(ctx: DaemonWorkspaceContext) {
+export function openOpensidianDaemon({
+	projectDir,
+	clientId,
+	installationId,
+	keyring,
+	openWebSocket,
+}: DaemonWorkspaceContext) {
 	const ydoc = new Y.Doc({ guid: OPENSIDIAN_ID, gc: true });
-	ydoc.clientID = ctx.clientId;
-	const encryption = attachEncryption(ydoc, { keyring: ctx.keyring });
+	ydoc.clientID = clientId;
+	const encryption = attachEncryption(ydoc, { keyring });
 	encryption.attachTables(opensidianTables);
 	encryption.attachKv({});
 
 	return attachDaemonInfrastructure(ydoc, {
-		projectDir: ctx.projectDir,
-		openWebSocket: ctx.openWebSocket,
-		installationId: ctx.installationId,
+		projectDir,
+		openWebSocket,
+		installationId,
 		actions: {},
 	});
 }

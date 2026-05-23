@@ -21,7 +21,7 @@ import { Err, Ok, type Result } from 'wellcrafted/result';
 import type {
 	DaemonWorkspaceContext,
 	DaemonWorkspaceDefinition,
-} from '../daemon/define-daemon-workspace.js';
+} from '../daemon/define-workspace.js';
 import type { StartedDaemonRoute } from '../daemon/index.js';
 import { validateDaemonRouteNames } from '../daemon/route-validation.js';
 import { hashClientId } from '../shared/client-id.js';

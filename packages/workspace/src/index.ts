@@ -117,10 +117,10 @@ export {
 export {
 	DEFAULT_PROJECT_CONFIG_SOURCE,
 	defineConfig,
-	defineWorkspace,
 	type EpicenterConfig,
 	PROJECT_CONFIG_FILENAME,
 } from './config/define-config.js';
+export { defineWorkspace } from './daemon/define-workspace.js';
 export type { ProjectDir } from './shared/types';
 
 // ════════════════════════════════════════════════════════════════════════════

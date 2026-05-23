@@ -1,4 +1,5 @@
-import { defineConfig, defineWorkspace, type EpicenterConfig } from './define-config.js';
+import { defineWorkspace } from '../daemon/define-workspace.js';
+import { defineConfig, type EpicenterConfig } from './define-config.js';
 
 // Both `defineConfig` and `defineWorkspace` are `(x) => x`. The contract worth
 // pinning lives at the type level. Runtime identity is JS-trivial and covered

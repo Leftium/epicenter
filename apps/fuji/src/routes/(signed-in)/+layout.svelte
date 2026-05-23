@@ -3,7 +3,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
 	import { requireFuji, session } from '$lib/session';
-	import { auth } from '$platform/auth';
+	import { auth } from '$lib/auth';
 	import FujiAppShell from './components/FujiAppShell.svelte';
 
 	let { children } = $props();

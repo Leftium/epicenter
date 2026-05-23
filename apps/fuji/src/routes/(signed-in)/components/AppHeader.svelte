@@ -9,7 +9,7 @@
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import { goto } from '$app/navigation';
 	import { requireFuji } from '$lib/session';
-	import { auth } from '$platform/auth';
+	import { auth } from '$lib/auth';
 	import BulkAddModal from './BulkAddModal.svelte';
 
 	let { onOpenSearch }: { onOpenSearch: () => void } = $props();

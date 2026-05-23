@@ -1,6 +1,6 @@
 import { createSession } from '@epicenter/svelte';
 import { createInstallationId } from '@epicenter/workspace';
-import { auth } from '$platform/auth';
+import { auth } from '$lib/auth';
 import { openFujiBrowser } from './browser';
 import { createEntriesState } from './entries-state.svelte';
 

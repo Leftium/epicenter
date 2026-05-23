@@ -132,16 +132,16 @@ console.log(
 for (const zone of ZONES) {
 	console.log(`\n==> ${zone.name} (email: ${zone.email})`);
 
-	const found = await cf<Array<{ id: string }>>(
+	const [match] = await cf<Array<{ id: string }>>(
 		'GET',
 		`/zones?name=${encodeURIComponent(zone.name)}`,
 	);
-	if (found.length === 0) {
+	if (!match) {
 		console.error('    SKIP: zone not found. Add to Cloudflare account first.');
 		drift++;
 		continue;
 	}
-	const zoneId = found[0].id;
+	const zoneId = match.id;
 
 	for (const [id, want] of Object.entries(ZONE_BASELINE)) {
 		const got = await cf<{ value: unknown }>(

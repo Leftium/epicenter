@@ -16,10 +16,10 @@ import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type FileId, fileContentDocGuid } from '@epicenter/filesystem';
 import {
-	attachEncryption,
 	attachTimeline,
 	createDisposableCache,
 	generateId,
+	openEncryptedDoc,
 } from '@epicenter/workspace';
 import { assembleMarkdown } from '@epicenter/workspace/markdown';
 import { attachYjsLog } from '@epicenter/workspace/node';
@@ -46,13 +46,15 @@ function dbPath(id: string) {
 
 /** Create a workspace client with filesystem persistence for testing. */
 function createTestClient() {
-	const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
-	const encryption = attachEncryption(ydoc, {
+	const ws = openEncryptedDoc({
+		id: WORKSPACE_ID,
 		keyring: () => TEST_ENCRYPTION_KEYS,
 	});
-	const tables = encryption.attachTables(opensidianTables);
-	const kv = encryption.attachKv({});
-	const persistence = attachYjsLog(ydoc, { filePath: dbPath(WORKSPACE_ID) });
+	const tables = ws.attachTables(opensidianTables);
+	const kv = ws.attachKv({});
+	const persistence = attachYjsLog(ws.ydoc, {
+		filePath: dbPath(WORKSPACE_ID),
+	});
 
 	const contentDocs = createDisposableCache(
 		(fileId: FileId) => {
@@ -77,12 +79,12 @@ function createTestClient() {
 
 	const client = {
 		id: WORKSPACE_ID,
-		ydoc,
+		ydoc: ws.ydoc,
 		tables,
 		kv,
 		whenReady: Promise.resolve(),
 		async dispose() {
-			ydoc.destroy();
+			ws[Symbol.dispose]();
 		},
 	};
 	return { client, contentDocs };
@@ -215,13 +217,13 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 	const IMPORT_FILES_DIR = join(IMPORT_DIR, 'files');
 
 	function createImportClient() {
-		const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
-		const encryption = attachEncryption(ydoc, {
+		const ws = openEncryptedDoc({
+			id: WORKSPACE_ID,
 			keyring: () => TEST_ENCRYPTION_KEYS,
 		});
-		const tables = encryption.attachTables(opensidianTables);
-		const kv = encryption.attachKv({});
-		const persistence = attachYjsLog(ydoc, {
+		const tables = ws.attachTables(opensidianTables);
+		const kv = ws.attachKv({});
+		const persistence = attachYjsLog(ws.ydoc, {
 			filePath: join(IMPORT_PERSISTENCE, 'opensidian.db'),
 		});
 
@@ -252,12 +254,12 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 
 		const client = {
 			id: WORKSPACE_ID,
-			ydoc,
+			ydoc: ws.ydoc,
 			tables,
 			kv,
 			whenReady: Promise.resolve(),
 			async dispose() {
-				ydoc.destroy();
+				ws[Symbol.dispose]();
 			},
 		};
 		return { client, contentDocs };

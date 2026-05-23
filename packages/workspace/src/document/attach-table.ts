@@ -5,8 +5,8 @@
  * and wraps it with a typed `Table`. Provides CRUD operations with
  * schema validation and migration on read.
  *
- * For encrypted storage, call `encryption.attachTable` / `encryption.attachKv`
- * on the coordinator returned by `attachEncryption(ydoc, { keyring })`.
+ * For encrypted storage, construct the workspace doc with `openEncryptedDoc`
+ * and call `attachTable` / `attachKv` on the returned bundle.
  *
  * @example
  * ```typescript
@@ -315,8 +315,8 @@ export function attachReadonlyTable<
  * `attachTable`: calls it for each entry and returns the helpers keyed by
  * table name.
  *
- * For encrypted storage, call `encryption.attachTables` on the coordinator
- * returned by `attachEncryption(ydoc, { keyring })`.
+ * For encrypted storage, call `attachTables` on the bundle returned by
+ * `openEncryptedDoc({ id, keyring })`.
  */
 export function attachTables<T extends TableDefinitions>(
 	ydoc: Y.Doc,

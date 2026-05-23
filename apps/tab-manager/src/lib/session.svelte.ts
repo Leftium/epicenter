@@ -56,9 +56,9 @@ function buildSession(
 ) {
 	return createSession({
 		auth,
-		build: ({ owner }) => {
+		build: (signedIn) => {
 			const tabManager = openTabManagerBrowser({
-				owner,
+				signedIn,
 				installationId: profile.installationId,
 			});
 

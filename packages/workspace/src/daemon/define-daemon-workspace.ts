@@ -9,8 +9,7 @@
  * See `specs/20260520T120000-code-composed-daemon-route-map.md`.
  */
 
-import type * as Y from 'yjs';
-import type { EncryptionAttachment } from '../document/attach-encryption.js';
+import type { SubjectKeyring } from '@epicenter/encryption';
 import type { OpenWebSocket } from '../document/internal/sync-supervisor.js';
 import type { MaybePromise, ProjectDir } from '../shared/types.js';
 import type { DaemonRuntime } from './types.js';
@@ -19,10 +18,10 @@ import type { DaemonRuntime } from './types.js';
  * Context handed to `open()` for one daemon route.
  *
  * The host owns auth: it refuses to call `open` when machine auth is
- * signed-out, builds the encryption attacher around the keyring lookup, and
- * passes the WebSocket opener through. Daemon code never touches the auth
- * client directly; it composes a workspace runtime out of the capabilities
- * below and returns it.
+ * signed-out, exposes the keyring lookup (with a late-sign-out guard baked
+ * into the closure), and passes the WebSocket opener through. Daemon code
+ * never touches the auth client directly; it composes a workspace runtime
+ * out of the capabilities below and returns it.
  *
  * - `projectDir` is the resolved project root (same value the daemon lease
  *   owns). Disk-writing helpers like `yjsPath` derive every absolute path
@@ -31,13 +30,14 @@ import type { DaemonRuntime } from './types.js';
  *   the same string with logs, materializers, and installation ids.
  * - `clientId` is the deterministic Y.Doc clientID for this daemon (derived
  *   from `projectDir` so two daemons in different projects produce distinct
- *   update streams). Pass it to the workspace opener.
+ *   update streams). Pass it to the workspace opener via
+ *   `openEncryptedDoc({ id, keyring, clientId })`.
  * - `installationId` is the conventional collaboration installationId for the daemon
  *   side of this route (`<route>-daemon`). Pass it to `openCollaboration`.
- * - `attachEncryption` mirrors `LocalOwner.attachEncryption`: hand it a
- *   `Y.Doc` and get back the encryption attachment. The host bakes the
- *   keyring lookup (including the late-sign-out guard) into the closure so
- *   the daemon never touches auth state.
+ * - `keyring` is the lazy reader for the current subject keyring. Pass it to
+ *   `openEncryptedDoc({ id, keyring })`. The host's closure throws when auth
+ *   is signed-out, so a late sign-out turns into a thrown error at the next
+ *   encrypted-write or registration site rather than silent ciphertext loss.
  * - `openWebSocket` is the auth-bound WebSocket factory for
  *   `openCollaboration`.
  */
@@ -46,7 +46,7 @@ export type DaemonWorkspaceContext = {
 	route: string;
 	clientId: number;
 	installationId: string;
-	attachEncryption: (ydoc: Y.Doc) => EncryptionAttachment;
+	keyring: () => SubjectKeyring;
 	openWebSocket: OpenWebSocket;
 };
 

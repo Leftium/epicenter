@@ -19,19 +19,21 @@ const signedIn = (userId: string): AuthState => ({
 	keyring: [...keyring],
 });
 
-test('signed-out gap disposes old payload before building the next subject', () => {
+const ownerLabel = (state: AuthState) =>
+	state.status === 'signed-out'
+		? 'signed-out'
+		: state.owner.kind === 'personal'
+			? state.owner.userId
+			: 'team';
+
+test('signed-out gap disposes old payload before building the next owner', () => {
 	const { auth, setState } = createAuthHarness(signedIn('alice'));
 	const events: string[] = [];
 
 	const session = createSession({
 		auth,
-		build: () => {
-			const label =
-				auth.state.status === 'signed-out'
-					? 'signed-out'
-					: auth.state.owner.kind === 'personal'
-						? auth.state.owner.userId
-						: 'team';
+		build: ({ owner }) => {
+			const label = owner.kind === 'personal' ? owner.userId : 'team';
 			events.push(`build:${label}`);
 
 			return {
@@ -49,6 +51,28 @@ test('signed-out gap disposes old payload before building the next subject', () 
 	expect(events).toEqual(['build:alice', 'dispose:alice', 'build:bob']);
 	expect(session.current?.label).toBe('bob');
 
+	session[Symbol.dispose]();
+});
+
+test('build receives signedIn with owner, keyring callback, and auth client', () => {
+	const { auth } = createAuthHarness(signedIn('alice'));
+
+	const session = createSession({
+		auth,
+		build: (received) => {
+			expect(received.server).toBe('api.test');
+			expect(received.owner).toEqual({ kind: 'personal', userId: 'alice' });
+			expect(typeof received.keyring).toBe('function');
+			expect(received.keyring()).toEqual([...keyring]);
+			expect(received.auth).toBe(auth);
+			expect(ownerLabel(auth.state)).toBe('alice');
+			return {
+				[Symbol.dispose]() {},
+			};
+		},
+	});
+
+	expect(session.current).not.toBeNull();
 	session[Symbol.dispose]();
 });
 

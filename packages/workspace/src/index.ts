@@ -141,8 +141,8 @@ export {
 } from './cache/disposable-cache.js';
 
 export { attachBroadcastChannel } from './document/attach-broadcast-channel.js';
-export { attachEncryption } from './document/attach-encryption.js';
 export { attachIndexedDb } from './document/attach-indexed-db.js';
+export { attachLocalStorage } from './document/attach-local-storage.js';
 export {
 	attachKv,
 	type InferKvValue,
@@ -176,15 +176,17 @@ export type {
 	OpenWebSocket,
 	SyncStatus,
 } from './document/internal/sync-supervisor.js';
-export {
-	createLocalOwner,
-	type LocalOwner,
-} from './document/local-owner.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 export {
 	type Collaboration,
 	openCollaboration,
 } from './document/open-collaboration.js';
+export {
+	type EncryptedDoc,
+	openEncryptedDoc,
+	type OpenEncryptedDocOptions,
+} from './document/open-encrypted-doc.js';
+export { wipeLocalStorage } from './document/wipe-local-storage.js';
 // Transport URL builder.
 //
 // `roomWsUrl(apiUrl, ydoc.guid)` builds the WebSocket URL for `/rooms/:room`.

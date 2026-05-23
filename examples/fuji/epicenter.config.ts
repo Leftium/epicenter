@@ -8,17 +8,23 @@
  *     yjs.db                  Yjs persistence
  *     sqlite.db               SQL materializer
  *
- * The default export is a single `defineWorkspace({...})` call. The loader
- * wraps it as `{ daemon: { routes: { <basename>: ... } } }` internally,
- * deriving the route name from this project directory's name. For the
- * `examples/fuji` directory the route name is `fuji`, so CLI commands
- * address it as `fuji.<action>` exactly as they did under the previous
- * `defineConfig({ daemon: { routes: { fuji } } })` shape.
+ * Single-workspace shape: `defineWorkspace` default-exports the workspace
+ * definition directly. The host derives the route name from the project
+ * directory's basename (`fuji`).
+ *
+ * Composition is inline so the layout decisions are visible at the project
+ * root. Other projects that want the library default paths can call
+ * `openFujiDaemon(ctx)` from `@epicenter/fuji/daemon` instead of writing this
+ * out by hand.
  */
 
 import { join } from 'node:path';
-import { openFujiWorkspace } from '@epicenter/fuji';
-import { defineWorkspace } from '@epicenter/workspace';
+import {
+	createFujiActions,
+	FUJI_ID,
+	fujiTables,
+} from '@epicenter/fuji';
+import { defineWorkspace, openEncryptedDoc } from '@epicenter/workspace';
 import {
 	attachMarkdownMaterializer,
 	slugFilename,
@@ -31,44 +37,39 @@ import {
 import { createLogger } from 'wellcrafted/logger';
 
 export default defineWorkspace({
-	async open({
-		projectDir,
-		route,
-		clientId,
-		installationId,
-		attachEncryption,
-		openWebSocket,
-	}) {
-		const workspace = openFujiWorkspace(attachEncryption, { clientId });
-
-		const infra = attachDaemonInfrastructure(workspace.ydoc, {
-			projectDir,
-			openWebSocket,
-			installationId,
-			actions: workspace.actions,
+	open(ctx) {
+		const ws = openEncryptedDoc({
+			id: FUJI_ID,
+			keyring: ctx.keyring,
+			clientId: ctx.clientId,
 		});
+		const tables = ws.attachTables(fujiTables);
+		ws.attachKv({});
+		const actions = createFujiActions(tables);
 
 		// Runtime cache: hidden under .epicenter/ at the project root.
-		// The spec's future helper is `sqlitePath(projectDir)`; we inline the
-		// path here so the example runs against today's package surface.
+		// Inlined so the canonical layout stays visible at the project root.
 		const sqliteDb = openWriterSqlite({
-			filePath: join(projectDir, '.epicenter', 'sqlite.db'),
-			log: createLogger(`${route}-sqlite`),
+			filePath: join(ctx.projectDir, '.epicenter', 'sqlite.db'),
+			log: createLogger(`${ctx.route}-sqlite`),
 		});
-		workspace.ydoc.once('destroy', () => sqliteDb.close());
+		ws.ydoc.once('destroy', () => sqliteDb.close());
 
-		attachSqliteMaterializer(workspace.ydoc, { db: sqliteDb }).table(
-			workspace.tables.entries,
-		);
+		attachSqliteMaterializer(ws.ydoc, { db: sqliteDb }).table(tables.entries);
 
 		// Markdown: visible at project root, one directory per table.
 		// Committed to git as the source of truth. The materializer appends
 		// the table name to `dir`, so `dir: projectDir` produces
 		// `<projectDir>/entries/<slug>.md` for the `entries` table.
-		attachMarkdownMaterializer(workspace.ydoc, {
-			dir: projectDir,
-		}).table(workspace.tables.entries, { filename: slugFilename('title') });
+		attachMarkdownMaterializer(ws.ydoc, {
+			dir: ctx.projectDir,
+		}).table(tables.entries, { filename: slugFilename('title') });
 
-		return infra;
+		return attachDaemonInfrastructure(ws.ydoc, {
+			projectDir: ctx.projectDir,
+			openWebSocket: ctx.openWebSocket,
+			installationId: ctx.installationId,
+			actions,
+		});
 	},
 });

@@ -1,34 +1,32 @@
 /**
- * Zhongwen daemon extension entrypoint.
+ * Zhongwen daemon library default.
  *
- * Opens the shared Zhongwen workspace in a node runtime and adds daemon
- * infrastructure (Yjs log + sync). The current extension exposes no daemon
- * actions.
+ * `openZhongwenDaemon(ctx)` composes the daemon-side mount that any
+ * Zhongwen-consuming project can use directly when they want library-default
+ * paths. Zhongwen has no daemon actions and no materializers today; the
+ * daemon's only job is to host the encrypted Y.Doc on disk and bridge sync.
  */
 
-import { defineDaemonWorkspace } from '@epicenter/workspace/daemon';
+import type { DaemonWorkspaceContext } from '@epicenter/workspace/daemon';
 import { attachDaemonInfrastructure } from '@epicenter/workspace/node';
-import { openZhongwenWorkspace } from './workspace.js';
+import { openEncryptedDoc } from '@epicenter/workspace';
+import { ZHONGWEN_ID, zhongwenKv, zhongwenTables } from './workspace.js';
 
-export function defineZhongwenDaemon() {
-	return defineDaemonWorkspace({
-		async open({
-			projectDir,
-			clientId,
-			installationId,
-			attachEncryption,
-			openWebSocket,
-		}) {
-			const workspace = openZhongwenWorkspace(attachEncryption, { clientId });
-			const infra = attachDaemonInfrastructure(workspace.ydoc, {
-				projectDir,
-				openWebSocket,
-				installationId,
-				actions: {},
-			});
-			return { ...workspace, ...infra };
-		},
+export function openZhongwenDaemon(ctx: DaemonWorkspaceContext) {
+	const ws = openEncryptedDoc({
+		id: ZHONGWEN_ID,
+		keyring: ctx.keyring,
+		clientId: ctx.clientId,
+	});
+	ws.attachTables(zhongwenTables);
+	ws.attachKv(zhongwenKv);
+
+	return attachDaemonInfrastructure(ws.ydoc, {
+		projectDir: ctx.projectDir,
+		openWebSocket: ctx.openWebSocket,
+		installationId: ctx.installationId,
+		actions: {},
 	});
 }
 
-export default defineZhongwenDaemon();
+export type ZhongwenDaemon = ReturnType<typeof openZhongwenDaemon>;

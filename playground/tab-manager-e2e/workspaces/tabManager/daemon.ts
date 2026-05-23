@@ -13,6 +13,7 @@ import { tabManagerTables } from '@epicenter/tab-manager';
 import {
 	defineActions,
 	openCollaboration,
+	openEncryptedDoc,
 	roomWsUrl,
 } from '@epicenter/workspace';
 import { defineDaemonWorkspace } from '@epicenter/workspace/daemon';
@@ -21,34 +22,36 @@ import {
 	slugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachYjsLog, markdownPath, yjsPath } from '@epicenter/workspace/node';
-import * as Y from 'yjs';
 
 const SERVER_URL = 'https://api.epicenter.so';
 const WORKSPACE_ID = 'epicenter.tab-manager';
 
 export default defineDaemonWorkspace({
-	async open({ installationId, attachEncryption, openWebSocket, projectDir }) {
-		const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
-		const encryption = attachEncryption(ydoc);
-		const tables = encryption.attachTables(tabManagerTables);
-		const kv = encryption.attachKv({});
+	async open(ctx) {
+		const ws = openEncryptedDoc({
+			id: WORKSPACE_ID,
+			keyring: ctx.keyring,
+			clientId: ctx.clientId,
+		});
+		const tables = ws.attachTables(tabManagerTables);
+		const kv = ws.attachKv({});
 
-		const persistence = attachYjsLog(ydoc, {
-			filePath: yjsPath(projectDir, WORKSPACE_ID),
+		const persistence = attachYjsLog(ws.ydoc, {
+			filePath: yjsPath(ctx.projectDir, WORKSPACE_ID),
 		});
 
 		const actions = defineActions({});
 
-		const collaboration = openCollaboration(ydoc, {
-			url: roomWsUrl(SERVER_URL, ydoc.guid),
-			openWebSocket,
-			installationId,
+		const collaboration = openCollaboration(ws.ydoc, {
+			url: roomWsUrl(SERVER_URL, ws.ydoc.guid),
+			openWebSocket: ctx.openWebSocket,
+			installationId: ctx.installationId,
 			actions,
 		});
 
 		const whenReady = collaboration.whenConnected;
-		const markdown = attachMarkdownMaterializer(ydoc, {
-			dir: markdownPath(projectDir, WORKSPACE_ID),
+		const markdown = attachMarkdownMaterializer(ws.ydoc, {
+			dir: markdownPath(ctx.projectDir, WORKSPACE_ID),
 			waitFor: whenReady,
 		})
 			.table(tables.savedTabs, { filename: slugFilename('title') })
@@ -57,19 +60,18 @@ export default defineDaemonWorkspace({
 			.kv(kv);
 
 		return {
-			workspaceId: ydoc.guid,
+			workspaceId: ws.ydoc.guid,
 			whenReady,
 			actions,
 			collaboration,
 			async [Symbol.asyncDispose]() {
-				ydoc.destroy();
+				ws[Symbol.dispose]();
 				await collaboration.whenDisposed;
 			},
 			id: WORKSPACE_ID,
-			ydoc,
+			ydoc: ws.ydoc,
 			tables,
 			kv,
-			encryption,
 			persistence,
 			markdown,
 		};

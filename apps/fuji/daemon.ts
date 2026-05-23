@@ -1,12 +1,20 @@
 /**
- * Fuji daemon extension entrypoint.
+ * Fuji daemon library default.
  *
- * Composes daemon-only attachments around the shared `openFujiWorkspace`:
- * Yjs log + sync (via `attachDaemonInfrastructure`), SQLite materializer for
- * entries, and Markdown materializer for entries.
+ * `openFujiDaemon(ctx)` composes the daemon-side mount that any
+ * Fuji-consuming project can use directly when they want library-default
+ * paths. The canonical `examples/fuji` project uses the project-layout spec
+ * paths inline rather than calling this; see `examples/fuji/epicenter.config.ts`.
+ *
+ * What this does:
+ *   1. workspace root doc (encrypted tables + KV via openEncryptedDoc)
+ *   2. SQLite materializer at `sqlitePath(projectDir, workspaceId)`
+ *   3. Markdown materializer at `markdownPath(projectDir, workspaceId)`
+ *   4. infrastructure: Yjs log persistence + cloud sync via
+ *      `attachDaemonInfrastructure`
  */
 
-import { defineDaemonWorkspace } from '@epicenter/workspace/daemon';
+import type { DaemonWorkspaceContext } from '@epicenter/workspace/daemon';
 import {
 	attachMarkdownMaterializer,
 	slugFilename,
@@ -18,44 +26,41 @@ import {
 	openWriterSqlite,
 	sqlitePath,
 } from '@epicenter/workspace/node';
+import { openEncryptedDoc } from '@epicenter/workspace';
 import { createLogger } from 'wellcrafted/logger';
-import { openFujiWorkspace } from './src/lib/workspace.js';
+import {
+	createFujiActions,
+	FUJI_ID,
+	fujiTables,
+} from './src/lib/workspace.js';
 
-export function defineFujiDaemon() {
-	return defineDaemonWorkspace({
-		async open({
-			projectDir,
-			route,
-			clientId,
-			installationId,
-			attachEncryption,
-			openWebSocket,
-		}) {
-			const workspace = openFujiWorkspace(attachEncryption, { clientId });
+export function openFujiDaemon(ctx: DaemonWorkspaceContext) {
+	const ws = openEncryptedDoc({
+		id: FUJI_ID,
+		keyring: ctx.keyring,
+		clientId: ctx.clientId,
+	});
+	const tables = ws.attachTables(fujiTables);
+	ws.attachKv({});
+	const actions = createFujiActions(tables);
 
-			const infra = attachDaemonInfrastructure(workspace.ydoc, {
-				projectDir,
-				openWebSocket,
-				installationId,
-				actions: workspace.actions,
-			});
+	const sqliteDb = openWriterSqlite({
+		filePath: sqlitePath(ctx.projectDir, ws.ydoc.guid),
+		log: createLogger(`${ctx.route}-sqlite`),
+	});
+	ws.ydoc.once('destroy', () => sqliteDb.close());
 
-			const sqliteDb = openWriterSqlite({
-				filePath: sqlitePath(projectDir, workspace.ydoc.guid),
-				log: createLogger(`${route}-sqlite`),
-			});
-			workspace.ydoc.once('destroy', () => sqliteDb.close());
+	attachSqliteMaterializer(ws.ydoc, { db: sqliteDb }).table(tables.entries);
+	attachMarkdownMaterializer(ws.ydoc, {
+		dir: markdownPath(ctx.projectDir, ws.ydoc.guid),
+	}).table(tables.entries, { filename: slugFilename('title') });
 
-			attachSqliteMaterializer(workspace.ydoc, { db: sqliteDb }).table(
-				workspace.tables.entries,
-			);
-			attachMarkdownMaterializer(workspace.ydoc, {
-				dir: markdownPath(projectDir, workspace.ydoc.guid),
-			}).table(workspace.tables.entries, { filename: slugFilename('title') });
-
-			return infra;
-		},
+	return attachDaemonInfrastructure(ws.ydoc, {
+		projectDir: ctx.projectDir,
+		openWebSocket: ctx.openWebSocket,
+		installationId: ctx.installationId,
+		actions,
 	});
 }
 
-export default defineFujiDaemon();
+export type FujiDaemon = ReturnType<typeof openFujiDaemon>;

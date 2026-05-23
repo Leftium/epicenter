@@ -84,10 +84,7 @@ export const autumnAiGate = createMiddleware<Env>(async (c, next) => {
 	}
 
 	if (c.var.planId === PLAN_IDS.free && credits > FREE_TIER_MAX_CREDITS) {
-		return c.json(
-			{ name: 'model_requires_paid_plan', model, credits },
-			403,
-		);
+		return c.json({ name: 'model_requires_paid_plan', model, credits }, 403);
 	}
 
 	const autumn = createAutumn(c.env);

@@ -155,10 +155,12 @@ export function createAuthApp(_opts: ServerOptions): Hono<Env> {
 		}),
 		async (c) => {
 			const resource = oauthProviderResourceClient();
-			const metadata = await resource.getActions().getProtectedResourceMetadata({
-				resource: c.var.authBaseURL,
-				authorization_servers: [createOAuthIssuerURL(c.var.authBaseURL)],
-			});
+			const metadata = await resource
+				.getActions()
+				.getProtectedResourceMetadata({
+					resource: c.var.authBaseURL,
+					authorization_servers: [createOAuthIssuerURL(c.var.authBaseURL)],
+				});
 			c.header('Cache-Control', OAUTH_METADATA_CACHE_CONTROL);
 			return c.json(metadata);
 		},

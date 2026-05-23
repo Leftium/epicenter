@@ -19,7 +19,9 @@ import type { AuthClient, AuthState } from './auth-contract.js';
  * });
  * ```
  */
-export function createTestAuth(overrides: Partial<AuthClient> = {}): AuthClient {
+export function createTestAuth(
+	overrides: Partial<AuthClient> = {},
+): AuthClient {
 	const signedOut: AuthState = { status: 'signed-out' };
 	return {
 		state: signedOut,

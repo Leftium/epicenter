@@ -105,10 +105,7 @@ export function createAuth({
 					// the create operation by returning `false`. Out-of-band
 					// provisioning (Better Auth admin API or a CLI) bypasses this
 					// hook because it operates on the adapter directly.
-					before:
-						signUpPolicy === 'disabled'
-							? async () => false
-							: undefined,
+					before: signUpPolicy === 'disabled' ? async () => false : undefined,
 				},
 				delete: {
 					before: async (user) => {

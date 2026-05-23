@@ -29,11 +29,7 @@ import {
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
 import * as Y from 'yjs';
-import {
-	createFujiActions,
-	FUJI_ID,
-	fujiTables,
-} from './src/lib/workspace.js';
+import { createFujiActions, FUJI_ID, fujiTables } from './src/lib/workspace.js';
 
 export function openFujiDaemon({
 	projectDir,

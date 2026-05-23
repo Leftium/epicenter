@@ -325,4 +325,3 @@ function extractCauseString(cause: unknown): string {
 		return String(cause);
 	}
 }
-

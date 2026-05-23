@@ -34,9 +34,9 @@ import {
 } from '../document/attach-yjs-log.js';
 import {
 	type Collaboration,
-	openCollaboration,
 	type OnReconnectSignal,
 	type OpenWebSocketFn,
+	openCollaboration,
 } from '../document/open-collaboration.js';
 import { roomWsUrl } from '../document/transport.js';
 import { yjsPath } from '../document/workspace-paths.js';

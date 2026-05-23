@@ -2,8 +2,8 @@
 	import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
 	import { Button } from '@epicenter/ui/button';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
-	import { requireFuji, session } from '$lib/session';
 	import { auth } from '$lib/auth';
+	import { requireFuji, session } from '$lib/session';
 	import FujiAppShell from './components/FujiAppShell.svelte';
 
 	let { children } = $props();

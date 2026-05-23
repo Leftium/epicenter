@@ -326,7 +326,10 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	function pickRecipient(installationId: string): RoomSocket | null {
 		let newest: RoomSocket | null = null;
 		for (const [ws, data] of connections) {
-			if (data.installationId === installationId && ws.readyState === WS_READY_OPEN) {
+			if (
+				data.installationId === installationId &&
+				ws.readyState === WS_READY_OPEN
+			) {
 				newest = ws;
 			}
 		}
@@ -344,10 +347,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	 * back to `callerWs`. A malformed frame is dropped silently: the
 	 * caller's own ceiling settles it.
 	 */
-	function handleDispatchRequest(
-		callerWs: RoomSocket,
-		frame: unknown,
-	): void {
+	function handleDispatchRequest(callerWs: RoomSocket, frame: unknown): void {
 		if (!checkDispatchRequestFrame.Check(frame)) return;
 		const { id, to, action, input } = frame;
 

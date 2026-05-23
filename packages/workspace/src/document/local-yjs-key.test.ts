@@ -13,9 +13,7 @@ describe('getOwnedYjsPrefix', () => {
 		);
 	});
 	test('team drops the owner partition; server origin disambiguates', () => {
-		expect(getOwnedYjsPrefix(SERVER, TEAM)).toBe(
-			'epicenter/api.epicenter.so/',
-		);
+		expect(getOwnedYjsPrefix(SERVER, TEAM)).toBe('epicenter/api.epicenter.so/');
 	});
 });
 

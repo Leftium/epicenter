@@ -16,8 +16,8 @@ import {
 	defineQuery,
 	defineTable,
 	type OnReconnectSignal,
-	openCollaboration,
 	type OpenWebSocketFn,
+	openCollaboration,
 	roomWsUrl,
 } from '@epicenter/workspace';
 import { type } from 'arktype';

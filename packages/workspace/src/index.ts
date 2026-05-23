@@ -144,14 +144,19 @@ export {
 } from './cache/disposable-cache.js';
 
 export { attachBroadcastChannel } from './document/attach-broadcast-channel.js';
+export {
+	type AttachEncryptionOptions,
+	attachEncryption,
+	type EncryptionAttachment,
+} from './document/attach-encryption.js';
 export { attachIndexedDb } from './document/attach-indexed-db.js';
-export { attachLocalStorage } from './document/attach-local-storage.js';
 export {
 	attachKv,
 	type InferKvValue,
 	type Kv,
 	type KvDefinitions,
 } from './document/attach-kv.js';
+export { attachLocalStorage } from './document/attach-local-storage.js';
 export { attachPlainText } from './document/attach-plain-text.js';
 export { attachRichText } from './document/attach-rich-text.js';
 export {
@@ -170,22 +175,17 @@ export { docGuid } from './document/doc-guid.js';
 export type { SyncStatus } from './document/internal/sync-supervisor.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 export {
-	type AttachEncryptionOptions,
-	attachEncryption,
-	type EncryptionAttachment,
-} from './document/attach-encryption.js';
-export {
 	type Collaboration,
 	type OnReconnectSignal,
 	type OpenCollaborationConfig,
-	openCollaboration,
 	type OpenWebSocketFn,
+	openCollaboration,
 } from './document/open-collaboration.js';
-export { wipeLocalStorage } from './document/wipe-local-storage.js';
 // Transport URL builder.
 //
 // `roomWsUrl({ baseURL, owner, guid, installationId })` builds the WebSocket URL
 // for the partitioned `/api/users/:userId/rooms/:roomId` (personal) or
 // `/api/rooms/:roomId` (team) endpoint. Both browser apps and the daemon
 // use this one builder.
-export { roomWsUrl, type RoomWsUrlOptions } from './document/transport.js';
+export { type RoomWsUrlOptions, roomWsUrl } from './document/transport.js';
+export { wipeLocalStorage } from './document/wipe-local-storage.js';

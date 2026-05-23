@@ -13,7 +13,11 @@
  *  - `apps/opensidian/daemon.ts`                     -> `openOpensidianDaemon(ctx)`
  */
 
-import { fileContentDocGuid, filesTable, type FileId } from '@epicenter/filesystem';
+import {
+	type FileId,
+	fileContentDocGuid,
+	filesTable,
+} from '@epicenter/filesystem';
 import {
 	defineTable,
 	generateId,

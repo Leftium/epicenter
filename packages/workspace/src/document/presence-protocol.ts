@@ -30,7 +30,10 @@ import { ActionMetaSchema } from '../shared/actions.js';
  * value is the metadata-only projection of a callable `Action`. Reuses
  * `ActionMetaSchema` so the wire stays in lockstep with the local registry.
  */
-export const ActionManifestSchema = Type.Record(Type.String(), ActionMetaSchema);
+export const ActionManifestSchema = Type.Record(
+	Type.String(),
+	ActionMetaSchema,
+);
 
 /**
  * One device's entry on the wire.

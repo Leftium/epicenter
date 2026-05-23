@@ -47,8 +47,12 @@ describe('Fuji workspace architecture', () => {
 		expect(browserSource).toContain('server: signedIn.server,');
 		expect(browserSource).toContain('owner: signedIn.owner,');
 		expect(browserSource).toContain('openCollaboration(ydoc,');
-		expect(browserSource).toContain('openWebSocket: signedIn.auth.openWebSocket');
-		expect(browserSource).toContain('onReconnectSignal: signedIn.auth.onStateChange');
+		expect(browserSource).toContain(
+			'openWebSocket: signedIn.auth.openWebSocket',
+		);
+		expect(browserSource).toContain(
+			'onReconnectSignal: signedIn.auth.onStateChange',
+		);
 		expect(browserSource).toContain('wipeLocalStorage({');
 		// No LocalOwner / openEncryptedDoc / wipeLocalYjsData carry-over.
 		expect(browserSource).not.toContain('LocalOwner');

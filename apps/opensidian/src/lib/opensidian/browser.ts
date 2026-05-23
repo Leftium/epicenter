@@ -36,8 +36,8 @@ import {
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import {
-	opensidianFileContentDocGuid,
 	OPENSIDIAN_ID,
+	opensidianFileContentDocGuid,
 	opensidianTables,
 } from 'opensidian';
 import * as Y from 'yjs';

@@ -11,10 +11,10 @@
 
 import {
 	createServer,
+	Room,
 	requireBearerUser,
 	requireCookieOrBearerUser,
 	requireUrlUserIdMatchesAuth,
-	Room,
 } from '@epicenter/server';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
@@ -44,10 +44,7 @@ base.get('/', (c) =>
 );
 
 // Auth surface (no /api prefix; these render HTML and OAuth metadata).
-base
-	.route('/sign-in', auth)
-	.route('/consent', auth)
-	.route('/auth', auth);
+base.route('/sign-in', auth).route('/consent', auth).route('/auth', auth);
 
 // Session: authed via library middleware, no cloud-specific wrapping.
 base.route('/api/session', session);
@@ -55,11 +52,7 @@ base.route('/api/session', session);
 // Rooms: bearer auth + URL userId safety, then library handler. No billing
 // gate for rooms today; bandwidth and DO storage are not metered.
 const cloudRooms = new Hono<Env>()
-	.use(
-		'/users/:userId/rooms/*',
-		requireBearerUser,
-		requireUrlUserIdMatchesAuth,
-	)
+	.use('/users/:userId/rooms/*', requireBearerUser, requireUrlUserIdMatchesAuth)
 	.route('/', rooms);
 base.route('/api', cloudRooms);
 

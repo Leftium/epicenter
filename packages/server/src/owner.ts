@@ -20,9 +20,7 @@
  * Personal: a single user; their userId is the partition key.
  * Team:     the deployment itself; no partition.
  */
-export type Owner =
-	| { kind: 'personal'; userId: string }
-	| { kind: 'team' };
+export type Owner = { kind: 'personal'; userId: string } | { kind: 'team' };
 
 /** The set of valid `kind` discriminators. */
 export type OwnerKind = Owner['kind'];

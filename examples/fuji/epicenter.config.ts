@@ -19,11 +19,7 @@
  */
 
 import { join } from 'node:path';
-import {
-	createFujiActions,
-	FUJI_ID,
-	fujiTables,
-} from '@epicenter/fuji';
+import { createFujiActions, FUJI_ID, fujiTables } from '@epicenter/fuji';
 import { attachEncryption, defineWorkspace } from '@epicenter/workspace';
 import {
 	attachMarkdownMaterializer,

@@ -81,9 +81,7 @@ export function createBaseApp(opts: ServerOptions): Hono<Env> {
 		} finally {
 			// Response is already streaming; keep the isolate alive for
 			// queued promises, then close pg.
-			c.executionCtx.waitUntil(
-				afterResponse.drain().then(() => client.end()),
-			);
+			c.executionCtx.waitUntil(afterResponse.drain().then(() => client.end()));
 		}
 	});
 

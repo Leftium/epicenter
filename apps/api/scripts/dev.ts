@@ -21,7 +21,9 @@ const auth = await Bun.$`infisical --silent user get token --plain`
 
 if (auth.exitCode !== 0 || !auth.stdout.toString().trim()) {
 	console.error('Not logged into Infisical.');
-	console.error('Run `infisical login`, then retry `bun run dev:api`.');
+	console.error('Running `apps/api` requires Infisical access for dev secrets (API keys, auth secret).');
+	console.error('Run `infisical login`, then rerun the same command.');
+	console.error('If you do not have Infisical access, see CONTRIBUTING.md for what you can work on without it.');
 	process.exit(1);
 }
 

@@ -16,11 +16,10 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { epicenterEnv } from '@epicenter/constants/node';
 
 import { createLogger } from 'wellcrafted/logger';
 
-import { metadataPathFor } from './paths.js';
+import { daemonRuntimeDir, metadataPathFor } from './paths.js';
 
 const log = createLogger('workspace/daemon/metadata');
 
@@ -75,7 +74,7 @@ export function unlinkMetadata(dir: string): void {
 }
 
 export function enumerateDaemons(): DaemonMetadata[] {
-	const root = epicenterEnv.runtimeDir;
+	const root = daemonRuntimeDir();
 	if (!existsSync(root)) return [];
 	const result: DaemonMetadata[] = [];
 	for (const name of readdirSync(root)) {

@@ -943,3 +943,221 @@ User loss: clients with pinned old @epicenter/auth versions stop
 Trigger to revisit: never (clean break by design)
 ```
 
+
+## Wave 4 (proposed): name the bag `session`, add `user`, refuse the facade
+
+Status: drafted, queued. Not yet executed.
+Supersedes: an earlier draft of wave 4 that proposed a `LocalWorkspace`
+            method-bag facade on `auth.state`. The facade was wrong on
+            principle: it is a layer that delegates. See "Refused
+            alternatives" below.
+
+### The single sentence
+
+> When you are signed in, you have a Session. Session is a named bundle
+> of three values (user, owner, keyring). Apps consume those values
+> directly through free primitives. There is no facade between them and
+> the workspace.
+
+### Context: why the facade is wrong
+
+The fuji branch (`braden-w/examples-fuji-test-improvements`) deleted the
+`LocalOwner` facade for the right reason: apps were calling
+`signedIn.owner.attachEncryption(ydoc)` which immediately delegated to
+`attachEncryption(ydoc, { keyring })`. The mediator earned nothing. The
+fuji refactor moved every browser app to:
+
+```ts
+const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
+const tables = encryption.attachTables(fujiTables);
+const idb = attachLocalStorage(ydoc, signedIn);
+const collab = openCollaboration(ydoc, { auth: signedIn.auth, ... });
+```
+
+Every line at the call site does real work. No facade hiding combinations.
+
+A `LocalWorkspace` facade on `auth.state` would re-create exactly what
+fuji deleted, just one layer further up. Wrong direction.
+
+### What actually changes on the client surface
+
+Two changes only. Both are slim renames; the data is the same.
+
+```ts
+// @epicenter/auth
+
+type AuthState =
+  | { status: 'signed-out' }
+  | { status: 'signed-in';       session: Session }   // wraps the bag
+  | { status: 'reauth-required'; session: Session };
+
+type Session = {
+  user: AuthUser;            // NEW on auth state (apps want it for UI
+                             // without re-hitting /api/session)
+  owner: Owner;
+  keyring: SubjectKeyring;
+};
+
+type PersistedAuth = {
+  grant: OAuthTokenGrant;
+  session: Session;          // wrapped to match the runtime shape
+};
+
+type ApiSessionResponse = Session;  // /api/session returns Session directly
+```
+
+That is the whole client-side delta.
+
+### What dies, what stays
+
+```
+DIES
+  auth.state.signed-in.owner               flat field
+  auth.state.signed-in.keyring             flat field
+  ApiSessionResponse.user / .owner / .keyring as separate top-level keys
+    (still present, but wrapped under Session)
+
+STAYS (because fuji's free-primitive direction is correct)
+  attachEncryption, attachLocalStorage, wipeLocalStorage as free functions
+  openCollaboration(ydoc, { auth, ... }) owning auth and reconnect
+  Apps composing primitives inline in open<App>Browser / open<App>Daemon
+  No LocalOwner / LocalWorkspace facade anywhere
+
+ADDED
+  user on the persisted cell and on auth.state (single source of truth
+  for "who is signed in" without a network round-trip)
+```
+
+### Wire change
+
+```
+ApiSessionResponse before (current buffalo):
+  { user, owner, keyring }
+
+ApiSessionResponse after:
+  { user, owner, keyring }   /* same fields, now reflected in `Session`
+                                schema and matched 1:1 by AuthState */
+
+PersistedAuth before:
+  { grant, owner, keyring }
+
+PersistedAuth after:
+  { grant, session: { user, owner, keyring } }
+```
+
+The wire is essentially the same; the client groups the auth-bound
+trio under a `session` name and persists `user` alongside.
+
+### Cycle: not broken in this wave
+
+The earlier draft proposed breaking workspace's dependency on auth so
+auth could name `LocalWorkspace`. Since we are not adding a workspace
+facade to auth state, the cycle does not need to break. Workspace
+keeps depending on auth for `AuthClient` (consumed by openCollaboration);
+auth has no need to import anything from workspace.
+
+If a future wave wants to invert this (e.g., move openCollaboration's
+auth dependency to a capability function pair), it can. This wave does
+not require it.
+
+### Migration scope
+
+```
+@epicenter/auth
+  auth-types.ts        Session schema (arktype) replacing the three flat
+                       fields on ApiSessionResponse and PersistedAuth.
+                       user added.
+  auth-contract.ts     AuthState carries session instead of (owner, keyring).
+  create-oauth-app-auth.ts
+                       Use session shape in persistedAuth, AuthState,
+                       comparison helpers, refresh paths.
+
+@epicenter/server
+  routes/session.ts    Return Session shape directly (already returns
+                       { user, owner, keyring }; just satisfy the new
+                       arktype).
+
+@epicenter/svelte-utils
+  session.svelte.ts    Read state.signed-in.session.{user,owner,keyring}
+                       (was state.owner / .keyring).
+  account-popover      Same.
+
+apps/*
+  open<App>Browser     Receive SignedIn = Session & { auth: AuthClient }.
+                       Read signedIn.owner / .keyring / .user.
+
+  open<App>Daemon /    Already passed AuthClient via DaemonWorkspaceContext
+  daemon ctx           (fuji branch); add session-shaped fields if any
+                       daemon wants user info.
+
+packages/cli, apps/dashboard, apps/whispering
+                       Mechanical cascade for any place that reads
+                       state.owner / state.keyring directly.
+```
+
+### Refused alternatives
+
+```
+Refused:  LocalWorkspace facade on auth.state (the earlier wave 4 draft)
+Reason:   re-creates exactly the kind of decorative mediator fuji
+          deleted. apps composing primitives inline IS the design;
+          a facade undoes that.
+
+Refused:  expose signedIn.workspace.keyring() callback
+Reason:   not needed. apps call `attachEncryption(ydoc, { keyring })`
+          with `signedIn.keyring` directly. No additional indirection.
+
+Refused:  break workspace -> auth dependency
+Reason:   only required for the LocalWorkspace facade we are no longer
+          adding. Without that, openCollaboration's `auth: AuthClient`
+          is honest.
+
+Refused:  flatten Session into auth.state directly (no `.session` bag)
+Reason:   the bag has a name and a domain meaning ("the auth-bound bundle
+          that is restored on reauth-required"). Naming it earns its
+          keep; future fields like `verifiedAt` or `expiresAt` would
+          live there.
+```
+
+### Success criteria
+
+```
+1. ApiSessionResponse, PersistedAuth, AuthState all expose `session` as
+   the auth-bound bundle. `user`, `owner`, `keyring` exist exactly under
+   `session.*`.
+
+2. Apps' open<App>Browser receive `SignedIn = Session & { auth }` and
+   pass `signedIn.keyring` to attachEncryption, `signedIn` to
+   attachLocalStorage, `signedIn.auth` to openCollaboration. No facade.
+
+3. `auth.state.signed-in.user` is readable without a network call.
+   account-popover, sign-in banners, and any "you are signed in as X"
+   surface can render from cache.
+
+4. LocalOwner / LocalWorkspace does NOT exist anywhere. The encryption
+   boundary is exactly the free primitives.
+
+5. Adding a hypothetical third OwnerKind requires:
+     - 1 new variant on Owner
+     - 0 changes to Session
+     - 0 changes to apps (apps already pattern-match on owner.kind for
+       UI; the new variant participates in the same union)
+```
+
+### Notes on integrating with the fuji branch
+
+This wave's scope reduces dramatically because the fuji branch already
+landed the free-primitive direction. The integration sequence is:
+
+```
+1. Rebase fuji onto buffalo. Conflict resolution philosophy:
+     - fuji wins at the encryption boundary (free primitives, no facade)
+     - buffalo wins on the data vocabulary (Owner replaces subject)
+     - server-scoping from buffalo wave 3 moves INSIDE
+       attachLocalStorage / wipeLocalStorage where it belongs
+
+2. After rebase, the wave 4 changes are a small follow-up commit:
+     - rename auth.state.signed-in fields under `session`
+     - add `user` to Session and PersistedAuth
+     - cascade through the same client files wave 2 and wave 3 touched
+```

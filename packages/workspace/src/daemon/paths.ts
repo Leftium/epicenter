@@ -16,10 +16,8 @@
 
 import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-
-import { userLogDir } from '../paths/user-paths.js';
+import { createEpicenterEnv } from '@epicenter/constants/node';
 
 const SAFE_UNIX_SOCKET_PATH_BYTES = 95;
 
@@ -29,12 +27,13 @@ const SAFE_UNIX_SOCKET_PATH_BYTES = 95;
  * - Linux with `XDG_RUNTIME_DIR` uses `$XDG_RUNTIME_DIR/epicenter` (tmpfs,
  *   reboot-cleaned by the OS).
  * - macOS / Windows / Linux without XDG uses `os.tmpdir()/epicenter`.
+ *
+ * Thin wrapper around `createEpicenterEnv().runtimeDir`; kept because three
+ * helpers below and `daemon/metadata.ts` call it by name and the wrapper
+ * documents intent at the call site.
  */
 export function runtimeDir(): string {
-	if (process.env.XDG_RUNTIME_DIR) {
-		return join(process.env.XDG_RUNTIME_DIR, 'epicenter');
-	}
-	return join(tmpdir(), 'epicenter');
+	return createEpicenterEnv().runtimeDir;
 }
 
 /**
@@ -82,5 +81,5 @@ export function leasePathFor(dir: string): string {
  * the operator can read post-mortem logs after a crash or reboot.
  */
 export function logPathFor(dir: string): string {
-	return join(userLogDir, `${dirHash(dir)}.log`);
+	return join(createEpicenterEnv().logDir, `${dirHash(dir)}.log`);
 }

@@ -19,9 +19,9 @@
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
+import { createEpicenterEnv } from '@epicenter/constants/node';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import type { SubjectKeyring } from '@epicenter/encryption';
-import envPaths from 'env-paths';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -42,27 +42,6 @@ import {
 import { createOobOAuthLauncher } from './oob-launcher.js';
 
 /**
- * Platform user-data directory for the `epicenter` app, resolved via
- * `env-paths`. macOS: `~/Library/Application Support/epicenter`. Linux:
- * `$XDG_DATA_HOME/epicenter` or `~/.local/share/epicenter`. Windows:
- * `%APPDATA%\epicenter\Data`. The same string is what `packages/workspace`
- * uses for daemon logs and other persistent user data; keeping them aligned
- * is intentional.
- *
- * `EPICENTER_DATA_DIR`, if set, overrides this. It exists for users with
- * unusual home layouts (Nix, snap, ephemeral homes, CI sandboxes) and for
- * the integration tests in `packages/cli` which need to redirect the
- * lookup into a temp directory at runtime; `env-paths` itself caches
- * `os.homedir()` at module load and cannot be re-pointed.
- */
-function defaultDataDir(): string {
-	return (
-		process.env.EPICENTER_DATA_DIR ??
-		envPaths('epicenter', { suffix: '' }).data
-	);
-}
-
-/**
  * The on-disk machine auth file for a given API target.
  *
  * One file per API target under the platform data directory, in an `auth/`
@@ -72,12 +51,14 @@ function defaultDataDir(): string {
  * `<dataDir>/auth/localhost_8787.json`. Different targets cannot trample
  * each other.
  *
- * `dataDir` defaults to `env-paths('epicenter').data` and exists only as an
- * override for tests; production callers should never pass it.
+ * `dataDir` defaults to `createEpicenterEnv().dataDir` (which honours
+ * `EPICENTER_DATA_DIR` and falls back to the env-paths data directory)
+ * and exists only as an override for tests; production callers should
+ * never pass it.
  */
 export function machineAuthFilePath({
 	baseURL = EPICENTER_API_URL,
-	dataDir = defaultDataDir(),
+	dataDir = createEpicenterEnv().dataDir,
 }: {
 	baseURL?: string;
 	dataDir?: string;

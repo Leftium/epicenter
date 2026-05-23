@@ -519,7 +519,6 @@
         "@epicenter/encryption": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "catalog:",
-        "env-paths": "^3.0.0",
         "oauth4webapi": "catalog:",
         "wellcrafted": "catalog:",
       },
@@ -574,6 +573,7 @@
       "name": "@epicenter/constants",
       "version": "0.1.0",
       "dependencies": {
+        "env-paths": "^3.0.0",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
@@ -750,7 +750,6 @@
         "diff": "^8.0.3",
         "drizzle-orm": "catalog:",
         "elysia": "^1.2.25",
-        "env-paths": "^3.0.0",
         "fflate": "catalog:",
         "hono": "catalog:",
         "lib0": "catalog:",

@@ -108,11 +108,12 @@ export {
 // ════════════════════════════════════════════════════════════════════════════
 
 // Node-only helpers that resolve real paths (`findProjectRoot`,
-// `loadProjectConfig`, `userCacheDir`, `userConfigDir`, `userDataDir`,
-// `userLogDir`, etc.) import `node:fs`, `node:path`, `node:os`, or `env-paths`
+// `loadProjectConfig`, etc.) import `node:fs`, `node:path`, or `node:os`
 // at module top level. They are exported from `@epicenter/workspace/node`;
 // keeping them out of this root barrel stops browser bundles (fuji,
-// whispering, etc.) from traversing `node:*` modules.
+// whispering, etc.) from traversing `node:*` modules. Platform paths
+// (data, log, cache, config, runtime) live in `@epicenter/constants/node`
+// behind `createEpicenterEnv`.
 export {
 	DEFAULT_PROJECT_CONFIG_SOURCE,
 	defineConfig,

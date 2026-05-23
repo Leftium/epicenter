@@ -53,7 +53,8 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { machineAuthFilePath } from '@epicenter/auth/node';
 
 const FIXTURE_DIR = join(import.meta.dir, 'fixtures/inline-actions');
 const BIN_PATH = join(import.meta.dir, '..', 'src', 'bin.ts');
@@ -61,17 +62,21 @@ const BIN_PATH = join(import.meta.dir, '..', 'src', 'bin.ts');
 type EnvOverrides = Disposable & {
 	/** Stable `runtimeDir()` root: $XDG_RUNTIME_DIR/epicenter. */
 	xdgRoot: string;
-	/** Stable auth home; user logs resolve from this HOME via env-paths. */
+	/** Stable home; user logs resolve from this HOME via env-paths. */
 	home: string;
+	/** Stable auth data dir for machine auth. */
+	dataDir: string;
 };
 
 function makeEnv(): EnvOverrides {
 	const xdgRoot = mkdtempSync('/tmp/ep-e2e-xdg-');
 	const home = mkdtempSync(join(tmpdir(), 'ep-e2e-home-'));
+	const dataDir = mkdtempSync(join(tmpdir(), 'ep-e2e-data-'));
+	const authPath = machineAuthFilePath({ dataDir });
 	mkdirSync(join(xdgRoot, 'epicenter'), { recursive: true });
-	mkdirSync(join(home, '.epicenter'), { recursive: true });
+	mkdirSync(dirname(authPath), { recursive: true, mode: 0o700 });
 	writeFileSync(
-		join(home, '.epicenter', 'auth.json'),
+		authPath,
 		JSON.stringify({
 			grant: {
 				accessToken: 'access-stored',
@@ -93,9 +98,11 @@ function makeEnv(): EnvOverrides {
 	return {
 		xdgRoot,
 		home,
+		dataDir,
 		[Symbol.dispose]: () => {
 			rmSync(xdgRoot, { recursive: true, force: true });
 			rmSync(home, { recursive: true, force: true });
+			rmSync(dataDir, { recursive: true, force: true });
 		},
 	};
 }
@@ -105,6 +112,7 @@ function childEnv(env: EnvOverrides): NodeJS.ProcessEnv {
 		...process.env,
 		XDG_RUNTIME_DIR: env.xdgRoot,
 		HOME: env.home,
+		EPICENTER_DATA_DIR: env.dataDir,
 	};
 }
 

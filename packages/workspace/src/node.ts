@@ -11,7 +11,6 @@ export type {
 	DaemonActions,
 } from './client/daemon-actions.js';
 export { buildDaemonActions } from './client/daemon-actions.js';
-export { epicenterPaths } from './client/epicenter-paths.js';
 export { findProjectRoot } from './client/find-project-root.js';
 export { DEFAULT_PROJECT_CONFIG_SOURCE } from './config/define-config.js';
 export {
@@ -90,12 +89,6 @@ export {
 	sqlitePath,
 	yjsPath,
 } from './document/workspace-paths.js';
-export {
-	userCacheDir,
-	userConfigDir,
-	userDataDir,
-	userLogDir,
-} from './paths/user-paths.js';
 export { hashClientId } from './shared/client-id.js';
 export { WorkspaceAppError } from './workspace-apps/errors.js';
 export {

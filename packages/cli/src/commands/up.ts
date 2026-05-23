@@ -19,7 +19,10 @@
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { AuthClient } from '@epicenter/auth';
-import { createMachineAuthClient } from '@epicenter/auth/node';
+import {
+	createMachineAuthClient,
+	type MachineAuthStorageError,
+} from '@epicenter/auth/node';
 import type { StartedDaemonRoute } from '@epicenter/workspace/daemon';
 import {
 	claimDaemonLease,
@@ -35,7 +38,7 @@ import {
 	type WorkspaceAppError,
 	writeMetadata,
 } from '@epicenter/workspace/node';
-import { Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
+import { Ok, type Result, trySync } from 'wellcrafted/result';
 import packageJson from '../../package.json' with { type: 'json' };
 import { cmd } from '../util/cmd.js';
 
@@ -70,7 +73,7 @@ type UpOptions = {
 	 * disk). Tests pass a stub or a deliberately-failing factory to exercise
 	 * the auth-construction seam without seeding files or mutating env vars.
 	 */
-	createAuthClient?: () => Promise<AuthClient>;
+	createAuthClient?: () => Promise<Result<AuthClient, MachineAuthStorageError>>;
 };
 
 /**
@@ -104,7 +107,12 @@ type UpHandle = {
  */
 export async function runUp(
 	options: UpOptions,
-): Promise<Result<UpHandle, WorkspaceAppError | StartupErrorType>> {
+): Promise<
+	Result<
+		UpHandle,
+		WorkspaceAppError | StartupErrorType | MachineAuthStorageError
+	>
+> {
 	const projectDir = realpathSync(resolveProjectForUp(options.projectDir));
 	provisionProject(projectDir);
 
@@ -129,10 +137,7 @@ export async function runUp(
 	stack.defer(() => lease.release());
 
 	const createAuthClient = options.createAuthClient ?? createMachineAuthClient;
-	const authResult = await tryAsync({
-		try: () => createAuthClient(),
-		catch: (cause) => StartupError.AuthFailed({ cause }),
-	});
+	const authResult = await createAuthClient();
 	if (authResult.error) return authResult;
 	const auth = authResult.data;
 	stack.defer(() => auth[Symbol.dispose]());

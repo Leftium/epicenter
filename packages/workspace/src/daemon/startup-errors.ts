@@ -13,7 +13,10 @@ import type { DaemonRouteNameIssue } from './route-validation.js';
  * - `BindFailed`: `Bun.serve` raised on an unrecoverable bind error.
  * - `RouteNameRejected`: embedded callers passed invalid route names.
  * - `MetadataWriteFailed`: startup could not publish its metadata sidecar.
- * - `AuthFailed`: startup could not construct the machine auth client.
+ *
+ * Auth-construction failures are surfaced as `MachineAuthStorageError`
+ * variants directly (see `@epicenter/auth`); they do not need a startup-
+ * scope wrapper because `runUp` returns the original typed error.
  */
 export const StartupError = defineErrors({
 	AlreadyRunning: ({ pid }: { pid?: number }) => ({
@@ -38,10 +41,6 @@ export const StartupError = defineErrors({
 	}),
 	MetadataWriteFailed: ({ cause }: { cause: unknown }) => ({
 		message: `daemon metadata write failed: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	AuthFailed: ({ cause }: { cause: unknown }) => ({
-		message: `daemon auth failed: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });

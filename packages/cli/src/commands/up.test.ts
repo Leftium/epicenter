@@ -31,6 +31,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AuthClient } from '@epicenter/auth';
+import { MachineAuthStorageError } from '@epicenter/auth/node';
 import {
 	claimDaemonLease,
 	metadataPathFor,
@@ -38,7 +39,7 @@ import {
 	socketPathFor,
 	writeMetadata,
 } from '@epicenter/workspace/node';
-import { Ok } from 'wellcrafted/result';
+import { Err, Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { runUp } from './up';
 
@@ -65,7 +66,7 @@ const STUB_AUTH: AuthClient = {
 	[Symbol.dispose]: () => {},
 };
 
-const stubAuthFactory = async () => STUB_AUTH;
+const stubAuthFactory = async () => Ok(STUB_AUTH);
 
 let originalXdg: string | undefined;
 let runtimeRoot: string;
@@ -191,18 +192,22 @@ describe('runUp: happy path', () => {
 });
 
 describe('runUp: failure cleanup', () => {
-	test('returns AuthFailed and releases the lease when createAuthClient throws', async () => {
+	test('surfaces the auth error and releases the lease when createAuthClient returns Err', async () => {
 		const error = expectErr(
 			await runUp({
 				projectDir: workDir,
 				quiet: true,
-				createAuthClient: async () => {
-					throw new Error('no saved session');
-				},
+				createAuthClient: async () =>
+					Err(
+						MachineAuthStorageError.NoSavedSession({
+							filePath: '/tmp/fake-auth.json',
+							baseURL: 'https://example.com',
+						}).error,
+					),
 			}),
 		);
 
-		expect(error.name).toBe('AuthFailed');
+		expect(error.name).toBe('NoSavedSession');
 		expect(error.message).toContain('no saved session');
 		const lease = expectOk(claimDaemonLease(workDir));
 		lease.release();

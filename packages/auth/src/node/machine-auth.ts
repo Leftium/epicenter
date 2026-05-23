@@ -98,6 +98,17 @@ export const MachineAuthStorageError = defineErrors({
 		filePath,
 		mode,
 	}),
+	NoSavedSession: ({
+		filePath,
+		baseURL,
+	}: {
+		filePath: string;
+		baseURL: string;
+	}) => ({
+		message: `[machine-auth] no saved session at ${filePath}. Run \`epicenter auth login\` against ${baseURL} first.`,
+		filePath,
+		baseURL,
+	}),
 });
 export type MachineAuthStorageError = InferErrors<
 	typeof MachineAuthStorageError
@@ -317,7 +328,7 @@ export async function status({
 	if (!loaded.data) return Ok({ status: 'signedOut' as const });
 	const cachedLocalIdentity = loaded.data.localIdentity;
 
-	const client = await createMachineAuthClient({
+	const clientResult = await createMachineAuthClient({
 		baseURL,
 		clientId,
 		filePath: authFilePath,
@@ -325,6 +336,8 @@ export async function status({
 		log,
 		now,
 	});
+	if (clientResult.error) return Err(clientResult.error);
+	const client = clientResult.data;
 
 	let response: Response;
 	try {
@@ -398,7 +411,7 @@ export async function logout({
 	if (loaded.error) return Err(loaded.error);
 	if (!loaded.data) return Ok({ status: 'signedOut' as const });
 
-	const client = await createMachineAuthClient({
+	const clientResult = await createMachineAuthClient({
 		baseURL,
 		clientId,
 		filePath: authFilePath,
@@ -406,13 +419,18 @@ export async function logout({
 		log,
 		now,
 	});
-	await client.signOut();
+	if (clientResult.error) return Err(clientResult.error);
+	await clientResult.data.signOut();
 	return Ok({ status: 'loggedOut' as const });
 }
 
 /**
  * Load the persisted cell and construct an `AuthClient` over it. Daemons
  * call this on boot; they never spawn an interactive sign-in launcher.
+ *
+ * Returns a typed `Result`. `NoSavedSession` means the user must run
+ * `epicenter auth login`; `StorageFailed` / `PermissionsTooOpen` indicate
+ * an on-disk fault.
  */
 export async function createMachineAuthClient({
 	baseURL = EPICENTER_API_URL,
@@ -421,41 +439,45 @@ export async function createMachineAuthClient({
 	fetch = globalThis.fetch.bind(globalThis),
 	log = createLogger('machine-auth'),
 	now = Date.now,
-}: CommonConfig = {}): Promise<AuthClient> {
+}: CommonConfig = {}): Promise<Result<AuthClient, MachineAuthStorageError>> {
 	const authFilePath = filePath ?? machineAuthFilePath({ baseURL });
 	const loaded = await loadMachineTokens({
 		filePath: authFilePath,
 		log,
 	});
-	if (loaded.error) throw loaded.error;
+	if (loaded.error) return Err(loaded.error);
 	if (!loaded.data) {
-		throw new Error(
-			`[machine-auth] no saved session at ${authFilePath}. ` +
-				`Run \`epicenter auth login\` against ${baseURL} first.`,
+		return Err(
+			MachineAuthStorageError.NoSavedSession({
+				filePath: authFilePath,
+				baseURL,
+			}).error,
 		);
 	}
 	let currentCell: PersistedAuth | null = loaded.data;
-	return createOAuthAppAuth({
-		baseURL,
-		clientId,
-		launcher: {
-			// Daemons never sign in interactively; a human must run
-			// `epicenter auth login` to refresh the persisted cell.
-			startSignIn: async () => Ok(null),
-		},
-		persistedAuthStorage: {
-			get: () => currentCell,
-			set: async (next) => {
-				const saved = await saveMachineTokens(next, {
-					filePath: authFilePath,
-				});
-				if (saved.error) throw saved.error;
-				currentCell = next;
+	return Ok(
+		createOAuthAppAuth({
+			baseURL,
+			clientId,
+			launcher: {
+				// Daemons never sign in interactively; a human must run
+				// `epicenter auth login` to refresh the persisted cell.
+				startSignIn: async () => Ok(null),
 			},
-		},
-		fetch,
-		now,
-	});
+			persistedAuthStorage: {
+				get: () => currentCell,
+				set: async (next) => {
+					const saved = await saveMachineTokens(next, {
+						filePath: authFilePath,
+					});
+					if (saved.error) throw saved.error;
+					currentCell = next;
+				},
+			},
+			fetch,
+			now,
+		}),
+	);
 }
 
 async function fetchApiSession(

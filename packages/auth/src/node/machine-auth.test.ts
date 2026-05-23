@@ -506,24 +506,20 @@ test('logout survives revoke failure and still deletes the file', async () => {
 	expect(exists).toBe(false);
 });
 
-test('createMachineAuthClient throws when no file', async () => {
+test('createMachineAuthClient returns NoSavedSession when no file', async () => {
 	const filePath = tmpAuthPath();
 	const { fetch } = createFetch();
-	let thrown: unknown = null;
-	try {
-		await createMachineAuthClient({
-			baseURL: BASE_URL,
-			clientId: CLIENT_ID,
-			filePath,
-			fetch,
-			now: () => NOW,
-		});
-	} catch (cause) {
-		thrown = cause;
-	}
-	expect(thrown).toBeInstanceOf(Error);
-	expect((thrown as Error).message).toContain(filePath);
-	expect((thrown as Error).message).toContain(BASE_URL);
+	const result = await createMachineAuthClient({
+		baseURL: BASE_URL,
+		clientId: CLIENT_ID,
+		filePath,
+		fetch,
+		now: () => NOW,
+	});
+	const error = expectErr(result);
+	expect(error.name).toBe('NoSavedSession');
+	expect(error.message).toContain(filePath);
+	expect(error.message).toContain(BASE_URL);
 });
 
 test('createMachineAuthClient loads file and attaches Bearer after gate', async () => {
@@ -563,13 +559,14 @@ test('createMachineAuthClient loads file and attaches Bearer after gate', async 
 		return new Response(null, { status: 404 });
 	};
 
-	const auth = await createMachineAuthClient({
+	const result = await createMachineAuthClient({
 		baseURL: BASE_URL,
 		clientId: CLIENT_ID,
 		filePath,
 		fetch: fetchImpl,
 		now: () => NOW,
 	});
+	const auth = expectOk(result);
 	const response = await auth.fetch('/api/something');
 	expect(response.status).toBe(200);
 

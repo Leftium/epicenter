@@ -27,7 +27,8 @@ export function createDurableObjectRooms(
 	return {
 		/**
 		 * Resolve a room by its host-owned opaque name (e.g.
-		 * `subject:<userId>:rooms:<guid>`).
+		 * `users/<userId>/rooms/<roomId>` in personal mode, `rooms/<roomId>`
+		 * in team mode; both built by `doName(owner, roomId)`).
 		 *
 		 * Returns a {@link ResolvedRoom} whose methods forward to the DO
 		 * stub: RPC for `sync` and `getDoc`, and `fetch` for the

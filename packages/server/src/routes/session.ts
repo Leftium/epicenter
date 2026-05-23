@@ -6,9 +6,9 @@
  * workspace keyring. Clients cache the response so workspace boot,
  * local-storage keying, and Yjs decryption work offline.
  *
- * The keyring is derived from the owner's partition label via the
- * deployment's root keyring (`ENCRYPTION_SECRETS`). Personal owners get a
- * user-scoped subject; team owners share one team-scoped subject.
+ * The keyring is derived from a per-owner HKDF label via the deployment's
+ * root keyring (`ENCRYPTION_SECRETS`). Personal owners get a per-user
+ * keyring; every member of a team deployment shares one keyring.
  */
 
 import type { ApiSessionResponse, Owner } from '@epicenter/auth';
@@ -31,11 +31,13 @@ export function createSessionApp(opts: ServerOptions): Hono<Env> {
 				opts.ownerKind === 'personal'
 					? { kind: 'personal', userId: c.var.user.id }
 					: { kind: 'team' };
-			// HKDF subject: personal mode uses the bare user id (byte-identical
-			// to the pre-split derivation, so any existing keyring stays valid);
+			// HKDF label: personal mode uses the bare user id (byte-pinned to
+			// the pre-split derivation, so any existing keyring stays valid);
 			// team mode uses the literal `team`, shared across the deployment.
-			const subject = owner.kind === 'personal' ? owner.userId : 'team';
-			const keyring = await deriveSubjectKeyring(subject);
+			// Not routed through an Owner-aware helper on purpose: the bytes
+			// are the contract, and a helper would invite drift.
+			const hkdfLabel = owner.kind === 'personal' ? owner.userId : 'team';
+			const keyring = await deriveSubjectKeyring(hkdfLabel);
 			return c.json({
 				user: c.var.user,
 				owner,

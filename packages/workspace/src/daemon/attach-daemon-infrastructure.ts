@@ -8,7 +8,7 @@
  * dispose (destroy first so writes flush before sockets close, then await
  * both `whenDisposed` promises).
  *
- * A cloud doc is owned by the authenticated subject and addressed by its
+ * A cloud doc is owned by the authenticated `owner` and addressed by its
  * `ydoc.guid`. The daemon and browser apps build the same URL with
  * `roomWsUrl({ baseURL, owner, guid, installationId })`, so syncing the same guid
  * for the same owner means sharing one room.

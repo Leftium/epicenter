@@ -231,9 +231,10 @@ export function createOAuthAppAuth({
 
 	/**
 	 * Verify `/api/session` against the current persisted auth. Marks it
-	 * verified; writes localIdentity only when the keyring actually changed.
-	 * Wipes storage on same-subject-guard mismatch. Single-flight: concurrent
-	 * callers for the same persisted auth share the in-flight promise.
+	 * verified; rewrites the persisted cell only when the keyring actually
+	 * changed. Wipes storage on same-owner-guard mismatch (different
+	 * `ownerId`). Single-flight: concurrent callers for the same persisted
+	 * auth share the in-flight promise.
 	 */
 	async function verifyPersistedAuthForNetwork(
 		startedFrom: PersistedAuthType,

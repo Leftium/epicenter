@@ -20,7 +20,7 @@ const PBKDF2_ITERATIONS_DEFAULT = 600_000;
  *
  * @example
  * ```typescript
- * const subjectKey = base64ToBytes(session.localIdentity.keyring[0].subjectKeyBase64);
+ * const subjectKey = base64ToBytes(session.keyring[0].subjectKeyBase64);
  * const workspaceKey = deriveWorkspaceKey(subjectKey, workspaceId);
  * ```
  */

@@ -11,7 +11,7 @@
  * `openCollaboration` owns reconnect-on-auth-change internally, so this file
  * has no per-app onStateChange listener.
  *
- * The bundle's `wipe()` drops every encrypted IDB database for this subject;
+ * The bundle's `wipe()` drops every encrypted IDB database for this owner;
  * `Symbol.dispose` tears down the root + cached child Y.Docs without touching
  * local storage.
  */

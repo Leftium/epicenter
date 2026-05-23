@@ -7,13 +7,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import {
-	assetKey,
-	doName,
-	keyringLabel,
-	type Owner,
-	ownerPath,
-} from './owner.js';
+import { assetKey, doName, type Owner, ownerPath } from './owner.js';
 
 const personal: Owner = { kind: 'personal', userId: 'abc' };
 const team: Owner = { kind: 'team' };
@@ -45,26 +39,15 @@ describe('assetKey', () => {
 	});
 });
 
-describe('keyringLabel', () => {
-	test('personal partitions HKDF info by user', () => {
-		expect(keyringLabel(personal)).toBe('users/abc/keyring');
-	});
-	test('team uses the bare keyring label', () => {
-		expect(keyringLabel(team)).toBe('keyring');
-	});
-});
-
 describe('cross-mode isolation', () => {
 	test('two distinct personal users never collide on any resource', () => {
 		const alice: Owner = { kind: 'personal', userId: 'alice' };
 		const bob: Owner = { kind: 'personal', userId: 'bob' };
 		expect(doName(alice, 'r')).not.toBe(doName(bob, 'r'));
 		expect(assetKey(alice, 'a')).not.toBe(assetKey(bob, 'a'));
-		expect(keyringLabel(alice)).not.toBe(keyringLabel(bob));
 	});
 	test('team and personal never produce overlapping strings', () => {
 		expect(doName(team, 'r')).not.toBe(doName(personal, 'r'));
 		expect(assetKey(team, 'a')).not.toBe(assetKey(personal, 'a'));
-		expect(keyringLabel(team)).not.toBe(keyringLabel(personal));
 	});
 });

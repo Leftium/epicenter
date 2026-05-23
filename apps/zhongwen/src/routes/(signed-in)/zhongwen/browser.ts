@@ -10,7 +10,7 @@
  * Zhongwen has no child docs and no daemon actions; the root doc is the
  * entire workspace surface. `openCollaboration` owns reconnect-on-auth-change
  * internally, so this file has no per-app onStateChange listener. The
- * bundle's `wipe()` drops every encrypted IDB database for this subject;
+ * bundle's `wipe()` drops every encrypted IDB database for this owner;
  * `Symbol.dispose` tears down the root Y.Doc without touching local storage.
  */
 

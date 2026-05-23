@@ -31,7 +31,7 @@
  *
  * const installationId = createInstallationId({ storage: localStorage });
  *
- * // A cloud doc is owned by the authenticated subject and addressed by its
+ * // A cloud doc is owned by the authenticated `owner` and addressed by its
  * // Y.Doc guid: `roomWsUrl({ baseURL, owner, guid, installationId })` builds the
  * // partitioned room URL the server expects.
  * const ydoc = new Y.Doc({ guid: 'notes' });

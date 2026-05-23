@@ -14,7 +14,7 @@
  * groups) is NOT stored here. Chrome is the sole authority for ephemeral
  * browser state. See `browser-state.svelte.ts`.
  *
- * The bundle's `wipe()` drops every encrypted IDB database for this subject;
+ * The bundle's `wipe()` drops every encrypted IDB database for this owner;
  * `Symbol.dispose` tears down the root Y.Doc without touching local storage.
  */
 

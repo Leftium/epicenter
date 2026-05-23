@@ -19,14 +19,13 @@ export {
 export { requireUrlUserIdMatchesAuth } from './middleware/require-url-user-id-matches-auth.js';
 export type {
 	AssetR2Key,
-	KeyringInfo,
 	Owner,
 	OwnerKind,
 	OwnerPath,
 	RoomDoName,
 } from './owner.js';
 // Owner concept and durable-identifier derivations.
-export { assetKey, doName, keyringLabel, ownerPath } from './owner.js';
+export { assetKey, doName, ownerPath } from './owner.js';
 // Re-export the Cloudflare Durable Object class so each deployment's
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.
 export { Room } from './room/backends/cloudflare/durable-object.js';

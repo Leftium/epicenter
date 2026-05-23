@@ -308,7 +308,7 @@ export async function loginWithOob({
 /**
  * Load the persisted cell and verify it by hitting `/api/session` through a
  * regular `createOAuthAppAuth` client (so refresh-on-401 fires automatically
- * and the same-subject guard wipes the cell on mismatch). Returns `unverified`
+ * and the same-owner guard wipes the cell on mismatch). Returns `unverified`
  * on network failures so the CLI can still report the cached identity.
  */
 export async function status({

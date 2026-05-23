@@ -16,11 +16,12 @@ try {
 }
 
 /**
- * Derive the per-subject keyring attached to Epicenter auth-session responses.
+ * Derive the `SubjectKeyring` attached to Epicenter auth-session responses.
  *
- * The API owns env access and fail-fast worker startup. `@epicenter/encryption`
- * owns parsing and HKDF derivation, keeping workspace encryption separate from
- * Better Auth's cookie and token secrets.
+ * The caller (the `/api/session` route) picks the HKDF label from the
+ * resolved `Owner`; this wrapper just owns env access and fail-fast worker
+ * startup. `@epicenter/encryption` owns parsing and HKDF derivation, keeping
+ * workspace encryption separate from Better Auth's cookie and token secrets.
  */
 export async function deriveSubjectKeyring(
 	subject: string,

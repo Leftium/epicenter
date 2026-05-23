@@ -37,7 +37,6 @@ export type RoomDoName = `users/${string}/rooms/${string}` | `rooms/${string}`;
 export type AssetR2Key =
 	| `users/${string}/assets/${string}`
 	| `assets/${string}`;
-export type KeyringInfo = `users/${string}/keyring` | 'keyring';
 
 /** Compute the partition segment for this Owner. */
 export function ownerPath(o: Owner): OwnerPath {
@@ -56,9 +55,4 @@ export function assetKey(o: Owner, assetId: string): AssetR2Key {
 	return o.kind === 'personal'
 		? `users/${o.userId}/assets/${assetId}`
 		: `assets/${assetId}`;
-}
-
-/** HKDF info label for the workspace keyring this owner controls. */
-export function keyringLabel(o: Owner): KeyringInfo {
-	return o.kind === 'personal' ? `users/${o.userId}/keyring` : 'keyring';
 }

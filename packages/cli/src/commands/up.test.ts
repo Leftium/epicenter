@@ -46,16 +46,15 @@ import { runUp } from './up';
 const STUB_AUTH: AuthClient = {
 	state: {
 		status: 'signed-in',
-		localIdentity: {
-			subject: 'user-1',
-			keyring: [
-				{
-					version: 1,
-					subjectKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
-				},
-			],
-		},
+		owner: { kind: 'personal' as const, userId: 'user-1' },
+		keyring: [
+			{
+				version: 1,
+				subjectKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+			},
+		],
 	},
+	baseURL: 'http://localhost:8787',
 	onStateChange: () => () => {},
 	startSignIn: async () => Ok(undefined),
 	signOut: async () => Ok(undefined),

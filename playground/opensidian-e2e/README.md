@@ -14,7 +14,7 @@ epicenter auth login
 bun epicenter auth login http://localhost:8787
 ```
 
-This stores your credentials at `~/.epicenter/auth.json`.
+This stores your credentials at `<dataDir>/auth/<host>.json`, where `dataDir` is the platform user-data directory from `env-paths('epicenter')` (for example, `~/Library/Application Support/epicenter/auth/api.epicenter.so.json` on macOS). See `packages/cli/README.md` for the per-target layout.
 
 ## Usage
 

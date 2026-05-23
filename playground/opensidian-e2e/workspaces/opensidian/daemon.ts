@@ -28,7 +28,7 @@ import {
 import { attachMarkdownMaterializer } from '@epicenter/workspace/document/materializer/markdown';
 import { attachSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import { toSlugFilename } from '@epicenter/workspace/markdown';
-import { attachYjsLog, epicenterPaths } from '@epicenter/workspace/node';
+import { attachYjsLog, yjsPath } from '@epicenter/workspace/node';
 import { opensidianTables } from 'opensidian';
 import Type from 'typebox';
 import * as Y from 'yjs';
@@ -45,6 +45,7 @@ async function openOpensidianPlayground({
 	installationId,
 	attachEncryption,
 	openWebSocket,
+	projectDir,
 }: DaemonWorkspaceContext) {
 	const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
 	const encryption = attachEncryption(ydoc);
@@ -52,15 +53,9 @@ async function openOpensidianPlayground({
 	const kv = encryption.attachKv({});
 
 	const persistence = attachYjsLog(ydoc, {
-		filePath: epicenterPaths.persistence(WORKSPACE_ID),
+		filePath: yjsPath(projectDir, WORKSPACE_ID),
 	});
 
-	const contentDir = join(
-		epicenterPaths.home(),
-		'persistence',
-		WORKSPACE_ID,
-		'content',
-	);
 	const fileContentDocs = createDisposableCache(
 		(fileId: string) => {
 			const contentYdoc = new Y.Doc({
@@ -71,7 +66,7 @@ async function openOpensidianPlayground({
 				gc: true,
 			});
 			const contentPersistence = attachYjsLog(contentYdoc, {
-				filePath: join(contentDir, `${contentYdoc.guid}.db`),
+				filePath: yjsPath(projectDir, contentYdoc.guid),
 			});
 			return {
 				ydoc: contentYdoc,

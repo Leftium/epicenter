@@ -1,5 +1,7 @@
 > **Status: Superseded** by `20260313T063000-workspace-architecture-decisions.md`. The headless runner concept is subsumed into the Bun app server, which loads all workspaces in one process.
 
+> **Path note (2026-05-22)**: This spec's `{configDir}/.epicenter/auth/token.json` and `.epicenter/persistence/...` examples predate the current path policy. Machine auth now lives at `env-paths('epicenter').data/auth/<host>.json` and daemon runtime files use the OS runtime dir. See `specs/20260522T203209-top-level-epicenter-path-cleanup.md`.
+
 # Headless Workspace Runner
 
 **Date**: 2026-03-12

@@ -5,6 +5,8 @@
 **Author**: AI-assisted, pairing with Braden
 **Builds on**: `specs/20260424T180000-drop-document-factory-attach-everything.md` (the post-factory architecture)
 
+> **Path note (2026-05-22)**: The `epicenterPaths.deviceIdentity()` reference below is stale. The `epicenterPaths` symbol was removed; per-device state belongs under `env-paths('epicenter').data`. See `specs/20260522T203209-top-level-epicenter-path-cleanup.md`.
+
 ---
 
 ## One-sentence thesis

@@ -4,6 +4,8 @@
 **Status**: shipped (PR #1705, merged 2026-04-26 at `252dced47`). The v4 reasoning landed; the v5 amendment to Layer 4 below covers the iso/env/client reversal. The always-async-Result section was reversed by `specs/20260425T200000-actions-passthrough-adr.md`.
 **Author**: AI-assisted, pairing with Braden
 
+> **Path note (2026-05-22)**: The `epicenterPaths.persistence(...)` code example below predates the current path policy. The `epicenterPaths` symbol was removed; project-local persistence now lives under `<projectDir>/.epicenter/sqlite/` via `attachSqlite` and machine state under `env-paths('epicenter')`. See `specs/20260522T203209-top-level-epicenter-path-cleanup.md`.
+
 > ⚠ **v5 amendment — read this before relying on the Overview, the Design decisions table, or any Layer text.**
 >
 > The "no `openFuji()` wrapper function — the module IS the workspace" axiom that runs through the [thesis](#one-sentence-thesis), the [Overview](#overview), the [Design decisions table](#design-decisions), and the original Layer 4 was **reversed within hours** when a Node consumer needed to construct the workspace's Y.Doc without dragging in `y-indexeddb`. Bundle bleed prevention required restoring the wrapper as a *seam* between iso construction and env binding.

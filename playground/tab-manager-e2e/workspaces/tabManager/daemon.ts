@@ -21,7 +21,7 @@ import {
 	attachMarkdownMaterializer,
 	slugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
-import { attachYjsLog, epicenterPaths } from '@epicenter/workspace/node';
+import { attachYjsLog, yjsPath } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
 
 const SERVER_URL = 'https://api.epicenter.so';
@@ -29,14 +29,14 @@ const MARKDOWN_DIR = join(import.meta.dir, 'data');
 const WORKSPACE_ID = 'epicenter.tab-manager';
 
 export default defineDaemonWorkspace({
-	async open({ installationId, attachEncryption, openWebSocket }) {
+	async open({ installationId, attachEncryption, openWebSocket, projectDir }) {
 		const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
 		const encryption = attachEncryption(ydoc);
 		const tables = encryption.attachTables(tabManagerTables);
 		const kv = encryption.attachKv({});
 
 		const persistence = attachYjsLog(ydoc, {
-			filePath: epicenterPaths.persistence(WORKSPACE_ID),
+			filePath: yjsPath(projectDir, WORKSPACE_ID),
 		});
 
 		const actions = defineActions({});

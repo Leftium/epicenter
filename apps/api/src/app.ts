@@ -462,13 +462,13 @@ app.post(
  * Durable Object name and never needs to know about auth state.
  */
 function resolveSubjectRoom(c: Context<Env>) {
-	const room = c.req.param('room');
-	if (room == null) {
+	const roomId = c.req.param('room');
+	if (roomId == null) {
 		throw new Error('Room route is missing required room parameter');
 	}
 	return {
-		roomName: `subject:${c.var.user.id}:rooms:${room}`,
-		room,
+		roomName: `subject:${c.var.user.id}:rooms:${roomId}`,
+		roomId,
 	};
 }
 
@@ -539,25 +539,25 @@ app.get(
 		tags: ['rooms'],
 	}),
 	async (c) => {
-		const { roomName, room } = resolveSubjectRoom(c);
-		const resolved = c.var.rooms.get(roomName);
+		const { roomName, roomId } = resolveSubjectRoom(c);
+		const room = c.var.rooms.get(roomName);
 
 		if (isWebSocketUpgrade(c)) {
 			c.var.afterResponse.push(
 				upsertDoInstance(c.var.db, {
 					userId: c.var.user.id,
-					resourceName: room,
+					resourceName: roomId,
 					doName: roomName,
 				}),
 			);
-			return resolved.handleUpgrade(c.req.raw);
+			return room.handleUpgrade(c.req.raw);
 		}
 
-		const { data, storageBytes } = await resolved.getDoc();
+		const { data, storageBytes } = await room.getDoc();
 		c.var.afterResponse.push(
 			upsertDoInstance(c.var.db, {
 				userId: c.var.user.id,
-				resourceName: room,
+				resourceName: roomId,
 				doName: roomName,
 				storageBytes,
 			}),
@@ -573,14 +573,14 @@ app.post(
 		tags: ['rooms'],
 	}),
 	async (c) => {
-		const { roomName, room } = resolveSubjectRoom(c);
+		const { roomName, roomId } = resolveSubjectRoom(c);
 		const body = new Uint8Array(await c.req.raw.arrayBuffer());
 		if (body.byteLength > MAX_PAYLOAD_BYTES) {
 			return new Response('Payload too large', { status: 413 });
 		}
 
-		const resolved = c.var.rooms.get(roomName);
-		const { data: synced, error } = await resolved.sync(body);
+		const room = c.var.rooms.get(roomName);
+		const { data: synced, error } = await room.sync(body);
 		if (error) {
 			return new Response('Malformed sync body', { status: 400 });
 		}
@@ -589,7 +589,7 @@ app.post(
 		c.var.afterResponse.push(
 			upsertDoInstance(c.var.db, {
 				userId: c.var.user.id,
-				resourceName: room,
+				resourceName: roomId,
 				doName: roomName,
 				storageBytes,
 			}),

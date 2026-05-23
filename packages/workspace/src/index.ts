@@ -104,25 +104,21 @@ export {
 } from './document/installation-id.js';
 
 // ════════════════════════════════════════════════════════════════════════════
-// PATH TYPES (for daemon callers)
+// PROJECT CONFIG (browser-safe surface)
 // ════════════════════════════════════════════════════════════════════════════
 
-// `findProjectRoot` and `loadProjectConfig` import `node:fs` and `node:path`.
-// They are node-only and are exported from `@epicenter/workspace/node`; keeping
-// them out of this root barrel stops browser bundles (whispering, etc.) from
-// traversing `node:*` modules.
+// Node-only helpers that resolve real paths (`findProjectRoot`,
+// `loadProjectConfig`, `userCacheDir`, `userConfigDir`, `userDataDir`,
+// `userLogDir`, etc.) import `node:fs`, `node:path`, `node:os`, or `env-paths`
+// at module top level. They are exported from `@epicenter/workspace/node`;
+// keeping them out of this root barrel stops browser bundles (fuji,
+// whispering, etc.) from traversing `node:*` modules.
 export {
 	DEFAULT_PROJECT_CONFIG_SOURCE,
 	defineConfig,
 	type EpicenterConfig,
 	PROJECT_CONFIG_FILENAME,
 } from './config/define-config.js';
-export {
-	userCacheDir,
-	userConfigDir,
-	userDataDir,
-	userLogDir,
-} from './paths/user-paths.js';
 export type { ProjectDir } from './shared/types';
 
 // ════════════════════════════════════════════════════════════════════════════

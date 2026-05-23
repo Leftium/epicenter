@@ -90,6 +90,12 @@ export {
 	sqlitePath,
 	yjsPath,
 } from './document/workspace-paths.js';
+export {
+	userCacheDir,
+	userConfigDir,
+	userDataDir,
+	userLogDir,
+} from './paths/user-paths.js';
 export { hashClientId } from './shared/client-id.js';
 export { WorkspaceAppError } from './workspace-apps/errors.js';
 export {

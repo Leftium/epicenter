@@ -24,6 +24,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { machineAuthFilePath } from '@epicenter/auth/node';
 import {
 	claimDaemonLease,
 	metadataPathFor,
@@ -52,7 +53,7 @@ beforeEach(() => {
 	process.env.HOME = homeRoot;
 	mkdirSync(join(homeRoot, '.epicenter'), { recursive: true });
 	writeFileSync(
-		join(homeRoot, '.epicenter', 'auth.json'),
+		machineAuthPath(homeRoot),
 		JSON.stringify({
 			grant: {
 				accessToken: 'access-stored',
@@ -88,6 +89,10 @@ afterEach(() => {
 
 function markerPath(name: string): string {
 	return join(workDir, `${name}.marker`);
+}
+
+function machineAuthPath(homeDir: string): string {
+	return machineAuthFilePath({ homeDir });
 }
 
 function writeDemoDaemon(source: string): string {
@@ -187,6 +192,22 @@ describe('runUp: happy path', () => {
 });
 
 describe('runUp: failure cleanup', () => {
+	test('returns AuthFailed and releases the lease when machine auth is missing', async () => {
+		rmSync(machineAuthPath(homeRoot), { force: true });
+
+		const error = expectErr(
+			await runUp({
+				projectDir: workDir,
+				quiet: true,
+			}),
+		);
+
+		expect(error.name).toBe('AuthFailed');
+		expect(error.message).toContain('no saved session');
+		const lease = expectOk(claimDaemonLease(workDir));
+		lease.release();
+	});
+
 	test('writes the default config and starts with no routes when config is missing', async () => {
 		mkdirSync(join(workDir, 'workspaces', 'demo'), { recursive: true });
 

@@ -2,11 +2,11 @@
  * Machine auth API surface for CLI and daemons.
  *
  * `loginWithOob` runs the OOB OAuth dance once, fetches `/api/session` to derive
- * the local workspace identity, and persists a `PersistedAuth` cell to
- * `~/.epicenter/auth.json` (mode 0o600). `status` and `logout` read that
- * cell and reach the server through a regular `createOAuthAppAuth` client.
- * `createMachineAuthClient` is the daemon entry point: it loads the cell,
- * constructs the auth client, and never spawns an interactive launcher.
+ * the local workspace identity, and persists a `PersistedAuth` cell to the
+ * API-host-specific machine auth file (mode 0o600). `status` and `logout`
+ * read that cell and reach the server through a regular `createOAuthAppAuth`
+ * client. `createMachineAuthClient` is the daemon entry point: it loads the
+ * cell, constructs the auth client, and never spawns an interactive launcher.
  *
  * Architectural note: `loginWithOob` deliberately bypasses
  * `createOAuthAppAuth`. The factory is for daemons (long-lived, refresh on
@@ -16,6 +16,9 @@
  * internally, but the CLI also needs the email for "Signed in as ...").
  */
 
+import { promises as fs } from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import type { SubjectKeyring } from '@epicenter/encryption';
@@ -25,19 +28,47 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
-import { Err, Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { AuthClient } from '../auth-contract.js';
-import { ApiSessionResponse, type PersistedAuth } from '../auth-types.js';
+import {
+	ApiSessionResponse,
+	PersistedAuth,
+	type PersistedAuth as PersistedAuthType,
+} from '../auth-types.js';
 import {
 	type AuthFetch,
 	createOAuthAppAuth,
 } from '../create-oauth-app-auth.js';
-import {
-	loadMachineTokens,
-	type MachineAuthStorageError,
-	saveMachineTokens,
-} from './machine-tokens-store.js';
 import { createOobOAuthLauncher } from './oob-launcher.js';
+
+/**
+ * The on-disk machine auth file for a given API target.
+ *
+ * One file per API host: `~/.epicenter/auth.<host>.json` with `:` replaced
+ * by `_`. Prod resolves to `~/.epicenter/auth.api.epicenter.so.json`;
+ * `cli:local` (`EPICENTER_API_URL=http://localhost:8787`) resolves to
+ * `~/.epicenter/auth.localhost_8787.json`. Different targets cannot
+ * trample each other.
+ */
+export function machineAuthFilePath({
+	baseURL = EPICENTER_API_URL,
+	homeDir = process.env.HOME ?? os.homedir(),
+}: {
+	baseURL?: string;
+	homeDir?: string;
+} = {}): string {
+	let host: string;
+	try {
+		host = new URL(baseURL).host;
+	} catch (cause) {
+		throw new Error(`Invalid Epicenter API URL: ${baseURL}`, { cause });
+	}
+	return path.join(
+		homeDir,
+		'.epicenter',
+		`auth.${host.replaceAll(':', '_')}.json`,
+	);
+}
 
 export const MachineAuthRequestError = defineErrors({
 	RequestFailed: ({ cause }: { cause: unknown }) => ({
@@ -48,6 +79,113 @@ export const MachineAuthRequestError = defineErrors({
 export type MachineAuthRequestError = InferErrors<
 	typeof MachineAuthRequestError
 >;
+
+export const MachineAuthStorageError = defineErrors({
+	StorageFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Could not access machine auth storage: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	PermissionsTooOpen: ({
+		filePath,
+		mode,
+	}: {
+		filePath: string;
+		mode: number;
+	}) => ({
+		message: `Refusing to load ${filePath}: permissions ${mode.toString(8)} are too permissive. Run: chmod 600 ${filePath}`,
+		filePath,
+		mode,
+	}),
+});
+export type MachineAuthStorageError = InferErrors<
+	typeof MachineAuthStorageError
+>;
+
+/**
+ * Read the persisted auth cell at `filePath`. Private to this module: the
+ * orchestration functions below resolve the path and call through to here.
+ *
+ * - Missing file -> `Ok(null)` (signed-out).
+ * - Corrupt JSON or shape mismatch -> log warning, `Ok(null)`.
+ * - Permissions wider than 0o600 on a regular file -> refuse with a clear
+ *   chmod hint.
+ */
+async function loadMachineTokens({
+	filePath,
+	log,
+}: {
+	filePath: string;
+	log: Logger;
+}): Promise<Result<PersistedAuthType | null, MachineAuthStorageError>> {
+	const stat = await tryAsync({
+		try: () => fs.stat(filePath),
+		catch: (cause) => MachineAuthStorageError.StorageFailed({ cause }),
+	});
+	if (stat.error) {
+		const cause = stat.error.cause as NodeJS.ErrnoException | undefined;
+		if (cause?.code === 'ENOENT') return Ok(null);
+		return Err(stat.error);
+	}
+	if (process.platform !== 'win32') {
+		const mode = stat.data.mode & 0o777;
+		if ((mode & 0o077) !== 0) {
+			return Err(
+				MachineAuthStorageError.PermissionsTooOpen({ filePath, mode }).error,
+			);
+		}
+	}
+
+	const read = await tryAsync({
+		try: () => fs.readFile(filePath, 'utf-8'),
+		catch: (cause) => MachineAuthStorageError.StorageFailed({ cause }),
+	});
+	if (read.error) return Err(read.error);
+
+	try {
+		return Ok(PersistedAuth.assert(JSON.parse(read.data)));
+	} catch (cause) {
+		log.warn(
+			MachineAuthStorageError.StorageFailed({
+				cause: new Error(
+					`Discarding corrupted ${filePath}: ${extractErrorMessage(cause)}`,
+					{ cause },
+				),
+			}),
+		);
+		return Ok(null);
+	}
+}
+
+/**
+ * Write or remove the persisted auth cell. Atomic via `.tmp` + rename so a
+ * crash mid-write never leaves a half-written file. Private to this module.
+ */
+async function saveMachineTokens(
+	value: PersistedAuthType | null,
+	{ filePath }: { filePath: string },
+): Promise<Result<undefined, MachineAuthStorageError>> {
+	return tryAsync({
+		try: async (): Promise<undefined> => {
+			if (value === null) {
+				try {
+					await fs.unlink(filePath);
+				} catch (cause) {
+					const code = (cause as NodeJS.ErrnoException | undefined)?.code;
+					if (code !== 'ENOENT') throw cause;
+				}
+				return undefined;
+			}
+			await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
+			const tmp = `${filePath}.tmp`;
+			await fs.writeFile(tmp, JSON.stringify(PersistedAuth.assert(value)), {
+				mode: 0o600,
+			});
+			await fs.rename(tmp, filePath);
+			return undefined;
+		},
+		catch: (cause) => MachineAuthStorageError.StorageFailed({ cause }),
+	});
+}
 
 /**
  * Identity returned to the CLI for display. `user.email` is fetched from
@@ -95,7 +233,6 @@ export async function loginWithOob({
 	redirectUri,
 	filePath,
 	fetch = globalThis.fetch.bind(globalThis),
-	log = createLogger('machine-auth'),
 	now = Date.now,
 	print,
 	openBrowser,
@@ -103,7 +240,7 @@ export async function loginWithOob({
 }: LoginWithOobConfig = {}): Promise<
 	Result<LoginWithOobResult, MachineAuthRequestError | MachineAuthStorageError>
 > {
-	void log;
+	const authFilePath = filePath ?? machineAuthFilePath({ baseURL });
 	const launcher = createOobOAuthLauncher({
 		baseURL,
 		clientId,
@@ -142,10 +279,7 @@ export async function loginWithOob({
 		grant,
 		localIdentity: session.localIdentity,
 	};
-	const saved = await saveMachineTokens(
-		cell,
-		...(filePath ? [{ filePath }] : []),
-	);
+	const saved = await saveMachineTokens(cell, { filePath: authFilePath });
 	if (saved.error) return Err(saved.error);
 
 	return Ok({
@@ -172,8 +306,9 @@ export async function status({
 }: CommonConfig = {}): Promise<
 	Result<StatusResult, MachineAuthStorageError | MachineAuthRequestError>
 > {
+	const authFilePath = filePath ?? machineAuthFilePath({ baseURL });
 	const loaded = await loadMachineTokens({
-		...(filePath ? { filePath } : {}),
+		filePath: authFilePath,
 		log,
 	});
 	if (loaded.error) return Err(loaded.error);
@@ -183,7 +318,7 @@ export async function status({
 	const client = await createMachineAuthClient({
 		baseURL,
 		clientId,
-		filePath,
+		filePath: authFilePath,
 		fetch,
 		log,
 		now,
@@ -253,8 +388,9 @@ export async function logout({
 }: CommonConfig = {}): Promise<
 	Result<LogoutResult, MachineAuthStorageError | MachineAuthRequestError>
 > {
+	const authFilePath = filePath ?? machineAuthFilePath({ baseURL });
 	const loaded = await loadMachineTokens({
-		...(filePath ? { filePath } : {}),
+		filePath: authFilePath,
 		log,
 	});
 	if (loaded.error) return Err(loaded.error);
@@ -263,7 +399,7 @@ export async function logout({
 	const client = await createMachineAuthClient({
 		baseURL,
 		clientId,
-		filePath,
+		filePath: authFilePath,
 		fetch,
 		log,
 		now,
@@ -284,16 +420,16 @@ export async function createMachineAuthClient({
 	log = createLogger('machine-auth'),
 	now = Date.now,
 }: CommonConfig = {}): Promise<AuthClient> {
-	void log;
+	const authFilePath = filePath ?? machineAuthFilePath({ baseURL });
 	const loaded = await loadMachineTokens({
-		...(filePath ? { filePath } : {}),
+		filePath: authFilePath,
 		log,
 	});
 	if (loaded.error) throw loaded.error;
 	if (!loaded.data) {
 		throw new Error(
-			'[machine-auth] no saved session at ~/.epicenter/auth.json. ' +
-				'Run `epicenter auth login` first.',
+			`[machine-auth] no saved session at ${authFilePath}. ` +
+				`Run \`epicenter auth login\` against ${baseURL} first.`,
 		);
 	}
 	let currentCell: PersistedAuth | null = loaded.data;
@@ -308,10 +444,9 @@ export async function createMachineAuthClient({
 		persistedAuthStorage: {
 			get: () => currentCell,
 			set: async (next) => {
-				const saved = await saveMachineTokens(
-					next,
-					...(filePath ? [{ filePath }] : []),
-				);
+				const saved = await saveMachineTokens(next, {
+					filePath: authFilePath,
+				});
 				if (saved.error) throw saved.error;
 				currentCell = next;
 			},

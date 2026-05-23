@@ -27,7 +27,7 @@ When you iterate on `apps/api`, you want CLI commands hitting your local server,
 | Use the published binary (end user) | `epicenter auth login` |
 | Override the target anywhere | `EPICENTER_API_URL=https://staging.example.com bun run cli auth login` |
 
-Tokens are stored per host so prod and local sessions coexist. The prod host writes `~/.epicenter/auth.json`; any other host writes `~/.epicenter/auth.<host>.json` with `:` replaced by `_`. So `http://localhost:8787` lands at `~/.epicenter/auth.localhost_8787.json`, and a fresh `cli:local auth login` will not overwrite your existing prod session. When the env var is set, the CLI prints `Using API at <url>.` to stderr once per process. The daemon freezes its target at boot; to retarget, `daemon down` then `daemon up` again.
+Tokens are stored per host so prod and local sessions coexist. Each API host writes `~/.epicenter/auth.<host>.json` with `:` replaced by `_`. So `https://api.epicenter.so` lands at `~/.epicenter/auth.api.epicenter.so.json` and `http://localhost:8787` lands at `~/.epicenter/auth.localhost_8787.json`. A fresh `cli:local auth login` will not overwrite your prod session. When the env var is set, the CLI prints `Using API at <url>.` to stderr once per process. The daemon freezes its target at boot; to retarget, `daemon down` then `daemon up` again.
 
 The same env var and scripts apply to every command that talks to the API, including `daemon`, not just `auth`.
 

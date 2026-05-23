@@ -5,16 +5,13 @@ export {
 	type LogoutResult,
 	loginWithOob,
 	logout,
+	machineAuthFilePath,
 	MachineAuthRequestError,
+	MachineAuthStorageError,
 	type MachineIdentity,
 	type StatusResult,
 	status,
 } from './node/machine-auth.js';
-export {
-	loadMachineTokens,
-	MachineAuthStorageError,
-	saveMachineTokens,
-} from './node/machine-tokens-store.js';
 export {
 	type CreateOobOAuthLauncherConfig,
 	createOobOAuthLauncher,

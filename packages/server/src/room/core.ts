@@ -54,14 +54,17 @@ import {
 	type SyncMessageType,
 	stateVectorsEqual,
 } from '@epicenter/sync';
-import type {
-	DispatchErrorWire,
-	DispatchInboundFrame,
-	DispatchResultFrame,
+import {
+	checkDispatchRequestFrame,
+	checkDispatchResponseFrame,
+	type DispatchErrorWire,
+	type DispatchInboundFrame,
+	type DispatchResultFrame,
 } from '@epicenter/workspace/document/dispatch-protocol';
-import type {
-	PresenceDevice,
-	PresenceFrame,
+import {
+	checkPresencePublishFrame,
+	type PresenceDevice,
+	type PresenceFrame,
 } from '@epicenter/workspace/document/presence';
 import * as decoding from 'lib0/decoding';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
@@ -343,16 +346,10 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	 */
 	function handleDispatchRequest(
 		callerWs: RoomSocket,
-		frame: Record<string, unknown>,
+		frame: unknown,
 	): void {
+		if (!checkDispatchRequestFrame.Check(frame)) return;
 		const { id, to, action, input } = frame;
-		if (
-			typeof id !== 'string' ||
-			typeof to !== 'string' ||
-			typeof action !== 'string'
-		) {
-			return;
-		}
 
 		const recipientWs = pickRecipient(to);
 		if (!recipientWs) {
@@ -391,42 +388,22 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	 * caller that started the dispatch. A `dispatch_response` with no
 	 * matching pending entry is a late reply (the caller already gave up,
 	 * or the entry was lost to hibernation) and is dropped.
+	 *
+	 * The TypeBox validator guarantees `frame.result` is a well-formed
+	 * `Result<unknown, ActionResponseError>`. The relay still forwards the
+	 * error side opaquely; the caller's own validator narrows it again to
+	 * `DispatchErrorWire` (which adds `RecipientOffline` to the union).
 	 */
-	function handleDispatchResponse(
-		installationId: string,
-		frame: Record<string, unknown>,
-	): void {
-		const id = typeof frame.id === 'string' ? frame.id : null;
-		if (!id) return;
+	function handleDispatchResponse(frame: unknown): void {
+		if (!checkDispatchResponseFrame.Check(frame)) return;
 
-		const pending = pendingDispatches.get(id);
+		const pending = pendingDispatches.get(frame.id);
 		if (!pending) return;
 
 		clearTimeout(pending.timeout);
-		pendingDispatches.delete(id);
+		pendingDispatches.delete(frame.id);
 
-		const result = frame.result;
-		const isResult =
-			typeof result === 'object' &&
-			result !== null &&
-			'data' in result &&
-			'error' in result;
-		if (!isResult) {
-			// Recipient sent a non-`Result` payload; treat it as offline so
-			// the caller gets a usable `Result` instead of waiting for its
-			// ceiling.
-			sendDispatchResult(pending.callerWs, id, recipientOffline(installationId));
-			return;
-		}
-
-		// The relay forwards the recipient's reply opaquely: it never
-		// inspects the error side. The caller validates errors against
-		// `DispatchErrorWire`.
-		sendDispatchResult(
-			pending.callerWs,
-			id,
-			result as Result<unknown, unknown>,
-		);
+		sendDispatchResult(pending.callerWs, frame.id, frame.result);
 	}
 
 	/**
@@ -460,38 +437,28 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	 * dropped silently: the relay never trusts client input but never tears
 	 * down a sync socket for one bad manifest publish either.
 	 */
-	function handlePresencePublish(
-		socket: RoomSocket,
-		frame: Record<string, unknown>,
-	): void {
-		const actions = frame.actions;
-		if (!actions || typeof actions !== 'object' || Array.isArray(actions)) {
-			return;
-		}
+	function handlePresencePublish(socket: RoomSocket, frame: unknown): void {
+		if (!checkPresencePublishFrame.Check(frame)) return;
 		const existing = connections.get(socket);
 		if (!existing) return;
-		const updated: ConnectionId = {
-			...existing,
-			actions: actions as ConnectionId['actions'],
-		};
+		const updated: ConnectionId = { ...existing, actions: frame.actions };
 		connections.set(socket, updated);
 		socket.serializeAttachment?.(updated);
 		broadcastPresence();
 	}
 
 	/**
-	 * Route a client -> relay text frame. Valid types are `dispatch_request`,
-	 * `dispatch_response`, and `presence_publish`. Unparseable JSON or an
-	 * unknown frame type is a genuine protocol desync and closes the socket
-	 * with `4400 protocol-error`; a recognized frame with malformed fields is
-	 * dropped without closing, because one bad text frame must not tear down
-	 * sync and presence.
+	 * Route a client -> relay text frame. Recognized types are `dispatch_request`,
+	 * `dispatch_response`, and `presence_publish`. The TypeBox-compiled validator
+	 * inside each handler narrows the frame; this dispatcher only owns the
+	 * `type` switch and the protocol-error close path.
+	 *
+	 * Unparseable JSON or an unknown frame type is a genuine protocol desync and
+	 * closes the socket with `4400 protocol-error`. A recognized frame with
+	 * malformed fields is dropped without closing, because one bad text frame
+	 * must not tear down sync and presence.
 	 */
-	function handleTextFrame(
-		ws: RoomSocket,
-		installationId: string,
-		message: string,
-	): void {
+	function handleTextFrame(ws: RoomSocket, message: string): void {
 		let parsed: unknown;
 		try {
 			parsed = JSON.parse(message);
@@ -500,26 +467,20 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 			return;
 		}
 
-		if (
-			!parsed ||
-			typeof parsed !== 'object' ||
-			!('type' in parsed) ||
-			typeof (parsed as { type: unknown }).type !== 'string'
-		) {
-			ws.close(4400, 'protocol-error');
-			return;
-		}
+		const type =
+			parsed && typeof parsed === 'object' && 'type' in parsed
+				? (parsed as { type: unknown }).type
+				: undefined;
 
-		const frame = parsed as { type: string } & Record<string, unknown>;
-		switch (frame.type) {
+		switch (type) {
 			case 'dispatch_request':
-				handleDispatchRequest(ws, frame);
+				handleDispatchRequest(ws, parsed);
 				return;
 			case 'dispatch_response':
-				handleDispatchResponse(installationId, frame);
+				handleDispatchResponse(parsed);
 				return;
 			case 'presence_publish':
-				handlePresencePublish(ws, frame);
+				handlePresencePublish(ws, parsed);
 				return;
 			default:
 				ws.close(4400, 'protocol-error');
@@ -639,7 +600,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 			}
 
 			if (typeof message === 'string') {
-				handleTextFrame(socket, data.installationId, message);
+				handleTextFrame(socket, message);
 				return;
 			}
 

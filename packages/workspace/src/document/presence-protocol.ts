@@ -13,24 +13,38 @@
  * stores and forwards them as bytes, never inspects their shape.
  *
  * Shared by the relay (`packages/server/src/room/core.ts`, the sender) and
- * the client (`open-collaboration.ts`, the reader). Pure types, zero runtime.
+ * the client (`open-collaboration.ts`, the reader).
+ *
+ * Schemas are TypeBox: they ARE valid JSON Schema at runtime, double as the
+ * source of truth for the TypeScript types via `Static`, and feed
+ * `typebox/compile`'s `Compile()` to produce checked-once validators reused
+ * at every boundary. No hand-written duck-typing helpers.
  */
 
-import type { ActionManifest } from '../shared/actions.js';
+import Type, { type Static } from 'typebox';
+import { Compile } from 'typebox/compile';
+import { ActionMetaSchema } from '../shared/actions.js';
+
+/**
+ * Wire schema for an action manifest. `Record<string, ActionMeta>` where each
+ * value is the metadata-only projection of a callable `Action`. Reuses
+ * `ActionMetaSchema` so the wire stays in lockstep with the local registry.
+ */
+export const ActionManifestSchema = Type.Record(Type.String(), ActionMetaSchema);
 
 /**
  * One device's entry on the wire.
  *
  * `installationId` routes dispatches; `connectedAt` lets receivers render an
  * "online since" affordance; `actions` is the device's published manifest, or
- * `{}` if the device has not (yet) published one. The same `ActionManifest`
- * type the local registry produces via `toActionMeta` is the wire form.
+ * `{}` if the device has not (yet) published one.
  */
-export type PresenceDevice = {
-	installationId: string;
-	connectedAt: number;
-	actions: ActionManifest;
-};
+export const PresenceDeviceSchema = Type.Object({
+	installationId: Type.String(),
+	connectedAt: Type.Number(),
+	actions: ActionManifestSchema,
+});
+export type PresenceDevice = Static<typeof PresenceDeviceSchema>;
 
 /**
  * Server -> client: full set of currently-connected devices, pushed on every
@@ -38,10 +52,11 @@ export type PresenceDevice = {
  * own install: the relay computes the list per-recipient so the client never
  * has to filter self.
  */
-export type PresenceFrame = {
-	type: 'presence';
-	devices: PresenceDevice[];
-};
+export const PresenceFrameSchema = Type.Object({
+	type: Type.Literal('presence'),
+	devices: Type.Array(PresenceDeviceSchema),
+});
+export type PresenceFrame = Static<typeof PresenceFrameSchema>;
 
 /**
  * Client -> server: publish this device's action manifest. The relay stores
@@ -49,7 +64,20 @@ export type PresenceFrame = {
  * presence so peers see the update. Sent once on connect; re-sent if the
  * local action registry changes.
  */
-export type PresencePublishFrame = {
-	type: 'presence_publish';
-	actions: ActionManifest;
-};
+export const PresencePublishFrameSchema = Type.Object({
+	type: Type.Literal('presence_publish'),
+	actions: ActionManifestSchema,
+});
+export type PresencePublishFrame = Static<typeof PresencePublishFrameSchema>;
+
+/**
+ * Pre-compiled validator for inbound presence frames. Used by the client to
+ * narrow untrusted text frames at the receive boundary.
+ */
+export const checkPresenceFrame = Compile(PresenceFrameSchema);
+
+/**
+ * Pre-compiled validator for inbound `presence_publish` frames. Used by the
+ * relay to validate device-supplied manifests before storing.
+ */
+export const checkPresencePublishFrame = Compile(PresencePublishFrameSchema);

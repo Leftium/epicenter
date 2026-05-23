@@ -42,15 +42,18 @@ import {
 	type LiveDevice,
 	runInboundDispatch,
 } from './dispatch.js';
-import type {
-	DispatchRequestFrame,
-	DispatchResultFrame,
+import {
+	checkDispatchResultFrame,
+	type DispatchRequestFrame,
 } from './dispatch-protocol.js';
 import {
 	createSyncSupervisor,
 	type SyncStatus,
 } from './internal/sync-supervisor.js';
-import type { PresencePublishFrame } from './presence-protocol.js';
+import {
+	checkPresenceFrame,
+	type PresencePublishFrame,
+} from './presence-protocol.js';
 
 const DISPATCH_RESPONSE_CEILING_MS = 90_000;
 
@@ -197,25 +200,10 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		} catch {
 			return false;
 		}
-		if (!parsed || typeof parsed !== 'object') return false;
-		if ((parsed as { type?: unknown }).type !== 'presence') return false;
-		const devices = (parsed as { devices?: unknown }).devices;
-		if (!Array.isArray(devices)) return false;
-		remoteDevices = devices.filter(isLiveDevice);
+		if (!checkPresenceFrame.Check(parsed)) return false;
+		remoteDevices = parsed.devices;
 		for (const listener of presenceListeners) listener(remoteDevices);
 		return true;
-	}
-
-	function isLiveDevice(value: unknown): value is LiveDevice {
-		if (!value || typeof value !== 'object') return false;
-		const v = value as Record<string, unknown>;
-		return (
-			typeof v.installationId === 'string' &&
-			typeof v.connectedAt === 'number' &&
-			typeof v.actions === 'object' &&
-			v.actions !== null &&
-			!Array.isArray(v.actions)
-		);
 	}
 
 	// Build the manifest once at construction time. The action registry is
@@ -237,15 +225,10 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		} catch {
 			return false;
 		}
-		if (!parsed || typeof parsed !== 'object') return false;
-		if ((parsed as { type?: unknown }).type !== 'dispatch_result') {
-			return false;
-		}
-		const frame = parsed as Partial<DispatchResultFrame>;
-		if (typeof frame.id !== 'string') return true;
-		const settle = pendingDispatches.get(frame.id);
+		if (!checkDispatchResultFrame.Check(parsed)) return false;
+		const settle = pendingDispatches.get(parsed.id);
 		if (!settle) return true;
-		settle(interpretDispatchResult(frame.result));
+		settle(interpretDispatchResult(parsed.result));
 		return true;
 	}
 

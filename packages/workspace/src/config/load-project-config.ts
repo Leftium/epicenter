@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { type } from 'arktype';
@@ -10,6 +10,7 @@ import {
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 
+import type { DaemonWorkspaceDefinition } from '../daemon/define-daemon-workspace.js';
 import type { ProjectDir } from '../shared/types.js';
 import {
 	DEFAULT_PROJECT_CONFIG_SOURCE,
@@ -50,8 +51,19 @@ export async function loadProjectConfig(
 	const module = await importProjectConfig(projectConfigPath);
 	if (!('default' in module)) {
 		throw new Error(
-			`loadProjectConfig: ${projectConfigPath} must default-export defineConfig(...).`,
+			`loadProjectConfig: ${projectConfigPath} must default-export defineConfig(...) or defineWorkspace(...).`,
 		);
+	}
+
+	// `defineWorkspace` shape: the default export IS the daemon workspace
+	// definition. Wrap it into the EpicenterConfig shape, deriving the route
+	// name from the project directory's basename so route-addressable code
+	// (CLI, materializer logs) sees the same identifier the developer typed.
+	if (isWorkspaceDefinition(module.default)) {
+		const routeName = basename(resolve(projectDir));
+		return Ok({
+			daemon: { routes: { [routeName]: module.default } },
+		});
 	}
 
 	const loaded = EpicenterConfigSchema(module.default);
@@ -67,6 +79,23 @@ export async function loadProjectConfig(
 	}
 
 	return Ok(loaded as EpicenterConfig);
+}
+
+/**
+ * Narrow a default-exported value to a `DaemonWorkspaceDefinition`. The
+ * structural test is "has an `open` function"; the route-map shape doesn't
+ * match (it has `daemon.routes`, not `open`), so the two cases are mutually
+ * exclusive.
+ */
+function isWorkspaceDefinition(
+	value: unknown,
+): value is DaemonWorkspaceDefinition {
+	return (
+		typeof value === 'object' &&
+		value !== null &&
+		'open' in value &&
+		typeof (value as { open: unknown }).open === 'function'
+	);
 }
 
 async function importProjectConfig(

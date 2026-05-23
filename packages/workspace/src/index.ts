@@ -117,6 +117,7 @@ export {
 export {
 	DEFAULT_PROJECT_CONFIG_SOURCE,
 	defineConfig,
+	defineWorkspace,
 	type EpicenterConfig,
 	PROJECT_CONFIG_FILENAME,
 } from './config/define-config.js';

@@ -1,5 +1,5 @@
 import type { SchemaClient } from '@better-auth/oauth-provider';
-import { APPS } from '#apps';
+import { APPS, type AppId, localUrl } from '#apps';
 
 /**
  * Better Auth calls server-side confidential clients `web`.
@@ -16,21 +16,25 @@ type TrustedPublicOAuthClientType = Extract<
 /**
  * Per-app facts for a checked-in first-party public OAuth client.
  *
- * This is deliberately smaller than Better Auth's full `SchemaClient`. Each
- * entry only says which app is asking and which redirect URIs are allowed. The
- * API seed layer fills in the shared policy for every trusted app: no client
- * secret, PKCE required, consent skipped, authorization-code flow, and the
- * common Epicenter scopes.
+ * Each entry declares one or more redirect-URI *sources*. The API seed
+ * (`ensureTrustedOAuthClients`) expands them against the deployment's own
+ * baseURL at cold boot, so a self-host at `https://api.acme.com` or a dev
+ * on an unusual port registers its own callbacks without anyone editing
+ * this file. At least one source must be set; the seed concatenates them.
  *
- * The fields stay spelled out instead of using `Pick` or a mapped type because
- * this file is meant to be read as config. The Better Auth indexed types keep
- * the field names tied to upstream without making the shape cryptic.
+ * - `literalUris`     hand-written URIs (e.g. chrome-extension://)
+ * - `apiOriginPaths`  paths joined to the deployment's API baseURL
+ *                     (e.g. CLI callback, dashboard mounted on /dashboard)
+ * - `appOrigins`      paths joined to another Epicenter app's origins, both
+ *                     `localUrl(APPS[appId])` and every entry in `urls`
  */
 type TrustedPublicOAuthClientDefinition = {
 	clientId: NonNullable<SchemaClient['clientId']>;
 	name: NonNullable<SchemaClient['name']>;
 	type: TrustedPublicOAuthClientType;
-	redirectUris: readonly string[];
+	literalUris?: readonly string[];
+	apiOriginPaths?: readonly string[];
+	appOrigins?: readonly { appId: AppId; path: string }[];
 };
 
 /**
@@ -38,11 +42,10 @@ type TrustedPublicOAuthClientDefinition = {
  *
  * The CLI uses an out-of-band (OOB) authorization-code + PKCE flow against
  * the same `/auth/oauth2/token` endpoint the browser uses. After sign-in
- * on the hosted portal, Better Auth redirects to
- * the API origin's `/auth/cli-callback`, which renders the one-time code;
- * the user pastes it into the terminal. This identifies the CLI app type,
- * not a user, machine, install, or secret. Every CLI install uses the same
- * value.
+ * on the hosted portal, Better Auth redirects to the API origin's
+ * `/auth/cli-callback`, which renders the one-time code; the user pastes
+ * it into the terminal. This identifies the CLI app type, not a user,
+ * machine, install, or secret. Every CLI install uses the same value.
  */
 export const EPICENTER_CLI_OAUTH_CLIENT_ID = 'epicenter-cli';
 
@@ -64,68 +67,70 @@ export const EPICENTER_OAUTH_SCOPES = [
 
 export const EPICENTER_OAUTH_SCOPE = EPICENTER_OAUTH_SCOPES.join(' ');
 
-const LOCAL_API_URL = `http://localhost:${APPS.API.port}`;
-
 export const EPICENTER_TRUSTED_OAUTH_CLIENTS = [
 	{
 		clientId: EPICENTER_DASHBOARD_OAUTH_CLIENT_ID,
 		name: 'Epicenter Dashboard',
 		type: 'user-agent-based',
-		redirectUris: [
-			'http://localhost:5178/dashboard/auth/callback',
-			'https://api.epicenter.so/dashboard/auth/callback',
-		],
+		apiOriginPaths: ['/dashboard/auth/callback'],
+		appOrigins: [{ appId: 'DASHBOARD', path: '/dashboard/auth/callback' }],
 	},
 	{
 		clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,
 		name: 'Fuji',
 		type: 'user-agent-based',
-		redirectUris: [
-			'http://localhost:5174/auth/callback',
-			'https://fuji.epicenter.so/auth/callback',
-		],
+		appOrigins: [{ appId: 'FUJI', path: '/auth/callback' }],
 	},
 	{
 		clientId: EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
 		name: 'Honeycrisp',
 		type: 'user-agent-based',
-		redirectUris: [
-			'http://localhost:5175/auth/callback',
-			'https://honeycrisp.epicenter.so/auth/callback',
-		],
+		appOrigins: [{ appId: 'HONEYCRISP', path: '/auth/callback' }],
 	},
 	{
 		clientId: EPICENTER_OPENSIDIAN_OAUTH_CLIENT_ID,
 		name: 'Opensidian',
 		type: 'user-agent-based',
-		redirectUris: [
-			'http://localhost:5176/auth/callback',
-			'https://opensidian.com/auth/callback',
-			'https://opensidian.epicenter.so/auth/callback',
-		],
+		appOrigins: [{ appId: 'OPENSIDIAN', path: '/auth/callback' }],
 	},
 	{
 		clientId: EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID,
 		name: 'Tab Manager extension',
 		type: 'user-agent-based',
-		redirectUris: ['https://mkbnicfhpacdofmoocppnjjmdfmkkgda.chromiumapp.org/'],
+		literalUris: ['chrome-extension://mkbnicfhpacdofmoocppnjjmdfmkkgda/'],
 	},
 	{
 		clientId: EPICENTER_ZHONGWEN_OAUTH_CLIENT_ID,
 		name: 'Zhongwen',
 		type: 'user-agent-based',
-		redirectUris: [
-			'http://localhost:8888/auth/callback',
-			'https://zhongwen.epicenter.so/auth/callback',
-		],
+		appOrigins: [{ appId: 'ZHONGWEN', path: '/auth/callback' }],
 	},
 	{
 		clientId: EPICENTER_CLI_OAUTH_CLIENT_ID,
 		name: 'Epicenter CLI',
 		type: 'native',
-		redirectUris: [
-			`${APPS.API.urls[0]}/auth/cli-callback`,
-			`${LOCAL_API_URL}/auth/cli-callback`,
-		],
+		apiOriginPaths: ['/auth/cli-callback'],
 	},
 ] as const satisfies readonly TrustedPublicOAuthClientDefinition[];
+
+/**
+ * Expand a trusted client's redirect-URI sources into concrete URIs for a
+ * specific deployment. The API seed calls this once per client at cold
+ * boot; tests use the same expander to assert the right URIs land in the
+ * DB. Each source contributes zero or more URIs; the result is their
+ * concatenation in declaration order.
+ */
+export function expandTrustedClientRedirectUris(
+	client: TrustedPublicOAuthClientDefinition,
+	{ apiBaseURL }: { apiBaseURL: string },
+): readonly string[] {
+	const fromLiteral = client.literalUris ?? [];
+	const fromApiOrigin =
+		client.apiOriginPaths?.map((path) => `${apiBaseURL}${path}`) ?? [];
+	const fromAppOrigins =
+		client.appOrigins?.flatMap(({ appId, path }) => {
+			const app = APPS[appId];
+			return [localUrl(app), ...app.urls].map((origin) => `${origin}${path}`);
+		}) ?? [];
+	return [...fromLiteral, ...fromApiOrigin, ...fromAppOrigins];
+}

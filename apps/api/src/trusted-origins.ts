@@ -1,4 +1,4 @@
-import { APPS } from '@epicenter/constants/apps';
+import { APPS, localUrl } from '@epicenter/constants/apps';
 
 /**
  * Tooling-only exception for `wrangler dev`.
@@ -43,7 +43,7 @@ export const TRUSTED_ORIGINS: string[] = [
 	// No Set wrap here: every APPS entry has a distinct port by construction;
 	// a future port collision is itself a bug we want surfaced by the
 	// "no duplicates" test invariant.
-	...Object.values(APPS).map((app) => `http://localhost:${app.port}`),
+	...Object.values(APPS).map(localUrl),
 
 	// Tauri WebView origin used by Whispering and any future Tauri app.
 	// Custom scheme reported by the browser as tauri://localhost; not a

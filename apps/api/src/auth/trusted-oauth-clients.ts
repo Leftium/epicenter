@@ -2,6 +2,7 @@ import type { SchemaClient } from '@better-auth/oauth-provider';
 import {
 	EPICENTER_OAUTH_SCOPES,
 	EPICENTER_TRUSTED_OAUTH_CLIENTS,
+	expandTrustedClientRedirectUris,
 } from '@epicenter/constants/oauth';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../db/schema';
@@ -74,17 +75,25 @@ export function projectTrustedOAuthClientToRow(
 /**
  * Upsert the first-party OAuth clients Better Auth is allowed to trust.
  *
- * Call this before handling OAuth requests in a fresh database. The module-level
- * promise makes concurrent workers share one seed attempt; if the attempt fails,
- * the cache is cleared so a later request can retry instead of pinning a bad
- * startup state.
+ * Call this before handling OAuth requests in a fresh database. Redirect
+ * URIs are expanded against `baseURL` so Epicenter Cloud, a self-host, and
+ * `wrangler dev` each seed their own callbacks without sharing config.
+ *
+ * The module-level promise makes concurrent workers share one seed attempt;
+ * if the attempt fails, the cache is cleared so a later request can retry
+ * instead of pinning a bad startup state. A given worker isolate only ever
+ * talks to one deployment, so caching by `baseURL` is unnecessary.
  */
 export async function ensureTrustedOAuthClients(
 	db: NodePgDatabase<typeof schema>,
+	baseURL: string,
 ) {
 	trustedOAuthClientsSeed ??= (async () => {
 		for (const client of EPICENTER_TRUSTED_OAUTH_CLIENTS) {
-			const row = projectTrustedOAuthClientToRow(client);
+			const redirectUris = expandTrustedClientRedirectUris(client, {
+				apiBaseURL: baseURL,
+			});
+			const row = projectTrustedOAuthClientToRow({ ...client, redirectUris });
 			await db
 				.insert(schema.oauthClient)
 				.values(row)

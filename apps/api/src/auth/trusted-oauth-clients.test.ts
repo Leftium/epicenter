@@ -16,6 +16,7 @@ import {
 	EPICENTER_FUJI_OAUTH_CLIENT_ID,
 	EPICENTER_OAUTH_SCOPES,
 	EPICENTER_TRUSTED_OAUTH_CLIENTS,
+	expandTrustedClientRedirectUris,
 } from '@epicenter/constants/oauth';
 import { betterAuth } from 'better-auth';
 import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
@@ -23,7 +24,7 @@ import { generateCodeChallenge } from 'better-auth/oauth2';
 import { authPlugins } from './plugins.js';
 import { projectTrustedOAuthClientToRow } from './trusted-oauth-clients.js';
 
-const trustedClientDefinition = {
+const trustedClientFixture = {
 	clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,
 	name: 'Fuji',
 	type: 'user-agent-based',
@@ -32,7 +33,22 @@ const trustedClientDefinition = {
 		'https://fuji.epicenter.so/auth/callback',
 	],
 } as const;
-const redirectUri = trustedClientDefinition.redirectUris[0];
+const redirectUri = trustedClientFixture.redirectUris[0];
+
+type TestTrustedClient = {
+	clientId: string;
+	name: string;
+	type: 'native' | 'user-agent-based';
+	redirectUris: readonly string[];
+};
+
+function findCliClient() {
+	const cliClient = EPICENTER_TRUSTED_OAUTH_CLIENTS.find(
+		(client) => client.clientId === EPICENTER_CLI_OAUTH_CLIENT_ID,
+	);
+	if (!cliClient) throw new Error('Expected trusted CLI OAuth client');
+	return cliClient;
+}
 const verifier = 'test-verifier-test-verifier-test-verifier';
 
 test('trusted OAuth clients project to public PKCE client rows', () => {
@@ -112,22 +128,44 @@ test('trusted OAuth client exchanges code for API-origin access token', async ()
 	expect(payload.iss).toBe(`${setup.baseURL}/auth`);
 });
 
-test('trusted CLI OAuth client accepts the local API callback redirect', async () => {
-	const cliClient = EPICENTER_TRUSTED_OAUTH_CLIENTS.find(
-		(client) => client.clientId === EPICENTER_CLI_OAUTH_CLIENT_ID,
-	);
-	if (!cliClient) throw new Error('Expected trusted CLI OAuth client');
-	const localCliRedirectUri = 'http://localhost:8787/auth/cli-callback';
-	expect(cliClient.redirectUris).toContain(localCliRedirectUri);
+test('expandTrustedClientRedirectUris derives the CLI callback from any deployment baseURL', () => {
+	const cliClient = findCliClient();
+	for (const apiBaseURL of [
+		'https://api.epicenter.so',
+		'http://localhost:8787',
+		'http://localhost:9999',
+		'https://api.acme.example',
+	]) {
+		const redirectUris = expandTrustedClientRedirectUris(cliClient, {
+			apiBaseURL,
+		});
+		expect(redirectUris).toEqual([`${apiBaseURL}/auth/cli-callback`]);
+	}
+});
+
+test('trusted CLI OAuth client (expanded against test baseURL) is accepted by Better Auth', async () => {
+	const cliClient = findCliClient();
+	const baseURL = 'http://localhost:47878';
+	const redirectUris = expandTrustedClientRedirectUris(cliClient, {
+		apiBaseURL: baseURL,
+	});
+	const expectedRedirectUri = `${baseURL}/auth/cli-callback`;
+	expect(redirectUris).toContain(expectedRedirectUri);
 
 	const setup = createTrustedClientTestAuth({
-		trustedClientDefinition: cliClient,
+		trustedClient: {
+			clientId: cliClient.clientId,
+			name: cliClient.name,
+			type: cliClient.type,
+			redirectUris,
+		},
+		baseURL,
 	});
 	const cookie = await signUpTestUser(setup.auth, setup.baseURL);
 	const code = await authorize(setup, {
 		clientId: setup.trustedClientId,
 		cookie,
-		redirectUri: localCliRedirectUri,
+		redirectUri: expectedRedirectUri,
 	});
 
 	expect(code).toBeTruthy();
@@ -151,15 +189,13 @@ test('registered non-trusted OAuth client requires consent', async () => {
 });
 
 function createTrustedClientTestAuth({
-	trustedClientDefinition:
-		inputTrustedClientDefinition = trustedClientDefinition,
+	trustedClient: inputTrustedClient = trustedClientFixture,
+	baseURL = 'http://localhost:47878',
 }: {
-	trustedClientDefinition?: (typeof EPICENTER_TRUSTED_OAUTH_CLIENTS)[number];
+	trustedClient?: TestTrustedClient;
+	baseURL?: string;
 } = {}) {
-	const baseURL = 'http://localhost:47878';
-	const trustedClient = projectTrustedOAuthClientToRow(
-		inputTrustedClientDefinition,
-	);
+	const trustedClient = projectTrustedOAuthClientToRow(inputTrustedClient);
 	const registeredClient = {
 		...projectTrustedOAuthClientToRow({
 			clientId: 'registered-client-1',

@@ -38,7 +38,7 @@ const app = defineDocument((id: string) => {
 	const collaboration = openCollaboration(ydoc, {              // sync + presence + dispatch
 		url: roomWsUrl({ baseURL: auth.baseURL, owner, guid: ydoc.guid, clientId }),
 		openWebSocket: auth.openWebSocket,
-		onAuthChange: auth.onStateChange,
+		onReconnectSignal: auth.onStateChange,
 		waitFor: idb.whenLoaded,                                   // delta-only on reconnect
 		actions: {},
 	});

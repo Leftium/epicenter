@@ -14,7 +14,7 @@ import type { AuthClient, AuthState } from './auth-contract.js';
  * const collaboration = openCollaboration(ydoc, {
  *   url,
  *   openWebSocket: auth.openWebSocket,
- *   onAuthChange: auth.onStateChange,
+ *   onReconnectSignal: auth.onStateChange,
  *   actions: {},
  * });
  * ```

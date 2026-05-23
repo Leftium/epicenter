@@ -48,7 +48,7 @@ describe('Fuji workspace architecture', () => {
 		expect(browserSource).toContain('owner: signedIn.owner,');
 		expect(browserSource).toContain('openCollaboration(ydoc,');
 		expect(browserSource).toContain('openWebSocket: signedIn.auth.openWebSocket');
-		expect(browserSource).toContain('onAuthChange: signedIn.auth.onStateChange');
+		expect(browserSource).toContain('onReconnectSignal: signedIn.auth.onStateChange');
 		expect(browserSource).toContain('wipeLocalStorage({');
 		// No LocalOwner / openEncryptedDoc / wipeLocalYjsData carry-over.
 		expect(browserSource).not.toContain('LocalOwner');
@@ -70,11 +70,11 @@ describe('Fuji workspace architecture', () => {
 		expect(daemonSource).toContain('attachSqliteMaterializer');
 		expect(daemonSource).toContain('attachMarkdownMaterializer');
 		// Destructured ctx: `yDocClientId` pins the Y.Doc CRDT clientID;
-		// `openWebSocket` and `onAuthChange` thread through to the daemon
+		// `openWebSocket` and `onReconnectSignal` thread through to the daemon
 		// infrastructure for cloud sync.
 		expect(daemonSource).toContain('ydoc.clientID = yDocClientId');
 		expect(daemonSource).toContain('openWebSocket,');
-		expect(daemonSource).toContain('onAuthChange,');
+		expect(daemonSource).toContain('onReconnectSignal,');
 		expect(daemonSource).not.toContain('openEncryptedDoc');
 		expect(daemonSource).not.toContain('openFujiWorkspace');
 		// Old shape: `auth,` passed as a single AuthClient is gone.

@@ -15,7 +15,7 @@ type Keyring = SignedInState['keyring'];
  * - `attachLocalStorage(ydoc, { server, owner, keyring })` reads `server`,
  *   `owner`, and `keyring` explicitly.
  * - `openCollaboration(ydoc, { openWebSocket: signedIn.auth.openWebSocket,
- *   onAuthChange: signedIn.auth.onStateChange })` consumes the two
+ *   onReconnectSignal: signedIn.auth.onStateChange })` consumes the two
  *   function refs explicitly so the primitive does not hold a reference
  *   to the full auth client.
  *

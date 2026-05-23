@@ -50,7 +50,7 @@ function setup<TActions extends ActionRegistry = ActionRegistry>(
 	const collaboration = openCollaboration<TActions>(ydoc, {
 		url,
 		openWebSocket: fakeWebSocket,
-		onAuthChange: () => () => {},
+		onReconnectSignal: () => () => {},
 		actions,
 	});
 	return { ydoc, collaboration };

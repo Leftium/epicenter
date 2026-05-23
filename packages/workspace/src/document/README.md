@@ -126,7 +126,7 @@ function openBlog({
       clientId,
     }),
     openWebSocket: signedIn.auth.openWebSocket,
-    onAuthChange: signedIn.auth.onStateChange,
+    onReconnectSignal: signedIn.auth.onStateChange,
     waitFor: idb.whenLoaded,
     actions: {},
   });

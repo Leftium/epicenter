@@ -35,7 +35,7 @@ import {
 import {
 	type Collaboration,
 	openCollaboration,
-	type OnAuthChange,
+	type OnReconnectSignal,
 	type OpenWebSocketFn,
 } from '../document/open-collaboration.js';
 import { roomWsUrl } from '../document/transport.js';
@@ -49,7 +49,7 @@ export type AttachDaemonInfrastructureOptions<TActions extends ActionRegistry> =
 		owner: Owner;
 		clientId: string;
 		openWebSocket: OpenWebSocketFn;
-		onAuthChange: OnAuthChange;
+		onReconnectSignal: OnReconnectSignal;
 		actions: TActions;
 		/** Defaults to `EPICENTER_API_URL`. Override for self-hosted hubs. */
 		baseURL?: string;
@@ -68,7 +68,7 @@ export function attachDaemonInfrastructure<TActions extends ActionRegistry>(
 		owner,
 		clientId,
 		openWebSocket,
-		onAuthChange,
+		onReconnectSignal,
 		actions,
 		baseURL = EPICENTER_API_URL,
 	}: AttachDaemonInfrastructureOptions<TActions>,
@@ -85,7 +85,7 @@ export function attachDaemonInfrastructure<TActions extends ActionRegistry>(
 			clientId,
 		}),
 		openWebSocket,
-		onAuthChange,
+		onReconnectSignal,
 		actions,
 	});
 

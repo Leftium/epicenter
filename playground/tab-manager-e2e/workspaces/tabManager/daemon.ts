@@ -35,7 +35,7 @@ export default defineWorkspace({
 		owner,
 		keyring,
 		openWebSocket,
-		onAuthChange,
+		onReconnectSignal,
 	}) {
 		const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
 		ydoc.clientID = yDocClientId;
@@ -57,7 +57,7 @@ export default defineWorkspace({
 				clientId,
 			}),
 			openWebSocket,
-			onAuthChange,
+			onReconnectSignal,
 			actions,
 		});
 

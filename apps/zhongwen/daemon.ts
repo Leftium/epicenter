@@ -20,7 +20,7 @@ export function openZhongwenDaemon({
 	owner,
 	keyring,
 	openWebSocket,
-	onAuthChange,
+	onReconnectSignal,
 }: DaemonWorkspaceContext) {
 	const ydoc = new Y.Doc({ guid: ZHONGWEN_ID, gc: true });
 	ydoc.clientID = yDocClientId;
@@ -33,7 +33,7 @@ export function openZhongwenDaemon({
 		owner,
 		clientId,
 		openWebSocket,
-		onAuthChange,
+		onReconnectSignal,
 		actions: {},
 	});
 }

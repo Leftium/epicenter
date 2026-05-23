@@ -15,7 +15,7 @@ import {
 	defineMutation,
 	defineQuery,
 	defineTable,
-	type OnAuthChange,
+	type OnReconnectSignal,
 	openCollaboration,
 	type OpenWebSocketFn,
 	roomWsUrl,
@@ -35,12 +35,12 @@ export function openNotes({
 	clientId,
 	owner,
 	openWebSocket,
-	onAuthChange,
+	onReconnectSignal,
 }: {
 	clientId: string;
 	owner: Owner;
 	openWebSocket: OpenWebSocketFn;
-	onAuthChange: OnAuthChange;
+	onReconnectSignal: OnReconnectSignal;
 }) {
 	const ydoc = new Y.Doc({ guid: WORKSPACE_ID });
 	const tables = attachTables(ydoc, { notes: Note });
@@ -68,7 +68,7 @@ export function openNotes({
 			clientId,
 		}),
 		openWebSocket,
-		onAuthChange,
+		onReconnectSignal,
 		actions,
 	});
 

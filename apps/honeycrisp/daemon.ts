@@ -44,7 +44,7 @@ export function openHoneycrispDaemon({
 	owner,
 	keyring,
 	openWebSocket,
-	onAuthChange,
+	onReconnectSignal,
 }: DaemonWorkspaceContext) {
 	const ydoc = new Y.Doc({ guid: HONEYCRISP_ID, gc: true });
 	ydoc.clientID = yDocClientId;
@@ -72,7 +72,7 @@ export function openHoneycrispDaemon({
 		owner,
 		clientId,
 		openWebSocket,
-		onAuthChange,
+		onReconnectSignal,
 		actions,
 	});
 }

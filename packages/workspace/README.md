@@ -164,7 +164,7 @@ export function openApp({
 		}),
 		waitFor: idb.whenLoaded,
 		openWebSocket: signedIn.auth.openWebSocket,
-		onAuthChange: signedIn.auth.onStateChange,
+		onReconnectSignal: signedIn.auth.onStateChange,
 		actions: {},
 	});
 
@@ -240,7 +240,7 @@ function openBlog() {
 		url,
 		waitFor: idb.whenLoaded,
 		openWebSocket,
-		onAuthChange,
+		onReconnectSignal,
 		actions: {},
 	});
 	return {
@@ -870,11 +870,11 @@ const tabs = defineTable(type({ id: 'string', url: 'string', _v: '1' }));
 function openTabs({
 	owner,
 	openWebSocket,
-	onAuthChange,
+	onReconnectSignal,
 }: {
 	owner: Owner;
 	openWebSocket: AuthClient['openWebSocket'];
-	onAuthChange: AuthClient['onStateChange'];
+	onReconnectSignal: AuthClient['onStateChange'];
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.tabs' });
 	const tables = attachTables(ydoc, { tabs });
@@ -890,7 +890,7 @@ function openTabs({
 		}),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
-		onAuthChange,
+		onReconnectSignal,
 		actions: {},
 	});
 
@@ -1299,7 +1299,7 @@ Two composition shapes, one builder contract.
 │   const tables        = attachTables(ydoc, { ... });     │
 │   const idb           = attachIndexedDb(ydoc);            │
 │   const collaboration = openCollaboration(ydoc, {         │
-│     waitFor: idb.whenLoaded, openWebSocket, onAuthChange, │
+│     waitFor: idb.whenLoaded, openWebSocket, onReconnectSignal, │
 │     actions: { ... },                                     │
 │   });                                                     │
 │   return { ydoc, tables, idb, collaboration,              │

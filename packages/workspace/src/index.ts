@@ -40,7 +40,7 @@
  * const collaboration = openCollaboration(ydoc, {
  *   url: roomWsUrl({ baseURL: auth.baseURL, owner, guid: ydoc.guid, clientId }),
  *   openWebSocket: auth.openWebSocket,
- *   onAuthChange: auth.onStateChange,
+ *   onReconnectSignal: auth.onStateChange,
  *   waitFor: idb.whenLoaded,
  *   actions: {},
  * });
@@ -67,7 +67,7 @@
  *         clientId,
  *       }),
  *       openWebSocket: auth.openWebSocket,
- *       onAuthChange: auth.onStateChange,
+ *       onReconnectSignal: auth.onStateChange,
  *       waitFor: bodyIdb.whenLoaded,
  *       actions: {},
  *     });
@@ -176,7 +176,7 @@ export {
 } from './document/attach-encryption.js';
 export {
 	type Collaboration,
-	type OnAuthChange,
+	type OnReconnectSignal,
 	type OpenCollaborationConfig,
 	openCollaboration,
 	type OpenWebSocketFn,

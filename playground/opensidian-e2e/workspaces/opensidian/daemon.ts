@@ -48,7 +48,7 @@ async function openOpensidianPlayground({
 	owner,
 	keyring,
 	openWebSocket,
-	onAuthChange,
+	onReconnectSignal,
 }: DaemonWorkspaceContext) {
 	const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
 	ydoc.clientID = yDocClientId;
@@ -107,7 +107,7 @@ async function openOpensidianPlayground({
 			clientId,
 		}),
 		openWebSocket,
-		onAuthChange,
+		onReconnectSignal,
 		actions,
 	});
 

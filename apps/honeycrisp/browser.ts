@@ -63,7 +63,7 @@ export function openHoneycrispBrowser({
 			clientId,
 		}),
 		openWebSocket: signedIn.auth.openWebSocket,
-		onAuthChange: signedIn.auth.onStateChange,
+		onReconnectSignal: signedIn.auth.onStateChange,
 		waitFor: idb.whenLoaded,
 		actions,
 	});
@@ -87,7 +87,7 @@ export function openHoneycrispBrowser({
 				clientId,
 			}),
 			openWebSocket: signedIn.auth.openWebSocket,
-			onAuthChange: signedIn.auth.onStateChange,
+			onReconnectSignal: signedIn.auth.onStateChange,
 			waitFor: childIdb.whenLoaded,
 			actions: {},
 		});

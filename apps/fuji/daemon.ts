@@ -43,7 +43,7 @@ export function openFujiDaemon({
 	owner,
 	keyring,
 	openWebSocket,
-	onAuthChange,
+	onReconnectSignal,
 }: DaemonWorkspaceContext) {
 	const ydoc = new Y.Doc({ guid: FUJI_ID, gc: true });
 	ydoc.clientID = yDocClientId;
@@ -68,7 +68,7 @@ export function openFujiDaemon({
 		owner,
 		clientId,
 		openWebSocket,
-		onAuthChange,
+		onReconnectSignal,
 		actions,
 	});
 }

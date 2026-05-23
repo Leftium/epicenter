@@ -16,7 +16,7 @@
 import type { Owner } from '@epicenter/auth';
 import type { SubjectKeyring } from '@epicenter/encryption';
 import type {
-	OnAuthChange,
+	OnReconnectSignal,
 	OpenWebSocketFn,
 } from '../document/open-collaboration.js';
 import type { MaybePromise, ProjectDir } from '../shared/types.js';
@@ -53,7 +53,7 @@ import type { DaemonRuntime } from './types.js';
  * - `openWebSocket` opens the relay socket for `openCollaboration`. The
  *   host wires it to `auth.openWebSocket`, which carries the bearer
  *   subprotocol.
- * - `onAuthChange` subscribes to auth-state transitions that should trigger
+ * - `onReconnectSignal` subscribes to auth-state transitions that should trigger
  *   a sync reconnect (token refresh, sign-in after sign-out). The host
  *   wires it to `auth.onStateChange`.
  */
@@ -65,7 +65,7 @@ export type DaemonWorkspaceContext = {
 	owner: Owner;
 	keyring: () => SubjectKeyring;
 	openWebSocket: OpenWebSocketFn;
-	onAuthChange: OnAuthChange;
+	onReconnectSignal: OnReconnectSignal;
 };
 
 /**

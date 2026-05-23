@@ -62,12 +62,12 @@ export type OpenWebSocketFn = (
 ) => Promise<WebSocket> | WebSocket;
 
 /**
- * Subscribe to auth-state transitions that should trigger a sync reconnect.
- * The callback receives no argument: consumers only need to know that a
- * transition happened. Returns an unsubscribe. Matches the shape of
- * `AuthClient.onStateChange` (the state argument is discarded).
+ * Subscribe to a wake signal that should trigger a sync reconnect (e.g. an
+ * auth-state transition that may have refreshed the bearer). The callback
+ * receives no argument and returns an unsubscribe. Pass `auth.onStateChange`
+ * or any compatible function.
  */
-export type OnAuthChange = (fn: () => void) => () => void;
+export type OnReconnectSignal = (fn: () => void) => () => void;
 
 export type OpenCollaborationConfig<TActions extends ActionRegistry> = {
 	/**
@@ -84,13 +84,12 @@ export type OpenCollaborationConfig<TActions extends ActionRegistry> = {
 	 */
 	openWebSocket: OpenWebSocketFn;
 	/**
-	 * Subscribe to auth-state transitions that should trigger a reconnect
-	 * (token refresh, sign-in after reauth-required, sign-out then sign-in).
-	 * Pass `auth.onStateChange` or any function with the same shape. The
-	 * unsubscribe is wired into `whenDisposed`, so callers do not write
-	 * reconnect glue.
+	 * Subscribe to a wake signal that should trigger a reconnect (token refresh,
+	 * sign-in after reauth-required, sign-out then sign-in). Pass
+	 * `auth.onStateChange` or any compatible function. The unsubscribe is wired
+	 * into `whenDisposed`, so callers do not write reconnect glue.
 	 */
-	onAuthChange: OnAuthChange;
+	onReconnectSignal: OnReconnectSignal;
 	waitFor?: Promise<unknown>;
 	log?: Logger;
 	/**
@@ -249,7 +248,7 @@ export function openCollaboration<TActions extends ActionRegistry>(
 	// reauth-required to signed-in, and sign-in after sign-out all surface
 	// as state changes; the supervisor's own state machine decides whether
 	// a reconnect actually does anything.
-	const unsubscribeAuth = config.onAuthChange(() => {
+	const unsubscribeAuth = config.onReconnectSignal(() => {
 		supervisor.reconnect();
 	});
 

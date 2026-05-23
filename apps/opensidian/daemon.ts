@@ -28,7 +28,7 @@ export function openOpensidianDaemon({
 	owner,
 	keyring,
 	openWebSocket,
-	onAuthChange,
+	onReconnectSignal,
 }: DaemonWorkspaceContext) {
 	const ydoc = new Y.Doc({ guid: OPENSIDIAN_ID, gc: true });
 	ydoc.clientID = yDocClientId;
@@ -41,7 +41,7 @@ export function openOpensidianDaemon({
 		owner,
 		clientId,
 		openWebSocket,
-		onAuthChange,
+		onReconnectSignal,
 		actions: {},
 	});
 }

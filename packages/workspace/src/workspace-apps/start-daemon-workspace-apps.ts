@@ -121,7 +121,7 @@ async function openOneDaemonRoute({
 		// the auth client and do not read `this`, so passing the method
 		// reference directly is safe (no `.bind(auth)` needed).
 		openWebSocket: auth.openWebSocket,
-		onAuthChange: auth.onStateChange,
+		onReconnectSignal: auth.onStateChange,
 	};
 	try {
 		const runtime = await definition.open(ctx);

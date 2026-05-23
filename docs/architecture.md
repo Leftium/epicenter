@@ -120,7 +120,7 @@ const app = defineDocument((id: string) => {
 			clientId,
 		}),
 		openWebSocket: auth.openWebSocket,
-		onAuthChange: auth.onStateChange,
+		onReconnectSignal: auth.onStateChange,
 		waitFor: idb.whenLoaded,
 		actions: {},
 	});
@@ -248,7 +248,7 @@ const opensidian = defineDocument((id: string) => {
 			clientId,
 		}),
 		openWebSocket: auth.openWebSocket,
-		onAuthChange: auth.onStateChange,
+		onReconnectSignal: auth.onStateChange,
 		waitFor: idb.whenLoaded,
 		actions,
 	});
@@ -266,7 +266,7 @@ defineDocument(builder).open('opensidian')
     +-- attachTables(ydoc, {...})
     +-- attachIndexedDb(ydoc)
     +-- createSqliteIndex(...)
-    +-- openCollaboration(ydoc, { url, openWebSocket, onAuthChange, waitFor: idb.whenLoaded, actions })
+    +-- openCollaboration(ydoc, { url, openWebSocket, onReconnectSignal, waitFor: idb.whenLoaded, actions })
     |
     +-- attachYjsFileSystem(...)              -> editor + terminal + file tree
     +-- actionsToAiTools(...).tools           -> local AI tool execution

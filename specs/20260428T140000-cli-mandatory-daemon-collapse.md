@@ -15,6 +15,8 @@ and route handlers moved into `packages/workspace/src/daemon`, so some file
 paths in this spec are historical. The startup recovery design was adapted to
 Bun's Unix socket behavior through `bindOrRecover()`.
 
+> **Path note (2026-05-22):** Any pre-flight references to directory creation under `~/.epicenter` are stale path guidance. Current daemon process files are owned by `packages/workspace/src/daemon/paths.ts` and should not recreate top-level `~/.epicenter/run` or `~/.epicenter/log`.
+
 ## Why this exists
 
 The current CLI has two execution modes for `run`, `list`, and `peers`:

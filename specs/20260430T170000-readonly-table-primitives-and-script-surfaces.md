@@ -6,6 +6,8 @@
 **Still live**: the readonly-table-primitives concept (the `encryption.attachTables` / `attachKv` split) is unchanged. The script-surfaces direction (per-app `openXSnapshot` + `openXScript` recipes) is replaced: scripts read SQLite directly and write through `connectDaemonActions`; there is no per-app script recipe.
 **Author**: AI-assisted
 
+> **Path note (2026-05-22):** Any `$EPICENTER_HOME/auth/credentials.json` references in this spec are stale. Current machine auth is stored through the active auth path resolver, not a top-level `~/.epicenter` home.
+
 ## Overview
 
 Split table attachment into read-only and writable layers, then use that split to make Fuji script reads honest. This spec supports a fast local `snapshot` and raw daemon `actions`. `fuji.snapshot` is local, read-only, and allowed to be stale. Durable writes go through daemon actions. Sync-peer writes and table-shaped daemon facades are deferred until they have named, tested contracts.

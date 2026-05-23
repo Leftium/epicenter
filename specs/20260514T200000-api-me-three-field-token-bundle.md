@@ -6,7 +6,7 @@
 - `specs/20260514T154500-id-token-bearing-encryption-keys.md` (the id_token-carries-keys design)
 - `specs/20260514T160000-execute-id-token-and-oob-cli.md` (the Wave 1-4 plan based on that design)
 - `specs/20260514T091255-tokens-only-auth-extract-identity-to-workspace.md` (the WorkspaceIdentityStore variant)
-**Composes with**: `specs/20260514T120000-machine-auth-oob-clean-break.md` (the OOB CLI flow; this spec adjusts the persisted shape the CLI's `~/.epicenter/auth.json` holds)
+**Composes with**: `specs/20260514T120000-machine-auth-oob-clean-break.md` (the OOB CLI flow; this spec adjusts the persisted shape the CLI's env-paths machine auth file holds)
 
 ## One Sentence
 
@@ -111,7 +111,7 @@ export const PersistedAuth = type({
 export type PersistedAuth = typeof PersistedAuth.infer;
 ```
 
-One cell. Two sections. The browser persists this to localStorage; the extension to chrome.storage.local; the CLI to `~/.epicenter/auth.json` (mode 0o600). All three storage cells validate against the same arktype.
+One cell. Two sections. The browser persists this to localStorage; the extension to chrome.storage.local; the CLI to `env-paths('epicenter').data/auth/<host>.json` (mode 0o600). All three storage cells validate against the same arktype.
 
 `OAuthSession` (today's `{ tokens, identity }`) is deleted; this is a clean break, not a rename.
 
@@ -502,7 +502,7 @@ packages/auth/src/contract.test.ts                EDIT
 
 packages/auth/src/node/machine-tokens-store.ts    NEW (renamed from machine-session-store)
   - persists PersistedAuth (grant + unlock; no profile)
-  - file path: ~/.epicenter/auth.json mode 0o600
+  - file path: env-paths('epicenter').data/auth/<host>.json mode 0o600
   - atomic write via .tmp + rename
   - corrupt-blob -> Ok(null) + warn
   - permissions-too-open -> refuse load with chmod hint
@@ -555,7 +555,7 @@ apps/api/src/auth/resource-boundary.ts            keep resolveBearerIdentity
                                                   (used by /api/me)
 docs/encryption.md                                update /workspace-identity
                                                   references to /api/me
-packages/cli/README.md                            document OOB flow + auth.json
+packages/cli/README.md                            document OOB flow + env-paths machine auth file
 specs/20260512T111335-post-oauth-audit-remediation.md
                                                   prepend "superseded by ..."
                                                   notice on Phase 4
@@ -570,7 +570,7 @@ Storage cell keys are renamed so old `OAuthSession`-shaped data does not acciden
 ```
 Browser localStorage:    <app>.auth.session   -> <app>.auth.persisted
 Extension chrome.storage:           auth.session  -> auth.persisted
-CLI file path:           keychain (deleted)    -> ~/.epicenter/auth.json
+CLI file path:           keychain (deleted)    -> env-paths('epicenter').data/auth/<host>.json
 ```
 
 Old keys are ignored. The new `PersistedAuth` arktype refuses to parse `OAuthSession`-shaped blobs (the field names do not match: `tokens` vs `grant`, `identity` vs `unlock`).

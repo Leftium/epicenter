@@ -66,7 +66,7 @@ MachineCredential
 Machine storage then splits the credential again:
 
 ```txt
-~/.epicenter/auth/credentials.json
+env-paths('epicenter').data/auth/<host>.json
   version
   currentServerOrigin
   credentials[]
@@ -157,7 +157,7 @@ test mode
 If a plaintext file mode survives, it should write the same payload:
 
 ```txt
-~/.epicenter/auth/session.json
+env-paths('epicenter').data/auth/<host>.json
   AuthSession | null
 ```
 

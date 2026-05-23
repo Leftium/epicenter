@@ -340,7 +340,7 @@ async function createMachineAuthClient({
   if (error) throw error;
   if (!loaded) {
     throw new Error(
-      '[machine-auth] no saved session at ~/.epicenter/auth.json. ' +
+      '[machine-auth] no saved session in the Epicenter machine auth data directory. ' +
       'Run `epicenter auth login` first.',
     );
   }
@@ -389,7 +389,7 @@ File: `packages/cli/src/commands/auth.ts`:
     * `auth login` prints a URL; the user signs in on the hosted portal,
     * copies the one-time code from the success page, and pastes it into the
     * terminal. Tokens and the local-unlock bundle live at
-    * `~/.epicenter/auth.json` with file mode 0o600.
+    * `env-paths('epicenter').data/auth/<host>.json` with file mode 0o600.
     *
     * Same shape and same source as the browser, dashboard, and extension
     * clients (see specs/20260514T200000-api-me-three-field-token-bundle.md).
@@ -408,7 +408,7 @@ Commit message: `feat(cli): wire epicenter auth to OOB flow`.
 ### Wave 4: tests
 
 Three test files. Use `path.join(os.tmpdir(), \`epicenter-test-\${randomUUID()}.json\`)`
-for any file paths; tests must not touch `~/.epicenter`.
+for any file paths; tests must not touch the real env-paths data directory.
 
 See `## Tests` below for the complete list. Run with:
 
@@ -546,7 +546,7 @@ test('createMachineAuthClient loads file and attaches Bearer after gate')
 [ ] packages/auth/src/node.ts barrel: drops loginWithDeviceCode,
     DeviceTokenError, MachineAuthClient (alias); adds loginWithOob
 [ ] packages/cli/src/commands/auth.ts: docstring describes OOB +
-    auth.json (no device-code, no keychain mentions); `login` calls
+    the env-paths machine auth file (no device-code, no keychain mentions); `login` calls
     loginWithOob; `status`/`logout` consume the new return shape
 [ ] grep across packages/* yields zero matches for:
     OAuthSession, loadMachineSession, saveMachineSession,
@@ -565,7 +565,7 @@ Run apps/api at http://localhost:8787 with at least one OAuth client signed in
 via a browser to populate the database.
 
 ```
-1. rm -f ~/.epicenter/auth.json
+1. rm -f "$MACHINE_AUTH_FILE"
 2. epicenter auth login
    - Prints the authorize URL
    - Opens browser best-effort, or user copies the URL
@@ -573,18 +573,18 @@ via a browser to populate the database.
    - Page renders the code in a monospace block with Copy button
    - User pastes into terminal
    - Terminal prints: "Signed in as <email>."
-3. stat -c '%a' ~/.epicenter/auth.json    # Linux
-   stat -f "%Lp" ~/.epicenter/auth.json   # macOS
+3. stat -c '%a' "$MACHINE_AUTH_FILE"    # Linux
+   stat -f "%Lp" "$MACHINE_AUTH_FILE"   # macOS
    Expected: 600
 4. epicenter auth status
    Expected: prints valid identity (email)
 5. epicenter auth logout
    Expected: apps/api logs show POST /auth/oauth2/revoke;
-             ~/.epicenter/auth.json is deleted
+             the env-paths machine auth file is deleted
 6. epicenter auth status
    Expected: signedOut
 7. Boot a daemon (apps/fuji daemon entrypoint): expect it to load
-   ~/.epicenter/auth.json, hit /api/me, and connect to /api/* successfully
+   the env-paths machine auth file, hit /api/me, and connect to /api/* successfully
 ```
 
 ## Out of scope (do NOT)

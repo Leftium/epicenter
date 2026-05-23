@@ -7,7 +7,6 @@ import {
 	type Tool,
 	toServerSentEventsResponse,
 } from '@tanstack/ai';
-import { ANTHROPIC_MODELS, createAnthropicChat } from '@tanstack/ai-anthropic';
 import { createGeminiChat, GeminiTextModels } from '@tanstack/ai-gemini';
 import { createOpenaiChat, OPENAI_CHAT_MODELS } from '@tanstack/ai-openai';
 import { type } from 'arktype';
@@ -39,7 +38,6 @@ const aiChatBody = type({
 	data: chatOptions.merge(
 		type.or(
 			{ provider: "'openai'", model: type.enumerated(...OPENAI_CHAT_MODELS) },
-			{ provider: "'anthropic'", model: type.enumerated(...ANTHROPIC_MODELS) },
 			{ provider: "'gemini'", model: type.enumerated(...GeminiTextModels) },
 		),
 	),
@@ -104,13 +102,6 @@ export const aiChatHandlers = factory.createHandlers(
 				if (!apiKey)
 					return c.json(AiChatError.ProviderNotConfigured({ provider }), 503);
 				adapter = createOpenaiChat(data.model, apiKey);
-				break;
-			}
-			case 'anthropic': {
-				const apiKey = userApiKey ?? c.env.ANTHROPIC_API_KEY;
-				if (!apiKey)
-					return c.json(AiChatError.ProviderNotConfigured({ provider }), 503);
-				adapter = createAnthropicChat(data.model, apiKey);
 				break;
 			}
 			case 'gemini': {

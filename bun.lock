@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -27,7 +26,6 @@
         "@epicenter/workspace": "workspace:*",
         "@hono/standard-validator": "catalog:",
         "@tanstack/ai": "catalog:",
-        "@tanstack/ai-anthropic": "catalog:",
         "@tanstack/ai-gemini": "catalog:",
         "@tanstack/ai-grok": "catalog:",
         "@tanstack/ai-openai": "catalog:",

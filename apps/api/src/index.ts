@@ -13,6 +13,7 @@
  * Read top to bottom for the full URL surface of cloud.
  */
 
+import { API_ROUTES } from '@epicenter/constants/api-routes';
 import {
 	aiApp,
 	authApp,
@@ -48,13 +49,13 @@ base.get('/', (c) =>
 base.route('/', authApp);
 
 // Session: cookie-or-bearer auth + owner resolution.
-base.use('/api/session', requireCookieOrBearerUser, attachOwner);
+base.use(API_ROUTES.session.pattern, requireCookieOrBearerUser, attachOwner);
 base.route('/', sessionApp);
 
 // Rooms: bearer auth + URL ownerId safety + owner resolution. No billing
 // gate; bandwidth and DO storage are not metered.
 base.use(
-	'/api/owners/:ownerId/rooms/*',
+	API_ROUTES.room.prefixPattern,
 	requireBearerUser,
 	requireUrlOwnerIdMatchesAuth,
 	attachOwner,
@@ -67,14 +68,14 @@ base.route('/', roomsApp);
 // for `visibility === 'private'` rows. Public assets serve to anyone with the
 // URL.
 base.use(
-	'/api/owners/:ownerId/assets',
+	API_ROUTES.assets.list.pattern,
 	requireCookieOrBearerUser,
 	requireUrlOwnerIdMatchesAuth,
 	attachOwner,
 	autumnStorageGate,
 );
 base.use(
-	'/api/owners/:ownerId/assets/usage',
+	API_ROUTES.assets.usage.pattern,
 	requireCookieOrBearerUser,
 	requireUrlOwnerIdMatchesAuth,
 	attachOwner,
@@ -82,7 +83,7 @@ base.use(
 );
 base.on(
 	['PATCH', 'DELETE'],
-	'/api/owners/:ownerId/assets/:assetId{[a-z0-9]{21}}',
+	API_ROUTES.assets.byId.pattern,
 	requireCookieOrBearerUser,
 	requireUrlOwnerIdMatchesAuth,
 	attachOwner,
@@ -91,11 +92,11 @@ base.on(
 base.route('/', createAssetsApp({ mode: MODE }));
 
 // AI chat: bearer-only, plan-aware credit gate.
-base.use('/api/ai/*', requireBearerUser, ensurePlanId, autumnAiGate);
+base.use(API_ROUTES.ai.chat.prefixPattern, requireBearerUser, ensurePlanId, autumnAiGate);
 base.route('/', aiApp);
 
 // Billing dashboard data plane.
-base.use('/api/billing/*', requireCookieOrBearerUser);
+base.use(API_ROUTES.billing.prefixPattern, requireCookieOrBearerUser);
 base.route('/api/billing', billingRoutes);
 
 // Dashboard SPA: Workers Static Assets binding serves the SvelteKit build.

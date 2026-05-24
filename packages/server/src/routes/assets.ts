@@ -35,6 +35,8 @@
  */
 
 import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/constants/identity';
+import { sValidator } from '@hono/standard-validator';
+import { type } from 'arktype';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
@@ -70,6 +72,14 @@ const ALLOWED_MIME_TYPES = new Set([
 	'image/webp',
 	'application/pdf',
 ]);
+
+/**
+ * Schema for the PATCH body. Multipart upload (POST) stays on manual
+ * `parseBody()` + per-field checks because the `File` instance check
+ * and the multi-field validation read more clearly inline than through
+ * an arktype `narrow`.
+ */
+const PatchAssetBody = type({ visibility: "'private' | 'public'" });
 
 const AssetError = defineErrors({
 	MissingFile: () => ({
@@ -245,18 +255,10 @@ function createAssetAuthedRoutes(): Hono<Env> {
 						"Modify an asset's metadata (currently: visibility flip)",
 					tags: ['assets'],
 				}),
+				sValidator('json', PatchAssetBody),
 				async (c) => {
 					const { assetId } = c.req.param();
-					const body = await c.req.json().catch(() => null);
-					const visibility = parseVisibility(body?.visibility);
-					if (visibility === null) {
-						return c.json(
-							AssetError.InvalidVisibility({
-								value: String(body?.visibility),
-							}),
-							400,
-						);
-					}
+					const { visibility } = c.req.valid('json');
 
 					const [updated] = await c.var.db
 						.update(schema.asset)

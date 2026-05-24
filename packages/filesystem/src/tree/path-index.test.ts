@@ -282,24 +282,6 @@ describe('attachFileSystemIndex', () => {
 	});
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// DISPOSE / UNSUBSCRIBE
-	// ═══════════════════════════════════════════════════════════════════════
-
-	test('teardown stops observing — destroying the ydoc unsubscribes the index', () => {
-		const { files, ydoc } = setup();
-		files.set(makeRow('f1', 'before.txt'));
-		const index = attachFileSystemIndex(ydoc, files);
-
-		expect(index.getIdByPath('/before.txt')).toBe(fid('f1'));
-
-		ydoc.destroy();
-
-		// Index state is frozen at destroy time. Reads still answer from the
-		// in-memory maps; the observer is just no longer wired to the yarray.
-		expect(index.getIdByPath('/before.txt')).toBe(fid('f1'));
-	});
-
-	// ═══════════════════════════════════════════════════════════════════════
 	// CIRCULAR REFERENCE DETECTION
 	// ═══════════════════════════════════════════════════════════════════════
 

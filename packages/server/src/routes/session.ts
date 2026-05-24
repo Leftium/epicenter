@@ -10,30 +10,26 @@
  * owners get a per-user keyring (`ownerId === userId`); every member of a
  * team deployment shares one keyring (`ownerId === TEAM_OWNER_ID`).
  *
- * The owner partition is resolved by the `attachOwner` middleware, not by
- * this handler. The handler reads `c.var.ownerId` and stays mode-blind.
- * Deployment shape is not on the wire: any consumer that needs to branch
- * derives it from `ownerId === TEAM_OWNER_ID`.
+ * The deployment is responsible for mounting auth and the `attachOwner`
+ * middleware upstream so `c.var.user` and `c.var.ownerId` are populated
+ * before this handler runs. The handler stays mode-blind. Deployment
+ * shape is not on the wire: any consumer that needs to branch derives
+ * it from `ownerId === TEAM_OWNER_ID`.
  */
 
 import type { ApiSessionResponse } from '@epicenter/auth';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
 import { deriveKeyring } from '../auth/encryption.js';
-import { createAttachOwner } from '../middleware/attach-owner.js';
-import { requireCookieOrBearerUser } from '../middleware/require-auth.js';
-import type { Env, ServerOptions } from '../types.js';
+import type { Env } from '../types.js';
 
-export function createSessionApp(opts: ServerOptions): Hono<Env> {
-	const attachOwner = createAttachOwner(opts.mode);
+export function createSessionApp(): Hono<Env> {
 	return new Hono<Env>().get(
 		'/',
 		describeRoute({
 			description: 'Return the authenticated session projection',
 			tags: ['auth'],
 		}),
-		requireCookieOrBearerUser,
-		attachOwner,
 		async (c) => {
 			const ownerId = c.var.ownerId;
 			const keyring = await deriveKeyring(ownerId);

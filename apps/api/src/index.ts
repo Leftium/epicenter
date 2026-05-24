@@ -10,11 +10,17 @@
  */
 
 import {
-	createServer,
-	Room,
+	createAiApp,
+	createAssetsApp,
+	createAttachOwner,
+	createAuthApp,
+	createBaseApp,
+	createRoomsApp,
+	createSessionApp,
 	requireBearerUser,
 	requireCookieOrBearerUser,
 	requireUrlOwnerIdMatchesAuth,
+	Room,
 } from '@epicenter/server';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
@@ -26,12 +32,10 @@ import {
 } from './autumn-gates.js';
 import { billingRoutes } from './billing-routes.js';
 
-// Generic on cloud's extended `Env` so every sub-app is typed as
-// `Hono<Env>` (with `planId`) without per-mount casts.
-const { base, auth, session, rooms, assets, ai, attachOwner } = createServer<Env>({
-	mode: 'personal',
-	signUpPolicy: 'open',
-});
+const MODE = 'personal';
+
+const base = createBaseApp({ signUpPolicy: 'open' });
+const attachOwner = createAttachOwner(MODE);
 
 // Public health endpoint at root.
 base.get('/', (c) =>
@@ -39,10 +43,14 @@ base.get('/', (c) =>
 );
 
 // Auth surface (no /api prefix; these render HTML and OAuth metadata).
+const auth = createAuthApp();
 base.route('/sign-in', auth).route('/consent', auth).route('/auth', auth);
 
-// Session: authed via library middleware, no cloud-specific wrapping.
-base.route('/api/session', session);
+// Session: cookie-or-bearer auth + owner resolution, then library handler.
+const cloudSession = new Hono<Env>()
+	.use('/', requireCookieOrBearerUser, attachOwner)
+	.route('/', createSessionApp());
+base.route('/api/session', cloudSession);
 
 // Rooms: bearer auth + URL ownerId safety + owner resolution, then library
 // handler. No billing gate for rooms today; bandwidth and DO storage are not
@@ -54,7 +62,7 @@ const cloudRooms = new Hono<Env>()
 		requireUrlOwnerIdMatchesAuth,
 		attachOwner,
 	)
-	.route('/', rooms);
+	.route('/', createRoomsApp());
 base.route('/api', cloudRooms);
 
 // Assets: split auth by path/method. POST upload, list, usage, PATCH metadata,
@@ -89,13 +97,13 @@ const cloudAssets = new Hono<Env>()
 		attachOwner,
 		autumnStorageGate,
 	)
-	.route('/', assets);
+	.route('/', createAssetsApp({ mode: MODE }));
 base.route('/api', cloudAssets);
 
 // AI chat: bearer-only, plan-aware credit gate, then library handler.
 const cloudAi = new Hono<Env>()
 	.use('*', requireBearerUser, ensurePlanId, autumnAiGate)
-	.route('/', ai);
+	.route('/', createAiApp());
 base.route('/api/ai', cloudAi);
 
 // Billing dashboard data plane.

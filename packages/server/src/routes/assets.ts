@@ -44,7 +44,7 @@ import { defineErrors } from 'wellcrafted/error';
 import { MAX_ASSET_BYTES } from '../constants.js';
 import * as schema from '../db/schema/index.js';
 import { assetKey } from '../owner.js';
-import type { Env, OwnershipMode, ServerOptions } from '../types.js';
+import type { Env, OwnershipMode } from '../types.js';
 
 /**
  * 21-char alphanumeric ID generator (~108 bits entropy). Used as the
@@ -438,7 +438,7 @@ function createAssetReadRoute(mode: OwnershipMode): Hono<Env> {
 	);
 }
 
-export function createAssetsApp(opts: ServerOptions): Hono<Env> {
+export function createAssetsApp(opts: { mode: OwnershipMode }): Hono<Env> {
 	const app = new Hono<Env>();
 	// Conditional read mounts first so it matches GET /:assetId before
 	// any wildcard handlers. Order matters: both sub-apps mount at the

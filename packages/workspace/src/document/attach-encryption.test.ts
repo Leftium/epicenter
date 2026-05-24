@@ -1,7 +1,6 @@
 /**
- * attachEncryption tests: lazy keyring callback wires the workspace keyring
- * at every registration site (table, kv). Plaintext mode does not exist:
- * registration always activates encryption.
+ * attachEncryption tests: keyring lookup failures surface at registration,
+ * and readonly helpers expose encrypted reads without write methods.
  *
  * Encrypted IndexedDB and owner-scoped BroadcastChannel behavior live on
  * `attachLocalStorage`; see `attach-local-storage.test.ts` for those

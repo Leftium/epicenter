@@ -1,7 +1,5 @@
 /**
- * Behavior tests for the Fuji schema and its mounted shape via
- * `attachEncryption`. Pins the canonical workspace id and the encrypted
- * tables/kv surface that browser and daemon compositions both build on.
+ * Tests for Fuji schema helpers that pin durable document identifiers.
  */
 
 import { describe, expect, test } from 'bun:test';

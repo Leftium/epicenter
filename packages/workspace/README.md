@@ -10,7 +10,14 @@ around `new Y.Doc`. Browser apps with many child Y.Docs use
 cleanup stays in app-owned helper functions that already know the parent table
 and child document guid policy.
 
-## Quick Start
+## Quick Start: local-only workspace
+
+The recipe below ships a workspace with no auth, no encryption, no cloud
+sync. It is the right shape for a single-user desktop notes app, an
+offline CLI, a test fixture, or any consumer whose data has no remote
+adversary. Cloud-synced workspaces add `attachEncryption` and swap
+`attachIndexedDb` + `attachBroadcastChannel` for the owner-scoped
+`attachLocalStorage` composite; see [Plaintext vs encrypted](#plaintext-vs-encrypted).
 
 ```bash
 bun add @epicenter/workspace
@@ -20,6 +27,7 @@ bun add @epicenter/workspace
 import { type } from 'arktype';
 import * as Y from 'yjs';
 import {
+	attachBroadcastChannel,
 	attachIndexedDb,
 	attachKv,
 	attachTables,
@@ -41,6 +49,9 @@ export function openBlog() {
 	const tables = attachTables(ydoc, { posts });
 	const kv = attachKv(ydoc, {});
 	const idb = attachIndexedDb(ydoc);
+	// Cross-tab broadcast keyed by ydoc.guid. Skip this line for a Tauri
+	// or Electron app that only ever runs one window.
+	attachBroadcastChannel(ydoc);
 
 	return {
 		get id() {
@@ -116,7 +127,10 @@ refcounting, and the `gcTime` grace period between last dispose and teardown.
 
 ### Plaintext vs encrypted
 
-Both variants ship from this package. Plaintext (`attachTable`, `attachTables`, `attachKv`) binds a typed helper directly to the Y.Doc. Encrypted: the methods on the `EncryptionAttachment` coordinator returned by `attachEncryption(ydoc, { keyring })` (`encryption.attachTable`, `encryption.attachTables`, `encryption.attachKv`) additionally register their backing store with that coordinator. The coordinator reads `keyring()` synchronously at each registration site, derives the per-workspace keyring, and activates the store before handing it back. Already-attached encrypted stores keep their derived keyring; same-owner key rotation needs a re-attach to affect those stores.
+Both variants ship from this package. Pick by adversary: plaintext for
+data that never leaves the device, encrypted for data the server stores.
+
+Plaintext (`attachTable`, `attachTables`, `attachKv`) binds a typed helper directly to the Y.Doc. Encrypted: the methods on the `EncryptionAttachment` coordinator returned by `attachEncryption(ydoc, { keyring })` (`encryption.attachTable`, `encryption.attachTables`, `encryption.attachKv`) additionally register their backing store with that coordinator. The coordinator reads `keyring()` synchronously at each registration site, derives the per-workspace keyring, and activates the store before handing it back. Already-attached encrypted stores keep their derived keyring; same-owner key rotation needs a re-attach to affect those stores.
 
 Don't mix plaintext and encrypted wrappers on the same slot name: Yjs hands both calls the same underlying `Y.Array` and you get a silent plaintext-over-ciphertext race. The verb (`encryption.attachTable` vs plain `attachTable`) is the primary defense; review call sites accordingly. One slot name, one attach site, one intent.
 

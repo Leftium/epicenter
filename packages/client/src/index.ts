@@ -127,10 +127,10 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 			const fd = new FormData();
 			fd.append('file', file);
 			fd.append('visibility', params.visibility ?? 'private');
-			const res = await opts.fetch(
-				API_ROUTES.assets.list.url(base, ownerId),
-				{ method: 'POST', body: fd },
-			);
+			const res = await opts.fetch(API_ROUTES.assets.list.url(base, ownerId), {
+				method: 'POST',
+				body: fd,
+			});
 			if (!res.ok) {
 				throw new Error(`epicenter.assets.upload: ${res.status}`);
 			}
@@ -148,9 +148,7 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 
 		async usage(): Promise<{ totalBytes: number }> {
 			const ownerId = await getOwnerId();
-			const res = await opts.fetch(
-				API_ROUTES.assets.usage.url(base, ownerId),
-			);
+			const res = await opts.fetch(API_ROUTES.assets.usage.url(base, ownerId));
 			if (!res.ok) {
 				throw new Error(`epicenter.assets.usage: ${res.status}`);
 			}

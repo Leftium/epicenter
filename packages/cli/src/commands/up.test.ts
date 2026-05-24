@@ -28,7 +28,6 @@ import {
 	rmSync,
 	writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AuthClient } from '@epicenter/auth';
 import { asOwnerId } from '@epicenter/constants/identity';
@@ -69,23 +68,26 @@ const STUB_AUTH = {
 
 const stubAuthFactory = async () => Ok(STUB_AUTH);
 
-let originalXdg: string | undefined;
+let originalRuntimeDir: string | undefined;
 let runtimeRoot: string;
 let workDir: string;
 
 beforeEach(() => {
-	originalXdg = process.env.XDG_RUNTIME_DIR;
+	originalRuntimeDir = process.env.EPICENTER_RUNTIME_DIR;
 
-	runtimeRoot = mkdtempSync(join(tmpdir(), 'ep-up-'));
-	process.env.XDG_RUNTIME_DIR = runtimeRoot;
-	mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
+	// `/tmp/...` is short on every POSIX platform; needed because
+	// socketPathFor enforces a strict path-length guard that macOS's
+	// `os.tmpdir()` would blow.
+	runtimeRoot = mkdtempSync('/tmp/eps-up-rt-');
+	process.env.EPICENTER_RUNTIME_DIR = runtimeRoot;
+	mkdirSync(runtimeRoot, { recursive: true });
 
-	workDir = mkdtempSync(join(tmpdir(), 'ep-dir-'));
+	workDir = mkdtempSync('/tmp/eps-up-dir-');
 });
 
 afterEach(() => {
-	if (originalXdg === undefined) delete process.env.XDG_RUNTIME_DIR;
-	else process.env.XDG_RUNTIME_DIR = originalXdg;
+	if (originalRuntimeDir === undefined) delete process.env.EPICENTER_RUNTIME_DIR;
+	else process.env.EPICENTER_RUNTIME_DIR = originalRuntimeDir;
 
 	rmSync(runtimeRoot, { recursive: true, force: true });
 	rmSync(workDir, { recursive: true, force: true });
@@ -424,7 +426,7 @@ describe('runUp: already running', () => {
 describe('runUp: orphan path', () => {
 	test('proceeds cleanly when metadata pid is dead and socket is phantom', async () => {
 		const sockPath = socketPathFor(workDir);
-		mkdirSync(join(runtimeRoot, 'epicenter'), { recursive: true });
+		mkdirSync(runtimeRoot, { recursive: true });
 
 		writeFileSync(sockPath, '');
 		writeMetadata(workDir, {

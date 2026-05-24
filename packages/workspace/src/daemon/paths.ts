@@ -1,39 +1,45 @@
 /**
  * Daemon-process path helpers.
  *
- * Per-project runtime: socket and metadata sidecar live under
- * `daemonRuntimeDir()` (OS runtime directory, volatile, may be tmpfs).
- * Persistent logs live under `epicenterEnv.logDir` (env-paths log
- * directory). Every file is keyed by a hash of the daemon's project
- * directory so two daemons on the same machine never collide.
+ * Per-project runtime files (socket, metadata sidecar, SQLite lease) live
+ * under `runtimeDir()` (a per-user directory built on top of
+ * `epicenterEnv.dataDir`). Persistent logs live under `epicenterEnv.logDir`.
+ * Every file is keyed by a hash of the daemon's project directory so two
+ * daemons on the same machine never collide.
  *
- * For per-workspace data layout (yjs/sqlite/markdown under `<projectDir>/.epicenter/`),
- * see `document/workspace-paths.ts`. Different audience, different rationale.
+ * For per-workspace data layout (yjs/sqlite/markdown under the project
+ * directory's reserved subdir), see `document/workspace-paths.ts`. Different
+ * audience, different rationale.
  *
- * Pure helpers: no side effects, no directory creation. The `daemon up` command
- * owns the `mkdir`/`chmod` work; consumers here are free to call these from
- * anywhere without worrying about filesystem mutation.
+ * Pure helpers: no side effects, no directory creation. The `daemon up`
+ * command owns the `mkdir`/`chmod` work; consumers here are free to call
+ * these from anywhere without worrying about filesystem mutation.
  */
 
 import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { epicenterEnv } from '@epicenter/constants/node';
 
 const SAFE_UNIX_SOCKET_PATH_BYTES = 95;
 
 /**
- * Volatile runtime directory for daemon sockets, metadata, and lease files.
+ * Per-user directory for daemon sockets, metadata, and lease files.
  *
- * Reads `XDG_RUNTIME_DIR` (or falls back to `os.tmpdir()`) on every call so
- * the in-process tests in `packages/cli/src/commands/up.test.ts` can give
- * each test its own socket directory by mutating env between cases.
- * Production callers read this once at boot, so per-call evaluation costs
- * nothing.
+ * Default: `<epicenterEnv.dataDir>/run/`, mirroring the systemd/Docker
+ * `/run/` convention for transient runtime state. The path stays short
+ * enough to fit under the ~104-byte Unix-socket kernel limit on macOS,
+ * where `os.tmpdir()` (~48 bytes for `/var/folders/...`) is too long once
+ * the per-project socket suffix is appended.
+ *
+ * `EPICENTER_RUNTIME_DIR` overrides the default. The env var is a workspace
+ * test seam: production users do not set it (the default is correct), but
+ * test cases set it to a short `mkdtemp` dir under `/tmp/` to isolate from
+ * each other. Read on every call so test mutations between cases take
+ * effect without re-importing the module.
  */
-export function daemonRuntimeDir(): string {
-	return join(process.env.XDG_RUNTIME_DIR ?? tmpdir(), 'epicenter');
+export function runtimeDir(): string {
+	return process.env.EPICENTER_RUNTIME_DIR ?? join(epicenterEnv.dataDir, 'run');
 }
 
 /**
@@ -54,7 +60,7 @@ export function dirHash(dir: string): string {
 
 /** Unix-socket path for the daemon serving `dir`. */
 export function socketPathFor(dir: string): string {
-	const socketPath = join(daemonRuntimeDir(), `${dirHash(dir)}.sock`);
+	const socketPath = join(runtimeDir(), `${dirHash(dir)}.sock`);
 	if (Buffer.byteLength(socketPath) > SAFE_UNIX_SOCKET_PATH_BYTES) {
 		throw new Error(
 			`socketPathFor: resolved path is ${Buffer.byteLength(socketPath)} bytes, ` +
@@ -66,12 +72,12 @@ export function socketPathFor(dir: string): string {
 
 /** Metadata JSON sidecar for the daemon serving `dir`. */
 export function metadataPathFor(dir: string): string {
-	return join(daemonRuntimeDir(), `${dirHash(dir)}.meta.json`);
+	return join(runtimeDir(), `${dirHash(dir)}.meta.json`);
 }
 
 /** SQLite lease file for the daemon serving `dir`. */
 export function leasePathFor(dir: string): string {
-	return join(daemonRuntimeDir(), `${dirHash(dir)}.lease.sqlite`);
+	return join(runtimeDir(), `${dirHash(dir)}.lease.sqlite`);
 }
 
 /**

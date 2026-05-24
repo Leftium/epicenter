@@ -26,18 +26,12 @@ import {
 } from './autumn-gates.js';
 import { billingRoutes } from './billing-routes.js';
 
-const s = createServer({ mode: 'personal', signUpPolicy: 'open' });
-
-// Cast each library sub-app into cloud's extended Env so the chained
-// `.route(...)` calls below typecheck against `Hono<Env>`. The runtime
-// shape is identical; cloud just adds `planId` to Variables.
-const base = s.base as unknown as Hono<Env>;
-const auth = s.auth as unknown as Hono<Env>;
-const session = s.session as unknown as Hono<Env>;
-const rooms = s.rooms as unknown as Hono<Env>;
-const assets = s.assets as unknown as Hono<Env>;
-const ai = s.ai as unknown as Hono<Env>;
-const { attachOwner } = s;
+// Generic on cloud's extended `Env` so every sub-app is typed as
+// `Hono<Env>` (with `planId`) without per-mount casts.
+const { base, auth, session, rooms, assets, ai, attachOwner } = createServer<Env>({
+	mode: 'personal',
+	signUpPolicy: 'open',
+});
 
 // Public health endpoint at root.
 base.get('/', (c) =>

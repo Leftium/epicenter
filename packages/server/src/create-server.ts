@@ -17,38 +17,65 @@
  * `specs/20260522T230000-server-package-split.md` for the full design.
  */
 
-import { createAttachOwner } from './middleware/attach-owner.js';
+import type { Hono } from 'hono';
 import { createBaseApp } from './base-app.js';
+import { createAttachOwner } from './middleware/attach-owner.js';
 import { createAiApp } from './routes/ai.js';
 import { createAssetsApp } from './routes/assets.js';
 import { createAuthApp } from './routes/auth.js';
 import { createRoomsApp } from './routes/rooms.js';
 import { createSessionApp } from './routes/session.js';
-import type { ServerOptions } from './types.js';
+import type { Env, ServerOptions } from './types.js';
 
-export function createServer(opts: ServerOptions) {
+/**
+ * Sub-app bundle returned by {@link createServer}.
+ *
+ * Generic over `E` so deployments that extend the library `Env` (e.g.
+ * Epicenter Cloud adds `planId` to `Variables`) get sub-apps typed against
+ * the deployment's full env, and `.use(deploymentMiddleware)` chains
+ * typecheck without casting at every mount site. Internally each sub-app
+ * is constructed against the library `Env`; the widening is correct
+ * because the deployment env always includes every library variable, and
+ * the library never reads the deployment's extra variables.
+ */
+export type Server<E extends Env = Env> = {
+	base: Hono<E>;
+	auth: Hono<E>;
+	session: Hono<E>;
+	rooms: Hono<E>;
+	assets: Hono<E>;
+	ai: Hono<E>;
+	attachOwner: ReturnType<typeof createAttachOwner>;
+};
+
+export function createServer<E extends Env = Env>(
+	opts: ServerOptions,
+): Server<E> {
+	// Each sub-app is a `Hono<Env>` at construction. The single widening cast
+	// to `Hono<E>` lives here so deployments do not repeat it at every mount.
+	const widen = <T>(app: T) => app as unknown as Hono<E>;
 	return {
 		/**
 		 * Parent Hono app. Carries CORS, per-request pg lifecycle, auth
 		 * context, single-credential normalization, CSRF, and the rooms
 		 * registry. Mount every other sub-app on this one.
 		 */
-		base: createBaseApp(opts),
+		base: widen(createBaseApp(opts)),
 
 		/** /sign-in, /consent, /auth/cli-callback, OAuth discovery, /auth/*. */
-		auth: createAuthApp(),
+		auth: widen(createAuthApp()),
 
 		/** /api/session: authenticated session projection plus keyring. */
-		session: createSessionApp(opts),
+		session: widen(createSessionApp(opts)),
 
 		/** /api/.../rooms/:roomId: GET, POST, WS upgrade. */
-		rooms: createRoomsApp(),
+		rooms: widen(createRoomsApp()),
 
 		/** /api/.../assets: public read + authed CRUD. */
-		assets: createAssetsApp(),
+		assets: widen(createAssetsApp()),
 
 		/** /api/ai/chat: SSE streaming chat (no billing; wrap externally). */
-		ai: createAiApp(),
+		ai: widen(createAiApp()),
 
 		/**
 		 * Middleware that populates `c.var.ownerId` from

@@ -7,8 +7,9 @@
  * `specs/20260522T230000-server-package-split.md`.
  */
 
-// Top-level factory.
-export { createServer } from './create-server.js';
+// Top-level factory. `Server<E>` is the bundle of sub-apps; deployments
+// extending the library `Env` pass their full env as the type argument.
+export { createServer, type Server } from './create-server.js';
 // Middleware deployments compose around library sub-apps. Auth is mounted by
 // the deployment (not the library) so cloud can interleave Autumn gates
 // between the auth check and the handler.

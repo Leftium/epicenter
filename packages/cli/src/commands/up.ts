@@ -107,10 +107,7 @@ type UpHandle = {
 export async function runUp(
 	options: UpOptions,
 ): Promise<
-	Result<
-		UpHandle,
-		WorkspaceAppError | StartupError | MachineAuthStorageError
-	>
+	Result<UpHandle, WorkspaceAppError | StartupError | MachineAuthStorageError>
 > {
 	const projectDir = realpathSync(resolveProjectForUp(options.projectDir));
 	provisionProject(projectDir);

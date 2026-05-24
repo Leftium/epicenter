@@ -55,7 +55,6 @@ describe('makeEpicenterLink', () => {
 			SAMPLE_REF,
 		);
 	});
-
 });
 
 describe('convertEpicenterLinksToWikilinks', () => {
@@ -105,7 +104,6 @@ describe('convertWikilinksToEpicenterLinks', () => {
 
 		expect(convertWikilinksToEpicenterLinks(body, resolve)).toBe(body);
 	});
-
 });
 
 describe('EPICENTER_LINK_RE', () => {

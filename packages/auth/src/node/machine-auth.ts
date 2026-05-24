@@ -20,8 +20,8 @@ import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
-import envPaths from 'env-paths';
 import type { Keyring } from '@epicenter/encryption';
+import envPaths from 'env-paths';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -49,8 +49,7 @@ import { createOobOAuthLauncher } from './oob-launcher.js';
  * production env vars don't change mid-process.
  */
 const DEFAULT_DATA_DIR =
-	process.env.EPICENTER_DATA_DIR ??
-	envPaths('epicenter', { suffix: '' }).data;
+	process.env.EPICENTER_DATA_DIR ?? envPaths('epicenter', { suffix: '' }).data;
 
 /**
  * The on-disk machine auth file for a given API target.

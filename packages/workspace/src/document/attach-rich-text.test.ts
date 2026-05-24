@@ -142,5 +142,4 @@ describe('xmlFragmentToPlaintext', () => {
 		});
 		expect(xmlFragmentToPlaintext(fragment)).toBe('Hello world');
 	});
-
 });

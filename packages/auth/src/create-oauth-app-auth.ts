@@ -577,8 +577,7 @@ function authStatesEqual(left: AuthState, right: AuthState) {
 	if (left.status === 'signed-out') return true;
 	if (right.status === 'signed-out') return false;
 	return (
-		left.ownerId === right.ownerId &&
-		keyringsEqual(left.keyring, right.keyring)
+		left.ownerId === right.ownerId && keyringsEqual(left.keyring, right.keyring)
 	);
 }
 
@@ -678,7 +677,10 @@ async function refreshOAuthTokenWithEndpoint({
 		fallbackRefreshToken: grant.refreshToken,
 	});
 	if (error) {
-		throw new Error(`OAuth refresh produced an invalid grant: ${error.message}`, { cause: error });
+		throw new Error(
+			`OAuth refresh produced an invalid grant: ${error.message}`,
+			{ cause: error },
+		);
 	}
 	return parsed;
 }

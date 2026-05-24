@@ -395,7 +395,6 @@ describe('Room presence: rebroadcast on close', () => {
 		await new Promise((r) => setTimeout(r, 350));
 		expect(presenceFrames(wsA).slice(before)).toEqual([]);
 	});
-
 });
 
 describe('Room presence: graceful handoff', () => {

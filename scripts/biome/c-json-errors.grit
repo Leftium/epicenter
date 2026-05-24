@@ -30,9 +30,5 @@ language js(typescript, jsx)
 `c.json($body, $status)` as $call where {
 	$body <: `{ $... }`,
 	$status <: r"^[45][0-9]{2}$",
-	register_diagnostic(
-		span = $call,
-		message = "Use a defineErrors variant from @epicenter/constants/<domain>-errors.ts instead of an ad-hoc c.json error literal.",
-		severity = "error"
-	)
+	register_diagnostic(span=$call, message="Use a defineErrors variant from @epicenter/constants/<domain>-errors.ts instead of an ad-hoc c.json error literal.", severity="error")
 }

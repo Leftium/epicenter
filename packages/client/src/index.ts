@@ -126,10 +126,10 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 			const fd = new FormData();
 			fd.append('file', file);
 			fd.append('visibility', params.visibility ?? 'private');
-			const res = await opts.fetch(
-				`${base}/api/owners/${ownerId}/assets`,
-				{ method: 'POST', body: fd },
-			);
+			const res = await opts.fetch(`${base}/api/owners/${ownerId}/assets`, {
+				method: 'POST',
+				body: fd,
+			});
 			if (!res.ok) {
 				throw new Error(`epicenter.assets.upload: ${res.status}`);
 			}

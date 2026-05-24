@@ -30,8 +30,8 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import type { AuthClient } from '@epicenter/auth';
-import { asOwnerId } from '@epicenter/constants/identity';
 import { MachineAuthStorageError } from '@epicenter/auth/node';
+import { asOwnerId } from '@epicenter/constants/identity';
 import { DEFAULT_PROJECT_CONFIG_SOURCE } from '@epicenter/workspace';
 import {
 	claimDaemonLease,
@@ -86,7 +86,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	if (originalRuntimeDir === undefined) delete process.env.EPICENTER_RUNTIME_DIR;
+	if (originalRuntimeDir === undefined)
+		delete process.env.EPICENTER_RUNTIME_DIR;
 	else process.env.EPICENTER_RUNTIME_DIR = originalRuntimeDir;
 
 	rmSync(runtimeRoot, { recursive: true, force: true });

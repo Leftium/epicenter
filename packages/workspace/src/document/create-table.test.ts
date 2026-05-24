@@ -321,7 +321,6 @@ describe('createTable', () => {
 			expect(error.issues.length).toBeGreaterThan(0);
 			expect(error.row).toEqual({ id: '1', name: 123, _v: 1 });
 		});
-
 	});
 
 	describe('delete operations', () => {

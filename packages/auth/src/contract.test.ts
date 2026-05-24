@@ -12,6 +12,7 @@
 
 import { expect, test } from 'bun:test';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
+import { asOwnerId } from '@epicenter/constants/identity';
 import type { Keyring } from '@epicenter/encryption';
 import { Ok, type Result } from 'wellcrafted/result';
 import type {
@@ -20,7 +21,6 @@ import type {
 	PersistedAuth,
 	PersistedAuthStorage,
 } from './index.js';
-import { asOwnerId } from '@epicenter/constants/identity';
 import { asUserId, createOAuthAppAuth } from './index.js';
 
 const now = 1_000_000;
@@ -1081,4 +1081,3 @@ test('/api/session key update after signOut is discarded without writing identit
 	expect(auth.state).toEqual({ status: 'signed-out' });
 	auth[Symbol.dispose]();
 });
-

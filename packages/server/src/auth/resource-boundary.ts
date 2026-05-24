@@ -47,7 +47,7 @@ export function parseBearer(value: string | null): string | null {
 /**
  * Cheap resolver for the protected-resource boundary (`/ai/*`,
  * `/rooms/*`, `/api/billing/*`, `/api/assets/*`).
- * Skips subject keyring derivation; only the calling user is needed once
+ * Skips owner keyring derivation; only the calling user is needed once
  * the token proves issuer, audience, signature, expiration, and subject.
  *
  * Add custom OAuth scopes back only when two valid clients need different

@@ -30,7 +30,7 @@ LAYER 3  Tenancy / billing       acme.com, 40 seats, admin console     Google Wo
 LAYER 2  Shared-drive content    docs OWNED BY an org, so they         Google Shared Drives
            survive a departing employee                                (enterprise, future)
               |  alongside
-LAYER 1  Personal content        users/<userId> owns the doc;          consumer Google Docs
+LAYER 1  Personal content        owners/<ownerId> owns the doc;        consumer Google Docs
            an ACL grants other users access                             (TODAY)
 ```
 
@@ -63,18 +63,16 @@ A cloud doc syncs through one route, keyed by the owning user and the doc's
 guid.
 
 ```
-route     /users/:userId/rooms/:room   (personal)
-          /rooms/:room                 (team)
-DO name   users/${userId}/rooms/${room}        (personal, room = ydoc.guid)
-          rooms/${room}                        (team)
-builder   roomWsUrl({ baseURL, owner, guid: ydoc.guid, installationId })
+route     /api/owners/:ownerId/rooms/:room   (both modes)
+DO name   owners/${ownerId}/rooms/${room}    (room = ydoc.guid)
+builder   roomWsUrl({ baseURL, ownerId, guid: ydoc.guid, installationId })
 ```
 
-In personal mode the DO partition is `users/<userId>`, derived from the
-authenticated user's id. In team mode the deployment itself is the owner, so
-the partition is empty and every signed-in member shares the same room. The
-room id is the Y.Doc's guid: the document already carries its own identity,
-so nothing else is composed into the name.
+The DO partition is `owners/<ownerId>` in both modes. In personal mode
+`ownerId === user.id`, derived from the authenticated user's id. In team mode
+`ownerId === 'team'`, so every signed-in member of the deployment shares the
+same partition. The room id is the Y.Doc's guid: the document already carries
+its own identity, so nothing else is composed into the name.
 
 Browser apps and the daemon use the same route and the same builder. They sync
 the same document by using the same guid.
@@ -101,12 +99,13 @@ bug.
 
 Authorization for a Layer 1 document is identity, not membership. The route's
 auth middleware confirms the caller is a valid user; the DO name is derived from
-that same user id. A user reaching their own `users/${userId}/rooms/*` space
-is, by construction, authorized. A membership query here would have exactly one
-possible denial: the system is broken.
+that same identity. A user reaching their own `owners/${ownerId}/rooms/*` space
+(where `ownerId === user.id` in personal mode) is, by construction, authorized.
+A membership query here would have exactly one possible denial: the system is
+broken.
 
 Layer 1.5 sharing changes this only for documents shared *to* you: the owner's
-DO name stays `users/${ownerUserId}/rooms/${room}`, and an ACL table grants
+DO name stays `owners/${ownerId}/rooms/${room}`, and an ACL table grants
 other users access. The auth check becomes "is the caller the owner, or in the
 ACL". Your own documents still need no lookup.
 

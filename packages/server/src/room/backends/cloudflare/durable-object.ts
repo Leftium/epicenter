@@ -58,8 +58,9 @@ const COMPACTION_DELAY_MS = 30_000;
  * validates the caller, checks any route-owned policy, and builds the
  * internal DO name before calling RPC methods or forwarding `fetch`. The
  * DO itself does not re-validate. DO names are host-owned opaque strings
- * built by `doName(owner, roomId)`: `users/<userId>/rooms/<roomId>` in
- * personal mode, `rooms/<roomId>` in team mode.
+ * built by `doName(ownerId, roomId)`, producing `owners/<ownerId>/rooms/<roomId>`
+ * in both modes (in personal mode `ownerId === user.id`, in team mode
+ * `ownerId === 'team'`).
  */
 export class Room extends DurableObject {
 	/**

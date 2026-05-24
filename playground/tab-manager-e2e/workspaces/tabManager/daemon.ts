@@ -32,7 +32,7 @@ export default defineWorkspace({
 		projectDir,
 		yDocClientId,
 		installationId,
-		owner,
+		ownerId,
 		keyring,
 		openWebSocket,
 		onReconnectSignal,
@@ -52,7 +52,7 @@ export default defineWorkspace({
 		const collaboration = openCollaboration(ydoc, {
 			url: roomWsUrl({
 				baseURL: SERVER_URL,
-				owner,
+				ownerId,
 				guid: ydoc.guid,
 				installationId,
 			}),

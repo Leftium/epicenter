@@ -57,7 +57,7 @@ billingRoutes.onError((err, c) => {
 function svc(c: Context<Env>) {
 	return createBillingService(c.env, {
 		userId: c.var.user.id,
-		userEmail: c.var.user.email ?? null,
+		userEmail: c.var.user.email,
 	});
 }
 

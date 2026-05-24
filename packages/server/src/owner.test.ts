@@ -10,12 +10,12 @@
  * `'team'`.
  */
 
-import { asOwnerId } from '@epicenter/auth';
+import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/auth';
 import { describe, expect, test } from 'bun:test';
 import { assetKey, doName, ownerPath } from './owner.js';
 
 const personal = asOwnerId('abc');
-const team = asOwnerId('team');
+const team = TEAM_OWNER_ID;
 
 describe('ownerPath', () => {
 	test('personal returns owners/<userId>', () => {

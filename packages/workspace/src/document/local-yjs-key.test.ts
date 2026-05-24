@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { asOwnerId } from '@epicenter/auth';
+import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/auth';
 import { createOwnedYjsKey, getOwnedYjsPrefix } from './local-yjs-key.js';
 
 const SERVER = 'api.epicenter.so';
 const ALICE = asOwnerId('user-a');
 const BOB = asOwnerId('user-b');
-const TEAM = asOwnerId('team');
+const TEAM = TEAM_OWNER_ID;
 
 describe('getOwnedYjsPrefix', () => {
 	test('personal mode owner id partitions the prefix under owners/', () => {

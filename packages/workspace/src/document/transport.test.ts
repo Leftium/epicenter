@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { asOwnerId } from '@epicenter/auth';
+import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/auth';
 import { roomWsUrl } from './transport.js';
 
 describe('roomWsUrl', () => {
@@ -33,7 +33,7 @@ describe('roomWsUrl', () => {
 		expect(
 			roomWsUrl({
 				baseURL: 'https://team.example.com',
-				ownerId: asOwnerId('team'),
+				ownerId: TEAM_OWNER_ID,
 				guid: 'epicenter.fuji',
 				installationId: 'client-1',
 			}),
@@ -46,7 +46,7 @@ describe('roomWsUrl', () => {
 		expect(
 			roomWsUrl({
 				baseURL: 'https://api.example.com/',
-				ownerId: asOwnerId('team'),
+				ownerId: TEAM_OWNER_ID,
 				guid: 'a/b?c#d',
 				installationId: 'client-1',
 			}),
@@ -59,7 +59,7 @@ describe('roomWsUrl', () => {
 		expect(
 			roomWsUrl({
 				baseURL: 'http://localhost:8787',
-				ownerId: asOwnerId('team'),
+				ownerId: TEAM_OWNER_ID,
 				guid: 'epicenter.fuji',
 				installationId: 'client-1',
 			}),

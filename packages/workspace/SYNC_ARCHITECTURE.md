@@ -209,7 +209,13 @@ roomWsUrl({
 // -> wss://api.epicenter.so/api/owners/<ownerId>/rooms/<guid>?deviceId=<id>
 ```
 
-In personal mode `ownerId` equals the signed-in user's id; in team mode it is the literal `'team'`. The URL shape is uniform across both modes. The relay takes the user from the auth token, validates `:ownerId === c.var.user.id` in personal mode (the team mode skips that check), and builds the internal Durable Object name `owners/${ownerId}/rooms/${room}`. There is no workspace lookup and no membership check at the relay layer: the route's auth middleware is the whole authorization story, because you cannot fail to be yourself.
+In personal mode `ownerId` equals the signed-in user's id; in team mode it is
+the literal `'team'`. The URL shape is uniform across both modes. The relay
+takes the user from the auth token, resolves the expected owner partition for
+the deployment, verifies the URL `:ownerId` matches that partition, and builds
+the internal Durable Object name `owners/${ownerId}/rooms/${room}`. Personal
+deployments resolve one partition per user. Team deployments resolve one shared
+partition for admitted members.
 
 This is the consumer Google Docs model and the first of three account layers, introduced over time:
 

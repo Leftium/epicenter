@@ -173,12 +173,11 @@ export function createOobOAuthLauncher({
 				return Err(OobLauncherError.InvalidTokenResponse({ cause }).error);
 			}
 
-			try {
-				const grant = parseOAuthTokenGrant(payload, { now });
-				return Ok(grant);
-			} catch (cause) {
-				return Err(OobLauncherError.InvalidTokenResponse({ cause }).error);
+			const { data: grant, error } = parseOAuthTokenGrant(payload, { now });
+			if (error) {
+				return Err(OobLauncherError.InvalidTokenResponse({ cause: error }).error);
 			}
+			return Ok(grant);
 		},
 	};
 }

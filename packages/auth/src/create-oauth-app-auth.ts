@@ -679,10 +679,14 @@ async function refreshOAuthTokenWithEndpoint({
 		throw new Error(`OAuth refresh failed with ${response.status}.`);
 	}
 	const data = await response.json();
-	return parseOAuthTokenGrant(data, {
+	const { data: parsed, error } = parseOAuthTokenGrant(data, {
 		now,
 		fallbackRefreshToken: grant.refreshToken,
 	});
+	if (error) {
+		throw new Error(`OAuth refresh produced an invalid grant: ${error.message}`, { cause: error });
+	}
+	return parsed;
 }
 
 async function revokeOAuthRefreshTokenWithEndpoint({

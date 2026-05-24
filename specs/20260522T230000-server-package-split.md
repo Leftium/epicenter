@@ -409,62 +409,37 @@ No further change needed.
 
 ## 10. Library public API
 
-```ts
-// packages/server/src/types.ts
+The authoritative public surface is whatever `packages/server/src/index.ts`
+re-exports. Read that file; do not maintain a prose snapshot here.
 
-export type OwnerKind    = 'personal' | 'team';
-export type SignUpPolicy = 'open' | 'disabled';
+Earlier drafts of this section pinned a snapshot ("`createServer` returns
+a bundle of sub-apps, `ServerOptions = { ownerKind, signUpPolicy }`, etc.").
+That snapshot has rotted three times on this branch alone:
 
-export type ServerOptions = {
-  ownerKind: OwnerKind;
-  signUpPolicy?: SignUpPolicy;   // default: 'open'
-};
-
-export type Owner =
-  | { kind: 'personal'; userId: string }
-  | { kind: 'team' };
-
-export type OwnerPath = `users/${string}` | '';
-
-export type Connection = {
-  userId: string;
-  deviceId: string;
-  connectedAt: number;
-  actions: ActionManifest;
-};
-
-export type Env = { Bindings: Cloudflare.Env; Variables: { /* ... */ } };
+```
+1. ApiSessionResponse shape           wave 2 reshuffle
+2. Owner discriminated union          collapsed to branded OwnerId + OwnershipMode
+3. createServer({...}) bundle         flattened to direct sub-app factories
 ```
 
-```ts
-// packages/server/src/create-server.ts
+Each rot was followed by silent drift between this section and the source.
+The asymmetric move is to refuse the snapshot duty entirely: the source IS
+the surface, and any prose copy will lie within a release cycle.
 
-export function createServer(opts: ServerOptions) {
-  return {
-    base:    createBaseApp(opts),     // CORS, db, auth context, singleCredential
-    auth:    createAuthApp(opts),     // /sign-in, /consent, /auth/*, OAuth discovery
-    session: createSessionApp(opts),  // /api/session
-    rooms:   createRoomsApp(opts),    // owner-shaped URL pattern
-    assets:  createAssetsApp(opts),   // owner-shaped URL pattern
-    ai:      createAiApp(opts),       // /api/ai/chat
-  };
-}
-```
+Design intent (which IS stable and belongs here):
 
-```ts
-// packages/server/src/index.ts
+- One factory per sub-app; each declares its full URL pattern internally.
+- Deployments mount sub-apps on `createBaseApp()`, composing auth and
+  billing middleware around each at mount time. No `ServerOptions` bundle
+  pretending to configure all of them uniformly.
+- Per-request owner partition is resolved by `createAttachOwner(mode)`
+  middleware so handlers stay mode-blind.
+- Internal derivations (`ownerPath`, `doName`, `assetKey`, etc.) stay
+  inside their respective files because no external consumer needs them.
 
-export { createServer } from './create-server';
-export { Room } from './room/backends/cloudflare/durable-object';
-export type {
-  OwnerKind, SignUpPolicy, ServerOptions,
-  Owner, OwnerPath, Connection, Env,
-} from './types';
-```
-
-That is the entire public surface. The `ownerPath`, `doName`, `assetKey`,
-`keyringLabel`, and `assetOwnerFilter` functions stay internal because no
-consumer needs them.
+For the concrete shape at any point in time:
+- `packages/server/src/index.ts` — public re-exports.
+- `apps/api/src/index.ts` — cloud composition reading top-to-bottom.
 
 ## 11. Library internals: how ownerKind dispatches
 

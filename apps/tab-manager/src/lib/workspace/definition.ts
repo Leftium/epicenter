@@ -163,10 +163,12 @@ export const asChatMessageId = (value: string): ChatMessageId =>
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Devices — tracks browser installations for multi-device sync.
+ * Devices — tracks browser-scoped devices (one per persistent storage scope)
+ * for multi-device sync.
  *
  * Each device generates a unique ID on first install, stored in storage.local.
- * This enables syncing tabs across multiple computers while preventing ID collisions.
+ * This enables syncing tabs across multiple computers while preventing ID
+ * collisions.
  */
 const devicesTable = defineTable(
 	type({

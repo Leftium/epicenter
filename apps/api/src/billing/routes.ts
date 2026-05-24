@@ -16,7 +16,7 @@ import type { Env } from '@epicenter/server';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { AutumnError } from 'autumn-js';
-import { Hono, type MiddlewareHandler } from 'hono';
+import { type Context, Hono, type MiddlewareHandler } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { createBillingService } from './service.js';
 
@@ -54,7 +54,7 @@ billingRoutes.onError((err, c) => {
 	);
 });
 
-function svc(c: { env: Env['Bindings']; var: Env['Variables'] }) {
+function svc(c: Context<Env>) {
 	return createBillingService(c.env, {
 		userId: c.var.user.id,
 		userEmail: c.var.user.email ?? null,

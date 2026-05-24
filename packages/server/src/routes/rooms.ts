@@ -143,7 +143,8 @@ const roomsApp = new Hono<Env>()
 				// produce a presence-ghost connection (visible in presence
 				// frames but unreachable by dispatch).
 				if (!c.req.query('deviceId')) {
-					return c.json(RequestGuardError.MissingDeviceId(), 400);
+					const err = RequestGuardError.MissingDeviceId();
+					return c.json(err, err.error.status);
 				}
 
 				// Stamp userId from auth, overwriting any client-supplied

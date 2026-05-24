@@ -28,7 +28,7 @@ import {
 } from '@epicenter/constants/identity';
 import { RequestGuardError } from '@epicenter/constants/request-guard-errors';
 import type { Context } from 'hono';
-import { Err, Ok, type Result } from 'wellcrafted/result';
+import { Ok, type Result } from 'wellcrafted/result';
 import type { Env } from './types.js';
 
 /** Per-request membership predicate. Returns `true` to admit the user. */
@@ -72,15 +72,13 @@ export const team = (opts: { isMember: IsMember }): OwnershipRule => ({
 export async function resolveOwnerPartition(
 	rule: OwnershipRule,
 	c: Context<Env>,
-): Promise<
-	Result<OwnerId, ReturnType<typeof RequestGuardError.NotTeamMember>>
-> {
+): Promise<Result<OwnerId, RequestGuardError>> {
 	switch (rule.kind) {
 		case 'personal':
 			return Ok(asOwnerId(c.var.user.id));
 		case 'team': {
 			const member = await rule.isMember(c);
-			if (!member) return Err(RequestGuardError.NotTeamMember());
+			if (!member) return RequestGuardError.NotTeamMember();
 			return Ok(TEAM_OWNER_ID);
 		}
 	}

@@ -116,7 +116,8 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 					const body = await c.req.parseBody();
 					const file = body.file;
 					if (!(file instanceof File)) {
-						return c.json(AssetError.MissingFile(), 400);
+						const err = AssetError.MissingFile();
+						return c.json(err, err.error.status);
 					}
 
 					// Missing / empty visibility defaults to 'private': the
@@ -133,32 +134,28 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 					} else if (rawVisibility === 'private' || rawVisibility === 'public') {
 						visibility = rawVisibility;
 					} else {
-						return c.json(
-							AssetError.InvalidVisibility({ value: String(rawVisibility) }),
-							400,
-						);
+						const err = AssetError.InvalidVisibility({
+							value: String(rawVisibility),
+						});
+						return c.json(err, err.error.status);
 					}
 
 					const sanitizedFilename = sanitizeFilename(file.name);
 
 					if (!ALLOWED_MIME_TYPES.has(file.type)) {
-						return c.json(
-							AssetError.FileTypeNotAllowed({
-								contentType: file.type,
-								allowed: [...ALLOWED_MIME_TYPES],
-							}),
-							415,
-						);
+						const err = AssetError.FileTypeNotAllowed({
+							contentType: file.type,
+							allowed: [...ALLOWED_MIME_TYPES],
+						});
+						return c.json(err, err.error.status);
 					}
 
 					if (file.size > MAX_ASSET_BYTES) {
-						return c.json(
-							AssetError.FileTooLarge({
-								size: file.size,
-								maxBytes: MAX_ASSET_BYTES,
-							}),
-							413,
-						);
+						const err = AssetError.FileTooLarge({
+							size: file.size,
+							maxBytes: MAX_ASSET_BYTES,
+						});
+						return c.json(err, err.error.status);
 					}
 
 					const assetId = generateAssetId();
@@ -264,7 +261,8 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 						});
 
 					if (!updated) {
-						return c.json(AssetError.NotFound(), 404);
+						const err = AssetError.NotFound();
+						return c.json(err, err.error.status);
 					}
 					return c.json(updated);
 				},
@@ -290,7 +288,8 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 						.returning({ sizeBytes: schema.asset.sizeBytes });
 
 					if (!deleted) {
-						return c.json(AssetError.NotFound(), 404);
+						const err = AssetError.NotFound();
+						return c.json(err, err.error.status);
 					}
 
 					await c.env.ASSETS_BUCKET.delete(assetKey(c.var.ownerId, assetId));
@@ -328,20 +327,27 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 						),
 					});
 
-					if (!row) return c.json(AssetError.NotFound(), 404);
+					if (!row) {
+						const err = AssetError.NotFound();
+						return c.json(err, err.error.status);
+					}
 
 					if (row.visibility === 'private') {
 						const session = await c.var.auth.api.getSession({
 							headers: c.req.raw.headers,
 						});
-						if (!session) return c.json(AssetError.Unauthorized(), 401);
+						if (!session) {
+							const err = AssetError.Unauthorized();
+							return c.json(err, err.error.status);
+						}
 						c.set('user', AuthUser.assert(session.user));
 						const { data: ownerPartition, error } = await resolveOwnerPartition(
 							ownership,
 							c,
 						);
 						if (error || urlOwnerId !== ownerPartition) {
-							return c.json(AssetError.Unauthorized(), 401);
+							const err = AssetError.Unauthorized();
+							return c.json(err, err.error.status);
 						}
 					}
 
@@ -354,7 +360,8 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 					);
 
 					if (object === null) {
-						return c.json(AssetError.NotFound(), 404);
+						const err = AssetError.NotFound();
+						return c.json(err, err.error.status);
 					}
 
 					// Cache-Control differs by visibility. Private assets MUST never

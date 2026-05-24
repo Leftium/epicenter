@@ -30,10 +30,11 @@ export function createRequireOwnership(rule: OwnershipRule) {
 			rule,
 			c,
 		);
-		if (error) return c.json(error, 403);
+		if (error) return c.json({ data: null, error }, error.status);
 		const urlOwnerId = c.req.param('ownerId');
 		if (urlOwnerId !== undefined && urlOwnerId !== ownerPartition) {
-			return c.json(RequestGuardError.OwnerMismatch(), 403);
+			const err = RequestGuardError.OwnerMismatch();
+			return c.json(err, err.error.status);
 		}
 		c.set('ownerId', ownerPartition);
 		await next();

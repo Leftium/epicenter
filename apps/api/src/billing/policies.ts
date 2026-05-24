@@ -4,8 +4,9 @@
  *
  * Each policy is a thin shell around the billing service. The service
  * owns the Autumn round-trips and DTO mapping; policies own only HTTP
- * shape: pulling fields off the request, choosing a status, queueing
- * refunds onto the after-response promise queue from `@epicenter/server`.
+ * shape: pulling fields off the request, forwarding the guard's typed
+ * error (and its baked-in status) to `c.json`, and queueing refunds onto
+ * the after-response promise queue from `@epicenter/server`.
  *
  *   chargeAiCreditsWithAutumn      Around `/api/ai/chat`. Resolves the
  *                                  model from the chat body, asks the
@@ -22,7 +23,6 @@
  * The library remains billing-agnostic; everything here is cloud-only.
  */
 
-import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import type { Env } from '@epicenter/server';
 import { createMiddleware } from 'hono/factory';
 import { createBillingService } from './service.js';
@@ -31,30 +31,6 @@ type AiChatBody = {
 	data?: { model?: string; provider?: string };
 	apiKey?: string;
 };
-
-/**
- * Map a guard-emitted AiChatError to its HTTP status. Exhaustive over the
- * full union so a new variant trips a compile error; the guard itself only
- * emits UnknownModel, ModelRequiresPaidPlan, and InsufficientCredits today.
- */
-function statusForAiChatError(
-	error: AiChatError,
-): 400 | 401 | 402 | 403 | 500 {
-	switch (error.name) {
-		case 'UnknownModel':
-			return 400;
-		case 'ModelRequiresPaidPlan':
-			return 403;
-		case 'InsufficientCredits':
-			return 402;
-		case 'Unauthorized':
-			return 401;
-		case 'ProviderNotConfigured':
-			return 500;
-		default:
-			return error satisfies never;
-	}
-}
 
 export const chargeAiCreditsWithAutumn = createMiddleware<Env>(
 	async (c, next) => {
@@ -77,10 +53,7 @@ export const chargeAiCreditsWithAutumn = createMiddleware<Env>(
 			provider: body.data?.provider,
 		});
 		if (guardError) {
-			return c.json(
-				{ data: null, error: guardError },
-				statusForAiChatError(guardError),
-			);
+			return c.json({ data: null, error: guardError }, guardError.status);
 		}
 
 		await next();
@@ -109,9 +82,8 @@ export const trackAssetStorageWithAutumn = createMiddleware<Env>(
 				userEmail: c.var.user.email,
 			});
 			const { error: guardError } = await billing.guardAssetUpload(file.size);
-			// guardAssetUpload only emits StorageLimitExceeded, which is 402.
 			if (guardError) {
-				return c.json({ data: null, error: guardError }, 402);
+				return c.json({ data: null, error: guardError }, guardError.status);
 			}
 
 			await next();

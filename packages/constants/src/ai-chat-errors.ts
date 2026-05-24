@@ -11,13 +11,17 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  * Each variant's `name` field is the discriminant—use `switch (error.name)`
  * for exhaustive handling with full TypeScript narrowing.
  *
+ * Each variant carries its own HTTP `status`, so call sites just forward
+ * the baked-in code to `c.json`. No external status mapper required.
+ *
  * @example
  * ```ts
- * // Server — runtime usage
+ * // Server: runtime usage
  * import { AiChatError } from '@epicenter/constants/ai-chat-errors';
- * return c.json(AiChatError.InsufficientCredits({ balance: 42 }), 402);
+ * const err = AiChatError.InsufficientCredits({ balance: 42 });
+ * return c.json(err, err.error.status); // 402, baked into the variant
  *
- * // Client — type-only usage
+ * // Client: type-only usage
  * import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
  * if (err instanceof AiChatHttpError) {
  *   switch (err.detail.name) {
@@ -28,17 +32,23 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  * ```
  */
 export const AiChatError = defineErrors({
-	Unauthorized: () => ({ message: 'Unauthorized' }),
+	Unauthorized: () => ({
+		message: 'Unauthorized',
+		status: 401 as const,
+	}),
 	ProviderNotConfigured: ({ provider }: { provider: string }) => ({
 		message: `${provider} not configured`,
+		status: 503 as const,
 		provider,
 	}),
 	UnknownModel: ({ model }: { model: string }) => ({
 		message: `Unknown model: ${model}`,
+		status: 400 as const,
 		model,
 	}),
 	InsufficientCredits: ({ balance }: { balance: unknown }) => ({
 		message: 'Insufficient credits',
+		status: 402 as const,
 		balance,
 	}),
 	ModelRequiresPaidPlan: ({
@@ -49,6 +59,7 @@ export const AiChatError = defineErrors({
 		credits: number;
 	}) => ({
 		message: `${model} requires a paid plan (costs ${credits} credits)`,
+		status: 403 as const,
 		model,
 		credits,
 	}),
@@ -82,17 +93,17 @@ export type AiChatError = InferErrors<typeof AiChatError>;
  *
  * Created by `createAiChatFetch` when the server returns a non-2xx response
  * with a wellcrafted `{ data, error }` JSON envelope. The `Error` propagates
- * unchanged through TanStack AI's `ChatClient` pipeline—`instanceof
+ * unchanged through TanStack AI's `ChatClient` pipeline; `instanceof
  * AiChatHttpError` works in `onError` and when reading `chat.error`.
  *
  * The `detail` property carries the full discriminated union with
- * variant-specific fields. Use `switch (err.detail.name)` for
- * exhaustive handling.
+ * variant-specific fields, including the baked-in HTTP `status`. Use
+ * `switch (err.detail.name)` for exhaustive handling.
  *
  * @example
  * ```ts
  * if (err instanceof AiChatHttpError) {
- *   console.log(err.status);        // 402
+ *   console.log(err.detail.status); // 402
  *   console.log(err.detail.name);   // "InsufficientCredits"
  *   switch (err.detail.name) {
  *     case 'InsufficientCredits':
@@ -105,10 +116,7 @@ export type AiChatError = InferErrors<typeof AiChatError>;
 export class AiChatHttpError extends Error {
 	override readonly name = 'AiChatHttpError';
 
-	constructor(
-		readonly status: number,
-		readonly detail: AiChatError,
-	) {
+	constructor(readonly detail: AiChatError) {
 		super(detail.message);
 	}
 }

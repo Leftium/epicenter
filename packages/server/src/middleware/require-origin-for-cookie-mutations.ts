@@ -25,7 +25,8 @@ export const requireOriginForCookieMutations = createMiddleware(
 		if (parseBearer(c.req.header('authorization') ?? null)) return next();
 		const origin = c.req.header('origin');
 		if (!origin || !TRUSTED_ORIGINS.includes(origin)) {
-			return c.json(RequestGuardError.ForbiddenOrigin(), 403);
+			const err = RequestGuardError.ForbiddenOrigin();
+			return c.json(err, err.error.status);
 		}
 		await next();
 	},

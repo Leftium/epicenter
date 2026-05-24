@@ -34,9 +34,9 @@ export { Room } from './room/backends/cloudflare/durable-object.js';
 // Sub-apps. Each declares its full URL pattern internally; the
 // deployment composes auth and billing middleware around them.
 export { aiApp } from './routes/ai.js';
-export { createAssetsApp } from './routes/assets.js';
+export { createAssetsApp, mountAssetsApp } from './routes/assets.js';
 export { authApp } from './routes/auth.js';
-export { roomsApp } from './routes/rooms.js';
+export { mountRoomsApp, roomsApp } from './routes/rooms.js';
 export { sessionApp } from './routes/session.js';
 
 // Public Hono context type the deployment composes around library

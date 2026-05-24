@@ -18,14 +18,14 @@ import { API_ROUTES } from '@epicenter/constants/api-routes';
 import {
 	aiApp,
 	authApp,
-	createAssetsApp,
 	createBaseApp,
 	createRequireOwnership,
+	mountAssetsApp,
+	mountRoomsApp,
 	personal,
 	Room,
 	requireBearerUser,
 	requireCookieOrBearerUser,
-	roomsApp,
 	sessionApp,
 } from '@epicenter/server';
 import { describeRoute } from 'hono-openapi';
@@ -39,7 +39,6 @@ import { billingRoutes } from './billing-routes.js';
 const ownership = personal();
 
 const base = createBaseApp();
-const requireOwnership = createRequireOwnership(ownership);
 
 // Public health endpoint at root.
 base.get('/', (c) =>
@@ -54,41 +53,18 @@ base.route('/', authApp);
 base.use(
 	API_ROUTES.session.pattern,
 	requireCookieOrBearerUser,
-	requireOwnership,
+	createRequireOwnership(ownership),
 );
 base.route('/', sessionApp);
 
-// Rooms: bearer auth + ownership boundary. requireOwnership rejects URL
-// :ownerId mismatches and attaches c.var.ownerId. No billing gate; bandwidth
-// and DO storage are not metered.
-base.use(API_ROUTES.room.prefixPattern, requireBearerUser, requireOwnership);
-base.route('/', roomsApp);
+// Rooms: library owns the URL pattern, bearer auth, and ownership boundary.
+// No billing gate; bandwidth and DO storage are not metered.
+mountRoomsApp(base, { ownership });
 
-// Assets: split auth by path/method. POST upload, list, usage, PATCH metadata,
-// and DELETE all require auth + ownership. The conditional GET at /:assetId
-// is left uncovered; the library handler looks up the row and runs auth
-// inline only for `visibility === 'private'` rows. Public assets serve to
-// anyone with the URL.
-base.use(
-	API_ROUTES.assets.list.pattern,
-	requireCookieOrBearerUser,
-	requireOwnership,
-	autumnStorageGate,
-);
-base.use(
-	API_ROUTES.assets.usage.pattern,
-	requireCookieOrBearerUser,
-	requireOwnership,
-	autumnStorageGate,
-);
-base.on(
-	['PATCH', 'DELETE'],
-	API_ROUTES.assets.byId.pattern,
-	requireCookieOrBearerUser,
-	requireOwnership,
-	autumnStorageGate,
-);
-base.route('/', createAssetsApp({ ownership }));
+// Assets: library owns the URL/auth matrix; we layer the cloud-only
+// storage gate. The conditional public-read GET is excluded from the
+// gate by the mount helper.
+mountAssetsApp(base, { ownership, gates: [autumnStorageGate] });
 
 // AI chat: bearer-only, plan-aware credit gate.
 base.use(

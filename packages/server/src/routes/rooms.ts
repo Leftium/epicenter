@@ -20,6 +20,7 @@
  */
 
 import { API_ROUTES } from '@epicenter/constants/api-routes';
+import { RequestGuardError } from '@epicenter/constants/request-guard-errors';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
@@ -28,6 +29,9 @@ import { createLogger } from 'wellcrafted/logger';
 import { MAX_PAYLOAD_BYTES } from '../constants.js';
 import * as schema from '../db/schema/index.js';
 import { isWebSocketUpgrade } from '../is-websocket-upgrade.js';
+import { requireBearerUser } from '../middleware/require-auth.js';
+import { createRequireOwnership } from '../middleware/require-ownership.js';
+import type { OwnershipRule } from '../ownership.js';
 import { doName } from '../owner.js';
 import type { Env } from '../types.js';
 
@@ -131,8 +135,18 @@ export const roomsApp = new Hono<Env>()
 			const room = c.var.rooms.get(name);
 
 			if (isWebSocketUpgrade(c)) {
-				// Stamp userId from auth onto the URL so the DO can attach it
-				// to the connection without trusting client-supplied data.
+				// Validate deviceId presence at the route boundary so the DO
+				// can trust the URL has it. deviceId is the dispatch address
+				// `dispatch({ to })` resolves against; a missing one would
+				// produce a presence-ghost connection (visible in presence
+				// frames but unreachable by dispatch).
+				if (!c.req.query('deviceId')) {
+					return c.json(RequestGuardError.MissingDeviceId(), 400);
+				}
+
+				// Stamp userId from auth, overwriting any client-supplied
+				// value for safety. deviceId is the client's own identifier
+				// so it rides through unchanged from c.req.url.
 				const url = new URL(c.req.url);
 				url.searchParams.set('userId', c.var.user.id);
 				const stamped = new Request(url.toString(), c.req.raw);
@@ -193,3 +207,22 @@ export const roomsApp = new Hono<Env>()
 			return diff ? binaryResponse(diff) : new Response(null, { status: 204 });
 		},
 	);
+
+/**
+ * Mount the rooms surface on a deployment's base app.
+ *
+ * Bundles auth (bearer-only: rooms is for external clients, never
+ * browsers), the ownership boundary, and the route mount into one call.
+ * Deployments call this once; they do not assemble the chain manually.
+ */
+export function mountRoomsApp(
+	base: Hono<Env>,
+	opts: { ownership: OwnershipRule },
+): void {
+	base.use(
+		API_ROUTES.room.prefixPattern,
+		requireBearerUser,
+		createRequireOwnership(opts.ownership),
+	);
+	base.route('/', roomsApp);
+}

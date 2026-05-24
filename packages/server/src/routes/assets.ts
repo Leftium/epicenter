@@ -43,12 +43,14 @@ import { asOwnerId } from '@epicenter/constants/identity';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { Hono } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { describeRoute } from 'hono-openapi';
 import { customAlphabet } from 'nanoid';
 import { MAX_ASSET_BYTES } from '../constants.js';
 import * as schema from '../db/schema/index.js';
+import { requireCookieOrBearerUser } from '../middleware/require-auth.js';
+import { createRequireOwnership } from '../middleware/require-ownership.js';
 import { type OwnershipRule, resolveExpectedOwnerId } from '../ownership.js';
 import { assetKey } from '../owner.js';
 import type { Env } from '../types.js';
@@ -436,4 +438,62 @@ export function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 	app.route('/', createAssetReadRoute(opts.ownership));
 	app.route('/', createAssetAuthedRoutes());
 	return app;
+}
+
+/**
+ * Mount the assets surface on a deployment's base app.
+ *
+ * Bundles auth (cookie-or-bearer, the assets surface is reachable from
+ * both browser apps and API clients), the ownership boundary, optional
+ * deployment-specific gates (e.g. `autumnStorageGate` for cloud's
+ * storage limit), and the route mount into one call.
+ *
+ * The conditional GET at `/:assetId{21}` is intentionally NOT covered by
+ * upstream auth or gates: public reads must bypass auth, and the library
+ * handler runs the visibility branch + auth inline. Hono matches the
+ * conditional GET first because `createAssetsApp` mounts it before the
+ * authed sub-app at the same prefix.
+ */
+export function mountAssetsApp(
+	base: Hono<Env>,
+	opts: {
+		ownership: OwnershipRule;
+		/**
+		 * Extra middleware to run after auth + ownership on every authed
+		 * asset route. Cloud passes `[autumnStorageGate]`; self-hosted
+		 * deployments typically pass nothing.
+		 *
+		 * Typed loosely (`MiddlewareHandler`, defaulting `E = any`) because
+		 * deployments commonly extend the library `Env` with their own
+		 * `Variables` (e.g. `planId`) and the resulting handler types are
+		 * not directly assignable to `MiddlewareHandler<Env>`. At runtime
+		 * the handler executes against the deployment's wider Context, so
+		 * the gate is safe regardless of its declared Env shape.
+		 */
+		gates?: MiddlewareHandler[];
+	},
+): void {
+	const requireOwnership = createRequireOwnership(opts.ownership);
+	const gates = opts.gates ?? [];
+
+	base.use(
+		API_ROUTES.assets.list.pattern,
+		requireCookieOrBearerUser,
+		requireOwnership,
+		...gates,
+	);
+	base.use(
+		API_ROUTES.assets.usage.pattern,
+		requireCookieOrBearerUser,
+		requireOwnership,
+		...gates,
+	);
+	base.on(
+		['PATCH', 'DELETE'],
+		API_ROUTES.assets.byId.pattern,
+		requireCookieOrBearerUser,
+		requireOwnership,
+		...gates,
+	);
+	base.route('/', createAssetsApp({ ownership: opts.ownership }));
 }

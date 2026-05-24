@@ -72,7 +72,7 @@ export function createServer<E extends Env = Env>(
 		rooms: widen(createRoomsApp()),
 
 		/** /api/.../assets: public read + authed CRUD. */
-		assets: widen(createAssetsApp()),
+		assets: widen(createAssetsApp(opts)),
 
 		/** /api/ai/chat: SSE streaming chat (no billing; wrap externally). */
 		ai: widen(createAiApp()),

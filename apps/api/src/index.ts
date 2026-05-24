@@ -57,11 +57,13 @@ const cloudRooms = new Hono<Env>()
 	.route('/', rooms);
 base.route('/api', cloudRooms);
 
-// Assets: cookie-or-bearer (dashboard SPA uses cookies), URL ownerId safety,
-// owner resolution, Autumn storage gate, then library handlers. Public read
-// is registered inside the library sub-app and matches before the authed
-// paths because of its `{15-char id}` regex.
+// Assets: split auth by path/method. POST upload, list, usage, PATCH metadata,
+// and DELETE all require auth. The conditional GET at /:assetId is left
+// uncovered; the library handler looks up the row and runs auth inline only
+// for `visibility === 'private'` rows. Public assets serve to anyone with the
+// URL.
 const cloudAssets = new Hono<Env>()
+	// POST upload + GET list at the bare prefix
 	.use(
 		'/owners/:ownerId/assets',
 		requireCookieOrBearerUser,
@@ -69,8 +71,19 @@ const cloudAssets = new Hono<Env>()
 		attachOwner,
 		autumnStorageGate,
 	)
+	// GET usage (one segment deeper, not caught by the bare-prefix .use)
 	.use(
-		'/owners/:ownerId/assets/*',
+		'/owners/:ownerId/assets/usage',
+		requireCookieOrBearerUser,
+		requireUrlOwnerIdMatchesAuth,
+		attachOwner,
+		autumnStorageGate,
+	)
+	// PATCH metadata + DELETE on /:assetId. GET is intentionally absent
+	// here so the conditional library handler can run without upstream auth.
+	.on(
+		['PATCH', 'DELETE'],
+		'/owners/:ownerId/assets/:assetId{[a-z0-9]{21}}',
 		requireCookieOrBearerUser,
 		requireUrlOwnerIdMatchesAuth,
 		attachOwner,

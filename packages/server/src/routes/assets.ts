@@ -168,7 +168,9 @@ function createAssetAuthedRoutes(): Hono<Env> {
 						httpMetadata: {
 							contentType: file.type,
 							contentDisposition: `inline; filename="${sanitizedFilename}"`,
-							cacheControl: 'private, max-age=31536000, immutable',
+							// No cache-control here. The read handler picks per request
+							// based on `row.visibility`; baking a value into R2 would
+							// either shadow the read-time decision or go stale on flip.
 						},
 					});
 
@@ -374,11 +376,22 @@ function createAssetReadRoute(mode: OwnershipMode): Hono<Env> {
 				return c.body('Not found', 404);
 			}
 
+			// Cache-Control differs by visibility. Private assets MUST never
+			// land in a shared cache (Cloudflare edge, corporate proxy);
+			// 'private, no-store' is the conservative answer. Public assets
+			// get a short max-age so a publish→unpublish flip becomes visible
+			// to new requests within ~60s without an explicit purge. Active
+			// purge on PATCH would let us raise max-age; documented as a
+			// future optimization in the spec §4.
+			const cacheControl =
+				row.visibility === 'public' ? 'public, max-age=60' : 'private, no-store';
+
 			// Bodyless object - precondition failed (ETag match -> 304)
 			if (!('body' in object)) {
 				const headers = new Headers();
 				object.writeHttpMetadata(headers);
 				headers.set('etag', object.httpEtag);
+				headers.set('cache-control', cacheControl);
 				headers.set('referrer-policy', 'no-referrer');
 				return new Response(null, { status: 304, headers });
 			}
@@ -387,6 +400,7 @@ function createAssetReadRoute(mode: OwnershipMode): Hono<Env> {
 			const headers = new Headers();
 			object.writeHttpMetadata(headers);
 			headers.set('etag', object.httpEtag);
+			headers.set('cache-control', cacheControl);
 			headers.set('accept-ranges', 'bytes');
 			headers.set('x-content-type-options', 'nosniff');
 			// Capability URL: do not let outgoing sub-resource requests carry

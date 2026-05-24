@@ -32,25 +32,6 @@ const LOCAL_API_ORIGIN = localUrl(APPS.API);
 const WRANGLER_DEV_API_ORIGIN = `http://${new URL(PRODUCTION_API_ORIGIN).host}`;
 
 /**
- * Build the queue every base-app middleware installs on `c.var.afterResponse`.
- *
- * Handlers push fire-and-forget promises into the queue (`push`); the
- * lifecycle middleware drains them inside `executionCtx.waitUntil` so the
- * worker isolate stays alive until every queued promise settles.
- */
-function createAfterResponseQueue(): AfterResponseQueue {
-	const promises: Promise<unknown>[] = [];
-	return {
-		push(promise) {
-			promises.push(promise);
-		},
-		drain() {
-			return Promise.allSettled(promises);
-		},
-	};
-}
-
-/**
  * Construct the parent `Hono` app every deployment mounts sub-apps onto.
  *
  * Installs four ordered request-scoped middlewares:
@@ -78,7 +59,14 @@ export function createBaseApp(): Hono<Env> {
 		const client = new pg.Client({
 			connectionString: c.env.HYPERDRIVE.connectionString,
 		});
-		const afterResponse = createAfterResponseQueue();
+		// Fire-and-forget queue for promises that must outlive the response.
+		// Handlers push into it; the finally block below drains inside
+		// `waitUntil` so the worker isolate stays alive until all settle.
+		const promises: Promise<unknown>[] = [];
+		const afterResponse: AfterResponseQueue = {
+			push: (p) => promises.push(p),
+			drain: () => Promise.allSettled(promises),
+		};
 		try {
 			await client.connect();
 			c.set('db', drizzle(client, { schema }));

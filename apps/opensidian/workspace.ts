@@ -42,6 +42,14 @@ export const ConversationId = type('string').as<Id & Brand<'ConversationId'>>();
 export type ConversationId = typeof ConversationId.infer;
 
 /**
+ * Syntactic sugar for `value as ConversationId`. The constrained `string` parameter
+ * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
+ * The only place in the codebase where `as ConversationId` should appear.
+ */
+export const asConversationId = (value: string): ConversationId =>
+	value as ConversationId;
+
+/**
  * Generate a unique {@link ConversationId} for a new conversation row.
  *
  * This keeps call sites from casting raw strings and makes the ID source of
@@ -58,6 +66,14 @@ export const generateConversationId = (): ConversationId =>
  */
 export const ChatMessageId = type('string').as<Id & Brand<'ChatMessageId'>>();
 export type ChatMessageId = typeof ChatMessageId.infer;
+
+/**
+ * Syntactic sugar for `value as ChatMessageId`. The constrained `string` parameter
+ * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
+ * The only place in the codebase where `as ChatMessageId` should appear.
+ */
+export const asChatMessageId = (value: string): ChatMessageId =>
+	value as ChatMessageId;
 
 /**
  * Generate a unique {@link ChatMessageId} for a new chat message.

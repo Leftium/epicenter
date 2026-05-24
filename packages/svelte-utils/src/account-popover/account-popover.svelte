@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { AuthClient } from '@epicenter/auth-svelte';
+	import type { AuthClient } from '@epicenter/auth';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Popover from '@epicenter/ui/popover';

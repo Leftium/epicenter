@@ -20,7 +20,7 @@ import type {
 	PersistedAuth,
 	PersistedAuthStorage,
 } from './index.js';
-import { createOAuthAppAuth, OwnerId, UserId } from './index.js';
+import { asOwnerId, asUserId, createOAuthAppAuth } from './index.js';
 
 const now = 1_000_000;
 
@@ -48,8 +48,8 @@ function cell({
 } = {}): PersistedAuth {
 	return {
 		grant: g,
-		userId: UserId(userId),
-		ownerId: OwnerId(userId),
+		userId: asUserId(userId),
+		ownerId: asOwnerId(userId),
 		keyring: [...keyring],
 		mode: 'personal',
 	};
@@ -146,7 +146,7 @@ test('cold-boot signed-in exposes ownerId and keyring immediately without profil
 
 	expect(auth.state).toEqual({
 		status: 'signed-in',
-		ownerId: OwnerId('user-1'),
+		ownerId: asOwnerId('user-1'),
 		mode: 'personal',
 		keyring: [...keyring],
 	});
@@ -185,8 +185,8 @@ test('startSignIn calls /api/session and writes both sections', async () => {
 			refreshToken: 'sign-in-refresh',
 			accessTokenExpiresAt: now + 3_600_000,
 		},
-		userId: UserId('user-1'),
-		ownerId: OwnerId('user-1'),
+		userId: asUserId('user-1'),
+		ownerId: asOwnerId('user-1'),
 		keyring: [...keyring],
 		mode: 'personal',
 	});
@@ -235,15 +235,15 @@ test('startSignIn publishes signed-out before installing a different owner', asy
 				refreshToken: 'bob-refresh',
 				accessTokenExpiresAt: now + 3_600_000,
 			},
-			userId: UserId('bob'),
-			ownerId: OwnerId('bob'),
+			userId: asUserId('bob'),
+			ownerId: asOwnerId('bob'),
 			keyring: [...keyring],
 			mode: 'personal',
 		},
 	]);
 	expect(auth.state).toEqual({
 		status: 'signed-in',
-		ownerId: OwnerId('bob'),
+		ownerId: asOwnerId('bob'),
 		mode: 'personal',
 		keyring: [...keyring],
 	});
@@ -348,7 +348,7 @@ test('concurrent startSignIn shares one launcher flight', async () => {
 	expect(apiSessionCalls).toBe(1);
 	expect(auth.state).toEqual({
 		status: 'signed-in',
-		ownerId: OwnerId('bob'),
+		ownerId: asOwnerId('bob'),
 		mode: 'personal',
 		keyring: [...keyring],
 	});
@@ -358,8 +358,8 @@ test('concurrent startSignIn shares one launcher flight', async () => {
 			refreshToken: 'bob-refresh',
 			accessTokenExpiresAt: now + 3_600_000,
 		},
-		userId: UserId('bob'),
-		ownerId: OwnerId('bob'),
+		userId: asUserId('bob'),
+		ownerId: asOwnerId('bob'),
 		keyring: [...keyring],
 		mode: 'personal',
 	});
@@ -391,7 +391,7 @@ for (const status of [401, 403] as const) {
 		expect(resourceAuths).toEqual([null]);
 		expect(auth.state).toEqual({
 			status: 'reauth-required',
-			ownerId: OwnerId('user-1'),
+			ownerId: asOwnerId('user-1'),
 			mode: 'personal',
 			keyring: [...keyring],
 		});
@@ -424,7 +424,7 @@ test('/api/session 503 leaves local auth signed-in without attaching a bearer', 
 	expect(resourceAuths).toEqual([null]);
 	expect(auth.state).toEqual({
 		status: 'signed-in',
-		ownerId: OwnerId('user-1'),
+		ownerId: asOwnerId('user-1'),
 		mode: 'personal',
 		keyring: [...keyring],
 	});
@@ -470,7 +470,7 @@ test('stale /api/session verification after owner-switch sign-in cannot replace 
 	expect(result).toEqual(Ok(undefined));
 	expect(auth.state).toEqual({
 		status: 'signed-in',
-		ownerId: OwnerId('bob'),
+		ownerId: asOwnerId('bob'),
 		mode: 'personal',
 		keyring: [...keyring],
 	});
@@ -484,14 +484,14 @@ test('stale /api/session verification after owner-switch sign-in cannot replace 
 			refreshToken: 'bob-refresh',
 			accessTokenExpiresAt: now + 3_600_000,
 		},
-		userId: UserId('bob'),
-		ownerId: OwnerId('bob'),
+		userId: asUserId('bob'),
+		ownerId: asOwnerId('bob'),
 		keyring: [...keyring],
 		mode: 'personal',
 	});
 	expect(auth.state).toEqual({
 		status: 'signed-in',
-		ownerId: OwnerId('bob'),
+		ownerId: asOwnerId('bob'),
 		mode: 'personal',
 		keyring: [...keyring],
 	});
@@ -634,14 +634,14 @@ test('keyring rotation updates persisted keyring', async () => {
 
 	await auth.fetch('http://localhost:8787/resource');
 	const last = setup.saved.at(-1);
-	expect(last?.userId).toEqual(UserId('user-1'));
-	expect(last?.ownerId).toEqual(OwnerId('user-1'));
+	expect(last?.userId).toEqual(asUserId('user-1'));
+	expect(last?.ownerId).toEqual(asOwnerId('user-1'));
 	expect(last?.mode).toEqual('personal');
 	expect(last?.keyring).toEqual(rotated);
 	expect(last?.grant).toEqual(cell().grant);
 	expect(auth.state).toEqual({
 		status: 'signed-in',
-		ownerId: OwnerId('user-1'),
+		ownerId: asOwnerId('user-1'),
 		mode: 'personal',
 		keyring: rotated,
 	});
@@ -764,7 +764,7 @@ test('cold-boot offline keeps signed-in with cached ownerId and keyring and no p
 	});
 	expect('email' in auth.state).toBe(false);
 	expect(auth.state).toMatchObject({
-		ownerId: OwnerId('user-1'),
+		ownerId: asOwnerId('user-1'),
 		mode: 'personal',
 		keyring: [...keyring],
 	});
@@ -810,7 +810,7 @@ test('signOut clears cell and network pause even when revoke fails', async () =>
 		await auth.fetch('http://localhost:8787/resource');
 		expect(auth.state).toEqual({
 			status: 'reauth-required',
-			ownerId: OwnerId('user-1'),
+			ownerId: asOwnerId('user-1'),
 			mode: 'personal',
 			keyring: [...keyring],
 		});
@@ -876,7 +876,7 @@ test('network verification clears on grant refresh until /api/session confirms n
 	await secondApiSessionRequested;
 	expect(auth.state).toEqual({
 		status: 'signed-in',
-		ownerId: OwnerId('user-1'),
+		ownerId: asOwnerId('user-1'),
 		mode: 'personal',
 		keyring: [...keyring],
 	});
@@ -1094,8 +1094,8 @@ test('/api/session key update after signOut is discarded without writing identit
 	expect(setup.current).toBeNull();
 	expect(setup.saved).not.toContainEqual({
 		grant: grant(),
-		userId: UserId('user-1'),
-		ownerId: OwnerId('user-1'),
+		userId: asUserId('user-1'),
+		ownerId: asOwnerId('user-1'),
 		keyring: rotated,
 		mode: 'personal',
 	});

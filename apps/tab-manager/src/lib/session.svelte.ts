@@ -64,13 +64,13 @@ function buildSession(
 
 			const collaboration = openCollaboration(tabManager.ydoc, {
 				url: roomWsUrl({
-					baseURL: signedIn.auth.baseURL,
+					baseURL: signedIn.baseURL,
 					ownerId: signedIn.ownerId,
 					guid: tabManager.ydoc.guid,
 					installationId: profile.installationId,
 				}),
-				openWebSocket: signedIn.auth.openWebSocket,
-				onReconnectSignal: signedIn.auth.onStateChange,
+				openWebSocket: signedIn.openWebSocket,
+				onReconnectSignal: signedIn.onReconnectSignal,
 				waitFor: tabManager.idb.whenLoaded,
 				actions: tabManager.actions,
 			});

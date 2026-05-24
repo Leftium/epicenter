@@ -44,13 +44,13 @@ export function openZhongwenBrowser({
 	});
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl({
-			baseURL: signedIn.auth.baseURL,
+			baseURL: signedIn.baseURL,
 			ownerId: signedIn.ownerId,
 			guid: ydoc.guid,
 			installationId,
 		}),
-		openWebSocket: signedIn.auth.openWebSocket,
-		onReconnectSignal: signedIn.auth.onStateChange,
+		openWebSocket: signedIn.openWebSocket,
+		onReconnectSignal: signedIn.onReconnectSignal,
 		waitFor: idb.whenLoaded,
 		actions: {},
 	});

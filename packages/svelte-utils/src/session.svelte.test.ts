@@ -50,17 +50,19 @@ test('signed-out gap disposes old payload before building the next owner', () =>
 	session[Symbol.dispose]();
 });
 
-test('build receives signedIn with ownerId, keyring callback, and auth client', () => {
+test('build receives signedIn with projected fields and explicit auth capabilities', () => {
 	const { auth } = createAuthHarness(signedIn('alice'));
 
 	const session = createSession({
 		auth,
 		build: (received) => {
 			expect(received.server).toBe('api.test');
+			expect(received.baseURL).toBe(auth.baseURL);
 			expect(received.ownerId).toBe(asOwnerId('alice'));
 			expect(typeof received.keyring).toBe('function');
 			expect(received.keyring()).toEqual([...keyring]);
-			expect(received.auth).toBe(auth);
+			expect(received.openWebSocket).toBe(auth.openWebSocket);
+			expect(received.onReconnectSignal).toBe(auth.onStateChange);
 			expect(ownerLabel(auth.state)).toBe(asOwnerId('alice'));
 			return {
 				[Symbol.dispose]() {},

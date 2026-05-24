@@ -10,7 +10,7 @@
  * The Durable Object name is the owner-partitioned identifier produced by
  * {@link doName}; nothing here interpolates strings inline. The DO itself
  * is owner-blind: every connection is identified by the
- * `(userId, installationId)` pair stamped onto its WebSocket attachment.
+ * `(userId, deviceId)` pair stamped onto its WebSocket attachment.
  *
  * Each HTTP/WS access pushes a fire-and-forget upsert into
  * `c.var.afterResponse` so the platform-level `durableObjectInstance`
@@ -22,6 +22,8 @@
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
+import { defineErrors } from 'wellcrafted/error';
+import { createLogger } from 'wellcrafted/logger';
 import { MAX_PAYLOAD_BYTES } from '../constants.js';
 import * as schema from '../db/schema/index.js';
 import { isWebSocketUpgrade } from '../is-websocket-upgrade.js';
@@ -29,6 +31,25 @@ import { doName } from '../owner.js';
 import type { Env } from '../types.js';
 
 type Db = NodePgDatabase<typeof schema>;
+
+const log = createLogger('server/rooms');
+
+const RoomsTelemetryError = defineErrors({
+	DoInstanceUpsertFailed: ({
+		cause,
+		ownerId,
+		doName,
+	}: {
+		cause: unknown;
+		ownerId: string;
+		doName: string;
+	}) => ({
+		message: 'durableObjectInstance telemetry upsert failed; row dropped',
+		cause,
+		ownerId,
+		doName,
+	}),
+});
 
 /**
  * Wrap a Uint8Array in a Response with a fresh ArrayBuffer copy. Yjs
@@ -47,7 +68,8 @@ function binaryResponse(data: Uint8Array): Response {
  * Fire-and-forget upsert into the platform DO instance table. Records that
  * the owner partition touched the DO and, when available, the post-access
  * storage size. Errors are logged and dropped: this is telemetry, not
- * billing authority.
+ * billing authority. The failure is observable via the `server/rooms`
+ * logger so silent telemetry loss surfaces in deployment logs.
  */
 function upsertDoInstance(
 	db: Db,
@@ -79,7 +101,15 @@ function upsertDoInstance(
 				}),
 			},
 		})
-		.catch(() => undefined);
+		.catch((cause: unknown) => {
+			log.warn(
+				RoomsTelemetryError.DoInstanceUpsertFailed({
+					cause,
+					ownerId: params.ownerId,
+					doName: params.doName,
+				}),
+			);
+		});
 }
 
 /**

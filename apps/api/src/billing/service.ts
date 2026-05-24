@@ -12,17 +12,14 @@
  * Autumn calls it needs and returns a DTO.
  */
 
+import { MODEL_CREDITS } from '@epicenter/billing/ai-model-pricing';
 import {
 	FEATURE_IDS,
 	FREE_TIER_MAX_CREDITS_PER_CALL,
 	getPlan,
-	isOneOffTopUpPlan,
-	isSubscriptionPlan,
 	PLAN_IDS,
 	PLANS,
 	type PlanId,
-	RECOMMENDED_PLAN_IDS,
-	TOP_UP_PLAN_ID,
 	VISIBLE_SUBSCRIPTION_PLAN_IDS,
 } from '@epicenter/billing/catalog';
 import type {
@@ -38,11 +35,10 @@ import type {
 	UsageQuery,
 	UsageSeries,
 } from '@epicenter/billing/contracts';
-import { MODEL_CREDITS } from '@epicenter/billing/ai-model-pricing';
 import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import { AssetError } from '@epicenter/constants/asset-errors';
+import { Autumn } from 'autumn-js';
 import type { Err } from 'wellcrafted/result';
-import { type AutumnClient, createAutumn } from './autumn-client.js';
 
 // ---------------------------------------------------------------------
 // Types
@@ -79,49 +75,37 @@ export type StorageGateOutcome =
 // Construction
 // ---------------------------------------------------------------------
 
+export type BillingService = ReturnType<typeof createBillingService>;
+
+/**
+ * Build a per-request billing service.
+ *
+ * The Autumn SDK defaults `failOpen: true`, meaning a vendor outage
+ * causes `check()` to silently allow the request. That is the wrong
+ * default for paid features: if we can't verify entitlement, we must
+ * reject. We pass `failOpen: false` so every billing check fails CLOSED.
+ */
 export function createBillingService(
 	env: { AUTUMN_SECRET_KEY: string },
 	identity: Identity,
 ) {
-	const autumn = createAutumn(env);
-	return new BillingService(autumn, identity);
-}
-
-export class BillingService {
-	constructor(
-		private readonly autumn: AutumnClient,
-		private readonly identity: Identity,
-	) {}
-
-	// ----- Customer + plan resolution -----------------------------------
+	const autumn = new Autumn({
+		secretKey: env.AUTUMN_SECRET_KEY,
+		failOpen: false,
+	});
 
 	/** Load Autumn customer with subscriptions + balances expanded. */
-	private async loadCustomer() {
-		return this.autumn.customers.getOrCreate({
-			customerId: this.identity.userId,
-			email: this.identity.userEmail ?? undefined,
+	async function loadCustomer() {
+		return autumn.customers.getOrCreate({
+			customerId: identity.userId,
+			email: identity.userEmail ?? undefined,
 			expand: ['subscriptions.plan', 'balances.feature'],
 		});
 	}
 
-	/** Find the active non-add-on subscription. Returns null when the
-	 *  customer only has add-ons (e.g. top-ups) or no subscriptions. */
-	private mainSubscriptionOf(
-		subscriptions: Array<{
-			addOn: boolean;
-			planId: string;
-			plan?: { name?: string };
-			trialEndsAt: number | null;
-		}>,
-	) {
-		return subscriptions.find((s) => !s.addOn) ?? null;
-	}
-
 	// ----- AI gate ------------------------------------------------------
 
-	/** Resolve credit cost, plan eligibility, and atomically deduct.
-	 *  Returns the credit count so the gate can refund on failure. */
-	async guardAiChat(input: {
+	async function guardAiChat(input: {
 		model: string;
 		provider: string | undefined;
 	}): Promise<AiGateOutcome> {
@@ -135,8 +119,8 @@ export class BillingService {
 		}
 
 		// Resolve the active plan from a single customer fetch.
-		const customer = await this.loadCustomer();
-		const mainSub = this.mainSubscriptionOf(customer.subscriptions);
+		const customer = await loadCustomer();
+		const mainSub = customer.subscriptions.find((s) => !s.addOn) ?? null;
 		const planId = mainSub?.planId ?? PLAN_IDS.free;
 
 		// Free tier rejects models above the per-call ceiling.
@@ -154,8 +138,8 @@ export class BillingService {
 		// Atomic check + deduct. `sendEvent: true` makes Autumn record the
 		// usage as part of the same call, so a second concurrent request
 		// cannot read the same balance.
-		const { allowed, balance } = await this.autumn.check({
-			customerId: this.identity.userId,
+		const { allowed, balance } = await autumn.check({
+			customerId: identity.userId,
 			featureId: FEATURE_IDS.aiUsage,
 			requiredBalance: credits,
 			sendEvent: true,
@@ -174,11 +158,9 @@ export class BillingService {
 		return { kind: 'allow', credits };
 	}
 
-	/** Refund a previously-deducted AI charge. Returns a promise the
-	 *  caller can queue via afterResponse so the response stays fast. */
-	refundAiCharge(credits: number): Promise<unknown> {
-		return this.autumn.track({
-			customerId: this.identity.userId,
+	function refundAiCharge(credits: number): Promise<unknown> {
+		return autumn.track({
+			customerId: identity.userId,
 			featureId: FEATURE_IDS.aiUsage,
 			value: -credits,
 		});
@@ -186,18 +168,18 @@ export class BillingService {
 
 	// ----- Storage gate -------------------------------------------------
 
-	/** Pre-flight check for an asset upload against the storage budget. */
-	async guardAssetUpload(fileSize: number): Promise<StorageGateOutcome> {
-		// `customers.getOrCreate` ensures the customer exists before the
-		// check; for new customers the storage balance must be seeded
-		// from the auto-enable free plan.
-		await this.autumn.customers.getOrCreate({
-			customerId: this.identity.userId,
-			email: this.identity.userEmail ?? undefined,
+	async function guardAssetUpload(
+		fileSize: number,
+	): Promise<StorageGateOutcome> {
+		// Seed the customer so the storage balance materializes from the
+		// auto-enable free plan before we check it.
+		await autumn.customers.getOrCreate({
+			customerId: identity.userId,
+			email: identity.userEmail ?? undefined,
 		});
 
-		const { allowed } = await this.autumn.check({
-			customerId: this.identity.userId,
+		const { allowed } = await autumn.check({
+			customerId: identity.userId,
 			featureId: FEATURE_IDS.storageBytes,
 			requiredBalance: fileSize,
 		});
@@ -212,19 +194,17 @@ export class BillingService {
 		return { kind: 'allow' };
 	}
 
-	/** Record storage usage after a successful upload. */
-	trackAssetUpload(sizeBytes: number): Promise<unknown> {
-		return this.autumn.track({
-			customerId: this.identity.userId,
+	function trackAssetUpload(sizeBytes: number): Promise<unknown> {
+		return autumn.track({
+			customerId: identity.userId,
 			featureId: FEATURE_IDS.storageBytes,
 			value: sizeBytes,
 		});
 	}
 
-	/** Release storage usage after a successful delete. */
-	releaseAssetStorage(sizeBytes: number): Promise<unknown> {
-		return this.autumn.track({
-			customerId: this.identity.userId,
+	function releaseAssetStorage(sizeBytes: number): Promise<unknown> {
+		return autumn.track({
+			customerId: identity.userId,
 			featureId: FEATURE_IDS.storageBytes,
 			value: -sizeBytes,
 		});
@@ -232,20 +212,22 @@ export class BillingService {
 
 	// ----- Dashboard data plane -----------------------------------------
 
-	async getOverview(): Promise<BillingOverview> {
-		const customer = await this.loadCustomer();
-		const mainSub = this.mainSubscriptionOf(customer.subscriptions);
+	async function getOverview(): Promise<BillingOverview> {
+		const customer = await loadCustomer();
+		const mainSub = customer.subscriptions.find((s) => !s.addOn) ?? null;
 		const planId = mainSub?.planId ?? PLAN_IDS.free;
 		const catalogPlan = getPlan(planId);
 		const planDisplayName =
-			mainSub?.plan?.name ??
-			(catalogPlan ? catalogPlan.displayName : planId);
+			mainSub?.plan?.name ?? (catalogPlan ? catalogPlan.displayName : planId);
 
 		const trial =
 			mainSub?.trialEndsAt != null
 				? {
 						endsAtMs: mainSub.trialEndsAt,
-						daysLeft: daysUntil(mainSub.trialEndsAt),
+						daysLeft: Math.max(
+							0,
+							Math.ceil((mainSub.trialEndsAt - Date.now()) / 86_400_000),
+						),
 					}
 				: null;
 
@@ -256,6 +238,10 @@ export class BillingService {
 		const rolloverEntry = creditsBalance?.rollovers?.[0];
 
 		const storageBalance = customer.balances?.[FEATURE_IDS.storageBytes];
+		const storageIncluded =
+			catalogPlan && catalogPlan.kind === 'subscription'
+				? catalogPlan.storage.includedBytes
+				: 0;
 
 		return {
 			planId,
@@ -270,19 +256,15 @@ export class BillingService {
 			},
 			storage: {
 				usedBytes: storageBalance?.usage ?? 0,
-				includedBytes:
-					storageBalance?.granted ??
-					(catalogPlan && isSubscriptionPlan(catalogPlan)
-						? catalogPlan.storage.includedBytes
-						: 0),
+				includedBytes: storageBalance?.granted ?? storageIncluded,
 			},
 		};
 	}
 
-	async listPlans(): Promise<BillingPlansView> {
+	async function listPlans(): Promise<BillingPlansView> {
 		const [customer, autumnPlans] = await Promise.all([
-			this.loadCustomer(),
-			this.autumn.plans.list({ customerId: this.identity.userId }),
+			loadCustomer(),
+			autumn.plans.list({ customerId: identity.userId }),
 		]);
 
 		const eligibilityByPlanId = new Map(
@@ -291,18 +273,18 @@ export class BillingService {
 			),
 		);
 
-		const mainSub = this.mainSubscriptionOf(customer.subscriptions);
+		const mainSub = customer.subscriptions.find((s) => !s.addOn) ?? null;
 		const currentPlanId = mainSub?.planId ?? PLAN_IDS.free;
 		const currentPlan = getPlan(currentPlanId);
 		const currentPlanDisplayName =
 			mainSub?.plan?.name ??
 			(currentPlan ? currentPlan.displayName : currentPlanId);
 
-		const renderCard = (planId: PlanId): BillingPlanCard => {
+		function renderCard(planId: PlanId): BillingPlanCard {
 			const plan = PLANS[planId];
-			if (!isSubscriptionPlan(plan)) {
-				// Subscription cards never include the top-up plan; this is
-				// a programmer error in VISIBLE_SUBSCRIPTION_PLAN_IDS.
+			// VISIBLE_SUBSCRIPTION_PLAN_IDS never contains the top-up plan;
+			// this narrow is the type-level proof of that invariant.
+			if (plan.kind !== 'subscription') {
 				throw new Error(`Plan ${planId} is not a subscription plan`);
 			}
 			const price = plan.basePrice;
@@ -321,47 +303,41 @@ export class BillingService {
 				? `$${formatUsd(plan.credits.overage.priceUsd)}/${plan.credits.overage.billingUnits} overage`
 				: null;
 
+			// Annual cards highlight the matching monthly subscription (and
+			// vice versa) so the user sees which cycle they are on.
 			const isCurrent =
 				currentPlanId === planId ||
-				// Annual cards highlight the matching monthly subscription
-				// (and vice versa) so the user can see which cycle they are on.
 				(plan.monthlyEquivalentId !== null &&
 					plan.monthlyEquivalentId === currentPlanId);
 
 			let cta: BillingPlanCard['cta'];
 			if (isCurrent) {
-				cta = { kind: 'current' };
+				cta = 'Current';
 			} else {
 				const action = eligibilityByPlanId.get(planId);
-				const verb =
+				cta =
 					action === 'upgrade'
 						? 'Upgrade'
 						: action === 'downgrade'
 							? 'Downgrade'
 							: 'Switch';
-				cta = { kind: 'switch', verb };
 			}
 
 			return {
 				id: plan.id,
 				displayName: plan.displayName.replace(' (Annual)', ''),
-				cycle: plan.cycle,
 				displayedPrice,
 				displayedPricePerMonth,
 				displayedCreditsPerCycle,
 				displayedOverage,
 				rollover: plan.rollover,
-				isRecommended: RECOMMENDED_PLAN_IDS.has(plan.id),
+				isRecommended: plan.isRecommended,
 				cta,
-				isTrialing:
-					mainSub?.trialEndsAt != null && mainSub.planId === plan.id,
+				isTrialing: mainSub?.trialEndsAt != null && mainSub.planId === plan.id,
 			};
-		};
-
-		const topUp = PLANS[TOP_UP_PLAN_ID];
-		if (!isOneOffTopUpPlan(topUp)) {
-			throw new Error('TOP_UP_PLAN_ID must reference a one-off plan');
 		}
+
+		const topUp = PLANS[PLAN_IDS.creditTopUp];
 
 		return {
 			currentPlanId,
@@ -378,9 +354,9 @@ export class BillingService {
 		};
 	}
 
-	async listUsage(query: UsageQuery): Promise<UsageSeries> {
-		const result = await this.autumn.events.aggregate({
-			customerId: this.identity.userId,
+	async function listUsage(query: UsageQuery): Promise<UsageSeries> {
+		const result = await autumn.events.aggregate({
+			customerId: identity.userId,
 			featureId: FEATURE_IDS.aiUsage,
 			range: query.range,
 			binSize: query.binSize,
@@ -404,45 +380,30 @@ export class BillingService {
 		};
 	}
 
-	async listEvents(query: EventsQuery): Promise<BillingEventsPage> {
-		// Autumn `events.list` uses offset pagination, not cursors. We
-		// expose the next-page offset as the `nextCursor` string so the
-		// dashboard contract stays cursor-shaped (offset is an Autumn
-		// detail; switching to a true cursor later would not change
-		// the dashboard contract).
-		const offset = query.startingAfter
-			? Number.parseInt(query.startingAfter, 10) || 0
-			: 0;
-		const result = await this.autumn.events.list({
-			customerId: this.identity.userId,
+	async function listEvents(query: EventsQuery): Promise<BillingEventsPage> {
+		const result = await autumn.events.list({
+			customerId: identity.userId,
 			featureId: FEATURE_IDS.aiUsage,
 			limit: query.limit,
-			offset,
 		});
 
 		const events: BillingEvent[] = (result.list ?? []).map((e) => {
 			const props = (e.properties ?? {}) as Record<string, unknown>;
-			const model = typeof props.model === 'string' ? props.model : null;
-			const provider =
-				typeof props.provider === 'string' ? props.provider : null;
 			return {
 				id: e.id,
 				timestampMs: e.timestamp,
-				model,
-				provider,
+				model: typeof props.model === 'string' ? props.model : null,
+				provider: typeof props.provider === 'string' ? props.provider : null,
 				credits: e.value,
 			};
 		});
 
-		return {
-			events,
-			nextCursor: result.hasMore ? String(offset + events.length) : null,
-		};
+		return { events };
 	}
 
-	async previewPlanChange(planId: string): Promise<PlanChangePreview> {
-		const preview = await this.autumn.billing.previewAttach({
-			customerId: this.identity.userId,
+	async function previewPlanChange(planId: string): Promise<PlanChangePreview> {
+		const preview = await autumn.billing.previewAttach({
+			customerId: identity.userId,
 			planId,
 		});
 		// Autumn returns `total` in cents.
@@ -451,10 +412,10 @@ export class BillingService {
 			prorationAmountUsd > 0
 				? `You will be charged $${formatUsd(prorationAmountUsd)} today (prorated).`
 				: 'No charge today. Plan changes take effect at the next renewal.';
-		return { prorationAmountUsd, displayedSummary };
+		return { displayedSummary };
 	}
 
-	async checkoutPlan(input: {
+	async function checkoutPlan(input: {
 		planId: string;
 		successUrl?: string | undefined;
 	}): Promise<CheckoutResult> {
@@ -463,15 +424,12 @@ export class BillingService {
 		// don't ship hard-coded plan-id lists.
 		const target = getPlan(input.planId);
 		const carry =
-			target && isSubscriptionPlan(target) && target.rollover
-				? {
-						enabled: true,
-						featureIds: [FEATURE_IDS.aiCredits],
-					}
+			target && target.kind === 'subscription' && target.rollover
+				? { enabled: true, featureIds: [FEATURE_IDS.aiCredits] }
 				: undefined;
 
-		const result = await this.autumn.billing.attach({
-			customerId: this.identity.userId,
+		const result = await autumn.billing.attach({
+			customerId: identity.userId,
 			planId: input.planId,
 			successUrl: input.successUrl,
 			...(carry ? { carryOverBalances: carry } : {}),
@@ -479,32 +437,42 @@ export class BillingService {
 		return { checkoutUrl: result.paymentUrl };
 	}
 
-	async checkoutTopUp(input: {
+	async function checkoutTopUp(input: {
 		successUrl?: string | undefined;
 	}): Promise<CheckoutResult> {
-		const result = await this.autumn.billing.attach({
-			customerId: this.identity.userId,
-			planId: TOP_UP_PLAN_ID,
+		const result = await autumn.billing.attach({
+			customerId: identity.userId,
+			planId: PLAN_IDS.creditTopUp,
 			successUrl: input.successUrl,
 		});
 		return { checkoutUrl: result.paymentUrl };
 	}
 
-	async openPortal(input: { returnUrl: string }): Promise<PortalSession> {
-		const result = await this.autumn.billing.openCustomerPortal({
-			customerId: this.identity.userId,
+	async function openPortal(input: {
+		returnUrl: string;
+	}): Promise<PortalSession> {
+		const result = await autumn.billing.openCustomerPortal({
+			customerId: identity.userId,
 			returnUrl: input.returnUrl,
 		});
 		return { portalUrl: result.url };
 	}
-}
 
-// ---------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------
-
-function daysUntil(epochMs: number): number {
-	return Math.max(0, Math.ceil((epochMs - Date.now()) / 86_400_000));
+	return {
+		guardAiChat,
+		refundAiCharge,
+		guardAssetUpload,
+		trackAssetUpload,
+		releaseAssetStorage,
+		getOverview,
+		listPlans,
+		listUsage,
+		listEvents,
+		previewPlanChange,
+		checkoutPlan,
+		checkoutTopUp,
+		openPortal,
+	};
 }
 
 function formatUsd(amount: number): string {

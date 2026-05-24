@@ -2,10 +2,10 @@
  * Cloud-only Hono middleware that wraps `@epicenter/server` sub-apps
  * with Autumn-backed billing.
  *
- * Each gate is a thin shell around `BillingService`. The service owns
- * the Autumn round-trips and DTO mapping; gates own only HTTP shape:
- * pulling fields off the request, choosing a status, queueing refunds
- * onto the response-lifecycle queue from `@epicenter/server`.
+ * Each gate is a thin shell around the billing service. The service
+ * owns the Autumn round-trips and DTO mapping; gates own only HTTP
+ * shape: pulling fields off the request, choosing a status, queueing
+ * refunds onto the after-response promise queue from `@epicenter/server`.
  *
  *   autumnAiGate       Around `/api/ai/chat`. Resolves the model from
  *                      the chat body, asks the service to atomically
@@ -20,17 +20,9 @@
  * The library remains billing-agnostic; everything here is cloud-only.
  */
 
-import type { Env as ServerEnv } from '@epicenter/server';
+import type { Env } from '@epicenter/server';
 import { createMiddleware } from 'hono/factory';
 import { createBillingService } from './service.js';
-
-/** The cloud worker's Env. Currently identical to the library Env; no
- *  cloud-only Variables are stamped on the request anymore. Kept as a
- *  named alias so other middleware can extend it in the future. */
-export type Env = {
-	Bindings: ServerEnv['Bindings'];
-	Variables: ServerEnv['Variables'];
-};
 
 type AiChatBody = {
 	data?: { model?: string; provider?: string };

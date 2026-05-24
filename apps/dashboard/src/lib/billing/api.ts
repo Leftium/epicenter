@@ -90,22 +90,17 @@ export const billingApi = {
 
 	models: () => get<ModelCostGuide>('/api/billing/models'),
 
-	previewPlanChange: (planId: string) =>
-		post<{ planId: string }, PlanChangePreview>('/api/billing/preview', {
-			planId,
-		}),
-
-	checkoutPlan: (planId: string, successUrl?: string) =>
-		post<{ planId: string; successUrl?: string }, CheckoutResult>(
-			'/api/billing/checkout/plan',
-			{ planId, successUrl },
+	previewPlanChange: (params: { planId: string }) =>
+		post<{ planId: string }, PlanChangePreview>(
+			'/api/billing/preview',
+			params,
 		),
 
-	checkoutTopUp: (successUrl?: string) =>
-		post<{ successUrl?: string }, CheckoutResult>(
-			'/api/billing/checkout/top-up',
-			{ successUrl },
-		),
+	checkoutPlan: (params: { planId: string; successUrl?: string }) =>
+		post<typeof params, CheckoutResult>('/api/billing/checkout/plan', params),
+
+	checkoutTopUp: (params: { successUrl?: string } = {}) =>
+		post<typeof params, CheckoutResult>('/api/billing/checkout/top-up', params),
 
 	portal: () => get<PortalSession>('/api/billing/portal'),
 };

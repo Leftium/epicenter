@@ -108,7 +108,9 @@ function subscriptionPlan(p: SubscriptionPlan) {
 	return plan({
 		id: p.id,
 		name: p.displayName,
-		group: p.group,
+		// All Epicenter subscription plans share one mutual-exclusion
+		// group at the Autumn level. Top-ups are add-ons (no group).
+		group: 'main',
 		autoEnable: p.autoEnable,
 		...(p.basePrice
 			? {
@@ -141,11 +143,12 @@ export const max = subscriptionPlan(PLANS[PLAN_IDS.max]);
 export const proAnnual = subscriptionPlan(PLANS[PLAN_IDS.proAnnual]);
 export const ultraAnnual = subscriptionPlan(PLANS[PLAN_IDS.ultraAnnual]);
 export const maxAnnual = subscriptionPlan(PLANS[PLAN_IDS.maxAnnual]);
-const topUpPlan = PLANS[PLAN_IDS.creditTopUp];
 
 // ---------------------------------------------------------------------
 // One-off credit top-up
 // ---------------------------------------------------------------------
+
+const topUpPlan = PLANS[PLAN_IDS.creditTopUp];
 
 export const creditTopUp = plan({
 	id: topUpPlan.id,

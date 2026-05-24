@@ -14,13 +14,11 @@
  * returns `{ portalUrl: string }` rather than a vendor envelope.
  */
 
-import type { BillingCycle, PlanId } from './catalog.js';
-
 /** Snapshot of the customer's current plan and credit balance. */
 export type BillingOverview = {
 	/** Active subscription plan id; `'free'` when no paid subscription
 	 *  exists. Always present (auto-enable plans guarantee a row). */
-	planId: PlanId | string;
+	planId: string;
 	/** Display name resolved server-side from the catalog or the
 	 *  Autumn plan name. Never derived client-side. */
 	planDisplayName: string;
@@ -51,9 +49,8 @@ export type BillingOverview = {
 
 /** Single plan card rendered on the upgrade UI. */
 export type BillingPlanCard = {
-	id: PlanId | string;
+	id: string;
 	displayName: string;
-	cycle: BillingCycle;
 	/** Price string as displayed on the card (e.g. "$20/mo"). */
 	displayedPrice: string;
 	/** Price normalized per month for the "annualized monthly" row
@@ -65,25 +62,24 @@ export type BillingPlanCard = {
 	displayedOverage: string | null;
 	rollover: boolean;
 	isRecommended: boolean;
-	/** Customer-relative call to action. `'current'` means the plan is
-	 *  already active. */
-	cta:
-		| { kind: 'current' }
-		| { kind: 'switch'; verb: 'Upgrade' | 'Downgrade' | 'Switch' };
+	/** Button label / state. `'Current'` means the plan is already active;
+	 *  the other three are upgrade-relative verbs from the provider. */
+	cta: 'Current' | 'Upgrade' | 'Downgrade' | 'Switch';
 	/** True when the active subscription is in a free trial for this plan. */
 	isTrialing: boolean;
 };
 
 /** Catalog of the current customer's plan options. */
 export type BillingPlansView = {
-	currentPlanId: PlanId | string;
+	currentPlanId: string;
 	currentPlanDisplayName: string;
 	cards: {
 		monthly: BillingPlanCard[];
 		annual: BillingPlanCard[];
 	};
+	/** One-off credit top-up offer (price + credits granted). */
 	topUp: {
-		planId: PlanId | string;
+		planId: string;
 		creditsPerPurchase: number;
 		priceUsd: number;
 	};
@@ -120,8 +116,6 @@ export type BillingEvent = {
 
 export type BillingEventsPage = {
 	events: BillingEvent[];
-	/** Cursor for the next page; null when there are no more events. */
-	nextCursor: string | null;
 };
 
 /** Result of an attach operation (subscription change or top-up).
@@ -134,9 +128,6 @@ export type CheckoutResult = {
 
 /** Preview of the cost of switching to a target plan. */
 export type PlanChangePreview = {
-	/** USD amount that will be charged today (prorated). 0 if no
-	 *  immediate charge applies. */
-	prorationAmountUsd: number;
 	/** Server-rendered single-line summary for the confirm dialog. */
 	displayedSummary: string;
 };
@@ -169,6 +160,4 @@ export type UsageQuery = {
 
 export type EventsQuery = {
 	limit?: number;
-	startingAfter?: string;
 };
-

@@ -18,7 +18,14 @@
 	import { queryClient } from '$lib/query/client';
 
 	const overview = createQuery(() => billing.overview.options);
+	const plans = createQuery(() => billing.plans.options);
 	const isOnTrial = $derived(overview.data?.trial != null);
+
+	const topUpLabel = $derived(
+		plans.data
+			? `Buy ${plans.data.topUp.creditsPerPurchase.toLocaleString()} credits ($${plans.data.topUp.priceUsd})`
+			: 'Buy credits',
+	);
 
 	async function openBillingPortal() {
 		const { data, error } = await billingApi.portal();
@@ -88,7 +95,7 @@
 		{#if topUp.isPending}
 			<Spinner class="size-3.5" />
 		{:else}
-			Buy 500 credits ($5)
+			{topUpLabel}
 		{/if}
 	</Button>
 	<Button variant="outline" onclick={openBillingPortal}>Manage billing</Button>

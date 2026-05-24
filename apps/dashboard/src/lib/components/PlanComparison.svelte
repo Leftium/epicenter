@@ -13,9 +13,7 @@
 	import { queryClient } from '$lib/query/client';
 
 	let isAnnual = $state(false);
-	let confirmDialog = $state<{
-		card: BillingPlanCard;
-	} | null>(null);
+	let confirmDialog = $state<{ card: BillingPlanCard } | null>(null);
 	let previewSummary = $state<string | null>(null);
 
 	const overview = createQuery(() => billing.overview.options);
@@ -86,7 +84,7 @@
 		<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
 			{#each visibleCards as card (card.id)}
 				<Card.Root
-					class="{card.isRecommended ? 'border-primary ring-1 ring-primary' : ''} {card.cta.kind === 'current' ? 'border-emerald-700 bg-emerald-950/20' : ''} flex flex-col"
+					class="{card.isRecommended ? 'border-primary ring-1 ring-primary' : ''} {card.cta === 'Current' ? 'border-emerald-700 bg-emerald-950/20' : ''} flex flex-col"
 				>
 					<Card.Header class="pb-2">
 						<div class="flex items-center gap-2">
@@ -114,20 +112,17 @@
 						{/if}
 					</Card.Content>
 					<Card.Footer>
-						{#if card.cta.kind === 'current'}
+						{#if card.cta === 'Current'}
 							<Button variant="outline" class="w-full" disabled>
-								Current plan
-								{#if card.isTrialing}
-									&nbsp;(trial)
-								{/if}
+								Current plan{#if card.isTrialing}&nbsp;(trial){/if}
 							</Button>
 						{:else}
 							<Button
 								class="w-full"
-								variant={card.cta.verb === 'Upgrade' ? 'default' : 'secondary'}
+								variant={card.cta === 'Upgrade' ? 'default' : 'secondary'}
 								onclick={() => handleUpgradeClick(card)}
 							>
-								{card.cta.verb} to {card.displayName}
+								{card.cta} to {card.displayName}
 							</Button>
 						{/if}
 					</Card.Footer>
@@ -157,8 +152,8 @@
 	<Dialog.Content>
 		<Dialog.Header>
 			<Dialog.Title>
-				{confirmDialog?.card.cta.kind === 'switch'
-					? `${confirmDialog.card.cta.verb} to ${confirmDialog.card.displayName}`
+				{confirmDialog
+					? `${confirmDialog.card.cta} to ${confirmDialog.card.displayName}`
 					: ''}
 			</Dialog.Title>
 			<Dialog.Description>
@@ -178,9 +173,11 @@
 			<Button
 				onclick={() => {
 					if (!confirmDialog) return;
-					const target = confirmDialog.card;
 					checkoutMutation.mutate(
-						{ planId: target.id, successUrl: window.location.href },
+						{
+							planId: confirmDialog.card.id,
+							successUrl: window.location.href,
+						},
 						{
 							onSuccess: (data) => {
 								if (data.checkoutUrl) {

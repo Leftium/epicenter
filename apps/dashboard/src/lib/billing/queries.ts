@@ -1,9 +1,8 @@
 /**
  * TanStack Query bindings for billing data.
  *
- * Wraps `billingApi` with deferred mutation queues and a single
- * centralized key namespace so an invalidate on `billingKeys.all`
- * clears every billing view in one call.
+ * Wraps `billingApi` with a centralized key namespace so an invalidate
+ * on `billingKeys.all` clears every billing view in one call.
  */
 
 import type {
@@ -13,7 +12,6 @@ import type {
 import { defineMutation, defineQuery } from '$lib/query/client';
 import { billingApi } from './api';
 
-/** Centralized query keys for billing views. */
 export const billingKeys = {
 	all: ['billing'] as const,
 	overview: ['billing', 'overview'] as const,
@@ -55,22 +53,18 @@ export const billing = {
 
 	topUp: defineMutation({
 		mutationKey: [...billingKeys.all, 'top-up'] as const,
-		mutationFn: (successUrl?: string) => billingApi.checkoutTopUp(successUrl),
+		mutationFn: (successUrl?: string) =>
+			billingApi.checkoutTopUp({ successUrl }),
 	}),
 
 	previewPlanChange: defineMutation({
 		mutationKey: [...billingKeys.all, 'preview'] as const,
-		mutationFn: (planId: string) => billingApi.previewPlanChange(planId),
+		mutationFn: (planId: string) => billingApi.previewPlanChange({ planId }),
 	}),
 
 	checkoutPlan: defineMutation({
 		mutationKey: [...billingKeys.all, 'checkout-plan'] as const,
-		mutationFn: ({
-			planId,
-			successUrl,
-		}: {
-			planId: string;
-			successUrl?: string;
-		}) => billingApi.checkoutPlan(planId, successUrl),
+		mutationFn: (params: { planId: string; successUrl?: string }) =>
+			billingApi.checkoutPlan(params),
 	}),
 };

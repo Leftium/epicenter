@@ -6,8 +6,8 @@
  * `apps/api/autumn.config.ts` reads this catalog and emits Autumn
  * `feature()` / `plan()` / `item()` calls; the billing service in
  * `apps/api/src/billing/service.ts` reads the same catalog to resolve
- * plan tier semantics (rollover policy, top-up plan id, free-tier
- * model-cost ceiling); the dashboard reads it through the
+ * plan tier semantics (rollover policy, free-tier model-cost ceiling,
+ * upgrade-UI recommendation flag); the dashboard reads it through the
  * server-rendered DTOs from `contracts.ts`. Nothing else in the repo
  * holds plan or feature configuration.
  *
@@ -42,9 +42,6 @@ export const PLAN_IDS = {
 
 export type PlanId = (typeof PLAN_IDS)[keyof typeof PLAN_IDS];
 
-/** Billing cycle for a subscription plan. `oneOff` for top-ups. */
-export type BillingCycle = 'monthly' | 'annual' | 'oneOff';
-
 /** Per-cycle credit grant + overage pricing. Free plan: no overage. */
 type CreditPolicy =
 	| {
@@ -77,12 +74,12 @@ export type SubscriptionPlan = {
 	id: PlanId;
 	kind: 'subscription';
 	displayName: string;
-	/** Hardcoded UI grouping; Autumn `group` for mutual exclusion. */
-	group: 'main';
 	cycle: 'monthly' | 'annual';
 	/** True if this plan rolls over unused credits and the cloud should
 	 *  carry over balances on upgrade. */
 	rollover: boolean;
+	/** Marked with a "Recommended" badge on the upgrade UI. */
+	isRecommended: boolean;
 	/** Auto-enable on customer creation (Autumn-side default for free). */
 	autoEnable: boolean;
 	/** Base price, billed on `cycle`. Free plan: null. */
@@ -111,7 +108,7 @@ export type OneOffTopUpPlan = {
 export type Plan = SubscriptionPlan | OneOffTopUpPlan;
 
 /** Cap on the per-call credit cost that the free tier may consume.
- *  Resolved against {@link MODEL_CREDITS} at request time. */
+ *  Resolved against `MODEL_CREDITS` at request time. */
 export const FREE_TIER_MAX_CREDITS_PER_CALL = 2;
 
 export const PLANS = {
@@ -119,9 +116,9 @@ export const PLANS = {
 		id: PLAN_IDS.free,
 		kind: 'subscription',
 		displayName: 'Free',
-		group: 'main',
 		cycle: 'monthly',
 		rollover: false,
+		isRecommended: false,
 		autoEnable: true,
 		basePrice: null,
 		freeTrial: null,
@@ -133,9 +130,9 @@ export const PLANS = {
 		id: PLAN_IDS.pro,
 		kind: 'subscription',
 		displayName: 'Pro',
-		group: 'main',
 		cycle: 'monthly',
 		rollover: false,
+		isRecommended: false,
 		autoEnable: false,
 		basePrice: { amountUsd: 20, interval: 'month' },
 		freeTrial: null,
@@ -151,9 +148,9 @@ export const PLANS = {
 		id: PLAN_IDS.ultra,
 		kind: 'subscription',
 		displayName: 'Ultra',
-		group: 'main',
 		cycle: 'monthly',
 		rollover: true,
+		isRecommended: true,
 		autoEnable: false,
 		basePrice: { amountUsd: 60, interval: 'month' },
 		freeTrial: { days: 14, cardRequired: false },
@@ -169,9 +166,9 @@ export const PLANS = {
 		id: PLAN_IDS.max,
 		kind: 'subscription',
 		displayName: 'Max',
-		group: 'main',
 		cycle: 'monthly',
 		rollover: true,
+		isRecommended: false,
 		autoEnable: false,
 		basePrice: { amountUsd: 200, interval: 'month' },
 		freeTrial: null,
@@ -187,9 +184,9 @@ export const PLANS = {
 		id: PLAN_IDS.proAnnual,
 		kind: 'subscription',
 		displayName: 'Pro (Annual)',
-		group: 'main',
 		cycle: 'annual',
 		rollover: false,
+		isRecommended: false,
 		autoEnable: false,
 		basePrice: { amountUsd: 200, interval: 'year' },
 		freeTrial: null,
@@ -205,9 +202,9 @@ export const PLANS = {
 		id: PLAN_IDS.ultraAnnual,
 		kind: 'subscription',
 		displayName: 'Ultra (Annual)',
-		group: 'main',
 		cycle: 'annual',
 		rollover: true,
+		isRecommended: true,
 		autoEnable: false,
 		basePrice: { amountUsd: 600, interval: 'year' },
 		freeTrial: null,
@@ -223,9 +220,9 @@ export const PLANS = {
 		id: PLAN_IDS.maxAnnual,
 		kind: 'subscription',
 		displayName: 'Max (Annual)',
-		group: 'main',
 		cycle: 'annual',
 		rollover: true,
+		isRecommended: false,
 		autoEnable: false,
 		basePrice: { amountUsd: 2000, interval: 'year' },
 		freeTrial: null,
@@ -254,24 +251,8 @@ export const VISIBLE_SUBSCRIPTION_PLAN_IDS = {
 	annual: [PLAN_IDS.proAnnual, PLAN_IDS.ultraAnnual, PLAN_IDS.maxAnnual],
 } as const;
 
-/** Plans recommended in the upgrade UI (one per cycle). */
-export const RECOMMENDED_PLAN_IDS: ReadonlySet<PlanId> = new Set([
-	PLAN_IDS.ultra,
-	PLAN_IDS.ultraAnnual,
-]);
-
-export function isSubscriptionPlan(plan: Plan): plan is SubscriptionPlan {
-	return plan.kind === 'subscription';
-}
-
-export function isOneOffTopUpPlan(plan: Plan): plan is OneOffTopUpPlan {
-	return plan.kind === 'oneOffTopUp';
-}
-
-/** Resolve a Plan by id with a type-narrow. Returns undefined for
- *  unknown ids (e.g. legacy plans that have been retired). */
+/** Resolve a Plan by id. Returns undefined for unknown ids
+ *  (e.g. legacy plans that have been retired). */
 export function getPlan(id: string): Plan | undefined {
 	return (PLANS as Record<string, Plan>)[id];
 }
-
-export const TOP_UP_PLAN_ID: PlanId = PLAN_IDS.creditTopUp;

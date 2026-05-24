@@ -1,58 +1,51 @@
 /**
  * `/api/billing/*` routes for the dashboard.
  *
- * Every handler is a one-line delegate to `BillingService`. The service
- * owns Autumn round-trips and DTO mapping; routes own HTTP shape, body
- * validation, and the Autumn-error translation layer. Auth is mounted
- * in the parent composition (cloud's cookie-or-bearer middleware).
+ * Every handler is a one-line delegate to the billing service. The
+ * service owns Autumn round-trips and DTO mapping; routes own HTTP
+ * shape, body validation, and the Autumn-error translation layer. Auth
+ * is mounted in the parent composition (cloud's cookie-or-bearer
+ * middleware).
  */
 
+import {
+	MODEL_CREDITS,
+	providerOf,
+} from '@epicenter/billing/ai-model-pricing';
+import type { ModelCostGuide } from '@epicenter/billing/contracts';
 import { BillingError } from '@epicenter/constants/billing-errors';
+import type { Env } from '@epicenter/server';
 import { sValidator } from '@hono/standard-validator';
+import { type } from 'arktype';
 import { AutumnError } from 'autumn-js';
 import { Hono } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
-import type { Env } from './gates.js';
-import {
-	checkoutPlanSchema,
-	checkoutTopUpSchema,
-	eventsQuerySchema,
-	previewPlanSchema,
-	usageQuerySchema,
-} from './schemas.js';
-import { getModelCostGuide } from './model-cost-guide.js';
 import { createBillingService } from './service.js';
 
 const billingRoutes = new Hono<Env>();
 
-/** Normalize `AutumnError.body` (raw HTTP body string) into `{code, message}`.
- *  Non-JSON bodies fall through as `{ code: undefined, message: <raw> }`
- *  so upstream text is never silently dropped. */
-function parseAutumnBody(body: string): {
-	code: string | undefined;
-	message: string;
-} {
-	try {
-		const parsed = JSON.parse(body) as unknown;
-		if (parsed && typeof parsed === 'object') {
-			const record = parsed as { code?: unknown; message?: unknown };
-			return {
-				code: typeof record.code === 'string' ? record.code : undefined,
-				message: typeof record.message === 'string' ? record.message : body,
-			};
-		}
-	} catch {
-		// fall through to raw body
-	}
-	return { code: undefined, message: body };
-}
-
 // Translate Autumn SDK throws into the repo-wide wellcrafted envelope.
 // Non-AutumnError throws (network failures, programming errors) bubble
-// to the parent app's default handler for a generic 500.
+// to the parent app's default handler for a generic 500. The body of
+// an AutumnError is a raw HTTP body string; parse JSON when we can so
+// downstream consumers see `{ code, message }`, fall through to raw on
+// non-JSON so the upstream text is never silently dropped.
 billingRoutes.onError((err, c) => {
 	if (!(err instanceof AutumnError)) throw err;
-	const { code, message } = parseAutumnBody(err.body);
+
+	let code: string | undefined;
+	let message: string = err.body;
+	try {
+		const parsed = JSON.parse(err.body) as unknown;
+		if (parsed && typeof parsed === 'object') {
+			const record = parsed as { code?: unknown; message?: unknown };
+			if (typeof record.code === 'string') code = record.code;
+			if (typeof record.message === 'string') message = record.message;
+		}
+	} catch {
+		// non-JSON body; `message` already holds the raw text
+	}
+
 	return c.json(
 		BillingError.ProviderRequestFailed({
 			statusCode: err.statusCode,
@@ -70,30 +63,56 @@ function svc(c: { env: Env['Bindings']; var: Env['Variables'] }) {
 	});
 }
 
-// ── Overview (balance + plan + storage) ──────────────────────────────
+const usageQuerySchema = type({
+	'range?': "'24h' | '7d' | '30d' | '90d' | 'last_cycle' | undefined",
+	'binSize?': "'hour' | 'day' | 'month' | undefined",
+	'groupBy?': "'model' | 'provider' | undefined",
+	'maxGroups?': 'number | undefined',
+});
+
+const eventsQuerySchema = type({
+	'limit?': 'number | undefined',
+});
+
+const previewPlanSchema = type({ planId: 'string' });
+
+const checkoutPlanSchema = type({
+	planId: 'string',
+	'successUrl?': 'string | undefined',
+});
+
+const checkoutTopUpSchema = type({
+	'successUrl?': 'string | undefined',
+});
+
 billingRoutes.get('/overview', async (c) => c.json(await svc(c).getOverview()));
 
-// ── Usage aggregation (powers charts) ────────────────────────────────
-billingRoutes.post(
-	'/usage',
-	sValidator('json', usageQuerySchema),
-	async (c) => c.json(await svc(c).listUsage(c.req.valid('json'))),
+billingRoutes.post('/usage', sValidator('json', usageQuerySchema), async (c) =>
+	c.json(await svc(c).listUsage(c.req.valid('json'))),
 );
 
-// ── Event history (powers activity feed) ─────────────────────────────
 billingRoutes.post(
 	'/events',
 	sValidator('json', eventsQuerySchema),
 	async (c) => c.json(await svc(c).listEvents(c.req.valid('json'))),
 );
 
-// ── Plan cards (powers Upgrade UI) ───────────────────────────────────
 billingRoutes.get('/plans', async (c) => c.json(await svc(c).listPlans()));
 
-// ── Static model cost guide ──────────────────────────────────────────
-billingRoutes.get('/models', (c) => c.json(getModelCostGuide()));
+billingRoutes.get('/models', (c) => {
+	const models = Object.entries(MODEL_CREDITS)
+		.filter((entry): entry is [string, number] => entry[1] !== undefined)
+		.map(([model, credits]) => ({
+			model,
+			provider: providerOf(model),
+			credits,
+		}))
+		.sort(
+			(a, b) => a.credits - b.credits || a.model.localeCompare(b.model),
+		);
+	return c.json({ models } satisfies ModelCostGuide);
+});
 
-// ── Preview a plan change ────────────────────────────────────────────
 billingRoutes.post(
 	'/preview',
 	sValidator('json', previewPlanSchema),
@@ -103,21 +122,18 @@ billingRoutes.post(
 	},
 );
 
-// ── Checkout a subscription plan change ──────────────────────────────
 billingRoutes.post(
 	'/checkout/plan',
 	sValidator('json', checkoutPlanSchema),
 	async (c) => c.json(await svc(c).checkoutPlan(c.req.valid('json'))),
 );
 
-// ── Checkout a credit top-up ─────────────────────────────────────────
 billingRoutes.post(
 	'/checkout/top-up',
 	sValidator('json', checkoutTopUpSchema),
 	async (c) => c.json(await svc(c).checkoutTopUp(c.req.valid('json'))),
 );
 
-// ── Open the Stripe portal ───────────────────────────────────────────
 billingRoutes.get('/portal', async (c) => {
 	const returnUrl =
 		c.req.query('returnUrl') ?? new URL('/dashboard', c.req.url).toString();

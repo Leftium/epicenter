@@ -2,9 +2,10 @@
  * Rooms sub-app: one Cloudflare Durable Object per named Y.Doc.
  *
  * URL shape (uniform across modes): `/owners/:ownerId/rooms/:roomId`.
- * In personal mode the deployment layers `requireUrlOwnerIdMatchesAuth`
- * on top to gate `:ownerId === c.var.user.id`. In team mode `:ownerId`
- * is the literal string `'team'`, so no such gate is needed.
+ * The deployment is responsible for mounting auth and the `attachOwner`
+ * middleware so `c.var.ownerId` is populated before this handler runs.
+ * In personal mode it also layers `requireUrlOwnerIdMatchesAuth` to gate
+ * `:ownerId === c.var.user.id`.
  *
  * The Durable Object name is the owner-partitioned identifier produced by
  * {@link doName}; nothing here interpolates strings inline. The DO itself
@@ -17,7 +18,6 @@
  * captures the actor regardless of mode (provenance), not the data owner.
  */
 
-import { asOwnerId } from '@epicenter/auth';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
@@ -25,7 +25,7 @@ import { MAX_PAYLOAD_BYTES } from '../constants.js';
 import * as schema from '../db/schema/index.js';
 import { isWebSocketUpgrade } from '../is-websocket-upgrade.js';
 import { doName } from '../owner.js';
-import type { Env, ServerOptions } from '../types.js';
+import type { Env } from '../types.js';
 
 type Db = NodePgDatabase<typeof schema>;
 
@@ -82,20 +82,14 @@ function upsertDoInstance(
 }
 
 /**
- * Build the rooms sub-app for the given deployment mode. URL shape is
- * uniform across modes; the only difference is how `ownerId` is resolved
- * (personal mode reads it from the URL, team mode pins it to `'team'`).
+ * Build the rooms sub-app. URL shape is uniform across modes; the resolved
+ * owner partition arrives on `c.var.ownerId` via the deployment-mounted
+ * `attachOwner` middleware, so handlers stay mode-blind.
  */
-export function createRoomsApp(opts: ServerOptions): Hono<Env> {
+export function createRoomsApp(): Hono<Env> {
 	const app = new Hono<Env>();
 
 	const pattern = '/owners/:ownerId/rooms/:roomId{[a-z0-9]{15}}';
-	const isPersonal = opts.mode === 'personal';
-
-	// In personal mode the deployment layers `requireUrlOwnerIdMatchesAuth`
-	// on this prefix so `:ownerId` is guaranteed to equal `c.var.user.id`
-	// before the handler runs. In team mode `:ownerId` carries the literal
-	// `'team'` and no gate is needed; handlers below ignore the URL param.
 
 	app.get(
 		pattern,
@@ -105,10 +99,7 @@ export function createRoomsApp(opts: ServerOptions): Hono<Env> {
 		}),
 		async (c) => {
 			const roomId = c.req.param('roomId')!;
-			const ownerId = isPersonal
-				? asOwnerId(c.req.param('ownerId')!)
-				: asOwnerId('team');
-			const name = doName(ownerId, roomId);
+			const name = doName(c.var.ownerId, roomId);
 			const room = c.var.rooms.get(name);
 
 			if (isWebSocketUpgrade(c)) {
@@ -149,10 +140,7 @@ export function createRoomsApp(opts: ServerOptions): Hono<Env> {
 		}),
 		async (c) => {
 			const roomId = c.req.param('roomId')!;
-			const ownerId = isPersonal
-				? asOwnerId(c.req.param('ownerId')!)
-				: asOwnerId('team');
-			const name = doName(ownerId, roomId);
+			const name = doName(c.var.ownerId, roomId);
 
 			const body = new Uint8Array(await c.req.raw.arrayBuffer());
 			if (body.byteLength > MAX_PAYLOAD_BYTES) {

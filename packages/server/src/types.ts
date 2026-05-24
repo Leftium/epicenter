@@ -7,7 +7,7 @@
  * or from the literal `'team'` (in team mode), based on `opts.mode`.
  */
 
-import type { AuthUser, OwnershipMode } from '@epicenter/auth';
+import type { AuthUser, OwnerId, OwnershipMode } from '@epicenter/auth';
 import type { ActionManifest } from '@epicenter/workspace';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { createAuth } from './auth/create-auth.js';
@@ -100,6 +100,14 @@ export type Env = {
 		auth: ReturnType<typeof createAuth>;
 		authBaseURL: string;
 		user: AuthUser;
+		/**
+		 * Resolved owner partition for this request. Populated by the
+		 * `attachOwner` middleware after auth runs. In personal mode equals
+		 * the authenticated user's id; in team mode equals `TEAM_OWNER_ID`.
+		 * Handlers read this instead of branching on mode or re-deriving
+		 * from the URL `:ownerId` param.
+		 */
+		ownerId: OwnerId;
 		afterResponse: AfterResponseQueue;
 		rooms: Rooms;
 	};

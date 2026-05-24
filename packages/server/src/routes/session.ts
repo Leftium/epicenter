@@ -9,21 +9,22 @@
  * The keyring is derived from a per-owner HKDF label via the deployment's
  * root keyring (`ENCRYPTION_SECRETS`). The label IS the `ownerId`: personal
  * owners get a per-user keyring (`ownerId === userId`); every member of a
- * team deployment shares one keyring (`ownerId === 'team'`).
+ * team deployment shares one keyring (`ownerId === TEAM_OWNER_ID`).
+ *
+ * The owner partition is resolved by the `attachOwner` middleware, not by
+ * this handler. The handler reads `c.var.ownerId` and stays mode-blind.
  */
 
-import {
-	type ApiSessionResponse,
-	asOwnerId,
-	asUserId,
-} from '@epicenter/auth';
+import type { ApiSessionResponse } from '@epicenter/auth';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
 import { deriveKeyring } from '../auth/encryption.js';
+import { createAttachOwner } from '../middleware/attach-owner.js';
 import { requireCookieOrBearerUser } from '../middleware/require-auth.js';
 import type { Env, ServerOptions } from '../types.js';
 
 export function createSessionApp(opts: ServerOptions): Hono<Env> {
+	const attachOwner = createAttachOwner(opts.mode);
 	return new Hono<Env>().get(
 		'/',
 		describeRoute({
@@ -31,19 +32,12 @@ export function createSessionApp(opts: ServerOptions): Hono<Env> {
 			tags: ['auth'],
 		}),
 		requireCookieOrBearerUser,
+		attachOwner,
 		async (c) => {
-			// `ownerId` IS the HKDF label. In personal mode the bytes equal
-			// the signed-in user's id; in team mode the bytes are the literal
-			// `'team'`. Both shapes were the HKDF label before the collapse,
-			// so existing keyrings keep decrypting. Domain separation across
-			// deployments comes from each deployment's `ENCRYPTION_SECRETS`.
-			const ownerId =
-				opts.mode === 'personal'
-					? asOwnerId(c.var.user.id)
-					: asOwnerId('team');
+			const ownerId = c.var.ownerId;
 			const keyring = await deriveKeyring(ownerId);
 			return c.json({
-				user: { id: asUserId(c.var.user.id), email: c.var.user.email },
+				user: { id: c.var.user.id, email: c.var.user.email },
 				ownerId,
 				keyring,
 				mode: opts.mode,

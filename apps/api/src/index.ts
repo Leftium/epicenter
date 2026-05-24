@@ -37,6 +37,7 @@ const session = s.session as unknown as Hono<Env>;
 const rooms = s.rooms as unknown as Hono<Env>;
 const assets = s.assets as unknown as Hono<Env>;
 const ai = s.ai as unknown as Hono<Env>;
+const { attachOwner } = s;
 
 // Public health endpoint at root.
 base.get('/', (c) =>
@@ -49,28 +50,36 @@ base.route('/sign-in', auth).route('/consent', auth).route('/auth', auth);
 // Session: authed via library middleware, no cloud-specific wrapping.
 base.route('/api/session', session);
 
-// Rooms: bearer auth + URL ownerId safety, then library handler. No billing
-// gate for rooms today; bandwidth and DO storage are not metered.
+// Rooms: bearer auth + URL ownerId safety + owner resolution, then library
+// handler. No billing gate for rooms today; bandwidth and DO storage are not
+// metered.
 const cloudRooms = new Hono<Env>()
-	.use('/owners/:ownerId/rooms/*', requireBearerUser, requireUrlOwnerIdMatchesAuth)
+	.use(
+		'/owners/:ownerId/rooms/*',
+		requireBearerUser,
+		requireUrlOwnerIdMatchesAuth,
+		attachOwner,
+	)
 	.route('/', rooms);
 base.route('/api', cloudRooms);
 
 // Assets: cookie-or-bearer (dashboard SPA uses cookies), URL ownerId safety,
-// Autumn storage gate, then library handlers. Public read is registered
-// inside the library sub-app and matches before the authed paths because
-// of its `{15-char id}` regex.
+// owner resolution, Autumn storage gate, then library handlers. Public read
+// is registered inside the library sub-app and matches before the authed
+// paths because of its `{15-char id}` regex.
 const cloudAssets = new Hono<Env>()
 	.use(
 		'/owners/:ownerId/assets',
 		requireCookieOrBearerUser,
 		requireUrlOwnerIdMatchesAuth,
+		attachOwner,
 		autumnStorageGate,
 	)
 	.use(
 		'/owners/:ownerId/assets/*',
 		requireCookieOrBearerUser,
 		requireUrlOwnerIdMatchesAuth,
+		attachOwner,
 		autumnStorageGate,
 	)
 	.route('/', assets);

@@ -8,19 +8,19 @@
  *   DEL  /owners/:ownerId/assets/:assetId     authed delete
  *   GET  /owners/:ownerId/assets/:assetId     public read (capability URL)
  *
- * In personal mode `:ownerId` is the signed-in user's id and the deployment
- * layers `requireUrlOwnerIdMatchesAuth` to gate `:ownerId === c.var.user.id`.
- * In team mode `:ownerId` carries the literal string `'team'` and no gate is
- * needed.
+ * The resolved owner partition arrives on `c.var.ownerId` via the
+ * deployment-mounted `attachOwner` middleware. In personal mode the
+ * deployment also layers `requireUrlOwnerIdMatchesAuth` to gate
+ * `:ownerId === c.var.user.id`; in team mode `:ownerId` is pinned to
+ * `TEAM_OWNER_ID` by the route pattern and no gate is needed.
  *
  * Authentication and any billing gating are layered on by the deployment,
  * not by this factory. The library returns bare CRUD; cloud wraps the
  * authed paths with `requireCookieOrBearerUser`, `requireUrlOwnerIdMatchesAuth`,
- * and `autumnStorageGate`; team wraps with `requireCookieOrBearerUser` alone.
+ * `attachOwner`, and `autumnStorageGate`; team wraps with
+ * `requireCookieOrBearerUser` and `attachOwner` alone.
  */
 
-import { asOwnerId } from '@epicenter/auth';
-import type { Context } from 'hono';
 import { Hono } from 'hono';
 import {
 	createAssetAuthedRoutes,
@@ -31,17 +31,10 @@ import type { Env, ServerOptions } from '../types.js';
 export function createAssetsApp(opts: ServerOptions): Hono<Env> {
 	const app = new Hono<Env>();
 
-	const isPersonal = opts.mode === 'personal';
-	const ownerFor = (c: Context<Env>) =>
-		isPersonal ? asOwnerId(c.req.param('ownerId')!) : asOwnerId('team');
-
 	// Public read mounts first so the deployment's auth middleware (applied
 	// at the same prefix) does not intercept GETs for the capability URL.
-	app.route('/owners/:ownerId/assets', createAssetPublicRoutes(ownerFor));
-	app.route(
-		'/owners/:ownerId/assets',
-		createAssetAuthedRoutes(ownerFor, opts.mode),
-	);
+	app.route('/owners/:ownerId/assets', createAssetPublicRoutes());
+	app.route('/owners/:ownerId/assets', createAssetAuthedRoutes(opts.mode));
 
 	return app;
 }

@@ -43,6 +43,19 @@ export type OwnerId = typeof OwnerId.infer;
 export const asOwnerId = (value: string): OwnerId => value as OwnerId;
 
 /**
+ * Owner partition for team deployments.
+ *
+ * Byte-pinned: this string IS the HKDF derivation label, the `:ownerId` path
+ * segment, the R2 key prefix, the Durable Object name prefix, and the local
+ * IndexedDB key prefix for every team server. Changing the bytes breaks every
+ * existing team deployment's data. Do not edit.
+ *
+ * Personal-mode deployments never read this; their owner partition is the
+ * signed-in user's id.
+ */
+export const TEAM_OWNER_ID = asOwnerId('team');
+
+/**
  * Deployment-static product shape. Set once at server construction
  * (`createServer({ mode, ... })`), flowed back to clients via
  * `/api/session`, persisted in the auth cell so the daemon knows the

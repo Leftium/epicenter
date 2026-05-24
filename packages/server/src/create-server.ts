@@ -17,6 +17,7 @@
  * `specs/20260522T230000-server-package-split.md` for the full design.
  */
 
+import { createAttachOwner } from './middleware/attach-owner.js';
 import { createBaseApp } from './base-app.js';
 import { createAiApp } from './routes/ai.js';
 import { createAssetsApp } from './routes/assets.js';
@@ -41,12 +42,21 @@ export function createServer(opts: ServerOptions) {
 		session: createSessionApp(opts),
 
 		/** /api/.../rooms/:roomId: GET, POST, WS upgrade. */
-		rooms: createRoomsApp(opts),
+		rooms: createRoomsApp(),
 
 		/** /api/.../assets: public read + authed CRUD. */
 		assets: createAssetsApp(opts),
 
 		/** /api/ai/chat: SSE streaming chat (no billing; wrap externally). */
 		ai: createAiApp(),
+
+		/**
+		 * Middleware that populates `c.var.ownerId` from
+		 * `(opts.mode, c.var.user.id)`. The deployment mounts this alongside
+		 * the auth middleware on every authed sub-app that reads
+		 * `c.var.ownerId` (rooms, assets). The session sub-app builds its
+		 * own internally because it carries its own auth.
+		 */
+		attachOwner: createAttachOwner(opts.mode),
 	};
 }

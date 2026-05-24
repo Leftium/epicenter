@@ -25,7 +25,7 @@ import { customAlphabet } from 'nanoid';
 const generateGuid = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 15);
 
 import { and, desc, eq, sql } from 'drizzle-orm';
-import type { OwnerId, OwnershipMode } from '@epicenter/auth';
+import type { OwnershipMode } from '@epicenter/auth';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { describeRoute } from 'hono-openapi';
@@ -81,19 +81,14 @@ function sanitizeFilename(name: string): string {
  * Build a `Hono` sub-app exposing the authenticated asset CRUD surface.
  *
  * URL shape is uniform across modes: handlers mount under
- * `/owners/:ownerId/assets`. In personal mode the deployment layers
- * `requireUrlOwnerIdMatchesAuth` so `:ownerId === c.var.user.id`; in team
- * mode `:ownerId` is the literal `'team'`. `ownerFor(c)` returns the
- * resolved `OwnerId`. Per-row filtering happens only in personal mode
- * (gated by `mode`), because in team mode every member shares the same
- * `ownerId === 'team'` partition.
+ * `/owners/:ownerId/assets`. The resolved owner partition arrives on
+ * `c.var.ownerId` via the deployment-mounted `attachOwner` middleware, so
+ * handlers stay mode-blind for partition resolution. Per-row filtering
+ * still branches on `mode` because in personal mode the partition is per-
+ * actor (filter by `userId === ownerId`) while in team mode the partition
+ * is shared (no filter).
  */
-type OwnerForContext = (c: import('hono').Context<Env>) => OwnerId;
-
-export function createAssetAuthedRoutes(
-	ownerFor: OwnerForContext,
-	mode: OwnershipMode,
-): Hono<Env> {
+export function createAssetAuthedRoutes(mode: OwnershipMode): Hono<Env> {
 	const isPersonal = mode === 'personal';
 	return (
 		new Hono<Env>()
@@ -131,8 +126,7 @@ export function createAssetAuthedRoutes(
 					// Provenance (asset.userId) is still recorded for both modes so
 					// deletion via account-delete can find every object.
 					const assetId = generateGuid();
-					const ownerId = ownerFor(c);
-					const r2Key = assetKey(ownerId, assetId);
+					const r2Key = assetKey(c.var.ownerId, assetId);
 
 					await c.env.ASSETS_BUCKET.put(r2Key, file.stream(), {
 						httpMetadata: {
@@ -176,11 +170,10 @@ export function createAssetAuthedRoutes(
 					tags: ['assets'],
 				}),
 				async (c) => {
-					const ownerId = ownerFor(c);
 					// Personal mode scopes by the actor (ownerId === userId in this
 					// mode). Team mode shares one partition, so no per-row filter.
 					const filter = isPersonal
-						? eq(schema.asset.userId, ownerId)
+						? eq(schema.asset.userId, c.var.ownerId)
 						: undefined;
 					const query = c.var.db
 						.select()
@@ -199,9 +192,8 @@ export function createAssetAuthedRoutes(
 					tags: ['assets'],
 				}),
 				async (c) => {
-					const ownerId = ownerFor(c);
 					const filter = isPersonal
-						? eq(schema.asset.userId, ownerId)
+						? eq(schema.asset.userId, c.var.ownerId)
 						: undefined;
 					const query = c.var.db
 						.select({
@@ -222,14 +214,13 @@ export function createAssetAuthedRoutes(
 				}),
 				async (c) => {
 					const { assetId } = c.req.param();
-					const ownerId = ownerFor(c);
 
 					// Atomic lookup + delete. Personal mode scopes to the
 					// authenticated user; team mode trusts the URL alone.
 					const filter = isPersonal
 						? and(
 								eq(schema.asset.id, assetId),
-								eq(schema.asset.userId, ownerId),
+								eq(schema.asset.userId, c.var.ownerId),
 							)
 						: eq(schema.asset.id, assetId);
 					const [deleted] = await c.var.db
@@ -241,7 +232,7 @@ export function createAssetAuthedRoutes(
 						return c.json(AssetError.NotFound(), 404);
 					}
 
-					await c.env.ASSETS_BUCKET.delete(assetKey(ownerId, assetId));
+					await c.env.ASSETS_BUCKET.delete(assetKey(c.var.ownerId, assetId));
 					// Surface deleted byte count via response header so cloud's
 					// storage gate can refund without re-reading the row.
 					return c.body(null, 204, {
@@ -260,7 +251,7 @@ export function createAssetAuthedRoutes(
  * `generateGuid` produces so it cannot shadow sibling management endpoints
  * mounted under the same `/assets` prefix.
  */
-export function createAssetPublicRoutes(ownerFor: OwnerForContext): Hono<Env> {
+export function createAssetPublicRoutes(): Hono<Env> {
 	return new Hono<Env>().get(
 		'/:assetId{[a-z0-9]{15}}',
 		describeRoute({
@@ -269,10 +260,9 @@ export function createAssetPublicRoutes(ownerFor: OwnerForContext): Hono<Env> {
 		}),
 		async (c) => {
 			const { assetId } = c.req.param();
-			const ownerId = ownerFor(c);
 
 			const object = await c.env.ASSETS_BUCKET.get(
-				assetKey(ownerId, assetId),
+				assetKey(c.var.ownerId, assetId),
 				{
 					onlyIf: c.req.raw.headers,
 					range: c.req.raw.headers,

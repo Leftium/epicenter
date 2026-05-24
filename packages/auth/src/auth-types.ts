@@ -1,6 +1,6 @@
 import { Keyring } from '@epicenter/encryption';
 import { type } from 'arktype';
-import { OwnerId, OwnershipMode, UserId } from './ids.js';
+import { OwnerId, UserId } from './ids.js';
 
 export const AuthUser = type({
 	'+': 'delete',
@@ -45,14 +45,18 @@ export type OAuthTokenGrant = typeof OAuthTokenGrant.infer;
  * Profile data is intentionally absent; application surfaces fetch it when
  * they display it.
  *
- * `userId`, `ownerId`, `mode`, and `keyring` are persisted separately from
- * the OAuth grant because they remain useful offline. The grant lets the
- * app call the server; the rest let the app select and decrypt this user's
- * local workspace data.
+ * `userId`, `ownerId`, and `keyring` are persisted separately from the OAuth
+ * grant because they remain useful offline. The grant lets the app call the
+ * server; the rest let the app select and decrypt this user's local
+ * workspace data.
  *
  * `userId` is stored explicitly (rather than synthesised from `ownerId`) so
  * the daemon can read it directly in team mode, where `ownerId` is the
- * literal `'team'` and is structurally not a `UserId`.
+ * literal `TEAM_OWNER_ID` and is structurally not a `UserId`. The deployment
+ * shape itself (personal vs team) is not stored here: it is a property of
+ * the server, not of an authenticated cell, and any consumer that needs to
+ * branch on it is asking the wrong question. Branch on `ownerId` instead
+ * (`ownerId === TEAM_OWNER_ID` for team, `ownerId === userId` for personal).
  */
 export const PersistedAuth = type({
 	'+': 'delete',
@@ -60,7 +64,6 @@ export const PersistedAuth = type({
 	userId: UserId,
 	ownerId: OwnerId,
 	keyring: Keyring,
-	mode: OwnershipMode,
 });
 
 export type PersistedAuth = typeof PersistedAuth.infer;
@@ -72,20 +75,24 @@ export type PersistedAuth = typeof PersistedAuth.infer;
  *
  * Flat by design: `user` is the Better Auth profile slice displayed in
  * account UI; `ownerId` is the partition key clients use to key local
- * storage and server-side identifiers; `mode` drives team-aware UI; and
- * `keyring` decrypts local workspace data.
+ * storage and server-side identifiers; `keyring` decrypts local workspace
+ * data.
  *
  * `ownerId` and `keyring` are intentionally not nested under an `owner`
  * object: grouping them adds an indirection without earning it, and any
  * future presentational owner facts (display name, avatar, quota) live in
  * dedicated endpoints rather than the session boot manifest.
+ *
+ * The deployment shape (personal vs team) is not carried on the wire. The
+ * server is configured with it at construction, and clients that need to
+ * branch derive it from `ownerId === TEAM_OWNER_ID`. Carrying it twice
+ * created a consistency burden with no consumer.
  */
 export const ApiSessionResponse = type({
 	'+': 'delete',
 	user: AuthUser,
 	ownerId: OwnerId,
 	keyring: Keyring,
-	mode: OwnershipMode,
 });
 
 export type ApiSessionResponse = typeof ApiSessionResponse.infer;

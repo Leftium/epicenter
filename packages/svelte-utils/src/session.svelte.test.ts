@@ -17,7 +17,6 @@ const keyring = [
 const signedIn = (id: string): AuthState => ({
 	status: 'signed-in',
 	ownerId: asOwnerId(id),
-	mode: 'personal',
 	keyring: [...keyring],
 });
 
@@ -51,7 +50,7 @@ test('signed-out gap disposes old payload before building the next owner', () =>
 	session[Symbol.dispose]();
 });
 
-test('build receives signedIn with ownerId, mode, keyring callback, and auth client', () => {
+test('build receives signedIn with ownerId, keyring callback, and auth client', () => {
 	const { auth } = createAuthHarness(signedIn('alice'));
 
 	const session = createSession({
@@ -59,7 +58,6 @@ test('build receives signedIn with ownerId, mode, keyring callback, and auth cli
 		build: (received) => {
 			expect(received.server).toBe('api.test');
 			expect(received.ownerId).toBe(asOwnerId('alice'));
-			expect(received.mode).toBe('personal');
 			expect(typeof received.keyring).toBe('function');
 			expect(received.keyring()).toEqual([...keyring]);
 			expect(received.auth).toBe(auth);

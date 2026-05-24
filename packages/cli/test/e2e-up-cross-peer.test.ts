@@ -91,7 +91,6 @@ function makeEnv(): EnvOverrides {
 					keyBytesBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 				},
 			],
-			mode: 'personal',
 		}),
 		{ mode: 0o600 },
 	);

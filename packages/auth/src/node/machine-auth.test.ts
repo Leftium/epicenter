@@ -175,7 +175,6 @@ function apiSessionOk(userId = 'user-1'): Route {
 			user: { id: userId, email: `${userId}@example.com` },
 			ownerId: userId,
 			keyring: [...keyring],
-			mode: 'personal' as const,
 		});
 }
 
@@ -233,7 +232,6 @@ test('loginWithOob writes PersistedAuth and returns identity', async () => {
 				keyBytesBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 			},
 		],
-		mode: 'personal',
 	});
 
 	if (process.platform !== 'win32') {
@@ -335,7 +333,6 @@ async function preWriteCell(filePath: string, userId = 'user-1') {
 				keyBytesBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 			},
 		],
-		mode: 'personal',
 	};
 	await writeCell(filePath, cell);
 	return cell;
@@ -364,12 +361,12 @@ test('sign-in writes the new persisted shape', async () => {
 	expect(Object.keys(parsed).sort()).toEqual([
 		'grant',
 		'keyring',
-		'mode',
 		'ownerId',
 		'userId',
 	]);
 	expect('unlock' in parsed).toBe(false);
 	expect('owner' in parsed).toBe(false);
+	expect('mode' in parsed).toBe(false);
 });
 
 test('status valid when /api/session returns 200 with same owner', async () => {
@@ -578,7 +575,6 @@ test('createMachineAuthClient loads file and attaches Bearer after gate', async 
 				user: { id: 'user-1', email: 'user-1@example.com' },
 				ownerId: 'user-1',
 				keyring: [...keyring],
-				mode: 'personal' as const,
 			});
 		}
 		if (url.endsWith('/api/something')) {

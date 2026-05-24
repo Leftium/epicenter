@@ -32,6 +32,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type AuthClient, asOwnerId } from '@epicenter/auth';
 import { MachineAuthStorageError } from '@epicenter/auth/node';
+import { DEFAULT_PROJECT_CONFIG_SOURCE } from '@epicenter/workspace';
 import {
 	claimDaemonLease,
 	metadataPathFor,
@@ -47,7 +48,6 @@ const STUB_AUTH = {
 	state: {
 		status: 'signed-in',
 		ownerId: asOwnerId('user-1'),
-		mode: 'personal',
 		keyring: [
 			{
 				version: 1,
@@ -227,7 +227,7 @@ describe('runUp: failure cleanup', () => {
 		try {
 			expect(handle.runtimes).toEqual([]);
 			expect(readFileSync(join(workDir, 'epicenter.config.ts'), 'utf8')).toBe(
-				"import { defineConfig } from '@epicenter/workspace';\n\nexport default defineConfig({});\n",
+				DEFAULT_PROJECT_CONFIG_SOURCE,
 			);
 			expect(
 				readFileSync(join(workDir, '.epicenter', '.gitignore'), 'utf8'),

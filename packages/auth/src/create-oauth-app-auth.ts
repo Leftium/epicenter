@@ -181,7 +181,6 @@ export function createOAuthAppAuth({
 					userId: startedFrom.userId,
 					ownerId: startedFrom.ownerId,
 					keyring: startedFrom.keyring,
-					mode: startedFrom.mode,
 				} satisfies PersistedAuthType;
 				await authSession.write(next);
 				if (authSession.persistedAuth !== startedFrom) return false;
@@ -271,7 +270,6 @@ export function createOAuthAppAuth({
 					userId: session.user.id,
 					ownerId: session.ownerId,
 					keyring: session.keyring,
-					mode: session.mode,
 				} satisfies PersistedAuthType;
 				await authSession.write(next);
 				if (authSession.persistedAuth !== startedFrom) return Ok(session);
@@ -369,7 +367,6 @@ export function createOAuthAppAuth({
 			userId: session.user.id,
 			ownerId: session.ownerId,
 			keyring: session.keyring,
-			mode: session.mode,
 		} satisfies PersistedAuthType;
 		await authSession.write(next);
 		if (!isCurrentSignIn(generation)) return Ok(undefined);
@@ -565,14 +562,12 @@ function publicStateFromRuntime(runtimeState: RuntimeAuthState): AuthState {
 		return {
 			status: 'reauth-required',
 			ownerId: runtimeState.persistedAuth.ownerId,
-			mode: runtimeState.persistedAuth.mode,
 			keyring: runtimeState.persistedAuth.keyring,
 		};
 	}
 	return {
 		status: 'signed-in',
 		ownerId: runtimeState.persistedAuth.ownerId,
-		mode: runtimeState.persistedAuth.mode,
 		keyring: runtimeState.persistedAuth.keyring,
 	};
 }
@@ -583,7 +578,6 @@ function authStatesEqual(left: AuthState, right: AuthState) {
 	if (right.status === 'signed-out') return false;
 	return (
 		left.ownerId === right.ownerId &&
-		left.mode === right.mode &&
 		keyringsEqual(left.keyring, right.keyring)
 	);
 }

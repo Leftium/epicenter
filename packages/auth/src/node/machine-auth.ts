@@ -294,7 +294,6 @@ export async function loginWithOob({
 		userId: session.user.id,
 		ownerId: session.ownerId,
 		keyring: session.keyring,
-		mode: session.mode,
 	} satisfies PersistedAuth;
 	const saved = await saveMachineTokens(cell, { filePath: authFilePath });
 	if (saved.error) return Err(saved.error);

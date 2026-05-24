@@ -1,10 +1,9 @@
 /**
  * `/api/session` sub-app.
  *
- * Returns the authenticated user, the `ownerId` the request resolves through,
- * the per-owner workspace keyring, and the deployment `mode`. Clients cache
- * the response so workspace boot, local-storage keying, and Yjs decryption
- * work offline.
+ * Returns the authenticated user, the `ownerId` the request resolves
+ * through, and the per-owner workspace keyring. Clients cache the response
+ * so workspace boot, local-storage keying, and Yjs decryption work offline.
  *
  * The keyring is derived from a per-owner HKDF label via the deployment's
  * root keyring (`ENCRYPTION_SECRETS`). The label IS the `ownerId`: personal
@@ -13,6 +12,8 @@
  *
  * The owner partition is resolved by the `attachOwner` middleware, not by
  * this handler. The handler reads `c.var.ownerId` and stays mode-blind.
+ * Deployment shape is not on the wire: any consumer that needs to branch
+ * derives it from `ownerId === TEAM_OWNER_ID`.
  */
 
 import type { ApiSessionResponse } from '@epicenter/auth';
@@ -40,7 +41,6 @@ export function createSessionApp(opts: ServerOptions): Hono<Env> {
 				user: { id: c.var.user.id, email: c.var.user.email },
 				ownerId,
 				keyring,
-				mode: opts.mode,
 			} satisfies ApiSessionResponse);
 		},
 	);

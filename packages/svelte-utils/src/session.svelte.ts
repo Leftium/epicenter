@@ -1,9 +1,4 @@
-import type {
-	AuthClient,
-	AuthState,
-	OwnerId,
-	OwnershipMode,
-} from '@epicenter/auth';
+import type { AuthClient, AuthState, OwnerId } from '@epicenter/auth';
 
 type SignedInState = Extract<AuthState, { status: 'signed-in' }>;
 type Keyring = SignedInState['keyring'];
@@ -12,9 +7,9 @@ type Keyring = SignedInState['keyring'];
  * Auth-gated identity payload that `createSession` hands to the build
  * callback whenever an identity-bearing auth state is present.
  *
- * Flat shape, not an intersection: `ownerId`, `mode`, and `keyring` come
- * from auth's signed-in state, and `auth` is the live auth client. Per-app
- * openers take this whole and use what they need:
+ * Flat shape, not an intersection: `ownerId` and `keyring` come from auth's
+ * signed-in state, and `auth` is the live auth client. Per-app openers take
+ * this whole and use what they need:
  *
  * - `attachEncryption(ydoc, { keyring: signedIn.keyring })` reads keyring.
  * - `attachLocalStorage(ydoc, { server, ownerId, keyring })` reads
@@ -24,11 +19,13 @@ type Keyring = SignedInState['keyring'];
  *   function refs explicitly so the primitive does not hold a reference
  *   to the full auth client.
  *
- * `ownerId` and `mode` are stable for the lifetime of a single `SignedIn`:
- * a different-owner sign-in produces a new payload via the session's
- * dispose / rebuild cycle. `keyring` is a callback because the same-owner
- * keyring can rotate (reauth-required to identity-bearing) without a
- * rebuild.
+ * `ownerId` is stable for the lifetime of a single `SignedIn`: a
+ * different-owner sign-in produces a new payload via the session's dispose
+ * / rebuild cycle. `keyring` is a callback because the same-owner keyring
+ * can rotate (reauth-required to identity-bearing) without a rebuild.
+ *
+ * Deployment shape (personal vs team) is not on this payload. Apps that
+ * need to branch derive it from `ownerId === TEAM_OWNER_ID`.
  */
 export type SignedIn = {
 	/** API origin host, derived once from `auth.baseURL`. Threads into
@@ -36,7 +33,6 @@ export type SignedIn = {
 	 * on the same machine partition local storage separately. */
 	server: string;
 	ownerId: OwnerId;
-	mode: OwnershipMode;
 	keyring: () => Keyring;
 	auth: AuthClient;
 };
@@ -48,11 +44,10 @@ export type SignedIn = {
  * consecutive identity-bearing states are always the same owner.
  *
  * The build callback receives a `SignedIn` value: `ownerId` for local
- * storage scoping, `mode` for team-aware UI, `keyring` (callback) for
- * encryption, and the live `auth` client for cloud sync and reconnect
- * listeners. The keyring reader pulls from the live `state.keyring` so
- * refreshed keyrings from `/api/session` are picked up on next access
- * without rebuilding the payload.
+ * storage scoping, `keyring` (callback) for encryption, and the live `auth`
+ * client for cloud sync and reconnect listeners. The keyring reader pulls
+ * from the live `state.keyring` so refreshed keyrings from `/api/session`
+ * are picked up on next access without rebuilding the payload.
  *
  * Requires an `AuthClient` whose `state` is Svelte-reactive (use
  * `@epicenter/auth-svelte`, not `@epicenter/auth` directly).
@@ -84,7 +79,6 @@ export function createSession<T extends Disposable>({
 		payload = build({
 			server,
 			ownerId: state.ownerId,
-			mode: state.mode,
 			keyring: () => {
 				if (auth.state.status === 'signed-out') {
 					throw new Error('[session] keyring() called while signed-out.');

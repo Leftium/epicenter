@@ -45,19 +45,6 @@ export type Connection = {
 };
 
 /**
- * Per-request queue for fire-and-forget promises that must outlive the
- * HTTP response. Populated by handlers via `push`; drained inside
- * `executionCtx.waitUntil` by the base-app's lifecycle middleware so the
- * worker isolate stays alive until every queued promise settles.
- */
-export type AfterResponseQueue = {
-	/** Enqueue a fire-and-forget promise to run after the response is sent. */
-	push(promise: Promise<unknown>): void;
-	/** Settle every queued promise via `Promise.allSettled`. */
-	drain(): Promise<unknown>;
-};
-
-/**
  * Hono context type for every library sub-app.
  *
  * `Bindings` is `Cloudflare.Env`, augmented by each deployment with the
@@ -86,7 +73,15 @@ export type Env = {
 		 * mode or re-deriving from the URL `:ownerId` param.
 		 */
 		ownerId: OwnerId;
-		afterResponse: AfterResponseQueue;
+		/**
+		 * Per-request collection of fire-and-forget promises that must
+		 * outlive the HTTP response. Handlers push promises (typically DB
+		 * writes that use `c.var.db`); the base-app's lifecycle middleware
+		 * passes the whole array to `Promise.allSettled(...).then(close pg)`
+		 * inside `executionCtx.waitUntil`, so the worker isolate stays
+		 * alive AND the pg client outlives every queued write.
+		 */
+		afterResponse: Promise<unknown>[];
 		rooms: Rooms;
 	};
 };

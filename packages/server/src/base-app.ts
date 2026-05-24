@@ -20,7 +20,7 @@ import { corsMiddleware } from './middleware/cors.js';
 import { requireOriginForCookieMutations } from './middleware/require-origin-for-cookie-mutations.js';
 import { singleCredential } from './middleware/single-credential.js';
 import { createDurableObjectRooms } from './room/backends/cloudflare/registry.js';
-import type { AfterResponseQueue, Env } from './types.js';
+import type { Env } from './types.js';
 
 const PRODUCTION_API_ORIGIN = APPS.API.urls[0];
 const LOCAL_API_ORIGIN = localUrl(APPS.API);
@@ -53,29 +53,26 @@ export function createBaseApp(): Hono<Env> {
 	// 1. CORS
 	app.use('*', corsMiddleware);
 
-	// 2. Per-request database + after-response queue.
+	// 2. Per-request pg client + after-response promise list.
 	// Uses Client (not Pool) because Hyperdrive IS the connection pool.
+	// Handlers push fire-and-forget promises (typically DB writes) onto
+	// `afterResponse`; the finally block waits for all of them to settle
+	// before closing pg, so writes that outlive the response don't hit a
+	// closed client.
 	app.use('*', async (c, next) => {
 		const client = new pg.Client({
 			connectionString: c.env.HYPERDRIVE.connectionString,
 		});
-		// Fire-and-forget queue for promises that must outlive the response.
-		// Handlers push into it; the finally block below drains inside
-		// `waitUntil` so the worker isolate stays alive until all settle.
-		const promises: Promise<unknown>[] = [];
-		const afterResponse: AfterResponseQueue = {
-			push: (p) => promises.push(p),
-			drain: () => Promise.allSettled(promises),
-		};
+		const afterResponse: Promise<unknown>[] = [];
 		try {
 			await client.connect();
 			c.set('db', drizzle(client, { schema }));
 			c.set('afterResponse', afterResponse);
 			await next();
 		} finally {
-			// Response is already streaming; keep the isolate alive for
-			// queued promises, then close pg.
-			c.executionCtx.waitUntil(afterResponse.drain().then(() => client.end()));
+			c.executionCtx.waitUntil(
+				Promise.allSettled(afterResponse).then(() => client.end()),
+			);
 		}
 	});
 

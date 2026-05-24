@@ -123,7 +123,7 @@ function upsertDoInstance(
  * partition arrives on `c.var.ownerId` via the deployment-mounted
  * `requireOwnership` middleware, so handlers stay mode-blind.
  */
-export const roomsApp = new Hono<Env>()
+const roomsApp = new Hono<Env>()
 	.get(
 		API_ROUTES.room.pattern,
 		describeRoute({

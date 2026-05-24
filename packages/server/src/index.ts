@@ -2,8 +2,8 @@
  * @epicenter/server
  *
  * Shared Hono server for Epicenter cloud and self-hosted team
- * deployments. Personal mode partitions data by user; team mode does
- * not partition. The full design lives in
+ * deployments. Personal mode partitions data by user; team mode uses
+ * one shared owner partition. The full design lives in
  * `specs/20260522T230000-server-package-split.md`.
  *
  * Deployments import the parent base app and the sub-apps they need,
@@ -34,9 +34,9 @@ export { Room } from './room/backends/cloudflare/durable-object.js';
 // Sub-apps. Each declares its full URL pattern internally; the
 // deployment composes auth and billing middleware around them.
 export { aiApp } from './routes/ai.js';
-export { createAssetsApp, mountAssetsApp } from './routes/assets.js';
+export { mountAssetsApp } from './routes/assets.js';
 export { authApp } from './routes/auth.js';
-export { mountRoomsApp, roomsApp } from './routes/rooms.js';
+export { mountRoomsApp } from './routes/rooms.js';
 export { sessionApp } from './routes/session.js';
 
 // Public Hono context type the deployment composes around library

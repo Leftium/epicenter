@@ -106,7 +106,7 @@ function parseVisibility(raw: unknown): 'private' | 'public' | null {
 	return null;
 }
 
-export function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
+function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 	const { ownership } = opts;
 	return (
 		new Hono<Env>()

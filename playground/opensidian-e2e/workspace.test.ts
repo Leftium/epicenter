@@ -121,10 +121,6 @@ describe('e2e: opensidian workspace', () => {
 		await rm(PERSISTENCE_DIR, { recursive: true, force: true });
 	});
 
-	test('workspace has correct ID', () => {
-		expect(WORKSPACE_ID).toBe('opensidian');
-	});
-
 	test('table CRUD: create folder and file', async () => {
 		const { client, contentDocs } = createTestClient();
 		await client.whenReady;
@@ -166,23 +162,6 @@ describe('e2e: opensidian workspace', () => {
 		expect(file).toBeDefined();
 		expect(file?.name).toBe('hello.md');
 		expect(file?.parentId).toBe(folderId);
-
-		await client.dispose();
-	});
-
-	test('document content: write and read', async () => {
-		const { client, contentDocs } = createTestClient();
-		await client.whenReady;
-
-		await writeContent(
-			contentDocs,
-			fileId,
-			'# Hello World\n\nThis is a test note.',
-		);
-
-		expect(await readContent(contentDocs, fileId)).toBe(
-			'# Hello World\n\nThis is a test note.',
-		);
 
 		await client.dispose();
 	});

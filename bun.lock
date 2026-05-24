@@ -534,6 +534,7 @@
         "@epicenter/encryption": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "catalog:",
+        "env-paths": "^3.0.0",
         "oauth4webapi": "catalog:",
         "wellcrafted": "catalog:",
       },
@@ -585,12 +586,23 @@
         "typescript": "catalog:",
       },
     },
+    "packages/client": {
+      "name": "@epicenter/client",
+      "version": "0.1.0",
+      "dependencies": {
+        "@epicenter/auth": "workspace:*",
+        "@epicenter/constants": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/constants": {
       "name": "@epicenter/constants",
       "version": "0.1.0",
       "dependencies": {
         "arktype": "catalog:",
-        "env-paths": "^3.0.0",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {
@@ -800,6 +812,7 @@
         "diff": "^8.0.3",
         "drizzle-orm": "catalog:",
         "elysia": "^1.2.25",
+        "env-paths": "^3.0.0",
         "fflate": "catalog:",
         "hono": "catalog:",
         "lib0": "catalog:",
@@ -1083,6 +1096,8 @@
     "@epicenter/breddit": ["@epicenter/breddit@workspace:apps/breddit"],
 
     "@epicenter/cli": ["@epicenter/cli@workspace:packages/cli"],
+
+    "@epicenter/client": ["@epicenter/client@workspace:packages/client"],
 
     "@epicenter/constants": ["@epicenter/constants@workspace:packages/constants"],
 

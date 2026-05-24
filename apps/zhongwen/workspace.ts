@@ -32,13 +32,13 @@ export const ZHONGWEN_ID = 'epicenter.zhongwen';
 // Branded ID Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type ConversationId = Id & Brand<'ConversationId'>;
-export const ConversationId = type('string').as<ConversationId>();
+export const ConversationId = type('string').as<Id & Brand<'ConversationId'>>();
+export type ConversationId = typeof ConversationId.infer;
 export const generateConversationId = (): ConversationId =>
 	generateId() as ConversationId;
 
-export type ChatMessageId = Id & Brand<'ChatMessageId'>;
-export const ChatMessageId = type('string').as<ChatMessageId>();
+export const ChatMessageId = type('string').as<Id & Brand<'ChatMessageId'>>();
+export type ChatMessageId = typeof ChatMessageId.infer;
 export const generateChatMessageId = (): ChatMessageId =>
 	generateId() as ChatMessageId;
 

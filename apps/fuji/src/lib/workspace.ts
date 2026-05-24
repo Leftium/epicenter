@@ -31,8 +31,8 @@ import type { Brand } from 'wellcrafted/brand';
 
 export const FUJI_ID = 'epicenter.fuji';
 
-export type EntryId = string & Brand<'EntryId'>;
-export const EntryId = type('string').pipe((s): EntryId => s as EntryId);
+export const EntryId = type('string').as<string & Brand<'EntryId'>>();
+export type EntryId = typeof EntryId.infer;
 
 const entryBase = type({
 	id: EntryId,

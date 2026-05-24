@@ -8,8 +8,8 @@ import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 
 /** Branded file identifier — a Guid that is specifically a file ID */
-export type FileId = Guid & Brand<'FileId'>;
-export const FileId = type('string').as<FileId>();
+export const FileId = type('string').as<Guid & Brand<'FileId'>>();
+export type FileId = typeof FileId.infer;
 
 /** Generate a new unique file identifier */
 export function generateFileId(): FileId {

@@ -30,16 +30,16 @@ export const TAB_MANAGER_ID = 'epicenter.tab-manager';
  *
  * Prevents accidental mixing with other string IDs (conversation, tab, etc.).
  */
-export type DeviceId = string & Brand<'DeviceId'>;
-export const DeviceId = type('string').as<DeviceId>();
+export const DeviceId = type('string').as<string & Brand<'DeviceId'>>();
+export type DeviceId = typeof DeviceId.infer;
 
 /**
  * Branded saved tab ID — nanoid generated when a tab is explicitly saved.
  *
  * Prevents accidental mixing with composite tab IDs or other string IDs.
  */
-export type SavedTabId = Id & Brand<'SavedTabId'>;
-export const SavedTabId = type('string').as<SavedTabId>();
+export const SavedTabId = type('string').as<Id & Brand<'SavedTabId'>>();
+export type SavedTabId = typeof SavedTabId.infer;
 /**
  * Generate a unique {@link SavedTabId} for a newly saved tab.
  *
@@ -64,8 +64,8 @@ export const generateSavedTabId = (): SavedTabId => generateId() as SavedTabId;
  * Unlike {@link SavedTabId}, bookmarks persist indefinitely—opening a
  * bookmarked URL does NOT delete the record.
  */
-export type BookmarkId = Id & Brand<'BookmarkId'>;
-export const BookmarkId = type('string').as<BookmarkId>();
+export const BookmarkId = type('string').as<Id & Brand<'BookmarkId'>>();
+export type BookmarkId = typeof BookmarkId.infer;
 /**
  * Generate a unique {@link BookmarkId} for a newly created bookmark.
  *
@@ -90,8 +90,8 @@ export const generateBookmarkId = (): BookmarkId => generateId() as BookmarkId;
  * Used as the primary key for conversations and as a foreign key in chat messages.
  * Prevents accidental mixing with message IDs or other string IDs.
  */
-export type ConversationId = Id & Brand<'ConversationId'>;
-export const ConversationId = type('string').as<ConversationId>();
+export const ConversationId = type('string').as<Id & Brand<'ConversationId'>>();
+export type ConversationId = typeof ConversationId.infer;
 /**
  * Generate a unique {@link ConversationId} for a new chat conversation.
  *
@@ -120,8 +120,8 @@ export const generateConversationId = (): ConversationId =>
  *
  * Prevents accidental mixing with conversation IDs or other string IDs.
  */
-export type ChatMessageId = Id & Brand<'ChatMessageId'>;
-export const ChatMessageId = type('string').as<ChatMessageId>();
+export const ChatMessageId = type('string').as<Id & Brand<'ChatMessageId'>>();
+export type ChatMessageId = typeof ChatMessageId.infer;
 /**
  * Generate a unique {@link ChatMessageId} for a new chat message.
  *

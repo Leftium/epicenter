@@ -38,8 +38,8 @@ export const OPENSIDIAN_ID = 'epicenter.opensidian';
  * messages that belong to that thread. The brand prevents accidental mixing
  * with message IDs or other plain strings.
  */
-export type ConversationId = Id & Brand<'ConversationId'>;
-export const ConversationId = type('string').as<ConversationId>();
+export const ConversationId = type('string').as<Id & Brand<'ConversationId'>>();
+export type ConversationId = typeof ConversationId.infer;
 
 /**
  * Generate a unique {@link ConversationId} for a new conversation row.
@@ -56,8 +56,8 @@ export const generateConversationId = (): ConversationId =>
  * The brand keeps message IDs distinct from conversation IDs so references
  * stay type-safe across joins and edits.
  */
-export type ChatMessageId = Id & Brand<'ChatMessageId'>;
-export const ChatMessageId = type('string').as<ChatMessageId>();
+export const ChatMessageId = type('string').as<Id & Brand<'ChatMessageId'>>();
+export type ChatMessageId = typeof ChatMessageId.infer;
 
 /**
  * Generate a unique {@link ChatMessageId} for a new chat message.

@@ -35,16 +35,16 @@ export const HONEYCRISP_ID = 'epicenter.honeycrisp';
  *
  * Prevents accidental mixing with other string IDs at compile time.
  */
-export type NoteId = string & Brand<'NoteId'>;
-export const NoteId = type('string').pipe((s): NoteId => s as NoteId);
+export const NoteId = type('string').as<string & Brand<'NoteId'>>();
+export type NoteId = typeof NoteId.infer;
 
 /**
  * Branded folder ID: nanoid generated when a folder is created.
  *
  * Prevents accidental mixing with other string IDs at compile time.
  */
-export type FolderId = string & Brand<'FolderId'>;
-export const FolderId = type('string').pipe((s): FolderId => s as FolderId);
+export const FolderId = type('string').as<string & Brand<'FolderId'>>();
+export type FolderId = typeof FolderId.infer;
 
 // ─── Tables ───────────────────────────────────────────────────────────────────
 

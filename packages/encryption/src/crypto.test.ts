@@ -16,22 +16,17 @@ import { describe, expect, test } from 'bun:test';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import {
 	base64ToBytes,
-	buildKeyring,
 	bytesToBase64,
 	decryptBytes,
 	decryptValue,
-	deriveKeyFromPassword,
 	deriveKeyring,
 	deriveWorkspaceKey,
 	type EncryptedBlob,
 	encryptBytes,
 	encryptValue,
-	formatRootKeyring,
-	generateSalt,
 	getKeyVersion,
 	isEncryptedBlob,
 	keyringsEqual,
-	PBKDF2_ITERATIONS_DEFAULT,
 	parseRootKeyring,
 } from './index.js';
 
@@ -96,8 +91,6 @@ describe('encryptValue and decryptValue', () => {
 
 		expect(() => encryptValue('test', key, undefined, 0)).toThrow();
 		expect(() => encryptValue('test', key, undefined, 256)).toThrow();
-		expect(() => buildKeyring(key, 0)).toThrow();
-		expect(() => buildKeyring(key, 256)).toThrow();
 	});
 
 	test('invalid key size throws', () => {
@@ -298,41 +291,8 @@ describe('deriveWorkspaceKey', () => {
 	});
 });
 
-describe('deriveKeyFromPassword and generateSalt', () => {
-	test('password derivation is deterministic for the same salt', () => {
-		const salt = randomBytes(32);
-
-		expect(deriveKeyFromPassword('hunter2', salt)).toEqual(
-			deriveKeyFromPassword('hunter2', salt),
-		);
-		expect(deriveKeyFromPassword('hunter2', salt)).not.toEqual(
-			deriveKeyFromPassword('password2', salt),
-		);
-		expect(PBKDF2_ITERATIONS_DEFAULT).toBe(600_000);
-	});
-
-	test('generateSalt returns fresh 32 byte salts', () => {
-		const salt1 = generateSalt();
-		const salt2 = generateSalt();
-
-		expect(salt1.length).toBe(32);
-		expect(salt2.length).toBe(32);
-		expect(salt1).not.toEqual(salt2);
-	});
-});
-
-describe('buildKeyring and keyringsEqual', () => {
-	test('buildKeyring returns transport keys that round trip through base64', () => {
-		const keyBytes = randomBytes(32);
-		const keyring = buildKeyring(keyBytes, 3);
-
-		expect(keyring).toEqual([
-			{ version: 3, keyBytesBase64: bytesToBase64(keyBytes) },
-		]);
-		expect(base64ToBytes(keyring[0].keyBytesBase64)).toEqual(keyBytes);
-	});
-
-	test('keyringsEqual ignores order and compares key material', () => {
+describe('keyringsEqual', () => {
+	test('ignores order and compares key material', () => {
 		const keyV1 = bytesToBase64(randomBytes(32));
 		const keyV2 = bytesToBase64(randomBytes(32));
 
@@ -357,8 +317,8 @@ describe('buildKeyring and keyringsEqual', () => {
 	});
 });
 
-describe('parseRootKeyring and formatRootKeyring', () => {
-	test('parseRootKeyring sorts versions descending', () => {
+describe('parseRootKeyring', () => {
+	test('sorts versions descending', () => {
 		expect(parseRootKeyring('1:old,3:new,2:middle')).toEqual([
 			{ version: 3, secret: 'new' },
 			{ version: 2, secret: 'middle' },
@@ -366,25 +326,10 @@ describe('parseRootKeyring and formatRootKeyring', () => {
 		]);
 	});
 
-	test('formatRootKeyring emits canonical descending order', () => {
-		expect(
-			formatRootKeyring([
-				{ version: 1, secret: 'old' },
-				{ version: 2, secret: 'new' },
-			]),
-		).toBe('2:new,1:old');
-	});
-
 	test('secret values may contain colons', () => {
 		expect(parseRootKeyring('1:secret:with:colons')).toEqual([
 			{ version: 1, secret: 'secret:with:colons' },
 		]);
-	});
-
-	test('round trip preserves canonical representation', () => {
-		const formatted = formatRootKeyring(parseRootKeyring('1:old,2:new'));
-
-		expect(formatted).toBe('2:new,1:old');
 	});
 
 	test('malformed entries throw', () => {
@@ -399,12 +344,6 @@ describe('parseRootKeyring and formatRootKeyring', () => {
 		expect(() => parseRootKeyring('2:alpha,2:bravo')).toThrow();
 		expect(() => parseRootKeyring('0:secret')).toThrow();
 		expect(() => parseRootKeyring('256:secret')).toThrow();
-		expect(() =>
-			formatRootKeyring([
-				{ version: 1, secret: 'a' },
-				{ version: 1, secret: 'b' },
-			]),
-		).toThrow();
 	});
 });
 

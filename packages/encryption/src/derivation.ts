@@ -1,14 +1,10 @@
-import { randomBytes } from '@noble/ciphers/utils.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
-import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToBase64 } from './bytes.js';
-import { assertEncryptionKeyVersion, type Keyring } from './keys.js';
+import type { Keyring } from './keys.js';
 import type { RootKeyring } from './secrets.js';
 
 const textEncoder = new TextEncoder();
-const SALT_LENGTH = 32;
-const PBKDF2_ITERATIONS_DEFAULT = 600_000;
 
 /**
  * Derive a per-workspace key from a label key.
@@ -35,48 +31,6 @@ export function deriveWorkspaceKey(
 		textEncoder.encode(`workspace:${workspaceId}`),
 		32,
 	);
-}
-
-/**
- * Derive a 32-byte key from a password and salt.
- *
- * This helper is for self-managed or local password flows. Cloud API sessions
- * should use `deriveKeyring()` with a root keyring instead.
- */
-export function deriveKeyFromPassword(
-	password: string,
-	salt: Uint8Array,
-	iterations: number = PBKDF2_ITERATIONS_DEFAULT,
-): Uint8Array {
-	return pbkdf2(sha256, textEncoder.encode(password), salt, {
-		c: iterations,
-		dkLen: 32,
-	});
-}
-
-/**
- * Generate a PBKDF2 salt for password-derived keys.
- *
- * This salt is not an encryption nonce. Store it next to the password-derived
- * key metadata so the same password can derive the same key later.
- */
-export function generateSalt(): Uint8Array {
-	return randomBytes(SALT_LENGTH);
-}
-
-/**
- * Wrap raw key bytes in the auth-session keyring shape.
- *
- * Use this when a caller already has key material, such as a password-derived
- * key. Server-side root keyring derivation should call `deriveKeyring()` so
- * every configured root version is included.
- */
-export function buildKeyring(
-	keyBytes: Uint8Array,
-	version: number = 1,
-): Keyring {
-	assertEncryptionKeyVersion(version);
-	return [{ version, keyBytesBase64: bytesToBase64(keyBytes) }];
 }
 
 async function deriveLabelKey(
@@ -137,5 +91,3 @@ export async function deriveKeyring({
 		})),
 	) as Promise<Keyring>;
 }
-
-export { PBKDF2_ITERATIONS_DEFAULT };

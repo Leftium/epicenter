@@ -12,19 +12,10 @@
 
 import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/auth';
 import { describe, expect, test } from 'bun:test';
-import { assetKey, doName, ownerPath } from './owner.js';
+import { assetKey, doName } from './owner.js';
 
 const personal = asOwnerId('abc');
 const team = TEAM_OWNER_ID;
-
-describe('ownerPath', () => {
-	test('personal returns owners/<userId>', () => {
-		expect(ownerPath(personal)).toBe('owners/abc');
-	});
-	test('team returns owners/team', () => {
-		expect(ownerPath(team)).toBe('owners/team');
-	});
-});
 
 describe('doName', () => {
 	test('personal partitions DO names under the user', () => {

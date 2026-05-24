@@ -39,7 +39,7 @@ import {
 	renderSignedInPage,
 	renderSignInPage,
 } from '../auth-pages/index.js';
-import type { Env, ServerOptions } from '../types.js';
+import type { Env } from '../types.js';
 
 type OAuthOpenIdConfigAuth = Parameters<
 	typeof oauthProviderOpenIdConfigMetadata
@@ -53,7 +53,7 @@ type OAuthAuthServerConfigAuth = Parameters<
  * routes must register before the `/auth/*` Better Auth catch-all, or the
  * catch-all swallows discovery requests. This is exercised by tests.
  */
-export function createAuthApp(_opts: ServerOptions): Hono<Env> {
+export function createAuthApp(): Hono<Env> {
 	const app = new Hono<Env>();
 
 	// Server-rendered sign-in page. Re-entry into OAuth happens when the

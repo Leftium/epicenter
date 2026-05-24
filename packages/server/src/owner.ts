@@ -21,19 +21,11 @@
 
 import type { OwnerId } from '@epicenter/auth';
 
-/** Partition segment that prefixes every durable identifier. */
-export type OwnerPath = `owners/${string}`;
-
 /** Durable Object name template, single form. */
 export type RoomDoName = `owners/${string}/rooms/${string}`;
 
 /** R2 object key template, single form. */
 export type AssetR2Key = `owners/${string}/assets/${string}`;
-
-/** Compute the partition segment for this owner. */
-export function ownerPath(ownerId: OwnerId): OwnerPath {
-	return `owners/${ownerId}`;
-}
 
 /** Durable name of a room's Cloudflare Durable Object. */
 export function doName(ownerId: OwnerId, roomId: string): RoomDoName {

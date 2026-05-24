@@ -1,3 +1,4 @@
+import type { OwnerId } from '@epicenter/auth';
 import { env } from 'cloudflare:workers';
 import {
 	deriveKeyring as deriveKeyringFromRoot,
@@ -18,14 +19,15 @@ try {
 /**
  * Derive the workspace `Keyring` attached to Epicenter auth-session responses.
  *
- * The caller (the `/api/session` route) passes the resolved `ownerId` as the
- * HKDF label; this wrapper just owns env access and fail-fast worker startup.
- * `@epicenter/encryption` owns parsing and HKDF derivation, keeping workspace
- * encryption separate from Better Auth's cookie and token secrets.
+ * The HKDF label IS the `ownerId`. The signature requires `OwnerId` (not bare
+ * `string`) so the contract "owner partition equals keyring partition" lives
+ * in the type. This wrapper just owns env access and fail-fast worker
+ * startup; `@epicenter/encryption` owns parsing and HKDF derivation, keeping
+ * workspace encryption separate from Better Auth's cookie and token secrets.
  */
-export async function deriveKeyring(label: string): Promise<Keyring> {
+export async function deriveKeyring(ownerId: OwnerId): Promise<Keyring> {
 	return deriveKeyringFromRoot({
 		rootKeyring,
-		label,
+		label: ownerId,
 	});
 }

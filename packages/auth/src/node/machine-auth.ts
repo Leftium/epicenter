@@ -35,6 +35,7 @@ import {
 	PersistedAuth,
 	type PersistedAuth as PersistedAuthType,
 } from '../auth-types.js';
+import type { UserId } from '../ids.js';
 import {
 	type AuthFetch,
 	createOAuthAppAuth,
@@ -207,7 +208,7 @@ async function saveMachineTokens(
  * machine is offline during `status`.
  */
 export type MachineIdentity = {
-	user: { id: string; email: string };
+	user: { id: UserId; email: string };
 	keyring: Keyring;
 };
 

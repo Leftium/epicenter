@@ -36,7 +36,7 @@ export function createServer(opts: ServerOptions) {
 		base: createBaseApp(opts),
 
 		/** /sign-in, /consent, /auth/cli-callback, OAuth discovery, /auth/*. */
-		auth: createAuthApp(opts),
+		auth: createAuthApp(),
 
 		/** /api/session: authenticated session projection plus keyring. */
 		session: createSessionApp(opts),

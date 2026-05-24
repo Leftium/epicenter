@@ -214,7 +214,7 @@ test('loginWithOob writes PersistedAuth and returns identity', async () => {
 	});
 	const data = expectOk(result);
 	expect(data.identity.user).toEqual({
-		id: 'user-1',
+		id: asUserId('user-1'),
 		email: 'user-1@example.com',
 	});
 

@@ -17,19 +17,13 @@ export {
 	requireCookieOrBearerUser,
 } from './middleware/require-auth.js';
 export { requireUrlOwnerIdMatchesAuth } from './middleware/require-url-owner-id-matches-auth.js';
-// Server-only durable-identifier derivations. The `OwnerId` type itself
-// lives in `@epicenter/auth` because it flows through `/api/session` and
-// every client; consumers that need it should import it from there.
-export type { AssetR2Key, OwnerPath, RoomDoName } from './owner.js';
-export { assetKey, doName, ownerPath } from './owner.js';
 // Re-export the Cloudflare Durable Object class so each deployment's
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.
 export { Room } from './room/backends/cloudflare/durable-object.js';
-// Public configuration surface.
-export type {
-	AfterResponseQueue,
-	Connection,
-	Env,
-	ServerOptions,
-	SignUpPolicy,
-} from './types.js';
+// Public configuration surface. `Env` is the Hono context type the
+// deployment composes around library middleware; `ServerOptions` is the
+// `createServer` config. Other types (`Connection`, `AfterResponseQueue`,
+// `SignUpPolicy`, `OwnerPath`, `RoomDoName`, `AssetR2Key`) and helpers
+// (`assetKey`, `doName`) are intentionally not re-exported: they are
+// internal to the library and have no current external consumers.
+export type { Env, ServerOptions } from './types.js';

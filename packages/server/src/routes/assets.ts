@@ -34,6 +34,7 @@
  * platform-level limit {@link MAX_ASSET_BYTES}.
  */
 
+import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { AssetError } from '@epicenter/constants/asset-errors';
 import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/constants/identity';
 import { sValidator } from '@hono/standard-validator';
@@ -63,8 +64,6 @@ const generateAssetId = customAlphabet(
 	21,
 );
 
-const ASSET_ID_REGEX = '[a-z0-9]{21}';
-const ASSET_ROUTES_BASE_PATH = '/api/owners/:ownerId/assets';
 
 const ALLOWED_MIME_TYPES = new Set([
 	'image/png',
@@ -111,10 +110,9 @@ function parseVisibility(raw: unknown): 'private' | 'public' | null {
 function createAssetAuthedRoutes(): Hono<Env> {
 	return (
 		new Hono<Env>()
-			.basePath(ASSET_ROUTES_BASE_PATH)
-			// POST / - Create (upload)
+			// POST - Create (upload)
 			.post(
-				'/',
+				API_ROUTES.assets.list.pattern,
 				describeRoute({
 					description: 'Upload an asset (image or PDF)',
 					tags: ['assets'],
@@ -198,9 +196,9 @@ function createAssetAuthedRoutes(): Hono<Env> {
 					);
 				},
 			)
-			// GET / - List the current owner's assets
+			// GET - List the current owner's assets
 			.get(
-				'/',
+				API_ROUTES.assets.list.pattern,
 				describeRoute({
 					description: "List the current owner's assets",
 					tags: ['assets'],
@@ -214,9 +212,9 @@ function createAssetAuthedRoutes(): Hono<Env> {
 					return c.json(assets);
 				},
 			)
-			// GET /usage - Total storage in bytes
+			// GET usage - Total storage in bytes
 			.get(
-				'/usage',
+				API_ROUTES.assets.usage.pattern,
 				describeRoute({
 					description: "Get the current owner's total storage usage in bytes",
 					tags: ['assets'],
@@ -232,9 +230,9 @@ function createAssetAuthedRoutes(): Hono<Env> {
 					return c.json({ totalBytes: total });
 				},
 			)
-			// PATCH /:assetId - Modify metadata (currently: visibility only)
+			// PATCH by id - Modify metadata (currently: visibility only)
 			.patch(
-				`/:assetId{${ASSET_ID_REGEX}}`,
+				API_ROUTES.assets.byId.pattern,
 				describeRoute({
 					description:
 						"Modify an asset's metadata (currently: visibility flip)",
@@ -265,9 +263,9 @@ function createAssetAuthedRoutes(): Hono<Env> {
 					return c.json(updated);
 				},
 			)
-			// DELETE /:assetId - Delete (owner only)
+			// DELETE by id (owner only)
 			.delete(
-				`/:assetId{${ASSET_ID_REGEX}}`,
+				API_ROUTES.assets.byId.pattern,
 				describeRoute({
 					description: 'Delete an asset (owner only)',
 					tags: ['assets'],
@@ -314,8 +312,8 @@ function createAssetAuthedRoutes(): Hono<Env> {
  * pinned to `TEAM_OWNER_ID` by the route shape).
  */
 function createAssetReadRoute(mode: OwnershipMode): Hono<Env> {
-	return new Hono<Env>().basePath(ASSET_ROUTES_BASE_PATH).get(
-		`/:assetId{${ASSET_ID_REGEX}}`,
+	return new Hono<Env>().get(
+		API_ROUTES.assets.byId.pattern,
 		describeRoute({
 			description:
 				'Read an asset by ID. Public assets serve without auth; private assets require an authenticated owner.',

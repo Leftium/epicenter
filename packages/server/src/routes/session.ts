@@ -18,13 +18,14 @@
  */
 
 import type { ApiSessionResponse } from '@epicenter/auth';
+import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
 import { deriveKeyring } from '../auth/encryption.js';
 import type { Env } from '../types.js';
 
 export const sessionApp = new Hono<Env>().get(
-	'/api/session',
+	API_ROUTES.session.pattern,
 	describeRoute({
 		description: 'Return the authenticated session projection',
 		tags: ['auth'],

@@ -21,6 +21,7 @@ import {
 	oauthProviderOpenIdConfigMetadata,
 } from '@better-auth/oauth-provider';
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
+import { OAUTH_ROUTES } from '@epicenter/constants/oauth-routes';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { Hono } from 'hono';
@@ -100,7 +101,7 @@ export const authApp = new Hono<Env>()
 	// CLI OOB callback. The code is useless without the CLI's PKCE verifier,
 	// but `Cache-Control: no-store` keeps the edge from caching it anyway.
 	.get(
-		'/auth/cli-callback',
+		OAUTH_ROUTES.cliCallback.pattern,
 		describeRoute({
 			description: 'CLI OAuth out-of-band callback page',
 			tags: ['auth', 'oauth'],

@@ -19,6 +19,7 @@
  * `owner_id` (see auth `before(delete)` hook).
  */
 
+import { API_ROUTES } from '@epicenter/constants/api-routes';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
@@ -117,11 +118,9 @@ function upsertDoInstance(
  * partition arrives on `c.var.ownerId` via the deployment-mounted
  * `attachOwner` middleware, so handlers stay mode-blind.
  */
-const ROOM_PATTERN = '/api/owners/:ownerId/rooms/:roomId{[a-z0-9]{15}}';
-
 export const roomsApp = new Hono<Env>()
 	.get(
-		ROOM_PATTERN,
+		API_ROUTES.room.pattern,
 		describeRoute({
 			description: 'Get room doc or upgrade to WebSocket',
 			tags: ['rooms'],
@@ -161,7 +160,7 @@ export const roomsApp = new Hono<Env>()
 		},
 	)
 	.post(
-		ROOM_PATTERN,
+		API_ROUTES.room.pattern,
 		describeRoute({
 			description: 'Sync room doc',
 			tags: ['rooms'],

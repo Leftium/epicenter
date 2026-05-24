@@ -12,6 +12,7 @@
  */
 
 import { AiChatError } from '@epicenter/constants/ai-chat-errors';
+import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { sValidator } from '@hono/standard-validator';
 import {
 	type AnyTextAdapter,
@@ -54,7 +55,7 @@ const aiChatBody = type({
  * (cloud's bearer-only middleware, team's cookie-or-bearer middleware).
  */
 export const aiApp = new Hono<Env>().post(
-	'/api/ai/chat',
+	API_ROUTES.ai.chat.pattern,
 	describeRoute({
 		description: 'Stream AI chat completions via SSE',
 		tags: ['ai'],

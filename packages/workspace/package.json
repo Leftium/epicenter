@@ -47,7 +47,6 @@
 	},
 	"dependencies": {
 		"@ark/json-schema": "^0.0.4",
-		"@epicenter/auth": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/encryption": "workspace:*",
 		"@hono/standard-validator": "catalog:",

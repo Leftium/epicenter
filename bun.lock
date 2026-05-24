@@ -783,7 +783,6 @@
       "version": "0.2.0",
       "dependencies": {
         "@ark/json-schema": "^0.0.4",
-        "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
         "@epicenter/sync": "workspace:*",

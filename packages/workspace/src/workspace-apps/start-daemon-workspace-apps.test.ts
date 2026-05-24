@@ -14,7 +14,6 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { AuthClient } from '@epicenter/auth';
 import { asOwnerId } from '@epicenter/constants/identity';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import type {
@@ -23,6 +22,7 @@ import type {
 } from '../daemon/define-workspace.js';
 import type { DaemonRuntime } from '../daemon/types.js';
 
+import type { WorkspaceAuthClient } from './auth-client.js';
 import { startDaemonWorkspaceApps } from './start-daemon-workspace-apps.js';
 
 let projectDir: string;
@@ -39,17 +39,16 @@ function disposeMarkerPath(route: string): string {
 	return join(projectDir, `${route}.disposed`);
 }
 
-function stubAuthClient(): AuthClient {
+function stubAuthClient(): WorkspaceAuthClient {
 	return {
 		state: {
 			status: 'signed-in',
 			ownerId: asOwnerId('test-user'),
-			mode: 'personal',
 			keyring: [] as never,
 		},
 		openWebSocket: () => Promise.resolve({} as WebSocket),
 		onStateChange: () => () => {},
-	} as unknown as AuthClient;
+	};
 }
 
 function testRuntime(
@@ -168,7 +167,7 @@ describe('startDaemonWorkspaceApps', () => {
 
 		const result = await startDaemonWorkspaceApps({
 			projectDir,
-			auth: { state: { status: 'signed-out' } } as AuthClient,
+			auth: { state: { status: 'signed-out' } } as WorkspaceAuthClient,
 			routes,
 		});
 		const error = expectErr(result);

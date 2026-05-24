@@ -13,7 +13,6 @@
  */
 
 import { resolve } from 'node:path';
-import type { AuthClient } from '@epicenter/auth';
 import type { OwnerId } from '@epicenter/constants/identity';
 import type { Keyring } from '@epicenter/encryption';
 import { Err, Ok, type Result } from 'wellcrafted/result';
@@ -27,11 +26,12 @@ import { validateDaemonRouteNames } from '../daemon/route-validation.js';
 import { asDeviceId } from '../document/device-id.js';
 import { hashYDocClientId } from '../shared/client-id.js';
 import type { ProjectDir } from '../shared/types.js';
+import type { WorkspaceAuthClient } from './auth-client.js';
 import { WorkspaceAppError } from './errors.js';
 
 export type StartDaemonWorkspaceAppsOptions = {
 	projectDir: ProjectDir | string;
-	auth: AuthClient;
+	auth: WorkspaceAuthClient;
 	routes: Readonly<Record<string, DaemonWorkspaceDefinition>>;
 };
 
@@ -109,7 +109,7 @@ async function openOneDaemonRoute({
 	route: string;
 	definition: DaemonWorkspaceDefinition;
 	projectDir: ProjectDir;
-	auth: AuthClient;
+	auth: WorkspaceAuthClient;
 	ownerId: OwnerId;
 }): Promise<Result<StartedDaemonRoute, WorkspaceAppError>> {
 	const ctx: DaemonWorkspaceContext = {
@@ -146,7 +146,7 @@ function createDaemonKeyringReader({
 	auth,
 	route,
 }: {
-	auth: AuthClient;
+	auth: WorkspaceAuthClient;
 	route: string;
 }): () => Keyring {
 	return () => {

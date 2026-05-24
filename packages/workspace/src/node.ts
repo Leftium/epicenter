@@ -90,6 +90,10 @@ export {
 } from './document/workspace-paths.js';
 export { hashYDocClientId } from './shared/client-id.js';
 export { WorkspaceAppError } from './workspace-apps/errors.js';
+export type {
+	WorkspaceAuthClient,
+	WorkspaceAuthState,
+} from './workspace-apps/auth-client.js';
 export {
 	type StartDaemonWorkspaceAppsOptions,
 	startDaemonWorkspaceApps,

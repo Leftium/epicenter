@@ -12,7 +12,7 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  * name, message, ...fields } }`. Receivers branch on `body.error.name`.
  *
  * `StorageLimitExceeded` is emitted by the cloud-only Autumn storage
- * gate (`apps/api/src/autumn-gates.ts`). It lives with the asset surface
+ * gate (`apps/api/src/billing/gates.ts`). It lives with the asset surface
  * (not in a separate billing namespace) so an asset client handles one
  * error type per call, matching the `AiChatError` precedent that lumps
  * billing-shaped failures with the surface that raises them.

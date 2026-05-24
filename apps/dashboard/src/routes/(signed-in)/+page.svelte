@@ -7,27 +7,23 @@
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 	import { extractErrorMessage } from 'wellcrafted/error';
-	import { api } from '$lib/api';
+	import { billingApi } from '$lib/billing/api';
+	import { billing, billingKeys } from '$lib/billing/queries';
 	import ActivityFeed from '$lib/components/ActivityFeed.svelte';
 	import CreditBalance from '$lib/components/CreditBalance.svelte';
 	import ModelCostGuide from '$lib/components/ModelCostGuide.svelte';
 	import PlanComparison from '$lib/components/PlanComparison.svelte';
 	import TopModels from '$lib/components/TopModels.svelte';
 	import UsageChart from '$lib/components/UsageChart.svelte';
-	import { billing, billingKeys } from '$lib/query/billing';
 	import { queryClient } from '$lib/query/client';
 
-	const balance = createQuery(() => billing.balance.options);
-	const subscription = $derived(
-		balance.data?.subscriptions?.find((s) => !s.addOn) ?? null,
-	);
-	const isOnTrial = $derived(subscription?.trialEndsAt != null);
+	const overview = createQuery(() => billing.overview.options);
+	const isOnTrial = $derived(overview.data?.trial != null);
 
-	/** Open Stripe billing portal via the API. */
 	async function openBillingPortal() {
-		const { data, error } = await api.billing.portal();
+		const { data, error } = await billingApi.portal();
 		if (error) return toastOnError(error, 'Could not open billing portal');
-		if (data.url) window.location.href = data.url;
+		if (data.portalUrl) window.location.href = data.portalUrl;
 	}
 
 	const topUp = createMutation(() => billing.topUp.options);
@@ -43,8 +39,7 @@
 				variant="ghost"
 				size="sm"
 				class="h-auto px-0 text-primary hover:bg-transparent hover:underline"
-				onclick={openBillingPortal}
-				>Update billing →</Button
+				onclick={openBillingPortal}>Update billing →</Button
 			>
 		</Alert.Description>
 	</Alert.Root>
@@ -75,14 +70,17 @@
 		onclick={() => {
 			topUp.mutate(window.location.href, {
 				onSuccess: (data) => {
-					if (data.paymentUrl) {
-						window.location.href = data.paymentUrl;
+					if (data.checkoutUrl) {
+						window.location.href = data.checkoutUrl;
 					} else {
 						toast.success('Credits added to your account');
 						queryClient.invalidateQueries({ queryKey: billingKeys.all });
 					}
 				},
-				onError: (error) => toast.error('Top-up failed', { description: extractErrorMessage(error) }),
+				onError: (error) =>
+					toast.error('Top-up failed', {
+						description: extractErrorMessage(error),
+					}),
 			});
 		}}
 		disabled={topUp.isPending}

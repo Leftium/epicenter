@@ -29,12 +29,8 @@ import {
 	sessionApp,
 } from '@epicenter/server';
 import { describeRoute } from 'hono-openapi';
-import {
-	autumnAiGate,
-	autumnStorageGate,
-	ensurePlanId,
-} from './autumn-gates.js';
-import { billingRoutes } from './billing-routes.js';
+import { autumnAiGate, autumnStorageGate } from './billing/gates.js';
+import { billingRoutes } from './billing/routes.js';
 
 const ownership = personal();
 
@@ -66,13 +62,10 @@ mountRoomsApp(base, { ownership });
 // gate by the mount helper.
 mountAssetsApp(base, { ownership, gates: [autumnStorageGate] });
 
-// AI chat: bearer-only, plan-aware credit gate.
-base.use(
-	API_ROUTES.ai.chat.prefixPattern,
-	requireBearerUser,
-	ensurePlanId,
-	autumnAiGate,
-);
+// AI chat: bearer-only, plan-aware credit gate. The gate fetches the
+// customer, resolves the active plan, and atomically deducts credits
+// inside one billing-service call.
+base.use(API_ROUTES.ai.chat.prefixPattern, requireBearerUser, autumnAiGate);
 base.route('/', aiApp);
 
 // Billing dashboard data plane.

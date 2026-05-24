@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -22,6 +21,7 @@
         "@better-auth/drizzle-adapter": "catalog:",
         "@better-auth/oauth-provider": "catalog:",
         "@epicenter/auth": "workspace:*",
+        "@epicenter/billing": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
         "@epicenter/server": "workspace:*",
@@ -73,9 +73,9 @@
       "name": "@epicenter/dashboard",
       "version": "0.0.1",
       "dependencies": {
-        "@epicenter/api": "workspace:*",
         "@epicenter/auth": "workspace:*",
         "@epicenter/auth-svelte": "workspace:*",
+        "@epicenter/billing": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@tanstack/svelte-query": "catalog:",
@@ -558,6 +558,15 @@
       },
       "peerDependencies": {
         "svelte": "^5.0.0",
+      },
+    },
+    "packages/billing": {
+      "name": "@epicenter/billing",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@tanstack/ai-gemini": "catalog:",
+        "@tanstack/ai-openai": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "packages/cli": {
@@ -1093,6 +1102,8 @@
     "@epicenter/auth": ["@epicenter/auth@workspace:packages/auth"],
 
     "@epicenter/auth-svelte": ["@epicenter/auth-svelte@workspace:packages/auth-svelte"],
+
+    "@epicenter/billing": ["@epicenter/billing@workspace:packages/billing"],
 
     "@epicenter/breddit": ["@epicenter/breddit@workspace:apps/breddit"],
 

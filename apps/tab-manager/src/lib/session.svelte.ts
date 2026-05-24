@@ -65,7 +65,7 @@ function buildSession(
 			const collaboration = openCollaboration(tabManager.ydoc, {
 				url: roomWsUrl({
 					baseURL: signedIn.auth.baseURL,
-					owner: signedIn.owner,
+					ownerId: signedIn.ownerId,
 					guid: tabManager.ydoc.guid,
 					installationId: profile.installationId,
 				}),

@@ -39,13 +39,13 @@ export function openZhongwenBrowser({
 
 	const idb = attachLocalStorage(ydoc, {
 		server: signedIn.server,
-		owner: signedIn.owner,
+		ownerId: signedIn.ownerId,
 		keyring: signedIn.keyring,
 	});
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl({
 			baseURL: signedIn.auth.baseURL,
-			owner: signedIn.owner,
+			ownerId: signedIn.ownerId,
 			guid: ydoc.guid,
 			installationId,
 		}),
@@ -66,7 +66,7 @@ export function openZhongwenBrowser({
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
 			await wipeLocalStorage({
 				server: signedIn.server,
-				owner: signedIn.owner,
+				ownerId: signedIn.ownerId,
 			});
 		},
 		[Symbol.dispose]() {

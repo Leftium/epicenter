@@ -58,7 +58,7 @@ export function openTabManagerBrowser({
 
 	const idb = attachLocalStorage(ydoc, {
 		server: signedIn.server,
-		owner: signedIn.owner,
+		ownerId: signedIn.ownerId,
 		keyring: signedIn.keyring,
 	});
 
@@ -74,7 +74,7 @@ export function openTabManagerBrowser({
 			await idb.whenDisposed;
 			await wipeLocalStorage({
 				server: signedIn.server,
-				owner: signedIn.owner,
+				ownerId: signedIn.ownerId,
 			});
 		},
 		[Symbol.dispose]() {

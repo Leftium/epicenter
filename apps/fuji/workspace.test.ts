@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { bytesToBase64, type SubjectKeyring } from '@epicenter/encryption';
+import { bytesToBase64, type Keyring } from '@epicenter/encryption';
 import { attachEncryption } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import {
@@ -17,8 +17,8 @@ import {
 } from './src/lib/workspace.js';
 
 const testKey = new Uint8Array(32).fill(7);
-const testKeyring: SubjectKeyring = [
-	{ version: 1, subjectKeyBase64: bytesToBase64(testKey) },
+const testKeyring: Keyring = [
+	{ version: 1, keyBytesBase64: bytesToBase64(testKey) },
 ];
 
 function openFujiForTest({ clientId }: { clientId?: number } = {}) {

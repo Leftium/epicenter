@@ -52,13 +52,13 @@ export function openHoneycrispBrowser({
 
 	const idb = attachLocalStorage(ydoc, {
 		server: signedIn.server,
-		owner: signedIn.owner,
+		ownerId: signedIn.ownerId,
 		keyring: signedIn.keyring,
 	});
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl({
 			baseURL: signedIn.auth.baseURL,
-			owner: signedIn.owner,
+			ownerId: signedIn.ownerId,
 			guid: ydoc.guid,
 			installationId,
 		}),
@@ -76,13 +76,13 @@ export function openHoneycrispBrowser({
 		const body = attachRichText(childYdoc);
 		const childIdb = attachLocalStorage(childYdoc, {
 			server: signedIn.server,
-			owner: signedIn.owner,
+			ownerId: signedIn.ownerId,
 			keyring: signedIn.keyring,
 		});
 		const childSync = openCollaboration(childYdoc, {
 			url: roomWsUrl({
 				baseURL: signedIn.auth.baseURL,
-				owner: signedIn.owner,
+				ownerId: signedIn.ownerId,
 				guid: childYdoc.guid,
 				installationId,
 			}),
@@ -128,7 +128,7 @@ export function openHoneycrispBrowser({
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
 			await wipeLocalStorage({
 				server: signedIn.server,
-				owner: signedIn.owner,
+				ownerId: signedIn.ownerId,
 			});
 		},
 		[Symbol.dispose]() {

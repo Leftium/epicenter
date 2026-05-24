@@ -31,7 +31,7 @@ const WORKSPACE_ID = 'opensidian';
 const TEST_ENCRYPTION_KEYS = [
 	{
 		version: 1,
-		subjectKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+		keyBytesBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 	},
 ];
 

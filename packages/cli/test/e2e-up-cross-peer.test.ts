@@ -83,13 +83,15 @@ function makeEnv(): EnvOverrides {
 				refreshToken: 'refresh-stored',
 				accessTokenExpiresAt: Date.now() + 3_600_000,
 			},
-			owner: { kind: 'personal' as const, userId: 'user-1' },
+			userId: 'user-1',
+			ownerId: 'user-1',
 			keyring: [
 				{
 					version: 1,
-					subjectKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+					keyBytesBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 				},
 			],
+			mode: 'personal',
 		}),
 		{ mode: 0o600 },
 	);

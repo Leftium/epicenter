@@ -57,7 +57,7 @@ export function openOpensidianBrowser({
 
 	const idb = attachLocalStorage(ydoc, {
 		server: signedIn.server,
-		owner: signedIn.owner,
+		ownerId: signedIn.ownerId,
 		keyring: signedIn.keyring,
 	});
 
@@ -71,7 +71,7 @@ export function openOpensidianBrowser({
 		);
 		const childIdb = attachLocalStorage(childYdoc, {
 			server: signedIn.server,
-			owner: signedIn.owner,
+			ownerId: signedIn.ownerId,
 			keyring: signedIn.keyring,
 		});
 		// File bodies sync through Cloud so device loss doesn't drop the largest
@@ -79,7 +79,7 @@ export function openOpensidianBrowser({
 		const childSync = openCollaboration(childYdoc, {
 			url: roomWsUrl({
 				baseURL: signedIn.auth.baseURL,
-				owner: signedIn.owner,
+				ownerId: signedIn.ownerId,
 				guid: childYdoc.guid,
 				installationId,
 			}),
@@ -138,7 +138,7 @@ export function openOpensidianBrowser({
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl({
 			baseURL: signedIn.auth.baseURL,
-			owner: signedIn.owner,
+			ownerId: signedIn.ownerId,
 			guid: ydoc.guid,
 			installationId,
 		}),
@@ -174,7 +174,7 @@ export function openOpensidianBrowser({
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
 			await wipeLocalStorage({
 				server: signedIn.server,
-				owner: signedIn.owner,
+				ownerId: signedIn.ownerId,
 			});
 		},
 		[Symbol.dispose]() {

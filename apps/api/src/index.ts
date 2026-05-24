@@ -4,7 +4,7 @@
  * Composes the `@epicenter/server` library in `personal` ownership mode and
  * layers cloud-only billing, admin, and dashboard surfaces on top. Self-
  * hosted team deployments live in a sibling apps/* folder and compose the
- * same library with `ownerKind: 'team'` and no Autumn middleware.
+ * same library with `mode: 'team'` and no Autumn middleware.
  *
  * Read top to bottom for the full URL surface of cloud.
  */
@@ -14,7 +14,7 @@ import {
 	Room,
 	requireBearerUser,
 	requireCookieOrBearerUser,
-	requireUrlUserIdMatchesAuth,
+	requireUrlOwnerIdMatchesAuth,
 } from '@epicenter/server';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
@@ -26,7 +26,7 @@ import {
 } from './autumn-gates.js';
 import { billingRoutes } from './billing-routes.js';
 
-const s = createServer({ ownerKind: 'personal', signUpPolicy: 'open' });
+const s = createServer({ mode: 'personal', signUpPolicy: 'open' });
 
 // Cast each library sub-app into cloud's extended Env so the chained
 // `.route(...)` calls below typecheck against `Hono<Env>`. The runtime
@@ -49,28 +49,28 @@ base.route('/sign-in', auth).route('/consent', auth).route('/auth', auth);
 // Session: authed via library middleware, no cloud-specific wrapping.
 base.route('/api/session', session);
 
-// Rooms: bearer auth + URL userId safety, then library handler. No billing
+// Rooms: bearer auth + URL ownerId safety, then library handler. No billing
 // gate for rooms today; bandwidth and DO storage are not metered.
 const cloudRooms = new Hono<Env>()
-	.use('/users/:userId/rooms/*', requireBearerUser, requireUrlUserIdMatchesAuth)
+	.use('/owners/:ownerId/rooms/*', requireBearerUser, requireUrlOwnerIdMatchesAuth)
 	.route('/', rooms);
 base.route('/api', cloudRooms);
 
-// Assets: cookie-or-bearer (dashboard SPA uses cookies), URL userId safety,
+// Assets: cookie-or-bearer (dashboard SPA uses cookies), URL ownerId safety,
 // Autumn storage gate, then library handlers. Public read is registered
 // inside the library sub-app and matches before the authed paths because
 // of its `{15-char id}` regex.
 const cloudAssets = new Hono<Env>()
 	.use(
-		'/users/:userId/assets',
+		'/owners/:ownerId/assets',
 		requireCookieOrBearerUser,
-		requireUrlUserIdMatchesAuth,
+		requireUrlOwnerIdMatchesAuth,
 		autumnStorageGate,
 	)
 	.use(
-		'/users/:userId/assets/*',
+		'/owners/:ownerId/assets/*',
 		requireCookieOrBearerUser,
-		requireUrlUserIdMatchesAuth,
+		requireUrlOwnerIdMatchesAuth,
 		autumnStorageGate,
 	)
 	.route('/', assets);

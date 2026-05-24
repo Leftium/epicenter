@@ -8,7 +8,7 @@
  * installationIds for the same workspace, so each peer hard-codes its own).
  */
 
-import type { Owner } from '@epicenter/auth';
+import type { OwnerId } from '@epicenter/auth';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachTables,
@@ -33,12 +33,12 @@ const Note = defineTable(type({ id: 'string', body: 'string', _v: '1' }));
 
 export function openNotes({
 	installationId,
-	owner,
+	ownerId,
 	openWebSocket,
 	onReconnectSignal,
 }: {
 	installationId: string;
-	owner: Owner;
+	ownerId: OwnerId;
 	openWebSocket: OpenWebSocketFn;
 	onReconnectSignal: OnReconnectSignal;
 }) {
@@ -63,7 +63,7 @@ export function openNotes({
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl({
 			baseURL: EPICENTER_API_URL,
-			owner,
+			ownerId,
 			guid: ydoc.guid,
 			installationId,
 		}),

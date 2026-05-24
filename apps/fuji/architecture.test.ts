@@ -45,7 +45,7 @@ describe('Fuji workspace architecture', () => {
 		expect(browserSource).toContain('attachEncryption(ydoc, { keyring:');
 		expect(browserSource).toContain('attachLocalStorage(ydoc, {');
 		expect(browserSource).toContain('server: signedIn.server,');
-		expect(browserSource).toContain('owner: signedIn.owner,');
+		expect(browserSource).toContain('ownerId: signedIn.ownerId,');
 		expect(browserSource).toContain('openCollaboration(ydoc,');
 		expect(browserSource).toContain(
 			'openWebSocket: signedIn.auth.openWebSocket',

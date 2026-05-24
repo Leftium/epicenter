@@ -8,10 +8,10 @@ import { defineWorkspace } from '@epicenter/workspace';
 import { openNotes } from '../../../notes';
 
 export default defineWorkspace({
-	open: ({ owner, openWebSocket, onReconnectSignal }) =>
+	open: ({ ownerId, openWebSocket, onReconnectSignal }) =>
 		openNotes({
 			installationId: 'notes-repro-peer-a',
-			owner,
+			ownerId,
 			openWebSocket,
 			onReconnectSignal,
 		}),

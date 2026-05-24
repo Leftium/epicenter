@@ -30,7 +30,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { AuthClient } from '@epicenter/auth';
+import { type AuthClient, asOwnerId } from '@epicenter/auth';
 import { MachineAuthStorageError } from '@epicenter/auth/node';
 import {
 	claimDaemonLease,
@@ -43,14 +43,15 @@ import { Err, Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { runUp } from './up';
 
-const STUB_AUTH: AuthClient = {
+const STUB_AUTH = {
 	state: {
 		status: 'signed-in',
-		owner: { kind: 'personal' as const, userId: 'user-1' },
+		ownerId: asOwnerId('user-1'),
+		mode: 'personal',
 		keyring: [
 			{
 				version: 1,
-				subjectKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+				keyBytesBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 			},
 		],
 	},
@@ -63,7 +64,7 @@ const STUB_AUTH: AuthClient = {
 		throw new Error('STUB_AUTH: openWebSocket not implemented');
 	},
 	[Symbol.dispose]: () => {},
-};
+} satisfies AuthClient;
 
 const stubAuthFactory = async () => Ok(STUB_AUTH);
 

@@ -11,6 +11,7 @@
  */
 
 import type { ApiSessionResponse, AuthFetch } from '@epicenter/auth';
+import { API_ROUTES } from '@epicenter/constants/api-routes';
 import type { OwnerId } from '@epicenter/constants/identity';
 
 export type EpicenterClientOptions = {
@@ -95,7 +96,7 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 
 	async function getSession(): Promise<ApiSessionResponse> {
 		if (cachedSession) return cachedSession;
-		const res = await opts.fetch(`${base}/api/session`);
+		const res = await opts.fetch(API_ROUTES.session.url(base));
 		if (!res.ok) {
 			throw new Error(`epicenter: /api/session returned ${res.status}`);
 		}
@@ -126,10 +127,10 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 			const fd = new FormData();
 			fd.append('file', file);
 			fd.append('visibility', params.visibility ?? 'private');
-			const res = await opts.fetch(`${base}/api/owners/${ownerId}/assets`, {
-				method: 'POST',
-				body: fd,
-			});
+			const res = await opts.fetch(
+				API_ROUTES.assets.list.url(base, ownerId),
+				{ method: 'POST', body: fd },
+			);
 			if (!res.ok) {
 				throw new Error(`epicenter.assets.upload: ${res.status}`);
 			}
@@ -138,7 +139,7 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 
 		async list(): Promise<AssetRow[]> {
 			const ownerId = await getOwnerId();
-			const res = await opts.fetch(`${base}/api/owners/${ownerId}/assets`);
+			const res = await opts.fetch(API_ROUTES.assets.list.url(base, ownerId));
 			if (!res.ok) {
 				throw new Error(`epicenter.assets.list: ${res.status}`);
 			}
@@ -148,7 +149,7 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 		async usage(): Promise<{ totalBytes: number }> {
 			const ownerId = await getOwnerId();
 			const res = await opts.fetch(
-				`${base}/api/owners/${ownerId}/assets/usage`,
+				API_ROUTES.assets.usage.url(base, ownerId),
 			);
 			if (!res.ok) {
 				throw new Error(`epicenter.assets.usage: ${res.status}`);
@@ -162,7 +163,7 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 		): Promise<SetVisibilityResponse> {
 			const ownerId = await getOwnerId();
 			const res = await opts.fetch(
-				`${base}/api/owners/${ownerId}/assets/${id}`,
+				API_ROUTES.assets.byId.url(base, ownerId, id),
 				{
 					method: 'PATCH',
 					headers: { 'content-type': 'application/json' },
@@ -178,7 +179,7 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 		async delete(id: string): Promise<void> {
 			const ownerId = await getOwnerId();
 			const res = await opts.fetch(
-				`${base}/api/owners/${ownerId}/assets/${id}`,
+				API_ROUTES.assets.byId.url(base, ownerId, id),
 				{ method: 'DELETE' },
 			);
 			if (!res.ok) {
@@ -201,7 +202,7 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 						'await any other assets.* method first.',
 				);
 			}
-			return `${base}/api/owners/${cachedSession.ownerId}/assets/${id}`;
+			return API_ROUTES.assets.byId.url(base, cachedSession.ownerId, id);
 		},
 	};
 
@@ -215,7 +216,7 @@ export function createEpicenterClient(opts: EpicenterClientOptions) {
 		 * plan/credit gating in front of the library handler.
 		 */
 		async chat(body: AiChatBody): Promise<Response> {
-			const res = await opts.fetch(`${base}/api/ai/chat`, {
+			const res = await opts.fetch(API_ROUTES.ai.chat.url(base), {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify(body),

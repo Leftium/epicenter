@@ -18,6 +18,7 @@
 
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
+import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import type { Keyring } from '@epicenter/encryption';
@@ -351,7 +352,7 @@ export async function status({
 
 	let response: Response;
 	try {
-		response = await client.fetch('/api/session');
+		response = await client.fetch(API_ROUTES.session.pattern);
 	} catch {
 		return Ok({
 			status: 'unverified' as const,
@@ -496,7 +497,7 @@ async function fetchApiSession(
 ): Promise<Result<ApiSessionResponse, MachineAuthRequestError>> {
 	let response: Response;
 	try {
-		response = await fetch(`${baseURL}/api/session`, {
+		response = await fetch(API_ROUTES.session.url(baseURL), {
 			headers: { Authorization: `Bearer ${accessToken}` },
 			credentials: 'omit',
 		});

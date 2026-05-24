@@ -1,3 +1,4 @@
+import { API_ROUTES } from '@epicenter/constants/api-routes';
 import type { OwnerId } from '@epicenter/constants/identity';
 import type { DeviceId } from './device-id.js';
 
@@ -21,18 +22,18 @@ export type RoomWsUrlOptions = {
  * In personal mode `ownerId` equals the signed-in user's id; in team mode it
  * is the literal `'team'`. The URL shape is uniform across both modes.
  *
- * The `guid` is `encodeURIComponent`-encoded so ids containing `/`, `?`, or
- * `#` round-trip safely; the server's Hono routes decode the path param. The
- * `baseURL` trailing slash is stripped so callers can pass either
- * `https://api.example.com` or `https://api.example.com/`. The `http(s)`
- * origin is rewritten to `ws(s)`.
+ * The path itself comes from `API_ROUTES.room.url(...)` so server route
+ * declarations and client URL construction can never drift. This wrapper
+ * adds the `?deviceId=` query and rewrites the `http(s)` scheme to `ws(s)`.
  */
 export function roomWsUrl(options: RoomWsUrlOptions): string {
-	const base = options.baseURL.replace(/\/+$/, '');
-	const encodedGuid = encodeURIComponent(options.guid);
-	const path = `/api/owners/${options.ownerId}/rooms/${encodedGuid}`;
+	const httpUrl = API_ROUTES.room.url(
+		options.baseURL,
+		options.ownerId,
+		options.guid,
+	);
 	const search = `?deviceId=${encodeURIComponent(options.deviceId)}`;
-	return `${base}${path}${search}`
+	return `${httpUrl}${search}`
 		.replace(/^https:/, 'wss:')
 		.replace(/^http:/, 'ws:');
 }

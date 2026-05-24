@@ -13,6 +13,7 @@
  * per-user check applies.
  */
 
+import { RequestGuardError } from '@epicenter/constants/request-guard-errors';
 import { createMiddleware } from 'hono/factory';
 import type { Env } from '../types.js';
 
@@ -20,7 +21,7 @@ export const requireUrlOwnerIdMatchesAuth = createMiddleware<Env>(
 	async (c, next) => {
 		const urlOwnerId = c.req.param('ownerId');
 		if (!urlOwnerId || urlOwnerId !== c.var.user.id) {
-			return c.json({ name: 'forbidden_owner_mismatch' }, 403);
+			return c.json(RequestGuardError.OwnerMismatch(), 403);
 		}
 		await next();
 	},

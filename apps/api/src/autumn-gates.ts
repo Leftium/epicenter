@@ -21,6 +21,8 @@
  * The library is billing-agnostic; everything here is cloud-specific.
  */
 
+import { AiChatError } from '@epicenter/constants/ai-chat-errors';
+import { AssetError } from '@epicenter/constants/asset-errors';
 import type { Env as ServerEnv } from '@epicenter/server';
 import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
@@ -76,15 +78,16 @@ export const autumnAiGate = createMiddleware<Env>(async (c, next) => {
 	}
 
 	const model = body.data?.model;
-	const credits = model
-		? MODEL_CREDITS[model as keyof typeof MODEL_CREDITS]
-		: undefined;
+	if (!model) {
+		return c.json(AiChatError.UnknownModel({ model: '<unspecified>' }), 400);
+	}
+	const credits = MODEL_CREDITS[model as keyof typeof MODEL_CREDITS];
 	if (credits === undefined) {
-		return c.json({ name: 'unknown_model', model }, 400);
+		return c.json(AiChatError.UnknownModel({ model }), 400);
 	}
 
 	if (c.var.planId === PLAN_IDS.free && credits > FREE_TIER_MAX_CREDITS) {
-		return c.json({ name: 'model_requires_paid_plan', model, credits }, 403);
+		return c.json(AiChatError.ModelRequiresPaidPlan({ model, credits }), 403);
 	}
 
 	const autumn = createAutumn(c.env);
@@ -98,7 +101,7 @@ export const autumnAiGate = createMiddleware<Env>(async (c, next) => {
 	});
 
 	if (!allowed) {
-		return c.json({ name: 'insufficient_credits', balance }, 402);
+		return c.json(AiChatError.InsufficientCredits({ balance }), 402);
 	}
 
 	await next();
@@ -143,7 +146,10 @@ export const autumnStorageGate = createMiddleware<Env>(async (c, next) => {
 			requiredBalance: file.size,
 		});
 		if (!allowed) {
-			return c.json({ name: 'storage_limit_exceeded' }, 402);
+			return c.json(
+				AssetError.StorageLimitExceeded({ requestedBytes: file.size }),
+				402,
+			);
 		}
 
 		await next();

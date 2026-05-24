@@ -2,14 +2,14 @@
  * Assets sub-app: owner-partitioned URL shapes for the asset CRUD surface.
  *
  * Uniform URL shape across modes:
- *   POST   /owners/:ownerId/assets              authed upload
- *   GET    /owners/:ownerId/assets              authed list
- *   GET    /owners/:ownerId/assets/usage        authed usage
- *   PATCH  /owners/:ownerId/assets/:assetId     authed metadata update
- *                                                (visibility flip; future:
- *                                                 rename)
- *   DELETE /owners/:ownerId/assets/:assetId     authed delete
- *   GET    /owners/:ownerId/assets/:assetId     CONDITIONAL auth
+ *   POST   /api/owners/:ownerId/assets              authed upload
+ *   GET    /api/owners/:ownerId/assets              authed list
+ *   GET    /api/owners/:ownerId/assets/usage        authed usage
+ *   PATCH  /api/owners/:ownerId/assets/:assetId     authed metadata update
+ *                                                    (visibility flip; future:
+ *                                                     rename)
+ *   DELETE /api/owners/:ownerId/assets/:assetId     authed delete
+ *   GET    /api/owners/:ownerId/assets/:assetId     CONDITIONAL auth
  *
  * The conditional GET is the one shape that's new. The handler looks up
  * the row, branches on `visibility`:
@@ -34,6 +34,7 @@
  * platform-level limit {@link MAX_ASSET_BYTES}.
  */
 
+import { AssetError } from '@epicenter/constants/asset-errors';
 import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/constants/identity';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
@@ -42,7 +43,6 @@ import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { describeRoute } from 'hono-openapi';
 import { customAlphabet } from 'nanoid';
-import { defineErrors } from 'wellcrafted/error';
 import { MAX_ASSET_BYTES } from '../constants.js';
 import * as schema from '../db/schema/index.js';
 import { assetKey } from '../owner.js';
@@ -64,6 +64,7 @@ const generateAssetId = customAlphabet(
 );
 
 const ASSET_ID_REGEX = '[a-z0-9]{21}';
+const ASSET_ROUTES_BASE_PATH = '/api/owners/:ownerId/assets';
 
 const ALLOWED_MIME_TYPES = new Set([
 	'image/png',
@@ -80,31 +81,6 @@ const ALLOWED_MIME_TYPES = new Set([
  * an arktype `narrow`.
  */
 const PatchAssetBody = type({ visibility: "'private' | 'public'" });
-
-const AssetError = defineErrors({
-	MissingFile: () => ({
-		message: 'Missing file field in multipart body',
-	}),
-	InvalidVisibility: ({ value }: { value: string }) => ({
-		message: `Invalid visibility: '${value}'. Expected 'private' or 'public'.`,
-		value,
-	}),
-	FileTypeNotAllowed: ({ contentType }: { contentType: string }) => ({
-		message: `File type not allowed: ${contentType}`,
-		contentType,
-		allowed: [...ALLOWED_MIME_TYPES],
-	}),
-	FileTooLarge: ({ size }: { size: number }) => ({
-		message: `File exceeds ${MAX_ASSET_BYTES} byte limit (got ${size})`,
-		size,
-	}),
-	NotFound: () => ({
-		message: 'Asset not found',
-	}),
-	Unauthorized: () => ({
-		message: 'Authentication required to read this asset',
-	}),
-});
 
 function sanitizeFilename(name: string): string {
 	return Array.from(name)
@@ -125,7 +101,7 @@ function parseVisibility(raw: unknown): 'private' | 'public' | null {
 }
 
 /**
- * Authenticated asset CRUD surface, mounted under `/owners/:ownerId/assets`.
+ * Authenticated asset CRUD surface under `/api/owners/:ownerId/assets`.
  *
  * Every handler in this factory expects `c.var.ownerId` to be populated
  * by the deployment-mounted `attachOwner` middleware. The deployment
@@ -135,6 +111,7 @@ function parseVisibility(raw: unknown): 'private' | 'public' | null {
 function createAssetAuthedRoutes(): Hono<Env> {
 	return (
 		new Hono<Env>()
+			.basePath(ASSET_ROUTES_BASE_PATH)
 			// POST / - Create (upload)
 			.post(
 				'/',
@@ -162,13 +139,22 @@ function createAssetAuthedRoutes(): Hono<Env> {
 
 					if (!ALLOWED_MIME_TYPES.has(file.type)) {
 						return c.json(
-							AssetError.FileTypeNotAllowed({ contentType: file.type }),
+							AssetError.FileTypeNotAllowed({
+								contentType: file.type,
+								allowed: [...ALLOWED_MIME_TYPES],
+							}),
 							415,
 						);
 					}
 
 					if (file.size > MAX_ASSET_BYTES) {
-						return c.json(AssetError.FileTooLarge({ size: file.size }), 413);
+						return c.json(
+							AssetError.FileTooLarge({
+								size: file.size,
+								maxBytes: MAX_ASSET_BYTES,
+							}),
+							413,
+						);
 					}
 
 					const assetId = generateAssetId();
@@ -220,12 +206,11 @@ function createAssetAuthedRoutes(): Hono<Env> {
 					tags: ['assets'],
 				}),
 				async (c) => {
-					const assets = await c.var.db
-						.select()
-						.from(schema.asset)
-						.where(eq(schema.asset.ownerId, c.var.ownerId))
-						.orderBy(desc(schema.asset.uploadedAt))
-						.limit(100);
+					const assets = await c.var.db.query.asset.findMany({
+						where: eq(schema.asset.ownerId, c.var.ownerId),
+						orderBy: desc(schema.asset.uploadedAt),
+						limit: 100,
+					});
 					return c.json(assets);
 				},
 			)
@@ -316,11 +301,12 @@ function createAssetAuthedRoutes(): Hono<Env> {
 }
 
 /**
- * Conditional asset read. Mounted at `/owners/:ownerId/assets`. The
- * deployment must NOT layer auth upstream of this route, because public
- * reads bypass auth by design. The handler looks up the row, branches
- * on `visibility`, and runs an auth check inline only for private
- * assets.
+ * Conditional asset read. Defines the full `/api/owners/:ownerId/assets`
+ * base path here so Hono's route type includes `ownerId` in this
+ * handler. The deployment must NOT layer auth upstream of this route,
+ * because public reads bypass auth by design. The handler looks up the
+ * row, branches on `visibility`, and runs an auth check inline only for
+ * private assets.
  *
  * `mode` is needed because the actor-matches-owner check differs by
  * deployment: personal mode requires `session.user.id === urlOwnerId`;
@@ -328,7 +314,7 @@ function createAssetAuthedRoutes(): Hono<Env> {
  * pinned to `TEAM_OWNER_ID` by the route shape).
  */
 function createAssetReadRoute(mode: OwnershipMode): Hono<Env> {
-	return new Hono<Env>().get(
+	return new Hono<Env>().basePath(ASSET_ROUTES_BASE_PATH).get(
 		`/:assetId{${ASSET_ID_REGEX}}`,
 		describeRoute({
 			description:
@@ -337,20 +323,15 @@ function createAssetReadRoute(mode: OwnershipMode): Hono<Env> {
 		}),
 		async (c) => {
 			const { assetId } = c.req.param();
-			const urlOwnerId = asOwnerId(c.req.param('ownerId')!);
+			const urlOwnerId = asOwnerId(c.req.param('ownerId'));
 
-			const [row] = await c.var.db
-				.select({
-					visibility: schema.asset.visibility,
-				})
-				.from(schema.asset)
-				.where(
-					and(
-						eq(schema.asset.id, assetId),
-						eq(schema.asset.ownerId, urlOwnerId),
-					),
-				)
-				.limit(1);
+			const row = await c.var.db.query.asset.findFirst({
+				columns: { visibility: true },
+				where: and(
+					eq(schema.asset.id, assetId),
+					eq(schema.asset.ownerId, urlOwnerId),
+				),
+			});
 
 			if (!row) return c.json(AssetError.NotFound(), 404);
 
@@ -386,7 +367,9 @@ function createAssetReadRoute(mode: OwnershipMode): Hono<Env> {
 			// purge on PATCH would let us raise max-age; documented as a
 			// future optimization in the spec §4.
 			const cacheControl =
-				row.visibility === 'public' ? 'public, max-age=60' : 'private, no-store';
+				row.visibility === 'public'
+					? 'public, max-age=60'
+					: 'private, no-store';
 
 			// Bodyless object - precondition failed (ETag match -> 304)
 			if (!('body' in object)) {
@@ -445,7 +428,7 @@ export function createAssetsApp(opts: { mode: OwnershipMode }): Hono<Env> {
 	// Conditional read mounts first so it matches GET /:assetId before
 	// any wildcard handlers. Order matters: both sub-apps mount at the
 	// same prefix, and Hono matches in registration order.
-	app.route('/owners/:ownerId/assets', createAssetReadRoute(opts.mode));
-	app.route('/owners/:ownerId/assets', createAssetAuthedRoutes());
+	app.route('/', createAssetReadRoute(opts.mode));
+	app.route('/', createAssetAuthedRoutes());
 	return app;
 }

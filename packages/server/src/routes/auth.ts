@@ -49,16 +49,14 @@ type OAuthAuthServerConfigAuth = Parameters<
 >[0];
 
 /**
- * Build the auth sub-app. Registration order matters: OAuth discovery
- * routes must register before the `/auth/*` Better Auth catch-all, or the
- * catch-all swallows discovery requests. This is exercised by tests.
+ * Auth sub-app. Registration order matters: OAuth discovery routes must
+ * register before the `/auth/*` Better Auth catch-all, or the catch-all
+ * swallows discovery requests.
  */
-export function createAuthApp(): Hono<Env> {
-	const app = new Hono<Env>();
-
+export const authApp = new Hono<Env>()
 	// Server-rendered sign-in page. Re-entry into OAuth happens when the
 	// caller arrives with `?sig=` (signed authorize params).
-	app.get('/sign-in', async (c) => {
+	.get('/sign-in', async (c) => {
 		const session = await c.var.auth.api.getSession({
 			headers: c.req.raw.headers,
 		});
@@ -79,11 +77,10 @@ export function createAuthApp(): Hono<Env> {
 			);
 		}
 		return c.html(renderSignInPage());
-	});
-
+	})
 	// Server-rendered consent page. Requires a session; redirects to sign-in
 	// (with a callbackURL pointing back) when missing.
-	app.get(
+	.get(
 		'/consent',
 		sValidator('query', type({ 'client_id?': 'string', 'scope?': 'string' })),
 		async (c) => {
@@ -99,11 +96,10 @@ export function createAuthApp(): Hono<Env> {
 			const { client_id: clientId, scope } = c.req.valid('query');
 			return c.html(renderConsentPage({ clientId, scope }));
 		},
-	);
-
+	)
 	// CLI OOB callback. The code is useless without the CLI's PKCE verifier,
 	// but `Cache-Control: no-store` keeps the edge from caching it anyway.
-	app.get(
+	.get(
 		'/auth/cli-callback',
 		describeRoute({
 			description: 'CLI OAuth out-of-band callback page',
@@ -121,11 +117,10 @@ export function createAuthApp(): Hono<Env> {
 				}),
 			);
 		},
-	);
-
+	)
 	// OAuth discovery. MUST register before /auth/* below; Hono matches in
 	// registration order and the catch-all otherwise wins.
-	app.get(
+	.get(
 		OAUTH_OPENID_CONFIGURATION_PATH,
 		describeRoute({
 			description: 'OpenID Connect discovery metadata',
@@ -135,8 +130,8 @@ export function createAuthApp(): Hono<Env> {
 			oauthProviderOpenIdConfigMetadata(c.var.auth as OAuthOpenIdConfigAuth)(
 				c.req.raw,
 			),
-	);
-	app.get(
+	)
+	.get(
 		OAUTH_AUTHORIZATION_SERVER_METADATA_PATH,
 		describeRoute({
 			description: 'OAuth authorization server metadata',
@@ -146,8 +141,8 @@ export function createAuthApp(): Hono<Env> {
 			oauthProviderAuthServerMetadata(c.var.auth as OAuthAuthServerConfigAuth)(
 				c.req.raw,
 			),
-	);
-	app.get(
+	)
+	.get(
 		OAUTH_PROTECTED_RESOURCE_METADATA_PATH,
 		describeRoute({
 			description: 'OAuth protected resource metadata',
@@ -164,10 +159,9 @@ export function createAuthApp(): Hono<Env> {
 			c.header('Cache-Control', OAUTH_METADATA_CACHE_CONTROL);
 			return c.json(metadata);
 		},
-	);
-
+	)
 	// Better Auth catch-all.
-	app.on(
+	.on(
 		['GET', 'POST'],
 		'/auth/*',
 		describeRoute({
@@ -176,6 +170,3 @@ export function createAuthApp(): Hono<Env> {
 		}),
 		(c) => c.var.auth.handler(c.req.raw),
 	);
-
-	return app;
-}

@@ -6,28 +6,30 @@
  * hosted team deployments live in a sibling apps/* folder and compose the
  * same library with `mode: 'team'` and no Autumn middleware.
  *
+ * Library sub-apps declare their full URL patterns (including `/api`).
+ * The deployment composes auth + billing middleware via `base.use(...)` at
+ * the matching pattern, then mounts each sub-app at `/`.
+ *
  * Read top to bottom for the full URL surface of cloud.
  */
 
 import {
-	createAiApp,
+	aiApp,
+	authApp,
 	createAssetsApp,
 	createAttachOwner,
-	createAuthApp,
 	createBaseApp,
-	createRoomsApp,
-	createSessionApp,
+	Room,
 	requireBearerUser,
 	requireCookieOrBearerUser,
 	requireUrlOwnerIdMatchesAuth,
-	Room,
+	roomsApp,
+	sessionApp,
 } from '@epicenter/server';
-import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
 import {
 	autumnAiGate,
 	autumnStorageGate,
-	type Env,
 	ensurePlanId,
 } from './autumn-gates.js';
 import { billingRoutes } from './billing-routes.js';
@@ -42,71 +44,55 @@ base.get('/', (c) =>
 	c.json({ mode: 'hub', version: '0.1.0', runtime: 'cloudflare' }),
 );
 
-// Auth surface (no /api prefix; these render HTML and OAuth metadata).
-// Mounted at root: the sub-app already declares full paths internally
-// (`/sign-in`, `/consent`, `/auth/cli-callback`, `/auth/*`). Mounting at
-// a prefix would make Hono prepend it, producing `/sign-in/sign-in` etc.
-base.route('/', createAuthApp());
+// Auth surface (HTML pages + OAuth metadata; no /api prefix by design).
+base.route('/', authApp);
 
-// Session: cookie-or-bearer auth + owner resolution, then library handler.
-const cloudSession = new Hono<Env>()
-	.use('/', requireCookieOrBearerUser, attachOwner)
-	.route('/', createSessionApp());
-base.route('/api/session', cloudSession);
+// Session: cookie-or-bearer auth + owner resolution.
+base.use('/api/session', requireCookieOrBearerUser, attachOwner);
+base.route('/', sessionApp);
 
-// Rooms: bearer auth + URL ownerId safety + owner resolution, then library
-// handler. No billing gate for rooms today; bandwidth and DO storage are not
-// metered.
-const cloudRooms = new Hono<Env>()
-	.use(
-		'/owners/:ownerId/rooms/*',
-		requireBearerUser,
-		requireUrlOwnerIdMatchesAuth,
-		attachOwner,
-	)
-	.route('/', createRoomsApp());
-base.route('/api', cloudRooms);
+// Rooms: bearer auth + URL ownerId safety + owner resolution. No billing
+// gate; bandwidth and DO storage are not metered.
+base.use(
+	'/api/owners/:ownerId/rooms/*',
+	requireBearerUser,
+	requireUrlOwnerIdMatchesAuth,
+	attachOwner,
+);
+base.route('/', roomsApp);
 
 // Assets: split auth by path/method. POST upload, list, usage, PATCH metadata,
 // and DELETE all require auth. The conditional GET at /:assetId is left
 // uncovered; the library handler looks up the row and runs auth inline only
 // for `visibility === 'private'` rows. Public assets serve to anyone with the
 // URL.
-const cloudAssets = new Hono<Env>()
-	// POST upload + GET list at the bare prefix
-	.use(
-		'/owners/:ownerId/assets',
-		requireCookieOrBearerUser,
-		requireUrlOwnerIdMatchesAuth,
-		attachOwner,
-		autumnStorageGate,
-	)
-	// GET usage (one segment deeper, not caught by the bare-prefix .use)
-	.use(
-		'/owners/:ownerId/assets/usage',
-		requireCookieOrBearerUser,
-		requireUrlOwnerIdMatchesAuth,
-		attachOwner,
-		autumnStorageGate,
-	)
-	// PATCH metadata + DELETE on /:assetId. GET is intentionally absent
-	// here so the conditional library handler can run without upstream auth.
-	.on(
-		['PATCH', 'DELETE'],
-		'/owners/:ownerId/assets/:assetId{[a-z0-9]{21}}',
-		requireCookieOrBearerUser,
-		requireUrlOwnerIdMatchesAuth,
-		attachOwner,
-		autumnStorageGate,
-	)
-	.route('/', createAssetsApp({ mode: MODE }));
-base.route('/api', cloudAssets);
+base.use(
+	'/api/owners/:ownerId/assets',
+	requireCookieOrBearerUser,
+	requireUrlOwnerIdMatchesAuth,
+	attachOwner,
+	autumnStorageGate,
+);
+base.use(
+	'/api/owners/:ownerId/assets/usage',
+	requireCookieOrBearerUser,
+	requireUrlOwnerIdMatchesAuth,
+	attachOwner,
+	autumnStorageGate,
+);
+base.on(
+	['PATCH', 'DELETE'],
+	'/api/owners/:ownerId/assets/:assetId{[a-z0-9]{21}}',
+	requireCookieOrBearerUser,
+	requireUrlOwnerIdMatchesAuth,
+	attachOwner,
+	autumnStorageGate,
+);
+base.route('/', createAssetsApp({ mode: MODE }));
 
-// AI chat: bearer-only, plan-aware credit gate, then library handler.
-const cloudAi = new Hono<Env>()
-	.use('*', requireBearerUser, ensurePlanId, autumnAiGate)
-	.route('/', createAiApp());
-base.route('/api/ai', cloudAi);
+// AI chat: bearer-only, plan-aware credit gate.
+base.use('/api/ai/*', requireBearerUser, ensurePlanId, autumnAiGate);
+base.route('/', aiApp);
 
 // Billing dashboard data plane.
 base.use('/api/billing/*', requireCookieOrBearerUser);

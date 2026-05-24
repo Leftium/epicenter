@@ -31,7 +31,6 @@ import {
 	findProjectRoot,
 	loadProjectConfig,
 	StartupError,
-	type StartupError as StartupErrorType,
 	startDaemonServer,
 	startDaemonWorkspaceApps,
 	unlinkMetadata,
@@ -110,7 +109,7 @@ export async function runUp(
 ): Promise<
 	Result<
 		UpHandle,
-		WorkspaceAppError | StartupErrorType | MachineAuthStorageError
+		WorkspaceAppError | StartupError | MachineAuthStorageError
 	>
 > {
 	const projectDir = realpathSync(resolveProjectForUp(options.projectDir));

@@ -8,12 +8,9 @@
  * be mounted without it.
  */
 
-import { API_ROUTES } from '@epicenter/constants/api-routes';
-import {
-	MODEL_CREDITS,
-	providerOf,
-} from '@epicenter/billing/ai-model-pricing';
+import { MODEL_CREDITS, providerOf } from '@epicenter/billing/ai-model-pricing';
 import type { ModelCostGuide } from '@epicenter/billing/contracts';
+import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { BillingError } from '@epicenter/constants/billing-errors';
 import type { Env } from '@epicenter/server';
 import { sValidator } from '@hono/standard-validator';
@@ -108,9 +105,7 @@ billingRoutes.get('/models', (c) => {
 			provider: providerOf(model),
 			credits,
 		}))
-		.sort(
-			(a, b) => a.credits - b.credits || a.model.localeCompare(b.model),
-		);
+		.sort((a, b) => a.credits - b.credits || a.model.localeCompare(b.model));
 	return c.json({ models } satisfies ModelCostGuide);
 });
 

@@ -21,9 +21,9 @@ import {
 	mountRoomsApp,
 	mountSessionApp,
 	personal,
+	Room,
 	requireBearerUser,
 	requireCookieOrBearerUser,
-	Room,
 } from '@epicenter/server';
 import { describeRoute } from 'hono-openapi';
 import {

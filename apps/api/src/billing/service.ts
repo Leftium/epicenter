@@ -1,7 +1,7 @@
 /**
  * Billing service.
  *
- * Owns every Autumn round-trip in the cloud worker. Routes and gates
+ * Owns every Autumn round-trip in the cloud worker. Routes and policies
  * call into this service, which returns Epicenter DTOs from
  * `@epicenter/billing/contracts`. Nothing outside this module imports
  * `autumn-js` at runtime.
@@ -61,13 +61,13 @@ type StorageErrorBody = Err<
 	ReturnType<typeof AssetError.StorageLimitExceeded>['error']
 >;
 
-/** Result of an AI billing gate check. */
-export type AiGateOutcome =
+/** Result of an AI guard check. Returned by {@link guardAiChat}. */
+type AiGuardOutcome =
 	| { kind: 'allow'; credits: number }
 	| { kind: 'deny'; status: 400 | 402 | 403; body: AiErrorBody };
 
-/** Result of a pre-flight storage upload check. */
-export type StorageGateOutcome =
+/** Result of a pre-flight storage upload check. Returned by {@link guardAssetUpload}. */
+type StorageGuardOutcome =
 	| { kind: 'allow' }
 	| { kind: 'deny'; status: 402; body: StorageErrorBody };
 
@@ -103,12 +103,12 @@ export function createBillingService(
 		});
 	}
 
-	// ----- AI gate ------------------------------------------------------
+	// ----- AI guard -----------------------------------------------------
 
 	async function guardAiChat(input: {
 		model: string;
 		provider: string | undefined;
-	}): Promise<AiGateOutcome> {
+	}): Promise<AiGuardOutcome> {
 		const credits = MODEL_CREDITS[input.model as keyof typeof MODEL_CREDITS];
 		if (credits === undefined) {
 			return {
@@ -166,11 +166,11 @@ export function createBillingService(
 		});
 	}
 
-	// ----- Storage gate -------------------------------------------------
+	// ----- Storage guard ------------------------------------------------
 
 	async function guardAssetUpload(
 		fileSize: number,
-	): Promise<StorageGateOutcome> {
+	): Promise<StorageGuardOutcome> {
 		// Seed the customer so the storage balance materializes from the
 		// auto-enable free plan before we check it.
 		await autumn.customers.getOrCreate({

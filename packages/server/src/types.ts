@@ -16,14 +16,6 @@ import type * as schema from './db/schema/index.js';
 import type { Rooms } from './room/contracts.js';
 
 /**
- * Deployment partition shape. Passed to the sub-apps and middleware that
- * branch on it (`createAssetsApp`, `createRequireOwnership`). The wire
- * does not carry mode (consumers derive it from `ownerId === TEAM_OWNER_ID`),
- * so this type stays server-internal.
- */
-export type OwnershipMode = 'personal' | 'team';
-
-/**
  * Per-connection identity and runtime state, stamped onto the Cloudflare
  * Durable Object WebSocket attachment so presence survives hibernation.
  *

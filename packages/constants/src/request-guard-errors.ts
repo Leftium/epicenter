@@ -1,12 +1,20 @@
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 
 /**
- * Structured error variants for pre-handler 403 boundary refusals.
+ * Structured error variants for request-boundary refusals.
  *
- * Emitted by request-guard middleware in `@epicenter/server` before any
- * route handler runs. Both variants are co-located because they share a
- * domain: the request was rejected at an authorization or CSRF boundary,
- * not by the resource handler itself.
+ * Emitted before the resource handler runs domain logic. Four flavors,
+ * grouped because they share the property "request was malformed at the
+ * boundary, not by the domain":
+ *
+ *   - `OwnerMismatch` (403): middleware-level auth refusal: URL owner
+ *     does not match the authenticated user.
+ *   - `NotTeamMember` (403): middleware-level membership refusal: the
+ *     authenticated user is not on this team deployment's allow-list.
+ *   - `ForbiddenOrigin` (403): middleware-level CSRF refusal: origin
+ *     missing or not in the trusted-origin allowlist.
+ *   - `MissingDeviceId` (400): route-level input refusal: WebSocket
+ *     upgrade is missing the required `deviceId` query parameter.
  *
  * Defined once in the shared constants package so server runtime and
  * any client SDK reference the same discriminated union. The server
@@ -26,8 +34,10 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  * import type { RequestGuardError } from '@epicenter/constants/request-guard-errors';
  * function handle(error: RequestGuardError) {
  *   switch (error.name) {
- *     case 'OwnerMismatch':    // wrong URL for this signed-in user
- *     case 'ForbiddenOrigin':  // CSRF: origin missing or not trusted
+ *     case 'OwnerMismatch':     // wrong URL for this signed-in user
+ *     case 'NotTeamMember':     // signed in but not on the team allow-list
+ *     case 'ForbiddenOrigin':   // CSRF: origin missing or not trusted
+ *     case 'MissingDeviceId':   // WebSocket upgrade without ?deviceId=
  *   }
  * }
  * ```
@@ -36,8 +46,16 @@ export const RequestGuardError = defineErrors({
 	OwnerMismatch: () => ({
 		message: 'The request URL owner does not match the authenticated user.',
 	}),
+	NotTeamMember: () => ({
+		message:
+			'The authenticated user is not a member of this team deployment.',
+	}),
 	ForbiddenOrigin: () => ({
 		message: 'Origin header is missing or not in the trusted-origin allowlist.',
+	}),
+	MissingDeviceId: () => ({
+		message:
+			'WebSocket upgrade is missing the required deviceId query parameter.',
 	}),
 });
 

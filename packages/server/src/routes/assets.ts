@@ -14,9 +14,11 @@
  * The conditional GET is the one shape that's new. The handler looks up
  * the row, branches on `visibility`:
  *   - 'public'  : serve bytes; no auth required.
- *   - 'private' : require an authenticated session whose actor matches
- *                 the URL `:ownerId` (personal mode) or any team session
- *                 if the URL owner is `TEAM_OWNER_ID` (team mode).
+ *   - 'private' : require an authenticated session whose actor resolves
+ *                 to the URL `:ownerId` partition via the deployment's
+ *                 `OwnershipRule` (personal: user.id matches; team: user
+ *                 passes the membership predicate and URL is the team
+ *                 sentinel).
  *
  * Because the conditional GET handles its own auth, the deployment must
  * NOT layer `requireCookieOrBearerUser` upstream of it (that would block
@@ -34,6 +36,7 @@
  * platform-level limit {@link MAX_ASSET_BYTES}.
  */
 
+import { AuthUser } from '@epicenter/auth';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { AssetError } from '@epicenter/constants/asset-errors';
 import { asOwnerId } from '@epicenter/constants/identity';
@@ -46,9 +49,9 @@ import { describeRoute } from 'hono-openapi';
 import { customAlphabet } from 'nanoid';
 import { MAX_ASSET_BYTES } from '../constants.js';
 import * as schema from '../db/schema/index.js';
-import { resolveExpectedOwnerId } from '../middleware/require-ownership.js';
+import { type OwnershipRule, resolveExpectedOwnerId } from '../ownership.js';
 import { assetKey } from '../owner.js';
-import type { Env, OwnershipMode } from '../types.js';
+import type { Env } from '../types.js';
 
 /**
  * 21-char alphanumeric ID generator (~108 bits entropy). Used as the
@@ -306,11 +309,13 @@ function createAssetAuthedRoutes(): Hono<Env> {
  * row, branches on `visibility`, and runs an auth check inline only for
  * private assets.
  *
- * The actor-matches-owner check goes through {@link resolveExpectedOwnerId}
- * (the same rule `requireOwnership` enforces), so the conditional GET
- * never re-implements the partition-resolution decision.
+ * Private-asset auth goes through the same `resolveExpectedOwnerId` the
+ * `requireOwnership` middleware uses, so the partition decision and any
+ * team-membership check live in one place. We synthesize `c.var.user`
+ * from the fetched session before delegating, because no upstream auth
+ * runs on this path (public assets must serve without it).
  */
-function createAssetReadRoute(mode: OwnershipMode): Hono<Env> {
+function createAssetReadRoute(ownership: OwnershipRule): Hono<Env> {
 	return new Hono<Env>().get(
 		API_ROUTES.assets.byId.pattern,
 		describeRoute({
@@ -337,8 +342,12 @@ function createAssetReadRoute(mode: OwnershipMode): Hono<Env> {
 					headers: c.req.raw.headers,
 				});
 				if (!session) return c.json(AssetError.Unauthorized(), 401);
-				const expectedOwnerId = resolveExpectedOwnerId(mode, session.user.id);
-				if (urlOwnerId !== expectedOwnerId) {
+				c.set('user', AuthUser.assert(session.user));
+				const { data: expectedOwnerId, error } = await resolveExpectedOwnerId(
+					ownership,
+					c,
+				);
+				if (error || urlOwnerId !== expectedOwnerId) {
 					return c.json(AssetError.Unauthorized(), 401);
 				}
 			}
@@ -419,12 +428,12 @@ function createAssetReadRoute(mode: OwnershipMode): Hono<Env> {
 	);
 }
 
-export function createAssetsApp(opts: { mode: OwnershipMode }): Hono<Env> {
+export function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 	const app = new Hono<Env>();
 	// Conditional read mounts first so it matches GET /:assetId before
 	// any wildcard handlers. Order matters: both sub-apps mount at the
 	// same prefix, and Hono matches in registration order.
-	app.route('/', createAssetReadRoute(opts.mode));
+	app.route('/', createAssetReadRoute(opts.ownership));
 	app.route('/', createAssetAuthedRoutes());
 	return app;
 }

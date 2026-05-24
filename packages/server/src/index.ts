@@ -23,6 +23,11 @@ export {
 	requireCookieOrBearerUser,
 } from './middleware/require-auth.js';
 export { createRequireOwnership } from './middleware/require-ownership.js';
+// Ownership composition: the deployment constructs the rule once via
+// `personal()` or `team({ isMember })` and threads it into every library
+// surface that needs the partition. See ./ownership.ts for the design
+// note.
+export { type IsMember, type OwnershipRule, personal, team } from './ownership.js';
 // Re-export the Cloudflare Durable Object class so each deployment's
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.
 export { Room } from './room/backends/cloudflare/durable-object.js';
@@ -35,6 +40,5 @@ export { roomsApp } from './routes/rooms.js';
 export { sessionApp } from './routes/session.js';
 
 // Public Hono context type the deployment composes around library
-// middleware. `OwnershipMode` stays internal: factories accept the
-// literal value directly.
+// middleware.
 export type { Env } from './types.js';

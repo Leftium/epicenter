@@ -1,10 +1,11 @@
 /**
  * Epicenter Cloud Worker entry.
  *
- * Composes the `@epicenter/server` library in `personal` ownership mode and
- * layers cloud-only billing, admin, and dashboard surfaces on top. Self-
- * hosted team deployments live in a sibling apps/* folder and compose the
- * same library with `mode: 'team'` and no Autumn middleware.
+ * Composes the `@epicenter/server` library with the `personal` ownership
+ * rule and layers cloud-only billing, admin, and dashboard surfaces on
+ * top. Self-hosted team deployments live in a sibling apps/* folder and
+ * compose the same library with `team({ isMember })` and no Autumn
+ * middleware.
  *
  * Library sub-apps declare their full URL patterns (including `/api`).
  * The deployment composes auth + billing middleware via `base.use(...)` at
@@ -20,6 +21,7 @@ import {
 	createAssetsApp,
 	createBaseApp,
 	createRequireOwnership,
+	personal,
 	Room,
 	requireBearerUser,
 	requireCookieOrBearerUser,
@@ -34,10 +36,10 @@ import {
 } from './autumn-gates.js';
 import { billingRoutes } from './billing-routes.js';
 
-const MODE = 'personal';
+const ownership = personal();
 
 const base = createBaseApp();
-const requireOwnership = createRequireOwnership(MODE);
+const requireOwnership = createRequireOwnership(ownership);
 
 // Public health endpoint at root.
 base.get('/', (c) =>
@@ -86,7 +88,7 @@ base.on(
 	requireOwnership,
 	autumnStorageGate,
 );
-base.route('/', createAssetsApp({ mode: MODE }));
+base.route('/', createAssetsApp({ ownership }));
 
 // AI chat: bearer-only, plan-aware credit gate.
 base.use(

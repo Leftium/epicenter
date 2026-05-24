@@ -1,15 +1,16 @@
 /**
  * Deployment ownership boundary.
  *
- * One middleware that closes the matrix `(mode, URL :ownerId, auth user)`
+ * One middleware that closes the matrix `(rule, URL :ownerId, auth user)`
  * into a resolved owner partition on `c.var.ownerId`:
  *
- *   1. Compute the expected partition from `(mode, c.var.user.id)`.
- *      Personal: the signed-in user's id (a UserId, byte-equal to an
- *      OwnerId). Team: the literal `TEAM_OWNER_ID`.
+ *   1. Resolve the expected partition from `(rule, c.var.user)` via
+ *      {@link resolveExpectedOwnerId}. In team mode this also runs the
+ *      deployment's membership predicate; non-members get 403
+ *      NotTeamMember before any URL is read.
  *   2. If the route declares `:ownerId`, assert the URL segment equals
- *      the expected partition. Mismatch is a 403 in both modes. Team mode
- *      used to silently overwrite the URL — now the URL is honest.
+ *      the expected partition. Mismatch is 403 OwnerMismatch in both
+ *      modes.
  *   3. Routes without `:ownerId` (the session endpoint) skip the URL
  *      check; the partition still resolves and attaches.
  *
@@ -18,32 +19,18 @@
  * a typecheck failure on the missing variable.
  */
 
-import {
-	asOwnerId,
-	type OwnerId,
-	TEAM_OWNER_ID,
-} from '@epicenter/constants/identity';
 import { RequestGuardError } from '@epicenter/constants/request-guard-errors';
 import { createMiddleware } from 'hono/factory';
-import type { Env, OwnershipMode } from '../types.js';
+import { type OwnershipRule, resolveExpectedOwnerId } from '../ownership.js';
+import type { Env } from '../types.js';
 
-/**
- * The single rule for "what partition does this signed-in actor map to in
- * this deployment?" Personal collapses to the actor's id (byte-equal to
- * the OwnerId); team collapses to the fixed sentinel. Exported so the
- * conditional asset GET (which runs auth inline and cannot use the
- * middleware) goes through the same rule.
- */
-export function resolveExpectedOwnerId(
-	mode: OwnershipMode,
-	userId: string,
-): OwnerId {
-	return mode === 'personal' ? asOwnerId(userId) : TEAM_OWNER_ID;
-}
-
-export function createRequireOwnership(mode: OwnershipMode) {
+export function createRequireOwnership(rule: OwnershipRule) {
 	return createMiddleware<Env>(async (c, next) => {
-		const expectedOwnerId = resolveExpectedOwnerId(mode, c.var.user.id);
+		const { data: expectedOwnerId, error } = await resolveExpectedOwnerId(
+			rule,
+			c,
+		);
+		if (error) return c.json(error, 403);
 		const urlOwnerId = c.req.param('ownerId');
 		if (urlOwnerId !== undefined && urlOwnerId !== expectedOwnerId) {
 			return c.json(RequestGuardError.OwnerMismatch(), 403);

@@ -19,6 +19,7 @@
 		"./versions": "./src/versions.ts",
 		"./ai-chat-errors": "./src/ai-chat-errors.ts",
 		"./asset-errors": "./src/asset-errors.ts",
+		"./oauth-errors": "./src/oauth-errors.ts",
 		"./request-guard-errors": "./src/request-guard-errors.ts"
 	},
 	"devDependencies": {

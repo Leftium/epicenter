@@ -356,7 +356,7 @@ function createAssetReadRoute(mode: OwnershipMode): Hono<Env> {
 			);
 
 			if (object === null) {
-				return c.body('Not found', 404);
+				return c.json(AssetError.NotFound(), 404);
 			}
 
 			// Cache-Control differs by visibility. Private assets MUST never

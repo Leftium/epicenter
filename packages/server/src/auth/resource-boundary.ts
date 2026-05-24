@@ -6,7 +6,7 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Context } from 'hono';
 import { Ok, type Result } from 'wellcrafted/result';
 import * as schema from '../db/schema';
-import { OAuthError } from './oauth-error.js';
+import { OAuthError } from '@epicenter/constants/oauth-errors';
 import { createOAuthIssuerURL, createOAuthJwksURL } from './oauth-metadata.js';
 
 type VerifyOAuthAccessToken = ReturnType<

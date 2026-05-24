@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 import { isWebSocketUpgrade } from '../is-websocket-upgrade.js';
-import type { OAuthError } from './oauth-error.js';
+import type { OAuthError } from '@epicenter/constants/oauth-errors';
 
 type CreateWebSocketPair = () => InstanceType<typeof WebSocketPair>;
 

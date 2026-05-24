@@ -27,6 +27,7 @@ Load these on demand based on what you're working on:
 - If working with **test setup architecture** (`setup()` patterns, composable setup, `beforeEach` avoidance, shared schemas), read [references/setup-pattern.md](references/setup-pattern.md)
 - If working with **test organization structure** (flat tests, `describe()` boundaries, helper-over-nesting), read [references/test-structure.md](references/test-structure.md)
 - If **auditing existing tests** for hedged assertions, pass-through getters, stalled fakes, dead fake surface, or docstrings that contradict the code, read [references/honest-tests.md](references/honest-tests.md)
+- If **pruning tests** that may not earn their keep, read [references/test-deletion-grill.md](references/test-deletion-grill.md)
 
 External reading:
 

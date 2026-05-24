@@ -17,16 +17,19 @@
  * sees them.
  */
 
-import { asUserId, type AuthUser } from '@epicenter/auth';
-import { TEAM_OWNER_ID } from '@epicenter/constants/identity';
 import { describe, expect, test } from 'bun:test';
+import { type AuthUser, asUserId } from '@epicenter/auth';
+import { TEAM_OWNER_ID } from '@epicenter/constants/identity';
 import { Hono } from 'hono';
 import type { Env } from '../types.js';
 import { createRequireOwnership } from './require-ownership.js';
 
 function createTestApp(mode: 'personal' | 'team', userId: string) {
 	const app = new Hono<Env>();
-	const user = { id: asUserId(userId), email: `${userId}@x` } satisfies AuthUser;
+	const user = {
+		id: asUserId(userId),
+		email: `${userId}@x`,
+	} satisfies AuthUser;
 	app.use('*', async (c, next) => {
 		c.set('user', user);
 		await next();
@@ -34,9 +37,7 @@ function createTestApp(mode: 'personal' | 'team', userId: string) {
 	const requireOwnership = createRequireOwnership(mode);
 	app.use('/api/owners/:ownerId/*', requireOwnership);
 	app.use('/api/session', requireOwnership);
-	app.get('/api/owners/:ownerId/rooms/:roomId', (c) =>
-		c.text(c.var.ownerId),
-	);
+	app.get('/api/owners/:ownerId/rooms/:roomId', (c) => c.text(c.var.ownerId));
 	app.get('/api/session', (c) => c.text(c.var.ownerId));
 	return app;
 }

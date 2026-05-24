@@ -65,7 +65,6 @@ const generateAssetId = customAlphabet(
 	21,
 );
 
-
 const ALLOWED_MIME_TYPES = new Set([
 	'image/png',
 	'image/jpeg',

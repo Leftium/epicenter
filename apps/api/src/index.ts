@@ -49,17 +49,17 @@ base.route('/', authApp);
 
 // Session: cookie-or-bearer auth + owner resolution. No URL :ownerId; the
 // guard attaches the resolved partition directly.
-base.use(API_ROUTES.session.pattern, requireCookieOrBearerUser, requireOwnership);
+base.use(
+	API_ROUTES.session.pattern,
+	requireCookieOrBearerUser,
+	requireOwnership,
+);
 base.route('/', sessionApp);
 
 // Rooms: bearer auth + ownership boundary. requireOwnership rejects URL
 // :ownerId mismatches and attaches c.var.ownerId. No billing gate; bandwidth
 // and DO storage are not metered.
-base.use(
-	API_ROUTES.room.prefixPattern,
-	requireBearerUser,
-	requireOwnership,
-);
+base.use(API_ROUTES.room.prefixPattern, requireBearerUser, requireOwnership);
 base.route('/', roomsApp);
 
 // Assets: split auth by path/method. POST upload, list, usage, PATCH metadata,
@@ -89,7 +89,12 @@ base.on(
 base.route('/', createAssetsApp({ mode: MODE }));
 
 // AI chat: bearer-only, plan-aware credit gate.
-base.use(API_ROUTES.ai.chat.prefixPattern, requireBearerUser, ensurePlanId, autumnAiGate);
+base.use(
+	API_ROUTES.ai.chat.prefixPattern,
+	requireBearerUser,
+	ensurePlanId,
+	autumnAiGate,
+);
 base.route('/', aiApp);
 
 // Billing dashboard data plane.

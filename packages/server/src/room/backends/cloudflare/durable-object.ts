@@ -28,9 +28,9 @@
  * with no wrapper.
  */
 
+import { DurableObject } from 'cloudflare:workers';
 import { asUserId } from '@epicenter/auth';
 import { MAIN_SUBPROTOCOL, parseSubprotocols } from '@epicenter/sync';
-import { DurableObject } from 'cloudflare:workers';
 import type { Connection } from '../../../types.js';
 import { createRoomCore, type RoomCore } from '../../core.js';
 import { createDurableObjectUpdateLog } from './update-log.js';

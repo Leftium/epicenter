@@ -100,12 +100,6 @@ function sanitizeFilename(name: string): string {
 		.slice(0, 255);
 }
 
-function parseVisibility(raw: unknown): 'private' | 'public' | null {
-	if (raw === undefined || raw === null || raw === '') return 'private';
-	if (raw === 'private' || raw === 'public') return raw;
-	return null;
-}
-
 function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 	const { ownership } = opts;
 	return (
@@ -125,10 +119,22 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 						return c.json(AssetError.MissingFile(), 400);
 					}
 
-					const visibility = parseVisibility(body.visibility);
-					if (visibility === null) {
+					// Missing / empty visibility defaults to 'private': the
+					// safer side of the publish toggle. An unrecognized value
+					// is a client bug; reject explicitly.
+					const rawVisibility = body.visibility;
+					let visibility: 'private' | 'public';
+					if (
+						rawVisibility === undefined ||
+						rawVisibility === null ||
+						rawVisibility === ''
+					) {
+						visibility = 'private';
+					} else if (rawVisibility === 'private' || rawVisibility === 'public') {
+						visibility = rawVisibility;
+					} else {
 						return c.json(
-							AssetError.InvalidVisibility({ value: String(body.visibility) }),
+							AssetError.InvalidVisibility({ value: String(rawVisibility) }),
 							400,
 						);
 					}

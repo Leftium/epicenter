@@ -12,11 +12,11 @@
 import { describe, expect, test } from 'bun:test';
 import { attachTables } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import type { FileId } from '../ids.js';
+import { asFileId } from '../ids.js';
 import { filesTable } from '../table.js';
 import { assertUniqueName, disambiguateNames, validateName } from './naming.js';
 
-const fid = (s: string) => s as FileId;
+const fid = (s: string) => asFileId(s);
 
 function setup() {
 	const id = 'test';

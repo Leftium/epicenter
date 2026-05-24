@@ -18,12 +18,11 @@
 // registry). Mount every sub-app on this one.
 export { createBaseApp } from './base-app.js';
 // Middleware deployments compose around sub-apps.
-export { createAttachOwner } from './middleware/attach-owner.js';
 export {
 	requireBearerUser,
 	requireCookieOrBearerUser,
 } from './middleware/require-auth.js';
-export { requireUrlOwnerIdMatchesAuth } from './middleware/require-url-owner-id-matches-auth.js';
+export { createRequireOwnership } from './middleware/require-ownership.js';
 // Re-export the Cloudflare Durable Object class so each deployment's
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.
 export { Room } from './room/backends/cloudflare/durable-object.js';

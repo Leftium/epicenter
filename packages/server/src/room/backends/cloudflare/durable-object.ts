@@ -28,8 +28,9 @@
  * with no wrapper.
  */
 
-import { DurableObject } from 'cloudflare:workers';
+import { asUserId } from '@epicenter/auth';
 import { MAIN_SUBPROTOCOL, parseSubprotocols } from '@epicenter/sync';
+import { DurableObject } from 'cloudflare:workers';
 import type { Connection } from '../../../types.js';
 import { createRoomCore, type RoomCore } from '../../core.js';
 import { createDurableObjectUpdateLog } from './update-log.js';
@@ -137,11 +138,14 @@ export class Room extends DurableObject {
 		}
 
 		const url = new URL(request.url);
-		const userId = url.searchParams.get('userId');
+		const rawUserId = url.searchParams.get('userId');
 		const deviceId = url.searchParams.get('deviceId');
-		if (!userId || !deviceId) {
+		if (!rawUserId || !deviceId) {
 			return new Response('missing userId or deviceId', { status: 400 });
 		}
+		// The URL stamp is the binding (set by the auth-gated rooms route);
+		// brand it once at the boundary.
+		const userId = asUserId(rawUserId);
 
 		void this.ctx.storage.deleteAlarm();
 

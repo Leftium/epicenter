@@ -27,7 +27,7 @@ import type { OwnerId } from './identity.js';
  *   .get(API_ROUTES.room.pattern, handler);
  *
  * // Deployment middleware
- * base.use(API_ROUTES.room.prefixPattern, requireBearerUser, attachOwner);
+ * base.use(API_ROUTES.room.prefixPattern, requireBearerUser, requireOwnership);
  *
  * // Client fetch
  * const res = await fetch(API_ROUTES.session.url(baseURL));

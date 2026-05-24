@@ -2,12 +2,12 @@
  * Library types shared by sub-app factories and middleware.
  *
  * Per-request state lives on the Hono context (`c.var.user`, `c.var.db`,
- * etc.). Per-request `OwnerId` values are reconstructed inside handlers
- * from URL params (in personal mode) or from the literal `'team'` (in
- * team mode), via the `attachOwner` middleware.
+ * etc.). The `requireOwnership` middleware resolves the owner partition
+ * from `(mode, c.var.user.id)`, rejects URL `:ownerId` mismatches at
+ * the boundary, and stashes the result on `c.var.ownerId`.
  */
 
-import type { AuthUser } from '@epicenter/auth';
+import type { AuthUser, UserId } from '@epicenter/auth';
 import type { OwnerId } from '@epicenter/constants/identity';
 import type { ActionManifest } from '@epicenter/workspace';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -17,9 +17,9 @@ import type { Rooms } from './room/contracts.js';
 
 /**
  * Deployment partition shape. Passed to the sub-apps and middleware that
- * branch on it (`createAssetsApp`, `createAttachOwner`). The wire does not
- * carry mode (consumers derive it from `ownerId === TEAM_OWNER_ID`), so
- * this type stays server-internal.
+ * branch on it (`createAssetsApp`, `createRequireOwnership`). The wire
+ * does not carry mode (consumers derive it from `ownerId === TEAM_OWNER_ID`),
+ * so this type stays server-internal.
  */
 export type OwnershipMode = 'personal' | 'team';
 
@@ -46,7 +46,7 @@ export type OwnershipMode = 'personal' | 'team';
  * on which mode it is in.
  */
 export type Connection = {
-	userId: string;
+	userId: UserId;
 	deviceId: string;
 	connectedAt: number;
 	actions: ActionManifest;
@@ -88,10 +88,10 @@ export type Env = {
 		user: AuthUser;
 		/**
 		 * Resolved owner partition for this request. Populated by the
-		 * `attachOwner` middleware after auth runs. In personal mode equals
-		 * the authenticated user's id; in team mode equals `TEAM_OWNER_ID`.
-		 * Handlers read this instead of branching on mode or re-deriving
-		 * from the URL `:ownerId` param.
+		 * `requireOwnership` middleware after auth runs. In personal mode
+		 * equals the authenticated user's id; in team mode equals
+		 * `TEAM_OWNER_ID`. Handlers read this instead of branching on
+		 * mode or re-deriving from the URL `:ownerId` param.
 		 */
 		ownerId: OwnerId;
 		afterResponse: AfterResponseQueue;

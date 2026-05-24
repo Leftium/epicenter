@@ -18,12 +18,11 @@ import {
 	aiApp,
 	authApp,
 	createAssetsApp,
-	createAttachOwner,
 	createBaseApp,
+	createRequireOwnership,
 	Room,
 	requireBearerUser,
 	requireCookieOrBearerUser,
-	requireUrlOwnerIdMatchesAuth,
 	roomsApp,
 	sessionApp,
 } from '@epicenter/server';
@@ -38,7 +37,7 @@ import { billingRoutes } from './billing-routes.js';
 const MODE = 'personal';
 
 const base = createBaseApp();
-const attachOwner = createAttachOwner(MODE);
+const requireOwnership = createRequireOwnership(MODE);
 
 // Public health endpoint at root.
 base.get('/', (c) =>
@@ -48,45 +47,43 @@ base.get('/', (c) =>
 // Auth surface (HTML pages + OAuth metadata; no /api prefix by design).
 base.route('/', authApp);
 
-// Session: cookie-or-bearer auth + owner resolution.
-base.use(API_ROUTES.session.pattern, requireCookieOrBearerUser, attachOwner);
+// Session: cookie-or-bearer auth + owner resolution. No URL :ownerId; the
+// guard attaches the resolved partition directly.
+base.use(API_ROUTES.session.pattern, requireCookieOrBearerUser, requireOwnership);
 base.route('/', sessionApp);
 
-// Rooms: bearer auth + URL ownerId safety + owner resolution. No billing
-// gate; bandwidth and DO storage are not metered.
+// Rooms: bearer auth + ownership boundary. requireOwnership rejects URL
+// :ownerId mismatches and attaches c.var.ownerId. No billing gate; bandwidth
+// and DO storage are not metered.
 base.use(
 	API_ROUTES.room.prefixPattern,
 	requireBearerUser,
-	requireUrlOwnerIdMatchesAuth,
-	attachOwner,
+	requireOwnership,
 );
 base.route('/', roomsApp);
 
 // Assets: split auth by path/method. POST upload, list, usage, PATCH metadata,
-// and DELETE all require auth. The conditional GET at /:assetId is left
-// uncovered; the library handler looks up the row and runs auth inline only
-// for `visibility === 'private'` rows. Public assets serve to anyone with the
-// URL.
+// and DELETE all require auth + ownership. The conditional GET at /:assetId
+// is left uncovered; the library handler looks up the row and runs auth
+// inline only for `visibility === 'private'` rows. Public assets serve to
+// anyone with the URL.
 base.use(
 	API_ROUTES.assets.list.pattern,
 	requireCookieOrBearerUser,
-	requireUrlOwnerIdMatchesAuth,
-	attachOwner,
+	requireOwnership,
 	autumnStorageGate,
 );
 base.use(
 	API_ROUTES.assets.usage.pattern,
 	requireCookieOrBearerUser,
-	requireUrlOwnerIdMatchesAuth,
-	attachOwner,
+	requireOwnership,
 	autumnStorageGate,
 );
 base.on(
 	['PATCH', 'DELETE'],
 	API_ROUTES.assets.byId.pattern,
 	requireCookieOrBearerUser,
-	requireUrlOwnerIdMatchesAuth,
-	attachOwner,
+	requireOwnership,
 	autumnStorageGate,
 );
 base.route('/', createAssetsApp({ mode: MODE }));

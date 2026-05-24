@@ -10,11 +10,11 @@
  * owners get a per-user keyring (`ownerId === userId`); every member of a
  * team deployment shares one keyring (`ownerId === TEAM_OWNER_ID`).
  *
- * The deployment is responsible for mounting auth and the `attachOwner`
- * middleware upstream so `c.var.user` and `c.var.ownerId` are populated
- * before this handler runs. The handler stays mode-blind. Deployment
- * shape is not on the wire: any consumer that needs to branch derives
- * it from `ownerId === TEAM_OWNER_ID`.
+ * The deployment is responsible for mounting auth and `requireOwnership`
+ * upstream so `c.var.user` and `c.var.ownerId` are populated before this
+ * handler runs. The handler stays mode-blind. Deployment shape is not on
+ * the wire: any consumer that needs to branch derives it from
+ * `ownerId === TEAM_OWNER_ID`.
  */
 
 import type { ApiSessionResponse } from '@epicenter/auth';

@@ -2,10 +2,10 @@
  * Rooms sub-app: one Cloudflare Durable Object per named Y.Doc.
  *
  * URL shape (uniform across modes): `/api/owners/:ownerId/rooms/:roomId`.
- * The deployment is responsible for mounting auth and the `attachOwner`
- * middleware so `c.var.ownerId` is populated before this handler runs.
- * In personal mode it also layers `requireUrlOwnerIdMatchesAuth` to gate
- * `:ownerId === c.var.user.id`.
+ * The deployment mounts auth and `requireOwnership` upstream;
+ * `requireOwnership` resolves the partition from `(mode, user.id)`,
+ * rejects URL `:ownerId` mismatches at the boundary, and populates
+ * `c.var.ownerId` before this handler runs.
  *
  * The Durable Object name is the owner-partitioned identifier produced by
  * {@link doName}; nothing here interpolates strings inline. The DO itself
@@ -116,7 +116,7 @@ function upsertDoInstance(
 /**
  * Rooms sub-app. URL shape is uniform across modes; the resolved owner
  * partition arrives on `c.var.ownerId` via the deployment-mounted
- * `attachOwner` middleware, so handlers stay mode-blind.
+ * `requireOwnership` middleware, so handlers stay mode-blind.
  */
 export const roomsApp = new Hono<Env>()
 	.get(

@@ -24,8 +24,8 @@
  * separately. See `apps/api/src/index.ts` for the split mount.
  *
  * All writes still arrive with `c.var.ownerId` populated by the
- * deployment-mounted `attachOwner` middleware. The conditional read
- * does NOT have `c.var.ownerId` (no attachOwner upstream); it reads
+ * deployment-mounted `requireOwnership` middleware. The conditional read
+ * does NOT have `c.var.ownerId` (no `requireOwnership` upstream); it reads
  * `c.req.param('ownerId')` directly and constrains the DB lookup by it.
  *
  * R2 bucket is private (no public domain, no r2.dev). All reads are
@@ -36,7 +36,7 @@
 
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { AssetError } from '@epicenter/constants/asset-errors';
-import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/constants/identity';
+import { asOwnerId } from '@epicenter/constants/identity';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { and, desc, eq, sql } from 'drizzle-orm';
@@ -46,6 +46,7 @@ import { describeRoute } from 'hono-openapi';
 import { customAlphabet } from 'nanoid';
 import { MAX_ASSET_BYTES } from '../constants.js';
 import * as schema from '../db/schema/index.js';
+import { resolveExpectedOwnerId } from '../middleware/require-ownership.js';
 import { assetKey } from '../owner.js';
 import type { Env, OwnershipMode } from '../types.js';
 
@@ -103,9 +104,9 @@ function parseVisibility(raw: unknown): 'private' | 'public' | null {
  * Authenticated asset CRUD surface under `/api/owners/:ownerId/assets`.
  *
  * Every handler in this factory expects `c.var.ownerId` to be populated
- * by the deployment-mounted `attachOwner` middleware. The deployment
- * also runs auth + `requireUrlOwnerIdMatchesAuth` upstream so handlers
- * stay mode-blind for partition resolution.
+ * by the deployment-mounted `requireOwnership` middleware. That middleware
+ * also asserts the URL `:ownerId` matches the expected partition, so
+ * handlers stay mode-blind for partition resolution.
  */
 function createAssetAuthedRoutes(): Hono<Env> {
 	return (
@@ -306,10 +307,9 @@ function createAssetAuthedRoutes(): Hono<Env> {
  * row, branches on `visibility`, and runs an auth check inline only for
  * private assets.
  *
- * `mode` is needed because the actor-matches-owner check differs by
- * deployment: personal mode requires `session.user.id === urlOwnerId`;
- * team mode requires only that a session exists (the URL owner is
- * pinned to `TEAM_OWNER_ID` by the route shape).
+ * The actor-matches-owner check goes through {@link resolveExpectedOwnerId}
+ * (the same rule `requireOwnership` enforces), so the conditional GET
+ * never re-implements the partition-resolution decision.
  */
 function createAssetReadRoute(mode: OwnershipMode): Hono<Env> {
 	return new Hono<Env>().get(
@@ -337,12 +337,11 @@ function createAssetReadRoute(mode: OwnershipMode): Hono<Env> {
 				const session = await c.var.auth.api.getSession({
 					headers: c.req.raw.headers,
 				});
-				const authorized =
-					session != null &&
-					(mode === 'team'
-						? urlOwnerId === TEAM_OWNER_ID
-						: session.user.id === urlOwnerId);
-				if (!authorized) return c.json(AssetError.Unauthorized(), 401);
+				if (!session) return c.json(AssetError.Unauthorized(), 401);
+				const expectedOwnerId = resolveExpectedOwnerId(mode, session.user.id);
+				if (urlOwnerId !== expectedOwnerId) {
+					return c.json(AssetError.Unauthorized(), 401);
+				}
 			}
 
 			const object = await c.env.ASSETS_BUCKET.get(

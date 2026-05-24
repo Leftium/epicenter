@@ -20,6 +20,7 @@
  */
 
 import { API_ROUTES } from '@epicenter/constants/api-routes';
+import type { OwnerId } from '@epicenter/constants/identity';
 import { RequestGuardError } from '@epicenter/constants/request-guard-errors';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Hono } from 'hono';
@@ -46,7 +47,7 @@ const RoomsTelemetryError = defineErrors({
 		doName,
 	}: {
 		cause: unknown;
-		ownerId: string;
+		ownerId: OwnerId;
 		doName: string;
 	}) => ({
 		message: 'durableObjectInstance telemetry upsert failed; row dropped',
@@ -79,7 +80,7 @@ function binaryResponse(data: Uint8Array): Response {
 function upsertDoInstance(
 	db: Db,
 	params: {
-		ownerId: string;
+		ownerId: OwnerId;
 		resourceName: string;
 		doName: string;
 		storageBytes?: number;

@@ -507,7 +507,9 @@ async function fetchApiSession(
 	if (response.status !== 200) {
 		return Err(
 			MachineAuthRequestError.RequestFailed({
-				cause: new Error(`/api/session returned ${response.status}.`),
+				cause: new Error(
+					`${API_ROUTES.session.pattern} returned ${response.status}.`,
+				),
 			}).error,
 		);
 	}

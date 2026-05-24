@@ -64,7 +64,7 @@ export const authApp = new Hono<Env>()
 		if (session) {
 			const url = new URL(c.req.url);
 			if (url.searchParams.has('sig')) {
-				return c.redirect(`/auth/oauth2/authorize${url.search}`);
+				return c.redirect(`${OAUTH_ROUTES.authorize.pattern}${url.search}`);
 			}
 			const callbackURL = url.searchParams.get('callbackURL');
 			if (callbackURL?.startsWith('/')) {

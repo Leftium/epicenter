@@ -222,7 +222,9 @@ export function createOAuthAppAuth({
 				return ApiSessionRequestError.AuthRejected({ status: response.status });
 			}
 			return ApiSessionRequestError.Unavailable({
-				cause: new Error(`/api/session failed with ${response.status}.`),
+				cause: new Error(
+					`${API_ROUTES.session.pattern} failed with ${response.status}.`,
+				),
 			});
 		}
 		try {

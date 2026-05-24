@@ -27,12 +27,15 @@ export const OAUTH_ROUTES = {
 		url: (baseURL: string) => `${stripTrailing(baseURL)}/auth/cli-callback`,
 	},
 	token: {
+		pattern: '/auth/oauth2/token',
 		url: (baseURL: string) => `${stripTrailing(baseURL)}/auth/oauth2/token`,
 	},
 	authorize: {
+		pattern: '/auth/oauth2/authorize',
 		url: (baseURL: string) => `${stripTrailing(baseURL)}/auth/oauth2/authorize`,
 	},
 	revoke: {
+		pattern: '/auth/oauth2/revoke',
 		url: (baseURL: string) => `${stripTrailing(baseURL)}/auth/oauth2/revoke`,
 	},
 } as const;

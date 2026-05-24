@@ -67,11 +67,14 @@ import {
 	type PresenceFrame,
 } from '@epicenter/workspace/document/presence';
 import * as decoding from 'lib0/decoding';
+import { createLogger } from 'wellcrafted/logger';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { MAX_PAYLOAD_BYTES } from '../constants.js';
 import type { Connection } from '../types.js';
 import { RoomError, type RoomSocket, type RoomUpdateLog } from './contracts.js';
+
+const log = createLogger('server/room/core');
 
 // ============================================================================
 // Constants
@@ -620,7 +623,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 				catch: (cause) => RoomError.MessageDecode({ cause }),
 			});
 			if (error) {
-				console.error(error.message);
+				log.warn(error);
 				return;
 			}
 			if (reply) socket.send(reply);
@@ -731,7 +734,10 @@ function compactUpdateLog(doc: Y.Doc, updateLog: RoomUpdateLog): void {
 
 	updateLog.replaceAll(compacted);
 
-	console.log(`[compaction] ${count} entries to ${compacted.byteLength} bytes`);
+	log.info('update log compacted', {
+		entries: count,
+		compactedBytes: compacted.byteLength,
+	});
 }
 
 /**

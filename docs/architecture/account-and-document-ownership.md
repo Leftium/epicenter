@@ -121,6 +121,5 @@ require content to be owned by anything other than the user.
 - `docs/articles/20260522T170000-documents-belong-to-you-not-a-workspace.md` - the narrative
 - `specs/20260522T160000-revert-cloud-workspace-sync-layer.md` - the spec that reverted the code to this model
 - `packages/workspace/SYNC_ARCHITECTURE.md` - the sync transport, presence, and dispatch surfaces
-- `docs/encryption.md` - the per-owner keyring; encryption HKDF labels still
-  use `subject:` as the internal info-string, but the input string itself is
-  derived from the owner (the personal `userId` or the literal `team`)
+- `docs/encryption.md` - the per-owner keyring; HKDF info-string is
+  `owner:{ownerId}` end to end (personal `userId` or the literal `team`)

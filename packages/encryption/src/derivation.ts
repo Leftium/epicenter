@@ -49,7 +49,7 @@ async function deriveLabelKey(
 			name: 'HKDF',
 			hash: 'SHA-256',
 			salt: new Uint8Array(0),
-			info: textEncoder.encode(`subject:${label}`),
+			info: textEncoder.encode(`owner:${label}`),
 		},
 		hkdfKey,
 		256,
@@ -65,8 +65,8 @@ async function deriveLabelKey(
  * keyring order supplied by `parseRootKeyring()`.
  *
  * The `label` argument is the caller's partition string (typically an
- * `OwnerId`). The HKDF info bytes are `subject:${label}` and are byte-pinned
- * for backward compatibility with existing keyrings.
+ * `OwnerId`). The HKDF info bytes are `owner:${label}`, matching the
+ * public vocabulary; there is no separate legacy prefix to support.
  *
  * @example
  * ```typescript

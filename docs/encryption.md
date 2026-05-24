@@ -34,7 +34,7 @@ ENCRYPTION_SECRETS entry        (root keyring)
         v
 root key material
         |
-        | HKDF-SHA256 info = "subject:{ownerId}"
+        | HKDF-SHA256 info = "owner:{ownerId}"
         v
 owner key                       (per-owner keyring)
         |
@@ -46,7 +46,7 @@ workspace key
         v
 encrypted CRDT value
 ```
-The HKDF info string at the owner derivation step is byte-pinned to the literal `subject:{ownerId}`. The `subject:` prefix is the legacy salt fixed by the original derivation code in `packages/encryption/src/derivation.ts`; it is not part of the public vocabulary. The label fed into the HKDF call is the `ownerId` directly (the user's id in personal mode, the literal string `team` in team mode).
+The HKDF info string at the owner derivation step is the literal `owner:{ownerId}`. The label fed into the HKDF call is the `ownerId` directly: the user's id in personal mode, the literal string `team` in team mode.
 
 On the server, `apps/api/src/auth/encryption.ts` reads `ENCRYPTION_SECRETS` from the worker env and calls `@epicenter/encryption`'s `deriveKeyring` to parse the root keyring and derive a per-owner keyring.
 It returns one `{ version, keyBytesBase64 }` entry per configured root keyring version.

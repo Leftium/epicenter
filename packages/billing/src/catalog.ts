@@ -27,8 +27,6 @@ export const FEATURE_IDS = {
 	storageBytes: 'storage_bytes',
 } as const;
 
-export type FeatureId = (typeof FEATURE_IDS)[keyof typeof FEATURE_IDS];
-
 export const PLAN_IDS = {
 	free: 'free',
 	pro: 'pro',

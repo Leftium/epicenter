@@ -38,7 +38,7 @@ import type {
 import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import { AssetError } from '@epicenter/constants/asset-errors';
 import { Autumn } from 'autumn-js';
-import type { Err } from 'wellcrafted/result';
+import { Ok, type Result } from 'wellcrafted/result';
 
 // ---------------------------------------------------------------------
 // Types
@@ -48,28 +48,6 @@ type Identity = {
 	userId: string;
 	userEmail: string | null;
 };
-
-/** Body shapes are wellcrafted Err envelopes (`{ data: null, error }`)
- *  ready to be handed to `c.json(...)` for the wire response. */
-type AiErrorBody = Err<
-	| ReturnType<typeof AiChatError.UnknownModel>['error']
-	| ReturnType<typeof AiChatError.ModelRequiresPaidPlan>['error']
-	| ReturnType<typeof AiChatError.InsufficientCredits>['error']
->;
-
-type StorageErrorBody = Err<
-	ReturnType<typeof AssetError.StorageLimitExceeded>['error']
->;
-
-/** Result of an AI guard check. Returned by {@link guardAiChat}. */
-type AiGuardOutcome =
-	| { kind: 'allow'; credits: number }
-	| { kind: 'deny'; status: 400 | 402 | 403; body: AiErrorBody };
-
-/** Result of a pre-flight storage upload check. Returned by {@link guardAssetUpload}. */
-type StorageGuardOutcome =
-	| { kind: 'allow' }
-	| { kind: 'deny'; status: 402; body: StorageErrorBody };
 
 // ---------------------------------------------------------------------
 // Construction
@@ -108,14 +86,10 @@ export function createBillingService(
 	async function guardAiChat(input: {
 		model: string;
 		provider: string | undefined;
-	}): Promise<AiGuardOutcome> {
+	}): Promise<Result<{ credits: number }, AiChatError>> {
 		const credits = MODEL_CREDITS[input.model as keyof typeof MODEL_CREDITS];
 		if (credits === undefined) {
-			return {
-				kind: 'deny',
-				status: 400,
-				body: AiChatError.UnknownModel({ model: input.model }),
-			};
+			return AiChatError.UnknownModel({ model: input.model });
 		}
 
 		// Resolve the active plan from a single customer fetch.
@@ -125,14 +99,10 @@ export function createBillingService(
 
 		// Free tier rejects models above the per-call ceiling.
 		if (planId === PLAN_IDS.free && credits > FREE_TIER_MAX_CREDITS_PER_CALL) {
-			return {
-				kind: 'deny',
-				status: 403,
-				body: AiChatError.ModelRequiresPaidPlan({
-					model: input.model,
-					credits,
-				}),
-			};
+			return AiChatError.ModelRequiresPaidPlan({
+				model: input.model,
+				credits,
+			});
 		}
 
 		// Atomic check + deduct. `sendEvent: true` makes Autumn record the
@@ -148,14 +118,10 @@ export function createBillingService(
 		});
 
 		if (!allowed) {
-			return {
-				kind: 'deny',
-				status: 402,
-				body: AiChatError.InsufficientCredits({ balance }),
-			};
+			return AiChatError.InsufficientCredits({ balance });
 		}
 
-		return { kind: 'allow', credits };
+		return Ok({ credits });
 	}
 
 	function refundAiCharge(credits: number): Promise<unknown> {
@@ -170,7 +136,7 @@ export function createBillingService(
 
 	async function guardAssetUpload(
 		fileSize: number,
-	): Promise<StorageGuardOutcome> {
+	): Promise<Result<void, AssetError>> {
 		// Seed the customer so the storage balance materializes from the
 		// auto-enable free plan before we check it.
 		await autumn.customers.getOrCreate({
@@ -185,13 +151,9 @@ export function createBillingService(
 		});
 
 		if (!allowed) {
-			return {
-				kind: 'deny',
-				status: 402,
-				body: AssetError.StorageLimitExceeded({ requestedBytes: fileSize }),
-			};
+			return AssetError.StorageLimitExceeded({ requestedBytes: fileSize });
 		}
-		return { kind: 'allow' };
+		return Ok(undefined);
 	}
 
 	function trackAssetUpload(sizeBytes: number): Promise<unknown> {
@@ -220,6 +182,17 @@ export function createBillingService(
 		const planDisplayName =
 			mainSub?.plan?.name ?? (catalogPlan ? catalogPlan.displayName : planId);
 
+		const creditsBalance = customer.balances?.[FEATURE_IDS.aiCredits];
+		const monthlyEntry = creditsBalance?.breakdown?.find(
+			(e) => e.reset?.interval === 'month',
+		);
+		const rolloverEntry = creditsBalance?.rollovers?.[0];
+		const storageBalance = customer.balances?.[FEATURE_IDS.storageBytes];
+		const storageIncluded =
+			catalogPlan && catalogPlan.kind === 'subscription'
+				? catalogPlan.storage.includedBytes
+				: 0;
+
 		const trial =
 			mainSub?.trialEndsAt != null
 				? {
@@ -231,20 +204,7 @@ export function createBillingService(
 					}
 				: null;
 
-		const creditsBalance = customer.balances?.[FEATURE_IDS.aiCredits];
-		const monthlyEntry = creditsBalance?.breakdown?.find(
-			(e) => e.reset?.interval === 'month',
-		);
-		const rolloverEntry = creditsBalance?.rollovers?.[0];
-
-		const storageBalance = customer.balances?.[FEATURE_IDS.storageBytes];
-		const storageIncluded =
-			catalogPlan && catalogPlan.kind === 'subscription'
-				? catalogPlan.storage.includedBytes
-				: 0;
-
 		return {
-			planId,
 			planDisplayName,
 			trial,
 			credits: {
@@ -275,10 +235,6 @@ export function createBillingService(
 
 		const mainSub = customer.subscriptions.find((s) => !s.addOn) ?? null;
 		const currentPlanId = mainSub?.planId ?? PLAN_IDS.free;
-		const currentPlan = getPlan(currentPlanId);
-		const currentPlanDisplayName =
-			mainSub?.plan?.name ??
-			(currentPlan ? currentPlan.displayName : currentPlanId);
 
 		function renderCard(planId: PlanId): BillingPlanCard {
 			const plan = PLANS[planId];
@@ -340,14 +296,11 @@ export function createBillingService(
 		const topUp = PLANS[PLAN_IDS.creditTopUp];
 
 		return {
-			currentPlanId,
-			currentPlanDisplayName,
 			cards: {
 				monthly: VISIBLE_SUBSCRIPTION_PLAN_IDS.monthly.map(renderCard),
 				annual: VISIBLE_SUBSCRIPTION_PLAN_IDS.annual.map(renderCard),
 			},
 			topUp: {
-				planId: topUp.id,
 				creditsPerPurchase: topUp.creditsPerPurchase,
 				priceUsd: topUp.priceUsd,
 			},

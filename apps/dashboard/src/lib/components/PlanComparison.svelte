@@ -26,7 +26,7 @@
 	);
 
 	const currentPlanDisplayName = $derived(
-		plans.data?.currentPlanDisplayName ?? null,
+		overview.data?.planDisplayName ?? null,
 	);
 	const trial = $derived(overview.data?.trial ?? null);
 	const trialEndDate = $derived(

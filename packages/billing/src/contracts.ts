@@ -16,11 +16,9 @@
 
 /** Snapshot of the customer's current plan and credit balance. */
 export type BillingOverview = {
-	/** Active subscription plan id; `'free'` when no paid subscription
-	 *  exists. Always present (auto-enable plans guarantee a row). */
-	planId: string;
-	/** Display name resolved server-side from the catalog or the
-	 *  Autumn plan name. Never derived client-side. */
+	/** Display name of the active plan, resolved server-side from the
+	 *  catalog or the Autumn plan name. Free tier when no paid
+	 *  subscription exists. Never derived client-side. */
 	planDisplayName: string;
 	/** Trial details when the subscription is in its free-trial window. */
 	trial: {
@@ -69,17 +67,18 @@ export type BillingPlanCard = {
 	isTrialing: boolean;
 };
 
-/** Catalog of the current customer's plan options. */
+/** Catalog of the current customer's plan options. The active plan is
+ *  signalled per-card via `cta === 'Current'`; consumers read the active
+ *  plan's display name from `BillingOverview.planDisplayName` (one
+ *  source of truth, served by `/overview`). */
 export type BillingPlansView = {
-	currentPlanId: string;
-	currentPlanDisplayName: string;
 	cards: {
 		monthly: BillingPlanCard[];
 		annual: BillingPlanCard[];
 	};
-	/** One-off credit top-up offer (price + credits granted). */
+	/** One-off credit top-up offer. The plan id is server-resolved by
+	 *  `/checkout/top-up`; the dashboard renders price + grant size. */
 	topUp: {
-		planId: string;
 		creditsPerPurchase: number;
 		priceUsd: number;
 	};

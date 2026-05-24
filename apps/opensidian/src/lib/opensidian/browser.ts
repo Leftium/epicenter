@@ -29,6 +29,7 @@ import {
 	attachLocalStorage,
 	attachTimeline,
 	createDisposableCache,
+	type DeviceId,
 	onLocalUpdate,
 	openCollaboration,
 	roomWsUrl,
@@ -45,10 +46,10 @@ import { createOpensidianActions } from './actions';
 
 export function openOpensidianBrowser({
 	signedIn,
-	installationId,
+	deviceId,
 }: {
 	signedIn: SignedIn;
-	installationId: string;
+	deviceId: DeviceId;
 }) {
 	const ydoc = new Y.Doc({ guid: OPENSIDIAN_ID, gc: true });
 	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
@@ -81,7 +82,7 @@ export function openOpensidianBrowser({
 				baseURL: signedIn.baseURL,
 				ownerId: signedIn.ownerId,
 				guid: childYdoc.guid,
-				installationId,
+				deviceId,
 			}),
 			openWebSocket: signedIn.openWebSocket,
 			onReconnectSignal: signedIn.onReconnectSignal,
@@ -140,7 +141,7 @@ export function openOpensidianBrowser({
 			baseURL: signedIn.baseURL,
 			ownerId: signedIn.ownerId,
 			guid: ydoc.guid,
-			installationId,
+			deviceId,
 		}),
 		openWebSocket: signedIn.openWebSocket,
 		onReconnectSignal: signedIn.onReconnectSignal,

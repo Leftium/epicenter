@@ -102,10 +102,10 @@ import {
 
 function openBlog({
   signedIn,
-  installationId,
+  deviceId,
 }: {
   signedIn: SignedIn;
-  installationId: string;
+  deviceId: string;
 }) {
   const ydoc = new Y.Doc({ guid: 'blog' });
   const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
@@ -123,7 +123,7 @@ function openBlog({
       baseURL: signedIn.auth.baseURL,
       ownerId: signedIn.ownerId,
       guid: ydoc.guid,
-      installationId,
+      deviceId,
     }),
     openWebSocket: signedIn.auth.openWebSocket,
     onReconnectSignal: signedIn.auth.onStateChange,

@@ -126,7 +126,7 @@ Minimal encrypted browser workspace: encryption + owner-scoped IndexedDB + cross
 import {
 	attachEncryption,
 	attachLocalStorage,
-	createInstallationId,
+	createDeviceId,
 	openCollaboration,
 	roomWsUrl,
 	wipeLocalStorage,
@@ -138,10 +138,10 @@ import { appTables } from '$lib/workspace/definition';
 
 export function openApp({
 	signedIn,
-	installationId,
+	deviceId,
 }: {
 	signedIn: SignedIn;
-	installationId: string;
+	deviceId: string;
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: true });
 
@@ -160,7 +160,7 @@ export function openApp({
 			baseURL: signedIn.auth.baseURL,
 			ownerId: signedIn.ownerId,
 			guid: ydoc.guid,
-			installationId,
+			deviceId,
 		}),
 		waitFor: idb.whenLoaded,
 		openWebSocket: signedIn.auth.openWebSocket,
@@ -197,16 +197,16 @@ export const session = createSession({
 	build: ({ signedIn }) =>
 		openApp({
 			signedIn,
-			installationId: createInstallationId({ storage: localStorage }),
+			deviceId: createDeviceId({ storage: localStorage }),
 		}),
 });
 ```
 
 `attachLocalStorage(ydoc, { server, ownerId, keyring })` pairs the encrypted IndexedDB store with an owner-scoped BroadcastChannel: two tabs of the same owner share both persisted state and live updates, while two different owners on the same browser profile never see each other's data. On sign-out, call `wipeLocalStorage({ server, ownerId })` to delete every owner-scoped local database.
 
-`openCollaboration` is the workspace primitive: it wraps the sync supervisor, mirrors the relay's server-owned presence channel as `collaboration.devices`, and runs inbound dispatch frames against the local action registry. Find an online install with `workspace.collaboration.devices.list().find((d) => d.installationId === installationId)`, then call it with `workspace.collaboration.dispatch(...)`. Content documents use the same primitive with `actions: {}`. See [SYNC_ARCHITECTURE.md](./SYNC_ARCHITECTURE.md) for the full model.
+`openCollaboration` is the workspace primitive: it wraps the sync supervisor, mirrors the relay's server-owned presence channel as `collaboration.devices`, and runs inbound dispatch frames against the local action registry. Find an online install with `workspace.collaboration.devices.list().find((d) => d.deviceId === deviceId)`, then call it with `workspace.collaboration.dispatch(...)`. Content documents use the same primitive with `actions: {}`. See [SYNC_ARCHITECTURE.md](./SYNC_ARCHITECTURE.md) for the full model.
 
-The `guid` you pass to `new Y.Doc(...)` becomes `ydoc.guid`. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin. Cloud sync targets the single uniform shape `/api/owners/:ownerId/rooms/:roomId` in both modes: build the URL with `roomWsUrl({ baseURL, ownerId, guid: ydoc.guid, installationId })`. A cloud doc is owned by the authenticated `OwnerId`, so the server resolves the Durable Object name `owners/${ownerId}/rooms/${room}` from the auth token (personal: `ownerId === userId`; team: `ownerId === 'team'`), with no workspace lookup.
+The `guid` you pass to `new Y.Doc(...)` becomes `ydoc.guid`. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin. Cloud sync targets the single uniform shape `/api/owners/:ownerId/rooms/:roomId` in both modes: build the URL with `roomWsUrl({ baseURL, ownerId, guid: ydoc.guid, deviceId })`. A cloud doc is owned by the authenticated `OwnerId`, so the server resolves the Durable Object name `owners/${ownerId}/rooms/${room}` from the auth token (personal: `ownerId === userId`; team: `ownerId === 'team'`), with no workspace lookup.
 
 For production-shaped browser wiring, see `apps/fuji/src/lib/browser.ts`. For auth session transitions, see `apps/fuji/src/lib/session.ts`.
 
@@ -544,14 +544,14 @@ as `collaboration.devices`:
 
 ```typescript
 const online = workspace.collaboration.devices.list();
-// -> [{ installationId: 'phone' }, { installationId: 'laptop' }]
+// -> [{ deviceId: 'phone' }, { deviceId: 'laptop' }]
 
 const unsubscribe = workspace.collaboration.devices.subscribe((devices) => {
-	console.log('online:', devices.map((device) => device.installationId));
+	console.log('online:', devices.map((device) => device.deviceId));
 });
 ```
 
-Each entry is a `PresenceDevice` (`{ installationId, connectedAt, actions }`);
+Each entry is a `PresenceDevice` (`{ deviceId, connectedAt, actions }`);
 the local install is excluded. Product-level data (display name, cursor,
 capability list) lives in app-owned tables, not on the presence wire. See
 [SYNC_ARCHITECTURE.md](./SYNC_ARCHITECTURE.md) for the full model.
@@ -857,7 +857,7 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachTables,
-	createInstallationId,
+	createDeviceId,
 	defineTable,
 	openCollaboration,
 	roomWsUrl,
@@ -880,13 +880,13 @@ function openTabs({
 	const tables = attachTables(ydoc, { tabs });
 	const idb = attachIndexedDb(ydoc);
 	attachBroadcastChannel(ydoc);
-	const installationId = createInstallationId({ storage: localStorage });
+	const deviceId = createDeviceId({ storage: localStorage });
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl({
 			baseURL: 'https://api.epicenter.so',
 			ownerId,
 			guid: ydoc.guid,
-			installationId,
+			deviceId,
 		}),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
@@ -1559,7 +1559,7 @@ import {
 } from '@epicenter/workspace';
 ```
 
-`openCollaboration` returns a `Collaboration`. Online devices (relay-owned presence, with each device's `installationId`, `connectedAt`, and published `actions` manifest):
+`openCollaboration` returns a `Collaboration`. Online devices (relay-owned presence, with each device's `deviceId`, `connectedAt`, and published `actions` manifest):
 
 - `collaboration.devices.list()`: `PresenceDevice[]`, the local install excluded
 - `collaboration.devices.subscribe(fn)`: returns an unsubscribe function

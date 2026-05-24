@@ -9,7 +9,7 @@
  * schema.
  *
  * Composition lives elsewhere:
- *  - `apps/opensidian/src/lib/opensidian/browser.ts` -> `openOpensidianBrowser({ signedIn, installationId })`
+ *  - `apps/opensidian/src/lib/opensidian/browser.ts` -> `openOpensidianBrowser({ signedIn, deviceId })`
  *  - `apps/opensidian/daemon.ts`                     -> `openOpensidianDaemon(ctx)`
  */
 

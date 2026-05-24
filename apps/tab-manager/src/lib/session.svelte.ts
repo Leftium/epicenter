@@ -59,7 +59,7 @@ function buildSession(
 		build: (signedIn) => {
 			const tabManager = openTabManagerBrowser({
 				signedIn,
-				installationId: profile.installationId,
+				deviceId: profile.deviceId,
 			});
 
 			const collaboration = openCollaboration(tabManager.ydoc, {
@@ -67,7 +67,7 @@ function buildSession(
 					baseURL: signedIn.baseURL,
 					ownerId: signedIn.ownerId,
 					guid: tabManager.ydoc.guid,
-					installationId: profile.installationId,
+					deviceId: profile.deviceId,
 				}),
 				openWebSocket: signedIn.openWebSocket,
 				onReconnectSignal: signedIn.onReconnectSignal,

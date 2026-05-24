@@ -18,6 +18,7 @@ import type { SignedIn } from '@epicenter/svelte';
 import {
 	attachEncryption,
 	attachLocalStorage,
+	type DeviceId,
 	openCollaboration,
 	roomWsUrl,
 	wipeLocalStorage,
@@ -27,10 +28,10 @@ import * as Y from 'yjs';
 
 export function openZhongwenBrowser({
 	signedIn,
-	installationId,
+	deviceId,
 }: {
 	signedIn: SignedIn;
-	installationId: string;
+	deviceId: DeviceId;
 }) {
 	const ydoc = new Y.Doc({ guid: ZHONGWEN_ID, gc: true });
 	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
@@ -47,7 +48,7 @@ export function openZhongwenBrowser({
 			baseURL: signedIn.baseURL,
 			ownerId: signedIn.ownerId,
 			guid: ydoc.guid,
-			installationId,
+			deviceId,
 		}),
 		openWebSocket: signedIn.openWebSocket,
 		onReconnectSignal: signedIn.onReconnectSignal,

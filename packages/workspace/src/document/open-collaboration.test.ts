@@ -22,7 +22,7 @@ import {
 } from '../shared/actions.js';
 import { openCollaboration } from './open-collaboration.js';
 
-const url = 'wss://ignored.invalid/api/rooms/test?installationId=self';
+const url = 'wss://ignored.invalid/api/rooms/test?deviceId=self';
 
 /**
  * Minimal fake WebSocket. Stays in CONNECTING (readyState 0) until `close()`

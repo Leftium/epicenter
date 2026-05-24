@@ -9,7 +9,7 @@
  * canonical schema.
  *
  * Composition lives elsewhere:
- *  - `apps/fuji/src/lib/browser.ts`  → `openFujiBrowser({ signedIn, installationId })`
+ *  - `apps/fuji/src/lib/browser.ts`  → `openFujiBrowser({ signedIn, deviceId })`
  *  - `apps/fuji/daemon.ts`           → `openFujiDaemon(ctx)`
  *  - `examples/fuji/epicenter.config.ts` → canonical project layout composition
  */

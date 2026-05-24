@@ -10,7 +10,9 @@
  */
 
 import {
+	asDeviceId,
 	defineTable,
+	DeviceId,
 	generateId,
 	type Id,
 	type InferTableRow,
@@ -19,25 +21,17 @@ import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
 
+// `DeviceId` and `asDeviceId` are the canonical brand from `@epicenter/workspace`.
+// Tab-manager reuses them so the wire-level device identity, the local table
+// row keys, and the dispatch addresses all share one type.
+export { asDeviceId, DeviceId };
+
 export const TAB_MANAGER_ID = 'epicenter.tab-manager';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Branded ID Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Branded device ID — nanoid generated once per browser installation.
- *
- * Prevents accidental mixing with other string IDs (conversation, tab, etc.).
- */
-export const DeviceId = type('string').as<string & Brand<'DeviceId'>>();
-export type DeviceId = typeof DeviceId.infer;
-/**
- * Syntactic sugar for `value as DeviceId`. The constrained `string` parameter
- * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
- * The only place in the codebase where `as DeviceId` should appear.
- */
-export const asDeviceId = (value: string): DeviceId => value as DeviceId;
 
 /**
  * Branded saved tab ID — nanoid generated when a tab is explicitly saved.

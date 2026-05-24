@@ -50,13 +50,14 @@ export type ServerOptions = {
  * Per-connection identity and runtime state, stamped onto the Cloudflare
  * Durable Object WebSocket attachment so presence survives hibernation.
  *
- * `installationId` identifies one running instance of any app (browser tab,
- * Tauri window, extension service worker, CLI process). The client generates
- * and persists its own; lifespan is the client's concern.
+ * `deviceId` identifies one Epicenter app on one persistent storage scope
+ * (browser tab, Tauri window, extension service worker, CLI process; tabs
+ * sharing localStorage share an id). The client generates and persists its
+ * own; lifespan is the client's concern.
  *
  * `connectedAt` is stamped at upgrade time and surfaced in presence frames so
  * receivers can render an "online since" affordance and tie-break multi-tab
- * same-install (newest wins).
+ * same-device (newest wins).
  *
  * `actions` is the published action manifest for this socket. Starts as `{}`
  * at upgrade; updated to the device's manifest when `presence_publish` arrives.
@@ -69,7 +70,7 @@ export type ServerOptions = {
  */
 export type Connection = {
 	userId: string;
-	installationId: string;
+	deviceId: string;
 	connectedAt: number;
 	actions: ActionManifest;
 };

@@ -13,7 +13,7 @@ type Keyring = SignedInState['keyring'];
  * - `attachEncryption(ydoc, { keyring: signedIn.keyring })`
  * - `attachLocalStorage(ydoc, { server, ownerId, keyring })`
  * - `openCollaboration(ydoc, { openWebSocket, onReconnectSignal })`
- * - `roomWsUrl({ baseURL, ownerId, guid, installationId })`
+ * - `roomWsUrl({ baseURL, ownerId, guid, deviceId })`
  *
  * `server` and `baseURL` are both projected because `roomWsUrl` wants the
  * full origin (for the ws:// vs wss:// scheme) while local-storage partition

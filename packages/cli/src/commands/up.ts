@@ -279,7 +279,7 @@ function printPeersSnapshot(entry: StartedDaemonRoute): void {
 		return;
 	}
 	for (const device of devices) {
-		process.stderr.write(`${entry.route}: peer ${device.installationId}\n`);
+		process.stderr.write(`${entry.route}: peer ${device.deviceId}\n`);
 	}
 }
 
@@ -288,22 +288,22 @@ function subscribePeers(entry: StartedDaemonRoute, quiet: boolean): void {
 		new Set(
 			entry.runtime.collaboration.devices
 				.list()
-				.map((device) => device.installationId),
+				.map((device) => device.deviceId),
 		);
 	let prev = snapshot();
 	entry.runtime.collaboration.devices.subscribe(() => {
 		const next = snapshot();
-		for (const installationId of next) {
-			if (!prev.has(installationId)) {
+		for (const deviceId of next) {
+			if (!prev.has(deviceId)) {
 				if (!quiet) {
-					process.stderr.write(`${entry.route}: ${installationId} joined\n`);
+					process.stderr.write(`${entry.route}: ${deviceId} joined\n`);
 				}
 			}
 		}
-		for (const installationId of prev) {
-			if (!next.has(installationId)) {
+		for (const deviceId of prev) {
+			if (!next.has(deviceId)) {
 				if (!quiet) {
-					process.stderr.write(`${entry.route}: ${installationId} left\n`);
+					process.stderr.write(`${entry.route}: ${deviceId} left\n`);
 				}
 			}
 		}

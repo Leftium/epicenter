@@ -10,7 +10,7 @@
  *
  * Composition lives elsewhere:
  *  - `apps/zhongwen/src/routes/(signed-in)/zhongwen/browser.ts`
- *      → `openZhongwenBrowser({ signedIn, installationId })`
+ *      → `openZhongwenBrowser({ signedIn, deviceId })`
  *  - `apps/zhongwen/daemon.ts` → `openZhongwenDaemon(ctx)`
  */
 

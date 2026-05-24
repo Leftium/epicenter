@@ -9,7 +9,7 @@
  * canonical schema.
  *
  * Composition lives elsewhere:
- *  - `apps/honeycrisp/browser.ts`  -> `openHoneycrispBrowser({ signedIn, installationId })`
+ *  - `apps/honeycrisp/browser.ts`  -> `openHoneycrispBrowser({ signedIn, deviceId })`
  *  - `apps/honeycrisp/daemon.ts`   -> `openHoneycrispDaemon(ctx)`
  */
 

@@ -23,6 +23,7 @@ import {
 	attachRichText,
 	createDisposableCache,
 	DateTimeString,
+	type DeviceId,
 	onLocalUpdate,
 	openCollaboration,
 	roomWsUrl,
@@ -39,10 +40,10 @@ import {
 
 export function openHoneycrispBrowser({
 	signedIn,
-	installationId,
+	deviceId,
 }: {
 	signedIn: SignedIn;
-	installationId: string;
+	deviceId: DeviceId;
 }) {
 	const ydoc = new Y.Doc({ guid: HONEYCRISP_ID, gc: true });
 	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
@@ -60,7 +61,7 @@ export function openHoneycrispBrowser({
 			baseURL: signedIn.baseURL,
 			ownerId: signedIn.ownerId,
 			guid: ydoc.guid,
-			installationId,
+			deviceId,
 		}),
 		openWebSocket: signedIn.openWebSocket,
 		onReconnectSignal: signedIn.onReconnectSignal,
@@ -84,7 +85,7 @@ export function openHoneycrispBrowser({
 				baseURL: signedIn.baseURL,
 				ownerId: signedIn.ownerId,
 				guid: childYdoc.guid,
-				installationId,
+				deviceId,
 			}),
 			openWebSocket: signedIn.openWebSocket,
 			onReconnectSignal: signedIn.onReconnectSignal,

@@ -1,9 +1,9 @@
 # Centralize `c.json(...)` Error Responses Under `defineErrors`
 
 **Date**: 2026-05-24
-**Status**: Draft (greenfield-grilled)
+**Status**: Implemented (closed 2026-05-24)
 **Author**: AI-assisted (claude@bradenwong.com)
-**Branch**: TBD
+**Branch**: braden-w/owner-collapse-and-cleanup
 
 ## Greenfield Refinements
 
@@ -224,28 +224,28 @@ Three honest commits, one PR. No staged migration: there's no durable contract t
 
 ### Commit 1: Add error namespaces
 
-- [ ] **1.1** Create `packages/constants/src/request-guard-errors.ts` with `RequestGuardError.{OwnerMismatch, ForbiddenOrigin}`.
-- [ ] **1.2** Create `packages/constants/src/asset-errors.ts`: move the existing `AssetError` namespace from `packages/server/src/routes/assets.ts` verbatim, add `StorageLimitExceeded({ requestedBytes })`.
-- [ ] **1.3** Update `packages/constants/package.json` `exports` with `./request-guard-errors` and `./asset-errors`.
-- [ ] **1.4** Update `packages/server/src/routes/assets.ts` to import `AssetError` from `@epicenter/constants/asset-errors` and delete the local `defineErrors` block.
+- [x] **1.1** `packages/constants/src/request-guard-errors.ts` exists with `RequestGuardError.{OwnerMismatch, ForbiddenOrigin}`.
+- [x] **1.2** `packages/constants/src/asset-errors.ts` exists with the migrated `AssetError` namespace and the `StorageLimitExceeded({ requestedBytes })` variant.
+- [x] **1.3** `packages/constants/package.json` exports `./request-guard-errors`, `./asset-errors`, `./oauth-errors`, and (added later in this branch) `./billing-errors`.
+- [x] **1.4** `packages/server/src/routes/assets.ts` imports `AssetError` from `@epicenter/constants/asset-errors`; no local `defineErrors` block remains.
 
 ### Commit 2: Swap ad-hoc call sites
 
-- [ ] **2.1** `packages/server/src/middleware/require-url-owner-id-matches-auth.ts`: `RequestGuardError.OwnerMismatch()`.
-- [ ] **2.2** `packages/server/src/middleware/require-origin-for-cookie-mutations.ts`: `RequestGuardError.ForbiddenOrigin()`.
-- [ ] **2.3** `packages/server/src/middleware/require-origin-for-cookie-mutations.test.ts`: update `body.name === 'forbidden_origin'` to `body.error.name === 'ForbiddenOrigin'`.
-- [ ] **2.4** `apps/api/src/autumn-gates.ts`:
-  - Line 83 to `AiChatError.UnknownModel({ model })`
-  - Line 87 to `AiChatError.ModelRequiresPaidPlan({ model, credits })`
-  - Line 101 to `AiChatError.InsufficientCredits({ balance })`
-  - Line 146 to `AssetError.StorageLimitExceeded({ requestedBytes: file.size })`
-- [ ] **2.5** Run `bun typecheck` across `packages/constants`, `packages/server`, `apps/api`, `apps/tab-manager`, `apps/opensidian` (last two compile-check the AiChatError consumers).
-- [ ] **2.6** Run `bun test` in `packages/server`.
+- [x] **2.1** `packages/server/src/middleware/require-url-owner-id-matches-auth.ts:24` calls `RequestGuardError.OwnerMismatch()`.
+- [x] **2.2** `packages/server/src/middleware/require-origin-for-cookie-mutations.ts:28` calls `RequestGuardError.ForbiddenOrigin()`.
+- [x] **2.3** `packages/server/src/middleware/require-origin-for-cookie-mutations.test.ts:30` asserts `body.error.name === 'ForbiddenOrigin'`.
+- [x] **2.4** `apps/api/src/autumn-gates.ts` — all four sites swapped (lines 82, 86, 90, 104, and 149-152 for `AssetError.StorageLimitExceeded`).
+- [x] **2.5** `bun typecheck` clean across all referenced packages.
+- [x] **2.6** `bun test` clean in `packages/server`.
 
 ### Commit 3: CI guard
 
-- [ ] **3.1** Add a CI step that runs `! grep -rEn "c\.json\(\s*\{\s*name:\s*['\"]" packages apps` (fails if matches found). Place in the existing CI workflow.
-- [ ] **3.2** Sanity-check by reverting one site temporarily and confirming the grep fails it.
+- [x] **3.1** Implemented as a Biome GritQL plugin (`scripts/biome/c-json-errors.grit`) running under `bun run lint:check` in `.github/workflows/ci.format.yml`. Superseded the grep approach for AST precision (commit `fbbf8f42d`).
+- [x] **3.2** Plugin verified by reverting and confirming the rule fires.
+
+### Follow-up: billing-routes Autumn translation
+
+- [x] **4.1** `packages/constants/src/billing-errors.ts` created with `BillingError.ProviderRequestFailed`. `apps/api/src/billing-routes.ts` `onError` translates `AutumnError` via this variant (commit `decf24eda`). See the "billing-routes.ts Autumn passthrough" Edge Case section for the design.
 
 ## Edge Cases
 
@@ -273,44 +273,32 @@ Non-AutumnError throws (e.g. `ConnectionError`, `RequestTimeoutError`, programmi
 
 ## Open Questions
 
-1. **Should `OAuthError` move to `@epicenter/constants` for consistency?**
-   - Today: lives in `packages/server/src/auth/oauth-error.ts`.
-   - Argument for: rule is "shared constants for anything on the wire."
-   - Argument against: only consumer is server-internal; moving widens the constants surface for no client benefit.
-   - **Recommendation**: leave alone. The rule is "shared if a client SDK switches on it"; the SDK does not.
+The first three are resolved; the last two remain intentionally deferred. Kept here as a record of explicit non-decisions so future authors do not re-litigate them without reading the rationale.
 
-2. **Should middleware errors really be in shared constants, or in a `packages/server/src/api-errors.ts`?**
-   - Constants: importable by future client SDKs that want to recognize the 403 shape.
-   - Server-local: tighter import boundary, matches `OAuthError`'s placement.
-   - **Recommendation**: constants. `ForbiddenOrigin` is the kind of "any SDK call can return this" boundary error that benefits from being known to every client. `OwnerMismatch` is more debatable but coupling them is simpler.
+1. ~~**Should `OAuthError` move to `@epicenter/constants` for consistency?**~~ **Resolved.** Moved to `packages/constants/src/oauth-errors.ts` in commit `523ba0c0d`. All server consumers import from there; `packages/server/src/auth/oauth-error.ts` no longer exists. The "scope-creep refusal" stance in the original Decisions Log was reversed once a separate refactor needed the move anyway.
 
-3. **CI guard: grep vs ESLint rule?**
-   - Grep: one-line CI command, trivial to maintain, easy to false-positive on harmless content (e.g. variable named `name` in an unrelated object).
-   - ESLint rule: AST-precise, integrates with editor lint, more setup.
-   - **Recommendation**: start with a grep CI check (`grep -rE 'c\.json\(\s*\{\s*name:' packages apps && exit 1`). Upgrade to ESLint if false-positives are noisy.
+2. ~~**Should middleware errors really be in shared constants, or in a `packages/server/src/api-errors.ts`?**~~ **Resolved.** Shipped in shared constants per the one-location rule (`packages/constants/src/request-guard-errors.ts`).
 
-4. **Should `AssetError` get a custom error class like `AiChatHttpError`?**
-   - `AiChatHttpError` exists because TanStack AI's adapter swallows the body and rethrows generic `Error`. Asset reads go through `auth.fetch` directly, which already returns the `Response`.
-   - **Recommendation**: not now. The asset client SDK (per spec `20260524T021140-asset-visibility-and-client-sdk.md`) reads `response.json()` and branches on `body.error.name` directly. Add the bridge only if an adapter forces one.
+3. ~~**CI guard: grep vs ESLint rule?**~~ **Resolved.** Shipped as a Biome GritQL plugin (`scripts/biome/c-json-errors.grit`) running under `bun run lint:check`. AST-precise; runs in CI via `.github/workflows/ci.format.yml`. Commit `fbbf8f42d`.
 
-5. **Should the status code be encoded into the variant definition?**
-   - E.g. `AssetError.NotFound` always 404; `RequestGuardError.OwnerMismatch` always 403. A sidecar map (`assetErrorStatus[name]`) could remove the magic number from call sites.
-   - **Recommendation**: defer. The status-code-per-variant convention is implicit today and rarely changes; formalizing it is a separate (small) refactor.
+4. **Should `AssetError` get a custom error class like `AiChatHttpError`?** **Deferred.** Asset reads go through `auth.fetch` directly, which returns the `Response` — clients branch on `body.error.name` without a throw-bridge. Add a custom error class only if an adapter (analogous to TanStack AI's) forces one. Revisit when an asset SDK gains an adapter that swallows the body.
+
+5. **Should the status code be encoded into the variant definition?** **Deferred.** Audit (2026-05-24) found all variant-to-status mappings are 1:1 across 18 call sites with zero wrong-status bugs. Adding a sidecar map would couple `packages/constants` to Hono's `ContentfulStatusCode` (or split the map into `packages/server` away from the variant definition). Adding `httpStatus` to the variant body pollutes the wire shape. Revisit when: a variant first appears at two different status codes.
 
 ## Decisions Log
 
-- Keep `OAuthError` in `packages/server/src/auth/oauth-error.ts` for this PR (scope-creep refusal). Greenfield-consistent move target is `packages/constants/src/oauth-errors.ts`. Trade-off: one wire-format namespace lives in the wrong place after this PR. Revisit when: next time anyone edits the OAuth resource boundary, the close-reason format, or `OAuthError` itself.
-- Keep `RoomsTelemetryError` route-local in `packages/server/src/routes/rooms.ts`: never serialized; consumed only by `wellcrafted/logger`. Revisit when: any other module needs to switch on its name.
-- ~~Keep `billing-routes.ts` Autumn passthrough untouched.~~ Resolved: `billing-routes.ts` onError now uses `instanceof AutumnError` and translates to `BillingError.ProviderRequestFailed`. Trade-off accepted: one generic variant rather than an enumerated taxonomy we cannot ground. Revisit when: specific Autumn error codes need bespoke client UX (e.g. "Card declined" vs "Customer not found"), at which point add named variants and branch on Autumn's `code` field.
+- ~~Keep `OAuthError` in `packages/server/src/auth/oauth-error.ts` for this PR (scope-creep refusal).~~ **Resolved**: moved to `packages/constants/src/oauth-errors.ts` (commit `523ba0c0d`); the old file no longer exists.
+- Keep `RoomsTelemetryError` route-local in `packages/server/src/routes/rooms.ts`: never serialized; consumed only by `wellcrafted/logger`. Revisit when: any other module needs to switch on its name. **Still holds as of 2026-05-24.**
+- ~~Keep `billing-routes.ts` Autumn passthrough untouched.~~ **Resolved** in commit `decf24eda`: `billing-routes.ts` onError now uses `instanceof AutumnError` and translates to `BillingError.ProviderRequestFailed`. Trade-off accepted: one generic variant rather than an enumerated taxonomy we cannot ground. Revisit when: specific Autumn error codes need bespoke client UX (e.g. "Card declined" vs "Customer not found"), at which point add named variants and branch on Autumn's `code` field.
 
 ## Success Criteria
 
-- [ ] Repo-wide grep `grep -rE 'c\.json\(\s*\{\s*name:' packages apps` returns 0 matches.
-- [ ] Every `c.json(...)` non-2xx response in `packages/server` and `apps/api` passes the result of a `defineErrors` factory call.
-- [ ] `apps/tab-manager` and `apps/opensidian` chat-state files compile without changes after the autumn-gates rewrite (they already switch on `UnknownModel`, `InsufficientCredits`, `ModelRequiresPaidPlan`).
-- [ ] The "decision tree" in Architecture (or its `AGENTS.md` equivalent) tells a new author where to add the next error in under 30 seconds.
-- [ ] `bun test` and `bun typecheck` pass across all touched packages.
-- [ ] CI grep guard (or ESLint rule) added and verified to fail on a deliberately-introduced ad-hoc `c.json` object literal.
+- [x] Repo-wide audit (2026-05-24) confirms zero ad-hoc `c.json({ name: ... }, status)` object literals remain in `packages/` and `apps/`.
+- [x] Every `c.json(...)` non-2xx response in `packages/server` and `apps/api` passes the result of a `defineErrors` factory call.
+- [x] `apps/tab-manager` and `apps/opensidian` chat-state files compile without changes after the autumn-gates rewrite.
+- [x] The "one rule for the next author" block in Architecture documents where new errors go.
+- [x] `bun test` and `bun typecheck` pass across all touched packages.
+- [x] Biome GritQL plugin (`scripts/biome/c-json-errors.grit`) runs in `bun run lint:check` and CI; verified to fail on a reverted ad-hoc literal.
 
 ## References
 

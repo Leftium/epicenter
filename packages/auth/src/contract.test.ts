@@ -2,32 +2,34 @@
  * Auth Client Contract Tests
  *
  * Covers:
- * - PersistedAuth = { grant, owner, keyring } shape
+ * - PersistedAuth = { grant, userId, ownerId, keyring, mode } shape
  * - AuthState three variants; profile data is absent from state
- * - Refresh writes only grant, owner + keyring byte-identical
+ * - Refresh writes only grant, identity + keyring + mode byte-identical
  * - Same-owner guard at /api/session response
  * - Network gate: bearer not attached until /api/session confirms same owner
- * - Cold-boot offline keeps signed-in with owner + keyring and no profile field
+ * - Cold-boot offline keeps signed-in with ownerId + keyring and no profile field
  */
 
 import { describe, expect, test } from 'bun:test';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
-import type { SubjectKeyring } from '@epicenter/encryption';
+import type { Keyring } from '@epicenter/encryption';
 import { Ok, type Result } from 'wellcrafted/result';
 import type {
 	AuthClient,
 	OAuthTokenGrant,
+	OwnerId,
 	PersistedAuth,
 	PersistedAuthStorage,
+	UserId,
 } from './index.js';
-import { createOAuthAppAuth, ownerId } from './index.js';
+import { createOAuthAppAuth } from './index.js';
 
 const now = 1_000_000;
 
-const keyring: SubjectKeyring = [
+const keyring: Keyring = [
 	{
 		version: 1,
-		subjectKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+		keyBytesBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 	},
 ];
 
@@ -48,8 +50,10 @@ function cell({
 } = {}): PersistedAuth {
 	return {
 		grant: g,
-		owner: { kind: 'personal' as const, userId },
+		userId: userId as UserId,
+		ownerId: userId as OwnerId,
 		keyring: [...keyring],
+		mode: 'personal',
 	};
 }
 
@@ -101,8 +105,9 @@ function oauthTokenResponse({
 function apiSessionBody(userId = 'user-1') {
 	return {
 		user: { id: userId, email: `${userId}@example.com` },
-		owner: { kind: 'personal' as const, userId },
+		ownerId: userId,
 		keyring: [...keyring],
+		mode: 'personal' as const,
 	};
 }
 
@@ -131,7 +136,7 @@ test('signed-out by default; AuthClient satisfies the public contract', () => {
 	auth[Symbol.dispose]();
 });
 
-test('cold-boot signed-in exposes owner and keyring immediately without profile data', () => {
+test('cold-boot signed-in exposes ownerId and keyring immediately without profile data', () => {
 	const setup = createStorage(cell());
 	const auth = createOAuthAppAuth({
 		baseURL: 'http://localhost:8787',
@@ -143,7 +148,8 @@ test('cold-boot signed-in exposes owner and keyring immediately without profile 
 
 	expect(auth.state).toEqual({
 		status: 'signed-in',
-		owner: { kind: 'personal' as const, userId: 'user-1' },
+		ownerId: 'user-1' as OwnerId,
+		mode: 'personal',
 		keyring: [...keyring],
 	});
 	expect('email' in auth.state).toBe(false);
@@ -181,8 +187,10 @@ test('startSignIn calls /api/session and writes both sections', async () => {
 			refreshToken: 'sign-in-refresh',
 			accessTokenExpiresAt: now + 3_600_000,
 		},
-		owner: { kind: 'personal' as const, userId: 'user-1' },
+		userId: 'user-1' as UserId,
+		ownerId: 'user-1' as OwnerId,
 		keyring: [...keyring],
+		mode: 'personal',
 	});
 	expect(auth.state).toMatchObject({
 		status: 'signed-in',
@@ -213,14 +221,14 @@ test('startSignIn publishes signed-out before installing a different owner', asy
 		states.push(
 			state.status === 'signed-out'
 				? 'signed-out'
-				: `${state.status}:${ownerId(state.owner)}`,
+				: `${state.status}:${state.ownerId}`,
 		);
 	});
 
 	const result = await auth.startSignIn();
 
 	expect(result).toEqual(Ok(undefined));
-	expect(states).toEqual(['signed-out', 'signed-in:users/bob']);
+	expect(states).toEqual(['signed-out', 'signed-in:bob']);
 	expect(setup.saved).toEqual([
 		null,
 		{
@@ -229,13 +237,16 @@ test('startSignIn publishes signed-out before installing a different owner', asy
 				refreshToken: 'bob-refresh',
 				accessTokenExpiresAt: now + 3_600_000,
 			},
-			owner: { kind: 'personal' as const, userId: 'bob' },
+			userId: 'bob' as UserId,
+			ownerId: 'bob' as OwnerId,
 			keyring: [...keyring],
+			mode: 'personal',
 		},
 	]);
 	expect(auth.state).toEqual({
 		status: 'signed-in',
-		owner: { kind: 'personal' as const, userId: 'bob' },
+		ownerId: 'bob' as OwnerId,
+		mode: 'personal',
 		keyring: [...keyring],
 	});
 	auth[Symbol.dispose]();
@@ -339,7 +350,8 @@ test('concurrent startSignIn shares one launcher flight', async () => {
 	expect(apiSessionCalls).toBe(1);
 	expect(auth.state).toEqual({
 		status: 'signed-in',
-		owner: { kind: 'personal' as const, userId: 'bob' },
+		ownerId: 'bob' as OwnerId,
+		mode: 'personal',
 		keyring: [...keyring],
 	});
 	expect(setup.current).toEqual({
@@ -348,8 +360,10 @@ test('concurrent startSignIn shares one launcher flight', async () => {
 			refreshToken: 'bob-refresh',
 			accessTokenExpiresAt: now + 3_600_000,
 		},
-		owner: { kind: 'personal' as const, userId: 'bob' },
+		userId: 'bob' as UserId,
+		ownerId: 'bob' as OwnerId,
 		keyring: [...keyring],
+		mode: 'personal',
 	});
 	auth[Symbol.dispose]();
 });
@@ -379,7 +393,8 @@ for (const status of [401, 403] as const) {
 		expect(resourceAuths).toEqual([null]);
 		expect(auth.state).toEqual({
 			status: 'reauth-required',
-			owner: { kind: 'personal' as const, userId: 'user-1' },
+			ownerId: 'user-1' as OwnerId,
+			mode: 'personal',
 			keyring: [...keyring],
 		});
 		expect(setup.current).toEqual(cell());
@@ -411,7 +426,8 @@ test('/api/session 503 leaves local auth signed-in without attaching a bearer', 
 	expect(resourceAuths).toEqual([null]);
 	expect(auth.state).toEqual({
 		status: 'signed-in',
-		owner: { kind: 'personal' as const, userId: 'user-1' },
+		ownerId: 'user-1' as OwnerId,
+		mode: 'personal',
 		keyring: [...keyring],
 	});
 	expect(setup.current).toEqual(cell());
@@ -456,7 +472,8 @@ test('stale /api/session verification after owner-switch sign-in cannot replace 
 	expect(result).toEqual(Ok(undefined));
 	expect(auth.state).toEqual({
 		status: 'signed-in',
-		owner: { kind: 'personal' as const, userId: 'bob' },
+		ownerId: 'bob' as OwnerId,
+		mode: 'personal',
 		keyring: [...keyring],
 	});
 
@@ -469,18 +486,21 @@ test('stale /api/session verification after owner-switch sign-in cannot replace 
 			refreshToken: 'bob-refresh',
 			accessTokenExpiresAt: now + 3_600_000,
 		},
-		owner: { kind: 'personal' as const, userId: 'bob' },
+		userId: 'bob' as UserId,
+		ownerId: 'bob' as OwnerId,
 		keyring: [...keyring],
+		mode: 'personal',
 	});
 	expect(auth.state).toEqual({
 		status: 'signed-in',
-		owner: { kind: 'personal' as const, userId: 'bob' },
+		ownerId: 'bob' as OwnerId,
+		mode: 'personal',
 		keyring: [...keyring],
 	});
 	auth[Symbol.dispose]();
 });
 
-test('refresh writes ONLY the grant section; owner and keyring byte-identical', async () => {
+test('refresh writes ONLY the grant section; identity + keyring + mode byte-identical', async () => {
 	const initial = cell({ grant: grant({ accessTokenExpiresAt: now + 1 }) });
 	const setup = createStorage(initial);
 	const auth = createOAuthAppAuth({
@@ -501,7 +521,9 @@ test('refresh writes ONLY the grant section; owner and keyring byte-identical', 
 
 	await auth.fetch('http://localhost:8787/resource');
 	const last = setup.saved.at(-1);
-	expect(last?.owner).toEqual(initial.owner);
+	expect(last?.userId).toEqual(initial.userId);
+	expect(last?.ownerId).toEqual(initial.ownerId);
+	expect(last?.mode).toEqual(initial.mode);
 	expect(last?.keyring).toEqual(initial.keyring);
 	expect(last?.grant).toEqual({
 		accessToken: 'new-access',
@@ -578,7 +600,7 @@ test('same-owner /api/session preserves state when keyring is unchanged', async 
 
 	await auth.fetch('http://localhost:8787/resource');
 	expect(setup.current).toEqual(cell());
-	// No owner/keyring write should have happened: keyring unchanged.
+	// No identity/keyring write should have happened: keyring unchanged.
 	expect(setup.saved).toEqual([]);
 	expect(auth.state).toMatchObject({ status: 'signed-in' });
 	auth[Symbol.dispose]();
@@ -586,10 +608,10 @@ test('same-owner /api/session preserves state when keyring is unchanged', async 
 
 test('keyring rotation updates persisted keyring', async () => {
 	const setup = createStorage(cell());
-	const rotated: SubjectKeyring = [
+	const rotated: Keyring = [
 		{
 			version: 2,
-			subjectKeyBase64: 'AQECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+			keyBytesBase64: 'AQECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 		},
 		...keyring,
 	];
@@ -603,8 +625,9 @@ test('keyring rotation updates persisted keyring', async () => {
 			if (String(input).endsWith('/api/session')) {
 				return json({
 					user: { id: 'user-1', email: 'user-1@example.com' },
-					owner: { kind: 'personal' as const, userId: 'user-1' },
+					ownerId: 'user-1',
 					keyring: rotated,
+					mode: 'personal' as const,
 				});
 			}
 			return new Response(null, { status: 204 });
@@ -613,12 +636,15 @@ test('keyring rotation updates persisted keyring', async () => {
 
 	await auth.fetch('http://localhost:8787/resource');
 	const last = setup.saved.at(-1);
-	expect(last?.owner).toEqual({ kind: 'personal', userId: 'user-1' });
+	expect(last?.userId).toEqual('user-1' as UserId);
+	expect(last?.ownerId).toEqual('user-1' as OwnerId);
+	expect(last?.mode).toEqual('personal');
 	expect(last?.keyring).toEqual(rotated);
 	expect(last?.grant).toEqual(cell().grant);
 	expect(auth.state).toEqual({
 		status: 'signed-in',
-		owner: { kind: 'personal' as const, userId: 'user-1' },
+		ownerId: 'user-1' as OwnerId,
+		mode: 'personal',
 		keyring: rotated,
 	});
 	auth[Symbol.dispose]();
@@ -722,7 +748,7 @@ test('network gate: no WebSocket bearer protocol until /api/session confirms sam
 	auth[Symbol.dispose]();
 });
 
-test('cold-boot offline keeps signed-in with cached owner and keyring and no profile field', async () => {
+test('cold-boot offline keeps signed-in with cached ownerId and keyring and no profile field', async () => {
 	const setup = createStorage(cell());
 	const auth = createOAuthAppAuth({
 		baseURL: 'http://localhost:8787',
@@ -740,7 +766,8 @@ test('cold-boot offline keeps signed-in with cached owner and keyring and no pro
 	});
 	expect('email' in auth.state).toBe(false);
 	expect(auth.state).toMatchObject({
-		owner: { kind: 'personal', userId: 'user-1' },
+		ownerId: 'user-1' as OwnerId,
+		mode: 'personal',
 		keyring: [...keyring],
 	});
 	auth[Symbol.dispose]();
@@ -785,7 +812,8 @@ test('signOut clears cell and network pause even when revoke fails', async () =>
 		await auth.fetch('http://localhost:8787/resource');
 		expect(auth.state).toEqual({
 			status: 'reauth-required',
-			owner: { kind: 'personal' as const, userId: 'user-1' },
+			ownerId: 'user-1' as OwnerId,
+			mode: 'personal',
 			keyring: [...keyring],
 		});
 		expect('email' in auth.state).toBe(false);
@@ -850,7 +878,8 @@ test('network verification clears on grant refresh until /api/session confirms n
 	await secondApiSessionRequested;
 	expect(auth.state).toEqual({
 		status: 'signed-in',
-		owner: { kind: 'personal' as const, userId: 'user-1' },
+		ownerId: 'user-1' as OwnerId,
+		mode: 'personal',
 		keyring: [...keyring],
 	});
 	expect('email' in auth.state).toBe(false);
@@ -1021,12 +1050,12 @@ test('/api/session response after signOut is discarded without corrupting state'
 	auth[Symbol.dispose]();
 });
 
-test('/api/session key update after signOut is discarded without writing owner or keyring', async () => {
+test('/api/session key update after signOut is discarded without writing identity or keyring', async () => {
 	const setup = createStorage(cell());
-	const rotated: SubjectKeyring = [
+	const rotated: Keyring = [
 		{
 			version: 2,
-			subjectKeyBase64: 'AQECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+			keyBytesBase64: 'AQECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 		},
 	];
 	let resolveApiSession!: (response: Response) => void;
@@ -1058,31 +1087,38 @@ test('/api/session key update after signOut is discarded without writing owner o
 	resolveApiSession(
 		json({
 			user: { id: 'user-1', email: 'user-1@example.com' },
-			owner: { kind: 'personal' as const, userId: 'user-1' },
+			ownerId: 'user-1',
 			keyring: rotated,
+			mode: 'personal' as const,
 		}),
 	);
 	await fetchPromise;
 	expect(setup.current).toBeNull();
 	expect(setup.saved).not.toContainEqual({
 		grant: grant(),
-		owner: { kind: 'personal' as const, userId: 'user-1' },
+		userId: 'user-1' as UserId,
+		ownerId: 'user-1' as OwnerId,
 		keyring: rotated,
+		mode: 'personal',
 	});
 	expect(auth.state).toEqual({ status: 'signed-out' });
 	auth[Symbol.dispose]();
 });
 
 describe('removed legacy surface', () => {
-	test('requireIdentity / requireSession / OAuthSession are not exported', async () => {
+	test('requireIdentity / requireSession / OAuthSession / ownerId are not exported', async () => {
 		const mod = await import('./index.js');
-		// @ts-expect-error: requireIdentity removed; reach for state.owner / state.keyring.
+		// @ts-expect-error: requireIdentity removed; reach for state.ownerId / state.keyring.
 		expect(mod.requireIdentity).toBeUndefined();
 		// @ts-expect-error: requireSession removed.
 		expect(mod.requireSession).toBeUndefined();
 		// @ts-expect-error: OAuthSession deleted; use PersistedAuth.
 		expect(mod.OAuthSession).toBeUndefined();
-		// @ts-expect-error: LocalUnlockBundle replaced by PersistedAuth.{owner,keyring}.
+		// @ts-expect-error: LocalUnlockBundle replaced by PersistedAuth.{ownerId,keyring}.
 		expect(mod.LocalUnlockBundle).toBeUndefined();
+		// @ts-expect-error: ownerId() helper deleted; PersistedAuth.ownerId is the value.
+		expect(mod.ownerId).toBeUndefined();
+		// @ts-expect-error: Owner discriminated union deleted; use ownerId + mode.
+		expect(mod.Owner).toBeUndefined();
 	});
 });

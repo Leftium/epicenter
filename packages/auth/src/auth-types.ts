@@ -1,10 +1,10 @@
-import { SubjectKeyring } from '@epicenter/encryption';
+import { Keyring } from '@epicenter/encryption';
 import { type } from 'arktype';
-import { Owner } from './owner.js';
+import { OwnerId, OwnershipMode, UserId } from './ids.js';
 
 export const AuthUser = type({
 	'+': 'delete',
-	id: 'string',
+	id: UserId,
 	email: 'string',
 });
 
@@ -35,7 +35,7 @@ export const OAuthTokenGrant = type({
 export type OAuthTokenGrant = typeof OAuthTokenGrant.infer;
 
 /**
- * The single persisted auth cell. Two clearly-labeled sections.
+ * The single persisted auth cell.
  *
  * Browser persists to localStorage, extension to chrome.storage.local, CLI
  * to a per-API-target file under the platform data directory (mode 0o600);
@@ -45,16 +45,22 @@ export type OAuthTokenGrant = typeof OAuthTokenGrant.infer;
  * Profile data is intentionally absent; application surfaces fetch it when
  * they display it.
  *
- * `owner` and `keyring` are persisted separately from the OAuth grant
- * because they remain useful offline. The grant lets the app call the
- * server; `owner` + `keyring` let the app select and decrypt this user's
+ * `userId`, `ownerId`, `mode`, and `keyring` are persisted separately from
+ * the OAuth grant because they remain useful offline. The grant lets the
+ * app call the server; the rest let the app select and decrypt this user's
  * local workspace data.
+ *
+ * `userId` is stored explicitly (rather than synthesised from `ownerId`) so
+ * the daemon can read it directly in team mode, where `ownerId` is the
+ * literal `'team'` and is structurally not a `UserId`.
  */
 export const PersistedAuth = type({
 	'+': 'delete',
 	grant: OAuthTokenGrant,
-	owner: Owner,
-	keyring: SubjectKeyring,
+	userId: UserId,
+	ownerId: OwnerId,
+	keyring: Keyring,
+	mode: OwnershipMode,
 });
 
 export type PersistedAuth = typeof PersistedAuth.infer;
@@ -65,15 +71,21 @@ export type PersistedAuth = typeof PersistedAuth.infer;
  * daemon).
  *
  * Flat by design: `user` is the Better Auth profile slice displayed in
- * account UI; `owner` is the partition discriminator clients use to render
- * personal-vs-team aware UI and to key local storage; `keyring` decrypts
- * local workspace data.
+ * account UI; `ownerId` is the partition key clients use to key local
+ * storage and server-side identifiers; `mode` drives team-aware UI; and
+ * `keyring` decrypts local workspace data.
+ *
+ * `ownerId` and `keyring` are intentionally not nested under an `owner`
+ * object: grouping them adds an indirection without earning it, and any
+ * future presentational owner facts (display name, avatar, quota) live in
+ * dedicated endpoints rather than the session boot manifest.
  */
 export const ApiSessionResponse = type({
 	'+': 'delete',
 	user: AuthUser,
-	owner: Owner,
-	keyring: SubjectKeyring,
+	ownerId: OwnerId,
+	keyring: Keyring,
+	mode: OwnershipMode,
 });
 
 export type ApiSessionResponse = typeof ApiSessionResponse.infer;

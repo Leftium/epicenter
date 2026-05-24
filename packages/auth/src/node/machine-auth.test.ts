@@ -15,6 +15,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { PersistedAuth } from '../auth-types.js';
+import type { OwnerId, UserId } from '../ids.js';
 import type { AuthFetch } from '../create-oauth-app-auth.js';
 import {
 	createMachineAuthClient,
@@ -41,7 +42,7 @@ const NOW = 1_700_000_000_000;
 const keyring = [
 	{
 		version: 1,
-		subjectKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+		keyBytesBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
 	},
 ] as const;
 
@@ -172,8 +173,9 @@ function apiSessionOk(userId = 'user-1'): Route {
 	return () =>
 		jsonResponse({
 			user: { id: userId, email: `${userId}@example.com` },
-			owner: { kind: 'personal' as const, userId },
+			ownerId: userId,
 			keyring: [...keyring],
+			mode: 'personal' as const,
 		});
 }
 
@@ -223,8 +225,15 @@ test('loginWithOob writes PersistedAuth and returns identity', async () => {
 			refreshToken: 'refresh-1',
 			accessTokenExpiresAt: NOW + 3_600_000,
 		},
-		owner: { kind: 'personal' as const, userId: 'user-1' },
-		keyring: [...keyring],
+		userId: 'user-1' as UserId,
+		ownerId: 'user-1' as OwnerId,
+		keyring: [
+			{
+				version: 1,
+				keyBytesBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+			},
+		],
+		mode: 'personal',
 	});
 
 	if (process.platform !== 'win32') {
@@ -318,8 +327,15 @@ async function preWriteCell(filePath: string, userId = 'user-1') {
 			refreshToken: 'refresh-stored',
 			accessTokenExpiresAt: NOW + 3_600_000,
 		},
-		owner: { kind: 'personal' as const, userId },
-		keyring: [...keyring],
+		userId: userId as UserId,
+		ownerId: userId as OwnerId,
+		keyring: [
+			{
+				version: 1,
+				keyBytesBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+			},
+		],
+		mode: 'personal',
 	};
 	await writeCell(filePath, cell);
 	return cell;
@@ -345,8 +361,15 @@ test('sign-in writes the new persisted shape', async () => {
 	expectOk(result);
 	const raw = await fs.readFile(filePath, 'utf-8');
 	const parsed = JSON.parse(raw) as Record<string, unknown>;
-	expect(Object.keys(parsed).sort()).toEqual(['grant', 'keyring', 'owner']);
+	expect(Object.keys(parsed).sort()).toEqual([
+		'grant',
+		'keyring',
+		'mode',
+		'ownerId',
+		'userId',
+	]);
 	expect('unlock' in parsed).toBe(false);
+	expect('owner' in parsed).toBe(false);
 });
 
 test('status valid when /api/session returns 200 with same owner', async () => {
@@ -553,8 +576,9 @@ test('createMachineAuthClient loads file and attaches Bearer after gate', async 
 		if (url.endsWith('/api/session')) {
 			return jsonResponse({
 				user: { id: 'user-1', email: 'user-1@example.com' },
-				owner: { kind: 'personal' as const, userId: 'user-1' },
+				ownerId: 'user-1',
 				keyring: [...keyring],
+				mode: 'personal' as const,
 			});
 		}
 		if (url.endsWith('/api/something')) {

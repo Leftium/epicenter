@@ -21,7 +21,7 @@ import * as path from 'node:path';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { epicenterEnv } from '@epicenter/constants/node';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
-import type { SubjectKeyring } from '@epicenter/encryption';
+import type { Keyring } from '@epicenter/encryption';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -39,7 +39,6 @@ import {
 	type AuthFetch,
 	createOAuthAppAuth,
 } from '../create-oauth-app-auth.js';
-import { ownerId } from '../owner.js';
 import { createOobOAuthLauncher } from './oob-launcher.js';
 
 /**
@@ -209,7 +208,7 @@ async function saveMachineTokens(
  */
 export type MachineIdentity = {
 	user: { id: string; email: string };
-	keyring: SubjectKeyring;
+	keyring: Keyring;
 };
 
 type CommonConfig = {
@@ -289,11 +288,13 @@ export async function loginWithOob({
 	if (sessionResult.error) return Err(sessionResult.error);
 	const session = sessionResult.data;
 
-	const cell: PersistedAuth = {
+	const cell = {
 		grant,
-		owner: session.owner,
+		userId: session.user.id,
+		ownerId: session.ownerId,
 		keyring: session.keyring,
-	};
+		mode: session.mode,
+	} satisfies PersistedAuth;
 	const saved = await saveMachineTokens(cell, { filePath: authFilePath });
 	if (saved.error) return Err(saved.error);
 
@@ -349,7 +350,7 @@ export async function status({
 		return Ok({
 			status: 'unverified' as const,
 			identity: {
-				user: { id: ownerId(cachedCell.owner), email: '' },
+				user: { id: cachedCell.userId, email: '' },
 				keyring: cachedCell.keyring,
 			},
 		});
@@ -383,7 +384,7 @@ export async function status({
 	return Ok({
 		status: 'unverified' as const,
 		identity: {
-			user: { id: ownerId(cachedCell.owner), email: '' },
+			user: { id: cachedCell.userId, email: '' },
 			keyring: cachedCell.keyring,
 		},
 	});

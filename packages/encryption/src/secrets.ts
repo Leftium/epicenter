@@ -16,7 +16,7 @@ export const RootKeyringEntry = type({
  * Non-empty root keyring.
  *
  * The parsed keyring is canonicalized by descending version so the first entry
- * is the current secret for new per-subject key derivations.
+ * is the current secret for new per-label key derivations.
  */
 export const RootKeyring = type([
 	RootKeyringEntry,

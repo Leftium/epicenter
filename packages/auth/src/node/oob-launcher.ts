@@ -7,8 +7,8 @@
  * at `/auth/oauth2/token` with PKCE. Returns a 3-field `OAuthTokenGrant`.
  *
  * The launcher is concerned only with the OAuth dance. The caller pairs
- * the returned grant with `GET /api/session` to fill in the `owner` and
- * `keyring` fields of `PersistedAuth`.
+ * the returned grant with `GET /api/session` to fill in the `userId`,
+ * `ownerId`, `mode`, and `keyring` fields of `PersistedAuth`.
  */
 
 import * as readline from 'node:readline';

@@ -1,6 +1,6 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
-import { subjectKeyringsEqual } from '@epicenter/encryption';
+import { keyringsEqual } from '@epicenter/encryption';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -16,10 +16,9 @@ import {
 	type PersistedAuth as PersistedAuthType,
 } from './auth-types.js';
 import { parseOAuthTokenGrant } from './oauth-token-response.js';
-import { ownerId } from './owner.js';
 
 /**
- * Storage adapter for the single `PersistedAuth` cell (grant + owner + keyring).
+ * Storage adapter for the single `PersistedAuth` cell (grant + identity + keyring).
  * Two methods, no watch hook: cross-context sign-out propagates via the
  * server (next bearer-bearing call hits a revoked token and reauth-requires
  * organically). The server is the authority; brief cross-tab desync is
@@ -104,7 +103,7 @@ type ApiSessionRequestResult = Result<
  * Use this once per runtime around one persisted auth record. The returned
  * client exposes capabilities (`fetch`, `openWebSocket`) instead of raw tokens:
  * it refreshes grants, verifies `/api/session` before attaching a bearer, and
- * keeps the cached `owner` and `keyring` available when network auth pauses.
+ * keeps the cached `ownerId` and `keyring` available when network auth pauses.
  * That preserves the local-first invariant: offline workspace boot can continue,
  * but server access fails closed until the current persisted auth has been
  * verified by the API.
@@ -177,11 +176,13 @@ export function createOAuthAppAuth({
 					now,
 				});
 				if (authSession.persistedAuth !== startedFrom) return false;
-				const next: PersistedAuthType = {
+				const next = {
 					grant,
-					owner: startedFrom.owner,
+					userId: startedFrom.userId,
+					ownerId: startedFrom.ownerId,
 					keyring: startedFrom.keyring,
-				};
+					mode: startedFrom.mode,
+				} satisfies PersistedAuthType;
 				await authSession.write(next);
 				if (authSession.persistedAuth !== startedFrom) return false;
 				authSession.installUnverified(next);
@@ -259,17 +260,19 @@ export function createOAuthAppAuth({
 			const current = authSession.persistedAuth;
 			if (current !== startedFrom) return Ok(session);
 
-			if (ownerId(current.owner) !== ownerId(session.owner)) {
+			if (current.ownerId !== session.ownerId) {
 				await clearPersistedAuth();
 				return Ok(session);
 			}
 
-			if (!subjectKeyringsEqual(current.keyring, session.keyring)) {
-				const next: PersistedAuthType = {
+			if (!keyringsEqual(current.keyring, session.keyring)) {
+				const next = {
 					grant: current.grant,
-					owner: session.owner,
+					userId: session.user.id,
+					ownerId: session.ownerId,
 					keyring: session.keyring,
-				};
+					mode: session.mode,
+				} satisfies PersistedAuthType;
 				await authSession.write(next);
 				if (authSession.persistedAuth !== startedFrom) return Ok(session);
 				authSession.installVerified(next);
@@ -357,18 +360,17 @@ export function createOAuthAppAuth({
 			return AuthError.StartSignInFailed({ cause: error });
 		}
 		if (!isCurrentSignIn(generation)) return Ok(undefined);
-		if (
-			previous !== null &&
-			ownerId(previous.owner) !== ownerId(session.owner)
-		) {
+		if (previous !== null && previous.ownerId !== session.ownerId) {
 			await clearAuthSession();
 			if (!isCurrentSignIn(generation)) return Ok(undefined);
 		}
-		const next: PersistedAuthType = {
+		const next = {
 			grant,
-			owner: session.owner,
+			userId: session.user.id,
+			ownerId: session.ownerId,
 			keyring: session.keyring,
-		};
+			mode: session.mode,
+		} satisfies PersistedAuthType;
 		await authSession.write(next);
 		if (!isCurrentSignIn(generation)) return Ok(undefined);
 		authSession.installVerified(next);
@@ -562,13 +564,15 @@ function publicStateFromRuntime(runtimeState: RuntimeAuthState): AuthState {
 	if (runtimeState.networkAccess === 'paused') {
 		return {
 			status: 'reauth-required',
-			owner: runtimeState.persistedAuth.owner,
+			ownerId: runtimeState.persistedAuth.ownerId,
+			mode: runtimeState.persistedAuth.mode,
 			keyring: runtimeState.persistedAuth.keyring,
 		};
 	}
 	return {
 		status: 'signed-in',
-		owner: runtimeState.persistedAuth.owner,
+		ownerId: runtimeState.persistedAuth.ownerId,
+		mode: runtimeState.persistedAuth.mode,
 		keyring: runtimeState.persistedAuth.keyring,
 	};
 }
@@ -578,8 +582,9 @@ function authStatesEqual(left: AuthState, right: AuthState) {
 	if (left.status === 'signed-out') return true;
 	if (right.status === 'signed-out') return false;
 	return (
-		ownerId(left.owner) === ownerId(right.owner) &&
-		subjectKeyringsEqual(left.keyring, right.keyring)
+		left.ownerId === right.ownerId &&
+		left.mode === right.mode &&
+		keyringsEqual(left.keyring, right.keyring)
 	);
 }
 

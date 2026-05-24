@@ -1,16 +1,16 @@
-import type { SubjectKeyring } from '@epicenter/encryption';
+import type { Keyring } from '@epicenter/encryption';
 import type { Result } from 'wellcrafted/result';
 import type { AuthError } from './auth-errors.js';
-import type { Owner } from './owner.js';
+import type { OwnerId, OwnershipMode } from './ids.js';
 
 /**
  * Current auth state for local-first workspace clients.
  *
- * `owner` and `keyring` are present in `signed-in` and `reauth-required`
- * because they belong to local workspace operations. Even when the OAuth
- * grant needs reauth, the cached owner can still pick the right local
- * storage partition and the keyring can still decrypt local workspace
- * data.
+ * `ownerId`, `mode`, and `keyring` are present in `signed-in` and
+ * `reauth-required` because they belong to local workspace operations. Even
+ * when the OAuth grant needs reauth, the cached owner id can still pick the
+ * right local storage partition and the keyring can still decrypt local
+ * workspace data.
  *
  * Auth state carries capability material only. Profile data is fetched by
  * application surfaces that display it.
@@ -19,13 +19,15 @@ export type AuthState =
 	| { status: 'signed-out' }
 	| {
 			status: 'signed-in';
-			owner: Owner;
-			keyring: SubjectKeyring;
+			ownerId: OwnerId;
+			mode: OwnershipMode;
+			keyring: Keyring;
 	  }
 	| {
 			status: 'reauth-required';
-			owner: Owner;
-			keyring: SubjectKeyring;
+			ownerId: OwnerId;
+			mode: OwnershipMode;
+			keyring: Keyring;
 	  };
 
 export type AuthClient = {
@@ -33,7 +35,7 @@ export type AuthClient = {
 	/**
 	 * Origin of the API this client signs into. Exposed so client-side
 	 * partitioning (local storage keys, BroadcastChannel names) can scope by
-	 * `(server, owner)` and stay distinct across two signed-in deployments on
+	 * `(server, ownerId)` and stay distinct across two signed-in deployments on
 	 * the same machine. Mirrors the `baseURL` passed at construction.
 	 */
 	baseURL: string;

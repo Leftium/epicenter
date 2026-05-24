@@ -4,14 +4,14 @@
  * `attachDaemonInfrastructure(ydoc, opts)` is the recipe every config-routed
  * daemon extension needs: persist the Y.Doc update log to disk under
  * `yjsPath(projectDir, guid)`, join the cloud room at the partitioned
- * `roomWsUrl({ baseURL, owner, guid, installationId })`, and own the ordered async
+ * `roomWsUrl({ baseURL, ownerId, guid, installationId })`, and own the ordered async
  * dispose (destroy first so writes flush before sockets close, then await
  * both `whenDisposed` promises).
  *
- * A cloud doc is owned by the authenticated `owner` and addressed by its
+ * A cloud doc is owned by the authenticated `ownerId` and addressed by its
  * `ydoc.guid`. The daemon and browser apps build the same URL with
- * `roomWsUrl({ baseURL, owner, guid, installationId })`, so syncing the same guid
- * for the same owner means sharing one room.
+ * `roomWsUrl({ baseURL, ownerId, guid, installationId })`, so syncing the same
+ * guid for the same owner means sharing one room.
  *
  * The helper takes the ydoc and the daemon ctx capabilities directly so the
  * caller stays explicit about its `actions` choice: app workspaces with
@@ -24,7 +24,7 @@
  * compose materializers around the same ydoc.
  */
 
-import type { Owner } from '@epicenter/auth';
+import type { OwnerId } from '@epicenter/auth';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import type * as Y from 'yjs';
 
@@ -46,7 +46,7 @@ import type { ProjectDir } from '../shared/types.js';
 export type AttachDaemonInfrastructureOptions<TActions extends ActionRegistry> =
 	{
 		projectDir: ProjectDir;
-		owner: Owner;
+		ownerId: OwnerId;
 		installationId: string;
 		openWebSocket: OpenWebSocketFn;
 		onReconnectSignal: OnReconnectSignal;
@@ -65,7 +65,7 @@ export function attachDaemonInfrastructure<TActions extends ActionRegistry>(
 	ydoc: Y.Doc,
 	{
 		projectDir,
-		owner,
+		ownerId,
 		installationId,
 		openWebSocket,
 		onReconnectSignal,
@@ -80,7 +80,7 @@ export function attachDaemonInfrastructure<TActions extends ActionRegistry>(
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl({
 			baseURL,
-			owner,
+			ownerId,
 			guid: ydoc.guid,
 			installationId,
 		}),

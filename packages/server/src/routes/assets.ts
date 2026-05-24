@@ -1,22 +1,25 @@
 /**
  * Assets sub-app: owner-partitioned URL shapes for the asset CRUD surface.
  *
- * Personal mode mounts:
- *   POST /users/:userId/assets               authed upload
- *   GET  /users/:userId/assets               authed list
- *   GET  /users/:userId/assets/usage         authed usage
- *   DEL  /users/:userId/assets/:assetId      authed delete
- *   GET  /users/:userId/assets/:assetId      public read (capability URL)
+ * Uniform URL shape across modes:
+ *   POST /owners/:ownerId/assets              authed upload
+ *   GET  /owners/:ownerId/assets              authed list
+ *   GET  /owners/:ownerId/assets/usage        authed usage
+ *   DEL  /owners/:ownerId/assets/:assetId     authed delete
+ *   GET  /owners/:ownerId/assets/:assetId     public read (capability URL)
  *
- * Team mode mounts the same handlers at `/assets/...` (no partition).
+ * In personal mode `:ownerId` is the signed-in user's id and the deployment
+ * layers `requireUrlOwnerIdMatchesAuth` to gate `:ownerId === c.var.user.id`.
+ * In team mode `:ownerId` carries the literal string `'team'` and no gate is
+ * needed.
  *
  * Authentication and any billing gating are layered on by the deployment,
  * not by this factory. The library returns bare CRUD; cloud wraps the
- * authed paths with `requireCookieOrBearerUser`, `requireUrlUserIdMatchesAuth`,
+ * authed paths with `requireCookieOrBearerUser`, `requireUrlOwnerIdMatchesAuth`,
  * and `autumnStorageGate`; team wraps with `requireCookieOrBearerUser` alone.
  */
 
-import type { Owner } from '@epicenter/auth';
+import { asOwnerId } from '@epicenter/auth';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import {
@@ -28,22 +31,17 @@ import type { Env, ServerOptions } from '../types.js';
 export function createAssetsApp(opts: ServerOptions): Hono<Env> {
 	const app = new Hono<Env>();
 
-	if (opts.ownerKind === 'personal') {
-		const ownerFor = (c: Context<Env>): Owner => ({
-			kind: 'personal',
-			userId: c.req.param('userId')!,
-		});
+	const isPersonal = opts.mode === 'personal';
+	const ownerFor = (c: Context<Env>) =>
+		isPersonal ? asOwnerId(c.req.param('ownerId')!) : asOwnerId('team');
 
-		// Public read mounts first so the deployment's auth middleware (applied
-		// at the same prefix) does not intercept GETs for the capability URL.
-		app.route('/users/:userId/assets', createAssetPublicRoutes(ownerFor));
-		app.route('/users/:userId/assets', createAssetAuthedRoutes(ownerFor));
-	} else {
-		const ownerFor = (): Owner => ({ kind: 'team' });
-
-		app.route('/assets', createAssetPublicRoutes(ownerFor));
-		app.route('/assets', createAssetAuthedRoutes(ownerFor));
-	}
+	// Public read mounts first so the deployment's auth middleware (applied
+	// at the same prefix) does not intercept GETs for the capability URL.
+	app.route('/owners/:ownerId/assets', createAssetPublicRoutes(ownerFor));
+	app.route(
+		'/owners/:ownerId/assets',
+		createAssetAuthedRoutes(ownerFor, opts.mode),
+	);
 
 	return app;
 }

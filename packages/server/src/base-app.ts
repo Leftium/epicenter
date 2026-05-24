@@ -121,7 +121,7 @@ export function createBaseApp(opts: ServerOptions): Hono<Env> {
 
 	// Health
 	app.get('/', (c) =>
-		c.json({ mode: opts.ownerKind, version: '0.1.0', runtime: 'cloudflare' }),
+		c.json({ mode: opts.mode, version: '0.1.0', runtime: 'cloudflare' }),
 	);
 
 	// Rooms registry: bound for any sub-app that reads `c.var.rooms`.

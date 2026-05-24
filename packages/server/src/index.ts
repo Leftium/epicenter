@@ -16,8 +16,8 @@ export {
 	requireBearerUser,
 	requireCookieOrBearerUser,
 } from './middleware/require-auth.js';
-export { requireUrlUserIdMatchesAuth } from './middleware/require-url-user-id-matches-auth.js';
-// Server-only durable-identifier derivations. The `Owner` type itself
+export { requireUrlOwnerIdMatchesAuth } from './middleware/require-url-owner-id-matches-auth.js';
+// Server-only durable-identifier derivations. The `OwnerId` type itself
 // lives in `@epicenter/auth` because it flows through `/api/session` and
 // every client; consumers that need it should import it from there.
 export type { AssetR2Key, OwnerPath, RoomDoName } from './owner.js';

@@ -45,7 +45,7 @@ export const OwnershipMode = type("'personal' | 'team'");
 export type OwnershipMode = typeof OwnershipMode.infer;
 ```
 
-Schemas use the `*Schema` exports:
+Schemas use the `*Schema` exports for branded IDs and `OwnershipMode` for the unbranded mode union:
 
 ```ts
 // auth-types.ts
@@ -53,7 +53,7 @@ export const ApiSessionResponse = type({
   user: { id: UserIdSchema, email: 'string' },
   ownerId: OwnerIdSchema,
   keyring: Keyring,
-  mode: OwnershipModeSchema,
+  mode: OwnershipMode,
 });
 export type ApiSessionResponse = typeof ApiSessionResponse.infer;
 ```

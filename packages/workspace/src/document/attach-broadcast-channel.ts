@@ -8,7 +8,7 @@ import * as Y from 'yjs';
  * updates from other tabs. Defaults the channel key to `ydoc.guid` so only
  * docs for the same local workspace communicate. Authenticated browser
  * workspaces should pass an owner-scoped key (`attachLocalStorage` derives
- * one from the `(server, owner)` pair) so two signed-in owners in the same
+ * one from the `(server, ownerId)` pair) so two signed-in owners in the same
  * browser profile cannot exchange plaintext.
  *
  * Skips re-broadcasting updates that arrived from BroadcastChannel itself

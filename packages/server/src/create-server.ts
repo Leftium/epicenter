@@ -2,15 +2,16 @@
  * Top-level factory for `@epicenter/server`.
  *
  * Returns named sub-apps the deployment composes onto a single `Hono`
- * instance. Each sub-app reads `opts.ownerKind` once, at construction, to
- * choose the right URL pattern; downstream handlers operate on a resolved
- * {@link Owner} value uniformly. There is no runtime branch on `ownerKind`
- * outside route registration.
+ * instance. Each sub-app reads `opts.mode` once, at construction; downstream
+ * handlers operate on a resolved `OwnerId` value uniformly. URL patterns are
+ * uniform across modes (`/owners/:ownerId/...`); the only mode-specific
+ * behavior is which middleware the deployment layers on (personal mode adds
+ * the URL-vs-auth safety gate).
  *
  * Cloud and team deployments call `createServer` with one of:
  *
- *   { ownerKind: 'personal', signUpPolicy: 'open' }       Epicenter Cloud
- *   { ownerKind: 'team',     signUpPolicy: 'disabled' }   self-hosted team
+ *   { mode: 'personal', signUpPolicy: 'open' }       Epicenter Cloud
+ *   { mode: 'team',     signUpPolicy: 'disabled' }   self-hosted team
  *
  * The deployment composition mounts the returned sub-apps. See
  * `specs/20260522T230000-server-package-split.md` for the full design.

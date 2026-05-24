@@ -2,12 +2,12 @@
  * Public configuration surface for {@link createServer}.
  *
  * Deployment-level facts only. Per-request state lives on the Hono
- * context (`c.var.user`, `c.var.db`, etc.), and per-request {@link Owner}
- * values are reconstructed inside handlers from URL params plus
- * `opts.ownerKind`.
+ * context (`c.var.user`, `c.var.db`, etc.). Per-request `OwnerId` values
+ * are reconstructed inside handlers from URL params (in personal mode)
+ * or from the literal `'team'` (in team mode), based on `opts.mode`.
  */
 
-import type { AuthUser, OwnerKind } from '@epicenter/auth';
+import type { AuthUser, OwnershipMode } from '@epicenter/auth';
 import type { ActionManifest } from '@epicenter/workspace';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { createAuth } from './auth/create-auth.js';
@@ -30,11 +30,11 @@ export type SignUpPolicy = 'open' | 'disabled';
 /**
  * The two-word deployment configuration.
  *
- * Cloud composition passes `{ ownerKind: 'personal', signUpPolicy: 'open' }`.
- * Team composition passes `{ ownerKind: 'team', signUpPolicy: 'disabled' }`.
+ * Cloud composition passes `{ mode: 'personal', signUpPolicy: 'open' }`.
+ * Team composition passes `{ mode: 'team', signUpPolicy: 'disabled' }`.
  */
 export type ServerOptions = {
-	ownerKind: OwnerKind;
+	mode: OwnershipMode;
 	signUpPolicy?: SignUpPolicy;
 };
 

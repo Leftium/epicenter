@@ -1,9 +1,9 @@
 import { env } from 'cloudflare:workers';
 import {
-	deriveSubjectKeyring as deriveSubjectKeyringFromRoot,
+	deriveKeyring as deriveKeyringFromRoot,
+	type Keyring,
 	parseRootKeyring,
 	type RootKeyring,
-	type SubjectKeyring,
 } from '@epicenter/encryption';
 
 let rootKeyring: RootKeyring;
@@ -16,18 +16,16 @@ try {
 }
 
 /**
- * Derive the `SubjectKeyring` attached to Epicenter auth-session responses.
+ * Derive the workspace `Keyring` attached to Epicenter auth-session responses.
  *
- * The caller (the `/api/session` route) picks the HKDF label from the
- * resolved `Owner`; this wrapper just owns env access and fail-fast worker
- * startup. `@epicenter/encryption` owns parsing and HKDF derivation, keeping
- * workspace encryption separate from Better Auth's cookie and token secrets.
+ * The caller (the `/api/session` route) passes the resolved `ownerId` as the
+ * HKDF label; this wrapper just owns env access and fail-fast worker startup.
+ * `@epicenter/encryption` owns parsing and HKDF derivation, keeping workspace
+ * encryption separate from Better Auth's cookie and token secrets.
  */
-export async function deriveSubjectKeyring(
-	subject: string,
-): Promise<SubjectKeyring> {
-	return deriveSubjectKeyringFromRoot({
+export async function deriveKeyring(label: string): Promise<Keyring> {
+	return deriveKeyringFromRoot({
 		rootKeyring,
-		subject,
+		label,
 	});
 }

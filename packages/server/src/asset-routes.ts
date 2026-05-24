@@ -25,7 +25,7 @@ import { customAlphabet } from 'nanoid';
 const generateGuid = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 15);
 
 import { and, desc, eq, sql } from 'drizzle-orm';
-import type { Owner } from '@epicenter/auth';
+import type { OwnerId, OwnershipMode } from '@epicenter/auth';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { describeRoute } from 'hono-openapi';
@@ -80,15 +80,21 @@ function sanitizeFilename(name: string): string {
 /**
  * Build a `Hono` sub-app exposing the authenticated asset CRUD surface.
  *
- * The caller picks the URL shape: personal mode mounts these handlers under
- * `/users/:userId/assets` (with the safety middleware checking the URL
- * userId matches the authenticated user); team mode mounts them at
- * `/assets`. Either way, each handler reconstructs its {@link Owner} value
- * from the static `ownerKind` plus, in personal mode, the URL param.
+ * URL shape is uniform across modes: handlers mount under
+ * `/owners/:ownerId/assets`. In personal mode the deployment layers
+ * `requireUrlOwnerIdMatchesAuth` so `:ownerId === c.var.user.id`; in team
+ * mode `:ownerId` is the literal `'team'`. `ownerFor(c)` returns the
+ * resolved `OwnerId`. Per-row filtering happens only in personal mode
+ * (gated by `mode`), because in team mode every member shares the same
+ * `ownerId === 'team'` partition.
  */
-type OwnerForContext = (c: import('hono').Context<Env>) => Owner;
+type OwnerForContext = (c: import('hono').Context<Env>) => OwnerId;
 
-export function createAssetAuthedRoutes(ownerFor: OwnerForContext): Hono<Env> {
+export function createAssetAuthedRoutes(
+	ownerFor: OwnerForContext,
+	mode: OwnershipMode,
+): Hono<Env> {
+	const isPersonal = mode === 'personal';
 	return (
 		new Hono<Env>()
 			// POST / - Create (upload)
@@ -119,14 +125,14 @@ export function createAssetAuthedRoutes(ownerFor: OwnerForContext): Hono<Env> {
 						return c.json(AssetError.FileTooLarge({ size: file.size }), 413);
 					}
 
-					// The R2 key is the partition-prefixed `assets/<assetId>`.
-					// Personal mode: `users/<userId>/assets/<assetId>`.
-					// Team mode:     `assets/<assetId>`.
+					// The R2 key is the partition-prefixed `owners/<ownerId>/assets/<assetId>`.
+					// Personal mode: `owners/<userId>/assets/<assetId>`.
+					// Team mode:     `owners/team/assets/<assetId>`.
 					// Provenance (asset.userId) is still recorded for both modes so
 					// deletion via account-delete can find every object.
 					const assetId = generateGuid();
-					const owner = ownerFor(c);
-					const r2Key = assetKey(owner, assetId);
+					const ownerId = ownerFor(c);
+					const r2Key = assetKey(ownerId, assetId);
 
 					await c.env.ASSETS_BUCKET.put(r2Key, file.stream(), {
 						httpMetadata: {
@@ -170,11 +176,12 @@ export function createAssetAuthedRoutes(ownerFor: OwnerForContext): Hono<Env> {
 					tags: ['assets'],
 				}),
 				async (c) => {
-					const owner = ownerFor(c);
-					const filter =
-						owner.kind === 'personal'
-							? eq(schema.asset.userId, owner.userId)
-							: undefined;
+					const ownerId = ownerFor(c);
+					// Personal mode scopes by the actor (ownerId === userId in this
+					// mode). Team mode shares one partition, so no per-row filter.
+					const filter = isPersonal
+						? eq(schema.asset.userId, ownerId)
+						: undefined;
 					const query = c.var.db
 						.select()
 						.from(schema.asset)
@@ -192,11 +199,10 @@ export function createAssetAuthedRoutes(ownerFor: OwnerForContext): Hono<Env> {
 					tags: ['assets'],
 				}),
 				async (c) => {
-					const owner = ownerFor(c);
-					const filter =
-						owner.kind === 'personal'
-							? eq(schema.asset.userId, owner.userId)
-							: undefined;
+					const ownerId = ownerFor(c);
+					const filter = isPersonal
+						? eq(schema.asset.userId, ownerId)
+						: undefined;
 					const query = c.var.db
 						.select({
 							total: sql<number>`COALESCE(SUM(${schema.asset.sizeBytes}), 0)`,
@@ -216,17 +222,16 @@ export function createAssetAuthedRoutes(ownerFor: OwnerForContext): Hono<Env> {
 				}),
 				async (c) => {
 					const { assetId } = c.req.param();
-					const owner = ownerFor(c);
+					const ownerId = ownerFor(c);
 
 					// Atomic lookup + delete. Personal mode scopes to the
 					// authenticated user; team mode trusts the URL alone.
-					const filter =
-						owner.kind === 'personal'
-							? and(
-									eq(schema.asset.id, assetId),
-									eq(schema.asset.userId, owner.userId),
-								)
-							: eq(schema.asset.id, assetId);
+					const filter = isPersonal
+						? and(
+								eq(schema.asset.id, assetId),
+								eq(schema.asset.userId, ownerId),
+							)
+						: eq(schema.asset.id, assetId);
 					const [deleted] = await c.var.db
 						.delete(schema.asset)
 						.where(filter)
@@ -236,7 +241,7 @@ export function createAssetAuthedRoutes(ownerFor: OwnerForContext): Hono<Env> {
 						return c.json(AssetError.NotFound(), 404);
 					}
 
-					await c.env.ASSETS_BUCKET.delete(assetKey(owner, assetId));
+					await c.env.ASSETS_BUCKET.delete(assetKey(ownerId, assetId));
 					// Surface deleted byte count via response header so cloud's
 					// storage gate can refund without re-reading the row.
 					return c.body(null, 204, {
@@ -264,12 +269,15 @@ export function createAssetPublicRoutes(ownerFor: OwnerForContext): Hono<Env> {
 		}),
 		async (c) => {
 			const { assetId } = c.req.param();
-			const owner = ownerFor(c);
+			const ownerId = ownerFor(c);
 
-			const object = await c.env.ASSETS_BUCKET.get(assetKey(owner, assetId), {
-				onlyIf: c.req.raw.headers,
-				range: c.req.raw.headers,
-			});
+			const object = await c.env.ASSETS_BUCKET.get(
+				assetKey(ownerId, assetId),
+				{
+					onlyIf: c.req.raw.headers,
+					range: c.req.raw.headers,
+				},
+			);
 
 			if (object === null) {
 				return c.body('Not found', 404);

@@ -14,7 +14,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { AuthClient } from '@epicenter/auth';
+import { asOwnerId, type AuthClient } from '@epicenter/auth';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import type {
 	DaemonWorkspaceContext,
@@ -42,7 +42,8 @@ function stubAuthClient(): AuthClient {
 	return {
 		state: {
 			status: 'signed-in',
-			owner: { kind: 'personal', userId: 'test-user' },
+			ownerId: asOwnerId('test-user'),
+			mode: 'personal',
 			keyring: [] as never,
 		},
 		openWebSocket: () => Promise.resolve({} as WebSocket),

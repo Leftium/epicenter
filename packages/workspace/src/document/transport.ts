@@ -1,13 +1,13 @@
-import type { Owner } from '@epicenter/auth';
+import type { OwnerId } from '@epicenter/auth';
 
 /**
  * Options for {@link roomWsUrl}: the full base URL of the API host, the
- * workspace `owner` (which selects the personal vs team URL shape), the room
+ * workspace `ownerId` (which selects the partitioned URL path), the room
  * `guid`, and the per-client `installationId` query value.
  */
 export type RoomWsUrlOptions = {
 	baseURL: string;
-	owner: Owner;
+	ownerId: OwnerId;
 	guid: string;
 	installationId: string;
 };
@@ -15,8 +15,10 @@ export type RoomWsUrlOptions = {
 /**
  * Build the WebSocket URL for a hosted room.
  *
- * Personal: `wss://<baseURL>/api/users/<owner.userId>/rooms/<guid>?installationId=<id>`
- * Team:     `wss://<baseURL>/api/rooms/<guid>?installationId=<id>`
+ * Single URL form: `wss://<baseURL>/api/owners/<ownerId>/rooms/<guid>?installationId=<id>`
+ *
+ * In personal mode `ownerId` equals the signed-in user's id; in team mode it
+ * is the literal `'team'`. The URL shape is uniform across both modes.
  *
  * The `guid` is `encodeURIComponent`-encoded so ids containing `/`, `?`, or
  * `#` round-trip safely; the server's Hono routes decode the path param. The
@@ -27,10 +29,7 @@ export type RoomWsUrlOptions = {
 export function roomWsUrl(options: RoomWsUrlOptions): string {
 	const base = options.baseURL.replace(/\/+$/, '');
 	const encodedGuid = encodeURIComponent(options.guid);
-	const path =
-		options.owner.kind === 'personal'
-			? `/api/users/${options.owner.userId}/rooms/${encodedGuid}`
-			: `/api/rooms/${encodedGuid}`;
+	const path = `/api/owners/${options.ownerId}/rooms/${encodedGuid}`;
 	const search = `?installationId=${encodeURIComponent(options.installationId)}`;
 	return `${base}${path}${search}`
 		.replace(/^https:/, 'wss:')

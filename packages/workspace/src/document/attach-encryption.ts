@@ -8,7 +8,7 @@
  * register encrypted resources:
  *
  * ```ts
- * const encryption = attachEncryption(ydoc, { keyring: () => subjectKeyring });
+ * const encryption = attachEncryption(ydoc, { keyring: () => ownerKeyring });
  * const tables = encryption.attachTables(defs);
  * const kv = encryption.attachKv(defs);
  * ```
@@ -33,9 +33,9 @@
  * ## Local persistence concerns live elsewhere
  *
  * Encrypted IndexedDB persistence and owner-scoped BroadcastChannel are
- * owner-scoped (one `(server, owner)` pair) rather than ydoc-scoped, so they
- * live on `attachLocalStorage(ydoc, { server, owner, keyring })`. Local-data
- * wipe lives on `wipeLocalStorage({ server, owner })`. Both are free
+ * owner-scoped (one `(server, ownerId)` pair) rather than ydoc-scoped, so they
+ * live on `attachLocalStorage(ydoc, { server, ownerId, keyring })`. Local-data
+ * wipe lives on `wipeLocalStorage({ server, ownerId })`. Both are free
  * functions in this package; callers compose them around `attachEncryption`
  * at use sites.
  *
@@ -48,7 +48,7 @@
  *
  * ## What this attachment does NOT do
  *
- * - It does not wipe local storage. `wipeLocalStorage({ server, owner })` owns that.
+ * - It does not wipe local storage. `wipeLocalStorage({ server, ownerId })` owns that.
  * - It does not validate that every encryption-capable slot on the Y.Doc got
  *   registered. The caller owns the composition: if you pair a plaintext
  *   `attachTable` with `encryption.attachTable` targeting the *same slot
@@ -68,7 +68,7 @@
  * @module
  */
 
-import type { SubjectKeyring } from '@epicenter/encryption';
+import type { Keyring } from '@epicenter/encryption';
 import type * as Y from 'yjs';
 import {
 	createEncryptedYkvLww,
@@ -91,13 +91,13 @@ import { KV_KEY, TableKey } from './keys.js';
 
 export type AttachEncryptionOptions = {
 	/**
-	 * Lazy reader for the current subject keyring.
+	 * Lazy reader for the current owner keyring.
 	 *
 	 * Called synchronously at every `attachTable` / `attachKv` site. Throw if
 	 * no keyring is available (e.g. signed-out): a throw here means the
 	 * workspace outlived its signed-in scope, which is a caller bug.
 	 */
-	keyring: () => SubjectKeyring;
+	keyring: () => Keyring;
 };
 
 export type EncryptionAttachment = {

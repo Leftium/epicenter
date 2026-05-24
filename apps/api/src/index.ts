@@ -43,8 +43,10 @@ base.get('/', (c) =>
 );
 
 // Auth surface (no /api prefix; these render HTML and OAuth metadata).
-const auth = createAuthApp();
-base.route('/sign-in', auth).route('/consent', auth).route('/auth', auth);
+// Mounted at root: the sub-app already declares full paths internally
+// (`/sign-in`, `/consent`, `/auth/cli-callback`, `/auth/*`). Mounting at
+// a prefix would make Hono prepend it, producing `/sign-in/sign-in` etc.
+base.route('/', createAuthApp());
 
 // Session: cookie-or-bearer auth + owner resolution, then library handler.
 const cloudSession = new Hono<Env>()

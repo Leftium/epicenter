@@ -876,7 +876,8 @@ import {
 	openCollaboration,
 	roomWsUrl,
 } from '@epicenter/workspace';
-import type { AuthClient, OwnerId } from '@epicenter/auth';
+import type { AuthClient } from '@epicenter/auth';
+import type { OwnerId } from '@epicenter/constants/identity';
 import { type } from 'arktype';
 
 const tabs = defineTable(type({ id: 'string', url: 'string', _v: '1' }));

@@ -8,8 +8,9 @@
  *
  * The host owns auth lifecycle. It refuses to start when machine auth is
  * signed-out, then builds a per-route `DaemonWorkspaceContext` carrying the
- * lazy `keyring` reader (with a sign-out guard) plus the auth client itself
- * for `openCollaboration({ auth })`.
+ * lazy `keyring` reader (with a sign-out guard) plus the auth-derived
+ * function refs (`openWebSocket`, `onReconnectSignal`) the route forwards
+ * into `openCollaboration`.
  */
 
 import { resolve } from 'node:path';

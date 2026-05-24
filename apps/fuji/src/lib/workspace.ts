@@ -34,6 +34,13 @@ export const FUJI_ID = 'epicenter.fuji';
 export const EntryId = type('string').as<string & Brand<'EntryId'>>();
 export type EntryId = typeof EntryId.infer;
 
+/**
+ * Syntactic sugar for `value as EntryId`. The constrained `string` parameter
+ * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
+ * The only place in the codebase where `as EntryId` should appear.
+ */
+export const asEntryId = (value: string): EntryId => value as EntryId;
+
 const entryBase = type({
 	id: EntryId,
 	title: 'string',

@@ -9,8 +9,8 @@ import { bytesToBase64, type Keyring } from '@epicenter/encryption';
 import { attachEncryption } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import {
+	asEntryId,
 	createFujiActions,
-	type EntryId,
 	entryContentDocGuid,
 	FUJI_ID,
 	fujiTables,
@@ -74,16 +74,16 @@ describe('Fuji workspace mount', () => {
 
 describe('Fuji schema helpers', () => {
 	test('entryContentDocGuid is deterministic per entry id', () => {
-		const a = entryContentDocGuid('entry-1' as EntryId);
-		const b = entryContentDocGuid('entry-1' as EntryId);
-		const c = entryContentDocGuid('entry-2' as EntryId);
+		const a = entryContentDocGuid(asEntryId('entry-1'));
+		const b = entryContentDocGuid(asEntryId('entry-1'));
+		const c = entryContentDocGuid(asEntryId('entry-2'));
 		expect(a).toBe(b);
 		expect(a).not.toBe(c);
 		expect(a.length).toBeGreaterThan(0);
 	});
 
 	test('entryContentDocGuid bakes in FUJI_ID as the workspace label', () => {
-		const guid = entryContentDocGuid('entry-1' as EntryId);
+		const guid = entryContentDocGuid(asEntryId('entry-1'));
 		expect(typeof guid).toBe('string');
 		expect(guid.length).toBeGreaterThan(0);
 	});

@@ -123,7 +123,7 @@
 		const ts = dateNow - twoYearsMs + Math.random() * twoYearsMs;
 
 		return {
-			id: generateId() as string as EntryId,
+			id: generateId<EntryId>(),
 			title: `${pick(TITLES)} #${index + 1}`,
 			subtitle: pick(SUBTITLES),
 			type: pickN(TYPES, 0, 2),

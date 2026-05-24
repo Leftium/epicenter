@@ -119,11 +119,12 @@ export class Room extends DurableObject {
 	 * / {@link Room.getDoc}), avoiding the overhead of constructing and
 	 * parsing Request/Response objects for binary payloads.
 	 *
-	 * The `userId` and `deviceId` query parameters are required: together
-	 * they form the {@link Connection} stamped on the socket attachment
-	 * for the lifetime of the connection. `userId` is what presence carries
-	 * to peers; `deviceId` is the address `dispatch({ to })` routes to. No
-	 * round-trip validation: the URL stamp is the binding.
+	 * Trusts the rooms route to have validated and stamped both `userId`
+	 * (from auth) and `deviceId` (from the client query, presence-checked
+	 * at the route boundary) onto the URL before forwarding. Together they
+	 * form the {@link Connection} stamped on the socket attachment for the
+	 * lifetime of the connection. `userId` is what presence carries to
+	 * peers; `deviceId` is the address `dispatch({ to })` routes to.
 	 *
 	 * Cancels any pending compaction alarm: a new client just connected,
 	 * so compacting now would be wasteful.
@@ -141,10 +142,12 @@ export class Room extends DurableObject {
 		const rawUserId = url.searchParams.get('userId');
 		const deviceId = url.searchParams.get('deviceId');
 		if (!rawUserId || !deviceId) {
-			return new Response('missing userId or deviceId', { status: 400 });
+			// Contract violation: the auth-gated rooms route is responsible
+			// for validating and stamping both params before forwarding.
+			// 500 (not 400) signals this is a server bug, not a client error.
+			return new Response(null, { status: 500 });
 		}
-		// The URL stamp is the binding (set by the auth-gated rooms route);
-		// brand it once at the boundary.
+		// The URL stamp is the binding; brand userId once at the boundary.
 		const userId = asUserId(rawUserId);
 
 		void this.ctx.storage.deleteAlarm();

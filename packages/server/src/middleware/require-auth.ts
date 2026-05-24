@@ -31,6 +31,11 @@ import { parseBearer } from '../auth/parse-bearer.js';
 import * as schema from '../db/schema/index.js';
 import type { Env } from '../types.js';
 
+// `verifyAccessToken` carries no per-request state (`audience`, `issuer`,
+// `jwksUrl` are passed per call), so resolve it once at module load.
+const verifyAccessToken = oauthProviderResourceClient().getActions()
+	.verifyAccessToken;
+
 /**
  * Resolve the OAuth bearer on the current request to the calling user.
  *
@@ -46,13 +51,10 @@ async function resolveRequestOAuthUser(
 	if (!accessToken) return OAuthError.InvalidToken();
 
 	const audience = c.var.authBaseURL;
-	const payload = await oauthProviderResourceClient()
-		.getActions()
-		.verifyAccessToken(accessToken, {
-			verifyOptions: { audience, issuer: createOAuthIssuerURL(audience) },
-			jwksUrl: createOAuthJwksURL(audience),
-		})
-		.catch(() => null);
+	const payload = await verifyAccessToken(accessToken, {
+		verifyOptions: { audience, issuer: createOAuthIssuerURL(audience) },
+		jwksUrl: createOAuthJwksURL(audience),
+	}).catch(() => null);
 	const userId = typeof payload?.sub === 'string' ? payload.sub : null;
 	if (!userId) return OAuthError.InvalidToken();
 

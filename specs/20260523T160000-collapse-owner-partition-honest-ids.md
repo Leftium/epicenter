@@ -20,66 +20,68 @@ This is greenfield. No back-compat shims. No "renamed but kept the old export." 
 
 ### 2.1 Branded ids
 
-Two artifacts per branded id, each with a clear role:
+Three artifacts per branded id, each with a clear role:
 
-- `UserId` / `OwnerId` — **plain function constructor**. Takes `string`, returns the branded type. Used at TypeScript call sites to brand known-string values without ceremony. Single argument, no error result.
-- `UserIdSchema` / `OwnerIdSchema` — **arktype validator**. Used inside arktype schema definitions where the inferred type needs to carry the brand. Required because inline `type('string').as<UserId>()` inside a schema field collapses to `{}` in inference, but a named top-level arktype validator preserves the brand.
+- `UserId` / `OwnerId` (value) — **arktype validator**. Declared first so it is the single source of truth. Used inside arktype schema definitions and any call site that needs to validate an `unknown` boundary value.
+- `UserId` / `OwnerId` (type) — **branded type alias**. Derived from the validator via `typeof UserId.infer`, so schema and type stay in lockstep under one PascalCase name.
+- `asUserId` / `asOwnerId` — **shorthand cast helper**. Takes a known `string` and returns the brand. The only place `as UserId` appears in the codebase; replaces scattered raw casts at trusted internal call sites.
 
 ```ts
 // packages/auth/src/ids.ts
 import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 
-export type UserId = string & Brand<'UserId'>;
-export const UserId = (value: string): UserId => value as UserId;
-export const UserIdSchema = type('string').as<UserId>();
+export const UserId = type('string').as<string & Brand<'UserId'>>();
+export type UserId = typeof UserId.infer;
+export const asUserId = (value: string): UserId => value as UserId;
 
-export type OwnerId = string & Brand<'OwnerId'>;
-export const OwnerId = (value: string): OwnerId => value as OwnerId;
-export const OwnerIdSchema = type('string').as<OwnerId>();
+export const OwnerId = type('string').as<string & Brand<'OwnerId'>>();
+export type OwnerId = typeof OwnerId.infer;
+export const asOwnerId = (value: string): OwnerId => value as OwnerId;
 
-// Unbranded unions follow the existing dual-declaration pattern;
-// no separate *Schema export because the arktype callable IS the validator
-// and the inferred type IS the union (no brand to lose).
+// Unbranded unions follow the same dual-declaration pattern. No `as*`
+// helper because there is no brand to add: the inferred type IS the union.
 export const OwnershipMode = type("'personal' | 'team'");
 export type OwnershipMode = typeof OwnershipMode.infer;
 ```
 
-Schemas use the `*Schema` exports for branded IDs and `OwnershipMode` for the unbranded mode union:
+Schemas use the validator directly under its PascalCase name. There is no `*Schema` alias because TypeScript keeps value space and type space separate, so the same identifier names both:
 
 ```ts
 // auth-types.ts
 export const ApiSessionResponse = type({
-  user: { id: UserIdSchema, email: 'string' },
-  ownerId: OwnerIdSchema,
+  user: { id: UserId, email: 'string' },
+  ownerId: OwnerId,
   keyring: Keyring,
   mode: OwnershipMode,
 });
 export type ApiSessionResponse = typeof ApiSessionResponse.infer;
 ```
 
-Call sites use the function constructor:
+Trusted internal call sites use the `as*` shorthand:
 
 ```ts
 // PREFERRED — explicit, searchable, takes string and returns brand
-const ownerId = OwnerId(c.var.user.id);
-const userId  = UserId(rawUserId);
+const ownerId = asOwnerId(c.var.user.id);
+const userId  = asUserId(rawUserId);
 
 // AVOID — silent cast, harder to grep
 const ownerId = c.var.user.id as OwnerId;
 ```
 
-Test fixtures use the constructor too:
+Test fixtures use the helper too:
 
 ```ts
 const cell = {
-  userId: UserId('user-1'),
-  ownerId: OwnerId('user-1'),
+  userId: asUserId('user-1'),
+  ownerId: asOwnerId('user-1'),
   // ...
 } satisfies PersistedAuth;
 ```
 
-Why dual-export (not just the arktype callable matching the rest of the codebase): the arktype callable's signature is `(value: unknown) => T | ArkErrors`, so call sites need `.assert()` or error handling for trivial brand application. The plain function constructor `(value: string) => T` is what reads naturally in non-validation contexts. The arktype validator is kept for schema definitions where the brand needs to survive validator composition.
+For genuinely untyped boundaries (parsing `unknown` JSON, network input), use the validator's `.assert(value)` or schema-level validation (e.g., `PersistedAuth.assert(...)`). That throws on shape mismatch; the `as*` helper trusts the compiler.
+
+Why the `as*` helper alongside the arktype callable: the arktype callable's signature is `(value: unknown) => T | ArkErrors`, so call sites need `.assert()` or error handling for trivial brand application. `asUserId(value: string): UserId` is what reads naturally in non-validation contexts and gives `unknown`-typed callers a compile error instead of a silent widening. The arktype validator is also the schema-composition value because the named top-level callable preserves the brand under composition (an inline `type('string').as<UserId>()` inside a schema field collapses to `{}` in inference).
 
 Generator helpers stay as bare casts because they're producing fresh values from trusted sources, not lifting external strings:
 
@@ -117,7 +119,7 @@ Construction at boundaries uses `satisfies`, never colon annotation, so inferred
 
 ```ts
 return c.json({
-  user: { id: UserId(c.var.user.id), email: c.var.user.email },
+  user: { id: asUserId(c.var.user.id), email: c.var.user.email },
   ownerId,
   keyring,
   mode,
@@ -518,10 +520,10 @@ inferred type narrow and lets    } satisfies ApiSessionResponse);
 the call site type-test against  // NOT: const x: ApiSessionResponse = {...}
 the contract.
 
-Brand application uses the       const ownerId = OwnerId(rawString);
-callable constructor, not `as`   // NOT: const ownerId = rawString as OwnerId;
-casts at consumer sites.         (Internal generators producing fresh ids
-                                  may still use `as`.)
+Brand application uses the       const ownerId = asOwnerId(rawString);
+`as*` shorthand helper, not      // NOT: const ownerId = rawString as OwnerId;
+raw `as` casts at consumer       (Internal generators producing fresh ids
+sites.                            may still use `as` inside their bodies.)
 
 Function parameter and field     function doName(ownerId: OwnerId, ...)
 declarations still use `:`.      type X = { ownerId: OwnerId; ... }

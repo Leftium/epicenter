@@ -16,7 +16,7 @@ import { expect, test } from 'bun:test';
 import { oauthProvider } from '@better-auth/oauth-provider';
 import { EPICENTER_OAUTH_SCOPES } from '@epicenter/constants/oauth';
 import { betterAuth } from 'better-auth';
-import { memoryAdapter, type MemoryDB } from 'better-auth/adapters/memory';
+import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
 import { jwt } from 'better-auth/plugins';
 import { Hono } from 'hono';
 import {

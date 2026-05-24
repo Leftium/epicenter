@@ -92,11 +92,9 @@ export function resolveRequestOAuthUser<E extends RequestOAuthEnv>(
 		verifyOAuthAccessToken:
 			oauthProviderResourceClient().getActions().verifyAccessToken,
 		findUserById: async (userId) => {
-			const [row] = await c.var.db
-				.select()
-				.from(schema.user)
-				.where(eq(schema.user.id, userId))
-				.limit(1);
+			const row = await c.var.db.query.user.findFirst({
+				where: eq(schema.user.id, userId),
+			});
 			return row ?? null;
 		},
 	} satisfies ResolverDeps);

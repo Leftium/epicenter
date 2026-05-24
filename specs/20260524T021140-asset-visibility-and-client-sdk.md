@@ -261,7 +261,24 @@ export function createAssetReadRoute(mode: OwnershipMode): Hono<Env> {
         onlyIf: c.req.raw.headers,
         range: c.req.raw.headers,
       });
-      // ... same response building as today
+
+      // Cache-Control differs by visibility. Private assets must never
+      // hit a shared cache (Cloudflare edge, corporate proxies). Public
+      // assets get a short max-age so that visibility flips become
+      // visible to new requests within ~60s without an explicit purge.
+      // Longer max-age + active purge on PATCH is a future optimization.
+      const cacheControl = row.visibility === 'public'
+        ? 'public, max-age=60'
+        : 'private, no-store';
+
+      return new Response(object.body, {
+        headers: {
+          'content-type': row.contentType,
+          'etag': object.httpEtag,
+          'cache-control': cacheControl,
+          // ... range/content-length/etc. as today
+        },
+      });
     },
   );
 }
@@ -561,6 +578,23 @@ GC of orphaned assets?                APPLICATION RESPONSIBILITY.
                                        R2 lifecycle rules can be
                                        set on a /tmp/ prefix later
                                        for failed-upload sweeps.
+
+Cache strategy for public reads?      SHORT max-age (60s) + no
+                                       active purge in v1. A flip
+                                       from public to private becomes
+                                       visible to new requests
+                                       within ~60s; in-flight
+                                       cached copies persist for
+                                       that window. Apps needing
+                                       hard revocation should not
+                                       publish in the first place.
+                                       Future: longer s-maxage +
+                                       Cloudflare cache purge on
+                                       PATCH.
+
+Cache strategy for private reads?     'private, no-store'. No
+                                       shared cache should ever
+                                       hold a private asset.
 ```
 
 ## 5. Execution plan
@@ -639,3 +673,19 @@ curl http://localhost:8787/api/owners/$USER/assets/$ID
   asset-specific rate limits become a concern only at abuse scale.
 - Signed URLs with expiry (Discord 2023 precedent). Documented as
   a future option; not built now.
+- Metering of egress on public reads. The autumnStorageGate runs
+  on POST/PATCH/DELETE only; viral public assets generate egress
+  that is invisible to the owner's bill. Worker-level egress caps
+  apply. Revisit if abuse appears.
+- OwnerId is visible in public asset URLs
+  (`/api/owners/:ownerId/assets/:assetId`). Apps that need
+  anonymous publish must layer their own indirection (e.g., a
+  proxy under their own domain).
+- Multi-account-in-one-tab. The SDK caches `ownerId` on first
+  resolve and never invalidates. Sign-out-then-sign-in-as-a-
+  different-user in the same tab produces 403s on next call,
+  not silent cross-owner writes. Add an `invalidate()` method or
+  wire to an auth event when an app actually needs this.
+- Hard revocation. PATCH visibility flips have a ~60s CDN cache
+  lag (see section 4 cache strategy). Active purge on flip is a future
+  optimization; not needed for v1.

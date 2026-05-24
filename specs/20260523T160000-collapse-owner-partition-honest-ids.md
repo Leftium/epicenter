@@ -20,50 +20,66 @@ This is greenfield. No back-compat shims. No "renamed but kept the old export." 
 
 ### 2.1 Branded ids
 
-Dual-declared as both type AND runtime callable, matching `packages/filesystem/src/ids.ts` and `apps/tab-manager/src/lib/workspace/definition.ts`:
+Two artifacts per branded id, each with a clear role:
+
+- `UserId` / `OwnerId` — **plain function constructor**. Takes `string`, returns the branded type. Used at TypeScript call sites to brand known-string values without ceremony. Single argument, no error result.
+- `UserIdSchema` / `OwnerIdSchema` — **arktype validator**. Used inside arktype schema definitions where the inferred type needs to carry the brand. Required because inline `type('string').as<UserId>()` inside a schema field collapses to `{}` in inference, but a named top-level arktype validator preserves the brand.
 
 ```ts
-// packages/auth/src/ids.ts (new file)
+// packages/auth/src/ids.ts
 import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 
-/**
- * A signed-in account identifier. Issued by Better Auth, opaque to clients.
- * In personal mode, the bytes happen to equal the owner id; in team mode
- * they do not. The brand prevents accidental cross-assignment.
- */
 export type UserId = string & Brand<'UserId'>;
-export const UserId = type('string').as<UserId>();
+export const UserId = (value: string): UserId => value as UserId;
+export const UserIdSchema = type('string').as<UserId>();
 
-/**
- * Workspace partition key. In personal mode equals the signed-in user's
- * id (bytes preserve pre-collapse HKDF labels). In team mode the literal
- * 'team'. Every server path, every R2 key, every local IDB name, and the
- * HKDF derivation label all use this one value.
- */
 export type OwnerId = string & Brand<'OwnerId'>;
-export const OwnerId = type('string').as<OwnerId>();
+export const OwnerId = (value: string): OwnerId => value as OwnerId;
+export const OwnerIdSchema = type('string').as<OwnerId>();
 
-/**
- * Deployment-static product shape. Set once at server construction
- * (`createServer({ mode, ... })`), flowed back to clients via
- * `/api/session`, persisted in the auth cell so the daemon knows the
- * shape offline. Drives URL pattern, sign-up policy, and team-aware UI.
- */
-export type OwnershipMode = 'personal' | 'team';
+// Unbranded unions follow the existing dual-declaration pattern;
+// no separate *Schema export because the arktype callable IS the validator
+// and the inferred type IS the union (no brand to lose).
 export const OwnershipMode = type("'personal' | 'team'");
+export type OwnershipMode = typeof OwnershipMode.infer;
 ```
 
-Call sites use the constructor, not raw `as` casts. The constructor is a callable arktype validator that returns the branded value:
+Schemas use the `*Schema` exports:
 
 ```ts
-// PREFERRED — explicit, searchable, readable
+// auth-types.ts
+export const ApiSessionResponse = type({
+  user: { id: UserIdSchema, email: 'string' },
+  ownerId: OwnerIdSchema,
+  keyring: Keyring,
+  mode: OwnershipModeSchema,
+});
+export type ApiSessionResponse = typeof ApiSessionResponse.infer;
+```
+
+Call sites use the function constructor:
+
+```ts
+// PREFERRED — explicit, searchable, takes string and returns brand
 const ownerId = OwnerId(c.var.user.id);
 const userId  = UserId(rawUserId);
 
-// AVOID — silent cast, harder to grep, less obvious at the boundary
+// AVOID — silent cast, harder to grep
 const ownerId = c.var.user.id as OwnerId;
 ```
+
+Test fixtures use the constructor too:
+
+```ts
+const cell = {
+  userId: UserId('user-1'),
+  ownerId: OwnerId('user-1'),
+  // ...
+} satisfies PersistedAuth;
+```
+
+Why dual-export (not just the arktype callable matching the rest of the codebase): the arktype callable's signature is `(value: unknown) => T | ArkErrors`, so call sites need `.assert()` or error handling for trivial brand application. The plain function constructor `(value: string) => T` is what reads naturally in non-validation contexts. The arktype validator is kept for schema definitions where the brand needs to survive validator composition.
 
 Generator helpers stay as bare casts because they're producing fresh values from trusted sources, not lifting external strings:
 
@@ -72,7 +88,7 @@ Generator helpers stay as bare casts because they're producing fresh values from
 export const generateOwnerId = (): OwnerId => generateId() as OwnerId;
 ```
 
-The brand fits this codebase's pattern (see every `apps/*/workspace.ts`, `packages/filesystem/src/ids.ts`). UserId and OwnerId are the only pair in the system where one's bytes can be the other's bytes in one mode but not another, which is exactly what the brand catches.
+UserId and OwnerId are the only pair in the system where one's bytes can be the other's bytes in one mode but not another, which is exactly what the brand catches.
 
 ### 2.2 `ApiSessionResponse`
 

@@ -15,7 +15,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { PersistedAuth } from '../auth-types.js';
-import type { OwnerId, UserId } from '../ids.js';
+import { OwnerId, UserId } from '../ids.js';
 import type { AuthFetch } from '../create-oauth-app-auth.js';
 import {
 	createMachineAuthClient,
@@ -225,8 +225,8 @@ test('loginWithOob writes PersistedAuth and returns identity', async () => {
 			refreshToken: 'refresh-1',
 			accessTokenExpiresAt: NOW + 3_600_000,
 		},
-		userId: 'user-1' as UserId,
-		ownerId: 'user-1' as OwnerId,
+		userId: UserId('user-1'),
+		ownerId: OwnerId('user-1'),
 		keyring: [
 			{
 				version: 1,
@@ -327,8 +327,8 @@ async function preWriteCell(filePath: string, userId = 'user-1') {
 			refreshToken: 'refresh-stored',
 			accessTokenExpiresAt: NOW + 3_600_000,
 		},
-		userId: userId as UserId,
-		ownerId: userId as OwnerId,
+		userId: UserId(userId),
+		ownerId: OwnerId(userId),
 		keyring: [
 			{
 				version: 1,

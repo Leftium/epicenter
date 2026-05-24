@@ -1,10 +1,14 @@
 import { Keyring } from '@epicenter/encryption';
 import { type } from 'arktype';
-import { OwnerId, OwnershipMode, UserId } from './ids.js';
+import {
+	OwnerIdSchema,
+	OwnershipMode,
+	UserIdSchema,
+} from './ids.js';
 
 export const AuthUser = type({
 	'+': 'delete',
-	id: UserId,
+	id: UserIdSchema,
 	email: 'string',
 });
 
@@ -57,8 +61,8 @@ export type OAuthTokenGrant = typeof OAuthTokenGrant.infer;
 export const PersistedAuth = type({
 	'+': 'delete',
 	grant: OAuthTokenGrant,
-	userId: UserId,
-	ownerId: OwnerId,
+	userId: UserIdSchema,
+	ownerId: OwnerIdSchema,
 	keyring: Keyring,
 	mode: OwnershipMode,
 });
@@ -83,7 +87,7 @@ export type PersistedAuth = typeof PersistedAuth.infer;
 export const ApiSessionResponse = type({
 	'+': 'delete',
 	user: AuthUser,
-	ownerId: OwnerId,
+	ownerId: OwnerIdSchema,
 	keyring: Keyring,
 	mode: OwnershipMode,
 });

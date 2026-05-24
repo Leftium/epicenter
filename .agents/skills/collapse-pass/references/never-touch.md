@@ -50,7 +50,12 @@ Other apps validate inputs against these by name and shape. Renaming a field or 
 - `ApiSessionResponse` (`packages/auth/src/auth-types.ts`)
 - `Keyring` (`packages/encryption/src/keys.ts`, formerly `SubjectKeyring` before `af31c870b`)
 - `RootKeyring` (`packages/encryption/src/secrets.ts`)
-- `OwnerId`, `UserId`, `OwnershipMode`, `TEAM_OWNER_ID` (`packages/auth/src/ids.ts`)
+- `OwnerId`, `UserId`, `TEAM_OWNER_ID` (`packages/auth/src/ids.ts`)
+
+`OwnershipMode` is intentionally NOT in this list: it was moved to
+`packages/server/src/types.ts` in `eb85a0d9b` and dropped its arktype
+validator (it's a plain `'personal' | 'team'` literal now). It is
+server-internal deployment config, not a wire-validated schema.
 
 ### Identity strings inside documents
 

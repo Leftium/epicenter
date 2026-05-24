@@ -24,12 +24,7 @@ jobs:
         run: bun run lint:check
       - name: Type check
         run: bun run typecheck
-      - name: Reject ad-hoc c.json error literals
-        # Every non-2xx response must come from a defineErrors variant in
-        # packages/constants/src/<domain>-errors.ts. See
-        # specs/20260524T100110-centralize-c-json-error-responses.md.
-        run: |
-          if grep -rEn --exclude-dir=.wrangler --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=.next "c\.json\(\s*\{\s*name:\s*['\"]" packages apps; then
-            echo "::error::Found ad-hoc c.json({ name: ... }) literal. Use a defineErrors variant from @epicenter/constants/<domain>-errors.ts instead."
-            exit 1
-          fi
+      # The Biome plugin at scripts/biome/c-json-errors.grit rejects ad-hoc
+      # c.json({ ... }, 4xx/5xx) error literals as part of `bun run lint:check`
+      # above; no separate step is needed. See
+      # specs/20260524T100110-centralize-c-json-error-responses.md.

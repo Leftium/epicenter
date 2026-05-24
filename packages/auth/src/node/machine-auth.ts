@@ -34,8 +34,8 @@ import {
 	ApiSessionResponse,
 	PersistedAuth,
 	type PersistedAuth as PersistedAuthType,
+	type UserId,
 } from '../auth-types.js';
-import type { UserId } from '../ids.js';
 import {
 	type AuthFetch,
 	createOAuthAppAuth,

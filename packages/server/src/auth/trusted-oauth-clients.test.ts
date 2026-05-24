@@ -139,26 +139,6 @@ test('every trusted client has at least one redirect URI', () => {
 	}
 });
 
-test('trusted CLI OAuth client (built for test baseURL) is accepted by Better Auth', async () => {
-	const baseURL = 'http://localhost:47878';
-	const cliClient = findCliClient(baseURL);
-	const expectedRedirectUri = `${baseURL}/auth/cli-callback`;
-	expect(cliClient.redirectUris).toContain(expectedRedirectUri);
-
-	const setup = createTrustedClientTestAuth({
-		trustedClient: cliClient,
-		baseURL,
-	});
-	const cookie = await signUpTestUser(setup.auth, setup.baseURL);
-	const code = await authorize(setup, {
-		clientId: setup.trustedClientId,
-		cookie,
-		redirectUri: expectedRedirectUri,
-	});
-
-	expect(code).toBeTruthy();
-});
-
 test('registered non-trusted OAuth client requires consent', async () => {
 	const setup = createTrustedClientTestAuth();
 

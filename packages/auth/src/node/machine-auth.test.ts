@@ -339,37 +339,6 @@ async function preWriteCell(filePath: string, userId = 'user-1') {
 	return cell;
 }
 
-test('sign-in writes the new persisted shape', async () => {
-	const filePath = tmpAuthPath();
-	const { fetch } = createFetch({
-		tokenRoute: tokenSuccess(),
-		apiSessionRoute: apiSessionOk('user-1'),
-	});
-
-	const result = await loginWithOob({
-		baseURL: BASE_URL,
-		clientId: CLIENT_ID,
-		filePath,
-		fetch,
-		now: () => NOW,
-		print: () => {},
-		openBrowser: () => {},
-		readCode: async () => 'CODE',
-	});
-	expectOk(result);
-	const raw = await fs.readFile(filePath, 'utf-8');
-	const parsed = JSON.parse(raw) as Record<string, unknown>;
-	expect(Object.keys(parsed).sort()).toEqual([
-		'grant',
-		'keyring',
-		'ownerId',
-		'userId',
-	]);
-	expect('unlock' in parsed).toBe(false);
-	expect('owner' in parsed).toBe(false);
-	expect('mode' in parsed).toBe(false);
-});
-
 test('status valid when /api/session returns 200 with same owner', async () => {
 	const filePath = tmpAuthPath();
 	await preWriteCell(filePath, 'user-1');

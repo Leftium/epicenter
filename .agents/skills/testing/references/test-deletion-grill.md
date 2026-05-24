@@ -24,6 +24,7 @@ Related references:
 - The grill question
 - Deletion taxonomy
 - What to do per file
+- Punch list format
 - What stays
 - Commit discipline
 - Final report
@@ -158,6 +159,20 @@ before editing production code.
 
 If any package has more than about 10 candidates, show the punch list
 before deleting. For small packages, do the work directly.
+
+## Punch List Format
+
+When you need to show candidates before editing, use this shape:
+
+```txt
+| File | Test | Category | Why deletion is safe | Remaining coverage |
+| ---- | ---- | -------- | -------------------- | ------------------ |
+```
+
+Keep each row concrete. "Looks redundant" is not enough. Name the
+caller test, integration test, type check, or contract boundary that
+makes the deletion safe. If there is no replacement coverage and the
+behavior is still real, rewrite the test instead of deleting it.
 
 ## What Stays
 

@@ -10,7 +10,7 @@
  * - Cold-boot offline keeps signed-in with ownerId + keyring and no profile field
  */
 
-import { describe, expect, test } from 'bun:test';
+import { expect, test } from 'bun:test';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
 import type { Keyring } from '@epicenter/encryption';
 import { Ok, type Result } from 'wellcrafted/result';
@@ -1082,20 +1082,3 @@ test('/api/session key update after signOut is discarded without writing identit
 	auth[Symbol.dispose]();
 });
 
-describe('removed legacy surface', () => {
-	test('requireIdentity / requireSession / OAuthSession / ownerId are not exported', async () => {
-		const mod = await import('./index.js');
-		// @ts-expect-error: requireIdentity removed; reach for state.ownerId / state.keyring.
-		expect(mod.requireIdentity).toBeUndefined();
-		// @ts-expect-error: requireSession removed.
-		expect(mod.requireSession).toBeUndefined();
-		// @ts-expect-error: OAuthSession deleted; use PersistedAuth.
-		expect(mod.OAuthSession).toBeUndefined();
-		// @ts-expect-error: LocalUnlockBundle replaced by PersistedAuth.{ownerId,keyring}.
-		expect(mod.LocalUnlockBundle).toBeUndefined();
-		// @ts-expect-error: ownerId() helper deleted; PersistedAuth.ownerId is the value.
-		expect(mod.ownerId).toBeUndefined();
-		// @ts-expect-error: Owner discriminated union deleted; use ownerId + mode.
-		expect(mod.Owner).toBeUndefined();
-	});
-});

@@ -14,7 +14,6 @@
 		"./apps": "./src/apps.ts",
 		"./auth": "./src/auth.ts",
 		"./identity": "./src/identity.ts",
-		"./node": "./src/node.ts",
 		"./oauth": "./src/oauth.ts",
 		"./vite": "./src/vite.ts",
 		"./versions": "./src/versions.ts",
@@ -28,7 +27,6 @@
 	},
 	"dependencies": {
 		"arktype": "catalog:",
-		"env-paths": "^3.0.0",
 		"wellcrafted": "catalog:"
 	},
 	"scripts": {

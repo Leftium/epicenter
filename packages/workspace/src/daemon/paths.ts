@@ -2,10 +2,10 @@
  * Daemon-process path helpers.
  *
  * Per-project runtime files (socket, metadata sidecar, SQLite lease) live
- * under `runtimeDir()` (a per-user directory built on top of
- * `epicenterEnv.dataDir`). Persistent logs live under `epicenterEnv.logDir`.
- * Every file is keyed by a hash of the daemon's project directory so two
- * daemons on the same machine never collide.
+ * under `runtimeDir()` (a per-user directory at `<dataDir>/run/`).
+ * Persistent logs live at `<logDir>/<dirHash>.log`. Every file is keyed by
+ * a hash of the daemon's project directory so two daemons on the same
+ * machine never collide.
  *
  * For per-workspace data layout (yjs/sqlite/markdown under the project
  * directory's reserved subdir), see `document/workspace-paths.ts`. Different
@@ -19,27 +19,35 @@
 import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { join } from 'node:path';
-import { epicenterEnv } from '@epicenter/constants/node';
+import envPaths from 'env-paths';
 
 const SAFE_UNIX_SOCKET_PATH_BYTES = 95;
 
 /**
+ * env-paths layout for this app. Honors `XDG_DATA_HOME` / `XDG_STATE_HOME`
+ * on Linux; uses `~/Library/Application Support/epicenter` and
+ * `~/Library/Logs/epicenter` on macOS. Resolved once at module load.
+ */
+const PATHS = envPaths('epicenter', { suffix: '' });
+
+/**
  * Per-user directory for daemon sockets, metadata, and lease files.
  *
- * Default: `<epicenterEnv.dataDir>/run/`, mirroring the systemd/Docker
- * `/run/` convention for transient runtime state. The path stays short
- * enough to fit under the ~104-byte Unix-socket kernel limit on macOS,
- * where `os.tmpdir()` (~48 bytes for `/var/folders/...`) is too long once
- * the per-project socket suffix is appended.
+ * Default: `<dataDir>/run/`, mirroring the systemd/Docker `/run/` convention
+ * for transient runtime state. The path stays short enough to fit under the
+ * ~104-byte Unix-socket kernel limit on macOS, where `os.tmpdir()` (~48
+ * bytes for `/var/folders/...`) is too long once the per-project socket
+ * suffix is appended.
  *
- * `EPICENTER_RUNTIME_DIR` overrides the default. The env var is a workspace
- * test seam: production users do not set it (the default is correct), but
- * test cases set it to a short `mkdtemp` dir under `/tmp/` to isolate from
- * each other. Read on every call so test mutations between cases take
- * effect without re-importing the module.
+ * `EPICENTER_RUNTIME_DIR` overrides the default; `EPICENTER_DATA_DIR` shifts
+ * the underlying data dir. Both are read on every call so test cases can
+ * isolate by mutating env between cases without re-importing the module.
  */
 export function runtimeDir(): string {
-	return process.env.EPICENTER_RUNTIME_DIR ?? join(epicenterEnv.dataDir, 'run');
+	return (
+		process.env.EPICENTER_RUNTIME_DIR ??
+		join(process.env.EPICENTER_DATA_DIR ?? PATHS.data, 'run')
+	);
 }
 
 /**
@@ -83,9 +91,14 @@ export function leasePathFor(dir: string): string {
 /**
  * Log file for the daemon serving `dir`.
  *
- * Always lives under the user log directory (persistent), never tmpfs, so
- * the operator can read post-mortem logs after a crash or reboot.
+ * Lives under the env-paths log directory (`~/Library/Logs/epicenter` on
+ * macOS, `~/.local/state/epicenter` on Linux), so the operator can read
+ * post-mortem logs after a crash or reboot. `EPICENTER_LOG_DIR` overrides;
+ * read on every call so tests can isolate.
  */
 export function logPathFor(dir: string): string {
-	return join(epicenterEnv.logDir, `${dirHash(dir)}.log`);
+	return join(
+		process.env.EPICENTER_LOG_DIR ?? PATHS.log,
+		`${dirHash(dir)}.log`,
+	);
 }

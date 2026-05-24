@@ -20,10 +20,12 @@
  *                 passes the membership predicate and URL is the team
  *                 sentinel).
  *
- * Because the conditional GET handles its own auth, the deployment must
- * NOT layer `requireCookieOrBearerUser` upstream of it (that would block
- * public reads). The deployment composes auth on the other methods
- * separately. See `apps/api/src/index.ts` for the split mount.
+ * Because the conditional GET handles its own auth, deployments mount
+ * auth ONLY on the authed patterns (list, usage, byId-PATCH/DELETE). The
+ * conditional GET pattern (`/:assetId{21}`) is disjoint from those, so
+ * Hono picks the right handler without registration-order tricks.
+ * `mountAssetsApp` owns this composition; the deployment passes only the
+ * deployment-specific gates.
  *
  * All writes still arrive with `c.var.ownerId` populated by the
  * deployment-mounted `requireOwnership` middleware. The conditional read
@@ -104,18 +106,11 @@ function parseVisibility(raw: unknown): 'private' | 'public' | null {
 	return null;
 }
 
-/**
- * Authenticated asset CRUD surface under `/api/owners/:ownerId/assets`.
- *
- * Every handler in this factory expects `c.var.ownerId` to be populated
- * by the deployment-mounted `requireOwnership` middleware. That middleware
- * also asserts the URL `:ownerId` matches the expected partition, so
- * handlers stay mode-blind for partition resolution.
- */
-function createAssetAuthedRoutes(): Hono<Env> {
+export function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
+	const { ownership } = opts;
 	return (
 		new Hono<Env>()
-			// POST - Create (upload)
+			// POST upload (authed).
 			.post(
 				API_ROUTES.assets.list.pattern,
 				describeRoute({
@@ -268,7 +263,7 @@ function createAssetAuthedRoutes(): Hono<Env> {
 					return c.json(updated);
 				},
 			)
-			// DELETE by id (owner only)
+			// DELETE by id (authed).
 			.delete(
 				API_ROUTES.assets.byId.pattern,
 				describeRoute({
@@ -300,32 +295,22 @@ function createAssetAuthedRoutes(): Hono<Env> {
 					});
 				},
 			)
-	);
-}
-
-/**
- * Conditional asset read. Defines the full `/api/owners/:ownerId/assets`
- * base path here so Hono's route type includes `ownerId` in this
- * handler. The deployment must NOT layer auth upstream of this route,
- * because public reads bypass auth by design. The handler looks up the
- * row, branches on `visibility`, and runs an auth check inline only for
- * private assets.
- *
- * Private-asset auth goes through the same `resolveExpectedOwnerId` the
- * `requireOwnership` middleware uses, so the partition decision and any
- * team-membership check live in one place. We synthesize `c.var.user`
- * from the fetched session before delegating, because no upstream auth
- * runs on this path (public assets must serve without it).
- */
-function createAssetReadRoute(ownership: OwnershipRule): Hono<Env> {
-	return new Hono<Env>().get(
-		API_ROUTES.assets.byId.pattern,
-		describeRoute({
-			description:
-				'Read an asset by ID. Public assets serve without auth; private assets require an authenticated owner.',
-			tags: ['assets'],
-		}),
-		async (c) => {
+			// GET by id (CONDITIONAL auth). The deployment must NOT layer
+			// auth upstream of THIS pattern. Public assets bypass auth by
+			// design; private assets run the auth + ownership check inline.
+			// Private-asset auth goes through the same `resolveExpectedOwnerId`
+			// the `requireOwnership` middleware uses, so the partition decision
+			// and any team-membership check live in one place. We synthesize
+			// `c.var.user` from the fetched session because no upstream auth
+			// runs on this path.
+			.get(
+				API_ROUTES.assets.byId.pattern,
+				describeRoute({
+					description:
+						'Read an asset by ID. Public assets serve without auth; private assets require an authenticated owner.',
+					tags: ['assets'],
+				}),
+				async (c) => {
 			const { assetId } = c.req.param();
 			const urlOwnerId = asOwnerId(c.req.param('ownerId'));
 
@@ -424,20 +409,11 @@ function createAssetReadRoute(ownership: OwnershipRule): Hono<Env> {
 				return new Response(object.body, { status: 206, headers });
 			}
 
-			headers.set('content-length', String(object.size));
-			return new Response(object.body, { status: 200, headers });
-		},
+				headers.set('content-length', String(object.size));
+				return new Response(object.body, { status: 200, headers });
+			},
+		)
 	);
-}
-
-export function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
-	const app = new Hono<Env>();
-	// Conditional read mounts first so it matches GET /:assetId before
-	// any wildcard handlers. Order matters: both sub-apps mount at the
-	// same prefix, and Hono matches in registration order.
-	app.route('/', createAssetReadRoute(opts.ownership));
-	app.route('/', createAssetAuthedRoutes());
-	return app;
 }
 
 /**

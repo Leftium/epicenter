@@ -1,6 +1,6 @@
-import { asOwnerId, type OwnershipMode, TEAM_OWNER_ID } from '@epicenter/auth';
+import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/auth';
 import { createMiddleware } from 'hono/factory';
-import type { Env } from '../types.js';
+import type { Env, OwnershipMode } from '../types.js';
 
 /**
  * Build the `attachOwner` middleware for a deployment.

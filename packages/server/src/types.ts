@@ -7,7 +7,7 @@
  * or from the literal `'team'` (in team mode), based on `opts.mode`.
  */
 
-import type { AuthUser, OwnerId, OwnershipMode } from '@epicenter/auth';
+import type { AuthUser, OwnerId } from '@epicenter/auth';
 import type { ActionManifest } from '@epicenter/workspace';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { createAuth } from './auth/create-auth.js';
@@ -26,6 +26,14 @@ import type { Rooms } from './room/contracts.js';
  * `disabled`.
  */
 export type SignUpPolicy = 'open' | 'disabled';
+
+/**
+ * Deployment partition shape. Set once at `createServer({ mode, ... })` and
+ * read by route-mounting logic plus the `attachOwner` middleware. The wire
+ * does not carry mode (consumers derive it from
+ * `ownerId === TEAM_OWNER_ID`), so this type stays server-internal.
+ */
+export type OwnershipMode = 'personal' | 'team';
 
 /**
  * The two-word deployment configuration.

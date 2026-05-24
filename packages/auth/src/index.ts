@@ -18,7 +18,6 @@ export {
 	asOwnerId,
 	asUserId,
 	OwnerId,
-	OwnershipMode,
 	TEAM_OWNER_ID,
 	UserId,
 } from './ids.js';

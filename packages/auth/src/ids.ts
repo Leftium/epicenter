@@ -54,15 +54,3 @@ export const asOwnerId = (value: string): OwnerId => value as OwnerId;
  * signed-in user's id.
  */
 export const TEAM_OWNER_ID = asOwnerId('team');
-
-/**
- * Deployment-static product shape. Set once at server construction
- * (`createServer({ mode, ... })`), flowed back to clients via
- * `/api/session`, persisted in the auth cell so the daemon knows the
- * shape offline. Drives URL pattern, sign-up policy, and team-aware UI.
- *
- * The validator is declared first; the type is derived from it via
- * `.infer` so schema and type stay in lockstep.
- */
-export const OwnershipMode = type("'personal' | 'team'");
-export type OwnershipMode = typeof OwnershipMode.infer;

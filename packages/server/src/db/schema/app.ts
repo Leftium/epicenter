@@ -29,7 +29,20 @@ export const asset = pgTable(
 		contentType: text('content_type').notNull(),
 		sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
 		originalName: text('original_name').notNull(),
+		/**
+		 * Visibility flag. `'private'` requires the read handler to verify
+		 * an authenticated session and that the actor matches the owner;
+		 * `'public'` lets anyone with the URL fetch the bytes. Flipping
+		 * this is the publish / unpublish primitive. The R2 object is
+		 * never duplicated; the flag IS the visibility decision.
+		 */
+		visibility: text('visibility', { enum: ['private', 'public'] })
+			.notNull()
+			.default('private'),
 		uploadedAt: timestamp('uploaded_at').defaultNow().notNull(),
 	},
-	(table) => [index('asset_owner_id_idx').on(table.ownerId)],
+	(table) => [
+		index('asset_owner_id_idx').on(table.ownerId),
+		index('asset_visibility_idx').on(table.visibility),
+	],
 );

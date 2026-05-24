@@ -50,8 +50,35 @@ export const createTabCompositeId = (deviceId: DeviceId, tabId: TabId): TabCompo
 
 | Part | When to use |
 | --- | --- |
-| Type | Always |
-| Validator | When used in `defineTable()` or Arktype schemas |
-| Generator | When IDs are created at runtime |
+| Validator | Used in `defineTable()` or arktype schemas, and as `.assert(...)` at `unknown` boundaries |
+| Type | Always — derived from the validator via `typeof X.infer` or declared alongside it |
+| Third part | A helper sized to where the value comes from (see below) |
 
-You can find the canonical implementation with 7 branded types and 4 generators in `apps/tab-manager/src/lib/workspace.ts`. Every ID in the system stays type-safe and validated at the boundary without leaking implementation details.
+The third part flexes by ID origin:
+
+| Origin of the value                         | Third part                                        | Example                                                                |
+| ------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------- |
+| Minted fresh by this code                   | `generateXxx()` wrapping `generateId() as Xxx`    | `generateSavedTabId` in `apps/tab-manager/src/lib/workspace.ts`        |
+| Received as a typed string (auth, URL, DB)  | `asXxx(value: string)` syntactic-sugar helper     | `asUserId`, `asOwnerId` in `packages/auth/src/ids.ts`                  |
+| Received as `unknown` at a network boundary | None — use the validator or `.assert(unknown)`    | `PersistedAuth.assert(...)` at machine-auth deserialization            |
+| Set from an external source, never minted   | `asXxx` helper                                    | `asDeviceId` would belong here if installation ids needed grep sites   |
+
+## The `as*` variant for external-source IDs
+
+When the ID is not minted but received as a typed `string` from another typed source — Better Auth's `c.var.user.id`, a Hono URL param, a DB column — the third part is an `as*` syntactic-sugar helper instead of a generator:
+
+```typescript
+// packages/auth/src/ids.ts
+export const UserId = type('string').as<string & Brand<'UserId'>>();
+export type UserId = typeof UserId.infer;
+
+/**
+ * Syntactic sugar for `value as UserId`. The constrained `string` parameter
+ * is what earns it over a raw `as` cast. The only place `as UserId` appears.
+ */
+export const asUserId = (value: string): UserId => value as UserId;
+```
+
+The validator can be declared first (as above) and the type inferred via `typeof UserId.infer`, or the type can be declared first with the brand alongside it and the validator declared as `type('string').as<UserId>()`. Both shapes are in the repo; prefer validator-first for new code so the validator stays the single source of truth.
+
+You can find the canonical generator implementation with 7 branded types and 4 generators in `apps/tab-manager/src/lib/workspace.ts`, and the canonical `as*` variant in `packages/auth/src/ids.ts`. Every ID in the system stays type-safe and validated at the boundary without leaking implementation details.

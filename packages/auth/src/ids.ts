@@ -13,7 +13,12 @@ import type { Brand } from 'wellcrafted/brand';
  */
 export const UserId = type('string').as<string & Brand<'UserId'>>();
 export type UserId = typeof UserId.infer;
-/** Brand a known-string value as a {@link UserId}. Shorthand for `value as UserId`. */
+/**
+ * Syntactic sugar for `value as UserId`. The function body is a single typed
+ * cast; the constrained `string` parameter is what earns it over a raw `as`
+ * (callers can't accidentally widen to `unknown`). The only place in the
+ * codebase where `as UserId` appears.
+ */
 export const asUserId = (value: string): UserId => value as UserId;
 
 /**
@@ -29,7 +34,12 @@ export const asUserId = (value: string): UserId => value as UserId;
  */
 export const OwnerId = type('string').as<string & Brand<'OwnerId'>>();
 export type OwnerId = typeof OwnerId.infer;
-/** Brand a known-string value as an {@link OwnerId}. Shorthand for `value as OwnerId`. */
+/**
+ * Syntactic sugar for `value as OwnerId`. The function body is a single typed
+ * cast; the constrained `string` parameter is what earns it over a raw `as`
+ * (callers can't accidentally widen to `unknown`). The only place in the
+ * codebase where `as OwnerId` appears.
+ */
 export const asOwnerId = (value: string): OwnerId => value as OwnerId;
 
 /**

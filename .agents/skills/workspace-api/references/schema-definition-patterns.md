@@ -108,7 +108,7 @@ Every table's `id` field and every string foreign key field MUST use a branded t
 
 ### Pattern
 
-Define a branded type + arktype validator + generator in the same file as the workspace definition:
+Define a branded type + arktype validator + generator in the same file as the workspace definition. The validator and the type share one PascalCase name; the third part is a `generate*` factory when the ID is minted fresh:
 
 ```typescript
 import type { Brand } from 'wellcrafted/brand';
@@ -138,3 +138,29 @@ export type Conversation = InferTableRow<typeof conversationsTable>;
 const newId = generateConversationId();  // Good
 // const newId = generateId() as string as ConversationId;  // Bad
 ```
+
+### `as*` Helper Variant for External-Source IDs
+
+When the branded ID is not minted but received as a typed `string` from another typed source (Better Auth user id, URL param, DB column), the third part is an `as*` syntactic-sugar helper instead of a `generate*` factory. The auth package follows this shape:
+
+```typescript
+// packages/auth/src/ids.ts
+export const UserId = type('string').as<string & Brand<'UserId'>>();
+export type UserId = typeof UserId.infer;
+
+/**
+ * Syntactic sugar for `value as UserId`. The constrained `string` parameter
+ * is what earns it over a raw `as` cast. The only place `as UserId` appears.
+ */
+export const asUserId = (value: string): UserId => value as UserId;
+```
+
+Pick the variant by ID origin:
+
+| Origin of the value                         | Third part                                       |
+| ------------------------------------------- | ------------------------------------------------ |
+| Minted fresh by this code                   | `generateXxx()` factory (workspace table IDs)    |
+| Received as a typed string                  | `asXxx(value: string)` syntactic-sugar helper    |
+| Received as `unknown` at a network boundary | None — use the validator's `.assert(value)`      |
+
+Both variants keep the validator and the type under a shared PascalCase name. Schema bodies read `id: ConversationId` / `userId: UserId` with no `Schema` suffix anywhere.

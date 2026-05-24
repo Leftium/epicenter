@@ -77,7 +77,7 @@ function binaryResponse(data: Uint8Array): Response {
  * billing authority. The failure is observable via the `server/rooms`
  * logger so silent telemetry loss surfaces in deployment logs.
  */
-function upsertDoInstance(
+async function upsertDoInstance(
 	db: Db,
 	params: {
 		ownerId: OwnerId;
@@ -85,37 +85,38 @@ function upsertDoInstance(
 		doName: string;
 		storageBytes?: number;
 	},
-) {
+): Promise<void> {
 	const now = new Date();
-	return db
-		.insert(schema.durableObjectInstance)
-		.values({
-			ownerId: params.ownerId,
-			resourceName: params.resourceName,
-			doName: params.doName,
-			storageBytes: params.storageBytes ?? null,
-			lastAccessedAt: now,
-			storageMeasuredAt: params.storageBytes != null ? now : null,
-		})
-		.onConflictDoUpdate({
-			target: schema.durableObjectInstance.doName,
-			set: {
+	try {
+		await db
+			.insert(schema.durableObjectInstance)
+			.values({
+				ownerId: params.ownerId,
+				resourceName: params.resourceName,
+				doName: params.doName,
+				storageBytes: params.storageBytes ?? null,
 				lastAccessedAt: now,
-				...(params.storageBytes != null && {
-					storageBytes: params.storageBytes,
-					storageMeasuredAt: now,
-				}),
-			},
-		})
-		.catch((cause: unknown) => {
-			log.warn(
-				RoomsTelemetryError.DoInstanceUpsertFailed({
-					cause,
-					ownerId: params.ownerId,
-					doName: params.doName,
-				}),
-			);
-		});
+				storageMeasuredAt: params.storageBytes != null ? now : null,
+			})
+			.onConflictDoUpdate({
+				target: schema.durableObjectInstance.doName,
+				set: {
+					lastAccessedAt: now,
+					...(params.storageBytes != null && {
+						storageBytes: params.storageBytes,
+						storageMeasuredAt: now,
+					}),
+				},
+			});
+	} catch (cause) {
+		log.warn(
+			RoomsTelemetryError.DoInstanceUpsertFailed({
+				cause,
+				ownerId: params.ownerId,
+				doName: params.doName,
+			}),
+		);
+	}
 }
 
 /**

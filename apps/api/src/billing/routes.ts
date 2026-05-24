@@ -3,11 +3,12 @@
  *
  * Every handler is a one-line delegate to the billing service. The
  * service owns Autumn round-trips and DTO mapping; routes own HTTP
- * shape, body validation, and the Autumn-error translation layer. Auth
- * is mounted in the parent composition (cloud's cookie-or-bearer
- * middleware).
+ * shape, body validation, and the Autumn-error translation layer.
+ * Auth is bundled into {@link mountBillingApi} so the data plane can't
+ * be mounted without it.
  */
 
+import { API_ROUTES } from '@epicenter/constants/api-routes';
 import {
 	MODEL_CREDITS,
 	providerOf,
@@ -18,7 +19,7 @@ import type { Env } from '@epicenter/server';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { AutumnError } from 'autumn-js';
-import { Hono } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { createBillingService } from './service.js';
 
@@ -140,4 +141,18 @@ billingRoutes.get('/portal', async (c) => {
 	return c.json(await svc(c).openPortal({ returnUrl }));
 });
 
-export { billingRoutes };
+/**
+ * Mount the cloud billing data plane on the server app.
+ *
+ * Bundles auth (the dashboard reaches this with cookie sessions; admin
+ * scripts reach it with OAuth bearers) and the route mount into one
+ * call. Lives in apps/api, not @epicenter/server, because Autumn is
+ * cloud-only deployment policy.
+ */
+export function mountBillingApi(
+	app: Hono<Env>,
+	opts: { auth: MiddlewareHandler },
+): void {
+	app.use(API_ROUTES.billing.prefixPattern, opts.auth);
+	app.route('/api/billing', billingRoutes);
+}

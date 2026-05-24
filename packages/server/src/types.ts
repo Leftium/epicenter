@@ -76,7 +76,7 @@ export type Env = {
 		/**
 		 * Per-request collection of fire-and-forget promises that must
 		 * outlive the HTTP response. Handlers push promises (typically DB
-		 * writes that use `c.var.db`); the base-app's lifecycle middleware
+		 * writes that use `c.var.db`); the server-app's lifecycle middleware
 		 * passes the whole array to `Promise.allSettled(...).then(close pg)`
 		 * inside `executionCtx.waitUntil`, so the worker isolate stays
 		 * alive AND the pg client outlives every queued write.

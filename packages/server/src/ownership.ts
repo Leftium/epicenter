@@ -3,7 +3,7 @@
  *
  * The deployment composes one of two variants and threads it into every
  * library surface that needs the partition (`createRequireOwnership`,
- * `createAssetsApp`, future `mount*` primitives). The variants are
+ * `mountRoomsApp`, `mountAssetsApp`, `mountSessionApp`). The variants are
  * constructed via {@link personal} / {@link team} so call sites never type
  * the discriminator string. See
  * `docs/articles/use-functions-to-wrap-discriminated-unions.md`.
@@ -35,7 +35,7 @@ export type IsMember = (
 /**
  * Discriminated union of every ownership shape this library knows how to
  * compose. Constructed via {@link personal} or {@link team}; consumed by
- * {@link resolveExpectedOwnerId} and any sub-app that mounts ownership-
+ * {@link resolveOwnerPartition} and any sub-app that mounts ownership-
  * scoped routes.
  */
 export type OwnershipRule =
@@ -56,11 +56,18 @@ export const team = (opts: { isMember: IsMember }): OwnershipRule => ({
  * `requireOwnership` middleware and the conditional asset GET delegate
  * here, so the partition decision lives in one place.
  *
+ * Returns the owner partition the request maps to. In team mode this
+ * function also AUTHORIZES the request: non-members get an `Err` arm
+ * carrying `NotTeamMember` before any URL is read. The caller decides
+ * whether to compare the partition to a URL `:ownerId` segment (the
+ * `requireOwnership` middleware does; the conditional asset GET does
+ * not).
+ *
  * Personal: always succeeds, returns the user's id branded as `OwnerId`.
  * Team:     runs the predicate; admits with `TEAM_OWNER_ID` or rejects
  *           with `NotTeamMember`.
  */
-export async function resolveExpectedOwnerId(
+export async function resolveOwnerPartition(
 	rule: OwnershipRule,
 	c: Context<Env>,
 ): Promise<Result<OwnerId, ReturnType<typeof RequestGuardError.NotTeamMember>>> {

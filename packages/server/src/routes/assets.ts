@@ -25,7 +25,7 @@
  * conditional GET pattern (`/:assetId{21}`) is disjoint from those, so
  * Hono picks the right handler without registration-order tricks.
  * `mountAssetsApp` owns this composition; the deployment passes only the
- * deployment-specific gates.
+ * deployment-specific policies.
  *
  * All writes still arrive with `c.var.ownerId` populated by the
  * deployment-mounted `requireOwnership` middleware. The conditional read
@@ -53,7 +53,7 @@ import { MAX_ASSET_BYTES } from '../constants.js';
 import * as schema from '../db/schema/index.js';
 import { requireCookieOrBearerUser } from '../middleware/require-auth.js';
 import { createRequireOwnership } from '../middleware/require-ownership.js';
-import { type OwnershipRule, resolveExpectedOwnerId } from '../ownership.js';
+import { type OwnershipRule, resolveOwnerPartition } from '../ownership.js';
 import { assetKey } from '../owner.js';
 import type { Env } from '../types.js';
 
@@ -298,7 +298,7 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 			// GET by id (CONDITIONAL auth). The deployment must NOT layer
 			// auth upstream of THIS pattern. Public assets bypass auth by
 			// design; private assets run the auth + ownership check inline.
-			// Private-asset auth goes through the same `resolveExpectedOwnerId`
+			// Private-asset auth goes through the same `resolveOwnerPartition`
 			// the `requireOwnership` middleware uses, so the partition decision
 			// and any team-membership check live in one place. We synthesize
 			// `c.var.user` from the fetched session because no upstream auth
@@ -330,11 +330,11 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 				});
 				if (!session) return c.json(AssetError.Unauthorized(), 401);
 				c.set('user', AuthUser.assert(session.user));
-				const { data: expectedOwnerId, error } = await resolveExpectedOwnerId(
+				const { data: ownerPartition, error } = await resolveOwnerPartition(
 					ownership,
 					c,
 				);
-				if (error || urlOwnerId !== expectedOwnerId) {
+				if (error || urlOwnerId !== ownerPartition) {
 					return c.json(AssetError.Unauthorized(), 401);
 				}
 			}
@@ -417,59 +417,59 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 }
 
 /**
- * Mount the assets surface on a deployment's base app.
+ * Mount the assets surface on a deployment's server app.
  *
  * Bundles auth (cookie-or-bearer, the assets surface is reachable from
  * both browser apps and API clients), the ownership boundary, optional
- * deployment-specific gates (e.g. `autumnStorageGate` for cloud's
+ * deployment policies (e.g. `trackAssetStorageWithAutumn` for cloud's
  * storage limit), and the route mount into one call.
  *
  * The conditional GET at `/:assetId{21}` is intentionally NOT covered by
- * upstream auth or gates: public reads must bypass auth, and the library
- * handler runs the visibility branch + auth inline. Hono matches the
- * conditional GET first because `createAssetsApp` mounts it before the
- * authed sub-app at the same prefix.
+ * upstream auth or policies: public reads must bypass auth, and the
+ * library handler runs the visibility branch + auth inline. Hono matches
+ * the conditional GET first because `createAssetsApp` mounts it before
+ * the authed sub-app at the same prefix.
  */
 export function mountAssetsApp(
-	base: Hono<Env>,
+	app: Hono<Env>,
 	opts: {
 		ownership: OwnershipRule;
 		/**
 		 * Extra middleware to run after auth + ownership on every authed
-		 * asset route. Cloud passes `[autumnStorageGate]`; self-hosted
-		 * deployments typically pass nothing.
+		 * asset route. Cloud passes `[trackAssetStorageWithAutumn]`;
+		 * self-hosted deployments typically pass nothing.
 		 *
 		 * Typed loosely (`MiddlewareHandler`, defaulting `E = any`) because
 		 * deployments commonly extend the library `Env` with their own
 		 * `Variables` (e.g. `planId`) and the resulting handler types are
 		 * not directly assignable to `MiddlewareHandler<Env>`. At runtime
-		 * the handler executes against the deployment's wider Context, so
-		 * the gate is safe regardless of its declared Env shape.
+		 * the policy executes against the deployment's wider Context, so
+		 * it is safe regardless of its declared Env shape.
 		 */
-		gates?: MiddlewareHandler[];
+		policies?: MiddlewareHandler[];
 	},
 ): void {
 	const requireOwnership = createRequireOwnership(opts.ownership);
-	const gates = opts.gates ?? [];
+	const policies = opts.policies ?? [];
 
-	base.use(
+	app.use(
 		API_ROUTES.assets.list.pattern,
 		requireCookieOrBearerUser,
 		requireOwnership,
-		...gates,
+		...policies,
 	);
-	base.use(
+	app.use(
 		API_ROUTES.assets.usage.pattern,
 		requireCookieOrBearerUser,
 		requireOwnership,
-		...gates,
+		...policies,
 	);
-	base.on(
+	app.on(
 		['PATCH', 'DELETE'],
 		API_ROUTES.assets.byId.pattern,
 		requireCookieOrBearerUser,
 		requireOwnership,
-		...gates,
+		...policies,
 	);
-	base.route('/', createAssetsApp({ ownership: opts.ownership }));
+	app.route('/', createAssetsApp({ ownership: opts.ownership }));
 }

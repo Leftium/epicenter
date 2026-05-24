@@ -6,38 +6,42 @@
  * one shared owner partition. The full design lives in
  * `specs/20260522T230000-server-package-split.md`.
  *
- * Deployments import the parent base app and the sub-apps they need,
- * then compose auth and (where applicable) billing middleware around
- * each sub-app at mount time. Sub-apps declare full URLs (including the
- * `/api` prefix where applicable); deployments mount them at `/`.
- * See `apps/api/src/index.ts` for the cloud composition.
+ * Deployments construct the server app, choose an `OwnershipRule`, then
+ * mount each reusable surface with the matching `mount*` primitive. Each
+ * primitive owns its auth + ownership wiring; the deployment passes only
+ * the rule and any deployment policies (e.g. cloud billing middleware).
+ * Sub-apps declare full URLs (including the `/api` prefix where
+ * applicable). See `apps/api/src/index.ts` for the cloud composition.
  */
 
 // Parent app. Wires per-request lifecycle (pg, after-response queue,
 // auth context, CORS, single-credential normalization, CSRF, rooms
-// registry). Mount every sub-app on this one.
-export { createBaseApp } from './base-app.js';
-// Middleware deployments compose around sub-apps.
+// registry). Mount every surface on this app via the `mount*` primitives.
+export { createServerApp } from './server-app.js';
+// Auth middleware. `authApp` is mounted directly; the AI surface accepts
+// `requireBearerUser` via `mountAiApp({ auth })`. Most owner-partitioned
+// surfaces wire auth inside their mount primitive and never need these.
 export {
 	requireBearerUser,
 	requireCookieOrBearerUser,
 } from './middleware/require-auth.js';
-export { createRequireOwnership } from './middleware/require-ownership.js';
 // Ownership composition: the deployment constructs the rule once via
-// `personal()` or `team({ isMember })` and threads it into every library
-// surface that needs the partition. See ./ownership.ts for the design
+// `personal()` or `team({ isMember })` and threads it into every mount
+// primitive that needs the partition. See ./ownership.ts for the design
 // note.
 export { type IsMember, type OwnershipRule, personal, team } from './ownership.js';
 // Re-export the Cloudflare Durable Object class so each deployment's
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.
 export { Room } from './room/backends/cloudflare/durable-object.js';
-// Sub-apps. Each declares its full URL pattern internally; the
-// deployment composes auth and billing middleware around them.
-export { aiApp } from './routes/ai.js';
-export { mountAssetsApp } from './routes/assets.js';
+// Reusable surfaces. Each `mount*` bundles auth + ownership + the route
+// mount, accepting only the deployment-controlled knobs (ownership rule,
+// optional policies). The bare `authApp` is mounted directly because it
+// has no deployment knobs.
 export { authApp } from './routes/auth.js';
+export { mountAiApp } from './routes/ai.js';
+export { mountAssetsApp } from './routes/assets.js';
 export { mountRoomsApp } from './routes/rooms.js';
-export { sessionApp } from './routes/session.js';
+export { mountSessionApp } from './routes/session.js';
 
 // Public Hono context type the deployment composes around library
 // middleware.

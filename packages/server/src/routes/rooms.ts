@@ -210,20 +210,20 @@ const roomsApp = new Hono<Env>()
 	);
 
 /**
- * Mount the rooms surface on a deployment's base app.
+ * Mount the rooms surface on a deployment's server app.
  *
  * Bundles auth (bearer-only: rooms is for external clients, never
  * browsers), the ownership boundary, and the route mount into one call.
  * Deployments call this once; they do not assemble the chain manually.
  */
 export function mountRoomsApp(
-	base: Hono<Env>,
+	app: Hono<Env>,
 	opts: { ownership: OwnershipRule },
 ): void {
-	base.use(
+	app.use(
 		API_ROUTES.room.prefixPattern,
 		requireBearerUser,
 		createRequireOwnership(opts.ownership),
 	);
-	base.route('/', roomsApp);
+	app.route('/', roomsApp);
 }

@@ -2,9 +2,9 @@
  * `/api/ai` sub-app: SSE streaming chat across OpenAI and Gemini.
  *
  * Library-side, billing-free. The deployment composes any plan or credit
- * gating in front of this app via Hono middleware. apps/api wraps this
- * with `autumnPlanGate`; a self-hosted team deployment mounts the sub-app
- * directly with no gate.
+ * gating in front of this app via `mountAiApp`'s `policies`. apps/api
+ * passes `chargeAiCreditsWithAutumn`; a self-hosted team deployment
+ * passes no policies.
  *
  * BYOK: callers may pass `apiKey` in the request body, in which case the
  * deployment's provider key is ignored. No billing implications; the
@@ -24,7 +24,7 @@ import {
 import { createGeminiChat, GeminiTextModels } from '@tanstack/ai-gemini';
 import { createOpenaiChat, OPENAI_CHAT_MODELS } from '@tanstack/ai-openai';
 import { type } from 'arktype';
-import { Hono } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
 import { describeRoute } from 'hono-openapi';
 import type { Env } from '../types.js';
 
@@ -51,10 +51,10 @@ const aiChatBody = type({
 });
 
 /**
- * `/api/ai/chat` sub-app. Auth is supplied by the parent composition
- * (cloud's bearer-only middleware, team's cookie-or-bearer middleware).
+ * `/api/ai/chat` sub-app. Auth and credit policies are supplied by the
+ * deployment via {@link mountAiApp}.
  */
-export const aiApp = new Hono<Env>().post(
+const aiApp = new Hono<Env>().post(
 	API_ROUTES.ai.chat.pattern,
 	describeRoute({
 		description: 'Stream AI chat completions via SSE',
@@ -97,3 +97,32 @@ export const aiApp = new Hono<Env>().post(
 		return toServerSentEventsResponse(stream, { abortController });
 	},
 );
+
+/**
+ * Mount the AI surface on a deployment's server app.
+ *
+ * Bundles the deployment's chosen auth middleware (cloud uses
+ * `requireBearerUser`; AI chat is for external clients only), any
+ * deployment policies (cloud passes `[chargeAiCreditsWithAutumn]`), and
+ * the route mount into one call.
+ *
+ * The library remains billing-agnostic: policies are opaque middleware
+ * that run after auth and may short-circuit the request (e.g. 402
+ * insufficient credits) before the AI handler streams.
+ *
+ * Policies are typed loosely (`MiddlewareHandler`) so deployments that
+ * extend the library `Env` with their own `Variables` can pass policies
+ * without an unsafe cast. At runtime they execute against the deployment's
+ * wider Context, so they are safe regardless of declared Env shape.
+ */
+export function mountAiApp(
+	app: Hono<Env>,
+	opts: {
+		auth: MiddlewareHandler;
+		policies?: MiddlewareHandler[];
+	},
+): void {
+	const policies = opts.policies ?? [];
+	app.use(API_ROUTES.ai.chat.prefixPattern, opts.auth, ...policies);
+	app.route('/', aiApp);
+}

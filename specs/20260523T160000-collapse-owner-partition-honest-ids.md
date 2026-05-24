@@ -8,13 +8,13 @@ Date: 2026-05-23
 
 Landed across phased commits 2026-05-23 → 2026-05-24. Keystones:
 
-- `af31c870b` — Phase 1: branded `OwnerId` + `OwnershipMode` collapse in `@epicenter/auth` and `@epicenter/encryption`.
-- `46b3e0a72` — Phase 2: uniform `owners/:ownerId/` paths and consumer migration across server, workspace, svelte.
-- `438e54700` — DB migration: `asset.userId` and `durableObjectInstance.userId` collapsed into `owner_id`.
-- `eb85a0d9b` — `OwnershipMode` moved into `@epicenter/server` (mode home settled).
-- `850eb3755` / `77c8564b0` — leftover `subject` vocabulary collapsed; narrative docs refreshed.
-- `d5c70e6b1` — owner partition ownership pulled into `TEAM_OWNER_ID` + `c.var.ownerId` on the server context.
-- `2d63000fb` — final piece: owner middleware pair (`attachOwner` + `requireUrlOwnerIdMatchesAuth`) collapsed into a single `requireOwnership(mode)` primitive.
+- `af31c870b`: Phase 1, branded `OwnerId` + `OwnershipMode` collapse in `@epicenter/auth` and `@epicenter/encryption`.
+- `46b3e0a72`: Phase 2, uniform `owners/:ownerId/` paths and consumer migration across server, workspace, svelte.
+- `438e54700`: DB migration, `asset.userId` and `durableObjectInstance.userId` collapsed into `owner_id`.
+- `eb85a0d9b`: `OwnershipMode` moved into `@epicenter/server` (mode home settled).
+- `850eb3755` / `77c8564b0`: leftover `subject` vocabulary collapsed; narrative docs refreshed.
+- `d5c70e6b1`: owner partition ownership pulled into `TEAM_OWNER_ID` + `c.var.ownerId` on the server context.
+- `2d63000fb`: final piece, owner middleware pair (`attachOwner` + `requireUrlOwnerIdMatchesAuth`) collapsed into a single `requireOwnership(mode)` primitive.
 
 §5.5 post-implementation review (audit 2026-05-24): grep-verifiable criteria pass; see annotations below.
 

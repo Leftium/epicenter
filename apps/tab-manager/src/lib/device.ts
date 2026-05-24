@@ -10,7 +10,7 @@
 import { createInstallationIdAsync } from '@epicenter/workspace';
 import { storage } from '@wxt-dev/storage';
 import type { TabManagerBrowser } from './tab-manager/extension';
-import type { DeviceId } from './workspace/definition';
+import { asDeviceId } from './workspace/definition';
 
 /**
  * Compute the extension's installation id and default device label.
@@ -33,7 +33,7 @@ export async function createDeviceProfile() {
 		generateDefaultDeviceName(),
 	]);
 	return {
-		installationId: id as DeviceId,
+		installationId: asDeviceId(id),
 		defaultName,
 	};
 }

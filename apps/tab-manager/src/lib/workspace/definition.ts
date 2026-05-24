@@ -32,6 +32,12 @@ export const TAB_MANAGER_ID = 'epicenter.tab-manager';
  */
 export const DeviceId = type('string').as<string & Brand<'DeviceId'>>();
 export type DeviceId = typeof DeviceId.infer;
+/**
+ * Syntactic sugar for `value as DeviceId`. The constrained `string` parameter
+ * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
+ * The only place in the codebase where `as DeviceId` should appear.
+ */
+export const asDeviceId = (value: string): DeviceId => value as DeviceId;
 
 /**
  * Branded saved tab ID — nanoid generated when a tab is explicitly saved.
@@ -114,6 +120,13 @@ export type ConversationId = typeof ConversationId.infer;
  */
 export const generateConversationId = (): ConversationId =>
 	generateId() as ConversationId;
+/**
+ * Syntactic sugar for `value as ConversationId`. The constrained `string` parameter
+ * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
+ * The only place in the codebase where `as ConversationId` should appear.
+ */
+export const asConversationId = (value: string): ConversationId =>
+	value as ConversationId;
 
 /**
  * Branded chat message ID — nanoid generated when a message is created.
@@ -143,6 +156,13 @@ export type ChatMessageId = typeof ChatMessageId.infer;
  */
 export const generateChatMessageId = (): ChatMessageId =>
 	generateId() as ChatMessageId;
+/**
+ * Syntactic sugar for `value as ChatMessageId`. The constrained `string` parameter
+ * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
+ * The only place in the codebase where `as ChatMessageId` should appear.
+ */
+export const asChatMessageId = (value: string): ChatMessageId =>
+	value as ChatMessageId;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Table Definitions

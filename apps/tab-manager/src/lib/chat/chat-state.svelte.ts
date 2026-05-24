@@ -35,6 +35,8 @@ import { toUiMessage } from '$lib/chat/ui-message';
 import type { SessionAiTools } from '$lib/session.svelte';
 import type { TabManagerBrowser } from '$lib/tab-manager/extension';
 import {
+	asChatMessageId,
+	asConversationId,
 	type ChatMessageId,
 	type Conversation,
 	type ConversationId,
@@ -158,7 +160,7 @@ export function createAiChatState({
 			},
 			onFinish: (message) => {
 				tabManager.tables.chatMessages.set({
-					id: message.id as ChatMessageId,
+					id: asChatMessageId(message.id),
 					conversationId,
 					role: 'assistant',
 					parts: message.parts as JsonValue[],
@@ -336,7 +338,7 @@ export function createAiChatState({
 				const lastMessage = chat.messages.at(-1);
 				if (lastMessage?.role === 'assistant') {
 					tabManager.tables.chatMessages.delete(
-						lastMessage.id as ChatMessageId,
+						asChatMessageId(lastMessage.id),
 					);
 				}
 				void chat.reload();
@@ -400,7 +402,7 @@ export function createAiChatState({
 		}
 
 		for (const id of conversationsMap.keys()) {
-			const convId = id as ConversationId;
+			const convId = asConversationId(id);
 			if (!handles.has(convId)) {
 				handles.set(convId, createConversationHandle(convId));
 			}
@@ -409,7 +411,7 @@ export function createAiChatState({
 
 	// ── Active Conversation ──────────────────────────────────────────
 
-	let activeConversationId = $state<ConversationId>('' as ConversationId);
+	let activeConversationId = $state<ConversationId>(asConversationId(''));
 
 	// ── Observers ────────────────────────────────────────────────────────────
 

@@ -1,5 +1,8 @@
 export { createTabManagerActions } from './actions';
 export {
+	asChatMessageId,
+	asConversationId,
+	asDeviceId,
 	type Bookmark,
 	BookmarkId,
 	type ChatMessage,

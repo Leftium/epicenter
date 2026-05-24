@@ -36,11 +36,25 @@ export const ConversationId = type('string').as<Id & Brand<'ConversationId'>>();
 export type ConversationId = typeof ConversationId.infer;
 export const generateConversationId = (): ConversationId =>
 	generateId() as ConversationId;
+/**
+ * Syntactic sugar for `value as ConversationId`. The constrained `string` parameter
+ * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
+ * The only place in the codebase where `as ConversationId` should appear.
+ */
+export const asConversationId = (value: string): ConversationId =>
+	value as ConversationId;
 
 export const ChatMessageId = type('string').as<Id & Brand<'ChatMessageId'>>();
 export type ChatMessageId = typeof ChatMessageId.infer;
 export const generateChatMessageId = (): ChatMessageId =>
 	generateId() as ChatMessageId;
+/**
+ * Syntactic sugar for `value as ChatMessageId`. The constrained `string` parameter
+ * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
+ * The only place in the codebase where `as ChatMessageId` should appear.
+ */
+export const asChatMessageId = (value: string): ChatMessageId =>
+	value as ChatMessageId;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Table Definitions

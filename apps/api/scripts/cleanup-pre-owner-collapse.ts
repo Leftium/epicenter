@@ -1,5 +1,6 @@
 /**
- * Find pre-Owner-collapse orphans in R2 and the durable_object_instance table.
+ * Find pre-Owner-collapse orphans in the durable_object_instance table
+ * and report what a one-shot admin route would need to enumerate in R2.
  *
  * The Owner-partition collapse changed every durable identifier from
  *   personal: `users/<userId>/...`
@@ -12,17 +13,13 @@
  * decrypt under the new derivation.
  *
  * Net effect: any data written before either change is unreachable AND
- * unreadable. For deployments that had real data, those rows + objects +
- * Durable Objects need to be enumerated and removed (R2 + DO storage
- * incurs ongoing cost).
+ * unreadable. For deployments that had real data, the orphaned rows +
+ * objects + Durable Objects need to be enumerated and removed (R2 + DO
+ * storage incurs ongoing cost).
  *
- * This script REPORTS orphans. It does NOT delete. The output is a list
- * of names + the wrangler / SQL commands the operator can run to clean
- * up after review.
- *
- * Greenfield deployments with no prior writes will see 0 orphans and
- * report "nothing to do." That is the expected state for the original
- * Epicenter Cloud at this moment in 2026-05.
+ * Greenfield deployments with no prior writes will see 0 DO orphans and
+ * the R2 template can be skipped. That is the expected state for the
+ * original Epicenter Cloud at this moment in 2026-05.
  *
  * Usage:
  *   cd apps/api
@@ -30,20 +27,24 @@
  *   # Or, for prod via Infisical:
  *   infisical run --env=prod --path=/ops -- bun run scripts/cleanup-pre-owner-collapse.ts
  *
- * Why this script does not delete:
- *   - R2: bulk deletion across thousands of keys deserves operator review
- *     before execution. The script prints the wrangler commands to run.
- *   - DOs: Cloudflare has no public "delete DO by name" CLI. DO storage
- *     is only deletable from inside a Worker that owns the binding.
- *     Wiring a one-shot admin route to do that is intentional friction;
- *     the operator should add the route, run it once, then remove it.
+ * Why this script is report-only:
+ *   - The Postgres rows are safe to delete from the script (with a separate
+ *     manual SQL after the operator confirms DO storage is wiped). But the
+ *     row delete is one-line SQL and an automated `--apply` would tempt
+ *     skipping the storage-wipe step. Better to keep the operator in
+ *     control of ordering.
+ *   - R2 key listing requires the bucket binding. Wrangler 4.x has no
+ *     `r2 object list` CLI; enumeration only works from inside a Worker
+ *     that has the binding. Same constraint applies to DO storage wipe
+ *     (Cloudflare has no `wrangler do delete <name>`). Both are handled
+ *     by adding a one-shot admin route to the Worker, running it once,
+ *     and removing the route.
  */
 
-import { spawnSync } from 'node:child_process';
 import { Client } from 'pg';
 
 const OWNERS_PREFIX = 'owners/';
-const ASSETS_BUCKET = 'epicenter-assets';
+const ASSETS_BUCKET_BINDING = 'ASSETS_BUCKET';
 
 type OrphanDoRow = {
 	do_name: string;
@@ -68,24 +69,8 @@ async function findOrphanedDoRecords(databaseUrl: string): Promise<OrphanDoRow[]
 	}
 }
 
-function listR2Keys(bucket: string): string[] {
-	const result = spawnSync(
-		'bunx',
-		['wrangler', 'r2', 'object', 'list', bucket, '--remote'],
-		{ encoding: 'utf-8' },
-	);
-	if (result.status !== 0) {
-		throw new Error(`wrangler r2 list failed: ${result.stderr}`);
-	}
-	// `wrangler r2 object list` output format: one key per line, plus header
-	// lines that start with "Listing" or contain whitespace columns. Filter
-	// to plain key strings.
-	return result.stdout
-		.split('\n')
-		.map((line) => line.trim())
-		.filter((line) => line.length > 0)
-		.filter((line) => !line.startsWith('Listing'))
-		.filter((line) => !line.includes(' '));
+function formatBytes(value: number | null): string {
+	return value == null ? '(size unknown)' : `${value} bytes`;
 }
 
 async function main() {
@@ -97,25 +82,30 @@ async function main() {
 		process.exit(1);
 	}
 
-	console.log('=== Phase 1: Durable Object instance orphans ===');
+	console.log('=== Durable Object orphans (from durable_object_instance) ===');
 	const orphanRows = await findOrphanedDoRecords(databaseUrl);
 	if (orphanRows.length === 0) {
-		console.log('No orphaned durable_object_instance rows. Nothing to do.\n');
+		console.log('No orphaned DO records.\n');
 	} else {
 		console.log(
 			`Found ${orphanRows.length} orphaned DO records (do_name not starting with "owners/"):`,
 		);
 		for (const row of orphanRows) {
-			const bytes = row.storage_bytes ?? '?';
 			console.log(
-				`  ${row.do_name}  (${bytes} bytes, last access ${row.last_accessed_at.toISOString()})`,
+				`  ${row.do_name}  (${formatBytes(row.storage_bytes)}, last access ${row.last_accessed_at.toISOString()})`,
 			);
 		}
 		console.log(`
 Step 1: wipe DO storage from inside the Worker. Add a one-shot admin
-route to apps/api (auth-gated, removed after one run):
+route to apps/api/src/index.ts (auth-gated, removed after one run).
 
-  // apps/api/src/index.ts, temporarily
+The handler iterates ONLY the orphan names listed below. It does NOT
+enumerate the bucket via ROOM.list() or any similar API. Live DOs whose
+names start with 'owners/' are not visible to this handler and cannot
+be touched by it.
+
+  // Assumes the single \`Room\` DO binding declared in wrangler.jsonc.
+  // Adapt the binding name if your deployment has more than one DO class.
   app.post('/__admin/wipe-orphan-do', requireBearerUser, async (c) => {
     const orphanNames = [
 ${orphanRows.map((row) => `      ${JSON.stringify(row.do_name)},`).join('\n')}
@@ -137,36 +127,50 @@ Step 3: remove the admin route and the /__wipe handler.
 `);
 	}
 
-	console.log('=== Phase 2: R2 asset orphans ===');
-	let allKeys: string[];
-	try {
-		allKeys = listR2Keys(ASSETS_BUCKET);
-	} catch (cause) {
-		console.error(String(cause));
-		process.exit(1);
-	}
-	const orphanKeys = allKeys.filter((key) => !key.startsWith(OWNERS_PREFIX));
+	console.log('=== R2 asset orphans (in the ASSETS_BUCKET bucket) ===');
+	console.log(`
+Wrangler 4.x has no \`r2 object list\` CLI; key enumeration requires the
+bucket binding. If the DO orphan section above reported zero rows AND
+this deployment never wrote assets pre-collapse, R2 is clean by
+construction (every R2 write goes through the same upload route that
+also inserts a durable_object_instance row... no, that's not true; R2
+uploads are independent. Verify manually below.)
 
-	if (orphanKeys.length === 0) {
-		console.log('No orphaned R2 keys. Nothing to do.\n');
-	} else {
-		console.log(`Found ${orphanKeys.length} orphaned R2 keys:`);
-		for (const key of orphanKeys) {
-			console.log(`  ${key}`);
-		}
-		console.log(`
-To delete them after review, the safest pattern is bulk by prefix:
+To enumerate (and optionally delete) R2 orphans, add the same kind of
+one-shot admin route as Step 1 above:
 
-  bunx wrangler r2 object delete ${ASSETS_BUCKET} --prefix users/ --remote
-  bunx wrangler r2 object delete ${ASSETS_BUCKET} --prefix assets/ --remote
+  app.get('/__admin/list-orphan-r2', requireBearerUser, async (c) => {
+    const orphans: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await c.env.${ASSETS_BUCKET_BINDING}.list({ cursor, limit: 1000 });
+      for (const obj of page.objects) {
+        if (!obj.key.startsWith('${OWNERS_PREFIX}')) orphans.push(obj.key);
+      }
+      cursor = page.truncated ? page.cursor : undefined;
+    } while (cursor);
+    return c.json({ count: orphans.length, keys: orphans });
+  });
 
-(Any other top-level prefixes the list shows above also need their own
-delete commands.)
+After reviewing the JSON response, delete in bulk (also from a one-shot
+admin route, or use bunx wrangler r2 object delete for individual keys):
+
+  app.post('/__admin/wipe-orphan-r2', requireBearerUser, async (c) => {
+    const { keys } = await c.req.json<{ keys: string[] }>();
+    await c.env.${ASSETS_BUCKET_BINDING}.delete(keys);
+    return c.json({ wiped: keys.length });
+  });
+
+Remove both routes after one successful run.
+
+For a quick visual check via dashboard:
+  https://dash.cloudflare.com/?to=/:account/r2/default/buckets/epicenter-assets
 `);
-	}
 
-	if (orphanRows.length === 0 && orphanKeys.length === 0) {
-		console.log('All clean. The deployment has no pre-Owner-collapse orphans.');
+	if (orphanRows.length === 0) {
+		console.log(
+			'DO orphans: clean. R2 needs the one-shot route above to confirm.',
+		);
 	}
 }
 

@@ -55,6 +55,10 @@ test('PersistedAuth top-level keys are serialized in the pinned order', () => {
 });
 
 test('PersistedAuth rejects a cell missing any required field', () => {
+	// arktype treats `{...FIXTURE, x: undefined}` as "x is missing" because
+	// `x: string` rejects undefined. Verified manually; do not switch to a
+	// strip pattern (e.g. delete broken.x) which would defeat the type-narrow
+	// loop.
 	const required = ['grant', 'userId', 'ownerId', 'keyring'] as const;
 	for (const field of required) {
 		const broken = { ...FIXTURE, [field]: undefined };

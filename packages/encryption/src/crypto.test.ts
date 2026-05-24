@@ -381,6 +381,8 @@ describe('deriveKeyring', () => {
 	// label can take in production: an opaque per-user id (personal mode)
 	// and the literal `'team'` (team mode).
 	test('output bytes are pinned (regression guard for HKDF format)', async () => {
+		// Secret is base64('constant-test-secret-32-byte-seed'); a reader
+		// can reproduce the expected bytes manually with `openssl base64 -d`.
 		const rootKeyring = parseRootKeyring(
 			'1:Y29uc3RhbnQtdGVzdC1zZWNyZXQtMzItYnl0ZS1zZWVk',
 		);

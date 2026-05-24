@@ -35,6 +35,7 @@ import type {
 	UsageQuery,
 	UsageSeries,
 } from '@epicenter/billing/contracts';
+import type { UserId } from '@epicenter/auth';
 import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import { AssetError } from '@epicenter/constants/asset-errors';
 import { Autumn } from 'autumn-js';
@@ -45,7 +46,7 @@ import { Ok, type Result } from 'wellcrafted/result';
 // ---------------------------------------------------------------------
 
 type Identity = {
-	userId: string;
+	userId: UserId;
 	userEmail: string | null;
 };
 

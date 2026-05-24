@@ -1,84 +1,105 @@
-# Three Parts, One ID: Type the Brand, Validate the Schema, Generate the Value
+# Three Parts, One ID — and a Fourth When You Need Both Directions
 
-Every generated branded ID in the workspace codebase follows the same three-part pattern. The type brands the string, the validator slots into `defineTable()` schemas, and the generator wraps `generateId()` so the cast lives in one place. A `SavedTabId` with all three parts looks like this:
+Every branded ID in the workspace codebase follows the same canonical shape: a validator that lives in the value space, a type derived from it via `typeof X.infer`, and zero, one, or two helpers sized to where the value comes from. Most workspace IDs end up with three exports; the ones that flow in from both directions (minted by the app AND received from URL params or DB rows) end up with four.
 
 ```typescript
-export type SavedTabId = Id & Brand<'SavedTabId'>;
-export const SavedTabId = type('string').as<SavedTabId>();
-export const generateSavedTabId = (): SavedTabId =>
-  generateId() as SavedTabId;
+// Validator first; type derived. One PascalCase name in both namespaces.
+export const SavedTabId = type('string').as<Id & Brand<'SavedTabId'>>();
+export type SavedTabId = typeof SavedTabId.infer;
+
+// generate* for IDs minted fresh by this code.
+export const generateSavedTabId = (): SavedTabId => generateId<SavedTabId>();
+
+// asXxx for trusted strings flowing in from another typed source. Optional.
+export const asSavedTabId = (value: string): SavedTabId => value as SavedTabId;
 ```
 
-## Extend the base Id type to simplify the factory cast
+`SavedTabId` is the arktype validator in `id: SavedTabId` inside a schema and the inferred branded type in a parameter annotation. There is no `SavedTabIdSchema` alias, no separate constructor function; one name covers both namespaces because TypeScript keeps them separate.
 
-The base type extends `Id` (which is `string & Brand<'Id'>`) rather than bare `string`. This means the factory only needs a single cast (`generateId() as SavedTabId`) instead of the double cast (`generateId() as string as SavedTabId`). Since `generateId()` returns `Id`, the types are compatible without stripping the brand first.
+## Validator-first declaration
+
+Declaring the validator first and deriving the type via `typeof SavedTabId.infer` makes the validator the single source of truth. If the brand changes or the underlying primitive switches from `Id` to plain `string`, you change one place and the type follows. Declaring the type first and re-passing it into `type('string').as<SavedTabId>()` works too, but it encodes the same shape twice. Prefer validator-first for new code.
+
+## Extend the base Id type to simplify the factory generic
+
+The brand intersects with `Id` (which is `string & Brand<'Id'>`) rather than bare `string`. That lets the factory use `generateId<SavedTabId>()` directly — the generic is constrained to `T extends string`, so any brand on top of `Id` (which extends `string`) flows through without a cast.
 
 ```typescript
-// Good: compatible with generateId()
-export type SavedTabId = Id & Brand<'SavedTabId'>;
+// Good: factory uses the generic; no `as` in the body.
+export const generateSavedTabId = (): SavedTabId => generateId<SavedTabId>();
 
-// Bad: requires double cast
-export type SavedTabId = string & Brand<'SavedTabId'>;
+// Older form (still in some files): cast inside the factory.
+export const generateSavedTabId = (): SavedTabId => generateId() as SavedTabId;
 ```
 
-## Use .as<>() for zero-cost type assertions in Arktype
+Both compile. The generic form is preferred because the only intentional `as <Brand>` per ID is then the `asXxx` helper, and the factory's signature carries the brand on its return type rather than in a cast.
 
-Both `.as<>()` and `.pipe()` create the same runtime validator, but `.as<>()` is a zero-cost type assertion. Arktype knows the output type without a pipe function, which keeps the schema definition clean. The pipe version is three lines of ceremony for the same result.
+## Use `.as<>()` for zero-cost type assertions, not `.pipe()`
+
+`.pipe()` runs a function at runtime; `.as<>()` is a pure compile-time assertion that arktype reads directly off the type argument. For brand application the two are functionally equivalent, but `.pipe()` is three lines of ceremony for nothing.
 
 ```typescript
-// Good: concise and zero-cost
-export const SavedTabId = type('string').as<SavedTabId>();
+// Good: zero-cost, concise.
+export const SavedTabId = type('string').as<Id & Brand<'SavedTabId'>>();
 
-// Bad: unnecessary ceremony
+// Bad: pipe ceremony.
 export const SavedTabId = type('string').pipe((s): SavedTabId => s as SavedTabId);
 ```
 
-## Distinguish generators from constructors with the generate prefix
+## Pick the helpers by ID origin
 
-The codebase distinguishes generators from constructors. `generate*` means a new ID from scratch that calls `generateId()` or nanoid. `create*` means assembling an ID from inputs, like `createTabCompositeId(deviceId, tabId)`. Both are factory functions, but the prefix signals the difference.
+| Origin of the value                         | Helpers to add                                                  |
+| ------------------------------------------- | --------------------------------------------------------------- |
+| Minted fresh by this code                   | `generateXxx()`                                                 |
+| Received as a typed `string` (auth, URL, DB column, page param) | `asXxx(value: string)` syntactic-sugar helper       |
+| Both of the above                           | Both helpers, declared next to the validator                    |
+| Received as `unknown` at a network boundary | None — use the validator's `.assert(unknown)` or schema-level validation |
+| Set from an external source, never minted   | `asXxx` helper                                                  |
+
+The repo's IDs split as follows:
+
+- **Validator + type + `generate*` only** (workspace-internal): `SavedTabId`, `BookmarkId`, `FileId`'s `RowId` and `ColumnId` siblings, etc. They're minted by the app and never received from outside.
+- **Validator + type + `asXxx` only** (purely external): `UserId`, `OwnerId` from `@epicenter/auth`. The user id is issued by Better Auth and arrives as a typed string; the owner id is the partition key derived from it. Nothing in the codebase mints them.
+- **Validator + type + both helpers** (minted AND received): `FileId`, `ConversationId`, `ChatMessageId`, `EntryId`, `NoteId`, `FolderId`, `DeviceId`. The app generates them with `generate*` and also brands them with `as*` when reading them back from URL params, DB rows, page params, or external strings.
+
+For the third row, the two helpers do unrelated jobs and both earn their keep:
 
 ```typescript
-// New ID from scratch
-export const generateSavedTabId = (): SavedTabId => generateId() as SavedTabId;
+// generate* mints a fresh value, no caller input needed.
+const newFile: FileId = generateFileId();
 
-// Assembled from inputs
+// as* brands an externally-provided typed string.
+const fromUrl: FileId = asFileId(page.url.searchParams.get('file')!);
+```
+
+## Distinguish `generate*` from `create*`
+
+`generate*` means a new ID minted from scratch — `generateId()`, `generateGuid()`, or `nanoid()` under the hood. `create*` means assembling an ID from existing inputs:
+
+```typescript
+export const generateSavedTabId = (): SavedTabId => generateId<SavedTabId>();
 export const createTabCompositeId = (deviceId: DeviceId, tabId: TabId): TabCompositeId =>
-  `${deviceId}:${tabId}` as TabCompositeId;
+	`${deviceId}:${tabId}` as TabCompositeId;
 ```
 
-## Each part serves a specific purpose in the schema
+Both are factory functions. The prefix tells the reader whether the function fabricates randomness or composes existing identity.
 
-| Part | When to use |
-| --- | --- |
-| Validator | Used in `defineTable()` or arktype schemas, and as `.assert(...)` at `unknown` boundaries |
-| Type | Always — derived from the validator via `typeof X.infer` or declared alongside it |
-| Third part | A helper sized to where the value comes from (see below) |
+## `asXxx` is the only place `as Xxx` should appear in the codebase
 
-The third part flexes by ID origin:
-
-| Origin of the value                         | Third part                                        | Example                                                                |
-| ------------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------- |
-| Minted fresh by this code                   | `generateXxx()` wrapping `generateId() as Xxx`    | `generateSavedTabId` in `apps/tab-manager/src/lib/workspace.ts`        |
-| Received as a typed string (auth, URL, DB)  | `asXxx(value: string)` syntactic-sugar helper     | `asUserId`, `asOwnerId` in `packages/auth/src/ids.ts`                  |
-| Received as `unknown` at a network boundary | None — use the validator or `.assert(unknown)`    | `PersistedAuth.assert(...)` at machine-auth deserialization            |
-| Set from an external source, never minted   | `asXxx` helper                                    | `asDeviceId` would belong here if installation ids needed grep sites   |
-
-## The `as*` variant for external-source IDs
-
-When the ID is not minted but received as a typed `string` from another typed source — Better Auth's `c.var.user.id`, a Hono URL param, a DB column — the third part is an `as*` syntactic-sugar helper instead of a generator:
+The `asXxx` helper exists to centralize the typed cast. Once it exists, raw `value as Xxx` casts elsewhere are a smell — the helper's `value: string` parameter rejects accidental `unknown` widenings and any code that wants to bypass it has to spell out a real reason.
 
 ```typescript
-// packages/auth/src/ids.ts
-export const UserId = type('string').as<string & Brand<'UserId'>>();
-export type UserId = typeof UserId.infer;
+// Good: helper centralizes the cast, rejects unknown widening.
+const fileId = asFileId(searchParams.get('file') ?? '');
 
-/**
- * Syntactic sugar for `value as UserId`. The constrained `string` parameter
- * is what earns it over a raw `as` cast. The only place `as UserId` appears.
- */
-export const asUserId = (value: string): UserId => value as UserId;
+// Bad: raw cast scattered through consumer code; silently swallows undefined.
+const fileId = searchParams.get('file') as FileId;
 ```
 
-The validator can be declared first (as above) and the type inferred via `typeof UserId.infer`, or the type can be declared first with the brand alongside it and the validator declared as `type('string').as<UserId>()`. Both shapes are in the repo; prefer validator-first for new code so the validator stays the single source of truth.
+Inside the helper itself the `as` is intentional and unavoidable; that single body is the sanctioned spot. Generators are the other sanctioned spot, and the modern generic form (`generateId<Xxx>()`) removes the cast even there.
 
-You can find the canonical generator implementation with 7 branded types and 4 generators in `apps/tab-manager/src/lib/workspace.ts`, and the canonical `as*` variant in `packages/auth/src/ids.ts`. Every ID in the system stays type-safe and validated at the boundary without leaking implementation details.
+## Why this matters
+
+The branded-ID pattern catches type confusion that structural typing misses. A `FileId` is not a `ConversationId` even though both are strings at runtime. The validator makes the brand survive arktype schema composition; the type makes the brand visible to function signatures and hover docs; `generate*` keeps random-ID minting honest; and `asXxx` keeps the cast that turns a string into a brand pinned to one searchable spot in the codebase.
+
+You can find the canonical multi-ID workspace in `apps/tab-manager/src/lib/workspace/definition.ts`, the purely-external IDs in `packages/auth/src/ids.ts`, and the both-directions case in `apps/opensidian/workspace.ts` and `packages/filesystem/src/ids.ts`.

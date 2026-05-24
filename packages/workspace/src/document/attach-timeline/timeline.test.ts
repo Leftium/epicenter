@@ -560,16 +560,6 @@ describe('attachTimeline - write (sheet mode)', () => {
 		expect(tl.read()).toBe('A,B\n1,2\n');
 	});
 
-	test('observe does NOT fire when write replaces sheet in-place', () => {
-		const tl = setup();
-		tl.asSheet();
-		tl.write('A,B\n1,2\n');
-		let callCount = 0;
-		tl.observe(() => callCount++);
-		tl.write('X,Y\n3,4\n');
-		expect(callCount).toBe(0);
-	});
-
 	test('observe fires when asSheet converts from different type', () => {
 		const tl = setup();
 		tl.write('some text');

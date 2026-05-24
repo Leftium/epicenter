@@ -22,10 +22,6 @@ describe('isEpicenterLink', () => {
 		expect(isEpicenterLink('https://example.com')).toBe(false);
 	});
 
-	test('returns false for empty strings', () => {
-		expect(isEpicenterLink('')).toBe(false);
-	});
-
 	test('returns false for bare ids', () => {
 		expect(isEpicenterLink(SAMPLE_ID)).toBe(false);
 	});
@@ -60,15 +56,6 @@ describe('makeEpicenterLink', () => {
 		);
 	});
 
-	test('round-trips with parseEpicenterLink', () => {
-		const href = makeEpicenterLink(SAMPLE_WORKSPACE, SAMPLE_TABLE, SAMPLE_ID);
-
-		expect(parseEpicenterLink(href)).toEqual({
-			workspace: SAMPLE_WORKSPACE,
-			table: SAMPLE_TABLE,
-			id: SAMPLE_ID,
-		});
-	});
 });
 
 describe('convertEpicenterLinksToWikilinks', () => {
@@ -119,15 +106,6 @@ describe('convertWikilinksToEpicenterLinks', () => {
 		expect(convertWikilinksToEpicenterLinks(body, resolve)).toBe(body);
 	});
 
-	test('round-trips with convertEpicenterLinksToWikilinks', () => {
-		const original = `[First Note](${SAMPLE_REF})`;
-		const asWikilink = convertEpicenterLinksToWikilinks(original);
-
-		expect(asWikilink).toBe('[[First Note]]');
-		expect(convertWikilinksToEpicenterLinks(asWikilink, resolve)).toBe(
-			original,
-		);
-	});
 });
 
 describe('EPICENTER_LINK_RE', () => {

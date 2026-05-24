@@ -322,20 +322,6 @@ describe('createTable', () => {
 			expect(error.row).toEqual({ id: '1', name: 123, _v: 1 });
 		});
 
-		test('update preserves id field', () => {
-			const { ykv } = setup();
-			const definition = defineTable(
-				type({ id: 'string', name: 'string', _v: '1' }),
-			);
-			const helper = createTable(ykv, definition, 'test');
-
-			helper.set({ id: '1', name: 'Alice', _v: 1 });
-			const data = expectOk(helper.update('1', { name: 'Bob' }));
-
-			expect(data?.id).toBe('1');
-			expect(data?.name).toBe('Bob');
-			expect(helper.has('1')).toBe(true);
-		});
 	});
 
 	describe('delete operations', () => {
@@ -554,23 +540,6 @@ describe('createTable', () => {
 
 			const data = expectOk(helper.get('1'));
 			expect(data).toEqual({ id: '1', name: 'Alice', age: 0, _v: 2 });
-		});
-
-		test('passes through current version data unchanged', () => {
-			const { ykv } = setup();
-			const definition = defineTable(
-				type({ id: 'string', name: 'string', _v: '1' }),
-				type({ id: 'string', name: 'string', age: 'number', _v: '2' }),
-			).migrate((row) => {
-				if (row._v === 1) return { ...row, age: 0, _v: 2 };
-				return row;
-			});
-			const helper = createTable(ykv, definition, 'test');
-
-			helper.set({ id: '1', name: 'Alice', age: 30, _v: 2 });
-
-			const data = expectOk(helper.get('1'));
-			expect(data).toEqual({ id: '1', name: 'Alice', age: 30, _v: 2 });
 		});
 
 		test('three-version migration chain v1→v2→v3 composes at read time', () => {

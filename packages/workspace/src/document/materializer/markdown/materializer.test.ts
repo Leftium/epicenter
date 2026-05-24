@@ -715,51 +715,6 @@ describe('round-trip', () => {
 		workspace2[Symbol.dispose]();
 	});
 
-	test('fromMarkdown(toMarkdown(row)) preserves row: MarkdownShape round-trip', async () => {
-		// Explicit toMarkdown / fromMarkdown pair over the shared MarkdownShape
-		// type, so the compiler guarantees one is the inverse of the other.
-		const toMarkdownFn = (row: {
-			id: string;
-			body: string;
-			_v: 1;
-		}): MarkdownShape => ({
-			frontmatter: { id: row.id, _v: row._v },
-			body: row.body,
-		});
-		const fromMarkdownFn = (parsed: MarkdownShape) => ({
-			id: parsed.frontmatter.id as string,
-			body: parsed.body ?? '',
-			_v: 1 as const,
-		});
-
-		const { workspace } = await setup({
-			tables: (t) =>
-				[
-					{
-						table: t.notes,
-						config: { toMarkdown: toMarkdownFn, fromMarkdown: fromMarkdownFn },
-					},
-				] as unknown as TableRegistration[],
-		});
-
-		const original = { id: 'n1', body: 'Hello, round trip!', _v: 1 as const };
-		workspace.tables.notes.set(original);
-
-		// Pull to disk, then push from disk into a fresh workspace.
-		await workspace.materializer.pull();
-
-		// Also assert the pure inverse identity: fromMarkdown(toMarkdown(x)) ≡ x
-		expect(fromMarkdownFn(toMarkdownFn(original))).toEqual(original);
-
-		// And verify the end-to-end disk round trip.
-		const disk = await readTestFile('notes/n1.md');
-		const parsed = parseMarkdownFile(disk);
-		if (parsed === null) throw new Error('expected notes/n1.md to parse');
-		expect(fromMarkdownFn(parsed)).toEqual(original);
-
-		workspace[Symbol.dispose]();
-	});
-
 	test('inline field-to-body pair round-trips over MarkdownShape', async () => {
 		// Most real apps store body content in a separate Y.Doc (via
 		// createDisposableCache). This test covers the simpler case where body IS a

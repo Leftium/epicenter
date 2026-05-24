@@ -3,9 +3,9 @@
  *
  * Per-project runtime files (socket, metadata sidecar, SQLite lease) live
  * under `runtimeDir()` (a per-user directory at `<dataDir>/run/`).
- * Persistent logs live at `<logDir>/<dirHash>.log`. Every file is keyed by
- * a hash of the daemon's project directory so two daemons on the same
- * machine never collide.
+ * Persistent logs live under `logDir()` (the env-paths log directory).
+ * Every file is keyed by a hash of the daemon's project directory so two
+ * daemons on the same machine never collide.
  *
  * For per-workspace data layout (yjs/sqlite/markdown under the project
  * directory's reserved subdir), see `document/workspace-paths.ts`. Different
@@ -30,6 +30,9 @@ const SAFE_UNIX_SOCKET_PATH_BYTES = 95;
  */
 const PATHS = envPaths('epicenter', { suffix: '' });
 
+const DEFAULT_DATA_DIR = process.env.EPICENTER_DATA_DIR ?? PATHS.data;
+const DEFAULT_LOG_DIR = process.env.EPICENTER_LOG_DIR ?? PATHS.log;
+
 /**
  * Per-user directory for daemon sockets, metadata, and lease files.
  *
@@ -39,15 +42,24 @@ const PATHS = envPaths('epicenter', { suffix: '' });
  * bytes for `/var/folders/...`) is too long once the per-project socket
  * suffix is appended.
  *
- * `EPICENTER_RUNTIME_DIR` overrides the default; `EPICENTER_DATA_DIR` shifts
- * the underlying data dir. Both are read on every call so test cases can
- * isolate by mutating env between cases without re-importing the module.
+ * `EPICENTER_RUNTIME_DIR` overrides the default. The env var is a workspace
+ * test seam: production users do not set it (the default is correct), but
+ * test cases set it to a short `mkdtemp` dir under `/tmp/` to isolate from
+ * each other. Read on every call so test mutations between cases take
+ * effect without re-importing the module.
  */
 export function runtimeDir(): string {
-	return (
-		process.env.EPICENTER_RUNTIME_DIR ??
-		join(process.env.EPICENTER_DATA_DIR ?? PATHS.data, 'run')
-	);
+	return process.env.EPICENTER_RUNTIME_DIR ?? join(DEFAULT_DATA_DIR, 'run');
+}
+
+/**
+ * Per-user directory for daemon log files. Default: env-paths log dir
+ * (`~/Library/Logs/epicenter` on macOS, `~/.local/state/epicenter` on
+ * Linux). `EPICENTER_LOG_DIR` overrides; read on every call so tests can
+ * isolate.
+ */
+export function logDir(): string {
+	return process.env.EPICENTER_LOG_DIR ?? DEFAULT_LOG_DIR;
 }
 
 /**
@@ -91,14 +103,9 @@ export function leasePathFor(dir: string): string {
 /**
  * Log file for the daemon serving `dir`.
  *
- * Lives under the env-paths log directory (`~/Library/Logs/epicenter` on
- * macOS, `~/.local/state/epicenter` on Linux), so the operator can read
- * post-mortem logs after a crash or reboot. `EPICENTER_LOG_DIR` overrides;
- * read on every call so tests can isolate.
+ * Always lives under the user log directory (persistent), never tmpfs, so
+ * the operator can read post-mortem logs after a crash or reboot.
  */
 export function logPathFor(dir: string): string {
-	return join(
-		process.env.EPICENTER_LOG_DIR ?? PATHS.log,
-		`${dirHash(dir)}.log`,
-	);
+	return join(logDir(), `${dirHash(dir)}.log`);
 }

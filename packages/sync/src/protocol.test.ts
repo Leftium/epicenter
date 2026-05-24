@@ -213,6 +213,16 @@ describe('edge cases', () => {
 
 		expect(clientDoc.getArray('items').length).toBe(1000);
 	});
+
+	test('empty document produces a valid STEP1 frame', () => {
+		const { syncType, payload } = readFrame(
+			encodeSyncStep1({ doc: createDoc() }),
+		);
+
+		expect(syncType).toBe(SYNC_MESSAGE_TYPE.STEP1);
+		// Even an empty doc has a state vector (carries clientID info).
+		expect(payload).toBeInstanceOf(Uint8Array);
+	});
 });
 
 // ============================================================================

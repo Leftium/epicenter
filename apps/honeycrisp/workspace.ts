@@ -39,12 +39,26 @@ export const NoteId = type('string').as<string & Brand<'NoteId'>>();
 export type NoteId = typeof NoteId.infer;
 
 /**
+ * Syntactic sugar for `value as NoteId`. The constrained `string` parameter
+ * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
+ * The only place in the codebase where `as NoteId` should appear.
+ */
+export const asNoteId = (value: string): NoteId => value as NoteId;
+
+/**
  * Branded folder ID: nanoid generated when a folder is created.
  *
  * Prevents accidental mixing with other string IDs at compile time.
  */
 export const FolderId = type('string').as<string & Brand<'FolderId'>>();
 export type FolderId = typeof FolderId.infer;
+
+/**
+ * Syntactic sugar for `value as FolderId`. The constrained `string` parameter
+ * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
+ * The only place in the codebase where `as FolderId` should appear.
+ */
+export const asFolderId = (value: string): FolderId => value as FolderId;
 
 // ─── Tables ───────────────────────────────────────────────────────────────────
 
@@ -151,7 +165,7 @@ export function createHoneycrispActions(tables: HoneycrispTables) {
 			description: 'Delete a folder and re-parent its notes to unfiled',
 			input: Type.Object({ folderId: Type.String() }),
 			handler: ({ folderId: rawId }) => {
-				const folderId = rawId as FolderId;
+				const folderId = asFolderId(rawId);
 				const folderNotes = tables.notes
 					.getAllValid()
 					.filter((n) => n.folderId === folderId);

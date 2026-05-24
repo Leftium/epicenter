@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -589,6 +588,7 @@
       "name": "@epicenter/constants",
       "version": "0.1.0",
       "dependencies": {
+        "arktype": "catalog:",
         "env-paths": "^3.0.0",
         "wellcrafted": "catalog:",
       },

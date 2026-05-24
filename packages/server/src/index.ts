@@ -36,6 +36,6 @@ export { roomsApp } from './routes/rooms.js';
 export { sessionApp } from './routes/session.js';
 
 // Public Hono context type the deployment composes around library
-// middleware. `OwnershipMode` and `SignUpPolicy` stay internal: factories
-// accept the literal values directly.
+// middleware. `OwnershipMode` stays internal: factories accept the
+// literal value directly.
 export type { Env } from './types.js';

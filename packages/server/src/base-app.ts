@@ -20,7 +20,7 @@ import { corsMiddleware } from './middleware/cors.js';
 import { requireOriginForCookieMutations } from './middleware/require-origin-for-cookie-mutations.js';
 import { singleCredential } from './middleware/single-credential.js';
 import { createDurableObjectRooms } from './room/backends/cloudflare/registry.js';
-import type { AfterResponseQueue, Env, SignUpPolicy } from './types.js';
+import type { AfterResponseQueue, Env } from './types.js';
 
 const PRODUCTION_API_ORIGIN = APPS.API.urls[0];
 const LOCAL_API_ORIGIN = localUrl(APPS.API);
@@ -66,9 +66,7 @@ function createAfterResponseQueue(): AfterResponseQueue {
  * and the rooms registry. The deployment is responsible for exposing a
  * health endpoint on `/`.
  */
-export function createBaseApp(opts: {
-	signUpPolicy?: SignUpPolicy;
-}): Hono<Env> {
+export function createBaseApp(): Hono<Env> {
 	const app = new Hono<Env>();
 
 	// 1. CORS
@@ -109,7 +107,6 @@ export function createBaseApp(opts: {
 				db: c.var.db,
 				env: c.env,
 				baseURL,
-				signUpPolicy: opts.signUpPolicy ?? 'open',
 			}),
 		);
 		await next();

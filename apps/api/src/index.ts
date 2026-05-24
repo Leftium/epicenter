@@ -37,7 +37,7 @@ import { billingRoutes } from './billing-routes.js';
 
 const MODE = 'personal';
 
-const base = createBaseApp({ signUpPolicy: 'open' });
+const base = createBaseApp();
 const attachOwner = createAttachOwner(MODE);
 
 // Public health endpoint at root.

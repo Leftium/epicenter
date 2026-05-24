@@ -16,19 +16,6 @@ import type * as schema from './db/schema/index.js';
 import type { Rooms } from './room/contracts.js';
 
 /**
- * Sign-up gating policy.
- *
- * - `open`     : Better Auth accepts new sign-ups normally.
- * - `disabled` : a Better Auth `before` hook rejects every sign-up. The
- *                deployment owner provisions accounts out of band.
- *
- * `invite-only` becomes a third value when the invitation-token system
- * is designed; until that exists, the meaningful gradient is `open` or
- * `disabled`.
- */
-export type SignUpPolicy = 'open' | 'disabled';
-
-/**
  * Deployment partition shape. Passed to the sub-apps and middleware that
  * branch on it (`createAssetsApp`, `createAttachOwner`). The wire does not
  * carry mode (consumers derive it from `ownerId === TEAM_OWNER_ID`), so

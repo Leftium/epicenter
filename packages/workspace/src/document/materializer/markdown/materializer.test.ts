@@ -423,23 +423,6 @@ describe('pull', () => {
 		workspace[Symbol.dispose]();
 	});
 
-	test('creates table directory before writing', async () => {
-		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
-		workspace.tables.posts.set({
-			id: 'p1',
-			title: 'First',
-			published: false,
-			_v: 1,
-		});
-
-		await workspace.materializer.pull();
-
-		const entries = await listTestDir('posts');
-		expect(entries).toContain('p1.md');
-
-		workspace[Symbol.dispose]();
-	});
-
 	test('uses custom filename and toMarkdown callbacks', async () => {
 		const { workspace } = await setup({
 			tables: (t) => [

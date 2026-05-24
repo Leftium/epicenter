@@ -31,7 +31,7 @@ export default defineWorkspace({
 	async open({
 		projectDir,
 		yDocClientId,
-		installationId,
+		deviceId,
 		ownerId,
 		keyring,
 		openWebSocket,
@@ -54,7 +54,7 @@ export default defineWorkspace({
 				baseURL: SERVER_URL,
 				ownerId,
 				guid: ydoc.guid,
-				installationId,
+				deviceId,
 			}),
 			openWebSocket,
 			onReconnectSignal,

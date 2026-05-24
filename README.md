@@ -215,14 +215,14 @@ const posts = defineTable(
   type({ id: 'string', title: 'string', published: 'boolean', _v: '1' }),
 );
 
-function openBlog(id: string, installationId: string) {
+function openBlog(id: string, deviceId: string) {
   const ydoc = new Y.Doc({ guid: id });
   const tables = attachTables(ydoc, { posts });
   const idb = attachIndexedDb(ydoc);
   const collaboration = openCollaboration(ydoc, {
     url: websocketUrl(`http://localhost:3913/rooms/${ydoc.guid}`),
     waitFor: idb.whenLoaded,
-    installationId,
+    deviceId,
   });
 
   return {

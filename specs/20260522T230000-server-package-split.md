@@ -158,7 +158,7 @@ URL tells you the partition (or its absence) directly. No magic mapping.
 Rooms snapshot/sync       GET  /api/users/:userId/rooms/:r     GET  /api/rooms/:r
                           POST /api/users/:userId/rooms/:r     POST /api/rooms/:r
 Rooms WebSocket           WS   /api/users/:userId/rooms/:r     WS   /api/rooms/:r
-                            ?clientId=<id>                       ?clientId=<id>
+                            ?deviceId=<id>                       ?deviceId=<id>
 
 Asset upload              POST /api/users/:userId/assets       POST /api/assets
 Asset list                GET  /api/users/:userId/assets       GET  /api/assets
@@ -183,18 +183,31 @@ all personal-mode authed routes so Bob cannot reach `/api/users/alice/...`.
 ## 6. The DO attachment (both modes)
 
 ```ts
-export type ConnectionId = { userId: string; clientId: string };
+export type Connection = {
+  userId: string;
+  deviceId: string;
+  connectedAt: number;
+  actions: ActionManifest;
+};
 ```
 
-Each WebSocket connection carries a `(userId, clientId)` pair. The DO is
+Each WebSocket connection carries a `(userId, deviceId)` pair plus the
+upgrade timestamp and the device's published action manifest. The DO is
 owner-blind; it tracks pairs and broadcasts presence with the `userId` so
 clients can render names. In personal mode every connection to a given DO
 shares the same `userId` (the DO name partitions by user). In team mode
 connections have different `userId` values. Same code path either way.
 
-`clientId` replaces today's `installationId`. A client is "one running
-instance of any app" (browser tab, Tauri app, extension, CLI). The
-lifespan is the client's concern.
+`deviceId` identifies one Epicenter app on one persistent storage scope:
+browser tabs sharing localStorage share an id; separate browsers, the
+extension, Tauri windows, and the CLI daemon each get distinct ids. The
+client generates and persists its own via `createDeviceId({ storage })`
+(from `@epicenter/workspace`); lifespan is the client's concern. The
+canonical brand `DeviceId` lives in `@epicenter/workspace`. We refused
+the name `clientId` because Yjs already ships `clientID` (a number,
+CRDT identifier) and Better Auth uses `clientId` for OAuth client ids;
+"device" matches what `PresenceDevice` and the user-facing presence UI
+already say.
 
 ## 7. /api/session response
 
@@ -413,7 +426,12 @@ export type Owner =
 
 export type OwnerPath = `users/${string}` | '';
 
-export type ConnectionId = { userId: string; clientId: string };
+export type Connection = {
+  userId: string;
+  deviceId: string;
+  connectedAt: number;
+  actions: ActionManifest;
+};
 
 export type Env = { Bindings: Cloudflare.Env; Variables: { /* ... */ } };
 ```
@@ -440,7 +458,7 @@ export { createServer } from './create-server';
 export { Room } from './room/backends/cloudflare/durable-object';
 export type {
   OwnerKind, SignUpPolicy, ServerOptions,
-  Owner, OwnerPath, ConnectionId, Env,
+  Owner, OwnerPath, Connection, Env,
 } from './types';
 ```
 
@@ -649,9 +667,14 @@ value. Until that exists, the meaningful gradient is `open` or `disabled`.
 3. Rewrite URLs to the owner-partition shape (section 5).
    Personal-mode authed routes get the requireUrlUserIdMatchesAuth gate.
 
-4. Replace installationId with clientId everywhere
+4. Replace installationId with deviceId everywhere
    (WebSocket query param, DO attachment, presence map).
-   DO attachment becomes { userId, clientId }.
+   DO attachment becomes { userId, deviceId, connectedAt, actions }.
+   The canonical brand `DeviceId` (`asDeviceId`, `createDeviceId`,
+   `createDeviceIdAsync`) lives in `@epicenter/workspace`. The earlier
+   draft proposed `clientId`; refused because `clientID` (number) is
+   already the Yjs CRDT identifier and `clientId` (string) is Better
+   Auth's OAuth client param.
 
 5. Recreate apps/api/src/index.ts as the cloud composition (section 11.2).
    Cloud-only files live in apps/api/src/.
@@ -669,7 +692,7 @@ value. Until that exists, the meaningful gradient is `open` or `disabled`.
 
 10. Update client URL builders (workspace daemon, browser apps, CLI,
     extension) to use session.ownerPath when constructing room and
-    asset URLs. Replace any installationId usage with clientId.
+    asset URLs. Replace any installationId usage with deviceId.
 ```
 
 ## 17. Tests
@@ -683,7 +706,7 @@ packages/server/
                                team:     owner is the bare { kind: 'team' }
   rooms.test.ts                personal: requires URL userId == auth userId
                                team: no userId in URL
-                               WS upgrade carries clientId
+                               WS upgrade carries deviceId
   assets.test.ts               personal: public read works without auth via
                                URL userId; authed routes require URL match
                                team: public read works without auth
@@ -729,10 +752,10 @@ apps/api/
 ## 19. Open questions
 
 ```
-1. Should the WebSocket URL place clientId in the query string or in a
-   subprotocol entry like `client.<clientId>`? Query string is simpler
+1. Should the WebSocket URL place deviceId in the query string or in a
+   subprotocol entry like `device.<deviceId>`? Query string is simpler
    and matches today's pattern; subprotocol is harder to log and slightly
-   more secure. Defaulting to query string.
+   more secure. Defaulting to query string. (Landed: query string.)
 
 2. The personal-mode safety middleware compares c.req.param('userId') to
    c.var.user.id. Confirm Better Auth's resolved user id matches the
@@ -747,8 +770,9 @@ apps/api/
    template, or as a downstream example repo? Either works.
 
 5. The Room DO attachment shape change from { installationId } to
-   { userId, clientId } is a wire change; old clients and old DOs
-   would not interoperate. Acceptable because greenfield.
+   { userId, deviceId, connectedAt, actions } is a wire change; old
+   clients and old DOs would not interoperate. Acceptable because
+   greenfield. (Landed.)
 ```
 
 ## 20. Success criteria

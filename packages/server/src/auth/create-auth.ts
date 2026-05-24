@@ -1,8 +1,10 @@
+import { asOwnerId } from '@epicenter/auth';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../db/schema/index.js';
+import { assetKey } from '../owner.js';
 import { TRUSTED_ORIGINS } from '../trusted-origins.js';
 import type { SignUpPolicy } from '../types.js';
 import { BASE_AUTH_CONFIG } from './base-config.js';
@@ -109,16 +111,29 @@ export function createAuth({
 				},
 				delete: {
 					before: async (user) => {
-						// Clean up R2 assets before CASCADE deletes Postgres rows
+						// Partition cleanup. In personal mode `owner_id === user.id`
+						// so this deletes the user's R2 blobs, asset rows, and
+						// DOI rows. In team mode `owner_id === 'team' !== user.id`
+						// so every query no-ops and team data survives member
+						// churn. Without an FK + cascade, the row deletes are
+						// explicit here.
+						const ownerId = asOwnerId(user.id);
+
 						const assets = await db
 							.select({ id: schema.asset.id })
 							.from(schema.asset)
-							.where(eq(schema.asset.userId, user.id));
-
+							.where(eq(schema.asset.ownerId, ownerId));
 						if (assets.length > 0) {
-							const keys = assets.map((a) => a.id);
+							const keys = assets.map((a) => assetKey(ownerId, a.id));
 							await env.ASSETS_BUCKET.delete(keys);
+							await db
+								.delete(schema.asset)
+								.where(eq(schema.asset.ownerId, ownerId));
 						}
+
+						await db
+							.delete(schema.durableObjectInstance)
+							.where(eq(schema.durableObjectInstance.ownerId, ownerId));
 					},
 				},
 			},

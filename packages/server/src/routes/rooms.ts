@@ -14,8 +14,9 @@
  *
  * Each HTTP/WS access pushes a fire-and-forget upsert into
  * `c.var.afterResponse` so the platform-level `durableObjectInstance`
- * table tracks who accessed which DO, and when. The userId column
- * captures the actor regardless of mode (provenance), not the data owner.
+ * table tracks which owner's DO was touched and when. The row is keyed by
+ * `do_name` and partitioned by `owner_id`; account-delete cleanup matches
+ * `owner_id` (see auth `before(delete)` hook).
  */
 
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
@@ -43,15 +44,15 @@ function binaryResponse(data: Uint8Array): Response {
 }
 
 /**
- * Fire-and-forget upsert into the platform DO instance table. Records
- * that the actor accessed the DO and, when available, the post-access
+ * Fire-and-forget upsert into the platform DO instance table. Records that
+ * the owner partition touched the DO and, when available, the post-access
  * storage size. Errors are logged and dropped: this is telemetry, not
  * billing authority.
  */
 function upsertDoInstance(
 	db: Db,
 	params: {
-		userId: string;
+		ownerId: string;
 		resourceName: string;
 		doName: string;
 		storageBytes?: number;
@@ -61,7 +62,7 @@ function upsertDoInstance(
 	return db
 		.insert(schema.durableObjectInstance)
 		.values({
-			userId: params.userId,
+			ownerId: params.ownerId,
 			resourceName: params.resourceName,
 			doName: params.doName,
 			storageBytes: params.storageBytes ?? null,
@@ -111,7 +112,7 @@ export function createRoomsApp(): Hono<Env> {
 
 				c.var.afterResponse.push(
 					upsertDoInstance(c.var.db, {
-						userId: c.var.user.id,
+						ownerId: c.var.ownerId,
 						resourceName: roomId,
 						doName: name,
 					}),
@@ -122,7 +123,7 @@ export function createRoomsApp(): Hono<Env> {
 			const { data, storageBytes } = await room.getDoc();
 			c.var.afterResponse.push(
 				upsertDoInstance(c.var.db, {
-					userId: c.var.user.id,
+					ownerId: c.var.ownerId,
 					resourceName: roomId,
 					doName: name,
 					storageBytes,
@@ -156,7 +157,7 @@ export function createRoomsApp(): Hono<Env> {
 
 			c.var.afterResponse.push(
 				upsertDoInstance(c.var.db, {
-					userId: c.var.user.id,
+					ownerId: c.var.ownerId,
 					resourceName: roomId,
 					doName: name,
 					storageBytes,

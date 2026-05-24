@@ -45,7 +45,7 @@ export function createServer(opts: ServerOptions) {
 		rooms: createRoomsApp(),
 
 		/** /api/.../assets: public read + authed CRUD. */
-		assets: createAssetsApp(opts),
+		assets: createAssetsApp(),
 
 		/** /api/ai/chat: SSE streaming chat (no billing; wrap externally). */
 		ai: createAiApp(),

@@ -33,7 +33,6 @@
  * limit {@link MAX_ASSET_BYTES}.
  */
 
-import type { OwnershipMode } from '@epicenter/auth';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
@@ -43,7 +42,7 @@ import { defineErrors } from 'wellcrafted/error';
 import { MAX_ASSET_BYTES } from '../constants.js';
 import * as schema from '../db/schema/index.js';
 import { assetKey } from '../owner.js';
-import type { Env, ServerOptions } from '../types.js';
+import type { Env } from '../types.js';
 
 /**
  * 15-char alphanumeric ID generator, same spec as `generateGuid` in
@@ -94,12 +93,12 @@ function sanitizeFilename(name: string): string {
 /**
  * Authenticated asset CRUD surface, mounted under `/owners/:ownerId/assets`.
  *
- * Per-row filtering branches on `mode` because in personal mode the
- * partition is per-actor (filter by `userId === ownerId`) while in team
- * mode the partition is shared (no filter).
+ * Handlers are mode-blind: every row carries `owner_id`, every read filters
+ * by `c.var.ownerId`. In personal mode the partition value equals the
+ * signed-in user's id; in team mode it equals `TEAM_OWNER_ID`. The same
+ * filter is correct in both modes.
  */
-function createAssetAuthedRoutes(mode: OwnershipMode): Hono<Env> {
-	const isPersonal = mode === 'personal';
+function createAssetAuthedRoutes(): Hono<Env> {
 	return (
 		new Hono<Env>()
 			// POST / - Create (upload)
@@ -130,11 +129,6 @@ function createAssetAuthedRoutes(mode: OwnershipMode): Hono<Env> {
 						return c.json(AssetError.FileTooLarge({ size: file.size }), 413);
 					}
 
-					// The R2 key is the partition-prefixed `owners/<ownerId>/assets/<assetId>`.
-					// Personal mode: `owners/<userId>/assets/<assetId>`.
-					// Team mode:     `owners/team/assets/<assetId>`.
-					// Provenance (asset.userId) is still recorded for both modes so
-					// deletion via account-delete can find every object.
 					const assetId = generateGuid();
 					const r2Key = assetKey(c.var.ownerId, assetId);
 
@@ -149,7 +143,7 @@ function createAssetAuthedRoutes(mode: OwnershipMode): Hono<Env> {
 					try {
 						await c.var.db.insert(schema.asset).values({
 							id: assetId,
-							userId: c.var.user.id,
+							ownerId: c.var.ownerId,
 							contentType: file.type,
 							sizeBytes: file.size,
 							originalName: sanitizedFilename,
@@ -180,17 +174,12 @@ function createAssetAuthedRoutes(mode: OwnershipMode): Hono<Env> {
 					tags: ['assets'],
 				}),
 				async (c) => {
-					// Personal mode scopes by the actor (ownerId === userId in this
-					// mode). Team mode shares one partition, so no per-row filter.
-					const filter = isPersonal
-						? eq(schema.asset.userId, c.var.ownerId)
-						: undefined;
-					const query = c.var.db
+					const assets = await c.var.db
 						.select()
 						.from(schema.asset)
+						.where(eq(schema.asset.ownerId, c.var.ownerId))
 						.orderBy(desc(schema.asset.uploadedAt))
 						.limit(100);
-					const assets = await (filter ? query.where(filter) : query);
 					return c.json(assets);
 				},
 			)
@@ -202,15 +191,12 @@ function createAssetAuthedRoutes(mode: OwnershipMode): Hono<Env> {
 					tags: ['assets'],
 				}),
 				async (c) => {
-					const filter = isPersonal
-						? eq(schema.asset.userId, c.var.ownerId)
-						: undefined;
-					const query = c.var.db
+					const result = await c.var.db
 						.select({
 							total: sql<number>`COALESCE(SUM(${schema.asset.sizeBytes}), 0)`,
 						})
-						.from(schema.asset);
-					const result = await (filter ? query.where(filter) : query);
+						.from(schema.asset)
+						.where(eq(schema.asset.ownerId, c.var.ownerId));
 					const total = result[0]?.total ?? 0;
 					return c.json({ totalBytes: total });
 				},
@@ -225,17 +211,14 @@ function createAssetAuthedRoutes(mode: OwnershipMode): Hono<Env> {
 				async (c) => {
 					const { assetId } = c.req.param();
 
-					// Atomic lookup + delete. Personal mode scopes to the
-					// authenticated user; team mode trusts the URL alone.
-					const filter = isPersonal
-						? and(
-								eq(schema.asset.id, assetId),
-								eq(schema.asset.userId, c.var.ownerId),
-							)
-						: eq(schema.asset.id, assetId);
 					const [deleted] = await c.var.db
 						.delete(schema.asset)
-						.where(filter)
+						.where(
+							and(
+								eq(schema.asset.id, assetId),
+								eq(schema.asset.ownerId, c.var.ownerId),
+							),
+						)
 						.returning({ sizeBytes: schema.asset.sizeBytes });
 
 					if (!deleted) {
@@ -331,13 +314,13 @@ function createAssetPublicRoutes(): Hono<Env> {
 	);
 }
 
-export function createAssetsApp(opts: ServerOptions): Hono<Env> {
+export function createAssetsApp(): Hono<Env> {
 	const app = new Hono<Env>();
 
 	// Public read mounts first so the deployment's auth middleware (applied
 	// at the same prefix) does not intercept GETs for the capability URL.
 	app.route('/owners/:ownerId/assets', createAssetPublicRoutes());
-	app.route('/owners/:ownerId/assets', createAssetAuthedRoutes(opts.mode));
+	app.route('/owners/:ownerId/assets', createAssetAuthedRoutes());
 
 	return app;
 }

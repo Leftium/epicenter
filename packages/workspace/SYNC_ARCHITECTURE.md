@@ -17,7 +17,7 @@ import {
 } from '@epicenter/workspace';
 
 const collaboration = openCollaboration(ydoc, {
-    url: roomWsUrl({ baseURL, owner, guid: ydoc.guid, installationId }),
+    url: roomWsUrl({ baseURL, ownerId, guid: ydoc.guid, installationId }),
     waitFor: idb.whenLoaded,
     openWebSocket: auth.openWebSocket,
     onReconnectSignal: auth.onStateChange,
@@ -197,30 +197,30 @@ The recipient side is `runInboundDispatch`: the supervisor routes inbound text f
 
 ## URLs and routing
 
-A cloud document is owned by the authenticated user and addressed by its own `ydoc.guid`. The client builds the URL from `(baseURL, owner, guid, installationId)`:
+A cloud document is owned by the authenticated `OwnerId` and addressed by its own `ydoc.guid`. The client builds the URL from `(baseURL, ownerId, guid, installationId)`:
 
 ```ts
 roomWsUrl({
     baseURL: 'https://api.epicenter.so',
-    owner: { kind: 'personal', userId },
+    ownerId,
     guid: ydoc.guid,
     installationId,
 });
-// -> wss://api.epicenter.so/api/users/<userId>/rooms/<guid>?installationId=<id>
+// -> wss://api.epicenter.so/api/owners/<ownerId>/rooms/<guid>?installationId=<id>
 ```
 
-The relay takes the user from the auth token, validates `:userId === c.var.user.id` in personal mode, and builds the internal Durable Object name `users/${userId}/rooms/${room}`. There is no workspace lookup and no membership check at the relay layer: the route's auth middleware is the whole authorization story, because you cannot fail to be yourself.
+In personal mode `ownerId` equals the signed-in user's id; in team mode it is the literal `'team'`. The URL shape is uniform across both modes. The relay takes the user from the auth token, validates `:ownerId === c.var.user.id` in personal mode (the team mode skips that check), and builds the internal Durable Object name `owners/${ownerId}/rooms/${room}`. There is no workspace lookup and no membership check at the relay layer: the route's auth middleware is the whole authorization story, because you cannot fail to be yourself.
 
 This is the consumer Google Docs model and the first of three account layers, introduced over time:
 
-- **Layer 1 (this)**: personal content. `users/${userId}` owns the doc.
+- **Layer 1 (this)**: personal content. `owners/${ownerId}` owns the doc, where `ownerId === userId`.
 - **Layer 1.5 (future)**: sharing. A per-document ACL grants other users access; the owner's DO name does not change.
-- **Layer 2 (future)**: shared-drive content. An org owns a namespace so content survives a departing employee.
+- **Layer 2 (future)**: shared-drive content. A team deployment uses `ownerId === 'team'` so content survives a departing employee.
 - **Layer 3 (future)**: tenancy and billing. An organization groups user accounts for one invoice and admin policy; it never owns a document.
 
 `installationId` is appended as a query parameter (`?installationId=`) on every connect, including reconnects. It is a routing label stamped on the socket at upgrade, not an auth principal: the relay authorizes the room from the token, and within that room `installationId` only decides which socket dispatch is delivered to.
 
-`/rooms/:room` (team) and `/users/:userId/rooms/:room` (personal) are the cloud sync routes. Browser apps and the workspace daemon both build their URL with `roomWsUrl`.
+`/owners/:ownerId/rooms/:room` is the single cloud sync route shape (personal: `:ownerId` is the user id; team: `:ownerId === 'team'`). Browser apps and the workspace daemon both build their URL with `roomWsUrl`.
 
 ## Supervisor lifecycle
 

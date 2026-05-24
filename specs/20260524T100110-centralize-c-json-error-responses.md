@@ -147,7 +147,7 @@ apps/{opensidian,tab-manager}/src/lib/chat/chat-state.svelte.ts
 | Middleware wire-format change | 1 evidence | Accept the break: response body shifts from `{ name }` to `{ data: null, error: { name, message } }` | `defineErrors` factories return `Err(variant)` = `{ data: null, error: variant }`; passing the factory result through `c.json` produces the wellcrafted envelope. Verified by reading `packages/svelte-utils/src/create-ai-chat-fetch.ts:60-68` (already parses `body.error.name`) and grepping for production consumers of `'forbidden_origin'` / `'forbidden_owner_mismatch'`: only consumer is the middleware test file. Test updates from `body.name` to `body.error.name`. |
 | Custom error class bridge (`AiChatHttpError`) for the new namespaces | 3 taste | Defer: do not add `AssetHttpError` / `ApiHttpError` yet | The bridge exists only because TanStack AI's adapter rethrows generic `Error` and discards the parsed body. Regular `auth.fetch` callers can read `response.json()` and branch on `error.name` directly. Add a bridge only when an adapter forces one. |
 | Rename `'forbidden_origin'` and `'forbidden_owner_mismatch'` | 1 evidence | Yes, breaking rename to `'ForbiddenOrigin'` / `'OwnerMismatch'` | Only consumer is `require-origin-for-cookie-mutations.test.ts:30`. No production client switches on these strings (grepped repo-wide). |
-| `apps/api/src/billing-routes.ts` Autumn pass-through | 3 taste | Out of scope of this pass | The body is whatever Autumn returned (`autumnErr.body` is an opaque string from a third party). Wrapping it in `defineErrors` is a separate design decision about Autumn error translation. Flagged in Open Questions. |
+| `apps/api/src/billing-routes.ts` Autumn pass-through | 2 coherence | Translate at the route-level `onError` into a single `BillingError.ProviderRequestFailed({ statusCode, code, message })` variant living in `packages/constants/src/billing-errors.ts` | One variant by design: enumerating Autumn's full error catalog without grounding would be speculative type design. The `code` field preserves Autumn's machine-readable string so clients pattern-match without us inventing a taxonomy. Variant name avoids leaking the vendor ("Autumn") so a future direct-Stripe swap is not a client-visible rename. `instanceof AutumnError` replaces the duck-typed `as { statusCode?, body? }` cast; non-AutumnError throws bubble to the parent's default 500 handler. |
 | Lint rule to prevent regression | 3 taste | Add a custom ESLint rule **or** a grep-based CI check that bans `c.json({ name:` object literals | Without a guard the next author writes another ad-hoc one. Cheap to add; high leverage. |
 
 ### Class 3 keeps
@@ -163,6 +163,7 @@ apps/{opensidian,tab-manager}/src/lib/chat/chat-state.svelte.ts
 packages/constants/src/
 ├── ai-chat-errors.ts          [unchanged]
 ├── asset-errors.ts            [NEW: AssetError + StorageLimitExceeded]
+├── billing-errors.ts          [NEW: BillingError.ProviderRequestFailed]
 ├── request-guard-errors.ts    [NEW: RequestGuardError.{OwnerMismatch, ForbiddenOrigin}]
 └── ...                        [other constants files unchanged]
 
@@ -178,7 +179,7 @@ packages/server/src/
 
 apps/api/src/
 ├── autumn-gates.ts            [imports AiChatError + AssetError from constants]
-└── billing-routes.ts          [out of scope; see Open Questions]
+└── billing-routes.ts          [translates AutumnError -> BillingError.ProviderRequestFailed at onError]
 ```
 
 ### The one rule for the next author
@@ -264,12 +265,11 @@ Option 1 is consistent with every other `c.json(defineErrorsVariant, ...)` call 
 
 ### `apps/api/src/billing-routes.ts` Autumn passthrough
 
-```ts
-return c.json(body, autumnErr.statusCode as 400);
-return c.json({ message: autumnErr.body }, autumnErr.statusCode as 400);
-```
+Resolved in this pass. The route-level `onError` now narrows with `instanceof AutumnError` (publicly exported from `autumn-js`), normalizes `err.body` via a local `parseAutumnBody` helper (`{ code, message }` if JSON, raw string otherwise), and returns the wellcrafted envelope via a single `BillingError.ProviderRequestFailed({ statusCode, code, message })` variant. The previous `as 400` HTTP-status cast is replaced with `as ContentfulStatusCode` (the honest type for Autumn's runtime `number`).
 
-The first form forwards Autumn's response body unchanged (whatever shape it has). The second wraps Autumn's error string in `{ message }`. Neither uses `defineErrors`. This is a third-party translation problem, not an ad-hoc invention. Pulling it into scope means designing an `AutumnError` translation layer, which deserves its own spec. Out of scope here.
+One variant by design: enumerating Autumn's catalog without grounding would be speculative; the `code` field preserves Autumn's machine-readable string so clients pattern-match without us inventing a taxonomy. The variant deliberately avoids leaking the vendor name so a future direct-Stripe swap is not a client-visible rename.
+
+Non-AutumnError throws (e.g. `ConnectionError`, `RequestTimeoutError`, programming errors) rethrow and bubble to the parent app's default handler for a generic 500. This matches the previous behavior but is now explicit at the type level.
 
 ## Open Questions
 
@@ -301,7 +301,7 @@ The first form forwards Autumn's response body unchanged (whatever shape it has)
 
 - Keep `OAuthError` in `packages/server/src/auth/oauth-error.ts` for this PR (scope-creep refusal). Greenfield-consistent move target is `packages/constants/src/oauth-errors.ts`. Trade-off: one wire-format namespace lives in the wrong place after this PR. Revisit when: next time anyone edits the OAuth resource boundary, the close-reason format, or `OAuthError` itself.
 - Keep `RoomsTelemetryError` route-local in `packages/server/src/routes/rooms.ts`: never serialized; consumed only by `wellcrafted/logger`. Revisit when: any other module needs to switch on its name.
-- Keep `billing-routes.ts` Autumn passthrough untouched: it forwards a third-party response, not an invented shape. Trade-off: one location does not match the rule. Revisit when: a client needs to branch on Autumn-translated errors.
+- ~~Keep `billing-routes.ts` Autumn passthrough untouched.~~ Resolved: `billing-routes.ts` onError now uses `instanceof AutumnError` and translates to `BillingError.ProviderRequestFailed`. Trade-off accepted: one generic variant rather than an enumerated taxonomy we cannot ground. Revisit when: specific Autumn error codes need bespoke client UX (e.g. "Card declined" vs "Customer not found"), at which point add named variants and branch on Autumn's `code` field.
 
 ## Success Criteria
 

@@ -9,9 +9,12 @@
  * route that returns repo-owned data and satisfies its contract type.
  */
 
+import { BillingError } from '@epicenter/constants/billing-errors';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
+import { AutumnError } from 'autumn-js';
 import { Hono } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { createAutumn } from './autumn.js';
 import type { Env } from './autumn-gates.js';
 import type { ModelsResponse } from './billing-contract.js';
@@ -20,18 +23,45 @@ import { MODEL_CREDITS } from './model-costs.js';
 
 const billingRoutes = new Hono<Env>();
 
-// Catch Autumn SDK errors and return proper HTTP status codes instead of 500.
-billingRoutes.onError((err, c) => {
-	const autumnErr = err as { statusCode?: number; body?: string };
-	if (autumnErr.statusCode && autumnErr.body) {
-		try {
-			const body = JSON.parse(autumnErr.body);
-			return c.json(body, autumnErr.statusCode as 400);
-		} catch {
-			return c.json({ message: autumnErr.body }, autumnErr.statusCode as 400);
+/**
+ * Normalize Autumn's `AutumnError.body` (a raw HTTP body string) into the
+ * `{ code, message }` shape Autumn's own responses use. Non-JSON bodies
+ * fall through as `{ code: undefined, message: <raw body> }` so the
+ * upstream text is never silently dropped.
+ */
+function parseAutumnBody(body: string): {
+	code: string | undefined;
+	message: string;
+} {
+	try {
+		const parsed = JSON.parse(body) as unknown;
+		if (parsed && typeof parsed === 'object') {
+			const record = parsed as { code?: unknown; message?: unknown };
+			return {
+				code: typeof record.code === 'string' ? record.code : undefined,
+				message: typeof record.message === 'string' ? record.message : body,
+			};
 		}
+	} catch {
+		// fall through to raw body
 	}
-	throw err;
+	return { code: undefined, message: body };
+}
+
+// Translate Autumn SDK throws into the repo-wide wellcrafted error envelope.
+// Non-AutumnError throws (network failures, programming errors) bubble to the
+// parent app's default handler for a generic 500.
+billingRoutes.onError((err, c) => {
+	if (!(err instanceof AutumnError)) throw err;
+	const { code, message } = parseAutumnBody(err.body);
+	return c.json(
+		BillingError.ProviderRequestFailed({
+			statusCode: err.statusCode,
+			code,
+			message,
+		}),
+		err.statusCode as ContentfulStatusCode,
+	);
 });
 
 // ── Balance + subscription info ──────────────────────────────────────────

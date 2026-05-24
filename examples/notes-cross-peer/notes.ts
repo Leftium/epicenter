@@ -8,8 +8,8 @@
  * installationIds for the same workspace, so each peer hard-codes its own).
  */
 
-import type { OwnerId } from '@epicenter/auth';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
+import type { OwnerId } from '@epicenter/constants/identity';
 import {
 	attachTables,
 	defineMutation,

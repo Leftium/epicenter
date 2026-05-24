@@ -15,7 +15,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { PersistedAuth } from '../auth-types.js';
-import { asOwnerId, asUserId } from '../ids.js';
+import { asOwnerId } from '@epicenter/constants/identity';
+import { asUserId } from '../ids.js';
 import type { AuthFetch } from '../create-oauth-app-auth.js';
 import {
 	createMachineAuthClient,

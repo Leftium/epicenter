@@ -7,7 +7,8 @@
  * or from the literal `'team'` (in team mode), based on `opts.mode`.
  */
 
-import type { AuthUser, OwnerId } from '@epicenter/auth';
+import type { AuthUser } from '@epicenter/auth';
+import type { OwnerId } from '@epicenter/constants/identity';
 import type { ActionManifest } from '@epicenter/workspace';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { createAuth } from './auth/create-auth.js';

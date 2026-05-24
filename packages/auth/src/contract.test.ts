@@ -20,7 +20,8 @@ import type {
 	PersistedAuth,
 	PersistedAuthStorage,
 } from './index.js';
-import { asOwnerId, asUserId, createOAuthAppAuth } from './index.js';
+import { asOwnerId } from '@epicenter/constants/identity';
+import { asUserId, createOAuthAppAuth } from './index.js';
 
 const now = 1_000_000;
 

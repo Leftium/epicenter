@@ -1,7 +1,7 @@
+import type { OwnerId } from '@epicenter/constants/identity';
 import type { Keyring } from '@epicenter/encryption';
 import type { Result } from 'wellcrafted/result';
 import type { AuthError } from './auth-errors.js';
-import type { OwnerId } from './ids.js';
 
 /**
  * Current auth state for local-first workspace clients.

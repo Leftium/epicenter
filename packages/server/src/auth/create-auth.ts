@@ -1,4 +1,4 @@
-import { asOwnerId } from '@epicenter/auth';
+import { asOwnerId } from '@epicenter/constants/identity';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { eq } from 'drizzle-orm';

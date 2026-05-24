@@ -1,4 +1,4 @@
-import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/auth';
+import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/constants/identity';
 import { createMiddleware } from 'hono/factory';
 import type { Env, OwnershipMode } from '../types.js';
 

@@ -10,7 +10,7 @@
  * `'team'`.
  */
 
-import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/auth';
+import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/constants/identity';
 import { describe, expect, test } from 'bun:test';
 import { assetKey, doName } from './owner.js';
 

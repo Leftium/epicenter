@@ -14,10 +14,4 @@ export {
 	type PersistedAuthStorage,
 } from './create-oauth-app-auth.js';
 export { createTestAuth } from './create-test-auth.js';
-export {
-	asOwnerId,
-	asUserId,
-	OwnerId,
-	TEAM_OWNER_ID,
-	UserId,
-} from './ids.js';
+export { asUserId, UserId } from './ids.js';

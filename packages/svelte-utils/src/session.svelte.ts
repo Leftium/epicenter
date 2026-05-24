@@ -1,4 +1,5 @@
-import type { AuthClient, AuthState, OwnerId } from '@epicenter/auth';
+import type { AuthClient, AuthState } from '@epicenter/auth';
+import type { OwnerId } from '@epicenter/constants/identity';
 
 type SignedInState = Extract<AuthState, { status: 'signed-in' }>;
 type Keyring = SignedInState['keyring'];

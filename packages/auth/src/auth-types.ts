@@ -1,6 +1,7 @@
+import { OwnerId } from '@epicenter/constants/identity';
 import { Keyring } from '@epicenter/encryption';
 import { type } from 'arktype';
-import { OwnerId, UserId } from './ids.js';
+import { UserId } from './ids.js';
 
 export const AuthUser = type({
 	'+': 'delete',

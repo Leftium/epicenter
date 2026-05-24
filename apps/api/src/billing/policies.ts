@@ -69,7 +69,7 @@ export const chargeAiCreditsWithAutumn = createMiddleware<Env>(
 
 		const billing = createBillingService(c.env, {
 			userId: c.var.user.id,
-			userEmail: c.var.user.email ?? null,
+			userEmail: c.var.user.email,
 		});
 
 		const { data: guardAllow, error: guardError } = await billing.guardAiChat({
@@ -95,19 +95,19 @@ export const chargeAiCreditsWithAutumn = createMiddleware<Env>(
 export const trackAssetStorageWithAutumn = createMiddleware<Env>(
 	async (c, next) => {
 		const method = c.req.method;
-		const billing = createBillingService(c.env, {
-			userId: c.var.user.id,
-			userEmail: c.var.user.email ?? null,
-		});
 
 		if (method === 'POST') {
 			const parsed = await c.req.parseBody({ all: false }).catch(() => null);
 			const file = parsed?.file;
 			if (!(file instanceof File)) {
-				// Library will return 400 for missing-file; nothing to gate.
+				// Library will return 400 for missing-file; nothing to charge.
 				return next();
 			}
 
+			const billing = createBillingService(c.env, {
+				userId: c.var.user.id,
+				userEmail: c.var.user.email,
+			});
 			const { error: guardError } = await billing.guardAssetUpload(file.size);
 			// guardAssetUpload only emits StorageLimitExceeded, which is 402.
 			if (guardError) {
@@ -128,6 +128,10 @@ export const trackAssetStorageWithAutumn = createMiddleware<Env>(
 			const sizeHeader = c.res.headers.get('x-deleted-size-bytes');
 			const size = sizeHeader ? Number.parseInt(sizeHeader, 10) : null;
 			if (size == null || Number.isNaN(size)) return;
+			const billing = createBillingService(c.env, {
+				userId: c.var.user.id,
+				userEmail: c.var.user.email,
+			});
 			c.var.afterResponse.push(billing.releaseAssetStorage(size));
 			return;
 		}

@@ -47,14 +47,14 @@ import { Ok, type Result } from 'wellcrafted/result';
 
 type Identity = {
 	userId: UserId;
-	userEmail: string | null;
+	/** AuthUser.email is always a string (Better Auth guarantee); no
+	 *  null coercion needed at the boundary. */
+	userEmail: string;
 };
 
 // ---------------------------------------------------------------------
 // Construction
 // ---------------------------------------------------------------------
-
-export type BillingService = ReturnType<typeof createBillingService>;
 
 /**
  * Build a per-request billing service.
@@ -77,7 +77,7 @@ export function createBillingService(
 	async function loadCustomer() {
 		return autumn.customers.getOrCreate({
 			customerId: identity.userId,
-			email: identity.userEmail ?? undefined,
+			email: identity.userEmail,
 			expand: ['subscriptions.plan', 'balances.feature'],
 		});
 	}
@@ -142,7 +142,7 @@ export function createBillingService(
 		// auto-enable free plan before we check it.
 		await autumn.customers.getOrCreate({
 			customerId: identity.userId,
-			email: identity.userEmail ?? undefined,
+			email: identity.userEmail,
 		});
 
 		const { allowed } = await autumn.check({
@@ -355,10 +355,12 @@ export function createBillingService(
 		return { events };
 	}
 
-	async function previewPlanChange(planId: string): Promise<PlanChangePreview> {
+	async function previewPlanChange(input: {
+		planId: string;
+	}): Promise<PlanChangePreview> {
 		const preview = await autumn.billing.previewAttach({
 			customerId: identity.userId,
-			planId,
+			planId: input.planId,
 		});
 		// Autumn returns `total` in cents.
 		const prorationAmountUsd = (preview.total ?? 0) / 100;

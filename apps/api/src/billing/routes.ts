@@ -112,10 +112,7 @@ billingRoutes.get('/models', (c) => {
 billingRoutes.post(
 	'/preview',
 	sValidator('json', previewPlanSchema),
-	async (c) => {
-		const { planId } = c.req.valid('json');
-		return c.json(await svc(c).previewPlanChange(planId));
-	},
+	async (c) => c.json(await svc(c).previewPlanChange(c.req.valid('json'))),
 );
 
 billingRoutes.post(

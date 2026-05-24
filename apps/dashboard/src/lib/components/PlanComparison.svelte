@@ -14,7 +14,6 @@
 
 	let isAnnual = $state(false);
 	let confirmDialog = $state<{ card: BillingPlanCard } | null>(null);
-	let previewSummary = $state<string | null>(null);
 
 	const overview = createQuery(() => billing.overview.options);
 	const plans = createQuery(() => billing.plans.options);
@@ -43,14 +42,14 @@
 	);
 	const checkoutMutation = createMutation(() => billing.checkoutPlan.options);
 
+	const previewSummary = $derived(
+		previewMutation.data?.displayedSummary ?? null,
+	);
+
 	function handleUpgradeClick(card: BillingPlanCard) {
 		confirmDialog = { card };
-		previewSummary = null;
-		previewMutation.mutate(card.id, {
-			onSuccess: (data) => {
-				previewSummary = data.displayedSummary;
-			},
-		});
+		previewMutation.reset();
+		previewMutation.mutate({ planId: card.id });
 	}
 </script>
 

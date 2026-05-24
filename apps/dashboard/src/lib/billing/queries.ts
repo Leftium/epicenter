@@ -59,7 +59,8 @@ export const billing = {
 
 	previewPlanChange: defineMutation({
 		mutationKey: [...billingKeys.all, 'preview'] as const,
-		mutationFn: (planId: string) => billingApi.previewPlanChange({ planId }),
+		mutationFn: (params: { planId: string }) =>
+			billingApi.previewPlanChange(params),
 	}),
 
 	checkoutPlan: defineMutation({

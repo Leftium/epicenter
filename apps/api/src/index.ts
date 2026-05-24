@@ -84,8 +84,5 @@ app.on(
 // Legacy redirect: /billing -> /dashboard.
 app.get('/billing', (c) => c.redirect('/dashboard'));
 
-/** App type for hc<AppType> in the dashboard. */
-export type AppType = typeof app;
-
 export default app;
 export { Room };

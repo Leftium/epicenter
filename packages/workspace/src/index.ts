@@ -15,13 +15,14 @@
  *   attachRichText,
  *   attachTables,
  *   createDisposableCache,
- *   createInstallationId,
+ *   createDeviceId,
  *   defineTable,
  *   docGuid,
  *   openCollaboration,
  *   roomWsUrl,
  * } from '@epicenter/workspace';
- * import type { AuthClient, OwnerId } from '@epicenter/auth';
+ * import type { AuthClient } from '@epicenter/auth';
+ * import type { OwnerId } from '@epicenter/constants/identity';
  * import { type } from 'arktype';
  * import * as Y from 'yjs';
  *
@@ -29,16 +30,16 @@
  * declare const auth: AuthClient;
  * declare const ownerId: OwnerId;
  *
- * const installationId = createInstallationId({ storage: localStorage });
+ * const deviceId = createDeviceId({ storage: localStorage });
  *
  * // A cloud doc is owned by the authenticated `ownerId` and addressed by its
- * // Y.Doc guid: `roomWsUrl({ baseURL, ownerId, guid, installationId })` builds the
+ * // Y.Doc guid: `roomWsUrl({ baseURL, ownerId, guid, deviceId })` builds the
  * // partitioned room URL the server expects.
  * const ydoc = new Y.Doc({ guid: 'notes' });
  * const tables = attachTables(ydoc, { posts });
  * const idb = attachIndexedDb(ydoc);
  * const collaboration = openCollaboration(ydoc, {
- *   url: roomWsUrl({ baseURL: auth.baseURL, ownerId, guid: ydoc.guid, installationId }),
+ *   url: roomWsUrl({ baseURL: auth.baseURL, ownerId, guid: ydoc.guid, deviceId }),
  *   openWebSocket: auth.openWebSocket,
  *   onReconnectSignal: auth.onStateChange,
  *   waitFor: idb.whenLoaded,
@@ -64,7 +65,7 @@
  *         baseURL: auth.baseURL,
  *         ownerId,
  *         guid: bodyYdoc.guid,
- *         installationId,
+ *         deviceId,
  *       }),
  *       openWebSocket: auth.openWebSocket,
  *       onReconnectSignal: auth.onStateChange,
@@ -100,13 +101,15 @@ export {
 } from './shared/actions';
 
 // ════════════════════════════════════════════════════════════════════════════
-// INSTALLATION IDENTITY
+// DEVICE IDENTITY
 // ════════════════════════════════════════════════════════════════════════════
 
 export {
-	createInstallationId,
-	createInstallationIdAsync,
-} from './document/installation-id.js';
+	asDeviceId,
+	createDeviceId,
+	createDeviceIdAsync,
+	DeviceId,
+} from './document/device-id.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // PROJECT CONFIG (browser-safe surface)
@@ -189,7 +192,7 @@ export {
 export type { PresenceDevice } from './document/presence-protocol.js';
 // Transport URL builder.
 //
-// `roomWsUrl({ baseURL, ownerId, guid, installationId })` builds the WebSocket
+// `roomWsUrl({ baseURL, ownerId, guid, deviceId })` builds the WebSocket
 // URL for the partitioned `/api/owners/:ownerId/rooms/:roomId` endpoint. The
 // same single URL form is used in both personal and team modes. Both browser
 // apps and the daemon use this one builder.

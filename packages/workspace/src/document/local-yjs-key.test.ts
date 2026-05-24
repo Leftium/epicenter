@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/auth';
+import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/constants/identity';
 import { createOwnedYjsKey, getOwnedYjsPrefix } from './local-yjs-key.js';
 
 const SERVER = 'api.epicenter.so';

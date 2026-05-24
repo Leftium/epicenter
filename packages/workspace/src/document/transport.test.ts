@@ -8,11 +8,12 @@
  * - `guid` is `encodeURIComponent`-encoded.
  * - Trailing slashes on `baseURL` are stripped.
  * - `http` origins become `ws`; `https` origins become `wss`.
- * - `installationId` is appended as a query parameter.
+ * - `deviceId` is appended as a query parameter.
  */
 
 import { describe, expect, test } from 'bun:test';
-import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/auth';
+import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/constants/identity';
+import { asDeviceId } from './device-id.js';
 import { roomWsUrl } from './transport.js';
 
 describe('roomWsUrl', () => {
@@ -22,10 +23,10 @@ describe('roomWsUrl', () => {
 				baseURL: 'https://api.example.com',
 				ownerId: asOwnerId('alice'),
 				guid: 'epicenter.fuji',
-				installationId: 'client-1',
+				deviceId: asDeviceId('client-1'),
 			}),
 		).toBe(
-			'wss://api.example.com/api/owners/alice/rooms/epicenter.fuji?installationId=client-1',
+			'wss://api.example.com/api/owners/alice/rooms/epicenter.fuji?deviceId=client-1',
 		);
 	});
 
@@ -35,10 +36,10 @@ describe('roomWsUrl', () => {
 				baseURL: 'https://team.example.com',
 				ownerId: TEAM_OWNER_ID,
 				guid: 'epicenter.fuji',
-				installationId: 'client-1',
+				deviceId: asDeviceId('client-1'),
 			}),
 		).toBe(
-			'wss://team.example.com/api/owners/team/rooms/epicenter.fuji?installationId=client-1',
+			'wss://team.example.com/api/owners/team/rooms/epicenter.fuji?deviceId=client-1',
 		);
 	});
 
@@ -48,10 +49,10 @@ describe('roomWsUrl', () => {
 				baseURL: 'https://api.example.com/',
 				ownerId: TEAM_OWNER_ID,
 				guid: 'a/b?c#d',
-				installationId: 'client-1',
+				deviceId: asDeviceId('client-1'),
 			}),
 		).toBe(
-			'wss://api.example.com/api/owners/team/rooms/a%2Fb%3Fc%23d?installationId=client-1',
+			'wss://api.example.com/api/owners/team/rooms/a%2Fb%3Fc%23d?deviceId=client-1',
 		);
 	});
 
@@ -61,10 +62,10 @@ describe('roomWsUrl', () => {
 				baseURL: 'http://localhost:8787',
 				ownerId: TEAM_OWNER_ID,
 				guid: 'epicenter.fuji',
-				installationId: 'client-1',
+				deviceId: asDeviceId('client-1'),
 			}),
 		).toBe(
-			'ws://localhost:8787/api/owners/team/rooms/epicenter.fuji?installationId=client-1',
+			'ws://localhost:8787/api/owners/team/rooms/epicenter.fuji?deviceId=client-1',
 		);
 	});
 });

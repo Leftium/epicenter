@@ -20,7 +20,7 @@
  * @module
  */
 
-import type { OwnerId } from '@epicenter/auth';
+import type { OwnerId } from '@epicenter/constants/identity';
 import { clearDocument } from 'y-indexeddb';
 import { getOwnedYjsPrefix } from './local-yjs-key.js';
 

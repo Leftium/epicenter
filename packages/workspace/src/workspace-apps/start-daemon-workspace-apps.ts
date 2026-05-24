@@ -13,7 +13,8 @@
  */
 
 import { resolve } from 'node:path';
-import type { AuthClient, OwnerId } from '@epicenter/auth';
+import type { AuthClient } from '@epicenter/auth';
+import type { OwnerId } from '@epicenter/constants/identity';
 import type { Keyring } from '@epicenter/encryption';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 
@@ -23,6 +24,7 @@ import type {
 } from '../daemon/define-workspace.js';
 import type { StartedDaemonRoute } from '../daemon/index.js';
 import { validateDaemonRouteNames } from '../daemon/route-validation.js';
+import { asDeviceId } from '../document/device-id.js';
 import { hashYDocClientId } from '../shared/client-id.js';
 import type { ProjectDir } from '../shared/types.js';
 import { WorkspaceAppError } from './errors.js';
@@ -114,7 +116,7 @@ async function openOneDaemonRoute({
 		projectDir,
 		route,
 		yDocClientId: hashYDocClientId(projectDir),
-		installationId: `${route}-daemon`,
+		deviceId: asDeviceId(`${route}-daemon`),
 		ownerId,
 		keyring: createDaemonKeyringReader({ auth, route }),
 		// `auth.openWebSocket` / `auth.onStateChange` are closure-based on

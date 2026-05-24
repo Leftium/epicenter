@@ -22,7 +22,7 @@
  * @module
  */
 
-import type { OwnerId } from '@epicenter/auth';
+import type { OwnerId } from '@epicenter/constants/identity';
 import type { Keyring } from '@epicenter/encryption';
 import type * as Y from 'yjs';
 import { attachBroadcastChannel } from './attach-broadcast-channel.js';

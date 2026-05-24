@@ -14,7 +14,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { asOwnerId, type AuthClient } from '@epicenter/auth';
+import type { AuthClient } from '@epicenter/auth';
+import { asOwnerId } from '@epicenter/constants/identity';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import type {
 	DaemonWorkspaceContext,

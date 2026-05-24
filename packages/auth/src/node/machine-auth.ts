@@ -33,7 +33,6 @@ import type { AuthClient } from '../auth-contract.js';
 import {
 	ApiSessionResponse,
 	PersistedAuth,
-	type PersistedAuth as PersistedAuthType,
 	type UserId,
 } from '../auth-types.js';
 import {
@@ -130,7 +129,7 @@ async function loadMachineTokens({
 }: {
 	filePath: string;
 	log: Logger;
-}): Promise<Result<PersistedAuthType | null, MachineAuthStorageError>> {
+}): Promise<Result<PersistedAuth | null, MachineAuthStorageError>> {
 	const stat = await tryAsync({
 		try: () => fs.stat(filePath),
 		catch: (cause) => MachineAuthStorageError.StorageFailed({ cause }),
@@ -175,7 +174,7 @@ async function loadMachineTokens({
  * crash mid-write never leaves a half-written file. Private to this module.
  */
 async function saveMachineTokens(
-	value: PersistedAuthType | null,
+	value: PersistedAuth | null,
 	{ filePath }: { filePath: string },
 ): Promise<Result<undefined, MachineAuthStorageError>> {
 	return tryAsync({
@@ -345,8 +344,7 @@ export async function status({
 	let response: Response;
 	try {
 		response = await client.fetch('/api/session');
-	} catch (cause) {
-		void cause;
+	} catch {
 		return Ok({
 			status: 'unverified' as const,
 			identity: {

@@ -13,7 +13,7 @@ import { AuthError } from './auth-errors.js';
 import {
 	ApiSessionResponse,
 	type OAuthTokenGrant,
-	type PersistedAuth as PersistedAuthType,
+	type PersistedAuth,
 } from './auth-types.js';
 import { parseOAuthTokenGrant } from './oauth-token-response.js';
 
@@ -25,8 +25,8 @@ import { parseOAuthTokenGrant } from './oauth-token-response.js';
  * acceptable.
  */
 export type PersistedAuthStorage = {
-	get(): PersistedAuthType | null;
-	set(value: PersistedAuthType | null): void | Promise<void>;
+	get(): PersistedAuth | null;
+	set(value: PersistedAuth | null): void | Promise<void>;
 };
 
 export type OAuthSignInLauncher = {
@@ -78,17 +78,17 @@ type RuntimeAuthState =
 	| { status: 'signed-out' }
 	| {
 			status: 'signed-in';
-			persistedAuth: PersistedAuthType;
+			persistedAuth: PersistedAuth;
 			networkAccess: NetworkAccess;
 	  };
 
 type RefreshFlight = {
-	persistedAuth: PersistedAuthType;
+	persistedAuth: PersistedAuth;
 	promise: Promise<boolean>;
 };
 
 type IdentityVerificationFlight = {
-	persistedAuth: PersistedAuthType;
+	persistedAuth: PersistedAuth;
 	promise: Promise<ApiSessionRequestResult>;
 };
 
@@ -181,7 +181,7 @@ export function createOAuthAppAuth({
 					userId: startedFrom.userId,
 					ownerId: startedFrom.ownerId,
 					keyring: startedFrom.keyring,
-				} satisfies PersistedAuthType;
+				} satisfies PersistedAuth;
 				await authSession.write(next);
 				if (authSession.persistedAuth !== startedFrom) return false;
 				authSession.installUnverified(next);
@@ -238,7 +238,7 @@ export function createOAuthAppAuth({
 	 * auth share the in-flight promise.
 	 */
 	async function verifyPersistedAuthForNetwork(
-		startedFrom: PersistedAuthType,
+		startedFrom: PersistedAuth,
 	): Promise<ApiSessionRequestResult> {
 		if (identityVerificationFlight?.persistedAuth === startedFrom) {
 			return identityVerificationFlight.promise;
@@ -270,7 +270,7 @@ export function createOAuthAppAuth({
 					userId: session.user.id,
 					ownerId: session.ownerId,
 					keyring: session.keyring,
-				} satisfies PersistedAuthType;
+				} satisfies PersistedAuth;
 				await authSession.write(next);
 				if (authSession.persistedAuth !== startedFrom) return Ok(session);
 				authSession.installVerified(next);
@@ -367,7 +367,7 @@ export function createOAuthAppAuth({
 			userId: session.user.id,
 			ownerId: session.ownerId,
 			keyring: session.keyring,
-		} satisfies PersistedAuthType;
+		} satisfies PersistedAuth;
 		await authSession.write(next);
 		if (!isCurrentSignIn(generation)) return Ok(undefined);
 		authSession.installVerified(next);
@@ -455,7 +455,7 @@ function createAuthSessionRuntime({
 	persistedAuthStorage,
 	log,
 }: {
-	initialPersistedAuth: PersistedAuthType | null;
+	initialPersistedAuth: PersistedAuth | null;
 	persistedAuthStorage: PersistedAuthStorage;
 	log: Logger;
 }) {
@@ -484,7 +484,7 @@ function createAuthSessionRuntime({
 		}
 	}
 
-	async function write(value: PersistedAuthType | null) {
+	async function write(value: PersistedAuth | null) {
 		const pendingWrite = storageWriteQueue.then(() =>
 			persistedAuthStorage.set(value),
 		);
@@ -496,7 +496,7 @@ function createAuthSessionRuntime({
 		get state() {
 			return publicState;
 		},
-		get persistedAuth(): PersistedAuthType | null {
+		get persistedAuth(): PersistedAuth | null {
 			return runtimeState.status === 'signed-out'
 				? null
 				: runtimeState.persistedAuth;
@@ -507,7 +507,7 @@ function createAuthSessionRuntime({
 				runtimeState.networkAccess === 'paused'
 			);
 		},
-		get verifiedPersistedAuth(): PersistedAuthType | null {
+		get verifiedPersistedAuth(): PersistedAuth | null {
 			if (runtimeState.status === 'signed-out') return null;
 			if (runtimeState.networkAccess !== 'verified') return null;
 			return runtimeState.persistedAuth;
@@ -518,7 +518,7 @@ function createAuthSessionRuntime({
 				stateChangeListeners.delete(fn);
 			};
 		},
-		installUnverified(persistedAuth: PersistedAuthType) {
+		installUnverified(persistedAuth: PersistedAuth) {
 			runtimeState = {
 				status: 'signed-in',
 				persistedAuth,
@@ -526,7 +526,7 @@ function createAuthSessionRuntime({
 			};
 			publishState();
 		},
-		installVerified(persistedAuth: PersistedAuthType) {
+		installVerified(persistedAuth: PersistedAuth) {
 			runtimeState = {
 				status: 'signed-in',
 				persistedAuth,
@@ -542,7 +542,7 @@ function createAuthSessionRuntime({
 			};
 			publishState();
 		},
-		async write(value: PersistedAuthType | null) {
+		async write(value: PersistedAuth | null) {
 			await write(value);
 		},
 		async clear() {

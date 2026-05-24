@@ -19,6 +19,7 @@ import {
 	defineMutation,
 	defineTable,
 	docGuid,
+	generateId,
 	type InferTableRow,
 	type Tables,
 } from '@epicenter/workspace';
@@ -45,6 +46,9 @@ export type NoteId = typeof NoteId.infer;
  */
 export const asNoteId = (value: string): NoteId => value as NoteId;
 
+/** Generate a unique {@link NoteId} for a new note row. */
+export const generateNoteId = (): NoteId => generateId<NoteId>();
+
 /**
  * Branded folder ID: nanoid generated when a folder is created.
  *
@@ -59,6 +63,9 @@ export type FolderId = typeof FolderId.infer;
  * The only place in the codebase where `as FolderId` should appear.
  */
 export const asFolderId = (value: string): FolderId => value as FolderId;
+
+/** Generate a unique {@link FolderId} for a new folder row. */
+export const generateFolderId = (): FolderId => generateId<FolderId>();
 
 // ─── Tables ───────────────────────────────────────────────────────────────────
 

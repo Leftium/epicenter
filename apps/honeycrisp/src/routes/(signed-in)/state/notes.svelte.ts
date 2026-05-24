@@ -20,9 +20,13 @@
  * ```
  */
 
-import type { FolderId, NoteId } from '@epicenter/honeycrisp';
+import {
+	type FolderId,
+	generateNoteId,
+	type NoteId,
+} from '@epicenter/honeycrisp';
 import { fromTable } from '@epicenter/svelte';
-import { DateTimeString, generateId } from '@epicenter/workspace';
+import { DateTimeString } from '@epicenter/workspace';
 import type { HoneycrispBrowser } from '../../../../browser';
 import type { createFolders } from './folders.svelte';
 import { searchParams } from './search-params.svelte';
@@ -98,7 +102,7 @@ export function createNotes({
 		 * ```
 		 */
 		create(folderId?: FolderId | null) {
-			const id = generateId() as NoteId;
+			const id = generateNoteId();
 			honeycrisp.tables.notes.set({
 				id,
 				folderId: folderId ?? undefined,

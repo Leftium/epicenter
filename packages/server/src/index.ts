@@ -37,7 +37,7 @@ export { requireUrlOwnerIdMatchesAuth } from './middleware/require-url-owner-id-
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.
 export { Room } from './room/backends/cloudflare/durable-object.js';
 
-// Public configuration surface. `Env` is the Hono context type the
-// deployment composes around library middleware; `OwnershipMode` and
-// `SignUpPolicy` are the values factories read.
-export type { Env, OwnershipMode, SignUpPolicy } from './types.js';
+// Public Hono context type the deployment composes around library
+// middleware. `OwnershipMode` and `SignUpPolicy` stay internal: factories
+// accept the literal values directly.
+export type { Env } from './types.js';

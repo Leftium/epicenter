@@ -24,9 +24,11 @@ export function openZhongwenDaemon({
 }: DaemonWorkspaceContext) {
 	const ydoc = new Y.Doc({ guid: ZHONGWEN_ID, gc: true });
 	ydoc.clientID = yDocClientId;
-	const encryption = attachEncryption(ydoc, { keyring });
-	encryption.attachTables(zhongwenTables);
-	encryption.attachKv(zhongwenKv);
+	attachEncryption(ydoc, {
+		keyring,
+		tables: zhongwenTables,
+		kv: zhongwenKv,
+	});
 
 	return attachDaemonInfrastructure(ydoc, {
 		projectDir,

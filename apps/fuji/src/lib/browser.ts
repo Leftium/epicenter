@@ -46,9 +46,11 @@ export function openFujiBrowser({
 	deviceId: DeviceId;
 }) {
 	const ydoc = new Y.Doc({ guid: FUJI_ID, gc: true });
-	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
-	const tables = encryption.attachTables(fujiTables);
-	const kv = encryption.attachKv({});
+	const { tables, kv } = attachEncryption(ydoc, {
+		keyring: signedIn.keyring,
+		tables: fujiTables,
+		kv: {},
+	});
 	const actions = createFujiActions(tables);
 
 	const idb = attachLocalStorage(ydoc, {

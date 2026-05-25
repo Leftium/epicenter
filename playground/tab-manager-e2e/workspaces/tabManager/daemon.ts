@@ -39,9 +39,11 @@ export default defineWorkspace({
 	}) {
 		const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
 		ydoc.clientID = yDocClientId;
-		const encryption = attachEncryption(ydoc, { keyring });
-		const tables = encryption.attachTables(tabManagerTables);
-		const kv = encryption.attachKv({});
+		const { tables, kv } = attachEncryption(ydoc, {
+			keyring,
+			tables: tabManagerTables,
+			kv: {},
+		});
 
 		const persistence = attachYjsLog(ydoc, {
 			filePath: yjsPath(projectDir, WORKSPACE_ID),

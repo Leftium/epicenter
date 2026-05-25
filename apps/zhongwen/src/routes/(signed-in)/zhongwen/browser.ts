@@ -34,9 +34,11 @@ export function openZhongwenBrowser({
 	deviceId: DeviceId;
 }) {
 	const ydoc = new Y.Doc({ guid: ZHONGWEN_ID, gc: true });
-	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
-	const tables = encryption.attachTables(zhongwenTables);
-	const kv = encryption.attachKv(zhongwenKv);
+	const { tables, kv } = attachEncryption(ydoc, {
+		keyring: signedIn.keyring,
+		tables: zhongwenTables,
+		kv: zhongwenKv,
+	});
 
 	const idb = attachLocalStorage(ydoc, {
 		server: signedIn.server,

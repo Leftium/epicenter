@@ -49,9 +49,11 @@ async function openOpensidianPlayground({
 }: DaemonWorkspaceContext) {
 	const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
 	ydoc.clientID = yDocClientId;
-	const encryption = attachEncryption(ydoc, { keyring });
-	const tables = encryption.attachTables(opensidianTables);
-	const kv = encryption.attachKv({});
+	const { tables, kv } = attachEncryption(ydoc, {
+		keyring,
+		tables: opensidianTables,
+		kv: {},
+	});
 
 	const persistence = attachYjsLog(ydoc, {
 		filePath: yjsPath(projectDir, WORKSPACE_ID),

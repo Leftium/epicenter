@@ -47,9 +47,11 @@ export function openHoneycrispDaemon({
 }: DaemonWorkspaceContext) {
 	const ydoc = new Y.Doc({ guid: HONEYCRISP_ID, gc: true });
 	ydoc.clientID = yDocClientId;
-	const encryption = attachEncryption(ydoc, { keyring });
-	const tables = encryption.attachTables(honeycrispTables);
-	encryption.attachKv({});
+	const { tables } = attachEncryption(ydoc, {
+		keyring,
+		tables: honeycrispTables,
+		kv: {},
+	});
 	const actions = createHoneycrispActions(tables);
 
 	attachBunSqliteMaterializer(ydoc, {

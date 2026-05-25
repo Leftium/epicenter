@@ -29,8 +29,9 @@ export type Keyring = typeof Keyring.infer;
  * Per-workspace HKDF keyring derived locally from a `Keyring`.
  *
  * Each entry maps a key version to the raw 32-byte workspace key derived via
- * `deriveWorkspaceKey(keyBytes, workspaceId)`. The map is rebuilt at every
- * `attachEncryption` site so workspace key bytes do not outlive the Y.Doc.
+ * `deriveWorkspaceKey(keyBytes, workspaceId)`. The map is rebuilt once per
+ * `createWorkspace({ keyring })` call so workspace key bytes do not outlive
+ * the Y.Doc.
  *
  * The version axis equals the version axis of the source `Keyring`: one
  * workspace key per keyring entry, never persisted.

@@ -47,7 +47,7 @@ import {
 	type RowOf,
 	type TableDefinition,
 	type VersionedColumns,
-} from './attach-table';
+} from './table';
 import type { ColumnError, FlatJsonTSchema } from './column/constraint';
 
 /**

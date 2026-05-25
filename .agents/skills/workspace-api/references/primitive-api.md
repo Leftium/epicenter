@@ -6,9 +6,11 @@ Read when composing any Y.Doc in the app: the top-level workspace doc, per-row c
 
 `.withDocument()` on tables was removed. Per-row content docs are now their own `createDisposableCache`, keyed on the row's content guid.
 
-## The Primitive: Just Y.Doc + attach\*
+## Two layers: the workspace bundle vs. per-row docs
 
-You construct a `Y.Doc` yourself and call `attach*` functions on it. `ydoc.destroy()` is the teardown. A builder closure returns the bundle:
+For an app's **top-level workspace**, you call `createWorkspace({ id, tables, kv, keyring? })` and it returns a fully assembled `Workspace` bundle: `{ ydoc, tables, kv, [Symbol.dispose] }`. Tables and KV are built in; encryption is opt-in via the `keyring` parameter. Persistence, broadcast, collaboration, and materializers attach **onto** that bundle (or onto `workspace.ydoc`).
+
+For **per-row content docs** (rich text, plain text, timeline) you still construct a `Y.Doc` directly and call `attach*` functions on it. `ydoc.destroy()` is the teardown. A builder closure returns the bundle:
 
 ```typescript
 import {
@@ -49,11 +51,51 @@ Consumers await readiness through the attached subsystem (`handle.idb.whenLoaded
 
 Everything you need is in Yjs itself:
 
-- `new Y.Doc({ guid, gc: true })`: allocate a runtime workspace or content doc.
-- `ydoc.destroy()`: teardown (fires `'destroy'`; every `attach*` self-registers cleanup via `ydoc.on('destroy', ...)`).
+- `new Y.Doc({ guid, gc: true })`: allocate a runtime content doc (per-row). For a workspace, use `createWorkspace({ id, ... })` instead and it allocates the Y.Doc for you.
+- `ydoc.destroy()`: teardown (fires `'destroy'`; every `attach*` self-registers cleanup via `ydoc.on('destroy', ...)`). The workspace bundle's `[Symbol.dispose]()` calls this.
 - `onLocalUpdate(ydoc, fn)`: side effects triggered only by **local** transactions (e.g. bumping a parent row's `updatedAt`). Filters out remote sync updates so you don't loop.
 
 The builder is a plain function. For a cached, refcounted fan-out surface (shared handles, grace-period teardown), wrap it with `createDisposableCache`. See below.
+
+## The Workspace Factory: `createWorkspace`
+
+For the app's top-level workspace doc, never call `new Y.Doc` directly. Use `createWorkspace`:
+
+```typescript
+import { createWorkspace } from '@epicenter/workspace';
+import { honeycrispTables } from './definition';
+
+// Encrypted app: pass a `keyring` accessor.
+export function createHoneycrispWorkspace(opts: { keyring: () => Keyring }) {
+  return createWorkspace({
+    id: HONEYCRISP_ID,
+    keyring: opts.keyring,
+    tables: honeycrispTables,
+    kv: {},
+  });
+}
+
+// Plaintext app: omit `keyring` entirely.
+export function createWhisperingWorkspace() {
+  return createWorkspace({
+    id: 'whispering',
+    tables: whisperingTables,
+    kv: whisperingKv,
+  });
+}
+```
+
+`createWorkspace` returns `{ ydoc, tables, kv, [Symbol.dispose] }`. Tables and KV are already wired (encrypted when `keyring` is provided, plaintext otherwise). Other primitives attach onto the bundle's `ydoc`:
+
+```ts
+const workspace   = createHoneycrispWorkspace({ keyring: signedIn.keyring });
+const actions     = createHoneycrispActions(workspace);     // takes the bundle
+const idb         = attachLocalStorage(workspace.ydoc, {...});
+const collab      = openCollaboration(workspace.ydoc, {...});
+attachBunSqliteMaterializer(workspace, {...});              // materializers take the bundle
+```
+
+Only the three **materializers** (`attachBunSqliteMaterializer`, `attachTursoMaterializer`, `attachMarkdownMaterializer`) take the `Workspace` bundle. Every other primitive (persistence, broadcast, IDB, log, `openCollaboration`, `attachDaemonInfrastructure`) still takes `(ydoc, options)`; callers pass `workspace.ydoc`.
 
 ## Attach Helpers
 
@@ -65,43 +107,31 @@ Each helper takes a `Y.Doc` and registers cleanup on `ydoc.on('destroy')`. Each 
 | `openCollaboration(ydoc, { url, openWebSocket?, replicaId, actions?, waitFor? })` | `{ whenConnected, status, onStatusChange, reconnect, whenDisposed, peers, dispatch }` |
 | `attachRichText(ydoc)` | `RichTextAttachment`: `{ read, write, binding: Y.XmlFragment }` |
 | `attachPlainText(ydoc)` | `PlainTextAttachment`: `{ read, write, binding: Y.Text }` |
-| `attachTable(ydoc, name, def)` | Typed row helper over `Y.Map` |
-| `attachKv(ydoc, defs)` | Typed KV helper |
+
+Tables and KV are no longer attached individually. They come from `createWorkspace({ tables, kv })` as `workspace.tables` and `workspace.kv`.
 
 `openCollaboration`'s `waitFor` gates the first connection attempt on another promise, typically `idb.whenLoaded`, so the first handshake exchanges only a delta, not the full document.
 
-> **`attach*` is NOT idempotent.** Hold the reference from the first call. Calling any `attach*` helper twice against the same `Y.Doc` + slot is a caller bug; the framework does not catch it. For observer-installing primitives (`attachTable`, `attachKv`, `attachEncryption`) double-attach silently installs duplicate observers, causing undefined behavior. One attach site per slot, one reference, held for the life of the `Y.Doc`.
+> **`attach*` is NOT idempotent.** Hold the reference from the first call. Calling any `attach*` helper twice against the same `Y.Doc` + slot is a caller bug; the framework does not catch it. Double-attach silently installs duplicate observers, causing undefined behavior. One attach site per slot, one reference, held for the life of the `Y.Doc`. (This is also why workspace tables/KV come from a single `createWorkspace` call rather than per-slot attach calls.)
 
-## Encrypted Variants (from `@epicenter/workspace`)
+## Encryption: the `keyring` parameter
 
-For workspaces that need at-rest encryption, the coordinator owns the sibling attachments as methods. There are no top-level `attachEncryptedX` exports.
-
-| Helper | Purpose |
-|---|---|
-| `attachEncryption(ydoc, { encryptionKeys })` | Per-ydoc encryption coordinator. Returns `{ attachTable, attachTables, attachKv, attachIndexedDb, ... }`. Reads `encryptionKeys()` synchronously at every registration site. Teardown is synchronous and cascades from `ydoc.destroy()`. |
-| `encryption.attachTable(name, def)` | Singular encrypted table; self-registers with the coordinator and is activated with the current keyring before being returned. |
-| `encryption.attachTables(defs)` | Batch sugar over `encryption.attachTable`. |
-| `encryption.attachKv(defs)` | Encrypted KV singleton. |
-| `encryption.attachIndexedDb(targetYdoc, { userId })` | Encrypted local IndexedDB persistence for a root or child Y.Doc. |
-
-Standard composition:
+Encryption is no longer a separate `attachEncryption` step. It's an optional `keyring` parameter on `createWorkspace`:
 
 ```ts
-const ydoc       = new Y.Doc({ guid: id, gc: true });
-const encryption = attachEncryption(ydoc, {
-	encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+const workspace = createWorkspace({
+  id: HONEYCRISP_ID,
+  keyring: () => requireSignedIn(auth).keyring,  // accessor: read at attach time
+  tables: honeycrispTables,
+  kv: {},
 });
-const tables     = encryption.attachTables(myTables);
-const kv         = encryption.attachKv(myKv);
 ```
 
-Keys are read through the `encryptionKeys` callback when an encrypted resource is attached. There is no separate `applyKeys` step: registration and activation happen in one call. Already-attached encrypted stores keep the keyring they derived at attach time; same-user key rotation needs a re-attach to affect those stores. `encryptionKeys()` should throw if no keys are available (for example, signed-out): a throw means the workspace outlived its signed-in scope, which is a caller bug. The `requireSignedIn(auth)` helper from `@epicenter/auth` does exactly that.
+When `keyring` is present, both `workspace.tables` and `workspace.kv` are wired through the encryption coordinator. When `keyring` is absent, they're plaintext. Pick one per workspace; there is no per-slot mixing.
 
-Encryption is opt-in per slot; the coordinator carries the intent. Plaintext `attachTable(ydoc, name, def)` (top-level) and encrypted `encryption.attachTable(name, def)` (method) are both available; pick one per slot.
+The `keyring` callback is read synchronously at attach time. It should throw if no keys are available (for example, signed-out): a throw means the workspace outlived its signed-in scope, which is a caller bug. The `requireSignedIn(auth)` helper from `@epicenter/auth` does exactly that. Same-user key rotation needs reconstructing the workspace to take effect on already-attached stores.
 
-> **Never mix plaintext and encrypted wrappers on the same slot name.** Yjs returns the same underlying `Y.Array` to `attachTable(ydoc, 'posts', ...)` and `encryption.attachTable('posts', ...)` because `ydoc.getArray('table:posts')` is idempotent. If both run, the plaintext wrapper writes plaintext into the same yarray the encrypted wrapper thinks it owns, a silent data-at-rest leak. The framework does not catch this; the grep-able call-site shape (`encryption.attach*` vs top-level `attach*`) is the defense. One slot name, one variant, one intent.
-
-IDB / broadcast / collaboration / sqlite transitively see already-encrypted bytes once encryption is registered. The Yjs update stream carries ciphertext blobs inside it. No additional encryption setup is needed at those transport layers.
+IDB / broadcast / collaboration / sqlite transitively see already-encrypted bytes once `keyring` is wired. The Yjs update stream carries ciphertext blobs inside it. No additional encryption setup is needed at those transport layers.
 
 ## Readiness Signals: Split, Don't Precompose
 
@@ -312,9 +342,11 @@ new Y.Doc({ guid, gc: true });
 new Y.Doc({ guid, gc: false });
 ```
 
-## One primitive for every doc
+## Two doc shapes
 
-There is no separate workspace/document split anymore. The app's top-level workspace doc is usually a direct `openX()` builder with `attachTables` + `attachKv` + persistence + `openCollaboration` inside. Per-row content docs use `createDisposableCache` with `attachRichText` / `attachPlainText` / `attachTimeline` + their own persistence + `openCollaboration`. Those are keyed by id and refcounted by the cache.
+The app's top-level workspace doc comes from `createWorkspace({ id, tables, kv, keyring? })` and exposes `{ ydoc, tables, kv, [Symbol.dispose] }`. Persistence, broadcast, collaboration, and materializers attach onto that bundle (materializers take the whole bundle; everything else takes `workspace.ydoc`).
+
+Per-row content docs are unchanged: `createDisposableCache` with `attachRichText` / `attachPlainText` / `attachTimeline` + their own persistence + `openCollaboration`. Those are keyed by id and refcounted by the cache.
 
 ## Code References
 

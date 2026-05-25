@@ -1,30 +1,23 @@
 /**
- * `attachKv()` — bind KV definitions to a Y.Doc.
+ * KV definition types and the `createKv` builder. `createWorkspace` (in
+ * `./workspace.ts`) consumes these to mount the KV slot onto a workspace
+ * root, applying encryption when a keyring is provided.
  *
- * Constructs an unencrypted `YKeyValueLww` on `ydoc.getArray('kv')` and
- * wraps it with a typed `Kv`. KV uses validate-or-default semantics:
- * invalid or missing values return the result of the definition's
- * `defaultValue()` factory.
+ * KV uses validate-or-default semantics: invalid or missing values return
+ * the result of the definition's `defaultValue()` factory.
  *
- * For encrypted storage, call `encryption.attachKv` on the coordinator
- * returned by `attachEncryption(ydoc, { keyring })`.
- *
- * `attachKv` and `createKv` accept an optional `{ logger? }`: when provided,
- * validation failures emit `logger.warn(KvError.ValidationFailed({ key, raw }))`
- * without changing the return contract. When omitted, behavior is silent.
+ * `createKv` accepts an optional `{ logger? }`: when provided, validation
+ * failures emit `logger.warn(KvError.ValidationFailed({ key, raw }))` without
+ * changing the return contract. When omitted, behavior is silent.
  */
 
 import { type Static, type TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Logger } from 'wellcrafted/logger';
-import type * as Y from 'yjs';
-import { KV_KEY } from './keys';
 import {
 	type KvStoreChange,
 	type ObservableKvStore,
-	YKeyValueLww,
-	type YKeyValueLwwEntry,
 } from './y-keyvalue/index';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -76,7 +69,7 @@ export type KvDefinitions = Record<
 	KvDefinition<any>
 >;
 
-/** Optional knobs for `attachKv` / `createKv`. */
+/** Optional knobs for `createKv`. */
 export type KvOptions = {
 	/**
 	 * Logger that captures validation failures via
@@ -94,23 +87,8 @@ export type Kv<TKvDefinitions extends KvDefinitions> = ReturnType<
 >;
 
 /**
- * Bind a record of KV definitions to a Y.Doc and return a typed Kv.
- */
-export function attachKv<TKvDefinitions extends KvDefinitions>(
-	ydoc: Y.Doc,
-	definitions: TKvDefinitions,
-	opts?: KvOptions,
-): Kv<TKvDefinitions> {
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(KV_KEY);
-	const ykv = new YKeyValueLww<unknown>(yarray);
-	ydoc.once('destroy', () => ykv[Symbol.dispose]());
-	return createKv(ykv, definitions, opts);
-}
-
-/**
- * Build a Kv helper over any `ObservableKvStore`. Exported so
- * `@epicenter/workspace` can reuse the helper logic over its encrypted
- * store wrapper.
+ * Build a Kv helper over any `ObservableKvStore`. Consumed by
+ * `createWorkspace` over both the plain and encrypted YKV stores.
  */
 export function createKv<TKvDefinitions extends KvDefinitions>(
 	ykv: ObservableKvStore<unknown>,

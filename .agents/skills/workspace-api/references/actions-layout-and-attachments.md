@@ -4,13 +4,15 @@ Detailed guidance for action factories, action return surfaces, JSDoc, workspace
 
 ## Actions
 
-Actions wrap table operations as `defineMutation` (writes) or `defineQuery` (reads). Build them in a small factory that closes over `tables` and `batch`, then attach the result to the bundle returned from your workspace builder.
+Actions wrap table operations as `defineMutation` (writes) or `defineQuery` (reads). Build them in a small factory that takes the `Workspace` bundle (from `createWorkspace`) and closes over `workspace.tables` and `workspace.ydoc.transact` as needed.
 
 ```typescript
-import { defineMutation, defineQuery } from '@epicenter/workspace';
+import { defineMutation, defineQuery, type Workspace } from '@epicenter/workspace';
 import { Type } from 'typebox';
 
-export function createBlogActions({ tables, batch }) {
+export function createBlogActions(workspace: Workspace<typeof blogTables>) {
+	const { tables, ydoc } = workspace;
+	const batch = (fn: () => void) => ydoc.transact(fn);
 	return {
 		/**
 		 * Mark a post as published and record the publication timestamp.
@@ -31,9 +33,9 @@ export function createBlogActions({ tables, batch }) {
 	};
 }
 
-// Inside openBlog() or a createDisposableCache(...) builder:
-//   const actions = createBlogActions({ tables, batch });
-//   return { id, ydoc, tables, actions, batch, /* ... */ };
+// At the client/entry layer:
+//   const workspace = createBlogWorkspace();
+//   const actions   = createBlogActions(workspace);
 ```
 
 For full input composition guidance (full-row writes, narrow patches, blanket PATCH, id-only inputs), see [Deriving action input schemas](deriving-action-inputs.md).
@@ -94,13 +96,13 @@ src/lib/
 |
 |-- workspace/                          <- 100% isomorphic (safe for Node, Bun, browser)
 |   |-- definition.ts                   <- Schema: defineTable, defineKv, branded IDs
-|   |-- actions.ts                      <- Isomorphic action factory: createXActions({ tables, batch })
-|   +-- index.ts                        <- Barrel: re-exports definition + actions only
+|   |-- create-workspace.ts             <- createXWorkspace(opts): wraps createWorkspace({ id, tables, kv, keyring? })
+|   |-- actions.ts                      <- Isomorphic action factory: createXActions(workspace)
+|   +-- index.ts                        <- Barrel: re-exports definition + workspace factory + actions
 |
-+-- client.ts                           <- Runtime singleton: openX() builder composing
-                                           attachTables, attachIndexedDb/attachYjsLog,
-                                           openCollaboration,
-                                           attachEncryption, and runtime-specific actions
++-- client.ts                           <- Runtime singleton: calls createXWorkspace + composes
+                                           attachIndexedDb/attachYjsLog, openCollaboration,
+                                           materializers, and runtime-specific actions
 ```
 
 ```
@@ -109,10 +111,17 @@ src/lib/
                     |  tables, KV, branded IDs |
                     +------------+------------+
                                  | imports
+                    +------------v-------------+
+                    |   create-workspace.ts    |
+                    |  createXWorkspace(opts)  |
+                    |  -> createWorkspace({    |
+                    |       id, tables, kv,    |
+                    |       keyring? })        |
+                    +------------+-------------+
+                                 | imports
                     +------------v------------+
-                    |     actions.ts           |
-                    |  createXActions factory  |
-                    |  ({ tables, batch })     |
+                    |     actions.ts          |
+                    |  createXActions(ws)     |
                     +------------+------------+
                                  | imports
    +-----------------------------+-----------------------------+
@@ -121,7 +130,7 @@ src/lib/
 +--------------+   +------------------+   +------------------+
 | client.ts    |   | server-client.ts |   | cli-client.ts    |
 | (browser)    |   | (Node/Bun)       |   | (CLI)            |
-| attachIndex... |   | attachYjsLog     |   | attachYjsLog     |
+| attachIndex...|  | attachYjsLog     |   | attachYjsLog     |
 | openCollab   |   | openCollab       |   | (no sync)        |
 | Chrome APIs  |   | Node fs APIs     |   |                  |
 +--------------+   +------------------+   +------------------+
@@ -130,9 +139,10 @@ src/lib/
 ### Layering Rules
 
 1. **`definition.ts`**: Pure schema. `defineTable()`, `defineKv()`, branded ID types and generators. Isomorphic.
-2. **`actions.ts`**: Factory that takes `{ tables, batch }` and returns an action tree of `defineQuery`/`defineMutation`. Isomorphic: no browser/Node APIs.
-3. **`index.ts`**: Barrel that re-exports from `definition.ts` and `actions.ts` only. **Never re-exports from `client.ts`.** This is the import path for `$lib/workspace` and the package.json subpath export.
-4. **`client.ts`**: Lives **outside** the `workspace/` folder at `src/lib/client.ts`. Exposes an `openX()` builder where runtime-specific attachments are composed (IndexedDB vs SQLite, browser vs Node APIs) and the full bundle is assembled, including runtime-specific actions. Singleton apps export the opened bundle directly (`export const workspace = openX()`). Per-row document caches use `createDisposableCache(builder)` beside that singleton.
+2. **`create-workspace.ts`**: Per-app wrapper around `createWorkspace({ id, tables, kv, keyring? })`. Encrypted apps accept a `keyring` opt; plaintext apps omit it. Isomorphic.
+3. **`actions.ts`**: Factory that takes the `Workspace` bundle and returns an action tree of `defineQuery`/`defineMutation`. Isomorphic: no browser/Node APIs.
+4. **`index.ts`**: Barrel that re-exports from `definition.ts`, `create-workspace.ts`, and `actions.ts` only. **Never re-exports from `client.ts`.** This is the import path for `$lib/workspace` and the package.json subpath export.
+5. **`client.ts`**: Lives **outside** the `workspace/` folder at `src/lib/client.ts`. Calls the app's `createXWorkspace(...)` factory to get the bundle, then composes runtime-specific attachments (IndexedDB vs SQLite, browser vs Node APIs) onto `workspace.ydoc` (or, for materializers, onto the bundle), and assembles runtime-specific actions. Singleton apps export the bundle directly (`export const workspace = createXWorkspace(...)`). Per-row document caches use `createDisposableCache(builder)` beside that singleton.
 
 ### Import Convention
 
@@ -167,8 +177,18 @@ The barrel is 100% isomorphic, so this single subpath is safe for any consumer (
 Isomorphic actions (table reads/writes, portable logic) belong in the exported `actions.ts` factory. Runtime-specific actions, whether browser APIs, Chrome extension APIs, Node/Bun filesystem calls, or Tauri commands, live in the `client.ts` builder where the relevant attachments and APIs are in scope.
 
 ```typescript
+// workspace/create-workspace.ts: isomorphic workspace factory
+export function createMyAppWorkspace() {
+  return createWorkspace({
+    id: 'epicenter.myapp',
+    tables: myAppTables,
+    kv: myAppKv,
+  });
+}
+
 // workspace/actions.ts: isomorphic actions (exported via barrel)
-export function createMyAppActions({ tables, batch }) {
+export function createMyAppActions(workspace: Workspace<typeof myAppTables>) {
+  const { tables } = workspace;
   return {
     devices: {
       list: defineQuery({
@@ -182,36 +202,30 @@ export function createMyAppActions({ tables, batch }) {
 }
 
 // src/lib/client.ts: browser-specific attachments + runtime actions
-function openMyApp() {
-  const ydoc = new Y.Doc({ guid: 'epicenter.myapp' });
-  const tables = attachTables(ydoc, myAppTables);
-  const idb = attachIndexedDb(ydoc);
-  const batch = (fn) => ydoc.transact(fn);
+export const workspace = createMyAppWorkspace();
 
-  const actions = defineActions({
-    ...createMyAppActions({ tables, batch }),
-    tabs_close: defineMutation({
-      title: 'Close Tabs',
-      description: 'Close browser tabs by ID.',
-      input: Type.Object({ tabIds: Type.Array(Type.Number()) }),
-      handler: async ({ tabIds }) => {
-        await browser.tabs.remove(tabIds);  // Chrome API
-        return { closedCount: tabIds.length };
-      },
-    }),
-  });
-  const collaboration = openCollaboration(ydoc, {
-    url,
-    waitFor: idb.whenLoaded,
-    openWebSocket,
-    replicaId,
-    actions,
-  });
+const idb = attachIndexedDb(workspace.ydoc);
 
-  return { ydoc, tables, idb, collaboration, actions, batch, /* whenReady, ... */ };
-}
+const actions = defineActions({
+  ...createMyAppActions(workspace),
+  tabs_close: defineMutation({
+    title: 'Close Tabs',
+    description: 'Close browser tabs by ID.',
+    input: Type.Object({ tabIds: Type.Array(Type.Number()) }),
+    handler: async ({ tabIds }) => {
+      await browser.tabs.remove(tabIds);  // Chrome API
+      return { closedCount: tabIds.length };
+    },
+  }),
+});
 
-export const workspace = openMyApp();
+const collaboration = openCollaboration(workspace.ydoc, {
+  url,
+  waitFor: idb.whenLoaded,
+  openWebSocket,
+  replicaId,
+  actions,
+});
 ```
 
 ## Attachment Ordering
@@ -220,9 +234,9 @@ Attachments compose through plain lexical scope, so ordering is explicit: if `op
 
 | Attachment | Typical `waitFor` | Behavior |
 |---|---|---|
+| `createWorkspace({ keyring? })` | (none, sync) | Allocates the workspace `Y.Doc`, wires tables + KV, reads `keyring()` synchronously when encryption is requested |
 | `attachYjsLog` | none | Starts loading the Yjs update log immediately |
 | `attachIndexedDb` | none | Starts loading IndexedDB immediately |
-| `attachEncryption` | (none, sync) | Reads `encryptionKeys()` synchronously at each registration site |
 | `openCollaboration` | `idb.whenLoaded` (or another local-load promise) | Opens WebSocket after local replay |
 
 The standard shape is **persistence first, then collaboration with `waitFor`**:
@@ -237,26 +251,19 @@ This ordering matters because sync only exchanges the delta between local state 
 
 ```typescript
 // Correct: persistence loads first, collaboration waits for idb, exchanges delta only
-createDisposableCache((id) => {
-  const ydoc = new Y.Doc({ guid: id });
-  const tables = attachTables(ydoc, myTables);
-  const idb = attachIndexedDb(ydoc);
-  const collaboration = openCollaboration(ydoc, {
-    url: roomWsUrl(serverUrl, ydoc.guid),
-    waitFor: idb.whenLoaded,
-    openWebSocket,
-    replicaId,
-  });
-  return { id, ydoc, tables, idb, collaboration, /* ... */ };
+const workspace = createMyAppWorkspace();
+const idb = attachIndexedDb(workspace.ydoc);
+const collaboration = openCollaboration(workspace.ydoc, {
+  url: roomWsUrl(serverUrl, workspace.ydoc.guid),
+  waitFor: idb.whenLoaded,
+  openWebSocket,
+  replicaId,
 });
 
 // Wrong: collaboration starts before local state is loaded, downloads full document
-createDisposableCache((id) => {
-  const ydoc = new Y.Doc({ guid: id });
-  const collaboration = openCollaboration(ydoc, { url, openWebSocket, replicaId });
-  const idb = attachIndexedDb(ydoc);
-  return { id, ydoc, idb, collaboration, /* ... */ };
-});
+const workspace = createMyAppWorkspace();
+const collaboration = openCollaboration(workspace.ydoc, { url, openWebSocket, replicaId });
+const idb = attachIndexedDb(workspace.ydoc);
 ```
 
 ### `connectWorkspace` (CLI/Script Shortcut)

@@ -15,7 +15,7 @@
  */
 
 import * as Y from 'yjs';
-import { attachTable, column, defineTable } from '../../src/index.js';
+import { column, createWorkspace, defineTable } from '../../src/index.js';
 import { formatBytes } from './helpers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -126,8 +126,12 @@ function main() {
 `);
 
 	// ── Setup ────────────────────────────────────────────────────────────────
-	const ydoc = new Y.Doc();
-	const tables = { events: attachTable(ydoc, 'events', eventDefinition) };
+	const workspace = createWorkspace({
+		id: 'persistence-growth',
+		tables: { events: eventDefinition },
+		kv: {},
+	});
+	const { ydoc, tables } = workspace;
 	const idb = createIdbSimulator(ydoc);
 
 	// ── Seed steady-state rows ──────────────────────────────────────────────
@@ -379,11 +383,13 @@ function main() {
 	);
 	console.log(`${'─'.repeat(80)}`);
 	const finalState = Y.encodeStateAsUpdate(ydoc);
-	const freshDoc = new Y.Doc();
-	Y.applyUpdate(freshDoc, finalState);
-	const freshTables = {
-		events: attachTable(freshDoc, 'events', eventDefinition),
-	};
+	const freshWorkspace = createWorkspace({
+		id: 'persistence-growth-fresh',
+		tables: { events: eventDefinition },
+		kv: {},
+	});
+	Y.applyUpdate(freshWorkspace.ydoc, finalState);
+	const { ydoc: freshDoc, tables: freshTables } = freshWorkspace;
 	const freshSize = Y.encodeStateAsUpdate(freshDoc).byteLength;
 
 	console.log(

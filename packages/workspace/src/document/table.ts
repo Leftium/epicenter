@@ -1,17 +1,18 @@
 /**
- * `attachTable()` — bind a `TableDefinition` to a Y.Doc.
+ * Table definition types and the `createTable` / `createReadonlyTable`
+ * builders. `createWorkspace` (in `./workspace.ts`) consumes these to mount
+ * tables onto a workspace root, applying encryption when a keyring is
+ * provided.
  *
- * Constructs an unencrypted `YKeyValueLww` on `ydoc.getArray('table:<name>')`
- * and wraps it with a typed `Table`. Provides CRUD operations with schema
- * validation and migration on read.
+ * This file also keeps `attachTable` and `attachReadonlyTable` as internal
+ * helpers used by package-local benchmarks and the create-table test. They
+ * are intentionally NOT exported from the package barrel: public callers go
+ * through `createWorkspace`.
  *
  * The library owns `_v` end-to-end: stamped on every write, stripped from
  * every read, refused as a column key at compile time. Users define columns
  * and (for multi-version tables) one migrate function. The user-facing row
  * type contains only the user's columns.
- *
- * For encrypted storage, call `encryption.attachTable` on the coordinator
- * returned by `attachEncryption(ydoc, { keyring })`.
  */
 
 import { type Static, type TObject, type TSchema, Type } from 'typebox';
@@ -332,7 +333,8 @@ export type ReadonlyTables<TTableDefinitions extends TableDefinitions> = {
 };
 
 // ════════════════════════════════════════════════════════════════════════════
-// PUBLIC: attach
+// INTERNAL: attach (used by package-local benchmarks + tests; NOT exported
+// from the public barrel — public callers go through `createWorkspace`)
 // ════════════════════════════════════════════════════════════════════════════
 
 export function attachTable<
@@ -361,30 +363,6 @@ export function attachReadonlyTable<
 	const ykv = new YKeyValueLww<unknown>(yarray);
 	ydoc.once('destroy', () => ykv[Symbol.dispose]());
 	return createReadonlyTable(ykv, definition, name);
-}
-
-export function attachTables<T extends TableDefinitions>(
-	ydoc: Y.Doc,
-	definitions: T,
-): Tables<T> {
-	return Object.fromEntries(
-		Object.entries(definitions).map(([name, def]) => [
-			name,
-			attachTable(ydoc, name, def),
-		]),
-	) as Tables<T>;
-}
-
-export function attachReadonlyTables<T extends TableDefinitions>(
-	ydoc: Y.Doc,
-	definitions: T,
-): ReadonlyTables<T> {
-	return Object.fromEntries(
-		Object.entries(definitions).map(([name, def]) => [
-			name,
-			attachReadonlyTable(ydoc, name, def),
-		]),
-	) as ReadonlyTables<T>;
 }
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -11,7 +11,7 @@ import {
 	attachTable,
 	createReadonlyTable,
 	createTable,
-} from './attach-table.js';
+} from './table.js';
 import { column } from './column/index.js';
 import { defineTable } from './define-table.js';
 

@@ -1,5 +1,5 @@
 import { toSlugFilename } from '../../../markdown/to-slug-filename.js';
-import type { BaseRow } from '../../attach-table.js';
+import type { BaseRow } from '../../table.js';
 
 /**
  * Build a `filename` slot that produces `{slug}-{id}.md` using a row field

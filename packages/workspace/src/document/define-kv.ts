@@ -33,7 +33,7 @@
  */
 
 import type { Static, TSchema } from 'typebox';
-import type { KvDefinition } from './attach-kv';
+import type { KvDefinition } from './kv';
 
 /**
  * Create a KV definition with a TypeBox schema and a factory default.

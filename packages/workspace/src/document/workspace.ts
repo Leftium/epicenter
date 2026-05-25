@@ -41,12 +41,12 @@
 import type { Keyring } from '@epicenter/encryption';
 import * as Y from 'yjs';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import { createKv, type Kv, type KvDefinitions } from './attach-kv.js';
+import { createKv, type Kv, type KvDefinitions } from './kv.js';
 import {
 	createTable,
 	type TableDefinitions,
 	type Tables,
-} from './attach-table.js';
+} from './table.js';
 import { deriveWorkspaceKeyring } from './derive-workspace-keyring.js';
 import { KV_KEY, TableKey } from './keys.js';
 import {

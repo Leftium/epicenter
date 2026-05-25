@@ -23,6 +23,7 @@
  * The library remains billing-agnostic; everything here is cloud-only.
  */
 
+import { AiChatErrorStatus } from '@epicenter/constants/ai-chat-errors';
 import type { Env } from '@epicenter/server';
 import { createMiddleware } from 'hono/factory';
 import { createBillingService } from './service.js';
@@ -53,7 +54,10 @@ export const chargeAiCreditsWithAutumn = createMiddleware<Env>(
 			provider: body.data?.provider,
 		});
 		if (guardError) {
-			return c.json({ data: null, error: guardError }, guardError.status);
+			return c.json(
+				{ data: null, error: guardError },
+				AiChatErrorStatus[guardError.name],
+			);
 		}
 
 		await next();

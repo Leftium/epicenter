@@ -15,6 +15,7 @@
  */
 
 import {
+	column,
 	DateTimeString,
 	defineActions,
 	defineMutation,
@@ -25,14 +26,12 @@ import {
 	type InferTableRow,
 	type Tables,
 } from '@epicenter/workspace';
-import { type } from 'arktype';
-import Type from 'typebox';
+import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 
 export const FUJI_ID = 'epicenter.fuji';
 
-export const EntryId = type('string').as<string & Brand<'EntryId'>>();
-export type EntryId = typeof EntryId.infer;
+export type EntryId = string & Brand<'EntryId'>;
 
 /**
  * Syntactic sugar for `value as EntryId`. The constrained `string` parameter
@@ -41,34 +40,37 @@ export type EntryId = typeof EntryId.infer;
  */
 export const asEntryId = (value: string): EntryId => value as EntryId;
 
-const entryBase = type({
-	id: EntryId,
-	title: 'string',
-	subtitle: 'string',
-	type: 'string[]',
-	tags: 'string[]',
-	pinned: 'boolean',
-	'deletedAt?': DateTimeString.or('undefined'),
-	date: DateTimeString,
-	createdAt: DateTimeString,
-	updatedAt: DateTimeString,
-});
-
 const entriesTable = defineTable(
-	entryBase.merge({
-		_v: '1',
-	}),
-	entryBase.merge({
-		rating: 'number',
-		_v: '2',
-	}),
+	{
+		_v: column.literal(1),
+		id: column.string<EntryId>(),
+		title: column.string(),
+		subtitle: column.string(),
+		type: column.json(Type.Array(Type.String())),
+		tags: column.json(Type.Array(Type.String())),
+		pinned: column.boolean(),
+		deletedAt: column.nullable(column.dateTime()),
+		date: column.dateTime(),
+		createdAt: column.dateTime(),
+		updatedAt: column.dateTime(),
+	},
+	{
+		_v: column.literal(2),
+		id: column.string<EntryId>(),
+		title: column.string(),
+		subtitle: column.string(),
+		type: column.json(Type.Array(Type.String())),
+		tags: column.json(Type.Array(Type.String())),
+		pinned: column.boolean(),
+		deletedAt: column.nullable(column.dateTime()),
+		date: column.dateTime(),
+		createdAt: column.dateTime(),
+		updatedAt: column.dateTime(),
+		rating: column.number(),
+	},
 ).migrate((row) => {
-	switch (row._v) {
-		case 1:
-			return { ...row, rating: 0, _v: 2 };
-		case 2:
-			return row;
-	}
+	if (row._v === 1) return { ...row, rating: 0, _v: 2 as const };
+	return row;
 });
 
 export type Entry = InferTableRow<typeof entriesTable>;
@@ -161,7 +163,7 @@ export function createFujiActions(tables: FujiTables) {
 					tags: tags ?? [],
 					pinned: false,
 					rating: rating ?? 0,
-					deletedAt: undefined,
+					deletedAt: null,
 					date: now,
 					createdAt: now,
 					updatedAt: now,
@@ -183,11 +185,8 @@ export function createFujiActions(tables: FujiTables) {
 				tags: Type.Array(Type.String(), { description: 'Freeform tags' }),
 				pinned: Type.Boolean({ description: 'Whether the entry is pinned' }),
 				rating: Type.Number({ description: 'Rating from 0 to 5' }),
-				deletedAt: Type.Optional(
-					Type.Unsafe<DateTimeString>({
-						type: 'string',
-						description: 'Soft deletion timestamp',
-					}),
+				deletedAt: column.nullable(
+					column.dateTime({ description: 'Soft deletion timestamp' }),
 				),
 				date: Type.Unsafe<DateTimeString>({
 					type: 'string',
@@ -266,7 +265,7 @@ export function createFujiActions(tables: FujiTables) {
 			}),
 			handler: ({ id }) => {
 				return tables.entries.update(id, {
-					deletedAt: undefined,
+					deletedAt: null,
 					updatedAt: DateTimeString.now(),
 				});
 			},
@@ -294,7 +293,7 @@ export function createFujiActions(tables: FujiTables) {
 					tags: [] as string[],
 					pinned: false,
 					rating: 0,
-					deletedAt: undefined,
+					deletedAt: null,
 					date: date as DateTimeString,
 					createdAt: now,
 					updatedAt: now,

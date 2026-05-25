@@ -48,10 +48,10 @@ export function createNotes({
 	// ─── Derived State ───────────────────────────────────────────────────
 
 	/** Active notes, not soft-deleted. */
-	const all = $derived(allNotes.filter((n) => n.deletedAt === undefined));
+	const all = $derived(allNotes.filter((n) => n.deletedAt === null));
 
 	/** Soft-deleted notes for the Recently Deleted view. */
-	const deleted = $derived(allNotes.filter((n) => n.deletedAt !== undefined));
+	const deleted = $derived(allNotes.filter((n) => n.deletedAt !== null));
 
 	/** Per-folder note counts for the sidebar (active notes only). */
 	const countsByFolder = $derived.by(() => {
@@ -105,11 +105,11 @@ export function createNotes({
 			const id = generateNoteId();
 			honeycrisp.tables.notes.set({
 				id,
-				folderId: folderId ?? undefined,
+				folderId: folderId ?? null,
 				title: '',
 				preview: '',
 				pinned: false,
-				deletedAt: undefined,
+				deletedAt: null,
 				wordCount: 0,
 				createdAt: DateTimeString.now(),
 				updatedAt: DateTimeString.now(),
@@ -159,8 +159,8 @@ export function createNotes({
 				? folders.all.some((f) => f.id === note.folderId)
 				: true;
 			honeycrisp.tables.notes.update(noteId, {
-				deletedAt: undefined,
-				...(folderExists ? {} : { folderId: undefined }),
+				deletedAt: null,
+				...(folderExists ? {} : { folderId: null }),
 			});
 		},
 
@@ -206,7 +206,7 @@ export function createNotes({
 		/**
 		 * Move a note to a different folder.
 		 *
-		 * Pass `undefined` to move the note to unfiled (remove from folder).
+		 * Pass `null` to move the note to unfiled (remove from folder).
 		 * The note remains selected if it was selected before the move.
 		 *
 		 * @example
@@ -214,10 +214,10 @@ export function createNotes({
 		 * app.state.notes.moveToFolder(noteId, folderId);
 		 *
 		 * // Move a note to unfiled
-		 * app.state.notes.moveToFolder(noteId, undefined);
+		 * app.state.notes.moveToFolder(noteId, null);
 		 * ```
 		 */
-		moveToFolder(noteId: NoteId, folderId: FolderId | undefined) {
+		moveToFolder(noteId: NoteId, folderId: FolderId | null) {
 			honeycrisp.tables.notes.update(noteId, { folderId });
 		},
 

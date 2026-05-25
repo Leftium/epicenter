@@ -19,68 +19,10 @@
 	 */
 	const INSERT_CHUNK_SIZE = 100;
 
-	const TITLES = [
-		'Morning Reflections',
-		'Project Update',
-		'Book Notes',
-		'Meeting Summary',
-		'Travel Plans',
-		'Recipe Ideas',
-		'Code Review Notes',
-		'Design Critique',
-		'Weekly Goals',
-		'Research Findings',
-		'Product Roadmap',
-		'Bug Report',
-		'Feature Request',
-		'Architecture Decision',
-		'Performance Analysis',
-		'User Feedback',
-		'Sprint Retrospective',
-		'Technical Debt',
-		'API Design',
-		'Database Schema',
-		'Security Audit',
-		'Deployment Checklist',
-		'Onboarding Guide',
-		'Style Guide',
-		'Release Notes',
-		'Changelog',
-		'Migration Plan',
-		'Brainstorm',
-		'Interview Notes',
-		'Competitive Analysis',
-	];
-
-	const SUBTITLES = [
-		'A deep dive into the details',
-		'Quick thoughts on the topic',
-		'Notes for future reference',
-		'Draft in progress',
-		'Ready for review',
-		'Needs more research',
-		'Follow up required',
-		'Summary of key points',
-		'Initial exploration',
-		'Final draft',
-		'Work in progress',
-		'Archived',
-		'For discussion',
-		'Action items included',
-		'',
-	];
-
-	const TYPES = ['article', 'thought', 'idea', 'research', 'journal'];
-	const EXTRA_TAGS = [
-		'draft',
-		'published',
-		'favorite',
-		'personal',
-		'work',
-		'code',
-		'design',
-		'writing',
-	];
+	const TITLES = ['Morning Reflections', 'Project Update', 'Book Notes'];
+	const SUBTITLES = ['Quick thoughts', 'Draft in progress', ''];
+	const TYPES = ['article', 'thought', 'journal'];
+	const EXTRA_TAGS = ['draft', 'published', 'favorite'];
 
 	// ─── State ───────────────────────────────────────────────────────────────────
 
@@ -130,7 +72,7 @@
 			tags: ['stress-test', ...pickN(EXTRA_TAGS, 0, 2)],
 			pinned: Math.random() < 0.05,
 			rating: Math.random() < 0.7 ? 0 : Math.floor(Math.random() * 5) + 1,
-			deletedAt: undefined,
+			deletedAt: null,
 			date: DateTimeString.stringify(new Date(ts).toISOString(), LOCAL_TZ),
 			createdAt: now,
 			updatedAt: now,
@@ -225,6 +167,7 @@
 	}
 </script>
 
+{#if import.meta.env.DEV}
 <main class="flex h-full flex-col gap-6 overflow-auto p-6">
 	<!-- Header -->
 	<div>
@@ -345,3 +288,4 @@
 		{/if}
 	</div>
 </main>
+{/if}

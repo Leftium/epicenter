@@ -141,10 +141,10 @@
 
 									{#if run.status === 'completed'}
 										<Label class="text-sm font-medium">Output</Label>
-										<CopyablePre variant="text" copyableText={run.output} />
+										<CopyablePre variant="text" copyableText={run.output ?? ''} />
 									{:else if run.status === 'failed'}
 										<Label class="text-sm font-medium">Error</Label>
-										<CopyablePre variant="error" copyableText={run.error} />
+										<CopyablePre variant="error" copyableText={run.error ?? ''} />
 									{/if}
 									{#if stepRuns.length > 0}
 										<div class="flex flex-col gap-2">
@@ -192,7 +192,7 @@
 																				.output}
 																			title="Step Output"
 																			label="step output"
-																			text={stepRun.output}
+																			text={stepRun.output ?? ''}
 																		/>
 																	{:else if stepRun.status === 'failed'}
 																		<TextPreviewDialog
@@ -200,7 +200,7 @@
 																				.error}
 																			title="Step Error"
 																			label="step error"
-																			text={stepRun.error}
+																			text={stepRun.error ?? ''}
 																		/>
 																	{/if}
 																</Table.Cell>

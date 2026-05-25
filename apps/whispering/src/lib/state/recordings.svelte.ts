@@ -36,7 +36,8 @@ function createRecordings() {
 	const sorted = $derived(
 		[...map.values()].sort(
 			(a, b) =>
-				new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime(),
+				new Date(b.recordedAt as string).getTime() -
+				new Date(a.recordedAt as string).getTime(),
 		),
 	);
 

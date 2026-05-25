@@ -26,27 +26,30 @@ import type {
 	TransformationStepRun,
 } from '$lib/workspace';
 
-type TransformationRunRunning = Extract<
-	TransformationRun,
-	{ status: 'running' }
->;
-type TransformationRunCompleted = Extract<
-	TransformationRun,
-	{ status: 'completed' }
->;
-type TransformationRunFailed = Extract<TransformationRun, { status: 'failed' }>;
-type TransformationStepRunRunning = Extract<
-	TransformationStepRun,
-	{ status: 'running' }
->;
-type TransformationStepRunCompleted = Extract<
-	TransformationStepRun,
-	{ status: 'completed' }
->;
-type TransformationStepRunFailed = Extract<
-	TransformationStepRun,
-	{ status: 'failed' }
->;
+/**
+ * Workspace rows are flat: `status` is an enum and `output`/`error` are
+ * nullable strings. These helpers narrow `status` at the type level so the
+ * pipeline below reads as a discriminated union, even though the underlying
+ * row schema is flat for SQLite materialization.
+ */
+type TransformationRunRunning = Omit<TransformationRun, 'status'> & {
+	status: 'running';
+};
+type TransformationRunCompleted = Omit<TransformationRun, 'status'> & {
+	status: 'completed';
+};
+type TransformationRunFailed = Omit<TransformationRun, 'status'> & {
+	status: 'failed';
+};
+type TransformationStepRunRunning = Omit<TransformationStepRun, 'status'> & {
+	status: 'running';
+};
+type TransformationStepRunCompleted = Omit<TransformationStepRun, 'status'> & {
+	status: 'completed';
+};
+type TransformationStepRunFailed = Omit<TransformationStepRun, 'status'> & {
+	status: 'failed';
+};
 
 /**
  * Config map for standard completion providers that share the same
@@ -144,8 +147,11 @@ export const transformer = {
 				if (transformationRun.status === 'failed') {
 					return WhisperingErr({
 						title: '⚠️ Transformation failed',
-						description: transformationRun.error,
-						action: { type: 'more-details', error: transformationRun.error },
+						description: transformationRun.error ?? undefined,
+						action: {
+							type: 'more-details',
+							error: transformationRun.error ?? '',
+						},
 					});
 				}
 
@@ -193,7 +199,7 @@ export const transformer = {
 
 			const { data: transformationRun, error: transformationRunError } =
 				await runTransformation({
-					input: recording.transcript,
+					input: recording.transcript as string,
 					transformation,
 					steps,
 					recordingId,
@@ -320,8 +326,10 @@ async function runTransformation({
 		input,
 		startedAt: now,
 		completedAt: null,
-		status: 'running',
-		_v: 1,
+		status: 'running' as const,
+		output: null,
+		error: null,
+		_v: 1 as const,
 	} satisfies TransformationRunRunning;
 
 	transformationRuns.set(transformationRun);
@@ -338,8 +346,10 @@ async function runTransformation({
 			input: currentInput,
 			startedAt: new Date().toISOString(),
 			completedAt: null,
-			status: 'running',
-			_v: 1,
+			status: 'running' as const,
+			output: null,
+			error: null,
+			_v: 1 as const,
 		} satisfies TransformationStepRunRunning;
 		whispering.tables.transformationStepRuns.set(stepRun);
 
@@ -352,14 +362,14 @@ async function runTransformation({
 			const failedNow = new Date().toISOString();
 			const failedStepRun = {
 				...stepRun,
-				status: 'failed',
+				status: 'failed' as const,
 				completedAt: failedNow,
 				error: handleStepResult.error,
 			} satisfies TransformationStepRunFailed;
 			whispering.tables.transformationStepRuns.set(failedStepRun);
 			const failedRun = {
 				...transformationRun,
-				status: 'failed',
+				status: 'failed' as const,
 				completedAt: failedNow,
 				error: handleStepResult.error,
 			} satisfies TransformationRunFailed;
@@ -371,7 +381,7 @@ async function runTransformation({
 
 		const completedStepRun = {
 			...stepRun,
-			status: 'completed',
+			status: 'completed' as const,
 			completedAt: new Date().toISOString(),
 			output: handleStepOutput,
 		} satisfies TransformationStepRunCompleted;
@@ -382,7 +392,7 @@ async function runTransformation({
 
 	const completedRun = {
 		...transformationRun,
-		status: 'completed',
+		status: 'completed' as const,
 		completedAt: new Date().toISOString(),
 		output: currentInput,
 	} satisfies TransformationRunCompleted;

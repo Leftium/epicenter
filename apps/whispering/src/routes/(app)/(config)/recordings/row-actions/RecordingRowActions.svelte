@@ -105,7 +105,7 @@
 		<EditRecordingModal {recording} />
 
 		<CopyButton
-			text={recording.transcript}
+			text={(recording.transcript as string) ?? ''}
 			copyFn={createCopyFn('transcript')}
 			style="view-transition-name: {viewTransition.recording(recordingId)
 				.transcript}"
@@ -113,7 +113,7 @@
 
 		{#if latestRun?.status === 'completed'}
 			<CopyButton
-				text={latestRun.output}
+				text={latestRun.output ?? ''}
 				copyFn={createCopyFn('latest transformation run output')}
 				style="view-transition-name: {viewTransition.recording(recordingId)
 					.transformationOutput}"

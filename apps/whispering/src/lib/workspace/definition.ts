@@ -4,6 +4,7 @@ import {
 	defineTable,
 	type InferTableRow,
 } from '@epicenter/workspace';
+import { type Static, Type } from 'typebox';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
 
@@ -150,14 +151,47 @@ const transformationSteps = defineTable({
 export type TransformationStep = InferTableRow<typeof transformationSteps>;
 
 /**
+ * Result of a transformation run or step run. Discriminated on `status`:
+ * `running` carries no payload; `completed` carries `completedAt` + `output`;
+ * `failed` carries `completedAt` + `error`. Storage is one JSON-encoded TEXT
+ * column (`result`) on the row; nothing in the read path filters or sorts
+ * on these fields, so the JSON envelope is cheaper than the loss of per-status
+ * invariants a flat nullable layout would cause.
+ *
+ * Run and step run share the schema so a single union covers both tables.
+ */
+const transformationRunResultSchema = Type.Union([
+	Type.Object({ status: Type.Literal('running') }),
+	Type.Object({
+		status: Type.Literal('completed'),
+		completedAt: Type.String(),
+		output: Type.String(),
+	}),
+	Type.Object({
+		status: Type.Literal('failed'),
+		completedAt: Type.String(),
+		error: Type.String(),
+	}),
+]);
+
+export type TransformationRunResult = Static<
+	typeof transformationRunResultSchema
+>;
+
+/**
+ * Same shape with the `running` variant excluded. Used at boundaries where a
+ * run has reached a terminal state (the `runTransformation` return path,
+ * mutation callers that proceed only after the pipeline finishes).
+ */
+export type TerminalTransformationRunResult = Exclude<
+	TransformationRunResult,
+	{ status: 'running' }
+>;
+
+/**
  * Execution records for transformation pipelines. One run per invocation.
- *
- * Status lifecycle: `running` -> `completed` | `failed`. `output` is populated
- * only on completed runs; `error` only on failed runs. The fields are stored
- * as nullable strings because TypeBox column schemas materialize to flat
- * SQLite columns (no per-status discriminated union at the column layer).
- *
- * @see {@link https://github.com/EpicenterHQ/epicenter/blob/main/specs/20260312T170000-whispering-workspace-polish-and-migration.md | Spec Decision 1}
+ * State queries filter by top-level `recordingId` / `transformationId` and
+ * sort by `startedAt`; status-dependent fields live inside `result`.
  */
 const transformationRuns = defineTable({
 	_v: column.literal(1),
@@ -166,21 +200,13 @@ const transformationRuns = defineTable({
 	recordingId: column.nullable(column.string()),
 	input: column.string(),
 	startedAt: column.string(),
-	completedAt: column.nullable(column.string()),
-	status: column.enum(['running', 'completed', 'failed']),
-	output: column.nullable(column.string()),
-	error: column.nullable(column.string()),
+	result: column.json(transformationRunResultSchema),
 });
 
 /** Transformation run row type inferred from the latest workspace table schema version. */
 export type TransformationRun = InferTableRow<typeof transformationRuns>;
 
-/**
- * Per-step execution records within a transformation run.
- *
- * Same shape as `transformationRuns`: `status` is an enum, `output` and `error`
- * are nullable. Population follows the per-status convention documented above.
- */
+/** Per-step execution records within a transformation run. */
 const transformationStepRuns = defineTable({
 	_v: column.literal(1),
 	id: column.string(),
@@ -189,10 +215,7 @@ const transformationStepRuns = defineTable({
 	order: column.number(),
 	input: column.string(),
 	startedAt: column.string(),
-	completedAt: column.nullable(column.string()),
-	status: column.enum(['running', 'completed', 'failed']),
-	output: column.nullable(column.string()),
-	error: column.nullable(column.string()),
+	result: column.json(transformationRunResultSchema),
 });
 
 /** Transformation step run row type inferred from the latest workspace table schema version. */

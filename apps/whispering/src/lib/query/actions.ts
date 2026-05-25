@@ -728,14 +728,14 @@ async function processRecordingPipeline({
 		return;
 	}
 
-	if (transformationRun.status === 'failed') {
+	if (transformationRun.result.status === 'failed') {
 		notify.error({
 			id: transformToastId,
 			title: '⚠️ Transformation error',
-			description: transformationRun.error ?? '',
+			description: transformationRun.result.error,
 			action: {
 				type: 'more-details',
-				error: transformationRun.error ?? '',
+				error: transformationRun.result.error,
 			},
 		});
 		return;
@@ -744,7 +744,7 @@ async function processRecordingPipeline({
 	sound.playSoundIfEnabled('transformationComplete');
 
 	await delivery.deliverTransformationResult({
-		text: transformationRun.output ?? '',
+		text: transformationRun.result.output,
 		toastId: transformToastId,
 	});
 }

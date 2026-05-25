@@ -20,6 +20,7 @@ import { transformationSteps } from '$lib/state/transformation-steps.svelte';
 import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
 import { whispering } from '$lib/whispering/client';
 import type {
+	TerminalTransformationRunResult,
 	Transformation,
 	TransformationRun,
 	TransformationStep,
@@ -27,28 +28,12 @@ import type {
 } from '$lib/workspace';
 
 /**
- * Workspace rows are flat: `status` is an enum and `output`/`error` are
- * nullable strings. These helpers narrow `status` at the type level so the
- * pipeline below reads as a discriminated union, even though the underlying
- * row schema is flat for SQLite materialization.
+ * A transformation run in its terminal state (completed or failed). The
+ * variant payload (output / error / completedAt) is carried by `result`
+ * via the shared `TerminalTransformationRunResult` union.
  */
-type TransformationRunRunning = Omit<TransformationRun, 'status'> & {
-	status: 'running';
-};
-type TransformationRunCompleted = Omit<TransformationRun, 'status'> & {
-	status: 'completed';
-};
-type TransformationRunFailed = Omit<TransformationRun, 'status'> & {
-	status: 'failed';
-};
-type TransformationStepRunRunning = Omit<TransformationStepRun, 'status'> & {
-	status: 'running';
-};
-type TransformationStepRunCompleted = Omit<TransformationStepRun, 'status'> & {
-	status: 'completed';
-};
-type TransformationStepRunFailed = Omit<TransformationStepRun, 'status'> & {
-	status: 'failed';
+type TerminalTransformationRun = Omit<TransformationRun, 'result'> & {
+	result: TerminalTransformationRunResult;
 };
 
 /**
@@ -144,25 +129,25 @@ export const transformer = {
 						serviceError: transformationRunError,
 					});
 
-				if (transformationRun.status === 'failed') {
+				if (transformationRun.result.status === 'failed') {
 					return WhisperingErr({
 						title: '⚠️ Transformation failed',
-						description: transformationRun.error ?? undefined,
+						description: transformationRun.result.error,
 						action: {
 							type: 'more-details',
-							error: transformationRun.error ?? '',
+							error: transformationRun.result.error,
 						},
 					});
 				}
 
-				if (!transformationRun.output) {
+				if (!transformationRun.result.output) {
 					return WhisperingErr({
 						title: '⚠️ Transformation produced no output',
 						description: 'The transformation completed but produced no output.',
 					});
 				}
 
-				return Ok(transformationRun.output);
+				return Ok(transformationRun.result.output);
 			};
 
 			const transformationOutputResult = await getTransformationOutput();
@@ -179,12 +164,7 @@ export const transformer = {
 		}: {
 			recordingId: string;
 			transformation: Transformation;
-		}): Promise<
-			Result<
-				TransformationRunCompleted | TransformationRunFailed,
-				WhisperingError
-			>
-		> => {
+		}): Promise<Result<TerminalTransformationRun, WhisperingError>> => {
 			const recording = recordings.get(recordingId);
 			if (!recording) {
 				return WhisperingErr({
@@ -300,9 +280,7 @@ async function runTransformation({
 	transformation: Transformation;
 	steps: TransformationStep[];
 	recordingId: string | null;
-}): Promise<
-	Result<TransformationRunCompleted | TransformationRunFailed, TransformError>
-> {
+}): Promise<Result<TerminalTransformationRun, TransformError>> {
 	if (!input.trim()) {
 		return TransformError.InvalidInput({
 			message: 'Empty input. Please enter some text to transform',
@@ -325,12 +303,9 @@ async function runTransformation({
 		recordingId,
 		input,
 		startedAt: now,
-		completedAt: null,
-		status: 'running' as const,
-		output: null,
-		error: null,
-		_v: 1 as const,
-	} satisfies TransformationRunRunning;
+		result: { status: 'running' },
+		_v: 1,
+	} satisfies TransformationRun;
 
 	transformationRuns.set(transformationRun);
 
@@ -345,12 +320,9 @@ async function runTransformation({
 			order: stepIndex,
 			input: currentInput,
 			startedAt: new Date().toISOString(),
-			completedAt: null,
-			status: 'running' as const,
-			output: null,
-			error: null,
-			_v: 1 as const,
-		} satisfies TransformationStepRunRunning;
+			result: { status: 'running' },
+			_v: 1,
+		} satisfies TransformationStepRun;
 		whispering.tables.transformationStepRuns.set(stepRun);
 
 		const handleStepResult = await handleStep({
@@ -360,42 +332,48 @@ async function runTransformation({
 
 		if (isErr(handleStepResult)) {
 			const failedNow = new Date().toISOString();
-			const failedStepRun = {
+			whispering.tables.transformationStepRuns.set({
 				...stepRun,
-				status: 'failed' as const,
-				completedAt: failedNow,
-				error: handleStepResult.error,
-			} satisfies TransformationStepRunFailed;
-			whispering.tables.transformationStepRuns.set(failedStepRun);
+				result: {
+					status: 'failed',
+					completedAt: failedNow,
+					error: handleStepResult.error,
+				},
+			});
 			const failedRun = {
 				...transformationRun,
-				status: 'failed' as const,
-				completedAt: failedNow,
-				error: handleStepResult.error,
-			} satisfies TransformationRunFailed;
+				result: {
+					status: 'failed',
+					completedAt: failedNow,
+					error: handleStepResult.error,
+				},
+			} satisfies TerminalTransformationRun;
 			transformationRuns.set(failedRun);
 			return Ok(failedRun);
 		}
 
 		const handleStepOutput = handleStepResult.data;
 
-		const completedStepRun = {
+		whispering.tables.transformationStepRuns.set({
 			...stepRun,
-			status: 'completed' as const,
-			completedAt: new Date().toISOString(),
-			output: handleStepOutput,
-		} satisfies TransformationStepRunCompleted;
-		whispering.tables.transformationStepRuns.set(completedStepRun);
+			result: {
+				status: 'completed',
+				completedAt: new Date().toISOString(),
+				output: handleStepOutput,
+			},
+		});
 
 		currentInput = handleStepOutput;
 	}
 
 	const completedRun = {
 		...transformationRun,
-		status: 'completed' as const,
-		completedAt: new Date().toISOString(),
-		output: currentInput,
-	} satisfies TransformationRunCompleted;
+		result: {
+			status: 'completed',
+			completedAt: new Date().toISOString(),
+			output: currentInput,
+		},
+	} satisfies TerminalTransformationRun;
 	transformationRuns.set(completedRun);
 	return Ok(completedRun);
 }

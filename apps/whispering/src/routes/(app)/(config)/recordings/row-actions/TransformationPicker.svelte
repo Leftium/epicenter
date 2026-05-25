@@ -51,13 +51,13 @@
 					{
 						onError: (error) => rpc.notify.error(error),
 						onSuccess: (transformationRun) => {
-							if (transformationRun.status === 'failed') {
+							if (transformationRun.result.status === 'failed') {
 								rpc.notify.error({
 									title: '⚠️ Transformation error',
-									description: transformationRun.error ?? '',
+									description: transformationRun.result.error,
 									action: {
 										type: 'more-details',
-										error: transformationRun.error ?? '',
+										error: transformationRun.result.error,
 									},
 								});
 								return;
@@ -66,7 +66,7 @@
 							rpc.sound.playSoundIfEnabled('transformationComplete');
 
 							rpc.delivery.deliverTransformationResult({
-								text: transformationRun.output ?? '',
+								text: transformationRun.result.output,
 								toastId,
 							});
 						},

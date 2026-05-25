@@ -524,7 +524,7 @@ async function processRecordingPipeline({ blob, toastId }: { blob: Blob; toastId
 
 	// Step 5: Deliver transformation result
 	await rpc.delivery.deliverTransformationResult.execute({
-		text: transformationRun.output,
+		text: transformationRun.result.output,
 		toastId,
 	});
 }
@@ -801,23 +801,23 @@ transformInput: defineMutation({
       return WhisperingErr({ title: '⚠️ Transformation failed', serviceError: transformationRunError });
 
     // Step 2: Check result
-    if (transformationRun.status === 'failed') {
+    if (transformationRun.result.status === 'failed') {
       return WhisperingErr({
         title: '⚠️ Transformation failed',
-        description: transformationRun.error,
-        action: { type: 'more-details', error: transformationRun.error },
+        description: transformationRun.result.error,
+        action: { type: 'more-details', error: transformationRun.result.error },
       });
     }
 
     // Step 3: Return output
-    if (!transformationRun.output) {
+    if (!transformationRun.result.output) {
       return WhisperingErr({
         title: '⚠️ Transformation produced no output',
         description: 'The transformation completed but produced no output.',
       });
     }
 
-    return Ok(transformationRun.output);
+    return Ok(transformationRun.result.output);
   },
 }),
 ```

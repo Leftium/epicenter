@@ -13,22 +13,22 @@ import { convertEpicenterLinksToWikilinks } from '../../../links.js';
 import { assembleMarkdown } from '../../../markdown/assemble-markdown.js';
 import { parseMarkdownFile } from '../../../markdown/parse-markdown-file.js';
 import type { MaybePromise } from '../../../shared/types.js';
-import type { Kv } from '../../attach-kv.js';
 import {
 	type BaseRow,
 	type Table,
 	TableParseError,
-} from '../../attach-table.js';
+} from '../../table.js';
+import type { TablesRecord } from '../shared.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // PUSH ERROR + EVENT TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Errors produced by the background write-observer (table row → .md file,
- * KV state → serialized file). These run inside `.catch(...)` of a detached
- * async task, so they ship to the logger, not through a Result to the caller.
- * File-local: never crosses the module boundary.
+ * Errors produced by the background write-observer (table row → .md file).
+ * These run inside `.catch(...)` of a detached async task, so they ship to
+ * the logger, not through a Result to the caller. File-local: never crosses
+ * the module boundary.
  */
 const MaterializerWriteError = defineErrors({
 	TableWriteFailed: ({
@@ -40,10 +40,6 @@ const MaterializerWriteError = defineErrors({
 	}) => ({
 		message: `[markdown-materializer] table write failed for "${tableName}": ${extractErrorMessage(cause)}`,
 		tableName,
-		cause,
-	}),
-	KvWriteFailed: ({ cause }: { cause: unknown }) => ({
-		message: `[markdown-materializer] kv write failed: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
@@ -98,8 +94,6 @@ export type PushResult = {
 	events: PushEvent[];
 };
 
-// biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous kv
-type AnyKv = Kv<any>;
 // biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous tables
 type AnyTable = Table<any>;
 
@@ -127,13 +121,11 @@ export type MarkdownTableConfig<TRow extends BaseRow> = {
 	fromMarkdown?: (parsed: MarkdownShape) => MaybePromise<TRow>;
 };
 
-// biome-ignore lint/suspicious/noExplicitAny: heterogeneous row types in a record
-type TablesRecord = Record<string, Table<any>>;
-
 /**
- * Mapped per-table config keyed by `tables`. Each value sees the right row
- * type for its callbacks. Keys outside `tables` are rejected at the type
- * level.
+ * Mapped per-table config keyed by `workspace.tables`. Each value sees the
+ * right row type for its callbacks. Keys outside `workspace.tables` are
+ * rejected at the type level. Presence here is also the selection: tables
+ * not named in this record are not mirrored.
  */
 export type PerTableConfig<TTables extends TablesRecord> = {
 	[K in keyof TTables]?: TTables[K] extends Table<infer TRow>
@@ -145,11 +137,6 @@ type RegisteredTable = {
 	table: AnyTable;
 	// biome-ignore lint/suspicious/noExplicitAny: internal storage, variance across heterogeneous row types
 	config: MarkdownTableConfig<any>;
-	unsubscribe?: () => void;
-};
-
-type RegisteredKv = {
-	kv: AnyKv;
 	unsubscribe?: () => void;
 };
 
@@ -166,9 +153,6 @@ const defaultToMarkdown = (row: BaseRow) =>
 /** Default fromMarkdown: treat frontmatter as the row. */
 const defaultFromMarkdown = (parsed: MarkdownShape): BaseRow =>
 	parsed.frontmatter as BaseRow;
-
-/** Filename for the KV mirror: a single pretty-printed JSON file. */
-const KV_FILENAME = 'kv.json';
 
 /**
  * Compose a row into the full on-disk artifact: filename + content string.
@@ -214,10 +198,10 @@ async function writeMarkdownFile(
 /**
  * Create a bidirectional markdown materializer for workspace data.
  *
- * Pass the workspace `tables` record (or an object subset) and the
- * materializer mirrors every entry as a directory of .md files. Customize
- * filename / serializer behavior per table via `perTable`. Pass `kv` to
- * mirror the workspace KV as a single file alongside the tables.
+ * `perTable[name]` presence is the selection: tables whose name appears in
+ * `perTable` are mirrored as a directory of .md files; tables without a
+ * `perTable` entry are skipped. To mirror with defaults, pass an empty
+ * config (`perTable: { notes: {} }`).
  *
  * Exposes three mutations:
  * - `push`: disk to workspace. Import .md files as rows (additive).
@@ -226,55 +210,44 @@ async function writeMarkdownFile(
  *   all rows. Use for orphan cleanup or after config changes.
  *   Matches the sqlite materializer's `rebuild` for cross-materializer parity.
  *
- * Teardown is hooked to the ydoc via `ydoc.once('destroy', ...)`; callers
- * never call a dispose method; destroying the ydoc cascades.
+ * Teardown is hooked to `workspace.ydoc` via `once('destroy', ...)`; callers
+ * never call a dispose method; destroying the workspace cascades.
  *
  * @example
  * ```ts
- * const ydoc = new Y.Doc({ guid: 'workspace' });
- * const tables = attachTables(ydoc, myTableDefs);
- * const kv = attachKv(ydoc, myKvDefs);
- * const idb = attachIndexedDb(ydoc);
+ * using workspace = createMyWorkspace({...});
+ * const idb = attachIndexedDb(workspace.ydoc);
  *
- * const markdown = attachMarkdownMaterializer(ydoc, {
+ * const markdown = attachMarkdownMaterializer(workspace, {
  *   dir: './data',
  *   waitFor: idb.whenLoaded,
- *   tables,
  *   perTable: {
  *     posts: { filename: slugFilename('title') },
- *     // Inline toMarkdown / fromMarkdown callbacks when needed:
- *     // most real tables split metadata (on the row) from body
- *     // content (in a separate content-doc via createDisposableCache).
+ *     // Tables not listed here are skipped. Inline toMarkdown / fromMarkdown
+ *     // callbacks when needed: most real tables split metadata (on the row)
+ *     // from body content (in a separate content-doc).
  *   },
- *   kv,
  * });
  * ```
  */
 export function attachMarkdownMaterializer<TTables extends TablesRecord>(
-	ydoc: Y.Doc,
+	workspace: { ydoc: Y.Doc; tables: TTables },
 	{
 		dir,
-		tables,
 		perTable,
-		kv,
 		waitFor,
 		log = createLogger('markdown-materializer'),
 	}: {
 		/** Base output directory. Accepts a string or async getter for lazy path resolution. */
 		dir: string | (() => MaybePromise<string>);
 		/**
-		 * Tables to mirror. Pass the full `tables` record to mirror everything,
-		 * or an object subset like `{ notes: tables.notes }` to mirror a slice.
-		 */
-		tables: TTables;
-		/**
-		 * Optional per-table customization keyed by table name. Each entry can
-		 * override `dir`, `filename`, `toMarkdown`, and `fromMarkdown` for that
-		 * table only.
+		 * Per-table customization keyed by `workspace.tables` name. Presence
+		 * selects: only tables named in this record are mirrored. Each entry
+		 * can override `dir`, `filename`, `toMarkdown`, and `fromMarkdown`;
+		 * omit fields for defaults. Pass `{}` for an entry to mirror with all
+		 * defaults.
 		 */
 		perTable?: PerTableConfig<TTables>;
-		/** Optional workspace KV to mirror as a single file (default `kv.json`). */
-		kv?: AnyKv;
 		/**
 		 * Gate: the materializer awaits this before the initial filesystem flush.
 		 * Matches the `waitFor` convention used by `openCollaboration`. Omit for
@@ -282,21 +255,21 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 		 */
 		waitFor?: Promise<unknown>;
 		/**
-		 * Logger for background write-observer failures (table row to file,
-		 * KV state to file). Defaults to a console-backed logger.
+		 * Logger for background write-observer failures (table row to file).
+		 * Defaults to a console-backed logger.
 		 */
 		log?: Logger;
 	},
 ) {
+	const { ydoc, tables } = workspace;
 	const registered = new Map<string, RegisteredTable>();
 	for (const [name, table] of Object.entries(tables)) {
-		const config =
-			(perTable as Record<string, MarkdownTableConfig<BaseRow>> | undefined)?.[
-				name
-			] ?? {};
+		const config = (
+			perTable as Record<string, MarkdownTableConfig<BaseRow>> | undefined
+		)?.[name];
+		if (config === undefined) continue;
 		registered.set(name, { table: table as AnyTable, config });
 	}
-	const registeredKv: RegisteredKv | undefined = kv ? { kv } : undefined;
 	let isDisposed = false;
 
 	const resolveDir = async () =>
@@ -354,35 +327,12 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 		});
 	}
 
-	async function materializeKv(
-		baseDir: string,
-		{ kv }: RegisteredKv,
-	): Promise<() => void> {
-		const state: Record<string, unknown> = { ...kv.getAll() };
-		const kvPath = join(baseDir, KV_FILENAME);
-
-		await writeFile(kvPath, JSON.stringify(state, null, 2));
-
-		return kv.observeAll((changes) => {
-			void (async () => {
-				for (const [key, change] of changes) {
-					if (change.type === 'set') state[key] = change.value;
-					else delete state[key];
-				}
-				await writeFile(kvPath, JSON.stringify(state, null, 2));
-			})().catch((cause) => {
-				log.warn(MaterializerWriteError.KvWriteFailed({ cause }));
-			});
-		});
-	}
-
 	// ── Disposal ────────────────────────────────────────────────
 
 	function dispose() {
 		if (isDisposed) return;
 		isDisposed = true;
 		for (const entry of registered.values()) entry.unsubscribe?.();
-		registeredKv?.unsubscribe?.();
 	}
 
 	ydoc.once('destroy', dispose);
@@ -401,10 +351,6 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 		for (const entry of registered.values()) {
 			if (isDisposed) return;
 			entry.unsubscribe = await materializeTable(baseDir, entry);
-		}
-
-		if (registeredKv && !isDisposed) {
-			registeredKv.unsubscribe = await materializeKv(baseDir, registeredKv);
 		}
 	}
 
@@ -566,16 +512,6 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 		}
 
 		for (const entry of registered.values()) await rebuildOne(entry);
-
-		// Full reindex: re-materialize KV if registered.
-		if (registeredKv) {
-			const state = { ...registeredKv.kv.getAll() };
-			await writeFile(
-				join(baseDir, KV_FILENAME),
-				JSON.stringify(state, null, 2),
-			);
-			written++;
-		}
 
 		return { deleted, written };
 	}

@@ -14,8 +14,7 @@ import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import Type from 'typebox';
-import * as Y from 'yjs';
-import { attachTables, column, defineTable } from '../index.js';
+import { column, createWorkspace, defineTable } from '../index.js';
 import { tablesToDrizzleSchema } from './drizzle-schema.js';
 import { attachBunSqliteMaterializer } from './materializer/sqlite/bun-sqlite.js';
 import { openSqliteReader } from './open-sqlite-reader.js';
@@ -59,18 +58,19 @@ type EntryRow = {
 };
 
 async function seedMirror(filePath: string, rows: EntryRow[]) {
-	const ydoc = new Y.Doc({ guid: 'drizzle-schema-test' });
-	const tables = attachTables(ydoc, definitions);
-	const materializer = attachBunSqliteMaterializer(ydoc, {
+	using workspace = createWorkspace({
+		id: 'drizzle-schema-test',
+		tables: definitions,
+		kv: {},
+	});
+	const materializer = attachBunSqliteMaterializer(workspace, {
 		filePath,
 		debounceMs: 0,
-		tables: { entries: tables.entries },
 	});
 	await materializer.whenFlushed;
-	for (const row of rows) tables.entries.set(row);
+	for (const row of rows) workspace.tables.entries.set(row);
 	await new Promise<void>((resolve) => setTimeout(resolve, 0));
 	await new Promise<void>((resolve) => setTimeout(resolve, 0));
-	ydoc.destroy();
 }
 
 describe('tablesToDrizzleSchema', () => {

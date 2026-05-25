@@ -9,8 +9,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import * as Y from 'yjs';
-import { attachTables, column, defineTable } from '../index.js';
+import { column, createWorkspace, defineTable } from '../index.js';
 import { attachBunSqliteMaterializer } from './materializer/sqlite/bun-sqlite.js';
 import { openSqliteReader } from './open-sqlite-reader.js';
 
@@ -35,23 +34,24 @@ async function seedMirrorFile(
 	rows: Array<{ id: string; title: string; body: string }>,
 	{ fts = true }: { fts?: boolean } = {},
 ) {
-	const ydoc = new Y.Doc({ guid: 'test-mirror' });
-	const tables = attachTables(ydoc, { entries: entriesTable });
+	using workspace = createWorkspace({
+		id: 'test-mirror',
+		tables: { entries: entriesTable },
+		kv: {},
+	});
 	// debounceMs: 0 so each set() flushes on the next microtask, matching the
 	// "seed then read" shape of these tests.
-	const materializer = attachBunSqliteMaterializer(ydoc, {
+	const materializer = attachBunSqliteMaterializer(workspace, {
 		filePath,
 		debounceMs: 0,
-		tables: { entries: tables.entries },
 		...(fts ? { fts: { entries: ['title', 'body'] } } : {}),
 	});
 	await materializer.whenFlushed;
-	for (const row of rows) tables.entries.set({ ...row });
+	for (const row of rows) workspace.tables.entries.set({ ...row });
 	// Yield once for the debounced flush, then once more for the awaited
 	// syncQueue chain inside flushPendingSync to settle.
 	await new Promise<void>((resolve) => setTimeout(resolve, 0));
 	await new Promise<void>((resolve) => setTimeout(resolve, 0));
-	ydoc.destroy();
 }
 
 describe('openSqliteReader', () => {

@@ -1,5 +1,5 @@
 /**
- * `attachTursoMaterializer(ydoc, { path, tables })`: Turso-backed materializer.
+ * `attachTursoMaterializer(workspace, { path })`: Turso-backed materializer.
  *
  * Built on `@tursodatabase/database` (Turso's Rust SQLite rewrite, formerly
  * Limbo). The same package powers both native (Bun/Node) via the platform
@@ -16,10 +16,9 @@
  *
  * @example
  * ```ts
- * const materializer = attachTursoMaterializer(ydoc, {
+ * const materializer = attachTursoMaterializer(workspace, {
  *   path: ':memory:',                // in-memory; rebuilds from Y.Doc each session
  *   waitFor: idb.whenLoaded,
- *   tables,
  *   fts: { entries: ['title'] },
  * });
  *
@@ -71,15 +70,7 @@ export type AttachTursoMaterializerOptions<
 	path: string;
 
 	/**
-	 * Workspace tables to mirror. Each entry becomes a SQLite table named
-	 * after the record key. Pass the whole `tables` record to mirror
-	 * everything, or an object literal subset like `{ notes: tables.notes }`
-	 * to mirror a strict subset.
-	 */
-	tables: TTables;
-
-	/**
-	 * Optional FTS5 configuration. Keys must match `tables` keys; values
+	 * Optional FTS5 configuration. Keys must match `workspace.tables` keys; values
 	 * list the columns of that table's row to include in the FTS index.
 	 * When provided, the result exposes `materializer.fts.search(...)`;
 	 * when omitted, the `fts` namespace is absent from the return type.
@@ -116,16 +107,16 @@ export function attachTursoMaterializer<
 	TTables extends TablesRecord,
 	TFts extends FtsConfig<TTables> | undefined = undefined,
 >(
-	ydoc: Y.Doc,
+	workspace: { ydoc: Y.Doc; tables: TTables },
 	{
 		path,
-		tables,
 		fts,
 		debounceMs,
 		waitFor,
 		log = createLogger('attachTursoMaterializer'),
 	}: AttachTursoMaterializerOptions<TTables, TFts>,
 ) {
+	const { ydoc, tables } = workspace;
 	const clientPromise = connect(path);
 	const whenConnected = clientPromise.then(() => undefined);
 

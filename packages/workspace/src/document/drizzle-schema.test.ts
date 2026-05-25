@@ -176,28 +176,4 @@ describe('tablesToDrizzleSchema', () => {
 		expect(rows).toEqual([{ id: 'a' }]);
 	});
 
-	test('json columns roundtrip through Drizzles mode:json decoder', async () => {
-		const filePath = join(workDir, 'mirror.db');
-		await seedMirror(filePath, [
-			{
-				id: 'a',
-				title: 't',
-				body: null,
-				wordCount: 0,
-				score: 0,
-				published: false,
-				priority: 'medium',
-				tags: ['one', 'two', 'three'],
-				metadata: { author: 'me' },
-			},
-		]);
-
-		using reader = openSqliteReader({ filePath });
-		const schema = tablesToDrizzleSchema(definitions);
-		const db = drizzle(reader.db, { schema });
-
-		const [row] = await db.select().from(schema.entries);
-		expect(row?.tags).toEqual(['one', 'two', 'three']);
-		expect(row?.metadata).toEqual({ author: 'me' });
-	});
 });

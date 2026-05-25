@@ -52,16 +52,16 @@ export function openHoneycrispDaemon({
 	encryption.attachKv({});
 	const actions = createHoneycrispActions(tables);
 
-	const sqlite = attachBunSqliteMaterializer(ydoc, {
+	attachBunSqliteMaterializer(ydoc, {
 		filePath: sqlitePath(projectDir, ydoc.guid),
 		log: createLogger(`${route}-sqlite`),
+		tables: [tables.folders, tables.notes],
 	});
-	sqlite.table(tables.folders);
-	sqlite.table(tables.notes);
 
 	attachMarkdownMaterializer(ydoc, {
 		dir: markdownPath(projectDir, ydoc.guid),
-	}).table(tables.notes, { filename: slugFilename('title') });
+		tables: [[tables.notes, { filename: slugFilename('title') }]],
+	});
 
 	return attachDaemonInfrastructure(ydoc, {
 		projectDir,

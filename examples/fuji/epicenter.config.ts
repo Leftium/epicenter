@@ -53,7 +53,8 @@ export default defineWorkspace({
 		attachBunSqliteMaterializer(ydoc, {
 			filePath: join(projectDir, '.epicenter', 'sqlite.db'),
 			log: createLogger(`${route}-sqlite`),
-		}).table(tables.entries);
+			tables: [tables.entries],
+		});
 
 		// Markdown: visible at project root, one directory per table.
 		// Committed to git as the source of truth. The materializer appends
@@ -61,7 +62,8 @@ export default defineWorkspace({
 		// `<projectDir>/entries/<slug>.md` for the `entries` table.
 		attachMarkdownMaterializer(ydoc, {
 			dir: projectDir,
-		}).table(tables.entries, { filename: slugFilename('title') });
+			tables: [[tables.entries, { filename: slugFilename('title') }]],
+		});
 
 		return attachDaemonInfrastructure(ydoc, {
 			projectDir,

@@ -64,7 +64,8 @@ async function seedMirror(filePath: string, rows: EntryRow[]) {
 	const materializer = attachBunSqliteMaterializer(ydoc, {
 		filePath,
 		debounceMs: 0,
-	}).table(tables.entries);
+		tables: [tables.entries],
+	});
 	await materializer.whenFlushed;
 	for (const row of rows) tables.entries.set(row);
 	await new Promise<void>((resolve) => setTimeout(resolve, 0));

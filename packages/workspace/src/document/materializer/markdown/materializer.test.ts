@@ -29,6 +29,7 @@ import { parseMarkdownFile } from '../../../markdown/parse-markdown-file.js';
 import { column } from '../../column/index.js';
 import {
 	attachMarkdownMaterializer,
+	type MarkdownTableEntry,
 	type MarkdownShape,
 } from './materializer.js';
 
@@ -82,16 +83,13 @@ async function listTestDir(relativePath: string) {
 }
 
 type AttachedTables = ReturnType<typeof attachTables<typeof tableDefinitions>>;
-type Materializer = ReturnType<typeof attachMarkdownMaterializer>;
-type TableRegistration = {
-	table: Parameters<Materializer['table']>[0];
-	config?: Parameters<Materializer['table']>[1];
-};
+// biome-ignore lint/suspicious/noExplicitAny: heterogeneous test table entries
+type TableEntries = readonly MarkdownTableEntry<any>[];
 
 async function setup({
-	tables: tableRegistrations,
+	tables: tableEntries,
 }: {
-	tables?: (t: AttachedTables) => TableRegistration[];
+	tables?: (t: AttachedTables) => TableEntries;
 } = {}) {
 	const cache = createDisposableCache(
 		(id: string) => {
@@ -100,17 +98,8 @@ async function setup({
 
 			const materializer = attachMarkdownMaterializer(ydoc, {
 				dir: TEST_DIR,
+				tables: tableEntries?.(tables) ?? [tables.posts, tables.notes],
 			});
-
-			const registrations =
-				tableRegistrations?.(tables) ??
-				([
-					{ table: tables.posts },
-					{ table: tables.notes },
-				] as TableRegistration[]);
-			for (const { table, config } of registrations) {
-				materializer.table(table, config);
-			}
 
 			return {
 				ydoc,
@@ -136,7 +125,7 @@ async function setup({
 
 describe('push', () => {
 	test('imports markdown files into workspace tables', async () => {
-		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
+		const { workspace } = await setup({ tables: (t) => [t.posts] });
 		await writeTestFile(
 			'posts/hello.md',
 			'---\nid: post-1\ntitle: Hello World\npublished: true\n---\n',
@@ -163,7 +152,7 @@ describe('push', () => {
 	});
 
 	test('skips non-.md files', async () => {
-		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
+		const { workspace } = await setup({ tables: (t) => [t.posts] });
 		await writeTestFile(
 			'posts/valid.md',
 			'---\nid: p1\ntitle: Valid\npublished: false\n---\n',
@@ -180,7 +169,7 @@ describe('push', () => {
 	});
 
 	test('skips files without valid frontmatter', async () => {
-		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
+		const { workspace } = await setup({ tables: (t) => [t.posts] });
 		await writeTestFile(
 			'posts/valid.md',
 			'---\nid: p1\ntitle: Valid\npublished: false\n---\n',
@@ -199,7 +188,7 @@ describe('push', () => {
 	});
 
 	test('silently skips tables whose directories do not exist', async () => {
-		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
+		const { workspace } = await setup({ tables: (t) => [t.posts] });
 		// Don't create the posts directory. It should not exist.
 		const result = await workspace.materializer.push();
 
@@ -211,7 +200,7 @@ describe('push', () => {
 	});
 
 	test('emits error event when frontmatter fails schema validation', async () => {
-		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
+		const { workspace } = await setup({ tables: (t) => [t.posts] });
 		// Valid frontmatter structure but wrong type: title must be a string,
 		// here it's a number. `fromMarkdown` happily returns it; `table.parse()`
 		// catches the schema violation.
@@ -240,14 +229,14 @@ describe('push', () => {
 	test('emits error event when fromMarkdown callback throws', async () => {
 		const { workspace } = await setup({
 			tables: (t) => [
-				{
-					table: t.notes,
-					config: {
+				[
+					t.notes,
+					{
 						fromMarkdown: () => {
 							throw new Error('simulated callback failure');
 						},
 					},
-				},
+				],
 			],
 		});
 		await writeTestFile(
@@ -269,7 +258,7 @@ describe('push', () => {
 	});
 
 	test('counts match event kinds (invariant)', async () => {
-		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
+		const { workspace } = await setup({ tables: (t) => [t.posts] });
 		await writeTestFile(
 			'posts/good.md',
 			'---\nid: p1\ntitle: Good\npublished: true\n---\n',
@@ -296,15 +285,15 @@ describe('push', () => {
 	test('uses custom fromMarkdown callback', async () => {
 		const { workspace } = await setup({
 			tables: (t) => [
-				{
-					table: t.notes,
-					config: {
+				[
+					t.notes,
+					{
 						fromMarkdown: (parsed) => ({
 							id: parsed.frontmatter.id as string,
 							body: parsed.body ?? '',
 						}),
 					},
-				},
+				],
 			],
 		});
 		await writeTestFile(
@@ -324,7 +313,7 @@ describe('push', () => {
 
 	test('uses custom table directory', async () => {
 		const { workspace } = await setup({
-			tables: (t) => [{ table: t.posts, config: { dir: 'blog' } }],
+			tables: (t) => [[t.posts, { dir: 'blog' }]],
 		});
 		await writeTestFile(
 			'blog/hello.md',
@@ -340,7 +329,7 @@ describe('push', () => {
 	});
 
 	test('overwrites existing rows (set is insert-or-replace)', async () => {
-		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
+		const { workspace } = await setup({ tables: (t) => [t.posts] });
 		// First import
 		await writeTestFile(
 			'posts/p1.md',
@@ -396,7 +385,7 @@ describe('push', () => {
 
 describe('pull', () => {
 	test('writes all valid rows to disk', async () => {
-		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
+		const { workspace } = await setup({ tables: (t) => [t.posts] });
 		workspace.tables.posts.set({
 			id: 'p1',
 			title: 'First',
@@ -425,16 +414,16 @@ describe('pull', () => {
 	test('uses custom filename and toMarkdown callbacks', async () => {
 		const { workspace } = await setup({
 			tables: (t) => [
-				{
-					table: t.notes,
-					config: {
+				[
+					t.notes,
+					{
 						filename: (row) => `${row.id}-custom.md`,
 						toMarkdown: (row) => ({
 							frontmatter: { id: row.id },
-							body: (row as unknown as { body: string }).body,
+							body: row.body,
 						}),
 					},
-				},
+				],
 			],
 		});
 		workspace.tables.notes.set({ id: 'n1', body: 'Custom body' });
@@ -451,7 +440,7 @@ describe('pull', () => {
 
 	test('uses custom table directory', async () => {
 		const { workspace } = await setup({
-			tables: (t) => [{ table: t.posts, config: { dir: 'blog' } }],
+			tables: (t) => [[t.posts, { dir: 'blog' }]],
 		});
 		workspace.tables.posts.set({
 			id: 'p1',
@@ -468,7 +457,7 @@ describe('pull', () => {
 	});
 
 	test('writes nothing when table is empty', async () => {
-		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
+		const { workspace } = await setup({ tables: (t) => [t.posts] });
 		const result = await workspace.materializer.pull();
 
 		expect(result.written).toBe(0);
@@ -505,7 +494,7 @@ describe('pull', () => {
 
 describe('rebuild', () => {
 	test('removes orphan files and rewrites existing valid rows', async () => {
-		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
+		const { workspace } = await setup({ tables: (t) => [t.posts] });
 		// Seed disk with rows + an orphan file
 		workspace.tables.posts.set({
 			id: 'p1',
@@ -558,7 +547,7 @@ describe('rebuild', () => {
 	});
 
 	test('throws on unknown table name', async () => {
-		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
+		const { workspace } = await setup({ tables: (t) => [t.posts] });
 		await expect(workspace.materializer.rebuild('notAThing')).rejects.toThrow(
 			/not in the materialized table set/,
 		);
@@ -567,7 +556,7 @@ describe('rebuild', () => {
 	});
 
 	test('is idempotent: rebuild twice produces identical filesystem state', async () => {
-		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
+		const { workspace } = await setup({ tables: (t) => [t.posts] });
 		workspace.tables.posts.set({
 			id: 'p1',
 			title: 'A',
@@ -616,7 +605,8 @@ describe('round-trip', () => {
 			const tables = attachTables(ydoc, tableDefinitions);
 			const materializer = attachMarkdownMaterializer(ydoc, {
 				dir: TEST_DIR,
-			}).table(tables.posts);
+				tables: [tables.posts],
+			});
 			return {
 				ydoc,
 				tables,
@@ -657,7 +647,8 @@ describe('round-trip', () => {
 			const tables = attachTables(ydoc, tableDefinitions);
 			const materializer = attachMarkdownMaterializer(ydoc, {
 				dir: TEST_DIR,
-			}).table(tables.posts);
+				tables: [tables.posts],
+			});
 			return {
 				ydoc,
 				tables,
@@ -692,22 +683,21 @@ describe('round-trip', () => {
 		// row field: `notes.body` here. Inline callbacks keep the intent
 		// at the call site; no helper abstracts the destructure.
 		const { workspace } = await setup({
-			tables: (t) =>
+			tables: (t) => [
 				[
+					t.notes,
 					{
-						table: t.notes,
-						config: {
-							toMarkdown: (row: { id: string; body: string }) => {
-								const { body, ...frontmatter } = row;
-								return { frontmatter, body };
-							},
-							fromMarkdown: (parsed: MarkdownShape) => ({
-								id: parsed.frontmatter.id as string,
-								body: parsed.body ?? '',
-							}),
+						toMarkdown: (row) => {
+							const { body, ...frontmatter } = row;
+							return { frontmatter, body };
 						},
+						fromMarkdown: (parsed: MarkdownShape) => ({
+							id: parsed.frontmatter.id as string,
+							body: parsed.body ?? '',
+						}),
 					},
-				] as unknown as TableRegistration[],
+				],
+			],
 		});
 
 		const original = { id: 'n1', body: 'Body content here' };

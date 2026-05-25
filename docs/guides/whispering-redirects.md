@@ -26,6 +26,36 @@ Use the product page for old marketing/download links. Use the web app only when
 
 ## Cloudflare Setup
 
+The repo script manages the Cloudflare pieces for zones listed in `scripts/cf/apply.ts`. It currently covers:
+
+- `getwhispering.com`
+- `www.getwhispering.com`
+- `whispering.studio`
+- `www.whispering.studio`
+
+Preview the changes:
+
+```bash
+bun run cf:plan
+```
+
+Apply them:
+
+```bash
+bun run cf:apply
+```
+
+The script creates proxied placeholder DNS records for redirect-only hosts, then upserts Cloudflare Single Redirect rules in the `http_request_dynamic_redirect` phase. This is required because Redirect Rules only run when traffic reaches Cloudflare's proxy.
+
+The token behind `CLOUDFLARE_ZONE_TOKEN` needs:
+
+- `Zone:Read`
+- `Zone Settings:Edit`
+- `DNS:Edit`
+- `Single Redirect:Edit`
+
+## Manual Fallback
+
 In Cloudflare, configure redirects on the zone that receives the old traffic, not on the destination zone.
 
 For each old zone:
@@ -49,7 +79,7 @@ For `whispering.studio`:
 (http.host eq "whispering.studio" or http.host eq "www.whispering.studio")
 ```
 
-For old subdomains like `whispering.bradenwong.com` and `whispering.epicenterhq.com`, add redirect rules in the parent zones (`bradenwong.com` and `epicenterhq.com`). If those zones are not in this Cloudflare account, configure the same 301 at their DNS/hosting provider instead.
+For old subdomains like `whispering.bradenwong.com` and `whispering.epicenterhq.com`, add redirect rules in the parent zones (`bradenwong.com` and `epicenterhq.com`). If those zones are not in this Cloudflare account, configure the same 301 at their DNS/hosting provider instead. To manage them from `scripts/cf/apply.ts`, first add those parent zones to the script's `ZONES` list, then add matching entries to `REDIRECTS`.
 
 ## Verification
 

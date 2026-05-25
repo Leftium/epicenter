@@ -8,7 +8,7 @@
  *   bun run cf:apply  write changes
  *
  * Token: CLOUDFLARE_ZONE_TOKEN with scopes Zone:Read, Zone Settings:Edit,
- * DNS:Edit on all zones in the account. Create at
+ * DNS:Edit, and Single Redirect:Edit on all zones in the account. Create at
  * https://dash.cloudflare.com/profile/api-tokens.
  *
  * Adding a zone: add the domain to `ZONES` below. Zones marked `lockdown`
@@ -50,6 +50,31 @@ const ZONE_BASELINE = {
 	},
 } as const;
 
+const REDIRECT_RULESET_PHASE = 'http_request_dynamic_redirect';
+const REDIRECT_PLACEHOLDER_IP = '192.0.2.1';
+
+const REDIRECTS = [
+	{
+		zone: 'getwhispering.com',
+		ref: 'whispering_legacy_getwhispering_to_epicenter',
+		description: 'Redirect legacy Whispering domain to Epicenter product page',
+		hosts: ['getwhispering.com', 'www.getwhispering.com'],
+		targetUrl: 'https://epicenter.so/whispering',
+		statusCode: 301,
+		preserveQueryString: false,
+	},
+	{
+		zone: 'whispering.studio',
+		ref: 'whispering_legacy_studio_to_epicenter',
+		description:
+			'Redirect legacy Whispering studio domain to Epicenter product page',
+		hosts: ['whispering.studio', 'www.whispering.studio'],
+		targetUrl: 'https://epicenter.so/whispering',
+		statusCode: 301,
+		preserveQueryString: false,
+	},
+] as const;
+
 function emailLockdownRecords(zone: string) {
 	return [
 		{ type: 'TXT', name: zone, content: 'v=spf1 -all', ttl: 3600 },
@@ -71,9 +96,19 @@ if (!token) {
 		'CLOUDFLARE_ZONE_TOKEN is not set. Create one at https://dash.cloudflare.com/profile/api-tokens',
 	);
 	console.error(
-		'Required scopes: Zone:Read, Zone Settings:Edit, DNS:Edit (all zones).',
+		'Required scopes: Zone:Read, Zone Settings:Edit, DNS:Edit, Single Redirect:Edit (all zones).',
 	);
 	process.exit(1);
+}
+
+class CloudflareError extends Error {
+	constructor(
+		message: string,
+		readonly status: number,
+	) {
+		super(message);
+		this.name = 'CloudflareError';
+	}
 }
 
 async function cf<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -92,8 +127,9 @@ async function cf<T>(method: string, path: string, body?: unknown): Promise<T> {
 	};
 	if (!res.ok || !json.success) {
 		const errs = json.errors?.map((e) => `[${e.code}] ${e.message}`).join('; ');
-		throw new Error(
+		throw new CloudflareError(
 			`Cloudflare ${method} ${path} failed (${res.status}): ${errs ?? 'unknown error'}`,
+			res.status,
 		);
 	}
 	return json.result;
@@ -189,6 +225,16 @@ for (const zone of ZONES) {
 		if (dnssec.ds) dsRecords.push({ zone: zone.name, ds: dnssec.ds });
 	}
 
+	const redirects = REDIRECTS.filter((redirect) => redirect.zone === zone.name);
+	if (redirects.length > 0) {
+		for (const redirect of redirects) {
+			for (const host of redirect.hosts) {
+				await reconcileRedirectDnsRecord(zone.name, zoneId, host);
+			}
+		}
+		await reconcileRedirectRuleset(zoneId, redirects);
+	}
+
 	if (zone.email !== 'lockdown') {
 		console.log('    skip    email DNS (managed externally)');
 		continue;
@@ -268,4 +314,182 @@ function deepEqual(a: unknown, b: unknown): boolean {
 function shortJson(v: unknown): string {
 	const s = JSON.stringify(v);
 	return s.length > 80 ? `${s.slice(0, 77)}...` : s;
+}
+
+async function reconcileRedirectDnsRecord(
+	zoneName: string,
+	zoneId: string,
+	host: string,
+) {
+	const records = await cf<
+		Array<{ id: string; type: string; content: string; proxied?: boolean }>
+	>('GET', `/zones/${zoneId}/dns_records?name=${encodeURIComponent(host)}`);
+	const usable = records.find(
+		(record) =>
+			(record.type === 'A' ||
+				record.type === 'AAAA' ||
+				record.type === 'CNAME') &&
+			record.proxied === true,
+	);
+	if (usable) {
+		console.log(`    ok      redirect dns ${host}`);
+		return;
+	}
+
+	const placeholder = records.find(
+		(record) =>
+			record.type === 'A' && record.content === REDIRECT_PLACEHOLDER_IP,
+	);
+	const want = {
+		type: 'A',
+		name: host,
+		content: REDIRECT_PLACEHOLDER_IP,
+		ttl: 1,
+		proxied: true,
+	};
+	if (placeholder) {
+		drift++;
+		console.log(`    diff    redirect dns ${host}: proxied false -> true`);
+		if (!isPlan) {
+			await cf('PUT', `/zones/${zoneId}/dns_records/${placeholder.id}`, want);
+			console.log(`    applied redirect dns ${host}`);
+		}
+		return;
+	}
+
+	if (records.length > 0) {
+		drift++;
+		console.log(
+			`    warn    redirect dns ${host}: existing non-proxied records block Cloudflare redirects. Review DNS before replacing them.`,
+		);
+		return;
+	}
+
+	drift++;
+	const label = host === zoneName ? '@' : host.slice(0, -zoneName.length - 1);
+	console.log(
+		`    create  redirect dns ${label}: A ${REDIRECT_PLACEHOLDER_IP} proxied`,
+	);
+	if (!isPlan) {
+		await cf('POST', `/zones/${zoneId}/dns_records`, want);
+		console.log(`    applied redirect dns ${host}`);
+	}
+}
+
+type RedirectConfig = (typeof REDIRECTS)[number];
+
+type RedirectRule = {
+	id?: string;
+	ref?: string;
+	description?: string;
+	expression: string;
+	action: 'redirect';
+	action_parameters: {
+		from_value: {
+			target_url: { value: string };
+			status_code: number;
+			preserve_query_string: boolean;
+		};
+	};
+	enabled: boolean;
+};
+
+type RedirectRuleset = {
+	id: string;
+	name: string;
+	kind: 'zone';
+	phase: typeof REDIRECT_RULESET_PHASE;
+	rules: RedirectRule[];
+};
+
+async function reconcileRedirectRuleset(
+	zoneId: string,
+	redirects: readonly RedirectConfig[],
+) {
+	const existing = await getRedirectRuleset(zoneId);
+	const desiredRules = redirects.map(toRedirectRule);
+
+	if (!existing) {
+		drift++;
+		console.log(`    create  redirect ruleset ${REDIRECT_RULESET_PHASE}`);
+		if (!isPlan) {
+			await cf('POST', `/zones/${zoneId}/rulesets`, {
+				name: 'Redirect rules',
+				kind: 'zone',
+				phase: REDIRECT_RULESET_PHASE,
+				rules: desiredRules,
+			});
+			console.log('    applied redirect ruleset');
+		}
+		return;
+	}
+
+	const rules = [...existing.rules];
+	let changed = false;
+	for (const desired of desiredRules) {
+		const index = rules.findIndex((rule) => rule.ref === desired.ref);
+		if (index === -1) {
+			changed = true;
+			rules.push(desired);
+			console.log(`    create  redirect rule ${desired.ref}`);
+			continue;
+		}
+		const current = rules[index];
+		if (!current) {
+			throw new Error(`Missing redirect rule at index ${index}`);
+		}
+		const next = { ...desired, id: current.id };
+		if (!deepEqual(current, next)) {
+			changed = true;
+			rules[index] = next;
+			console.log(`    diff    redirect rule ${desired.ref}`);
+		} else {
+			console.log(`    ok      redirect rule ${desired.ref}`);
+		}
+	}
+
+	if (!changed) return;
+	drift++;
+	if (!isPlan) {
+		await cf('PUT', `/zones/${zoneId}/rulesets/${existing.id}`, {
+			name: existing.name,
+			kind: existing.kind,
+			phase: existing.phase,
+			rules,
+		});
+		console.log('    applied redirect ruleset');
+	}
+}
+
+async function getRedirectRuleset(zoneId: string) {
+	try {
+		return await cf<RedirectRuleset>(
+			'GET',
+			`/zones/${zoneId}/rulesets/phases/${REDIRECT_RULESET_PHASE}/entrypoint`,
+		);
+	} catch (error) {
+		if (error instanceof CloudflareError && error.status === 404) return null;
+		throw error;
+	}
+}
+
+function toRedirectRule(redirect: RedirectConfig): RedirectRule {
+	return {
+		ref: redirect.ref,
+		description: redirect.description,
+		expression: hostExpression(redirect.hosts),
+		action: 'redirect',
+		action_parameters: {
+			from_value: {
+				target_url: { value: redirect.targetUrl },
+				status_code: redirect.statusCode,
+				preserve_query_string: redirect.preserveQueryString,
+			},
+		},
+		enabled: true,
+	};
+}
+
+function hostExpression(hosts: readonly string[]) {
+	return `(${hosts.map((host) => `http.host eq "${host}"`).join(' or ')})`;
 }

@@ -16,9 +16,9 @@ import type { DeviceConfigKey } from '$lib/state/device-config.svelte';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
 import { transformationRuns } from '$lib/state/transformation-runs.svelte';
+import { transformationStepRuns } from '$lib/state/transformation-step-runs.svelte';
 import { transformationSteps } from '$lib/state/transformation-steps.svelte';
 import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
-import { whispering } from '$lib/whispering/client';
 import type {
 	TerminalTransformationRunResult,
 	Transformation,
@@ -292,7 +292,7 @@ async function runTransformation({
 			startedAt: new Date().toISOString(),
 			result: { status: 'running' },
 		} satisfies TransformationStepRun;
-		whispering.tables.transformationStepRuns.set(stepRun);
+		transformationStepRuns.set(stepRun);
 
 		const handleStepResult = await handleStep({
 			input: currentInput,
@@ -301,7 +301,7 @@ async function runTransformation({
 
 		if (isErr(handleStepResult)) {
 			const failedNow = new Date().toISOString();
-			whispering.tables.transformationStepRuns.set({
+			transformationStepRuns.set({
 				...stepRun,
 				result: {
 					status: 'failed',
@@ -323,7 +323,7 @@ async function runTransformation({
 
 		const handleStepOutput = handleStepResult.data;
 
-		whispering.tables.transformationStepRuns.set({
+		transformationStepRuns.set({
 			...stepRun,
 			result: {
 				status: 'completed',

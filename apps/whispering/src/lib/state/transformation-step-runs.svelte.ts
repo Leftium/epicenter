@@ -50,6 +50,14 @@ function createTransformationStepRuns() {
 				.sort((a, b) => a.order - b.order);
 		},
 
+		/** Create or update a step run. */
+		set(stepRun: Omit<TransformationStepRun, '_v'>) {
+			whispering.tables.transformationStepRuns.set({
+				...stepRun,
+				_v: 1,
+			} as TransformationStepRun);
+		},
+
 		/** Total number of step runs. */
 		get count() {
 			return map.size;

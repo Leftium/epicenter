@@ -108,7 +108,7 @@ export type SqliteMaterializerError = InferErrors<
  * Per-table configuration, generic over the specific row type so `fts` narrows
  * to valid column names at the call site.
  */
-type TableConfig<TRow extends BaseRow> = {
+export type TableConfig<TRow extends BaseRow> = {
 	/** Column names to include in FTS5 full-text search index. */
 	fts?: (keyof TRow & string)[];
 	/** Optional per-column value serializer override. */
@@ -175,13 +175,9 @@ export function attachSqliteMaterializerCore(
 		const config = registered.get(tableName)?.config;
 		const serialize = config?.serialize ?? serializeValue;
 		const keys = Object.keys(row);
-		const placeholders = keys.map(() => '?').join(', ');
 		const values = keys.map((key) => serialize(row[key]));
-		const columns = keys.map(quoteIdentifier).join(', ');
 
-		const stmt = await db.prepare(
-			`INSERT OR REPLACE INTO ${quoteIdentifier(tableName)} (${columns}) VALUES (${placeholders})`,
-		);
+		const stmt = await db.prepare(buildUpsertSql(tableName, keys));
 		await stmt.run(...values);
 	}
 
@@ -199,11 +195,7 @@ export function attachSqliteMaterializerCore(
 		if (rows.length === 0) return;
 
 		const keys = collectRowKeys(rows);
-		const placeholders = keys.map(() => '?').join(', ');
-		const columns = keys.map(quoteIdentifier).join(', ');
-		const stmt = await db.prepare(
-			`INSERT OR REPLACE INTO ${quoteIdentifier(tableName)} (${columns}) VALUES (${placeholders})`,
-		);
+		const stmt = await db.prepare(buildUpsertSql(tableName, keys));
 
 		for (const row of rows) {
 			const values = keys.map((key) => serialize(row[key]));
@@ -439,6 +431,34 @@ export function attachSqliteMaterializerCore(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Build an UPSERT statement: insert with `ON CONFLICT(id) DO UPDATE`.
+ *
+ * Avoids `INSERT OR REPLACE` because Turso's Rust engine doesn't support
+ * that form yet (parses as "INSERT OR REPLACE is only supported with
+ * UPSERT"). Standard UPSERT works across bun:sqlite, libSQL, and Turso.
+ *
+ * When `keys.length === 1` (just `id`), there's nothing to update on
+ * conflict, so the statement collapses to `INSERT ... ON CONFLICT DO NOTHING`
+ * (SET clauses with zero assignments are a SQL error).
+ */
+function buildUpsertSql(tableName: string, keys: string[]): string {
+	const quotedTable = quoteIdentifier(tableName);
+	const columns = keys.map(quoteIdentifier).join(', ');
+	const placeholders = keys.map(() => '?').join(', ');
+	const updateKeys = keys.filter((key) => key !== 'id');
+
+	if (updateKeys.length === 0) {
+		return `INSERT INTO ${quotedTable} (${columns}) VALUES (${placeholders}) ON CONFLICT(${quoteIdentifier('id')}) DO NOTHING`;
+	}
+
+	const setClause = updateKeys
+		.map((key) => `${quoteIdentifier(key)} = excluded.${quoteIdentifier(key)}`)
+		.join(', ');
+
+	return `INSERT INTO ${quotedTable} (${columns}) VALUES (${placeholders}) ON CONFLICT(${quoteIdentifier('id')}) DO UPDATE SET ${setClause}`;
 }
 
 function collectRowKeys(rows: readonly BaseRow[]): string[] {

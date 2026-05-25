@@ -300,7 +300,7 @@ export function attachSqliteMaterializer(
 		if (isDisposed) return;
 
 		for (const [tableName, entry] of registered) {
-			await db.run(generateDdl(tableName, entry.table.row));
+			await db.run(generateDdl(tableName, entry.table.schema));
 			if (entry.config.fts && entry.config.fts.length > 0)
 				await setupFtsTable(db, tableName, entry.config.fts);
 		}

@@ -1,7 +1,7 @@
 /**
  * Generate SQLite DDL from a workspace table's latest-version row schema.
  *
- * Callers pass `definition.schema.row` (a TypeBox `TObject` which is itself a
+ * Callers pass `definition.schema` (a TypeBox `TObject` which is itself a
  * JSON Schema). Column storage class and nullability come from
  * `deriveStorage` / `isNullable`, so `column.nullable(column.X())` rows map
  * cleanly to nullable SQLite columns.

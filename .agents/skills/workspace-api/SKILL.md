@@ -52,6 +52,7 @@ Use this skill when you are:
 
 - [Schema definition patterns](references/schema-definition-patterns.md): `defineTable`, `defineKv`, row type inference, KV scalar design, and branded IDs.
 - [Actions, layout, and attachments](references/actions-layout-and-attachments.md): action factories, JSDoc, workspace file layout, attachment ordering, `connectWorkspace`, and `_v`.
+- [Deriving action input schemas](references/deriving-action-inputs.md): use `tables.X.schema` and `schema.properties.X` to compose `defineQuery`/`defineMutation` input schemas inline. No helper layer.
 - [Action return shapes](references/action-return-shapes.md): local vs remote action return contracts and error normalization.
 - [Table, KV, CRUD, and observation](references/table-kv-crud-observation.md): table/KV read, write, observe, and derived-state details.
 - [Table migrations](references/table-migrations.md): migration rules and version evolution examples.

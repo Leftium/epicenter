@@ -184,8 +184,25 @@ export type TableDefinition<
 > = {
 	/** The original variadic versions, in declaration order. */
 	versions: TVersions;
-	/** Latest version's row TObject (user-facing; no `_v`). */
-	row: TObject<LastVersion<TVersions>>;
+	/**
+	 * Latest version's row schema as a TypeBox `TObject` (user-facing; no `_v`).
+	 *
+	 * Use as the runtime schema for full-row action inputs:
+	 * ```ts
+	 * defineMutation({ input: tables.notes.schema, handler: tables.notes.set });
+	 * ```
+	 *
+	 * Pluck individual column schemas via `.properties.X` for narrow inputs:
+	 * ```ts
+	 * Type.Object({
+	 *   id:    tables.notes.schema.properties.id,
+	 *   title: tables.notes.schema.properties.title,
+	 * })
+	 * ```
+	 *
+	 * The SQLite DDL generator and markdown materializer both read this field.
+	 */
+	schema: TObject<LastVersion<TVersions>>;
 	/** Upgrade any stored version to the current row in one step. */
 	migrate: (input: MigrateInput<TVersions>) => RowOf<LastVersion<TVersions>>;
 };
@@ -229,7 +246,7 @@ export function createTableDefinition<
 	const latestColumns = versions[versions.length - 1] as LastVersion<TVersions>;
 	return {
 		versions,
-		row: Type.Object(latestColumns),
+		schema: Type.Object(latestColumns),
 		migrate: migrate as TableDefinition<TVersions>['migrate'],
 	};
 }
@@ -241,7 +258,7 @@ export function createTableDefinition<
 /**
  * Type-safe read-only runtime handle for a single workspace table.
  *
- * Mirrors `row` (the latest version's TObject) from the definition for
+ * Mirrors `schema` (the latest version's row TObject) from the definition for
  * ergonomics; the underlying `definition` stays exposed for introspection.
  */
 export type ReadonlyTable<
@@ -254,8 +271,14 @@ export type ReadonlyTable<
 	/** The underlying `TableDefinition`. */
 	definition: TableDefinition<TVersions>;
 
-	/** Latest version's row TObject (mirrored from definition). */
-	row: TObject<LastVersion<TVersions>>;
+	/**
+	 * Latest version's row schema (mirrored from `definition.schema`).
+	 *
+	 * Use as the runtime schema for full-row action inputs, or pluck
+	 * individual column schemas via `.properties.X` for narrow inputs.
+	 * See `TableDefinition.schema` JSDoc for examples.
+	 */
+	schema: TObject<LastVersion<TVersions>>;
 
 	get(id: string): Result<TRow | null, TableParseError>;
 	getAll(): Array<Result<TRow, TableParseError>>;
@@ -435,7 +458,7 @@ export function createReadonlyTable<
 	return {
 		name,
 		definition,
-		row: definition.row,
+		schema: definition.schema,
 
 		get(id: string): Result<TRow | null, TableParseError> {
 			const raw = ykv.get(id);
@@ -563,8 +586,8 @@ export function createTable<
 			// latest shape. Validate against the latest schema directly: no
 			// need to stamp _v, route, and re-migrate just to write back.
 			const merged = { ...current, ...partial, id } as TRow;
-			if (!Value.Check(definition.row, merged)) {
-				const errors = [...Value.Errors(definition.row, merged)].map((e) => ({
+			if (!Value.Check(definition.schema, merged)) {
+				const errors = [...Value.Errors(definition.schema, merged)].map((e) => ({
 					path: e.instancePath,
 					message: e.message,
 				}));

@@ -9,8 +9,8 @@
  * `_v` stays explicit at every boundary: declared as `_v: column.literal(N)`
  * in each schema and passed as `_v: N as const` at every write site. The
  * library reads `_v` from storage and looks up the matching schema by
- * literal value, not by argument position; reordering the variadic args is
- * harmless.
+ * literal value. Variadic argument order is metadata only; the only
+ * objective error caught at definition time is a duplicated `_v` literal.
  *
  * @example
  * ```ts
@@ -101,7 +101,7 @@ export function defineTable(
 	}
 
 	const versions = args as readonly VersionedColumns[];
-	assertContiguousVersions(versions);
+	assertUniqueVersionLiterals(versions);
 
 	if (versions.length === 1) {
 		const onlyColumns = versions[0]!;
@@ -122,27 +122,30 @@ export function defineTable(
 }
 
 /**
- * Runtime guard: version literals must be unique, ascending, and contiguous
- * starting at 1. The common mistake (`defineTable(v1, v3)` after deleting v2)
- * surfaces here with a clear error.
+ * Runtime guard: every version must carry an `_v: column.literal(N)` field,
+ * and no two versions may declare the same `N`. Order is the developer's
+ * choice; the library matches stored rows by `_v` value, not by argument
+ * position.
  */
-function assertContiguousVersions(versions: readonly VersionedColumns[]): void {
-	const literals = versions.map((cols, idx) => {
+function assertUniqueVersionLiterals(
+	versions: readonly VersionedColumns[],
+): void {
+	const seen = new Set<number>();
+	versions.forEach((cols, idx) => {
 		const literalSchema = cols._v as TLiteral<number> | undefined;
 		if (!literalSchema || typeof literalSchema.const !== 'number') {
 			throw new Error(
 				`defineTable() version at position ${idx} is missing an _v: column.literal(N) field`,
 			);
 		}
-		return literalSchema.const;
-	});
-	for (let i = 0; i < literals.length; i++) {
-		if (literals[i] !== i + 1) {
+		const value = literalSchema.const;
+		if (seen.has(value)) {
 			throw new Error(
-				`defineTable() version literals must be contiguous starting at 1; got [${literals.join(', ')}] (position ${i} expected ${i + 1}, got ${literals[i]})`,
+				`defineTable() duplicate _v literal: ${value}. Each version must declare a unique _v.`,
 			);
 		}
-	}
+		seen.add(value);
+	});
 }
 
 export type { RowOf, TableDefinition, VersionedColumns } from './attach-table';

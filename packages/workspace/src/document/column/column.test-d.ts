@@ -8,7 +8,7 @@
  * offending line during typecheck.
  */
 
-import { Type } from 'typebox';
+import { Type, type Static, type TUnsafe } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
 import { column, type ColumnError, type FlatJsonTSchema } from './index';
@@ -158,18 +158,33 @@ export type _StringBrandedReturnsUnsafe = ReturnType<
 >;
 
 // --------------------------------------------------------------------------
-// column.json gate
+// column.json gate (Static<S> derived from schema; JsonValue-checked)
 // --------------------------------------------------------------------------
 
-export type _JsonAcceptsObject = ReturnType<
-	typeof column.json<{ tags: string[] }>
+// Schema with a JSON-safe Static passes through untouched.
+export type _JsonAcceptsObject = Expect<
+	Equal<
+		ReturnType<
+			typeof column.json<
+				ReturnType<typeof Type.Object<{ tags: ReturnType<typeof Type.Array<ReturnType<typeof Type.String>>> }>>
+			>
+		>,
+		TUnsafe<{ tags: string[] }>
+	>
 >;
 
-// JsonValue rejects Date / bigint / undefined at the type level.
-// @ts-expect-error: Date is not a JsonValue.
-export type _JsonRejectsDate = ReturnType<typeof column.json<{ at: Date }>>;
-// @ts-expect-error: bigint is not a JsonValue.
-export type _JsonRejectsBigInt = ReturnType<typeof column.json<{ n: bigint }>>;
+// Schema whose Static contains Date (via Unsafe<Date>) collapses the return
+// type to a ColumnError template-literal, surfaced in the IDE tooltip.
+type _JsonDate = ReturnType<typeof column.json<ReturnType<typeof Type.Unsafe<Date>>>>;
+export type _JsonRejectsDate = Expect<
+	Equal<Static<_JsonDate> extends string ? true : false, true>
+>;
+
+// Same for bigint.
+type _JsonBigInt = ReturnType<typeof column.json<ReturnType<typeof Type.Unsafe<bigint>>>>;
+export type _JsonRejectsBigInt = Expect<
+	Equal<Static<_JsonBigInt> extends string ? true : false, true>
+>;
 
 // --------------------------------------------------------------------------
 // Static<> JsonValue secondary check

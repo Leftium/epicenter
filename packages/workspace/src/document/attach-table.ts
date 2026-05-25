@@ -398,11 +398,20 @@ export function createReadonlyTable<
 	type TRow = InferTableRow<TTableDefinition>;
 
 	const versions = definition.versions as readonly VersionedColumns[];
-	const versionSchemas = versions.map((cols) => Type.Object(cols));
+	const versionSchemas = new Map<number, TObject<VersionedColumns>>();
+	for (const cols of versions) {
+		const literalSchema = cols._v as TLiteral<number>;
+		versionSchemas.set(
+			literalSchema.const,
+			Type.Object(cols) as TObject<VersionedColumns>,
+		);
+	}
 
 	/**
 	 * Parse and migrate a raw row value. Injects `id` into the input before
 	 * validation, then routes by stored `_v` value to the matching schema.
+	 * Lookup is value-based so `defineTable(v2, v1)` and `defineTable(v1, v2)`
+	 * behave identically at read time.
 	 */
 	function parseRow(id: string, input: unknown): Result<TRow, TableParseError> {
 		const row: Record<string, unknown> = {
@@ -410,8 +419,8 @@ export function createReadonlyTable<
 			id,
 		};
 		const version = row._v;
-		const schemaIndex = typeof version === 'number' ? version - 1 : -1;
-		const schema = versionSchemas[schemaIndex];
+		const schema =
+			typeof version === 'number' ? versionSchemas.get(version) : undefined;
 		if (!schema) {
 			return TableParseError.UnknownVersion({ id, version });
 		}

@@ -49,10 +49,10 @@ describe('column.enum', () => {
 });
 
 describe('column.json', () => {
-	test('validates against the provided schema', () => {
-		const tagsSchema = column.json<string[]>(column.string());
-		// Note: column.json wraps in Unsafe; runtime validation delegates to
-		// the inner schema. A string passes; a number does not.
+	test('validates against the provided schema (type derives from schema)', () => {
+		const tagsSchema = column.json(column.string());
+		// Runtime validation delegates to the inner schema; the static type
+		// is `Static<typeof inner>` so type and runtime cannot drift.
 		expect(Value.Check(tagsSchema, 'hello')).toBe(true);
 		expect(Value.Check(tagsSchema, 42)).toBe(false);
 	});

@@ -26,7 +26,7 @@ export const noteDefinition = defineTable({
 	id: column.string(),
 	title: column.string(),
 	content: column.string(),
-	tags: column.json<string[]>(Type.Array(Type.String())),
+	tags: column.json(Type.Array(Type.String())),
 	createdAt: column.number(),
 	updatedAt: column.number(),
 });
@@ -37,7 +37,7 @@ export const heavyNoteDefinition = defineTable({
 	title: column.string(),
 	content: column.string(),
 	summary: column.string(),
-	tags: column.json<string[]>(Type.Array(Type.String())),
+	tags: column.json(Type.Array(Type.String())),
 	createdAt: column.number(),
 	updatedAt: column.number(),
 });

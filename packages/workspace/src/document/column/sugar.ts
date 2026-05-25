@@ -44,6 +44,7 @@ import {
 import { Format } from 'typebox/format';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
+import type { ColumnError } from './constraint';
 import { DateTimeString } from '../../shared/datetime-string';
 import {
 	IANA_TIME_ZONE_FORMAT,
@@ -113,23 +114,34 @@ export function enum_<const T extends readonly TLiteralValue[]>(
 }
 
 /**
- * JSON-encoded TEXT column with a required runtime schema and a compile-time
- * `JsonValue` gate.
+ * JSON-encoded TEXT column. The TypeScript type derives from `Static<S>`, so
+ * the static and runtime sides are guaranteed to agree (no free `<T>`
+ * generic that could drift from the schema you actually pass).
  *
- * The schema argument is required by design: no implicit `Type.Any()`. A
- * caller writing `column.json<{x: number}>()` gets a TS error pointing at the
- * missing argument, instead of a silent runtime no-op where every value
- * passes `Value.Check`.
+ * The schema argument is required: no implicit `Type.Any()`. The
+ * `JsonValue` gate runs on `Static<S>` and surfaces as a readable type error
+ * if the schema admits non-JSON shapes (`Date`, `bigint`, `undefined`,
+ * optional keys widened under loose `exactOptionalPropertyTypes`).
  *
- * `T` is constrained to `JsonValue` (from `wellcrafted/json`), which rejects
- * `Date`, `bigint`, optional keys widening to `T | undefined` under loose
- * `exactOptionalPropertyTypes`, and any other non-JSON shape at the type level.
+ * @example
+ * ```ts
+ * column.json(Type.Array(Type.String()))          // Static = string[]
+ * column.json(Type.Object({ x: Type.Number() }))  // Static = { x: number }
+ * ```
  */
-export function json<T extends JsonValue>(
-	schema: TSchema,
+export function json<S extends TSchema>(
+	schema: S,
 	opts?: TSchemaOptions,
-): TUnsafe<T> {
-	return Type.Unsafe<T>(opts ? { ...schema, ...opts } : schema);
+): TUnsafe<
+	Static<S> extends JsonValue
+		? Static<S>
+		: ColumnError<`column.json schema must produce a JSON-safe Static<> value (got a shape containing Date, bigint, undefined, or optional keys widened to ' | undefined').`>
+> {
+	return Type.Unsafe(opts ? { ...schema, ...opts } : schema) as TUnsafe<
+		Static<S> extends JsonValue
+			? Static<S>
+			: ColumnError<`column.json schema must produce a JSON-safe Static<> value (got a shape containing Date, bigint, undefined, or optional keys widened to ' | undefined').`>
+	>;
 }
 
 /**

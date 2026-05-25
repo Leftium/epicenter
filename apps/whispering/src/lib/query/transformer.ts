@@ -150,7 +150,7 @@ export const transformer = {
 			);
 
 			const { data: result, error: runError } = await runTransformation({
-				input: recording.transcript as string,
+				input: recording.transcript,
 				transformation,
 				steps,
 				recordingId,

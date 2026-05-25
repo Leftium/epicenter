@@ -105,7 +105,7 @@
 		<EditRecordingModal {recording} />
 
 		<CopyButton
-			text={(recording.transcript as string) ?? ''}
+			text={recording.transcript}
 			copyFn={createCopyFn('transcript')}
 			style="view-transition-name: {viewTransition.recording(recordingId)
 				.transcript}"

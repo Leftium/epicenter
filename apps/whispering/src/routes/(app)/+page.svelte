@@ -364,9 +364,9 @@
 				recordingId={latestRecording.id}
 				transcript={latestRecording.transcriptionStatus === 'TRANSCRIBING'
 					? '...'
-					: ((latestRecording.transcript as string) ?? '')}
+					: latestRecording.transcript}
 				rows={1}
-				disabled={!(latestRecording.transcript as string)?.trim()}
+				disabled={!latestRecording.transcript.trim()}
 				loading={latestRecording.transcriptionStatus === 'TRANSCRIBING'}
 				onDelete={() => {
 					confirmationDialog.open({

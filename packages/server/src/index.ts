@@ -5,14 +5,19 @@
  * deployments. Personal mode partitions data by user; team mode does
  * not partition. The full design lives in
  * `specs/20260522T230000-server-package-split.md`.
+ *
+ * Deployments import the parent base app and the sub-apps they need,
+ * then compose auth and (where applicable) billing middleware around
+ * each sub-app at mount time. See `apps/api/src/index.ts` for the
+ * cloud composition.
  */
 
-// Top-level factory. `Server<E>` is the bundle of sub-apps; deployments
-// extending the library `Env` pass their full env as the type argument.
-export { createServer, type Server } from './create-server.js';
-// Middleware deployments compose around library sub-apps. Auth is mounted by
-// the deployment (not the library) so cloud can interleave Autumn gates
-// between the auth check and the handler.
+// Parent app. Wires per-request lifecycle (pg, after-response queue,
+// auth context, CORS, single-credential normalization, CSRF, rooms
+// registry). Mount every sub-app on this one.
+export { createBaseApp } from './base-app.js';
+// Middleware deployments compose around sub-apps.
+export { createAttachOwner } from './middleware/attach-owner.js';
 export {
 	requireBearerUser,
 	requireCookieOrBearerUser,
@@ -21,10 +26,15 @@ export { requireUrlOwnerIdMatchesAuth } from './middleware/require-url-owner-id-
 // Re-export the Cloudflare Durable Object class so each deployment's
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.
 export { Room } from './room/backends/cloudflare/durable-object.js';
-// Public configuration surface. `Env` is the Hono context type the
-// deployment composes around library middleware; `ServerOptions` is the
-// `createServer` config. Other types (`Connection`, `AfterResponseQueue`,
-// `SignUpPolicy`, `OwnerPath`, `RoomDoName`, `AssetR2Key`) and helpers
-// (`assetKey`, `doName`) are intentionally not re-exported: they are
-// internal to the library and have no current external consumers.
-export type { Env, ServerOptions } from './types.js';
+// Sub-apps. Each defines route shapes only; the deployment composes
+// auth and billing middleware around them at mount time.
+export { createAiApp } from './routes/ai.js';
+export { createAssetsApp } from './routes/assets.js';
+export { createAuthApp } from './routes/auth.js';
+export { createRoomsApp } from './routes/rooms.js';
+export { createSessionApp } from './routes/session.js';
+
+// Public Hono context type the deployment composes around library
+// middleware. `OwnershipMode` and `SignUpPolicy` stay internal: factories
+// accept the literal values directly.
+export type { Env } from './types.js';

@@ -1,10 +1,10 @@
 /**
- * Public configuration surface for {@link createServer}.
+ * Library types shared by sub-app factories and middleware.
  *
- * Deployment-level facts only. Per-request state lives on the Hono
- * context (`c.var.user`, `c.var.db`, etc.). Per-request `OwnerId` values
- * are reconstructed inside handlers from URL params (in personal mode)
- * or from the literal `'team'` (in team mode), based on `opts.mode`.
+ * Per-request state lives on the Hono context (`c.var.user`, `c.var.db`,
+ * etc.). Per-request `OwnerId` values are reconstructed inside handlers
+ * from URL params (in personal mode) or from the literal `'team'` (in
+ * team mode), via the `attachOwner` middleware.
  */
 
 import type { AuthUser } from '@epicenter/auth';
@@ -29,23 +29,12 @@ import type { Rooms } from './room/contracts.js';
 export type SignUpPolicy = 'open' | 'disabled';
 
 /**
- * Deployment partition shape. Set once at `createServer({ mode, ... })` and
- * read by route-mounting logic plus the `attachOwner` middleware. The wire
- * does not carry mode (consumers derive it from
- * `ownerId === TEAM_OWNER_ID`), so this type stays server-internal.
+ * Deployment partition shape. Passed to the sub-apps and middleware that
+ * branch on it (`createAssetsApp`, `createAttachOwner`). The wire does not
+ * carry mode (consumers derive it from `ownerId === TEAM_OWNER_ID`), so
+ * this type stays server-internal.
  */
 export type OwnershipMode = 'personal' | 'team';
-
-/**
- * The two-word deployment configuration.
- *
- * Cloud composition passes `{ mode: 'personal', signUpPolicy: 'open' }`.
- * Team composition passes `{ mode: 'team', signUpPolicy: 'disabled' }`.
- */
-export type ServerOptions = {
-	mode: OwnershipMode;
-	signUpPolicy?: SignUpPolicy;
-};
 
 /**
  * Per-connection identity and runtime state, stamped onto the Cloudflare

@@ -20,7 +20,7 @@ import { corsMiddleware } from './middleware/cors.js';
 import { requireOriginForCookieMutations } from './middleware/require-origin-for-cookie-mutations.js';
 import { singleCredential } from './middleware/single-credential.js';
 import { createDurableObjectRooms } from './room/backends/cloudflare/registry.js';
-import type { AfterResponseQueue, Env, ServerOptions } from './types.js';
+import type { AfterResponseQueue, Env, SignUpPolicy } from './types.js';
 
 const PRODUCTION_API_ORIGIN = APPS.API.urls[0];
 const LOCAL_API_ORIGIN = localUrl(APPS.API);
@@ -62,10 +62,13 @@ function createAfterResponseQueue(): AfterResponseQueue {
  *   4. {@link singleCredential}: reject ambiguous auth and lift WS bearer
  *      subprotocol into `Authorization`.
  *
- * Then mounts the global CSRF gate for cookie-auth mutations on `/api/*`,
- * and exposes a health endpoint at `/`.
+ * Then mounts the global CSRF gate for cookie-auth mutations on `/api/*`
+ * and the rooms registry. The deployment is responsible for exposing a
+ * health endpoint on `/`.
  */
-export function createBaseApp(opts: ServerOptions): Hono<Env> {
+export function createBaseApp(opts: {
+	signUpPolicy?: SignUpPolicy;
+}): Hono<Env> {
 	const app = new Hono<Env>();
 
 	// 1. CORS
@@ -118,11 +121,6 @@ export function createBaseApp(opts: ServerOptions): Hono<Env> {
 	// CSRF gate on every `/api/*` route. Bearer requests are CSRF-immune
 	// and skip this check inside the middleware.
 	app.use('/api/*', requireOriginForCookieMutations);
-
-	// Health
-	app.get('/', (c) =>
-		c.json({ mode: opts.mode, version: '0.1.0', runtime: 'cloudflare' }),
-	);
 
 	// Rooms registry: bound for any sub-app that reads `c.var.rooms`.
 	// The Cloudflare backend wraps `env.ROOM`; a future Bun backend wires

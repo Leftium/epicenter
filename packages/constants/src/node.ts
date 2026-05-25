@@ -1,14 +1,13 @@
 /**
  * Node-only runtime configuration: every Epicenter env var and platform
- * path users care about, resolved once at module load.
+ * path that crosses package boundaries, resolved once at module load.
  *
  * Production env vars are set by the shell or CI before the process starts
  * and do not change. Reading them eagerly matches reality and keeps this
  * module a pure value namespace.
  *
- * Volatile per-process state (daemon sockets, metadata, lease) lives at a
- * different lifetime; see `daemonRuntimeDir()` in
- * `@epicenter/workspace/daemon` for that.
+ * Single-consumer paths (daemon socket dir, auth token dir) live in their
+ * owning package, not here, so this module stays a cross-package vocabulary.
  */
 
 import envPaths from 'env-paths';

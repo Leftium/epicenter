@@ -2,37 +2,41 @@
  * Assets sub-app: owner-partitioned URL shapes for the asset CRUD surface.
  *
  * Uniform URL shape across modes:
- *   POST /owners/:ownerId/assets              authed upload
- *   GET  /owners/:ownerId/assets              authed list
- *   GET  /owners/:ownerId/assets/usage        authed usage
- *   DEL  /owners/:ownerId/assets/:assetId     authed delete
- *   GET  /owners/:ownerId/assets/:assetId     public read (capability URL)
+ *   POST   /owners/:ownerId/assets              authed upload
+ *   GET    /owners/:ownerId/assets              authed list
+ *   GET    /owners/:ownerId/assets/usage        authed usage
+ *   PATCH  /owners/:ownerId/assets/:assetId     authed metadata update
+ *                                                (visibility flip; future:
+ *                                                 rename)
+ *   DELETE /owners/:ownerId/assets/:assetId     authed delete
+ *   GET    /owners/:ownerId/assets/:assetId     CONDITIONAL auth
  *
- * Upload and delete require authentication. Read is unauthenticated: the
- * unguessable URL (15-char nanoid) is the credential, same model as Google
- * Drive "anyone with the link", Discord CDN, and Supabase Storage.
+ * The conditional GET is the one shape that's new. The handler looks up
+ * the row, branches on `visibility`:
+ *   - 'public'  : serve bytes; no auth required.
+ *   - 'private' : require an authenticated session whose actor matches
+ *                 the URL `:ownerId` (personal mode) or any team session
+ *                 if the URL owner is `TEAM_OWNER_ID` (team mode).
  *
- * R2 bucket is private (no public domain, no r2.dev). All reads are proxied
- * through this Worker, which sets security headers and supports ETag/range.
+ * Because the conditional GET handles its own auth, the deployment must
+ * NOT layer `requireCookieOrBearerUser` upstream of it (that would block
+ * public reads). The deployment composes auth on the other methods
+ * separately. See `apps/api/src/index.ts` for the split mount.
  *
- * The resolved owner partition arrives on `c.var.ownerId` via the
- * deployment-mounted `attachOwner` middleware. In personal mode the
- * deployment also layers `requireUrlOwnerIdMatchesAuth` to gate
- * `:ownerId === c.var.user.id`; in team mode `:ownerId` is pinned to
- * `TEAM_OWNER_ID` by the route pattern and no gate is needed.
+ * All writes still arrive with `c.var.ownerId` populated by the
+ * deployment-mounted `attachOwner` middleware. The conditional read
+ * does NOT have `c.var.ownerId` (no attachOwner upstream); it reads
+ * `c.req.param('ownerId')` directly and constrains the DB lookup by it.
  *
- * Authentication and any billing gating are layered on by the deployment,
- * not by this factory. The library returns bare CRUD; cloud wraps the
- * authed paths with `requireCookieOrBearerUser`, `requireUrlOwnerIdMatchesAuth`,
- * `attachOwner`, and `autumnStorageGate`; team wraps with
- * `requireCookieOrBearerUser` and `attachOwner` alone.
- *
- * Billing concerns (storage quota checks, usage tracking, reconciliation)
- * are layered on top by the cloud deployment via Hono middleware; the
- * library is billing-agnostic and only enforces the platform-level
- * limit {@link MAX_ASSET_BYTES}.
+ * R2 bucket is private (no public domain, no r2.dev). All reads are
+ * proxied through this Worker, which sets security headers and supports
+ * ETag/range. The library is billing-agnostic and only enforces the
+ * platform-level limit {@link MAX_ASSET_BYTES}.
  */
 
+import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/constants/identity';
+import { sValidator } from '@hono/standard-validator';
+import { type } from 'arktype';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
@@ -42,15 +46,24 @@ import { defineErrors } from 'wellcrafted/error';
 import { MAX_ASSET_BYTES } from '../constants.js';
 import * as schema from '../db/schema/index.js';
 import { assetKey } from '../owner.js';
-import type { Env } from '../types.js';
+import type { Env, OwnershipMode } from '../types.js';
 
 /**
- * 15-char alphanumeric ID generator, same spec as `generateGuid` in
- * `@epicenter/workspace`. Inlined here to avoid pulling workspace (and its
- * Yjs dependency tree) into the Cloudflare Worker bundle, where wrangler
- * cannot resolve it.
+ * 21-char alphanumeric ID generator (~108 bits entropy). Used as the
+ * unguessable credential portion of public asset URLs. Bumped from 15
+ * chars after grounding against Signal/Bitwarden precedent and the
+ * historical Slack file-token brute-force incident.
+ *
+ * Inlined here (rather than re-using `@epicenter/workspace`'s
+ * `generateGuid`) to avoid pulling Yjs into the Cloudflare Worker
+ * bundle.
  */
-const generateGuid = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 15);
+const generateAssetId = customAlphabet(
+	'abcdefghijklmnopqrstuvwxyz0123456789',
+	21,
+);
+
+const ASSET_ID_REGEX = '[a-z0-9]{21}';
 
 const ALLOWED_MIME_TYPES = new Set([
 	'image/png',
@@ -60,9 +73,21 @@ const ALLOWED_MIME_TYPES = new Set([
 	'application/pdf',
 ]);
 
+/**
+ * Schema for the PATCH body. Multipart upload (POST) stays on manual
+ * `parseBody()` + per-field checks because the `File` instance check
+ * and the multi-field validation read more clearly inline than through
+ * an arktype `narrow`.
+ */
+const PatchAssetBody = type({ visibility: "'private' | 'public'" });
+
 const AssetError = defineErrors({
 	MissingFile: () => ({
 		message: 'Missing file field in multipart body',
+	}),
+	InvalidVisibility: ({ value }: { value: string }) => ({
+		message: `Invalid visibility: '${value}'. Expected 'private' or 'public'.`,
+		value,
 	}),
 	FileTypeNotAllowed: ({ contentType }: { contentType: string }) => ({
 		message: `File type not allowed: ${contentType}`,
@@ -75,6 +100,9 @@ const AssetError = defineErrors({
 	}),
 	NotFound: () => ({
 		message: 'Asset not found',
+	}),
+	Unauthorized: () => ({
+		message: 'Authentication required to read this asset',
 	}),
 });
 
@@ -90,13 +118,19 @@ function sanitizeFilename(name: string): string {
 		.slice(0, 255);
 }
 
+function parseVisibility(raw: unknown): 'private' | 'public' | null {
+	if (raw === undefined || raw === null || raw === '') return 'private';
+	if (raw === 'private' || raw === 'public') return raw;
+	return null;
+}
+
 /**
  * Authenticated asset CRUD surface, mounted under `/owners/:ownerId/assets`.
  *
- * Handlers are mode-blind: every row carries `owner_id`, every read filters
- * by `c.var.ownerId`. In personal mode the partition value equals the
- * signed-in user's id; in team mode it equals `TEAM_OWNER_ID`. The same
- * filter is correct in both modes.
+ * Every handler in this factory expects `c.var.ownerId` to be populated
+ * by the deployment-mounted `attachOwner` middleware. The deployment
+ * also runs auth + `requireUrlOwnerIdMatchesAuth` upstream so handlers
+ * stay mode-blind for partition resolution.
  */
 function createAssetAuthedRoutes(): Hono<Env> {
 	return (
@@ -116,6 +150,14 @@ function createAssetAuthedRoutes(): Hono<Env> {
 						return c.json(AssetError.MissingFile(), 400);
 					}
 
+					const visibility = parseVisibility(body.visibility);
+					if (visibility === null) {
+						return c.json(
+							AssetError.InvalidVisibility({ value: String(body.visibility) }),
+							400,
+						);
+					}
+
 					const sanitizedFilename = sanitizeFilename(file.name);
 
 					if (!ALLOWED_MIME_TYPES.has(file.type)) {
@@ -129,14 +171,16 @@ function createAssetAuthedRoutes(): Hono<Env> {
 						return c.json(AssetError.FileTooLarge({ size: file.size }), 413);
 					}
 
-					const assetId = generateGuid();
+					const assetId = generateAssetId();
 					const r2Key = assetKey(c.var.ownerId, assetId);
 
 					await c.env.ASSETS_BUCKET.put(r2Key, file.stream(), {
 						httpMetadata: {
 							contentType: file.type,
 							contentDisposition: `inline; filename="${sanitizedFilename}"`,
-							cacheControl: 'private, max-age=31536000, immutable',
+							// No cache-control here. The read handler picks per request
+							// based on `row.visibility`; baking a value into R2 would
+							// either shadow the read-time decision or go stale on flip.
 						},
 					});
 
@@ -147,6 +191,7 @@ function createAssetAuthedRoutes(): Hono<Env> {
 							contentType: file.type,
 							sizeBytes: file.size,
 							originalName: sanitizedFilename,
+							visibility,
 						});
 					} catch (dbError) {
 						// Compensating delete - don't leave orphaned R2 objects
@@ -158,6 +203,7 @@ function createAssetAuthedRoutes(): Hono<Env> {
 						{
 							id: assetId,
 							url: `${c.req.path.replace(/\/$/, '')}/${assetId}`,
+							visibility,
 							contentType: file.type,
 							size: file.size,
 							originalName: sanitizedFilename,
@@ -201,9 +247,42 @@ function createAssetAuthedRoutes(): Hono<Env> {
 					return c.json({ totalBytes: total });
 				},
 			)
+			// PATCH /:assetId - Modify metadata (currently: visibility only)
+			.patch(
+				`/:assetId{${ASSET_ID_REGEX}}`,
+				describeRoute({
+					description:
+						"Modify an asset's metadata (currently: visibility flip)",
+					tags: ['assets'],
+				}),
+				sValidator('json', PatchAssetBody),
+				async (c) => {
+					const { assetId } = c.req.param();
+					const { visibility } = c.req.valid('json');
+
+					const [updated] = await c.var.db
+						.update(schema.asset)
+						.set({ visibility })
+						.where(
+							and(
+								eq(schema.asset.id, assetId),
+								eq(schema.asset.ownerId, c.var.ownerId),
+							),
+						)
+						.returning({
+							id: schema.asset.id,
+							visibility: schema.asset.visibility,
+						});
+
+					if (!updated) {
+						return c.json(AssetError.NotFound(), 404);
+					}
+					return c.json(updated);
+				},
+			)
 			// DELETE /:assetId - Delete (owner only)
 			.delete(
-				'/:assetId{[a-z0-9]{15}}',
+				`/:assetId{${ASSET_ID_REGEX}}`,
 				describeRoute({
 					description: 'Delete an asset (owner only)',
 					tags: ['assets'],
@@ -237,23 +316,58 @@ function createAssetAuthedRoutes(): Hono<Env> {
 }
 
 /**
- * Public asset read. The unguessable 15-char id is the credential, so the
- * route ships unauthenticated. The asset id is constrained to the exact
- * pattern `generateGuid` produces so it cannot shadow sibling management
- * endpoints mounted under the same `/assets` prefix.
+ * Conditional asset read. Mounted at `/owners/:ownerId/assets`. The
+ * deployment must NOT layer auth upstream of this route, because public
+ * reads bypass auth by design. The handler looks up the row, branches
+ * on `visibility`, and runs an auth check inline only for private
+ * assets.
+ *
+ * `mode` is needed because the actor-matches-owner check differs by
+ * deployment: personal mode requires `session.user.id === urlOwnerId`;
+ * team mode requires only that a session exists (the URL owner is
+ * pinned to `TEAM_OWNER_ID` by the route shape).
  */
-function createAssetPublicRoutes(): Hono<Env> {
+function createAssetReadRoute(mode: OwnershipMode): Hono<Env> {
 	return new Hono<Env>().get(
-		'/:assetId{[a-z0-9]{15}}',
+		`/:assetId{${ASSET_ID_REGEX}}`,
 		describeRoute({
-			description: 'Read an asset by ID (unauthenticated)',
+			description:
+				'Read an asset by ID. Public assets serve without auth; private assets require an authenticated owner.',
 			tags: ['assets'],
 		}),
 		async (c) => {
 			const { assetId } = c.req.param();
+			const urlOwnerId = asOwnerId(c.req.param('ownerId')!);
+
+			const [row] = await c.var.db
+				.select({
+					visibility: schema.asset.visibility,
+				})
+				.from(schema.asset)
+				.where(
+					and(
+						eq(schema.asset.id, assetId),
+						eq(schema.asset.ownerId, urlOwnerId),
+					),
+				)
+				.limit(1);
+
+			if (!row) return c.json(AssetError.NotFound(), 404);
+
+			if (row.visibility === 'private') {
+				const session = await c.var.auth.api.getSession({
+					headers: c.req.raw.headers,
+				});
+				const authorized =
+					session != null &&
+					(mode === 'team'
+						? urlOwnerId === TEAM_OWNER_ID
+						: session.user.id === urlOwnerId);
+				if (!authorized) return c.json(AssetError.Unauthorized(), 401);
+			}
 
 			const object = await c.env.ASSETS_BUCKET.get(
-				assetKey(c.var.ownerId, assetId),
+				assetKey(urlOwnerId, assetId),
 				{
 					onlyIf: c.req.raw.headers,
 					range: c.req.raw.headers,
@@ -264,11 +378,24 @@ function createAssetPublicRoutes(): Hono<Env> {
 				return c.body('Not found', 404);
 			}
 
+			// Cache-Control differs by visibility. Private assets MUST never
+			// land in a shared cache (Cloudflare edge, corporate proxy);
+			// 'private, no-store' is the conservative answer. Public assets
+			// get a short max-age so a publish→unpublish flip becomes visible
+			// to new requests within ~60s without an explicit purge. Active
+			// purge on PATCH would let us raise max-age; documented as a
+			// future optimization in the spec §4.
+			const cacheControl =
+				row.visibility === 'public'
+					? 'public, max-age=60'
+					: 'private, no-store';
+
 			// Bodyless object - precondition failed (ETag match -> 304)
 			if (!('body' in object)) {
 				const headers = new Headers();
 				object.writeHttpMetadata(headers);
 				headers.set('etag', object.httpEtag);
+				headers.set('cache-control', cacheControl);
 				headers.set('referrer-policy', 'no-referrer');
 				return new Response(null, { status: 304, headers });
 			}
@@ -277,6 +404,7 @@ function createAssetPublicRoutes(): Hono<Env> {
 			const headers = new Headers();
 			object.writeHttpMetadata(headers);
 			headers.set('etag', object.httpEtag);
+			headers.set('cache-control', cacheControl);
 			headers.set('accept-ranges', 'bytes');
 			headers.set('x-content-type-options', 'nosniff');
 			// Capability URL: do not let outgoing sub-resource requests carry
@@ -314,13 +442,12 @@ function createAssetPublicRoutes(): Hono<Env> {
 	);
 }
 
-export function createAssetsApp(): Hono<Env> {
+export function createAssetsApp(opts: { mode: OwnershipMode }): Hono<Env> {
 	const app = new Hono<Env>();
-
-	// Public read mounts first so the deployment's auth middleware (applied
-	// at the same prefix) does not intercept GETs for the capability URL.
-	app.route('/owners/:ownerId/assets', createAssetPublicRoutes());
+	// Conditional read mounts first so it matches GET /:assetId before
+	// any wildcard handlers. Order matters: both sub-apps mount at the
+	// same prefix, and Hono matches in registration order.
+	app.route('/owners/:ownerId/assets', createAssetReadRoute(opts.mode));
 	app.route('/owners/:ownerId/assets', createAssetAuthedRoutes());
-
 	return app;
 }

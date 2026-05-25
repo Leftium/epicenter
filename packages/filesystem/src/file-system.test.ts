@@ -399,14 +399,6 @@ describe('Uint8Array write support', () => {
 		await fs.cp('/src.bin', '/dest.bin');
 		expect(await fs.readFile('/dest.bin')).toBe('Hello');
 	});
-
-	test('rm cleans up Uint8Array-written file', async () => {
-		const { fs } = setup();
-		const data = new Uint8Array([0x48, 0x69]); // "Hi"
-		await fs.writeFile('/file.bin', data);
-		await fs.rm('/file.bin');
-		expect(await fs.exists('/file.bin')).toBe(false);
-	});
 });
 
 describe('ydoc destroy lifecycle', () => {

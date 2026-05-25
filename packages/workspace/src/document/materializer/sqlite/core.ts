@@ -29,8 +29,7 @@ import { defineMutation, defineQuery } from '../../../shared/actions.js';
 import type { MaybePromise } from '../../../shared/types.js';
 import type { BaseRow, Table } from '../../attach-table.js';
 import { generateDdl, quoteIdentifier } from './ddl.js';
-import type { SearchOptions, SearchResult } from './fts.js';
-import { ftsSearch, setupFtsTable } from './fts.js';
+import { createSqliteFtsLayer } from './fts.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // INTERNAL SQL EXECUTOR CONTRACT
@@ -111,9 +110,31 @@ export type SqliteMaterializerError = InferErrors<
 
 type RegisteredTable = {
 	table: AnyTable;
-	ftsColumns?: string[];
 	unsubscribe?: () => void;
 };
+
+/**
+ * Common shape returned by `attachSqliteMaterializerCore`. Each backend factory
+ * wraps this with its own additions (`client`, `whenConnected`).
+ */
+type SqliteMaterializerCommon = {
+	whenFlushed: Promise<void>;
+	count: ReturnType<typeof defineQuery>;
+	rebuild: ReturnType<typeof defineMutation>;
+};
+
+/**
+ * FTS slice of the materializer result. Conditional on whether `fts` was
+ * passed: when omitted, `fts` is absent from the type entirely.
+ */
+type SqliteMaterializerFts<TFts> = [TFts] extends [undefined]
+	? // biome-ignore lint/complexity/noBannedTypes: intentional empty branch when no FTS was configured
+		{}
+	: { fts: { search: ReturnType<typeof defineQuery> } };
+
+/** Result of `attachSqliteMaterializerCore`. `fts` is present iff `fts` opt was passed. */
+export type SqliteMaterializerCoreResult<TFts> = SqliteMaterializerCommon &
+	SqliteMaterializerFts<TFts>;
 
 /**
  * Internal shared materializer body. Each per-backend factory
@@ -125,7 +146,10 @@ type RegisteredTable = {
  *
  * @internal
  */
-export function attachSqliteMaterializerCore<TTables extends TablesRecord>(
+export function attachSqliteMaterializerCore<
+	TTables extends TablesRecord,
+	TFts extends FtsConfig<TTables> | undefined = undefined,
+>(
 	ydoc: Y.Doc,
 	{
 		db,
@@ -143,9 +167,12 @@ export function attachSqliteMaterializerCore<TTables extends TablesRecord>(
 		tables: TTables;
 		/**
 		 * Optional FTS5 configuration. Keyed by the same names as `tables`,
-		 * with values listing the columns to include in the FTS index.
+		 * with values listing the columns to include in the FTS index. When
+		 * provided, the returned materializer exposes a nested `fts` namespace
+		 * with the `search` action; when omitted, `fts` is absent from the
+		 * return type entirely.
 		 */
-		fts?: FtsConfig<TTables>;
+		fts?: TFts;
 		debounceMs?: number;
 		/**
 		 * Gate: the materializer awaits this before the initial DDL + full-load.
@@ -159,17 +186,18 @@ export function attachSqliteMaterializerCore<TTables extends TablesRecord>(
 		 */
 		log?: Logger;
 	},
-) {
+): SqliteMaterializerCoreResult<TFts> {
 	const registered = new Map<string, RegisteredTable>();
 	for (const [tableName, table] of Object.entries(tables)) {
-		const ftsColumns = fts?.[tableName as keyof TTables] as
-			| string[]
-			| undefined;
-		registered.set(tableName, {
-			table: table as AnyTable,
-			ftsColumns,
-		});
+		registered.set(tableName, { table: table as AnyTable });
 	}
+
+	// FTS lives entirely in its own layer when configured. Core knows nothing
+	// about FTS state, columns, or search SQL.
+	const ftsLayer =
+		fts !== undefined
+			? createSqliteFtsLayer<TTables>({ db, fts, log })
+			: undefined;
 
 	let pendingSync = new Map<string, Set<string>>();
 	let syncQueue = Promise.resolve();
@@ -254,18 +282,6 @@ export function attachSqliteMaterializerCore<TTables extends TablesRecord>(
 
 	// ── Query / mutation surface ─────────────────────────────────
 
-	async function search(
-		tableName: string,
-		query: string,
-		options?: SearchOptions,
-	): Promise<SearchResult[]> {
-		if (isDisposed) return [];
-		const entry = registered.get(tableName);
-		const ftsColumns = entry?.ftsColumns;
-		if (ftsColumns === undefined || ftsColumns.length === 0) return [];
-		return ftsSearch(db, tableName, ftsColumns, query, options, log);
-	}
-
 	async function count(tableName: string): Promise<number> {
 		if (isDisposed) return 0;
 		if (!registered.has(tableName)) return 0;
@@ -335,9 +351,12 @@ export function attachSqliteMaterializerCore<TTables extends TablesRecord>(
 
 		for (const [tableName, entry] of registered) {
 			await db.run(generateDdl(tableName, entry.table.schema));
-			if (entry.ftsColumns && entry.ftsColumns.length > 0)
-				await setupFtsTable(db, tableName, entry.ftsColumns);
 		}
+
+		// FTS DDL + triggers run after table DDL and before the bulk insert, so
+		// the AFTER INSERT triggers populate `<table>_fts` for free during the
+		// existing full-load. This is the load-bearing ordering invariant.
+		await ftsLayer?.beforeFullLoad();
 
 		if (isDisposed) return;
 
@@ -362,19 +381,8 @@ export function attachSqliteMaterializerCore<TTables extends TablesRecord>(
 
 	const whenFlushed = initialize();
 
-	return {
+	const base: SqliteMaterializerCommon = {
 		whenFlushed,
-		search: defineQuery({
-			title: 'Full-text search',
-			description: 'FTS5 search across materialized table rows',
-			input: Type.Object({
-				table: Type.String(),
-				query: Type.String(),
-				limit: Type.Optional(Type.Number()),
-			}),
-			handler: ({ table: tableName, query: q, limit: lim }) =>
-				search(tableName, q, lim !== undefined ? { limit: lim } : undefined),
-		}),
 		count: defineQuery({
 			title: 'Row count',
 			description: 'Count rows in a materialized table',
@@ -388,6 +396,16 @@ export function attachSqliteMaterializerCore<TTables extends TablesRecord>(
 			handler: ({ table: tableName }) => rebuild(tableName),
 		}),
 	};
+
+	// The conditional return type collapses to `base` when no FTS was passed.
+	// The cast is local: the runtime branch matches the type-level branch.
+	if (ftsLayer === undefined) {
+		return base as SqliteMaterializerCoreResult<TFts>;
+	}
+	return {
+		...base,
+		fts: { search: ftsLayer.search },
+	} as SqliteMaterializerCoreResult<TFts>;
 }
 
 // ════════════════════════════════════════════════════════════════════════════

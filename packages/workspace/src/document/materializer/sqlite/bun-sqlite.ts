@@ -39,6 +39,7 @@ import {
  */
 export type AttachBunSqliteMaterializerOptions<
 	TTables extends TablesRecord,
+	TFts extends FtsConfig<TTables> | undefined = undefined,
 > = {
 	/**
 	 * Absolute path to the bun:sqlite mirror file, or `':memory:'` for an
@@ -58,8 +59,10 @@ export type AttachBunSqliteMaterializerOptions<
 	/**
 	 * Optional FTS5 configuration. Keys must match `tables` keys; values
 	 * list the columns of that table's row to include in the FTS index.
+	 * When provided, the result exposes `sqlite.fts.search(...)`; when
+	 * omitted, the `fts` namespace is absent from the return type.
 	 */
-	fts?: FtsConfig<TTables>;
+	fts?: TFts;
 
 	/**
 	 * Debounce window for the materializer's incremental row flush. Defaults
@@ -92,7 +95,10 @@ export type AttachBunSqliteMaterializerOptions<
  * callers can wrap it in Drizzle (`drizzle(materializer.client, { schema })`)
  * for typed reads against the same file.
  */
-export function attachBunSqliteMaterializer<TTables extends TablesRecord>(
+export function attachBunSqliteMaterializer<
+	TTables extends TablesRecord,
+	TFts extends FtsConfig<TTables> | undefined = undefined,
+>(
 	ydoc: Y.Doc,
 	{
 		filePath,
@@ -101,11 +107,11 @@ export function attachBunSqliteMaterializer<TTables extends TablesRecord>(
 		debounceMs,
 		waitFor,
 		log = createLogger('attachBunSqliteMaterializer'),
-	}: AttachBunSqliteMaterializerOptions<TTables>,
+	}: AttachBunSqliteMaterializerOptions<TTables, TFts>,
 ) {
 	const client = openWriterSqlite({ filePath, log });
 
-	const core = attachSqliteMaterializerCore(ydoc, {
+	const core = attachSqliteMaterializerCore<TTables, TFts>(ydoc, {
 		db: client,
 		tables,
 		fts,

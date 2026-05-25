@@ -525,18 +525,18 @@ describe('attachSqliteMaterializerCore', () => {
 	// ============================================================================
 
 	describe('search', () => {
-		test('search returns empty array when fts is not configured', async () => {
+		test('fts namespace is absent when fts is not configured', async () => {
 			const testSetup = setup();
 
 			try {
 				await testSetup.workspace.sqlite.whenFlushed;
 
+				// The setup helper's build callback erases the FTS generic, so
+				// the runtime value is what we assert against: no FTS was passed,
+				// so the layer was never constructed, so `fts` is undefined.
 				expect(
-					await testSetup.workspace.sqlite.search({
-						table: 'posts',
-						query: 'hello',
-					}),
-				).toEqual([]);
+					(testSetup.workspace.sqlite as { fts?: unknown }).fts,
+				).toBeUndefined();
 			} finally {
 				await cleanup(testSetup);
 			}
@@ -565,7 +565,10 @@ describe('attachSqliteMaterializerCore', () => {
 
 					await testSetup.workspace.sqlite.whenFlushed;
 
-					const results = (await testSetup.workspace.sqlite.search({
+					const sqliteWithFts = testSetup.workspace.sqlite as unknown as {
+						fts: { search: (input: Record<string, unknown>) => Promise<unknown> };
+					};
+					const results = (await sqliteWithFts.fts.search({
 						table: 'posts',
 						query: 'mirror',
 						limit: 10,
@@ -587,21 +590,41 @@ describe('attachSqliteMaterializerCore', () => {
 	// ============================================================================
 
 	describe('action brand', () => {
-		test('search, count, rebuild are detectable via isAction()', async () => {
+		test('count and rebuild are detectable via isAction()', async () => {
 			const testSetup = setup();
 
 			try {
 				const { sqlite } = testSetup.workspace;
-				expect(isAction(sqlite.search)).toBe(true);
 				expect(isAction(sqlite.count)).toBe(true);
 				expect(isAction(sqlite.rebuild)).toBe(true);
 
-				expect(isQuery(sqlite.search)).toBe(true);
 				expect(isQuery(sqlite.count)).toBe(true);
 				expect(isMutation(sqlite.rebuild)).toBe(true);
 			} finally {
 				await cleanup(testSetup);
 			}
 		});
+
+		if (hasFts5) {
+			test('fts.search is detectable via isAction() when configured', async () => {
+				const testSetup = setup({
+					build: (t) => ({
+						tables: { posts: t.posts },
+						fts: { posts: ['title'] },
+					}),
+				});
+
+				try {
+					await testSetup.workspace.sqlite.whenFlushed;
+					const sqliteWithFts = testSetup.workspace.sqlite as unknown as {
+						fts: { search: unknown };
+					};
+					expect(isAction(sqliteWithFts.fts.search)).toBe(true);
+					expect(isQuery(sqliteWithFts.fts.search)).toBe(true);
+				} finally {
+					await cleanup(testSetup);
+				}
+			});
+		}
 	});
 });

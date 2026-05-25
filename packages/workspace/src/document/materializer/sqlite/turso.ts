@@ -54,7 +54,10 @@ import {
 /**
  * Options for {@link attachTursoMaterializer}.
  */
-export type AttachTursoMaterializerOptions<TTables extends TablesRecord> = {
+export type AttachTursoMaterializerOptions<
+	TTables extends TablesRecord,
+	TFts extends FtsConfig<TTables> | undefined = undefined,
+> = {
 	/**
 	 * Path or URL that Turso's `connect()` accepts:
 	 *
@@ -78,8 +81,10 @@ export type AttachTursoMaterializerOptions<TTables extends TablesRecord> = {
 	/**
 	 * Optional FTS5 configuration. Keys must match `tables` keys; values
 	 * list the columns of that table's row to include in the FTS index.
+	 * When provided, the result exposes `materializer.fts.search(...)`;
+	 * when omitted, the `fts` namespace is absent from the return type.
 	 */
-	fts?: FtsConfig<TTables>;
+	fts?: TFts;
 
 	/** Forwarded to the materializer core. Defaults to 100 ms. */
 	debounceMs?: number;
@@ -107,7 +112,10 @@ export type AttachTursoMaterializerOptions<TTables extends TablesRecord> = {
  * underlying handle await `materializer.client` or wait for
  * `materializer.whenConnected`.
  */
-export function attachTursoMaterializer<TTables extends TablesRecord>(
+export function attachTursoMaterializer<
+	TTables extends TablesRecord,
+	TFts extends FtsConfig<TTables> | undefined = undefined,
+>(
 	ydoc: Y.Doc,
 	{
 		path,
@@ -116,7 +124,7 @@ export function attachTursoMaterializer<TTables extends TablesRecord>(
 		debounceMs,
 		waitFor,
 		log = createLogger('attachTursoMaterializer'),
-	}: AttachTursoMaterializerOptions<TTables>,
+	}: AttachTursoMaterializerOptions<TTables, TFts>,
 ) {
 	const clientPromise = connect(path);
 	const whenConnected = clientPromise.then(() => undefined);
@@ -139,7 +147,7 @@ export function attachTursoMaterializer<TTables extends TablesRecord>(
 		},
 	};
 
-	const core = attachSqliteMaterializerCore(ydoc, {
+	const core = attachSqliteMaterializerCore<TTables, TFts>(ydoc, {
 		db,
 		tables,
 		fts,

@@ -73,6 +73,8 @@ attachBunSqliteMaterializer(ydoc, {
 
 Per-table customization lives in `perTable: { [tableName]: { ... } }` (markdown) and FTS column opt-in lives in `fts: { [tableName]: ColumnKey[] }` (SQLite). Both slots narrow against `keyof tables`, so keys autocomplete and typos error at the call site. Passing the bare `tables` record mirrors every entry; an object subset (`tables: { files: tables.files }`) mirrors only what you list.
 
+The SQLite result surfaces FTS on a nested namespace: `sqlite.fts.search({ table, query })` exists when `fts: {...}` was passed; when omitted, `sqlite.fts` is absent from the return type entirely. Single attach call, single `whenFlushed` barrier; the FTS DDL and triggers run between table DDL and the bulk insert so triggers populate `<table>_fts` for free.
+
 ## The One Exception: Non-Ydoc Subject
 
 When a primitive modifies a sibling attachment and the coordination is cross-package (so it can't be a method on the coordinator), it's a top-level function with the attachment as first arg:

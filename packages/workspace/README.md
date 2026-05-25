@@ -984,14 +984,13 @@ void openNotes;
 The SQLite materializer is exported from `@epicenter/workspace/document/materializer/sqlite`. It mirrors table rows into queryable SQLite tables with optional FTS5 full-text search. Pass the `tables` record to mirror every entry, and use the keyed `fts` slot to opt specific columns into FTS5.
 
 ```typescript
-import { Database } from 'bun:sqlite';
 import * as Y from 'yjs';
 import {
 	attachTables,
 	column,
 	defineTable,
 } from '@epicenter/workspace';
-import { attachSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
+import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 
 const posts = defineTable({
 	id: column.string(),
@@ -1003,10 +1002,8 @@ const posts = defineTable({
 function openBlog() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.blog' });
 	const tables = attachTables(ydoc, { posts });
-	const db = new Database('/tmp/epicenter/blog.db');
-	ydoc.once('destroy', () => db.close());
-	const mirror = attachSqliteMaterializer(ydoc, {
-		db,
+	const mirror = attachBunSqliteMaterializer(ydoc, {
+		filePath: '/tmp/epicenter/blog.db',
 		tables: { posts: tables.posts },
 		fts: { posts: ['title', 'body'] },
 	});
@@ -1021,13 +1018,13 @@ function openBlog() {
 }
 
 // After mirror.whenFlushed:
-// blog.mirror.search('posts', 'hello');
-// blog.mirror.count('posts');
-// blog.mirror.rebuild('posts');
+// blog.mirror.fts.search({ table: 'posts', query: 'hello' });
+// blog.mirror.count({ table: 'posts' });
+// blog.mirror.rebuild({ table: 'posts' });
 void openBlog;
 ```
 
-The `MirrorDatabase` interface is structurally compatible with `bun:sqlite`'s `Database` and `better-sqlite3`'s `Database`: no wrapper needed. Pass your driver directly.
+The materializer owns the SQLite file end-to-end. When you pass `fts: {...}`, the result exposes a nested `mirror.fts` namespace with the search action; omit `fts` and `mirror.fts` is absent from the return type entirely.
 
 ## Workspace Dependencies
 

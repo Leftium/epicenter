@@ -1,5 +1,8 @@
 export {
+	type CompletedResult,
+	type FailedResult,
 	type Recording,
+	type RunningResult,
 	type TerminalTransformationRunResult,
 	type Transformation,
 	type TransformationRun,

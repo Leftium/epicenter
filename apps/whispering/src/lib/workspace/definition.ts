@@ -151,41 +151,53 @@ const transformationSteps = defineTable({
 export type TransformationStep = InferTableRow<typeof transformationSteps>;
 
 /**
- * Result of a transformation run or step run. Discriminated on `status`:
- * `running` carries no payload; `completed` carries `completedAt` + `output`;
- * `failed` carries `completedAt` + `error`. Storage is one JSON-encoded TEXT
- * column (`result`) on the row; nothing in the read path filters or sorts
- * on these fields, so the JSON envelope is cheaper than the loss of per-status
- * invariants a flat nullable layout would cause.
+ * Per-variant result shapes for a transformation run or step run. Each
+ * variant has a single source of truth (one schema, one shadowed type) and
+ * higher-level unions compose them.
  *
- * Run and step run share the schema so a single union covers both tables.
+ * Storage is one JSON-encoded TEXT column (`result`) on the row; nothing in
+ * the read path filters or sorts on these fields, so the JSON envelope is
+ * cheaper than the loss of per-status invariants a flat nullable layout
+ * would cause.
+ *
+ * Run and step run share the same result schema.
  */
-const transformationRunResultSchema = Type.Union([
-	Type.Object({ status: Type.Literal('running') }),
-	Type.Object({
-		status: Type.Literal('completed'),
-		completedAt: Type.String(),
-		output: Type.String(),
-	}),
-	Type.Object({
-		status: Type.Literal('failed'),
-		completedAt: Type.String(),
-		error: Type.String(),
-	}),
-]);
+const RunningResult = Type.Object({ status: Type.Literal('running') });
+export type RunningResult = Static<typeof RunningResult>;
 
-export type TransformationRunResult = Static<
-	typeof transformationRunResultSchema
->;
+const CompletedResult = Type.Object({
+	status: Type.Literal('completed'),
+	completedAt: Type.String(),
+	output: Type.String(),
+});
+export type CompletedResult = Static<typeof CompletedResult>;
+
+const FailedResult = Type.Object({
+	status: Type.Literal('failed'),
+	completedAt: Type.String(),
+	error: Type.String(),
+});
+export type FailedResult = Static<typeof FailedResult>;
+
+/** Every possible result a run or step run can carry. */
+const TransformationRunResult = Type.Union([
+	RunningResult,
+	CompletedResult,
+	FailedResult,
+]);
+export type TransformationRunResult = Static<typeof TransformationRunResult>;
 
 /**
- * Same shape with the `running` variant excluded. Used at boundaries where a
- * run has reached a terminal state (the `runTransformation` return path,
- * mutation callers that proceed only after the pipeline finishes).
+ * Results from runs that have reached a terminal state. Enumerated, not
+ * negated: adding a new non-terminal status (e.g. `pending`) means adding
+ * a variant above, not silently widening this union.
  */
-export type TerminalTransformationRunResult = Exclude<
-	TransformationRunResult,
-	{ status: 'running' }
+const TerminalTransformationRunResult = Type.Union([
+	CompletedResult,
+	FailedResult,
+]);
+export type TerminalTransformationRunResult = Static<
+	typeof TerminalTransformationRunResult
 >;
 
 /**
@@ -200,7 +212,7 @@ const transformationRuns = defineTable({
 	recordingId: column.nullable(column.string()),
 	input: column.string(),
 	startedAt: column.string(),
-	result: column.json(transformationRunResultSchema),
+	result: column.json(TransformationRunResult),
 });
 
 /** Transformation run row type inferred from the latest workspace table schema version. */
@@ -215,7 +227,7 @@ const transformationStepRuns = defineTable({
 	order: column.number(),
 	input: column.string(),
 	startedAt: column.string(),
-	result: column.json(transformationRunResultSchema),
+	result: column.json(TransformationRunResult),
 });
 
 /** Transformation step run row type inferred from the latest workspace table schema version. */
@@ -268,7 +280,7 @@ const output = {
 const ui = {
 	'ui.alwaysOnTop': defineKv(
 		column.enum(ALWAYS_ON_TOP_MODES),
-		() => 'Never' as const,
+		() => 'Never',
 	),
 } as const;
 
@@ -280,7 +292,7 @@ const ui = {
 const dataRetention = {
 	'retention.strategy': defineKv(
 		column.enum(['keep-forever', 'limit-count']),
-		() => 'keep-forever' as const,
+		() => 'keep-forever',
 	),
 	'retention.maxCount': defineKv(column.integer({ minimum: 1 }), () => 100),
 } as const;
@@ -289,7 +301,7 @@ const dataRetention = {
 const recording = {
 	'recording.mode': defineKv(
 		column.enum(RECORDING_MODES),
-		() => 'manual' as const,
+		() => 'manual',
 	),
 } as const;
 
@@ -305,7 +317,7 @@ const recording = {
 const transcription = {
 	'transcription.service': defineKv(
 		column.enum(TRANSCRIPTION_SERVICE_ID_TUPLE),
-		() => 'moonshine' as const,
+		() => 'moonshine',
 	),
 	'transcription.openai.model': defineKv(
 		column.string(),

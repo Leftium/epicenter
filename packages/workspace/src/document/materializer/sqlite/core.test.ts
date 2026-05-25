@@ -575,7 +575,9 @@ describe('attachSqliteMaterializerCore', () => {
 					await testSetup.workspace.sqlite.whenFlushed;
 
 					const sqliteWithFts = testSetup.workspace.sqlite as unknown as {
-						fts: { search: (input: Record<string, unknown>) => Promise<unknown> };
+						fts: {
+							search: (input: Record<string, unknown>) => Promise<unknown>;
+						};
 					};
 					const results = (await sqliteWithFts.fts.search({
 						table: 'posts',

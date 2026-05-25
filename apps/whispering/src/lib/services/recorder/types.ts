@@ -230,23 +230,11 @@ export type NavigatorRecordingParams = BaseRecordingParams & {
 };
 
 /**
- * FFmpeg recording parameters
- */
-export type FfmpegRecordingParams = BaseRecordingParams & {
-	method: 'ffmpeg';
-	globalOptions: string;
-	inputOptions: string;
-	outputOptions: string;
-	outputFolder: string;
-};
-
-/**
  * Discriminated union for recording parameters based on method
  */
 export type StartRecordingParams =
 	| CpalRecordingParams
-	| NavigatorRecordingParams
-	| FfmpegRecordingParams;
+	| NavigatorRecordingParams;
 
 /**
  * Recorder service interface shared by all methods
@@ -274,11 +262,13 @@ export type RecorderService = {
 	): Promise<Result<DeviceAcquisitionOutcome, RecorderError>>;
 
 	/**
-	 * Stop the current recording and return the audio blob
+	 * Stop the current recording. Returns the audio blob alongside the
+	 * recordingId that was supplied to startRecording, so callers don't need to
+	 * remember it across the start/stop boundary.
 	 */
 	stopRecording(callbacks: {
 		sendStatus: UpdateStatusMessageFn;
-	}): Promise<Result<Blob, RecorderError>>;
+	}): Promise<Result<{ blob: Blob; recordingId: string }, RecorderError>>;
 
 	/**
 	 * Cancel the current recording without saving

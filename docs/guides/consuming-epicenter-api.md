@@ -62,9 +62,11 @@ export function openMyAppBrowser({
 	installationId: string;
 }) {
 	const ydoc = new Y.Doc({ guid: MY_APP_ID, gc: true });
-	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
-	const tables = encryption.attachTables(myAppTables);
-	const kv = encryption.attachKv({});
+	const { tables, kv } = attachEncryption(ydoc, {
+		keyring: signedIn.keyring,
+		tables: myAppTables,
+		kv: {},
+	});
 	const actions = {
 		notes_create: async ({ id, title }: { id: string; title: string }) => {
 			tables.notes.create({ id, title, _v: 1 });

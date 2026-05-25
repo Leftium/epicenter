@@ -2,16 +2,17 @@
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';
-	import { DateTimeString, generateId, type IanaTimeZone } from '@epicenter/workspace';
+	import { DateTimeString, generateId, IanaTimeZone } from '@epicenter/workspace';
 	import { toast } from 'svelte-sonner';
 	import * as Y from 'yjs';
 	import { requireFuji } from '$lib/session';
-	import type { EntryId } from '$lib/workspace';
+	import type { Entry, EntryId } from '$lib/workspace';
 
 	// ─── Config ──────────────────────────────────────────────────────────────────
 	const fuji = requireFuji();
 
 	const COUNTS = [1_000, 10_000] as const;
+	const STRESS_TEST_TAG = 'stress-test';
 
 	/**
 	 * Small chunk size for bulkSet so the browser event loop yields between
@@ -42,7 +43,7 @@
 	let results = $state<Results | null>(null);
 
 	const stressTestCount = $derived(
-		fuji.entries.active.filter((e) => e.tags.includes('stress-test')).length,
+		fuji.entries.active.filter(isStressTestEntry).length,
 	);
 
 	// ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -57,9 +58,15 @@
 		return shuffled.slice(0, count);
 	}
 
-	const LOCAL_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone as IanaTimeZone;
+	function isStressTestEntry(entry: Entry): boolean {
+		return entry.tags.includes(STRESS_TEST_TAG);
+	}
 
-	function generateEntryRow(index: number, now: DateTimeString) {
+	function generateEntryRow(
+		index: number,
+		now: DateTimeString,
+		dateZone: IanaTimeZone,
+	) {
 		const dateNow = Date.now();
 		const twoYearsMs = 2 * 365 * 24 * 60 * 60 * 1000;
 		const ts = dateNow - twoYearsMs + Math.random() * twoYearsMs;
@@ -69,12 +76,12 @@
 			title: `${pick(TITLES)} #${index + 1}`,
 			subtitle: pick(SUBTITLES),
 			type: pickN(TYPES, 0, 2),
-			tags: ['stress-test', ...pickN(EXTRA_TAGS, 0, 2)],
+			tags: [STRESS_TEST_TAG, ...pickN(EXTRA_TAGS, 0, 2)],
 			pinned: Math.random() < 0.05,
 			rating: Math.random() < 0.7 ? 0 : Math.floor(Math.random() * 5) + 1,
 			deletedAt: null,
 			date: new Date(ts).toISOString() as DateTimeString,
-			dateZone: LOCAL_TZ,
+			dateZone,
 			createdAt: now,
 			updatedAt: now,
 		};
@@ -83,6 +90,12 @@
 	function formatMs(ms: number): string {
 		if (ms < 1000) return `${ms.toFixed(1)}ms`;
 		return `${(ms / 1000).toFixed(2)}s`;
+	}
+
+	function formatBytes(bytes: number): string {
+		if (bytes < 1024) return `${bytes} B`;
+		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 	}
 
 	// ─── Actions ─────────────────────────────────────────────────────────────────
@@ -94,8 +107,9 @@
 
 		try {
 			const now = DateTimeString.now();
+			const dateZone = IanaTimeZone.current();
 			const rows = Array.from({ length: count }, (_, i) =>
-				generateEntryRow(i, now),
+				generateEntryRow(i, now, dateZone),
 			);
 
 			const insertStart = performance.now();
@@ -114,9 +128,7 @@
 
 			// Filter performance
 			const filterStart = performance.now();
-			const stressEntries = fuji.tables.entries.filter((e) =>
-				e.tags.includes('stress-test'),
-			);
+			fuji.tables.entries.filter(isStressTestEntry);
 			const filterTimeMs = performance.now() - filterStart;
 
 			// Y.Doc binary size
@@ -146,9 +158,7 @@
 		clearing = true;
 
 		try {
-			const stressEntries = fuji.tables.entries.filter((e) =>
-				e.tags.includes('stress-test'),
-			);
+			const stressEntries = fuji.tables.entries.filter(isStressTestEntry);
 			const ids = stressEntries.map((e) => e.id);
 
 			await fuji.tables.entries.bulkDelete(ids);
@@ -183,7 +193,7 @@
 			<Card.Title class="text-sm">Generate Entries</Card.Title>
 			<Card.Description>
 				All generated entries are tagged
-				<Badge variant="secondary">stress-test</Badge>
+				<Badge variant="secondary">{STRESS_TEST_TAG}</Badge>
 				for easy cleanup.
 			</Card.Description>
 		</Card.Header>
@@ -258,12 +268,7 @@
 					{ label: 'Stress-test rows', value: stressTestCount.toLocaleString() },
 					{
 						label: 'Y.Doc size',
-						value:
-							results.ydocSizeBytes < 1024
-								? `${results.ydocSizeBytes} B`
-								: results.ydocSizeBytes < 1024 * 1024
-									? `${(results.ydocSizeBytes / 1024).toFixed(1)} KB`
-									: `${(results.ydocSizeBytes / (1024 * 1024)).toFixed(1)} MB`,
+						value: formatBytes(results.ydocSizeBytes),
 					},
 					{ label: 'getAllValid() time', value: formatMs(results.readTimeMs) },
 					{ label: 'filter() time', value: formatMs(results.filterTimeMs) },

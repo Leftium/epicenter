@@ -24,7 +24,7 @@ import {
 	defineTable,
 	docGuid,
 	generateId,
-	IanaTimeZone,
+	type IanaTimeZone,
 	type InferTableRow,
 	type Keyring,
 	type Tables,
@@ -359,7 +359,6 @@ export function createFujiActions(workspace: FujiWorkspace) {
 			}),
 			handler: async ({ dateZone, entries: items }) => {
 				const now = DateTimeString.now();
-				const zone = dateZone as IanaTimeZone;
 				const rows = items.map(({ title, date }) => ({
 					id: generateId<EntryId>(),
 					title,
@@ -370,7 +369,7 @@ export function createFujiActions(workspace: FujiWorkspace) {
 					rating: 0,
 					deletedAt: null,
 					date: date as DateTimeString,
-					dateZone: zone,
+					dateZone: dateZone as IanaTimeZone,
 					createdAt: now,
 					updatedAt: now,
 				}));

@@ -1,6 +1,6 @@
 ---
 name: attach-primitive
-description: Contract and invariants for `attach*` composition primitives in `packages/workspace` (side-effectful building blocks like attachIndexedDb, attachSqlite, attachBroadcastChannel, attachEncryption, attachTable, openCollaboration), and when to use `create*` (pure construction) instead. Use when writing or reviewing an `attach*` or `create*` function, naming a new workspace primitive, composing inside a workspace builder, or deciding whether a primitive registers listeners at call time.
+description: Contract and invariants for `attach*` composition primitives in `packages/workspace` (side-effectful building blocks like attachIndexedDb, attachSqlite, attachBroadcastChannel, attachBunSqliteMaterializer, attachMarkdownMaterializer, openCollaboration), and when to use `create*` (pure construction) instead. Use when writing or reviewing an `attach*` or `create*` function, naming a new workspace primitive, composing inside a workspace builder, or deciding whether a primitive registers listeners at call time.
 ---
 
 # Attach Primitives
@@ -31,13 +31,11 @@ attachIndexedDb(ydoc)                   // Y.Doc subject
 attachSqlite(ydoc, { filePath })
 openCollaboration(ydoc, { url, openWebSocket, replicaId, actions })
 attachBroadcastChannel(ydoc)
-attachEncryption(ydoc, { encryptionKeys })
-attachTable(ydoc, name, def)            // Y.Doc subject + slot key + def
-attachTables(ydoc, defs)
-attachKv(ydoc, defs)
 attachAwareness(ydoc, defs)
 attachRichText(ydoc) / attachPlainText(ydoc) / attachTimeline(ydoc)
 ```
+
+Table and KV stores are no longer attached one-by-one. They are constructed as a bundle by `createWorkspace({ id, tables, kv, keyring? })`, which owns the Y.Doc's lifecycle and exposes `workspace.ydoc`, `workspace.tables`, and `workspace.kv`. Pass `workspace.ydoc` into the remaining `attach*` primitives; pass the whole `workspace` (or its `tables` record) into the materializers.
 
 **Materializers** follow the same `attachX(ydoc, opts)` shape: pass the `tables` record (or an object subset) to choose what to mirror, and keep per-table customization in sibling option slots keyed by table name:
 
@@ -75,35 +73,39 @@ Per-table customization lives in `perTable: { [tableName]: { ... } }` (markdown)
 
 The SQLite result surfaces FTS on a nested namespace: `sqlite.fts.search({ table, query })` exists when `fts: {...}` was passed; when omitted, `sqlite.fts` is absent from the return type entirely. Single attach call, single `whenFlushed` barrier; the FTS DDL and triggers run between table DDL and the bulk insert so triggers populate `<table>_fts` for free.
 
-## The One Exception: Non-Ydoc Subject
+## Non-Ydoc Subject (rare)
 
-When a primitive modifies a sibling attachment and the coordination is cross-package (so it can't be a method on the coordinator), it's a top-level function with the attachment as first arg:
+When a primitive operates on a sibling attachment rather than the Y.Doc itself (cross-package coordination, for example), the subject is that attachment and the call shape stays `attachX(subject, opts)`. No examples currently in the repo; the pattern is documented in case it ever surfaces.
 
-```ts
-attachSessionUnlock(encryption, { sessions, serverUrl, waitFor })
-```
+## Constructor bundles (the workspace case)
 
-This is rare: one example in the whole codebase. It lives in `@epicenter/cli` and operates on an `EncryptionAttachment` defined in `@epicenter/workspace`; making it a method on the workspace type would couple packages backwards, so it stays a top-level function.
-
-If the primitive is in-package with its coordinator, prefer method-on-coordinator (below) over a top-level `attachX(attachment, opts)`.
-
-## Coordinator pattern (the encryption case)
-
-When one attachment registers additional sibling attachments into itself, it owns the method surface:
+When several sibling handles must be constructed atomically (one Y.Doc, N stores activated together, optionally one keyring derivation feeding them all), that work lives in `createWorkspace`, not in an `attach*` primitive. The factory takes definition records as named slots and returns the constructed handles as a bundle:
 
 ```ts
-const encryption = attachEncryption(ydoc, { encryptionKeys });
-const tables = encryption.attachTables(defs);      // method on coordinator
-const kv = encryption.attachKv(defs);
+// Plaintext
+const workspace = createWorkspace({
+  id: 'my-app',
+  tables: { posts },
+  kv: {},
+});
+
+// Encrypted: same call shape, `keyring` switches it on
+const workspace = createWorkspace({
+  id: 'my-app',
+  keyring: signedIn.keyring,
+  tables: { posts },
+  kv: {},
+});
+
+workspace.ydoc;                    // Y.Doc bundled in
+workspace.tables.posts;            // constructed table helper
+workspace.kv;                      // constructed KV bag
+workspace[Symbol.dispose]();       // cascades to ydoc.destroy()
 ```
 
-vs. the top-level form that would read:
+The workspace bundle owns the stores' lifecycle: `using workspace = createWorkspace(...)` triggers cascade disposal. Passing `keyring` switches encryption on at construction; without it the stores are plaintext. One call, atomic registration, no temporal window for mid-session attachment.
 
-```ts
-const tables = attachEncryptedTables(ydoc, encryption, defs);   // ← not used; coordinator owns this
-```
-
-The method form says "use the encryption's attach-tables" directly. Preferred when the coordinator and its siblings live in the same package.
+The materializer primitives are the remaining "named slots in, constructed handle out" `attach*` shape: see the materializer block above. They take the already-constructed `tables` record off `workspace` (or an object subset of it) and a `perTable` / `fts` sibling slot for per-table customization.
 
 ## Invariants
 
@@ -127,16 +129,17 @@ Primitives compose inside a build closure:
 
 ```ts
 const cache = createDisposableCache((id: string) => {
-  const ydoc       = new Y.Doc({ guid: id, gc: false });
-  const encryption = attachEncryption(ydoc, { encryptionKeys });
-  const tables     = encryption.attachTables(schema);     // coordinator method
-  const idb        = attachIndexedDb(ydoc);
-  const unlock     = attachSessionUnlock(encryption, {          // non-ydoc subject
-    sessions, serverUrl, waitFor: idb.whenLoaded,
+  const workspace = createWorkspace({
+    id,
+    keyring,
+    tables: schema,
+    kv: kvDefs,
   });
+  const { ydoc, tables, kv } = workspace;
+  const idb        = attachIndexedDb(ydoc);
   const collaboration = openCollaboration(ydoc, {
     url, openWebSocket, replicaId, actions,
-    waitFor: Promise.all([idb.whenLoaded, unlock.whenChecked]),
+    waitFor: idb.whenLoaded,
   });
   const markdown   = attachMarkdownMaterializer(ydoc, {
     dir,
@@ -146,19 +149,19 @@ const cache = createDisposableCache((id: string) => {
   });
 
   return {
-    ydoc, tables, encryption, idb, collaboration, markdown,
-    whenReady: Promise.all([idb.whenLoaded, unlock.whenChecked, collaboration.whenConnected]),
+    workspace, ydoc, tables, kv, idb, collaboration, markdown,
+    whenReady: Promise.all([idb.whenLoaded, collaboration.whenConnected]),
     async wipe() {
-      ydoc.destroy();
+      workspace[Symbol.dispose]();
       await collaboration.whenDisposed;
       await idb.whenDisposed;
       await idb.clearLocal();
     },
-    [Symbol.dispose]() { ydoc.destroy(); },
+    [Symbol.dispose]() { workspace[Symbol.dispose](); },
   };
 });
 
-export const workspace = cache.open('my-app');
+export const bundle = cache.open('my-app');
 ```
 
 The bundle aggregates child `whenLoaded` / `whenConnected` / `whenChecked` into one `whenReady`. Browser bundles expose `wipe()` for reset flows that must dispose and delete local storage in the right order. Daemon bundles expose `[Symbol.asyncDispose]()` as the trigger and await attachment `whenDisposed` barriers before process exit.
@@ -180,12 +183,13 @@ Use it whenever a primitive's startup must follow another's. Examples:
 - **Don't duck-type an attachment.** If you need to brand it, use a `Symbol.for` marker. See `skills/typescript`: runtime shape-checking is a code smell.
 - **Don't take an `id` on a ydoc-bound primitive.** Use `ydoc.guid`.
 - **Don't use `createX` for a side-effectful primitive.** If it registers listeners, it's `attach*`.
-- **Don't introduce `attachEncryptedX(ydoc, encryption, ...)` top-level exports.** Use `encryption.attachX(...)`: the coordinator owns its siblings.
+- **Don't introduce a separate top-level encrypted-X helper.** Encryption is a construction-time switch on `createWorkspace({ id, keyring, tables, kv })`, not an `attach*` primitive. If you find yourself reaching for an `attachEncryption` shape, the work belongs in the workspace bundle factory instead.
+- **Don't attach tables or KV stores one-by-one on a raw Y.Doc.** Construct them as a bundle via `createWorkspace`; pass `workspace.ydoc` into the remaining `attach*` primitives.
 
 ## Reference implementations
 
 - `packages/workspace/src/document/attach-indexed-db.ts` ; the canonical 40-line example.
 - `packages/workspace/src/document/open-collaboration.ts` ; document collaboration surface with sync, presence, peers, and action dispatch.
-- `packages/workspace/src/document/attach-encryption.ts` ; state-owning coordinator; exposes `attachTable` / `attachTables` / `attachKv` as methods.
-- `packages/workspace/src/document/materializer/markdown/materializer.ts` ; tables and optional `perTable` / `kv` in the options bag, keyed by table name.
+- `packages/workspace/src/create-workspace.ts` ; the bundle factory; takes `{ id, tables, kv, keyring? }` and returns `{ ydoc, tables, kv, [Symbol.dispose] }` after one atomic construction (and one keyring derivation when encrypted).
+- `packages/workspace/src/document/materializer/markdown/materializer.ts` ; tables and optional `perTable` in the options bag, keyed by table name.
 - `apps/whispering/src/lib/client.ts`: full singleton composition.

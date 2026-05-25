@@ -1,10 +1,11 @@
 import { Ok } from 'wellcrafted/result';
 import { WHISPERING_RECORDINGS_PATHNAME } from '$lib/constants/app';
-import { rpc } from '$lib/query';
 import { defineMutation } from '$lib/query/client';
 import type { WhisperingError } from '$lib/result';
 import type { TextError } from '$lib/services/text';
 import { settings } from '$lib/state/settings.svelte';
+import { notify } from './notify';
+import { text as textRpc } from './text';
 
 export const delivery = {
 	/**
@@ -48,7 +49,7 @@ export const delivery = {
 
 			// Shows transcription result and offers manual copy action
 			const offerManualCopy = () =>
-				rpc.notify.success({
+				notify.success({
 					id: toastId,
 					title: '📝 Recording transcribed!',
 					description: text,
@@ -56,12 +57,12 @@ export const delivery = {
 						type: 'button',
 						label: 'Copy to clipboard',
 						onClick: async () => {
-							const { error } = await rpc.text.copyToClipboard({
+							const { error } = await textRpc.copyToClipboard({
 								text,
 							});
 							if (error) {
 								// Report that manual copy attempt failed
-								rpc.notify.error({
+								notify.error({
 									title: 'Error copying transcript to clipboard',
 									description: error.message,
 									action: { type: 'more-details', error },
@@ -69,7 +70,7 @@ export const delivery = {
 								return;
 							}
 							// Confirm manual copy succeeded
-							rpc.notify.success({
+							notify.success({
 								id: toastId,
 								title: 'Copied transcript to clipboard!',
 								description: text,
@@ -80,7 +81,7 @@ export const delivery = {
 
 			// Warns that automatic copy failed
 			const warnAutoCopyFailed = (error: TextError) => {
-				rpc.notify.warning({
+				notify.warning({
 					title: "Couldn't copy to clipboard",
 					description: error.message,
 					action: { type: 'more-details', error },
@@ -90,10 +91,10 @@ export const delivery = {
 			// Warns that write to cursor failed
 			const warnWriteToCursorFailed = (error: TextError | WhisperingError) => {
 				if (error.name === 'WhisperingError') {
-					rpc.notify[error.severity](error);
+					notify[error.severity](error);
 					return;
 				}
-				rpc.notify.warning({
+				notify.warning({
 					title: 'Unable to write to cursor automatically',
 					description: error.message,
 					action: { type: 'more-details', error },
@@ -104,7 +105,7 @@ export const delivery = {
 			const showSuccessNotification = () => {
 				if (copied && written) {
 					// Both operations succeeded
-					rpc.notify.success({
+					notify.success({
 						id: toastId,
 						title:
 							'📝 Recording transcribed, copied to clipboard, and written to cursor!',
@@ -117,7 +118,7 @@ export const delivery = {
 					});
 				} else if (copied) {
 					// Only copy succeeded
-					rpc.notify.success({
+					notify.success({
 						id: toastId,
 						title: '📝 Recording transcribed and copied to clipboard!',
 						description: text,
@@ -129,7 +130,7 @@ export const delivery = {
 					});
 				} else if (written) {
 					// Only write succeeded
-					rpc.notify.success({
+					notify.success({
 						id: toastId,
 						title: '📝 Recording transcribed and written to cursor!',
 						description: text,
@@ -149,7 +150,7 @@ export const delivery = {
 
 			// Check if user wants to copy to clipboard
 			if (settings.get('output.transcription.clipboard')) {
-				const { error: copyError } = await rpc.text.copyToClipboard({
+				const { error: copyError } = await textRpc.copyToClipboard({
 					text,
 				});
 				if (!copyError) {
@@ -161,7 +162,7 @@ export const delivery = {
 
 			// Check if user wants to write to cursor (independent of copy)
 			if (settings.get('output.transcription.cursor')) {
-				const { error: writeError } = await rpc.text.writeToCursor({
+				const { error: writeError } = await textRpc.writeToCursor({
 					text,
 				});
 				if (!writeError) {
@@ -169,9 +170,9 @@ export const delivery = {
 					// Optionally simulate Enter keystroke after successful write
 					if (settings.get('output.transcription.enter')) {
 						const { error: enterError } =
-							await rpc.text.simulateEnterKeystroke();
+							await textRpc.simulateEnterKeystroke();
 						if (enterError) {
-							rpc.notify.warning({
+							notify.warning({
 								title: 'Unable to simulate Enter keystroke',
 								description: enterError.message,
 								action: { type: 'more-details', error: enterError },
@@ -231,7 +232,7 @@ export const delivery = {
 
 			// Shows transformation result and offers manual copy action
 			const offerManualCopy = () =>
-				rpc.notify.success({
+				notify.success({
 					id: toastId,
 					title: '🔄 Transformation complete!',
 					description: text,
@@ -239,12 +240,12 @@ export const delivery = {
 						type: 'button',
 						label: 'Copy to clipboard',
 						onClick: async () => {
-							const { error } = await rpc.text.copyToClipboard({
+							const { error } = await textRpc.copyToClipboard({
 								text,
 							});
 							if (error) {
 								// Report that manual copy attempt failed
-								rpc.notify.error({
+								notify.error({
 									title: 'Error copying transformed text to clipboard',
 									description: error.message,
 									action: { type: 'more-details', error },
@@ -252,7 +253,7 @@ export const delivery = {
 								return;
 							}
 							// Confirm manual copy succeeded
-							rpc.notify.success({
+							notify.success({
 								id: toastId,
 								title: 'Copied transformed text to clipboard!',
 								description: text,
@@ -263,7 +264,7 @@ export const delivery = {
 
 			// Warns that automatic copy failed
 			const warnAutoCopyFailed = (error: TextError) => {
-				rpc.notify.warning({
+				notify.warning({
 					title: "Couldn't copy to clipboard",
 					description: error.message,
 					action: { type: 'more-details', error },
@@ -273,10 +274,10 @@ export const delivery = {
 			// Warns that write to cursor failed
 			const warnWriteToCursorFailed = (error: TextError | WhisperingError) => {
 				if (error.name === 'WhisperingError') {
-					rpc.notify[error.severity](error);
+					notify[error.severity](error);
 					return;
 				}
-				rpc.notify.error({
+				notify.error({
 					title: 'Error writing transformed text to cursor',
 					description: error.message,
 					action: { type: 'more-details', error },
@@ -287,7 +288,7 @@ export const delivery = {
 			const showSuccessNotification = () => {
 				if (copied && written) {
 					// Both operations succeeded
-					rpc.notify.success({
+					notify.success({
 						id: toastId,
 						title:
 							'🔄 Transformation complete, copied to clipboard, and written to cursor!',
@@ -300,7 +301,7 @@ export const delivery = {
 					});
 				} else if (copied) {
 					// Only copy succeeded
-					rpc.notify.success({
+					notify.success({
 						id: toastId,
 						title: '🔄 Transformation complete and copied to clipboard!',
 						description: text,
@@ -312,7 +313,7 @@ export const delivery = {
 					});
 				} else if (written) {
 					// Only write succeeded
-					rpc.notify.success({
+					notify.success({
 						id: toastId,
 						title: '🔄 Transformation complete and written to cursor!',
 						description: text,
@@ -332,7 +333,7 @@ export const delivery = {
 
 			// Check if user wants to copy to clipboard
 			if (settings.get('output.transformation.clipboard')) {
-				const { error: copyError } = await rpc.text.copyToClipboard({
+				const { error: copyError } = await textRpc.copyToClipboard({
 					text,
 				});
 				if (!copyError) {
@@ -344,7 +345,7 @@ export const delivery = {
 
 			// Check if user wants to write to cursor (independent of copy)
 			if (settings.get('output.transformation.cursor')) {
-				const { error: writeError } = await rpc.text.writeToCursor({
+				const { error: writeError } = await textRpc.writeToCursor({
 					text,
 				});
 				if (!writeError) {
@@ -352,9 +353,9 @@ export const delivery = {
 					// Optionally simulate Enter keystroke after successful write
 					if (settings.get('output.transformation.enter')) {
 						const { error: enterError } =
-							await rpc.text.simulateEnterKeystroke();
+							await textRpc.simulateEnterKeystroke();
 						if (enterError) {
-							rpc.notify.warning({
+							notify.warning({
 								title: 'Unable to simulate Enter keystroke',
 								description: enterError.message,
 								action: { type: 'more-details', error: enterError },

@@ -369,7 +369,6 @@ const DEVICE_KEY_MAP: readonly { oldKey: string; newKey: string }[] = [
 		oldKey: 'recording.navigator.deviceId',
 		newKey: 'recording.navigator.deviceId',
 	},
-	{ oldKey: 'recording.ffmpeg.deviceId', newKey: 'recording.ffmpeg.deviceId' },
 	{
 		oldKey: 'recording.navigator.bitrateKbps',
 		newKey: 'recording.navigator.bitrateKbps',
@@ -379,18 +378,6 @@ const DEVICE_KEY_MAP: readonly { oldKey: string; newKey: string }[] = [
 		newKey: 'recording.cpal.outputFolder',
 	},
 	{ oldKey: 'recording.cpal.sampleRate', newKey: 'recording.cpal.sampleRate' },
-	{
-		oldKey: 'recording.ffmpeg.globalOptions',
-		newKey: 'recording.ffmpeg.globalOptions',
-	},
-	{
-		oldKey: 'recording.ffmpeg.inputOptions',
-		newKey: 'recording.ffmpeg.inputOptions',
-	},
-	{
-		oldKey: 'recording.ffmpeg.outputOptions',
-		newKey: 'recording.ffmpeg.outputOptions',
-	},
 
 	// Local model paths
 	{

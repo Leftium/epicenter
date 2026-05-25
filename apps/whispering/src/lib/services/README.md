@@ -389,33 +389,34 @@ const result = await services.completion.openai.complete({
 
 ## Available Services
 
-### Single Implementation Services
+### Cross-platform (`services/`)
 
-- `vad.ts` - Voice Activity Detection
-- `manual-recorder.ts` - Recording state management
-- `cpal-recorder.ts` - CPAL audio recording (desktop only)
-- `global-shortcut-manager.ts` - Global keyboard shortcuts
-- `local-shortcut-manager.ts` - Local keyboard shortcuts
+- `recorder/navigator.ts` - MediaRecorder-based audio capture (browser + desktop fallback)
+- `recorder/types.ts` - Shared `RecorderService` interface, error types, params
+- `device-stream.ts` - `getRecordingStream` and `enumerateDevices` shared by recorder backends
+- `local-shortcut-manager.ts` - In-window keyboard shortcuts
+- `toast.ts` - In-app toast notifications (Sonner)
+- `text/` - Clipboard operations
+- `blob-store/` - Audio blob persistence (IndexedDB on web, fs on desktop)
+- `analytics/`, `download/`, `http/`, `notifications/`, `os/`, `sound/` - Platform-specific implementations behind a unified interface
+
+### Desktop-only (`services/desktop/`)
+
+- `recorder/cpal.ts` - Native Rust audio recording via CPAL
+- `ffmpeg.ts` - FFmpeg binary helper (compression, file-extension detection). Not a recording backend.
+- `command.ts` - Tauri shell command execution
+- `fs.ts` - Tauri filesystem operations
 - `tray.ts` - System tray management
+- `global-shortcut-manager.ts` - OS-level keyboard shortcuts
+- `permissions.ts` - Accessibility/microphone permission checks
+- `autostart.ts` - Launch-at-login
 
-### Platform-Specific Services
+### Multi-provider services
 
-- `clipboard/` - Clipboard operations (Tauri vs Browser API)
-- `notifications/` - OS-level system notifications (native desktop vs browser Notification API)
-- `toast` - In-app toast notifications using Sonner (unified across platforms)
-- `download/` - File downloads (filesystem vs browser)
-- `http/` - HTTP client (Tauri vs fetch)
-- `os/` - Operating system info
-- `sound/` - Audio playback
-
-### Multi-Provider Services
-
-- `transcription/` - Speech-to-text (OpenAI, Groq, ElevenLabs, Speaches)
+- `transcription/` - Speech-to-text (OpenAI, Groq, ElevenLabs, Speaches, local Whisper/Parakeet/Moonshine)
 - `completion/` - LLM completions (OpenAI, Anthropic, Google, Groq)
 
-### Database Service
-
-- `db/` - Database operations (Dexie/IndexedDB)
+Recording state itself is owned by `$lib/state/manual-recorder.svelte.ts` and `$lib/state/vad-recorder.svelte.ts`, not by services. Services are pure operations; state lives one level up.
 
 ## Quick Start
 

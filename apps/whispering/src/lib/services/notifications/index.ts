@@ -1,3 +1,4 @@
+import { isTauri } from '@tauri-apps/api/core';
 import { createNotificationServiceDesktop } from './desktop';
 import { createNotificationServiceWeb } from './web';
 
@@ -41,6 +42,6 @@ export type { NotificationError, NotificationService } from './types';
  * - Desktop (Tauri): Uses native OS notifications via Tauri plugin
  * - Web: Uses browser Notification API with permission handling
  */
-export const NotificationServiceLive = window.__TAURI_INTERNALS__
+export const NotificationServiceLive = isTauri()
 	? createNotificationServiceDesktop()
 	: createNotificationServiceWeb();

@@ -1,16 +1,22 @@
 import { nanoid } from 'nanoid/non-secure';
 import { defineErrors } from 'wellcrafted/error';
 import { Ok } from 'wellcrafted/result';
-import { rpc } from '$lib/query';
 import { defineMutation } from '$lib/query/client';
 import { WhisperingErr } from '$lib/result';
 import { services } from '$lib/services';
 import { deviceConfig } from '$lib/state/device-config.svelte';
+import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { transformations } from '$lib/state/transformations.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 import * as transformClipboardWindow from '$routes/transform-clipboard/transformClipboardWindow.tauri';
+import { analytics } from './analytics';
+import { delivery } from './delivery';
+import { notify } from './notify';
+import { sound } from './sound';
+import { text } from './text';
+import { transcribeBlob } from './transcription';
 
 const ImportError = defineErrors({
 	NoImportableFiles: () => ({
@@ -18,12 +24,6 @@ const ImportError = defineErrors({
 	}),
 });
 
-import { delivery } from './delivery';
-import { notify } from './notify';
-import { recorder } from './recorder';
-import { sound } from './sound';
-import { text } from './text';
-import { transcribeBlob } from './transcription';
 import { transformer } from './transformer';
 
 /**
@@ -73,7 +73,7 @@ const startManualRecording = defineMutation({
 		});
 
 		const { data: deviceAcquisitionOutcome, error: startRecordingError } =
-			await recorder.startRecording({ toastId });
+			await manualRecorder.startRecording({ toastId });
 
 		// Release mutex after the actual start operation completes
 		isRecordingOperationBusy = false;
@@ -155,9 +155,10 @@ const stopManualRecording = defineMutation({
 			description: 'Finalizing your audio capture...',
 		});
 
-		const { data, error: stopRecordingError } = await recorder.stopRecording({
-			toastId,
-		});
+		const { data, error: stopRecordingError } =
+			await manualRecorder.stopRecording({
+				toastId,
+			});
 
 		// Release mutex after the actual stop operation completes
 		// This allows new recordings to start while pipeline runs
@@ -184,7 +185,7 @@ const stopManualRecording = defineMutation({
 			duration = Date.now() - manualRecordingStartTime;
 			manualRecordingStartTime = null; // Reset for next recording
 		}
-		rpc.analytics.logEvent({
+		analytics.logEvent({
 			type: 'manual_recording_completed',
 			blob_size: blob.size,
 			duration,
@@ -236,7 +237,7 @@ const startVadRecording = defineMutation({
 					sound.playSoundIfEnabled('vad-capture');
 
 					// Log VAD recording completion
-					rpc.analytics.logEvent({
+					analytics.logEvent({
 						type: 'vad_recording_completed',
 						blob_size: blob.size,
 						// VAD doesn't track duration by default
@@ -344,15 +345,8 @@ export const actions = {
 	toggleManualRecording: defineMutation({
 		mutationKey: ['commands', 'toggleManualRecording'] as const,
 		mutationFn: async () => {
-			const { data: recorderState, error: getRecorderStateError } =
-				await recorder.getRecorderState.fetch();
-			if (getRecorderStateError) {
-				notify.error(getRecorderStateError);
-				return Ok(undefined);
-			}
-			if (recorderState === 'RECORDING') {
+			if (manualRecorder.state === 'RECORDING')
 				return await stopManualRecording(undefined);
-			}
 			return await startManualRecording(undefined);
 		},
 	}),
@@ -377,7 +371,7 @@ export const actions = {
 				description: 'Cleaning up recording session...',
 			});
 			const { data: cancelRecordingResult, error: cancelRecordingError } =
-				await recorder.cancelRecording({ toastId });
+				await manualRecorder.cancelRecording({ toastId });
 
 			// Release mutex after the actual cancel operation completes
 			isRecordingOperationBusy = false;
@@ -464,7 +458,7 @@ export const actions = {
 					const audioBlob = new Blob([arrayBuffer], { type: file.type });
 
 					// Log file upload event
-					rpc.analytics.logEvent({
+					analytics.logEvent({
 						type: 'file_uploaded',
 						blob_size: audioBlob.size,
 					});

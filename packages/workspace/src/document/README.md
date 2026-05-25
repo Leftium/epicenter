@@ -15,7 +15,7 @@ The pattern: a vanilla `openX()` function constructs the workspace's `Y.Doc`, co
 | function openBlog(): { ydoc, tables, ...; dispose }            |
 +----------------------------------------------------------------+
 | attachTable / attachTables / attachKv                          |
-| attachEncryption -> .attachTable / .attachTables / .attachKv    |
+| attachEncryption({ keyring, tables, kv }) -> { tables, kv }    |
 | attachIndexedDb / attachYjsLog / attachBroadcastChannel        |
 | attachLocalStorage(ydoc, { server, ownerId, keyring })  // encrypted IDB + scoped BC |
 | wipeLocalStorage({ server, ownerId })           // delete local data for owner |
@@ -69,7 +69,7 @@ The factory body is where you wire everything. Because you own the return shape,
 
 ### Encryption (server-managed value encryption)
 
-The encryption coordinator owns sibling attachments: `attachTable` / `attachTables` / `attachKv` are methods on it, not top-level exports.
+`attachEncryption(ydoc, { keyring, tables, kv })` takes the same definition maps as the plaintext primitives, derives the per-workspace keyring once, activates every encrypted store, and returns the constructed handles in one call.
 
 ```typescript
 import { attachEncryption } from '@epicenter/workspace';
@@ -77,10 +77,12 @@ import type { Keyring } from '@epicenter/encryption';
 
 function openBlog({ keyring }: { keyring: () => Keyring }) {
   const ydoc = new Y.Doc({ guid: 'blog' });
-  const encryption = attachEncryption(ydoc, { keyring });
-  const tables = encryption.attachTables(myTables);
-  const kv = encryption.attachKv(myKv);
-  return { ydoc, tables, kv, encryption, [Symbol.dispose]() { ydoc.destroy(); } };
+  const { tables, kv } = attachEncryption(ydoc, {
+    keyring,
+    tables: myTables,
+    kv: myKv,
+  });
+  return { ydoc, tables, kv, [Symbol.dispose]() { ydoc.destroy(); } };
 }
 ```
 
@@ -110,8 +112,11 @@ function openBlog({
   deviceId: string;
 }) {
   const ydoc = new Y.Doc({ guid: 'blog' });
-  const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
-  const tables = encryption.attachTables(myTables);
+  const { tables } = attachEncryption(ydoc, {
+    keyring: signedIn.keyring,
+    tables: myTables,
+    kv: {},
+  });
 
   // Server + owner scoped encrypted IDB + cross-tab BroadcastChannel in one call.
   const idb = attachLocalStorage(ydoc, {

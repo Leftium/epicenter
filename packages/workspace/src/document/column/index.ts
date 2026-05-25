@@ -21,7 +21,6 @@ export {
 	number,
 	string,
 } from './sugar';
-export type { NumberOpts, SchemaMetadata, StringOpts } from './types';
 export {
 	deriveCheck,
 	deriveStorage,

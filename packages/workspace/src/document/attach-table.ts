@@ -1,43 +1,39 @@
 /**
- * attachTable(): Bind a TableDefinition to a Y.Doc.
+ * `attachTable()` — bind a TypeBox-native `TableDefinition` to a Y.Doc.
  *
  * Constructs an unencrypted `YKeyValueLww` on `ydoc.getArray('table:<name>')`
- * and wraps it with a typed `Table`. Provides CRUD operations with
- * schema validation and migration on read.
+ * and wraps it with a typed `Table`. Provides CRUD operations with schema
+ * validation and migration on read.
  *
- * For encrypted storage, call `encryption.attachTable` / `encryption.attachKv`
- * on the coordinator returned by `attachEncryption(ydoc, { keyring })`.
- *
- * @example
- * ```typescript
- * import * as Y from 'yjs';
- * import { defineTable, attachTable } from '@epicenter/workspace';
- * import { type } from 'arktype';
- *
- * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
- * const ydoc = new Y.Doc({ guid: 'my-doc' });
- * const postsTable = attachTable(ydoc, 'posts', posts);
- * postsTable.set({ id: '1', title: 'Hello', _v: 1 });
- * ```
+ * For encrypted storage, call `encryption.attachTable` on the coordinator
+ * returned by `attachEncryption(ydoc, { keyring })`.
  */
 
-import type { StandardSchemaV1 } from '@standard-schema/spec';
+import {
+	Type,
+	type Static,
+	type TLiteral,
+	type TObject,
+	type TOmit,
+	type TPartial,
+	type TSchema,
+	type TUnion,
+} from 'typebox';
+import { Value } from 'typebox/value';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import type { JsonObject } from 'wellcrafted/json';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type * as Y from 'yjs';
-import { TableKey } from './keys.js';
-import type { CombinedStandardSchema } from './standard-schema.js';
+import { TableKey } from './keys';
 import {
 	type KvStoreChangeHandler,
 	type ObservableKvStore,
 	YKeyValueLww,
 	type YKeyValueLwwEntry,
-} from './y-keyvalue/index.js';
+} from './y-keyvalue/index';
 
 // ════════════════════════════════════════════════════════════════════════════
 // TABLE PARSE ERROR
@@ -46,30 +42,33 @@ import {
 /**
  * Errors produced when parsing unknown input against a table's schema.
  *
- * Surfaced by `parse()`, `get()`, `getAll()`, and `update()`. "Not found" on
- * `get()` / `update()` is *not* an error: it's a legitimate absence and is
- * returned as `data: null` instead.
+ * Surfaced by `parse()`, `get()`, `getAll()`, and `update()`. "Not found"
+ * on `get()` / `update()` is *not* an error: it's a legitimate absence and
+ * is returned as `data: null` instead.
  */
 export const TableParseError = defineErrors({
-	/** Standard Schema validation produced issues. */
+	/** The row's `_v` did not match any registered schema version. */
+	UnknownVersion: ({ id, version }: { id: string; version: unknown }) => ({
+		message: `Row '${id}' has unknown _v value: ${String(version)}`,
+		id,
+		version,
+	}),
+	/** TypeBox `Value.Check` rejected the row against the matched version. */
 	ValidationFailed: ({
 		id,
-		issues,
+		errors,
 		row,
 	}: {
 		id: string;
-		issues: readonly StandardSchemaV1.Issue[];
+		errors: readonly { path: string; message: string }[];
 		row: unknown;
 	}) => ({
-		message: `Row '${id}' failed schema validation: ${issues.map((i) => i.message).join('; ')}`,
+		message: `Row '${id}' failed schema validation: ${errors
+			.map((e) => `${e.path}: ${e.message}`)
+			.join('; ')}`,
 		id,
-		issues,
+		errors,
 		row,
-	}),
-	/** The table's schema returned a `Promise` from `validate()`: not supported. */
-	AsyncSchemaNotSupported: ({ id }: { id: string }) => ({
-		message: `Row '${id}' could not be parsed: async Standard Schema validate() is not supported`,
-		id,
 	}),
 	/** The migration function threw while upgrading a valid-at-parse-time row. */
 	MigrationFailed: ({ id, cause }: { id: string; cause: unknown }) => ({
@@ -87,58 +86,117 @@ export type TableParseError = InferErrors<typeof TableParseError>;
 /**
  * The minimum shape every versioned table row must satisfy.
  *
- * - `id`: Unique identifier for row lookup and identity
- * - `_v`: Schema version number for tracking which version this row conforms to
- *
- * Intersected with `JsonObject` to ensure all field values are JSON-serializable.
+ * `FlatJsonTSchema` rejects every TypeBox `~kind` whose `Static<>` is not
+ * JSON-serializable, so the row's value-side stays JSON without needing a
+ * `& JsonObject` intersection on this type.
  */
-export type BaseRow = { id: string; _v: number } & JsonObject;
+export type BaseRow = { id: string; _v: number };
 
 // ════════════════════════════════════════════════════════════════════════════
-// TABLE DEFINITION TYPES
+// COLUMN RECORD TYPES
 // ════════════════════════════════════════════════════════════════════════════
-
-/** Extract the last element from a tuple of schemas. */
-export type LastSchema<T extends readonly CombinedStandardSchema[]> =
-	T extends readonly [
-		...CombinedStandardSchema[],
-		infer L extends CombinedStandardSchema,
-	]
-		? L
-		: T[number];
 
 /**
- * A table definition created by `defineTable(schema)` or `defineTable(v1, v2, ...).migrate(fn)`.
+ * A versioned column record. Every table version is a `Record<string,
+ * TSchema>` carrying a string-ish `id` column and a `_v: column.literal(N)`
+ * discriminant. `FlatJsonTSchema` (applied in `defineTable`'s parameter
+ * type) enforces every column maps 1:1 to a SQLite column.
+ */
+export type VersionedColumns = {
+	id: TSchema;
+	_v: TLiteral<number>;
+	[key: string]: TSchema;
+};
+
+/** Convert a column record to its row static type. */
+export type RowOf<TCols extends Record<string, TSchema>> = {
+	[K in keyof TCols]: Static<TCols[K]>;
+};
+
+/**
+ * Distributive variant of `RowOf` over a tuple of versions. Each version's
+ * row is computed independently and joined as a discriminated union, so
+ * downstream `switch (row._v)` exhaustively narrows on the literal
+ * discriminator.
+ */
+export type AnyVersionRow<TVersions extends readonly VersionedColumns[]> =
+	TVersions extends readonly (infer V)[]
+		? V extends VersionedColumns
+			? RowOf<V>
+			: never
+		: never;
+
+type LastVersion<TVersions extends readonly VersionedColumns[]> =
+	TVersions extends readonly [...infer _, infer L]
+		? L extends VersionedColumns
+			? L
+			: TVersions[number]
+		: TVersions[number];
+
+// ════════════════════════════════════════════════════════════════════════════
+// TABLE DEFINITION
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * The reusable schema surfaces on every `TableDefinition`. Callers reach
+ * for these directly: they should never need to walk `definition.versions`
+ * for day-to-day code.
+ */
+export type TableSchema<TVersions extends readonly VersionedColumns[]> = {
+	/** Current row TObject (latest version). */
+	row: TObject<LastVersion<TVersions>>;
+	/** Union of every version's row TObject. Used by parse-by-`_v`. */
+	union: TUnion<TObject<VersionedColumns>[]>;
+};
+
+/**
+ * Per-operation input schemas, mirrored on attached `Table` handles so
+ * action authors can reuse them without reaching into `definition`.
+ */
+export type TableInput<TVersions extends readonly VersionedColumns[]> = {
+	get: TObject<{ id: LastVersion<TVersions>['id'] }>;
+	set: TObject<LastVersion<TVersions>>;
+	update: TObject<{
+		id: LastVersion<TVersions>['id'];
+		patch: TPartial<TOmit<TObject<LastVersion<TVersions>>, ['id']>>;
+	}>;
+	delete: TObject<{ id: LastVersion<TVersions>['id'] }>;
+};
+
+/**
+ * A table definition created by `defineTable(cols)` (single version) or
+ * `defineTable(v1, v2, ...).migrate(fn)` (multi-version).
  *
  * For per-row content (rich text, long-form body), keep the row lean (ids,
  * metadata, a content-doc guid) and pair the table with a separate
  * `createDisposableCache(builder)` keyed on that content guid. Opening a row
  * then becomes `contentDocs.open(row.contentGuid)`: the list doesn't load
  * every content doc, and the editor doesn't contend with the table.
- *
- * @typeParam TVersions - Tuple of schema versions (each must include `{ id: string }`)
  */
 export type TableDefinition<
 	TVersions extends
-		readonly CombinedStandardSchema<BaseRow>[] = readonly CombinedStandardSchema<BaseRow>[],
+		readonly VersionedColumns[] = readonly VersionedColumns[],
 > = {
-	schema: CombinedStandardSchema<
-		unknown,
-		StandardSchemaV1.InferOutput<TVersions[number]>
-	>;
-	migrate: (
-		row: StandardSchemaV1.InferOutput<TVersions[number]>,
-	) => StandardSchemaV1.InferOutput<LastSchema<TVersions>>;
+	/** The original variadic versions, in declaration order. */
+	versions: TVersions;
+	/** The latest version's column record. */
+	columns: LastVersion<TVersions>;
+	/** Reusable row/union TObject pair. */
+	schema: TableSchema<TVersions>;
+	/** Per-operation input schemas. */
+	input: TableInput<TVersions>;
+	/** Upgrade any stored version to the current row in one step. */
+	migrate: (row: AnyVersionRow<TVersions>) => RowOf<LastVersion<TVersions>>;
 };
 
-/** Extract the row type from a TableDefinition */
-export type InferTableRow<T> = T extends {
-	migrate: (...args: never[]) => infer TLatest;
-}
-	? TLatest
+/** Extract the row type from a TableDefinition (current version). */
+export type InferTableRow<T> = T extends TableDefinition<infer TVersions>
+	? TVersions extends readonly VersionedColumns[]
+		? RowOf<LastVersion<TVersions>> & BaseRow
+		: BaseRow
 	: never;
 
-/** Map of table definitions (uses `any` to allow variance in generic parameters) */
+/** Map of table definitions (uses `any` to allow variance in generic parameters). */
 export type TableDefinitions = Record<
 	string,
 	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly map type
@@ -146,83 +204,96 @@ export type TableDefinitions = Record<
 >;
 
 // ════════════════════════════════════════════════════════════════════════════
-// TABLE HELPER TYPE
+// createTableDefinition
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Internal helper: build a `TableDefinition` from a list of versions and the
+ * migrate function. Called by `defineTable`; exposed for future codegen /
+ * encryption helpers that need to assemble a definition directly.
+ */
+export function createTableDefinition<
+	TVersions extends readonly VersionedColumns[],
+>(
+	versions: TVersions,
+	migrate: (row: unknown) => RowOf<LastVersion<TVersions>>,
+): TableDefinition<TVersions> {
+	const latestColumns = versions[versions.length - 1] as LastVersion<TVersions>;
+	const versionObjects = versions.map((cols) => Type.Object(cols));
+	const row = Type.Object(latestColumns) as TObject<LastVersion<TVersions>>;
+	const union = Type.Union(versionObjects) as TUnion<
+		TObject<VersionedColumns>[]
+	>;
+	const idSchema = latestColumns.id as LastVersion<TVersions>['id'];
+	const set = row;
+	const get = Type.Object({ id: idSchema });
+	const patch = Type.Partial(Type.Omit(row, ['id'])) as TPartial<
+		TOmit<TObject<LastVersion<TVersions>>, ['id']>
+	>;
+	const update = Type.Object({ id: idSchema, patch });
+	const deleteInput = Type.Object({ id: idSchema });
+
+	return {
+		versions,
+		columns: latestColumns,
+		schema: { row, union },
+		input: {
+			get: get as TableInput<TVersions>['get'],
+			set,
+			update: update as TableInput<TVersions>['update'],
+			delete: deleteInput as TableInput<TVersions>['delete'],
+		},
+		migrate: migrate as TableDefinition<TVersions>['migrate'],
+	};
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TABLE HANDLE TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
  * Type-safe read-only runtime handle for a single workspace table.
  *
- * Provides parsing, validated reads, queries, and observation. It intentionally
- * has no write methods.
- *
- * @typeParam TRow - The fully-typed row shape for this table (extends `{ id: string }`)
+ * Mirrors `columns`, `schema`, and `input` from the definition so custom
+ * actions can use the input schemas without reaching through `definition`.
  */
-export type ReadonlyTable<TRow extends BaseRow> = {
+export type ReadonlyTable<
+	TRow extends BaseRow,
+	TVersions extends readonly VersionedColumns[] = readonly VersionedColumns[],
+> = {
 	/** The table name (the Y.Array key this table is bound to). */
 	name: string;
 
 	/**
-	 * The underlying `TableDefinition` (schema + migration) this table was
-	 * attached with. Exposed for consumers that need the raw schema: e.g.,
-	 * the sqlite materializer generating DDL.
+	 * The underlying `TableDefinition`. Exposed for introspection; most code
+	 * prefers `columns` / `schema` / `input` mirrored directly on the handle.
 	 */
-	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly: defineTable already constrains schemas
-	definition: TableDefinition<any>;
+	definition: TableDefinition<TVersions>;
 
-	/**
-	 * Parse unknown input against the table schema and migrate to the latest
-	 * version.
-	 *
-	 * Injects `id` into the input before validation. Does not write to storage.
-	 *
-	 * @returns `Result<TRow, TableParseError>`:
-	 *   - `data: TRow` when the input validates and migrates
-	 *   - `error: TableParseError` on validation / migration failure
-	 */
+	/** Latest version's column record. */
+	columns: LastVersion<TVersions>;
+	schema: TableSchema<TVersions>;
+	input: TableInput<TVersions>;
+
 	parse(id: string, input: unknown): Result<TRow, TableParseError>;
-
-	/**
-	 * Get a single row by ID.
-	 *
-	 * @returns `Result<TRow | null, TableParseError>`:
-	 *   - `data: TRow` when the row exists and validates
-	 *   - `data: null` when no row exists at that id (not an error: legitimate absence)
-	 *   - `error: TableParseError` when the stored row failed schema validation
-	 */
 	get(id: string): Result<TRow | null, TableParseError>;
-
-	/** Get all rows with their validation outcome. */
 	getAll(): Array<Result<TRow, TableParseError>>;
-
-	/** Get all rows that pass schema validation. */
 	getAllValid(): TRow[];
-
-	/** Get all rows that fail schema validation. */
 	getAllInvalid(): TableParseError[];
-
-	/** Filter valid rows by predicate. */
 	filter(predicate: (row: TRow) => boolean): TRow[];
-
-	/** Find the first valid row matching a predicate. */
 	find(predicate: (row: TRow) => boolean): TRow | undefined;
-
-	/** Watch for row changes. */
 	observe(
 		callback: (changedIds: ReadonlySet<TRow['id']>, origin?: unknown) => void,
 	): () => void;
-
-	/** Get the total number of rows in the table. */
 	count(): number;
-
-	/** Check if a row exists by ID. */
 	has(id: string): boolean;
 };
 
-export type Table<TRow extends BaseRow> = ReadonlyTable<TRow> & {
-	/** Set a row (insert or replace). Always writes the full row. */
+export type Table<
+	TRow extends BaseRow,
+	TVersions extends readonly VersionedColumns[] = readonly VersionedColumns[],
+> = ReadonlyTable<TRow, TVersions> & {
 	set(row: TRow): void;
-
-	/** Insert or replace many rows with chunked transactions and progress reporting. */
 	bulkSet(
 		rows: TRow[],
 		options?: {
@@ -230,25 +301,11 @@ export type Table<TRow extends BaseRow> = ReadonlyTable<TRow> & {
 			onProgress?: (percent: number) => void;
 		},
 	): Promise<void>;
-
-	/**
-	 * Partial update a row by ID.
-	 *
-	 * @returns `Result<TRow | null, TableParseError>`:
-	 *   - `data: TRow` when the row existed, merged, and validated
-	 *   - `data: null` when no row exists at that id (nothing to update)
-	 *   - `error: TableParseError` when the current row is invalid, or the merged
-	 *     row fails validation
-	 */
 	update(
 		id: string,
 		partial: Partial<Omit<TRow, 'id'>>,
 	): Result<TRow | null, TableParseError>;
-
-	/** Delete a single row by ID. */
 	delete(id: string): void;
-
-	/** Delete many rows by ID with chunked operations and progress reporting. */
 	bulkDelete(
 		ids: string[],
 		options?: {
@@ -256,8 +313,6 @@ export type Table<TRow extends BaseRow> = ReadonlyTable<TRow> & {
 			onProgress?: (percent: number) => void;
 		},
 	): Promise<void>;
-
-	/** Delete all rows from the table. */
 	clear(): void;
 };
 
@@ -272,18 +327,12 @@ export type ReadonlyTables<TTableDefinitions extends TableDefinitions> = {
 	>;
 };
 
-/**
- * Bind a single TableDefinition to a Y.Doc and return a typed Table.
- *
- * Creates (or reuses) a Y.Array at `table:<name>` and wraps it with an
- * unencrypted `YKeyValueLww` store.
- *
- * @param ydoc - The Y.Doc to attach to
- * @param name - The table name (used as the Y.Array key)
- * @param definition - The table definition with schema and migration
- */
+// ════════════════════════════════════════════════════════════════════════════
+// PUBLIC: attach
+// ════════════════════════════════════════════════════════════════════════════
+
 export function attachTable<
-	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly: defineTable already constrains schemas
+	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly
 	TTableDefinition extends TableDefinition<any>,
 >(
 	ydoc: Y.Doc,
@@ -297,7 +346,7 @@ export function attachTable<
 }
 
 export function attachReadonlyTable<
-	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly: defineTable already constrains schemas
+	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly
 	TTableDefinition extends TableDefinition<any>,
 >(
 	ydoc: Y.Doc,
@@ -310,14 +359,6 @@ export function attachReadonlyTable<
 	return createReadonlyTable(ykv, definition, name);
 }
 
-/**
- * Bind a record of plaintext `TableDefinition`s to a Y.Doc. Sugar over
- * `attachTable`: calls it for each entry and returns the helpers keyed by
- * table name.
- *
- * For encrypted storage, call `encryption.attachTables` on the coordinator
- * returned by `attachEncryption(ydoc, { keyring })`.
- */
 export function attachTables<T extends TableDefinitions>(
 	ydoc: Y.Doc,
 	definitions: T,
@@ -342,14 +383,12 @@ export function attachReadonlyTables<T extends TableDefinitions>(
 	) as ReadonlyTables<T>;
 }
 
-/**
- * Construct a ReadonlyTable from any `ObservableKvStore` and a TableDefinition.
- *
- * Exported so `@epicenter/workspace` can reuse the exact same helper logic
- * over its encrypted store wrapper.
- */
+// ════════════════════════════════════════════════════════════════════════════
+// createTable / createReadonlyTable
+// ════════════════════════════════════════════════════════════════════════════
+
 export function createReadonlyTable<
-	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly: defineTable already constrains schemas
+	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly
 	TTableDefinition extends TableDefinition<any>,
 >(
 	ykv: ObservableKvStore<unknown>,
@@ -358,25 +397,35 @@ export function createReadonlyTable<
 ): ReadonlyTable<InferTableRow<TTableDefinition>> {
 	type TRow = InferTableRow<TTableDefinition>;
 
+	const versions = definition.versions as readonly VersionedColumns[];
+	const versionSchemas = versions.map((cols) => Type.Object(cols));
+
 	/**
 	 * Parse and migrate a raw row value. Injects `id` into the input before
-	 * validation. Returns `Result<TRow, TableParseError>`.
+	 * validation, then routes by stored `_v` value to the matching schema.
 	 */
 	function parseRow(id: string, input: unknown): Result<TRow, TableParseError> {
-		const row = { ...(input as Record<string, unknown>), id };
-		const result = definition.schema['~standard'].validate(row);
-		if (result instanceof Promise) {
-			return TableParseError.AsyncSchemaNotSupported({ id });
+		const row: Record<string, unknown> = {
+			...(input as Record<string, unknown>),
+			id,
+		};
+		const version = row._v;
+		const schemaIndex = typeof version === 'number' ? version - 1 : -1;
+		const schema = versionSchemas[schemaIndex];
+		if (!schema) {
+			return TableParseError.UnknownVersion({ id, version });
 		}
-		if (result.issues) {
-			return TableParseError.ValidationFailed({
-				id,
-				issues: result.issues,
-				row,
-			});
+		if (!Value.Check(schema, row)) {
+			const errors = [...Value.Errors(schema, row)].map((e) => ({
+				path: e.instancePath,
+				message: e.message,
+			}));
+			return TableParseError.ValidationFailed({ id, errors, row });
 		}
 		try {
-			const migrated = definition.migrate(result.value) as TRow;
+			const migrated = definition.migrate(
+				row as Parameters<typeof definition.migrate>[0],
+			) as TRow;
 			return Ok(migrated);
 		} catch (cause) {
 			return TableParseError.MigrationFailed({ id, cause });
@@ -386,10 +435,11 @@ export function createReadonlyTable<
 	return {
 		name,
 		definition,
+		columns: definition.columns,
+		schema: definition.schema,
+		input: definition.input,
 
-		parse(id: string, input: unknown): Result<TRow, TableParseError> {
-			return parseRow(id, input);
-		},
+		parse: parseRow,
 
 		get(id: string): Result<TRow | null, TableParseError> {
 			const raw = ykv.get(id);
@@ -446,7 +496,6 @@ export function createReadonlyTable<
 			const handler: KvStoreChangeHandler<unknown> = (changes, origin) => {
 				callback(new Set(changes.keys()) as ReadonlySet<TRow['id']>, origin);
 			};
-
 			ykv.observe(handler);
 			return () => ykv.unobserve(handler);
 		},
@@ -462,7 +511,7 @@ export function createReadonlyTable<
 }
 
 export function createTable<
-	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly: defineTable already constrains schemas
+	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly
 	TTableDefinition extends TableDefinition<any>,
 >(
 	ykv: ObservableKvStore<unknown>,
@@ -490,7 +539,6 @@ export function createTable<
 			} = {},
 		): Promise<void> {
 			const total = rows.length;
-
 			for (let i = 0; i < total; i += chunkSize) {
 				const chunk = rows.slice(i, i + chunkSize);
 				ykv.bulkSet(chunk.map((row) => ({ key: row.id, val: row })));
@@ -533,7 +581,6 @@ export function createTable<
 			} = {},
 		): Promise<void> {
 			const total = ids.length;
-
 			for (let i = 0; i < total; i += chunkSize) {
 				const chunk = ids.slice(i, i + chunkSize);
 				ykv.bulkDelete(chunk);

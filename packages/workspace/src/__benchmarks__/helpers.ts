@@ -5,57 +5,58 @@
  * table definitions, row generators, and formatting helpers.
  */
 
-import { type } from 'arktype';
-import { defineKv } from '../document/define-kv.js';
-import { defineTable } from '../document/define-table.js';
+import { column } from '../document/column/index';
+import { defineKv } from '../document/define-kv';
+import { defineTable } from '../document/define-table';
+import { Type } from 'typebox';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Table & KV Definitions
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const postDefinition = defineTable(
-	type({ id: 'string', title: 'string', views: 'number', _v: '1' }),
-);
+export const postDefinition = defineTable({
+	_v: column.literal(1),
+	id: column.string(),
+	title: column.string(),
+	views: column.number(),
+});
 
-export const noteDefinition = defineTable(
-	type({
-		id: 'string',
-		title: 'string',
-		content: 'string',
-		tags: 'string[]',
-		createdAt: 'number',
-		updatedAt: 'number',
-		_v: '1',
-	}),
-);
+export const noteDefinition = defineTable({
+	_v: column.literal(1),
+	id: column.string(),
+	title: column.string(),
+	content: column.string(),
+	tags: column.json<string[]>(Type.Array(Type.String())),
+	createdAt: column.number(),
+	updatedAt: column.number(),
+});
 
-export const heavyNoteDefinition = defineTable(
-	type({
-		id: 'string',
-		title: 'string',
-		content: 'string',
-		summary: 'string',
-		tags: 'string[]',
-		createdAt: 'number',
-		updatedAt: 'number',
-		_v: '1',
-	}),
-);
+export const heavyNoteDefinition = defineTable({
+	_v: column.literal(1),
+	id: column.string(),
+	title: column.string(),
+	content: column.string(),
+	summary: column.string(),
+	tags: column.json<string[]>(Type.Array(Type.String())),
+	createdAt: column.number(),
+	updatedAt: column.number(),
+});
 
-export const eventDefinition = defineTable(
-	type({
-		id: 'string',
-		type: "'command' | 'event'",
-		name: 'string',
-		payload: 'string',
-		timestamp: 'number',
-		_v: '1',
-	}),
-);
+export const eventDefinition = defineTable({
+	_v: column.literal(1),
+	id: column.string(),
+	type: column.enum(['command', 'event']),
+	name: column.string(),
+	payload: column.string(),
+	timestamp: column.number(),
+});
 
 export const settingsDefinition = defineKv(
-	type({ theme: "'light' | 'dark'", fontSize: 'number' }),
-	{ theme: 'light', fontSize: 14 },
+	Type.Object({
+		theme: Type.Union([Type.Literal('light'), Type.Literal('dark')]),
+		fontSize: Type.Number(),
+	}),
+	() => ({ theme: 'light' as const, fontSize: 14 }),
 );
 
 // ═══════════════════════════════════════════════════════════════════════════════

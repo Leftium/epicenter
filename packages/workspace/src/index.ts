@@ -146,9 +146,6 @@ export {
 	type ColumnError,
 	type FlatJsonTSchema,
 	type Infer,
-	type NumberOpts,
-	type SchemaMetadata,
-	type StringOpts,
 } from './document/column/index';
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -1,12 +1,27 @@
 /**
  * The `column.*` sugar layer.
  *
- * Optional ergonomics over raw TypeBox. Three helpers add behavior (brand
- * sugar on `string<T>`, the `JsonValue` gate on `json<T>`, composition in
- * `nullable`); two helpers (`dateTime`, `ianaTimeZone`) wrap branded-string
- * patterns; five helpers (`number`, `integer`, `boolean`, `literal`, `enum`)
- * are pass-through re-exports of `Type.X` so autocomplete on `column.` lists
- * the entire SQLite-safe constructor menu in one namespace.
+ * Three helpers add real behavior:
+ * - `string<T>` for brand sugar (rejects literal-string subtypes at compile time)
+ * - `json<T extends JsonValue>(schema)` for the `JsonValue` gate plus required runtime schema
+ * - `nullable(inner)` for `Type.Union([inner, Type.Null()])` composition
+ *
+ * Two helpers wrap branded-string datetime patterns:
+ * - `dateTime` (TypeBox's built-in `date-time` format, brand `DateTimeString`)
+ * - `ianaTimeZone` (custom format validated against `Intl.DateTimeFormat`,
+ *   brand `IanaTimeZone`; registered once at module load)
+ *
+ * The rest are direct re-exports of `Type.X` so autocomplete on `column.`
+ * lists the entire SQLite-safe constructor menu. They keep TypeBox's full
+ * JSDoc / signature / overloads intact (single source of truth):
+ *
+ *   column.number   = Type.Number
+ *   column.integer  = Type.Integer
+ *   column.boolean  = Type.Boolean
+ *   column.literal  = Type.Literal
+ *
+ * `column.enum` is a small function (it builds a Union from a values array)
+ * so it isn't a re-export, but it still defers all option-typing to TypeBox.
  *
  * Users may freely mix `column.X()` and raw `Type.X()`; the `FlatJsonTSchema`
  * constraint enforces safety regardless of which call site produced the
@@ -20,7 +35,9 @@ import {
 	type TLiteralValue,
 	type TNull,
 	type TSchema,
+	type TSchemaOptions,
 	type TString,
+	type TStringOptions,
 	type TUnion,
 	type TUnsafe,
 } from 'typebox';
@@ -29,13 +46,15 @@ import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
 import { DateTimeString } from '../../shared/datetime-string';
 import {
-	IanaTimeZone,
 	IANA_TIME_ZONE_FORMAT,
+	IanaTimeZone,
 } from '../../shared/iana-time-zone';
-import type { NumberOpts, SchemaMetadata, StringOpts } from './types';
 
 type BrandedString = string & Brand<string>;
 
+// Register the IANA timezone format once at module load. Skip if another
+// caller already registered it (idempotent under hot-reload / repeated
+// module evaluation).
 if (!Format.Has(IANA_TIME_ZONE_FORMAT)) {
 	Format.Set(IANA_TIME_ZONE_FORMAT, (value) => IanaTimeZone.is(value));
 }
@@ -50,54 +69,30 @@ if (!Format.Has(IANA_TIME_ZONE_FORMAT)) {
  *   instead.
  */
 export function string<T extends string = string>(
-	opts?: StringOpts,
+	opts?: TStringOptions,
 ): string extends T
 	? TString
 	: T extends BrandedString
 		? TUnsafe<T>
 		: never {
-	const schema = Type.String(opts as StringOpts);
-	return schema as string extends T
+	return Type.String(opts) as string extends T
 		? TString
 		: T extends BrandedString
 			? TUnsafe<T>
 			: never;
 }
 
-/**
- * Number column. Pass-through to `Type.Number`, exposed for autocomplete
- * discoverability.
- */
-export function number(opts?: NumberOpts): ReturnType<typeof Type.Number> {
-	return Type.Number(opts);
-}
+/** Pass-through to `Type.Number`. Re-exported for autocomplete discoverability. */
+export const number = Type.Number;
 
-/**
- * Integer column. Pass-through to `Type.Integer`.
- */
-export function integer(opts?: NumberOpts): ReturnType<typeof Type.Integer> {
-	return Type.Integer(opts);
-}
+/** Pass-through to `Type.Integer`. */
+export const integer = Type.Integer;
 
-/**
- * Boolean column. Pass-through to `Type.Boolean`.
- */
-export function boolean(
-	opts?: SchemaMetadata,
-): ReturnType<typeof Type.Boolean> {
-	return Type.Boolean(opts);
-}
+/** Pass-through to `Type.Boolean`. */
+export const boolean = Type.Boolean;
 
-/**
- * Literal column. Pass-through to `Type.Literal`. Primary use: `_v` markers
- * via `column.literal(1)`.
- */
-export function literal<V extends TLiteralValue>(
-	value: V,
-	opts?: SchemaMetadata,
-): TLiteral<V> {
-	return Type.Literal(value, opts);
-}
+/** Pass-through to `Type.Literal`. Primary use: `_v: column.literal(N)`. */
+export const literal = Type.Literal;
 
 /**
  * Enum-of-literals column. Produces `Type.Union<TLiteral[]>` (anyOf-of-const).
@@ -107,9 +102,9 @@ export function literal<V extends TLiteralValue>(
  * `Type.Enum` (`~kind: 'Enum'`) is rejected by `FlatJsonTSchema` in favor of
  * this shape so the CHECK generator has one shape to walk.
  */
-export function enum_<const T extends readonly (string | number)[]>(
+export function enum_<const T extends readonly TLiteralValue[]>(
 	values: T,
-	opts?: SchemaMetadata,
+	opts?: TSchemaOptions,
 ): TUnion<TLiteral<T[number]>[]> {
 	const members = values.map((v) => Type.Literal(v));
 	return Type.Union(members, opts) as TUnion<TLiteral<T[number]>[]>;
@@ -124,23 +119,21 @@ export function enum_<const T extends readonly (string | number)[]>(
  * missing argument, instead of a silent runtime no-op where every value
  * passes `Value.Check`.
  *
- * The type parameter `T` is constrained to `JsonValue` (from
- * `wellcrafted/json`), which rejects `Date`, `bigint`, optional keys widening
- * to `T | undefined` under loose `exactOptionalPropertyTypes`, and any other
- * non-JSON shape at the type level.
+ * `T` is constrained to `JsonValue` (from `wellcrafted/json`), which rejects
+ * `Date`, `bigint`, optional keys widening to `T | undefined` under loose
+ * `exactOptionalPropertyTypes`, and any other non-JSON shape at the type level.
  */
 export function json<T extends JsonValue>(
 	schema: TSchema,
-	opts?: SchemaMetadata,
+	opts?: TSchemaOptions,
 ): TUnsafe<T> {
-	const wrapped = opts ? { ...schema, ...opts } : schema;
-	return Type.Unsafe<T>(wrapped);
+	return Type.Unsafe<T>(opts ? { ...schema, ...opts } : schema);
 }
 
 /**
  * Composition sugar: `Type.Union([schema, Type.Null()])`. Reads as "nullable
- * inner" instead of constructing the union by hand. Matches TypeBox issue
- * #989 guidance on nullability.
+ * inner" instead of constructing the union by hand. Matches TypeBox issue #989
+ * guidance on nullability.
  */
 export function nullable<S extends TSchema>(schema: S): TUnion<[S, TNull]> {
 	return Type.Union([schema, Type.Null()]);
@@ -150,19 +143,19 @@ export function nullable<S extends TSchema>(schema: S): TUnion<[S, TNull]> {
  * RFC 3339 / ISO 8601 datetime string, branded as `DateTimeString`.
  *
  * Uses TypeBox v1's built-in `date-time` format validator (auto-registered;
- * no `Format.Set` required). Accepts both Z (`...Z`) and offset
+ * no `Format.Set` required from us). Accepts both Z (`...Z`) and offset
  * (`...±HH:MM`) forms.
  *
  * **Writing convention.** Lex-sort across rows is chronological iff every
  * writer emits the Z form. `new Date().toISOString()` and
- * `Temporal.Now.instant().toString()` both do this. We document the
- * convention in the brand JSDoc but do not enforce it at the schema layer.
+ * `Temporal.Now.instant().toString()` both do this. The convention is
+ * documented on the brand, not enforced at the schema layer.
  *
- * Pair with `column.ianaTimeZone()` as a separate field if you need the
- * originating zone (calendar events, reminders): see the
- * `<field>` + `<field>Zone` naming convention.
+ * Pair with `column.ianaTimeZone()` as a separate field when the originating
+ * zone matters (calendar events, reminders); see the `<field>` + `<field>Zone`
+ * naming convention in the workspace spec.
  */
-export function dateTime(opts?: SchemaMetadata): TUnsafe<DateTimeString> {
+export function dateTime(opts?: TSchemaOptions): TUnsafe<DateTimeString> {
 	return Type.Unsafe<DateTimeString>(
 		Type.String({ format: 'date-time', ...opts }),
 	);
@@ -176,16 +169,14 @@ export function dateTime(opts?: SchemaMetadata): TUnsafe<DateTimeString> {
  * the runtime accepts is valid; any zone it rejects is not). No hand-tuned
  * regex.
  */
-export function ianaTimeZone(
-	opts?: SchemaMetadata,
-): TUnsafe<IanaTimeZone> {
+export function ianaTimeZone(opts?: TSchemaOptions): TUnsafe<IanaTimeZone> {
 	return Type.Unsafe<IanaTimeZone>(
 		Type.String({ format: IANA_TIME_ZONE_FORMAT, ...opts }),
 	);
 }
 
 /**
- * The `column.*` sugar namespace. `column.X(opts)` returns a vanilla TypeBox
+ * The `column.*` namespace. `column.X(opts)` returns a vanilla TypeBox
  * `TSchema` (identical to what `Type.X(opts)` returns; the helpers don't wrap
  * or annotate). Each schema *is* the JSON Schema, the validator input, and
  * the static-type carrier.

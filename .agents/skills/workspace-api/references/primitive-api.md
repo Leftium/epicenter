@@ -74,32 +74,28 @@ Each helper takes a `Y.Doc` and registers cleanup on `ydoc.on('destroy')`. Each 
 
 ## Encrypted Variants (from `@epicenter/workspace`)
 
-For workspaces that need at-rest encryption, the coordinator owns the sibling attachments as methods. There are no top-level `attachEncryptedX` exports.
+`attachEncryption` is a constructor primitive: pass the same definition records you'd hand to the plaintext primitives plus a `keyring` callback, and it returns the constructed encrypted handles atomically.
 
 | Helper | Purpose |
 |---|---|
-| `attachEncryption(ydoc, { encryptionKeys })` | Per-ydoc encryption coordinator. Returns `{ attachTable, attachTables, attachKv, attachIndexedDb, ... }`. Reads `encryptionKeys()` synchronously at every registration site. Teardown is synchronous and cascades from `ydoc.destroy()`. |
-| `encryption.attachTable(name, def)` | Singular encrypted table; self-registers with the coordinator and is activated with the current keyring before being returned. |
-| `encryption.attachTables(defs)` | Batch sugar over `encryption.attachTable`. |
-| `encryption.attachKv(defs)` | Encrypted KV singleton. |
-| `encryption.attachIndexedDb(targetYdoc, { userId })` | Encrypted local IndexedDB persistence for a root or child Y.Doc. |
+| `attachEncryption(ydoc, { keyring, tables, kv })` | Derives the per-workspace HKDF keyring once, constructs one encrypted store per table and one encrypted KV singleton, activates every store, and returns `{ tables, kv }`. Teardown is synchronous and cascades from `ydoc.destroy()`. |
 
 Standard composition:
 
 ```ts
-const ydoc       = new Y.Doc({ guid: id, gc: false });
-const encryption = attachEncryption(ydoc, {
-	encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+const ydoc = new Y.Doc({ guid: id, gc: false });
+const { tables, kv } = attachEncryption(ydoc, {
+	keyring: () => requireSignedIn(auth).keyring,
+	tables: myTables,
+	kv: myKv,
 });
-const tables     = encryption.attachTables(myTables);
-const kv         = encryption.attachKv(myKv);
 ```
 
-Keys are read through the `encryptionKeys` callback when an encrypted resource is attached. There is no separate `applyKeys` step: registration and activation happen in one call. Already-attached encrypted stores keep the keyring they derived at attach time; same-user key rotation needs a re-attach to affect those stores. `encryptionKeys()` should throw if no keys are available (for example, signed-out): a throw means the workspace outlived its signed-in scope, which is a caller bug. The `requireSignedIn(auth)` helper from `@epicenter/auth` does exactly that.
+Keys are read through the `keyring` callback once at construction. There is no separate `applyKeys` step and no temporal registration window: registration and activation happen in one call. Same-owner key rotation requires a fresh `attachEncryption` call (and therefore a fresh Y.Doc) for those stores to pick up rotated keys. `keyring()` should throw if no keys are available (for example, signed-out): a throw means the workspace outlived its signed-in scope, which is a caller bug. The `requireSignedIn(auth)` helper from `@epicenter/auth` does exactly that.
 
-Encryption is opt-in per slot; the coordinator carries the intent. Plaintext `attachTable(ydoc, name, def)` (top-level) and encrypted `encryption.attachTable(name, def)` (method) are both available; pick one per slot.
+Encryption is opt-in per slot; the primitive carries the intent. Plaintext `attachTable(ydoc, name, def)` (top-level) and encrypted entries inside `attachEncryption({ tables })` are both available; pick one per slot.
 
-> **Never mix plaintext and encrypted wrappers on the same slot name.** Yjs returns the same underlying `Y.Array` to `attachTable(ydoc, 'posts', ...)` and `encryption.attachTable('posts', ...)` because `ydoc.getArray('table:posts')` is idempotent. If both run, the plaintext wrapper writes plaintext into the same yarray the encrypted wrapper thinks it owns, a silent data-at-rest leak. The framework does not catch this; the grep-able call-site shape (`encryption.attach*` vs top-level `attach*`) is the defense. One slot name, one variant, one intent.
+> **Never pair a plaintext `attachTable` with the same slot name in `attachEncryption({ tables })`.** Yjs returns the same underlying `Y.Array` from `ydoc.getArray('table:posts')` to both, so a plaintext wrapper would write plaintext into the same yarray the encrypted wrapper thinks it owns: a silent data-at-rest leak. The framework does not catch this. One slot name, one variant, one intent.
 
 IDB / broadcast / collaboration / sqlite transitively see already-encrypted bytes once encryption is registered. The Yjs update stream carries ciphertext blobs inside it. No additional encryption setup is needed at those transport layers.
 

@@ -31,7 +31,7 @@ attachIndexedDb(ydoc)                   // Y.Doc subject
 attachSqlite(ydoc, { filePath })
 openCollaboration(ydoc, { url, openWebSocket, replicaId, actions })
 attachBroadcastChannel(ydoc)
-attachEncryption(ydoc, { encryptionKeys })
+attachEncryption(ydoc, { keyring, tables, kv })
 attachTable(ydoc, name, def)            // Y.Doc subject + slot key + def
 attachTables(ydoc, defs)
 attachKv(ydoc, defs)
@@ -87,23 +87,21 @@ This is rare: one example in the whole codebase. It lives in `@epicenter/cli` an
 
 If the primitive is in-package with its coordinator, prefer method-on-coordinator (below) over a top-level `attachX(attachment, opts)`.
 
-## Coordinator pattern (the encryption case)
+## Constructor primitives (the encryption case)
 
-When one attachment registers additional sibling attachments into itself, it owns the method surface:
-
-```ts
-const encryption = attachEncryption(ydoc, { encryptionKeys });
-const tables = encryption.attachTables(defs);      // method on coordinator
-const kv = encryption.attachKv(defs);
-```
-
-vs. the top-level form that would read:
+When a primitive must construct several sibling handles atomically (one keyring derivation, N stores activated together), it takes the definition records as named slots and returns the constructed handles as a record:
 
 ```ts
-const tables = attachEncryptedTables(ydoc, encryption, defs);   // ← not used; coordinator owns this
+const { tables, kv } = attachEncryption(ydoc, {
+  keyring,
+  tables: defs,
+  kv: kvDefs,
+});
 ```
 
-The method form says "use the encryption's attach-tables" directly. Preferred when the coordinator and its siblings live in the same package.
+The slot names mirror the plaintext primitives (`tables`, `kv`): same definition records in, but the primitive constructs the encrypted variants instead of the caller wiring `attachTable`/`attachKv` by hand. One call, atomic registration, no temporal window for mid-session attachment.
+
+The materializer primitives follow the same "named slots in, constructed handle out" pattern (see the materializer block above); encryption is the constructor case where the slots are *definitions*, materializer is the mirror case where the slots are already-constructed *handles*.
 
 ## Invariants
 
@@ -128,15 +126,13 @@ Primitives compose inside a build closure:
 ```ts
 const cache = createDisposableCache((id: string) => {
   const ydoc       = new Y.Doc({ guid: id, gc: false });
-  const encryption = attachEncryption(ydoc, { encryptionKeys });
-  const tables     = encryption.attachTables(schema);     // coordinator method
-  const idb        = attachIndexedDb(ydoc);
-  const unlock     = attachSessionUnlock(encryption, {          // non-ydoc subject
-    sessions, serverUrl, waitFor: idb.whenLoaded,
+  const { tables, kv } = attachEncryption(ydoc, {
+    keyring, tables: schema, kv: kvDefs,
   });
+  const idb        = attachIndexedDb(ydoc);
   const collaboration = openCollaboration(ydoc, {
     url, openWebSocket, replicaId, actions,
-    waitFor: Promise.all([idb.whenLoaded, unlock.whenChecked]),
+    waitFor: idb.whenLoaded,
   });
   const markdown   = attachMarkdownMaterializer(ydoc, {
     dir,
@@ -146,8 +142,8 @@ const cache = createDisposableCache((id: string) => {
   });
 
   return {
-    ydoc, tables, encryption, idb, collaboration, markdown,
-    whenReady: Promise.all([idb.whenLoaded, unlock.whenChecked, collaboration.whenConnected]),
+    ydoc, tables, kv, idb, collaboration, markdown,
+    whenReady: Promise.all([idb.whenLoaded, collaboration.whenConnected]),
     async wipe() {
       ydoc.destroy();
       await collaboration.whenDisposed;
@@ -180,12 +176,12 @@ Use it whenever a primitive's startup must follow another's. Examples:
 - **Don't duck-type an attachment.** If you need to brand it, use a `Symbol.for` marker. See `skills/typescript`: runtime shape-checking is a code smell.
 - **Don't take an `id` on a ydoc-bound primitive.** Use `ydoc.guid`.
 - **Don't use `createX` for a side-effectful primitive.** If it registers listeners, it's `attach*`.
-- **Don't introduce `attachEncryptedX(ydoc, encryption, ...)` top-level exports.** Use `encryption.attachX(...)`: the coordinator owns its siblings.
+- **Don't introduce a separate top-level encrypted-X helper.** When a primitive must derive keys and construct sibling handles atomically, pass the definition records as named slots on a single call (`attachEncryption(ydoc, { keyring, tables, kv })`) and return the constructed handles destructurable at the call site.
 
 ## Reference implementations
 
 - `packages/workspace/src/document/attach-indexed-db.ts` ; the canonical 40-line example.
 - `packages/workspace/src/document/open-collaboration.ts` ; document collaboration surface with sync, presence, peers, and action dispatch.
-- `packages/workspace/src/document/attach-encryption.ts` ; state-owning coordinator; exposes `attachTable` / `attachTables` / `attachKv` as methods.
+- `packages/workspace/src/document/attach-encryption.ts` ; constructor primitive; takes `{ keyring, tables, kv }` and returns `{ tables, kv }` after one atomic keyring derivation.
 - `packages/workspace/src/document/materializer/markdown/materializer.ts` ; tables and optional `perTable` / `kv` in the options bag, keyed by table name.
 - `apps/whispering/src/lib/client.ts`: full singleton composition.

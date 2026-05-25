@@ -31,8 +31,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AuthClient } from '@epicenter/auth';
-import { asOwnerId } from '@epicenter/constants/identity';
 import { MachineAuthStorageError } from '@epicenter/auth/node';
+import { asOwnerId } from '@epicenter/constants/identity';
 import { DEFAULT_PROJECT_CONFIG_SOURCE } from '@epicenter/workspace';
 import {
 	claimDaemonLease,

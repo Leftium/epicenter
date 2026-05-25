@@ -41,9 +41,7 @@ class FakeBroadcastChannel {
 	close(): void {}
 }
 
-const NoteDef = defineTable(
-	type({ id: 'string', body: 'string', _v: '1' }),
-);
+const NoteDef = defineTable(type({ id: 'string', body: 'string', _v: '1' }));
 
 describe('local-only recipe', () => {
 	beforeEach(() => {

@@ -28,10 +28,11 @@ import { billingRoutes } from './billing-routes.js';
 
 // Generic on cloud's extended `Env` so every sub-app is typed as
 // `Hono<Env>` (with `planId`) without per-mount casts.
-const { base, auth, session, rooms, assets, ai, attachOwner } = createServer<Env>({
-	mode: 'personal',
-	signUpPolicy: 'open',
-});
+const { base, auth, session, rooms, assets, ai, attachOwner } =
+	createServer<Env>({
+		mode: 'personal',
+		signUpPolicy: 'open',
+	});
 
 // Public health endpoint at root.
 base.get('/', (c) =>

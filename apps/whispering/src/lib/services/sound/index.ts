@@ -1,8 +1,9 @@
+import { isTauri } from '@tauri-apps/api/core';
 import { createPlaySoundServiceDesktop } from './desktop';
 import { createPlaySoundServiceWeb } from './web';
 
 export type { PlaySoundService, SoundError } from './types';
 
-export const PlaySoundServiceLive = window.__TAURI_INTERNALS__
+export const PlaySoundServiceLive = isTauri()
 	? createPlaySoundServiceDesktop()
 	: createPlaySoundServiceWeb();

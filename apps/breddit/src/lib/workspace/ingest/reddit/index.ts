@@ -52,7 +52,7 @@ export type ImportProgress = {
 };
 
 // Workspace bundle type — the `redditWorkspace` singleton or any other
-// `openReddit()` instance.
+// `createBredditWorkspace()` instance.
 type RedditWorkspaceClient = RedditWorkspace;
 
 /**
@@ -152,7 +152,7 @@ function transformKv(raw: ParsedRedditData): KvData {
  * Import a Reddit GDPR export ZIP file into the workspace.
  *
  * @param input - ZIP file as Blob, File, or ArrayBuffer
- * @param workspace - Reddit workspace bundle (singleton `redditWorkspace` or `openReddit()`)
+ * @param workspace - Reddit workspace bundle (singleton `redditWorkspace` or `createBredditWorkspace()`)
  * @param options - Optional progress callback
  * @returns Import statistics
  */
@@ -181,7 +181,7 @@ export async function importRedditExport(
 	let tableIndex = 0;
 
 	// Batch all table and KV inserts into a single Y.Doc transaction
-	workspace.batch(() => {
+	workspace.ydoc.transact(() => {
 		for (const table of tableNames) {
 			onProgress?.({
 				phase: 'transform',

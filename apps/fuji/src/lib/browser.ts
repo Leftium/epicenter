@@ -4,7 +4,7 @@
  * Single source of truth for "how Fuji mounts in a browser." Calls Tier 1
  * primitives inline so every line is visible top-to-bottom:
  *
- *  1. workspace root doc (encrypted tables + KV via attachEncryption)
+ *  1. workspace root doc (encrypted tables + KV via createFujiWorkspace)
  *  2. local storage + cloud sync for root (attachLocalStorage + openCollaboration)
  *  3. per-entry child docs (plaintext Y.XmlFragment + encrypted IDB storage)
  *
@@ -18,7 +18,6 @@
 
 import type { SignedIn } from '@epicenter/svelte';
 import {
-	attachEncryption,
 	attachLocalStorage,
 	attachRichText,
 	createDisposableCache,
@@ -32,10 +31,9 @@ import {
 import * as Y from 'yjs';
 import {
 	createFujiActions,
+	createFujiWorkspace,
 	type EntryId,
 	entryContentDocGuid,
-	FUJI_ID,
-	fujiTables,
 } from './workspace';
 
 export function openFujiBrowser({
@@ -45,22 +43,19 @@ export function openFujiBrowser({
 	signedIn: SignedIn;
 	deviceId: DeviceId;
 }) {
-	const ydoc = new Y.Doc({ guid: FUJI_ID, gc: true });
-	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
-	const tables = encryption.attachTables(fujiTables);
-	const kv = encryption.attachKv({});
-	const actions = createFujiActions(tables);
+	const workspace = createFujiWorkspace({ keyring: signedIn.keyring });
+	const actions = createFujiActions(workspace);
 
-	const idb = attachLocalStorage(ydoc, {
+	const idb = attachLocalStorage(workspace.ydoc, {
 		server: signedIn.server,
 		ownerId: signedIn.ownerId,
 		keyring: signedIn.keyring,
 	});
-	const collaboration = openCollaboration(ydoc, {
+	const collaboration = openCollaboration(workspace.ydoc, {
 		url: roomWsUrl({
 			baseURL: signedIn.baseURL,
 			ownerId: signedIn.ownerId,
-			guid: ydoc.guid,
+			guid: workspace.ydoc.guid,
 			deviceId,
 		}),
 		openWebSocket: signedIn.openWebSocket,
@@ -94,7 +89,7 @@ export function openFujiBrowser({
 		});
 
 		onLocalUpdate(childYdoc, () => {
-			tables.entries.update(entryId, {
+			workspace.tables.entries.update(entryId, {
 				updatedAt: DateTimeString.now(),
 			});
 		});
@@ -116,16 +111,14 @@ export function openFujiBrowser({
 	});
 
 	return {
-		ydoc,
-		tables,
-		kv,
+		...workspace,
 		actions,
 		idb,
 		entryContentDocs,
 		collaboration,
 		async wipe() {
 			entryContentDocs[Symbol.dispose]();
-			ydoc.destroy();
+			workspace[Symbol.dispose]();
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
 			await wipeLocalStorage({
 				server: signedIn.server,
@@ -134,7 +127,7 @@ export function openFujiBrowser({
 		},
 		[Symbol.dispose]() {
 			entryContentDocs[Symbol.dispose]();
-			ydoc.destroy();
+			workspace[Symbol.dispose]();
 		},
 	};
 }

@@ -11,8 +11,8 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import type { OwnerId } from '@epicenter/constants/identity';
 import {
-	attachTables,
 	column,
+	createWorkspace,
 	defineMutation,
 	defineQuery,
 	defineTable,
@@ -22,7 +22,6 @@ import {
 	roomWsUrl,
 } from '@epicenter/workspace';
 import Type from 'typebox';
-import * as Y from 'yjs';
 
 const WORKSPACE_ID = 'epicenter.notes-repro';
 
@@ -42,8 +41,12 @@ export function openNotes({
 	openWebSocket: OpenWebSocketFn;
 	onReconnectSignal: OnReconnectSignal;
 }) {
-	const ydoc = new Y.Doc({ guid: WORKSPACE_ID });
-	const tables = attachTables(ydoc, { notes: Note });
+	const workspace = createWorkspace({
+		id: WORKSPACE_ID,
+		tables: { notes: Note },
+		kv: {},
+	});
+	const { ydoc, tables } = workspace;
 
 	const actions = {
 		notes: {
@@ -78,7 +81,7 @@ export function openNotes({
 		collaboration,
 		whenReady: collaboration.whenConnected,
 		async [Symbol.asyncDispose]() {
-			ydoc.destroy();
+			workspace[Symbol.dispose]();
 			await collaboration.whenDisposed;
 		},
 	};

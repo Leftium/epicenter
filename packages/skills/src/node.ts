@@ -44,7 +44,7 @@ import { serializeSkillMd } from './serialize.js';
 import { skillInstructionsDocGuid } from './skill-instructions-docs.js';
 import { createSkillsActions } from './skills-actions.js';
 import type { Skill } from './tables.js';
-import { openSkills } from './workspace.js';
+import { createSkillsWorkspace } from './workspace.js';
 
 export { SKILLS_WORKSPACE_ID } from './constants.js';
 export type { Reference, Skill } from './tables.js';
@@ -79,7 +79,7 @@ export function openSkillsNodeWorkspace({
 }: {
 	workspaceId: string;
 }) {
-	const doc = openSkills({ workspaceId });
+	const doc = createSkillsWorkspace({ workspaceId });
 	const { tables } = doc;
 
 	function openInstructionsDoc(skillId: string) {
@@ -312,14 +312,10 @@ export function openSkillsNodeWorkspace({
 	const actions = { ...readActions, ...nodeActions };
 
 	return {
-		get id() {
-			return doc.ydoc.guid;
-		},
 		ydoc: doc.ydoc,
 		tables,
 		kv: doc.kv,
 		actions,
-		batch: doc.batch,
 		[Symbol.dispose]() {
 			doc[Symbol.dispose]();
 		},

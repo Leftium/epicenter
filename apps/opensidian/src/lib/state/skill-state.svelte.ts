@@ -1,6 +1,6 @@
 import {
 	createSkillsActions,
-	openSkills,
+	createSkillsWorkspace,
 	referenceContentDocGuid,
 	skillInstructionsDocGuid,
 } from '@epicenter/skills';
@@ -154,7 +154,7 @@ export function createSkillState({ binding }: { binding: OpensidianBrowser }) {
 export type SkillState = ReturnType<typeof createSkillState>;
 
 function openGlobalSkillsWorkspace() {
-	const doc = openSkills();
+	const doc = createSkillsWorkspace();
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
 

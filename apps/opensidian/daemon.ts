@@ -6,7 +6,7 @@
  * paths.
  *
  * What this does:
- *   1. workspace root doc (encrypted tables + KV via attachEncryption)
+ *   1. workspace root doc (encrypted tables + KV via createOpensidianWorkspace)
  *   2. infrastructure: Yjs log persistence + cloud sync via
  *      `attachDaemonInfrastructure`
  *
@@ -15,11 +15,9 @@
  * and stay in the app runtime.
  */
 
-import { attachEncryption } from '@epicenter/workspace';
 import type { DaemonWorkspaceContext } from '@epicenter/workspace/daemon';
 import { attachDaemonInfrastructure } from '@epicenter/workspace/node';
-import * as Y from 'yjs';
-import { OPENSIDIAN_ID, opensidianTables } from './workspace.js';
+import { createOpensidianWorkspace } from './workspace.js';
 
 export function openOpensidianDaemon({
 	projectDir,
@@ -30,13 +28,10 @@ export function openOpensidianDaemon({
 	openWebSocket,
 	onReconnectSignal,
 }: DaemonWorkspaceContext) {
-	const ydoc = new Y.Doc({ guid: OPENSIDIAN_ID, gc: true });
-	ydoc.clientID = yDocClientId;
-	const encryption = attachEncryption(ydoc, { keyring });
-	encryption.attachTables(opensidianTables);
-	encryption.attachKv({});
+	const workspace = createOpensidianWorkspace({ keyring });
+	workspace.ydoc.clientID = yDocClientId;
 
-	return attachDaemonInfrastructure(ydoc, {
+	return attachDaemonInfrastructure(workspace.ydoc, {
 		projectDir,
 		ownerId,
 		deviceId,

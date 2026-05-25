@@ -6,7 +6,7 @@
  * paths.
  *
  * What this does:
- *   1. workspace root doc (encrypted tables + KV via attachEncryption)
+ *   1. workspace root doc (encrypted tables + KV via createHoneycrispWorkspace)
  *   2. SQLite materializer at `sqlitePath(projectDir, workspaceId)` for
  *      folders + notes
  *   3. Markdown materializer at `markdownPath(projectDir, workspaceId)` for
@@ -15,7 +15,6 @@
  *      `attachDaemonInfrastructure`
  */
 
-import { attachEncryption } from '@epicenter/workspace';
 import type { DaemonWorkspaceContext } from '@epicenter/workspace/daemon';
 import {
 	attachMarkdownMaterializer,
@@ -28,11 +27,9 @@ import {
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
-import * as Y from 'yjs';
 import {
 	createHoneycrispActions,
-	HONEYCRISP_ID,
-	honeycrispTables,
+	createHoneycrispWorkspace,
 } from './workspace.js';
 
 export function openHoneycrispDaemon({
@@ -45,26 +42,21 @@ export function openHoneycrispDaemon({
 	openWebSocket,
 	onReconnectSignal,
 }: DaemonWorkspaceContext) {
-	const ydoc = new Y.Doc({ guid: HONEYCRISP_ID, gc: true });
-	ydoc.clientID = yDocClientId;
-	const encryption = attachEncryption(ydoc, { keyring });
-	const tables = encryption.attachTables(honeycrispTables);
-	encryption.attachKv({});
-	const actions = createHoneycrispActions(tables);
+	const workspace = createHoneycrispWorkspace({ keyring });
+	workspace.ydoc.clientID = yDocClientId;
+	const actions = createHoneycrispActions(workspace);
 
-	attachBunSqliteMaterializer(ydoc, {
-		filePath: sqlitePath(projectDir, ydoc.guid),
+	attachBunSqliteMaterializer(workspace, {
+		filePath: sqlitePath(projectDir, workspace.ydoc.guid),
 		log: createLogger(`${route}-sqlite`),
-		tables,
 	});
 
-	attachMarkdownMaterializer(ydoc, {
-		dir: markdownPath(projectDir, ydoc.guid),
-		tables: { notes: tables.notes },
+	attachMarkdownMaterializer(workspace, {
+		dir: markdownPath(projectDir, workspace.ydoc.guid),
 		perTable: { notes: { filename: slugFilename('title') } },
 	});
 
-	return attachDaemonInfrastructure(ydoc, {
+	return attachDaemonInfrastructure(workspace.ydoc, {
 		projectDir,
 		ownerId,
 		deviceId,

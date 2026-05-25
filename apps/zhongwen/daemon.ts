@@ -7,30 +7,25 @@
  * daemon's only job is to host the encrypted Y.Doc on disk and bridge sync.
  */
 
-import { attachEncryption } from '@epicenter/workspace';
 import type { DaemonWorkspaceContext } from '@epicenter/workspace/daemon';
 import { attachDaemonInfrastructure } from '@epicenter/workspace/node';
-import * as Y from 'yjs';
-import { ZHONGWEN_ID, zhongwenKv, zhongwenTables } from './workspace.js';
+import { createZhongwenWorkspace } from './workspace.js';
 
 export function openZhongwenDaemon({
 	projectDir,
 	yDocClientId,
 	deviceId,
-	owner,
+	ownerId,
 	keyring,
 	openWebSocket,
 	onReconnectSignal,
 }: DaemonWorkspaceContext) {
-	const ydoc = new Y.Doc({ guid: ZHONGWEN_ID, gc: true });
-	ydoc.clientID = yDocClientId;
-	const encryption = attachEncryption(ydoc, { keyring });
-	encryption.attachTables(zhongwenTables);
-	encryption.attachKv(zhongwenKv);
+	const workspace = createZhongwenWorkspace({ keyring });
+	workspace.ydoc.clientID = yDocClientId;
 
-	return attachDaemonInfrastructure(ydoc, {
+	return attachDaemonInfrastructure(workspace.ydoc, {
 		projectDir,
-		owner,
+		ownerId,
 		deviceId,
 		openWebSocket,
 		onReconnectSignal,

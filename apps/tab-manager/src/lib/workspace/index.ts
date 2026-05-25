@@ -19,5 +19,7 @@ export {
 	type SavedTabId,
 	TAB_MANAGER_ID,
 	type ToolTrust,
+	createTabManagerWorkspace,
+	type TabManagerWorkspace,
 	tabManagerTables,
 } from './definition';

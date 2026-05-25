@@ -7,14 +7,12 @@
  */
 
 import {
-	attachKv,
-	attachTables,
 	column,
+	createWorkspace,
 	defineKv,
 	defineTable,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
-import * as Y from 'yjs';
 
 const redditTables = {
 	/** posts.csv */
@@ -279,23 +277,16 @@ const redditKv = {
 	),
 };
 
-export function openReddit() {
-	const id = 'reddit';
-	const ydoc = new Y.Doc({ guid: id, gc: true });
-	const tables = attachTables(ydoc, redditTables);
-	const kv = attachKv(ydoc, redditKv);
+export function createBredditWorkspace() {
 	// no persistence/sync/encryption: in-memory-only importer target
-	return {
-		ydoc,
-		tables,
-		kv,
-		batch: (fn: () => void) => ydoc.transact(fn),
-		[Symbol.dispose]() {
-			ydoc.destroy();
-		},
-	};
+	return createWorkspace({
+		id: 'reddit',
+		tables: redditTables,
+		kv: redditKv,
+	});
 }
 
-export const redditWorkspace = openReddit();
+
+export const redditWorkspace = createBredditWorkspace();
 
 export type RedditWorkspace = typeof redditWorkspace;

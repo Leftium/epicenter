@@ -7,14 +7,13 @@
  * paths inline rather than calling this; see `examples/fuji/epicenter.config.ts`.
  *
  * What this does:
- *   1. workspace root doc (encrypted tables + KV via attachEncryption)
+ *   1. workspace root doc (encrypted tables + KV via createFujiWorkspace)
  *   2. SQLite materializer at `sqlitePath(projectDir, workspaceId)`
  *   3. Markdown materializer at `markdownPath(projectDir, workspaceId)`
  *   4. infrastructure: Yjs log persistence + cloud sync via
  *      `attachDaemonInfrastructure`
  */
 
-import { attachEncryption } from '@epicenter/workspace';
 import type { DaemonWorkspaceContext } from '@epicenter/workspace/daemon';
 import {
 	attachMarkdownMaterializer,
@@ -27,8 +26,7 @@ import {
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
-import * as Y from 'yjs';
-import { createFujiActions, FUJI_ID, fujiTables } from './src/lib/workspace.js';
+import { createFujiActions, createFujiWorkspace } from './src/lib/workspace.js';
 
 export function openFujiDaemon({
 	projectDir,
@@ -40,25 +38,20 @@ export function openFujiDaemon({
 	openWebSocket,
 	onReconnectSignal,
 }: DaemonWorkspaceContext) {
-	const ydoc = new Y.Doc({ guid: FUJI_ID, gc: true });
-	ydoc.clientID = yDocClientId;
-	const encryption = attachEncryption(ydoc, { keyring });
-	const tables = encryption.attachTables(fujiTables);
-	encryption.attachKv({});
-	const actions = createFujiActions(tables);
+	const workspace = createFujiWorkspace({ keyring });
+	workspace.ydoc.clientID = yDocClientId;
+	const actions = createFujiActions(workspace);
 
-	attachBunSqliteMaterializer(ydoc, {
-		filePath: sqlitePath(projectDir, ydoc.guid),
+	attachBunSqliteMaterializer(workspace, {
+		filePath: sqlitePath(projectDir, workspace.ydoc.guid),
 		log: createLogger(`${route}-sqlite`),
-		tables,
 	});
-	attachMarkdownMaterializer(ydoc, {
-		dir: markdownPath(projectDir, ydoc.guid),
-		tables,
+	attachMarkdownMaterializer(workspace, {
+		dir: markdownPath(projectDir, workspace.ydoc.guid),
 		perTable: { entries: { filename: slugFilename('title') } },
 	});
 
-	return attachDaemonInfrastructure(ydoc, {
+	return attachDaemonInfrastructure(workspace.ydoc, {
 		projectDir,
 		ownerId,
 		deviceId,

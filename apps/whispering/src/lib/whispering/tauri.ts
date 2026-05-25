@@ -3,17 +3,17 @@
 import { attachBroadcastChannel, attachIndexedDb } from '@epicenter/workspace';
 import { PATHS } from '$lib/constants/paths';
 import { attachRecordingMarkdownFiles } from '$lib/recording-materializer';
-import { openWhispering as openWhisperingDoc } from './index';
+import { createWhisperingWorkspace } from './index';
 
 export function openWhispering() {
-	const doc = openWhisperingDoc();
+	const workspace = createWhisperingWorkspace();
 
-	const idb = attachIndexedDb(doc.ydoc);
-	attachBroadcastChannel(doc.ydoc);
+	const idb = attachIndexedDb(workspace.ydoc);
+	attachBroadcastChannel(workspace.ydoc);
 
 	const recordingsFs = attachRecordingMarkdownFiles(
-		doc.ydoc,
-		doc.tables.recordings,
+		workspace.ydoc,
+		workspace.tables.recordings,
 		{
 			dir: PATHS.DB.RECORDINGS(),
 			waitFor: idb.whenLoaded,
@@ -21,7 +21,7 @@ export function openWhispering() {
 	);
 
 	return {
-		...doc,
+		...workspace,
 		idb,
 		recordingsFs,
 		whenReady: Promise.all([idb.whenLoaded, recordingsFs.whenFlushed]),

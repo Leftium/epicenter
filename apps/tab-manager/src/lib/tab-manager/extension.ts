@@ -19,17 +19,11 @@
  */
 
 import type { SignedIn } from '@epicenter/svelte';
-import {
-	attachEncryption,
-	attachLocalStorage,
-	wipeLocalStorage,
-} from '@epicenter/workspace';
-import * as Y from 'yjs';
+import { attachLocalStorage, wipeLocalStorage } from '@epicenter/workspace';
 import { createTabManagerActions } from '$lib/workspace/actions';
 import {
+	createTabManagerWorkspace,
 	type DeviceId,
-	TAB_MANAGER_ID,
-	tabManagerTables,
 } from '$lib/workspace/definition';
 
 /**
@@ -46,17 +40,14 @@ export function openTabManagerBrowser({
 	signedIn: SignedIn;
 	deviceId: DeviceId;
 }) {
-	const ydoc = new Y.Doc({ guid: TAB_MANAGER_ID, gc: true });
-	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
-	const tables = encryption.attachTables(tabManagerTables);
-	const kv = encryption.attachKv({});
+	const workspace = createTabManagerWorkspace({ keyring: signedIn.keyring });
 	const actions = createTabManagerActions({
-		tables,
-		batch: (fn) => ydoc.transact(fn),
+		tables: workspace.tables,
+		batch: (fn) => workspace.ydoc.transact(fn),
 		deviceId,
 	});
 
-	const idb = attachLocalStorage(ydoc, {
+	const idb = attachLocalStorage(workspace.ydoc, {
 		server: signedIn.server,
 		ownerId: signedIn.ownerId,
 		keyring: signedIn.keyring,
@@ -64,21 +55,16 @@ export function openTabManagerBrowser({
 
 	return {
 		deviceId,
-		ydoc,
-		tables,
-		kv,
+		...workspace,
 		idb,
 		actions,
 		async wipe() {
-			ydoc.destroy();
+			workspace[Symbol.dispose]();
 			await idb.whenDisposed;
 			await wipeLocalStorage({
 				server: signedIn.server,
 				ownerId: signedIn.ownerId,
 			});
-		},
-		[Symbol.dispose]() {
-			ydoc.destroy();
 		},
 	};
 }

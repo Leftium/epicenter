@@ -16,7 +16,7 @@
 	import { nanoid } from 'nanoid/non-secure';
 	import { onDestroy, onMount } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
-	import { partitionResults, tryAsync } from 'wellcrafted/result';
+	import { tryAsync } from 'wellcrafted/result';
 	import { commandCallbacks } from '$lib/commands';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import {
@@ -34,6 +34,11 @@
 	} from '$lib/constants/audio';
 	import { getShortcutDisplayLabel } from '$lib/constants/keyboard';
 	import { notify } from '$lib/operations/notify';
+	import {
+		stopManualRecording,
+		stopVadRecording,
+	} from '$lib/operations/recording';
+	import { uploadRecordings } from '$lib/operations/upload';
 	import { rpc } from '$lib/query';
 	import { WhisperingErr } from '$lib/result';
 	import { services } from '$lib/services';
@@ -145,7 +150,7 @@
 						}
 
 						if (files.length > 0) {
-							await rpc.actions.uploadRecordings({ files });
+							await uploadRecordings({ files });
 						}
 					},
 				);
@@ -172,12 +177,12 @@
 			{
 				mode: 'manual' as const,
 				isActive: () => manualRecorder.state === 'RECORDING',
-				stop: () => rpc.actions.stopManualRecording(),
+				stop: () => stopManualRecording(),
 			},
 			{
 				mode: 'vad' as const,
 				isActive: () => vadRecorder.state !== 'IDLE',
-				stop: () => rpc.actions.stopVadRecording(),
+				stop: () => stopVadRecording(),
 			},
 		] satisfies {
 			mode: RecordingMode;
@@ -190,27 +195,12 @@
 				recordingMode.mode !== modeToKeep && recordingMode.isActive(),
 		);
 
-		const stopPromises = modesToStop.map(
-			async (recordingMode) => await recordingMode.stop(),
-		);
-
-		const results = await Promise.all(stopPromises);
-		return partitionResults(results);
+		await Promise.all(modesToStop.map((recordingMode) => recordingMode.stop()));
 	}
 
 	async function switchRecordingMode(newMode: RecordingMode) {
 		const toastId = nanoid();
-		const { errs } = await stopAllRecordingModesExcept(newMode);
-
-		if (errs.length > 0) {
-			console.error('Failed to stop active recordings:', errs);
-			notify.warning({
-				id: toastId,
-				title: '⚠️ Recording may still be active',
-				description:
-					'Previous recording could not be stopped automatically. Please stop it manually.',
-			});
-		}
+		await stopAllRecordingModesExcept(newMode);
 
 		if (settings.get('recording.mode') !== newMode) {
 			settings.set('recording.mode', newMode);
@@ -336,7 +326,7 @@
 				maxFileSize={25 * MEGABYTE}
 				onUpload={async (files) => {
 					if (files.length > 0) {
-					await rpc.actions.uploadRecordings({ files });
+					await uploadRecordings({ files });
 					}
 				}}
 				onFileRejected={({ file, reason }) => {

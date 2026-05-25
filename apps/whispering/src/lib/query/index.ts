@@ -1,4 +1,3 @@
-import { actions } from './actions';
 import { audio } from './audio';
 import { download } from './download';
 import { text } from './text';
@@ -11,7 +10,6 @@ import { transformer } from './transformer';
  */
 export const rpc = {
 	text,
-	actions,
 	audio,
 	download,
 	transcription,

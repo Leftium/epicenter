@@ -38,14 +38,12 @@
 	import { services } from '$lib/services';
 	import { desktopServices } from '$lib/services/desktop';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
+	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 
-	const getRecorderStateQuery = createQuery(
-		() => rpc.recorder.getRecorderState.options,
-	);
 	const latestRecording = $derived(recordings.sorted[0]);
 
 	const audioPlaybackUrlQuery = createQuery(() => ({
@@ -169,12 +167,10 @@
 	});
 
 	async function stopAllRecordingModesExcept(modeToKeep: RecordingMode) {
-		const { data: recorderState } = await rpc.recorder.getRecorderState.fetch();
-
 		const recordingModes = [
 			{
 				mode: 'manual' as const,
-				isActive: () => recorderState === 'RECORDING',
+				isActive: () => manualRecorder.state === 'RECORDING',
 				stop: () => rpc.actions.stopManualRecording(),
 			},
 			{
@@ -267,7 +263,7 @@
 		<!-- Container with relative positioning for the button and absolute selectors -->
 		<div class="relative">
 			<Button
-				tooltip={getRecorderStateQuery.data === 'IDLE'
+				tooltip={manualRecorder.state === 'IDLE'
 					? 'Start recording'
 					: 'Stop recording'}
 				onclick={() => commandCallbacks.toggleManualRecording()}
@@ -279,10 +275,10 @@
 						.global.microphone};"
 					class="text-[100px] sm:text-[110px] lg:text-[120px] xl:text-[130px] leading-none"
 				>
-					{RECORDER_STATE_TO_ICON[getRecorderStateQuery.data ?? 'IDLE']}
+					{RECORDER_STATE_TO_ICON[manualRecorder.state]}
 				</span>
 			</Button>
-			{#if getRecorderStateQuery.data === 'RECORDING'}
+			{#if manualRecorder.state === 'RECORDING'}
 				<div class="absolute -right-12 bottom-4 flex items-center">
 					<Button
 						tooltip="Cancel recording"

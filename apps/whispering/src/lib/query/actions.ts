@@ -20,7 +20,7 @@ const ImportError = defineErrors({
 
 import { delivery } from './delivery';
 import { notify } from './notify';
-import { recorder } from './recorder';
+import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { sound } from './sound';
 import { text } from './text';
 import { transcribeBlob } from './transcription';
@@ -73,7 +73,7 @@ const startManualRecording = defineMutation({
 		});
 
 		const { data: deviceAcquisitionOutcome, error: startRecordingError } =
-			await recorder.startRecording({ toastId });
+			await manualRecorder.startRecording({ toastId });
 
 		// Release mutex after the actual start operation completes
 		isRecordingOperationBusy = false;
@@ -155,7 +155,7 @@ const stopManualRecording = defineMutation({
 			description: 'Finalizing your audio capture...',
 		});
 
-		const { data, error: stopRecordingError } = await recorder.stopRecording({
+		const { data, error: stopRecordingError } = await manualRecorder.stopRecording({
 			toastId,
 		});
 
@@ -344,15 +344,8 @@ export const actions = {
 	toggleManualRecording: defineMutation({
 		mutationKey: ['commands', 'toggleManualRecording'] as const,
 		mutationFn: async () => {
-			const { data: recorderState, error: getRecorderStateError } =
-				await recorder.getRecorderState.fetch();
-			if (getRecorderStateError) {
-				notify.error(getRecorderStateError);
-				return Ok(undefined);
-			}
-			if (recorderState === 'RECORDING') {
+			if (manualRecorder.state === 'RECORDING')
 				return await stopManualRecording(undefined);
-			}
 			return await startManualRecording(undefined);
 		},
 	}),
@@ -377,7 +370,7 @@ export const actions = {
 				description: 'Cleaning up recording session...',
 			});
 			const { data: cancelRecordingResult, error: cancelRecordingError } =
-				await recorder.cancelRecording({ toastId });
+				await manualRecorder.cancelRecording({ toastId });
 
 			// Release mutex after the actual cancel operation completes
 			isRecordingOperationBusy = false;

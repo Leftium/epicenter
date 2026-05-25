@@ -5,6 +5,7 @@
 	import { rpc } from '$lib/query';
 	import type { DeviceIdentifier } from '$lib/services/recorder/types';
 	import { asDeviceIdentifier } from '$lib/services/recorder/types';
+	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 
 	let {
 		selected = $bindable(),
@@ -12,9 +13,9 @@
 		selected: DeviceIdentifier | null;
 	} = $props();
 
-	// Use recorder.enumerateDevices for manual recording (includes desktop devices)
+	// Use manualRecorder.enumerateDevices for manual recording (includes desktop devices)
 	const getDevicesQuery = createQuery(
-		() => rpc.recorder.enumerateDevices.options,
+		() => manualRecorder.enumerateDevices.options,
 	);
 
 	$effect(() => {

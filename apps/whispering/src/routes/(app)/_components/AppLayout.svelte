@@ -2,7 +2,6 @@
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Dialog from '@epicenter/ui/dialog';
 	// import { extension } from '@epicenter/extension';
-	import { createQuery } from '@tanstack/svelte-query';
 	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { commandCallbacks } from '$lib/commands';
@@ -14,8 +13,8 @@
 		VAD_STATE_TO_ICON,
 	} from '$lib/constants/audio';
 	import { migrationDialog } from '$lib/migration/migration-dialog.svelte';
-	import { rpc } from '$lib/query';
 	import { services } from '$lib/services';
+	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
@@ -34,10 +33,6 @@
 		registerMicrophonePermission,
 	} from '../_layout-utils/register-permissions';
 	import { syncIconWithRecorderState } from '../_layout-utils/syncIconWithRecorderState.svelte';
-
-	const getRecorderStateQuery = createQuery(
-		() => rpc.recorder.getRecorderState.options,
-	);
 
 	let cleanupAccessibilityPermission: (() => void) | undefined;
 	let cleanupMicrophonePermission: (() => void) | undefined;
@@ -119,7 +114,7 @@
 			style="filter: drop-shadow(0px 2px 4px rgba(0, 0, 0, 0.5));"
 			class="text-[48px] leading-none"
 		>
-			{RECORDER_STATE_TO_ICON[getRecorderStateQuery.data ?? 'IDLE']}
+			{RECORDER_STATE_TO_ICON[manualRecorder.state]}
 		</span>
 	</button>
 {/if}

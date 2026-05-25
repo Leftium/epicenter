@@ -12,6 +12,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { rpc } from '$lib/query';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
+	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 
 	const combobox = useCombobox();
 
@@ -41,7 +42,7 @@
 	} as const;
 
 	const getDevicesQuery = createQuery(() => ({
-		...rpc.recorder.enumerateDevices.options,
+		...manualRecorder.enumerateDevices.options,
 		enabled: combobox.open,
 	}));
 

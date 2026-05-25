@@ -50,25 +50,23 @@
 					{ recordingId, transformation },
 					{
 						onError: (error) => rpc.notify.error(error),
-						onSuccess: (transformationRun) => {
-							if (transformationRun.result.status !== 'completed') {
-								if (transformationRun.result.status === 'failed') {
-									rpc.notify.error({
-										title: '⚠️ Transformation error',
-										description: transformationRun.result.error,
-										action: {
-											type: 'more-details',
-											error: transformationRun.result.error,
-										},
-									});
-								}
+						onSuccess: (result) => {
+							if (result.status === 'failed') {
+								rpc.notify.error({
+									title: '⚠️ Transformation error',
+									description: result.error,
+									action: {
+										type: 'more-details',
+										error: result.error,
+									},
+								});
 								return;
 							}
 
 							rpc.sound.playSoundIfEnabled('transformationComplete');
 
 							rpc.delivery.deliverTransformationResult({
-								text: transformationRun.result.output,
+								text: result.output,
 								toastId,
 							});
 						},

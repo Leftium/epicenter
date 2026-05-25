@@ -718,7 +718,7 @@ async function processRecordingPipeline({
 		description:
 			'Applying your selected transformation to the transcribed text...',
 	});
-	const { data: transformationRun, error: transformError } =
+	const { data: result, error: transformError } =
 		await transformer.transformRecording({
 			recordingId: recording.id,
 			transformation,
@@ -728,25 +728,20 @@ async function processRecordingPipeline({
 		return;
 	}
 
-	if (transformationRun.result.status !== 'completed') {
-		if (transformationRun.result.status === 'failed') {
-			notify.error({
-				id: transformToastId,
-				title: '⚠️ Transformation error',
-				description: transformationRun.result.error,
-				action: {
-					type: 'more-details',
-					error: transformationRun.result.error,
-				},
-			});
-		}
+	if (result.status === 'failed') {
+		notify.error({
+			id: transformToastId,
+			title: '⚠️ Transformation error',
+			description: result.error,
+			action: { type: 'more-details', error: result.error },
+		});
 		return;
 	}
 
 	sound.playSoundIfEnabled('transformationComplete');
 
 	await delivery.deliverTransformationResult({
-		text: transformationRun.result.output,
+		text: result.output,
 		toastId: transformToastId,
 	});
 }

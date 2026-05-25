@@ -20,6 +20,7 @@ import { transformationSteps } from '$lib/state/transformation-steps.svelte';
 import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
 import { whispering } from '$lib/whispering/client';
 import type {
+	TerminalTransformationRunResult,
 	Transformation,
 	TransformationRun,
 	TransformationStep,
@@ -102,46 +103,28 @@ export const transformer = {
 			const steps = transformationSteps.getByTransformationId(
 				transformation.id,
 			);
-			const getTransformationOutput = async (): Promise<
-				Result<string, WhisperingError>
-			> => {
-				const { data: transformationRun, error: transformationRunError } =
-					await runTransformation({
-						input,
-						transformation,
-						steps,
-						recordingId: null,
-					});
 
-				if (transformationRunError)
-					return WhisperingErr({
-						title: '⚠️ Transformation failed',
-						serviceError: transformationRunError,
-					});
+			const { data: result, error: runError } = await runTransformation({
+				input,
+				transformation,
+				steps,
+				recordingId: null,
+			});
 
-				if (transformationRun.result.status !== 'completed') {
-					if (transformationRun.result.status === 'failed') {
-						return WhisperingErr({
-							title: '⚠️ Transformation failed',
-							description: transformationRun.result.error,
-							action: {
-								type: 'more-details',
-								error: transformationRun.result.error,
-							},
-						});
-					}
-					return WhisperingErr({
-						title: '⚠️ Transformation produced no output',
-						description: 'The transformation completed but produced no output.',
-					});
-				}
+			if (runError)
+				return WhisperingErr({
+					title: '⚠️ Transformation failed',
+					serviceError: runError,
+				});
 
-				return Ok(transformationRun.result.output);
-			};
+			if (result.status === 'failed')
+				return WhisperingErr({
+					title: '⚠️ Transformation failed',
+					description: result.error,
+					action: { type: 'more-details', error: result.error },
+				});
 
-			const transformationOutputResult = await getTransformationOutput();
-
-			return transformationOutputResult;
+			return Ok(result.output);
 		},
 	}),
 
@@ -153,7 +136,7 @@ export const transformer = {
 		}: {
 			recordingId: string;
 			transformation: Transformation;
-		}): Promise<Result<TransformationRun, WhisperingError>> => {
+		}): Promise<Result<TerminalTransformationRunResult, WhisperingError>> => {
 			const recording = recordings.get(recordingId);
 			if (!recording) {
 				return WhisperingErr({
@@ -166,21 +149,20 @@ export const transformer = {
 				transformation.id,
 			);
 
-			const { data: transformationRun, error: transformationRunError } =
-				await runTransformation({
-					input: recording.transcript as string,
-					transformation,
-					steps,
-					recordingId,
-				});
+			const { data: result, error: runError } = await runTransformation({
+				input: recording.transcript as string,
+				transformation,
+				steps,
+				recordingId,
+			});
 
-			if (transformationRunError)
+			if (runError)
 				return WhisperingErr({
 					title: '⚠️ Transformation failed',
-					serviceError: transformationRunError,
+					serviceError: runError,
 				});
 
-			return Ok(transformationRun);
+			return Ok(result);
 		},
 	}),
 };
@@ -269,7 +251,7 @@ async function runTransformation({
 	transformation: Transformation;
 	steps: TransformationStep[];
 	recordingId: string | null;
-}): Promise<Result<TransformationRun, TransformError>> {
+}): Promise<Result<TerminalTransformationRunResult, TransformError>> {
 	if (!input.trim()) {
 		return TransformError.InvalidInput({
 			message: 'Empty input. Please enter some text to transform',
@@ -336,7 +318,7 @@ async function runTransformation({
 				},
 			} satisfies TransformationRun;
 			transformationRuns.set(failedRun);
-			return Ok(failedRun);
+			return Ok(failedRun.result);
 		}
 
 		const handleStepOutput = handleStepResult.data;
@@ -362,5 +344,5 @@ async function runTransformation({
 		},
 	} satisfies TransformationRun;
 	transformationRuns.set(completedRun);
-	return Ok(completedRun);
+	return Ok(completedRun.result);
 }

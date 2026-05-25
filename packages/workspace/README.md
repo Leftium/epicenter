@@ -962,7 +962,9 @@ function openNotes() {
 	});
 	const markdown = attachMarkdownMaterializer(ydoc, {
 		dir: '/tmp/epicenter/markdown',
-	}).table(tables.notes, { filename: slugFilename('title') });
+		tables: { notes: tables.notes },
+		perTable: { notes: { filename: slugFilename('title') } },
+	});
 
 	return {
 		get id() { return ydoc.guid; },
@@ -979,7 +981,7 @@ void openNotes;
 
 ### SQLite materializer
 
-The SQLite materializer is exported from `@epicenter/workspace/document/materializer/sqlite`. It mirrors table rows into queryable SQLite tables with optional FTS5 full-text search, using a builder pattern with `.table()` opt-in.
+The SQLite materializer is exported from `@epicenter/workspace/document/materializer/sqlite`. It mirrors table rows into queryable SQLite tables with optional FTS5 full-text search. Pass the `tables` record to mirror every entry, and use the keyed `fts` slot to opt specific columns into FTS5.
 
 ```typescript
 import { Database } from 'bun:sqlite';
@@ -1003,8 +1005,10 @@ function openBlog() {
 	const tables = attachTables(ydoc, { posts });
 	const db = new Database('/tmp/epicenter/blog.db');
 	ydoc.once('destroy', () => db.close());
-	const mirror = attachSqliteMaterializer(ydoc, { db }).table(tables.posts, {
-		fts: ['title', 'body'],
+	const mirror = attachSqliteMaterializer(ydoc, {
+		db,
+		tables: { posts: tables.posts },
+		fts: { posts: ['title', 'body'] },
 	});
 
 	return {

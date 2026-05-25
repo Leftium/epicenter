@@ -3,18 +3,22 @@ import type { BaseRow } from '../../attach-table.js';
 
 /**
  * Build a `filename` slot that produces `{slug}-{id}.md` using a row field
- * as the slug source. Pass to `.table(t, { filename: slugFilename('title') })`.
+ * as the slug source. Pass via `perTable[tableName].filename`.
  *
  * @example
  * ```typescript
- * .table(tables.posts, { filename: slugFilename('title') })
+ * attachMarkdownMaterializer(ydoc, {
+ *   dir,
+ *   tables,
+ *   perTable: { posts: { filename: slugFilename('title') } },
+ * });
  * // row with title "Hello World", id "abc123" => "hello-world-abc123.md"
  * ```
  */
-export function slugFilename<TRow extends BaseRow>(
-	field: keyof TRow & string,
-): (row: TRow) => string {
-	return (row) => {
+export function slugFilename<TField extends string>(field: TField) {
+	return <TRow extends BaseRow & { [P in TField]: unknown }>(
+		row: TRow,
+	): string => {
 		const value = row[field];
 		return toSlugFilename(
 			typeof value === 'string' ? value : undefined,

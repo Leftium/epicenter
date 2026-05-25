@@ -77,6 +77,26 @@ export type MirrorStatement = {
 // biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous table helpers
 type AnyTable = Table<any>;
 
+/**
+ * Record of workspace tables to materialize. Keys become the mirror table
+ * names; values are the workspace table refs returned by `attachTables`.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: heterogeneous row types in a record
+export type TablesRecord = Record<string, Table<any>>;
+
+/**
+ * Optional FTS configuration, keyed by the same names as `tables`. Each
+ * value lists the columns of that table's row to include in the FTS5 index.
+ *
+ * The mapped type narrows the value to the row's column names, so typos
+ * become compile errors at the call site.
+ */
+export type FtsConfig<TTables extends TablesRecord> = {
+	[K in keyof TTables]?: TTables[K] extends Table<infer TRow>
+		? (keyof TRow & string)[]
+		: never;
+};
+
 /** Errors surfaced by the SQLite materializer's async background sync loop. */
 export const SqliteMaterializerError = defineErrors({
 	/** Debounced flush of pending row writes to the mirror database failed. */
@@ -89,21 +109,9 @@ export type SqliteMaterializerError = InferErrors<
 	typeof SqliteMaterializerError
 >;
 
-/**
- * Per-table configuration, generic over the specific row type so `fts` narrows
- * to valid column names at the call site.
- */
-export type TableConfig<TRow extends BaseRow> = {
-	/** Column names to include in FTS5 full-text search index. */
-	fts?: (keyof TRow & string)[];
-	/** Optional per-column value serializer override. */
-	serialize?: (value: unknown) => unknown;
-};
-
 type RegisteredTable = {
 	table: AnyTable;
-	// biome-ignore lint/suspicious/noExplicitAny: internal storage, variance across heterogeneous row types
-	config: TableConfig<any>;
+	ftsColumns?: string[];
 	unsubscribe?: () => void;
 };
 
@@ -117,15 +125,27 @@ type RegisteredTable = {
  *
  * @internal
  */
-export function attachSqliteMaterializerCore(
+export function attachSqliteMaterializerCore<TTables extends TablesRecord>(
 	ydoc: Y.Doc,
 	{
 		db,
+		tables,
+		fts,
 		debounceMs = 100,
 		waitFor,
 		log = createLogger('sqlite-materializer'),
 	}: {
 		db: MirrorDatabase;
+		/**
+		 * Workspace tables to mirror. Each entry becomes a SQLite table named
+		 * after the record key.
+		 */
+		tables: TTables;
+		/**
+		 * Optional FTS5 configuration. Keyed by the same names as `tables`,
+		 * with values listing the columns to include in the FTS index.
+		 */
+		fts?: FtsConfig<TTables>;
 		debounceMs?: number;
 		/**
 		 * Gate: the materializer awaits this before the initial DDL + full-load.
@@ -141,15 +161,19 @@ export function attachSqliteMaterializerCore(
 	},
 ) {
 	const registered = new Map<string, RegisteredTable>();
+	for (const [tableName, table] of Object.entries(tables)) {
+		const ftsColumns = fts?.[tableName as keyof TTables] as
+			| string[]
+			| undefined;
+		registered.set(tableName, {
+			table: table as AnyTable,
+			ftsColumns,
+		});
+	}
+
 	let pendingSync = new Map<string, Set<string>>();
 	let syncQueue = Promise.resolve();
 	let isDisposed = false;
-	/**
-	 * Closed once `initialize()` commits (past `await waitFor`). Any `.table()`
-	 * call after this throws: the materializer is past the point where late
-	 * registrations would be picked up for DDL + full-load.
-	 */
-	let isRegistrationOpen = true;
 
 	// ── SQL primitives ───────────────────────────────────────────
 
@@ -157,10 +181,8 @@ export function attachSqliteMaterializerCore(
 		tableName: string,
 		row: BaseRow & Record<string, unknown>,
 	) {
-		const config = registered.get(tableName)?.config;
-		const serialize = config?.serialize ?? serializeValue;
 		const keys = Object.keys(row);
-		const values = keys.map((key) => serialize(row[key]));
+		const values = keys.map((key) => serializeValue(row[key]));
 
 		const stmt = await db.prepare(buildUpsertSql(tableName, keys));
 		await stmt.run(...values);
@@ -174,8 +196,6 @@ export function attachSqliteMaterializerCore(
 	}
 
 	async function fullLoadTable(tableName: string, table: AnyTable) {
-		const config = registered.get(tableName)?.config;
-		const serialize = config?.serialize ?? serializeValue;
 		const rows = table.getAllValid();
 		if (rows.length === 0) return;
 
@@ -183,7 +203,7 @@ export function attachSqliteMaterializerCore(
 		const stmt = await db.prepare(buildUpsertSql(tableName, keys));
 
 		for (const row of rows) {
-			const values = keys.map((key) => serialize(row[key]));
+			const values = keys.map((key) => serializeValue(row[key]));
 			await stmt.run(...values);
 		}
 	}
@@ -241,7 +261,7 @@ export function attachSqliteMaterializerCore(
 	): Promise<SearchResult[]> {
 		if (isDisposed) return [];
 		const entry = registered.get(tableName);
-		const ftsColumns = entry?.config.fts;
+		const ftsColumns = entry?.ftsColumns;
 		if (ftsColumns === undefined || ftsColumns.length === 0) return [];
 		return ftsSearch(db, tableName, ftsColumns, query, options, log);
 	}
@@ -298,9 +318,6 @@ export function attachSqliteMaterializerCore(
 	function dispose() {
 		if (isDisposed) return;
 		isDisposed = true;
-		// Close the registration window even if `initialize()` never ran
-		// (e.g., waitFor stalled and the ydoc was destroyed before init).
-		isRegistrationOpen = false;
 		flushAfterDebounce.cancel();
 		for (const entry of registered.values()) entry.unsubscribe?.();
 	}
@@ -310,18 +327,16 @@ export function attachSqliteMaterializerCore(
 	// ── Initial flush ────────────────────────────────────────────
 
 	async function initialize() {
-		// Always yield a microtask so callers can finish synchronous setup
-		// (including writing initial rows) before the full-load runs.
+		// Always yield a microtask so callers can seed synchronous writes
+		// (e.g. `tables.posts.set(...)`) before the full-load reads
+		// `getAllValid()`.
 		await waitFor;
-		// Close the registration window: any further `.table()` call throws,
-		// even if init errors or disposes mid-flight below.
-		isRegistrationOpen = false;
 		if (isDisposed) return;
 
 		for (const [tableName, entry] of registered) {
 			await db.run(generateDdl(tableName, entry.table.schema));
-			if (entry.config.fts && entry.config.fts.length > 0)
-				await setupFtsTable(db, tableName, entry.config.fts);
+			if (entry.ftsColumns && entry.ftsColumns.length > 0)
+				await setupFtsTable(db, tableName, entry.ftsColumns);
 		}
 
 		if (isDisposed) return;
@@ -347,9 +362,7 @@ export function attachSqliteMaterializerCore(
 
 	const whenFlushed = initialize();
 
-	// ── Builder ──────────────────────────────────────────────────
-
-	const api = {
+	return {
 		whenFlushed,
 		search: defineQuery({
 			title: 'Full-text search',
@@ -375,39 +388,6 @@ export function attachSqliteMaterializerCore(
 			handler: ({ table: tableName }) => rebuild(tableName),
 		}),
 	};
-
-	type MaterializerBuilder = typeof api & {
-		/**
-		 * Opt in a workspace table for SQLite materialization.
-		 *
-		 * `fts` and `serialize` are narrowed to the specific row type, so typos
-		 * in column names become compile errors.
-		 *
-		 * Must be called synchronously after construction, before `whenFlushed`
-		 * resolves. Calls after the initial flush throw.
-		 */
-		table<TRow extends BaseRow>(
-			table: Table<TRow>,
-			config?: TableConfig<TRow>,
-		): MaterializerBuilder;
-	};
-
-	const builder: MaterializerBuilder = {
-		...api,
-		table(table, config) {
-			if (!isRegistrationOpen)
-				throw new Error(
-					`materializer: .table("${table.name}") called after initial flush. All .table() registrations must happen synchronously after construction.`,
-				);
-			registered.set(table.name, {
-				table: table as AnyTable,
-				config: config ?? {},
-			});
-			return builder;
-		},
-	};
-
-	return builder;
 }
 
 // ════════════════════════════════════════════════════════════════════════════

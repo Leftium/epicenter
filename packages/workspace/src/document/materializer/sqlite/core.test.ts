@@ -70,18 +70,19 @@ function createTestDb(): TestDb {
 }
 
 type AttachedTables = ReturnType<typeof attachTables<typeof tableDefinitions>>;
-type Materializer = ReturnType<typeof attachSqliteMaterializerCore>;
-type TableRegistration = {
-	table: Parameters<Materializer['table']>[0];
-	config?: Parameters<Materializer['table']>[1];
+
+type SetupBuildResult = {
+	// biome-ignore lint/suspicious/noExplicitAny: tests build heterogeneous subsets
+	tables: Record<string, any>;
+	fts?: Record<string, string[]>;
 };
 
 type SetupOptions = {
-	tables?: (t: AttachedTables) => TableRegistration[];
+	build?: (t: AttachedTables) => SetupBuildResult;
 	debounceMs?: number;
 };
 
-function setup({ tables: tableRegistrations, debounceMs }: SetupOptions = {}) {
+function setup({ build, debounceMs }: SetupOptions = {}) {
 	const db = createTestDb();
 
 	const cache = createDisposableCache(
@@ -89,20 +90,17 @@ function setup({ tables: tableRegistrations, debounceMs }: SetupOptions = {}) {
 			const ydoc = new Y.Doc({ guid: id });
 			const tables = attachTables(ydoc, tableDefinitions);
 
+			const built: SetupBuildResult = build?.(tables) ?? {
+				tables: { posts: tables.posts, notes: tables.notes },
+			};
+
 			const materializer = attachSqliteMaterializerCore(ydoc, {
 				db,
 				debounceMs,
+				tables: built.tables,
+				// biome-ignore lint/suspicious/noExplicitAny: tests erase row types through the setup helper
+				fts: built.fts as any,
 			});
-
-			const registrations =
-				tableRegistrations?.(tables) ??
-				([
-					{ table: tables.posts },
-					{ table: tables.notes },
-				] as TableRegistration[]);
-			for (const { table, config } of registrations) {
-				materializer.table(table, config);
-			}
 
 			return {
 				ydoc,
@@ -182,9 +180,8 @@ describe('attachSqliteMaterializerCore', () => {
 					const materializer = attachSqliteMaterializerCore(ydoc, {
 						db,
 						waitFor: gate.promise,
-					})
-						.table(tables.posts)
-						.table(tables.notes);
+						tables: { posts: tables.posts, notes: tables.notes },
+					});
 
 					return {
 						ydoc,
@@ -249,7 +246,9 @@ describe('attachSqliteMaterializerCore', () => {
 		});
 
 		test('mirrors only specified tables when tables option is provided', async () => {
-			const testSetup = setup({ tables: (t) => [{ table: t.posts }] });
+			const testSetup = setup({
+				build: (t) => ({ tables: { posts: t.posts } }),
+			});
 
 			try {
 				testSetup.workspace.tables.posts.set({
@@ -546,11 +545,10 @@ describe('attachSqliteMaterializerCore', () => {
 		if (hasFts5) {
 			test('search returns ranked results with snippets when fts is configured', async () => {
 				const testSetup = setup({
-					tables: (t) =>
-						[
-							{ table: t.posts, config: { fts: ['title'] } },
-							{ table: t.notes },
-						] as TableRegistration[],
+					build: (t) => ({
+						tables: { posts: t.posts, notes: t.notes },
+						fts: { posts: ['title'] },
+					}),
 				});
 
 				try {

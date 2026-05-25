@@ -65,11 +65,17 @@ export default defineWorkspace({
 		const markdown = attachMarkdownMaterializer(ydoc, {
 			dir: markdownPath(projectDir, WORKSPACE_ID),
 			waitFor: whenReady,
-		})
-			.table(tables.savedTabs, { filename: slugFilename('title') })
-			.table(tables.bookmarks, { filename: slugFilename('title') })
-			.table(tables.devices)
-			.kv(kv);
+			tables: {
+				savedTabs: tables.savedTabs,
+				bookmarks: tables.bookmarks,
+				devices: tables.devices,
+			},
+			perTable: {
+				savedTabs: { filename: slugFilename('title') },
+				bookmarks: { filename: slugFilename('title') },
+			},
+			kv,
+		});
 
 		return {
 			workspaceId: ydoc.guid,

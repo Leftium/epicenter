@@ -95,7 +95,7 @@ describe('scaling ceiling: small rows (posts)', () => {
 
 	test('insert, encode, decode, read at increasing row counts', () => {
 		console.log('\n=== SCALING CEILING: SMALL ROWS (~75 bytes/row) ===');
-		console.log('Table: posts { id, title, views, _v }');
+		console.log('Table: posts { id, title, views }');
 
 		const results: ScalingRow[] = [];
 
@@ -185,7 +185,7 @@ describe('scaling ceiling: realistic rows (notes)', () => {
 	test('insert, encode, decode, read at increasing row counts', () => {
 		console.log('\n=== SCALING CEILING: REALISTIC ROWS (~700 bytes/row) ===');
 		console.log(
-			'Table: notes { id, title, content (~500 chars), tags, createdAt, updatedAt, _v }',
+			'Table: notes { id, title, content (~500 chars), tags, createdAt, updatedAt }',
 		);
 
 		const sampleContent =

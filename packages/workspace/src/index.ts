@@ -110,8 +110,8 @@ export {
 	asDeviceId,
 	createDeviceId,
 	createDeviceIdAsync,
-	DeviceId,
 } from './document/device-id.js';
+export type { DeviceId } from './document/device-id.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // PROJECT CONFIG (browser-safe surface)

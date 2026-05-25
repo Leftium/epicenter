@@ -14,7 +14,7 @@
  * returned by `attachEncryption(ydoc, { keyring })`.
  */
 
-import { Type, type Static, type TObject, type TSchema } from 'typebox';
+import { type Static, type TObject, type TSchema, Type } from 'typebox';
 import { Value } from 'typebox/value';
 import {
 	defineErrors,
@@ -179,8 +179,7 @@ export type MigrateInput<
  * every content doc, and the editor doesn't contend with the table.
  */
 export type TableDefinition<
-	TVersions extends
-		readonly VersionedColumns[] = readonly VersionedColumns[],
+	TVersions extends readonly VersionedColumns[] = readonly VersionedColumns[],
 > = {
 	/** The original variadic versions, in declaration order. */
 	versions: TVersions;
@@ -213,11 +212,12 @@ export type TableDefinition<
  * Intersected with `BaseRow` so that `id: string` is guaranteed even when
  * the generic widens (e.g. `TableDefinition<any>` in `TableDefinitions`).
  */
-export type InferTableRow<T> = T extends TableDefinition<infer TVersions>
-	? TVersions extends readonly VersionedColumns[]
-		? RowOf<LastVersion<TVersions>> & BaseRow
-		: BaseRow
-	: never;
+export type InferTableRow<T> =
+	T extends TableDefinition<infer TVersions>
+		? TVersions extends readonly VersionedColumns[]
+			? RowOf<LastVersion<TVersions>> & BaseRow
+			: BaseRow
+		: never;
 
 /** Map of table definitions (uses `any` to allow variance in generic parameters). */
 export type TableDefinitions = Record<
@@ -587,10 +587,12 @@ export function createTable<
 			// need to stamp _v, route, and re-migrate just to write back.
 			const merged = { ...current, ...partial, id } as TRow;
 			if (!Value.Check(definition.schema, merged)) {
-				const errors = [...Value.Errors(definition.schema, merged)].map((e) => ({
-					path: e.instancePath,
-					message: e.message,
-				}));
+				const errors = [...Value.Errors(definition.schema, merged)].map(
+					(e) => ({
+						path: e.instancePath,
+						message: e.message,
+					}),
+				);
 				return TableParseError.ValidationFailed({ id, errors, row: merged });
 			}
 			ykv.set(merged.id, stamp(merged));

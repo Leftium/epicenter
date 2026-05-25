@@ -177,7 +177,9 @@ describe('KV operations', () => {
 		const ydoc = new Y.Doc();
 		const ykv = createEncryptedYkvLww<unknown>(ydoc, 'kv');
 		const kv = createKv(ykv, {
-			counter: defineKv(Type.Object({ value: Type.Number() }), () => ({ value: 0 })),
+			counter: defineKv(Type.Object({ value: Type.Number() }), () => ({
+				value: 0,
+			})),
 		});
 
 		const { durationMs } = measureTime(() => {
@@ -197,7 +199,9 @@ describe('KV operations', () => {
 		const ydoc = new Y.Doc();
 		const ykv = createEncryptedYkvLww<unknown>(ydoc, 'kv');
 		const kv = createKv(ykv, {
-			counter: defineKv(Type.Object({ value: Type.Number() }), () => ({ value: 0 })),
+			counter: defineKv(Type.Object({ value: Type.Number() }), () => ({
+				value: 0,
+			})),
 		});
 
 		const { durationMs } = measureTime(() => {
@@ -215,7 +219,9 @@ describe('KV operations', () => {
 		const ydoc = new Y.Doc();
 		const ykv = createEncryptedYkvLww<unknown>(ydoc, 'kv');
 		const kv = createKv(ykv, {
-			counter: defineKv(Type.Object({ value: Type.Number() }), () => ({ value: 0 })),
+			counter: defineKv(Type.Object({ value: Type.Number() }), () => ({
+				value: 0,
+			})),
 		});
 
 		const { durationMs } = measureTime(() => {

@@ -183,7 +183,14 @@ export function createFujiActions(tables: FujiTables) {
 					}),
 				),
 			}),
-			handler: ({ title, subtitle, type: entryType, tags, rating, dateZone }) => {
+			handler: ({
+				title,
+				subtitle,
+				type: entryType,
+				tags,
+				rating,
+				dateZone,
+			}) => {
 				const id = generateId<EntryId>();
 				const now = DateTimeString.now();
 				tables.entries.set({

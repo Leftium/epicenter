@@ -12,8 +12,8 @@
 import {
 	asDeviceId,
 	column,
-	defineTable,
 	type DeviceId,
+	defineTable,
 	generateId,
 	type Id,
 	type InferTableRow,
@@ -22,11 +22,11 @@ import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
 
+export type { DeviceId };
 // `DeviceId` and `asDeviceId` are the canonical brand from `@epicenter/workspace`.
 // Tab-manager reuses them so the wire-level device identity, the local table
 // row keys, and the dispatch addresses all share one type.
 export { asDeviceId };
-export type { DeviceId };
 
 export const TAB_MANAGER_ID = 'epicenter.tab-manager';
 

@@ -50,9 +50,7 @@ export function deriveStorage(schema: TSchema): SqliteStorage {
 			: 'TEXT';
 	}
 	if (s.anyOf) {
-		const nonNull = s.anyOf.filter(
-			(branch) => asShape(branch).type !== 'null',
-		);
+		const nonNull = s.anyOf.filter((branch) => asShape(branch).type !== 'null');
 		if (nonNull.length === 1) {
 			const only = nonNull[0];
 			if (only) return deriveStorage(only);
@@ -86,7 +84,8 @@ export function deriveCheck(
 	for (const branch of s.anyOf) {
 		const b = asShape(branch);
 		if (b.const === undefined) return undefined;
-		if (typeof b.const !== 'string' && typeof b.const !== 'number') return undefined;
+		if (typeof b.const !== 'string' && typeof b.const !== 'number')
+			return undefined;
 		consts.push(b.const);
 	}
 	if (consts.length === 0) return undefined;

@@ -63,7 +63,9 @@ type RedditWorkspaceClient = RedditWorkspace;
  * `column.nullable(column.string())` which stores `null`. Normalize at the
  * boundary so the stored row round-trips cleanly through validation on read.
  */
-function nullifyUndefined(row: Record<string, unknown>): Record<string, unknown> {
+function nullifyUndefined(
+	row: Record<string, unknown>,
+): Record<string, unknown> {
 	const out: Record<string, unknown> = {};
 	for (const key in row) {
 		const value = row[key];

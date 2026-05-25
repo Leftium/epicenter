@@ -29,7 +29,6 @@
  */
 
 import {
-	Type,
 	type Static,
 	type TLiteral,
 	type TLiteralValue,
@@ -40,16 +39,17 @@ import {
 	type TStringOptions,
 	type TUnion,
 	type TUnsafe,
+	Type,
 } from 'typebox';
 import { Format } from 'typebox/format';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
-import type { ColumnError } from './constraint';
 import { DateTimeString } from '../../shared/datetime-string';
 import {
 	IANA_TIME_ZONE_FORMAT,
 	IanaTimeZone,
 } from '../../shared/iana-time-zone';
+import type { ColumnError } from './constraint';
 
 type BrandedString = string & Brand<string>;
 
@@ -71,11 +71,7 @@ if (!Format.Has(IANA_TIME_ZONE_FORMAT)) {
  */
 export function string<T extends string = string>(
 	opts?: TStringOptions,
-): string extends T
-	? TString
-	: T extends BrandedString
-		? TUnsafe<T>
-		: never {
+): string extends T ? TString : T extends BrandedString ? TUnsafe<T> : never {
 	return Type.String(opts) as string extends T
 		? TString
 		: T extends BrandedString

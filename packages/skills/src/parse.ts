@@ -92,8 +92,7 @@ export function parseSkillMd(
 				typeof frontmatter.compatibility === 'string'
 					? frontmatter.compatibility
 					: null,
-			metadata:
-				metadataRecord !== null ? JSON.stringify(metadataRecord) : null,
+			metadata: metadataRecord !== null ? JSON.stringify(metadataRecord) : null,
 			allowedTools:
 				typeof frontmatter['allowed-tools'] === 'string'
 					? frontmatter['allowed-tools']

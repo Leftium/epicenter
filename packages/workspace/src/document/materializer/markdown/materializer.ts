@@ -112,7 +112,7 @@ export type MarkdownShape = {
 	body: string | undefined;
 };
 
-export type MarkdownTableConfig<TRow extends BaseRow> = {
+type TableConfig<TRow extends BaseRow> = {
 	/** Subdirectory (joined onto the base `dir`) for this table's files. Default: `table.name`. */
 	dir?: string;
 	/** Compute the on-disk filename for a row. Default: `${row.id}.md`. */
@@ -123,7 +123,7 @@ export type MarkdownTableConfig<TRow extends BaseRow> = {
 	fromMarkdown?: (parsed: MarkdownShape) => MaybePromise<TRow>;
 };
 
-export type MarkdownKvConfig = {
+type KvConfig = {
 	/** Serialize the full KV state to a single file. Default: `kv.json` with JSON.stringify. */
 	serialize?: (data: Record<string, unknown>) => {
 		filename: string;
@@ -131,42 +131,16 @@ export type MarkdownKvConfig = {
 	};
 };
 
-/**
- * One element of the materializer's `tables` option. Either a bare table
- * reference (when no per-table config is needed) or a `[table, config]`
- * tuple. `config` narrows per entry so `filename: (row) => row.title`
- * sees the specific row type.
- */
-export type MarkdownTableEntry<TRow extends BaseRow> =
-	| Table<TRow>
-	| readonly [Table<TRow>, MarkdownTableConfig<TRow>?];
-
-/**
- * Variadic mapped type over a tuple of row types. Each element of the
- * outer tuple is `MarkdownTableEntry<Rows[K]>`, so the row type is inferred
- * per entry from the table reference.
- */
-export type MarkdownTableEntries<TRows extends readonly BaseRow[]> = {
-	[K in keyof TRows]: MarkdownTableEntry<TRows[K]>;
-};
-
-/**
- * The `kv` option: either a bare Kv reference or a `[kv, config]` tuple.
- * Single value (not an array of entries), because the markdown materializer
- * mirrors at most one KV per workspace.
- */
-export type MarkdownKvEntry = AnyKv | readonly [AnyKv, MarkdownKvConfig?];
-
 type RegisteredTable = {
 	table: AnyTable;
 	// biome-ignore lint/suspicious/noExplicitAny: internal storage, variance across heterogeneous row types
-	config: MarkdownTableConfig<any>;
+	config: TableConfig<any>;
 	unsubscribe?: () => void;
 };
 
 type RegisteredKv = {
 	kv: AnyKv;
-	config: MarkdownKvConfig;
+	config: KvConfig;
 	unsubscribe?: () => void;
 };
 
@@ -203,7 +177,7 @@ const defaultKvSerialize = (data: Record<string, unknown>) => ({
  */
 async function rowToMarkdownFile<TRow extends BaseRow>(
 	row: TRow,
-	config: MarkdownTableConfig<TRow>,
+	config: TableConfig<TRow>,
 ): Promise<{ filename: string; content: string }> {
 	const filenameFn = config.filename ?? defaultFilename;
 	const toMarkdownFn = config.toMarkdown ?? defaultToMarkdown;
@@ -237,8 +211,9 @@ async function writeMarkdownFile(
 /**
  * Create a bidirectional markdown materializer for workspace data.
  *
- * Tables and (optionally) a KV are passed as options; nothing materializes
- * until they're listed in `tables` / `kv`.
+ * `attachMarkdownMaterializer(ydoc, { dir })` returns a chainable builder where
+ * `.table(tableRef, config?)` opts in per table and `.kv(kvRef, config?)` opts
+ * in a single KV mirror. Nothing materializes by default.
  *
  * Exposes three mutations:
  * - `push`: disk → workspace. Import .md files as rows (additive).
@@ -260,39 +235,25 @@ async function writeMarkdownFile(
  * const markdown = attachMarkdownMaterializer(ydoc, {
  *   dir: './data',
  *   waitFor: idb.whenLoaded,
- *   tables: [
- *     [tables.posts, { filename: slugFilename('title') }],
- *     tables.devices,
- *   ],
- *   kv,
- * });
+ * })
+ *   .table(tables.posts, {
+ *     filename: slugFilename('title'),
+ *     // Inline toMarkdown / fromMarkdown callbacks when needed:
+ *     // most real tables split metadata (on the row) from body
+ *     // content (in a separate content-doc via createDisposableCache).
+ *   })
+ *   .kv(kv);
  * ```
  */
-export function attachMarkdownMaterializer<
-	const TRows extends readonly BaseRow[],
->(
+export function attachMarkdownMaterializer(
 	ydoc: Y.Doc,
 	{
 		dir,
-		tables,
-		kv,
 		waitFor,
 		log = createLogger('markdown-materializer'),
 	}: {
 		/** Base output directory. Accepts a string or async getter for lazy path resolution. */
 		dir: string | (() => MaybePromise<string>);
-		/**
-		 * Workspace tables to materialize. Each entry is either the table
-		 * reference directly (no per-table config) or a `[table, config]` tuple.
-		 * Per-table `filename` / `toMarkdown` / `fromMarkdown` callbacks see the
-		 * row's specific type.
-		 */
-		tables: MarkdownTableEntries<TRows>;
-		/**
-		 * Optional KV to materialize as a single on-disk file. Pass the Kv
-		 * directly or as `[kv, config]` for serializer overrides.
-		 */
-		kv?: MarkdownKvEntry;
 		/**
 		 * Gate: the materializer awaits this before the initial filesystem flush.
 		 * Matches the `waitFor` convention used by `openCollaboration`. Omit for
@@ -307,25 +268,14 @@ export function attachMarkdownMaterializer<
 	},
 ) {
 	const registered = new Map<string, RegisteredTable>();
-	for (const entry of tables) {
-		const [table, config] = Array.isArray(entry)
-			? (entry as readonly [AnyTable, MarkdownTableConfig<BaseRow>?])
-			: ([entry as AnyTable, undefined] as const);
-		registered.set(table.name, {
-			table,
-			config: config ?? {},
-		});
-	}
-
 	let registeredKv: RegisteredKv | undefined;
-	if (kv) {
-		const [kvRef, kvConfig] = Array.isArray(kv)
-			? (kv as readonly [AnyKv, MarkdownKvConfig?])
-			: ([kv as AnyKv, undefined] as const);
-		registeredKv = { kv: kvRef, config: kvConfig ?? {} };
-	}
-
 	let isDisposed = false;
+	/**
+	 * Closed once `initialize()` commits (past `await waitFor`). Any `.table()`
+	 * / `.kv()` call after this throws: the materializer is past the point
+	 * where late registrations would be picked up for initial flush.
+	 */
+	let isRegistrationOpen = true;
 
 	const resolveDir = async () =>
 		typeof dir === 'function' ? await dir() : dir;
@@ -411,6 +361,9 @@ export function attachMarkdownMaterializer<
 	function dispose() {
 		if (isDisposed) return;
 		isDisposed = true;
+		// Close the registration window even if `initialize()` never ran
+		// (e.g., waitFor stalled and the ydoc was destroyed before init).
+		isRegistrationOpen = false;
 		for (const entry of registered.values()) entry.unsubscribe?.();
 		registeredKv?.unsubscribe?.();
 	}
@@ -420,7 +373,12 @@ export function attachMarkdownMaterializer<
 	// ── Initial flush ────────────────────────────────────────────
 
 	async function initialize() {
+		// Always yield a microtask so callers can finish synchronous setup
+		// (including `.table()` / `.kv()` registrations) before the first flush.
 		await waitFor;
+		// Close the registration window: any further `.table()` / `.kv()` call
+		// throws, even if init errors or disposes mid-flight below.
+		isRegistrationOpen = false;
 		if (isDisposed) return;
 
 		const baseDir = await resolveDir();
@@ -628,7 +586,9 @@ export function attachMarkdownMaterializer<
 		return { written };
 	}
 
-	return {
+	// ── Builder ──────────────────────────────────────────────────
+
+	const api = {
 		whenFlushed,
 		/** Read markdown files from disk and import rows into registered tables. */
 		push: pushMarkdownFiles,
@@ -641,4 +601,53 @@ export function attachMarkdownMaterializer<
 		 */
 		rebuild: rebuildMarkdownFiles,
 	};
+
+	type MaterializerBuilder = typeof api & {
+		/**
+		 * Opt in a workspace table for markdown materialization.
+		 *
+		 * Must be called synchronously after construction, before `whenFlushed`
+		 * resolves.
+		 */
+		table<TRow extends BaseRow>(
+			table: Table<TRow>,
+			config?: TableConfig<TRow>,
+		): MaterializerBuilder;
+		/**
+		 * Opt in the workspace Kv for markdown materialization. Single file on
+		 * disk (default `kv.json`) keeps the full Kv state.
+		 *
+		 * Must be called synchronously after construction, before `whenFlushed`
+		 * resolves.
+		 */
+		kv(kv: AnyKv, config?: KvConfig): MaterializerBuilder;
+	};
+
+	const builder: MaterializerBuilder = {
+		...api,
+		table(table, config) {
+			if (!isRegistrationOpen)
+				throw new Error(
+					`attachMarkdownMaterializer: .table("${table.name}") called after initial flush. All .table() registrations must happen synchronously after construction.`,
+				);
+			registered.set(table.name, {
+				table: table as AnyTable,
+				config: config ?? {},
+			});
+			return builder;
+		},
+		kv(kv, config) {
+			if (!isRegistrationOpen)
+				throw new Error(
+					'attachMarkdownMaterializer: .kv() called after initial flush. All .kv() registrations must happen synchronously after construction.',
+				);
+			registeredKv = {
+				kv: kv as AnyKv,
+				config: config ?? {},
+			};
+			return builder;
+		},
+	};
+
+	return builder;
 }

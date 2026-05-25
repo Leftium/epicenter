@@ -39,40 +39,29 @@ attachAwareness(ydoc, defs)
 attachRichText(ydoc) / attachPlainText(ydoc) / attachTimeline(ydoc)
 ```
 
-**Per-entity registration goes in the options bag, not in a chained builder.** Materializers follow the same `attachX(ydoc, opts)` shape, with tables (and optional KV) listed up front as either a bare reference or a `[ref, config]` tuple:
+**Chainable return is allowed** when per-entity configuration is incremental. Materializers follow the same `attachX(ydoc, opts)` shape: the builder registers specific table/kv references via `.table(ref, cfg)`:
 
 ```ts
-attachMarkdownMaterializer(ydoc, {
-  dir,
-  waitFor,
-  tables: [
-    [
-      tables.files,
-      {
-        filename: slugFilename('title'),
-        // Most real tables store body content in a separate Y.Doc (via
-        // createDisposableCache), so toMarkdown / fromMarkdown are typically
-        // bespoke callbacks; no sugar helper can abstract the async
-        // open/await/dispose cycle usefully.
-        toMarkdown: async (row) => {
-          using doc = fileContentDocs.open(row.id);
-          await doc.whenReady;
-          return { frontmatter: { id: row.id, name: row.name }, body: doc.content.read() };
-        },
-      },
-    ],
-  ],
-  kv,
-});
+attachMarkdownMaterializer(ydoc, { dir, waitFor })
+  .table(tables.files, {
+    filename: slugFilename('title'),
+    // Most real tables store body content in a separate Y.Doc (via
+    // createDisposableCache), so toMarkdown / fromMarkdown are typically
+    // bespoke callbacks; no sugar helper can abstract the async
+    // open/await/dispose cycle usefully.
+    toMarkdown: async (row) => {
+      using doc = fileContentDocs.open(row.id);
+      await doc.whenReady;
+      return { frontmatter: { id: row.id, name: row.name }, body: doc.content.read() };
+    },
+  })
+  .kv(kv);
 
-attachBunSqliteMaterializer(ydoc, {
-  filePath,
-  waitFor,
-  tables: [[tables.posts, { fts: ['title'] }]],
-});
+attachSqliteMaterializer(ydoc, { db, waitFor })
+  .table(tables.posts, { fts: ['title'] });
 ```
 
-Passing `tables.files` directly (rather than a string name) mirrors y-prosemirror / y-codemirror: take the specific shared resource, not a bag plus a lookup key. The materializer reads `table.name` and `table.definition` off the reference internally. Tuple entries with `[ref, cfg]` narrow per entry, so `fts: ['typo']` errors at the offending entry rather than collapsing to `keyof never`.
+Passing `tables.files` directly (rather than a string name) mirrors y-prosemirror / y-codemirror: take the specific shared resource, not a bag plus a lookup key. The materializer reads `table.name` and `table.definition` off the reference internally. All `.table()` / `.kv()` registrations must happen synchronously after construction; calls after `whenFlushed` resolves throw.
 
 ## The One Exception: Non-Ydoc Subject
 
@@ -138,10 +127,9 @@ const cache = createDisposableCache((id: string) => {
     url, openWebSocket, replicaId, actions,
     waitFor: Promise.all([idb.whenLoaded, unlock.whenChecked]),
   });
-  const markdown   = attachMarkdownMaterializer(ydoc, {
+  const markdown   = attachMarkdownMaterializer(ydoc, {           // chainable return
     dir, waitFor: collaboration.whenConnected,
-    tables: [[tables.posts, { filename: slugFilename('title') }]],
-  });
+  }).table(tables.posts, { filename: slugFilename('title') });
 
   return {
     ydoc, tables, encryption, idb, collaboration, markdown,
@@ -185,5 +173,5 @@ Use it whenever a primitive's startup must follow another's. Examples:
 - `packages/workspace/src/document/attach-indexed-db.ts` ; the canonical 40-line example.
 - `packages/workspace/src/document/open-collaboration.ts` ; document collaboration surface with sync, presence, peers, and action dispatch.
 - `packages/workspace/src/document/attach-encryption.ts` ; state-owning coordinator; exposes `attachTable` / `attachTables` / `attachKv` as methods.
-- `packages/workspace/src/document/materializer/markdown/materializer.ts` ; tables/kv listed in the options bag as bare references or `[ref, config]` tuples.
+- `packages/workspace/src/document/materializer/markdown/materializer.ts` ; chainable builder with `.table()/.kv()`.
 - `apps/whispering/src/lib/client.ts`: full singleton composition.

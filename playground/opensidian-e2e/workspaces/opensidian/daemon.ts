@@ -112,50 +112,43 @@ async function openOpensidianPlayground({
 	const markdown = attachMarkdownMaterializer(ydoc, {
 		dir: markdownPath(projectDir, WORKSPACE_ID),
 		waitFor: whenReady,
-		tables: [
-			[
-				tables.files,
-				{
-					filename: (row) =>
-						row.type === 'folder'
-							? `${row.id}.md`
-							: toSlugFilename(row.name.replace(/\.md$/i, ''), row.id),
-					toMarkdown: async (row) => {
-						if (row.type === 'folder') {
-							return {
-								frontmatter: { id: row.id, name: row.name, type: 'folder' },
-								body: undefined,
-							};
-						}
-						let body: string | undefined;
-						try {
-							body = await readContent(row.id);
-						} catch {
-							// Content doc not yet available (sync pending).
-						}
-						return {
-							frontmatter: {
-								id: row.id,
-								name: row.name,
-								parentId: row.parentId,
-								size: row.size,
-								createdAt: row.createdAt,
-								updatedAt: row.updatedAt,
-								trashedAt: row.trashedAt,
-							},
-							body,
-						};
-					},
+	}).table(tables.files, {
+		filename: (row) =>
+			row.type === 'folder'
+				? `${row.id}.md`
+				: toSlugFilename(row.name.replace(/\.md$/i, ''), row.id),
+		toMarkdown: async (row) => {
+			if (row.type === 'folder') {
+				return {
+					frontmatter: { id: row.id, name: row.name, type: 'folder' },
+					body: undefined,
+				};
+			}
+			let body: string | undefined;
+			try {
+				body = await readContent(row.id);
+			} catch {
+				// Content doc not yet available (sync pending).
+			}
+			return {
+				frontmatter: {
+					id: row.id,
+					name: row.name,
+					parentId: row.parentId,
+					size: row.size,
+					createdAt: row.createdAt,
+					updatedAt: row.updatedAt,
+					trashedAt: row.trashedAt,
 				},
-			],
-		],
+				body,
+			};
+		},
 	});
 
 	const sqlite = attachBunSqliteMaterializer(ydoc, {
 		filePath: sqlitePath(projectDir, WORKSPACE_ID),
 		waitFor: whenReady,
-		tables: [[tables.files, { fts: ['name'] }]],
-	});
+	}).table(tables.files, { fts: ['name'] });
 
 	return {
 		workspaceId: ydoc.guid,

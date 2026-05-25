@@ -50,12 +50,10 @@ export function openFujiDaemon({
 	attachBunSqliteMaterializer(ydoc, {
 		filePath: sqlitePath(projectDir, ydoc.guid),
 		log: createLogger(`${route}-sqlite`),
-		tables: [tables.entries],
-	});
+	}).table(tables.entries);
 	attachMarkdownMaterializer(ydoc, {
 		dir: markdownPath(projectDir, ydoc.guid),
-		tables: [[tables.entries, { filename: slugFilename('title') }]],
-	});
+	}).table(tables.entries, { filename: slugFilename('title') });
 
 	return attachDaemonInfrastructure(ydoc, {
 		projectDir,

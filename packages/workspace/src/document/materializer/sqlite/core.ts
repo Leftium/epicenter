@@ -100,25 +100,6 @@ export type TableConfig<TRow extends BaseRow> = {
 	serialize?: (value: unknown) => unknown;
 };
 
-/**
- * One element of the materializer's `tables` option. Either a bare table
- * reference (when no per-table config is needed) or a `[table, config]` tuple
- * with row-specific narrowing on `fts` / `serialize`.
- */
-export type TableEntry<TRow extends BaseRow> =
-	| Table<TRow>
-	| readonly [Table<TRow>, TableConfig<TRow>?];
-
-/**
- * Variadic mapped type over a tuple of row types. Each element of the
- * outer tuple is `TableEntry<Rows[K]>`, so the row type is inferred per
- * entry from the table reference, and `fts: ['typo']` errors at the
- * offending entry rather than collapsing to `keyof never`.
- */
-export type TableEntries<TRows extends readonly BaseRow[]> = {
-	[K in keyof TRows]: TableEntry<TRows[K]>;
-};
-
 type RegisteredTable = {
 	table: AnyTable;
 	// biome-ignore lint/suspicious/noExplicitAny: internal storage, variance across heterogeneous row types
@@ -136,24 +117,15 @@ type RegisteredTable = {
  *
  * @internal
  */
-export function attachSqliteMaterializerCore<
-	const TRows extends readonly BaseRow[],
->(
+export function attachSqliteMaterializerCore(
 	ydoc: Y.Doc,
 	{
 		db,
-		tables,
 		debounceMs = 100,
 		waitFor,
 		log = createLogger('sqlite-materializer'),
 	}: {
 		db: MirrorDatabase;
-		/**
-		 * Workspace tables to mirror. Each entry is either the table reference
-		 * directly (no per-table config) or a `[table, config]` tuple. `config.fts`
-		 * narrows to the row's column names per entry.
-		 */
-		tables: TableEntries<TRows>;
 		debounceMs?: number;
 		/**
 		 * Gate: the materializer awaits this before the initial DDL + full-load.
@@ -169,19 +141,15 @@ export function attachSqliteMaterializerCore<
 	},
 ) {
 	const registered = new Map<string, RegisteredTable>();
-	for (const entry of tables) {
-		const [table, config] = Array.isArray(entry)
-			? (entry as readonly [AnyTable, TableConfig<BaseRow>?])
-			: ([entry as AnyTable, undefined] as const);
-		registered.set(table.name, {
-			table,
-			config: config ?? {},
-		});
-	}
-
 	let pendingSync = new Map<string, Set<string>>();
 	let syncQueue = Promise.resolve();
 	let isDisposed = false;
+	/**
+	 * Closed once `initialize()` commits (past `await waitFor`). Any `.table()`
+	 * call after this throws: the materializer is past the point where late
+	 * registrations would be picked up for DDL + full-load.
+	 */
+	let isRegistrationOpen = true;
 
 	// ── SQL primitives ───────────────────────────────────────────
 
@@ -330,6 +298,9 @@ export function attachSqliteMaterializerCore<
 	function dispose() {
 		if (isDisposed) return;
 		isDisposed = true;
+		// Close the registration window even if `initialize()` never ran
+		// (e.g., waitFor stalled and the ydoc was destroyed before init).
+		isRegistrationOpen = false;
 		flushAfterDebounce.cancel();
 		for (const entry of registered.values()) entry.unsubscribe?.();
 	}
@@ -339,7 +310,12 @@ export function attachSqliteMaterializerCore<
 	// ── Initial flush ────────────────────────────────────────────
 
 	async function initialize() {
+		// Always yield a microtask so callers can finish synchronous setup
+		// (including writing initial rows) before the full-load runs.
 		await waitFor;
+		// Close the registration window: any further `.table()` call throws,
+		// even if init errors or disposes mid-flight below.
+		isRegistrationOpen = false;
 		if (isDisposed) return;
 
 		for (const [tableName, entry] of registered) {
@@ -371,7 +347,9 @@ export function attachSqliteMaterializerCore<
 
 	const whenFlushed = initialize();
 
-	return {
+	// ── Builder ──────────────────────────────────────────────────
+
+	const api = {
 		whenFlushed,
 		search: defineQuery({
 			title: 'Full-text search',
@@ -397,6 +375,39 @@ export function attachSqliteMaterializerCore<
 			handler: ({ table: tableName }) => rebuild(tableName),
 		}),
 	};
+
+	type MaterializerBuilder = typeof api & {
+		/**
+		 * Opt in a workspace table for SQLite materialization.
+		 *
+		 * `fts` and `serialize` are narrowed to the specific row type, so typos
+		 * in column names become compile errors.
+		 *
+		 * Must be called synchronously after construction, before `whenFlushed`
+		 * resolves. Calls after the initial flush throw.
+		 */
+		table<TRow extends BaseRow>(
+			table: Table<TRow>,
+			config?: TableConfig<TRow>,
+		): MaterializerBuilder;
+	};
+
+	const builder: MaterializerBuilder = {
+		...api,
+		table(table, config) {
+			if (!isRegistrationOpen)
+				throw new Error(
+					`materializer: .table("${table.name}") called after initial flush. All .table() registrations must happen synchronously after construction.`,
+				);
+			registered.set(table.name, {
+				table: table as AnyTable,
+				config: config ?? {},
+			});
+			return builder;
+		},
+	};
+
+	return builder;
 }
 
 // ════════════════════════════════════════════════════════════════════════════

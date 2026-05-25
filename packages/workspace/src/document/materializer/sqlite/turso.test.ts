@@ -46,8 +46,7 @@ describe('attachTursoMaterializer', () => {
 
 		const materializer = attachTursoMaterializer(ydoc, {
 			path: ':memory:',
-			tables: [tables.entries],
-		});
+		}).table(tables.entries);
 
 		await materializer.whenFlushed;
 

@@ -1,5 +1,5 @@
 /**
- * `attachTursoMaterializer(ydoc, { path, tables })`: Turso-backed materializer.
+ * `attachTursoMaterializer(ydoc, { path })`: Turso-backed materializer.
  *
  * Built on `@tursodatabase/database` (Turso's Rust SQLite rewrite, formerly
  * Limbo). The same package powers both native (Bun/Node) via the platform
@@ -19,8 +19,7 @@
  * const materializer = attachTursoMaterializer(ydoc, {
  *   path: ':memory:',                // in-memory; rebuilds from Y.Doc each session
  *   waitFor: idb.whenLoaded,
- *   tables: [[tables.entries, { fts: ['title'] }]],
- * });
+ * }).table(tables.entries, { fts: ['title'] });
  *
  * await materializer.whenFlushed;
  * const client = await materializer.client;
@@ -43,19 +42,17 @@
 import { connect, type Database } from '@tursodatabase/database';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
-import type { BaseRow } from '../../attach-table.js';
+import type { BaseRow, Table } from '../../attach-table.js';
 import {
 	attachSqliteMaterializerCore,
 	type MirrorDatabase,
-	type TableEntries,
+	type TableConfig,
 } from './core.js';
 
 /**
  * Options for {@link attachTursoMaterializer}.
  */
-export type AttachTursoMaterializerOptions<
-	TRows extends readonly BaseRow[],
-> = {
+export type AttachTursoMaterializerOptions = {
 	/**
 	 * Path or URL that Turso's `connect()` accepts:
 	 *
@@ -67,13 +64,6 @@ export type AttachTursoMaterializerOptions<
 	 * `:memory:`).
 	 */
 	path: string;
-
-	/**
-	 * Workspace tables to mirror. Each entry is either the table reference
-	 * directly (no per-table config) or a `[table, config]` tuple. `config.fts`
-	 * narrows to the row's column names per entry.
-	 */
-	tables: TableEntries<TRows>;
 
 	/** Forwarded to the materializer core. Defaults to 100 ms. */
 	debounceMs?: number;
@@ -93,6 +83,29 @@ export type AttachTursoMaterializerOptions<
 };
 
 /**
+ * Builder returned by {@link attachTursoMaterializer}. Mirrors the core
+ * builder shape but threads `.client` + `.whenConnected` through chained
+ * `.table()` calls so the augmented props survive the chain.
+ */
+export type AttachTursoMaterializerBuilder = Omit<
+	ReturnType<typeof attachSqliteMaterializerCore>,
+	'table'
+> & {
+	table<TRow extends BaseRow>(
+		table: Table<TRow>,
+		config?: TableConfig<TRow>,
+	): AttachTursoMaterializerBuilder;
+	/** Resolves once Turso's `connect()` has completed. */
+	whenConnected: Promise<void>;
+	/**
+	 * The underlying Turso `Database` handle. Async because `connect()` is
+	 * async; most callers `await materializer.whenFlushed` first, by which
+	 * point the promise has already resolved.
+	 */
+	client: Promise<Database>;
+};
+
+/**
  * Attach a Turso-backed materializer to a Y.Doc.
  *
  * Returns synchronously per the attach-primitive convention. The async
@@ -101,21 +114,15 @@ export type AttachTursoMaterializerOptions<
  * underlying handle await `materializer.client` or wait for
  * `materializer.whenConnected`.
  */
-export function attachTursoMaterializer<
-	const TRows extends readonly BaseRow[],
->(
+export function attachTursoMaterializer(
 	ydoc: Y.Doc,
 	{
 		path,
-		tables,
 		debounceMs,
 		waitFor,
 		log = createLogger('attachTursoMaterializer'),
-	}: AttachTursoMaterializerOptions<TRows>,
-): ReturnType<typeof attachSqliteMaterializerCore<TRows>> & {
-	whenConnected: Promise<void>;
-	client: Promise<Database>;
-} {
+	}: AttachTursoMaterializerOptions,
+): AttachTursoMaterializerBuilder {
 	const clientPromise = connect(path);
 	const whenConnected = clientPromise.then(() => undefined);
 
@@ -137,9 +144,8 @@ export function attachTursoMaterializer<
 		},
 	};
 
-	const core = attachSqliteMaterializerCore(ydoc, {
+	const coreBuilder = attachSqliteMaterializerCore(ydoc, {
 		db,
-		tables,
 		debounceMs,
 		waitFor:
 			waitFor === undefined
@@ -163,5 +169,16 @@ export function attachTursoMaterializer<
 			});
 	});
 
-	return { ...core, whenConnected, client: clientPromise };
+	const augmented: AttachTursoMaterializerBuilder = {
+		...coreBuilder,
+		// Re-bind .table so chained calls keep returning the augmented builder
+		// (with .client + .whenConnected), not the bare core builder.
+		table(table, config) {
+			coreBuilder.table(table, config);
+			return augmented;
+		},
+		whenConnected,
+		client: clientPromise,
+	};
+	return augmented;
 }

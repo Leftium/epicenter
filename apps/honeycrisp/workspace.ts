@@ -120,7 +120,8 @@ const notesTable = defineTable(
 		wordCount: column.nullable(column.number()),
 	},
 ).migrate((row) => {
-	if (row._v === 1) return { ...row, deletedAt: null, wordCount: null, _v: 2 as const };
+	if (row._v === 1)
+		return { ...row, deletedAt: null, wordCount: null, _v: 2 as const };
 	return row;
 });
 export type Note = InferTableRow<typeof notesTable>;

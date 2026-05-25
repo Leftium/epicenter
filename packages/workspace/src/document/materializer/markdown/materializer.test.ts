@@ -20,13 +20,13 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import * as Y from 'yjs';
-import { column } from '../../column/index.js';
 import {
 	attachTables,
 	createDisposableCache,
 	defineTable,
 } from '../../../index.js';
 import { parseMarkdownFile } from '../../../markdown/parse-markdown-file.js';
+import { column } from '../../column/index.js';
 import {
 	attachMarkdownMaterializer,
 	type MarkdownShape,

@@ -8,12 +8,18 @@
 
 export type { ColumnError, FlatJsonTSchema } from './constraint';
 export {
+	deriveCheck,
+	deriveStorage,
+	isNullable,
+	type SqliteStorage,
+} from './derive';
+export {
 	boolean,
 	column,
 	dateTime,
 	enum_,
-	ianaTimeZone,
 	type Infer,
+	ianaTimeZone,
 	integer,
 	json,
 	literal,
@@ -21,9 +27,3 @@ export {
 	number,
 	string,
 } from './sugar';
-export {
-	deriveCheck,
-	deriveStorage,
-	isNullable,
-	type SqliteStorage,
-} from './derive';

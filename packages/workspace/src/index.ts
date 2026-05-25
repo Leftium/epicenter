@@ -133,17 +133,17 @@ export type { ProjectDir } from './shared/types';
 // ════════════════════════════════════════════════════════════════════════════
 
 export { DateTimeString } from './shared/datetime-string';
+export { IANA_TIME_ZONE_FORMAT, IanaTimeZone } from './shared/iana-time-zone';
 export type { Guid, Id } from './shared/id';
 export { generateGuid, generateId } from './shared/id';
-export { IANA_TIME_ZONE_FORMAT, IanaTimeZone } from './shared/iana-time-zone';
 
 // ════════════════════════════════════════════════════════════════════════════
 // COLUMN PRIMITIVES (TypeBox-native)
 // ════════════════════════════════════════════════════════════════════════════
 
 export {
-	column,
 	type ColumnError,
+	column,
 	type FlatJsonTSchema,
 	type Infer,
 } from './document/column/index';

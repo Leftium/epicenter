@@ -10,7 +10,6 @@
  */
 
 import {
-	Type,
 	type Static,
 	type TLiteral,
 	type TObject,
@@ -18,6 +17,7 @@ import {
 	type TPartial,
 	type TSchema,
 	type TUnion,
+	Type,
 } from 'typebox';
 import { Value } from 'typebox/value';
 import {
@@ -174,8 +174,7 @@ export type TableInput<TVersions extends readonly VersionedColumns[]> = {
  * every content doc, and the editor doesn't contend with the table.
  */
 export type TableDefinition<
-	TVersions extends
-		readonly VersionedColumns[] = readonly VersionedColumns[],
+	TVersions extends readonly VersionedColumns[] = readonly VersionedColumns[],
 > = {
 	/** The original variadic versions, in declaration order. */
 	versions: TVersions;
@@ -190,11 +189,12 @@ export type TableDefinition<
 };
 
 /** Extract the row type from a TableDefinition (current version). */
-export type InferTableRow<T> = T extends TableDefinition<infer TVersions>
-	? TVersions extends readonly VersionedColumns[]
-		? RowOf<LastVersion<TVersions>> & BaseRow
-		: BaseRow
-	: never;
+export type InferTableRow<T> =
+	T extends TableDefinition<infer TVersions>
+		? TVersions extends readonly VersionedColumns[]
+			? RowOf<LastVersion<TVersions>> & BaseRow
+			: BaseRow
+		: never;
 
 /** Map of table definitions (uses `any` to allow variance in generic parameters). */
 export type TableDefinitions = Record<

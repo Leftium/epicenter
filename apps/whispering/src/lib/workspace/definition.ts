@@ -25,14 +25,16 @@ import { FFMPEG_DEFAULT_COMPRESSION_OPTIONS } from '$lib/services/desktop/record
  * UI code. `column.enum` needs a const-typed tuple to derive literal members,
  * so we re-narrow at the schema boundary without touching the constants.
  */
-const TRANSCRIPTION_SERVICE_ID_TUPLE = TRANSCRIPTION_SERVICE_IDS as unknown as readonly [
-	TranscriptionServiceId,
-	...TranscriptionServiceId[],
-];
-const INFERENCE_PROVIDER_ID_TUPLE = INFERENCE_PROVIDER_IDS as unknown as readonly [
-	InferenceProviderId,
-	...InferenceProviderId[],
-];
+const TRANSCRIPTION_SERVICE_ID_TUPLE =
+	TRANSCRIPTION_SERVICE_IDS as unknown as readonly [
+		TranscriptionServiceId,
+		...TranscriptionServiceId[],
+	];
+const INFERENCE_PROVIDER_ID_TUPLE =
+	INFERENCE_PROVIDER_IDS as unknown as readonly [
+		InferenceProviderId,
+		...InferenceProviderId[],
+	];
 
 /**
  * Tables store normalized domain entities. Each row is replaced atomically via
@@ -196,7 +198,9 @@ const transformationStepRuns = defineTable({
 });
 
 /** Transformation step run row type inferred from the latest workspace table schema version. */
-export type TransformationStepRun = InferTableRow<typeof transformationStepRuns>;
+export type TransformationStepRun = InferTableRow<
+	typeof transformationStepRuns
+>;
 
 /**
  * Synced settings stored as individual KV entries with last-write-wins resolution.

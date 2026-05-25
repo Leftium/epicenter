@@ -8,10 +8,10 @@
  * offending line during typecheck.
  */
 
-import { Type, type Static, type TUnsafe } from 'typebox';
+import { type Static, type TUnsafe, Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
-import { column, type ColumnError, type FlatJsonTSchema } from './index';
+import { type ColumnError, column, type FlatJsonTSchema } from './index';
 
 // --------------------------------------------------------------------------
 // Helpers
@@ -127,7 +127,9 @@ export type _RejectRecord = Expect<
 export type _RejectFunction = Expect<
 	Equal<
 		IsError<
-			FlatJsonTSchema<ReturnType<typeof Type.Function<[], ReturnType<typeof Type.Number>>>>
+			FlatJsonTSchema<
+				ReturnType<typeof Type.Function<[], ReturnType<typeof Type.Number>>>
+			>
 		>,
 		true
 	>
@@ -135,7 +137,9 @@ export type _RejectFunction = Expect<
 export type _RejectPromise = Expect<
 	Equal<
 		IsError<
-			FlatJsonTSchema<ReturnType<typeof Type.Promise<ReturnType<typeof Type.Number>>>>
+			FlatJsonTSchema<
+				ReturnType<typeof Type.Promise<ReturnType<typeof Type.Number>>>
+			>
 		>,
 		true
 	>
@@ -166,7 +170,11 @@ export type _JsonAcceptsObject = Expect<
 	Equal<
 		ReturnType<
 			typeof column.json<
-				ReturnType<typeof Type.Object<{ tags: ReturnType<typeof Type.Array<ReturnType<typeof Type.String>>> }>>
+				ReturnType<
+					typeof Type.Object<{
+						tags: ReturnType<typeof Type.Array<ReturnType<typeof Type.String>>>;
+					}>
+				>
 			>
 		>,
 		TUnsafe<{ tags: string[] }>
@@ -175,13 +183,17 @@ export type _JsonAcceptsObject = Expect<
 
 // Schema whose Static contains Date (via Unsafe<Date>) collapses the return
 // type to a ColumnError template-literal, surfaced in the IDE tooltip.
-type _JsonDate = ReturnType<typeof column.json<ReturnType<typeof Type.Unsafe<Date>>>>;
+type _JsonDate = ReturnType<
+	typeof column.json<ReturnType<typeof Type.Unsafe<Date>>>
+>;
 export type _JsonRejectsDate = Expect<
 	Equal<Static<_JsonDate> extends string ? true : false, true>
 >;
 
 // Same for bigint.
-type _JsonBigInt = ReturnType<typeof column.json<ReturnType<typeof Type.Unsafe<bigint>>>>;
+type _JsonBigInt = ReturnType<
+	typeof column.json<ReturnType<typeof Type.Unsafe<bigint>>>
+>;
 export type _JsonRejectsBigInt = Expect<
 	Equal<Static<_JsonBigInt> extends string ? true : false, true>
 >;

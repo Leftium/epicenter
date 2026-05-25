@@ -5,10 +5,10 @@
  * table definitions, row generators, and formatting helpers.
  */
 
+import { Type } from 'typebox';
 import { column } from '../document/column/index';
 import { defineKv } from '../document/define-kv';
 import { defineTable } from '../document/define-table';
-import { Type } from 'typebox';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Table & KV Definitions

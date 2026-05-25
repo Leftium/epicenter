@@ -42,7 +42,6 @@ export const asEntryId = (value: string): EntryId => value as EntryId;
 
 const entriesTable = defineTable(
 	{
-		_v: column.literal(1),
 		id: column.string<EntryId>(),
 		title: column.string(),
 		subtitle: column.string(),
@@ -55,7 +54,6 @@ const entriesTable = defineTable(
 		updatedAt: column.dateTime(),
 	},
 	{
-		_v: column.literal(2),
 		id: column.string<EntryId>(),
 		title: column.string(),
 		subtitle: column.string(),
@@ -68,9 +66,13 @@ const entriesTable = defineTable(
 		updatedAt: column.dateTime(),
 		rating: column.number(),
 	},
-).migrate((row) => {
-	if (row._v === 1) return { ...row, rating: 0, _v: 2 as const };
-	return row;
+).migrate(({ value, version }) => {
+	switch (version) {
+		case 1:
+			return { ...value, rating: 0 };
+		case 2:
+			return value;
+	}
 });
 
 export type Entry = InferTableRow<typeof entriesTable>;
@@ -167,7 +169,6 @@ export function createFujiActions(tables: FujiTables) {
 					date: now,
 					createdAt: now,
 					updatedAt: now,
-					_v: 2 as const,
 				});
 				return { id };
 			},
@@ -200,13 +201,10 @@ export function createFujiActions(tables: FujiTables) {
 					type: 'string',
 					description: 'Last update timestamp',
 				}),
-				_v: Type.Literal(2),
 			}),
 			handler: (row) => {
-				const parsed = tables.entries.parse(row.id, row);
-				if (parsed.error) throw parsed.error;
-				tables.entries.set(parsed.data);
-				return { id: parsed.data.id };
+				tables.entries.set({ ...row, id: asEntryId(row.id) });
+				return { id: row.id };
 			},
 		}),
 		entries_update: defineMutation({
@@ -297,7 +295,6 @@ export function createFujiActions(tables: FujiTables) {
 					date: date as DateTimeString,
 					createdAt: now,
 					updatedAt: now,
-					_v: 2 as const,
 				}));
 				await tables.entries.bulkSet(rows);
 				return { count: rows.length };

@@ -1,47 +1,62 @@
 /**
- * `defineTable(...)` — TypeBox-native versioned table definition.
+ * `defineTable(...)` — TypeBox-native table definition.
  *
  * Every column schema flows through the `FlatJsonTSchema` mapped-type
  * constraint, which rejects every TypeBox `~kind` that cannot materialize
  * 1:1 to a SQLite column. Users may construct columns via `column.X()` or
  * raw `Type.X()` interchangeably; the constraint enforces safety either way.
  *
- * `_v` stays explicit at every boundary: declared as `_v: column.literal(N)`
- * in each schema and passed as `_v: N as const` at every write site. The
- * library reads `_v` from storage and looks up the matching schema by
- * literal value. Variadic argument order is metadata only; the only
- * objective error caught at definition time is a duplicated `_v` literal.
+ * `_v` is library-managed. Users never declare it as a column, never type
+ * it at write sites, and never see it on returned rows. The library stamps
+ * the current version onto each stored row, reads it for schema routing on
+ * load, and strips it before handing the row back to the caller.
+ *
+ * Version numbers are positional: the first argument is v1, the second is
+ * v2, etc. The migrate function receives `{ value, version }` and returns
+ * the latest row shape; `switch (version)` narrows `value` to the matching
+ * version's columns.
  *
  * @example
  * ```ts
+ * // Single-version table: no migrate needed.
  * const notes = defineTable({
- *   _v: column.literal(1),
  *   id: column.string<NoteId>(),
  *   title: column.string({ minLength: 1, maxLength: 200 }),
  *   createdAt: column.dateTime(),
  * });
  *
+ * // Multi-version table: migrate is required.
  * const versioned = defineTable(
- *   { _v: column.literal(1), id: column.string<NoteId>(), title: column.string() },
- *   { _v: column.literal(2), id: column.string<NoteId>(), title: column.string(), pinned: column.boolean() },
- * ).migrate((row) => {
- *   switch (row._v) {
- *     case 1: return { ...row, pinned: false, _v: 2 as const };
- *     case 2: return row;
+ *   // v1
+ *   { id: column.string<NoteId>(), title: column.string() },
+ *   // v2
+ *   { id: column.string<NoteId>(), title: column.string(), pinned: column.boolean() },
+ * ).migrate(({ value, version }) => {
+ *   switch (version) {
+ *     case 1: return { ...value, pinned: false };
+ *     case 2: return value;
  *   }
  * });
  * ```
  */
 
-import type { TLiteral } from 'typebox';
 import {
-	type AnyVersionRow,
 	createTableDefinition,
+	type MigrateInput,
 	type RowOf,
 	type TableDefinition,
 	type VersionedColumns,
 } from './attach-table';
-import type { FlatJsonTSchema } from './column/constraint';
+import type { ColumnError, FlatJsonTSchema } from './column/constraint';
+
+/**
+ * Refuse `_v` as a user-declared column key. The library stamps `_v` itself
+ * on every write and strips it from every read; declaring it in columns
+ * either silently fights the library or accidentally desyncs the schema.
+ */
+type RefuseV<TCols> = '_v' extends keyof TCols
+	? ColumnError<'_v is library-managed; remove it from the column record'>
+	: TCols;
 
 /**
  * Apply `FlatJsonTSchema` per column. Used DIRECTLY as `defineTable`'s
@@ -49,7 +64,7 @@ import type { FlatJsonTSchema } from './column/constraint';
  * surface as readable English tooltips at the offending field rather than
  * collapsing to `never`.
  */
-type ConstrainColumns<TCols extends VersionedColumns> = {
+type ConstrainColumns<TCols extends VersionedColumns> = RefuseV<TCols> & {
 	[K in keyof TCols]: FlatJsonTSchema<TCols[K]>;
 };
 
@@ -73,7 +88,7 @@ type LastVersion<TVersions extends readonly VersionedColumns[]> =
  */
 type MigrationRequired<TVersions extends readonly VersionedColumns[]> = {
 	migrate(
-		fn: (row: AnyVersionRow<TVersions>) => RowOf<LastVersion<TVersions>>,
+		fn: (input: MigrateInput<TVersions>) => RowOf<LastVersion<TVersions>>,
 	): TableDefinition<TVersions>;
 };
 
@@ -101,51 +116,24 @@ export function defineTable(
 	}
 
 	const versions = args as readonly VersionedColumns[];
-	assertUniqueVersionLiterals(versions);
 
 	if (versions.length === 1) {
 		const onlyColumns = versions[0]!;
 		return createTableDefinition(
 			[onlyColumns] as const,
-			(row) => row as RowOf<VersionedColumns>,
+			(input) =>
+				(input as { value: RowOf<VersionedColumns> }).value as RowOf<
+					typeof onlyColumns
+				>,
 		);
 	}
 
 	return {
-		migrate(fn: (row: unknown) => unknown) {
+		migrate(fn: (input: unknown) => unknown) {
 			return createTableDefinition(
 				versions,
-				fn as (row: unknown) => RowOf<VersionedColumns>,
+				fn as (input: unknown) => RowOf<VersionedColumns>,
 			);
 		},
 	};
 }
-
-/**
- * Runtime guard: every version must carry an `_v: column.literal(N)` field,
- * and no two versions may declare the same `N`. Order is the developer's
- * choice; the library matches stored rows by `_v` value, not by argument
- * position.
- */
-function assertUniqueVersionLiterals(
-	versions: readonly VersionedColumns[],
-): void {
-	const seen = new Set<number>();
-	versions.forEach((cols, idx) => {
-		const literalSchema = cols._v as TLiteral<number> | undefined;
-		if (!literalSchema || typeof literalSchema.const !== 'number') {
-			throw new Error(
-				`defineTable() version at position ${idx} is missing an _v: column.literal(N) field`,
-			);
-		}
-		const value = literalSchema.const;
-		if (seen.has(value)) {
-			throw new Error(
-				`defineTable() duplicate _v literal: ${value}. Each version must declare a unique _v.`,
-			);
-		}
-		seen.add(value);
-	});
-}
-
-export type { RowOf, TableDefinition, VersionedColumns } from './attach-table';

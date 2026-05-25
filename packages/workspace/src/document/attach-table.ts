@@ -1,9 +1,14 @@
 /**
- * `attachTable()` — bind a TypeBox-native `TableDefinition` to a Y.Doc.
+ * `attachTable()` — bind a `TableDefinition` to a Y.Doc.
  *
  * Constructs an unencrypted `YKeyValueLww` on `ydoc.getArray('table:<name>')`
  * and wraps it with a typed `Table`. Provides CRUD operations with schema
  * validation and migration on read.
+ *
+ * The library owns `_v` end-to-end: stamped on every write, stripped from
+ * every read, refused as a column key at compile time. Users define columns
+ * and (for multi-version tables) one migrate function. The user-facing row
+ * type contains only the user's columns.
  *
  * For encrypted storage, call `encryption.attachTable` on the coordinator
  * returned by `attachEncryption(ydoc, { keyring })`.
@@ -12,12 +17,10 @@
 import {
 	Type,
 	type Static,
-	type TLiteral,
 	type TObject,
-	type TOmit,
 	type TPartial,
+	type TOmit,
 	type TSchema,
-	type TUnion,
 } from 'typebox';
 import { Value } from 'typebox/value';
 import {
@@ -84,27 +87,27 @@ export type TableParseError = InferErrors<typeof TableParseError>;
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * The minimum shape every versioned table row must satisfy.
+ * The minimum shape every table row must satisfy.
  *
- * `FlatJsonTSchema` rejects every TypeBox `~kind` whose `Static<>` is not
- * JSON-serializable, so the row's value-side stays JSON without needing a
- * `& JsonObject` intersection on this type.
+ * `_v` is library state and lives only on the stored payload, never on the
+ * user-facing row type. `BaseRow` carries only `id`.
  */
-export type BaseRow = { id: string; _v: number };
+export type BaseRow = { id: string };
 
 // ════════════════════════════════════════════════════════════════════════════
 // COLUMN RECORD TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * A versioned column record. Every table version is a `Record<string,
- * TSchema>` carrying a string-ish `id` column and a `_v: column.literal(N)`
- * discriminant. `FlatJsonTSchema` (applied in `defineTable`'s parameter
- * type) enforces every column maps 1:1 to a SQLite column.
+ * A column record. Every table version is a `Record<string, TSchema>` with
+ * a string-ish `id` column. `_v` is library-managed and refused as a column
+ * key at compile time via `defineTable`'s parameter constraint.
+ *
+ * `FlatJsonTSchema` (applied in `defineTable`'s parameter type) enforces
+ * every column maps 1:1 to a SQLite column.
  */
 export type VersionedColumns = {
 	id: TSchema;
-	_v: TLiteral<number>;
 	[key: string]: TSchema;
 };
 
@@ -115,9 +118,9 @@ export type RowOf<TCols extends Record<string, TSchema>> = {
 
 /**
  * Distributive variant of `RowOf` over a tuple of versions. Each version's
- * row is computed independently and joined as a discriminated union, so
- * downstream `switch (row._v)` exhaustively narrows on the literal
- * discriminator.
+ * row is computed independently and joined as a union.
+ *
+ * @internal exposed for the migrate function's input typing.
  */
 export type AnyVersionRow<TVersions extends readonly VersionedColumns[]> =
 	TVersions extends readonly (infer V)[]
@@ -134,6 +137,53 @@ type LastVersion<TVersions extends readonly VersionedColumns[]> =
 		: TVersions[number];
 
 // ════════════════════════════════════════════════════════════════════════════
+// MIGRATE INPUT TYPE
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Bounded type-level addition: returns `N + 1` as a literal.
+ *
+ * Used to map tuple positions (0-indexed) to version numbers (1-indexed) for
+ * the migrate function's input discriminator.
+ */
+type IncrementVersion<
+	N extends number,
+	Acc extends unknown[] = [],
+> = Acc['length'] extends N
+	? [...Acc, unknown]['length']
+	: IncrementVersion<N, [...Acc, unknown]>;
+
+/**
+ * Migrate input: walks the versions tuple and accumulates `{ value, version }`
+ * pairs where `version = position + 1`. Distributing this as a union gives
+ * TypeScript discriminated narrowing on `switch (version)` in the migrate fn.
+ *
+ * For `defineTable(v1Cols, v2Cols)`:
+ *   MigrateInput = { value: RowOf<v1Cols>; version: 1 }
+ *                | { value: RowOf<v2Cols>; version: 2 }
+ */
+export type MigrateInput<
+	TVersions extends readonly VersionedColumns[],
+	Acc extends readonly unknown[] = [],
+> = TVersions extends readonly [
+	infer Head,
+	...infer Rest extends readonly VersionedColumns[],
+]
+	? Head extends VersionedColumns
+		? MigrateInput<
+				Rest,
+				readonly [
+					...Acc,
+					{
+						value: RowOf<Head>;
+						version: IncrementVersion<Acc['length'] & number>;
+					},
+				]
+			>
+		: never
+	: Acc[number];
+
+// ════════════════════════════════════════════════════════════════════════════
 // TABLE DEFINITION
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -141,19 +191,20 @@ type LastVersion<TVersions extends readonly VersionedColumns[]> =
  * The reusable schema surfaces on every `TableDefinition`. Callers reach
  * for these directly: they should never need to walk `definition.versions`
  * for day-to-day code.
+ *
+ * `row` is the latest version's user-facing schema (no `_v`). SQLite DDL
+ * generation reads this directly.
  */
-export type TableSchema<TVersions extends readonly VersionedColumns[]> = {
-	/** Current row TObject (latest version). */
+type TableSchema<TVersions extends readonly VersionedColumns[]> = {
+	/** Latest version's row TObject (user-facing; no `_v`). */
 	row: TObject<LastVersion<TVersions>>;
-	/** Union of every version's row TObject. Used by parse-by-`_v`. */
-	union: TUnion<TObject<VersionedColumns>[]>;
 };
 
 /**
  * Per-operation input schemas, mirrored on attached `Table` handles so
  * action authors can reuse them without reaching into `definition`.
  */
-export type TableInput<TVersions extends readonly VersionedColumns[]> = {
+type TableInput<TVersions extends readonly VersionedColumns[]> = {
 	get: TObject<{ id: LastVersion<TVersions>['id'] }>;
 	set: TObject<LastVersion<TVersions>>;
 	update: TObject<{
@@ -181,15 +232,20 @@ export type TableDefinition<
 	versions: TVersions;
 	/** The latest version's column record. */
 	columns: LastVersion<TVersions>;
-	/** Reusable row/union TObject pair. */
+	/** The latest version's user-facing row schema. */
 	schema: TableSchema<TVersions>;
 	/** Per-operation input schemas. */
 	input: TableInput<TVersions>;
 	/** Upgrade any stored version to the current row in one step. */
-	migrate: (row: AnyVersionRow<TVersions>) => RowOf<LastVersion<TVersions>>;
+	migrate: (input: MigrateInput<TVersions>) => RowOf<LastVersion<TVersions>>;
 };
 
-/** Extract the row type from a TableDefinition (current version). */
+/**
+ * Extract the user-facing row type from a TableDefinition.
+ *
+ * Intersected with `BaseRow` so that `id: string` is guaranteed even when
+ * the generic widens (e.g. `TableDefinition<any>` in `TableDefinitions`).
+ */
 export type InferTableRow<T> = T extends TableDefinition<infer TVersions>
 	? TVersions extends readonly VersionedColumns[]
 		? RowOf<LastVersion<TVersions>> & BaseRow
@@ -208,22 +264,20 @@ export type TableDefinitions = Record<
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Internal helper: build a `TableDefinition` from a list of versions and the
- * migrate function. Called by `defineTable`; exposed for future codegen /
- * encryption helpers that need to assemble a definition directly.
+ * Build a `TableDefinition` from a list of versions and the migrate function.
+ * Called by `defineTable`; exposed for future codegen / encryption helpers
+ * that need to assemble a definition directly.
+ *
+ * @internal
  */
 export function createTableDefinition<
 	TVersions extends readonly VersionedColumns[],
 >(
 	versions: TVersions,
-	migrate: (row: unknown) => RowOf<LastVersion<TVersions>>,
+	migrate: (input: unknown) => RowOf<LastVersion<TVersions>>,
 ): TableDefinition<TVersions> {
 	const latestColumns = versions[versions.length - 1] as LastVersion<TVersions>;
-	const versionObjects = versions.map((cols) => Type.Object(cols));
 	const row = Type.Object(latestColumns) as TObject<LastVersion<TVersions>>;
-	const union = Type.Union(versionObjects) as TUnion<
-		TObject<VersionedColumns>[]
-	>;
 	const idSchema = latestColumns.id as LastVersion<TVersions>['id'];
 	const set = row;
 	const get = Type.Object({ id: idSchema });
@@ -236,7 +290,7 @@ export function createTableDefinition<
 	return {
 		versions,
 		columns: latestColumns,
-		schema: { row, union },
+		schema: { row },
 		input: {
 			get: get as TableInput<TVersions>['get'],
 			set,
@@ -398,43 +452,53 @@ export function createReadonlyTable<
 	type TRow = InferTableRow<TTableDefinition>;
 
 	const versions = definition.versions as readonly VersionedColumns[];
-	const versionSchemas = new Map<number, TObject<VersionedColumns>>();
-	for (const cols of versions) {
-		const literalSchema = cols._v as TLiteral<number>;
+
+	/**
+	 * Per-version augmented schema (user columns + `_v: Literal(N)`), keyed
+	 * by version number (1-indexed = tuple position + 1). Used to validate
+	 * stored rows: storage carries `_v`, so we route on it before validating.
+	 */
+	const versionSchemas = new Map<number, TObject>();
+	for (let i = 0; i < versions.length; i++) {
+		const versionNumber = i + 1;
+		const cols = versions[i]!;
 		versionSchemas.set(
-			literalSchema.const,
-			Type.Object(cols) as TObject<VersionedColumns>,
+			versionNumber,
+			Type.Object({ ...cols, _v: Type.Literal(versionNumber) }) as TObject,
 		);
 	}
 
 	/**
-	 * Parse and migrate a raw row value. Injects `id` into the input before
-	 * validation, then routes by stored `_v` value to the matching schema.
-	 * Lookup is value-based so `defineTable(v2, v1)` and `defineTable(v1, v2)`
-	 * behave identically at read time.
+	 * Parse a stored row value. Injects `id` into the input, routes by stored
+	 * `_v` to the matching schema, validates, runs migrate, returns the
+	 * user-facing row (no `_v`).
 	 */
 	function parseRow(id: string, input: unknown): Result<TRow, TableParseError> {
-		const row: Record<string, unknown> = {
+		const stored: Record<string, unknown> = {
 			...(input as Record<string, unknown>),
 			id,
 		};
-		const version = row._v;
+		const version = stored._v;
 		const schema =
 			typeof version === 'number' ? versionSchemas.get(version) : undefined;
 		if (!schema) {
 			return TableParseError.UnknownVersion({ id, version });
 		}
-		if (!Value.Check(schema, row)) {
-			const errors = [...Value.Errors(schema, row)].map((e) => ({
+		if (!Value.Check(schema, stored)) {
+			const errors = [...Value.Errors(schema, stored)].map((e) => ({
 				path: e.instancePath,
 				message: e.message,
 			}));
-			return TableParseError.ValidationFailed({ id, errors, row });
+			return TableParseError.ValidationFailed({ id, errors, row: stored });
 		}
 		try {
-			const migrated = definition.migrate(
-				row as Parameters<typeof definition.migrate>[0],
-			) as TRow;
+			// Strip `_v` from the value passed to migrate. The user's migrate fn
+			// works in terms of the version's user-facing columns only.
+			const { _v: _, ...value } = stored;
+			const migrated = definition.migrate({
+				value,
+				version,
+			} as Parameters<typeof definition.migrate>[0]) as TRow;
 			return Ok(migrated);
 		} catch (cause) {
 			return TableParseError.MigrationFailed({ id, cause });
@@ -530,11 +594,18 @@ export function createTable<
 	type TRow = InferTableRow<TTableDefinition>;
 	const readonly = createReadonlyTable(ykv, definition, name);
 
+	const latestVersion = definition.versions.length;
+	/** Stamp the latest `_v` onto a row for storage. */
+	const stamp = (row: TRow): Record<string, unknown> => ({
+		...(row as Record<string, unknown>),
+		_v: latestVersion,
+	});
+
 	return {
 		...readonly,
 
 		set(row: TRow): void {
-			ykv.set(row.id, row);
+			ykv.set(row.id, stamp(row));
 		},
 
 		async bulkSet(
@@ -550,7 +621,7 @@ export function createTable<
 			const total = rows.length;
 			for (let i = 0; i < total; i += chunkSize) {
 				const chunk = rows.slice(i, i + chunkSize);
-				ykv.bulkSet(chunk.map((row) => ({ key: row.id, val: row })));
+				ykv.bulkSet(chunk.map((row) => ({ key: row.id, val: stamp(row) })));
 				onProgress?.(Math.min((i + chunkSize) / total, 1));
 				await new Promise((resolve) => setTimeout(resolve, 0));
 			}
@@ -564,14 +635,14 @@ export function createTable<
 			if (currentError) return Err(currentError);
 			if (current === null) return Ok(null);
 
-			const merged = { ...current, ...partial, id };
+			const merged = { ...current, ...partial, id } as TRow;
 			const { data: validated, error: mergedError } = readonly.parse(
 				id,
-				merged,
+				stamp(merged),
 			);
 			if (mergedError) return Err(mergedError);
 
-			ykv.set(validated.id, validated);
+			ykv.set(validated.id, stamp(validated));
 			return Ok(validated);
 		},
 

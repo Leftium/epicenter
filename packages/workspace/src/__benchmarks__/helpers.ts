@@ -15,14 +15,12 @@ import { Type } from 'typebox';
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const postDefinition = defineTable({
-	_v: column.literal(1),
 	id: column.string(),
 	title: column.string(),
 	views: column.number(),
 });
 
 export const noteDefinition = defineTable({
-	_v: column.literal(1),
 	id: column.string(),
 	title: column.string(),
 	content: column.string(),
@@ -32,7 +30,6 @@ export const noteDefinition = defineTable({
 });
 
 export const heavyNoteDefinition = defineTable({
-	_v: column.literal(1),
 	id: column.string(),
 	title: column.string(),
 	content: column.string(),
@@ -43,7 +40,6 @@ export const heavyNoteDefinition = defineTable({
 });
 
 export const eventDefinition = defineTable({
-	_v: column.literal(1),
 	id: column.string(),
 	type: column.enum(['command', 'event']),
 	name: column.string(),
@@ -84,7 +80,6 @@ export function makeHeavyRow(id: string, contentChars: number) {
 		tags: ['research', 'important', 'draft', 'long-form'],
 		createdAt: Date.now(),
 		updatedAt: Date.now(),
-		_v: 1 as const,
 	};
 }
 

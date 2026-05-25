@@ -29,14 +29,12 @@ import { attachSqliteMaterializer } from './sqlite.js';
 import type { MirrorDatabase } from './types.js';
 
 const postsTable = defineTable({
-	_v: column.literal(1),
 	id: column.string(),
 	title: column.string(),
 	published: column.nullable(column.boolean()),
 });
 
 const notesTable = defineTable({
-	_v: column.literal(1),
 	id: column.string(),
 	body: column.string(),
 });
@@ -233,20 +231,18 @@ describe('attachSqliteMaterializer', () => {
 					id: 'post-1',
 					title: 'Hello mirror',
 					published: null,
-					_v: 1,
 				});
 				testSetup.workspace.tables.posts.set({
 					id: 'post-2',
 					title: 'Second row',
 					published: true,
-					_v: 1,
 				});
 
 				await testSetup.workspace.sqlite.whenFlushed;
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([
-					{ id: 'post-1', _v: 1, published: null, title: 'Hello mirror' },
-					{ id: 'post-2', _v: 1, published: 1, title: 'Second row' },
+					{ id: 'post-1', published: null, title: 'Hello mirror' },
+					{ id: 'post-2', published: 1, title: 'Second row' },
 				]);
 			} finally {
 				await cleanup(testSetup);
@@ -261,12 +257,10 @@ describe('attachSqliteMaterializer', () => {
 					id: 'post-1',
 					title: 'Mirrored post',
 					published: null,
-					_v: 1,
 				});
 				testSetup.workspace.tables.notes.set({
 					id: 'note-1',
 					body: 'Ignored note',
-					_v: 1,
 				});
 
 				await testSetup.workspace.sqlite.whenFlushed;
@@ -274,7 +268,7 @@ describe('attachSqliteMaterializer', () => {
 				expect(hasTable(testSetup.db, 'posts')).toBe(true);
 				expect(hasTable(testSetup.db, 'notes')).toBe(false);
 				expect(getRows(testSetup.db, 'posts')).toEqual([
-					{ id: 'post-1', _v: 1, published: null, title: 'Mirrored post' },
+					{ id: 'post-1', published: null, title: 'Mirrored post' },
 				]);
 			} finally {
 				await cleanup(testSetup);
@@ -297,13 +291,12 @@ describe('attachSqliteMaterializer', () => {
 					id: 'post-1',
 					title: 'Added later',
 					published: true,
-					_v: 1,
 				});
 
 				await waitForSyncCycle();
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([
-					{ id: 'post-1', _v: 1, published: 1, title: 'Added later' },
+					{ id: 'post-1', published: 1, title: 'Added later' },
 				]);
 			} finally {
 				await cleanup(testSetup);
@@ -318,7 +311,6 @@ describe('attachSqliteMaterializer', () => {
 					id: 'post-1',
 					title: 'Delete me',
 					published: null,
-					_v: 1,
 				});
 
 				await testSetup.workspace.sqlite.whenFlushed;
@@ -340,7 +332,6 @@ describe('attachSqliteMaterializer', () => {
 					id: 'post-1',
 					title: 'Before update',
 					published: true,
-					_v: 1,
 				});
 
 				await testSetup.workspace.sqlite.whenFlushed;
@@ -352,7 +343,7 @@ describe('attachSqliteMaterializer', () => {
 				await waitForSyncCycle();
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([
-					{ id: 'post-1', _v: 1, published: 0, title: 'After update' },
+					{ id: 'post-1', published: 0, title: 'After update' },
 				]);
 			} finally {
 				await cleanup(testSetup);
@@ -373,7 +364,6 @@ describe('attachSqliteMaterializer', () => {
 					id: 'post-1',
 					title: 'Persisted in Yjs',
 					published: null,
-					_v: 1,
 				});
 
 				await testSetup.workspace.sqlite.whenFlushed;
@@ -384,7 +374,7 @@ describe('attachSqliteMaterializer', () => {
 				await testSetup.workspace.sqlite.rebuild({});
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([
-					{ id: 'post-1', _v: 1, published: null, title: 'Persisted in Yjs' },
+					{ id: 'post-1', published: null, title: 'Persisted in Yjs' },
 				]);
 			} finally {
 				await cleanup(testSetup);
@@ -399,12 +389,10 @@ describe('attachSqliteMaterializer', () => {
 					id: 'post-1',
 					title: 'Post row',
 					published: null,
-					_v: 1,
 				});
 				testSetup.workspace.tables.notes.set({
 					id: 'note-1',
 					body: 'Note row',
-					_v: 1,
 				});
 
 				await testSetup.workspace.sqlite.whenFlushed;
@@ -416,7 +404,7 @@ describe('attachSqliteMaterializer', () => {
 				await testSetup.workspace.sqlite.rebuild({ table: 'posts' });
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([
-					{ id: 'post-1', _v: 1, published: null, title: 'Post row' },
+					{ id: 'post-1', published: null, title: 'Post row' },
 				]);
 				expect(getRows(testSetup.db, 'notes')).toHaveLength(1);
 			} finally {
@@ -450,13 +438,11 @@ describe('attachSqliteMaterializer', () => {
 					id: 'post-1',
 					title: 'First',
 					published: null,
-					_v: 1,
 				});
 				testSetup.workspace.tables.posts.set({
 					id: 'post-2',
 					title: 'Second',
 					published: null,
-					_v: 1,
 				});
 
 				await testSetup.workspace.sqlite.whenFlushed;
@@ -519,7 +505,6 @@ describe('attachSqliteMaterializer', () => {
 					id: 'post-1',
 					title: 'Queued row',
 					published: null,
-					_v: 1,
 				});
 				testSetup.workspace[Symbol.dispose]();
 
@@ -574,13 +559,11 @@ describe('attachSqliteMaterializer', () => {
 						id: 'post-1',
 						title: 'Epicenter local-first mirror',
 						published: null,
-						_v: 1,
 					});
 					testSetup.workspace.tables.posts.set({
 						id: 'post-2',
 						title: 'Another search result',
 						published: null,
-						_v: 1,
 					});
 
 					await testSetup.workspace.sqlite.whenFlushed;

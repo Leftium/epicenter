@@ -76,7 +76,6 @@
 			date: DateTimeString.stringify(new Date(ts).toISOString(), LOCAL_TZ),
 			createdAt: now,
 			updatedAt: now,
-			_v: 2 as const,
 		};
 	}
 

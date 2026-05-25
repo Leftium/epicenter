@@ -166,6 +166,7 @@ export {
 export { attachIndexedDb } from './document/attach-indexed-db.js';
 export {
 	attachKv,
+	KvError,
 	type InferKvValue,
 	type Kv,
 	type KvDefinitions,
@@ -174,12 +175,17 @@ export { attachLocalStorage } from './document/attach-local-storage.js';
 export { attachPlainText } from './document/attach-plain-text.js';
 export { attachRichText } from './document/attach-rich-text.js';
 export {
+	attachReadonlyTable,
+	attachReadonlyTables,
 	attachTable,
 	attachTables,
 	type BaseRow,
 	type InferTableRow,
+	type ReadonlyTable,
+	type ReadonlyTables,
 	type Table,
 	type Tables,
+	TableParseError,
 } from './document/attach-table.js';
 export { attachTimeline } from './document/attach-timeline/index.js';
 export { defineKv } from './document/define-kv.js';

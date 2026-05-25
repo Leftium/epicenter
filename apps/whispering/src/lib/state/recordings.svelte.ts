@@ -85,7 +85,7 @@ function createRecordings() {
 		 * No manual cache invalidation needed—the observer handles UI updates.
 		 */
 		set(recording: Omit<Recording, '_v'>) {
-			whispering.tables.recordings.set({ ...recording, _v: 2 } as Recording);
+			whispering.tables.recordings.set({ ...recording } as Recording);
 		},
 
 		/**

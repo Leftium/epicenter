@@ -43,7 +43,6 @@ const INFERENCE_PROVIDER_ID_TUPLE = INFERENCE_PROVIDER_IDS as unknown as readonl
 /** Audio recordings captured by the user. One row per recording session. */
 const recordings = defineTable(
 	{
-		_v: column.literal(1),
 		id: column.string(),
 		title: column.string(),
 		subtitle: column.string(),
@@ -59,7 +58,6 @@ const recordings = defineTable(
 		]),
 	},
 	{
-		_v: column.literal(2),
 		id: column.string(),
 		title: column.string(),
 		recordedAt: column.string(),
@@ -73,20 +71,21 @@ const recordings = defineTable(
 		]),
 		duration: column.nullable(column.number()),
 	},
-).migrate((row) => {
-	if (row._v === 1) {
-		return {
-			id: row.id,
-			title: row.title,
-			recordedAt: row.timestamp,
-			updatedAt: row.updatedAt,
-			transcript: row.transcribedText,
-			transcriptionStatus: row.transcriptionStatus,
-			duration: null,
-			_v: 2 as const,
-		};
+).migrate(({ value, version }) => {
+	switch (version) {
+		case 1:
+			return {
+				id: value.id,
+				title: value.title,
+				recordedAt: value.timestamp,
+				updatedAt: value.updatedAt,
+				transcript: value.transcribedText,
+				transcriptionStatus: value.transcriptionStatus,
+				duration: null,
+			};
+		case 2:
+			return value;
 	}
-	return row;
 });
 
 /** Recording row type inferred from the latest workspace table schema version. */
@@ -94,7 +93,6 @@ export type Recording = InferTableRow<typeof recordings>;
 
 /** User-defined transformation pipelines. Each transformation has ordered steps. */
 const transformations = defineTable({
-	_v: column.literal(1),
 	id: column.string(),
 	title: column.string(),
 	description: column.string(),
@@ -119,7 +117,6 @@ export type Transformation = InferTableRow<typeof transformations>;
  * @see {@link https://github.com/EpicenterHQ/epicenter/blob/main/specs/20260312T170000-whispering-workspace-polish-and-migration.md | Spec Decision 1}
  */
 const transformationSteps = defineTable({
-	_v: column.literal(1),
 	id: column.string(),
 	transformationId: column.string(),
 	order: column.number(),
@@ -206,7 +203,6 @@ export type TerminalTransformationRunResult = Static<
  * sort by `startedAt`; status-dependent fields live inside `result`.
  */
 const transformationRuns = defineTable({
-	_v: column.literal(1),
 	id: column.string(),
 	transformationId: column.string(),
 	recordingId: column.nullable(column.string()),
@@ -220,7 +216,6 @@ export type TransformationRun = InferTableRow<typeof transformationRuns>;
 
 /** Per-step execution records within a transformation run. */
 const transformationStepRuns = defineTable({
-	_v: column.literal(1),
 	id: column.string(),
 	transformationRunId: column.string(),
 	stepId: column.string(),
@@ -280,7 +275,7 @@ const output = {
 const ui = {
 	'ui.alwaysOnTop': defineKv(
 		column.enum(ALWAYS_ON_TOP_MODES),
-		() => 'Never',
+		() => 'Never' as const,
 	),
 } as const;
 
@@ -292,7 +287,7 @@ const ui = {
 const dataRetention = {
 	'retention.strategy': defineKv(
 		column.enum(['keep-forever', 'limit-count']),
-		() => 'keep-forever',
+		() => 'keep-forever' as const,
 	),
 	'retention.maxCount': defineKv(column.integer({ minimum: 1 }), () => 100),
 } as const;
@@ -301,7 +296,7 @@ const dataRetention = {
 const recording = {
 	'recording.mode': defineKv(
 		column.enum(RECORDING_MODES),
-		() => 'manual',
+		() => 'manual' as const,
 	),
 } as const;
 
@@ -317,7 +312,7 @@ const recording = {
 const transcription = {
 	'transcription.service': defineKv(
 		column.enum(TRANSCRIPTION_SERVICE_ID_TUPLE),
-		() => 'moonshine',
+		() => 'moonshine' as const,
 	),
 	'transcription.openai.model': defineKv(
 		column.string(),

@@ -73,7 +73,6 @@ export const generateFolderId = (): FolderId => generateId<FolderId>();
  * reordering in the sidebar. Notes reference folders via `folderId`.
  */
 const foldersTable = defineTable({
-	_v: column.literal(1),
 	id: column.string<FolderId>(),
 	name: column.string(),
 	icon: column.nullable(column.string()),
@@ -98,7 +97,6 @@ export type Folder = InferTableRow<typeof foldersTable>;
  */
 const notesTable = defineTable(
 	{
-		_v: column.literal(1),
 		id: column.string<NoteId>(),
 		folderId: column.nullable(column.string<FolderId>()),
 		title: column.string(),
@@ -108,7 +106,6 @@ const notesTable = defineTable(
 		updatedAt: column.dateTime(),
 	},
 	{
-		_v: column.literal(2),
 		id: column.string<NoteId>(),
 		folderId: column.nullable(column.string<FolderId>()),
 		title: column.string(),
@@ -119,9 +116,13 @@ const notesTable = defineTable(
 		deletedAt: column.nullable(column.dateTime()),
 		wordCount: column.nullable(column.number()),
 	},
-).migrate((row) => {
-	if (row._v === 1) return { ...row, deletedAt: null, wordCount: null, _v: 2 as const };
-	return row;
+).migrate(({ value, version }) => {
+	switch (version) {
+		case 1:
+			return { ...value, deletedAt: null, wordCount: null };
+		case 2:
+			return value;
+	}
 });
 export type Note = InferTableRow<typeof notesTable>;
 

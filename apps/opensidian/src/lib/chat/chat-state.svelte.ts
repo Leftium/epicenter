@@ -7,7 +7,6 @@ import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import {
 	asChatMessageId,
 	asConversationId,
-	type ChatMessageId,
 	type Conversation,
 	type ConversationId,
 	generateChatMessageId,
@@ -75,11 +74,13 @@ export function createAiChatState({
 		binding.tables.conversations.set({
 			id,
 			title: 'New Chat',
+			parentId: null,
+			sourceMessageId: null,
+			systemPrompt: null,
 			provider: DEFAULT_PROVIDER,
 			model: DEFAULT_MODEL,
 			createdAt: now,
 			updatedAt: now,
-			_v: 1,
 		});
 
 		return id;
@@ -149,7 +150,6 @@ export function createAiChatState({
 					role: 'assistant',
 					parts: message.parts as JsonValue[],
 					createdAt: message.createdAt?.getTime() ?? Date.now(),
-					_v: 1,
 				});
 
 				updateConversation(conversationId, {});
@@ -249,7 +249,6 @@ export function createAiChatState({
 					role: 'user',
 					parts: [{ type: 'text', content }],
 					createdAt: Date.now(),
-					_v: 1,
 				});
 
 				const currentTitle = getStringValue(metadata?.title, 'New Chat');
@@ -358,11 +357,13 @@ export function createAiChatState({
 		binding.tables.conversations.set({
 			id,
 			title: 'New Chat',
+			parentId: null,
+			sourceMessageId: null,
+			systemPrompt: null,
 			provider: active?.provider ?? DEFAULT_PROVIDER,
 			model: active?.model ?? DEFAULT_MODEL,
 			createdAt: now,
 			updatedAt: now,
-			_v: 1,
 		});
 
 		searchParams.update({ chat: id });

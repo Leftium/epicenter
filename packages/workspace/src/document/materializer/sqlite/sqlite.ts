@@ -126,13 +126,15 @@ export function attachSqliteMaterializer(
 
 	// ── SQL primitives ───────────────────────────────────────────
 
-	async function insertRow(tableName: string, row: BaseRow) {
+	async function insertRow(
+		tableName: string,
+		row: BaseRow & Record<string, unknown>,
+	) {
 		const config = registered.get(tableName)?.config;
 		const serialize = config?.serialize ?? serializeValue;
-		const rowRecord = row as unknown as Record<string, unknown>;
-		const keys = Object.keys(rowRecord);
+		const keys = Object.keys(row);
 		const placeholders = keys.map(() => '?').join(', ');
-		const values = keys.map((key) => serialize(rowRecord[key]));
+		const values = keys.map((key) => serialize(row[key]));
 		const columns = keys.map(quoteIdentifier).join(', ');
 
 		const stmt = await db.prepare(
@@ -162,8 +164,7 @@ export function attachSqliteMaterializer(
 		);
 
 		for (const row of rows) {
-			const rowRecord = row as unknown as Record<string, unknown>;
-			const values = keys.map((key) => serialize(rowRecord[key]));
+			const values = keys.map((key) => serialize(row[key]));
 			await stmt.run(...values);
 		}
 	}
@@ -299,11 +300,7 @@ export function attachSqliteMaterializer(
 		if (isDisposed) return;
 
 		for (const [tableName, entry] of registered) {
-			const rowSchema = entry.table.definition.schema.row as unknown as Record<
-				string,
-				unknown
-			>;
-			await db.run(generateDdl(tableName, rowSchema));
+			await db.run(generateDdl(tableName, entry.table.definition.schema.row));
 			if (entry.config.fts && entry.config.fts.length > 0)
 				await setupFtsTable(db, tableName, entry.config.fts);
 		}

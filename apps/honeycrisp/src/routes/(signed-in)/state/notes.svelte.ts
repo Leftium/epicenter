@@ -110,10 +110,9 @@ export function createNotes({
 				preview: '',
 				pinned: false,
 				deletedAt: null,
-				wordCount: 0,
+				wordCount: null,
 				createdAt: DateTimeString.now(),
 				updatedAt: DateTimeString.now(),
-				_v: 2,
 			});
 			return { id };
 		},

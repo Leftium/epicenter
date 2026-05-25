@@ -293,7 +293,6 @@ async function runTransformation({
 		input,
 		startedAt: now,
 		result: { status: 'running' },
-		_v: 1,
 	} satisfies TransformationRun;
 
 	transformationRuns.set(transformationRun);
@@ -310,7 +309,6 @@ async function runTransformation({
 			input: currentInput,
 			startedAt: new Date().toISOString(),
 			result: { status: 'running' },
-			_v: 1,
 		} satisfies TransformationStepRun;
 		whispering.tables.transformationStepRuns.set(stepRun);
 

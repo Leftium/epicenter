@@ -21,7 +21,6 @@ function toKeyring(key: Uint8Array): Keyring {
 }
 
 const encryptedRowDefinition = defineTable({
-	_v: column.literal(1),
 	id: column.string(),
 	title: column.string(),
 });
@@ -44,19 +43,17 @@ describe('attachEncryption', () => {
 		const ydoc = new Y.Doc({ guid: 'enc-readonly-table', gc: true });
 		const encryption = attachEncryption(ydoc, { keyring: () => keyring });
 		const definition = defineTable({
-			_v: column.literal(1),
 			id: column.string(),
 			title: column.string(),
 		});
 		const writer = encryption.attachTable('entries', definition);
 		const reader = encryption.attachReadonlyTable('entries', definition);
 
-		writer.set({ id: '1', title: 'Secret row', _v: 1 });
+		writer.set({ id: '1', title: 'Secret row' });
 
 		expect(reader.get('1').data).toEqual({
 			id: '1',
 			title: 'Secret row',
-			_v: 1,
 		});
 		expect('set' in reader).toBe(false);
 		expect('bulkSet' in reader).toBe(false);
@@ -71,7 +68,6 @@ describe('attachEncryption', () => {
 		const ydoc = new Y.Doc({ guid: 'enc-readonly-tables', gc: true });
 		const encryption = attachEncryption(ydoc, { keyring: () => keyring });
 		const definition = defineTable({
-			_v: column.literal(1),
 			id: column.string(),
 			title: column.string(),
 		});
@@ -80,10 +76,10 @@ describe('attachEncryption', () => {
 			entries: definition,
 		});
 
-		writers.entries.set({ id: '1', title: 'Secret row', _v: 1 });
+		writers.entries.set({ id: '1', title: 'Secret row' });
 
 		expect(readers.entries.getAllValid()).toEqual([
-			{ id: '1', title: 'Secret row', _v: 1 },
+			{ id: '1', title: 'Secret row' },
 		]);
 		expect('set' in readers.entries).toBe(false);
 		expect('bulkSet' in readers.entries).toBe(false);

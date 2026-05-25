@@ -42,6 +42,7 @@
 
 import {
 	createTableDefinition,
+	type LastVersion,
 	type MigrateInput,
 	type RowOf,
 	type TableDefinition,
@@ -73,13 +74,6 @@ type ConstrainVersions<TVersions extends readonly VersionedColumns[]> = {
 		? ConstrainColumns<TVersions[I]>
 		: never;
 };
-
-type LastVersion<TVersions extends readonly VersionedColumns[]> =
-	TVersions extends readonly [...infer _, infer L]
-		? L extends VersionedColumns
-			? L
-			: TVersions[number]
-		: TVersions[number];
 
 /**
  * Intermediate builder returned by the variadic overload until `.migrate(fn)`

@@ -455,11 +455,9 @@ export function attachMarkdownMaterializer(
 
 				// 4. Validate the returned row against the latest schema.
 				//    `fromMarkdown` returns a user-facing row (no `_v`); validate
-				//    directly against the latest version's columns rather than
-				//    going through `table.parse`, which expects a stored row
-				//    that already carries `_v`.
+				//    directly against the latest version's TObject.
 				const rowId = row.id;
-				const latestSchema = entry.table.schema.row;
+				const latestSchema = entry.table.row;
 				if (!Value.Check(latestSchema, row)) {
 					const errors = [...Value.Errors(latestSchema, row)].map((e) => ({
 						path: e.instancePath,

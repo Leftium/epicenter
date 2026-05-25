@@ -14,14 +14,7 @@
  * returned by `attachEncryption(ydoc, { keyring })`.
  */
 
-import {
-	Type,
-	type Static,
-	type TObject,
-	type TPartial,
-	type TOmit,
-	type TSchema,
-} from 'typebox';
+import { Type, type Static, type TObject, type TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 import {
 	defineErrors,
@@ -43,11 +36,12 @@ import {
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Errors produced when parsing unknown input against a table's schema.
+ * Errors produced when parsing stored rows against a table's schema.
  *
- * Surfaced by `parse()`, `get()`, `getAll()`, and `update()`. "Not found"
- * on `get()` / `update()` is *not* an error: it's a legitimate absence and
- * is returned as `data: null` instead.
+ * Surfaced by `get()`, `getAll()`, `getAllValid()`, `getAllInvalid()`,
+ * `filter()`, `find()`, and `update()`. "Not found" on `get()` / `update()`
+ * is *not* an error: it's a legitimate absence and is returned as
+ * `data: null` instead.
  */
 export const TableParseError = defineErrors({
 	/** The row's `_v` did not match any registered schema version. */
@@ -116,20 +110,7 @@ export type RowOf<TCols extends Record<string, TSchema>> = {
 	[K in keyof TCols]: Static<TCols[K]>;
 };
 
-/**
- * Distributive variant of `RowOf` over a tuple of versions. Each version's
- * row is computed independently and joined as a union.
- *
- * @internal exposed for the migrate function's input typing.
- */
-export type AnyVersionRow<TVersions extends readonly VersionedColumns[]> =
-	TVersions extends readonly (infer V)[]
-		? V extends VersionedColumns
-			? RowOf<V>
-			: never
-		: never;
-
-type LastVersion<TVersions extends readonly VersionedColumns[]> =
+export type LastVersion<TVersions extends readonly VersionedColumns[]> =
 	TVersions extends readonly [...infer _, infer L]
 		? L extends VersionedColumns
 			? L
@@ -188,33 +169,6 @@ export type MigrateInput<
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * The reusable schema surfaces on every `TableDefinition`. Callers reach
- * for these directly: they should never need to walk `definition.versions`
- * for day-to-day code.
- *
- * `row` is the latest version's user-facing schema (no `_v`). SQLite DDL
- * generation reads this directly.
- */
-type TableSchema<TVersions extends readonly VersionedColumns[]> = {
-	/** Latest version's row TObject (user-facing; no `_v`). */
-	row: TObject<LastVersion<TVersions>>;
-};
-
-/**
- * Per-operation input schemas, mirrored on attached `Table` handles so
- * action authors can reuse them without reaching into `definition`.
- */
-type TableInput<TVersions extends readonly VersionedColumns[]> = {
-	get: TObject<{ id: LastVersion<TVersions>['id'] }>;
-	set: TObject<LastVersion<TVersions>>;
-	update: TObject<{
-		id: LastVersion<TVersions>['id'];
-		patch: TPartial<TOmit<TObject<LastVersion<TVersions>>, ['id']>>;
-	}>;
-	delete: TObject<{ id: LastVersion<TVersions>['id'] }>;
-};
-
-/**
  * A table definition created by `defineTable(cols)` (single version) or
  * `defineTable(v1, v2, ...).migrate(fn)` (multi-version).
  *
@@ -230,12 +184,8 @@ export type TableDefinition<
 > = {
 	/** The original variadic versions, in declaration order. */
 	versions: TVersions;
-	/** The latest version's column record. */
-	columns: LastVersion<TVersions>;
-	/** The latest version's user-facing row schema. */
-	schema: TableSchema<TVersions>;
-	/** Per-operation input schemas. */
-	input: TableInput<TVersions>;
+	/** Latest version's row TObject (user-facing; no `_v`). */
+	row: TObject<LastVersion<TVersions>>;
 	/** Upgrade any stored version to the current row in one step. */
 	migrate: (input: MigrateInput<TVersions>) => RowOf<LastVersion<TVersions>>;
 };
@@ -277,26 +227,9 @@ export function createTableDefinition<
 	migrate: (input: unknown) => RowOf<LastVersion<TVersions>>,
 ): TableDefinition<TVersions> {
 	const latestColumns = versions[versions.length - 1] as LastVersion<TVersions>;
-	const row = Type.Object(latestColumns) as TObject<LastVersion<TVersions>>;
-	const idSchema = latestColumns.id as LastVersion<TVersions>['id'];
-	const set = row;
-	const get = Type.Object({ id: idSchema });
-	const patch = Type.Partial(Type.Omit(row, ['id'])) as TPartial<
-		TOmit<TObject<LastVersion<TVersions>>, ['id']>
-	>;
-	const update = Type.Object({ id: idSchema, patch });
-	const deleteInput = Type.Object({ id: idSchema });
-
 	return {
 		versions,
-		columns: latestColumns,
-		schema: { row },
-		input: {
-			get: get as TableInput<TVersions>['get'],
-			set,
-			update: update as TableInput<TVersions>['update'],
-			delete: deleteInput as TableInput<TVersions>['delete'],
-		},
+		row: Type.Object(latestColumns),
 		migrate: migrate as TableDefinition<TVersions>['migrate'],
 	};
 }
@@ -308,8 +241,8 @@ export function createTableDefinition<
 /**
  * Type-safe read-only runtime handle for a single workspace table.
  *
- * Mirrors `columns`, `schema`, and `input` from the definition so custom
- * actions can use the input schemas without reaching through `definition`.
+ * Mirrors `row` (the latest version's TObject) from the definition for
+ * ergonomics; the underlying `definition` stays exposed for introspection.
  */
 export type ReadonlyTable<
 	TRow extends BaseRow,
@@ -318,18 +251,12 @@ export type ReadonlyTable<
 	/** The table name (the Y.Array key this table is bound to). */
 	name: string;
 
-	/**
-	 * The underlying `TableDefinition`. Exposed for introspection; most code
-	 * prefers `columns` / `schema` / `input` mirrored directly on the handle.
-	 */
+	/** The underlying `TableDefinition`. */
 	definition: TableDefinition<TVersions>;
 
-	/** Latest version's column record. */
-	columns: LastVersion<TVersions>;
-	schema: TableSchema<TVersions>;
-	input: TableInput<TVersions>;
+	/** Latest version's row TObject (mirrored from definition). */
+	row: TObject<LastVersion<TVersions>>;
 
-	parse(id: string, input: unknown): Result<TRow, TableParseError>;
 	get(id: string): Result<TRow | null, TableParseError>;
 	getAll(): Array<Result<TRow, TableParseError>>;
 	getAllValid(): TRow[];
@@ -508,11 +435,7 @@ export function createReadonlyTable<
 	return {
 		name,
 		definition,
-		columns: definition.columns,
-		schema: definition.schema,
-		input: definition.input,
-
-		parse: parseRow,
+		row: definition.row,
 
 		get(id: string): Result<TRow | null, TableParseError> {
 			const raw = ykv.get(id);
@@ -631,19 +554,24 @@ export function createTable<
 			id: string,
 			partial: Partial<Omit<TRow, 'id'>>,
 		): Result<TRow | null, TableParseError> {
-			const { data: current, error: currentError } = readonly.get(id);
-			if (currentError) return Err(currentError);
+			const { data: current, error } = readonly.get(id);
+			if (error) return Err(error);
 			if (current === null) return Ok(null);
 
+			// `current` is already the latest-version user-facing row (get()
+			// migrates on read), so merging with a partial keeps us in the
+			// latest shape. Validate against the latest schema directly: no
+			// need to stamp _v, route, and re-migrate just to write back.
 			const merged = { ...current, ...partial, id } as TRow;
-			const { data: validated, error: mergedError } = readonly.parse(
-				id,
-				stamp(merged),
-			);
-			if (mergedError) return Err(mergedError);
-
-			ykv.set(validated.id, stamp(validated));
-			return Ok(validated);
+			if (!Value.Check(definition.row, merged)) {
+				const errors = [...Value.Errors(definition.row, merged)].map((e) => ({
+					path: e.instancePath,
+					message: e.message,
+				}));
+				return TableParseError.ValidationFailed({ id, errors, row: merged });
+			}
+			ykv.set(merged.id, stamp(merged));
+			return Ok(merged);
 		},
 
 		delete(id: string): void {

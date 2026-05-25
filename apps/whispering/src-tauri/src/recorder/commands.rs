@@ -1,8 +1,27 @@
 use crate::recorder::recorder::{AudioRecording, RecorderState, Result};
+use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::State;
-use log::{debug, info};
+use tauri::{AppHandle, Emitter, State};
+use log::{debug, info, warn};
+
+const RECORDER_STATE_CHANGED: &str = "recorder:state-changed";
+
+#[derive(Serialize, Clone, Copy, Debug)]
+#[serde(rename_all = "UPPERCASE")]
+enum RecorderStateEvent {
+    Idle,
+    Recording,
+}
+
+fn emit_recorder_state(app: &AppHandle, state: RecorderStateEvent) {
+    if let Err(e) = app.emit(RECORDER_STATE_CHANGED, state) {
+        warn!(
+            "Failed to emit {} = {:?}: {}",
+            RECORDER_STATE_CHANGED, state, e
+        );
+    }
+}
 
 /// Application state containing the recorder
 pub struct AppData {
@@ -34,23 +53,20 @@ pub async fn init_recording_session(
     output_folder: String,
     sample_rate: Option<u32>,
     state: State<'_, AppData>,
-    _app_handle: tauri::AppHandle,
+    app_handle: AppHandle,
 ) -> Result<()> {
     info!(
         "Initializing recording session: device={}, id={}, folder={}, sample_rate={:?}",
         device_identifier, recording_id, output_folder, sample_rate
     );
 
-    // Use the provided output folder
     let recordings_dir = PathBuf::from(output_folder);
 
-    // Create the directory if it doesn't exist
     if !recordings_dir.exists() {
         std::fs::create_dir_all(&recordings_dir)
             .map_err(|e| format!("Failed to create output folder: {}", e))?;
     }
 
-    // Validate it's a directory (not a file)
     if !recordings_dir.is_dir() {
         return Err(format!(
             "Output path is not a directory: {:?}",
@@ -58,52 +74,86 @@ pub async fn init_recording_session(
         ));
     }
 
-    // Initialize the session with optional sample rate
-    let mut recorder = state
-        .recorder
-        .lock()
-        .map_err(|e| format!("Failed to lock recorder: {}", e))?;
-    recorder.init_session(device_identifier, recordings_dir, recording_id, sample_rate)
+    {
+        let mut recorder = state
+            .recorder
+            .lock()
+            .map_err(|e| format!("Failed to lock recorder: {}", e))?;
+        recorder.init_session(device_identifier, recordings_dir, recording_id, sample_rate)?;
+    }
+    // init_session calls close_session internally as cleanup. If the previous
+    // session was actively recording, that transition is silent at the domain
+    // layer; emit IDLE here so the JS state never diverges from reality.
+    emit_recorder_state(&app_handle, RecorderStateEvent::Idle);
+    Ok(())
 }
 
 #[tauri::command]
-pub async fn start_recording(state: State<'_, AppData>) -> Result<()> {
+pub async fn start_recording(
+    state: State<'_, AppData>,
+    app_handle: AppHandle,
+) -> Result<()> {
     info!("Starting recording");
-    let mut recorder = state
-        .recorder
-        .lock()
-        .map_err(|e| format!("Failed to lock recorder: {}", e))?;
-    recorder.start_recording()
+    {
+        let mut recorder = state
+            .recorder
+            .lock()
+            .map_err(|e| format!("Failed to lock recorder: {}", e))?;
+        recorder.start_recording()?;
+    }
+    emit_recorder_state(&app_handle, RecorderStateEvent::Recording);
+    Ok(())
 }
 
 #[tauri::command]
-pub async fn stop_recording(state: State<'_, AppData>) -> Result<AudioRecording> {
+pub async fn stop_recording(
+    state: State<'_, AppData>,
+    app_handle: AppHandle,
+) -> Result<AudioRecording> {
     info!("Stopping recording");
-    let mut recorder = state
-        .recorder
-        .lock()
-        .map_err(|e| format!("Failed to lock recorder: {}", e))?;
-    recorder.stop_recording()
+    let recording = {
+        let mut recorder = state
+            .recorder
+            .lock()
+            .map_err(|e| format!("Failed to lock recorder: {}", e))?;
+        recorder.stop_recording()?
+    };
+    emit_recorder_state(&app_handle, RecorderStateEvent::Idle);
+    Ok(recording)
 }
 
 #[tauri::command]
-pub async fn cancel_recording(state: State<'_, AppData>) -> Result<()> {
+pub async fn cancel_recording(
+    state: State<'_, AppData>,
+    app_handle: AppHandle,
+) -> Result<()> {
     info!("Cancelling recording");
-    let mut recorder = state
-        .recorder
-        .lock()
-        .map_err(|e| format!("Failed to lock recorder: {}", e))?;
-    recorder.cancel_recording()
+    {
+        let mut recorder = state
+            .recorder
+            .lock()
+            .map_err(|e| format!("Failed to lock recorder: {}", e))?;
+        recorder.cancel_recording()?;
+    }
+    emit_recorder_state(&app_handle, RecorderStateEvent::Idle);
+    Ok(())
 }
 
 #[tauri::command]
-pub async fn close_recording_session(state: State<'_, AppData>) -> Result<()> {
+pub async fn close_recording_session(
+    state: State<'_, AppData>,
+    app_handle: AppHandle,
+) -> Result<()> {
     info!("Closing recording session");
-    let mut recorder = state
-        .recorder
-        .lock()
-        .map_err(|e| format!("Failed to lock recorder: {}", e))?;
-    recorder.close_session()
+    {
+        let mut recorder = state
+            .recorder
+            .lock()
+            .map_err(|e| format!("Failed to lock recorder: {}", e))?;
+        recorder.close_session()?;
+    }
+    emit_recorder_state(&app_handle, RecorderStateEvent::Idle);
+    Ok(())
 }
 
 #[tauri::command]

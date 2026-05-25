@@ -1,9 +1,9 @@
 import type { CopyFn } from '@epicenter/ui/copy-button';
 import { notify } from '$lib/operations/notify';
-import { rpc } from '$lib/query';
+import { services } from '$lib/services';
 
 /**
- * Creates a copy function that uses the app's RPC layer with toast notifications.
+ * Creates a copy function with toast notifications.
  *
  * @param contentDescription - Description of what's being copied (e.g., "transcript", "API key")
  *                            Used in toast messages like "Copied {contentDescription} to clipboard!"
@@ -20,7 +20,7 @@ import { rpc } from '$lib/query';
  */
 export function createCopyFn(contentDescription: string): CopyFn {
 	return async (text: string) => {
-		const { error } = await rpc.text.copyToClipboard({ text });
+		const { error } = await services.text.copyToClipboard(text);
 		if (error) {
 			await notify.error({
 				title: `Error copying ${contentDescription} to clipboard`,

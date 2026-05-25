@@ -32,8 +32,8 @@ import * as schema from '../db/schema/index.js';
 import { isWebSocketUpgrade } from '../is-websocket-upgrade.js';
 import { requireBearerUser } from '../middleware/require-auth.js';
 import { createRequireOwnership } from '../middleware/require-ownership.js';
-import type { OwnershipRule } from '../ownership.js';
 import { doName } from '../owner.js';
+import type { OwnershipRule } from '../ownership.js';
 import type { Env } from '../types.js';
 
 type Db = NodePgDatabase<typeof schema>;

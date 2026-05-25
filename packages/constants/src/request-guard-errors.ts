@@ -47,8 +47,7 @@ export const RequestGuardError = defineErrors({
 		message: 'The request URL owner does not match the authenticated user.',
 	}),
 	NotTeamMember: () => ({
-		message:
-			'The authenticated user is not a member of this team deployment.',
+		message: 'The authenticated user is not a member of this team deployment.',
 	}),
 	ForbiddenOrigin: () => ({
 		message: 'Origin header is missing or not in the trusted-origin allowlist.',

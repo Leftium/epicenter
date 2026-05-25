@@ -70,8 +70,10 @@ const aiApp = new Hono<Env>().post(
 			case 'openai': {
 				const apiKey = userApiKey ?? c.env.OPENAI_API_KEY;
 				if (!apiKey) {
-					const err = AiChatError.ProviderNotConfigured({ provider });
-					return c.json(err, err.error.status);
+					return c.json(
+						AiChatError.ProviderNotConfigured({ provider }),
+						AiChatError.ProviderNotConfigured.status,
+					);
 				}
 				adapter = createOpenaiChat(data.model, apiKey);
 				break;
@@ -79,8 +81,10 @@ const aiApp = new Hono<Env>().post(
 			case 'gemini': {
 				const apiKey = userApiKey ?? c.env.GEMINI_API_KEY;
 				if (!apiKey) {
-					const err = AiChatError.ProviderNotConfigured({ provider });
-					return c.json(err, err.error.status);
+					return c.json(
+						AiChatError.ProviderNotConfigured({ provider }),
+						AiChatError.ProviderNotConfigured.status,
+					);
 				}
 				adapter = createGeminiChat(data.model, apiKey);
 				break;

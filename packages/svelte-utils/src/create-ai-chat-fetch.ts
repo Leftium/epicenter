@@ -10,8 +10,13 @@ import { Ok, tryAsync } from 'wellcrafted/result';
  *
  * When the server returns a non-2xx response, this wrapper:
  * 1. Reads the JSON body (wellcrafted's `{ data, error }` envelope)
- * 2. Extracts the structured error (`name`, `message`, `status`, variant fields)
- * 3. Throws an `AiChatHttpError` carrying that detail (HTTP status lives on `detail.status`)
+ * 2. Extracts the structured error (`name`, `message`, variant fields)
+ * 3. Throws an `AiChatHttpError` carrying that detail
+ *
+ * The HTTP status is not serialized into the error body; it lives as a
+ * static property on the server-side factory (`AiChatError.<Variant>.status`).
+ * Client code that needs the status should read it from `response.status`
+ * or look it up by variant name on the imported factory.
  *
  * The thrown error propagates unchanged through TanStack AI's
  * `ChatClient` pipeline to `onError` / `chat.error`. Use

@@ -35,7 +35,6 @@ const CYCLES = 5;
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const eventDefinition = defineTable({
-	_v: column.literal(1),
 	id: column.string(),
 	type: column.enum(['command', 'event']),
 	name: column.string(),
@@ -138,7 +137,6 @@ function main() {
 		steadyStateIds.push(id);
 		tables.events.set({
 			id,
-			_v: 1,
 			type: i % 2 === 0 ? 'command' : 'event',
 			name: `seed_${i}`,
 			payload: samplePayload,
@@ -188,7 +186,6 @@ function main() {
 			addedIds.push(id);
 			tables.events.set({
 				id,
-				_v: 1,
 				type: i % 2 === 0 ? 'command' : 'event',
 				name: `cycle${cycle}_add_${i}`,
 				payload: samplePayload,

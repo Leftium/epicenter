@@ -54,7 +54,6 @@ export async function registerDevice(
 		name: existingName ?? defaultName,
 		lastSeen: new Date().toISOString(),
 		browser: import.meta.env.BROWSER,
-		_v: 1,
 	});
 }
 

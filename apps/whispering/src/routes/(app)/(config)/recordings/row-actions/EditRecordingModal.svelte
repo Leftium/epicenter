@@ -162,7 +162,7 @@
 				<Label for="transcript" class="text-right">Transcript</Label>
 				<Textarea
 					id="transcript"
-					value={workingCopy.transcript as string}
+					value={workingCopy.transcript}
 					oninput={(e) => {
 						workingCopy = {
 							...workingCopy,

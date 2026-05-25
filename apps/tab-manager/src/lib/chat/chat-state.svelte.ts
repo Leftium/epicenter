@@ -73,11 +73,13 @@ export function createAiChatState({
 		tabManager.tables.conversations.set({
 			id,
 			title: 'New Chat',
+			parentId: null,
+			sourceMessageId: null,
+			systemPrompt: null,
 			provider: DEFAULT_PROVIDER,
 			model: DEFAULT_MODEL,
 			createdAt: now,
 			updatedAt: now,
-			_v: 1,
 		});
 		return id;
 	}
@@ -165,7 +167,6 @@ export function createAiChatState({
 					role: 'assistant',
 					parts: message.parts as JsonValue[],
 					createdAt: message.createdAt?.getTime() ?? Date.now(),
-					_v: 1,
 				});
 				updateConversation(conversationId, {});
 			},
@@ -323,7 +324,6 @@ export function createAiChatState({
 					role: 'user',
 					parts: [{ type: 'text', content }],
 					createdAt: Date.now(),
-					_v: 1,
 				});
 
 				updateConversation(conversationId, {
@@ -456,14 +456,13 @@ export function createAiChatState({
 		tabManager.tables.conversations.set({
 			id,
 			title,
-			parentId,
-			sourceMessageId,
-			systemPrompt,
+			parentId: parentId ?? null,
+			sourceMessageId: sourceMessageId ?? null,
+			systemPrompt: systemPrompt ?? null,
 			provider: current?.provider ?? DEFAULT_PROVIDER,
 			model: current?.model ?? DEFAULT_MODEL,
 			createdAt: now,
 			updatedAt: now,
-			_v: 1,
 		});
 
 		switchConversation(id);

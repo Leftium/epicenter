@@ -4,6 +4,7 @@ import {
 	defineTable,
 	type InferTableRow,
 } from '@epicenter/workspace';
+import { type Static, Type } from 'typebox';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
 
@@ -44,7 +45,6 @@ const INFERENCE_PROVIDER_ID_TUPLE =
 /** Audio recordings captured by the user. One row per recording session. */
 const recordings = defineTable(
 	{
-		_v: column.literal(1),
 		id: column.string(),
 		title: column.string(),
 		subtitle: column.string(),
@@ -60,7 +60,6 @@ const recordings = defineTable(
 		]),
 	},
 	{
-		_v: column.literal(2),
 		id: column.string(),
 		title: column.string(),
 		recordedAt: column.string(),
@@ -74,20 +73,21 @@ const recordings = defineTable(
 		]),
 		duration: column.nullable(column.number()),
 	},
-).migrate((row) => {
-	if (row._v === 1) {
-		return {
-			id: row.id,
-			title: row.title,
-			recordedAt: row.timestamp,
-			updatedAt: row.updatedAt,
-			transcript: row.transcribedText,
-			transcriptionStatus: row.transcriptionStatus,
-			duration: null,
-			_v: 2 as const,
-		};
+).migrate(({ value, version }) => {
+	switch (version) {
+		case 1:
+			return {
+				id: value.id,
+				title: value.title,
+				recordedAt: value.timestamp,
+				updatedAt: value.updatedAt,
+				transcript: value.transcribedText,
+				transcriptionStatus: value.transcriptionStatus,
+				duration: null,
+			};
+		case 2:
+			return value;
 	}
-	return row;
 });
 
 /** Recording row type inferred from the latest workspace table schema version. */
@@ -95,7 +95,6 @@ export type Recording = InferTableRow<typeof recordings>;
 
 /** User-defined transformation pipelines. Each transformation has ordered steps. */
 const transformations = defineTable({
-	_v: column.literal(1),
 	id: column.string(),
 	title: column.string(),
 	description: column.string(),
@@ -120,7 +119,6 @@ export type Transformation = InferTableRow<typeof transformations>;
  * @see {@link https://github.com/EpicenterHQ/epicenter/blob/main/specs/20260312T170000-whispering-workspace-polish-and-migration.md | Spec Decision 1}
  */
 const transformationSteps = defineTable({
-	_v: column.literal(1),
 	id: column.string(),
 	transformationId: column.string(),
 	order: column.number(),
@@ -152,49 +150,81 @@ const transformationSteps = defineTable({
 export type TransformationStep = InferTableRow<typeof transformationSteps>;
 
 /**
+ * Per-variant result shapes for a transformation run or step run. Each
+ * variant has a single source of truth (one schema, one shadowed type) and
+ * higher-level unions compose them.
+ *
+ * Storage is one JSON-encoded TEXT column (`result`) on the row; nothing in
+ * the read path filters or sorts on these fields, so the JSON envelope is
+ * cheaper than the loss of per-status invariants a flat nullable layout
+ * would cause.
+ *
+ * Run and step run share the same result schema.
+ */
+const RunningResult = Type.Object({ status: Type.Literal('running') });
+export type RunningResult = Static<typeof RunningResult>;
+
+const CompletedResult = Type.Object({
+	status: Type.Literal('completed'),
+	completedAt: Type.String(),
+	output: Type.String(),
+});
+export type CompletedResult = Static<typeof CompletedResult>;
+
+const FailedResult = Type.Object({
+	status: Type.Literal('failed'),
+	completedAt: Type.String(),
+	error: Type.String(),
+});
+export type FailedResult = Static<typeof FailedResult>;
+
+/** Every possible result a run or step run can carry. */
+const TransformationRunResult = Type.Union([
+	RunningResult,
+	CompletedResult,
+	FailedResult,
+]);
+export type TransformationRunResult = Static<typeof TransformationRunResult>;
+
+/**
+ * Results from runs that have reached a terminal state. Enumerated, not
+ * negated: adding a new non-terminal status (e.g. `pending`) means adding
+ * a variant above, not silently widening this union.
+ */
+const TerminalTransformationRunResult = Type.Union([
+	CompletedResult,
+	FailedResult,
+]);
+export type TerminalTransformationRunResult = Static<
+	typeof TerminalTransformationRunResult
+>;
+
+/**
  * Execution records for transformation pipelines. One run per invocation.
- *
- * Status lifecycle: `running` -> `completed` | `failed`. `output` is populated
- * only on completed runs; `error` only on failed runs. The fields are stored
- * as nullable strings because TypeBox column schemas materialize to flat
- * SQLite columns (no per-status discriminated union at the column layer).
- *
- * @see {@link https://github.com/EpicenterHQ/epicenter/blob/main/specs/20260312T170000-whispering-workspace-polish-and-migration.md | Spec Decision 1}
+ * State queries filter by top-level `recordingId` / `transformationId` and
+ * sort by `startedAt`; status-dependent fields live inside `result`.
  */
 const transformationRuns = defineTable({
-	_v: column.literal(1),
 	id: column.string(),
 	transformationId: column.string(),
 	recordingId: column.nullable(column.string()),
 	input: column.string(),
 	startedAt: column.string(),
-	completedAt: column.nullable(column.string()),
-	status: column.enum(['running', 'completed', 'failed']),
-	output: column.nullable(column.string()),
-	error: column.nullable(column.string()),
+	result: column.json(TransformationRunResult),
 });
 
 /** Transformation run row type inferred from the latest workspace table schema version. */
 export type TransformationRun = InferTableRow<typeof transformationRuns>;
 
-/**
- * Per-step execution records within a transformation run.
- *
- * Same shape as `transformationRuns`: `status` is an enum, `output` and `error`
- * are nullable. Population follows the per-status convention documented above.
- */
+/** Per-step execution records within a transformation run. */
 const transformationStepRuns = defineTable({
-	_v: column.literal(1),
 	id: column.string(),
 	transformationRunId: column.string(),
 	stepId: column.string(),
 	order: column.number(),
 	input: column.string(),
 	startedAt: column.string(),
-	completedAt: column.nullable(column.string()),
-	status: column.enum(['running', 'completed', 'failed']),
-	output: column.nullable(column.string()),
-	error: column.nullable(column.string()),
+	result: column.json(TransformationRunResult),
 });
 
 /** Transformation step run row type inferred from the latest workspace table schema version. */

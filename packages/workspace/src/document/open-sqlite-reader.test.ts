@@ -17,7 +17,6 @@ import { openSqliteReader } from './open-sqlite-reader.js';
 import { openWriterSqlite } from './sqlite-writer.js';
 
 const entriesTable = defineTable({
-	_v: column.literal(1),
 	id: column.string(),
 	title: column.string(),
 	body: column.string(),
@@ -49,7 +48,7 @@ async function seedMirrorFile(
 		? builder.table(tables.entries, { fts: ['title', 'body'] })
 		: builder.table(tables.entries);
 	await materializer.whenFlushed;
-	for (const row of rows) tables.entries.set({ ...row, _v: 1 });
+	for (const row of rows) tables.entries.set({ ...row });
 	// Yield once for the debounced flush, then once more for the awaited
 	// syncQueue chain inside flushPendingSync to settle.
 	await new Promise<void>((resolve) => setTimeout(resolve, 0));

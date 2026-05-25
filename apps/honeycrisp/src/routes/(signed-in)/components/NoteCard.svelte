@@ -48,7 +48,7 @@
 					{note.title || 'Untitled'}
 				</span>
 				<span class="shrink-0 text-xs text-muted-foreground">
-					{format(DateTimeString.toDate(note.updatedAt), 'h:mm a')}
+					{format(new Date(note.updatedAt), 'h:mm a')}
 				</span>
 			</div>
 			<p class="line-clamp-2 text-xs text-muted-foreground">

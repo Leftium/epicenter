@@ -427,7 +427,6 @@ describe('ydoc destroy lifecycle', () => {
 			createdAt: now,
 			updatedAt: now,
 			trashedAt: null,
-			_v: 1,
 		});
 
 		// Index did NOT update: the observer is gone.

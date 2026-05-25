@@ -31,7 +31,6 @@ describe('table operations', () => {
 					id: generateId(i),
 					title: `Post ${i}`,
 					views: i,
-					_v: 1,
 				});
 			}
 		});
@@ -53,7 +52,6 @@ describe('table operations', () => {
 					id: generateId(i),
 					title: `Post ${i}`,
 					views: i,
-					_v: 1,
 				});
 			}
 		});
@@ -74,7 +72,6 @@ describe('table operations', () => {
 				id: generateId(i),
 				title: `Post ${i}`,
 				views: i,
-				_v: 1,
 			});
 		}
 
@@ -97,7 +94,6 @@ describe('table operations', () => {
 				id: generateId(i),
 				title: `Post ${i}`,
 				views: i,
-				_v: 1,
 			});
 		}
 
@@ -123,7 +119,6 @@ describe('table operations', () => {
 				id: generateId(i),
 				title: `Post ${i}`,
 				views: i,
-				_v: 1,
 			});
 		}
 
@@ -148,7 +143,6 @@ describe('table operations', () => {
 					id: generateId(i),
 					title: `Post ${i}`,
 					views: i,
-					_v: 1,
 				});
 			}
 		});
@@ -163,7 +157,6 @@ describe('table operations', () => {
 						id: generateId(i),
 						title: `Post ${i}`,
 						views: i,
-						_v: 1,
 					});
 				}
 			});

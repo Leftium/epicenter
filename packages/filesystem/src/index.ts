@@ -24,10 +24,9 @@ export {
 	yMapToRecord,
 } from './formats/index.js';
 // IDs
-export type { ColumnId, RowId } from './ids.js';
+export type { ColumnId, FileId, RowId } from './ids.js';
 export {
 	asFileId,
-	FileId,
 	generateColumnId,
 	generateFileId,
 	generateRowId,

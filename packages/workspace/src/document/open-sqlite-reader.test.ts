@@ -39,13 +39,12 @@ async function seedMirrorFile(
 	const tables = attachTables(ydoc, { entries: entriesTable });
 	// debounceMs: 0 so each set() flushes on the next microtask, matching the
 	// "seed then read" shape of these tests.
-	const builder = attachBunSqliteMaterializer(ydoc, {
+	const materializer = attachBunSqliteMaterializer(ydoc, {
 		filePath,
 		debounceMs: 0,
+		tables: { entries: tables.entries },
+		...(fts ? { fts: { entries: ['title', 'body'] } } : {}),
 	});
-	const materializer = fts
-		? builder.table(tables.entries, { fts: ['title', 'body'] })
-		: builder.table(tables.entries);
 	await materializer.whenFlushed;
 	for (const row of rows) tables.entries.set({ ...row });
 	// Yield once for the debounced flush, then once more for the awaited

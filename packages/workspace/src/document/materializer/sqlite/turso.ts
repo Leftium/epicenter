@@ -1,5 +1,5 @@
 /**
- * `attachTursoMaterializer(ydoc, { path })`: Turso-backed materializer.
+ * `attachTursoMaterializer(ydoc, { path, tables })`: Turso-backed materializer.
  *
  * Built on `@tursodatabase/database` (Turso's Rust SQLite rewrite, formerly
  * Limbo). The same package powers both native (Bun/Node) via the platform
@@ -11,15 +11,17 @@
  * Turso engine than the SQLite project's own pace.
  *
  * `connect()` is async, so the materializer's startup is gated behind
- * {@link whenConnected}. Callers wanting the underlying handle await
- * `.client` (a `Promise<Database>`).
+ * {@link AttachTursoMaterializerResult.whenConnected}. Callers wanting the
+ * underlying handle await `.client` (a `Promise<Database>`).
  *
  * @example
  * ```ts
  * const materializer = attachTursoMaterializer(ydoc, {
  *   path: ':memory:',                // in-memory; rebuilds from Y.Doc each session
  *   waitFor: idb.whenLoaded,
- * }).table(tables.entries, { fts: ['title'] });
+ *   tables,
+ *   fts: { entries: ['title'] },
+ * });
  *
  * await materializer.whenFlushed;
  * const client = await materializer.client;
@@ -39,20 +41,23 @@
  * @module
  */
 
-import { connect, type Database } from '@tursodatabase/database';
+import { connect } from '@tursodatabase/database';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
-import type { BaseRow, Table } from '../../attach-table.js';
 import {
 	attachSqliteMaterializerCore,
+	type FtsConfig,
 	type MirrorDatabase,
-	type TableConfig,
+	type TablesRecord,
 } from './core.js';
 
 /**
  * Options for {@link attachTursoMaterializer}.
  */
-export type AttachTursoMaterializerOptions = {
+export type AttachTursoMaterializerOptions<
+	TTables extends TablesRecord,
+	TFts extends FtsConfig<TTables> | undefined = undefined,
+> = {
 	/**
 	 * Path or URL that Turso's `connect()` accepts:
 	 *
@@ -64,6 +69,22 @@ export type AttachTursoMaterializerOptions = {
 	 * `:memory:`).
 	 */
 	path: string;
+
+	/**
+	 * Workspace tables to mirror. Each entry becomes a SQLite table named
+	 * after the record key. Pass the whole `tables` record to mirror
+	 * everything, or an object literal subset like `{ notes: tables.notes }`
+	 * to mirror a strict subset.
+	 */
+	tables: TTables;
+
+	/**
+	 * Optional FTS5 configuration. Keys must match `tables` keys; values
+	 * list the columns of that table's row to include in the FTS index.
+	 * When provided, the result exposes `materializer.fts.search(...)`;
+	 * when omitted, the `fts` namespace is absent from the return type.
+	 */
+	fts?: TFts;
 
 	/** Forwarded to the materializer core. Defaults to 100 ms. */
 	debounceMs?: number;
@@ -83,29 +104,6 @@ export type AttachTursoMaterializerOptions = {
 };
 
 /**
- * Builder returned by {@link attachTursoMaterializer}. Mirrors the core
- * builder shape but threads `.client` + `.whenConnected` through chained
- * `.table()` calls so the augmented props survive the chain.
- */
-export type AttachTursoMaterializerBuilder = Omit<
-	ReturnType<typeof attachSqliteMaterializerCore>,
-	'table'
-> & {
-	table<TRow extends BaseRow>(
-		table: Table<TRow>,
-		config?: TableConfig<TRow>,
-	): AttachTursoMaterializerBuilder;
-	/** Resolves once Turso's `connect()` has completed. */
-	whenConnected: Promise<void>;
-	/**
-	 * The underlying Turso `Database` handle. Async because `connect()` is
-	 * async; most callers `await materializer.whenFlushed` first, by which
-	 * point the promise has already resolved.
-	 */
-	client: Promise<Database>;
-};
-
-/**
  * Attach a Turso-backed materializer to a Y.Doc.
  *
  * Returns synchronously per the attach-primitive convention. The async
@@ -114,15 +112,20 @@ export type AttachTursoMaterializerBuilder = Omit<
  * underlying handle await `materializer.client` or wait for
  * `materializer.whenConnected`.
  */
-export function attachTursoMaterializer(
+export function attachTursoMaterializer<
+	TTables extends TablesRecord,
+	TFts extends FtsConfig<TTables> | undefined = undefined,
+>(
 	ydoc: Y.Doc,
 	{
 		path,
+		tables,
+		fts,
 		debounceMs,
 		waitFor,
 		log = createLogger('attachTursoMaterializer'),
-	}: AttachTursoMaterializerOptions,
-): AttachTursoMaterializerBuilder {
+	}: AttachTursoMaterializerOptions<TTables, TFts>,
+) {
 	const clientPromise = connect(path);
 	const whenConnected = clientPromise.then(() => undefined);
 
@@ -144,8 +147,10 @@ export function attachTursoMaterializer(
 		},
 	};
 
-	const coreBuilder = attachSqliteMaterializerCore(ydoc, {
+	const core = attachSqliteMaterializerCore<TTables, TFts>(ydoc, {
 		db,
+		tables,
+		fts,
 		debounceMs,
 		waitFor:
 			waitFor === undefined
@@ -169,16 +174,5 @@ export function attachTursoMaterializer(
 			});
 	});
 
-	const augmented: AttachTursoMaterializerBuilder = {
-		...coreBuilder,
-		// Re-bind .table so chained calls keep returning the augmented builder
-		// (with .client + .whenConnected), not the bare core builder.
-		table(table, config) {
-			coreBuilder.table(table, config);
-			return augmented;
-		},
-		whenConnected,
-		client: clientPromise,
-	};
-	return augmented;
+	return { ...core, whenConnected, client: clientPromise };
 }

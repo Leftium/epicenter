@@ -70,18 +70,19 @@ function createTestDb(): TestDb {
 }
 
 type AttachedTables = ReturnType<typeof attachTables<typeof tableDefinitions>>;
-type Materializer = ReturnType<typeof attachSqliteMaterializerCore>;
-type TableRegistration = {
-	table: Parameters<Materializer['table']>[0];
-	config?: Parameters<Materializer['table']>[1];
+
+type SetupBuildResult = {
+	// biome-ignore lint/suspicious/noExplicitAny: tests build heterogeneous subsets
+	tables: Record<string, any>;
+	fts?: Record<string, string[]>;
 };
 
 type SetupOptions = {
-	tables?: (t: AttachedTables) => TableRegistration[];
+	build?: (t: AttachedTables) => SetupBuildResult;
 	debounceMs?: number;
 };
 
-function setup({ tables: tableRegistrations, debounceMs }: SetupOptions = {}) {
+function setup({ build, debounceMs }: SetupOptions = {}) {
 	const db = createTestDb();
 
 	const cache = createDisposableCache(
@@ -89,20 +90,17 @@ function setup({ tables: tableRegistrations, debounceMs }: SetupOptions = {}) {
 			const ydoc = new Y.Doc({ guid: id });
 			const tables = attachTables(ydoc, tableDefinitions);
 
+			const built: SetupBuildResult = build?.(tables) ?? {
+				tables: { posts: tables.posts, notes: tables.notes },
+			};
+
 			const materializer = attachSqliteMaterializerCore(ydoc, {
 				db,
 				debounceMs,
+				tables: built.tables,
+				// biome-ignore lint/suspicious/noExplicitAny: tests erase row types through the setup helper
+				fts: built.fts as any,
 			});
-
-			const registrations =
-				tableRegistrations?.(tables) ??
-				([
-					{ table: tables.posts },
-					{ table: tables.notes },
-				] as TableRegistration[]);
-			for (const { table, config } of registrations) {
-				materializer.table(table, config);
-			}
 
 			return {
 				ydoc,
@@ -182,9 +180,8 @@ describe('attachSqliteMaterializerCore', () => {
 					const materializer = attachSqliteMaterializerCore(ydoc, {
 						db,
 						waitFor: gate.promise,
-					})
-						.table(tables.posts)
-						.table(tables.notes);
+						tables: { posts: tables.posts, notes: tables.notes },
+					});
 
 					return {
 						ydoc,
@@ -249,7 +246,9 @@ describe('attachSqliteMaterializerCore', () => {
 		});
 
 		test('mirrors only specified tables when tables option is provided', async () => {
-			const testSetup = setup({ tables: (t) => [{ table: t.posts }] });
+			const testSetup = setup({
+				build: (t) => ({ tables: { posts: t.posts } }),
+			});
 
 			try {
 				testSetup.workspace.tables.posts.set({
@@ -526,18 +525,18 @@ describe('attachSqliteMaterializerCore', () => {
 	// ============================================================================
 
 	describe('search', () => {
-		test('search returns empty array when fts is not configured', async () => {
+		test('fts namespace is absent when fts is not configured', async () => {
 			const testSetup = setup();
 
 			try {
 				await testSetup.workspace.sqlite.whenFlushed;
 
+				// The setup helper's build callback erases the FTS generic, so
+				// the runtime value is what we assert against: no FTS was passed,
+				// so the layer was never constructed, so `fts` is undefined.
 				expect(
-					await testSetup.workspace.sqlite.search({
-						table: 'posts',
-						query: 'hello',
-					}),
-				).toEqual([]);
+					(testSetup.workspace.sqlite as { fts?: unknown }).fts,
+				).toBeUndefined();
 			} finally {
 				await cleanup(testSetup);
 			}
@@ -546,11 +545,10 @@ describe('attachSqliteMaterializerCore', () => {
 		if (hasFts5) {
 			test('search returns ranked results with snippets when fts is configured', async () => {
 				const testSetup = setup({
-					tables: (t) =>
-						[
-							{ table: t.posts, config: { fts: ['title'] } },
-							{ table: t.notes },
-						] as TableRegistration[],
+					build: (t) => ({
+						tables: { posts: t.posts, notes: t.notes },
+						fts: { posts: ['title'] },
+					}),
 				});
 
 				try {
@@ -567,7 +565,10 @@ describe('attachSqliteMaterializerCore', () => {
 
 					await testSetup.workspace.sqlite.whenFlushed;
 
-					const results = (await testSetup.workspace.sqlite.search({
+					const sqliteWithFts = testSetup.workspace.sqlite as unknown as {
+						fts: { search: (input: Record<string, unknown>) => Promise<unknown> };
+					};
+					const results = (await sqliteWithFts.fts.search({
 						table: 'posts',
 						query: 'mirror',
 						limit: 10,
@@ -589,21 +590,41 @@ describe('attachSqliteMaterializerCore', () => {
 	// ============================================================================
 
 	describe('action brand', () => {
-		test('search, count, rebuild are detectable via isAction()', async () => {
+		test('count and rebuild are detectable via isAction()', async () => {
 			const testSetup = setup();
 
 			try {
 				const { sqlite } = testSetup.workspace;
-				expect(isAction(sqlite.search)).toBe(true);
 				expect(isAction(sqlite.count)).toBe(true);
 				expect(isAction(sqlite.rebuild)).toBe(true);
 
-				expect(isQuery(sqlite.search)).toBe(true);
 				expect(isQuery(sqlite.count)).toBe(true);
 				expect(isMutation(sqlite.rebuild)).toBe(true);
 			} finally {
 				await cleanup(testSetup);
 			}
 		});
+
+		if (hasFts5) {
+			test('fts.search is detectable via isAction() when configured', async () => {
+				const testSetup = setup({
+					build: (t) => ({
+						tables: { posts: t.posts },
+						fts: { posts: ['title'] },
+					}),
+				});
+
+				try {
+					await testSetup.workspace.sqlite.whenFlushed;
+					const sqliteWithFts = testSetup.workspace.sqlite as unknown as {
+						fts: { search: unknown };
+					};
+					expect(isAction(sqliteWithFts.fts.search)).toBe(true);
+					expect(isQuery(sqliteWithFts.fts.search)).toBe(true);
+				} finally {
+					await cleanup(testSetup);
+				}
+			});
+		}
 	});
 });

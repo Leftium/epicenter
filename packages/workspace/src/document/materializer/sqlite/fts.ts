@@ -1,20 +1,23 @@
 /**
- * FTS5 full-text search setup for the SQLite materializer.
+ * FTS5 full-text search for the SQLite materializer.
  *
- * Pure functions that generate FTS5 virtual tables and content-sync triggers,
- * plus the search query builder. Separated from the main materializer so
- * FTS concerns don't pollute the core sync logic.
+ * Owns the FTS5 virtual table DDL, content-sync triggers, the search SQL, and
+ * the `search` action exposed on the materializer's nested `fts` namespace.
+ * Kept out of `core.ts` so the materializer body only knows about Y.Doc →
+ * SQLite mirroring; the SQLite → FTS5 step lives entirely here.
  *
  * @module
  */
 
+import Type from 'typebox';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
 import type { Logger } from 'wellcrafted/logger';
-import type { MirrorDatabase } from './core.js';
+import { defineQuery } from '../../../shared/actions.js';
+import type { FtsConfig, MirrorDatabase, TablesRecord } from './core.js';
 import { quoteIdentifier } from './ddl.js';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -82,18 +85,15 @@ export type SearchResult = {
 
 /**
  * Create FTS5 virtual table and content-sync triggers for a materializer table.
+ * Module-private: only `createSqliteFtsLayer` below calls this.
  *
  * Sets up:
  * 1. `CREATE VIRTUAL TABLE IF NOT EXISTS {table}_fts USING fts5(...)` with content sync
  * 2. AFTER INSERT trigger to index new rows
  * 3. AFTER DELETE trigger to remove deleted rows
  * 4. AFTER UPDATE trigger to re-index changed rows
- *
- * @param db - The mirror database to execute DDL against
- * @param tableName - The source table name
- * @param columns - Column names to include in the FTS index
  */
-export async function setupFtsTable(
+async function setupFtsTable(
 	db: MirrorDatabase,
 	tableName: string,
 	columns: string[],
@@ -148,19 +148,13 @@ export async function setupFtsTable(
 
 /**
  * Execute a FTS5 search query against a materialized table.
+ * Module-private: called by `createSqliteFtsLayer`'s `search` handler.
  *
  * Returns ranked results with snippet text. The query is trimmed and
  * empty queries return an empty array. If the FTS table doesn't exist
  * or the query fails, returns an empty array with a warning.
- *
- * @param db - The mirror database to query
- * @param tableName - The source table name (FTS table is `{tableName}_fts`)
- * @param ftsColumns - The columns indexed in FTS5 (needed for snippet column index)
- * @param query - The FTS5 search query string
- * @param options - Optional search configuration (limit, snippet column)
- * @returns Array of search results sorted by relevance
  */
-export async function ftsSearch(
+async function ftsSearch(
 	db: MirrorDatabase,
 	tableName: string,
 	ftsColumns: string[],
@@ -210,6 +204,75 @@ export async function ftsSearch(
 		);
 		return [];
 	}
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// INTERNAL FTS LAYER
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Internal factory that owns the materializer's FTS surface.
+ *
+ * Constructed by `attachSqliteMaterializerCore` only when the caller passed an
+ * `fts` option. Holds the FTS column map, exposes a `beforeFullLoad()` setup
+ * pass that runs after table DDL and before the bulk insert (so triggers
+ * populate `<table>_fts` for free during the existing full-load), and surfaces
+ * the `search` action that lands on `materializer.fts.search`.
+ *
+ * Pure construction at call time: registers no listeners and runs no DDL.
+ * Returning the factory unconditionally would be fine; the caller decides
+ * whether to call it based on whether `fts` was provided, so the materializer's
+ * return type can omit `fts` entirely when no FTS was configured.
+ *
+ * @internal
+ */
+export function createSqliteFtsLayer<TTables extends TablesRecord>({
+	db,
+	fts,
+	log,
+}: {
+	db: MirrorDatabase;
+	fts: FtsConfig<TTables>;
+	log: Logger;
+}) {
+	const ftsColumns = new Map<string, string[]>();
+	for (const [tableName, columns] of Object.entries(fts)) {
+		if (Array.isArray(columns) && columns.length > 0) {
+			ftsColumns.set(tableName, columns as string[]);
+		}
+	}
+
+	async function beforeFullLoad(): Promise<void> {
+		for (const [tableName, columns] of ftsColumns) {
+			await setupFtsTable(db, tableName, columns);
+		}
+	}
+
+	const search = defineQuery({
+		title: 'Full-text search',
+		description: 'FTS5 search across materialized table rows',
+		input: Type.Object({
+			table: Type.String(),
+			query: Type.String(),
+			limit: Type.Optional(Type.Number()),
+		}),
+		handler: ({ table, query, limit }) => {
+			const columns = ftsColumns.get(table);
+			if (columns === undefined || columns.length === 0) {
+				return Promise.resolve<SearchResult[]>([]);
+			}
+			return ftsSearch(
+				db,
+				table,
+				columns,
+				query,
+				limit !== undefined ? { limit } : undefined,
+				log,
+			);
+		},
+	});
+
+	return { beforeFullLoad, search };
 }
 
 // ════════════════════════════════════════════════════════════════════════════

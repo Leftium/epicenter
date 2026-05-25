@@ -11,10 +11,10 @@ Every persistence, sync, materializer, and binding in `packages/workspace` (plus
 
 | Prefix     | Meaning                                                                                                                      |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `attach*`  | Side-effectful. Registers observers, destroy listeners, or subscription state. Return shape is free: fixed surface *or* chainable builder, both are `attach*`. |
+| `attach*`  | Side-effectful. Registers observers, destroy listeners, or subscription state. Returns a plain object whose surface is fixed at call time. |
 | `create*`  | Pure construction. No listeners, no subscriptions, no destroy registration at call time. Cache constructors qualify, e.g. `createFileContentDocs` returns a `createDisposableCache` result; nothing attaches until `.open(id)` is called. |
 
-Both return plain objects. The distinction is **what happens at call time**, not what the return value looks like. A chainable builder with `.table()/.kv()` that registers `table.observe(...)` is still `attach*`; chainability is a return-shape concern, orthogonal to naming.
+Both return plain objects. The distinction is **what happens at call time**, not what the return value looks like.
 
 ## The shape
 
@@ -39,29 +39,41 @@ attachAwareness(ydoc, defs)
 attachRichText(ydoc) / attachPlainText(ydoc) / attachTimeline(ydoc)
 ```
 
-**Chainable return is allowed** when per-entity configuration is incremental. Materializers follow the same `attachX(ydoc, opts)` shape: the builder registers specific table/kv references via `.table(ref, cfg)`:
+**Materializers** follow the same `attachX(ydoc, opts)` shape: pass the `tables` record (or an object subset) to choose what to mirror, and keep per-table customization in sibling option slots keyed by table name:
 
 ```ts
-attachMarkdownMaterializer(ydoc, { dir, waitFor })
-  .table(tables.files, {
-    filename: slugFilename('title'),
-    // Most real tables store body content in a separate Y.Doc (via
-    // createDisposableCache), so toMarkdown / fromMarkdown are typically
-    // bespoke callbacks; no sugar helper can abstract the async
-    // open/await/dispose cycle usefully.
-    toMarkdown: async (row) => {
-      using doc = fileContentDocs.open(row.id);
-      await doc.whenReady;
-      return { frontmatter: { id: row.id, name: row.name }, body: doc.content.read() };
+attachMarkdownMaterializer(ydoc, {
+  dir,
+  waitFor,
+  tables,
+  perTable: {
+    files: {
+      filename: slugFilename('title'),
+      // Most real tables store body content in a separate Y.Doc (via
+      // createDisposableCache), so toMarkdown / fromMarkdown are typically
+      // bespoke callbacks; no sugar helper can abstract the async
+      // open/await/dispose cycle usefully.
+      toMarkdown: async (row) => {
+        using doc = fileContentDocs.open(row.id);
+        await doc.whenReady;
+        return { frontmatter: { id: row.id, name: row.name }, body: doc.content.read() };
+      },
     },
-  })
-  .kv(kv);
+  },
+  kv,
+});
 
-attachSqliteMaterializer(ydoc, { db, waitFor })
-  .table(tables.posts, { fts: ['title'] });
+attachBunSqliteMaterializer(ydoc, {
+  filePath,
+  waitFor,
+  tables,
+  fts: { posts: ['title'] },
+});
 ```
 
-Passing `tables.files` directly (rather than a string name) mirrors y-prosemirror / y-codemirror: take the specific shared resource, not a bag plus a lookup key. The materializer reads `table.name` and `table.definition` off the reference internally. All `.table()` / `.kv()` registrations must happen synchronously after construction; calls after `whenFlushed` resolves throw.
+Per-table customization lives in `perTable: { [tableName]: { ... } }` (markdown) and FTS column opt-in lives in `fts: { [tableName]: ColumnKey[] }` (SQLite). Both slots narrow against `keyof tables`, so keys autocomplete and typos error at the call site. Passing the bare `tables` record mirrors every entry; an object subset (`tables: { files: tables.files }`) mirrors only what you list.
+
+The SQLite result surfaces FTS on a nested namespace: `sqlite.fts.search({ table, query })` exists when `fts: {...}` was passed; when omitted, `sqlite.fts` is absent from the return type entirely. Single attach call, single `whenFlushed` barrier; the FTS DDL and triggers run between table DDL and the bulk insert so triggers populate `<table>_fts` for free.
 
 ## The One Exception: Non-Ydoc Subject
 
@@ -99,7 +111,6 @@ The method form says "use the encryption's attach-tables" directly. Preferred wh
 2. **Teardown hooked to the subject's lifecycle.**
    - Y.Doc subject: `ydoc.once('destroy', ...)`. Never expose a `.destroy()` method on the attachment.
    - Attachment subject: use the subject attachment's disposal signal; or no teardown if there are no listeners.
-   - Chainable builders (materializers): `[Symbol.dispose]()` method on the builder, unsubscribes observers.
 3. **Idempotent cleanup.** If the underlying library also registers a destroy handler (like `y-indexeddb`), your handler must be safe to run alongside it.
 4. **Plain data returned.** The attachment is a record of promises, functions, and occasionally mutable state. No ES classes, no getters that lazy-init.
 5. **No id option on ydoc-bound primitives.** `ydoc.guid` is the identity. Read it off the doc.
@@ -127,9 +138,12 @@ const cache = createDisposableCache((id: string) => {
     url, openWebSocket, replicaId, actions,
     waitFor: Promise.all([idb.whenLoaded, unlock.whenChecked]),
   });
-  const markdown   = attachMarkdownMaterializer(ydoc, {           // chainable return
-    dir, waitFor: collaboration.whenConnected,
-  }).table(tables.posts, { filename: slugFilename('title') });
+  const markdown   = attachMarkdownMaterializer(ydoc, {
+    dir,
+    waitFor: collaboration.whenConnected,
+    tables,
+    perTable: { posts: { filename: slugFilename('title') } },
+  });
 
   return {
     ydoc, tables, encryption, idb, collaboration, markdown,
@@ -173,5 +187,5 @@ Use it whenever a primitive's startup must follow another's. Examples:
 - `packages/workspace/src/document/attach-indexed-db.ts` ; the canonical 40-line example.
 - `packages/workspace/src/document/open-collaboration.ts` ; document collaboration surface with sync, presence, peers, and action dispatch.
 - `packages/workspace/src/document/attach-encryption.ts` ; state-owning coordinator; exposes `attachTable` / `attachTables` / `attachKv` as methods.
-- `packages/workspace/src/document/materializer/markdown/materializer.ts` ; chainable builder with `.table()/.kv()`.
+- `packages/workspace/src/document/materializer/markdown/materializer.ts` ; tables and optional `perTable` / `kv` in the options bag, keyed by table name.
 - `apps/whispering/src/lib/client.ts`: full singleton composition.

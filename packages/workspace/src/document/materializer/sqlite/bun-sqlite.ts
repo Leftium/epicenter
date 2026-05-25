@@ -1,5 +1,5 @@
 /**
- * `attachBunSqliteMaterializer(ydoc, { filePath })`: bun:sqlite-backed
+ * `attachBunSqliteMaterializer(ydoc, { filePath, tables })`: bun:sqlite-backed
  * materializer. Owns the database file end-to-end: opens it (with the
  * writer-side WAL pragmas), mirrors Y.Doc table rows into it, and closes
  * the handle when the ydoc is destroyed.
@@ -12,7 +12,9 @@
  * const materializer = attachBunSqliteMaterializer(ydoc, {
  *   filePath: sqlitePath(projectDir, ydoc.guid),
  *   waitFor: idb.whenLoaded,
- * }).table(tables.entries, { fts: ['title', 'body'] });
+ *   tables,
+ *   fts: { entries: ['title', 'body'] },
+ * });
  *
  * // Daemon-local typed reads:
  * const schema = tablesToDrizzleSchema(definitions);
@@ -23,23 +25,44 @@
  * @module
  */
 
-import type { Database } from 'bun:sqlite';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
-import type { BaseRow, Table } from '../../attach-table.js';
 import { openWriterSqlite } from '../../sqlite-writer.js';
-import { attachSqliteMaterializerCore, type TableConfig } from './core.js';
+import {
+	attachSqliteMaterializerCore,
+	type FtsConfig,
+	type TablesRecord,
+} from './core.js';
 
 /**
  * Options for {@link attachBunSqliteMaterializer}.
  */
-export type AttachBunSqliteMaterializerOptions = {
+export type AttachBunSqliteMaterializerOptions<
+	TTables extends TablesRecord,
+	TFts extends FtsConfig<TTables> | undefined = undefined,
+> = {
 	/**
 	 * Absolute path to the bun:sqlite mirror file, or `':memory:'` for an
 	 * ephemeral in-memory mirror. The parent directory is created on demand
 	 * (no-op for `:memory:`).
 	 */
 	filePath: ':memory:' | (string & {});
+
+	/**
+	 * Workspace tables to mirror. Each entry becomes a SQLite table named
+	 * after the record key. Pass the whole `tables` record to mirror
+	 * everything, or an object literal subset like `{ notes: tables.notes }`
+	 * to mirror a strict subset.
+	 */
+	tables: TTables;
+
+	/**
+	 * Optional FTS5 configuration. Keys must match `tables` keys; values
+	 * list the columns of that table's row to include in the FTS index.
+	 * When provided, the result exposes `sqlite.fts.search(...)`; when
+	 * omitted, the `fts` namespace is absent from the return type.
+	 */
+	fts?: TFts;
 
 	/**
 	 * Debounce window for the materializer's incremental row flush. Defaults
@@ -64,49 +87,34 @@ export type AttachBunSqliteMaterializerOptions = {
 };
 
 /**
- * Builder returned by {@link attachBunSqliteMaterializer}. Mirrors the core
- * builder shape but threads `.client` through the chained `.table()` calls,
- * so consumers can write
- * `attachBunSqliteMaterializer(...).table(...).client` without losing the
- * augmentation through the chain.
- */
-export type AttachBunSqliteMaterializerBuilder = Omit<
-	ReturnType<typeof attachSqliteMaterializerCore>,
-	'table'
-> & {
-	table<TRow extends BaseRow>(
-		table: Table<TRow>,
-		config?: TableConfig<TRow>,
-	): AttachBunSqliteMaterializerBuilder;
-	/**
-	 * The underlying bun:sqlite Database handle. Use it directly or wrap in
-	 * Drizzle (`drizzle(materializer.client, { schema })`) for typed reads.
-	 */
-	client: Database;
-};
-
-/**
  * Attach a bun:sqlite-backed materializer to a Y.Doc. The materializer
  * opens the file at `filePath`, applies the writer-side WAL pragmas, and
  * closes the handle on `ydoc.destroy()`.
  *
- * The returned builder exposes the underlying `Database` as `.client`, so
+ * The returned object exposes the underlying `Database` as `.client`, so
  * callers can wrap it in Drizzle (`drizzle(materializer.client, { schema })`)
  * for typed reads against the same file.
  */
-export function attachBunSqliteMaterializer(
+export function attachBunSqliteMaterializer<
+	TTables extends TablesRecord,
+	TFts extends FtsConfig<TTables> | undefined = undefined,
+>(
 	ydoc: Y.Doc,
 	{
 		filePath,
+		tables,
+		fts,
 		debounceMs,
 		waitFor,
 		log = createLogger('attachBunSqliteMaterializer'),
-	}: AttachBunSqliteMaterializerOptions,
-): AttachBunSqliteMaterializerBuilder {
+	}: AttachBunSqliteMaterializerOptions<TTables, TFts>,
+) {
 	const client = openWriterSqlite({ filePath, log });
 
-	const coreBuilder = attachSqliteMaterializerCore(ydoc, {
+	const core = attachSqliteMaterializerCore<TTables, TFts>(ydoc, {
 		db: client,
+		tables,
+		fts,
 		debounceMs,
 		waitFor,
 		log,
@@ -128,15 +136,5 @@ export function attachBunSqliteMaterializer(
 		}
 	});
 
-	const augmented: AttachBunSqliteMaterializerBuilder = {
-		...coreBuilder,
-		// Re-bind .table so chained calls keep returning the augmented builder
-		// (with .client), not the bare core builder.
-		table(table, config) {
-			coreBuilder.table(table, config);
-			return augmented;
-		},
-		client,
-	};
-	return augmented;
+	return { ...core, client };
 }

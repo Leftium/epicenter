@@ -11,8 +11,8 @@
 
 import {
 	asDeviceId,
-	defineTable,
 	DeviceId,
+	defineTable,
 	generateId,
 	type Id,
 	type InferTableRow,
@@ -31,7 +31,6 @@ export const TAB_MANAGER_ID = 'epicenter.tab-manager';
 // ─────────────────────────────────────────────────────────────────────────────
 // Branded ID Types
 // ─────────────────────────────────────────────────────────────────────────────
-
 
 /**
  * Branded saved tab ID — nanoid generated when a tab is explicitly saved.

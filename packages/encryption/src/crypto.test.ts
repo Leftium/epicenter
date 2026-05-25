@@ -262,23 +262,17 @@ describe('deriveWorkspaceKey', () => {
 	test('matches Web Crypto HKDF output for fixed fixtures', async () => {
 		const fixtures = [
 			{
-				keyBytes: base64ToBytes(
-					'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
-				),
+				keyBytes: base64ToBytes('AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8='),
 				workspaceId: 'tab-manager',
 			},
 			{
-				keyBytes: base64ToBytes(
-					'8PHy8/T19vf4+fr7/P3+/wABAgMEBQYHCAkKCwwNDg8=',
-				),
+				keyBytes: base64ToBytes('8PHy8/T19vf4+fr7/P3+/wABAgMEBQYHCAkKCwwNDg8='),
 				workspaceId: 'workspace:with:colons',
 			},
 		];
 
 		for (const fixture of fixtures) {
-			expect(
-				deriveWorkspaceKey(fixture.keyBytes, fixture.workspaceId),
-			).toEqual(
+			expect(deriveWorkspaceKey(fixture.keyBytes, fixture.workspaceId)).toEqual(
 				await deriveWorkspaceKeyWithWebCrypto(
 					fixture.keyBytes,
 					fixture.workspaceId,

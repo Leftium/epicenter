@@ -12,7 +12,7 @@
 
 declare namespace Cloudflare {
 	// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-	type Env = {};
+	type Env = Record<PropertyKey, never>;
 }
 
 // Cloudflare Workers runtime modules referenced by the API

@@ -1,5 +1,5 @@
-import type { OwnerId } from '@epicenter/constants/identity';
 import { env } from 'cloudflare:workers';
+import type { OwnerId } from '@epicenter/constants/identity';
 import {
 	deriveKeyring as deriveKeyringFromRoot,
 	type Keyring,

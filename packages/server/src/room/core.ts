@@ -326,10 +326,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	function pickRecipient(deviceId: string): RoomSocket | null {
 		let newest: RoomSocket | null = null;
 		for (const [ws, data] of connections) {
-			if (
-				data.deviceId === deviceId &&
-				ws.readyState === WS_READY_OPEN
-			) {
+			if (data.deviceId === deviceId && ws.readyState === WS_READY_OPEN) {
 				newest = ws;
 			}
 		}

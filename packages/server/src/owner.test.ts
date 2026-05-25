@@ -10,8 +10,8 @@
  * `'team'`.
  */
 
-import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/constants/identity';
 import { describe, expect, test } from 'bun:test';
+import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/constants/identity';
 import { assetKey, doName } from './owner.js';
 
 const personal = asOwnerId('abc');

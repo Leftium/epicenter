@@ -5,10 +5,7 @@
  * on `billingKeys.all` clears every billing view in one call.
  */
 
-import type {
-	EventsQuery,
-	UsageQuery,
-} from '@epicenter/billing/contracts';
+import type { EventsQuery, UsageQuery } from '@epicenter/billing/contracts';
 import { defineMutation, defineQuery } from '$lib/query/client';
 import { billingApi } from './api';
 

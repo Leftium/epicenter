@@ -131,7 +131,10 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 						rawVisibility === ''
 					) {
 						visibility = 'private';
-					} else if (rawVisibility === 'private' || rawVisibility === 'public') {
+					} else if (
+						rawVisibility === 'private' ||
+						rawVisibility === 'public'
+					) {
 						visibility = rawVisibility;
 					} else {
 						const err = AssetError.InvalidVisibility({

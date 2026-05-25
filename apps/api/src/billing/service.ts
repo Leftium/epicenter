@@ -12,6 +12,7 @@
  * Autumn calls it needs and returns a DTO.
  */
 
+import type { UserId } from '@epicenter/auth';
 import { MODEL_CREDITS } from '@epicenter/billing/ai-model-pricing';
 import {
 	FEATURE_IDS,
@@ -35,7 +36,6 @@ import type {
 	UsageQuery,
 	UsageSeries,
 } from '@epicenter/billing/contracts';
-import type { UserId } from '@epicenter/auth';
 import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import { AssetError } from '@epicenter/constants/asset-errors';
 import { Autumn } from 'autumn-js';

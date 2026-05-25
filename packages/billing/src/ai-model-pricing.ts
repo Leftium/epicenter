@@ -93,7 +93,9 @@ export const MODEL_CREDITS: Partial<Record<SupportedModel, number>> = {
 /** Coarse provider classification used by the dashboard model-cost
  *  table. Models that do not match any prefix are labeled "Unknown"
  *  rather than guessed at, so a misclassification never quietly ships. */
-export function providerOf(model: string): 'OpenAI' | 'Google' | 'xAI' | 'Unknown' {
+export function providerOf(
+	model: string,
+): 'OpenAI' | 'Google' | 'xAI' | 'Unknown' {
 	if (
 		model.startsWith('gpt') ||
 		model.startsWith('o1') ||

@@ -33,8 +33,8 @@ import type { Env } from '../types.js';
 
 // `verifyAccessToken` carries no per-request state (`audience`, `issuer`,
 // `jwksUrl` are passed per call), so resolve it once at module load.
-const verifyAccessToken = oauthProviderResourceClient().getActions()
-	.verifyAccessToken;
+const verifyAccessToken =
+	oauthProviderResourceClient().getActions().verifyAccessToken;
 
 /**
  * Resolve the OAuth bearer on the current request to the calling user.

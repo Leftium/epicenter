@@ -52,8 +52,7 @@ export const RequestGuardError = defineErrors({
 		status: 403 as const,
 	}),
 	NotTeamMember: () => ({
-		message:
-			'The authenticated user is not a member of this team deployment.',
+		message: 'The authenticated user is not a member of this team deployment.',
 		status: 403 as const,
 	}),
 	ForbiddenOrigin: () => ({

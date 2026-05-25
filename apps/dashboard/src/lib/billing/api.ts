@@ -91,10 +91,7 @@ export const billingApi = {
 	models: () => get<ModelCostGuide>('/api/billing/models'),
 
 	previewPlanChange: (params: { planId: string }) =>
-		post<{ planId: string }, PlanChangePreview>(
-			'/api/billing/preview',
-			params,
-		),
+		post<{ planId: string }, PlanChangePreview>('/api/billing/preview', params),
 
 	checkoutPlan: (params: { planId: string; successUrl?: string }) =>
 		post<typeof params, CheckoutResult>('/api/billing/checkout/plan', params),

@@ -30,8 +30,9 @@ enum RecorderCmd {
     Shutdown,
 }
 
-/// Simplified recorder state
-pub struct RecorderState {
+/// CPAL-backed audio recorder. Owns the worker thread, command channel,
+/// and WAV writer for the active session (if any).
+pub struct Recorder {
     cmd_tx: Option<mpsc::Sender<RecorderCmd>>,
     worker_handle: Option<JoinHandle<()>>,
     writer: Option<Arc<Mutex<WavWriter>>>,
@@ -41,7 +42,7 @@ pub struct RecorderState {
     file_path: Option<PathBuf>,
 }
 
-impl RecorderState {
+impl Recorder {
     pub fn new() -> Self {
         Self {
             cmd_tx: None,
@@ -470,7 +471,7 @@ fn build_input_stream(
     Ok(stream)
 }
 
-impl Drop for RecorderState {
+impl Drop for Recorder {
     fn drop(&mut self) {
         let _ = self.close_session();
     }

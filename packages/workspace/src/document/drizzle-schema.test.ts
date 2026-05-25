@@ -18,7 +18,7 @@ import { createLogger } from 'wellcrafted/logger';
 import * as Y from 'yjs';
 import { attachTables, column, defineTable } from '../index.js';
 import { tablesToDrizzleSchema } from './drizzle-schema.js';
-import { attachSqliteMaterializer } from './materializer/sqlite/sqlite.js';
+import { attachSqliteMaterializer } from './materializer/sqlite/core.js';
 import { openSqliteReader } from './open-sqlite-reader.js';
 import { openWriterSqlite } from './sqlite-writer.js';
 

@@ -20,10 +20,53 @@ import {
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
 import { defineMutation, defineQuery } from '../../../shared/actions.js';
+import type { MaybePromise } from '../../../shared/types.js';
 import type { BaseRow, Table } from '../../attach-table.js';
 import { generateDdl, quoteIdentifier } from './ddl.js';
 import { ftsSearch, setupFtsTable } from './fts.js';
-import type { MirrorDatabase, SearchOptions, SearchResult } from './types.js';
+import type { SearchOptions, SearchResult } from './fts.js';
+
+// ════════════════════════════════════════════════════════════════════════════
+// INTERNAL SQL EXECUTOR CONTRACT
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Minimal SQL executor the materializer body talks to.
+ *
+ * Structurally compatible with sync drivers (`bun:sqlite`, `better-sqlite3`)
+ * and async WASM drivers (`@libsql/client`, `@tursodatabase/database`). The
+ * materializer `await`s every call, so sync drivers work without an adapter.
+ *
+ * Kept internal: each per-backend `attach*` factory (e.g.
+ * `attachBunSqliteMaterializer`) owns the adapter from a native client to
+ * this contract. Consumers never construct or pass one in.
+ *
+ * @internal
+ */
+export type MirrorDatabase = {
+	/** Execute raw SQL that does not return rows. */
+	run(sql: string): MaybePromise<unknown>;
+
+	/** Prepare a reusable statement for repeated reads or writes. */
+	prepare(sql: string): MaybePromise<MirrorStatement>;
+};
+
+/**
+ * Internal prepared statement interface. Sibling of {@link MirrorDatabase};
+ * each backend adapter constructs these from its native client.
+ *
+ * @internal
+ */
+export type MirrorStatement = {
+	/** Run a statement that writes data or otherwise returns no rows. */
+	run(...params: unknown[]): MaybePromise<unknown>;
+
+	/** Fetch all matching rows as plain objects. */
+	all(...params: unknown[]): MaybePromise<unknown[]>;
+
+	/** Fetch the first matching row, or null if none found. */
+	get(...params: unknown[]): MaybePromise<unknown>;
+};
 
 // biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous table helpers
 type AnyTable = Table<any>;

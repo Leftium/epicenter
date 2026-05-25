@@ -25,8 +25,7 @@ import {
 } from '../../../index.js';
 import { isAction, isMutation, isQuery } from '../../../shared/actions.js';
 import { column } from '../../column/index.js';
-import { attachSqliteMaterializer } from './sqlite.js';
-import type { MirrorDatabase } from './types.js';
+import { attachSqliteMaterializer, type MirrorDatabase } from './core.js';
 
 const postsTable = defineTable({
 	id: column.string(),

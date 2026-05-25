@@ -1,8 +1,3 @@
+export { attachSqliteMaterializer } from './core.js';
 export { generateDdl } from './ddl.js';
-export { attachSqliteMaterializer } from './sqlite.js';
-export type {
-	MirrorDatabase,
-	MirrorStatement,
-	SearchOptions,
-	SearchResult,
-} from './types.js';
+export type { SearchOptions, SearchResult } from './fts.js';

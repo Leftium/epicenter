@@ -30,7 +30,7 @@ import { quoteIdentifier } from './materializer/sqlite/ddl.js';
 import type {
 	SearchOptions,
 	SearchResult,
-} from './materializer/sqlite/types.js';
+} from './materializer/sqlite/fts.js';
 
 /**
  * Options for {@link openSqliteReader}.

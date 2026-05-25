@@ -1,29 +1,28 @@
 import { nanoid } from 'nanoid/non-secure';
 import { defineErrors } from 'wellcrafted/error';
 import { Ok } from 'wellcrafted/result';
-import { rpc } from '$lib/query';
 import { defineMutation } from '$lib/query/client';
 import { WhisperingErr } from '$lib/result';
 import { services } from '$lib/services';
 import { deviceConfig } from '$lib/state/device-config.svelte';
+import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { transformations } from '$lib/state/transformations.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 import * as transformClipboardWindow from '$routes/transform-clipboard/transformClipboardWindow.tauri';
+import { analytics } from './analytics';
+import { delivery } from './delivery';
+import { notify } from './notify';
+import { sound } from './sound';
+import { text } from './text';
+import { transcribeBlob } from './transcription';
 
 const ImportError = defineErrors({
 	NoImportableFiles: () => ({
 		message: 'No valid audio or video files found',
 	}),
 });
-
-import { delivery } from './delivery';
-import { notify } from './notify';
-import { manualRecorder } from '$lib/state/manual-recorder.svelte';
-import { sound } from './sound';
-import { text } from './text';
-import { transcribeBlob } from './transcription';
 import { transformer } from './transformer';
 
 /**
@@ -184,7 +183,7 @@ const stopManualRecording = defineMutation({
 			duration = Date.now() - manualRecordingStartTime;
 			manualRecordingStartTime = null; // Reset for next recording
 		}
-		rpc.analytics.logEvent({
+		analytics.logEvent({
 			type: 'manual_recording_completed',
 			blob_size: blob.size,
 			duration,
@@ -236,7 +235,7 @@ const startVadRecording = defineMutation({
 					sound.playSoundIfEnabled('vad-capture');
 
 					// Log VAD recording completion
-					rpc.analytics.logEvent({
+					analytics.logEvent({
 						type: 'vad_recording_completed',
 						blob_size: blob.size,
 						// VAD doesn't track duration by default
@@ -457,7 +456,7 @@ export const actions = {
 					const audioBlob = new Blob([arrayBuffer], { type: file.type });
 
 					// Log file upload event
-					rpc.analytics.logEvent({
+					analytics.logEvent({
 						type: 'file_uploaded',
 						blob_size: audioBlob.size,
 					});

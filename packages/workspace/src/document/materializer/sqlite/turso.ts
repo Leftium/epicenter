@@ -41,7 +41,7 @@
  * @module
  */
 
-import { connect, type Database } from '@tursodatabase/database';
+import { connect } from '@tursodatabase/database';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
 import {
@@ -117,16 +117,7 @@ export function attachTursoMaterializer<TTables extends TablesRecord>(
 		waitFor,
 		log = createLogger('attachTursoMaterializer'),
 	}: AttachTursoMaterializerOptions<TTables>,
-): ReturnType<typeof attachSqliteMaterializerCore<TTables>> & {
-	/** Resolves once Turso's `connect()` has completed. */
-	whenConnected: Promise<void>;
-	/**
-	 * The underlying Turso `Database` handle. Async because `connect()` is
-	 * async; most callers `await materializer.whenFlushed` first, by which
-	 * point the promise has already resolved.
-	 */
-	client: Promise<Database>;
-} {
+) {
 	const clientPromise = connect(path);
 	const whenConnected = clientPromise.then(() => undefined);
 

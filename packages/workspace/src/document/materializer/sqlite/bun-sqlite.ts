@@ -25,7 +25,6 @@
  * @module
  */
 
-import type { Database } from 'bun:sqlite';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
 import { openWriterSqlite } from '../../sqlite-writer.js';
@@ -103,13 +102,7 @@ export function attachBunSqliteMaterializer<TTables extends TablesRecord>(
 		waitFor,
 		log = createLogger('attachBunSqliteMaterializer'),
 	}: AttachBunSqliteMaterializerOptions<TTables>,
-): ReturnType<typeof attachSqliteMaterializerCore<TTables>> & {
-	/**
-	 * The underlying bun:sqlite Database handle. Use it directly or wrap in
-	 * Drizzle (`drizzle(materializer.client, { schema })`) for typed reads.
-	 */
-	client: Database;
-} {
+) {
 	const client = openWriterSqlite({ filePath, log });
 
 	const core = attachSqliteMaterializerCore(ydoc, {

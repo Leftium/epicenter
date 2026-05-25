@@ -136,8 +136,8 @@ type TablesRecord = Record<string, Table<any>>;
  * level.
  */
 export type PerTableConfig<TTables extends TablesRecord> = {
-	[K in keyof TTables]?: TTables[K] extends Table<infer R>
-		? MarkdownTableConfig<R>
+	[K in keyof TTables]?: TTables[K] extends Table<infer TRow>
+		? MarkdownTableConfig<TRow>
 		: never;
 };
 
@@ -167,14 +167,8 @@ const defaultToMarkdown = (row: BaseRow) =>
 const defaultFromMarkdown = (parsed: MarkdownShape): BaseRow =>
 	parsed.frontmatter as BaseRow;
 
-/**
- * Default KV serializer: pretty-printed JSON in `kv.json`. Used whenever a
- * registered kv's `config.serialize` isn't provided.
- */
-const defaultKvSerialize = (data: Record<string, unknown>) => ({
-	filename: 'kv.json',
-	content: JSON.stringify(data, null, 2),
-});
+/** Filename for the KV mirror: a single pretty-printed JSON file. */
+const KV_FILENAME = 'kv.json';
 
 /**
  * Compose a row into the full on-disk artifact: filename + content string.
@@ -365,9 +359,9 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 		{ kv }: RegisteredKv,
 	): Promise<() => void> {
 		const state: Record<string, unknown> = { ...kv.getAll() };
+		const kvPath = join(baseDir, KV_FILENAME);
 
-		const initial = defaultKvSerialize(state);
-		await writeFile(join(baseDir, initial.filename), initial.content);
+		await writeFile(kvPath, JSON.stringify(state, null, 2));
 
 		return kv.observeAll((changes) => {
 			void (async () => {
@@ -375,8 +369,7 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 					if (change.type === 'set') state[key] = change.value;
 					else delete state[key];
 				}
-				const result = defaultKvSerialize(state);
-				await writeFile(join(baseDir, result.filename), result.content);
+				await writeFile(kvPath, JSON.stringify(state, null, 2));
 			})().catch((cause) => {
 				log.warn(MaterializerWriteError.KvWriteFailed({ cause }));
 			});
@@ -535,20 +528,7 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 		let deleted = 0;
 		let written = 0;
 
-		const targets =
-			tableName !== undefined
-				? ([registered.get(tableName)].filter(
-						(entry): entry is RegisteredTable => entry !== undefined,
-					) as RegisteredTable[])
-				: [...registered.values()];
-
-		if (tableName !== undefined && targets.length === 0) {
-			throw new Error(
-				`Cannot rebuild "${tableName}": not in the materialized table set.`,
-			);
-		}
-
-		for (const entry of targets) {
+		async function rebuildOne(entry: RegisteredTable) {
 			const directory = join(baseDir, entry.config.dir ?? entry.table.name);
 
 			// Sweep existing .md files
@@ -574,12 +554,26 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 			}
 		}
 
-		// Re-materialize KV if registered and this is a full reindex.
-		if (tableName === undefined && registeredKv) {
-			const { kv } = registeredKv;
-			const state = { ...kv.getAll() };
-			const result = defaultKvSerialize(state);
-			await writeFile(join(baseDir, result.filename), result.content);
+		if (tableName !== undefined) {
+			const entry = registered.get(tableName);
+			if (entry === undefined) {
+				throw new Error(
+					`Cannot rebuild "${tableName}": not in the materialized table set.`,
+				);
+			}
+			await rebuildOne(entry);
+			return { deleted, written };
+		}
+
+		for (const entry of registered.values()) await rebuildOne(entry);
+
+		// Full reindex: re-materialize KV if registered.
+		if (registeredKv) {
+			const state = { ...registeredKv.kv.getAll() };
+			await writeFile(
+				join(baseDir, KV_FILENAME),
+				JSON.stringify(state, null, 2),
+			);
 			written++;
 		}
 

@@ -10,8 +10,9 @@
  * and (for multi-version tables) one migrate function. The user-facing row
  * type contains only the user's columns.
  *
- * For encrypted storage, call `encryption.attachTable` on the coordinator
- * returned by `attachEncryption(ydoc, { keyring })`.
+ * For encrypted storage, pass table definitions via the `tables:` slot on
+ * `attachEncryption(ydoc, { keyring, tables, kv })` and destructure the
+ * constructed handles from the return.
  */
 
 import { type Static, type TObject, type TSchema, Type } from 'typebox';

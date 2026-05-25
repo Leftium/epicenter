@@ -1,8 +1,8 @@
 /**
- * attachEncryption: per-ydoc encryption coordinator.
+ * attachEncryption: per-ydoc constructor for the workspace's encrypted stores.
  *
  * A workspace owns several `EncryptedYKeyValueLww` stores (one per table plus
- * the KV store). This attachment derives a per-workspace HKDF keyring at
+ * the KV store). This primitive derives a per-workspace HKDF keyring at
  * construction time, activates every store, and returns the constructed
  * encrypted handles atomically:
  *

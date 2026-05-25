@@ -75,17 +75,9 @@ Per-table customization lives in `perTable: { [tableName]: { ... } }` (markdown)
 
 The SQLite result surfaces FTS on a nested namespace: `sqlite.fts.search({ table, query })` exists when `fts: {...}` was passed; when omitted, `sqlite.fts` is absent from the return type entirely. Single attach call, single `whenFlushed` barrier; the FTS DDL and triggers run between table DDL and the bulk insert so triggers populate `<table>_fts` for free.
 
-## The One Exception: Non-Ydoc Subject
+## Non-Ydoc Subject (rare)
 
-When a primitive modifies a sibling attachment and the coordination is cross-package (so it can't be a method on the coordinator), it's a top-level function with the attachment as first arg:
-
-```ts
-attachSessionUnlock(encryption, { sessions, serverUrl, waitFor })
-```
-
-This is rare: one example in the whole codebase. It lives in `@epicenter/cli` and operates on an `EncryptionAttachment` defined in `@epicenter/workspace`; making it a method on the workspace type would couple packages backwards, so it stays a top-level function.
-
-If the primitive is in-package with its coordinator, prefer method-on-coordinator (below) over a top-level `attachX(attachment, opts)`.
+When a primitive operates on a sibling attachment rather than the Y.Doc itself (cross-package coordination, for example), the subject is that attachment and the call shape stays `attachX(subject, opts)`. No examples currently in the repo; the pattern is documented in case it ever surfaces.
 
 ## Constructor primitives (the encryption case)
 

@@ -195,11 +195,11 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 
 	function createImportClient() {
 		const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
-		const encryption = attachEncryption(ydoc, {
+		const { tables, kv } = attachEncryption(ydoc, {
 			keyring: () => TEST_ENCRYPTION_KEYS,
+			tables: opensidianTables,
+			kv: {},
 		});
-		const tables = encryption.attachTables(opensidianTables);
-		const kv = encryption.attachKv({});
 		const persistence = attachYjsLog(ydoc, {
 			filePath: join(IMPORT_PERSISTENCE, 'opensidian.db'),
 		});

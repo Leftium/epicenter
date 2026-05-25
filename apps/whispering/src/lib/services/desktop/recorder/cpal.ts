@@ -200,15 +200,28 @@ export const CpalRecorderServiceLive: RecorderService = {
 	stopRecording: async ({
 		sendStatus,
 	}): Promise<Result<{ blob: Blob; recordingId: string }, RecorderError>> => {
-		if (!activeRecording) {
-			return RecorderError.NotRecording({
-				message:
-					'Cannot stop recording because no active recording session was found. Make sure you have started recording before attempting to stop it.',
-			});
+		// Fast path uses the recordingId captured at startRecording. After a JS
+		// reload mid-recording the closure is gone but Rust is still going; fall
+		// back to asking Rust which recording is currently active.
+		let recordingId: string;
+		if (activeRecording) {
+			recordingId = activeRecording.recordingId;
+			activeRecording = null;
+		} else {
+			const { data: liveRecordingId, error: getIdError } = await invoke<
+				string | null
+			>('get_current_recording_id');
+			if (getIdError) {
+				return RecorderError.GetStateFailed({ cause: getIdError });
+			}
+			if (!liveRecordingId) {
+				return RecorderError.NotRecording({
+					message:
+						'Cannot stop recording because no active recording session was found. Make sure you have started recording before attempting to stop it.',
+				});
+			}
+			recordingId = liveRecordingId;
 		}
-
-		const { recordingId } = activeRecording;
-		activeRecording = null;
 
 		const { data: audioRecording, error: stopRecordingError } =
 			await invoke<AudioRecording>('stop_recording');

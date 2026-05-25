@@ -24,6 +24,15 @@
  * shared across all stores in this workspace). When absent, stores are
  * constructed plaintext. One factory, both modes.
  *
+ * The asymmetry is intentional: the encryption boundary is "does this
+ * workspace participate in untrusted persistence (Cloud sync, encrypted
+ * IndexedDB)?" Real user workspaces always pass a keyring because they
+ * persist or sync. Tests, in-memory importers, and benchmarks omit it
+ * because they live and die in-process and have no off-device data to
+ * protect. There is no auto-generated "local keyring" for the no-keyring
+ * path: that would silently invent a new key-recovery surface the caller
+ * never opted into.
+ *
  * ## Disposal
  *
  * `using workspace` triggers `ydoc.destroy()`, which cascades through every
@@ -96,15 +105,26 @@ export type CreateWorkspaceOptions<
 /**
  * Build a fully wired workspace bundle: `{ ydoc, tables, kv, [Symbol.dispose] }`.
  *
- * Behavior:
+ * The encrypted branch is the production path. It runs the same
+ * construct, activate, hook-destroy sequence the deleted `attachEncryption`
+ * primitive ran: one HKDF step over `keyring()` and `id`, then every
+ * table and the KV slot are activated before any handle escapes. Lifting
+ * that work into `createWorkspace` means the Y.Doc and its stores are
+ * owned together (no temporal window where the doc exists but its stores
+ * are not yet encrypted).
+ *
+ * Step by step:
  *   1. Construct `new Y.Doc({ guid: id, gc: true })`.
- *   2. If `keyring` is provided, derive the per-workspace keyring once via
- *      HKDF over `keyring()` + `id`, then activate every store with it.
- *   3. For each `tables[name]`: create an encrypted or plaintext YKV store on
- *      `ydoc.getArray(TableKey(name))` and wrap with `createTable`.
- *   4. For `kv`: same on `ydoc.getArray(KV_KEY)`, wrapped with `createKv`.
- *   5. Each store hooks `ydoc.once('destroy', ...)` for cascade disposal.
- *   6. `[Symbol.dispose]()` calls `ydoc.destroy()`.
+ *   2. If `keyring` is provided, derive the per-workspace HKDF keyring
+ *      once. One derivation is reused for every store in this workspace
+ *      (table stores and the KV slot) so an N-table workspace pays one
+ *      HKDF cost, not N.
+ *   3. For each table definition and for the KV slot: build a YKV store
+ *      over `ydoc.getArray(...)`, hook `ydoc.once('destroy', dispose)`,
+ *      and (encrypted mode only) call `activateEncryption(workspaceKeyring)`.
+ *   4. Wrap with `createTable` / `createKv` for the typed surfaces.
+ *   5. `[Symbol.dispose]()` calls `ydoc.destroy()`, which fires every
+ *      registered destroy hook in turn.
  */
 export function createWorkspace<
 	TTables extends TableDefinitions,
@@ -117,10 +137,30 @@ export function createWorkspace<
 		gc: true,
 	});
 
+	// One HKDF derivation per workspace, not per store. `null` selects
+	// the plaintext branch in `attachStore`. See "Encrypted vs plaintext"
+	// in the module doc for when that branch is intended.
 	const workspaceKeyring = options.keyring
 		? deriveWorkspaceKeyring(options.keyring(), options.id)
 		: null;
 
+	/**
+	 * Build one store for a single workspace slot (one table, or the KV
+	 * singleton). Two modes, selected by `workspaceKeyring`:
+	 *
+	 *   - Encrypted (`workspaceKeyring !== null`): the same
+	 *     construct, hook-destroy, activate-encryption sequence the
+	 *     deleted `attachEncryption` primitive ran. The store is
+	 *     activated with the per-workspace keyring before it returns,
+	 *     so no caller ever sees a not-yet-encrypted store.
+	 *   - Plaintext (`workspaceKeyring === null`): bare YKV over a raw
+	 *     `Y.Array`. Intended for in-memory importers, tests, and
+	 *     benchmarks. Real user workspaces never take this branch.
+	 *
+	 * Both modes hook `ydoc.once('destroy', ...)` so a single
+	 * `ydoc.destroy()` (triggered by `using` scope exit or an explicit
+	 * `[Symbol.dispose]()`) cascades through every store.
+	 */
 	function attachStore(arrayKey: string): ObservableKvStore<unknown> {
 		if (workspaceKeyring) {
 			const store = createEncryptedYkvLww<unknown>(ydoc, arrayKey);

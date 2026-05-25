@@ -1,34 +1,36 @@
 /**
- * attachEncryption: per-ydoc encryption coordinator.
+ * attachEncryption: per-ydoc constructor for the workspace's encrypted stores.
  *
  * A workspace owns several `EncryptedYKeyValueLww` stores (one per table plus
- * the KV store). This attachment derives a per-workspace HKDF keyring at
- * attach time and calls `activateEncryption(keyring)` on each store before
- * the caller gets it back. Call the methods on the returned attachment to
- * register encrypted resources:
+ * the KV store). This primitive derives a per-workspace HKDF keyring at
+ * construction time, activates every store, and returns the constructed
+ * encrypted handles atomically:
  *
  * ```ts
- * const encryption = attachEncryption(ydoc, { keyring: () => ownerKeyring });
- * const tables = encryption.attachTables(defs);
- * const kv = encryption.attachKv(defs);
+ * const { tables, kv } = attachEncryption(ydoc, {
+ *   keyring: () => ownerKeyring,
+ *   tables: tableDefs,
+ *   kv: kvDefs,
+ * });
  * ```
  *
- * The method names mirror the plaintext primitives (`attachTable`,
- * `attachTables`, `attachKv`) so the pattern reads symmetrically:
- * "encryption's attach-tables" vs "plain attach-tables."
+ * Slots are *definition maps* (not handles): encryption constructs the
+ * encrypted store for every entry. Compare to the materializer primitives,
+ * whose `tables:` slot takes already-constructed handles to mirror; here
+ * `tables:` takes the same `TableDefinitions` you'd hand to plaintext
+ * `attachTables`, and encryption returns the constructed `Tables<T>`.
  *
- * ## Key source: lazy callback
+ * ## Key source: lazy callback, single derivation
  *
- * `keyring` is a callback into whoever owns identity. The coordinator calls
- * it synchronously at every `attachTable` / `attachKv` site, derives the
- * per-workspace keyring, and activates the store. The keyring is not cached
- * on the attachment: each attach call is its own derivation, which keeps
- * state out of this layer entirely.
+ * `keyring` is a callback into whoever owns identity. It's invoked once at
+ * construction, derived into a per-workspace keyring via HKDF, and that
+ * keyring activates every store before any handle is returned. Throw inside
+ * `keyring()` if no keyring is available (e.g. signed-out): a throw here
+ * means the workspace outlived its signed-in scope, which is a caller bug.
  *
  * Same-owner identity updates (key rotation, profile edits) do not flow
  * through this attachment. Authenticated apps reload the page on
- * different-owner transitions; same-owner updates are observed lazily
- * via the `keyring` callback the next time it runs.
+ * different-owner transitions.
  *
  * ## Local persistence concerns live elsewhere
  *
@@ -41,21 +43,20 @@
  *
  * ## Disposal
  *
- * Each attached store hooks `ydoc.once('destroy', ...)` at attach time,
- * mirroring the plaintext `attachTable` / `attachKv` primitives. Callers tear
- * down encryption by calling `ydoc.destroy()`: the attachment does not expose
- * a standalone `dispose()` method.
+ * Each store hooks `ydoc.once('destroy', ...)` at construction, mirroring the
+ * plaintext `attachTable` / `attachKv` primitives. Callers tear down
+ * encryption by calling `ydoc.destroy()`: the attachment does not expose a
+ * standalone `dispose()` method.
  *
  * ## What this attachment does NOT do
  *
  * - It does not wipe local storage. `wipeLocalStorage({ server, ownerId })` owns that.
  * - It does not validate that every encryption-capable slot on the Y.Doc got
  *   registered. The caller owns the composition: if you pair a plaintext
- *   `attachTable` with `encryption.attachTable` targeting the *same slot
- *   name*, Yjs hands both calls the same underlying `Y.Array` and you get a
- *   silent plaintext-over-ciphertext race. The verb (`encryption.attachTable`
- *   vs plain `attachTable`) is the primary defense; review call sites
- *   accordingly. One slot name, one attach site, one intent.
+ *   `attachTable` with a `tables:` entry on `attachEncryption` targeting the
+ *   *same slot name*, Yjs hands both calls the same underlying `Y.Array` and
+ *   you get a silent plaintext-over-ciphertext race. One slot name, one
+ *   attach site, one intent.
  *
  * ## Why `workspaceId` is read from `ydoc.guid`
  *
@@ -70,125 +71,76 @@
 
 import type { Keyring } from '@epicenter/encryption';
 import type * as Y from 'yjs';
+import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
+import { createKv, type KvDefinitions } from './attach-kv.js';
 import {
-	createEncryptedYkvLww,
-	type EncryptedYKeyValueLww,
-} from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import { createKv, type Kv, type KvDefinitions } from './attach-kv.js';
-import {
-	createReadonlyTable,
 	createTable,
-	type InferTableRow,
-	type ReadonlyTable,
-	type ReadonlyTables,
-	type Table,
-	type TableDefinition,
 	type TableDefinitions,
 	type Tables,
 } from './attach-table.js';
 import { deriveWorkspaceKeyring } from './derive-workspace-keyring.js';
 import { KV_KEY, TableKey } from './keys.js';
 
-export type AttachEncryptionOptions = {
-	/**
-	 * Lazy reader for the current owner keyring.
-	 *
-	 * Called synchronously at every `attachTable` / `attachKv` site. Throw if
-	 * no keyring is available (e.g. signed-out): a throw here means the
-	 * workspace outlived its signed-in scope, which is a caller bug.
-	 */
+export type AttachEncryptionOptions<
+	TTables extends TableDefinitions,
+	TKv extends KvDefinitions,
+> = {
+	/** Lazy reader for the current owner keyring; invoked once at construction. */
 	keyring: () => Keyring;
-};
-
-export type EncryptionAttachment = {
 	/**
-	 * Attach an encrypted table to the coordinator's Y.Doc. The store is
-	 * activated with the current keyring (via `keyring()`) before being
-	 * returned.
+	 * Table definitions to register as encrypted stores, keyed by table name.
+	 * Pass the same record you'd hand to plaintext `attachTables`.
 	 */
-	attachTable<
-		// biome-ignore lint/suspicious/noExplicitAny: variance-friendly: defineTable already constrains schemas
-		TTableDefinition extends TableDefinition<any>,
-	>(
-		name: string,
-		definition: TTableDefinition,
-	): Table<InferTableRow<TTableDefinition>>;
-
-	attachReadonlyTable<
-		// biome-ignore lint/suspicious/noExplicitAny: variance-friendly
-		TTableDefinition extends TableDefinition<any>,
-	>(
-		name: string,
-		definition: TTableDefinition,
-	): ReadonlyTable<InferTableRow<TTableDefinition>>;
-
+	tables: TTables;
 	/**
-	 * Batch sugar over `attachTable`: one encrypted store per entry, keyed by
-	 * name.
+	 * KV definitions to register on the encrypted KV singleton. Pass `{}` to
+	 * register the slot without any typed keys (apps that don't read KV through
+	 * the typed helper still want the slot claimed so the daemon syncs it).
 	 */
-	attachTables<T extends TableDefinitions>(definitions: T): Tables<T>;
-
-	attachReadonlyTables<T extends TableDefinitions>(
-		definitions: T,
-	): ReadonlyTables<T>;
-
-	/**
-	 * Attach the encrypted KV singleton to the coordinator's Y.Doc.
-	 */
-	attachKv<T extends KvDefinitions>(definitions: T): Kv<T>;
+	kv: TKv;
 };
 
 /**
- * Create an encryption coordinator bound to `ydoc`.
+ * Create the encrypted stores for a workspace Y.Doc and return them keyed by
+ * name.
  *
- * The returned coordinator owns `attachTable` / `attachTables` / `attachKv`
- * methods: call them to register encrypted resources. The coordinator reads
- * `options.keyring()` synchronously at each registration site and
- * activates the resource before returning it.
+ * Atomic: derives one per-workspace keyring, activates every store, and
+ * returns the constructed `{ tables, kv }` bundle in a single call. No
+ * temporal registration window, no mid-session attachment.
  */
-export function attachEncryption(
+export function attachEncryption<
+	TTables extends TableDefinitions,
+	TKv extends KvDefinitions,
+>(
 	ydoc: Y.Doc,
-	options: AttachEncryptionOptions,
-): EncryptionAttachment {
-	const workspaceId = ydoc.guid;
+	{
+		keyring,
+		tables: tableDefs,
+		kv: kvDefs,
+	}: AttachEncryptionOptions<TTables, TKv>,
+) {
+	const workspaceKeyring = deriveWorkspaceKeyring(keyring(), ydoc.guid);
 
-	// biome-ignore lint/suspicious/noExplicitAny: variance
-	function attachStore(key: string): EncryptedYKeyValueLww<any> {
+	function attachStore(key: string) {
 		const store = createEncryptedYkvLww(ydoc, key);
 		ydoc.once('destroy', () => store[Symbol.dispose]());
-		store.activateEncryption(
-			deriveWorkspaceKeyring(options.keyring(), workspaceId),
-		);
+		store.activateEncryption(workspaceKeyring);
 		return store;
 	}
 
-	const attachment: EncryptionAttachment = {
-		attachTable(name, definition) {
-			return createTable(attachStore(TableKey(name)), definition, name);
-		},
-		attachReadonlyTable(name, definition) {
-			return createReadonlyTable(attachStore(TableKey(name)), definition, name);
-		},
-		attachTables(definitions) {
-			return Object.fromEntries(
-				Object.entries(definitions).map(([name, def]) => [
-					name,
-					attachment.attachTable(name, def),
-				]),
-			) as Tables<typeof definitions>;
-		},
-		attachReadonlyTables(definitions) {
-			return Object.fromEntries(
-				Object.entries(definitions).map(([name, def]) => [
-					name,
-					attachment.attachReadonlyTable(name, def),
-				]),
-			) as ReadonlyTables<typeof definitions>;
-		},
-		attachKv(definitions) {
-			return createKv(attachStore(KV_KEY), definitions);
-		},
-	};
+	const tables = Object.fromEntries(
+		Object.entries(tableDefs).map(([name, def]) => [
+			name,
+			createTable(attachStore(TableKey(name)), def, name),
+		]),
+	) as Tables<TTables>;
 
-	return attachment;
+	const kv = createKv(attachStore(KV_KEY), kvDefs);
+
+	return { tables, kv };
 }
+
+export type EncryptionAttachment<
+	TTables extends TableDefinitions,
+	TKv extends KvDefinitions,
+> = ReturnType<typeof attachEncryption<TTables, TKv>>;

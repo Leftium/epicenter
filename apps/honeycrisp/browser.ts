@@ -46,9 +46,11 @@ export function openHoneycrispBrowser({
 	deviceId: DeviceId;
 }) {
 	const ydoc = new Y.Doc({ guid: HONEYCRISP_ID, gc: true });
-	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
-	const tables = encryption.attachTables(honeycrispTables);
-	const kv = encryption.attachKv({});
+	const { tables, kv } = attachEncryption(ydoc, {
+		keyring: signedIn.keyring,
+		tables: honeycrispTables,
+		kv: {},
+	});
 	const actions = createHoneycrispActions(tables);
 
 	const idb = attachLocalStorage(ydoc, {

@@ -6,8 +6,9 @@
  * invalid or missing values return the result of the definition's
  * `defaultValue()` factory.
  *
- * For encrypted storage, call `encryption.attachKv` on the coordinator
- * returned by `attachEncryption(ydoc, { keyring })`.
+ * For encrypted storage, pass KV definitions via the `kv:` slot on
+ * `attachEncryption(ydoc, { keyring, tables, kv })` and destructure the
+ * constructed `kv` handle from the return.
  *
  * `attachKv` and `createKv` accept an optional `{ logger? }`: when provided,
  * validation failures emit `logger.warn(KvError.ValidationFailed({ key, raw }))`

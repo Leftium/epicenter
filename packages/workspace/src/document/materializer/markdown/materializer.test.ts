@@ -26,8 +26,8 @@ import {
 	defineTable,
 } from '../../../index.js';
 import { parseMarkdownFile } from '../../../markdown/parse-markdown-file.js';
-import { column } from '../../column/index.js';
 import type { Table } from '../../attach-table.js';
+import { column } from '../../column/index.js';
 import {
 	attachMarkdownMaterializer,
 	type MarkdownShape,
@@ -135,7 +135,9 @@ async function setup({ build }: SetupOptions = {}) {
 
 describe('push', () => {
 	test('imports markdown files into workspace tables', async () => {
-		const { workspace } = await setup({ build: (t) => ({ tables: { posts: t.posts } }) });
+		const { workspace } = await setup({
+			build: (t) => ({ tables: { posts: t.posts } }),
+		});
 		await writeTestFile(
 			'posts/hello.md',
 			'---\nid: post-1\ntitle: Hello World\npublished: true\n---\n',
@@ -162,7 +164,9 @@ describe('push', () => {
 	});
 
 	test('skips non-.md files', async () => {
-		const { workspace } = await setup({ build: (t) => ({ tables: { posts: t.posts } }) });
+		const { workspace } = await setup({
+			build: (t) => ({ tables: { posts: t.posts } }),
+		});
 		await writeTestFile(
 			'posts/valid.md',
 			'---\nid: p1\ntitle: Valid\npublished: false\n---\n',
@@ -179,7 +183,9 @@ describe('push', () => {
 	});
 
 	test('skips files without valid frontmatter', async () => {
-		const { workspace } = await setup({ build: (t) => ({ tables: { posts: t.posts } }) });
+		const { workspace } = await setup({
+			build: (t) => ({ tables: { posts: t.posts } }),
+		});
 		await writeTestFile(
 			'posts/valid.md',
 			'---\nid: p1\ntitle: Valid\npublished: false\n---\n',
@@ -198,7 +204,9 @@ describe('push', () => {
 	});
 
 	test('silently skips tables whose directories do not exist', async () => {
-		const { workspace } = await setup({ build: (t) => ({ tables: { posts: t.posts } }) });
+		const { workspace } = await setup({
+			build: (t) => ({ tables: { posts: t.posts } }),
+		});
 		// Don't create the posts directory. It should not exist.
 		const result = await workspace.materializer.push();
 
@@ -210,7 +218,9 @@ describe('push', () => {
 	});
 
 	test('emits error event when frontmatter fails schema validation', async () => {
-		const { workspace } = await setup({ build: (t) => ({ tables: { posts: t.posts } }) });
+		const { workspace } = await setup({
+			build: (t) => ({ tables: { posts: t.posts } }),
+		});
 		// Valid frontmatter structure but wrong type: title must be a string,
 		// here it's a number. `fromMarkdown` happily returns it; `table.parse()`
 		// catches the schema violation.
@@ -268,7 +278,9 @@ describe('push', () => {
 	});
 
 	test('counts match event kinds (invariant)', async () => {
-		const { workspace } = await setup({ build: (t) => ({ tables: { posts: t.posts } }) });
+		const { workspace } = await setup({
+			build: (t) => ({ tables: { posts: t.posts } }),
+		});
 		await writeTestFile(
 			'posts/good.md',
 			'---\nid: p1\ntitle: Good\npublished: true\n---\n',
@@ -342,7 +354,9 @@ describe('push', () => {
 	});
 
 	test('overwrites existing rows (set is insert-or-replace)', async () => {
-		const { workspace } = await setup({ build: (t) => ({ tables: { posts: t.posts } }) });
+		const { workspace } = await setup({
+			build: (t) => ({ tables: { posts: t.posts } }),
+		});
 		// First import
 		await writeTestFile(
 			'posts/p1.md',
@@ -398,7 +412,9 @@ describe('push', () => {
 
 describe('pull', () => {
 	test('writes all valid rows to disk', async () => {
-		const { workspace } = await setup({ build: (t) => ({ tables: { posts: t.posts } }) });
+		const { workspace } = await setup({
+			build: (t) => ({ tables: { posts: t.posts } }),
+		});
 		workspace.tables.posts.set({
 			id: 'p1',
 			title: 'First',
@@ -473,7 +489,9 @@ describe('pull', () => {
 	});
 
 	test('writes nothing when table is empty', async () => {
-		const { workspace } = await setup({ build: (t) => ({ tables: { posts: t.posts } }) });
+		const { workspace } = await setup({
+			build: (t) => ({ tables: { posts: t.posts } }),
+		});
 		const result = await workspace.materializer.pull();
 
 		expect(result.written).toBe(0);
@@ -510,7 +528,9 @@ describe('pull', () => {
 
 describe('rebuild', () => {
 	test('removes orphan files and rewrites existing valid rows', async () => {
-		const { workspace } = await setup({ build: (t) => ({ tables: { posts: t.posts } }) });
+		const { workspace } = await setup({
+			build: (t) => ({ tables: { posts: t.posts } }),
+		});
 		// Seed disk with rows + an orphan file
 		workspace.tables.posts.set({
 			id: 'p1',
@@ -563,7 +583,9 @@ describe('rebuild', () => {
 	});
 
 	test('throws on unknown table name', async () => {
-		const { workspace } = await setup({ build: (t) => ({ tables: { posts: t.posts } }) });
+		const { workspace } = await setup({
+			build: (t) => ({ tables: { posts: t.posts } }),
+		});
 		await expect(workspace.materializer.rebuild('notAThing')).rejects.toThrow(
 			/not in the materialized table set/,
 		);
@@ -572,7 +594,9 @@ describe('rebuild', () => {
 	});
 
 	test('is idempotent: rebuild twice produces identical filesystem state', async () => {
-		const { workspace } = await setup({ build: (t) => ({ tables: { posts: t.posts } }) });
+		const { workspace } = await setup({
+			build: (t) => ({ tables: { posts: t.posts } }),
+		});
 		workspace.tables.posts.set({
 			id: 'p1',
 			title: 'A',

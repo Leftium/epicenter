@@ -52,9 +52,11 @@ export function openOpensidianBrowser({
 	deviceId: DeviceId;
 }) {
 	const ydoc = new Y.Doc({ guid: OPENSIDIAN_ID, gc: true });
-	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
-	const tables = encryption.attachTables(opensidianTables);
-	const kv = encryption.attachKv({});
+	const { tables, kv } = attachEncryption(ydoc, {
+		keyring: signedIn.keyring,
+		tables: opensidianTables,
+		kv: {},
+	});
 
 	const idb = attachLocalStorage(ydoc, {
 		server: signedIn.server,

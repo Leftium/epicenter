@@ -32,9 +32,11 @@ export function openOpensidianDaemon({
 }: DaemonWorkspaceContext) {
 	const ydoc = new Y.Doc({ guid: OPENSIDIAN_ID, gc: true });
 	ydoc.clientID = yDocClientId;
-	const encryption = attachEncryption(ydoc, { keyring });
-	encryption.attachTables(opensidianTables);
-	encryption.attachKv({});
+	attachEncryption(ydoc, {
+		keyring,
+		tables: opensidianTables,
+		kv: {},
+	});
 
 	return attachDaemonInfrastructure(ydoc, {
 		projectDir,

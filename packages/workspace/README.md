@@ -112,7 +112,7 @@ Every exported function in this package falls into one of three verbs. The prefi
 | Verb | Side effect | Input | Output | Examples |
 |---|---|---|---|---|
 | `define*` | **None**: pure data | Schemas, defaults | Plain config object | `defineTable`, `defineKv`, `defineMutation`, `defineQuery` |
-| `attach*` | **Mutates a Y.Doc**: binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config | Typed handle, non-idempotent, hold the reference | `attachTable`, `attachTables`, `attachKv`, `attachRichText`, `attachPlainText`, `attachTimeline`, `attachIndexedDb`, `attachYjsLog`, `attachBroadcastChannel`, `attachEncryption` (with `.attachTable` / `.attachTables` / `.attachKv` methods), `attachMarkdownMaterializer`, `attachSqliteMaterializer` |
+| `attach*` | **Mutates a Y.Doc**: binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config | Typed handle, non-idempotent, hold the reference | `attachTable`, `attachTables`, `attachKv`, `attachRichText`, `attachPlainText`, `attachTimeline`, `attachIndexedDb`, `attachYjsLog`, `attachBroadcastChannel`, `attachEncryption` (constructs `{ tables, kv }` from definitions), `attachMarkdownMaterializer`, `attachSqliteMaterializer` |
 | `create*` | **Pure construction**: no listeners, no subscriptions, no destroy registration at call time. | Definitions or a builder closure | A usable definition or cache | `createDisposableCache` |
 | `open*` | **Opens a runtime over a Y.Doc or a local resource**: returns a typed handle with its own teardown. The Y.Doc-bound case (`openCollaboration`) registers `ydoc.on('destroy')` like `attach*` does; the resource case (`openSqliteReader`) takes no Y.Doc and returns a `[Symbol.dispose]()` handle. | Y.Doc + config, or resource config | Typed runtime handle | `openCollaboration`, `openSqliteReader`, `openWriterSqlite` |
 
@@ -126,9 +126,9 @@ refcounting, and the `gcTime` grace period between last dispose and teardown.
 Both variants ship from this package. Pick by adversary: plaintext for
 data that never leaves the device, encrypted for data the server stores.
 
-Plaintext (`attachTable`, `attachTables`, `attachKv`) binds a typed helper directly to the Y.Doc. Encrypted: the methods on the `EncryptionAttachment` coordinator returned by `attachEncryption(ydoc, { keyring })` (`encryption.attachTable`, `encryption.attachTables`, `encryption.attachKv`) additionally register their backing store with that coordinator. The coordinator reads `keyring()` synchronously at each registration site, derives the per-workspace keyring, and activates the store before handing it back. Already-attached encrypted stores keep their derived keyring; same-owner key rotation needs a re-attach to affect those stores.
+Plaintext (`attachTable`, `attachTables`, `attachKv`) binds a typed helper directly to the Y.Doc. Encrypted: `attachEncryption(ydoc, { keyring, tables, kv })` takes the same definition maps as the plaintext primitives plus a `keyring` callback, derives the per-workspace keyring once, activates every encrypted store, and returns `{ tables, kv }` atomically. Same-owner key rotation requires a fresh `attachEncryption` call (and therefore a fresh Y.Doc) to take effect.
 
-Don't mix plaintext and encrypted wrappers on the same slot name: Yjs hands both calls the same underlying `Y.Array` and you get a silent plaintext-over-ciphertext race. The verb (`encryption.attachTable` vs plain `attachTable`) is the primary defense; review call sites accordingly. One slot name, one attach site, one intent.
+Don't pair a plaintext `attachTable` with a `tables:` entry on `attachEncryption` targeting the same slot name: Yjs hands both calls the same underlying `Y.Array` and you get a silent plaintext-over-ciphertext race. One slot name, one attach site, one intent.
 
 Minimal encrypted browser workspace: encryption + owner-scoped IndexedDB + cross-tab + collaboration (sync + presence + dispatch) wired together:
 
@@ -155,8 +155,11 @@ export function openApp({
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: true });
 
-	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
-	const tables = encryption.attachTables(appTables);
+	const { tables } = attachEncryption(ydoc, {
+		keyring: signedIn.keyring,
+		tables: appTables,
+		kv: {},
+	});
 
 	// Server + owner scoped encrypted IDB + cross-tab BroadcastChannel in one call.
 	const idb = attachLocalStorage(ydoc, {

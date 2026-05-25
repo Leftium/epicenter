@@ -78,28 +78,30 @@ The iso factory accepts an optional `clientID` so daemon and script peers can
 use stable Yjs identities.
 
 ```ts
-import { attachEncryption, type EncryptionKeys } from '@epicenter/workspace';
+import type { Keyring } from '@epicenter/encryption';
+import { attachEncryption } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { createFujiActions, fujiTables } from '../workspace.js';
 
 export function openFuji({
-	encryptionKeys,
+	keyring,
 	clientID,
 }: {
-	encryptionKeys: () => EncryptionKeys;
+	keyring: () => Keyring;
 	clientID?: number;
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.fuji', gc: false });
 	if (clientID !== undefined) ydoc.clientID = clientID;
-	const encryption = attachEncryption(ydoc, { encryptionKeys });
-	const tables = encryption.attachTables(fujiTables);
-	const kv = encryption.attachKv({});
+	const { tables, kv } = attachEncryption(ydoc, {
+		keyring,
+		tables: fujiTables,
+		kv: {},
+	});
 	const actions = createFujiActions(tables);
 	return {
 		ydoc,
 		tables,
 		kv,
-		encryption,
 		actions,
 		batch: (fn: () => void) => ydoc.transact(fn),
 		[Symbol.dispose]() {

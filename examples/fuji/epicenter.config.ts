@@ -43,9 +43,11 @@ export default defineWorkspace({
 	}) {
 		const ydoc = new Y.Doc({ guid: FUJI_ID, gc: true });
 		ydoc.clientID = yDocClientId;
-		const encryption = attachEncryption(ydoc, { keyring });
-		const tables = encryption.attachTables(fujiTables);
-		encryption.attachKv({});
+		const { tables } = attachEncryption(ydoc, {
+			keyring,
+			tables: fujiTables,
+			kv: {},
+		});
 		const actions = createFujiActions(tables);
 
 		// Runtime cache: hidden under .epicenter/ at the project root.

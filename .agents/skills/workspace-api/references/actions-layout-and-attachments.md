@@ -222,7 +222,7 @@ Attachments compose through plain lexical scope, so ordering is explicit: if `op
 |---|---|---|
 | `attachYjsLog` | none | Starts loading the Yjs update log immediately |
 | `attachIndexedDb` | none | Starts loading IndexedDB immediately |
-| `attachEncryption` | (none, sync) | Reads `encryptionKeys()` synchronously at each registration site |
+| `attachEncryption` | (none, sync) | Reads `keyring()` once at construction, derives the per-workspace HKDF keyring, activates every store, returns `{ tables, kv }` |
 | `openCollaboration` | `idb.whenLoaded` (or another local-load promise) | Opens WebSocket after local replay |
 
 The standard shape is **persistence first, then collaboration with `waitFor`**:

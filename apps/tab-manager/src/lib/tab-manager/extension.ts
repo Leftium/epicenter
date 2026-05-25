@@ -47,9 +47,11 @@ export function openTabManagerBrowser({
 	deviceId: DeviceId;
 }) {
 	const ydoc = new Y.Doc({ guid: TAB_MANAGER_ID, gc: true });
-	const encryption = attachEncryption(ydoc, { keyring: signedIn.keyring });
-	const tables = encryption.attachTables(tabManagerTables);
-	const kv = encryption.attachKv({});
+	const { tables, kv } = attachEncryption(ydoc, {
+		keyring: signedIn.keyring,
+		tables: tabManagerTables,
+		kv: {},
+	});
 	const actions = createTabManagerActions({
 		tables,
 		batch: (fn) => ydoc.transact(fn),

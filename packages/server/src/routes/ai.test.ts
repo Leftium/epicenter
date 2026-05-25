@@ -1,30 +1,33 @@
 /**
- * Pins the `defineHttpErrors` wire contract for `AiChatError`:
+ * Pins the `defineErrors` + `AiChatErrorStatus` side-map contract:
  *
- *   - `.status` is a static literal on each factory.
+ *   - `AiChatErrorStatus` holds the per-variant HTTP status as literal types.
  *   - The serialized error body MUST NOT include `status`.
- *   - The Hono route returns the factory's status as the HTTP status.
+ *   - The Hono route returns the side-map status as the HTTP status.
  *   - `error.name` narrows to variant-specific fields.
  */
 
 import { describe, expect, expectTypeOf, test } from 'bun:test';
-import { AiChatError } from '@epicenter/constants/ai-chat-errors';
+import {
+	AiChatError,
+	AiChatErrorStatus,
+} from '@epicenter/constants/ai-chat-errors';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { Hono } from 'hono';
 import type { Env } from '../types.js';
 import { mountAiApp } from './ai.js';
 
-describe('AiChatError factory shape', () => {
-	test('exposes .status as the correct literal on each factory', () => {
-		expect(AiChatError.Unauthorized.status).toBe(401);
-		expect(AiChatError.ProviderNotConfigured.status).toBe(503);
-		expect(AiChatError.UnknownModel.status).toBe(400);
-		expect(AiChatError.InsufficientCredits.status).toBe(402);
-		expect(AiChatError.ModelRequiresPaidPlan.status).toBe(403);
+describe('AiChatErrorStatus side-map', () => {
+	test('holds the correct literal status for each variant', () => {
+		expect(AiChatErrorStatus.Unauthorized).toBe(401);
+		expect(AiChatErrorStatus.ProviderNotConfigured).toBe(503);
+		expect(AiChatErrorStatus.UnknownModel).toBe(400);
+		expect(AiChatErrorStatus.InsufficientCredits).toBe(402);
+		expect(AiChatErrorStatus.ModelRequiresPaidPlan).toBe(403);
 
-		expectTypeOf(AiChatError.Unauthorized.status).toEqualTypeOf<401>();
-		expectTypeOf(AiChatError.ProviderNotConfigured.status).toEqualTypeOf<503>();
-		expectTypeOf(AiChatError.InsufficientCredits.status).toEqualTypeOf<402>();
+		expectTypeOf(AiChatErrorStatus.Unauthorized).toEqualTypeOf<401>();
+		expectTypeOf(AiChatErrorStatus.ProviderNotConfigured).toEqualTypeOf<503>();
+		expectTypeOf(AiChatErrorStatus.InsufficientCredits).toEqualTypeOf<402>();
 	});
 
 	test('factory returns Err envelope without a status field in the body', () => {
@@ -103,7 +106,7 @@ describe('AI chat route HTTP responses', () => {
 			{},
 		);
 
-		expect(res.status).toBe(AiChatError.ProviderNotConfigured.status);
+		expect(res.status).toBe(AiChatErrorStatus.ProviderNotConfigured);
 		expect(res.status).toBe(503);
 
 		const body = (await res.json()) as {

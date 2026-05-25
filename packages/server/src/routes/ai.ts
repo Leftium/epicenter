@@ -11,7 +11,10 @@
  * library treats BYOK and house-key the same.
  */
 
-import { AiChatError } from '@epicenter/constants/ai-chat-errors';
+import {
+	AiChatError,
+	AiChatErrorStatus,
+} from '@epicenter/constants/ai-chat-errors';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { sValidator } from '@hono/standard-validator';
 import {
@@ -72,7 +75,7 @@ const aiApp = new Hono<Env>().post(
 				if (!apiKey) {
 					return c.json(
 						AiChatError.ProviderNotConfigured({ provider }),
-						AiChatError.ProviderNotConfigured.status,
+						AiChatErrorStatus.ProviderNotConfigured,
 					);
 				}
 				adapter = createOpenaiChat(data.model, apiKey);
@@ -83,7 +86,7 @@ const aiApp = new Hono<Env>().post(
 				if (!apiKey) {
 					return c.json(
 						AiChatError.ProviderNotConfigured({ provider }),
-						AiChatError.ProviderNotConfigured.status,
+						AiChatErrorStatus.ProviderNotConfigured,
 					);
 				}
 				adapter = createGeminiChat(data.model, apiKey);

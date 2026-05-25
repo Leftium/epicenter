@@ -13,10 +13,10 @@ import { Ok, tryAsync } from 'wellcrafted/result';
  * 2. Extracts the structured error (`name`, `message`, variant fields)
  * 3. Throws an `AiChatHttpError` carrying that detail
  *
- * The HTTP status is not serialized into the error body; it lives as a
- * static property on the server-side factory (`AiChatError.<Variant>.status`).
- * Client code that needs the status should read it from `response.status`
- * or look it up by variant name on the imported factory.
+ * The HTTP status is not serialized into the error body; the server holds
+ * it in a sibling `AiChatErrorStatus` map keyed by variant name. Client
+ * code that needs the status should read it from `response.status`, or
+ * import `AiChatErrorStatus` and look it up by `err.detail.name`.
  *
  * The thrown error propagates unchanged through TanStack AI's
  * `ChatClient` pipeline to `onError` / `chat.error`. Use

@@ -1,4 +1,4 @@
-import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import { defineHttpErrors, type InferHttpErrors } from 'wellcrafted/error';
 
 /**
  * Structured error variants for the `/ai/chat` endpoint.
@@ -18,8 +18,7 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  * ```ts
  * // Server: runtime usage
  * import { AiChatError } from '@epicenter/constants/ai-chat-errors';
- * const err = AiChatError.InsufficientCredits({ balance: 42 });
- * return c.json(err, err.error.status); // 402, baked into the variant
+ * return c.json(AiChatError.InsufficientCredits({ balance: 42 }), AiChatError.InsufficientCredits.status);
  *
  * // Client: type-only usage
  * import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
@@ -31,38 +30,16 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  * }
  * ```
  */
-export const AiChatError = defineErrors({
-	Unauthorized: () => ({
-		message: 'Unauthorized',
-		status: 401 as const,
-	}),
-	ProviderNotConfigured: ({ provider }: { provider: string }) => ({
-		message: `${provider} not configured`,
-		status: 503 as const,
-		provider,
-	}),
-	UnknownModel: ({ model }: { model: string }) => ({
-		message: `Unknown model: ${model}`,
-		status: 400 as const,
-		model,
-	}),
-	InsufficientCredits: ({ balance }: { balance: unknown }) => ({
-		message: 'Insufficient credits',
-		status: 402 as const,
-		balance,
-	}),
-	ModelRequiresPaidPlan: ({
-		model,
-		credits,
-	}: {
-		model: string;
-		credits: number;
-	}) => ({
+export const AiChatError = defineHttpErrors({
+	Unauthorized:          [401, () => ({ message: 'Unauthorized' })],
+	UnknownModel:          [400, ({ model }: { model: string }) => ({ message: `Unknown model: ${model}`, model })],
+	ModelRequiresPaidPlan: [403, ({ model, credits }: { model: string; credits: number }) => ({
 		message: `${model} requires a paid plan (costs ${credits} credits)`,
-		status: 403 as const,
 		model,
 		credits,
-	}),
+	})],
+	InsufficientCredits:   [402, ({ balance }: { balance: unknown }) => ({ message: 'Insufficient credits', balance })],
+	ProviderNotConfigured: [503, ({ provider }: { provider: string }) => ({ message: `${provider} not configured`, provider })],
 });
 
 /**
@@ -85,7 +62,7 @@ export const AiChatError = defineErrors({
  * }
  * ```
  */
-export type AiChatError = InferErrors<typeof AiChatError>;
+export type AiChatError = InferHttpErrors<typeof AiChatError>;
 
 /**
  * Error subclass that carries structured error data across TanStack AI's

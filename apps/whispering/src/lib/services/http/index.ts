@@ -1,3 +1,4 @@
+import { isTauri } from '@tauri-apps/api/core';
 import { createHttpServiceDesktop } from './desktop';
 import { createHttpServiceWeb } from './web';
 
@@ -11,6 +12,6 @@ export type {
 } from './types';
 export { HttpError } from './types';
 
-export const HttpServiceLive = window.__TAURI_INTERNALS__
+export const HttpServiceLive = isTauri()
 	? createHttpServiceDesktop()
 	: createHttpServiceWeb();

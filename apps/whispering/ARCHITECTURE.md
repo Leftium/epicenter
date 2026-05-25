@@ -88,7 +88,7 @@ async function transcribeBlob(blob: Blob) {
 The query layer's role has narrowed to things that don't fit in CRDTs:
 
 - **External APIs**: Transcription services, LLM completions (`rpc.transcription.*`, `rpc.transformer.*`)
-- **Hardware state**: Recorder state, microphone enumeration (`rpc.recorder.*`)
+- **Microphone enumeration**: Async device list with loading states (`manualRecorder.enumerateDevices`). Recorder state itself lives in `$lib/state/manual-recorder.svelte.ts` and `$lib/state/vad-recorder.svelte.ts` as `$state`, not queries.
 - **Audio blob access**: Too large for Yjs CRDTs, still served via DbService (`rpc.audio.getPlaybackUrl`)
 
 ```svelte
@@ -139,7 +139,7 @@ Whispering uses [WellCrafted](https://github.com/wellcrafted-dev/wellcrafted), a
 
 - **Service Layer**: Platform-agnostic business logic with Result types
 - **Query Layer**: Reactive data management with caching
-- **RPC Pattern**: Unified API interface for non-CRUD operations (`rpc.audio.*`, `rpc.transcription.*`, `rpc.recorder.*`)
+- **RPC Pattern**: Unified API interface for non-CRUD operations (`rpc.audio.*`, `rpc.transcription.*`, `rpc.actions.*`)
 - **Dependency Injection**: Clean separation of concerns
 
 ## Key Architectural Decisions

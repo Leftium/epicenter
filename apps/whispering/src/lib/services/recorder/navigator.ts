@@ -112,7 +112,7 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 
 	stopRecording: async ({
 		sendStatus,
-	}): Promise<Result<Blob, RecorderError>> => {
+	}): Promise<Result<{ blob: Blob; recordingId: string }, RecorderError>> => {
 		if (!activeRecording) {
 			return RecorderError.NotRecording({
 				message:
@@ -152,7 +152,7 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 			title: '✅ Recording Saved',
 			description: 'Your recording is ready for transcription!',
 		});
-		return Ok(blob);
+		return Ok({ blob, recordingId: recording.recordingId });
 	},
 
 	cancelRecording: async ({

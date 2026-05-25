@@ -3,7 +3,6 @@ import {
 	SUPPORTED_LANGUAGES,
 	type SupportedLanguage,
 } from '$lib/constants/languages';
-import { rpc } from '$lib/query';
 import { defineMutation, queryClient } from '$lib/query/client';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { services } from '$lib/services';
@@ -12,6 +11,7 @@ import { deviceConfig } from '$lib/state/device-config.svelte';
 import type { Recording } from '$lib/state/recordings.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';
+import { analytics } from './analytics';
 import { notify } from './notify';
 import { deepgramErrorToWhisperingErr } from './transcription-errors/deepgram';
 import { elevenlabsErrorToWhisperingErr } from './transcription-errors/elevenlabs';
@@ -109,7 +109,7 @@ export async function transcribeBlob(
 
 	// Log transcription request
 	const startTime = Date.now();
-	rpc.analytics.logEvent({
+	analytics.logEvent({
 		type: 'transcription_requested',
 		provider: selectedService,
 	});
@@ -129,7 +129,7 @@ export async function transcribeBlob(
 				title: 'Audio compression failed',
 				description: `${compressionError.message}. Using original audio for transcription.`,
 			});
-			rpc.analytics.logEvent({
+			analytics.logEvent({
 				type: 'compression_failed',
 				provider: selectedService,
 				error_message: compressionError.message,
@@ -144,7 +144,7 @@ export async function transcribeBlob(
 				title: 'Audio compressed',
 				description: `Reduced file size by ${compressionRatio}%`,
 			});
-			rpc.analytics.logEvent({
+			analytics.logEvent({
 				type: 'compression_completed',
 				provider: selectedService,
 				original_size: blob.size,
@@ -290,14 +290,14 @@ export async function transcribeBlob(
 	// Log transcription result
 	const duration = Date.now() - startTime;
 	if (transcriptionResult.error) {
-		rpc.analytics.logEvent({
+		analytics.logEvent({
 			type: 'transcription_failed',
 			provider: selectedService,
 			error_title: transcriptionResult.error.title,
 			error_description: transcriptionResult.error.description,
 		});
 	} else {
-		rpc.analytics.logEvent({
+		analytics.logEvent({
 			type: 'transcription_completed',
 			provider: selectedService,
 			duration,

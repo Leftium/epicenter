@@ -1,3 +1,4 @@
+import { isTauri } from '@tauri-apps/api/core';
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 
 /**
@@ -5,4 +6,4 @@ import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
  * Uses Tauri's HTTP plugin in the desktop app to bypass CORS restrictions.
  * When `undefined`, SDKs fall back to the global `fetch`.
  */
-export const customFetch = window.__TAURI_INTERNALS__ ? tauriFetch : undefined;
+export const customFetch = isTauri() ? tauriFetch : undefined;

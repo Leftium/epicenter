@@ -26,6 +26,13 @@ type AudioRecording = {
 };
 
 /**
+ * Tracks the recordingId the JS caller passed to startRecording so we can
+ * return it from stopRecording without a Rust round-trip. Cleared on stop or
+ * cancel.
+ */
+let activeRecording: { recordingId: string } | null = null;
+
+/**
  * Enumerates available recording devices from the system.
  */
 const enumerateDevices = async (): Promise<Result<Device[], RecorderError>> => {
@@ -180,6 +187,7 @@ export const CpalRecorderServiceLive: RecorderService = {
 		if (startRecordingError)
 			return RecorderError.StartFailed({ cause: startRecordingError });
 
+		activeRecording = { recordingId };
 		return Ok(deviceOutcome);
 	},
 
@@ -191,7 +199,30 @@ export const CpalRecorderServiceLive: RecorderService = {
 	 */
 	stopRecording: async ({
 		sendStatus,
-	}): Promise<Result<Blob, RecorderError>> => {
+	}): Promise<Result<{ blob: Blob; recordingId: string }, RecorderError>> => {
+		// Fast path uses the recordingId captured at startRecording. After a JS
+		// reload mid-recording the closure is gone but Rust is still going; fall
+		// back to asking Rust which recording is currently active.
+		let recordingId: string;
+		if (activeRecording) {
+			recordingId = activeRecording.recordingId;
+			activeRecording = null;
+		} else {
+			const { data: liveRecordingId, error: getIdError } = await invoke<
+				string | null
+			>('get_current_recording_id');
+			if (getIdError) {
+				return RecorderError.GetStateFailed({ cause: getIdError });
+			}
+			if (!liveRecordingId) {
+				return RecorderError.NotRecording({
+					message:
+						'Cannot stop recording because no active recording session was found. Make sure you have started recording before attempting to stop it.',
+				});
+			}
+			recordingId = liveRecordingId;
+		}
+
 		const { data: audioRecording, error: stopRecordingError } =
 			await invoke<AudioRecording>('stop_recording');
 		if (stopRecordingError) {
@@ -203,7 +234,6 @@ export const CpalRecorderServiceLive: RecorderService = {
 		if (!filePath) {
 			return RecorderError.NoFilePath();
 		}
-		// audioRecording is now AudioRecordingWithFile
 
 		// Read the WAV file from disk
 		sendStatus({
@@ -228,7 +258,7 @@ export const CpalRecorderServiceLive: RecorderService = {
 			console.error('Failed to close recording session:', closeError);
 		}
 
-		return Ok(blob);
+		return Ok({ blob, recordingId });
 	},
 
 	/**
@@ -251,8 +281,11 @@ export const CpalRecorderServiceLive: RecorderService = {
 		}
 
 		if (!recordingId) {
+			activeRecording = null;
 			return Ok({ status: 'no-recording' });
 		}
+
+		activeRecording = null;
 
 		sendStatus({
 			title: '🛑 Cancelling',

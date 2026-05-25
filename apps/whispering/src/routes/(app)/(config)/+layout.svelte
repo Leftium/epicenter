@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { cn } from '@epicenter/ui/utils';
-	import { createQuery } from '@tanstack/svelte-query';
 	import { commandCallbacks } from '$lib/commands';
 	import {
 		CompressionSelector,
@@ -15,14 +14,10 @@
 		RECORDER_STATE_TO_ICON,
 		VAD_STATE_TO_ICON,
 	} from '$lib/constants/audio';
-	import { rpc } from '$lib/query';
+	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
-
-	const getRecorderStateQuery = createQuery(
-		() => rpc.recorder.getRecorderState.options,
-	);
 
 	let { children } = $props();
 </script>
@@ -41,7 +36,7 @@
 	<div class="flex items-center gap-1.5">
 		<div class="flex items-center gap-1.5">
 			{#if settings.get('recording.mode') === 'manual'}
-				{#if getRecorderStateQuery.data === 'RECORDING'}
+				{#if manualRecorder.state === 'RECORDING'}
 					<Button
 						tooltip="Cancel recording"
 						onclick={() => commandCallbacks.cancelManualRecording()}
@@ -57,7 +52,7 @@
 					<TranscriptionSelector />
 					<TransformationSelector />
 				{/if}
-				{#if getRecorderStateQuery.data === 'RECORDING'}
+				{#if manualRecorder.state === 'RECORDING'}
 					<Button
 						tooltip="Stop recording"
 						onclick={() => commandCallbacks.toggleManualRecording()}
@@ -65,7 +60,7 @@
 						size="icon"
 						style="view-transition-name: {viewTransition.global.microphone}"
 					>
-						{RECORDER_STATE_TO_ICON[getRecorderStateQuery.data ?? 'IDLE']}
+						{RECORDER_STATE_TO_ICON[manualRecorder.state]}
 					</Button>
 				{:else}
 					<div class="flex">
@@ -77,7 +72,7 @@
 							style="view-transition-name: {viewTransition.global.microphone}"
 							class="rounded-r-none border-r-0"
 						>
-							{RECORDER_STATE_TO_ICON[getRecorderStateQuery.data ?? 'IDLE']}
+							{RECORDER_STATE_TO_ICON[manualRecorder.state]}
 						</Button>
 						<RecordingModeSelector class="rounded-l-none" />
 					</div>

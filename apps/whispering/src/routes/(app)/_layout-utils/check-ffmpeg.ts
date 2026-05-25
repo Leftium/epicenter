@@ -55,37 +55,6 @@ export function isCompressionRecommended(): boolean {
 }
 
 /**
- * Checks if FFmpeg recording method is selected but FFmpeg is not installed.
- * Shows a warning toast prompting the user to install FFmpeg when this incompatibility is detected.
- *
- * This function is specifically for validating the FFmpeg recording method selection.
- * It ensures users who have explicitly chosen FFmpeg as their recording method have it installed.
- *
- * @returns Promise<void> - Shows toast notification if FFmpeg method is selected but not installed
- */
-export async function checkFfmpegRecordingMethodCompatibility() {
-	if (!window.__TAURI_INTERNALS__) return;
-
-	// Only check if FFmpeg recording method is selected
-	if (deviceConfig.get('recording.method') !== 'ffmpeg') return;
-
-	const { data: ffmpegInstalled } =
-		await desktopRpc.ffmpeg.checkFfmpegInstalled.ensure();
-	if (ffmpegInstalled) return; // FFmpeg is installed, all good
-
-	// FFmpeg recording method selected but not installed
-	toast.warning('FFmpeg Required for FFmpeg Recording Method', {
-		description:
-			'You have selected FFmpeg as your recording method, but FFmpeg is not installed.',
-		action: {
-			label: 'Install FFmpeg',
-			onClick: () => goto('/install-ffmpeg'),
-		},
-		duration: 15000,
-	});
-}
-
-/**
  * Checks for compatibility issues between local transcription models and current recording settings.
  * Shows a warning toast with resolution options when incompatible settings are detected.
  *

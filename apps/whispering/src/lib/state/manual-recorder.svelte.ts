@@ -1,3 +1,4 @@
+import { isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { nanoid } from 'nanoid/non-secure';
 import { Ok } from 'wellcrafted/result';
@@ -10,7 +11,7 @@ import { services } from '$lib/services';
 import { desktopServices } from '$lib/services/desktop';
 import {
 	asDeviceIdentifier,
-	type DeviceIdentifier,
+	type StartRecordingParams,
 } from '$lib/services/recorder/types';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 
@@ -30,18 +31,39 @@ import { deviceConfig } from '$lib/state/device-config.svelte';
  * transitions. The Rust emit side is not yet wired; the listener is a no-op
  * until that lands and harmless in the meantime.
  */
-function parseDeviceId(deviceId: string | null): DeviceIdentifier | null {
-	if (!deviceId) return null;
-	return asDeviceIdentifier(deviceId);
+function recorderService() {
+	if (!isTauri()) return services.navigatorRecorder;
+	return deviceConfig.get('recording.method') === 'cpal'
+		? desktopServices.cpalRecorder
+		: services.navigatorRecorder;
 }
 
-function recorderService() {
-	if (!window.__TAURI_INTERNALS__) return services.navigatorRecorder;
-	const recorderMap = {
-		navigator: services.navigatorRecorder,
-		cpal: desktopServices.cpalRecorder,
+async function buildStartParams(
+	recordingId: string,
+): Promise<StartRecordingParams> {
+	const useCpal =
+		isTauri() && deviceConfig.get('recording.method') === 'cpal';
+
+	if (useCpal) {
+		const deviceId = deviceConfig.get('recording.cpal.deviceId');
+		return {
+			method: 'cpal',
+			recordingId,
+			selectedDeviceId: deviceId ? asDeviceIdentifier(deviceId) : null,
+			outputFolder:
+				deviceConfig.get('recording.cpal.outputFolder') ??
+				(await PATHS.DB.RECORDINGS()),
+			sampleRate: deviceConfig.get('recording.cpal.sampleRate'),
+		};
+	}
+
+	const deviceId = deviceConfig.get('recording.navigator.deviceId');
+	return {
+		method: 'navigator',
+		recordingId,
+		selectedDeviceId: deviceId ? asDeviceIdentifier(deviceId) : null,
+		bitrateKbps: deviceConfig.get('recording.navigator.bitrateKbps'),
 	};
-	return recorderMap[deviceConfig.get('recording.method')];
 }
 
 function createManualRecorder() {
@@ -54,7 +76,7 @@ function createManualRecorder() {
 			if (data) _state = data;
 		});
 
-	if (window.__TAURI_INTERNALS__) {
+	if (isTauri()) {
 		void listen<WhisperingRecordingState>('recorder:state-changed', (event) => {
 			_state = event.payload;
 		});
@@ -83,38 +105,7 @@ function createManualRecorder() {
 			const recordingId = nanoid();
 			_currentRecordingId = recordingId;
 
-			const outputFolder = window.__TAURI_INTERNALS__
-				? (deviceConfig.get('recording.cpal.outputFolder') ??
-					(await PATHS.DB.RECORDINGS()))
-				: '';
-
-			const paramsMap = {
-				navigator: {
-					recordingId,
-					method: 'navigator' as const,
-					selectedDeviceId: parseDeviceId(
-						deviceConfig.get('recording.navigator.deviceId'),
-					),
-					bitrateKbps: deviceConfig.get('recording.navigator.bitrateKbps'),
-				},
-				cpal: {
-					recordingId,
-					method: 'cpal' as const,
-					selectedDeviceId: parseDeviceId(
-						deviceConfig.get('recording.cpal.deviceId'),
-					),
-					outputFolder,
-					sampleRate: deviceConfig.get('recording.cpal.sampleRate'),
-				},
-			} as const;
-
-			const params =
-				paramsMap[
-					!window.__TAURI_INTERNALS__
-						? 'navigator'
-						: deviceConfig.get('recording.method')
-				];
-
+			const params = await buildStartParams(recordingId);
 			const { data: deviceAcquisitionOutcome, error: startRecordingError } =
 				await recorderService().startRecording(params, {
 					sendStatus: (options) => notify.loading({ id: toastId, ...options }),

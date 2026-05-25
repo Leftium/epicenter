@@ -31,8 +31,7 @@ function setup() {
 	return {
 		workDir,
 		cleanup() {
-			if (oldRuntimeDir === undefined)
-				delete process.env.EPICENTER_RUNTIME_DIR;
+			if (oldRuntimeDir === undefined) delete process.env.EPICENTER_RUNTIME_DIR;
 			else process.env.EPICENTER_RUNTIME_DIR = oldRuntimeDir;
 			rmSync(runtimeRoot, { recursive: true, force: true });
 			rmSync(workDir, { recursive: true, force: true });
@@ -106,8 +105,7 @@ describe('claimDaemonLease', () => {
 			const error = expectErr(claimDaemonLease(workDir));
 			expect(error.name).toBe('LeaseFailed');
 		} finally {
-			if (oldRuntimeDir === undefined)
-				delete process.env.EPICENTER_RUNTIME_DIR;
+			if (oldRuntimeDir === undefined) delete process.env.EPICENTER_RUNTIME_DIR;
 			else process.env.EPICENTER_RUNTIME_DIR = oldRuntimeDir;
 			rmSync(runtimeFile, { force: true });
 			rmSync(workDir, { recursive: true, force: true });

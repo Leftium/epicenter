@@ -17,10 +17,10 @@ import {
 	createBaseApp,
 	createRoomsApp,
 	createSessionApp,
+	Room,
 	requireBearerUser,
 	requireCookieOrBearerUser,
 	requireUrlOwnerIdMatchesAuth,
-	Room,
 } from '@epicenter/server';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';

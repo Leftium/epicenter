@@ -399,7 +399,6 @@ describe('Uint8Array write support', () => {
 		await fs.cp('/src.bin', '/dest.bin');
 		expect(await fs.readFile('/dest.bin')).toBe('Hello');
 	});
-
 });
 
 describe('ydoc destroy lifecycle', () => {

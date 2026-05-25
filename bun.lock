@@ -586,6 +586,18 @@
         "typescript": "catalog:",
       },
     },
+    "packages/client": {
+      "name": "@epicenter/client",
+      "version": "0.1.0",
+      "dependencies": {
+        "@epicenter/auth": "workspace:*",
+        "@epicenter/constants": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/constants": {
       "name": "@epicenter/constants",
       "version": "0.1.0",
@@ -1084,6 +1096,8 @@
     "@epicenter/breddit": ["@epicenter/breddit@workspace:apps/breddit"],
 
     "@epicenter/cli": ["@epicenter/cli@workspace:packages/cli"],
+
+    "@epicenter/client": ["@epicenter/client@workspace:packages/client"],
 
     "@epicenter/constants": ["@epicenter/constants@workspace:packages/constants"],
 

@@ -381,18 +381,14 @@ describe('deriveKeyring', () => {
 			'1:Y29uc3RhbnQtdGVzdC1zZWNyZXQtMzItYnl0ZS1zZWVk',
 		);
 
-		expect(
-			await deriveKeyring({ rootKeyring, label: 'alice' }),
-		).toEqual([
+		expect(await deriveKeyring({ rootKeyring, label: 'alice' })).toEqual([
 			{
 				version: 1,
 				keyBytesBase64: 'gkn6jlaCXiVx+RCTmQfb7GhEWwC+rhrI4hdCNC0y5Rs=',
 			},
 		]);
 
-		expect(
-			await deriveKeyring({ rootKeyring, label: 'team' }),
-		).toEqual([
+		expect(await deriveKeyring({ rootKeyring, label: 'team' })).toEqual([
 			{
 				version: 1,
 				keyBytesBase64: 'Y6iYwbC6x4lAUnuSQOHxInNiSmgzE1+xxaMW59pucak=',

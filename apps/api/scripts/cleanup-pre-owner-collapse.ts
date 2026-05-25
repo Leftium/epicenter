@@ -52,7 +52,9 @@ type OrphanDoRow = {
 	last_accessed_at: Date;
 };
 
-async function findOrphanedDoRecords(databaseUrl: string): Promise<OrphanDoRow[]> {
+async function findOrphanedDoRecords(
+	databaseUrl: string,
+): Promise<OrphanDoRow[]> {
 	const client = new Client({ connectionString: databaseUrl });
 	await client.connect();
 	try {

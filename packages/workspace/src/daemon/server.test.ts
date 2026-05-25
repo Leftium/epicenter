@@ -56,7 +56,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	if (originalRuntimeDir === undefined) delete process.env.EPICENTER_RUNTIME_DIR;
+	if (originalRuntimeDir === undefined)
+		delete process.env.EPICENTER_RUNTIME_DIR;
 	else process.env.EPICENTER_RUNTIME_DIR = originalRuntimeDir;
 	rmSync(runtimeRoot, { recursive: true, force: true });
 	rmSync(workDir, { recursive: true, force: true });

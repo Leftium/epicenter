@@ -40,7 +40,10 @@ describe('daemon/paths', () => {
 		// resolved socket path overflows the guard. Production callers never
 		// see paths this long, but the guard is load-bearing so we exercise it.
 		const longRuntimeDir = mkdtempSync(
-			join(tmpdir(), 'epicenter-runtime-path-that-is-way-too-long-for-sockets-'),
+			join(
+				tmpdir(),
+				'epicenter-runtime-path-that-is-way-too-long-for-sockets-',
+			),
 		);
 		process.env.EPICENTER_RUNTIME_DIR = longRuntimeDir;
 		try {

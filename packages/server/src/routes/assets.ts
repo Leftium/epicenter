@@ -386,7 +386,9 @@ function createAssetReadRoute(mode: OwnershipMode): Hono<Env> {
 			// purge on PATCH would let us raise max-age; documented as a
 			// future optimization in the spec §4.
 			const cacheControl =
-				row.visibility === 'public' ? 'public, max-age=60' : 'private, no-store';
+				row.visibility === 'public'
+					? 'public, max-age=60'
+					: 'private, no-store';
 
 			// Bodyless object - precondition failed (ETag match -> 304)
 			if (!('body' in object)) {

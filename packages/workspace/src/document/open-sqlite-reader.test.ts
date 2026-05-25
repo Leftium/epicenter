@@ -9,12 +9,10 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createLogger } from 'wellcrafted/logger';
 import * as Y from 'yjs';
 import { attachTables, column, defineTable } from '../index.js';
-import { attachSqliteMaterializer } from './materializer/sqlite/core.js';
+import { attachBunSqliteMaterializer } from './materializer/sqlite/bun-sqlite.js';
 import { openSqliteReader } from './open-sqlite-reader.js';
-import { openWriterSqlite } from './sqlite-writer.js';
 
 const entriesTable = defineTable({
 	id: column.string(),
@@ -39,11 +37,9 @@ async function seedMirrorFile(
 ) {
 	const ydoc = new Y.Doc({ guid: 'test-mirror' });
 	const tables = attachTables(ydoc, { entries: entriesTable });
-	const db = openWriterSqlite({ filePath, log: createLogger('test') });
-	ydoc.once('destroy', () => db.close());
 	// debounceMs: 0 so each set() flushes on the next microtask, matching the
 	// "seed then read" shape of these tests.
-	const builder = attachSqliteMaterializer(ydoc, { db, debounceMs: 0 });
+	const builder = attachBunSqliteMaterializer(ydoc, { filePath, debounceMs: 0 });
 	const materializer = fts
 		? builder.table(tables.entries, { fts: ['title', 'body'] })
 		: builder.table(tables.entries);

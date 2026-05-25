@@ -14,13 +14,11 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Type from 'typebox';
-import { createLogger } from 'wellcrafted/logger';
 import * as Y from 'yjs';
 import { attachTables, column, defineTable } from '../index.js';
 import { tablesToDrizzleSchema } from './drizzle-schema.js';
-import { attachSqliteMaterializer } from './materializer/sqlite/core.js';
+import { attachBunSqliteMaterializer } from './materializer/sqlite/bun-sqlite.js';
 import { openSqliteReader } from './open-sqlite-reader.js';
-import { openWriterSqlite } from './sqlite-writer.js';
 
 const entriesTable = defineTable({
 	id: column.string(),
@@ -61,10 +59,8 @@ type EntryRow = {
 async function seedMirror(filePath: string, rows: EntryRow[]) {
 	const ydoc = new Y.Doc({ guid: 'drizzle-schema-test' });
 	const tables = attachTables(ydoc, definitions);
-	const db = openWriterSqlite({ filePath, log: createLogger('test') });
-	ydoc.once('destroy', () => db.close());
-	const materializer = attachSqliteMaterializer(ydoc, {
-		db,
+	const materializer = attachBunSqliteMaterializer(ydoc, {
+		filePath,
 		debounceMs: 0,
 	}).table(tables.entries);
 	await materializer.whenFlushed;

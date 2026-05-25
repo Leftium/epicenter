@@ -1,3 +1,6 @@
-export { attachSqliteMaterializer } from './core.js';
+export {
+	type AttachBunSqliteMaterializerOptions,
+	attachBunSqliteMaterializer,
+} from './bun-sqlite.js';
 export { generateDdl } from './ddl.js';
 export type { SearchOptions, SearchResult } from './fts.js';

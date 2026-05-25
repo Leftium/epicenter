@@ -1,12 +1,18 @@
 /**
- * SQLite materializer: mirrors workspace table rows into queryable SQLite tables.
+ * SQLite materializer core: the shared body that backend-specific
+ * `attach*` factories wrap. Mirrors workspace table rows into a SQLite-shaped
+ * mirror via the internal {@link MirrorDatabase} contract.
  *
- * `attachSqliteMaterializer(ydoc, { db })` returns a chainable builder where
- * `.table(tableRef, config?)` opts in per table. Nothing materializes by default.
+ * Public callers use the per-backend factories (e.g.
+ * `attachBunSqliteMaterializer`), which own the native client lifecycle and
+ * adapt it to {@link MirrorDatabase} before calling
+ * {@link attachSqliteMaterializerCore} here.
  *
- * Teardown is hooked to the ydoc via `ydoc.once('destroy', ...)`; callers
- * never call a dispose method; destroying the ydoc cascades.
+ * Teardown is hooked to the ydoc via `ydoc.once('destroy', ...)`. The
+ * per-backend factory registers its own destroy handler too to close the
+ * underlying native client.
  *
+ * @internal
  * @module
  */
 
@@ -117,23 +123,16 @@ type RegisteredTable = {
 };
 
 /**
- * Create a one-way materializer that mirrors workspace table rows into SQLite.
+ * Internal shared materializer body. Each per-backend factory
+ * (`attachBunSqliteMaterializer`, future `attachLibsqlMaterializer`)
+ * constructs an adapter from its native client to {@link MirrorDatabase}
+ * and forwards into this function.
  *
- * @example
- * ```ts
- * const ydoc = new Y.Doc({ guid: 'workspace' });
- * const tables = attachTables(ydoc, myTableDefs);
- * const idb = attachIndexedDb(ydoc);
+ * Callers outside this directory should not import this directly.
  *
- * const sqlite = attachSqliteMaterializer(ydoc, {
- *   db: new Database('workspace.db'),
- *   waitFor: idb.whenLoaded,
- * })
- *   .table(tables.posts, { fts: ['title', 'body'] })
- *   .table(tables.users);
- * ```
+ * @internal
  */
-export function attachSqliteMaterializer(
+export function attachSqliteMaterializerCore(
 	ydoc: Y.Doc,
 	{
 		db,
@@ -375,7 +374,6 @@ export function attachSqliteMaterializer(
 
 	const api = {
 		whenFlushed,
-		db,
 		search: defineQuery({
 			title: 'Full-text search',
 			description: 'FTS5 search across materialized table rows',
@@ -422,7 +420,7 @@ export function attachSqliteMaterializer(
 		table(table, config) {
 			if (!isRegistrationOpen)
 				throw new Error(
-					`attachSqliteMaterializer: .table("${table.name}") called after initial flush. All .table() registrations must happen synchronously after construction.`,
+					`materializer: .table("${table.name}") called after initial flush. All .table() registrations must happen synchronously after construction.`,
 				);
 			registered.set(table.name, {
 				table: table as AnyTable,

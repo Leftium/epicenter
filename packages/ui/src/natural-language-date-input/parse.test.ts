@@ -56,7 +56,11 @@ describe('parseInZone', () => {
 
 	it('treats "in 2 hours" as relative to referenceNow regardless of zone', () => {
 		const referenceNow = new Date('2026-05-25T17:00:00Z');
-		const inLA = parseInZone({ text: 'in 2 hours', referenceNow, timeZone: LA });
+		const inLA = parseInZone({
+			text: 'in 2 hours',
+			referenceNow,
+			timeZone: LA,
+		});
 		const inTokyo = parseInZone({
 			text: 'in 2 hours',
 			referenceNow,

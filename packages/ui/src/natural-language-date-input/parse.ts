@@ -1,5 +1,5 @@
-import * as chrono from 'chrono-node';
 import type { IanaTimeZone } from '@epicenter/workspace';
+import * as chrono from 'chrono-node';
 
 export type ParsedSuggestion = { label: string; date: Date };
 

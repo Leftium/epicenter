@@ -292,7 +292,5 @@ export type RecorderService = {
 	 * Returns an unsubscribe function. Module-singleton consumers can ignore
 	 * the return value; ephemeral consumers should call it on teardown.
 	 */
-	subscribe(
-		handler: (state: WhisperingRecordingState) => void,
-	): () => void;
+	subscribe(handler: (state: WhisperingRecordingState) => void): () => void;
 };

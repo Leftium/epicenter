@@ -7,7 +7,7 @@ import { type } from 'arktype';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { BITRATES_KBPS, DEFAULT_BITRATE_KBPS } from '$lib/constants/audio';
 import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
-import { rpc } from '$lib/query';
+import { notify } from '$lib/query/notify';
 
 // ── Per-key definitions ──────────────────────────────────────────────────────
 
@@ -125,7 +125,7 @@ export const deviceConfig: PersistedMap<typeof DEVICE_DEFINITIONS> =
 			console.warn(`Invalid device config for "${key}", using default`);
 		},
 		onUpdateError: (_key, error) => {
-			rpc.notify.error({
+			notify.error({
 				title: 'Error updating device config',
 				description: extractErrorMessage(error),
 			});

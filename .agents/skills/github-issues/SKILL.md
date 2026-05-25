@@ -24,8 +24,42 @@ Use this pattern when you need to:
 - **Formulaic openings**: Don't start every comment identically. Match the tone to the conversation.
 - **Restating what's obvious**: If someone asked a question, just answer it. Don't recap what they said.
 - **Corporate announcements**: "We are pleased to announce..."; just say what changed.
+- **Over-explaining closed-loop fixes**: If the issue is fixed and there is no action needed from the reporter, do not make them read release-process details.
 
 Follow [writing-voice](../writing-voice/SKILL.md) for tone.
+
+## Maintainer Respect Gate
+
+Assume issue reporters and maintainers are busy. The most respectful comment is usually the shortest one that closes the loop clearly.
+
+For fixed issues, use this order:
+
+1. Thank them for flagging it.
+2. Say the current state directly.
+3. Mention the concrete version, release, PR, or commit only if it helps them verify.
+4. Close with brief gratitude and a little warmth.
+
+Do not add "you were right" unless the correction itself matters. Do not explain internal mechanics unless the issue is about those mechanics or the user needs them to verify the fix.
+
+Good:
+
+```
+Hey @username, thank you for flagging this.
+
+This has been fixed, and current releases now include npm provenance attestations.
+
+Thanks again for catching it!
+```
+
+Too much:
+
+```
+Hey @username, thank you for flagging this.
+
+You were right that version 0.34.1 did not include trusted publishing provenance metadata. The publish workflow has since been updated to use npm trusted publishing through GitHub OIDC, with id-token permissions and no NPM token. I verified this in the registry metadata.
+
+I am going to close this since the release pipeline is fixed now. Thanks again.
+```
 
 ## Opening Pattern
 

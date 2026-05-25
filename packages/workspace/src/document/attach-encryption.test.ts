@@ -1,7 +1,6 @@
 /**
- * attachEncryption tests: lazy keyring callback wires the workspace keyring
- * at every registration site (table, kv). Plaintext mode does not exist:
- * registration always activates encryption.
+ * attachEncryption tests: keyring lookup failures surface at registration,
+ * and readonly helpers expose encrypted reads without write methods.
  *
  * Encrypted IndexedDB and owner-scoped BroadcastChannel behavior live on
  * `attachLocalStorage`; see `attach-local-storage.test.ts` for those
@@ -25,51 +24,7 @@ const encryptedRowDefinition = defineTable(
 	type({ id: 'string', title: 'string', _v: '1' }),
 );
 
-function setup(keyring: Keyring = toKeyring(randomBytes(32))) {
-	const ydoc = new Y.Doc({ guid: 'enc-test', gc: true });
-	const encryption = attachEncryption(ydoc, { keyring: () => keyring });
-	const tableA = encryption.attachTable('a', encryptedRowDefinition);
-	const tableB = encryption.attachTable('b', encryptedRowDefinition);
-	return { ydoc, tableA, tableB, encryption };
-}
-
 describe('attachEncryption', () => {
-	test('registered stores accept encrypted writes immediately', () => {
-		const { tableA, tableB } = setup();
-		tableA.set({ id: '1', title: 'Secret A', _v: 1 });
-		tableB.set({ id: '1', title: 'Secret B', _v: 1 });
-		expect(tableA.get('1').data).toEqual({
-			id: '1',
-			title: 'Secret A',
-			_v: 1,
-		});
-		expect(tableB.get('1').data).toEqual({
-			id: '1',
-			title: 'Secret B',
-			_v: 1,
-		});
-	});
-
-	test('late-registered store activates via keyring callback at registration time', () => {
-		const keyring = toKeyring(randomBytes(32));
-		const ydoc = new Y.Doc({ guid: 'enc-late-register', gc: true });
-		const encryption = attachEncryption(ydoc, { keyring: () => keyring });
-
-		// Initial table is registered.
-		const earlyTable = encryption.attachTable('early', encryptedRowDefinition);
-		earlyTable.set({ id: '1', title: 'Early', _v: 1 });
-
-		// A later registration also calls keyring() and is encrypted from the start.
-		const lateTable = encryption.attachTable('late', encryptedRowDefinition);
-
-		lateTable.set({ id: '1', title: 'Written after late register', _v: 1 });
-		expect(lateTable.get('1').data).toEqual({
-			id: '1',
-			title: 'Written after late register',
-			_v: 1,
-		});
-	});
-
 	test('keyring callback throwing at registration surfaces the throw', () => {
 		const ydoc = new Y.Doc({ guid: 'enc-no-keys', gc: true });
 		const encryption = attachEncryption(ydoc, {

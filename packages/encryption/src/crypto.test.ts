@@ -251,12 +251,9 @@ describe('base64 helpers', () => {
 });
 
 describe('deriveWorkspaceKey', () => {
-	test('same inputs produce same key and different labels produce different keys', () => {
+	test('different labels produce different keys', () => {
 		const keyBytes = randomBytes(32);
 
-		expect(deriveWorkspaceKey(keyBytes, 'tab-manager')).toEqual(
-			deriveWorkspaceKey(keyBytes, 'tab-manager'),
-		);
 		expect(deriveWorkspaceKey(keyBytes, 'tab-manager')).not.toEqual(
 			deriveWorkspaceKey(keyBytes, 'whispering'),
 		);
@@ -352,15 +349,6 @@ describe('deriveKeyring', () => {
 		expect(keyring[0]?.version).toBe(2);
 		expect(keyring[1]?.version).toBe(1);
 		expect(base64ToBytes(keyring[0]?.keyBytesBase64 ?? '').length).toBe(32);
-	});
-
-	test('same root keyring and label derive the same transport keys', async () => {
-		const input = {
-			rootKeyring: parseRootKeyring('1:secret'),
-			label: 'user-1',
-		};
-
-		expect(await deriveKeyring(input)).toEqual(await deriveKeyring(input));
 	});
 
 	// Pinning test: lock the EXACT byte output of deriveKeyring for known

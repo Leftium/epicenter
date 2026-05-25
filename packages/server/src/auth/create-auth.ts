@@ -119,10 +119,10 @@ export function createAuth({
 						// explicit here.
 						const ownerId = asOwnerId(user.id);
 
-						const assets = await db
-							.select({ id: schema.asset.id })
-							.from(schema.asset)
-							.where(eq(schema.asset.ownerId, ownerId));
+						const assets = await db.query.asset.findMany({
+							columns: { id: true },
+							where: eq(schema.asset.ownerId, ownerId),
+						});
 						if (assets.length > 0) {
 							const keys = assets.map((a) => assetKey(ownerId, a.id));
 							await env.ASSETS_BUCKET.delete(keys);

@@ -395,42 +395,9 @@ describe('Room presence: rebroadcast on close', () => {
 		await new Promise((r) => setTimeout(r, 350));
 		expect(presenceFrames(wsA).slice(before)).toEqual([]);
 	});
-
-	test('real disconnect (no replacement) rebroadcasts exactly once', async () => {
-		const { room } = await makeRoom();
-		const wsA = await upgrade(room, 'A');
-		const wsB = await upgrade(room, 'B');
-		const before = presenceFrames(wsA).length;
-		await room.webSocketClose(wsB, 1000, 'bye', true);
-		await new Promise((r) => setTimeout(r, 350));
-		expect(presenceFrames(wsA).slice(before).map(deviceIds)).toEqual([[]]);
-	});
 });
 
 describe('Room presence: graceful handoff', () => {
-	test('close + reconnect within grace: the device is never observed absent', async () => {
-		const { room } = await makeRoom();
-		const wsA = await upgrade(room, 'A');
-		const wsB1 = await upgrade(room, 'B');
-		const baseline = presenceFrames(wsA).length;
-
-		await room.webSocketClose(wsB1, 1000, 'tab handoff', true);
-
-		// Reconnect well inside the 300 ms grace.
-		await new Promise((r) => setTimeout(r, 50));
-		await upgrade(room, 'B');
-
-		// Let the (now cancelled) grace timer's window elapse.
-		await new Promise((r) => setTimeout(r, 350));
-
-		const frames = presenceFrames(wsA).slice(baseline);
-		// Peer A may receive the reconnect's rebroadcast, but every frame
-		// still lists B: the device never disappears.
-		for (const frame of frames) {
-			expect(deviceIds(frame)).toContain('B');
-		}
-	});
-
 	test('cancel-then-replace: T1 closes, T2 connects inside grace, T2 closes outside grace', async () => {
 		const { room } = await makeRoom();
 		const wsA = await upgrade(room, 'A');

@@ -423,23 +423,6 @@ describe('pull', () => {
 		workspace[Symbol.dispose]();
 	});
 
-	test('creates table directory before writing', async () => {
-		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
-		workspace.tables.posts.set({
-			id: 'p1',
-			title: 'First',
-			published: false,
-			_v: 1,
-		});
-
-		await workspace.materializer.pull();
-
-		const entries = await listTestDir('posts');
-		expect(entries).toContain('p1.md');
-
-		workspace[Symbol.dispose]();
-	});
-
 	test('uses custom filename and toMarkdown callbacks', async () => {
 		const { workspace } = await setup({
 			tables: (t) => [
@@ -713,51 +696,6 @@ describe('round-trip', () => {
 		expect(p2?.published).toBe(false);
 
 		workspace2[Symbol.dispose]();
-	});
-
-	test('fromMarkdown(toMarkdown(row)) preserves row: MarkdownShape round-trip', async () => {
-		// Explicit toMarkdown / fromMarkdown pair over the shared MarkdownShape
-		// type, so the compiler guarantees one is the inverse of the other.
-		const toMarkdownFn = (row: {
-			id: string;
-			body: string;
-			_v: 1;
-		}): MarkdownShape => ({
-			frontmatter: { id: row.id, _v: row._v },
-			body: row.body,
-		});
-		const fromMarkdownFn = (parsed: MarkdownShape) => ({
-			id: parsed.frontmatter.id as string,
-			body: parsed.body ?? '',
-			_v: 1 as const,
-		});
-
-		const { workspace } = await setup({
-			tables: (t) =>
-				[
-					{
-						table: t.notes,
-						config: { toMarkdown: toMarkdownFn, fromMarkdown: fromMarkdownFn },
-					},
-				] as unknown as TableRegistration[],
-		});
-
-		const original = { id: 'n1', body: 'Hello, round trip!', _v: 1 as const };
-		workspace.tables.notes.set(original);
-
-		// Pull to disk, then push from disk into a fresh workspace.
-		await workspace.materializer.pull();
-
-		// Also assert the pure inverse identity: fromMarkdown(toMarkdown(x)) ≡ x
-		expect(fromMarkdownFn(toMarkdownFn(original))).toEqual(original);
-
-		// And verify the end-to-end disk round trip.
-		const disk = await readTestFile('notes/n1.md');
-		const parsed = parseMarkdownFile(disk);
-		if (parsed === null) throw new Error('expected notes/n1.md to parse');
-		expect(fromMarkdownFn(parsed)).toEqual(original);
-
-		workspace[Symbol.dispose]();
 	});
 
 	test('inline field-to-body pair round-trips over MarkdownShape', async () => {

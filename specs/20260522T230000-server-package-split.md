@@ -409,209 +409,89 @@ No further change needed.
 
 ## 10. Library public API
 
-```ts
-// packages/server/src/types.ts
+The authoritative public surface is whatever `packages/server/src/index.ts`
+re-exports. Read that file; do not maintain a prose snapshot here.
 
-export type OwnerKind    = 'personal' | 'team';
-export type SignUpPolicy = 'open' | 'disabled';
+Earlier drafts of this section pinned a snapshot ("`createServer` returns
+a bundle of sub-apps, `ServerOptions = { ownerKind, signUpPolicy }`, etc.").
+That snapshot has rotted three times on this branch alone:
 
-export type ServerOptions = {
-  ownerKind: OwnerKind;
-  signUpPolicy?: SignUpPolicy;   // default: 'open'
-};
-
-export type Owner =
-  | { kind: 'personal'; userId: string }
-  | { kind: 'team' };
-
-export type OwnerPath = `users/${string}` | '';
-
-export type Connection = {
-  userId: string;
-  deviceId: string;
-  connectedAt: number;
-  actions: ActionManifest;
-};
-
-export type Env = { Bindings: Cloudflare.Env; Variables: { /* ... */ } };
+```
+1. ApiSessionResponse shape           wave 2 reshuffle
+2. Owner discriminated union          collapsed to branded OwnerId + OwnershipMode
+3. createServer({...}) bundle         flattened to direct sub-app factories
 ```
 
-```ts
-// packages/server/src/create-server.ts
+Each rot was followed by silent drift between this section and the source.
+The asymmetric move is to refuse the snapshot duty entirely: the source IS
+the surface, and any prose copy will lie within a release cycle.
 
-export function createServer(opts: ServerOptions) {
-  return {
-    base:    createBaseApp(opts),     // CORS, db, auth context, singleCredential
-    auth:    createAuthApp(opts),     // /sign-in, /consent, /auth/*, OAuth discovery
-    session: createSessionApp(opts),  // /api/session
-    rooms:   createRoomsApp(opts),    // owner-shaped URL pattern
-    assets:  createAssetsApp(opts),   // owner-shaped URL pattern
-    ai:      createAiApp(opts),       // /api/ai/chat
-  };
-}
-```
+Design intent (which IS stable and belongs here):
 
-```ts
-// packages/server/src/index.ts
+- One factory per sub-app; each declares its full URL pattern internally.
+- Deployments mount sub-apps on `createBaseApp()`, composing auth and
+  billing middleware around each at mount time. No `ServerOptions` bundle
+  pretending to configure all of them uniformly.
+- Per-request owner partition is resolved by `createAttachOwner(mode)`
+  middleware so handlers stay mode-blind.
+- Internal derivations (`ownerPath`, `doName`, `assetKey`, etc.) stay
+  inside their respective files because no external consumer needs them.
 
-export { createServer } from './create-server';
-export { Room } from './room/backends/cloudflare/durable-object';
-export type {
-  OwnerKind, SignUpPolicy, ServerOptions,
-  Owner, OwnerPath, Connection, Env,
-} from './types';
-```
+For the concrete shape at any point in time:
+- `packages/server/src/index.ts` — public re-exports.
+- `apps/api/src/index.ts` — cloud composition reading top-to-bottom.
 
-That is the entire public surface. The `ownerPath`, `doName`, `assetKey`,
-`keyringLabel`, and `assetOwnerFilter` functions stay internal because no
-consumer needs them.
+## 11. Library internals: how mode dispatches
 
-## 11. Library internals: how ownerKind dispatches
+Design intent: the library has minimum mode-based branching. The
+`OwnershipMode` value (`'personal' | 'team'`) is read at construction by
+the small set of factories that need it for URL-shape decisions (e.g.
+`createAssetsApp`, `createAttachOwner`). After route registration, every
+handler reads the resolved `OwnerId` from `c.var.ownerId` (populated by
+the `attachOwner` middleware) and stays mode-blind.
 
-`opts.ownerKind` is the only static config the library reads. It is used
-in exactly one place: route registration shape.
+This invariant is the load-bearing one: any new feature should resolve to
+an `OwnerId` once at the boundary and never re-branch on mode inside
+handlers.
 
-```ts
-function createAssetsApp(opts: ServerOptions): Hono<Env> {
-  const app = new Hono<Env>();
-
-  if (opts.ownerKind === 'personal') {
-    // Personal: URL carries userId; safety middleware enforces it
-    app.get('/users/:userId/assets/:assetId{[a-z0-9]{15}}', publicReadPersonal);
-    app.use('/users/:userId/*', requireAuth, requireUrlUserIdMatchesAuth);
-    app.post('/users/:userId/assets', uploadPersonal);
-    app.get('/users/:userId/assets', listPersonal);
-    app.get('/users/:userId/assets/usage', usagePersonal);
-    app.delete('/users/:userId/assets/:assetId{[a-z0-9]{15}}', deletePersonal);
-  } else {
-    // Team: no partition in URL; auth still required for mutating ops
-    app.get('/assets/:assetId{[a-z0-9]{15}}', publicReadTeam);
-    app.use('/assets/*', requireAuth);
-    app.post('/assets', uploadTeam);
-    app.get('/assets', listTeam);
-    app.get('/assets/usage', usageTeam);
-    app.delete('/assets/:assetId{[a-z0-9]{15}}', deleteTeam);
-  }
-
-  return app;
-}
-```
-
-After route registration, every handler builds its `Owner` value the same
-way: personal handlers from `c.req.param('userId')`, team handlers from
-the constant `{ kind: 'team' }`. The `Owner` flows into `doName`,
-`assetKey`, `keyringLabel`, `assetOwnerFilter` uniformly.
-
-This is the only conditional branch on `ownerKind` in the library.
-Everything downstream operates on the resolved `Owner` value.
+For the concrete dispatch shape at any point in time, read the actual
+factory source under `packages/server/src/routes/`. Earlier drafts of
+this section pinned an example; that example rotted under the same
+factory-flattening refactors as §10's snapshot. The intent above is
+stable; the code is the surface.
 
 ## 12. Deployment composition
 
-### 11.1 Self-hosted team (`apps/server-team/src/index.ts`)
+Design intent: each deployment composes the public sub-apps onto
+`createBaseApp()` top-to-bottom, layering its own middleware (auth,
+billing, CSRF) around each sub-app at mount time. The base app owns
+per-request lifecycle (pg, after-response queue, CORS); deployments own
+which sub-apps are mounted and what middleware wraps them.
 
-```ts
-import { createServer } from '@epicenter/server';
-
-const s = createServer({
-  ownerKind: 'team',
-  signUpPolicy: 'disabled',
-});
-
-export default s.base
-  .route('/api/session', s.session)
-  .route('/sign-in',     s.auth)
-  .route('/consent',     s.auth)
-  .route('/auth',        s.auth)
-  .route('/api',         s.rooms)        // mounts /api/rooms/...
-  .route('/api',         s.assets)       // mounts /api/assets/...
-  .route('/api/ai',      s.ai);
-
-export { Room } from '@epicenter/server';
-```
-
-### 11.2 Epicenter Cloud (`apps/api/src/index.ts`)
-
-```ts
-import { Hono } from 'hono';
-import { createServer } from '@epicenter/server';
-import type { Env } from '@epicenter/server';
-import { autumnStorageGate, autumnPlanGate } from './autumn-gates';
-import { billingRoutes } from './billing-routes';
-import { adminRoutes }   from './admin-routes';
-import { dashboardSpa }  from './dashboard';
-
-const s = createServer({
-  ownerKind: 'personal',
-  signUpPolicy: 'open',
-});
-
-export default s.base
-  .route('/api/session', s.session)
-  .route('/sign-in',     s.auth)
-  .route('/consent',     s.auth)
-  .route('/auth',        s.auth)
-  .route('/api',         s.rooms)
-  .route(
-    '/api',
-    new Hono<Env>().use('/users/:userId/assets/*', autumnStorageGate).route('/', s.assets),
-  )
-  .route('/api/ai',      new Hono<Env>().use('*', autumnPlanGate).route('/', s.ai))
-  .route('/api/billing', billingRoutes)
-  .route('/admin',       adminRoutes)
-  .route('/dashboard',   dashboardSpa);
-
-export { Room } from '@epicenter/server';
-```
-
-Any reader sees the entire URL surface of either deployment in one file,
-top to bottom.
+For the cloud composition, read `apps/api/src/index.ts` top to bottom —
+that file is the canonical example and the entire cloud URL surface.
+For a self-hosted team deployment, a sibling app directory would compose
+the same sub-apps with team-mode middleware (no billing gates, no
+admin/dashboard SPA). Earlier drafts of this section pinned both
+compositions in prose; those snapshots rotted, but the intent above is
+stable.
 
 ## 13. Package shape
 
-```
-packages/server/
-  package.json                name: "@epicenter/server"
-  tsconfig.json
-  src/
-    index.ts                  public re-exports
-    create-server.ts          factory; returns named sub-apps
-    types.ts                  ServerOptions, OwnerKind, SignUpPolicy, Env
-    owner.ts                  Owner, OwnerPath, ownerPath, doName,
-                              assetKey, keyringLabel, assetOwnerFilter
-    routes/
-      auth.ts                 /sign-in, /consent, /auth/*, OAuth discovery
-      session.ts              /api/session
-      rooms.ts                /api/.../rooms/:roomId (GET, POST, WS upgrade)
-      assets.ts               /api/.../assets/[/:id, /usage] (public read + authed CRUD)
-      ai.ts                   /api/ai/chat
-    middleware/
-      single-credential.ts
-      require-auth.ts
-      require-url-user-id-matches-auth.ts
-      cors.ts
-      require-origin-for-cookie-mutations.ts
-    auth/                     Better Auth setup, encryption, OAuth metadata,
-                              resource-boundary, trusted-oauth-clients
-    room/                     Room DO class, RoomCore, update-log
-    db/                       schema (everything except billing-only columns)
-    auth-pages/               sign-in / consent / cli-callback / signed-in HTML
+Design intent:
 
-apps/api/                     Epicenter Cloud deployment
-  package.json                depends on @epicenter/server
-  wrangler.jsonc              cloud secrets and bindings
-  src/
-    index.ts                  ~30 lines composition
-    autumn-gates.ts           autumnStorageGate, autumnPlanGate
-    autumn.ts                 createAutumn client wrapper
-    billing-routes.ts         /api/billing/*
-    admin-routes.ts           /admin/* and /api/assets/reconcile
-    dashboard.ts              dashboard SPA static serving
-    billing-plans.ts          FEATURE_IDS, plan definitions
+- `packages/server/` is one library: a parent app (`createBaseApp`), sub-app
+  factories (one file per route family), middleware (one file per check),
+  and supporting subsystems (`auth/`, `room/`, `db/`, `auth-pages/`).
+- Sub-apps declare full URL patterns internally; deployments mount each
+  at the root. No `ServerOptions` bundle uniformly configuring all of them.
+- `apps/api/` is the only deployment shipped in this repo. Cloud-only
+  concerns (Autumn billing, admin routes, dashboard SPA) live there, not
+  in the library.
 
-(future) apps/server-team/    template self-hosted deployment, or example
-                              in @epicenter/server's README until a real
-                              customer runs one
-```
+The concrete file layout has moved enough times that mirroring it in
+prose has rotted twice this branch. Read `packages/server/src/` and
+`apps/api/src/` directly for the current shape.
 
 ## 14. Env reads, not opts
 

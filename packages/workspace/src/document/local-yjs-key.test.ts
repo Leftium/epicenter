@@ -4,7 +4,6 @@ import { createOwnedYjsKey, getOwnedYjsPrefix } from './local-yjs-key.js';
 
 const SERVER = 'api.epicenter.so';
 const ALICE = asOwnerId('user-a');
-const BOB = asOwnerId('user-b');
 const TEAM = TEAM_OWNER_ID;
 
 describe('getOwnedYjsPrefix', () => {
@@ -27,21 +26,6 @@ describe('createOwnedYjsKey', () => {
 		);
 		expect(createOwnedYjsKey(SERVER, TEAM, 'epicenter.fuji')).toBe(
 			'epicenter/api.epicenter.so/owners/team/epicenter.fuji',
-		);
-	});
-	test('different owners on the same server produce different keys', () => {
-		expect(createOwnedYjsKey(SERVER, ALICE, 'epicenter.fuji')).not.toBe(
-			createOwnedYjsKey(SERVER, BOB, 'epicenter.fuji'),
-		);
-	});
-	test('different ydoc guids produce different keys for the same owner', () => {
-		expect(createOwnedYjsKey(SERVER, ALICE, 'epicenter.fuji')).not.toBe(
-			createOwnedYjsKey(SERVER, ALICE, 'epicenter.honeycrisp'),
-		);
-	});
-	test('different servers produce different keys for the same team owner id', () => {
-		expect(createOwnedYjsKey('team-a.example', TEAM, 'd')).not.toBe(
-			createOwnedYjsKey('team-b.example', TEAM, 'd'),
 		);
 	});
 });

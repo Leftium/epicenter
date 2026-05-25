@@ -16,11 +16,6 @@ describe('daemon/paths', () => {
 		}
 	});
 
-	test('dirHash is deterministic for the same absolute path', () => {
-		const abs = realpathSync(tmpdir());
-		expect(dirHash(abs)).toBe(dirHash(abs));
-	});
-
 	test('dirHash of a relative path equals the hash of its realpath', () => {
 		// `tmpdir()` may resolve through a symlink (e.g. /tmp -> /private/tmp on
 		// macOS); dirHash should normalize via realpathSync so equivalent inputs

@@ -8,8 +8,9 @@
  *
  * Deployments import the parent base app and the sub-apps they need,
  * then compose auth and (where applicable) billing middleware around
- * each sub-app at mount time. See `apps/api/src/index.ts` for the
- * cloud composition.
+ * each sub-app at mount time. Sub-apps declare full URLs (including the
+ * `/api` prefix where applicable); deployments mount them at `/`.
+ * See `apps/api/src/index.ts` for the cloud composition.
  */
 
 // Parent app. Wires per-request lifecycle (pg, after-response queue,
@@ -26,13 +27,13 @@ export { requireUrlOwnerIdMatchesAuth } from './middleware/require-url-owner-id-
 // Re-export the Cloudflare Durable Object class so each deployment's
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.
 export { Room } from './room/backends/cloudflare/durable-object.js';
-// Sub-apps. Each defines route shapes only; the deployment composes
-// auth and billing middleware around them at mount time.
-export { createAiApp } from './routes/ai.js';
+// Sub-apps. Each declares its full URL pattern internally; the
+// deployment composes auth and billing middleware around them.
+export { aiApp } from './routes/ai.js';
 export { createAssetsApp } from './routes/assets.js';
-export { createAuthApp } from './routes/auth.js';
-export { createRoomsApp } from './routes/rooms.js';
-export { createSessionApp } from './routes/session.js';
+export { authApp } from './routes/auth.js';
+export { roomsApp } from './routes/rooms.js';
+export { sessionApp } from './routes/session.js';
 
 // Public Hono context type the deployment composes around library
 // middleware. `OwnershipMode` and `SignUpPolicy` stay internal: factories

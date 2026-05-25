@@ -119,9 +119,8 @@ export {
 // `loadProjectConfig`, etc.) import `node:fs`, `node:path`, or `node:os`
 // at module top level. They are exported from `@epicenter/workspace/node`;
 // keeping them out of this root barrel stops browser bundles (fuji,
-// whispering, etc.) from traversing `node:*` modules. Platform paths
-// (data, log, cache, config, runtime) live in `@epicenter/constants/node`
-// behind `createEpicenterEnv`.
+// whispering, etc.) from traversing `node:*` modules. Daemon runtime and
+// log paths live in `@epicenter/workspace/daemon/paths.ts`.
 export {
 	DEFAULT_PROJECT_CONFIG_SOURCE,
 	defineConfig,

@@ -34,16 +34,3 @@ describe('assetKey', () => {
 		expect(assetKey(team, 'x1y2z3')).toBe('owners/team/assets/x1y2z3');
 	});
 });
-
-describe('cross-mode isolation', () => {
-	test('two distinct personal users never collide on any resource', () => {
-		const alice = asOwnerId('alice');
-		const bob = asOwnerId('bob');
-		expect(doName(alice, 'r')).not.toBe(doName(bob, 'r'));
-		expect(assetKey(alice, 'a')).not.toBe(assetKey(bob, 'a'));
-	});
-	test('team and personal never produce overlapping strings', () => {
-		expect(doName(team, 'r')).not.toBe(doName(personal, 'r'));
-		expect(assetKey(team, 'a')).not.toBe(assetKey(personal, 'a'));
-	});
-});

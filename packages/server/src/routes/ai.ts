@@ -50,53 +50,49 @@ const aiChatBody = type({
 });
 
 /**
- * Build the `/api/ai` sub-app.
- *
- * Mounts `POST /chat` only; auth is supplied by the parent composition
+ * `/api/ai/chat` sub-app. Auth is supplied by the parent composition
  * (cloud's bearer-only middleware, team's cookie-or-bearer middleware).
  */
-export function createAiApp(): Hono<Env> {
-	return new Hono<Env>().post(
-		'/chat',
-		describeRoute({
-			description: 'Stream AI chat completions via SSE',
-			tags: ['ai'],
-		}),
-		sValidator('json', aiChatBody),
-		async (c) => {
-			const { messages, data, apiKey: userApiKey } = c.req.valid('json');
-			const { provider, tools, ...options } = data;
+export const aiApp = new Hono<Env>().post(
+	'/api/ai/chat',
+	describeRoute({
+		description: 'Stream AI chat completions via SSE',
+		tags: ['ai'],
+	}),
+	sValidator('json', aiChatBody),
+	async (c) => {
+		const { messages, data, apiKey: userApiKey } = c.req.valid('json');
+		const { provider, tools, ...options } = data;
 
-			let adapter: AnyTextAdapter;
-			switch (data.provider) {
-				case 'openai': {
-					const apiKey = userApiKey ?? c.env.OPENAI_API_KEY;
-					if (!apiKey)
-						return c.json(AiChatError.ProviderNotConfigured({ provider }), 503);
-					adapter = createOpenaiChat(data.model, apiKey);
-					break;
-				}
-				case 'gemini': {
-					const apiKey = userApiKey ?? c.env.GEMINI_API_KEY;
-					if (!apiKey)
-						return c.json(AiChatError.ProviderNotConfigured({ provider }), 503);
-					adapter = createGeminiChat(data.model, apiKey);
-					break;
-				}
-				default:
-					return data satisfies never;
+		let adapter: AnyTextAdapter;
+		switch (data.provider) {
+			case 'openai': {
+				const apiKey = userApiKey ?? c.env.OPENAI_API_KEY;
+				if (!apiKey)
+					return c.json(AiChatError.ProviderNotConfigured({ provider }), 503);
+				adapter = createOpenaiChat(data.model, apiKey);
+				break;
 			}
+			case 'gemini': {
+				const apiKey = userApiKey ?? c.env.GEMINI_API_KEY;
+				if (!apiKey)
+					return c.json(AiChatError.ProviderNotConfigured({ provider }), 503);
+				adapter = createGeminiChat(data.model, apiKey);
+				break;
+			}
+			default:
+				return data satisfies never;
+		}
 
-			const abortController = new AbortController();
-			const stream = chat({
-				adapter,
-				messages: messages as Array<ModelMessage>,
-				...options,
-				tools: tools as Array<Tool> | undefined,
-				abortController,
-			});
+		const abortController = new AbortController();
+		const stream = chat({
+			adapter,
+			messages: messages as Array<ModelMessage>,
+			...options,
+			tools: tools as Array<Tool> | undefined,
+			abortController,
+		});
 
-			return toServerSentEventsResponse(stream, { abortController });
-		},
-	);
-}
+		return toServerSentEventsResponse(stream, { abortController });
+	},
+);

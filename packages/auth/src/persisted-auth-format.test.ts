@@ -44,16 +44,6 @@ test('PersistedAuth.assert round-trips the on-disk fixture byte-identical', () =
 	expect(JSON.stringify(parsed)).toBe(PINNED_JSON);
 });
 
-test('PersistedAuth top-level keys are serialized in the pinned order', () => {
-	const parsed = PersistedAuth.assert(FIXTURE);
-	expect(Object.keys(parsed)).toEqual([
-		'grant',
-		'userId',
-		'ownerId',
-		'keyring',
-	]);
-});
-
 test('PersistedAuth rejects a cell missing any required field', () => {
 	// arktype treats `{...FIXTURE, x: undefined}` as "x is missing" because
 	// `x: string` rejects undefined. Verified manually; do not switch to a

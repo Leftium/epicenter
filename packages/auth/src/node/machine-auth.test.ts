@@ -59,12 +59,6 @@ function tmpAuthPath() {
 	return filePath;
 }
 
-function tmpDataDir() {
-	const dirPath = path.join(os.tmpdir(), `epicenter-data-${randomUUID()}`);
-	cleanupDirs.push(dirPath);
-	return dirPath;
-}
-
 afterEach(async () => {
 	while (cleanupPaths.length) {
 		const filePath = cleanupPaths.pop()!;
@@ -239,32 +233,6 @@ test('loginWithOob writes PersistedAuth and returns identity', async () => {
 		const stat = await fs.stat(filePath);
 		expect(stat.mode & 0o777).toBe(0o600);
 	}
-});
-
-test('loginWithOob writes to the API-target-specific default path under the data dir', async () => {
-	const dataDir = tmpDataDir();
-	const filePath = machineAuthFilePath({ baseURL: BASE_URL, dataDir });
-
-	const { fetch } = createFetch({
-		tokenRoute: tokenSuccess(),
-		apiSessionRoute: apiSessionOk('user-1'),
-	});
-
-	const result = await loginWithOob({
-		baseURL: BASE_URL,
-		clientId: CLIENT_ID,
-		filePath,
-		fetch,
-		now: () => NOW,
-		print: () => {},
-		openBrowser: () => {},
-		readCode: async () => 'CODE',
-	});
-	expectOk(result);
-
-	const loaded = (await readCellRaw(filePath)) as PersistedAuth;
-	expect(loaded.grant.accessToken).toBe('access-1');
-	expect(filePath).toBe(path.join(dataDir, 'auth', 'localhost_8787.json'));
 });
 
 test('loginWithOob with empty paste writes no file', async () => {

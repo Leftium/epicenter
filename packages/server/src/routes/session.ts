@@ -23,21 +23,19 @@ import { describeRoute } from 'hono-openapi';
 import { deriveKeyring } from '../auth/encryption.js';
 import type { Env } from '../types.js';
 
-export function createSessionApp(): Hono<Env> {
-	return new Hono<Env>().get(
-		'/',
-		describeRoute({
-			description: 'Return the authenticated session projection',
-			tags: ['auth'],
-		}),
-		async (c) => {
-			const ownerId = c.var.ownerId;
-			const keyring = await deriveKeyring(ownerId);
-			return c.json({
-				user: { id: c.var.user.id, email: c.var.user.email },
-				ownerId,
-				keyring,
-			} satisfies ApiSessionResponse);
-		},
-	);
-}
+export const sessionApp = new Hono<Env>().get(
+	'/api/session',
+	describeRoute({
+		description: 'Return the authenticated session projection',
+		tags: ['auth'],
+	}),
+	async (c) => {
+		const ownerId = c.var.ownerId;
+		const keyring = await deriveKeyring(ownerId);
+		return c.json({
+			user: { id: c.var.user.id, email: c.var.user.email },
+			ownerId,
+			keyring,
+		} satisfies ApiSessionResponse);
+	},
+);

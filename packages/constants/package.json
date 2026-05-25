@@ -14,11 +14,13 @@
 		"./apps": "./src/apps.ts",
 		"./auth": "./src/auth.ts",
 		"./identity": "./src/identity.ts",
-		"./node": "./src/node.ts",
 		"./oauth": "./src/oauth.ts",
 		"./vite": "./src/vite.ts",
 		"./versions": "./src/versions.ts",
-		"./ai-chat-errors": "./src/ai-chat-errors.ts"
+		"./ai-chat-errors": "./src/ai-chat-errors.ts",
+		"./asset-errors": "./src/asset-errors.ts",
+		"./oauth-errors": "./src/oauth-errors.ts",
+		"./request-guard-errors": "./src/request-guard-errors.ts"
 	},
 	"devDependencies": {
 		"@better-auth/oauth-provider": "catalog:",
@@ -28,7 +30,6 @@
 	},
 	"dependencies": {
 		"arktype": "catalog:",
-		"env-paths": "^3.0.0",
 		"wellcrafted": "catalog:"
 	},
 	"scripts": {

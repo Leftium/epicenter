@@ -1,7 +1,7 @@
 /**
  * Rooms sub-app: one Cloudflare Durable Object per named Y.Doc.
  *
- * URL shape (uniform across modes): `/owners/:ownerId/rooms/:roomId`.
+ * URL shape (uniform across modes): `/api/owners/:ownerId/rooms/:roomId`.
  * The deployment is responsible for mounting auth and the `attachOwner`
  * middleware so `c.var.ownerId` is populated before this handler runs.
  * In personal mode it also layers `requireUrlOwnerIdMatchesAuth` to gate
@@ -113,23 +113,21 @@ function upsertDoInstance(
 }
 
 /**
- * Build the rooms sub-app. URL shape is uniform across modes; the resolved
- * owner partition arrives on `c.var.ownerId` via the deployment-mounted
+ * Rooms sub-app. URL shape is uniform across modes; the resolved owner
+ * partition arrives on `c.var.ownerId` via the deployment-mounted
  * `attachOwner` middleware, so handlers stay mode-blind.
  */
-export function createRoomsApp(): Hono<Env> {
-	const app = new Hono<Env>();
+const ROOM_PATTERN = '/api/owners/:ownerId/rooms/:roomId{[a-z0-9]{15}}';
 
-	const pattern = '/owners/:ownerId/rooms/:roomId{[a-z0-9]{15}}';
-
-	app.get(
-		pattern,
+export const roomsApp = new Hono<Env>()
+	.get(
+		ROOM_PATTERN,
 		describeRoute({
 			description: 'Get room doc or upgrade to WebSocket',
 			tags: ['rooms'],
 		}),
 		async (c) => {
-			const roomId = c.req.param('roomId')!;
+			const roomId = c.req.param('roomId');
 			const name = doName(c.var.ownerId, roomId);
 			const room = c.var.rooms.get(name);
 
@@ -161,16 +159,15 @@ export function createRoomsApp(): Hono<Env> {
 			);
 			return binaryResponse(data);
 		},
-	);
-
-	app.post(
-		pattern,
+	)
+	.post(
+		ROOM_PATTERN,
 		describeRoute({
 			description: 'Sync room doc',
 			tags: ['rooms'],
 		}),
 		async (c) => {
-			const roomId = c.req.param('roomId')!;
+			const roomId = c.req.param('roomId');
 			const name = doName(c.var.ownerId, roomId);
 
 			const body = new Uint8Array(await c.req.raw.arrayBuffer());
@@ -197,6 +194,3 @@ export function createRoomsApp(): Hono<Env> {
 			return diff ? binaryResponse(diff) : new Response(null, { status: 204 });
 		},
 	);
-
-	return app;
-}

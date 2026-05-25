@@ -1,12 +1,12 @@
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
 import { AuthUser } from '@epicenter/auth';
+import { OAuthError } from '@epicenter/constants/oauth-errors';
 import type { User } from 'better-auth';
 import { eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Context } from 'hono';
 import { Ok, type Result } from 'wellcrafted/result';
 import * as schema from '../db/schema';
-import { OAuthError } from './oauth-error.js';
 import { createOAuthIssuerURL, createOAuthJwksURL } from './oauth-metadata.js';
 
 type VerifyOAuthAccessToken = ReturnType<
@@ -92,11 +92,9 @@ export function resolveRequestOAuthUser<E extends RequestOAuthEnv>(
 		verifyOAuthAccessToken:
 			oauthProviderResourceClient().getActions().verifyAccessToken,
 		findUserById: async (userId) => {
-			const [row] = await c.var.db
-				.select()
-				.from(schema.user)
-				.where(eq(schema.user.id, userId))
-				.limit(1);
+			const row = await c.var.db.query.user.findFirst({
+				where: eq(schema.user.id, userId),
+			});
 			return row ?? null;
 		},
 	} satisfies ResolverDeps);

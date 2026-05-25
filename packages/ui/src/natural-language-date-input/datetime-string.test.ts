@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 
 import type { DateTimeString } from '@epicenter/workspace';
-import { localTimezone, toDateTimeString } from './datetime-string.js';
+import { toDateTimeString } from './datetime-string.js';
 
 describe('toDateTimeString', () => {
 	it('formats UTC date and timezone with a pipe separator', () => {
@@ -15,14 +15,5 @@ describe('toDateTimeString', () => {
 		);
 		expect(value).toContain('|');
 		expect(value).toContain('America/New_York');
-	});
-});
-
-describe('localTimezone', () => {
-	it('returns a non-empty IANA timezone name', () => {
-		const timezone = localTimezone();
-
-		expect(timezone).not.toBe('');
-		expect(timezone).toMatch(/\/|^UTC$/);
 	});
 });

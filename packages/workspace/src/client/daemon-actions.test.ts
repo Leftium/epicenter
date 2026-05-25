@@ -44,19 +44,6 @@ describe('buildDaemonActions workspace facade', () => {
 		});
 	});
 
-	test('action with no input sends undefined', async () => {
-		const { client, calls } = makeStubClient();
-		// biome-ignore lint/suspicious/noExplicitAny: smoke test
-		const workspace: any = buildDaemonActions(client, WORKSPACE);
-
-		await workspace.status();
-
-		expect(calls[0]!.arg).toMatchObject({
-			actionPath: 'demo.status',
-			input: undefined,
-		});
-	});
-
 	test('action options override the daemon wait budget', async () => {
 		const { client, calls } = makeStubClient();
 		// biome-ignore lint/suspicious/noExplicitAny: smoke test

@@ -19,9 +19,9 @@
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import { epicenterEnv } from '@epicenter/constants/node';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import type { Keyring } from '@epicenter/encryption';
+import envPaths from 'env-paths';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -42,6 +42,16 @@ import {
 import { createOobOAuthLauncher } from './oob-launcher.js';
 
 /**
+ * Auth's per-user data directory. Honors `EPICENTER_DATA_DIR` first, then
+ * falls back to the env-paths platform data directory (e.g.
+ * `~/Library/Application Support/epicenter` on macOS,
+ * `~/.local/share/epicenter` on Linux). Resolved once at module load:
+ * production env vars don't change mid-process.
+ */
+const DEFAULT_DATA_DIR =
+	process.env.EPICENTER_DATA_DIR ?? envPaths('epicenter', { suffix: '' }).data;
+
+/**
  * The on-disk machine auth file for a given API target.
  *
  * One file per API target under the platform data directory, in an `auth/`
@@ -51,14 +61,12 @@ import { createOobOAuthLauncher } from './oob-launcher.js';
  * `<dataDir>/auth/localhost_8787.json`. Different targets cannot trample
  * each other.
  *
- * `dataDir` defaults to `epicenterEnv.dataDir` (which honours
- * `EPICENTER_DATA_DIR` and falls back to the env-paths data directory)
- * and exists only as an override for tests; production callers should
- * never pass it.
+ * `dataDir` defaults to {@link DEFAULT_DATA_DIR} and exists as an override
+ * for tests; production callers should never pass it.
  */
 export function machineAuthFilePath({
 	baseURL = EPICENTER_API_URL,
-	dataDir = epicenterEnv.dataDir,
+	dataDir = DEFAULT_DATA_DIR,
 }: {
 	baseURL?: string;
 	dataDir?: string;

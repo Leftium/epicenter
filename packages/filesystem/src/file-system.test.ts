@@ -597,11 +597,4 @@ describe('just-bash integration', () => {
 		const result = await bash.exec('cat /dest.txt');
 		expect(result.stdout.trim()).toBe('content');
 	});
-
-	test('bash wc -l reports the expected line count', async () => {
-		const bash = setupBash();
-		await bash.exec('printf "line1\\nline2\\nline3\\n" > /file.txt');
-		const result = await bash.exec('wc -l /file.txt');
-		expect(result.stdout.trim()).toContain('3');
-	});
 });

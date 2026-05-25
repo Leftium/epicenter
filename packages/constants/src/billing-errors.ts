@@ -28,12 +28,12 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  *
  * billingRoutes.onError((err, c) => {
  *   if (!(err instanceof AutumnError)) throw err;
- *   const parsed = parseAutumnBody(err.body);
+ *   const body = tryJsonParse(err.body);
  *   return c.json(
  *     BillingError.ProviderRequestFailed({
  *       statusCode: err.statusCode,
- *       code: parsed.code,
- *       message: parsed.message,
+ *       code: body?.code,
+ *       message: body?.message ?? err.body,
  *     }),
  *     err.statusCode as ContentfulStatusCode,
  *   );

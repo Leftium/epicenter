@@ -22,6 +22,7 @@
         "@better-auth/drizzle-adapter": "catalog:",
         "@better-auth/oauth-provider": "catalog:",
         "@epicenter/auth": "workspace:*",
+        "@epicenter/billing": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
         "@epicenter/server": "workspace:*",
@@ -73,9 +74,9 @@
       "name": "@epicenter/dashboard",
       "version": "0.0.1",
       "dependencies": {
-        "@epicenter/api": "workspace:*",
         "@epicenter/auth": "workspace:*",
         "@epicenter/auth-svelte": "workspace:*",
+        "@epicenter/billing": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@tanstack/svelte-query": "catalog:",
@@ -560,6 +561,15 @@
         "svelte": "^5.0.0",
       },
     },
+    "packages/billing": {
+      "name": "@epicenter/billing",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@tanstack/ai-gemini": "catalog:",
+        "@tanstack/ai-openai": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/cli": {
       "name": "@epicenter/cli",
       "version": "0.1.0",
@@ -904,7 +914,7 @@
     "typescript": "^5.9.3",
     "virtua": "^0.48.5",
     "vite": "^7.2.4",
-    "wellcrafted": "^0.36.0",
+    "wellcrafted": "^0.37.0",
     "wrangler": "^4.71.0",
     "y-indexeddb": "^9.0.12",
     "y-protocols": "^1.0.7",
@@ -1093,6 +1103,8 @@
     "@epicenter/auth": ["@epicenter/auth@workspace:packages/auth"],
 
     "@epicenter/auth-svelte": ["@epicenter/auth-svelte@workspace:packages/auth-svelte"],
+
+    "@epicenter/billing": ["@epicenter/billing@workspace:packages/billing"],
 
     "@epicenter/breddit": ["@epicenter/breddit@workspace:apps/breddit"],
 
@@ -3782,7 +3794,7 @@
 
     "webpack-virtual-modules": ["webpack-virtual-modules@0.6.2", "", {}, "sha512-66/V2i5hQanC51vBQKPH4aI8NMAcBW59FVBs+rC7eGHupMyfn34q7rZIE+ETlJ+XTevqfUhVVBgSUNSW2flEUQ=="],
 
-    "wellcrafted": ["wellcrafted@0.36.0", "", {}, "sha512-Ub8uI7rnpise7mjbH+SUOtOYJneWqwI26eTIvrn4DNI4DFAtGvb6Ha+XoVHpC6T/yEa2NS2xe32iVKnW7C9euw=="],
+    "wellcrafted": ["wellcrafted@0.37.0", "", {}, "sha512-gsX07pbZh6oO8fZ4HDfYdKy8ln3JbzO6yiVE07SU/G3Jjx5hcXCA6ATG8ZWy6e7Ct4Ma17/bxJfzTRoiR4729g=="],
 
     "whatwg-url": ["whatwg-url@5.0.0", "", { "dependencies": { "tr46": "~0.0.3", "webidl-conversions": "^3.0.0" } }, "sha512-saE57nupxk6v3HY35+jzBwYa0rKSy0XR8JSxZPwgLr7ys0IBzhGviA1/TUGJLmSVqs8pb9AnvICXEuOHLprYTw=="],
 

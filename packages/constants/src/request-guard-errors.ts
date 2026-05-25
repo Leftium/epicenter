@@ -24,11 +24,15 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  * The serialized envelope is `wellcrafted`'s `{ data: null, error: {
  * name, message, ...fields } }`. Receivers branch on `body.error.name`.
  *
+ * Each variant carries its own HTTP `status`, so call sites just forward
+ * the baked-in code to `c.json`. No external status mapper required.
+ *
  * @example
  * ```ts
  * // Server: runtime usage
  * import { RequestGuardError } from '@epicenter/constants/request-guard-errors';
- * return c.json(RequestGuardError.OwnerMismatch(), 403);
+ * const err = RequestGuardError.OwnerMismatch();
+ * return c.json(err, err.error.status); // 403, baked into the variant
  *
  * // Client: type-only narrowing
  * import type { RequestGuardError } from '@epicenter/constants/request-guard-errors';
@@ -45,16 +49,20 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 export const RequestGuardError = defineErrors({
 	OwnerMismatch: () => ({
 		message: 'The request URL owner does not match the authenticated user.',
+		status: 403 as const,
 	}),
 	NotTeamMember: () => ({
 		message: 'The authenticated user is not a member of this team deployment.',
+		status: 403 as const,
 	}),
 	ForbiddenOrigin: () => ({
 		message: 'Origin header is missing or not in the trusted-origin allowlist.',
+		status: 403 as const,
 	}),
 	MissingDeviceId: () => ({
 		message:
 			'WebSocket upgrade is missing the required deviceId query parameter.',
+		status: 400 as const,
 	}),
 });
 

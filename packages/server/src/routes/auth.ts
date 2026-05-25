@@ -42,13 +42,6 @@ import {
 } from '../auth-pages/index.js';
 import type { Env } from '../types.js';
 
-type OAuthOpenIdConfigAuth = Parameters<
-	typeof oauthProviderOpenIdConfigMetadata
->[0];
-type OAuthAuthServerConfigAuth = Parameters<
-	typeof oauthProviderAuthServerMetadata
->[0];
-
 /**
  * Auth sub-app. Registration order matters: OAuth discovery routes must
  * register before the `/auth/*` Better Auth catch-all, or the catch-all
@@ -128,9 +121,9 @@ export const authApp = new Hono<Env>()
 			tags: ['auth', 'oauth'],
 		}),
 		(c) =>
-			oauthProviderOpenIdConfigMetadata(c.var.auth as OAuthOpenIdConfigAuth)(
-				c.req.raw,
-			),
+			oauthProviderOpenIdConfigMetadata(
+				c.var.auth as Parameters<typeof oauthProviderOpenIdConfigMetadata>[0],
+			)(c.req.raw),
 	)
 	.get(
 		OAUTH_AUTHORIZATION_SERVER_METADATA_PATH,
@@ -139,9 +132,9 @@ export const authApp = new Hono<Env>()
 			tags: ['auth', 'oauth'],
 		}),
 		(c) =>
-			oauthProviderAuthServerMetadata(c.var.auth as OAuthAuthServerConfigAuth)(
-				c.req.raw,
-			),
+			oauthProviderAuthServerMetadata(
+				c.var.auth as Parameters<typeof oauthProviderAuthServerMetadata>[0],
+			)(c.req.raw),
 	)
 	.get(
 		OAUTH_PROTECTED_RESOURCE_METADATA_PATH,

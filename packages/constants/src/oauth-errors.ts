@@ -16,6 +16,9 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  * The serialized envelope is `wellcrafted`'s `{ data: null, error: {
  * name, message, ...fields } }`. Receivers branch on `body.error.name`.
  *
+ * The variant carries its own HTTP `status` (401), so call sites just
+ * forward the baked-in code to `c.json`. No external status mapper required.
+ *
  * @example
  * ```ts
  * // Server: runtime usage
@@ -34,6 +37,7 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 export const OAuthError = defineErrors({
 	InvalidToken: () => ({
 		message: 'OAuth access token is missing, malformed, or unverifiable.',
+		status: 401 as const,
 	}),
 });
 

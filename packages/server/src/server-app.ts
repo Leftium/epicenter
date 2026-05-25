@@ -1,5 +1,5 @@
 /**
- * Base app factory. Wires per-request lifecycle (pg connection,
+ * Server app factory. Wires per-request lifecycle (pg connection,
  * after-response queue, auth instance, CORS, single-credential
  * normalization, CSRF) and returns a `Hono` instance the deployment
  * mounts every other sub-app on.
@@ -47,7 +47,7 @@ const WRANGLER_DEV_API_ORIGIN = `http://${new URL(PRODUCTION_API_ORIGIN).host}`;
  * and the rooms registry. The deployment is responsible for exposing a
  * health endpoint on `/`.
  */
-export function createBaseApp(): Hono<Env> {
+export function createServerApp(): Hono<Env> {
 	const app = new Hono<Env>();
 
 	// 1. CORS

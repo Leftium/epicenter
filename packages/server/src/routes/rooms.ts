@@ -77,7 +77,7 @@ function binaryResponse(data: Uint8Array): Response {
  * billing authority. The failure is observable via the `server/rooms`
  * logger so silent telemetry loss surfaces in deployment logs.
  */
-function upsertDoInstance(
+async function upsertDoInstance(
 	db: Db,
 	params: {
 		ownerId: OwnerId;
@@ -85,37 +85,38 @@ function upsertDoInstance(
 		doName: string;
 		storageBytes?: number;
 	},
-) {
+): Promise<void> {
 	const now = new Date();
-	return db
-		.insert(schema.durableObjectInstance)
-		.values({
-			ownerId: params.ownerId,
-			resourceName: params.resourceName,
-			doName: params.doName,
-			storageBytes: params.storageBytes ?? null,
-			lastAccessedAt: now,
-			storageMeasuredAt: params.storageBytes != null ? now : null,
-		})
-		.onConflictDoUpdate({
-			target: schema.durableObjectInstance.doName,
-			set: {
+	try {
+		await db
+			.insert(schema.durableObjectInstance)
+			.values({
+				ownerId: params.ownerId,
+				resourceName: params.resourceName,
+				doName: params.doName,
+				storageBytes: params.storageBytes ?? null,
 				lastAccessedAt: now,
-				...(params.storageBytes != null && {
-					storageBytes: params.storageBytes,
-					storageMeasuredAt: now,
-				}),
-			},
-		})
-		.catch((cause: unknown) => {
-			log.warn(
-				RoomsTelemetryError.DoInstanceUpsertFailed({
-					cause,
-					ownerId: params.ownerId,
-					doName: params.doName,
-				}),
-			);
-		});
+				storageMeasuredAt: params.storageBytes != null ? now : null,
+			})
+			.onConflictDoUpdate({
+				target: schema.durableObjectInstance.doName,
+				set: {
+					lastAccessedAt: now,
+					...(params.storageBytes != null && {
+						storageBytes: params.storageBytes,
+						storageMeasuredAt: now,
+					}),
+				},
+			});
+	} catch (cause) {
+		log.warn(
+			RoomsTelemetryError.DoInstanceUpsertFailed({
+				cause,
+				ownerId: params.ownerId,
+				doName: params.doName,
+			}),
+		);
+	}
 }
 
 /**
@@ -142,7 +143,8 @@ const roomsApp = new Hono<Env>()
 				// produce a presence-ghost connection (visible in presence
 				// frames but unreachable by dispatch).
 				if (!c.req.query('deviceId')) {
-					return c.json(RequestGuardError.MissingDeviceId(), 400);
+					const err = RequestGuardError.MissingDeviceId();
+					return c.json(err, err.error.status);
 				}
 
 				// Stamp userId from auth, overwriting any client-supplied
@@ -210,20 +212,20 @@ const roomsApp = new Hono<Env>()
 	);
 
 /**
- * Mount the rooms surface on a deployment's base app.
+ * Mount the rooms surface on a deployment's server app.
  *
  * Bundles auth (bearer-only: rooms is for external clients, never
  * browsers), the ownership boundary, and the route mount into one call.
  * Deployments call this once; they do not assemble the chain manually.
  */
 export function mountRoomsApp(
-	base: Hono<Env>,
+	app: Hono<Env>,
 	opts: { ownership: OwnershipRule },
 ): void {
-	base.use(
+	app.use(
 		API_ROUTES.room.prefixPattern,
 		requireBearerUser,
 		createRequireOwnership(opts.ownership),
 	);
-	base.route('/', roomsApp);
+	app.route('/', roomsApp);
 }

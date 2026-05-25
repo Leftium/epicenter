@@ -10,8 +10,8 @@
  * owners get a per-user keyring (`ownerId === userId`); every member of a
  * team deployment shares one keyring (`ownerId === TEAM_OWNER_ID`).
  *
- * The deployment is responsible for mounting auth and `requireOwnership`
- * upstream so `c.var.user` and `c.var.ownerId` are populated before this
+ * {@link mountSessionApp} wires cookie-or-bearer auth and the ownership
+ * boundary so `c.var.user` and `c.var.ownerId` are populated before the
  * handler runs. The handler stays mode-blind. Deployment shape is not on
  * the wire: any consumer that needs to branch derives it from
  * `ownerId === TEAM_OWNER_ID`.
@@ -22,9 +22,12 @@ import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
 import { deriveKeyring } from '../auth/encryption.js';
+import { requireCookieOrBearerUser } from '../middleware/require-auth.js';
+import { createRequireOwnership } from '../middleware/require-ownership.js';
+import type { OwnershipRule } from '../ownership.js';
 import type { Env } from '../types.js';
 
-export const sessionApp = new Hono<Env>().get(
+const sessionApp = new Hono<Env>().get(
 	API_ROUTES.session.pattern,
 	describeRoute({
 		description: 'Return the authenticated session projection',
@@ -40,3 +43,24 @@ export const sessionApp = new Hono<Env>().get(
 		} satisfies ApiSessionResponse);
 	},
 );
+
+/**
+ * Mount the session surface on a deployment's server app.
+ *
+ * Bundles cookie-or-bearer auth (the session endpoint is reachable from
+ * both browser apps and API clients), the ownership boundary (no URL
+ * `:ownerId` to compare against, but team-mode membership is still
+ * enforced and `c.var.ownerId` is populated), and the route mount into
+ * one call.
+ */
+export function mountSessionApp(
+	app: Hono<Env>,
+	opts: { ownership: OwnershipRule },
+): void {
+	app.use(
+		API_ROUTES.session.pattern,
+		requireCookieOrBearerUser,
+		createRequireOwnership(opts.ownership),
+	);
+	app.route('/', sessionApp);
+}

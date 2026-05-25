@@ -25,7 +25,7 @@
  * conditional GET pattern (`/:assetId{21}`) is disjoint from those, so
  * Hono picks the right handler without registration-order tricks.
  * `mountAssetsApp` owns this composition; the deployment passes only the
- * deployment-specific gates.
+ * deployment-specific policies.
  *
  * All writes still arrive with `c.var.ownerId` populated by the
  * deployment-mounted `requireOwnership` middleware. The conditional read
@@ -54,7 +54,7 @@ import * as schema from '../db/schema/index.js';
 import { requireCookieOrBearerUser } from '../middleware/require-auth.js';
 import { createRequireOwnership } from '../middleware/require-ownership.js';
 import { assetKey } from '../owner.js';
-import { type OwnershipRule, resolveExpectedOwnerId } from '../ownership.js';
+import { type OwnershipRule, resolveOwnerPartition } from '../ownership.js';
 import type { Env } from '../types.js';
 
 /**
@@ -100,12 +100,6 @@ function sanitizeFilename(name: string): string {
 		.slice(0, 255);
 }
 
-function parseVisibility(raw: unknown): 'private' | 'public' | null {
-	if (raw === undefined || raw === null || raw === '') return 'private';
-	if (raw === 'private' || raw === 'public') return raw;
-	return null;
-}
-
 function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 	const { ownership } = opts;
 	return (
@@ -122,37 +116,49 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 					const body = await c.req.parseBody();
 					const file = body.file;
 					if (!(file instanceof File)) {
-						return c.json(AssetError.MissingFile(), 400);
+						const err = AssetError.MissingFile();
+						return c.json(err, err.error.status);
 					}
 
-					const visibility = parseVisibility(body.visibility);
-					if (visibility === null) {
-						return c.json(
-							AssetError.InvalidVisibility({ value: String(body.visibility) }),
-							400,
-						);
+					// Missing / empty visibility defaults to 'private': the
+					// safer side of the publish toggle. An unrecognized value
+					// is a client bug; reject explicitly.
+					const rawVisibility = body.visibility;
+					let visibility: 'private' | 'public';
+					if (
+						rawVisibility === undefined ||
+						rawVisibility === null ||
+						rawVisibility === ''
+					) {
+						visibility = 'private';
+					} else if (
+						rawVisibility === 'private' ||
+						rawVisibility === 'public'
+					) {
+						visibility = rawVisibility;
+					} else {
+						const err = AssetError.InvalidVisibility({
+							value: String(rawVisibility),
+						});
+						return c.json(err, err.error.status);
 					}
 
 					const sanitizedFilename = sanitizeFilename(file.name);
 
 					if (!ALLOWED_MIME_TYPES.has(file.type)) {
-						return c.json(
-							AssetError.FileTypeNotAllowed({
-								contentType: file.type,
-								allowed: [...ALLOWED_MIME_TYPES],
-							}),
-							415,
-						);
+						const err = AssetError.FileTypeNotAllowed({
+							contentType: file.type,
+							allowed: [...ALLOWED_MIME_TYPES],
+						});
+						return c.json(err, err.error.status);
 					}
 
 					if (file.size > MAX_ASSET_BYTES) {
-						return c.json(
-							AssetError.FileTooLarge({
-								size: file.size,
-								maxBytes: MAX_ASSET_BYTES,
-							}),
-							413,
-						);
+						const err = AssetError.FileTooLarge({
+							size: file.size,
+							maxBytes: MAX_ASSET_BYTES,
+						});
+						return c.json(err, err.error.status);
 					}
 
 					const assetId = generateAssetId();
@@ -258,7 +264,8 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 						});
 
 					if (!updated) {
-						return c.json(AssetError.NotFound(), 404);
+						const err = AssetError.NotFound();
+						return c.json(err, err.error.status);
 					}
 					return c.json(updated);
 				},
@@ -284,12 +291,13 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 						.returning({ sizeBytes: schema.asset.sizeBytes });
 
 					if (!deleted) {
-						return c.json(AssetError.NotFound(), 404);
+						const err = AssetError.NotFound();
+						return c.json(err, err.error.status);
 					}
 
 					await c.env.ASSETS_BUCKET.delete(assetKey(c.var.ownerId, assetId));
 					// Surface deleted byte count via response header so cloud's
-					// storage gate can refund without re-reading the row.
+					// storage policy can refund without re-reading the row.
 					return c.body(null, 204, {
 						'x-deleted-size-bytes': String(deleted.sizeBytes),
 					});
@@ -298,7 +306,7 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 			// GET by id (CONDITIONAL auth). The deployment must NOT layer
 			// auth upstream of THIS pattern. Public assets bypass auth by
 			// design; private assets run the auth + ownership check inline.
-			// Private-asset auth goes through the same `resolveExpectedOwnerId`
+			// Private-asset auth goes through the same `resolveOwnerPartition`
 			// the `requireOwnership` middleware uses, so the partition decision
 			// and any team-membership check live in one place. We synthesize
 			// `c.var.user` from the fetched session because no upstream auth
@@ -322,18 +330,27 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 						),
 					});
 
-					if (!row) return c.json(AssetError.NotFound(), 404);
+					if (!row) {
+						const err = AssetError.NotFound();
+						return c.json(err, err.error.status);
+					}
 
 					if (row.visibility === 'private') {
 						const session = await c.var.auth.api.getSession({
 							headers: c.req.raw.headers,
 						});
-						if (!session) return c.json(AssetError.Unauthorized(), 401);
+						if (!session) {
+							const err = AssetError.Unauthorized();
+							return c.json(err, err.error.status);
+						}
 						c.set('user', AuthUser.assert(session.user));
-						const { data: expectedOwnerId, error } =
-							await resolveExpectedOwnerId(ownership, c);
-						if (error || urlOwnerId !== expectedOwnerId) {
-							return c.json(AssetError.Unauthorized(), 401);
+						const { data: ownerPartition, error } = await resolveOwnerPartition(
+							ownership,
+							c,
+						);
+						if (error || urlOwnerId !== ownerPartition) {
+							const err = AssetError.Unauthorized();
+							return c.json(err, err.error.status);
 						}
 					}
 
@@ -346,7 +363,8 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 					);
 
 					if (object === null) {
-						return c.json(AssetError.NotFound(), 404);
+						const err = AssetError.NotFound();
+						return c.json(err, err.error.status);
 					}
 
 					// Cache-Control differs by visibility. Private assets MUST never
@@ -418,59 +436,59 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 }
 
 /**
- * Mount the assets surface on a deployment's base app.
+ * Mount the assets surface on a deployment's server app.
  *
  * Bundles auth (cookie-or-bearer, the assets surface is reachable from
  * both browser apps and API clients), the ownership boundary, optional
- * deployment-specific gates (e.g. `autumnStorageGate` for cloud's
+ * deployment policies (e.g. `trackAssetStorageWithAutumn` for cloud's
  * storage limit), and the route mount into one call.
  *
  * The conditional GET at `/:assetId{21}` is intentionally NOT covered by
- * upstream auth or gates: public reads must bypass auth, and the library
- * handler runs the visibility branch + auth inline. Hono matches the
- * conditional GET first because `createAssetsApp` mounts it before the
- * authed sub-app at the same prefix.
+ * upstream auth or policies: public reads must bypass auth, and the
+ * library handler runs the visibility branch + auth inline. Hono matches
+ * the conditional GET first because `createAssetsApp` mounts it before
+ * the authed sub-app at the same prefix.
  */
 export function mountAssetsApp(
-	base: Hono<Env>,
+	app: Hono<Env>,
 	opts: {
 		ownership: OwnershipRule;
 		/**
 		 * Extra middleware to run after auth + ownership on every authed
-		 * asset route. Cloud passes `[autumnStorageGate]`; self-hosted
-		 * deployments typically pass nothing.
+		 * asset route. Cloud passes `[trackAssetStorageWithAutumn]`;
+		 * self-hosted deployments typically pass nothing.
 		 *
 		 * Typed loosely (`MiddlewareHandler`, defaulting `E = any`) because
 		 * deployments commonly extend the library `Env` with their own
 		 * `Variables` (e.g. `planId`) and the resulting handler types are
 		 * not directly assignable to `MiddlewareHandler<Env>`. At runtime
-		 * the handler executes against the deployment's wider Context, so
-		 * the gate is safe regardless of its declared Env shape.
+		 * the policy executes against the deployment's wider Context, so
+		 * it is safe regardless of its declared Env shape.
 		 */
-		gates?: MiddlewareHandler[];
+		policies?: MiddlewareHandler[];
 	},
 ): void {
 	const requireOwnership = createRequireOwnership(opts.ownership);
-	const gates = opts.gates ?? [];
+	const policies = opts.policies ?? [];
 
-	base.use(
+	app.use(
 		API_ROUTES.assets.list.pattern,
 		requireCookieOrBearerUser,
 		requireOwnership,
-		...gates,
+		...policies,
 	);
-	base.use(
+	app.use(
 		API_ROUTES.assets.usage.pattern,
 		requireCookieOrBearerUser,
 		requireOwnership,
-		...gates,
+		...policies,
 	);
-	base.on(
+	app.on(
 		['PATCH', 'DELETE'],
 		API_ROUTES.assets.byId.pattern,
 		requireCookieOrBearerUser,
 		requireOwnership,
-		...gates,
+		...policies,
 	);
-	base.route('/', createAssetsApp({ ownership: opts.ownership }));
+	app.route('/', createAssetsApp({ ownership: opts.ownership }));
 }

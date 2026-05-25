@@ -23,6 +23,7 @@ const ImportError = defineErrors({
 		message: 'No valid audio or video files found',
 	}),
 });
+
 import { transformer } from './transformer';
 
 /**
@@ -154,9 +155,10 @@ const stopManualRecording = defineMutation({
 			description: 'Finalizing your audio capture...',
 		});
 
-		const { data, error: stopRecordingError } = await manualRecorder.stopRecording({
-			toastId,
-		});
+		const { data, error: stopRecordingError } =
+			await manualRecorder.stopRecording({
+				toastId,
+			});
 
 		// Release mutex after the actual stop operation completes
 		// This allows new recordings to start while pipeline runs

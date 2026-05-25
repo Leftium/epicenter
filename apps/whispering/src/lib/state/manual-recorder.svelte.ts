@@ -41,8 +41,7 @@ function recorderService() {
 async function buildStartParams(
 	recordingId: string,
 ): Promise<StartRecordingParams> {
-	const useCpal =
-		isTauri() && deviceConfig.get('recording.method') === 'cpal';
+	const useCpal = isTauri() && deviceConfig.get('recording.method') === 'cpal';
 
 	if (useCpal) {
 		const deviceId = deviceConfig.get('recording.cpal.deviceId');

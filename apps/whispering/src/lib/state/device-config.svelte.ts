@@ -35,10 +35,7 @@ const DEVICE_DEFINITIONS = {
 	'apiEndpoints.groq': defineEntry(type('string'), ''),
 
 	// ── Recording hardware ────────────────────────────────────────────
-	'recording.method': defineEntry(
-		type("'cpal' | 'navigator'"),
-		'cpal',
-	),
+	'recording.method': defineEntry(type("'cpal' | 'navigator'"), 'cpal'),
 	'recording.cpal.deviceId': defineEntry(type('string | null'), null),
 	'recording.navigator.deviceId': defineEntry(type('string | null'), null),
 	'recording.navigator.bitrateKbps': defineEntry(

@@ -190,6 +190,11 @@ export {
 	type Tables,
 } from './document/attach-table.js';
 export { attachTimeline } from './document/attach-timeline/index.js';
+export {
+	type CreateWorkspaceOptions,
+	createWorkspace,
+	type Workspace,
+} from './document/workspace.js';
 export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
 export {

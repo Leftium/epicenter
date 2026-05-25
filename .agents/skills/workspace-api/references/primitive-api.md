@@ -20,9 +20,9 @@ import {
 import * as Y from 'yjs';
 
 function buildMyDoc(id: string) {
-  // gc: false because the doc syncs. GC'd deletion markers break peers that
-  // haven't seen the deletes. Only set true for purely local, ephemeral docs.
-  const ydoc = new Y.Doc({ guid: id, gc: false });
+  // Runtime docs explicitly collect deleted structs. Use gc: false only for
+  // specialized history or migration docs that need retained deleted structs.
+  const ydoc = new Y.Doc({ guid: id, gc: true });
 
   const content = attachRichText(ydoc);
   const idb = attachIndexedDb(ydoc);
@@ -49,7 +49,7 @@ Consumers await readiness through the attached subsystem (`handle.idb.whenLoaded
 
 Everything you need is in Yjs itself:
 
-- `new Y.Doc({ guid, gc })`: allocate.
+- `new Y.Doc({ guid, gc: true })`: allocate a runtime workspace or content doc.
 - `ydoc.destroy()`: teardown (fires `'destroy'`; every `attach*` self-registers cleanup via `ydoc.on('destroy', ...)`).
 - `onLocalUpdate(ydoc, fn)`: side effects triggered only by **local** transactions (e.g. bumping a parent row's `updatedAt`). Filters out remote sync updates so you don't loop.
 
@@ -87,7 +87,7 @@ For workspaces that need at-rest encryption, the coordinator owns the sibling at
 Standard composition:
 
 ```ts
-const ydoc       = new Y.Doc({ guid: id, gc: false });
+const ydoc       = new Y.Doc({ guid: id, gc: true });
 const encryption = attachEncryption(ydoc, {
 	encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
 });
@@ -138,7 +138,7 @@ export const entryContentDocs = createDisposableCache((entryId: EntryId) => {
       rowId: entryId,
       field: 'content',
     }),
-    gc: false,
+    gc: true,
   });
 
   const content = attachRichText(ydoc);
@@ -272,7 +272,7 @@ export function createFileContentDocs({
   return createDisposableCache((fileId: FileId) => {
     const ydoc = new Y.Doc({
       guid: docGuid({ workspaceId, collection: 'files', rowId: fileId, field: 'content' }),
-      gc: false,
+      gc: true,
     });
     // …
   });
@@ -301,10 +301,14 @@ await Promise.all([doc.whenLoaded, doc.whenConnected]);       // CLI needing rem
 ```
 
 ```typescript
-// ❌ Don't pass gc: true on a synced doc
-new Y.Doc({ guid, gc: true });  // peers lose deletion markers
+// ❌ Don't leave workspace/runtime docs on implicit Yjs defaults
+new Y.Doc({ guid });
 
-// ✅ Default to gc: false; only opt in for purely local ephemeral docs
+// ✅ Runtime workspace and content docs should collect deleted structs
+new Y.Doc({ guid, gc: true });
+
+// If a specialized doc needs retained deleted structs, keep that exception
+// local to the direct constructor call and explain why.
 new Y.Doc({ guid, gc: false });
 ```
 

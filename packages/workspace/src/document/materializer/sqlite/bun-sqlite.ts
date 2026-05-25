@@ -4,8 +4,8 @@
  * writer-side WAL pragmas), mirrors Y.Doc table rows into it, and closes
  * the handle when the ydoc is destroyed.
  *
- * Daemon-side. For browser/in-memory use, see (forthcoming)
- * `attachLibsqlMaterializer`.
+ * Daemon-side. For browser/in-memory use, see `attachTursoMaterializer`
+ * in the sibling `./turso.ts`.
  *
  * @example
  * ```ts

@@ -81,22 +81,7 @@ type AnyTable = Table<any>;
 export const SqliteMaterializerError = defineErrors({
 	/** Debounced flush of pending row writes to the mirror database failed. */
 	SyncFailed: ({ cause }: { cause: unknown }) => ({
-		message: `[attachSqliteMaterializer] Failed to sync SQLite materializer: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	/** An FTS5 MATCH query raised inside the mirror database. */
-	FtsSearchFailed: ({
-		tableName,
-		query,
-		cause,
-	}: {
-		tableName: string;
-		query: string;
-		cause: unknown;
-	}) => ({
-		message: `[attachSqliteMaterializer] FTS search failed on table "${tableName}" for query "${query}": ${extractErrorMessage(cause)}`,
-		tableName,
-		query,
+		message: `[sqlite-materializer] Failed to sync SQLite materializer: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
@@ -124,9 +109,9 @@ type RegisteredTable = {
 
 /**
  * Internal shared materializer body. Each per-backend factory
- * (`attachBunSqliteMaterializer`, future `attachLibsqlMaterializer`)
- * constructs an adapter from its native client to {@link MirrorDatabase}
- * and forwards into this function.
+ * (`attachBunSqliteMaterializer`, `attachTursoMaterializer`) constructs
+ * an adapter from its native client to {@link MirrorDatabase} and forwards
+ * into this function.
  *
  * Callers outside this directory should not import this directly.
  *
@@ -138,7 +123,7 @@ export function attachSqliteMaterializerCore(
 		db,
 		debounceMs = 100,
 		waitFor,
-		log = createLogger('attachSqliteMaterializer'),
+		log = createLogger('sqlite-materializer'),
 	}: {
 		db: MirrorDatabase;
 		debounceMs?: number;
@@ -150,7 +135,7 @@ export function attachSqliteMaterializerCore(
 		waitFor?: Promise<unknown>;
 		/**
 		 * Logger for background failures (debounced sync flush, FTS query).
-		 * Defaults to a console-backed logger with source `attachSqliteMaterializer`.
+		 * Defaults to a console-backed logger with source `sqlite-materializer`.
 		 */
 		log?: Logger;
 	},
@@ -477,7 +462,7 @@ function collectRowKeys(rows: readonly BaseRow[]): string[] {
  * - `boolean` → `0` or `1` (`INTEGER` column)
  * - everything else → passed through as-is
  */
-export function serializeValue(value: unknown): unknown {
+function serializeValue(value: unknown): unknown {
 	if (value === null || value === undefined) return null;
 	if (typeof value === 'object') return JSON.stringify(value);
 	if (typeof value === 'boolean') return value ? 1 : 0;

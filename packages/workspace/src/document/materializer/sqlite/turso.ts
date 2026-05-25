@@ -46,7 +46,6 @@ import type { BaseRow, Table } from '../../attach-table.js';
 import {
 	attachSqliteMaterializerCore,
 	type MirrorDatabase,
-	type MirrorStatement,
 	type TableConfig,
 } from './core.js';
 
@@ -131,6 +130,9 @@ export function attachTursoMaterializer(
 	// forwards to Turso's `exec` / `prepare`. The materializer body already
 	// awaits every MirrorDatabase call, so the extra hop costs only one
 	// already-resolved tick per call after the initial connect.
+	// Turso's Statement (Promise-returning run/get/all) is structurally
+	// compatible with MirrorStatement (MaybePromise-returning), so prepare()
+	// can return the native Statement directly. No wrapper.
 	const db: MirrorDatabase = {
 		async run(sql) {
 			const client = await clientPromise;
@@ -138,13 +140,7 @@ export function attachTursoMaterializer(
 		},
 		async prepare(sql) {
 			const client = await clientPromise;
-			const stmt = client.prepare(sql);
-			const wrapper: MirrorStatement = {
-				run: (...params) => stmt.run(...params),
-				get: (...params) => stmt.get(...params),
-				all: (...params) => stmt.all(...params),
-			};
-			return wrapper;
+			return client.prepare(sql);
 		},
 	};
 

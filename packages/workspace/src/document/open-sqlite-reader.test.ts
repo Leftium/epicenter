@@ -1,8 +1,8 @@
 /**
  * Tests for `openSqliteReader` (the script-side read-only handle on the
  * daemon's SQLite materializer file). The daemon side is exercised via a real
- * `attachSqliteMaterializer` writing to an on-disk WAL file in a tmpdir; the
- * mirror reads the same file and asserts FTS5 lookups + raw row reads work.
+ * `attachBunSqliteMaterializer` writing to an on-disk WAL file in a tmpdir;
+ * the mirror reads the same file and asserts FTS5 lookups + raw row reads work.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';

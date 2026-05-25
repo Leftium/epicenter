@@ -8,9 +8,38 @@
  * @module
  */
 
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
 import type { Logger } from 'wellcrafted/logger';
-import { type MirrorDatabase, SqliteMaterializerError } from './core.js';
+import type { MirrorDatabase } from './core.js';
 import { quoteIdentifier } from './ddl.js';
+
+// ════════════════════════════════════════════════════════════════════════════
+// FTS ERRORS
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Errors logged by the FTS search path. Module-local; not exported. */
+const FtsError = defineErrors({
+	/** An FTS5 MATCH query raised inside the mirror database. */
+	FtsSearchFailed: ({
+		tableName,
+		query,
+		cause,
+	}: {
+		tableName: string;
+		query: string;
+		cause: unknown;
+	}) => ({
+		message: `[sqlite-materializer] FTS search failed on table "${tableName}" for query "${query}": ${extractErrorMessage(cause)}`,
+		tableName,
+		query,
+		cause,
+	}),
+});
+type FtsError = InferErrors<typeof FtsError>;
 
 // ════════════════════════════════════════════════════════════════════════════
 // PUBLIC SEARCH TYPES
@@ -173,7 +202,7 @@ export async function ftsSearch(
 		});
 	} catch (cause: unknown) {
 		log?.warn(
-			SqliteMaterializerError.FtsSearchFailed({
+			FtsError.FtsSearchFailed({
 				tableName,
 				query: trimmed,
 				cause,

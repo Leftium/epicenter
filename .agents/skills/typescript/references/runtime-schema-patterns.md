@@ -44,9 +44,50 @@ Both behave similarly in TypeScript, but only the `?` syntax converts correctly 
 
 # Branded Types Pattern
 
-## Canonical Shape: Validator First, Type Inferred, Optional `as*` Helper
+Two shapes coexist in the codebase, picked by what owns the brand at runtime:
 
-For any string-shaped branded primitive that flows through an arktype schema, **declare the validator first** and derive the type from it via `.infer`. Both share one PascalCase name. Add a small `as*` helper next to it for branding known-string values without scattering raw `as` casts.
+- **Workspace table IDs**: pure type alias + `generate*` factory. The brand lives only in the type system; `column.string<Id>()` carries it through the TypeBox schema. No runtime validator object.
+- **Arktype-validated IDs** (auth user IDs, persisted-state schemas, HTTP route inputs): validator-first + `as*` helper. The arktype `Type` and the inferred type share one PascalCase name.
+
+## Workspace Table IDs: Pure Type Alias + Generator
+
+For any ID that lives in a `defineTable` schema, declare the brand as a **type alias** and pair it with a `generate*` factory that wraps `generateId<T>()`. The brand is never a runtime value; `column.string<T>()` propagates it through the TypeBox schema.
+
+```typescript
+import type { Brand } from 'wellcrafted/brand';
+import { column, defineTable, generateId } from '@epicenter/workspace';
+
+// 1. Type alias: brand-only, no runtime symbol
+export type SavedTabId = string & Brand<'SavedTabId'>;
+
+// 2. Generator: wraps generateId<T>() so the cast lives in one place
+export const generateSavedTabId = (): SavedTabId => generateId<SavedTabId>();
+
+// 3. Use in defineTable via column.string<>()
+const savedTabsTable = defineTable({
+	id: column.string<SavedTabId>(),
+	url: column.string(),
+	parentId: column.nullable(column.string<SavedTabId>()),
+});
+```
+
+At call sites, mint with the generator; never scatter raw casts:
+
+```typescript
+// Good
+const id = generateSavedTabId();
+
+// Bad: scattered double-cast
+const id = generateId() as string as SavedTabId;
+```
+
+The `generate*` prefix means "new ID from scratch." The `create*` prefix means "assemble from inputs" (e.g., `createTabCompositeId(deviceId, tabId)`).
+
+See the `workspace-api` skill for the full schema/migration rules.
+
+## Arktype-Validated IDs: Validator First, Type Inferred, Optional `as*` Helper
+
+For IDs that flow through an **arktype** schema at a runtime boundary (auth user IDs read off Better Auth sessions, persisted-state schemas, HTTP route inputs), declare the validator first and derive the type via `.infer`. Both share one PascalCase name. Add a small `as*` helper for branding known-string values without scattering raw `as` casts.
 
 ```typescript
 import { type } from 'arktype';
@@ -66,7 +107,7 @@ TypeScript keeps value space and type space separate, so the same identifier `Us
 
 ### Why Validator First
 
-Declaring the validator first and deriving the type via `typeof UserId.infer` makes the validator the single source of truth. If you change the brand or the underlying primitive (e.g., to `Id` instead of `string`), you update one place and the type follows. Declaring the type first and re-passing it into `type('string').as<UserId>()` works but encodes the same shape twice and risks drift.
+Declaring the validator first and deriving the type via `typeof UserId.infer` makes the validator the single source of truth. If you change the brand or the underlying primitive, you update one place and the type follows. Declaring the type first and re-passing it into `type('string').as<UserId>()` works but encodes the same shape twice and risks drift.
 
 ### Branding a Known-String Value
 
@@ -85,46 +126,18 @@ const userId = c.var.user.id as UserId;
 
 For genuinely untyped boundaries (parsing `unknown` JSON, network input) use the validator's `.assert(value)` or schema-level validation (e.g., `PersistedAuth.assert(...)`). That throws on shape mismatch; the `as*` helper trusts the compiler.
 
-### Generating a New ID
-
-For IDs that are minted fresh (workspace table primary keys), pair the validator with a `generate*` function that wraps `generateId()` so the brand cast lives in one place:
-
-```typescript
-// 1. VALIDATOR — declared first
-export const SavedTabId = type('string').as<Id & Brand<'SavedTabId'>>();
-
-// 2. TYPE — derived from the validator
-export type SavedTabId = typeof SavedTabId.infer;
-
-// 3. GENERATOR — wraps generateId() so the cast lives in one place
-export const generateSavedTabId = (): SavedTabId =>
-	generateId() as SavedTabId;
-```
-
-Use in the schema: `id: SavedTabId`. For optional foreign keys: `'parentId?': SavedTabId.or('undefined')`. At call sites:
-
-```typescript
-// Good
-const id = generateSavedTabId();
-
-// Bad — scattered double-cast
-const id = generateId() as string as SavedTabId;
-```
-
-The `generate*` prefix means "new ID from scratch." The `create*` prefix means "assemble from inputs" (e.g., `createTabCompositeId(deviceId, tabId)`).
-
 ### When Each Part Is Needed
 
 | Origin of the value                         | Parts                                            |
 | ------------------------------------------- | ------------------------------------------------ |
-| Minted fresh by this code                   | Validator + Type + `generate*`                   |
+| Minted fresh into a workspace table         | Type alias + `generate*` (no validator)          |
 | Received as a typed string (auth, URL, DB)  | Validator + Type + `as*` helper                  |
 | Received as `unknown` at a network boundary | Validator + Type (validate via arktype schema)   |
 | Set from an external source, never minted   | Validator + Type (with `as*` helper if branded)  |
 
 ### Schema Body Reads Cleanly
 
-Because the validator shares the type name, schemas read with no `Schema` suffix anywhere:
+Because the validator shares the type name, arktype schemas read with no `Schema` suffix anywhere:
 
 ```typescript
 // Good — one PascalCase name covers both namespaces
@@ -160,6 +173,6 @@ This is rejected in favor of the validator-first pattern because:
 2. Every schema body has to read `id: UserIdSchema` instead of `id: UserId`.
 3. The same name (`UserId`) serves two unrelated runtime behaviors (typed cast vs. arktype validator), splitting reader intent.
 
-The validator-first + `as*` helper pattern keeps the schema name unified and pushes brand-casting into a clearly named function.
+The validator-first + `as*` helper pattern keeps the arktype schema name unified and pushes brand-casting into a clearly named function.
 
 See the `workspace-api` skill for the full workspace file structure and rules.

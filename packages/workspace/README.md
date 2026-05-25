@@ -24,25 +24,22 @@ bun add @epicenter/workspace
 ```
 
 ```typescript
-import { type } from 'arktype';
 import * as Y from 'yjs';
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachKv,
 	attachTables,
+	column,
 	defineTable,
 } from '@epicenter/workspace';
 
-const posts = defineTable(
-	type({
-		id: 'string',
-		title: 'string',
-		body: 'string',
-		published: 'boolean',
-		_v: '1',
-	}),
-);
+const posts = defineTable({
+	id: column.string(),
+	title: column.string(),
+	body: column.string(),
+	published: column.boolean(),
+});
 
 export function openBlog() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.blog' });
@@ -79,12 +76,11 @@ async function quickStart() {
 		title: 'Hello World',
 		body: 'This row lives in the Y.Doc.',
 		published: false,
-		_v: 1,
 	});
 
-	const result = blog.tables.posts.get('welcome');
-	if (result.status === 'valid') {
-		blog.tables.posts.update(result.row.id, { published: true });
+	const { data: row, error } = blog.tables.posts.get('welcome');
+	if (!error && row) {
+		blog.tables.posts.update(row.id, { published: true });
 	}
 }
 
@@ -269,7 +265,7 @@ Ordering is obvious (later `attach*` and `open*` calls see earlier ones through 
 
 ### Read-time validation beats write-time ceremony
 
-Tables validate and migrate on read, not on write. `set(...)` writes the row shape TypeScript already approved. `get(...)` is where invalid old data shows up as `{ status: 'invalid' }` and old versions are migrated to the latest schema.
+Tables validate and migrate on read, not on write. `set(...)` writes the row shape TypeScript already approved. `get(...)` returns a wellcrafted `Result<TRow | null, TableParseError>`: parse failures surface as `error`, missing rows as `data: null`, and old versions are migrated to the latest schema before being returned.
 
 That trade-off is deliberate. It keeps the write path cheap and pushes schema evolution into one place:the table definition.
 
@@ -393,10 +389,13 @@ The raw `Y.Doc` is available at `bundle.ydoc`. That is the escape hatch, not the
 
 ### Tables
 
-Tables are versioned row collections. Each row must include:
+Tables are versioned row collections. Each row must declare:
 
 - `id: string`
-- `_v: number`
+
+`_v` is library-managed: never declare it as a column, never include it in
+write calls, never expect it on returned rows. The library stamps the
+current version on write and strips it before handing the row back.
 
 At runtime, each table becomes a `Table` exposed as a direct property:
 
@@ -467,27 +466,28 @@ Reference implementations: `apps/opensidian/src/lib/opensidian/browser.ts`, `app
 
 ### Required table fields
 
-Every table row schema must include:
+Every table row schema must declare an `id` column. Version metadata (`_v`)
+is library-managed: never declare it as a column, never pass it to `set` or
+`update`, never expect it on returned rows. The library stamps the current
+version on write, routes by it on read, and strips it before handing the row
+back.
 
-- `id`
-- `_v`
-
-In arktype, `_v: '1'` means the numeric literal `1`, not the string `'1'` at runtime.
+Columns are TypeBox-native. Use the `column.*` factory helpers (`column.string`,
+`column.number`, `column.boolean`, `column.dateTime`, `column.enum`,
+`column.nullable`, `column.json`, ...) for the SQLite-flat default set, or pass
+raw `Type.*` schemas if you need a shape the helpers don't cover. The library
+enforces 1:1 SQLite-column mapping at the type level either way.
 
 ### Single-version tables
 
 ```typescript
-import { type } from 'arktype';
-import { defineTable } from '@epicenter/workspace';
+import { column, defineTable } from '@epicenter/workspace';
 
-const users = defineTable(
-	type({
-		id: 'string',
-		email: 'string',
-		name: 'string',
-		_v: '1',
-	}),
-);
+const users = defineTable({
+	id: column.string(),
+	email: column.string(),
+	name: column.string(),
+});
 
 void users;
 ```
@@ -497,56 +497,58 @@ Use the single-schema form when the table has only one version today.
 ### Versioned tables
 
 ```typescript
-import { type } from 'arktype';
-import { defineTable } from '@epicenter/workspace';
+import { column, defineTable } from '@epicenter/workspace';
 
 const posts = defineTable(
-	type({
-		id: 'string',
-		title: 'string',
-		_v: '1',
-	}),
-	type({
-		id: 'string',
-		title: 'string',
-		slug: 'string',
-		_v: '2',
-	}),
-).migrate((row) => {
-		switch (row._v) {
-			case 1:
-				return {
-					...row,
-					slug: row.title.toLowerCase().replaceAll(' ', '-'),
-					_v: 2,
-				};
-
-			case 2:
-				return row;
-		}
-	});
+	{
+		id: column.string(),
+		title: column.string(),
+	},
+	{
+		id: column.string(),
+		title: column.string(),
+		slug: column.string(),
+	},
+).migrate(({ value, version }) => {
+	switch (version) {
+		case 1:
+			return {
+				...value,
+				slug: value.title.toLowerCase().replaceAll(' ', '-'),
+			};
+		case 2:
+			return value;
+	}
+});
 
 void posts;
 ```
 
-Migration runs on read. Old rows stay old in storage until you rewrite them.
+Migration runs on read. The migrate function receives `{ value, version }`
+where `value` is the user-facing row for that version (no `_v`); `version`
+is the 1-indexed position in the variadic argument list. Old rows stay old
+in storage until you rewrite them.
 
 ### KV entries
 
 ```typescript
-import { type } from 'arktype';
-import { defineKv } from '@epicenter/workspace';
+import { column, defineKv } from '@epicenter/workspace';
 
-const themeMode = defineKv(type("'light' | 'dark' | 'system'"), 'light');
-const sidebarWidth = defineKv(type('number'), 280);
-const sidebarCollapsed = defineKv(type('boolean'), false);
+const themeMode = defineKv(
+	column.enum(['light', 'dark', 'system']),
+	() => 'light' as const,
+);
+const sidebarWidth = defineKv(column.number(), () => 280);
+const sidebarCollapsed = defineKv(column.boolean(), () => false);
 
 void themeMode;
 void sidebarWidth;
 void sidebarCollapsed;
 ```
 
-KV is validate-or-default. There is no migration function.
+KV is validate-or-default. The default argument is a factory (`() => value`),
+not a bare value, so each consumer gets a fresh instance. There is no
+migration function.
 
 ### Presence
 
@@ -582,12 +584,12 @@ the cache owns live content Y.Docs. App-local helpers own browser cleanup.
 Node one-shot code can open the content document directly for one operation.
 
 ```typescript
-import { type } from 'arktype';
 import * as Y from 'yjs';
 import {
 	attachIndexedDb,
 	attachPlainText,
 	attachTables,
+	column,
 	createDisposableCache,
 	defineTable,
 	docGuid,
@@ -595,14 +597,11 @@ import {
 } from '@epicenter/workspace';
 import { clearDocument } from 'y-indexeddb';
 
-const files = defineTable(
-	type({
-		id: 'string',
-		name: 'string',
-		updatedAt: 'number',
-		_v: '1',
-	}),
-);
+const files = defineTable({
+	id: column.string(),
+	name: column.string(),
+	updatedAt: column.number(),
+});
 
 function openFilesWorkspace() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.files' });
@@ -663,7 +662,6 @@ async function documentExample() {
 		id: 'file-1',
 		name: 'hello.md',
 		updatedAt: Date.now(),
-		_v: 1,
 	});
 
 	// Load a content handle for the row. Dispose when done.
@@ -692,14 +690,12 @@ workspace.tables.posts.set({
 	id: 'post-1',
 	title: 'First post',
 	published: false,
-	_v: 1,
 });
 
 workspace.tables.posts.set({
 	id: 'post-1',
 	title: 'First post, replaced',
 	published: true,
-	_v: 1,
 });
 ```
 
@@ -707,20 +703,22 @@ workspace.tables.posts.set({
 
 `update(id, partial)` reads the row, merges the partial fields, validates the merged result, and writes it back.
 
-Possible return values:
+Returns a wellcrafted `Result<TRow | null, TableParseError>`:
 
-- `{ status: 'updated', row }`
-- `{ status: 'not_found', id, row: undefined }`
-- `{ status: 'invalid', id, errors, row }`
+- `{ data: TRow, error: null }` on success
+- `{ data: null, error: null }` when no row exists for `id`
+- `{ data: null, error: TableParseError }` if the stored row failed schema validation, or if the merged result fails validation
 
 ```typescript
-const updateResult = workspace.tables.posts.update('post-1', {
+const { data: row, error } = workspace.tables.posts.update('post-1', {
 	published: true,
 	views: 1,
 });
 
-if (updateResult.status === 'updated') {
-	console.log(updateResult.row.views);
+if (error) {
+	console.error(error.message);
+} else if (row) {
+	console.log(row.views);
 }
 ```
 
@@ -728,19 +726,21 @@ if (updateResult.status === 'updated') {
 
 | Method | Return type | Notes |
 | --- | --- | --- |
-| `get(id)` | `GetResult<TRow>` | Returns `valid`, `invalid`, or `not_found` |
-| `getAll()` | `RowResult<TRow>[]` | Includes invalid rows |
+| `get(id)` | `Result<TRow \| null, TableParseError>` | `data: null` for "not found"; `error` for parse/validation failures |
+| `getAll()` | `Array<Result<TRow, TableParseError>>` | One Result per stored row |
 | `getAllValid()` | `TRow[]` | Skips invalid rows |
 | `getAllInvalid()` | `TableParseError[]` | Debug schema drift or corrupt data |
 | `filter(predicate)` | `TRow[]` | Runs only on valid rows |
 | `find(predicate)` | `TRow \| undefined` | First valid match |
 | `has(id)` | `boolean` | Existence only |
-| `count()` | `number` | Counts valid and invalid rows |
+| `count()` | `number` | Counts every stored row |
 
 ```typescript
-const one = workspace.tables.posts.get('1');
-if (one.status === 'valid') {
-	console.log(one.row.title);
+const { data: row, error } = workspace.tables.posts.get('1');
+if (error) {
+	console.error('parse failed:', error.message);
+} else if (row) {
+	console.log(row.title);
 }
 
 const all = workspace.tables.posts.getAll();
@@ -759,7 +759,7 @@ const count = workspace.tables.posts.count();
 | `clear()` | Deletes all rows in the table |
 
 ```typescript
-workspace.tables.tags.set({ id: 'tag-1', name: 'important', _v: 1 });
+workspace.tables.tags.set({ id: 'tag-1', name: 'important' });
 workspace.tables.tags.delete('tag-1');
 workspace.tables.tags.clear();
 ```
@@ -771,19 +771,20 @@ workspace.tables.tags.clear();
 ```typescript
 const unsubscribe = workspace.tables.files.observe((changedIds, origin) => {
 	for (const id of changedIds) {
-		const result = workspace.tables.files.get(id);
-		if (result.status === 'not_found') {
+		const { data: row, error } = workspace.tables.files.get(id);
+		if (error) {
+			console.error('parse failed:', id, error.message);
+			continue;
+		}
+		if (row === null) {
 			console.log('deleted:', id);
 			continue;
 		}
-
-		if (result.status === 'valid') {
-			console.log('present:', result.row.name);
-		}
+		console.log('present:', row.name);
 	}
 });
 
-workspace.tables.files.set({ id: 'file-1', name: 'notes.md', _v: 1 });
+workspace.tables.files.set({ id: 'file-1', name: 'notes.md' });
 workspace.tables.files.delete('file-1');
 unsubscribe();
 ```
@@ -794,7 +795,7 @@ The `origin` argument is whatever the caller passed to `ydoc.transact(fn, origin
 const APP_ORIGIN = Symbol('my-app');
 
 ydoc.transact(() => {
-	workspace.tables.posts.set({ id: 'p1', title: 'Tagged', _v: 1 });
+	workspace.tables.posts.set({ id: 'p1', title: 'Tagged' });
 }, APP_ORIGIN);
 
 workspace.tables.posts.observe((_ids, origin) => {
@@ -837,12 +838,15 @@ For authenticated apps, call `await wipeLocalStorage({ server, ownerId })` after
 import * as Y from 'yjs';
 import {
 	attachTables,
+	column,
 	defineTable,
 } from '@epicenter/workspace';
 import { attachYjsLog } from '@epicenter/workspace/node';
-import { type } from 'arktype';
 
-const notes = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
+const notes = defineTable({
+	id: column.string(),
+	title: column.string(),
+});
 
 function openNotes() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.notes' });
@@ -871,6 +875,7 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachTables,
+	column,
 	createDeviceId,
 	defineTable,
 	openCollaboration,
@@ -878,9 +883,11 @@ import {
 } from '@epicenter/workspace';
 import type { AuthClient } from '@epicenter/auth';
 import type { OwnerId } from '@epicenter/constants/identity';
-import { type } from 'arktype';
 
-const tabs = defineTable(type({ id: 'string', url: 'string', _v: '1' }));
+const tabs = defineTable({
+	id: column.string(),
+	url: column.string(),
+});
 
 function openTabs({
 	ownerId,
@@ -929,10 +936,10 @@ Ordering is just lexical: `collaboration` reads `idb.whenLoaded` as `waitFor` be
 The markdown materializer is exported from `@epicenter/workspace/document/materializer/markdown`. Compose it inside your builder alongside the other attachments: it needs `tables` and `ydoc`, both of which are already in lexical scope.
 
 ```typescript
-import { type } from 'arktype';
 import * as Y from 'yjs';
 import {
 	attachTables,
+	column,
 	defineTable,
 } from '@epicenter/workspace';
 import { attachYjsLog } from '@epicenter/workspace/node';
@@ -941,9 +948,11 @@ import {
 	slugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
 
-const notes = defineTable(
-	type({ id: 'string', title: 'string', body: 'string', _v: '1' }),
-);
+const notes = defineTable({
+	id: column.string(),
+	title: column.string(),
+	body: column.string(),
+});
 
 function openNotes() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.notes' });
@@ -977,20 +986,17 @@ import { Database } from 'bun:sqlite';
 import * as Y from 'yjs';
 import {
 	attachTables,
+	column,
 	defineTable,
 } from '@epicenter/workspace';
 import { attachSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
-import { type } from 'arktype';
 
-const posts = defineTable(
-	type({
-		id: 'string',
-		title: 'string',
-		body: 'string',
-		published: 'boolean',
-		_v: '1',
-	}),
-);
+const posts = defineTable({
+	id: column.string(),
+	title: column.string(),
+	body: column.string(),
+	published: column.boolean(),
+});
 
 function openBlog() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.blog' });
@@ -1042,7 +1048,6 @@ declare const blogWorkspace: {
 				id: string;
 				title: string;
 				authorId: string;
-				_v: 1;
 			}) => void;
 		};
 	};
@@ -1064,7 +1069,6 @@ const createPost = defineMutation({
 			id,
 			title,
 			authorId,
-			_v: 1,
 		});
 
 		return { id };
@@ -1092,24 +1096,21 @@ They have four important properties:
 Use `defineQuery(...)` for reads.
 
 ```typescript
-import { type } from 'arktype';
 import Type from 'typebox';
 import * as Y from 'yjs';
 import {
 	attachTables,
+	column,
 	defineActions,
 	defineQuery,
 	defineTable,
 } from '@epicenter/workspace';
 
-const posts = defineTable(
-	type({
-		id: 'string',
-		title: 'string',
-		published: 'boolean',
-		_v: '1',
-	}),
-);
+const posts = defineTable({
+	id: column.string(),
+	title: column.string(),
+	published: column.boolean(),
+});
 
 function openPosts() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.actions.queries' });
@@ -1124,7 +1125,7 @@ function openPosts() {
 		posts_get_by_id: defineQuery({
 			title: 'Get Post',
 			description: 'Get one post by ID.',
-			input: Type.Object({ id: Type.String() }),
+			input: Type.Object({ id: tables.posts.schema.properties.id }),
 			handler: ({ id }) => tables.posts.get(id),
 		}),
 	});
@@ -1148,25 +1149,22 @@ void actionType;
 Use `defineMutation(...)` for writes or side effects.
 
 ```typescript
-import { type } from 'arktype';
 import Type from 'typebox';
 import * as Y from 'yjs';
 import {
 	attachTables,
+	column,
 	defineActions,
 	defineMutation,
 	defineTable,
 	generateId,
 } from '@epicenter/workspace';
 
-const posts = defineTable(
-	type({
-		id: 'string',
-		title: 'string',
-		published: 'boolean',
-		_v: '1',
-	}),
-);
+const posts = defineTable({
+	id: column.string(),
+	title: column.string(),
+	published: column.boolean(),
+});
 
 function openPosts() {
 	const ydoc = new Y.Doc({ guid: 'epicenter.actions.mutations' });
@@ -1176,10 +1174,10 @@ function openPosts() {
 		posts_create: defineMutation({
 			title: 'Create Post',
 			description: 'Create a new post row.',
-			input: Type.Object({ title: Type.String() }),
+			input: Type.Object({ title: tables.posts.schema.properties.title }),
 			handler: ({ title }) => {
 				const id = generateId();
-				tables.posts.set({ id, title, published: false, _v: 1 });
+				tables.posts.set({ id, title, published: false });
 				return { id };
 			},
 		}),
@@ -1363,8 +1361,8 @@ A `batch(fn)` helper groups mutations into a single Yjs transaction. The framewo
 
 ```typescript
 workspace.batch(() => {
-	workspace.tables.posts.set({ id: 'p1', title: 'One transaction', _v: 1 });
-	workspace.tables.tags.set({ id: 't1', name: 'docs', _v: 1 });
+	workspace.tables.posts.set({ id: 'p1', title: 'One transaction' });
+	workspace.tables.tags.set({ id: 't1', name: 'docs' });
 });
 ```
 

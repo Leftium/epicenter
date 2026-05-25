@@ -38,11 +38,13 @@ See `.agents/skills/attach-primitive/SKILL.md` for the full contract (shape, inv
 
 ```typescript
 import * as Y from 'yjs';
-import { defineTable, attachTable } from '@epicenter/workspace';
-import { type } from 'arktype';
+import { column, defineTable, attachTable } from '@epicenter/workspace';
 
-// Pure schema
-const postsTable = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
+// Pure schema. `_v` is library-managed: never declare it as a column.
+const postsTable = defineTable({
+  id: column.string(),
+  title: column.string(),
+});
 
 // Vanilla factory: owns Y.Doc creation, composes attachments
 function openBlog() {
@@ -58,7 +60,7 @@ function openBlog() {
 }
 
 const workspace = openBlog();
-workspace.tables.posts.set({ id: '1', title: 'Hello', _v: 1 });
+workspace.tables.posts.set({ id: '1', title: 'Hello' });
 ```
 
 ## Composing More
@@ -169,7 +171,7 @@ Tables stay lean (ids, titles, metadata). Rich content lives in a separate per-r
 
 **No field-level observation.** Observe entire tables or KV keys. Let your UI framework handle field reactivity.
 
-**Why `_v` instead of `v`.** Framework metadata prefix: same convention as `_id` in MongoDB. Users intuitively avoid underscore-prefixed fields for business data.
+**Why `_v` instead of `v`.** The library-managed version field uses a framework metadata prefix, the same convention as `_id` in MongoDB. Users never declare or read `_v`; the library stamps it on every write and strips it on every read. The underscore makes the reserved key visually distinct in storage dumps.
 
 ## Testing
 

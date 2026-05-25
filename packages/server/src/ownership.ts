@@ -21,16 +21,18 @@
  * of a stale at-sign-up decision.
  */
 
-import { asOwnerId, type OwnerId, TEAM_OWNER_ID } from '@epicenter/constants/identity';
+import {
+	asOwnerId,
+	type OwnerId,
+	TEAM_OWNER_ID,
+} from '@epicenter/constants/identity';
 import { RequestGuardError } from '@epicenter/constants/request-guard-errors';
 import type { Context } from 'hono';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { Env } from './types.js';
 
 /** Per-request membership predicate. Returns `true` to admit the user. */
-export type IsMember = (
-	c: Context<Env>,
-) => Promise<boolean> | boolean;
+export type IsMember = (c: Context<Env>) => Promise<boolean> | boolean;
 
 /**
  * Discriminated union of every ownership shape this library knows how to
@@ -63,7 +65,9 @@ export const team = (opts: { isMember: IsMember }): OwnershipRule => ({
 export async function resolveExpectedOwnerId(
 	rule: OwnershipRule,
 	c: Context<Env>,
-): Promise<Result<OwnerId, ReturnType<typeof RequestGuardError.NotTeamMember>>> {
+): Promise<
+	Result<OwnerId, ReturnType<typeof RequestGuardError.NotTeamMember>>
+> {
 	switch (rule.kind) {
 		case 'personal':
 			return Ok(asOwnerId(c.var.user.id));

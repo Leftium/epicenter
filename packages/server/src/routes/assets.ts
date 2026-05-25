@@ -53,8 +53,8 @@ import { MAX_ASSET_BYTES } from '../constants.js';
 import * as schema from '../db/schema/index.js';
 import { requireCookieOrBearerUser } from '../middleware/require-auth.js';
 import { createRequireOwnership } from '../middleware/require-ownership.js';
-import { type OwnershipRule, resolveExpectedOwnerId } from '../ownership.js';
 import { assetKey } from '../owner.js';
+import { type OwnershipRule, resolveExpectedOwnerId } from '../ownership.js';
 import type { Env } from '../types.js';
 
 /**
@@ -311,108 +311,109 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 					tags: ['assets'],
 				}),
 				async (c) => {
-			const { assetId } = c.req.param();
-			const urlOwnerId = asOwnerId(c.req.param('ownerId'));
+					const { assetId } = c.req.param();
+					const urlOwnerId = asOwnerId(c.req.param('ownerId'));
 
-			const row = await c.var.db.query.asset.findFirst({
-				columns: { visibility: true },
-				where: and(
-					eq(schema.asset.id, assetId),
-					eq(schema.asset.ownerId, urlOwnerId),
-				),
-			});
+					const row = await c.var.db.query.asset.findFirst({
+						columns: { visibility: true },
+						where: and(
+							eq(schema.asset.id, assetId),
+							eq(schema.asset.ownerId, urlOwnerId),
+						),
+					});
 
-			if (!row) return c.json(AssetError.NotFound(), 404);
+					if (!row) return c.json(AssetError.NotFound(), 404);
 
-			if (row.visibility === 'private') {
-				const session = await c.var.auth.api.getSession({
-					headers: c.req.raw.headers,
-				});
-				if (!session) return c.json(AssetError.Unauthorized(), 401);
-				c.set('user', AuthUser.assert(session.user));
-				const { data: expectedOwnerId, error } = await resolveExpectedOwnerId(
-					ownership,
-					c,
-				);
-				if (error || urlOwnerId !== expectedOwnerId) {
-					return c.json(AssetError.Unauthorized(), 401);
-				}
-			}
+					if (row.visibility === 'private') {
+						const session = await c.var.auth.api.getSession({
+							headers: c.req.raw.headers,
+						});
+						if (!session) return c.json(AssetError.Unauthorized(), 401);
+						c.set('user', AuthUser.assert(session.user));
+						const { data: expectedOwnerId, error } =
+							await resolveExpectedOwnerId(ownership, c);
+						if (error || urlOwnerId !== expectedOwnerId) {
+							return c.json(AssetError.Unauthorized(), 401);
+						}
+					}
 
-			const object = await c.env.ASSETS_BUCKET.get(
-				assetKey(urlOwnerId, assetId),
-				{
-					onlyIf: c.req.raw.headers,
-					range: c.req.raw.headers,
+					const object = await c.env.ASSETS_BUCKET.get(
+						assetKey(urlOwnerId, assetId),
+						{
+							onlyIf: c.req.raw.headers,
+							range: c.req.raw.headers,
+						},
+					);
+
+					if (object === null) {
+						return c.json(AssetError.NotFound(), 404);
+					}
+
+					// Cache-Control differs by visibility. Private assets MUST never
+					// land in a shared cache (Cloudflare edge, corporate proxy);
+					// 'private, no-store' is the conservative answer. Public assets
+					// get a short max-age so a publish→unpublish flip becomes visible
+					// to new requests within ~60s without an explicit purge. Active
+					// purge on PATCH would let us raise max-age; documented as a
+					// future optimization in the spec §4.
+					const cacheControl =
+						row.visibility === 'public'
+							? 'public, max-age=60'
+							: 'private, no-store';
+
+					// Bodyless object - precondition failed (ETag match -> 304)
+					if (!('body' in object)) {
+						const headers = new Headers();
+						object.writeHttpMetadata(headers);
+						headers.set('etag', object.httpEtag);
+						headers.set('cache-control', cacheControl);
+						headers.set('referrer-policy', 'no-referrer');
+						return new Response(null, { status: 304, headers });
+					}
+
+					// Build response headers
+					const headers = new Headers();
+					object.writeHttpMetadata(headers);
+					headers.set('etag', object.httpEtag);
+					headers.set('cache-control', cacheControl);
+					headers.set('accept-ranges', 'bytes');
+					headers.set('x-content-type-options', 'nosniff');
+					// Capability URL: do not let outgoing sub-resource requests carry
+					// the asset URL as a Referer. The unguessable id is the credential;
+					// keep it out of third-party logs and analytics.
+					headers.set('referrer-policy', 'no-referrer');
+					if (object.uploaded) {
+						headers.set('last-modified', object.uploaded.toUTCString());
+					}
+
+					// Range request -> 206
+					const range = object.range;
+					if (range) {
+						let start: number;
+						let end: number;
+						if ('suffix' in range) {
+							const len = Math.min(range.suffix, object.size);
+							start = object.size - len;
+							end = object.size - 1;
+						} else {
+							start = range.offset ?? 0;
+							end =
+								range.length != null
+									? Math.min(start + range.length - 1, object.size - 1)
+									: object.size - 1;
+						}
+						headers.set(
+							'content-range',
+							`bytes ${start}-${end}/${object.size}`,
+						);
+						headers.set('content-length', String(end - start + 1));
+						return new Response(object.body, { status: 206, headers });
+					}
+
+					headers.set('content-length', String(object.size));
+					return new Response(object.body, { status: 200, headers });
 				},
-			);
-
-			if (object === null) {
-				return c.json(AssetError.NotFound(), 404);
-			}
-
-			// Cache-Control differs by visibility. Private assets MUST never
-			// land in a shared cache (Cloudflare edge, corporate proxy);
-			// 'private, no-store' is the conservative answer. Public assets
-			// get a short max-age so a publish→unpublish flip becomes visible
-			// to new requests within ~60s without an explicit purge. Active
-			// purge on PATCH would let us raise max-age; documented as a
-			// future optimization in the spec §4.
-			const cacheControl =
-				row.visibility === 'public'
-					? 'public, max-age=60'
-					: 'private, no-store';
-
-			// Bodyless object - precondition failed (ETag match -> 304)
-			if (!('body' in object)) {
-				const headers = new Headers();
-				object.writeHttpMetadata(headers);
-				headers.set('etag', object.httpEtag);
-				headers.set('cache-control', cacheControl);
-				headers.set('referrer-policy', 'no-referrer');
-				return new Response(null, { status: 304, headers });
-			}
-
-			// Build response headers
-			const headers = new Headers();
-			object.writeHttpMetadata(headers);
-			headers.set('etag', object.httpEtag);
-			headers.set('cache-control', cacheControl);
-			headers.set('accept-ranges', 'bytes');
-			headers.set('x-content-type-options', 'nosniff');
-			// Capability URL: do not let outgoing sub-resource requests carry
-			// the asset URL as a Referer. The unguessable id is the credential;
-			// keep it out of third-party logs and analytics.
-			headers.set('referrer-policy', 'no-referrer');
-			if (object.uploaded) {
-				headers.set('last-modified', object.uploaded.toUTCString());
-			}
-
-			// Range request -> 206
-			const range = object.range;
-			if (range) {
-				let start: number;
-				let end: number;
-				if ('suffix' in range) {
-					const len = Math.min(range.suffix, object.size);
-					start = object.size - len;
-					end = object.size - 1;
-				} else {
-					start = range.offset ?? 0;
-					end =
-						range.length != null
-							? Math.min(start + range.length - 1, object.size - 1)
-							: object.size - 1;
-				}
-				headers.set('content-range', `bytes ${start}-${end}/${object.size}`);
-				headers.set('content-length', String(end - start + 1));
-				return new Response(object.body, { status: 206, headers });
-			}
-
-				headers.set('content-length', String(object.size));
-				return new Response(object.body, { status: 200, headers });
-			},
-		)
+			)
 	);
 }
 

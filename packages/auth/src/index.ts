@@ -2,8 +2,8 @@ export { type AuthClient, type AuthState } from './auth-contract.js';
 export * from './auth-errors.js';
 export {
 	ApiSessionResponse,
-	asUserId,
 	AuthUser,
+	asUserId,
 	type OAuthTokenGrant,
 	PersistedAuth,
 	UserId,

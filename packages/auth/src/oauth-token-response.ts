@@ -1,7 +1,4 @@
-import {
-	defineErrors,
-	type InferErrors,
-} from 'wellcrafted/error';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import type { OAuthTokenGrant } from './auth-types.js';
 
@@ -30,7 +27,9 @@ export const OAuthTokenResponseError = defineErrors({
 	}),
 });
 
-export type OAuthTokenResponseError = InferErrors<typeof OAuthTokenResponseError>;
+export type OAuthTokenResponseError = InferErrors<
+	typeof OAuthTokenResponseError
+>;
 
 /**
  * Normalize an OAuth token endpoint payload into Epicenter's persisted grant.

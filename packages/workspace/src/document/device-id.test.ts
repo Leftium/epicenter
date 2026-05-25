@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import {
-	asDeviceId,
 	type AsyncStorage,
+	asDeviceId,
 	createDeviceId,
 	createDeviceIdAsync,
 	type SimpleStorage,

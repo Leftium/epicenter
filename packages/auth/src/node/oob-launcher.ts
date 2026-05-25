@@ -175,7 +175,9 @@ export function createOobOAuthLauncher({
 
 			const { data: grant, error } = parseOAuthTokenGrant(payload, { now });
 			if (error) {
-				return Err(OobLauncherError.InvalidTokenResponse({ cause: error }).error);
+				return Err(
+					OobLauncherError.InvalidTokenResponse({ cause: error }).error,
+				);
 			}
 			return Ok(grant);
 		},

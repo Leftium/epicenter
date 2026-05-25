@@ -4,7 +4,4 @@ export { skillInstructionsDocGuid } from './skill-instructions-docs.js';
 export { createSkillsActions, type SkillsTables } from './skills-actions.js';
 export type { Reference, Skill } from './tables.js';
 export { referencesTable, skillsTable } from './tables.js';
-export {
-	createSkillsWorkspace,
-	type CreateSkillsWorkspaceOptions,
-} from './workspace.js';
+export { createSkillsWorkspace } from './workspace.js';

@@ -1,4 +1,1 @@
-export {
-	createSkillsWorkspace,
-	type CreateSkillsWorkspaceOptions,
-} from '@epicenter/skills';
+export { createSkillsWorkspace } from '@epicenter/skills';

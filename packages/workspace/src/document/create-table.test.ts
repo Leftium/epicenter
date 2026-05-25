@@ -7,7 +7,6 @@ import { expectErr, expectOk } from 'wellcrafted/testing';
 import * as Y from 'yjs';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import {
-	attachReadonlyTable,
 	attachTable,
 	createReadonlyTable,
 	createTable,
@@ -46,28 +45,6 @@ describe('createTable', () => {
 			expect('clear' in helper).toBe(false);
 		});
 
-		test('attachReadonlyTable reads the same Y.Doc slot without write methods', () => {
-			const ydoc = new Y.Doc();
-			const definition = defineTable({
-				id: column.string(),
-				name: column.string(),
-			});
-			const writer = attachTable(ydoc, 'people', definition);
-			const reader = attachReadonlyTable(ydoc, 'people', definition);
-
-			writer.set({ id: '1', name: 'Alice' });
-
-			expect(reader.get('1').data).toEqual({
-				id: '1',
-				name: 'Alice',
-			});
-			expect('set' in reader).toBe(false);
-			expect('bulkSet' in reader).toBe(false);
-			expect('update' in reader).toBe(false);
-			expect('delete' in reader).toBe(false);
-			expect('bulkDelete' in reader).toBe(false);
-			expect('clear' in reader).toBe(false);
-		});
 	});
 
 	describe('set operations', () => {

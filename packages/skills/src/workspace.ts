@@ -2,15 +2,13 @@ import { createWorkspace } from '@epicenter/workspace';
 import { SKILLS_WORKSPACE_ID } from './constants.js';
 import { referencesTable, skillsTable } from './tables.js';
 
-export type CreateSkillsWorkspaceOptions = {
-	workspaceId?: string;
-	clientID?: number;
-};
-
 export function createSkillsWorkspace({
 	workspaceId = SKILLS_WORKSPACE_ID,
 	clientID,
-}: CreateSkillsWorkspaceOptions = {}) {
+}: {
+	workspaceId?: string;
+	clientID?: number;
+} = {}) {
 	const workspace = createWorkspace({
 		id: workspaceId,
 		tables: {

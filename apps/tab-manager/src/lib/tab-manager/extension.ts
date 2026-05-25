@@ -4,7 +4,7 @@
  * Single source of truth for "how Tab Manager mounts in a browser extension."
  * Calls Tier 1 primitives inline so every line is visible top-to-bottom:
  *
- *  1. workspace root doc (encrypted tables + KV via attachEncryption)
+ *  1. workspace root doc (encrypted tables + KV via createTabManagerWorkspace)
  *  2. local storage for the root (attachLocalStorage)
  *  3. actions wired against tables + Y.Doc transaction batching
  *

@@ -47,10 +47,10 @@ import type { DaemonRuntime } from './types.js';
  *   refuses to start when auth is signed-out, so this value is stable for the
  *   lifetime of the daemon process; routes use it for partitioned URLs.
  * - `keyring` is the lazy reader for the current owner keyring. Pass it to
- *   `attachEncryption(ydoc, { keyring })`. The host's closure throws when
- *   auth is signed-out, so a late sign-out turns into a thrown error at the
- *   next encrypted-write or registration site rather than silent ciphertext
- *   loss.
+ *   `createWorkspace({ id, keyring, tables, kv })` (or your per-app wrapper).
+ *   The host's closure throws when auth is signed-out, so a late sign-out
+ *   turns into a thrown error at workspace construction rather than silent
+ *   ciphertext loss.
  * - `openWebSocket` opens the relay socket for `openCollaboration`. The
  *   host wires it to `auth.openWebSocket`, which carries the bearer
  *   subprotocol.

@@ -4,10 +4,10 @@
  * tables onto a workspace root, applying encryption when a keyring is
  * provided.
  *
- * This file also keeps `attachTable` and `attachReadonlyTable` as internal
- * helpers used by package-local benchmarks and the create-table test. They
- * are intentionally NOT exported from the package barrel: public callers go
- * through `createWorkspace`.
+ * This file also keeps `attachTable` as an internal helper used by
+ * package-local benchmarks and the create-table test. It is intentionally
+ * NOT exported from the package barrel: public callers go through
+ * `createWorkspace`.
  *
  * The library owns `_v` end-to-end: stamped on every write, stripped from
  * every read, refused as a column key at compile time. Users define columns
@@ -349,20 +349,6 @@ export function attachTable<
 	const ykv = new YKeyValueLww<unknown>(yarray);
 	ydoc.once('destroy', () => ykv[Symbol.dispose]());
 	return createTable(ykv, definition, name);
-}
-
-export function attachReadonlyTable<
-	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly
-	TTableDefinition extends TableDefinition<any>,
->(
-	ydoc: Y.Doc,
-	name: string,
-	definition: TTableDefinition,
-): ReadonlyTable<InferTableRow<TTableDefinition>> {
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
-	const ykv = new YKeyValueLww<unknown>(yarray);
-	ydoc.once('destroy', () => ykv[Symbol.dispose]());
-	return createReadonlyTable(ykv, definition, name);
 }
 
 // ════════════════════════════════════════════════════════════════════════════

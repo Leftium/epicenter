@@ -32,14 +32,31 @@ Follow [writing-voice](../writing-voice/SKILL.md) for tone.
 
 Assume issue reporters and maintainers are busy. The most respectful comment is usually the shortest one that closes the loop clearly.
 
+### Comment Compression Rule
+
+Before drafting, ask: what does the reader need to know or do next? Include only that.
+
+Most comments need this shape:
+
+1. Human acknowledgment.
+2. Current state or direct answer.
+3. Next action, only if there is one.
+4. Warm closing.
+
+Warmth should be visible but light. Prefer one exclamation point at the end of the opening or closing sentence. The closing is usually the best place: "Thanks again for catching it!"
+
+Do not add internal process details unless the reader needs them to verify the answer or take the next step.
+
+### Fixed Issues
+
 For fixed issues, use this order:
 
 1. Thank them for flagging it.
 2. Say the current state directly.
 3. Mention the concrete version, release, PR, or commit only if it helps them verify.
-4. Close with brief gratitude and a little warmth.
+4. Close with brief gratitude, usually with one exclamation point.
 
-Do not add "you were right" unless the correction itself matters. Do not explain internal mechanics unless the issue is about those mechanics or the user needs them to verify the fix.
+Avoid validating the reporter's correctness unless it helps the reply. Usually, thank them and state the current status. Do not explain internal mechanics unless the issue is about those mechanics or the user needs them to verify the fix.
 
 Good:
 
@@ -49,16 +66,6 @@ Hey @username, thank you for flagging this.
 This has been fixed, and current releases now include npm provenance attestations.
 
 Thanks again for catching it!
-```
-
-Too much:
-
-```
-Hey @username, thank you for flagging this.
-
-You were right that version 0.34.1 did not include trusted publishing provenance metadata. The publish workflow has since been updated to use npm trusted publishing through GitHub OIDC, with id-token permissions and no NPM token. I verified this in the registry metadata.
-
-I am going to close this since the release pipeline is fixed now. Thanks again.
 ```
 
 ## Opening Pattern

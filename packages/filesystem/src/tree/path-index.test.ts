@@ -12,11 +12,11 @@
 import { describe, expect, test } from 'bun:test';
 import { attachTables } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import type { FileId } from '../ids.js';
+import { asFileId } from '../ids.js';
 import { filesTable } from '../table.js';
 import { attachFileSystemIndex } from './path-index.js';
 
-const fid = (s: string) => s as FileId;
+const fid = (s: string) => asFileId(s);
 
 function setup() {
 	const ydoc = new Y.Doc({ guid: 'test' });

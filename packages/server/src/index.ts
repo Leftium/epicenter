@@ -7,8 +7,9 @@
  * `specs/20260522T230000-server-package-split.md`.
  */
 
-// Top-level factory.
-export { createServer } from './create-server.js';
+// Top-level factory. `Server<E>` is the bundle of sub-apps; deployments
+// extending the library `Env` pass their full env as the type argument.
+export { createServer, type Server } from './create-server.js';
 // Middleware deployments compose around library sub-apps. Auth is mounted by
 // the deployment (not the library) so cloud can interleave Autumn gates
 // between the auth check and the handler.
@@ -16,25 +17,14 @@ export {
 	requireBearerUser,
 	requireCookieOrBearerUser,
 } from './middleware/require-auth.js';
-export { requireUrlUserIdMatchesAuth } from './middleware/require-url-user-id-matches-auth.js';
-export type {
-	AssetR2Key,
-	KeyringInfo,
-	Owner,
-	OwnerKind,
-	OwnerPath,
-	RoomDoName,
-} from './owner.js';
-// Owner concept and durable-identifier derivations.
-export { assetKey, doName, keyringLabel, ownerPath } from './owner.js';
+export { requireUrlOwnerIdMatchesAuth } from './middleware/require-url-owner-id-matches-auth.js';
 // Re-export the Cloudflare Durable Object class so each deployment's
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.
 export { Room } from './room/backends/cloudflare/durable-object.js';
-// Public configuration surface.
-export type {
-	AfterResponseQueue,
-	Connection,
-	Env,
-	ServerOptions,
-	SignUpPolicy,
-} from './types.js';
+// Public configuration surface. `Env` is the Hono context type the
+// deployment composes around library middleware; `ServerOptions` is the
+// `createServer` config. Other types (`Connection`, `AfterResponseQueue`,
+// `SignUpPolicy`, `OwnerPath`, `RoomDoName`, `AssetR2Key`) and helpers
+// (`assetKey`, `doName`) are intentionally not re-exported: they are
+// internal to the library and have no current external consumers.
+export type { Env, ServerOptions } from './types.js';

@@ -9,7 +9,7 @@
  * canonical schema.
  *
  * Composition lives elsewhere:
- *  - `apps/honeycrisp/browser.ts`  -> `openHoneycrispBrowser({ signedIn, installationId })`
+ *  - `apps/honeycrisp/browser.ts`  -> `openHoneycrispBrowser({ signedIn, deviceId })`
  *  - `apps/honeycrisp/daemon.ts`   -> `openHoneycrispDaemon(ctx)`
  */
 
@@ -19,6 +19,7 @@ import {
 	defineMutation,
 	defineTable,
 	docGuid,
+	generateId,
 	type InferTableRow,
 	type Tables,
 } from '@epicenter/workspace';
@@ -35,16 +36,36 @@ export const HONEYCRISP_ID = 'epicenter.honeycrisp';
  *
  * Prevents accidental mixing with other string IDs at compile time.
  */
-export type NoteId = string & Brand<'NoteId'>;
-export const NoteId = type('string').pipe((s): NoteId => s as NoteId);
+export const NoteId = type('string').as<string & Brand<'NoteId'>>();
+export type NoteId = typeof NoteId.infer;
+
+/**
+ * Syntactic sugar for `value as NoteId`. The constrained `string` parameter
+ * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
+ * The only place in the codebase where `as NoteId` should appear.
+ */
+export const asNoteId = (value: string): NoteId => value as NoteId;
+
+/** Generate a unique {@link NoteId} for a new note row. */
+export const generateNoteId = (): NoteId => generateId<NoteId>();
 
 /**
  * Branded folder ID: nanoid generated when a folder is created.
  *
  * Prevents accidental mixing with other string IDs at compile time.
  */
-export type FolderId = string & Brand<'FolderId'>;
-export const FolderId = type('string').pipe((s): FolderId => s as FolderId);
+export const FolderId = type('string').as<string & Brand<'FolderId'>>();
+export type FolderId = typeof FolderId.infer;
+
+/**
+ * Syntactic sugar for `value as FolderId`. The constrained `string` parameter
+ * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
+ * The only place in the codebase where `as FolderId` should appear.
+ */
+export const asFolderId = (value: string): FolderId => value as FolderId;
+
+/** Generate a unique {@link FolderId} for a new folder row. */
+export const generateFolderId = (): FolderId => generateId<FolderId>();
 
 // ─── Tables ───────────────────────────────────────────────────────────────────
 
@@ -151,7 +172,7 @@ export function createHoneycrispActions(tables: HoneycrispTables) {
 			description: 'Delete a folder and re-parent its notes to unfiled',
 			input: Type.Object({ folderId: Type.String() }),
 			handler: ({ folderId: rawId }) => {
-				const folderId = rawId as FolderId;
+				const folderId = asFolderId(rawId);
 				const folderNotes = tables.notes
 					.getAllValid()
 					.filter((n) => n.folderId === folderId);

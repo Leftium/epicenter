@@ -2,17 +2,17 @@
  * Public configuration surface for {@link createServer}.
  *
  * Deployment-level facts only. Per-request state lives on the Hono
- * context (`c.var.user`, `c.var.db`, etc.), and per-request {@link Owner}
- * values are reconstructed inside handlers from URL params plus
- * `opts.ownerKind`.
+ * context (`c.var.user`, `c.var.db`, etc.). Per-request `OwnerId` values
+ * are reconstructed inside handlers from URL params (in personal mode)
+ * or from the literal `'team'` (in team mode), based on `opts.mode`.
  */
 
 import type { AuthUser } from '@epicenter/auth';
+import type { OwnerId } from '@epicenter/constants/identity';
 import type { ActionManifest } from '@epicenter/workspace';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { createAuth } from './auth/create-auth.js';
 import type * as schema from './db/schema/index.js';
-import type { OwnerKind } from './owner.js';
 import type { Rooms } from './room/contracts.js';
 
 /**
@@ -29,13 +29,21 @@ import type { Rooms } from './room/contracts.js';
 export type SignUpPolicy = 'open' | 'disabled';
 
 /**
+ * Deployment partition shape. Set once at `createServer({ mode, ... })` and
+ * read by route-mounting logic plus the `attachOwner` middleware. The wire
+ * does not carry mode (consumers derive it from
+ * `ownerId === TEAM_OWNER_ID`), so this type stays server-internal.
+ */
+export type OwnershipMode = 'personal' | 'team';
+
+/**
  * The two-word deployment configuration.
  *
- * Cloud composition passes `{ ownerKind: 'personal', signUpPolicy: 'open' }`.
- * Team composition passes `{ ownerKind: 'team', signUpPolicy: 'disabled' }`.
+ * Cloud composition passes `{ mode: 'personal', signUpPolicy: 'open' }`.
+ * Team composition passes `{ mode: 'team', signUpPolicy: 'disabled' }`.
  */
 export type ServerOptions = {
-	ownerKind: OwnerKind;
+	mode: OwnershipMode;
 	signUpPolicy?: SignUpPolicy;
 };
 
@@ -43,13 +51,14 @@ export type ServerOptions = {
  * Per-connection identity and runtime state, stamped onto the Cloudflare
  * Durable Object WebSocket attachment so presence survives hibernation.
  *
- * `installationId` identifies one running instance of any app (browser tab,
- * Tauri window, extension service worker, CLI process). The client generates
- * and persists its own; lifespan is the client's concern.
+ * `deviceId` identifies one Epicenter app on one persistent storage scope
+ * (browser tab, Tauri window, extension service worker, CLI process; tabs
+ * sharing localStorage share an id). The client generates and persists its
+ * own; lifespan is the client's concern.
  *
  * `connectedAt` is stamped at upgrade time and surfaced in presence frames so
  * receivers can render an "online since" affordance and tie-break multi-tab
- * same-install (newest wins).
+ * same-device (newest wins).
  *
  * `actions` is the published action manifest for this socket. Starts as `{}`
  * at upgrade; updated to the device's manifest when `presence_publish` arrives.
@@ -62,7 +71,7 @@ export type ServerOptions = {
  */
 export type Connection = {
 	userId: string;
-	installationId: string;
+	deviceId: string;
 	connectedAt: number;
 	actions: ActionManifest;
 };
@@ -101,6 +110,14 @@ export type Env = {
 		auth: ReturnType<typeof createAuth>;
 		authBaseURL: string;
 		user: AuthUser;
+		/**
+		 * Resolved owner partition for this request. Populated by the
+		 * `attachOwner` middleware after auth runs. In personal mode equals
+		 * the authenticated user's id; in team mode equals `TEAM_OWNER_ID`.
+		 * Handlers read this instead of branching on mode or re-deriving
+		 * from the URL `:ownerId` param.
+		 */
+		ownerId: OwnerId;
 		afterResponse: AfterResponseQueue;
 		rooms: Rooms;
 	};

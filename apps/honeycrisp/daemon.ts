@@ -40,8 +40,8 @@ export function openHoneycrispDaemon({
 	projectDir,
 	route,
 	yDocClientId,
-	installationId,
-	owner,
+	deviceId,
+	ownerId,
 	keyring,
 	openWebSocket,
 	onReconnectSignal,
@@ -69,8 +69,8 @@ export function openHoneycrispDaemon({
 
 	return attachDaemonInfrastructure(ydoc, {
 		projectDir,
-		owner,
-		installationId,
+		ownerId,
+		deviceId,
 		openWebSocket,
 		onReconnectSignal,
 		actions,

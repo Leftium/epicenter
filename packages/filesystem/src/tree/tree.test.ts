@@ -13,7 +13,7 @@
 import { describe, expect, test } from 'bun:test';
 import { attachTables } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import { type FileId, generateFileId } from '../ids.js';
+import { asFileId, generateFileId } from '../ids.js';
 import { filesTable } from '../table.js';
 import { attachFileTree } from './tree.js';
 
@@ -89,7 +89,7 @@ describe('attachFileTree', () => {
 
 		test('throws ENOENT for invalid id', () => {
 			const tree = setup();
-			expect(() => tree.getRow('bogus' as FileId, '/bogus')).toThrow('ENOENT');
+			expect(() => tree.getRow(asFileId('bogus'), '/bogus')).toThrow('ENOENT');
 		});
 	});
 

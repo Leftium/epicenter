@@ -7,8 +7,8 @@
  * at `/auth/oauth2/token` with PKCE. Returns a 3-field `OAuthTokenGrant`.
  *
  * The launcher is concerned only with the OAuth dance. The caller pairs
- * the returned grant with `GET /api/session` to build the `localIdentity` section
- * of `PersistedAuth`.
+ * the returned grant with `GET /api/session` to fill in the `userId`,
+ * `ownerId`, `mode`, and `keyring` fields of `PersistedAuth`.
  */
 
 import * as readline from 'node:readline';
@@ -173,12 +173,13 @@ export function createOobOAuthLauncher({
 				return Err(OobLauncherError.InvalidTokenResponse({ cause }).error);
 			}
 
-			try {
-				const grant = parseOAuthTokenGrant(payload, { now });
-				return Ok(grant);
-			} catch (cause) {
-				return Err(OobLauncherError.InvalidTokenResponse({ cause }).error);
+			const { data: grant, error } = parseOAuthTokenGrant(payload, { now });
+			if (error) {
+				return Err(
+					OobLauncherError.InvalidTokenResponse({ cause: error }).error,
+				);
 			}
+			return Ok(grant);
 		},
 	};
 }

@@ -15,30 +15,31 @@
  *   attachRichText,
  *   attachTables,
  *   createDisposableCache,
- *   createInstallationId,
+ *   createDeviceId,
  *   defineTable,
  *   docGuid,
  *   openCollaboration,
  *   roomWsUrl,
  * } from '@epicenter/workspace';
- * import type { AuthClient, Owner } from '@epicenter/auth';
+ * import type { AuthClient } from '@epicenter/auth';
+ * import type { OwnerId } from '@epicenter/constants/identity';
  * import { type } from 'arktype';
  * import * as Y from 'yjs';
  *
  * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
  * declare const auth: AuthClient;
- * declare const owner: Owner;
+ * declare const ownerId: OwnerId;
  *
- * const installationId = createInstallationId({ storage: localStorage });
+ * const deviceId = createDeviceId({ storage: localStorage });
  *
- * // A cloud doc is owned by the authenticated subject and addressed by its
- * // Y.Doc guid: `roomWsUrl({ baseURL, owner, guid, installationId })` builds the
+ * // A cloud doc is owned by the authenticated `ownerId` and addressed by its
+ * // Y.Doc guid: `roomWsUrl({ baseURL, ownerId, guid, deviceId })` builds the
  * // partitioned room URL the server expects.
  * const ydoc = new Y.Doc({ guid: 'notes' });
  * const tables = attachTables(ydoc, { posts });
  * const idb = attachIndexedDb(ydoc);
  * const collaboration = openCollaboration(ydoc, {
- *   url: roomWsUrl({ baseURL: auth.baseURL, owner, guid: ydoc.guid, installationId }),
+ *   url: roomWsUrl({ baseURL: auth.baseURL, ownerId, guid: ydoc.guid, deviceId }),
  *   openWebSocket: auth.openWebSocket,
  *   onReconnectSignal: auth.onStateChange,
  *   waitFor: idb.whenLoaded,
@@ -62,9 +63,9 @@
  *     const bodySync = openCollaboration(bodyYdoc, {
  *       url: roomWsUrl({
  *         baseURL: auth.baseURL,
- *         owner,
+ *         ownerId,
  *         guid: bodyYdoc.guid,
- *         installationId,
+ *         deviceId,
  *       }),
  *       openWebSocket: auth.openWebSocket,
  *       onReconnectSignal: auth.onStateChange,
@@ -100,13 +101,15 @@ export {
 } from './shared/actions';
 
 // ════════════════════════════════════════════════════════════════════════════
-// INSTALLATION IDENTITY
+// DEVICE IDENTITY
 // ════════════════════════════════════════════════════════════════════════════
 
 export {
-	createInstallationId,
-	createInstallationIdAsync,
-} from './document/installation-id.js';
+	asDeviceId,
+	createDeviceId,
+	createDeviceIdAsync,
+	DeviceId,
+} from './document/device-id.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // PROJECT CONFIG (browser-safe surface)
@@ -170,7 +173,12 @@ export {
 export { attachTimeline } from './document/attach-timeline/index.js';
 export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
-export { DispatchError } from './document/dispatch.js';
+export {
+	DispatchError,
+	type DispatchRequest,
+	type TypedDispatch,
+	typedDispatch,
+} from './document/dispatch.js';
 export { docGuid } from './document/doc-guid.js';
 export type { SyncStatus } from './document/internal/sync-supervisor.js';
 export { onLocalUpdate } from './document/on-local-update.js';
@@ -181,11 +189,12 @@ export {
 	type OpenWebSocketFn,
 	openCollaboration,
 } from './document/open-collaboration.js';
+export type { PresenceDevice } from './document/presence-protocol.js';
 // Transport URL builder.
 //
-// `roomWsUrl({ baseURL, owner, guid, installationId })` builds the WebSocket URL
-// for the partitioned `/api/users/:userId/rooms/:roomId` (personal) or
-// `/api/rooms/:roomId` (team) endpoint. Both browser apps and the daemon
-// use this one builder.
+// `roomWsUrl({ baseURL, ownerId, guid, deviceId })` builds the WebSocket
+// URL for the partitioned `/api/owners/:ownerId/rooms/:roomId` endpoint. The
+// same single URL form is used in both personal and team modes. Both browser
+// apps and the daemon use this one builder.
 export { type RoomWsUrlOptions, roomWsUrl } from './document/transport.js';
 export { wipeLocalStorage } from './document/wipe-local-storage.js';

@@ -32,6 +32,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AuthClient } from '@epicenter/auth';
 import { MachineAuthStorageError } from '@epicenter/auth/node';
+import { asOwnerId } from '@epicenter/constants/identity';
+import { DEFAULT_PROJECT_CONFIG_SOURCE } from '@epicenter/workspace';
 import {
 	claimDaemonLease,
 	metadataPathFor,
@@ -43,19 +45,18 @@ import { Err, Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { runUp } from './up';
 
-const STUB_AUTH: AuthClient = {
+const STUB_AUTH = {
 	state: {
 		status: 'signed-in',
-		localIdentity: {
-			subject: 'user-1',
-			keyring: [
-				{
-					version: 1,
-					subjectKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
-				},
-			],
-		},
+		ownerId: asOwnerId('user-1'),
+		keyring: [
+			{
+				version: 1,
+				keyBytesBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+			},
+		],
 	},
+	baseURL: 'http://localhost:8787',
 	onStateChange: () => () => {},
 	startSignIn: async () => Ok(undefined),
 	signOut: async () => Ok(undefined),
@@ -64,7 +65,7 @@ const STUB_AUTH: AuthClient = {
 		throw new Error('STUB_AUTH: openWebSocket not implemented');
 	},
 	[Symbol.dispose]: () => {},
-};
+} satisfies AuthClient;
 
 const stubAuthFactory = async () => Ok(STUB_AUTH);
 
@@ -227,7 +228,7 @@ describe('runUp: failure cleanup', () => {
 		try {
 			expect(handle.runtimes).toEqual([]);
 			expect(readFileSync(join(workDir, 'epicenter.config.ts'), 'utf8')).toBe(
-				"import { defineConfig } from '@epicenter/workspace';\n\nexport default defineConfig({});\n",
+				DEFAULT_PROJECT_CONFIG_SOURCE,
 			);
 			expect(
 				readFileSync(join(workDir, '.epicenter', '.gitignore'), 'utf8'),

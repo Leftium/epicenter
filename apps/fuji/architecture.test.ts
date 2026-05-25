@@ -45,13 +45,11 @@ describe('Fuji workspace architecture', () => {
 		expect(browserSource).toContain('attachEncryption(ydoc, { keyring:');
 		expect(browserSource).toContain('attachLocalStorage(ydoc, {');
 		expect(browserSource).toContain('server: signedIn.server,');
-		expect(browserSource).toContain('owner: signedIn.owner,');
+		expect(browserSource).toContain('ownerId: signedIn.ownerId,');
 		expect(browserSource).toContain('openCollaboration(ydoc,');
+		expect(browserSource).toContain('openWebSocket: signedIn.openWebSocket');
 		expect(browserSource).toContain(
-			'openWebSocket: signedIn.auth.openWebSocket',
-		);
-		expect(browserSource).toContain(
-			'onReconnectSignal: signedIn.auth.onStateChange',
+			'onReconnectSignal: signedIn.onReconnectSignal',
 		);
 		expect(browserSource).toContain('wipeLocalStorage({');
 		// No LocalOwner / openEncryptedDoc / wipeLocalYjsData carry-over.
@@ -62,8 +60,9 @@ describe('Fuji workspace architecture', () => {
 		expect(browserSource).not.toContain('connectDaemonActions');
 		// No more duck-typed `attachLocalStorage(ydoc, signedIn)` shape.
 		expect(browserSource).not.toContain('attachLocalStorage(ydoc, signedIn)');
-		// No more inline `auth: signedIn.auth` on openCollaboration.
-		expect(browserSource).not.toContain('auth: signedIn.auth');
+		// The full auth client must stay off SignedIn: openers consume explicit
+		// capabilities (`openWebSocket`, `onReconnectSignal`) only.
+		expect(browserSource).not.toContain('signedIn.auth');
 	});
 
 	test('daemon opener composes ydoc + attachEncryption + materializers', () => {

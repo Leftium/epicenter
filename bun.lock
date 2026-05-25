@@ -567,6 +567,7 @@
       },
       "dependencies": {
         "@epicenter/auth": "workspace:*",
+        "@epicenter/constants": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@hono/standard-validator": "catalog:",
         "arktype": "catalog:",
@@ -589,6 +590,7 @@
       "name": "@epicenter/constants",
       "version": "0.1.0",
       "dependencies": {
+        "arktype": "catalog:",
         "env-paths": "^3.0.0",
         "wellcrafted": "catalog:",
       },
@@ -783,7 +785,6 @@
       "version": "0.2.0",
       "dependencies": {
         "@ark/json-schema": "^0.0.4",
-        "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
         "@epicenter/sync": "workspace:*",

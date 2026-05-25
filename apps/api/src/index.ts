@@ -4,7 +4,7 @@
  * Composes the `@epicenter/server` library in `personal` ownership mode and
  * layers cloud-only billing, admin, and dashboard surfaces on top. Self-
  * hosted team deployments live in a sibling apps/* folder and compose the
- * same library with `ownerKind: 'team'` and no Autumn middleware.
+ * same library with `mode: 'team'` and no Autumn middleware.
  *
  * Read top to bottom for the full URL surface of cloud.
  */
@@ -14,7 +14,7 @@ import {
 	Room,
 	requireBearerUser,
 	requireCookieOrBearerUser,
-	requireUrlUserIdMatchesAuth,
+	requireUrlOwnerIdMatchesAuth,
 } from '@epicenter/server';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
@@ -26,17 +26,13 @@ import {
 } from './autumn-gates.js';
 import { billingRoutes } from './billing-routes.js';
 
-const s = createServer({ ownerKind: 'personal', signUpPolicy: 'open' });
-
-// Cast each library sub-app into cloud's extended Env so the chained
-// `.route(...)` calls below typecheck against `Hono<Env>`. The runtime
-// shape is identical; cloud just adds `planId` to Variables.
-const base = s.base as unknown as Hono<Env>;
-const auth = s.auth as unknown as Hono<Env>;
-const session = s.session as unknown as Hono<Env>;
-const rooms = s.rooms as unknown as Hono<Env>;
-const assets = s.assets as unknown as Hono<Env>;
-const ai = s.ai as unknown as Hono<Env>;
+// Generic on cloud's extended `Env` so every sub-app is typed as
+// `Hono<Env>` (with `planId`) without per-mount casts.
+const { base, auth, session, rooms, assets, ai, attachOwner } =
+	createServer<Env>({
+		mode: 'personal',
+		signUpPolicy: 'open',
+	});
 
 // Public health endpoint at root.
 base.get('/', (c) =>
@@ -49,28 +45,36 @@ base.route('/sign-in', auth).route('/consent', auth).route('/auth', auth);
 // Session: authed via library middleware, no cloud-specific wrapping.
 base.route('/api/session', session);
 
-// Rooms: bearer auth + URL userId safety, then library handler. No billing
-// gate for rooms today; bandwidth and DO storage are not metered.
+// Rooms: bearer auth + URL ownerId safety + owner resolution, then library
+// handler. No billing gate for rooms today; bandwidth and DO storage are not
+// metered.
 const cloudRooms = new Hono<Env>()
-	.use('/users/:userId/rooms/*', requireBearerUser, requireUrlUserIdMatchesAuth)
+	.use(
+		'/owners/:ownerId/rooms/*',
+		requireBearerUser,
+		requireUrlOwnerIdMatchesAuth,
+		attachOwner,
+	)
 	.route('/', rooms);
 base.route('/api', cloudRooms);
 
-// Assets: cookie-or-bearer (dashboard SPA uses cookies), URL userId safety,
-// Autumn storage gate, then library handlers. Public read is registered
-// inside the library sub-app and matches before the authed paths because
-// of its `{15-char id}` regex.
+// Assets: cookie-or-bearer (dashboard SPA uses cookies), URL ownerId safety,
+// owner resolution, Autumn storage gate, then library handlers. Public read
+// is registered inside the library sub-app and matches before the authed
+// paths because of its `{15-char id}` regex.
 const cloudAssets = new Hono<Env>()
 	.use(
-		'/users/:userId/assets',
+		'/owners/:ownerId/assets',
 		requireCookieOrBearerUser,
-		requireUrlUserIdMatchesAuth,
+		requireUrlOwnerIdMatchesAuth,
+		attachOwner,
 		autumnStorageGate,
 	)
 	.use(
-		'/users/:userId/assets/*',
+		'/owners/:ownerId/assets/*',
 		requireCookieOrBearerUser,
-		requireUrlUserIdMatchesAuth,
+		requireUrlOwnerIdMatchesAuth,
+		attachOwner,
 		autumnStorageGate,
 	)
 	.route('/', assets);

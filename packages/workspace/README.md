@@ -10,7 +10,14 @@ around `new Y.Doc`. Browser apps with many child Y.Docs use
 cleanup stays in app-owned helper functions that already know the parent table
 and child document guid policy.
 
-## Quick Start
+## Quick Start: local-only workspace
+
+The recipe below ships a workspace with no auth, no encryption, no cloud
+sync. It is the right shape for a single-user desktop notes app, an
+offline CLI, a test fixture, or any consumer whose data has no remote
+adversary. Cloud-synced workspaces add `attachEncryption` and swap
+`attachIndexedDb` + `attachBroadcastChannel` for the owner-scoped
+`attachLocalStorage` composite; see [Plaintext vs encrypted](#plaintext-vs-encrypted).
 
 ```bash
 bun add @epicenter/workspace
@@ -20,6 +27,7 @@ bun add @epicenter/workspace
 import { type } from 'arktype';
 import * as Y from 'yjs';
 import {
+	attachBroadcastChannel,
 	attachIndexedDb,
 	attachKv,
 	attachTables,
@@ -41,6 +49,9 @@ export function openBlog() {
 	const tables = attachTables(ydoc, { posts });
 	const kv = attachKv(ydoc, {});
 	const idb = attachIndexedDb(ydoc);
+	// Cross-tab broadcast keyed by ydoc.guid. Skip this line for a Tauri
+	// or Electron app that only ever runs one window.
+	attachBroadcastChannel(ydoc);
 
 	return {
 		get id() {
@@ -116,17 +127,20 @@ refcounting, and the `gcTime` grace period between last dispose and teardown.
 
 ### Plaintext vs encrypted
 
-Both variants ship from this package. Plaintext (`attachTable`, `attachTables`, `attachKv`) binds a typed helper directly to the Y.Doc. Encrypted: the methods on the `EncryptionAttachment` coordinator returned by `attachEncryption(ydoc, { keyring })` (`encryption.attachTable`, `encryption.attachTables`, `encryption.attachKv`) additionally register their backing store with that coordinator. The coordinator reads `keyring()` synchronously at each registration site, derives the per-workspace keyring, and activates the store before handing it back. Already-attached encrypted stores keep their derived keyring; same-subject key rotation needs a re-attach to affect those stores.
+Both variants ship from this package. Pick by adversary: plaintext for
+data that never leaves the device, encrypted for data the server stores.
+
+Plaintext (`attachTable`, `attachTables`, `attachKv`) binds a typed helper directly to the Y.Doc. Encrypted: the methods on the `EncryptionAttachment` coordinator returned by `attachEncryption(ydoc, { keyring })` (`encryption.attachTable`, `encryption.attachTables`, `encryption.attachKv`) additionally register their backing store with that coordinator. The coordinator reads `keyring()` synchronously at each registration site, derives the per-workspace keyring, and activates the store before handing it back. Already-attached encrypted stores keep their derived keyring; same-owner key rotation needs a re-attach to affect those stores.
 
 Don't mix plaintext and encrypted wrappers on the same slot name: Yjs hands both calls the same underlying `Y.Array` and you get a silent plaintext-over-ciphertext race. The verb (`encryption.attachTable` vs plain `attachTable`) is the primary defense; review call sites accordingly. One slot name, one attach site, one intent.
 
-Minimal encrypted browser workspace: encryption + subject-scoped IndexedDB + cross-tab + collaboration (sync + presence + dispatch) wired together:
+Minimal encrypted browser workspace: encryption + owner-scoped IndexedDB + cross-tab + collaboration (sync + presence + dispatch) wired together:
 
 ```typescript
 import {
 	attachEncryption,
 	attachLocalStorage,
-	createInstallationId,
+	createDeviceId,
 	openCollaboration,
 	roomWsUrl,
 	wipeLocalStorage,
@@ -138,10 +152,10 @@ import { appTables } from '$lib/workspace/definition';
 
 export function openApp({
 	signedIn,
-	installationId,
+	deviceId,
 }: {
 	signedIn: SignedIn;
-	installationId: string;
+	deviceId: string;
 }) {
 	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: true });
 
@@ -151,16 +165,16 @@ export function openApp({
 	// Server + owner scoped encrypted IDB + cross-tab BroadcastChannel in one call.
 	const idb = attachLocalStorage(ydoc, {
 		server: signedIn.server,
-		owner: signedIn.owner,
+		ownerId: signedIn.ownerId,
 		keyring: signedIn.keyring,
 	});
 
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl({
 			baseURL: signedIn.auth.baseURL,
-			owner: signedIn.owner,
+			ownerId: signedIn.ownerId,
 			guid: ydoc.guid,
-			installationId,
+			deviceId,
 		}),
 		waitFor: idb.whenLoaded,
 		openWebSocket: signedIn.auth.openWebSocket,
@@ -183,7 +197,7 @@ export function openApp({
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
 			await wipeLocalStorage({
 				server: signedIn.server,
-				owner: signedIn.owner,
+				ownerId: signedIn.ownerId,
 			});
 		},
 		[Symbol.dispose]() {
@@ -197,16 +211,16 @@ export const session = createSession({
 	build: ({ signedIn }) =>
 		openApp({
 			signedIn,
-			installationId: createInstallationId({ storage: localStorage }),
+			deviceId: createDeviceId({ storage: localStorage }),
 		}),
 });
 ```
 
-`attachLocalStorage(ydoc, { server, owner, keyring })` pairs the encrypted IndexedDB store with an owner-scoped BroadcastChannel: two tabs of the same owner share both persisted state and live updates, while two different owners on the same browser profile never see each other's data. On sign-out, call `wipeLocalStorage({ server, owner })` to delete every owner-scoped local database.
+`attachLocalStorage(ydoc, { server, ownerId, keyring })` pairs the encrypted IndexedDB store with an owner-scoped BroadcastChannel: two tabs of the same owner share both persisted state and live updates, while two different owners on the same browser profile never see each other's data. On sign-out, call `wipeLocalStorage({ server, ownerId })` to delete every owner-scoped local database.
 
-`openCollaboration` is the workspace primitive: it wraps the sync supervisor, mirrors the relay's server-owned presence channel as `collaboration.devices`, and runs inbound dispatch frames against the local action registry. Find an online install with `workspace.collaboration.devices.list().find((d) => d.installationId === installationId)`, then call it with `workspace.collaboration.dispatch(...)`. Content documents use the same primitive with `actions: {}`. See [SYNC_ARCHITECTURE.md](./SYNC_ARCHITECTURE.md) for the full model.
+`openCollaboration` is the workspace primitive: it wraps the sync supervisor, mirrors the relay's server-owned presence channel as `collaboration.devices`, and runs inbound dispatch frames against the local action registry. Find an online install with `workspace.collaboration.devices.list().find((d) => d.deviceId === deviceId)`, then call it with `workspace.collaboration.dispatch(...)`. Content documents use the same primitive with `actions: {}`. See [SYNC_ARCHITECTURE.md](./SYNC_ARCHITECTURE.md) for the full model.
 
-The `guid` you pass to `new Y.Doc(...)` becomes `ydoc.guid`. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin. Cloud sync targets `/api/users/:userId/rooms/:roomId` (personal) or `/api/rooms/:roomId` (team): build the URL with `roomWsUrl({ baseURL, owner, guid: ydoc.guid, installationId })`. A cloud doc is owned by the authenticated `owner`, so the server resolves the DO name `users/${userId}/rooms/${room}` (personal) or `rooms/${room}` (team) from the auth token, with no workspace lookup.
+The `guid` you pass to `new Y.Doc(...)` becomes `ydoc.guid`. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin. Cloud sync targets the single uniform shape `/api/owners/:ownerId/rooms/:roomId` in both modes: build the URL with `roomWsUrl({ baseURL, ownerId, guid: ydoc.guid, deviceId })`. A cloud doc is owned by the authenticated `OwnerId`, so the server resolves the Durable Object name `owners/${ownerId}/rooms/${room}` from the auth token (personal: `ownerId === userId`; team: `ownerId === 'team'`), with no workspace lookup.
 
 For production-shaped browser wiring, see `apps/fuji/src/lib/browser.ts`. For auth session transitions, see `apps/fuji/src/lib/session.ts`.
 
@@ -544,16 +558,16 @@ as `collaboration.devices`:
 
 ```typescript
 const online = workspace.collaboration.devices.list();
-// -> [{ installationId: 'phone' }, { installationId: 'laptop' }]
+// -> [{ deviceId: 'phone' }, { deviceId: 'laptop' }]
 
 const unsubscribe = workspace.collaboration.devices.subscribe((devices) => {
-	console.log('online:', devices.map((device) => device.installationId));
+	console.log('online:', devices.map((device) => device.deviceId));
 });
 ```
 
-Each entry is a `LiveDevice` (`{ installationId }`); the local install is
-excluded. Product-level data (display name, cursor, capability list) lives in
-app-owned tables, not on the presence wire. See
+Each entry is a `PresenceDevice` (`{ deviceId, connectedAt, actions }`);
+the local install is excluded. Product-level data (display name, cursor,
+capability list) lives in app-owned tables, not on the presence wire. See
 [SYNC_ARCHITECTURE.md](./SYNC_ARCHITECTURE.md) for the full model.
 
 Cursor and selection sync (genuine ephemeral peer-to-peer state) is future
@@ -807,15 +821,15 @@ import { attachYjsLog } from '@epicenter/workspace/node';
 
 ### Persistence
 
-Browser apps use `attachIndexedDb(ydoc)` for unauthenticated docs, or `attachLocalStorage(ydoc, { server, owner, keyring })` for an authenticated workspace that needs encrypted persistence plus cross-tab pairing. Bun/Node daemons use `attachYjsLog(ydoc, { filePath })`. All bind to the Y.Doc and tear down on `ydoc.destroy()`.
+Browser apps use `attachIndexedDb(ydoc)` for unauthenticated docs, or `attachLocalStorage(ydoc, { server, ownerId, keyring })` for an authenticated workspace that needs encrypted persistence plus cross-tab pairing. Bun/Node daemons use `attachYjsLog(ydoc, { filePath })`. All bind to the Y.Doc and tear down on `ydoc.destroy()`.
 
 | Primitive | Runtime | Barrier | Other | Purpose |
 |---|---|---|---|---|
 | `attachIndexedDb(ydoc)` | browser | `whenLoaded`, `whenDisposed` | `clearLocal()` | Local Yjs persistence via `y-indexeddb` |
-| `attachLocalStorage(ydoc, { server, owner, keyring })` | browser | `whenLoaded`, `whenDisposed` | paired BroadcastChannel | Owner-scoped encrypted IDB plus cross-tab pairing |
+| `attachLocalStorage(ydoc, { server, ownerId, keyring })` | browser | `whenLoaded`, `whenDisposed` | paired BroadcastChannel | Owner-scoped encrypted IDB plus cross-tab pairing |
 | `attachYjsLog(ydoc, { filePath })` | Bun/Node | `whenDisposed` (sync replay; no `whenLoaded` needed) | `clearLocal()` | Append-log SQLite file the daemon writes |
 
-For authenticated apps, call `await wipeLocalStorage({ server, owner })` after disposing the bundle to delete every owner-scoped encrypted IDB database on the current browser profile (sign-out, "delete my local data", account switch).
+For authenticated apps, call `await wipeLocalStorage({ server, ownerId })` after disposing the bundle to delete every owner-scoped encrypted IDB database on the current browser profile (sign-out, "delete my local data", account switch).
 
 `attachSqliteMaterializer` and `attachMarkdownMaterializer` are not persistence: they project workspace rows into queryable SQLite tables or `.md` files. See the materializer subsections below.
 
@@ -849,7 +863,7 @@ void openNotes;
 
 ### Sync
 
-One primitive wraps the WebSocket transport: `openCollaboration`. The workspace document passes a real `actions` registry; content documents that only need bytes-on-the-wire pass `actions: {}`. Compose it with `attachBroadcastChannel(ydoc)` for unauthenticated local-only documents. Authenticated browser workspaces use `attachLocalStorage(ydoc, { server, owner, keyring })`, which pairs encrypted IDB with an owner-scoped BroadcastChannel in one call.
+One primitive wraps the WebSocket transport: `openCollaboration`. The workspace document passes a real `actions` registry; content documents that only need bytes-on-the-wire pass `actions: {}`. Compose it with `attachBroadcastChannel(ydoc)` for unauthenticated local-only documents. Authenticated browser workspaces use `attachLocalStorage(ydoc, { server, ownerId, keyring })`, which pairs encrypted IDB with an owner-scoped BroadcastChannel in one call.
 
 ```typescript
 import * as Y from 'yjs';
@@ -857,22 +871,23 @@ import {
 	attachBroadcastChannel,
 	attachIndexedDb,
 	attachTables,
-	createInstallationId,
+	createDeviceId,
 	defineTable,
 	openCollaboration,
 	roomWsUrl,
 } from '@epicenter/workspace';
-import type { AuthClient, Owner } from '@epicenter/auth';
+import type { AuthClient } from '@epicenter/auth';
+import type { OwnerId } from '@epicenter/constants/identity';
 import { type } from 'arktype';
 
 const tabs = defineTable(type({ id: 'string', url: 'string', _v: '1' }));
 
 function openTabs({
-	owner,
+	ownerId,
 	openWebSocket,
 	onReconnectSignal,
 }: {
-	owner: Owner;
+	ownerId: OwnerId;
 	openWebSocket: AuthClient['openWebSocket'];
 	onReconnectSignal: AuthClient['onStateChange'];
 }) {
@@ -880,13 +895,13 @@ function openTabs({
 	const tables = attachTables(ydoc, { tabs });
 	const idb = attachIndexedDb(ydoc);
 	attachBroadcastChannel(ydoc);
-	const installationId = createInstallationId({ storage: localStorage });
+	const deviceId = createDeviceId({ storage: localStorage });
 	const collaboration = openCollaboration(ydoc, {
 		url: roomWsUrl({
 			baseURL: 'https://api.epicenter.so',
-			owner,
+			ownerId,
 			guid: ydoc.guid,
-			installationId,
+			deviceId,
 		}),
 		waitFor: idb.whenLoaded,
 		openWebSocket,
@@ -1553,15 +1568,15 @@ import {
 	type Collaboration,
 	DispatchError,
 	type DispatchRequest,
-	type LiveDevice,
+	type PresenceDevice,
 	type TypedDispatch,
 	typedDispatch,
 } from '@epicenter/workspace';
 ```
 
-`openCollaboration` returns a `Collaboration`. Online devices (relay-owned presence, with each device's `installationId`, `connectedAt`, and published `actions` manifest):
+`openCollaboration` returns a `Collaboration`. Online devices (relay-owned presence, with each device's `deviceId`, `connectedAt`, and published `actions` manifest):
 
-- `collaboration.devices.list()`: `LiveDevice[]`, the local install excluded
+- `collaboration.devices.list()`: `PresenceDevice[]`, the local install excluded
 - `collaboration.devices.subscribe(fn)`: returns an unsubscribe function
 
 Cross-device calls:

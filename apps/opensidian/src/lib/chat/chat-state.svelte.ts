@@ -5,6 +5,8 @@ import { createAiChatFetch, fromTable } from '@epicenter/svelte';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import {
+	asChatMessageId,
+	asConversationId,
 	type ChatMessageId,
 	type Conversation,
 	type ConversationId,
@@ -142,7 +144,7 @@ export function createAiChatState({
 			),
 			onFinish: (message) => {
 				binding.tables.chatMessages.set({
-					id: message.id as ChatMessageId,
+					id: asChatMessageId(message.id),
 					conversationId,
 					role: 'assistant',
 					parts: message.parts as JsonValue[],
@@ -263,7 +265,7 @@ export function createAiChatState({
 			reload() {
 				const lastMessage = chat.messages.at(-1);
 				if (lastMessage?.role === 'assistant') {
-					binding.tables.chatMessages.delete(lastMessage.id as ChatMessageId);
+					binding.tables.chatMessages.delete(asChatMessageId(lastMessage.id));
 				}
 
 				void chat.reload();
@@ -301,7 +303,7 @@ export function createAiChatState({
 		}
 
 		for (const conversationId of conversationsMap.keys()) {
-			const id = conversationId as ConversationId;
+			const id = asConversationId(conversationId);
 			if (!handles.has(id)) {
 				handles.set(id, createConversationHandle(id));
 			}
@@ -311,13 +313,13 @@ export function createAiChatState({
 		if (!firstConversation) return;
 		if (handles.has(activeConversationId)) return;
 
-		const newActiveId = firstConversation.id as ConversationId;
+		const newActiveId = asConversationId(firstConversation.id);
 		searchParams.update({ chat: newActiveId });
 		handles.get(newActiveId)?.refreshMessages();
 	}
 
 	const activeConversationId = $derived(
-		(searchParams.chat ?? '') as ConversationId,
+		asConversationId(searchParams.chat ?? ''),
 	);
 
 	const _unobserveConversations = binding.tables.conversations.observe(() => {
@@ -341,7 +343,7 @@ export function createAiChatState({
 		const firstConversation = conversations[0];
 		if (!firstConversation) return;
 
-		const activeId = firstConversation.id as ConversationId;
+		const activeId = asConversationId(firstConversation.id);
 		searchParams.update({ chat: activeId });
 		handles.get(activeId)?.refreshMessages();
 	});

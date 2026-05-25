@@ -9,7 +9,7 @@
  * schema.
  *
  * Composition lives elsewhere:
- *  - `apps/opensidian/src/lib/opensidian/browser.ts` -> `openOpensidianBrowser({ signedIn, installationId })`
+ *  - `apps/opensidian/src/lib/opensidian/browser.ts` -> `openOpensidianBrowser({ signedIn, deviceId })`
  *  - `apps/opensidian/daemon.ts`                     -> `openOpensidianDaemon(ctx)`
  */
 
@@ -38,8 +38,16 @@ export const OPENSIDIAN_ID = 'epicenter.opensidian';
  * messages that belong to that thread. The brand prevents accidental mixing
  * with message IDs or other plain strings.
  */
-export type ConversationId = Id & Brand<'ConversationId'>;
-export const ConversationId = type('string').as<ConversationId>();
+export const ConversationId = type('string').as<Id & Brand<'ConversationId'>>();
+export type ConversationId = typeof ConversationId.infer;
+
+/**
+ * Syntactic sugar for `value as ConversationId`. The constrained `string` parameter
+ * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
+ * The only place in the codebase where `as ConversationId` should appear.
+ */
+export const asConversationId = (value: string): ConversationId =>
+	value as ConversationId;
 
 /**
  * Generate a unique {@link ConversationId} for a new conversation row.
@@ -56,8 +64,16 @@ export const generateConversationId = (): ConversationId =>
  * The brand keeps message IDs distinct from conversation IDs so references
  * stay type-safe across joins and edits.
  */
-export type ChatMessageId = Id & Brand<'ChatMessageId'>;
-export const ChatMessageId = type('string').as<ChatMessageId>();
+export const ChatMessageId = type('string').as<Id & Brand<'ChatMessageId'>>();
+export type ChatMessageId = typeof ChatMessageId.infer;
+
+/**
+ * Syntactic sugar for `value as ChatMessageId`. The constrained `string` parameter
+ * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
+ * The only place in the codebase where `as ChatMessageId` should appear.
+ */
+export const asChatMessageId = (value: string): ChatMessageId =>
+	value as ChatMessageId;
 
 /**
  * Generate a unique {@link ChatMessageId} for a new chat message.

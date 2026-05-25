@@ -1,24 +1,31 @@
 /**
  * `/api/session` sub-app.
  *
- * Returns the authenticated user, the owner the request resolves through
- * (`{ kind: 'personal', userId } | { kind: 'team' }`), and the per-owner
- * workspace keyring. Clients cache the response so workspace boot,
- * local-storage keying, and Yjs decryption work offline.
+ * Returns the authenticated user, the `ownerId` the request resolves
+ * through, and the per-owner workspace keyring. Clients cache the response
+ * so workspace boot, local-storage keying, and Yjs decryption work offline.
  *
- * The keyring is derived from the owner's partition label via the
- * deployment's root keyring (`ENCRYPTION_SECRETS`). Personal owners get a
- * user-scoped subject; team owners share one team-scoped subject.
+ * The keyring is derived from a per-owner HKDF label via the deployment's
+ * root keyring (`ENCRYPTION_SECRETS`). The label IS the `ownerId`: personal
+ * owners get a per-user keyring (`ownerId === userId`); every member of a
+ * team deployment shares one keyring (`ownerId === TEAM_OWNER_ID`).
+ *
+ * The owner partition is resolved by the `attachOwner` middleware, not by
+ * this handler. The handler reads `c.var.ownerId` and stays mode-blind.
+ * Deployment shape is not on the wire: any consumer that needs to branch
+ * derives it from `ownerId === TEAM_OWNER_ID`.
  */
 
-import type { ApiSessionResponse, Owner } from '@epicenter/auth';
+import type { ApiSessionResponse } from '@epicenter/auth';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
-import { deriveSubjectKeyring } from '../auth/encryption.js';
+import { deriveKeyring } from '../auth/encryption.js';
+import { createAttachOwner } from '../middleware/attach-owner.js';
 import { requireCookieOrBearerUser } from '../middleware/require-auth.js';
 import type { Env, ServerOptions } from '../types.js';
 
 export function createSessionApp(opts: ServerOptions): Hono<Env> {
+	const attachOwner = createAttachOwner(opts.mode);
 	return new Hono<Env>().get(
 		'/',
 		describeRoute({
@@ -26,19 +33,13 @@ export function createSessionApp(opts: ServerOptions): Hono<Env> {
 			tags: ['auth'],
 		}),
 		requireCookieOrBearerUser,
+		attachOwner,
 		async (c) => {
-			const owner: Owner =
-				opts.ownerKind === 'personal'
-					? { kind: 'personal', userId: c.var.user.id }
-					: { kind: 'team' };
-			// HKDF subject: personal mode uses the bare user id (byte-identical
-			// to the pre-split derivation, so any existing keyring stays valid);
-			// team mode uses the literal `team`, shared across the deployment.
-			const subject = owner.kind === 'personal' ? owner.userId : 'team';
-			const keyring = await deriveSubjectKeyring(subject);
+			const ownerId = c.var.ownerId;
+			const keyring = await deriveKeyring(ownerId);
 			return c.json({
-				user: c.var.user,
-				owner,
+				user: { id: c.var.user.id, email: c.var.user.email },
+				ownerId,
 				keyring,
 			} satisfies ApiSessionResponse);
 		},

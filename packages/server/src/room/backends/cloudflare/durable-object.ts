@@ -58,8 +58,9 @@ const COMPACTION_DELAY_MS = 30_000;
  * validates the caller, checks any route-owned policy, and builds the
  * internal DO name before calling RPC methods or forwarding `fetch`. The
  * DO itself does not re-validate. DO names are host-owned opaque strings
- * built by `doName(owner, roomId)`: `users/<userId>/rooms/<roomId>` in
- * personal mode, `rooms/<roomId>` in team mode.
+ * built by `doName(ownerId, roomId)`, producing `owners/<ownerId>/rooms/<roomId>`
+ * in both modes (in personal mode `ownerId === user.id`, in team mode
+ * `ownerId === 'team'`).
  */
 export class Room extends DurableObject {
 	/**
@@ -117,10 +118,10 @@ export class Room extends DurableObject {
 	 * / {@link Room.getDoc}), avoiding the overhead of constructing and
 	 * parsing Request/Response objects for binary payloads.
 	 *
-	 * The `userId` and `installationId` query parameters are required: together
+	 * The `userId` and `deviceId` query parameters are required: together
 	 * they form the {@link Connection} stamped on the socket attachment
 	 * for the lifetime of the connection. `userId` is what presence carries
-	 * to peers; `installationId` is the address `dispatch({ to })` routes to. No
+	 * to peers; `deviceId` is the address `dispatch({ to })` routes to. No
 	 * round-trip validation: the URL stamp is the binding.
 	 *
 	 * Cancels any pending compaction alarm: a new client just connected,
@@ -137,9 +138,9 @@ export class Room extends DurableObject {
 
 		const url = new URL(request.url);
 		const userId = url.searchParams.get('userId');
-		const installationId = url.searchParams.get('installationId');
-		if (!userId || !installationId) {
-			return new Response('missing userId or installationId', { status: 400 });
+		const deviceId = url.searchParams.get('deviceId');
+		if (!userId || !deviceId) {
+			return new Response('missing userId or deviceId', { status: 400 });
 		}
 
 		void this.ctx.storage.deleteAlarm();
@@ -154,7 +155,7 @@ export class Room extends DurableObject {
 		// and the core re-serializes the attachment when it does.
 		const attachment: Connection = {
 			userId,
-			installationId,
+			deviceId,
 			connectedAt: Date.now(),
 			actions: {},
 		};

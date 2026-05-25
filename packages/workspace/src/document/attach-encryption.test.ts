@@ -3,13 +3,13 @@
  * at every registration site (table, kv). Plaintext mode does not exist:
  * registration always activates encryption.
  *
- * Encrypted IndexedDB and subject-scoped BroadcastChannel behavior live on
+ * Encrypted IndexedDB and owner-scoped BroadcastChannel behavior live on
  * `attachLocalStorage`; see `attach-local-storage.test.ts` for those
  * round-trip tests.
  */
 
 import { describe, expect, test } from 'bun:test';
-import type { SubjectKeyring } from '@epicenter/encryption';
+import type { Keyring } from '@epicenter/encryption';
 import { bytesToBase64 } from '@epicenter/encryption';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { type } from 'arktype';
@@ -17,15 +17,15 @@ import * as Y from 'yjs';
 import { attachEncryption } from './attach-encryption.js';
 import { defineTable } from './define-table.js';
 
-function toKeyring(key: Uint8Array): SubjectKeyring {
-	return [{ version: 1, subjectKeyBase64: bytesToBase64(key) }];
+function toKeyring(key: Uint8Array): Keyring {
+	return [{ version: 1, keyBytesBase64: bytesToBase64(key) }];
 }
 
 const encryptedRowDefinition = defineTable(
 	type({ id: 'string', title: 'string', _v: '1' }),
 );
 
-function setup(keyring: SubjectKeyring = toKeyring(randomBytes(32))) {
+function setup(keyring: Keyring = toKeyring(randomBytes(32))) {
 	const ydoc = new Y.Doc({ guid: 'enc-test', gc: true });
 	const encryption = attachEncryption(ydoc, { keyring: () => keyring });
 	const tableA = encryption.attachTable('a', encryptedRowDefinition);

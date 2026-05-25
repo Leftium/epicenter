@@ -1,6 +1,6 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
-import { subjectKeyringsEqual } from '@epicenter/encryption';
+import { keyringsEqual } from '@epicenter/encryption';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -13,21 +13,20 @@ import { AuthError } from './auth-errors.js';
 import {
 	ApiSessionResponse,
 	type OAuthTokenGrant,
-	type PersistedAuth as PersistedAuthType,
+	type PersistedAuth,
 } from './auth-types.js';
 import { parseOAuthTokenGrant } from './oauth-token-response.js';
-import { ownerId } from './owner.js';
 
 /**
- * Storage adapter for the single `PersistedAuth` cell (grant + localIdentity).
+ * Storage adapter for the single `PersistedAuth` cell (grant + identity + keyring).
  * Two methods, no watch hook: cross-context sign-out propagates via the
  * server (next bearer-bearing call hits a revoked token and reauth-requires
  * organically). The server is the authority; brief cross-tab desync is
  * acceptable.
  */
 export type PersistedAuthStorage = {
-	get(): PersistedAuthType | null;
-	set(value: PersistedAuthType | null): void | Promise<void>;
+	get(): PersistedAuth | null;
+	set(value: PersistedAuth | null): void | Promise<void>;
 };
 
 export type OAuthSignInLauncher = {
@@ -79,17 +78,17 @@ type RuntimeAuthState =
 	| { status: 'signed-out' }
 	| {
 			status: 'signed-in';
-			persistedAuth: PersistedAuthType;
+			persistedAuth: PersistedAuth;
 			networkAccess: NetworkAccess;
 	  };
 
 type RefreshFlight = {
-	persistedAuth: PersistedAuthType;
+	persistedAuth: PersistedAuth;
 	promise: Promise<boolean>;
 };
 
 type IdentityVerificationFlight = {
-	persistedAuth: PersistedAuthType;
+	persistedAuth: PersistedAuth;
 	promise: Promise<ApiSessionRequestResult>;
 };
 
@@ -104,9 +103,10 @@ type ApiSessionRequestResult = Result<
  * Use this once per runtime around one persisted auth record. The returned
  * client exposes capabilities (`fetch`, `openWebSocket`) instead of raw tokens:
  * it refreshes grants, verifies `/api/session` before attaching a bearer, and
- * keeps `localIdentity` available when network auth pauses. That preserves the
- * local-first invariant: offline workspace boot can continue, but server access
- * fails closed until the current persisted auth has been verified by the API.
+ * keeps the cached `ownerId` and `keyring` available when network auth pauses.
+ * That preserves the local-first invariant: offline workspace boot can continue,
+ * but server access fails closed until the current persisted auth has been
+ * verified by the API.
  */
 export function createOAuthAppAuth({
 	baseURL = EPICENTER_API_URL,
@@ -176,11 +176,12 @@ export function createOAuthAppAuth({
 					now,
 				});
 				if (authSession.persistedAuth !== startedFrom) return false;
-				const next: PersistedAuthType = {
+				const next = {
 					grant,
-					owner: startedFrom.owner,
+					userId: startedFrom.userId,
+					ownerId: startedFrom.ownerId,
 					keyring: startedFrom.keyring,
-				};
+				} satisfies PersistedAuth;
 				await authSession.write(next);
 				if (authSession.persistedAuth !== startedFrom) return false;
 				authSession.installUnverified(next);
@@ -231,12 +232,13 @@ export function createOAuthAppAuth({
 
 	/**
 	 * Verify `/api/session` against the current persisted auth. Marks it
-	 * verified; writes localIdentity only when the keyring actually changed.
-	 * Wipes storage on same-subject-guard mismatch. Single-flight: concurrent
-	 * callers for the same persisted auth share the in-flight promise.
+	 * verified; rewrites the persisted cell only when the keyring actually
+	 * changed. Wipes storage on same-owner-guard mismatch (different
+	 * `ownerId`). Single-flight: concurrent callers for the same persisted
+	 * auth share the in-flight promise.
 	 */
 	async function verifyPersistedAuthForNetwork(
-		startedFrom: PersistedAuthType,
+		startedFrom: PersistedAuth,
 	): Promise<ApiSessionRequestResult> {
 		if (identityVerificationFlight?.persistedAuth === startedFrom) {
 			return identityVerificationFlight.promise;
@@ -257,17 +259,18 @@ export function createOAuthAppAuth({
 			const current = authSession.persistedAuth;
 			if (current !== startedFrom) return Ok(session);
 
-			if (ownerId(current.owner) !== ownerId(session.owner)) {
+			if (current.ownerId !== session.ownerId) {
 				await clearPersistedAuth();
 				return Ok(session);
 			}
 
-			if (!subjectKeyringsEqual(current.keyring, session.keyring)) {
-				const next: PersistedAuthType = {
+			if (!keyringsEqual(current.keyring, session.keyring)) {
+				const next = {
 					grant: current.grant,
-					owner: session.owner,
+					userId: session.user.id,
+					ownerId: session.ownerId,
 					keyring: session.keyring,
-				};
+				} satisfies PersistedAuth;
 				await authSession.write(next);
 				if (authSession.persistedAuth !== startedFrom) return Ok(session);
 				authSession.installVerified(next);
@@ -292,7 +295,7 @@ export function createOAuthAppAuth({
 	 * Refuses to attach unless `/api/session` has confirmed the current persisted
 	 * auth in this runtime. Cold boot online: refresh grant if
 	 * stale, call `/api/session`, then attach. Offline: fails closed; local
-	 * workspace decrypt continues via `localIdentity`.
+	 * workspace decrypt continues via the cached `keyring`.
 	 */
 	async function bearerForNetwork(force: boolean): Promise<string | null> {
 		if (authSession.persistedAuth === null || authSession.networkAuthPaused) {
@@ -355,18 +358,16 @@ export function createOAuthAppAuth({
 			return AuthError.StartSignInFailed({ cause: error });
 		}
 		if (!isCurrentSignIn(generation)) return Ok(undefined);
-		if (
-			previous !== null &&
-			ownerId(previous.owner) !== ownerId(session.owner)
-		) {
+		if (previous !== null && previous.ownerId !== session.ownerId) {
 			await clearAuthSession();
 			if (!isCurrentSignIn(generation)) return Ok(undefined);
 		}
-		const next: PersistedAuthType = {
+		const next = {
 			grant,
-			owner: session.owner,
+			userId: session.user.id,
+			ownerId: session.ownerId,
 			keyring: session.keyring,
-		};
+		} satisfies PersistedAuth;
 		await authSession.write(next);
 		if (!isCurrentSignIn(generation)) return Ok(undefined);
 		authSession.installVerified(next);
@@ -454,7 +455,7 @@ function createAuthSessionRuntime({
 	persistedAuthStorage,
 	log,
 }: {
-	initialPersistedAuth: PersistedAuthType | null;
+	initialPersistedAuth: PersistedAuth | null;
 	persistedAuthStorage: PersistedAuthStorage;
 	log: Logger;
 }) {
@@ -483,7 +484,7 @@ function createAuthSessionRuntime({
 		}
 	}
 
-	async function write(value: PersistedAuthType | null) {
+	async function write(value: PersistedAuth | null) {
 		const pendingWrite = storageWriteQueue.then(() =>
 			persistedAuthStorage.set(value),
 		);
@@ -495,7 +496,7 @@ function createAuthSessionRuntime({
 		get state() {
 			return publicState;
 		},
-		get persistedAuth(): PersistedAuthType | null {
+		get persistedAuth(): PersistedAuth | null {
 			return runtimeState.status === 'signed-out'
 				? null
 				: runtimeState.persistedAuth;
@@ -506,7 +507,7 @@ function createAuthSessionRuntime({
 				runtimeState.networkAccess === 'paused'
 			);
 		},
-		get verifiedPersistedAuth(): PersistedAuthType | null {
+		get verifiedPersistedAuth(): PersistedAuth | null {
 			if (runtimeState.status === 'signed-out') return null;
 			if (runtimeState.networkAccess !== 'verified') return null;
 			return runtimeState.persistedAuth;
@@ -517,7 +518,7 @@ function createAuthSessionRuntime({
 				stateChangeListeners.delete(fn);
 			};
 		},
-		installUnverified(persistedAuth: PersistedAuthType) {
+		installUnverified(persistedAuth: PersistedAuth) {
 			runtimeState = {
 				status: 'signed-in',
 				persistedAuth,
@@ -525,7 +526,7 @@ function createAuthSessionRuntime({
 			};
 			publishState();
 		},
-		installVerified(persistedAuth: PersistedAuthType) {
+		installVerified(persistedAuth: PersistedAuth) {
 			runtimeState = {
 				status: 'signed-in',
 				persistedAuth,
@@ -541,7 +542,7 @@ function createAuthSessionRuntime({
 			};
 			publishState();
 		},
-		async write(value: PersistedAuthType | null) {
+		async write(value: PersistedAuth | null) {
 			await write(value);
 		},
 		async clear() {
@@ -560,13 +561,13 @@ function publicStateFromRuntime(runtimeState: RuntimeAuthState): AuthState {
 	if (runtimeState.networkAccess === 'paused') {
 		return {
 			status: 'reauth-required',
-			owner: runtimeState.persistedAuth.owner,
+			ownerId: runtimeState.persistedAuth.ownerId,
 			keyring: runtimeState.persistedAuth.keyring,
 		};
 	}
 	return {
 		status: 'signed-in',
-		owner: runtimeState.persistedAuth.owner,
+		ownerId: runtimeState.persistedAuth.ownerId,
 		keyring: runtimeState.persistedAuth.keyring,
 	};
 }
@@ -576,8 +577,7 @@ function authStatesEqual(left: AuthState, right: AuthState) {
 	if (left.status === 'signed-out') return true;
 	if (right.status === 'signed-out') return false;
 	return (
-		ownerId(left.owner) === ownerId(right.owner) &&
-		subjectKeyringsEqual(left.keyring, right.keyring)
+		left.ownerId === right.ownerId && keyringsEqual(left.keyring, right.keyring)
 	);
 }
 
@@ -672,10 +672,17 @@ async function refreshOAuthTokenWithEndpoint({
 		throw new Error(`OAuth refresh failed with ${response.status}.`);
 	}
 	const data = await response.json();
-	return parseOAuthTokenGrant(data, {
+	const { data: parsed, error } = parseOAuthTokenGrant(data, {
 		now,
 		fallbackRefreshToken: grant.refreshToken,
 	});
+	if (error) {
+		throw new Error(
+			`OAuth refresh produced an invalid grant: ${error.message}`,
+			{ cause: error },
+		);
+	}
+	return parsed;
 }
 
 async function revokeOAuthRefreshTokenWithEndpoint({

@@ -10,6 +10,8 @@
  */
 
 import {
+	asDeviceId,
+	DeviceId,
 	defineTable,
 	generateId,
 	type Id,
@@ -19,6 +21,11 @@ import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
 
+// `DeviceId` and `asDeviceId` are the canonical brand from `@epicenter/workspace`.
+// Tab-manager reuses them so the wire-level device identity, the local table
+// row keys, and the dispatch addresses all share one type.
+export { asDeviceId, DeviceId };
+
 export const TAB_MANAGER_ID = 'epicenter.tab-manager';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -26,20 +33,12 @@ export const TAB_MANAGER_ID = 'epicenter.tab-manager';
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Branded device ID — nanoid generated once per browser installation.
- *
- * Prevents accidental mixing with other string IDs (conversation, tab, etc.).
- */
-export type DeviceId = string & Brand<'DeviceId'>;
-export const DeviceId = type('string').as<DeviceId>();
-
-/**
  * Branded saved tab ID — nanoid generated when a tab is explicitly saved.
  *
  * Prevents accidental mixing with composite tab IDs or other string IDs.
  */
-export type SavedTabId = Id & Brand<'SavedTabId'>;
-export const SavedTabId = type('string').as<SavedTabId>();
+export const SavedTabId = type('string').as<Id & Brand<'SavedTabId'>>();
+export type SavedTabId = typeof SavedTabId.infer;
 /**
  * Generate a unique {@link SavedTabId} for a newly saved tab.
  *
@@ -64,8 +63,8 @@ export const generateSavedTabId = (): SavedTabId => generateId() as SavedTabId;
  * Unlike {@link SavedTabId}, bookmarks persist indefinitely—opening a
  * bookmarked URL does NOT delete the record.
  */
-export type BookmarkId = Id & Brand<'BookmarkId'>;
-export const BookmarkId = type('string').as<BookmarkId>();
+export const BookmarkId = type('string').as<Id & Brand<'BookmarkId'>>();
+export type BookmarkId = typeof BookmarkId.infer;
 /**
  * Generate a unique {@link BookmarkId} for a newly created bookmark.
  *
@@ -90,8 +89,8 @@ export const generateBookmarkId = (): BookmarkId => generateId() as BookmarkId;
  * Used as the primary key for conversations and as a foreign key in chat messages.
  * Prevents accidental mixing with message IDs or other string IDs.
  */
-export type ConversationId = Id & Brand<'ConversationId'>;
-export const ConversationId = type('string').as<ConversationId>();
+export const ConversationId = type('string').as<Id & Brand<'ConversationId'>>();
+export type ConversationId = typeof ConversationId.infer;
 /**
  * Generate a unique {@link ConversationId} for a new chat conversation.
  *
@@ -114,14 +113,21 @@ export const ConversationId = type('string').as<ConversationId>();
  */
 export const generateConversationId = (): ConversationId =>
 	generateId() as ConversationId;
+/**
+ * Syntactic sugar for `value as ConversationId`. The constrained `string` parameter
+ * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
+ * The only place in the codebase where `as ConversationId` should appear.
+ */
+export const asConversationId = (value: string): ConversationId =>
+	value as ConversationId;
 
 /**
  * Branded chat message ID — nanoid generated when a message is created.
  *
  * Prevents accidental mixing with conversation IDs or other string IDs.
  */
-export type ChatMessageId = Id & Brand<'ChatMessageId'>;
-export const ChatMessageId = type('string').as<ChatMessageId>();
+export const ChatMessageId = type('string').as<Id & Brand<'ChatMessageId'>>();
+export type ChatMessageId = typeof ChatMessageId.infer;
 /**
  * Generate a unique {@link ChatMessageId} for a new chat message.
  *
@@ -143,6 +149,13 @@ export const ChatMessageId = type('string').as<ChatMessageId>();
  */
 export const generateChatMessageId = (): ChatMessageId =>
 	generateId() as ChatMessageId;
+/**
+ * Syntactic sugar for `value as ChatMessageId`. The constrained `string` parameter
+ * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
+ * The only place in the codebase where `as ChatMessageId` should appear.
+ */
+export const asChatMessageId = (value: string): ChatMessageId =>
+	value as ChatMessageId;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Table Definitions

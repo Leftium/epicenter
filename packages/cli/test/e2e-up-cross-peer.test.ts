@@ -83,15 +83,14 @@ function makeEnv(): EnvOverrides {
 				refreshToken: 'refresh-stored',
 				accessTokenExpiresAt: Date.now() + 3_600_000,
 			},
-			localIdentity: {
-				subject: 'user-1',
-				keyring: [
-					{
-						version: 1,
-						subjectKeyBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
-					},
-				],
-			},
+			userId: 'user-1',
+			ownerId: 'user-1',
+			keyring: [
+				{
+					version: 1,
+					keyBytesBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
+				},
+			],
 		}),
 		{ mode: 0o600 },
 	);

@@ -9,7 +9,7 @@
  * canonical schema.
  *
  * Composition lives elsewhere:
- *  - `apps/fuji/src/lib/browser.ts`  → `openFujiBrowser({ signedIn, installationId })`
+ *  - `apps/fuji/src/lib/browser.ts`  → `openFujiBrowser({ signedIn, deviceId })`
  *  - `apps/fuji/daemon.ts`           → `openFujiDaemon(ctx)`
  *  - `examples/fuji/epicenter.config.ts` → canonical project layout composition
  */
@@ -31,8 +31,15 @@ import type { Brand } from 'wellcrafted/brand';
 
 export const FUJI_ID = 'epicenter.fuji';
 
-export type EntryId = string & Brand<'EntryId'>;
-export const EntryId = type('string').pipe((s): EntryId => s as EntryId);
+export const EntryId = type('string').as<string & Brand<'EntryId'>>();
+export type EntryId = typeof EntryId.infer;
+
+/**
+ * Syntactic sugar for `value as EntryId`. The constrained `string` parameter
+ * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
+ * The only place in the codebase where `as EntryId` should appear.
+ */
+export const asEntryId = (value: string): EntryId => value as EntryId;
 
 const entryBase = type({
 	id: EntryId,

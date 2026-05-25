@@ -5,20 +5,20 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { bytesToBase64, type SubjectKeyring } from '@epicenter/encryption';
+import { bytesToBase64, type Keyring } from '@epicenter/encryption';
 import { attachEncryption } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import {
+	asNoteId,
 	createHoneycrispActions,
 	HONEYCRISP_ID,
 	honeycrispTables,
-	type NoteId,
 	noteBodyDocGuid,
 } from './workspace.js';
 
 const testKey = new Uint8Array(32).fill(7);
-const testKeyring: SubjectKeyring = [
-	{ version: 1, subjectKeyBase64: bytesToBase64(testKey) },
+const testKeyring: Keyring = [
+	{ version: 1, keyBytesBase64: bytesToBase64(testKey) },
 ];
 
 function openHoneycrispForTest({ clientId }: { clientId?: number } = {}) {
@@ -74,9 +74,9 @@ describe('Honeycrisp workspace mount', () => {
 
 describe('Honeycrisp schema helpers', () => {
 	test('noteBodyDocGuid is deterministic per note id', () => {
-		const a = noteBodyDocGuid('note-1' as NoteId);
-		const b = noteBodyDocGuid('note-1' as NoteId);
-		const c = noteBodyDocGuid('note-2' as NoteId);
+		const a = noteBodyDocGuid(asNoteId('note-1'));
+		const b = noteBodyDocGuid(asNoteId('note-1'));
+		const c = noteBodyDocGuid(asNoteId('note-2'));
 		expect(a).toBe(b);
 		expect(a).not.toBe(c);
 		expect(a.length).toBeGreaterThan(0);
@@ -84,7 +84,7 @@ describe('Honeycrisp schema helpers', () => {
 
 	test('noteBodyDocGuid bakes in HONEYCRISP_ID as the workspace label', () => {
 		// Sanity: a different workspace label would produce a different guid.
-		const guid = noteBodyDocGuid('note-1' as NoteId);
+		const guid = noteBodyDocGuid(asNoteId('note-1'));
 		expect(typeof guid).toBe('string');
 		expect(guid.length).toBeGreaterThan(0);
 	});

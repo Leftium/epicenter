@@ -1,12 +1,18 @@
 /**
- * SQLite materializer: mirrors workspace table rows into queryable SQLite tables.
+ * SQLite materializer core: the shared body that backend-specific
+ * `attach*` factories wrap. Mirrors workspace table rows into a SQLite-shaped
+ * mirror via the internal {@link MirrorDatabase} contract.
  *
- * `attachSqliteMaterializer(ydoc, { db })` returns a chainable builder where
- * `.table(tableRef, config?)` opts in per table. Nothing materializes by default.
+ * Public callers use the per-backend factories (e.g.
+ * `attachBunSqliteMaterializer`), which own the native client lifecycle and
+ * adapt it to {@link MirrorDatabase} before calling
+ * {@link attachSqliteMaterializerCore} here.
  *
- * Teardown is hooked to the ydoc via `ydoc.once('destroy', ...)`; callers
- * never call a dispose method; destroying the ydoc cascades.
+ * Teardown is hooked to the ydoc via `ydoc.once('destroy', ...)`. The
+ * per-backend factory registers its own destroy handler too to close the
+ * underlying native client.
  *
+ * @internal
  * @module
  */
 
@@ -20,10 +26,53 @@ import {
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
 import { defineMutation, defineQuery } from '../../../shared/actions.js';
+import type { MaybePromise } from '../../../shared/types.js';
 import type { BaseRow, Table } from '../../attach-table.js';
 import { generateDdl, quoteIdentifier } from './ddl.js';
+import type { SearchOptions, SearchResult } from './fts.js';
 import { ftsSearch, setupFtsTable } from './fts.js';
-import type { MirrorDatabase, SearchOptions, SearchResult } from './types.js';
+
+// ════════════════════════════════════════════════════════════════════════════
+// INTERNAL SQL EXECUTOR CONTRACT
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Minimal SQL executor the materializer body talks to.
+ *
+ * Structurally compatible with sync drivers (`bun:sqlite`, `better-sqlite3`)
+ * and async WASM drivers (`@libsql/client`, `@tursodatabase/database`). The
+ * materializer `await`s every call, so sync drivers work without an adapter.
+ *
+ * Kept internal: each per-backend `attach*` factory (e.g.
+ * `attachBunSqliteMaterializer`) owns the adapter from a native client to
+ * this contract. Consumers never construct or pass one in.
+ *
+ * @internal
+ */
+export type MirrorDatabase = {
+	/** Execute raw SQL that does not return rows. */
+	run(sql: string): MaybePromise<unknown>;
+
+	/** Prepare a reusable statement for repeated reads or writes. */
+	prepare(sql: string): MaybePromise<MirrorStatement>;
+};
+
+/**
+ * Internal prepared statement interface. Sibling of {@link MirrorDatabase};
+ * each backend adapter constructs these from its native client.
+ *
+ * @internal
+ */
+export type MirrorStatement = {
+	/** Run a statement that writes data or otherwise returns no rows. */
+	run(...params: unknown[]): MaybePromise<unknown>;
+
+	/** Fetch all matching rows as plain objects. */
+	all(...params: unknown[]): MaybePromise<unknown[]>;
+
+	/** Fetch the first matching row, or null if none found. */
+	get(...params: unknown[]): MaybePromise<unknown>;
+};
 
 // biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous table helpers
 type AnyTable = Table<any>;
@@ -32,22 +81,7 @@ type AnyTable = Table<any>;
 export const SqliteMaterializerError = defineErrors({
 	/** Debounced flush of pending row writes to the mirror database failed. */
 	SyncFailed: ({ cause }: { cause: unknown }) => ({
-		message: `[attachSqliteMaterializer] Failed to sync SQLite materializer: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	/** An FTS5 MATCH query raised inside the mirror database. */
-	FtsSearchFailed: ({
-		tableName,
-		query,
-		cause,
-	}: {
-		tableName: string;
-		query: string;
-		cause: unknown;
-	}) => ({
-		message: `[attachSqliteMaterializer] FTS search failed on table "${tableName}" for query "${query}": ${extractErrorMessage(cause)}`,
-		tableName,
-		query,
+		message: `[sqlite-materializer] Failed to sync SQLite materializer: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
@@ -59,7 +93,7 @@ export type SqliteMaterializerError = InferErrors<
  * Per-table configuration, generic over the specific row type so `fts` narrows
  * to valid column names at the call site.
  */
-type TableConfig<TRow extends BaseRow> = {
+export type TableConfig<TRow extends BaseRow> = {
 	/** Column names to include in FTS5 full-text search index. */
 	fts?: (keyof TRow & string)[];
 	/** Optional per-column value serializer override. */
@@ -74,29 +108,22 @@ type RegisteredTable = {
 };
 
 /**
- * Create a one-way materializer that mirrors workspace table rows into SQLite.
+ * Internal shared materializer body. Each per-backend factory
+ * (`attachBunSqliteMaterializer`, `attachTursoMaterializer`) constructs
+ * an adapter from its native client to {@link MirrorDatabase} and forwards
+ * into this function.
  *
- * @example
- * ```ts
- * const ydoc = new Y.Doc({ guid: 'workspace' });
- * const tables = attachTables(ydoc, myTableDefs);
- * const idb = attachIndexedDb(ydoc);
+ * Callers outside this directory should not import this directly.
  *
- * const sqlite = attachSqliteMaterializer(ydoc, {
- *   db: new Database('workspace.db'),
- *   waitFor: idb.whenLoaded,
- * })
- *   .table(tables.posts, { fts: ['title', 'body'] })
- *   .table(tables.users);
- * ```
+ * @internal
  */
-export function attachSqliteMaterializer(
+export function attachSqliteMaterializerCore(
 	ydoc: Y.Doc,
 	{
 		db,
 		debounceMs = 100,
 		waitFor,
-		log = createLogger('attachSqliteMaterializer'),
+		log = createLogger('sqlite-materializer'),
 	}: {
 		db: MirrorDatabase;
 		debounceMs?: number;
@@ -108,7 +135,7 @@ export function attachSqliteMaterializer(
 		waitFor?: Promise<unknown>;
 		/**
 		 * Logger for background failures (debounced sync flush, FTS query).
-		 * Defaults to a console-backed logger with source `attachSqliteMaterializer`.
+		 * Defaults to a console-backed logger with source `sqlite-materializer`.
 		 */
 		log?: Logger;
 	},
@@ -133,13 +160,9 @@ export function attachSqliteMaterializer(
 		const config = registered.get(tableName)?.config;
 		const serialize = config?.serialize ?? serializeValue;
 		const keys = Object.keys(row);
-		const placeholders = keys.map(() => '?').join(', ');
 		const values = keys.map((key) => serialize(row[key]));
-		const columns = keys.map(quoteIdentifier).join(', ');
 
-		const stmt = await db.prepare(
-			`INSERT OR REPLACE INTO ${quoteIdentifier(tableName)} (${columns}) VALUES (${placeholders})`,
-		);
+		const stmt = await db.prepare(buildUpsertSql(tableName, keys));
 		await stmt.run(...values);
 	}
 
@@ -157,11 +180,7 @@ export function attachSqliteMaterializer(
 		if (rows.length === 0) return;
 
 		const keys = collectRowKeys(rows);
-		const placeholders = keys.map(() => '?').join(', ');
-		const columns = keys.map(quoteIdentifier).join(', ');
-		const stmt = await db.prepare(
-			`INSERT OR REPLACE INTO ${quoteIdentifier(tableName)} (${columns}) VALUES (${placeholders})`,
-		);
+		const stmt = await db.prepare(buildUpsertSql(tableName, keys));
 
 		for (const row of rows) {
 			const values = keys.map((key) => serialize(row[key]));
@@ -332,7 +351,6 @@ export function attachSqliteMaterializer(
 
 	const api = {
 		whenFlushed,
-		db,
 		search: defineQuery({
 			title: 'Full-text search',
 			description: 'FTS5 search across materialized table rows',
@@ -379,7 +397,7 @@ export function attachSqliteMaterializer(
 		table(table, config) {
 			if (!isRegistrationOpen)
 				throw new Error(
-					`attachSqliteMaterializer: .table("${table.name}") called after initial flush. All .table() registrations must happen synchronously after construction.`,
+					`materializer: .table("${table.name}") called after initial flush. All .table() registrations must happen synchronously after construction.`,
 				);
 			registered.set(table.name, {
 				table: table as AnyTable,
@@ -400,6 +418,34 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Build an UPSERT statement: insert with `ON CONFLICT(id) DO UPDATE`.
+ *
+ * Avoids `INSERT OR REPLACE` because Turso's Rust engine doesn't support
+ * that form yet (parses as "INSERT OR REPLACE is only supported with
+ * UPSERT"). Standard UPSERT works across bun:sqlite, libSQL, and Turso.
+ *
+ * When `keys.length === 1` (just `id`), there's nothing to update on
+ * conflict, so the statement collapses to `INSERT ... ON CONFLICT DO NOTHING`
+ * (SET clauses with zero assignments are a SQL error).
+ */
+function buildUpsertSql(tableName: string, keys: string[]): string {
+	const quotedTable = quoteIdentifier(tableName);
+	const columns = keys.map(quoteIdentifier).join(', ');
+	const placeholders = keys.map(() => '?').join(', ');
+	const updateKeys = keys.filter((key) => key !== 'id');
+
+	if (updateKeys.length === 0) {
+		return `INSERT INTO ${quotedTable} (${columns}) VALUES (${placeholders}) ON CONFLICT(${quoteIdentifier('id')}) DO NOTHING`;
+	}
+
+	const setClause = updateKeys
+		.map((key) => `${quoteIdentifier(key)} = excluded.${quoteIdentifier(key)}`)
+		.join(', ');
+
+	return `INSERT INTO ${quotedTable} (${columns}) VALUES (${placeholders}) ON CONFLICT(${quoteIdentifier('id')}) DO UPDATE SET ${setClause}`;
+}
+
 function collectRowKeys(rows: readonly BaseRow[]): string[] {
 	const keys = new Set<string>();
 	for (const row of rows) {
@@ -416,7 +462,7 @@ function collectRowKeys(rows: readonly BaseRow[]): string[] {
  * - `boolean` → `0` or `1` (`INTEGER` column)
  * - everything else → passed through as-is
  */
-export function serializeValue(value: unknown): unknown {
+function serializeValue(value: unknown): unknown {
 	if (value === null || value === undefined) return null;
 	if (typeof value === 'object') return JSON.stringify(value);
 	if (typeof value === 'boolean') return value ? 1 : 0;

@@ -1,7 +1,7 @@
 /**
  * SQLite Materializer Tests
  *
- * Tests the full attachSqliteMaterializer lifecycle: DDL generation, full load,
+ * Tests the full attachSqliteMaterializerCore lifecycle: DDL generation, full load,
  * incremental sync, FTS5 search, rebuild, and dispose. Uses real Yjs documents
  * with defineTable schemas so the materializer exercises the actual workspace
  * observation path.
@@ -25,8 +25,7 @@ import {
 } from '../../../index.js';
 import { isAction, isMutation, isQuery } from '../../../shared/actions.js';
 import { column } from '../../column/index.js';
-import { attachSqliteMaterializer } from './sqlite.js';
-import type { MirrorDatabase } from './types.js';
+import { attachSqliteMaterializerCore, type MirrorDatabase } from './core.js';
 
 const postsTable = defineTable({
 	id: column.string(),
@@ -71,7 +70,7 @@ function createTestDb(): TestDb {
 }
 
 type AttachedTables = ReturnType<typeof attachTables<typeof tableDefinitions>>;
-type Materializer = ReturnType<typeof attachSqliteMaterializer>;
+type Materializer = ReturnType<typeof attachSqliteMaterializerCore>;
 type TableRegistration = {
 	table: Parameters<Materializer['table']>[0];
 	config?: Parameters<Materializer['table']>[1];
@@ -90,7 +89,7 @@ function setup({ tables: tableRegistrations, debounceMs }: SetupOptions = {}) {
 			const ydoc = new Y.Doc({ guid: id });
 			const tables = attachTables(ydoc, tableDefinitions);
 
-			const materializer = attachSqliteMaterializer(ydoc, {
+			const materializer = attachSqliteMaterializerCore(ydoc, {
 				db,
 				debounceMs,
 			});
@@ -169,7 +168,7 @@ async function cleanup(setupResult: ReturnType<typeof setup>) {
 // READINESS Tests
 // ============================================================================
 
-describe('attachSqliteMaterializer', () => {
+describe('attachSqliteMaterializerCore', () => {
 	describe('readiness', () => {
 		test('waits for whenReady before touching SQLite', async () => {
 			const db = createTestDb();
@@ -180,7 +179,7 @@ describe('attachSqliteMaterializer', () => {
 					const ydoc = new Y.Doc({ guid: id });
 					const tables = attachTables(ydoc, tableDefinitions);
 
-					const materializer = attachSqliteMaterializer(ydoc, {
+					const materializer = attachSqliteMaterializerCore(ydoc, {
 						db,
 						waitFor: gate.promise,
 					})

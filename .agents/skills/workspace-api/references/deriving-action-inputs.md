@@ -4,14 +4,14 @@
 
 Read when wiring a table operation as a `defineQuery`/`defineMutation` action whose input needs runtime validation (AI tool / MCP server, RPC over the sync socket, HTTP route, CLI command, or any other wire boundary).
 
-In-app code calling `tables.X.set(row)` directly doesn't need a runtime input schema — TypeScript covers the call site. This guidance is for **actions exposed across a wire** where the input arrives as `unknown`.
+In-app code calling `tables.X.set(row)` directly doesn't need a runtime input schema; TypeScript covers the call site. This guidance is for **actions exposed across a wire** where the input arrives as `unknown`.
 
 ## The Two Accessors
 
 Every table definition and every attached table handle exposes the latest version's row schema as a TypeBox `TObject`:
 
 ```typescript
-tables.notes.schema           // TObject<LastVersion> — convenience mirror on the handle
+tables.notes.schema           // TObject<LastVersion>: convenience mirror on the handle
 tables.notes.definition.schema // same value on the definition
 
 tables.notes.schema.properties.id    // TSchema for the `id` column
@@ -96,7 +96,7 @@ defineMutation({
 });
 ```
 
-This is the only case where the inline composition gets verbose. Still cheaper than a helper — extract one only if you have 3+ tables doing the same `Type.Partial(Type.Omit(schema, ['id']))` dance.
+This is the only case where the inline composition gets verbose. Still cheaper than a helper; extract one only if you have 3+ tables doing the same `Type.Partial(Type.Omit(schema, ['id']))` dance.
 
 ## What Not To Do
 

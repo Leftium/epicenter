@@ -80,10 +80,6 @@ export {
 } from './document/open-sqlite-reader.js';
 export { openWorkspaceSqlite } from './document/open-workspace-sqlite.js';
 export {
-	openWriterSqlite,
-	SqliteWriterError,
-} from './document/sqlite-writer.js';
-export {
 	markdownPath,
 	sqlitePath,
 	yjsPath,

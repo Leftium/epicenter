@@ -19,7 +19,6 @@
  * every HTTP dispatch.
  */
 
-import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 import { generateGuid } from '../shared/id.js';
 
@@ -30,13 +29,10 @@ import { generateGuid } from '../shared/id.js';
  * {@link createDeviceIdAsync}; brand prevents accidental mixing with
  * unrelated string ids (UserId, OwnerId, room ids, etc.).
  *
- * The validator is declared first; the type is derived from it via `.infer`
- * so schema and type stay in lockstep under one PascalCase name. Use
- * {@link DeviceId} directly inside schemas (`id: DeviceId`); at trusted
- * call sites that receive a known `string`, brand it with {@link asDeviceId}.
+ * At trusted call sites that receive a known `string`, brand it with
+ * {@link asDeviceId}.
  */
-export const DeviceId = type('string').as<string & Brand<'DeviceId'>>();
-export type DeviceId = typeof DeviceId.infer;
+export type DeviceId = string & Brand<'DeviceId'>;
 
 /**
  * Syntactic sugar for `value as DeviceId`. The function body is a single

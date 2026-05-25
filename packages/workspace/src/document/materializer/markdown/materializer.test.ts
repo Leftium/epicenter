@@ -139,11 +139,11 @@ describe('push', () => {
 		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
 		await writeTestFile(
 			'posts/hello.md',
-			'---\nid: post-1\ntitle: Hello World\npublished: true\n_v: 1\n---\n',
+			'---\nid: post-1\ntitle: Hello World\npublished: true\n---\n',
 		);
 		await writeTestFile(
 			'posts/draft.md',
-			'---\nid: post-2\ntitle: Draft Post\npublished: false\n_v: 1\n---\n',
+			'---\nid: post-2\ntitle: Draft Post\npublished: false\n---\n',
 		);
 
 		const result = await workspace.materializer.push();
@@ -166,7 +166,7 @@ describe('push', () => {
 		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
 		await writeTestFile(
 			'posts/valid.md',
-			'---\nid: p1\ntitle: Valid\npublished: false\n_v: 1\n---\n',
+			'---\nid: p1\ntitle: Valid\npublished: false\n---\n',
 		);
 		await writeTestFile('posts/readme.txt', 'not a markdown file');
 		await writeTestFile('posts/data.json', '{"id": "test"}');
@@ -183,7 +183,7 @@ describe('push', () => {
 		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
 		await writeTestFile(
 			'posts/valid.md',
-			'---\nid: p1\ntitle: Valid\npublished: false\n_v: 1\n---\n',
+			'---\nid: p1\ntitle: Valid\npublished: false\n---\n',
 		);
 		await writeTestFile(
 			'posts/no-frontmatter.md',
@@ -217,7 +217,7 @@ describe('push', () => {
 		// catches the schema violation.
 		await writeTestFile(
 			'posts/bad.md',
-			'---\nid: post-bad\ntitle: 42\npublished: true\n_v: 1\n---\n',
+			'---\nid: post-bad\ntitle: 42\npublished: true\n---\n',
 		);
 
 		const result = await workspace.materializer.push();
@@ -272,12 +272,12 @@ describe('push', () => {
 		const { workspace } = await setup({ tables: (t) => [{ table: t.posts }] });
 		await writeTestFile(
 			'posts/good.md',
-			'---\nid: p1\ntitle: Good\npublished: true\n_v: 1\n---\n',
+			'---\nid: p1\ntitle: Good\npublished: true\n---\n',
 		);
 		await writeTestFile('posts/no-frontmatter.md', 'just a heading\n');
 		await writeTestFile(
 			'posts/bad.md',
-			'---\nid: p3\ntitle: 42\npublished: true\n_v: 1\n---\n',
+			'---\nid: p3\ntitle: 42\npublished: true\n---\n',
 		);
 
 		const result = await workspace.materializer.push();
@@ -328,7 +328,7 @@ describe('push', () => {
 		});
 		await writeTestFile(
 			'blog/hello.md',
-			'---\nid: p1\ntitle: Hello\npublished: false\n_v: 1\n---\n',
+			'---\nid: p1\ntitle: Hello\npublished: false\n---\n',
 		);
 
 		const result = await workspace.materializer.push();
@@ -344,7 +344,7 @@ describe('push', () => {
 		// First import
 		await writeTestFile(
 			'posts/p1.md',
-			'---\nid: p1\ntitle: Original\npublished: false\n_v: 1\n---\n',
+			'---\nid: p1\ntitle: Original\npublished: false\n---\n',
 		);
 
 		const first = await workspace.materializer.push();
@@ -359,7 +359,7 @@ describe('push', () => {
 		// Second import: overwrite the same file with different data
 		await writeTestFile(
 			'posts/p1.md',
-			'---\nid: p1\ntitle: Updated From Disk\npublished: true\n_v: 1\n---\n',
+			'---\nid: p1\ntitle: Updated From Disk\npublished: true\n---\n',
 		);
 
 		const second = await workspace.materializer.push();
@@ -376,12 +376,9 @@ describe('push', () => {
 		const { workspace } = await setup();
 		await writeTestFile(
 			'posts/post.md',
-			'---\nid: p1\ntitle: Post\npublished: false\n_v: 1\n---\n',
+			'---\nid: p1\ntitle: Post\npublished: false\n---\n',
 		);
-		await writeTestFile(
-			'notes/note.md',
-			'---\nid: n1\nbody: Note body\n_v: 1\n---\n',
-		);
+		await writeTestFile('notes/note.md', '---\nid: n1\nbody: Note body\n---\n');
 
 		const result = await workspace.materializer.push();
 
@@ -518,7 +515,7 @@ describe('rebuild', () => {
 		await workspace.materializer.pull();
 		await writeTestFile(
 			'posts/orphan.md',
-			'---\nid: orphan\ntitle: Orphan\npublished: false\n_v: 1\n---\n',
+			'---\nid: orphan\ntitle: Orphan\npublished: false\n---\n',
 		);
 
 		const before = await listTestDir('posts');
@@ -546,10 +543,7 @@ describe('rebuild', () => {
 		});
 		workspace.tables.notes.set({ id: 'n1', body: 'Note' });
 		await workspace.materializer.pull();
-		await writeTestFile(
-			'notes/orphan.md',
-			'---\nid: x\nbody: gone\n_v: 1\n---\n',
-		);
+		await writeTestFile('notes/orphan.md', '---\nid: x\nbody: gone\n---\n');
 
 		const result = await workspace.materializer.rebuild('posts');
 
@@ -703,7 +697,7 @@ describe('round-trip', () => {
 					{
 						table: t.notes,
 						config: {
-							toMarkdown: (row: { id: string; body: string; _v: 1 }) => {
+							toMarkdown: (row: { id: string; body: string }) => {
 								const { body, ...frontmatter } = row;
 								return { frontmatter, body };
 							},

@@ -246,17 +246,19 @@ When the spec introduces a coherent set of new primitives (column types, action 
 Catalogs let a reader scan the entire surface in one glance before diving into any single primitive.
 
 ````markdown
-## The 8-column catalog
+## The column.* catalog
 
 ```ts
-column.id<TBrand?>(s?)          // TEXT PRIMARY KEY, auto nanoid on insert
-column.string<TBrand?>(s?)      // TEXT (TBrand for branded strings)
-column.number(s?)               // REAL
-column.integer(s?)              // INTEGER (covers ms-epoch timestamps)
-column.boolean()                // INTEGER 0/1
-column.enum([...])              // TEXT + CHECK constraint
-column.json<T extends JsonValue>(s?)  // TEXT JSON-encoded
-column.timestamp()              // sugar for column.string(type("string.date.iso"))
+column.string<TBrand?>(s?)              // TEXT (TBrand for branded strings)
+column.number(s?)                       // REAL
+column.integer(s?)                      // INTEGER
+column.boolean()                        // INTEGER 0/1
+column.literal(value)                   // TEXT (single literal)
+column.enum([...])                      // TEXT + CHECK constraint
+column.json<S extends TSchema>(schema)  // TEXT JSON-encoded, schema required
+column.nullable(inner)                  // Type.Union([inner, Type.Null()])
+column.dateTime(s?)                     // RFC 3339 string, branded DateTimeString
+column.ianaTimeZone(s?)                 // IANA zone string, branded IanaTimeZone
 ```
 
 Every primitive justified by N+ existing call sites in the audit.
@@ -265,8 +267,9 @@ Every primitive justified by N+ existing call sites in the audit.
 
 | Candidate | Why rejected |
 |---|---|
-| `column.array(of)` | Subsumed by `column.json<T>(s?)` |
-| `column.literal(value)` | Only useful for `_v` markers, which become auto |
+| `column.id()` | Subsumed by `column.string<IdBrand>()` + a co-located `generate*` factory |
+| `column.array(of)` | Subsumed by `column.json(Type.Array(of))` |
+| Declaring `_v` as a column | Library-managed; positional in `defineTable(v1, v2, ...)` |
 ````
 
 A "rejected candidates" table is often as useful as the catalog itself: it shows the implementer what *not* to add, and why. The reader gains confidence that the surface is tight.
@@ -295,16 +298,21 @@ const notesTable = defineTable(
 
 ```ts
 const notesTable = defineTable(
-  { id: column.id<'NoteId'>(), title: column.string() },
+  { id: column.string<NoteId>(), title: column.string() },
   {
-    id: column.id<'NoteId'>(),
+    id: column.string<NoteId>(),
     title: column.string(),
-    wordCount: column.number().nullable(),
+    wordCount: column.nullable(column.number()),
   },
-).migrate(...)
+).migrate(({ value, version }) => {
+  switch (version) {
+    case 1: return { ...value, wordCount: null };
+    case 2: return value;
+  }
+});
 ```
 
-**Semantic shift to flag**: rows previously stored with `wordCount` key absent will now read as `null` instead of `undefined`. Affects app code doing `if (row.wordCount === undefined)`.
+**Semantic shift to flag**: rows previously stored with `wordCount` key absent will now read as `null` instead of `undefined`. Affects app code doing `if (row.wordCount === undefined)`. Also: `_v` no longer appears in the column record; it is library-managed and stripped from returned rows.
 ````
 
 The "semantic shift to flag" callouts are critical: they're what the implementer needs to grep for and codemod across the codebase.

@@ -7,12 +7,12 @@
  * materializer DDL → mirror file → Drizzle reads) is exercised end-to-end.
  */
 
-import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { eq } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
 import Type from 'typebox';
 import * as Y from 'yjs';
 import { attachTables, column, defineTable } from '../index.js';
@@ -29,7 +29,9 @@ const entriesTable = defineTable({
 	published: column.boolean(),
 	priority: column.enum(['low', 'medium', 'high']),
 	tags: column.json(Type.Array(Type.String())),
-	metadata: column.nullable(column.json(Type.Object({ author: Type.String() }))),
+	metadata: column.nullable(
+		column.json(Type.Object({ author: Type.String() })),
+	),
 });
 
 const definitions = { entries: entriesTable };
@@ -171,5 +173,4 @@ describe('tablesToDrizzleSchema', () => {
 
 		expect(rows).toEqual([{ id: 'a' }]);
 	});
-
 });

@@ -35,12 +35,6 @@ import type {
 	IsPrimaryKey,
 	NotNull,
 } from 'drizzle-orm';
-import {
-	integer,
-	real,
-	sqliteTable,
-	text,
-} from 'drizzle-orm/sqlite-core';
 import type {
 	SQLiteBooleanBuilderInitial,
 	SQLiteColumnBuilderBase,
@@ -50,6 +44,7 @@ import type {
 	SQLiteTextBuilderInitial,
 	SQLiteTextJsonBuilderInitial,
 } from 'drizzle-orm/sqlite-core';
+import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import type { Static, TSchema } from 'typebox';
 import type { TableDefinition, TableDefinitions } from './attach-table';
 
@@ -112,13 +107,15 @@ export type TablesToDrizzleSchema<T extends TableDefinitions> = {
  * to runtime `SQLiteColumn` instances with `tableName` plumbed through.
  */
 // biome-ignore lint/suspicious/noExplicitAny: variance over TVersions
-type DrizzleTableFor<Name extends string, D extends TableDefinition<any>> =
-	SQLiteTableWithColumns<{
-		name: Name;
-		schema: undefined;
-		columns: BuildColumns<Name, ColumnsForDef<D>, 'sqlite'>;
-		dialect: 'sqlite';
-	}>;
+type DrizzleTableFor<
+	Name extends string,
+	D extends TableDefinition<any>,
+> = SQLiteTableWithColumns<{
+	name: Name;
+	schema: undefined;
+	columns: BuildColumns<Name, ColumnsForDef<D>, 'sqlite'>;
+	dialect: 'sqlite';
+}>;
 
 /**
  * Walk `D['schema']['properties']` into a Drizzle column-builder dictionary.

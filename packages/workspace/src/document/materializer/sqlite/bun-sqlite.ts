@@ -28,10 +28,7 @@ import { createLogger, type Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
 import type { BaseRow, Table } from '../../attach-table.js';
 import { openWriterSqlite } from '../../sqlite-writer.js';
-import {
-	attachSqliteMaterializerCore,
-	type TableConfig,
-} from './core.js';
+import { attachSqliteMaterializerCore, type TableConfig } from './core.js';
 
 /**
  * Options for {@link attachBunSqliteMaterializer}.

@@ -378,10 +378,7 @@ describe('push', () => {
 			'posts/post.md',
 			'---\nid: p1\ntitle: Post\npublished: false\n---\n',
 		);
-		await writeTestFile(
-			'notes/note.md',
-			'---\nid: n1\nbody: Note body\n---\n',
-		);
+		await writeTestFile('notes/note.md', '---\nid: n1\nbody: Note body\n---\n');
 
 		const result = await workspace.materializer.push();
 
@@ -546,10 +543,7 @@ describe('rebuild', () => {
 		});
 		workspace.tables.notes.set({ id: 'n1', body: 'Note' });
 		await workspace.materializer.pull();
-		await writeTestFile(
-			'notes/orphan.md',
-			'---\nid: x\nbody: gone\n---\n',
-		);
+		await writeTestFile('notes/orphan.md', '---\nid: x\nbody: gone\n---\n');
 
 		const result = await workspace.materializer.rebuild('posts');
 

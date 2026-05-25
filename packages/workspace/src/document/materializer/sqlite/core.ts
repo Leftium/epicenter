@@ -29,8 +29,8 @@ import { defineMutation, defineQuery } from '../../../shared/actions.js';
 import type { MaybePromise } from '../../../shared/types.js';
 import type { BaseRow, Table } from '../../attach-table.js';
 import { generateDdl, quoteIdentifier } from './ddl.js';
-import { ftsSearch, setupFtsTable } from './fts.js';
 import type { SearchOptions, SearchResult } from './fts.js';
+import { ftsSearch, setupFtsTable } from './fts.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // INTERNAL SQL EXECUTOR CONTRACT

@@ -9,7 +9,7 @@
  */
 
 import type { Logger } from 'wellcrafted/logger';
-import { SqliteMaterializerError, type MirrorDatabase } from './core.js';
+import { type MirrorDatabase, SqliteMaterializerError } from './core.js';
 import { quoteIdentifier } from './ddl.js';
 
 // ════════════════════════════════════════════════════════════════════════════

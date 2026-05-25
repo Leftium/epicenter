@@ -106,12 +106,12 @@ export {
 // DEVICE IDENTITY
 // ════════════════════════════════════════════════════════════════════════════
 
+export type { DeviceId } from './document/device-id.js';
 export {
 	asDeviceId,
 	createDeviceId,
 	createDeviceIdAsync,
 } from './document/device-id.js';
-export type { DeviceId } from './document/device-id.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // PROJECT CONFIG (browser-safe surface)
@@ -200,8 +200,8 @@ export {
 } from './document/dispatch.js';
 export { docGuid } from './document/doc-guid.js';
 export {
-	tablesToDrizzleSchema,
 	type TablesToDrizzleSchema,
+	tablesToDrizzleSchema,
 } from './document/drizzle-schema.js';
 export type { SyncStatus } from './document/internal/sync-supervisor.js';
 export { onLocalUpdate } from './document/on-local-update.js';

@@ -27,10 +27,7 @@
 
 import { Database } from 'bun:sqlite';
 import { quoteIdentifier } from './materializer/sqlite/ddl.js';
-import type {
-	SearchOptions,
-	SearchResult,
-} from './materializer/sqlite/fts.js';
+import type { SearchOptions, SearchResult } from './materializer/sqlite/fts.js';
 
 /**
  * Options for {@link openSqliteReader}.

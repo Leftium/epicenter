@@ -52,7 +52,9 @@ describe('attachTursoMaterializer', () => {
 
 		const client = await materializer.client;
 		const rows = (await client
-			.prepare('SELECT id, title, body, priority, tags FROM entries ORDER BY id')
+			.prepare(
+				'SELECT id, title, body, priority, tags FROM entries ORDER BY id',
+			)
 			.all()) as Array<{
 			id: string;
 			title: string;

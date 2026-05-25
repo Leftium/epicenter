@@ -622,7 +622,7 @@ async function processRecordingPipeline({
 		recordedAt: now,
 		updatedAt: now,
 		transcript: '',
-		duration: undefined,
+		duration: null,
 		transcriptionStatus: 'UNPROCESSED',
 	} as const;
 
@@ -728,16 +728,18 @@ async function processRecordingPipeline({
 		return;
 	}
 
-	if (transformationRun.result.status === 'failed') {
-		notify.error({
-			id: transformToastId,
-			title: '⚠️ Transformation error',
-			description: transformationRun.result.error,
-			action: {
-				type: 'more-details',
-				error: transformationRun.result.error,
-			},
-		});
+	if (transformationRun.result.status !== 'completed') {
+		if (transformationRun.result.status === 'failed') {
+			notify.error({
+				id: transformToastId,
+				title: '⚠️ Transformation error',
+				description: transformationRun.result.error,
+				action: {
+					type: 'more-details',
+					error: transformationRun.result.error,
+				},
+			});
+		}
 		return;
 	}
 

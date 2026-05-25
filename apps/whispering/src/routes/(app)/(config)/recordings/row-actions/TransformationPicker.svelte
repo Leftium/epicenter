@@ -51,15 +51,17 @@
 					{
 						onError: (error) => rpc.notify.error(error),
 						onSuccess: (transformationRun) => {
-							if (transformationRun.result.status === 'failed') {
-								rpc.notify.error({
-									title: '⚠️ Transformation error',
-									description: transformationRun.result.error,
-									action: {
-										type: 'more-details',
-										error: transformationRun.result.error,
-									},
-								});
+							if (transformationRun.result.status !== 'completed') {
+								if (transformationRun.result.status === 'failed') {
+									rpc.notify.error({
+										title: '⚠️ Transformation error',
+										description: transformationRun.result.error,
+										action: {
+											type: 'more-details',
+											error: transformationRun.result.error,
+										},
+									});
+								}
 								return;
 							}
 

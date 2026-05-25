@@ -20,21 +20,11 @@ import { transformationSteps } from '$lib/state/transformation-steps.svelte';
 import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
 import { whispering } from '$lib/whispering/client';
 import type {
-	TerminalTransformationRunResult,
 	Transformation,
 	TransformationRun,
 	TransformationStep,
 	TransformationStepRun,
 } from '$lib/workspace';
-
-/**
- * A transformation run in its terminal state (completed or failed). The
- * variant payload (output / error / completedAt) is carried by `result`
- * via the shared `TerminalTransformationRunResult` union.
- */
-type TerminalTransformationRun = Omit<TransformationRun, 'result'> & {
-	result: TerminalTransformationRunResult;
-};
 
 /**
  * Config map for standard completion providers that share the same
@@ -129,18 +119,17 @@ export const transformer = {
 						serviceError: transformationRunError,
 					});
 
-				if (transformationRun.result.status === 'failed') {
-					return WhisperingErr({
-						title: '⚠️ Transformation failed',
-						description: transformationRun.result.error,
-						action: {
-							type: 'more-details',
-							error: transformationRun.result.error,
-						},
-					});
-				}
-
-				if (!transformationRun.result.output) {
+				if (transformationRun.result.status !== 'completed') {
+					if (transformationRun.result.status === 'failed') {
+						return WhisperingErr({
+							title: '⚠️ Transformation failed',
+							description: transformationRun.result.error,
+							action: {
+								type: 'more-details',
+								error: transformationRun.result.error,
+							},
+						});
+					}
 					return WhisperingErr({
 						title: '⚠️ Transformation produced no output',
 						description: 'The transformation completed but produced no output.',
@@ -164,7 +153,7 @@ export const transformer = {
 		}: {
 			recordingId: string;
 			transformation: Transformation;
-		}): Promise<Result<TerminalTransformationRun, WhisperingError>> => {
+		}): Promise<Result<TransformationRun, WhisperingError>> => {
 			const recording = recordings.get(recordingId);
 			if (!recording) {
 				return WhisperingErr({
@@ -280,7 +269,7 @@ async function runTransformation({
 	transformation: Transformation;
 	steps: TransformationStep[];
 	recordingId: string | null;
-}): Promise<Result<TerminalTransformationRun, TransformError>> {
+}): Promise<Result<TransformationRun, TransformError>> {
 	if (!input.trim()) {
 		return TransformError.InvalidInput({
 			message: 'Empty input. Please enter some text to transform',
@@ -347,7 +336,7 @@ async function runTransformation({
 					completedAt: failedNow,
 					error: handleStepResult.error,
 				},
-			} satisfies TerminalTransformationRun;
+			} satisfies TransformationRun;
 			transformationRuns.set(failedRun);
 			return Ok(failedRun);
 		}
@@ -373,7 +362,7 @@ async function runTransformation({
 			completedAt: new Date().toISOString(),
 			output: currentInput,
 		},
-	} satisfies TerminalTransformationRun;
+	} satisfies TransformationRun;
 	transformationRuns.set(completedRun);
 	return Ok(completedRun);
 }

@@ -92,7 +92,12 @@ export const integer = Type.Integer;
 /** Pass-through to `Type.Boolean`. */
 export const boolean = Type.Boolean;
 
-/** Pass-through to `Type.Literal`. Primary use: `_v: column.literal(N)`. */
+/**
+ * Pass-through to `Type.Literal`. Use for status enums and other
+ * literal-valued column shapes. (Version discriminators are now
+ * library-managed via `defineTable`'s tuple position; do not declare
+ * `_v` as a column.)
+ */
 export const literal = Type.Literal;
 
 /**

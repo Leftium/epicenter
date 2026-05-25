@@ -23,10 +23,12 @@
  * } from '@epicenter/workspace';
  * import type { AuthClient } from '@epicenter/auth';
  * import type { OwnerId } from '@epicenter/constants/identity';
- * import { type } from 'arktype';
  * import * as Y from 'yjs';
  *
- * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
+ * const posts = defineTable({
+ *   id: column.string(),
+ *   title: column.string(),
+ * });
  * declare const auth: AuthClient;
  * declare const ownerId: OwnerId;
  *

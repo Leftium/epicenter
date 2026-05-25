@@ -51,11 +51,8 @@ function createTransformationStepRuns() {
 		},
 
 		/** Create or update a step run. */
-		set(stepRun: Omit<TransformationStepRun, '_v'>) {
-			whispering.tables.transformationStepRuns.set({
-				...stepRun,
-				_v: 1,
-			} as TransformationStepRun);
+		set(stepRun: TransformationStepRun) {
+			whispering.tables.transformationStepRuns.set(stepRun);
 		},
 
 		/** Total number of step runs. */

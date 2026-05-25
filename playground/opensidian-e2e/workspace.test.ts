@@ -135,7 +135,6 @@ describe('e2e: opensidian workspace', () => {
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
 			trashedAt: null,
-			_v: 1,
 		});
 
 		// Create a file inside the folder
@@ -148,7 +147,6 @@ describe('e2e: opensidian workspace', () => {
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
 			trashedAt: null,
-			_v: 1,
 		});
 
 		const files = client.tables.files.getAllValid();
@@ -343,7 +341,6 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 			createdAt: 1712300000000,
 			updatedAt: 1712300000000,
 			trashedAt: null,
-			_v: 1,
 		});
 
 		// Write source file with a wikilink referencing the target

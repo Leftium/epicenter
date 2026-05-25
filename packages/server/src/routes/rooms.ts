@@ -2,10 +2,10 @@
  * Rooms sub-app: one Cloudflare Durable Object per named Y.Doc.
  *
  * URL shape (uniform across modes): `/api/owners/:ownerId/rooms/:roomId`.
- * The deployment is responsible for mounting auth and the `attachOwner`
- * middleware so `c.var.ownerId` is populated before this handler runs.
- * In personal mode it also layers `requireUrlOwnerIdMatchesAuth` to gate
- * `:ownerId === c.var.user.id`.
+ * The deployment mounts auth and `requireOwnership` upstream;
+ * `requireOwnership` resolves the partition from `(mode, user.id)`,
+ * rejects URL `:ownerId` mismatches at the boundary, and populates
+ * `c.var.ownerId` before this handler runs.
  *
  * The Durable Object name is the owner-partitioned identifier produced by
  * {@link doName}; nothing here interpolates strings inline. The DO itself
@@ -19,6 +19,9 @@
  * `owner_id` (see auth `before(delete)` hook).
  */
 
+import { API_ROUTES } from '@epicenter/constants/api-routes';
+import type { OwnerId } from '@epicenter/constants/identity';
+import { RequestGuardError } from '@epicenter/constants/request-guard-errors';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
@@ -27,7 +30,10 @@ import { createLogger } from 'wellcrafted/logger';
 import { MAX_PAYLOAD_BYTES } from '../constants.js';
 import * as schema from '../db/schema/index.js';
 import { isWebSocketUpgrade } from '../is-websocket-upgrade.js';
+import { requireBearerUser } from '../middleware/require-auth.js';
+import { createRequireOwnership } from '../middleware/require-ownership.js';
 import { doName } from '../owner.js';
+import type { OwnershipRule } from '../ownership.js';
 import type { Env } from '../types.js';
 
 type Db = NodePgDatabase<typeof schema>;
@@ -41,7 +47,7 @@ const RoomsTelemetryError = defineErrors({
 		doName,
 	}: {
 		cause: unknown;
-		ownerId: string;
+		ownerId: OwnerId;
 		doName: string;
 	}) => ({
 		message: 'durableObjectInstance telemetry upsert failed; row dropped',
@@ -74,7 +80,7 @@ function binaryResponse(data: Uint8Array): Response {
 function upsertDoInstance(
 	db: Db,
 	params: {
-		ownerId: string;
+		ownerId: OwnerId;
 		resourceName: string;
 		doName: string;
 		storageBytes?: number;
@@ -115,13 +121,11 @@ function upsertDoInstance(
 /**
  * Rooms sub-app. URL shape is uniform across modes; the resolved owner
  * partition arrives on `c.var.ownerId` via the deployment-mounted
- * `attachOwner` middleware, so handlers stay mode-blind.
+ * `requireOwnership` middleware, so handlers stay mode-blind.
  */
-const ROOM_PATTERN = '/api/owners/:ownerId/rooms/:roomId{[a-z0-9]{15}}';
-
-export const roomsApp = new Hono<Env>()
+const roomsApp = new Hono<Env>()
 	.get(
-		ROOM_PATTERN,
+		API_ROUTES.room.pattern,
 		describeRoute({
 			description: 'Get room doc or upgrade to WebSocket',
 			tags: ['rooms'],
@@ -132,8 +136,18 @@ export const roomsApp = new Hono<Env>()
 			const room = c.var.rooms.get(name);
 
 			if (isWebSocketUpgrade(c)) {
-				// Stamp userId from auth onto the URL so the DO can attach it
-				// to the connection without trusting client-supplied data.
+				// Validate deviceId presence at the route boundary so the DO
+				// can trust the URL has it. deviceId is the dispatch address
+				// `dispatch({ to })` resolves against; a missing one would
+				// produce a presence-ghost connection (visible in presence
+				// frames but unreachable by dispatch).
+				if (!c.req.query('deviceId')) {
+					return c.json(RequestGuardError.MissingDeviceId(), 400);
+				}
+
+				// Stamp userId from auth, overwriting any client-supplied
+				// value for safety. deviceId is the client's own identifier
+				// so it rides through unchanged from c.req.url.
 				const url = new URL(c.req.url);
 				url.searchParams.set('userId', c.var.user.id);
 				const stamped = new Request(url.toString(), c.req.raw);
@@ -161,7 +175,7 @@ export const roomsApp = new Hono<Env>()
 		},
 	)
 	.post(
-		ROOM_PATTERN,
+		API_ROUTES.room.pattern,
 		describeRoute({
 			description: 'Sync room doc',
 			tags: ['rooms'],
@@ -194,3 +208,22 @@ export const roomsApp = new Hono<Env>()
 			return diff ? binaryResponse(diff) : new Response(null, { status: 204 });
 		},
 	);
+
+/**
+ * Mount the rooms surface on a deployment's base app.
+ *
+ * Bundles auth (bearer-only: rooms is for external clients, never
+ * browsers), the ownership boundary, and the route mount into one call.
+ * Deployments call this once; they do not assemble the chain manually.
+ */
+export function mountRoomsApp(
+	base: Hono<Env>,
+	opts: { ownership: OwnershipRule },
+): void {
+	base.use(
+		API_ROUTES.room.prefixPattern,
+		requireBearerUser,
+		createRequireOwnership(opts.ownership),
+	);
+	base.route('/', roomsApp);
+}

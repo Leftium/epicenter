@@ -2,39 +2,18 @@
  * Library types shared by sub-app factories and middleware.
  *
  * Per-request state lives on the Hono context (`c.var.user`, `c.var.db`,
- * etc.). Per-request `OwnerId` values are reconstructed inside handlers
- * from URL params (in personal mode) or from the literal `'team'` (in
- * team mode), via the `attachOwner` middleware.
+ * etc.). The `requireOwnership` middleware resolves the owner partition
+ * from `(mode, c.var.user.id)`, rejects URL `:ownerId` mismatches at
+ * the boundary, and stashes the result on `c.var.ownerId`.
  */
 
-import type { AuthUser } from '@epicenter/auth';
+import type { AuthUser, UserId } from '@epicenter/auth';
 import type { OwnerId } from '@epicenter/constants/identity';
 import type { ActionManifest } from '@epicenter/workspace';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { createAuth } from './auth/create-auth.js';
 import type * as schema from './db/schema/index.js';
 import type { Rooms } from './room/contracts.js';
-
-/**
- * Sign-up gating policy.
- *
- * - `open`     : Better Auth accepts new sign-ups normally.
- * - `disabled` : a Better Auth `before` hook rejects every sign-up. The
- *                deployment owner provisions accounts out of band.
- *
- * `invite-only` becomes a third value when the invitation-token system
- * is designed; until that exists, the meaningful gradient is `open` or
- * `disabled`.
- */
-export type SignUpPolicy = 'open' | 'disabled';
-
-/**
- * Deployment partition shape. Passed to the sub-apps and middleware that
- * branch on it (`createAssetsApp`, `createAttachOwner`). The wire does not
- * carry mode (consumers derive it from `ownerId === TEAM_OWNER_ID`), so
- * this type stays server-internal.
- */
-export type OwnershipMode = 'personal' | 'team';
 
 /**
  * Per-connection identity and runtime state, stamped onto the Cloudflare
@@ -59,23 +38,10 @@ export type OwnershipMode = 'personal' | 'team';
  * on which mode it is in.
  */
 export type Connection = {
-	userId: string;
+	userId: UserId;
 	deviceId: string;
 	connectedAt: number;
 	actions: ActionManifest;
-};
-
-/**
- * Per-request queue for fire-and-forget promises that must outlive the
- * HTTP response. Populated by handlers via `push`; drained inside
- * `executionCtx.waitUntil` by the base-app's lifecycle middleware so the
- * worker isolate stays alive until every queued promise settles.
- */
-export type AfterResponseQueue = {
-	/** Enqueue a fire-and-forget promise to run after the response is sent. */
-	push(promise: Promise<unknown>): void;
-	/** Settle every queued promise via `Promise.allSettled`. */
-	drain(): Promise<unknown>;
 };
 
 /**
@@ -101,13 +67,21 @@ export type Env = {
 		user: AuthUser;
 		/**
 		 * Resolved owner partition for this request. Populated by the
-		 * `attachOwner` middleware after auth runs. In personal mode equals
-		 * the authenticated user's id; in team mode equals `TEAM_OWNER_ID`.
-		 * Handlers read this instead of branching on mode or re-deriving
-		 * from the URL `:ownerId` param.
+		 * `requireOwnership` middleware after auth runs. In personal mode
+		 * equals the authenticated user's id; in team mode equals
+		 * `TEAM_OWNER_ID`. Handlers read this instead of branching on
+		 * mode or re-deriving from the URL `:ownerId` param.
 		 */
 		ownerId: OwnerId;
-		afterResponse: AfterResponseQueue;
+		/**
+		 * Per-request collection of fire-and-forget promises that must
+		 * outlive the HTTP response. Handlers push promises (typically DB
+		 * writes that use `c.var.db`); the base-app's lifecycle middleware
+		 * passes the whole array to `Promise.allSettled(...).then(close pg)`
+		 * inside `executionCtx.waitUntil`, so the worker isolate stays
+		 * alive AND the pg client outlives every queued write.
+		 */
+		afterResponse: Promise<unknown>[];
 		rooms: Rooms;
 	};
 };

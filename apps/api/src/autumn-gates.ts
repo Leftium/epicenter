@@ -24,7 +24,6 @@
 import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import { AssetError } from '@epicenter/constants/asset-errors';
 import type { Env as ServerEnv } from '@epicenter/server';
-import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import { createAutumn } from './autumn.js';
 import { FEATURE_IDS, PLAN_IDS } from './billing-plans.js';
@@ -32,7 +31,11 @@ import { MODEL_CREDITS } from './model-costs.js';
 
 /**
  * Cloud `Env` extends the library's with the `planId` variable populated
- * by `ensurePlanId` and read by `autumnAiGate`.
+ * by `ensurePlanId`. Typed as `string | undefined` rather than `string`
+ * because Hono can't enforce middleware composition order at the type
+ * level: any consumer that reads `c.var.planId` must explicitly fall back
+ * to `PLAN_IDS.free` (the most restrictive plan) so a missing-`ensurePlanId`
+ * mount degrades safely instead of silently bypassing tier checks.
  */
 export type Env = {
 	Bindings: ServerEnv['Bindings'];
@@ -53,9 +56,7 @@ export const ensurePlanId = createMiddleware<Env>(async (c, next) => {
 		email: c.var.user.email ?? undefined,
 		expand: ['subscriptions.plan'],
 	});
-	const mainSub = customer.subscriptions?.find(
-		(s: { addOn?: boolean }) => !s.addOn,
-	);
+	const mainSub = customer.subscriptions.find((s) => !s.addOn);
 	c.set('planId', mainSub?.planId ?? PLAN_IDS.free);
 	await next();
 });
@@ -86,7 +87,10 @@ export const autumnAiGate = createMiddleware<Env>(async (c, next) => {
 		return c.json(AiChatError.UnknownModel({ model }), 400);
 	}
 
-	if (c.var.planId === PLAN_IDS.free && credits > FREE_TIER_MAX_CREDITS) {
+	// Default to free-tier restrictions if planId is missing so a
+	// dropped `ensurePlanId` mount can't silently bypass tier gating.
+	const planId = c.var.planId ?? PLAN_IDS.free;
+	if (planId === PLAN_IDS.free && credits > FREE_TIER_MAX_CREDITS) {
 		return c.json(AiChatError.ModelRequiresPaidPlan({ model, credits }), 403);
 	}
 
@@ -186,6 +190,3 @@ export const autumnStorageGate = createMiddleware<Env>(async (c, next) => {
 	// GET, OPTIONS, etc. pass through.
 	return next();
 });
-
-/** Type helper for sub-app factories that need cloud's Env. */
-export type CloudContext = Context<Env>;

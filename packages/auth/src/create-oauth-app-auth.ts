@@ -1,5 +1,7 @@
+import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
+import { OAUTH_ROUTES } from '@epicenter/constants/oauth-routes';
 import { keyringsEqual } from '@epicenter/encryption';
 import {
 	defineErrors,
@@ -208,7 +210,7 @@ export function createOAuthAppAuth({
 	): Promise<ApiSessionRequestResult> {
 		let response: Response;
 		try {
-			response = await fetchImpl(`${baseURL}/api/session`, {
+			response = await fetchImpl(API_ROUTES.session.url(baseURL), {
 				headers: { Authorization: `Bearer ${grant.accessToken}` },
 				credentials: 'omit',
 			});
@@ -220,7 +222,9 @@ export function createOAuthAppAuth({
 				return ApiSessionRequestError.AuthRejected({ status: response.status });
 			}
 			return ApiSessionRequestError.Unavailable({
-				cause: new Error(`/api/session failed with ${response.status}.`),
+				cause: new Error(
+					`${API_ROUTES.session.pattern} failed with ${response.status}.`,
+				),
 			});
 		}
 		try {
@@ -662,7 +666,7 @@ async function refreshOAuthTokenWithEndpoint({
 		client_id: clientId,
 		resource: baseURL,
 	});
-	const response = await fetch(`${baseURL}/auth/oauth2/token`, {
+	const response = await fetch(OAUTH_ROUTES.token.url(baseURL), {
 		method: 'POST',
 		body,
 		headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -701,7 +705,7 @@ async function revokeOAuthRefreshTokenWithEndpoint({
 		token: refreshToken,
 		token_type_hint: 'refresh_token',
 	});
-	const response = await fetch(`${baseURL}/auth/oauth2/revoke`, {
+	const response = await fetch(OAUTH_ROUTES.revoke.url(baseURL), {
 		method: 'POST',
 		body,
 		headers: { 'content-type': 'application/x-www-form-urlencoded' },

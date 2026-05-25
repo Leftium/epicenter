@@ -3,9 +3,9 @@
  *
  * Per-project runtime files (socket, metadata sidecar, SQLite lease) live
  * under `runtimeDir()` (a per-user directory at `<dataDir>/run/`).
- * Persistent logs live under `logDir()` (the env-paths log directory).
- * Every file is keyed by a hash of the daemon's project directory so two
- * daemons on the same machine never collide.
+ * Persistent logs live under the env-paths log directory. Every file is
+ * keyed by a hash of the daemon's project directory so two daemons on the
+ * same machine never collide.
  *
  * For per-workspace data layout (yjs/sqlite/markdown under the project
  * directory's reserved subdir), see `document/workspace-paths.ts`. Different
@@ -53,16 +53,6 @@ export function runtimeDir(): string {
 }
 
 /**
- * Per-user directory for daemon log files. Default: env-paths log dir
- * (`~/Library/Logs/epicenter` on macOS, `~/.local/state/epicenter` on
- * Linux). `EPICENTER_LOG_DIR` overrides; read on every call so tests can
- * isolate.
- */
-export function logDir(): string {
-	return process.env.EPICENTER_LOG_DIR ?? DEFAULT_LOG_DIR;
-}
-
-/**
  * Stable hash of an absolute, fs-resolved project directory path.
  *
  * Truncated to 16 hex chars (64 bits) so the resulting socket path stays
@@ -103,9 +93,15 @@ export function leasePathFor(dir: string): string {
 /**
  * Log file for the daemon serving `dir`.
  *
- * Always lives under the user log directory (persistent), never tmpfs, so
- * the operator can read post-mortem logs after a crash or reboot.
+ * Always lives under the user log directory (env-paths default,
+ * `~/Library/Logs/epicenter` on macOS, `~/.local/state/epicenter` on
+ * Linux), so the operator can read post-mortem logs after a crash or
+ * reboot. `EPICENTER_LOG_DIR` overrides; read on every call so tests can
+ * isolate.
  */
 export function logPathFor(dir: string): string {
-	return join(logDir(), `${dirHash(dir)}.log`);
+	return join(
+		process.env.EPICENTER_LOG_DIR ?? DEFAULT_LOG_DIR,
+		`${dirHash(dir)}.log`,
+	);
 }

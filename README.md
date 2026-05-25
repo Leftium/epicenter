@@ -208,21 +208,23 @@ import {
   attachTables,
   defineTable,
   openCollaboration,
-  websocketUrl,
+  roomWsUrl,
 } from '@epicenter/workspace';
 
 const posts = defineTable(
   type({ id: 'string', title: 'string', published: 'boolean', _v: '1' }),
 );
 
-function openBlog(id: string, deviceId: string) {
+function openBlog(id: string, ownerId, deviceId, auth) {
   const ydoc = new Y.Doc({ guid: id });
   const tables = attachTables(ydoc, { posts });
   const idb = attachIndexedDb(ydoc);
   const collaboration = openCollaboration(ydoc, {
-    url: websocketUrl(`http://localhost:3913/rooms/${ydoc.guid}`),
+    url: roomWsUrl({ baseURL: auth.baseURL, ownerId, guid: ydoc.guid, deviceId }),
+    openWebSocket: auth.openWebSocket,
+    onReconnectSignal: auth.onStateChange,
     waitFor: idb.whenLoaded,
-    deviceId,
+    actions: {},
   });
 
   return {
@@ -231,7 +233,7 @@ function openBlog(id: string, deviceId: string) {
   };
 }
 
-const workspace = openBlog('epicenter.blog', 'browser-dev');
+const workspace = openBlog('epicenter.blog', myOwnerId, 'browser-dev', auth);
 workspace.tables.posts.set({ id: '1', title: 'Hello', published: false, _v: 1 });
 ```
 

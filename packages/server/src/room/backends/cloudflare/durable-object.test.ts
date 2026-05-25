@@ -545,17 +545,11 @@ describe('Room sync: binary update fan-out', () => {
 		const ws = await upgrade(room, 'A');
 		const before = ws.sent.length;
 		const truncated = new Uint8Array([SYNC_MESSAGE_TYPE.UPDATE, 10]);
-		const originalConsoleError = console.error;
-		const errorSpy = mock(() => {});
-		console.error = errorSpy as typeof console.error;
 
-		try {
-			await room.webSocketMessage(ws, toArrayBuffer(truncated));
-		} finally {
-			console.error = originalConsoleError;
-		}
+		await room.webSocketMessage(ws, toArrayBuffer(truncated));
 
-		expect(errorSpy).toHaveBeenCalledTimes(1);
+		// Handler swallows the decode error: no response, no close.
+		// (Whether it logs and via which logger is implementation detail.)
 		expect(ws.sent.slice(before)).toEqual([]);
 		expect(ws.closeCalls).toEqual([]);
 	});

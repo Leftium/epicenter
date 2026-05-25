@@ -6,7 +6,6 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../db/schema/index.js';
 import { assetKey } from '../owner.js';
 import { TRUSTED_ORIGINS } from '../trusted-origins.js';
-import type { SignUpPolicy } from '../types.js';
 import { BASE_AUTH_CONFIG } from './base-config.js';
 import { createCookieAdvancedConfig } from './cookie-config.js';
 import { authPlugins } from './plugins.js';
@@ -26,7 +25,6 @@ type Db = NodePgDatabase<typeof schema>;
  * - Plugins: JWT (ES256), OAuth provider (PKCE)
  * - Optional cleanup hook for R2 assets when a user is deleted
  * - Cloudflare KV secondary storage for session caching
- * - {@link SignUpPolicy} gating via a Better Auth `before` hook
  *
  * `/api/session` is the single Epicenter session surface; this builder no longer
  * enriches `/auth/get-session` with encryption keys.
@@ -35,12 +33,10 @@ export function createAuth({
 	db,
 	env,
 	baseURL,
-	signUpPolicy = 'open',
 }: {
 	db: Db;
 	env: Cloudflare.Env;
 	baseURL: string;
-	signUpPolicy?: SignUpPolicy;
 }) {
 	return betterAuth({
 		...BASE_AUTH_CONFIG,
@@ -102,13 +98,6 @@ export function createAuth({
 		advanced: createCookieAdvancedConfig(baseURL),
 		databaseHooks: {
 			user: {
-				create: {
-					// Sign-up gate. When policy is 'disabled', Better Auth aborts
-					// the create operation by returning `false`. Out-of-band
-					// provisioning (Better Auth admin API or a CLI) bypasses this
-					// hook because it operates on the adapter directly.
-					before: signUpPolicy === 'disabled' ? async () => false : undefined,
-				},
 				delete: {
 					before: async (user) => {
 						// Partition cleanup. In personal mode `owner_id === user.id`

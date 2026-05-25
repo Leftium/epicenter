@@ -1,10 +1,11 @@
 /**
  * Epicenter Cloud Worker entry.
  *
- * Composes the `@epicenter/server` library in `personal` ownership mode and
- * layers cloud-only billing, admin, and dashboard surfaces on top. Self-
- * hosted team deployments live in a sibling apps/* folder and compose the
- * same library with `mode: 'team'` and no Autumn middleware.
+ * Composes the `@epicenter/server` library with the `personal` ownership
+ * rule and layers cloud-only billing, admin, and dashboard surfaces on
+ * top. Self-hosted team deployments live in a sibling apps/* folder and
+ * compose the same library with `team({ isMember })` and no Autumn
+ * middleware.
  *
  * Library sub-apps declare their full URL patterns (including `/api`).
  * The deployment composes auth + billing middleware via `base.use(...)` at
@@ -13,17 +14,18 @@
  * Read top to bottom for the full URL surface of cloud.
  */
 
+import { API_ROUTES } from '@epicenter/constants/api-routes';
 import {
 	aiApp,
 	authApp,
-	createAssetsApp,
-	createAttachOwner,
 	createBaseApp,
+	createRequireOwnership,
+	mountAssetsApp,
+	mountRoomsApp,
+	personal,
 	Room,
 	requireBearerUser,
 	requireCookieOrBearerUser,
-	requireUrlOwnerIdMatchesAuth,
-	roomsApp,
 	sessionApp,
 } from '@epicenter/server';
 import { describeRoute } from 'hono-openapi';
@@ -34,10 +36,9 @@ import {
 } from './autumn-gates.js';
 import { billingRoutes } from './billing-routes.js';
 
-const MODE = 'personal';
+const ownership = personal();
 
-const base = createBaseApp({ signUpPolicy: 'open' });
-const attachOwner = createAttachOwner(MODE);
+const base = createBaseApp();
 
 // Public health endpoint at root.
 base.get('/', (c) =>
@@ -47,55 +48,35 @@ base.get('/', (c) =>
 // Auth surface (HTML pages + OAuth metadata; no /api prefix by design).
 base.route('/', authApp);
 
-// Session: cookie-or-bearer auth + owner resolution.
-base.use('/api/session', requireCookieOrBearerUser, attachOwner);
+// Session: cookie-or-bearer auth + owner resolution. No URL :ownerId; the
+// guard attaches the resolved partition directly.
+base.use(
+	API_ROUTES.session.pattern,
+	requireCookieOrBearerUser,
+	createRequireOwnership(ownership),
+);
 base.route('/', sessionApp);
 
-// Rooms: bearer auth + URL ownerId safety + owner resolution. No billing
-// gate; bandwidth and DO storage are not metered.
-base.use(
-	'/api/owners/:ownerId/rooms/*',
-	requireBearerUser,
-	requireUrlOwnerIdMatchesAuth,
-	attachOwner,
-);
-base.route('/', roomsApp);
+// Rooms: library owns the URL pattern, bearer auth, and ownership boundary.
+// No billing gate; bandwidth and DO storage are not metered.
+mountRoomsApp(base, { ownership });
 
-// Assets: split auth by path/method. POST upload, list, usage, PATCH metadata,
-// and DELETE all require auth. The conditional GET at /:assetId is left
-// uncovered; the library handler looks up the row and runs auth inline only
-// for `visibility === 'private'` rows. Public assets serve to anyone with the
-// URL.
-base.use(
-	'/api/owners/:ownerId/assets',
-	requireCookieOrBearerUser,
-	requireUrlOwnerIdMatchesAuth,
-	attachOwner,
-	autumnStorageGate,
-);
-base.use(
-	'/api/owners/:ownerId/assets/usage',
-	requireCookieOrBearerUser,
-	requireUrlOwnerIdMatchesAuth,
-	attachOwner,
-	autumnStorageGate,
-);
-base.on(
-	['PATCH', 'DELETE'],
-	'/api/owners/:ownerId/assets/:assetId{[a-z0-9]{21}}',
-	requireCookieOrBearerUser,
-	requireUrlOwnerIdMatchesAuth,
-	attachOwner,
-	autumnStorageGate,
-);
-base.route('/', createAssetsApp({ mode: MODE }));
+// Assets: library owns the URL/auth matrix; we layer the cloud-only
+// storage gate. The conditional public-read GET is excluded from the
+// gate by the mount helper.
+mountAssetsApp(base, { ownership, gates: [autumnStorageGate] });
 
 // AI chat: bearer-only, plan-aware credit gate.
-base.use('/api/ai/*', requireBearerUser, ensurePlanId, autumnAiGate);
+base.use(
+	API_ROUTES.ai.chat.prefixPattern,
+	requireBearerUser,
+	ensurePlanId,
+	autumnAiGate,
+);
 base.route('/', aiApp);
 
 // Billing dashboard data plane.
-base.use('/api/billing/*', requireCookieOrBearerUser);
+base.use(API_ROUTES.billing.prefixPattern, requireCookieOrBearerUser);
 base.route('/api/billing', billingRoutes);
 
 // Dashboard SPA: Workers Static Assets binding serves the SvelteKit build.

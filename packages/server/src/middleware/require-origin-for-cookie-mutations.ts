@@ -1,6 +1,6 @@
 import { RequestGuardError } from '@epicenter/constants/request-guard-errors';
 import { createMiddleware } from 'hono/factory';
-import { parseBearer } from '../auth/resource-boundary.js';
+import { parseBearer } from '../auth/parse-bearer.js';
 import { TRUSTED_ORIGINS } from '../trusted-origins.js';
 
 /**

@@ -20,7 +20,7 @@ import { corsMiddleware } from './middleware/cors.js';
 import { requireOriginForCookieMutations } from './middleware/require-origin-for-cookie-mutations.js';
 import { singleCredential } from './middleware/single-credential.js';
 import { createDurableObjectRooms } from './room/backends/cloudflare/registry.js';
-import type { AfterResponseQueue, Env, SignUpPolicy } from './types.js';
+import type { Env } from './types.js';
 
 const PRODUCTION_API_ORIGIN = APPS.API.urls[0];
 const LOCAL_API_ORIGIN = localUrl(APPS.API);
@@ -30,25 +30,6 @@ const LOCAL_API_ORIGIN = localUrl(APPS.API);
 // against the deployed worker; it is a dev-loop artifact. Inlined here, the
 // only consumer, rather than exported from trusted-origins.
 const WRANGLER_DEV_API_ORIGIN = `http://${new URL(PRODUCTION_API_ORIGIN).host}`;
-
-/**
- * Build the queue every base-app middleware installs on `c.var.afterResponse`.
- *
- * Handlers push fire-and-forget promises into the queue (`push`); the
- * lifecycle middleware drains them inside `executionCtx.waitUntil` so the
- * worker isolate stays alive until every queued promise settles.
- */
-function createAfterResponseQueue(): AfterResponseQueue {
-	const promises: Promise<unknown>[] = [];
-	return {
-		push(promise) {
-			promises.push(promise);
-		},
-		drain() {
-			return Promise.allSettled(promises);
-		},
-	};
-}
 
 /**
  * Construct the parent `Hono` app every deployment mounts sub-apps onto.
@@ -66,30 +47,32 @@ function createAfterResponseQueue(): AfterResponseQueue {
  * and the rooms registry. The deployment is responsible for exposing a
  * health endpoint on `/`.
  */
-export function createBaseApp(opts: {
-	signUpPolicy?: SignUpPolicy;
-}): Hono<Env> {
+export function createBaseApp(): Hono<Env> {
 	const app = new Hono<Env>();
 
 	// 1. CORS
 	app.use('*', corsMiddleware);
 
-	// 2. Per-request database + after-response queue.
+	// 2. Per-request pg client + after-response promise list.
 	// Uses Client (not Pool) because Hyperdrive IS the connection pool.
+	// Handlers push fire-and-forget promises (typically DB writes) onto
+	// `afterResponse`; the finally block waits for all of them to settle
+	// before closing pg, so writes that outlive the response don't hit a
+	// closed client.
 	app.use('*', async (c, next) => {
 		const client = new pg.Client({
 			connectionString: c.env.HYPERDRIVE.connectionString,
 		});
-		const afterResponse = createAfterResponseQueue();
+		const afterResponse: Promise<unknown>[] = [];
 		try {
 			await client.connect();
 			c.set('db', drizzle(client, { schema }));
 			c.set('afterResponse', afterResponse);
 			await next();
 		} finally {
-			// Response is already streaming; keep the isolate alive for
-			// queued promises, then close pg.
-			c.executionCtx.waitUntil(afterResponse.drain().then(() => client.end()));
+			c.executionCtx.waitUntil(
+				Promise.allSettled(afterResponse).then(() => client.end()),
+			);
 		}
 	});
 
@@ -109,7 +92,6 @@ export function createBaseApp(opts: {
 				db: c.var.db,
 				env: c.env,
 				baseURL,
-				signUpPolicy: opts.signUpPolicy ?? 'open',
 			}),
 		);
 		await next();

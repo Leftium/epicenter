@@ -3,15 +3,13 @@
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { Loading } from '@epicenter/ui/loading';
-	import { NaturalLanguageDateInput } from '@epicenter/ui/natural-language-date-input';
+	import { ZonedNaturalLanguageDateInput } from '@epicenter/ui/natural-language-date-input';
 	import * as Popover from '@epicenter/ui/popover';
 	import { toastOnError } from '@epicenter/ui/sonner';
 	import * as StarRating from '@epicenter/ui/star-rating';
-	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
-	import type { DateTimeString } from '@epicenter/workspace';
 	import { goto } from '$app/navigation';
 	import ProseMirrorEditor from '$lib/components/ProseMirrorEditor.svelte';
 	import TagInput from '$lib/components/TagInput.svelte';
@@ -38,7 +36,6 @@
 
 	let wordCount = $state(0);
 	let isDatePopoverOpen = $state(false);
-	let dateTz = $state(entry.dateZone);
 </script>
 
 <div class="flex h-full flex-col">
@@ -143,16 +140,13 @@
 						align="start"
 						class="w-80 space-y-3 p-3"
 					>
-						<NaturalLanguageDateInput
-							onChoice={({ date }) => {
-								updateEntry({
-									date: date.toISOString() as DateTimeString,
-									dateZone: dateTz,
-								});
+						<ZonedNaturalLanguageDateInput
+							initialDateZone={entry.dateZone}
+							onChoice={({ date, dateZone }) => {
+								updateEntry({ date, dateZone });
 								isDatePopoverOpen = false;
 							}}
 						/>
-						<TimezoneCombobox bind:value={dateTz} />
 					</Popover.Content>
 				</Popover.Root>
 			</div>

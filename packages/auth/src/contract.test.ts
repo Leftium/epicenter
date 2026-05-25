@@ -1081,4 +1081,3 @@ test('/api/session key update after signOut is discarded without writing identit
 	expect(auth.state).toEqual({ status: 'signed-out' });
 	auth[Symbol.dispose]();
 });
-

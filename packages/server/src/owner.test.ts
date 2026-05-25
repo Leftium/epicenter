@@ -34,4 +34,3 @@ describe('assetKey', () => {
 		expect(assetKey(team, 'x1y2z3')).toBe('owners/team/assets/x1y2z3');
 	});
 });
-

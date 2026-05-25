@@ -1,12 +1,12 @@
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';
 import { AuthUser } from '@epicenter/auth';
+import { OAuthError } from '@epicenter/constants/oauth-errors';
 import type { User } from 'better-auth';
 import { eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Context } from 'hono';
 import { Ok, type Result } from 'wellcrafted/result';
 import * as schema from '../db/schema';
-import { OAuthError } from '@epicenter/constants/oauth-errors';
 import { createOAuthIssuerURL, createOAuthJwksURL } from './oauth-metadata.js';
 
 type VerifyOAuthAccessToken = ReturnType<

@@ -13,6 +13,7 @@
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { nanoid } from 'nanoid/non-secure';
+	import { deliverTranscriptionResult } from '$lib/operations/delivery';
 	import { notify } from '$lib/operations/notify';
 	import { sound } from '$lib/operations/sound';
 	import { rpc } from '$lib/query';
@@ -81,7 +82,7 @@
 					onSuccess: (transcribedText) => {
 						sound.playSoundIfEnabled('transcriptionComplete');
 
-						rpc.delivery.deliverTranscriptionResult({
+						deliverTranscriptionResult({
 							text: transcribedText,
 							toastId,
 						});

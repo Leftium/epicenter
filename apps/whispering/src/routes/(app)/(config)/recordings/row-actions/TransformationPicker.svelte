@@ -7,6 +7,7 @@
 	import { nanoid } from 'nanoid/non-secure';
 	import { goto } from '$app/navigation';
 	import TransformationPickerBody from '$lib/components/TransformationPickerBody.svelte';
+	import { deliverTransformationResult } from '$lib/operations/delivery';
 	import { notify } from '$lib/operations/notify';
 	import { sound } from '$lib/operations/sound';
 	import { rpc } from '$lib/query';
@@ -67,7 +68,7 @@
 
 							sound.playSoundIfEnabled('transformationComplete');
 
-							rpc.delivery.deliverTransformationResult({
+							deliverTransformationResult({
 								text: result.output,
 								toastId,
 							});

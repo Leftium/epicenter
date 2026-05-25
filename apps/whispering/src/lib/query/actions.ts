@@ -12,11 +12,14 @@ import { transformations } from '$lib/state/transformations.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 import * as transformClipboardWindow from '$routes/transform-clipboard/transformClipboardWindow.tauri';
 import { analytics } from '$lib/operations/analytics';
+import {
+	deliverTranscriptionResult,
+	deliverTransformationResult,
+} from '$lib/operations/delivery';
 import { notify } from '$lib/operations/notify';
 import { sound } from '$lib/operations/sound';
-import { delivery } from './delivery';
+import { transcribeBlob } from '$lib/operations/transcribe';
 import { text } from './text';
-import { transcribeBlob } from './transcription';
 
 const ImportError = defineErrors({
 	NoImportableFiles: () => ({
@@ -565,7 +568,7 @@ export const actions = {
 
 			sound.playSoundIfEnabled('transformationComplete');
 
-			await delivery.deliverTransformationResult({
+			await deliverTransformationResult({
 				text: output,
 				toastId,
 			});
@@ -655,7 +658,7 @@ async function processRecordingPipeline({
 
 	// Transcription succeeded - deliver text immediately
 	sound.playSoundIfEnabled('transcriptionComplete');
-	await delivery.deliverTranscriptionResult({
+	await deliverTranscriptionResult({
 		text: transcribedText,
 		toastId: transcribeToastId,
 	});
@@ -734,7 +737,7 @@ async function processRecordingPipeline({
 
 	sound.playSoundIfEnabled('transformationComplete');
 
-	await delivery.deliverTransformationResult({
+	await deliverTransformationResult({
 		text: result.output,
 		toastId: transformToastId,
 	});

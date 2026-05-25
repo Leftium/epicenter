@@ -10,6 +10,7 @@
 	import { nanoid } from 'nanoid/non-secure';
 	import { onDestroy, onMount } from 'svelte';
 	import TransformationPickerBody from '$lib/components/TransformationPickerBody.svelte';
+	import { deliverTransformationResult } from '$lib/operations/delivery';
 	import { notify } from '$lib/operations/notify';
 	import { sound } from '$lib/operations/sound';
 	import { rpc } from '$lib/query';
@@ -139,7 +140,7 @@
 
 					sound.playSoundIfEnabled('transformationComplete');
 
-					await rpc.delivery.deliverTransformationResult({
+					await deliverTransformationResult({
 						text: output,
 						toastId,
 					});

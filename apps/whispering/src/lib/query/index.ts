@@ -1,6 +1,5 @@
 import { actions } from './actions';
 import { audio } from './audio';
-import { delivery } from './delivery';
 import { download } from './download';
 import { text } from './text';
 import { transcription } from './transcription';
@@ -17,5 +16,4 @@ export const rpc = {
 	download,
 	transcription,
 	transformer,
-	delivery,
 };

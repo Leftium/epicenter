@@ -68,7 +68,6 @@ async function buildStartParams(
 
 function createManualRecorder() {
 	let _state = $state<WhisperingRecordingState>('IDLE');
-	let _currentRecordingId: string | null = null;
 
 	void recorderService()
 		.getRecorderState()
@@ -102,17 +101,13 @@ function createManualRecorder() {
 		}),
 
 		async startRecording({ toastId }: { toastId: string }) {
-			const recordingId = nanoid();
-			_currentRecordingId = recordingId;
-
-			const params = await buildStartParams(recordingId);
+			const params = await buildStartParams(nanoid());
 			const { data: deviceAcquisitionOutcome, error: startRecordingError } =
 				await recorderService().startRecording(params, {
 					sendStatus: (options) => notify.loading({ id: toastId, ...options }),
 				});
 
 			if (startRecordingError) {
-				_currentRecordingId = null;
 				return WhisperingErr({
 					title: '❌ Failed to start recording',
 					serviceError: startRecordingError,
@@ -124,13 +119,11 @@ function createManualRecorder() {
 		},
 
 		async stopRecording({ toastId }: { toastId: string }) {
-			const { data: blob, error: stopRecordingError } =
+			const { data, error: stopRecordingError } =
 				await recorderService().stopRecording({
 					sendStatus: (options) => notify.loading({ id: toastId, ...options }),
 				});
 
-			const recordingId = _currentRecordingId;
-			_currentRecordingId = null;
 			_state = 'IDLE';
 
 			if (stopRecordingError) {
@@ -140,15 +133,7 @@ function createManualRecorder() {
 				});
 			}
 
-			if (!recordingId) {
-				return WhisperingErr({
-					title: '❌ Missing recording ID',
-					description:
-						'An internal error occurred: recording ID was not set when stopping the recording.',
-				});
-			}
-
-			return Ok({ blob, recordingId });
+			return Ok(data);
 		},
 
 		async cancelRecording({ toastId }: { toastId: string }) {
@@ -157,7 +142,6 @@ function createManualRecorder() {
 					sendStatus: (options) => notify.loading({ id: toastId, ...options }),
 				});
 
-			_currentRecordingId = null;
 			_state = 'IDLE';
 
 			if (cancelRecordingError) {

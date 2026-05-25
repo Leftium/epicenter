@@ -16,12 +16,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { type } from 'arktype';
 import { IDBKeyRange, indexedDB } from 'fake-indexeddb';
 import * as Y from 'yjs';
 import { attachBroadcastChannel } from './attach-broadcast-channel.js';
 import { attachIndexedDb } from './attach-indexed-db.js';
 import { attachTable } from './attach-table.js';
+import { column } from './column/index.js';
 import { defineTable } from './define-table.js';
 
 Object.assign(globalThis, { indexedDB, IDBKeyRange });
@@ -41,7 +41,10 @@ class FakeBroadcastChannel {
 	close(): void {}
 }
 
-const NoteDef = defineTable(type({ id: 'string', body: 'string', _v: '1' }));
+const NoteDef = defineTable({
+	id: column.string(),
+	body: column.string(),
+});
 
 describe('local-only recipe', () => {
 	beforeEach(() => {
@@ -69,11 +72,11 @@ describe('local-only recipe', () => {
 		await idb.whenLoaded;
 
 		const notes = attachTable(ydoc, 'notes', NoteDef);
-		notes.set({ id: 'first', body: 'hello local-first', _v: 1 });
+		notes.set({ id: 'first', body: 'hello local-first' });
 
 		const { data: stored, error } = notes.get('first');
 		expect(error).toBeNull();
-		expect(stored).toEqual({ id: 'first', body: 'hello local-first', _v: 1 });
+		expect(stored).toEqual({ id: 'first', body: 'hello local-first' });
 
 		expect(FakeBroadcastChannel.names).toEqual(['yjs.local-notes']);
 
@@ -86,7 +89,7 @@ describe('local-only recipe', () => {
 		const firstIdb = attachIndexedDb(first);
 		await firstIdb.whenLoaded;
 		const firstNotes = attachTable(first, 'notes', NoteDef);
-		firstNotes.set({ id: 'persist-me', body: 'survives reload', _v: 1 });
+		firstNotes.set({ id: 'persist-me', body: 'survives reload' });
 		first.destroy();
 		await firstIdb.whenDisposed;
 
@@ -99,7 +102,6 @@ describe('local-only recipe', () => {
 		expect(stored).toEqual({
 			id: 'persist-me',
 			body: 'survives reload',
-			_v: 1,
 		});
 
 		second.destroy();

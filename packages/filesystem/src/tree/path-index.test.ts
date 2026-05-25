@@ -39,7 +39,6 @@ function makeRow(
 		createdAt: Date.now(),
 		updatedAt: Date.now(),
 		trashedAt: null,
-		_v: 1 as const,
 	};
 }
 

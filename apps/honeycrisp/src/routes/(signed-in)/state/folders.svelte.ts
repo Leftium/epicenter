@@ -67,8 +67,8 @@ export function createFolders(honeycrisp: HoneycrispBrowser) {
 			honeycrisp.tables.folders.set({
 				id,
 				name: 'New Folder',
+				icon: null,
 				sortOrder: foldersMap.size,
-				_v: 1,
 			});
 		},
 

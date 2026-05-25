@@ -19,7 +19,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { type } from 'arktype';
 import * as Y from 'yjs';
 import {
 	attachTables,
@@ -27,6 +26,7 @@ import {
 	defineTable,
 } from '../../../index.js';
 import { parseMarkdownFile } from '../../../markdown/parse-markdown-file.js';
+import { column } from '../../column/index.js';
 import {
 	attachMarkdownMaterializer,
 	type MarkdownShape,
@@ -36,11 +36,16 @@ import {
 // Test Table Definitions
 // ============================================================================
 
-const postsTable = defineTable(
-	type({ id: 'string', title: 'string', published: 'boolean', _v: '1' }),
-);
+const postsTable = defineTable({
+	id: column.string(),
+	title: column.string(),
+	published: column.boolean(),
+});
 
-const notesTable = defineTable(type({ id: 'string', body: 'string', _v: '1' }));
+const notesTable = defineTable({
+	id: column.string(),
+	body: column.string(),
+});
 
 const tableDefinitions = { posts: postsTable, notes: notesTable };
 
@@ -297,7 +302,6 @@ describe('push', () => {
 						fromMarkdown: (parsed) => ({
 							id: parsed.frontmatter.id as string,
 							body: parsed.body ?? '',
-							_v: 1 as const,
 						}),
 					},
 				},
@@ -400,13 +404,11 @@ describe('pull', () => {
 			id: 'p1',
 			title: 'First',
 			published: true,
-			_v: 1,
 		});
 		workspace.tables.posts.set({
 			id: 'p2',
 			title: 'Second',
 			published: false,
-			_v: 1,
 		});
 
 		const result = await workspace.materializer.pull();
@@ -432,13 +434,13 @@ describe('pull', () => {
 						filename: (row) => `${row.id}-custom.md`,
 						toMarkdown: (row) => ({
 							frontmatter: { id: row.id },
-							body: row.body as string,
+							body: (row as unknown as { body: string }).body,
 						}),
 					},
 				},
 			],
 		});
-		workspace.tables.notes.set({ id: 'n1', body: 'Custom body', _v: 1 });
+		workspace.tables.notes.set({ id: 'n1', body: 'Custom body' });
 
 		const result = await workspace.materializer.pull();
 
@@ -458,7 +460,6 @@ describe('pull', () => {
 			id: 'p1',
 			title: 'Blog Post',
 			published: false,
-			_v: 1,
 		});
 
 		await workspace.materializer.pull();
@@ -484,9 +485,8 @@ describe('pull', () => {
 			id: 'p1',
 			title: 'Post',
 			published: false,
-			_v: 1,
 		});
-		workspace.tables.notes.set({ id: 'n1', body: 'Note', _v: 1 });
+		workspace.tables.notes.set({ id: 'n1', body: 'Note' });
 
 		const result = await workspace.materializer.pull();
 
@@ -514,7 +514,6 @@ describe('rebuild', () => {
 			id: 'p1',
 			title: 'Live',
 			published: true,
-			_v: 1,
 		});
 		await workspace.materializer.pull();
 		await writeTestFile(
@@ -544,9 +543,8 @@ describe('rebuild', () => {
 			id: 'p1',
 			title: 'Post',
 			published: false,
-			_v: 1,
 		});
-		workspace.tables.notes.set({ id: 'n1', body: 'Note', _v: 1 });
+		workspace.tables.notes.set({ id: 'n1', body: 'Note' });
 		await workspace.materializer.pull();
 		await writeTestFile(
 			'notes/orphan.md',
@@ -580,13 +578,11 @@ describe('rebuild', () => {
 			id: 'p1',
 			title: 'A',
 			published: true,
-			_v: 1,
 		});
 		workspace.tables.posts.set({
 			id: 'p2',
 			title: 'B',
 			published: false,
-			_v: 1,
 		});
 
 		const first = await workspace.materializer.rebuild();
@@ -645,13 +641,11 @@ describe('round-trip', () => {
 			id: 'p1',
 			title: 'Round Trip',
 			published: true,
-			_v: 1,
 		});
 		workspace1.tables.posts.set({
 			id: 'p2',
 			title: 'Another',
 			published: false,
-			_v: 1,
 		});
 
 		await workspace1.materializer.pull();
@@ -716,14 +710,13 @@ describe('round-trip', () => {
 							fromMarkdown: (parsed: MarkdownShape) => ({
 								id: parsed.frontmatter.id as string,
 								body: parsed.body ?? '',
-								_v: 1 as const,
 							}),
 						},
 					},
 				] as unknown as TableRegistration[],
 		});
 
-		const original = { id: 'n1', body: 'Body content here', _v: 1 as const };
+		const original = { id: 'n1', body: 'Body content here' };
 		workspace.tables.notes.set(original);
 
 		await workspace.materializer.pull();

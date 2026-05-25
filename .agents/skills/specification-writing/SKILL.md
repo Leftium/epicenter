@@ -9,8 +9,9 @@ metadata:
 # Specification Writing
 
 Follow [writing-voice](../writing-voice/SKILL.md) for prose sections.
+Follow [notebook-explanation](../notebook-explanation/SKILL.md) for mental models, ownership diagrams, flow diagrams, and compressed rules.
 
-A specification gives an agent (or human) the context they need to implement a feature autonomously. The goal is NOT to describe everything exhaustively; it's to provide enough initial context that the implementer can do their own research and make informed decisions.
+A specification gives an agent or maintainer the context they need to implement a feature autonomously. The goal is not to describe everything exhaustively. The goal is to make the current truth easy to find, show enough evidence that the direction is credible, and give the implementer a concrete launch point.
 
 > **Note**: This guide uses `[PLACEHOLDER]` markers for content you must fill in. Code blocks show templates; replace all bracketed content with your feature's details.
 
@@ -29,6 +30,7 @@ Use this pattern when you need to:
 Load these on demand based on the spec's decision surface:
 
 - If writing a spec with **many trade-offs, migration cleanup, or "keep for consistency" decisions**, read [references/decision-hygiene.md](references/decision-hygiene.md).
+- If writing a spec with **architecture, API, lifecycle, or ownership changes**, read [../git/references/pull-request-guidelines.md](../git/references/pull-request-guidelines.md) for before/after examples and visual communication rhythm.
 
 ## The Core Philosophy
 
@@ -38,10 +40,57 @@ Specs should:
 - **Document research, not conclusions**: Show what was explored, what exists, what doesn't
 - **Leave questions open**: The Open Questions section is a feature, not a bug
 - **Enable autonomous implementation**: An agent reading this should spawn sub-agents to verify and extend
+- **Respect maintainer time**: Make the active path obvious before asking the reader to absorb history, appendices, or implementation logs
 
 A good spec is a launching pad, not a script to follow.
 
 **Before outlining sections, apply the [one-sentence-test](../one-sentence-test/SKILL.md).** If you can't name what this spec is about in one concrete sentence, the design is not coherent yet. That is the finding, and the spec is not ready.
+
+---
+
+## Maintainer-Time Contract
+
+The first screen of a spec must answer:
+
+```txt
+What is this?
+Is it active, implemented, superseded, or historical?
+What is the current shape?
+What is the target shape?
+What proves the change is done?
+```
+
+Large specs are allowed. Thoroughness is useful when the work is deep. The rule is not "split after N lines." The rule is: do not make one reader job fight another.
+
+Split or add a short active slice when a document mixes:
+
+- North-star architecture and concrete execution steps.
+- Historical debate and current implementation path.
+- Spec content and handoff prompts.
+- Appendices or ledgers that are useful, but not needed to start work.
+
+When keeping everything in one file, add a "How to read this spec" block near the top:
+
+```txt
+Read first:
+  One Sentence
+  Current State
+  Target Shape
+  Implementation Plan
+  Verification
+
+Read if changing the architecture:
+  Design Decisions
+  Rejected Alternatives
+  Edge Cases
+
+Historical only:
+  Implementation Notes
+  Superseded Decisions
+  Execution Prompts
+```
+
+The reader should be able to get the current truth in one minute, the model in five minutes, and the execution path in fifteen minutes.
 
 ---
 
@@ -73,9 +122,21 @@ Never let evidence questions hide behind design coherence. Verify before deletin
 # [Feature Name]
 
 **Date**: [YYYY-MM-DD]
-**Status**: Draft | In Progress | Implemented
-**Author**: [Name or AI-assisted]
-**Branch**: [optional: feat/feature-name if work has started]
+**Status**: Draft | In Progress | Implemented | Superseded | Retrospective
+**Owner**: [Name/team responsible for decisions]
+**Branch**: [optional: branch name if work has started]
+**Supersedes**: [optional: previous spec paths]
+**Superseded by**: [optional: later spec path]
+```
+
+### One Sentence
+
+Every spec needs one concrete sentence before the overview. This is the maintainer's anchor.
+
+```markdown
+## One Sentence
+
+[One sentence naming the new shape and the boundary it changes.]
 ```
 
 ### Overview
@@ -153,7 +214,7 @@ Use a table for traceability. Every material decision should have a class and ra
 
 ### Architecture
 
-Diagrams over prose. Show relationships visually with ASCII art.
+Diagrams over prose. Prefer fenced text diagrams, file trees, route tables, and before/after blocks. Use simple ASCII diagrams by default because they are fast to write and easy to edit. Use box-drawing characters only when a polished diagram is worth the extra weight.
 
 ```markdown
 ## Architecture
@@ -161,38 +222,92 @@ Diagrams over prose. Show relationships visually with ASCII art.
 [Describe what the diagram shows]
 ```
 
-┌─────────────────────────────────────────┐
-│ [Component Name] │
-│ ├── [field]: [type or value] │
-│ └── [field]: [type or value] │
-└─────────────────────────────────────────┘
-│
-▼ [relationship label]
-┌─────────────────────────────────────────┐
-│ [Component Name] │
-└─────────────────────────────────────────┘
-
-```
-
+```txt
+[caller]
+  -> [boundary or route]
+    -> [policy or validation]
+      -> [storage or primitive]
 ```
 
 For multi-step flows:
 
-```markdown
+```txt
+Step 1: [Step name]
+  [What happens in this step]
 
+Step 2: [Step name]
+  [What happens in this step]
 ```
 
-STEP 1: [Step name]
-────────────────────
-[What happens in this step]
+### Catalogs (when introducing a primitive set)
 
-STEP 2: [Step name]
-────────────────────
-[What happens in this step]
+When the spec introduces a coherent set of new primitives (column types, action variants, error kinds, modifier methods, etc.), present them as a **catalog**: a compact code block that lists every primitive with a one-line annotation, followed by detail sections only for the ones that need elaboration.
 
+Catalogs let a reader scan the entire surface in one glance before diving into any single primitive.
+
+````markdown
+## The 8-column catalog
+
+```ts
+column.id<TBrand?>(s?)          // TEXT PRIMARY KEY, auto nanoid on insert
+column.string<TBrand?>(s?)      // TEXT (TBrand for branded strings)
+column.number(s?)               // REAL
+column.integer(s?)              // INTEGER (covers ms-epoch timestamps)
+column.boolean()                // INTEGER 0/1
+column.enum([...])              // TEXT + CHECK constraint
+column.json<T extends JsonValue>(s?)  // TEXT JSON-encoded
+column.timestamp()              // sugar for column.string(type("string.date.iso"))
 ```
 
+Every primitive justified by N+ existing call sites in the audit.
+
+### What was considered and rejected
+
+| Candidate | Why rejected |
+|---|---|
+| `column.array(of)` | Subsumed by `column.json<T>(s?)` |
+| `column.literal(value)` | Only useful for `_v` markers, which become auto |
+````
+
+A "rejected candidates" table is often as useful as the catalog itself: it shows the implementer what *not* to add, and why. The reader gains confidence that the surface is tight.
+
+### Call Sites (before/after on real code)
+
+When the spec changes a consumer-facing API, show **at least 2-3 real call sites translated**, not invented examples. Real code surfaces semantic shifts the abstract proposal misses.
+
+Find actual usages in the codebase first. Show the verbatim "Before" with file:line, then the "After" translation. Annotate any non-obvious mapping with a brief comment.
+
+````markdown
+## Call sites: before and after
+
+### honeycrisp notes table
+
+**Before** (`apps/honeycrisp/src/lib/workspace.ts:78`):
+
+```ts
+const notesTable = defineTable(
+  type({ id: NoteId, title: 'string', _v: '1' }),
+  type({ id: NoteId, title: 'string', wordCount: 'number | undefined', _v: '2' }),
+).migrate(...)
 ```
+
+**After**:
+
+```ts
+const notesTable = defineTable(
+  { id: column.id<'NoteId'>(), title: column.string() },
+  {
+    id: column.id<'NoteId'>(),
+    title: column.string(),
+    wordCount: column.number().nullable(),
+  },
+).migrate(...)
+```
+
+**Semantic shift to flag**: rows previously stored with `wordCount` key absent will now read as `null` instead of `undefined`. Affects app code doing `if (row.wordCount === undefined)`.
+````
+
+The "semantic shift to flag" callouts are critical: they're what the implementer needs to grep for and codemod across the codebase.
 
 ### Implementation Plan
 
@@ -308,6 +423,8 @@ Files that will be touched or consulted.
 - **Code shows current state**: Not described abstractly
 - **Architecture is visual**: ASCII diagrams over prose
 - **Phases are actionable**: Checkboxes that can be tracked
+- **First screen is useful**: Status, one sentence, current shape, target shape, and proof are easy to find
+- **History is labeled**: Superseded decisions and implementation notes do not masquerade as active instructions
 
 ### Bad Spec Characteristics
 
@@ -316,6 +433,8 @@ Files that will be touched or consulted.
 - **Closes all questions**: No Open Questions section
 - **Abstract descriptions**: "The system will handle Y" without showing code
 - **Wall of prose**: No tables, no diagrams, no structure
+- **Reader-job mixing**: North-star architecture, execution prompt, handoff notes, and historical debate are all interleaved without a read path
+- **Process theater**: Sections exist because the template said so, not because they change implementation or review
 
 ---
 
@@ -343,7 +462,10 @@ If your spec is too prescriptive, the agent will blindly follow it. If it's too 
 ## Quick Reference Checklist
 
 ```markdown
-- [ ] Header (Date, Status, Author)
+- [ ] Header (Date, Status, Owner)
+- [ ] One Sentence
+- [ ] First screen answers active status, current shape, target shape, and proof
+- [ ] "How to read this spec" block when the file is long or partly historical
 - [ ] Overview (1-2 sentences)
 - [ ] Motivation
   - [ ] Current State (with code)
@@ -357,7 +479,10 @@ If your spec is too prescriptive, the agent will blindly follow it. If it's too 
 - [ ] Design decisions have classes
 - [ ] Class 1 decisions were verified
 - [ ] Class 3 keeps are logged with `Revisit when:`
+- [ ] Catalogs (when introducing a primitive set: code block + rejected candidates table)
 - [ ] Architecture (ASCII diagrams)
+- [ ] Visual rhythm: prose is broken up with code, tables, trees, or diagrams where relationships matter
+- [ ] Call Sites (before/after on 2-3 real usages with file:line)
 - [ ] Implementation Plan (phased checkboxes)
 - [ ] Edge Cases
 - [ ] Open Questions (with recommendations)

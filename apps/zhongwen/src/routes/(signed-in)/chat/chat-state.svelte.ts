@@ -56,7 +56,6 @@ export function createChatState() {
 			model: DEFAULT_MODEL,
 			createdAt: now,
 			updatedAt: now,
-			_v: 1,
 		});
 		return id;
 	}
@@ -123,7 +122,6 @@ export function createChatState() {
 					role: 'assistant',
 					parts: message.parts as JsonValue[],
 					createdAt: message.createdAt?.getTime() ?? Date.now(),
-					_v: 1,
 				});
 				zhongwen.tables.conversations.update(conversationId, {
 					updatedAt: Date.now(),
@@ -195,7 +193,6 @@ export function createChatState() {
 					role: 'user',
 					parts: [{ type: 'text', content }],
 					createdAt: Date.now(),
-					_v: 1,
 				});
 
 				updateConversation(conversationId, {
@@ -275,7 +272,6 @@ export function createChatState() {
 			model: current?.model ?? DEFAULT_MODEL,
 			createdAt: now,
 			updatedAt: now,
-			_v: 1,
 		});
 
 		switchConversation(id);

@@ -15,6 +15,7 @@
  */
 
 import {
+	column,
 	defineKv,
 	defineTable,
 	generateId,
@@ -22,7 +23,7 @@ import {
 	type InferTableRow,
 	type Tables,
 } from '@epicenter/workspace';
-import { type } from 'arktype';
+import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
 
@@ -32,8 +33,7 @@ export const ZHONGWEN_ID = 'epicenter.zhongwen';
 // Branded ID Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const ConversationId = type('string').as<Id & Brand<'ConversationId'>>();
-export type ConversationId = typeof ConversationId.infer;
+export type ConversationId = Id & Brand<'ConversationId'>;
 export const generateConversationId = (): ConversationId =>
 	generateId() as ConversationId;
 /**
@@ -44,8 +44,7 @@ export const generateConversationId = (): ConversationId =>
 export const asConversationId = (value: string): ConversationId =>
 	value as ConversationId;
 
-export const ChatMessageId = type('string').as<Id & Brand<'ChatMessageId'>>();
-export type ChatMessageId = typeof ChatMessageId.infer;
+export type ChatMessageId = Id & Brand<'ChatMessageId'>;
 export const generateChatMessageId = (): ChatMessageId =>
 	generateId() as ChatMessageId;
 /**
@@ -60,29 +59,23 @@ export const asChatMessageId = (value: string): ChatMessageId =>
 // Table Definitions
 // ─────────────────────────────────────────────────────────────────────────────
 
-const conversationsTable = defineTable(
-	type({
-		id: ConversationId,
-		title: 'string',
-		provider: 'string',
-		model: 'string',
-		createdAt: 'number',
-		updatedAt: 'number',
-		_v: '1',
-	}),
-);
+const conversationsTable = defineTable({
+	id: column.string<ConversationId>(),
+	title: column.string(),
+	provider: column.string(),
+	model: column.string(),
+	createdAt: column.number(),
+	updatedAt: column.number(),
+});
 export type Conversation = InferTableRow<typeof conversationsTable>;
 
-const chatMessagesTable = defineTable(
-	type({
-		id: ChatMessageId,
-		conversationId: ConversationId,
-		role: "'user' | 'assistant'",
-		parts: type({} as type.cast<JsonValue[]>),
-		createdAt: 'number',
-		_v: '1',
-	}),
-);
+const chatMessagesTable = defineTable({
+	id: column.string<ChatMessageId>(),
+	conversationId: column.string<ConversationId>(),
+	role: column.enum(['user', 'assistant']),
+	parts: column.json(Type.Array(Type.Unsafe<JsonValue>(Type.Any()))),
+	createdAt: column.number(),
+});
 export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -96,5 +89,5 @@ export const zhongwenTables = {
 export type ZhongwenTables = Tables<typeof zhongwenTables>;
 
 export const zhongwenKv = {
-	showPinyin: defineKv(type('boolean'), true),
+	showPinyin: defineKv(Type.Boolean(), () => true),
 };

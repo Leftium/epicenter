@@ -6,7 +6,6 @@
 	import { Textarea } from '@epicenter/ui/textarea';
 	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
 	import * as Tooltip from '@epicenter/ui/tooltip';
-	import { DateTimeString } from '@epicenter/workspace';
 	import ClipboardPasteIcon from '@lucide/svelte/icons/clipboard-paste';
 	import { requireFuji } from '$lib/session';
 
@@ -59,9 +58,12 @@
 			if (parsed.entries.length === 0) return;
 			const items = parsed.entries.map(({ iso, text }) => ({
 				title: text,
-				date: DateTimeString.stringify(iso, timezone),
+				date: iso,
 			}));
-			fuji.collaboration.actions.entries_bulk_create({ entries: items });
+			fuji.collaboration.actions.entries_bulk_create({
+				dateZone: timezone,
+				entries: items,
+			});
 			toast.success(`Added ${items.length} ${items.length === 1 ? 'entry' : 'entries'}`);
 			isOpen = false;
 			rawText = '';

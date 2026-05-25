@@ -23,10 +23,12 @@
  * } from '@epicenter/workspace';
  * import type { AuthClient } from '@epicenter/auth';
  * import type { OwnerId } from '@epicenter/constants/identity';
- * import { type } from 'arktype';
  * import * as Y from 'yjs';
  *
- * const posts = defineTable(type({ id: 'string', title: 'string', _v: '1' }));
+ * const posts = defineTable({
+ *   id: column.string(),
+ *   title: column.string(),
+ * });
  * declare const auth: AuthClient;
  * declare const ownerId: OwnerId;
  *
@@ -133,8 +135,20 @@ export type { ProjectDir } from './shared/types';
 // ════════════════════════════════════════════════════════════════════════════
 
 export { DateTimeString } from './shared/datetime-string';
+export { IANA_TIME_ZONE_FORMAT, IanaTimeZone } from './shared/iana-time-zone';
 export type { Guid, Id } from './shared/id';
 export { generateGuid, generateId } from './shared/id';
+
+// ════════════════════════════════════════════════════════════════════════════
+// COLUMN PRIMITIVES (TypeBox-native)
+// ════════════════════════════════════════════════════════════════════════════
+
+export {
+	type ColumnError,
+	column,
+	type FlatJsonTSchema,
+	type Infer,
+} from './document/column/index';
 
 // ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT PRIMITIVES
@@ -157,16 +171,22 @@ export {
 	type InferKvValue,
 	type Kv,
 	type KvDefinitions,
+	KvError,
 } from './document/attach-kv.js';
 export { attachLocalStorage } from './document/attach-local-storage.js';
 export { attachPlainText } from './document/attach-plain-text.js';
 export { attachRichText } from './document/attach-rich-text.js';
 export {
+	attachReadonlyTable,
+	attachReadonlyTables,
 	attachTable,
 	attachTables,
 	type BaseRow,
 	type InferTableRow,
+	type ReadonlyTable,
+	type ReadonlyTables,
 	type Table,
+	TableParseError,
 	type Tables,
 } from './document/attach-table.js';
 export { attachTimeline } from './document/attach-timeline/index.js';

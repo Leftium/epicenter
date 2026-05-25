@@ -42,7 +42,9 @@
 					<Table.Cell class="text-xs text-muted-foreground whitespace-nowrap">
 						{formatTimestamp(event.timestampMs)}
 					</Table.Cell>
-					<Table.Cell class="font-mono text-xs">{event.model ?? '-'}</Table.Cell>
+					<Table.Cell class="font-mono text-xs"
+						>{event.model ?? '-'}</Table.Cell
+					>
 					<Table.Cell class="text-xs text-muted-foreground">
 						{event.provider ?? '-'}
 					</Table.Cell>

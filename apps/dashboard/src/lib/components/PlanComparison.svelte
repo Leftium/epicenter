@@ -61,7 +61,8 @@
 				variant="ghost"
 				size="sm"
 				class="rounded-md {!isAnnual ? 'bg-background shadow-sm' : 'text-muted-foreground'}"
-				onclick={() => (isAnnual = false)}>Monthly</Button
+				onclick={() => (isAnnual = false)}
+				>Monthly</Button
 			>
 			<Button
 				variant="ghost"
@@ -96,9 +97,7 @@
 							{isAnnual ? card.displayedPricePerMonth : card.displayedPrice}
 						</p>
 					</Card.Header>
-					<Card.Content
-						class="flex-1 space-y-2 text-sm text-muted-foreground"
-					>
+					<Card.Content class="flex-1 space-y-2 text-sm text-muted-foreground">
 						<p>{card.displayedCreditsPerCycle}</p>
 						{#if card.displayedOverage}
 							<p>{card.displayedOverage}</p>
@@ -113,7 +112,10 @@
 					<Card.Footer>
 						{#if card.cta === 'Current'}
 							<Button variant="outline" class="w-full" disabled>
-								Current plan{#if card.isTrialing}&nbsp;(trial){/if}
+								Current plan
+								{#if card.isTrialing}
+									&nbsp;(trial)
+								{/if}
 							</Button>
 						{:else}
 							<Button
@@ -121,7 +123,8 @@
 								variant={card.cta === 'Upgrade' ? 'default' : 'secondary'}
 								onclick={() => handleUpgradeClick(card)}
 							>
-								{card.cta} to {card.displayName}
+								{card.cta}
+								to {card.displayName}
 							</Button>
 						{/if}
 					</Card.Footer>

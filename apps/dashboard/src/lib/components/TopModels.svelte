@@ -66,7 +66,7 @@
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
-					{#each sortedModels as [model, credits] (model)}
+					{#each sortedModels as [ model, credits ] (model)}
 						<Table.Row>
 							<Table.Cell class="font-mono text-xs">{model}</Table.Cell>
 							<Table.Cell class="text-right tabular-nums">

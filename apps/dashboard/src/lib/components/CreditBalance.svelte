@@ -20,7 +20,10 @@
 
 	const daysUntilReset = $derived(
 		credits?.nextResetAtMs != null
-			? Math.max(0, Math.ceil((credits.nextResetAtMs - Date.now()) / 86_400_000))
+			? Math.max(
+					0,
+					Math.ceil((credits.nextResetAtMs - Date.now()) / 86_400_000),
+				)
 			: null,
 	);
 
@@ -60,7 +63,8 @@
 						: 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400'}
 				>
 					{planDisplayName}
-					Trial: {trial.daysLeft} day{trial.daysLeft === 1 ? '' : 's'} left
+					Trial: {trial.daysLeft} day{trial.daysLeft === 1 ? '' : 's'}
+					left
 				</Badge>
 			{/if}
 		</Card.Header>

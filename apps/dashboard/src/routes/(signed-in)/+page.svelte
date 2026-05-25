@@ -46,7 +46,8 @@
 				variant="ghost"
 				size="sm"
 				class="h-auto px-0 text-primary hover:bg-transparent hover:underline"
-				onclick={openBillingPortal}>Update billing →</Button
+				onclick={openBillingPortal}
+				>Update billing →</Button
 			>
 		</Alert.Description>
 	</Alert.Root>

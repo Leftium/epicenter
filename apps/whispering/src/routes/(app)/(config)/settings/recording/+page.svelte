@@ -10,7 +10,7 @@
 		RECORDING_MODE_OPTIONS,
 		SAMPLE_RATE_OPTIONS,
 	} from '$lib/constants/audio';
-	import { IS_LINUX, IS_MACOS, PLATFORM_TYPE } from '$lib/constants/platform';
+	import { IS_LINUX, IS_MACOS } from '$lib/constants/platform';
 	import { TRANSCRIPTION_SERVICE_ID_TO_LABEL } from '$lib/constants/transcription';
 	import {
 		asDeviceIdentifier,
@@ -24,7 +24,6 @@
 		isCompressionRecommended,
 	} from '$routes/(app)/_layout-utils/check-ffmpeg';
 	import DesktopOutputFolder from './DesktopOutputFolder.svelte';
-	import FfmpegCommandBuilder from './FfmpegCommandBuilder.svelte';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
 
@@ -58,21 +57,6 @@
 				: 'Native Rust audio method. Records uncompressed WAV format. Works with all transcription methods.',
 		},
 		{
-			value: 'ffmpeg',
-			label: 'FFmpeg',
-			description: {
-				macos:
-					'Supports all audio formats with advanced customization options. Reliable with keyboard shortcuts.',
-				linux:
-					'Recommended for Linux. Supports all audio formats with advanced customization options. Helps bypass common audio issues.',
-				windows:
-					'Supports all audio formats with advanced customization options.',
-				android:
-					'Supports all audio formats with advanced customization options.',
-				ios: 'Supports all audio formats with advanced customization options.',
-			}[PLATFORM_TYPE],
-		},
-		{
 			value: 'navigator',
 			label: 'Browser API',
 			description: IS_MACOS
@@ -92,23 +76,17 @@
 			deviceConfig.get('recording.method') === 'navigator',
 	);
 
-	const isUsingFfmpegMethod = $derived(
-		deviceConfig.get('recording.method') === 'ffmpeg',
-	);
-
-	function getManualDeviceId(method: 'cpal' | 'navigator' | 'ffmpeg') {
+	function getManualDeviceId(method: 'cpal' | 'navigator') {
 		switch (method) {
 			case 'cpal':
 				return deviceConfig.get('recording.cpal.deviceId');
 			case 'navigator':
 				return deviceConfig.get('recording.navigator.deviceId');
-			case 'ffmpeg':
-				return deviceConfig.get('recording.ffmpeg.deviceId');
 		}
 	}
 
 	function setManualDeviceId(
-		method: 'cpal' | 'navigator' | 'ffmpeg',
+		method: 'cpal' | 'navigator',
 		selected: DeviceIdentifier | null,
 	) {
 		switch (method) {
@@ -117,9 +95,6 @@
 				break;
 			case 'navigator':
 				deviceConfig.set('recording.navigator.deviceId', selected);
-				break;
-			case 'ffmpeg':
-				deviceConfig.set('recording.ffmpeg.deviceId', selected);
 				break;
 		}
 	}
@@ -170,7 +145,7 @@
 							if (selected)
 							deviceConfig.set(
 									'recording.method',
-									selected as 'cpal' | 'navigator' | 'ffmpeg',
+									selected as 'cpal' | 'navigator',
 								);
 						}}
 				>
@@ -213,24 +188,7 @@
 				</Alert.Root>
 			{/if}
 
-			{#if deviceConfig.get('recording.method') === 'ffmpeg' && !data.ffmpegInstalled}
-				<Alert.Root class="border-red-500/20 bg-red-500/5">
-					<InfoIcon class="size-4 text-red-600 dark:text-red-400" />
-					<Alert.Title class="text-red-600 dark:text-red-400">
-						FFmpeg Not Installed
-					</Alert.Title>
-					<Alert.Description>
-						FFmpeg is required for the FFmpeg recording method. Please install
-						it to use this feature.
-						<Link
-							href="/install-ffmpeg"
-							class="font-medium underline underline-offset-4 hover:text-red-700 dark:hover:text-red-300"
-						>
-							Install FFmpeg →
-						</Link>
-					</Alert.Description>
-				</Alert.Root>
-			{:else if isCompressionRecommended()}
+			{#if isCompressionRecommended()}
 				<Alert.Root class="border-blue-500/20 bg-blue-500/5">
 					<InfoIcon class="size-4 text-blue-600 dark:text-blue-400" />
 					<Alert.Title class="text-blue-600 dark:text-blue-400">
@@ -372,25 +330,6 @@
 						larger file sizes.
 					</Field.Description>
 				</Field.Field>
-			{:else if isUsingFfmpegMethod}
-				<!-- FFmpeg method settings -->
-				<Field.Field>
-					<Field.Label for="output-folder">Recording Output Folder</Field.Label>
-					<DesktopOutputFolder></DesktopOutputFolder>
-					<Field.Description>
-						Choose where to save your recordings. Default location is secure and
-						managed by the app.
-					</Field.Description>
-				</Field.Field>
-
-				<FfmpegCommandBuilder
-					bind:globalOptions={() => deviceConfig.get('recording.ffmpeg.globalOptions'),
-						(v) => deviceConfig.set('recording.ffmpeg.globalOptions', v)}
-					bind:inputOptions={() => deviceConfig.get('recording.ffmpeg.inputOptions'),
-						(v) => deviceConfig.set('recording.ffmpeg.inputOptions', v)}
-					bind:outputOptions={() => deviceConfig.get('recording.ffmpeg.outputOptions'),
-						(v) => deviceConfig.set('recording.ffmpeg.outputOptions', v)}
-				/>
 			{:else}
 				<!-- CPAL method settings -->
 				<Field.Field>

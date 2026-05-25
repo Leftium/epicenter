@@ -230,23 +230,11 @@ export type NavigatorRecordingParams = BaseRecordingParams & {
 };
 
 /**
- * FFmpeg recording parameters
- */
-export type FfmpegRecordingParams = BaseRecordingParams & {
-	method: 'ffmpeg';
-	globalOptions: string;
-	inputOptions: string;
-	outputOptions: string;
-	outputFolder: string;
-};
-
-/**
  * Discriminated union for recording parameters based on method
  */
 export type StartRecordingParams =
 	| CpalRecordingParams
-	| NavigatorRecordingParams
-	| FfmpegRecordingParams;
+	| NavigatorRecordingParams;
 
 /**
  * Recorder service interface shared by all methods

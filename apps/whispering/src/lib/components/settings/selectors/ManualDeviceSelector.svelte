@@ -32,12 +32,6 @@
 			badge: 'Recommended',
 			isAvailable: window.__TAURI_INTERNALS__, // Desktop only
 		},
-		ffmpeg: {
-			label: 'FFmpeg',
-			description: 'Customizable command-line recording',
-			badge: 'Advanced',
-			isAvailable: window.__TAURI_INTERNALS__, // Desktop only
-		},
 		navigator: {
 			label: 'Navigator',
 			description: 'Browser MediaRecorder API',

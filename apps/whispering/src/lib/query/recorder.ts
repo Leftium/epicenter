@@ -95,17 +95,6 @@ export const recorder = {
 					),
 					bitrateKbps: deviceConfig.get('recording.navigator.bitrateKbps'),
 				},
-				ffmpeg: {
-					...baseParams,
-					method: 'ffmpeg' as const,
-					selectedDeviceId: parseDeviceId(
-						deviceConfig.get('recording.ffmpeg.deviceId'),
-					),
-					globalOptions: deviceConfig.get('recording.ffmpeg.globalOptions'),
-					inputOptions: deviceConfig.get('recording.ffmpeg.inputOptions'),
-					outputOptions: deviceConfig.get('recording.ffmpeg.outputOptions'),
-					outputFolder,
-				},
 				cpal: {
 					...baseParams,
 					method: 'cpal' as const,
@@ -210,7 +199,6 @@ export function recorderService() {
 
 	const recorderMap = {
 		navigator: services.navigatorRecorder,
-		ffmpeg: desktopServices.ffmpegRecorder,
 		cpal: desktopServices.cpalRecorder,
 	};
 	return recorderMap[deviceConfig.get('recording.method')];

@@ -5,7 +5,6 @@ import { FsServiceLive } from './fs';
 import { GlobalShortcutManagerLive } from './global-shortcut-manager';
 import { PermissionsServiceLive } from './permissions';
 import { CpalRecorderServiceLive } from './recorder/cpal';
-import { FfmpegRecorderServiceLive } from './recorder/ffmpeg';
 import { TrayIconServiceLive } from './tray';
 
 /**
@@ -21,5 +20,4 @@ export const desktopServices = {
 	globalShortcutManager: GlobalShortcutManagerLive,
 	permissions: PermissionsServiceLive,
 	cpalRecorder: CpalRecorderServiceLive,
-	ffmpegRecorder: FfmpegRecorderServiceLive,
 } as const;

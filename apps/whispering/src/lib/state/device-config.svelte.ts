@@ -8,11 +8,6 @@ import { extractErrorMessage } from 'wellcrafted/error';
 import { BITRATES_KBPS, DEFAULT_BITRATE_KBPS } from '$lib/constants/audio';
 import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
 import { rpc } from '$lib/query';
-import {
-	FFMPEG_DEFAULT_GLOBAL_OPTIONS,
-	FFMPEG_DEFAULT_INPUT_OPTIONS,
-	FFMPEG_DEFAULT_OUTPUT_OPTIONS,
-} from '$lib/services/desktop/recorder/ffmpeg';
 
 // ── Per-key definitions ──────────────────────────────────────────────────────
 
@@ -41,12 +36,11 @@ const DEVICE_DEFINITIONS = {
 
 	// ── Recording hardware ────────────────────────────────────────────
 	'recording.method': defineEntry(
-		type("'cpal' | 'navigator' | 'ffmpeg'"),
+		type("'cpal' | 'navigator'"),
 		'cpal',
 	),
 	'recording.cpal.deviceId': defineEntry(type('string | null'), null),
 	'recording.navigator.deviceId': defineEntry(type('string | null'), null),
-	'recording.ffmpeg.deviceId': defineEntry(type('string | null'), null),
 	'recording.navigator.bitrateKbps': defineEntry(
 		type.enumerated(...BITRATES_KBPS),
 		DEFAULT_BITRATE_KBPS,
@@ -55,18 +49,6 @@ const DEVICE_DEFINITIONS = {
 	'recording.cpal.sampleRate': defineEntry(
 		type("'16000' | '44100' | '48000'"),
 		'16000',
-	),
-	'recording.ffmpeg.globalOptions': defineEntry(
-		type('string'),
-		FFMPEG_DEFAULT_GLOBAL_OPTIONS,
-	),
-	'recording.ffmpeg.inputOptions': defineEntry(
-		type('string'),
-		FFMPEG_DEFAULT_INPUT_OPTIONS,
-	),
-	'recording.ffmpeg.outputOptions': defineEntry(
-		type('string'),
-		FFMPEG_DEFAULT_OUTPUT_OPTIONS,
 	),
 
 	// ── Local model paths ─────────────────────────────────────────────
@@ -142,7 +124,7 @@ export const deviceConfig: PersistedMap<typeof DEVICE_DEFINITIONS> =
 		onError: (key) => {
 			console.warn(`Invalid device config for "${key}", using default`);
 		},
-		onUpdateError: (key, error) => {
+		onUpdateError: (_key, error) => {
 			rpc.notify.error({
 				title: 'Error updating device config',
 				description: extractErrorMessage(error),

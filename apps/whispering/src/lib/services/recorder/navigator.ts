@@ -27,6 +27,12 @@ type ActiveRecording = {
 
 let activeRecording: ActiveRecording | null = null;
 
+const subscribers = new Set<(state: WhisperingRecordingState) => void>();
+
+function notify(state: WhisperingRecordingState) {
+	for (const handler of subscribers) handler(state);
+}
+
 /**
  * Navigator recorder service that uses the MediaRecorder API.
  * Available in both browser and desktop environments.
@@ -105,6 +111,7 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 
 		// Start recording
 		mediaRecorder.start(TIMESLICE_MS);
+		notify('RECORDING');
 
 		// Return the device acquisition outcome
 		return Ok(deviceOutcome);
@@ -145,6 +152,7 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 
 		// Always clean up the stream
 		cleanupRecordingStream(recording.stream);
+		notify('IDLE');
 
 		if (stopError) return Err(stopError);
 
@@ -175,6 +183,7 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 
 		// Clean up the stream
 		cleanupRecordingStream(recording.stream);
+		notify('IDLE');
 
 		sendStatus({
 			title: '✨ Cancelled',
@@ -182,6 +191,13 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 		});
 
 		return Ok({ status: 'cancelled' });
+	},
+
+	subscribe(handler) {
+		subscribers.add(handler);
+		return () => {
+			subscribers.delete(handler);
+		};
 	},
 };
 

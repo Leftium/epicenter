@@ -276,4 +276,23 @@ export type RecorderService = {
 	cancelRecording(callbacks: {
 		sendStatus: UpdateStatusMessageFn;
 	}): Promise<Result<CancelRecordingResult, RecorderError>>;
+
+	/**
+	 * Subscribe to state changes from this service. The handler is invoked
+	 * synchronously whenever the service transitions between IDLE and RECORDING.
+	 *
+	 * This is the single source of truth for state changes. Consumers should
+	 * subscribe at construction time and let the handler drive their local
+	 * state ; no eager mirror writes from the consumer side.
+	 *
+	 * Inactive services never fire (a CPAL subscription stays silent in web
+	 * mode, a navigator subscription stays silent in CPAL mode), so it is
+	 * safe to subscribe to every available service at once.
+	 *
+	 * Returns an unsubscribe function. Module-singleton consumers can ignore
+	 * the return value; ephemeral consumers should call it on teardown.
+	 */
+	subscribe(
+		handler: (state: WhisperingRecordingState) => void,
+	): () => void;
 };

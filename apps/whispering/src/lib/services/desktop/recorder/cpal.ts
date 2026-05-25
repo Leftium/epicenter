@@ -1,4 +1,5 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { remove } from '@tauri-apps/plugin-fs';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type {
@@ -324,6 +325,19 @@ export const CpalRecorderServiceLive: RecorderService = {
 		}
 
 		return Ok({ status: 'cancelled' });
+	},
+
+	subscribe(handler) {
+		// Rust emits 'recorder:state-changed' from every mutation path (see
+		// src-tauri/src/recorder/commands.rs). Wrap the Tauri listener so this
+		// service exposes the same subscribe shape as the navigator service.
+		const unlistenPromise = listen<WhisperingRecordingState>(
+			'recorder:state-changed',
+			(event) => handler(event.payload),
+		);
+		return () => {
+			void unlistenPromise.then((unlisten) => unlisten());
+		};
 	},
 };
 

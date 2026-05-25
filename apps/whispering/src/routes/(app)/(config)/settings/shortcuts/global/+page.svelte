@@ -6,7 +6,7 @@
 	import { Separator } from '@epicenter/ui/separator';
 	import Layers2Icon from '@lucide/svelte/icons/layers-2';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
-	import { rpc } from '$lib/query';
+	import { notify } from '$lib/operations/notify';
 	import { desktopRpc } from '$lib/query/desktop';
 	import { resetGlobalShortcuts } from '$routes/(app)/_layout-utils/register-commands';
 	import ShortcutFormatHelp from '../keyboard-shortcut-recorder/ShortcutFormatHelp.svelte';
@@ -42,7 +42,7 @@
 				onclick={async () => {
 					await desktopRpc.globalShortcuts.unregisterAll();
 					resetGlobalShortcuts();
-					rpc.notify.success({
+					notify.success({
 						title: 'Shortcuts reset',
 						description: 'All global shortcuts have been reset to defaults.',
 					});

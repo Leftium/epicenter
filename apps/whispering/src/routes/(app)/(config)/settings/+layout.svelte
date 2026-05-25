@@ -5,7 +5,7 @@
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import { Separator } from '@epicenter/ui/separator';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
-	import { rpc } from '$lib/query';
+	import { notify } from '$lib/operations/notify';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import SidebarNav from './SidebarNav.svelte';
@@ -83,7 +83,7 @@
 					onConfirm: () => {
 						settings.reset();
 						deviceConfig.reset();
-						rpc.notify.success({
+						notify.success({
 							title: 'Settings reset',
 							description: 'All settings have been reset to defaults.',
 						});

@@ -5,7 +5,7 @@ import { Ok } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { PATHS } from '$lib/constants/paths';
 import { defineQuery } from '$lib/query/client';
-import { notify } from '$lib/query/notify';
+import { notify } from '$lib/operations/notify';
 import { WhisperingErr } from '$lib/result';
 import { services } from '$lib/services';
 import { desktopServices } from '$lib/services/desktop';

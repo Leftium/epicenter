@@ -11,10 +11,10 @@ import { settings } from '$lib/state/settings.svelte';
 import { transformations } from '$lib/state/transformations.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 import * as transformClipboardWindow from '$routes/transform-clipboard/transformClipboardWindow.tauri';
-import { analytics } from './analytics';
+import { analytics } from '$lib/operations/analytics';
+import { notify } from '$lib/operations/notify';
+import { sound } from '$lib/operations/sound';
 import { delivery } from './delivery';
-import { notify } from './notify';
-import { sound } from './sound';
 import { text } from './text';
 import { transcribeBlob } from './transcription';
 

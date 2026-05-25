@@ -10,7 +10,7 @@
 	import MicIcon from '@lucide/svelte/icons/mic';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { rpc } from '$lib/query';
+	import { notify } from '$lib/operations/notify';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 
@@ -48,7 +48,7 @@
 
 	$effect(() => {
 		if (getDevicesQuery.isError) {
-			rpc.notify.warning(getDevicesQuery.error);
+			notify.warning(getDevicesQuery.error);
 		}
 	});
 </script>

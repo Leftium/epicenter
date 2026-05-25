@@ -10,6 +10,8 @@
 	import { nanoid } from 'nanoid/non-secure';
 	import { onDestroy, onMount } from 'svelte';
 	import TransformationPickerBody from '$lib/components/TransformationPickerBody.svelte';
+	import { notify } from '$lib/operations/notify';
+	import { sound } from '$lib/operations/sound';
 	import { rpc } from '$lib/query';
 	import * as transformClipboardWindow from './transformClipboardWindow.tauri';
 
@@ -56,7 +58,7 @@
 		if (!window.__TAURI_INTERNALS__) return;
 
 		if (clipboardQuery.error) {
-			rpc.notify.error({
+			notify.error({
 				title: '❌ Failed to read clipboard',
 				description: clipboardQuery.error.message,
 				action: { type: 'more-details', error: clipboardQuery.error },
@@ -65,7 +67,7 @@
 		}
 
 		if (clipboardQuery.isSuccess && !clipboardQuery.data?.trim()) {
-			rpc.notify.info({
+			notify.info({
 				title: 'Empty clipboard',
 				description: 'Please copy some text before running a transformation.',
 			});
@@ -117,7 +119,7 @@
 					combobox.closeAndFocusTrigger();
 
 					const toastId = nanoid();
-					rpc.notify.loading({
+					notify.loading({
 						id: toastId,
 						title: '🔄 Running transformation...',
 						description: 'Transforming your clipboard text...',
@@ -130,12 +132,12 @@
 						});
 
 					if (transformError) {
-						rpc.notify.error({ id: toastId, ...transformError });
+						notify.error({ id: toastId, ...transformError });
 						await transformClipboardWindow.hide();
 						return;
 					}
 
-					rpc.sound.playSoundIfEnabled('transformationComplete');
+					sound.playSoundIfEnabled('transformationComplete');
 
 					await rpc.delivery.deliverTransformationResult({
 						text: output,

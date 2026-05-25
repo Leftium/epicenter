@@ -7,6 +7,8 @@
 	import { nanoid } from 'nanoid/non-secure';
 	import { goto } from '$app/navigation';
 	import TransformationPickerBody from '$lib/components/TransformationPickerBody.svelte';
+	import { notify } from '$lib/operations/notify';
+	import { sound } from '$lib/operations/sound';
 	import { rpc } from '$lib/query';
 
 	const combobox = useCombobox();
@@ -39,7 +41,7 @@
 				combobox.closeAndFocusTrigger();
 
 				const toastId = nanoid();
-				rpc.notify.loading({
+				notify.loading({
 					id: toastId,
 					title: '🔄 Running transformation...',
 					description:
@@ -49,10 +51,10 @@
 				transformRecording.mutate(
 					{ recordingId, transformation },
 					{
-						onError: (error) => rpc.notify.error(error),
+						onError: (error) => notify.error(error),
 						onSuccess: (result) => {
 							if (result.status === 'failed') {
-								rpc.notify.error({
+								notify.error({
 									title: '⚠️ Transformation error',
 									description: result.error,
 									action: {
@@ -63,7 +65,7 @@
 								return;
 							}
 
-							rpc.sound.playSoundIfEnabled('transformationComplete');
+							sound.playSoundIfEnabled('transformationComplete');
 
 							rpc.delivery.deliverTransformationResult({
 								text: result.output,

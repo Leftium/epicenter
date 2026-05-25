@@ -23,7 +23,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import { Ok, tryAsync } from 'wellcrafted/result';
-	import { rpc } from '$lib/query';
+	import { notify } from '$lib/operations/notify';
 
 	type Props = {
 		/**
@@ -63,7 +63,7 @@
 				await openPath(folderPath);
 			},
 			catch: (error) => {
-				rpc.notify.error({
+				notify.error({
 					title: 'Failed to open folder',
 					description: error instanceof Error ? error.message : 'Unknown error',
 				});

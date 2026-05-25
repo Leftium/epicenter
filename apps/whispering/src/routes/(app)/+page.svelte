@@ -33,6 +33,7 @@
 		VAD_STATE_TO_ICON,
 	} from '$lib/constants/audio';
 	import { getShortcutDisplayLabel } from '$lib/constants/keyboard';
+	import { notify } from '$lib/operations/notify';
 	import { rpc } from '$lib/query';
 	import { WhisperingErr } from '$lib/result';
 	import { services } from '$lib/services';
@@ -122,7 +123,7 @@
 							.map(({ path }) => path);
 
 						if (validPaths.length === 0) {
-							rpc.notify.warning({
+							notify.warning({
 								title: '⚠️ No valid files',
 								description: 'Please drop audio or video files',
 							});
@@ -136,7 +137,7 @@
 							await desktopServices.fs.pathsToFiles(validPaths);
 
 						if (error) {
-							rpc.notify.error({
+							notify.error({
 								title: '❌ Failed to read files',
 								description: error.message,
 							});
@@ -155,7 +156,7 @@
 					description: extractErrorMessage(error),
 				}),
 		});
-		if (error) rpc.notify.error(error);
+		if (error) notify.error(error);
 	});
 
 	onDestroy(() => {
@@ -203,7 +204,7 @@
 
 		if (errs.length > 0) {
 			console.error('Failed to stop active recordings:', errs);
-			rpc.notify.warning({
+			notify.warning({
 				id: toastId,
 				title: '⚠️ Recording may still be active',
 				description:
@@ -213,7 +214,7 @@
 
 		if (settings.get('recording.mode') !== newMode) {
 			settings.set('recording.mode', newMode);
-			rpc.notify.success({
+			notify.success({
 				id: toastId,
 				title: '✅ Recording mode switched',
 				description: `Switched to ${newMode} recording mode`,
@@ -339,7 +340,7 @@
 					}
 				}}
 				onFileRejected={({ file, reason }) => {
-					rpc.notify.error({
+					notify.error({
 						title: '❌ File rejected',
 						description: `${file.name}: ${reason}`,
 					});
@@ -372,7 +373,7 @@
 						onConfirm: () => {
 							services.blobs.audio.revokeUrl(latestRecording.id);
 							recordings.delete(latestRecording.id);
-							rpc.notify.success({
+							notify.success({
 								title: 'Deleted recording!',
 								description: 'Your recording has been deleted.',
 							});

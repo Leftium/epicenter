@@ -1,4 +1,5 @@
 import type { CopyFn } from '@epicenter/ui/copy-button';
+import { notify } from '$lib/operations/notify';
 import { rpc } from '$lib/query';
 
 /**
@@ -21,14 +22,14 @@ export function createCopyFn(contentDescription: string): CopyFn {
 	return async (text: string) => {
 		const { error } = await rpc.text.copyToClipboard({ text });
 		if (error) {
-			await rpc.notify.error({
+			await notify.error({
 				title: `Error copying ${contentDescription} to clipboard`,
 				description: error.message,
 				action: { type: 'more-details', error },
 			});
 			throw error;
 		}
-		await rpc.notify.success({
+		await notify.success({
 			title: `Copied ${contentDescription} to clipboard!`,
 			description: text,
 		});

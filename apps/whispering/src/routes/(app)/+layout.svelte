@@ -5,7 +5,7 @@
 	import { MediaQuery } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
 	import { migrateOldSettings } from '$lib/migration/migrate-settings';
-	import { rpc } from '$lib/query';
+	import { analytics } from '$lib/operations/analytics';
 	import { services } from '$lib/services';
 	import AppLayout from './_components/AppLayout.svelte';
 	import BottomNav from './_components/BottomNav.svelte';
@@ -29,7 +29,7 @@
 
 	// Log app started event once on mount
 	$effect(() => {
-		rpc.analytics.logEvent({ type: 'app_started' });
+		analytics.logEvent({ type: 'app_started' });
 	});
 
 	// Listen for navigation events from other windows

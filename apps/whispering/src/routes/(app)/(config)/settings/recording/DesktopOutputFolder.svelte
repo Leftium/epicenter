@@ -6,7 +6,7 @@
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import { Ok, tryAsync } from 'wellcrafted/result';
 	import { PATHS } from '$lib/constants/paths';
-	import { rpc } from '$lib/query';
+	import { notify } from '$lib/operations/notify';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 
 	// Top-level await to get the default app data directory
@@ -55,7 +55,7 @@
 				await openPath(folderPath);
 			},
 			catch: (error) => {
-				rpc.notify.error({
+				notify.error({
 					title: 'Failed to open folder',
 					description: error instanceof Error ? error.message : 'Unknown error',
 				});

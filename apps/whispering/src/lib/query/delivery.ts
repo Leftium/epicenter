@@ -4,7 +4,7 @@ import { defineMutation } from '$lib/query/client';
 import type { WhisperingError } from '$lib/result';
 import type { TextError } from '$lib/services/text';
 import { settings } from '$lib/state/settings.svelte';
-import { notify } from './notify';
+import { notify } from '$lib/operations/notify';
 import { text as textRpc } from './text';
 
 export const delivery = {

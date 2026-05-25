@@ -7,7 +7,7 @@ import { type } from 'arktype';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { BITRATES_KBPS, DEFAULT_BITRATE_KBPS } from '$lib/constants/audio';
 import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
-import { notify } from '$lib/query/notify';
+import { notify } from '$lib/operations/notify';
 
 // ── Per-key definitions ──────────────────────────────────────────────────────
 

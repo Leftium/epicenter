@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Command } from '$lib/commands';
 	import type { KeyboardEventSupportedKey } from '$lib/constants/keyboard';
-	import { rpc } from '$lib/query';
+	import { notify } from '$lib/operations/notify';
 	import { desktopRpc } from '$lib/query/desktop';
 	import {
 		type Accelerator,
@@ -38,7 +38,7 @@
 					});
 
 				if (unregisterError) {
-					rpc.notify.error({
+					notify.error({
 						title: 'Failed to unregister shortcut',
 						description:
 							'Could not unregister the global shortcut. It may already be in use by another application.',
@@ -51,7 +51,7 @@
 				pressedKeysToTauriAccelerator(keyCombination);
 
 			if (acceleratorError) {
-				rpc.notify.error({
+				notify.error({
 					title: 'Invalid shortcut combination',
 					description: `The key combination "${keyCombination.join('+')}" is not valid. Please try a different combination.`,
 					action: { type: 'more-details', error: acceleratorError },
@@ -71,14 +71,14 @@
 					case 'NoKeyCode':
 					case 'MultipleKeyCodes':
 					case 'GeneratedInvalid':
-						rpc.notify.error({
+						notify.error({
 							title: 'Invalid shortcut combination',
 							description: `The key combination "${keyCombination.join('+')}" is not valid. Please try a different combination.`,
 							action: { type: 'more-details', error: registerError },
 						});
 						break;
 					default:
-						rpc.notify.error({
+						notify.error({
 							title: 'Failed to register shortcut',
 							description:
 								'Could not register the global shortcut. It may already be in use by another application.',
@@ -91,7 +91,7 @@
 
 			deviceConfig.set(`shortcuts.global.${command.id}`, accelerator);
 
-			rpc.notify.success({
+			notify.success({
 				title: `Global shortcut set to ${accelerator}`,
 				description: `Press the shortcut to trigger "${command.title}"`,
 			});
@@ -103,7 +103,7 @@
 				});
 
 			if (unregisterError) {
-				rpc.notify.error({
+				notify.error({
 					title: 'Error clearing global shortcut',
 					description: 'Could not clear the global shortcut.',
 					action: { type: 'more-details', error: unregisterError },
@@ -112,7 +112,7 @@
 
 			deviceConfig.set(`shortcuts.global.${command.id}`, null);
 
-			rpc.notify.success({
+			notify.success({
 				title: 'Global shortcut cleared',
 				description: `Please set a new shortcut to trigger "${command.title}"`,
 			});

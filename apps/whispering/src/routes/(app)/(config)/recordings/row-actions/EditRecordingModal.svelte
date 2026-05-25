@@ -9,6 +9,7 @@
 	import EditIcon from '@lucide/svelte/icons/pencil';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { onDestroy } from 'svelte';
+	import { notify } from '$lib/operations/notify';
 	import { rpc } from '$lib/query';
 	import { services } from '$lib/services';
 	import { type Recording, recordings } from '$lib/state/recordings.svelte';
@@ -201,7 +202,7 @@
 			<Button
 				onclick={() => {
 				recordings.set($state.snapshot(workingCopy));
-				rpc.notify.success({
+				notify.success({
 					title: 'Updated recording!',
 					description: 'Your recording has been updated successfully.',
 				});

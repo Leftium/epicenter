@@ -23,6 +23,7 @@ import {
 	defineTable,
 	docGuid,
 	generateId,
+	IanaTimeZone,
 	type InferTableRow,
 	type Tables,
 } from '@epicenter/workspace';
@@ -41,6 +42,7 @@ export type EntryId = string & Brand<'EntryId'>;
 export const asEntryId = (value: string): EntryId => value as EntryId;
 
 const entriesTable = defineTable(
+	// v1
 	{
 		id: column.string<EntryId>(),
 		title: column.string(),
@@ -53,6 +55,7 @@ const entriesTable = defineTable(
 		createdAt: column.dateTime(),
 		updatedAt: column.dateTime(),
 	},
+	// v2 — added rating
 	{
 		id: column.string<EntryId>(),
 		title: column.string(),
@@ -66,11 +69,31 @@ const entriesTable = defineTable(
 		updatedAt: column.dateTime(),
 		rating: column.number(),
 	},
+	// v3 — split user-meaningful `date` into UTC `date` + IANA `dateZone`.
+	// `date` is the canonical UTC instant; `dateZone` carries the originating
+	// IANA zone so display code can render the user's local wall-clock time.
+	// Per the workspace `<field>` + `<field>Zone` convention.
+	{
+		id: column.string<EntryId>(),
+		title: column.string(),
+		subtitle: column.string(),
+		type: column.json(Type.Array(Type.String())),
+		tags: column.json(Type.Array(Type.String())),
+		pinned: column.boolean(),
+		deletedAt: column.nullable(column.dateTime()),
+		date: column.dateTime(),
+		dateZone: column.ianaTimeZone(),
+		createdAt: column.dateTime(),
+		updatedAt: column.dateTime(),
+		rating: column.number(),
+	},
 ).migrate(({ value, version }) => {
 	switch (version) {
 		case 1:
-			return { ...value, rating: 0 };
+			return { ...value, rating: 0, dateZone: 'UTC' as IanaTimeZone };
 		case 2:
+			return { ...value, dateZone: 'UTC' as IanaTimeZone };
+		case 3:
 			return value;
 	}
 });
@@ -153,8 +176,14 @@ export function createFujiActions(tables: FujiTables) {
 				rating: Type.Optional(
 					Type.Number({ description: 'Rating from 0-5 (0 = unrated)' }),
 				),
+				dateZone: Type.Optional(
+					Type.String({
+						description:
+							'IANA timezone the entry was authored in. Defaults to UTC.',
+					}),
+				),
 			}),
-			handler: ({ title, subtitle, type: entryType, tags, rating }) => {
+			handler: ({ title, subtitle, type: entryType, tags, rating, dateZone }) => {
 				const id = generateId<EntryId>();
 				const now = DateTimeString.now();
 				tables.entries.set({
@@ -167,6 +196,7 @@ export function createFujiActions(tables: FujiTables) {
 					rating: rating ?? 0,
 					deletedAt: null,
 					date: now,
+					dateZone: (dateZone ?? 'UTC') as IanaTimeZone,
 					createdAt: now,
 					updatedAt: now,
 				});
@@ -191,7 +221,10 @@ export function createFujiActions(tables: FujiTables) {
 				),
 				date: Type.Unsafe<DateTimeString>({
 					type: 'string',
-					description: 'User-defined date for the entry',
+					description: 'User-defined date for the entry (UTC ISO 8601)',
+				}),
+				dateZone: Type.String({
+					description: 'IANA timezone for displaying the entry date',
 				}),
 				createdAt: Type.Unsafe<DateTimeString>({
 					type: 'string',
@@ -203,7 +236,11 @@ export function createFujiActions(tables: FujiTables) {
 				}),
 			}),
 			handler: (row) => {
-				tables.entries.set({ ...row, id: asEntryId(row.id) });
+				tables.entries.set({
+					...row,
+					id: asEntryId(row.id),
+					dateZone: row.dateZone as IanaTimeZone,
+				});
 				return { id: row.id };
 			},
 		}),
@@ -231,13 +268,21 @@ export function createFujiActions(tables: FujiTables) {
 				date: Type.Optional(
 					Type.Unsafe<DateTimeString>({
 						type: 'string',
-						description: 'User-defined date for the entry',
+						description: 'User-defined date for the entry (UTC ISO 8601)',
+					}),
+				),
+				dateZone: Type.Optional(
+					Type.String({
+						description: 'IANA timezone for displaying the entry date',
 					}),
 				),
 			}),
-			handler: ({ id, ...fields }) => {
+			handler: ({ id, dateZone, ...fields }) => {
 				return tables.entries.update(id, {
 					...fields,
+					...(dateZone !== undefined && {
+						dateZone: dateZone as IanaTimeZone,
+					}),
 					updatedAt: DateTimeString.now(),
 				});
 			},
@@ -270,19 +315,25 @@ export function createFujiActions(tables: FujiTables) {
 		}),
 		entries_bulk_create: defineMutation({
 			title: 'Bulk Create Entries',
-			description: 'Create multiple entries at once from title + date pairs.',
+			description:
+				'Create multiple entries at once from title + (date, dateZone) pairs.',
 			input: Type.Object({
+				dateZone: Type.String({
+					description:
+						'IANA timezone the entries were authored in. Applied to every row.',
+				}),
 				entries: Type.Array(
 					Type.Object({
 						title: Type.String({ description: 'Entry title' }),
 						date: Type.String({
-							description: 'ISO date string in workspace DateTimeString format',
+							description: 'UTC ISO 8601 instant for the entry',
 						}),
 					}),
 				),
 			}),
-			handler: async ({ entries: items }) => {
+			handler: async ({ dateZone, entries: items }) => {
 				const now = DateTimeString.now();
+				const zone = dateZone as IanaTimeZone;
 				const rows = items.map(({ title, date }) => ({
 					id: generateId<EntryId>(),
 					title,
@@ -293,6 +344,7 @@ export function createFujiActions(tables: FujiTables) {
 					rating: 0,
 					deletedAt: null,
 					date: date as DateTimeString,
+					dateZone: zone,
 					createdAt: now,
 					updatedAt: now,
 				}));

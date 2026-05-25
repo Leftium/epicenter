@@ -2,7 +2,7 @@
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';
-	import { DateTimeString, generateId } from '@epicenter/workspace';
+	import { DateTimeString, generateId, type IanaTimeZone } from '@epicenter/workspace';
 	import { toast } from 'svelte-sonner';
 	import * as Y from 'yjs';
 	import { requireFuji } from '$lib/session';
@@ -57,7 +57,7 @@
 		return shuffled.slice(0, count);
 	}
 
-	const LOCAL_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+	const LOCAL_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone as IanaTimeZone;
 
 	function generateEntryRow(index: number, now: DateTimeString) {
 		const dateNow = Date.now();
@@ -73,7 +73,8 @@
 			pinned: Math.random() < 0.05,
 			rating: Math.random() < 0.7 ? 0 : Math.floor(Math.random() * 5) + 1,
 			deletedAt: null,
-			date: DateTimeString.stringify(new Date(ts).toISOString(), LOCAL_TZ),
+			date: new Date(ts).toISOString() as DateTimeString,
+			dateZone: LOCAL_TZ,
 			createdAt: now,
 			updatedAt: now,
 		};

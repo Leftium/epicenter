@@ -4,7 +4,6 @@ import { audio } from './audio';
 import { delivery } from './delivery';
 import { download } from './download';
 import { notify } from './notify';
-import { recorder } from './recorder';
 import { localShortcuts } from './shortcuts';
 import { sound } from './sound';
 import { text } from './text';
@@ -21,7 +20,6 @@ export const rpc = {
 	actions,
 	audio,
 	download,
-	recorder,
 	localShortcuts,
 	sound,
 	transcription,

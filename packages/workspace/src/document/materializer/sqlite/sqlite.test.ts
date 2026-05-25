@@ -17,7 +17,6 @@
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { type } from 'arktype';
 import * as Y from 'yjs';
 import {
 	attachTables,
@@ -25,14 +24,22 @@ import {
 	defineTable,
 } from '../../../index.js';
 import { isAction, isMutation, isQuery } from '../../../shared/actions.js';
+import { column } from '../../column/index.js';
 import { attachSqliteMaterializer } from './sqlite.js';
 import type { MirrorDatabase } from './types.js';
 
-const postsTable = defineTable(
-	type({ id: 'string', _v: '1', title: 'string', 'published?': 'boolean' }),
-);
+const postsTable = defineTable({
+	_v: column.literal(1),
+	id: column.string(),
+	title: column.string(),
+	published: column.nullable(column.boolean()),
+});
 
-const notesTable = defineTable(type({ id: 'string', _v: '1', body: 'string' }));
+const notesTable = defineTable({
+	_v: column.literal(1),
+	id: column.string(),
+	body: column.string(),
+});
 
 const tableDefinitions = { posts: postsTable, notes: notesTable };
 
@@ -225,6 +232,7 @@ describe('attachSqliteMaterializer', () => {
 				testSetup.workspace.tables.posts.set({
 					id: 'post-1',
 					title: 'Hello mirror',
+					published: null,
 					_v: 1,
 				});
 				testSetup.workspace.tables.posts.set({
@@ -252,6 +260,7 @@ describe('attachSqliteMaterializer', () => {
 				testSetup.workspace.tables.posts.set({
 					id: 'post-1',
 					title: 'Mirrored post',
+					published: null,
 					_v: 1,
 				});
 				testSetup.workspace.tables.notes.set({
@@ -308,6 +317,7 @@ describe('attachSqliteMaterializer', () => {
 				testSetup.workspace.tables.posts.set({
 					id: 'post-1',
 					title: 'Delete me',
+					published: null,
 					_v: 1,
 				});
 
@@ -362,6 +372,7 @@ describe('attachSqliteMaterializer', () => {
 				testSetup.workspace.tables.posts.set({
 					id: 'post-1',
 					title: 'Persisted in Yjs',
+					published: null,
 					_v: 1,
 				});
 
@@ -387,6 +398,7 @@ describe('attachSqliteMaterializer', () => {
 				testSetup.workspace.tables.posts.set({
 					id: 'post-1',
 					title: 'Post row',
+					published: null,
 					_v: 1,
 				});
 				testSetup.workspace.tables.notes.set({
@@ -437,11 +449,13 @@ describe('attachSqliteMaterializer', () => {
 				testSetup.workspace.tables.posts.set({
 					id: 'post-1',
 					title: 'First',
+					published: null,
 					_v: 1,
 				});
 				testSetup.workspace.tables.posts.set({
 					id: 'post-2',
 					title: 'Second',
+					published: null,
 					_v: 1,
 				});
 
@@ -504,6 +518,7 @@ describe('attachSqliteMaterializer', () => {
 				testSetup.workspace.tables.posts.set({
 					id: 'post-1',
 					title: 'Queued row',
+					published: null,
 					_v: 1,
 				});
 				testSetup.workspace[Symbol.dispose]();
@@ -547,21 +562,24 @@ describe('attachSqliteMaterializer', () => {
 		if (hasFts5) {
 			test('search returns ranked results with snippets when fts is configured', async () => {
 				const testSetup = setup({
-					tables: (t) => [
-						{ table: t.posts, config: { fts: ['title'] } },
-						{ table: t.notes },
-					],
+					tables: (t) =>
+						[
+							{ table: t.posts, config: { fts: ['title'] } },
+							{ table: t.notes },
+						] as TableRegistration[],
 				});
 
 				try {
 					testSetup.workspace.tables.posts.set({
 						id: 'post-1',
 						title: 'Epicenter local-first mirror',
+						published: null,
 						_v: 1,
 					});
 					testSetup.workspace.tables.posts.set({
 						id: 'post-2',
 						title: 'Another search result',
+						published: null,
 						_v: 1,
 					});
 

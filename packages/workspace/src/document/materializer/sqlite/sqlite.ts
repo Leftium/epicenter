@@ -11,7 +11,6 @@
  */
 
 import { debounce } from '@epicenter/util';
-import type { StandardJSONSchemaV1 } from '@standard-schema/spec';
 import Type from 'typebox';
 import {
 	defineErrors,
@@ -21,8 +20,7 @@ import {
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
 import { defineMutation, defineQuery } from '../../../shared/actions.js';
-import { standardSchemaToJsonSchema } from '../../../shared/standard-schema.js';
-import type { BaseRow, Table, TableDefinition } from '../../attach-table.js';
+import type { BaseRow, Table } from '../../attach-table.js';
 import { generateDdl, quoteIdentifier } from './ddl.js';
 import { ftsSearch, setupFtsTable } from './fts.js';
 import type { MirrorDatabase, SearchOptions, SearchResult } from './types.js';
@@ -131,9 +129,10 @@ export function attachSqliteMaterializer(
 	async function insertRow(tableName: string, row: BaseRow) {
 		const config = registered.get(tableName)?.config;
 		const serialize = config?.serialize ?? serializeValue;
-		const keys = Object.keys(row);
+		const rowRecord = row as unknown as Record<string, unknown>;
+		const keys = Object.keys(rowRecord);
 		const placeholders = keys.map(() => '?').join(', ');
-		const values = keys.map((key) => serialize(row[key]));
+		const values = keys.map((key) => serialize(rowRecord[key]));
 		const columns = keys.map(quoteIdentifier).join(', ');
 
 		const stmt = await db.prepare(
@@ -163,7 +162,8 @@ export function attachSqliteMaterializer(
 		);
 
 		for (const row of rows) {
-			const values = keys.map((key) => serialize(row[key]));
+			const rowRecord = row as unknown as Record<string, unknown>;
+			const values = keys.map((key) => serialize(rowRecord[key]));
 			await stmt.run(...values);
 		}
 	}
@@ -299,11 +299,11 @@ export function attachSqliteMaterializer(
 		if (isDisposed) return;
 
 		for (const [tableName, entry] of registered) {
-			const jsonSchema = tableDefinitionToJsonSchema(
-				entry.table.definition,
-				tableName,
-			);
-			await db.run(generateDdl(tableName, jsonSchema));
+			const rowSchema = entry.table.definition.schema.row as unknown as Record<
+				string,
+				unknown
+			>;
+			await db.run(generateDdl(tableName, rowSchema));
 			if (entry.config.fts && entry.config.fts.length > 0)
 				await setupFtsTable(db, tableName, entry.config.fts);
 		}
@@ -398,25 +398,6 @@ export function attachSqliteMaterializer(
 // ════════════════════════════════════════════════════════════════════════════
 // MODULE-LEVEL HELPERS
 // ════════════════════════════════════════════════════════════════════════════
-
-function tableDefinitionToJsonSchema(
-	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly, defineTable already constrains schemas
-	definition: TableDefinition<any>,
-	tableName: string,
-): Record<string, unknown> {
-	const schema = definition.schema;
-	if (
-		schema === null ||
-		schema === undefined ||
-		(typeof schema !== 'object' && typeof schema !== 'function') ||
-		!('~standard' in schema)
-	) {
-		throw new Error(
-			`SQLite materializer definition for "${tableName}" is not a Standard Schema (missing ~standard).`,
-		);
-	}
-	return standardSchemaToJsonSchema(schema as StandardJSONSchemaV1);
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);

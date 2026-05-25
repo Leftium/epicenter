@@ -11,18 +11,20 @@ import { describe, expect, test } from 'bun:test';
 import type { Keyring } from '@epicenter/encryption';
 import { bytesToBase64 } from '@epicenter/encryption';
 import { randomBytes } from '@noble/ciphers/utils.js';
-import { type } from 'arktype';
 import * as Y from 'yjs';
 import { attachEncryption } from './attach-encryption.js';
+import { column } from './column/index.js';
 import { defineTable } from './define-table.js';
 
 function toKeyring(key: Uint8Array): Keyring {
 	return [{ version: 1, keyBytesBase64: bytesToBase64(key) }];
 }
 
-const encryptedRowDefinition = defineTable(
-	type({ id: 'string', title: 'string', _v: '1' }),
-);
+const encryptedRowDefinition = defineTable({
+	_v: column.literal(1),
+	id: column.string(),
+	title: column.string(),
+});
 
 describe('attachEncryption', () => {
 	test('keyring callback throwing at registration surfaces the throw', () => {
@@ -41,9 +43,11 @@ describe('attachEncryption', () => {
 		const keyring = toKeyring(randomBytes(32));
 		const ydoc = new Y.Doc({ guid: 'enc-readonly-table', gc: true });
 		const encryption = attachEncryption(ydoc, { keyring: () => keyring });
-		const definition = defineTable(
-			type({ id: 'string', title: 'string', _v: '1' }),
-		);
+		const definition = defineTable({
+			_v: column.literal(1),
+			id: column.string(),
+			title: column.string(),
+		});
 		const writer = encryption.attachTable('entries', definition);
 		const reader = encryption.attachReadonlyTable('entries', definition);
 
@@ -66,9 +70,11 @@ describe('attachEncryption', () => {
 		const keyring = toKeyring(randomBytes(32));
 		const ydoc = new Y.Doc({ guid: 'enc-readonly-tables', gc: true });
 		const encryption = attachEncryption(ydoc, { keyring: () => keyring });
-		const definition = defineTable(
-			type({ id: 'string', title: 'string', _v: '1' }),
-		);
+		const definition = defineTable({
+			_v: column.literal(1),
+			id: column.string(),
+			title: column.string(),
+		});
 		const writers = encryption.attachTables({ entries: definition });
 		const readers = encryption.attachReadonlyTables({
 			entries: definition,

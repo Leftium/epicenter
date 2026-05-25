@@ -9,22 +9,19 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type } from 'arktype';
 import { createLogger } from 'wellcrafted/logger';
 import * as Y from 'yjs';
-import { attachTables, defineTable } from '../index.js';
+import { attachTables, column, defineTable } from '../index.js';
 import { attachSqliteMaterializer } from './materializer/sqlite/sqlite.js';
 import { openSqliteReader } from './open-sqlite-reader.js';
 import { openWriterSqlite } from './sqlite-writer.js';
 
-const entriesTable = defineTable(
-	type({
-		id: 'string',
-		_v: '1',
-		title: 'string',
-		body: 'string',
-	}),
-);
+const entriesTable = defineTable({
+	_v: column.literal(1),
+	id: column.string(),
+	title: column.string(),
+	body: column.string(),
+});
 
 let workDir: string;
 

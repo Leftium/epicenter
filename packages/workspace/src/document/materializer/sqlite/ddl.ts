@@ -1,27 +1,22 @@
 /**
- * Generate SQLite DDL from workspace JSON Schema descriptors.
+ * Generate SQLite DDL from a workspace table's latest-version row schema.
  *
- * The SQLite materializer only needs the latest materialized row shape. When a table
- * schema has multiple versions, this module picks the highest `_v` variant and
- * generates a `CREATE TABLE IF NOT EXISTS` statement that preserves the exact
- * workspace field names.
- *
- * Complex values like arrays and objects are stored as JSON-serialized `TEXT`
- * columns because the materializer is a read cache, not the source-of-truth schema.
+ * Callers pass `definition.schema.row` (a TypeBox `TObject` which is itself a
+ * JSON Schema). Column storage class and nullability come from
+ * `deriveStorage` / `isNullable`, so `column.nullable(column.X())` rows map
+ * cleanly to nullable SQLite columns.
  *
  * @module
  */
 
+import type { TSchema } from 'typebox';
+import { deriveStorage, isNullable } from '../../column/derive.js';
+
 type JsonSchema = Record<string, unknown>;
 
-const SQLITE_TYPE_BY_JSON_TYPE: Record<string, string> = {
-	string: 'TEXT',
-	number: 'REAL',
-	integer: 'INTEGER',
-	boolean: 'INTEGER',
-	object: 'TEXT',
-	array: 'TEXT',
-};
+function asSchema(value: JsonSchema): TSchema {
+	return value as unknown as TSchema;
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // PUBLIC API
@@ -178,24 +173,13 @@ function columnDef(
 		return `${quotedName} INTEGER NOT NULL`;
 	}
 
-	if (Array.isArray(propSchema.enum)) {
-		return appendNullability(`${quotedName} TEXT`, isRequired);
-	}
+	const schema = asSchema(propSchema);
+	const storage = deriveStorage(schema);
+	const nullable = !isRequired || isNullable(schema);
 
-	const jsonType =
-		typeof propSchema.type === 'string' ? propSchema.type : undefined;
-	const sqliteType =
-		jsonType === undefined ? undefined : SQLITE_TYPE_BY_JSON_TYPE[jsonType];
-
-	return appendNullability(`${quotedName} ${sqliteType ?? 'TEXT'}`, isRequired);
-}
-
-function appendNullability(column: string, isRequired: boolean) {
-	if (!isRequired) {
-		return column;
-	}
-
-	return `${column} NOT NULL`;
+	return nullable
+		? `${quotedName} ${storage}`
+		: `${quotedName} ${storage} NOT NULL`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

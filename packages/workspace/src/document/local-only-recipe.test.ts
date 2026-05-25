@@ -16,12 +16,12 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { type } from 'arktype';
 import { IDBKeyRange, indexedDB } from 'fake-indexeddb';
 import * as Y from 'yjs';
 import { attachBroadcastChannel } from './attach-broadcast-channel.js';
 import { attachIndexedDb } from './attach-indexed-db.js';
 import { attachTable } from './attach-table.js';
+import { column } from './column/index.js';
 import { defineTable } from './define-table.js';
 
 Object.assign(globalThis, { indexedDB, IDBKeyRange });
@@ -41,7 +41,11 @@ class FakeBroadcastChannel {
 	close(): void {}
 }
 
-const NoteDef = defineTable(type({ id: 'string', body: 'string', _v: '1' }));
+const NoteDef = defineTable({
+	_v: column.literal(1),
+	id: column.string(),
+	body: column.string(),
+});
 
 describe('local-only recipe', () => {
 	beforeEach(() => {

@@ -105,9 +105,11 @@ export const literal = Type.Literal;
 export function enum_<const T extends readonly TLiteralValue[]>(
 	values: T,
 	opts?: TSchemaOptions,
-): TUnion<TLiteral<T[number]>[]> {
+): TUnion<{ -readonly [K in keyof T]: TLiteral<T[K] & TLiteralValue> }> {
 	const members = values.map((v) => Type.Literal(v));
-	return Type.Union(members, opts) as TUnion<TLiteral<T[number]>[]>;
+	return Type.Union(members, opts) as TUnion<{
+		-readonly [K in keyof T]: TLiteral<T[K] & TLiteralValue>;
+	}>;
 }
 
 /**

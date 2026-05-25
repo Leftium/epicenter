@@ -19,8 +19,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { type } from 'arktype';
 import * as Y from 'yjs';
+import { column } from '../../column/index.js';
 import {
 	attachTables,
 	createDisposableCache,
@@ -36,11 +36,18 @@ import {
 // Test Table Definitions
 // ============================================================================
 
-const postsTable = defineTable(
-	type({ id: 'string', title: 'string', published: 'boolean', _v: '1' }),
-);
+const postsTable = defineTable({
+	_v: column.literal(1),
+	id: column.string(),
+	title: column.string(),
+	published: column.boolean(),
+});
 
-const notesTable = defineTable(type({ id: 'string', body: 'string', _v: '1' }));
+const notesTable = defineTable({
+	_v: column.literal(1),
+	id: column.string(),
+	body: column.string(),
+});
 
 const tableDefinitions = { posts: postsTable, notes: notesTable };
 
@@ -432,7 +439,7 @@ describe('pull', () => {
 						filename: (row) => `${row.id}-custom.md`,
 						toMarkdown: (row) => ({
 							frontmatter: { id: row.id },
-							body: row.body as string,
+							body: (row as unknown as { body: string }).body,
 						}),
 					},
 				},

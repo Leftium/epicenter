@@ -153,7 +153,6 @@ describe('createEncryptedYkvLww', () => {
 			expect(entry?.val).toBe('raw-value');
 			expect(isEncryptedBlob(entry?.val)).toBe(false);
 		});
-
 	});
 
 	describe('Observer decryption', () => {
@@ -273,8 +272,7 @@ describe('createEncryptedYkvLww', () => {
 		});
 	});
 
-	describe('reads always return plaintext', () => {
-	});
+	describe('reads always return plaintext', () => {});
 
 	describe('Two-device sync with same key', () => {
 		test('encrypted value syncs and decrypts correctly', () => {
@@ -322,7 +320,6 @@ describe('createEncryptedYkvLww', () => {
 			expect(kv1.get('x')).toBe('from-client-2-later');
 			expect(kv2.get('x')).toBe('from-client-2-later');
 		});
-
 	});
 
 	describe('Key becomes available mid-session', () => {

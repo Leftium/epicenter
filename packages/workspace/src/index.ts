@@ -199,6 +199,10 @@ export {
 	typedDispatch,
 } from './document/dispatch.js';
 export { docGuid } from './document/doc-guid.js';
+export {
+	tablesToDrizzleSchema,
+	type TablesToDrizzleSchema,
+} from './document/drizzle-schema.js';
 export type { SyncStatus } from './document/internal/sync-supervisor.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 export {

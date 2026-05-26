@@ -2,7 +2,11 @@
 	import type { Command } from '$lib/commands';
 	import type { KeyboardEventSupportedKey } from '$lib/constants/keyboard';
 	import { notify } from '$lib/operations/notify';
-	import type { Accelerator, Tauri } from '$lib/tauri';
+	import type { Tauri } from '$lib/tauri';
+	import {
+		type Accelerator,
+		pressedKeysToAccelerator,
+	} from '$lib/utils/accelerator';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { type PressedKeys } from '$lib/utils/createPressedKeys.svelte';
 	import { createKeyRecorder } from './create-key-recorder.svelte';
@@ -48,7 +52,7 @@
 			}
 
 			const { data: accelerator, error: acceleratorError } =
-				tauri.globalShortcuts.pressedKeysToTauriAccelerator(keyCombination);
+				pressedKeysToAccelerator(keyCombination);
 
 			if (acceleratorError) {
 				notify.error({

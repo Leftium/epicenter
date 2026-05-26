@@ -1,8 +1,9 @@
 /**
  * Tauri-only capability namespace. Everything that requires the Tauri
- * runtime lives in this file (fs, command, permissions, ffmpeg, tray,
- * globalShortcuts, autostart) plus a `rpc` sub-namespace for the subset
- * that needs TanStack caching, error transformation, or invalidation.
+ * runtime lives in this file: fs, command, permissions, ffmpeg, tray,
+ * globalShortcuts, autostart. The subset that needs TanStack caching,
+ * error transformation, or invalidation is exposed in the same shape
+ * (no sub-namespace), with each leaf picking one canonical call form.
  *
  * Two files, one import path:
  *
@@ -57,12 +58,10 @@ import {
 	unregister as tauriUnregister,
 	unregisterAll as tauriUnregisterAll,
 } from '@tauri-apps/plugin-global-shortcut';
-import * as os from '@tauri-apps/plugin-os';
 import { exit } from '@tauri-apps/plugin-process';
 import type { Child, ChildProcess } from '@tauri-apps/plugin-shell';
 import mime from 'mime';
 import { nanoid } from 'nanoid/non-secure';
-import type { Brand } from 'wellcrafted/brand';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -75,20 +74,15 @@ import type { Command, ShortcutEventState } from '$lib/commands';
 import { commandCallbacks } from '$lib/commands';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { getFileExtensionFromFfmpegOptions } from '$lib/constants/ffmpeg';
-import {
-	ACCELERATOR_KEY_CODES,
-	ACCELERATOR_MODIFIER_KEYS,
-	ACCELERATOR_MODIFIER_SORT_PRIORITY,
-	ACCELERATOR_PUNCTUATION_KEYS,
-	type AcceleratorKeyCode,
-	type AcceleratorModifier,
-	FUNCTION_KEY_PATTERN,
-	KEYBOARD_EVENT_SPECIAL_KEY_TO_ACCELERATOR_KEY_CODE_MAP,
-	type KeyboardEventSupportedKey,
-} from '$lib/constants/keyboard';
 import { IS_MACOS } from '$lib/constants/platform';
 import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
 import { WhisperingErr } from '$lib/result';
+import {
+	type Accelerator,
+	AcceleratorError,
+	type InvalidAcceleratorError,
+	isValidElectronAccelerator,
+} from '$lib/utils/accelerator';
 
 // fs ----------------------------------------------------------------
 export const FsError = defineErrors({
@@ -496,21 +490,10 @@ const _traySetIcon = (recorderState: WhisperingRecordingState) =>
 	});
 
 // globalShortcuts ---------------------------------------------------
+// Pure accelerator parsing/validation lives in `$lib/utils/accelerator`
+// since it has no Tauri runtime dependency. Only the registration ops
+// (which talk to Tauri's global-shortcut plugin) live here.
 export const ShortcutError = defineErrors({
-	InvalidFormat: ({ accelerator }: { accelerator: string }) => ({
-		message: `Invalid accelerator format: '${accelerator}'. Must follow Electron accelerator specification.`,
-		accelerator,
-	}),
-	NoKeyCode: () => ({
-		message: 'No valid key code found in pressed keys',
-	}),
-	MultipleKeyCodes: () => ({
-		message: 'Multiple key codes not allowed in accelerator',
-	}),
-	GeneratedInvalid: ({ accelerator }: { accelerator: string }) => ({
-		message: `Generated invalid accelerator: ${accelerator}`,
-		accelerator,
-	}),
 	RegisterFailed: ({
 		accelerator,
 		cause,
@@ -539,101 +522,14 @@ export const ShortcutError = defineErrors({
 	}),
 });
 export type ShortcutError = InferErrors<typeof ShortcutError>;
-type InvalidAcceleratorError =
-	| InferError<typeof ShortcutError.InvalidFormat>
-	| InferError<typeof ShortcutError.NoKeyCode>
-	| InferError<typeof ShortcutError.MultipleKeyCodes>
-	| InferError<typeof ShortcutError.GeneratedInvalid>;
 type GlobalShortcutServiceError =
 	| InferError<typeof ShortcutError.RegisterFailed>
 	| InferError<typeof ShortcutError.UnregisterFailed>
 	| InferError<typeof ShortcutError.UnregisterAllFailed>;
 
-/**
- * Brand for Electron accelerator strings.
- *
- * @example 'CommandOrControl+P'
- * @see https://www.electronjs.org/docs/latest/api/accelerator
- */
-export type Accelerator = string & Brand<'Accelerator'>;
-
-function isValidElectronAccelerator(accelerator: string): boolean {
-	const parts = accelerator.split('+');
-	if (parts.length === 0) return false;
-	const modifiers = parts.slice(0, -1);
-	const lastPart = parts.at(-1);
-	if (!ACCELERATOR_KEY_CODES.includes(lastPart as AcceleratorKeyCode))
-		return false;
-	for (const modifier of modifiers) {
-		if (!ACCELERATOR_MODIFIER_KEYS.includes(modifier as AcceleratorModifier))
-			return false;
-	}
-	if (new Set(modifiers).size !== modifiers.length) return false;
-	return true;
-}
-
-function convertToModifier(
-	key: KeyboardEventSupportedKey,
-): AcceleratorModifier | null {
-	const platform = os.type();
-	switch (key) {
-		case 'control':
-			return 'Control';
-		case 'shift':
-			return 'Shift';
-		case 'alt':
-			return platform === 'macos' ? 'Option' : 'Alt';
-		case 'meta':
-			return platform === 'macos' ? 'Command' : 'Super';
-		case 'altgraph':
-			return platform === 'macos' ? null : 'AltGr';
-		case 'super':
-			return 'Super';
-		case 'fn':
-			return null;
-		default:
-			return null;
-	}
-}
-
-function convertToKeyCode(
-	key: KeyboardEventSupportedKey,
-): AcceleratorKeyCode | null {
-	if (key.length === 1 && key >= 'a' && key <= 'z') {
-		return key.toUpperCase() as AcceleratorKeyCode;
-	}
-	if (key.length === 1 && key >= '0' && key <= '9') {
-		return key as AcceleratorKeyCode;
-	}
-	if (FUNCTION_KEY_PATTERN.test(key)) {
-		return key.toUpperCase() as AcceleratorKeyCode;
-	}
-	const mappedKey = KEYBOARD_EVENT_SPECIAL_KEY_TO_ACCELERATOR_KEY_CODE_MAP[key];
-	if (mappedKey) return mappedKey;
-	if (
-		ACCELERATOR_PUNCTUATION_KEYS.includes(
-			key as (typeof ACCELERATOR_PUNCTUATION_KEYS)[number],
-		)
-	) {
-		return key as AcceleratorKeyCode;
-	}
-	return null;
-}
-
-function sortModifiers(
-	modifiers: AcceleratorModifier[],
-): AcceleratorModifier[] {
-	return [...modifiers].sort((a, b) => {
-		const priorityA = ACCELERATOR_MODIFIER_SORT_PRIORITY[a] ?? 99;
-		const priorityB = ACCELERATOR_MODIFIER_SORT_PRIORITY[b] ?? 99;
-		return priorityA - priorityB;
-	});
-}
-
 // Raw globalShortcuts ops; public `tauri.globalShortcuts` below
 // exposes TanStack-wrapped versions of register/unregister/unregisterAll
-// (named registerCommand/unregisterCommand/unregisterAll) plus the
-// pure helpers.
+// (named registerCommand/unregisterCommand/unregisterAll).
 
 async function _registerShortcut({
 	accelerator,
@@ -650,7 +546,7 @@ async function _registerShortcut({
 	if (unregisterError) return Err(unregisterError);
 
 	if (!isValidElectronAccelerator(accelerator)) {
-		return ShortcutError.InvalidFormat({ accelerator });
+		return AcceleratorError.InvalidFormat({ accelerator });
 	}
 
 	const { error: registerError } = await tryAsync({
@@ -692,36 +588,6 @@ async function _unregisterAllShortcuts(): Promise<
 	});
 	if (error) return Err(error);
 	return Ok(undefined);
-}
-
-function pressedKeysToTauriAccelerator(
-	pressedKeys: KeyboardEventSupportedKey[],
-): Result<Accelerator, InvalidAcceleratorError> {
-		const modifiers: AcceleratorModifier[] = [];
-		const keyCodes: AcceleratorKeyCode[] = [];
-
-		for (const key of pressedKeys) {
-			const modifier = convertToModifier(key);
-			if (modifier) {
-				modifiers.push(modifier);
-				continue;
-			}
-			const keyCode = convertToKeyCode(key);
-			if (keyCode) keyCodes.push(keyCode);
-		}
-
-		if (keyCodes.length === 0) return ShortcutError.NoKeyCode();
-		if (keyCodes.length > 1) return ShortcutError.MultipleKeyCodes();
-
-		const sortedModifiers = sortModifiers(modifiers);
-		const accelerator = [...sortedModifiers, keyCodes.at(0)].join(
-			'+',
-		) as Accelerator;
-
-	if (!isValidElectronAccelerator(accelerator)) {
-		return ShortcutError.GeneratedInvalid({ accelerator });
-	}
-	return Ok(accelerator);
 }
 
 // autostart ---------------------------------------------------------
@@ -851,9 +717,6 @@ const tray = {
 };
 
 const globalShortcuts = {
-	isValidElectronAccelerator,
-	pressedKeysToTauriAccelerator,
-
 	registerCommand: defineMutation({
 		mutationKey: ['shortcuts', 'registerCommandGlobally'] as const,
 		mutationFn: ({

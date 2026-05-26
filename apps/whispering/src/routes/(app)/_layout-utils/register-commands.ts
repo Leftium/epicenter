@@ -3,7 +3,8 @@ import { commands } from '$lib/commands';
 import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
 import { notify } from '$lib/operations/notify';
 import { localShortcuts } from '$lib/operations/shortcuts';
-import { tauri, type Accelerator } from '$lib/tauri';
+import { tauri } from '$lib/tauri';
+import type { Accelerator } from '$lib/utils/accelerator';
 import {
 	type CommandId,
 	shortcutStringToArray,

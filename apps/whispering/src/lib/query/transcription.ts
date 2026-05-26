@@ -43,7 +43,9 @@ function isUploadTranscriptionService(serviceId: string): boolean {
  */
 function blobLooksLikeWav(blob: Blob): boolean {
 	const type = blob.type.toLowerCase();
-	return type === 'audio/wav' || type === 'audio/wave' || type === 'audio/x-wav';
+	return (
+		type === 'audio/wav' || type === 'audio/wave' || type === 'audio/x-wav'
+	);
 }
 
 function getOutputLanguage(): SupportedLanguage {
@@ -181,10 +183,7 @@ export async function transcribeBlob(
 	// explicitly enabled the old toggle AND the new Opus path didn't already
 	// compress (uploadCompression === 'wav' disables the new path). Will be
 	// removed once the FFmpeg sidecar deletion (Wave 4) lands.
-	if (
-		!shouldOpusCompress &&
-		settings.get('transcription.compressionEnabled')
-	) {
+	if (!shouldOpusCompress && settings.get('transcription.compressionEnabled')) {
 		const { data: compressedBlob, error: compressionError } =
 			await desktopServices.ffmpeg.compressAudioBlob(
 				blob,

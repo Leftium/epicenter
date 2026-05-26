@@ -1,9 +1,8 @@
-import { invoke } from '@tauri-apps/api/core';
 import { exists, stat } from '@tauri-apps/plugin-fs';
-import { type } from 'arktype';
-import { extractErrorMessage } from 'wellcrafted/error';
-import { Ok, type Result, tryAsync } from 'wellcrafted/result';
-import { WhisperingErr, type WhisperingError } from '$lib/result';
+import { Ok, tryAsync } from 'wellcrafted/result';
+import { WhisperingErr, type WhisperingResult } from '$lib/result';
+
+import { transcribeLocal } from './local-transcription';
 import type { ParakeetModelConfig } from './types';
 
 /**
@@ -16,7 +15,7 @@ export const PARAKEET_MODELS = [
 		name: 'Parakeet TDT 0.6B v3 (INT8)',
 		description: 'Fast and accurate NVIDIA NeMo model',
 		size: '~670 MB',
-		sizeBytes: 670_619_803, // Total size of all individual files
+		sizeBytes: 670_619_803,
 		engine: 'parakeet',
 		directoryName: 'parakeet-tdt-0.6b-v3-int8',
 		files: [
@@ -49,17 +48,11 @@ export const PARAKEET_MODELS = [
 	},
 ] as const satisfies readonly ParakeetModelConfig[];
 
-const ParakeetErrorType = type({
-	name: "'AudioReadError' | 'FfmpegNotFoundError' | 'ModelLoadError' | 'TranscriptionError'",
-	message: 'string',
-});
-
 export const ParakeetTranscriptionServiceLive = {
 	async transcribe(
 		audioBlob: Blob,
 		options: { modelPath: string },
-	): Promise<Result<string, WhisperingError>> {
-		// Pre-validation
+	): Promise<WhisperingResult<string>> {
 		if (!options.modelPath) {
 			return WhisperingErr({
 				title: '📁 Model Directory Required',
@@ -72,7 +65,6 @@ export const ParakeetTranscriptionServiceLive = {
 			});
 		}
 
-		// Check if model directory exists
 		const { data: isExists } = await tryAsync({
 			try: () => exists(options.modelPath),
 			catch: () => Ok(false),
@@ -90,7 +82,6 @@ export const ParakeetTranscriptionServiceLive = {
 			});
 		}
 
-		// Check if it's actually a directory
 		const { data: stats } = await tryAsync({
 			try: () => stat(options.modelPath),
 			catch: () => Ok(null),
@@ -109,85 +100,10 @@ export const ParakeetTranscriptionServiceLive = {
 			});
 		}
 
-		// Convert audio blob to byte array
-		const arrayBuffer = await audioBlob.arrayBuffer();
-		const audioData = Array.from(new Uint8Array(arrayBuffer));
-
-		// Call Tauri command to transcribe with Parakeet
-		// Note: Parakeet doesn't support language selection, temperature, or prompt
-		const result = await tryAsync({
-			try: () =>
-				invoke<string>('transcribe_audio_parakeet', {
-					audioData: audioData,
-					modelPath: options.modelPath,
-				}),
-			catch: (unknownError) => {
-				const result = ParakeetErrorType(unknownError);
-				if (result instanceof type.errors) {
-					return WhisperingErr({
-						title: '❌ Unexpected Parakeet Error',
-						description: extractErrorMessage(unknownError),
-						action: { type: 'more-details', error: unknownError },
-					});
-				}
-				const error = result;
-
-				switch (error.name) {
-					case 'ModelLoadError':
-						return WhisperingErr({
-							title: '🤖 Model Loading Error',
-							description: error.message,
-							action: {
-								type: 'more-details',
-								error: new Error(error.message),
-							},
-						});
-
-					case 'FfmpegNotFoundError':
-						return WhisperingErr({
-							title: '🛠️ FFmpeg Not Installed',
-							description:
-								'Parakeet requires FFmpeg to convert audio formats. Please install FFmpeg or switch to CPAL recording at 16kHz.',
-							action: {
-								type: 'link',
-								label: 'Install FFmpeg',
-								href: '/install-ffmpeg',
-							},
-						});
-
-					case 'AudioReadError':
-						return WhisperingErr({
-							title: '🔊 Audio Read Error',
-							description: error.message,
-							action: {
-								type: 'more-details',
-								error: new Error(error.message),
-							},
-						});
-
-					case 'TranscriptionError':
-						return WhisperingErr({
-							title: '❌ Transcription Error',
-							description: error.message,
-							action: {
-								type: 'more-details',
-								error: new Error(error.message),
-							},
-						});
-
-					default:
-						return WhisperingErr({
-							title: '❌ Parakeet Error',
-							description: 'An unexpected error occurred.',
-							action: {
-								type: 'more-details',
-								error: new Error(String(error)),
-							},
-						});
-				}
-			},
-		});
-
-		return result;
+		return transcribeLocal(
+			audioBlob,
+			{ engine: 'parakeet', modelPath: options.modelPath },
+			'Parakeet',
+		);
 	},
 };

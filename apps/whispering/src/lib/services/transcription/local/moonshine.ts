@@ -1,10 +1,9 @@
-import { invoke } from '@tauri-apps/api/core';
 import { stat } from '@tauri-apps/plugin-fs';
 import { regex } from 'arkregex';
-import { type } from 'arktype';
-import { extractErrorMessage } from 'wellcrafted/error';
-import { Ok, type Result, tryAsync } from 'wellcrafted/result';
-import { WhisperingErr, type WhisperingError } from '$lib/result';
+import { Ok, tryAsync } from 'wellcrafted/result';
+import { WhisperingErr, type WhisperingResult } from '$lib/result';
+
+import { transcribeLocal } from './local-transcription';
 import {
 	MOONSHINE_LANGUAGES,
 	MOONSHINE_VARIANTS,
@@ -23,10 +22,8 @@ const HF_BASE = 'https://huggingface.co/UsefulSensors/moonshine/resolve/main';
 
 /**
  * Type-safe regex pattern for validating Moonshine model paths.
- * Matches paths ending with `moonshine-{variant}-{lang}`.
- *
- * Built from MOONSHINE_VARIANTS and MOONSHINE_LANGUAGES arrays for consistency.
- * The Rust side extracts variant from the path to determine model architecture.
+ * Matches paths ending with `moonshine-{variant}-{lang}`. The captured
+ * variant is forwarded on the wire to Rust.
  */
 const MOONSHINE_DIR_PATTERN = regex.as<
 	`${string}moonshine-${MoonshineVariant}-${MoonshineLanguage}`,
@@ -45,8 +42,8 @@ const MOONSHINE_DIR_PATTERN = regex.as<
  * - variant: "tiny" or "base" (determines model architecture)
  * - lang: language code (e.g., "en", "ar", "zh")
  *
- * The Rust side extracts the variant from the directory name to determine
- * which MoonshineModelParams to use (tiny: 6 layers, base: 8 layers).
+ * The variant is parsed from the directory name on the JS side and passed
+ * to Rust on the wire as part of the transcribe_audio config payload.
  *
  * ## Model Sizes
  *
@@ -63,7 +60,7 @@ export const MOONSHINE_MODELS = [
 		name: 'Moonshine Tiny (English)',
 		description: 'Fast and efficient English transcription (~28 MB)',
 		size: '~30 MB',
-		sizeBytes: 30_166_481, // encoder + decoder + tokenizer
+		sizeBytes: 30_166_481,
 		engine: 'moonshine',
 		language: 'en',
 		directoryName: 'moonshine-tiny-en',
@@ -90,7 +87,7 @@ export const MOONSHINE_MODELS = [
 		name: 'Moonshine Base (English)',
 		description: 'Higher accuracy English transcription (~65 MB)',
 		size: '~65 MB',
-		sizeBytes: 64_997_467, // encoder + decoder + tokenizer
+		sizeBytes: 64_997_467,
 		engine: 'moonshine',
 		language: 'en',
 		directoryName: 'moonshine-base-en',
@@ -114,17 +111,11 @@ export const MOONSHINE_MODELS = [
 	},
 ] as const satisfies readonly MoonshineModelConfig[];
 
-const MoonshineErrorType = type({
-	name: "'AudioReadError' | 'FfmpegNotFoundError' | 'ModelLoadError' | 'TranscriptionError'",
-	message: 'string',
-});
-
 export const MoonshineTranscriptionServiceLive = {
 	async transcribe(
 		audioBlob: Blob,
 		{ modelPath }: { modelPath: string },
-	): Promise<Result<string, WhisperingError>> {
-		// Pre-validation
+	): Promise<WhisperingResult<string>> {
 		if (!modelPath) {
 			return WhisperingErr({
 				title: 'Model Directory Required',
@@ -137,7 +128,6 @@ export const MoonshineTranscriptionServiceLive = {
 			});
 		}
 
-		// Check if model directory exists and is a directory (single I/O call)
 		const { data: stats } = await tryAsync({
 			try: () => stat(modelPath),
 			catch: () => Ok(null),
@@ -168,8 +158,8 @@ export const MoonshineTranscriptionServiceLive = {
 			});
 		}
 
-		// Validate path ends with moonshine-{variant}-{lang}
-		if (!MOONSHINE_DIR_PATTERN.test(modelPath)) {
+		const match = MOONSHINE_DIR_PATTERN.exec(modelPath);
+		if (!match) {
 			return WhisperingErr({
 				title: 'Invalid Model Directory Name',
 				description: `Model path must end with moonshine-{variant}-{lang} (e.g., "moonshine-tiny-en", "moonshine-base-en")`,
@@ -181,85 +171,13 @@ export const MoonshineTranscriptionServiceLive = {
 			});
 		}
 
-		// Convert audio blob to byte array
-		const arrayBuffer = await audioBlob.arrayBuffer();
-		const audioData = Array.from(new Uint8Array(arrayBuffer));
+		// arkregex's RegexExecArray indexes captures: [0] full match, [1] variant, [2] language
+		const variant = match[1];
 
-		// Call Tauri command to transcribe with Moonshine
-		// The Rust side extracts variant from the model path directory name
-		const result = await tryAsync({
-			try: () =>
-				invoke<string>('transcribe_audio_moonshine', {
-					audioData,
-					modelPath,
-				}),
-			catch: (unknownError) => {
-				const result = MoonshineErrorType(unknownError);
-				if (result instanceof type.errors) {
-					return WhisperingErr({
-						title: 'Unexpected Moonshine Error',
-						description: extractErrorMessage(unknownError),
-						action: { type: 'more-details', error: unknownError },
-					});
-				}
-				const error = result;
-
-				switch (error.name) {
-					case 'ModelLoadError':
-						return WhisperingErr({
-							title: 'Model Loading Error',
-							description: error.message,
-							action: {
-								type: 'more-details',
-								error: new Error(error.message),
-							},
-						});
-
-					case 'FfmpegNotFoundError':
-						return WhisperingErr({
-							title: 'FFmpeg Not Installed',
-							description:
-								'Moonshine requires FFmpeg to convert audio formats. Please install FFmpeg or switch to CPAL recording at 16kHz.',
-							action: {
-								type: 'link',
-								label: 'Install FFmpeg',
-								href: '/install-ffmpeg',
-							},
-						});
-
-					case 'AudioReadError':
-						return WhisperingErr({
-							title: 'Audio Read Error',
-							description: error.message,
-							action: {
-								type: 'more-details',
-								error: new Error(error.message),
-							},
-						});
-
-					case 'TranscriptionError':
-						return WhisperingErr({
-							title: 'Transcription Error',
-							description: error.message,
-							action: {
-								type: 'more-details',
-								error: new Error(error.message),
-							},
-						});
-
-					default:
-						return WhisperingErr({
-							title: 'Moonshine Error',
-							description: 'An unexpected error occurred.',
-							action: {
-								type: 'more-details',
-								error: new Error(String(error)),
-							},
-						});
-				}
-			},
-		});
-
-		return result;
+		return transcribeLocal(
+			audioBlob,
+			{ engine: 'moonshine', modelPath, variant },
+			'Moonshine',
+		);
 	},
 };

@@ -50,6 +50,10 @@ const OGG_SERIAL: u32 = 0x57_48_53_50; // "WHSP"
 /// Accepts mono or stereo, 16-bit integer or 32-bit float WAV (the formats
 /// cpal writes). Returns `AudioError::DecodeFailed` for non-WAV input so
 /// callers can fall back to uploading the original blob uncompressed.
+///
+/// This path exists for the longform `File` artifact (cpal records native-
+/// rate WAV) and for legacy callers that pass a Blob through. The cpal
+/// dictation path bypasses this entirely via `encode_pcm_to_opus_ogg`.
 pub fn encode_wav_to_opus_ogg(wav_bytes: &[u8]) -> Result<Vec<u8>, AudioError> {
     debug!("[Audio Encode] encoding {} WAV bytes", wav_bytes.len());
 
@@ -60,7 +64,44 @@ pub fn encode_wav_to_opus_ogg(wav_bytes: &[u8]) -> Result<Vec<u8>, AudioError> {
         source_rate,
     );
 
-    let pcm_48k = resample_mono(samples_mono, source_rate, ENCODE_RATE)?;
+    encode_pcm_to_opus_ogg(&samples_mono, source_rate, 1)
+}
+
+/// Encode an in-memory mono f32 PCM buffer to an OGG/Opus blob.
+///
+/// This is the canonical fast path for the dictation `Pcm` artifact: the
+/// recorder's consumer worker already produced 16 kHz mono f32, so we
+/// resample to 48 kHz (libopus's internal rate) and encode straight into
+/// the OGG container. No WAV synthesis, no Symphonia decode, no detour.
+///
+/// `channels` must be 1 today; stereo input is downmixed by averaging.
+pub fn encode_pcm_to_opus_ogg(
+    samples: &[f32],
+    source_rate: u32,
+    channels: u16,
+) -> Result<Vec<u8>, AudioError> {
+    if channels == 0 {
+        return Err(AudioError::unsupported("pcm input has zero channels"));
+    }
+
+    debug!(
+        "[Audio Encode] encoding {} PCM samples @ {} Hz x {} channels",
+        samples.len(),
+        source_rate,
+        channels,
+    );
+
+    let mono: Vec<f32> = if channels == 1 {
+        samples.to_vec()
+    } else {
+        let n = channels as usize;
+        samples
+            .chunks_exact(n)
+            .map(|frame| frame.iter().sum::<f32>() / n as f32)
+            .collect()
+    };
+
+    let pcm_48k = resample_mono(mono, source_rate, ENCODE_RATE)?;
     debug!(
         "[Audio Encode] resampled to {} Hz: {} samples",
         ENCODE_RATE,

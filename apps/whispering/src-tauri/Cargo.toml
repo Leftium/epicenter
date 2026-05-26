@@ -62,7 +62,7 @@ windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_
 transcribe-rs = { version = "=0.3.8", features = ["whisper-vulkan", "ort-directml"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-transcribe-rs = { version = "=0.3.8", features = ["whisper-cpp", "whisper-metal", "onnx"] }
+transcribe-rs = { version = "=0.3.8", features = ["whisper-cpp", "whisper-metal", "onnx", "ort-coreml"] }
 accessibility-sys =  "0.1.3"
 core-foundation-sys =  "0.8.7"
 

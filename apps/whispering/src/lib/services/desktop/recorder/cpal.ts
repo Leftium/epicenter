@@ -199,7 +199,12 @@ export const CpalRecorderServiceLive: RecorderService = {
 	 */
 	stopRecording: async ({
 		sendStatus,
-	}): Promise<Result<{ blob: Blob; recordingId: string }, RecorderError>> => {
+	}): Promise<
+		Result<
+			{ blob: Blob; recordingId: string; durationMs: number },
+			RecorderError
+		>
+	> => {
 		// Fast path uses the recordingId captured at startRecording. After a JS
 		// reload mid-recording the closure is gone but Rust is still going; fall
 		// back to asking Rust which recording is currently active.
@@ -229,11 +234,12 @@ export const CpalRecorderServiceLive: RecorderService = {
 			return RecorderError.StopFailed({ cause: stopRecordingError });
 		}
 
-		const { filePath } = audioRecording;
+		const { filePath, durationSeconds } = audioRecording;
 		// Desktop recorder should always write to a file
 		if (!filePath) {
 			return RecorderError.NoFilePath();
 		}
+		const durationMs = Math.round(durationSeconds * 1000);
 
 		// Read the WAV file from disk
 		sendStatus({
@@ -258,7 +264,7 @@ export const CpalRecorderServiceLive: RecorderService = {
 			console.error('Failed to close recording session:', closeError);
 		}
 
-		return Ok({ blob, recordingId });
+		return Ok({ blob, recordingId, durationMs });
 	},
 
 	/**

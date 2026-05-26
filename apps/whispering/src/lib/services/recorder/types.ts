@@ -262,13 +262,19 @@ export type RecorderService = {
 	): Promise<Result<DeviceAcquisitionOutcome, RecorderError>>;
 
 	/**
-	 * Stop the current recording. Returns the audio blob alongside the
-	 * recordingId that was supplied to startRecording, so callers don't need to
-	 * remember it across the start/stop boundary.
+	 * Stop the current recording. Returns the audio blob, the recordingId that
+	 * was supplied to startRecording, and the recording duration in milliseconds
+	 * measured by the underlying recorder (more accurate than measuring from JS
+	 * because it excludes mic-acquisition and toast-construction time).
 	 */
 	stopRecording(callbacks: {
 		sendStatus: UpdateStatusMessageFn;
-	}): Promise<Result<{ blob: Blob; recordingId: string }, RecorderError>>;
+	}): Promise<
+		Result<
+			{ blob: Blob; recordingId: string; durationMs: number },
+			RecorderError
+		>
+	>;
 
 	/**
 	 * Cancel the current recording without saving

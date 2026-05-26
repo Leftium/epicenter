@@ -23,6 +23,7 @@ type ActiveRecording = {
 	stream: MediaStream;
 	mediaRecorder: MediaRecorder;
 	recordedChunks: Blob[];
+	startedAtMs: number;
 };
 
 let activeRecording: ActiveRecording | null = null;
@@ -88,7 +89,16 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 		// Set up recording state and event handlers
 		const recordedChunks: Blob[] = [];
 
-		// Store active recording state
+		// Set up event handlers
+		mediaRecorder.addEventListener('dataavailable', (event: BlobEvent) => {
+			if (event.data.size) recordedChunks.push(event.data);
+		});
+
+		// Start recording. Capture the timestamp right after start() so duration
+		// excludes mic-acquisition latency.
+		mediaRecorder.start(TIMESLICE_MS);
+		const startedAtMs = Date.now();
+
 		activeRecording = {
 			recordingId,
 			selectedDeviceId,
@@ -96,15 +106,8 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 			stream,
 			mediaRecorder,
 			recordedChunks,
+			startedAtMs,
 		};
-
-		// Set up event handlers
-		mediaRecorder.addEventListener('dataavailable', (event: BlobEvent) => {
-			if (event.data.size) recordedChunks.push(event.data);
-		});
-
-		// Start recording
-		mediaRecorder.start(TIMESLICE_MS);
 
 		// Return the device acquisition outcome
 		return Ok(deviceOutcome);
@@ -112,7 +115,12 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 
 	stopRecording: async ({
 		sendStatus,
-	}): Promise<Result<{ blob: Blob; recordingId: string }, RecorderError>> => {
+	}): Promise<
+		Result<
+			{ blob: Blob; recordingId: string; durationMs: number },
+			RecorderError
+		>
+	> => {
 		if (!activeRecording) {
 			return RecorderError.NotRecording({
 				message:
@@ -143,6 +151,8 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 			catch: (error) => RecorderError.StopFailed({ cause: error }),
 		});
 
+		const durationMs = Date.now() - recording.startedAtMs;
+
 		// Always clean up the stream
 		cleanupRecordingStream(recording.stream);
 
@@ -152,7 +162,7 @@ export const NavigatorRecorderServiceLive: RecorderService = {
 			title: '✅ Recording Saved',
 			description: 'Your recording is ready for transcription!',
 		});
-		return Ok({ blob, recordingId: recording.recordingId });
+		return Ok({ blob, recordingId: recording.recordingId, durationMs });
 	},
 
 	cancelRecording: async ({

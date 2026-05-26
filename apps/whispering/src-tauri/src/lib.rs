@@ -97,6 +97,14 @@ pub async fn run() {
     // This ensures child processes can find ffmpeg on Windows
     fix_windows_path();
 
+    // OrtAccelerator::Auto deliberately excludes DirectML because DirectML
+    // requires sequential ORT session settings. On Windows, select it
+    // explicitly so the compiled-in `ort-directml` feature is actually used.
+    // Other platforms rely on the default Auto, which picks CoreML/CUDA where
+    // those features are compiled in.
+    #[cfg(target_os = "windows")]
+    transcribe_rs::accel::set_ort_accelerator(transcribe_rs::accel::OrtAccelerator::DirectMl);
+
     let log_plugin = tauri_plugin_log::Builder::new()
         .level(log::LevelFilter::Info)
         .level_for("whispering::transcription", log::LevelFilter::Debug)

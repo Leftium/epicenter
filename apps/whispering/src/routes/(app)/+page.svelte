@@ -27,7 +27,6 @@
 	import ManualDeviceSelector from '$lib/components/settings/selectors/ManualDeviceSelector.svelte';
 	import VadDeviceSelector from '$lib/components/settings/selectors/VadDeviceSelector.svelte';
 	import {
-		RECORDER_STATE_TO_ICON,
 		RECORDING_MODE_OPTIONS,
 		type RecordingMode,
 		VAD_STATE_TO_ICON,
@@ -49,6 +48,7 @@
 	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
+	import ManualRecordingButton from './_components/ManualRecordingButton.svelte';
 
 	const latestRecording = $derived(recordings.sorted[0]);
 
@@ -253,22 +253,7 @@
 	{#if settings.get('recording.mode') === 'manual'}
 		<!-- Container with relative positioning for the button and absolute selectors -->
 		<div class="relative">
-			<Button
-				tooltip={manualRecorder.state === 'IDLE'
-					? 'Start recording'
-					: 'Stop recording'}
-				onclick={() => commandCallbacks.toggleManualRecording()}
-				variant="ghost"
-				class="shrink-0 size-32 sm:size-36 lg:size-40 xl:size-44 transform items-center justify-center overflow-hidden duration-300 ease-in-out"
-			>
-				<span
-					style="filter: drop-shadow(0px 2px 4px rgba(0, 0, 0, 0.5)); view-transition-name: {viewTransition
-						.global.microphone};"
-					class="text-[100px] sm:text-[110px] lg:text-[120px] xl:text-[130px] leading-none"
-				>
-					{RECORDER_STATE_TO_ICON[manualRecorder.state]}
-				</span>
-			</Button>
+			<ManualRecordingButton />
 			{#if manualRecorder.state === 'RECORDING'}
 				<div class="absolute -right-12 bottom-4 flex items-center">
 					<Button

@@ -37,10 +37,35 @@ const transcribeRecordings = createMutation(
 
 ## Authoring rules
 
-1. A module belongs here if and only if a `.svelte` file calls `createQuery(...)` or `createMutation(...)` on it. Otherwise it belongs in `$lib/operations/`.
+1. A module belongs here if and only if it exports a `defineQuery`/`defineMutation` object that one or more `.svelte` files observe via `createQuery(...)` / `createMutation(...)`. Otherwise it belongs in `$lib/operations/`.
 2. Adapters are leaves: a file in `query/` may import from `query/client` but not from another sibling in `query/`. Cross-adapter coordination is an operation; put it in `operations/`.
 3. Adapters do not import from `$lib/operations/*`. The dependency direction is one-way: `operations -> query -> services / state`.
 4. Each adapter wraps services with: error transformation to `WhisperingError`, cache keys, and (for queries) parameterization.
+
+## Observing an operation's lifecycle without putting it here
+
+Rule 3 forbids `query/` from importing `operations/`. So when a component needs `mutation.isPending` for an operation that already lives in `$lib/operations/` (because it orchestrates side effects across notify, sound, settings, pipeline, etc.), do not move the operation into `query/`. Instead, instantiate the mutation inline in the component:
+
+```svelte
+<script lang="ts">
+  import { createMutation } from '@tanstack/svelte-query';
+  import {
+    startManualRecording,
+    stopManualRecording,
+  } from '$lib/operations/recording';
+
+  const startMutation = createMutation(() => ({ mutationFn: startManualRecording }));
+  const stopMutation  = createMutation(() => ({ mutationFn: stopManualRecording  }));
+  const isPreparing = $derived(startMutation.isPending || stopMutation.isPending);
+</script>
+
+<Button disabled={isPreparing} onclick={...}>...</Button>
+```
+
+When to put the mutation here vs. inline:
+
+- **Here (`$lib/query/<topic>.ts`)**: the mutation is a thin adapter over a service call. Shared cache keys, shared error transformation, observed in multiple components. Example: `transcription.ts`.
+- **Inline in the component**: the work lives in `$lib/operations/` because it orchestrates several side effects, and only this component needs the lifecycle. The mutation is just a TanStack wrapper around `mutationFn: someOperation`; no cache key, no error transformation, no cross-component reuse.
 
 ## Error transformation
 

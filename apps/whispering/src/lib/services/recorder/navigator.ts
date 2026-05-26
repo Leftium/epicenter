@@ -48,6 +48,11 @@ function createNavigatorRecorder(): RecorderService {
 		let currentState: WhisperingRecordingState = 'RECORDING';
 
 		const notify = (state: WhisperingRecordingState) => {
+			// Idempotent: same-state notifications collapse to a no-op. Keeps
+			// the teardown safe to call from multiple paths without double
+			// firing 'IDLE' (e.g. an external listener and an explicit
+			// teardown for the same transition).
+			if (currentState === state) return;
 			currentState = state;
 			for (const handler of subscribers) handler(state);
 		};

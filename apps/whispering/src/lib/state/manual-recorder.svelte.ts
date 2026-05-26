@@ -99,7 +99,12 @@ function createManualRecorder() {
 	// Bootstrap: ask each backend whether it owns a live session. Navigator
 	// always returns null after a JS reload (its state lives in the closure);
 	// cpal can return non-null because the Rust process keeps the stream alive.
-	void Promise.all([
+	//
+	// The promise is awaited before any stop/cancel/start runs. Without
+	// that gate, a user action that fires before bootstrap resolves sees a
+	// stale `_current === null` and either no-ops the cancel (leaking the
+	// Rust session) or double-starts on top of a rehydrated one.
+	const bootstrapped = Promise.all([
 		services.navigatorRecorder.getActiveRecording(),
 		isTauri()
 			? desktopServices.cpalRecorder.getActiveRecording()
@@ -129,6 +134,14 @@ function createManualRecorder() {
 		}),
 
 		async startRecording({ toastId }: { toastId: string }) {
+			await bootstrapped;
+			if (_current) {
+				return WhisperingErr({
+					title: '❌ Already recording',
+					description:
+						'A recording is already in progress. Stop the current one before starting a new one.',
+				});
+			}
 			const service = resolveServiceForStart();
 			const params = await buildStartParams(nanoid());
 			const { data, error: startRecordingError } = await service.startRecording(
@@ -150,6 +163,7 @@ function createManualRecorder() {
 		},
 
 		async stopRecording({ toastId }: { toastId: string }) {
+			await bootstrapped;
 			if (!_current) {
 				return WhisperingErr({
 					title: '❌ Failed to stop recording',
@@ -172,6 +186,7 @@ function createManualRecorder() {
 		},
 
 		async cancelRecording({ toastId }: { toastId: string }) {
+			await bootstrapped;
 			if (!_current) return Ok({ status: 'no-recording' as const });
 			const { data: cancelResult, error: cancelRecordingError } =
 				await _current.cancel({

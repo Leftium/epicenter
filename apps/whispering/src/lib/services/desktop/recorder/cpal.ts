@@ -67,6 +67,11 @@ function createCpalRecorder(): RecorderService {
 		let tauriUnlisten: Promise<UnlistenFn> | null = null;
 
 		const notify = (state: WhisperingRecordingState) => {
+			// Idempotent: same-state notifications collapse to a no-op. Rust
+			// emits 'recorder:state-changed' IDLE from `stop_recording`, then
+			// our explicit `teardown()` also notifies IDLE; without this
+			// guard we'd fire the handler twice for one transition.
+			if (currentState === state) return;
 			currentState = state;
 			for (const handler of subscribers) handler(state);
 		};

@@ -2,7 +2,7 @@ import { nanoid } from 'nanoid/non-secure';
 import { deliverTransformationResult } from '$lib/operations/delivery';
 import { notify } from '$lib/operations/notify';
 import { sound } from '$lib/operations/sound';
-import { transformer } from '$lib/query/transformer';
+import { runTransformation } from '$lib/operations/transform';
 import { services } from '$lib/services';
 import { settings } from '$lib/state/settings.svelte';
 import { transformations } from '$lib/state/transformations.svelte';
@@ -72,21 +72,36 @@ export async function runTransformationOnClipboard() {
 		description: 'Transforming your clipboard text...',
 	});
 
-	const { data: output, error: transformError } =
-		await transformer.transformInput({
-			input: clipboardText,
-			transformation,
-		});
+	const { data: result, error: transformError } = await runTransformation({
+		input: clipboardText,
+		transformation,
+		recordingId: null,
+	});
 
 	if (transformError) {
-		notify.error({ id: toastId, ...transformError });
+		notify.error({
+			id: toastId,
+			title: '⚠️ Transformation failed',
+			description: transformError.message,
+			action: { type: 'more-details', error: transformError },
+		});
+		return;
+	}
+
+	if (result.status === 'failed') {
+		notify.error({
+			id: toastId,
+			title: '⚠️ Transformation error',
+			description: result.error,
+			action: { type: 'more-details', error: result.error },
+		});
 		return;
 	}
 
 	sound.playSoundIfEnabled('transformationComplete');
 
 	await deliverTransformationResult({
-		text: output,
+		text: result.output,
 		toastId,
 	});
 }

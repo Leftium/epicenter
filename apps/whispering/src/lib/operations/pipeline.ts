@@ -6,7 +6,7 @@ import {
 import { notify } from '$lib/operations/notify';
 import { sound } from '$lib/operations/sound';
 import { transcribeBlob } from '$lib/operations/transcribe';
-import { transformer } from '$lib/query/transformer';
+import { runTransformation } from '$lib/operations/transform';
 import { services } from '$lib/services';
 import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';
@@ -128,13 +128,18 @@ export async function processRecordingPipeline({
 			'Applying your selected transformation to the transcribed text...',
 	});
 
-	const { data: result, error: transformError } =
-		await transformer.transformRecording({
-			recordingId: recording.id,
-			transformation,
-		});
+	const { data: result, error: transformError } = await runTransformation({
+		input: transcribedText,
+		transformation,
+		recordingId: recording.id,
+	});
 	if (transformError) {
-		notify.error({ id: transformToastId, ...transformError });
+		notify.error({
+			id: transformToastId,
+			title: '⚠️ Transformation failed',
+			description: transformError.message,
+			action: { type: 'more-details', error: transformError },
+		});
 		return;
 	}
 

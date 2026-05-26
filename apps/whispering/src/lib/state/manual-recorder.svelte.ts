@@ -1,35 +1,36 @@
 import { isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { nanoid } from 'nanoid/non-secure';
-import { Ok } from 'wellcrafted/result';
-import type { WhisperingRecordingState } from '$lib/constants/audio';
+import { Err, Ok, type Result } from 'wellcrafted/result';
+import type {
+	CancelRecordingResult,
+	WhisperingRecordingState,
+} from '$lib/constants/audio';
 import { PATHS } from '$lib/constants/paths';
 import { defineQuery } from '$lib/query/client';
-import { notify } from '$lib/operations/notify';
 import { WhisperingErr } from '$lib/result';
 import { services } from '$lib/services';
 import { desktopServices } from '$lib/services/desktop';
 import {
 	asDeviceIdentifier,
+	type DeviceAcquisitionOutcome,
+	type RecorderError,
 	type StartRecordingParams,
+	type UpdateStatusMessageFn,
 } from '$lib/services/recorder/types';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 
 /**
- * Creates the manual recorder with reactive state.
+ * Toast-agnostic manual recorder.
  *
- * State is owned by this module via Svelte's $state rune for synchronous
- * reactivity. Mirrors the shape of `vadRecorder` in `vad-recorder.svelte.ts`:
- *
- * - Reactive access: `manualRecorder.state` (triggers effects on change)
- * - Operations: `manualRecorder.startRecording({ toastId })` etc.
- * - Device enumeration as a TanStack Query for loading states in selectors
+ * Owns reactive state, an internal busy mutex, and start-time tracking. Takes
+ * a generic `sendStatus` progress callback so callers (notify, log, etc.)
+ * decide how progress surfaces to the user.
  *
  * On Tauri, state is bootstrapped from the active service's `getRecorderState`
  * once at module init (a Rust CPAL session can outlive a JS reload). A Tauri
  * `recorder:state-changed` listener is registered to receive future Rust-side
- * transitions. The Rust emit side is not yet wired; the listener is a no-op
- * until that lands and harmless in the meantime.
+ * transitions.
  */
 function recorderService() {
 	if (!isTauri()) return services.navigatorRecorder;
@@ -67,6 +68,10 @@ async function buildStartParams(
 
 function createManualRecorder() {
 	let _state = $state<WhisperingRecordingState>('IDLE');
+	// Internal mutex: covers the window between calling the recorder service
+	// and the service returning, during which _state hasn't been updated yet.
+	let _busy = false;
+	let _startedAt: number | null = null;
 
 	void recorderService()
 		.getRecorderState()
@@ -99,58 +104,98 @@ function createManualRecorder() {
 			},
 		}),
 
-		async startRecording({ toastId }: { toastId: string }) {
-			const params = await buildStartParams(nanoid());
-			const { data: deviceAcquisitionOutcome, error: startRecordingError } =
-				await recorderService().startRecording(params, {
-					sendStatus: (options) => notify.loading({ id: toastId, ...options }),
-				});
-
-			if (startRecordingError) {
-				return WhisperingErr({
-					title: '❌ Failed to start recording',
-					serviceError: startRecordingError,
-				});
+		/**
+		 * Returns Ok(null) if the recorder is busy or not idle; the caller should
+		 * treat that as a no-op (no toast, no error). Returns Err only for
+		 * actual service failures.
+		 */
+		async start({
+			sendStatus,
+		}: {
+			sendStatus: UpdateStatusMessageFn;
+		}): Promise<Result<DeviceAcquisitionOutcome | null, RecorderError>> {
+			if (_busy || _state !== 'IDLE') {
+				console.info('Recorder not idle, ignoring start');
+				return Ok(null);
 			}
+			_busy = true;
+
+			const params = await buildStartParams(nanoid());
+			const { data: outcome, error } = await recorderService().startRecording(
+				params,
+				{ sendStatus },
+			);
+
+			_busy = false;
+
+			if (error) return Err(error);
 
 			_state = 'RECORDING';
-			return Ok(deviceAcquisitionOutcome);
+			_startedAt = Date.now();
+			return Ok(outcome);
 		},
 
-		async stopRecording({ toastId }: { toastId: string }) {
-			const { data, error: stopRecordingError } =
-				await recorderService().stopRecording({
-					sendStatus: (options) => notify.loading({ id: toastId, ...options }),
-				});
+		/**
+		 * Returns Ok(null) if the recorder is busy; the caller should treat that
+		 * as a no-op. Returns Err only for actual service failures.
+		 */
+		async stop({
+			sendStatus,
+		}: {
+			sendStatus: UpdateStatusMessageFn;
+		}): Promise<
+			Result<
+				{ blob: Blob; recordingId: string; duration: number | undefined } | null,
+				RecorderError
+			>
+		> {
+			if (_busy) {
+				console.info('Recorder busy, ignoring stop');
+				return Ok(null);
+			}
+			_busy = true;
+
+			const { data, error } = await recorderService().stopRecording({
+				sendStatus,
+			});
+
+			_busy = false;
+
+			if (error) return Err(error);
+
+			const duration = _startedAt ? Date.now() - _startedAt : undefined;
+			_state = 'IDLE';
+			_startedAt = null;
+
+			return Ok({ ...data, duration });
+		},
+
+		/**
+		 * Returns Ok(null) if the recorder is busy; the caller should treat that
+		 * as a no-op. Returns Err only for actual service failures.
+		 */
+		async cancel({
+			sendStatus,
+		}: {
+			sendStatus: UpdateStatusMessageFn;
+		}): Promise<Result<CancelRecordingResult | null, RecorderError>> {
+			if (_busy) {
+				console.info('Recorder busy, ignoring cancel');
+				return Ok(null);
+			}
+			_busy = true;
+
+			const { data, error } = await recorderService().cancelRecording({
+				sendStatus,
+			});
+
+			_busy = false;
+
+			if (error) return Err(error);
 
 			_state = 'IDLE';
-
-			if (stopRecordingError) {
-				return WhisperingErr({
-					title: '❌ Failed to stop recording',
-					serviceError: stopRecordingError,
-				});
-			}
-
+			_startedAt = null;
 			return Ok(data);
-		},
-
-		async cancelRecording({ toastId }: { toastId: string }) {
-			const { data: cancelResult, error: cancelRecordingError } =
-				await recorderService().cancelRecording({
-					sendStatus: (options) => notify.loading({ id: toastId, ...options }),
-				});
-
-			_state = 'IDLE';
-
-			if (cancelRecordingError) {
-				return WhisperingErr({
-					title: '❌ Failed to cancel recording',
-					serviceError: cancelRecordingError,
-				});
-			}
-
-			return Ok(cancelResult);
 		},
 	};
 }

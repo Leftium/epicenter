@@ -72,14 +72,23 @@ export default defineConfig({
 });
 ```
 
-A Tauri-only service has an `index.tauri.ts` with the real implementation. Some additionally need an `index.browser.ts` stub because they're statically imported from web-bundled code (`fs`, `command`, `permissions`, `ffmpeg`, `global-shortcut-manager`); the stub enumerates the same exports but binds each to the shared `unreachable` throw from `services/_tauri-stub.ts` via `satisfies typeof Tauri.X`. Services reachable only from `rpc/desktop/*.tauri.ts` (`autostart`, `tray`) need no stub because the rpc layer itself has one. Consumers gate on `window.__TAURI_INTERNALS__` so the throws are unreachable at runtime on web.
+Tauri-only capabilities don't live in `services/`. They live in a single file at `$lib/tauri.tauri.ts` with a one-line `$lib/tauri.browser.ts` companion. Consumers import the default and access via the optional chain:
 
-> **💡 Two kinds of dependency injection**
+```ts
+import tauri from '$lib/tauri';
+await tauri?.fs.pathToBlob(path);                       // raw capability
+await tauri?.rpc.ffmpeg.checkInstalled.ensure();        // TanStack-wrapped (cached)
+```
+
+See `specs/20260526T000140-collapse-tauri-only-services-into-namespace.md` for the rationale.
+
+> **💡 Three kinds of dependency injection**
 >
-> - **Build-time platform DI**: file resolution via `.tauri.ts` / `.browser.ts` suffix. The decision is fixed at `vite build` and the wrong implementation isn't bundled. Used for `text`, `notifications`, `os`, `sound`, `download`, `analytics`, `http`, `blob-store`, and the Tauri-only services.
-> - **Runtime DI**: a switch statement reads `settings.value` at call time. Used for `transcription` (user picks the provider) and `completion` (LLM model selection).
+> - **Build-time platform DI** (suffix files): for services that have a real implementation on both platforms. `text`, `notifications`, `os`, `sound`, `download`, `analytics`, `http`, `blob-store`, `recorder`. Each has `index.tauri.ts` + `index.browser.ts` + `types.ts`. Vite picks one at build time.
+> - **Tauri-only namespace** (`$lib/tauri`): for capabilities that exist only on Tauri (fs, command, permissions, ffmpeg, tray, globalShortcuts, autostart). One file holds all of them. Consumers gate with `tauri?.`.
+> - **Runtime DI** (switch on `settings.value`): for user-pick providers like `transcription` and `completion`.
 >
-> See `docs/articles/20260526T012650-two-switches-build-time-and-runtime.md` for the full pattern walkthrough.
+> See `docs/articles/20260526T012650-two-switches-build-time-and-runtime.md` for the platform-vs-settings walkthrough.
 
 ## Core Concepts
 
@@ -402,20 +411,21 @@ const result = await services.completion.openai.complete({
 - `blob-store/` - Audio blob persistence (IndexedDB on web, fs on desktop)
 - `analytics/`, `download/`, `http/`, `notifications/`, `os/`, `sound/` - Platform-specific implementations behind a unified interface
 
-### Tauri-only services (each lives in its own folder under `services/`)
+### Tauri-only capabilities (`$lib/tauri`)
 
-Each has an `index.tauri.ts` with the real implementation. Web stubs (`index.browser.ts`) exist only for services that web-bundled code statically imports; the rest are reachable only through `rpc/desktop/*.tauri.ts` and need no web counterpart.
+All seven Tauri-only capabilities live inline in one file at `$lib/tauri.tauri.ts`. The companion `$lib/tauri.browser.ts` is one line (`export default null;`). Consumers access via `tauri?.<cap>.method()`.
 
-- `services/recorder/cpal.tauri.ts` - Native Rust audio recording via CPAL (sibling of `navigator.ts`; the recorder folder exposes both through `index.tauri.ts`)
-- `services/ffmpeg/` - FFmpeg binary helper (web stub exists). `shared.ts` holds platform-neutral constants (compression options, file-extension detection); `index.tauri.ts` is the Tauri service.
-- `services/command/` - Tauri shell command execution (web stub exists)
-- `services/fs/` - Tauri filesystem operations (web stub exists)
-- `services/permissions/` - macOS accessibility / microphone permission flows (web stub exists)
-- `services/global-shortcut-manager/` - OS-level keyboard shortcuts (web stub exists)
-- `services/autostart/` - launch-at-login toggle (no web stub; reachable only from `rpc/desktop`)
-- `services/tray/` - System tray management (no web stub; reachable only from `rpc/desktop`)
-- `services/permissions/` - Accessibility/microphone permission checks
-- `services/autostart/` - Launch-at-login
+- `tauri.fs` - Filesystem operations (pathToBlob, pathToFile, pathsToFiles)
+- `tauri.command` - Shell command execution (execute, spawn)
+- `tauri.permissions` - macOS accessibility/microphone permission flows
+- `tauri.ffmpeg` - FFmpeg binary helper (checkInstalled, compressAudioBlob)
+- `tauri.tray` - System tray icon (setIcon)
+- `tauri.globalShortcuts` - OS-level keyboard shortcuts (register, unregister, ...)
+- `tauri.autostart` - Launch-at-login toggle (isEnabled, enable, disable)
+
+A `tauri.rpc` sub-namespace exposes TanStack-wrapped versions of the subset that needs caching, error transformation to `WhisperingError`, or post-mutation invalidation (autostart, ffmpeg.checkInstalled, tray.setIcon, globalShortcuts.*).
+
+The cpal recorder (`services/recorder/cpal.tauri.ts`) stays under `services/` because it's a sibling of `navigator.ts` and the recorder folder exposes both through its own suffix files. Platform-neutral FFmpeg constants live at `$lib/constants/ffmpeg.ts`.
 
 ### Multi-provider services
 

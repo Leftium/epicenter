@@ -53,7 +53,7 @@ if (tauri) {
   // here, `tauri` is the full namespace, not `null`
   await tauri.fs.pathToBlob(path);
   await tauri.command.execute('open .');
-  await tauri.rpc.autostart.enable();
+  await tauri.autostart.enable.execute();
 }
 ```
 
@@ -61,11 +61,17 @@ Inside the `if`, every capability is reachable without re-checking. The branch i
 
 ## How it's two files behind one import
 
-Vite swaps the file at build time. `tauri.tauri.ts` is the real namespace. `tauri.browser.ts` is one line:
+Vite swaps the file at build time. `tauri.tauri.ts` is the real namespace. `tauri.browser.ts` is the web stub:
 
 ```ts
 export const tauri = null;
+
+export function requireTauri(): never {
+  throw new Error('requireTauri() called outside Tauri runtime');
+}
 ```
+
+The `tauri` export is the platform check. The `requireTauri` export is the loud-fail companion for `.tauri.ts` files (covered below).
 
 `vite.config.ts` has:
 
@@ -89,9 +95,13 @@ TS always reads `tauri.tauri.ts` for type information, regardless of build. The 
 
 So the consumer sees one type (`Tauri | null`) on both builds, and the runtime value follows the platform.
 
-## Prop drilling: pushing the narrowing further
+## Pushing the narrowing further: prop drilling
 
-After you narrow `tauri` once, child components shouldn't have to re-narrow. The check has already happened. You can prop-drill the non-null reference:
+After you narrow `tauri` once, code below that point shouldn't have to re-narrow. The check has already happened. Pass the non-null reference down.
+
+This works two ways, depending on whether you're crossing a component boundary or a function boundary.
+
+### Component-level: Svelte props
 
 ```svelte
 <!-- ParentPage.svelte -->
@@ -116,9 +126,111 @@ After you narrow `tauri` once, child components shouldn't have to re-narrow. The
 <button onclick={() => tauri.tray.setIcon('IDLE')}>Set tray</button>
 ```
 
-The child takes `tauri: Tauri` (non-null) as a prop. The parent has already checked. No `tauri!` assertion inside the child, no re-check, no possibility of forgetting.
+The child takes `tauri: Tauri` (non-null) as a prop. The parent has already checked. No re-check, no `tauri?.`, no assertion.
 
-The pattern composes. Any child that needs Tauri capabilities declares it in its prop signature, and parents have to either be Tauri-only themselves or gate before rendering. The type system carries the invariant up the tree.
+### Function-level: positional parameter
+
+The same idea works for plain functions. If a helper is only meaningful when Tauri is present, take `tauri: Tauri` as an argument instead of re-narrowing inside.
+
+Before (the helper re-narrows what its caller already checked):
+
+```ts
+// syncIconWithRecorderState.svelte.ts
+import { tauri } from '$lib/tauri';
+
+export function syncIconWithRecorderState() {
+  $effect(() => {
+    void tauri?.tray.setIcon({ icon: manualRecorder.state });
+    //       ^ redundant: caller already gated on `if (tauri)`
+  });
+}
+```
+
+```svelte
+<!-- AppLayout.svelte (caller, before) -->
+<script>
+  import { tauri } from '$lib/tauri';
+  import { syncIconWithRecorderState } from './syncIconWithRecorderState.svelte';
+
+  if (tauri) {
+    syncIconWithRecorderState(); // narrow happens, but the function doesn't know
+  }
+</script>
+```
+
+After (helper accepts the asserted namespace; the redundant narrow disappears):
+
+```ts
+// syncIconWithRecorderState.svelte.ts
+import type { Tauri } from '$lib/tauri';
+
+export function syncIconWithRecorderState(tauri: Tauri) {
+  $effect(() => {
+    void tauri.tray.setIcon({ icon: manualRecorder.state });
+  });
+}
+```
+
+```svelte
+<!-- AppLayout.svelte (caller, after) -->
+<script>
+  import { tauri } from '$lib/tauri';
+  import { syncIconWithRecorderState } from './syncIconWithRecorderState.svelte';
+
+  if (tauri) {
+    syncIconWithRecorderState(tauri); // narrowed value flows through
+  }
+</script>
+```
+
+The function signature is the documentation: "I need Tauri." TypeScript enforces it. Callers without a narrowed `tauri` in scope get a compile error, which is exactly the feedback you want.
+
+### Why the prop-drill instead of `requireTauri()`?
+
+The narrowing is already in your hand at the call site. You have the value. Passing the value you already have is more honest than asking a helper to look up a module-level variable and assert it. The signature ends up self-documenting: `(tauri: Tauri)` literally says "this function needs Tauri" in the place a reader looks first.
+
+Use `requireTauri()` (covered below) only when prop-drilling doesn't make sense, typically because the caller boundary is the build system itself rather than another piece of your code.
+
+### Where this composes
+
+Any helper or component that needs Tauri capabilities declares it in its signature. Parents either have a narrowed `tauri` to pass, or they themselves need to gate before rendering, or they take a `Tauri` prop from their own parent. The invariant climbs the tree until it hits the one place that did `if (tauri)`. That one check is the boundary; everything below it is unconditionally Tauri-shaped.
+
+## `requireTauri()` for files the build system already gated
+
+There's one case where the prop-drill doesn't fit cleanly: code that lives in a `*.tauri.ts` file. The Vite suffix routing already guarantees the module is only loaded on Tauri builds, so there isn't a caller boundary you can prop-drill from. Yet inside the file, `import { tauri } from '$lib/tauri'` still gives you `Tauri | null`, because TypeScript reads the same nullable shape for both builds.
+
+The historical workaround was a non-null assertion at the top of the file:
+
+```ts
+// file-system.tauri.ts (old)
+import { tauri } from '$lib/tauri';
+// This file is Tauri-only (suffix `.tauri.ts` keeps it out of web bundles),
+// so `tauri` is never null when this module loads.
+const { fs } = tauri!;
+```
+
+That `tauri!` is fine but ugly: it asserts a fact the filename already encodes. The fact is encoded twice, in two different syntaxes, in two different files. If someone ever imports this from a non-`.tauri.ts` file, the assertion silently lies and you crash with a confusing null property access elsewhere.
+
+The replacement is a named export from the same `$lib/tauri` module:
+
+```ts
+// file-system.tauri.ts (new)
+import { requireTauri } from '$lib/tauri';
+
+const { data: blob } = await requireTauri().fs.pathToBlob(audioPath);
+```
+
+`requireTauri()` returns `Tauri` (non-null) on Tauri builds and throws on web. The browser shim exports a stub that throws with a clear message. If anyone misuses this from a shared file, you get `requireTauri() called outside Tauri runtime` instead of a downstream null deref.
+
+The naming carries the constraint. Reviewers see `requireTauri()` and know two things at a glance: this file is asserting it's on Tauri, and the runtime will yell if that assertion is wrong.
+
+### When to use which
+
+A short rule:
+
+- **Crossing a function or component boundary inside shared code?** Prop-drill `tauri: Tauri`. The narrow has happened in the caller; pass the value.
+- **Top of a `.tauri.ts` file that needs the namespace?** `requireTauri()`. The build system is your guarantee; the function call is your assertion.
+- **Plain shared code that may or may not be on Tauri?** Narrow at the call site (`if (tauri)` or `tauri?.`). The runtime ambiguity is real and the narrow is doing real work.
 
 ## When this doesn't fit: dual-implementation services
 
@@ -153,7 +265,7 @@ Most apps want both patterns. They solve different problems.
 
 ## What lives in `tauri`
 
-Today: file system, shell command execution, macOS permission flows, FFmpeg, system tray, global shortcuts, autostart. Plus a `tauri.rpc` sub-namespace with TanStack-wrapped variants for the subset that needs caching and reactive query state (autostart toggle, ffmpeg-installed check, etc).
+Today: file system, shell command execution, macOS permission flows, FFmpeg, system tray, global shortcuts, autostart. Each leaf picks one canonical call form. Capabilities that need caching and reactive query state (the autostart toggle, the ffmpeg-installed check, tray icon updates, shortcut registration) expose their TanStack-wrapped form directly on the leaf, in the same shape as the raw ones. There is no `tauri.rpc` sub-namespace any more.
 
 Adding a new Tauri-only capability is one section in one file:
 
@@ -181,7 +293,7 @@ The TypeScript narrowing gives us the rest for free. You can't call into the nam
 ## If you want to see the code
 
 - `apps/whispering/src/lib/tauri.tauri.ts` is the namespace.
-- `apps/whispering/src/lib/tauri.browser.ts` is one line.
+- `apps/whispering/src/lib/tauri.browser.ts` is the web stub (`tauri = null` plus a throwing `requireTauri`).
 - `apps/whispering/vite.config.ts` for the build-time switch.
 - `apps/whispering/tsconfig.json` for `moduleSuffixes`.
 - Any consumer file under `apps/whispering/src/routes/` for a real call site.

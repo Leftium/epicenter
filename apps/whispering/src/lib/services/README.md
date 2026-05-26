@@ -72,20 +72,34 @@ export default defineConfig({
 });
 ```
 
-Tauri-only capabilities don't live in `services/`. They live in a single file at `$lib/tauri.tauri.ts` with a one-line `$lib/tauri.browser.ts` companion. Consumers import the default and access via the optional chain:
+Tauri-only capabilities don't live in `services/`. They live in a single file at `$lib/tauri.tauri.ts` with a `$lib/tauri.browser.ts` companion that exports a `null` namespace plus a throwing `requireTauri` stub. Consumers pick one of three call shapes depending on where they sit:
 
 ```ts
-import tauri from '$lib/tauri';
-await tauri?.fs.pathToBlob(path);                       // raw capability
-await tauri?.ffmpeg.checkInstalled.ensure();            // TanStack-wrapped (cached)
+import { tauri } from '$lib/tauri';
+
+// 1. Shared code (runs on web and Tauri): narrow once.
+if (tauri) {
+  await tauri.fs.pathToBlob(path);
+  await tauri.ffmpeg.checkInstalled.ensure();
+}
+
+// 2. Shared helpers called only inside an `if (tauri)` block:
+//    prop-drill the narrowed value.
+function useTrayIcon(tauri: Tauri) {
+  tauri.tray.setIcon({ icon: 'IDLE' });
+}
+
+// 3. Inside *.tauri.ts files (build system already gated): requireTauri.
+import { requireTauri } from '$lib/tauri';
+await requireTauri().fs.pathToBlob(audioPath);
 ```
 
-See `specs/20260526T000140-collapse-tauri-only-services-into-namespace.md` for the rationale.
+See `docs/articles/20260526T012526-tauri-is-both-the-namespace-and-the-platform-check.md` for the full pattern walkthrough, and `specs/20260526T000140-collapse-tauri-only-services-into-namespace.md` for the original rationale.
 
 > **💡 Three kinds of dependency injection**
 >
 > - **Build-time platform DI** (suffix files): for services that have a real implementation on both platforms. `text`, `notifications`, `os`, `sound`, `download`, `analytics`, `http`, `blob-store`, `recorder`. Each has `index.tauri.ts` + `index.browser.ts` + `types.ts`. Vite picks one at build time.
-> - **Tauri-only namespace** (`$lib/tauri`): for capabilities that exist only on Tauri (fs, command, permissions, ffmpeg, tray, globalShortcuts, autostart). One file holds all of them. Consumers gate with `tauri?.`.
+> - **Tauri-only namespace** (`$lib/tauri`): for capabilities that exist only on Tauri (fs, command, permissions, ffmpeg, tray, globalShortcuts, autostart). One file holds all of them. Consumers either narrow with `if (tauri)`, prop-drill the narrowed value into helpers, or call `requireTauri()` from inside a `.tauri.ts` file.
 > - **Runtime DI** (switch on `settings.value`): for user-pick providers like `transcription` and `completion`.
 >
 > See `docs/articles/20260526T012650-two-switches-build-time-and-runtime.md` for the platform-vs-settings walkthrough.
@@ -413,17 +427,19 @@ const result = await services.completion.openai.complete({
 
 ### Tauri-only capabilities (`$lib/tauri`)
 
-All seven Tauri-only capabilities live inline in one file at `$lib/tauri.tauri.ts`. The companion `$lib/tauri.browser.ts` is one line (`export default null;`). Consumers access via `tauri?.<cap>.method()`.
+All seven Tauri-only capabilities live inline in one file at `$lib/tauri.tauri.ts`. The companion `$lib/tauri.browser.ts` exports `tauri = null` plus a throwing `requireTauri` stub. Consumers access via `if (tauri) { tauri.<cap>.method() }`, by prop-drilling the narrowed value, or by calling `requireTauri()` from inside a `.tauri.ts` file.
 
 - `tauri.fs` - Filesystem operations (pathToBlob, pathToFile, pathsToFiles)
 - `tauri.command` - Shell command execution (execute, spawn)
 - `tauri.permissions` - macOS accessibility/microphone permission flows
 - `tauri.ffmpeg` - FFmpeg binary helper (checkInstalled, compressAudioBlob)
 - `tauri.tray` - System tray icon (setIcon)
-- `tauri.globalShortcuts` - OS-level keyboard shortcuts (register, unregister, ...)
+- `tauri.globalShortcuts` - OS-level shortcut registration (registerCommand, unregisterCommand, unregisterAll)
 - `tauri.autostart` - Launch-at-login toggle (isEnabled, enable, disable)
 
-A `tauri.rpc` sub-namespace exposes TanStack-wrapped versions of the subset that needs caching, error transformation to `WhisperingError`, or post-mutation invalidation (autostart, ffmpeg.checkInstalled, tray.setIcon, globalShortcuts.*).
+Each leaf picks one canonical call form: TanStack-wrapped (via `defineQuery`/`defineMutation`) where caching, reactivity, or post-mutation invalidation matter; plain async functions where they don't. There is no separate `tauri.rpc` sub-namespace.
+
+Pure accelerator parsing (validate-format, pressed-keys-to-accelerator, the `Accelerator` brand) doesn't need the Tauri runtime and lives in `$lib/utils/accelerator.ts`. The Tauri-side registration code consumes the same types.
 
 The cpal recorder (`services/recorder/cpal.tauri.ts`) stays under `services/` because it's a sibling of `navigator.ts` and the recorder folder exposes both through its own suffix files. Platform-neutral FFmpeg constants live at `$lib/constants/ffmpeg.ts`.
 

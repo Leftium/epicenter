@@ -22,7 +22,11 @@
 	import LocalModelSelector from '$lib/components/settings/LocalModelSelector.svelte';
 	import TranscriptionServiceSelect from '$lib/components/settings/TranscriptionServiceSelect.svelte';
 	import { SUPPORTED_LANGUAGES_OPTIONS } from '$lib/constants/languages';
-	import { TRANSCRIPTION } from '$lib/constants/transcription';
+	import {
+		LOCAL_MODEL_UNLOAD_POLICY_OPTIONS,
+		type LocalModelUnloadPolicy,
+		TRANSCRIPTION,
+	} from '$lib/constants/transcription';
 	import { MOONSHINE_MODELS } from '$lib/services/transcription/local/moonshine';
 	import { PARAKEET_MODELS } from '$lib/services/transcription/local/parakeet';
 	import { WHISPER_MODELS } from '$lib/services/transcription/local/whispercpp';
@@ -106,6 +110,17 @@
 	const outputLanguageLabel = $derived(
 		SUPPORTED_LANGUAGES_OPTIONS.find(
 			(i) => i.value === settings.get('transcription.language'),
+		)?.label,
+	);
+
+	const isLocalEngine = $derived(
+		TRANSCRIPTION[settings.get('transcription.service')].location === 'local',
+	);
+
+	const unloadPolicyLabel = $derived(
+		LOCAL_MODEL_UNLOAD_POLICY_OPTIONS.find(
+			(o) =>
+				o.value === deviceConfig.get('transcription.localModelUnloadPolicy'),
 		)?.label,
 	);
 </script>
@@ -756,6 +771,45 @@
 					{/if}
 				{/if}
 			</div>
+		{/if}
+
+		{#if isLocalEngine}
+			<Field.Field>
+				<Field.Label for="local-model-unload-policy">
+					Unload Model When Idle
+				</Field.Label>
+				<Select.Root
+					type="single"
+					bind:value={
+						() => deviceConfig.get('transcription.localModelUnloadPolicy'),
+						(v) =>
+							deviceConfig.set(
+								'transcription.localModelUnloadPolicy',
+								v as LocalModelUnloadPolicy,
+							)
+					}
+				>
+					<Select.Trigger id="local-model-unload-policy" class="w-full">
+						{unloadPolicyLabel ?? 'Select a policy'}
+					</Select.Trigger>
+					<Select.Content>
+						{#each LOCAL_MODEL_UNLOAD_POLICY_OPTIONS as option}
+							<Select.Item value={option.value} label={option.label}>
+								<div class="flex flex-col gap-1 py-1">
+									<div class="font-medium">{option.label}</div>
+									<div class="text-sm text-muted-foreground">
+										{option.description}
+									</div>
+								</div>
+							</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+				<Field.Description>
+					Controls when Whispering drops the loaded transcription model from
+					memory. Lower memory means a fresh load on the next transcription.
+				</Field.Description>
+			</Field.Field>
 		{/if}
 
 		<!-- Audio Compression Settings -->

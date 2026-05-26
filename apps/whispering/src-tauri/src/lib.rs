@@ -12,7 +12,7 @@ use recorder::commands::{
 use recorder::recorder::Recorder;
 
 pub mod transcription;
-use transcription::{transcribe_audio, ModelManager};
+use transcription::{set_unload_policy, transcribe_audio, ModelManager};
 
 pub mod windows_path;
 use windows_path::fix_windows_path;
@@ -142,7 +142,15 @@ pub async fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .manage(Mutex::new(Recorder::new()))
-        .manage(ModelManager::new());
+        .manage(ModelManager::new())
+        .setup(|app| {
+            // Start the model idle watcher. It runs on the Tauri async
+            // runtime, sleeps between checks, and drops the resident
+            // model when the configured idle timeout elapses.
+            let manager = app.state::<ModelManager>().inner().clone();
+            manager.start_idle_watcher();
+            Ok(())
+        });
 
     #[cfg(desktop)]
     {
@@ -172,6 +180,7 @@ pub async fn run() {
         stop_recording,
         cancel_recording,
         transcribe_audio,
+        set_unload_policy,
         send_sigint,
         // Command execution (prevents console window flash on Windows)
         execute_command,

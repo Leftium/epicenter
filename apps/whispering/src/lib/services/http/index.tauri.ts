@@ -1,4 +1,5 @@
 import type { StandardSchemaV1 } from '@standard-schema/spec';
+import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import { Err, tryAsync } from 'wellcrafted/result';
 import type { HttpService } from './types';
 import { HttpError } from './types';
@@ -12,18 +13,16 @@ export type {
 export { HttpError } from './types';
 
 /**
- * Custom `fetch` function implementation for SDK clients (OpenAI, Anthropic).
- * Web builds expose `undefined`, so SDKs fall back to the global `fetch`.
- * The Tauri build (`index.tauri.ts`) exposes Tauri's HTTP plugin fetch to
- * bypass CORS.
+ * Tauri's HTTP plugin fetch. Used by SDK clients (OpenAI, Anthropic) to
+ * bypass CORS restrictions in the desktop app.
  */
-export const customFetch: typeof fetch | undefined = undefined;
+export const customFetch = tauriFetch;
 
 export const HttpServiceLive: HttpService = {
 	async post({ body, url, schema, headers }) {
 		const { data: response, error: responseError } = await tryAsync({
 			try: () =>
-				window.fetch(url, {
+				tauriFetch(url, {
 					method: 'POST',
 					body,
 					headers,

@@ -169,9 +169,6 @@ export const RecorderError = defineErrors({
 		message:
 			'A recording is already in progress. Please stop the current recording before starting a new one.',
 	}),
-	NotRecording: ({ message }: { message: string }) => ({
-		message,
-	}),
 	InitFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to initialize the audio recorder: ${extractErrorMessage(cause)}`,
 		cause,
@@ -190,16 +187,6 @@ export const RecorderError = defineErrors({
 	}),
 	ReadFileFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Unable to read recording file: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	NoFilePath: () => ({
-		message: 'Recording file path not provided by method.',
-	}),
-	EmptyRecording: () => ({
-		message: 'Recording file is empty.',
-	}),
-	FileDeleteFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to delete recording file: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 	GetStateFailed: ({ cause }: { cause: unknown }) => ({
@@ -229,6 +216,12 @@ export type CpalRecordingParams = BaseRecordingParams & {
 	method: 'cpal';
 	outputFolder: string;
 	sampleRate: string;
+	/**
+	 * Storage policy. `'dictation'` (default) returns a `kind: 'pcm'`
+	 * artifact at 16 kHz mono in memory; `'longform'` writes a native-rate
+	 * WAV file progressively and returns a `kind: 'file'` artifact.
+	 */
+	mode: 'dictation' | 'longform';
 };
 
 /**
@@ -238,6 +231,37 @@ export type NavigatorRecordingParams = BaseRecordingParams & {
 	method: 'navigator';
 	bitrateKbps: string;
 };
+
+/**
+ * Canonical audio artifact emitted by every recorder path.
+ *
+ * - `pcm`: in-memory mono PCM. Dictation cpal path. Cheapest input for
+ *   both cloud (direct opus encode) and local (no decode) transcription.
+ * - `file`: native-rate WAV on disk. Longform cpal path. Crash-safe
+ *   thanks to the WAV writer's periodic header updates.
+ * - `blob`: container bytes in memory. Navigator path (Opus/WebM or
+ *   mp4/AAC depending on browser) and file-upload UI.
+ */
+export type AudioArtifact =
+	| {
+			kind: 'pcm';
+			samples: Float32Array;
+			rate: number;
+			channels: number;
+			durationSeconds: number;
+	  }
+	| {
+			kind: 'file';
+			path: string;
+			rate: number;
+			channels: number;
+			durationSeconds: number;
+			container: 'wav';
+	  }
+	| {
+			kind: 'blob';
+			blob: Blob;
+	  };
 
 /**
  * Discriminated union for recording parameters based on method
@@ -266,7 +290,7 @@ export type Recording = {
 		sendStatus: UpdateStatusMessageFn;
 	}): Promise<
 		Result<
-			{ blob: Blob; recordingId: string; durationMs: number },
+			{ artifact: AudioArtifact; recordingId: string; durationMs: number },
 			RecorderError
 		>
 	>;

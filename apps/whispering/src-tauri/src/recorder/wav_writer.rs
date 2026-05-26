@@ -163,9 +163,11 @@ impl WavWriter {
         Ok(())
     }
 
-    /// Finalize the WAV file with correct headers
+    /// Finalize the WAV file with correct headers. Pure WAV concern; the
+    /// short-recording padding (Whisper hallucination defense) lives on
+    /// the sink layer in `recorder/sink.rs` so it applies to both memory
+    /// and progressive sinks symmetrically.
     pub fn finalize(&mut self) -> io::Result<()> {
-        self.pad_short_recording()?;
         self.update_headers()?;
         self.writer.flush()?;
 
@@ -176,46 +178,6 @@ impl WavWriter {
             self.get_duration_seconds()
         );
 
-        Ok(())
-    }
-
-    /// Pad recordings shorter than 1 second up to 1.25 seconds with silence.
-    ///
-    /// Whisper is unreliable on very short clips and tends to hallucinate
-    /// common phrases like "Thank you for watching!" on near-silent or
-    /// sub-second inputs. Padding to 1.25s suppresses this across model
-    /// sizes without meaningfully changing the user's transcript.
-    ///
-    /// Inspired by Handy's stop_recording padding (MIT licensed):
-    /// https://github.com/cjpais/Handy/blob/main/src-tauri/src/managers/audio.rs
-    /// (search for "Pad if very short")
-    ///
-    /// Empty recordings (0 samples) are left alone; they indicate an init
-    /// failure, not a genuine short clip, and should surface as such.
-    fn pad_short_recording(&mut self) -> io::Result<()> {
-        let samples_per_second = self.sample_rate as u64 * self.channels as u64;
-        let pad_target = samples_per_second * 5 / 4; // 1.25 seconds
-
-        if self.samples_written == 0 || self.samples_written >= samples_per_second {
-            return Ok(());
-        }
-
-        let samples_to_add = pad_target - self.samples_written;
-        let zero_bytes = 0.0f32.to_le_bytes();
-        for _ in 0..samples_to_add {
-            self.writer.write_all(&zero_bytes)?;
-        }
-
-        debug!(
-            "Padded short recording: added {} silent samples ({} -> {} total, {:.2}s)",
-            samples_to_add,
-            self.samples_written,
-            self.samples_written + samples_to_add,
-            (self.samples_written + samples_to_add) as f32
-                / (self.sample_rate as f32 * self.channels as f32)
-        );
-
-        self.samples_written += samples_to_add;
         Ok(())
     }
 

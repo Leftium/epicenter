@@ -1,11 +1,11 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { remove } from '@tauri-apps/plugin-fs';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { categorizeRecorderError } from '$lib/services/recorder/categorize-error';
 import {
 	asDeviceIdentifier,
+	type AudioArtifact,
 	type CpalRecordingParams,
 	type Device,
 	type DeviceAcquisitionOutcome,
@@ -13,17 +13,47 @@ import {
 	type RecorderService,
 	type Recording,
 } from '$lib/services/recorder/types';
-import { requireTauri } from '$lib/tauri';
 
 /**
- * Audio recording data returned from the Rust method
+ * Raw artifact shape coming back from the Rust IPC boundary. The PCM
+ * variant arrives with `samples: number[]` because serde's default JSON
+ * representation for `Vec<f32>` is an array of numbers; we convert to
+ * `Float32Array` here so the in-app type is always the typed array.
+ *
+ * For longer recordings the JSON-array form of PCM samples is the
+ * load-bearing IPC cost; for dictation clips (~30s at 16 kHz = 480k
+ * samples) the cost is bounded. If profiling shows it dominates, switch
+ * `stop_recording` to a raw IPC response with a binary body.
  */
-type AudioRecording = {
-	sampleRate: number;
-	channels: number;
-	durationSeconds: number;
-	filePath?: string;
-};
+type RawAudioArtifact =
+	| {
+			kind: 'pcm';
+			samples: number[];
+			rate: number;
+			channels: number;
+			durationSeconds: number;
+	  }
+	| {
+			kind: 'file';
+			path: string;
+			rate: number;
+			channels: number;
+			durationSeconds: number;
+			container: 'wav';
+	  };
+
+function hydrateArtifact(raw: RawAudioArtifact): AudioArtifact {
+	if (raw.kind === 'pcm') {
+		return {
+			kind: 'pcm',
+			samples: Float32Array.from(raw.samples),
+			rate: raw.rate,
+			channels: raw.channels,
+			durationSeconds: raw.durationSeconds,
+		};
+	}
+	return raw;
+}
 
 /**
  * Enumerates available recording devices from the system.
@@ -108,33 +138,15 @@ function createCpalRecorder(): RecorderService {
 			backend: 'cpal',
 
 			stop: async ({ sendStatus }) => {
-				const { data: audioRecording, error: stopRecordingError } =
-					await invoke<AudioRecording>('stop_recording');
+				const { data: raw, error: stopRecordingError } =
+					await invoke<RawAudioArtifact>('stop_recording');
 				if (stopRecordingError) {
 					teardown(recording);
 					return RecorderError.StopFailed({ cause: stopRecordingError });
 				}
 
-				const { filePath, durationSeconds } = audioRecording;
-				if (!filePath) {
-					teardown(recording);
-					return RecorderError.NoFilePath();
-				}
-				const durationMs = Math.round(durationSeconds * 1000);
-
-				sendStatus({
-					title: '📁 Reading Recording',
-					description: 'Loading your recording from disk...',
-				});
-
-				const { data: blob, error: readRecordingFileError } =
-					await requireTauri().fs.pathToBlob(filePath);
-				if (readRecordingFileError) {
-					teardown(recording);
-					return RecorderError.ReadFileFailed({
-						cause: readRecordingFileError,
-					});
-				}
+				const artifact = hydrateArtifact(raw);
+				const durationMs = Math.round(raw.durationSeconds * 1000);
 
 				sendStatus({
 					title: '🔄 Closing Session',
@@ -144,12 +156,11 @@ function createCpalRecorder(): RecorderService {
 					'close_recording_session',
 				);
 				if (closeError) {
-					// Log but don't fail the stop operation
 					console.error('Failed to close recording session:', closeError);
 				}
 
 				teardown(recording);
-				return Ok({ blob, recordingId, durationMs });
+				return Ok({ artifact, recordingId, durationMs });
 			},
 
 			cancel: async ({ sendStatus }) => {
@@ -159,33 +170,16 @@ function createCpalRecorder(): RecorderService {
 						'Safely stopping your recording and cleaning up resources...',
 				});
 
-				// First get the recording data to know if there's a file to delete
-				const { data: audioRecording } =
-					await invoke<AudioRecording>('stop_recording');
-
-				if (audioRecording?.filePath) {
-					const filePath = audioRecording.filePath;
-					const { error: removeError } = await tryAsync({
-						try: () => remove(filePath),
-						catch: (error) => RecorderError.FileDeleteFailed({ cause: error }),
+				// cancel_recording on the Rust side discards the in-flight
+				// artifact, deletes the on-disk WAV (file sinks), and tears
+				// down the session worker. One round trip.
+				const { error: cancelError } = await invoke<void>('cancel_recording');
+				if (cancelError) {
+					sendStatus({
+						title: '❌ Cancel Failed',
+						description:
+							'We hit a problem cancelling; continuing cleanup anyway...',
 					});
-					if (removeError)
-						sendStatus({
-							title: '❌ Error Deleting Recording File',
-							description:
-								"We couldn't delete the recording file. Continuing with the cancellation process...",
-						});
-				}
-
-				sendStatus({
-					title: '🔄 Closing Session',
-					description: 'Cleaning up recording resources...',
-				});
-				const { error: closeError } = await invoke<void>(
-					'close_recording_session',
-				);
-				if (closeError) {
-					console.error('Failed to close recording session:', closeError);
 				}
 
 				teardown(recording);
@@ -236,6 +230,7 @@ function createCpalRecorder(): RecorderService {
 				recordingId,
 				outputFolder,
 				sampleRate,
+				mode,
 			}: CpalRecordingParams,
 			{ sendStatus },
 		) => {
@@ -301,6 +296,7 @@ function createCpalRecorder(): RecorderService {
 					recordingId,
 					outputFolder,
 					sampleRate: sampleRateNum,
+					mode,
 				},
 			);
 			if (initRecordingSessionError)

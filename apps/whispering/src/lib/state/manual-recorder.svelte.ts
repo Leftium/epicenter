@@ -68,6 +68,9 @@ async function buildStartParams(
 				deviceConfig.get('recording.cpal.outputFolder') ??
 				(await PATHS.DB.RECORDINGS()),
 			sampleRate: deviceConfig.get('recording.cpal.sampleRate'),
+			// Dictation default: memory sink + 16 kHz mono + short-clip pad.
+			// Hardcoded today; a longform mode lands when the longform UI does.
+			mode: 'dictation',
 		};
 	}
 

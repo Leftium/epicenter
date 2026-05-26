@@ -247,14 +247,45 @@ export type StartRecordingParams =
 	| NavigatorRecordingParams;
 
 /**
- * Recorder service interface shared by all methods
+ * A live recording session bound to the backend that started it.
+ *
+ * The `Recording` is the unit of lifecycle: it knows its own backend, owns
+ * its own teardown, and exposes per-session state changes. Toggling
+ * `recording.method` after construction has no effect on an in-flight
+ * Recording, which is what fixes the swap-mid-recording leak.
+ *
+ * The `subscribe` handler is invoked synchronously with the current state on
+ * subscribe (so callers don't have to mirror "I just started" themselves),
+ * then again whenever the session transitions, ending with 'IDLE' on
+ * stop/cancel.
+ */
+export type Recording = {
+	readonly recordingId: string;
+	readonly backend: 'navigator' | 'cpal';
+	stop(callbacks: {
+		sendStatus: UpdateStatusMessageFn;
+	}): Promise<Result<{ blob: Blob; recordingId: string }, RecorderError>>;
+	cancel(callbacks: {
+		sendStatus: UpdateStatusMessageFn;
+	}): Promise<Result<CancelRecordingResult, RecorderError>>;
+	subscribe(handler: (state: WhisperingRecordingState) => void): () => void;
+};
+
+/**
+ * Factory for `Recording` sessions. Services no longer carry mutable
+ * start/stop state directly; instead `startRecording` returns a Recording
+ * whose methods are bound to the backend that produced it.
  */
 export type RecorderService = {
 	/**
-	 * Get the current recorder state
-	 * Returns 'IDLE' if no recording is active, 'RECORDING' if recording is in progress
+	 * Probe for a Recording that already exists at module-load time. CPAL
+	 * sessions can outlive a JS reload because the Rust process keeps the
+	 * stream; navigator sessions cannot survive a reload and will always
+	 * return null after one.
+	 *
+	 * Returns the live Recording bound to this backend, or null if none.
 	 */
-	getRecorderState(): Promise<Result<WhisperingRecordingState, RecorderError>>;
+	getActiveRecording(): Promise<Result<Recording | null, RecorderError>>;
 
 	/**
 	 * Enumerate available recording devices with their labels and identifiers
@@ -262,45 +293,22 @@ export type RecorderService = {
 	enumerateDevices(): Promise<Result<Device[], RecorderError>>;
 
 	/**
-	 * Start a new recording session
+	 * Start a new recording session, returning the Recording handle along
+	 * with the device acquisition outcome. The caller holds the Recording
+	 * and uses its `stop`/`cancel`/`subscribe` for the rest of the session.
 	 */
 	startRecording(
 		params: StartRecordingParams,
 		callbacks: {
 			sendStatus: UpdateStatusMessageFn;
 		},
-	): Promise<Result<DeviceAcquisitionOutcome, RecorderError>>;
-
-	/**
-	 * Stop the current recording. Returns the audio blob alongside the
-	 * recordingId that was supplied to startRecording, so callers don't need to
-	 * remember it across the start/stop boundary.
-	 */
-	stopRecording(callbacks: {
-		sendStatus: UpdateStatusMessageFn;
-	}): Promise<Result<{ blob: Blob; recordingId: string }, RecorderError>>;
-
-	/**
-	 * Cancel the current recording without saving
-	 */
-	cancelRecording(callbacks: {
-		sendStatus: UpdateStatusMessageFn;
-	}): Promise<Result<CancelRecordingResult, RecorderError>>;
-
-	/**
-	 * Subscribe to state changes from this service. The handler is invoked
-	 * synchronously whenever the service transitions between IDLE and RECORDING.
-	 *
-	 * This is the single source of truth for state changes. Consumers should
-	 * subscribe at construction time and let the handler drive their local
-	 * state ; no eager mirror writes from the consumer side.
-	 *
-	 * Inactive services never fire (a CPAL subscription stays silent in web
-	 * mode, a navigator subscription stays silent in CPAL mode), so it is
-	 * safe to subscribe to every available service at once.
-	 *
-	 * Returns an unsubscribe function. Module-singleton consumers can ignore
-	 * the return value; ephemeral consumers should call it on teardown.
-	 */
-	subscribe(handler: (state: WhisperingRecordingState) => void): () => void;
+	): Promise<
+		Result<
+			{
+				recording: Recording;
+				deviceAcquisition: DeviceAcquisitionOutcome;
+			},
+			RecorderError
+		>
+	>;
 };

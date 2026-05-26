@@ -95,11 +95,14 @@ pub async fn run() {
     // This ensures child processes can find ffmpeg on Windows
     fix_windows_path();
 
-    // OrtAccelerator::Auto deliberately excludes DirectML because DirectML
-    // requires sequential ORT session settings. On Windows, select it
-    // explicitly so the compiled-in `ort-directml` feature is actually used.
-    // Other platforms rely on the default Auto, which picks CoreML/CUDA where
-    // those features are compiled in.
+    // ONNX Runtime accelerator for Parakeet and Moonshine. `OrtAccelerator::Auto`
+    // picks the best provider that's compiled in (CoreML on macOS, CPU on Linux),
+    // but it deliberately excludes DirectML because DirectML needs sequential ORT
+    // session settings that would penalize other backends. So on Windows we
+    // select DirectML explicitly to honor the compiled-in `ort-directml` feature.
+    // transcribe-rs always appends CPU to the EP list, so a CoreML or DirectML
+    // init failure degrades to CPU rather than failing the transcription. Set
+    // `ORT_LOG_SEVERITY_LEVEL=0` to confirm which EP ORT actually selected.
     #[cfg(target_os = "windows")]
     transcribe_rs::accel::set_ort_accelerator(transcribe_rs::accel::OrtAccelerator::DirectMl);
 

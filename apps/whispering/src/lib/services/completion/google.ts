@@ -6,7 +6,7 @@ import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import type { CompletionService } from './types';
 import { CompletionError } from './types';
 
-export const GoogleCompletionServiceLive: CompletionService = {
+export const GoogleCompletionServiceLive = {
 	complete: async ({ apiKey, model: modelName, systemPrompt, userPrompt }) => {
 		const combinedPrompt = `${systemPrompt}\n${userPrompt}`;
 		const { data: completion, error: completionError } = await tryAsync({
@@ -42,4 +42,4 @@ export const GoogleCompletionServiceLive: CompletionService = {
 
 		return Ok(completion);
 	},
-};
+} satisfies CompletionService;

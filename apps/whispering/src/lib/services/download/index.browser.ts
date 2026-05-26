@@ -4,7 +4,7 @@ import { DownloadError } from './types';
 
 export type { DownloadError, DownloadService } from './types';
 
-export const DownloadServiceLive: DownloadService = {
+export const DownloadServiceLive = {
 	downloadBlob: ({ name, blob }) =>
 		tryAsync({
 			try: async () => {
@@ -20,4 +20,4 @@ export const DownloadServiceLive: DownloadService = {
 			},
 			catch: (error) => DownloadError.BrowserDownloadFailed({ cause: error }),
 		}),
-};
+} satisfies DownloadService;

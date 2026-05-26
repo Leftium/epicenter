@@ -11,4 +11,4 @@ export { BlobError } from './types';
  * system store with the IndexedDB store as a legacy fallback. Both entries
  * expose `AudioBlobStoreLive` satisfying `BlobStore` from types.ts.
  */
-export const AudioBlobStoreLive: BlobStore = createIndexedDbBlobStore();
+export const AudioBlobStoreLive = createIndexedDbBlobStore() satisfies BlobStore;

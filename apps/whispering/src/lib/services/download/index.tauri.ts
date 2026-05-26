@@ -7,7 +7,7 @@ import { DownloadError } from './types';
 
 export type { DownloadError, DownloadService } from './types';
 
-export const DownloadServiceLive: DownloadService = {
+export const DownloadServiceLive = {
 	downloadBlob: async ({ name, blob }) => {
 		const extension = getAudioExtension(blob.type);
 		const { data: path, error: saveError } = await tryAsync({
@@ -31,4 +31,4 @@ export const DownloadServiceLive: DownloadService = {
 		if (writeError) return Err(writeError);
 		return Ok(undefined);
 	},
-};
+} satisfies DownloadService;

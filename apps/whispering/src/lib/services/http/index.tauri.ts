@@ -18,7 +18,7 @@ export { HttpError } from './types';
  */
 export const customFetch = tauriFetch;
 
-export const HttpServiceLive: HttpService = {
+export const HttpServiceLive = {
 	async post({ body, url, schema, headers }) {
 		const { data: response, error: responseError } = await tryAsync({
 			try: () =>
@@ -59,4 +59,4 @@ export const HttpServiceLive: HttpService = {
 		});
 		return parseResult;
 	},
-};
+} satisfies HttpService;

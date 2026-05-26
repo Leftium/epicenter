@@ -29,7 +29,7 @@ const detectExtension = async (): Promise<boolean> => {
 	return hasExtension;
 };
 
-export const NotificationServiceLive: NotificationService = {
+export const NotificationServiceLive = {
 	async notify({
 		action,
 		id,
@@ -88,4 +88,4 @@ export const NotificationServiceLive: NotificationService = {
 		// or require service worker control.
 		return Ok(undefined);
 	},
-};
+} satisfies NotificationService;

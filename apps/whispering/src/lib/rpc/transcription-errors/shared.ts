@@ -6,17 +6,17 @@ type LinkActionShape = {
 	href: `/${string}`;
 };
 
-const updateApiKeyAction: LinkActionShape = {
+const updateApiKeyAction = {
 	type: 'link',
 	label: 'Update API key',
 	href: '/settings/transcription',
-};
+} satisfies LinkActionShape;
 
-const addApiKeyAction: LinkActionShape = {
+const addApiKeyAction = {
 	type: 'link',
 	label: 'Add API key',
 	href: '/settings/transcription',
-};
+} satisfies LinkActionShape;
 
 export const apiKeyRequired = (provider: string) => ({
 	title: '🔑 API Key Required',

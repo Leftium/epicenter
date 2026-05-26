@@ -6,7 +6,7 @@ import { TextError } from './types';
 
 export type { TextError, TextService } from './types';
 
-export const TextServiceLive: TextService = {
+export const TextServiceLive = {
 	readFromClipboard: () =>
 		tryAsync({
 			try: async () => {
@@ -33,4 +33,4 @@ export const TextServiceLive: TextService = {
 			try: () => invoke<void>('simulate_enter_keystroke'),
 			catch: (error) => TextError.SimulateKeystroke({ cause: error }),
 		}),
-};
+} satisfies TextService;

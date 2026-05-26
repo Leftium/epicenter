@@ -3,6 +3,6 @@ import type { OsService } from './types';
 
 export type { OsError, OsService } from './types';
 
-export const OsServiceLive: OsService = {
+export const OsServiceLive = {
 	type: () => os.type(),
-};
+} satisfies OsService;

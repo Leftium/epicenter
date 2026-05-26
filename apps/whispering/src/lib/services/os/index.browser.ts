@@ -13,7 +13,7 @@ type NavigatorWithUAData = Navigator & {
 	userAgentData: UserAgentData;
 };
 
-export const OsServiceLive: OsService = {
+export const OsServiceLive = {
 	type(): OsType {
 		// Try modern User-Agent Client Hints API first
 		if (hasUserAgentData(navigator)) {
@@ -24,7 +24,7 @@ export const OsServiceLive: OsService = {
 		// Fallback to traditional user agent detection
 		return getPlatformFromUserAgent(navigator);
 	},
-};
+} satisfies OsService;
 
 /**
  * Type guard to check if navigator supports User-Agent Client Hints

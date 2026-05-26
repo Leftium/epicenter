@@ -4,7 +4,7 @@ import type { PlaySoundService } from './types';
 
 export type { PlaySoundService, SoundError } from './types';
 
-export const PlaySoundServiceLive: PlaySoundService = {
+export const PlaySoundServiceLive = {
 	playSound: async (soundName) => {
 		if (!document.hidden) {
 			await audioElements[soundName].play();
@@ -12,4 +12,4 @@ export const PlaySoundServiceLive: PlaySoundService = {
 		}
 		return Ok(undefined);
 	},
-};
+} satisfies PlaySoundService;

@@ -435,20 +435,20 @@ export type MyService = {
 // 2. services/my-service/index.browser.ts - web impl
 import type { MyService } from './types';
 export type { MyError, MyService } from './types';
-export const MyServiceLive: MyService = {
+export const MyServiceLive = {
 	doSomething: async (input) => {
 		/* browser API call */
 	},
-};
+} satisfies MyService;
 
 // 3. services/my-service/index.tauri.ts - Tauri impl
 import type { MyService } from './types';
 export type { MyError, MyService } from './types';
-export const MyServiceLive: MyService = {
+export const MyServiceLive = {
 	doSomething: async (input) => {
 		/* Tauri API call */
 	},
-};
+} satisfies MyService;
 
 // 4. Add to main export at services/index.ts
 import { MyServiceLive } from './my-service';

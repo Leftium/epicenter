@@ -7,7 +7,7 @@ export type { AnalyticsError, AnalyticsService, Event } from './types';
 
 init('A-US-5744332458');
 
-export const AnalyticsServiceLive: AnalyticsService = {
+export const AnalyticsServiceLive = {
 	logEvent: async (event) =>
 		tryAsync({
 			try: async () => {
@@ -16,4 +16,4 @@ export const AnalyticsServiceLive: AnalyticsService = {
 			},
 			catch: (error) => AnalyticsError.LogEventFailed({ cause: error }),
 		}),
-};
+} satisfies AnalyticsService;

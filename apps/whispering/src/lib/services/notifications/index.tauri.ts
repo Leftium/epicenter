@@ -42,7 +42,7 @@ const removeNotificationById = async (
 	return Ok(undefined);
 };
 
-export const NotificationServiceLive: NotificationService = {
+export const NotificationServiceLive = {
 	async notify({
 		id: notificationId,
 		...notificationOptions
@@ -82,4 +82,4 @@ export const NotificationServiceLive: NotificationService = {
 		);
 		return removeNotificationResult;
 	},
-};
+} satisfies NotificationService;

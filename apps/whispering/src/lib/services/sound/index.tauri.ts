@@ -4,7 +4,7 @@ import { SoundError, type PlaySoundService } from './types';
 
 export type { PlaySoundService, SoundError } from './types';
 
-export const PlaySoundServiceLive: PlaySoundService = {
+export const PlaySoundServiceLive = {
 	playSound: async (soundName) =>
 		tryAsync({
 			try: async () => {
@@ -12,4 +12,4 @@ export const PlaySoundServiceLive: PlaySoundService = {
 			},
 			catch: (error) => SoundError.Play({ cause: error }),
 		}),
-};
+} satisfies PlaySoundService;

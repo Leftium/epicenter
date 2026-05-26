@@ -17,7 +17,7 @@ export { BlobError } from './types';
 const fileSystemDb = createFileSystemBlobStore();
 const indexedDb = createIndexedDbBlobStore();
 
-export const AudioBlobStoreLive: BlobStore = {
+export const AudioBlobStoreLive = {
 	save: async (key, blob) => {
 		// SINGLE WRITE: only to file system
 		return fileSystemDb.save(key, blob);
@@ -85,4 +85,4 @@ export const AudioBlobStoreLive: BlobStore = {
 		}
 		return Ok(undefined);
 	},
-};
+} satisfies BlobStore;

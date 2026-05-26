@@ -2,7 +2,6 @@ import { type Command, commandCallbacks } from '$lib/commands';
 import { GlobalShortcutManagerLive } from '$lib/services/global-shortcut-manager';
 import { IS_MACOS } from '$lib/constants/platform';
 import { defineMutation } from '$lib/rpc/client';
-// see direct imports below
 import type { Accelerator } from '$lib/services/global-shortcut-manager';
 
 /**

@@ -2,7 +2,6 @@ import { Ok } from 'wellcrafted/result';
 import { AutostartServiceLive } from '$lib/services/autostart';
 import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
 import { WhisperingErr } from '$lib/result';
-// see direct imports below
 
 const autostartKeys = {
 	all: ['autostart'] as const,

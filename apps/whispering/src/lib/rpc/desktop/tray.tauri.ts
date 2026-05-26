@@ -3,7 +3,6 @@ import { TrayIconServiceLive } from '$lib/services/tray';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { defineMutation } from '$lib/rpc/client';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
-// see direct imports below
 
 const setTrayIconKeys = {
 	setTrayIcon: ['setTrayIcon', 'setTrayIcon'] as const,

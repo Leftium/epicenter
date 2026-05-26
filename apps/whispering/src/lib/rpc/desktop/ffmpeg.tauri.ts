@@ -2,7 +2,6 @@ import { Ok } from 'wellcrafted/result';
 import { FfmpegServiceLive } from '$lib/services/ffmpeg';
 import { defineQuery } from '$lib/rpc/client';
 import { WhisperingErr } from '$lib/result';
-// see direct imports below
 
 export const ffmpeg = {
 	checkFfmpegInstalled: defineQuery({

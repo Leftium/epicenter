@@ -2,7 +2,8 @@
 ///
 /// On Windows, there's a known bug where Command::new() sometimes ignores
 /// the parent process's PATH environment variable. This function ensures
-/// child processes (like ffmpeg) can be found by explicitly setting PATH.
+/// child processes spawned for shell utilities can be found by explicitly
+/// setting PATH.
 #[cfg(target_os = "windows")]
 pub fn fix_windows_path() {
     use std::env;

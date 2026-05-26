@@ -1,10 +1,9 @@
-mod audio;
 mod error;
 mod model_manager;
 
-use audio::prepare_samples_for_transcription;
+use crate::audio;
 use error::TranscriptionError;
-use log::info;
+use log::{debug, info, warn};
 pub use model_manager::ModelManager;
 use model_manager::UnloadPolicy;
 use serde::Deserialize;
@@ -164,9 +163,20 @@ fn run_transcription(
         audio_data.len(),
     );
 
-    let Some(samples) = prepare_samples_for_transcription(audio_data, engine_label)? else {
+    let samples = audio::decode_to_pcm16k_mono(&audio_data).map_err(|e| {
+        TranscriptionError::AudioReadError {
+            message: e.to_string(),
+        }
+    })?;
+    debug!(
+        "[Transcription] decoded {} samples for {} engine",
+        samples.len(),
+        engine_label,
+    );
+    if samples.is_empty() {
+        warn!("[Transcription] decoder produced zero samples, returning empty transcript");
         return Ok(String::new());
-    };
+    }
 
     let transcript = match request {
         TranscribeRequest::Whisper {

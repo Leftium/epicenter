@@ -14,6 +14,7 @@
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { Ok, tryAsync } from 'wellcrafted/result';
 	import type { LocalModelConfig } from '$lib/services/transcription/local/types';
+	import { tauri } from '$lib/tauri';
 	import LocalModelDownloadCard from './LocalModelDownloadCard.svelte';
 
 	/**
@@ -82,7 +83,7 @@
 	 * Open file/folder browser for manual model selection
 	 */
 	async function selectModel() {
-		if (!window.__TAURI_INTERNALS__) return;
+		if (!tauri) return;
 
 		await tryAsync({
 			try: async () => {

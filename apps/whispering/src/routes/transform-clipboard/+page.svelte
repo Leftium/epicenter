@@ -13,6 +13,7 @@
 	import { deliverTransformationResult } from '$lib/operations/delivery';
 	import { notify } from '$lib/operations/notify';
 	import { sound } from '$lib/operations/sound';
+	import { tauri } from '$lib/tauri';
 	import { rpc } from '$lib/rpc';
 	import * as transformClipboardWindow from './transformClipboardWindow.tauri';
 
@@ -56,7 +57,7 @@
 	});
 
 	$effect(() => {
-		if (!window.__TAURI_INTERNALS__) return;
+		if (!tauri) return;
 
 		if (clipboardQuery.error) {
 			notify.error({

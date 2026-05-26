@@ -24,6 +24,7 @@
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import { Ok, tryAsync } from 'wellcrafted/result';
 	import { notify } from '$lib/operations/notify';
+	import { tauri } from '$lib/tauri';
 
 	type Props = {
 		/**
@@ -54,7 +55,7 @@
 	 * Shows error toast if opening fails.
 	 */
 	async function openFolder() {
-		if (!window.__TAURI_INTERNALS__) return;
+		if (!tauri) return;
 
 		await tryAsync({
 			try: async () => {
@@ -73,7 +74,7 @@
 	}
 </script>
 
-{#if window.__TAURI_INTERNALS__}
+{#if tauri}
 	{#if variant === 'icon'}
 		<Button
 			tooltip={tooltipText}

@@ -107,7 +107,7 @@
 					</Field.Label>
 				</Field.Field>
 
-				{#if window.__TAURI_INTERNALS__ && settings.get('output.transcription.cursor')}
+				{#if tauri && settings.get('output.transcription.cursor')}
 					<Field.Field orientation="horizontal">
 						<Switch
 							id="transcription.simulateEnterAfterOutput"
@@ -152,7 +152,7 @@
 					</Field.Label>
 				</Field.Field>
 
-				{#if window.__TAURI_INTERNALS__ && settings.get('output.transformation.cursor')}
+				{#if tauri && settings.get('output.transformation.cursor')}
 					<Field.Field orientation="horizontal">
 						<Switch
 							id="transformation.simulateEnterAfterOutput"
@@ -209,7 +209,7 @@
 			</Field.Field>
 		{/if}
 
-		{#if window.__TAURI_INTERNALS__}
+		{#if tauri}
 			<Field.Field orientation="horizontal">
 				<Field.Content>
 					<Field.Label for="autostart">Launch on Startup</Field.Label>

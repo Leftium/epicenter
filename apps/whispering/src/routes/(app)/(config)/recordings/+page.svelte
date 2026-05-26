@@ -52,6 +52,7 @@
 	import { PATHS } from '$lib/constants/paths';
 	import { notify } from '$lib/operations/notify';
 	import { rpc } from '$lib/rpc';
+	import { tauri } from '$lib/tauri';
 	import { services } from '$lib/services';
 	import { type Recording, recordings } from '$lib/state/recordings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
@@ -364,7 +365,7 @@
 		</SectionHeader.Title>
 		<SectionHeader.Description>
 			Your latest recordings and transcriptions, stored locally
-			{window.__TAURI_INTERNALS__ ? 'on your file system' : 'in IndexedDB'}.
+			{tauri ? 'on your file system' : 'in IndexedDB'}.
 		</SectionHeader.Description>
 	</SectionHeader.Root>
 	<Card class="flex flex-col gap-4 p-6">

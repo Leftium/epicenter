@@ -7,6 +7,7 @@
 	import { migrateOldSettings } from '$lib/migration/migrate-settings';
 	import { analytics } from '$lib/operations/analytics';
 	import { services } from '$lib/services';
+	import { tauri } from '$lib/tauri';
 	import AppLayout from './_components/AppLayout.svelte';
 	import BottomNav from './_components/BottomNav.svelte';
 	import VerticalNav from './_components/VerticalNav.svelte';
@@ -34,7 +35,7 @@
 
 	// Listen for navigation events from other windows
 	onMount(async () => {
-		if (!window.__TAURI_INTERNALS__) return;
+		if (!tauri) return;
 		unlistenNavigate = await listen<{ path: string }>(
 			'navigate-main-window',
 			(event) => {

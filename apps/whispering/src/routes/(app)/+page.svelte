@@ -61,7 +61,7 @@
 		RECORDING_MODE_OPTIONS.filter((mode) => {
 			if (!mode.desktopOnly) return true;
 			// Desktop only, only show if Tauri is available
-			return window.__TAURI_INTERNALS__;
+			return !!tauri;
 		}),
 	);
 
@@ -92,7 +92,7 @@
 
 	// Set up desktop drag and drop listener
 	onMount(async () => {
-		if (!window.__TAURI_INTERNALS__) return;
+		if (!tauri) return;
 		const { error } = await tryAsync({
 			try: async () => {
 				const { getCurrentWebview } = await import('@tauri-apps/api/webview');
@@ -390,7 +390,7 @@
 				{' '}
 				to start recording here.
 			</p>
-			{#if window.__TAURI_INTERNALS__}
+			{#if tauri}
 				<p class="text-foreground/75 text-sm">
 					Press
 					{' '}
@@ -429,7 +429,7 @@
 			<p class="text-foreground/75 text-center text-sm">
 				Drag files here or click to browse.
 			</p>
-			{#if window.__TAURI_INTERNALS__}
+			{#if tauri}
 				<p class="text-foreground/75 text-sm">
 					Press
 					{' '}
@@ -449,7 +449,7 @@
 			{/if}
 		{/if}
 		<p class="text-muted-foreground text-center text-sm font-light">
-			{#if !window.__TAURI_INTERNALS__}
+			{#if !tauri}
 				Tired of switching tabs?
 				<Link
 					tooltip="Get Whispering for desktop"

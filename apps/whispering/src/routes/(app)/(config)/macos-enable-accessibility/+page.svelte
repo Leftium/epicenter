@@ -69,7 +69,7 @@
 		</Card.Header>
 		<Card.Content>
 			<div class="flex flex-col items-center gap-2">
-				{#if window.__TAURI_INTERNALS__}
+				{#if tauri}
 					<!-- YouTube embed for Tauri app (external videos don't work well) -->
 					<iframe
 						class="max-w-md rounded-lg border"

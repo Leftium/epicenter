@@ -18,7 +18,7 @@ import {
 	type Table,
 	TableParseError,
 } from '../../table.js';
-import type { TablesRecord } from '../shared.js';
+import type { AnyTable, TablesRecord } from '../shared.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // PUSH ERROR + EVENT TYPES
@@ -93,9 +93,6 @@ export type PushResult = {
 	errored: number;
 	events: PushEvent[];
 };
-
-// biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous tables
-type AnyTable = Table<any>;
 
 /**
  * Symmetric shape of a parsed markdown file. `toMarkdown` produces it,

@@ -28,7 +28,7 @@ import type * as Y from 'yjs';
 import { defineMutation, defineQuery } from '../../../shared/actions.js';
 import type { MaybePromise } from '../../../shared/types.js';
 import type { BaseRow, Table } from '../../table.js';
-import type { TablesRecord } from '../shared.js';
+import type { AnyTable, TablesRecord } from '../shared.js';
 import { generateDdl, quoteIdentifier } from './ddl.js';
 import { createSqliteFtsLayer } from './fts.js';
 
@@ -73,9 +73,6 @@ export type MirrorStatement = {
 	/** Fetch the first matching row, or null if none found. */
 	get(...params: unknown[]): MaybePromise<unknown>;
 };
-
-// biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous table helpers
-type AnyTable = Table<any>;
 
 export type { TablesRecord } from '../shared.js';
 

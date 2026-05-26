@@ -90,11 +90,6 @@ export async function startManualRecording() {
 		return;
 	}
 
-	if (!outcome) {
-		notify.dismiss(toastId);
-		return;
-	}
-
 	handleDeviceAcquisitionOutcome(
 		outcome,
 		toastId,
@@ -132,12 +127,7 @@ export async function stopManualRecording() {
 		return;
 	}
 
-	if (!data) {
-		notify.dismiss(toastId);
-		return;
-	}
-
-	const { blob, recordingId, duration } = data;
+	const { blob, recordingId, durationMs } = data;
 
 	notify.success({
 		id: toastId,
@@ -150,7 +140,7 @@ export async function stopManualRecording() {
 	analytics.logEvent({
 		type: 'manual_recording_completed',
 		blob_size: blob.size,
-		duration,
+		duration: durationMs,
 	});
 
 	await processRecordingPipeline({
@@ -188,11 +178,6 @@ export async function cancelManualRecording() {
 			description: error.message,
 			action: { type: 'more-details', error },
 		});
-		return;
-	}
-
-	if (!data) {
-		notify.dismiss(toastId);
 		return;
 	}
 

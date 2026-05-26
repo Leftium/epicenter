@@ -1,11 +1,8 @@
 import { isTauri } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { nanoid } from 'nanoid/non-secure';
-import { Err, Ok, type Result } from 'wellcrafted/result';
-import type {
-	CancelRecordingResult,
-	WhisperingRecordingState,
-} from '$lib/constants/audio';
+import { Ok } from 'wellcrafted/result';
+import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { PATHS } from '$lib/constants/paths';
 import { defineQuery } from '$lib/query/client';
 import { WhisperingErr } from '$lib/result';
@@ -13,19 +10,17 @@ import { services } from '$lib/services';
 import { desktopServices } from '$lib/services/desktop';
 import {
 	asDeviceIdentifier,
-	type DeviceAcquisitionOutcome,
-	type RecorderError,
 	type StartRecordingParams,
 	type UpdateStatusMessageFn,
 } from '$lib/services/recorder/types';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 
 /**
- * Toast-agnostic manual recorder.
- *
- * Owns reactive state, an internal busy mutex, and start-time tracking. Takes
- * a generic `sendStatus` progress callback so callers (notify, log, etc.)
- * decide how progress surfaces to the user.
+ * Toast-agnostic manual recorder. Exposes the current recording state and
+ * three thin wrappers around the active recorder service. State stays narrow
+ * (`'IDLE' | 'RECORDING'`); the transient "operation in flight" window is
+ * owned by the caller (a TanStack mutation in the UI layer), not modelled
+ * here.
  *
  * On Tauri, state is bootstrapped from the active service's `getRecorderState`
  * once at module init (a Rust CPAL session can outlive a JS reload). A Tauri
@@ -66,12 +61,10 @@ async function buildStartParams(
 	};
 }
 
+type Callbacks = { sendStatus: UpdateStatusMessageFn };
+
 function createManualRecorder() {
 	let _state = $state<WhisperingRecordingState>('IDLE');
-	// Internal mutex: covers the window between calling the recorder service
-	// and the service returning, during which _state hasn't been updated yet.
-	let _busy = false;
-	let _startedAt: number | null = null;
 
 	void recorderService()
 		.getRecorderState()
@@ -104,98 +97,25 @@ function createManualRecorder() {
 			},
 		}),
 
-		/**
-		 * Returns Ok(null) if the recorder is busy or not idle; the caller should
-		 * treat that as a no-op (no toast, no error). Returns Err only for
-		 * actual service failures.
-		 */
-		async start({
-			sendStatus,
-		}: {
-			sendStatus: UpdateStatusMessageFn;
-		}): Promise<Result<DeviceAcquisitionOutcome | null, RecorderError>> {
-			if (_busy || _state !== 'IDLE') {
-				console.info('Recorder not idle, ignoring start');
-				return Ok(null);
-			}
-			_busy = true;
-
-			const params = await buildStartParams(nanoid());
-			const { data: outcome, error } = await recorderService().startRecording(
-				params,
+		async start({ sendStatus }: Callbacks) {
+			const result = await recorderService().startRecording(
+				await buildStartParams(nanoid()),
 				{ sendStatus },
 			);
-
-			_busy = false;
-
-			if (error) return Err(error);
-
-			_state = 'RECORDING';
-			_startedAt = Date.now();
-			return Ok(outcome);
+			if (result.data) _state = 'RECORDING';
+			return result;
 		},
 
-		/**
-		 * Returns Ok(null) if the recorder is busy; the caller should treat that
-		 * as a no-op. Returns Err only for actual service failures.
-		 */
-		async stop({
-			sendStatus,
-		}: {
-			sendStatus: UpdateStatusMessageFn;
-		}): Promise<
-			Result<
-				{ blob: Blob; recordingId: string; duration: number | undefined } | null,
-				RecorderError
-			>
-		> {
-			if (_busy) {
-				console.info('Recorder busy, ignoring stop');
-				return Ok(null);
-			}
-			_busy = true;
-
-			const { data, error } = await recorderService().stopRecording({
-				sendStatus,
-			});
-
-			_busy = false;
-
-			if (error) return Err(error);
-
-			const duration = _startedAt ? Date.now() - _startedAt : undefined;
-			_state = 'IDLE';
-			_startedAt = null;
-
-			return Ok({ ...data, duration });
+		async stop({ sendStatus }: Callbacks) {
+			const result = await recorderService().stopRecording({ sendStatus });
+			if (result.data) _state = 'IDLE';
+			return result;
 		},
 
-		/**
-		 * Returns Ok(null) if the recorder is busy; the caller should treat that
-		 * as a no-op. Returns Err only for actual service failures.
-		 */
-		async cancel({
-			sendStatus,
-		}: {
-			sendStatus: UpdateStatusMessageFn;
-		}): Promise<Result<CancelRecordingResult | null, RecorderError>> {
-			if (_busy) {
-				console.info('Recorder busy, ignoring cancel');
-				return Ok(null);
-			}
-			_busy = true;
-
-			const { data, error } = await recorderService().cancelRecording({
-				sendStatus,
-			});
-
-			_busy = false;
-
-			if (error) return Err(error);
-
-			_state = 'IDLE';
-			_startedAt = null;
-			return Ok(data);
+		async cancel({ sendStatus }: Callbacks) {
+			const result = await recorderService().cancelRecording({ sendStatus });
+			if (result.data) _state = 'IDLE';
+			return result;
 		},
 	};
 }

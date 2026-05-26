@@ -85,7 +85,7 @@ import {
 } from '$lib/utils/accelerator';
 
 // fs ----------------------------------------------------------------
-export const FsError = defineErrors({
+const FsError = defineErrors({
 	ReadBlobFailed: ({ path, cause }: { path: string; cause: unknown }) => ({
 		message: `Failed to read file as Blob: ${path}: ${extractErrorMessage(cause)}`,
 		path,
@@ -102,7 +102,7 @@ export const FsError = defineErrors({
 		cause,
 	}),
 });
-export type FsError = InferErrors<typeof FsError>;
+type FsError = InferErrors<typeof FsError>;
 
 async function readFileWithMimeType(path: string): Promise<{
 	bytes: Uint8Array<ArrayBuffer>;
@@ -149,7 +149,7 @@ const fs = {
 };
 
 // command -----------------------------------------------------------
-export const CommandError = defineErrors({
+const CommandError = defineErrors({
 	ExecuteFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to execute command: ${extractErrorMessage(cause)}`,
 		cause,
@@ -159,7 +159,7 @@ export const CommandError = defineErrors({
 		cause,
 	}),
 });
-export type CommandError = InferErrors<typeof CommandError>;
+type CommandError = InferErrors<typeof CommandError>;
 
 const command = {
 	/**
@@ -197,7 +197,7 @@ const command = {
 };
 
 // permissions -------------------------------------------------------
-export const PermissionsError = defineErrors({
+const PermissionsError = defineErrors({
 	CheckAccessibility: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to check accessibility permissions: ${extractErrorMessage(cause)}`,
 		cause,
@@ -215,7 +215,7 @@ export const PermissionsError = defineErrors({
 		cause,
 	}),
 });
-export type PermissionsError = InferErrors<typeof PermissionsError>;
+type PermissionsError = InferErrors<typeof PermissionsError>;
 
 const permissions = {
 	accessibility: {
@@ -277,7 +277,7 @@ const permissions = {
 };
 
 // ffmpeg ------------------------------------------------------------
-export const FfmpegError = defineErrors({
+const FfmpegError = defineErrors({
 	InstallCheckFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to check FFmpeg installation: ${extractErrorMessage(cause)}`,
 		cause,
@@ -291,7 +291,7 @@ export const FfmpegError = defineErrors({
 		cause,
 	}),
 });
-export type FfmpegError = InferErrors<typeof FfmpegError>;
+type FfmpegError = InferErrors<typeof FfmpegError>;
 
 function buildCompressionCommand({
 	inputPath,
@@ -410,13 +410,13 @@ const window = {
 };
 
 // tray --------------------------------------------------------------
-export const TrayError = defineErrors({
+const TrayError = defineErrors({
 	SetIcon: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to set tray icon: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
-export type TrayError = InferErrors<typeof TrayError>;
+type TrayError = InferErrors<typeof TrayError>;
 
 const TRAY_ID = 'whispering-tray';
 let trayPromise: ReturnType<typeof initTray> | null = null;
@@ -496,7 +496,7 @@ const _traySetIcon = (recorderState: WhisperingRecordingState) =>
 // Pure accelerator parsing/validation lives in `$lib/utils/accelerator`
 // since it has no Tauri runtime dependency. Only the registration ops
 // (which talk to Tauri's global-shortcut plugin) live here.
-export const ShortcutError = defineErrors({
+const ShortcutError = defineErrors({
 	RegisterFailed: ({
 		accelerator,
 		cause,
@@ -524,7 +524,7 @@ export const ShortcutError = defineErrors({
 		cause,
 	}),
 });
-export type ShortcutError = InferErrors<typeof ShortcutError>;
+type ShortcutError = InferErrors<typeof ShortcutError>;
 type GlobalShortcutServiceError =
 	| InferError<typeof ShortcutError.RegisterFailed>
 	| InferError<typeof ShortcutError.UnregisterFailed>
@@ -594,7 +594,7 @@ async function _unregisterAllShortcuts(): Promise<
 }
 
 // autostart ---------------------------------------------------------
-export const AutostartError = defineErrors({
+const AutostartError = defineErrors({
 	CheckFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to check autostart: ${extractErrorMessage(cause)}`,
 		cause,
@@ -608,7 +608,7 @@ export const AutostartError = defineErrors({
 		cause,
 	}),
 });
-export type AutostartError = InferErrors<typeof AutostartError>;
+type AutostartError = InferErrors<typeof AutostartError>;
 
 // Raw autostart ops; public TanStack-wrapped versions are defined below.
 const _autostartIsEnabled = () =>

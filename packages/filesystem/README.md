@@ -18,14 +18,14 @@ This package has a peer dependency on `yjs`.
 
 ## Quick usage
 
-The basic setup is short: attach the `files` table to a Y.Doc, define how to
-open a file content document at the app edge, then hand `attachYjsFileSystem`
+The basic setup is short: build a workspace with the `files` table, define how
+to open a file content document at the app edge, then hand `attachYjsFileSystem`
 the content operations it needs.
 
 ```typescript
 import {
-	attachTables,
 	attachTimeline,
+	createWorkspace,
 	onLocalUpdate,
 } from '@epicenter/workspace';
 import {
@@ -35,16 +35,19 @@ import {
 } from '@epicenter/filesystem';
 import * as Y from 'yjs';
 
-const ydoc = new Y.Doc({ guid: 'test' });
-const tables = attachTables(ydoc, { files: filesTable });
+const workspace = createWorkspace({
+	id: 'test',
+	tables: { files: filesTable },
+	kv: {},
+});
 
 function openContentDoc(fileId) {
 	const contentYdoc = new Y.Doc({
-		guid: fileContentDocGuid({ workspaceId: ydoc.guid, fileId }),
+		guid: fileContentDocGuid({ workspaceId: workspace.ydoc.guid, fileId }),
 		gc: true,
 	});
 	onLocalUpdate(contentYdoc, () =>
-		tables.files.update(fileId, { updatedAt: Date.now() }),
+		workspace.tables.files.update(fileId, { updatedAt: Date.now() }),
 	);
 	return {
 		ydoc: contentYdoc,
@@ -76,10 +79,8 @@ const fileContent = {
 };
 
 const ws = {
-	fs: attachYjsFileSystem(ydoc, tables.files, fileContent),
-	[Symbol.dispose]() {
-		ydoc.destroy();
-	},
+	...workspace,
+	fs: attachYjsFileSystem(workspace.ydoc, workspace.tables.files, fileContent),
 };
 
 await ws.fs.mkdir('/docs');

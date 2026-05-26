@@ -4,7 +4,7 @@ That keeps the sync path moving ciphertext instead of application JSON.
 This page only makes claims visible in the current code:
 - `packages/encryption/src/index.ts`
 - `packages/workspace/src/shared/y-keyvalue/y-keyvalue-lww-encrypted.ts`
-- `packages/workspace/src/document/attach-encryption.ts`
+- `packages/workspace/src/document/workspace.ts`
 - `packages/workspace/src/document/attach-local-storage.ts`
 - `packages/workspace/src/document/wipe-local-storage.ts`
 - `packages/workspace/src/document/attach-encrypted-indexed-db.ts`
@@ -50,7 +50,7 @@ The HKDF info string at the owner derivation step is the literal `owner:{ownerId
 
 On the server, `apps/api/src/auth/encryption.ts` reads `ENCRYPTION_SECRETS` from the worker env and calls `@epicenter/encryption`'s `deriveKeyring` to parse the root keyring and derive a per-owner keyring.
 It returns one `{ version, keyBytesBase64 }` entry per configured root keyring version.
-On the client, `attachEncryption(ydoc, { keyring, tables, kv })` reads `keyring()` once at construction, decodes each `keyBytesBase64`, runs `deriveWorkspaceKey(ownerKey, workspaceId)`, and gets a 32-byte workspace key with `info = workspace:{workspaceId}`. The derived keyring activates every encrypted store atomically before any handle is returned.
+On the client, `createWorkspace({ id, keyring, tables, kv })` reads `keyring()` once at construction, decodes each `keyBytesBase64`, runs `deriveWorkspaceKey(ownerKey, id)`, and gets a 32-byte workspace key with `info = workspace:{id}`. The derived keyring activates every encrypted store atomically before any handle is returned.
 The highest version becomes the current key for new writes.
 
 ## How keys reach the client
@@ -58,7 +58,7 @@ Keys come through `/api/session`.
 `apps/api/src/app.ts` mounts `GET /api/session` behind cookie-or-bearer authentication. A valid Better Auth cookie session or a valid API-audience bearer token for the user can fetch `{ user: { id, email }, ownerId, keyring, mode }`, where `ownerId` is a branded id (the user's id in personal mode, the literal `team` in team mode) and `mode` is the orthogonal `OwnershipMode` flag.
 `@epicenter/auth` calls `/api/session` at sign-in and at cold-boot when online, persists `{ ownerId, keyring, mode }` alongside the OAuth grant in the persisted auth cell, and exposes them through `auth.state.ownerId` / `auth.state.keyring` / `auth.state.mode` whenever the auth state is not `signed-out`.
 Cold-boot offline keeps the cached `{ ownerId, keyring, mode }` so the workspace can decrypt local Yjs data without a network roundtrip; the bearer is not attached to outbound requests until `/api/session` re-confirms the cell in this runtime.
-The workspace does not hold an independently mutable copy of the keys. `attachEncryption` takes a `keyring` callback and calls it once at construction; `attachLocalStorage` takes the same callback and calls it on every persisted update. Each encrypted store keeps the keyring derived at its `attachEncryption` boundary. Browser app session modules receive a flat `SignedIn` payload from `createSession`; that payload carries the lazy keyring reader and the stable owner:
+The workspace does not hold an independently mutable copy of the keys. `createWorkspace` takes a `keyring` callback and calls it once at construction; `attachLocalStorage` takes the same callback and calls it on every persisted update. Each encrypted store keeps the keyring derived at its `createWorkspace` boundary. Browser app session modules receive a flat `SignedIn` payload from `createSession`; that payload carries the lazy keyring reader and the stable owner:
 ```ts
 import { createSession, type SignedIn } from '@epicenter/svelte';
 
@@ -73,53 +73,51 @@ export const session = createSession({
 ```
 `SignedIn` is `{ server: string; ownerId: OwnerId; mode: OwnershipMode; keyring: () => Keyring; auth: AuthClient }`. `ownerId` and `mode` are derived from the auth signed-in state and stay stable for the lifetime of a single `SignedIn` payload. `keyring` is a callback that reads the current `keyring` from `auth.state`, so same-owner rotations (e.g. `reauth-required` -> identity-bearing) are picked up on the next call without rebuilding the payload. `auth` is the live `AuthClient`; `openCollaboration({ openWebSocket, onReconnectSignal })` uses `auth.openWebSocket` to open the relay socket and subscribes to `auth.onStateChange` to drive reconnect, so per-app openers do not write reconnect glue. A different-owner sign-in publishes a `signed-out` gap first, which disposes the payload and rebuilds with the new owner.
 
-Same-owner identity updates do not remount the workspace. Auth callbacks read `auth.state` at the boundary that asks for them: sync can see refreshed bearer tokens on connection attempts, and `attachLocalStorage`'s IDB writes pick up rotated keys on the next persisted update. Already-attached encrypted tables and KVs keep the keyring they derived when `attachEncryption` was called; a fresh `attachEncryption` (and therefore a fresh Y.Doc) is required for them to pick up rotated keys.
+Same-owner identity updates do not remount the workspace. Auth callbacks read `auth.state` at the boundary that asks for them: sync can see refreshed bearer tokens on connection attempts, and `attachLocalStorage`'s IDB writes pick up rotated keys on the next persisted update. Already-attached encrypted tables and KVs keep the keyring they derived when `createWorkspace` was called; a fresh `createWorkspace` call (and therefore a fresh Y.Doc) is required for them to pick up rotated keys.
 
 Daemon-side openers receive the same shape via `DaemonWorkspaceContext`: `{ projectDir, route, yDocClientId, installationId, ownerId, keyring: () => Keyring, openWebSocket, onReconnectSignal }`. The host's `keyring` closure throws when auth is signed-out, so a late sign-out becomes a thrown error at the next encrypted-write or registration site rather than silent ciphertext loss. The `openWebSocket` and `onReconnectSignal` refs flow through to `attachDaemonInfrastructure({ openWebSocket, onReconnectSignal })` for cloud sync.
 
 ## Browser local persistence
 Authenticated browser workspaces open local IndexedDB only after auth has settled into an identity-bearing state. The session module guarantees that boundary: it builds the workspace lazily once auth produces a `SignedIn` payload and disposes it on sign-out.
 
-Two attachments cover the local-data surface and they read directly off the same `SignedIn` payload:
-- `attachEncryption(ydoc, { keyring, tables, kv })` derives the per-workspace HKDF keyring and constructs every encrypted table and KV store in one atomic call. The primitive does not own local storage: it only derives keys and activates the encrypted CRDT wrappers.
+The workspace bundle and the local-storage attachment cover the local-data surface and they read directly off the same `SignedIn` payload:
+- `createWorkspace({ id, keyring, tables, kv })` allocates the `Y.Doc`, derives the per-workspace HKDF keyring, and constructs every encrypted table and KV store in one atomic call. The factory does not own local storage: it only allocates the doc, derives keys, and activates the encrypted CRDT wrappers.
 - `attachLocalStorage(ydoc, { server, ownerId, keyring })` opens `(server, ownerId)`-scoped encrypted IndexedDB persistence and pairs it with a matching `BroadcastChannel` under the same name. The `server` and `ownerId` are snapshotted at attach time (stable for the attachment lifetime), and `keyring` is a callback so the IDB layer picks up rotated keys on the next persisted update.
 
 The browser factory shape is (from `apps/fuji/src/lib/browser.ts`):
 ```ts
 export function openFujiBrowser({
 	signedIn,
-	installationId,
+	deviceId,
 }: {
 	signedIn: SignedIn;
-	installationId: string;
+	deviceId: DeviceId;
 }) {
-	const ydoc = new Y.Doc({ guid: FUJI_ID, gc: true });
-	const { tables, kv } = attachEncryption(ydoc, {
-		keyring: signedIn.keyring,
-		tables: fujiTables,
-		kv: {},
-	});
+	const workspace = createFujiWorkspace({ keyring: signedIn.keyring });
+	const actions = createFujiActions(workspace);
 
-	const idb = attachLocalStorage(ydoc, {
+	const idb = attachLocalStorage(workspace.ydoc, {
 		server: signedIn.server,
 		ownerId: signedIn.ownerId,
 		keyring: signedIn.keyring,
 	});
-	const collaboration = openCollaboration(ydoc, {
+	const collaboration = openCollaboration(workspace.ydoc, {
 		url: roomWsUrl({
-			baseURL: signedIn.auth.baseURL,
+			baseURL: signedIn.baseURL,
 			ownerId: signedIn.ownerId,
-			guid: ydoc.guid,
-			installationId,
+			guid: workspace.ydoc.guid,
+			deviceId,
 		}),
-		openWebSocket: signedIn.auth.openWebSocket,
-		onReconnectSignal: signedIn.auth.onStateChange,
+		openWebSocket: signedIn.openWebSocket,
+		onReconnectSignal: signedIn.onReconnectSignal,
 		waitFor: idb.whenLoaded,
 		actions,
 	});
 	// ...
 }
 ```
+
+`createFujiWorkspace({ keyring })` is the per-app helper that wraps `createWorkspace` with Fuji's typed `tables` and `kv` schemas, returning the same `{ ydoc, tables, kv, [Symbol.dispose] }` bundle shape.
 
 `attachLocalStorage` reads exactly `{ server, ownerId, keyring }` from the explicit options object. The call site destructures `signedIn` so the dependency is visible in the code, not implied by structural typing.
 
@@ -251,7 +249,7 @@ Before activation, the wrapper is a passthrough store and `set()` writes plainte
 After activation, `set()` always encrypts.
 The active state holds the full keyring, the current key, and the current key version.
 Calling `activateEncryption()` again updates that state to a new keyring, but it does not switch the store back to plaintext mode.
-The document builder reinforces that shape: `attachEncryption(ydoc, { keyring, tables, kv })` takes the full table and KV definition record up front and returns the constructed encrypted handles atomically. It reads `keyring()` once, derives the per-workspace keyring with `deriveWorkspaceKeyring(ownerKeyring, ydoc.guid)`, and activates every store before any handle is returned. There is no separate `applyKeys` mutation step and no temporal registration window: key read, registration, and activation happen in one call.
+The workspace factory reinforces that shape: `createWorkspace({ id, keyring, tables, kv })` takes the full table and KV definition record up front and returns the constructed encrypted handles atomically. It reads `keyring()` once, derives the per-workspace keyring with `deriveWorkspaceKeyring(ownerKeyring, id)`, and activates every store before any handle is returned. There is no separate `applyKeys` mutation step and no temporal registration window: Y.Doc allocation, key read, registration, and activation all happen in one call.
 
 ## What activation re-encrypts
 Activation rewrites every decryptable entry that is not already stored under the current key version.

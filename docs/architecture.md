@@ -188,16 +188,14 @@ typed rows  settings       per-row content docs      indexes/materializers
 That model is why Epicenter can mix SQL-like lookup, filesystem semantics, and collaborative document editing without splitting the truth into three different stores. They are three views over one CRDT core.
 
 ## Opensidian is the best concrete example
-Opensidian composes nearly every layer in one builder. Its schema starts with `filesTable` from `@epicenter/filesystem`, adds chat tables locally, and exports one `defineDocument(builder)`.
+Opensidian composes nearly every layer inline in a per-app browser opener. Its schema starts with `filesTable` from `@epicenter/filesystem`, adds chat tables locally, and constructs the workspace with `createWorkspace`.
 
 ```ts
 import { filesTable } from '@epicenter/filesystem';
-import * as Y from 'yjs';
 import {
 	attachIndexedDb,
-	attachTables,
+	createWorkspace,
 	defineActions,
-	defineDocument,
 	defineQuery,
 	defineTable,
 	openCollaboration,
@@ -208,26 +206,29 @@ const conversationsTable = defineTable(/* ... */);
 const chatMessagesTable = defineTable(/* ... */);
 const toolTrustTable = defineTable(/* ... */);
 
-const opensidian = defineDocument((id: string) => {
-	const ydoc = new Y.Doc({ guid: id });
-	const tables = attachTables(ydoc, {
-		files: filesTable,
-		conversations: conversationsTable,
-		chatMessages: chatMessagesTable,
-		toolTrust: toolTrustTable,
+export function openOpensidianBrowser() {
+	const workspace = createWorkspace({
+		id: 'opensidian',
+		tables: {
+			files: filesTable,
+			conversations: conversationsTable,
+			chatMessages: chatMessagesTable,
+			toolTrust: toolTrustTable,
+		},
+		kv: {},
 	});
-	const idb = attachIndexedDb(ydoc);
-	const sqliteIndex = createSqliteIndex({ ydoc, tables });
+	const idb = attachIndexedDb(workspace.ydoc);
+	const sqliteIndex = createSqliteIndex({ ydoc: workspace.ydoc, tables: workspace.tables });
 	const actions = defineActions({
 		files_search: defineQuery({
 			handler: async ({ query }) => sqliteIndex.search(query),
 		}),
 	});
-	const collaboration = openCollaboration(ydoc, {
+	const collaboration = openCollaboration(workspace.ydoc, {
 		url: roomWsUrl({
 			baseURL: auth.baseURL,
 			owner,
-			guid: ydoc.guid,
+			guid: workspace.ydoc.guid,
 			installationId,
 		}),
 		openWebSocket: auth.openWebSocket,
@@ -235,26 +236,24 @@ const opensidian = defineDocument((id: string) => {
 		waitFor: idb.whenLoaded,
 		actions,
 	});
-	return { id, ydoc, tables, idb, collaboration, sqliteIndex, /* ... */ };
-});
-
-export const workspace = opensidian.open('opensidian');
+	return { ...workspace, idb, collaboration, sqliteIndex, actions };
+}
 ```
 
-That workspace then feeds other middleware packages. `attachYjsFileSystem(workspace.tables.files, workspace.filesContent)` turns the files table plus content docs into a real virtual filesystem; `actionsToAiTools(workspace)` from `@epicenter/workspace/ai` turns workspace actions into chat tools; a second `defineDocument` factory mounts the skills data source; `createCookieAuth()` or `createBearerAuth()` from `@epicenter/auth-svelte` coordinates identity, fetch, and WebSocket auth while `@epicenter/auth` provides the signed-in identity used by lazy encryption key callbacks.
+That bundle then feeds other middleware packages. `attachYjsFileSystem(workspace.tables.files, workspace.filesContent)` turns the files table plus content docs into a real virtual filesystem; `actionsToAiTools(workspace)` from `@epicenter/workspace/ai` turns workspace actions into chat tools; per-row content docs use sub-doc primitives like `attachRichText`; `createCookieAuth()` or `createBearerAuth()` from `@epicenter/auth-svelte` coordinates identity, fetch, and WebSocket auth while `@epicenter/auth` provides the signed-in identity used by lazy encryption key callbacks.
 
 ```text
-defineDocument(builder).open('opensidian')
+createWorkspace({ id: 'opensidian', tables, kv })
     |
-    +-- attachTables(ydoc, {...})
-    +-- attachIndexedDb(ydoc)
+    +-- workspace.ydoc, workspace.tables, workspace.kv
+    +-- attachIndexedDb(workspace.ydoc)
     +-- createSqliteIndex(...)
-    +-- openCollaboration(ydoc, { url, openWebSocket, onReconnectSignal, waitFor: idb.whenLoaded, actions })
+    +-- openCollaboration(workspace.ydoc, { url, openWebSocket, onReconnectSignal, waitFor: idb.whenLoaded, actions })
     |
     +-- attachYjsFileSystem(...)              -> editor + terminal + file tree
     +-- actionsToAiTools(...).tools           -> local AI tool execution
     +-- actionsToAiTools(...).definitions     -> wire payload for chat requests
-    +-- defineDocument(skillsBuilder)         -> shared skills data source
+    +-- attachRichText(childYdoc) per file    -> per-row content docs
     +-- fromTable / fromKv / auth             -> reactive Svelte app state
 ```
 
@@ -263,7 +262,7 @@ That is the whole monorepo in miniature. The app is mostly composition code beca
 ## The sync philosophy is dumb server, smart client
 The server is a relay, not the authority. Clients own schema meaning, table helpers, migrations, encryption activation, action handlers, and most of the user-facing behavior.
 
-`@epicenter/sync` reflects that philosophy in its API. It exports protocol encode/decode functions, while `openCollaboration` plugs those primitives into a live document that already knows how to read and write its own data.
+`@epicenter/sync` reflects that philosophy in its API. It exports protocol encode/decode functions, while `openCollaboration` plugs those primitives into a live workspace that already knows how to read and write its own data.
 
 That means the server does not need to understand your tables. It forwards Yjs sync messages. Presence is server state: the relay owns the `connections` map and pushes a `presence` text frame, the full list of connected installs, on every change. Cross-device dispatch is a plain HTTP POST the relay routes to the recipient's socket. Neither rides the CRDT, and neither needs the server to decode your data.
 
@@ -272,6 +271,6 @@ This is what "smart client" means here. The client can boot locally, read persis
 This is what "dumb server" means here. The server helps peers find each other and exchange updates, but it is not where the data model becomes valid or meaningful.
 
 ## The shortest accurate mental model
-Epicenter defines data first. `@epicenter/workspace` gives that data a live Yjs document via `defineDocument(builder)`, `attach*` primitives add durability and transport, middleware packages reinterpret the same client for files, skills, Svelte state, and AI tools, and the apps compose those layers into actual products.
+Epicenter defines data first. `@epicenter/workspace` gives that data a live Yjs document via `createWorkspace({ id, tables, kv })`, `attach*` primitives add durability and transport, middleware packages reinterpret the same bundle for files, skills, Svelte state, and AI tools, and the apps compose those layers into actual products.
 
 Everything after that is detail. Useful detail, but still detail.

@@ -201,11 +201,10 @@ The hard problem with local-first apps is synchronization. If each device has it
 The [`@epicenter/workspace`](packages/workspace) package wraps this into a single API. Define a schema, get CRDT-backed tables, attach providers to materialize to SQLite or markdown, and add sync when you're ready.
 
 ```typescript
-import * as Y from 'yjs';
 import {
   attachIndexedDb,
-  attachTables,
   column,
+  createWorkspace,
   defineTable,
   openCollaboration,
   roomWsUrl,
@@ -218,21 +217,21 @@ const posts = defineTable({
 });
 
 function openBlog(id: string, ownerId, deviceId, auth) {
-  const ydoc = new Y.Doc({ guid: id });
-  const tables = attachTables(ydoc, { posts });
-  const idb = attachIndexedDb(ydoc);
-  const collaboration = openCollaboration(ydoc, {
-    url: roomWsUrl({ baseURL: auth.baseURL, ownerId, guid: ydoc.guid, deviceId }),
+  const workspace = createWorkspace({
+    id,
+    tables: { posts },
+    kv: {},
+  });
+  const idb = attachIndexedDb(workspace.ydoc);
+  const collaboration = openCollaboration(workspace.ydoc, {
+    url: roomWsUrl({ baseURL: auth.baseURL, ownerId, guid: workspace.ydoc.guid, deviceId }),
     openWebSocket: auth.openWebSocket,
     onReconnectSignal: auth.onStateChange,
     waitFor: idb.whenLoaded,
     actions: {},
   });
 
-  return {
-    id, ydoc, tables, idb, collaboration,
-    [Symbol.dispose]() { ydoc.destroy(); },
-  };
+  return { ...workspace, idb, collaboration };
 }
 
 const workspace = openBlog('epicenter.blog', myOwnerId, 'browser-dev', auth);
@@ -334,7 +333,7 @@ We publish our implementation specs. These are the reasoning behind non-obvious 
 | --- | --- |
 | [Encrypted Workspace Storage](specs/20260213T005300-encrypted-workspace-storage.md) | XChaCha20-Poly1305 at the CRDT value level; server-managed keys with self-hosting as the trust boundary |
 | [Y-Sweet Persistence Architecture](specs/20260212T190000-y-sweet-persistence-architecture.md) | How Yjs documents persist and compact in Durable Objects |
-| [Simple Definition-First Workspace API](specs/20260201T120000-simple-definition-first-workspace.md) | The `defineTable` → `defineDocument` + `attach*` composition pattern |
+| [Simple Definition-First Workspace API](specs/20260201T120000-simple-definition-first-workspace.md) | The `defineTable` → `createWorkspace` + `attach*` composition pattern |
 | [Resilient Client Architecture](specs/20260119T231252-resilient-client-architecture.md) | How workspace clients handle offline, reconnect, and extension failures |
 | [Migrate to @epicenter/sync](specs/20260214T120800-migrate-y-sweet-to-epicenter-sync.md) | Custom sync protocol replacing Y-Sweet with our own framing layer |
 

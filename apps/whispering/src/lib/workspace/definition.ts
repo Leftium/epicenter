@@ -424,7 +424,7 @@ const shortcuts = {
 
 /**
  * Whispering table schemas: 5 normalized tables for domain data.
- * Consumed by `attachTables` in `client.ts`.
+ * Consumed by `createWhisperingWorkspace` (which wraps `createWorkspace`).
  */
 export const whisperingTables = {
 	recordings,
@@ -436,7 +436,7 @@ export const whisperingTables = {
 
 /**
  * Whispering KV schemas: ~40 entries for synced preferences.
- * Consumed by `attachKv` in `client.ts`.
+ * Consumed by `createWhisperingWorkspace` (which wraps `createWorkspace`).
  */
 export const whisperingKv = {
 	...sound,

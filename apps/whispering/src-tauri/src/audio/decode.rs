@@ -9,9 +9,6 @@ use std::io::Cursor;
 
 use audiopus::{Channels as OpusChannels, SampleRate as OpusSampleRate, coder::Decoder as OpusDecoder, packet::Packet as OpusPacket};
 use log::{debug, warn};
-use rubato::{
-    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
-};
 use symphonia::core::{
     audio::SampleBuffer,
     codecs::{CODEC_TYPE_NULL, CODEC_TYPE_OPUS, DecoderOptions},
@@ -23,6 +20,7 @@ use symphonia::core::{
 };
 
 use super::error::AudioError;
+use super::resample::resample_mono;
 
 /// Target sample rate for all three local transcription engines
 /// (whisper.cpp, Parakeet, Moonshine).
@@ -83,7 +81,7 @@ pub fn decode_to_pcm16k_mono(bytes: &[u8]) -> Result<Vec<f32>, AudioError> {
     let mono = downmix_to_mono(samples, channel_count);
     debug!("[Audio Decode] downmix to mono: {} samples", mono.len());
 
-    let resampled = resample_to_16k(mono, source_rate)?;
+    let resampled = resample_mono(mono, source_rate, TARGET_RATE)?;
     debug!(
         "[Audio Decode] resampled to {} Hz: {} samples",
         TARGET_RATE,
@@ -264,67 +262,6 @@ fn downmix_to_mono(samples: Vec<f32>, channels: u16) -> Vec<f32> {
         .collect()
 }
 
-/// Resample mono `samples` from `source_rate` to 16 kHz using rubato's
-/// fixed-input sinc resampler (BlackmanHarris2 window, sinc length 64,
-/// 128x oversampling). Skips resampling when the source is already 16 kHz.
-fn resample_to_16k(samples: Vec<f32>, source_rate: u32) -> Result<Vec<f32>, AudioError> {
-    if source_rate == TARGET_RATE {
-        return Ok(samples);
-    }
-    if samples.is_empty() {
-        return Ok(samples);
-    }
-
-    let ratio = TARGET_RATE as f64 / source_rate as f64;
-
-    // rubato::SincFixedIn is configured below with a max-ratio of 8.0, so
-    // we admit sources from 2 kHz upward (16000 / 8 = 2000). Anything below
-    // that is exotic for speech and not worth supporting silently.
-    if ratio > 8.0 {
-        return Err(AudioError::resample(format!(
-            "source rate {source_rate} Hz is below the supported minimum",
-        )));
-    }
-
-    let params = SincInterpolationParameters {
-        sinc_len: 64,
-        f_cutoff: 0.95,
-        interpolation: SincInterpolationType::Linear,
-        oversampling_factor: 128,
-        window: WindowFunction::BlackmanHarris2,
-    };
-
-    let chunk_size = 1024;
-    let mut resampler = SincFixedIn::<f32>::new(ratio, 8.0, params, chunk_size, 1)
-        .map_err(|e| AudioError::resample(format!("resampler init failed: {e}")))?;
-
-    let expected_len = (samples.len() as f64 * ratio).round() as usize;
-    let mut output = Vec::with_capacity(expected_len);
-
-    let mut pos = 0;
-    while pos < samples.len() {
-        let end = (pos + chunk_size).min(samples.len());
-        let mut chunk: Vec<f32> = samples[pos..end].to_vec();
-        if chunk.len() < chunk_size {
-            // Zero-pad the trailing chunk: rubato's fixed-input variant
-            // requires every call to be the full chunk size.
-            chunk.resize(chunk_size, 0.0);
-        }
-
-        let waves_out = resampler
-            .process(&[chunk], None)
-            .map_err(|e| AudioError::resample(format!("resample step failed: {e}")))?;
-
-        output.extend_from_slice(&waves_out[0]);
-        pos += chunk_size;
-    }
-
-    // Trim the synthetic tail produced by the zero-padded final chunk.
-    output.truncate(expected_len);
-
-    Ok(output)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -412,9 +349,9 @@ mod tests {
     fn decode_then_resample_matches_direct_resample_within_quantization_noise() {
         // Verify the WAV decode + stereo downmix do not perturb samples
         // beyond i16 quantization noise. We compare two paths that both
-        // end in the same `resample_to_16k`:
+        // end in the same `resample_mono`:
         //   path A: WAV bytes -> decode_to_pcm16k_mono
-        //   path B: analytical mono sine -> resample_to_16k
+        //   path B: analytical mono sine -> resample_mono
         // The legacy hound + rubato Tier 2 pipeline is gone, so this is
         // an internal consistency check (decode+downmix is the identity
         // on equal-channel stereo modulo quantization), not an old-vs-new
@@ -432,7 +369,7 @@ mod tests {
         let mono: Vec<f32> = (0..secs * in_rate as usize)
             .map(|i| sine_at(i, 220.0, in_rate))
             .collect();
-        let expected = resample_to_16k(mono, in_rate).expect("resample");
+        let expected = resample_mono(mono, in_rate, TARGET_RATE).expect("resample");
 
         let len = new_samples.len().min(expected.len());
         // Ignore the first/last few samples where the resampler's edge

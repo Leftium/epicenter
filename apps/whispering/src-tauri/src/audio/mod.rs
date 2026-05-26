@@ -11,8 +11,13 @@
 //! non-Opus decode), libopus via `audiopus` (Opus decode), and rubato
 //! (resample to 16 kHz).
 
+mod command;
 mod decode;
+mod encode;
 mod error;
+mod resample;
 
+pub use command::encode_upload_audio;
 pub use decode::decode_to_pcm16k_mono;
+pub use encode::{DEFAULT_BITRATE_BPS, encode_wav_to_opus_ogg};
 pub use error::AudioError;

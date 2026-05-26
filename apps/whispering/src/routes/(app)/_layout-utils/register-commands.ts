@@ -126,7 +126,7 @@ export async function syncGlobalShortcutsWithSettings() {
 
 	const results = await Promise.all(
 		commandsWithAccelerators.map((item) =>
-			t.rpc.globalShortcuts.registerCommand(item),
+			t.globalShortcuts.registerCommand(item),
 		),
 	);
 	const { errs } = partitionResults(results);

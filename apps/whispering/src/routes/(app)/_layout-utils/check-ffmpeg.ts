@@ -68,7 +68,7 @@ export async function checkLocalTranscriptionCompatibility() {
 	if (!tauri) return;
 
 	const { data: ffmpegInstalled } =
-		await tauri.rpc.ffmpeg.checkInstalled.ensure();
+		await tauri.ffmpeg.checkInstalled.ensure();
 
 	// Check if there are compatibility issues with local transcription
 	if (
@@ -109,7 +109,7 @@ export async function checkCompressionRecommendation() {
 	if (!isCompressionRecommended()) return;
 
 	const { data: ffmpegInstalled } =
-		await tauri.rpc.ffmpeg.checkInstalled.ensure();
+		await tauri.ffmpeg.checkInstalled.ensure();
 	if (ffmpegInstalled) return; // FFmpeg is required for compression
 
 	// FFmpeg is RECOMMENDED for compression

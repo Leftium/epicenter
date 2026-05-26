@@ -41,7 +41,7 @@
 				variant="outline"
 				size="sm"
 				onclick={async () => {
-					await t.rpc.globalShortcuts.unregisterAll();
+					await t.globalShortcuts.unregisterAll();
 					resetGlobalShortcuts();
 					notify.success({
 						title: 'Shortcuts reset',

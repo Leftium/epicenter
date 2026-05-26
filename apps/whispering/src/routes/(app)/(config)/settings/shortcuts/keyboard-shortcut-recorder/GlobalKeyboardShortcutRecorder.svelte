@@ -31,7 +31,7 @@
 		onRegister: async (keyCombination: KeyboardEventSupportedKey[]) => {
 			if (shortcutValue) {
 				const { error: unregisterError } =
-					await tauri!.rpc.globalShortcuts.unregisterCommand({
+					await tauri!.globalShortcuts.unregisterCommand({
 						accelerator: shortcutValue as Accelerator,
 					});
 
@@ -59,7 +59,7 @@
 			}
 
 			const { error: registerError } =
-				await tauri!.rpc.globalShortcuts.registerCommand({
+				await tauri!.globalShortcuts.registerCommand({
 					command,
 					accelerator,
 				});
@@ -97,7 +97,7 @@
 		},
 		onClear: async () => {
 			const { error: unregisterError } =
-				await tauri!.rpc.globalShortcuts.unregisterCommand({
+				await tauri!.globalShortcuts.unregisterCommand({
 					accelerator: shortcutValue as Accelerator,
 				});
 

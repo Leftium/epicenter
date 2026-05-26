@@ -3,6 +3,6 @@ import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 
 export function syncIconWithRecorderState() {
 	$effect(() => {
-		void tauri?.rpc.tray.setIcon({ icon: manualRecorder.state });
+		void tauri?.tray.setIcon({ icon: manualRecorder.state });
 	});
 }

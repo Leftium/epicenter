@@ -64,7 +64,7 @@
 	// stays disabled; isFfmpegInstalled falls back to false.
 	const ffmpegQuery = createQuery(() =>
 		tauri
-			? tauri.rpc.ffmpeg.checkInstalled.options
+			? tauri.ffmpeg.checkInstalled.options
 			: {
 					queryKey: ['ffmpeg.checkInstalled'] as const,
 					queryFn: async () => false,

@@ -77,7 +77,7 @@ Tauri-only capabilities don't live in `services/`. They live in a single file at
 ```ts
 import tauri from '$lib/tauri';
 await tauri?.fs.pathToBlob(path);                       // raw capability
-await tauri?.rpc.ffmpeg.checkInstalled.ensure();        // TanStack-wrapped (cached)
+await tauri?.ffmpeg.checkInstalled.ensure();            // TanStack-wrapped (cached)
 ```
 
 See `specs/20260526T000140-collapse-tauri-only-services-into-namespace.md` for the rationale.

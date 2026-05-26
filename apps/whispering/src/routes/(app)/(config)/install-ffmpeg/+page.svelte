@@ -24,7 +24,7 @@
 
 	// This page is Tauri-only; the route is unreachable on web.
 	const ffmpegQuery = createQuery(() => ({
-		...tauri!.rpc.ffmpeg.checkInstalled.options,
+		...tauri!.ffmpeg.checkInstalled.options,
 		refetchInterval: (query) => {
 			const isInstalled = query.state.data;
 			return isInstalled ? 30000 : 5000;

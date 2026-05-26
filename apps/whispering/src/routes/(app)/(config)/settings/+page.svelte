@@ -44,7 +44,7 @@
 	// disabled (default value `false`).
 	const autostartQuery = createQuery(() =>
 		tauri
-			? tauri.rpc.autostart.isEnabled.options
+			? tauri.autostart.isEnabled.options
 			: {
 					queryKey: ['autostart', 'isEnabled'] as const,
 					queryFn: async () => false,
@@ -54,7 +54,7 @@
 	);
 	const enableAutostartMutation = createMutation(() =>
 		tauri
-			? tauri.rpc.autostart.enable.options
+			? tauri.autostart.enable.options
 			: {
 					mutationKey: ['autostart', 'enable'] as const,
 					mutationFn: async () => undefined,
@@ -62,7 +62,7 @@
 	);
 	const disableAutostartMutation = createMutation(() =>
 		tauri
-			? tauri.rpc.autostart.disable.options
+			? tauri.autostart.disable.options
 			: {
 					mutationKey: ['autostart', 'disable'] as const,
 					mutationFn: async () => undefined,

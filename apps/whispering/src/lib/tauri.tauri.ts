@@ -35,7 +35,12 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { Menu, MenuItem } from '@tauri-apps/api/menu';
-import { appDataDir, basename, join, resolveResource } from '@tauri-apps/api/path';
+import {
+	appDataDir,
+	basename,
+	join,
+	resolveResource,
+} from '@tauri-apps/api/path';
 import { TrayIcon } from '@tauri-apps/api/tray';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
@@ -169,7 +174,8 @@ const command = {
 	 */
 	async execute(cmd: string) {
 		const { data, error } = await tryAsync({
-			try: () => invoke<ChildProcess<string>>('execute_command', { command: cmd }),
+			try: () =>
+				invoke<ChildProcess<string>>('execute_command', { command: cmd }),
 			catch: (error) => CommandError.ExecuteFailed({ cause: error }),
 		});
 		if (error) return Err(error);
@@ -268,8 +274,7 @@ const permissions = {
 					);
 					return await requestMicrophonePermission();
 				},
-				catch: (error) =>
-					PermissionsError.RequestMicrophone({ cause: error }),
+				catch: (error) => PermissionsError.RequestMicrophone({ cause: error }),
 			});
 		},
 	},
@@ -312,97 +317,98 @@ function buildCompressionCommand({
 		.join(' ');
 }
 
-const ffmpeg = {
-	/** Returns Ok(true) if FFmpeg is installed, Ok(false) otherwise. */
-	async checkInstalled() {
-		const { data: result, error } = await tryAsync({
-			try: async () => {
-				const { data, error: commandError } = await command.execute('ffmpeg -version');
-				if (commandError) throw commandError;
-				return data;
-			},
-			catch: (error) => FfmpegError.InstallCheckFailed({ cause: error }),
-		});
-		if (error) return Err(error);
-		return Ok(result.code === 0);
-	},
-
-	/**
-	 * Compress an audio blob using FFmpeg. Creates temp files for the
-	 * input/output and cleans them up on completion (success or failure).
-	 */
-	async compressAudioBlob(blob: Blob, compressionOptions: string) {
-		return tryAsync({
-			try: async () => {
-				const sessionId = nanoid();
-				const tempDir = await appDataDir();
-				const inputPath = await join(
-					tempDir,
-					`compression_input_${sessionId}.wav`,
-				);
-				const outputExtension =
-					getFileExtensionFromFfmpegOptions(compressionOptions);
-				const outputPath = await join(
-					tempDir,
-					`compression_output_${sessionId}.${outputExtension}`,
-				);
-
-				try {
-					const inputContents = new Uint8Array(await blob.arrayBuffer());
-					await writeFile(inputPath, inputContents);
-
-					// Verify file is accessible (forces OS flush on Windows).
-					const { error: verifyError } = await tryAsync({
-						try: () => fs.pathToBlob(inputPath),
-						catch: (error) => FfmpegError.VerifyFailed({ cause: error }),
-					});
-					if (verifyError) throw new Error(verifyError.message);
-
-					const cmd = buildCompressionCommand({
-						inputPath,
-						compressionOptions,
-						outputPath,
-					});
-					const { data: result, error: commandError } =
-						await command.execute(cmd);
-					if (commandError) {
-						throw new Error(`FFmpeg compression failed: ${commandError.message}`);
-					}
-					if (result.code !== 0) {
-						throw new Error(
-							`FFmpeg compression failed with exit code ${result.code}: ${result.stderr}`,
-						);
-					}
-
-					const outputExists = await exists(outputPath);
-					if (!outputExists) {
-						throw new Error(
-							'FFmpeg compression completed but output file was not created',
-						);
-					}
-
-					const { data: compressedBlob, error: readError } =
-						await fs.pathToBlob(outputPath);
-					if (readError) {
-						throw new Error(
-							`Failed to read compressed audio file: ${readError.message}`,
-						);
-					}
-					return compressedBlob;
-				} finally {
-					await tryAsync({
-						try: async () => {
-							if (await exists(inputPath)) await remove(inputPath);
-							if (await exists(outputPath)) await remove(outputPath);
-						},
-						catch: () => Ok(undefined),
-					});
-				}
-			},
-			catch: (error) => FfmpegError.CompressFailed({ cause: error }),
-		});
-	},
+// `_ffmpegCheckInstalled` is the raw implementation; the public
+// `tauri.ffmpeg.checkInstalled` below is the TanStack-wrapped form.
+const _ffmpegCheckInstalled = async () => {
+	const { data: result, error } = await tryAsync({
+		try: async () => {
+			const { data, error: commandError } =
+				await command.execute('ffmpeg -version');
+			if (commandError) throw commandError;
+			return data;
+		},
+		catch: (error) => FfmpegError.InstallCheckFailed({ cause: error }),
+	});
+	if (error) return Err(error);
+	return Ok(result.code === 0);
 };
+
+/**
+ * Compress an audio blob using FFmpeg. Creates temp files for the
+ * input/output and cleans them up on completion (success or failure).
+ */
+const compressAudioBlob = (blob: Blob, compressionOptions: string) =>
+	tryAsync({
+		try: async () => {
+			const sessionId = nanoid();
+			const tempDir = await appDataDir();
+			const inputPath = await join(
+				tempDir,
+				`compression_input_${sessionId}.wav`,
+			);
+			const outputExtension =
+				getFileExtensionFromFfmpegOptions(compressionOptions);
+			const outputPath = await join(
+				tempDir,
+				`compression_output_${sessionId}.${outputExtension}`,
+			);
+
+			try {
+				const inputContents = new Uint8Array(await blob.arrayBuffer());
+				await writeFile(inputPath, inputContents);
+
+				// Verify file is accessible (forces OS flush on Windows).
+				const { error: verifyError } = await tryAsync({
+					try: () => fs.pathToBlob(inputPath),
+					catch: (error) => FfmpegError.VerifyFailed({ cause: error }),
+				});
+				if (verifyError) throw new Error(verifyError.message);
+
+				const cmd = buildCompressionCommand({
+					inputPath,
+					compressionOptions,
+					outputPath,
+				});
+				const { data: result, error: commandError } =
+					await command.execute(cmd);
+				if (commandError) {
+					throw new Error(
+						`FFmpeg compression failed: ${commandError.message}`,
+					);
+				}
+				if (result.code !== 0) {
+					throw new Error(
+						`FFmpeg compression failed with exit code ${result.code}: ${result.stderr}`,
+					);
+				}
+
+				const outputExists = await exists(outputPath);
+				if (!outputExists) {
+					throw new Error(
+						'FFmpeg compression completed but output file was not created',
+					);
+				}
+
+				const { data: compressedBlob, error: readError } =
+					await fs.pathToBlob(outputPath);
+				if (readError) {
+					throw new Error(
+						`Failed to read compressed audio file: ${readError.message}`,
+					);
+				}
+				return compressedBlob;
+			} finally {
+				await tryAsync({
+					try: async () => {
+						if (await exists(inputPath)) await remove(inputPath);
+						if (await exists(outputPath)) await remove(outputPath);
+					},
+					catch: () => Ok(undefined),
+				});
+			}
+		},
+		catch: (error) => FfmpegError.CompressFailed({ cause: error }),
+	});
 
 // tray --------------------------------------------------------------
 export const TrayError = defineErrors({
@@ -474,18 +480,18 @@ async function initTray() {
 	});
 }
 
-const tray = {
-	setIcon: (recorderState: WhisperingRecordingState) =>
-		tryAsync({
-			try: async () => {
-				const iconPath = await getIconPath(recorderState);
-				if (!trayPromise) trayPromise = initTray();
-				const t = await trayPromise;
-				return t.setIcon(iconPath);
-			},
-			catch: (error) => TrayError.SetIcon({ cause: error }),
-		}),
-};
+// Raw tray ops; the public `tauri.tray.setIcon` below is the
+// TanStack-wrapped form.
+const _traySetIcon = (recorderState: WhisperingRecordingState) =>
+	tryAsync({
+		try: async () => {
+			const iconPath = await getIconPath(recorderState);
+			if (!trayPromise) trayPromise = initTray();
+			const t = await trayPromise;
+			return t.setIcon(iconPath);
+		},
+		catch: (error) => TrayError.SetIcon({ cause: error }),
+	});
 
 // globalShortcuts ---------------------------------------------------
 export const ShortcutError = defineErrors({
@@ -503,12 +509,24 @@ export const ShortcutError = defineErrors({
 		message: `Generated invalid accelerator: ${accelerator}`,
 		accelerator,
 	}),
-	RegisterFailed: ({ accelerator, cause }: { accelerator: string; cause: unknown }) => ({
+	RegisterFailed: ({
+		accelerator,
+		cause,
+	}: {
+		accelerator: string;
+		cause: unknown;
+	}) => ({
 		message: `Failed to register global shortcut '${accelerator}': ${extractErrorMessage(cause)}`,
 		accelerator,
 		cause,
 	}),
-	UnregisterFailed: ({ accelerator, cause }: { accelerator: string; cause: unknown }) => ({
+	UnregisterFailed: ({
+		accelerator,
+		cause,
+	}: {
+		accelerator: string;
+		cause: unknown;
+	}) => ({
 		message: `Failed to unregister global shortcut '${accelerator}': ${extractErrorMessage(cause)}`,
 		accelerator,
 		cause,
@@ -542,7 +560,8 @@ function isValidElectronAccelerator(accelerator: string): boolean {
 	if (parts.length === 0) return false;
 	const modifiers = parts.slice(0, -1);
 	const lastPart = parts.at(-1);
-	if (!ACCELERATOR_KEY_CODES.includes(lastPart as AcceleratorKeyCode)) return false;
+	if (!ACCELERATOR_KEY_CODES.includes(lastPart as AcceleratorKeyCode))
+		return false;
 	for (const modifier of modifiers) {
 		if (!ACCELERATOR_MODIFIER_KEYS.includes(modifier as AcceleratorModifier))
 			return false;
@@ -599,7 +618,9 @@ function convertToKeyCode(
 	return null;
 }
 
-function sortModifiers(modifiers: AcceleratorModifier[]): AcceleratorModifier[] {
+function sortModifiers(
+	modifiers: AcceleratorModifier[],
+): AcceleratorModifier[] {
 	return [...modifiers].sort((a, b) => {
 		const priorityA = ACCELERATOR_MODIFIER_SORT_PRIORITY[a] ?? 99;
 		const priorityB = ACCELERATOR_MODIFIER_SORT_PRIORITY[b] ?? 99;
@@ -607,68 +628,73 @@ function sortModifiers(modifiers: AcceleratorModifier[]): AcceleratorModifier[] 
 	});
 }
 
-const globalShortcuts = {
-	async register({
-		accelerator,
-		callback,
-		on,
-	}: {
-		accelerator: Accelerator;
-		callback: (state: ShortcutEventState) => void;
-		on: ShortcutEventState[];
-	}): Promise<Result<void, InvalidAcceleratorError | GlobalShortcutServiceError>> {
-		const { error: unregisterError } =
-			await globalShortcuts.unregister(accelerator);
-		if (unregisterError) return Err(unregisterError);
+// Raw globalShortcuts ops; public `tauri.globalShortcuts` below
+// exposes TanStack-wrapped versions of register/unregister/unregisterAll
+// (named registerCommand/unregisterCommand/unregisterAll) plus the
+// pure helpers.
 
-		if (!isValidElectronAccelerator(accelerator)) {
-			return ShortcutError.InvalidFormat({ accelerator });
-		}
+async function _registerShortcut({
+	accelerator,
+	callback,
+	on,
+}: {
+	accelerator: Accelerator;
+	callback: (state: ShortcutEventState) => void;
+	on: ShortcutEventState[];
+}): Promise<
+	Result<void, InvalidAcceleratorError | GlobalShortcutServiceError>
+> {
+	const { error: unregisterError } = await _unregisterShortcut(accelerator);
+	if (unregisterError) return Err(unregisterError);
 
-		const { error: registerError } = await tryAsync({
-			try: () =>
-				tauriRegister(accelerator, (event) => {
-					if (on.includes(event.state)) callback(event.state);
-				}),
-			catch: (error) =>
-				ShortcutError.RegisterFailed({ accelerator, cause: error }),
-		});
-		// Tauri's platform layer sometimes returns "RegisterEventHotKey failed"
-		// even after a successful registration. We swallow that error to avoid
-		// an unhelpful toast; other valid shortcuts still register.
-		if (registerError) return Ok(undefined);
-		return Ok(undefined);
-	},
+	if (!isValidElectronAccelerator(accelerator)) {
+		return ShortcutError.InvalidFormat({ accelerator });
+	}
 
-	async unregister(
-		accelerator: Accelerator,
-	): Promise<Result<void, GlobalShortcutServiceError>> {
-		const isRegistered = await tauriIsRegistered(accelerator);
-		if (!isRegistered) return Ok(undefined);
+	const { error: registerError } = await tryAsync({
+		try: () =>
+			tauriRegister(accelerator, (event) => {
+				if (on.includes(event.state)) callback(event.state);
+			}),
+		catch: (error) =>
+			ShortcutError.RegisterFailed({ accelerator, cause: error }),
+	});
+	// Tauri's platform layer sometimes returns "RegisterEventHotKey failed"
+	// even after a successful registration. We swallow that error to avoid
+	// an unhelpful toast; other valid shortcuts still register.
+	if (registerError) return Ok(undefined);
+	return Ok(undefined);
+}
 
-		const { error } = await tryAsync({
-			try: () => tauriUnregister(accelerator),
-			catch: (error) =>
-				ShortcutError.UnregisterFailed({ accelerator, cause: error }),
-		});
-		if (error) return Err(error);
-		return Ok(undefined);
-	},
+async function _unregisterShortcut(
+	accelerator: Accelerator,
+): Promise<Result<void, GlobalShortcutServiceError>> {
+	const isRegistered = await tauriIsRegistered(accelerator);
+	if (!isRegistered) return Ok(undefined);
 
-	async unregisterAll(): Promise<Result<void, GlobalShortcutServiceError>> {
-		const { error } = await tryAsync({
-			try: () => tauriUnregisterAll(),
-			catch: (error) => ShortcutError.UnregisterAllFailed({ cause: error }),
-		});
-		if (error) return Err(error);
-		return Ok(undefined);
-	},
+	const { error } = await tryAsync({
+		try: () => tauriUnregister(accelerator),
+		catch: (error) =>
+			ShortcutError.UnregisterFailed({ accelerator, cause: error }),
+	});
+	if (error) return Err(error);
+	return Ok(undefined);
+}
 
-	isValidElectronAccelerator,
+async function _unregisterAllShortcuts(): Promise<
+	Result<void, GlobalShortcutServiceError>
+> {
+	const { error } = await tryAsync({
+		try: () => tauriUnregisterAll(),
+		catch: (error) => ShortcutError.UnregisterAllFailed({ cause: error }),
+	});
+	if (error) return Err(error);
+	return Ok(undefined);
+}
 
-	pressedKeysToTauriAccelerator(
-		pressedKeys: KeyboardEventSupportedKey[],
-	): Result<Accelerator, InvalidAcceleratorError> {
+function pressedKeysToTauriAccelerator(
+	pressedKeys: KeyboardEventSupportedKey[],
+): Result<Accelerator, InvalidAcceleratorError> {
 		const modifiers: AcceleratorModifier[] = [];
 		const keyCodes: AcceleratorKeyCode[] = [];
 
@@ -690,12 +716,11 @@ const globalShortcuts = {
 			'+',
 		) as Accelerator;
 
-		if (!isValidElectronAccelerator(accelerator)) {
-			return ShortcutError.GeneratedInvalid({ accelerator });
-		}
-		return Ok(accelerator);
-	},
-};
+	if (!isValidElectronAccelerator(accelerator)) {
+		return ShortcutError.GeneratedInvalid({ accelerator });
+	}
+	return Ok(accelerator);
+}
 
 // autostart ---------------------------------------------------------
 export const AutostartError = defineErrors({
@@ -714,29 +739,28 @@ export const AutostartError = defineErrors({
 });
 export type AutostartError = InferErrors<typeof AutostartError>;
 
-const autostart = {
-	isEnabled: () =>
-		tryAsync({
-			try: () => isAutostartEnabled(),
-			catch: (error) => AutostartError.CheckFailed({ cause: error }),
-		}),
-	enable: () =>
-		tryAsync({
-			try: () => enableAutostart(),
-			catch: (error) => AutostartError.EnableFailed({ cause: error }),
-		}),
-	disable: () =>
-		tryAsync({
-			try: () => disableAutostart(),
-			catch: (error) => AutostartError.DisableFailed({ cause: error }),
-		}),
-};
+// Raw autostart ops; public TanStack-wrapped versions are defined below.
+const _autostartIsEnabled = () =>
+	tryAsync({
+		try: () => isAutostartEnabled(),
+		catch: (error) => AutostartError.CheckFailed({ cause: error }),
+	});
+const _autostartEnable = () =>
+	tryAsync({
+		try: () => enableAutostart(),
+		catch: (error) => AutostartError.EnableFailed({ cause: error }),
+	});
+const _autostartDisable = () =>
+	tryAsync({
+		try: () => disableAutostart(),
+		catch: (error) => AutostartError.DisableFailed({ cause: error }),
+	});
 
-// rpc ---------------------------------------------------------------
-// TanStack-wrapped adapters for the subset of capabilities that need
-// reactive caching, error transformation to WhisperingError, or
-// post-mutation invalidation. Capabilities without an entry here are
-// called directly through the namespace (e.g. `tauri.fs.pathToBlob`).
+// Public namespaces ------------------------------------------------
+// Each capability picks ONE shape per method: TanStack-wrapped where
+// reactivity/caching is the point, raw async functions where it isn't.
+// One canonical call shape per leaf; no `tauri.X.Y` vs `tauri.rpc.X.Y`
+// duplication.
 
 const autostartKeys = {
 	isEnabled: ['autostart', 'isEnabled'] as const,
@@ -746,120 +770,122 @@ const autostartKeys = {
 const invalidateAutostartState = () =>
 	queryClient.invalidateQueries({ queryKey: autostartKeys.isEnabled });
 
-const rpc = {
-	autostart: {
-		isEnabled: defineQuery({
-			queryKey: autostartKeys.isEnabled,
-			queryFn: async () => {
-				const { data, error } = await autostart.isEnabled();
-				if (error) {
-					return WhisperingErr({
-						title: '❌ Failed to check autostart status',
-						serviceError: error,
-					});
-				}
-				return Ok(data);
-			},
-			initialData: false,
-		}),
-		enable: defineMutation({
-			mutationKey: autostartKeys.enable,
-			mutationFn: async () => {
-				const { data, error } = await autostart.enable();
-				if (error) {
-					return WhisperingErr({
-						title: '❌ Failed to enable autostart',
-						serviceError: error,
-					});
-				}
-				return Ok(data);
-			},
-			onSettled: invalidateAutostartState,
-		}),
-		disable: defineMutation({
-			mutationKey: autostartKeys.disable,
-			mutationFn: async () => {
-				const { data, error } = await autostart.disable();
-				if (error) {
-					return WhisperingErr({
-						title: '❌ Failed to disable autostart',
-						serviceError: error,
-					});
-				}
-				return Ok(data);
-			},
-			onSettled: invalidateAutostartState,
-		}),
-	},
-
-	ffmpeg: {
-		checkInstalled: defineQuery({
-			queryKey: ['ffmpeg.checkInstalled'] as const,
-			queryFn: async () => {
-				const { data, error } = await ffmpeg.checkInstalled();
-				if (error) {
-					return WhisperingErr({
-						title: '❌ Error checking FFmpeg installation',
-						serviceError: error,
-					});
-				}
-				return Ok(data);
-			},
-		}),
-	},
-
-	tray: {
-		setIcon: defineMutation({
-			mutationKey: ['tray', 'setIcon'] as const,
-			mutationFn: async ({ icon }: { icon: WhisperingRecordingState }) => {
-				const { data, error } = await tray.setIcon(icon);
-				if (error) {
-					return WhisperingErr({
-						title: '⚠️ Failed to set tray icon',
-						serviceError: error,
-					});
-				}
-				return Ok(data);
-			},
-		}),
-	},
-
-	globalShortcuts: {
-		registerCommand: defineMutation({
-			mutationKey: ['shortcuts', 'registerCommandGlobally'] as const,
-			mutationFn: ({
-				command: cmd,
-				// Parameter may contain legacy "CommandOrControl" syntax.
-				// Legacy: "CommandOrControl+Shift+R" → Modern: "Command+Shift+R"
-				// (macOS) or "Control+Shift+R" (Windows/Linux).
-				accelerator: legacyAcceleratorString,
-			}: {
-				command: Command;
-				accelerator: Accelerator;
-			}) => {
-				const accel = legacyAcceleratorString.replace(
-					'CommandOrControl',
-					IS_MACOS ? 'Command' : 'Control',
-				) as Accelerator;
-				return globalShortcuts.register({
-					accelerator: accel,
-					callback: commandCallbacks[cmd.id],
-					on: cmd.on,
+const autostart = {
+	isEnabled: defineQuery({
+		queryKey: autostartKeys.isEnabled,
+		queryFn: async () => {
+			const { data, error } = await _autostartIsEnabled();
+			if (error) {
+				return WhisperingErr({
+					title: '❌ Failed to check autostart status',
+					serviceError: error,
 				});
-			},
-		}),
+			}
+			return Ok(data);
+		},
+		initialData: false,
+	}),
+	enable: defineMutation({
+		mutationKey: autostartKeys.enable,
+		mutationFn: async () => {
+			const { data, error } = await _autostartEnable();
+			if (error) {
+				return WhisperingErr({
+					title: '❌ Failed to enable autostart',
+					serviceError: error,
+				});
+			}
+			return Ok(data);
+		},
+		onSettled: invalidateAutostartState,
+	}),
+	disable: defineMutation({
+		mutationKey: autostartKeys.disable,
+		mutationFn: async () => {
+			const { data, error } = await _autostartDisable();
+			if (error) {
+				return WhisperingErr({
+					title: '❌ Failed to disable autostart',
+					serviceError: error,
+				});
+			}
+			return Ok(data);
+		},
+		onSettled: invalidateAutostartState,
+	}),
+};
 
-		unregisterCommand: defineMutation({
-			mutationKey: ['shortcuts', 'unregisterCommandGlobally'] as const,
-			mutationFn: ({ accelerator }: { accelerator: Accelerator }) =>
-				globalShortcuts.unregister(accelerator),
-		}),
+const ffmpeg = {
+	checkInstalled: defineQuery({
+		queryKey: ['ffmpeg.checkInstalled'] as const,
+		queryFn: async () => {
+			const { data, error } = await _ffmpegCheckInstalled();
+			if (error) {
+				return WhisperingErr({
+					title: '❌ Error checking FFmpeg installation',
+					serviceError: error,
+				});
+			}
+			return Ok(data);
+		},
+	}),
+	compressAudioBlob,
+};
 
-		unregisterAll: defineMutation({
-			mutationKey: ['shortcuts', 'unregisterAllGlobalShortcuts'] as const,
-			mutationFn: () => globalShortcuts.unregisterAll(),
-		}),
-	},
+const tray = {
+	setIcon: defineMutation({
+		mutationKey: ['tray', 'setIcon'] as const,
+		mutationFn: async ({ icon }: { icon: WhisperingRecordingState }) => {
+			const { data, error } = await _traySetIcon(icon);
+			if (error) {
+				return WhisperingErr({
+					title: '⚠️ Failed to set tray icon',
+					serviceError: error,
+				});
+			}
+			return Ok(data);
+		},
+	}),
+};
+
+const globalShortcuts = {
+	isValidElectronAccelerator,
+	pressedKeysToTauriAccelerator,
+
+	registerCommand: defineMutation({
+		mutationKey: ['shortcuts', 'registerCommandGlobally'] as const,
+		mutationFn: ({
+			command: cmd,
+			// Parameter may contain legacy "CommandOrControl" syntax.
+			// Legacy: "CommandOrControl+Shift+R" → Modern: "Command+Shift+R"
+			// (macOS) or "Control+Shift+R" (Windows/Linux).
+			accelerator: legacyAcceleratorString,
+		}: {
+			command: Command;
+			accelerator: Accelerator;
+		}) => {
+			const accel = legacyAcceleratorString.replace(
+				'CommandOrControl',
+				IS_MACOS ? 'Command' : 'Control',
+			) as Accelerator;
+			return _registerShortcut({
+				accelerator: accel,
+				callback: commandCallbacks[cmd.id],
+				on: cmd.on,
+			});
+		},
+	}),
+
+	unregisterCommand: defineMutation({
+		mutationKey: ['shortcuts', 'unregisterCommandGlobally'] as const,
+		mutationFn: ({ accelerator }: { accelerator: Accelerator }) =>
+			_unregisterShortcut(accelerator),
+	}),
+
+	unregisterAll: defineMutation({
+		mutationKey: ['shortcuts', 'unregisterAllGlobalShortcuts'] as const,
+		mutationFn: () => _unregisterAllShortcuts(),
+	}),
 };
 
 // barrel ------------------------------------------------------------
@@ -873,7 +899,6 @@ const _tauri = {
 	tray,
 	globalShortcuts,
 	autostart,
-	rpc,
 };
 
 /** Shape of the Tauri capability namespace (non-null). */

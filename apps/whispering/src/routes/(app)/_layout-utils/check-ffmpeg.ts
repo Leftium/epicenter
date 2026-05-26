@@ -7,12 +7,6 @@ import { settings } from '$lib/state/settings.svelte';
 export const COMPRESSION_RECOMMENDED_MESSAGE =
 	"Since you're using CPAL recording with cloud transcription, we recommend enabling audio compression to reduce file sizes and upload times.";
 
-export const NAVIGATOR_LOCAL_TRANSCRIPTION_MESSAGE =
-	'Browser API recording produces compressed audio that requires FFmpeg for local transcription. Switch to CPAL recording or install FFmpeg.';
-
-export const RECORDING_COMPATIBILITY_MESSAGE =
-	'Browser API recording produces compressed audio that requires FFmpeg for local transcription. Switch to CPAL recording, install FFmpeg, or use a cloud transcription service.';
-
 function isUsingLocalTranscription(): boolean {
 	const service = settings.get('transcription.service');
 	return (
@@ -20,26 +14,6 @@ function isUsingLocalTranscription(): boolean {
 		service === 'parakeet' ||
 		service === 'moonshine'
 	);
-}
-
-/**
- * Checks if the current recording + transcription configuration will work
- * @returns true if Navigator recording is used with local transcription but FFmpeg is not installed
- */
-export function hasNavigatorLocalTranscriptionIssue({
-	isFFmpegInstalled,
-}: {
-	isFFmpegInstalled: boolean;
-}): boolean {
-	if (!tauri) return false;
-
-	const isUsingNavigator = deviceConfig.get('recording.method') === 'navigator';
-	const isUsingLocalTranscription =
-		settings.get('transcription.service') === 'whispercpp' ||
-		settings.get('transcription.service') === 'parakeet' ||
-		settings.get('transcription.service') === 'moonshine';
-
-	return isUsingNavigator && isUsingLocalTranscription && !isFFmpegInstalled;
 }
 
 /**
@@ -52,41 +26,6 @@ export function isCompressionRecommended(): boolean {
 		!isUsingLocalTranscription() &&
 		!settings.get('transcription.compressionEnabled')
 	);
-}
-
-/**
- * Checks for compatibility issues between local transcription models and current recording settings.
- * Shows a warning toast with resolution options when incompatible settings are detected.
- *
- * Local transcription models (Whisper C++ and Parakeet) require audio in 16kHz mono WAV format.
- * This function detects when current recording settings won't produce compatible audio and offers
- * two solutions: installing FFmpeg for automatic conversion or switching to CPAL at 16kHz.
- *
- * @returns Promise<void> - Shows toast notification if local transcription has compatibility issues
- */
-export async function checkLocalTranscriptionCompatibility() {
-	if (!tauri) return;
-
-	const { data: ffmpegInstalled } =
-		await tauri.ffmpeg.checkInstalled.ensure();
-
-	// Check if there are compatibility issues with local transcription
-	if (
-		!hasNavigatorLocalTranscriptionIssue({
-			isFFmpegInstalled: ffmpegInstalled ?? false,
-		})
-	)
-		return;
-
-	// Recording compatibility issue with local transcription models
-	toast.warning('Recording Settings Incompatible', {
-		description: RECORDING_COMPATIBILITY_MESSAGE,
-		action: {
-			label: 'Go to Recording Settings',
-			onClick: () => goto('/settings/recording'),
-		},
-		duration: 15000,
-	});
 }
 
 /**

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import * as Alert from '@epicenter/ui/alert';
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';
@@ -9,7 +8,6 @@
 	import { Link } from '@epicenter/ui/link';
 	import * as Select from '@epicenter/ui/select';
 	import { Textarea } from '@epicenter/ui/textarea';
-	import InfoIcon from '@lucide/svelte/icons/info';
 	import CopyablePre from '$lib/components/copyable/CopyablePre.svelte';
 	import {
 		CompressionBody,
@@ -34,9 +32,6 @@
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
-	import { hasNavigatorLocalTranscriptionIssue } from '$routes/(app)/_layout-utils/check-ffmpeg';
-
-	const { data } = $props();
 
 	/**
 	 * Feature capabilities for the currently selected transcription service.
@@ -500,39 +495,6 @@
 							</div>
 						{/snippet}
 					</LocalModelSelector>
-
-					{#if hasNavigatorLocalTranscriptionIssue( { isFFmpegInstalled: data.ffmpegInstalled ?? false }, )}
-						<Alert.Root class="border-red-500/20 bg-red-500/5">
-							<InfoIcon class="size-4 text-red-600 dark:text-red-400" />
-							<Alert.Title class="text-red-600 dark:text-red-400">
-								Browser API Recording Requires FFmpeg
-							</Alert.Title>
-							<Alert.Description>
-								You're using the Browser API recording method, which produces
-								compressed audio that requires FFmpeg for Whisper C++
-								transcription.
-								<div class="mt-3 space-y-3">
-									<div class="text-sm">
-										<strong>Option 1:</strong>
-										<Link href="/settings/recording"
-											>Switch to CPAL recording</Link
-										>
-										for direct compatibility with local transcription
-									</div>
-									<div class="text-sm">
-										<strong>Option 2:</strong>
-										<Link href="/install-ffmpeg">Install FFmpeg</Link>
-										to keep using Browser API recording
-									</div>
-									<div class="text-sm">
-										<strong>Option 3:</strong>
-										Switch to a cloud transcription service (OpenAI, Groq,
-										Deepgram, etc.) which work with all recording methods
-									</div>
-								</div>
-							</Alert.Description>
-						</Alert.Root>
-					{/if}
 				{/if}
 			</div>
 		{:else if settings.get('transcription.service') === 'parakeet'}
@@ -607,39 +569,6 @@
 							</Card.Root>
 						{/snippet}
 					</LocalModelSelector>
-
-					{#if hasNavigatorLocalTranscriptionIssue( { isFFmpegInstalled: data.ffmpegInstalled ?? false }, )}
-						<Alert.Root class="border-red-500/20 bg-red-500/5">
-							<InfoIcon class="size-4 text-red-600 dark:text-red-400" />
-							<Alert.Title class="text-red-600 dark:text-red-400">
-								Browser API Recording Requires FFmpeg
-							</Alert.Title>
-							<Alert.Description>
-								You're using the Browser API recording method, which produces
-								compressed audio that requires FFmpeg for Parakeet
-								transcription.
-								<div class="mt-3 space-y-3">
-									<div class="text-sm">
-										<strong>Option 1:</strong>
-										<Link href="/settings/recording"
-											>Switch to CPAL recording</Link
-										>
-										for direct compatibility with local transcription
-									</div>
-									<div class="text-sm">
-										<strong>Option 2:</strong>
-										<Link href="/install-ffmpeg">Install FFmpeg</Link>
-										to keep using Browser API recording
-									</div>
-									<div class="text-sm">
-										<strong>Option 3:</strong>
-										Switch to a cloud transcription service (OpenAI, Groq,
-										Deepgram, etc.) which work with all recording methods
-									</div>
-								</div>
-							</Alert.Description>
-						</Alert.Root>
-					{/if}
 				{/if}
 			</div>
 		{:else if settings.get('transcription.service') === 'moonshine'}
@@ -737,39 +666,6 @@
 							</Card.Root>
 						{/snippet}
 					</LocalModelSelector>
-
-					{#if hasNavigatorLocalTranscriptionIssue( { isFFmpegInstalled: data.ffmpegInstalled ?? false }, )}
-						<Alert.Root class="border-red-500/20 bg-red-500/5">
-							<InfoIcon class="size-4 text-red-600 dark:text-red-400" />
-							<Alert.Title class="text-red-600 dark:text-red-400">
-								Browser API Recording Requires FFmpeg
-							</Alert.Title>
-							<Alert.Description>
-								You're using the Browser API recording method, which produces
-								compressed audio that requires FFmpeg for Moonshine
-								transcription.
-								<div class="mt-3 space-y-3">
-									<div class="text-sm">
-										<strong>Option 1:</strong>
-										<Link href="/settings/recording"
-											>Switch to CPAL recording</Link
-										>
-										for direct compatibility with local transcription
-									</div>
-									<div class="text-sm">
-										<strong>Option 2:</strong>
-										<Link href="/install-ffmpeg">Install FFmpeg</Link>
-										to keep using Browser API recording
-									</div>
-									<div class="text-sm">
-										<strong>Option 3:</strong>
-										Switch to a cloud transcription service (OpenAI, Groq,
-										Deepgram, etc.) which work with all recording methods
-									</div>
-								</div>
-							</Alert.Description>
-						</Alert.Root>
-					{/if}
 				{/if}
 			</div>
 		{/if}

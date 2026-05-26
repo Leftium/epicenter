@@ -160,15 +160,6 @@ function tryParseJson(raw: string | null): Record<string, unknown> | null {
 	return null;
 }
 
-function toNumber(raw: unknown): number | undefined {
-	if (typeof raw === 'number') return raw;
-	if (typeof raw === 'string') {
-		const value = parseFloat(raw);
-		return Number.isNaN(value) ? undefined : value;
-	}
-	return undefined;
-}
-
 function toInteger(raw: unknown): number | undefined {
 	if (typeof raw === 'number') return Number.isInteger(raw) ? raw : undefined;
 	if (typeof raw === 'string') {
@@ -248,7 +239,7 @@ const WORKSPACE_KEY_MAP: readonly {
 	// Recording
 	{ oldKey: 'recording.mode', newKey: 'recording.mode' },
 
-	// Transcription (temperature: string → number)
+	// Transcription
 	{
 		oldKey: 'transcription.selectedTranscriptionService',
 		newKey: 'transcription.service',
@@ -272,11 +263,6 @@ const WORKSPACE_KEY_MAP: readonly {
 	},
 	{ oldKey: 'transcription.outputLanguage', newKey: 'transcription.language' },
 	{ oldKey: 'transcription.prompt', newKey: 'transcription.prompt' },
-	{
-		oldKey: 'transcription.temperature',
-		newKey: 'transcription.temperature',
-		convert: toNumber,
-	},
 
 	// Transformation
 	{

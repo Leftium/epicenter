@@ -307,8 +307,7 @@ const recording = {
  * Transcription service and per-service model selections.
  *
  * Each service's model is its own KV entry so switching from OpenAI to Groq and
- * back preserves your OpenAI model choice. `temperature` is stored as a number
- * (0 to 1): the old settings schema used a string for localStorage.
+ * back preserves your OpenAI model choice.
  *
  * @see {@link https://github.com/EpicenterHQ/epicenter/blob/main/specs/20260312T170000-whispering-workspace-polish-and-migration.md | Spec Decision 2}
  */
@@ -339,10 +338,6 @@ const transcription = {
 	),
 	'transcription.language': defineKv(column.string(), () => 'auto'),
 	'transcription.prompt': defineKv(column.string(), () => ''),
-	'transcription.temperature': defineKv(
-		column.number({ minimum: 0, maximum: 1 }),
-		() => 0,
-	),
 } as const;
 
 /**

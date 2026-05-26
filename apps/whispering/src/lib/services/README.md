@@ -80,7 +80,7 @@ import { tauri, type Tauri } from '$lib/tauri';
 // 1. Shared code (runs on web and Tauri): narrow once.
 if (tauri) {
   await tauri.fs.pathToBlob(path);
-  await tauri.ffmpeg.checkInstalled.ensure();
+  await tauri.audioEncoder.encodeWavToOpusOgg(wavBlob);
 }
 
 // 2. Shared helpers called only inside an `if (tauri)` block:
@@ -99,7 +99,7 @@ See `docs/articles/20260526T012526-tauri-is-both-the-namespace-and-the-platform-
 > **💡 Three kinds of dependency injection**
 >
 > - **Build-time platform DI** (suffix files): for services that have a real implementation on both platforms. `text`, `notifications`, `os`, `sound`, `download`, `analytics`, `http`, `blob-store`, `recorder`. Each has `index.tauri.ts` + `index.browser.ts` + `types.ts`. Vite picks one at build time.
-> - **Tauri-only namespace** (`$lib/tauri`): for capabilities that exist only on Tauri (fs, command, permissions, ffmpeg, tray, globalShortcuts, autostart). One file holds all of them. Consumers either narrow with `if (tauri)`, prop-drill the narrowed value into helpers, or call `requireTauri()` from inside a `.tauri.ts` file.
+> - **Tauri-only namespace** (`$lib/tauri`): for capabilities that exist only on Tauri (fs, command, permissions, audioEncoder, tray, globalShortcuts, autostart). One file holds all of them. Consumers either narrow with `if (tauri)`, prop-drill the narrowed value into helpers, or call `requireTauri()` from inside a `.tauri.ts` file.
 > - **Runtime DI** (switch on `settings.value`): for user-pick providers like `transcription` and `completion`.
 >
 > See `docs/articles/20260526T012650-two-switches-build-time-and-runtime.md` for the platform-vs-settings walkthrough.
@@ -432,7 +432,7 @@ All seven Tauri-only capabilities live inline in one file at `$lib/tauri.tauri.t
 - `tauri.fs` - Filesystem operations (pathToBlob, pathToFile, pathsToFiles)
 - `tauri.command` - Shell command execution (execute, spawn)
 - `tauri.permissions` - macOS accessibility/microphone permission flows
-- `tauri.ffmpeg` - FFmpeg binary helper (checkInstalled, compressAudioBlob)
+- `tauri.audioEncoder` - In-process libopus encoder for cloud upload compression (encodeWavToOpusOgg)
 - `tauri.tray` - System tray icon (setIcon)
 - `tauri.globalShortcuts` - OS-level shortcut registration (registerCommand, unregisterCommand, unregisterAll)
 - `tauri.autostart` - Launch-at-login toggle (isEnabled, enable, disable)
@@ -441,7 +441,7 @@ Each leaf picks one canonical call form: TanStack-wrapped (via `defineQuery`/`de
 
 Pure accelerator parsing (validate-format, pressed-keys-to-accelerator, the `Accelerator` brand) doesn't need the Tauri runtime and lives in `$lib/utils/accelerator.ts`. The Tauri-side registration code consumes the same types.
 
-The cpal recorder (`services/recorder/cpal.tauri.ts`) stays under `services/` because it's a sibling of `navigator.ts` and the recorder folder exposes both through its own suffix files. Platform-neutral FFmpeg constants live at `$lib/constants/ffmpeg.ts`.
+The cpal recorder (`services/recorder/cpal.tauri.ts`) stays under `services/` because it's a sibling of `navigator.ts` and the recorder folder exposes both through its own suffix files.
 
 ### Multi-provider services
 

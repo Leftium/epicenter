@@ -277,23 +277,11 @@ const WORKSPACE_KEY_MAP: readonly {
 		newKey: 'transcription.temperature',
 		convert: toNumber,
 	},
-	{
-		oldKey: 'transcription.compressionEnabled',
-		newKey: 'transcription.compressionEnabled',
-	},
-	{
-		oldKey: 'transcription.compressionOptions',
-		newKey: 'transcription.compressionOptions',
-	},
 
 	// Transformation
 	{
 		oldKey: 'transformations.selectedTransformationId',
 		newKey: 'transformation.selectedId',
-	},
-	{
-		oldKey: 'completion.openrouter.model',
-		newKey: 'transformation.openrouterModel',
 	},
 
 	// Analytics

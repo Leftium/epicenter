@@ -12,9 +12,34 @@ import { groqErrorToWhisperingErr } from '$lib/rpc/transcription-errors/groq';
 import { mistralErrorToWhisperingErr } from '$lib/rpc/transcription-errors/mistral';
 import { openaiErrorToWhisperingErr } from '$lib/rpc/transcription-errors/openai';
 import { services } from '$lib/services';
+import { TRANSCRIPTION_SERVICES } from '$lib/services/transcription/registry';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { tauri } from '$lib/tauri';
+
+/**
+ * Services that upload audio bytes to a remote endpoint (cloud APIs +
+ * self-hosted). The local engines (whispercpp, parakeet, moonshine) decode
+ * the blob in-process via the Rust decoder, so compressing their input
+ * would just round-trip through libopus for no win.
+ */
+function isUploadTranscriptionService(serviceId: string): boolean {
+	const entry = TRANSCRIPTION_SERVICES.find((s) => s.id === serviceId);
+	return entry?.location === 'cloud' || entry?.location === 'self-hosted';
+}
+
+/**
+ * Heuristic that catches the cpal recorder output (which is the only WAV
+ * source we expect to compress). The Opus encoder rejects non-WAV input
+ * anyway; this just avoids paying the IPC round-trip when we already know
+ * the blob is something else.
+ */
+function blobLooksLikeWav(blob: Blob): boolean {
+	const type = blob.type.toLowerCase();
+	return (
+		type === 'audio/wav' || type === 'audio/wave' || type === 'audio/x-wav'
+	);
+}
 
 function getOutputLanguage(): SupportedLanguage {
 	const language = settings.get('transcription.language');
@@ -41,39 +66,38 @@ export async function transcribeBlob(
 		provider: selectedService,
 	});
 
+	// Opus-compress WAV uploads on the cloud path. cpal records ~960 KB/min
+	// uncompressed; libopus voice mode brings that to ~50 KB/min with no
+	// perceptible quality loss for transcription. Skipped for local engines
+	// (the Rust decoder consumes the raw WAV directly) and for already-
+	// compressed inputs (navigator MediaRecorder, file uploads).
 	let audioToTranscribe = blob;
-	if (tauri && settings.get('transcription.compressionEnabled')) {
-		const { data: compressedBlob, error: compressionError } =
-			await tauri.ffmpeg.compressAudioBlob(
-				blob,
-				settings.get('transcription.compressionOptions'),
-			);
+	if (
+		tauri &&
+		isUploadTranscriptionService(selectedService) &&
+		blobLooksLikeWav(blob)
+	) {
+		const { data: oggBlob, error: encodeError } =
+			await tauri.audioEncoder.encodeWavToOpusOgg(blob);
 
-		if (compressionError) {
+		if (encodeError) {
 			notify.warning({
-				title: 'Audio compression failed',
-				description: `${compressionError.message}. Using original audio for transcription.`,
+				title: 'Audio compression skipped',
+				description: `${encodeError.message}. Uploading original audio instead.`,
 			});
 			analytics.logEvent({
 				type: 'compression_failed',
 				provider: selectedService,
-				error_message: compressionError.message,
+				error_message: encodeError.message,
 			});
 		} else {
-			audioToTranscribe = compressedBlob;
-			const compressionRatio = Math.round(
-				(1 - compressedBlob.size / blob.size) * 100,
-			);
-			notify.info({
-				title: 'Audio compressed',
-				description: `Reduced file size by ${compressionRatio}%`,
-			});
+			audioToTranscribe = oggBlob;
 			analytics.logEvent({
 				type: 'compression_completed',
 				provider: selectedService,
 				original_size: blob.size,
-				compressed_size: compressedBlob.size,
-				compression_ratio: compressionRatio,
+				compressed_size: oggBlob.size,
+				compression_ratio: Math.round((1 - oggBlob.size / blob.size) * 100),
 			});
 		}
 	}
@@ -170,9 +194,6 @@ export async function transcribeBlob(
 					return Ok(data);
 				}
 				case 'whispercpp': {
-					// Pure Rust audio conversion now handles most formats without FFmpeg
-					// Only compressed formats (MP3, M4A) require FFmpeg, which will be
-					// handled automatically as a fallback in the Rust conversion pipeline
 					return await services.transcriptions.whispercpp.transcribe(
 						audioToTranscribe,
 						{
@@ -183,9 +204,6 @@ export async function transcribeBlob(
 					);
 				}
 				case 'parakeet': {
-					// Pure Rust audio conversion now handles most formats without FFmpeg
-					// Only compressed formats (MP3, M4A) require FFmpeg, which will be
-					// handled automatically as a fallback in the Rust conversion pipeline
 					return await services.transcriptions.parakeet.transcribe(
 						audioToTranscribe,
 						{

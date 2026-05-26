@@ -20,7 +20,6 @@
 	import { commandCallbacks } from '$lib/commands';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import {
-		CompressionSelector,
 		TranscriptionSelector,
 		TransformationSelector,
 	} from '$lib/components/settings';
@@ -271,7 +270,6 @@
 			{:else}
 				<div class="absolute -right-32 bottom-4 flex items-center gap-0.5">
 					<ManualDeviceSelector />
-					<CompressionSelector />
 					<TranscriptionSelector />
 					<TransformationSelector />
 				</div>
@@ -299,7 +297,6 @@
 			{#if vadRecorder.state === 'IDLE'}
 				<div class="absolute -right-32 bottom-4 flex items-center gap-0.5">
 					<VadDeviceSelector />
-					<CompressionSelector />
 					<TranscriptionSelector />
 					<TransformationSelector />
 				</div>
@@ -325,7 +322,6 @@
 				class="h-32 sm:h-36 lg:h-40 xl:h-44 w-full"
 			/>
 			<div class="flex items-center gap-1.5">
-				<CompressionSelector />
 				<TranscriptionSelector />
 				<TransformationSelector />
 			</div>

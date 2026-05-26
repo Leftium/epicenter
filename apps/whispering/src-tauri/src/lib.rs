@@ -5,6 +5,7 @@ use tauri_plugin_aptabase::EventTracker;
 use tauri_plugin_log::{Target, TargetKind};
 
 pub mod audio;
+use audio::encode_upload_audio;
 pub mod recorder;
 use recorder::commands::{
     cancel_recording, close_recording_session, enumerate_recording_devices,
@@ -182,6 +183,7 @@ pub async fn run() {
         stop_recording,
         cancel_recording,
         transcribe_audio,
+        encode_upload_audio,
         set_unload_policy,
         send_sigint,
         // Command execution (prevents console window flash on Windows)

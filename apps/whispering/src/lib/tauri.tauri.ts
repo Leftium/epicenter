@@ -1,6 +1,6 @@
 /**
  * Tauri-only capability namespace. Everything that requires the Tauri
- * runtime lives in this file: fs, command, permissions, ffmpeg, tray,
+ * runtime lives in this file: fs, command, permissions, audioEncoder, tray,
  * globalShortcuts, autostart. The subset that needs TanStack caching,
  * error transformation, or invalidation is exposed in the same shape
  * (no sub-namespace), with each leaf picking one canonical call form.
@@ -38,12 +38,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { Menu, MenuItem } from '@tauri-apps/api/menu';
-import {
-	appDataDir,
-	basename,
-	join,
-	resolveResource,
-} from '@tauri-apps/api/path';
+import { basename, resolveResource } from '@tauri-apps/api/path';
 import { TrayIcon } from '@tauri-apps/api/tray';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import {
@@ -51,7 +46,7 @@ import {
 	enable as enableAutostart,
 	isEnabled as isAutostartEnabled,
 } from '@tauri-apps/plugin-autostart';
-import { exists, readFile, remove, writeFile } from '@tauri-apps/plugin-fs';
+import { readFile } from '@tauri-apps/plugin-fs';
 import {
 	isRegistered as tauriIsRegistered,
 	register as tauriRegister,
@@ -61,7 +56,6 @@ import {
 import { exit } from '@tauri-apps/plugin-process';
 import type { Child, ChildProcess } from '@tauri-apps/plugin-shell';
 import mime from 'mime';
-import { nanoid } from 'nanoid/non-secure';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -73,7 +67,6 @@ import { goto } from '$app/navigation';
 import type { Command, ShortcutEventState } from '$lib/commands';
 import { commandCallbacks } from '$lib/commands';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
-import { getFileExtensionFromFfmpegOptions } from '$lib/constants/ffmpeg';
 import { IS_MACOS } from '$lib/constants/platform';
 import { WhisperingErr } from '$lib/result';
 import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
@@ -276,133 +269,45 @@ const permissions = {
 	},
 };
 
-// ffmpeg ------------------------------------------------------------
-const FfmpegError = defineErrors({
-	InstallCheckFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to check FFmpeg installation: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	VerifyFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to verify temp file accessibility: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	CompressFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to compress audio: ${extractErrorMessage(cause)}`,
+// audioEncoder ------------------------------------------------------
+// In-process libopus encoder. Wraps the `encode_upload_audio` Tauri
+// command (raw IPC body, no JSON). The Rust side decodes WAV with hound,
+// resamples to 48 kHz with rubato, encodes 24 kbps voice VBR through
+// audiopus, and muxes into a single OGG stream.
+const AudioEncoderError = defineErrors({
+	EncodeFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Audio encode failed: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
-type FfmpegError = InferErrors<typeof FfmpegError>;
+type AudioEncoderError = InferErrors<typeof AudioEncoderError>;
 
-function buildCompressionCommand({
-	inputPath,
-	compressionOptions,
-	outputPath,
-}: {
-	inputPath: string;
-	compressionOptions: string;
-	outputPath: string;
-}) {
-	return [
-		'ffmpeg',
-		'-i',
-		`"${inputPath}"`,
-		compressionOptions.trim(),
-		`"${outputPath}"`,
-	]
-		.filter((part) => part)
-		.join(' ');
-}
+const audioEncoder = {
+	/**
+	 * Compress a WAV blob into OGG/Opus. Returns the bytes wrapped as a
+	 * fresh Blob with `audio/ogg` MIME so the upload paths key their
+	 * multipart extension off `.type` like they already do for the
+	 * untouched WAV case.
+	 *
+	 * Callers should fall back to uploading the original WAV on error
+	 * rather than failing the whole transcription: compression is an
+	 * optimization, not a correctness requirement.
+	 */
+	async encodeWavToOpusOgg(
+		wavBlob: Blob,
+	): Promise<Result<Blob, AudioEncoderError>> {
+		const { data: oggBytes, error } = await tryAsync({
+			try: async () => {
+				const wavBuffer = await wavBlob.arrayBuffer();
+				return await invoke<ArrayBuffer>('encode_upload_audio', wavBuffer);
+			},
+			catch: (cause) => AudioEncoderError.EncodeFailed({ cause }),
+		});
 
-// `_ffmpegCheckInstalled` is the raw implementation; the public
-// `tauri.ffmpeg.checkInstalled` below is the TanStack-wrapped form.
-const _ffmpegCheckInstalled = async () => {
-	const { data: result, error } = await tryAsync({
-		try: async () => {
-			const { data, error: commandError } =
-				await command.execute('ffmpeg -version');
-			if (commandError) throw commandError;
-			return data;
-		},
-		catch: (error) => FfmpegError.InstallCheckFailed({ cause: error }),
-	});
-	if (error) return Err(error);
-	return Ok(result.code === 0);
+		if (error) return Err(error);
+		return Ok(new Blob([oggBytes], { type: 'audio/ogg' }));
+	},
 };
-
-/**
- * Compress an audio blob using FFmpeg. Creates temp files for the
- * input/output and cleans them up on completion (success or failure).
- */
-const compressAudioBlob = (blob: Blob, compressionOptions: string) =>
-	tryAsync({
-		try: async () => {
-			const sessionId = nanoid();
-			const tempDir = await appDataDir();
-			const inputPath = await join(
-				tempDir,
-				`compression_input_${sessionId}.wav`,
-			);
-			const outputExtension =
-				getFileExtensionFromFfmpegOptions(compressionOptions);
-			const outputPath = await join(
-				tempDir,
-				`compression_output_${sessionId}.${outputExtension}`,
-			);
-
-			try {
-				const inputContents = new Uint8Array(await blob.arrayBuffer());
-				await writeFile(inputPath, inputContents);
-
-				// Verify file is accessible (forces OS flush on Windows).
-				const { error: verifyError } = await tryAsync({
-					try: () => fs.pathToBlob(inputPath),
-					catch: (error) => FfmpegError.VerifyFailed({ cause: error }),
-				});
-				if (verifyError) throw new Error(verifyError.message);
-
-				const cmd = buildCompressionCommand({
-					inputPath,
-					compressionOptions,
-					outputPath,
-				});
-				const { data: result, error: commandError } =
-					await command.execute(cmd);
-				if (commandError) {
-					throw new Error(`FFmpeg compression failed: ${commandError.message}`);
-				}
-				if (result.code !== 0) {
-					throw new Error(
-						`FFmpeg compression failed with exit code ${result.code}: ${result.stderr}`,
-					);
-				}
-
-				const outputExists = await exists(outputPath);
-				if (!outputExists) {
-					throw new Error(
-						'FFmpeg compression completed but output file was not created',
-					);
-				}
-
-				const { data: compressedBlob, error: readError } =
-					await fs.pathToBlob(outputPath);
-				if (readError) {
-					throw new Error(
-						`Failed to read compressed audio file: ${readError.message}`,
-					);
-				}
-				return compressedBlob;
-			} finally {
-				await tryAsync({
-					try: async () => {
-						if (await exists(inputPath)) await remove(inputPath);
-						if (await exists(outputPath)) await remove(outputPath);
-					},
-					catch: () => Ok(undefined),
-				});
-			}
-		},
-		catch: (error) => FfmpegError.CompressFailed({ cause: error }),
-	});
 
 // window ------------------------------------------------------------
 const window = {
@@ -686,23 +591,6 @@ const autostart = {
 	}),
 };
 
-const ffmpeg = {
-	checkInstalled: defineQuery({
-		queryKey: ['ffmpeg.checkInstalled'] as const,
-		queryFn: async () => {
-			const { data, error } = await _ffmpegCheckInstalled();
-			if (error) {
-				return WhisperingErr({
-					title: '❌ Error checking FFmpeg installation',
-					serviceError: error,
-				});
-			}
-			return Ok(data);
-		},
-	}),
-	compressAudioBlob,
-};
-
 const tray = {
 	setIcon: defineMutation({
 		mutationKey: ['tray', 'setIcon'] as const,
@@ -764,7 +652,7 @@ const tauriImpl = {
 	fs,
 	command,
 	permissions,
-	ffmpeg,
+	audioEncoder,
 	window,
 	tray,
 	globalShortcuts,

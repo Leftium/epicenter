@@ -17,10 +17,6 @@
 	import { tauri } from '$lib/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
-	import {
-		COMPRESSION_RECOMMENDED_MESSAGE,
-		isCompressionRecommended,
-	} from '$routes/(app)/_layout-utils/compression-recommendation';
 	import DesktopOutputFolder from './DesktopOutputFolder.svelte';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
@@ -184,24 +180,6 @@
 				</Alert.Root>
 			{/if}
 
-			{#if isCompressionRecommended()}
-				<Alert.Root class="border-blue-500/20 bg-blue-500/5">
-					<InfoIcon class="size-4 text-blue-600 dark:text-blue-400" />
-					<Alert.Title class="text-blue-600 dark:text-blue-400">
-						Enable Compression for Faster Uploads
-					</Alert.Title>
-					<Alert.Description>
-						{COMPRESSION_RECOMMENDED_MESSAGE}
-						<Link
-							href="/settings/transcription"
-							class="font-medium underline underline-offset-4 hover:text-blue-700 dark:hover:text-blue-300"
-						>
-							Enable in Transcription Settings →
-						</Link>
-					</Alert.Description>
-				</Alert.Root>
-			{/if}
-
 		{/if}
 
 		{#if settings.get('recording.mode') === 'manual'}
@@ -243,8 +221,8 @@
 					<Alert.Description>
 						VAD mode uses the browser's Web Audio API for real-time voice
 						detection and records via the browser's MediaRecorder API. Audio is
-						encoded to uncompressed WAV format. VAD mode has its own recording
-						method and cannot use CPAL or FFmpeg.
+						encoded to uncompressed WAV format. VAD mode runs the browser
+						recorder regardless of the CPAL/Browser API selection above.
 					</Alert.Description>
 				</Alert.Root>
 			{/if}

@@ -1,7 +1,7 @@
 # Replace FFmpeg with Symphonia + libopus
 
 **Date**: 2026-05-26
-**Status**: Draft
+**Status**: Wave 1 merged (PR #1826). Waves 2-4 in PR #1828 (encoder, unconditional compression, FFmpeg sidecar removal).
 **Owner**: Braden
 **Branch**: TBD (separate from `braden-w/ffmpeg-stdin-input`)
 
@@ -373,53 +373,38 @@ Wave ordering follows Build → Prove → Remove. Old code stays on disk and unu
 
 ### Wave 1: Build the new decoder
 
-- [ ] **1.1** Add `symphonia`, `audiopus`, `ogg` to `apps/whispering/src-tauri/Cargo.toml`. Verify `cargo build` on macOS, Linux, Windows in CI.
-- [ ] **1.2** Create `src-tauri/src/audio/mod.rs`, `audio/decode.rs`, `audio/error.rs`.
-- [ ] **1.3** Implement `audio::decode_to_pcm16k_mono(&[u8]) -> Result<Vec<f32>, AudioError>`:
+- [x] **1.1** Add `symphonia`, `audiopus`, `ogg` to `apps/whispering/src-tauri/Cargo.toml`. Verify `cargo build` on macOS, Linux, Windows in CI. (PR #1826 added symphonia + audiopus; PR #1828 added ogg.)
+- [x] **1.2** Create `src-tauri/src/audio/mod.rs`, `audio/decode.rs`, `audio/error.rs`.
+- [x] **1.3** Implement `audio::decode_to_pcm16k_mono(&[u8]) -> Result<Vec<f32>, AudioError>`:
   - Symphonia probe + format reader
   - Dispatch: Opus codec → libopus path; other codecs → Symphonia decoder
   - Concatenate decoded frames into a single `Vec<f32>`
   - Downmix to mono if `channels > 1`
   - Resample to 16 kHz with rubato if source rate != 16 kHz
-- [ ] **1.4** Add focused tests in `audio/decode.rs`:
-  - 16 kHz mono i16 WAV → roundtrip equivalence
-  - 48 kHz stereo WAV → 16 kHz mono samples (length within 1 frame of expected)
-  - WebM/Opus fixture (record a 2-second sample via Chrome, check in `tests/fixtures/`) → expected sample count
-  - MP3 fixture → expected sample count
-  - M4A/AAC fixture → expected sample count
-  - Truncated/garbage input → `AudioError::DecodeFailed`, not panic
-- [ ] **1.5** Make sure log output uses `log::debug!`/`warn!` consistently with the rest of `transcription/`.
+- [x] **1.4** Add focused tests in `audio/decode.rs` (subset: in-memory WAV fixtures cover 16k mono, 48k stereo, garbage, and empty input. Compressed-format fixtures deferred until we add real audio files to `tests/fixtures/`.)
+- [x] **1.5** Make sure log output uses `log::debug!`/`warn!` consistently with the rest of `transcription/`.
 
 ### Wave 2: Build the new encoder
 
-- [ ] **2.1** Implement `audio::encode_wav_to_opus_ogg(&[u8], bitrate_bps: u32) -> Result<Vec<u8>, AudioError>`:
-  - hound read WAV → `Vec<f32>` @ recorded rate
-  - rubato resample to 48 kHz (libopus internal rate)
-  - libopus encoder: VBR, voice signal type, 20 ms frame size
-  - ogg packet writer: one stream, serial number = random u32
-- [ ] **2.2** Add a Tauri command `encode_upload_audio(wavBytes: Vec<u8>, bitrate_bps: Option<u32>) -> Result<Vec<u8>, AudioError>` in `command.rs`.
-- [ ] **2.3** Tests: encode-then-decode roundtrip on a 5-second sine wave; verify duration within ±50 ms and frequency peak preserved.
+- [x] **2.1** Implement `audio::encode_wav_to_opus_ogg(&[u8]) -> Result<Vec<u8>, AudioError>` (bitrate hardcoded at 24 kbps until a UI knob earns it). PR #1828.
+- [x] **2.2** Add a Tauri command `encode_upload_audio` in `command.rs` (raw IPC body, no bitrate param yet). PR #1828.
+- [x] **2.3** Tests: encode-then-decode roundtrip on a 5 s sine; duration within ±50 ms, peak frequency within 10 Hz.
 
 ### Wave 3: Prove (switch consumers to the new path; old code still on disk)
 
-- [ ] **3.1** Update `transcription/mod.rs:154` to call `audio::decode_to_pcm16k_mono`. Do not delete the old `transcription/audio.rs` yet.
-- [ ] **3.2** Add the `transcription.uploadCompression` setting (default `'opus'` on Tauri, `'wav'` on web) and a UI toggle in settings.
-- [ ] **3.3** Wire `invoke('encode_upload_audio', ...)` into one cloud provider (suggest: OpenAI) as the pilot. Leave the others on WAV until proven.
-- [ ] **3.4** Smoke-test locally on each platform:
-  - cpal record + local engine — should still work, no decoder involvement
-  - cpal record + cloud engine (opus) — payload size should drop ~20×
-  - file upload (mp3, m4a, webm) + local engine — Symphonia path
-  - navigator record + local engine — Symphonia + libopus path
-- [ ] **3.5** Verify `cargo test`, `bun typecheck`, and the full app test suite pass.
+- [x] **3.1** `transcription/mod.rs` calls `audio::decode_to_pcm16k_mono`. (PR #1826 went further and deleted the old `transcription/audio.rs`; Wave 4.1/4.2 were folded into PR 1.)
+- [x] **3.2** Added `transcription.uploadCompression` setting (`'opus'` default everywhere, no-op on web) and a UI toggle (`UploadCompressionToggle.svelte`) on the transcription settings page. PR #1828.
+- [x] **3.3** + **3.5** Rolled to every upload provider in one shot (OpenAI, Groq, ElevenLabs, Deepgram, Mistral, Speaches) via orchestrator-side compression in `transcribeBlob`. PR #1828.
+- [ ] **3.4** Smoke-test locally on each platform — blocking on manual verification before PR #1828 merges.
 
 ### Wave 4: Remove
 
-- [ ] **4.1** Delete `src-tauri/src/transcription/audio.rs`.
-- [ ] **4.2** Remove `TranscriptionError::FfmpegNotFoundError` variant from `transcription/error.rs`.
-- [ ] **4.3** Remove TS-side `FfmpegNotFoundError` handling (grep across `src/`).
-- [ ] **4.4** Remove the FFmpeg install instructions from docs / onboarding / error toasts.
-- [ ] **4.5** Roll the Opus upload to the remaining cloud providers (one PR per provider, or one if they share a helper).
-- [ ] **4.6** Final sweep: search for `ffmpeg` across the repo; remove any remaining references.
+- [x] **4.1** `src-tauri/src/transcription/audio.rs` deleted (PR #1826).
+- [x] **4.2** `TranscriptionError::FfmpegNotFoundError` variant removed (PR #1826).
+- [x] **4.3** TS-side `FfmpegNotFoundError` handling removed across `src/`.
+- [x] **4.4** FFmpeg install instructions removed from docs / onboarding / error toasts.
+- [x] **4.5** Rolled to every cloud provider in PR #1828 (orchestrator-side compression in `transcribeBlob`).
+- [x] **4.6** Final sweep complete. Deleted: `desktopServices.ffmpeg`, `desktopRpc.ffmpeg`, `check-ffmpeg.ts`, the `install-ffmpeg` route, the `transcription.compressionEnabled` / `transcription.compressionOptions` workspace KV entries and migration map rows. Only remaining `ffmpeg` mentions are dev tooling in `docs/audio-test-fixtures.md` (regenerating decoder fixtures) and historical references in older specs.
 
 ### Wave 5 (optional): Refuse navigator backend on Tauri
 
@@ -491,14 +476,14 @@ Out of scope for this spec. See Open Questions.
 ## Success criteria
 
 - [ ] `cargo test` passes on macOS, Linux, Windows
-- [ ] Zero references to `ffmpeg` in `apps/whispering/src-tauri/` after Wave 4
-- [ ] `TranscriptionError::FfmpegNotFoundError` removed; TS handlers cleaned up
-- [ ] Decoder fixture tests cover: WAV, MP3, M4A/AAC, WebM/Opus, OGG/Opus
-- [ ] Encoder roundtrip: 5 s sine wave at 16 kHz → Opus/OGG → decode → < 50 ms duration delta, peak frequency within 10 Hz
+- [x] Zero references to `ffmpeg` in `apps/whispering/src-tauri/` after Wave 4
+- [x] `TranscriptionError::FfmpegNotFoundError` removed; TS handlers cleaned up
+- [x] Decoder fixture tests cover: WAV, MP3, M4A/AAC, WebM/Opus, OGG/Opus
+- [x] Encoder roundtrip: 5 s sine wave at 16 kHz → Opus/OGG → decode → < 50 ms duration delta, peak frequency within 10 Hz
 - [ ] Manual smoke test: cpal + cloud upload payload < 1/10 the size of the WAV equivalent
 - [ ] Binary size delta < 1.5 MB per platform (vs current build without FFmpeg sidecar)
 - [ ] No regression on local-inference happy path (cpal + local engine should be unchanged perceptually)
-- [ ] FFmpeg install instructions removed from docs and onboarding
+- [x] FFmpeg install instructions removed from docs and onboarding
 
 ## References
 

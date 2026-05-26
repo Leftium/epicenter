@@ -10,7 +10,6 @@
 	import { Textarea } from '@epicenter/ui/textarea';
 	import CopyablePre from '$lib/components/copyable/CopyablePre.svelte';
 	import {
-		CompressionBody,
 		DeepgramApiKeyInput,
 		ElevenLabsApiKeyInput,
 		GroqApiKeyInput,
@@ -708,9 +707,6 @@
 				</Field.Description>
 			</Field.Field>
 		{/if}
-
-		<!-- Audio Compression Settings -->
-		<CompressionBody />
 
 		<Field.Field>
 			<Field.Label for="output-language">Output Language</Field.Label>

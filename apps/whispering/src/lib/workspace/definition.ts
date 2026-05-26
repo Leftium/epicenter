@@ -9,7 +9,6 @@ import { type Static, Type } from 'typebox';
 // ── Constant imports ─────────────────────────────────────────────────────────
 
 import { RECORDING_MODES } from '$lib/constants/audio/recording-modes';
-import { FFMPEG_DEFAULT_COMPRESSION_OPTIONS } from '$lib/constants/ffmpeg';
 import {
 	INFERENCE_PROVIDER_IDS,
 	type InferenceProviderId,
@@ -344,28 +343,21 @@ const transcription = {
 		column.number({ minimum: 0, maximum: 1 }),
 		() => 0,
 	),
-	'transcription.compressionEnabled': defineKv(column.boolean(), () => false),
-	'transcription.compressionOptions': defineKv(
-		column.string(),
-		() => FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
-	),
 } as const;
 
 /**
- * Currently active transformation pipeline and default completion model.
+ * Currently active transformation pipeline.
  *
  * `selectedId`: FK to `transformations` table. `null` = no transformation selected.
- * `openrouterModel`: Default OpenRouter model for new transformation steps.
- * Merged from `completion.*`: this is transformation pipeline config, not a separate domain.
+ *
+ * Per-provider model defaults for new steps live in `generateDefaultStep`
+ * (transformation-steps.svelte.ts), not as KV entries. Each step row carries
+ * its own per-provider model memory, so a global default KV would be redundant.
  */
 const transformation = {
 	'transformation.selectedId': defineKv(
 		column.nullable(column.string()),
 		(): string | null => null,
-	),
-	'transformation.openrouterModel': defineKv(
-		column.string(),
-		() => 'mistralai/mixtral-8x7b',
 	),
 } as const;
 

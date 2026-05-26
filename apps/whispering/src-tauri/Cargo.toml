@@ -53,10 +53,14 @@ rubato = "0.15"
 # MediaRecorder output. We do NOT enable Symphonia's incomplete `opus`
 # feature; Opus packets are decoded by libopus via `audiopus` instead.
 symphonia = { version = "0.5", features = ["mp3", "aac", "isomp4"] }
-# libopus FFI. Decoder is used in PR 1; encoder will be used in PR 2 for cloud
-# upload compression. Vendored libopus is built by audiopus_sys (requires
-# CMake + libclang on the build host).
+# libopus FFI. Decoder runs on the input path (Opus inside WebM/OGG/MP4);
+# encoder runs on the cloud-upload path to compress cpal WAV ~20x. Vendored
+# libopus is built by audiopus_sys (requires CMake + libclang on the build
+# host).
 audiopus = "0.3.0-rc.0"
+# Pure-Rust OGG muxer. Wraps libopus-encoded packets into a `.ogg` file the
+# cloud transcription providers accept directly.
+ogg = "0.9"
 tauri-plugin-macos-permissions = "2.3.0"
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
 regex = "1"

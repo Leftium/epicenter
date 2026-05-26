@@ -10,16 +10,17 @@
  * `$lib/rpc/desktop/index.browser.ts` instead.
  */
 
-function unreachable(): never {
-	throw new Error('Tauri-only service called from web bundle');
-}
+import { unreachable } from '$lib/services/_tauri-stub';
+import type * as Tauri from './index.tauri';
 
 export const FsError = {
+	ReadBlobFailed: unreachable,
 	ReadFileFailed: unreachable,
-	WriteFileFailed: unreachable,
-} as unknown as typeof import('./index.tauri').FsError;
+	ReadFilesFailed: unreachable,
+} satisfies typeof Tauri.FsError;
 
 export const FsServiceLive = {
 	pathToBlob: unreachable,
+	pathToFile: unreachable,
 	pathsToFiles: unreachable,
-} as unknown as typeof import('./index.tauri').FsServiceLive;
+} satisfies typeof Tauri.FsServiceLive;

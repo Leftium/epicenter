@@ -9,9 +9,8 @@
  * `$lib/services/ffmpeg` instead of `$lib/services/ffmpeg/shared`.
  */
 
-function unreachable(): never {
-	throw new Error('Tauri-only service called from web bundle');
-}
+import { unreachable } from '$lib/services/_tauri-stub';
+import type * as Tauri from './index.tauri';
 
 export {
 	FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
@@ -23,9 +22,9 @@ export const FfmpegError = {
 	InstallCheckFailed: unreachable,
 	VerifyFailed: unreachable,
 	CompressFailed: unreachable,
-} as unknown as typeof import('./index.tauri').FfmpegError;
+} satisfies typeof Tauri.FfmpegError;
 
 export const FfmpegServiceLive = {
 	checkInstalled: unreachable,
 	compressAudioBlob: unreachable,
-} as unknown as typeof import('./index.tauri').FfmpegServiceLive;
+} satisfies typeof Tauri.FfmpegServiceLive;

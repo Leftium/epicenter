@@ -5,16 +5,15 @@
  * (`if (!window.__TAURI_INTERNALS__) return`).
  */
 
-function unreachable(): never {
-	throw new Error('Tauri-only service called from web bundle');
-}
+import { unreachable } from '$lib/services/_tauri-stub';
+import type * as Tauri from './index.tauri';
 
 export const PermissionsError = {
-	AccessibilityCheckFailed: unreachable,
-	AccessibilityRequestFailed: unreachable,
-	MicrophoneCheckFailed: unreachable,
-	MicrophoneRequestFailed: unreachable,
-} as unknown as typeof import('./index.tauri').PermissionsError;
+	CheckAccessibility: unreachable,
+	RequestAccessibility: unreachable,
+	CheckMicrophone: unreachable,
+	RequestMicrophone: unreachable,
+} satisfies typeof Tauri.PermissionsError;
 
 export const PermissionsServiceLive = {
 	accessibility: {
@@ -25,4 +24,4 @@ export const PermissionsServiceLive = {
 		check: unreachable,
 		request: unreachable,
 	},
-} as unknown as typeof import('./index.tauri').PermissionsServiceLive;
+} satisfies typeof Tauri.PermissionsServiceLive;

@@ -5,18 +5,17 @@
  * so the throws are unreachable on web.
  */
 
-function unreachable(): never {
-	throw new Error('Tauri-only service called from web bundle');
-}
+import { unreachable } from '$lib/services/_tauri-stub';
+import type * as Tauri from './index.tauri';
 
 export const GlobalShortcutManagerLive = {
 	register: unreachable,
 	unregister: unreachable,
 	unregisterAll: unreachable,
-} as unknown as typeof import('./index.tauri').GlobalShortcutManagerLive;
+} satisfies typeof Tauri.GlobalShortcutManagerLive;
 
-export const isValidElectronAccelerator =
-	unreachable as unknown as typeof import('./index.tauri').isValidElectronAccelerator;
+export const isValidElectronAccelerator: typeof Tauri.isValidElectronAccelerator =
+	unreachable;
 
-export const pressedKeysToTauriAccelerator =
-	unreachable as unknown as typeof import('./index.tauri').pressedKeysToTauriAccelerator;
+export const pressedKeysToTauriAccelerator: typeof Tauri.pressedKeysToTauriAccelerator =
+	unreachable;

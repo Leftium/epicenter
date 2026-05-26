@@ -2,19 +2,23 @@
  * Web stub. The macOS accessibility page dynamic-imports this path;
  * Vite needs the path to resolve at chunk-generation time even though
  * the callsite is unreachable on web (the page is Tauri-only).
+ *
+ * `satisfies typeof import('./index.tauri').X` gives us shape-checking
+ * for free: if `index.tauri.ts` grows a new error variant or method,
+ * the web build fails here instead of drifting silently.
  */
 
-function unreachable(): never {
-	throw new Error('Tauri-only service called from web bundle');
-}
+import { unreachable } from '$lib/services/_tauri-stub';
+import type * as Tauri from './index.tauri';
 
 export const CommandError = {
 	ExecuteFailed: unreachable,
-} as unknown as typeof import('./index.tauri').CommandError;
+	SpawnFailed: unreachable,
+} satisfies typeof Tauri.CommandError;
 
-export const asShellCommand =
-	unreachable as unknown as typeof import('./index.tauri').asShellCommand;
+export const asShellCommand: typeof Tauri.asShellCommand = unreachable;
 
 export const CommandServiceLive = {
 	execute: unreachable,
-} as unknown as typeof import('./index.tauri').CommandServiceLive;
+	spawn: unreachable,
+} satisfies typeof Tauri.CommandServiceLive;

@@ -1,300 +1,137 @@
-use log::error;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, SystemTime};
-#[cfg(not(target_os = "windows"))]
-use transcribe_rs::engines::moonshine::{MoonshineEngine, MoonshineModelParams};
-use transcribe_rs::engines::parakeet::{ParakeetEngine, ParakeetModelParams};
-#[cfg(not(target_os = "windows"))]
-use transcribe_rs::engines::whisper::WhisperEngine;
-use transcribe_rs::TranscriptionEngine;
+use super::error::TranscriptionError;
+use log::{debug, warn};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, MutexGuard};
+use transcribe_rs::onnx::moonshine::{MoonshineModel, MoonshineVariant};
+use transcribe_rs::onnx::parakeet::ParakeetModel;
+use transcribe_rs::onnx::Quantization;
+use transcribe_rs::whisper_cpp::WhisperEngine;
 
-/// Engine type for managing different transcription engines
-pub enum Engine {
-    #[cfg(not(target_os = "windows"))]
+/// Engine type for managing different transcription engines.
+/// Dropping a variant releases the underlying model resources.
+enum Engine {
     Whisper(WhisperEngine),
-    Parakeet(ParakeetEngine),
-    #[cfg(not(target_os = "windows"))]
-    Moonshine(MoonshineEngine),
+    Parakeet(ParakeetModel),
+    Moonshine(MoonshineModel),
 }
 
-impl Engine {
-    fn unload(&mut self) {
-        match self {
-            Engine::Parakeet(e) => e.unload_model(),
-            #[cfg(not(target_os = "windows"))]
-            Engine::Whisper(e) => e.unload_model(),
-            #[cfg(not(target_os = "windows"))]
-            Engine::Moonshine(e) => e.unload_model(),
-        }
-    }
-}
+/// The path and engine are inseparable (engine X is always loaded from
+/// path Y), so they share one mutex slot instead of two parallel ones.
+type Cached = Option<(PathBuf, Engine)>;
 
+#[derive(Clone)]
 pub struct ModelManager {
-    engine: Arc<Mutex<Option<Engine>>>,
-    current_model_path: Arc<Mutex<Option<PathBuf>>>,
-    last_activity: Arc<Mutex<SystemTime>>,
-    idle_timeout: Duration,
+    cached: Arc<Mutex<Cached>>,
 }
 
 impl ModelManager {
     pub fn new() -> Self {
         Self {
-            engine: Arc::new(Mutex::new(None)),
-            current_model_path: Arc::new(Mutex::new(None)),
-            last_activity: Arc::new(Mutex::new(SystemTime::now())),
-            idle_timeout: Duration::from_secs(5 * 60), // 5 minutes default
+            cached: Arc::new(Mutex::new(None)),
         }
     }
 
-    pub fn get_or_load_parakeet(
+    pub fn with_whisper<T>(
         &self,
         model_path: PathBuf,
-    ) -> Result<Arc<Mutex<Option<Engine>>>, String> {
-        let mut engine_guard = self.engine.lock().map_err(|e| {
-            format!(
-                "Engine mutex poisoned (likely due to previous panic): {}",
-                e
-            )
-        })?;
-        let mut current_path_guard = self.current_model_path.lock().map_err(|e| {
-            format!(
-                "Model path mutex poisoned (likely due to previous panic): {}",
-                e
-            )
-        })?;
-
-        // Check if we need to load a new model
-        let needs_load = match (&*engine_guard, &*current_path_guard) {
-            (None, _) => true,
-            (Some(_), Some(path)) if path != &model_path => {
-                // Different model requested, unload current one
-                if let Some(mut engine) = engine_guard.take() {
-                    engine.unload();
-                }
-                true
-            }
-            #[cfg(not(target_os = "windows"))]
-            (Some(Engine::Whisper(_)), _) => {
-                // Wrong engine type, unload and reload
-                if let Some(mut engine) = engine_guard.take() {
-                    engine.unload();
-                }
-                true
-            }
-            _ => false,
-        };
-
-        if needs_load {
-            let mut engine = ParakeetEngine::new();
-            engine
-                .load_model_with_params(&model_path, ParakeetModelParams::int8())
-                .map_err(|e| format!("Failed to load Parakeet model: {}", e))?;
-
-            *engine_guard = Some(Engine::Parakeet(engine));
-            *current_path_guard = Some(model_path);
-        }
-
-        // Update last activity
-        let mut last_activity_guard = self
-            .last_activity
-            .lock()
-            .map_err(|e| format!("Last activity mutex poisoned: {}", e))?;
-        *last_activity_guard = SystemTime::now();
-
-        Ok(self.engine.clone())
+        f: impl FnOnce(&mut WhisperEngine) -> Result<T, TranscriptionError>,
+    ) -> Result<T, TranscriptionError> {
+        self.with_engine(
+            model_path,
+            |e| matches!(e, Engine::Whisper(_)),
+            |path| {
+                WhisperEngine::load(path)
+                    .map(Engine::Whisper)
+                    .map_err(|e| format!("Failed to load Whisper model: {}", e))
+            },
+            |engine| match engine {
+                Engine::Whisper(e) => f(e),
+                _ => unreachable!("can_reuse guarantees Whisper variant"),
+            },
+        )
     }
 
-    #[cfg(not(target_os = "windows"))]
-    pub fn get_or_load_whisper(
+    pub fn with_parakeet<T>(
         &self,
         model_path: PathBuf,
-    ) -> Result<Arc<Mutex<Option<Engine>>>, String> {
-        let mut engine_guard = self.engine.lock().map_err(|e| {
-            format!(
-                "Engine mutex poisoned (likely due to previous panic): {}",
-                e
-            )
-        })?;
-        let mut current_path_guard = self.current_model_path.lock().map_err(|e| {
-            format!(
-                "Model path mutex poisoned (likely due to previous panic): {}",
-                e
-            )
-        })?;
-
-        // Check if we need to load a new model
-        let needs_load = match (&*engine_guard, &*current_path_guard) {
-            (None, _) => true,
-            (Some(_), Some(path)) if path != &model_path => {
-                // Different model requested, unload current one
-                if let Some(mut engine) = engine_guard.take() {
-                    engine.unload();
-                }
-                true
-            }
-            (Some(Engine::Parakeet(_)), _) => {
-                // Wrong engine type, unload and reload
-                if let Some(mut engine) = engine_guard.take() {
-                    engine.unload();
-                }
-                true
-            }
-            _ => false,
-        };
-
-        if needs_load {
-            let mut engine = WhisperEngine::new();
-            engine
-                .load_model(&model_path)
-                .map_err(|e| format!("Failed to load Whisper model: {}", e))?;
-
-            *engine_guard = Some(Engine::Whisper(engine));
-            *current_path_guard = Some(model_path);
-        }
-
-        // Update last activity
-        let mut last_activity_guard = self
-            .last_activity
-            .lock()
-            .map_err(|e| format!("Last activity mutex poisoned: {}", e))?;
-        *last_activity_guard = SystemTime::now();
-
-        Ok(self.engine.clone())
+        f: impl FnOnce(&mut ParakeetModel) -> Result<T, TranscriptionError>,
+    ) -> Result<T, TranscriptionError> {
+        self.with_engine(
+            model_path,
+            |e| matches!(e, Engine::Parakeet(_)),
+            |path| {
+                ParakeetModel::load(path, &Quantization::Int8)
+                    .map(Engine::Parakeet)
+                    .map_err(|e| format!("Failed to load Parakeet model: {}", e))
+            },
+            |engine| match engine {
+                Engine::Parakeet(e) => f(e),
+                _ => unreachable!("can_reuse guarantees Parakeet variant"),
+            },
+        )
     }
 
-    #[cfg(target_os = "windows")]
-    pub fn get_or_load_whisper(
-        &self,
-        _model_path: PathBuf,
-    ) -> Result<Arc<Mutex<Option<Engine>>>, String> {
-        Err("Whisper C++ is not available on Windows due to build compatibility issues. Please use Parakeet for local transcription.".to_string())
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    pub fn get_or_load_moonshine(
+    pub fn with_moonshine<T>(
         &self,
         model_path: PathBuf,
-        variant: MoonshineModelParams,
-    ) -> Result<Arc<Mutex<Option<Engine>>>, String> {
-        let mut engine_guard = self.engine.lock().map_err(|e| {
-            format!(
-                "Engine mutex poisoned (likely due to previous panic): {}",
-                e
-            )
-        })?;
-        let mut current_path_guard = self.current_model_path.lock().map_err(|e| {
-            format!(
-                "Model path mutex poisoned (likely due to previous panic): {}",
-                e
-            )
-        })?;
-
-        // Check if we need to load a new model
-        let needs_load = match (&*engine_guard, &*current_path_guard) {
-            (None, _) => true,
-            (Some(_), Some(path)) if path != &model_path => {
-                // Different model requested, unload current one
-                if let Some(mut engine) = engine_guard.take() {
-                    engine.unload();
-                }
-                true
-            }
-            (Some(Engine::Whisper(_)), _) => {
-                // Wrong engine type, unload and reload
-                if let Some(mut engine) = engine_guard.take() {
-                    engine.unload();
-                }
-                true
-            }
-            (Some(Engine::Parakeet(_)), _) => {
-                // Wrong engine type, unload and reload
-                if let Some(mut engine) = engine_guard.take() {
-                    engine.unload();
-                }
-                true
-            }
-            _ => false,
-        };
-
-        if needs_load {
-            let mut engine = MoonshineEngine::new();
-            engine
-                .load_model_with_params(&model_path, variant)
-                .map_err(|e| format!("Failed to load Moonshine model: {}", e))?;
-
-            *engine_guard = Some(Engine::Moonshine(engine));
-            *current_path_guard = Some(model_path);
-        }
-
-        // Update last activity
-        let mut last_activity_guard = self
-            .last_activity
-            .lock()
-            .map_err(|e| format!("Last activity mutex poisoned: {}", e))?;
-        *last_activity_guard = SystemTime::now();
-
-        Ok(self.engine.clone())
+        variant: MoonshineVariant,
+        f: impl FnOnce(&mut MoonshineModel) -> Result<T, TranscriptionError>,
+    ) -> Result<T, TranscriptionError> {
+        self.with_engine(
+            model_path,
+            |e| matches!(e, Engine::Moonshine(_)),
+            |path| {
+                MoonshineModel::load(path, variant, &Quantization::default())
+                    .map(Engine::Moonshine)
+                    .map_err(|e| format!("Failed to load Moonshine model: {}", e))
+            },
+            |engine| match engine {
+                Engine::Moonshine(e) => f(e),
+                _ => unreachable!("can_reuse guarantees Moonshine variant"),
+            },
+        )
     }
 
-    #[cfg(target_os = "windows")]
-    pub fn get_or_load_moonshine(
+    /// Hold the cache lock across both load and inference. If the cached
+    /// (path, engine) matches the request, reuse it; otherwise drop it,
+    /// load fresh under the same lock, then run `use_engine` while still
+    /// holding the lock. This serializes concurrent transcribe calls (only
+    /// one engine fits in memory anyway) and eliminates any race where
+    /// another thread could swap the engine between a load and a use step.
+    fn with_engine<T>(
         &self,
-        _model_path: PathBuf,
-        _variant: &str,
-    ) -> Result<Arc<Mutex<Option<Engine>>>, String> {
-        Err("Moonshine is not available on Windows due to build compatibility issues. Please use Parakeet for local transcription.".to_string())
-    }
+        model_path: PathBuf,
+        can_reuse: impl Fn(&Engine) -> bool,
+        load: impl FnOnce(&Path) -> Result<Engine, String>,
+        use_engine: impl FnOnce(&mut Engine) -> Result<T, TranscriptionError>,
+    ) -> Result<T, TranscriptionError> {
+        let mut guard = lock_cached(&self.cached);
 
-    pub fn unload_if_idle(&self) {
-        let last_activity = match self.last_activity.lock() {
-            Ok(guard) => *guard,
-            Err(e) => {
-                error!(
-                    "Last activity mutex poisoned while checking idle unload: {}",
-                    e
-                );
-                return;
-            }
-        };
-        let elapsed = SystemTime::now()
-            .duration_since(last_activity)
-            .unwrap_or(Duration::from_secs(0));
+        let reuse = matches!(&*guard, Some((p, e)) if p == &model_path && can_reuse(e));
 
-        if elapsed > self.idle_timeout {
-            let mut engine_guard = match self.engine.lock() {
-                Ok(guard) => guard,
-                Err(e) => {
-                    error!("Engine mutex poisoned while unloading idle model: {}", e);
-                    return;
-                }
-            };
-            if let Some(mut engine) = engine_guard.take() {
-                engine.unload();
-            }
-            if let Ok(mut current_path_guard) = self.current_model_path.lock() {
-                *current_path_guard = None;
-            } else {
-                error!("Model path mutex poisoned while clearing idle model path after unload");
-            }
+        if !reuse {
+            let _ = guard.take();
+            let engine = load(&model_path)
+                .map_err(|message| TranscriptionError::ModelLoadError { message })?;
+            debug!("[Transcription] model loaded: {}", model_path.display());
+            *guard = Some((model_path, engine));
         }
-    }
 
-    pub fn unload_model(&self) {
-        let mut engine_guard = match self.engine.lock() {
-            Ok(guard) => guard,
-            Err(e) => {
-                error!("Engine mutex poisoned while unloading model: {}", e);
-                return;
-            }
-        };
-        if let Some(mut engine) = engine_guard.take() {
-            engine.unload();
-        }
-        if let Ok(mut current_path_guard) = self.current_model_path.lock() {
-            *current_path_guard = None;
-        } else {
-            error!("Model path mutex poisoned while clearing model path after unload");
-        }
+        let (_, engine) = guard.as_mut().expect("cache slot populated above");
+        use_engine(engine)
     }
+}
+
+/// Lock the cache slot, recovering from poisoning by clearing the cached
+/// (path, engine) so the next caller reloads from scratch instead of
+/// reusing corrupted state from a previous panic.
+fn lock_cached(cached: &Mutex<Cached>) -> MutexGuard<'_, Cached> {
+    cached.lock().unwrap_or_else(|poisoned| {
+        warn!(
+            "[Transcription] Cache mutex was poisoned from previous panic, clearing state to force reload..."
+        );
+        let mut recovered = poisoned.into_inner();
+        *recovered = None;
+        recovered
+    })
 }

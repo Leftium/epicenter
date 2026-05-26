@@ -4,8 +4,8 @@ import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { categorizeRecorderError } from '$lib/services/recorder/categorize-error';
 import {
-	asDeviceIdentifier,
 	type AudioArtifact,
+	asDeviceIdentifier,
 	type CpalRecordingParams,
 	type Device,
 	type DeviceAcquisitionOutcome,
@@ -25,7 +25,9 @@ import {
  * decimal-decoded array of doubles. For a 30 s clip this collapses the
  * post-stop critical path by ~150-300 ms compared to JSON `Vec<f32>`.
  */
-function parseArtifact(buffer: ArrayBuffer): Extract<AudioArtifact, { kind: 'pcm' }> {
+function parseArtifact(
+	buffer: ArrayBuffer,
+): Extract<AudioArtifact, { kind: 'pcm' }> {
 	const view = new DataView(buffer);
 	const rate = view.getUint32(0, true);
 	const channels = view.getUint16(4, true);
@@ -209,11 +211,7 @@ function createCpalRecorder(): RecorderService {
 		enumerateDevices,
 
 		startRecording: async (
-			{
-				selectedDeviceId,
-				recordingId,
-				sampleRate,
-			}: CpalRecordingParams,
+			{ selectedDeviceId, recordingId, sampleRate }: CpalRecordingParams,
 			{ sendStatus },
 		) => {
 			const { data: devices, error: enumerateError } = await enumerateDevices();

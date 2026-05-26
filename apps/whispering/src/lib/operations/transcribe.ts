@@ -69,11 +69,12 @@ async function prepareForService(
 
 	// Fast path: Pcm + cloud upload. One opus encode, no WAV synthesis.
 	if (isUpload && tauri && artifact.kind === 'pcm') {
-		const { data: oggBlob, error } = await tauri.audioEncoder.encodePcmToOpusOgg({
-			samples: artifact.samples,
-			rate: artifact.rate,
-			channels: artifact.channels,
-		});
+		const { data: oggBlob, error } =
+			await tauri.audioEncoder.encodePcmToOpusOgg({
+				samples: artifact.samples,
+				rate: artifact.rate,
+				channels: artifact.channels,
+			});
 		if (error) {
 			notify.warning({
 				title: 'Audio compression skipped',
@@ -257,16 +258,17 @@ async function dispatchTranscription(
 			return Ok(data);
 		}
 		case 'Deepgram': {
-			const { data, error } =
-				await services.transcriptions.deepgram.transcribe(audio, {
+			const { data, error } = await services.transcriptions.deepgram.transcribe(
+				audio,
+				{
 					outputLanguage,
 					prompt,
 					temperature,
 					apiKey: deviceConfig.get('apiKeys.deepgram'),
 					modelName: settings.get('transcription.deepgram.model'),
-				});
-			if (error)
-				return services.transcriptions.deepgram.toWhisperingErr(error);
+				},
+			);
+			if (error) return services.transcriptions.deepgram.toWhisperingErr(error);
 			return Ok(data);
 		}
 		case 'Mistral': {

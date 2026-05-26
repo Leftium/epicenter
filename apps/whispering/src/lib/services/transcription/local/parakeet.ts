@@ -1,8 +1,9 @@
-import { exists, stat } from '@tauri-apps/plugin-fs';
-import { Ok, tryAsync } from 'wellcrafted/result';
-import { WhisperingErr, type WhisperingResult } from '$lib/result';
+import type { WhisperingResult } from '$lib/result';
 
-import { transcribeLocal } from './local-transcription';
+import {
+	requireExistingModelPath,
+	transcribeLocal,
+} from './local-transcription';
 import type { ParakeetModelConfig } from './types';
 
 /**
@@ -48,57 +49,17 @@ export const PARAKEET_MODELS = [
 	},
 ] as const satisfies readonly ParakeetModelConfig[];
 
-export const ParakeetTranscriptionServiceLive = {
+export const ParakeetTranscriptionService = {
 	async transcribe(
 		audioBlob: Blob,
 		options: { modelPath: string },
 	): Promise<WhisperingResult<string>> {
-		if (!options.modelPath) {
-			return WhisperingErr({
-				title: '📁 Model Directory Required',
-				description: 'Please select a Parakeet model directory in settings.',
-				action: {
-					type: 'link',
-					label: 'Configure model',
-					href: '/settings/transcription',
-				},
-			});
-		}
-
-		const { data: isExists } = await tryAsync({
-			try: () => exists(options.modelPath),
-			catch: () => Ok(false),
-		});
-
-		if (!isExists) {
-			return WhisperingErr({
-				title: '❌ Model Directory Not Found',
-				description: `The model directory "${options.modelPath}" does not exist.`,
-				action: {
-					type: 'link',
-					label: 'Select model',
-					href: '/settings/transcription',
-				},
-			});
-		}
-
-		const { data: stats } = await tryAsync({
-			try: () => stat(options.modelPath),
-			catch: () => Ok(null),
-		});
-
-		if (!stats || !stats.isDirectory) {
-			return WhisperingErr({
-				title: '❌ Invalid Model Path',
-				description:
-					'Parakeet models must be directories containing model files.',
-				action: {
-					type: 'link',
-					label: 'Select model directory',
-					href: '/settings/transcription',
-				},
-			});
-		}
+		const validation = await requireExistingModelPath(
+			options.modelPath,
+			'directory',
+			'Parakeet',
+		);
+		if (validation.error) return validation;
 
 		return transcribeLocal(audioBlob, {
 			engine: 'parakeet',

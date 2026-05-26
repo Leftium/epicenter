@@ -1,8 +1,11 @@
-import { exists, stat } from '@tauri-apps/plugin-fs';
+import { stat } from '@tauri-apps/plugin-fs';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { WhisperingErr, type WhisperingResult } from '$lib/result';
 
-import { transcribeLocal } from './local-transcription';
+import {
+	requireExistingModelPath,
+	transcribeLocal,
+} from './local-transcription';
 import { isModelFileSizeValid, type WhisperModelConfig } from './types';
 
 /**
@@ -60,7 +63,7 @@ export const WHISPER_MODELS = [
 	},
 ] as const satisfies readonly WhisperModelConfig[];
 
-export const WhisperCppTranscriptionServiceLive = {
+export const WhisperCppTranscriptionService = {
 	async transcribe(
 		audioBlob: Blob,
 		options: {
@@ -69,35 +72,16 @@ export const WhisperCppTranscriptionServiceLive = {
 			prompt: string;
 		},
 	): Promise<WhisperingResult<string>> {
-		if (!options.modelPath) {
-			return WhisperingErr({
-				title: '📁 Model File Required',
-				description: 'Please select a Whisper model file in settings.',
-				action: {
-					type: 'link',
-					label: 'Configure model',
-					href: '/settings/transcription',
-				},
-			});
-		}
+		const validation = await requireExistingModelPath(
+			options.modelPath,
+			'file',
+			'Whisper C++',
+		);
+		if (validation.error) return validation;
 
-		const { data: isExists } = await tryAsync({
-			try: () => exists(options.modelPath),
-			catch: () => Ok(false),
-		});
-
-		if (!isExists) {
-			return WhisperingErr({
-				title: '❌ Model File Not Found',
-				description: `The model file "${options.modelPath}" does not exist.`,
-				action: {
-					type: 'link',
-					label: 'Select model',
-					href: '/settings/transcription',
-				},
-			});
-		}
-
+		// Whisper-specific: warn on truncated downloads (incomplete model files
+		// load successfully but produce garbage transcripts). Only files we
+		// recognize from WHISPER_MODELS have an expected size to compare against.
 		const modelConfig = WHISPER_MODELS.find((m) =>
 			options.modelPath.endsWith(m.file.filename),
 		);
@@ -123,7 +107,7 @@ export const WhisperCppTranscriptionServiceLive = {
 		}
 
 		return transcribeLocal(audioBlob, {
-			engine: 'whisper',
+			engine: 'whispercpp',
 			modelPath: options.modelPath,
 			language:
 				options.outputLanguage === 'auto' ? null : options.outputLanguage,

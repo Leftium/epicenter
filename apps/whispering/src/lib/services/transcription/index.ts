@@ -7,9 +7,9 @@ import { GroqTranscriptionServiceLive } from './cloud/groq';
 import { MistralTranscriptionServiceLive } from './cloud/mistral';
 import { OpenaiTranscriptionServiceLive } from './cloud/openai';
 // Local transcription services
-import { MoonshineTranscriptionServiceLive } from './local/moonshine';
-import { ParakeetTranscriptionServiceLive } from './local/parakeet';
-import { WhisperCppTranscriptionServiceLive } from './local/whispercpp';
+import { MoonshineTranscriptionService } from './local/moonshine';
+import { ParakeetTranscriptionService } from './local/parakeet';
+import { WhisperCppTranscriptionService } from './local/whispercpp';
 
 // Self-hosted transcription services
 import { SpeachesTranscriptionServiceLive } from './self-hosted/speaches';
@@ -19,9 +19,9 @@ export {
 	ElevenLabsTranscriptionServiceLive as elevenlabs,
 	GroqTranscriptionServiceLive as groq,
 	MistralTranscriptionServiceLive as mistral,
-	MoonshineTranscriptionServiceLive as moonshine,
+	MoonshineTranscriptionService as moonshine,
 	OpenaiTranscriptionServiceLive as openai,
-	ParakeetTranscriptionServiceLive as parakeet,
+	ParakeetTranscriptionService as parakeet,
 	SpeachesTranscriptionServiceLive as speaches,
-	WhisperCppTranscriptionServiceLive as whispercpp,
+	WhisperCppTranscriptionService as whispercpp,
 };

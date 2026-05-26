@@ -17,9 +17,15 @@ use transcribe_rs::{SpeechModel, TranscribeOptions};
 /// Engine-tagged request body sent in the `x-transcribe-config` header of
 /// the `transcribe_audio` command. The audio bytes travel in the raw body,
 /// this carries the engine choice plus engine-specific knobs.
+///
+/// Wire tags match the FE settings (`transcription.service`):
+/// `whispercpp` / `parakeet` / `moonshine`. The Whisper variant uses an
+/// explicit serde rename because the implementation is whisper.cpp, not
+/// just "whisper".
 #[derive(Debug, Deserialize)]
 #[serde(tag = "engine", rename_all = "lowercase")]
 enum TranscribeRequest {
+    #[serde(rename = "whispercpp")]
     Whisper {
         #[serde(rename = "modelPath")]
         model_path: String,

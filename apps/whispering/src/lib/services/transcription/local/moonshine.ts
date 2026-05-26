@@ -1,9 +1,10 @@
-import { stat } from '@tauri-apps/plugin-fs';
 import { regex } from 'arkregex';
-import { Ok, tryAsync } from 'wellcrafted/result';
 import { WhisperingErr, type WhisperingResult } from '$lib/result';
 
-import { transcribeLocal } from './local-transcription';
+import {
+	requireExistingModelPath,
+	transcribeLocal,
+} from './local-transcription';
 import {
 	MOONSHINE_LANGUAGES,
 	MOONSHINE_VARIANTS,
@@ -111,57 +112,22 @@ export const MOONSHINE_MODELS = [
 	},
 ] as const satisfies readonly MoonshineModelConfig[];
 
-export const MoonshineTranscriptionServiceLive = {
+export const MoonshineTranscriptionService = {
 	async transcribe(
 		audioBlob: Blob,
 		{ modelPath }: { modelPath: string },
 	): Promise<WhisperingResult<string>> {
-		if (!modelPath) {
-			return WhisperingErr({
-				title: 'Model Directory Required',
-				description: 'Please select a Moonshine model directory in settings.',
-				action: {
-					type: 'link',
-					label: 'Configure model',
-					href: '/settings/transcription',
-				},
-			});
-		}
-
-		const { data: stats } = await tryAsync({
-			try: () => stat(modelPath),
-			catch: () => Ok(null),
-		});
-
-		if (!stats) {
-			return WhisperingErr({
-				title: 'Model Directory Not Found',
-				description: `The model directory "${modelPath}" does not exist.`,
-				action: {
-					type: 'link',
-					label: 'Select model',
-					href: '/settings/transcription',
-				},
-			});
-		}
-
-		if (!stats.isDirectory) {
-			return WhisperingErr({
-				title: 'Invalid Model Path',
-				description:
-					'Moonshine models must be directories containing model files.',
-				action: {
-					type: 'link',
-					label: 'Select model directory',
-					href: '/settings/transcription',
-				},
-			});
-		}
+		const validation = await requireExistingModelPath(
+			modelPath,
+			'directory',
+			'Moonshine',
+		);
+		if (validation.error) return validation;
 
 		const match = MOONSHINE_DIR_PATTERN.exec(modelPath);
 		if (!match) {
 			return WhisperingErr({
-				title: 'Invalid Model Directory Name',
+				title: '❌ Invalid Model Directory Name',
 				description: `Model path must end with moonshine-{variant}-{lang} (e.g., "moonshine-tiny-en", "moonshine-base-en")`,
 				action: {
 					type: 'link',

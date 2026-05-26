@@ -5,7 +5,7 @@
 		"types": ["bun"],
 		// Mirrors Vite's resolve.extensions: try `.tauri` first, then default.
 		// Lets TS resolve Tauri-only services that have no `.ts` counterpart.
-		"moduleSuffixes": [".tauri", ""]
+		"moduleSuffixes": [".tauri", ".browser", ""]
 	}
 	// Path aliases are handled by https://svelte.dev/docs/kit/configuration#alias
 	// except $lib which is handled by https://svelte.dev/docs/kit/configuration#files

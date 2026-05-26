@@ -13,12 +13,15 @@ export default defineConfig(async () => ({
 	resolve: {
 		dedupe: ['yjs'],
 		// Build-time platform DI. Tauri builds resolve `.tauri.ts` first;
-		// web builds never see `.tauri.ts` at all, so a web bundle that
-		// imports a Tauri-only path fails at build time instead of at user
-		// runtime. See docs/articles for the full pattern.
+		// web builds resolve `.browser.ts` first. Files with no suffix
+		// (plain `.ts`) are platform-neutral and resolve on both builds
+		// as the fallback. A Tauri-only file (`<svc>.tauri.ts` with no
+		// `.browser.ts` companion) is unresolvable on web, so any web
+		// bundle that statically imports it fails at vite build time
+		// instead of at user runtime.
 		extensions: isTauri
 			? ['.tauri.ts', '.tauri.js', '.ts', '.js', '.json']
-			: ['.ts', '.js', '.json'],
+			: ['.browser.ts', '.browser.js', '.ts', '.js', '.json'],
 	},
 	// Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
 	//

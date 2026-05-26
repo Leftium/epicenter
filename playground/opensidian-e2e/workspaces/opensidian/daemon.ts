@@ -9,11 +9,10 @@
  * ```
  */
 
-import { fileContentDocGuid } from '@epicenter/filesystem';
+import type { FileId } from '@epicenter/filesystem';
 import {
 	attachTimeline,
 	createDisposableCache,
-	createWorkspace,
 	defineActions,
 	defineMutation,
 	defineWorkspace,
@@ -30,13 +29,15 @@ import {
 	sqlitePath,
 	yjsPath,
 } from '@epicenter/workspace/node';
-import { opensidianTables } from 'opensidian';
+import {
+	createOpensidianWorkspace,
+	opensidianFileContentDocGuid,
+} from 'opensidian';
 import Type from 'typebox';
 import * as Y from 'yjs';
 import { prepareMarkdownFiles } from '../../prepare-markdown-files';
 
 const SERVER_URL = process.env.EPICENTER_SERVER ?? 'https://api.epicenter.so';
-const WORKSPACE_ID = 'opensidian';
 
 async function openOpensidianPlayground({
 	projectDir,
@@ -47,26 +48,19 @@ async function openOpensidianPlayground({
 	openWebSocket,
 	onReconnectSignal,
 }: DaemonWorkspaceContext) {
-	const workspace = createWorkspace({
-		id: WORKSPACE_ID,
-		keyring,
-		tables: opensidianTables,
-		kv: {},
-	});
+	const workspace = createOpensidianWorkspace({ keyring });
 	workspace.ydoc.clientID = yDocClientId;
 	const { ydoc, tables, kv } = workspace;
+	const workspaceId = ydoc.guid;
 
 	const persistence = attachYjsLog(ydoc, {
-		filePath: yjsPath(projectDir, WORKSPACE_ID),
+		filePath: yjsPath(projectDir, workspaceId),
 	});
 
 	const fileContentDocs = createDisposableCache(
 		(fileId: string) => {
 			const contentYdoc = new Y.Doc({
-				guid: fileContentDocGuid({
-					workspaceId: WORKSPACE_ID,
-					fileId: fileId as never,
-				}),
+				guid: opensidianFileContentDocGuid(fileId as FileId),
 				gc: true,
 			});
 			const contentPersistence = attachYjsLog(contentYdoc, {
@@ -113,7 +107,7 @@ async function openOpensidianPlayground({
 
 	const whenReady = collaboration.whenConnected;
 	const markdown = attachMarkdownMaterializer(workspace, {
-		dir: markdownPath(projectDir, WORKSPACE_ID),
+		dir: markdownPath(projectDir, workspaceId),
 		waitFor: whenReady,
 		perTable: {
 			files: {
@@ -152,7 +146,7 @@ async function openOpensidianPlayground({
 	});
 
 	const sqlite = attachBunSqliteMaterializer(workspace, {
-		filePath: sqlitePath(projectDir, WORKSPACE_ID),
+		filePath: sqlitePath(projectDir, workspaceId),
 		waitFor: whenReady,
 		fts: { files: ['name'] },
 	});

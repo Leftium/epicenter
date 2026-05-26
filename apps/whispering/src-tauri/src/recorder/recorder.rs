@@ -4,41 +4,42 @@
 //! cpal callback thread          consumer worker thread
 //! ┌────────────────────┐  mpsc  ┌─────────────────────┐
 //! │ build_input_stream │ ─────▶ │ run_consumer        │
-//! │  - downmix mono    │ chunks │  - resample (policy)│
-//! │  - sample_tx.send  │        │  - sink.write_chunk │
-//! └────────────────────┘        │  - finalize on Stop │
+//! │  - downmix to mono │ chunks │  - accumulate Vec   │
+//! │  - sample_tx.send  │        │  - resample (final) │
+//! └────────────────────┘        │  - pad short clips  │
+//!                               │  - emit artifact    │
 //!                               └─────────────────────┘
 //! ```
 //!
-//! The cpal callback never touches the sink and never locks anything: its
-//! only job is to downmix to mono and ship samples down an mpsc channel.
-//! Everything policy-shaped (resample, pad, sink choice) lives in the
-//! consumer worker, which runs in its own thread and owns the sink.
+//! The cpal callback never blocks: it downmixes to mono and ships
+//! samples through an mpsc channel. The consumer worker accumulates,
+//! resamples to 16 kHz at finalize, pads sub-1s clips, and emits the
+//! canonical [`AudioArtifact`].
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, Stream};
 use log::{debug, error, info};
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use crate::audio::resample_mono;
-use crate::recorder::artifact::{AudioArtifact, RecorderMode};
-use crate::recorder::sink::{MemorySink, ProgressiveWavSink, Sink};
+use crate::recorder::artifact::AudioArtifact;
 
 /// Simple result type using String for errors. Errors cross the IPC
 /// boundary as plain strings so the JS side renders them in toasts.
 pub type Result<T> = std::result::Result<T, String>;
 
-/// Target rate for the dictation resample policy. All local transcription
-/// engines (whispercpp, parakeet, moonshine) want 16 kHz mono.
-const DICTATION_TARGET_RATE: u32 = 16_000;
+/// Target rate for every recording. All local transcription engines
+/// (whispercpp, parakeet, moonshine) want 16 kHz mono; the cloud
+/// services accept opus encoded from 48 kHz which we get to via a
+/// second resample step inside `audio::encode_pcm_to_opus_ogg`.
+const TARGET_RATE: u32 = 16_000;
 
-/// Sub-1s recordings are padded to this many samples (at the post-resample
-/// rate). Suppresses Whisper hallucination on near-silent short clips.
-/// 1.25s at 16 kHz = 20_000 samples.
+/// Sub-1s recordings are padded to this many samples (at 16 kHz, so
+/// 1.25 s). Suppresses Whisper hallucination on near-silent short
+/// clips. Empty recordings (no samples ever delivered) are left empty.
 const SHORT_RECORDING_PAD_SAMPLES: usize = 20_000;
 
 /// Worker-thread command channel.
@@ -85,17 +86,15 @@ impl Recorder {
 
     /// Initialize a recording session and spawn the consumer worker.
     ///
-    /// The cpal stream comes up immediately (so the mic permission prompt
-    /// fires here, not on first `start_recording`). The consumer worker
-    /// starts in an "idle, drop-samples" state until `start_recording`
+    /// The cpal stream comes up immediately (mic permission prompt fires
+    /// here, not on first `start_recording`). The consumer worker
+    /// starts in an idle, drop-samples state until `start_recording`
     /// flips its internal recording flag.
     pub fn init_session(
         &mut self,
         device_name: String,
-        output_folder: PathBuf,
         recording_id: String,
         preferred_sample_rate: Option<u32>,
-        mode: RecorderMode,
     ) -> Result<()> {
         // Clean up any existing session before standing up a new one.
         self.close_session()?;
@@ -117,18 +116,6 @@ impl Recorder {
         // worker can never flip a new stream's gate.
         self.is_recording = Arc::new(AtomicBool::new(false));
         let is_recording = self.is_recording.clone();
-
-        // Build the storage sink up front; we want a clear failure mode
-        // (file creation error) before the stream comes up. Dictation
-        // lands at the post-resample rate (16 kHz) in memory; longform
-        // preserves the device's native rate on disk.
-        let sink: Box<dyn Sink> = match mode {
-            RecorderMode::Dictation => Box::new(MemorySink::new(DICTATION_TARGET_RATE, 1)),
-            RecorderMode::Longform => {
-                let path = output_folder.join(format!("{recording_id}.wav"));
-                Box::new(ProgressiveWavSink::new(path, device_rate, 1)?)
-            }
-        };
 
         let (sample_tx, sample_rx) = mpsc::channel::<Vec<f32>>();
         let (cmd_tx, cmd_rx) = mpsc::channel::<RecorderCmd>();
@@ -157,7 +144,7 @@ impl Recorder {
             }
 
             info!("Audio stream started successfully");
-            run_consumer(sample_rx, cmd_rx, sink, mode, device_rate, is_recording);
+            run_consumer(sample_rx, cmd_rx, device_rate, is_recording);
             drop(stream);
         });
 
@@ -166,8 +153,8 @@ impl Recorder {
         self.current_recording_id = Some(recording_id);
 
         info!(
-            "Recording session initialized: {} Hz, {} channels, mode: {:?}",
-            device_rate, device_channels, mode
+            "Recording session initialized: {} Hz, {} channels",
+            device_rate, device_channels,
         );
 
         Ok(())
@@ -189,11 +176,6 @@ impl Recorder {
     }
 
     /// Stop recording and consume the worker's artifact.
-    ///
-    /// The session is left intact (the stream is still alive) until the
-    /// caller invokes `close_session`. This mirrors the previous
-    /// init/start/stop/close cadence so the JS layer's existing reload
-    /// reattachment story still works.
     pub fn stop_recording(&mut self) -> Result<AudioArtifact> {
         let tx = self
             .cmd_tx
@@ -206,14 +188,11 @@ impl Recorder {
             .recv()
             .map_err(|e| format!("Worker dropped stop reply: {e}"))?;
         let artifact = result?;
-        info!(
-            "Recording stopped: {:.2}s",
-            artifact_duration_seconds(&artifact)
-        );
+        info!("Recording stopped: {:.2}s", artifact.duration_seconds);
         Ok(artifact)
     }
 
-    /// Cancel the active recording, discarding any on-disk file.
+    /// Cancel the active recording, discarding any in-flight samples.
     pub fn cancel_recording(&mut self) -> Result<()> {
         if let Some(tx) = &self.cmd_tx {
             let (reply_tx, reply_rx) = mpsc::channel();
@@ -237,10 +216,8 @@ impl Recorder {
         Ok(())
     }
 
-    /// Recording id of the active session, if any. Returns `None` when
-    /// the worker is idle (between init and start, or after stop). Used
-    /// by the JS layer to reattach to a Rust session that outlived a
-    /// webview reload.
+    /// Recording id of the active session, if any. Surfaced for the JS
+    /// reload-reattach path.
     pub fn get_current_recording_id(&self) -> Option<String> {
         if self.is_recording.load(Ordering::Acquire) {
             self.current_recording_id.clone()
@@ -256,27 +233,18 @@ impl Drop for Recorder {
     }
 }
 
-/// Consumer worker entrypoint. Owns the sink, applies the mode's
-/// policies, and services the cpal callback and JS command threads.
+/// Consumer worker entrypoint. Accumulates mono samples, resamples to
+/// 16 kHz at finalize, pads short clips, emits the artifact.
 fn run_consumer(
     sample_rx: mpsc::Receiver<Vec<f32>>,
     cmd_rx: mpsc::Receiver<RecorderCmd>,
-    mut sink: Box<dyn Sink>,
-    mode: RecorderMode,
     device_rate: u32,
     is_recording: Arc<AtomicBool>,
 ) {
     use std::sync::mpsc::RecvTimeoutError;
 
     let mut recording = false;
-    // Dictation buffers native-rate samples and resamples once at
-    // finalize. Streaming resample via rubato is feasible but rubato's
-    // fixed-input API makes short trailing chunks awkward, and a single
-    // batch resample at stop is fast enough for dictation lengths.
-    // Longform never resamples, so this stays empty.
-    let mut native_buf: Vec<f32> = Vec::new();
-    let needs_resample =
-        matches!(mode, RecorderMode::Dictation) && device_rate != DICTATION_TARGET_RATE;
+    let mut buffer: Vec<f32> = Vec::new();
 
     loop {
         // Command channel has priority. Stop should respond fast even
@@ -286,27 +254,23 @@ fn run_consumer(
                 RecorderCmd::Start(reply) => {
                     recording = true;
                     is_recording.store(true, Ordering::Release);
-                    native_buf.clear();
+                    buffer.clear();
                     let _ = reply.send(());
                     continue;
                 }
                 RecorderCmd::Stop(reply) => {
                     is_recording.store(false, Ordering::Release);
-                    let result = finalize_sink(sink, mode, &mut native_buf, device_rate);
+                    let result = finalize(std::mem::take(&mut buffer), device_rate);
                     let _ = reply.send(result);
                     return;
                 }
                 RecorderCmd::Cancel(reply) => {
                     is_recording.store(false, Ordering::Release);
-                    let result = sink.cancel();
-                    let _ = reply.send(result);
+                    let _ = reply.send(Ok(()));
                     return;
                 }
                 RecorderCmd::Shutdown => {
                     is_recording.store(false, Ordering::Release);
-                    // Best-effort cancel; ignore result. No one is
-                    // listening on Shutdown.
-                    let _ = sink.cancel();
                     return;
                 }
             }
@@ -314,56 +278,41 @@ fn run_consumer(
 
         match sample_rx.recv_timeout(Duration::from_millis(20)) {
             Ok(samples) => {
-                if !recording {
-                    continue;
-                }
-                if needs_resample {
-                    native_buf.extend_from_slice(&samples);
-                } else {
-                    let _ = sink.write_chunk(&samples);
+                if recording {
+                    buffer.extend_from_slice(&samples);
                 }
             }
             Err(RecvTimeoutError::Timeout) => continue,
-            Err(RecvTimeoutError::Disconnected) => {
-                // cpal stream gone (panic in callback?). Best-effort cancel.
-                let _ = sink.cancel();
-                return;
-            }
+            Err(RecvTimeoutError::Disconnected) => return,
         }
     }
 }
 
-fn finalize_sink(
-    mut sink: Box<dyn Sink>,
-    mode: RecorderMode,
-    native_buf: &mut Vec<f32>,
-    device_rate: u32,
-) -> Result<AudioArtifact> {
-    // Dictation: if we buffered native-rate samples, resample them all
-    // at once and flush. Longform: native_buf stays empty.
-    if !native_buf.is_empty() {
-        let buf = std::mem::take(native_buf);
-        let processed = resample_mono(buf, device_rate, DICTATION_TARGET_RATE)
-            .map_err(|e| format!("resample failed: {e}"))?;
-        sink.write_chunk(&processed)?;
-    }
-
-    let pad_to = match mode {
-        RecorderMode::Dictation => Some(SHORT_RECORDING_PAD_SAMPLES),
-        RecorderMode::Longform => None,
+/// Resample to 16 kHz if needed, pad short clips, build the artifact.
+fn finalize(buffer: Vec<f32>, device_rate: u32) -> Result<AudioArtifact> {
+    let samples = if device_rate == TARGET_RATE {
+        buffer
+    } else {
+        resample_mono(buffer, device_rate, TARGET_RATE)
+            .map_err(|e| format!("resample failed: {e}"))?
     };
-    sink.finalize(pad_to)
-}
 
-fn artifact_duration_seconds(artifact: &AudioArtifact) -> f32 {
-    match artifact {
-        AudioArtifact::Pcm {
-            duration_seconds, ..
-        }
-        | AudioArtifact::File {
-            duration_seconds, ..
-        } => *duration_seconds,
+    let mut samples = samples;
+    let samples_per_second = TARGET_RATE as usize;
+    if !samples.is_empty()
+        && samples.len() < samples_per_second
+        && samples.len() < SHORT_RECORDING_PAD_SAMPLES
+    {
+        samples.resize(SHORT_RECORDING_PAD_SAMPLES, 0.0);
     }
+
+    let duration_seconds = samples.len() as f32 / TARGET_RATE as f32;
+    Ok(AudioArtifact {
+        samples,
+        rate: TARGET_RATE,
+        channels: 1,
+        duration_seconds,
+    })
 }
 
 /// Find a recording device by name. Treats "default" case-insensitively.
@@ -393,7 +342,7 @@ fn get_optimal_config(
     device: &Device,
     preferred_sample_rate: Option<u32>,
 ) -> Result<cpal::SupportedStreamConfig> {
-    let target_sample_rate = preferred_sample_rate.unwrap_or(16_000);
+    let target_sample_rate = preferred_sample_rate.unwrap_or(TARGET_RATE);
 
     let configs: Vec<_> = device
         .supported_input_configs()
@@ -643,5 +592,20 @@ mod tests {
         let input = vec![0.1_f32, 0.2, 0.3];
         let mono = downmix_f32(&input, 1);
         assert_eq!(mono, input);
+    }
+
+    #[test]
+    fn artifact_to_binary_round_trip_header() {
+        let artifact = AudioArtifact {
+            samples: vec![0.5, -0.5, 0.25],
+            rate: 16_000,
+            channels: 1,
+            duration_seconds: 0.000_1875,
+        };
+        let bytes = artifact.to_binary();
+        assert_eq!(&bytes[0..4], 16_000u32.to_le_bytes());
+        assert_eq!(&bytes[4..6], 1u16.to_le_bytes());
+        assert_eq!(&bytes[8..12], 0.000_1875f32.to_le_bytes());
+        assert_eq!(bytes.len(), 12 + 3 * 4);
     }
 }

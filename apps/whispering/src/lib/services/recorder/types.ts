@@ -214,14 +214,7 @@ type BaseRecordingParams = {
  */
 export type CpalRecordingParams = BaseRecordingParams & {
 	method: 'cpal';
-	outputFolder: string;
 	sampleRate: string;
-	/**
-	 * Storage policy. `'dictation'` (default) returns a `kind: 'pcm'`
-	 * artifact at 16 kHz mono in memory; `'longform'` writes a native-rate
-	 * WAV file progressively and returns a `kind: 'file'` artifact.
-	 */
-	mode: 'dictation' | 'longform';
 };
 
 /**
@@ -235,12 +228,14 @@ export type NavigatorRecordingParams = BaseRecordingParams & {
 /**
  * Canonical audio artifact emitted by every recorder path.
  *
- * - `pcm`: in-memory mono PCM. Dictation cpal path. Cheapest input for
- *   both cloud (direct opus encode) and local (no decode) transcription.
- * - `file`: native-rate WAV on disk. Longform cpal path. Crash-safe
- *   thanks to the WAV writer's periodic header updates.
- * - `blob`: container bytes in memory. Navigator path (Opus/WebM or
- *   mp4/AAC depending on browser) and file-upload UI.
+ * Two variants only:
+ * - `pcm`: in-memory mono PCM @ 16 kHz from the cpal recorder. Cheapest
+ *   input for both cloud (direct opus encode) and local (no decode)
+ *   transcription.
+ * - `blob`: container bytes from anywhere else: navigator (Opus/WebM
+ *   or mp4/AAC), VAD speech captures, file uploads, history replays.
+ *   The transcribe layer either passes it through or compresses if the
+ *   bytes look like an unencoded WAV.
  */
 export type AudioArtifact =
 	| {
@@ -249,14 +244,6 @@ export type AudioArtifact =
 			rate: number;
 			channels: number;
 			durationSeconds: number;
-	  }
-	| {
-			kind: 'file';
-			path: string;
-			rate: number;
-			channels: number;
-			durationSeconds: number;
-			container: 'wav';
 	  }
 	| {
 			kind: 'blob';

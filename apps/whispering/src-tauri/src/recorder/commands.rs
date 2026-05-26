@@ -1,9 +1,8 @@
-use crate::recorder::artifact::{AudioArtifact, RecorderMode};
 use crate::recorder::recorder::{Recorder, Result};
 use log::{debug, info, warn};
 use serde::Serialize;
-use std::path::PathBuf;
 use std::sync::Mutex;
+use tauri::ipc::Response;
 use tauri::{AppHandle, Emitter, State};
 
 const RECORDER_STATE_CHANGED: &str = "recorder:state-changed";
@@ -39,33 +38,19 @@ pub async fn enumerate_recording_devices(
 pub async fn init_recording_session(
     device_identifier: String,
     recording_id: String,
-    output_folder: String,
     sample_rate: Option<u32>,
-    mode: RecorderMode,
     recorder: State<'_, Mutex<Recorder>>,
     app_handle: AppHandle,
 ) -> Result<()> {
     info!(
-        "Initializing recording session: device={device_identifier}, id={recording_id}, folder={output_folder}, sample_rate={sample_rate:?}, mode={mode:?}",
+        "Initializing recording session: device={device_identifier}, id={recording_id}, sample_rate={sample_rate:?}",
     );
-
-    let recordings_dir = PathBuf::from(output_folder);
-
-    if !recordings_dir.exists() {
-        std::fs::create_dir_all(&recordings_dir)
-            .map_err(|e| format!("Failed to create output folder: {e}"))?;
-    }
-    if !recordings_dir.is_dir() {
-        return Err(format!(
-            "Output path is not a directory: {recordings_dir:?}",
-        ));
-    }
 
     {
         let mut recorder = recorder
             .lock()
             .map_err(|e| format!("Failed to lock recorder: {e}"))?;
-        recorder.init_session(device_identifier, recordings_dir, recording_id, sample_rate, mode)?;
+        recorder.init_session(device_identifier, recording_id, sample_rate)?;
     }
     // init_session calls close_session internally as cleanup. If the previous
     // session was actively recording, that transition is silent at the domain
@@ -90,11 +75,15 @@ pub async fn start_recording(
     Ok(())
 }
 
+/// Returns the captured artifact as a binary IPC body, not JSON. The
+/// wire layout is documented on `AudioArtifact::to_binary`. Avoids the
+/// 5-7 MB JSON serialize/parse round trip a 30 s clip would cost
+/// otherwise.
 #[tauri::command]
 pub async fn stop_recording(
     recorder: State<'_, Mutex<Recorder>>,
     app_handle: AppHandle,
-) -> Result<AudioArtifact> {
+) -> Result<Response> {
     info!("Stopping recording");
     let artifact = {
         let mut recorder = recorder
@@ -103,7 +92,7 @@ pub async fn stop_recording(
         recorder.stop_recording()?
     };
     emit_recording_state(&app_handle, RecordingState::Idle);
-    Ok(artifact)
+    Ok(Response::new(artifact.to_binary()))
 }
 
 #[tauri::command]

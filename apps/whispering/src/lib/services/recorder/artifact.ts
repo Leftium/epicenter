@@ -1,36 +1,29 @@
 import { Ok, type Result } from 'wellcrafted/result';
-import { RecorderError, type AudioArtifact } from './types';
-import { requireTauri } from '$lib/tauri';
+import type { AudioArtifact, RecorderError } from './types';
 
 /**
  * Materialize an artifact as a `Blob`. Used at the boundary with code
- * paths that still consume Blobs (history persistence, the legacy
+ * paths that consume Blobs (history persistence, the legacy
  * navigator-shaped transcription dispatch).
  *
  * - `pcm` -> in-memory WAV synthesis (IEEE Float, mono). Cheap; bounded
  *   by recording length.
- * - `file` -> read bytes from disk via the Tauri fs plugin.
  * - `blob` -> identity.
+ *
+ * Returns `Result` for symmetry with code that branches on error, though
+ * neither variant can actually fail today.
  */
 export async function artifactToBlob(
 	artifact: AudioArtifact,
 ): Promise<Result<Blob, RecorderError>> {
 	if (artifact.kind === 'blob') return Ok(artifact.blob);
-	if (artifact.kind === 'pcm') {
-		const wavBuffer = encodePcmAsWav(artifact);
-		return Ok(new Blob([wavBuffer], { type: 'audio/wav' }));
-	}
-	// kind === 'file'
-	const { data: blob, error } = await requireTauri().fs.pathToBlob(
-		artifact.path,
-	);
-	if (error) return RecorderError.ReadFileFailed({ cause: error });
-	return Ok(blob);
+	const wavBuffer = encodePcmAsWav(artifact);
+	return Ok(new Blob([wavBuffer], { type: 'audio/wav' }));
 }
 
 /**
  * Build a minimal IEEE Float 32-bit WAV file in memory from a mono PCM
- * artifact. Matches the format the Rust progressive WAV writer produces,
+ * artifact. Matches the format the previous Rust WAV writer produced,
  * so downstream decoders see one shape.
  */
 function encodePcmAsWav(artifact: {

@@ -1,60 +1,44 @@
-//! Tagged union describing the audio produced by a recording session.
+//! The audio captured by a recording session.
 //!
-//! The recorder emits exactly one variant per stop:
-//! - [`AudioArtifact::Pcm`] for dictation (memory sink, 16 kHz mono).
-//! - [`AudioArtifact::File`] for longform (progressive WAV on disk).
+//! One struct, one shape. The recorder always emits mono PCM at 16 kHz
+//! (it resamples to that rate inside the consumer worker), so there's
+//! no need for a tagged union here.
 //!
-//! The discriminant crosses the IPC boundary as JSON via serde's tagged-
-//! enum representation. The JS side adds a `kind: 'blob'` variant for
-//! navigator output and file-upload paths.
+//! IPC: the artifact is serialized as a binary response, not JSON. See
+//! `commands.rs::stop_recording` for the wire layout.
 
-use serde::Serialize;
-
-/// One canonical audio artifact emitted by the recorder.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
-pub enum AudioArtifact {
-    /// In-memory mono PCM. Sample rate is whatever the consumer resampled
-    /// to (16 kHz for dictation). `channels` is always 1 today but is
-    /// plumbed so a future stereo mode is non-breaking.
-    #[serde(rename = "pcm")]
-    Pcm {
-        samples: Vec<f32>,
-        rate: u32,
-        channels: u16,
-        duration_seconds: f32,
-    },
-
-    /// Audio is persisted on disk; the IPC payload is the path. Native
-    /// rate is preserved so a future re-transcription with a better
-    /// engine sees the original capture.
-    #[serde(rename = "file")]
-    File {
-        path: String,
-        rate: u32,
-        channels: u16,
-        duration_seconds: f32,
-        container: AudioContainer,
-    },
+/// Captured audio: mono PCM samples plus metadata.
+#[derive(Debug, Clone)]
+pub struct AudioArtifact {
+    pub samples: Vec<f32>,
+    pub rate: u32,
+    pub channels: u16,
+    pub duration_seconds: f32,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum AudioContainer {
-    Wav,
-}
-
-/// Storage and processing policy, selected per `init_session` call.
-///
-/// `RecorderMode` carries every policy axis (sink type, resampling,
-/// short-clip padding) by itself. The variants are not orthogonal:
-/// dictation always means "memory sink + resample to 16 kHz + pad short
-/// clips"; longform always means "WAV on disk + native rate + no pad."
-/// If a future requirement needs an axis to vary independently, split
-/// this enum then.
-#[derive(Debug, Clone, Copy, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum RecorderMode {
-    Dictation,
-    Longform,
+impl AudioArtifact {
+    /// Serialize as a binary IPC body for Tauri's `Response::new`.
+    ///
+    /// Layout (little-endian):
+    /// ```text
+    ///   bytes 0..4   : u32  rate
+    ///   bytes 4..6   : u16  channels
+    ///   bytes 6..8   : u16  reserved (alignment)
+    ///   bytes 8..12  : f32  duration_seconds
+    ///   bytes 12..   : f32[] samples
+    /// ```
+    /// JS reinterprets the trailing bytes as a `Float32Array` view, no
+    /// JSON, no decimal round-trip, no extra copy.
+    pub fn to_binary(&self) -> Vec<u8> {
+        let header_size = 12;
+        let mut buf = Vec::with_capacity(header_size + self.samples.len() * 4);
+        buf.extend_from_slice(&self.rate.to_le_bytes());
+        buf.extend_from_slice(&self.channels.to_le_bytes());
+        buf.extend_from_slice(&0u16.to_le_bytes());
+        buf.extend_from_slice(&self.duration_seconds.to_le_bytes());
+        for sample in &self.samples {
+            buf.extend_from_slice(&sample.to_le_bytes());
+        }
+        buf
+    }
 }

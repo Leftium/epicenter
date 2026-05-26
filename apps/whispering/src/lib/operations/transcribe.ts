@@ -3,14 +3,10 @@ import {
 	SUPPORTED_LANGUAGES,
 	type SupportedLanguage,
 } from '$lib/constants/languages';
+import type { TranscriptionServiceId } from '$lib/constants/transcription';
 import { analytics } from '$lib/operations/analytics';
 import { notify } from '$lib/operations/notify';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
-import { deepgramErrorToWhisperingErr } from '$lib/rpc/transcription-errors/deepgram';
-import { elevenlabsErrorToWhisperingErr } from '$lib/rpc/transcription-errors/elevenlabs';
-import { groqErrorToWhisperingErr } from '$lib/rpc/transcription-errors/groq';
-import { mistralErrorToWhisperingErr } from '$lib/rpc/transcription-errors/mistral';
-import { openaiErrorToWhisperingErr } from '$lib/rpc/transcription-errors/openai';
 import { services } from '$lib/services';
 import { artifactToBlob } from '$lib/services/recorder/artifact';
 import type { AudioArtifact } from '$lib/services/recorder/types';
@@ -25,7 +21,9 @@ import { tauri } from '$lib/tauri';
  * the blob in-process via the Rust decoder, so compressing their input
  * would just round-trip through libopus for no win.
  */
-function isUploadTranscriptionService(serviceId: TranscriptionService): boolean {
+function isUploadTranscriptionService(
+	serviceId: TranscriptionServiceId,
+): boolean {
 	const entry = TRANSCRIPTION_SERVICES.find((s) => s.id === serviceId);
 	return entry?.location === 'cloud' || entry?.location === 'self-hosted';
 }
@@ -56,25 +54,20 @@ function getOutputLanguage(): SupportedLanguage {
 /**
  * Pick the cheapest valid Blob shape for a given service + artifact.
  *
- * Cloud / self-hosted services want compressed bytes for upload; we
- * encode straight from `Pcm` samples via libopus, falling back to the
- * WAV-bytes encoder for `File` and `Blob` artifacts that already have
- * container bytes. Local engines decode the blob in-process; we hand
- * them whatever's nearest (WAV-wrapped PCM, the original file as a
- * blob, or the original navigator blob).
+ * Cloud / self-hosted services want compressed bytes for upload:
+ * `Pcm` artifacts go straight through libopus (one encode hop, no
+ * container synthesis), `Blob` artifacts that look like WAV go through
+ * the WAV-bytes encoder (one decode + one encode). Local engines decode
+ * the blob in-process via Symphonia, so we just materialize whichever
+ * Blob is nearest.
  */
-type TranscriptionService = ReturnType<
-	typeof settings.get<'transcription.service'>
->;
-
 async function prepareForService(
 	artifact: AudioArtifact,
-	service: TranscriptionService,
+	service: TranscriptionServiceId,
 ): Promise<Result<Blob, WhisperingError>> {
 	const isUpload = isUploadTranscriptionService(service);
 
-	// Fast path: dictation Pcm + cloud upload. One Opus encode hop, no
-	// container synthesis, no Symphonia decode.
+	// Fast path: Pcm + cloud upload. One opus encode, no WAV synthesis.
 	if (isUpload && tauri && artifact.kind === 'pcm') {
 		const { data: oggBlob, error } = await tauri.audioEncoder.encodePcmToOpusOgg({
 			samples: artifact.samples,
@@ -106,7 +99,6 @@ async function prepareForService(
 		}
 	}
 
-	// Materialize a Blob for the remaining cases.
 	const { data: blob, error: blobError } = await artifactToBlob(artifact);
 	if (blobError) {
 		return WhisperingErr({
@@ -115,7 +107,9 @@ async function prepareForService(
 		});
 	}
 
-	// Longform File artifact uploading to cloud: still worth compressing.
+	// WAV uploads (VAD captures, file uploads, history re-transcribes
+	// that came from a Pcm artifact's synthesized WAV): still worth
+	// compressing for cloud.
 	if (isUpload && tauri && blobLooksLikeWav(blob)) {
 		const { data: oggBlob, error: encodeError } =
 			await tauri.audioEncoder.encodeWavToOpusOgg(blob);
@@ -204,7 +198,7 @@ export async function transcribeBlob(
 
 async function dispatchTranscription(
 	audio: Blob,
-	selectedService: TranscriptionService,
+	selectedService: TranscriptionServiceId,
 ): Promise<Result<string, WhisperingError>> {
 	const outputLanguage = getOutputLanguage();
 	const prompt = settings.get('transcription.prompt');
@@ -223,7 +217,7 @@ async function dispatchTranscription(
 					baseURL: deviceConfig.get('apiEndpoints.openai') || undefined,
 				},
 			);
-			if (error) return openaiErrorToWhisperingErr(error);
+			if (error) return services.transcriptions.openai.toWhisperingErr(error);
 			return Ok(data);
 		}
 		case 'Groq': {
@@ -238,7 +232,7 @@ async function dispatchTranscription(
 					baseURL: deviceConfig.get('apiEndpoints.groq') || undefined,
 				},
 			);
-			if (error) return groqErrorToWhisperingErr(error);
+			if (error) return services.transcriptions.groq.toWhisperingErr(error);
 			return Ok(data);
 		}
 		case 'speaches':
@@ -258,7 +252,8 @@ async function dispatchTranscription(
 					apiKey: deviceConfig.get('apiKeys.elevenlabs'),
 					modelName: settings.get('transcription.elevenlabs.model'),
 				});
-			if (error) return elevenlabsErrorToWhisperingErr(error);
+			if (error)
+				return services.transcriptions.elevenlabs.toWhisperingErr(error);
 			return Ok(data);
 		}
 		case 'Deepgram': {
@@ -270,7 +265,8 @@ async function dispatchTranscription(
 					apiKey: deviceConfig.get('apiKeys.deepgram'),
 					modelName: settings.get('transcription.deepgram.model'),
 				});
-			if (error) return deepgramErrorToWhisperingErr(error);
+			if (error)
+				return services.transcriptions.deepgram.toWhisperingErr(error);
 			return Ok(data);
 		}
 		case 'Mistral': {
@@ -284,7 +280,7 @@ async function dispatchTranscription(
 					modelName: settings.get('transcription.mistral.model'),
 				},
 			);
-			if (error) return mistralErrorToWhisperingErr(error);
+			if (error) return services.transcriptions.mistral.toWhisperingErr(error);
 			return Ok(data);
 		}
 		case 'whispercpp': {

@@ -136,15 +136,9 @@ export async function stopManualRecording() {
 }
 
 function artifactByteSize(artifact: AudioArtifact): number {
-	switch (artifact.kind) {
-		case 'pcm':
-			return artifact.samples.byteLength;
-		case 'blob':
-			return artifact.blob.size;
-		case 'file':
-			// Disk file; we don't stat it here. Best-effort 0 for analytics.
-			return 0;
-	}
+	return artifact.kind === 'pcm'
+		? artifact.samples.byteLength
+		: artifact.blob.size;
 }
 
 export async function toggleManualRecording() {

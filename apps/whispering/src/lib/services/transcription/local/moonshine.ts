@@ -112,7 +112,7 @@ export const MOONSHINE_MODELS = [
 	},
 ] as const satisfies readonly MoonshineModelConfig[];
 
-export const MoonshineTranscriptionService = {
+export const MoonshineTranscriptionServiceLive = {
 	async transcribe(
 		audioBlob: Blob,
 		{ modelPath }: { modelPath: string },

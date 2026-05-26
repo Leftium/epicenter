@@ -49,7 +49,7 @@ export const PARAKEET_MODELS = [
 	},
 ] as const satisfies readonly ParakeetModelConfig[];
 
-export const ParakeetTranscriptionService = {
+export const ParakeetTranscriptionServiceLive = {
 	async transcribe(
 		audioBlob: Blob,
 		options: { modelPath: string },

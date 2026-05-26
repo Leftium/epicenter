@@ -63,7 +63,7 @@ export const WHISPER_MODELS = [
 	},
 ] as const satisfies readonly WhisperModelConfig[];
 
-export const WhisperCppTranscriptionService = {
+export const WhisperCppTranscriptionServiceLive = {
 	async transcribe(
 		audioBlob: Blob,
 		options: {

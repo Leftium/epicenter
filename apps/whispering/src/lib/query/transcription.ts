@@ -139,20 +139,17 @@ export async function transcribeBlob(
 		provider: selectedService,
 	});
 
+	// Opus-compress WAV uploads on the cloud path. cpal records ~960 KB/min
+	// uncompressed; libopus voice mode brings that to ~50 KB/min with no
+	// perceptible quality loss for transcription. Skipped for local engines
+	// (the Rust decoder consumes the raw WAV directly) and for already-
+	// compressed inputs (navigator MediaRecorder, file uploads).
 	let audioToTranscribe = blob;
-
-	// In-process Opus encode (Tauri only). Applies to the cloud upload path
-	// where bandwidth dominates: cpal records uncompressed WAV at ~960 KB/min,
-	// libopus voice mode brings that to ~50 KB/min with no perceptible quality
-	// loss for transcription. Skipped for local-engine paths because the Rust
-	// decoder consumes the raw WAV directly with zero benefit from compressing
-	// then immediately decoding.
-	const shouldOpusCompress =
+	if (
 		window.__TAURI_INTERNALS__ &&
-		settings.get('transcription.uploadCompression') === 'opus' &&
 		isUploadTranscriptionService(selectedService) &&
-		blobLooksLikeWav(blob);
-	if (shouldOpusCompress) {
+		blobLooksLikeWav(blob)
+	) {
 		const { data: oggBlob, error: encodeError } =
 			await desktopServices.audioEncoder.encodeWavToOpusOgg(blob);
 
@@ -168,55 +165,12 @@ export async function transcribeBlob(
 			});
 		} else {
 			audioToTranscribe = oggBlob;
-			const compressionRatio = Math.round((1 - oggBlob.size / blob.size) * 100);
 			analytics.logEvent({
 				type: 'compression_completed',
 				provider: selectedService,
 				original_size: blob.size,
 				compressed_size: oggBlob.size,
-				compression_ratio: compressionRatio,
-			});
-		}
-	}
-
-	// Legacy FFmpeg-based upload compression. Runs only when the user
-	// explicitly enabled the old toggle AND the new Opus path didn't already
-	// compress (uploadCompression === 'wav' disables the new path). Will be
-	// removed once the FFmpeg sidecar deletion (Wave 4) lands.
-	if (!shouldOpusCompress && settings.get('transcription.compressionEnabled')) {
-		const { data: compressedBlob, error: compressionError } =
-			await desktopServices.ffmpeg.compressAudioBlob(
-				blob,
-				settings.get('transcription.compressionOptions'),
-			);
-
-		if (compressionError) {
-			// Notify user of compression failure but continue with original blob
-			notify.warning({
-				title: 'Audio compression failed',
-				description: `${compressionError.message}. Using original audio for transcription.`,
-			});
-			analytics.logEvent({
-				type: 'compression_failed',
-				provider: selectedService,
-				error_message: compressionError.message,
-			});
-		} else {
-			// Use compressed blob and notify user of success
-			audioToTranscribe = compressedBlob;
-			const compressionRatio = Math.round(
-				(1 - compressedBlob.size / blob.size) * 100,
-			);
-			notify.info({
-				title: 'Audio compressed',
-				description: `Reduced file size by ${compressionRatio}%`,
-			});
-			analytics.logEvent({
-				type: 'compression_completed',
-				provider: selectedService,
-				original_size: blob.size,
-				compressed_size: compressedBlob.size,
-				compression_ratio: compressionRatio,
+				compression_ratio: Math.round((1 - oggBlob.size / blob.size) * 100),
 			});
 		}
 	}
@@ -313,9 +267,6 @@ export async function transcribeBlob(
 					return Ok(data);
 				}
 				case 'whispercpp': {
-					// Pure Rust audio conversion now handles most formats without FFmpeg
-					// Only compressed formats (MP3, M4A) require FFmpeg, which will be
-					// handled automatically as a fallback in the Rust conversion pipeline
 					return await services.transcriptions.whispercpp.transcribe(
 						audioToTranscribe,
 						{
@@ -326,9 +277,6 @@ export async function transcribeBlob(
 					);
 				}
 				case 'parakeet': {
-					// Pure Rust audio conversion now handles most formats without FFmpeg
-					// Only compressed formats (MP3, M4A) require FFmpeg, which will be
-					// handled automatically as a fallback in the Rust conversion pipeline
 					return await services.transcriptions.parakeet.transcribe(
 						audioToTranscribe,
 						{

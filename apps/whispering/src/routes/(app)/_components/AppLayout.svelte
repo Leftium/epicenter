@@ -53,8 +53,8 @@
 			syncGlobalShortcutsWithSettings();
 			resetGlobalShortcutsToDefaultIfDuplicates();
 
-			// Desktop-only async operations - fire and forget
-			Promise.allSettled([checkForUpdates()]);
+			// Desktop-only async check - fire and forget
+			void checkForUpdates();
 		} else {
 			// Browser extension context - notify that the Whispering tab is ready
 			// extension.notifyWhisperingTabReady(undefined);

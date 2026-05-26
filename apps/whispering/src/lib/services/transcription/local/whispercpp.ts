@@ -122,16 +122,12 @@ export const WhisperCppTranscriptionServiceLive = {
 			}
 		}
 
-		return transcribeLocal(
-			audioBlob,
-			{
-				engine: 'whisper',
-				modelPath: options.modelPath,
-				language:
-					options.outputLanguage === 'auto' ? null : options.outputLanguage,
-				initialPrompt: options.prompt || null,
-			},
-			'Whisper C++',
-		);
+		return transcribeLocal(audioBlob, {
+			engine: 'whisper',
+			modelPath: options.modelPath,
+			language:
+				options.outputLanguage === 'auto' ? null : options.outputLanguage,
+			initialPrompt: options.prompt || null,
+		});
 	},
 };

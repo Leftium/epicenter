@@ -29,6 +29,17 @@ export type TranscribeConfig =
 	  };
 
 /**
+ * User-facing display name for each engine. The wire-side `engine` tag
+ * (`whisper` / `parakeet` / `moonshine`) is internal; this is what appears
+ * in error titles like "❌ Unexpected Whisper C++ Error".
+ */
+const ENGINE_DISPLAY_NAME: Record<TranscribeConfig['engine'], string> = {
+	whisper: 'Whisper C++',
+	parakeet: 'Parakeet',
+	moonshine: 'Moonshine',
+};
+
+/**
  * Single arktype schema for all errors returned by the unified
  * `transcribe_audio` command. Each engine surfaces the same five
  * variants; the only one specific to Whisper is `GpuError`, which
@@ -40,11 +51,10 @@ const LocalTranscriptionErrorType = type({
 });
 
 /**
- * Shared error mapping for the unified `transcribe_audio` command.
- * Each per-engine service used to duplicate this switch with ~minor
- * copy variations; the variations are kept by passing an
- * `engineDisplayName` so user-facing titles still read "Whisper C++
- * Error" vs "Parakeet Error" vs "Moonshine Error".
+ * Shared error mapping for the unified `transcribe_audio` command. Each
+ * per-engine service used to duplicate this switch with minor copy
+ * variations; the only per-engine variation is the display name, which
+ * we derive from the config tag.
  */
 function mapLocalTranscriptionError(
 	unknownError: unknown,
@@ -123,7 +133,6 @@ function mapLocalTranscriptionError(
 export async function transcribeLocal(
 	audioBlob: Blob,
 	config: TranscribeConfig,
-	engineDisplayName: string,
 ): Promise<WhisperingResult<string>> {
 	const audioBuffer = await audioBlob.arrayBuffer();
 	return tryAsync({
@@ -132,6 +141,9 @@ export async function transcribeLocal(
 				headers: { 'x-transcribe-config': JSON.stringify(config) },
 			}),
 		catch: (unknownError) =>
-			mapLocalTranscriptionError(unknownError, engineDisplayName),
+			mapLocalTranscriptionError(
+				unknownError,
+				ENGINE_DISPLAY_NAME[config.engine],
+			),
 	});
 }

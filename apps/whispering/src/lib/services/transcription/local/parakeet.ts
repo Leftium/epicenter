@@ -100,10 +100,9 @@ export const ParakeetTranscriptionServiceLive = {
 			});
 		}
 
-		return transcribeLocal(
-			audioBlob,
-			{ engine: 'parakeet', modelPath: options.modelPath },
-			'Parakeet',
-		);
+		return transcribeLocal(audioBlob, {
+			engine: 'parakeet',
+			modelPath: options.modelPath,
+		});
 	},
 };

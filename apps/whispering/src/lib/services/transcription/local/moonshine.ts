@@ -174,10 +174,10 @@ export const MoonshineTranscriptionServiceLive = {
 		// arkregex's RegexExecArray indexes captures: [0] full match, [1] variant, [2] language
 		const variant = match[1];
 
-		return transcribeLocal(
-			audioBlob,
-			{ engine: 'moonshine', modelPath, variant },
-			'Moonshine',
-		);
+		return transcribeLocal(audioBlob, {
+			engine: 'moonshine',
+			modelPath,
+			variant,
+		});
 	},
 };

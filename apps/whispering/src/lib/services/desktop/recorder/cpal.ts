@@ -7,6 +7,7 @@ import type {
 	WhisperingRecordingState,
 } from '$lib/constants/audio';
 import { FsServiceLive } from '$lib/services/desktop/fs';
+import { categorizeRecorderError } from '$lib/services/recorder/categorize-error';
 import {
 	asDeviceIdentifier,
 	type CpalRecordingParams,
@@ -179,9 +180,12 @@ function createCpalRecorder(): RecorderService {
 				},
 			);
 			if (initRecordingSessionError)
-				return RecorderError.InitFailed({
-					cause: initRecordingSessionError,
-				});
+				return (
+					categorizeRecorderError(initRecordingSessionError) ??
+					RecorderError.InitFailed({
+						cause: initRecordingSessionError,
+					})
+				);
 
 			sendStatus({
 				title: '🎙️ Starting Recording',
@@ -191,7 +195,10 @@ function createCpalRecorder(): RecorderService {
 			const { error: startRecordingError } =
 				await invoke<void>('start_recording');
 			if (startRecordingError)
-				return RecorderError.StartFailed({ cause: startRecordingError });
+				return (
+					categorizeRecorderError(startRecordingError) ??
+					RecorderError.StartFailed({ cause: startRecordingError })
+				);
 
 			activeRecording = { recordingId };
 			return Ok(deviceOutcome);

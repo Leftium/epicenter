@@ -155,6 +155,16 @@ export const RecorderError = defineErrors({
 	NoDevice: ({ message }: { message: string }) => ({
 		message,
 	}),
+	MicrophonePermissionDenied: ({ cause }: { cause?: unknown } = {}) => ({
+		message:
+			'Microphone access was denied. Please grant microphone permission in your system or browser settings and try again.',
+		cause,
+	}),
+	NoInputDevice: ({ cause }: { cause?: unknown } = {}) => ({
+		message:
+			"We couldn't find any microphone to record from. Please connect a microphone and try again.",
+		cause,
+	}),
 	AlreadyRecording: () => ({
 		message:
 			'A recording is already in progress. Please stop the current recording before starting a new one.',

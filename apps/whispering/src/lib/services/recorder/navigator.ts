@@ -13,6 +13,7 @@ import type {
 	DeviceAcquisitionOutcome,
 	DeviceIdentifier,
 } from '$lib/services/recorder/types';
+import { categorizeRecorderError } from './categorize-error';
 import type { NavigatorRecordingParams, RecorderService } from './types';
 import { RecorderError } from './types';
 
@@ -76,7 +77,10 @@ function createNavigatorRecorder(): RecorderService {
 			const { data: streamResult, error: acquireStreamError } =
 				await getRecordingStream({ selectedDeviceId, sendStatus });
 			if (acquireStreamError) {
-				return RecorderError.StreamAcquisition({ cause: acquireStreamError });
+				return (
+					categorizeRecorderError(acquireStreamError) ??
+					RecorderError.StreamAcquisition({ cause: acquireStreamError })
+				);
 			}
 
 			const { stream, deviceOutcome } = streamResult;

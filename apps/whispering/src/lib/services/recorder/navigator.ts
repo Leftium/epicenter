@@ -25,165 +25,191 @@ type ActiveRecording = {
 	recordedChunks: Blob[];
 };
 
-let activeRecording: ActiveRecording | null = null;
-
 /**
  * Navigator recorder service that uses the MediaRecorder API.
  * Available in both browser and desktop environments.
+ *
+ * Constructed via a factory so all mutable state (`activeRecording`,
+ * `subscribers`) lives in the closure rather than at module scope. The
+ * exported `NavigatorRecorderServiceLive` is the single application-level
+ * instance; tests can call `createNavigatorRecorder()` for an isolated one.
  */
-export const NavigatorRecorderServiceLive: RecorderService = {
-	getRecorderState: async (): Promise<
-		Result<WhisperingRecordingState, RecorderError>
-	> => {
-		return Ok(activeRecording ? 'RECORDING' : 'IDLE');
-	},
+function createNavigatorRecorder(): RecorderService {
+	let activeRecording: ActiveRecording | null = null;
 
-	enumerateDevices: async () => {
-		const { data: devices, error } = await enumerateDevices();
-		if (error) {
-			return RecorderError.EnumerateDevices({ cause: error });
-		}
-		return Ok(devices);
-	},
+	const subscribers = new Set<(state: WhisperingRecordingState) => void>();
 
-	startRecording: async (
-		{ selectedDeviceId, recordingId, bitrateKbps }: NavigatorRecordingParams,
-		{ sendStatus },
-	): Promise<Result<DeviceAcquisitionOutcome, RecorderError>> => {
-		// Ensure we're not already recording
-		if (activeRecording) {
-			return RecorderError.AlreadyRecording();
-		}
+	const notify = (state: WhisperingRecordingState) => {
+		for (const handler of subscribers) handler(state);
+	};
 
-		sendStatus({
-			title: '🎙️ Starting Recording',
-			description: 'Setting up your microphone...',
-		});
+	return {
+		getRecorderState: async (): Promise<
+			Result<WhisperingRecordingState, RecorderError>
+		> => {
+			return Ok(activeRecording ? 'RECORDING' : 'IDLE');
+		},
 
-		// Get the recording stream
-		const { data: streamResult, error: acquireStreamError } =
-			await getRecordingStream({ selectedDeviceId, sendStatus });
-		if (acquireStreamError) {
-			return RecorderError.StreamAcquisition({ cause: acquireStreamError });
-		}
+		enumerateDevices: async () => {
+			const { data: devices, error } = await enumerateDevices();
+			if (error) {
+				return RecorderError.EnumerateDevices({ cause: error });
+			}
+			return Ok(devices);
+		},
 
-		const { stream, deviceOutcome } = streamResult;
+		startRecording: async (
+			{ selectedDeviceId, recordingId, bitrateKbps }: NavigatorRecordingParams,
+			{ sendStatus },
+		): Promise<Result<DeviceAcquisitionOutcome, RecorderError>> => {
+			// Ensure we're not already recording
+			if (activeRecording) {
+				return RecorderError.AlreadyRecording();
+			}
 
-		const mimeType = getSupportedAudioMimeType();
-		const { data: mediaRecorder, error: recorderError } = trySync({
-			try: () =>
-				new MediaRecorder(stream, {
-					bitsPerSecond: Number(bitrateKbps) * 1000,
-					mimeType,
-				}),
-			catch: (error) => RecorderError.InitFailed({ cause: error }),
-		});
-
-		if (recorderError) {
-			// Clean up stream if recorder creation fails
-			cleanupRecordingStream(stream);
-			return Err(recorderError);
-		}
-
-		// Set up recording state and event handlers
-		const recordedChunks: Blob[] = [];
-
-		// Store active recording state
-		activeRecording = {
-			recordingId,
-			selectedDeviceId,
-			bitrateKbps,
-			stream,
-			mediaRecorder,
-			recordedChunks,
-		};
-
-		// Set up event handlers
-		mediaRecorder.addEventListener('dataavailable', (event: BlobEvent) => {
-			if (event.data.size) recordedChunks.push(event.data);
-		});
-
-		// Start recording
-		mediaRecorder.start(TIMESLICE_MS);
-
-		// Return the device acquisition outcome
-		return Ok(deviceOutcome);
-	},
-
-	stopRecording: async ({
-		sendStatus,
-	}): Promise<Result<{ blob: Blob; recordingId: string }, RecorderError>> => {
-		if (!activeRecording) {
-			return RecorderError.NotRecording({
-				message:
-					'Cannot stop recording because no active recording session was found. Make sure you have started recording before attempting to stop it.',
+			sendStatus({
+				title: '🎙️ Starting Recording',
+				description: 'Setting up your microphone...',
 			});
-		}
 
-		const recording = activeRecording;
-		activeRecording = null; // Clear immediately to prevent race conditions
+			// Get the recording stream
+			const { data: streamResult, error: acquireStreamError } =
+				await getRecordingStream({ selectedDeviceId, sendStatus });
+			if (acquireStreamError) {
+				return RecorderError.StreamAcquisition({ cause: acquireStreamError });
+			}
 
-		sendStatus({
-			title: '⏸️ Finishing Recording',
-			description: 'Saving your audio...',
-		});
+			const { stream, deviceOutcome } = streamResult;
 
-		// Stop the recorder and wait for the final data
-		const { data: blob, error: stopError } = await tryAsync({
-			try: () =>
-				new Promise<Blob>((resolve) => {
-					recording.mediaRecorder.addEventListener('stop', () => {
-						const audioBlob = new Blob(recording.recordedChunks, {
-							type: recording.mediaRecorder.mimeType,
+			const mimeType = getSupportedAudioMimeType();
+			const { data: mediaRecorder, error: recorderError } = trySync({
+				try: () =>
+					new MediaRecorder(stream, {
+						bitsPerSecond: Number(bitrateKbps) * 1000,
+						mimeType,
+					}),
+				catch: (error) => RecorderError.InitFailed({ cause: error }),
+			});
+
+			if (recorderError) {
+				// Clean up stream if recorder creation fails
+				cleanupRecordingStream(stream);
+				return Err(recorderError);
+			}
+
+			// Set up recording state and event handlers
+			const recordedChunks: Blob[] = [];
+
+			// Store active recording state
+			activeRecording = {
+				recordingId,
+				selectedDeviceId,
+				bitrateKbps,
+				stream,
+				mediaRecorder,
+				recordedChunks,
+			};
+
+			// Set up event handlers
+			mediaRecorder.addEventListener('dataavailable', (event: BlobEvent) => {
+				if (event.data.size) recordedChunks.push(event.data);
+			});
+
+			// Start recording
+			mediaRecorder.start(TIMESLICE_MS);
+			notify('RECORDING');
+
+			// Return the device acquisition outcome
+			return Ok(deviceOutcome);
+		},
+
+		stopRecording: async ({
+			sendStatus,
+		}): Promise<Result<{ blob: Blob; recordingId: string }, RecorderError>> => {
+			if (!activeRecording) {
+				return RecorderError.NotRecording({
+					message:
+						'Cannot stop recording because no active recording session was found. Make sure you have started recording before attempting to stop it.',
+				});
+			}
+
+			const recording = activeRecording;
+			activeRecording = null; // Clear immediately to prevent race conditions
+
+			sendStatus({
+				title: '⏸️ Finishing Recording',
+				description: 'Saving your audio...',
+			});
+
+			// Stop the recorder and wait for the final data
+			const { data: blob, error: stopError } = await tryAsync({
+				try: () =>
+					new Promise<Blob>((resolve) => {
+						recording.mediaRecorder.addEventListener('stop', () => {
+							const audioBlob = new Blob(recording.recordedChunks, {
+								type: recording.mediaRecorder.mimeType,
+							});
+							resolve(audioBlob);
 						});
-						resolve(audioBlob);
-					});
-					recording.mediaRecorder.stop();
-				}),
-			catch: (error) => RecorderError.StopFailed({ cause: error }),
-		});
+						recording.mediaRecorder.stop();
+					}),
+				catch: (error) => RecorderError.StopFailed({ cause: error }),
+			});
 
-		// Always clean up the stream
-		cleanupRecordingStream(recording.stream);
+			// Always clean up the stream
+			cleanupRecordingStream(recording.stream);
+			notify('IDLE');
 
-		if (stopError) return Err(stopError);
+			if (stopError) return Err(stopError);
 
-		sendStatus({
-			title: '✅ Recording Saved',
-			description: 'Your recording is ready for transcription!',
-		});
-		return Ok({ blob, recordingId: recording.recordingId });
-	},
+			sendStatus({
+				title: '✅ Recording Saved',
+				description: 'Your recording is ready for transcription!',
+			});
+			return Ok({ blob, recordingId: recording.recordingId });
+		},
 
-	cancelRecording: async ({
-		sendStatus,
-	}): Promise<Result<CancelRecordingResult, RecorderError>> => {
-		if (!activeRecording) {
-			return Ok({ status: 'no-recording' });
-		}
+		cancelRecording: async ({
+			sendStatus,
+		}): Promise<Result<CancelRecordingResult, RecorderError>> => {
+			if (!activeRecording) {
+				return Ok({ status: 'no-recording' });
+			}
 
-		const recording = activeRecording;
-		activeRecording = null; // Clear immediately
+			const recording = activeRecording;
+			activeRecording = null; // Clear immediately
 
-		sendStatus({
-			title: '🛑 Cancelling',
-			description: 'Discarding your recording...',
-		});
+			sendStatus({
+				title: '🛑 Cancelling',
+				description: 'Discarding your recording...',
+			});
 
-		// Stop the recorder
-		recording.mediaRecorder.stop();
+			// Stop the recorder
+			recording.mediaRecorder.stop();
 
-		// Clean up the stream
-		cleanupRecordingStream(recording.stream);
+			// Clean up the stream
+			cleanupRecordingStream(recording.stream);
+			notify('IDLE');
 
-		sendStatus({
-			title: '✨ Cancelled',
-			description: 'Recording discarded successfully!',
-		});
+			sendStatus({
+				title: '✨ Cancelled',
+				description: 'Recording discarded successfully!',
+			});
 
-		return Ok({ status: 'cancelled' });
-	},
-};
+			return Ok({ status: 'cancelled' });
+		},
+
+		subscribe(handler) {
+			subscribers.add(handler);
+			return () => {
+				subscribers.delete(handler);
+			};
+		},
+	};
+}
+
+export const NavigatorRecorderServiceLive: RecorderService =
+	createNavigatorRecorder();
 
 /**
  * Determines the best supported audio MIME type for the current browser.

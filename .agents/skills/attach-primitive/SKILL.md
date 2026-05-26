@@ -11,10 +11,19 @@ Every persistence, sync, materializer, and binding in `packages/workspace` (plus
 
 | Prefix     | Meaning                                                                                                                      |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `attach*`  | Side-effectful. Registers observers, destroy listeners, or subscription state. Returns a plain object whose surface is fixed at call time. |
-| `create*`  | Pure construction. No listeners, no subscriptions, no destroy registration at call time. Cache constructors qualify, e.g. `createFileContentDocs` returns a `createDisposableCache` result; nothing attaches until `.open(id)` is called. |
+| `attach*`  | Side-effectful. Registers observers, destroy listeners, or subscription state **onto a subject argument**. Returns a plain object whose surface is fixed at call time. |
+| `create*`  | Pure construction OR module-singleton bootstrap. No subject argument. Cache constructors qualify (e.g. `createFileContentDocs` returns a `createDisposableCache` result; nothing attaches until `.open(id)` is called). Module-singleton factories that bootstrap themselves at construction time (e.g. `createManualRecorder` registering a global event listener) also use `create*`: the side effects belong to the singleton itself, not to an external subject. |
 
-Both return plain objects. The distinction is **what happens at call time**, not what the return value looks like.
+Both return plain objects. The distinction is **whether the call modifies a subject argument**, not just whether side effects fire at call time.
+
+### Scope of this contract
+
+These rules apply to `packages/workspace` primitives and other functions that take a *subject* (a Y.Doc, an attachment, or a comparable composable target) and decorate it. They do **not** apply to:
+
+- Module-level factory singletons in app code (e.g. UI state containers, service clients) — even if those factories perform I/O at construction time. Use `create*`.
+- Top-level orchestrators that own their own lifecycle and aren't attached to anything external.
+
+The discriminator is **"what is being attached to what?"** If there's no `subject` on the left side of that question, it's `create*`.
 
 ## The shape
 
@@ -167,7 +176,7 @@ Use it whenever a primitive's startup must follow another's. Examples:
 - **Don't expose `dispose()` on a ydoc-bound attachment.** Destroy the Y.Doc.
 - **Don't duck-type an attachment.** If you need to brand it, use a `Symbol.for` marker. See `skills/typescript`: runtime shape-checking is a code smell.
 - **Don't take an `id` on a ydoc-bound primitive.** Use `ydoc.guid`.
-- **Don't use `createX` for a side-effectful primitive.** If it registers listeners, it's `attach*`.
+- **Don't use `createX` for a side-effectful primitive that takes a subject argument.** If it registers listeners on a subject passed in, it's `attach*`. (Module-singleton factories that bootstrap themselves are still `create*` ; see scope section.)
 - **Don't introduce a separate top-level encrypted-X helper.** When a primitive must derive keys and construct sibling handles atomically, pass the definition records as named slots on a single call (`attachEncryption(ydoc, { keyring, tables, kv })`) and return the constructed handles destructurable at the call site.
 
 ## Reference implementations

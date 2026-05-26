@@ -1,5 +1,4 @@
 import { isTauri } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 import { nanoid } from 'nanoid/non-secure';
 import { Ok } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
@@ -18,18 +17,22 @@ import { deviceConfig } from '$lib/state/device-config.svelte';
 /**
  * Creates the manual recorder with reactive state.
  *
- * State is owned by this module via Svelte's $state rune for synchronous
+ * State is owned by this module via Svelte's `$state` rune for synchronous
  * reactivity. Mirrors the shape of `vadRecorder` in `vad-recorder.svelte.ts`:
  *
  * - Reactive access: `manualRecorder.state` (triggers effects on change)
  * - Operations: `manualRecorder.startRecording({ toastId })` etc.
  * - Device enumeration as a TanStack Query for loading states in selectors
  *
+ * State writes flow through a single channel: every recorder service exposes
+ * `subscribe(handler)`, this module registers one handler at construction
+ * time, and the active service drives `_state` directly. Inactive services
+ * (e.g. a CPAL subscription in web mode) emit nothing.
+ *
  * On Tauri, state is bootstrapped from the active service's `getRecorderState`
- * once at module init (a Rust CPAL session can outlive a JS reload). A Tauri
- * `recorder:state-changed` listener is registered to receive future Rust-side
- * transitions. The Rust emit side is not yet wired; the listener is a no-op
- * until that lands and harmless in the meantime.
+ * once at module init (a Rust CPAL session can outlive a JS reload). The
+ * subscribe handler covers every subsequent transition, including ones Rust
+ * initiates without a JS command (future auto-stop, device disconnect, etc.).
  */
 function recorderService() {
 	if (!isTauri()) return services.navigatorRecorder;
@@ -74,11 +77,11 @@ function createManualRecorder() {
 			if (data) _state = data;
 		});
 
-	if (isTauri()) {
-		void listen<WhisperingRecordingState>('recorder:state-changed', (event) => {
-			_state = event.payload;
-		});
-	}
+	const writeState = (state: WhisperingRecordingState) => {
+		_state = state;
+	};
+	services.navigatorRecorder.subscribe(writeState);
+	if (isTauri()) desktopServices.cpalRecorder.subscribe(writeState);
 
 	return {
 		get state(): WhisperingRecordingState {
@@ -113,7 +116,6 @@ function createManualRecorder() {
 				});
 			}
 
-			_state = 'RECORDING';
 			return Ok(deviceAcquisitionOutcome);
 		},
 
@@ -122,8 +124,6 @@ function createManualRecorder() {
 				await recorderService().stopRecording({
 					sendStatus: (options) => notify.loading({ id: toastId, ...options }),
 				});
-
-			_state = 'IDLE';
 
 			if (stopRecordingError) {
 				return WhisperingErr({
@@ -140,8 +140,6 @@ function createManualRecorder() {
 				await recorderService().cancelRecording({
 					sendStatus: (options) => notify.loading({ id: toastId, ...options }),
 				});
-
-			_state = 'IDLE';
 
 			if (cancelRecordingError) {
 				return WhisperingErr({

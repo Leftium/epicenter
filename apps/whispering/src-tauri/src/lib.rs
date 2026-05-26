@@ -1,4 +1,5 @@
 use log::{info, warn};
+use std::sync::Mutex;
 use tauri::Manager;
 use tauri_plugin_aptabase::EventTracker;
 use tauri_plugin_log::{Target, TargetKind};
@@ -6,8 +7,9 @@ use tauri_plugin_log::{Target, TargetKind};
 pub mod recorder;
 use recorder::commands::{
     cancel_recording, close_recording_session, enumerate_recording_devices,
-    get_current_recording_id, init_recording_session, start_recording, stop_recording, AppData,
+    get_current_recording_id, init_recording_session, start_recording, stop_recording,
 };
+use recorder::recorder::Recorder;
 
 pub mod transcription;
 use transcription::{
@@ -130,7 +132,7 @@ pub async fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
-        .manage(AppData::new())
+        .manage(Mutex::new(Recorder::new()))
         .manage(ModelManager::new());
 
     #[cfg(desktop)]

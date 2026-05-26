@@ -1,6 +1,6 @@
 import { Ok, type Result } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
-import { defineMutation } from '$lib/query/client';
+import { defineMutation } from '$lib/rpc/client';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { desktopServices } from '$lib/services/desktop';
 

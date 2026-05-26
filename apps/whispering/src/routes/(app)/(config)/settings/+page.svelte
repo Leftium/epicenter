@@ -6,7 +6,7 @@
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { ALWAYS_ON_TOP_MODE_OPTIONS } from '$lib/constants/ui';
 	import { notify } from '$lib/operations/notify';
-	import { desktopRpc } from '$lib/query/desktop';
+	import { desktopRpc } from '$lib/rpc/desktop';
 	import { settings } from '$lib/state/settings.svelte';
 
 	const retentionItems = [

@@ -10,7 +10,7 @@
 	import { deliverTransformationResult } from '$lib/operations/delivery';
 	import { notify } from '$lib/operations/notify';
 	import { sound } from '$lib/operations/sound';
-	import { rpc } from '$lib/query';
+	import { rpc } from '$lib/rpc';
 
 	const combobox = useCombobox();
 

@@ -1,10 +1,10 @@
 # State
 
-Singleton reactive state that stays in sync with the application. Unlike the query layer which uses stale-while-revalidate caching, state modules maintain live state that updates immediately and persists across the application lifecycle.
+Singleton reactive state that stays in sync with the application. Unlike the rpc layer which uses stale-while-revalidate caching, state modules maintain live state that updates immediately and persists across the application lifecycle.
 
-## When to Use State vs Query Layer
+## When to Use State vs RPC Layer
 
-| Aspect | `$lib/state/` | `$lib/query/` |
+| Aspect | `$lib/state/` | `$lib/rpc/` |
 |--------|----------------|---------------|
 | **Pattern** | Singleton reactive state | Stale-while-revalidate (TanStack Query) |
 | **State Location** | Module-level `$state` runes | TanStack Query cache |
@@ -117,7 +117,7 @@ await vadRecorder.stopActiveListening();
 
 ## Why VAD Lives Here
 
-The VAD recorder doesn't fit the query layer pattern because:
+The VAD recorder doesn't fit the rpc layer pattern because:
 
 1. **Live state**: VAD state (`IDLE` → `LISTENING` → `SPEECH_DETECTED`) must update immediately as hardware events occur
 2. **Singleton nature**: Only one VAD instance can exist at a time
@@ -133,10 +133,10 @@ Create a new state module when you need:
 3. **Application-lifetime persistence** (not request-scoped)
 4. **Hardware or system state** that can't be "refreshed" like data
 
-Use the query layer (`$lib/query/`) instead when you need:
+Use the rpc layer (`$lib/rpc/`) instead when you need:
 - Data fetching with caching
 - Mutations with optimistic updates
 - Background refresh and stale-while-revalidate
 - TanStack Query devtools integration
 
-See `$lib/query/README.md` for the query layer documentation.
+See `$lib/rpc/README.md` for the rpc layer documentation.

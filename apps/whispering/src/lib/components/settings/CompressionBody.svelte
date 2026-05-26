@@ -10,7 +10,7 @@
 	import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { desktopRpc } from '$lib/query/desktop';
+	import { desktopRpc } from '$lib/rpc/desktop';
 	import {
 		FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
 		FFMPEG_SMALLEST_COMPRESSION_OPTIONS,

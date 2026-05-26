@@ -1,6 +1,6 @@
 import { Ok, type Result } from 'wellcrafted/result';
 import { runTransformation } from '$lib/operations/transform';
-import { defineMutation } from '$lib/query/client';
+import { defineMutation } from '$lib/rpc/client';
 import {
 	WhisperingErr,
 	type WhisperingError,

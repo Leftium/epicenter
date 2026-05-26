@@ -1,5 +1,5 @@
 import { Ok } from 'wellcrafted/result';
-import { defineMutation, defineQuery, queryClient } from '$lib/query/client';
+import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
 import { WhisperingErr } from '$lib/result';
 import { desktopServices } from '$lib/services/desktop';
 

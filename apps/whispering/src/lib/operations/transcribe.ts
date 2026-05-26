@@ -5,11 +5,11 @@ import {
 } from '$lib/constants/languages';
 import { analytics } from '$lib/operations/analytics';
 import { notify } from '$lib/operations/notify';
-import { deepgramErrorToWhisperingErr } from '$lib/query/transcription-errors/deepgram';
-import { elevenlabsErrorToWhisperingErr } from '$lib/query/transcription-errors/elevenlabs';
-import { groqErrorToWhisperingErr } from '$lib/query/transcription-errors/groq';
-import { mistralErrorToWhisperingErr } from '$lib/query/transcription-errors/mistral';
-import { openaiErrorToWhisperingErr } from '$lib/query/transcription-errors/openai';
+import { deepgramErrorToWhisperingErr } from '$lib/rpc/transcription-errors/deepgram';
+import { elevenlabsErrorToWhisperingErr } from '$lib/rpc/transcription-errors/elevenlabs';
+import { groqErrorToWhisperingErr } from '$lib/rpc/transcription-errors/groq';
+import { mistralErrorToWhisperingErr } from '$lib/rpc/transcription-errors/mistral';
+import { openaiErrorToWhisperingErr } from '$lib/rpc/transcription-errors/openai';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { services } from '$lib/services';
 import { desktopServices } from '$lib/services/desktop';

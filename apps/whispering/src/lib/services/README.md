@@ -4,10 +4,10 @@ The services layer provides pure, isolated business logic with no UI dependencie
 
 ## How Services Are Consumed
 
-Services are consumed through the query layer, which wraps them with caching, reactivity, and state management. Here's a real example showing how isolated, testable services are used:
+Services are consumed through the rpc layer, which wraps them with caching, reactivity, and state management. Here's a real example showing how isolated, testable services are used:
 
 ```typescript
-// From: /lib/query/transcription.ts
+// From: /lib/rpc/transcription.ts
 async function transcribeBlob(
 	blob: Blob,
 ): Promise<Result<string, WhisperingError>> {
@@ -45,7 +45,7 @@ async function transcribeBlob(
 - **Consistent**: All return `Result<T, E>` types for uniform error handling
 - **Platform-agnostic**: Same interface works on desktop and web
 
-The query layer injects configuration (like `settings.value`) and handles caching/reactivity, while services focus purely on business logic.
+The rpc layer injects configuration (like `settings.value`) and handles caching/reactivity, while services focus purely on business logic.
 
 ### Build-Time Platform Injection
 
@@ -72,10 +72,10 @@ Platform-specific implementations are minimal - just 6 services with ~57 lines p
 
 > **💡 Dependency Injection Strategy**
 >
-> Services only use dependency injection for **build-time platform differences** (desktop vs web). When we need to switch implementations based on **reactive variables** like user settings, that logic lives in the query layer instead.
+> Services only use dependency injection for **build-time platform differences** (desktop vs web). When we need to switch implementations based on **reactive variables** like user settings, that logic lives in the rpc layer instead.
 >
 > - **Services**: Static platform detection (`ClipboardServiceLive` chooses Tauri vs Browser APIs)
-> - **Query Layer**: Dynamic implementation switching based on `settings.value['transcription.selectedTranscriptionService']`
+> - **RPC Layer**: Dynamic implementation switching based on `settings.value['transcription.selectedTranscriptionService']`
 
 ## Core Concepts
 
@@ -152,7 +152,7 @@ type DeviceStreamError = InferErrors<typeof DeviceStreamError>;
 The error handling follows a clear pattern across three layers:
 
 1. **Service Layer**: Returns domain-specific errors via `defineErrors`
-2. **Query Layer**: Wraps service errors into `WhisperingError` objects
+2. **RPC Layer**: Wraps service errors into `WhisperingError` objects
 3. **UI Layer**: Displays `WhisperingError` objects in toasts without re-wrapping
 
 This pattern ensures consistent error handling and avoids double-wrapping errors.
@@ -195,7 +195,7 @@ This pattern ensures consistent error handling and avoids double-wrapping errors
 
 ### Important: Services Don't Know About UI
 
-Services should **never** import or use `WhisperingError`. That transformation happens in the query layer:
+Services should **never** import or use `WhisperingError`. That transformation happens in the rpc layer:
 
 ```typescript
 // ❌ WRONG - Service shouldn't know about WhisperingError
@@ -211,7 +211,7 @@ const MyError = defineErrors({
 type MyError = InferErrors<typeof MyError>;
 ```
 
-The query layer is responsible for transforming service errors into `WhisperingError` for toast notifications. This separation ensures:
+The rpc layer is responsible for transforming service errors into `WhisperingError` for toast notifications. This separation ensures:
 
 - Services remain pure and testable
 - Error types can evolve independently
@@ -269,7 +269,7 @@ This example shows:
 
 ### Anti-Pattern: Double Wrapping
 
-Never wrap an already-wrapped error. The query layer handles the single transformation from service error to `WhisperingError`:
+Never wrap an already-wrapped error. The rpc layer handles the single transformation from service error to `WhisperingError`:
 
 ```typescript
 // ❌ BAD: Service returns tagged error, query wraps it, then UI wraps again
@@ -282,7 +282,7 @@ if (error) {
 
 // ✅ GOOD: Service returns tagged error, query wraps it, UI uses directly
 if (error) {
-	notify.error.execute(error); // Already a WhisperingError from query layer
+	notify.error.execute(error); // Already a WhisperingError from rpc layer
 }
 ```
 
@@ -367,14 +367,14 @@ export const ClipboardServiceLive = window.__TAURI_INTERNALS__
 
 ## Configuration Injection
 
-Services are pure and accept configuration as parameters. We never import/use global variables like `settings.value`—that's for the query layer.
+Services are pure and accept configuration as parameters. We never import/use global variables like `settings.value`—that's for the rpc layer.
 
 ```typescript
 // ✅ CORRECT - Pure service
 export function createCompletionService() {
 	return {
 		async complete({ apiKey, prompt }) {
-			const client = new OpenAI({ apiKey }); // Injected from query layer
+			const client = new OpenAI({ apiKey }); // Injected from rpc layer
 			// ...
 		},
 	};
@@ -450,9 +450,9 @@ export const MyServiceLive = window.__TAURI_INTERNALS__
 export { MyServiceLive as myService } from './my-service';
 ```
 
-## Services vs Query Layer
+## Services vs RPC Layer
 
-| Aspect             | Services              | Query Layer            |
+| Aspect             | Services              | RPC Layer            |
 | ------------------ | --------------------- | ---------------------- |
 | **State**          | Stateless             | Stateful (cache)       |
 | **Dependencies**   | Explicit parameters   | Settings, state        |
@@ -460,4 +460,4 @@ export { MyServiceLive as myService } from './my-service';
 | **Usage**          | Direct function calls | TanStack Query         |
 | **Reactivity**     | None                  | Reactive subscriptions |
 
-Services provide pure business logic. The query layer adds caching, reactivity, and UI integration.
+Services provide pure business logic. The rpc layer adds caching, reactivity, and UI integration.

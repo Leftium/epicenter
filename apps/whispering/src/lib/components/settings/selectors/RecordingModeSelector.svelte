@@ -10,7 +10,7 @@
 		RECORDING_MODE_OPTIONS,
 		type RecordingMode,
 	} from '$lib/constants/audio';
-	import { rpc } from '$lib/query';
+	import { rpc } from '$lib/rpc';
 	import { settings } from '$lib/state/settings.svelte';
 
 	let { class: className }: { class?: string } = $props();

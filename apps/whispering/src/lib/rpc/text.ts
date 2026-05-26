@@ -1,4 +1,4 @@
-import { defineQuery } from '$lib/query/client';
+import { defineQuery } from '$lib/rpc/client';
 import { services } from '$lib/services';
 
 const textKeys = {

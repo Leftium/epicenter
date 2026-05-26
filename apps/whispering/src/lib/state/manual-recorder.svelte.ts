@@ -4,7 +4,7 @@ import { nanoid } from 'nanoid/non-secure';
 import { Ok } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { PATHS } from '$lib/constants/paths';
-import { defineQuery } from '$lib/query/client';
+import { defineQuery } from '$lib/rpc/client';
 import { WhisperingErr } from '$lib/result';
 import { services } from '$lib/services';
 import { desktopServices } from '$lib/services/desktop';

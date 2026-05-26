@@ -51,7 +51,7 @@
 	import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
 	import { PATHS } from '$lib/constants/paths';
 	import { notify } from '$lib/operations/notify';
-	import { rpc } from '$lib/query';
+	import { rpc } from '$lib/rpc';
 	import { services } from '$lib/services';
 	import { type Recording, recordings } from '$lib/state/recordings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';

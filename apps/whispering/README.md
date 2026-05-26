@@ -622,7 +622,7 @@ Whispering showcases the power of modern web development as a comprehensive exam
 Whispering uses a clean three-layer architecture with 97% code sharing between desktop and web versions:
 
 - **Service Layer**: Platform-agnostic business logic with Result types
-- **Query Layer**: Reactive data management with caching
+- **RPC Layer**: Reactive data management with caching
 - **UI Layer**: Clean Svelte 5 components with minimal logic
 
 The architecture achieves extensive code reuse through build-time platform detection, allowing the same codebase to run natively on desktop (via Tauri) and in the browser.
@@ -669,7 +669,7 @@ We welcome contributions! Whispering is built with care and attention to clean, 
 - Follow WellCrafted best practices: explicit errors with `Result<T, E>`, structured `TaggedError` objects, and comprehensive error context
 - Study the existing patterns in these key directories:
   - **[Services Architecture](./src/lib/services/README.md)** - Platform-agnostic business logic
-  - **[Query Layer Patterns](./src/lib/query/README.md)** - RPC pattern and reactive state
+  - **[RPC Layer Patterns](./src/lib/rpc/README.md)** - RPC pattern and reactive state
   - **[Constants Organization](./src/lib/constants/README.md)** - Type-safe configuration
 
 **→ New to the codebase?** Start with the [Architecture Deep Dive](./ARCHITECTURE.md) to understand how everything fits together.
@@ -832,7 +832,7 @@ Adding a new transcription service involves four main steps:
    ] as const satisfies SatisfiedTranscriptionService[];
    ```
 
-3. **Wire up the query layer** in `src/lib/query/transcription.ts`:
+3. **Wire up the rpc layer** in `src/lib/rpc/transcription.ts`:
 
    ```typescript
    // Add to the switch statement in transcribeBlob function
@@ -968,7 +968,7 @@ AI transformations in Whispering use completion services that can be integrated 
    };
    ```
 
-3. **Wire up the transformation handler** in `src/lib/query/transformer.ts`:
+3. **Wire up the transformation handler** in `src/lib/rpc/transformer.ts`:
 
    ```typescript
    // Add a new case in the handleStep function's prompt_transform switch statement

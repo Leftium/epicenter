@@ -1,5 +1,5 @@
 import type { Result } from 'wellcrafted/result';
-import { defineMutation } from '$lib/query/client';
+import { defineMutation } from '$lib/rpc/client';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { services } from '$lib/services';
 import type { DownloadError } from '$lib/services/download';

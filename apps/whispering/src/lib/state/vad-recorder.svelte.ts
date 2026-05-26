@@ -2,7 +2,7 @@ import { MicVAD, utils } from '@ricky0123/vad-web';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, tryAsync, trySync } from 'wellcrafted/result';
 import type { VadState } from '$lib/constants/audio';
-import { defineQuery } from '$lib/query/client';
+import { defineQuery } from '$lib/rpc/client';
 import { WhisperingErr } from '$lib/result';
 import {
 	cleanupRecordingStream,

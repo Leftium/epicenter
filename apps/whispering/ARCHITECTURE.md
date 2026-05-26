@@ -2,11 +2,11 @@
 
 Whispering uses a clean three-layer architecture that achieves **extensive code sharing** between the desktop app (Tauri) and web app. This is possible because of how we handle platform differences and separate business logic from UI concerns.
 
-**Quick Navigation:** [Service Layer](#service-layer---pure-business-logic--platform-abstraction) | [Query Layer](#query-layer---adding-reactivity-and-state-management) | [Error Handling](#error-handling-with-wellcrafted)
+**Quick Navigation:** [Service Layer](#service-layer---pure-business-logic--platform-abstraction) | [RPC Layer](#query-layer---adding-reactivity-and-state-management) | [Error Handling](#error-handling-with-wellcrafted)
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌──────────────┐
-│  UI Layer   │ --> │  Query Layer│ --> │ Service Layer│
+│  UI Layer   │ --> │  RPC Layer│ --> │ Service Layer│
 │ (Svelte 5)  │     │ (TanStack)  │     │   (Pure)     │
 └─────────────┘     └─────────────┘     └──────────────┘
       ↑                    │
@@ -57,14 +57,14 @@ This minimal platform-specific code demonstrates how the architecture maximizes 
 
 **→ Learn more:** [Services README](./src/lib/services/README.md) | [Constants Organization](./src/lib/constants/README.md)
 
-## Query Layer - Adding Reactivity and State Management
+## RPC Layer - Adding Reactivity and State Management
 
-The query layer is where reactivity gets injected on top of pure services. It wraps service functions with TanStack Query and handles two key responsibilities:
+The rpc layer is where reactivity gets injected on top of pure services. It wraps service functions with TanStack Query and handles two key responsibilities:
 
 **Runtime Dependency Injection** - Dynamically switching service implementations based on user settings:
 
 ```typescript
-// From transcription query layer
+// From transcription rpc layer
 async function transcribeBlob(blob: Blob) {
   const selectedService = settings.value['transcription.selectedTranscriptionService'];
 
@@ -85,7 +85,7 @@ async function transcribeBlob(blob: Blob) {
 
 **Workspace State** - After migrating to Yjs CRDTs, domain data (recordings, transformations, transformation runs) lives in reactive workspace state modules (`$lib/state/*.svelte.ts`). These use SvelteMap backed by Yjs documents for instant reactivity—no cache invalidation or optimistic updates needed.
 
-The query layer's role has narrowed to things that don't fit in CRDTs:
+The rpc layer's role has narrowed to things that don't fit in CRDTs:
 
 - **External APIs**: Transcription services, LLM completions (`rpc.transcription.*`, `rpc.transformer.*`)
 - **Microphone enumeration**: Async device list with loading states (`manualRecorder.enumerateDevices`). Recorder state itself lives in `$lib/state/manual-recorder.svelte.ts` and `$lib/state/vad-recorder.svelte.ts` as `$state`, not queries.
@@ -109,11 +109,11 @@ The query layer's role has narrowed to things that don't fit in CRDTs:
 
 This design keeps services pure and platform-agnostic while giving the UI immediate reactivity for domain data and cached access for external resources.
 
-**→ Learn more:** [Query README](./src/lib/query/README.md) | [State README](./src/lib/state/README.md)
+**→ Learn more:** [RPC README](./src/lib/rpc/README.md) | [State README](./src/lib/state/README.md)
 
 ## Error Transformation
 
-The query layer also transforms service-specific errors into `WhisperingError` types that integrate seamlessly with the toast notification system. This happens inside `mutationFn` or `queryFn`, creating a clean boundary between business logic errors and UI presentation:
+The rpc layer also transforms service-specific errors into `WhisperingError` types that integrate seamlessly with the toast notification system. This happens inside `mutationFn` or `queryFn`, creating a clean boundary between business logic errors and UI presentation:
 
 ```typescript
 // Service returns domain-specific error
@@ -138,7 +138,7 @@ Whispering uses [WellCrafted](https://github.com/wellcrafted-dev/wellcrafted), a
 ## Architecture Patterns
 
 - **Service Layer**: Platform-agnostic business logic with Result types
-- **Query Layer**: Reactive data management with caching
+- **RPC Layer**: Reactive data management with caching
 - **RPC Pattern**: Unified API interface for non-CRUD operations (`rpc.audio.*`, `rpc.transcription.*`, `rpc.actions.*`)
 - **Dependency Injection**: Clean separation of concerns
 

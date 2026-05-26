@@ -16,7 +16,7 @@ export type { NotificationError, NotificationService } from './types';
  * This is a **service-layer** component that handles the technical details
  * of platform-specific notification APIs. Most application code should NOT
  * use this directly. Instead, use the higher-level `notify` API from the
- * query layer:
+ * rpc layer:
  *
  * ```typescript
  * // ❌ Don't use this service directly
@@ -24,13 +24,13 @@ export type { NotificationError, NotificationService } from './types';
  * await NotificationServiceLive.notify({ title: 'Hello' });
  *
  * // ✅ Use the notify API instead
- * import { notify } from '$lib/query';
+ * import { notify } from '$lib/rpc';
  * await notify.success({ title: 'Hello' });
  * ```
  *
  * ## Why use `notify` instead?
  *
- * The `notify` API in the query layer:
+ * The `notify` API in the rpc layer:
  * - Shows BOTH toast (in-app) AND OS notifications
  * - Provides better error handling and logging
  * - Offers a cleaner API with variant methods

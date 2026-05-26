@@ -38,7 +38,7 @@
 		stopVadRecording,
 	} from '$lib/operations/recording';
 	import { uploadRecordings } from '$lib/operations/upload';
-	import { rpc } from '$lib/query';
+	import { rpc } from '$lib/rpc';
 	import { WhisperingErr } from '$lib/result';
 	import { services } from '$lib/services';
 	import { desktopServices } from '$lib/services/desktop';

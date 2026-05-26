@@ -16,7 +16,7 @@
 	import { deliverTranscriptionResult } from '$lib/operations/delivery';
 	import { notify } from '$lib/operations/notify';
 	import { sound } from '$lib/operations/sound';
-	import { rpc } from '$lib/query';
+	import { rpc } from '$lib/rpc';
 	import { recordings } from '$lib/state/recordings.svelte';
 	import { transformationRuns } from '$lib/state/transformation-runs.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';

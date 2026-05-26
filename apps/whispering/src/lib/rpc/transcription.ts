@@ -1,6 +1,6 @@
 import { Err, Ok, partitionResults, type Result } from 'wellcrafted/result';
 import { transcribeBlob } from '$lib/operations/transcribe';
-import { defineMutation, queryClient } from '$lib/query/client';
+import { defineMutation, queryClient } from '$lib/rpc/client';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { services } from '$lib/services';
 import type { Recording } from '$lib/state/recordings.svelte';

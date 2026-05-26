@@ -1,5 +1,5 @@
 import type { Accessor } from '@tanstack/svelte-query';
-import { defineQuery } from '$lib/query/client';
+import { defineQuery } from '$lib/rpc/client';
 import { services } from '$lib/services';
 
 const audioKeys = {

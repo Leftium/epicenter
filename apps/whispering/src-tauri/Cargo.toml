@@ -47,6 +47,15 @@ hound = "3.5"
 lazy_static = "1.4"
 tempfile = "3.8"
 rubato = "0.15"
+# Container demux + non-Opus decode. Defaults include WAV, FLAC, OGG, MKV/WebM,
+# Vorbis, PCM. We opt in to MP3, AAC, and ISO MP4 for the file-upload path and
+# Safari's MediaRecorder output. We do NOT enable Symphonia's incomplete `opus`
+# feature; Opus packets are decoded by libopus via `audiopus` instead.
+symphonia = { version = "0.5", features = ["mp3", "aac", "isomp4"] }
+# libopus FFI. Decoder is used in PR 1; encoder will be used in PR 2 for cloud
+# upload compression. Vendored libopus is built by audiopus_sys (requires
+# CMake + libclang on the build host).
+audiopus = "0.3.0-rc.0"
 tauri-plugin-macos-permissions = "2.3.0"
 fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
 regex = "1"

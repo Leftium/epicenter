@@ -95,6 +95,8 @@ export type HeadDoc = ReturnType<typeof createHeadDoc>;
 
 With `ReturnType`, the returned object is the public type source. Put consumer-facing JSDoc directly on the returned method or getter so hover, completion, and Go to Definition all land on the same member.
 
+JSDoc preservation and Go-to-Definition flow from the same choice: where the consumer's tools resolve to. Method shorthand in zone 4 keeps both on the real definition. A hand-written interface annotation, a destructure-re-export of a module-level object, or a wrapper that just re-emits a function are the regressions that split them apart. See `typescript` "Go-to-Definition Awareness" for the navigation-side rules.
+
 ## Why This Works
 
 1. **JSDoc attaches to the method definition site** - when methods are inline in the return object, the JSDoc is directly on the property TypeScript sees

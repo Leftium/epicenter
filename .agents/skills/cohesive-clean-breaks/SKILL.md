@@ -287,6 +287,19 @@ core imports app concerns     move integration to the edge package
 
 The best cleanup often moves a boundary instead of shortening a function.
 
+## Go-to-Definition Awareness
+
+A clean public shape is also a navigable one. When choosing how to expose types and values across a package boundary, always consider Go-to-Definition: a caller pressing Go-to-Def should land on the actual source of truth, not on an alias, a re-export hop, or a passthrough wrapper. If a design choice forces an extra navigation hop, name what it earns (real validation, published contract, multi-impl port). If nothing earns it, collapse the hop.
+
+Specific regressions worth flagging during a clean-break review:
+
+- Re-export chains across packages where each hop adds nothing.
+- Adapter / proxy boundaries that wrap a real function with no behavior change.
+- Module-level objects that get destructure-re-exported, so Go-to-Def lands on the destructuring line.
+- Public type aliases hand-written over what is structurally the factory's return shape (prefer `ReturnType<typeof createThing>` so navigation lands on the returned member).
+
+See `typescript` "Go-to-Definition Awareness" for the per-file mechanics.
+
 ## Consumer Ergonomics Test
 
 Read the final API as a new caller.
@@ -475,6 +488,7 @@ Did the file tree change to match the new ownership?
 Did every validation move to the earliest layer that can know the truth?
 Would mentally inlining each new helper make the code clearer?
 Did I run the asymmetric wins pass before adding another invariant?
+Does Go-to-Def from a typical call site land on the real definition, or on an alias, re-export, or wrapper?
 ```
 
 If any answer is no, keep simplifying.

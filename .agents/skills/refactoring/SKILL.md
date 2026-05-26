@@ -331,6 +331,19 @@ WorkspaceKeyResponse contract type             grep for the type → zero consum
 
 The sweep is a separate commit from the refactor. Label it `refactor(scope): remove dead X` or `refactor(scope): fix stale JSDoc after Y`.
 
+## Go-to-Definition Check
+
+After a refactor that moves, renames, or re-exports a symbol, press Go-to-Def from a real call site. The cursor should land on the actual definition, not on an alias line, a re-export passthrough, or a destructure-re-export of a module-level object. If it lands somewhere worse than before, the refactor regressed navigation: fix it before committing.
+
+Common regressions introduced by refactors:
+
+- Re-export chains added during file moves where the intermediate file does nothing.
+- Module-level `const x = {...} satisfies T; export const { fn } = x;` introduced "for symmetry" that lands Go-to-Def on the destructuring line.
+- Wrapper / adapter functions inserted with no behavior change.
+- Hand-written interface annotation added to a factory whose `ReturnType<typeof ...>` already covered it.
+
+See `typescript` "Go-to-Definition Awareness" for the per-shape mechanics.
+
 ## Anti-Patterns
 
 - **Premature extraction**: Extracting a 1-3 line block used 2-3 times into a named helper. The indirection costs more than the duplication. See "Prefer Inline for Trivial Duplications" above.

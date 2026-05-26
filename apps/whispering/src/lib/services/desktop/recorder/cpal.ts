@@ -88,7 +88,13 @@ function createCpalRecorder(): RecorderService {
 			);
 		};
 
-		const teardown = () => {
+		// Takes `recording` as an argument rather than closing over the const
+		// declared below. Both work because teardown only runs from stop/cancel
+		// handlers (which can only fire after `recording` is bound), but the
+		// explicit argument keeps the function TDZ-safe if a future caller
+		// invokes teardown from a path declared above the `recording = ...`
+		// initializer.
+		const teardown = (recording: Recording) => {
 			if (activeRecording === recording) activeRecording = null;
 			if (tauriUnlisten) {
 				void tauriUnlisten.then((unlisten) => unlisten());
@@ -105,13 +111,13 @@ function createCpalRecorder(): RecorderService {
 				const { data: audioRecording, error: stopRecordingError } =
 					await invoke<AudioRecording>('stop_recording');
 				if (stopRecordingError) {
-					teardown();
+					teardown(recording);
 					return RecorderError.StopFailed({ cause: stopRecordingError });
 				}
 
 				const { filePath } = audioRecording;
 				if (!filePath) {
-					teardown();
+					teardown(recording);
 					return RecorderError.NoFilePath();
 				}
 
@@ -123,7 +129,7 @@ function createCpalRecorder(): RecorderService {
 				const { data: blob, error: readRecordingFileError } =
 					await FsServiceLive.pathToBlob(filePath);
 				if (readRecordingFileError) {
-					teardown();
+					teardown(recording);
 					return RecorderError.ReadFileFailed({
 						cause: readRecordingFileError,
 					});
@@ -141,7 +147,7 @@ function createCpalRecorder(): RecorderService {
 					console.error('Failed to close recording session:', closeError);
 				}
 
-				teardown();
+				teardown(recording);
 				return Ok({ blob, recordingId });
 			},
 
@@ -181,7 +187,7 @@ function createCpalRecorder(): RecorderService {
 					console.error('Failed to close recording session:', closeError);
 				}
 
-				teardown();
+				teardown(recording);
 				return Ok({ status: 'cancelled' });
 			},
 

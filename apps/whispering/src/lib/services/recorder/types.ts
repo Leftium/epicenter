@@ -227,6 +227,8 @@ export type NavigatorRecordingParams = BaseRecordingParams & {
 
 /**
  * Canonical audio artifact emitted by every recorder path.
+ * Describes only the audio payload. Capture-session metadata such as
+ * `recordingId` and `durationMs` belongs to the `Recording.stop()` result.
  *
  * Two variants only:
  * - `pcm`: in-memory mono PCM @ 16 kHz from the cpal recorder. Cheapest

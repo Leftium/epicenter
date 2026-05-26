@@ -696,10 +696,10 @@ async function prepareForService(artifact: AudioArtifact, service: string): Prom
 - `src-tauri/src/lib.rs`: registered `encode_upload_pcm`.
 
 **TypeScript**:
-- `src/lib/services/recorder/types.ts`: added `AudioArtifact` tagged union (`pcm | file | blob`). Updated `Recording.stop` to return `{ artifact, recordingId, durationMs }`. Added `mode` to `CpalRecordingParams`. Removed unused `RecorderError` variants (`NotRecording`, `NoFilePath`, `EmptyRecording`, `FileDeleteFailed`).
-- `src/lib/services/recorder/artifact.ts` new: `artifactToBlob` materializes any artifact to a `Blob` (in-memory WAV synthesis for `pcm`, fs read for `file`, identity for `blob`).
+- `src/lib/services/recorder/types.ts`: added `AudioArtifact` tagged union (`pcm | blob`). The artifact describes the audio payload only; `Recording.stop` returns `{ artifact, recordingId, durationMs }` for capture-session metadata. Removed unused `RecorderError` variants (`NotRecording`, `NoFilePath`, `EmptyRecording`, `FileDeleteFailed`).
+- `src/lib/services/recorder/artifact.ts` new: `artifactToBlob` materializes any artifact to a `Blob` (in-memory WAV synthesis for `pcm`, identity for `blob`).
 - `src/lib/services/recorder/cpal.tauri.ts` rewritten: `Recording.stop` returns the artifact; `samples: number[]` from IPC is hydrated to `Float32Array`; cancel goes through new `cancel_recording` command without the explicit `stop_recording`/file-delete dance.
-- `src/lib/services/recorder/navigator.ts`: stops emit `{ kind: 'blob', blob, durationSeconds }`.
+- `src/lib/services/recorder/navigator.ts`: stops emit `{ artifact: { kind: 'blob', blob }, recordingId, durationMs }`.
 - `src/lib/state/manual-recorder.svelte.ts`: passes `mode: 'dictation'` in cpal start params.
 - `src/lib/tauri.tauri.ts`: added `audioEncoder.encodePcmToOpusOgg({ samples, rate, channels })`.
 - `src/lib/operations/transcribe.ts`: new `transcribeArtifact(artifact)`. Pcm + cloud upload skips the WAV round-trip and goes straight through `encodePcmToOpusOgg`. `transcribeBlob` is now a thin wrapper for the history re-transcribe path.
@@ -728,7 +728,7 @@ The catalogs above sketched a richer config surface than the work actually needs
 - **Dropped `RecorderPolicy` struct and `SinkKind` enum**: every axis is determined by `RecorderMode`. The struct was a "would be nice if we ever needed it" speculation; nothing varies independently. Now `recorder.rs::init_session` and `run_consumer` match on `RecorderMode` directly.
 - **Dropped `AudioChunk` enum**: the wrapper had one variant (`Samples(Vec<f32>)`). The channel is now `mpsc::Sender<Vec<f32>>` directly.
 - **Dropped `Default for RecorderMode` and `mode: Option<RecorderMode>` in the Tauri command**: the JS caller always passes `mode` explicitly. The Option/default was defensive ceremony.
-- **Dropped `durationSeconds` from `AudioArtifact::Blob`**: four of five `kind: 'blob'` producers passed `0` because JS does not know the duration without decoding. Now only `pcm` and `file` carry `durationSeconds` (Rust computes it). The canonical "how long was this recording" number lives on `Recording.stop`'s return.
+- **Dropped `durationSeconds` from `AudioArtifact`**: blob producers cannot know duration without decoding, and PCM duration is derivable from `samples`, `rate`, and `channels`. The canonical "how long was this recording" number lives on `Recording.stop`'s return.
 - **Tightened cancel**: `cancel_recording` now does the full Rust-side cleanup in one call; the JS-side follow-up `close_recording_session` invoke was removed. One IPC round trip per cancel instead of two.
 - **Trimmed `recorder/mod.rs` re-exports**: removed `AudioContainer` and `RecorderPolicy` from the public surface (they were unused outside the module).
 

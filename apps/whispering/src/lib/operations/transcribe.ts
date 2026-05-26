@@ -29,10 +29,10 @@ function isUploadTranscriptionService(
 }
 
 /**
- * Heuristic that catches WAV blobs (the longform `File` artifact form
- * after `pathToBlob`, plus any legacy WAV inputs). The Opus encoder
- * rejects non-WAV input anyway; this avoids paying the IPC round-trip
- * when we already know the blob is something else.
+ * Heuristic that catches WAV blobs from synthesized PCM, VAD captures,
+ * file uploads, history replays, and legacy WAV inputs. The Opus encoder
+ * rejects non-WAV input anyway; this avoids paying the IPC round-trip when
+ * we already know the blob is something else.
  */
 function blobLooksLikeWav(blob: Blob): boolean {
 	const type = blob.type.toLowerCase();
@@ -101,9 +101,8 @@ async function prepareForService(
 
 	const blob = artifactToBlob(artifact);
 
-	// WAV uploads (VAD captures, file uploads, history re-transcribes
-	// that came from a Pcm artifact's synthesized WAV): still worth
-	// compressing for cloud.
+	// WAV uploads and synthesized PCM blobs are still worth compressing
+	// for cloud transcription.
 	if (isUpload && tauri && blobLooksLikeWav(blob)) {
 		const { data: oggBlob, error: encodeError } =
 			await tauri.audioEncoder.encodeWavToOpusOgg(blob);
@@ -136,8 +135,8 @@ async function prepareForService(
  * Transcribe an audio artifact through the configured service. This is
  * the canonical entry point for recorder output. Cloud transcription of
  * a `Pcm` artifact skips the WAV synthesis + decode roundtrip entirely;
- * a `File` artifact takes the same encode-from-WAV path as before; a
- * `Blob` artifact (navigator + file upload) passes through unchanged.
+ * a `Blob` artifact (navigator, VAD, file upload, history replay) passes
+ * through unchanged unless it is a WAV blob for an upload service.
  */
 export async function transcribeArtifact(
 	artifact: AudioArtifact,

@@ -73,7 +73,7 @@
 
 	if (tauri) {
 		syncWindowAlwaysOnTopWithRecorderState();
-		syncIconWithRecorderState();
+		syncIconWithRecorderState(tauri);
 	}
 
 	$effect(() => {

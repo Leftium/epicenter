@@ -19,7 +19,6 @@
 	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { syncWindowAlwaysOnTopWithRecorderState } from '../_layout-utils/alwaysOnTop.svelte';
-	import { checkCompressionRecommendation } from '../_layout-utils/check-ffmpeg';
 	import { checkForUpdates } from '../_layout-utils/check-for-updates';
 	import {
 		resetGlobalShortcutsToDefaultIfDuplicates,
@@ -55,10 +54,7 @@
 			resetGlobalShortcutsToDefaultIfDuplicates();
 
 			// Desktop-only async operations - fire and forget
-			Promise.allSettled([
-				checkCompressionRecommendation(),
-				checkForUpdates(),
-			]);
+			Promise.allSettled([checkForUpdates()]);
 		} else {
 			// Browser extension context - notify that the Whispering tab is ready
 			// extension.notifyWhisperingTabReady(undefined);

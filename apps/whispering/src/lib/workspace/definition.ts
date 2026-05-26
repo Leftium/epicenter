@@ -19,7 +19,6 @@ import {
 	type TranscriptionServiceId,
 } from '$lib/constants/transcription';
 import { ALWAYS_ON_TOP_MODES } from '$lib/constants/ui/always-on-top';
-import { FFMPEG_DEFAULT_COMPRESSION_OPTIONS } from '$lib/services/desktop/ffmpeg';
 
 /**
  * The constants files type `*_IDS` as plain mutable arrays for ergonomics in
@@ -343,22 +342,6 @@ const transcription = {
 	'transcription.temperature': defineKv(
 		column.number({ minimum: 0, maximum: 1 }),
 		() => 0,
-	),
-	'transcription.compressionEnabled': defineKv(column.boolean(), () => false),
-	'transcription.compressionOptions': defineKv(
-		column.string(),
-		() => FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
-	),
-	/**
-	 * Whether to compress audio with libopus before uploading to cloud
-	 * transcription providers. `opus` runs the in-process Rust encoder and
-	 * uploads `.ogg`; `wav` uploads the original bytes untouched. The
-	 * encoder is Tauri-only, so the setting is a no-op on web (web uploads
-	 * MediaRecorder output unchanged regardless of this value).
-	 */
-	'transcription.uploadCompression': defineKv(
-		column.enum(['opus', 'wav']),
-		() => 'opus' as const,
 	),
 } as const;
 

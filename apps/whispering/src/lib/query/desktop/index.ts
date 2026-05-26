@@ -1,5 +1,4 @@
 import { autostart } from './autostart';
-import { ffmpeg } from './ffmpeg';
 import { globalShortcuts } from './shortcuts';
 import { tray } from './tray';
 
@@ -11,6 +10,5 @@ import { tray } from './tray';
 export const desktopRpc = {
 	autostart,
 	tray,
-	ffmpeg,
 	globalShortcuts,
 };

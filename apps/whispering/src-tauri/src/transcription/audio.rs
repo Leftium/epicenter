@@ -368,20 +368,11 @@ fn convert_audio_rust(audio_data: Vec<u8>) -> Result<Vec<u8>, TranscriptionError
     Ok(output_bytes)
 }
 
+/// Decode compressed audio (MP3, M4A, OGG, etc.) by streaming the bytes
+/// through FFmpeg's stdin. The output WAV is still written to a temp file
+/// because FFmpeg's WAV muxer stamps the byte-count fields in the header
+/// after the fact, which it cannot do on a non-seekable pipe.
 fn convert_audio_with_ffmpeg(audio_data: Vec<u8>) -> Result<Vec<u8>, TranscriptionError> {
-    let mut input_file = tempfile::Builder::new()
-        .suffix(".audio")
-        .tempfile()
-        .map_err(|e| TranscriptionError::AudioReadError {
-            message: format!("Failed to create temp file: {}", e),
-        })?;
-
-    input_file
-        .write_all(&audio_data)
-        .map_err(|e| TranscriptionError::AudioReadError {
-            message: format!("Failed to write audio data: {}", e),
-        })?;
-
     let output_file = tempfile::Builder::new()
         .suffix(".wav")
         .tempfile()
@@ -389,21 +380,24 @@ fn convert_audio_with_ffmpeg(audio_data: Vec<u8>) -> Result<Vec<u8>, Transcripti
             message: format!("Failed to create output file: {}", e),
         })?;
 
-    let output = {
+    let mut child = {
         let mut cmd = std::process::Command::new("ffmpeg");
         cmd.args(&[
-            "-i", &input_file.path().to_string_lossy(),
+            "-i", "-",
             "-ar", "16000",
             "-ac", "1",
             "-c:a", "pcm_s16le",
             "-y",
             &output_file.path().to_string_lossy(),
         ]);
+        cmd.stdin(std::process::Stdio::piped());
+        cmd.stdout(std::process::Stdio::null());
+        cmd.stderr(std::process::Stdio::piped());
         #[cfg(target_os = "windows")]
         {
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
-        cmd.output()
+        cmd.spawn()
     }
     .map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
@@ -412,10 +406,29 @@ fn convert_audio_with_ffmpeg(audio_data: Vec<u8>) -> Result<Vec<u8>, Transcripti
             }
         } else {
             TranscriptionError::AudioReadError {
-                message: format!("Failed to run ffmpeg: {}", e),
+                message: format!("Failed to spawn ffmpeg: {}", e),
             }
         }
     })?;
+
+    // Feed stdin from a worker thread so the parent can drain stderr
+    // concurrently. Without this, a chatty FFmpeg log on a large input
+    // would fill the stderr pipe buffer (~64 KiB) and deadlock: FFmpeg
+    // blocks on stderr write, we block on stdin write.
+    let mut stdin = child.stdin.take().expect("stdin was piped above");
+    let writer = std::thread::spawn(move || stdin.write_all(&audio_data));
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| TranscriptionError::AudioReadError {
+            message: format!("Failed to wait for ffmpeg: {}", e),
+        })?;
+
+    // The write result is intentionally not surfaced: if FFmpeg failed
+    // it closed stdin early and the real diagnostic is its stderr; if
+    // FFmpeg succeeded it consumed enough input to produce a valid WAV
+    // and any tail write error is noise.
+    let _ = writer.join().expect("stdin writer thread");
 
     if !output.status.success() {
         return Err(TranscriptionError::AudioReadError {

@@ -188,7 +188,9 @@ impl Recorder {
             .recv()
             .map_err(|e| format!("Worker dropped stop reply: {e}"))?;
         let artifact = result?;
-        info!("Recording stopped: {:.2}s", artifact.duration_seconds);
+        let duration_seconds =
+            artifact.samples.len() as f32 / artifact.rate as f32 / artifact.channels as f32;
+        info!("Recording stopped: {duration_seconds:.2}s");
         Ok(artifact)
     }
 
@@ -306,12 +308,10 @@ fn finalize(buffer: Vec<f32>, device_rate: u32) -> Result<AudioArtifact> {
         samples.resize(SHORT_RECORDING_PAD_SAMPLES, 0.0);
     }
 
-    let duration_seconds = samples.len() as f32 / TARGET_RATE as f32;
     Ok(AudioArtifact {
         samples,
         rate: TARGET_RATE,
         channels: 1,
-        duration_seconds,
     })
 }
 
@@ -600,12 +600,12 @@ mod tests {
             samples: vec![0.5, -0.5, 0.25],
             rate: 16_000,
             channels: 1,
-            duration_seconds: 0.000_1875,
         };
         let bytes = artifact.to_binary();
         assert_eq!(&bytes[0..4], 16_000u32.to_le_bytes());
         assert_eq!(&bytes[4..6], 1u16.to_le_bytes());
-        assert_eq!(&bytes[8..12], 0.000_1875f32.to_le_bytes());
-        assert_eq!(bytes.len(), 12 + 3 * 4);
+        assert_eq!(&bytes[6..8], 0u16.to_le_bytes());
+        assert_eq!(bytes.len(), 8 + 3 * 4);
+        assert_eq!(&bytes[8..12], 0.5f32.to_le_bytes());
     }
 }

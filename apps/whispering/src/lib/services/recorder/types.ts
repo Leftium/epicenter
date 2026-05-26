@@ -243,7 +243,6 @@ export type AudioArtifact =
 			samples: Float32Array;
 			rate: number;
 			channels: number;
-			durationSeconds: number;
 	  }
 	| {
 			kind: 'blob';

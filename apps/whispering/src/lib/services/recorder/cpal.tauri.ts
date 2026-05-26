@@ -19,8 +19,7 @@ import {
  *   bytes 0..4   : u32  rate
  *   bytes 4..6   : u16  channels
  *   bytes 6..8   : u16  reserved
- *   bytes 8..12  : f32  durationSeconds
- *   bytes 12..   : f32[] samples
+ *   bytes 8..    : f32[] samples
  *
  * The `Float32Array` is a zero-copy view over the IPC body, not a
  * decimal-decoded array of doubles. For a 30 s clip this collapses the
@@ -30,14 +29,12 @@ function parseArtifact(buffer: ArrayBuffer): Extract<AudioArtifact, { kind: 'pcm
 	const view = new DataView(buffer);
 	const rate = view.getUint32(0, true);
 	const channels = view.getUint16(4, true);
-	const durationSeconds = view.getFloat32(8, true);
-	const samples = new Float32Array(buffer, 12);
+	const samples = new Float32Array(buffer, 8);
 	return {
 		kind: 'pcm',
 		samples,
 		rate,
 		channels,
-		durationSeconds,
 	};
 }
 
@@ -132,7 +129,9 @@ function createCpalRecorder(): RecorderService {
 				}
 
 				const artifact = parseArtifact(buffer);
-				const durationMs = Math.round(artifact.durationSeconds * 1000);
+				const durationMs = Math.round(
+					(artifact.samples.length / artifact.rate / artifact.channels) * 1000,
+				);
 
 				sendStatus({
 					title: '🔄 Closing Session',

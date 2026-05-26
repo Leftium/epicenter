@@ -26,6 +26,8 @@
 
 	const keyRecorder = createKeyRecorder({
 		pressedKeys,
+		// Global shortcuts only exist on Tauri; this component renders only when the parent
+		// (a Tauri-gated settings page) is showing. `tauri!` is safe inside these callbacks.
 		onRegister: async (keyCombination: KeyboardEventSupportedKey[]) => {
 			if (shortcutValue) {
 				const { error: unregisterError } =

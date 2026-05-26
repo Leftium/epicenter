@@ -40,6 +40,7 @@
 				variant="outline"
 				size="sm"
 				onclick={async () => {
+					// Parent {#if tauri} block guarantees non-null; closures don't inherit Svelte template narrowing.
 					await tauri!.rpc.globalShortcuts.unregisterAll();
 					resetGlobalShortcuts();
 					notify.success({

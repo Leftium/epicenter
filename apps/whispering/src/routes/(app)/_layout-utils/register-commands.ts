@@ -122,6 +122,7 @@ export async function syncGlobalShortcutsWithSettings() {
 		})
 		.filter((item) => item !== null);
 
+	// Gated above with `if (!tauri) return`; the closure can't carry the narrowing.
 	const results = await Promise.all(
 		commandsWithAccelerators.map((item) =>
 			tauri!.rpc.globalShortcuts.registerCommand(item),

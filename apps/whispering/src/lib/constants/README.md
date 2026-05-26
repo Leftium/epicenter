@@ -83,7 +83,7 @@ import { OsServiceLive } from '$lib/services/os';
 export const IS_MACOS = OsServiceLive.type() === 'Darwin';
 ```
 
-Because OsServiceLive.type() remains stable after build time (services are injected conditionally based on `window.__TAURI_INTERNALS__`, which is available at build time), the constant caches this value for performance.
+Because `OsServiceLive.type()` returns a value that doesn't change for the life of the process, the constant caches it once at module load. The `os` service is dual-impl (web reads `navigator.userAgent`, Tauri reads `@tauri-apps/plugin-os`); Vite picks the right implementation via suffix files at build time.
 
 ## Import and Export Patterns
 

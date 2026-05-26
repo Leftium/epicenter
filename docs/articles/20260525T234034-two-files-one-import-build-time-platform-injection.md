@@ -114,60 +114,66 @@ Both files share the `ClipboardService` interface from `types.ts`. If one drifts
 
 ## The Tauri-only case
 
-This is where it gets interesting. Some services have no web equivalent. The file system. The system tray. Global shortcut registration. None of these have a browser counterpart we could reasonably stub with `navigator` APIs.
+Dual-impl services are the easy half. Some capabilities have no web counterpart: the file system, the system tray, global shortcut registration. There's nothing reasonable to stub with `navigator` APIs.
 
-The naive answer is: just don't import those services from web code. And mostly that's true. But Whispering has a few pages that exist in both builds and have a button that does something Tauri-only when clicked. The button's import path is statically reachable from web-bundled code, even though the button itself is gated by `window.__TAURI_INTERNALS__` and never fires on web.
-
-Vite still has to resolve that import. If there's no `.browser.ts`, the web build fails.
-
-So we keep a tiny stub file:
+Stuffing those into the same per-service folder pattern made them lie. The "browser implementation" was a throwing stub whose only job was to satisfy Vite's resolver on web. After several iterations, we collapsed all of them into one namespace file:
 
 ```ts
-// services/fs/index.browser.ts
-import { unreachable } from '$lib/services/_tauri-stub';
-import type * as Tauri from './index.tauri';
+// $lib/tauri.tauri.ts
+const tauriImpl = {
+  fs: { pathToBlob, pathToFile, pathsToFiles },
+  command: { execute, spawn },
+  permissions: { accessibility, microphone },
+  ffmpeg: { checkInstalled, compressAudioBlob },
+  tray: { setIcon },
+  globalShortcuts: { register, unregister, unregisterAll },
+  autostart: { isEnabled, enable, disable },
+  rpc: { /* TanStack-wrapped variants for the ones that need caching */ },
+};
 
-export const FsServiceLive = {
-  pathToBlob: unreachable,
-  pathToFile: unreachable,
-  pathsToFiles: unreachable,
-} satisfies typeof Tauri.FsServiceLive;
+export type Tauri = typeof tauriImpl;
+export const tauri: Tauri | null = tauriImpl;
 ```
 
-`unreachable` is a single shared function:
+The companion is one line:
 
 ```ts
-// services/_tauri-stub.ts
-export function unreachable(..._args: unknown[]): never {
-  throw new Error('Tauri-only service called from web bundle');
-}
+// $lib/tauri.browser.ts
+import type { Tauri } from './tauri.tauri';
+export const tauri: Tauri | null = null;
 ```
 
-The signature `(...args: unknown[]) => never` is the trick. `unknown` accepts any parameter shape (contravariance), `never` is assignable to any return type (bottom). So one function drops into any method slot, and `satisfies typeof Tauri.FsServiceLive` enforces that the stub has exactly the same exports as the real file.
+Consumers do:
 
-The throw never fires in practice. The button has a runtime gate:
+```ts
+import { tauri } from '$lib/tauri';
 
-```svelte
-<button onclick={async () => {
-  if (window.__TAURI_INTERNALS__) {
-    await FsServiceLive.pathToBlob(path);
-  }
-}}>
+if (tauri) await tauri.fs.pathToBlob(path);
+// or
+await tauri?.fs.pathToBlob(path);
 ```
 
-On web, the condition is false. On Tauri, the import resolved to `index.tauri.ts` instead of the stub. Either way, the throw is unreachable. The stub exists for the build, not for runtime.
+The variable doubles as both the namespace and the platform boolean. `if (tauri)` answers "are we on Tauri?" and gives you the namespace in the same line. No separate `window.__TAURI_INTERNALS__` check, no separate import, no separate stub per capability.
 
-## What `satisfies` buys us
+## The dual-impl pattern stays for genuine duals
 
-The first version of these stubs used `as unknown as typeof import('./index.tauri').FsServiceLive`. That's a double cast: TypeScript stops checking anything inside it. It passes whatever you give it.
+Services that have a real implementation on both platforms (clipboard, text, http, notifications, etc.) keep the per-folder `.tauri.ts` + `.browser.ts` shape. Each side uses `satisfies` against a shared interface:
 
-Switching to `satisfies` immediately surfaced drift the cast was hiding. The `fs` stub was missing `pathToFile` entirely. The `command` stub was missing a method that had been added to the real file weeks ago. The `permissions` stub had four error variants with stale names from before a rename.
+```ts
+// services/clipboard/index.browser.ts
+import type { ClipboardService } from './types';
 
-The cost of `satisfies` over the cast is zero. The benefit is that the next time we add a method to a Tauri-only service, the web build fails until the stub is updated. The contract stays honest by itself.
+export const ClipboardServiceLive = {
+  writeText: async (text) => navigator.clipboard.writeText(text),
+  // ...
+} satisfies ClipboardService;
+```
+
+The `satisfies` keyword preserves the inferred literal type but type-checks against the interface. If the two impls drift, the build catches it in whichever side broke. We tried `as unknown as ClipboardService` first and learned the hard way: the double cast hides drift. After switching to `satisfies` across the codebase, we caught five existing stubs that had stale method names or missing exports.
 
 ## What the call sites look like in practice
 
-After three rewrites, every service call across the app looks the same:
+Dual-impl services read the same on both platforms:
 
 ```ts
 import { ClipboardServiceLive } from '$lib/services/clipboard';
@@ -179,7 +185,16 @@ await TextServiceLive.copyToClipboard(text);
 await NotificationServiceLive.notify({ title: 'Done' });
 ```
 
-No ternary. No dynamic import. No platform check. The reader sees a function call and reads it as a function call.
+No ternary, no dynamic import, no platform check. The reader sees a function call.
+
+Tauri-only capabilities go through one optional chain:
+
+```ts
+import { tauri } from '$lib/tauri';
+
+await tauri?.fs.pathToBlob(path);
+if (tauri) await tauri.tray.setIcon('IDLE');
+```
 
 The two builds produce different bundles. The web bundle has no Tauri code in it; we verified this by grepping the production build for `@tauri-apps` and getting zero hits. The Tauri bundle has no `navigator.clipboard` fallbacks. Each build ships only what it needs.
 
@@ -198,7 +213,7 @@ The whole pattern is about 60 lines of Vite config plus filename discipline. The
 If you want to see the actual code, the relevant files are:
 
 - `apps/whispering/vite.config.ts` for the `resolve.extensions` switch.
-- `apps/whispering/src/lib/services/_tauri-stub.ts` for the shared `unreachable`.
-- Any service folder under `apps/whispering/src/lib/services/` for a concrete example.
+- `apps/whispering/src/lib/tauri.tauri.ts` and `tauri.browser.ts` for the Tauri-only namespace.
+- Any service folder under `apps/whispering/src/lib/services/` for a dual-impl example.
 
 Fork it, break it, ship your own version. The setup is small enough that you can read the whole thing in five minutes.

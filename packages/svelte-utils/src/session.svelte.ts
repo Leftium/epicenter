@@ -11,9 +11,9 @@ type Keyring = SignedInState['keyring'];
  * Flat shape: the auth client is not exposed. Every field is something an
  * app opener actually consumes:
  *
- * - `attachEncryption(ydoc, { keyring: signedIn.keyring })`
- * - `attachLocalStorage(ydoc, { server, ownerId, keyring })`
- * - `openCollaboration(ydoc, { openWebSocket, onReconnectSignal })`
+ * - `createWorkspace({ id, keyring: signedIn.keyring, tables, kv })`
+ * - `attachLocalStorage(workspace.ydoc, { server, ownerId, keyring })`
+ * - `openCollaboration(workspace.ydoc, { openWebSocket, onReconnectSignal })`
  * - `roomWsUrl({ baseURL, ownerId, guid, deviceId })`
  *
  * `server` and `baseURL` are both projected because `roomWsUrl` wants the

@@ -11,8 +11,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { attachTables } from '@epicenter/workspace';
-import * as Y from 'yjs';
+import { createWorkspace } from '@epicenter/workspace';
 import { asFileId, generateFileId } from '../ids.js';
 import { filesTable } from '../table.js';
 import { attachFileTree } from './tree.js';
@@ -22,11 +21,13 @@ function setup() {
 }
 
 function setupWithHandles() {
-	const id = 'test';
-	const ydoc = new Y.Doc({ guid: id });
-	const tables = attachTables(ydoc, { files: filesTable });
-	const tree = attachFileTree(ydoc, tables.files);
-	return { tree, ydoc, files: tables.files };
+	const workspace = createWorkspace({
+		id: 'test',
+		tables: { files: filesTable },
+		kv: {},
+	});
+	const tree = attachFileTree(workspace.ydoc, workspace.tables.files);
+	return { tree, ydoc: workspace.ydoc, files: workspace.tables.files };
 }
 
 describe('attachFileTree', () => {

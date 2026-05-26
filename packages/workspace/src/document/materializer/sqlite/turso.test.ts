@@ -9,8 +9,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import Type from 'typebox';
-import * as Y from 'yjs';
-import { attachTables, column, defineTable } from '../../../index.js';
+import { column, createWorkspace, defineTable } from '../../../index.js';
 import { attachTursoMaterializer } from './turso.js';
 
 const entriesTable = defineTable({
@@ -23,20 +22,23 @@ const entriesTable = defineTable({
 
 describe('attachTursoMaterializer', () => {
 	test('materializes Y.Doc rows into a Turso :memory: mirror', async () => {
-		const ydoc = new Y.Doc({ guid: 'turso-test' });
-		const tables = attachTables(ydoc, { entries: entriesTable });
+		using workspace = createWorkspace({
+			id: 'turso-test',
+			tables: { entries: entriesTable },
+			kv: {},
+		});
 
 		// Seed BEFORE attach so whenFlushed includes the full-load. Avoids the
 		// "wait for the async sync queue to drain" pattern that's only
 		// deterministic against sync drivers.
-		tables.entries.set({
+		workspace.tables.entries.set({
 			id: 'a',
 			title: 'Alpha',
 			body: 'first entry',
 			priority: 'high',
 			tags: ['urgent'],
 		});
-		tables.entries.set({
+		workspace.tables.entries.set({
 			id: 'b',
 			title: 'Beta',
 			body: null,
@@ -44,9 +46,8 @@ describe('attachTursoMaterializer', () => {
 			tags: [],
 		});
 
-		const materializer = attachTursoMaterializer(ydoc, {
+		const materializer = attachTursoMaterializer(workspace, {
 			path: ':memory:',
-			tables: { entries: tables.entries },
 		});
 
 		await materializer.whenFlushed;
@@ -79,7 +80,5 @@ describe('attachTursoMaterializer', () => {
 			priority: 'low',
 			tags: JSON.stringify([]),
 		});
-
-		ydoc.destroy();
 	});
 });

@@ -79,8 +79,7 @@ use stable Yjs identities.
 
 ```ts
 import type { Keyring } from '@epicenter/encryption';
-import { attachEncryption } from '@epicenter/workspace';
-import * as Y from 'yjs';
+import { createWorkspace } from '@epicenter/workspace';
 import { createFujiActions, fujiTables } from '../workspace.js';
 
 export function openFuji({
@@ -90,23 +89,18 @@ export function openFuji({
 	keyring: () => Keyring;
 	clientID?: number;
 }) {
-	const ydoc = new Y.Doc({ guid: 'epicenter.fuji', gc: false });
-	if (clientID !== undefined) ydoc.clientID = clientID;
-	const { tables, kv } = attachEncryption(ydoc, {
+	const workspace = createWorkspace({
+		id: 'epicenter.fuji',
 		keyring,
 		tables: fujiTables,
 		kv: {},
 	});
-	const actions = createFujiActions(tables);
+	if (clientID !== undefined) workspace.ydoc.clientID = clientID;
+	const actions = createFujiActions(workspace.tables);
 	return {
-		ydoc,
-		tables,
-		kv,
+		...workspace,
 		actions,
-		batch: (fn: () => void) => ydoc.transact(fn),
-		[Symbol.dispose]() {
-			ydoc.destroy();
-		},
+		batch: (fn: () => void) => workspace.ydoc.transact(fn),
 	};
 }
 ```

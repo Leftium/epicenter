@@ -120,12 +120,12 @@ function createSkillsState() {
 		/**
 		 * Delete a skill and cascade-delete all its references.
 		 *
-		 * Uses `batch()` to collapse observer notifications.
+		 * Uses `ydoc.transact()` to collapse observer notifications.
 		 * If the deleted skill was selected, selects the next skill
 		 * alphabetically, or clears the selection if none remain.
 		 */
 		deleteSkill(id: string) {
-			skillsWorkspace.batch(() => {
+			skillsWorkspace.ydoc.transact(() => {
 				for (const ref of referencesMap.values()) {
 					if (ref.skillId === id) {
 						skillsWorkspace.tables.references.delete(ref.id);

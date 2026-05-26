@@ -157,7 +157,7 @@ A layer is hierarchy, and indentation already expresses hierarchy, so indent-arr
 ```txt
 Layer (workspace builder):
   createDisposableCache(id => ...).open(id)
-    -> attachTables(ydoc, ...) / attachKv(ydoc, ...)
+    -> createWorkspace({ id, tables, kv })
       -> defineTable() / defineKv()
 ```
 

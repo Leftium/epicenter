@@ -11,9 +11,9 @@
 
 import { fileContentDocGuid } from '@epicenter/filesystem';
 import {
-	attachEncryption,
 	attachTimeline,
 	createDisposableCache,
+	createWorkspace,
 	defineActions,
 	defineMutation,
 	defineWorkspace,
@@ -47,13 +47,14 @@ async function openOpensidianPlayground({
 	openWebSocket,
 	onReconnectSignal,
 }: DaemonWorkspaceContext) {
-	const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
-	ydoc.clientID = yDocClientId;
-	const { tables, kv } = attachEncryption(ydoc, {
+	const workspace = createWorkspace({
+		id: WORKSPACE_ID,
 		keyring,
 		tables: opensidianTables,
 		kv: {},
 	});
+	workspace.ydoc.clientID = yDocClientId;
+	const { ydoc, tables, kv } = workspace;
 
 	const persistence = attachYjsLog(ydoc, {
 		filePath: yjsPath(projectDir, WORKSPACE_ID),
@@ -111,10 +112,9 @@ async function openOpensidianPlayground({
 	});
 
 	const whenReady = collaboration.whenConnected;
-	const markdown = attachMarkdownMaterializer(ydoc, {
+	const markdown = attachMarkdownMaterializer(workspace, {
 		dir: markdownPath(projectDir, WORKSPACE_ID),
 		waitFor: whenReady,
-		tables: { files: tables.files },
 		perTable: {
 			files: {
 				filename: (row) =>
@@ -151,10 +151,9 @@ async function openOpensidianPlayground({
 		},
 	});
 
-	const sqlite = attachBunSqliteMaterializer(ydoc, {
+	const sqlite = attachBunSqliteMaterializer(workspace, {
 		filePath: sqlitePath(projectDir, WORKSPACE_ID),
 		waitFor: whenReady,
-		tables: { files: tables.files },
 		fts: { files: ['name'] },
 	});
 
@@ -168,7 +167,6 @@ async function openOpensidianPlayground({
 			ydoc.destroy();
 			await collaboration.whenDisposed;
 		},
-		id: WORKSPACE_ID,
 		ydoc,
 		tables,
 		kv,

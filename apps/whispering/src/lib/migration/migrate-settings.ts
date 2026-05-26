@@ -89,7 +89,7 @@ export async function migrateOldSettings(): Promise<void> {
 	// Batch into a single Yjs transaction so settings.observeAll
 	// fires once with all changes, not 43 individual updates.
 
-	whispering.batch(() => {
+	whispering.ydoc.transact(() => {
 		for (const { oldKey, newKey, convert } of WORKSPACE_KEY_MAP) {
 			trySync({
 				try: () => {

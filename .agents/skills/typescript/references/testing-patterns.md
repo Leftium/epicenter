@@ -12,35 +12,39 @@ When a schema, builder, or configuration is only used once in a test, inline it 
 ### Bad Pattern (Extracted Variables)
 
 ```typescript
-test('attaches tables to a Y.Doc', () => {
+test('builds a workspace bundle', () => {
 	const posts = defineTable({ id: column.string<PostId>(), title: column.string() });
 
 	const theme = defineKv(Type.Union([Type.Literal('light'), Type.Literal('dark')]), () => 'light');
 
-	const ydoc = new Y.Doc({ guid: 'test-app' });
-	const tables = attachTables(ydoc, { posts });
-	const kv = attachKv(ydoc, { theme });
+	const workspace = createWorkspace({
+		id: 'test-app',
+		tables: { posts },
+		kv: { theme },
+	});
 
-	expect(ydoc.guid).toBe('test-app');
+	expect(workspace.ydoc.guid).toBe('test-app');
 });
 ```
 
 ### Good Pattern (Inlined)
 
 ```typescript
-test('attaches tables to a Y.Doc', () => {
-	const ydoc = new Y.Doc({ guid: 'test-app' });
-	const tables = attachTables(ydoc, {
-		posts: defineTable({ id: column.string<PostId>(), title: column.string() }),
-	});
-	const kv = attachKv(ydoc, {
-		theme: defineKv(
-			Type.Union([Type.Literal('light'), Type.Literal('dark')]),
-			() => 'light',
-		),
+test('builds a workspace bundle', () => {
+	const workspace = createWorkspace({
+		id: 'test-app',
+		tables: {
+			posts: defineTable({ id: column.string<PostId>(), title: column.string() }),
+		},
+		kv: {
+			theme: defineKv(
+				Type.Union([Type.Literal('light'), Type.Literal('dark')]),
+				() => 'light',
+			),
+		},
 	});
 
-	expect(ydoc.guid).toBe('test-app');
+	expect(workspace.ydoc.guid).toBe('test-app');
 });
 ```
 
@@ -63,7 +67,7 @@ Extract to a variable when:
 ### Applies To
 
 - `defineTable()`, `defineKv()`, `createDisposableCache()` builders
-- `attachTables()`, `attachKv()` factory calls
+- `createWorkspace()` factory calls
 - Schema definitions (TypeBox `column.*` / `Type.*`, arktype, zod, etc.)
 - Configuration objects passed to factories
 - Mock functions used only once

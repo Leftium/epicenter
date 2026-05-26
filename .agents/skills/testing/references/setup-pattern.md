@@ -26,9 +26,12 @@ Every test file that needs shared infrastructure MUST have a `setup()` function.
 ```typescript
 // Good — always an object, even for one thing
 function setup() {
-	const ydoc = new Y.Doc({ guid: 'test' });
-	const tables = attachTables(ydoc, { files: filesTable });
-	return { files: tables.files };
+	const workspace = createWorkspace({
+		id: 'test',
+		tables: { files: filesTable },
+		kv: {},
+	});
+	return { files: workspace.tables.files };
 }
 
 test('creates a file', () => {
@@ -41,9 +44,12 @@ test('creates a file', () => {
 ```typescript
 // Bad — returns value directly
 function setup() {
-	const ydoc = new Y.Doc({ guid: 'test' });
-	const tables = attachTables(ydoc, { files: filesTable });
-	return tables.files; // No destructuring = breaks convention
+	const workspace = createWorkspace({
+		id: 'test',
+		tables: { files: filesTable },
+		kv: {},
+	});
+	return workspace.tables.files; // No destructuring = breaks convention
 }
 ```
 
@@ -77,9 +83,12 @@ When tests need additional setup beyond the base, create composable setup varian
 ```typescript
 function setup() {
 	const tableDef = defineTable(fileSchema);
-	const ydoc = new Y.Doc({ guid: 'test-workspace' });
-	const tables = attachTables(ydoc, { files: tableDef });
-	return { ydoc, tables };
+	const workspace = createWorkspace({
+		id: 'test-workspace',
+		tables: { files: tableDef },
+		kv: {},
+	});
+	return { ydoc: workspace.ydoc, tables: workspace.tables };
 }
 
 function setupWithBinding(
@@ -110,16 +119,22 @@ Use `beforeEach`/`afterEach` ONLY for cleanup that must run even if a test fails
 // Bad — mutable state, hidden setup
 let files: TableHelper;
 beforeEach(() => {
-	const ydoc = new Y.Doc({ guid: 'test' });
-	const tables = attachTables(ydoc, { files: filesTable });
-	files = tables.files;
+	const workspace = createWorkspace({
+		id: 'test',
+		tables: { files: filesTable },
+		kv: {},
+	});
+	files = workspace.tables.files;
 });
 
 // Good — setup function, immutable per-test
 function setup() {
-	const ydoc = new Y.Doc({ guid: 'test' });
-	const tables = attachTables(ydoc, { files: filesTable });
-	return { files: tables.files };
+	const workspace = createWorkspace({
+		id: 'test',
+		tables: { files: filesTable },
+		kv: {},
+	});
+	return { files: workspace.tables.files };
 }
 ```
 
@@ -135,13 +150,16 @@ const filesTable = defineTable({
 });
 
 function setup() {
-	const ydoc = new Y.Doc({ guid: 'test' });
-	const tables = attachTables(ydoc, { files: filesTable });
-	return { files: tables.files };
+	const workspace = createWorkspace({
+		id: 'test',
+		tables: { files: filesTable },
+		kv: {},
+	});
+	return { files: workspace.tables.files };
 }
 ```
 
-These are stateless definitions — safe to share. Stateful objects (Y.Doc, workspace instances) go in `setup()`.
+These are stateless definitions, safe to share. Stateful objects (Y.Doc, workspace instances) go in `setup()`.
 
 ## Don't Return Dead Weight
 

@@ -13,9 +13,10 @@
  * import {
  *   attachIndexedDb,
  *   attachRichText,
- *   attachTables,
- *   createDisposableCache,
+ *   column,
  *   createDeviceId,
+ *   createDisposableCache,
+ *   createWorkspace,
  *   defineTable,
  *   docGuid,
  *   openCollaboration,
@@ -34,27 +35,34 @@
  *
  * const deviceId = createDeviceId({ storage: localStorage });
  *
- * // A cloud doc is owned by the authenticated `ownerId` and addressed by its
- * // Y.Doc guid: `roomWsUrl({ baseURL, ownerId, guid, deviceId })` builds the
- * // partitioned room URL the server expects.
- * const ydoc = new Y.Doc({ guid: 'notes' });
- * const tables = attachTables(ydoc, { posts });
- * const idb = attachIndexedDb(ydoc);
- * const collaboration = openCollaboration(ydoc, {
- *   url: roomWsUrl({ baseURL: auth.baseURL, ownerId, guid: ydoc.guid, deviceId }),
+ * // The workspace bundle owns the root Y.Doc, the tables, and the KV slot.
+ * // `using` triggers cascade disposal of every store on scope exit.
+ * using workspace = createWorkspace({
+ *   id: 'notes',
+ *   tables: { posts },
+ *   kv: {},
+ * });
+ * const idb = attachIndexedDb(workspace.ydoc);
+ * const collaboration = openCollaboration(workspace.ydoc, {
+ *   url: roomWsUrl({
+ *     baseURL: auth.baseURL,
+ *     ownerId,
+ *     guid: workspace.ydoc.guid,
+ *     deviceId,
+ *   }),
  *   openWebSocket: auth.openWebSocket,
  *   onReconnectSignal: auth.onStateChange,
  *   waitFor: idb.whenLoaded,
  *   actions: {},
  * });
  *
- * // Content docs build the same URL from their own guid. The local Y.Doc
- * // guid doubles as the cloud room id, so there is no second id system.
+ * // Content docs are per-row child Y.Docs constructed inline. Sub-doc
+ * // primitives (attachRichText, etc.) take a raw Y.Doc, not a workspace.
  * const noteBodyDocs = createDisposableCache(
  *   (noteId: string) => {
  *     const bodyYdoc = new Y.Doc({
  *       guid: docGuid({
- *         workspaceId: ydoc.guid,
+ *         workspaceId: workspace.ydoc.guid,
  *         collection: 'posts',
  *         rowId: noteId,
  *         field: 'body',
@@ -154,41 +162,16 @@ export {
 // DOCUMENT PRIMITIVES
 // ════════════════════════════════════════════════════════════════════════════
 
+export type { Keyring } from '@epicenter/encryption';
 export {
 	createDisposableCache,
 	type DisposableCache,
 } from './cache/disposable-cache.js';
-
 export { attachBroadcastChannel } from './document/attach-broadcast-channel.js';
-export {
-	type AttachEncryptionOptions,
-	attachEncryption,
-	type EncryptionAttachment,
-} from './document/attach-encryption.js';
 export { attachIndexedDb } from './document/attach-indexed-db.js';
-export {
-	attachKv,
-	type InferKvValue,
-	type Kv,
-	type KvDefinitions,
-	KvError,
-} from './document/attach-kv.js';
 export { attachLocalStorage } from './document/attach-local-storage.js';
 export { attachPlainText } from './document/attach-plain-text.js';
 export { attachRichText } from './document/attach-rich-text.js';
-export {
-	attachReadonlyTable,
-	attachReadonlyTables,
-	attachTable,
-	attachTables,
-	type BaseRow,
-	type InferTableRow,
-	type ReadonlyTable,
-	type ReadonlyTables,
-	type Table,
-	TableParseError,
-	type Tables,
-} from './document/attach-table.js';
 export { attachTimeline } from './document/attach-timeline/index.js';
 export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
@@ -204,6 +187,12 @@ export {
 	tablesToDrizzleSchema,
 } from './document/drizzle-schema.js';
 export type { SyncStatus } from './document/internal/sync-supervisor.js';
+export {
+	type InferKvValue,
+	type Kv,
+	type KvDefinitions,
+	KvError,
+} from './document/kv.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 export {
 	type Collaboration,
@@ -213,6 +202,13 @@ export {
 	openCollaboration,
 } from './document/open-collaboration.js';
 export type { PresenceDevice } from './document/presence-protocol.js';
+export {
+	type BaseRow,
+	type InferTableRow,
+	type Table,
+	TableParseError,
+	type Tables,
+} from './document/table.js';
 // Transport URL builder.
 //
 // `roomWsUrl({ baseURL, ownerId, guid, deviceId })` builds the WebSocket
@@ -221,3 +217,8 @@ export type { PresenceDevice } from './document/presence-protocol.js';
 // apps and the daemon use this one builder.
 export { type RoomWsUrlOptions, roomWsUrl } from './document/transport.js';
 export { wipeLocalStorage } from './document/wipe-local-storage.js';
+export {
+	type CreateWorkspaceOptions,
+	createWorkspace,
+	type Workspace,
+} from './document/workspace.js';

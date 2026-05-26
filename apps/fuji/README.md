@@ -21,7 +21,7 @@ Workspace ID: `FUJI_ID` (`epicenter.fuji`). Rich-text content and entry metadata
 
 ### Client wiring
 
-Fuji's root workspace is built once per signed-in session by `createSession`. `openFujiBrowser()` owns the `new Y.Doc(...)` call, composes every Tier 1 primitive inline, and returns the bundle directly. The session module receives a `SignedIn` from `createSession` and passes it into the browser factory. `SignedIn` carries `{ server, owner, keyring, auth }`; `attachEncryption` reads the keyring, `attachLocalStorage` reads the server + owner (for the IDB database name) and the keyring, and `openCollaboration` takes `auth.openWebSocket` and `auth.onStateChange` directly so it can open sockets and reconnect without per-app glue.
+Fuji's root workspace is built once per signed-in session by `createSession`. `openFujiBrowser()` calls `createFujiWorkspace({ keyring })` for the root bundle, composes every other Tier 1 primitive inline, and returns the bundle directly. The session module receives a `SignedIn` from `createSession` and passes it into the browser factory. `SignedIn` carries `{ server, ownerId, keyring, auth }`; `createFujiWorkspace` (which wraps `createWorkspace`) reads the keyring once at construction, `attachLocalStorage` reads server + ownerId (for the IDB database name) plus the keyring callback, and `openCollaboration` takes `auth.openWebSocket` and `auth.onStateChange` directly so it can open sockets and reconnect without per-app glue.
 
 ```ts
 import { openFujiBrowser } from '$lib/browser';
@@ -47,39 +47,36 @@ export function openFujiBrowser({
   deviceId,
 }: {
   signedIn: SignedIn;
-  deviceId: string;
+  deviceId: DeviceId;
 }) {
-  const ydoc = new Y.Doc({ guid: FUJI_ID, gc: true });
-  const { tables, kv } = attachEncryption(ydoc, {
-    keyring: signedIn.keyring,
-    tables: fujiTables,
-    kv: {},
-  });
-  const actions = createFujiActions(tables);
+  const workspace = createFujiWorkspace({ keyring: signedIn.keyring });
+  const actions = createFujiActions(workspace);
 
-  const idb = attachLocalStorage(ydoc, {
+  const idb = attachLocalStorage(workspace.ydoc, {
     server: signedIn.server,
-    owner: signedIn.owner,
+    ownerId: signedIn.ownerId,
     keyring: signedIn.keyring,
   });
-  const collaboration = openCollaboration(ydoc, {
+  const collaboration = openCollaboration(workspace.ydoc, {
     url: roomWsUrl({
-      baseURL: signedIn.auth.baseURL,
-      owner: signedIn.owner,
-      guid: ydoc.guid,
+      baseURL: signedIn.baseURL,
+      ownerId: signedIn.ownerId,
+      guid: workspace.ydoc.guid,
       deviceId,
     }),
-    openWebSocket: signedIn.auth.openWebSocket,
-    onReconnectSignal: signedIn.auth.onStateChange,
+    openWebSocket: signedIn.openWebSocket,
+    onReconnectSignal: signedIn.onReconnectSignal,
     waitFor: idb.whenLoaded,
     actions,
   });
   // ... per-entry child docs, wipe(), dispose
-  return { ydoc, tables, kv, actions, idb, collaboration, /* ... */ };
+  return { ...workspace, actions, idb, collaboration, /* ... */ };
 }
 ```
 
-The browser bundle exposes concrete resources like `idb`, `collaboration`, and child document collections. Auth state flows through `session.current`; when present, it carries the Fuji bundle, and pages reach it via the module-level `requireFuji()` exported from `$lib/session` (throws if called without an authenticated session). Local cleanup runs through `bundle.wipe()`, which destroys the live Y.Docs and then calls `wipeLocalStorage({ server: signedIn.server, owner: signedIn.owner })` to drop every encrypted IDB database for that owner. It is a separate explicit action, not part of sign-out.
+`createFujiWorkspace({ keyring })` is the per-app helper that wraps `createWorkspace({ id: FUJI_ID, keyring, tables: fujiTables, kv })`, returning the standard `{ ydoc, tables, kv, [Symbol.dispose] }` bundle.
+
+The browser bundle exposes concrete resources like `idb`, `collaboration`, and child document collections. Auth state flows through `session.current`; when present, it carries the Fuji bundle, and pages reach it via the module-level `requireFuji()` exported from `$lib/session` (throws if called without an authenticated session). Local cleanup runs through `bundle.wipe()`, which destroys the live Y.Docs and then calls `wipeLocalStorage({ server: signedIn.server, ownerId: signedIn.ownerId })` to drop every encrypted IDB database for that owner. It is a separate explicit action, not part of sign-out.
 
 For a sibling example of the same pattern (plus a Tauri-side materializer), see `apps/whispering/src/lib/whispering/client.ts`.
 

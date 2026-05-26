@@ -1,9 +1,9 @@
 ---
 name: workspace-api
-description: 'Epicenter workspace API patterns: `defineTable`, `defineKv`, migrations, actions, `attach*` primitives, `openCollaboration`, and workspace connections. Use when editing workspace schemas, table/KV access, actions, attachments, or collaboration setup.'
+description: 'Epicenter workspace API patterns: `defineTable`, `defineKv`, migrations, actions, `createWorkspace`, materializers, `openCollaboration`, and workspace connections. Use when editing workspace schemas, table/KV access, actions, attachments, or collaboration setup.'
 metadata:
   author: epicenter
-  version: '7.0'
+  version: '8.0'
 ---
 
 # Workspace API
@@ -29,9 +29,9 @@ Use this skill when you are:
 - Adding a version or migration to an existing table definition.
 - Reading, writing, or observing table or KV data.
 - Creating actions with `defineMutation` or `defineQuery`.
-- Composing a live document with a direct builder and `attach*` primitives.
+- Composing a live document with `createWorkspace` and surrounding `attach*` primitives (persistence, sync, materializers).
 - Adding `createDisposableCache(builder)` for per-row or fan-out documents.
-- Attaching persistence, collaboration, encryption, or materializers.
+- Attaching persistence, collaboration, or materializers around a workspace.
 - Writing server-side Bun scripts with `connectWorkspace()`.
 
 ## Core Rules
@@ -42,11 +42,12 @@ Use this skill when you are:
 - Do not re-derive row types from runtime table methods or relay them through state files.
 - KV stores use `defineKv(schema, defaultValue)` where `defaultValue` is a **factory** `() => Static<S>`. Prefer one scalar per dot-namespaced key unless the value is a true atomic object.
 - Every table `id` and string foreign key uses a branded type plus a co-located generator. The brand lives as a pure type alias (`type X = string & Brand<'X'>`); the generator uses `generateId<X>()`. Call sites use the generator, never a direct cast.
-- Isomorphic actions belong in `workspace/actions.ts` factories that close over `tables` and `batch`. Runtime-specific actions live in the runtime builder where browser, Node, Tauri, or extension APIs are in scope.
+- Isomorphic actions belong in `workspace/actions.ts` factories that take the `Workspace` bundle (`createXActions(workspace)`) and read `workspace.tables` / `workspace.ydoc.transact` internally. Runtime-specific actions live in the runtime builder where browser, Node, Tauri, or extension APIs are in scope.
+- Construct a workspace with `createWorkspace({ id, tables, kv, keyring? })` (or a per-app wrapper like `createHoneycrispWorkspace`). Plaintext apps omit `keyring`; encrypted apps pass the signed-in keyring callback. The bundle exposes `{ ydoc, tables, kv, [Symbol.dispose] }` and `using workspace` cascades disposal to every store. Only the three materializers (`attachBunSqliteMaterializer`, `attachTursoMaterializer`, `attachMarkdownMaterializer`) take the bundle; persistence, log, and sync primitives take `workspace.ydoc`.
 - Local action calls see the handler shape directly. Remote dispatch wraps raw values and failures in `Promise<Result<T, DispatchError>>`. Read the action return reference before changing handler failure behavior.
 - Every action method inside the workspace action object should have JSDoc that adds developer-facing value beyond the short `description` field.
 - Keep `workspace/definition.ts` and `workspace/actions.ts` isomorphic. Keep `client.ts` runtime-specific and outside the `workspace/` folder.
-- Compose attachments inline in the builder after creating the `Y.Doc`. Avoid wrapper helpers that hide ordering unless the abstraction owns a real invariant.
+- Compose attachments inline in the builder after calling `createWorkspace`. Avoid wrapper helpers that hide ordering unless the abstraction owns a real invariant.
 - Use `connectWorkspace()` for one-off Bun scripts that need a connected workspace without app UI bootstrapping.
 
 ## Reference Map

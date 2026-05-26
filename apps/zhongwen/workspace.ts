@@ -16,11 +16,13 @@
 
 import {
 	column,
+	createWorkspace,
 	defineKv,
 	defineTable,
 	generateId,
 	type Id,
 	type InferTableRow,
+	type Keyring,
 	type Tables,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
@@ -91,3 +93,17 @@ export type ZhongwenTables = Tables<typeof zhongwenTables>;
 export const zhongwenKv = {
 	showPinyin: defineKv(Type.Boolean(), () => true),
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Workspace Factory
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function createZhongwenWorkspace(opts: { keyring: () => Keyring }) {
+	return createWorkspace({
+		id: ZHONGWEN_ID,
+		keyring: opts.keyring,
+		tables: zhongwenTables,
+		kv: zhongwenKv,
+	});
+}
+export type ZhongwenWorkspace = ReturnType<typeof createZhongwenWorkspace>;

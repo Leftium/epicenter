@@ -4,8 +4,9 @@ The hard problem with local-first apps is synchronization. If each device has it
 
 `@epicenter/workspace` solves that by making Yjs the source of truth. Tables, KV entries, and document content all live in a `Y.Doc`; persistence, sync, and materializers hang off that core as attachment primitives. Write to the workspace, and everything else reacts.
 
-The public path is a small set of `attach*` primitives that you compose inline
-around `new Y.Doc`. Browser apps with many child Y.Docs use
+The public path is `createWorkspace(...)` for the root bundle plus a small set
+of `attach*` / `open*` primitives that you compose inline around
+`workspace.ydoc`. Browser apps with many child Y.Docs use
 `createDisposableCache(...)` to share live child documents. Browser storage
 cleanup stays in app-owned helper functions that already know the parent table
 and child document guid policy.
@@ -15,8 +16,8 @@ and child document guid policy.
 The recipe below ships a workspace with no auth, no encryption, no cloud
 sync. It is the right shape for a single-user desktop notes app, an
 offline CLI, a test fixture, or any consumer whose data has no remote
-adversary. Cloud-synced workspaces add `attachEncryption` and swap
-`attachIndexedDb` + `attachBroadcastChannel` for the owner-scoped
+adversary. Cloud-synced workspaces pass a `keyring` to `createWorkspace` and
+swap `attachIndexedDb` + `attachBroadcastChannel` for the owner-scoped
 `attachLocalStorage` composite; see [Plaintext vs encrypted](#plaintext-vs-encrypted).
 
 ```bash
@@ -24,13 +25,11 @@ bun add @epicenter/workspace
 ```
 
 ```typescript
-import * as Y from 'yjs';
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
-	attachKv,
-	attachTables,
 	column,
+	createWorkspace,
 	defineTable,
 } from '@epicenter/workspace';
 
@@ -42,26 +41,20 @@ const posts = defineTable({
 });
 
 export function openBlog() {
-	const ydoc = new Y.Doc({ guid: 'epicenter.blog' });
-	const tables = attachTables(ydoc, { posts });
-	const kv = attachKv(ydoc, {});
-	const idb = attachIndexedDb(ydoc);
+	const workspace = createWorkspace({
+		id: 'epicenter.blog',
+		tables: { posts },
+		kv: {},
+	});
+	const idb = attachIndexedDb(workspace.ydoc);
 	// Cross-tab broadcast keyed by ydoc.guid. Skip this line for a Tauri
 	// or Electron app that only ever runs one window.
-	attachBroadcastChannel(ydoc);
+	attachBroadcastChannel(workspace.ydoc);
 
 	return {
-		get id() {
-			return ydoc.guid;
-		},
-		ydoc,
-		tables,
-		kv,
+		...workspace,
 		idb,
-		batch: (fn: () => void) => ydoc.transact(fn),
-		[Symbol.dispose]() {
-			ydoc.destroy();
-		},
+		batch: (fn: () => void) => workspace.ydoc.transact(fn),
 	};
 }
 
@@ -90,8 +83,8 @@ void quickStart;
 That example uses the current public API end to end:
 
 - `defineTable(...)` with a real schema
-- a direct `openBlog()` builder function that owns `new Y.Doc` and returns the bundle
-- `attachTables` / `attachKv` / `attachIndexedDb` composed inline
+- a direct `openBlog()` builder function that calls `createWorkspace(...)` and returns the bundle
+- `createWorkspace` + `attachIndexedDb` composed inline
 - direct property access via `blog.tables.posts`
 - `set`, `get`, `update`, `delete`, `getAllValid`, and `observe`
 
@@ -112,8 +105,8 @@ Every exported function in this package falls into one of three verbs. The prefi
 | Verb | Side effect | Input | Output | Examples |
 |---|---|---|---|---|
 | `define*` | **None**: pure data | Schemas, defaults | Plain config object | `defineTable`, `defineKv`, `defineMutation`, `defineQuery` |
-| `attach*` | **Mutates a Y.Doc**: binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config | Typed handle, non-idempotent, hold the reference | `attachTable`, `attachTables`, `attachKv`, `attachRichText`, `attachPlainText`, `attachTimeline`, `attachIndexedDb`, `attachYjsLog`, `attachBroadcastChannel`, `attachEncryption` (constructs `{ tables, kv }` from definitions), `attachMarkdownMaterializer`, `attachSqliteMaterializer` |
-| `create*` | **Pure construction**: no listeners, no subscriptions, no destroy registration at call time. | Definitions or a builder closure | A usable definition or cache | `createDisposableCache` |
+| `create*` | **Constructs**: bundles or pure definitions | Definitions, options | Disposable bundle or pure value | `createWorkspace` (root bundle: ydoc + tables + kv + dispose), `createDisposableCache` (refcounted per-row cache) |
+| `attach*` | **Mutates a Y.Doc**: binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config (the three materializers take the bundle from `createWorkspace`) | Typed handle, non-idempotent, hold the reference | `attachRichText`, `attachPlainText`, `attachTimeline`, `attachIndexedDb`, `attachLocalStorage`, `attachYjsLog`, `attachBroadcastChannel`, `attachMarkdownMaterializer`, `attachBunSqliteMaterializer`, `attachTursoMaterializer` |
 | `open*` | **Opens a runtime over a Y.Doc or a local resource**: returns a typed handle with its own teardown. The Y.Doc-bound case (`openCollaboration`) registers `ydoc.on('destroy')` like `attach*` does; the resource case (`openSqliteReader`) takes no Y.Doc and returns a `[Symbol.dispose]()` handle. | Y.Doc + config, or resource config | Typed runtime handle | `openCollaboration`, `openSqliteReader`, `openWriterSqlite` |
 
 `createDisposableCache(build, opts?)` is the refcounted cache primitive. The
@@ -126,15 +119,26 @@ refcounting, and the `gcTime` grace period between last dispose and teardown.
 Both variants ship from this package. Pick by adversary: plaintext for
 data that never leaves the device, encrypted for data the server stores.
 
-Plaintext (`attachTable`, `attachTables`, `attachKv`) binds a typed helper directly to the Y.Doc. Encrypted: `attachEncryption(ydoc, { keyring, tables, kv })` takes the same definition maps as the plaintext primitives plus a `keyring` callback, derives the per-workspace keyring once, activates every encrypted store, and returns `{ tables, kv }` atomically. Same-owner key rotation requires a fresh `attachEncryption` call (and therefore a fresh Y.Doc) to take effect.
+One factory, both modes. `createWorkspace({ id, tables, kv, keyring? })` constructs the root Y.Doc, materializes the table and KV stores onto it, and registers cascade disposal. Pass a `keyring: () => Keyring` callback to encrypt every store under the owner keyring narrowed to `id` (one HKDF derivation, shared across stores); omit it for plaintext. Same-owner key rotation requires a fresh `createWorkspace` call (and therefore a fresh Y.Doc) to take effect.
 
-Don't pair a plaintext `attachTable` with a `tables:` entry on `attachEncryption` targeting the same slot name: Yjs hands both calls the same underlying `Y.Array` and you get a silent plaintext-over-ciphertext race. One slot name, one attach site, one intent.
+Apps usually wrap `createWorkspace` in a per-app factory next to their schema so the table set and id constant live in one place:
+
+```ts
+// apps/my-app/workspace.ts
+export function createMyAppWorkspace(opts: { keyring: () => Keyring }) {
+	return createWorkspace({
+		id: 'epicenter.my-app',
+		keyring: opts.keyring,
+		tables: myAppTables,
+		kv: {},
+	});
+}
+```
 
 Minimal encrypted browser workspace: encryption + owner-scoped IndexedDB + cross-tab + collaboration (sync + presence + dispatch) wired together:
 
 ```typescript
 import {
-	attachEncryption,
 	attachLocalStorage,
 	createDeviceId,
 	openCollaboration,
@@ -142,9 +146,8 @@ import {
 	wipeLocalStorage,
 } from '@epicenter/workspace';
 import { createSession, type SignedIn } from '@epicenter/svelte';
-import * as Y from 'yjs';
 import { auth } from '$lib/auth';
-import { appTables } from '$lib/workspace/definition';
+import { createMyAppWorkspace } from '$lib/workspace';
 
 export function openApp({
 	signedIn,
@@ -153,26 +156,20 @@ export function openApp({
 	signedIn: SignedIn;
 	deviceId: string;
 }) {
-	const ydoc = new Y.Doc({ guid: 'epicenter.my-app', gc: true });
-
-	const { tables } = attachEncryption(ydoc, {
-		keyring: signedIn.keyring,
-		tables: appTables,
-		kv: {},
-	});
+	const workspace = createMyAppWorkspace({ keyring: signedIn.keyring });
 
 	// Server + owner scoped encrypted IDB + cross-tab BroadcastChannel in one call.
-	const idb = attachLocalStorage(ydoc, {
+	const idb = attachLocalStorage(workspace.ydoc, {
 		server: signedIn.server,
 		ownerId: signedIn.ownerId,
 		keyring: signedIn.keyring,
 	});
 
-	const collaboration = openCollaboration(ydoc, {
+	const collaboration = openCollaboration(workspace.ydoc, {
 		url: roomWsUrl({
 			baseURL: signedIn.auth.baseURL,
 			ownerId: signedIn.ownerId,
-			guid: ydoc.guid,
+			guid: workspace.ydoc.guid,
 			deviceId,
 		}),
 		waitFor: idb.whenLoaded,
@@ -182,25 +179,16 @@ export function openApp({
 	});
 
 	return {
-		get id() {
-			return ydoc.guid;
-		},
-		ydoc,
-		tables,
-		encryption,
+		...workspace,
 		idb,
 		collaboration,
-		batch: (fn: () => void) => ydoc.transact(fn),
 		async wipe() {
-			ydoc.destroy();
+			workspace[Symbol.dispose]();
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
 			await wipeLocalStorage({
 				server: signedIn.server,
 				ownerId: signedIn.ownerId,
 			});
-		},
-		[Symbol.dispose]() {
-			ydoc.destroy();
 		},
 	};
 }
@@ -219,7 +207,7 @@ export const session = createSession({
 
 `openCollaboration` is the workspace primitive: it wraps the sync supervisor, mirrors the relay's server-owned presence channel as `collaboration.devices`, and runs inbound dispatch frames against the local action registry. Find an online install with `workspace.collaboration.devices.list().find((d) => d.deviceId === deviceId)`, then call it with `workspace.collaboration.dispatch(...)`. Content documents use the same primitive with `actions: {}`. See [SYNC_ARCHITECTURE.md](./SYNC_ARCHITECTURE.md) for the full model.
 
-The `guid` you pass to `new Y.Doc(...)` becomes `ydoc.guid`. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin. Cloud sync targets the single uniform shape `/api/owners/:ownerId/rooms/:roomId` in both modes: build the URL with `roomWsUrl({ baseURL, ownerId, guid: ydoc.guid, deviceId })`. A cloud doc is owned by the authenticated `OwnerId`, so the server resolves the Durable Object name `owners/${ownerId}/rooms/${room}` from the auth token (personal: `ownerId === userId`; team: `ownerId === 'team'`), with no workspace lookup.
+The `id` you pass to `createWorkspace(...)` becomes `workspace.ydoc.guid`. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin. Cloud sync targets the single uniform shape `/api/owners/:ownerId/rooms/:roomId` in both modes: build the URL with `roomWsUrl({ baseURL, ownerId, guid: workspace.ydoc.guid, deviceId })`. A cloud doc is owned by the authenticated `OwnerId`, so the server resolves the Durable Object name `owners/${ownerId}/rooms/${room}` from the auth token (personal: `ownerId === userId`; team: `ownerId === 'team'`), with no workspace lookup.
 
 For production-shaped browser wiring, see `apps/fuji/src/lib/browser.ts`. For auth session transitions, see `apps/fuji/src/lib/session.ts`.
 
@@ -246,21 +234,20 @@ There is no builder chain. A user-owned builder function composes attachments in
 
 ```typescript
 function openBlog() {
-	const ydoc = new Y.Doc({ guid: 'epicenter.blog' });
-	const tables = attachTables(ydoc, { posts });
-	const idb = attachIndexedDb(ydoc);
-	const collaboration = openCollaboration(ydoc, {
+	const workspace = createWorkspace({
+		id: 'epicenter.blog',
+		tables: { posts },
+		kv: {},
+	});
+	const idb = attachIndexedDb(workspace.ydoc);
+	const collaboration = openCollaboration(workspace.ydoc, {
 		url,
 		waitFor: idb.whenLoaded,
 		openWebSocket,
 		onReconnectSignal,
 		actions: {},
 	});
-	return {
-		get id() { return ydoc.guid; },
-		ydoc, tables, idb, collaboration,
-		[Symbol.dispose]() { ydoc.destroy(); },
-	};
+	return { ...workspace, idb, collaboration };
 }
 ```
 
@@ -349,7 +336,7 @@ Yjs supports multiple providers simultaneously. A phone can connect to desktop, 
 ### How It All Fits Together
 
 1. Define tables and KV entries with `defineTable` and `defineKv`.
-2. Write a builder function that constructs `new Y.Doc({ guid })` and composes `attachTables` / `attachKv` / `attachIndexedDb` / `openCollaboration` inline, returning the bundle. Content docs call `openCollaboration` with `actions: {}`.
+2. Write a builder function that calls `createWorkspace({ id, tables, kv })` and composes `attachIndexedDb` / `openCollaboration` inline around `workspace.ydoc`, returning the bundle. Content docs construct `new Y.Doc({ guid })` directly and call `openCollaboration` with `actions: {}`.
 3. For singleton apps: call the builder once at module scope. For browser
    child documents: use `createDisposableCache(...)` and call `.open(rowId)`
    per instance. For one-shot Node operations: call the child builder directly
@@ -421,7 +408,7 @@ KV entries are for settings and scalar preferences. They are keyed by string and
 
 "Extensions" in Epicenter are just `attach*` calls inside your builder function. There is no `.withExtension` chain, no extension registry, no priority flag: just lexical scope.
 
-- Call the relevant `attach*` or `open*` function (e.g. `attachIndexedDb`, `attachYjsLog`, `attachEncryption`, `openCollaboration`) inside the builder and include the handle in the returned bundle.
+- Call the relevant `attach*` or `open*` function (e.g. `attachIndexedDb`, `attachYjsLog`, `attachLocalStorage`, `openCollaboration`) inside the builder against `workspace.ydoc` and include the handle in the returned bundle.
 - Order matters only through lexical scope: later `attach*` calls see earlier handles directly.
 - For browser per-row content docs, write a separate `createDisposableCache(...)` and `.open(rowId)` it from the main workspace's actions or components.
 
@@ -591,9 +578,9 @@ import * as Y from 'yjs';
 import {
 	attachIndexedDb,
 	attachPlainText,
-	attachTables,
 	column,
 	createDisposableCache,
+	createWorkspace,
 	defineTable,
 	docGuid,
 	onLocalUpdate,
@@ -607,16 +594,13 @@ const files = defineTable({
 });
 
 function openFilesWorkspace() {
-	const ydoc = new Y.Doc({ guid: 'epicenter.files' });
-	const tables = attachTables(ydoc, { files });
-	const idb = attachIndexedDb(ydoc);
-	return {
-		get id() { return ydoc.guid; },
-		ydoc,
-		tables,
-		idb,
-		[Symbol.dispose]() { ydoc.destroy(); },
-	};
+	const workspace = createWorkspace({
+		id: 'epicenter.files',
+		tables: { files },
+		kv: {},
+	});
+	const idb = attachIndexedDb(workspace.ydoc);
+	return { ...workspace, idb };
 }
 
 export const workspace = openFilesWorkspace();
@@ -816,7 +800,7 @@ Attachments are the opt-in capabilities you compose inside a builder. Browser-sa
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
-	attachTables,
+	createWorkspace,
 	openCollaboration,
 	roomWsUrl,
 } from '@epicenter/workspace';
@@ -838,10 +822,9 @@ For authenticated apps, call `await wipeLocalStorage({ server, ownerId })` after
 `attachSqliteMaterializer` and `attachMarkdownMaterializer` are not persistence: they project workspace rows into queryable SQLite tables or `.md` files. See the materializer subsections below.
 
 ```typescript
-import * as Y from 'yjs';
 import {
-	attachTables,
 	column,
+	createWorkspace,
 	defineTable,
 } from '@epicenter/workspace';
 import { attachYjsLog } from '@epicenter/workspace/node';
@@ -852,17 +835,16 @@ const notes = defineTable({
 });
 
 function openNotes() {
-	const ydoc = new Y.Doc({ guid: 'epicenter.notes' });
-	const tables = attachTables(ydoc, { notes });
-	const yjsLog = attachYjsLog(ydoc, { filePath: '/tmp/epicenter/notes.db' });
+	const workspace = createWorkspace({
+		id: 'epicenter.notes',
+		tables: { notes },
+		kv: {},
+	});
+	const yjsLog = attachYjsLog(workspace.ydoc, {
+		filePath: '/tmp/epicenter/notes.db',
+	});
 
-	return {
-		get id() { return ydoc.guid; },
-		ydoc,
-		tables,
-		yjsLog,
-		[Symbol.dispose]() { ydoc.destroy(); },
-	};
+	return { ...workspace, yjsLog };
 }
 
 void openNotes;
@@ -873,13 +855,12 @@ void openNotes;
 One primitive wraps the WebSocket transport: `openCollaboration`. The workspace document passes a real `actions` registry; content documents that only need bytes-on-the-wire pass `actions: {}`. Compose it with `attachBroadcastChannel(ydoc)` for unauthenticated local-only documents. Authenticated browser workspaces use `attachLocalStorage(ydoc, { server, ownerId, keyring })`, which pairs encrypted IDB with an owner-scoped BroadcastChannel in one call.
 
 ```typescript
-import * as Y from 'yjs';
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
-	attachTables,
 	column,
 	createDeviceId,
+	createWorkspace,
 	defineTable,
 	openCollaboration,
 	roomWsUrl,
@@ -901,16 +882,19 @@ function openTabs({
 	openWebSocket: AuthClient['openWebSocket'];
 	onReconnectSignal: AuthClient['onStateChange'];
 }) {
-	const ydoc = new Y.Doc({ guid: 'epicenter.tabs' });
-	const tables = attachTables(ydoc, { tabs });
-	const idb = attachIndexedDb(ydoc);
-	attachBroadcastChannel(ydoc);
+	const workspace = createWorkspace({
+		id: 'epicenter.tabs',
+		tables: { tabs },
+		kv: {},
+	});
+	const idb = attachIndexedDb(workspace.ydoc);
+	attachBroadcastChannel(workspace.ydoc);
 	const deviceId = createDeviceId({ storage: localStorage });
-	const collaboration = openCollaboration(ydoc, {
+	const collaboration = openCollaboration(workspace.ydoc, {
 		url: roomWsUrl({
 			baseURL: 'https://api.epicenter.so',
 			ownerId,
-			guid: ydoc.guid,
+			guid: workspace.ydoc.guid,
 			deviceId,
 		}),
 		waitFor: idb.whenLoaded,
@@ -919,14 +903,7 @@ function openTabs({
 		actions: {},
 	});
 
-	return {
-		get id() { return ydoc.guid; },
-		ydoc,
-		tables,
-		idb,
-		collaboration,
-		[Symbol.dispose]() { ydoc.destroy(); },
-	};
+	return { ...workspace, idb, collaboration };
 }
 
 void openTabs;
@@ -936,13 +913,12 @@ Ordering is just lexical: `collaboration` reads `idb.whenLoaded` as `waitFor` be
 
 ### Markdown materializer
 
-The markdown materializer is exported from `@epicenter/workspace/document/materializer/markdown`. Compose it inside your builder alongside the other attachments: it needs `tables` and `ydoc`, both of which are already in lexical scope.
+The markdown materializer is exported from `@epicenter/workspace/document/materializer/markdown`. Compose it inside your builder alongside the other attachments: it takes the workspace bundle directly and uses `perTable[name]` presence as the selection (tables not listed in `perTable` are skipped).
 
 ```typescript
-import * as Y from 'yjs';
 import {
-	attachTables,
 	column,
+	createWorkspace,
 	defineTable,
 } from '@epicenter/workspace';
 import { attachYjsLog } from '@epicenter/workspace/node';
@@ -958,25 +934,20 @@ const notes = defineTable({
 });
 
 function openNotes() {
-	const ydoc = new Y.Doc({ guid: 'epicenter.notes' });
-	const tables = attachTables(ydoc, { notes });
-	const yjsLog = attachYjsLog(ydoc, {
+	const workspace = createWorkspace({
+		id: 'epicenter.notes',
+		tables: { notes },
+		kv: {},
+	});
+	const yjsLog = attachYjsLog(workspace.ydoc, {
 		filePath: '/tmp/epicenter/notes-workspace.db',
 	});
-	const markdown = attachMarkdownMaterializer(ydoc, {
+	const markdown = attachMarkdownMaterializer(workspace, {
 		dir: '/tmp/epicenter/markdown',
-		tables: { notes: tables.notes },
 		perTable: { notes: { filename: slugFilename('title') } },
 	});
 
-	return {
-		get id() { return ydoc.guid; },
-		ydoc,
-		tables,
-		yjsLog,
-		markdown,
-		[Symbol.dispose]() { ydoc.destroy(); },
-	};
+	return { ...workspace, yjsLog, markdown };
 }
 
 void openNotes;
@@ -984,13 +955,12 @@ void openNotes;
 
 ### SQLite materializer
 
-The SQLite materializer is exported from `@epicenter/workspace/document/materializer/sqlite`. It mirrors table rows into queryable SQLite tables with optional FTS5 full-text search. Pass the `tables` record to mirror every entry, and use the keyed `fts` slot to opt specific columns into FTS5.
+The SQLite materializer is exported from `@epicenter/workspace/document/materializer/sqlite`. It mirrors every table in the workspace bundle into queryable SQLite tables with optional FTS5 full-text search. Pass the workspace directly; use the keyed `fts` slot to opt specific columns into FTS5.
 
 ```typescript
-import * as Y from 'yjs';
 import {
-	attachTables,
 	column,
+	createWorkspace,
 	defineTable,
 } from '@epicenter/workspace';
 import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
@@ -1003,21 +973,17 @@ const posts = defineTable({
 });
 
 function openBlog() {
-	const ydoc = new Y.Doc({ guid: 'epicenter.blog' });
-	const tables = attachTables(ydoc, { posts });
-	const mirror = attachBunSqliteMaterializer(ydoc, {
+	const workspace = createWorkspace({
+		id: 'epicenter.blog',
+		tables: { posts },
+		kv: {},
+	});
+	const mirror = attachBunSqliteMaterializer(workspace, {
 		filePath: '/tmp/epicenter/blog.db',
-		tables: { posts: tables.posts },
 		fts: { posts: ['title', 'body'] },
 	});
 
-	return {
-		get id() { return ydoc.guid; },
-		ydoc,
-		tables,
-		mirror,
-		[Symbol.dispose]() { ydoc.destroy(); },
-	};
+	return { ...workspace, mirror };
 }
 
 // After mirror.whenFlushed:
@@ -1101,10 +1067,9 @@ Use `defineQuery(...)` for reads.
 
 ```typescript
 import Type from 'typebox';
-import * as Y from 'yjs';
 import {
-	attachTables,
 	column,
+	createWorkspace,
 	defineActions,
 	defineQuery,
 	defineTable,
@@ -1117,30 +1082,27 @@ const posts = defineTable({
 });
 
 function openPosts() {
-	const ydoc = new Y.Doc({ guid: 'epicenter.actions.queries' });
-	const tables = attachTables(ydoc, { posts });
+	const workspace = createWorkspace({
+		id: 'epicenter.actions.queries',
+		tables: { posts },
+		kv: {},
+	});
 
 	const actions = defineActions({
 		posts_list: defineQuery({
 			title: 'List Posts',
 			description: 'List all posts.',
-			handler: () => tables.posts.getAllValid(),
+			handler: () => workspace.tables.posts.getAllValid(),
 		}),
 		posts_get_by_id: defineQuery({
 			title: 'Get Post',
 			description: 'Get one post by ID.',
-			input: Type.Object({ id: tables.posts.schema.properties.id }),
-			handler: ({ id }) => tables.posts.get(id),
+			input: Type.Object({ id: workspace.tables.posts.schema.properties.id }),
+			handler: ({ id }) => workspace.tables.posts.get(id),
 		}),
 	});
 
-	return {
-		get id() { return ydoc.guid; },
-		ydoc,
-		tables,
-		actions,
-		[Symbol.dispose]() { ydoc.destroy(); },
-	};
+	return { ...workspace, actions };
 }
 
 const workspace = openPosts();
@@ -1154,10 +1116,9 @@ Use `defineMutation(...)` for writes or side effects.
 
 ```typescript
 import Type from 'typebox';
-import * as Y from 'yjs';
 import {
-	attachTables,
 	column,
+	createWorkspace,
 	defineActions,
 	defineMutation,
 	defineTable,
@@ -1171,17 +1132,20 @@ const posts = defineTable({
 });
 
 function openPosts() {
-	const ydoc = new Y.Doc({ guid: 'epicenter.actions.mutations' });
-	const tables = attachTables(ydoc, { posts });
+	const workspace = createWorkspace({
+		id: 'epicenter.actions.mutations',
+		tables: { posts },
+		kv: {},
+	});
 
 	const actions = defineActions({
 		posts_create: defineMutation({
 			title: 'Create Post',
 			description: 'Create a new post row.',
-			input: Type.Object({ title: tables.posts.schema.properties.title }),
+			input: Type.Object({ title: workspace.tables.posts.schema.properties.title }),
 			handler: ({ title }) => {
 				const id = generateId();
-				tables.posts.set({ id, title, published: false });
+				workspace.tables.posts.set({ id, title, published: false });
 				return { id };
 			},
 		}),
@@ -1189,17 +1153,11 @@ function openPosts() {
 			title: 'Publish Post',
 			description: 'Mark a post as published.',
 			input: Type.Object({ id: Type.String() }),
-			handler: ({ id }) => tables.posts.update(id, { published: true }),
+			handler: ({ id }) => workspace.tables.posts.update(id, { published: true }),
 		}),
 	});
 
-	return {
-		get id() { return ydoc.guid; },
-		ydoc,
-		tables,
-		actions,
-		[Symbol.dispose]() { ydoc.destroy(); },
-	};
+	return { ...workspace, actions };
 }
 
 void openPosts;
@@ -1312,15 +1270,17 @@ Two composition shapes, one builder contract.
 ```
 ┌──────────────────────────────────────────────────────────┐
 │ function openApp() {                                      │
-│   const ydoc = new Y.Doc({ guid: 'epicenter.my-app' });  │
-│   const tables        = attachTables(ydoc, { ... });     │
-│   const idb           = attachIndexedDb(ydoc);            │
-│   const collaboration = openCollaboration(ydoc, {         │
+│   const workspace = createWorkspace({                     │
+│     id: 'epicenter.my-app',                               │
+│     tables: { ... },                                      │
+│     kv: {},                                               │
+│   });                                                     │
+│   const idb = attachIndexedDb(workspace.ydoc);            │
+│   const collaboration = openCollaboration(workspace.ydoc, {│
 │     waitFor: idb.whenLoaded, openWebSocket, onReconnectSignal, │
 │     actions: { ... },                                     │
 │   });                                                     │
-│   return { ydoc, tables, idb, collaboration,              │
-│            [Symbol.dispose]() { ydoc.destroy(); } };     │
+│   return { ...workspace, idb, collaboration };            │
 │ }                                                         │
 │ export const workspace = openApp();                       │
 └──────────────────────────────────────────────────────────┘

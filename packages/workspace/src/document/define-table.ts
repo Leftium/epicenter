@@ -40,6 +40,7 @@
  * ```
  */
 
+import type { ColumnError, FlatJsonTSchema } from './column/constraint';
 import {
 	createTableDefinition,
 	type LastVersion,
@@ -47,8 +48,7 @@ import {
 	type RowOf,
 	type TableDefinition,
 	type VersionedColumns,
-} from './attach-table';
-import type { ColumnError, FlatJsonTSchema } from './column/constraint';
+} from './table';
 
 /**
  * Refuse `_v` as a user-declared column key. The library stamps `_v` itself

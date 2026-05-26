@@ -9,6 +9,7 @@ export {
 	type ChatMessageId,
 	type Conversation,
 	type ConversationId,
+	createTabManagerWorkspace,
 	type Device,
 	type DeviceId,
 	generateBookmarkId,
@@ -18,6 +19,7 @@ export {
 	type SavedTab,
 	type SavedTabId,
 	TAB_MANAGER_ID,
+	type TabManagerWorkspace,
 	type ToolTrust,
 	tabManagerTables,
 } from './definition';

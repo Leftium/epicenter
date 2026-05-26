@@ -5,8 +5,8 @@
 > column builders) that no longer exists in this codebase.
 >
 > Persistence today is an *attachment*, not a provider. You call
-> `attachIndexedDb(ydoc)` in the browser or `attachYjsLog(ydoc, { filePath })`
-> on Node/Bun, both inside a `defineDocument(builder)` closure. See
+> `attachIndexedDb(workspace.ydoc)` in the browser or `attachYjsLog(workspace.ydoc, { filePath })`
+> on Node/Bun, composed inline against the bundle returned by `createWorkspace`. See
 > [`packages/workspace/README.md`](../../packages/workspace/README.md) for the
 > Quick Start and [`packages/workspace/SYNC_ARCHITECTURE.md`](../../packages/workspace/SYNC_ARCHITECTURE.md)
 > for multi-device sync.
@@ -19,41 +19,35 @@ YJS is a **CRDT (Conflict-free Replicated Data Type)** library. In Epicenter, YJ
 
 The example below uses cloud sync: the client builds the URL with `roomWsUrl({ baseURL, owner, guid, installationId })` and the server resolves the room from the auth token.
 
-Each app composes its workspace in a single builder:
+Each app composes its workspace inline in a browser opener:
 
 ```typescript
 import {
 	attachIndexedDb,
-	attachTables,
-	defineDocument,
+	createWorkspace,
 	openCollaboration,
 	roomWsUrl,
 } from '@epicenter/workspace';
-import * as Y from 'yjs';
 
-const app = defineDocument((id: string) => {
-	const ydoc = new Y.Doc({ guid: id });
-	const tables = attachTables(ydoc, appTables);
-	const idb = attachIndexedDb(ydoc);                          // local persistence
-	const collaboration = openCollaboration(ydoc, {              // sync + presence + dispatch
-		url: roomWsUrl({ baseURL: auth.baseURL, owner, guid: ydoc.guid, installationId }),
+export function openMyApp() {
+	const workspace = createWorkspace({
+		id: 'epicenter.myapp',
+		tables: appTables,
+		kv: {},
+	});
+	const idb = attachIndexedDb(workspace.ydoc);                  // local persistence
+	const collaboration = openCollaboration(workspace.ydoc, {     // sync + presence + dispatch
+		url: roomWsUrl({ baseURL: auth.baseURL, owner, guid: workspace.ydoc.guid, installationId }),
 		openWebSocket: auth.openWebSocket,
 		onReconnectSignal: auth.onStateChange,
-		waitFor: idb.whenLoaded,                                   // delta-only on reconnect
+		waitFor: idb.whenLoaded,                                    // delta-only on reconnect
 		actions: {},
 	});
 
-	return {
-		id,
-		ydoc,
-		tables,
-		idb,
-		collaboration,
-		[Symbol.dispose]() { ydoc.destroy(); },
-	};
-});
+	return { ...workspace, idb, collaboration };
+}
 
-export const workspace = app.open('epicenter.myapp');
+export const workspace = openMyApp();
 ```
 
 Offline and sync behavior:

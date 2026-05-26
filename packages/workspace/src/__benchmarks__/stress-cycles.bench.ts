@@ -9,7 +9,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import * as Y from 'yjs';
-import { attachTable } from '../index.js';
+import { attachTable } from '../document/table.js';
 import {
 	eventDefinition,
 	generateId,

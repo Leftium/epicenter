@@ -30,7 +30,7 @@ export type Note = InferTableRow<typeof notesTable>;
 
 ### Variadic (Multiple Versions)
 
-Use when you need to evolve a schema over time. Each positional argument is a version (v1 first, v2 second, etc.). The `.migrate()` step is required before the definition is usable: passing the intermediate builder to `attachTable` is a compile error.
+Use when you need to evolve a schema over time. Each positional argument is a version (v1 first, v2 second, etc.). The `.migrate()` step is required before the definition is usable: passing the intermediate builder to `createWorkspace`'s `tables` is a compile error.
 
 ```typescript
 const notesTable = defineTable(

@@ -9,9 +9,8 @@
  * ```
  */
 
-import { tabManagerTables } from '@epicenter/tab-manager';
+import { createTabManagerWorkspace } from '@epicenter/tab-manager';
 import {
-	attachEncryption,
 	defineActions,
 	defineWorkspace,
 	openCollaboration,
@@ -22,10 +21,8 @@ import {
 	slugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachYjsLog, markdownPath, yjsPath } from '@epicenter/workspace/node';
-import * as Y from 'yjs';
 
 const SERVER_URL = 'https://api.epicenter.so';
-const WORKSPACE_ID = 'epicenter.tab-manager';
 
 export default defineWorkspace({
 	async open({
@@ -37,16 +34,12 @@ export default defineWorkspace({
 		openWebSocket,
 		onReconnectSignal,
 	}) {
-		const ydoc = new Y.Doc({ guid: WORKSPACE_ID, gc: true });
-		ydoc.clientID = yDocClientId;
-		const { tables, kv } = attachEncryption(ydoc, {
-			keyring,
-			tables: tabManagerTables,
-			kv: {},
-		});
+		const workspace = createTabManagerWorkspace({ keyring });
+		workspace.ydoc.clientID = yDocClientId;
+		const { ydoc, tables, kv } = workspace;
 
 		const persistence = attachYjsLog(ydoc, {
-			filePath: yjsPath(projectDir, WORKSPACE_ID),
+			filePath: yjsPath(projectDir, ydoc.guid),
 		});
 
 		const actions = defineActions({});
@@ -64,19 +57,14 @@ export default defineWorkspace({
 		});
 
 		const whenReady = collaboration.whenConnected;
-		const markdown = attachMarkdownMaterializer(ydoc, {
-			dir: markdownPath(projectDir, WORKSPACE_ID),
+		const markdown = attachMarkdownMaterializer(workspace, {
+			dir: markdownPath(projectDir, ydoc.guid),
 			waitFor: whenReady,
-			tables: {
-				savedTabs: tables.savedTabs,
-				bookmarks: tables.bookmarks,
-				devices: tables.devices,
-			},
 			perTable: {
 				savedTabs: { filename: slugFilename('title') },
 				bookmarks: { filename: slugFilename('title') },
+				devices: {},
 			},
-			kv,
 		});
 
 		return {
@@ -85,10 +73,9 @@ export default defineWorkspace({
 			actions,
 			collaboration,
 			async [Symbol.asyncDispose]() {
-				ydoc.destroy();
+				workspace[Symbol.dispose]();
 				await collaboration.whenDisposed;
 			},
-			id: WORKSPACE_ID,
 			ydoc,
 			tables,
 			kv,

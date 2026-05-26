@@ -112,14 +112,12 @@ See `apps/whispering/src/lib/workspace/definition.ts` for a multi-table example 
 ```typescript
 import type { Brand } from 'wellcrafted/brand';
 import {
-  attachTables,
   column,
-  createDisposableCache,
+  createWorkspace,
   defineTable,
   generateId,
   type InferTableRow,
 } from '@epicenter/workspace';
-import * as Y from 'yjs';
 
 // ─── Branded IDs ─────────────────────────────────────────────────────────
 
@@ -144,55 +142,56 @@ const postsTable = defineTable({
 });
 export type Post = InferTableRow<typeof postsTable>;
 
-// ─── Document cache + singleton ─────────────────────────────────────────
+const myAppTables = { users: usersTable, posts: postsTable };
 
-const myDoc = createDisposableCache((id: string) => {
-  const ydoc = new Y.Doc({ guid: id });
-  const tables = attachTables(ydoc, { users: usersTable, posts: postsTable });
-  return {
-    id,
-    ydoc,
-    tables,
-    [Symbol.dispose]() {
-      ydoc.destroy();
-    },
-  };
-});
+// ─── Workspace factory ──────────────────────────────────────────────────
 
-export const workspace = myDoc.open('my-workspace');
+export function createMyAppWorkspace() {
+  return createWorkspace({
+    id: 'my-workspace',
+    tables: myAppTables,
+    kv: {},
+  });
+}
+
+export const workspace = createMyAppWorkspace();
 ```
 
 ### Why This Structure
 
 - **Co-located types**: Each `export type` sits right below its `defineTable`: easy to verify 1:1 correspondence, easy to remove both together.
-- **Error co-location**: If you forget `id` or pass a non-flat column shape, the error surfaces on the `defineTable()` call itself, not buried inside the `attachTables` call.
+- **Error co-location**: If you forget `id` or pass a non-flat column shape, the error surfaces on the `defineTable()` call itself, not buried inside the `createWorkspace({ tables })` call.
 - **Single source of truth**: `InferTableRow` derives from the schema. Migrations always infer the latest version's row.
-- **Fast type inference**: `InferTableRow<typeof usersTable>` resolves against a standalone const. Avoids expensive indirection through the document handle type.
+- **Fast type inference**: `InferTableRow<typeof usersTable>` resolves against a standalone const. Avoids expensive indirection through the workspace bundle type.
 
 ### Anti-Pattern: Inline Tables + Deep Indirection
 
 ```typescript
-// BAD: Tables inline, types derived through deep indirection off the handle
-const myDoc = createDisposableCache((id) => {
-  const ydoc = new Y.Doc({ guid: id });
-  const tables = attachTables(ydoc, {
-    users: defineTable({ id: column.string<UserId>(), email: column.string() }),
+// BAD: Tables inline inside createWorkspace, types derived through indirection off the bundle
+export function createMyAppWorkspace() {
+  return createWorkspace({
+    id: 'my-workspace',
+    tables: {
+      users: defineTable({ id: column.string<UserId>(), email: column.string() }),
+    },
+    kv: {},
   });
-  return { id, ydoc, tables };
-});
-type Tables = ReturnType<typeof myDoc.open>['tables'];
+}
+type Tables = ReturnType<typeof createMyAppWorkspace>['tables'];
 export type User = InferTableRow<Tables['users']>;
 
-// GOOD: Extract table, co-locate type, reference it in attachTables
+// GOOD: Extract table, co-locate type, reference it in createWorkspace
 const usersTable = defineTable({
   id: column.string<UserId>(),
   email: column.string(),
 });
 export type User = InferTableRow<typeof usersTable>;
 
-const myDoc = createDisposableCache((id) => {
-  const ydoc = new Y.Doc({ guid: id });
-  const tables = attachTables(ydoc, { users: usersTable });
-  return { id, ydoc, tables };
-});
+export function createMyAppWorkspace() {
+  return createWorkspace({
+    id: 'my-workspace',
+    tables: { users: usersTable },
+    kv: {},
+  });
+}
 ```

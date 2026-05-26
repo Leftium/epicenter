@@ -17,11 +17,11 @@
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import * as Y from 'yjs';
 import {
-	attachTables,
 	createDisposableCache,
+	createWorkspace,
 	defineTable,
+	type Tables,
 } from '../../../index.js';
 import { isAction, isMutation, isQuery } from '../../../shared/actions.js';
 import { column } from '../../column/index.js';
@@ -69,7 +69,7 @@ function createTestDb(): TestDb {
 	};
 }
 
-type AttachedTables = ReturnType<typeof attachTables<typeof tableDefinitions>>;
+type AttachedTables = Tables<typeof tableDefinitions>;
 
 type SetupBuildResult = {
 	// biome-ignore lint/suspicious/noExplicitAny: tests build heterogeneous subsets
@@ -87,14 +87,20 @@ function setup({ build, debounceMs }: SetupOptions = {}) {
 
 	const cache = createDisposableCache(
 		(id: string) => {
-			const ydoc = new Y.Doc({ guid: id });
-			const tables = attachTables(ydoc, tableDefinitions);
+			const workspace = createWorkspace({
+				id,
+				tables: tableDefinitions,
+				kv: {},
+			});
 
-			const built: SetupBuildResult = build?.(tables) ?? {
-				tables: { posts: tables.posts, notes: tables.notes },
+			const built: SetupBuildResult = build?.(workspace.tables) ?? {
+				tables: {
+					posts: workspace.tables.posts,
+					notes: workspace.tables.notes,
+				},
 			};
 
-			const materializer = attachSqliteMaterializerCore(ydoc, {
+			const materializer = attachSqliteMaterializerCore(workspace.ydoc, {
 				db,
 				debounceMs,
 				tables: built.tables,
@@ -103,11 +109,11 @@ function setup({ build, debounceMs }: SetupOptions = {}) {
 			});
 
 			return {
-				ydoc,
-				tables,
+				ydoc: workspace.ydoc,
+				tables: workspace.tables,
 				sqlite: materializer,
 				[Symbol.dispose]() {
-					ydoc.destroy();
+					workspace[Symbol.dispose]();
 				},
 			};
 		},
@@ -174,21 +180,27 @@ describe('attachSqliteMaterializerCore', () => {
 
 			const cache = createDisposableCache(
 				(id: string) => {
-					const ydoc = new Y.Doc({ guid: id });
-					const tables = attachTables(ydoc, tableDefinitions);
+					const workspace = createWorkspace({
+						id,
+						tables: tableDefinitions,
+						kv: {},
+					});
 
-					const materializer = attachSqliteMaterializerCore(ydoc, {
+					const materializer = attachSqliteMaterializerCore(workspace.ydoc, {
 						db,
 						waitFor: gate.promise,
-						tables: { posts: tables.posts, notes: tables.notes },
+						tables: {
+							posts: workspace.tables.posts,
+							notes: workspace.tables.notes,
+						},
 					});
 
 					return {
-						ydoc,
-						tables,
+						ydoc: workspace.ydoc,
+						tables: workspace.tables,
 						sqlite: materializer,
 						[Symbol.dispose]() {
-							ydoc.destroy();
+							workspace[Symbol.dispose]();
 						},
 					};
 				},

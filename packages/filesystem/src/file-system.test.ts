@@ -11,9 +11,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import {
-	attachTables,
 	attachTimeline,
 	createDisposableCache,
+	createWorkspace,
 	onLocalUpdate,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
@@ -24,10 +24,16 @@ import { type FileId, generateFileId } from './ids.js';
 import { filesTable } from './table.js';
 
 function setup() {
-	const id = 'test';
-	const ydoc = new Y.Doc({ guid: id });
-	const tables = attachTables(ydoc, { files: filesTable });
-	const ws = { id, ydoc, tables };
+	const workspace = createWorkspace({
+		id: 'test',
+		tables: { files: filesTable },
+		kv: {},
+	});
+	const ws = {
+		id: workspace.ydoc.guid,
+		ydoc: workspace.ydoc,
+		tables: workspace.tables,
+	};
 	const contentDocs = createDisposableCache(
 		(fileId: FileId) => {
 			const contentYdoc = new Y.Doc({

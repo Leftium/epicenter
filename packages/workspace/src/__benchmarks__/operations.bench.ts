@@ -10,9 +10,9 @@
 import { describe, expect, test } from 'bun:test';
 import { Type } from 'typebox';
 import * as Y from 'yjs';
-import { createKv } from '../document/attach-kv.js';
 import { defineKv } from '../document/define-kv.js';
-import { attachTable } from '../index.js';
+import { createKv } from '../document/kv.js';
+import { attachTable } from '../document/table.js';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { generateId, measureTime, postDefinition } from './helpers.js';
 

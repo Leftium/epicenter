@@ -140,7 +140,7 @@ export function saveTransformationWithSteps(
 	transformation: Transformation,
 	steps: TransformationStep[],
 ) {
-	whispering.batch(() => {
+	whispering.ydoc.transact(() => {
 		transformations.set({
 			...transformation,
 			updatedAt: new Date().toISOString(),

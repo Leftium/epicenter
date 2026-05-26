@@ -1,15 +1,16 @@
 import { partitionResults } from 'wellcrafted/result';
 import { commands } from '$lib/commands';
 import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
-import { rpc } from '$lib/query';
-import { desktopRpc } from '$lib/query/desktop';
-import type { Accelerator } from '$lib/services/desktop/global-shortcut-manager';
+import { notify } from '$lib/operations/notify';
+import { localShortcuts } from '$lib/operations/shortcuts';
 import {
 	type CommandId,
 	shortcutStringToArray,
 } from '$lib/services/local-shortcut-manager';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
+import { tauri } from '$lib/tauri';
+import type { Accelerator } from '$lib/utils/accelerator';
 
 /** Default values for in-app (local) shortcuts. Keyed by command id string. */
 const DEFAULT_LOCAL_SHORTCUTS: Record<string, string | null> = {
@@ -83,11 +84,11 @@ export async function syncLocalShortcutsWithSettings() {
 			.map((command) => {
 				const keyCombination = settings.get(getLocalShortcutKey(command.id));
 				if (!keyCombination) {
-					return rpc.localShortcuts.unregisterCommand({
+					return localShortcuts.unregisterCommand({
 						commandId: command.id as CommandId,
 					});
 				}
-				return rpc.localShortcuts.registerCommand({
+				return localShortcuts.registerCommand({
 					command,
 					keyCombination: shortcutStringToArray(String(keyCombination)),
 				});
@@ -96,7 +97,7 @@ export async function syncLocalShortcutsWithSettings() {
 	);
 	const { errs } = partitionResults(results);
 	if (errs.length > 0) {
-		rpc.notify.error({
+		notify.error({
 			title: 'Error registering local commands',
 			description: errs.map((err) => err.error.message).join('\n'),
 			action: { type: 'more-details', error: errs },
@@ -111,6 +112,9 @@ export async function syncLocalShortcutsWithSettings() {
  * - Shows error toast if any registration/unregistration fails
  */
 export async function syncGlobalShortcutsWithSettings() {
+	if (!tauri) return;
+	const t = tauri; // Rebind for closures that lose the narrowing.
+
 	const commandsWithAccelerators = commands
 		.map((command) => {
 			const accelerator = deviceConfig.get(
@@ -123,12 +127,12 @@ export async function syncGlobalShortcutsWithSettings() {
 
 	const results = await Promise.all(
 		commandsWithAccelerators.map((item) =>
-			desktopRpc.globalShortcuts.registerCommand(item),
+			t.globalShortcuts.registerCommand(item),
 		),
 	);
 	const { errs } = partitionResults(results);
 	if (errs.length > 0) {
-		rpc.notify.error({
+		notify.error({
 			title: 'Error registering global commands',
 			description: errs.map((err) => err.error.message).join('\n'),
 			action: { type: 'more-details', error: errs },
@@ -150,7 +154,7 @@ export function resetLocalShortcutsToDefaultIfDuplicates(): boolean {
 			if (localShortcuts.has(String(shortcut))) {
 				// If duplicates found, reset all local shortcuts to defaults
 				resetLocalShortcuts();
-				rpc.notify.success({
+				notify.success({
 					title: 'Shortcuts reset',
 					description:
 						'Duplicate local shortcuts detected. All local shortcuts have been reset to defaults.',
@@ -183,7 +187,7 @@ export function resetGlobalShortcutsToDefaultIfDuplicates(): boolean {
 			if (globalShortcuts.has(shortcut)) {
 				// If duplicates found, reset all global shortcuts to defaults
 				resetGlobalShortcuts();
-				rpc.notify.success({
+				notify.success({
 					title: 'Shortcuts reset',
 					description:
 						'Duplicate global shortcuts detected. All global shortcuts have been reset to defaults.',

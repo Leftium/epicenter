@@ -1,7 +1,8 @@
 <script lang="ts">
 	import type { Command } from '$lib/commands';
 	import type { KeyboardEventSupportedKey } from '$lib/constants/keyboard';
-	import { rpc } from '$lib/query';
+	import { notify } from '$lib/operations/notify';
+	import { localShortcuts } from '$lib/operations/shortcuts';
 	import {
 		arrayToShortcutString,
 		type CommandId,
@@ -29,17 +30,17 @@
 		pressedKeys,
 		onRegister: async (keyCombination: KeyboardEventSupportedKey[]) => {
 			const { error: unregisterError } =
-				await rpc.localShortcuts.unregisterCommand({
+				await localShortcuts.unregisterCommand({
 					commandId: command.id as CommandId,
 				});
 			if (unregisterError) {
-				rpc.notify.error({
+				notify.error({
 					title: 'Error unregistering local shortcut',
 					description: unregisterError.message,
 					action: { type: 'more-details', error: unregisterError },
 				});
 			}
-			const { error: registerError } = await rpc.localShortcuts.registerCommand(
+			const { error: registerError } = await localShortcuts.registerCommand(
 				{
 					command,
 					keyCombination,
@@ -47,7 +48,7 @@
 			);
 
 			if (registerError) {
-				rpc.notify.error({
+				notify.error({
 					title: 'Error registering local shortcut',
 					description: registerError.message,
 					action: { type: 'more-details', error: registerError },
@@ -60,18 +61,18 @@
 				arrayToShortcutString(keyCombination),
 			);
 
-			rpc.notify.success({
+			notify.success({
 				title: `Local shortcut set to ${keyCombination}`,
 				description: `Press the shortcut to trigger "${command.title}"`,
 			});
 		},
 		onClear: async () => {
 			const { error: unregisterError } =
-				await rpc.localShortcuts.unregisterCommand({
+				await localShortcuts.unregisterCommand({
 					commandId: command.id as CommandId,
 				});
 			if (unregisterError) {
-				rpc.notify.error({
+				notify.error({
 					title: 'Error clearing local shortcut',
 					description: unregisterError.message,
 					action: { type: 'more-details', error: unregisterError },
@@ -79,7 +80,7 @@
 			}
 			settings.set(`shortcut.${command.id}`, null);
 
-			rpc.notify.success({
+			notify.success({
 				title: 'Local shortcut cleared',
 				description: `Please set a new shortcut to trigger "${command.title}"`,
 			});

@@ -13,7 +13,10 @@
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { nanoid } from 'nanoid/non-secure';
-	import { rpc } from '$lib/query';
+	import { deliverTranscriptionResult } from '$lib/operations/delivery';
+	import { notify } from '$lib/operations/notify';
+	import { sound } from '$lib/operations/sound';
+	import { rpc } from '$lib/rpc';
 	import { recordings } from '$lib/state/recordings.svelte';
 	import { transformationRuns } from '$lib/state/transformation-runs.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
@@ -58,7 +61,7 @@
 						: 'Transcription failed - click to try again'}
 			onclick={() => {
 				const toastId = nanoid();
-				rpc.notify.loading({
+				notify.loading({
 					id: toastId,
 					title: '📋 Transcribing...',
 					description: 'Your recording is being transcribed...',
@@ -66,10 +69,10 @@
 				transcribeRecording.mutate(recording, {
 					onError: (error) => {
 						if (error.name === 'WhisperingError') {
-							rpc.notify.error({ id: toastId, ...error });
+							notify.error({ id: toastId, ...error });
 							return;
 						}
-						rpc.notify.error({
+						notify.error({
 							id: toastId,
 							title: '❌ Failed to transcribe recording',
 							description: 'Your recording could not be transcribed.',
@@ -77,9 +80,9 @@
 						});
 					},
 					onSuccess: (transcribedText) => {
-						rpc.sound.playSoundIfEnabled('transcriptionComplete');
+						sound.playSoundIfEnabled('transcriptionComplete');
 
-						rpc.delivery.deliverTranscriptionResult({
+						deliverTranscriptionResult({
 							text: transcribedText,
 							toastId,
 						});
@@ -132,17 +135,17 @@
 				downloadRecording.mutate(recording, {
 					onError: (error) => {
 						if (error.name === 'WhisperingError') {
-							rpc.notify.error(error);
+							notify.error(error);
 							return;
 						}
-						rpc.notify.error({
+						notify.error({
 							title: 'Failed to download recording!',
 							description: 'Your recording could not be downloaded.',
 							action: { type: 'more-details', error },
 						});
 					},
 					onSuccess: () => {
-						rpc.notify.success({
+						notify.success({
 							title: 'Recording downloaded!',
 							description: 'Your recording has been downloaded.',
 						});

@@ -1,4 +1,4 @@
-import { rpc } from '$lib/query';
+import { notify } from '$lib/operations/notify';
 import {
 	getSelectedTranscriptionService,
 	isTranscriptionServiceConfigured,
@@ -13,7 +13,7 @@ export function registerOnboarding() {
 
 	// Check transcription service configuration
 	if (!selectedService) {
-		rpc.notify.info({
+		notify.info({
 			title: 'Welcome to Whispering!',
 			description: 'Please select a transcription service to get started.',
 			action: {
@@ -35,7 +35,7 @@ export function registerOnboarding() {
 			} as const
 		)[selectedService.location];
 
-		rpc.notify.info({
+		notify.info({
 			title: 'Welcome to Whispering!',
 			description: `Please configure your ${missingConfig} to get started.`,
 			action: {

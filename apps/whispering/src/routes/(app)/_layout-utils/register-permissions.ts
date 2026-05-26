@@ -2,18 +2,18 @@ import { toast, toastOnError } from '@epicenter/ui/sonner';
 import { nanoid } from 'nanoid/non-secure';
 import { goto } from '$app/navigation';
 import { IS_MACOS } from '$lib/constants/platform';
-import { desktopServices } from '$lib/services/desktop';
+import { tauri } from '$lib/tauri';
 
 export function registerAccessibilityPermission() {
 	// Only run on macOS desktop
-	if (!IS_MACOS) return;
+	if (!IS_MACOS || !tauri) return;
 
 	const accessibilityToastId = nanoid();
 
 	// Check accessibility permission once on mount
 	(async () => {
 		const { data: isAccessibilityGranted, error } =
-			await desktopServices.permissions.accessibility.check();
+			await tauri.permissions.accessibility.check();
 
 		if (error) {
 			console.error('Failed to check accessibility permissions:', error);
@@ -47,14 +47,14 @@ export function registerAccessibilityPermission() {
 
 export function registerMicrophonePermission() {
 	// Only run on macOS desktop
-	if (!IS_MACOS) return;
+	if (!IS_MACOS || !tauri) return;
 
 	const microphoneToastId = nanoid();
 
 	// Check microphone permission once on mount
 	(async () => {
 		const { data: isMicrophoneGranted, error } =
-			await desktopServices.permissions.microphone.check();
+			await tauri.permissions.microphone.check();
 
 		if (error) {
 			console.error('Failed to check microphone permissions:', error);
@@ -70,8 +70,9 @@ export function registerMicrophonePermission() {
 				action: {
 					label: 'Enable Permission',
 					onClick: async () => {
+						if (!tauri) return;
 						const { error: requestError } =
-							await desktopServices.permissions.microphone.request();
+							await tauri.permissions.microphone.request();
 
 						if (requestError)
 							return toastOnError(

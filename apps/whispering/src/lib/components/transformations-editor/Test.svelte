@@ -7,7 +7,7 @@
 	import { Textarea } from '@epicenter/ui/textarea';
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import { createMutation } from '@tanstack/svelte-query';
-	import { rpc } from '$lib/query';
+	import { rpc } from '$lib/rpc';
 	import type { Transformation, TransformationStep } from '$lib/workspace';
 
 	const transformInput = createMutation(

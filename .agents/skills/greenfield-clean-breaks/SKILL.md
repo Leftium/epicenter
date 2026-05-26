@@ -140,6 +140,20 @@ Decision:
   refuse / keep / defer because ...
 ```
 
+## Go-to-Definition Awareness
+
+In greenfield mode, any extra Go-to-Def hop has to earn its keep. A developer pressing Go-to-Def from a call site should land on the actual source of truth, not on an alias, a re-export, or a behavior-free wrapper. If nothing earns the hop, delete it.
+
+Greenfield-specific Go-to-Def smells:
+
+- Re-export chains across packages where each hop adds nothing.
+- Adapter or proxy that wraps a real function with no behavior change.
+- Module-level object destructure-re-exported, so Go-to-Def lands on the destructuring line instead of the real export.
+- Type annotation form that obscures the value's identity (`const fn: typeof Real = unreachable` instead of `const fn = unreachable satisfies typeof Real`).
+- Public types hand-written over a factory's return shape, so Go-to-Def lands on the alias instead of the returned member.
+
+See `typescript` and `cohesive-clean-breaks` for the per-change mechanics.
+
 ## Earned Trigger Test
 
 Do not add a table, public type, API field, route, service, config option, or lifecycle concept for a hypothetical future.

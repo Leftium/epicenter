@@ -8,7 +8,7 @@ import { extractErrorMessage } from 'wellcrafted/error';
 import { BITRATES_KBPS, DEFAULT_BITRATE_KBPS } from '$lib/constants/audio';
 import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
 import { LOCAL_MODEL_UNLOAD_POLICIES } from '$lib/constants/transcription';
-import { notify } from '$lib/query/notify';
+import { notify } from '$lib/operations/notify';
 
 // ── Per-key definitions ──────────────────────────────────────────────────────
 

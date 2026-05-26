@@ -14,12 +14,13 @@
 	} from '$lib/constants/audio';
 	import { migrationDialog } from '$lib/migration/migration-dialog.svelte';
 	import { services } from '$lib/services';
+	import { tauri } from '$lib/tauri';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { syncWindowAlwaysOnTopWithRecorderState } from '../_layout-utils/alwaysOnTop.svelte';
-	import { checkCompressionRecommendation } from '../_layout-utils/check-ffmpeg';
+	import { checkCompressionRecommendation } from '../_layout-utils/compression-recommendation';
 	import { checkForUpdates } from '../_layout-utils/check-for-updates';
 	import {
 		resetGlobalShortcutsToDefaultIfDuplicates,
@@ -50,7 +51,7 @@
 		// Platform-agnostic async checks
 		migrationDialog.check();
 
-		if (window.__TAURI_INTERNALS__) {
+		if (tauri) {
 			syncGlobalShortcutsWithSettings();
 			resetGlobalShortcutsToDefaultIfDuplicates();
 
@@ -70,9 +71,9 @@
 		cleanupMicrophonePermission?.();
 	});
 
-	if (window.__TAURI_INTERNALS__) {
-		syncWindowAlwaysOnTopWithRecorderState();
-		syncIconWithRecorderState();
+	if (tauri) {
+		syncWindowAlwaysOnTopWithRecorderState(tauri);
+		syncIconWithRecorderState(tauri);
 	}
 
 	$effect(() => {

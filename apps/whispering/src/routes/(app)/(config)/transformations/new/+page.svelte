@@ -3,7 +3,7 @@
 	import * as Card from '@epicenter/ui/card';
 	import { goto } from '$app/navigation';
 	import { Editor } from '$lib/components/transformations-editor';
-	import { rpc } from '$lib/query';
+	import { notify } from '$lib/operations/notify';
 	import {
 		generateDefaultTransformation,
 		saveTransformationWithSteps,
@@ -31,7 +31,7 @@
 						$state.snapshot(steps),
 					);
 					goto('/transformations');
-					rpc.notify.success({
+					notify.success({
 						title: 'Created transformation!',
 						description: 'Your transformation has been created successfully.',
 					});

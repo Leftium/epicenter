@@ -10,7 +10,7 @@
 	import SparklesIcon from '@lucide/svelte/icons/sparkles';
 	import WandIcon from '@lucide/svelte/icons/wand';
 	import { goto } from '$app/navigation';
-	import { rpc } from '$lib/query';
+	import { rpc } from '$lib/rpc';
 	import { settings } from '$lib/state/settings.svelte';
 	import { transformations } from '$lib/state/transformations.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';

@@ -264,7 +264,12 @@ export type Recording = {
 	readonly backend: 'navigator' | 'cpal';
 	stop(callbacks: {
 		sendStatus: UpdateStatusMessageFn;
-	}): Promise<Result<{ blob: Blob; recordingId: string }, RecorderError>>;
+	}): Promise<
+		Result<
+			{ blob: Blob; recordingId: string; durationMs: number },
+			RecorderError
+		>
+	>;
 	cancel(callbacks: {
 		sendStatus: UpdateStatusMessageFn;
 	}): Promise<Result<CancelRecordingResult, RecorderError>>;

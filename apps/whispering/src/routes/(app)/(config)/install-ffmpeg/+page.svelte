@@ -17,20 +17,31 @@
 	import XCircleIcon from '@lucide/svelte/icons/x-circle';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
-	import { desktopRpc } from '$lib/query/desktop';
 	import { services } from '$lib/services';
+	import { tauri } from '$lib/tauri';
 
 	const platform = services.os.type();
 
-	const ffmpegQuery = createQuery(() => ({
-		...desktopRpc.ffmpeg.checkFfmpegInstalled.options,
-		refetchInterval: (query) => {
-			const isInstalled = query.state.data;
-			return isInstalled ? 30000 : 5000;
-		},
-		refetchOnWindowFocus: true,
-		staleTime: 1000,
-	}));
+	// Page is Tauri-only by intent; gate the query so the script doesn't
+	// throw if a web user navigates here directly. The {#if tauri} block
+	// in the markup hides the rest.
+	const ffmpegQuery = createQuery(() =>
+		tauri
+			? {
+					...tauri.ffmpeg.checkInstalled.options,
+					refetchInterval: (query) => {
+						const isInstalled = query.state.data;
+						return isInstalled ? 30000 : 5000;
+					},
+					refetchOnWindowFocus: true,
+					staleTime: 1000,
+				}
+			: {
+					queryKey: ['ffmpeg.checkInstalled'] as const,
+					queryFn: async () => false,
+					enabled: false,
+				},
+	);
 </script>
 
 <svelte:head> <title>Install FFmpeg - Whispering</title> </svelte:head>

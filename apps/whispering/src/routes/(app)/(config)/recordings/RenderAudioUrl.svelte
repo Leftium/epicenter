@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createQuery } from '@tanstack/svelte-query';
 	import { onDestroy } from 'svelte';
-	import { rpc } from '$lib/query';
+	import { rpc } from '$lib/rpc';
 	import { services } from '$lib/services';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 

@@ -9,7 +9,7 @@
 	import { goto } from '$app/navigation';
 	import { CompressionBody } from '$lib/components/settings';
 	import { settings } from '$lib/state/settings.svelte';
-	import { isCompressionRecommended } from '$routes/(app)/_layout-utils/check-ffmpeg';
+	import { isCompressionRecommended } from '$routes/(app)/_layout-utils/compression-recommendation';
 
 	let { class: className }: { class?: string } = $props();
 

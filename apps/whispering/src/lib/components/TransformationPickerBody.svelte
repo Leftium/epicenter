@@ -5,7 +5,7 @@
 	import LayersIcon from '@lucide/svelte/icons/layers';
 	import { onMount } from 'svelte';
 	import { PLATFORM_TYPE } from '$lib/constants/platform';
-	import { rpc } from '$lib/query';
+	import { rpc } from '$lib/rpc';
 	import { transformations } from '$lib/state/transformations.svelte';
 	import type { Transformation } from '$lib/workspace';
 

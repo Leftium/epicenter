@@ -10,7 +10,8 @@
 		RECORDING_MODE_OPTIONS,
 		type RecordingMode,
 	} from '$lib/constants/audio';
-	import { rpc } from '$lib/query';
+	import { rpc } from '$lib/rpc';
+	import { tauri } from '$lib/tauri';
 	import { settings } from '$lib/state/settings.svelte';
 
 	let { class: className }: { class?: string } = $props();
@@ -21,7 +22,7 @@
 		RECORDING_MODE_OPTIONS.filter((mode) => {
 			if (!mode.desktopOnly) return true;
 			// Desktop only, only show if Tauri is available
-			return window.__TAURI_INTERNALS__;
+			return !!tauri;
 		}),
 	);
 

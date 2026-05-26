@@ -11,9 +11,10 @@ import type { Table } from '@epicenter/workspace';
 
 type MaybePromise<T> = T | Promise<T>;
 
-import { invoke, isTauri } from '@tauri-apps/api/core';
+import { invoke } from '@tauri-apps/api/core';
 import yaml from 'js-yaml';
 import type * as Y from 'yjs';
+import { tauri } from './tauri';
 import type { Recording } from './workspace';
 
 type RecordingMarkdownFilesAttachment = {
@@ -43,7 +44,7 @@ export function attachRecordingMarkdownFiles(
 		waitFor: Promise<unknown>;
 	},
 ) {
-	if (!isTauri()) {
+	if (!tauri) {
 		return {
 			whenFlushed: Promise.resolve(),
 		} satisfies RecordingMarkdownFilesAttachment;

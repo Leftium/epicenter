@@ -13,7 +13,7 @@
 	import { format } from 'date-fns';
 	import CopyablePre from '$lib/components/copyable/CopyablePre.svelte';
 	import TextPreviewDialog from '$lib/components/copyable/TextPreviewDialog.svelte';
-	import { rpc } from '$lib/query';
+	import { notify } from '$lib/operations/notify';
 	import { transformationRuns } from '$lib/state/transformation-runs.svelte';
 	import { transformationStepRuns } from '$lib/state/transformation-step-runs.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
@@ -57,7 +57,7 @@
 							for (const run of runs) {
 						transformationRuns.delete(run.id);
 							}
-							rpc.notify.success({
+							notify.success({
 								title: `${runs.length} run${runs.length !== 1 ? 's' : ''} deleted successfully`,
 								description: 'All transformation runs have been deleted.',
 							});
@@ -120,7 +120,7 @@
 											confirm: { text: 'Delete', variant: 'destructive' },
 										onConfirm: () => {
 						transformationRuns.delete(run.id);
-											rpc.notify.success({
+											notify.success({
 												title: 'Run deleted successfully',
 												description:
 													'Your transformation run has been deleted.',

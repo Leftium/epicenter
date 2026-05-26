@@ -4,7 +4,7 @@
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import { ModeWatcher } from 'mode-watcher';
 	import { onNavigate } from '$app/navigation';
-	import { queryClient } from '$lib/query/client';
+	import { queryClient } from '$lib/rpc/client';
 	import '@epicenter/ui/app.css';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 

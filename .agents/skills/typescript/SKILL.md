@@ -43,6 +43,20 @@ Use this skill when you need to:
 - Compose typed errors bottom-up. Do not filter a broad upstream error union at the boundary.
 - Question silent fallbacks that hide invalid state. Preserve round-trip invariants when parsing and serializing.
 
+## Go-to-Definition Awareness
+
+When organizing types and exports, always consider Go-to-Definition. A developer pressing Go-to-Def from a call site should land as close as possible to the actual source of truth. If a design choice forces an extra navigation hop, the choice has to earn it elsewhere (e.g., a real validation boundary, a published contract, or a multi-implementation port).
+
+Concrete regressions to watch for:
+
+- **Destructure-re-export of a module-level object**: `const stub = { fn, gn } satisfies T; export const { fn, gn } = stub;` lands Go-to-Def on the destructuring line, not the real definition. Prefer per-export `satisfies` or a direct `export const fn = ... satisfies T['fn']`.
+- **`typeof Real` annotation over `satisfies`**: `export const fn: typeof Real = unreachable` hides the underlying value's identity from navigation. `export const fn = unreachable satisfies typeof Real` keeps the value as the source of truth.
+- **Re-export chains in non-barrel files**: `export { X } from './alias'` outside `index.ts` costs an extra hop with nothing to show for it. Reserve `export { ... } from ...` for barrels; export at the declaration everywhere else.
+- **Adapter / proxy / wrapper with no behavior change**: a `fromX` translator or thin passthrough makes Go-to-Def land on the wrapper. Widen the underlying factory's return shape instead (see `factory-function-composition` "collapsed adapter" rule).
+- **Manual return type annotation duplicating zone 4**: annotating a factory with a hand-written interface diverts Go-to-Def to the alias. Use `ReturnType<typeof createThing>` so navigation lands on the actual returned member (this is the same choice that drives JSDoc preservation, see `method-shorthand-jsdoc`).
+
+For broader public-shape decisions that affect navigation across packages, see `cohesive-clean-breaks`.
+
 ## Reference Map
 
 - [Project conventions](references/project-conventions.md): detailed examples for derived types, local shape copies, imports, barrels, factories, generics, destructuring, and factory return types.

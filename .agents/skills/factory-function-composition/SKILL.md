@@ -227,6 +227,8 @@ export function createRemoteClient(options: RemoteClientOptions) {
 
 Zone 4 is already the public API. Duplicating it in a manual return type creates a second source of truth and changes editor navigation: Go to Definition tends to jump to the alias instead of the returned member. Keep method parameter and return annotations inside zone 4 when they make the public surface clearer.
 
+This is one face of a broader principle: when organizing types and exports, always consider Go-to-Definition. Adapter / proxy / wrapper factories with no behavior change are another regression in the same family: Go-to-Def lands on the wrapper instead of the source of truth. The "collapsed adapter" rule below is its concrete remedy. See `typescript` "Go-to-Definition Awareness" for the full set of regressions to watch for, and `method-shorthand-jsdoc` for the JSDoc sibling of this navigation concern.
+
 Do not use this for shared service contracts that several factories implement. Those contracts are vocabulary. Use `satisfies` at the return object when a factory needs to prove it matches an external contract while preserving the concrete returned shape.
 
 ### The `this` Decision Rule

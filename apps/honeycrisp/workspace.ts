@@ -23,7 +23,6 @@ import {
 	generateId,
 	type InferTableRow,
 	type Keyring,
-	type Tables,
 } from '@epicenter/workspace';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
@@ -128,18 +127,13 @@ const notesTable = defineTable(
 });
 export type Note = InferTableRow<typeof notesTable>;
 
-// ─── Table map ─────────────────────────────────────────────────────────────────
-
-export const honeycrispTables = { folders: foldersTable, notes: notesTable };
-export type HoneycrispTables = Tables<typeof honeycrispTables>;
-
 // ─── Workspace factory ────────────────────────────────────────────────────────
 
 export function createHoneycrispWorkspace(opts: { keyring: () => Keyring }) {
 	return createWorkspace({
 		id: HONEYCRISP_ID,
 		keyring: opts.keyring,
-		tables: honeycrispTables,
+		tables: { folders: foldersTable, notes: notesTable },
 		kv: {},
 	});
 }

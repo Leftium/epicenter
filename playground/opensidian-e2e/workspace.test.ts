@@ -14,20 +14,21 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { type FileId, fileContentDocGuid } from '@epicenter/filesystem';
+import type { FileId } from '@epicenter/filesystem';
 import {
 	attachTimeline,
 	createDisposableCache,
-	createWorkspace,
 	generateId,
 } from '@epicenter/workspace';
 import { assembleMarkdown } from '@epicenter/workspace/markdown';
 import { attachYjsLog } from '@epicenter/workspace/node';
-import { opensidianTables } from 'opensidian';
+import {
+	createOpensidianWorkspace,
+	opensidianFileContentDocGuid,
+} from 'opensidian';
 import * as Y from 'yjs';
 import { pushFromMarkdown } from './push-from-markdown';
 
-const WORKSPACE_ID = 'opensidian';
 const TEST_ENCRYPTION_KEYS = [
 	{
 		version: 1,
@@ -46,20 +47,17 @@ function dbPath(id: string) {
 
 /** Create a workspace client with filesystem persistence for testing. */
 function createTestClient() {
-	const workspace = createWorkspace({
-		id: WORKSPACE_ID,
+	const workspace = createOpensidianWorkspace({
 		keyring: () => TEST_ENCRYPTION_KEYS,
-		tables: opensidianTables,
-		kv: {},
 	});
 	attachYjsLog(workspace.ydoc, {
-		filePath: dbPath(WORKSPACE_ID),
+		filePath: dbPath(workspace.ydoc.guid),
 	});
 
 	const contentDocs = createDisposableCache(
 		(fileId: FileId) => {
 			const contentDoc = new Y.Doc({
-				guid: fileContentDocGuid({ workspaceId: WORKSPACE_ID, fileId }),
+				guid: opensidianFileContentDocGuid(fileId),
 				gc: true,
 			});
 			attachYjsLog(contentDoc, {
@@ -78,7 +76,7 @@ function createTestClient() {
 	);
 
 	const client = {
-		id: WORKSPACE_ID,
+		id: workspace.ydoc.guid,
 		ydoc: workspace.ydoc,
 		tables: workspace.tables,
 		kv: workspace.kv,
@@ -194,20 +192,17 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 	const IMPORT_FILES_DIR = join(IMPORT_DIR, 'files');
 
 	function createImportClient() {
-		const workspace = createWorkspace({
-			id: WORKSPACE_ID,
+		const workspace = createOpensidianWorkspace({
 			keyring: () => TEST_ENCRYPTION_KEYS,
-			tables: opensidianTables,
-			kv: {},
 		});
 		attachYjsLog(workspace.ydoc, {
-			filePath: join(IMPORT_PERSISTENCE, 'opensidian.db'),
+			filePath: join(IMPORT_PERSISTENCE, `${workspace.ydoc.guid}.db`),
 		});
 
 		const contentDocs = createDisposableCache(
 			(fileId: FileId) => {
 				const contentDoc = new Y.Doc({
-					guid: fileContentDocGuid({ workspaceId: WORKSPACE_ID, fileId }),
+					guid: opensidianFileContentDocGuid(fileId),
 					gc: true,
 				});
 				attachYjsLog(contentDoc, {
@@ -230,7 +225,7 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 		);
 
 		const client = {
-			id: WORKSPACE_ID,
+			id: workspace.ydoc.guid,
 			ydoc: workspace.ydoc,
 			tables: workspace.tables,
 			kv: workspace.kv,

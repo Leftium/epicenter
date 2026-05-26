@@ -1,4 +1,5 @@
-use log::error;
+use super::error::TranscriptionError;
+use log::{error, warn};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
@@ -9,12 +10,13 @@ use transcribe_rs::whisper_cpp::WhisperEngine;
 
 /// Engine type for managing different transcription engines.
 /// Dropping a variant releases the underlying model resources.
-pub enum Engine {
+enum Engine {
     Whisper(WhisperEngine),
     Parakeet(ParakeetModel),
     Moonshine(MoonshineModel),
 }
 
+#[derive(Clone)]
 pub struct ModelManager {
     engine: Arc<Mutex<Option<Engine>>>,
     current_model_path: Arc<Mutex<Option<PathBuf>>>,
@@ -32,7 +34,7 @@ impl ModelManager {
         }
     }
 
-    pub fn get_or_load_parakeet(
+    fn get_or_load_parakeet(
         &self,
         model_path: PathBuf,
     ) -> Result<Arc<Mutex<Option<Engine>>>, String> {
@@ -83,7 +85,7 @@ impl ModelManager {
         Ok(self.engine.clone())
     }
 
-    pub fn get_or_load_whisper(
+    fn get_or_load_whisper(
         &self,
         model_path: PathBuf,
     ) -> Result<Arc<Mutex<Option<Engine>>>, String> {
@@ -132,7 +134,7 @@ impl ModelManager {
         Ok(self.engine.clone())
     }
 
-    pub fn get_or_load_moonshine(
+    fn get_or_load_moonshine(
         &self,
         model_path: PathBuf,
         variant: MoonshineVariant,
@@ -229,4 +231,79 @@ impl ModelManager {
             error!("Model path mutex poisoned while clearing model path after unload");
         }
     }
+
+    pub fn with_whisper<T>(
+        &self,
+        model_path: PathBuf,
+        f: impl FnOnce(&mut WhisperEngine) -> Result<T, TranscriptionError>,
+    ) -> Result<T, TranscriptionError> {
+        let engine_arc = self
+            .get_or_load_whisper(model_path)
+            .map_err(|message| TranscriptionError::ModelLoadError { message })?;
+        with_typed_engine(&engine_arc, |engine| match engine {
+            Engine::Whisper(e) => Ok(e),
+            _ => Err(TranscriptionError::ModelLoadError {
+                message: "Expected Whisper engine but got different type".to_string(),
+            }),
+        }, f)
+    }
+
+    pub fn with_parakeet<T>(
+        &self,
+        model_path: PathBuf,
+        f: impl FnOnce(&mut ParakeetModel) -> Result<T, TranscriptionError>,
+    ) -> Result<T, TranscriptionError> {
+        let engine_arc = self
+            .get_or_load_parakeet(model_path)
+            .map_err(|message| TranscriptionError::ModelLoadError { message })?;
+        with_typed_engine(&engine_arc, |engine| match engine {
+            Engine::Parakeet(e) => Ok(e),
+            _ => Err(TranscriptionError::ModelLoadError {
+                message: "Expected Parakeet engine but got different type".to_string(),
+            }),
+        }, f)
+    }
+
+    pub fn with_moonshine<T>(
+        &self,
+        model_path: PathBuf,
+        variant: MoonshineVariant,
+        f: impl FnOnce(&mut MoonshineModel) -> Result<T, TranscriptionError>,
+    ) -> Result<T, TranscriptionError> {
+        let engine_arc = self
+            .get_or_load_moonshine(model_path, variant)
+            .map_err(|message| TranscriptionError::ModelLoadError { message })?;
+        with_typed_engine(&engine_arc, |engine| match engine {
+            Engine::Moonshine(e) => Ok(e),
+            _ => Err(TranscriptionError::ModelLoadError {
+                message: "Expected Moonshine engine but got different type".to_string(),
+            }),
+        }, f)
+    }
+}
+
+/// Lock the engine slot, recover from poisoning by clearing the cached
+/// engine so the next get_or_load_* call reloads from scratch, then
+/// project to the typed engine the caller asked for.
+fn with_typed_engine<E, T>(
+    engine_arc: &Arc<Mutex<Option<Engine>>>,
+    project: impl FnOnce(&mut Engine) -> Result<&mut E, TranscriptionError>,
+    f: impl FnOnce(&mut E) -> Result<T, TranscriptionError>,
+) -> Result<T, TranscriptionError> {
+    let mut engine_guard = engine_arc.lock().unwrap_or_else(|poisoned| {
+        warn!(
+            "[Transcription] Engine mutex was poisoned from previous panic, clearing state to force reload..."
+        );
+        let mut recovered = poisoned.into_inner();
+        *recovered = None;
+        recovered
+    });
+    let engine = engine_guard
+        .as_mut()
+        .ok_or_else(|| TranscriptionError::ModelLoadError {
+            message: "Model not loaded (may have been cleared after previous error). Please try again."
+                .to_string(),
+        })?;
+    let typed = project(engine)?;
+    f(typed)
 }

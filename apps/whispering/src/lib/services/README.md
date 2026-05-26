@@ -72,7 +72,7 @@ export default defineConfig({
 });
 ```
 
-A Tauri-only service (`tray`, `fs`, `autostart`, `command`, `permissions`, `ffmpeg`, `global-shortcut-manager`) has an `index.tauri.ts` plus an `index.browser.ts` web stub. The stub enumerates the same exports but binds each to a thrown error: code that tries to call them on web fails clearly. Consumers gate on `window.__TAURI_INTERNALS__` so the throws are unreachable at runtime on web.
+A Tauri-only service has an `index.tauri.ts` with the real implementation. Some additionally need an `index.browser.ts` stub because they're statically imported from web-bundled code (`fs`, `command`, `permissions`, `ffmpeg`, `global-shortcut-manager`); the stub enumerates the same exports but binds each to the shared `unreachable` throw from `services/_tauri-stub.ts` via `satisfies typeof Tauri.X`. Services reachable only from `rpc/desktop/*.tauri.ts` (`autostart`, `tray`) need no stub because the rpc layer itself has one. Consumers gate on `window.__TAURI_INTERNALS__` so the throws are unreachable at runtime on web.
 
 > **💡 Two kinds of dependency injection**
 >
@@ -404,14 +404,16 @@ const result = await services.completion.openai.complete({
 
 ### Tauri-only services (each lives in its own folder under `services/`)
 
-Each has an `index.tauri.ts` with the real implementation and an `index.browser.ts` web stub. Web bundles can import these paths (so static imports from `rpc/desktop/` resolve at build time) but any call throws.
+Each has an `index.tauri.ts` with the real implementation. Web stubs (`index.browser.ts`) exist only for services that web-bundled code statically imports; the rest are reachable only through `rpc/desktop/*.tauri.ts` and need no web counterpart.
 
 - `services/recorder/cpal.tauri.ts` - Native Rust audio recording via CPAL (sibling of `navigator.ts`; the recorder folder exposes both through `index.tauri.ts`)
-- `services/ffmpeg/` - FFmpeg binary helper. `shared.ts` holds platform-neutral constants (compression options, file-extension detection); `index.tauri.ts` is the Tauri service.
-- `services/command/` - Tauri shell command execution
-- `services/fs/` - Tauri filesystem operations
-- `services/tray/` - System tray management
-- `services/global-shortcut-manager/` - OS-level keyboard shortcuts
+- `services/ffmpeg/` - FFmpeg binary helper (web stub exists). `shared.ts` holds platform-neutral constants (compression options, file-extension detection); `index.tauri.ts` is the Tauri service.
+- `services/command/` - Tauri shell command execution (web stub exists)
+- `services/fs/` - Tauri filesystem operations (web stub exists)
+- `services/permissions/` - macOS accessibility / microphone permission flows (web stub exists)
+- `services/global-shortcut-manager/` - OS-level keyboard shortcuts (web stub exists)
+- `services/autostart/` - launch-at-login toggle (no web stub; reachable only from `rpc/desktop`)
+- `services/tray/` - System tray management (no web stub; reachable only from `rpc/desktop`)
 - `services/permissions/` - Accessibility/microphone permission checks
 - `services/autostart/` - Launch-at-login
 

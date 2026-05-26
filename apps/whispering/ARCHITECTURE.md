@@ -2,7 +2,7 @@
 
 Whispering uses a clean three-layer architecture that achieves **extensive code sharing** between the desktop app (Tauri) and web app. This is possible because of how we handle platform differences and separate business logic from UI concerns.
 
-**Quick Navigation:** [Service Layer](#service-layer---pure-business-logic--platform-abstraction) | [RPC Layer](#query-layer---adding-reactivity-and-state-management) | [Error Handling](#error-handling-with-wellcrafted)
+**Quick Navigation:** [Service Layer](#service-layer---pure-business-logic--platform-abstraction) | [RPC Layer](#rpc-layer---adding-reactivity-and-state-management) | [Error Handling](#error-handling-with-wellcrafted)
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌──────────────┐
@@ -83,7 +83,7 @@ The rpc layer's role has narrowed to things that don't fit in CRDTs:
 
 ```svelte
 <script>
-  import { rpc } from '$lib/query';
+  import { rpc } from '$lib/rpc';
   import { recordings } from '$lib/state/recordings.svelte';
 
   // Domain data — workspace state (reactive, no queries needed)

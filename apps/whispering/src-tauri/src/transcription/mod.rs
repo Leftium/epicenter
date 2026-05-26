@@ -4,14 +4,69 @@ mod model_manager;
 use error::TranscriptionError;
 use log::{debug, error, info, warn};
 pub use model_manager::ModelManager;
+use serde::Deserialize;
 use std::io::Write;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
+use tauri::ipc::{InvokeBody, Request};
 use transcribe_rs::onnx::moonshine::MoonshineVariant;
 use transcribe_rs::onnx::parakeet::{ParakeetParams, TimestampGranularity};
 use transcribe_rs::whisper_cpp::WhisperInferenceParams;
 use transcribe_rs::{SpeechModel, TranscribeOptions};
+
+/// Engine-tagged request body sent in the `x-transcribe-config` header of
+/// the `transcribe_audio` command. The audio bytes travel in the raw body,
+/// this carries the engine choice plus engine-specific knobs.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "engine", rename_all = "lowercase")]
+pub enum TranscribeRequest {
+    Whisper {
+        #[serde(rename = "modelPath")]
+        model_path: String,
+        #[serde(default)]
+        language: Option<String>,
+        #[serde(default, rename = "initialPrompt")]
+        initial_prompt: Option<String>,
+    },
+    Parakeet {
+        #[serde(rename = "modelPath")]
+        model_path: String,
+    },
+    Moonshine {
+        #[serde(rename = "modelPath")]
+        model_path: String,
+        variant: MoonshineVariantWire,
+    },
+}
+
+/// Wire representation of the subset of Moonshine variants the app surfaces.
+/// `transcribe-rs` exposes more variants but the UI only offers Tiny and Base.
+#[derive(Debug, Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum MoonshineVariantWire {
+    Tiny,
+    Base,
+}
+
+impl From<MoonshineVariantWire> for MoonshineVariant {
+    fn from(v: MoonshineVariantWire) -> Self {
+        match v {
+            MoonshineVariantWire::Tiny => MoonshineVariant::Tiny,
+            MoonshineVariantWire::Base => MoonshineVariant::Base,
+        }
+    }
+}
+
+impl TranscribeRequest {
+    fn engine_label(&self) -> &'static str {
+        match self {
+            TranscribeRequest::Whisper { .. } => "Whisper",
+            TranscribeRequest::Parakeet { .. } => "Parakeet",
+            TranscribeRequest::Moonshine { .. } => "Moonshine",
+        }
+    }
+}
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -514,6 +569,55 @@ fn join_err(e: tauri::Error) -> TranscriptionError {
     }
 }
 
+/// Unified transcription Tauri command.
+///
+/// Audio bytes arrive as the raw IPC body (Tauri 2's `InvokeBody::Raw`),
+/// which avoids the ~3x overhead of serializing a Vec<u8> as a JSON array
+/// of numbers. Engine selection and per-engine knobs travel as JSON in the
+/// `x-transcribe-config` header.
+///
+/// JS call shape:
+/// ```js
+/// invoke('transcribe_audio', audioArrayBuffer, {
+///   headers: { 'x-transcribe-config': JSON.stringify(config) }
+/// })
+/// ```
+#[tauri::command]
+pub async fn transcribe_audio(
+    request: Request<'_>,
+    model_manager: tauri::State<'_, ModelManager>,
+) -> Result<String, TranscriptionError> {
+    let audio_data = match request.body() {
+        InvokeBody::Raw(bytes) => bytes.clone(),
+        InvokeBody::Json(_) => {
+            return Err(TranscriptionError::AudioReadError {
+                message: "Audio must be sent as the raw IPC body, not JSON".to_string(),
+            })
+        }
+    };
+
+    let config_header = request
+        .headers()
+        .get("x-transcribe-config")
+        .ok_or_else(|| TranscriptionError::TranscriptionError {
+            message: "Missing x-transcribe-config header on transcribe_audio call".to_string(),
+        })?
+        .to_str()
+        .map_err(|e| TranscriptionError::TranscriptionError {
+            message: format!("Invalid x-transcribe-config header bytes: {}", e),
+        })?;
+
+    let req: TranscribeRequest =
+        serde_json::from_str(config_header).map_err(|e| TranscriptionError::TranscriptionError {
+            message: format!("Invalid x-transcribe-config JSON: {}", e),
+        })?;
+
+    run_transcription(audio_data, req, model_manager.inner().clone()).await
+}
+
+/// Compat shim: the original Whisper-specific command, kept while the FE
+/// migrates to the unified `transcribe_audio` command. Delete once all
+/// callers are off it.
 #[tauri::command]
 pub async fn transcribe_audio_whisper(
     audio_data: Vec<u8>,
@@ -522,125 +626,113 @@ pub async fn transcribe_audio_whisper(
     initial_prompt: Option<String>,
     model_manager: tauri::State<'_, ModelManager>,
 ) -> Result<String, TranscriptionError> {
-    let manager = model_manager.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        info!(
-            "[Transcription] starting Whisper transcription: audio_bytes={} model_path={}",
-            audio_data.len(),
-            model_path
-        );
-
-        let Some(samples) = prepare_samples_for_transcription(audio_data, "Whisper")? else {
-            return Ok(String::new());
-        };
-
-        let mut params = WhisperInferenceParams::default();
-        params.language = language;
-        params.initial_prompt = initial_prompt;
-        params.print_special = false;
-        params.print_progress = false;
-        params.print_realtime = false;
-        params.print_timestamps = false;
-        params.suppress_blank = true;
-        params.suppress_non_speech_tokens = true;
-        params.no_speech_thold = 0.2;
-
-        let transcript = manager.with_whisper(PathBuf::from(&model_path), |engine| {
-            let result = engine.transcribe_with(&samples, &params).map_err(|e| {
-                TranscriptionError::TranscriptionError {
-                    message: e.to_string(),
-                }
-            })?;
-            Ok(result.text.trim().to_string())
-        })?;
-
-        info!(
-            "[Transcription] Whisper transcription complete: characters={}",
-            transcript.len()
-        );
-        Ok(transcript)
-    })
-    .await
-    .map_err(join_err)?
+    let req = TranscribeRequest::Whisper {
+        model_path,
+        language,
+        initial_prompt,
+    };
+    run_transcription(audio_data, req, model_manager.inner().clone()).await
 }
 
+/// Compat shim: see `transcribe_audio_whisper`.
 #[tauri::command]
 pub async fn transcribe_audio_parakeet(
     audio_data: Vec<u8>,
     model_path: String,
     model_manager: tauri::State<'_, ModelManager>,
 ) -> Result<String, TranscriptionError> {
-    let manager = model_manager.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        info!(
-            "[Transcription] starting Parakeet transcription: audio_bytes={} model_path={}",
-            audio_data.len(),
-            model_path
-        );
-
-        let Some(samples) = prepare_samples_for_transcription(audio_data, "Parakeet")? else {
-            return Ok(String::new());
-        };
-
-        let params = ParakeetParams {
-            timestamp_granularity: Some(TimestampGranularity::Segment),
-            ..Default::default()
-        };
-
-        let transcript = manager.with_parakeet(PathBuf::from(&model_path), |engine| {
-            let result = engine.transcribe_with(&samples, &params).map_err(|e| {
-                TranscriptionError::TranscriptionError {
-                    message: e.to_string(),
-                }
-            })?;
-            Ok(result.text.trim().to_string())
-        })?;
-
-        info!(
-            "[Transcription] Parakeet transcription complete: characters={}",
-            transcript.len()
-        );
-        Ok(transcript)
-    })
-    .await
-    .map_err(join_err)?
+    let req = TranscribeRequest::Parakeet { model_path };
+    run_transcription(audio_data, req, model_manager.inner().clone()).await
 }
 
+/// Compat shim: see `transcribe_audio_whisper`. Variant is still parsed from
+/// the directory name here for back-compat; the new command takes variant
+/// on the wire.
 #[tauri::command]
 pub async fn transcribe_audio_moonshine(
     audio_data: Vec<u8>,
     model_path: String,
     model_manager: tauri::State<'_, ModelManager>,
 ) -> Result<String, TranscriptionError> {
-    let manager = model_manager.inner().clone();
+    let variant = parse_moonshine_variant(&model_path);
+    let req = TranscribeRequest::Moonshine {
+        model_path,
+        variant,
+    };
+    run_transcription(audio_data, req, model_manager.inner().clone()).await
+}
+
+/// The single transcription work function. Everything CPU-heavy runs inside
+/// `spawn_blocking`. All three engines route through here.
+async fn run_transcription(
+    audio_data: Vec<u8>,
+    request: TranscribeRequest,
+    manager: ModelManager,
+) -> Result<String, TranscriptionError> {
     tauri::async_runtime::spawn_blocking(move || {
+        let engine_label = request.engine_label();
         info!(
-            "[Transcription] starting Moonshine transcription: audio_bytes={} model_path={}",
+            "[Transcription] starting {} transcription: audio_bytes={}",
+            engine_label,
             audio_data.len(),
-            model_path
         );
 
-        let Some(samples) = prepare_samples_for_transcription(audio_data, "Moonshine")? else {
+        let Some(samples) = prepare_samples_for_transcription(audio_data, engine_label)? else {
             return Ok(String::new());
         };
 
-        let model_variant = parse_moonshine_variant(&model_path);
+        let transcript = match request {
+            TranscribeRequest::Whisper {
+                model_path,
+                language,
+                initial_prompt,
+            } => {
+                let mut params = WhisperInferenceParams::default();
+                params.language = language;
+                params.initial_prompt = initial_prompt;
+                params.print_special = false;
+                params.print_progress = false;
+                params.print_realtime = false;
+                params.print_timestamps = false;
+                params.suppress_blank = true;
+                params.suppress_non_speech_tokens = true;
+                params.no_speech_thold = 0.2;
 
-        let transcript =
-            manager.with_moonshine(PathBuf::from(&model_path), model_variant, |engine| {
+                manager.with_whisper(PathBuf::from(model_path), |engine| {
+                    let result = engine
+                        .transcribe_with(&samples, &params)
+                        .map_err(transcription_err)?;
+                    Ok(result.text.trim().to_string())
+                })?
+            }
+            TranscribeRequest::Parakeet { model_path } => {
+                let params = ParakeetParams {
+                    timestamp_granularity: Some(TimestampGranularity::Segment),
+                    ..Default::default()
+                };
+                manager.with_parakeet(PathBuf::from(model_path), |engine| {
+                    let result = engine
+                        .transcribe_with(&samples, &params)
+                        .map_err(transcription_err)?;
+                    Ok(result.text.trim().to_string())
+                })?
+            }
+            TranscribeRequest::Moonshine {
+                model_path,
+                variant,
+            } => manager.with_moonshine(PathBuf::from(model_path), variant.into(), |engine| {
                 // Moonshine doesn't expose model-specific inference params we use, so use the
                 // SpeechModel trait's default-options path.
-                let result =
-                    engine
-                        .transcribe(&samples, &TranscribeOptions::default())
-                        .map_err(|e| TranscriptionError::TranscriptionError {
-                            message: e.to_string(),
-                        })?;
+                let result = engine
+                    .transcribe(&samples, &TranscribeOptions::default())
+                    .map_err(transcription_err)?;
                 Ok(result.text.trim().to_string())
-            })?;
+            })?,
+        };
 
         info!(
-            "[Transcription] Moonshine transcription complete: characters={}",
+            "[Transcription] {} transcription complete: characters={}",
+            engine_label,
             transcript.len()
         );
         Ok(transcript)
@@ -649,10 +741,16 @@ pub async fn transcribe_audio_moonshine(
     .map_err(join_err)?
 }
 
-/// Parse the Moonshine variant out of the model directory name.
-/// Expected format: `moonshine-{variant}-{lang}` (e.g. `moonshine-tiny-en`,
-/// `moonshine-base-en`). Unknown variants fall back to `Tiny` with a warning.
-fn parse_moonshine_variant(model_path: &str) -> MoonshineVariant {
+fn transcription_err(e: impl std::fmt::Display) -> TranscriptionError {
+    TranscriptionError::TranscriptionError {
+        message: e.to_string(),
+    }
+}
+
+/// Convert a wire-side Moonshine variant (from a model directory name) into
+/// the upstream `MoonshineVariant`. Used only by the compat shim; the new
+/// command takes the variant on the wire.
+fn parse_moonshine_variant(model_path: &str) -> MoonshineVariantWire {
     let dir_name = std::path::Path::new(model_path)
         .file_name()
         .and_then(|n| n.to_str())
@@ -665,14 +763,14 @@ fn parse_moonshine_variant(model_path: &str) -> MoonshineVariant {
     );
 
     match variant {
-        "base" => MoonshineVariant::Base,
-        "tiny" => MoonshineVariant::Tiny,
+        "base" => MoonshineVariantWire::Base,
+        "tiny" => MoonshineVariantWire::Tiny,
         _ => {
             warn!(
                 "[Transcription] unknown Moonshine variant '{}' in path '{}', defaulting to tiny",
                 variant, dir_name
             );
-            MoonshineVariant::Tiny
+            MoonshineVariantWire::Tiny
         }
     }
 }

@@ -1,5 +1,4 @@
-import { Ok, type Result } from 'wellcrafted/result';
-import type { AudioArtifact, RecorderError } from './types';
+import type { AudioArtifact } from './types';
 
 /**
  * Materialize an artifact as a `Blob`. Used at the boundary with code
@@ -9,16 +8,11 @@ import type { AudioArtifact, RecorderError } from './types';
  * - `pcm` -> in-memory WAV synthesis (IEEE Float, mono). Cheap; bounded
  *   by recording length.
  * - `blob` -> identity.
- *
- * Returns `Result` for symmetry with code that branches on error, though
- * neither variant can actually fail today.
  */
-export async function artifactToBlob(
-	artifact: AudioArtifact,
-): Promise<Result<Blob, RecorderError>> {
-	if (artifact.kind === 'blob') return Ok(artifact.blob);
+export function artifactToBlob(artifact: AudioArtifact): Blob {
+	if (artifact.kind === 'blob') return artifact.blob;
 	const wavBuffer = encodePcmAsWav(artifact);
-	return Ok(new Blob([wavBuffer], { type: 'audio/wav' }));
+	return new Blob([wavBuffer], { type: 'audio/wav' });
 }
 
 /**

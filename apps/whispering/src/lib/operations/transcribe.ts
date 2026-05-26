@@ -99,13 +99,7 @@ async function prepareForService(
 		}
 	}
 
-	const { data: blob, error: blobError } = await artifactToBlob(artifact);
-	if (blobError) {
-		return WhisperingErr({
-			title: '⚠️ Failed to read recording',
-			description: blobError.message,
-		});
-	}
+	const blob = artifactToBlob(artifact);
 
 	// WAV uploads (VAD captures, file uploads, history re-transcribes
 	// that came from a Pcm artifact's synthesized WAV): still worth

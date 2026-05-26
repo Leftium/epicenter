@@ -57,10 +57,9 @@ export async function processRecordingPipeline({
 	recordings.set(recording);
 	// History save still consumes a Blob today. Materialize once and run
 	// the save in parallel with transcription; for Pcm artifacts this is
-	// in-memory WAV synthesis (cheap), for File it's a disk read.
+	// in-memory WAV synthesis; for Blob artifacts it is identity.
 	const saveAudioPromise = (async () => {
-		const { data: blob, error } = await artifactToBlob(artifact);
-		if (error) return { data: null, error } as const;
+		const blob = artifactToBlob(artifact);
 		return await services.blobs.audio.save(recording.id, blob);
 	})();
 	const transcribePromise = transcribeArtifact(artifact);

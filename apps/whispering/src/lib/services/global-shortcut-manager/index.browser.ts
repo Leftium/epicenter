@@ -14,8 +14,8 @@ export const GlobalShortcutManagerLive = {
 	unregisterAll: unreachable,
 } satisfies typeof Tauri.GlobalShortcutManagerLive;
 
-export const isValidElectronAccelerator: typeof Tauri.isValidElectronAccelerator =
-	unreachable;
+export const isValidElectronAccelerator =
+	unreachable satisfies typeof Tauri.isValidElectronAccelerator;
 
-export const pressedKeysToTauriAccelerator: typeof Tauri.pressedKeysToTauriAccelerator =
-	unreachable;
+export const pressedKeysToTauriAccelerator =
+	unreachable satisfies typeof Tauri.pressedKeysToTauriAccelerator;

@@ -16,7 +16,7 @@ export const CommandError = {
 	SpawnFailed: unreachable,
 } satisfies typeof Tauri.CommandError;
 
-export const asShellCommand: typeof Tauri.asShellCommand = unreachable;
+export const asShellCommand = unreachable satisfies typeof Tauri.asShellCommand;
 
 export const CommandServiceLive = {
 	execute: unreachable,

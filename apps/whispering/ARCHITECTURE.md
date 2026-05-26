@@ -18,42 +18,32 @@ Whispering uses a clean three-layer architecture that achieves **extensive code 
 
 The service layer contains all business logic as **pure functions** with zero UI dependencies. Services don't know about reactive Svelte variables, user settings, or UI state—they only accept explicit parameters and return `Result<T, E>` types for consistent error handling.
 
-The key innovation is **build-time platform detection**. Services automatically choose the right implementation based on the target platform:
+The key innovation is **build-time platform resolution**. Each platform-bound service lives in a folder with both implementations as sibling files; Vite resolves to the matching one based on the build target:
 
-```typescript
-// Platform abstraction happens at build time
-export const ClipboardServiceLive = window.__TAURI_INTERNALS__
-  ? createClipboardServiceDesktop() // Uses Tauri clipboard APIs
-  : createClipboardServiceWeb();     // Uses browser clipboard APIs
-
-// Same interface, different implementations
-export const NotificationServiceLive = window.__TAURI_INTERNALS__
-  ? createNotificationServiceDesktop() // Native OS notifications
-  : createNotificationServiceWeb();     // Browser notifications
+```
+src/lib/services/clipboard/
+  index.browser.ts    Browser clipboard APIs
+  index.tauri.ts      Tauri clipboard plugin
+  types.ts            Shared interface both impls satisfy
 ```
 
-This design enables **97% code sharing** between desktop and web versions. The vast majority of the application logic is platform-agnostic, with only the thin service implementation layer varying between platforms. Services are incredibly **testable** (just pass mock parameters), **reusable** (work identically anywhere), and **maintainable** (no hidden dependencies).
-
-### Measuring Code Sharing
-
-To calculate the actual code sharing percentage, I analyzed the codebase:
-
-```bash
-# Count total lines of code in the app
-find src -name "*.ts" -o -name "*.svelte" -o -name "*.js" | \
-  grep -v node_modules | xargs wc -l
-# Result: 22,824 lines total
-
-# Count platform-specific implementation code
-find src/lib/services -name "*desktop.ts" -o -name "*web.ts" | \
-  xargs wc -l
-# Result: 685 lines (3%)
-
-# Code sharing calculation
-# Shared code: 22,824 - 685 = 22,139 lines (97%)
+```ts
+// vite.config.ts
+const isTauri = process.env.TAURI_PLATFORM !== undefined;
+export default defineConfig({
+  resolve: {
+    extensions: isTauri
+      ? ['.tauri.ts', '.ts', '.json']
+      : ['.browser.ts', '.ts', '.json'],
+  },
+});
 ```
 
-This minimal platform-specific code demonstrates how the architecture maximizes code reuse while maintaining native performance on each platform.
+Consumers always import `from '$lib/services/clipboard'` without naming the platform. Vite picks `index.tauri.ts` on Tauri builds and `index.browser.ts` on web builds; the off-target file is never bundled. This makes the web bundle structurally unable to ship Tauri APIs and vice versa.
+
+Services are **testable** (just pass mock parameters), **reusable** (work identically anywhere via the shared interface in `types.ts`), and **maintainable** (no hidden runtime branches).
+
+The codebase distinguishes two kinds of "which implementation" decisions and uses different mechanisms for each. See `docs/articles/20260526T012650-two-switches-build-time-and-runtime.md` for the walkthrough.
 
 **→ Learn more:** [Services README](./src/lib/services/README.md) | [Constants Organization](./src/lib/constants/README.md)
 

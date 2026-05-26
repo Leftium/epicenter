@@ -49,33 +49,37 @@ The rpc layer injects configuration (like `settings.value`) and handles caching/
 
 ### Build-Time Platform Injection
 
-Services also handle **build-time dependency injection** for platform differences. The application detects whether it's running on desktop (Tauri) or web at build time and injects the appropriate service implementations:
+Services handle **build-time dependency injection** for platform differences through filename suffixes resolved by Vite. The application produces different bundles for web and Tauri; each bundle only contains the implementations that target it.
 
-```typescript
-// Platform detection happens at build time
-export const ClipboardServiceLive = window.__TAURI_INTERNALS__
-	? createClipboardServiceDesktop() // Tauri APIs
-	: createClipboardServiceWeb(); // Browser APIs
+```
+services/text/
+  index.browser.ts    Web implementation
+  index.tauri.ts      Tauri implementation
+  types.ts            Shared interface both impls satisfy
 ```
 
-This platform abstraction enables **97% code sharing** between Whispering's desktop and web versions. The vast majority of application logic is platform-agnostic, with only the thin service implementation layer varying between platforms. Instead of maintaining separate codebases, we write business logic once and let services handle platform differences automatically.
+Consumers always write `import { TextServiceLive } from '$lib/services/text'`. They never name the platform. Vite's `resolve.extensions` picks `.browser.ts` for web builds and `.tauri.ts` for Tauri builds; the off-target file is never parsed or bundled.
 
-#### Measuring Code Sharing
+```ts
+// vite.config.ts (sketch)
+const isTauri = process.env.TAURI_PLATFORM !== undefined;
+export default defineConfig({
+  resolve: {
+    extensions: isTauri
+      ? ['.tauri.ts', '.ts', '.json']
+      : ['.browser.ts', '.ts', '.json'],
+  },
+});
+```
 
-The 97% figure comes from analyzing the codebase:
+A Tauri-only service (`tray`, `fs`, `autostart`, `command`, `permissions`, `ffmpeg`, `global-shortcut-manager`) has an `index.tauri.ts` plus an `index.browser.ts` web stub. The stub enumerates the same exports but binds each to a thrown error: code that tries to call them on web fails clearly. Consumers gate on `window.__TAURI_INTERNALS__` so the throws are unreachable at runtime on web.
 
-- **Total application code**: 22,824 lines
-- **Platform-specific services**: 685 lines (3%)
-- **Shared code**: 22,139 lines (97%)
-
-Platform-specific implementations are minimal - just 6 services with ~57 lines per platform on average. This demonstrates how the architecture maximizes code reuse while maintaining native performance.
-
-> **💡 Dependency Injection Strategy**
+> **💡 Two kinds of dependency injection**
 >
-> Services only use dependency injection for **build-time platform differences** (desktop vs web). When we need to switch implementations based on **reactive variables** like user settings, that logic lives in the rpc layer instead.
+> - **Build-time platform DI**: file resolution via `.tauri.ts` / `.browser.ts` suffix. The decision is fixed at `vite build` and the wrong implementation isn't bundled. Used for `text`, `notifications`, `os`, `sound`, `download`, `analytics`, `http`, `blob-store`, and the Tauri-only services.
+> - **Runtime DI**: a switch statement reads `settings.value` at call time. Used for `transcription` (user picks the provider) and `completion` (LLM model selection).
 >
-> - **Services**: Static platform detection (`ClipboardServiceLive` chooses Tauri vs Browser APIs)
-> - **RPC Layer**: Dynamic implementation switching based on `settings.value['transcription.selectedTranscriptionService']`
+> See `docs/articles/20260526T012650-two-switches-build-time-and-runtime.md` for the full pattern walkthrough.
 
 ## Core Concepts
 
@@ -90,13 +94,12 @@ Services are collections of pure functions that:
 
 ### Platform Detection
 
-Services automatically choose the right implementation based off platform at build time:
+Vite picks the right file at build time based on `process.env.TAURI_PLATFORM`. Consumers import without naming the platform:
 
 ```typescript
-// Automatically selects desktop or web implementation
-export const ClipboardServiceLive = window.__TAURI_INTERNALS__
-	? createClipboardServiceDesktop() // Tauri APIs
-	: createClipboardServiceWeb(); // Browser APIs
+// Resolves to services/text/index.browser.ts on web,
+// services/text/index.tauri.ts on Tauri.
+import { TextServiceLive } from '$lib/services/text';
 ```
 
 ### Result Types
@@ -348,10 +351,9 @@ export function createClipboardServiceWeb(): ClipboardService {
 	};
 }
 
-// index.ts - Platform detection (Live suffix = production instance)
-export const ClipboardServiceLive = window.__TAURI_INTERNALS__
-	? createClipboardServiceDesktop()
-	: createClipboardServiceWeb();
+// index.browser.ts - Web impl exports `ClipboardServiceLive` directly
+// index.tauri.ts - Tauri impl exports `ClipboardServiceLive` directly
+// (Vite picks whichever file matches the build target)
 ```
 
 **When to use platform-specific pattern:**
@@ -400,16 +402,18 @@ const result = await services.completion.openai.complete({
 - `blob-store/` - Audio blob persistence (IndexedDB on web, fs on desktop)
 - `analytics/`, `download/`, `http/`, `notifications/`, `os/`, `sound/` - Platform-specific implementations behind a unified interface
 
-### Desktop-only (`services/desktop/`)
+### Tauri-only services (each lives in its own folder under `services/`)
 
-- `recorder/cpal.ts` - Native Rust audio recording via CPAL
-- `ffmpeg.ts` - FFmpeg binary helper (compression, file-extension detection). Not a recording backend.
-- `command.ts` - Tauri shell command execution
-- `fs.ts` - Tauri filesystem operations
-- `tray.ts` - System tray management
-- `global-shortcut-manager.ts` - OS-level keyboard shortcuts
-- `permissions.ts` - Accessibility/microphone permission checks
-- `autostart.ts` - Launch-at-login
+Each has an `index.tauri.ts` with the real implementation and an `index.browser.ts` web stub. Web bundles can import these paths (so static imports from `rpc/desktop/` resolve at build time) but any call throws.
+
+- `services/recorder/cpal.tauri.ts` - Native Rust audio recording via CPAL (sibling of `navigator.ts`; the recorder folder exposes both through `index.tauri.ts`)
+- `services/ffmpeg/` - FFmpeg binary helper. `shared.ts` holds platform-neutral constants (compression options, file-extension detection); `index.tauri.ts` is the Tauri service.
+- `services/command/` - Tauri shell command execution
+- `services/fs/` - Tauri filesystem operations
+- `services/tray/` - System tray management
+- `services/global-shortcut-manager/` - OS-level keyboard shortcuts
+- `services/permissions/` - Accessibility/microphone permission checks
+- `services/autostart/` - Launch-at-login
 
 ### Multi-provider services
 
@@ -420,35 +424,38 @@ Recording state itself is owned by `$lib/state/manual-recorder.svelte.ts` and `$
 
 ## Quick Start
 
-Add a new platform-specific service:
+Add a new dual-impl service:
 
 ```typescript
-// 1. Define interface in types.ts
+// 1. services/my-service/types.ts - shared interface
 export type MyService = {
 	doSomething(input: string): Promise<Result<Output, MyError>>;
 };
 
-// 2. Implement for each platform
-// desktop.ts
-export function createMyServiceDesktop(): MyService {
-	/* ... */
-}
+// 2. services/my-service/index.browser.ts - web impl
+import type { MyService } from './types';
+export type { MyError, MyService } from './types';
+export const MyServiceLive: MyService = {
+	doSomething: async (input) => {
+		/* browser API call */
+	},
+};
 
-// web.ts
-export function createMyServiceWeb(): MyService {
-	/* ... */
-}
+// 3. services/my-service/index.tauri.ts - Tauri impl
+import type { MyService } from './types';
+export type { MyError, MyService } from './types';
+export const MyServiceLive: MyService = {
+	doSomething: async (input) => {
+		/* Tauri API call */
+	},
+};
 
-// 3. Export with platform detection
-// index.ts
-export const MyServiceLive = window.__TAURI_INTERNALS__
-	? createMyServiceDesktop()
-	: createMyServiceWeb();
-
-// 4. Add to main export
-// services/index.ts
-export { MyServiceLive as myService } from './my-service';
+// 4. Add to main export at services/index.ts
+import { MyServiceLive } from './my-service';
+// ... include in the `services` object
 ```
+
+Vite picks `.browser.ts` for web builds, `.tauri.ts` for Tauri builds. Consumers import `from '$lib/services/my-service'` without naming the platform.
 
 ## Services vs RPC Layer
 

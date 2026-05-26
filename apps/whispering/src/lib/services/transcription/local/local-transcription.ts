@@ -1,5 +1,5 @@
-import { stat } from '@tauri-apps/plugin-fs';
 import { invoke } from '@tauri-apps/api/core';
+import { stat } from '@tauri-apps/plugin-fs';
 import { type } from 'arktype';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';

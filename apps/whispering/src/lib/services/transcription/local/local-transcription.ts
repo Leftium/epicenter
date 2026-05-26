@@ -109,12 +109,12 @@ export async function requireExistingModelPath(
 
 /**
  * Single arktype schema for all errors returned by the unified
- * `transcribe_audio` command. Each engine surfaces the same five
+ * `transcribe_audio` command. Each engine surfaces the same four
  * variants; the only one specific to Whisper is `GpuError`, which
  * Parakeet and Moonshine never emit in practice.
  */
 const LocalTranscriptionErrorType = type({
-	name: "'AudioReadError' | 'FfmpegNotFoundError' | 'GpuError' | 'ModelLoadError' | 'TranscriptionError'",
+	name: "'AudioReadError' | 'GpuError' | 'ModelLoadError' | 'TranscriptionError'",
 	message: 'string',
 });
 
@@ -156,18 +156,6 @@ function mapLocalTranscriptionError(
 					type: 'link',
 					label: 'Configure settings',
 					href: '/settings/transcription',
-				},
-			});
-
-		case 'FfmpegNotFoundError':
-			return WhisperingErr({
-				title: '🛠️ FFmpeg Required for This Recording Format',
-				description:
-					'This recording is in a compressed format (webm/ogg/mp4) that requires FFmpeg. Install FFmpeg or switch to CPAL recording (which produces WAV files that work without FFmpeg).',
-				action: {
-					type: 'link',
-					label: 'Install FFmpeg',
-					href: '/install-ffmpeg',
 				},
 			});
 

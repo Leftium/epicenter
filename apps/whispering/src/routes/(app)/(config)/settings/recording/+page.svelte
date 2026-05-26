@@ -1,6 +1,5 @@
 <script lang="ts">
 	import * as Alert from '@epicenter/ui/alert';
-	import { Button } from '@epicenter/ui/button';
 	import * as Field from '@epicenter/ui/field';
 	import { Link } from '@epicenter/ui/link';
 	import * as Select from '@epicenter/ui/select';
@@ -11,7 +10,6 @@
 		SAMPLE_RATE_OPTIONS,
 	} from '$lib/constants/audio';
 	import { IS_LINUX, IS_MACOS } from '$lib/constants/platform';
-	import { TRANSCRIPTION_SERVICE_ID_TO_LABEL } from '$lib/constants/transcription';
 	import {
 		asDeviceIdentifier,
 		type DeviceIdentifier,
@@ -20,14 +18,11 @@
 	import { settings } from '$lib/state/settings.svelte';
 	import {
 		COMPRESSION_RECOMMENDED_MESSAGE,
-		hasNavigatorLocalTranscriptionIssue,
 		isCompressionRecommended,
 	} from '$routes/(app)/_layout-utils/check-ffmpeg';
 	import DesktopOutputFolder from './DesktopOutputFolder.svelte';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
-
-	const { data } = $props();
 
 	// Derived labels for select triggers
 	const recordingModeLabel = $derived(
@@ -60,8 +55,8 @@
 			value: 'navigator',
 			label: 'Browser API',
 			description: IS_MACOS
-				? 'Web MediaRecorder API. Creates compressed files suitable for cloud transcription. Requires FFmpeg for local transcription (Whisper C++/Parakeet). May have delays with shortcuts when app is in background (macOS AppNap).'
-				: 'Web MediaRecorder API. Creates compressed files suitable for cloud transcription. Requires FFmpeg for local transcription (Whisper C++/Parakeet).',
+				? 'Web MediaRecorder API. Creates compressed files (WebM/Opus) suitable for cloud transcription. May have delays with shortcuts when app is in background (macOS AppNap).'
+				: 'Web MediaRecorder API. Creates compressed files (WebM/Opus) suitable for cloud transcription.',
 		},
 	];
 
@@ -206,43 +201,6 @@
 				</Alert.Root>
 			{/if}
 
-			{#if hasNavigatorLocalTranscriptionIssue( { isFFmpegInstalled: data.ffmpegInstalled ?? false }, )}
-				<Alert.Root class="border-red-500/20 bg-red-500/5">
-					<InfoIcon class="size-4 text-red-600 dark:text-red-400" />
-					<Alert.Title class="text-red-600 dark:text-red-400">
-						Local Transcription Requires FFmpeg or CPAL Recording
-					</Alert.Title>
-					<Alert.Description>
-						The Browser API recording method produces compressed audio that
-						requires FFmpeg for local transcription with
-						{TRANSCRIPTION_SERVICE_ID_TO_LABEL[
-							settings.get('transcription.service')
-						]}.
-						<div class="mt-3 space-y-3">
-							<div class="flex items-center gap-2">
-								<span class="text-sm"><strong>Option 1:</strong></span>
-								<Button
-									onclick={() => deviceConfig.set('recording.method', 'cpal')}
-									variant="secondary"
-									size="sm"
-								>
-									Switch to CPAL Recording
-								</Button>
-							</div>
-							<div class="text-sm">
-								<strong>Option 2:</strong>
-								<Link href="/install-ffmpeg">Install FFmpeg</Link>
-								to keep using Browser API recording
-							</div>
-							<div class="text-sm">
-								<strong>Option 3:</strong>
-								Switch to a cloud transcription service (OpenAI, Groq, Deepgram,
-								etc.) which work with all recording methods
-							</div>
-						</div>
-					</Alert.Description>
-				</Alert.Root>
-			{/if}
 		{/if}
 
 		{#if settings.get('recording.mode') === 'manual'}

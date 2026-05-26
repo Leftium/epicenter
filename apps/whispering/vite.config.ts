@@ -5,12 +5,20 @@ import { defineConfig } from 'vite';
 import devtoolsJson from 'vite-plugin-devtools-json';
 
 const host = process.env.TAURI_DEV_HOST;
+const isTauri = process.env.TAURI_PLATFORM !== undefined;
 
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
 	plugins: [sveltekit(), tailwindcss(), devtoolsJson()],
 	resolve: {
 		dedupe: ['yjs'],
+		// Build-time platform DI. Tauri builds resolve `.tauri.ts` first;
+		// web builds never see `.tauri.ts` at all, so a web bundle that
+		// imports a Tauri-only path fails at build time instead of at user
+		// runtime. See docs/articles for the full pattern.
+		extensions: isTauri
+			? ['.tauri.ts', '.tauri.js', '.ts', '.js', '.json']
+			: ['.ts', '.js', '.json'],
 	},
 	// Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
 	//

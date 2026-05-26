@@ -7,7 +7,7 @@ import { defineQuery } from '$lib/rpc/client';
 import { notify } from '$lib/operations/notify';
 import { WhisperingErr } from '$lib/result';
 import { services } from '$lib/services';
-import { desktopServices } from '$lib/services/desktop';
+import { CpalRecorderServiceLive } from '$lib/services/recorder/cpal.tauri';
 import {
 	asDeviceIdentifier,
 	type RecorderService,
@@ -44,7 +44,7 @@ import { deviceConfig } from '$lib/state/device-config.svelte';
 function resolveServiceForStart(): RecorderService {
 	if (!isTauri()) return services.navigatorRecorder;
 	return deviceConfig.get('recording.method') === 'cpal'
-		? desktopServices.cpalRecorder
+		? CpalRecorderServiceLive
 		: services.navigatorRecorder;
 }
 
@@ -107,7 +107,7 @@ function createManualRecorder() {
 	const bootstrapped = Promise.all([
 		services.navigatorRecorder.getActiveRecording(),
 		isTauri()
-			? desktopServices.cpalRecorder.getActiveRecording()
+			? CpalRecorderServiceLive.getActiveRecording()
 			: Promise.resolve({ data: null, error: null } as const),
 	]).then(([nav, cpal]) => {
 		const found = nav.data ?? cpal.data ?? null;

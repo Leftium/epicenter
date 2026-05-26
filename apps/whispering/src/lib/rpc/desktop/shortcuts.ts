@@ -1,8 +1,9 @@
 import { type Command, commandCallbacks } from '$lib/commands';
+import { GlobalShortcutManagerLive } from '$lib/services/global-shortcut-manager';
 import { IS_MACOS } from '$lib/constants/platform';
 import { defineMutation } from '$lib/rpc/client';
-import { desktopServices } from '$lib/services/desktop';
-import type { Accelerator } from '$lib/services/desktop/global-shortcut-manager';
+// see direct imports below
+import type { Accelerator } from '$lib/services/global-shortcut-manager';
 
 /**
  * Global shortcuts - desktop-only, require Tauri.
@@ -26,7 +27,7 @@ export const globalShortcuts = {
 				'CommandOrControl',
 				IS_MACOS ? 'Command' : 'Control',
 			) as Accelerator;
-			return desktopServices.globalShortcutManager.register({
+			return GlobalShortcutManagerLive.register({
 				accelerator,
 				callback: commandCallbacks[command.id],
 				on: command.on,
@@ -37,7 +38,7 @@ export const globalShortcuts = {
 	unregisterCommand: defineMutation({
 		mutationKey: ['shortcuts', 'unregisterCommandGlobally'] as const,
 		mutationFn: async ({ accelerator }: { accelerator: Accelerator }) => {
-			return await desktopServices.globalShortcutManager.unregister(
+			return await GlobalShortcutManagerLive.unregister(
 				accelerator,
 			);
 		},
@@ -46,6 +47,6 @@ export const globalShortcuts = {
 	unregisterAll: defineMutation({
 		mutationKey: ['shortcuts', 'unregisterAllGlobalShortcuts'] as const,
 		mutationFn: async () =>
-			desktopServices.globalShortcutManager.unregisterAll(),
+			GlobalShortcutManagerLive.unregisterAll(),
 	}),
 };

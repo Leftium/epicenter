@@ -1,4 +1,5 @@
 import { Ok, type Result } from 'wellcrafted/result';
+import { FfmpegServiceLive } from '$lib/services/ffmpeg';
 import {
 	SUPPORTED_LANGUAGES,
 	type SupportedLanguage,
@@ -12,7 +13,7 @@ import { mistralErrorToWhisperingErr } from '$lib/rpc/transcription-errors/mistr
 import { openaiErrorToWhisperingErr } from '$lib/rpc/transcription-errors/openai';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { services } from '$lib/services';
-import { desktopServices } from '$lib/services/desktop';
+// see direct imports below
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
 
@@ -44,7 +45,7 @@ export async function transcribeBlob(
 	let audioToTranscribe = blob;
 	if (settings.get('transcription.compressionEnabled')) {
 		const { data: compressedBlob, error: compressionError } =
-			await desktopServices.ffmpeg.compressAudioBlob(
+			await FfmpegServiceLive.compressAudioBlob(
 				blob,
 				settings.get('transcription.compressionOptions'),
 			);

@@ -8,7 +8,7 @@ import {
 import mime from 'mime';
 import { tryAsync } from 'wellcrafted/result';
 import { PATHS } from '$lib/constants/paths';
-import { FsServiceLive } from '$lib/services/desktop/fs';
+import { FsServiceLive } from '$lib/services/fs';
 import type { BlobStore } from './types';
 import { BlobError } from './types';
 

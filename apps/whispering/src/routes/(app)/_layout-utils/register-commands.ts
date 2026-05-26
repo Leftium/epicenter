@@ -4,7 +4,7 @@ import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
 import { notify } from '$lib/operations/notify';
 import { localShortcuts } from '$lib/operations/shortcuts';
 import { desktopRpc } from '$lib/rpc/desktop';
-import type { Accelerator } from '$lib/services/desktop/global-shortcut-manager';
+import type { Accelerator } from '$lib/services/global-shortcut-manager';
 import {
 	type CommandId,
 	shortcutStringToArray,

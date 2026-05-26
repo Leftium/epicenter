@@ -41,7 +41,6 @@
 	import { rpc } from '$lib/rpc';
 	import { WhisperingErr } from '$lib/result';
 	import { services } from '$lib/services';
-	import { desktopServices } from '$lib/services/desktop';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
@@ -138,8 +137,10 @@
 						await switchRecordingMode('upload');
 
 						// Convert file paths to File objects using the fs service
+						// (Tauri-only; dynamic import keeps it out of the web bundle)
+						const { FsServiceLive } = await import('$lib/services/fs');
 						const { data: files, error } =
-							await desktopServices.fs.pathsToFiles(validPaths);
+							await FsServiceLive.pathsToFiles(validPaths);
 
 						if (error) {
 							notify.error({

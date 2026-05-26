@@ -1,8 +1,12 @@
-import { desktopServices } from '$lib/services/desktop';
-
 export const load = async () => {
+	if (!window.__TAURI_INTERNALS__) {
+		return { isAccessibilityGranted: false };
+	}
+	const { PermissionsServiceLive } = await import(
+		'$lib/services/permissions'
+	);
 	const { data: isAccessibilityGranted } =
-		await desktopServices.permissions.accessibility.check();
+		await PermissionsServiceLive.accessibility.check();
 
 	return {
 		isAccessibilityGranted: isAccessibilityGranted ?? false,

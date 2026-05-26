@@ -19,7 +19,7 @@ import {
 	type TranscriptionServiceId,
 } from '$lib/constants/transcription';
 import { ALWAYS_ON_TOP_MODES } from '$lib/constants/ui/always-on-top';
-import { FFMPEG_DEFAULT_COMPRESSION_OPTIONS } from '$lib/services/desktop/ffmpeg';
+import { FFMPEG_DEFAULT_COMPRESSION_OPTIONS } from '$lib/services/ffmpeg';
 
 /**
  * The constants files type `*_IDS` as plain mutable arrays for ergonomics in

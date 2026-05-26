@@ -14,7 +14,7 @@
 	import {
 		FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
 		FFMPEG_SMALLEST_COMPRESSION_OPTIONS,
-	} from '$lib/services/desktop/ffmpeg';
+	} from '$lib/services/ffmpeg';
 	import { settings } from '$lib/state/settings.svelte';
 	import { isCompressionRecommended } from '$routes/(app)/_layout-utils/check-ffmpeg';
 

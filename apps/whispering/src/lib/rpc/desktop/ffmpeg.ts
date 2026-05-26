@@ -1,13 +1,14 @@
 import { Ok } from 'wellcrafted/result';
+import { FfmpegServiceLive } from '$lib/services/ffmpeg';
 import { defineQuery } from '$lib/rpc/client';
 import { WhisperingErr } from '$lib/result';
-import { desktopServices } from '$lib/services/desktop';
+// see direct imports below
 
 export const ffmpeg = {
 	checkFfmpegInstalled: defineQuery({
 		queryKey: ['ffmpeg.checkInstalled'],
 		queryFn: async () => {
-			const { data, error } = await desktopServices.ffmpeg.checkInstalled();
+			const { data, error } = await FfmpegServiceLive.checkInstalled();
 			if (error) {
 				return WhisperingErr({
 					title: '❌ Error checking FFmpeg installation',

@@ -7,8 +7,8 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
-import { asShellCommand, CommandServiceLive } from './command';
-import { FsServiceLive } from './fs';
+import { asShellCommand, CommandServiceLive } from '$lib/services/command';
+import { FsServiceLive } from '$lib/services/fs';
 
 /**
  * Default FFmpeg compression options optimized for transcription.

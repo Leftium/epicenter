@@ -2,7 +2,10 @@
 	"extends": ["../../tsconfig.base.json", "./.svelte-kit/tsconfig.json"],
 	"compilerOptions": {
 		"checkJs": true,
-		"types": ["bun"]
+		"types": ["bun"],
+		// Mirrors Vite's resolve.extensions: try `.tauri` first, then default.
+		// Lets TS resolve Tauri-only services that have no `.ts` counterpart.
+		"moduleSuffixes": [".tauri", ""]
 	}
 	// Path aliases are handled by https://svelte.dev/docs/kit/configuration#alias
 	// except $lib which is handled by https://svelte.dev/docs/kit/configuration#files

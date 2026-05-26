@@ -2,7 +2,6 @@ import { toast, toastOnError } from '@epicenter/ui/sonner';
 import { nanoid } from 'nanoid/non-secure';
 import { goto } from '$app/navigation';
 import { IS_MACOS } from '$lib/constants/platform';
-import { desktopServices } from '$lib/services/desktop';
 
 export function registerAccessibilityPermission() {
 	// Only run on macOS desktop
@@ -12,8 +11,11 @@ export function registerAccessibilityPermission() {
 
 	// Check accessibility permission once on mount
 	(async () => {
+		const { PermissionsServiceLive } = await import(
+			'$lib/services/permissions'
+		);
 		const { data: isAccessibilityGranted, error } =
-			await desktopServices.permissions.accessibility.check();
+			await PermissionsServiceLive.accessibility.check();
 
 		if (error) {
 			console.error('Failed to check accessibility permissions:', error);
@@ -53,8 +55,11 @@ export function registerMicrophonePermission() {
 
 	// Check microphone permission once on mount
 	(async () => {
+		const { PermissionsServiceLive } = await import(
+			'$lib/services/permissions'
+		);
 		const { data: isMicrophoneGranted, error } =
-			await desktopServices.permissions.microphone.check();
+			await PermissionsServiceLive.microphone.check();
 
 		if (error) {
 			console.error('Failed to check microphone permissions:', error);
@@ -70,8 +75,11 @@ export function registerMicrophonePermission() {
 				action: {
 					label: 'Enable Permission',
 					onClick: async () => {
+						const { PermissionsServiceLive } = await import(
+							'$lib/services/permissions'
+						);
 						const { error: requestError } =
-							await desktopServices.permissions.microphone.request();
+							await PermissionsServiceLive.microphone.request();
 
 						if (requestError)
 							return toastOnError(

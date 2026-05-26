@@ -39,7 +39,7 @@ export const CommandServiceLive = {
 	 * Commands are parsed and executed directly without shell wrappers on all platforms.
 	 * On Windows, uses CREATE_NO_WINDOW flag to prevent console window flash.
 	 *
-	 * @param command - The command to execute (e.g., "ffmpeg -version")
+	 * @param command - The command to execute (e.g., "osascript -e 'tell application ...'")
 	 * @returns The command output (stdout/stderr/exit code) or an error
 	 * @see https://github.com/EpicenterHQ/epicenter/issues/815
 	 */
@@ -71,7 +71,7 @@ export const CommandServiceLive = {
 	 * On Windows, uses CREATE_NO_WINDOW flag to prevent console window flash.
 	 * Returns a Child instance that can be used to control the process.
 	 *
-	 * @param command - The command to spawn (e.g., "ffmpeg -f avfoundation -i :0 output.wav")
+	 * @param command - The command to spawn (e.g., a long-running child process)
 	 * @returns A Child process handle or an error
 	 * @see https://github.com/EpicenterHQ/epicenter/issues/815
 	 */

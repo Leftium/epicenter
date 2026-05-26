@@ -403,7 +403,7 @@ const result = await services.completion.openai.complete({
 ### Desktop-only (`services/desktop/`)
 
 - `recorder/cpal.ts` - Native Rust audio recording via CPAL
-- `ffmpeg.ts` - FFmpeg binary helper (compression, file-extension detection). Not a recording backend.
+- `audio-encoder.ts` - In-process libopus encoder for cloud upload compression (WAV → OGG/Opus)
 - `command.ts` - Tauri shell command execution
 - `fs.ts` - Tauri filesystem operations
 - `tray.ts` - System tray management

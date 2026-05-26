@@ -10,6 +10,7 @@ import { services } from '$lib/services';
 import { desktopServices } from '$lib/services/desktop';
 import {
 	asDeviceIdentifier,
+	type RecorderService,
 	type StartRecordingParams,
 } from '$lib/services/recorder/types';
 import { deviceConfig } from '$lib/state/device-config.svelte';
@@ -71,11 +72,33 @@ async function buildStartParams(
 function createManualRecorder() {
 	let _state = $state<WhisperingRecordingState>('IDLE');
 
-	void recorderService()
-		.getRecorderState()
-		.then(({ data }) => {
-			if (data) _state = data;
+	/**
+	 * Tracks the service that owns the in-flight recording so stop/cancel
+	 * route to the same backend that started it.
+	 *
+	 * Without this, toggling `recording.method` between start and stop would
+	 * call stop on a backend that has no session (failing with NotRecording)
+	 * while leaving the original backend's stream/MediaRecorder alive and the
+	 * mic LED on. The bug is rare in click-driven UI but real for hotkey
+	 * flows where the recording is invisible. Resolving the service once at
+	 * start time and binding it to the lifecycle makes mid-recording toggles
+	 * a no-op for the in-flight session; the next start picks up the new
+	 * setting normally.
+	 */
+	let _activeService: RecorderService | null = null;
+
+	// Bootstrap: only cpal can outlive a JS reload (Rust process keeps the
+	// stream), so probe cpal directly rather than going through the current
+	// setting. If the user toggled to navigator after a reload but a cpal
+	// recording is still live, we still bind to cpal for the rest of its life.
+	if (isTauri()) {
+		void desktopServices.cpalRecorder.getRecorderState().then(({ data }) => {
+			if (data === 'RECORDING') {
+				_activeService = desktopServices.cpalRecorder;
+				_state = 'RECORDING';
+			}
 		});
+	}
 
 	const writeState = (state: WhisperingRecordingState) => {
 		_state = state;
@@ -104,8 +127,9 @@ function createManualRecorder() {
 
 		async startRecording({ toastId }: { toastId: string }) {
 			const params = await buildStartParams(nanoid());
+			const service = recorderService();
 			const { data: deviceAcquisitionOutcome, error: startRecordingError } =
-				await recorderService().startRecording(params, {
+				await service.startRecording(params, {
 					sendStatus: (options) => notify.loading({ id: toastId, ...options }),
 				});
 
@@ -116,14 +140,15 @@ function createManualRecorder() {
 				});
 			}
 
+			_activeService = service;
 			return Ok(deviceAcquisitionOutcome);
 		},
 
 		async stopRecording({ toastId }: { toastId: string }) {
-			const { data, error: stopRecordingError } =
-				await recorderService().stopRecording({
-					sendStatus: (options) => notify.loading({ id: toastId, ...options }),
-				});
+			const service = _activeService ?? recorderService();
+			const { data, error: stopRecordingError } = await service.stopRecording({
+				sendStatus: (options) => notify.loading({ id: toastId, ...options }),
+			});
 
 			if (stopRecordingError) {
 				return WhisperingErr({
@@ -132,12 +157,14 @@ function createManualRecorder() {
 				});
 			}
 
+			_activeService = null;
 			return Ok(data);
 		},
 
 		async cancelRecording({ toastId }: { toastId: string }) {
+			const service = _activeService ?? recorderService();
 			const { data: cancelResult, error: cancelRecordingError } =
-				await recorderService().cancelRecording({
+				await service.cancelRecording({
 					sendStatus: (options) => notify.loading({ id: toastId, ...options }),
 				});
 
@@ -148,6 +175,7 @@ function createManualRecorder() {
 				});
 			}
 
+			_activeService = null;
 			return Ok(cancelResult);
 		},
 	};

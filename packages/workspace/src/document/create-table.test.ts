@@ -6,11 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import * as Y from 'yjs';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import {
-	attachTable,
-	createReadonlyTable,
-	createTable,
-} from './table.js';
+import { createReadonlyTable, createTable } from './table.js';
 import { column } from './column/index.js';
 import { defineTable } from './define-table.js';
 

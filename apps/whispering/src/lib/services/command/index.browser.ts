@@ -1,8 +1,7 @@
 /**
- * Web stub for a Tauri-only service. See `index.tauri.ts`.
- *
- * `asShellCommand` is a pure brand-cast and would work on web, but
- * keeping it as a stub avoids dragging it into the web bundle.
+ * Web stub. The macOS accessibility page dynamic-imports this path;
+ * Vite needs the path to resolve at chunk-generation time even though
+ * the callsite is unreachable on web (the page is Tauri-only).
  */
 
 function unreachable(): never {

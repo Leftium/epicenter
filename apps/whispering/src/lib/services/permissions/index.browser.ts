@@ -1,5 +1,8 @@
 /**
- * Web stub for a Tauri-only service. See `index.tauri.ts`.
+ * Web stub. Consumers (the macOS accessibility page, register-permissions)
+ * dynamic-import this path; Vite needs the path to resolve at chunk-
+ * generation time even though the call sites are unreachable on web
+ * (`if (!window.__TAURI_INTERNALS__) return`).
  */
 
 function unreachable(): never {

@@ -1,13 +1,12 @@
 /**
- * Web stub. The real implementation lives in `index.tauri.ts`. This file
- * exists so static imports from web-bundled consumers (notably the
- * `rpc/desktop/` adapters) resolve at `vite build` time. Anything called
- * here throws clearly; web consumers gate on `window.__TAURI_INTERNALS__`
- * so the throws are unreachable at runtime.
+ * Web stub. `operations/transcribe.ts` statically imports
+ * `FfmpegServiceLive` from this path (it conditionally compresses audio
+ * before transcription, only on Tauri). Web needs the path to resolve;
+ * the call site is gated so the throws are unreachable.
  *
- * Platform-neutral helpers (constants, file-extension function) live in
- * `./shared` and are re-exported here so consumers don't need a second
- * import path.
+ * Platform-neutral helpers live in `./shared` and are re-exported here
+ * for backwards compatibility with consumers that import them via
+ * `$lib/services/ffmpeg` instead of `$lib/services/ffmpeg/shared`.
  */
 
 function unreachable(): never {

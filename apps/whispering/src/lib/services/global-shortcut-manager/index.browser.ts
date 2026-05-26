@@ -1,11 +1,8 @@
 /**
- * Web stub for a Tauri-only service. See `index.tauri.ts`.
- *
- * The utility functions (`isValidElectronAccelerator`,
- * `pressedKeysToTauriAccelerator`) are pure in principle but
- * `pressedKeysToTauriAccelerator` calls Tauri's `os.type()` internally,
- * so we stub them too. Consumers gate on `window.__TAURI_INTERNALS__`,
- * so neither is reachable at web runtime.
+ * Web stub. GlobalKeyboardShortcutRecorder statically imports type and
+ * utilities from this path; web needs the path to resolve at chunk-
+ * generation time. Call sites are gated by `window.__TAURI_INTERNALS__`
+ * so the throws are unreachable on web.
  */
 
 function unreachable(): never {

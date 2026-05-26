@@ -7,7 +7,7 @@ import { defineQuery } from '$lib/rpc/client';
 import { notify } from '$lib/operations/notify';
 import { WhisperingErr } from '$lib/result';
 import { services } from '$lib/services';
-import { CpalRecorderServiceLive } from '$lib/services/recorder/cpal.tauri';
+import { CpalRecorderServiceLive } from '$lib/services/recorder';
 import {
 	asDeviceIdentifier,
 	type RecorderService,
@@ -42,10 +42,12 @@ import { deviceConfig } from '$lib/state/device-config.svelte';
  */
 
 function resolveServiceForStart(): RecorderService {
-	if (!isTauri()) return services.navigatorRecorder;
-	return deviceConfig.get('recording.method') === 'cpal'
-		? CpalRecorderServiceLive
-		: services.navigatorRecorder;
+	// CpalRecorderServiceLive is null on web (build-time fact); even when
+	// non-null, the runtime setting decides whether to use it.
+	if (CpalRecorderServiceLive && deviceConfig.get('recording.method') === 'cpal') {
+		return CpalRecorderServiceLive;
+	}
+	return services.navigatorRecorder;
 }
 
 async function buildStartParams(
@@ -106,7 +108,7 @@ function createManualRecorder() {
 	// Rust session) or double-starts on top of a rehydrated one.
 	const bootstrapped = Promise.all([
 		services.navigatorRecorder.getActiveRecording(),
-		isTauri()
+		CpalRecorderServiceLive
 			? CpalRecorderServiceLive.getActiveRecording()
 			: Promise.resolve({ data: null, error: null } as const),
 	]).then(([nav, cpal]) => {

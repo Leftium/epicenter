@@ -1,5 +1,5 @@
 import { Ok } from 'wellcrafted/result';
-import { FfmpegServiceLive } from '$lib/services/ffmpeg';
+import { FfmpegServiceLive } from '$lib/tauri/ffmpeg';
 import { defineQuery } from '$lib/rpc/client';
 import { WhisperingErr } from '$lib/result';
 

@@ -1,5 +1,4 @@
 import { Ok, type Result } from 'wellcrafted/result';
-import { FfmpegServiceLive } from '$lib/services/ffmpeg';
 import {
 	SUPPORTED_LANGUAGES,
 	type SupportedLanguage,
@@ -43,7 +42,11 @@ export async function transcribeBlob(
 	});
 
 	let audioToTranscribe = blob;
-	if (settings.get('transcription.compressionEnabled')) {
+	if (
+		window.__TAURI_INTERNALS__ &&
+		settings.get('transcription.compressionEnabled')
+	) {
+		const { FfmpegServiceLive } = await import('$lib/tauri/ffmpeg');
 		const { data: compressedBlob, error: compressionError } =
 			await FfmpegServiceLive.compressAudioBlob(
 				blob,

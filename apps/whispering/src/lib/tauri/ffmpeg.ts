@@ -9,15 +9,7 @@ import {
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import { asShellCommand, CommandServiceLive } from '$lib/services/command';
 import { FsServiceLive } from '$lib/services/fs';
-import { getFileExtensionFromFfmpegOptions } from './shared';
-
-// Re-export platform-neutral helpers so consumers that grab them through
-// `$lib/services/ffmpeg` (Tauri only) still see one stable surface.
-export {
-	FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
-	FFMPEG_SMALLEST_COMPRESSION_OPTIONS,
-	getFileExtensionFromFfmpegOptions,
-} from './shared';
+import { getFileExtensionFromFfmpegOptions } from '$lib/services/ffmpeg/shared';
 
 export const FfmpegError = defineErrors({
 	InstallCheckFailed: ({ cause }: { cause: unknown }) => ({
@@ -68,7 +60,6 @@ export const FfmpegServiceLive = {
 	async compressAudioBlob(blob: Blob, compressionOptions: string) {
 		return await tryAsync({
 			try: async () => {
-				// Generate unique filenames for temporary files
 				const sessionId = nanoid();
 				const tempDir = await appDataDir();
 				const inputPath = await join(
@@ -76,7 +67,6 @@ export const FfmpegServiceLive = {
 					`compression_input_${sessionId}.wav`,
 				);
 
-				// Determine output extension and path based on compression options
 				const outputExtension =
 					getFileExtensionFromFfmpegOptions(compressionOptions);
 				const outputPath = await join(
@@ -85,7 +75,6 @@ export const FfmpegServiceLive = {
 				);
 
 				try {
-					// Write input blob to temporary file
 					const inputContents = new Uint8Array(await blob.arrayBuffer());
 					await writeFile(inputPath, inputContents);
 
@@ -96,14 +85,12 @@ export const FfmpegServiceLive = {
 					});
 					if (verifyError) throw new Error(verifyError.message);
 
-					// Build FFmpeg command for compression using the utility function
 					const command = buildCompressionCommand({
 						inputPath,
 						compressionOptions,
 						outputPath,
 					});
 
-					// Execute FFmpeg compression command
 					const { data: result, error: commandError } =
 						await CommandServiceLive.execute(asShellCommand(command));
 					if (commandError) {
@@ -112,14 +99,12 @@ export const FfmpegServiceLive = {
 						);
 					}
 
-					// Check if FFmpeg command was successful
 					if (result.code !== 0) {
 						throw new Error(
 							`FFmpeg compression failed with exit code ${result.code}: ${result.stderr}`,
 						);
 					}
 
-					// Verify output file exists
 					const outputExists = await exists(outputPath);
 					if (!outputExists) {
 						throw new Error(
@@ -127,7 +112,6 @@ export const FfmpegServiceLive = {
 						);
 					}
 
-					// Read compressed file back as blob
 					const { data: compressedBlob, error: readError } =
 						await FsServiceLive.pathToBlob(outputPath);
 					if (readError) {
@@ -138,13 +122,12 @@ export const FfmpegServiceLive = {
 
 					return compressedBlob;
 				} finally {
-					// Clean up temporary files
 					await tryAsync({
 						try: async () => {
 							if (await exists(inputPath)) await remove(inputPath);
 							if (await exists(outputPath)) await remove(outputPath);
 						},
-						catch: () => Ok(undefined), // Ignore cleanup errors
+						catch: () => Ok(undefined),
 					});
 				}
 			},
@@ -155,12 +138,6 @@ export const FfmpegServiceLive = {
 
 /**
  * Builds a complete FFmpeg compression command string.
- * Creates a command that compresses an input audio file using the specified options.
- *
- * @param inputPath - Path to the input audio file
- * @param compressionOptions - FFmpeg compression options
- * @param outputPath - Path to the output compressed file
- * @returns Complete FFmpeg compression command string
  *
  * @example
  * buildCompressionCommand({ inputPath: 'input.wav', compressionOptions: '-c:a libopus -b:a 32k', outputPath: 'output.opus' })
@@ -175,14 +152,13 @@ function buildCompressionCommand({
 	compressionOptions: string;
 	outputPath: string;
 }) {
-	// Build command parts
 	const parts = [
 		'ffmpeg',
 		'-i',
 		`"${inputPath}"`,
 		compressionOptions.trim(),
 		`"${outputPath}"`,
-	].filter((part) => part); // Remove empty strings
+	].filter((part) => part);
 
 	return parts.join(' ');
 }

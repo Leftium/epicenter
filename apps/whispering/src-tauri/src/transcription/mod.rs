@@ -308,9 +308,9 @@ fn convert_audio_rust(audio_data: Vec<u8>) -> Result<Vec<u8>, TranscriptionError
     Ok(output_bytes)
 }
 
-/// Convert audio to whisper-compatible format (16kHz mono PCM WAV)
+/// Convert audio to 16kHz mono 16-bit PCM WAV, the format all three local
+/// transcription engines (Whisper, Parakeet, Moonshine) require.
 ///
-/// Whisper models require audio in a specific format:
 /// - Sample rate: 16,000 Hz (not the typical 44.1kHz or 48kHz)
 /// - Channels: Mono (1 channel)
 /// - Format: 16-bit PCM WAV
@@ -335,7 +335,7 @@ fn convert_audio_rust(audio_data: Vec<u8>) -> Result<Vec<u8>, TranscriptionError
 ///
 /// This approach ensures maximum compatibility: users without FFmpeg can still
 /// transcribe most recordings, while complex formats are handled when FFmpeg is available.
-fn convert_audio_for_whisper(audio_data: Vec<u8>) -> Result<Vec<u8>, TranscriptionError> {
+fn convert_audio_to_pcm16k_mono(audio_data: Vec<u8>) -> Result<Vec<u8>, TranscriptionError> {
     debug!(
         "[Audio Conversion] starting 3-tier conversion strategy for {} bytes",
         audio_data.len()
@@ -484,7 +484,7 @@ fn prepare_samples_for_transcription(
     audio_data: Vec<u8>,
     engine_name: &str,
 ) -> Result<Option<Vec<f32>>, TranscriptionError> {
-    let wav_data = convert_audio_for_whisper(audio_data)?;
+    let wav_data = convert_audio_to_pcm16k_mono(audio_data)?;
     debug!(
         "[Transcription] audio conversion complete: wav_bytes={}",
         wav_data.len()
@@ -546,7 +546,6 @@ pub async fn transcribe_audio_whisper(
         params.no_speech_thold = 0.2;
 
         let transcript = manager.with_whisper(PathBuf::from(&model_path), |engine| {
-            debug!("[Transcription] Whisper model ready: {}", model_path);
             let result = engine.transcribe_with(&samples, &params).map_err(|e| {
                 TranscriptionError::TranscriptionError {
                     message: e.to_string(),
@@ -589,7 +588,6 @@ pub async fn transcribe_audio_parakeet(
         };
 
         let transcript = manager.with_parakeet(PathBuf::from(&model_path), |engine| {
-            debug!("[Transcription] Parakeet model ready: {}", model_path);
             let result = engine.transcribe_with(&samples, &params).map_err(|e| {
                 TranscriptionError::TranscriptionError {
                     message: e.to_string(),
@@ -630,7 +628,6 @@ pub async fn transcribe_audio_moonshine(
 
         let transcript =
             manager.with_moonshine(PathBuf::from(&model_path), model_variant, |engine| {
-                debug!("[Transcription] Moonshine model ready: {}", model_path);
                 // Moonshine doesn't expose model-specific inference params we use, so use the
                 // SpeechModel trait's default-options path.
                 let result =

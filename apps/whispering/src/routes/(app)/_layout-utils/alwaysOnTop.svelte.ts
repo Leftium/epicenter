@@ -1,13 +1,13 @@
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import { rpc } from '$lib/rpc';
+import type { Tauri } from '$lib/tauri';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 
-export function syncWindowAlwaysOnTopWithRecorderState() {
+export function syncWindowAlwaysOnTopWithRecorderState(tauri: Tauri) {
 	$effect(() => {
 		const setAlwaysOnTop = (value: boolean) =>
-			getCurrentWindow().setAlwaysOnTop(value);
+			tauri.window.setAlwaysOnTop(value);
 		switch (settings.get('ui.alwaysOnTop')) {
 			case 'Always':
 				setAlwaysOnTop(true);

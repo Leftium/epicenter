@@ -16,7 +16,7 @@
 	} from '$lib/constants/ffmpeg';
 	import { tauri } from '$lib/tauri';
 	import { settings } from '$lib/state/settings.svelte';
-	import { isCompressionRecommended } from '$routes/(app)/_layout-utils/check-ffmpeg';
+	import { isCompressionRecommended } from '$routes/(app)/_layout-utils/compression-recommendation';
 
 	// Compression preset definitions (UI only - not stored in settings)
 	const COMPRESSION_PRESETS = {

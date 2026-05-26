@@ -20,7 +20,7 @@
 	import {
 		COMPRESSION_RECOMMENDED_MESSAGE,
 		isCompressionRecommended,
-	} from '$routes/(app)/_layout-utils/check-ffmpeg';
+	} from '$routes/(app)/_layout-utils/compression-recommendation';
 	import DesktopOutputFolder from './DesktopOutputFolder.svelte';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';

@@ -368,9 +368,7 @@ const compressAudioBlob = (blob: Blob, compressionOptions: string) =>
 				const { data: result, error: commandError } =
 					await command.execute(cmd);
 				if (commandError) {
-					throw new Error(
-						`FFmpeg compression failed: ${commandError.message}`,
-					);
+					throw new Error(`FFmpeg compression failed: ${commandError.message}`);
 				}
 				if (result.code !== 0) {
 					throw new Error(
@@ -405,6 +403,11 @@ const compressAudioBlob = (blob: Blob, compressionOptions: string) =>
 		},
 		catch: (error) => FfmpegError.CompressFailed({ cause: error }),
 	});
+
+// window ------------------------------------------------------------
+const window = {
+	setAlwaysOnTop: (value: boolean) => getCurrentWindow().setAlwaysOnTop(value),
+};
 
 // tray --------------------------------------------------------------
 export const TrayError = defineErrors({
@@ -762,6 +765,7 @@ const tauriImpl = {
 	command,
 	permissions,
 	ffmpeg,
+	window,
 	tray,
 	globalShortcuts,
 	autostart,

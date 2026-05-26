@@ -6,6 +6,7 @@ use audio::prepare_samples_for_transcription;
 use error::TranscriptionError;
 use log::info;
 pub use model_manager::ModelManager;
+use model_manager::UnloadPolicy;
 use serde::Deserialize;
 use std::path::PathBuf;
 use tauri::ipc::{InvokeBody, Request};
@@ -122,6 +123,18 @@ pub async fn transcribe_audio(
         .map_err(join_err)?
 }
 
+/// Update the model unload policy from the frontend. Called by an effect
+/// in the SvelteKit layout whenever `transcription.localModelUnloadPolicy`
+/// changes, and once at app startup to push the initial value.
+///
+/// Unknown values fall back to the default inside `UnloadPolicy::from_wire`
+/// rather than erroring, so a future rename or corrupt localStorage value
+/// never breaks transcription.
+#[tauri::command]
+pub fn set_unload_policy(policy: String, model_manager: tauri::State<'_, ModelManager>) {
+    model_manager.set_policy(UnloadPolicy::from_wire(&policy));
+}
+
 /// Map a join failure from spawn_blocking into a TranscriptionError so the
 /// frontend always sees a structured error even when the background task
 /// panics or is cancelled.
@@ -209,5 +222,8 @@ fn run_transcription(
         engine_label,
         transcript.len()
     );
+    // For the `Immediately` policy, drop the resident model now that this
+    // transcription is done. No-op for any other policy.
+    manager.evict_if_immediate();
     Ok(transcript)
 }

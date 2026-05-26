@@ -1,10 +1,10 @@
 import { nanoid } from 'nanoid/non-secure';
-import { createBlobStoreWeb } from '$lib/services/blob-store/web';
+import { createIndexedDbBlobStore } from '$lib/services/blob-store/web';
 
 export const MOCK_RECORDING_COUNT = 12;
 
 export function createMigrationTestData() {
-	const indexedDb = createBlobStoreWeb();
+	const indexedDb = createIndexedDbBlobStore();
 
 	return {
 		async seedIndexedDB({

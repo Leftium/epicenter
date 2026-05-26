@@ -61,25 +61,26 @@
 	] as const;
 
 	const workspaceCode = `import { createSqliteIndex, attachYjsFileSystem, filesTable } from '@epicenter/filesystem';
-import { attachIndexedDb, attachTables } from '@epicenter/workspace';
-import * as Y from 'yjs';
+import { attachIndexedDb, createWorkspace } from '@epicenter/workspace';
 
 export function openOpensidianBrowser() {
-  const ydoc = new Y.Doc({ guid: 'opensidian' });
-  const tables = attachTables(ydoc, { files: filesTable });
-  const idb = attachIndexedDb(ydoc);
+  const workspace = createWorkspace({
+    id: 'opensidian',
+    tables: { files: filesTable },
+    kv: {},
+  });
+  const idb = attachIndexedDb(workspace.ydoc);
   const fileContent = {
     read: (fileId) => readFileContent(fileId),
     write: (fileId, text) => writeFileContent(fileId, text),
     append: (fileId, text) => appendFileContent(fileId, text),
   };
-  const sqliteIndex = createSqliteIndex({ readContent: fileContent.read })({ tables });
-  const fs = attachYjsFileSystem(ydoc, tables.files, fileContent);
+  const sqliteIndex = createSqliteIndex({ readContent: fileContent.read })({
+    tables: workspace.tables,
+  });
+  const fs = attachYjsFileSystem(workspace.ydoc, workspace.tables.files, fileContent);
 
-  return {
-    ydoc, tables, idb, sqliteIndex, fs,
-    [Symbol.dispose]() { ydoc.destroy(); },
-  };
+  return { ...workspace, idb, sqliteIndex, fs };
 }`;
 
 	const codeAnnotations = [
@@ -87,29 +88,29 @@ export function openOpensidianBrowser() {
 			id: 'open-opensidian',
 			line: 'export function openOpensidianBrowser() { ... }',
 			explanation:
-				'A browser factory: constructs a Y.Doc and composes browser attachments inline. The signed-in session owns the live workspace, so tests, codegen, and tooling can still build a fresh one without UI state.',
+				'A browser factory: builds the workspace bundle and composes browser attachments inline. The signed-in session owns the live workspace, so tests, codegen, and tooling can still build a fresh one without UI state.',
 		},
 		{
-			id: 'attach-tables',
-			line: 'attachTables(ydoc, { files: filesTable })',
+			id: 'create-workspace',
+			line: "createWorkspace({ id: 'opensidian', tables: { files: filesTable }, kv: {} })",
 			explanation:
-				'Binds the typed table schemas to the shared Y.Doc. Each table becomes a Y.Map of rows with a typed, reactive surface.',
+				'Builds the workspace bundle in one call: a Y.Doc, the typed `files` table, and an empty KV slot. The bundle owns the Y.Doc lifecycle, so disposing the bundle (via Symbol.dispose) tears every store down.',
 		},
 		{
 			id: 'indexeddb',
-			line: 'attachIndexedDb(ydoc)',
+			line: 'attachIndexedDb(workspace.ydoc)',
 			explanation:
-				"Attaches IndexedDB. Every Y.Doc update is written to the browser's local storage automatically.",
+				"Attaches IndexedDB to the workspace's Y.Doc. Every update is written to the browser's local storage automatically.",
 		},
 		{
 			id: 'sqlite-index',
-			line: 'createSqliteIndex({ readContent: fileContent.read })({ tables })',
+			line: 'createSqliteIndex({ readContent: fileContent.read })({ tables: workspace.tables })',
 			explanation:
 				'Spins up a WASM SQLite database that mirrors the Yjs files table into SQL rows for fast tree queries.',
 		},
 		{
 			id: 'filesystem',
-			line: 'attachYjsFileSystem(ydoc, tables.files, fileContent)',
+			line: 'attachYjsFileSystem(workspace.ydoc, workspace.tables.files, fileContent)',
 			explanation:
 				'Wraps the raw table and content operations into a familiar filesystem interface: writeFile, mkdir, rm, mv.',
 		},

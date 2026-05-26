@@ -4,9 +4,10 @@ import { globalShortcuts } from './shortcuts';
 import { tray } from './tray';
 
 /**
- * Desktop-only RPC namespace.
- * These query operations are only available in the Tauri desktop app.
- * The individual modules handle platform checks internally via desktopServices.
+ * Desktop-only RPC namespace. Bundled only on Tauri builds via Vite's
+ * suffix-based `resolve.extensions`. The web build resolves
+ * `./index.browser.ts` instead, which exposes the same shape with
+ * throwing stubs.
  */
 export const desktopRpc = {
 	autostart,

@@ -58,7 +58,7 @@ If your work has side effects beyond cache, it's an **orchestration** and belong
 <Button disabled={isPreparing} onclick={...}>...</Button>
 ```
 
-This isn't an exception to the rule — it's a direct consequence of it. Orchestrations aren't adapter-shaped, so they don't live here; observing their lifecycle is the component's concern, not the rpc layer's.
+This isn't an exception to the rule: it's a direct consequence of it. Orchestrations aren't adapter-shaped, so they don't live here; observing their lifecycle is the component's concern, not the rpc layer's.
 
 ## Dependency direction
 

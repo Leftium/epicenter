@@ -10,11 +10,11 @@ The current `$lib/` structure organizes by mechanism, not by feature:
 
 ```
 $lib/
-  services/    — pure IO        ┐
-  state/       — reactive       │ five mechanism-based layers,
-  operations/  — orchestrations │ every feature spread across all of them
-  rpc/         — TanStack       │
-  constants/   — shared types   ┘
+  services/   : pure IO        ┐
+  state/      : reactive       │ five mechanism-based layers,
+  operations/ : orchestrations │ every feature spread across all of them
+  rpc/        : TanStack       │
+  constants/  : shared types   ┘
 ```
 
 A single domain like "recording" lives in:
@@ -41,15 +41,15 @@ The mechanism-based split also forces artificial rules. The recent `rpc/` rename
 ```
 $lib/recording/
   service/
-    types.ts          — DeviceIdentifier, RecorderError, StartRecordingParams
-    navigator.ts      — Web MediaRecorder impl
-    cpal.ts           — Tauri/Rust impl
-    index.ts          — platform selector (Tauri vs web)
-  state.svelte.ts     — manualRecorder + vadRecorder singletons
-  use-cases.ts        — startManualRecording, stopManualRecording, cancel,
+    types.ts         : DeviceIdentifier, RecorderError, StartRecordingParams
+    navigator.ts     : Web MediaRecorder impl
+    cpal.ts          : Tauri/Rust impl
+    index.ts         : platform selector (Tauri vs web)
+  state.svelte.ts    : manualRecorder + vadRecorder singletons
+  use-cases.ts       : startManualRecording, stopManualRecording, cancel,
                         startVadRecording, stopVadRecording
-  devices.ts          — defineQuery for enumerateDevices (TanStack adapter)
-  constants.ts        — WhisperingRecordingState, VadState, MIME types
+  devices.ts         : defineQuery for enumerateDevices (TanStack adapter)
+  constants.ts       : WhisperingRecordingState, VadState, MIME types
   README.md
 ```
 
@@ -59,29 +59,29 @@ Imports inside the folder are short (`./service`, `./state.svelte`). Imports fro
 
 ```
 $lib/
-  recording/          — domain feature
-  transcription/      — domain feature
-  transformation/     — domain feature
-  clipboard/          — domain feature
-  audio-blob/         — domain feature (recording storage + playback)
-  shortcuts/          — domain feature
-  upload/             — domain feature
+  recording/         : domain feature
+  transcription/     : domain feature
+  transformation/    : domain feature
+  clipboard/         : domain feature
+  audio-blob/        : domain feature (recording storage + playback)
+  shortcuts/         : domain feature
+  upload/            : domain feature
 
-  pipeline.ts         — cross-feature orchestration (record → transcribe → transform)
+  pipeline.ts        : cross-feature orchestration (record → transcribe → transform)
                         OR: $lib/pipeline/ if it grows
 
-  shared/             — primitives nothing owns
-    result.ts         — WhisperingErr, error types
-    paths.ts          — PATHS
-    notify.ts         — toast facade
-    sound.ts          — sound facade
-    analytics.ts      — analytics facade
+  shared/            : primitives nothing owns
+    result.ts        : WhisperingErr, error types
+    paths.ts         : PATHS
+    notify.ts        : toast facade
+    sound.ts         : sound facade
+    analytics.ts     : analytics facade
 
-  ui/                 — components not bound to one feature
-    settings/         — cross-feature settings panels
+  ui/                : components not bound to one feature
+    settings/        : cross-feature settings panels
 
-  workspace/          — Yjs/CRDT integration (currently shared infra)
-  migration/          — already feature-organized
+  workspace/         : Yjs/CRDT integration (currently shared infra)
+  migration/         : already feature-organized
 ```
 
 `services/`, `state/`, `operations/`, `rpc/` disappear as top-level concepts. Their files live inside the feature that owns them.
@@ -123,7 +123,7 @@ $lib/clipboard/
     web.ts
     tauri.ts
     index.ts
-  rpc.ts              — defineQuery readFromClipboard (renamed from rpc/text.ts)
+  rpc.ts             : defineQuery readFromClipboard (renamed from rpc/text.ts)
   README.md
 ```
 
@@ -133,10 +133,10 @@ Three files moved, one renamed, two consumers (`transform-clipboard/+page.svelte
 
 Next migrations, in order of complexity:
 
-1. **`transcription/`** — service + rpc adapter + error transformers + orchestration. Self-contained. Big payoff: `transcription-errors/` finally lives next to the service whose errors it transforms.
-2. **`transformation/`** — similar shape, plus the runs UI.
-3. **`recording/`** — largest, most cross-cutting. Tackle last when conventions are settled.
-4. **`pipeline/`** — last move; by this point we know whether it's its own folder or inlines into `recording/use-cases.ts`.
+1. **`transcription/`**: service + rpc adapter + error transformers + orchestration. Self-contained. Big payoff: `transcription-errors/` finally lives next to the service whose errors it transforms.
+2. **`transformation/`**: similar shape, plus the runs UI.
+3. **`recording/`**: largest, most cross-cutting. Tackle last when conventions are settled.
+4. **`pipeline/`**: last move; by this point we know whether it's its own folder or inlines into `recording/use-cases.ts`.
 
 Each migration is its own PR. After all four, `services/`, `state/`, `operations/`, `rpc/` are gone; `constants/` is reduced to truly shared values.
 
@@ -160,9 +160,9 @@ These are the calls that need to be made up-front so we don't relitigate per fea
    **Lean: drop the barrel.** Direct imports are clearer and Vite handles them fine. The barrel was a holdover from the mechanism-organized world where everything reactive lived in one place.
 
 4. **`shared/` discipline.** What earns a place in `shared/`?
-   - `result.ts` (WhisperingError) — yes, used everywhere.
-   - `paths.ts` — yes, OS-aware paths.
-   - `notify`, `sound`, `analytics` — these are facades over services. They could live in `shared/` or as their own feature folders. **Lean: feature folders** (`$lib/notify/`, etc.) because each has its own service + state. `shared/` should only contain unstyled primitives.
+   - `result.ts` (WhisperingError): yes, used everywhere.
+   - `paths.ts`: yes, OS-aware paths.
+   - `notify`, `sound`, `analytics`: these are facades over services. They could live in `shared/` or as their own feature folders. **Lean: feature folders** (`$lib/notify/`, etc.) because each has its own service + state. `shared/` should only contain unstyled primitives.
 
 5. **`constants/` fate.** Most current `constants/` files are feature-specific (`audio/`, `keyboard/`, `sounds/`). These move to their owning feature. Truly cross-feature constants (`platform/`, `app/`) move to `shared/`.
 
@@ -197,7 +197,7 @@ Repeated for each feature.
 
 ### Wave 5: Verify
 
-- [ ] `bun run typecheck` — zero errors
+- [ ] `bun run typecheck`: zero errors
 - [ ] Manual smoke test of the feature's UI surface
 - [ ] Single commit per feature
 

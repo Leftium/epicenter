@@ -1,3 +1,4 @@
+import { AudioEncoderServiceLive } from './audio-encoder';
 import { AutostartServiceLive } from './autostart';
 import { CommandServiceLive } from './command';
 import { FfmpegServiceLive } from './ffmpeg';
@@ -12,6 +13,7 @@ import { TrayIconServiceLive } from './tray';
  * These services are only available in the Tauri desktop app.
  */
 export const desktopServices = {
+	audioEncoder: AudioEncoderServiceLive,
 	autostart: AutostartServiceLive,
 	command: CommandServiceLive,
 	ffmpeg: FfmpegServiceLive,

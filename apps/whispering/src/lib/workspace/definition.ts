@@ -349,6 +349,17 @@ const transcription = {
 		column.string(),
 		() => FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
 	),
+	/**
+	 * Whether to compress audio with libopus before uploading to cloud
+	 * transcription providers. `opus` runs the in-process Rust encoder and
+	 * uploads `.ogg`; `wav` uploads the original bytes untouched. The
+	 * encoder is Tauri-only, so the setting is a no-op on web (web uploads
+	 * MediaRecorder output unchanged regardless of this value).
+	 */
+	'transcription.uploadCompression': defineKv(
+		column.enum(['opus', 'wav']),
+		() => 'opus' as const,
+	),
 } as const;
 
 /**

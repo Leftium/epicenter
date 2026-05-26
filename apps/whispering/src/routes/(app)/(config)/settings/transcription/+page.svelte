@@ -16,6 +16,7 @@
 		GroqApiKeyInput,
 		MistralApiKeyInput,
 		OpenAiApiKeyInput,
+		UploadCompressionToggle,
 	} from '$lib/components/settings';
 	import LocalModelSelector from '$lib/components/settings/LocalModelSelector.svelte';
 	import TranscriptionServiceSelect from '$lib/components/settings/TranscriptionServiceSelect.svelte';
@@ -708,7 +709,10 @@
 			</Field.Field>
 		{/if}
 
-		<!-- Audio Compression Settings -->
+		<!-- Cloud upload compression (in-process Rust libopus). -->
+		<UploadCompressionToggle />
+
+		<!-- Legacy FFmpeg-based compression (separate setting, kept until Wave 4). -->
 		<CompressionBody />
 
 		<Field.Field>

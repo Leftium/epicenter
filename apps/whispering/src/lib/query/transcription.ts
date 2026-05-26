@@ -7,6 +7,7 @@ import { defineMutation, queryClient } from '$lib/query/client';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { services } from '$lib/services';
 import { desktopServices } from '$lib/services/desktop';
+import { TRANSCRIPTION_SERVICES } from '$lib/services/transcription/registry';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import type { Recording } from '$lib/state/recordings.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
@@ -22,6 +23,28 @@ import { openaiErrorToWhisperingErr } from './transcription-errors/openai';
 const transcriptionKeys = {
 	isTranscribing: ['transcription', 'isTranscribing'] as const,
 } as const;
+
+/**
+ * Services that upload audio bytes to a remote endpoint (cloud APIs +
+ * self-hosted). The local engines (whispercpp, parakeet, moonshine) decode
+ * the blob in-process via the Rust decoder, so compressing their input
+ * would just round-trip through libopus for no win.
+ */
+function isUploadTranscriptionService(serviceId: string): boolean {
+	const entry = TRANSCRIPTION_SERVICES.find((s) => s.id === serviceId);
+	return entry?.location === 'cloud' || entry?.location === 'self-hosted';
+}
+
+/**
+ * Heuristic that catches the cpal recorder output (which is the only WAV
+ * source we expect to compress). The new Opus encoder rejects non-WAV
+ * input anyway; this just avoids paying the IPC round-trip when we already
+ * know the blob is something else.
+ */
+function blobLooksLikeWav(blob: Blob): boolean {
+	const type = blob.type.toLowerCase();
+	return type === 'audio/wav' || type === 'audio/wave' || type === 'audio/x-wav';
+}
 
 function getOutputLanguage(): SupportedLanguage {
 	const language = settings.get('transcription.language');
@@ -114,9 +137,54 @@ export async function transcribeBlob(
 		provider: selectedService,
 	});
 
-	// Compress audio if enabled, else pass through original blob
 	let audioToTranscribe = blob;
-	if (settings.get('transcription.compressionEnabled')) {
+
+	// In-process Opus encode (Tauri only). Applies to the cloud upload path
+	// where bandwidth dominates: cpal records uncompressed WAV at ~960 KB/min,
+	// libopus voice mode brings that to ~50 KB/min with no perceptible quality
+	// loss for transcription. Skipped for local-engine paths because the Rust
+	// decoder consumes the raw WAV directly with zero benefit from compressing
+	// then immediately decoding.
+	const shouldOpusCompress =
+		window.__TAURI_INTERNALS__ &&
+		settings.get('transcription.uploadCompression') === 'opus' &&
+		isUploadTranscriptionService(selectedService) &&
+		blobLooksLikeWav(blob);
+	if (shouldOpusCompress) {
+		const { data: oggBlob, error: encodeError } =
+			await desktopServices.audioEncoder.encodeWavToOpusOgg(blob);
+
+		if (encodeError) {
+			notify.warning({
+				title: 'Audio compression skipped',
+				description: `${encodeError.message}. Uploading original audio instead.`,
+			});
+			analytics.logEvent({
+				type: 'compression_failed',
+				provider: selectedService,
+				error_message: encodeError.message,
+			});
+		} else {
+			audioToTranscribe = oggBlob;
+			const compressionRatio = Math.round((1 - oggBlob.size / blob.size) * 100);
+			analytics.logEvent({
+				type: 'compression_completed',
+				provider: selectedService,
+				original_size: blob.size,
+				compressed_size: oggBlob.size,
+				compression_ratio: compressionRatio,
+			});
+		}
+	}
+
+	// Legacy FFmpeg-based upload compression. Runs only when the user
+	// explicitly enabled the old toggle AND the new Opus path didn't already
+	// compress (uploadCompression === 'wav' disables the new path). Will be
+	// removed once the FFmpeg sidecar deletion (Wave 4) lands.
+	if (
+		!shouldOpusCompress &&
+		settings.get('transcription.compressionEnabled')
+	) {
 		const { data: compressedBlob, error: compressionError } =
 			await desktopServices.ffmpeg.compressAudioBlob(
 				blob,

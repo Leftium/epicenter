@@ -12,6 +12,7 @@ export { default as OpenRouterApiKeyInput } from './api-key-inputs/OpenRouterApi
 // Shared components
 export { default as CompressionBody } from './CompressionBody.svelte';
 export { default as CompressionSelector } from './selectors/CompressionSelector.svelte';
+export { default as UploadCompressionToggle } from './UploadCompressionToggle.svelte';
 export { default as ManualDeviceSelector } from './selectors/ManualDeviceSelector.svelte';
 // Selector components
 export { default as RecordingModeSelector } from './selectors/RecordingModeSelector.svelte';

@@ -151,10 +151,10 @@ Show how components stack:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  createDisposableCache((id) => { ... }).open(id)            │  ← High-level
-│    User-owned Y.Doc builder, composes attach* primitives    │
+│    Refcounted handle factory over per-id workspace bundles  │
 ├─────────────────────────────────────────────────────────────┤
-│  attachTables(ydoc, {...}) / attachKv(ydoc, {...})          │  ← Mid-level
-│    Binds to an existing Y.Doc                               │
+│  createWorkspace({ id, tables, kv })                        │  ← Mid-level
+│    Allocates Y.Doc and constructs typed tables/KV in one    │
 ├─────────────────────────────────────────────────────────────┤
 │  defineTable() / defineKv()                                 │  ← Low-level
 │    Pure schema definitions                                  │
@@ -608,19 +608,20 @@ const tables = encryption.attachTables(defs);
 await encryption.unlock(keys);
 ```
 
-Now keys are read lazily at every registration site, with no unlock step and no state machine:
+Now keys are read lazily at construction and registration happens atomically inside one factory call:
 
 ```typescript
 // After — sync, lazy reads, no mutation hook
-const ydoc = new Y.Doc({ guid: id });
-const encryption = attachEncryption(ydoc, {
-	encryptionKeys: () => requireSignedIn(auth).encryptionKeys,
+const workspace = createWorkspace({
+	id,
+	keyring: () => requireSignedIn(auth).keyring,
+	tables: defs,
+	kv: {},
 });
-const tables = encryption.attachTables(defs);
-// done, registration and activation happen in one call
+// done, Y.Doc + keyring derivation + table registration + activation in one call
 ```
 
-The encrypted Y.Map wrapper no longer maintains a dual-cache: it encrypts on write and decrypts on read, one direction each way. The encryption runtime, key stores, IndexedDB wrappers, and dual-cache logic are all gone. Encrypted stores derive their keyring when they attach; same-user key rotation needs a re-attach to affect already-attached stores.
+The encrypted Y.Map wrapper no longer maintains a dual-cache: it encrypts on write and decrypts on read, one direction each way. The encryption runtime, key stores, IndexedDB wrappers, and dual-cache logic are all gone. Encrypted stores derive their keyring when the workspace is constructed; same-owner key rotation needs a fresh `createWorkspace` call to affect already-attached stores.
 
 ```
 Before:
@@ -630,8 +631,8 @@ Before:
     └── y-keyvalue-lww-encrypted.ts (dual-cache: encrypted + decrypted)
 
 After:
-  attachEncryption(ydoc, { encryptionKeys })
-    └── reads encryptionKeys() when each encrypted store attaches
+  createWorkspace({ id, keyring, tables, kv })
+    └── reads keyring() once at construction, derives per-workspace key via HKDF
         └── y-keyvalue-lww-encrypted.ts (one-way: encrypt on write, decrypt on read)
 ```
 

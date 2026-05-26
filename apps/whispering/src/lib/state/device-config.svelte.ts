@@ -7,6 +7,7 @@ import { type } from 'arktype';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { BITRATES_KBPS, DEFAULT_BITRATE_KBPS } from '$lib/constants/audio';
 import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
+import { LOCAL_MODEL_UNLOAD_POLICIES } from '$lib/constants/transcription';
 import { notify } from '$lib/operations/notify';
 
 // ── Per-key definitions ──────────────────────────────────────────────────────
@@ -60,6 +61,20 @@ const DEVICE_DEFINITIONS = {
 	'transcription.whispercpp.modelPath': defineEntry(type('string'), ''),
 	'transcription.parakeet.modelPath': defineEntry(type('string'), ''),
 	'transcription.moonshine.modelPath': defineEntry(type('string'), ''),
+
+	// ── Local model lifecycle (per device: memory pressure is physical) ─
+	/**
+	 * When to drop the resident local transcription model. Pushed to Rust
+	 * on change via the `set_unload_policy` Tauri command; the Rust side
+	 * owns the actual eviction (synchronous for `immediately`, idle-watcher
+	 * for timed values). Device-local because the right answer depends on
+	 * available RAM (a 64 GB workstation and a 16 GB laptop want different
+	 * policies for the same workflow).
+	 */
+	'transcription.localModelUnloadPolicy': defineEntry(
+		type.enumerated(...LOCAL_MODEL_UNLOAD_POLICIES),
+		'after_5_minutes',
+	),
 
 	// ── Self-hosted server URLs ───────────────────────────────────────
 	'completion.custom.baseUrl': defineEntry(

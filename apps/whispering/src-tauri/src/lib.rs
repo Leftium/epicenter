@@ -12,9 +12,7 @@ use recorder::commands::{
 use recorder::recorder::Recorder;
 
 pub mod transcription;
-use transcription::{
-    transcribe_audio_moonshine, transcribe_audio_parakeet, transcribe_audio_whisper, ModelManager,
-};
+use transcription::{set_unload_policy, transcribe_audio, ModelManager};
 
 pub mod windows_path;
 use windows_path::fix_windows_path;
@@ -97,6 +95,17 @@ pub async fn run() {
     // This ensures child processes can find ffmpeg on Windows
     fix_windows_path();
 
+    // ONNX Runtime accelerator for Parakeet and Moonshine. `OrtAccelerator::Auto`
+    // picks the best provider that's compiled in (CoreML on macOS, CPU on Linux),
+    // but it deliberately excludes DirectML because DirectML needs sequential ORT
+    // session settings that would penalize other backends. So on Windows we
+    // select DirectML explicitly to honor the compiled-in `ort-directml` feature.
+    // transcribe-rs always appends CPU to the EP list, so a CoreML or DirectML
+    // init failure degrades to CPU rather than failing the transcription. Set
+    // `ORT_LOG_SEVERITY_LEVEL=0` to confirm which EP ORT actually selected.
+    #[cfg(target_os = "windows")]
+    transcribe_rs::accel::set_ort_accelerator(transcribe_rs::accel::OrtAccelerator::DirectMl);
+
     let log_plugin = tauri_plugin_log::Builder::new()
         .level(log::LevelFilter::Info)
         .level_for("whispering::transcription", log::LevelFilter::Debug)
@@ -133,7 +142,15 @@ pub async fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .manage(Mutex::new(Recorder::new()))
-        .manage(ModelManager::new());
+        .manage(ModelManager::new())
+        .setup(|app| {
+            // Start the model idle watcher. It runs on the Tauri async
+            // runtime, sleeps between checks, and drops the resident
+            // model when the configured idle timeout elapses.
+            let manager = app.state::<ModelManager>().inner().clone();
+            manager.start_idle_watcher();
+            Ok(())
+        });
 
     #[cfg(desktop)]
     {
@@ -162,9 +179,8 @@ pub async fn run() {
         start_recording,
         stop_recording,
         cancel_recording,
-        transcribe_audio_whisper,
-        transcribe_audio_parakeet,
-        transcribe_audio_moonshine,
+        transcribe_audio,
+        set_unload_policy,
         send_sigint,
         // Command execution (prevents console window flash on Windows)
         execute_command,

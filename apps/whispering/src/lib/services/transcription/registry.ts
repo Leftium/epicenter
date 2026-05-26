@@ -13,7 +13,6 @@ import moonshineIcon from '$lib/constants/icons/moonshine.svg?raw';
 import nvidiaIcon from '$lib/constants/icons/nvidia.svg?raw';
 import openaiIcon from '$lib/constants/icons/openai.svg?raw';
 import speachesIcon from '$lib/constants/icons/speaches.svg?raw';
-import { IS_WINDOWS } from '$lib/constants/platform';
 import {
 	TRANSCRIPTION,
 	type TranscriptionServiceId,
@@ -60,21 +59,18 @@ type SatisfiedTranscriptionService =
 // ── Service registry ──────────────────────────────────────────────────────────
 
 export const TRANSCRIPTION_SERVICES = [
-	// Local services first (truly offline)
-	// Whisper C++ is not available on Windows due to upstream whisper-rs limitations and MSVC runtime library conflicts
-	...(IS_WINDOWS
-		? []
-		: [
-				{
-					id: 'whispercpp',
-					name: 'Whisper C++',
-					icon: ggmlIcon,
-					invertInDarkMode: true,
-					description: 'Fast local transcription with no internet required',
-					modelPathField: 'transcription.whispercpp.modelPath',
-					location: 'local',
-				} as const,
-			]),
+	// Local services first (truly offline). All three local engines now run
+	// on every desktop platform via transcribe-rs 0.3.x (whisper-cpp + onnx
+	// with platform-appropriate GPU backends: Metal/Vulkan/DirectML).
+	{
+		id: 'whispercpp',
+		name: 'Whisper C++',
+		icon: ggmlIcon,
+		invertInDarkMode: true,
+		description: 'Fast local transcription with no internet required',
+		modelPathField: 'transcription.whispercpp.modelPath',
+		location: 'local',
+	},
 	{
 		id: 'parakeet',
 		name: 'Parakeet',
@@ -84,22 +80,15 @@ export const TRANSCRIPTION_SERVICES = [
 		modelPathField: 'transcription.parakeet.modelPath',
 		location: 'local',
 	},
-	// Moonshine is not available on Windows due to MSVC runtime library conflicts.
-	// The tokenizers/esaxx-rs CRT conflict was resolved in transcribe-rs 0.2.2,
-	// but moonshine on Windows remains untested.
-	...(IS_WINDOWS
-		? []
-		: [
-				{
-					id: 'moonshine',
-					name: 'Moonshine',
-					icon: moonshineIcon,
-					invertInDarkMode: false,
-					description: 'Efficient ONNX model by UsefulSensors',
-					modelPathField: 'transcription.moonshine.modelPath',
-					location: 'local',
-				} as const,
-			]),
+	{
+		id: 'moonshine',
+		name: 'Moonshine',
+		icon: moonshineIcon,
+		invertInDarkMode: false,
+		description: 'Efficient ONNX model by UsefulSensors',
+		modelPathField: 'transcription.moonshine.modelPath',
+		location: 'local',
+	},
 	// Cloud services (API-based)
 	{
 		id: 'Groq',

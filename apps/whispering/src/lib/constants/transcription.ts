@@ -222,3 +222,49 @@ export const TRANSCRIPTION_SERVICE_IDS = Object.keys(
 export const TRANSCRIPTION_SERVICE_ID_TO_LABEL = Object.fromEntries(
 	TRANSCRIPTION_SERVICE_IDS.map((id) => [id, TRANSCRIPTION[id].label]),
 ) as Record<TranscriptionServiceId, string>;
+
+/**
+ * When to drop the resident local transcription model from memory after the
+ * user stops transcribing. Single source of truth: the OPTIONS array below
+ * carries values, labels, and descriptions; the tuple and union type are
+ * derived from it (same pattern as TRANSCRIPTION → TRANSCRIPTION_SERVICE_IDS).
+ *
+ * Mirrored in Rust by `UnloadPolicy::from_wire` in
+ * `src-tauri/src/transcription/model_manager.rs`. If you add a value here,
+ * teach the Rust parser about it too.
+ *
+ * Default order is UX order (recommended first), not alphabetical.
+ */
+export const LOCAL_MODEL_UNLOAD_POLICY_OPTIONS = [
+	{
+		value: 'after_5_minutes',
+		label: 'After 5 minutes',
+		description: 'Drop the model after 5 minutes of inactivity. Good default.',
+	},
+	{
+		value: 'after_30_minutes',
+		label: 'After 30 minutes',
+		description:
+			'Drop the model after 30 minutes of inactivity. Useful for bursty workflows.',
+	},
+	{
+		value: 'immediately',
+		label: 'Immediately',
+		description:
+			'Drop after every transcription. Minimum memory, slowest next transcription.',
+	},
+	{
+		value: 'never',
+		label: 'Never',
+		description: 'Keep the model resident until the app exits.',
+	},
+] as const;
+
+export type LocalModelUnloadPolicy =
+	(typeof LOCAL_MODEL_UNLOAD_POLICY_OPTIONS)[number]['value'];
+
+/** Convenience array for `type.enumerated(...LOCAL_MODEL_UNLOAD_POLICIES)`. */
+export const LOCAL_MODEL_UNLOAD_POLICIES =
+	LOCAL_MODEL_UNLOAD_POLICY_OPTIONS.map(
+		(o) => o.value,
+	) as LocalModelUnloadPolicy[];

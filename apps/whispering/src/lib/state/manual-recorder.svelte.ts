@@ -10,6 +10,8 @@ import { services } from '$lib/services';
 import { desktopServices } from '$lib/services/desktop';
 import {
 	asDeviceIdentifier,
+	type RecorderService,
+	type Recording,
 	type StartRecordingParams,
 } from '$lib/services/recorder/types';
 import { deviceConfig } from '$lib/state/device-config.svelte';
@@ -24,17 +26,22 @@ import { deviceConfig } from '$lib/state/device-config.svelte';
  * - Operations: `manualRecorder.startRecording({ toastId })` etc.
  * - Device enumeration as a TanStack Query for loading states in selectors
  *
- * State writes flow through a single channel: every recorder service exposes
- * `subscribe(handler)`, this module registers one handler at construction
- * time, and the active service drives `_state` directly. Inactive services
- * (e.g. a CPAL subscription in web mode) emit nothing.
+ * Each recording is a `Recording` object returned by the backend that
+ * started it. The Recording owns its own stop/cancel/subscribe; the
+ * recorder service is only consulted at start time, so toggling
+ * `recording.method` mid-recording can't misroute teardown (the in-flight
+ * Recording stays bound to its original backend).
  *
- * On Tauri, state is bootstrapped from the active service's `getRecorderState`
- * once at module init (a Rust CPAL session can outlive a JS reload). The
- * subscribe handler covers every subsequent transition, including ones Rust
- * initiates without a JS command (future auto-stop, device disconnect, etc.).
+ * Subscription is per-Recording rather than per-service. The previous
+ * model subscribed to both navigator and cpal at module init even though
+ * only one would ever fire; now `attach()` subscribes to the live
+ * Recording and `detach()` cleans up on stop/cancel.
+ *
+ * On Tauri, state is bootstrapped from each backend's `getActiveRecording`
+ * at module init (a Rust CPAL session can outlive a JS reload).
  */
-function recorderService() {
+
+function resolveServiceForStart(): RecorderService {
 	if (!isTauri()) return services.navigatorRecorder;
 	return deviceConfig.get('recording.method') === 'cpal'
 		? desktopServices.cpalRecorder
@@ -70,18 +77,42 @@ async function buildStartParams(
 
 function createManualRecorder() {
 	let _state = $state<WhisperingRecordingState>('IDLE');
+	let _current: Recording | null = null;
+	let _unsubscribe: (() => void) | null = null;
 
-	void recorderService()
-		.getRecorderState()
-		.then(({ data }) => {
-			if (data) _state = data;
+	function attach(recording: Recording) {
+		_unsubscribe?.();
+		_current = recording;
+		_unsubscribe = recording.subscribe((s) => {
+			_state = s;
+			if (s === 'IDLE') detach();
 		});
+	}
 
-	const writeState = (state: WhisperingRecordingState) => {
-		_state = state;
-	};
-	services.navigatorRecorder.subscribe(writeState);
-	if (isTauri()) desktopServices.cpalRecorder.subscribe(writeState);
+	function detach() {
+		_unsubscribe?.();
+		_unsubscribe = null;
+		_current = null;
+		_state = 'IDLE';
+	}
+
+	// Bootstrap: ask each backend whether it owns a live session. Navigator
+	// always returns null after a JS reload (its state lives in the closure);
+	// cpal can return non-null because the Rust process keeps the stream alive.
+	//
+	// The promise is awaited before any stop/cancel/start runs. Without
+	// that gate, a user action that fires before bootstrap resolves sees a
+	// stale `_current === null` and either no-ops the cancel (leaking the
+	// Rust session) or double-starts on top of a rehydrated one.
+	const bootstrapped = Promise.all([
+		services.navigatorRecorder.getActiveRecording(),
+		isTauri()
+			? desktopServices.cpalRecorder.getActiveRecording()
+			: Promise.resolve({ data: null, error: null } as const),
+	]).then(([nav, cpal]) => {
+		const found = nav.data ?? cpal.data ?? null;
+		if (found) attach(found);
+	});
 
 	return {
 		get state(): WhisperingRecordingState {
@@ -91,7 +122,8 @@ function createManualRecorder() {
 		enumerateDevices: defineQuery({
 			queryKey: ['recorder', 'devices'],
 			queryFn: async () => {
-				const { data, error } = await recorderService().enumerateDevices();
+				const { data, error } =
+					await resolveServiceForStart().enumerateDevices();
 				if (error) {
 					return WhisperingErr({
 						title: '❌ Failed to enumerate devices',
@@ -103,11 +135,22 @@ function createManualRecorder() {
 		}),
 
 		async startRecording({ toastId }: { toastId: string }) {
-			const params = await buildStartParams(nanoid());
-			const { data: deviceAcquisitionOutcome, error: startRecordingError } =
-				await recorderService().startRecording(params, {
-					sendStatus: (options) => notify.loading({ id: toastId, ...options }),
+			await bootstrapped;
+			if (_current) {
+				return WhisperingErr({
+					title: '❌ Already recording',
+					description:
+						'A recording is already in progress. Stop the current one before starting a new one.',
 				});
+			}
+			const service = resolveServiceForStart();
+			const params = await buildStartParams(nanoid());
+			const { data, error: startRecordingError } = await service.startRecording(
+				params,
+				{
+					sendStatus: (options) => notify.loading({ id: toastId, ...options }),
+				},
+			);
 
 			if (startRecordingError) {
 				return WhisperingErr({
@@ -116,14 +159,22 @@ function createManualRecorder() {
 				});
 			}
 
-			return Ok(deviceAcquisitionOutcome);
+			attach(data.recording);
+			return Ok(data.deviceAcquisition);
 		},
 
 		async stopRecording({ toastId }: { toastId: string }) {
-			const { data, error: stopRecordingError } =
-				await recorderService().stopRecording({
-					sendStatus: (options) => notify.loading({ id: toastId, ...options }),
+			await bootstrapped;
+			if (!_current) {
+				return WhisperingErr({
+					title: '❌ Failed to stop recording',
+					description:
+						'No active recording session to stop. Start a recording first.',
 				});
+			}
+			const { data, error: stopRecordingError } = await _current.stop({
+				sendStatus: (options) => notify.loading({ id: toastId, ...options }),
+			});
 
 			if (stopRecordingError) {
 				return WhisperingErr({
@@ -136,8 +187,10 @@ function createManualRecorder() {
 		},
 
 		async cancelRecording({ toastId }: { toastId: string }) {
+			await bootstrapped;
+			if (!_current) return Ok({ status: 'no-recording' as const });
 			const { data: cancelResult, error: cancelRecordingError } =
-				await recorderService().cancelRecording({
+				await _current.cancel({
 					sendStatus: (options) => notify.loading({ id: toastId, ...options }),
 				});
 

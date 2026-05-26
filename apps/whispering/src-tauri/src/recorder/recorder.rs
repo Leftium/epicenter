@@ -476,3 +476,85 @@ impl Drop for Recorder {
         let _ = self.close_session();
     }
 }
+
+/// Categorize a raw cpal/audio error message as "microphone access was denied".
+///
+/// cpal surfaces permission denials as opaque platform strings; we string-match
+/// them so the JS side can show a "please grant mic permission" UI instead of a
+/// generic error toast.
+///
+/// Inspired by Handy (MIT licensed):
+/// https://github.com/cjpais/Handy/blob/main/src-tauri/src/audio_toolkit/audio/recorder.rs
+/// (`is_microphone_access_denied`)
+pub fn is_microphone_access_denied(error_message: &str) -> bool {
+    let normalized = error_message.to_lowercase();
+    normalized.contains("access is denied")
+        || normalized.contains("permission denied")
+        // Windows WASAPI HRESULT E_ACCESSDENIED.
+        || normalized.contains("0x80070005")
+}
+
+/// Categorize a raw cpal/audio error message as "no input device available".
+///
+/// CoreAudio in particular produces an unhelpful "Failed to fetch preferred
+/// config" / "An unknown error" string when no input device is connected;
+/// match it here so the JS side can show a "please plug in a microphone" UI.
+///
+/// Inspired by Handy (MIT licensed):
+/// https://github.com/cjpais/Handy/blob/main/src-tauri/src/audio_toolkit/audio/recorder.rs
+/// (`is_no_input_device_error`)
+pub fn is_no_input_device_error(error_message: &str) -> bool {
+    let normalized = error_message.to_lowercase();
+    normalized.contains("no input device found")
+        || normalized.contains("no default input device available")
+        || (normalized.contains("failed to fetch preferred config")
+            && normalized.contains("coreaudio"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_access_is_denied() {
+        assert!(is_microphone_access_denied("Access is denied"));
+    }
+
+    #[test]
+    fn detects_permission_denied() {
+        assert!(is_microphone_access_denied("permission denied"));
+    }
+
+    #[test]
+    fn detects_windows_error_code() {
+        assert!(is_microphone_access_denied("WASAPI error: 0x80070005"));
+    }
+
+    #[test]
+    fn does_not_match_unrelated_permission_errors() {
+        assert!(!is_microphone_access_denied("device not found"));
+    }
+
+    #[test]
+    fn detects_no_input_device() {
+        assert!(is_no_input_device_error("No input device found"));
+    }
+
+    #[test]
+    fn detects_no_default_input_device() {
+        assert!(is_no_input_device_error("No default input device available"));
+    }
+
+    #[test]
+    fn detects_coreaudio_config_error() {
+        assert!(is_no_input_device_error(
+            "Failed to fetch preferred config: A backend-specific error has occurred: An unknown error unknown to the coreaudio-rs API occurred"
+        ));
+    }
+
+    #[test]
+    fn does_not_match_permission_errors_as_no_device() {
+        assert!(!is_no_input_device_error("permission denied"));
+        assert!(!is_no_input_device_error("device not found"));
+    }
+}

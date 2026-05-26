@@ -1,6 +1,5 @@
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 import {
-	type CancelRecordingResult,
 	TIMESLICE_MS,
 	type WhisperingRecordingState,
 } from '$lib/constants/audio';
@@ -9,45 +8,142 @@ import {
 	enumerateDevices,
 	getRecordingStream,
 } from '$lib/services/device-stream';
+import { categorizeRecorderError } from './categorize-error';
 import type {
-	DeviceAcquisitionOutcome,
-	DeviceIdentifier,
-} from '$lib/services/recorder/types';
-import type { NavigatorRecordingParams, RecorderService } from './types';
+	NavigatorRecordingParams,
+	RecorderService,
+	Recording,
+} from './types';
 import { RecorderError } from './types';
 
-type ActiveRecording = {
-	recordingId: string;
-	selectedDeviceId: DeviceIdentifier | null;
-	bitrateKbps: string;
+type ActiveSession = {
 	stream: MediaStream;
 	mediaRecorder: MediaRecorder;
 	recordedChunks: Blob[];
+	recording: Recording;
 };
 
 /**
  * Navigator recorder service that uses the MediaRecorder API.
  * Available in both browser and desktop environments.
  *
- * Constructed via a factory so all mutable state (`activeRecording`,
- * `subscribers`) lives in the closure rather than at module scope. The
- * exported `NavigatorRecorderServiceLive` is the single application-level
- * instance; tests can call `createNavigatorRecorder()` for an isolated one.
+ * Constructed via a factory so module-level state is just the single
+ * in-flight session, if any. The exposed surface is `startRecording`
+ * (factory), `getActiveRecording` (bootstrap), and `enumerateDevices`.
+ * Per-session lifecycle (stop/cancel/subscribe) lives on the returned
+ * `Recording` so toggling the backend setting mid-recording does not
+ * misroute teardown.
  */
 function createNavigatorRecorder(): RecorderService {
-	let activeRecording: ActiveRecording | null = null;
+	let activeSession: ActiveSession | null = null;
 
-	const subscribers = new Set<(state: WhisperingRecordingState) => void>();
+	function buildRecording(args: {
+		recordingId: string;
+		stream: MediaStream;
+		mediaRecorder: MediaRecorder;
+		recordedChunks: Blob[];
+	}): { session: ActiveSession; recording: Recording } {
+		const { recordingId, stream, mediaRecorder, recordedChunks } = args;
+		const subscribers = new Set<(s: WhisperingRecordingState) => void>();
+		let currentState: WhisperingRecordingState = 'RECORDING';
 
-	const notify = (state: WhisperingRecordingState) => {
-		for (const handler of subscribers) handler(state);
-	};
+		const notify = (state: WhisperingRecordingState) => {
+			// Idempotent: same-state notifications collapse to a no-op. Keeps
+			// the teardown safe to call from multiple paths without double
+			// firing 'IDLE' (e.g. an external listener and an explicit
+			// teardown for the same transition).
+			if (currentState === state) return;
+			currentState = state;
+			for (const handler of subscribers) handler(state);
+		};
+
+		const teardown = () => {
+			activeSession = null;
+			cleanupRecordingStream(stream);
+			notify('IDLE');
+		};
+
+		const recording: Recording = {
+			recordingId,
+			backend: 'navigator',
+
+			stop: async ({ sendStatus }) => {
+				sendStatus({
+					title: '⏸️ Finishing Recording',
+					description: 'Saving your audio...',
+				});
+
+				const { data: blob, error: stopError } = await tryAsync({
+					try: () =>
+						new Promise<Blob>((resolve) => {
+							mediaRecorder.addEventListener('stop', () => {
+								const audioBlob = new Blob(recordedChunks, {
+									type: mediaRecorder.mimeType,
+								});
+								resolve(audioBlob);
+							});
+							mediaRecorder.stop();
+						}),
+					catch: (error) => RecorderError.StopFailed({ cause: error }),
+				});
+
+				teardown();
+
+				if (stopError) return Err(stopError);
+
+				sendStatus({
+					title: '✅ Recording Saved',
+					description: 'Your recording is ready for transcription!',
+				});
+				return Ok({ blob, recordingId });
+			},
+
+			cancel: async ({ sendStatus }) => {
+				sendStatus({
+					title: '🛑 Cancelling',
+					description: 'Discarding your recording...',
+				});
+
+				mediaRecorder.stop();
+				teardown();
+
+				sendStatus({
+					title: '✨ Cancelled',
+					description: 'Recording discarded successfully!',
+				});
+
+				return Ok({ status: 'cancelled' });
+			},
+
+			subscribe(handler) {
+				subscribers.add(handler);
+				// Fire current state immediately so callers don't have to mirror
+				// 'RECORDING' themselves at attach time.
+				handler(currentState);
+				return () => {
+					subscribers.delete(handler);
+				};
+			},
+		};
+
+		const session: ActiveSession = {
+			stream,
+			mediaRecorder,
+			recordedChunks,
+			recording,
+		};
+		return { session, recording };
+	}
 
 	return {
-		getRecorderState: async (): Promise<
-			Result<WhisperingRecordingState, RecorderError>
+		getActiveRecording: async (): Promise<
+			Result<Recording | null, RecorderError>
 		> => {
-			return Ok(activeRecording ? 'RECORDING' : 'IDLE');
+			// Navigator state lives in this closure, so a JS reload zeroes it
+			// out; the MediaStream/MediaRecorder are also gone in that case.
+			// Always null after a reload; non-null only if startRecording fired
+			// within this module's lifetime and the session is still live.
+			return Ok(activeSession?.recording ?? null);
 		},
 
 		enumerateDevices: async () => {
@@ -61,9 +157,8 @@ function createNavigatorRecorder(): RecorderService {
 		startRecording: async (
 			{ selectedDeviceId, recordingId, bitrateKbps }: NavigatorRecordingParams,
 			{ sendStatus },
-		): Promise<Result<DeviceAcquisitionOutcome, RecorderError>> => {
-			// Ensure we're not already recording
-			if (activeRecording) {
+		) => {
+			if (activeSession) {
 				return RecorderError.AlreadyRecording();
 			}
 
@@ -72,11 +167,13 @@ function createNavigatorRecorder(): RecorderService {
 				description: 'Setting up your microphone...',
 			});
 
-			// Get the recording stream
 			const { data: streamResult, error: acquireStreamError } =
 				await getRecordingStream({ selectedDeviceId, sendStatus });
 			if (acquireStreamError) {
-				return RecorderError.StreamAcquisition({ cause: acquireStreamError });
+				return (
+					categorizeRecorderError(acquireStreamError) ??
+					RecorderError.StreamAcquisition({ cause: acquireStreamError })
+				);
 			}
 
 			const { stream, deviceOutcome } = streamResult;
@@ -92,118 +189,26 @@ function createNavigatorRecorder(): RecorderService {
 			});
 
 			if (recorderError) {
-				// Clean up stream if recorder creation fails
 				cleanupRecordingStream(stream);
 				return Err(recorderError);
 			}
 
-			// Set up recording state and event handlers
 			const recordedChunks: Blob[] = [];
-
-			// Store active recording state
-			activeRecording = {
-				recordingId,
-				selectedDeviceId,
-				bitrateKbps,
-				stream,
-				mediaRecorder,
-				recordedChunks,
-			};
-
-			// Set up event handlers
 			mediaRecorder.addEventListener('dataavailable', (event: BlobEvent) => {
 				if (event.data.size) recordedChunks.push(event.data);
 			});
 
-			// Start recording
+			const { session, recording } = buildRecording({
+				recordingId,
+				stream,
+				mediaRecorder,
+				recordedChunks,
+			});
+			activeSession = session;
+
 			mediaRecorder.start(TIMESLICE_MS);
-			notify('RECORDING');
 
-			// Return the device acquisition outcome
-			return Ok(deviceOutcome);
-		},
-
-		stopRecording: async ({
-			sendStatus,
-		}): Promise<Result<{ blob: Blob; recordingId: string }, RecorderError>> => {
-			if (!activeRecording) {
-				return RecorderError.NotRecording({
-					message:
-						'Cannot stop recording because no active recording session was found. Make sure you have started recording before attempting to stop it.',
-				});
-			}
-
-			const recording = activeRecording;
-			activeRecording = null; // Clear immediately to prevent race conditions
-
-			sendStatus({
-				title: '⏸️ Finishing Recording',
-				description: 'Saving your audio...',
-			});
-
-			// Stop the recorder and wait for the final data
-			const { data: blob, error: stopError } = await tryAsync({
-				try: () =>
-					new Promise<Blob>((resolve) => {
-						recording.mediaRecorder.addEventListener('stop', () => {
-							const audioBlob = new Blob(recording.recordedChunks, {
-								type: recording.mediaRecorder.mimeType,
-							});
-							resolve(audioBlob);
-						});
-						recording.mediaRecorder.stop();
-					}),
-				catch: (error) => RecorderError.StopFailed({ cause: error }),
-			});
-
-			// Always clean up the stream
-			cleanupRecordingStream(recording.stream);
-			notify('IDLE');
-
-			if (stopError) return Err(stopError);
-
-			sendStatus({
-				title: '✅ Recording Saved',
-				description: 'Your recording is ready for transcription!',
-			});
-			return Ok({ blob, recordingId: recording.recordingId });
-		},
-
-		cancelRecording: async ({
-			sendStatus,
-		}): Promise<Result<CancelRecordingResult, RecorderError>> => {
-			if (!activeRecording) {
-				return Ok({ status: 'no-recording' });
-			}
-
-			const recording = activeRecording;
-			activeRecording = null; // Clear immediately
-
-			sendStatus({
-				title: '🛑 Cancelling',
-				description: 'Discarding your recording...',
-			});
-
-			// Stop the recorder
-			recording.mediaRecorder.stop();
-
-			// Clean up the stream
-			cleanupRecordingStream(recording.stream);
-			notify('IDLE');
-
-			sendStatus({
-				title: '✨ Cancelled',
-				description: 'Recording discarded successfully!',
-			});
-
-			return Ok({ status: 'cancelled' });
-		},
-
-		subscribe(handler) {
-			subscribers.add(handler);
-			return () => {
-				subscribers.delete(handler);
-			};
+			return Ok({ recording, deviceAcquisition: deviceOutcome });
 		},
 	};
 }
@@ -219,7 +224,7 @@ export const NavigatorRecorderServiceLive: RecorderService =
  * because:
  *
  * 1. Firefox (and forks like Zen) may leave `mediaRecorder.mimeType` empty when
- *    no type is specified at construction — see https://bugzilla.mozilla.org/show_bug.cgi?id=1512175
+ *    no type is specified at construction, see https://bugzilla.mozilla.org/show_bug.cgi?id=1512175
  * 2. Safari only supports `audio/mp4`, not `audio/webm`.
  * 3. Specifying upfront means the constructor throws `NotSupportedError` if invalid,
  *    rather than silently producing a blob with an empty type.

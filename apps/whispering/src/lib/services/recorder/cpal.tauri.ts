@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { remove } from '@tauri-apps/plugin-fs';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
-import tauri from '$lib/tauri';
+import { tauri } from '$lib/tauri';
 import { categorizeRecorderError } from '$lib/services/recorder/categorize-error';
 
 // This file is Tauri-only; `tauri` is non-null on this build.

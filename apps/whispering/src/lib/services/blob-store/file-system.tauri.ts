@@ -8,7 +8,7 @@ import {
 import mime from 'mime';
 import { tryAsync } from 'wellcrafted/result';
 import { PATHS } from '$lib/constants/paths';
-import tauri from '$lib/tauri';
+import { tauri } from '$lib/tauri';
 import type { BlobStore } from './types';
 
 // This file is Tauri-only; `tauri` is non-null on this build.

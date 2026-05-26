@@ -1,6 +1,6 @@
 import { toast } from '@epicenter/ui/sonner';
 import { goto } from '$app/navigation';
-import tauri from '$lib/tauri';
+import { tauri } from '$lib/tauri';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
 

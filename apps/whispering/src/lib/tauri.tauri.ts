@@ -851,7 +851,7 @@ const rpc = {
 };
 
 // barrel ------------------------------------------------------------
-const t = {
+const tauriImpl = {
 	fs,
 	command,
 	permissions,
@@ -863,16 +863,19 @@ const t = {
 };
 
 /**
- * Non-null Tauri namespace. Only import this from `.tauri.ts` files,
- * which are bundled only on Tauri builds. The `tauri.browser.ts`
- * companion does NOT export this name, so an accidental import from a
- * web-bundled file fails at build time instead of crashing at runtime.
+ * Shape of the Tauri capability namespace. Imported by consumers that
+ * want to type a non-null Tauri (after narrowing) without re-deriving
+ * the shape inline.
  */
-export const tauri = t;
+export type Tauri = typeof tauriImpl;
 
 /**
- * Default export: the namespace or null. Use this from any file that
- * might run on either platform. The optional chain at the call site is
- * the platform gate.
+ * The Tauri capability namespace, or null on web builds. Consumers
+ * narrow with `if (tauri)` or `tauri?.X.Y()`. The variable doubles as
+ * the platform check; if `tauri` is truthy you are on Tauri, full stop.
+ *
+ * The companion `tauri.browser.ts` exports the same name bound to
+ * `null`. Vite picks the right file at build time via
+ * `resolve.extensions`.
  */
-export default t as typeof t | null;
+export const tauri: Tauri | null = tauriImpl;

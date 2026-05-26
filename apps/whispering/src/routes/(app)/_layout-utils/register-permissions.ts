@@ -2,7 +2,7 @@ import { toast, toastOnError } from '@epicenter/ui/sonner';
 import { nanoid } from 'nanoid/non-secure';
 import { goto } from '$app/navigation';
 import { IS_MACOS } from '$lib/constants/platform';
-import tauri from '$lib/tauri';
+import { tauri } from '$lib/tauri';
 
 export function registerAccessibilityPermission() {
 	// Only run on macOS desktop

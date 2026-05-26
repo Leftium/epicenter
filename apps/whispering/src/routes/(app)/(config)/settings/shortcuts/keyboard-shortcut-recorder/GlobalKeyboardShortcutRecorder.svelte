@@ -2,7 +2,7 @@
 	import type { Command } from '$lib/commands';
 	import type { KeyboardEventSupportedKey } from '$lib/constants/keyboard';
 	import { notify } from '$lib/operations/notify';
-	import tauri, { type Accelerator } from '$lib/tauri';
+	import { tauri, type Accelerator } from '$lib/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { type PressedKeys } from '$lib/utils/createPressedKeys.svelte';
 	import { createKeyRecorder } from './create-key-recorder.svelte';

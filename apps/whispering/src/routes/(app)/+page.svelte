@@ -41,7 +41,7 @@
 	import { rpc } from '$lib/rpc';
 	import { WhisperingErr } from '$lib/result';
 	import { services } from '$lib/services';
-	import tauri from '$lib/tauri';
+	import { tauri } from '$lib/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';

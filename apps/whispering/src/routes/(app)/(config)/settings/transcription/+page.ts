@@ -1,4 +1,4 @@
-import tauri from '$lib/tauri';
+import { tauri } from '$lib/tauri';
 
 export const load = async () => {
 	if (!tauri) return { ffmpegInstalled: false };

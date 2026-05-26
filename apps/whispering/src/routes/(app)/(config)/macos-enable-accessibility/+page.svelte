@@ -7,7 +7,7 @@
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import { goto } from '$app/navigation';
-	import tauri from '$lib/tauri';
+	import { tauri } from '$lib/tauri';
 	import type { PageData } from './$types';
 
 	let { data } = $props();

@@ -14,7 +14,7 @@
 		FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
 		FFMPEG_SMALLEST_COMPRESSION_OPTIONS,
 	} from '$lib/constants/ffmpeg';
-	import tauri from '$lib/tauri';
+	import { tauri } from '$lib/tauri';
 	import { settings } from '$lib/state/settings.svelte';
 	import { isCompressionRecommended } from '$routes/(app)/_layout-utils/check-ffmpeg';
 

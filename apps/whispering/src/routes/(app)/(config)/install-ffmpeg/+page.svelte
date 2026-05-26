@@ -18,7 +18,7 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
 	import { services } from '$lib/services';
-	import tauri from '$lib/tauri';
+	import { tauri } from '$lib/tauri';
 
 	const platform = services.os.type();
 

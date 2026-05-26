@@ -7,7 +7,7 @@
 	import Layers2Icon from '@lucide/svelte/icons/layers-2';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import { notify } from '$lib/operations/notify';
-	import tauri from '$lib/tauri';
+	import { tauri } from '$lib/tauri';
 	import { resetGlobalShortcuts } from '$routes/(app)/_layout-utils/register-commands';
 	import ShortcutFormatHelp from '../keyboard-shortcut-recorder/ShortcutFormatHelp.svelte';
 	import ShortcutTable from '../keyboard-shortcut-recorder/ShortcutTable.svelte';

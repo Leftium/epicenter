@@ -12,7 +12,7 @@ import { mistralErrorToWhisperingErr } from '$lib/rpc/transcription-errors/mistr
 import { openaiErrorToWhisperingErr } from '$lib/rpc/transcription-errors/openai';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { services } from '$lib/services';
-import tauri from '$lib/tauri';
+import { tauri } from '$lib/tauri';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
 

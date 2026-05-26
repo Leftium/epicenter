@@ -23,7 +23,6 @@ import {
 	type Id,
 	type InferTableRow,
 	type Keyring,
-	type Tables,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
@@ -81,20 +80,6 @@ const chatMessagesTable = defineTable({
 export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Schema Records
-// ─────────────────────────────────────────────────────────────────────────────
-
-export const zhongwenTables = {
-	conversations: conversationsTable,
-	chatMessages: chatMessagesTable,
-};
-export type ZhongwenTables = Tables<typeof zhongwenTables>;
-
-export const zhongwenKv = {
-	showPinyin: defineKv(Type.Boolean(), () => true),
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Workspace Factory
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -102,8 +87,13 @@ export function createZhongwenWorkspace(opts: { keyring: () => Keyring }) {
 	return createWorkspace({
 		id: ZHONGWEN_ID,
 		keyring: opts.keyring,
-		tables: zhongwenTables,
-		kv: zhongwenKv,
+		tables: {
+			conversations: conversationsTable,
+			chatMessages: chatMessagesTable,
+		},
+		kv: {
+			showPinyin: defineKv(Type.Boolean(), () => true),
+		},
 	});
 }
 export type ZhongwenWorkspace = ReturnType<typeof createZhongwenWorkspace>;

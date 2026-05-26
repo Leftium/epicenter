@@ -26,7 +26,6 @@ import {
 	type Id,
 	type InferTableRow,
 	type Keyring,
-	type Tables,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
@@ -133,21 +132,10 @@ const toolTrustTable = defineTable({
 export type ToolTrust = InferTableRow<typeof toolTrustTable>;
 
 /**
- * Opensidian workspace table schema.
+ * Build an Opensidian workspace bundle: `{ ydoc, tables, kv, [Symbol.dispose] }`.
  *
  * Combines the filesystem-backed notes table with the chat tables so the app
  * can store notes, conversations, messages, and tool approvals in one schema.
- */
-export const opensidianTables = {
-	files: filesTable,
-	conversations: conversationsTable,
-	chatMessages: chatMessagesTable,
-	toolTrust: toolTrustTable,
-};
-export type OpensidianTables = Tables<typeof opensidianTables>;
-
-/**
- * Build an Opensidian workspace bundle: `{ ydoc, tables, kv, [Symbol.dispose] }`.
  *
  * Encrypted under the supplied keyring. Used by browser, daemon, and tests.
  */
@@ -155,7 +143,12 @@ export function createOpensidianWorkspace(opts: { keyring: () => Keyring }) {
 	return createWorkspace({
 		id: OPENSIDIAN_ID,
 		keyring: opts.keyring,
-		tables: opensidianTables,
+		tables: {
+			files: filesTable,
+			conversations: conversationsTable,
+			chatMessages: chatMessagesTable,
+			toolTrust: toolTrustTable,
+		},
 		kv: {},
 	});
 }

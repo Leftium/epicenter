@@ -8,14 +8,10 @@ use std::io::Write;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
-#[cfg(not(target_os = "windows"))]
-use transcribe_rs::engines::moonshine::MoonshineModelParams;
-use transcribe_rs::{
-    engines::parakeet::{ParakeetInferenceParams, TimestampGranularity},
-    TranscriptionEngine,
-};
-#[cfg(not(target_os = "windows"))]
-use transcribe_rs::engines::whisper::WhisperInferenceParams;
+use transcribe_rs::onnx::moonshine::MoonshineVariant;
+use transcribe_rs::onnx::parakeet::{ParakeetParams, TimestampGranularity};
+use transcribe_rs::whisper_cpp::WhisperInferenceParams;
+use transcribe_rs::{SpeechModel, TranscribeOptions};
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -486,7 +482,6 @@ fn extract_samples_from_wav(wav_data: Vec<u8>) -> Result<Vec<f32>, Transcription
     Ok(samples)
 }
 
-#[cfg(not(target_os = "windows"))]
 #[tauri::command]
 pub async fn transcribe_audio_whisper(
     audio_data: Vec<u8>,
@@ -567,7 +562,7 @@ pub async fn transcribe_audio_whisper(
         };
 
         whisper_engine
-            .transcribe_samples(samples, Some(params))
+            .transcribe_with(&samples, &params)
             .map_err(|e| TranscriptionError::TranscriptionError {
                 message: e.to_string(),
             })?
@@ -579,20 +574,6 @@ pub async fn transcribe_audio_whisper(
         transcript.len()
     );
     Ok(transcript)
-}
-
-#[cfg(target_os = "windows")]
-#[tauri::command]
-pub async fn transcribe_audio_whisper(
-    _audio_data: Vec<u8>,
-    _model_path: String,
-    _language: Option<String>,
-    _initial_prompt: Option<String>,
-    _model_manager: tauri::State<'_, ModelManager>,
-) -> Result<String, TranscriptionError> {
-    Err(TranscriptionError::TranscriptionError {
-        message: "Whisper C++ is not available on Windows due to build compatibility issues. Please use Parakeet for local transcription.".to_string(),
-    })
 }
 
 #[tauri::command]
@@ -633,8 +614,8 @@ pub async fn transcribe_audio_parakeet(
         .map_err(|e| TranscriptionError::ModelLoadError { message: e })?;
     debug!("[Transcription] Parakeet model ready: {}", model_path);
 
-    let params = ParakeetInferenceParams {
-        timestamp_granularity: TimestampGranularity::Segment,
+    let params = ParakeetParams {
+        timestamp_granularity: Some(TimestampGranularity::Segment),
         ..Default::default()
     };
 
@@ -655,7 +636,7 @@ pub async fn transcribe_audio_parakeet(
                 message: "Model not loaded (may have been cleared after previous error). Please try again.".to_string(),
             })?;
 
-        // Extract the ParakeetEngine from the enum
+        // Extract the Parakeet model from the enum
         let parakeet_engine = match engine {
             model_manager::Engine::Parakeet(e) => e,
             _ => {
@@ -666,7 +647,7 @@ pub async fn transcribe_audio_parakeet(
         };
 
         parakeet_engine
-            .transcribe_samples(samples, Some(params))
+            .transcribe_with(&samples, &params)
             .map_err(|e| TranscriptionError::TranscriptionError {
                 message: e.to_string(),
             })?
@@ -680,7 +661,6 @@ pub async fn transcribe_audio_parakeet(
     Ok(transcript)
 }
 
-#[cfg(not(target_os = "windows"))]
 #[tauri::command]
 pub async fn transcribe_audio_moonshine(
     audio_data: Vec<u8>,
@@ -715,7 +695,7 @@ pub async fn transcribe_audio_moonshine(
 
     // Extract variant from model path directory name
     // Expected format: moonshine-{variant}-{lang} (e.g., "moonshine-tiny-en", "moonshine-base-en")
-    let model_params = {
+    let model_variant = {
         let dir_name = std::path::Path::new(&model_path)
             .file_name()
             .and_then(|n| n.to_str())
@@ -731,21 +711,21 @@ pub async fn transcribe_audio_moonshine(
         );
 
         match variant {
-            "base" => MoonshineModelParams::base(),
-            "tiny" => MoonshineModelParams::tiny(),
+            "base" => MoonshineVariant::Base,
+            "tiny" => MoonshineVariant::Tiny,
             _ => {
                 warn!(
                     "[Transcription] unknown Moonshine variant '{}' in path '{}', defaulting to tiny",
                     variant, dir_name
                 );
-                MoonshineModelParams::tiny()
+                MoonshineVariant::Tiny
             }
         }
     };
 
     // Get or load the model using the persistent model manager
     let engine_arc = model_manager
-        .get_or_load_moonshine(PathBuf::from(&model_path), model_params)
+        .get_or_load_moonshine(PathBuf::from(&model_path), model_variant)
         .map_err(|e| TranscriptionError::ModelLoadError { message: e })?;
     debug!("[Transcription] Moonshine model ready: {}", model_path);
 
@@ -766,7 +746,7 @@ pub async fn transcribe_audio_moonshine(
                 message: "Model not loaded (may have been cleared after previous error). Please try again.".to_string(),
             })?;
 
-        // Extract the MoonshineEngine from the enum
+        // Extract the Moonshine model from the enum
         let moonshine_engine = match engine {
             model_manager::Engine::Moonshine(e) => e,
             _ => {
@@ -776,9 +756,10 @@ pub async fn transcribe_audio_moonshine(
             }
         };
 
-        // Moonshine doesn't have inference params like Whisper, pass None
+        // Moonshine doesn't expose model-specific inference params we use, so use the
+        // SpeechModel trait's default-options path.
         moonshine_engine
-            .transcribe_samples(samples, None)
+            .transcribe(&samples, &TranscribeOptions::default())
             .map_err(|e| TranscriptionError::TranscriptionError {
                 message: e.to_string(),
             })?
@@ -790,16 +771,4 @@ pub async fn transcribe_audio_moonshine(
         transcript.len()
     );
     Ok(transcript)
-}
-
-#[cfg(target_os = "windows")]
-#[tauri::command]
-pub async fn transcribe_audio_moonshine(
-    _audio_data: Vec<u8>,
-    _model_path: String,
-    _model_manager: tauri::State<'_, ModelManager>,
-) -> Result<String, TranscriptionError> {
-    Err(TranscriptionError::TranscriptionError {
-        message: "Moonshine is not available on Windows due to build compatibility issues. Please use Parakeet for local transcription.".to_string(),
-    })
 }

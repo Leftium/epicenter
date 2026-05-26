@@ -8,19 +8,17 @@
 use log::warn;
 use tauri::ipc::{InvokeBody, Request, Response};
 
-use super::encode::{DEFAULT_BITRATE_BPS, encode_wav_to_opus_ogg};
+use super::encode::encode_wav_to_opus_ogg;
 
 /// Compress a WAV audio blob into OGG/Opus for cloud transcription upload.
 ///
-/// Audio bytes arrive as the raw IPC body. The optional `x-encode-bitrate`
-/// header carries the VBR bitrate in bits-per-second; if absent or unparseable,
-/// the default 24 kbps is used.
+/// Audio bytes arrive as the raw IPC body. The output bitrate is fixed at
+/// the encoder's default (24 kbps voice VBR); when a user-tunable bitrate
+/// lands, plumb it through here as a header.
 ///
 /// JS call shape:
 /// ```js
-/// const compressed = await invoke('encode_upload_audio', wavArrayBuffer, {
-///   headers: { 'x-encode-bitrate': '24000' },
-/// });
+/// const compressed = await invoke('encode_upload_audio', wavArrayBuffer);
 /// ```
 #[tauri::command]
 pub async fn encode_upload_audio(request: Request<'_>) -> Result<Response, String> {
@@ -33,14 +31,7 @@ pub async fn encode_upload_audio(request: Request<'_>) -> Result<Response, Strin
         }
     };
 
-    let bitrate_bps = request
-        .headers()
-        .get("x-encode-bitrate")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse::<u32>().ok())
-        .unwrap_or(DEFAULT_BITRATE_BPS);
-
-    tauri::async_runtime::spawn_blocking(move || encode_wav_to_opus_ogg(&wav_bytes, bitrate_bps))
+    tauri::async_runtime::spawn_blocking(move || encode_wav_to_opus_ogg(&wav_bytes))
         .await
         .map_err(|e| format!("background encode task failed: {e}"))?
         .map(Response::new)

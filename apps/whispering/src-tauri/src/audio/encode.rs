@@ -32,9 +32,10 @@ const ENCODE_RATE: u32 = 48_000;
 const FRAME_MS: u32 = 20;
 const FRAME_SAMPLES: usize = (ENCODE_RATE / 1000 * FRAME_MS) as usize; // 960
 
-/// Default VBR bitrate the spec selected for voice transcription. Opus at
-/// 24 kbps is transparent for speech and matches the WebRTC voice profile.
-pub const DEFAULT_BITRATE_BPS: u32 = 24_000;
+/// VBR bitrate the spec selected for voice transcription. Opus at 24 kbps
+/// is transparent for speech and matches the WebRTC voice profile. Hardcoded
+/// for now; expose as a parameter once a user-facing knob earns it.
+const BITRATE_BPS: i32 = 24_000;
 
 /// libopus encoder output is bounded; 4000 bytes per frame is the worst
 /// case documented in `opus_encode`'s manpage.
@@ -44,20 +45,13 @@ const MAX_PACKET_BYTES: usize = 4000;
 /// A constant is fine because we only ever write one stream per blob.
 const OGG_SERIAL: u32 = 0x57_48_53_50; // "WHSP"
 
-/// Encode a WAV blob to an OGG/Opus blob at `bitrate_bps` VBR.
+/// Encode a WAV blob to an OGG/Opus blob at the default voice bitrate.
 ///
 /// Accepts mono or stereo, 16-bit integer or 32-bit float WAV (the formats
 /// cpal writes). Returns `AudioError::DecodeFailed` for non-WAV input so
 /// callers can fall back to uploading the original blob uncompressed.
-pub fn encode_wav_to_opus_ogg(
-    wav_bytes: &[u8],
-    bitrate_bps: u32,
-) -> Result<Vec<u8>, AudioError> {
-    debug!(
-        "[Audio Encode] encoding {} WAV bytes @ {} bps",
-        wav_bytes.len(),
-        bitrate_bps,
-    );
+pub fn encode_wav_to_opus_ogg(wav_bytes: &[u8]) -> Result<Vec<u8>, AudioError> {
+    debug!("[Audio Encode] encoding {} WAV bytes", wav_bytes.len());
 
     let (samples_mono, source_rate) = read_wav_to_mono_f32(wav_bytes)?;
     debug!(
@@ -73,19 +67,14 @@ pub fn encode_wav_to_opus_ogg(
         pcm_48k.len()
     );
 
-    let (encoder, lookahead) = build_encoder(bitrate_bps)?;
+    let (encoder, lookahead) = build_encoder()?;
 
     let mut out = Cursor::new(Vec::<u8>::with_capacity(pcm_48k.len() / 8));
     let mut packet_writer = PacketWriter::new(&mut out);
 
     write_opus_head(&mut packet_writer, lookahead, source_rate)?;
     write_opus_tags(&mut packet_writer)?;
-    let total_frames = encode_audio_pages(&mut packet_writer, &encoder, &pcm_48k, lookahead)?;
-
-    debug!(
-        "[Audio Encode] wrote {} samples across audio packets",
-        total_frames
-    );
+    encode_audio_pages(&mut packet_writer, &encoder, &pcm_48k, lookahead)?;
 
     drop(packet_writer);
     Ok(out.into_inner())
@@ -146,7 +135,7 @@ fn read_wav_to_mono_f32(wav_bytes: &[u8]) -> Result<(Vec<f32>, u32), AudioError>
 /// Returns the encoder together with its lookahead (in 48 kHz samples), the
 /// number of samples the decoder will need to skip off the front of the
 /// reconstructed stream.
-fn build_encoder(bitrate_bps: u32) -> Result<(OpusEncoder, u32), AudioError> {
+fn build_encoder() -> Result<(OpusEncoder, u32), AudioError> {
     let mut encoder = OpusEncoder::new(
         OpusSampleRate::Hz48000,
         OpusChannels::Mono,
@@ -155,7 +144,7 @@ fn build_encoder(bitrate_bps: u32) -> Result<(OpusEncoder, u32), AudioError> {
     .map_err(|e| AudioError::encode(format!("libopus encoder init failed: {e}")))?;
 
     encoder
-        .set_bitrate(OpusBitrate::BitsPerSecond(bitrate_bps as i32))
+        .set_bitrate(OpusBitrate::BitsPerSecond(BITRATE_BPS))
         .map_err(|e| AudioError::encode(format!("set_bitrate failed: {e}")))?;
     encoder
         .set_vbr(true)
@@ -214,14 +203,13 @@ fn write_opus_tags<W: std::io::Write>(
 ///
 /// Granule positions follow RFC 7845 §4: each packet's absgp is the running
 /// total of 48 kHz samples *including* the encoder's lookahead padding, so
-/// the decoder can trim the pre-skip exactly. Returns the total number of
-/// audio samples encoded (including the zero pad and pre-skip).
+/// the decoder can trim the pre-skip exactly.
 fn encode_audio_pages<W: std::io::Write>(
     writer: &mut PacketWriter<'_, W>,
     encoder: &OpusEncoder,
     pcm_48k: &[f32],
     lookahead: u32,
-) -> Result<u64, AudioError> {
+) -> Result<(), AudioError> {
     let mut packet_buf = vec![0u8; MAX_PACKET_BYTES];
     let mut frame_buf = vec![0f32; FRAME_SAMPLES];
 
@@ -267,7 +255,7 @@ fn encode_audio_pages<W: std::io::Write>(
             .map_err(|e| AudioError::encode(format!("ogg audio packet write failed: {e}")))?;
     }
 
-    Ok(padded_len as u64)
+    Ok(())
 }
 
 #[cfg(test)]
@@ -303,7 +291,7 @@ mod tests {
     #[test]
     fn encoded_blob_starts_with_ogg_magic_and_opushead() {
         let wav = make_sine_wav(0.5, 16_000, 440.0);
-        let ogg_bytes = encode_wav_to_opus_ogg(&wav, DEFAULT_BITRATE_BPS).expect("encode");
+        let ogg_bytes = encode_wav_to_opus_ogg(&wav).expect("encode");
 
         // OGG pages start with "OggS"; the first audio data after the page
         // header is the OpusHead identification packet.
@@ -318,7 +306,7 @@ mod tests {
     #[test]
     fn non_wav_input_returns_decode_error() {
         let garbage = vec![0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE];
-        let result = encode_wav_to_opus_ogg(&garbage, DEFAULT_BITRATE_BPS);
+        let result = encode_wav_to_opus_ogg(&garbage);
         assert!(
             matches!(result, Err(AudioError::DecodeFailed { .. })),
             "expected DecodeFailed, got {result:?}",
@@ -336,7 +324,7 @@ mod tests {
         let freq_hz = 440.0f32;
         let wav = make_sine_wav(secs, in_rate, freq_hz);
 
-        let ogg_bytes = encode_wav_to_opus_ogg(&wav, DEFAULT_BITRATE_BPS).expect("encode");
+        let ogg_bytes = encode_wav_to_opus_ogg(&wav).expect("encode");
         let decoded = decode_to_pcm16k_mono(&ogg_bytes).expect("decode");
 
         // Duration: ±50 ms tolerance per the spec's success criterion.

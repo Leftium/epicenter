@@ -24,10 +24,21 @@ import { deviceConfig } from '$lib/state/device-config.svelte';
  * - Stop listening: `await vadRecorder.stopActiveListening()`
  * - Enumerate devices: `createQuery(() => vadRecorder.enumerateDevices.options)`
  */
+/**
+ * Active VAD session, or null when idle. Collapses the previous
+ * `_session` + `_state` pair into a single reactive field so the
+ * invariant `vad/stream exist iff state !== 'IDLE'` is type-enforced:
+ * there is no way to spell a non-idle state without the underlying
+ * MicVAD and MediaStream that produced it.
+ */
+type VadSession = {
+	state: 'LISTENING' | 'SPEECH_DETECTED';
+	vad: MicVAD;
+	stream: MediaStream;
+};
+
 function createVadRecorder() {
-	// Private state
-	let _session: { vad: MicVAD; stream: MediaStream } | null = null;
-	let _state = $state<VadState>('IDLE');
+	let _session = $state<VadSession | null>(null);
 
 	return {
 		/**
@@ -35,7 +46,7 @@ function createVadRecorder() {
 		 * cause the effect to re-run when the state changes.
 		 */
 		get state(): VadState {
-			return _state;
+			return _session?.state ?? 'IDLE';
 		},
 
 		/**
@@ -116,17 +127,17 @@ function createVadRecorder() {
 						stream,
 						submitUserSpeechOnPause: true,
 						onSpeechStart: () => {
-							_state = 'SPEECH_DETECTED';
+							if (_session) _session.state = 'SPEECH_DETECTED';
 							onSpeechStart();
 						},
 						onSpeechEnd: (audio) => {
-							_state = 'LISTENING';
+							if (_session) _session.state = 'LISTENING';
 							const wavBuffer = utils.encodeWAV(audio);
 							const blob = new Blob([wavBuffer], { type: 'audio/wav' });
 							onSpeechEnd(blob);
 						},
 						onVADMisfire: () => {
-							_state = 'LISTENING';
+							if (_session) _session.state = 'LISTENING';
 							onVADMisfire?.();
 						},
 						onSpeechRealStart: () => {
@@ -170,8 +181,7 @@ function createVadRecorder() {
 				return Err(startError);
 			}
 
-			_session = { vad: newVad, stream };
-			_state = 'LISTENING';
+			_session = { state: 'LISTENING', vad: newVad, stream };
 			return Ok(deviceOutcome);
 		},
 
@@ -195,7 +205,6 @@ function createVadRecorder() {
 
 			// Always clean up, even if dispose had an error
 			_session = null;
-			_state = 'IDLE';
 			cleanupRecordingStream(stream);
 
 			if (destroyError) return Err(destroyError);

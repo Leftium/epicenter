@@ -1,8 +1,8 @@
 # Build-Time Platform DI via Filename Suffixes
 
-**Status**: Proposed
+**Status**: Approved for execution. Clean break — no backward-compatibility layer, no deprecation period.
 **Type**: Build/architecture change (zero behavior change at runtime)
-**Scope**: `apps/whispering/src/lib/services/*`, `vite.config.ts`
+**Scope**: `apps/whispering/src/lib/services/*`, `apps/whispering/vite.config.ts`, `apps/whispering/tsconfig.json`
 
 ## Problem
 
@@ -188,74 +188,274 @@ The platform check is invisible to the call site. The provider switch is visible
 - **Settings-driven behavior in general.** Stays runtime DI.
 - **Services with only one impl across all platforms.** Don't need a `.tauri.ts` variant; they're just `.ts`.
 
+## File inventory
+
+These are every platform-bound file in the codebase today. The migration touches exactly these; nothing else.
+
+### Services with both web and Tauri impls (8)
+
+Currently the `index.ts` + `web.ts` + `desktop.ts` + `types.ts` ternary pattern. All migrate to `index.ts` + `index.tauri.ts` + `types.ts`.
+
+| Folder                    | Today                                | After                                |
+| ------------------------- | ------------------------------------ | ------------------------------------ |
+| `services/analytics/`     | `index.ts` + `web.ts` + `desktop.ts` | `index.ts` + `index.tauri.ts`        |
+| `services/blob-store/`    | `index.ts` + `web/` + `desktop.ts`   | `index.ts` + `index.tauri.ts` (note: `web/` subfolder content folds into `index.ts` or stays as supporting files) |
+| `services/download/`      | `index.ts` + `web.ts` + `desktop.ts` | `index.ts` + `index.tauri.ts`        |
+| `services/http/`          | `index.ts` + `web.ts` + `desktop.ts` + `tauri-fetch.ts` | `index.ts` + `index.tauri.ts` (tauri-fetch becomes supporting file used only by tauri impl) |
+| `services/notifications/` | `index.ts` + `web.ts` + `desktop.ts` | `index.ts` + `index.tauri.ts`        |
+| `services/os/`            | `index.ts` + `web.ts` + `desktop.ts` | `index.ts` + `index.tauri.ts`        |
+| `services/sound/`         | `index.ts` + `web.ts` + `desktop.ts` | `index.ts` + `index.tauri.ts`        |
+| `services/text/`          | `index.ts` + `web.ts` + `desktop.ts` | `index.ts` + `index.tauri.ts`        |
+
+### Tauri-only services (8) — `services/desktop/` dissolves
+
+Currently nested under `services/desktop/`. Each moves up one level and becomes a folder with only `index.tauri.ts`.
+
+| Today                                             | After                                   |
+| ------------------------------------------------- | --------------------------------------- |
+| `services/desktop/autostart.ts`                   | `services/autostart/index.tauri.ts`     |
+| `services/desktop/command.ts`                     | `services/command/index.tauri.ts`       |
+| `services/desktop/ffmpeg.ts`                      | `services/ffmpeg/index.tauri.ts`        |
+| `services/desktop/fs.ts`                          | `services/fs/index.tauri.ts`            |
+| `services/desktop/global-shortcut-manager.ts`     | `services/global-shortcut-manager/index.tauri.ts` |
+| `services/desktop/permissions.ts`                 | `services/permissions/index.tauri.ts`   |
+| `services/desktop/tray.ts`                        | `services/tray/index.tauri.ts`          |
+| `services/desktop/recorder/cpal.ts`               | `services/recorder/cpal.tauri.ts` (sibling of `navigator.ts`) |
+| `services/desktop/index.ts` (barrel)              | **deleted**                              |
+
+The `services/desktop/` folder ceases to exist after this migration.
+
+### Recorder — the one tricky case
+
+The recorder is a hybrid:
+
+- `services/recorder/navigator.ts` — works on both platforms, unchanged.
+- `services/desktop/recorder/cpal.ts` — Tauri-only, moves to `services/recorder/cpal.tauri.ts`.
+- `state/manual-recorder.svelte.ts` — currently does `deviceConfig.get('recording.method') === 'cpal' ? cpalRecorder : navigatorRecorder` (a *runtime* decision inside the Tauri build, because the user picks the method in settings).
+
+After the migration, the state file must compile on web (where `cpal.tauri.ts` does not resolve) AND on Tauri. The solution:
+
+`services/recorder/index.ts` (web) exports `cpalRecorder` as `null`:
+```ts
+export { NavigatorRecorderServiceLive as navigatorRecorder } from './navigator';
+export const cpalRecorder: RecorderService | null = null;
+```
+
+`services/recorder/index.tauri.ts` exports the real CPAL service:
+```ts
+export { NavigatorRecorderServiceLive as navigatorRecorder } from './navigator';
+export { CpalRecorderServiceLive as cpalRecorder } from './cpal.tauri';
+```
+
+Both files satisfy a shared type defined in `services/recorder/types.ts`:
+```ts
+export type RecorderModule = {
+  navigatorRecorder: RecorderService;
+  cpalRecorder: RecorderService | null;
+};
+```
+
+The state file becomes:
+```ts
+function recorderService() {
+  if (cpalRecorder && deviceConfig.get('recording.method') === 'cpal') {
+    return cpalRecorder;
+  }
+  return navigatorRecorder;
+}
+```
+
+The `cpalRecorder &&` runtime null-check is the seam between build-time platform DI and the runtime user setting. It's correct on both platforms: on web, `cpalRecorder` is `null`, so the check short-circuits. On Tauri, the user setting controls the choice.
+
+### Consumer call sites with `isTauri()` / `__TAURI_INTERNALS__`
+
+Most consumer-side platform checks are about feature gating in the UI, not service selection. These do **not** migrate to the suffix convention — they're runtime UI decisions:
+
+- `routes/(app)/(config)/settings/+page.svelte` — shows Tauri-only sections
+- `routes/(app)/_components/AppLayout.svelte`, `VerticalNav.svelte` — Tauri-only menu items
+- `routes/(app)/(config)/recordings/+page.svelte` — "file system" vs "IndexedDB" label
+- ~15 other UI files
+
+These stay as `{#if window.__TAURI_INTERNALS__}` because they're rendering decisions inside a single component, not service-impl selection. The `$lib/services/*` migration does not touch them.
+
+## Vite config (exact)
+
+`apps/whispering/vite.config.ts`:
+
+```ts
+const isTauri = process.env.TAURI_PLATFORM !== undefined;
+
+export default defineConfig({
+  resolve: {
+    extensions: isTauri
+      ? ['.tauri.ts', '.tauri.js', '.ts', '.js', '.json', '.svelte']
+      : ['.ts', '.js', '.json', '.svelte'],
+  },
+  // ... existing config
+});
+```
+
+Notes:
+- On Tauri builds, `.tauri.ts` is tried first; missing → falls through to `.ts`.
+- On web builds, `.tauri.ts` is NOT in the extensions list, so a web bundle that imports a Tauri-only path fails at build time. This is the desired safety: web cannot accidentally bundle Tauri code.
+- `TAURI_PLATFORM` is set by Tauri's CLI automatically during `tauri dev` and `tauri build`. No manual env var management.
+
+## tsconfig (exact)
+
+Single `tsconfig.json`. Both `.ts` and `.tauri.ts` files are visible to TypeScript and must satisfy `types.ts`. No `moduleSuffixes`. Reasoning:
+
+- TS type-checks the whole tree once.
+- Both impls must compile against the same `types.ts` interface, so divergence is caught.
+- The minor "unused import" noise on the web build for Tauri-only API imports inside `.tauri.ts` files is acceptable (those files are valid TS; TS doesn't know they're not bundled on web).
+
+If `moduleSuffixes` is wanted later for per-target type-checking, that's a separate change. Not in this spec.
+
+## README discipline (required, not optional)
+
+Each service folder MUST have a `README.md` after migration. Minimum content:
+
+```md
+# <Service Name>
+
+**Platform-bound**: web (`index.ts`), Tauri (`index.tauri.ts`).
+Interface: `types.ts`.
+
+<one paragraph on what this service does>
+
+## Implementations
+
+- `index.ts` — Web impl using <browser API>.
+- `index.tauri.ts` — Tauri impl using <Tauri API or Rust command>.
+
+Both files MUST satisfy the type exported from `types.ts`.
+```
+
+For Tauri-only services:
+
+```md
+# <Service Name>
+
+**Tauri-only**: `index.tauri.ts`. No web fallback.
+Interface: `types.ts`.
+
+Importing this service from a web-bundled module is a build error by design.
+```
+
+Top-level `services/README.md` is rewritten in Wave 5 to describe the suffix convention as the project convention.
+
 ## Migration plan
 
-### Wave 1: Wire up the Vite config (one PR, no behavior change)
+### Wave 1: Wire up Vite (one PR, no service touched)
 
-- [ ] Add `resolve.extensions` config keyed on `process.env.TAURI_PLATFORM` to `vite.config.ts`.
-- [ ] Add a no-op `.tauri.ts` file somewhere to prove the resolution works (`tools/platform-check.ts` and `tools/platform-check.tauri.ts` that export different strings; assert in dev that the right one loaded).
-- [ ] Delete the proof of concept after verification.
+- [ ] Edit `apps/whispering/vite.config.ts` to set `resolve.extensions` based on `process.env.TAURI_PLATFORM`.
+- [ ] Create `apps/whispering/src/lib/.platform-probe.ts` (web stub: `export const target = 'web';`) and `apps/whispering/src/lib/.platform-probe.tauri.ts` (`export const target = 'tauri';`).
+- [ ] In `routes/(app)/+layout.svelte` (or any entry), add a dev-only `console.log` importing the probe.
+- [ ] `bun run dev` on web — log says `web`. `bun run dev:local` (Tauri) — log says `tauri`.
+- [ ] Delete the probe files and the console.log.
+- [ ] Commit.
 
-This is the smallest possible commit that introduces the mechanism. Reversible. No services touched yet.
+### Wave 2: Single-service smoke test — pick `text` (smallest, no recorder complexity)
 
-### Wave 2: Migrate clipboard (first real service)
+- [ ] Move `services/text/web.ts` content into a new `services/text/index.ts` (delete the old `index.ts` ternary).
+- [ ] Move `services/text/desktop.ts` content into `services/text/index.tauri.ts`.
+- [ ] Delete `services/text/web.ts` and `services/text/desktop.ts`.
+- [ ] Verify `services/text/types.ts` is the shared interface; both new files satisfy it.
+- [ ] Run `bun run typecheck` — zero errors expected.
+- [ ] Run `bun run dev` (web) and `bun run dev:local` (Tauri); manually exercise a text/clipboard read in each. Smoke test passes.
+- [ ] Add `services/text/README.md` per the discipline above.
+- [ ] Commit.
 
-- [ ] Create `$lib/services/clipboard/web.ts` (was the `createClipboardServiceWeb` impl).
-- [ ] Create `$lib/services/clipboard/tauri.ts` (was the `createClipboardServiceDesktop` impl).
-- [ ] Rename current `index.ts` to a `types.ts` that exports the interface and re-export sites:
-  - `service.ts` re-exports from `./web` (default)
-  - `service.tauri.ts` re-exports from `./tauri`
-- [ ] Consumers import `from '$lib/services/clipboard/service'` — no platform name.
-- [ ] Remove the runtime ternary.
-- [ ] Verify: web build doesn't include `@tauri-apps/api/clipboard-manager` (grep the bundle).
+If wave 2 fails (Vite resolution gotcha, TS type mismatch), stop and fix the convention before doing any more.
 
-If wave 2 reveals problems (TypeScript can't resolve, types diverge silently, etc.), stop and fix the convention before doing more.
+### Wave 3: Bulk-migrate the remaining seven dual-impl services
 
-### Wave 3: Migrate notifications, recorder, tray, fs, autostart, command, globalShortcutManager
+One commit per service. Same shape as wave 2. Order:
 
-- [ ] One service per commit. Each commit independently revertable.
-- [ ] Tauri-only services (`tray`, `fs`, etc.) get a `.tauri.ts` with no `.ts` sibling. Web build will fail if any web-bundled code imports them — that failure is the whole point.
+- [ ] `services/sound/` — small, no external deps
+- [ ] `services/notifications/` — small
+- [ ] `services/os/` — small
+- [ ] `services/download/` — small
+- [ ] `services/analytics/` — small
+- [ ] `services/http/` — medium, also fold `tauri-fetch.ts` into the Tauri impl
+- [ ] `services/blob-store/` — medium, has a `web/` subfolder that may stay as supporting files
 
-### Wave 4: Clean up the runtime layer
+Each commit:
+- Rename files.
+- Delete old `index.ts` ternary.
+- Update any imports that referenced `desktop.ts` or `web.ts` directly (rare; the ternary `index.ts` is usually the only import path).
+- Add the service README.
+- `bun run typecheck` clean.
 
-- [ ] Grep for remaining `window.__TAURI_INTERNALS__` checks. Each should be a runtime decision (rare) or a leftover (delete it).
-- [ ] Update services/README.md to describe the new pattern.
-- [ ] Document the convention in ARCHITECTURE.md.
+### Wave 4: Dissolve `services/desktop/`
 
-### Wave 5: Bundle audit
+One commit per Tauri-only service. Each moves out of `desktop/` and becomes its own service folder with only `index.tauri.ts`.
 
-- [ ] Compare web bundle size before and after.
-- [ ] Confirm `@tauri-apps/*` packages are absent from the web bundle (devtools network tab + grep).
-- [ ] Confirm web-specific fallbacks (e.g., navigator MediaRecorder) absent from the Tauri bundle if it doesn't use them.
+- [ ] `services/desktop/autostart.ts` → `services/autostart/index.tauri.ts` + `types.ts`
+- [ ] `services/desktop/command.ts` → `services/command/index.tauri.ts` + `types.ts`
+- [ ] `services/desktop/ffmpeg.ts` → `services/ffmpeg/index.tauri.ts` + `types.ts`
+- [ ] `services/desktop/fs.ts` → `services/fs/index.tauri.ts` + `types.ts`
+- [ ] `services/desktop/global-shortcut-manager.ts` → `services/global-shortcut-manager/index.tauri.ts` + `types.ts`
+- [ ] `services/desktop/permissions.ts` → `services/permissions/index.tauri.ts` + `types.ts`
+- [ ] `services/desktop/tray.ts` → `services/tray/index.tauri.ts` + `types.ts`
+- [ ] `services/desktop/recorder/cpal.ts` → `services/recorder/cpal.tauri.ts` (this one is a sibling of `navigator.ts`, not a separate service folder)
 
-## Open decisions
+Update every consumer that imported `from '$lib/services/desktop'` or `from '$lib/services/desktop/<x>'` to import from the new location.
 
-1. **Default suffix-less file: web or Tauri?**
-   The recommendation is **web is the default (`foo.ts`)** because web is the broader audience and most platform-agnostic services already work on web. Tauri is the override (`foo.tauri.ts`). This means Tauri builds are slightly slower to resolve (try `.tauri.ts` first, sometimes fall through to `.ts`). Negligible.
+Delete `services/desktop/index.ts` and the empty `services/desktop/` folder.
 
-2. **Naming: `.tauri.ts` or `.desktop.ts`?**
-   Tauri is the framework; desktop is the deployment target. They're synonyms today but a future iOS/Android Tauri build would still be "tauri" but not "desktop." **Lean: `.tauri.ts`.** Names what's actually true: the file uses Tauri APIs.
+### Wave 5: Recorder special-case wiring
 
-3. **Tsconfig setup: one or two?**
-   Lean: one (see TypeScript Handling section). Revisit if "unused import" noise becomes an issue.
+- [ ] Create `services/recorder/types.ts` `RecorderModule` type (defined above).
+- [ ] Create `services/recorder/index.ts` (web): exports `navigatorRecorder`, `cpalRecorder: null`.
+- [ ] Create `services/recorder/index.tauri.ts`: exports `navigatorRecorder`, `cpalRecorder`.
+- [ ] Update `state/manual-recorder.svelte.ts` `recorderService()` to use the null-check pattern documented above.
+- [ ] Verify web typecheck and runtime: clicking "record" on web works (uses navigator).
+- [ ] Verify Tauri typecheck and runtime: clicking "record" on Tauri uses navigator OR CPAL based on settings.
 
-4. **Where does `$lib/services/desktop/` go?**
-   Currently a folder for desktop-only services. With the suffix convention, each of these becomes `service.tauri.ts` with no `.ts` sibling. The `desktop/` folder dissolves. Or: keep `desktop/` as the home for Tauri-only services with no cross-platform counterpart, and use the suffix convention only for services with both. **Lean: dissolve `desktop/`** for consistency. One mechanism, one place to look.
+### Wave 6: Cleanup + docs
 
-5. **Composability with feature folders.**
-   This works orthogonally. In the feature-folder spec, `$lib/recording/service/` becomes a folder with `index.ts` + `index.tauri.ts` siblings (or `navigator.ts` + `cpal.tauri.ts`). The Vite resolution is unchanged; the location of the files just moves with the feature. **No conflict between the two specs.**
+- [ ] Top-level `services/README.md` rewritten to describe the suffix convention.
+- [ ] `ARCHITECTURE.md` updated: replace the runtime-DI examples with build-time-DI examples.
+- [ ] Grep `apps/whispering/src/lib` for `isTauri()` and `__TAURI_INTERNALS__`. Each remaining hit is either:
+  - A UI feature gate (acceptable, leave it).
+  - A leftover from a previous migration step (delete it).
+- [ ] Verify each remaining hit is intentional.
+
+### Wave 7: Bundle audit (verification, not a code change)
+
+- [ ] `bun run build` (web build).
+- [ ] Inspect the build output for any `@tauri-apps/*` imports. There should be **zero**.
+  - Method: `bun run build && grep -r "@tauri-apps" build/` — should return nothing.
+- [ ] Note web bundle size before and after. The reduction is the visible win.
+- [ ] `bun tauri build` succeeds.
+
+## Locked decisions
+
+1. **Default = web. Override = `.tauri.ts`.** Web is the unsuffixed file (`.ts`). Tauri-specific impl is `<name>.tauri.ts`. We do not use `.web.ts`; the absence of a suffix means web. This matches React Native's pattern, minimizes file count, and biases toward the broader audience as the default.
+
+2. **Suffix name: `.tauri.ts`** (not `.desktop.ts`). The file uses Tauri APIs; "tauri" is what's actually true. A future iOS/Android Tauri build is still "tauri."
+
+3. **Single tsconfig.** Both `index.ts` and `index.tauri.ts` are visible to TypeScript and must satisfy a shared interface in `types.ts`. No `moduleSuffixes`. The shared interface is the contract; type-checking both files prevents drift.
+
+4. **`services/desktop/` dissolves.** Each currently-desktop-only service moves into its own top-level service folder under `services/<name>/` and exposes only an `index.tauri.ts`. The web build will produce a build-time error if any web-bundled module imports such a service — that error is the whole point.
+
+5. **Composability with feature folders.** Orthogonal. The feature-folder spec inherits the `.tauri.ts` suffix convention unchanged when service code moves into feature folders.
+
+6. **No backward compatibility.** Old `desktop.ts`, `web.ts`, and `index.ts` ternary files are deleted, not deprecated. Single PR per service. Type errors during migration are expected and resolved within the same PR.
 
 ## Risks
 
-1. **Vite resolve.extensions edge cases.** If a third-party library uses `import './foo'` and we've configured `.tauri.ts` first, the library would accidentally pick up a `.tauri.ts` we've authored in its directory. Mitigated by the fact that `.tauri.ts` is our convention and won't appear in node_modules. Confirm during wave 1.
+1. **Vite `resolve.extensions` and `node_modules`.** `resolve.extensions` is global — it applies to imports inside `node_modules` too. If a library happens to import `./foo` and a `foo.tauri.ts` exists in its dist tree (vanishingly unlikely), it would be picked up. Confirmed during wave 1 by inspecting `node_modules` for any `.tauri.ts` files (`find node_modules -name '*.tauri.ts'` should return nothing). Not a real risk for this codebase, but document the check.
 
-2. **Hot reload behavior.** Vite dev mode rebuilds on file change. If you add a `.tauri.ts` while the dev server is running, does it pick up? Confirm during wave 1.
+2. **Hot reload.** Vite dev mode HMR should pick up a new `.tauri.ts` file. Verified in wave 1.
 
-3. **Two implementations drift.** Without a shared interface, `service.ts` and `service.tauri.ts` can diverge silently. **Mitigation:** require a `types.ts` next to them that both must satisfy. Type-check both files in CI.
+3. **Two implementations drift.** `index.ts` and `index.tauri.ts` could diverge silently. Mitigation: the shared `types.ts` interface is the enforcement; TS type-checks both files against it.
 
-4. **Bundle audit gives a false sense of security.** Tree-shaking is good; bundle inspection is the final word. Wave 5 (bundle audit) is non-optional.
+4. **Bundle audit is the final word.** Tree-shaking and dead-code elimination are good but bundle inspection (wave 7) is non-optional. Without it we don't know we won.
 
-5. **Migration of recorder is non-trivial** because the Tauri build itself has a runtime choice (CPAL vs navigator). After build-time DI, the Tauri bundle has both navigator AND CPAL recorders (the navigator one is shared with the web bundle). The runtime switch (`settings.get('recording.method')`) stays inside the Tauri build. **This is correct behavior** — recording method is a user setting, not a platform fact. But it's a non-obvious case where build-time and runtime DI compose, and worth documenting.
+5. **Recorder hybrid case.** Build-time platform DI for CPAL availability, runtime user-setting DI for CPAL vs navigator choice within the Tauri build. The null-check pattern documented in the recorder section is the seam between the two mechanisms.
+
+6. **Existing UI `__TAURI_INTERNALS__` checks remain.** These are runtime UI feature gates, not service-impl selection. They are out of scope for this migration. Wave 6 verifies each remaining hit is intentional.
 
 ## Why this is a bigger unblock than feature folders
 
@@ -270,6 +470,8 @@ Doing them in this order means feature folders don't have to invent a platform s
 
 ## First concrete move
 
-Land **Wave 1 only** as a standalone PR. The Vite config change + proof-of-concept file pair. Zero impact on the rest of the codebase. Sets up the convention.
+**Wave 1 is the next commit.** Vite config change + ephemeral probe pair + smoke verification. If it works, wave 2 (the `text` service smoke test) follows in the same session. The dual-impl service migrations (wave 3) are then mechanical and can be done in a single sitting.
 
-If wave 1 reveals a Vite gotcha, we learn cheaply. If it works, the rest of the migration is mechanical.
+Estimated waves 1+2 together: ~30 minutes. Waves 3+4: ~1-2 hours. Waves 5+6+7: ~1 hour.
+
+Total estimate: half a working day for the full clean break, with each wave individually revertable.

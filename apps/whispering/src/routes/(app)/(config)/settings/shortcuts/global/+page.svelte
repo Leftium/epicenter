@@ -57,7 +57,7 @@
 
 		<Separator class="my-6" />
 
-		<ShortcutTable type="global" />
+		<ShortcutTable type="global" tauri={t} />
 	</section>
 {:else}
 	<Empty.Root>

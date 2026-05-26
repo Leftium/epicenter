@@ -2,22 +2,26 @@
 	import type { Command } from '$lib/commands';
 	import type { KeyboardEventSupportedKey } from '$lib/constants/keyboard';
 	import { notify } from '$lib/operations/notify';
-	import { tauri, type Accelerator } from '$lib/tauri';
+	import type { Accelerator, Tauri } from '$lib/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { type PressedKeys } from '$lib/utils/createPressedKeys.svelte';
 	import { createKeyRecorder } from './create-key-recorder.svelte';
 	import KeyboardShortcutRecorder from './KeyboardShortcutRecorder.svelte';
 
+	// Tauri is passed in non-null from a Tauri-gated parent (the global
+	// shortcuts settings page). This component only makes sense on Tauri.
 	const {
 		command,
 		placeholder,
 		autoFocus = true,
 		pressedKeys,
+		tauri,
 	}: {
 		command: Command;
 		placeholder?: string;
 		autoFocus?: boolean;
 		pressedKeys: PressedKeys;
+		tauri: Tauri;
 	} = $props();
 
 	const shortcutValue = $derived(
@@ -26,12 +30,10 @@
 
 	const keyRecorder = createKeyRecorder({
 		pressedKeys,
-		// Global shortcuts only exist on Tauri; this component renders only when the parent
-		// (a Tauri-gated settings page) is showing. `tauri!` is safe inside these callbacks.
 		onRegister: async (keyCombination: KeyboardEventSupportedKey[]) => {
 			if (shortcutValue) {
 				const { error: unregisterError } =
-					await tauri!.globalShortcuts.unregisterCommand({
+					await tauri.globalShortcuts.unregisterCommand({
 						accelerator: shortcutValue as Accelerator,
 					});
 
@@ -45,7 +47,6 @@
 				}
 			}
 
-			if (!tauri) return;
 			const { data: accelerator, error: acceleratorError } =
 				tauri.globalShortcuts.pressedKeysToTauriAccelerator(keyCombination);
 
@@ -59,7 +60,7 @@
 			}
 
 			const { error: registerError } =
-				await tauri!.globalShortcuts.registerCommand({
+				await tauri.globalShortcuts.registerCommand({
 					command,
 					accelerator,
 				});
@@ -97,7 +98,7 @@
 		},
 		onClear: async () => {
 			const { error: unregisterError } =
-				await tauri!.globalShortcuts.unregisterCommand({
+				await tauri.globalShortcuts.unregisterCommand({
 					accelerator: shortcutValue as Accelerator,
 				});
 

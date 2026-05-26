@@ -22,16 +22,26 @@
 
 	const platform = services.os.type();
 
-	// This page is Tauri-only; the route is unreachable on web.
-	const ffmpegQuery = createQuery(() => ({
-		...tauri!.ffmpeg.checkInstalled.options,
-		refetchInterval: (query) => {
-			const isInstalled = query.state.data;
-			return isInstalled ? 30000 : 5000;
-		},
-		refetchOnWindowFocus: true,
-		staleTime: 1000,
-	}));
+	// Page is Tauri-only by intent; gate the query so the script doesn't
+	// throw if a web user navigates here directly. The {#if tauri} block
+	// in the markup hides the rest.
+	const ffmpegQuery = createQuery(() =>
+		tauri
+			? {
+					...tauri.ffmpeg.checkInstalled.options,
+					refetchInterval: (query) => {
+						const isInstalled = query.state.data;
+						return isInstalled ? 30000 : 5000;
+					},
+					refetchOnWindowFocus: true,
+					staleTime: 1000,
+				}
+			: {
+					queryKey: ['ffmpeg.checkInstalled'] as const,
+					queryFn: async () => false,
+					enabled: false,
+				},
+	);
 </script>
 
 <svelte:head> <title>Install FFmpeg - Whispering</title> </svelte:head>

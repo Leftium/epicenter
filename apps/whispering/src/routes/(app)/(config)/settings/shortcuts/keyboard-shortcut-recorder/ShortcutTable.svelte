@@ -4,6 +4,7 @@
 	import Search from '@lucide/svelte/icons/search';
 	import { commands } from '$lib/commands';
 	import { notify } from '$lib/operations/notify';
+	import type { Tauri } from '$lib/tauri';
 	import {
 		type DeviceConfigKey,
 		deviceConfig,
@@ -13,7 +14,9 @@
 	import GlobalKeyboardShortcutRecorder from './GlobalKeyboardShortcutRecorder.svelte';
 	import LocalKeyboardShortcutRecorder from './LocalKeyboardShortcutRecorder.svelte';
 
-	let { type }: { type: 'local' | 'global' } = $props();
+	// `tauri` is required when type === 'global' (the inner recorder needs it
+	// to register OS-level shortcuts). For type === 'local' it's ignored.
+	let { type, tauri }: { type: 'local' | 'global'; tauri?: Tauri } = $props();
 
 	let searchQuery = $state('');
 
@@ -85,13 +88,14 @@
 										: 'Set shortcut'}
 									{pressedKeys}
 								/>
-							{:else}
+							{:else if tauri}
 								<GlobalKeyboardShortcutRecorder
 									{command}
 									placeholder={defaultShortcut
 										? `Default: ${defaultShortcut}`
 										: 'Set shortcut'}
 									{pressedKeys}
+									{tauri}
 								/>
 							{/if}
 						</Table.Cell>

@@ -1,4 +1,5 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { remove } from '@tauri-apps/plugin-fs';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type {
@@ -26,13 +27,6 @@ type AudioRecording = {
 };
 
 /**
- * Tracks the recordingId the JS caller passed to startRecording so we can
- * return it from stopRecording without a Rust round-trip. Cleared on stop or
- * cancel.
- */
-let activeRecording: { recordingId: string } | null = null;
-
-/**
  * Enumerates available recording devices from the system.
  */
 const enumerateDevices = async (): Promise<Result<Device[], RecorderError>> => {
@@ -56,276 +50,308 @@ const enumerateDevices = async (): Promise<Result<Device[], RecorderError>> => {
  * CPAL recorder service that uses the Rust CPAL method.
  * This service handles device enumeration, recording start/stop operations, and file management
  * for desktop audio recording using the CPAL library.
+ *
+ * Constructed via a factory so `activeRecording` lives in the closure rather
+ * than at module scope. The exported `CpalRecorderServiceLive` is the single
+ * application-level instance; tests can call `createCpalRecorder()` for an
+ * isolated one.
  */
-export const CpalRecorderServiceLive: RecorderService = {
-	/**
-	 * Gets the current state of the recorder.
-	 */
-	getRecorderState: async (): Promise<
-		Result<WhisperingRecordingState, RecorderError>
-	> => {
-		const { data: recordingId, error: getRecorderStateError } = await invoke<
-			string | null
-		>('get_current_recording_id');
-		if (getRecorderStateError)
-			return RecorderError.GetStateFailed({
-				cause: getRecorderStateError,
-			});
+function createCpalRecorder(): RecorderService {
+	// Tracks the recordingId the JS caller passed to startRecording so we can
+	// return it from stopRecording without a Rust round-trip. Cleared on stop
+	// or cancel.
+	let activeRecording: { recordingId: string } | null = null;
 
-		return Ok(recordingId ? 'RECORDING' : 'IDLE');
-	},
-
-	enumerateDevices,
-
-	/**
-	 * Starts a recording session with the specified parameters.
-	 * Handles device selection, fallback logic, and recording initialization.
-	 *
-	 * @param params - Recording parameters including device ID, recording ID, output folder, and sample rate
-	 * @param callbacks - Callback functions for status updates
-	 */
-	startRecording: async (
-		{
-			selectedDeviceId,
-			recordingId,
-			outputFolder,
-			sampleRate,
-		}: CpalRecordingParams,
-		{ sendStatus },
-	): Promise<Result<DeviceAcquisitionOutcome, RecorderError>> => {
-		const { data: devices, error: enumerateError } = await enumerateDevices();
-		if (enumerateError) return Err(enumerateError);
-
+	return {
 		/**
-		 * Acquires a recording device, either the selected one or a fallback.
+		 * Gets the current state of the recorder.
 		 */
-		const acquireDevice = (): Result<
-			DeviceAcquisitionOutcome,
-			RecorderError
+		getRecorderState: async (): Promise<
+			Result<WhisperingRecordingState, RecorderError>
 		> => {
-			const deviceIds = devices.map((d) => d.id);
-			const fallbackDeviceId = deviceIds.at(0);
-			if (!fallbackDeviceId) {
-				return RecorderError.NoDevice({
-					message: selectedDeviceId
-						? "We couldn't find the selected microphone. Make sure it's connected and try again!"
-						: "We couldn't find any microphones. Make sure they're connected and try again!",
-				});
-			}
-
-			if (!selectedDeviceId) {
-				sendStatus({
-					title: '🔍 No Device Selected',
-					description:
-						"No worries! We'll find the best microphone for you automatically...",
-				});
-				return Ok({
-					outcome: 'fallback',
-					reason: 'no-device-selected',
-					deviceId: fallbackDeviceId,
-				});
-			}
-
-			// Check if the selected device exists in the devices array
-			const deviceExists = deviceIds.includes(selectedDeviceId);
-
-			if (deviceExists)
-				return Ok({ outcome: 'success', deviceId: selectedDeviceId });
-
-			sendStatus({
-				title: '⚠️ Finding a New Microphone',
-				description:
-					"That microphone isn't available. Let's try finding another one...",
-			});
-
-			return Ok({
-				outcome: 'fallback',
-				reason: 'preferred-device-unavailable',
-				deviceId: fallbackDeviceId,
-			});
-		};
-
-		const { data: deviceOutcome, error: acquireDeviceError } = acquireDevice();
-		if (acquireDeviceError) return Err(acquireDeviceError);
-
-		// Use the device from the outcome
-		const deviceIdentifier = deviceOutcome.deviceId;
-
-		// Now initialize recording with the chosen device
-		sendStatus({
-			title: '🎤 Setting Up',
-			description:
-				'Initializing your recording session and checking microphone access...',
-		});
-
-		// Convert sample rate string to number if provided
-		const sampleRateNum = sampleRate
-			? Number.parseInt(sampleRate, 10)
-			: undefined;
-
-		const { error: initRecordingSessionError } = await invoke(
-			'init_recording_session',
-			{
-				deviceIdentifier,
-				recordingId,
-				outputFolder,
-				sampleRate: sampleRateNum,
-			},
-		);
-		if (initRecordingSessionError)
-			return RecorderError.InitFailed({
-				cause: initRecordingSessionError,
-			});
-
-		sendStatus({
-			title: '🎙️ Starting Recording',
-			description:
-				'Recording session initialized, now starting to capture audio...',
-		});
-		const { error: startRecordingError } =
-			await invoke<void>('start_recording');
-		if (startRecordingError)
-			return RecorderError.StartFailed({ cause: startRecordingError });
-
-		activeRecording = { recordingId };
-		return Ok(deviceOutcome);
-	},
-
-	/**
-	 * Stops the current recording session and returns the recorded audio as a Blob.
-	 * Handles file reading, session cleanup, and resource management.
-	 *
-	 * @param callbacks - Callback functions for status updates
-	 */
-	stopRecording: async ({
-		sendStatus,
-	}): Promise<Result<{ blob: Blob; recordingId: string }, RecorderError>> => {
-		// Fast path uses the recordingId captured at startRecording. After a JS
-		// reload mid-recording the closure is gone but Rust is still going; fall
-		// back to asking Rust which recording is currently active.
-		let recordingId: string;
-		if (activeRecording) {
-			recordingId = activeRecording.recordingId;
-			activeRecording = null;
-		} else {
-			const { data: liveRecordingId, error: getIdError } = await invoke<
+			const { data: recordingId, error: getRecorderStateError } = await invoke<
 				string | null
 			>('get_current_recording_id');
-			if (getIdError) {
-				return RecorderError.GetStateFailed({ cause: getIdError });
-			}
-			if (!liveRecordingId) {
-				return RecorderError.NotRecording({
-					message:
-						'Cannot stop recording because no active recording session was found. Make sure you have started recording before attempting to stop it.',
+			if (getRecorderStateError)
+				return RecorderError.GetStateFailed({
+					cause: getRecorderStateError,
 				});
-			}
-			recordingId = liveRecordingId;
-		}
 
-		const { data: audioRecording, error: stopRecordingError } =
-			await invoke<AudioRecording>('stop_recording');
-		if (stopRecordingError) {
-			return RecorderError.StopFailed({ cause: stopRecordingError });
-		}
+			return Ok(recordingId ? 'RECORDING' : 'IDLE');
+		},
 
-		const { filePath } = audioRecording;
-		// Desktop recorder should always write to a file
-		if (!filePath) {
-			return RecorderError.NoFilePath();
-		}
+		enumerateDevices,
 
-		// Read the WAV file from disk
-		sendStatus({
-			title: '📁 Reading Recording',
-			description: 'Loading your recording from disk...',
-		});
+		/**
+		 * Starts a recording session with the specified parameters.
+		 * Handles device selection, fallback logic, and recording initialization.
+		 *
+		 * @param params - Recording parameters including device ID, recording ID, output folder, and sample rate
+		 * @param callbacks - Callback functions for status updates
+		 */
+		startRecording: async (
+			{
+				selectedDeviceId,
+				recordingId,
+				outputFolder,
+				sampleRate,
+			}: CpalRecordingParams,
+			{ sendStatus },
+		): Promise<Result<DeviceAcquisitionOutcome, RecorderError>> => {
+			const { data: devices, error: enumerateError } = await enumerateDevices();
+			if (enumerateError) return Err(enumerateError);
 
-		const { data: blob, error: readRecordingFileError } =
-			await FsServiceLive.pathToBlob(filePath);
-		if (readRecordingFileError)
-			return RecorderError.ReadFileFailed({
-				cause: readRecordingFileError,
-			});
-		// Close the recording session after stopping
-		sendStatus({
-			title: '🔄 Closing Session',
-			description: 'Cleaning up recording resources...',
-		});
-		const { error: closeError } = await invoke<void>('close_recording_session');
-		if (closeError) {
-			// Log but don't fail the stop operation
-			console.error('Failed to close recording session:', closeError);
-		}
+			/**
+			 * Acquires a recording device, either the selected one or a fallback.
+			 */
+			const acquireDevice = (): Result<
+				DeviceAcquisitionOutcome,
+				RecorderError
+			> => {
+				const deviceIds = devices.map((d) => d.id);
+				const fallbackDeviceId = deviceIds.at(0);
+				if (!fallbackDeviceId) {
+					return RecorderError.NoDevice({
+						message: selectedDeviceId
+							? "We couldn't find the selected microphone. Make sure it's connected and try again!"
+							: "We couldn't find any microphones. Make sure they're connected and try again!",
+					});
+				}
 
-		return Ok({ blob, recordingId });
-	},
+				if (!selectedDeviceId) {
+					sendStatus({
+						title: '🔍 No Device Selected',
+						description:
+							"No worries! We'll find the best microphone for you automatically...",
+					});
+					return Ok({
+						outcome: 'fallback',
+						reason: 'no-device-selected',
+						deviceId: fallbackDeviceId,
+					});
+				}
 
-	/**
-	 * Cancels the current recording session and cleans up resources.
-	 * Deletes any temporary recording files and closes the recording session.
-	 *
-	 * @param callbacks - Callback functions for status updates
-	 */
-	cancelRecording: async ({
-		sendStatus,
-	}): Promise<Result<CancelRecordingResult, RecorderError>> => {
-		// Check current state first
-		const { data: recordingId, error: getRecordingIdError } = await invoke<
-			string | null
-		>('get_current_recording_id');
-		if (getRecordingIdError) {
-			return RecorderError.GetStateFailed({
-				cause: getRecordingIdError,
-			});
-		}
+				// Check if the selected device exists in the devices array
+				const deviceExists = deviceIds.includes(selectedDeviceId);
 
-		if (!recordingId) {
-			activeRecording = null;
-			return Ok({ status: 'no-recording' });
-		}
+				if (deviceExists)
+					return Ok({ outcome: 'success', deviceId: selectedDeviceId });
 
-		activeRecording = null;
-
-		sendStatus({
-			title: '🛑 Cancelling',
-			description:
-				'Safely stopping your recording and cleaning up resources...',
-		});
-
-		// First get the recording data to know if there's a file to delete
-		const { data: audioRecording } =
-			await invoke<AudioRecording>('stop_recording');
-
-		// If there's a file path, delete the file using Tauri FS plugin
-		if (audioRecording?.filePath) {
-			const filePath = audioRecording.filePath;
-			const { error: removeError } = await tryAsync({
-				try: () => remove(filePath),
-				catch: (error) => RecorderError.FileDeleteFailed({ cause: error }),
-			});
-			if (removeError)
 				sendStatus({
-					title: '❌ Error Deleting Recording File',
+					title: '⚠️ Finding a New Microphone',
 					description:
-						"We couldn't delete the recording file. Continuing with the cancellation process...",
+						"That microphone isn't available. Let's try finding another one...",
 				});
-		}
 
-		// Close the recording session after cancelling
-		sendStatus({
-			title: '🔄 Closing Session',
-			description: 'Cleaning up recording resources...',
-		});
-		const { error: closeError } = await invoke<void>('close_recording_session');
-		if (closeError) {
-			// Log but don't fail the cancel operation
-			console.error('Failed to close recording session:', closeError);
-		}
+				return Ok({
+					outcome: 'fallback',
+					reason: 'preferred-device-unavailable',
+					deviceId: fallbackDeviceId,
+				});
+			};
 
-		return Ok({ status: 'cancelled' });
-	},
-};
+			const { data: deviceOutcome, error: acquireDeviceError } =
+				acquireDevice();
+			if (acquireDeviceError) return Err(acquireDeviceError);
+
+			// Use the device from the outcome
+			const deviceIdentifier = deviceOutcome.deviceId;
+
+			// Now initialize recording with the chosen device
+			sendStatus({
+				title: '🎤 Setting Up',
+				description:
+					'Initializing your recording session and checking microphone access...',
+			});
+
+			// Convert sample rate string to number if provided
+			const sampleRateNum = sampleRate
+				? Number.parseInt(sampleRate, 10)
+				: undefined;
+
+			const { error: initRecordingSessionError } = await invoke(
+				'init_recording_session',
+				{
+					deviceIdentifier,
+					recordingId,
+					outputFolder,
+					sampleRate: sampleRateNum,
+				},
+			);
+			if (initRecordingSessionError)
+				return RecorderError.InitFailed({
+					cause: initRecordingSessionError,
+				});
+
+			sendStatus({
+				title: '🎙️ Starting Recording',
+				description:
+					'Recording session initialized, now starting to capture audio...',
+			});
+			const { error: startRecordingError } =
+				await invoke<void>('start_recording');
+			if (startRecordingError)
+				return RecorderError.StartFailed({ cause: startRecordingError });
+
+			activeRecording = { recordingId };
+			return Ok(deviceOutcome);
+		},
+
+		/**
+		 * Stops the current recording session and returns the recorded audio as a Blob.
+		 * Handles file reading, session cleanup, and resource management.
+		 *
+		 * @param callbacks - Callback functions for status updates
+		 */
+		stopRecording: async ({
+			sendStatus,
+		}): Promise<Result<{ blob: Blob; recordingId: string }, RecorderError>> => {
+			// Fast path uses the recordingId captured at startRecording. After a JS
+			// reload mid-recording the closure is gone but Rust is still going; fall
+			// back to asking Rust which recording is currently active.
+			let recordingId: string;
+			if (activeRecording) {
+				recordingId = activeRecording.recordingId;
+				activeRecording = null;
+			} else {
+				const { data: liveRecordingId, error: getIdError } = await invoke<
+					string | null
+				>('get_current_recording_id');
+				if (getIdError) {
+					return RecorderError.GetStateFailed({ cause: getIdError });
+				}
+				if (!liveRecordingId) {
+					return RecorderError.NotRecording({
+						message:
+							'Cannot stop recording because no active recording session was found. Make sure you have started recording before attempting to stop it.',
+					});
+				}
+				recordingId = liveRecordingId;
+			}
+
+			const { data: audioRecording, error: stopRecordingError } =
+				await invoke<AudioRecording>('stop_recording');
+			if (stopRecordingError) {
+				return RecorderError.StopFailed({ cause: stopRecordingError });
+			}
+
+			const { filePath } = audioRecording;
+			// Desktop recorder should always write to a file
+			if (!filePath) {
+				return RecorderError.NoFilePath();
+			}
+
+			// Read the WAV file from disk
+			sendStatus({
+				title: '📁 Reading Recording',
+				description: 'Loading your recording from disk...',
+			});
+
+			const { data: blob, error: readRecordingFileError } =
+				await FsServiceLive.pathToBlob(filePath);
+			if (readRecordingFileError)
+				return RecorderError.ReadFileFailed({
+					cause: readRecordingFileError,
+				});
+			// Close the recording session after stopping
+			sendStatus({
+				title: '🔄 Closing Session',
+				description: 'Cleaning up recording resources...',
+			});
+			const { error: closeError } = await invoke<void>(
+				'close_recording_session',
+			);
+			if (closeError) {
+				// Log but don't fail the stop operation
+				console.error('Failed to close recording session:', closeError);
+			}
+
+			return Ok({ blob, recordingId });
+		},
+
+		/**
+		 * Cancels the current recording session and cleans up resources.
+		 * Deletes any temporary recording files and closes the recording session.
+		 *
+		 * @param callbacks - Callback functions for status updates
+		 */
+		cancelRecording: async ({
+			sendStatus,
+		}): Promise<Result<CancelRecordingResult, RecorderError>> => {
+			// Check current state first
+			const { data: recordingId, error: getRecordingIdError } = await invoke<
+				string | null
+			>('get_current_recording_id');
+			if (getRecordingIdError) {
+				return RecorderError.GetStateFailed({
+					cause: getRecordingIdError,
+				});
+			}
+
+			if (!recordingId) {
+				activeRecording = null;
+				return Ok({ status: 'no-recording' });
+			}
+
+			activeRecording = null;
+
+			sendStatus({
+				title: '🛑 Cancelling',
+				description:
+					'Safely stopping your recording and cleaning up resources...',
+			});
+
+			// First get the recording data to know if there's a file to delete
+			const { data: audioRecording } =
+				await invoke<AudioRecording>('stop_recording');
+
+			// If there's a file path, delete the file using Tauri FS plugin
+			if (audioRecording?.filePath) {
+				const filePath = audioRecording.filePath;
+				const { error: removeError } = await tryAsync({
+					try: () => remove(filePath),
+					catch: (error) => RecorderError.FileDeleteFailed({ cause: error }),
+				});
+				if (removeError)
+					sendStatus({
+						title: '❌ Error Deleting Recording File',
+						description:
+							"We couldn't delete the recording file. Continuing with the cancellation process...",
+					});
+			}
+
+			// Close the recording session after cancelling
+			sendStatus({
+				title: '🔄 Closing Session',
+				description: 'Cleaning up recording resources...',
+			});
+			const { error: closeError } = await invoke<void>(
+				'close_recording_session',
+			);
+			if (closeError) {
+				// Log but don't fail the cancel operation
+				console.error('Failed to close recording session:', closeError);
+			}
+
+			return Ok({ status: 'cancelled' });
+		},
+
+		subscribe(handler) {
+			// Rust emits 'recorder:state-changed' from every mutation path (see
+			// src-tauri/src/recorder/commands.rs). Wrap the Tauri listener so this
+			// service exposes the same subscribe shape as the navigator service.
+			const unlistenPromise = listen<WhisperingRecordingState>(
+				'recorder:state-changed',
+				(event) => handler(event.payload),
+			);
+			return () => {
+				void unlistenPromise.then((unlisten) => unlisten());
+			};
+		},
+	};
+}
+
+export const CpalRecorderServiceLive: RecorderService = createCpalRecorder();
 
 /**
  * Wrapper function for Tauri invoke calls that handles errors consistently.

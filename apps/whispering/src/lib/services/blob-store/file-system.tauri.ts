@@ -9,11 +9,11 @@ import mime from 'mime';
 import { tryAsync } from 'wellcrafted/result';
 import { PATHS } from '$lib/constants/paths';
 import { tauri } from '$lib/tauri';
-import type { BlobStore } from './types';
+import { BlobError, type BlobStore } from './types';
 
-// This file is Tauri-only; `tauri` is non-null on this build.
+// This file is Tauri-only (suffix `.tauri.ts` keeps it out of web bundles),
+// so `tauri` is never null when this module loads.
 const { fs } = tauri!;
-import { BlobError } from './types';
 
 /**
  * Deletes files inside a directory by filename.

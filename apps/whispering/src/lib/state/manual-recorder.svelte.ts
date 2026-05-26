@@ -1,4 +1,3 @@
-import { isTauri } from '@tauri-apps/api/core';
 import { nanoid } from 'nanoid/non-secure';
 import { Ok } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
@@ -8,6 +7,7 @@ import { notify } from '$lib/operations/notify';
 import { WhisperingErr } from '$lib/result';
 import { services } from '$lib/services';
 import { CpalRecorderServiceLive } from '$lib/services/recorder';
+import { tauri } from '$lib/tauri';
 import {
 	asDeviceIdentifier,
 	type RecorderService,
@@ -53,7 +53,7 @@ function resolveServiceForStart(): RecorderService {
 async function buildStartParams(
 	recordingId: string,
 ): Promise<StartRecordingParams> {
-	const useCpal = isTauri() && deviceConfig.get('recording.method') === 'cpal';
+	const useCpal = !!tauri && deviceConfig.get('recording.method') === 'cpal';
 
 	if (useCpal) {
 		const deviceId = deviceConfig.get('recording.cpal.deviceId');

@@ -5,9 +5,6 @@ import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { tauri } from '$lib/tauri';
 import { categorizeRecorderError } from '$lib/services/recorder/categorize-error';
-
-// This file is Tauri-only; `tauri` is non-null on this build.
-const { fs } = tauri!;
 import {
 	asDeviceIdentifier,
 	type CpalRecordingParams,
@@ -17,6 +14,10 @@ import {
 	type RecorderService,
 	type Recording,
 } from '$lib/services/recorder/types';
+
+// This file is Tauri-only (suffix `.tauri.ts` keeps it out of web bundles),
+// so `tauri` is never null when this module loads.
+const { fs } = tauri!;
 
 /**
  * Audio recording data returned from the Rust method

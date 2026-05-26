@@ -1,24 +1,36 @@
 /**
- * Tauri-only capability namespace.
+ * Tauri-only capability namespace. Everything that requires the Tauri
+ * runtime lives in this file (fs, command, permissions, ffmpeg, tray,
+ * globalShortcuts, autostart) plus a `rpc` sub-namespace for the subset
+ * that needs TanStack caching, error transformation, or invalidation.
  *
- * This file replaces the per-capability `services/<cap>/index.tauri.ts +
- * index.browser.ts` pairs for the seven Tauri-only services. The browser
- * companion is a single one-line `tauri.browser.ts` that exports `null`;
- * the optional chain at consumer sites is the platform gate.
+ * Two files, one import path:
  *
- * See `specs/20260526T000140-collapse-tauri-only-services-into-namespace.md`
- * for the rationale, migration plan, and the test for which DI pattern fits
- * which kind of dependency.
+ *     this file                                 → Tauri build
+ *     `./tauri.browser.ts` (exports `null`)     → web build
+ *
+ * Vite picks one at build time via `resolve.extensions` in
+ * `vite.config.ts`. TypeScript picks this one for type-checking on both
+ * builds via `moduleSuffixes` in `tsconfig.json`, so consumers always
+ * see the full `Tauri | null` shape.
  *
  * Consumer pattern:
  *
- *     import tauri from '$lib/tauri';
+ *     import { tauri } from '$lib/tauri';
+ *     if (tauri) await tauri.fs.pathToBlob(path);
+ *     // or
  *     await tauri?.fs.pathToBlob(path);
  *
- * The cast `as typeof tauri | null` at the bottom is the only piece of
- * type ceremony in the file. It forces consumers to narrow before access,
- * which gives us the runtime gate for free without scattering
- * `window.__TAURI_INTERNALS__` checks across call sites.
+ * `tauri` doubles as the platform check: truthy means we're on Tauri
+ * and the whole namespace is available. There is no separate
+ * `__TAURI_INTERNALS__` check; the value IS the check.
+ *
+ * Why the trailing `as Tauri | null` cast on a never-null local: it
+ * widens the export type so consumers are forced to narrow. The local
+ * is a single non-null object on Tauri builds; the cast at export is
+ * the only place the union appears.
+ *
+ * See `specs/20260526T000140-collapse-tauri-only-services-into-namespace.md`.
  */
 
 import { invoke } from '@tauri-apps/api/core';
@@ -851,7 +863,9 @@ const rpc = {
 };
 
 // barrel ------------------------------------------------------------
-const tauriImpl = {
+// Local `_tauri` holds the non-null namespace on Tauri builds. The
+// export below widens it to `Tauri | null` so consumers narrow.
+const _tauri = {
 	fs,
 	command,
 	permissions,
@@ -862,20 +876,11 @@ const tauriImpl = {
 	rpc,
 };
 
-/**
- * Shape of the Tauri capability namespace. Imported by consumers that
- * want to type a non-null Tauri (after narrowing) without re-deriving
- * the shape inline.
- */
-export type Tauri = typeof tauriImpl;
+/** Shape of the Tauri capability namespace (non-null). */
+export type Tauri = typeof _tauri;
 
 /**
- * The Tauri capability namespace, or null on web builds. Consumers
- * narrow with `if (tauri)` or `tauri?.X.Y()`. The variable doubles as
- * the platform check; if `tauri` is truthy you are on Tauri, full stop.
- *
- * The companion `tauri.browser.ts` exports the same name bound to
- * `null`. Vite picks the right file at build time via
- * `resolve.extensions`.
+ * The Tauri capability namespace, or `null` on web builds.
+ * Doubles as the platform check: truthy means Tauri.
  */
-export const tauri: Tauri | null = tauriImpl;
+export const tauri: Tauri | null = _tauri;

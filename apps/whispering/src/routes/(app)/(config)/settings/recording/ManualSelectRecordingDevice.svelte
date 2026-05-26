@@ -2,7 +2,7 @@
 	import * as Field from '@epicenter/ui/field';
 	import * as Select from '@epicenter/ui/select';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { rpc } from '$lib/query';
+	import { notify } from '$lib/operations/notify';
 	import type { DeviceIdentifier } from '$lib/services/recorder/types';
 	import { asDeviceIdentifier } from '$lib/services/recorder/types';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
@@ -20,7 +20,7 @@
 
 	$effect(() => {
 		if (getDevicesQuery.isError) {
-			rpc.notify.warning(getDevicesQuery.error);
+			notify.warning(getDevicesQuery.error);
 		}
 	});
 

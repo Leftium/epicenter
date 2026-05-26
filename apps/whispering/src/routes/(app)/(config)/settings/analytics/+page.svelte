@@ -4,7 +4,7 @@
 	import { Label } from '@epicenter/ui/label';
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import { Switch } from '@epicenter/ui/switch';
-	import { rpc } from '$lib/query';
+	import { analytics } from '$lib/operations/analytics';
 	import { settings } from '$lib/state/settings.svelte';
 </script>
 
@@ -61,7 +61,7 @@
 
 							// Log the change (will only send if analytics is now enabled)
 							if (checked) {
-								rpc.analytics.logEvent({
+								analytics.logEvent({
 									type: 'settings_changed',
 									section: 'analytics',
 								});

@@ -50,7 +50,9 @@
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
 	import { PATHS } from '$lib/constants/paths';
-	import { rpc } from '$lib/query';
+	import { notify } from '$lib/operations/notify';
+	import { rpc } from '$lib/rpc';
+	import { tauri } from '$lib/tauri';
 	import { services } from '$lib/services';
 	import { type Recording, recordings } from '$lib/state/recordings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
@@ -171,7 +173,7 @@
 							onConfirm: () => {
 								services.blobs.audio.revokeUrl(row.original.id);
 								recordings.delete(row.original.id);
-								rpc.notify.success({
+								notify.success({
 									title: 'Deleted recording!',
 									description: 'Your recording has been deleted.',
 								});
@@ -363,7 +365,7 @@
 		</SectionHeader.Title>
 		<SectionHeader.Description>
 			Your latest recordings and transcriptions, stored locally
-			{window.__TAURI_INTERNALS__ ? 'on your file system' : 'in IndexedDB'}.
+			{tauri ? 'on your file system' : 'in IndexedDB'}.
 		</SectionHeader.Description>
 	</SectionHeader.Root>
 	<Card class="flex flex-col gap-4 p-6">
@@ -383,7 +385,7 @@
 						disabled={transcribeRecordings.isPending}
 						onclick={() => {
 							const toastId = nanoid();
-							rpc.notify.loading({
+							notify.loading({
 								id: toastId,
 								title: 'Transcribing queries.recordings...',
 								description: 'This may take a while.',
@@ -395,7 +397,7 @@
 										const isAllSuccessful = errs.length === 0;
 										if (isAllSuccessful) {
 											const count = oks.length;
-											rpc.notify.success({
+											notify.success({
 												id: toastId,
 												title: `Transcribed ${count} recording${count === 1 ? '' : 's'}!`,
 												description: `Your ${count} recording${count === 1 ? ' has' : 's have'} been transcribed successfully.`,
@@ -405,7 +407,7 @@
 										const isAllFailed = oks.length === 0;
 										if (isAllFailed) {
 											const count = errs.length;
-											rpc.notify.error({
+											notify.error({
 												id: toastId,
 												title: `Failed to transcribe ${count} recording${count === 1 ? '' : 's'}`,
 												description:
@@ -417,7 +419,7 @@
 											return;
 										}
 										// Mixed results
-										rpc.notify.warning({
+										notify.warning({
 											id: toastId,
 											title: `Transcribed ${oks.length} of ${oks.length + errs.length} recordings`,
 											description: `${oks.length} succeeded, ${errs.length} failed.`,

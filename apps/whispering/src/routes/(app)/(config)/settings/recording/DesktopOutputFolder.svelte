@@ -6,14 +6,15 @@
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import { Ok, tryAsync } from 'wellcrafted/result';
 	import { PATHS } from '$lib/constants/paths';
-	import { rpc } from '$lib/query';
+	import { notify } from '$lib/operations/notify';
+	import { tauri } from '$lib/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 
 	// Top-level await to get the default app data directory
 	let defaultRecordingsFolder = $state<string | null>(null);
 
 	// Initialize the default path asynchronously
-	if (window.__TAURI_INTERNALS__) {
+	if (tauri) {
 		PATHS.DB.RECORDINGS().then((path) => {
 			defaultRecordingsFolder = path;
 		});
@@ -27,7 +28,7 @@
 	);
 
 	async function selectOutputFolder() {
-		if (!window.__TAURI_INTERNALS__) return;
+		if (!tauri) return;
 
 		const { open } = await import('@tauri-apps/plugin-dialog');
 		const selected = await open({
@@ -40,7 +41,7 @@
 	}
 
 	async function openOutputFolder() {
-		if (!window.__TAURI_INTERNALS__) return;
+		if (!tauri) return;
 
 		await tryAsync({
 			try: async () => {
@@ -55,7 +56,7 @@
 				await openPath(folderPath);
 			},
 			catch: (error) => {
-				rpc.notify.error({
+				notify.error({
 					title: 'Failed to open folder',
 					description: error instanceof Error ? error.message : 'Unknown error',
 				});

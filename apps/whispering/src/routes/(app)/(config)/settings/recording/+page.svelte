@@ -14,6 +14,7 @@
 		asDeviceIdentifier,
 		type DeviceIdentifier,
 	} from '$lib/services/recorder/types';
+	import { tauri } from '$lib/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import DesktopOutputFolder from './DesktopOutputFolder.svelte';
@@ -63,7 +64,7 @@
 	);
 
 	const isUsingNavigatorMethod = $derived(
-		!window.__TAURI_INTERNALS__ ||
+		!tauri ||
 			deviceConfig.get('recording.method') === 'navigator',
 	);
 
@@ -126,7 +127,7 @@
 			</Field.Description>
 		</Field.Field>
 
-		{#if window.__TAURI_INTERNALS__ && settings.get('recording.mode') === 'manual'}
+		{#if tauri && settings.get('recording.mode') === 'manual'}
 			<Field.Field>
 				<Field.Label for="recording-method">Recording Method</Field.Label>
 				<Select.Root

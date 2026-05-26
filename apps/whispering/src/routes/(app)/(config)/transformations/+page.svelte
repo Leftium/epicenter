@@ -33,7 +33,7 @@
 	import { createRawSnippet } from 'svelte';
 	import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
 	import { PATHS } from '$lib/constants/paths';
-	import { rpc } from '$lib/query';
+	import { notify } from '$lib/operations/notify';
 	import { transformations } from '$lib/state/transformations.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import type { Transformation } from '$lib/workspace';
@@ -225,7 +225,7 @@
 							for (const { original } of selectedTransformationRows) {
 								transformations.delete(original.id);
 							}
-							rpc.notify.success({
+							notify.success({
 								title: 'Deleted transformations!',
 								description:
 									'Your transformations have been deleted successfully.',

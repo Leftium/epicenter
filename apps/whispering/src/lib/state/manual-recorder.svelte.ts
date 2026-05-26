@@ -1,13 +1,12 @@
-import { isTauri } from '@tauri-apps/api/core';
 import { nanoid } from 'nanoid/non-secure';
 import { Ok } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { PATHS } from '$lib/constants/paths';
-import { defineQuery } from '$lib/query/client';
-import { notify } from '$lib/query/notify';
+import { notify } from '$lib/operations/notify';
 import { WhisperingErr } from '$lib/result';
+import { defineQuery } from '$lib/rpc/client';
 import { services } from '$lib/services';
-import { desktopServices } from '$lib/services/desktop';
+import { CpalRecorderServiceLive } from '$lib/services/recorder';
 import {
 	asDeviceIdentifier,
 	type RecorderService,
@@ -15,6 +14,7 @@ import {
 	type StartRecordingParams,
 } from '$lib/services/recorder/types';
 import { deviceConfig } from '$lib/state/device-config.svelte';
+import { tauri } from '$lib/tauri';
 
 /**
  * Creates the manual recorder with reactive state.
@@ -42,16 +42,21 @@ import { deviceConfig } from '$lib/state/device-config.svelte';
  */
 
 function resolveServiceForStart(): RecorderService {
-	if (!isTauri()) return services.navigatorRecorder;
-	return deviceConfig.get('recording.method') === 'cpal'
-		? desktopServices.cpalRecorder
-		: services.navigatorRecorder;
+	// CpalRecorderServiceLive is null on web (build-time fact); even when
+	// non-null, the runtime setting decides whether to use it.
+	if (
+		CpalRecorderServiceLive &&
+		deviceConfig.get('recording.method') === 'cpal'
+	) {
+		return CpalRecorderServiceLive;
+	}
+	return services.navigatorRecorder;
 }
 
 async function buildStartParams(
 	recordingId: string,
 ): Promise<StartRecordingParams> {
-	const useCpal = isTauri() && deviceConfig.get('recording.method') === 'cpal';
+	const useCpal = !!tauri && deviceConfig.get('recording.method') === 'cpal';
 
 	if (useCpal) {
 		const deviceId = deviceConfig.get('recording.cpal.deviceId');
@@ -106,8 +111,8 @@ function createManualRecorder() {
 	// Rust session) or double-starts on top of a rehydrated one.
 	const bootstrapped = Promise.all([
 		services.navigatorRecorder.getActiveRecording(),
-		isTauri()
-			? desktopServices.cpalRecorder.getActiveRecording()
+		CpalRecorderServiceLive
+			? CpalRecorderServiceLive.getActiveRecording()
 			: Promise.resolve({ data: null, error: null } as const),
 	]).then(([nav, cpal]) => {
 		const found = nav.data ?? cpal.data ?? null;

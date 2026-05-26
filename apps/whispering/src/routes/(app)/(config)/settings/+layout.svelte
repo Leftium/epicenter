@@ -5,7 +5,8 @@
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import { Separator } from '@epicenter/ui/separator';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
-	import { rpc } from '$lib/query';
+	import { notify } from '$lib/operations/notify';
+	import { tauri } from '$lib/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import SidebarNav from './SidebarNav.svelte';
@@ -23,7 +24,7 @@
 		if (!isString(latestVersion) || !isString(latestReleaseUrl)) {
 			throw new Error('Failed to fetch latest version');
 		}
-		if (!window.__TAURI_INTERNALS__)
+		if (!tauri)
 			return { isOutdated: false, version: latestVersion } as const;
 		const { getVersion } = await import('@tauri-apps/api/app');
 		const currentVersion = `v${await getVersion()}`;
@@ -83,7 +84,7 @@
 					onConfirm: () => {
 						settings.reset();
 						deviceConfig.reset();
-						rpc.notify.success({
+						notify.success({
 							title: 'Settings reset',
 							description: 'All settings have been reset to defaults.',
 						});

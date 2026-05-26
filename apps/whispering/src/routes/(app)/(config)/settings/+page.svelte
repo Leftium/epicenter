@@ -5,8 +5,8 @@
 	import { Switch } from '@epicenter/ui/switch';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { ALWAYS_ON_TOP_MODE_OPTIONS } from '$lib/constants/ui';
-	import { rpc } from '$lib/query';
-	import { desktopRpc } from '$lib/query/desktop';
+	import { notify } from '$lib/operations/notify';
+	import { tauri } from '$lib/tauri';
 	import { settings } from '$lib/state/settings.svelte';
 
 	const retentionItems = [
@@ -40,14 +40,33 @@
 		)?.label,
 	);
 
-	const autostartQuery = createQuery(
-		() => desktopRpc.autostart.isEnabled.options,
+	// Autostart is Tauri-only; on web `tauri` is null and the query stays
+	// disabled (default value `false`).
+	const autostartQuery = createQuery(() =>
+		tauri
+			? tauri.autostart.isEnabled.options
+			: {
+					queryKey: ['autostart', 'isEnabled'] as const,
+					queryFn: async () => false,
+					enabled: false,
+					initialData: false,
+				},
 	);
-	const enableAutostartMutation = createMutation(
-		() => desktopRpc.autostart.enable.options,
+	const enableAutostartMutation = createMutation(() =>
+		tauri
+			? tauri.autostart.enable.options
+			: {
+					mutationKey: ['autostart', 'enable'] as const,
+					mutationFn: async () => undefined,
+				},
 	);
-	const disableAutostartMutation = createMutation(
-		() => desktopRpc.autostart.disable.options,
+	const disableAutostartMutation = createMutation(() =>
+		tauri
+			? tauri.autostart.disable.options
+			: {
+					mutationKey: ['autostart', 'disable'] as const,
+					mutationFn: async () => undefined,
+				},
 	);
 </script>
 
@@ -88,7 +107,7 @@
 					</Field.Label>
 				</Field.Field>
 
-				{#if window.__TAURI_INTERNALS__ && settings.get('output.transcription.cursor')}
+				{#if tauri && settings.get('output.transcription.cursor')}
 					<Field.Field orientation="horizontal">
 						<Switch
 							id="transcription.simulateEnterAfterOutput"
@@ -133,7 +152,7 @@
 					</Field.Label>
 				</Field.Field>
 
-				{#if window.__TAURI_INTERNALS__ && settings.get('output.transformation.cursor')}
+				{#if tauri && settings.get('output.transformation.cursor')}
 					<Field.Field orientation="horizontal">
 						<Switch
 							id="transformation.simulateEnterAfterOutput"
@@ -190,7 +209,7 @@
 			</Field.Field>
 		{/if}
 
-		{#if window.__TAURI_INTERNALS__}
+		{#if tauri}
 			<Field.Field orientation="horizontal">
 				<Field.Content>
 					<Field.Label for="autostart">Launch on Startup</Field.Label>
@@ -204,11 +223,11 @@
 					onCheckedChange={(checked) => {
 						if (checked) {
 							enableAutostartMutation.mutate(undefined, {
-								onError: (error) => rpc.notify.error(error),
+								onError: (error) => notify.error(error),
 							});
 						} else {
 							disableAutostartMutation.mutate(undefined, {
-								onError: (error) => rpc.notify.error(error),
+								onError: (error) => notify.error(error),
 							});
 						}
 					}}

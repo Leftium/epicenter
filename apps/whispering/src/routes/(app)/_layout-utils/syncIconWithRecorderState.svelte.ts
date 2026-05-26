@@ -1,8 +1,8 @@
-import { desktopRpc } from '$lib/query/desktop';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
+import type { Tauri } from '$lib/tauri';
 
-export function syncIconWithRecorderState() {
+export function syncIconWithRecorderState(tauri: Tauri) {
 	$effect(() => {
-		desktopRpc.tray.setTrayIcon({ icon: manualRecorder.state });
+		void tauri.tray.setIcon({ icon: manualRecorder.state });
 	});
 }

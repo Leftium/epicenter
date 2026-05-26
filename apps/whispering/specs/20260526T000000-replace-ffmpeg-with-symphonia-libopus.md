@@ -1,7 +1,7 @@
 # Replace FFmpeg with Symphonia + libopus
 
 **Date**: 2026-05-26
-**Status**: Wave 1 merged (PR #1826). Wave 2 + 3.2/3.3/3.5 in Draft PR #1828. Wave 4 not started.
+**Status**: Wave 1 merged (PR #1826). Waves 2-4 in PR #1828 (encoder, unconditional compression, FFmpeg sidecar removal).
 **Owner**: Braden
 **Branch**: TBD (separate from `braden-w/ffmpeg-stdin-input`)
 
@@ -401,10 +401,10 @@ Wave ordering follows Build → Prove → Remove. Old code stays on disk and unu
 
 - [x] **4.1** `src-tauri/src/transcription/audio.rs` deleted (PR #1826).
 - [x] **4.2** `TranscriptionError::FfmpegNotFoundError` variant removed (PR #1826).
-- [ ] **4.3** Remove TS-side `FfmpegNotFoundError` handling (grep across `src/`).
-- [ ] **4.4** Remove the FFmpeg install instructions from docs / onboarding / error toasts.
+- [x] **4.3** TS-side `FfmpegNotFoundError` handling removed across `src/`.
+- [x] **4.4** FFmpeg install instructions removed from docs / onboarding / error toasts.
 - [x] **4.5** Rolled to every cloud provider in PR #1828 (orchestrator-side compression in `transcribeBlob`).
-- [ ] **4.6** Final sweep: search for `ffmpeg` across the repo; remove any remaining references. Notably still live: `desktopServices.ffmpeg.{checkInstalled, compressAudioBlob}`, `desktopRpc.ffmpeg`, `check-ffmpeg.ts`, the `install-ffmpeg` route, the `FFMPEG_DEFAULT_COMPRESSION_OPTIONS` constant.
+- [x] **4.6** Final sweep complete. Deleted: `desktopServices.ffmpeg`, `desktopRpc.ffmpeg`, `check-ffmpeg.ts`, the `install-ffmpeg` route, the `transcription.compressionEnabled` / `transcription.compressionOptions` workspace KV entries and migration map rows. Only remaining `ffmpeg` mentions are dev tooling in `docs/audio-test-fixtures.md` (regenerating decoder fixtures) and historical references in older specs.
 
 ### Wave 5 (optional): Refuse navigator backend on Tauri
 
@@ -476,14 +476,14 @@ Out of scope for this spec. See Open Questions.
 ## Success criteria
 
 - [ ] `cargo test` passes on macOS, Linux, Windows
-- [ ] Zero references to `ffmpeg` in `apps/whispering/src-tauri/` after Wave 4
-- [ ] `TranscriptionError::FfmpegNotFoundError` removed; TS handlers cleaned up
-- [ ] Decoder fixture tests cover: WAV, MP3, M4A/AAC, WebM/Opus, OGG/Opus
-- [ ] Encoder roundtrip: 5 s sine wave at 16 kHz → Opus/OGG → decode → < 50 ms duration delta, peak frequency within 10 Hz
+- [x] Zero references to `ffmpeg` in `apps/whispering/src-tauri/` after Wave 4
+- [x] `TranscriptionError::FfmpegNotFoundError` removed; TS handlers cleaned up
+- [x] Decoder fixture tests cover: WAV, MP3, M4A/AAC, WebM/Opus, OGG/Opus
+- [x] Encoder roundtrip: 5 s sine wave at 16 kHz → Opus/OGG → decode → < 50 ms duration delta, peak frequency within 10 Hz
 - [ ] Manual smoke test: cpal + cloud upload payload < 1/10 the size of the WAV equivalent
 - [ ] Binary size delta < 1.5 MB per platform (vs current build without FFmpeg sidecar)
 - [ ] No regression on local-inference happy path (cpal + local engine should be unchanged perceptually)
-- [ ] FFmpeg install instructions removed from docs and onboarding
+- [x] FFmpeg install instructions removed from docs and onboarding
 
 ## References
 

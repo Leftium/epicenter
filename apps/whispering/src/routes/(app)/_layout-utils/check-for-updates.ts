@@ -5,7 +5,7 @@ import {
 	type UpdateInfo,
 	updateDialog,
 } from '$lib/components/UpdateDialog.svelte';
-import { rpc } from '$lib/query';
+import { notify } from '$lib/operations/notify';
 import { WhisperingErr } from '$lib/result';
 
 export async function checkForUpdates() {
@@ -13,7 +13,7 @@ export async function checkForUpdates() {
 		try: async () => {
 			const update = await (shouldUseMockUpdates() ? mockCheck() : check());
 			if (update) {
-				await rpc.notify.info({
+				await notify.info({
 					title: `Update ${update.version} available`,
 					description: 'A new version of Whispering is available.',
 					action: {
@@ -31,7 +31,7 @@ export async function checkForUpdates() {
 				description: extractErrorMessage(error),
 			}),
 	});
-	if (error) rpc.notify.error(error);
+	if (error) notify.error(error);
 }
 
 /**

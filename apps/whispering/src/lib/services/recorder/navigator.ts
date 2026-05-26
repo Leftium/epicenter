@@ -42,8 +42,10 @@ function createNavigatorRecorder(): RecorderService {
 		stream: MediaStream;
 		mediaRecorder: MediaRecorder;
 		recordedChunks: Blob[];
+		startedAtMs: number;
 	}): { session: ActiveSession; recording: Recording } {
-		const { recordingId, stream, mediaRecorder, recordedChunks } = args;
+		const { recordingId, stream, mediaRecorder, recordedChunks, startedAtMs } =
+			args;
 		const subscribers = new Set<(s: WhisperingRecordingState) => void>();
 		let currentState: WhisperingRecordingState = 'RECORDING';
 
@@ -87,6 +89,8 @@ function createNavigatorRecorder(): RecorderService {
 					catch: (error) => RecorderError.StopFailed({ cause: error }),
 				});
 
+				const durationMs = Date.now() - startedAtMs;
+
 				teardown();
 
 				if (stopError) return Err(stopError);
@@ -95,7 +99,7 @@ function createNavigatorRecorder(): RecorderService {
 					title: '✅ Recording Saved',
 					description: 'Your recording is ready for transcription!',
 				});
-				return Ok({ blob, recordingId });
+				return Ok({ blob, recordingId, durationMs });
 			},
 
 			cancel: async ({ sendStatus }) => {
@@ -198,15 +202,17 @@ function createNavigatorRecorder(): RecorderService {
 				if (event.data.size) recordedChunks.push(event.data);
 			});
 
+			mediaRecorder.start(TIMESLICE_MS);
+			const startedAtMs = Date.now();
+
 			const { session, recording } = buildRecording({
 				recordingId,
 				stream,
 				mediaRecorder,
 				recordedChunks,
+				startedAtMs,
 			});
 			activeSession = session;
-
-			mediaRecorder.start(TIMESLICE_MS);
 
 			return Ok({ recording, deviceAcquisition: deviceOutcome });
 		},

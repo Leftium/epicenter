@@ -1,12 +1,26 @@
 import type { ShortcutEvent } from '@tauri-apps/plugin-global-shortcut';
-import { rpc } from '$lib/query';
+import {
+	cancelManualRecording,
+	startManualRecording,
+	startVadRecording,
+	stopManualRecording,
+	stopVadRecording,
+	toggleManualRecording,
+	toggleVadRecording,
+} from '$lib/operations/recording';
+import {
+	openTransformationPicker,
+	runTransformationOnClipboard,
+} from '$lib/operations/transformation-clipboard';
 
 /**
  * Registry of available commands in the application.
- * Defines what commands exist and how they're triggered (keyboard shortcuts, voice, command palette, etc.).
+ * Defines what commands exist and how they're triggered (keyboard shortcuts,
+ * voice, command palette, etc.).
  *
- * The actual command implementations live in /lib/query/actions.ts as reusable mutations
- * that can be invoked from anywhere in the UI, not just through this command registry.
+ * The actual command implementations live in $lib/operations/* as plain async
+ * functions that can be invoked from anywhere in the UI, not just through this
+ * command registry.
  */
 
 /**
@@ -35,9 +49,9 @@ export const commands = [
 		on: ['Pressed', 'Released'],
 		callback: (state?: ShortcutEventState) => {
 			if (state === 'Pressed') {
-				rpc.actions.startManualRecording(undefined);
+				startManualRecording();
 			} else if (state === 'Released') {
-				rpc.actions.stopManualRecording(undefined);
+				stopManualRecording();
 			}
 		},
 	},
@@ -45,55 +59,55 @@ export const commands = [
 		id: 'toggleManualRecording',
 		title: 'Toggle recording',
 		on: ['Pressed'],
-		callback: () => rpc.actions.toggleManualRecording(undefined),
+		callback: () => toggleManualRecording(),
 	},
 	{
 		id: 'startManualRecording',
 		title: 'Start recording',
 		on: ['Pressed'],
-		callback: () => rpc.actions.startManualRecording(undefined),
+		callback: () => startManualRecording(),
 	},
 	{
 		id: 'stopManualRecording',
 		title: 'Stop recording',
 		on: ['Pressed'],
-		callback: () => rpc.actions.stopManualRecording(undefined),
+		callback: () => stopManualRecording(),
 	},
 	{
 		id: 'cancelManualRecording',
 		title: 'Cancel recording',
 		on: ['Pressed'],
-		callback: () => rpc.actions.cancelManualRecording(undefined),
+		callback: () => cancelManualRecording(),
 	},
 	{
 		id: 'startVadRecording',
 		title: 'Start voice activated recording',
 		on: ['Pressed'],
-		callback: () => rpc.actions.startVadRecording(undefined),
+		callback: () => startVadRecording(),
 	},
 	{
 		id: 'stopVadRecording',
 		title: 'Stop voice activated recording',
 		on: ['Pressed'],
-		callback: () => rpc.actions.stopVadRecording(undefined),
+		callback: () => stopVadRecording(),
 	},
 	{
 		id: 'toggleVadRecording',
 		title: 'Toggle voice activated recording',
 		on: ['Pressed'],
-		callback: () => rpc.actions.toggleVadRecording(undefined),
+		callback: () => toggleVadRecording(),
 	},
 	{
 		id: 'openTransformationPicker',
 		title: 'Open transformation picker',
 		on: ['Pressed'],
-		callback: () => rpc.actions.openTransformationPicker(undefined),
+		callback: () => openTransformationPicker(),
 	},
 	{
 		id: 'runTransformationOnClipboard',
 		title: 'Run transformation on clipboard',
 		on: ['Pressed'],
-		callback: () => rpc.actions.runTransformationOnClipboard(undefined),
+		callback: () => runTransformationOnClipboard(),
 	},
 ] as const satisfies SatisfiedCommand[];
 

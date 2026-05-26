@@ -5,12 +5,23 @@ import { defineConfig } from 'vite';
 import devtoolsJson from 'vite-plugin-devtools-json';
 
 const host = process.env.TAURI_DEV_HOST;
+const isTauri = process.env.TAURI_PLATFORM !== undefined;
 
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
 	plugins: [sveltekit(), tailwindcss(), devtoolsJson()],
 	resolve: {
 		dedupe: ['yjs'],
+		// Build-time platform DI. Tauri builds resolve `.tauri.ts` first;
+		// web builds resolve `.browser.ts` first. Files with no suffix
+		// (plain `.ts`) are platform-neutral and resolve on both builds
+		// as the fallback. A Tauri-only file (`<svc>.tauri.ts` with no
+		// `.browser.ts` companion) is unresolvable on web, so any web
+		// bundle that statically imports it fails at vite build time
+		// instead of at user runtime.
+		extensions: isTauri
+			? ['.tauri.ts', '.tauri.js', '.ts', '.js', '.json']
+			: ['.browser.ts', '.browser.js', '.ts', '.js', '.json'],
 	},
 	// Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
 	//

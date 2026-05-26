@@ -27,6 +27,7 @@
 	import { MOONSHINE_MODELS } from '$lib/services/transcription/local/moonshine';
 	import { PARAKEET_MODELS } from '$lib/services/transcription/local/parakeet';
 	import { WHISPER_MODELS } from '$lib/services/transcription/local/whispercpp';
+	import { tauri } from '$lib/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';
@@ -439,7 +440,7 @@
 		{:else if settings.get('transcription.service') === 'whispercpp'}
 			<div class="space-y-4">
 				<!-- Whisper Model Selector Component -->
-				{#if window.__TAURI_INTERNALS__}
+				{#if tauri}
 					<LocalModelSelector
 						models={WHISPER_MODELS}
 						title="Whisper Model"
@@ -498,7 +499,7 @@
 		{:else if settings.get('transcription.service') === 'parakeet'}
 			<div class="space-y-4">
 				<!-- Parakeet Model Selector Component -->
-				{#if window.__TAURI_INTERNALS__}
+				{#if tauri}
 					<LocalModelSelector
 						models={PARAKEET_MODELS}
 						title="Parakeet Model"
@@ -572,7 +573,7 @@
 		{:else if settings.get('transcription.service') === 'moonshine'}
 			<div class="space-y-4">
 				<!-- Moonshine Model Selector Component -->
-				{#if window.__TAURI_INTERNALS__}
+				{#if tauri}
 					<LocalModelSelector
 						models={MOONSHINE_MODELS}
 						title="Moonshine Model"

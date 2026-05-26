@@ -11,6 +11,7 @@
 	import { GithubIcon } from '$lib/components/icons';
 	import { notificationLog } from '$lib/components/NotificationLog.svelte';
 	import { NAV_ITEMS } from '$lib/constants/ui';
+	import { tauri } from '$lib/tauri';
 	import MigrationDialog from '$lib/migration/MigrationDialog.svelte';
 	import { migrationDialog } from '$lib/migration/migration-dialog.svelte';
 
@@ -145,7 +146,7 @@
 			{/if}
 
 			<!-- Minimize (desktop only) -->
-			{#if window.__TAURI_INTERNALS__}
+			{#if tauri}
 				<Sidebar.MenuItem>
 					<Sidebar.MenuButton>
 						{#snippet child({ props })}

@@ -16,7 +16,7 @@
 	import { nanoid } from 'nanoid/non-secure';
 	import { onDestroy, onMount } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
-	import { partitionResults, tryAsync } from 'wellcrafted/result';
+	import { tryAsync } from 'wellcrafted/result';
 	import { commandCallbacks } from '$lib/commands';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import {
@@ -26,22 +26,28 @@
 	import ManualDeviceSelector from '$lib/components/settings/selectors/ManualDeviceSelector.svelte';
 	import VadDeviceSelector from '$lib/components/settings/selectors/VadDeviceSelector.svelte';
 	import {
-		RECORDER_STATE_TO_ICON,
 		RECORDING_MODE_OPTIONS,
 		type RecordingMode,
 		VAD_STATE_TO_ICON,
 	} from '$lib/constants/audio';
 	import { getShortcutDisplayLabel } from '$lib/constants/keyboard';
-	import { rpc } from '$lib/query';
+	import { notify } from '$lib/operations/notify';
+	import {
+		stopManualRecording,
+		stopVadRecording,
+	} from '$lib/operations/recording';
+	import { uploadRecordings } from '$lib/operations/upload';
+	import { rpc } from '$lib/rpc';
 	import { WhisperingErr } from '$lib/result';
 	import { services } from '$lib/services';
-	import { desktopServices } from '$lib/services/desktop';
+	import { tauri } from '$lib/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
+	import ManualRecordingButton from './_components/ManualRecordingButton.svelte';
 
 	const latestRecording = $derived(recordings.sorted[0]);
 
@@ -54,7 +60,7 @@
 		RECORDING_MODE_OPTIONS.filter((mode) => {
 			if (!mode.desktopOnly) return true;
 			// Desktop only, only show if Tauri is available
-			return window.__TAURI_INTERNALS__;
+			return !!tauri;
 		}),
 	);
 
@@ -85,7 +91,7 @@
 
 	// Set up desktop drag and drop listener
 	onMount(async () => {
-		if (!window.__TAURI_INTERNALS__) return;
+		if (!tauri) return;
 		const { error } = await tryAsync({
 			try: async () => {
 				const { getCurrentWebview } = await import('@tauri-apps/api/webview');
@@ -121,7 +127,7 @@
 							.map(({ path }) => path);
 
 						if (validPaths.length === 0) {
-							rpc.notify.warning({
+							notify.warning({
 								title: '⚠️ No valid files',
 								description: 'Please drop audio or video files',
 							});
@@ -130,12 +136,14 @@
 
 						await switchRecordingMode('upload');
 
-						// Convert file paths to File objects using the fs service
+						// Convert file paths to File objects. The file-drop event only
+						// fires on Tauri, so `tauri` is non-null in this branch.
+						if (!tauri) return;
 						const { data: files, error } =
-							await desktopServices.fs.pathsToFiles(validPaths);
+							await tauri.fs.pathsToFiles(validPaths);
 
 						if (error) {
-							rpc.notify.error({
+							notify.error({
 								title: '❌ Failed to read files',
 								description: error.message,
 							});
@@ -143,7 +151,7 @@
 						}
 
 						if (files.length > 0) {
-							await rpc.actions.uploadRecordings({ files });
+							await uploadRecordings({ files });
 						}
 					},
 				);
@@ -154,7 +162,7 @@
 					description: extractErrorMessage(error),
 				}),
 		});
-		if (error) rpc.notify.error(error);
+		if (error) notify.error(error);
 	});
 
 	onDestroy(() => {
@@ -170,12 +178,12 @@
 			{
 				mode: 'manual' as const,
 				isActive: () => manualRecorder.state === 'RECORDING',
-				stop: () => rpc.actions.stopManualRecording(),
+				stop: () => stopManualRecording(),
 			},
 			{
 				mode: 'vad' as const,
 				isActive: () => vadRecorder.state !== 'IDLE',
-				stop: () => rpc.actions.stopVadRecording(),
+				stop: () => stopVadRecording(),
 			},
 		] satisfies {
 			mode: RecordingMode;
@@ -188,31 +196,16 @@
 				recordingMode.mode !== modeToKeep && recordingMode.isActive(),
 		);
 
-		const stopPromises = modesToStop.map(
-			async (recordingMode) => await recordingMode.stop(),
-		);
-
-		const results = await Promise.all(stopPromises);
-		return partitionResults(results);
+		await Promise.all(modesToStop.map((recordingMode) => recordingMode.stop()));
 	}
 
 	async function switchRecordingMode(newMode: RecordingMode) {
 		const toastId = nanoid();
-		const { errs } = await stopAllRecordingModesExcept(newMode);
-
-		if (errs.length > 0) {
-			console.error('Failed to stop active recordings:', errs);
-			rpc.notify.warning({
-				id: toastId,
-				title: '⚠️ Recording may still be active',
-				description:
-					'Previous recording could not be stopped automatically. Please stop it manually.',
-			});
-		}
+		await stopAllRecordingModesExcept(newMode);
 
 		if (settings.get('recording.mode') !== newMode) {
 			settings.set('recording.mode', newMode);
-			rpc.notify.success({
+			notify.success({
 				id: toastId,
 				title: '✅ Recording mode switched',
 				description: `Switched to ${newMode} recording mode`,
@@ -261,22 +254,7 @@
 	{#if settings.get('recording.mode') === 'manual'}
 		<!-- Container with relative positioning for the button and absolute selectors -->
 		<div class="relative">
-			<Button
-				tooltip={manualRecorder.state === 'IDLE'
-					? 'Start recording'
-					: 'Stop recording'}
-				onclick={() => commandCallbacks.toggleManualRecording()}
-				variant="ghost"
-				class="shrink-0 size-32 sm:size-36 lg:size-40 xl:size-44 transform items-center justify-center overflow-hidden duration-300 ease-in-out"
-			>
-				<span
-					style="filter: drop-shadow(0px 2px 4px rgba(0, 0, 0, 0.5)); view-transition-name: {viewTransition
-						.global.microphone};"
-					class="text-[100px] sm:text-[110px] lg:text-[120px] xl:text-[130px] leading-none"
-				>
-					{RECORDER_STATE_TO_ICON[manualRecorder.state]}
-				</span>
-			</Button>
+			<ManualRecordingButton />
 			{#if manualRecorder.state === 'RECORDING'}
 				<div class="absolute -right-12 bottom-4 flex items-center">
 					<Button
@@ -332,11 +310,11 @@
 				maxFileSize={25 * MEGABYTE}
 				onUpload={async (files) => {
 					if (files.length > 0) {
-					await rpc.actions.uploadRecordings({ files });
+					await uploadRecordings({ files });
 					}
 				}}
 				onFileRejected={({ file, reason }) => {
-					rpc.notify.error({
+					notify.error({
 						title: '❌ File rejected',
 						description: `${file.name}: ${reason}`,
 					});
@@ -368,7 +346,7 @@
 						onConfirm: () => {
 							services.blobs.audio.revokeUrl(latestRecording.id);
 							recordings.delete(latestRecording.id);
-							rpc.notify.success({
+							notify.success({
 								title: 'Deleted recording!',
 								description: 'Your recording has been deleted.',
 							});
@@ -408,7 +386,7 @@
 				{' '}
 				to start recording here.
 			</p>
-			{#if window.__TAURI_INTERNALS__}
+			{#if tauri}
 				<p class="text-foreground/75 text-sm">
 					Press
 					{' '}
@@ -447,7 +425,7 @@
 			<p class="text-foreground/75 text-center text-sm">
 				Drag files here or click to browse.
 			</p>
-			{#if window.__TAURI_INTERNALS__}
+			{#if tauri}
 				<p class="text-foreground/75 text-sm">
 					Press
 					{' '}
@@ -467,7 +445,7 @@
 			{/if}
 		{/if}
 		<p class="text-muted-foreground text-center text-sm font-light">
-			{#if !window.__TAURI_INTERNALS__}
+			{#if !tauri}
 				Tired of switching tabs?
 				<Link
 					tooltip="Get Whispering for desktop"

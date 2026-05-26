@@ -29,7 +29,7 @@ function serializedAudioToBlob(serializedAudio: SerializedAudio): Blob {
 	});
 }
 
-export function createBlobStoreWeb() {
+export function createIndexedDbBlobStore() {
 	const db = new WhisperingDatabase();
 	/** Cache for blob object URLs to avoid recreating them. */
 	const urlCache = new Map<string, string>();

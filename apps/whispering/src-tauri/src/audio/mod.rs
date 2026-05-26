@@ -5,10 +5,11 @@
 //! of 16 kHz mono samples, ready for the local transcription engines.
 //!
 //! Replaces the old `transcription::audio` module, which dispatched
-//! across three tiers (WAV fast-path, hound + rubato, FFmpeg sidecar)
-//! and required users to install FFmpeg for compressed formats. The new
-//! pipeline is one path built on Symphonia (demux + non-Opus decode),
-//! libopus via `audiopus` (Opus decode), and rubato (resample to 16 kHz).
+//! across three tiers (WAV fast-path, hound + rubato, external sidecar)
+//! and required users to install an external decoder for compressed
+//! formats. The new pipeline is one path built on Symphonia (demux +
+//! non-Opus decode), libopus via `audiopus` (Opus decode), and rubato
+//! (resample to 16 kHz).
 
 mod decode;
 mod error;

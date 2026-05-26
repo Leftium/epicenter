@@ -88,12 +88,13 @@ pub async fn run() {
         previous_hook(panic_info);
     }));
 
-    // Fix PATH environment for GUI applications on macOS and Linux
-    // This ensures commands like ffmpeg installed via Homebrew are accessible
+    // Fix PATH environment for GUI applications on macOS and Linux.
+    // Tauri-launched processes don't inherit the user's shell PATH, so any
+    // command we spawn (Homebrew-installed binaries, etc.) needs this.
     let _ = fix_path_env::fix();
 
-    // Fix Windows PATH inheritance bug
-    // This ensures child processes can find ffmpeg on Windows
+    // Fix Windows PATH inheritance bug so spawned child processes resolve
+    // commands from PATH the same way the parent does.
     fix_windows_path();
 
     // ONNX Runtime accelerator for Parakeet and Moonshine. `OrtAccelerator::Auto`

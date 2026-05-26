@@ -41,6 +41,7 @@
 	import { rpc } from '$lib/rpc';
 	import { WhisperingErr } from '$lib/result';
 	import { services } from '$lib/services';
+	import tauri from '$lib/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
@@ -136,11 +137,11 @@
 
 						await switchRecordingMode('upload');
 
-						// Convert file paths to File objects using the fs service
-						// (Tauri-only; dynamic import keeps it out of the web bundle)
-						const { FsServiceLive } = await import('$lib/services/fs');
+						// Convert file paths to File objects. The file-drop event only
+						// fires on Tauri, so `tauri` is non-null in this branch.
+						if (!tauri) return;
 						const { data: files, error } =
-							await FsServiceLive.pathsToFiles(validPaths);
+							await tauri.fs.pathsToFiles(validPaths);
 
 						if (error) {
 							notify.error({

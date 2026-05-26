@@ -7,7 +7,7 @@
 	import Layers2Icon from '@lucide/svelte/icons/layers-2';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import { notify } from '$lib/operations/notify';
-	import { desktopRpc } from '$lib/rpc/desktop';
+	import tauri from '$lib/tauri';
 	import { resetGlobalShortcuts } from '$routes/(app)/_layout-utils/register-commands';
 	import ShortcutFormatHelp from '../keyboard-shortcut-recorder/ShortcutFormatHelp.svelte';
 	import ShortcutTable from '../keyboard-shortcut-recorder/ShortcutTable.svelte';
@@ -15,7 +15,7 @@
 
 <svelte:head> <title>Global Shortcuts - Whispering</title> </svelte:head>
 
-{#if window.__TAURI_INTERNALS__}
+{#if tauri}
 	<section>
 		<div
 			class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
@@ -40,7 +40,7 @@
 				variant="outline"
 				size="sm"
 				onclick={async () => {
-					await desktopRpc.globalShortcuts.unregisterAll();
+					await tauri!.rpc.globalShortcuts.unregisterAll();
 					resetGlobalShortcuts();
 					notify.success({
 						title: 'Shortcuts reset',

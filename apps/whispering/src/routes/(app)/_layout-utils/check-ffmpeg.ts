@@ -1,6 +1,6 @@
 import { toast } from '@epicenter/ui/sonner';
 import { goto } from '$app/navigation';
-import { desktopRpc } from '$lib/rpc/desktop';
+import tauri from '$lib/tauri';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
 
@@ -31,7 +31,7 @@ export function hasNavigatorLocalTranscriptionIssue({
 }: {
 	isFFmpegInstalled: boolean;
 }): boolean {
-	if (!window.__TAURI_INTERNALS__) return false;
+	if (!tauri) return false;
 
 	const isUsingNavigator = deviceConfig.get('recording.method') === 'navigator';
 	const isUsingLocalTranscription =
@@ -65,10 +65,10 @@ export function isCompressionRecommended(): boolean {
  * @returns Promise<void> - Shows toast notification if local transcription has compatibility issues
  */
 export async function checkLocalTranscriptionCompatibility() {
-	if (!window.__TAURI_INTERNALS__) return;
+	if (!tauri) return;
 
 	const { data: ffmpegInstalled } =
-		await desktopRpc.ffmpeg.checkFfmpegInstalled.ensure();
+		await tauri.rpc.ffmpeg.checkInstalled.ensure();
 
 	// Check if there are compatibility issues with local transcription
 	if (
@@ -103,13 +103,13 @@ export async function checkLocalTranscriptionCompatibility() {
  * @returns Promise<void> - Shows toast notification if compression is recommended
  */
 export async function checkCompressionRecommendation() {
-	if (!window.__TAURI_INTERNALS__) return;
+	if (!tauri) return;
 
 	// Check if compression should be recommended
 	if (!isCompressionRecommended()) return;
 
 	const { data: ffmpegInstalled } =
-		await desktopRpc.ffmpeg.checkFfmpegInstalled.ensure();
+		await tauri.rpc.ffmpeg.checkInstalled.ensure();
 	if (ffmpegInstalled) return; // FFmpeg is required for compression
 
 	// FFmpeg is RECOMMENDED for compression

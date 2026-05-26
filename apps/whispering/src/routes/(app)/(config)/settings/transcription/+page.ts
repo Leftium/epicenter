@@ -1,8 +1,9 @@
-import { desktopRpc } from '$lib/rpc/desktop';
+import tauri from '$lib/tauri';
 
 export const load = async () => {
+	if (!tauri) return { ffmpegInstalled: false };
 	const { data: ffmpegInstalled } =
-		await desktopRpc.ffmpeg.checkFfmpegInstalled.ensure();
+		await tauri.rpc.ffmpeg.checkInstalled.ensure();
 
 	return {
 		ffmpegInstalled: ffmpegInstalled === true,

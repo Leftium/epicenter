@@ -2,11 +2,7 @@
 	import type { Command } from '$lib/commands';
 	import type { KeyboardEventSupportedKey } from '$lib/constants/keyboard';
 	import { notify } from '$lib/operations/notify';
-	import { desktopRpc } from '$lib/rpc/desktop';
-	import {
-		type Accelerator,
-		pressedKeysToTauriAccelerator,
-	} from '$lib/services/global-shortcut-manager';
+	import tauri, { type Accelerator } from '$lib/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { type PressedKeys } from '$lib/utils/createPressedKeys.svelte';
 	import { createKeyRecorder } from './create-key-recorder.svelte';
@@ -33,7 +29,7 @@
 		onRegister: async (keyCombination: KeyboardEventSupportedKey[]) => {
 			if (shortcutValue) {
 				const { error: unregisterError } =
-					await desktopRpc.globalShortcuts.unregisterCommand({
+					await tauri!.rpc.globalShortcuts.unregisterCommand({
 						accelerator: shortcutValue as Accelerator,
 					});
 
@@ -47,8 +43,9 @@
 				}
 			}
 
+			if (!tauri) return;
 			const { data: accelerator, error: acceleratorError } =
-				pressedKeysToTauriAccelerator(keyCombination);
+				tauri.globalShortcuts.pressedKeysToTauriAccelerator(keyCombination);
 
 			if (acceleratorError) {
 				notify.error({
@@ -60,7 +57,7 @@
 			}
 
 			const { error: registerError } =
-				await desktopRpc.globalShortcuts.registerCommand({
+				await tauri!.rpc.globalShortcuts.registerCommand({
 					command,
 					accelerator,
 				});
@@ -98,7 +95,7 @@
 		},
 		onClear: async () => {
 			const { error: unregisterError } =
-				await desktopRpc.globalShortcuts.unregisterCommand({
+				await tauri!.rpc.globalShortcuts.unregisterCommand({
 					accelerator: shortcutValue as Accelerator,
 				});
 

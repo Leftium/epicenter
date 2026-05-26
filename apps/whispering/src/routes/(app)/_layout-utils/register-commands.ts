@@ -3,8 +3,7 @@ import { commands } from '$lib/commands';
 import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
 import { notify } from '$lib/operations/notify';
 import { localShortcuts } from '$lib/operations/shortcuts';
-import { desktopRpc } from '$lib/rpc/desktop';
-import type { Accelerator } from '$lib/services/global-shortcut-manager';
+import tauri, { type Accelerator } from '$lib/tauri';
 import {
 	type CommandId,
 	shortcutStringToArray,
@@ -112,6 +111,7 @@ export async function syncLocalShortcutsWithSettings() {
  * - Shows error toast if any registration/unregistration fails
  */
 export async function syncGlobalShortcutsWithSettings() {
+	if (!tauri) return;
 	const commandsWithAccelerators = commands
 		.map((command) => {
 			const accelerator = deviceConfig.get(
@@ -124,7 +124,7 @@ export async function syncGlobalShortcutsWithSettings() {
 
 	const results = await Promise.all(
 		commandsWithAccelerators.map((item) =>
-			desktopRpc.globalShortcuts.registerCommand(item),
+			tauri!.rpc.globalShortcuts.registerCommand(item),
 		),
 	);
 	const { errs } = partitionResults(results);

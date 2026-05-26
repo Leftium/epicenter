@@ -8,8 +8,11 @@ import {
 import mime from 'mime';
 import { tryAsync } from 'wellcrafted/result';
 import { PATHS } from '$lib/constants/paths';
-import { FsServiceLive } from '$lib/services/fs';
+import tauri from '$lib/tauri';
 import type { BlobStore } from './types';
+
+// This file is Tauri-only; `tauri` is non-null on this build.
+const { fs } = tauri!;
 import { BlobError } from './types';
 
 /**
@@ -86,7 +89,7 @@ export function createFileSystemBlobStore() {
 
 					// Use existing fsService.pathToBlob utility
 					const { data: blob, error } =
-						await FsServiceLive.pathToBlob(audioPath);
+						await fs.pathToBlob(audioPath);
 					if (error) throw error;
 
 					return blob;

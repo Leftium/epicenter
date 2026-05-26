@@ -6,7 +6,7 @@
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { ALWAYS_ON_TOP_MODE_OPTIONS } from '$lib/constants/ui';
 	import { notify } from '$lib/operations/notify';
-	import { desktopRpc } from '$lib/rpc/desktop';
+	import tauri from '$lib/tauri';
 	import { settings } from '$lib/state/settings.svelte';
 
 	const retentionItems = [
@@ -40,14 +40,33 @@
 		)?.label,
 	);
 
-	const autostartQuery = createQuery(
-		() => desktopRpc.autostart.isEnabled.options,
+	// Autostart is Tauri-only; on web `tauri` is null and the query stays
+	// disabled (default value `false`).
+	const autostartQuery = createQuery(() =>
+		tauri
+			? tauri.rpc.autostart.isEnabled.options
+			: {
+					queryKey: ['autostart', 'isEnabled'] as const,
+					queryFn: async () => false,
+					enabled: false,
+					initialData: false,
+				},
 	);
-	const enableAutostartMutation = createMutation(
-		() => desktopRpc.autostart.enable.options,
+	const enableAutostartMutation = createMutation(() =>
+		tauri
+			? tauri.rpc.autostart.enable.options
+			: {
+					mutationKey: ['autostart', 'enable'] as const,
+					mutationFn: async () => undefined,
+				},
 	);
-	const disableAutostartMutation = createMutation(
-		() => desktopRpc.autostart.disable.options,
+	const disableAutostartMutation = createMutation(() =>
+		tauri
+			? tauri.rpc.autostart.disable.options
+			: {
+					mutationKey: ['autostart', 'disable'] as const,
+					mutationFn: async () => undefined,
+				},
 	);
 </script>
 

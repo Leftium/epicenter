@@ -10,11 +10,11 @@
 	import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { desktopRpc } from '$lib/rpc/desktop';
 	import {
 		FFMPEG_DEFAULT_COMPRESSION_OPTIONS,
 		FFMPEG_SMALLEST_COMPRESSION_OPTIONS,
 	} from '$lib/constants/ffmpeg';
+	import tauri from '$lib/tauri';
 	import { settings } from '$lib/state/settings.svelte';
 	import { isCompressionRecommended } from '$routes/(app)/_layout-utils/check-ffmpeg';
 
@@ -60,9 +60,16 @@
 		);
 	}
 
-	// Check if FFmpeg is installed
-	const ffmpegQuery = createQuery(
-		() => desktopRpc.ffmpeg.checkFfmpegInstalled.options,
+	// Check if FFmpeg is installed. On web `tauri` is null and the query
+	// stays disabled; isFfmpegInstalled falls back to false.
+	const ffmpegQuery = createQuery(() =>
+		tauri
+			? tauri.rpc.ffmpeg.checkInstalled.options
+			: {
+					queryKey: ['ffmpeg.checkInstalled'] as const,
+					queryFn: async () => false,
+					enabled: false,
+				},
 	);
 
 	const isFfmpegInstalled = $derived(ffmpegQuery.data ?? false);

@@ -12,7 +12,7 @@ import { mistralErrorToWhisperingErr } from '$lib/rpc/transcription-errors/mistr
 import { openaiErrorToWhisperingErr } from '$lib/rpc/transcription-errors/openai';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { services } from '$lib/services';
-// see direct imports below
+import tauri from '$lib/tauri';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
 
@@ -42,13 +42,9 @@ export async function transcribeBlob(
 	});
 
 	let audioToTranscribe = blob;
-	if (
-		window.__TAURI_INTERNALS__ &&
-		settings.get('transcription.compressionEnabled')
-	) {
-		const { FfmpegServiceLive } = await import('$lib/tauri/ffmpeg');
+	if (tauri && settings.get('transcription.compressionEnabled')) {
 		const { data: compressedBlob, error: compressionError } =
-			await FfmpegServiceLive.compressAudioBlob(
+			await tauri.ffmpeg.compressAudioBlob(
 				blob,
 				settings.get('transcription.compressionOptions'),
 			);

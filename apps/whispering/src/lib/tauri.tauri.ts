@@ -52,6 +52,8 @@ import {
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { goto } from '$app/navigation';
+import type { Command, ShortcutEventState } from '$lib/commands';
+import { commandCallbacks } from '$lib/commands';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { getFileExtensionFromFfmpegOptions } from '$lib/constants/ffmpeg';
 import {
@@ -66,7 +68,8 @@ import {
 	type KeyboardEventSupportedKey,
 } from '$lib/constants/keyboard';
 import { IS_MACOS } from '$lib/constants/platform';
-import type { ShortcutEventState } from '$lib/commands';
+import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
+import { WhisperingErr } from '$lib/result';
 
 // fs ----------------------------------------------------------------
 export const FsError = defineErrors({
@@ -717,8 +720,138 @@ const autostart = {
 		}),
 };
 
+// rpc ---------------------------------------------------------------
+// TanStack-wrapped adapters for the subset of capabilities that need
+// reactive caching, error transformation to WhisperingError, or
+// post-mutation invalidation. Capabilities without an entry here are
+// called directly through the namespace (e.g. `tauri.fs.pathToBlob`).
+
+const autostartKeys = {
+	isEnabled: ['autostart', 'isEnabled'] as const,
+	enable: ['autostart', 'enable'] as const,
+	disable: ['autostart', 'disable'] as const,
+};
+const invalidateAutostartState = () =>
+	queryClient.invalidateQueries({ queryKey: autostartKeys.isEnabled });
+
+const rpc = {
+	autostart: {
+		isEnabled: defineQuery({
+			queryKey: autostartKeys.isEnabled,
+			queryFn: async () => {
+				const { data, error } = await autostart.isEnabled();
+				if (error) {
+					return WhisperingErr({
+						title: '❌ Failed to check autostart status',
+						serviceError: error,
+					});
+				}
+				return Ok(data);
+			},
+			initialData: false,
+		}),
+		enable: defineMutation({
+			mutationKey: autostartKeys.enable,
+			mutationFn: async () => {
+				const { data, error } = await autostart.enable();
+				if (error) {
+					return WhisperingErr({
+						title: '❌ Failed to enable autostart',
+						serviceError: error,
+					});
+				}
+				return Ok(data);
+			},
+			onSettled: invalidateAutostartState,
+		}),
+		disable: defineMutation({
+			mutationKey: autostartKeys.disable,
+			mutationFn: async () => {
+				const { data, error } = await autostart.disable();
+				if (error) {
+					return WhisperingErr({
+						title: '❌ Failed to disable autostart',
+						serviceError: error,
+					});
+				}
+				return Ok(data);
+			},
+			onSettled: invalidateAutostartState,
+		}),
+	},
+
+	ffmpeg: {
+		checkInstalled: defineQuery({
+			queryKey: ['ffmpeg.checkInstalled'] as const,
+			queryFn: async () => {
+				const { data, error } = await ffmpeg.checkInstalled();
+				if (error) {
+					return WhisperingErr({
+						title: '❌ Error checking FFmpeg installation',
+						serviceError: error,
+					});
+				}
+				return Ok(data);
+			},
+		}),
+	},
+
+	tray: {
+		setIcon: defineMutation({
+			mutationKey: ['tray', 'setIcon'] as const,
+			mutationFn: async ({ icon }: { icon: WhisperingRecordingState }) => {
+				const { data, error } = await tray.setIcon(icon);
+				if (error) {
+					return WhisperingErr({
+						title: '⚠️ Failed to set tray icon',
+						serviceError: error,
+					});
+				}
+				return Ok(data);
+			},
+		}),
+	},
+
+	globalShortcuts: {
+		registerCommand: defineMutation({
+			mutationKey: ['shortcuts', 'registerCommandGlobally'] as const,
+			mutationFn: ({
+				command: cmd,
+				// Parameter may contain legacy "CommandOrControl" syntax.
+				// Legacy: "CommandOrControl+Shift+R" → Modern: "Command+Shift+R"
+				// (macOS) or "Control+Shift+R" (Windows/Linux).
+				accelerator: legacyAcceleratorString,
+			}: {
+				command: Command;
+				accelerator: Accelerator;
+			}) => {
+				const accel = legacyAcceleratorString.replace(
+					'CommandOrControl',
+					IS_MACOS ? 'Command' : 'Control',
+				) as Accelerator;
+				return globalShortcuts.register({
+					accelerator: accel,
+					callback: commandCallbacks[cmd.id],
+					on: cmd.on,
+				});
+			},
+		}),
+
+		unregisterCommand: defineMutation({
+			mutationKey: ['shortcuts', 'unregisterCommandGlobally'] as const,
+			mutationFn: ({ accelerator }: { accelerator: Accelerator }) =>
+				globalShortcuts.unregister(accelerator),
+		}),
+
+		unregisterAll: defineMutation({
+			mutationKey: ['shortcuts', 'unregisterAllGlobalShortcuts'] as const,
+			mutationFn: () => globalShortcuts.unregisterAll(),
+		}),
+	},
+};
+
 // barrel ------------------------------------------------------------
-const tauri = {
+const t = {
 	fs,
 	command,
 	permissions,
@@ -726,6 +859,20 @@ const tauri = {
 	tray,
 	globalShortcuts,
 	autostart,
+	rpc,
 };
 
-export default tauri as typeof tauri | null;
+/**
+ * Non-null Tauri namespace. Only import this from `.tauri.ts` files,
+ * which are bundled only on Tauri builds. The `tauri.browser.ts`
+ * companion does NOT export this name, so an accidental import from a
+ * web-bundled file fails at build time instead of crashing at runtime.
+ */
+export const tauri = t;
+
+/**
+ * Default export: the namespace or null. Use this from any file that
+ * might run on either platform. The optional chain at the call site is
+ * the platform gate.
+ */
+export default t as typeof t | null;

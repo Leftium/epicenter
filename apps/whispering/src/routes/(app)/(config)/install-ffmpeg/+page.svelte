@@ -17,13 +17,14 @@
 	import XCircleIcon from '@lucide/svelte/icons/x-circle';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { goto } from '$app/navigation';
-	import { desktopRpc } from '$lib/rpc/desktop';
 	import { services } from '$lib/services';
+	import tauri from '$lib/tauri';
 
 	const platform = services.os.type();
 
+	// This page is Tauri-only; the route is unreachable on web.
 	const ffmpegQuery = createQuery(() => ({
-		...desktopRpc.ffmpeg.checkFfmpegInstalled.options,
+		...tauri!.rpc.ffmpeg.checkInstalled.options,
 		refetchInterval: (query) => {
 			const isInstalled = query.state.data;
 			return isInstalled ? 30000 : 5000;

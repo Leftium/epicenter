@@ -1,12 +1,11 @@
+import tauri from '$lib/tauri';
+
 export const load = async () => {
-	if (!window.__TAURI_INTERNALS__) {
+	if (!tauri) {
 		return { isAccessibilityGranted: false };
 	}
-	const { PermissionsServiceLive } = await import(
-		'$lib/services/permissions'
-	);
 	const { data: isAccessibilityGranted } =
-		await PermissionsServiceLive.accessibility.check();
+		await tauri.permissions.accessibility.check();
 
 	return {
 		isAccessibilityGranted: isAccessibilityGranted ?? false,

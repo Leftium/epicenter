@@ -7,13 +7,14 @@
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import { goto } from '$app/navigation';
+	import tauri from '$lib/tauri';
 	import type { PageData } from './$types';
 
 	let { data } = $props();
 
 	async function requestPermissionOrShowGuidance() {
-		const { PermissionsServiceLive } = await import('$lib/services/permissions');
-		const { error } = await PermissionsServiceLive.accessibility.request();
+		if (!tauri) return;
+		const { error } = await tauri.permissions.accessibility.request();
 
 		if (error) {
 			toast.error('Failed to open accessibility settings', {
@@ -27,14 +28,10 @@
 	}
 
 	async function openSystemSettings() {
-		const { CommandServiceLive, asShellCommand } = await import(
-			'$lib/services/command'
-		);
+		if (!tauri) return;
 		// Try opening System Settings directly (works on macOS 13+)
-		const { error: commandError } = await CommandServiceLive.execute(
-			asShellCommand(
-				'open x-apple.systemsettings:com.apple.SystemSettings.extension',
-			),
+		const { error: commandError } = await tauri.command.execute(
+			'open x-apple.systemsettings:com.apple.SystemSettings.extension',
 		);
 
 		if (commandError) {

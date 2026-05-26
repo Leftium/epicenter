@@ -112,6 +112,8 @@ export async function syncLocalShortcutsWithSettings() {
  */
 export async function syncGlobalShortcutsWithSettings() {
 	if (!tauri) return;
+	const t = tauri; // Rebind for closures that lose the narrowing.
+
 	const commandsWithAccelerators = commands
 		.map((command) => {
 			const accelerator = deviceConfig.get(
@@ -122,10 +124,9 @@ export async function syncGlobalShortcutsWithSettings() {
 		})
 		.filter((item) => item !== null);
 
-	// Gated above with `if (!tauri) return`; the closure can't carry the narrowing.
 	const results = await Promise.all(
 		commandsWithAccelerators.map((item) =>
-			tauri!.rpc.globalShortcuts.registerCommand(item),
+			t.rpc.globalShortcuts.registerCommand(item),
 		),
 	);
 	const { errs } = partitionResults(results);

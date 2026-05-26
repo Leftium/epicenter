@@ -16,6 +16,7 @@
 <svelte:head> <title>Global Shortcuts - Whispering</title> </svelte:head>
 
 {#if tauri}
+	{@const t = tauri}
 	<section>
 		<div
 			class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
@@ -40,8 +41,7 @@
 				variant="outline"
 				size="sm"
 				onclick={async () => {
-					// Parent {#if tauri} block guarantees non-null; closures don't inherit Svelte template narrowing.
-					await tauri!.rpc.globalShortcuts.unregisterAll();
+					await t.rpc.globalShortcuts.unregisterAll();
 					resetGlobalShortcuts();
 					notify.success({
 						title: 'Shortcuts reset',

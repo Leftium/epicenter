@@ -264,6 +264,13 @@ const sound = {
  * Uses `output.*` prefix to separate post-processing behavior from service
  * configuration: avoids polluting `transcription.*` and `transformation.*`
  * namespaces with unrelated concerns.
+ *
+ * Cursor default asymmetry (transcription=true, transformation=false): when a
+ * transformation runs on the just-finished transcription, the transcription
+ * has already typed itself at the cursor. Defaulting transformation.cursor to
+ * true would double-type. Users who turn off transcription.cursor specifically
+ * to let the transformation be the cursor output can flip the transformation
+ * toggle on.
  */
 const output = {
 	'output.transcription.clipboard': defineKv(column.boolean(), () => true),

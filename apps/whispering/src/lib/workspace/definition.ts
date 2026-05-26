@@ -376,14 +376,6 @@ const shortcuts = {
 		column.nullable(column.string()),
 		(): string | null => ' ',
 	),
-	'shortcut.startManualRecording': defineKv(
-		column.nullable(column.string()),
-		(): string | null => null,
-	),
-	'shortcut.stopManualRecording': defineKv(
-		column.nullable(column.string()),
-		(): string | null => null,
-	),
 	'shortcut.cancelManualRecording': defineKv(
 		column.nullable(column.string()),
 		(): string | null => 'c',
@@ -391,14 +383,6 @@ const shortcuts = {
 	'shortcut.toggleVadRecording': defineKv(
 		column.nullable(column.string()),
 		(): string | null => 'v',
-	),
-	'shortcut.startVadRecording': defineKv(
-		column.nullable(column.string()),
-		(): string | null => null,
-	),
-	'shortcut.stopVadRecording': defineKv(
-		column.nullable(column.string()),
-		(): string | null => null,
 	),
 	'shortcut.pushToTalk': defineKv(
 		column.nullable(column.string()),

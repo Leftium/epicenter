@@ -293,28 +293,12 @@ const WORKSPACE_KEY_MAP: readonly {
 		newKey: 'shortcut.toggleManualRecording',
 	},
 	{
-		oldKey: 'shortcuts.local.startManualRecording',
-		newKey: 'shortcut.startManualRecording',
-	},
-	{
-		oldKey: 'shortcuts.local.stopManualRecording',
-		newKey: 'shortcut.stopManualRecording',
-	},
-	{
 		oldKey: 'shortcuts.local.cancelManualRecording',
 		newKey: 'shortcut.cancelManualRecording',
 	},
 	{
 		oldKey: 'shortcuts.local.toggleVadRecording',
 		newKey: 'shortcut.toggleVadRecording',
-	},
-	{
-		oldKey: 'shortcuts.local.startVadRecording',
-		newKey: 'shortcut.startVadRecording',
-	},
-	{
-		oldKey: 'shortcuts.local.stopVadRecording',
-		newKey: 'shortcut.stopVadRecording',
 	},
 	{ oldKey: 'shortcuts.local.pushToTalk', newKey: 'shortcut.pushToTalk' },
 	{
@@ -398,28 +382,12 @@ const DEVICE_KEY_MAP: readonly { oldKey: string; newKey: string }[] = [
 		newKey: 'shortcuts.global.toggleManualRecording',
 	},
 	{
-		oldKey: 'shortcuts.global.startManualRecording',
-		newKey: 'shortcuts.global.startManualRecording',
-	},
-	{
-		oldKey: 'shortcuts.global.stopManualRecording',
-		newKey: 'shortcuts.global.stopManualRecording',
-	},
-	{
 		oldKey: 'shortcuts.global.cancelManualRecording',
 		newKey: 'shortcuts.global.cancelManualRecording',
 	},
 	{
 		oldKey: 'shortcuts.global.toggleVadRecording',
 		newKey: 'shortcuts.global.toggleVadRecording',
-	},
-	{
-		oldKey: 'shortcuts.global.startVadRecording',
-		newKey: 'shortcuts.global.startVadRecording',
-	},
-	{
-		oldKey: 'shortcuts.global.stopVadRecording',
-		newKey: 'shortcuts.global.stopVadRecording',
 	},
 	{
 		oldKey: 'shortcuts.global.pushToTalk',

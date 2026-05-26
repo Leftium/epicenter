@@ -3,10 +3,7 @@ import { analytics } from '$lib/operations/analytics';
 import { notify } from '$lib/operations/notify';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { sound } from '$lib/operations/sound';
-import type {
-	AudioArtifact,
-	DeviceAcquisitionOutcome,
-} from '$lib/services/recorder/types';
+import type { DeviceAcquisitionOutcome } from '$lib/services/recorder/types';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { settings } from '$lib/state/settings.svelte';
@@ -122,7 +119,8 @@ export async function stopManualRecording() {
 
 	analytics.logEvent({
 		type: 'manual_recording_completed',
-		blob_size: artifactByteSize(artifact),
+		blob_size:
+			artifact.kind === 'pcm' ? artifact.samples.byteLength : artifact.blob.size,
 		duration: durationMs,
 	});
 
@@ -133,12 +131,6 @@ export async function stopManualRecording() {
 		completionTitle: '✨ Recording Complete!',
 		completionDescription: 'Recording saved and session closed successfully',
 	});
-}
-
-function artifactByteSize(artifact: AudioArtifact): number {
-	return artifact.kind === 'pcm'
-		? artifact.samples.byteLength
-		: artifact.blob.size;
 }
 
 export async function toggleManualRecording() {

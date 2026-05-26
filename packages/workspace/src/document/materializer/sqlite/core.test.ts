@@ -94,7 +94,10 @@ function setup({ build, debounceMs }: SetupOptions = {}) {
 			});
 
 			const built: SetupBuildResult = build?.(workspace.tables) ?? {
-				tables: { posts: workspace.tables.posts, notes: workspace.tables.notes },
+				tables: {
+					posts: workspace.tables.posts,
+					notes: workspace.tables.notes,
+				},
 			};
 
 			const materializer = attachSqliteMaterializerCore(workspace.ydoc, {

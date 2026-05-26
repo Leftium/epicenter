@@ -13,11 +13,7 @@ import { convertEpicenterLinksToWikilinks } from '../../../links.js';
 import { assembleMarkdown } from '../../../markdown/assemble-markdown.js';
 import { parseMarkdownFile } from '../../../markdown/parse-markdown-file.js';
 import type { MaybePromise } from '../../../shared/types.js';
-import {
-	type BaseRow,
-	type Table,
-	TableParseError,
-} from '../../table.js';
+import { type BaseRow, type Table, TableParseError } from '../../table.js';
 import type { AnyTable, TablesRecord } from '../shared.js';
 
 // ════════════════════════════════════════════════════════════════════════════

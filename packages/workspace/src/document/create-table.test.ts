@@ -6,9 +6,9 @@ import { describe, expect, test } from 'bun:test';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import * as Y from 'yjs';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import { createReadonlyTable, createTable } from './table.js';
 import { column } from './column/index.js';
 import { defineTable } from './define-table.js';
+import { createReadonlyTable, createTable } from './table.js';
 
 /** Creates Yjs infrastructure for testing */
 function setup() {
@@ -40,7 +40,6 @@ describe('createTable', () => {
 			expect('bulkDelete' in helper).toBe(false);
 			expect('clear' in helper).toBe(false);
 		});
-
 	});
 
 	describe('set operations', () => {

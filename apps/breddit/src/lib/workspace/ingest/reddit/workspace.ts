@@ -286,7 +286,6 @@ export function createBredditWorkspace() {
 	});
 }
 
-
 export const redditWorkspace = createBredditWorkspace();
 
 export type RedditWorkspace = typeof redditWorkspace;

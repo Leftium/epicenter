@@ -15,10 +15,7 @@ import { type Static, type TSchema } from 'typebox';
 import { Value } from 'typebox/value';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Logger } from 'wellcrafted/logger';
-import {
-	type KvStoreChange,
-	type ObservableKvStore,
-} from './y-keyvalue/index';
+import { type KvStoreChange, type ObservableKvStore } from './y-keyvalue/index';
 
 // ════════════════════════════════════════════════════════════════════════════
 // KV RESULT TYPES

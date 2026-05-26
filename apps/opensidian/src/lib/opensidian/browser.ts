@@ -35,7 +35,10 @@ import {
 	wipeLocalStorage,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
-import { createOpensidianWorkspace, opensidianFileContentDocGuid } from 'opensidian';
+import {
+	createOpensidianWorkspace,
+	opensidianFileContentDocGuid,
+} from 'opensidian';
 import * as Y from 'yjs';
 import { createOpensidianActions } from './actions';
 

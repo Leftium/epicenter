@@ -162,36 +162,17 @@ export {
 // DOCUMENT PRIMITIVES
 // ════════════════════════════════════════════════════════════════════════════
 
+export type { Keyring } from '@epicenter/encryption';
 export {
 	createDisposableCache,
 	type DisposableCache,
 } from './cache/disposable-cache.js';
-
 export { attachBroadcastChannel } from './document/attach-broadcast-channel.js';
 export { attachIndexedDb } from './document/attach-indexed-db.js';
-export {
-	type InferKvValue,
-	type Kv,
-	type KvDefinitions,
-	KvError,
-} from './document/kv.js';
 export { attachLocalStorage } from './document/attach-local-storage.js';
 export { attachPlainText } from './document/attach-plain-text.js';
 export { attachRichText } from './document/attach-rich-text.js';
-export {
-	type BaseRow,
-	type InferTableRow,
-	type Table,
-	TableParseError,
-	type Tables,
-} from './document/table.js';
 export { attachTimeline } from './document/attach-timeline/index.js';
-export type { Keyring } from '@epicenter/encryption';
-export {
-	type CreateWorkspaceOptions,
-	createWorkspace,
-	type Workspace,
-} from './document/workspace.js';
 export { defineKv } from './document/define-kv.js';
 export { defineTable } from './document/define-table.js';
 export {
@@ -206,6 +187,12 @@ export {
 	tablesToDrizzleSchema,
 } from './document/drizzle-schema.js';
 export type { SyncStatus } from './document/internal/sync-supervisor.js';
+export {
+	type InferKvValue,
+	type Kv,
+	type KvDefinitions,
+	KvError,
+} from './document/kv.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 export {
 	type Collaboration,
@@ -215,6 +202,13 @@ export {
 	openCollaboration,
 } from './document/open-collaboration.js';
 export type { PresenceDevice } from './document/presence-protocol.js';
+export {
+	type BaseRow,
+	type InferTableRow,
+	type Table,
+	TableParseError,
+	type Tables,
+} from './document/table.js';
 // Transport URL builder.
 //
 // `roomWsUrl({ baseURL, ownerId, guid, deviceId })` builds the WebSocket
@@ -223,3 +217,8 @@ export type { PresenceDevice } from './document/presence-protocol.js';
 // apps and the daemon use this one builder.
 export { type RoomWsUrlOptions, roomWsUrl } from './document/transport.js';
 export { wipeLocalStorage } from './document/wipe-local-storage.js';
+export {
+	type CreateWorkspaceOptions,
+	createWorkspace,
+	type Workspace,
+} from './document/workspace.js';

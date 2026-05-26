@@ -50,14 +50,10 @@
 import type { Keyring } from '@epicenter/encryption';
 import * as Y from 'yjs';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import { createKv, type Kv, type KvDefinitions } from './kv.js';
-import {
-	createTable,
-	type TableDefinitions,
-	type Tables,
-} from './table.js';
 import { deriveWorkspaceKeyring } from './derive-workspace-keyring.js';
 import { KV_KEY, TableKey } from './keys.js';
+import { createKv, type Kv, type KvDefinitions } from './kv.js';
+import { createTable, type TableDefinitions, type Tables } from './table.js';
 import {
 	type ObservableKvStore,
 	YKeyValueLww,
@@ -129,9 +125,7 @@ export type CreateWorkspaceOptions<
 export function createWorkspace<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
->(
-	options: CreateWorkspaceOptions<TTables, TKv>,
-): Workspace<TTables, TKv> {
+>(options: CreateWorkspaceOptions<TTables, TKv>): Workspace<TTables, TKv> {
 	const ydoc = new Y.Doc({
 		guid: options.id,
 		gc: true,

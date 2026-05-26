@@ -29,7 +29,11 @@ function setup() {
 		tables: { files: filesTable },
 		kv: {},
 	});
-	const ws = { id: workspace.ydoc.guid, ydoc: workspace.ydoc, tables: workspace.tables };
+	const ws = {
+		id: workspace.ydoc.guid,
+		ydoc: workspace.ydoc,
+		tables: workspace.tables,
+	};
 	const contentDocs = createDisposableCache(
 		(fileId: FileId) => {
 			const contentYdoc = new Y.Doc({

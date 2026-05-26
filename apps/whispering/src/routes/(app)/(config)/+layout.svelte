@@ -3,7 +3,6 @@
 	import { cn } from '@epicenter/ui/utils';
 	import { commandCallbacks } from '$lib/commands';
 	import {
-		CompressionSelector,
 		RecordingModeSelector,
 		TranscriptionSelector,
 		TransformationSelector,
@@ -48,7 +47,6 @@
 					</Button>
 				{:else}
 					<ManualDeviceSelector />
-					<CompressionSelector />
 					<TranscriptionSelector />
 					<TransformationSelector />
 				{/if}
@@ -80,7 +78,6 @@
 			{:else if settings.get('recording.mode') === 'vad'}
 				{#if vadRecorder.state === 'IDLE'}
 					<VadDeviceSelector />
-					<CompressionSelector />
 					<TranscriptionSelector />
 					<TransformationSelector />
 				{/if}
@@ -110,7 +107,6 @@
 					</Button>
 				{/if}
 			{:else if settings.get('recording.mode') === 'upload'}
-				<CompressionSelector />
 				<TranscriptionSelector />
 				<TransformationSelector />
 				<RecordingModeSelector />

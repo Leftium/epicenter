@@ -44,10 +44,8 @@ settings/
 │   ├── VadDeviceSelector.svelte
 │   ├── TransformationSelector.svelte
 │   ├── TranscriptionSelector.svelte
-│   ├── RecordingModeSelector.svelte
-│   └── CompressionSelector.svelte
+│   └── RecordingModeSelector.svelte
 ├── LocalModelDownloadCard.svelte
-├── CompressionBody.svelte
 └── README.md               # This file
 ```
 

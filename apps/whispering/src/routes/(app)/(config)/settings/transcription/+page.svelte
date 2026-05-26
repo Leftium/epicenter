@@ -10,13 +10,11 @@
 	import { Textarea } from '@epicenter/ui/textarea';
 	import CopyablePre from '$lib/components/copyable/CopyablePre.svelte';
 	import {
-		CompressionBody,
 		DeepgramApiKeyInput,
 		ElevenLabsApiKeyInput,
 		GroqApiKeyInput,
 		MistralApiKeyInput,
 		OpenAiApiKeyInput,
-		UploadCompressionToggle,
 	} from '$lib/components/settings';
 	import LocalModelSelector from '$lib/components/settings/LocalModelSelector.svelte';
 	import TranscriptionServiceSelect from '$lib/components/settings/TranscriptionServiceSelect.svelte';
@@ -708,12 +706,6 @@
 				</Field.Description>
 			</Field.Field>
 		{/if}
-
-		<!-- Cloud upload compression (in-process Rust libopus). -->
-		<UploadCompressionToggle />
-
-		<!-- Legacy FFmpeg-based compression (separate setting, kept until Wave 4). -->
-		<CompressionBody />
 
 		<Field.Field>
 			<Field.Label for="output-language">Output Language</Field.Label>

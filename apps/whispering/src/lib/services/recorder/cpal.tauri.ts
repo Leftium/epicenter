@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { remove } from '@tauri-apps/plugin-fs';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
-import { tauri } from '$lib/tauri';
+import { requireTauri } from '$lib/tauri';
 import { categorizeRecorderError } from '$lib/services/recorder/categorize-error';
 import {
 	asDeviceIdentifier,
@@ -14,10 +14,6 @@ import {
 	type RecorderService,
 	type Recording,
 } from '$lib/services/recorder/types';
-
-// This file is Tauri-only (suffix `.tauri.ts` keeps it out of web bundles),
-// so `tauri` is never null when this module loads.
-const { fs } = tauri!;
 
 /**
  * Audio recording data returned from the Rust method
@@ -132,7 +128,7 @@ function createCpalRecorder(): RecorderService {
 				});
 
 				const { data: blob, error: readRecordingFileError } =
-					await fs.pathToBlob(filePath);
+					await requireTauri().fs.pathToBlob(filePath);
 				if (readRecordingFileError) {
 					teardown(recording);
 					return RecorderError.ReadFileFailed({

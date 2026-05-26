@@ -14,21 +14,23 @@
  * builds via `moduleSuffixes` in `tsconfig.json`, so consumers always
  * see the full `Tauri | null` shape.
  *
- * Consumer pattern:
+ * Two exports, one for each use case:
  *
  *     import { tauri } from '$lib/tauri';
  *     if (tauri) await tauri.fs.pathToBlob(path);
  *     // or
  *     await tauri?.fs.pathToBlob(path);
  *
+ *     // Inside *.tauri.ts files only (build guarantees Tauri runtime):
+ *     import { requireTauri } from '$lib/tauri';
+ *     await requireTauri().fs.pathToBlob(path);
+ *
  * `tauri` doubles as the platform check: truthy means we're on Tauri
  * and the whole namespace is available. There is no separate
  * `__TAURI_INTERNALS__` check; the value IS the check.
  *
- * Why the trailing `as Tauri | null` cast on a never-null local: it
- * widens the export type so consumers are forced to narrow. The local
- * is a single non-null object on Tauri builds; the cast at export is
- * the only place the union appears.
+ * Why the `as Tauri | null` cast on a never-null local: it widens the
+ * export type so consumers are forced to narrow.
  *
  * See `specs/20260526T000140-collapse-tauri-only-services-into-namespace.md`.
  */
@@ -889,9 +891,10 @@ const globalShortcuts = {
 };
 
 // barrel ------------------------------------------------------------
-// Local `_tauri` holds the non-null namespace on Tauri builds. The
-// export below widens it to `Tauri | null` so consumers narrow.
-const _tauri = {
+// Local `tauriImpl` holds the non-null namespace on Tauri builds. The
+// `tauri` export widens it to `Tauri | null` so consumers narrow;
+// `requireTauri()` returns the asserted form for `.tauri.ts` callers.
+const tauriImpl = {
 	fs,
 	command,
 	permissions,
@@ -902,10 +905,24 @@ const _tauri = {
 };
 
 /** Shape of the Tauri capability namespace (non-null). */
-export type Tauri = typeof _tauri;
+export type Tauri = typeof tauriImpl;
 
 /**
  * The Tauri capability namespace, or `null` on web builds.
  * Doubles as the platform check: truthy means Tauri.
  */
-export const tauri: Tauri | null = _tauri;
+export const tauri: Tauri | null = tauriImpl;
+
+/**
+ * Returns the Tauri namespace, asserting we're on Tauri.
+ *
+ * Use ONLY inside `*.tauri.ts` files where the build system guarantees
+ * this module loads only on Tauri. Throws on web, which should be
+ * unreachable given the suffix routing.
+ */
+export function requireTauri(): Tauri {
+	if (!tauri) {
+		throw new Error('requireTauri() called outside Tauri runtime');
+	}
+	return tauri;
+}

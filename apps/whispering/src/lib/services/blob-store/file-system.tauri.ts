@@ -8,12 +8,8 @@ import {
 import mime from 'mime';
 import { tryAsync } from 'wellcrafted/result';
 import { PATHS } from '$lib/constants/paths';
-import { tauri } from '$lib/tauri';
+import { requireTauri } from '$lib/tauri';
 import { BlobError, type BlobStore } from './types';
-
-// This file is Tauri-only (suffix `.tauri.ts` keeps it out of web bundles),
-// so `tauri` is never null when this module loads.
-const { fs } = tauri!;
 
 /**
  * Deletes files inside a directory by filename.
@@ -89,7 +85,7 @@ export function createFileSystemBlobStore() {
 
 					// Use existing fsService.pathToBlob utility
 					const { data: blob, error } =
-						await fs.pathToBlob(audioPath);
+						await requireTauri().fs.pathToBlob(audioPath);
 					if (error) throw error;
 
 					return blob;

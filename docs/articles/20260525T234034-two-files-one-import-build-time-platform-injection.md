@@ -193,7 +193,7 @@ Tauri-only capabilities go through one optional chain:
 import { tauri } from '$lib/tauri';
 
 await tauri?.fs.pathToBlob(path);
-if (tauri) await tauri.tray.setIcon('IDLE');
+if (tauri) await tauri.tray.setIcon({ icon: 'IDLE' });
 ```
 
 The two builds produce different bundles. The web bundle has no Tauri code in it; we verified this by grepping the production build for `@tauri-apps` and getting zero hits. The Tauri bundle has no `navigator.clipboard` fallbacks. Each build ships only what it needs.

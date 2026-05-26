@@ -75,7 +75,7 @@ export default defineConfig({
 Tauri-only capabilities don't live in `services/`. They live in a single file at `$lib/tauri.tauri.ts` with a `$lib/tauri.browser.ts` companion that exports a `null` namespace plus a throwing `requireTauri` stub. Consumers pick one of three call shapes depending on where they sit:
 
 ```ts
-import { tauri } from '$lib/tauri';
+import { tauri, type Tauri } from '$lib/tauri';
 
 // 1. Shared code (runs on web and Tauri): narrow once.
 if (tauri) {
@@ -85,8 +85,8 @@ if (tauri) {
 
 // 2. Shared helpers called only inside an `if (tauri)` block:
 //    prop-drill the narrowed value.
-function useTrayIcon(tauri: Tauri) {
-  tauri.tray.setIcon({ icon: 'IDLE' });
+async function useTrayIcon(tauri: Tauri) {
+  await tauri.tray.setIcon({ icon: 'IDLE' });
 }
 
 // 3. Inside *.tauri.ts files (build system already gated): requireTauri.

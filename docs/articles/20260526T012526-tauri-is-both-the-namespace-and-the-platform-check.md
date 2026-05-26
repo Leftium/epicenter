@@ -104,29 +104,35 @@ This works two ways, depending on whether you're crossing a component boundary o
 ### Component-level: Svelte props
 
 ```svelte
-<!-- ParentPage.svelte -->
+<!-- settings/shortcuts/global/+page.svelte -->
 <script>
   import { tauri } from '$lib/tauri';
-  import TauriOnlyContent from './TauriOnlyContent.svelte';
+  import ShortcutTable from '../keyboard-shortcut-recorder/ShortcutTable.svelte';
 </script>
 
 {#if tauri}
-  <TauriOnlyContent {tauri} />
+  {@const t = tauri}
+  <ShortcutTable type="global" tauri={t} />
 {/if}
 ```
 
 ```svelte
-<!-- TauriOnlyContent.svelte -->
+<!-- ShortcutTable.svelte -->
 <script lang="ts">
   import type { Tauri } from '$lib/tauri';
+  import GlobalKeyboardShortcutRecorder from './GlobalKeyboardShortcutRecorder.svelte';
 
-  let { tauri }: { tauri: Tauri } = $props();
+  let { type, tauri }: { type: 'local' | 'global'; tauri?: Tauri } = $props();
 </script>
 
-<button onclick={() => tauri.tray.setIcon('IDLE')}>Set tray</button>
+{#if type === 'local'}
+  <LocalKeyboardShortcutRecorder />
+{:else if tauri}
+  <GlobalKeyboardShortcutRecorder {tauri} />
+{/if}
 ```
 
-The child takes `tauri: Tauri` (non-null) as a prop. The parent has already checked. No re-check, no `tauri?.`, no assertion.
+The global shortcuts page binds `{@const t = tauri}` inside the `{#if tauri}` block, then passes that non-null value into the table. The table only forwards it into the global recorder after another local narrow. No re-check inside the recorder, no `tauri?.`, no assertion.
 
 ### Function-level: positional parameter
 

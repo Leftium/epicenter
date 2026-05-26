@@ -11,8 +11,8 @@ import {
 import { categorizeRecorderError } from './categorize-error';
 import type {
 	NavigatorRecordingParams,
-	Recording,
 	RecorderService,
+	Recording,
 } from './types';
 import { RecorderError } from './types';
 

@@ -10,8 +10,8 @@ import { services } from '$lib/services';
 import { desktopServices } from '$lib/services/desktop';
 import {
 	asDeviceIdentifier,
-	type Recording,
 	type RecorderService,
+	type Recording,
 	type StartRecordingParams,
 } from '$lib/services/recorder/types';
 import { deviceConfig } from '$lib/state/device-config.svelte';
@@ -122,7 +122,8 @@ function createManualRecorder() {
 		enumerateDevices: defineQuery({
 			queryKey: ['recorder', 'devices'],
 			queryFn: async () => {
-				const { data, error } = await resolveServiceForStart().enumerateDevices();
+				const { data, error } =
+					await resolveServiceForStart().enumerateDevices();
 				if (error) {
 					return WhisperingErr({
 						title: '❌ Failed to enumerate devices',

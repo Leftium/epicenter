@@ -11,8 +11,8 @@ import {
 	type Device,
 	type DeviceAcquisitionOutcome,
 	RecorderError,
-	type Recording,
 	type RecorderService,
+	type Recording,
 } from '$lib/services/recorder/types';
 
 /**

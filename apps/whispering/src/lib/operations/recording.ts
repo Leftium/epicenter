@@ -44,7 +44,7 @@ function handleDeviceAcquisitionOutcome(
 		case 'preferred-device-unavailable': {
 			notify.info({
 				id: toastId,
-				title: "🎙️ Switched to different microphone",
+				title: '🎙️ Switched to different microphone',
 				description:
 					"Your previously selected microphone wasn't found, so we automatically connected to an available one.",
 				action: {

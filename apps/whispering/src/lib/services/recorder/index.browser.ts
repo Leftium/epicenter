@@ -1,5 +1,5 @@
-import type { RecorderService } from './types';
 import { NavigatorRecorderServiceLive } from './navigator';
+import type { RecorderService } from './types';
 
 export type { RecorderError, RecorderService, Recording } from './types';
 

@@ -3,7 +3,6 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { remove } from '@tauri-apps/plugin-fs';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
-import { requireTauri } from '$lib/tauri';
 import { categorizeRecorderError } from '$lib/services/recorder/categorize-error';
 import {
 	asDeviceIdentifier,
@@ -14,6 +13,7 @@ import {
 	type RecorderService,
 	type Recording,
 } from '$lib/services/recorder/types';
+import { requireTauri } from '$lib/tauri';
 
 /**
  * Audio recording data returned from the Rust method

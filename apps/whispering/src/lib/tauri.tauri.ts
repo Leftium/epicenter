@@ -75,8 +75,8 @@ import { commandCallbacks } from '$lib/commands';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { getFileExtensionFromFfmpegOptions } from '$lib/constants/ffmpeg';
 import { IS_MACOS } from '$lib/constants/platform';
-import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
 import { WhisperingErr } from '$lib/result';
+import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
 import {
 	type Accelerator,
 	AcceleratorError,

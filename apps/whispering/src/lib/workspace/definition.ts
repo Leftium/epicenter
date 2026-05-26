@@ -9,6 +9,7 @@ import { type Static, Type } from 'typebox';
 // ── Constant imports ─────────────────────────────────────────────────────────
 
 import { RECORDING_MODES } from '$lib/constants/audio/recording-modes';
+import { FFMPEG_DEFAULT_COMPRESSION_OPTIONS } from '$lib/constants/ffmpeg';
 import {
 	INFERENCE_PROVIDER_IDS,
 	type InferenceProviderId,
@@ -19,7 +20,6 @@ import {
 	type TranscriptionServiceId,
 } from '$lib/constants/transcription';
 import { ALWAYS_ON_TOP_MODES } from '$lib/constants/ui/always-on-top';
-import { FFMPEG_DEFAULT_COMPRESSION_OPTIONS } from '$lib/constants/ffmpeg';
 
 /**
  * The constants files type `*_IDS` as plain mutable arrays for ergonomics in

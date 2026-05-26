@@ -1,6 +1,6 @@
 import { tryAsync } from 'wellcrafted/result';
 import { audioElements } from './assets';
-import { SoundError, type PlaySoundService } from './types';
+import { type PlaySoundService, SoundError } from './types';
 
 export type { PlaySoundService, SoundError } from './types';
 

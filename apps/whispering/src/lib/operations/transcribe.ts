@@ -5,16 +5,16 @@ import {
 } from '$lib/constants/languages';
 import { analytics } from '$lib/operations/analytics';
 import { notify } from '$lib/operations/notify';
+import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { deepgramErrorToWhisperingErr } from '$lib/rpc/transcription-errors/deepgram';
 import { elevenlabsErrorToWhisperingErr } from '$lib/rpc/transcription-errors/elevenlabs';
 import { groqErrorToWhisperingErr } from '$lib/rpc/transcription-errors/groq';
 import { mistralErrorToWhisperingErr } from '$lib/rpc/transcription-errors/mistral';
 import { openaiErrorToWhisperingErr } from '$lib/rpc/transcription-errors/openai';
-import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { services } from '$lib/services';
-import { tauri } from '$lib/tauri';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
+import { tauri } from '$lib/tauri';
 
 function getOutputLanguage(): SupportedLanguage {
 	const language = settings.get('transcription.language');

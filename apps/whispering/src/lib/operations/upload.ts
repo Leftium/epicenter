@@ -21,7 +21,9 @@ export async function uploadRecordings({
 	files,
 }: {
 	files: File[];
-}): Promise<Result<UploadSummary, ReturnType<typeof NoImportableFiles>['error']>> {
+}): Promise<
+	Result<UploadSummary, ReturnType<typeof NoImportableFiles>['error']>
+> {
 	settings.set('recording.mode', 'upload');
 
 	const { valid: validFiles, invalid: invalidFiles } = files.reduce<{

@@ -1,8 +1,8 @@
 import { toast } from '@epicenter/ui/sonner';
 import { goto } from '$app/navigation';
-import { tauri } from '$lib/tauri';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
+import { tauri } from '$lib/tauri';
 
 export const COMPRESSION_RECOMMENDED_MESSAGE =
 	"Since you're using CPAL recording with cloud transcription, we recommend enabling audio compression to reduce file sizes and upload times.";
@@ -47,8 +47,7 @@ export async function checkCompressionRecommendation() {
 	// Check if compression should be recommended
 	if (!isCompressionRecommended()) return;
 
-	const { data: ffmpegInstalled } =
-		await tauri.ffmpeg.checkInstalled.ensure();
+	const { data: ffmpegInstalled } = await tauri.ffmpeg.checkInstalled.ensure();
 	if (ffmpegInstalled) return; // FFmpeg is required for compression
 
 	// FFmpeg is RECOMMENDED for compression

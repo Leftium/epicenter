@@ -1,8 +1,8 @@
 import { rpc } from '$lib/rpc';
-import type { Tauri } from '$lib/tauri';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
+import type { Tauri } from '$lib/tauri';
 
 export function syncWindowAlwaysOnTopWithRecorderState(tauri: Tauri) {
 	$effect(() => {

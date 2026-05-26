@@ -1,6 +1,6 @@
-import { NavigatorRecorderServiceLive } from './navigator';
 import { CpalRecorderServiceLive } from './cpal.tauri';
+import { NavigatorRecorderServiceLive } from './navigator';
 
 export type { RecorderError, RecorderService, Recording } from './types';
 
-export { NavigatorRecorderServiceLive, CpalRecorderServiceLive };
+export { CpalRecorderServiceLive, NavigatorRecorderServiceLive };

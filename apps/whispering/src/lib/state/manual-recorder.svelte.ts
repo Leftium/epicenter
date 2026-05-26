@@ -2,12 +2,11 @@ import { nanoid } from 'nanoid/non-secure';
 import { Ok } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { PATHS } from '$lib/constants/paths';
-import { defineQuery } from '$lib/rpc/client';
 import { notify } from '$lib/operations/notify';
 import { WhisperingErr } from '$lib/result';
+import { defineQuery } from '$lib/rpc/client';
 import { services } from '$lib/services';
 import { CpalRecorderServiceLive } from '$lib/services/recorder';
-import { tauri } from '$lib/tauri';
 import {
 	asDeviceIdentifier,
 	type RecorderService,
@@ -15,6 +14,7 @@ import {
 	type StartRecordingParams,
 } from '$lib/services/recorder/types';
 import { deviceConfig } from '$lib/state/device-config.svelte';
+import { tauri } from '$lib/tauri';
 
 /**
  * Creates the manual recorder with reactive state.
@@ -44,7 +44,10 @@ import { deviceConfig } from '$lib/state/device-config.svelte';
 function resolveServiceForStart(): RecorderService {
 	// CpalRecorderServiceLive is null on web (build-time fact); even when
 	// non-null, the runtime setting decides whether to use it.
-	if (CpalRecorderServiceLive && deviceConfig.get('recording.method') === 'cpal') {
+	if (
+		CpalRecorderServiceLive &&
+		deviceConfig.get('recording.method') === 'cpal'
+	) {
 		return CpalRecorderServiceLive;
 	}
 	return services.navigatorRecorder;

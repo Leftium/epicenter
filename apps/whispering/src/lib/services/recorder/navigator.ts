@@ -99,7 +99,11 @@ function createNavigatorRecorder(): RecorderService {
 					title: '✅ Recording Saved',
 					description: 'Your recording is ready for transcription!',
 				});
-				return Ok({ blob, recordingId, durationMs });
+				return Ok({
+					artifact: { kind: 'blob' as const, blob },
+					recordingId,
+					durationMs,
+				});
 			},
 
 			cancel: async ({ sendStatus }) => {

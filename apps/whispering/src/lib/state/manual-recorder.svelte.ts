@@ -1,7 +1,6 @@
 import { nanoid } from 'nanoid/non-secure';
 import { Ok } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
-import { PATHS } from '$lib/constants/paths';
 import { notify } from '$lib/operations/notify';
 import { WhisperingErr } from '$lib/result';
 import { defineQuery } from '$lib/rpc/client';
@@ -64,9 +63,6 @@ async function buildStartParams(
 			method: 'cpal',
 			recordingId,
 			selectedDeviceId: deviceId ? asDeviceIdentifier(deviceId) : null,
-			outputFolder:
-				deviceConfig.get('recording.cpal.outputFolder') ??
-				(await PATHS.DB.RECORDINGS()),
 			sampleRate: deviceConfig.get('recording.cpal.sampleRate'),
 		};
 	}

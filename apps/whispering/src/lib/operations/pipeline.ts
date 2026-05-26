@@ -5,9 +5,11 @@ import {
 } from '$lib/operations/delivery';
 import { notify } from '$lib/operations/notify';
 import { sound } from '$lib/operations/sound';
-import { transcribeBlob } from '$lib/operations/transcribe';
+import { transcribeArtifact } from '$lib/operations/transcribe';
 import { runTransformation } from '$lib/operations/transform';
 import { services } from '$lib/services';
+import { artifactToBlob } from '$lib/services/recorder/artifact';
+import type { AudioArtifact } from '$lib/services/recorder/types';
 import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { transformations } from '$lib/state/transformations.svelte';
@@ -20,13 +22,13 @@ import { transformations } from '$lib/state/transformations.svelte';
  * When omitted (e.g., VAD recording, file uploads), a new ID is generated here.
  */
 export async function processRecordingPipeline({
-	blob,
+	artifact,
 	recordingId,
 	toastId,
 	completionTitle,
 	completionDescription,
 }: {
-	blob: Blob;
+	artifact: AudioArtifact;
 	recordingId?: string;
 	toastId: string;
 	completionTitle: string;
@@ -53,8 +55,15 @@ export async function processRecordingPipeline({
 	});
 
 	recordings.set(recording);
-	const saveAudioPromise = services.blobs.audio.save(recording.id, blob);
-	const transcribePromise = transcribeBlob(blob);
+	// History save still consumes a Blob today. Materialize once and run
+	// the save in parallel with transcription; for Pcm artifacts this is
+	// in-memory WAV synthesis (cheap), for File it's a disk read.
+	const saveAudioPromise = (async () => {
+		const { data: blob, error } = await artifactToBlob(artifact);
+		if (error) return { data: null, error } as const;
+		return await services.blobs.audio.save(recording.id, blob);
+	})();
+	const transcribePromise = transcribeArtifact(artifact);
 
 	const { data: transcribedText, error: transcribeError } =
 		await transcribePromise;

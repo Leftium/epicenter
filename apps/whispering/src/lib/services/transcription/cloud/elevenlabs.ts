@@ -5,6 +5,8 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { type Result, tryAsync } from 'wellcrafted/result';
+import { WhisperingErr } from '$lib/result';
+import * as toasts from '$lib/rpc/transcription-errors/shared';
 
 const MAX_FILE_SIZE_MB = 1000 as const;
 
@@ -63,5 +65,21 @@ export const ElevenLabsTranscriptionServiceLive = {
 			},
 			catch: (error) => ElevenLabsError.Unexpected({ cause: error }),
 		});
+	},
+
+	toWhisperingErr(error: ElevenLabsError) {
+		switch (error.name) {
+			case 'MissingApiKey':
+				return WhisperingErr(toasts.apiKeyRequired('ElevenLabs'));
+			case 'FileTooLarge':
+				return WhisperingErr(toasts.fileTooLarge(error));
+			case 'Unexpected':
+				return WhisperingErr({
+					title: '🔧 Transcription Failed',
+					description:
+						'Unable to complete the transcription using ElevenLabs. This may be due to a service issue or unsupported audio format. Please try again.',
+					serviceError: error,
+				});
+		}
 	},
 };

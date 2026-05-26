@@ -1,9 +1,9 @@
-use crate::recorder::recorder::{AudioRecording, Recorder, Result};
-use serde::Serialize;
-use std::path::PathBuf;
-use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, State};
+use crate::recorder::recorder::{Recorder, Result};
 use log::{debug, info, warn};
+use serde::Serialize;
+use std::sync::Mutex;
+use tauri::ipc::Response;
+use tauri::{AppHandle, Emitter, State};
 
 const RECORDER_STATE_CHANGED: &str = "recorder:state-changed";
 
@@ -30,7 +30,7 @@ pub async fn enumerate_recording_devices(
     debug!("Enumerating recording devices");
     let recorder = recorder
         .lock()
-        .map_err(|e| format!("Failed to lock recorder: {}", e))?;
+        .map_err(|e| format!("Failed to lock recorder: {e}"))?;
     recorder.enumerate_devices()
 }
 
@@ -38,35 +38,19 @@ pub async fn enumerate_recording_devices(
 pub async fn init_recording_session(
     device_identifier: String,
     recording_id: String,
-    output_folder: String,
     sample_rate: Option<u32>,
     recorder: State<'_, Mutex<Recorder>>,
     app_handle: AppHandle,
 ) -> Result<()> {
     info!(
-        "Initializing recording session: device={}, id={}, folder={}, sample_rate={:?}",
-        device_identifier, recording_id, output_folder, sample_rate
+        "Initializing recording session: device={device_identifier}, id={recording_id}, sample_rate={sample_rate:?}",
     );
-
-    let recordings_dir = PathBuf::from(output_folder);
-
-    if !recordings_dir.exists() {
-        std::fs::create_dir_all(&recordings_dir)
-            .map_err(|e| format!("Failed to create output folder: {}", e))?;
-    }
-
-    if !recordings_dir.is_dir() {
-        return Err(format!(
-            "Output path is not a directory: {:?}",
-            recordings_dir
-        ));
-    }
 
     {
         let mut recorder = recorder
             .lock()
-            .map_err(|e| format!("Failed to lock recorder: {}", e))?;
-        recorder.init_session(device_identifier, recordings_dir, recording_id, sample_rate)?;
+            .map_err(|e| format!("Failed to lock recorder: {e}"))?;
+        recorder.init_session(device_identifier, recording_id, sample_rate)?;
     }
     // init_session calls close_session internally as cleanup. If the previous
     // session was actively recording, that transition is silent at the domain
@@ -84,27 +68,31 @@ pub async fn start_recording(
     {
         let mut recorder = recorder
             .lock()
-            .map_err(|e| format!("Failed to lock recorder: {}", e))?;
+            .map_err(|e| format!("Failed to lock recorder: {e}"))?;
         recorder.start_recording()?;
     }
     emit_recording_state(&app_handle, RecordingState::Recording);
     Ok(())
 }
 
+/// Returns the captured artifact as a binary IPC body, not JSON. The
+/// wire layout is documented on `AudioArtifact::to_binary`. Avoids the
+/// 5-7 MB JSON serialize/parse round trip a 30 s clip would cost
+/// otherwise.
 #[tauri::command]
 pub async fn stop_recording(
     recorder: State<'_, Mutex<Recorder>>,
     app_handle: AppHandle,
-) -> Result<AudioRecording> {
+) -> Result<Response> {
     info!("Stopping recording");
-    let recording = {
+    let artifact = {
         let mut recorder = recorder
             .lock()
-            .map_err(|e| format!("Failed to lock recorder: {}", e))?;
+            .map_err(|e| format!("Failed to lock recorder: {e}"))?;
         recorder.stop_recording()?
     };
     emit_recording_state(&app_handle, RecordingState::Idle);
-    Ok(recording)
+    Ok(Response::new(artifact.to_binary()))
 }
 
 #[tauri::command]
@@ -116,7 +104,7 @@ pub async fn cancel_recording(
     {
         let mut recorder = recorder
             .lock()
-            .map_err(|e| format!("Failed to lock recorder: {}", e))?;
+            .map_err(|e| format!("Failed to lock recorder: {e}"))?;
         recorder.cancel_recording()?;
     }
     emit_recording_state(&app_handle, RecordingState::Idle);
@@ -132,7 +120,7 @@ pub async fn close_recording_session(
     {
         let mut recorder = recorder
             .lock()
-            .map_err(|e| format!("Failed to lock recorder: {}", e))?;
+            .map_err(|e| format!("Failed to lock recorder: {e}"))?;
         recorder.close_session()?;
     }
     emit_recording_state(&app_handle, RecordingState::Idle);
@@ -146,6 +134,6 @@ pub async fn get_current_recording_id(
     debug!("Getting current recording ID");
     let recorder = recorder
         .lock()
-        .map_err(|e| format!("Failed to lock recorder: {}", e))?;
+        .map_err(|e| format!("Failed to lock recorder: {e}"))?;
     Ok(recorder.get_current_recording_id())
 }

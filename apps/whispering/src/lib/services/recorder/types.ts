@@ -169,9 +169,6 @@ export const RecorderError = defineErrors({
 		message:
 			'A recording is already in progress. Please stop the current recording before starting a new one.',
 	}),
-	NotRecording: ({ message }: { message: string }) => ({
-		message,
-	}),
 	InitFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to initialize the audio recorder: ${extractErrorMessage(cause)}`,
 		cause,
@@ -190,16 +187,6 @@ export const RecorderError = defineErrors({
 	}),
 	ReadFileFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Unable to read recording file: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	NoFilePath: () => ({
-		message: 'Recording file path not provided by method.',
-	}),
-	EmptyRecording: () => ({
-		message: 'Recording file is empty.',
-	}),
-	FileDeleteFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to delete recording file: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 	GetStateFailed: ({ cause }: { cause: unknown }) => ({
@@ -227,7 +214,6 @@ type BaseRecordingParams = {
  */
 export type CpalRecordingParams = BaseRecordingParams & {
 	method: 'cpal';
-	outputFolder: string;
 	sampleRate: string;
 };
 
@@ -238,6 +224,30 @@ export type NavigatorRecordingParams = BaseRecordingParams & {
 	method: 'navigator';
 	bitrateKbps: string;
 };
+
+/**
+ * Canonical audio artifact emitted by every recorder path.
+ *
+ * Two variants only:
+ * - `pcm`: in-memory mono PCM @ 16 kHz from the cpal recorder. Cheapest
+ *   input for both cloud (direct opus encode) and local (no decode)
+ *   transcription.
+ * - `blob`: container bytes from anywhere else: navigator (Opus/WebM
+ *   or mp4/AAC), VAD speech captures, file uploads, history replays.
+ *   The transcribe layer either passes it through or compresses if the
+ *   bytes look like an unencoded WAV.
+ */
+export type AudioArtifact =
+	| {
+			kind: 'pcm';
+			samples: Float32Array;
+			rate: number;
+			channels: number;
+	  }
+	| {
+			kind: 'blob';
+			blob: Blob;
+	  };
 
 /**
  * Discriminated union for recording parameters based on method
@@ -266,7 +276,7 @@ export type Recording = {
 		sendStatus: UpdateStatusMessageFn;
 	}): Promise<
 		Result<
-			{ blob: Blob; recordingId: string; durationMs: number },
+			{ artifact: AudioArtifact; recordingId: string; durationMs: number },
 			RecorderError
 		>
 	>;

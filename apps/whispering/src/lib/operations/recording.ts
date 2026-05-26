@@ -3,7 +3,10 @@ import { analytics } from '$lib/operations/analytics';
 import { notify } from '$lib/operations/notify';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { sound } from '$lib/operations/sound';
-import type { DeviceAcquisitionOutcome } from '$lib/services/recorder/types';
+import type {
+	AudioArtifact,
+	DeviceAcquisitionOutcome,
+} from '$lib/services/recorder/types';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { settings } from '$lib/state/settings.svelte';
@@ -107,7 +110,7 @@ export async function stopManualRecording() {
 		return;
 	}
 
-	const { blob, recordingId, durationMs } = data;
+	const { artifact, recordingId, durationMs } = data;
 
 	notify.success({
 		id: toastId,
@@ -119,17 +122,23 @@ export async function stopManualRecording() {
 
 	analytics.logEvent({
 		type: 'manual_recording_completed',
-		blob_size: blob.size,
+		blob_size: artifactByteSize(artifact),
 		duration: durationMs,
 	});
 
 	await processRecordingPipeline({
-		blob,
+		artifact,
 		recordingId,
 		toastId,
 		completionTitle: '✨ Recording Complete!',
 		completionDescription: 'Recording saved and session closed successfully',
 	});
+}
+
+function artifactByteSize(artifact: AudioArtifact): number {
+	return artifact.kind === 'pcm'
+		? artifact.samples.byteLength
+		: artifact.blob.size;
 }
 
 export async function toggleManualRecording() {
@@ -210,7 +219,7 @@ export async function startVadRecording() {
 			});
 
 			await processRecordingPipeline({
-				blob,
+				artifact: { kind: 'blob', blob },
 				toastId: speechToastId,
 				completionTitle: '✨ Voice activated capture complete!',
 				completionDescription:

@@ -7,6 +7,8 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
+import { WhisperingErr } from '$lib/result';
+import * as toasts from '$lib/rpc/transcription-errors/shared';
 import { getAudioExtension } from '$lib/services/transcription/utils';
 
 const MAX_FILE_SIZE_MB = 25 as const;
@@ -148,5 +150,35 @@ export const MistralTranscriptionServiceLive = {
 		}
 
 		return Ok(transcription.text.trim());
+	},
+
+	toWhisperingErr(error: MistralTranscriptionError) {
+		switch (error.name) {
+			case 'MissingApiKey':
+				return WhisperingErr(toasts.apiKeyRequired('Mistral'));
+			case 'FileTooLarge':
+				return WhisperingErr(toasts.fileTooLarge(error));
+			case 'FileCreationFailed':
+				return WhisperingErr(toasts.fileCreationFailed(error));
+			case 'Unauthorized':
+				return WhisperingErr(toasts.unauthorized(error));
+			case 'RateLimit':
+				return WhisperingErr(toasts.rateLimit(error));
+			case 'PayloadTooLarge':
+				return WhisperingErr(toasts.payloadTooLarge(error));
+			case 'BadRequest':
+				return WhisperingErr(toasts.badRequest('Mistral', error));
+			case 'ServiceUnavailable':
+				return WhisperingErr(toasts.serviceUnavailable('Mistral', error));
+			case 'Connection':
+				return WhisperingErr(toasts.connectionIssue('Mistral', error));
+			case 'InvalidResponse':
+				return WhisperingErr({
+					title: '❌ Invalid Transcription Response',
+					description: 'Mistral API returned an invalid response format.',
+				});
+			case 'Unexpected':
+				return WhisperingErr(toasts.unexpected(error));
+		}
 	},
 };

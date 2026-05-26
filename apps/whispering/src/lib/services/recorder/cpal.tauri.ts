@@ -1,10 +1,10 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { remove } from '@tauri-apps/plugin-fs';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { categorizeRecorderError } from '$lib/services/recorder/categorize-error';
 import {
+	type AudioArtifact,
 	asDeviceIdentifier,
 	type CpalRecordingParams,
 	type Device,
@@ -13,17 +13,32 @@ import {
 	type RecorderService,
 	type Recording,
 } from '$lib/services/recorder/types';
-import { requireTauri } from '$lib/tauri';
 
 /**
- * Audio recording data returned from the Rust method
+ * Parse the binary response from `stop_recording`. Wire layout (LE):
+ *   bytes 0..4   : u32  rate
+ *   bytes 4..6   : u16  channels
+ *   bytes 6..8   : u16  reserved
+ *   bytes 8..    : f32[] samples
+ *
+ * The `Float32Array` is a zero-copy view over the IPC body, not a
+ * decimal-decoded array of doubles. For a 30 s clip this collapses the
+ * post-stop critical path by ~150-300 ms compared to JSON `Vec<f32>`.
  */
-type AudioRecording = {
-	sampleRate: number;
-	channels: number;
-	durationSeconds: number;
-	filePath?: string;
-};
+function parseArtifact(
+	buffer: ArrayBuffer,
+): Extract<AudioArtifact, { kind: 'pcm' }> {
+	const view = new DataView(buffer);
+	const rate = view.getUint32(0, true);
+	const channels = view.getUint16(4, true);
+	const samples = new Float32Array(buffer, 8);
+	return {
+		kind: 'pcm',
+		samples,
+		rate,
+		channels,
+	};
+}
 
 /**
  * Enumerates available recording devices from the system.
@@ -108,33 +123,17 @@ function createCpalRecorder(): RecorderService {
 			backend: 'cpal',
 
 			stop: async ({ sendStatus }) => {
-				const { data: audioRecording, error: stopRecordingError } =
-					await invoke<AudioRecording>('stop_recording');
+				const { data: buffer, error: stopRecordingError } =
+					await invoke<ArrayBuffer>('stop_recording');
 				if (stopRecordingError) {
 					teardown(recording);
 					return RecorderError.StopFailed({ cause: stopRecordingError });
 				}
 
-				const { filePath, durationSeconds } = audioRecording;
-				if (!filePath) {
-					teardown(recording);
-					return RecorderError.NoFilePath();
-				}
-				const durationMs = Math.round(durationSeconds * 1000);
-
-				sendStatus({
-					title: '📁 Reading Recording',
-					description: 'Loading your recording from disk...',
-				});
-
-				const { data: blob, error: readRecordingFileError } =
-					await requireTauri().fs.pathToBlob(filePath);
-				if (readRecordingFileError) {
-					teardown(recording);
-					return RecorderError.ReadFileFailed({
-						cause: readRecordingFileError,
-					});
-				}
+				const artifact = parseArtifact(buffer);
+				const durationMs = Math.round(
+					(artifact.samples.length / artifact.rate / artifact.channels) * 1000,
+				);
 
 				sendStatus({
 					title: '🔄 Closing Session',
@@ -144,12 +143,11 @@ function createCpalRecorder(): RecorderService {
 					'close_recording_session',
 				);
 				if (closeError) {
-					// Log but don't fail the stop operation
 					console.error('Failed to close recording session:', closeError);
 				}
 
 				teardown(recording);
-				return Ok({ blob, recordingId, durationMs });
+				return Ok({ artifact, recordingId, durationMs });
 			},
 
 			cancel: async ({ sendStatus }) => {
@@ -159,33 +157,15 @@ function createCpalRecorder(): RecorderService {
 						'Safely stopping your recording and cleaning up resources...',
 				});
 
-				// First get the recording data to know if there's a file to delete
-				const { data: audioRecording } =
-					await invoke<AudioRecording>('stop_recording');
-
-				if (audioRecording?.filePath) {
-					const filePath = audioRecording.filePath;
-					const { error: removeError } = await tryAsync({
-						try: () => remove(filePath),
-						catch: (error) => RecorderError.FileDeleteFailed({ cause: error }),
+				// cancel_recording on the Rust side discards the in-flight
+				// samples and tears down the session worker. One round trip.
+				const { error: cancelError } = await invoke<void>('cancel_recording');
+				if (cancelError) {
+					sendStatus({
+						title: '❌ Cancel Failed',
+						description:
+							'We hit a problem cancelling; continuing cleanup anyway...',
 					});
-					if (removeError)
-						sendStatus({
-							title: '❌ Error Deleting Recording File',
-							description:
-								"We couldn't delete the recording file. Continuing with the cancellation process...",
-						});
-				}
-
-				sendStatus({
-					title: '🔄 Closing Session',
-					description: 'Cleaning up recording resources...',
-				});
-				const { error: closeError } = await invoke<void>(
-					'close_recording_session',
-				);
-				if (closeError) {
-					console.error('Failed to close recording session:', closeError);
 				}
 
 				teardown(recording);
@@ -231,12 +211,7 @@ function createCpalRecorder(): RecorderService {
 		enumerateDevices,
 
 		startRecording: async (
-			{
-				selectedDeviceId,
-				recordingId,
-				outputFolder,
-				sampleRate,
-			}: CpalRecordingParams,
+			{ selectedDeviceId, recordingId, sampleRate }: CpalRecordingParams,
 			{ sendStatus },
 		) => {
 			const { data: devices, error: enumerateError } = await enumerateDevices();
@@ -299,7 +274,6 @@ function createCpalRecorder(): RecorderService {
 				{
 					deviceIdentifier,
 					recordingId,
-					outputFolder,
 					sampleRate: sampleRateNum,
 				},
 			);

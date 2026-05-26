@@ -307,6 +307,40 @@ const audioEncoder = {
 		if (error) return Err(error);
 		return Ok(new Blob([oggBytes], { type: 'audio/ogg' }));
 	},
+
+	/**
+	 * Compress a mono f32 PCM buffer into OGG/Opus. Used by the dictation
+	 * cpal path: the recorder returns samples already in memory, so we
+	 * skip the WAV synthesis + decode round-trip and hand the samples
+	 * straight to libopus.
+	 *
+	 * Body packing mirrors the Rust `encode_upload_pcm` handler:
+	 * `[u32 rate][u16 channels][u16 pad][f32 samples...]` (little-endian).
+	 */
+	async encodePcmToOpusOgg(args: {
+		samples: Float32Array;
+		rate: number;
+		channels: number;
+	}): Promise<Result<Blob, AudioEncoderError>> {
+		const { samples, rate, channels } = args;
+		const headerSize = 8;
+		const buf = new ArrayBuffer(headerSize + samples.byteLength);
+		const view = new DataView(buf);
+		view.setUint32(0, rate, true);
+		view.setUint16(4, channels, true);
+		view.setUint16(6, 0, true); // reserved
+		new Uint8Array(buf, headerSize).set(
+			new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength),
+		);
+
+		const { data: oggBytes, error } = await tryAsync({
+			try: () => invoke<ArrayBuffer>('encode_upload_pcm', buf),
+			catch: (cause) => AudioEncoderError.EncodeFailed({ cause }),
+		});
+
+		if (error) return Err(error);
+		return Ok(new Blob([oggBytes], { type: 'audio/ogg' }));
+	},
 };
 
 // window ------------------------------------------------------------

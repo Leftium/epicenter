@@ -2,12 +2,13 @@ mod error;
 mod model_manager;
 
 use error::TranscriptionError;
-pub use model_manager::ModelManager;
 use log::{debug, error, info, warn};
+pub use model_manager::ModelManager;
 use std::io::Write;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use transcribe_rs::onnx::moonshine::MoonshineVariant;
 use transcribe_rs::onnx::parakeet::{ParakeetParams, TimestampGranularity};
 use transcribe_rs::whisper_cpp::WhisperInferenceParams;
@@ -111,10 +112,7 @@ fn convert_audio_rust(audio_data: Vec<u8>) -> Result<Vec<u8>, TranscriptionError
         }
     };
 
-    debug!(
-        "[Rust Audio Conversion] read {} samples",
-        samples_f32.len()
-    );
+    debug!("[Rust Audio Conversion] read {} samples", samples_f32.len());
 
     // Step 2: Convert channels to mono (if needed)
     let mono_samples: Vec<f32> = if channels == 1 {
@@ -123,9 +121,7 @@ fn convert_audio_rust(audio_data: Vec<u8>) -> Result<Vec<u8>, TranscriptionError
         samples_f32
     } else if channels == 2 {
         // Stereo: average left and right channels
-        debug!(
-            "[Rust Audio Conversion] converting stereo to mono by averaging channels"
-        );
+        debug!("[Rust Audio Conversion] converting stereo to mono by averaging channels");
         samples_f32
             .chunks_exact(2)
             .map(|chunk| (chunk[0] + chunk[1]) / 2.0)
@@ -372,8 +368,11 @@ fn convert_audio_for_whisper(audio_data: Vec<u8>) -> Result<Vec<u8>, Transcripti
         }
     }
 
-    // Tier 3: Fall back to FFmpeg for complex formats (MP3, M4A, OGG, etc.)
-    // Create temp files for conversion
+    // Tier 3: FFmpeg fallback for complex formats (MP3, M4A, OGG, etc.)
+    convert_audio_with_ffmpeg(audio_data)
+}
+
+fn convert_audio_with_ffmpeg(audio_data: Vec<u8>) -> Result<Vec<u8>, TranscriptionError> {
     let mut input_file = tempfile::Builder::new()
         .suffix(".audio")
         .tempfile()
@@ -482,6 +481,56 @@ fn extract_samples_from_wav(wav_data: Vec<u8>) -> Result<Vec<f32>, Transcription
     Ok(samples)
 }
 
+fn prepare_samples_for_transcription(
+    audio_data: Vec<u8>,
+    engine_name: &str,
+) -> Result<Option<Vec<f32>>, TranscriptionError> {
+    let wav_data = convert_audio_for_whisper(audio_data)?;
+    debug!(
+        "[Transcription] audio conversion complete: wav_bytes={}",
+        wav_data.len()
+    );
+
+    let samples = extract_samples_from_wav(wav_data)?;
+    debug!(
+        "[Transcription] extracted {} PCM samples for {} engine",
+        samples.len(),
+        engine_name
+    );
+
+    if samples.is_empty() {
+        warn!("[Transcription] no samples extracted, returning empty transcription");
+        return Ok(None);
+    }
+
+    Ok(Some(samples))
+}
+
+fn with_loaded_engine<T>(
+    engine_arc: &Arc<Mutex<Option<model_manager::Engine>>>,
+    transcribe: impl FnOnce(&mut model_manager::Engine) -> Result<T, TranscriptionError>,
+) -> Result<T, TranscriptionError> {
+    // On a poisoned engine lock, drop the cached engine so the next
+    // get_or_load_* call reloads instead of reusing corrupted state.
+    let mut engine_guard = engine_arc.lock().unwrap_or_else(|poisoned| {
+        warn!(
+            "[Transcription] Engine mutex was poisoned from previous panic, clearing state to force reload..."
+        );
+        let mut recovered = poisoned.into_inner();
+        *recovered = None;
+        recovered
+    });
+    let engine = engine_guard
+        .as_mut()
+        .ok_or_else(|| TranscriptionError::ModelLoadError {
+            message:
+                "Model not loaded (may have been cleared after previous error). Please try again."
+                    .to_string(),
+        })?;
+
+    transcribe(engine)
+}
+
 #[tauri::command]
 pub async fn transcribe_audio_whisper(
     audio_data: Vec<u8>,
@@ -496,25 +545,9 @@ pub async fn transcribe_audio_whisper(
         model_path
     );
 
-    // Convert audio to 16kHz mono format that whisper requires
-    let wav_data = convert_audio_for_whisper(audio_data)?;
-    debug!(
-        "[Transcription] audio conversion complete: wav_bytes={}",
-        wav_data.len()
-    );
-
-    // Extract samples from WAV
-    let samples = extract_samples_from_wav(wav_data)?;
-    debug!(
-        "[Transcription] extracted {} PCM samples for Whisper engine",
-        samples.len()
-    );
-
-    // Return early if audio is empty
-    if samples.is_empty() {
-        warn!("[Transcription] no samples extracted, returning empty transcription");
+    let Some(samples) = prepare_samples_for_transcription(audio_data, "Whisper")? else {
         return Ok(String::new());
-    }
+    };
 
     // Get or load the model using the persistent model manager
     let engine_arc = model_manager
@@ -534,23 +567,7 @@ pub async fn transcribe_audio_whisper(
     params.suppress_non_speech_tokens = true;
     params.no_speech_thold = 0.2;
 
-    // Run transcription with the persistent engine
-    // Use into_inner() to recover from poisoned mutex, but clear state to force fresh reload
-    let result = {
-        let mut engine_guard = engine_arc.lock().unwrap_or_else(|poisoned| {
-            warn!(
-                "[Transcription] Engine mutex was poisoned from previous panic, clearing state to force reload..."
-            );
-            let mut recovered = poisoned.into_inner();
-            *recovered = None; // Clear potentially corrupted state
-            recovered
-        });
-        let engine = engine_guard
-            .as_mut()
-            .ok_or_else(|| TranscriptionError::ModelLoadError {
-                message: "Model not loaded (may have been cleared after previous error). Please try again.".to_string(),
-            })?;
-
+    let result = with_loaded_engine(&engine_arc, |engine| {
         // Extract the WhisperEngine from the enum
         let whisper_engine = match engine {
             model_manager::Engine::Whisper(e) => e,
@@ -565,8 +582,8 @@ pub async fn transcribe_audio_whisper(
             .transcribe_with(&samples, &params)
             .map_err(|e| TranscriptionError::TranscriptionError {
                 message: e.to_string(),
-            })?
-    };
+            })
+    })?;
 
     let transcript = result.text.trim().to_string();
     info!(
@@ -588,25 +605,9 @@ pub async fn transcribe_audio_parakeet(
         model_path
     );
 
-    // Convert audio to 16kHz mono format
-    let wav_data = convert_audio_for_whisper(audio_data)?;
-    debug!(
-        "[Transcription] audio conversion complete: wav_bytes={}",
-        wav_data.len()
-    );
-
-    // Extract samples from WAV
-    let samples = extract_samples_from_wav(wav_data)?;
-    debug!(
-        "[Transcription] extracted {} PCM samples for Parakeet engine",
-        samples.len()
-    );
-
-    // Return early if audio is empty
-    if samples.is_empty() {
-        warn!("[Transcription] no samples extracted, returning empty transcription");
+    let Some(samples) = prepare_samples_for_transcription(audio_data, "Parakeet")? else {
         return Ok(String::new());
-    }
+    };
 
     // Get or load the model using the persistent model manager
     let engine_arc = model_manager
@@ -619,23 +620,7 @@ pub async fn transcribe_audio_parakeet(
         ..Default::default()
     };
 
-    // Run transcription with the persistent engine
-    // Use into_inner() to recover from poisoned mutex, but clear state to force fresh reload
-    let result = {
-        let mut engine_guard = engine_arc.lock().unwrap_or_else(|poisoned| {
-            warn!(
-                "[Transcription] Engine mutex was poisoned from previous panic, clearing state to force reload..."
-            );
-            let mut recovered = poisoned.into_inner();
-            *recovered = None; // Clear potentially corrupted state
-            recovered
-        });
-        let engine = engine_guard
-            .as_mut()
-            .ok_or_else(|| TranscriptionError::ModelLoadError {
-                message: "Model not loaded (may have been cleared after previous error). Please try again.".to_string(),
-            })?;
-
+    let result = with_loaded_engine(&engine_arc, |engine| {
         // Extract the Parakeet model from the enum
         let parakeet_engine = match engine {
             model_manager::Engine::Parakeet(e) => e,
@@ -650,8 +635,8 @@ pub async fn transcribe_audio_parakeet(
             .transcribe_with(&samples, &params)
             .map_err(|e| TranscriptionError::TranscriptionError {
                 message: e.to_string(),
-            })?
-    };
+            })
+    })?;
 
     let transcript = result.text.trim().to_string();
     info!(
@@ -673,25 +658,9 @@ pub async fn transcribe_audio_moonshine(
         model_path
     );
 
-    // Convert audio to 16kHz mono format
-    let wav_data = convert_audio_for_whisper(audio_data)?;
-    debug!(
-        "[Transcription] audio conversion complete: wav_bytes={}",
-        wav_data.len()
-    );
-
-    // Extract samples from WAV
-    let samples = extract_samples_from_wav(wav_data)?;
-    debug!(
-        "[Transcription] extracted {} PCM samples for Moonshine engine",
-        samples.len()
-    );
-
-    // Return early if audio is empty
-    if samples.is_empty() {
-        warn!("[Transcription] no samples extracted, returning empty transcription");
+    let Some(samples) = prepare_samples_for_transcription(audio_data, "Moonshine")? else {
         return Ok(String::new());
-    }
+    };
 
     // Extract variant from model path directory name
     // Expected format: moonshine-{variant}-{lang} (e.g., "moonshine-tiny-en", "moonshine-base-en")
@@ -729,23 +698,7 @@ pub async fn transcribe_audio_moonshine(
         .map_err(|e| TranscriptionError::ModelLoadError { message: e })?;
     debug!("[Transcription] Moonshine model ready: {}", model_path);
 
-    // Run transcription with the persistent engine
-    // Use into_inner() to recover from poisoned mutex, but clear state to force fresh reload
-    let result = {
-        let mut engine_guard = engine_arc.lock().unwrap_or_else(|poisoned| {
-            warn!(
-                "[Transcription] Engine mutex was poisoned from previous panic, clearing state to force reload..."
-            );
-            let mut recovered = poisoned.into_inner();
-            *recovered = None; // Clear potentially corrupted state
-            recovered
-        });
-        let engine = engine_guard
-            .as_mut()
-            .ok_or_else(|| TranscriptionError::ModelLoadError {
-                message: "Model not loaded (may have been cleared after previous error). Please try again.".to_string(),
-            })?;
-
+    let result = with_loaded_engine(&engine_arc, |engine| {
         // Extract the Moonshine model from the enum
         let moonshine_engine = match engine {
             model_manager::Engine::Moonshine(e) => e,
@@ -762,8 +715,8 @@ pub async fn transcribe_audio_moonshine(
             .transcribe(&samples, &TranscribeOptions::default())
             .map_err(|e| TranscriptionError::TranscriptionError {
                 message: e.to_string(),
-            })?
-    };
+            })
+    })?;
 
     let transcript = result.text.trim().to_string();
     info!(

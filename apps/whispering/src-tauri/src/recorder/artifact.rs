@@ -4,8 +4,8 @@
 //! (it resamples to that rate inside the consumer worker), so there's
 //! no need for a tagged union here.
 //!
-//! IPC: the artifact is serialized as a binary response, not JSON. See
-//! `commands.rs::stop_recording` for the wire layout.
+//! IPC: the artifact is serialized as a binary response, not JSON. The
+//! `to_binary` method below is the wire-layout source of truth.
 
 /// Captured audio: mono PCM samples plus metadata.
 #[derive(Debug, Clone)]
@@ -22,7 +22,7 @@ impl AudioArtifact {
     /// ```text
     ///   bytes 0..4   : u32  rate
     ///   bytes 4..6   : u16  channels
-    ///   bytes 6..8   : u16  reserved (alignment)
+    ///   bytes 6..8   : u16  padding (aligns samples to f32 boundary)
     ///   bytes 8..    : f32[] samples
     /// ```
     /// JS reinterprets the trailing bytes as a `Float32Array` view, no

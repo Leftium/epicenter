@@ -595,7 +595,7 @@ mod tests {
     }
 
     #[test]
-    fn artifact_to_binary_round_trip_header() {
+    fn artifact_to_binary_writes_header_and_samples() {
         let artifact = AudioArtifact {
             samples: vec![0.5, -0.5, 0.25],
             rate: 16_000,

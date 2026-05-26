@@ -18,7 +18,7 @@ import {
  * Parse the binary response from `stop_recording`. Wire layout (LE):
  *   bytes 0..4   : u32  rate
  *   bytes 4..6   : u16  channels
- *   bytes 6..8   : u16  reserved
+ *   bytes 6..8   : u16  padding (aligns samples to f32 boundary)
  *   bytes 8..    : f32[] samples
  *
  * The `Float32Array` is a zero-copy view over the IPC body, not a

@@ -283,10 +283,6 @@ const WORKSPACE_KEY_MAP: readonly {
 		oldKey: 'transformations.selectedTransformationId',
 		newKey: 'transformation.selectedId',
 	},
-	{
-		oldKey: 'completion.openrouter.model',
-		newKey: 'transformation.openrouterModel',
-	},
 
 	// Analytics
 	{ oldKey: 'analytics.enabled', newKey: 'analytics.enabled' },

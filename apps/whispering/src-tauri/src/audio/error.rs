@@ -1,13 +1,12 @@
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Failure modes for the audio decode/encode pipeline.
 ///
-/// Serialized with a `name` tag so the TypeScript side can discriminate on
-/// the variant. Surface text is short and structured: the caller adds the
-/// user-facing wrapper.
-#[derive(Error, Debug, Serialize, Deserialize)]
-#[serde(tag = "name")]
+/// Variants document the failure mode for log/debug consumption. The current
+/// consumer (`transcription::run_transcription`) stringifies and wraps any
+/// variant into `TranscriptionError::AudioReadError`, so the discriminant
+/// does not cross the IPC boundary.
+#[derive(Error, Debug)]
 pub enum AudioError {
     #[error("Audio decode failed: {message}")]
     DecodeFailed { message: String },

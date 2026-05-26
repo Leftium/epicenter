@@ -44,30 +44,6 @@ pub fn decode_to_pcm16k_mono(bytes: &[u8]) -> Result<Vec<f32>, AudioError> {
         return Ok(Vec::new());
     }
 
-    let (samples, source_rate, channel_count) = demux_and_decode(bytes)?;
-    debug!(
-        "[Audio Decode] decoded {} samples @ {} Hz x {} channels",
-        samples.len(),
-        source_rate,
-        channel_count
-    );
-
-    let mono = downmix_to_mono(samples, channel_count);
-    debug!("[Audio Decode] downmix to mono: {} samples", mono.len());
-
-    let resampled = resample_to_16k(mono, source_rate)?;
-    debug!(
-        "[Audio Decode] resampled to {} Hz: {} samples",
-        TARGET_RATE,
-        resampled.len()
-    );
-
-    Ok(resampled)
-}
-
-/// Probe the container, dispatch by codec, and return interleaved f32
-/// samples at the source sample rate alongside the source channel count.
-fn demux_and_decode(bytes: &[u8]) -> Result<(Vec<f32>, u32, u16), AudioError> {
     // Symphonia's `MediaSource` trait requires `'static`, so the bytes are
     // copied into an owned cursor here rather than borrowed.
     let cursor = Cursor::new(bytes.to_vec());
@@ -89,15 +65,32 @@ fn demux_and_decode(bytes: &[u8]) -> Result<(Vec<f32>, u32, u16), AudioError> {
         .iter()
         .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
         .ok_or_else(|| AudioError::unsupported("no audio track in container".to_string()))?;
-
     let track_id = track.id;
     let codec_params = track.codec_params.clone();
 
-    if codec_params.codec == CODEC_TYPE_OPUS {
-        decode_opus_track(&mut *format, track_id, &codec_params)
+    let (samples, source_rate, channel_count) = if codec_params.codec == CODEC_TYPE_OPUS {
+        decode_via_libopus(&mut *format, track_id, &codec_params)?
     } else {
-        decode_via_symphonia(&mut *format, track_id, &codec_params)
-    }
+        decode_via_symphonia(&mut *format, track_id, &codec_params)?
+    };
+    debug!(
+        "[Audio Decode] decoded {} samples @ {} Hz x {} channels",
+        samples.len(),
+        source_rate,
+        channel_count
+    );
+
+    let mono = downmix_to_mono(samples, channel_count);
+    debug!("[Audio Decode] downmix to mono: {} samples", mono.len());
+
+    let resampled = resample_to_16k(mono, source_rate)?;
+    debug!(
+        "[Audio Decode] resampled to {} Hz: {} samples",
+        TARGET_RATE,
+        resampled.len()
+    );
+
+    Ok(resampled)
 }
 
 /// Decode any non-Opus codec via Symphonia's registered decoder.
@@ -171,7 +164,12 @@ fn decode_via_symphonia(
 
 /// Decode an Opus track by extracting raw packets from the container
 /// (Symphonia) and decoding them with libopus (audiopus).
-fn decode_opus_track(
+///
+/// Unlike `decode_via_symphonia`, this does not skip individual packet
+/// decode errors. Container demuxers (OGG, MKV/WebM) validate packets
+/// before yielding them, so a libopus decode failure typically signals
+/// genuine corruption rather than a recoverable boundary glitch.
+fn decode_via_libopus(
     format: &mut dyn symphonia::core::formats::FormatReader,
     track_id: u32,
     codec_params: &symphonia::core::codecs::CodecParameters,
@@ -266,9 +264,9 @@ fn downmix_to_mono(samples: Vec<f32>, channels: u16) -> Vec<f32> {
         .collect()
 }
 
-/// Resample mono `samples` from `source_rate` to 16 kHz with the same
-/// sinc-interpolation settings the old Tier 2 path used. Skips resampling
-/// when the source is already 16 kHz.
+/// Resample mono `samples` from `source_rate` to 16 kHz using rubato's
+/// fixed-input sinc resampler (BlackmanHarris2 window, sinc length 64,
+/// 128x oversampling). Skips resampling when the source is already 16 kHz.
 fn resample_to_16k(samples: Vec<f32>, source_rate: u32) -> Result<Vec<f32>, AudioError> {
     if source_rate == TARGET_RATE {
         return Ok(samples);
@@ -279,9 +277,9 @@ fn resample_to_16k(samples: Vec<f32>, source_rate: u32) -> Result<Vec<f32>, Audi
 
     let ratio = TARGET_RATE as f64 / source_rate as f64;
 
-    // rubato::SincFixedIn caps the upsampling ratio. The cap of 8.0 matches
-    // the old Tier 2 setup and admits sources from 2 kHz upward. Anything
-    // outside that range is exotic and not worth supporting silently.
+    // rubato::SincFixedIn is configured below with a max-ratio of 8.0, so
+    // we admit sources from 2 kHz upward (16000 / 8 = 2000). Anything below
+    // that is exotic for speech and not worth supporting silently.
     if ratio > 8.0 {
         return Err(AudioError::resample(format!(
             "source rate {source_rate} Hz is below the supported minimum",
@@ -411,34 +409,34 @@ mod tests {
     }
 
     #[test]
-    fn equivalent_output_for_synthetic_48k_stereo_vs_legacy_pipeline() {
-        // Open Question #5 from the spec: assert the new decoder's output
-        // is numerically close to the old hound + rubato Tier 2 pipeline
-        // on a 48 kHz stereo WAV. The legacy pipeline averaged channels
-        // and ran rubato with the same parameters, so a content-matched
-        // synthetic input should produce bit-similar samples modulo
-        // floating-point edge effects at the trailing zero-pad.
+    fn decode_then_resample_matches_direct_resample_within_quantization_noise() {
+        // Verify the WAV decode + stereo downmix do not perturb samples
+        // beyond i16 quantization noise. We compare two paths that both
+        // end in the same `resample_to_16k`:
+        //   path A: WAV bytes -> decode_to_pcm16k_mono
+        //   path B: analytical mono sine -> resample_to_16k
+        // The legacy hound + rubato Tier 2 pipeline is gone, so this is
+        // an internal consistency check (decode+downmix is the identity
+        // on equal-channel stereo modulo quantization), not an old-vs-new
+        // pipeline comparison.
         let in_rate = 48_000;
         let secs = 1;
-        let bytes = make_wav(secs * in_rate as usize, 2, in_rate, |i, c| {
-            // Stereo sine, opposite channels at the same frequency. Average
-            // is just the per-sample sine, simplifying the comparison.
-            let s = sine_at(i, 220.0, in_rate);
-            if c == 0 { s } else { s }
+        let bytes = make_wav(secs * in_rate as usize, 2, in_rate, |i, _| {
+            // Identical L/R channels so the downmix average equals the
+            // single-channel sine, making the comparison clean.
+            sine_at(i, 220.0, in_rate)
         });
 
         let new_samples = decode_to_pcm16k_mono(&bytes).expect("decode");
 
-        // Synthetic baseline: averaging two equal channels is the sine
-        // itself, then resample to 16 kHz.
         let mono: Vec<f32> = (0..secs * in_rate as usize)
             .map(|i| sine_at(i, 220.0, in_rate))
             .collect();
         let expected = resample_to_16k(mono, in_rate).expect("resample");
 
         let len = new_samples.len().min(expected.len());
-        // Ignore the first/last few samples where boundary effects from
-        // hound's quantization to i16 and back diverge from the float path.
+        // Ignore the first/last few samples where the resampler's edge
+        // ringing on the quantization step amplifies above the noise floor.
         let pad = 32;
         let mut max_diff = 0.0f32;
         for i in pad..(len - pad) {

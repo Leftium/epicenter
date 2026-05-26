@@ -3,12 +3,15 @@ import {
 	attachTable,
 	type TableDefinitions,
 	type Tables,
-} from '../document/attach-table.js';
+} from '../document/table.js';
 
 /**
- * Test-only convenience: attach every table in a definitions map to a Y.Doc.
- * Mirrors the shape production code uses internally without pulling in
- * encryption, extensions, or builder plumbing.
+ * Benchmark-only ergonomic: attach every table in a definitions map to an
+ * externally-constructed Y.Doc. Production callers go through
+ * `createWorkspace`, which owns the Y.Doc and the encryption layer; the
+ * benchmarks in `src/__benchmarks__` construct fresh Y.Docs themselves to
+ * measure binary size, GC behavior, and reload cost, so they need a lower
+ * primitive than `createWorkspace` exposes.
  */
 export function createTables<T extends TableDefinitions>(
 	ydoc: Y.Doc,

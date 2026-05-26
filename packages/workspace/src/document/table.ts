@@ -1,18 +1,18 @@
 /**
- * `attachTable()` — bind a `TableDefinition` to a Y.Doc.
+ * Table definition types and the `createTable` / `createReadonlyTable`
+ * builders. `createWorkspace` (in `./workspace.ts`) consumes these to mount
+ * tables onto a workspace root, applying encryption when a keyring is
+ * provided.
  *
- * Constructs an unencrypted `YKeyValueLww` on `ydoc.getArray('table:<name>')`
- * and wraps it with a typed `Table`. Provides CRUD operations with schema
- * validation and migration on read.
+ * This file also keeps `attachTable` as an internal helper used by
+ * package-local benchmarks and the create-table test. It is intentionally
+ * NOT exported from the package barrel: public callers go through
+ * `createWorkspace`.
  *
  * The library owns `_v` end-to-end: stamped on every write, stripped from
  * every read, refused as a column key at compile time. Users define columns
  * and (for multi-version tables) one migrate function. The user-facing row
  * type contains only the user's columns.
- *
- * For encrypted storage, pass table definitions via the `tables:` slot on
- * `attachEncryption(ydoc, { keyring, tables, kv })` and destructure the
- * constructed handles from the return.
  */
 
 import { type Static, type TObject, type TSchema, Type } from 'typebox';
@@ -333,7 +333,8 @@ export type ReadonlyTables<TTableDefinitions extends TableDefinitions> = {
 };
 
 // ════════════════════════════════════════════════════════════════════════════
-// PUBLIC: attach
+// INTERNAL: attach (used by package-local benchmarks + tests; NOT exported
+// from the public barrel — public callers go through `createWorkspace`)
 // ════════════════════════════════════════════════════════════════════════════
 
 export function attachTable<
@@ -348,44 +349,6 @@ export function attachTable<
 	const ykv = new YKeyValueLww<unknown>(yarray);
 	ydoc.once('destroy', () => ykv[Symbol.dispose]());
 	return createTable(ykv, definition, name);
-}
-
-export function attachReadonlyTable<
-	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly
-	TTableDefinition extends TableDefinition<any>,
->(
-	ydoc: Y.Doc,
-	name: string,
-	definition: TTableDefinition,
-): ReadonlyTable<InferTableRow<TTableDefinition>> {
-	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>(TableKey(name));
-	const ykv = new YKeyValueLww<unknown>(yarray);
-	ydoc.once('destroy', () => ykv[Symbol.dispose]());
-	return createReadonlyTable(ykv, definition, name);
-}
-
-export function attachTables<T extends TableDefinitions>(
-	ydoc: Y.Doc,
-	definitions: T,
-): Tables<T> {
-	return Object.fromEntries(
-		Object.entries(definitions).map(([name, def]) => [
-			name,
-			attachTable(ydoc, name, def),
-		]),
-	) as Tables<T>;
-}
-
-export function attachReadonlyTables<T extends TableDefinitions>(
-	ydoc: Y.Doc,
-	definitions: T,
-): ReadonlyTables<T> {
-	return Object.fromEntries(
-		Object.entries(definitions).map(([name, def]) => [
-			name,
-			attachReadonlyTable(ydoc, name, def),
-		]),
-	) as ReadonlyTables<T>;
 }
 
 // ════════════════════════════════════════════════════════════════════════════

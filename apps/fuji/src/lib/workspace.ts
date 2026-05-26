@@ -16,6 +16,7 @@
 
 import {
 	column,
+	createWorkspace,
 	DateTimeString,
 	defineActions,
 	defineMutation,
@@ -25,6 +26,7 @@ import {
 	generateId,
 	type IanaTimeZone,
 	type InferTableRow,
+	type Keyring,
 	type Tables,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
@@ -104,6 +106,22 @@ export const fujiTables = { entries: entriesTable };
 export type FujiTables = Tables<typeof fujiTables>;
 
 /**
+ * Build a Fuji workspace bundle: `{ ydoc, tables, kv, [Symbol.dispose] }`.
+ *
+ * Encrypted under the supplied keyring; the same factory is used in both
+ * browser and daemon entrypoints.
+ */
+export function createFujiWorkspace(opts: { keyring: () => Keyring }) {
+	return createWorkspace({
+		id: FUJI_ID,
+		keyring: opts.keyring,
+		tables: fujiTables,
+		kv: {},
+	});
+}
+export type FujiWorkspace = ReturnType<typeof createFujiWorkspace>;
+
+/**
  * Deterministic guid of an entry's rich-text content sub-doc.
  *
  * Browser editors, daemon materializers, and wipe paths reach this same
@@ -118,7 +136,8 @@ export function entryContentDocGuid(entryId: EntryId): string {
 	});
 }
 
-export function createFujiActions(tables: FujiTables) {
+export function createFujiActions(workspace: FujiWorkspace) {
+	const { tables } = workspace;
 	return defineActions({
 		entries_get: defineQuery({
 			title: 'Get Entry',

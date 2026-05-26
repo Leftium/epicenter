@@ -20,10 +20,12 @@ import {
 } from '@epicenter/filesystem';
 import {
 	column,
+	createWorkspace,
 	defineTable,
 	generateId,
 	type Id,
 	type InferTableRow,
+	type Keyring,
 	type Tables,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
@@ -143,6 +145,21 @@ export const opensidianTables = {
 	toolTrust: toolTrustTable,
 };
 export type OpensidianTables = Tables<typeof opensidianTables>;
+
+/**
+ * Build an Opensidian workspace bundle: `{ ydoc, tables, kv, [Symbol.dispose] }`.
+ *
+ * Encrypted under the supplied keyring. Used by browser, daemon, and tests.
+ */
+export function createOpensidianWorkspace(opts: { keyring: () => Keyring }) {
+	return createWorkspace({
+		id: OPENSIDIAN_ID,
+		keyring: opts.keyring,
+		tables: opensidianTables,
+		kv: {},
+	});
+}
+export type OpensidianWorkspace = ReturnType<typeof createOpensidianWorkspace>;
 
 /**
  * Deterministic guid of a file's content sub-doc.

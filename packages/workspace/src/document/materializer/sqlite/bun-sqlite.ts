@@ -1,18 +1,17 @@
 /**
- * `attachBunSqliteMaterializer(ydoc, { filePath, tables })`: bun:sqlite-backed
+ * `attachBunSqliteMaterializer(workspace, { filePath })`: bun:sqlite-backed
  * materializer. Owns the database file end-to-end: opens it (with the
- * writer-side WAL pragmas), mirrors Y.Doc table rows into it, and closes
- * the handle when the ydoc is destroyed.
+ * writer-side WAL pragmas), mirrors every table in `workspace.tables` into
+ * it, and closes the handle when the workspace's ydoc is destroyed.
  *
  * Daemon-side. For browser/in-memory use, see `attachTursoMaterializer`
  * in the sibling `./turso.ts`.
  *
  * @example
  * ```ts
- * const materializer = attachBunSqliteMaterializer(ydoc, {
- *   filePath: sqlitePath(projectDir, ydoc.guid),
+ * const materializer = attachBunSqliteMaterializer(workspace, {
+ *   filePath: sqlitePath(projectDir, workspace.ydoc.guid),
  *   waitFor: idb.whenLoaded,
- *   tables,
  *   fts: { entries: ['title', 'body'] },
  * });
  *
@@ -49,15 +48,7 @@ export type AttachBunSqliteMaterializerOptions<
 	filePath: ':memory:' | (string & {});
 
 	/**
-	 * Workspace tables to mirror. Each entry becomes a SQLite table named
-	 * after the record key. Pass the whole `tables` record to mirror
-	 * everything, or an object literal subset like `{ notes: tables.notes }`
-	 * to mirror a strict subset.
-	 */
-	tables: TTables;
-
-	/**
-	 * Optional FTS5 configuration. Keys must match `tables` keys; values
+	 * Optional FTS5 configuration. Keys must match `workspace.tables` keys; values
 	 * list the columns of that table's row to include in the FTS index.
 	 * When provided, the result exposes `sqlite.fts.search(...)`; when
 	 * omitted, the `fts` namespace is absent from the return type.
@@ -99,16 +90,16 @@ export function attachBunSqliteMaterializer<
 	TTables extends TablesRecord,
 	TFts extends FtsConfig<TTables> | undefined = undefined,
 >(
-	ydoc: Y.Doc,
+	workspace: { ydoc: Y.Doc; tables: TTables },
 	{
 		filePath,
-		tables,
 		fts,
 		debounceMs,
 		waitFor,
 		log = createLogger('attachBunSqliteMaterializer'),
 	}: AttachBunSqliteMaterializerOptions<TTables, TFts>,
 ) {
+	const { ydoc, tables } = workspace;
 	const client = openWriterSqlite({ filePath, log });
 
 	const core = attachSqliteMaterializerCore<TTables, TFts>(ydoc, {

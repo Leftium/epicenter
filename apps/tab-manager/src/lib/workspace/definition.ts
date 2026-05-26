@@ -12,11 +12,13 @@
 import {
 	asDeviceId,
 	column,
+	createWorkspace,
 	type DeviceId,
 	defineTable,
 	generateId,
 	type Id,
 	type InferTableRow,
+	type Keyring,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
@@ -275,9 +277,9 @@ export type ToolTrust = InferTableRow<typeof toolTrustTable>;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Table definitions for the tab-manager workspace. Composed in
- * `lib/tab-manager/extension.ts` via `attachEncryption(ydoc, { keyring,
- * tables: tabManagerTables, kv })`. Kept separate so actions and future
+ * Table definitions for the tab-manager workspace. Mounted by
+ * `createTabManagerWorkspace` below; the extension entry composes the result
+ * with persistence, actions, and sync. Kept separate so actions and future
  * consumers can derive their input types from one source of truth.
  */
 export const tabManagerTables = {
@@ -288,3 +290,17 @@ export const tabManagerTables = {
 	chatMessages: chatMessagesTable,
 	toolTrust: toolTrustTable,
 };
+
+/**
+ * Build the Tab Manager workspace bundle. Encrypted under the supplied
+ * keyring; used by extension entrypoint and the e2e playground daemon.
+ */
+export function createTabManagerWorkspace(opts: { keyring: () => Keyring }) {
+	return createWorkspace({
+		id: TAB_MANAGER_ID,
+		keyring: opts.keyring,
+		tables: tabManagerTables,
+		kv: {},
+	});
+}
+export type TabManagerWorkspace = ReturnType<typeof createTabManagerWorkspace>;

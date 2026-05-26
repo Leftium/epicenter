@@ -6,14 +6,9 @@ import { describe, expect, test } from 'bun:test';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import * as Y from 'yjs';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import {
-	attachReadonlyTable,
-	attachTable,
-	createReadonlyTable,
-	createTable,
-} from './attach-table.js';
 import { column } from './column/index.js';
 import { defineTable } from './define-table.js';
+import { createReadonlyTable, createTable } from './table.js';
 
 /** Creates Yjs infrastructure for testing */
 function setup() {
@@ -44,29 +39,6 @@ describe('createTable', () => {
 			expect('delete' in helper).toBe(false);
 			expect('bulkDelete' in helper).toBe(false);
 			expect('clear' in helper).toBe(false);
-		});
-
-		test('attachReadonlyTable reads the same Y.Doc slot without write methods', () => {
-			const ydoc = new Y.Doc();
-			const definition = defineTable({
-				id: column.string(),
-				name: column.string(),
-			});
-			const writer = attachTable(ydoc, 'people', definition);
-			const reader = attachReadonlyTable(ydoc, 'people', definition);
-
-			writer.set({ id: '1', name: 'Alice' });
-
-			expect(reader.get('1').data).toEqual({
-				id: '1',
-				name: 'Alice',
-			});
-			expect('set' in reader).toBe(false);
-			expect('bulkSet' in reader).toBe(false);
-			expect('update' in reader).toBe(false);
-			expect('delete' in reader).toBe(false);
-			expect('bulkDelete' in reader).toBe(false);
-			expect('clear' in reader).toBe(false);
 		});
 	});
 

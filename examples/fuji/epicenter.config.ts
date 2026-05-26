@@ -19,8 +19,8 @@
  */
 
 import { join } from 'node:path';
-import { createFujiActions, FUJI_ID, fujiTables } from '@epicenter/fuji';
-import { attachEncryption, defineWorkspace } from '@epicenter/workspace';
+import { createFujiActions, createFujiWorkspace } from '@epicenter/fuji';
+import { defineWorkspace } from '@epicenter/workspace';
 import {
 	attachMarkdownMaterializer,
 	slugFilename,
@@ -28,7 +28,6 @@ import {
 import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import { attachDaemonInfrastructure } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
-import * as Y from 'yjs';
 
 export default defineWorkspace({
 	open({
@@ -41,34 +40,27 @@ export default defineWorkspace({
 		openWebSocket,
 		onReconnectSignal,
 	}) {
-		const ydoc = new Y.Doc({ guid: FUJI_ID, gc: true });
-		ydoc.clientID = yDocClientId;
-		const { tables } = attachEncryption(ydoc, {
-			keyring,
-			tables: fujiTables,
-			kv: {},
-		});
-		const actions = createFujiActions(tables);
+		const workspace = createFujiWorkspace({ keyring });
+		workspace.ydoc.clientID = yDocClientId;
+		const actions = createFujiActions(workspace);
 
 		// Runtime cache: hidden under .epicenter/ at the project root.
 		// Inlined so the canonical layout stays visible at the project root.
-		attachBunSqliteMaterializer(ydoc, {
+		attachBunSqliteMaterializer(workspace, {
 			filePath: join(projectDir, '.epicenter', 'sqlite.db'),
 			log: createLogger(`${route}-sqlite`),
-			tables,
 		});
 
 		// Markdown: visible at project root, one directory per table.
 		// Committed to git as the source of truth. The materializer appends
 		// the table name to `dir`, so `dir: projectDir` produces
 		// `<projectDir>/entries/<slug>.md` for the `entries` table.
-		attachMarkdownMaterializer(ydoc, {
+		attachMarkdownMaterializer(workspace, {
 			dir: projectDir,
-			tables,
 			perTable: { entries: { filename: slugFilename('title') } },
 		});
 
-		return attachDaemonInfrastructure(ydoc, {
+		return attachDaemonInfrastructure(workspace.ydoc, {
 			projectDir,
 			ownerId,
 			deviceId,

@@ -23,7 +23,7 @@
 import { describe, test } from 'bun:test';
 import * as Y from 'yjs';
 import { createTables } from '../__tests__/create-tables.js';
-import { attachTable } from '../index.js';
+import { attachTable } from '../document/table.js';
 import {
 	formatBytes,
 	generateId,

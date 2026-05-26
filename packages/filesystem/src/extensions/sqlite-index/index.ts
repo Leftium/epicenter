@@ -14,11 +14,14 @@
  *
  * @example
  * ```typescript
- * const ydoc = new Y.Doc({ guid: 'app' });
- * const tables = attachTables(ydoc, { files: filesTable });
+ * const workspace = createWorkspace({
+ *   id: 'app',
+ *   tables: { files: filesTable },
+ *   kv: {},
+ * });
  * const sqliteIndex = createSqliteIndex({
  *   readContent: fileContent.read,
- * })({ tables });
+ * })({ tables: workspace.tables });
  * await sqliteIndex.exports.whenReady;
  * const results = await sqliteIndex.exports.search('meeting notes');
  * ```
@@ -132,10 +135,15 @@ type SqliteIndexContext = {
  *
  * @example
  * ```typescript
- * const ydoc = new Y.Doc({ guid: 'app' });
- * const tables = attachTables(ydoc, { files: filesTable });
- * attachIndexedDb(ydoc);
- * const sqliteIndex = createSqliteIndex({ readContent })({ tables });
+ * const workspace = createWorkspace({
+ *   id: 'app',
+ *   tables: { files: filesTable },
+ *   kv: {},
+ * });
+ * attachIndexedDb(workspace.ydoc);
+ * const sqliteIndex = createSqliteIndex({ readContent })({
+ *   tables: workspace.tables,
+ * });
  * ```
  */
 export function createSqliteIndex(

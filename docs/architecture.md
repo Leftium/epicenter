@@ -64,73 +64,59 @@ const themeMode = defineKv(type("'light' | 'dark' | 'system'"), 'system');
 
 That purity is what makes cross-package reuse work. The same table and KV declarations can be imported by an app, a CLI tool, a migration utility, a test, or another package without dragging runtime side effects along for the ride.
 
-### 2. `defineDocument` is where the live bundle appears
-`defineDocument(builder)` is the boundary where static meaning turns into live state. The user-owned builder allocates the `Y.Doc`, wires up table/KV helpers via `attachTables` / `attachKv`, attaches persistence, calls `openCollaboration` for the live network surface (sync, server-owned presence, dispatch), and returns a typed bundle. `.open(id)` hands back a refcounted handle.
+### 2. `createWorkspace` is where the live bundle appears
+`createWorkspace({ id, tables, kv })` is the boundary where static meaning turns into live state. It allocates the `Y.Doc`, derives the encryption keyring (if a `keyring` is passed) once at construction, registers and activates every typed table and KV slot atomically, and returns a typed bundle. The bundle owns the Y.Doc lifecycle: `[Symbol.dispose]()` calls `ydoc.destroy()`, and cascade disposal tears every attached store down.
 
 ```ts
-import * as Y from 'yjs';
-import {
-	attachKv,
-	attachTables,
-	defineDocument,
-} from '@epicenter/workspace';
+import { createWorkspace } from '@epicenter/workspace';
 
-const app = defineDocument((id: string) => {
-	const ydoc = new Y.Doc({ guid: id });
-	const tables = attachTables(ydoc, { files });
-	const kv = attachKv(ydoc, { themeMode });
-	return {
-		id, ydoc, tables, kv,
-		[Symbol.dispose]() { ydoc.destroy(); },
-	};
+const workspace = createWorkspace({
+	id: 'example.app',
+	tables: { files },
+	kv: { themeMode },
 });
 
-const workspace = app.open('example.app');
 workspace.tables.files.set({ id: 'readme.md', name: 'README.md', _v: 1 });
 ```
 
-The split is conceptual, not cosmetic. Definitions describe what data means; the builder is the runtime that can actually hold and mutate that data.
+The split is conceptual, not cosmetic. Definitions describe what data means; `createWorkspace` is the runtime that can actually hold and mutate that data.
 
 ### 3. Extend means adding more `attach*` calls
-There is no plugin chain. Persistence, indexing, and materializers all mount through `attach*` functions; the workspace's network surface (sync + presence + dispatch) mounts through the `openCollaboration` primitive. You add them to the builder alongside tables and KV.
+There is no plugin chain. Persistence, indexing, and materializers all mount through `attach*` functions; the workspace's network surface (sync + presence + dispatch) mounts through the `openCollaboration` primitive. You compose them inline against `workspace.ydoc` after `createWorkspace`.
 
 The example below syncs a cloud document. A cloud doc is owned by the authenticated `owner` and addressed by its own `ydoc.guid`, so the client builds the URL with `roomWsUrl({ baseURL, owner, guid: ydoc.guid, installationId })`; the server resolves it to the DO name `users/${userId}/rooms/${room}` (personal) or `rooms/${room}` (team). There is no workspace lookup and no membership check: ownership is identity.
 
 ```ts
-import * as Y from 'yjs';
 import {
 	attachIndexedDb,
-	attachKv,
-	attachTables,
-	defineDocument,
+	createWorkspace,
 	openCollaboration,
 	roomWsUrl,
 } from '@epicenter/workspace';
 
-const app = defineDocument((id: string) => {
-	const ydoc = new Y.Doc({ guid: id });
-	const tables = attachTables(ydoc, { files });
-	const kv = attachKv(ydoc, { themeMode });
-	const idb = attachIndexedDb(ydoc);
-	const collaboration = openCollaboration(ydoc, {
-		url: roomWsUrl({
-			baseURL: auth.baseURL,
-			owner,
-			guid: ydoc.guid,
-			installationId,
-		}),
-		openWebSocket: auth.openWebSocket,
-		onReconnectSignal: auth.onStateChange,
-		waitFor: idb.whenLoaded,
-		actions: {},
-	});
-	return { id, ydoc, tables, kv, idb, collaboration, /* ... */ };
+const workspace = createWorkspace({
+	id: 'example.app',
+	tables: { files },
+	kv: { themeMode },
+});
+const idb = attachIndexedDb(workspace.ydoc);
+const collaboration = openCollaboration(workspace.ydoc, {
+	url: roomWsUrl({
+		baseURL: auth.baseURL,
+		owner,
+		guid: workspace.ydoc.guid,
+		installationId,
+	}),
+	openWebSocket: auth.openWebSocket,
+	onReconnectSignal: auth.onStateChange,
+	waitFor: idb.whenLoaded,
+	actions: {},
 });
 ```
 
 Ordering is lexical. `openCollaboration` reads `idb.whenLoaded` as `waitFor` because `idb` is already in scope. Later attachments see earlier ones directly. There is no context object to route through.
 
-For extensions that need their own Y.Doc per row (file content, note bodies), define a *second* `defineDocument` keyed on the row's content guid. Content docs use the same `openCollaboration` primitive with an empty `actions` registry. Inbound dispatch frames reply `ActionNotFound`; the byte transport and presence channel are identical.
+For extensions that need their own Y.Doc per row (file content, note bodies), use sub-doc primitives like `attachRichText(childYdoc)` or `attachTimeline(childYdoc)` against a raw `Y.Doc`, then mount `openCollaboration` on it with an empty `actions` registry. Inbound dispatch frames reply `ActionNotFound`; the byte transport and presence channel are identical.
 
 ### 4. Collaboration is just another attachment, but it changes the topology
 `openCollaboration` does not own the document. It attaches to a Y.Doc that already exists and starts moving CRDT updates between peers. The relay publishes presence over its own channel; cross-device dispatch rides a plain HTTP POST. The `waitFor: idb.whenLoaded` option ensures local state is replayed first, so the initial handshake is a delta, not a full document transfer.
@@ -141,19 +127,16 @@ Local state exists first, then optional durability, then optional network coordi
 The builder runs synchronously, but attachments load asynchronously. Conventionally the bundle exposes a `whenReady` promise, usually `idb.whenLoaded`, so callers can await full local availability:
 
 ```ts
-// Reactive callers (Svelte $effect, {#await}) use sync open() and gate on whenReady.
-const workspace = app.open('example.app');
-await workspace.whenReady;
-
-// Imperative callers collapse the two steps into one. load() bakes the await in
-// and releases the refcount correctly if whenReady rejects.
-const workspace = await app.load('example.app');
+// Reactive callers (Svelte $effect, {#await}) construct and gate on whenReady.
+const workspace = createWorkspace({ id: 'example.app', tables, kv });
+const idb = attachIndexedDb(workspace.ydoc);
+await idb.whenLoaded;
 ```
 
-That promise is the line between construction and full availability. Create now, await later, or use `load()` to do both at once.
+That promise is the line between construction and full availability. Construct synchronously, await whichever attachment exposes the relevant readiness signal.
 
 ## Disposal cascades from `ydoc.destroy()`
-Teardown runs through Yjs itself. Every async `attach*` function registers `ydoc.once('destroy')` internally, so when the builder's `[Symbol.dispose]()` calls `ydoc.destroy()`, every attachment starts teardown in parallel. Attachments with genuine async cleanup expose `whenDisposed` for the callers that need a barrier:
+Teardown runs through Yjs itself. Every async `attach*` function registers `ydoc.once('destroy')` internally, so when the workspace bundle's `[Symbol.dispose]()` calls `ydoc.destroy()`, every attachment starts teardown in parallel. Attachments with genuine async cleanup expose `whenDisposed` for the callers that need a barrier:
 
 ```ts
 workspace[Symbol.dispose]();
@@ -205,16 +188,14 @@ typed rows  settings       per-row content docs      indexes/materializers
 That model is why Epicenter can mix SQL-like lookup, filesystem semantics, and collaborative document editing without splitting the truth into three different stores. They are three views over one CRDT core.
 
 ## Opensidian is the best concrete example
-Opensidian composes nearly every layer in one builder. Its schema starts with `filesTable` from `@epicenter/filesystem`, adds chat tables locally, and exports one `defineDocument(builder)`.
+Opensidian composes nearly every layer inline in a per-app browser opener. Its schema starts with `filesTable` from `@epicenter/filesystem`, adds chat tables locally, and constructs the workspace with `createWorkspace`.
 
 ```ts
 import { filesTable } from '@epicenter/filesystem';
-import * as Y from 'yjs';
 import {
 	attachIndexedDb,
-	attachTables,
+	createWorkspace,
 	defineActions,
-	defineDocument,
 	defineQuery,
 	defineTable,
 	openCollaboration,
@@ -225,26 +206,29 @@ const conversationsTable = defineTable(/* ... */);
 const chatMessagesTable = defineTable(/* ... */);
 const toolTrustTable = defineTable(/* ... */);
 
-const opensidian = defineDocument((id: string) => {
-	const ydoc = new Y.Doc({ guid: id });
-	const tables = attachTables(ydoc, {
-		files: filesTable,
-		conversations: conversationsTable,
-		chatMessages: chatMessagesTable,
-		toolTrust: toolTrustTable,
+export function openOpensidianBrowser() {
+	const workspace = createWorkspace({
+		id: 'opensidian',
+		tables: {
+			files: filesTable,
+			conversations: conversationsTable,
+			chatMessages: chatMessagesTable,
+			toolTrust: toolTrustTable,
+		},
+		kv: {},
 	});
-	const idb = attachIndexedDb(ydoc);
-	const sqliteIndex = createSqliteIndex({ ydoc, tables });
+	const idb = attachIndexedDb(workspace.ydoc);
+	const sqliteIndex = createSqliteIndex({ ydoc: workspace.ydoc, tables: workspace.tables });
 	const actions = defineActions({
 		files_search: defineQuery({
 			handler: async ({ query }) => sqliteIndex.search(query),
 		}),
 	});
-	const collaboration = openCollaboration(ydoc, {
+	const collaboration = openCollaboration(workspace.ydoc, {
 		url: roomWsUrl({
 			baseURL: auth.baseURL,
 			owner,
-			guid: ydoc.guid,
+			guid: workspace.ydoc.guid,
 			installationId,
 		}),
 		openWebSocket: auth.openWebSocket,
@@ -252,26 +236,24 @@ const opensidian = defineDocument((id: string) => {
 		waitFor: idb.whenLoaded,
 		actions,
 	});
-	return { id, ydoc, tables, idb, collaboration, sqliteIndex, /* ... */ };
-});
-
-export const workspace = opensidian.open('opensidian');
+	return { ...workspace, idb, collaboration, sqliteIndex, actions };
+}
 ```
 
-That workspace then feeds other middleware packages. `attachYjsFileSystem(workspace.tables.files, workspace.filesContent)` turns the files table plus content docs into a real virtual filesystem; `actionsToAiTools(workspace)` from `@epicenter/workspace/ai` turns workspace actions into chat tools; a second `defineDocument` factory mounts the skills data source; `createCookieAuth()` or `createBearerAuth()` from `@epicenter/auth-svelte` coordinates identity, fetch, and WebSocket auth while `@epicenter/auth` provides the signed-in identity used by lazy encryption key callbacks.
+That bundle then feeds other middleware packages. `attachYjsFileSystem(workspace.tables.files, workspace.filesContent)` turns the files table plus content docs into a real virtual filesystem; `actionsToAiTools(workspace)` from `@epicenter/workspace/ai` turns workspace actions into chat tools; per-row content docs use sub-doc primitives like `attachRichText`; `createCookieAuth()` or `createBearerAuth()` from `@epicenter/auth-svelte` coordinates identity, fetch, and WebSocket auth while `@epicenter/auth` provides the signed-in identity used by lazy encryption key callbacks.
 
 ```text
-defineDocument(builder).open('opensidian')
+createWorkspace({ id: 'opensidian', tables, kv })
     |
-    +-- attachTables(ydoc, {...})
-    +-- attachIndexedDb(ydoc)
+    +-- workspace.ydoc, workspace.tables, workspace.kv
+    +-- attachIndexedDb(workspace.ydoc)
     +-- createSqliteIndex(...)
-    +-- openCollaboration(ydoc, { url, openWebSocket, onReconnectSignal, waitFor: idb.whenLoaded, actions })
+    +-- openCollaboration(workspace.ydoc, { url, openWebSocket, onReconnectSignal, waitFor: idb.whenLoaded, actions })
     |
     +-- attachYjsFileSystem(...)              -> editor + terminal + file tree
     +-- actionsToAiTools(...).tools           -> local AI tool execution
     +-- actionsToAiTools(...).definitions     -> wire payload for chat requests
-    +-- defineDocument(skillsBuilder)         -> shared skills data source
+    +-- attachRichText(childYdoc) per file    -> per-row content docs
     +-- fromTable / fromKv / auth             -> reactive Svelte app state
 ```
 
@@ -280,7 +262,7 @@ That is the whole monorepo in miniature. The app is mostly composition code beca
 ## The sync philosophy is dumb server, smart client
 The server is a relay, not the authority. Clients own schema meaning, table helpers, migrations, encryption activation, action handlers, and most of the user-facing behavior.
 
-`@epicenter/sync` reflects that philosophy in its API. It exports protocol encode/decode functions, while `openCollaboration` plugs those primitives into a live document that already knows how to read and write its own data.
+`@epicenter/sync` reflects that philosophy in its API. It exports protocol encode/decode functions, while `openCollaboration` plugs those primitives into a live workspace that already knows how to read and write its own data.
 
 That means the server does not need to understand your tables. It forwards Yjs sync messages. Presence is server state: the relay owns the `connections` map and pushes a `presence` text frame, the full list of connected installs, on every change. Cross-device dispatch is a plain HTTP POST the relay routes to the recipient's socket. Neither rides the CRDT, and neither needs the server to decode your data.
 
@@ -289,6 +271,6 @@ This is what "smart client" means here. The client can boot locally, read persis
 This is what "dumb server" means here. The server helps peers find each other and exchange updates, but it is not where the data model becomes valid or meaningful.
 
 ## The shortest accurate mental model
-Epicenter defines data first. `@epicenter/workspace` gives that data a live Yjs document via `defineDocument(builder)`, `attach*` primitives add durability and transport, middleware packages reinterpret the same client for files, skills, Svelte state, and AI tools, and the apps compose those layers into actual products.
+Epicenter defines data first. `@epicenter/workspace` gives that data a live Yjs document via `createWorkspace({ id, tables, kv })`, `attach*` primitives add durability and transport, middleware packages reinterpret the same bundle for files, skills, Svelte state, and AI tools, and the apps compose those layers into actual products.
 
 Everything after that is detail. Useful detail, but still detail.

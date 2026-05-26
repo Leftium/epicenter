@@ -6,21 +6,21 @@ A typed interface over Y.js for apps that need to evolve their data schema over 
 
 This is a wrapper around Y.js that handles schema versioning. Local-first apps can't run migration scripts, so data has to evolve gracefully. Old data coexists with new. The Workspace API bakes that into the design: define your schemas once with versions, write a migration function, and everything else is typed.
 
-The pattern: a vanilla `openX()` function constructs the workspace's `Y.Doc`, composes `attach*` calls inline, and returns whatever shape your app needs. There is no framework wrapper, just plain functions and the `attach*` primitives. Apps split factory code into `index.ts` (iso doc factory) and `<binding>.ts` (env-specific factory adding persistence/sync). Runtime lifecycle then lives in `session.svelte.ts` for SvelteKit signed-in apps or `client.ts` for singleton clients; see `.claude/skills/workspace-app-layout/SKILL.md`.
+The pattern: `createWorkspace({ id, tables, kv, keyring? })` constructs the workspace's `Y.Doc` with tables and KV mounted; your `openX()` function composes additional `attach*` / `open*` primitives around it and returns whatever shape your app needs. Apps split factory code into `index.ts` (iso doc factory) and `<binding>.ts` (env-specific factory adding persistence/sync). Runtime lifecycle then lives in `session.svelte.ts` for SvelteKit signed-in apps or `client.ts` for singleton clients; see `.claude/skills/workspace-app-layout/SKILL.md`.
 
 ```
 +----------------------------------------------------------------+
 | Your App                                                       |
 +----------------------------------------------------------------+
-| function openBlog(): { ydoc, tables, ...; dispose }            |
+| function openBlog(): { ydoc, tables, kv, ...; dispose }        |
 +----------------------------------------------------------------+
-| attachTable / attachTables / attachKv                          |
-| attachEncryption({ keyring, tables, kv }) -> { tables, kv }    |
+| createWorkspace({ id, tables, kv, keyring? })                  |
+|   -> { ydoc, tables, kv, [Symbol.dispose] }                    |
 | attachIndexedDb / attachYjsLog / attachBroadcastChannel        |
 | attachLocalStorage(ydoc, { server, ownerId, keyring })  // encrypted IDB + scoped BC |
 | wipeLocalStorage({ server, ownerId })           // delete local data for owner |
 | openCollaboration (sync + presence + dispatch)                 |
-| attachSqliteMaterializer                                       |
+| attachBunSqliteMaterializer / attachMarkdownMaterializer       |
 +----------------------------------------------------------------+
 | Y.Doc (raw CRDT)                                               |
 +----------------------------------------------------------------+
@@ -37,8 +37,7 @@ Three prefixes, each with a consistent meaning:
 See `.agents/skills/attach-primitive/SKILL.md` for the full contract (shape, invariants, barrier naming).
 
 ```typescript
-import * as Y from 'yjs';
-import { column, defineTable, attachTable } from '@epicenter/workspace';
+import { column, createWorkspace, defineTable } from '@epicenter/workspace';
 
 // Pure schema. `_v` is library-managed: never declare it as a column.
 const postsTable = defineTable({
@@ -46,20 +45,17 @@ const postsTable = defineTable({
   title: column.string(),
 });
 
-// Vanilla factory: owns Y.Doc creation, composes attachments
+// Vanilla factory: createWorkspace owns Y.Doc creation; the factory composes
+// any extra attachments your app needs and returns the bundle.
 function openBlog() {
-  const ydoc = new Y.Doc({ guid: 'blog' });
-  const tables = {
-    posts: attachTable(ydoc, 'posts', postsTable),
-  };
-  return {
-    ydoc,
-    tables,
-    [Symbol.dispose]() { ydoc.destroy(); },
-  };
+  return createWorkspace({
+    id: 'blog',
+    tables: { posts: postsTable },
+    kv: {},
+  });
 }
 
-const workspace = openBlog();
+using workspace = openBlog();
 workspace.tables.posts.set({ id: '1', title: 'Hello' });
 ```
 
@@ -69,20 +65,18 @@ The factory body is where you wire everything. Because you own the return shape,
 
 ### Encryption (server-managed value encryption)
 
-`attachEncryption(ydoc, { keyring, tables, kv })` takes the same definition maps as the plaintext primitives, derives the per-workspace keyring once, activates every encrypted store, and returns the constructed handles in one call.
+Pass a `keyring: () => Keyring` callback to `createWorkspace`. The keyring is read once at construction, narrowed to `id` via HKDF, and shared across every table and the KV store. Omit it for plaintext.
 
 ```typescript
-import { attachEncryption } from '@epicenter/workspace';
-import type { Keyring } from '@epicenter/encryption';
+import { createWorkspace, type Keyring } from '@epicenter/workspace';
 
 function openBlog({ keyring }: { keyring: () => Keyring }) {
-  const ydoc = new Y.Doc({ guid: 'blog' });
-  const { tables, kv } = attachEncryption(ydoc, {
+  return createWorkspace({
+    id: 'blog',
     keyring,
     tables: myTables,
     kv: myKv,
   });
-  return { ydoc, tables, kv, [Symbol.dispose]() { ydoc.destroy(); } };
 }
 ```
 
@@ -97,8 +91,8 @@ sync supervisor, mirrors the relay's server-owned presence channel as
 ```typescript
 import type { SignedIn } from '@epicenter/svelte';
 import {
-  attachEncryption,
   attachLocalStorage,
+  createWorkspace,
   openCollaboration,
   roomWsUrl,
   wipeLocalStorage,
@@ -111,25 +105,25 @@ function openBlog({
   signedIn: SignedIn;
   deviceId: string;
 }) {
-  const ydoc = new Y.Doc({ guid: 'blog' });
-  const { tables } = attachEncryption(ydoc, {
+  const workspace = createWorkspace({
+    id: 'blog',
     keyring: signedIn.keyring,
     tables: myTables,
     kv: {},
   });
 
   // Server + owner scoped encrypted IDB + cross-tab BroadcastChannel in one call.
-  const idb = attachLocalStorage(ydoc, {
+  const idb = attachLocalStorage(workspace.ydoc, {
     server: signedIn.server,
     ownerId: signedIn.ownerId,
     keyring: signedIn.keyring,
   });
 
-  const collaboration = openCollaboration(ydoc, {
+  const collaboration = openCollaboration(workspace.ydoc, {
     url: roomWsUrl({
       baseURL: signedIn.auth.baseURL,
       ownerId: signedIn.ownerId,
-      guid: ydoc.guid,
+      guid: workspace.ydoc.guid,
       deviceId,
     }),
     openWebSocket: signedIn.auth.openWebSocket,
@@ -139,16 +133,17 @@ function openBlog({
   });
 
   return {
-    ydoc, tables, idb, collaboration,
+    ...workspace,
+    idb,
+    collaboration,
     async wipe() {
-      ydoc.destroy();
+      workspace[Symbol.dispose]();
       await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
       await wipeLocalStorage({
         server: signedIn.server,
         ownerId: signedIn.ownerId,
       });
     },
-    [Symbol.dispose]() { ydoc.destroy(); },
   };
 }
 ```
@@ -180,7 +175,7 @@ Tables stay lean (ids, titles, metadata). Rich content lives in a separate per-r
 
 ## Testing
 
-Tests live in `*.test.ts` next to the implementation. Use `new Y.Doc()` for in-memory tests. Migrations are validated by reading old data and checking the result.
+Tests live in `*.test.ts` next to the implementation. Use `createWorkspace({ id: 'test', tables, kv: {} })` for in-memory tests; `using workspace = ...` cascades disposal of every store. Migrations are validated by reading old data and checking the result.
 
 ## Canonical references
 

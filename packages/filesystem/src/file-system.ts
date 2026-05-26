@@ -35,12 +35,19 @@ function FileSystem<T extends IFileSystem>(fs: T): T {
  *
  * @example
  * ```typescript
- * import * as Y from 'yjs';
- * import { attachTable } from '@epicenter/workspace';
+ * import { createWorkspace } from '@epicenter/workspace';
+ * import { filesTable, attachYjsFileSystem } from '@epicenter/filesystem';
  *
- * const ydoc = new Y.Doc({ guid: 'app' });
- * const files = attachTable(ydoc, 'files', filesTable);
- * const fs = attachYjsFileSystem(ydoc, files, fileContent);
+ * const workspace = createWorkspace({
+ *   id: 'app',
+ *   tables: { files: filesTable },
+ *   kv: {},
+ * });
+ * const fs = attachYjsFileSystem(
+ *   workspace.ydoc,
+ *   workspace.tables.files,
+ *   fileContent,
+ * );
  * ```
  */
 export function attachYjsFileSystem(

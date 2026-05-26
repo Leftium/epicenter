@@ -15,12 +15,14 @@
 
 import {
 	column,
+	createWorkspace,
 	defineActions,
 	defineMutation,
 	defineTable,
 	docGuid,
 	generateId,
 	type InferTableRow,
+	type Keyring,
 	type Tables,
 } from '@epicenter/workspace';
 import Type from 'typebox';
@@ -131,6 +133,18 @@ export type Note = InferTableRow<typeof notesTable>;
 export const honeycrispTables = { folders: foldersTable, notes: notesTable };
 export type HoneycrispTables = Tables<typeof honeycrispTables>;
 
+// ─── Workspace factory ────────────────────────────────────────────────────────
+
+export function createHoneycrispWorkspace(opts: { keyring: () => Keyring }) {
+	return createWorkspace({
+		id: HONEYCRISP_ID,
+		keyring: opts.keyring,
+		tables: honeycrispTables,
+		kv: {},
+	});
+}
+export type HoneycrispWorkspace = ReturnType<typeof createHoneycrispWorkspace>;
+
 /**
  * Deterministic guid of a note's rich-text body sub-doc.
  *
@@ -155,7 +169,8 @@ export function noteBodyDocGuid(noteId: NoteId): string {
  * (e.g. folder deletion with note re-parenting). Simple single-table CRUD
  * stays in the Svelte state files.
  */
-export function createHoneycrispActions(tables: HoneycrispTables) {
+export function createHoneycrispActions(workspace: HoneycrispWorkspace) {
+	const { tables } = workspace;
 	return defineActions({
 		/**
 		 * Delete a folder and move all its notes to unfiled.

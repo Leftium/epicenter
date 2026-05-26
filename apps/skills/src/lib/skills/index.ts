@@ -1,1 +1,1 @@
-export { type OpenSkillsOptions, openSkills } from '@epicenter/skills';
+export { createSkillsWorkspace } from '@epicenter/skills';

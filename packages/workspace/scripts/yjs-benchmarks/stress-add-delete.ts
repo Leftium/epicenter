@@ -10,7 +10,7 @@
 
 import { unlinkSync } from 'node:fs';
 import * as Y from 'yjs';
-import { attachTable, column, defineTable } from '../../src/index.js';
+import { column, createWorkspace, defineTable } from '../../src/index.js';
 import { formatBytes, measureTime } from './helpers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -46,8 +46,12 @@ function generateId(index: number): string {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 async function main() {
-	const ydoc = new Y.Doc();
-	const tables = { events: attachTable(ydoc, 'events', eventDefinition) };
+	const workspace = createWorkspace({
+		id: 'stress-add-delete',
+		tables: { events: eventDefinition },
+		kv: {},
+	});
+	const { ydoc, tables } = workspace;
 
 	console.log(`\n=== Static API Stress Test ===`);
 	console.log(`Events per cycle: ${EVENTS_PER_CYCLE.toLocaleString()}`);
@@ -128,9 +132,13 @@ async function main() {
 	console.log(`File size on disk: ${formatBytes(file.size)}`);
 
 	// ── Bonus: what does a fresh doc from this snapshot look like? ──────
-	const ydoc2 = new Y.Doc();
-	Y.applyUpdate(ydoc2, finalUpdate);
-	const tables2 = { events: attachTable(ydoc2, 'events', eventDefinition) };
+	const workspace2 = createWorkspace({
+		id: 'stress-add-delete-reload',
+		tables: { events: eventDefinition },
+		kv: {},
+	});
+	Y.applyUpdate(workspace2.ydoc, finalUpdate);
+	const { ydoc: ydoc2, tables: tables2 } = workspace2;
 	console.log(`\n=== Snapshot Verification ===`);
 	console.log(`Rows after loading snapshot: ${tables2.events.count()}`);
 

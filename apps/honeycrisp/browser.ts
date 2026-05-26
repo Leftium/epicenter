@@ -4,7 +4,7 @@
  * Single source of truth for "how Honeycrisp mounts in a browser." Calls
  * Tier 1 primitives inline so every line is visible top-to-bottom:
  *
- *  1. workspace root doc (encrypted tables + KV via attachEncryption)
+ *  1. workspace root doc (encrypted tables + KV via createHoneycrispWorkspace)
  *  2. local storage + cloud sync for root (attachLocalStorage + openCollaboration)
  *  3. per-note rich-text body sub-docs (plaintext Y.XmlFragment + encrypted IDB)
  *
@@ -18,7 +18,6 @@
 
 import type { SignedIn } from '@epicenter/svelte';
 import {
-	attachEncryption,
 	attachLocalStorage,
 	attachRichText,
 	createDisposableCache,
@@ -32,8 +31,7 @@ import {
 import * as Y from 'yjs';
 import {
 	createHoneycrispActions,
-	HONEYCRISP_ID,
-	honeycrispTables,
+	createHoneycrispWorkspace,
 	type NoteId,
 	noteBodyDocGuid,
 } from './workspace';
@@ -45,24 +43,19 @@ export function openHoneycrispBrowser({
 	signedIn: SignedIn;
 	deviceId: DeviceId;
 }) {
-	const ydoc = new Y.Doc({ guid: HONEYCRISP_ID, gc: true });
-	const { tables, kv } = attachEncryption(ydoc, {
-		keyring: signedIn.keyring,
-		tables: honeycrispTables,
-		kv: {},
-	});
-	const actions = createHoneycrispActions(tables);
+	const workspace = createHoneycrispWorkspace({ keyring: signedIn.keyring });
+	const actions = createHoneycrispActions(workspace);
 
-	const idb = attachLocalStorage(ydoc, {
+	const idb = attachLocalStorage(workspace.ydoc, {
 		server: signedIn.server,
 		ownerId: signedIn.ownerId,
 		keyring: signedIn.keyring,
 	});
-	const collaboration = openCollaboration(ydoc, {
+	const collaboration = openCollaboration(workspace.ydoc, {
 		url: roomWsUrl({
 			baseURL: signedIn.baseURL,
 			ownerId: signedIn.ownerId,
-			guid: ydoc.guid,
+			guid: workspace.ydoc.guid,
 			deviceId,
 		}),
 		openWebSocket: signedIn.openWebSocket,
@@ -96,7 +89,7 @@ export function openHoneycrispBrowser({
 		});
 
 		onLocalUpdate(childYdoc, () => {
-			tables.notes.update(noteId, {
+			workspace.tables.notes.update(noteId, {
 				updatedAt: DateTimeString.now(),
 			});
 		});
@@ -118,16 +111,14 @@ export function openHoneycrispBrowser({
 	});
 
 	return {
-		ydoc,
-		tables,
-		kv,
+		...workspace,
 		actions,
 		idb,
 		noteBodyDocs,
 		collaboration,
 		async wipe() {
 			noteBodyDocs[Symbol.dispose]();
-			ydoc.destroy();
+			workspace[Symbol.dispose]();
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
 			await wipeLocalStorage({
 				server: signedIn.server,
@@ -136,7 +127,7 @@ export function openHoneycrispBrowser({
 		},
 		[Symbol.dispose]() {
 			noteBodyDocs[Symbol.dispose]();
-			ydoc.destroy();
+			workspace[Symbol.dispose]();
 		},
 	};
 }

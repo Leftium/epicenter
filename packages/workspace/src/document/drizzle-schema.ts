@@ -15,7 +15,7 @@
  * per-read concern.
  *
  * `_v` is stripped from `definition.schema` before this code sees it (see
- * `attach-table.ts`), so the walker never has to special-case it.
+ * `table.ts`), so the walker never has to special-case it.
  *
  * @example
  * ```ts
@@ -46,7 +46,7 @@ import type {
 } from 'drizzle-orm/sqlite-core';
 import { integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import type { Static, TSchema } from 'typebox';
-import type { TableDefinition, TableDefinitions } from './attach-table';
+import type { TableDefinition, TableDefinitions } from './table';
 
 // ════════════════════════════════════════════════════════════════════════════
 // PUBLIC API

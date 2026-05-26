@@ -3,19 +3,11 @@ import { analytics } from '$lib/operations/analytics';
 import { notify } from '$lib/operations/notify';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { sound } from '$lib/operations/sound';
-import type {
-	DeviceAcquisitionOutcome,
-	UpdateStatusMessageFn,
-} from '$lib/services/recorder/types';
+import type { DeviceAcquisitionOutcome } from '$lib/services/recorder/types';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
-
-const sendStatusToToast =
-	(toastId: string): UpdateStatusMessageFn =>
-	(status) =>
-		notify.loading({ id: toastId, ...status });
 
 function handleDeviceAcquisitionOutcome(
 	outcome: DeviceAcquisitionOutcome,
@@ -76,17 +68,12 @@ export async function startManualRecording() {
 		description: 'Setting up your recording environment...',
 	});
 
-	const { data: outcome, error } = await manualRecorder.start({
-		sendStatus: sendStatusToToast(toastId),
+	const { data: outcome, error } = await manualRecorder.startRecording({
+		toastId,
 	});
 
 	if (error) {
-		notify.error({
-			id: toastId,
-			title: '❌ Failed to start recording',
-			description: error.message,
-			action: { type: 'more-details', error },
-		});
+		notify.error({ id: toastId, ...error });
 		return;
 	}
 
@@ -113,17 +100,10 @@ export async function stopManualRecording() {
 		description: 'Finalizing your audio capture...',
 	});
 
-	const { data, error } = await manualRecorder.stop({
-		sendStatus: sendStatusToToast(toastId),
-	});
+	const { data, error } = await manualRecorder.stopRecording({ toastId });
 
 	if (error) {
-		notify.error({
-			id: toastId,
-			title: '❌ Failed to stop recording',
-			description: error.message,
-			action: { type: 'more-details', error },
-		});
+		notify.error({ id: toastId, ...error });
 		return;
 	}
 
@@ -167,17 +147,10 @@ export async function cancelManualRecording() {
 		description: 'Cleaning up recording session...',
 	});
 
-	const { data, error } = await manualRecorder.cancel({
-		sendStatus: sendStatusToToast(toastId),
-	});
+	const { data, error } = await manualRecorder.cancelRecording({ toastId });
 
 	if (error) {
-		notify.error({
-			id: toastId,
-			title: '❌ Failed to cancel recording',
-			description: error.message,
-			action: { type: 'more-details', error },
-		});
+		notify.error({ id: toastId, ...error });
 		return;
 	}
 

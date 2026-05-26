@@ -6,9 +6,9 @@ import { expect, test } from 'bun:test';
 import { Type } from 'typebox';
 import * as Y from 'yjs';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
-import { createKv } from './attach-kv.js';
 import { defineKv } from './define-kv.js';
 import { KV_KEY } from './keys.js';
+import { createKv } from './kv.js';
 
 const themeSchema = Type.Object({
 	mode: Type.Union([Type.Literal('light'), Type.Literal('dark')]),

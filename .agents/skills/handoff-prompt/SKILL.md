@@ -170,10 +170,13 @@ and `Badge` from `@epicenter/ui/badge`. The page has 4 sections...
 The workspace setup code is:
 \`\`\`typescript
 const cache = createDisposableCache((id: string) => {
-  const ydoc = new Y.Doc({ guid: id });
-  const tables = attachTables(ydoc, { files: filesTable });
-  const idb = attachIndexedDb(ydoc);
-  return { ydoc, tables, idb, [Symbol.dispose]() { ydoc.destroy(); } };
+  const workspace = createWorkspace({
+    id,
+    tables: { files: filesTable },
+    kv: {},
+  });
+  const idb = attachIndexedDb(workspace.ydoc);
+  return { ...workspace, idb };
 });
 export const ws = cache.open('opensidian');
 \`\`\`

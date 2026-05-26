@@ -1,33 +1,47 @@
 import { isTauri } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 import { nanoid } from 'nanoid/non-secure';
 import { Ok } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { PATHS } from '$lib/constants/paths';
 import { defineQuery } from '$lib/rpc/client';
+import { notify } from '$lib/operations/notify';
 import { WhisperingErr } from '$lib/result';
 import { services } from '$lib/services';
 import { desktopServices } from '$lib/services/desktop';
 import {
 	asDeviceIdentifier,
+	type RecorderService,
+	type Recording,
 	type StartRecordingParams,
-	type UpdateStatusMessageFn,
 } from '$lib/services/recorder/types';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 
 /**
- * Toast-agnostic manual recorder. Exposes the current recording state and
- * three thin wrappers around the active recorder service. State stays narrow
- * (`'IDLE' | 'RECORDING'`); the transient "operation in flight" window is
- * owned by the caller (a TanStack mutation in the UI layer), not modelled
- * here.
+ * Creates the manual recorder with reactive state.
  *
- * On Tauri, state is bootstrapped from the active service's `getRecorderState`
- * once at module init (a Rust CPAL session can outlive a JS reload). A Tauri
- * `recorder:state-changed` listener is registered to receive future Rust-side
- * transitions.
+ * State is owned by this module via Svelte's `$state` rune for synchronous
+ * reactivity. Mirrors the shape of `vadRecorder` in `vad-recorder.svelte.ts`:
+ *
+ * - Reactive access: `manualRecorder.state` (triggers effects on change)
+ * - Operations: `manualRecorder.startRecording({ toastId })` etc.
+ * - Device enumeration as a TanStack Query for loading states in selectors
+ *
+ * Each recording is a `Recording` object returned by the backend that
+ * started it. The Recording owns its own stop/cancel/subscribe; the
+ * recorder service is only consulted at start time, so toggling
+ * `recording.method` mid-recording can't misroute teardown (the in-flight
+ * Recording stays bound to its original backend).
+ *
+ * Subscription is per-Recording rather than per-service. The previous
+ * model subscribed to both navigator and cpal at module init even though
+ * only one would ever fire; now `attach()` subscribes to the live
+ * Recording and `detach()` cleans up on stop/cancel.
+ *
+ * On Tauri, state is bootstrapped from each backend's `getActiveRecording`
+ * at module init (a Rust CPAL session can outlive a JS reload).
  */
-function recorderService() {
+
+function resolveServiceForStart(): RecorderService {
 	if (!isTauri()) return services.navigatorRecorder;
 	return deviceConfig.get('recording.method') === 'cpal'
 		? desktopServices.cpalRecorder
@@ -61,22 +75,44 @@ async function buildStartParams(
 	};
 }
 
-type Callbacks = { sendStatus: UpdateStatusMessageFn };
-
 function createManualRecorder() {
 	let _state = $state<WhisperingRecordingState>('IDLE');
+	let _current: Recording | null = null;
+	let _unsubscribe: (() => void) | null = null;
 
-	void recorderService()
-		.getRecorderState()
-		.then(({ data }) => {
-			if (data) _state = data;
-		});
-
-	if (isTauri()) {
-		void listen<WhisperingRecordingState>('recorder:state-changed', (event) => {
-			_state = event.payload;
+	function attach(recording: Recording) {
+		_unsubscribe?.();
+		_current = recording;
+		_unsubscribe = recording.subscribe((s) => {
+			_state = s;
+			if (s === 'IDLE') detach();
 		});
 	}
+
+	function detach() {
+		_unsubscribe?.();
+		_unsubscribe = null;
+		_current = null;
+		_state = 'IDLE';
+	}
+
+	// Bootstrap: ask each backend whether it owns a live session. Navigator
+	// always returns null after a JS reload (its state lives in the closure);
+	// cpal can return non-null because the Rust process keeps the stream alive.
+	//
+	// The promise is awaited before any stop/cancel/start runs. Without
+	// that gate, a user action that fires before bootstrap resolves sees a
+	// stale `_current === null` and either no-ops the cancel (leaking the
+	// Rust session) or double-starts on top of a rehydrated one.
+	const bootstrapped = Promise.all([
+		services.navigatorRecorder.getActiveRecording(),
+		isTauri()
+			? desktopServices.cpalRecorder.getActiveRecording()
+			: Promise.resolve({ data: null, error: null } as const),
+	]).then(([nav, cpal]) => {
+		const found = nav.data ?? cpal.data ?? null;
+		if (found) attach(found);
+	});
 
 	return {
 		get state(): WhisperingRecordingState {
@@ -86,7 +122,8 @@ function createManualRecorder() {
 		enumerateDevices: defineQuery({
 			queryKey: ['recorder', 'devices'],
 			queryFn: async () => {
-				const { data, error } = await recorderService().enumerateDevices();
+				const { data, error } =
+					await resolveServiceForStart().enumerateDevices();
 				if (error) {
 					return WhisperingErr({
 						title: '❌ Failed to enumerate devices',
@@ -97,25 +134,74 @@ function createManualRecorder() {
 			},
 		}),
 
-		async start({ sendStatus }: Callbacks) {
-			const result = await recorderService().startRecording(
-				await buildStartParams(nanoid()),
-				{ sendStatus },
+		async startRecording({ toastId }: { toastId: string }) {
+			await bootstrapped;
+			if (_current) {
+				return WhisperingErr({
+					title: '❌ Already recording',
+					description:
+						'A recording is already in progress. Stop the current one before starting a new one.',
+				});
+			}
+			const service = resolveServiceForStart();
+			const params = await buildStartParams(nanoid());
+			const { data, error: startRecordingError } = await service.startRecording(
+				params,
+				{
+					sendStatus: (options) => notify.loading({ id: toastId, ...options }),
+				},
 			);
-			if (result.data) _state = 'RECORDING';
-			return result;
+
+			if (startRecordingError) {
+				return WhisperingErr({
+					title: '❌ Failed to start recording',
+					serviceError: startRecordingError,
+				});
+			}
+
+			attach(data.recording);
+			return Ok(data.deviceAcquisition);
 		},
 
-		async stop({ sendStatus }: Callbacks) {
-			const result = await recorderService().stopRecording({ sendStatus });
-			if (result.data) _state = 'IDLE';
-			return result;
+		async stopRecording({ toastId }: { toastId: string }) {
+			await bootstrapped;
+			if (!_current) {
+				return WhisperingErr({
+					title: '❌ Failed to stop recording',
+					description:
+						'No active recording session to stop. Start a recording first.',
+				});
+			}
+			const { data, error: stopRecordingError } = await _current.stop({
+				sendStatus: (options) => notify.loading({ id: toastId, ...options }),
+			});
+
+			if (stopRecordingError) {
+				return WhisperingErr({
+					title: '❌ Failed to stop recording',
+					serviceError: stopRecordingError,
+				});
+			}
+
+			return Ok(data);
 		},
 
-		async cancel({ sendStatus }: Callbacks) {
-			const result = await recorderService().cancelRecording({ sendStatus });
-			if (result.data) _state = 'IDLE';
-			return result;
+		async cancelRecording({ toastId }: { toastId: string }) {
+			await bootstrapped;
+			if (!_current) return Ok({ status: 'no-recording' as const });
+			const { data: cancelResult, error: cancelRecordingError } =
+				await _current.cancel({
+					sendStatus: (options) => notify.loading({ id: toastId, ...options }),
+				});
+
+			if (cancelRecordingError) {
+				return WhisperingErr({
+					title: '❌ Failed to cancel recording',
+					serviceError: cancelRecordingError,
+				});
+			}
+
+			return Ok(cancelResult);
 		},
 	};
 }

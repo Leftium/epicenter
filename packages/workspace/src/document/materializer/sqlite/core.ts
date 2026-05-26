@@ -27,7 +27,8 @@ import { createLogger, type Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
 import { defineMutation, defineQuery } from '../../../shared/actions.js';
 import type { MaybePromise } from '../../../shared/types.js';
-import type { BaseRow, Table } from '../../attach-table.js';
+import type { BaseRow, Table } from '../../table.js';
+import type { AnyTable, TablesRecord } from '../shared.js';
 import { generateDdl, quoteIdentifier } from './ddl.js';
 import { createSqliteFtsLayer } from './fts.js';
 
@@ -73,15 +74,7 @@ export type MirrorStatement = {
 	get(...params: unknown[]): MaybePromise<unknown>;
 };
 
-// biome-ignore lint/suspicious/noExplicitAny: generic bound for heterogeneous table helpers
-type AnyTable = Table<any>;
-
-/**
- * Record of workspace tables to materialize. Keys become the mirror table
- * names; values are the workspace table refs returned by `attachTables`.
- */
-// biome-ignore lint/suspicious/noExplicitAny: heterogeneous row types in a record
-export type TablesRecord = Record<string, Table<any>>;
+export type { TablesRecord } from '../shared.js';
 
 /**
  * Optional FTS configuration, keyed by the same names as `tables`. Each

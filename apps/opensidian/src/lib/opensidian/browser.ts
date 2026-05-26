@@ -4,7 +4,7 @@
  * Single source of truth for "how Opensidian mounts in a browser." Calls
  * Tier 1 primitives inline so every line is visible top-to-bottom:
  *
- *  1. workspace root doc (encrypted tables + KV via attachEncryption)
+ *  1. workspace root doc (encrypted tables + KV via createOpensidianWorkspace)
  *  2. local storage + cloud sync for root (attachLocalStorage + openCollaboration)
  *  3. per-file child content docs (plaintext timeline + encrypted IDB storage)
  *  4. file system, sqlite index, bash, and action registry
@@ -25,7 +25,6 @@ import {
 } from '@epicenter/filesystem';
 import type { SignedIn } from '@epicenter/svelte';
 import {
-	attachEncryption,
 	attachLocalStorage,
 	attachTimeline,
 	createDisposableCache,
@@ -37,9 +36,8 @@ import {
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import {
-	OPENSIDIAN_ID,
+	createOpensidianWorkspace,
 	opensidianFileContentDocGuid,
-	opensidianTables,
 } from 'opensidian';
 import * as Y from 'yjs';
 import { createOpensidianActions } from './actions';
@@ -51,12 +49,8 @@ export function openOpensidianBrowser({
 	signedIn: SignedIn;
 	deviceId: DeviceId;
 }) {
-	const ydoc = new Y.Doc({ guid: OPENSIDIAN_ID, gc: true });
-	const { tables, kv } = attachEncryption(ydoc, {
-		keyring: signedIn.keyring,
-		tables: opensidianTables,
-		kv: {},
-	});
+	const workspace = createOpensidianWorkspace({ keyring: signedIn.keyring });
+	const { ydoc, tables } = workspace;
 
 	const idb = attachLocalStorage(ydoc, {
 		server: signedIn.server,
@@ -158,13 +152,11 @@ export function openOpensidianBrowser({
 		docsTornDown = true;
 		fileContentDocs[Symbol.dispose]();
 		sqliteIndex[Symbol.dispose]();
-		ydoc.destroy();
+		workspace[Symbol.dispose]();
 	}
 
 	return {
-		ydoc,
-		tables,
-		kv,
+		...workspace,
 		idb,
 		fileContentDocs,
 		sqliteIndex: sqliteIndexExports,

@@ -10,8 +10,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { attachTables } from '@epicenter/workspace';
-import * as Y from 'yjs';
+import { createWorkspace } from '@epicenter/workspace';
 import { asFileId } from '../ids.js';
 import { filesTable } from '../table.js';
 import { attachFileSystemIndex } from './path-index.js';
@@ -19,9 +18,12 @@ import { attachFileSystemIndex } from './path-index.js';
 const fid = (s: string) => asFileId(s);
 
 function setup() {
-	const ydoc = new Y.Doc({ guid: 'test' });
-	const tables = attachTables(ydoc, { files: filesTable });
-	return { files: tables.files, ydoc };
+	const workspace = createWorkspace({
+		id: 'test',
+		tables: { files: filesTable },
+		kv: {},
+	});
+	return { files: workspace.tables.files, ydoc: workspace.ydoc };
 }
 
 function makeRow(

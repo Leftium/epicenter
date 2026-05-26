@@ -2,11 +2,11 @@
  * Local-only recipe: regression guard.
  *
  * Pins the composition a local-only consumer (desktop notes app, offline
- * CLI, test fixture) is meant to use. The recipe does NOT route through
- * `attachLocalStorage` or `attachEncryption`: those are cloud-synced
- * composites that require an owner-scoped keyring. Local-only data has no
- * cloud adversary, so plain IDB + plain BroadcastChannel + plain
- * `attachTable` is the right shape.
+ * CLI, test fixture) is meant to use. The recipe constructs a plaintext
+ * workspace (no `keyring`) and pairs it with plain IDB + plain
+ * BroadcastChannel. No `attachLocalStorage`: that's the cloud-synced
+ * composite that requires an owner-scoped keyring. Local-only data has no
+ * cloud adversary.
  *
  * If this file ever needs to import from `@epicenter/auth`,
  * `@epicenter/encryption`, or `@epicenter/constants/identity`, the
@@ -17,12 +17,11 @@
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { IDBKeyRange, indexedDB } from 'fake-indexeddb';
-import * as Y from 'yjs';
 import { attachBroadcastChannel } from './attach-broadcast-channel.js';
 import { attachIndexedDb } from './attach-indexed-db.js';
-import { attachTable } from './attach-table.js';
 import { column } from './column/index.js';
 import { defineTable } from './define-table.js';
+import { createWorkspace } from './workspace.js';
 
 Object.assign(globalThis, { indexedDB, IDBKeyRange });
 
@@ -65,46 +64,55 @@ describe('local-only recipe', () => {
 		});
 	});
 
-	test('persist + broadcast + table compose with no auth or encryption', async () => {
-		const ydoc = new Y.Doc({ guid: 'local-notes' });
-		const idb = attachIndexedDb(ydoc);
-		attachBroadcastChannel(ydoc);
+	test('persist + broadcast + workspace compose with no auth or encryption', async () => {
+		const workspace = createWorkspace({
+			id: 'local-notes',
+			tables: { notes: NoteDef },
+			kv: {},
+		});
+		const idb = attachIndexedDb(workspace.ydoc);
+		attachBroadcastChannel(workspace.ydoc);
 		await idb.whenLoaded;
 
-		const notes = attachTable(ydoc, 'notes', NoteDef);
-		notes.set({ id: 'first', body: 'hello local-first' });
+		workspace.tables.notes.set({ id: 'first', body: 'hello local-first' });
 
-		const { data: stored, error } = notes.get('first');
+		const { data: stored, error } = workspace.tables.notes.get('first');
 		expect(error).toBeNull();
 		expect(stored).toEqual({ id: 'first', body: 'hello local-first' });
 
 		expect(FakeBroadcastChannel.names).toEqual(['yjs.local-notes']);
 
-		ydoc.destroy();
+		workspace[Symbol.dispose]();
 		await idb.whenDisposed;
 	});
 
 	test('data survives a fresh open on the same guid', async () => {
-		const first = new Y.Doc({ guid: 'local-notes' });
-		const firstIdb = attachIndexedDb(first);
+		const first = createWorkspace({
+			id: 'local-notes',
+			tables: { notes: NoteDef },
+			kv: {},
+		});
+		const firstIdb = attachIndexedDb(first.ydoc);
 		await firstIdb.whenLoaded;
-		const firstNotes = attachTable(first, 'notes', NoteDef);
-		firstNotes.set({ id: 'persist-me', body: 'survives reload' });
-		first.destroy();
+		first.tables.notes.set({ id: 'persist-me', body: 'survives reload' });
+		first[Symbol.dispose]();
 		await firstIdb.whenDisposed;
 
-		const second = new Y.Doc({ guid: 'local-notes' });
-		const secondIdb = attachIndexedDb(second);
+		const second = createWorkspace({
+			id: 'local-notes',
+			tables: { notes: NoteDef },
+			kv: {},
+		});
+		const secondIdb = attachIndexedDb(second.ydoc);
 		await secondIdb.whenLoaded;
-		const secondNotes = attachTable(second, 'notes', NoteDef);
 
-		const { data: stored } = secondNotes.get('persist-me');
+		const { data: stored } = second.tables.notes.get('persist-me');
 		expect(stored).toEqual({
 			id: 'persist-me',
 			body: 'survives reload',
 		});
 
-		second.destroy();
+		second[Symbol.dispose]();
 		await secondIdb.whenDisposed;
 	});
 });

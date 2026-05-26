@@ -155,6 +155,16 @@ export const RecorderError = defineErrors({
 	NoDevice: ({ message }: { message: string }) => ({
 		message,
 	}),
+	MicrophonePermissionDenied: ({ cause }: { cause?: unknown } = {}) => ({
+		message:
+			'Microphone access was denied. Please grant microphone permission in your system or browser settings and try again.',
+		cause,
+	}),
+	NoInputDevice: ({ cause }: { cause?: unknown } = {}) => ({
+		message:
+			"We couldn't find any microphone to record from. Please connect a microphone and try again.",
+		cause,
+	}),
 	AlreadyRecording: () => ({
 		message:
 			'A recording is already in progress. Please stop the current recording before starting a new one.',
@@ -237,37 +247,22 @@ export type StartRecordingParams =
 	| NavigatorRecordingParams;
 
 /**
- * Recorder service interface shared by all methods
+ * A live recording session bound to the backend that started it.
+ *
+ * The `Recording` is the unit of lifecycle: it knows its own backend, owns
+ * its own teardown, and exposes per-session state changes. Toggling
+ * `recording.method` after construction has no effect on an in-flight
+ * Recording, which is what fixes the swap-mid-recording leak.
+ *
+ * The `subscribe` handler is invoked synchronously with the current state on
+ * subscribe (so callers don't have to mirror "I just started" themselves),
+ * then again whenever the session transitions, ending with 'IDLE' on
+ * stop/cancel.
  */
-export type RecorderService = {
-	/**
-	 * Get the current recorder state
-	 * Returns 'IDLE' if no recording is active, 'RECORDING' if recording is in progress
-	 */
-	getRecorderState(): Promise<Result<WhisperingRecordingState, RecorderError>>;
-
-	/**
-	 * Enumerate available recording devices with their labels and identifiers
-	 */
-	enumerateDevices(): Promise<Result<Device[], RecorderError>>;
-
-	/**
-	 * Start a new recording session
-	 */
-	startRecording(
-		params: StartRecordingParams,
-		callbacks: {
-			sendStatus: UpdateStatusMessageFn;
-		},
-	): Promise<Result<DeviceAcquisitionOutcome, RecorderError>>;
-
-	/**
-	 * Stop the current recording. Returns the audio blob, the recordingId that
-	 * was supplied to startRecording, and the recording duration in milliseconds
-	 * measured by the underlying recorder (more accurate than measuring from JS
-	 * because it excludes mic-acquisition and toast-construction time).
-	 */
-	stopRecording(callbacks: {
+export type Recording = {
+	readonly recordingId: string;
+	readonly backend: 'navigator' | 'cpal';
+	stop(callbacks: {
 		sendStatus: UpdateStatusMessageFn;
 	}): Promise<
 		Result<
@@ -275,11 +270,50 @@ export type RecorderService = {
 			RecorderError
 		>
 	>;
-
-	/**
-	 * Cancel the current recording without saving
-	 */
-	cancelRecording(callbacks: {
+	cancel(callbacks: {
 		sendStatus: UpdateStatusMessageFn;
 	}): Promise<Result<CancelRecordingResult, RecorderError>>;
+	subscribe(handler: (state: WhisperingRecordingState) => void): () => void;
+};
+
+/**
+ * Factory for `Recording` sessions. Services no longer carry mutable
+ * start/stop state directly; instead `startRecording` returns a Recording
+ * whose methods are bound to the backend that produced it.
+ */
+export type RecorderService = {
+	/**
+	 * Probe for a Recording that already exists at module-load time. CPAL
+	 * sessions can outlive a JS reload because the Rust process keeps the
+	 * stream; navigator sessions cannot survive a reload and will always
+	 * return null after one.
+	 *
+	 * Returns the live Recording bound to this backend, or null if none.
+	 */
+	getActiveRecording(): Promise<Result<Recording | null, RecorderError>>;
+
+	/**
+	 * Enumerate available recording devices with their labels and identifiers
+	 */
+	enumerateDevices(): Promise<Result<Device[], RecorderError>>;
+
+	/**
+	 * Start a new recording session, returning the Recording handle along
+	 * with the device acquisition outcome. The caller holds the Recording
+	 * and uses its `stop`/`cancel`/`subscribe` for the rest of the session.
+	 */
+	startRecording(
+		params: StartRecordingParams,
+		callbacks: {
+			sendStatus: UpdateStatusMessageFn;
+		},
+	): Promise<
+		Result<
+			{
+				recording: Recording;
+				deviceAcquisition: DeviceAcquisitionOutcome;
+			},
+			RecorderError
+		>
+	>;
 };

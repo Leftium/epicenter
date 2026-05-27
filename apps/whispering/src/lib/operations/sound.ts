@@ -22,6 +22,6 @@ export const sound = {
 		if (!settings.get(soundSettingKeyMap[soundName])) {
 			return Ok(undefined);
 		}
-		return await services.sound.playSound(soundName);
+		return services.sound.playSound(soundName);
 	},
 };

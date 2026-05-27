@@ -1,9 +1,5 @@
 import { nanoid } from 'nanoid/non-secure';
-import {
-	defineErrors,
-	extractErrorMessage,
-	type InferErrors,
-} from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { defineKeys } from 'wellcrafted/query';
 import { Err, Ok } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
@@ -33,7 +29,6 @@ const ManualRecorderError = defineErrors({
 		message: 'No active recording session to stop. Start a recording first.',
 	}),
 });
-type ManualRecorderError = InferErrors<typeof ManualRecorderError>;
 
 export const manualRecorderKeys = defineKeys({
 	devices: ['recorder', 'devices'],
@@ -76,9 +71,7 @@ function resolveServiceForStart(): RecorderService {
 	return services.navigatorRecorder;
 }
 
-async function buildStartParams(
-	recordingId: string,
-): Promise<StartRecordingParams> {
+function buildStartParams(recordingId: string): StartRecordingParams {
 	const useCpal = !!tauri && deviceConfig.get('recording.method') === 'cpal';
 
 	if (useCpal) {
@@ -163,7 +156,7 @@ function createManualRecorder() {
 			await bootstrapped;
 			if (_current) return ManualRecorderError.AlreadyRecording();
 			const service = resolveServiceForStart();
-			const params = await buildStartParams(nanoid());
+			const params = buildStartParams(nanoid());
 			const { data, error: startRecordingError } = await service.startRecording(
 				params,
 				{ sendStatus },
@@ -178,13 +171,7 @@ function createManualRecorder() {
 		async stopRecording({ sendStatus }: { sendStatus: UpdateStatusMessageFn }) {
 			await bootstrapped;
 			if (!_current) return ManualRecorderError.NoActiveRecording();
-			const { data, error: stopRecordingError } = await _current.stop({
-				sendStatus,
-			});
-
-			if (stopRecordingError) return Err(stopRecordingError);
-
-			return Ok(data);
+			return _current.stop({ sendStatus });
 		},
 
 		async cancelRecording({
@@ -194,12 +181,7 @@ function createManualRecorder() {
 		}) {
 			await bootstrapped;
 			if (!_current) return Ok({ status: 'no-recording' as const });
-			const { data: cancelResult, error: cancelRecordingError } =
-				await _current.cancel({ sendStatus });
-
-			if (cancelRecordingError) return Err(cancelRecordingError);
-
-			return Ok(cancelResult);
+			return _current.cancel({ sendStatus });
 		},
 	};
 }

@@ -37,7 +37,6 @@ export function createFujiActions(workspace: FujiWorkspace) {
 		entries_get_all_valid: defineQuery({
 			title: 'List Valid Entries',
 			description: 'Read all valid entries from the daemon workspace.',
-			input: Type.Object({}),
 			handler: () => {
 				return tables.entries.getAllValid();
 			},
@@ -45,7 +44,6 @@ export function createFujiActions(workspace: FujiWorkspace) {
 		entries_count: defineQuery({
 			title: 'Count Entries',
 			description: 'Count entries in the daemon workspace.',
-			input: Type.Object({}),
 			handler: () => {
 				return tables.entries.count();
 			},

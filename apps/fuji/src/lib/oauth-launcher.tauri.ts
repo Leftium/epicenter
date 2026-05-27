@@ -1,7 +1,5 @@
-import type { OAuthTokenGrant } from '@epicenter/auth';
 import {
 	createOAuthClient,
-	type OAuthAuthorizationRequest,
 	type OAuthClientConfig,
 	OAuthClientError,
 	type OAuthLauncher,
@@ -20,8 +18,9 @@ import { Ok, type Result } from 'wellcrafted/result';
  * still override it without making `auth.ts` know about Tauri deep-link
  * details.
  */
-type FujiOAuthLauncherConfig = OAuthClientConfig &
-	Partial<OAuthAuthorizationRequest>;
+type FujiOAuthLauncherConfig = OAuthClientConfig & {
+	redirectUri?: string;
+};
 
 /**
  * Create Fuji's native-app OAuth launcher.
@@ -43,20 +42,29 @@ export function createFujiOAuthLauncher({
 				isRedirectUrl(url, redirectUri),
 			);
 			if (currentCallback) {
-				return completeLaunchFromCallback(
-					client.handleCallback,
-					currentCallback,
-				);
+				const callbackResult = await client.exchangeCallback(currentCallback);
+				if (callbackResult.error) return callbackResult;
+				return Ok({
+					status: 'completed',
+					grant: callbackResult.data,
+				} satisfies OAuthLaunchResult);
 			}
 
-			const urlResult = await client.createAuthorizationUrl({ redirectUri });
+			const urlResult = await client.createAuthorizationUrl(redirectUri);
 			if (urlResult.error) return urlResult;
 
-			return await waitForOAuthCallback({
+			const callbackUrl = await waitForRedirectUrl({
 				authorizationUrl: urlResult.data.toString(),
 				redirectUri,
-				handleCallback: client.handleCallback,
 			});
+			if (callbackUrl.error) return callbackUrl;
+
+			const callbackResult = await client.exchangeCallback(callbackUrl.data);
+			if (callbackResult.error) return callbackResult;
+			return Ok({
+				status: 'completed',
+				grant: callbackResult.data,
+			} satisfies OAuthLaunchResult);
 		},
 	};
 }
@@ -79,62 +87,39 @@ function isRedirectUrl(url: string, redirectUri: string): boolean {
  * The callback is claimed before token exchange starts. That prevents duplicate
  * deep-link events from racing two exchanges for the same authorization code.
  */
-async function waitForOAuthCallback({
+async function waitForRedirectUrl({
 	authorizationUrl,
 	redirectUri,
-	handleCallback,
 }: {
 	authorizationUrl: string;
 	redirectUri: string;
-	handleCallback: (
-		url: string | URL,
-	) => Promise<Result<OAuthTokenGrant, OAuthClientError>>;
 }) {
-	return await new Promise<Result<OAuthLaunchResult, OAuthClientError>>(
-		(resolve) => {
-			let settled = false;
-			let callbackClaimed = false;
-			let unlisten: UnlistenFn | null = null;
+	return await new Promise<Result<string, OAuthClientError>>((resolve) => {
+		let settled = false;
+		let callbackClaimed = false;
+		let unlisten: UnlistenFn | null = null;
 
-			const settle = (result: Result<OAuthLaunchResult, OAuthClientError>) => {
-				if (settled) return;
-				settled = true;
-				unlisten?.();
-				resolve(result);
-			};
+		const settle = (result: Result<string, OAuthClientError>) => {
+			if (settled) return;
+			settled = true;
+			unlisten?.();
+			resolve(result);
+		};
 
-			onOpenUrl((urls) => {
-				if (callbackClaimed) return;
-				const callbackUrl = urls.find((url) => isRedirectUrl(url, redirectUri));
-				if (!callbackUrl) return;
-				callbackClaimed = true;
-				unlisten?.();
-				void completeLaunchFromCallback(handleCallback, callbackUrl).then(
-					settle,
-					(cause) => settle(OAuthClientError.TokenExchangeFailed({ cause })),
-				);
+		onOpenUrl((urls) => {
+			if (callbackClaimed) return;
+			const callbackUrl = urls.find((url) => isRedirectUrl(url, redirectUri));
+			if (!callbackUrl) return;
+			callbackClaimed = true;
+			unlisten?.();
+			settle(Ok(callbackUrl));
+		})
+			.then((nextUnlisten) => {
+				unlisten = nextUnlisten;
+				return openUrl(authorizationUrl);
 			})
-				.then((nextUnlisten) => {
-					unlisten = nextUnlisten;
-					return openUrl(authorizationUrl);
-				})
-				.catch((cause) => {
-					settle(OAuthClientError.LaunchFailed({ cause }));
-				});
-		},
-	);
-}
-
-async function completeLaunchFromCallback(
-	handleCallback: (
-		url: string | URL,
-	) => Promise<Result<OAuthTokenGrant, OAuthClientError>>,
-	url: string | URL,
-): Promise<Result<OAuthLaunchResult, OAuthClientError>> {
-	const callbackResult = await handleCallback(url);
-	if (callbackResult.error) return callbackResult;
-	return Ok({
-		status: 'completed',
-		grant: callbackResult.data,
-	} satisfies OAuthLaunchResult);
+			.catch((cause) => {
+				settle(OAuthClientError.LaunchFailed({ cause }));
+			});
+	});
 }

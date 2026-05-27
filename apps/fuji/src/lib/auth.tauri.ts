@@ -3,7 +3,7 @@ import { createOAuthAppAuth } from '@epicenter/auth-svelte';
 import { EPICENTER_FUJI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
-import { createFujiOAuthLauncher } from './oauth-launcher';
+import { createFujiOAuthLauncher } from './oauth-launcher.tauri.js';
 
 export const auth = createOAuthAppAuth({
 	baseURL: APP_URLS.API,

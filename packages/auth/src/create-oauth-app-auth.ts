@@ -17,6 +17,7 @@ import {
 	type OAuthTokenGrant,
 	type PersistedAuth,
 } from './auth-types.js';
+import type { OAuthLauncher } from './oauth-launchers/contract.js';
 import { parseOAuthTokenGrant } from './oauth-token-response.js';
 
 /**
@@ -31,22 +32,6 @@ export type PersistedAuthStorage = {
 	set(value: PersistedAuth | null): void | Promise<void>;
 };
 
-/**
- * Result of a runtime-specific OAuth launch.
- *
- * `completed` means the launcher already has an authorization-code grant for
- * auth core to verify and persist. `launched` means the runtime handed control
- * away, usually through browser navigation, and completion will happen through
- * a later callback invocation.
- */
-export type OAuthLaunchResult =
-	| { status: 'completed'; grant: OAuthTokenGrant }
-	| { status: 'launched' };
-
-export type OAuthSignInLauncher = {
-	startSignIn(): Promise<Result<OAuthLaunchResult, unknown>>;
-};
-
 type AuthFetchInput = Request | string | URL;
 
 export type AuthFetch = (
@@ -58,7 +43,7 @@ export type CreateOAuthAppAuthConfig = {
 	baseURL?: string;
 	clientId: string;
 	persistedAuthStorage: PersistedAuthStorage;
-	launcher: OAuthSignInLauncher;
+	launcher: OAuthLauncher;
 	fetch?: AuthFetch;
 	WebSocket?: typeof WebSocket;
 	now?: () => number;

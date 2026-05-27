@@ -223,7 +223,6 @@ export type MachineIdentity = {
 type CommonConfig = {
 	baseURL?: string;
 	clientId?: string;
-	redirectUri?: string;
 	filePath?: string;
 	fetch?: AuthFetch;
 	log?: Logger;
@@ -231,6 +230,7 @@ type CommonConfig = {
 };
 
 export type LoginWithOobConfig = CommonConfig & {
+	redirectUri?: string;
 	print?: (line: string) => void;
 	openBrowser?: (url: string) => Promise<void> | void;
 	readCode?: () => Promise<string>;

@@ -22,11 +22,11 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
+import type { AuthFetch } from '../create-oauth-app-auth.js';
 import type {
-	AuthFetch,
+	OAuthLauncher,
 	OAuthLaunchResult,
-	OAuthSignInLauncher,
-} from '../create-oauth-app-auth.js';
+} from '../oauth-launchers/contract.js';
 import { parseOAuthTokenGrant } from '../oauth-token-response.js';
 
 export const OobLauncherError = defineErrors({
@@ -88,7 +88,7 @@ export function createOobOAuthLauncher({
 	fetch = globalThis.fetch.bind(globalThis),
 	crypto = globalThis.crypto,
 	now = Date.now,
-}: CreateOobOAuthLauncherConfig): OAuthSignInLauncher {
+}: CreateOobOAuthLauncherConfig): OAuthLauncher {
 	return {
 		async startSignIn(): Promise<Result<OAuthLaunchResult, OobLauncherError>> {
 			const codeVerifier = base64UrlEncode(randomBytes(crypto, 32));

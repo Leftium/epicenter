@@ -83,9 +83,7 @@ test('createAuthorizationUrl stores verifier state and returns PKCE URL', async 
 		fetch: createFetch(),
 	});
 
-	const url = expectOk(
-		await client.createAuthorizationUrl({ redirectUri: REDIRECT_URI }),
-	);
+	const url = expectOk(await client.createAuthorizationUrl(REDIRECT_URI));
 
 	expect(url.searchParams.get('response_type')).toBe('code');
 	expect(url.searchParams.get('client_id')).toBe('client-1');
@@ -165,7 +163,26 @@ test('extension launcher returns completed grant after web-auth callback', async
 	expect(result.grant.accessToken).toBe('access-token');
 });
 
-test('handleCallback rejects missing stored transaction', async () => {
+test('isCallback classifies OAuth callback URLs', () => {
+	const { storage } = createMemoryStorage();
+	const client = createOAuthClient({
+		issuer: 'http://auth.test/auth',
+		clientId: 'client-1',
+		resource: 'http://auth.test',
+		storage,
+		fetch: createFetch(),
+	});
+
+	expect(client.isCallback('http://app.test/auth/callback?code=code-1')).toBe(
+		true,
+	);
+	expect(
+		client.isCallback('http://app.test/auth/callback?error=access_denied'),
+	).toBe(true);
+	expect(client.isCallback('http://app.test/sign-in')).toBe(false);
+});
+
+test('exchangeCallback rejects missing stored transaction', async () => {
 	const { storage } = createMemoryStorage();
 	const client = createOAuthClient({
 		issuer: 'http://auth.test/auth',
@@ -176,7 +193,7 @@ test('handleCallback rejects missing stored transaction', async () => {
 	});
 
 	const error = expectErr(
-		await client.handleCallback(
+		await client.exchangeCallback(
 			'http://app.test/auth/callback?code=code-1&state=state-1',
 		),
 	);
@@ -184,7 +201,7 @@ test('handleCallback rejects missing stored transaction', async () => {
 	expect(error.name).toBe('MissingCallbackTransaction');
 });
 
-test('handleCallback reports callback authorization errors', async () => {
+test('exchangeCallback reports callback authorization errors', async () => {
 	const { storage } = createMemoryStorage({
 		'epicenter.oauth.client-1': JSON.stringify({
 			state: 'state-1',
@@ -201,7 +218,7 @@ test('handleCallback reports callback authorization errors', async () => {
 	});
 
 	const error = expectErr(
-		await client.handleCallback(
+		await client.exchangeCallback(
 			'http://app.test/auth/callback?error=access_denied&error_description=Denied&state=state-1',
 		),
 	);
@@ -215,7 +232,7 @@ test('handleCallback reports callback authorization errors', async () => {
 	);
 });
 
-test('handleCallback rejects state mismatch before token exchange', async () => {
+test('exchangeCallback rejects state mismatch before token exchange', async () => {
 	const { storage } = createMemoryStorage({
 		'epicenter.oauth.client-1': JSON.stringify({
 			state: 'state-1',
@@ -237,7 +254,7 @@ test('handleCallback rejects state mismatch before token exchange', async () => 
 	});
 
 	const error = expectErr(
-		await client.handleCallback(
+		await client.exchangeCallback(
 			'http://app.test/auth/callback?code=code-1&state=state-2',
 		),
 	);
@@ -246,7 +263,7 @@ test('handleCallback rejects state mismatch before token exchange', async () => 
 	expect(tokenRequests).toBe(0);
 });
 
-test('handleCallback returns token result after successful exchange', async () => {
+test('exchangeCallback returns token result after successful exchange', async () => {
 	const { storage, values } = createMemoryStorage({
 		'epicenter.oauth.client-1': JSON.stringify({
 			state: 'state-1',
@@ -269,7 +286,7 @@ test('handleCallback returns token result after successful exchange', async () =
 	});
 
 	const data = expectOk(
-		await client.handleCallback(
+		await client.exchangeCallback(
 			'http://app.test/auth/callback?code=code-1&state=state-1',
 		),
 	);
@@ -282,7 +299,7 @@ test('handleCallback returns token result after successful exchange', async () =
 	expect(values.size).toBe(0);
 });
 
-test('handleCallback reports token exchange failure', async () => {
+test('exchangeCallback reports token exchange failure', async () => {
 	const { storage } = createMemoryStorage({
 		'epicenter.oauth.client-1': JSON.stringify({
 			state: 'state-1',
@@ -299,7 +316,7 @@ test('handleCallback reports token exchange failure', async () => {
 	});
 
 	const error = expectErr(
-		await client.handleCallback(
+		await client.exchangeCallback(
 			'http://app.test/auth/callback?code=code-1&state=state-1',
 		),
 	);
@@ -307,7 +324,7 @@ test('handleCallback reports token exchange failure', async () => {
 	expect(error.name).toBe('TokenExchangeFailed');
 });
 
-test('handleCallback rejects a token response without access token', async () => {
+test('exchangeCallback rejects a token response without access token', async () => {
 	const { storage } = createMemoryStorage({
 		'epicenter.oauth.client-1': JSON.stringify({
 			state: 'state-1',
@@ -330,7 +347,7 @@ test('handleCallback rejects a token response without access token', async () =>
 	});
 
 	const error = expectErr(
-		await client.handleCallback(
+		await client.exchangeCallback(
 			'http://app.test/auth/callback?code=code-1&state=state-1',
 		),
 	);
@@ -338,7 +355,7 @@ test('handleCallback rejects a token response without access token', async () =>
 	expect(error.name).toBe('TokenExchangeFailed');
 });
 
-test('handleCallback rejects a token response without refresh token', async () => {
+test('exchangeCallback rejects a token response without refresh token', async () => {
 	const { storage } = createMemoryStorage({
 		'epicenter.oauth.client-1': JSON.stringify({
 			state: 'state-1',
@@ -361,7 +378,7 @@ test('handleCallback rejects a token response without refresh token', async () =
 	});
 
 	const error = expectErr(
-		await client.handleCallback(
+		await client.exchangeCallback(
 			'http://app.test/auth/callback?code=code-1&state=state-1',
 		),
 	);
@@ -369,7 +386,7 @@ test('handleCallback rejects a token response without refresh token', async () =
 	expect(error.name).toBe('MissingRefreshToken');
 });
 
-test('handleCallback rejects a token response without expires_in', async () => {
+test('exchangeCallback rejects a token response without expires_in', async () => {
 	const { storage } = createMemoryStorage({
 		'epicenter.oauth.client-1': JSON.stringify({
 			state: 'state-1',
@@ -392,7 +409,7 @@ test('handleCallback rejects a token response without expires_in', async () => {
 	});
 
 	const error = expectErr(
-		await client.handleCallback(
+		await client.exchangeCallback(
 			'http://app.test/auth/callback?code=code-1&state=state-1',
 		),
 	);
@@ -400,7 +417,7 @@ test('handleCallback rejects a token response without expires_in', async () => {
 	expect(error.name).toBe('MissingExpiresIn');
 });
 
-test('handleCallback rejects a non-bearer token response', async () => {
+test('exchangeCallback rejects a non-bearer token response', async () => {
 	const { storage } = createMemoryStorage({
 		'epicenter.oauth.client-1': JSON.stringify({
 			state: 'state-1',
@@ -424,7 +441,7 @@ test('handleCallback rejects a non-bearer token response', async () => {
 	});
 
 	const error = expectErr(
-		await client.handleCallback(
+		await client.exchangeCallback(
 			'http://app.test/auth/callback?code=code-1&state=state-1',
 		),
 	);

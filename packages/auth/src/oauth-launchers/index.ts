@@ -7,10 +7,11 @@ import {
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import type { OAuthTokenGrant } from '../auth-types.js';
-import type { AuthFetch, OAuthLaunchResult } from '../create-oauth-app-auth.js';
+import type { AuthFetch } from '../create-oauth-app-auth.js';
 import { parseOAuthTokenGrant } from '../oauth-token-response.js';
+import type { OAuthLauncher, OAuthLaunchResult } from './contract.js';
 
-export type { OAuthLaunchResult } from '../create-oauth-app-auth.js';
+export type { OAuthLauncher, OAuthLaunchResult } from './contract.js';
 
 export const OAuthClientError = defineErrors({
 	MissingCallbackTransaction: () => ({
@@ -85,25 +86,6 @@ export type OAuthClientConfig = {
 	fetch?: AuthFetch;
 };
 
-/**
- * Per-launch redirect data required to build an authorization URL.
- */
-export type OAuthAuthorizationRequest = {
-	redirectUri: string;
-};
-
-/**
- * Runtime-specific OAuth launcher consumed by auth core.
- *
- * A launcher owns the transport mechanics of sign-in: full-page browser
- * redirects, extension web-auth APIs, native-app deep links, or other runtimes.
- * `completed` carries the token grant immediately. `launched` means control has
- * moved to another runtime surface and a later callback will complete sign-in.
- */
-export type OAuthLauncher = {
-	startSignIn(): Promise<Result<OAuthLaunchResult, OAuthClientError>>;
-};
-
 type MaybePromise<T> = T | Promise<T>;
 
 type OAuthTransaction = {
@@ -114,14 +96,14 @@ type OAuthTransaction = {
 
 type RedirectTo = (url: string) => MaybePromise<void>;
 type LaunchWebAuthFlow = (url: string) => Promise<string>;
-type BrowserOAuthLauncherConfig = OAuthClientConfig &
-	OAuthAuthorizationRequest & {
-		redirectTo?: RedirectTo;
-	};
-type ExtensionOAuthLauncherConfig = OAuthClientConfig &
-	OAuthAuthorizationRequest & {
-		launchWebAuthFlow: LaunchWebAuthFlow;
-	};
+type BrowserOAuthLauncherConfig = OAuthClientConfig & {
+	redirectUri: string;
+	redirectTo?: RedirectTo;
+};
+type ExtensionOAuthLauncherConfig = OAuthClientConfig & {
+	redirectUri: string;
+	launchWebAuthFlow: LaunchWebAuthFlow;
+};
 
 const DEFAULT_SCOPE = EPICENTER_OAUTH_SCOPE;
 
@@ -144,18 +126,18 @@ export function createBrowserOAuthLauncher({
 	const client = createOAuthClient(config);
 	return {
 		async startSignIn() {
-			const callbackResult = await client.handleCallback(window.location.href);
-			if (callbackResult.data) {
+			if (client.isCallback(window.location.href)) {
+				const callbackResult = await client.exchangeCallback(
+					window.location.href,
+				);
+				if (callbackResult.error) return callbackResult;
 				return Ok({
 					status: 'completed',
 					grant: callbackResult.data,
 				} satisfies OAuthLaunchResult);
 			}
-			if (callbackResult.error?.name !== 'MissingCallbackTransaction') {
-				return callbackResult;
-			}
 
-			const urlResult = await client.createAuthorizationUrl({ redirectUri });
+			const urlResult = await client.createAuthorizationUrl(redirectUri);
 			if (urlResult.error) return urlResult;
 			await redirectTo(urlResult.data.toString());
 			return Ok({ status: 'launched' } satisfies OAuthLaunchResult);
@@ -180,12 +162,12 @@ export function createExtensionOAuthLauncher({
 	const client = createOAuthClient(config);
 	return {
 		async startSignIn() {
-			const urlResult = await client.createAuthorizationUrl({ redirectUri });
+			const urlResult = await client.createAuthorizationUrl(redirectUri);
 			if (urlResult.error) return urlResult;
 
 			try {
 				const responseUrl = await launchWebAuthFlow(urlResult.data.toString());
-				const callbackResult = await client.handleCallback(responseUrl);
+				const callbackResult = await client.exchangeCallback(responseUrl);
 				if (callbackResult.error) return callbackResult;
 				return Ok({
 					status: 'completed',
@@ -234,9 +216,9 @@ export function createOAuthClient({
 		return await oauth.processDiscoveryResponse(issuerUrl, response);
 	}
 
-	async function createAuthorizationUrl({
-		redirectUri,
-	}: OAuthAuthorizationRequest): Promise<Result<URL, OAuthClientError>> {
+	async function createAuthorizationUrl(
+		redirectUri: string,
+	): Promise<Result<URL, OAuthClientError>> {
 		try {
 			const as = await discover();
 			const state = oauth.generateRandomState();
@@ -269,17 +251,18 @@ export function createOAuthClient({
 		}
 	}
 
-	async function handleCallback(
+	function isCallback(url: string | URL): boolean {
+		const callbackUrl = new URL(url);
+		return (
+			callbackUrl.searchParams.has('code') ||
+			callbackUrl.searchParams.has('error')
+		);
+	}
+
+	async function exchangeCallback(
 		url: string | URL,
 	): Promise<Result<OAuthTokenGrant, OAuthClientError>> {
 		const callbackUrl = new URL(url);
-		if (
-			!callbackUrl.searchParams.has('code') &&
-			!callbackUrl.searchParams.has('error')
-		) {
-			return OAuthClientError.MissingCallbackTransaction();
-		}
-
 		const callbackError = callbackUrl.searchParams.get('error');
 		if (callbackError) {
 			return OAuthClientError.AuthorizationFailed({
@@ -357,7 +340,8 @@ export function createOAuthClient({
 
 	return {
 		createAuthorizationUrl,
-		handleCallback,
+		isCallback,
+		exchangeCallback,
 	};
 }
 

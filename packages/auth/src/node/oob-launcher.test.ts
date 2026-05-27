@@ -15,7 +15,8 @@ import { expect, test } from 'bun:test';
 import { EPICENTER_OAUTH_SCOPE } from '@epicenter/constants/oauth';
 import type { Result } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
-import type { AuthFetch, OAuthLaunchResult } from '../create-oauth-app-auth.js';
+import type { AuthFetch } from '../create-oauth-app-auth.js';
+import type { OAuthLaunchResult } from '../oauth-launchers/contract.js';
 import { createOobOAuthLauncher } from './oob-launcher.js';
 
 const NOW = 1_700_000_000_000;

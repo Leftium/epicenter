@@ -66,6 +66,7 @@ import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { IS_MACOS } from '$lib/constants/platform';
 import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
 import { autostartKeys } from '$lib/tauri/autostart-keys';
+import { commands } from '$lib/tauri/commands';
 import {
 	type Accelerator,
 	AcceleratorError,

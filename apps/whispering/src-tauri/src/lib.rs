@@ -8,8 +8,9 @@ pub mod audio;
 use audio::encode_recording_for_upload;
 pub mod recorder;
 use recorder::commands::{
-    cancel_recording, close_recording_session, delete_recording, enumerate_recording_devices,
-    get_current_recording_id, init_recording_session, start_recording, stop_recording,
+    cancel_recording, clear_recording_artifacts, close_recording_session,
+    delete_recording_artifacts, enumerate_recording_devices, get_current_recording_id,
+    init_recording_session, start_recording, stop_recording,
 };
 use recorder::recorder::Recorder;
 
@@ -21,9 +22,6 @@ use transcription::{
 
 pub mod command;
 use command::open_accessibility_settings;
-
-pub mod files;
-use files::delete_files_in_directory;
 
 pub mod markdown;
 use markdown::write_markdown_files;
@@ -44,10 +42,10 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             start_recording,
             stop_recording,
             cancel_recording,
-            delete_recording,
+            delete_recording_artifacts,
+            clear_recording_artifacts,
             transcribe_recording,
             open_accessibility_settings,
-            delete_files_in_directory,
             write_markdown_files,
             set_transcription_config,
             get_transcription_state,

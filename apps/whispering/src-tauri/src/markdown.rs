@@ -1,8 +1,7 @@
-use crate::files::validate_leaf_filename;
 use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 use tempfile::NamedTempFile;
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -14,6 +13,21 @@ pub struct MarkdownFile {
 }
 
 // ── Commands ────────────────────────────────────────────────────────────────
+
+/// Validates a filename is a single path component with no directory traversal.
+/// Rejects empty strings, paths with separators (`foo/bar`), and parent refs (`..`).
+fn validate_leaf_filename(filename: &str) -> Result<&str, String> {
+    if filename.is_empty() {
+        return Err("Filename cannot be empty".to_string());
+    }
+    let path = Path::new(filename);
+    let mut components = path.components();
+    match (components.next(), components.next()) {
+        (Some(Component::Normal(_)), None) => {}
+        _ => return Err(format!("Invalid filename: {}", filename)),
+    }
+    Ok(filename)
+}
 
 /// Writes markdown files to disk atomically using a temporary file plus persist.
 /// Validates all filenames upfront. No files are written if any name is invalid.

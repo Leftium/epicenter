@@ -1,6 +1,5 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import {
-	exists,
 	mkdir,
 	readDir,
 	readFile,
@@ -41,19 +40,7 @@ export function createFileSystemBlobStore() {
 			const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
 			return tryAsync({
 				try: async () => {
-					const recordingsPath = await PATHS.DB.RECORDINGS();
-					const idsToDelete = new Set(ids);
-					const allFiles = await readDir(recordingsPath);
-					const filenames = allFiles
-						.filter((file) => {
-							const id = file.name.split('.')[0] ?? '';
-							return idsToDelete.has(id) && isAudioFilename(file.name);
-						})
-						.map((file) => file.name);
-					const { error } = await commands.deleteFilesInDirectory(
-						recordingsPath,
-						{ kind: 'filenames', filenames },
-					);
+					const { error } = await commands.deleteRecordingArtifacts(ids);
 					if (error !== null) throw error;
 				},
 				catch: (error) => BlobError.WriteFailed({ cause: error }),
@@ -106,18 +93,7 @@ export function createFileSystemBlobStore() {
 		async clear() {
 			return tryAsync({
 				try: async () => {
-					const recordingsPath = await PATHS.DB.RECORDINGS();
-					const dirExists = await exists(recordingsPath);
-					if (!dirExists) return undefined;
-
-					const allFiles = await readDir(recordingsPath);
-					const filenames = allFiles
-						.filter((file) => isAudioFilename(file.name))
-						.map((file) => file.name);
-					const { error } = await commands.deleteFilesInDirectory(
-						recordingsPath,
-						{ kind: 'filenames', filenames },
-					);
+					const { error } = await commands.clearRecordingArtifacts();
 					if (error !== null) throw error;
 				},
 				catch: (error) => BlobError.WriteFailed({ cause: error }),

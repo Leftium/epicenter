@@ -54,12 +54,11 @@ import {
 	unregisterAll as tauriUnregisterAll,
 } from '@tauri-apps/plugin-global-shortcut';
 import { exit } from '@tauri-apps/plugin-process';
-import type { Child, ChildProcess } from '@tauri-apps/plugin-shell';
+import type { ChildProcess } from '@tauri-apps/plugin-shell';
 import mime from 'mime';
 import {
 	defineErrors,
 	extractErrorMessage,
-	type InferError,
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
@@ -80,11 +79,6 @@ import {
 const FsError = defineErrors({
 	ReadBlobFailed: ({ path, cause }: { path: string; cause: unknown }) => ({
 		message: `Failed to read file as Blob: ${path}: ${extractErrorMessage(cause)}`,
-		path,
-		cause,
-	}),
-	ReadFileFailed: ({ path, cause }: { path: string; cause: unknown }) => ({
-		message: `Failed to read file as File: ${path}: ${extractErrorMessage(cause)}`,
 		path,
 		cause,
 	}),
@@ -116,16 +110,6 @@ const fs = {
 			catch: (error) => FsError.ReadBlobFailed({ path, cause: error }),
 		}),
 
-	pathToFile: (path: string) =>
-		tryAsync({
-			try: async () => {
-				const { bytes, mimeType } = await readFileWithMimeType(path);
-				const fileName = await basename(path);
-				return new File([bytes], fileName, { type: mimeType });
-			},
-			catch: (error) => FsError.ReadFileFailed({ path, cause: error }),
-		}),
-
 	pathsToFiles: (paths: string[]) =>
 		tryAsync({
 			try: () =>
@@ -146,10 +130,6 @@ const CommandError = defineErrors({
 		message: `Failed to execute command: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
-	SpawnFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to spawn command: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
 });
 type CommandError = InferErrors<typeof CommandError>;
 
@@ -165,21 +145,6 @@ const command = {
 			try: () =>
 				invoke<ChildProcess<string>>('execute_command', { command: cmd }),
 			catch: (error) => CommandError.ExecuteFailed({ cause: error }),
-		});
-	},
-
-	/**
-	 * Spawn a child process without waiting for it to complete. Returns a
-	 * Child instance that can be used to control the process.
-	 */
-	spawn(cmd: string) {
-		return tryAsync({
-			try: async () => {
-				const pid = await invoke<number>('spawn_command', { command: cmd });
-				const { Child } = await import('@tauri-apps/plugin-shell');
-				return new Child(pid) as Child;
-			},
-			catch: (error) => CommandError.SpawnFailed({ cause: error }),
 		});
 	},
 };
@@ -441,10 +406,6 @@ const ShortcutError = defineErrors({
 	}),
 });
 type ShortcutError = InferErrors<typeof ShortcutError>;
-type GlobalShortcutServiceError =
-	| InferError<typeof ShortcutError.RegisterFailed>
-	| InferError<typeof ShortcutError.UnregisterFailed>
-	| InferError<typeof ShortcutError.UnregisterAllFailed>;
 
 async function registerShortcut({
 	accelerator,
@@ -455,7 +416,7 @@ async function registerShortcut({
 	callback: (state: ShortcutEventState) => void;
 	on: ShortcutEventState[];
 }): Promise<
-	Result<void, InvalidAcceleratorError | GlobalShortcutServiceError>
+	Result<void, InvalidAcceleratorError | ShortcutError>
 > {
 	const { error: unregisterError } = await unregisterShortcut(accelerator);
 	if (unregisterError) return Err(unregisterError);
@@ -486,7 +447,7 @@ async function registerShortcut({
 
 async function unregisterShortcut(
 	accelerator: Accelerator,
-): Promise<Result<void, GlobalShortcutServiceError>> {
+): Promise<Result<void, ShortcutError>> {
 	const isRegistered = await tauriIsRegistered(accelerator);
 	if (!isRegistered) return Ok(undefined);
 

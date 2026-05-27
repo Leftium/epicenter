@@ -416,10 +416,10 @@ User-facing reporting (toast + OS notification) is owned by `$lib/report`, not t
 
 All eight Tauri-only capabilities live inline in one file at `$lib/tauri.tauri.ts`. The companion `$lib/tauri.browser.ts` exports `tauri = null` plus a throwing `requireTauri` stub. Consumers access via `if (tauri) { tauri.<cap>.method() }`, by prop-drilling the narrowed value, or by calling `requireTauri()` from inside a `.tauri.ts` file.
 
-- `tauri.fs` - Filesystem operations (pathToBlob, pathToFile, pathsToFiles)
-- `tauri.command` - Shell command execution (execute, spawn)
+- `tauri.fs` - Filesystem operations (pathToBlob, pathsToFiles)
+- `tauri.command` - Shell command execution (execute)
 - `tauri.permissions` - macOS accessibility/microphone permission flows
-- `tauri.audioEncoder` - In-process libopus encoder for cloud upload compression (encodeWavToOpusOgg)
+- `tauri.audioEncoder` - In-process libopus encoder for cloud upload compression (encodeWavToOpusOgg, encodePcmToOpusOgg)
 - `tauri.window` - Window operations (setAlwaysOnTop)
 - `tauri.tray` - System tray icon (setIcon)
 - `tauri.globalShortcuts` - OS-level shortcut registration (registerCommand, unregisterCommand, unregisterAll)

@@ -99,9 +99,7 @@ export async function stopManualRecording() {
 	const durationMs =
 		source.kind === 'artifact' ? source.artifact.durationMs : source.durationMs;
 	const byteLength =
-		source.kind === 'artifact'
-			? source.artifact.byteLength
-			: source.blob.size;
+		source.kind === 'artifact' ? source.artifact.byteLength : source.blob.size;
 
 	loading.resolve({
 		title: '🎙️ Recording stopped',

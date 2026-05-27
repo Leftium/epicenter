@@ -225,6 +225,7 @@ export type NavigatorRecordingParams = BaseRecordingParams & {
  * other mimes).
  */
 export type { RecordingArtifact } from '$lib/tauri/commands';
+
 import type { RecordingArtifact } from '$lib/tauri/commands';
 
 /**

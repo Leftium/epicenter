@@ -10,13 +10,13 @@
  */
 
 import type { Result } from 'wellcrafted/result';
-import { commands } from './commands';
 import type {
 	CommandOutput,
 	RecordingArtifact,
 	TranscribeRequest,
 	TranscriptionError,
 } from './commands';
+import { commands } from './commands';
 
 // Helper: a no-op assertion that two types are equal. Triggers a TS error
 // if they diverge.
@@ -39,9 +39,7 @@ type _StopRecording = Expect<
 type _TranscribeRecording = Expect<
 	Equal<
 		ReturnType<
-			(typeof commands.transcribeRecording) extends (
-				...args: infer A
-			) => infer R
+			typeof commands.transcribeRecording extends (...args: infer A) => infer R
 				? (...args: A) => R
 				: never
 		>,

@@ -244,9 +244,7 @@ function createCpalRecorder(): RecorderService {
 					'Initializing your recording session and checking microphone access...',
 			});
 
-			const sampleRateNum = sampleRate
-				? Number.parseInt(sampleRate, 10)
-				: null;
+			const sampleRateNum = sampleRate ? Number.parseInt(sampleRate, 10) : null;
 
 			const { error: initRecordingSessionError } =
 				await commands.initRecordingSession(

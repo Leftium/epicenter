@@ -12,10 +12,17 @@ import {
 	OAuthClientError,
 	type OAuthLauncher,
 } from '@epicenter/auth/oauth-launchers';
+import { invoke } from '@tauri-apps/api/core';
 import type { UnlistenFn } from '@tauri-apps/api/event';
+import { appDataDir, join } from '@tauri-apps/api/path';
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import type { Result } from 'wellcrafted/result';
+
+export type MarkdownFile = {
+	filename: string;
+	content: string;
+};
 
 function isRedirectUrl(url: string, redirectUri: string): boolean {
 	return url === redirectUri || url.startsWith(`${redirectUri}?`);
@@ -85,10 +92,27 @@ async function waitForOAuthCallback({
 	);
 }
 
+const markdown = {
+	async directory() {
+		return await join(await appDataDir(), 'markdown');
+	},
+
+	async writeFiles(files: MarkdownFile[]) {
+		const directory = await this.directory();
+		await invoke('write_markdown_files', { directory, files });
+	},
+
+	async readFiles() {
+		const directory = await this.directory();
+		return await invoke<MarkdownFile[]>('read_markdown_files', { directory });
+	},
+};
+
 const tauriImpl = {
 	oauth: {
 		createLauncher: createTauriOAuthLauncher,
 	},
+	markdown,
 };
 
 export type Tauri = typeof tauriImpl;

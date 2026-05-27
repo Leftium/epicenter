@@ -29,6 +29,7 @@ import {
 	wipeLocalStorage,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
+import { createFujiMarkdownActions } from './markdown-materializer';
 import {
 	createFujiActions,
 	createFujiWorkspace,
@@ -110,9 +111,16 @@ export function openFujiBrowser({
 		};
 	});
 
+	const markdownActions = createFujiMarkdownActions({
+		tables: workspace.tables,
+		idb,
+		entryContentDocs,
+	});
+
 	return {
 		...workspace,
 		actions,
+		...markdownActions,
 		idb,
 		entryContentDocs,
 		collaboration,

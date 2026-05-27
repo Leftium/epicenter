@@ -25,11 +25,9 @@
 
 	let {
 		yxmlfragment,
-		placeholder = 'Start writing…',
 		onWordCountChange,
 	}: {
 		yxmlfragment: Y.XmlFragment;
-		placeholder?: string;
 		onWordCountChange?: (count: number) => void;
 	} = $props();
 
@@ -63,18 +61,19 @@
 
 	// ─── Plugins ─────────────────────────────────────────────────────────────
 
-	function countWords(text: string): number {
-		const trimmed = text.trim();
-		if (!trimmed) return 0;
-		return trimmed.split(/\s+/).length;
-	}
-
 	function createWordCountPlugin() {
+		let previousCount: number | undefined;
+
 		return new Plugin({
 			view() {
 				return {
 					update(view) {
-						onWordCountChange?.(countWords(view.state.doc.textContent));
+						const textContent = view.state.doc.textContent.trim();
+						const nextCount = textContent ? textContent.split(/\s+/).length : 0;
+						if (nextCount === previousCount) return;
+
+						previousCount = nextCount;
+						onWordCountChange?.(nextCount);
 					},
 				};
 			},
@@ -115,7 +114,7 @@
 				plugins: [
 					ySyncPlugin(yxmlfragment),
 					yUndoPlugin(),
-					createPlaceholderPlugin(placeholder),
+					createPlaceholderPlugin('Start writing…'),
 					keymap({
 						'Mod-z': undo,
 						'Mod-y': redo,

@@ -164,11 +164,13 @@
 	<!-- Editor body -->
 	{#await contentDoc.current.idb.whenLoaded}
 		<Loading class="flex-1" />
-	{:then}
-		<ProseMirrorEditor
-			yxmlfragment={contentDoc.current.body.binding}
-			onWordCountChange={(count) => (wordCount = count)}
-		/>
+	{:then _}
+		{#key contentDoc.current.body.binding}
+			<ProseMirrorEditor
+				yxmlfragment={contentDoc.current.body.binding}
+				onWordCountChange={(count) => (wordCount = count)}
+			/>
+		{/key}
 	{/await}
 
 	<!-- Status bar -->

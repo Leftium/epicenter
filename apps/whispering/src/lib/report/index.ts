@@ -74,7 +74,6 @@ function emit(level: Level, notice: Notice, id?: string): void {
 		ts: Date.now(),
 		level,
 		source: SOURCE,
-		message: notice.title ?? notice.cause?.message ?? '',
 		data: id !== undefined ? { ...notice, id } : notice,
 	};
 	consoleSink(event);
@@ -84,14 +83,18 @@ function emit(level: Level, notice: Notice, id?: string): void {
 
 function consoleSink(event: ReportEvent): void {
 	if (event.level === 'loading') return;
+	const { data } = event;
 	wellcraftedConsoleSink({
-		...event,
+		ts: event.ts,
 		level: event.level === 'error' ? 'error' : 'info',
+		source: event.source,
+		message: data.title ?? data.cause?.message ?? '',
+		data,
 	} satisfies LogEvent);
 }
 
 function toastSink(event: ReportEvent): void {
-	const data = (event.data ?? {}) as Notice & { id?: string };
+	const { data } = event;
 	const { title, description } = resolveDisplay(data);
 
 	sonner[event.level](title, {

@@ -26,8 +26,7 @@ export type ReportEvent = {
 	ts: number;
 	level: Level;
 	source: string;
-	message: string;
-	data?: Notice & { id?: string };
+	data: Notice & { id?: string };
 };
 
 export type OsNotifySink = (event: ReportEvent) => void;

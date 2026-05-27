@@ -1,12 +1,11 @@
 import { Err, tryAsync } from 'wellcrafted/result';
 import { resolveDisplay } from './display';
-import type { Notice, OsNotifySink, Problem } from './types';
+import type { OsNotifySink } from './types';
 
 export const osNotifySink: OsNotifySink = (event) => {
 	if (event.level !== 'error' || document.hasFocus()) return;
 
-	const data = (event.data ?? {}) as Notice | Problem;
-	const { title, description: body } = resolveDisplay(data);
+	const { title, description: body } = resolveDisplay(event.data);
 
 	void tryAsync({
 		try: async () => {

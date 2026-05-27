@@ -20,23 +20,16 @@ use transcription::{set_unload_policy, transcribe_recording, ModelManager};
 pub mod windows_path;
 use windows_path::fix_windows_path;
 
-pub mod graceful_shutdown;
-use graceful_shutdown::send_sigint;
-
 pub mod command;
 use command::{execute_command, spawn_command};
 
 pub mod markdown;
-use markdown::{count_markdown_files, delete_files_in_directory, read_markdown_files, write_markdown_files};
+use markdown::{delete_files_in_directory, write_markdown_files};
 
 /// Specta-known commands: every app command except the one that returns a
 /// raw `tauri::ipc::Response` (which is not `specta::Type`). The builder
 /// owns BOTH the runtime handler for these commands (see `run`) and the
 /// TypeScript binding export (see `export_types` test).
-///
-/// The three dead commands (`send_sigint`, `read_markdown_files`,
-/// `count_markdown_files`) stay in the builder for now so we have one
-/// source of truth; Wave 7 deletes them outright.
 fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
     tauri_specta::Builder::<tauri::Wry>::new()
         .commands(tauri_specta::collect_commands![
@@ -52,11 +45,8 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             delete_recording,
             transcribe_recording,
             set_unload_policy,
-            send_sigint,
             execute_command,
             spawn_command,
-            read_markdown_files,
-            count_markdown_files,
             delete_files_in_directory,
             write_markdown_files,
         ])

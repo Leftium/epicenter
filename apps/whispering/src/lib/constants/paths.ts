@@ -82,7 +82,7 @@ export const PATHS = {
 		 * Use this when you need to:
 		 * - List all files in the recordings directory
 		 * - Check if the recordings directory exists
-		 * - Pass to Rust commands like `read_markdown_files` or `count_markdown_files`
+		 * - Pass to filesystem helpers in `services/blob-store`
 		 *
 		 * @returns Absolute path to the recordings directory
 		 *

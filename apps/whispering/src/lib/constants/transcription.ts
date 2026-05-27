@@ -221,9 +221,9 @@ export const TRANSCRIPTION_SERVICE_ID_TO_LABEL = Object.fromEntries(
  * carries values, labels, and descriptions; the tuple and union type are
  * derived from it (same pattern as TRANSCRIPTION → TRANSCRIPTION_SERVICE_IDS).
  *
- * Mirrored in Rust by `UnloadPolicy::from_wire` in
- * `src-tauri/src/transcription/model_manager.rs`. If you add a value here,
- * teach the Rust parser about it too.
+ * Mirrored in Rust by the `UnloadPolicy` enum in
+ * `src-tauri/src/transcription/config.rs` (serde rename tags pair each value
+ * with a variant). If you add a value here, add a matching variant there.
  *
  * Default order is UX order (recommended first), not alphabetical.
  */

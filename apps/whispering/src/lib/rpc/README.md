@@ -7,7 +7,6 @@ Thin, side-effect-free TanStack adapters over services. Each module here wraps a
 | Module             | Shape    | Where it is observed                                                       |
 | ------------------ | -------- | -------------------------------------------------------------------------- |
 | `audio.ts`         | query    | `RenderAudioUrl.svelte`, `(app)/+page.svelte`, `EditRecordingModal.svelte` |
-| `text.ts`          | query    | `transform-clipboard/+page.svelte`                                         |
 | `download.ts`      | mutation | `RecordingRowActions.svelte`                                               |
 | `transcription.ts` | mutation | `recordings/+page.svelte`, `RecordingRowActions.svelte`                    |
 | `transformer.ts`   | mutation | `TransformationPicker.svelte`, `Test.svelte`                               |

@@ -14,12 +14,19 @@
 	import { sound } from '$lib/operations/sound';
 	import { tauri } from '$lib/tauri';
 	import { rpc } from '$lib/rpc';
+	import { defineQuery } from '$lib/rpc/client';
+	import { services } from '$lib/services';
 	import * as transformClipboardWindow from './transformClipboardWindow.tauri';
 
 	const combobox = useCombobox();
 
+	const readFromClipboard = defineQuery({
+		queryKey: ['text', 'readFromClipboard'] as const,
+		queryFn: () => services.text.readFromClipboard(),
+	});
+
 	const clipboardQuery = createQuery(() => ({
-		...rpc.text.readFromClipboard.options,
+		...readFromClipboard.options,
 		refetchInterval: 1000,
 	}));
 

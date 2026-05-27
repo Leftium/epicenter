@@ -1,28 +1,40 @@
 /**
- * Path constants for Whispering's appdata directories.
+ * Tauri path helpers for Whispering's appdata directories.
  *
  * Absolute paths under the platform appdata root:
  *   macOS:   ~/Library/Application Support/com.bradenwong.whispering/
  *   Windows: %APPDATA%/com.bradenwong.whispering/
  *   Linux:   ~/.config/com.bradenwong.whispering/
  *
- * Async because `@tauri-apps/api/path` is dynamically imported so the
- * module stays importable from non-Tauri code paths.
+ * This module must stay importable from browser builds because Svelte routes
+ * and components statically import it while guarding calls with `tauri`. Keep
+ * Tauri API loading lazy unless every importer moves behind a `.tauri` suffix.
  */
+type TauriPathApi = typeof import('@tauri-apps/api/path');
+
+let tauriPathApiPromise: Promise<TauriPathApi> | undefined;
+
+function getTauriPathApi() {
+	tauriPathApiPromise ??= import('@tauri-apps/api/path');
+	return tauriPathApiPromise;
+}
+
+async function appDataPath(...segments: string[]) {
+	const { appDataDir, join } = await getTauriPathApi();
+	return join(await appDataDir(), ...segments);
+}
+
 export const PATHS = {
 	/** Local transcription model directories under `models/`. */
 	MODELS: {
 		async WHISPER() {
-			const { appDataDir, join } = await import('@tauri-apps/api/path');
-			return join(await appDataDir(), 'models', 'whisper');
+			return appDataPath('models', 'whisper');
 		},
 		async PARAKEET() {
-			const { appDataDir, join } = await import('@tauri-apps/api/path');
-			return join(await appDataDir(), 'models', 'parakeet');
+			return appDataPath('models', 'parakeet');
 		},
 		async MOONSHINE() {
-			const { appDataDir, join } = await import('@tauri-apps/api/path');
-			return join(await appDataDir(), 'models', 'moonshine');
+			return appDataPath('models', 'moonshine');
 		},
 	},
 
@@ -30,18 +42,15 @@ export const PATHS = {
 	DB: {
 		/** `recordings/` directory containing audio files. */
 		async RECORDINGS() {
-			const { appDataDir, join } = await import('@tauri-apps/api/path');
-			return join(await appDataDir(), 'recordings');
+			return appDataPath('recordings');
 		},
 		/** Path for a newly written recording: `recordings/{id}.{extension}`. */
 		async RECORDING_AUDIO(id: string, extension: string) {
-			const { appDataDir, join } = await import('@tauri-apps/api/path');
-			return join(await appDataDir(), 'recordings', `${id}.${extension}`);
+			return appDataPath('recordings', `${id}.${extension}`);
 		},
 		/** Path to an existing recording file given its full filename. */
 		async RECORDING_FILE(filename: string) {
-			const { appDataDir, join } = await import('@tauri-apps/api/path');
-			return join(await appDataDir(), 'recordings', filename);
+			return appDataPath('recordings', filename);
 		},
 	},
 };

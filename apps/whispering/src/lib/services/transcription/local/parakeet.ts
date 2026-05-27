@@ -2,7 +2,7 @@ import type { WhisperingResult } from '$lib/result';
 
 import {
 	requireExistingModelPath,
-	transcribeLocal,
+	transcribeRecording,
 } from './local-transcription';
 import type { ParakeetModelConfig } from './types';
 
@@ -51,7 +51,7 @@ export const PARAKEET_MODELS = [
 
 export const ParakeetTranscriptionServiceLive = {
 	async transcribe(
-		audioBlob: Blob,
+		recordingId: string,
 		options: { modelPath: string },
 	): Promise<WhisperingResult<string>> {
 		const validation = await requireExistingModelPath(
@@ -61,7 +61,7 @@ export const ParakeetTranscriptionServiceLive = {
 		);
 		if (validation.error) return validation;
 
-		return transcribeLocal(audioBlob, {
+		return transcribeRecording(recordingId, {
 			engine: 'parakeet',
 			modelPath: options.modelPath,
 		});

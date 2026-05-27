@@ -8,39 +8,49 @@ import { sound } from '$lib/operations/sound';
 import { transcribeAudio } from '$lib/operations/transcribe';
 import { runTransformation } from '$lib/operations/transform';
 import { services } from '$lib/services';
-import { pcmToWavBlob } from '$lib/services/recorder/pcm-to-wav';
-import type { RecorderAudio } from '$lib/services/recorder/types';
+import type { RecorderStopResult } from '$lib/services/recorder/types';
 import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { transformations } from '$lib/state/transformations.svelte';
 
 /**
- * Processes a recording through the full pipeline: save -> transcribe -> transform.
- *
- * @param recordingId - Optional recording ID. When provided (e.g., from CPAL recorder),
- * the ID was generated earlier in the pipeline and is passed through for consistency.
- * When omitted (e.g., VAD recording, file uploads), a new ID is generated here.
+ * Argument shape for the pipeline. The recorder produces a
+ * `RecorderStopResult`; the VAD path and file-upload path build the
+ * equivalent shape with `kind: 'blob'`. The pipeline picks an id from
+ * the result (or generates one for legacy blob callers that don't carry
+ * one yet) and treats the recording as a Rust-owned artifact from then on.
  */
-export async function processRecordingPipeline({
-	audio,
-	recordingId,
-	durationMs,
-	toastId,
-	completionTitle,
-	completionDescription,
-}: {
-	audio: RecorderAudio;
-	recordingId?: string;
+type PipelineInput = {
+	source: RecorderStopResult;
 	durationMs: number | null;
 	toastId: string;
 	completionTitle: string;
 	completionDescription: string;
-}) {
+};
+
+/**
+ * Processes a recording through the full pipeline: persist artifact ->
+ * transcribe by id -> transform.
+ *
+ * Audio bytes never live in pipeline state. For cpal sources Rust has
+ * already written the durable artifact at
+ * `<appDataDir>/recordings/{id}.wav` by the time we get here. For blob
+ * sources (navigator MediaRecorder, VAD, file upload) we persist the
+ * bytes through the recordings blob store, then operate on the id.
+ */
+export async function processRecordingPipeline({
+	source,
+	durationMs,
+	toastId,
+	completionTitle,
+	completionDescription,
+}: PipelineInput) {
 	const now = new Date().toISOString();
-	const newRecordingId = recordingId ?? nanoid();
+	const recordingId =
+		source.kind === 'artifact' ? source.artifact.id : source.recordingId;
 
 	const recording = {
-		id: newRecordingId,
+		id: recordingId,
 		title: '',
 		recordedAt: now,
 		updatedAt: now,
@@ -49,6 +59,29 @@ export async function processRecordingPipeline({
 		transcriptionStatus: 'UNPROCESSED',
 	} as const;
 
+	recordings.set(recording);
+
+	// Persist the audio before transcription. For cpal artifacts this is
+	// a no-op (Rust already wrote the WAV). For blobs we save through the
+	// recordings blob store, which writes to the same on-disk location in
+	// Tauri (`recordings/{id}.{ext}`) and to IndexedDB on the web. The
+	// next steps look the file up by id, so this save MUST complete first.
+	if (source.kind === 'blob') {
+		const { error: saveError } = await services.blobs.audio.save(
+			recordingId,
+			source.blob,
+		);
+		if (saveError) {
+			notify.warning({
+				id: toastId,
+				title: '⚠️ Audio not saved',
+				description:
+					'We could not save the recording bytes; transcription will continue but history playback will be unavailable.',
+				action: { type: 'more-details', error: saveError },
+			});
+		}
+	}
+
 	const transcribeToastId = nanoid();
 	notify.loading({
 		id: transcribeToastId,
@@ -56,20 +89,11 @@ export async function processRecordingPipeline({
 		description: 'Your recording is being transcribed...',
 	});
 
-	recordings.set(recording);
-	// History save consumes a Blob: PCM gets WAV-synthesized once, Blob is
-	// passed through. Run the save in parallel with transcription.
-	const saveAudioPromise = (async () => {
-		const blob = audio instanceof Blob ? audio : pcmToWavBlob(audio);
-		return await services.blobs.audio.save(recording.id, blob);
-	})();
-	const transcribePromise = transcribeAudio(audio);
-
 	const { data: transcribedText, error: transcribeError } =
-		await transcribePromise;
+		await transcribeAudio(recordingId);
 
 	if (transcribeError) {
-		recordings.update(recording.id, { transcriptionStatus: 'FAILED' });
+		recordings.update(recordingId, { transcriptionStatus: 'FAILED' });
 		if (transcribeError.name === 'WhisperingError') {
 			notify.error({ id: transcribeToastId, ...transcribeError });
 			return;
@@ -89,23 +113,13 @@ export async function processRecordingPipeline({
 		toastId: transcribeToastId,
 	});
 
-	const { error: saveAudioError } = await saveAudioPromise;
-	if (saveAudioError) {
-		notify.warning({
-			id: toastId,
-			title: '⚠️ Audio not saved',
-			description: 'Transcription delivered but audio blob was not saved.',
-			action: { type: 'more-details', error: saveAudioError },
-		});
-	}
-
 	notify.success({
 		id: toastId,
 		title: completionTitle,
 		description: completionDescription,
 	});
 
-	recordings.update(recording.id, {
+	recordings.update(recordingId, {
 		transcript: transcribedText,
 		transcriptionStatus: 'DONE',
 	});
@@ -140,7 +154,7 @@ export async function processRecordingPipeline({
 	const { data: result, error: transformError } = await runTransformation({
 		input: transcribedText,
 		transformation,
-		recordingId: recording.id,
+		recordingId,
 	});
 	if (transformError) {
 		notify.error({

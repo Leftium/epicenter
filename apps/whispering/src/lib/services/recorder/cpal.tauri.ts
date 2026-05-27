@@ -2,10 +2,7 @@ import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { createLogger } from 'wellcrafted/logger';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
-import {
-	RECORDER_OUTPUT_RATE,
-	type WhisperingRecordingState,
-} from '$lib/constants/audio';
+import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { categorizeRecorderError } from '$lib/services/recorder/categorize-error';
 import {
 	asDeviceIdentifier,
@@ -14,31 +11,41 @@ import {
 	type DeviceAcquisitionOutcome,
 	RecorderError,
 	type RecorderService,
+	type RecordingArtifact,
 	type RecordingSession,
 } from '$lib/services/recorder/types';
 
 const log = createLogger('whispering/recorder/cpal');
 
 /**
- * Parse the binary response from `stop_recording`. Wire layout: raw
- * little-endian f32 samples, no header. The recorder's contract is "16 kHz
- * mono" (see `RECORDER_OUTPUT_RATE`), so rate and channels are not on the
- * wire; if the contract ever changes, both sides grow a header together.
- *
- * The `Float32Array` is a zero-copy view over the IPC body, not a
- * decimal-decoded array of doubles. For a 30 s clip this collapses the
- * post-stop critical path by ~150-300 ms compared to JSON `Vec<f32>`.
+ * Sanity-check the artifact handle Rust returned. Rust validates ids
+ * before they touch the filesystem, but we still defend in depth so a
+ * malformed IPC payload (e.g. from a future protocol mismatch) surfaces
+ * as a clear error rather than wedging a downstream consumer.
  */
-function parsePcmIpcBody(
-	buffer: ArrayBuffer,
-): Result<Float32Array, RecorderError> {
-	if (buffer.byteLength % 4 !== 0) {
-		return RecorderError.InvalidPcmIpc({
-			reason: `byte length not a multiple of 4 (f32 size)`,
-			byteLength: buffer.byteLength,
+function validateArtifact(
+	artifact: RecordingArtifact,
+	expectedRecordingId: string,
+): Result<RecordingArtifact, RecorderError> {
+	if (artifact.id !== expectedRecordingId) {
+		return RecorderError.InvalidArtifact({
+			reason: `id mismatch: expected '${expectedRecordingId}', got '${artifact.id}'`,
+			recordingId: expectedRecordingId,
 		});
 	}
-	return Ok(new Float32Array(buffer));
+	if (!Number.isFinite(artifact.durationMs) || artifact.durationMs < 0) {
+		return RecorderError.InvalidArtifact({
+			reason: `durationMs is not a finite non-negative number`,
+			recordingId: artifact.id,
+		});
+	}
+	if (!Number.isFinite(artifact.byteLength) || artifact.byteLength < 0) {
+		return RecorderError.InvalidArtifact({
+			reason: `byteLength is not a finite non-negative number`,
+			recordingId: artifact.id,
+		});
+	}
+	return Ok(artifact);
 }
 
 /**
@@ -65,14 +72,18 @@ const enumerateDevices = async (): Promise<Result<Device[], RecorderError>> => {
  * CPAL recorder service that uses the Rust CPAL backend.
  *
  * Constructed via a factory so the per-session lifecycle (stop/cancel/
- * subscribe) lives on the returned `RecordingSession`. The service itself only
- * holds a pointer to the active session for rehydration through
+ * subscribe) lives on the returned `RecordingSession`. The service itself
+ * only holds a pointer to the active session for rehydration through
  * `getActiveRecording`; once stop/cancel runs, that pointer clears.
  *
  * Unlike navigator, a cpal session can outlive a JS reload because the
  * Rust process keeps the cpal stream alive. `getActiveRecording` consults
- * Rust via `get_current_recording_id` and reattaches a new `RecordingSession`
- * wrapper if Rust still has one going.
+ * Rust via `get_current_recording_id` and reattaches a new
+ * `RecordingSession` wrapper if Rust still has one going.
+ *
+ * Stop returns a `RecordingArtifact` handle: Rust writes the durable WAV
+ * to `<appDataDir>/recordings/{id}.wav` and the JS side refers to the
+ * recording by id from then on. There is no raw PCM on the wire.
  */
 function createCpalRecorder(): RecorderService {
 	let activeSession: RecordingSession | null = null;
@@ -94,10 +105,10 @@ function createCpalRecorder(): RecorderService {
 
 		const ensureTauriListener = () => {
 			if (tauriUnlisten) return;
-			// Rust emits 'recorder:state-changed' from every mutation path (see
-			// src-tauri/src/recorder/commands.rs). Forward to subscribers so
-			// Rust-initiated transitions (future auto-stop, device disconnect)
-			// reach the UI.
+			// Rust emits 'recorder:state-changed' from every mutation path
+			// (see src-tauri/src/recorder/commands.rs). Forward to subscribers
+			// so Rust-initiated transitions (future auto-stop, device
+			// disconnect) reach the UI.
 			tauriUnlisten = listen<WhisperingRecordingState>(
 				'recorder:state-changed',
 				(event) => notify(event.payload),
@@ -105,11 +116,11 @@ function createCpalRecorder(): RecorderService {
 		};
 
 		// Takes `session` as an argument rather than closing over the const
-		// declared below. Both work because teardown only runs from stop/cancel
-		// handlers (which can only fire after `session` is bound), but the
-		// explicit argument keeps the function TDZ-safe if a future caller
-		// invokes teardown from a path declared above the `session = ...`
-		// initializer.
+		// declared below. Both work because teardown only runs from
+		// stop/cancel handlers (which can only fire after `session` is
+		// bound), but the explicit argument keeps the function TDZ-safe if a
+		// future caller invokes teardown from a path declared above the
+		// `session = ...` initializer.
 		const teardown = (session: RecordingSession) => {
 			if (activeSession === session) activeSession = null;
 			if (tauriUnlisten) {
@@ -119,11 +130,11 @@ function createCpalRecorder(): RecorderService {
 			notify('IDLE');
 		};
 
-		// Close the Rust-side session and tear down JS state. Used by both
-		// the happy path and the parse-failure path so a malformed IPC body
-		// can't leave a zombie session in Rust or a stale activeSession
-		// pointer in JS. Takes `session` explicitly for the same TDZ
-		// reason `teardown` does.
+		// Close the Rust-side session and tear down JS state. Used by the
+		// stop happy path and the artifact-validation failure path so a
+		// malformed IPC payload can't leave a zombie session in Rust or a
+		// stale `activeSession` pointer in JS. Takes `session` explicitly
+		// for the same TDZ reason `teardown` does.
 		const closeAndTeardown = async (
 			session: RecordingSession,
 			sendStatus: (args: { title: string; description: string }) => void,
@@ -146,25 +157,29 @@ function createCpalRecorder(): RecorderService {
 			backend: 'cpal',
 
 			stop: async ({ sendStatus }) => {
-				const { data: buffer, error: stopRecordingError } =
-					await invoke<ArrayBuffer>('stop_recording');
+				sendStatus({
+					title: '⏸️ Saving recording',
+					description: 'Writing the WAV artifact to disk...',
+				});
+				const { data: artifact, error: stopRecordingError } =
+					await invoke<RecordingArtifact>('stop_recording');
 				if (stopRecordingError) {
 					teardown(session);
 					return RecorderError.StopFailed({ cause: stopRecordingError });
 				}
 
-				const { data: samples, error: parseError } = parsePcmIpcBody(buffer);
-				if (parseError) {
+				const { data: validated, error: validateError } = validateArtifact(
+					artifact,
+					recordingId,
+				);
+				if (validateError) {
+					log.error(validateError);
 					await closeAndTeardown(session, sendStatus);
-					return Err(parseError);
+					return Err(validateError);
 				}
 
-				const durationMs = Math.round(
-					(samples.length / RECORDER_OUTPUT_RATE) * 1000,
-				);
-
 				await closeAndTeardown(session, sendStatus);
-				return Ok({ audio: samples, recordingId, durationMs });
+				return Ok({ kind: 'artifact', artifact: validated });
 			},
 
 			cancel: async ({ sendStatus }) => {
@@ -208,8 +223,8 @@ function createCpalRecorder(): RecorderService {
 		getActiveRecording: async (): Promise<
 			Result<RecordingSession | null, RecorderError>
 		> => {
-			// If we still hold the in-memory pointer, prefer it; otherwise probe
-			// Rust in case a recording session outlived a JS reload.
+			// If we still hold the in-memory pointer, prefer it; otherwise
+			// probe Rust in case a recording session outlived a JS reload.
 			if (activeSession) return Ok(activeSession);
 
 			const { data: liveRecordingId, error: getIdError } = await invoke<

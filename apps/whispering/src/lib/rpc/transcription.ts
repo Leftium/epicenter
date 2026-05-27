@@ -1,8 +1,7 @@
 import { Err, Ok, partitionResults, type Result } from 'wellcrafted/result';
 import { transcribeAudio } from '$lib/operations/transcribe';
-import { WhisperingErr, type WhisperingError } from '$lib/result';
+import type { WhisperingError } from '$lib/result';
 import { defineMutation, queryClient } from '$lib/rpc/client';
-import { services } from '$lib/services';
 import type { Recording } from '$lib/state/recordings.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
 
@@ -23,19 +22,9 @@ export const transcription = {
 		mutationFn: async (
 			recording: Recording,
 		): Promise<Result<string, WhisperingError>> => {
-			const { data: audioBlob, error: getAudioBlobError } =
-				await services.blobs.audio.getBlob(recording.id);
-
-			if (getAudioBlobError) {
-				return WhisperingErr({
-					title: '⚠️ Failed to fetch audio',
-					description: `Unable to load audio for recording: ${getAudioBlobError.message}`,
-				});
-			}
-
 			recordings.update(recording.id, { transcriptionStatus: 'TRANSCRIBING' });
 			const { data: transcribedText, error: transcribeError } =
-				await transcribeAudio(audioBlob);
+				await transcribeAudio(recording.id);
 			if (transcribeError) {
 				recordings.update(recording.id, { transcriptionStatus: 'FAILED' });
 				return Err(transcribeError);
@@ -53,19 +42,7 @@ export const transcription = {
 		mutationKey: transcriptionKeys.isTranscribing,
 		mutationFn: async (recordings: Recording[]) => {
 			const results = await Promise.all(
-				recordings.map(async (recording) => {
-					const { data: audioBlob, error: getAudioBlobError } =
-						await services.blobs.audio.getBlob(recording.id);
-
-					if (getAudioBlobError) {
-						return WhisperingErr({
-							title: '⚠️ Failed to fetch audio',
-							description: `Unable to load audio for recording: ${getAudioBlobError.message}`,
-						});
-					}
-
-					return await transcribeAudio(audioBlob);
-				}),
+				recordings.map((recording) => transcribeAudio(recording.id)),
 			);
 			const partitionedResults = partitionResults(results);
 			return Ok(partitionedResults);

@@ -270,10 +270,10 @@ const permissions = {
 };
 
 // audioEncoder ------------------------------------------------------
-// In-process libopus encoder. Wraps the `encode_upload_audio` Tauri
-// command (raw IPC body, no JSON). The Rust side decodes WAV with hound,
-// resamples to 48 kHz with rubato, encodes 24 kbps voice VBR through
-// audiopus, and muxes into a single OGG stream.
+// Compress a saved recording artifact into OGG/Opus by id. Rust reads
+// the file from `<appDataDir>/recordings/{id}.{ext}`, Symphonia decodes
+// whichever container the source produced, and libopus re-encodes at
+// the voice bitrate. JS never holds the audio bytes.
 const AudioEncoderError = defineErrors({
 	EncodeFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Audio encode failed: ${extractErrorMessage(cause)}`,
@@ -283,53 +283,12 @@ const AudioEncoderError = defineErrors({
 type AudioEncoderError = InferErrors<typeof AudioEncoderError>;
 
 const audioEncoder = {
-	/**
-	 * Compress a WAV blob into OGG/Opus. Returns the bytes wrapped as a
-	 * fresh Blob with `audio/ogg` MIME so the upload paths key their
-	 * multipart extension off `.type` like they already do for the
-	 * untouched WAV case.
-	 *
-	 * Callers should fall back to uploading the original WAV on error
-	 * rather than failing the whole transcription: compression is an
-	 * optimization, not a correctness requirement.
-	 */
-	async encodeWavToOpusOgg(
-		wavBlob: Blob,
+	async encodeRecordingForUpload(
+		recordingId: string,
 	): Promise<Result<Blob, AudioEncoderError>> {
 		const { data: oggBytes, error } = await tryAsync({
-			try: async () => {
-				const wavBuffer = await wavBlob.arrayBuffer();
-				return await invoke<ArrayBuffer>('encode_upload_audio', wavBuffer);
-			},
-			catch: (cause) => AudioEncoderError.EncodeFailed({ cause }),
-		});
-
-		if (error) return Err(error);
-		return Ok(new Blob([oggBytes], { type: 'audio/ogg' }));
-	},
-
-	/**
-	 * Compress the recorder's in-memory mono 16 kHz PCM into OGG/Opus.
-	 * Used by the dictation cpal path: the recorder returns samples already
-	 * in memory, so we skip the WAV synthesis + decode round-trip and hand
-	 * the samples straight to libopus.
-	 *
-	 * Wire format mirrors `encode_upload_pcm`: raw little-endian f32 samples,
-	 * no header. The rate/channels are a recorder contract, not on the wire.
-	 */
-	async encodePcmToOpusOgg(
-		samples: Float32Array,
-	): Promise<Result<Blob, AudioEncoderError>> {
-		// Tauri's IPC body accepts a Uint8Array (or ArrayBuffer). A typed-array
-		// view over the samples is zero-copy; no need to allocate a copy.
-		const body = new Uint8Array(
-			samples.buffer,
-			samples.byteOffset,
-			samples.byteLength,
-		);
-
-		const { data: oggBytes, error } = await tryAsync({
-			try: () => invoke<ArrayBuffer>('encode_upload_pcm', body),
+			try: () =>
+				invoke<ArrayBuffer>('encode_recording_for_upload', { recordingId }),
 			catch: (cause) => AudioEncoderError.EncodeFailed({ cause }),
 		});
 

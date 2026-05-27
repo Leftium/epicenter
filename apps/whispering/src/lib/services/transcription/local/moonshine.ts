@@ -3,7 +3,7 @@ import { WhisperingErr, type WhisperingResult } from '$lib/result';
 
 import {
 	requireExistingModelPath,
-	transcribeLocal,
+	transcribeRecording,
 } from './local-transcription';
 import {
 	MOONSHINE_LANGUAGES,
@@ -44,7 +44,7 @@ const MOONSHINE_DIR_PATTERN = regex.as<
  * - lang: language code (e.g., "en", "ar", "zh")
  *
  * The variant is parsed from the directory name on the JS side and passed
- * to Rust on the wire as part of the transcribe_audio config payload.
+ * to Rust on the wire as part of the transcribe_recording config payload.
  *
  * ## Model Sizes
  *
@@ -114,7 +114,7 @@ export const MOONSHINE_MODELS = [
 
 export const MoonshineTranscriptionServiceLive = {
 	async transcribe(
-		audioBlob: Blob,
+		recordingId: string,
 		{ modelPath }: { modelPath: string },
 	): Promise<WhisperingResult<string>> {
 		const validation = await requireExistingModelPath(
@@ -140,7 +140,7 @@ export const MoonshineTranscriptionServiceLive = {
 		// arkregex's RegexExecArray indexes captures: [0] full match, [1] variant, [2] language
 		const variant = match[1];
 
-		return transcribeLocal(audioBlob, {
+		return transcribeRecording(recordingId, {
 			engine: 'moonshine',
 			modelPath,
 			variant,

@@ -198,16 +198,16 @@ export const RecorderError = defineErrors({
 		command,
 		cause,
 	}),
-	InvalidPcmIpc: ({
+	InvalidArtifact: ({
 		reason,
-		byteLength,
+		recordingId,
 	}: {
 		reason: string;
-		byteLength: number;
+		recordingId: string;
 	}) => ({
-		message: `Malformed PCM IPC body (${byteLength} bytes): ${reason}`,
+		message: `Invalid recording artifact for id '${recordingId}': ${reason}`,
 		reason,
-		byteLength,
+		recordingId,
 	}),
 });
 export type RecorderError = InferErrors<typeof RecorderError>;
@@ -237,23 +237,44 @@ export type NavigatorRecordingParams = BaseRecordingParams & {
 };
 
 /**
- * Audio payload accepted by the pipeline and the transcribe layer.
- * Describes only the bytes. Capture-session metadata such as `recordingId`
- * and `durationMs` belongs to the `RecordingSession.stop()` result, not here.
+ * Durable, Rust-owned recording artifact returned by the cpal stop path.
+ * The id maps deterministically to a WAV file under
+ * `<appDataDir>/recordings/{id}.wav`. JS treats the file as opaque: every
+ * later operation (transcribe, encode for upload, playback, delete) goes
+ * through the id, never a raw path.
  *
- * Two physical shapes:
- * - `Float32Array`: in-memory mono PCM at 16 kHz from the cpal recorder.
- *   The sample rate is a recorder contract (`RECORDER_OUTPUT_RATE`), not
- *   a per-payload field. Cheapest input for both cloud (direct opus
- *   encode) and local (no decode) transcription.
- * - `Blob`: container bytes from anywhere else, navigator (Opus/WebM or
- *   mp4/AAC), VAD speech captures, file uploads, history replays. The
- *   transcribe layer either passes it through or compresses if the bytes
- *   look like an unencoded WAV.
- *
- * Branches with `instanceof Blob`; the alternative is `Float32Array`.
+ * `mimeType` is always `'audio/wav'` today because the cpal recorder is
+ * the only producer; if a future producer lands (e.g. a navigator-on-Tauri
+ * artifact saved as webm), this widens to the source mime.
  */
-export type RecorderAudio = Float32Array | Blob;
+export type RecordingArtifact = {
+	id: string;
+	durationMs: number;
+	byteLength: number;
+	mimeType: 'audio/wav';
+};
+
+/**
+ * Output of `RecordingSession.stop()`. One of two physical shapes:
+ *
+ * - `kind: 'artifact'`: cpal produced a durable WAV on disk; the handle
+ *   is the canonical reference for transcribe/upload/delete. JS does not
+ *   touch the bytes itself.
+ * - `kind: 'blob'`: navigator (browser MediaRecorder) returned encoded
+ *   container bytes (webm/opus, mp4/AAC) the JS side already holds in
+ *   memory. This path stays for browser builds and for in-Tauri navigator
+ *   recordings; the transcribe layer uploads/decodes the blob the old
+ *   way. There is intentionally no `Float32Array` arm: raw PCM never
+ *   exists as a general front-end value.
+ */
+export type RecorderStopResult =
+	| { kind: 'artifact'; artifact: RecordingArtifact }
+	| {
+			kind: 'blob';
+			blob: Blob;
+			recordingId: string;
+			durationMs: number;
+	  };
 
 /**
  * Discriminated union for recording parameters based on method
@@ -280,12 +301,7 @@ export type RecordingSession = {
 	readonly backend: 'navigator' | 'cpal';
 	stop(callbacks: {
 		sendStatus: UpdateStatusMessageFn;
-	}): Promise<
-		Result<
-			{ audio: RecorderAudio; recordingId: string; durationMs: number },
-			RecorderError
-		>
-	>;
+	}): Promise<Result<RecorderStopResult, RecorderError>>;
 	cancel(callbacks: {
 		sendStatus: UpdateStatusMessageFn;
 	}): Promise<Result<CancelRecordingResult, RecorderError>>;

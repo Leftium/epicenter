@@ -100,14 +100,21 @@ export async function stopManualRecording() {
 		description: 'Finalizing your audio capture...',
 	});
 
-	const { data, error } = await manualRecorder.stopRecording({ toastId });
+	const { data: source, error } = await manualRecorder.stopRecording({
+		toastId,
+	});
 
 	if (error) {
 		notify.error({ id: toastId, ...error });
 		return;
 	}
 
-	const { audio, recordingId, durationMs } = data;
+	const durationMs =
+		source.kind === 'artifact' ? source.artifact.durationMs : source.durationMs;
+	const byteLength =
+		source.kind === 'artifact'
+			? source.artifact.byteLength
+			: source.blob.size;
 
 	notify.success({
 		id: toastId,
@@ -119,13 +126,12 @@ export async function stopManualRecording() {
 
 	analytics.logEvent({
 		type: 'manual_recording_completed',
-		blob_size: audio instanceof Blob ? audio.size : audio.byteLength,
+		blob_size: byteLength,
 		duration: durationMs,
 	});
 
 	await processRecordingPipeline({
-		audio,
-		recordingId,
+		source,
 		durationMs,
 		toastId,
 		completionTitle: '✨ Recording Complete!',
@@ -211,7 +217,12 @@ export async function startVadRecording() {
 			});
 
 			await processRecordingPipeline({
-				audio: blob,
+				source: {
+					kind: 'blob',
+					blob,
+					recordingId: nanoid(),
+					durationMs: 0,
+				},
 				durationMs: null,
 				toastId: speechToastId,
 				completionTitle: '✨ Voice activated capture complete!',

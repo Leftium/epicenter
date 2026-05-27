@@ -4,7 +4,7 @@ import { WhisperingErr, type WhisperingResult } from '$lib/result';
 
 import {
 	requireExistingModelPath,
-	transcribeLocal,
+	transcribeRecording,
 } from './local-transcription';
 import { isModelFileSizeValid, type WhisperModelConfig } from './types';
 
@@ -65,7 +65,7 @@ export const WHISPER_MODELS = [
 
 export const WhisperCppTranscriptionServiceLive = {
 	async transcribe(
-		audioBlob: Blob,
+		recordingId: string,
 		options: {
 			outputLanguage: string;
 			modelPath: string;
@@ -106,7 +106,7 @@ export const WhisperCppTranscriptionServiceLive = {
 			}
 		}
 
-		return transcribeLocal(audioBlob, {
+		return transcribeRecording(recordingId, {
 			engine: 'whispercpp',
 			modelPath: options.modelPath,
 			language:

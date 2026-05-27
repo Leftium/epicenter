@@ -8,9 +8,9 @@ import { WhisperingErr, type WhisperingResult } from '$lib/result';
 import type { MoonshineVariant } from './types';
 
 /**
- * Engine-tagged config sent in the `x-transcribe-config` header of the
- * unified `transcribe_audio` Tauri command. Mirrors `TranscribeRequest`
- * on the Rust side.
+ * Engine-tagged config sent as the `config` argument to the
+ * `transcribe_recording` Tauri command. Mirrors `TranscribeRequest` on
+ * the Rust side.
  *
  * The `engine` tag values match `transcription.service` in user settings
  * so the same string flows: settings → service selector → wire → Rust
@@ -109,7 +109,7 @@ export async function requireExistingModelPath(
 
 /**
  * Single arktype schema for all errors returned by the unified
- * `transcribe_audio` command. Each engine surfaces the same four
+ * `transcribe_recording` command. Each engine surfaces the same four
  * variants; the only one specific to Whisper is `GpuError`, which
  * Parakeet and Moonshine never emit in practice.
  */
@@ -119,7 +119,7 @@ const LocalTranscriptionErrorType = type({
 });
 
 /**
- * Shared error mapping for the unified `transcribe_audio` command. Each
+ * Shared error mapping for the unified `transcribe_recording` command. Each
  * per-engine service used to duplicate this switch with minor copy
  * variations; the only per-engine variation is the display name, which
  * we derive from the config tag.
@@ -182,19 +182,22 @@ function mapLocalTranscriptionError(
 }
 
 /**
- * Send `audioBlob` and `config` to the unified `transcribe_audio` Tauri
- * command. Audio travels as the raw IPC body (no JSON-array-of-bytes
- * overhead); the config goes in the `x-transcribe-config` header as JSON.
+ * Canonical transcribe-by-id path. Rust resolves the recording file under
+ * `<appDataDir>/recordings/{recordingId}.*`, decodes it (Symphonia handles
+ * WAV, webm/opus, mp4/AAC, etc.), and runs inference. This is the entry
+ * point for every local-transcription call: the cpal stop path, the
+ * navigator/VAD blob path (after the pipeline saves the blob to disk),
+ * file uploads, retry, history replay.
  */
-export async function transcribeLocal(
-	audioBlob: Blob,
+export async function transcribeRecording(
+	recordingId: string,
 	config: TranscribeConfig,
 ): Promise<WhisperingResult<string>> {
-	const audioBuffer = await audioBlob.arrayBuffer();
 	return tryAsync({
 		try: () =>
-			invoke<string>('transcribe_audio', audioBuffer, {
-				headers: { 'x-transcribe-config': JSON.stringify(config) },
+			invoke<string>('transcribe_recording', {
+				recordingId,
+				config,
 			}),
 		catch: (unknownError) =>
 			mapLocalTranscriptionError(

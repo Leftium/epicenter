@@ -4,7 +4,8 @@
  * Prints an authorize URL, optionally opens it in the user's browser,
  * waits for the user to paste the one-time code from
  * `https://api.epicenter.so/auth/cli-callback`, then exchanges the code
- * at `/auth/oauth2/token` with PKCE. Returns a 3-field `OAuthTokenGrant`.
+ * at `/auth/oauth2/token` with PKCE. Returns a completed OAuth launch result
+ * containing a 3-field `OAuthTokenGrant`.
  *
  * The launcher is concerned only with the OAuth dance. The caller pairs
  * the returned grant with `GET /api/session` to fill in the `userId`,
@@ -21,9 +22,9 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import type { OAuthTokenGrant } from '../auth-types.js';
 import type {
 	AuthFetch,
+	OAuthLaunchResult,
 	OAuthSignInLauncher,
 } from '../create-oauth-app-auth.js';
 import { parseOAuthTokenGrant } from '../oauth-token-response.js';
@@ -72,9 +73,9 @@ export type CreateOobOAuthLauncherConfig = {
  *
  * Use this for one-shot human login from terminals where a localhost callback
  * is not guaranteed. It prints the authorize URL, exchanges the pasted code
- * with PKCE, and returns only the OAuth grant. The caller must still call
- * `/api/session` before persisting anything, preserving the split between
- * network credentials and local workspace identity.
+ * with PKCE, and returns a completed launch result with the OAuth grant. The
+ * caller must still call `/api/session` before persisting anything, preserving
+ * the split between network credentials and local workspace identity.
  */
 export function createOobOAuthLauncher({
 	baseURL = EPICENTER_API_URL,
@@ -89,9 +90,7 @@ export function createOobOAuthLauncher({
 	now = Date.now,
 }: CreateOobOAuthLauncherConfig): OAuthSignInLauncher {
 	return {
-		async startSignIn(): Promise<
-			Result<OAuthTokenGrant | null, OobLauncherError>
-		> {
+		async startSignIn(): Promise<Result<OAuthLaunchResult, OobLauncherError>> {
 			const codeVerifier = base64UrlEncode(randomBytes(crypto, 32));
 			const challengeBytes = new Uint8Array(
 				await crypto.subtle.digest(
@@ -180,7 +179,7 @@ export function createOobOAuthLauncher({
 					OobLauncherError.InvalidTokenResponse({ cause: error }).error,
 				);
 			}
-			return Ok(grant);
+			return Ok({ status: 'completed', grant } satisfies OAuthLaunchResult);
 		},
 	};
 }

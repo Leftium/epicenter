@@ -1,12 +1,13 @@
-import type { OAuthClientConfig } from '@epicenter/auth/oauth-launchers';
+import type {
+	OAuthAuthorizationRequest,
+	OAuthClientConfig,
+} from '@epicenter/auth/oauth-launchers';
 import { createBrowserOAuthLauncher } from '@epicenter/auth/oauth-launchers';
 
 export function createFujiOAuthLauncher({
 	redirectUri = `${window.location.origin}/auth/callback`,
 	...config
-}: Omit<OAuthClientConfig, 'redirectUri'> & {
-	redirectUri?: string;
-}) {
+}: OAuthClientConfig & Partial<OAuthAuthorizationRequest>) {
 	return createBrowserOAuthLauncher({
 		...config,
 		redirectUri,

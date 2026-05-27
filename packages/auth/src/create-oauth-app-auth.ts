@@ -31,8 +31,20 @@ export type PersistedAuthStorage = {
 	set(value: PersistedAuth | null): void | Promise<void>;
 };
 
+/**
+ * Result of a runtime-specific OAuth launch.
+ *
+ * `completed` means the launcher already has an authorization-code grant for
+ * auth core to verify and persist. `launched` means the runtime handed control
+ * away, usually through browser navigation, and completion will happen through
+ * a later callback invocation.
+ */
+export type OAuthLaunchResult =
+	| { status: 'completed'; grant: OAuthTokenGrant }
+	| { status: 'launched' };
+
 export type OAuthSignInLauncher = {
-	startSignIn(): Promise<Result<OAuthTokenGrant | null, unknown>>;
+	startSignIn(): Promise<Result<OAuthLaunchResult, unknown>>;
 };
 
 type AuthFetchInput = Request | string | URL;
@@ -398,8 +410,16 @@ export function createOAuthAppAuth({
 					if (result.error) {
 						return AuthError.StartSignInFailed({ cause: result.error });
 					}
-					if (result.data === null) return Ok(undefined);
-					return completeSignInWithGrant(result.data, generation);
+					const launchResult = result.data;
+					switch (launchResult?.status) {
+						case 'launched':
+							return Ok(undefined);
+						case 'completed':
+							return completeSignInWithGrant(launchResult.grant, generation);
+					}
+					return AuthError.StartSignInFailed({
+						cause: new Error('OAuth launcher returned no launch result.'),
+					});
 				} catch (cause) {
 					if (!isCurrentSignIn(generation)) {
 						return Ok(undefined);

@@ -14,7 +14,14 @@ import { expect, test } from 'bun:test';
 import { EPICENTER_OAUTH_SCOPE } from '@epicenter/constants/oauth';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { AuthFetch } from '../create-oauth-app-auth.js';
-import { createOAuthClient, type OAuthTemporaryStorage } from './index.js';
+import {
+	createBrowserOAuthLauncher,
+	createExtensionOAuthLauncher,
+	createOAuthClient,
+	type OAuthTemporaryStorage,
+} from './index.js';
+
+const REDIRECT_URI = 'http://app.test/auth/callback';
 
 function createMemoryStorage(seed: Record<string, string> = {}) {
 	const values = new Map(Object.entries(seed));
@@ -71,21 +78,91 @@ test('createAuthorizationUrl stores verifier state and returns PKCE URL', async 
 	const client = createOAuthClient({
 		issuer: 'http://auth.test/auth',
 		clientId: 'client-1',
-		redirectUri: 'http://app.test/auth/callback',
 		resource: 'http://auth.test',
 		storage,
 		fetch: createFetch(),
 	});
 
-	const url = expectOk(await client.createAuthorizationUrl());
+	const url = expectOk(
+		await client.createAuthorizationUrl({ redirectUri: REDIRECT_URI }),
+	);
 
 	expect(url.searchParams.get('response_type')).toBe('code');
 	expect(url.searchParams.get('client_id')).toBe('client-1');
+	expect(url.searchParams.get('redirect_uri')).toBe(REDIRECT_URI);
 	expect(url.searchParams.get('scope')).toBe(EPICENTER_OAUTH_SCOPE);
 	expect(url.searchParams.get('resource')).toBe('http://auth.test');
 	expect(url.searchParams.get('code_challenge_method')).toBe('S256');
 	expect(url.searchParams.get('code_challenge')).toBeTruthy();
 	expect(values.size).toBe(1);
+	expect([...values.values()][0]).toContain(REDIRECT_URI);
+});
+
+test('browser launcher returns launched after starting redirect', async () => {
+	const { storage } = createMemoryStorage();
+	const redirects: string[] = [];
+	const hadWindow = 'window' in globalThis;
+	const originalWindow = globalThis.window;
+	Object.defineProperty(globalThis, 'window', {
+		configurable: true,
+		value: { location: { href: 'http://app.test/sign-in' } },
+	});
+	try {
+		const launcher = createBrowserOAuthLauncher({
+			issuer: 'http://auth.test/auth',
+			clientId: 'client-1',
+			redirectUri: REDIRECT_URI,
+			resource: 'http://auth.test',
+			storage,
+			fetch: createFetch(),
+			redirectTo: (url) => {
+				redirects.push(url);
+			},
+		});
+
+		const result = await launcher.startSignIn();
+
+		expect(result.error).toBeNull();
+		expect(result.data).toEqual({ status: 'launched' });
+		expect(redirects).toHaveLength(1);
+		expect(new URL(redirects[0]!).searchParams.get('redirect_uri')).toBe(
+			REDIRECT_URI,
+		);
+	} finally {
+		if (hadWindow) {
+			Object.defineProperty(globalThis, 'window', {
+				configurable: true,
+				value: originalWindow,
+			});
+		} else {
+			delete (globalThis as { window?: unknown }).window;
+		}
+	}
+});
+
+test('extension launcher returns completed grant after web-auth callback', async () => {
+	const { storage } = createMemoryStorage();
+	const launcher = createExtensionOAuthLauncher({
+		issuer: 'http://auth.test/auth',
+		clientId: 'client-1',
+		redirectUri: REDIRECT_URI,
+		resource: 'http://auth.test',
+		storage,
+		fetch: createFetch(),
+		launchWebAuthFlow: async (url) => {
+			const state = new URL(url).searchParams.get('state');
+			expect(state).toBeTruthy();
+			return `${REDIRECT_URI}?code=code-1&state=${state}`;
+		},
+	});
+
+	const result = expectOk(await launcher.startSignIn());
+
+	expect(result.status).toBe('completed');
+	if (result.status !== 'completed') {
+		throw new Error('Expected completed extension OAuth launch.');
+	}
+	expect(result.grant.accessToken).toBe('access-token');
 });
 
 test('handleCallback rejects missing stored transaction', async () => {
@@ -93,7 +170,6 @@ test('handleCallback rejects missing stored transaction', async () => {
 	const client = createOAuthClient({
 		issuer: 'http://auth.test/auth',
 		clientId: 'client-1',
-		redirectUri: 'http://app.test/auth/callback',
 		resource: 'http://auth.test',
 		storage,
 		fetch: createFetch(),
@@ -113,13 +189,12 @@ test('handleCallback reports callback authorization errors', async () => {
 		'epicenter.oauth.client-1': JSON.stringify({
 			state: 'state-1',
 			codeVerifier: 'verifier-1',
-			redirectUri: 'http://app.test/auth/callback',
+			redirectUri: REDIRECT_URI,
 		}),
 	});
 	const client = createOAuthClient({
 		issuer: 'http://auth.test/auth',
 		clientId: 'client-1',
-		redirectUri: 'http://app.test/auth/callback',
 		resource: 'http://auth.test',
 		storage,
 		fetch: createFetch(),
@@ -145,14 +220,13 @@ test('handleCallback rejects state mismatch before token exchange', async () => 
 		'epicenter.oauth.client-1': JSON.stringify({
 			state: 'state-1',
 			codeVerifier: 'verifier-1',
-			redirectUri: 'http://app.test/auth/callback',
+			redirectUri: REDIRECT_URI,
 		}),
 	});
 	let tokenRequests = 0;
 	const client = createOAuthClient({
 		issuer: 'http://auth.test/auth',
 		clientId: 'client-1',
-		redirectUri: 'http://app.test/auth/callback',
 		resource: 'http://auth.test',
 		storage,
 		fetch: createFetch({
@@ -177,7 +251,7 @@ test('handleCallback returns token result after successful exchange', async () =
 		'epicenter.oauth.client-1': JSON.stringify({
 			state: 'state-1',
 			codeVerifier: 'verifier-1',
-			redirectUri: 'http://app.test/auth/callback',
+			redirectUri: REDIRECT_URI,
 		}),
 	});
 	let tokenBody: URLSearchParams | undefined;
@@ -185,7 +259,6 @@ test('handleCallback returns token result after successful exchange', async () =
 	const client = createOAuthClient({
 		issuer: 'http://auth.test/auth',
 		clientId: 'client-1',
-		redirectUri: 'http://app.test/auth/callback',
 		resource: 'http://auth.test',
 		storage,
 		fetch: createFetch({
@@ -200,11 +273,11 @@ test('handleCallback returns token result after successful exchange', async () =
 			'http://app.test/auth/callback?code=code-1&state=state-1',
 		),
 	);
-	if (!data) throw new Error('Expected non-null token grant');
 
 	expect(data.accessToken).toBe('access-token');
 	expect(data.refreshToken).toBe('refresh-token');
 	expect(data.accessTokenExpiresAt).toBeGreaterThanOrEqual(now + 899_000);
+	expect(tokenBody?.get('redirect_uri')).toBe(REDIRECT_URI);
 	expect(tokenBody?.get('resource')).toBe('http://auth.test');
 	expect(values.size).toBe(0);
 });
@@ -214,13 +287,12 @@ test('handleCallback reports token exchange failure', async () => {
 		'epicenter.oauth.client-1': JSON.stringify({
 			state: 'state-1',
 			codeVerifier: 'verifier-1',
-			redirectUri: 'http://app.test/auth/callback',
+			redirectUri: REDIRECT_URI,
 		}),
 	});
 	const client = createOAuthClient({
 		issuer: 'http://auth.test/auth',
 		clientId: 'client-1',
-		redirectUri: 'http://app.test/auth/callback',
 		resource: 'http://auth.test',
 		storage,
 		fetch: createFetch({ tokenStatus: 400 }),
@@ -240,13 +312,12 @@ test('handleCallback rejects a token response without access token', async () =>
 		'epicenter.oauth.client-1': JSON.stringify({
 			state: 'state-1',
 			codeVerifier: 'verifier-1',
-			redirectUri: 'http://app.test/auth/callback',
+			redirectUri: REDIRECT_URI,
 		}),
 	});
 	const client = createOAuthClient({
 		issuer: 'http://auth.test/auth',
 		clientId: 'client-1',
-		redirectUri: 'http://app.test/auth/callback',
 		resource: 'http://auth.test',
 		storage,
 		fetch: createFetch({
@@ -272,13 +343,12 @@ test('handleCallback rejects a token response without refresh token', async () =
 		'epicenter.oauth.client-1': JSON.stringify({
 			state: 'state-1',
 			codeVerifier: 'verifier-1',
-			redirectUri: 'http://app.test/auth/callback',
+			redirectUri: REDIRECT_URI,
 		}),
 	});
 	const client = createOAuthClient({
 		issuer: 'http://auth.test/auth',
 		clientId: 'client-1',
-		redirectUri: 'http://app.test/auth/callback',
 		resource: 'http://auth.test',
 		storage,
 		fetch: createFetch({
@@ -304,13 +374,12 @@ test('handleCallback rejects a token response without expires_in', async () => {
 		'epicenter.oauth.client-1': JSON.stringify({
 			state: 'state-1',
 			codeVerifier: 'verifier-1',
-			redirectUri: 'http://app.test/auth/callback',
+			redirectUri: REDIRECT_URI,
 		}),
 	});
 	const client = createOAuthClient({
 		issuer: 'http://auth.test/auth',
 		clientId: 'client-1',
-		redirectUri: 'http://app.test/auth/callback',
 		resource: 'http://auth.test',
 		storage,
 		fetch: createFetch({
@@ -336,13 +405,12 @@ test('handleCallback rejects a non-bearer token response', async () => {
 		'epicenter.oauth.client-1': JSON.stringify({
 			state: 'state-1',
 			codeVerifier: 'verifier-1',
-			redirectUri: 'http://app.test/auth/callback',
+			redirectUri: REDIRECT_URI,
 		}),
 	});
 	const client = createOAuthClient({
 		issuer: 'http://auth.test/auth',
 		clientId: 'client-1',
-		redirectUri: 'http://app.test/auth/callback',
 		resource: 'http://auth.test',
 		storage,
 		fetch: createFetch({

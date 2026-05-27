@@ -12,6 +12,7 @@ export {
 	type AuthFetch,
 	type CreateOAuthAppAuthConfig,
 	createOAuthAppAuth,
+	type OAuthLaunchResult,
 	type OAuthSignInLauncher,
 	type PersistedAuthStorage,
 } from './create-oauth-app-auth.js';

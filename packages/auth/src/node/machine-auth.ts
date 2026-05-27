@@ -280,14 +280,15 @@ export async function loginWithOob({
 			MachineAuthRequestError.RequestFailed({ cause: grantResult.error }).error,
 		);
 	}
-	if (!grantResult.data) {
+	const launchResult = grantResult.data;
+	if (launchResult?.status !== 'completed') {
 		return Err(
 			MachineAuthRequestError.RequestFailed({
 				cause: new Error('OOB launcher returned no grant.'),
 			}).error,
 		);
 	}
-	const grant = grantResult.data;
+	const grant = launchResult.grant;
 
 	const sessionResult = await fetchApiSession(
 		baseURL,
@@ -472,7 +473,12 @@ export async function createMachineAuthClient({
 			launcher: {
 				// Daemons never sign in interactively; a human must run
 				// `epicenter auth login` to refresh the persisted cell.
-				startSignIn: async () => Ok(null),
+				startSignIn: async () =>
+					Err(
+						new Error(
+							'Machine auth clients cannot start interactive sign-in. Run `epicenter auth login` first.',
+						),
+					),
 			},
 			persistedAuthStorage: {
 				get: () => currentCell,

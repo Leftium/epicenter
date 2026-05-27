@@ -7,8 +7,10 @@ import {
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import type { OAuthTokenGrant } from '../auth-types.js';
-import type { AuthFetch } from '../create-oauth-app-auth.js';
+import type { AuthFetch, OAuthLaunchResult } from '../create-oauth-app-auth.js';
 import { parseOAuthTokenGrant } from '../oauth-token-response.js';
+
+export type { OAuthLaunchResult } from '../create-oauth-app-auth.js';
 
 export const OAuthClientError = defineErrors({
 	MissingCallbackTransaction: () => ({
@@ -52,24 +54,54 @@ export const OAuthClientError = defineErrors({
 
 export type OAuthClientError = InferErrors<typeof OAuthClientError>;
 
+/**
+ * Temporary storage for one in-progress OAuth authorization request.
+ *
+ * Launchers use this for PKCE verifier and state data only. Durable app
+ * sessions belong to `createOAuthAppAuth` after the token exchange succeeds.
+ * Browser redirect flows can use `sessionStorage`; native app flows usually
+ * need storage that survives leaving the app and returning through a deep link.
+ */
 export type OAuthTemporaryStorage = {
 	getItem(key: string): MaybePromise<string | null>;
 	setItem(key: string, value: string): MaybePromise<void>;
 	removeItem(key: string): MaybePromise<void>;
 };
 
+/**
+ * Stable OAuth client identity and transient transaction storage.
+ *
+ * `redirectUri` is intentionally not part of this config. Browser, extension,
+ * and native launchers own the callback endpoint for each authorization launch.
+ * The client stores that per-launch value in the temporary transaction so token
+ * exchange uses the same redirect URI that created the authorization URL.
+ */
 export type OAuthClientConfig = {
 	issuer: string;
 	clientId: string;
-	redirectUri: string;
 	resource: string;
 	scope?: string;
 	storage: OAuthTemporaryStorage;
 	fetch?: AuthFetch;
 };
 
+/**
+ * Per-launch redirect data required to build an authorization URL.
+ */
+export type OAuthAuthorizationRequest = {
+	redirectUri: string;
+};
+
+/**
+ * Runtime-specific OAuth launcher consumed by auth core.
+ *
+ * A launcher owns the transport mechanics of sign-in: full-page browser
+ * redirects, extension web-auth APIs, native-app deep links, or other runtimes.
+ * `completed` carries the token grant immediately. `launched` means control has
+ * moved to another runtime surface and a later callback will complete sign-in.
+ */
 export type OAuthLauncher = {
-	startSignIn(): Promise<Result<OAuthTokenGrant | null, OAuthClientError>>;
+	startSignIn(): Promise<Result<OAuthLaunchResult, OAuthClientError>>;
 };
 
 type MaybePromise<T> = T | Promise<T>;
@@ -82,6 +114,14 @@ type OAuthTransaction = {
 
 type RedirectTo = (url: string) => MaybePromise<void>;
 type LaunchWebAuthFlow = (url: string) => Promise<string>;
+type BrowserOAuthLauncherConfig = OAuthClientConfig &
+	OAuthAuthorizationRequest & {
+		redirectTo?: RedirectTo;
+	};
+type ExtensionOAuthLauncherConfig = OAuthClientConfig &
+	OAuthAuthorizationRequest & {
+		launchWebAuthFlow: LaunchWebAuthFlow;
+	};
 
 const DEFAULT_SCOPE = EPICENTER_OAUTH_SCOPE;
 
@@ -98,23 +138,27 @@ export function createBrowserOAuthLauncher({
 	redirectTo = (url) => {
 		window.location.href = url;
 	},
+	redirectUri,
 	...config
-}: OAuthClientConfig & {
-	redirectTo?: RedirectTo;
-}) {
+}: BrowserOAuthLauncherConfig) {
 	const client = createOAuthClient(config);
 	return {
 		async startSignIn() {
 			const callbackResult = await client.handleCallback(window.location.href);
-			if (callbackResult.data) return callbackResult;
+			if (callbackResult.data) {
+				return Ok({
+					status: 'completed',
+					grant: callbackResult.data,
+				} satisfies OAuthLaunchResult);
+			}
 			if (callbackResult.error?.name !== 'MissingCallbackTransaction') {
 				return callbackResult;
 			}
 
-			const urlResult = await client.createAuthorizationUrl();
+			const urlResult = await client.createAuthorizationUrl({ redirectUri });
 			if (urlResult.error) return urlResult;
 			await redirectTo(urlResult.data.toString());
-			return Ok(null);
+			return Ok({ status: 'launched' } satisfies OAuthLaunchResult);
 		},
 	} satisfies OAuthLauncher;
 }
@@ -130,19 +174,23 @@ export function createBrowserOAuthLauncher({
  */
 export function createExtensionOAuthLauncher({
 	launchWebAuthFlow,
+	redirectUri,
 	...config
-}: OAuthClientConfig & {
-	launchWebAuthFlow: LaunchWebAuthFlow;
-}) {
+}: ExtensionOAuthLauncherConfig) {
 	const client = createOAuthClient(config);
 	return {
 		async startSignIn() {
-			const urlResult = await client.createAuthorizationUrl();
+			const urlResult = await client.createAuthorizationUrl({ redirectUri });
 			if (urlResult.error) return urlResult;
 
 			try {
 				const responseUrl = await launchWebAuthFlow(urlResult.data.toString());
-				return await client.handleCallback(responseUrl);
+				const callbackResult = await client.handleCallback(responseUrl);
+				if (callbackResult.error) return callbackResult;
+				return Ok({
+					status: 'completed',
+					grant: callbackResult.data,
+				} satisfies OAuthLaunchResult);
 			} catch (cause) {
 				return OAuthClientError.LaunchFailed({ cause });
 			}
@@ -161,7 +209,6 @@ export function createExtensionOAuthLauncher({
 export function createOAuthClient({
 	issuer,
 	clientId,
-	redirectUri,
 	resource,
 	scope = DEFAULT_SCOPE,
 	storage,
@@ -187,9 +234,9 @@ export function createOAuthClient({
 		return await oauth.processDiscoveryResponse(issuerUrl, response);
 	}
 
-	async function createAuthorizationUrl(): Promise<
-		Result<URL, OAuthClientError>
-	> {
+	async function createAuthorizationUrl({
+		redirectUri,
+	}: OAuthAuthorizationRequest): Promise<Result<URL, OAuthClientError>> {
 		try {
 			const as = await discover();
 			const state = oauth.generateRandomState();
@@ -224,7 +271,7 @@ export function createOAuthClient({
 
 	async function handleCallback(
 		url: string | URL,
-	): Promise<Result<OAuthTokenGrant | null, OAuthClientError>> {
+	): Promise<Result<OAuthTokenGrant, OAuthClientError>> {
 		const callbackUrl = new URL(url);
 		if (
 			!callbackUrl.searchParams.has('code') &&

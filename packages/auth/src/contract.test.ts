@@ -17,6 +17,7 @@ import type { Keyring } from '@epicenter/encryption';
 import { Ok, type Result } from 'wellcrafted/result';
 import type {
 	AuthClient,
+	OAuthLaunchResult,
 	OAuthTokenGrant,
 	PersistedAuth,
 	PersistedAuthStorage,
@@ -38,6 +39,14 @@ function grant({
 	accessTokenExpiresAt = now + 3_600_000,
 }: Partial<OAuthTokenGrant> = {}): OAuthTokenGrant {
 	return { accessToken, refreshToken, accessTokenExpiresAt };
+}
+
+function launched() {
+	return Ok({ status: 'launched' } satisfies OAuthLaunchResult);
+}
+
+function completed(g: OAuthTokenGrant) {
+	return Ok({ status: 'completed', grant: g } satisfies OAuthLaunchResult);
 }
 
 function cell({
@@ -126,7 +135,7 @@ test('signed-out by default; AuthClient satisfies the public contract', () => {
 		clientId: 'client-1',
 		now: () => now,
 		persistedAuthStorage: setup.storage,
-		launcher: { startSignIn: async () => Ok(null) },
+		launcher: { startSignIn: async () => launched() },
 	});
 
 	expect(auth.state).toEqual({ status: 'signed-out' });
@@ -140,7 +149,7 @@ test('cold-boot signed-in exposes ownerId and keyring immediately without profil
 		clientId: 'client-1',
 		now: () => now,
 		persistedAuthStorage: setup.storage,
-		launcher: { startSignIn: async () => Ok(null) },
+		launcher: { startSignIn: async () => launched() },
 	});
 
 	expect(auth.state).toEqual({
@@ -162,7 +171,7 @@ test('startSignIn calls /api/session and writes both sections', async () => {
 		persistedAuthStorage: setup.storage,
 		launcher: {
 			startSignIn: async () =>
-				Ok({
+				completed({
 					accessToken: 'sign-in-access',
 					refreshToken: 'sign-in-refresh',
 					accessTokenExpiresAt: now + 3_600_000,
@@ -194,6 +203,30 @@ test('startSignIn calls /api/session and writes both sections', async () => {
 	auth[Symbol.dispose]();
 });
 
+test('startSignIn with launched result does not install a session', async () => {
+	const setup = createStorage(null);
+	let fetches = 0;
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: { startSignIn: async () => launched() },
+		fetch: async () => {
+			fetches += 1;
+			return json(apiSessionBody('user-1'));
+		},
+	});
+
+	const result = await auth.startSignIn();
+
+	expect(result).toEqual(Ok(undefined));
+	expect(fetches).toBe(0);
+	expect(setup.saved).toEqual([]);
+	expect(auth.state).toEqual({ status: 'signed-out' });
+	auth[Symbol.dispose]();
+});
+
 test('startSignIn publishes signed-out before installing a different owner', async () => {
 	const setup = createStorage(cell({ userId: 'alice' }));
 	const states: string[] = [];
@@ -204,7 +237,7 @@ test('startSignIn publishes signed-out before installing a different owner', asy
 		persistedAuthStorage: setup.storage,
 		launcher: {
 			startSignIn: async () =>
-				Ok({
+				completed({
 					accessToken: 'bob-access',
 					refreshToken: 'bob-refresh',
 					accessTokenExpiresAt: now + 3_600_000,
@@ -262,7 +295,7 @@ test('signOut during startSignIn prevents the in-flight grant from being install
 		persistedAuthStorage: setup.storage,
 		launcher: {
 			startSignIn: async () =>
-				Ok({
+				completed({
 					accessToken: 'bob-access',
 					refreshToken: 'bob-refresh',
 					accessTokenExpiresAt: now + 3_600_000,
@@ -295,10 +328,12 @@ test('signOut during startSignIn prevents the in-flight grant from being install
 test('concurrent startSignIn shares one launcher flight', async () => {
 	const setup = createStorage(null);
 	let signInAttempts = 0;
-	let resolveLauncher!: (result: Result<OAuthTokenGrant, unknown>) => void;
-	const launcherPromise = new Promise<Result<OAuthTokenGrant, unknown>>((r) => {
-		resolveLauncher = r;
-	});
+	let resolveLauncher!: (result: Result<OAuthLaunchResult, unknown>) => void;
+	const launcherPromise = new Promise<Result<OAuthLaunchResult, unknown>>(
+		(r) => {
+			resolveLauncher = r;
+		},
+	);
 	let apiSessionCalls = 0;
 	let markLauncherStarted!: () => void;
 	const launcherStarted = new Promise<void>((r) => {
@@ -331,7 +366,7 @@ test('concurrent startSignIn shares one launcher flight', async () => {
 
 	expect(signInAttempts).toBe(1);
 	resolveLauncher(
-		Ok({
+		completed({
 			accessToken: 'bob-access',
 			refreshToken: 'bob-refresh',
 			accessTokenExpiresAt: now + 3_600_000,
@@ -368,7 +403,7 @@ for (const status of [401, 403] as const) {
 			clientId: 'client-1',
 			now: () => now,
 			persistedAuthStorage: setup.storage,
-			launcher: { startSignIn: async () => Ok(null) },
+			launcher: { startSignIn: async () => launched() },
 			fetch: async (input, init) => {
 				if (String(input).endsWith('/api/session')) {
 					return new Response(null, { status });
@@ -400,7 +435,7 @@ test('/api/session 503 leaves local auth signed-in without attaching a bearer', 
 		clientId: 'client-1',
 		now: () => now,
 		persistedAuthStorage: setup.storage,
-		launcher: { startSignIn: async () => Ok(null) },
+		launcher: { startSignIn: async () => launched() },
 		fetch: async (input, init) => {
 			if (String(input).endsWith('/api/session')) {
 				return new Response(null, { status: 503 });
@@ -436,7 +471,7 @@ test('stale /api/session verification after owner-switch sign-in cannot replace 
 		persistedAuthStorage: setup.storage,
 		launcher: {
 			startSignIn: async () =>
-				Ok({
+				completed({
 					accessToken: 'bob-access',
 					refreshToken: 'bob-refresh',
 					accessTokenExpiresAt: now + 3_600_000,
@@ -494,7 +529,7 @@ test('refresh writes ONLY the grant section; identity + keyring + mode byte-iden
 		clientId: 'client-1',
 		now: () => now,
 		persistedAuthStorage: setup.storage,
-		launcher: { startSignIn: async () => Ok(null) },
+		launcher: { startSignIn: async () => launched() },
 		fetch: async (input) => {
 			if (String(input).endsWith('/api/session'))
 				return json(apiSessionBody('user-1'));
@@ -526,7 +561,7 @@ test('refresh keeps existing refresh token when token response omits rotation', 
 		clientId: 'client-1',
 		now: () => now,
 		persistedAuthStorage: setup.storage,
-		launcher: { startSignIn: async () => Ok(null) },
+		launcher: { startSignIn: async () => launched() },
 		fetch: async (input) => {
 			if (String(input).endsWith('/api/session'))
 				return json(apiSessionBody('user-1'));
@@ -553,7 +588,7 @@ test('same-owner guard wipes the cell when /api/session returns a different owne
 		clientId: 'client-1',
 		now: () => now,
 		persistedAuthStorage: setup.storage,
-		launcher: { startSignIn: async () => Ok(null) },
+		launcher: { startSignIn: async () => launched() },
 		fetch: async (input) => {
 			if (String(input).endsWith('/api/session'))
 				return json(apiSessionBody('bob'));
@@ -575,7 +610,7 @@ test('same-owner /api/session preserves state when keyring is unchanged', async 
 		clientId: 'client-1',
 		now: () => now,
 		persistedAuthStorage: setup.storage,
-		launcher: { startSignIn: async () => Ok(null) },
+		launcher: { startSignIn: async () => launched() },
 		fetch: async (input) => {
 			if (String(input).endsWith('/api/session'))
 				return json(apiSessionBody('user-1'));
@@ -605,7 +640,7 @@ test('keyring rotation updates persisted keyring', async () => {
 		clientId: 'client-1',
 		now: () => now,
 		persistedAuthStorage: setup.storage,
-		launcher: { startSignIn: async () => Ok(null) },
+		launcher: { startSignIn: async () => launched() },
 		fetch: async (input) => {
 			if (String(input).endsWith('/api/session')) {
 				return json({
@@ -644,7 +679,7 @@ test('network gate: no Authorization header until /api/session confirms same own
 		clientId: 'client-1',
 		now: () => now,
 		persistedAuthStorage: setup.storage,
-		launcher: { startSignIn: async () => Ok(null) },
+		launcher: { startSignIn: async () => launched() },
 		fetch: async (input, init) => {
 			if (String(input).endsWith('/api/session')) return apiSessionPromise;
 			seenAuth.push(new Headers(init?.headers).get('authorization'));
@@ -669,7 +704,7 @@ test('auth.fetch resolves relative API paths against the auth base URL', async (
 		clientId: 'client-1',
 		now: () => now,
 		persistedAuthStorage: setup.storage,
-		launcher: { startSignIn: async () => Ok(null) },
+		launcher: { startSignIn: async () => launched() },
 		fetch: async (input, init) => {
 			fetches.push({
 				url: String(input),
@@ -706,7 +741,7 @@ test('network gate: no WebSocket bearer protocol until /api/session confirms sam
 		clientId: 'client-1',
 		now: () => now,
 		persistedAuthStorage: setup.storage,
-		launcher: { startSignIn: async () => Ok(null) },
+		launcher: { startSignIn: async () => launched() },
 		WebSocket: WebSocketRecorder,
 		fetch: async (input) => {
 			if (String(input).endsWith('/api/session')) return apiSessionPromise;
@@ -737,7 +772,7 @@ test('cold-boot offline keeps signed-in with cached ownerId and keyring and no p
 		clientId: 'client-1',
 		now: () => now,
 		persistedAuthStorage: setup.storage,
-		launcher: { startSignIn: async () => Ok(null) },
+		launcher: { startSignIn: async () => launched() },
 		fetch: async () => {
 			throw new Error('offline');
 		},
@@ -771,7 +806,7 @@ test('signOut clears cell and network pause even when revoke fails', async () =>
 		clientId: 'client-1',
 		now: () => now,
 		persistedAuthStorage: setup.storage,
-		launcher: { startSignIn: async () => Ok(null) },
+		launcher: { startSignIn: async () => launched() },
 		fetch: async (input, init) => {
 			if (String(input).endsWith('/api/session'))
 				return json(apiSessionBody('user-1'));
@@ -830,7 +865,7 @@ test('network verification clears on grant refresh until /api/session confirms n
 		clientId: 'client-1',
 		now: () => now,
 		persistedAuthStorage: setup.storage,
-		launcher: { startSignIn: async () => Ok(null) },
+		launcher: { startSignIn: async () => launched() },
 		fetch: async (input, init) => {
 			const authorization = new Headers(init?.headers).get('authorization');
 			if (String(input).endsWith('/api/session')) {
@@ -896,7 +931,7 @@ test('concurrent refresh shares one promise and signOut during refresh wins', as
 		clientId: 'client-1',
 		now: () => now,
 		persistedAuthStorage: setup.storage,
-		launcher: { startSignIn: async () => Ok(null) },
+		launcher: { startSignIn: async () => launched() },
 		fetch: async (input, init) => {
 			if (String(input).endsWith('/auth/oauth2/token')) {
 				refreshCalls += 1;
@@ -961,7 +996,7 @@ test('signOut remains the final storage write when refresh persistence is in fli
 		clientId: 'client-1',
 		now: () => now,
 		persistedAuthStorage: storage,
-		launcher: { startSignIn: async () => Ok(null) },
+		launcher: { startSignIn: async () => launched() },
 		fetch: async (input, init) => {
 			if (String(input).endsWith('/auth/oauth2/token')) {
 				return oauthTokenResponse();
@@ -1001,7 +1036,7 @@ test('/api/session response after signOut is discarded without corrupting state'
 		clientId: 'client-1',
 		now: () => now,
 		persistedAuthStorage: setup.storage,
-		launcher: { startSignIn: async () => Ok(null) },
+		launcher: { startSignIn: async () => launched() },
 		fetch: async (input, init) => {
 			if (String(input).endsWith('/api/session')) return apiSessionPromise;
 			if (String(input).endsWith('/auth/oauth2/revoke')) {
@@ -1046,7 +1081,7 @@ test('/api/session key update after signOut is discarded without writing identit
 		clientId: 'client-1',
 		now: () => now,
 		persistedAuthStorage: setup.storage,
-		launcher: { startSignIn: async () => Ok(null) },
+		launcher: { startSignIn: async () => launched() },
 		fetch: async (input, init) => {
 			if (String(input).endsWith('/api/session')) return apiSessionPromise;
 			if (String(input).endsWith('/auth/oauth2/revoke')) {

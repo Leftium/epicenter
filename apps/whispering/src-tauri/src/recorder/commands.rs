@@ -26,6 +26,7 @@ fn emit_recording_state(app: &AppHandle, state: RecordingState) {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn enumerate_recording_devices(
     recorder: State<'_, Mutex<Recorder>>,
 ) -> Result<Vec<String>> {
@@ -37,6 +38,7 @@ pub async fn enumerate_recording_devices(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn init_recording_session(
     device_identifier: String,
     recording_id: String,
@@ -62,6 +64,7 @@ pub async fn init_recording_session(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn start_recording(
     recorder: State<'_, Mutex<Recorder>>,
     app_handle: AppHandle,
@@ -84,6 +87,7 @@ pub async fn start_recording(
 /// file up by id (`transcribe_recording`, `encode_recording_for_upload`,
 /// `delete_recording`).
 #[tauri::command]
+#[specta::specta]
 pub async fn stop_recording(
     recorder: State<'_, Mutex<Recorder>>,
     app_handle: AppHandle,
@@ -110,6 +114,7 @@ pub async fn stop_recording(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn cancel_recording(
     recorder: State<'_, Mutex<Recorder>>,
     app_handle: AppHandle,
@@ -126,6 +131,7 @@ pub async fn cancel_recording(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn close_recording_session(
     recorder: State<'_, Mutex<Recorder>>,
     app_handle: AppHandle,
@@ -142,6 +148,7 @@ pub async fn close_recording_session(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_current_recording_id(
     recorder: State<'_, Mutex<Recorder>>,
 ) -> Result<Option<String>> {
@@ -155,6 +162,7 @@ pub async fn get_current_recording_id(
 /// Delete an artifact by id. Idempotent: a missing file is not an error
 /// so the JS side can call this without first checking existence.
 #[tauri::command]
+#[specta::specta]
 pub async fn delete_recording(
     recording_id: String,
     app_handle: AppHandle,

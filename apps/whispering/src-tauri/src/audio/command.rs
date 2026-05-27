@@ -13,6 +13,12 @@ use crate::recorder::read_artifact_samples;
 
 /// Compress a saved recording artifact into OGG/Opus for cloud upload.
 ///
+/// Hand-rolled at the boundary (`src/lib/tauri/commands.ts`): the return
+/// is a raw IPC byte body via `tauri::ipc::Response`, which specta cannot
+/// introspect. Intentionally NOT annotated with `#[specta::specta]`; the
+/// command stays registered through `tauri::generate_handler!` alongside
+/// the specta-builder handlers (see `lib.rs`).
+///
 /// JS call shape:
 /// ```js
 /// const compressed = await invoke('encode_recording_for_upload', {

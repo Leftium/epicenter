@@ -36,6 +36,10 @@ const ARTIFACT_CHANNELS: u16 = 1;
 const ARTIFACT_EXT: &str = "wav";
 const ARTIFACT_MIME: &str = "audio/wav";
 
+fn artifact_mime() -> String {
+    ARTIFACT_MIME.to_string()
+}
+
 /// Subdirectory under the app data dir. Mirrors `PATHS.DB.RECORDINGS()` on
 /// the JS side so the blob store keeps finding files by id prefix.
 const RECORDINGS_DIR_NAME: &str = "recordings";
@@ -44,13 +48,27 @@ const RECORDINGS_DIR_NAME: &str = "recordings";
 /// for every later operation; the rest is metadata the UI needs without
 /// having to read the file (duration for analytics, byteLength for upload
 /// size, mimeType for the player).
-#[derive(Debug, Clone, Serialize)]
+///
+/// `mime_type` is `String` rather than `&'static str` so specta's TS
+/// generator sees a stable serializable shape (and so future producers,
+/// e.g. navigator-saved webm artifacts after the next collapse, can set
+/// it to a non-static value). The runtime cost is one short allocation
+/// per artifact write.
+///
+/// `duration_ms` and `byte_length` use `#[specta(type = Number<u64>)]`
+/// to opt out of specta's bigint guard: both stay well under
+/// `Number.MAX_SAFE_INTEGER` (2^53) for any plausible recording
+/// (duration in ms maxes at ~285,000 years; byte length is bounded by
+/// the filesystem).
+#[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RecordingArtifact {
     pub id: String,
+    #[specta(type = specta_typescript::Number<u64>)]
     pub duration_ms: u64,
+    #[specta(type = specta_typescript::Number<u64>)]
     pub byte_length: u64,
-    pub mime_type: &'static str,
+    pub mime_type: String,
 }
 
 /// Validate that `id` is a single safe filename component: no separators,
@@ -145,7 +163,7 @@ pub fn write_artifact(
         id: id.to_string(),
         duration_ms,
         byte_length,
-        mime_type: ARTIFACT_MIME,
+        mime_type: artifact_mime(),
     })
 }
 

@@ -2,7 +2,7 @@ mod error;
 mod model_manager;
 
 use crate::recorder::read_artifact_samples;
-use error::TranscriptionError;
+pub use error::TranscriptionError;
 use log::{debug, info, warn};
 pub use model_manager::ModelManager;
 use model_manager::UnloadPolicy;
@@ -18,9 +18,13 @@ use transcribe_rs::{SpeechModel, TranscribeOptions};
 /// JSON argument on the `transcribe_recording` command. Wire tags match
 /// the FE settings (`transcription.service`): `whispercpp` / `parakeet` /
 /// `moonshine`.
-#[derive(Debug, Deserialize)]
+///
+/// `pub` + `specta::Type` so the JS side gets the discriminated union as
+/// a typed argument via the `tauri-specta` generator. The existing serde
+/// tag + rename attributes carry through.
+#[derive(Debug, Deserialize, specta::Type)]
 #[serde(tag = "engine", rename_all = "lowercase")]
-enum TranscribeRequest {
+pub enum TranscribeRequest {
     #[serde(rename = "whispercpp")]
     Whisper {
         #[serde(rename = "modelPath")]
@@ -43,9 +47,9 @@ enum TranscribeRequest {
 
 /// Wire representation of the subset of Moonshine variants the app surfaces.
 /// `transcribe-rs` exposes more variants but the UI only offers Tiny and Base.
-#[derive(Debug, Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Clone, Copy, specta::Type)]
 #[serde(rename_all = "lowercase")]
-enum MoonshineVariantWire {
+pub enum MoonshineVariantWire {
     Tiny,
     Base,
 }
@@ -76,24 +80,19 @@ impl TranscribeRequest {
 /// stop, navigator/VAD/file-upload (after the pipeline saves), retry,
 /// history replay.
 #[tauri::command]
+#[specta::specta]
 pub async fn transcribe_recording(
     recording_id: String,
-    config: serde_json::Value,
+    config: TranscribeRequest,
     app_handle: AppHandle,
     model_manager: State<'_, ModelManager>,
 ) -> Result<String, TranscriptionError> {
-    let req: TranscribeRequest = serde_json::from_value(config).map_err(|e| {
-        TranscriptionError::TranscriptionError {
-            message: format!("Invalid transcribe config JSON: {}", e),
-        }
-    })?;
-
     let samples = read_artifact_samples(&app_handle, &recording_id).map_err(|e| {
         TranscriptionError::AudioReadError { message: e }
     })?;
 
     let manager = model_manager.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || run_inference(samples, req, manager))
+    tauri::async_runtime::spawn_blocking(move || run_inference(samples, config, manager))
         .await
         .map_err(join_err)?
 }
@@ -106,6 +105,7 @@ pub async fn transcribe_recording(
 /// rather than erroring, so a future rename or corrupt localStorage value
 /// never breaks transcription.
 #[tauri::command]
+#[specta::specta]
 pub fn set_unload_policy(policy: String, model_manager: State<'_, ModelManager>) {
     model_manager.set_policy(UnloadPolicy::from_wire(&policy));
 }

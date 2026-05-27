@@ -29,6 +29,62 @@ use command::{execute_command, spawn_command};
 pub mod markdown;
 use markdown::{count_markdown_files, delete_files_in_directory, read_markdown_files, write_markdown_files};
 
+/// Collect every specta-annotated command into one tauri-specta builder.
+///
+/// Two things live on this builder: the runtime invoke handler (which
+/// replaces `tauri::generate_handler!` for the specta-known commands in
+/// Wave 2) and the typescript exporter.
+///
+/// Two commands are intentionally excluded:
+/// - `encode_recording_for_upload` returns a raw `tauri::ipc::Response`
+///   which specta cannot introspect. It stays hand-rolled at the JS
+///   boundary (see `src/lib/tauri/commands.ts` in Wave 2) and gets
+///   registered through the legacy `tauri::generate_handler!`.
+/// - `count_markdown_files`, `read_markdown_files`, `send_sigint` have
+///   zero JS callers (verified via grep). They stay registered through
+///   the legacy handler until Wave 7's dead-command removal so the wire
+///   still works for any out-of-tree caller.
+///
+/// Currently only the `#[cfg(test)] export_types` consumer uses this
+/// builder; Wave 2 wires it into `tauri::Builder::invoke_handler`. The
+/// `#[allow(dead_code)]` is intentional and goes away at that point.
+#[allow(dead_code)]
+fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
+    tauri_specta::Builder::<tauri::Wry>::new()
+        .commands(tauri_specta::collect_commands![
+            write_text,
+            simulate_enter_keystroke,
+            get_current_recording_id,
+            enumerate_recording_devices,
+            init_recording_session,
+            close_recording_session,
+            start_recording,
+            stop_recording,
+            cancel_recording,
+            delete_recording,
+            transcribe_recording,
+            set_unload_policy,
+            execute_command,
+            spawn_command,
+            delete_files_in_directory,
+            write_markdown_files,
+        ])
+        .error_handling(tauri_specta::ErrorHandlingMode::Result)
+}
+
+#[cfg(test)]
+mod export_bindings {
+    #[test]
+    fn export_types() {
+        super::make_specta_builder()
+            .export(
+                specta_typescript::Typescript::default(),
+                "../src/lib/tauri/bindings.gen.ts",
+            )
+            .expect("failed to export bindings");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[tokio::main]
 pub async fn run() {
@@ -233,6 +289,7 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 /// This approach is faster than typing character-by-character and preserves
 /// the user's clipboard, making it ideal for inserting transcribed text.
 #[tauri::command]
+#[specta::specta]
 async fn write_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
     // 1. Save current clipboard content
     let original_clipboard = app.clipboard().read_text().ok();
@@ -290,6 +347,7 @@ async fn write_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
 /// This is useful for automatically submitting text in chat applications
 /// after transcription has been pasted.
 #[tauri::command]
+#[specta::specta]
 async fn simulate_enter_keystroke() -> Result<(), String> {
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
 

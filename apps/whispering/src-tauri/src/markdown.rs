@@ -8,7 +8,7 @@ use tempfile::NamedTempFile;
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, specta::Type)]
 pub struct MarkdownFile {
     filename: String,
     content: String,
@@ -38,6 +38,7 @@ fn validate_leaf_filename(filename: &str) -> Result<&str, String> {
 /// # Arguments
 /// * `directory_path` - Absolute path to the directory containing .md files
 #[tauri::command]
+#[specta::specta]
 pub async fn count_markdown_files(directory_path: String) -> Result<usize, String> {
     tokio::task::spawn_blocking(move || {
         let dir_path = PathBuf::from(&directory_path);
@@ -70,6 +71,7 @@ pub async fn count_markdown_files(directory_path: String) -> Result<usize, Strin
 /// # Arguments
 /// * `directory_path` - Absolute path to the directory containing .md files
 #[tauri::command]
+#[specta::specta]
 pub async fn read_markdown_files(directory_path: String) -> Result<Vec<String>, String> {
     tokio::task::spawn_blocking(move || {
         let dir_path = PathBuf::from(&directory_path);
@@ -116,6 +118,7 @@ pub async fn read_markdown_files(directory_path: String) -> Result<Vec<String>, 
 /// * `Ok(())` - All files written successfully
 /// * `Err(String)` - Error if any write fails (earlier files may already be on disk)
 #[tauri::command]
+#[specta::specta]
 pub async fn write_markdown_files(
     directory: String,
     files: Vec<MarkdownFile>,
@@ -170,6 +173,7 @@ pub async fn write_markdown_files(
 /// * `directory` - Absolute path to the directory containing the files
 /// * `filenames` - Array of leaf filenames to delete
 #[tauri::command]
+#[specta::specta]
 pub async fn delete_files_in_directory(
     directory: String,
     filenames: Vec<String>,

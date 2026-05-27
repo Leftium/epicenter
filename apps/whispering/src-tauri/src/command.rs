@@ -8,7 +8,7 @@ use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandOutput {
     pub code: Option<i32>,
@@ -57,6 +57,7 @@ fn parse_command(command: &str) -> (String, Vec<String>) {
 /// execute_command("git --version".to_string()).await?;
 /// ```
 #[tauri::command]
+#[specta::specta]
 pub async fn execute_command(command: String) -> Result<CommandOutput, String> {
     let (program, args) = parse_command(&command);
 
@@ -124,6 +125,7 @@ pub async fn execute_command(command: String) -> Result<CommandOutput, String> {
 /// spawn_command("my-sidecar --listen 127.0.0.1:9000".to_string()).await?;
 /// ```
 #[tauri::command]
+#[specta::specta]
 pub async fn spawn_command(command: String) -> Result<u32, String> {
     let (program, args) = parse_command(&command);
 

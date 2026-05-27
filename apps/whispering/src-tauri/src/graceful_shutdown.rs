@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, specta::Type)]
 pub struct SignalResult {
     success: bool,
     message: String,
@@ -9,6 +9,7 @@ pub struct SignalResult {
 /// Send a SIGINT signal to a process by PID.
 /// This is equivalent to Ctrl+C and allows graceful shutdown.
 #[tauri::command]
+#[specta::specta]
 pub fn send_sigint(pid: u32) -> SignalResult {
     #[cfg(unix)]
     {

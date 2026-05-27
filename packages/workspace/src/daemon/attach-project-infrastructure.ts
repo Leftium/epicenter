@@ -1,19 +1,18 @@
 /**
- * Daemon-side persistence + sync infrastructure for a single workspace doc.
+ * Project-daemon persistence + sync infrastructure for a single workspace doc.
  *
- * `attachDaemonInfrastructure(ydoc, opts)` is the recipe every config-routed
- * daemon extension needs: persist the Y.Doc update log to disk under
- * `yjsPath(projectDir, guid)`, join the cloud room at the partitioned
- * `roomWsUrl({ baseURL, ownerId, guid, deviceId })`, and own the ordered async
- * dispose (destroy first so writes flush before sockets close, then await
- * both `whenDisposed` promises).
+ * `attachProjectInfrastructure(ydoc, opts)` is the recipe every mount needs:
+ * persist the Y.Doc update log to disk under `yjsPath(projectDir, guid)`, join
+ * the cloud room at the partitioned `roomWsUrl({ baseURL, ownerId, guid,
+ * deviceId })`, and own the ordered async dispose (destroy first so writes
+ * flush before sockets close, then await both `whenDisposed` promises).
  *
  * A cloud doc is owned by the authenticated `ownerId` and addressed by its
  * `ydoc.guid`. The daemon and browser apps build the same URL with
- * `roomWsUrl({ baseURL, ownerId, guid, deviceId })`, so syncing the same
- * guid for the same owner means sharing one room.
+ * `roomWsUrl({ baseURL, ownerId, guid, deviceId })`, so syncing the same guid
+ * for the same owner means sharing one room.
  *
- * The helper takes the ydoc and the daemon ctx capabilities directly so the
+ * The helper takes the ydoc and the mount-context capabilities directly so the
  * caller stays explicit about its `actions` choice: app workspaces with
  * browser-only actions pass `{}` to refuse them on the daemon side, while
  * workspaces with daemon-safe actions pass `workspace.actions`.
@@ -40,19 +39,20 @@ import { yjsPath } from '../document/workspace-paths.js';
 import type { ActionRegistry } from '../shared/actions.js';
 import type { ProjectDir } from '../shared/types.js';
 
-export type AttachDaemonInfrastructureOptions<TActions extends ActionRegistry> =
-	{
-		projectDir: ProjectDir;
-		ownerId: OwnerId;
-		deviceId: DeviceId;
-		openWebSocket: OpenWebSocketFn;
-		onReconnectSignal: OnReconnectSignal;
-		actions: TActions;
-		/** Defaults to `EPICENTER_API_URL`. Override for self-hosted hubs. */
-		baseURL?: string;
-	};
+export type AttachProjectInfrastructureOptions<
+	TActions extends ActionRegistry,
+> = {
+	projectDir: ProjectDir;
+	ownerId: OwnerId;
+	deviceId: DeviceId;
+	openWebSocket: OpenWebSocketFn;
+	onReconnectSignal: OnReconnectSignal;
+	actions: TActions;
+	/** Defaults to `EPICENTER_API_URL`. Override for self-hosted hubs. */
+	baseURL?: string;
+};
 
-export function attachDaemonInfrastructure<TActions extends ActionRegistry>(
+export function attachProjectInfrastructure<TActions extends ActionRegistry>(
 	ydoc: Y.Doc,
 	{
 		projectDir,
@@ -62,7 +62,7 @@ export function attachDaemonInfrastructure<TActions extends ActionRegistry>(
 		onReconnectSignal,
 		actions,
 		baseURL = EPICENTER_API_URL,
-	}: AttachDaemonInfrastructureOptions<TActions>,
+	}: AttachProjectInfrastructureOptions<TActions>,
 ) {
 	const yjsLog = attachYjsLog(ydoc, {
 		filePath: yjsPath(projectDir, ydoc.guid),
@@ -83,7 +83,7 @@ export function attachDaemonInfrastructure<TActions extends ActionRegistry>(
 	return {
 		/** Durable Y.Doc update log handle. */
 		yjsLog,
-		/** Cloud sync, presence, and dispatch handle for this daemon route. */
+		/** Cloud sync, presence, and dispatch handle for this mount. */
 		collaboration,
 		/** Destroy the Y.Doc, then await collaboration and log teardown. */
 		async [Symbol.asyncDispose]() {
@@ -93,6 +93,6 @@ export function attachDaemonInfrastructure<TActions extends ActionRegistry>(
 	};
 }
 
-export type DaemonInfrastructure<TActions extends ActionRegistry> = ReturnType<
-	typeof attachDaemonInfrastructure<TActions>
+export type ProjectInfrastructure<TActions extends ActionRegistry> = ReturnType<
+	typeof attachProjectInfrastructure<TActions>
 >;

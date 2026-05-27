@@ -62,7 +62,7 @@
 	const modelName = $derived.by(async () => {
 		const path = value;
 		if (!path) return '';
-		return await basename(path);
+		return basename(path);
 	});
 
 	// Check if current model is pre-built

@@ -20,19 +20,19 @@ export const PATHS = {
 		async WHISPER() {
 			const { appDataDir, join } = await import('@tauri-apps/api/path');
 			const dir = await appDataDir();
-			return await join(dir, 'models', 'whisper');
+			return join(dir, 'models', 'whisper');
 		},
 		/** Directory for Parakeet model files */
 		async PARAKEET() {
 			const { appDataDir, join } = await import('@tauri-apps/api/path');
 			const dir = await appDataDir();
-			return await join(dir, 'models', 'parakeet');
+			return join(dir, 'models', 'parakeet');
 		},
 		/** Directory for Moonshine model files */
 		async MOONSHINE() {
 			const { appDataDir, join } = await import('@tauri-apps/api/path');
 			const dir = await appDataDir();
-			return await join(dir, 'models', 'moonshine');
+			return join(dir, 'models', 'moonshine');
 		},
 	},
 
@@ -96,7 +96,7 @@ export const PATHS = {
 		async RECORDINGS() {
 			const { appDataDir, join } = await import('@tauri-apps/api/path');
 			const dir = await appDataDir();
-			return await join(dir, 'recordings');
+			return join(dir, 'recordings');
 		},
 
 		/**
@@ -121,7 +121,7 @@ export const PATHS = {
 		async RECORDING_MD(id: string) {
 			const { appDataDir, join } = await import('@tauri-apps/api/path');
 			const dir = await appDataDir();
-			return await join(dir, 'recordings', `${id}.md`);
+			return join(dir, 'recordings', `${id}.md`);
 		},
 
 		/**
@@ -144,7 +144,7 @@ export const PATHS = {
 		async RECORDING_AUDIO(id: string, extension: string) {
 			const { appDataDir, join } = await import('@tauri-apps/api/path');
 			const dir = await appDataDir();
-			return await join(dir, 'recordings', `${id}.${extension}`);
+			return join(dir, 'recordings', `${id}.${extension}`);
 		},
 
 		/**
@@ -180,7 +180,7 @@ export const PATHS = {
 		async RECORDING_FILE(filename: string) {
 			const { appDataDir, join } = await import('@tauri-apps/api/path');
 			const dir = await appDataDir();
-			return await join(dir, 'recordings', filename);
+			return join(dir, 'recordings', filename);
 		},
 
 		/*
@@ -214,7 +214,7 @@ export const PATHS = {
 		async TRANSFORMATIONS() {
 			const { appDataDir, join } = await import('@tauri-apps/api/path');
 			const dir = await appDataDir();
-			return await join(dir, 'transformations');
+			return join(dir, 'transformations');
 		},
 
 		/**
@@ -237,7 +237,7 @@ export const PATHS = {
 		async TRANSFORMATION_MD(id: string) {
 			const { appDataDir, join } = await import('@tauri-apps/api/path');
 			const dir = await appDataDir();
-			return await join(dir, 'transformations', `${id}.md`);
+			return join(dir, 'transformations', `${id}.md`);
 		},
 
 		/*
@@ -271,7 +271,7 @@ export const PATHS = {
 		async TRANSFORMATION_RUNS() {
 			const { appDataDir, join } = await import('@tauri-apps/api/path');
 			const dir = await appDataDir();
-			return await join(dir, 'transformation-runs');
+			return join(dir, 'transformation-runs');
 		},
 
 		/**
@@ -295,7 +295,7 @@ export const PATHS = {
 		async TRANSFORMATION_RUN_MD(id: string) {
 			const { appDataDir, join } = await import('@tauri-apps/api/path');
 			const dir = await appDataDir();
-			return await join(dir, 'transformation-runs', `${id}.md`);
+			return join(dir, 'transformation-runs', `${id}.md`);
 		},
 	},
 };

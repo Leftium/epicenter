@@ -56,7 +56,7 @@
 				if (!(await exists(modelsDir))) {
 					await mkdir(modelsDir, { recursive: true });
 				}
-				return await join(modelsDir, model.file.filename);
+				return join(modelsDir, model.file.filename);
 			}
 			case 'parakeet': {
 				// Parakeet models are stored in a directory
@@ -65,7 +65,7 @@
 				if (!(await exists(parakeetModelsDir))) {
 					await mkdir(parakeetModelsDir, { recursive: true });
 				}
-				return await join(parakeetModelsDir, model.directoryName);
+				return join(parakeetModelsDir, model.directoryName);
 			}
 			case 'moonshine': {
 				// Moonshine models are stored in a directory
@@ -74,7 +74,7 @@
 				if (!(await exists(moonshineModelsDir))) {
 					await mkdir(moonshineModelsDir, { recursive: true });
 				}
-				return await join(moonshineModelsDir, model.directoryName);
+				return join(moonshineModelsDir, model.directoryName);
 			}
 		}
 	}

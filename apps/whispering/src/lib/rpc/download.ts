@@ -21,7 +21,7 @@ export const download = {
 
 			if (getAudioBlobError) return Err(getAudioBlobError);
 
-			return await services.download.downloadBlob({
+			return services.download.downloadBlob({
 				name: `whispering_recording_${recording.id}`,
 				blob: audioBlob,
 			});

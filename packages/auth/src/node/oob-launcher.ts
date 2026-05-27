@@ -9,7 +9,7 @@
  *
  * The launcher is concerned only with the OAuth dance. The caller pairs
  * the returned grant with `GET /api/session` to fill in the `userId`,
- * `ownerId`, `mode`, and `keyring` fields of `PersistedAuth`.
+ * `ownerId`, and `keyring` fields of `PersistedAuth`.
  */
 
 import * as readline from 'node:readline';

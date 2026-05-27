@@ -2,9 +2,9 @@
  * Auth Client Contract Tests
  *
  * Covers:
- * - PersistedAuth = { grant, userId, ownerId, keyring, mode } shape
+ * - PersistedAuth = { grant, userId, ownerId, keyring } shape
  * - AuthState three variants; profile data is absent from state
- * - Refresh writes only grant, identity + keyring + mode byte-identical
+ * - Refresh writes only grant, identity + keyring byte-identical
  * - Same-owner guard at /api/session response
  * - Network gate: bearer not attached until /api/session confirms same owner
  * - Cold-boot offline keeps signed-in with ownerId + keyring and no profile field
@@ -521,7 +521,7 @@ test('stale /api/session verification after owner-switch sign-in cannot replace 
 	auth[Symbol.dispose]();
 });
 
-test('refresh writes ONLY the grant section; identity + keyring + mode byte-identical', async () => {
+test('refresh writes ONLY the grant section; identity + keyring byte-identical', async () => {
 	const initial = cell({ grant: grant({ accessTokenExpiresAt: now + 1 }) });
 	const setup = createStorage(initial);
 	const auth = createOAuthAppAuth({

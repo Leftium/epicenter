@@ -72,7 +72,8 @@ export function parseOAuthTokenGrant(
 	if (refreshToken != null && typeof refreshToken !== 'string') {
 		return OAuthTokenResponseError.MissingRefreshToken();
 	}
-	if (refreshToken == null && fallbackRefreshToken === undefined) {
+	const nextRefreshToken = refreshToken ?? fallbackRefreshToken;
+	if (nextRefreshToken === undefined) {
 		return OAuthTokenResponseError.MissingRefreshToken();
 	}
 
@@ -87,7 +88,7 @@ export function parseOAuthTokenGrant(
 
 	return Ok({
 		accessToken,
-		refreshToken: refreshToken ?? fallbackRefreshToken!,
+		refreshToken: nextRefreshToken,
 		accessTokenExpiresAt: now() + expiresIn * 1000,
 	});
 }

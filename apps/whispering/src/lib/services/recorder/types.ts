@@ -194,17 +194,6 @@ export const RecorderError = defineErrors({
 		command,
 		cause,
 	}),
-	InvalidArtifact: ({
-		reason,
-		recordingId,
-	}: {
-		reason: string;
-		recordingId: string;
-	}) => ({
-		message: `Invalid recording artifact for id '${recordingId}': ${reason}`,
-		reason,
-		recordingId,
-	}),
 });
 export type RecorderError = InferErrors<typeof RecorderError>;
 

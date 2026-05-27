@@ -18,37 +18,6 @@ import {
 const log = createLogger('whispering/recorder/cpal');
 
 /**
- * Sanity-check the artifact handle Rust returned. Rust validates ids
- * before they touch the filesystem, but we still defend in depth so a
- * malformed IPC payload (e.g. from a future protocol mismatch) surfaces
- * as a clear error rather than wedging a downstream consumer.
- */
-function validateArtifact(
-	artifact: RecordingArtifact,
-	expectedRecordingId: string,
-): Result<RecordingArtifact, RecorderError> {
-	if (artifact.id !== expectedRecordingId) {
-		return RecorderError.InvalidArtifact({
-			reason: `id mismatch: expected '${expectedRecordingId}', got '${artifact.id}'`,
-			recordingId: expectedRecordingId,
-		});
-	}
-	if (!Number.isFinite(artifact.durationMs) || artifact.durationMs < 0) {
-		return RecorderError.InvalidArtifact({
-			reason: `durationMs is not a finite non-negative number`,
-			recordingId: artifact.id,
-		});
-	}
-	if (!Number.isFinite(artifact.byteLength) || artifact.byteLength < 0) {
-		return RecorderError.InvalidArtifact({
-			reason: `byteLength is not a finite non-negative number`,
-			recordingId: artifact.id,
-		});
-	}
-	return Ok(artifact);
-}
-
-/**
  * Enumerates available recording devices from the system.
  */
 const enumerateDevices = async (): Promise<Result<Device[], RecorderError>> => {
@@ -130,28 +99,6 @@ function createCpalRecorder(): RecorderService {
 			notify('IDLE');
 		};
 
-		// Close the Rust-side session and tear down JS state. Used by the
-		// stop happy path and the artifact-validation failure path so a
-		// malformed IPC payload can't leave a zombie session in Rust or a
-		// stale `activeSession` pointer in JS. Takes `session` explicitly
-		// for the same TDZ reason `teardown` does.
-		const closeAndTeardown = async (
-			session: RecordingSession,
-			sendStatus: (args: { title: string; description: string }) => void,
-		) => {
-			sendStatus({
-				title: '🔄 Closing Session',
-				description: 'Cleaning up recording resources...',
-			});
-			const { error: closeError } = await invoke<void>(
-				'close_recording_session',
-			);
-			if (closeError) {
-				log.error(closeError);
-			}
-			teardown(session);
-		};
-
 		const session: RecordingSession = {
 			recordingId,
 			backend: 'cpal',
@@ -168,18 +115,21 @@ function createCpalRecorder(): RecorderService {
 					return RecorderError.StopFailed({ cause: stopRecordingError });
 				}
 
-				const { data: validated, error: validateError } = validateArtifact(
-					artifact,
-					recordingId,
+				// Rust's `stop_recording` returns the artifact handle but does
+				// not close the worker; we still own the cpal stream and the
+				// worker thread. Send `close_recording_session` so Rust can
+				// join the worker and free the stream.
+				sendStatus({
+					title: '🔄 Closing Session',
+					description: 'Cleaning up recording resources...',
+				});
+				const { error: closeError } = await invoke<void>(
+					'close_recording_session',
 				);
-				if (validateError) {
-					log.error(validateError);
-					await closeAndTeardown(session, sendStatus);
-					return Err(validateError);
-				}
+				if (closeError) log.error(closeError);
+				teardown(session);
 
-				await closeAndTeardown(session, sendStatus);
-				return Ok({ kind: 'artifact', artifact: validated });
+				return Ok({ kind: 'artifact', artifact });
 			},
 
 			cancel: async ({ sendStatus }) => {

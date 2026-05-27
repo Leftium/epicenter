@@ -55,7 +55,9 @@
 </Button>
 
 <Modal.Root bind:open={dialogOpen}>
-	<Modal.Content class="sm:max-w-3xl">
+	<Modal.Content
+		class="sm:max-w-3xl md:max-h-[calc(100dvh-2rem)] md:grid-rows-[auto_minmax(0,1fr)_auto] md:overflow-hidden"
+	>
 		<Modal.Header>
 			<Modal.Title>
 				{isLocal ? 'Local' : 'Global'}
@@ -70,7 +72,7 @@
 			</Modal.Description>
 		</Modal.Header>
 
-		<div class="flex flex-col gap-4">
+		<div class="flex flex-col gap-4 md:min-h-0 md:overflow-y-auto md:pr-2">
 			<!-- Quick format summary -->
 			<div class="rounded-lg bg-muted p-4">
 				<p class="text-sm">

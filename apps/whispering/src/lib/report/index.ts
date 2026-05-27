@@ -5,9 +5,22 @@ import { type LogEvent, consoleSink } from 'wellcrafted/logger';
 import { moreDetailsDialog } from '$lib/components/MoreDetailsDialog.svelte';
 import { humanize } from './humanize';
 import { osNotify } from './os-notify';
-import type { Level, Notice, NoticeAction, Problem } from './types';
 
-export type { Notice, NoticeAction, Problem } from './types';
+export type NoticeAction = {
+	label: string;
+	onClick: () => void | Promise<void>;
+};
+
+export type Notice = {
+	title?: string;
+	description?: string;
+	action?: NoticeAction;
+	cause?: AnyTaggedError;
+};
+
+export type Problem = Notice & { cause: AnyTaggedError };
+
+type Level = 'error' | 'success' | 'info' | 'loading';
 
 const SOURCE = 'whispering/report';
 

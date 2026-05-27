@@ -1,7 +1,7 @@
 # Whispering Recording Markdown Export
 
 **Date**: 2026-05-27
-**Status**: In Progress
+**Status**: Implemented
 **Owner**: Whispering
 **Supersedes**: `specs/20260415T170000-recording-data-architecture.md` for the active markdown decision path
 
@@ -676,3 +676,43 @@ Keep writing hidden appdata markdown sidecars because the code already does it.
 ```
 
 If no user-facing export folder is wanted now, remove the current appdata projection instead of generalizing it.
+
+## Review
+
+**Completed**: 2026-05-27
+**Branch**: `codex/fooji-tauri-plan`
+
+### Summary
+
+Whispering now treats recording markdown as an explicit, device-local export folder instead of a hidden appdata projection. The exporter is read-only from workspace to disk, coalesces rapid edits, supports rebuild, and uses only the Specta `write_markdown_files` and `delete_files_in_directory` commands for filesystem IO.
+
+### Files Read
+
+```txt
+apps/whispering/
+|-- src-tauri/src/markdown.rs
+|-- src/lib/
+|   |-- constants/paths.ts
+|   |-- recording-markdown-export.ts
+|   |-- services/blob-store/file-system.tauri.ts
+|   |-- state/device-config.svelte.ts
+|   |-- tauri/bindings.gen.ts
+|   `-- whispering/tauri.ts
+|-- src/routes/(app)/(config)/settings/recording/
+|   |-- +page.svelte
+|   `-- RecordingMarkdownExportFolder.svelte
+docs/release-notes/
+`-- v7.11.1.md
+```
+
+### Deviations from Spec
+
+- The Wave 4 reactive `lastError` settings-panel bridge was removed before final handoff. Logging plus a once-per-session toast keeps failures visible without exposing the exporter handle as public Svelte state only for one settings row.
+- `delete_files_in_directory` kept one Rust command but now accepts a tagged selector: explicit filenames for realtime deletes and an extension selector for rebuild. This preserved the single filesystem boundary while avoiding TypeScript-side directory deletion logic.
+
+### Verification
+
+- `bun run check`
+- `bun test apps/whispering`
+- `cargo test --manifest-path apps/whispering/src-tauri/Cargo.toml export_types`
+- Symbol search for `recording-materializer`, `PATHS.DB.RECORDING_MD`, old appdata export attachment, and `utils/frontmatter` found no active code callers.

@@ -1,5 +1,5 @@
 import type { CopyFn } from '@epicenter/ui/copy-button';
-import { notify } from '$lib/operations/notify';
+import { report } from '$lib/report';
 import { services } from '$lib/services';
 
 /**
@@ -22,14 +22,13 @@ export function createCopyFn(contentDescription: string): CopyFn {
 	return async (text: string) => {
 		const { error } = await services.text.copyToClipboard(text);
 		if (error) {
-			await notify.error({
+			report.error({
 				title: `Error copying ${contentDescription} to clipboard`,
-				description: error.message,
-				action: { type: 'more-details', error },
+				cause: error,
 			});
 			throw error;
 		}
-		await notify.success({
+		report.success({
 			title: `Copied ${contentDescription} to clipboard!`,
 			description: text,
 		});

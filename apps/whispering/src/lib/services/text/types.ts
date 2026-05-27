@@ -4,7 +4,6 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
-import type { WhisperingError } from '$lib/result';
 
 type MaybePromise<T> = T | Promise<T>;
 
@@ -57,9 +56,7 @@ export type TextService = {
 	 *
 	 * @param text The text to write at the cursor position.
 	 */
-	writeToCursor: (
-		text: string,
-	) => MaybePromise<Result<void, TextError | WhisperingError>>;
+	writeToCursor: (text: string) => MaybePromise<Result<void, TextError>>;
 
 	/**
 	 * Simulates pressing the Enter/Return key.

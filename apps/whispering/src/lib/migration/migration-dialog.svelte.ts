@@ -1,6 +1,5 @@
-import { nanoid } from 'nanoid/non-secure';
 import { Ok, tryAsync } from 'wellcrafted/result';
-import { ToastServiceLive } from '$lib/services/toast';
+import { report } from '$lib/report';
 import { whispering } from '$lib/whispering/client';
 import {
 	type DbMigrationState,
@@ -18,7 +17,6 @@ function createMigrationDialog() {
 	let logs = $state<string[]>([]);
 	let migrationResult = $state<MigrationResult | null>(null);
 	let hasFailedAttempt = $state(false);
-	let migrationToastId: string | undefined;
 
 	function addLog(message: string) {
 		logs.push(message);
@@ -30,23 +28,17 @@ function createMigrationDialog() {
 	}
 
 	function showPendingToast() {
-		const toastId = nanoid();
-		ToastServiceLive.show({
-			variant: 'info',
-			id: toastId,
+		report.info({
 			title: 'Data Migration Available',
 			description:
 				'Your recordings and transformations can be migrated to the new workspace storage.',
 			action: {
-				type: 'button',
 				label: 'Migrate Now',
 				onClick: () => {
 					isOpen = true;
 				},
 			},
-			persist: true,
 		});
-		migrationToastId = toastId;
 	}
 
 	// ── Dev tools (import.meta.env.DEV only) ──
@@ -109,10 +101,6 @@ function createMigrationDialog() {
 				migrationResult = result;
 				setPersistedState('done');
 				addLog('✅ Migration complete');
-				if (migrationToastId) {
-					ToastServiceLive.dismiss(migrationToastId);
-					migrationToastId = undefined;
-				}
 				addLog(
 					`Recordings: ${result.recordings.migrated} migrated, ${result.recordings.skipped} skipped, ${result.recordings.failed} failed`,
 				);

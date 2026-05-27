@@ -1,9 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
 import { stat } from '@tauri-apps/plugin-fs';
 import { type } from 'arktype';
-import { extractErrorMessage } from 'wellcrafted/error';
-import { Ok, tryAsync } from 'wellcrafted/result';
-import { WhisperingErr, type WhisperingResult } from '$lib/result';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 import type { MoonshineVariant } from './types';
 
@@ -45,6 +48,71 @@ const ENGINE_DISPLAY_NAME: Record<TranscribeConfig['engine'], string> = {
 	moonshine: 'Moonshine',
 };
 
+export const LocalTranscriptionError = defineErrors({
+	ModelPathRequired: ({
+		engineDisplayName,
+		kind,
+	}: {
+		engineDisplayName: string;
+		kind: 'file' | 'directory';
+	}) => ({
+		message: `Please select a ${engineDisplayName} model ${kind} in settings.`,
+		engineDisplayName,
+		kind,
+	}),
+	ModelPathNotFound: ({
+		modelPath,
+		kind,
+	}: {
+		modelPath: string;
+		kind: 'file' | 'directory';
+	}) => ({
+		message: `The model ${kind} "${modelPath}" does not exist.`,
+		modelPath,
+		kind,
+	}),
+	InvalidModelPath: ({
+		engineDisplayName,
+		kind,
+	}: {
+		engineDisplayName: string;
+		kind: 'file' | 'directory';
+	}) => ({
+		message:
+			kind === 'directory'
+				? `${engineDisplayName} models must be directories containing model files.`
+				: `${engineDisplayName} models must be a single file.`,
+		engineDisplayName,
+		kind,
+	}),
+	UnexpectedLocalError: ({
+		cause,
+		engineDisplayName,
+	}: {
+		cause: unknown;
+		engineDisplayName: string;
+	}) => ({
+		message: extractErrorMessage(cause),
+		cause,
+		engineDisplayName,
+	}),
+	ModelLoadError: ({ message }: { message: string }) => ({
+		message,
+	}),
+	GpuError: ({ message }: { message: string }) => ({
+		message,
+	}),
+	AudioReadError: ({ message }: { message: string }) => ({
+		message,
+	}),
+	TranscriptionError: ({ message }: { message: string }) => ({
+		message,
+	}),
+});
+export type LocalTranscriptionError = InferErrors<
+	typeof LocalTranscriptionError
+>;
+
 /**
  * Validate that `modelPath` exists and is the expected `kind`. All three
  * local services share this exact preflight (only Whisper layers a
@@ -56,18 +124,11 @@ export async function requireExistingModelPath(
 	modelPath: string,
 	kind: 'file' | 'directory',
 	engineDisplayName: string,
-): Promise<WhisperingResult<void>> {
-	const fileOrDir = kind === 'directory' ? 'Directory' : 'File';
-
+): Promise<Result<void, LocalTranscriptionError>> {
 	if (!modelPath) {
-		return WhisperingErr({
-			title: `📁 Model ${fileOrDir} Required`,
-			description: `Please select a ${engineDisplayName} model ${kind} in settings.`,
-			action: {
-				type: 'link',
-				label: 'Configure model',
-				href: '/settings/transcription',
-			},
+		return LocalTranscriptionError.ModelPathRequired({
+			engineDisplayName,
+			kind,
 		});
 	}
 
@@ -77,30 +138,17 @@ export async function requireExistingModelPath(
 	});
 
 	if (!stats) {
-		return WhisperingErr({
-			title: `❌ Model ${fileOrDir} Not Found`,
-			description: `The model ${kind} "${modelPath}" does not exist.`,
-			action: {
-				type: 'link',
-				label: 'Select model',
-				href: '/settings/transcription',
-			},
+		return LocalTranscriptionError.ModelPathNotFound({
+			modelPath,
+			kind,
 		});
 	}
 
 	const isCorrectKind = kind === 'directory' ? stats.isDirectory : stats.isFile;
 	if (!isCorrectKind) {
-		return WhisperingErr({
-			title: '❌ Invalid Model Path',
-			description:
-				kind === 'directory'
-					? `${engineDisplayName} models must be directories containing model files.`
-					: `${engineDisplayName} models must be a single file.`,
-			action: {
-				type: 'link',
-				label: `Select model ${kind}`,
-				href: '/settings/transcription',
-			},
+		return LocalTranscriptionError.InvalidModelPath({
+			engineDisplayName,
+			kind,
 		});
 	}
 
@@ -127,56 +175,32 @@ const LocalTranscriptionErrorType = type({
 function mapLocalTranscriptionError(
 	unknownError: unknown,
 	engineDisplayName: string,
-): WhisperingResult<never> {
+): Result<never, LocalTranscriptionError> {
 	const parsed = LocalTranscriptionErrorType(unknownError);
 	if (parsed instanceof type.errors) {
-		return WhisperingErr({
-			title: `❌ Unexpected ${engineDisplayName} Error`,
-			description: extractErrorMessage(unknownError),
-			action: { type: 'more-details', error: unknownError },
+		return LocalTranscriptionError.UnexpectedLocalError({
+			cause: unknownError,
+			engineDisplayName,
 		});
 	}
 
 	switch (parsed.name) {
 		case 'ModelLoadError':
-			return WhisperingErr({
-				title: '🤖 Model Loading Error',
-				description: parsed.message,
-				action: {
-					type: 'more-details',
-					error: new Error(parsed.message),
-				},
+			return LocalTranscriptionError.ModelLoadError({
+				message: parsed.message,
 			});
 
 		case 'GpuError':
-			return WhisperingErr({
-				title: '🎮 GPU Error',
-				description: parsed.message,
-				action: {
-					type: 'link',
-					label: 'Configure settings',
-					href: '/settings/transcription',
-				},
-			});
+			return LocalTranscriptionError.GpuError({ message: parsed.message });
 
 		case 'AudioReadError':
-			return WhisperingErr({
-				title: '🔊 Audio Read Error',
-				description: parsed.message,
-				action: {
-					type: 'more-details',
-					error: new Error(parsed.message),
-				},
+			return LocalTranscriptionError.AudioReadError({
+				message: parsed.message,
 			});
 
 		case 'TranscriptionError':
-			return WhisperingErr({
-				title: '❌ Transcription Error',
-				description: parsed.message,
-				action: {
-					type: 'more-details',
-					error: new Error(parsed.message),
-				},
+			return LocalTranscriptionError.TranscriptionError({
+				message: parsed.message,
 			});
 	}
 }
@@ -189,7 +213,7 @@ function mapLocalTranscriptionError(
 export async function transcribeLocal(
 	audioBlob: Blob,
 	config: TranscribeConfig,
-): Promise<WhisperingResult<string>> {
+): Promise<Result<string, LocalTranscriptionError>> {
 	const audioBuffer = await audioBlob.arrayBuffer();
 	return tryAsync({
 		try: () =>

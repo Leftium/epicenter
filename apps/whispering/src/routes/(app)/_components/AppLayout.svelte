@@ -6,7 +6,6 @@
 	import { goto } from '$app/navigation';
 	import { commandCallbacks } from '$lib/commands';
 	import MoreDetailsDialog from '$lib/components/MoreDetailsDialog.svelte';
-	import NotificationLog from '$lib/components/NotificationLog.svelte';
 	import UpdateDialog from '$lib/components/UpdateDialog.svelte';
 	import {
 		RECORDER_STATE_TO_ICON,
@@ -122,5 +121,4 @@
 
 <ConfirmationDialog />
 <MoreDetailsDialog />
-<NotificationLog />
 <UpdateDialog />

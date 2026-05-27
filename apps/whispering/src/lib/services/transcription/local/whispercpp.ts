@@ -1,8 +1,9 @@
 import { stat } from '@tauri-apps/plugin-fs';
-import { Ok, tryAsync } from 'wellcrafted/result';
-import { WhisperingErr, type WhisperingResult } from '$lib/result';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 import {
+	type LocalTranscriptionError,
 	requireExistingModelPath,
 	transcribeLocal,
 } from './local-transcription';
@@ -63,6 +64,21 @@ export const WHISPER_MODELS = [
 	},
 ] as const satisfies readonly WhisperModelConfig[];
 
+export const WhisperCppError = defineErrors({
+	CorruptedModelFile: ({
+		actualSizeMb,
+		expectedSizeMb,
+	}: {
+		actualSizeMb: number;
+		expectedSizeMb: number;
+	}) => ({
+		message: `The model file is ${actualSizeMb}MB but should be ~${expectedSizeMb}MB. This usually happens when a download was interrupted. Please delete and re-download the model.`,
+		actualSizeMb,
+		expectedSizeMb,
+	}),
+});
+export type WhisperCppError = InferErrors<typeof WhisperCppError>;
+
 export const WhisperCppTranscriptionServiceLive = {
 	async transcribe(
 		audioBlob: Blob,
@@ -71,7 +87,7 @@ export const WhisperCppTranscriptionServiceLive = {
 			modelPath: string;
 			prompt: string;
 		},
-	): Promise<WhisperingResult<string>> {
+	): Promise<Result<string, WhisperCppError | LocalTranscriptionError>> {
 		const validation = await requireExistingModelPath(
 			options.modelPath,
 			'file',
@@ -94,14 +110,9 @@ export const WhisperCppTranscriptionServiceLive = {
 				fileStats &&
 				!isModelFileSizeValid(fileStats.size, modelConfig.sizeBytes)
 			) {
-				return WhisperingErr({
-					title: '⚠️ Model File Appears Corrupted',
-					description: `The model file is ${Math.round(fileStats.size / 1000000)}MB but should be ~${Math.round(modelConfig.sizeBytes / 1000000)}MB. This usually happens when a download was interrupted. Please delete and re-download the model.`,
-					action: {
-						type: 'link',
-						label: 'Re-download model',
-						href: '/settings/transcription',
-					},
+				return WhisperCppError.CorruptedModelFile({
+					actualSizeMb: Math.round(fileStats.size / 1000000),
+					expectedSizeMb: Math.round(modelConfig.sizeBytes / 1000000),
 				});
 			}
 		}

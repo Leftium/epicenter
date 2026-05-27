@@ -2,7 +2,7 @@
 	import * as Field from '@epicenter/ui/field';
 	import * as Select from '@epicenter/ui/select';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { notify } from '$lib/operations/notify';
+	import { report } from '$lib/report';
 	import type { DeviceIdentifier } from '$lib/services/recorder/types';
 	import { asDeviceIdentifier } from '$lib/services/recorder/types';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
@@ -20,7 +20,7 @@
 
 	$effect(() => {
 		if (getDevicesQuery.isError) {
-			notify.warning(getDevicesQuery.error);
+			report.info({ cause: getDevicesQuery.error });
 		}
 	});
 
@@ -49,7 +49,7 @@
 		</Select.Root>
 	</Field.Field>
 {:else if getDevicesQuery.isError}
-	<p class="text-sm text-red-500">{getDevicesQuery.error.title}</p>
+	<p class="text-sm text-red-500">{getDevicesQuery.error.message}</p>
 {:else}
 	<Field.Field>
 		<Field.Label for="manual-recording-device">Recording Device</Field.Label>

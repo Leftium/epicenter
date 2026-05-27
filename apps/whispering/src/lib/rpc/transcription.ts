@@ -1,8 +1,9 @@
+import type { AnyTaggedError } from 'wellcrafted/error';
 import { Err, Ok, partitionResults, type Result } from 'wellcrafted/result';
 import { transcribeAudio } from '$lib/operations/transcribe';
-import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { defineMutation, queryClient } from '$lib/rpc/client';
 import { services } from '$lib/services';
+import type { BlobError } from '$lib/services/blob-store';
 import type { Recording } from '$lib/state/recordings.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
 
@@ -22,16 +23,11 @@ export const transcription = {
 		mutationKey: transcriptionKeys.isTranscribing,
 		mutationFn: async (
 			recording: Recording,
-		): Promise<Result<string, WhisperingError>> => {
+		): Promise<Result<string, BlobError | AnyTaggedError>> => {
 			const { data: audioBlob, error: getAudioBlobError } =
 				await services.blobs.audio.getBlob(recording.id);
 
-			if (getAudioBlobError) {
-				return WhisperingErr({
-					title: '⚠️ Failed to fetch audio',
-					description: `Unable to load audio for recording: ${getAudioBlobError.message}`,
-				});
-			}
+			if (getAudioBlobError) return Err(getAudioBlobError);
 
 			recordings.update(recording.id, { transcriptionStatus: 'TRANSCRIBING' });
 			const { data: transcribedText, error: transcribeError } =
@@ -57,12 +53,7 @@ export const transcription = {
 					const { data: audioBlob, error: getAudioBlobError } =
 						await services.blobs.audio.getBlob(recording.id);
 
-					if (getAudioBlobError) {
-						return WhisperingErr({
-							title: '⚠️ Failed to fetch audio',
-							description: `Unable to load audio for recording: ${getAudioBlobError.message}`,
-						});
-					}
+					if (getAudioBlobError) return Err(getAudioBlobError);
 
 					return await transcribeAudio(audioBlob);
 				}),

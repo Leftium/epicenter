@@ -68,7 +68,6 @@ import type { Command, ShortcutEventState } from '$lib/commands';
 import { commandCallbacks } from '$lib/commands';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { IS_MACOS } from '$lib/constants/platform';
-import { WhisperingErr } from '$lib/result';
 import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
 import {
 	type Accelerator,
@@ -580,12 +579,7 @@ const autostart = {
 		queryKey: autostartKeys.isEnabled,
 		queryFn: async () => {
 			const { data, error } = await _autostartIsEnabled();
-			if (error) {
-				return WhisperingErr({
-					title: '❌ Failed to check autostart status',
-					serviceError: error,
-				});
-			}
+			if (error) return Err(error);
 			return Ok(data);
 		},
 		initialData: false,
@@ -594,12 +588,7 @@ const autostart = {
 		mutationKey: autostartKeys.enable,
 		mutationFn: async () => {
 			const { data, error } = await _autostartEnable();
-			if (error) {
-				return WhisperingErr({
-					title: '❌ Failed to enable autostart',
-					serviceError: error,
-				});
-			}
+			if (error) return Err(error);
 			return Ok(data);
 		},
 		onSettled: invalidateAutostartState,
@@ -608,12 +597,7 @@ const autostart = {
 		mutationKey: autostartKeys.disable,
 		mutationFn: async () => {
 			const { data, error } = await _autostartDisable();
-			if (error) {
-				return WhisperingErr({
-					title: '❌ Failed to disable autostart',
-					serviceError: error,
-				});
-			}
+			if (error) return Err(error);
 			return Ok(data);
 		},
 		onSettled: invalidateAutostartState,
@@ -625,12 +609,7 @@ const tray = {
 		mutationKey: ['tray', 'setIcon'] as const,
 		mutationFn: async ({ icon }: { icon: WhisperingRecordingState }) => {
 			const { data, error } = await _traySetIcon(icon);
-			if (error) {
-				return WhisperingErr({
-					title: '⚠️ Failed to set tray icon',
-					serviceError: error,
-				});
-			}
+			if (error) return Err(error);
 			return Ok(data);
 		},
 	}),

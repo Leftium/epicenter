@@ -73,7 +73,7 @@
 	import { marked } from 'marked';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { Err, tryAsync } from 'wellcrafted/result';
-	import { notify } from '$lib/operations/notify';
+	import { report } from '$lib/report';
 
 	const GITHUB_RELEASES_URL =
 		'https://github.com/EpicenterHQ/epicenter/releases/tag';
@@ -109,11 +109,10 @@
 							updateDialog.updateProgress(downloaded, contentLength);
 							break;
 						case 'Finished':
-							notify.success({
+							report.success({
 								title: 'Update installed successfully!',
 								description: 'Restart Whispering to apply the update.',
 								action: {
-									type: 'button',
 									label: 'Restart Whispering',
 									onClick: () => relaunch(),
 								},
@@ -125,9 +124,9 @@
 		});
 		if (error) {
 			updateDialog.setError(error);
-			notify.error({
+			report.error({
 				title: 'Failed to install update',
-				description: error,
+				cause: { name: 'UpdateInstallFailed', message: error },
 			});
 		}
 	}

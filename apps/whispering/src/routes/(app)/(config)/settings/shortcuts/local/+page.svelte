@@ -3,7 +3,7 @@
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import { Separator } from '@epicenter/ui/separator';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
-	import { notify } from '$lib/operations/notify';
+	import { report } from '$lib/report';
 	import { resetLocalShortcuts } from '$routes/(app)/_layout-utils/register-commands';
 	import ShortcutFormatHelp from '../keyboard-shortcut-recorder/ShortcutFormatHelp.svelte';
 	import ShortcutTable from '../keyboard-shortcut-recorder/ShortcutTable.svelte';
@@ -35,7 +35,7 @@
 			size="sm"
 			onclick={() => {
 				resetLocalShortcuts();
-				notify.success({
+				report.success({
 					title: 'Shortcuts reset',
 					description: 'All local shortcuts have been reset to defaults.',
 				});

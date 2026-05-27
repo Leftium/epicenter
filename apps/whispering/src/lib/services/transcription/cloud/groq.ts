@@ -5,8 +5,6 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, type Result, tryAsync, trySync } from 'wellcrafted/result';
-import { WhisperingErr } from '$lib/result';
-import * as toasts from '$lib/rpc/transcription-errors/shared';
 import { customFetch } from '$lib/services/http';
 import { getAudioExtension } from '$lib/services/transcription/utils';
 
@@ -164,38 +162,5 @@ export const GroqTranscriptionServiceLive = {
 				}
 			},
 		});
-	},
-
-	toWhisperingErr(error: GroqError) {
-		switch (error.name) {
-			case 'MissingApiKey':
-				return WhisperingErr(toasts.apiKeyRequired('Groq'));
-			case 'InvalidApiKeyFormat':
-				return WhisperingErr(
-					toasts.invalidApiKeyFormat('Groq', '"gsk_" or "xai-"'),
-				);
-			case 'FileTooLarge':
-				return WhisperingErr(toasts.fileTooLarge(error));
-			case 'FileCreationFailed':
-				return WhisperingErr(toasts.fileCreationFailed(error));
-			case 'BadRequest':
-				return WhisperingErr(toasts.badRequest('Groq', error));
-			case 'Unauthorized':
-				return WhisperingErr(toasts.unauthorized(error));
-			case 'PermissionDenied':
-				return WhisperingErr(toasts.permissionDenied(error));
-			case 'NotFound':
-				return WhisperingErr(toasts.notFound(error));
-			case 'UnprocessableEntity':
-				return WhisperingErr(toasts.unprocessableEntity(error));
-			case 'RateLimit':
-				return WhisperingErr(toasts.rateLimit(error));
-			case 'ServiceUnavailable':
-				return WhisperingErr(toasts.serviceUnavailable('Groq', error));
-			case 'Connection':
-				return WhisperingErr(toasts.connectionIssue('Groq', error));
-			case 'Unexpected':
-				return WhisperingErr(toasts.unexpected(error));
-		}
 	},
 };

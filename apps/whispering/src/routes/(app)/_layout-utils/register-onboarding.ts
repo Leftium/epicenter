@@ -1,4 +1,5 @@
-import { notify } from '$lib/operations/notify';
+import { goto } from '$app/navigation';
+import { report } from '$lib/report';
 import {
 	getSelectedTranscriptionService,
 	isTranscriptionServiceConfigured,
@@ -13,15 +14,13 @@ export function registerOnboarding() {
 
 	// Check transcription service configuration
 	if (!selectedService) {
-		notify.info({
+		report.info({
 			title: 'Welcome to Whispering!',
 			description: 'Please select a transcription service to get started.',
 			action: {
-				type: 'link',
 				label: 'Configure',
-				href: '/settings/transcription',
+				onClick: () => goto('/settings/transcription'),
 			},
-			persist: true,
 		});
 		return;
 	}
@@ -35,15 +34,13 @@ export function registerOnboarding() {
 			} as const
 		)[selectedService.location];
 
-		notify.info({
+		report.info({
 			title: 'Welcome to Whispering!',
 			description: `Please configure your ${missingConfig} to get started.`,
 			action: {
-				type: 'link',
 				label: 'Configure',
-				href: '/settings/transcription',
+				onClick: () => goto('/settings/transcription'),
 			},
-			persist: true,
 		});
 	}
 }

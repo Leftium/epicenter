@@ -1,12 +1,80 @@
 import { type } from 'arktype';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { HttpServiceLive } from '$lib/services/http';
 import { getAudioExtension } from '$lib/services/transcription/utils';
 
 const WhisperApiResponse = type({ text: 'string' }, '|', {
 	error: { message: 'string' },
 });
+
+export const SpeachesError = defineErrors({
+	ConnectionIssue: ({ cause }: { cause: unknown }) => ({
+		message:
+			'Unable to connect to the transcription service. This could be a network issue or temporary service interruption. Please try again in a moment.',
+		cause,
+	}),
+	AuthenticationRequired: ({ cause }: { cause: unknown }) => ({
+		message:
+			'Your API key appears to be invalid or expired. Please update your API key in settings to continue transcribing.',
+		cause,
+	}),
+	AccessRestricted: ({ cause }: { cause: unknown }) => ({
+		message:
+			"Your account doesn't have access to this feature. This may be due to plan limitations or account restrictions. Please check your account status.",
+		cause,
+	}),
+	AudioFileTooLarge: ({ cause }: { cause: unknown }) => ({
+		message:
+			'Your audio file exceeds the maximum size limit (typically 25MB). Try splitting it into smaller segments or reducing the audio quality.',
+		cause,
+	}),
+	UnsupportedFormat: ({ cause }: { cause: unknown }) => ({
+		message:
+			"This audio format isn't supported. Please convert your file to MP3, WAV, M4A, or another common audio format.",
+		cause,
+	}),
+	RateLimitReached: ({
+		message,
+		cause,
+	}: {
+		message: string;
+		cause: unknown;
+	}) => ({
+		message,
+		cause,
+	}),
+	ServiceUnavailable: ({
+		status,
+		cause,
+	}: {
+		status: number;
+		cause: unknown;
+	}) => ({
+		message: `The transcription service is temporarily unavailable (Error ${status}). Please try again in a few minutes.`,
+		status,
+		cause,
+	}),
+	RequestFailed: ({ status, cause }: { status: number; cause: unknown }) => ({
+		message: `The request failed with error ${status}. This may be temporary - please try again. If the problem persists, please contact support.`,
+		status,
+		cause,
+	}),
+	ResponseError: ({ cause }: { cause: unknown }) => ({
+		message:
+			'Received an unexpected response from the transcription service. This is usually temporary - please try again.',
+		cause,
+	}),
+	UnexpectedError: ({ cause }: { cause: unknown }) => ({
+		message:
+			'An unexpected error occurred during transcription. Please try again, and contact support if the issue continues.',
+		cause,
+	}),
+	SpeachesConnectionIssue: ({ message }: { message: string }) => ({
+		message,
+	}),
+});
+export type SpeachesError = InferErrors<typeof SpeachesError>;
 
 export const SpeachesTranscriptionServiceLive = {
 	transcribe: async (
@@ -18,7 +86,7 @@ export const SpeachesTranscriptionServiceLive = {
 			modelId: string;
 			baseUrl: string;
 		},
-	): Promise<Result<string, WhisperingError>> => {
+	): Promise<Result<string, SpeachesError>> => {
 		const formData = new FormData();
 		formData.append(
 			'file',
@@ -44,107 +112,62 @@ export const SpeachesTranscriptionServiceLive = {
 		if (postError) {
 			switch (postError.name) {
 				case 'Connection': {
-					return WhisperingErr({
-						title: '🌐 Connection Issue',
-						description:
-							'Unable to connect to the transcription service. This could be a network issue or temporary service interruption. Please try again in a moment.',
-						action: { type: 'more-details', error: postError },
-					});
+					return SpeachesError.ConnectionIssue({ cause: postError });
 				}
 
 				case 'Response': {
 					const { status, message } = postError;
 
 					if (status === 401) {
-						return WhisperingErr({
-							title: '🔑 Authentication Required',
-							description:
-								'Your API key appears to be invalid or expired. Please update your API key in settings to continue transcribing.',
-							action: {
-								type: 'link',
-								label: 'Update API key',
-								href: '/settings/transcription',
-							},
+						return SpeachesError.AuthenticationRequired({
+							cause: postError,
 						});
 					}
 
 					if (status === 403) {
-						return WhisperingErr({
-							title: '⛔ Access Restricted',
-							description:
-								"Your account doesn't have access to this feature. This may be due to plan limitations or account restrictions. Please check your account status.",
-							action: { type: 'more-details', error: postError },
-						});
+						return SpeachesError.AccessRestricted({ cause: postError });
 					}
 
 					if (status === 413) {
-						return WhisperingErr({
-							title: '📦 Audio File Too Large',
-							description:
-								'Your audio file exceeds the maximum size limit (typically 25MB). Try splitting it into smaller segments or reducing the audio quality.',
-							action: { type: 'more-details', error: postError },
-						});
+						return SpeachesError.AudioFileTooLarge({ cause: postError });
 					}
 
 					if (status === 415) {
-						return WhisperingErr({
-							title: '🎵 Unsupported Format',
-							description:
-								"This audio format isn't supported. Please convert your file to MP3, WAV, M4A, or another common audio format.",
-							action: { type: 'more-details', error: postError },
-						});
+						return SpeachesError.UnsupportedFormat({ cause: postError });
 					}
 
 					// Rate limiting
 					if (status === 429) {
-						return WhisperingErr({
-							title: '⏱️ Rate Limit Reached',
-							description: message,
-							action: {
-								type: 'link',
-								label: 'Update API key',
-								href: '/settings/transcription',
-							},
+						return SpeachesError.RateLimitReached({
+							message,
+							cause: postError,
 						});
 					}
 
 					if (status >= 500) {
-						return WhisperingErr({
-							title: '🔧 Service Unavailable',
-							description: `The transcription service is temporarily unavailable (Error ${status}). Please try again in a few minutes.`,
-							action: { type: 'more-details', error: postError },
+						return SpeachesError.ServiceUnavailable({
+							status,
+							cause: postError,
 						});
 					}
 
-					return WhisperingErr({
-						title: '❌ Request Failed',
-						description: `The request failed with error ${status}. This may be temporary - please try again. If the problem persists, please contact support.`,
-						action: { type: 'more-details', error: postError },
+					return SpeachesError.RequestFailed({
+						status,
+						cause: postError,
 					});
 				}
 
 				case 'Parse':
-					return WhisperingErr({
-						title: '🔍 Response Error',
-						description:
-							'Received an unexpected response from the transcription service. This is usually temporary - please try again.',
-						action: { type: 'more-details', error: postError },
-					});
+					return SpeachesError.ResponseError({ cause: postError });
 
 				default:
-					return WhisperingErr({
-						title: '❓ Unexpected Error',
-						description:
-							'An unexpected error occurred during transcription. Please try again, and contact support if the issue continues.',
-						action: { type: 'more-details', error: postError },
-					});
+					return SpeachesError.UnexpectedError({ cause: postError });
 			}
 		}
 
 		if ('error' in whisperApiResponse) {
-			return WhisperingErr({
-				title: '🔧 Speaches Connection Issue',
-				description: whisperApiResponse.error.message,
+			return SpeachesError.SpeachesConnectionIssue({
+				message: whisperApiResponse.error.message,
 			});
 		}
 

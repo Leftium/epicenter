@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Serialize, Deserialize)]
+#[derive(Error, Debug, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "name")]
 pub enum TranscriptionError {
     #[error("Audio read error: {message}")]

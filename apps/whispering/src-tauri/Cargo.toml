@@ -27,6 +27,11 @@ tokio = { version = "1", features = ["full"] }
 dotenvy_macro = "0.15"
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
+# Typed Rust to TypeScript IPC bindings. Pinned to the v2 RC line that this
+# spec targeted (20260526T220000-tauri-specta-on-artifact-id-base.md).
+specta = "=2.0.0-rc.25"
+specta-typescript = "=0.0.12"
+tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 tauri = { version = "2", features = ["protocol-asset", "macos-private-api", "image-png", "tray-icon"] }
 tauri-plugin-opener = "2"
 tauri-plugin-clipboard-manager = "2"

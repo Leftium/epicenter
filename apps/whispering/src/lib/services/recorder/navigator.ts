@@ -12,7 +12,7 @@ import { categorizeRecorderError } from './categorize-error';
 import type {
 	NavigatorRecordingParams,
 	RecorderService,
-	Recording,
+	RecordingSession,
 } from './types';
 import { RecorderError } from './types';
 
@@ -20,7 +20,7 @@ type ActiveSession = {
 	stream: MediaStream;
 	mediaRecorder: MediaRecorder;
 	recordedChunks: Blob[];
-	recording: Recording;
+	session: RecordingSession;
 };
 
 /**
@@ -31,19 +31,19 @@ type ActiveSession = {
  * in-flight session, if any. The exposed surface is `startRecording`
  * (factory), `getActiveRecording` (bootstrap), and `enumerateDevices`.
  * Per-session lifecycle (stop/cancel/subscribe) lives on the returned
- * `Recording` so toggling the backend setting mid-recording does not
+ * `RecordingSession` so toggling the backend setting mid-recording does not
  * misroute teardown.
  */
 function createNavigatorRecorder(): RecorderService {
 	let activeSession: ActiveSession | null = null;
 
-	function buildRecording(args: {
+	function buildSession(args: {
 		recordingId: string;
 		stream: MediaStream;
 		mediaRecorder: MediaRecorder;
 		recordedChunks: Blob[];
 		startedAtMs: number;
-	}): { session: ActiveSession; recording: Recording } {
+	}): { activeSession: ActiveSession; session: RecordingSession } {
 		const { recordingId, stream, mediaRecorder, recordedChunks, startedAtMs } =
 			args;
 		const subscribers = new Set<(s: WhisperingRecordingState) => void>();
@@ -65,7 +65,7 @@ function createNavigatorRecorder(): RecorderService {
 			notify('IDLE');
 		};
 
-		const recording: Recording = {
+		const recordingSession: RecordingSession = {
 			recordingId,
 			backend: 'navigator',
 
@@ -99,7 +99,7 @@ function createNavigatorRecorder(): RecorderService {
 					title: '✅ Recording Saved',
 					description: 'Your recording is ready for transcription!',
 				});
-				return Ok({ blob, recordingId, durationMs });
+				return Ok({ kind: 'blob', blob, recordingId, durationMs });
 			},
 
 			cancel: async ({ sendStatus }) => {
@@ -130,24 +130,24 @@ function createNavigatorRecorder(): RecorderService {
 			},
 		};
 
-		const session: ActiveSession = {
+		const sessionRecord: ActiveSession = {
 			stream,
 			mediaRecorder,
 			recordedChunks,
-			recording,
+			session: recordingSession,
 		};
-		return { session, recording };
+		return { activeSession: sessionRecord, session: recordingSession };
 	}
 
 	return {
 		getActiveRecording: async (): Promise<
-			Result<Recording | null, RecorderError>
+			Result<RecordingSession | null, RecorderError>
 		> => {
 			// Navigator state lives in this closure, so a JS reload zeroes it
 			// out; the MediaStream/MediaRecorder are also gone in that case.
 			// Always null after a reload; non-null only if startRecording fired
 			// within this module's lifetime and the session is still live.
-			return Ok(activeSession?.recording ?? null);
+			return Ok(activeSession?.session ?? null);
 		},
 
 		enumerateDevices: async () => {
@@ -205,16 +205,16 @@ function createNavigatorRecorder(): RecorderService {
 			mediaRecorder.start(TIMESLICE_MS);
 			const startedAtMs = Date.now();
 
-			const { session, recording } = buildRecording({
+			const { activeSession: sessionRecord, session } = buildSession({
 				recordingId,
 				stream,
 				mediaRecorder,
 				recordedChunks,
 				startedAtMs,
 			});
-			activeSession = session;
+			activeSession = sessionRecord;
 
-			return Ok({ recording, deviceAcquisition: deviceOutcome });
+			return Ok({ session, deviceAcquisition: deviceOutcome });
 		},
 	};
 }

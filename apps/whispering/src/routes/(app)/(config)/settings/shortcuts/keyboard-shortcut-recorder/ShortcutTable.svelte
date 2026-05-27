@@ -3,7 +3,7 @@
 	import * as Table from '@epicenter/ui/table';
 	import Search from '@lucide/svelte/icons/search';
 	import { commands } from '$lib/commands';
-	import { notify } from '$lib/operations/notify';
+	import { report } from '$lib/report';
 	import type { Tauri } from '$lib/tauri';
 	import {
 		type DeviceConfigKey,
@@ -41,7 +41,7 @@
 
 	const pressedKeys = createPressedKeys({
 		onUnsupportedKey: (key) => {
-			notify.warning({
+			report.info({
 				title: 'Unsupported key',
 				description: `The key "${key}" is not supported. Please try a different key.`,
 			});

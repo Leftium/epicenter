@@ -1,102 +1,105 @@
-import { nanoid } from 'nanoid/non-secure';
+import { goto } from '$app/navigation';
 import {
 	deliverTranscriptionResult,
 	deliverTransformationResult,
 } from '$lib/operations/delivery';
-import { notify } from '$lib/operations/notify';
 import { sound } from '$lib/operations/sound';
-import { transcribeBlob } from '$lib/operations/transcribe';
+import { transcribeAudio } from '$lib/operations/transcribe';
 import { runTransformation } from '$lib/operations/transform';
+import { report } from '$lib/report';
 import { services } from '$lib/services';
+import type { RecorderStopResult } from '$lib/services/recorder/types';
 import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { transformations } from '$lib/state/transformations.svelte';
 
+type DeliverySource = 'recording' | 'upload';
+
 /**
- * Processes a recording through the full pipeline: save -> transcribe -> transform.
+ * Argument shape for the pipeline. The recorder produces a
+ * `RecorderStopResult`; the VAD path and file-upload path build the
+ * equivalent shape with `kind: 'blob'`.
+ */
+type PipelineInput = {
+	source: RecorderStopResult;
+	durationMs: number | null;
+	deliverySource?: DeliverySource;
+};
+
+/**
+ * Processes a recording through the full pipeline: persist artifact,
+ * transcribe by id, then transform.
  *
- * @param recordingId - Optional recording ID. When provided (e.g., from CPAL recorder),
- * the ID was generated earlier in the pipeline and is passed through for consistency.
- * When omitted (e.g., VAD recording, file uploads), a new ID is generated here.
+ * Audio bytes never live in pipeline state. For cpal sources Rust has
+ * already written the durable artifact at
+ * `<appDataDir>/recordings/{id}.wav` by the time we get here. For blob
+ * sources (navigator MediaRecorder, VAD, file upload) we persist the
+ * bytes through the recordings blob store, then operate on the id.
  */
 export async function processRecordingPipeline({
-	blob,
-	recordingId,
-	toastId,
-	completionTitle,
-	completionDescription,
-}: {
-	blob: Blob;
-	recordingId?: string;
-	toastId: string;
-	completionTitle: string;
-	completionDescription: string;
-}) {
+	source,
+	durationMs,
+	deliverySource = 'recording',
+}: PipelineInput) {
 	const now = new Date().toISOString();
-	const newRecordingId = recordingId ?? nanoid();
+	const recordingId =
+		source.kind === 'artifact' ? source.artifact.id : source.recordingId;
 
 	const recording = {
-		id: newRecordingId,
+		id: recordingId,
 		title: '',
 		recordedAt: now,
 		updatedAt: now,
 		transcript: '',
-		duration: null,
+		duration: durationMs,
 		transcriptionStatus: 'UNPROCESSED',
 	} as const;
 
-	const transcribeToastId = nanoid();
-	notify.loading({
-		id: transcribeToastId,
+	recordings.set(recording);
+
+	if (source.kind === 'blob') {
+		const { error: saveError } = await services.blobs.audio.save(
+			recordingId,
+			source.blob,
+		);
+		if (saveError) {
+			// Transcription reads by id from disk: if the save failed there
+			// is nothing to transcribe. Bailing here surfaces the real
+			// failure instead of the misleading "no recording artifact
+			// found" the transcribe path would emit on the empty directory.
+			recordings.update(recordingId, { transcriptionStatus: 'FAILED' });
+			report.error({
+				title: 'Failed to save recording',
+				description:
+					'We could not write the recording bytes; transcription cannot continue.',
+				cause: saveError,
+			});
+			return;
+		}
+	}
+
+	const transcribeLoading = report.loading({
 		title: '📋 Transcribing...',
 		description: 'Your recording is being transcribed...',
 	});
 
-	recordings.set(recording);
-	const saveAudioPromise = services.blobs.audio.save(recording.id, blob);
-	const transcribePromise = transcribeBlob(blob);
-
 	const { data: transcribedText, error: transcribeError } =
-		await transcribePromise;
+		await transcribeAudio(recordingId);
 
 	if (transcribeError) {
-		recordings.update(recording.id, { transcriptionStatus: 'FAILED' });
-		if (transcribeError.name === 'WhisperingError') {
-			notify.error({ id: transcribeToastId, ...transcribeError });
-			return;
-		}
-		notify.error({
-			id: transcribeToastId,
-			title: '❌ Failed to transcribe recording',
-			description: 'Your recording could not be transcribed.',
-			action: { type: 'more-details', error: transcribeError },
-		});
+		recordings.update(recordingId, { transcriptionStatus: 'FAILED' });
+		transcribeLoading.reject({ cause: transcribeError });
 		return;
 	}
 
 	sound.playSoundIfEnabled('transcriptionComplete');
-	await deliverTranscriptionResult({
+	const transcribeNotice = await deliverTranscriptionResult({
 		text: transcribedText,
-		toastId: transcribeToastId,
+		source: deliverySource,
 	});
+	transcribeLoading.resolve(transcribeNotice);
 
-	const { error: saveAudioError } = await saveAudioPromise;
-	if (saveAudioError) {
-		notify.warning({
-			id: toastId,
-			title: '⚠️ Audio not saved',
-			description: 'Transcription delivered but audio blob was not saved.',
-			action: { type: 'more-details', error: saveAudioError },
-		});
-	}
-
-	notify.success({
-		id: toastId,
-		title: completionTitle,
-		description: completionDescription,
-	});
-
-	recordings.update(recording.id, {
+	recordings.update(recordingId, {
 		transcript: transcribedText,
 		transcriptionStatus: 'DONE',
 	});
@@ -107,56 +110,39 @@ export async function processRecordingPipeline({
 	const transformation = transformations.get(transformationId);
 	if (!transformation) {
 		settings.set('transformation.selectedId', null);
-		notify.warning({
-			title: '⚠️ No matching transformation found',
+		report.info({
+			title: 'No matching transformation found',
 			description:
 				'No matching transformation found. Please select a different transformation.',
 			action: {
-				type: 'link',
 				label: 'Select a different transformation',
-				href: '/transformations',
+				onClick: () => goto('/transformations'),
 			},
 		});
 		return;
 	}
 
-	const transformToastId = nanoid();
-	notify.loading({
-		id: transformToastId,
+	const transformLoading = report.loading({
 		title: '🔄 Running transformation...',
 		description:
 			'Applying your selected transformation to the transcribed text...',
 	});
 
-	const { data: result, error: transformError } = await runTransformation({
-		input: transcribedText,
-		transformation,
-		recordingId: recording.id,
-	});
+	const { data: transformedText, error: transformError } =
+		await runTransformation({
+			input: transcribedText,
+			transformation,
+			recordingId,
+		});
 	if (transformError) {
-		notify.error({
-			id: transformToastId,
-			title: '⚠️ Transformation failed',
-			description: transformError.message,
-			action: { type: 'more-details', error: transformError },
-		});
-		return;
-	}
-
-	if (result.status === 'failed') {
-		notify.error({
-			id: transformToastId,
-			title: '⚠️ Transformation error',
-			description: result.error,
-			action: { type: 'more-details', error: result.error },
-		});
+		transformLoading.reject({ cause: transformError });
 		return;
 	}
 
 	sound.playSoundIfEnabled('transformationComplete');
 
-	await deliverTransformationResult({
-		text: result.output,
-		toastId: transformToastId,
+	const transformNotice = await deliverTransformationResult({
+		text: transformedText,
 	});
+	transformLoading.resolve(transformNotice);
 }

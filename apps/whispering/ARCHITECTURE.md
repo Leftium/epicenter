@@ -29,7 +29,7 @@ src/lib/services/clipboard/
 
 ```ts
 // vite.config.ts
-const isTauri = process.env.TAURI_PLATFORM !== undefined;
+const isTauri = process.env.TAURI_ENV_PLATFORM !== undefined;
 export default defineConfig({
   resolve: {
     extensions: isTauri
@@ -101,21 +101,28 @@ This design keeps services pure and platform-agnostic while giving the UI immedi
 
 **→ Learn more:** [RPC README](./src/lib/rpc/README.md) | [State README](./src/lib/state/README.md)
 
-## Error Transformation
+## Error reporting
 
-The rpc layer also transforms service-specific errors into `WhisperingError` types that integrate seamlessly with the toast notification system. This happens inside `mutationFn` or `queryFn`, creating a clean boundary between business logic errors and UI presentation:
+Services and operations return tagged errors built with `defineErrors` from `wellcrafted/error`. The call site decides what the user should see by calling `report.error`, `report.info`, `report.success`, or `report.loading` from `$lib/report`. The toast and OS notification surfaces are sinks the spine fans out to; the per-event copy is inline at the call site, not a translator function.
 
 ```typescript
-// Service returns domain-specific error
-const { data, error: serviceError } = await services.recorder.startRecording(...);
+const { data, error } = await services.recorder.startRecording(...);
 
-if (serviceError) {
-  // Query layer transforms to UI-friendly WhisperingError
-  return Err(WhisperingError({
-    title: '❌ Failed to start recording',
-    description: serviceError.message,  // Preserve detailed message
-    action: { type: 'more-details', error: serviceError }
-  }));
+if (error) {
+  // Default: title is humanized from error.name, description is error.message,
+  // a "More details" action opens the raw error.
+  report.error({ cause: error });
+  return;
+}
+
+// Inline override only when context-specific copy or an action helps:
+if (error) {
+  report.error({
+    cause: error,
+    title: 'Authentication required',
+    action: { label: 'Update API key', onClick: () => goto('/settings') },
+  });
+  return;
 }
 ```
 

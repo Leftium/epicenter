@@ -41,7 +41,7 @@ The Vite config is small:
 
 ```ts
 // vite.config.ts
-const isTauri = process.env.TAURI_PLATFORM !== undefined;
+const isTauri = process.env.TAURI_ENV_PLATFORM !== undefined;
 
 export default defineConfig({
   resolve: {
@@ -52,7 +52,7 @@ export default defineConfig({
 });
 ```
 
-`TAURI_PLATFORM` is an environment variable Tauri's CLI sets automatically when you run `tauri dev` or `tauri build`. We don't set it ourselves.
+`TAURI_ENV_PLATFORM` is an environment variable Tauri's CLI sets automatically when you run `tauri dev` or `tauri build`. We don't set it ourselves.
 
 The effect is invisible at the call site. Consumers write:
 

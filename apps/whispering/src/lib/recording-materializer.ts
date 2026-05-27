@@ -11,10 +11,10 @@ import type { Table } from '@epicenter/workspace';
 
 type MaybePromise<T> = T | Promise<T>;
 
-import { invoke } from '@tauri-apps/api/core';
 import yaml from 'js-yaml';
 import type * as Y from 'yjs';
 import { tauri } from './tauri';
+import { commands } from './tauri/commands';
 import type { Recording } from './workspace';
 
 type RecordingMarkdownFilesAttachment = {
@@ -73,16 +73,15 @@ export function attachRecordingMarkdownFiles(
 				}
 
 				if (toWrite.length) {
-					await invoke('write_markdown_files', {
-						directory: dir,
-						files: toWrite,
-					});
+					const { error } = await commands.writeMarkdownFiles(dir, toWrite);
+					if (error !== null) throw error;
 				}
 				if (toDelete.length) {
-					await invoke('delete_files_in_directory', {
-						directory: dir,
-						filenames: toDelete,
-					});
+					const { error } = await commands.deleteFilesInDirectory(
+						dir,
+						toDelete,
+					);
+					if (error !== null) throw error;
 				}
 			})
 			.catch((error) => {
@@ -96,7 +95,8 @@ export function attachRecordingMarkdownFiles(
 			const dir = await dirPromise;
 			const files = recordings.getAllValid().map(toRecordingMarkdownFile);
 			if (files.length) {
-				await invoke('write_markdown_files', { directory: dir, files });
+				const { error } = await commands.writeMarkdownFiles(dir, files);
+				if (error !== null) throw error;
 			}
 		});
 		await syncQueue;

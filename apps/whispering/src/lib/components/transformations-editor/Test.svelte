@@ -63,13 +63,7 @@
 		onclick={() =>
 			transformInput.mutate(
 				{ input, transformation },
-				{
-					onSuccess: (o) => {
-						if (o) {
-							output = o;
-						}
-					},
-				},
+				{ onSuccess: (o) => (output = o) },
 			)}
 		disabled={!input.trim() || steps.length === 0}
 		class="w-full"

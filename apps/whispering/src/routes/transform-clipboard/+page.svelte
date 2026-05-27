@@ -7,20 +7,26 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
-	import { nanoid } from 'nanoid/non-secure';
 	import { onDestroy, onMount } from 'svelte';
 	import TransformationPickerBody from '$lib/components/TransformationPickerBody.svelte';
 	import { deliverTransformationResult } from '$lib/operations/delivery';
-	import { notify } from '$lib/operations/notify';
+	import { report } from '$lib/report';
 	import { sound } from '$lib/operations/sound';
 	import { tauri } from '$lib/tauri';
 	import { rpc } from '$lib/rpc';
+	import { defineQuery } from '$lib/rpc/client';
+	import { services } from '$lib/services';
 	import * as transformClipboardWindow from './transformClipboardWindow.tauri';
 
 	const combobox = useCombobox();
 
+	const readFromClipboard = defineQuery({
+		queryKey: ['text', 'readFromClipboard'] as const,
+		queryFn: () => services.text.readFromClipboard(),
+	});
+
 	const clipboardQuery = createQuery(() => ({
-		...rpc.text.readFromClipboard.options,
+		...readFromClipboard.options,
 		refetchInterval: 1000,
 	}));
 
@@ -60,16 +66,15 @@
 		if (!tauri) return;
 
 		if (clipboardQuery.error) {
-			notify.error({
-				title: '❌ Failed to read clipboard',
-				description: clipboardQuery.error.message,
-				action: { type: 'more-details', error: clipboardQuery.error },
+			report.error({
+				title: 'Failed to read clipboard',
+				cause: clipboardQuery.error,
 			});
 			void transformClipboardWindow.hide();
 		}
 
 		if (clipboardQuery.isSuccess && !clipboardQuery.data?.trim()) {
-			notify.info({
+			report.info({
 				title: 'Empty clipboard',
 				description: 'Please copy some text before running a transformation.',
 			});
@@ -120,9 +125,7 @@
 
 					combobox.closeAndFocusTrigger();
 
-					const toastId = nanoid();
-					notify.loading({
-						id: toastId,
+					const loading = report.loading({
 						title: '🔄 Running transformation...',
 						description: 'Transforming your clipboard text...',
 					});
@@ -134,17 +137,17 @@
 						});
 
 					if (transformError) {
-						notify.error({ id: toastId, ...transformError });
+						loading.reject({ cause: transformError });
 						await transformClipboardWindow.hide();
 						return;
 					}
 
 					sound.playSoundIfEnabled('transformationComplete');
 
-					await deliverTransformationResult({
+					const notice = await deliverTransformationResult({
 						text: output,
-						toastId,
 					});
+					loading.resolve(notice);
 
 					await transformClipboardWindow.hide();
 				}}

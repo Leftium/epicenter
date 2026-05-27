@@ -8,7 +8,7 @@ import { extractErrorMessage } from 'wellcrafted/error';
 import { BITRATES_KBPS, DEFAULT_BITRATE_KBPS } from '$lib/constants/audio';
 import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
 import { LOCAL_MODEL_UNLOAD_POLICIES } from '$lib/constants/transcription';
-import { notify } from '$lib/operations/notify';
+import { log, report } from '$lib/report';
 
 // ── Per-key definitions ──────────────────────────────────────────────────────
 
@@ -134,12 +134,15 @@ export const deviceConfig: PersistedMap<typeof DEVICE_DEFINITIONS> =
 		prefix: 'whispering.device.',
 		definitions: DEVICE_DEFINITIONS,
 		onError: (key) => {
-			console.warn(`Invalid device config for "${key}", using default`);
+			log.info(`Invalid device config for "${key}", using default`);
 		},
 		onUpdateError: (_key, error) => {
-			notify.error({
+			report.error({
 				title: 'Error updating device config',
-				description: extractErrorMessage(error),
+				cause: {
+					name: 'DeviceConfigUpdateFailed',
+					message: extractErrorMessage(error),
+				},
 			});
 		},
 	});

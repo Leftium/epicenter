@@ -53,7 +53,7 @@ if (tauri) {
   // here, `tauri` is the full namespace, not `null`
   await tauri.fs.pathToBlob(path);
   await tauri.command.execute('open .');
-  await tauri.autostart.enable.execute();
+  await tauri.autostart.enable();
 }
 ```
 
@@ -271,7 +271,7 @@ Most apps want both patterns. They solve different problems.
 
 ## What lives in `tauri`
 
-Today: file system, shell command execution, macOS permission flows, FFmpeg, system tray, global shortcuts, autostart. Each leaf picks one canonical call form. Capabilities that need caching and reactive query state (the autostart toggle, the ffmpeg-installed check, tray icon updates, shortcut registration) expose their TanStack-wrapped form directly on the leaf, in the same shape as the raw ones. There is no `tauri.rpc` sub-namespace any more.
+Today: file system, shell command execution, macOS permission flows, audio encoding, window control, system tray, global shortcuts, autostart. Each leaf picks one canonical call form. Autostart uses TanStack because the settings UI observes and invalidates it; tray, shortcuts, command execution, fs, window, and audio encoding are plain Result-returning functions. There is no `tauri.rpc` sub-namespace any more.
 
 Adding a new Tauri-only capability is one section in one file:
 

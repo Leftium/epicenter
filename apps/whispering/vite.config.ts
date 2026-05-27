@@ -5,7 +5,7 @@ import { defineConfig } from 'vite';
 import devtoolsJson from 'vite-plugin-devtools-json';
 
 const host = process.env.TAURI_DEV_HOST;
-const isTauri = process.env.TAURI_PLATFORM !== undefined;
+const isTauri = process.env.TAURI_ENV_PLATFORM !== undefined;
 
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({

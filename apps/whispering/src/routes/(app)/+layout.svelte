@@ -1,6 +1,5 @@
 <script lang="ts">
 	import * as Sidebar from '@epicenter/ui/sidebar';
-	import { invoke } from '@tauri-apps/api/core';
 	import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { onDestroy, onMount } from 'svelte';
 	import { MediaQuery } from 'svelte/reactivity';
@@ -10,6 +9,7 @@
 	import { services } from '$lib/services';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { tauri } from '$lib/tauri';
+	import { commands } from '$lib/tauri/commands';
 	import AppLayout from './_components/AppLayout.svelte';
 	import BottomNav from './_components/BottomNav.svelte';
 	import VerticalNav from './_components/VerticalNav.svelte';
@@ -42,7 +42,7 @@
 	$effect(() => {
 		if (!tauri) return;
 		const policy = deviceConfig.get('transcription.localModelUnloadPolicy');
-		invoke('set_unload_policy', { policy }).catch((err) => {
+		commands.setUnloadPolicy(policy).catch((err) => {
 			console.error('Failed to push unload policy to Rust:', err);
 		});
 	});

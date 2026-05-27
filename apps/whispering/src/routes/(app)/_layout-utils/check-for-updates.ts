@@ -1,37 +1,40 @@
 import { check, type DownloadEvent } from '@tauri-apps/plugin-updater';
-import { extractErrorMessage } from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { tryAsync } from 'wellcrafted/result';
 import {
 	type UpdateInfo,
 	updateDialog,
 } from '$lib/components/UpdateDialog.svelte';
-import { notify } from '$lib/operations/notify';
-import { WhisperingErr } from '$lib/result';
+import { report } from '$lib/report';
+
+const UpdateCheckError = defineErrors({
+	CheckFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to check for updates: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
 
 export async function checkForUpdates() {
 	const { error } = await tryAsync({
 		try: async () => {
 			const update = await (shouldUseMockUpdates() ? mockCheck() : check());
 			if (update) {
-				await notify.info({
+				report.info({
 					title: `Update ${update.version} available`,
 					description: 'A new version of Whispering is available.',
 					action: {
-						type: 'button',
 						label: 'View Update',
 						onClick: () => updateDialog.open(update),
 					},
-					persist: true,
 				});
 			}
 		},
 		catch: (error) =>
-			WhisperingErr({
-				title: 'Failed to check for updates',
-				description: extractErrorMessage(error),
+			UpdateCheckError.CheckFailed({
+				cause: error,
 			}),
 	});
-	if (error) notify.error(error);
+	if (error) report.error({ cause: error });
 }
 
 /**

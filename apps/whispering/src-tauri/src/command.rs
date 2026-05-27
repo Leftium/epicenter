@@ -8,7 +8,7 @@ use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandOutput {
     pub code: Option<i32>,
@@ -57,6 +57,7 @@ fn parse_command(command: &str) -> (String, Vec<String>) {
 /// execute_command("git --version".to_string()).await?;
 /// ```
 #[tauri::command]
+#[specta::specta]
 pub async fn execute_command(command: String) -> Result<CommandOutput, String> {
     let (program, args) = parse_command(&command);
 
@@ -96,64 +97,6 @@ pub async fn execute_command(command: String) -> Result<CommandOutput, String> {
         Err(e) => {
             let error_msg = format!("Command execution failed: {}", e);
             println!("[Rust] execute_command: error - {}", error_msg);
-            Err(error_msg)
-        }
-    }
-}
-
-/// Spawn a child process without waiting for it to complete.
-///
-/// Parses the command string into program and arguments, then spawns directly
-/// without using a shell wrapper. This approach provides:
-/// - Consistent behavior across all platforms
-/// - No shell injection vulnerabilities
-/// - Lower process overhead
-/// - PATH resolution still works via Command::new()
-///
-/// On Windows, also uses CREATE_NO_WINDOW flag to prevent console window flash (GitHub issue #815).
-///
-/// # Arguments
-/// * `command` - The command to spawn as a string
-///
-/// # Returns
-/// Result containing the process ID or error message
-///
-/// # Examples
-/// ```ignore
-/// // Long-running process (e.g., a sidecar daemon)
-/// spawn_command("my-sidecar --listen 127.0.0.1:9000".to_string()).await?;
-/// ```
-#[tauri::command]
-pub async fn spawn_command(command: String) -> Result<u32, String> {
-    let (program, args) = parse_command(&command);
-
-    if program.is_empty() {
-        return Err("Empty command".to_string());
-    }
-
-    println!(
-        "[Rust] spawn_command: program='{}', args={:?}",
-        program, args
-    );
-
-    let mut cmd = Command::new(&program);
-    cmd.args(&args);
-
-    #[cfg(target_os = "windows")]
-    {
-        cmd.creation_flags(CREATE_NO_WINDOW);
-        println!("[Rust] spawn_command: Windows - using CREATE_NO_WINDOW flag");
-    }
-
-    match cmd.spawn() {
-        Ok(child) => {
-            let pid = child.id();
-            println!("[Rust] spawn_command: spawned process with PID={}", pid);
-            Ok(pid)
-        }
-        Err(e) => {
-            let error_msg = format!("Failed to spawn process: {}", e);
-            println!("[Rust] spawn_command: error - {}", error_msg);
             Err(error_msg)
         }
     }

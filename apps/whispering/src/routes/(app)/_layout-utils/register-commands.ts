@@ -1,8 +1,9 @@
 import { partitionResults } from 'wellcrafted/result';
+import { goto } from '$app/navigation';
 import { commands } from '$lib/commands';
 import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
-import { notify } from '$lib/operations/notify';
 import { localShortcuts } from '$lib/operations/shortcuts';
+import { report } from '$lib/report';
 import {
 	type CommandId,
 	shortcutStringToArray,
@@ -97,10 +98,12 @@ export async function syncLocalShortcutsWithSettings() {
 	);
 	const { errs } = partitionResults(results);
 	if (errs.length > 0) {
-		notify.error({
+		report.error({
 			title: 'Error registering local commands',
-			description: errs.map((err) => err.error.message).join('\n'),
-			action: { type: 'more-details', error: errs },
+			cause: {
+				name: 'LocalShortcutRegistrationFailed',
+				message: errs.map((err) => err.error.message).join('\n'),
+			},
 		});
 	}
 }
@@ -132,10 +135,12 @@ export async function syncGlobalShortcutsWithSettings() {
 	);
 	const { errs } = partitionResults(results);
 	if (errs.length > 0) {
-		notify.error({
+		report.error({
 			title: 'Error registering global commands',
-			description: errs.map((err) => err.error.message).join('\n'),
-			action: { type: 'more-details', error: errs },
+			cause: {
+				name: 'GlobalShortcutRegistrationFailed',
+				message: errs.map((err) => err.error.message).join('\n'),
+			},
 		});
 	}
 }
@@ -154,14 +159,13 @@ export function resetLocalShortcutsToDefaultIfDuplicates(): boolean {
 			if (localShortcuts.has(String(shortcut))) {
 				// If duplicates found, reset all local shortcuts to defaults
 				resetLocalShortcuts();
-				notify.success({
+				report.success({
 					title: 'Shortcuts reset',
 					description:
 						'Duplicate local shortcuts detected. All local shortcuts have been reset to defaults.',
 					action: {
-						type: 'link',
 						label: 'Configure shortcuts',
-						href: '/settings/shortcuts/local',
+						onClick: () => goto('/settings/shortcuts/local'),
 					},
 				});
 
@@ -187,14 +191,13 @@ export function resetGlobalShortcutsToDefaultIfDuplicates(): boolean {
 			if (globalShortcuts.has(shortcut)) {
 				// If duplicates found, reset all global shortcuts to defaults
 				resetGlobalShortcuts();
-				notify.success({
+				report.success({
 					title: 'Shortcuts reset',
 					description:
 						'Duplicate global shortcuts detected. All global shortcuts have been reset to defaults.',
 					action: {
-						type: 'link',
 						label: 'Configure shortcuts',
-						href: '/settings/shortcuts/global',
+						onClick: () => goto('/settings/shortcuts/global'),
 					},
 				});
 

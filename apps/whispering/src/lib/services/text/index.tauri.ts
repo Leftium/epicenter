@@ -1,6 +1,6 @@
-import { invoke } from '@tauri-apps/api/core';
 import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager';
-import { tryAsync } from 'wellcrafted/result';
+import { Err, Ok, tryAsync } from 'wellcrafted/result';
+import { commands } from '$lib/tauri/commands';
 import type { TextService } from './types';
 import { TextError } from './types';
 
@@ -22,15 +22,15 @@ export const TextServiceLive = {
 			catch: (error) => TextError.ClipboardWrite({ cause: error }),
 		}),
 
-	writeToCursor: async (text) =>
-		tryAsync({
-			try: () => invoke<void>('write_text', { text }),
-			catch: (error) => TextError.WriteToCursor({ cause: error }),
-		}),
+	writeToCursor: async (text) => {
+		const { error } = await commands.writeText(text);
+		if (error !== null) return TextError.WriteToCursor({ cause: error });
+		return Ok(undefined);
+	},
 
-	simulateEnterKeystroke: () =>
-		tryAsync({
-			try: () => invoke<void>('simulate_enter_keystroke'),
-			catch: (error) => TextError.SimulateKeystroke({ cause: error }),
-		}),
+	simulateEnterKeystroke: async () => {
+		const { error } = await commands.simulateEnterKeystroke();
+		if (error !== null) return TextError.SimulateKeystroke({ cause: error });
+		return Ok(undefined);
+	},
 } satisfies TextService;

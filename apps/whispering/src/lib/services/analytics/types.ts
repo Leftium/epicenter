@@ -48,8 +48,8 @@ export type Event =
 	| {
 			type: 'transcription_failed';
 			provider: TranscriptionServiceId;
-			error_title: string;
-			error_description?: string;
+			error_name: string;
+			error_message?: string;
 	  }
 	// Compression events
 	| {

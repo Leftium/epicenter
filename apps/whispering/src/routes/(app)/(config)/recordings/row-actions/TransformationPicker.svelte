@@ -4,11 +4,10 @@
 	import * as Popover from '@epicenter/ui/popover';
 	import LayersIcon from '@lucide/svelte/icons/layers';
 	import { createMutation } from '@tanstack/svelte-query';
-	import { nanoid } from 'nanoid/non-secure';
 	import { goto } from '$app/navigation';
 	import TransformationPickerBody from '$lib/components/TransformationPickerBody.svelte';
 	import { deliverTransformationResult } from '$lib/operations/delivery';
-	import { notify } from '$lib/operations/notify';
+	import { report } from '$lib/report';
 	import { sound } from '$lib/operations/sound';
 	import { rpc } from '$lib/rpc';
 
@@ -41,9 +40,7 @@
 			onSelect={(transformation) => {
 				combobox.closeAndFocusTrigger();
 
-				const toastId = nanoid();
-				notify.loading({
-					id: toastId,
+				const loading = report.loading({
 					title: '🔄 Running transformation...',
 					description:
 						'Applying your selected transformation to the transcribed text...',
@@ -52,26 +49,13 @@
 				transformRecording.mutate(
 					{ recordingId, transformation },
 					{
-						onError: (error) => notify.error(error),
-						onSuccess: (result) => {
-							if (result.status === 'failed') {
-								notify.error({
-									title: '⚠️ Transformation error',
-									description: result.error,
-									action: {
-										type: 'more-details',
-										error: result.error,
-									},
-								});
-								return;
-							}
-
+						onError: (error) => loading.reject({ cause: error }),
+						onSuccess: async (transformedText) => {
 							sound.playSoundIfEnabled('transformationComplete');
-
-							deliverTransformationResult({
-								text: result.output,
-								toastId,
+							const notice = await deliverTransformationResult({
+								text: transformedText,
 							});
+							loading.resolve(notice);
 						},
 					},
 				);

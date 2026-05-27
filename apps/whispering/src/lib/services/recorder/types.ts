@@ -169,9 +169,6 @@ export const RecorderError = defineErrors({
 		message:
 			'A recording is already in progress. Please stop the current recording before starting a new one.',
 	}),
-	NotRecording: ({ message }: { message: string }) => ({
-		message,
-	}),
 	InitFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to initialize the audio recorder: ${extractErrorMessage(cause)}`,
 		cause,
@@ -188,27 +185,8 @@ export const RecorderError = defineErrors({
 		message: `Failed to acquire recording stream: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
-	ReadFileFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Unable to read recording file: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	NoFilePath: () => ({
-		message: 'Recording file path not provided by method.',
-	}),
-	EmptyRecording: () => ({
-		message: 'Recording file is empty.',
-	}),
-	FileDeleteFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to delete recording file: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
 	GetStateFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to get recorder state: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-	InvokeFailed: ({ command, cause }: { command: string; cause: unknown }) => ({
-		message: `Tauri invoke '${command}' failed: ${extractErrorMessage(cause)}`,
-		command,
 		cause,
 	}),
 });
@@ -227,7 +205,6 @@ type BaseRecordingParams = {
  */
 export type CpalRecordingParams = BaseRecordingParams & {
 	method: 'cpal';
-	outputFolder: string;
 	sampleRate: string;
 };
 
@@ -240,6 +217,46 @@ export type NavigatorRecordingParams = BaseRecordingParams & {
 };
 
 /**
+ * Re-exported from the tauri-specta boundary so this module's
+ * `RecorderStopResult` is structurally identical to what `commands.stopRecording`
+ * returns. The Rust `RecordingArtifact` struct is the single source of truth;
+ * the boundary file generates the TS shape (`mimeType: string` since cpal is
+ * currently the only producer but a future navigator-on-Tauri save could emit
+ * other mimes).
+ */
+export type { RecordingArtifact } from '$lib/tauri/commands';
+
+import type { RecordingArtifact } from '$lib/tauri/commands';
+
+/**
+ * Output of `RecordingSession.stop()`. One of two physical shapes:
+ *
+ * - `kind: 'artifact'`: cpal produced a durable WAV on disk; the handle
+ *   is the canonical reference for transcribe/upload/delete. JS does not
+ *   touch the bytes itself.
+ * - `kind: 'blob'`: navigator (browser MediaRecorder) returned encoded
+ *   container bytes (webm/opus, mp4/AAC) the JS side holds in memory.
+ *   The pipeline persists it through the recordings blob store so the
+ *   id-addressed Rust commands work on it too. There is intentionally
+ *   no `Float32Array` arm: raw PCM never exists as a general front-end
+ *   value.
+ *
+ * `durationMs` lives on whichever arm naturally carries it (the cpal
+ * artifact stat, the navigator wall-clock measurement). VAD and file
+ * uploads have no notion of duration at the recorder boundary; they
+ * synthesize a `kind: 'blob'` result from outside the recorder and pass
+ * `null` for duration at the pipeline boundary.
+ */
+export type RecorderStopResult =
+	| { kind: 'artifact'; artifact: RecordingArtifact }
+	| {
+			kind: 'blob';
+			blob: Blob;
+			recordingId: string;
+			durationMs: number | null;
+	  };
+
+/**
  * Discriminated union for recording parameters based on method
  */
 export type StartRecordingParams =
@@ -249,27 +266,22 @@ export type StartRecordingParams =
 /**
  * A live recording session bound to the backend that started it.
  *
- * The `Recording` is the unit of lifecycle: it knows its own backend, owns
+ * The `RecordingSession` is the unit of lifecycle: it knows its own backend, owns
  * its own teardown, and exposes per-session state changes. Toggling
  * `recording.method` after construction has no effect on an in-flight
- * Recording, which is what fixes the swap-mid-recording leak.
+ * RecordingSession, which is what fixes the swap-mid-recording leak.
  *
  * The `subscribe` handler is invoked synchronously with the current state on
  * subscribe (so callers don't have to mirror "I just started" themselves),
  * then again whenever the session transitions, ending with 'IDLE' on
  * stop/cancel.
  */
-export type Recording = {
+export type RecordingSession = {
 	readonly recordingId: string;
 	readonly backend: 'navigator' | 'cpal';
 	stop(callbacks: {
 		sendStatus: UpdateStatusMessageFn;
-	}): Promise<
-		Result<
-			{ blob: Blob; recordingId: string; durationMs: number },
-			RecorderError
-		>
-	>;
+	}): Promise<Result<RecorderStopResult, RecorderError>>;
 	cancel(callbacks: {
 		sendStatus: UpdateStatusMessageFn;
 	}): Promise<Result<CancelRecordingResult, RecorderError>>;
@@ -277,20 +289,20 @@ export type Recording = {
 };
 
 /**
- * Factory for `Recording` sessions. Services no longer carry mutable
- * start/stop state directly; instead `startRecording` returns a Recording
+ * Factory for recording sessions. Services no longer carry mutable
+ * start/stop state directly; instead `startRecording` returns a RecordingSession
  * whose methods are bound to the backend that produced it.
  */
 export type RecorderService = {
 	/**
-	 * Probe for a Recording that already exists at module-load time. CPAL
+	 * Probe for a RecordingSession that already exists at module-load time. CPAL
 	 * sessions can outlive a JS reload because the Rust process keeps the
 	 * stream; navigator sessions cannot survive a reload and will always
 	 * return null after one.
 	 *
-	 * Returns the live Recording bound to this backend, or null if none.
+	 * Returns the live RecordingSession bound to this backend, or null if none.
 	 */
-	getActiveRecording(): Promise<Result<Recording | null, RecorderError>>;
+	getActiveRecording(): Promise<Result<RecordingSession | null, RecorderError>>;
 
 	/**
 	 * Enumerate available recording devices with their labels and identifiers
@@ -298,8 +310,8 @@ export type RecorderService = {
 	enumerateDevices(): Promise<Result<Device[], RecorderError>>;
 
 	/**
-	 * Start a new recording session, returning the Recording handle along
-	 * with the device acquisition outcome. The caller holds the Recording
+	 * Start a new recording session, returning the RecordingSession handle along
+	 * with the device acquisition outcome. The caller holds the RecordingSession
 	 * and uses its `stop`/`cancel`/`subscribe` for the rest of the session.
 	 */
 	startRecording(
@@ -310,7 +322,7 @@ export type RecorderService = {
 	): Promise<
 		Result<
 			{
-				recording: Recording;
+				session: RecordingSession;
 				deviceAcquisition: DeviceAcquisitionOutcome;
 			},
 			RecorderError

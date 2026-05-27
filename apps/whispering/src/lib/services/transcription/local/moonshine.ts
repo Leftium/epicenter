@@ -1,9 +1,11 @@
 import { regex } from 'arkregex';
-import { WhisperingErr, type WhisperingResult } from '$lib/result';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import type { Result } from 'wellcrafted/result';
 
 import {
+	type LocalTranscriptionError,
 	requireExistingModelPath,
-	transcribeLocal,
+	transcribeRecording,
 } from './local-transcription';
 import {
 	MOONSHINE_LANGUAGES,
@@ -44,7 +46,7 @@ const MOONSHINE_DIR_PATTERN = regex.as<
  * - lang: language code (e.g., "en", "ar", "zh")
  *
  * The variant is parsed from the directory name on the JS side and passed
- * to Rust on the wire as part of the transcribe_audio config payload.
+ * to Rust on the wire as part of the transcribe_recording config payload.
  *
  * ## Model Sizes
  *
@@ -112,11 +114,19 @@ export const MOONSHINE_MODELS = [
 	},
 ] as const satisfies readonly MoonshineModelConfig[];
 
+export const MoonshineError = defineErrors({
+	InvalidModelDirectoryName: () => ({
+		message:
+			'Model path must end with moonshine-{variant}-{lang} (e.g., "moonshine-tiny-en", "moonshine-base-en")',
+	}),
+});
+export type MoonshineError = InferErrors<typeof MoonshineError>;
+
 export const MoonshineTranscriptionServiceLive = {
 	async transcribe(
-		audioBlob: Blob,
+		recordingId: string,
 		{ modelPath }: { modelPath: string },
-	): Promise<WhisperingResult<string>> {
+	): Promise<Result<string, MoonshineError | LocalTranscriptionError>> {
 		const validation = await requireExistingModelPath(
 			modelPath,
 			'directory',
@@ -126,21 +136,13 @@ export const MoonshineTranscriptionServiceLive = {
 
 		const match = MOONSHINE_DIR_PATTERN.exec(modelPath);
 		if (!match) {
-			return WhisperingErr({
-				title: '❌ Invalid Model Directory Name',
-				description: `Model path must end with moonshine-{variant}-{lang} (e.g., "moonshine-tiny-en", "moonshine-base-en")`,
-				action: {
-					type: 'link',
-					label: 'Select valid model',
-					href: '/settings/transcription',
-				},
-			});
+			return MoonshineError.InvalidModelDirectoryName();
 		}
 
 		// arkregex's RegexExecArray indexes captures: [0] full match, [1] variant, [2] language
 		const variant = match[1];
 
-		return transcribeLocal(audioBlob, {
+		return transcribeRecording(recordingId, {
 			engine: 'moonshine',
 			modelPath,
 			variant,

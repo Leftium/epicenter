@@ -97,7 +97,7 @@ export const OpenaiTranscriptionServiceLive = {
 		const isUsingCustomEndpoint = Boolean(options.baseURL);
 
 		// Custom endpoints (reverse proxies, OpenAI-compatible servers) may have
-		// different auth schemes or no auth — skip API-key format checks.
+		// different auth schemes or no auth, skip API-key format checks.
 		if (!isUsingCustomEndpoint) {
 			if (!options.apiKey) return OpenaiError.MissingApiKey();
 			if (!options.apiKey.startsWith('sk-')) {

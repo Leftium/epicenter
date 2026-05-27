@@ -23,7 +23,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import ExternalLink from '@lucide/svelte/icons/external-link';
 	import { Ok, tryAsync } from 'wellcrafted/result';
-	import { notify } from '$lib/operations/notify';
+	import { report } from '$lib/report';
 	import { tauri } from '$lib/tauri';
 
 	type Props = {
@@ -64,9 +64,12 @@
 				await openPath(folderPath);
 			},
 			catch: (error) => {
-				notify.error({
+				report.error({
 					title: 'Failed to open folder',
-					description: error instanceof Error ? error.message : 'Unknown error',
+					cause: {
+						name: 'OpenFolderFailed',
+						message: error instanceof Error ? error.message : 'Unknown error',
+					},
 				});
 				return Ok(undefined);
 			},

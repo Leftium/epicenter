@@ -5,7 +5,7 @@
 	import { Switch } from '@epicenter/ui/switch';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { ALWAYS_ON_TOP_MODE_OPTIONS } from '$lib/constants/ui';
-	import { notify } from '$lib/operations/notify';
+	import { report } from '$lib/report';
 	import { tauri } from '$lib/tauri';
 	import { settings } from '$lib/state/settings.svelte';
 
@@ -223,11 +223,11 @@
 					onCheckedChange={(checked) => {
 						if (checked) {
 							enableAutostartMutation.mutate(undefined, {
-								onError: (error) => notify.error(error),
+								onError: (error) => report.error({ cause: error }),
 							});
 						} else {
 							disableAutostartMutation.mutate(undefined, {
-								onError: (error) => notify.error(error),
+								onError: (error) => report.error({ cause: error }),
 							});
 						}
 					}}

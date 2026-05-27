@@ -9,17 +9,17 @@ import { commands } from './tauri/commands';
 import { whispering } from './whispering/client';
 import type { Recording } from './workspace';
 
-export const RecordingMarkdownExportError = defineErrors({
+const RecordingMarkdownExportError = defineErrors({
 	WriteFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to write recording markdown files: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
-export type RecordingMarkdownExportError = InferErrors<
+type RecordingMarkdownExportError = InferErrors<
 	typeof RecordingMarkdownExportError
 >;
 
-export type RecordingMarkdownExportResult = {
+type RecordingMarkdownExportResult = {
 	dir: string;
 	written: number;
 };

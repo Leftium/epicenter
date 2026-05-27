@@ -120,11 +120,11 @@ export async function stopManualRecording() {
 	});
 }
 
-export async function toggleManualRecording() {
+export function toggleManualRecording() {
 	if (manualRecorder.state === 'RECORDING') {
-		return await stopManualRecording();
+		return stopManualRecording();
 	}
-	return await startManualRecording();
+	return startManualRecording();
 }
 
 export async function cancelManualRecording() {
@@ -239,12 +239,12 @@ export async function stopVadRecording() {
 	sound.playSoundIfEnabled('vad-stop');
 }
 
-export async function toggleVadRecording() {
+export function toggleVadRecording() {
 	if (
 		vadRecorder.state === 'LISTENING' ||
 		vadRecorder.state === 'SPEECH_DETECTED'
 	) {
-		return await stopVadRecording();
+		return stopVadRecording();
 	}
-	return await startVadRecording();
+	return startVadRecording();
 }

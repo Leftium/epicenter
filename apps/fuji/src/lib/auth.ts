@@ -1,9 +1,9 @@
 import { PersistedAuth } from '@epicenter/auth';
-import { createBrowserOAuthLauncher } from '@epicenter/auth/oauth-launchers';
 import { createOAuthAppAuth } from '@epicenter/auth-svelte';
 import { EPICENTER_FUJI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createPersistedState } from '@epicenter/svelte';
+import { createFujiOAuthLauncher } from './oauth-launcher';
 
 export const auth = createOAuthAppAuth({
 	baseURL: APP_URLS.API,
@@ -13,10 +13,9 @@ export const auth = createOAuthAppAuth({
 		schema: PersistedAuth.or('null'),
 		defaultValue: null,
 	}),
-	launcher: createBrowserOAuthLauncher({
+	launcher: createFujiOAuthLauncher({
 		issuer: `${APP_URLS.API}/auth`,
 		clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,
-		redirectUri: `${window.location.origin}/auth/callback`,
 		resource: APP_URLS.API,
 		storage: window.sessionStorage,
 	}),

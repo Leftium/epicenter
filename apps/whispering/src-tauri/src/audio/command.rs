@@ -11,10 +11,10 @@ use tauri::AppHandle;
 use super::encode::encode_pcm_to_opus_ogg;
 use crate::recorder::read_artifact_samples;
 
-/// Sample rate `read_artifact_samples` always outputs. Pass through to
-/// `encode_pcm_to_opus_ogg` so the encoder's source-to-48k resample sees
-/// the right input rate.
-const DECODE_RATE: u32 = 16_000;
+/// Rate `read_artifact_samples` always outputs. Passed through to
+/// `encode_pcm_to_opus_ogg` so its source-to-48k resample sees the right
+/// input rate.
+const ARTIFACT_RATE: u32 = 16_000;
 
 /// Compress a saved recording artifact into OGG/Opus for cloud upload.
 ///
@@ -31,7 +31,7 @@ pub async fn encode_recording_for_upload(
 ) -> Result<Response, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let samples = read_artifact_samples(&app_handle, &recording_id)?;
-        encode_pcm_to_opus_ogg(&samples, DECODE_RATE, 1).map_err(|e| e.to_string())
+        encode_pcm_to_opus_ogg(samples, ARTIFACT_RATE).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| format!("background encode task failed: {e}"))?

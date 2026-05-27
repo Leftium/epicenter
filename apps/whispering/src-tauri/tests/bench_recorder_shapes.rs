@@ -215,10 +215,10 @@ fn bench_recorder_shapes() {
         println!("{}", fmt_row(rows.last().unwrap()));
 
         let (med_e, mean_e) = time_ms(ITERS_SLOW, || {
-            let out = encode_pcm_to_opus_ogg(&samples, TARGET_RATE, 1).expect("encode");
+            let out = encode_pcm_to_opus_ogg(samples.clone(), TARGET_RATE).expect("encode");
             std::hint::black_box(out);
         });
-        let opus_bytes = encode_pcm_to_opus_ogg(&samples, TARGET_RATE, 1).unwrap();
+        let opus_bytes = encode_pcm_to_opus_ogg(samples.clone(), TARGET_RATE).unwrap();
         rows.push(Row {
             clip,
             metric: "cloud: pcm->opus_ogg",
@@ -290,7 +290,7 @@ fn bench_recorder_shapes() {
         let (med_cr, mean_cr) = time_ms(ITERS_SLOW, || {
             let buf = std::fs::read(&wav_path).expect("read");
             let pcm = decode_to_pcm16k_mono(&buf).expect("decode");
-            let ogg = encode_pcm_to_opus_ogg(&pcm, TARGET_RATE, 1).expect("encode");
+            let ogg = encode_pcm_to_opus_ogg(pcm, TARGET_RATE).expect("encode");
             std::hint::black_box(ogg);
         });
         rows.push(Row {

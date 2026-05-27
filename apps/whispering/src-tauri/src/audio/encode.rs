@@ -44,41 +44,24 @@ const MAX_PACKET_BYTES: usize = 4000;
 /// A constant is fine because we only ever write one stream per blob.
 const OGG_SERIAL: u32 = 0x57_48_53_50; // "WHSP"
 
-/// Encode an in-memory mono f32 PCM buffer to an OGG/Opus blob.
+/// Encode a mono f32 PCM buffer to an OGG/Opus blob.
 ///
-/// This is the canonical fast path for the dictation `Pcm` artifact: the
-/// recorder's consumer worker already produced 16 kHz mono f32, so we
-/// resample to 48 kHz (libopus's internal rate) and encode straight into
-/// the OGG container. No WAV synthesis, no Symphonia decode, no detour.
-///
-/// `channels` must be 1 today; stereo input is downmixed by averaging.
+/// This is the canonical fast path for cloud uploads: the recorder
+/// consumer worker (and `read_artifact_samples`) always produce mono
+/// 16 kHz f32, so we resample to 48 kHz (libopus's internal rate) and
+/// encode straight into the OGG container. No WAV synthesis, no
+/// Symphonia round-trip, no detour.
 pub fn encode_pcm_to_opus_ogg(
-    samples: &[f32],
+    samples: Vec<f32>,
     source_rate: u32,
-    channels: u16,
 ) -> Result<Vec<u8>, AudioError> {
-    if channels == 0 {
-        return Err(AudioError::unsupported("pcm input has zero channels"));
-    }
-
     debug!(
-        "[Audio Encode] encoding {} PCM samples @ {} Hz x {} channels",
+        "[Audio Encode] encoding {} mono PCM samples @ {} Hz",
         samples.len(),
         source_rate,
-        channels,
     );
 
-    let mono: Vec<f32> = if channels == 1 {
-        samples.to_vec()
-    } else {
-        let n = channels as usize;
-        samples
-            .chunks_exact(n)
-            .map(|frame| frame.iter().sum::<f32>() / n as f32)
-            .collect()
-    };
-
-    let pcm_48k = resample_mono(mono, source_rate, ENCODE_RATE)?;
+    let pcm_48k = resample_mono(samples, source_rate, ENCODE_RATE)?;
     debug!(
         "[Audio Encode] resampled to {} Hz: {} samples",
         ENCODE_RATE,
@@ -266,7 +249,7 @@ mod tests {
                     * 0.5
             })
             .collect();
-        let ogg_bytes = encode_pcm_to_opus_ogg(&samples, rate, 1).expect("encode");
+        let ogg_bytes = encode_pcm_to_opus_ogg(samples, rate).expect("encode");
 
         // OGG pages start with "OggS"; the first audio data after the page
         // header is the OpusHead identification packet.
@@ -290,7 +273,7 @@ mod tests {
         let wav = make_sine_wav(secs, in_rate, freq_hz);
 
         let pcm = decode_to_pcm16k_mono(&wav).expect("decode wav");
-        let ogg_bytes = encode_pcm_to_opus_ogg(&pcm, target_rate, 1).expect("encode");
+        let ogg_bytes = encode_pcm_to_opus_ogg(pcm, target_rate).expect("encode");
         let decoded = decode_to_pcm16k_mono(&ogg_bytes).expect("decode");
 
         // Duration: ±50 ms tolerance per the spec's success criterion.

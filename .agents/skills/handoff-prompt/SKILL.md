@@ -26,7 +26,7 @@ A spec says "here's the plan." A handoff prompt says "here's everything you need
 
 ## Structure
 
-There's no rigid template. The sections you need depend on the type of handoff. Every prompt needs a task statement and guardrails. Everything else is judgment.
+There's no rigid template. The sections you need depend on the type of handoff. Every prompt needs a task statement and enough context to execute. Everything else is judgment.
 
 ### Task Statement
 
@@ -76,28 +76,6 @@ For logic work: describe input/output contracts, edge cases to handle, and integ
 
 If there's a choice to make (which component, which layout, which approach), make it here. Don't leave it open.
 
-### MUST DO
-
-Non-negotiable requirements. Keep this short: only things that genuinely can't be left to judgment.
-
-```
-## MUST DO
-- Follow existing Svelte 5 runes patterns (`$props()`, `$derived`, `$state`)
-- Use components from `@epicenter/ui/*` and `@lucide/svelte`
-```
-
-### Blockers
-
-Use this section only for true blockers: destructive actions, product calls, security boundaries, deleted tests, suppressed type errors, or files the user explicitly forbade. Do not list ordinary focus, preferences, or "nice to avoid" items here.
-
-```
-## Blockers
-- Do not suppress TypeScript errors with `@ts-ignore` or `as any`
-- Do not delete or skip existing tests to make the build pass
-```
-
-Everything else stays in Requirements or Context.
-
 ## Drafting Process
 
 1. **Gather context first.** Read the relevant files, understand the codebase patterns, check what components and tools are available. You can't write a self-contained prompt without knowing the details.
@@ -108,7 +86,7 @@ Everything else stays in Requirements or Context.
 
 4. **Close all decisions.** A spec can leave open questions. A handoff prompt cannot. If there's a choice to make, make it.
 
-5. **Name the lane.** Say what files, package, app, or spec the recipient should start with. A lane coordinates work; it is not a refusal rule.
+5. **Name the lane.** Say what files, package, app, or spec the recipient should start with. A lane coordinates where to begin; it does not restrict continuation.
 
 6. **Test mentally.** Read the prompt as if you've never seen this codebase. Could you execute it? If you'd need to grep for something, that information should be in the prompt.
 
@@ -147,18 +125,6 @@ You could use either a Card grid or an Accordion for this section: pick whicheve
 
 Pick one. The recipient will waste time deliberating instead of building.
 
-### Overloading Blockers
-
-```
-## Blockers
-- Do not install any new dependencies
-- Do not use images or external assets
-- Do not make the page feel like a SaaS landing page
-- Do not use inline styles
-```
-
-The first item might be an explicit limit. The rest are preferences. Put preferences in Requirements.
-
 ## Good vs Bad
 
 ### Good (self-contained, specific, closed)
@@ -180,8 +146,6 @@ const cache = createDisposableCache((id: string) => {
 });
 export const ws = cache.open('opensidian');
 \`\`\`
-
-Blockers: suppressing TypeScript errors, deleting existing tests to pass build.
 ```
 
 ### Bad (vague, open-ended, assumes context)

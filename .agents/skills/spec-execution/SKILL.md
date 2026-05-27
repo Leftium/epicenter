@@ -48,9 +48,9 @@ FINAL REVIEW (run post-implementation-review, update spec status, add review sec
 ```
 
 Default to continuing. After a wave passes verification, move to the next
-unchecked item until the spec is complete. Pause only for a real blocker:
-product decision, destructive action, broad reshape, current-code conflict, or
-explicit user limit.
+unchecked item until the spec is complete. Ask the user only when continuing
+requires a product decision, destructive action, broad reshape, or resolving a
+conflict with current code.
 
 ## Phase 0: Preflight the Spec
 
@@ -124,7 +124,7 @@ Wave 3: [Integration, consumers of Wave 2]
   - Commit: combine with Wave 2 if the API and consumers should be reviewed together
 ```
 
-Proceed after planning. Surface only real blockers before pausing: product choices, destructive actions, broad reshape risk, conflicts with current code, or explicit user limits.
+Proceed after planning. Ask first only for product choices, destructive actions, broad reshape risk, or conflicts with current code.
 
 ## Phase 3: Execute Waves
 
@@ -237,7 +237,7 @@ When spinning up sub-agents, each agent needs:
 - **The files it should read** before making changes
 - **The primary files it owns**
 - **The patterns to follow** (reference relevant skills)
-- **Real blockers**: product decisions, destructive actions, broad reshaping, current-code conflicts, or explicit user limits
+- **Questions that need the user**: product decisions, destructive actions, broad reshaping, or current-code conflicts
 
 Keep sub-agent prompts focused. A sub-agent that knows too much will try to do too much.
 
@@ -301,7 +301,7 @@ Before starting:
 - [ ] Read active sections first
 - [ ] Identify phases and dependencies
 - [ ] Plan waves (parallel vs sequential)
-- [ ] Surface blockers that need user input
+- [ ] Surface decisions that need user input
 
 For each wave:
 

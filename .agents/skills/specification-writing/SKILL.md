@@ -116,8 +116,8 @@ Never let evidence questions hide behind design coherence. Verify before deletin
 
 ## Adjacent Work
 
-Do not make one bucket that implies every omitted item is forbidden. When
-adjacent work matters, use only the distinctions the implementer needs:
+Most specs do not need a section for adjacent work. When adjacent work matters,
+write only what the implementer needs:
 
 ```txt
 Deferred:
@@ -407,20 +407,11 @@ This section signals "you decide this" to the implementer. Include your recommen
 
 ### Adjacent Work
 
-Use this section only when adjacent decisions would otherwise be ambiguous.
-
 ```markdown
 ## Adjacent Work
 
-### Deferred
-
 - [Decision or feature]: [Why it is not required now, and what would bring it back.]
-
-### Rejected product direction
-
-- [Decision or feature]: [Why this should not be part of the product or design.]
-
-### Opportunistic
+- [Rejected product direction]: [Why this should not be part of the product or design.]
 
 - [Issue or cleanup]: [Why it is not required, but may be fixed if discovered and grounded.]
 ```
@@ -527,7 +518,7 @@ If your spec is too prescriptive, the agent will blindly follow it. If it's too 
 - [ ] Design decisions have classes
 - [ ] Class 1 decisions were verified
 - [ ] Class 3 keeps are logged with `Revisit when:`
-- [ ] Deferred, refused, and opportunistic adjacent work is separated when relevant
+- [ ] Adjacent work is included only when it clarifies implementation
 - [ ] Catalogs (when introducing a primitive set: code block + rejected candidates table)
 - [ ] Architecture (ASCII diagrams)
 - [ ] Visual rhythm: prose is broken up with code, tables, trees, or diagrams where relationships matter

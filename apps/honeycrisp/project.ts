@@ -21,7 +21,7 @@ import {
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
-import { createHoneycrispWorkspace } from './workspace.js';
+import { createHoneycrispWorkspace } from './honeycrisp.js';
 
 export type HoneycrispMountOptions = {
 	markdownDir?: string;

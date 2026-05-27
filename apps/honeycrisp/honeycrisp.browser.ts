@@ -26,7 +26,7 @@ import {
 	roomWsUrl,
 	wipeLocalStorage,
 } from '@epicenter/workspace';
-import { createHoneycrispWorkspace, type NoteId } from './workspace';
+import { createHoneycrispWorkspace, type NoteId } from './honeycrisp';
 
 export function openHoneycrispBrowser({
 	signedIn,

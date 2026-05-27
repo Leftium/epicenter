@@ -5,7 +5,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
-		".": "./workspace.ts",
+		".": "./honeycrisp.ts",
 		"./project": "./project.ts"
 	},
 	"scripts": {

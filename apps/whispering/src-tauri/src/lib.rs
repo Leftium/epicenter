@@ -26,7 +26,9 @@ pub mod command;
 use command::execute_command;
 
 pub mod markdown;
-use markdown::{count_markdown_files, delete_files_in_directory, read_markdown_files, write_markdown_files};
+use markdown::{
+    count_markdown_files, delete_files_in_directory, read_markdown_files, write_markdown_files,
+};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[tokio::main]

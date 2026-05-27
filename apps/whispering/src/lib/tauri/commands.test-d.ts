@@ -4,22 +4,19 @@
  * These assertions never run at value-level; they exist so a regression in
  * the `Wrap<F>` mapper or in `tauri-specta`'s output surfaces as a
  * `svelte-check` / `tsc` failure at the type level.
- *
- * If specta's emitted shape changes (e.g. the discriminator key moves), the
- * `Wrap<F>` mapper stops matching and these assertions force the issue.
  */
 
 import type { Result } from 'wellcrafted/result';
 import type {
 	CommandOutput,
+	LocalModelState,
 	RecordingArtifact,
-	TranscribeRequest,
+	TranscriptionConfig,
 	TranscriptionError,
 } from './commands';
 import { commands } from './commands';
 
-// Helper: a no-op assertion that two types are equal. Triggers a TS error
-// if they diverge.
+// Helper: a no-op assertion that two types are equal.
 type Expect<T extends true> = T;
 type Equal<X, Y> =
 	(<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2
@@ -34,22 +31,38 @@ type _StopRecording = Expect<
 	>
 >;
 
-// transcribe_recording: fallible, returns transcript text with the typed
-// error union.
+// transcribe_recording: fallible, takes only recordingId now (config is
+// ambient via setTranscriptionConfig).
 type _TranscribeRecording = Expect<
 	Equal<
-		ReturnType<
-			typeof commands.transcribeRecording extends (...args: infer A) => infer R
-				? (...args: A) => R
-				: never
-		>,
+		ReturnType<typeof commands.transcribeRecording>,
 		Promise<Result<string, TranscriptionError>>
 	>
 >;
 
-// set_unload_policy: infallible (Rust `()`). Stays plain Promise; no Result wrap.
-type _SetUnloadPolicy = Expect<
-	Equal<ReturnType<typeof commands.setUnloadPolicy>, Promise<void>>
+type _TranscribeRecordingArgs = Expect<
+	Equal<Parameters<typeof commands.transcribeRecording>, [string]>
+>;
+
+// set_transcription_config: infallible (Rust `()`). Stays plain Promise; no
+// Result wrap.
+type _SetTranscriptionConfig = Expect<
+	Equal<ReturnType<typeof commands.setTranscriptionConfig>, Promise<void>>
+>;
+
+type _SetTranscriptionConfigArg = Expect<
+	Equal<
+		Parameters<typeof commands.setTranscriptionConfig>,
+		[TranscriptionConfig]
+	>
+>;
+
+// get_transcription_state: infallible snapshot for late-mounted observers.
+type _GetTranscriptionState = Expect<
+	Equal<
+		ReturnType<typeof commands.getTranscriptionState>,
+		Promise<LocalModelState>
+	>
 >;
 
 // execute_command: fallible, returns a typed CommandOutput struct.
@@ -68,20 +81,20 @@ type _EncodeRecordingForUpload = Expect<
 	>
 >;
 
-// TranscribeRequest is a discriminated union surfaced by specta from the
-// `#[serde(tag = "engine")]` enum on the Rust side.
-type _TranscribeRequestShape = Expect<
+// TranscriptionConfig is the ambient config the FE pushes once per change.
+type _TranscriptionConfigShape = Expect<
 	Equal<
-		TranscribeRequest extends infer T
-			? T extends { engine: 'whispercpp' }
-				? T
-				: never
-			: never,
+		TranscriptionConfig,
 		{
-			engine: 'whispercpp';
+			engine: 'whispercpp' | 'parakeet' | 'moonshine';
 			modelPath: string;
 			language?: string | null;
 			initialPrompt?: string | null;
+			unloadPolicy:
+				| 'never'
+				| 'immediately'
+				| 'after_5_minutes'
+				| 'after_30_minutes';
 		}
 	>
 >;

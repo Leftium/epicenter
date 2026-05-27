@@ -7,7 +7,6 @@ import {
 } from '$lib/constants/languages';
 import {
 	isModelFileSizeValid,
-	MOONSHINE_DIR_PATTERN,
 	WHISPER_MODELS,
 } from '$lib/constants/local-models';
 import type { TranscriptionServiceId } from '$lib/constants/transcription';
@@ -135,6 +134,10 @@ async function dispatchLocalTranscription(
 	recordingId: string,
 	selectedService: TranscriptionServiceId,
 ): Promise<Result<string, TranscriptionError>> {
+	// FE preflight: every local engine needs a model path on disk. Rust will
+	// also fail loudly via `ModelLoadError`, but checking here lets us return
+	// a much better error message (per-engine display name, file vs directory
+	// guidance) and short-circuit before round-tripping through the IPC.
 	switch (selectedService) {
 		case 'whispercpp': {
 			const modelPath = deviceConfig.get('transcription.whispercpp.modelPath');
@@ -166,15 +169,7 @@ async function dispatchLocalTranscription(
 					});
 				}
 			}
-
-			const outputLanguage = getOutputLanguage();
-			const prompt = settings.get('transcription.prompt');
-			return commands.transcribeRecording(recordingId, {
-				engine: 'whispercpp',
-				modelPath,
-				language: outputLanguage === 'auto' ? null : outputLanguage,
-				initialPrompt: prompt || null,
-			});
+			break;
 		}
 		case 'parakeet': {
 			const modelPath = deviceConfig.get('transcription.parakeet.modelPath');
@@ -184,13 +179,14 @@ async function dispatchLocalTranscription(
 				'Parakeet',
 			);
 			if (validation.error) return validation;
-
-			return commands.transcribeRecording(recordingId, {
-				engine: 'parakeet',
-				modelPath,
-			});
+			break;
 		}
 		case 'moonshine': {
+			// Directory-name validation (must end with moonshine-{variant}-{lang})
+			// is owned by Rust now: `parse_moonshine_variant` returns a
+			// structured `ConfigError` when the name is malformed. Keeping the
+			// existence check here for the same UX-message reason as the other
+			// engines.
 			const modelPath = deviceConfig.get('transcription.moonshine.modelPath');
 			const validation = await requireExistingModelPath(
 				modelPath,
@@ -198,25 +194,16 @@ async function dispatchLocalTranscription(
 				'Moonshine',
 			);
 			if (validation.error) return validation;
-
-			// Moonshine's ONNX files don't self-describe their architecture; the
-			// variant is encoded in the directory name (see
-			// MOONSHINE_DIR_PATTERN) and forwarded to Rust on the wire.
-			const match = MOONSHINE_DIR_PATTERN.exec(modelPath);
-			if (!match) {
-				return LocalPreflightError.InvalidMoonshineDirectoryName();
-			}
-			const [, variant] = match;
-
-			return commands.transcribeRecording(recordingId, {
-				engine: 'moonshine',
-				modelPath,
-				variant,
-			});
+			break;
 		}
 		default:
 			return TranscriptionOperationError.NoTranscriptionServiceSelected();
 	}
+
+	// Rust reads engine, modelPath, language, prompt, and unloadPolicy from
+	// the ambient config pushed via `setTranscriptionConfig` in the layout
+	// effect. Anything that affects inference output is already there.
+	return commands.transcribeRecording(recordingId);
 }
 
 async function dispatchCloudTranscription(

@@ -71,79 +71,47 @@ export const commands = {
 	/**
 	 *  Canonical transcribe-by-id path. Resolves the audio file under
 	 *  `<appDataDir>/recordings/{recordingId}.*` (cpal-written WAV,
-	 *  navigator-saved webm/opus/mp4, etc.), decodes, runs inference. This
-	 *  is the single entry point for every local transcription call: cpal
-	 *  stop, navigator/VAD/file-upload (after the pipeline saves), retry,
-	 *  history replay.
+	 *  navigator-saved webm/opus/mp4, etc.), decodes, runs inference using
+	 *  the ambient configuration pushed via `set_transcription_config`.
+	 *
+	 *  Returns `NoConfig` if the FE has not pushed a config yet.
 	 */
-	transcribeRecording: (recordingId: string, config: TranscribeRequest) =>
+	transcribeRecording: (recordingId: string) =>
 		typedError<string, TranscriptionError>(
-			__TAURI_INVOKE('transcribe_recording', { recordingId, config }),
+			__TAURI_INVOKE('transcribe_recording', { recordingId }),
 		),
 	/**
-	 *  Update the model unload policy from the frontend. Called by an effect
-	 *  in the SvelteKit layout whenever `transcription.localModelUnloadPolicy`
-	 *  changes, and once at app startup to push the initial value.
+	 *  Push the ambient transcription configuration. Replaces the per-call
+	 *  `config` argument that `transcribe_recording` used to take.
 	 *
-	 *  Unknown values fall back to the default inside `UnloadPolicy::from_wire`
-	 *  rather than erroring, so a future rename or corrupt localStorage value
-	 *  never breaks transcription.
+	 *  Drift in `(engine, modelPath)` triggers a background preload so the
+	 *  next `transcribe_recording` call does not pay cold-start latency.
+	 *  Other field changes take effect on the next transcription with no
+	 *  reload.
 	 */
-	setUnloadPolicy: (policy: string) =>
-		__TAURI_INVOKE<void>('set_unload_policy', { policy }),
+	setTranscriptionConfig: (config: TranscriptionConfig) =>
+		__TAURI_INVOKE<void>('set_transcription_config', { config }),
+	/**
+	 *  Snapshot the current model state. Used by late-mounted observers to
+	 *  catch up to the current lifecycle state without waiting for the next
+	 *  event on `transcription://model-state`.
+	 */
+	getTranscriptionState: () =>
+		__TAURI_INVOKE<LocalModelState>('get_transcription_state'),
 	/**
 	 *  Execute a command and wait for it to complete.
 	 *
 	 *  Parses the command string into program and arguments, then executes directly
-	 *  without using a shell wrapper. This approach provides:
-	 *  - Consistent behavior across all platforms
-	 *  - No shell injection vulnerabilities
-	 *  - Lower process overhead
-	 *  - PATH resolution still works via Command::new()
-	 *
-	 *  On Windows, also uses CREATE_NO_WINDOW flag to prevent console window flash (GitHub issue #815).
-	 *
-	 *  # Arguments
-	 *  * `command` - The command to execute as a string
-	 *
-	 *  # Returns
-	 *  Result containing the command output (stdout, stderr, exit code) or error message
-	 *
-	 *  # Examples
-	 *  ```ignore
-	 *  execute_command("uname -a".to_string()).await?;
-	 *  execute_command("git --version".to_string()).await?;
-	 *  ```
+	 *  without using a shell wrapper.
 	 */
 	executeCommand: (command: string) =>
 		typedError<CommandOutput, string>(
 			__TAURI_INVOKE('execute_command', { command }),
 		),
-	/**
-	 *  Deletes files inside a directory by filename.
-	 *  Validates filenames are single path components (no traversal).
-	 *  Uses Rayon for parallel deletion. Silently skips missing files.
-	 *
-	 *  # Arguments
-	 *  * `directory` - Absolute path to the directory containing the files
-	 *  * `filenames` - Array of leaf filenames to delete
-	 */
 	deleteFilesInDirectory: (directory: string, filenames: string[]) =>
 		typedError<number, string>(
 			__TAURI_INVOKE('delete_files_in_directory', { directory, filenames }),
 		),
-	/**
-	 *  Writes markdown files to disk atomically using a temporary file plus persist.
-	 *  Validates all filenames upfront\u2014no files are written if any name is invalid.
-	 *
-	 *  # Arguments
-	 *  * `directory` - Absolute path to the output directory
-	 *  * `files` - Array of `{ filename, content }` pairs to write
-	 *
-	 *  # Returns
-	 *  * `Ok(())` - All files written successfully
-	 *  * `Err(String)` - Error if any write fails (earlier files may already be on disk)
-	 */
 	writeMarkdownFiles: (directory: string, files: MarkdownFile[]) =>
 		typedError<null, string>(
 			__TAURI_INVOKE('write_markdown_files', { directory, files }),
@@ -163,30 +131,6 @@ export type MarkdownFile = {
 	content: string;
 };
 
-/**
- *  Wire representation of the subset of Moonshine variants the app surfaces.
- *  `transcribe-rs` exposes more variants but the UI only offers Tiny and Base.
- */
-export type MoonshineVariantWire = 'tiny' | 'base';
-
-/**
- *  Serializable handle returned to the JS side. The id is the lookup key
- *  for every later operation; the rest is metadata the UI needs without
- *  having to read the file (duration for analytics, byteLength for upload
- *  size, mimeType for the player).
- *
- *  `mime_type` is `String` rather than `&'static str` so specta's TS
- *  generator sees a stable serializable shape (and so future producers,
- *  e.g. navigator-saved webm artifacts after the next collapse, can set
- *  it to a non-static value). The runtime cost is one short allocation
- *  per artifact write.
- *
- *  `duration_ms` and `byte_length` use `#[specta(type = Number<u64>)]`
- *  to opt out of specta's bigint guard: both stay well under
- *  `Number.MAX_SAFE_INTEGER` (2^53) for any plausible recording
- *  (duration in ms maxes at ~285,000 years; byte length is bounded by
- *  the filesystem).
- */
 export type RecordingArtifact = {
 	id: string;
 	durationMs: number;
@@ -194,31 +138,72 @@ export type RecordingArtifact = {
 	mimeType: string;
 };
 
-/**
- *  Engine-tagged request body. JS serializes one of these as the `config`
- *  JSON argument on the `transcribe_recording` command. Wire tags match
- *  the FE settings (`transcription.service`): `whispercpp` / `parakeet` /
- *  `moonshine`.
- *
- *  `pub` + `specta::Type` so the JS side gets the discriminated union as
- *  a typed argument via the `tauri-specta` generator. The existing serde
- *  tag + rename attributes carry through.
+/** Local transcription engine. Wire tags match the frontend
+ *  `transcription.service` enum.
  */
-export type TranscribeRequest =
+export type Engine = 'whispercpp' | 'parakeet' | 'moonshine';
+
+/** How long after the last transcription the resident model should be
+ *  dropped. Mirrors the frontend `transcription.localModelUnloadPolicy`
+ *  device setting.
+ */
+export type UnloadPolicy =
+	| 'never'
+	| 'immediately'
+	| 'after_5_minutes'
+	| 'after_30_minutes';
+
+/** Ambient configuration the frontend pushes once per change. */
+export type TranscriptionConfig = {
+	engine: Engine;
+	modelPath: string;
+	language?: string | null;
+	initialPrompt?: string | null;
+	unloadPolicy: UnloadPolicy;
+};
+
+/** Lifecycle state of the resident model. */
+export type ModelStatus =
+	| { kind: 'idle' }
+	| { kind: 'loading' }
+	| { kind: 'ready' }
+	| { kind: 'inferring' }
+	| { kind: 'error'; message: string };
+
+/** Snapshot of everything observable about the resident model. */
+export type LocalModelState = {
+	engine: Engine | null;
+	modelPath: string | null;
+	status: ModelStatus;
+};
+
+/** Reason the resident model was dropped. */
+export type UnloadReason =
+	| { kind: 'immediate' }
+	| { kind: 'idle'; idleSecs: number }
+	| { kind: 'config_changed' };
+
+/** Single event type for everything observable about the model lifecycle.
+ *  Broadcast on the `transcription://model-state` Tauri event channel.
+ */
+export type ModelStateEvent =
+	| { kind: 'loading_started'; state: LocalModelState }
 	| {
-			engine: 'whispercpp';
-			modelPath: string;
-			language?: string | null;
-			initialPrompt?: string | null;
+			kind: 'loading_completed';
+			state: LocalModelState;
+			elapsedMs: number;
 	  }
-	| { engine: 'parakeet'; modelPath: string }
-	| { engine: 'moonshine'; modelPath: string; variant: MoonshineVariantWire };
+	| { kind: 'loading_failed'; state: LocalModelState; error: string }
+	| { kind: 'unloaded'; state: LocalModelState; reason: UnloadReason }
+	| { kind: 'selection_changed'; state: LocalModelState };
 
 export type TranscriptionError =
 	| { name: 'AudioReadError'; message: string }
 	| { name: 'GpuError'; message: string }
 	| { name: 'ModelLoadError'; message: string }
-	| { name: 'TranscriptionError'; message: string };
+	| { name: 'TranscriptionError'; message: string }
+	| { name: 'NoConfig'; message: string }
+	| { name: 'ConfigError'; message: string };
 
 /* Tauri Specta runtime */
 async function typedError<T, E>(

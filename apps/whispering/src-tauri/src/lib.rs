@@ -15,7 +15,9 @@ use recorder::commands::{
 use recorder::recorder::Recorder;
 
 pub mod transcription;
-use transcription::{set_unload_policy, transcribe_recording, ModelManager};
+use transcription::{
+    get_transcription_state, set_transcription_config, transcribe_recording, ModelManager,
+};
 
 pub mod windows_path;
 use windows_path::fix_windows_path;
@@ -44,7 +46,8 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cancel_recording,
             delete_recording,
             transcribe_recording,
-            set_unload_policy,
+            set_transcription_config,
+            get_transcription_state,
             execute_command,
             delete_files_in_directory,
             write_markdown_files,
@@ -182,13 +185,15 @@ pub async fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .manage(Mutex::new(Recorder::new()))
-        .manage(ModelManager::new())
         .setup(|app| {
-            // Start the model idle watcher. It runs on the Tauri async
-            // runtime, sleeps between checks, and drops the resident
-            // model when the configured idle timeout elapses.
-            let manager = app.state::<ModelManager>().inner().clone();
+            // ModelManager owns an `AppHandle` for emitting lifecycle events
+            // on the `transcription://model-state` channel, so it cannot be
+            // constructed at builder-time (no app handle exists yet). Move
+            // construction into setup; everything that needs it reads via
+            // `app.state::<ModelManager>()`.
+            let manager = ModelManager::new(app.handle().clone());
             manager.start_idle_watcher();
+            app.manage(manager);
             Ok(())
         });
 

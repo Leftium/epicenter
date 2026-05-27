@@ -10,7 +10,7 @@
 	import MicIcon from '@lucide/svelte/icons/mic';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { notify } from '$lib/operations/notify';
+	import { report } from '$lib/report';
 	import { tauri } from '$lib/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
@@ -49,7 +49,7 @@
 
 	$effect(() => {
 		if (getDevicesQuery.isError) {
-			notify.warning(getDevicesQuery.error);
+			report.info({ cause: getDevicesQuery.error });
 		}
 	});
 </script>
@@ -132,7 +132,7 @@
 						</div>
 					{:else if getDevicesQuery.isError}
 						<div class="p-4 text-center text-sm text-destructive">
-							{getDevicesQuery.error.title}
+							{getDevicesQuery.error.message}
 						</div>
 					{:else}
 						{#each getDevicesQuery.data as device (device.id)}

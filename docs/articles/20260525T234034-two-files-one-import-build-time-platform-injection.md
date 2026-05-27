@@ -121,14 +121,14 @@ Stuffing those into the same per-service folder pattern made them lie. The "brow
 ```ts
 // $lib/tauri.tauri.ts
 const tauriImpl = {
-  fs: { pathToBlob, pathToFile, pathsToFiles },
-  command: { execute, spawn },
+  fs: { pathToBlob, pathsToFiles },
+  command: { execute },
   permissions: { accessibility, microphone },
-  ffmpeg: { checkInstalled, compressAudioBlob },
+  audioEncoder: { encodeWavToOpusOgg, encodePcmToOpusOgg },
+  window: { setAlwaysOnTop },
   tray: { setIcon },
-  globalShortcuts: { register, unregister, unregisterAll },
+  globalShortcuts: { registerCommand, unregisterCommand, unregisterAll },
   autostart: { isEnabled, enable, disable },
-  rpc: { /* TanStack-wrapped variants for the ones that need caching */ },
 };
 
 export type Tauri = typeof tauriImpl;

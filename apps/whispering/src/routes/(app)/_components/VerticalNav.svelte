@@ -4,12 +4,10 @@
 	import Database from '@lucide/svelte/icons/database';
 	import Minimize2Icon from '@lucide/svelte/icons/minimize-2';
 	import MoonIcon from '@lucide/svelte/icons/moon';
-	import LogsIcon from '@lucide/svelte/icons/scroll-text';
 	import SunIcon from '@lucide/svelte/icons/sun';
 	import { toggleMode } from 'mode-watcher';
 	import { page } from '$app/state';
 	import { GithubIcon } from '$lib/components/icons';
-	import { notificationLog } from '$lib/components/NotificationLog.svelte';
 	import { NAV_ITEMS } from '$lib/constants/ui';
 	import { tauri } from '$lib/tauri';
 	import MigrationDialog from '$lib/migration/MigrationDialog.svelte';
@@ -108,18 +106,6 @@
 							<GithubIcon />
 							<span>GitHub</span>
 						</a>
-					{/snippet}
-				</Sidebar.MenuButton>
-			</Sidebar.MenuItem>
-
-			<!-- Notification History -->
-			<Sidebar.MenuItem>
-				<Sidebar.MenuButton>
-					{#snippet child({ props })}
-						<button onclick={() => (notificationLog.isOpen = true)} {...props}>
-							<LogsIcon />
-							<span>Notifications</span>
-						</button>
 					{/snippet}
 				</Sidebar.MenuButton>
 			</Sidebar.MenuItem>

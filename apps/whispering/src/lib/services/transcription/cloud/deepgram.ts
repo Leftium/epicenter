@@ -5,8 +5,6 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import { WhisperingErr } from '$lib/result';
-import * as toasts from '$lib/rpc/transcription-errors/shared';
 import { HttpServiceLive } from '$lib/services/http';
 import type { HttpError } from '$lib/services/http/types';
 
@@ -171,45 +169,5 @@ export const DeepgramTranscriptionServiceLive = {
 		if (!transcript) return DeepgramError.NoTranscriptDetected();
 
 		return Ok(transcript.trim());
-	},
-
-	toWhisperingErr(error: DeepgramError) {
-		switch (error.name) {
-			case 'MissingApiKey':
-				return WhisperingErr(toasts.apiKeyRequired('Deepgram'));
-			case 'FileTooLarge':
-				return WhisperingErr(toasts.fileTooLarge(error));
-			case 'Connection':
-				return WhisperingErr(toasts.connectionIssue('Deepgram', error));
-			case 'BadRequest':
-				return WhisperingErr(toasts.badRequest('Deepgram', error));
-			case 'Unauthorized':
-				return WhisperingErr(toasts.unauthorized(error));
-			case 'Forbidden':
-				return WhisperingErr(toasts.permissionDenied(error));
-			case 'PayloadTooLarge':
-				return WhisperingErr(toasts.payloadTooLarge(error));
-			case 'UnsupportedMediaType':
-				return WhisperingErr(toasts.unsupportedMediaType(error));
-			case 'RateLimit':
-				return WhisperingErr(toasts.rateLimit(error));
-			case 'ServiceUnavailable':
-				return WhisperingErr(toasts.serviceUnavailable('Deepgram', error));
-			case 'Parse':
-				return WhisperingErr({
-					title: '🔍 Response Error',
-					description:
-						'Received an unexpected response from Deepgram service. Please try again.',
-					serviceError: error,
-				});
-			case 'NoTranscriptDetected':
-				return WhisperingErr({
-					title: '📝 No Transcription Found',
-					description:
-						'No speech was detected in the audio file. Please check your audio and try again.',
-				});
-			case 'Unexpected':
-				return WhisperingErr(toasts.unexpected(error));
-		}
 	},
 };

@@ -1,37 +1,27 @@
+import type { AnyTaggedError } from 'wellcrafted/error';
 import { Err, Ok, partitionResults, type Result } from 'wellcrafted/result';
 import { transcribeAudio } from '$lib/operations/transcribe';
-import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { defineMutation, queryClient } from '$lib/rpc/client';
 import { services } from '$lib/services';
+import type { BlobError } from '$lib/services/blob-store';
 import type { Recording } from '$lib/state/recordings.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
 
-const transcriptionKeys = {
-	isTranscribing: ['transcription', 'isTranscribing'] as const,
-} as const;
+const isTranscribingKey = ['transcription', 'isTranscribing'] as const;
 
 export const transcription = {
 	isCurrentlyTranscribing() {
-		return (
-			queryClient.isMutating({
-				mutationKey: transcriptionKeys.isTranscribing,
-			}) > 0
-		);
+		return queryClient.isMutating({ mutationKey: isTranscribingKey }) > 0;
 	},
 	transcribeRecording: defineMutation({
-		mutationKey: transcriptionKeys.isTranscribing,
+		mutationKey: isTranscribingKey,
 		mutationFn: async (
 			recording: Recording,
-		): Promise<Result<string, WhisperingError>> => {
+		): Promise<Result<string, BlobError | AnyTaggedError>> => {
 			const { data: audioBlob, error: getAudioBlobError } =
 				await services.blobs.audio.getBlob(recording.id);
 
-			if (getAudioBlobError) {
-				return WhisperingErr({
-					title: '⚠️ Failed to fetch audio',
-					description: `Unable to load audio for recording: ${getAudioBlobError.message}`,
-				});
-			}
+			if (getAudioBlobError) return Err(getAudioBlobError);
 
 			recordings.update(recording.id, { transcriptionStatus: 'TRANSCRIBING' });
 			const { data: transcribedText, error: transcribeError } =
@@ -50,19 +40,14 @@ export const transcription = {
 	}),
 
 	transcribeRecordings: defineMutation({
-		mutationKey: transcriptionKeys.isTranscribing,
+		mutationKey: isTranscribingKey,
 		mutationFn: async (recordings: Recording[]) => {
 			const results = await Promise.all(
 				recordings.map(async (recording) => {
 					const { data: audioBlob, error: getAudioBlobError } =
 						await services.blobs.audio.getBlob(recording.id);
 
-					if (getAudioBlobError) {
-						return WhisperingErr({
-							title: '⚠️ Failed to fetch audio',
-							description: `Unable to load audio for recording: ${getAudioBlobError.message}`,
-						});
-					}
+					if (getAudioBlobError) return Err(getAudioBlobError);
 
 					return await transcribeAudio(audioBlob);
 				}),

@@ -13,9 +13,8 @@
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
 	import { createQuery } from '@tanstack/svelte-query';
 	import type { UnlistenFn } from '@tauri-apps/api/event';
-	import { nanoid } from 'nanoid/non-secure';
 	import { onDestroy, onMount } from 'svelte';
-	import { extractErrorMessage } from 'wellcrafted/error';
+	import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 	import { tryAsync } from 'wellcrafted/result';
 	import { commandCallbacks } from '$lib/commands';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
@@ -31,14 +30,13 @@
 		VAD_STATE_TO_ICON,
 	} from '$lib/constants/audio';
 	import { getShortcutDisplayLabel } from '$lib/constants/keyboard';
-	import { notify } from '$lib/operations/notify';
 	import {
 		stopManualRecording,
 		stopVadRecording,
 	} from '$lib/operations/recording';
 	import { uploadRecordings } from '$lib/operations/upload';
+	import { report } from '$lib/report';
 	import { rpc } from '$lib/rpc';
-	import { WhisperingErr } from '$lib/result';
 	import { services } from '$lib/services';
 	import { tauri } from '$lib/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
@@ -50,6 +48,23 @@
 	import ManualRecordingButton from './_components/ManualRecordingButton.svelte';
 
 	const latestRecording = $derived(recordings.sorted[0]);
+	const PageError = defineErrors({
+		SetupDragDropFailed: ({ cause }: { cause: unknown }) => ({
+			message: `Failed to set up drag drop listener: ${extractErrorMessage(cause)}`,
+			cause,
+		}),
+		FileRejected: ({
+			fileName,
+			reason,
+		}: {
+			fileName: string;
+			reason: string;
+		}) => ({
+			message: `${fileName}: ${reason}`,
+			fileName,
+			reason,
+		}),
+	});
 
 	const audioPlaybackUrlQuery = createQuery(() => ({
 		...rpc.audio.getPlaybackUrl(() => latestRecording?.id ?? '').options,
@@ -127,8 +142,8 @@
 							.map(({ path }) => path);
 
 						if (validPaths.length === 0) {
-							notify.warning({
-								title: '⚠️ No valid files',
+							report.info({
+								title: 'No valid files',
 								description: 'Please drop audio or video files',
 							});
 							return;
@@ -143,10 +158,7 @@
 							await tauri.fs.pathsToFiles(validPaths);
 
 						if (error) {
-							notify.error({
-								title: '❌ Failed to read files',
-								description: error.message,
-							});
+							report.error({ cause: error, title: 'Failed to read files' });
 							return;
 						}
 
@@ -157,12 +169,11 @@
 				);
 			},
 			catch: (error) =>
-				WhisperingErr({
-					title: '❌ Failed to set up drag drop listener',
-					description: extractErrorMessage(error),
+				PageError.SetupDragDropFailed({
+					cause: error,
 				}),
 		});
-		if (error) notify.error(error);
+		if (error) report.error({ cause: error });
 	});
 
 	onDestroy(() => {
@@ -200,14 +211,12 @@
 	}
 
 	async function switchRecordingMode(newMode: RecordingMode) {
-		const toastId = nanoid();
 		await stopAllRecordingModesExcept(newMode);
 
 		if (settings.get('recording.mode') !== newMode) {
 			settings.set('recording.mode', newMode);
-			notify.success({
-				id: toastId,
-				title: '✅ Recording mode switched',
+			report.success({
+				title: 'Recording mode switched',
 				description: `Switched to ${newMode} recording mode`,
 			});
 		}
@@ -310,13 +319,16 @@
 				maxFileSize={25 * MEGABYTE}
 				onUpload={async (files) => {
 					if (files.length > 0) {
-					await uploadRecordings({ files });
+						await uploadRecordings({ files });
 					}
 				}}
 				onFileRejected={({ file, reason }) => {
-					notify.error({
-						title: '❌ File rejected',
-						description: `${file.name}: ${reason}`,
+					report.error({
+						cause: PageError.FileRejected({
+							fileName: file.name,
+							reason,
+						}).error,
+						title: 'File rejected',
 					});
 				}}
 				class="h-32 sm:h-36 lg:h-40 xl:h-44 w-full"
@@ -346,7 +358,7 @@
 						onConfirm: () => {
 							services.blobs.audio.revokeUrl(latestRecording.id);
 							recordings.delete(latestRecording.id);
-							notify.success({
+							report.success({
 								title: 'Deleted recording!',
 								description: 'Your recording has been deleted.',
 							});

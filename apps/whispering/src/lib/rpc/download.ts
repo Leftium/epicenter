@@ -1,7 +1,7 @@
-import type { Result } from 'wellcrafted/result';
-import { WhisperingErr, type WhisperingError } from '$lib/result';
+import { Err, type Result } from 'wellcrafted/result';
 import { defineMutation } from '$lib/rpc/client';
 import { services } from '$lib/services';
+import type { BlobError } from '$lib/services/blob-store';
 import type { DownloadError } from '$lib/services/download';
 import type { Recording } from '$lib/state/recordings.svelte';
 
@@ -10,17 +10,12 @@ export const download = {
 		mutationKey: ['download', 'downloadRecording'] as const,
 		mutationFn: async (
 			recording: Recording,
-		): Promise<Result<void, WhisperingError | DownloadError>> => {
+		): Promise<Result<void, BlobError | DownloadError>> => {
 			// Fetch audio blob by ID
 			const { data: audioBlob, error: getAudioBlobError } =
 				await services.blobs.audio.getBlob(recording.id);
 
-			if (getAudioBlobError) {
-				return WhisperingErr({
-					title: '⚠️ Failed to fetch audio',
-					description: `Unable to load audio for recording: ${getAudioBlobError.message}`,
-				});
-			}
+			if (getAudioBlobError) return Err(getAudioBlobError);
 
 			return await services.download.downloadBlob({
 				name: `whispering_recording_${recording.id}`,

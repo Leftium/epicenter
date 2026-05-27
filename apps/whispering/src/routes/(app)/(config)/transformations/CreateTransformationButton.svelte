@@ -5,7 +5,7 @@
 	import { Separator } from '@epicenter/ui/separator';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import { Editor } from '$lib/components/transformations-editor';
-	import { notify } from '$lib/operations/notify';
+	import { report } from '$lib/report';
 	import {
 		generateDefaultTransformation,
 		saveTransformationWithSteps,
@@ -36,7 +36,7 @@
 		isModalOpen = false;
 		transformation = generateDefaultTransformation();
 		steps = [];
-		notify.success({
+		report.success({
 			title: 'Created transformation!',
 			description: 'Your transformation has been created successfully.',
 		});

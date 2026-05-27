@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Command } from '$lib/commands';
 	import type { KeyboardEventSupportedKey } from '$lib/constants/keyboard';
-	import { notify } from '$lib/operations/notify';
+	import { report } from '$lib/report';
 	import type { Tauri } from '$lib/tauri';
 	import {
 		type Accelerator,
@@ -42,11 +42,11 @@
 					});
 
 				if (unregisterError) {
-					notify.error({
+					report.error({
 						title: 'Failed to unregister shortcut',
 						description:
 							'Could not unregister the global shortcut. It may already be in use by another application.',
-						action: { type: 'more-details', error: unregisterError },
+						cause: unregisterError,
 					});
 				}
 			}
@@ -55,10 +55,10 @@
 				pressedKeysToAccelerator(keyCombination);
 
 			if (acceleratorError) {
-				notify.error({
+				report.error({
 					title: 'Invalid shortcut combination',
 					description: `The key combination "${keyCombination.join('+')}" is not valid. Please try a different combination.`,
-					action: { type: 'more-details', error: acceleratorError },
+					cause: acceleratorError,
 				});
 				return;
 			}
@@ -75,18 +75,18 @@
 					case 'NoKeyCode':
 					case 'MultipleKeyCodes':
 					case 'GeneratedInvalid':
-						notify.error({
+						report.error({
 							title: 'Invalid shortcut combination',
 							description: `The key combination "${keyCombination.join('+')}" is not valid. Please try a different combination.`,
-							action: { type: 'more-details', error: registerError },
+							cause: registerError,
 						});
 						break;
 					default:
-						notify.error({
+						report.error({
 							title: 'Failed to register shortcut',
 							description:
 								'Could not register the global shortcut. It may already be in use by another application.',
-							action: { type: 'more-details', error: registerError },
+							cause: registerError,
 						});
 						break;
 				}
@@ -95,7 +95,7 @@
 
 			deviceConfig.set(`shortcuts.global.${command.id}`, accelerator);
 
-			notify.success({
+			report.success({
 				title: `Global shortcut set to ${accelerator}`,
 				description: `Press the shortcut to trigger "${command.title}"`,
 			});
@@ -107,16 +107,16 @@
 				});
 
 			if (unregisterError) {
-				notify.error({
+				report.error({
 					title: 'Error clearing global shortcut',
 					description: 'Could not clear the global shortcut.',
-					action: { type: 'more-details', error: unregisterError },
+					cause: unregisterError,
 				});
 			}
 
 			deviceConfig.set(`shortcuts.global.${command.id}`, null);
 
-			notify.success({
+			report.success({
 				title: 'Global shortcut cleared',
 				description: `Please set a new shortcut to trigger "${command.title}"`,
 			});

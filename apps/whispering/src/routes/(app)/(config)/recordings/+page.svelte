@@ -45,12 +45,11 @@
 	} from '@tanstack/table-core';
 	import { type } from 'arktype';
 	import { format } from 'date-fns';
-	import { nanoid } from 'nanoid/non-secure';
 	import { createRawSnippet } from 'svelte';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import OpenFolderButton from '$lib/components/OpenFolderButton.svelte';
 	import { PATHS } from '$lib/constants/paths';
-	import { notify } from '$lib/operations/notify';
+	import { report } from '$lib/report';
 	import { rpc } from '$lib/rpc';
 	import { tauri } from '$lib/tauri';
 	import { services } from '$lib/services';
@@ -173,7 +172,7 @@
 							onConfirm: () => {
 								services.blobs.audio.revokeUrl(row.original.id);
 								recordings.delete(row.original.id);
-								notify.success({
+								report.success({
 									title: 'Deleted recording!',
 									description: 'Your recording has been deleted.',
 								});
@@ -384,9 +383,7 @@
 						size="icon"
 						disabled={transcribeRecordings.isPending}
 						onclick={() => {
-							const toastId = nanoid();
-							notify.loading({
-								id: toastId,
+							const loading = report.loading({
 								title: 'Transcribing queries.recordings...',
 								description: 'This may take a while.',
 							});
@@ -397,8 +394,7 @@
 										const isAllSuccessful = errs.length === 0;
 										if (isAllSuccessful) {
 											const count = oks.length;
-											notify.success({
-												id: toastId,
+											loading.resolve({
 												title: `Transcribed ${count} recording${count === 1 ? '' : 's'}!`,
 												description: `Your ${count} recording${count === 1 ? ' has' : 's have'} been transcribed successfully.`,
 											});
@@ -407,23 +403,30 @@
 										const isAllFailed = oks.length === 0;
 										if (isAllFailed) {
 											const count = errs.length;
-											notify.error({
-												id: toastId,
+											loading.reject({
 												title: `Failed to transcribe ${count} recording${count === 1 ? '' : 's'}`,
 												description:
 													count === 1
 														? 'Your recording could not be transcribed.'
 														: 'None of your recordings could be transcribed.',
-												action: { type: 'more-details', error: errs },
+												cause: {
+													name: 'BulkTranscriptionFailed',
+													message:
+														count === 1
+															? 'Your recording could not be transcribed.'
+															: 'None of your recordings could be transcribed.',
+												},
 											});
 											return;
 										}
 										// Mixed results
-										notify.warning({
-											id: toastId,
+										loading.reject({
 											title: `Transcribed ${oks.length} of ${oks.length + errs.length} recordings`,
 											description: `${oks.length} succeeded, ${errs.length} failed.`,
-											action: { type: 'more-details', error: errs },
+											cause: {
+												name: 'BulkTranscriptionPartiallyFailed',
+												message: `${oks.length} succeeded, ${errs.length} failed.`,
+											},
 										});
 									},
 								},

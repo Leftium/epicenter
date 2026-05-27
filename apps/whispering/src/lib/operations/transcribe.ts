@@ -1,3 +1,4 @@
+import { type AnyTaggedError, defineErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
 	SUPPORTED_LANGUAGES,
@@ -5,8 +6,7 @@ import {
 } from '$lib/constants/languages';
 import type { TranscriptionServiceId } from '$lib/constants/transcription';
 import { analytics } from '$lib/operations/analytics';
-import { notify } from '$lib/operations/notify';
-import { WhisperingErr, type WhisperingError } from '$lib/result';
+import { report } from '$lib/report';
 import { services } from '$lib/services';
 import { pcmToWavBlob } from '$lib/services/recorder/pcm-to-wav';
 import type { RecorderAudio } from '$lib/services/recorder/types';
@@ -14,6 +14,14 @@ import { TRANSCRIPTION_SERVICES } from '$lib/services/transcription/registry';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { tauri } from '$lib/tauri';
+
+export type TranscriptionError = AnyTaggedError;
+
+const TranscriptionOperationError = defineErrors({
+	NoTranscriptionServiceSelected: () => ({
+		message: 'Please select a transcription service in settings.',
+	}),
+});
 
 /**
  * Services that upload audio bytes to a remote endpoint (cloud APIs +
@@ -64,7 +72,7 @@ function getOutputLanguage(): SupportedLanguage {
 async function prepareForService(
 	audio: RecorderAudio,
 	service: TranscriptionServiceId,
-): Promise<Result<Blob, WhisperingError>> {
+): Promise<Blob> {
 	const isUpload = isUploadTranscriptionService(service);
 
 	// Fast path: PCM + cloud upload. One opus encode, no WAV synthesis.
@@ -72,9 +80,10 @@ async function prepareForService(
 		const { data: oggBlob, error } =
 			await tauri.audioEncoder.encodePcmToOpusOgg(audio);
 		if (error) {
-			notify.warning({
+			report.info({
 				title: 'Audio compression skipped',
 				description: `${error.message}. Uploading uncompressed audio instead.`,
+				cause: error,
 			});
 			analytics.logEvent({
 				type: 'compression_failed',
@@ -92,7 +101,7 @@ async function prepareForService(
 					(1 - oggBlob.size / audio.byteLength) * 100,
 				),
 			});
-			return Ok(oggBlob);
+			return oggBlob;
 		}
 	}
 
@@ -104,16 +113,17 @@ async function prepareForService(
 		const { data: oggBlob, error: encodeError } =
 			await tauri.audioEncoder.encodeWavToOpusOgg(blob);
 		if (encodeError) {
-			notify.warning({
+			report.info({
 				title: 'Audio compression skipped',
 				description: `${encodeError.message}. Uploading original audio instead.`,
+				cause: encodeError,
 			});
 			analytics.logEvent({
 				type: 'compression_failed',
 				provider: service,
 				error_message: encodeError.message,
 			});
-			return Ok(blob);
+			return blob;
 		}
 		analytics.logEvent({
 			type: 'compression_completed',
@@ -122,10 +132,10 @@ async function prepareForService(
 			compressed_size: oggBlob.size,
 			compression_ratio: Math.round((1 - oggBlob.size / blob.size) * 100),
 		});
-		return Ok(oggBlob);
+		return oggBlob;
 	}
 
-	return Ok(blob);
+	return blob;
 }
 
 /**
@@ -138,7 +148,7 @@ async function prepareForService(
  */
 export async function transcribeAudio(
 	audio: RecorderAudio,
-): Promise<Result<string, WhisperingError>> {
+): Promise<Result<string, TranscriptionError>> {
 	const selectedService = settings.get('transcription.service');
 
 	const startTime = Date.now();
@@ -147,10 +157,7 @@ export async function transcribeAudio(
 		provider: selectedService,
 	});
 
-	const { data: audioToTranscribe, error: prepareError } =
-		await prepareForService(audio, selectedService);
-	if (prepareError) return Err(prepareError);
-
+	const audioToTranscribe = await prepareForService(audio, selectedService);
 	const transcriptionResult = await dispatchTranscription(
 		audioToTranscribe,
 		selectedService,
@@ -161,8 +168,8 @@ export async function transcribeAudio(
 		analytics.logEvent({
 			type: 'transcription_failed',
 			provider: selectedService,
-			error_title: transcriptionResult.error.title,
-			error_description: transcriptionResult.error.description,
+			error_name: transcriptionResult.error.name,
+			error_message: transcriptionResult.error.message,
 		});
 	} else {
 		analytics.logEvent({
@@ -178,7 +185,7 @@ export async function transcribeAudio(
 async function dispatchTranscription(
 	audio: Blob,
 	selectedService: TranscriptionServiceId,
-): Promise<Result<string, WhisperingError>> {
+): Promise<Result<string, TranscriptionError>> {
 	const outputLanguage = getOutputLanguage();
 	const prompt = settings.get('transcription.prompt');
 	const temperature = String(settings.get('transcription.temperature'));
@@ -196,7 +203,7 @@ async function dispatchTranscription(
 					baseURL: deviceConfig.get('apiEndpoints.openai') || undefined,
 				},
 			);
-			if (error) return services.transcriptions.openai.toWhisperingErr(error);
+			if (error) return Err(error);
 			return Ok(data);
 		}
 		case 'Groq': {
@@ -211,17 +218,21 @@ async function dispatchTranscription(
 					baseURL: deviceConfig.get('apiEndpoints.groq') || undefined,
 				},
 			);
-			if (error) return services.transcriptions.groq.toWhisperingErr(error);
+			if (error) return Err(error);
 			return Ok(data);
 		}
-		case 'speaches':
-			return await services.transcriptions.speaches.transcribe(audio, {
-				outputLanguage,
-				prompt,
-				temperature,
-				modelId: deviceConfig.get('transcription.speaches.modelId'),
-				baseUrl: deviceConfig.get('transcription.speaches.baseUrl'),
-			});
+		case 'speaches': {
+			const { data: speachesData, error: speachesError } =
+				await services.transcriptions.speaches.transcribe(audio, {
+					outputLanguage,
+					prompt,
+					temperature,
+					modelId: deviceConfig.get('transcription.speaches.modelId'),
+					baseUrl: deviceConfig.get('transcription.speaches.baseUrl'),
+				});
+			if (speachesError) return Err(speachesError);
+			return Ok(speachesData);
+		}
 		case 'ElevenLabs': {
 			const { data, error } =
 				await services.transcriptions.elevenlabs.transcribe(audio, {
@@ -231,8 +242,7 @@ async function dispatchTranscription(
 					apiKey: deviceConfig.get('apiKeys.elevenlabs'),
 					modelName: settings.get('transcription.elevenlabs.model'),
 				});
-			if (error)
-				return services.transcriptions.elevenlabs.toWhisperingErr(error);
+			if (error) return Err(error);
 			return Ok(data);
 		}
 		case 'Deepgram': {
@@ -246,7 +256,7 @@ async function dispatchTranscription(
 					modelName: settings.get('transcription.deepgram.model'),
 				},
 			);
-			if (error) return services.transcriptions.deepgram.toWhisperingErr(error);
+			if (error) return Err(error);
 			return Ok(data);
 		}
 		case 'Mistral': {
@@ -260,30 +270,44 @@ async function dispatchTranscription(
 					modelName: settings.get('transcription.mistral.model'),
 				},
 			);
-			if (error) return services.transcriptions.mistral.toWhisperingErr(error);
+			if (error) return Err(error);
 			return Ok(data);
 		}
 		case 'whispercpp': {
-			return await services.transcriptions.whispercpp.transcribe(audio, {
-				outputLanguage,
-				modelPath: deviceConfig.get('transcription.whispercpp.modelPath'),
-				prompt,
-			});
+			const { data, error } =
+				await services.transcriptions.whispercpp.transcribe(audio, {
+					outputLanguage,
+					modelPath: deviceConfig.get('transcription.whispercpp.modelPath'),
+					prompt,
+				});
+			if (error) {
+				return Err(error);
+			}
+			return Ok(data);
 		}
 		case 'parakeet': {
-			return await services.transcriptions.parakeet.transcribe(audio, {
-				modelPath: deviceConfig.get('transcription.parakeet.modelPath'),
-			});
+			const { data, error } = await services.transcriptions.parakeet.transcribe(
+				audio,
+				{
+					modelPath: deviceConfig.get('transcription.parakeet.modelPath'),
+				},
+			);
+			if (error) {
+				return Err(error);
+			}
+			return Ok(data);
 		}
 		case 'moonshine': {
-			return await services.transcriptions.moonshine.transcribe(audio, {
-				modelPath: deviceConfig.get('transcription.moonshine.modelPath'),
-			});
+			const { data, error } =
+				await services.transcriptions.moonshine.transcribe(audio, {
+					modelPath: deviceConfig.get('transcription.moonshine.modelPath'),
+				});
+			if (error) {
+				return Err(error);
+			}
+			return Ok(data);
 		}
 		default:
-			return WhisperingErr({
-				title: '⚠️ No transcription service selected',
-				description: 'Please select a transcription service in settings.',
-			});
+			return TranscriptionOperationError.NoTranscriptionServiceSelected();
 	}
 }

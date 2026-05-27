@@ -13,7 +13,6 @@ import { transformationStepRuns } from '$lib/state/transformation-step-runs.svel
 import { transformationSteps } from '$lib/state/transformation-steps.svelte';
 import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
 import type {
-	TerminalTransformationRunResult,
 	Transformation,
 	TransformationRun,
 	TransformationStep,
@@ -70,11 +69,7 @@ const STANDARD_PROVIDER_CONFIG = {
 export const TransformError = defineErrors({
 	InvalidInput: ({ message }: { message: string }) => ({ message }),
 	NoSteps: ({ message }: { message: string }) => ({ message }),
-	CreateRunFailed: ({ message }: { message: string }) => ({ message }),
-	AddStepFailed: ({ message }: { message: string }) => ({ message }),
-	FailStepFailed: ({ message }: { message: string }) => ({ message }),
-	CompleteStepFailed: ({ message }: { message: string }) => ({ message }),
-	CompleteRunFailed: ({ message }: { message: string }) => ({ message }),
+	StepFailed: ({ message }: { message: string }) => ({ message }),
 });
 export type TransformError = InferErrors<typeof TransformError>;
 
@@ -152,7 +147,9 @@ async function handleStep({
 
 /**
  * Run a transformation pipeline. Persists run + step-run records to workspace
- * state as it progresses. Pure orchestration; no toasts, no notifications.
+ * state as it progresses (including the failed state when a step throws);
+ * the returned Result is purely for caller control flow. Pure orchestration;
+ * no toasts, no notifications.
  */
 export async function runTransformation({
 	input,
@@ -162,7 +159,7 @@ export async function runTransformation({
 	input: string;
 	transformation: Transformation;
 	recordingId: string | null;
-}): Promise<Result<TerminalTransformationRunResult, TransformError>> {
+}): Promise<Result<string, TransformError>> {
 	if (!input.trim()) {
 		return TransformError.InvalidInput({
 			message: 'Empty input. Please enter some text to transform',
@@ -222,16 +219,15 @@ export async function runTransformation({
 					error: handleStepResult.error,
 				},
 			});
-			const failedRun = {
+			transformationRuns.set({
 				...transformationRun,
 				result: {
 					status: 'failed',
 					completedAt: failedNow,
 					error: handleStepResult.error,
 				},
-			} satisfies TransformationRun;
-			transformationRuns.set(failedRun);
-			return Ok(failedRun.result);
+			} satisfies TransformationRun);
+			return TransformError.StepFailed({ message: handleStepResult.error });
 		}
 
 		const handleStepOutput = handleStepResult.data;
@@ -248,14 +244,13 @@ export async function runTransformation({
 		currentInput = handleStepOutput;
 	}
 
-	const completedRun = {
+	transformationRuns.set({
 		...transformationRun,
 		result: {
 			status: 'completed',
 			completedAt: new Date().toISOString(),
 			output: currentInput,
 		},
-	} satisfies TransformationRun;
-	transformationRuns.set(completedRun);
-	return Ok(completedRun.result);
+	} satisfies TransformationRun);
+	return Ok(currentInput);
 }

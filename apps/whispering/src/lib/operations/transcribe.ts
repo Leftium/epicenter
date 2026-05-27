@@ -1,8 +1,4 @@
-import {
-	type AnyTaggedError,
-	defineErrors,
-	type InferErrors,
-} from 'wellcrafted/error';
+import { type AnyTaggedError, defineErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
 	SUPPORTED_LANGUAGES,
@@ -22,17 +18,10 @@ import { tauri } from '$lib/tauri';
 export type TranscriptionError = AnyTaggedError;
 
 const TranscriptionOperationError = defineErrors({
-	RecordingReadFailed: ({ cause }: { cause: AnyTaggedError }) => ({
-		message: cause.message,
-		cause,
-	}),
 	NoTranscriptionServiceSelected: () => ({
 		message: 'Please select a transcription service in settings.',
 	}),
 });
-type TranscriptionOperationError = InferErrors<
-	typeof TranscriptionOperationError
->;
 
 /**
  * Services that upload audio bytes to a remote endpoint (cloud APIs +
@@ -83,7 +72,7 @@ function getOutputLanguage(): SupportedLanguage {
 async function prepareForService(
 	audio: RecorderAudio,
 	service: TranscriptionServiceId,
-): Promise<Result<Blob, TranscriptionOperationError>> {
+): Promise<Blob> {
 	const isUpload = isUploadTranscriptionService(service);
 
 	// Fast path: PCM + cloud upload. One opus encode, no WAV synthesis.
@@ -112,7 +101,7 @@ async function prepareForService(
 					(1 - oggBlob.size / audio.byteLength) * 100,
 				),
 			});
-			return Ok(oggBlob);
+			return oggBlob;
 		}
 	}
 
@@ -134,7 +123,7 @@ async function prepareForService(
 				provider: service,
 				error_message: encodeError.message,
 			});
-			return Ok(blob);
+			return blob;
 		}
 		analytics.logEvent({
 			type: 'compression_completed',
@@ -143,10 +132,10 @@ async function prepareForService(
 			compressed_size: oggBlob.size,
 			compression_ratio: Math.round((1 - oggBlob.size / blob.size) * 100),
 		});
-		return Ok(oggBlob);
+		return oggBlob;
 	}
 
-	return Ok(blob);
+	return blob;
 }
 
 /**
@@ -168,10 +157,7 @@ export async function transcribeAudio(
 		provider: selectedService,
 	});
 
-	const { data: audioToTranscribe, error: prepareError } =
-		await prepareForService(audio, selectedService);
-	if (prepareError) return Err(prepareError);
-
+	const audioToTranscribe = await prepareForService(audio, selectedService);
 	const transcriptionResult = await dispatchTranscription(
 		audioToTranscribe,
 		selectedService,

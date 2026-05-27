@@ -15,10 +15,9 @@ import { analytics } from '$lib/operations/analytics';
 import { report } from '$lib/report';
 import { services } from '$lib/services';
 import {
-	LocalTranscriptionError,
+	LocalPreflightError,
 	requireExistingModelPath,
-	transcribeRecording,
-} from '$lib/services/transcription/local-transcription';
+} from '$lib/services/transcription/local-preflight';
 import { TRANSCRIPTION_SERVICES } from '$lib/services/transcription/registry';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
@@ -161,7 +160,7 @@ async function dispatchLocalTranscription(
 					fileStats &&
 					!isModelFileSizeValid(fileStats.size, modelConfig.sizeBytes)
 				) {
-					return LocalTranscriptionError.CorruptedModelFile({
+					return LocalPreflightError.CorruptedModelFile({
 						actualSizeMb: Math.round(fileStats.size / 1000000),
 						expectedSizeMb: Math.round(modelConfig.sizeBytes / 1000000),
 					});
@@ -170,7 +169,7 @@ async function dispatchLocalTranscription(
 
 			const outputLanguage = getOutputLanguage();
 			const prompt = settings.get('transcription.prompt');
-			return transcribeRecording(recordingId, {
+			return commands.transcribeRecording(recordingId, {
 				engine: 'whispercpp',
 				modelPath,
 				language: outputLanguage === 'auto' ? null : outputLanguage,
@@ -186,7 +185,7 @@ async function dispatchLocalTranscription(
 			);
 			if (validation.error) return validation;
 
-			return transcribeRecording(recordingId, {
+			return commands.transcribeRecording(recordingId, {
 				engine: 'parakeet',
 				modelPath,
 			});
@@ -205,11 +204,11 @@ async function dispatchLocalTranscription(
 			// MOONSHINE_DIR_PATTERN) and forwarded to Rust on the wire.
 			const match = MOONSHINE_DIR_PATTERN.exec(modelPath);
 			if (!match) {
-				return LocalTranscriptionError.InvalidMoonshineDirectoryName();
+				return LocalPreflightError.InvalidMoonshineDirectoryName();
 			}
 			const [, variant] = match;
 
-			return transcribeRecording(recordingId, {
+			return commands.transcribeRecording(recordingId, {
 				engine: 'moonshine',
 				modelPath,
 				variant,

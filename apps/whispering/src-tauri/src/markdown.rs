@@ -18,7 +18,6 @@ pub struct MarkdownFile {
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum DeleteFilesSelection {
     Filenames { filenames: Vec<String> },
-    Extension { extension: String },
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -36,10 +35,6 @@ fn validate_leaf_filename(filename: &str) -> Result<&str, String> {
         _ => return Err(format!("Invalid filename: {}", filename)),
     }
     Ok(filename)
-}
-
-fn validate_extension(extension: &str) -> Result<&str, String> {
-    validate_leaf_filename(extension)
 }
 
 fn delete_paths(paths: Vec<PathBuf>) -> u32 {
@@ -115,12 +110,12 @@ pub async fn write_markdown_files(
 }
 
 /// Deletes files inside a directory by filename.
-/// Validates filenames and extensions are single path components (no traversal).
+/// Validates filenames are single path components (no traversal).
 /// Uses Rayon for parallel deletion. Silently skips missing files.
 ///
 /// # Arguments
 /// * `directory` - Absolute path to the directory containing the files
-/// * `selection` - Either named leaf filenames or one file extension
+/// * `selection` - Named leaf filenames to delete
 #[tauri::command]
 #[specta::specta]
 pub async fn delete_files_in_directory(
@@ -146,28 +141,6 @@ pub async fn delete_files_in_directory(
                         .map(|filename| dir_path.join(filename))
                         .collect(),
                 ))
-            }
-            DeleteFilesSelection::Extension { extension } => {
-                let extension = validate_extension(&extension)?;
-                if !dir_path.exists() {
-                    return Ok(0);
-                }
-                if !dir_path.is_dir() {
-                    return Err(format!("Directory is not a folder: {}", directory));
-                }
-
-                let paths = fs::read_dir(&dir_path)
-                    .map_err(|e| format!("Failed to read directory {}: {}", directory, e))?
-                    .filter_map(|entry| entry.ok())
-                    .map(|entry| entry.path())
-                    .filter(|path| path.is_file())
-                    .filter(|path| {
-                        path.extension()
-                            .is_some_and(|path_extension| path_extension == extension)
-                    })
-                    .collect();
-
-                Ok(delete_paths(paths))
             }
         }
     })

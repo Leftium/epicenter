@@ -729,7 +729,6 @@ Adding a new transcription service involves four main steps:
    		audioBlob: Blob,
    		options: {
    			prompt: string;
-   			temperature: string;
    			outputLanguage: string;
    			apiKey: string;
    			modelName: (string & {}) | YourServiceModel['name'];
@@ -827,7 +826,6 @@ Adding a new transcription service involves four main steps:
      return services.transcriptions.yourservice.transcribe(blob, {
        outputLanguage: settings.value['transcription.outputLanguage'],
        prompt: settings.value['transcription.prompt'],
-       temperature: settings.value['transcription.temperature'],
        apiKey: settings.value['apiKeys.yourservice'],
        modelName: settings.value['transcription.yourservice.model'],
      });

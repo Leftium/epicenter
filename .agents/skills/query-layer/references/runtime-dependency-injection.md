@@ -23,7 +23,6 @@ async function transcribeBlob(blob: Blob): Promise<Result<string, UserError>> {
 				modelName: settings.value['transcription.openai.model'],
 				outputLanguage: settings.value['transcription.outputLanguage'],
 				prompt: settings.value['transcription.prompt'],
-				temperature: settings.value['transcription.temperature'],
 			});
 		case 'Groq':
 			return await services.transcriptions.groq.transcribe(blob, {
@@ -31,7 +30,6 @@ async function transcribeBlob(blob: Blob): Promise<Result<string, UserError>> {
 				modelName: settings.value['transcription.groq.model'],
 				outputLanguage: settings.value['transcription.outputLanguage'],
 				prompt: settings.value['transcription.prompt'],
-				temperature: settings.value['transcription.temperature'],
 			});
 		// ... more cases
 		default:

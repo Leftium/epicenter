@@ -23,6 +23,7 @@ import {
 	defineActions,
 	defineMutation,
 	defineTable,
+	defineWorkspaceBundle,
 	docGuid,
 	generateId,
 	type InferTableRow,
@@ -178,7 +179,7 @@ export function createHoneycrispWorkspace(opts: { keyring: () => Keyring }) {
 		};
 	});
 
-	return {
+	return defineWorkspaceBundle({
 		...workspace,
 		actions,
 		noteBodyDocs,
@@ -186,7 +187,7 @@ export function createHoneycrispWorkspace(opts: { keyring: () => Keyring }) {
 			noteBodyDocs[Symbol.dispose]();
 			workspace[Symbol.dispose]();
 		},
-	};
+	});
 }
 export type HoneycrispWorkspace = ReturnType<typeof createHoneycrispWorkspace>;
 

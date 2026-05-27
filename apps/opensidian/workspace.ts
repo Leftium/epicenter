@@ -24,7 +24,9 @@ import {
 	column,
 	createDisposableCache,
 	createWorkspace,
+	defineActions,
 	defineTable,
+	defineWorkspaceBundle,
 	generateId,
 	type Id,
 	type InferTableRow,
@@ -62,7 +64,7 @@ export const asConversationId = (value: string): ConversationId =>
  * truth obvious wherever a conversation is created.
  */
 export const generateConversationId = (): ConversationId =>
-	generateId() as ConversationId;
+	generateId<ConversationId>();
 
 /**
  * Branded chat message ID for one persisted assistant, user, or system message.
@@ -87,7 +89,7 @@ export const asChatMessageId = (value: string): ChatMessageId =>
  * cast in one place.
  */
 export const generateChatMessageId = (): ChatMessageId =>
-	generateId() as ChatMessageId;
+	generateId<ChatMessageId>();
 
 /**
  * Conversations: metadata for each chat thread.
@@ -136,6 +138,13 @@ const toolTrustTable = defineTable({
 });
 export type ToolTrust = InferTableRow<typeof toolTrustTable>;
 
+const opensidianTables = {
+	files: filesTable,
+	conversations: conversationsTable,
+	chatMessages: chatMessagesTable,
+	toolTrust: toolTrustTable,
+};
+
 /**
  * Build an Opensidian workspace bundle:
  * `{ ydoc, tables, kv, actions, fileContentDocs }`.
@@ -150,14 +159,10 @@ export function createOpensidianWorkspace(opts: { keyring: () => Keyring }) {
 	const workspace = createWorkspace({
 		id: OPENSIDIAN_ID,
 		keyring: opts.keyring,
-		tables: {
-			files: filesTable,
-			conversations: conversationsTable,
-			chatMessages: chatMessagesTable,
-			toolTrust: toolTrustTable,
-		},
+		tables: opensidianTables,
 		kv: {},
 	});
+	const actions = defineActions({});
 	const fileContentDocs = createDisposableCache((fileId: FileId) => {
 		const childYdoc = new Y.Doc({
 			guid: opensidianFileContentDocGuid(fileId),
@@ -177,15 +182,15 @@ export function createOpensidianWorkspace(opts: { keyring: () => Keyring }) {
 		};
 	});
 
-	return {
+	return defineWorkspaceBundle({
 		...workspace,
-		actions: {},
+		actions,
 		fileContentDocs,
 		[Symbol.dispose]() {
 			fileContentDocs[Symbol.dispose]();
 			workspace[Symbol.dispose]();
 		},
-	};
+	});
 }
 export type OpensidianWorkspace = ReturnType<typeof createOpensidianWorkspace>;
 

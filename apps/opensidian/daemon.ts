@@ -15,6 +15,7 @@
  * just-bash) and are added only by the browser runtime.
  */
 
+import { defineWorkspaceBundle } from '@epicenter/workspace';
 import type { DaemonWorkspaceContext } from '@epicenter/workspace/daemon';
 import { attachDaemonInfrastructure } from '@epicenter/workspace/node';
 import { createOpensidianWorkspace } from './workspace.js';
@@ -31,13 +32,18 @@ export function openOpensidianDaemon({
 	const workspace = createOpensidianWorkspace({ keyring });
 	workspace.ydoc.clientID = yDocClientId;
 
-	return attachDaemonInfrastructure(workspace.ydoc, {
+	const infrastructure = attachDaemonInfrastructure(workspace.ydoc, {
 		projectDir,
 		ownerId,
 		deviceId,
 		openWebSocket,
 		onReconnectSignal,
 		actions: workspace.actions,
+	});
+
+	return defineWorkspaceBundle({
+		...workspace,
+		...infrastructure,
 	});
 }
 

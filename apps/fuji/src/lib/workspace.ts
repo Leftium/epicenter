@@ -30,6 +30,7 @@ import {
 	defineMutation,
 	defineQuery,
 	defineTable,
+	defineWorkspaceBundle,
 	docGuid,
 	generateId,
 	type IanaTimeZone,
@@ -67,7 +68,7 @@ const entriesTable = defineTable(
 		createdAt: column.dateTime(),
 		updatedAt: column.dateTime(),
 	},
-	// v2 — added rating
+	// v2: added rating
 	{
 		id: column.string<EntryId>(),
 		title: column.string(),
@@ -81,7 +82,7 @@ const entriesTable = defineTable(
 		updatedAt: column.dateTime(),
 		rating: column.number(),
 	},
-	// v3 — split user-meaningful `date` into UTC `date` + IANA `dateZone`.
+	// v3: split user-meaningful `date` into UTC `date` + IANA `dateZone`.
 	// `date` is the canonical UTC instant; `dateZone` carries the originating
 	// IANA zone so display code can render the user's local wall-clock time.
 	// Per the workspace `<field>` + `<field>Zone` convention.
@@ -152,7 +153,7 @@ export function createFujiWorkspace(opts: { keyring: () => Keyring }) {
 		};
 	});
 
-	return {
+	return defineWorkspaceBundle({
 		...workspace,
 		actions,
 		entryContentDocs,
@@ -160,7 +161,7 @@ export function createFujiWorkspace(opts: { keyring: () => Keyring }) {
 			entryContentDocs[Symbol.dispose]();
 			workspace[Symbol.dispose]();
 		},
-	};
+	});
 }
 export type FujiWorkspace = ReturnType<typeof createFujiWorkspace>;
 

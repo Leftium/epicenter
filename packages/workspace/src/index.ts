@@ -103,7 +103,7 @@
 // ACTION SYSTEM
 // ════════════════════════════════════════════════════════════════════════════
 
-export type { ActionManifest } from './shared/actions';
+export type { ActionManifest, ActionRegistry } from './shared/actions';
 export {
 	defineActions,
 	defineMutation,
@@ -220,5 +220,6 @@ export { wipeLocalStorage } from './document/wipe-local-storage.js';
 export {
 	type CreateWorkspaceOptions,
 	createWorkspace,
+	defineWorkspaceBundle,
 	type Workspace,
 } from './document/workspace.js';

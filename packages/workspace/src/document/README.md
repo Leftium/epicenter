@@ -12,10 +12,10 @@ The pattern: `createWorkspace({ id, tables, kv, keyring? })` constructs the work
 +----------------------------------------------------------------+
 | Your App                                                       |
 +----------------------------------------------------------------+
-| function openBlog(): { ydoc, tables, kv, ...; dispose }        |
+| function openBlog(): { ydoc, tables, kv, actions, ...; dispose } |
 +----------------------------------------------------------------+
 | createWorkspace({ id, tables, kv, keyring? })                  |
-|   -> { ydoc, tables, kv, [Symbol.dispose] }                    |
+|   -> { ydoc, tables, kv, actions, [Symbol.dispose] }           |
 | attachIndexedDb / attachYjsLog / attachBroadcastChannel        |
 | attachLocalStorage(ydoc, { server, ownerId, keyring })  // encrypted IDB + scoped BC |
 | wipeLocalStorage({ server, ownerId })           // delete local data for owner |

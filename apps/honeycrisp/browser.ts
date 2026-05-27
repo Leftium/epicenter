@@ -21,6 +21,7 @@ import {
 	attachLocalStorage,
 	createDisposableCache,
 	type DeviceId,
+	defineWorkspaceBundle,
 	openCollaboration,
 	roomWsUrl,
 	wipeLocalStorage,
@@ -89,7 +90,7 @@ export function openHoneycrispBrowser({
 		};
 	});
 
-	return {
+	return defineWorkspaceBundle({
 		...workspace,
 		actions: workspace.actions,
 		idb,
@@ -108,7 +109,7 @@ export function openHoneycrispBrowser({
 			noteBodyDocs[Symbol.dispose]();
 			workspace[Symbol.dispose]();
 		},
-	};
+	});
 }
 
 export type HoneycrispBrowser = ReturnType<typeof openHoneycrispBrowser>;

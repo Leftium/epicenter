@@ -18,8 +18,10 @@
 import {
 	column,
 	createWorkspace,
+	defineActions,
 	defineKv,
 	defineTable,
+	defineWorkspaceBundle,
 	generateId,
 	type Id,
 	type InferTableRow,
@@ -37,7 +39,7 @@ export const ZHONGWEN_ID = 'epicenter.zhongwen';
 
 export type ConversationId = Id & Brand<'ConversationId'>;
 export const generateConversationId = (): ConversationId =>
-	generateId() as ConversationId;
+	generateId<ConversationId>();
 /**
  * Syntactic sugar for `value as ConversationId`. The constrained `string` parameter
  * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
@@ -48,7 +50,7 @@ export const asConversationId = (value: string): ConversationId =>
 
 export type ChatMessageId = Id & Brand<'ChatMessageId'>;
 export const generateChatMessageId = (): ChatMessageId =>
-	generateId() as ChatMessageId;
+	generateId<ChatMessageId>();
 /**
  * Syntactic sugar for `value as ChatMessageId`. The constrained `string` parameter
  * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
@@ -80,6 +82,15 @@ const chatMessagesTable = defineTable({
 });
 export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 
+const zhongwenTables = {
+	conversations: conversationsTable,
+	chatMessages: chatMessagesTable,
+};
+
+const zhongwenKv = {
+	showPinyin: defineKv(Type.Boolean(), () => true),
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Workspace Factory
 // ─────────────────────────────────────────────────────────────────────────────
@@ -88,21 +99,17 @@ export function createZhongwenWorkspace(opts: { keyring: () => Keyring }) {
 	const workspace = createWorkspace({
 		id: ZHONGWEN_ID,
 		keyring: opts.keyring,
-		tables: {
-			conversations: conversationsTable,
-			chatMessages: chatMessagesTable,
-		},
-		kv: {
-			showPinyin: defineKv(Type.Boolean(), () => true),
-		},
+		tables: zhongwenTables,
+		kv: zhongwenKv,
 	});
+	const actions = defineActions({});
 
-	return {
+	return defineWorkspaceBundle({
 		...workspace,
-		actions: {},
+		actions,
 		[Symbol.dispose]() {
 			workspace[Symbol.dispose]();
 		},
-	};
+	});
 }
 export type ZhongwenWorkspace = ReturnType<typeof createZhongwenWorkspace>;

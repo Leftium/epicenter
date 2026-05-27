@@ -18,6 +18,7 @@ import type { SignedIn } from '@epicenter/svelte';
 import {
 	attachLocalStorage,
 	type DeviceId,
+	defineWorkspaceBundle,
 	openCollaboration,
 	roomWsUrl,
 	wipeLocalStorage,
@@ -51,7 +52,7 @@ export function openZhongwenBrowser({
 		actions: workspace.actions,
 	});
 
-	return {
+	return defineWorkspaceBundle({
 		...workspace,
 		idb,
 		collaboration,
@@ -63,7 +64,7 @@ export function openZhongwenBrowser({
 				ownerId: signedIn.ownerId,
 			});
 		},
-	};
+	});
 }
 
 export type ZhongwenBrowser = ReturnType<typeof openZhongwenBrowser>;

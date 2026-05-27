@@ -19,8 +19,8 @@
  */
 
 import { join } from 'node:path';
-import { createFujiActions, createFujiWorkspace } from '@epicenter/fuji';
-import { defineWorkspace } from '@epicenter/workspace';
+import { createFujiWorkspace } from '@epicenter/fuji';
+import { defineWorkspace, defineWorkspaceBundle } from '@epicenter/workspace';
 import {
 	attachMarkdownMaterializer,
 	slugFilename,
@@ -42,7 +42,6 @@ export default defineWorkspace({
 	}) {
 		const workspace = createFujiWorkspace({ keyring });
 		workspace.ydoc.clientID = yDocClientId;
-		const actions = createFujiActions(workspace);
 
 		// Runtime cache: hidden under .epicenter/ at the project root.
 		// Inlined so the canonical layout stays visible at the project root.
@@ -60,13 +59,18 @@ export default defineWorkspace({
 			perTable: { entries: { filename: slugFilename('title') } },
 		});
 
-		return attachDaemonInfrastructure(workspace.ydoc, {
+		const infrastructure = attachDaemonInfrastructure(workspace.ydoc, {
 			projectDir,
 			ownerId,
 			deviceId,
 			openWebSocket,
 			onReconnectSignal,
-			actions,
+			actions: workspace.actions,
+		});
+
+		return defineWorkspaceBundle({
+			...workspace,
+			...infrastructure,
 		});
 	},
 });

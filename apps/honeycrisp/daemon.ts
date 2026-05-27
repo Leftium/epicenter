@@ -15,6 +15,7 @@
  *      `attachDaemonInfrastructure`
  */
 
+import { defineWorkspaceBundle } from '@epicenter/workspace';
 import type { DaemonWorkspaceContext } from '@epicenter/workspace/daemon';
 import {
 	attachMarkdownMaterializer,
@@ -52,13 +53,18 @@ export function openHoneycrispDaemon({
 		perTable: { notes: { filename: slugFilename('title') } },
 	});
 
-	return attachDaemonInfrastructure(workspace.ydoc, {
+	const infrastructure = attachDaemonInfrastructure(workspace.ydoc, {
 		projectDir,
 		ownerId,
 		deviceId,
 		openWebSocket,
 		onReconnectSignal,
 		actions: workspace.actions,
+	});
+
+	return defineWorkspaceBundle({
+		...workspace,
+		...infrastructure,
 	});
 }
 

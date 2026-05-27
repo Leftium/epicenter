@@ -21,6 +21,7 @@ import {
 	attachLocalStorage,
 	createDisposableCache,
 	type DeviceId,
+	defineWorkspaceBundle,
 	openCollaboration,
 	roomWsUrl,
 	wipeLocalStorage,
@@ -96,7 +97,7 @@ export function openFujiBrowser({
 		entryContentDocs,
 	});
 
-	return {
+	return defineWorkspaceBundle({
 		...workspace,
 		actions: workspace.actions,
 		markdown,
@@ -116,7 +117,7 @@ export function openFujiBrowser({
 			entryContentDocs[Symbol.dispose]();
 			workspace[Symbol.dispose]();
 		},
-	};
+	});
 }
 
 export type FujiBrowser = ReturnType<typeof openFujiBrowser>;

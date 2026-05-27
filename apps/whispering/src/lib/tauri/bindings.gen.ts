@@ -102,7 +102,7 @@ export const commands = {
 	executeCommand: (command: string) => typedError<CommandOutput, string>(__TAURI_INVOKE("execute_command", { command })),
 	/**
 	 *  Deletes files inside a directory by filename.
-	 *  Validates filenames are single path components (no traversal).
+	 *  Validates filenames are single path components with no directory traversal.
 	 *  Uses Rayon for parallel deletion. Silently skips missing files.
 	 * 
 	 *  # Arguments
@@ -112,7 +112,7 @@ export const commands = {
 	deleteFilesInDirectory: (directory: string, selection: DeleteFilesSelection) => typedError<number, string>(__TAURI_INVOKE("delete_files_in_directory", { directory, selection })),
 	/**
 	 *  Writes markdown files to disk atomically using a temporary file plus persist.
-	 *  Validates all filenames upfront\u2014no files are written if any name is invalid.
+	 *  Validates all filenames upfront. No files are written if any name is invalid.
 	 * 
 	 *  # Arguments
 	 *  * `directory` - Absolute path to the output directory

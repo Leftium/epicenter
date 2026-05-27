@@ -22,8 +22,11 @@ use transcription::{
 pub mod command;
 use command::open_accessibility_settings;
 
+pub mod files;
+use files::delete_files_in_directory;
+
 pub mod markdown;
-use markdown::{delete_recording_files, write_recording_markdown_files};
+use markdown::write_markdown_files;
 
 /// Specta-known commands: every app command except the one that returns a
 /// raw `tauri::ipc::Response` (which is not `specta::Type`). The builder
@@ -44,8 +47,8 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             delete_recording,
             transcribe_recording,
             open_accessibility_settings,
-            delete_recording_files,
-            write_recording_markdown_files,
+            delete_files_in_directory,
+            write_markdown_files,
             set_transcription_config,
             get_transcription_state,
         ])

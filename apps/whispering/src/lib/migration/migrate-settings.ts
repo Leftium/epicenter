@@ -9,11 +9,43 @@
  */
 
 import { Err, Ok, tryAsync, trySync } from 'wellcrafted/result';
+import { defineErrors } from 'wellcrafted/error';
+import { createLogger } from 'wellcrafted/logger';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { whispering } from '$lib/whispering/client';
 import { whisperingKv } from '$lib/workspace';
 
 // ── Migration state ──────────────────────────────────────────────────────────
+
+const log = createLogger('whispering/settings-migration');
+const SettingsMigrationError = defineErrors({
+	ReadyFailed: ({ cause }: { cause: unknown }) => ({
+		message: 'Failed to load workspace before settings migration',
+		cause,
+	}),
+	WorkspaceKeyFailed: ({
+		oldKey,
+		cause,
+	}: {
+		oldKey: string;
+		cause: unknown;
+	}) => ({
+		message: `Failed to migrate workspace setting "${oldKey}"`,
+		oldKey,
+		cause,
+	}),
+	DeviceKeyFailed: ({
+		oldKey,
+		cause,
+	}: {
+		oldKey: string;
+		cause: unknown;
+	}) => ({
+		message: `Failed to migrate device setting "${oldKey}"`,
+		oldKey,
+		cause,
+	}),
+});
 
 const MIGRATION_STATE_KEY = 'whispering.settings.migration';
 type MigrationState = 'completed' | 'not-needed';
@@ -79,8 +111,9 @@ export async function migrateOldSettings(): Promise<void> {
 	const { error: readyError } = await tryAsync({
 		try: () => whispering.whenReady,
 		catch: (err) => {
-			console.warn('[settings-migration] whenReady failed, aborting:', err);
-			return Err(err);
+			const error = SettingsMigrationError.ReadyFailed({ cause: err });
+			log.warn(error);
+			return Err(error);
 		},
 	});
 	if (readyError) return;
@@ -106,7 +139,12 @@ export async function migrateOldSettings(): Promise<void> {
 					setKv(newKey, value);
 				},
 				catch: (err) => {
-					console.warn(`[settings-migration] workspace key "${oldKey}":`, err);
+					log.warn(
+						SettingsMigrationError.WorkspaceKeyFailed({
+							oldKey,
+							cause: err,
+						}),
+					);
 					return Ok(undefined);
 				},
 			});
@@ -134,7 +172,12 @@ export async function migrateOldSettings(): Promise<void> {
 				);
 			},
 			catch: (err) => {
-				console.warn(`[settings-migration] device key "${oldKey}":`, err);
+				log.warn(
+					SettingsMigrationError.DeviceKeyFailed({
+						oldKey,
+						cause: err,
+					}),
+				);
 				return Ok(undefined);
 			},
 		});
@@ -331,10 +374,6 @@ const DEVICE_KEY_MAP = [
 	{
 		oldKey: 'recording.navigator.bitrateKbps',
 		newKey: 'recording.navigator.bitrateKbps',
-	},
-	{
-		oldKey: 'recording.cpal.outputFolder',
-		newKey: 'recording.cpal.outputFolder',
 	},
 	{ oldKey: 'recording.cpal.sampleRate', newKey: 'recording.cpal.sampleRate' },
 

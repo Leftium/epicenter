@@ -29,10 +29,8 @@
 
 	async function openSystemSettings() {
 		if (!tauri) return;
-		// Try opening System Settings directly (works on macOS 13+)
-		const { error: commandError } = await tauri.command.execute(
-			'open x-apple.systemsettings:com.apple.SystemSettings.extension',
-		);
+		const { error: commandError } =
+			await tauri.permissions.accessibility.openSettings();
 
 		if (commandError) {
 			console.error('Failed to open System Settings:', commandError);

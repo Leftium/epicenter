@@ -20,7 +20,7 @@
  *
  * **Import discipline**: this is the only file in `src/lib/**` that imports
  * from `@tauri-apps/api/core` for app-owned commands. Tauri plugin APIs
- * (fs, shell, clipboard, etc.) keep their own imports.
+ * (fs, clipboard, etc.) keep their own imports.
  */
 
 import { invoke as rawInvoke } from '@tauri-apps/api/core';
@@ -105,7 +105,6 @@ export const commands = {
 };
 
 export type {
-	CommandOutput,
 	Engine,
 	LocalModelState,
 	MarkdownFile,

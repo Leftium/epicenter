@@ -8,7 +8,6 @@
 
 import type { Result } from 'wellcrafted/result';
 import type {
-	CommandOutput,
 	LocalModelState,
 	RecordingArtifact,
 	TranscriptionConfig,
@@ -65,11 +64,11 @@ type _GetTranscriptionState = Expect<
 	>
 >;
 
-// execute_command: fallible, returns a typed CommandOutput struct.
-type _ExecuteCommand = Expect<
+// open_accessibility_settings: fallible, returns unit as null.
+type _OpenAccessibilitySettings = Expect<
 	Equal<
-		ReturnType<typeof commands.executeCommand>,
-		Promise<Result<CommandOutput, string>>
+		ReturnType<typeof commands.openAccessibilitySettings>,
+		Promise<Result<null, string>>
 	>
 >;
 

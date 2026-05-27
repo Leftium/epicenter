@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use tauri_specta::Event;
 
 /// Channel name for every model lifecycle event. The same constant is bound
-/// to the `tauri_specta::event(name = "...")` attribute on `ModelStateEvent`
+/// to the `tauri_specta(event_name = "...")` attribute on `ModelStateEvent`
 /// below so the Rust emitter, the specta-emitted TS binding, and the FE
 /// `listen<ModelStateEvent>(...)` call all key off one symbol.
 pub const EVENT_CHANNEL: &str = "transcription://model-state";
@@ -65,13 +65,13 @@ pub enum UnloadReason {
 /// `tag = "kind"` matches `ModelStatus` and `UnloadReason` so the FE pattern
 /// is uniform: `switch (event.kind)`.
 ///
-/// `tauri_specta::Event` + `event(name = "...")` keys the TS export at the
+/// `tauri_specta::Event` + `event_name = "..."` keys the TS export at the
 /// custom channel name. Without the explicit name, the derive kebab-cases
 /// the type ident (`model-state-event`) which would break the existing FE
 /// listener. `collect_events![ModelStateEvent]` in `lib.rs` registers the
 /// type so the regen surface picks it up.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type, Event)]
-#[tauri_specta::event(name = "transcription://model-state")]
+#[tauri_specta(event_name = "transcription://model-state")]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ModelStateEvent {
     LoadingStarted {

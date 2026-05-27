@@ -1,14 +1,12 @@
 use super::config::{should_preload, Engine as EngineKind, TranscriptionConfig, UnloadPolicy};
 use super::error::TranscriptionError;
-use super::events::{
-    LocalModelState, ModelStateEvent, ModelStatus, UnloadReason, EVENT_CHANNEL,
-};
+use super::events::{LocalModelState, ModelStateEvent, ModelStatus, UnloadReason, EVENT_CHANNEL};
 use log::{debug, info, warn};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use transcribe_rs::onnx::moonshine::{MoonshineModel, MoonshineVariant};
 use transcribe_rs::onnx::parakeet::{ParakeetModel, ParakeetParams, TimestampGranularity};
 use transcribe_rs::onnx::Quantization;
@@ -80,6 +78,26 @@ impl ModelManager {
     /// changes (language, prompt, policy) take effect on next transcription
     /// without a reload.
     pub fn set_transcription_config(&self, config: TranscriptionConfig) {
+        let config = match self.constrain_config(config) {
+            Ok(config) => config,
+            Err(message) => {
+                warn!("[Transcription] rejected local model config: {}", message);
+                {
+                    let mut guard = self.write_config();
+                    *guard = None;
+                }
+                self.evict_with_reason(UnloadReason::ConfigChanged);
+                self.set_status(ModelStatus::Error {
+                    message: message.clone(),
+                });
+                self.emit(ModelStateEvent::LoadingFailed {
+                    state: self.snapshot(),
+                    error: message,
+                });
+                return;
+            }
+        };
+
         let needs_preload = {
             let mut guard = self.write_config();
             let preload = should_preload(guard.as_ref(), &config);
@@ -111,6 +129,36 @@ impl ModelManager {
                 warn!("[Transcription] preload failed: {}", err);
             }
         });
+    }
+
+    fn constrain_config(
+        &self,
+        mut config: TranscriptionConfig,
+    ) -> Result<TranscriptionConfig, String> {
+        config.model_path = self.app_model_path(&config.model_path)?;
+        Ok(config)
+    }
+
+    fn app_model_path(&self, model_path: &str) -> Result<String, String> {
+        let app_data_dir = self
+            .app
+            .path()
+            .app_data_dir()
+            .map_err(|e| format!("resolve app data directory: {}", e))?
+            .canonicalize()
+            .map_err(|e| format!("resolve app data directory: {}", e))?;
+        let models_dir = app_data_dir.join("models");
+        let path = PathBuf::from(model_path)
+            .canonicalize()
+            .map_err(|e| format!("resolve model path {}: {}", model_path, e))?;
+
+        if !path.starts_with(&models_dir) {
+            return Err(
+                "Local model path must be inside the app data models directory".to_string(),
+            );
+        }
+
+        Ok(path.to_string_lossy().to_string())
     }
 
     fn write_config(&self) -> std::sync::RwLockWriteGuard<'_, Option<TranscriptionConfig>> {
@@ -399,8 +447,7 @@ impl ModelManager {
     }
 
     fn touch_activity(&self) {
-        self.last_activity_ms
-            .store(now_millis(), Ordering::Relaxed);
+        self.last_activity_ms.store(now_millis(), Ordering::Relaxed);
     }
 
     /// Drop the resident model now if the current policy is `Immediately`.

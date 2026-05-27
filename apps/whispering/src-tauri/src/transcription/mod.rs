@@ -6,7 +6,7 @@ mod model_manager;
 use crate::recorder::read_artifact_samples;
 pub use config::TranscriptionConfig;
 pub use error::TranscriptionError;
-pub use events::LocalModelState;
+pub use events::{LocalModelState, ModelStateEvent};
 pub use model_manager::ModelManager;
 use tauri::{AppHandle, State};
 

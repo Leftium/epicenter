@@ -1,103 +1,33 @@
-use serde::{Deserialize, Serialize};
-use std::process::{Command, Stdio};
+#[cfg(target_os = "macos")]
+use std::process::Command;
 
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
-
-// Windows process creation flag to prevent console window from appearing
-#[cfg(target_os = "windows")]
-const CREATE_NO_WINDOW: u32 = 0x08000000;
-
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
-#[serde(rename_all = "camelCase")]
-pub struct CommandOutput {
-    pub code: Option<i32>,
-    pub signal: Option<i32>,
-    pub stdout: String,
-    pub stderr: String,
-}
-
-/// Parse a command string into program and arguments.
-/// Handles quoted arguments properly for direct execution without shell wrapper.
-fn parse_command(command: &str) -> (String, Vec<String>) {
-    // Match quoted strings or non-space sequences
-    let re = regex::Regex::new(r#"(?:[^\s"]+|"[^"]*")+"#).unwrap();
-    let parts: Vec<String> = re
-        .find_iter(command)
-        .map(|m| m.as_str().trim_matches('"').to_string())
-        .collect();
-
-    if parts.is_empty() {
-        return (String::new(), Vec::new());
-    }
-
-    (parts[0].clone(), parts[1..].to_vec())
-}
-
-/// Execute a command and wait for it to complete.
+/// Open macOS Accessibility settings.
 ///
-/// Parses the command string into program and arguments, then executes directly
-/// without using a shell wrapper. This approach provides:
-/// - Consistent behavior across all platforms
-/// - No shell injection vulnerabilities
-/// - Lower process overhead
-/// - PATH resolution still works via Command::new()
-///
-/// On Windows, also uses CREATE_NO_WINDOW flag to prevent console window flash (GitHub issue #815).
-///
-/// # Arguments
-/// * `command` - The command to execute as a string
-///
-/// # Returns
-/// Result containing the command output (stdout, stderr, exit code) or error message
-///
-/// # Examples
-/// ```ignore
-/// execute_command("uname -a".to_string()).await?;
-/// execute_command("git --version".to_string()).await?;
-/// ```
+/// This is intentionally a fixed command instead of a general command
+/// runner. The app only needs this one OS handoff, so the frontend should
+/// not receive shell or process execution privileges.
 #[tauri::command]
 #[specta::specta]
-pub async fn execute_command(command: String) -> Result<CommandOutput, String> {
-    let (program, args) = parse_command(&command);
-
-    if program.is_empty() {
-        return Err("Empty command".to_string());
-    }
-
-    println!(
-        "[Rust] execute_command: program='{}', args={:?}",
-        program, args
-    );
-
-    let mut cmd = Command::new(&program);
-    cmd.args(&args);
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
-
-    #[cfg(target_os = "windows")]
+pub async fn open_accessibility_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
     {
-        cmd.creation_flags(CREATE_NO_WINDOW);
-        println!("[Rust] execute_command: Windows - using CREATE_NO_WINDOW flag");
+        let status = Command::new("/usr/bin/open")
+            .arg("x-apple.systemsettings:com.apple.SystemSettings.extension")
+            .status()
+            .map_err(|e| format!("Failed to open accessibility settings: {}", e))?;
+
+        if status.success() {
+            return Ok(());
+        }
+
+        return Err(format!(
+            "Failed to open accessibility settings: exit code {:?}",
+            status.code()
+        ));
     }
 
-    match cmd.output() {
-        Ok(output) => {
-            let result = CommandOutput {
-                code: output.status.code(),
-                signal: None, // Signal is Unix-specific, not available from std::process::Output
-                stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-            };
-            println!(
-                "[Rust] execute_command: completed with code={:?}",
-                result.code
-            );
-            Ok(result)
-        }
-        Err(e) => {
-            let error_msg = format!("Command execution failed: {}", e);
-            println!("[Rust] execute_command: error - {}", error_msg);
-            Err(error_msg)
-        }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("Accessibility settings are only available on macOS.".to_string())
     }
 }

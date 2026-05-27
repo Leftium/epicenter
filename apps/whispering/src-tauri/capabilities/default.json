@@ -7,11 +7,8 @@
   ],
   "permissions": [
     "core:default",
-    "opener:default",
     "dialog:default",
     "fs:default",
-    "http:default",
-    "process:default",
     "os:default",
     "core:window:allow-hide",
     "core:window:allow-show",
@@ -26,33 +23,29 @@
     "notification:default",
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
-    "fs:allow-write",
-    "fs:allow-app-write",
-    "fs:allow-create",
+    "fs:allow-copy-file",
+    "fs:allow-exists",
     "fs:allow-mkdir",
+    "fs:allow-read-dir",
+    "fs:allow-read-file",
     "fs:allow-remove",
     "fs:allow-stat",
+    "fs:allow-write-file",
     "dialog:allow-open",
     {
       "identifier": "fs:scope",
       "allow": [
         {
-          "path": "**"
+          "path": "$APPDATA/recordings"
         },
         {
-          "path": "$APPLOCALDATA/**"
+          "path": "$APPDATA/recordings/**"
         },
         {
-          "path": "$LOCALDATA/**"
+          "path": "$APPDATA/models"
         },
         {
-          "path": "$APPDATA/**"
-        },
-        {
-          "path": "$HOME/.local/share/**"
-        },
-        {
-          "path": "$HOME/.local/share/com.bradenwong.whispering/**"
+          "path": "$APPDATA/models/**"
         }
       ]
     },
@@ -77,70 +70,22 @@
       "identifier": "opener:allow-open-path",
       "allow": [
         {
-          "path": "**"
+          "path": "$APPDATA/recordings"
+        },
+        {
+          "path": "$APPDATA/recordings/**"
+        },
+        {
+          "path": "$APPDATA/transformations"
+        },
+        {
+          "path": "$APPDATA/transformations/**"
         }
       ]
     },
-    "opener:allow-default-urls",
     "updater:default",
     "aptabase:allow-track-event",
     "macos-permissions:default",
-    "shell:default",
-    {
-      "identifier": "shell:allow-execute",
-      "allow": [
-        {
-          "name": "cmd",
-          "cmd": "cmd",
-          "args": [
-            "/c",
-            {
-              "validator": ".*"
-            }
-          ]
-        },
-        {
-          "name": "sh",
-          "cmd": "sh",
-          "args": [
-            "-c",
-            {
-              "validator": ".*"
-            }
-          ]
-        },
-        {
-          "name": "open",
-          "cmd": "open",
-          "args": true
-        }
-      ]
-    },
-    {
-      "identifier": "shell:allow-spawn",
-      "allow": [
-        {
-          "name": "cmd",
-          "cmd": "cmd",
-          "args": [
-            "/c",
-            {
-              "validator": ".*"
-            }
-          ]
-        },
-        {
-          "name": "sh",
-          "cmd": "sh",
-          "args": [
-            "-c",
-            {
-              "validator": ".*"
-            }
-          ]
-        }
-      ]
-    },
     "log:default"
   ]
 }

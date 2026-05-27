@@ -1,9 +1,11 @@
+use crate::recorder::artifact::recordings_dir;
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, Path};
 use std::sync::atomic::{AtomicU32, Ordering};
+use tauri::AppHandle;
 use tempfile::NamedTempFile;
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -33,12 +35,10 @@ fn validate_leaf_filename(filename: &str) -> Result<&str, String> {
 
 // ── Commands ────────────────────────────────────────────────────────────────
 
-
 /// Writes markdown files to disk atomically using a temporary file plus persist.
-/// Validates all filenames upfront\u2014no files are written if any name is invalid.
+/// Validates all filenames before writing so invalid names do not touch disk.
 ///
 /// # Arguments
-/// * `directory` - Absolute path to the output directory
 /// * `files` - Array of `{ filename, content }` pairs to write
 ///
 /// # Returns
@@ -46,17 +46,13 @@ fn validate_leaf_filename(filename: &str) -> Result<&str, String> {
 /// * `Err(String)` - Error if any write fails (earlier files may already be on disk)
 #[tauri::command]
 #[specta::specta]
-pub async fn write_markdown_files(
-    directory: String,
+pub async fn write_recording_markdown_files(
+    app_handle: AppHandle,
     files: Vec<MarkdownFile>,
 ) -> Result<(), String> {
+    let dir_path = recordings_dir(&app_handle)?;
+
     tokio::task::spawn_blocking(move || {
-        let dir_path = PathBuf::from(&directory);
-
-        if !dir_path.is_absolute() {
-            return Err(format!("Directory must be absolute: {}", directory));
-        }
-
         // Two-pass approach: validate all filenames first, then write.
         // If any filename is invalid or duplicated, no files touch disk.
         let validated: Vec<&str> = {
@@ -73,7 +69,7 @@ pub async fn write_markdown_files(
         };
 
         fs::create_dir_all(&dir_path)
-            .map_err(|e| format!("Failed to create directory {}: {}", directory, e))?;
+            .map_err(|e| format!("Failed to create directory {}: {}", dir_path.display(), e))?;
 
         for (file, filename) in files.iter().zip(validated.iter()) {
             let path = dir_path.join(filename);
@@ -97,21 +93,16 @@ pub async fn write_markdown_files(
 /// Uses Rayon for parallel deletion. Silently skips missing files.
 ///
 /// # Arguments
-/// * `directory` - Absolute path to the directory containing the files
 /// * `filenames` - Array of leaf filenames to delete
 #[tauri::command]
 #[specta::specta]
-pub async fn delete_files_in_directory(
-    directory: String,
+pub async fn delete_recording_files(
+    app_handle: AppHandle,
     filenames: Vec<String>,
 ) -> Result<u32, String> {
+    let dir_path = recordings_dir(&app_handle)?;
+
     tokio::task::spawn_blocking(move || {
-        let dir_path = PathBuf::from(&directory);
-
-        if !dir_path.is_absolute() {
-            return Err(format!("Directory must be absolute: {}", directory));
-        }
-
         let validated: Vec<&str> = filenames
             .iter()
             .map(|f| validate_leaf_filename(f))

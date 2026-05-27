@@ -84,7 +84,7 @@ See `docs/articles/20260526T012526-tauri-is-both-the-namespace-and-the-platform-
 > **💡 Three kinds of dependency injection**
 >
 > - **Build-time platform DI** (suffix files): for services that have a real implementation on both platforms. `text`, `os`, `sound`, `download`, `analytics`, `http`, `blob-store`, `recorder`. Each has `index.tauri.ts` + `index.browser.ts` + `types.ts`. Vite picks one at build time.
-> - **Tauri-only namespace** (`$lib/tauri`): for capabilities that exist only on Tauri (fs, command, permissions, window, tray, globalShortcuts, autostart). One file holds the current namespace capabilities. Consumers either narrow with `if (tauri)`, prop-drill the narrowed value into helpers, or call `requireTauri()` from inside a `.tauri.ts` file.
+> - **Tauri-only namespace** (`$lib/tauri`): for capabilities that exist only on Tauri (fs, permissions, window, tray, globalShortcuts, autostart). One file holds the current namespace capabilities. Consumers either narrow with `if (tauri)`, prop-drill the narrowed value into helpers, or call `requireTauri()` from inside a `.tauri.ts` file.
 > - **Runtime DI** (switch on `settings` and `deviceConfig`): for user-pick providers like `transcription` and `completion`.
 >
 > See `docs/articles/20260526T012650-two-switches-build-time-and-runtime.md` for the platform-vs-settings walkthrough.
@@ -415,7 +415,6 @@ User-facing reporting (toast + OS notification) is owned by `$lib/report`, not t
 Tauri-only namespace capabilities live inline in one file at `$lib/tauri.tauri.ts`. The companion `$lib/tauri.browser.ts` exports `tauri = null` plus a throwing `requireTauri` stub. Consumers access via `if (tauri) { tauri.<cap>.method() }`, by prop-drilling the narrowed value, or by calling `requireTauri()` from inside a `.tauri.ts` file.
 
 - `tauri.fs` - Filesystem operations (pathToBlob, pathsToFiles)
-- `tauri.command` - Shell command execution (execute)
 - `tauri.permissions` - macOS accessibility/microphone permission flows
 - `tauri.window` - Window operations (setAlwaysOnTop)
 - `tauri.tray` - System tray icon (setIcon)

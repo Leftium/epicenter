@@ -18,10 +18,10 @@ export function asTemplateString(str: string): TemplateString {
  *
  * @example
  * interpolateTemplate('Hello {{name}}!', { name: 'World' }) // 'Hello World!'
- * interpolateTemplate('{{outputFolder}}/{{recordingId}}.wav', {
- *   outputFolder: '/Users/jane/Recordings',
+ * interpolateTemplate('{{recordingsFolder}}/{{recordingId}}.wav', {
+ *   recordingsFolder: '/Users/jane/Library/Application Support/Whispering/recordings',
  *   recordingId: 'abc123'
- * }) // '/Users/jane/Recordings/abc123.wav'
+ * }) // '/Users/jane/Library/Application Support/Whispering/recordings/abc123.wav'
  */
 export function interpolateTemplate(
 	template: TemplateString,

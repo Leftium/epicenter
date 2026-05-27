@@ -1,7 +1,8 @@
 use super::config::Engine;
 use serde::{Deserialize, Serialize};
 
-/// Channel name for every model lifecycle event.
+/// Channel name for every model lifecycle event. The Rust emitter and the FE
+/// `listen<ModelStateEvent>(...)` call both key off this symbol.
 pub const EVENT_CHANNEL: &str = "transcription://model-state";
 
 /// Snapshot of everything observable about the resident model. Every event
@@ -26,6 +27,9 @@ pub enum ModelStatus {
     /// No model resident and none loading. Initial state, and reached after
     /// `Unloaded`.
     Idle,
+    /// A different model is selected, but the manager is still draining the
+    /// previous resident model before the new model can start loading.
+    Switching,
     /// `with_engine` is currently inside the `load(&model_path)` call.
     Loading,
     /// A model is resident and not currently in use.
@@ -106,4 +110,54 @@ pub enum ModelStateEvent {
     SelectionChanged {
         state: LocalModelState,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn event_wire_shape_uses_snake_case_kinds_and_camel_case_fields() {
+        let event = ModelStateEvent::InferenceCompleted {
+            state: LocalModelState {
+                engine: Some(Engine::Whispercpp),
+                model_path: Some("/models/whisper".to_string()),
+                status: ModelStatus::Ready,
+            },
+            elapsed_ms: 123,
+        };
+
+        assert_eq!(
+            serde_json::to_value(event).unwrap(),
+            json!({
+                "kind": "inference_completed",
+                "state": {
+                    "engine": "whispercpp",
+                    "modelPath": "/models/whisper",
+                    "status": { "kind": "ready" }
+                },
+                "elapsedMs": 123
+            })
+        );
+    }
+
+    #[test]
+    fn unload_reason_wire_shape_keeps_reason_fields_camel_case() {
+        assert_eq!(
+            serde_json::to_value(UnloadReason::Idle { idle_secs: 30 }).unwrap(),
+            json!({
+                "kind": "idle",
+                "idleSecs": 30
+            })
+        );
+    }
+
+    #[test]
+    fn switching_status_has_a_stable_wire_tag() {
+        assert_eq!(
+            serde_json::to_value(ModelStatus::Switching).unwrap(),
+            json!({ "kind": "switching" })
+        );
+    }
 }

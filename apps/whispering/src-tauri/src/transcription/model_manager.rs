@@ -107,11 +107,16 @@ impl ModelManager {
         let (preload_generation, selection_state) = {
             let mut guard = self.write_config();
             let needs_preload = should_preload(guard.as_ref(), &config);
+            let was_waiting_for_previous_model = !matches!(self.read_status(), ModelStatus::Idle);
             let generation =
                 needs_preload.then(|| self.model_generation.fetch_add(1, Ordering::SeqCst) + 1);
             *guard = Some(config.clone());
             let selection_state = needs_preload.then(|| {
-                let status = ModelStatus::Idle;
+                let status = if was_waiting_for_previous_model {
+                    ModelStatus::Switching
+                } else {
+                    ModelStatus::Idle
+                };
                 self.set_status(status.clone());
                 state_for_config(&config, status)
             });
@@ -140,7 +145,7 @@ impl ModelManager {
             if !this.is_current_model_generation(generation) {
                 return;
             }
-            this.evict_with_reason(UnloadReason::ConfigChanged);
+            this.evict_with_reason_if_current(UnloadReason::ConfigChanged, Some(generation));
             if let Err(err) = this.preload(config, generation) {
                 warn!("[Transcription] preload failed: {}", err);
             }
@@ -203,6 +208,13 @@ impl ModelManager {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
+    fn read_status(&self) -> ModelStatus {
+        self.status
+            .read()
+            .map(|g| g.clone())
+            .unwrap_or_else(|poisoned| poisoned.into_inner().clone())
+    }
+
     fn current_policy(&self) -> UnloadPolicy {
         self.read_config()
             .map(|c| c.unload_policy)
@@ -217,11 +229,7 @@ impl ModelManager {
     /// waiting for the next event.
     pub fn snapshot(&self) -> LocalModelState {
         let config = self.read_config();
-        let status = self
-            .status
-            .read()
-            .map(|g| g.clone())
-            .unwrap_or_else(|poisoned| poisoned.into_inner().clone());
+        let status = self.read_status();
         LocalModelState {
             engine: config.as_ref().map(|c| c.engine),
             model_path: config.map(|c| c.model_path),
@@ -312,7 +320,7 @@ impl ModelManager {
             config.engine,
             transcript.len()
         );
-        self.evict_if_immediate();
+        self.evict_if_immediate(config.unload_policy, generation);
         Ok(transcript)
     }
 
@@ -481,13 +489,12 @@ impl ModelManager {
 
         if !reuse {
             let _ = guard.take();
-            let loading_started = self.with_current_model_generation(caller.generation(), || {
-                let status = ModelStatus::Loading;
-                self.set_status(status.clone());
-                self.emit(ModelStateEvent::LoadingStarted {
-                    state: state_for_config(config, status),
-                });
-            });
+            let loading_started = self.publish_if_current(
+                caller.generation(),
+                config,
+                ModelStatus::Loading,
+                |state| ModelStateEvent::LoadingStarted { state },
+            );
             if caller.is_preload() && loading_started.is_none() {
                 return Ok(EnsureLoaded::Stale);
             }
@@ -501,29 +508,27 @@ impl ModelManager {
                         elapsed_ms
                     );
                     if caller.is_preload() {
-                        let Some(()) =
-                            self.with_current_model_generation(caller.generation(), || {
-                                *guard = Some((model_path, engine));
-                                let status = ModelStatus::Ready;
-                                self.set_status(status.clone());
-                                self.emit(ModelStateEvent::LoadingCompleted {
-                                    state: state_for_config(config, status),
-                                    elapsed_ms,
-                                });
-                            })
-                        else {
+                        if !self.is_current_model_generation(caller.generation()) {
+                            return Ok(EnsureLoaded::Stale);
+                        }
+                        *guard = Some((model_path, engine));
+                        let Some(()) = self.publish_if_current(
+                            caller.generation(),
+                            config,
+                            ModelStatus::Ready,
+                            |state| ModelStateEvent::LoadingCompleted { state, elapsed_ms },
+                        ) else {
+                            let _ = guard.take();
                             return Ok(EnsureLoaded::Stale);
                         };
                     } else {
                         *guard = Some((model_path, engine));
-                        let _ = self.with_current_model_generation(caller.generation(), || {
-                            let status = ModelStatus::Ready;
-                            self.set_status(status.clone());
-                            self.emit(ModelStateEvent::LoadingCompleted {
-                                state: state_for_config(config, status),
-                                elapsed_ms,
-                            });
-                        });
+                        let _ = self.publish_if_current(
+                            caller.generation(),
+                            config,
+                            ModelStatus::Ready,
+                            |state| ModelStateEvent::LoadingCompleted { state, elapsed_ms },
+                        );
                     }
                 }
                 Err(message) => {
@@ -531,16 +536,17 @@ impl ModelManager {
                     {
                         return Ok(EnsureLoaded::Stale);
                     }
-                    let _ = self.with_current_model_generation(caller.generation(), || {
-                        let status = ModelStatus::Error {
+                    let _ = self.publish_if_current(
+                        caller.generation(),
+                        config,
+                        ModelStatus::Error {
                             message: message.clone(),
-                        };
-                        self.set_status(status.clone());
-                        self.emit(ModelStateEvent::LoadingFailed {
-                            state: state_for_config(config, status),
+                        },
+                        |state| ModelStateEvent::LoadingFailed {
+                            state,
                             error: message.clone(),
-                        });
-                    });
+                        },
+                    );
                     return Err(TranscriptionError::ModelLoadError { message });
                 }
             }
@@ -568,27 +574,24 @@ impl ModelManager {
         };
 
         let (_, engine) = guard.as_mut().expect("cache slot populated above");
-        let _ = self.with_current_model_generation(caller.generation(), || {
-            let status = ModelStatus::Inferring;
-            self.set_status(status.clone());
-            self.emit(ModelStateEvent::InferenceStarted {
-                state: state_for_config(config, status),
-            });
-        });
+        let _ = self.publish_if_current(
+            caller.generation(),
+            config,
+            ModelStatus::Inferring,
+            |state| ModelStateEvent::InferenceStarted { state },
+        );
         let started = Instant::now();
         let result = use_engine(engine);
         let elapsed_ms = started.elapsed().as_millis() as u64;
         self.touch_activity();
         match &result {
             Ok(_) => {
-                let _ = self.with_current_model_generation(caller.generation(), || {
-                    let status = ModelStatus::Ready;
-                    self.set_status(status.clone());
-                    self.emit(ModelStateEvent::InferenceCompleted {
-                        state: state_for_config(config, status),
-                        elapsed_ms,
-                    });
-                });
+                let _ = self.publish_if_current(
+                    caller.generation(),
+                    config,
+                    ModelStatus::Ready,
+                    |state| ModelStateEvent::InferenceCompleted { state, elapsed_ms },
+                );
             }
             Err(e) => {
                 // Don't clear the cache on inference failure: the engine is
@@ -596,16 +599,17 @@ impl ModelManager {
                 // or input issue). The status reflects the last result; a
                 // successful next call flips it back to Ready.
                 let message = e.to_string();
-                let _ = self.with_current_model_generation(caller.generation(), || {
-                    let status = ModelStatus::Error {
+                let _ = self.publish_if_current(
+                    caller.generation(),
+                    config,
+                    ModelStatus::Error {
                         message: message.clone(),
-                    };
-                    self.set_status(status.clone());
-                    self.emit(ModelStateEvent::InferenceFailed {
-                        state: state_for_config(config, status),
+                    },
+                    |state| ModelStateEvent::InferenceFailed {
+                        state,
                         error: message,
-                    });
-                });
+                    },
+                );
             }
         }
         result
@@ -617,16 +621,24 @@ impl ModelManager {
 
     /// Drop the resident model now if the current policy is `Immediately`.
     /// Called at the end of every successful transcription.
-    pub fn evict_if_immediate(&self) {
-        if matches!(self.current_policy(), UnloadPolicy::Immediately) {
-            self.evict_with_reason(UnloadReason::Immediate);
+    fn evict_if_immediate(&self, policy: UnloadPolicy, generation: u64) {
+        if matches!(policy, UnloadPolicy::Immediately) {
+            self.evict_with_reason_if_current(UnloadReason::Immediate, Some(generation));
         }
     }
 
     /// Drop the resident model and emit an `Unloaded` event with the given
     /// reason. Idempotent: a no-op when the cache is already empty.
     fn evict_with_reason(&self, reason: UnloadReason) {
+        self.evict_with_reason_if_current(reason, None);
+    }
+
+    fn evict_with_reason_if_current(&self, reason: UnloadReason, generation: Option<u64>) {
         let mut guard = lock_cached(&self.cached);
+        let config_guard = self.read_config_guard();
+        if generation.is_some_and(|generation| !self.is_current_model_generation(generation)) {
+            return;
+        }
         if let Some((path, _engine)) = guard.take() {
             debug!(
                 "[Transcription] unloaded model ({:?}): {}",
@@ -637,11 +649,14 @@ impl ModelManager {
             // on the cache lock (they should not lock it anyway, but defensive
             // ordering is cheap).
             drop(guard);
-            self.set_status(ModelStatus::Idle);
-            self.emit(ModelStateEvent::Unloaded {
-                state: self.snapshot(),
-                reason,
-            });
+            let status = if matches!(reason, UnloadReason::ConfigChanged) {
+                ModelStatus::Switching
+            } else {
+                ModelStatus::Idle
+            };
+            self.set_status(status.clone());
+            let state = state_for_config_option(config_guard.as_ref(), status);
+            self.emit(ModelStateEvent::Unloaded { state, reason });
         }
     }
 
@@ -713,6 +728,19 @@ impl ModelManager {
         let _guard = self.read_config_guard();
         self.is_current_model_generation(generation).then(f)
     }
+
+    fn publish_if_current(
+        &self,
+        generation: u64,
+        config: &TranscriptionConfig,
+        status: ModelStatus,
+        build_event: impl FnOnce(LocalModelState) -> ModelStateEvent,
+    ) -> Option<()> {
+        self.with_current_model_generation(generation, || {
+            self.set_status(status.clone());
+            self.emit(build_event(state_for_config(config, status)));
+        })
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -745,9 +773,16 @@ enum EnsureLoaded<'a> {
 /// abort the process and bypass any Rust-level recovery). Cheap insurance
 /// against the most common abort class.
 fn state_for_config(config: &TranscriptionConfig, status: ModelStatus) -> LocalModelState {
+    state_for_config_option(Some(config), status)
+}
+
+fn state_for_config_option(
+    config: Option<&TranscriptionConfig>,
+    status: ModelStatus,
+) -> LocalModelState {
     LocalModelState {
-        engine: Some(config.engine),
-        model_path: Some(config.model_path.clone()),
+        engine: config.map(|config| config.engine),
+        model_path: config.map(|config| config.model_path.clone()),
         status,
     }
 }

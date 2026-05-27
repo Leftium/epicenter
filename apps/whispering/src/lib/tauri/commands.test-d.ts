@@ -10,6 +10,7 @@ import type { Result } from 'wellcrafted/result';
 import type {
 	LocalModelState,
 	ModelStateEvent,
+	ModelStatus,
 	RecordingArtifact,
 	TranscriptionConfig,
 	TranscriptionError,
@@ -91,6 +92,18 @@ type _ModelStateEventShape = Expect<
 					| { kind: 'config_changed' };
 		  }
 		| { kind: 'selection_changed'; state: LocalModelState }
+	>
+>;
+
+type _ModelStatusShape = Expect<
+	Equal<
+		ModelStatus,
+		| { kind: 'idle' }
+		| { kind: 'switching' }
+		| { kind: 'loading' }
+		| { kind: 'ready' }
+		| { kind: 'inferring' }
+		| { kind: 'error'; message: string }
 	>
 >;
 

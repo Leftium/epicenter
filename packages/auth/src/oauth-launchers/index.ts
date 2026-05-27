@@ -45,15 +45,6 @@ export const OAuthClientError = defineErrors({
 		message: `OAuth token exchange failed: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
-	MissingAccessToken: () => ({
-		message: 'OAuth token exchange did not return an access token.',
-	}),
-	MissingRefreshToken: () => ({
-		message: 'OAuth token exchange did not return a refresh token.',
-	}),
-	MissingExpiresIn: () => ({
-		message: 'OAuth token exchange did not return an access-token lifetime.',
-	}),
 	LaunchFailed: ({ cause }: { cause: unknown }) => ({
 		message: `OAuth sign-in launch failed: ${extractErrorMessage(cause)}`,
 		cause,
@@ -369,11 +360,16 @@ export function createOAuthClient({
 				client,
 				response,
 			);
-			const tokenResult = parseTokenResult(tokenResponse);
-			if (tokenResult.error) return tokenResult;
+			const { data: grant, error: grantError } = parseOAuthTokenGrant(
+				tokenResponse,
+				{ now: Date.now },
+			);
+			if (grantError) {
+				return OAuthClientError.TokenExchangeFailed({ cause: grantError });
+			}
 
 			await storage.removeItem(storageKey);
-			return tokenResult;
+			return Ok(grant);
 		} catch (cause) {
 			return OAuthClientError.TokenExchangeFailed({ cause });
 		}
@@ -412,24 +408,4 @@ export function createOAuthClient({
 		isCallback,
 		exchangeCallback,
 	};
-}
-
-function parseTokenResult(
-	tokenResponse: oauth.TokenEndpointResponse,
-): Result<OAuthTokenGrant, OAuthClientError> {
-	const { data, error } = parseOAuthTokenGrant(tokenResponse, {
-		now: Date.now,
-	});
-	if (!error) return Ok(data);
-	switch (error.name) {
-		case 'MissingAccessToken':
-			return OAuthClientError.MissingAccessToken();
-		case 'MissingRefreshToken':
-			return OAuthClientError.MissingRefreshToken();
-		case 'MissingExpiresIn':
-			return OAuthClientError.MissingExpiresIn();
-		case 'InvalidResponse':
-		case 'InvalidTokenType':
-			return OAuthClientError.TokenExchangeFailed({ cause: error });
-	}
 }

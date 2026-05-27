@@ -370,7 +370,7 @@ test('exchangeCallback rejects a token response without access token', async () 
 	expect(error.name).toBe('TokenExchangeFailed');
 });
 
-test('exchangeCallback rejects a token response without refresh token', async () => {
+test('exchangeCallback wraps missing refresh_token as TokenExchangeFailed', async () => {
 	const { storage } = createMemoryStorage({
 		'epicenter.oauth.client-1': JSON.stringify({
 			state: 'state-1',
@@ -396,12 +396,13 @@ test('exchangeCallback rejects a token response without refresh token', async ()
 		await client.exchangeCallback(
 			'http://app.test/auth/callback?code=code-1&state=state-1',
 		),
-	);
+	) as { name?: string; cause?: { name?: string } };
 
-	expect(error.name).toBe('MissingRefreshToken');
+	expect(error.name).toBe('TokenExchangeFailed');
+	expect(error.cause?.name).toBe('MissingRefreshToken');
 });
 
-test('exchangeCallback rejects a token response without expires_in', async () => {
+test('exchangeCallback wraps missing expires_in as TokenExchangeFailed', async () => {
 	const { storage } = createMemoryStorage({
 		'epicenter.oauth.client-1': JSON.stringify({
 			state: 'state-1',
@@ -427,9 +428,10 @@ test('exchangeCallback rejects a token response without expires_in', async () =>
 		await client.exchangeCallback(
 			'http://app.test/auth/callback?code=code-1&state=state-1',
 		),
-	);
+	) as { name?: string; cause?: { name?: string } };
 
-	expect(error.name).toBe('MissingExpiresIn');
+	expect(error.name).toBe('TokenExchangeFailed');
+	expect(error.cause?.name).toBe('MissingExpiresIn');
 });
 
 test('exchangeCallback rejects a non-bearer token response', async () => {

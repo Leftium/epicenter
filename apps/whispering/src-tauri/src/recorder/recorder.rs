@@ -13,8 +13,10 @@
 //!
 //! The cpal callback never blocks: it downmixes to mono and ships
 //! samples through an mpsc channel. The consumer worker accumulates,
-//! resamples to 16 kHz at finalize, pads sub-1s clips, and emits the
-//! canonical [`CapturedPcm`].
+//! resamples to 16 kHz at finalize, pads sub-1s clips, and hands the
+//! resulting `Vec<f32>` (mono 16 kHz PCM) back to the command layer,
+//! which writes the durable WAV artifact and emits the small handle JS
+//! sees over IPC.
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, Stream};
@@ -25,7 +27,6 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use crate::audio::resample_mono;
-use crate::recorder::artifact::CapturedPcm;
 
 /// Simple result type using String for errors. Errors cross the IPC
 /// boundary as plain strings so the JS side renders them in toasts.
@@ -46,7 +47,7 @@ const SHORT_RECORDING_PAD_SAMPLES: usize = 20_000;
 #[derive(Debug)]
 enum RecorderCmd {
     Start(mpsc::Sender<()>),
-    Stop(mpsc::Sender<Result<CapturedPcm>>),
+    Stop(mpsc::Sender<Result<Vec<f32>>>),
     Cancel(mpsc::Sender<Result<()>>),
     Shutdown,
 }
@@ -175,8 +176,8 @@ impl Recorder {
         Ok(())
     }
 
-    /// Stop recording and consume the worker's PCM.
-    pub fn stop_recording(&mut self) -> Result<CapturedPcm> {
+    /// Stop recording and consume the worker's mono 16 kHz PCM.
+    pub fn stop_recording(&mut self) -> Result<Vec<f32>> {
         let tx = self
             .cmd_tx
             .as_ref()
@@ -184,13 +185,9 @@ impl Recorder {
         let (reply_tx, reply_rx) = mpsc::channel();
         tx.send(RecorderCmd::Stop(reply_tx))
             .map_err(|e| format!("Failed to send stop command: {e}"))?;
-        let result = reply_rx
+        reply_rx
             .recv()
-            .map_err(|e| format!("Worker dropped stop reply: {e}"))?;
-        let pcm = result?;
-        let duration_seconds = pcm.samples.len() as f32 / TARGET_RATE as f32;
-        info!("Recording stopped: {duration_seconds:.2}s");
-        Ok(pcm)
+            .map_err(|e| format!("Worker dropped stop reply: {e}"))?
     }
 
     /// Cancel the active recording, discarding any in-flight samples.
@@ -218,13 +215,21 @@ impl Recorder {
     }
 
     /// Recording id of the active session, if any. Surfaced for the JS
-    /// reload-reattach path.
+    /// reload-reattach path: only returns while the recorder is actively
+    /// capturing, so a stopped-but-not-closed session does not look live.
     pub fn get_current_recording_id(&self) -> Option<String> {
         if self.is_recording.load(Ordering::Acquire) {
             self.current_recording_id.clone()
         } else {
             None
         }
+    }
+
+    /// Session id without the is_recording gate. Used by `stop_recording`
+    /// to address the artifact write after the worker has already flipped
+    /// the recording flag down.
+    pub fn session_id(&self) -> Option<String> {
+        self.current_recording_id.clone()
     }
 }
 
@@ -289,8 +294,8 @@ fn run_consumer(
     }
 }
 
-/// Resample to 16 kHz if needed, pad short clips, build the PCM.
-fn finalize(buffer: Vec<f32>, device_rate: u32) -> Result<CapturedPcm> {
+/// Resample to 16 kHz if needed, pad short clips, build the samples.
+fn finalize(buffer: Vec<f32>, device_rate: u32) -> Result<Vec<f32>> {
     let samples = if device_rate == TARGET_RATE {
         buffer
     } else {
@@ -307,7 +312,7 @@ fn finalize(buffer: Vec<f32>, device_rate: u32) -> Result<CapturedPcm> {
         samples.resize(SHORT_RECORDING_PAD_SAMPLES, 0.0);
     }
 
-    Ok(CapturedPcm { samples })
+    Ok(samples)
 }
 
 /// Find a recording device by name. Treats "default" case-insensitively.
@@ -589,15 +594,4 @@ mod tests {
         assert_eq!(mono, input);
     }
 
-    #[test]
-    fn captured_pcm_to_binary_writes_samples_only() {
-        let pcm = CapturedPcm {
-            samples: vec![0.5, -0.5, 0.25],
-        };
-        let bytes = pcm.to_binary();
-        assert_eq!(bytes.len(), 3 * 4);
-        assert_eq!(&bytes[0..4], 0.5f32.to_le_bytes());
-        assert_eq!(&bytes[4..8], (-0.5f32).to_le_bytes());
-        assert_eq!(&bytes[8..12], 0.25f32.to_le_bytes());
-    }
 }

@@ -1,8 +1,10 @@
+use crate::recorder::artifact::{
+    delete_artifact, write_artifact, RecordingArtifact,
+};
 use crate::recorder::recorder::{Recorder, Result};
 use log::{debug, info, warn};
 use serde::Serialize;
 use std::sync::Mutex;
-use tauri::ipc::Response;
 use tauri::{AppHandle, Emitter, State};
 
 const RECORDER_STATE_CHANGED: &str = "recorder:state-changed";
@@ -24,6 +26,7 @@ fn emit_recording_state(app: &AppHandle, state: RecordingState) {
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn enumerate_recording_devices(
     recorder: State<'_, Mutex<Recorder>>,
 ) -> Result<Vec<String>> {
@@ -35,6 +38,7 @@ pub async fn enumerate_recording_devices(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn init_recording_session(
     device_identifier: String,
     recording_id: String,
@@ -60,6 +64,7 @@ pub async fn init_recording_session(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn start_recording(
     recorder: State<'_, Mutex<Recorder>>,
     app_handle: AppHandle,
@@ -75,27 +80,41 @@ pub async fn start_recording(
     Ok(())
 }
 
-/// Returns the captured PCM as a binary IPC body, not JSON. The wire
-/// layout is documented on `CapturedPcm::to_binary`: raw little-endian
-/// f32 samples, no header. Avoids the 5-7 MB JSON serialize/parse round
-/// trip a 30 s clip would cost otherwise.
+/// Stop the recorder, write the canonical WAV artifact to
+/// `<appDataDir>/recordings/{id}.wav`, return the small JSON handle.
+///
+/// JS never sees raw PCM samples on the wire: later operations look the
+/// file up by id (`transcribe_recording`, `encode_recording_for_upload`,
+/// `delete_recording`).
 #[tauri::command]
+#[specta::specta]
 pub async fn stop_recording(
     recorder: State<'_, Mutex<Recorder>>,
     app_handle: AppHandle,
-) -> Result<Response> {
+) -> Result<RecordingArtifact> {
     info!("Stopping recording");
-    let pcm = {
+    let (recording_id, samples) = {
         let mut recorder = recorder
             .lock()
             .map_err(|e| format!("Failed to lock recorder: {e}"))?;
-        recorder.stop_recording()?
+        let id = recorder
+            .session_id()
+            .ok_or_else(|| "no active recording session at stop".to_string())?;
+        let samples = recorder.stop_recording()?;
+        (id, samples)
     };
+
+    let artifact = write_artifact(&app_handle, &recording_id, &samples)?;
     emit_recording_state(&app_handle, RecordingState::Idle);
-    Ok(Response::new(pcm.to_binary()))
+    info!(
+        "Recording stopped: id={}, duration_ms={}, bytes={}",
+        artifact.id, artifact.duration_ms, artifact.byte_length,
+    );
+    Ok(artifact)
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn cancel_recording(
     recorder: State<'_, Mutex<Recorder>>,
     app_handle: AppHandle,
@@ -112,6 +131,7 @@ pub async fn cancel_recording(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn close_recording_session(
     recorder: State<'_, Mutex<Recorder>>,
     app_handle: AppHandle,
@@ -128,6 +148,7 @@ pub async fn close_recording_session(
 }
 
 #[tauri::command]
+#[specta::specta]
 pub async fn get_current_recording_id(
     recorder: State<'_, Mutex<Recorder>>,
 ) -> Result<Option<String>> {
@@ -136,4 +157,16 @@ pub async fn get_current_recording_id(
         .lock()
         .map_err(|e| format!("Failed to lock recorder: {e}"))?;
     Ok(recorder.get_current_recording_id())
+}
+
+/// Delete an artifact by id. Idempotent: a missing file is not an error
+/// so the JS side can call this without first checking existence.
+#[tauri::command]
+#[specta::specta]
+pub async fn delete_recording(
+    recording_id: String,
+    app_handle: AppHandle,
+) -> Result<()> {
+    info!("Deleting recording artifact: {recording_id}");
+    delete_artifact(&app_handle, &recording_id)
 }

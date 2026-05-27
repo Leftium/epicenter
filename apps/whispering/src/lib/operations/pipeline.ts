@@ -1,4 +1,3 @@
-import { nanoid } from 'nanoid/non-secure';
 import { goto } from '$app/navigation';
 import {
 	deliverTranscriptionResult,
@@ -9,44 +8,45 @@ import { transcribeAudio } from '$lib/operations/transcribe';
 import { runTransformation } from '$lib/operations/transform';
 import { report } from '$lib/report';
 import { services } from '$lib/services';
-import { pcmToWavBlob } from '$lib/services/recorder/pcm-to-wav';
-import type { RecorderAudio } from '$lib/services/recorder/types';
+import type { RecorderStopResult } from '$lib/services/recorder/types';
 import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { transformations } from '$lib/state/transformations.svelte';
 
+type DeliverySource = 'recording' | 'upload';
+
 /**
- * Processes a recording through the full pipeline: save -> transcribe -> transform.
+ * Argument shape for the pipeline. The recorder produces a
+ * `RecorderStopResult`; the VAD path and file-upload path build the
+ * equivalent shape with `kind: 'blob'`.
+ */
+type PipelineInput = {
+	source: RecorderStopResult;
+	durationMs: number | null;
+	deliverySource?: DeliverySource;
+};
+
+/**
+ * Processes a recording through the full pipeline: persist artifact,
+ * transcribe by id, then transform.
  *
- * The transcribe and transform steps each own their own loading toast; the
- * delivery layer resolves them with the success message that already
- * includes "copied to clipboard" / "written to cursor" flags. No outer
- * pipeline-level toast is needed; the delivery messages ARE the completion
- * signal.
- *
- * @param recordingId - Optional recording ID. When provided (e.g., from CPAL recorder),
- * the ID was generated earlier in the pipeline and is passed through for consistency.
- * When omitted (e.g., VAD recording, file uploads), a new ID is generated here.
- * @param source - Whether the audio came from a live recording (default) or a
- * file upload. Drives the success-toast copy ("Recording transcribed" vs
- * "File transcribed"). The transcription/transform/delivery logic is identical.
+ * Audio bytes never live in pipeline state. For cpal sources Rust has
+ * already written the durable artifact at
+ * `<appDataDir>/recordings/{id}.wav` by the time we get here. For blob
+ * sources (navigator MediaRecorder, VAD, file upload) we persist the
+ * bytes through the recordings blob store, then operate on the id.
  */
 export async function processRecordingPipeline({
-	audio,
-	recordingId,
+	source,
 	durationMs,
-	source = 'recording',
-}: {
-	audio: RecorderAudio;
-	recordingId?: string;
-	durationMs: number | null;
-	source?: 'recording' | 'upload';
-}) {
+	deliverySource = 'recording',
+}: PipelineInput) {
 	const now = new Date().toISOString();
-	const newRecordingId = recordingId ?? nanoid();
+	const recordingId =
+		source.kind === 'artifact' ? source.artifact.id : source.recordingId;
 
 	const recording = {
-		id: newRecordingId,
+		id: recordingId,
 		title: '',
 		recordedAt: now,
 		updatedAt: now,
@@ -55,25 +55,39 @@ export async function processRecordingPipeline({
 		transcriptionStatus: 'UNPROCESSED',
 	} as const;
 
+	recordings.set(recording);
+
+	if (source.kind === 'blob') {
+		const { error: saveError } = await services.blobs.audio.save(
+			recordingId,
+			source.blob,
+		);
+		if (saveError) {
+			// Transcription reads by id from disk: if the save failed there
+			// is nothing to transcribe. Bailing here surfaces the real
+			// failure instead of the misleading "no recording artifact
+			// found" the transcribe path would emit on the empty directory.
+			recordings.update(recordingId, { transcriptionStatus: 'FAILED' });
+			report.error({
+				title: 'Failed to save recording',
+				description:
+					'We could not write the recording bytes; transcription cannot continue.',
+				cause: saveError,
+			});
+			return;
+		}
+	}
+
 	const transcribeLoading = report.loading({
 		title: '📋 Transcribing...',
 		description: 'Your recording is being transcribed...',
 	});
 
-	recordings.set(recording);
-	// History save consumes a Blob: PCM gets WAV-synthesized once, Blob is
-	// passed through. Run the save in parallel with transcription.
-	const saveAudioPromise = (async () => {
-		const blob = audio instanceof Blob ? audio : pcmToWavBlob(audio);
-		return await services.blobs.audio.save(recording.id, blob);
-	})();
-	const transcribePromise = transcribeAudio(audio);
-
 	const { data: transcribedText, error: transcribeError } =
-		await transcribePromise;
+		await transcribeAudio(recordingId);
 
 	if (transcribeError) {
-		recordings.update(recording.id, { transcriptionStatus: 'FAILED' });
+		recordings.update(recordingId, { transcriptionStatus: 'FAILED' });
 		transcribeLoading.reject({ cause: transcribeError });
 		return;
 	}
@@ -81,19 +95,11 @@ export async function processRecordingPipeline({
 	sound.playSoundIfEnabled('transcriptionComplete');
 	const transcribeNotice = await deliverTranscriptionResult({
 		text: transcribedText,
-		source,
+		source: deliverySource,
 	});
 	transcribeLoading.resolve(transcribeNotice);
 
-	const { error: saveAudioError } = await saveAudioPromise;
-	if (saveAudioError) {
-		report.error({
-			title: 'Audio not saved',
-			cause: saveAudioError,
-		});
-	}
-
-	recordings.update(recording.id, {
+	recordings.update(recordingId, {
 		transcript: transcribedText,
 		transcriptionStatus: 'DONE',
 	});
@@ -126,7 +132,7 @@ export async function processRecordingPipeline({
 		await runTransformation({
 			input: transcribedText,
 			transformation,
-			recordingId: recording.id,
+			recordingId,
 		});
 	if (transformError) {
 		transformLoading.reject({ cause: transformError });

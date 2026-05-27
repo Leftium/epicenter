@@ -1,52 +1,24 @@
-import { invoke } from '@tauri-apps/api/core';
 import { stat } from '@tauri-apps/plugin-fs';
-import { type } from 'arktype';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result, tryAsync } from 'wellcrafted/result';
-
-import type { MoonshineVariant } from './types';
-
-/**
- * Engine-tagged config sent in the `x-transcribe-config` header of the
- * unified `transcribe_audio` Tauri command. Mirrors `TranscribeRequest`
- * on the Rust side.
- *
- * The `engine` tag values match `transcription.service` in user settings
- * so the same string flows: settings → service selector → wire → Rust
- * dispatch. The Rust enum variant is named `Whisper` but serializes as
- * `whispercpp` (see `#[serde(rename)]` in mod.rs).
- */
-export type TranscribeConfig =
-	| {
-			engine: 'whispercpp';
-			modelPath: string;
-			language: string | null;
-			initialPrompt: string | null;
-	  }
-	| {
-			engine: 'parakeet';
-			modelPath: string;
-	  }
-	| {
-			engine: 'moonshine';
-			modelPath: string;
-			variant: MoonshineVariant;
-	  };
+import {
+	commands,
+	type TranscribeRequest,
+	type TranscriptionError,
+} from '$lib/tauri/commands';
 
 /**
- * User-facing display name for each engine. The wire-side `engine` tag
- * is the settings key; this is what appears in error titles like
- * "❌ Unexpected Whisper C++ Error".
+ * The Rust `TranscribeRequest` enum (`#[serde(tag = "engine", rename_all =
+ * "lowercase")]`) is the single source of truth for this argument shape;
+ * the boundary file re-exports the generated TS union. We keep the local
+ * alias `TranscribeConfig` so engine adapters that already import it stay
+ * unchanged.
  */
-const ENGINE_DISPLAY_NAME: Record<TranscribeConfig['engine'], string> = {
-	whispercpp: 'Whisper C++',
-	parakeet: 'Parakeet',
-	moonshine: 'Moonshine',
-};
+export type TranscribeConfig = TranscribeRequest;
 
 export const LocalTranscriptionError = defineErrors({
 	ModelPathRequired: ({
@@ -85,17 +57,6 @@ export const LocalTranscriptionError = defineErrors({
 		engineDisplayName,
 		kind,
 	}),
-	UnexpectedLocalError: ({
-		cause,
-		engineDisplayName,
-	}: {
-		cause: unknown;
-		engineDisplayName: string;
-	}) => ({
-		message: extractErrorMessage(cause),
-		cause,
-		engineDisplayName,
-	}),
 	ModelLoadError: ({ message }: { message: string }) => ({
 		message,
 	}),
@@ -108,6 +69,10 @@ export const LocalTranscriptionError = defineErrors({
 	TranscriptionError: ({ message }: { message: string }) => ({
 		message,
 	}),
+	UnexpectedLocalError: ({ cause }: { cause: unknown }) => ({
+		message: extractErrorMessage(cause),
+		cause,
+	}),
 });
 export type LocalTranscriptionError = InferErrors<
 	typeof LocalTranscriptionError
@@ -115,10 +80,7 @@ export type LocalTranscriptionError = InferErrors<
 
 /**
  * Validate that `modelPath` exists and is the expected `kind`. All three
- * local services share this exact preflight (only Whisper layers a
- * file-size check on top), so it lives here. Uses a single `stat()` call
- * for both existence and kind, replacing the previous `exists()` +
- * `stat()` two-step.
+ * local services share this exact preflight.
  */
 export async function requireExistingModelPath(
 	modelPath: string,
@@ -155,75 +117,41 @@ export async function requireExistingModelPath(
 	return Ok(undefined);
 }
 
-/**
- * Single arktype schema for all errors returned by the unified
- * `transcribe_audio` command. Each engine surfaces the same four
- * variants; the only one specific to Whisper is `GpuError`, which
- * Parakeet and Moonshine never emit in practice.
- */
-const LocalTranscriptionErrorType = type({
-	name: "'AudioReadError' | 'GpuError' | 'ModelLoadError' | 'TranscriptionError'",
-	message: 'string',
-});
-
-/**
- * Shared error mapping for the unified `transcribe_audio` command. Each
- * per-engine service used to duplicate this switch with minor copy
- * variations; the only per-engine variation is the display name, which
- * we derive from the config tag.
- */
 function mapLocalTranscriptionError(
-	unknownError: unknown,
-	engineDisplayName: string,
+	error: TranscriptionError,
 ): Result<never, LocalTranscriptionError> {
-	const parsed = LocalTranscriptionErrorType(unknownError);
-	if (parsed instanceof type.errors) {
-		return LocalTranscriptionError.UnexpectedLocalError({
-			cause: unknownError,
-			engineDisplayName,
-		});
-	}
-
-	switch (parsed.name) {
+	switch (error.name) {
 		case 'ModelLoadError':
 			return LocalTranscriptionError.ModelLoadError({
-				message: parsed.message,
+				message: error.message,
 			});
-
 		case 'GpuError':
-			return LocalTranscriptionError.GpuError({ message: parsed.message });
-
+			return LocalTranscriptionError.GpuError({ message: error.message });
 		case 'AudioReadError':
 			return LocalTranscriptionError.AudioReadError({
-				message: parsed.message,
+				message: error.message,
 			});
-
 		case 'TranscriptionError':
 			return LocalTranscriptionError.TranscriptionError({
-				message: parsed.message,
+				message: error.message,
 			});
+		default:
+			return LocalTranscriptionError.UnexpectedLocalError({ cause: error });
 	}
 }
 
 /**
- * Send `audioBlob` and `config` to the unified `transcribe_audio` Tauri
- * command. Audio travels as the raw IPC body (no JSON-array-of-bytes
- * overhead); the config goes in the `x-transcribe-config` header as JSON.
+ * Canonical transcribe-by-id path. Rust resolves the recording file under
+ * `<appDataDir>/recordings/{recordingId}.*`, decodes it, and runs inference.
  */
-export async function transcribeLocal(
-	audioBlob: Blob,
+export async function transcribeRecording(
+	recordingId: string,
 	config: TranscribeConfig,
 ): Promise<Result<string, LocalTranscriptionError>> {
-	const audioBuffer = await audioBlob.arrayBuffer();
-	return tryAsync({
-		try: () =>
-			invoke<string>('transcribe_audio', audioBuffer, {
-				headers: { 'x-transcribe-config': JSON.stringify(config) },
-			}),
-		catch: (unknownError) =>
-			mapLocalTranscriptionError(
-				unknownError,
-				ENGINE_DISPLAY_NAME[config.engine],
-			),
-	});
+	const { data, error } = await commands.transcribeRecording(
+		recordingId,
+		config,
+	);
+	if (error !== null) return mapLocalTranscriptionError(error);
+	return Ok(data);
 }

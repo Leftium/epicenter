@@ -1,3 +1,4 @@
+import { nanoid } from 'nanoid/non-secure';
 import { goto } from '$app/navigation';
 import { analytics } from '$lib/operations/analytics';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
@@ -86,7 +87,7 @@ export async function stopManualRecording() {
 		description: 'Finalizing your audio capture...',
 	});
 
-	const { data, error } = await manualRecorder.stopRecording({
+	const { data: source, error } = await manualRecorder.stopRecording({
 		sendStatus: loading.update,
 	});
 
@@ -95,7 +96,10 @@ export async function stopManualRecording() {
 		return;
 	}
 
-	const { audio, recordingId, durationMs } = data;
+	const durationMs =
+		source.kind === 'artifact' ? source.artifact.durationMs : source.durationMs;
+	const byteLength =
+		source.kind === 'artifact' ? source.artifact.byteLength : source.blob.size;
 
 	loading.resolve({
 		title: '🎙️ Recording stopped',
@@ -106,13 +110,12 @@ export async function stopManualRecording() {
 
 	analytics.logEvent({
 		type: 'manual_recording_completed',
-		blob_size: audio instanceof Blob ? audio.size : audio.byteLength,
-		duration: durationMs,
+		blob_size: byteLength,
+		duration: durationMs ?? undefined,
 	});
 
 	await processRecordingPipeline({
-		audio,
-		recordingId,
+		source,
 		durationMs,
 	});
 }
@@ -190,7 +193,12 @@ export async function startVadRecording() {
 			});
 
 			await processRecordingPipeline({
-				audio: blob,
+				source: {
+					kind: 'blob',
+					blob,
+					recordingId: nanoid(),
+					durationMs: null,
+				},
 				durationMs: null,
 			});
 		},

@@ -78,7 +78,15 @@ pub fn decode_to_pcm16k_mono(bytes: &[u8]) -> Result<Vec<f32>, AudioError> {
         channel_count
     );
 
-    let mono = downmix_to_mono(samples, channel_count);
+    let mono = if channel_count <= 1 {
+        samples
+    } else {
+        let n = channel_count as usize;
+        samples
+            .chunks_exact(n)
+            .map(|chunk| chunk.iter().sum::<f32>() / n as f32)
+            .collect()
+    };
     debug!("[Audio Decode] downmix to mono: {} samples", mono.len());
 
     let resampled = resample_mono(mono, source_rate, TARGET_RATE)?;
@@ -250,17 +258,6 @@ fn decode_via_libopus(
     Ok((interleaved, OPUS_RATE, channel_count))
 }
 
-/// Average all channels into one. Single-channel input passes through.
-fn downmix_to_mono(samples: Vec<f32>, channels: u16) -> Vec<f32> {
-    if channels <= 1 {
-        return samples;
-    }
-    let n = channels as usize;
-    samples
-        .chunks_exact(n)
-        .map(|chunk| chunk.iter().sum::<f32>() / n as f32)
-        .collect()
-}
 
 #[cfg(test)]
 mod tests {

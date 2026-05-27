@@ -5,30 +5,65 @@ use tauri_plugin_aptabase::EventTracker;
 use tauri_plugin_log::{Target, TargetKind};
 
 pub mod audio;
-use audio::{encode_upload_audio, encode_upload_pcm};
+use audio::encode_recording_for_upload;
 pub mod recorder;
 use recorder::commands::{
-    cancel_recording, close_recording_session, enumerate_recording_devices,
-    get_current_recording_id, init_recording_session, start_recording, stop_recording,
+    cancel_recording, close_recording_session, delete_recording,
+    enumerate_recording_devices, get_current_recording_id, init_recording_session,
+    start_recording, stop_recording,
 };
 use recorder::recorder::Recorder;
 
 pub mod transcription;
-use transcription::{set_unload_policy, transcribe_audio, ModelManager};
+use transcription::{set_unload_policy, transcribe_recording, ModelManager};
 
 pub mod windows_path;
 use windows_path::fix_windows_path;
-
-pub mod graceful_shutdown;
-use graceful_shutdown::send_sigint;
 
 pub mod command;
 use command::execute_command;
 
 pub mod markdown;
-use markdown::{
-    count_markdown_files, delete_files_in_directory, read_markdown_files, write_markdown_files,
-};
+use markdown::{delete_files_in_directory, write_markdown_files};
+
+/// Specta-known commands: every app command except the one that returns a
+/// raw `tauri::ipc::Response` (which is not `specta::Type`). The builder
+/// owns BOTH the runtime handler for these commands (see `run`) and the
+/// TypeScript binding export (see `export_types` test).
+fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
+    tauri_specta::Builder::<tauri::Wry>::new()
+        .commands(tauri_specta::collect_commands![
+            write_text,
+            simulate_enter_keystroke,
+            get_current_recording_id,
+            enumerate_recording_devices,
+            init_recording_session,
+            close_recording_session,
+            start_recording,
+            stop_recording,
+            cancel_recording,
+            delete_recording,
+            transcribe_recording,
+            set_unload_policy,
+            execute_command,
+            delete_files_in_directory,
+            write_markdown_files,
+        ])
+        .error_handling(tauri_specta::ErrorHandlingMode::Result)
+}
+
+#[cfg(test)]
+mod export_bindings {
+    #[test]
+    fn export_types() {
+        super::make_specta_builder()
+            .export(
+                specta_typescript::Typescript::default(),
+                "../src/lib/tauri/bindings.gen.ts",
+            )
+            .expect("failed to export bindings");
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[tokio::main]
@@ -172,31 +207,23 @@ pub async fn run() {
             }));
     }
 
-    // Register command handlers (same for all platforms now)
-    let builder = builder.invoke_handler(tauri::generate_handler![
-        write_text,
-        simulate_enter_keystroke,
-        // Audio recorder commands
-        get_current_recording_id,
-        enumerate_recording_devices,
-        init_recording_session,
-        close_recording_session,
-        start_recording,
-        stop_recording,
-        cancel_recording,
-        transcribe_audio,
-        encode_upload_audio,
-        encode_upload_pcm,
-        set_unload_policy,
-        send_sigint,
-        // Command execution (prevents console window flash on Windows)
-        execute_command,
-        // Filesystem utilities
-        read_markdown_files,
-        count_markdown_files,
-        delete_files_in_directory,
-        write_markdown_files,
-    ]);
+    // Compose two handlers by command name. The specta builder owns every
+    // command in its `collect_commands!` list and is the source of truth for
+    // TS bindings. `encode_recording_for_upload` (raw `tauri::ipc::Response`
+    // return) is outside specta's reach, so it gets its own
+    // `generate_handler!`. We route by name because `Invoke` is not Clone:
+    // each invocation can only be consumed by one handler.
+    let specta_builder = make_specta_builder();
+    let specta_handler = tauri_specta::Builder::invoke_handler(&specta_builder);
+    let raw_handler =
+        tauri::generate_handler![encode_recording_for_upload] as fn(tauri::ipc::Invoke<tauri::Wry>) -> bool;
+    let builder = builder.invoke_handler(move |invoke| {
+        if invoke.message.command() == "encode_recording_for_upload" {
+            raw_handler(invoke)
+        } else {
+            specta_handler(invoke)
+        }
+    });
 
     let app = builder
         .build(tauri::generate_context!())
@@ -233,6 +260,7 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 /// This approach is faster than typing character-by-character and preserves
 /// the user's clipboard, making it ideal for inserting transcribed text.
 #[tauri::command]
+#[specta::specta]
 async fn write_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
     // 1. Save current clipboard content
     let original_clipboard = app.clipboard().read_text().ok();
@@ -290,6 +318,7 @@ async fn write_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
 /// This is useful for automatically submitting text in chat applications
 /// after transcription has been pasted.
 #[tauri::command]
+#[specta::specta]
 async fn simulate_enter_keystroke() -> Result<(), String> {
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
 

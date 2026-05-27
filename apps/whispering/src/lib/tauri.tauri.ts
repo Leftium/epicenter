@@ -1,7 +1,7 @@
 /**
  * Tauri-only capability namespace. Everything that requires the Tauri
- * runtime lives in this file: fs, command, permissions, audioEncoder, window,
- * tray, globalShortcuts, autostart. The subset that needs TanStack caching,
+ * runtime lives in this file: fs, command, permissions, tray,
+ * globalShortcuts, autostart. The subset that needs TanStack caching,
  * error transformation, or invalidation is exposed in the same shape
  * (no sub-namespace), with each leaf picking one canonical call form.
  *
@@ -36,7 +36,6 @@
  * See `specs/20260526T000140-collapse-tauri-only-services-into-namespace.md`.
  */
 
-import { invoke } from '@tauri-apps/api/core';
 import { Menu, MenuItem } from '@tauri-apps/api/menu';
 import { basename, resolveResource } from '@tauri-apps/api/path';
 import { TrayIcon } from '@tauri-apps/api/tray';
@@ -54,7 +53,6 @@ import {
 	unregisterAll as tauriUnregisterAll,
 } from '@tauri-apps/plugin-global-shortcut';
 import { exit } from '@tauri-apps/plugin-process';
-import type { ChildProcess } from '@tauri-apps/plugin-shell';
 import mime from 'mime';
 import {
 	defineErrors,
@@ -64,10 +62,10 @@ import {
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { goto } from '$app/navigation';
 import type { Command, ShortcutEventState } from '$lib/commands';
-import { commandCallbacks } from '$lib/commands';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { IS_MACOS } from '$lib/constants/platform';
 import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
+import { commands } from '$lib/tauri/commands';
 import {
 	type Accelerator,
 	AcceleratorError,
@@ -140,12 +138,10 @@ const command = {
 	 * all platforms; Windows uses CREATE_NO_WINDOW to suppress the console
 	 * flash. See https://github.com/EpicenterHQ/epicenter/issues/815.
 	 */
-	execute(cmd: string) {
-		return tryAsync({
-			try: () =>
-				invoke<ChildProcess<string>>('execute_command', { command: cmd }),
-			catch: (error) => CommandError.ExecuteFailed({ cause: error }),
-		});
+	async execute(cmd: string) {
+		const { data, error } = await commands.executeCommand(cmd);
+		if (error !== null) return CommandError.ExecuteFailed({ cause: error });
+		return Ok(data);
 	},
 };
 
@@ -226,73 +222,6 @@ const permissions = {
 				catch: (error) => PermissionsError.RequestMicrophone({ cause: error }),
 			});
 		},
-	},
-};
-
-// audioEncoder ------------------------------------------------------
-// In-process libopus encoder. Wraps the `encode_upload_audio` Tauri
-// command (raw IPC body, no JSON). The Rust side decodes WAV with hound,
-// resamples to 48 kHz with rubato, encodes 24 kbps voice VBR through
-// audiopus, and muxes into a single OGG stream.
-const AudioEncoderError = defineErrors({
-	EncodeFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Audio encode failed: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-});
-type AudioEncoderError = InferErrors<typeof AudioEncoderError>;
-
-const audioEncoder = {
-	/**
-	 * Compress a WAV blob into OGG/Opus. Returns the bytes wrapped as a
-	 * fresh Blob with `audio/ogg` MIME so the upload paths key their
-	 * multipart extension off `.type` like they already do for the
-	 * untouched WAV case.
-	 *
-	 * Callers should fall back to uploading the original WAV on error
-	 * rather than failing the whole transcription: compression is an
-	 * optimization, not a correctness requirement.
-	 */
-	encodeWavToOpusOgg(wavBlob: Blob): Promise<Result<Blob, AudioEncoderError>> {
-		return tryAsync({
-			try: async () => {
-				const wavBuffer = await wavBlob.arrayBuffer();
-				const oggBytes = await invoke<ArrayBuffer>(
-					'encode_upload_audio',
-					wavBuffer,
-				);
-				return new Blob([oggBytes], { type: 'audio/ogg' });
-			},
-			catch: (cause) => AudioEncoderError.EncodeFailed({ cause }),
-		});
-	},
-
-	/**
-	 * Compress the recorder's in-memory mono 16 kHz PCM into OGG/Opus.
-	 * Used by the dictation cpal path: the recorder returns samples already
-	 * in memory, so we skip the WAV synthesis + decode round-trip and hand
-	 * the samples straight to libopus.
-	 *
-	 * Wire format mirrors `encode_upload_pcm`: raw little-endian f32 samples,
-	 * no header. The rate/channels are a recorder contract, not on the wire.
-	 */
-	encodePcmToOpusOgg(
-		samples: Float32Array,
-	): Promise<Result<Blob, AudioEncoderError>> {
-		return tryAsync({
-			try: async () => {
-				// Tauri's IPC body accepts a Uint8Array (or ArrayBuffer). A
-				// typed-array view over the samples is zero-copy.
-				const body = new Uint8Array(
-					samples.buffer,
-					samples.byteOffset,
-					samples.byteLength,
-				);
-				const oggBytes = await invoke<ArrayBuffer>('encode_upload_pcm', body);
-				return new Blob([oggBytes], { type: 'audio/ogg' });
-			},
-			catch: (cause) => AudioEncoderError.EncodeFailed({ cause }),
-		});
 	},
 };
 
@@ -525,7 +454,7 @@ const tray = {
 };
 
 const globalShortcuts = {
-	registerCommand({
+	async registerCommand({
 		command: cmd,
 		// Parameter may contain legacy "CommandOrControl" syntax.
 		// Legacy: "CommandOrControl+Shift+R" -> Modern: "Command+Shift+R"
@@ -535,6 +464,7 @@ const globalShortcuts = {
 		command: Command;
 		accelerator: Accelerator;
 	}) {
+		const { commandCallbacks } = await import('$lib/commands');
 		const accel = legacyAcceleratorString.replace(
 			'CommandOrControl',
 			IS_MACOS ? 'Command' : 'Control',
@@ -564,7 +494,6 @@ const tauriImpl = {
 	fs,
 	command,
 	permissions,
-	audioEncoder,
 	window,
 	tray,
 	globalShortcuts,

@@ -1,3 +1,4 @@
+import { nanoid } from 'nanoid/non-secure';
 import { defineErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import { analytics } from '$lib/operations/analytics';
@@ -60,9 +61,14 @@ export async function uploadRecordings({
 			});
 
 			await processRecordingPipeline({
-				audio: audioBlob,
+				source: {
+					kind: 'blob',
+					blob: audioBlob,
+					recordingId: nanoid(),
+					durationMs: null,
+				},
 				durationMs: null,
-				source: 'upload',
+				deliverySource: 'upload',
 			});
 		}),
 	);

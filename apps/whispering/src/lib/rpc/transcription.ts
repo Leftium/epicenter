@@ -2,8 +2,6 @@ import type { AnyTaggedError } from 'wellcrafted/error';
 import { Err, Ok, partitionResults, type Result } from 'wellcrafted/result';
 import { transcribeAudio } from '$lib/operations/transcribe';
 import { defineMutation, queryClient } from '$lib/rpc/client';
-import { services } from '$lib/services';
-import type { BlobError } from '$lib/services/blob-store';
 import type { Recording } from '$lib/state/recordings.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
 
@@ -17,15 +15,10 @@ export const transcription = {
 		mutationKey: isTranscribingKey,
 		mutationFn: async (
 			recording: Recording,
-		): Promise<Result<string, BlobError | AnyTaggedError>> => {
-			const { data: audioBlob, error: getAudioBlobError } =
-				await services.blobs.audio.getBlob(recording.id);
-
-			if (getAudioBlobError) return Err(getAudioBlobError);
-
+		): Promise<Result<string, AnyTaggedError>> => {
 			recordings.update(recording.id, { transcriptionStatus: 'TRANSCRIBING' });
 			const { data: transcribedText, error: transcribeError } =
-				await transcribeAudio(audioBlob);
+				await transcribeAudio(recording.id);
 			if (transcribeError) {
 				recordings.update(recording.id, { transcriptionStatus: 'FAILED' });
 				return Err(transcribeError);
@@ -43,14 +36,7 @@ export const transcription = {
 		mutationKey: isTranscribingKey,
 		mutationFn: async (recordings: Recording[]) => {
 			const results = await Promise.all(
-				recordings.map(async (recording) => {
-					const { data: audioBlob, error: getAudioBlobError } =
-						await services.blobs.audio.getBlob(recording.id);
-
-					if (getAudioBlobError) return Err(getAudioBlobError);
-
-					return await transcribeAudio(audioBlob);
-				}),
+				recordings.map((recording) => transcribeAudio(recording.id)),
 			);
 			const partitionedResults = partitionResults(results);
 			return Ok(partitionedResults);

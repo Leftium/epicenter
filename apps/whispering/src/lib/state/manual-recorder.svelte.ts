@@ -8,7 +8,7 @@ import { CpalRecorderServiceLive } from '$lib/services/recorder';
 import {
 	asDeviceIdentifier,
 	type RecorderService,
-	type Recording,
+	type RecordingSession,
 	type StartRecordingParams,
 	type UpdateStatusMessageFn,
 } from '$lib/services/recorder/types';
@@ -39,16 +39,16 @@ const ManualRecorderError = defineErrors({
  * - Operations: `manualRecorder.startRecording({ sendStatus })` etc.
  * - Device enumeration as a TanStack Query for loading states in selectors
  *
- * Each recording is a `Recording` object returned by the backend that
- * started it. The Recording owns its own stop/cancel/subscribe; the
+ * Each recording is a `RecordingSession` object returned by the backend that
+ * started it. The RecordingSession owns its own stop/cancel/subscribe; the
  * recorder service is only consulted at start time, so toggling
  * `recording.method` mid-recording can't misroute teardown (the in-flight
- * Recording stays bound to its original backend).
+ * RecordingSession stays bound to its original backend).
  *
- * Subscription is per-Recording rather than per-service. The previous
+ * Subscription is per-RecordingSession rather than per-service. The previous
  * model subscribed to both navigator and cpal at module init even though
  * only one would ever fire; now `attach()` subscribes to the live
- * Recording and `detach()` cleans up on stop/cancel.
+ * RecordingSession and `detach()` cleans up on stop/cancel.
  *
  * On Tauri, state is bootstrapped from each backend's `getActiveRecording`
  * at module init (a Rust CPAL session can outlive a JS reload).
@@ -92,13 +92,13 @@ async function buildStartParams(
 
 function createManualRecorder() {
 	let _state = $state<WhisperingRecordingState>('IDLE');
-	let _current: Recording | null = null;
+	let _current: RecordingSession | null = null;
 	let _unsubscribe: (() => void) | null = null;
 
-	function attach(recording: Recording) {
+	function attach(session: RecordingSession) {
 		_unsubscribe?.();
-		_current = recording;
-		_unsubscribe = recording.subscribe((s) => {
+		_current = session;
+		_unsubscribe = session.subscribe((s) => {
 			_state = s;
 			if (s === 'IDLE') detach();
 		});
@@ -161,7 +161,7 @@ function createManualRecorder() {
 
 			if (startRecordingError) return Err(startRecordingError);
 
-			attach(data.recording);
+			attach(data.session);
 			return Ok(data.deviceAcquisition);
 		},
 

@@ -1,4 +1,4 @@
-import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import {
 	exists,
 	mkdir,
@@ -9,22 +9,8 @@ import mime from 'mime';
 import { tryAsync } from 'wellcrafted/result';
 import { PATHS } from '$lib/constants/paths';
 import { requireTauri } from '$lib/tauri';
+import { commands } from '$lib/tauri/commands';
 import { BlobError, type BlobStore } from './types';
-
-/**
- * Deletes files inside a directory by filename.
- * Validates that filenames are single path components (no traversal).
- *
- * @param directory - Absolute path to the directory containing the files
- * @param filenames - Array of leaf filenames to delete
- * @returns Number of files successfully deleted
- */
-async function deleteFilesInDirectory(
-	directory: string,
-	filenames: string[],
-): Promise<number> {
-	return invoke('delete_files_in_directory', { directory, filenames });
-}
 
 /**
  * File system-based blob store implementation for desktop.
@@ -65,7 +51,11 @@ export function createFileSystemBlobStore() {
 							return idsToDelete.has(id);
 						})
 						.map((file) => file.name);
-					await deleteFilesInDirectory(recordingsPath, filenames);
+					const { error } = await commands.deleteFilesInDirectory(
+						recordingsPath,
+						filenames,
+					);
+					if (error !== null) throw error;
 				},
 				catch: (error) => BlobError.WriteFailed({ cause: error }),
 			});
@@ -128,7 +118,11 @@ export function createFileSystemBlobStore() {
 
 					const allFiles = await readDir(recordingsPath);
 					const filenames = allFiles.map((file) => file.name);
-					await deleteFilesInDirectory(recordingsPath, filenames);
+					const { error } = await commands.deleteFilesInDirectory(
+						recordingsPath,
+						filenames,
+					);
+					if (error !== null) throw error;
 				},
 				catch: (error) => BlobError.WriteFailed({ cause: error }),
 			});

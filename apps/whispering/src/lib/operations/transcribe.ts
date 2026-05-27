@@ -8,12 +8,11 @@ import type { TranscriptionServiceId } from '$lib/constants/transcription';
 import { analytics } from '$lib/operations/analytics';
 import { report } from '$lib/report';
 import { services } from '$lib/services';
-import { pcmToWavBlob } from '$lib/services/recorder/pcm-to-wav';
-import type { RecorderAudio } from '$lib/services/recorder/types';
 import { TRANSCRIPTION_SERVICES } from '$lib/services/transcription/registry';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { tauri } from '$lib/tauri';
+import { commands } from '$lib/tauri/commands';
 
 export type TranscriptionError = AnyTaggedError;
 
@@ -24,29 +23,15 @@ const TranscriptionOperationError = defineErrors({
 });
 
 /**
- * Services that upload audio bytes to a remote endpoint (cloud APIs +
- * self-hosted). The local engines (whispercpp, parakeet, moonshine) decode
- * the blob in-process via the Rust decoder, so compressing their input
- * would just round-trip through libopus for no win.
+ * Services that upload audio bytes to a remote endpoint. Local engines read
+ * the recording artifact from disk via the Rust `transcribe_recording`
+ * command.
  */
 function isUploadTranscriptionService(
 	serviceId: TranscriptionServiceId,
 ): boolean {
 	const entry = TRANSCRIPTION_SERVICES.find((s) => s.id === serviceId);
 	return entry?.location === 'cloud' || entry?.location === 'self-hosted';
-}
-
-/**
- * Heuristic that catches WAV blobs from synthesized PCM, VAD captures,
- * file uploads, history replays, and legacy WAV inputs. The Opus encoder
- * rejects non-WAV input anyway; this avoids paying the IPC round-trip when
- * we already know the blob is something else.
- */
-function blobLooksLikeWav(blob: Blob): boolean {
-	const type = blob.type.toLowerCase();
-	return (
-		type === 'audio/wav' || type === 'audio/wave' || type === 'audio/x-wav'
-	);
 }
 
 function getOutputLanguage(): SupportedLanguage {
@@ -60,94 +45,50 @@ function getOutputLanguage(): SupportedLanguage {
 }
 
 /**
- * Pick the cheapest valid Blob shape for a given service + audio payload.
- *
- * Cloud / self-hosted services want compressed bytes for upload: PCM
- * (Float32Array) goes straight through libopus (one encode hop, no
- * container synthesis), Blob payloads that look like WAV go through the
- * WAV-bytes encoder (one decode + one encode). Local engines decode the
- * blob in-process via Symphonia, so we just materialize whichever Blob
- * is nearest.
+ * Materialize the bytes to upload for a cloud transcription. The recording
+ * is already saved under `recordings/{id}.{ext}`; in Tauri we round-trip
+ * through Rust's libopus to land on a compressed opus blob. On the web
+ * there is no Rust, so we fetch the original bytes from the blob store and
+ * upload them as-is.
  */
-async function prepareForService(
-	audio: RecorderAudio,
-	service: TranscriptionServiceId,
-): Promise<Blob> {
-	const isUpload = isUploadTranscriptionService(service);
-
-	// Fast path: PCM + cloud upload. One opus encode, no WAV synthesis.
-	if (isUpload && tauri && audio instanceof Float32Array) {
-		const { data: oggBlob, error } =
-			await tauri.audioEncoder.encodePcmToOpusOgg(audio);
-		if (error) {
-			report.info({
-				title: 'Audio compression skipped',
-				description: `${error.message}. Uploading uncompressed audio instead.`,
-				cause: error,
-			});
-			analytics.logEvent({
-				type: 'compression_failed',
-				provider: service,
-				error_message: error.message,
-			});
-			// Fall through to the WAV-blob path below.
-		} else {
-			analytics.logEvent({
-				type: 'compression_completed',
-				provider: service,
-				original_size: audio.byteLength,
-				compressed_size: oggBlob.size,
-				compression_ratio: Math.round(
-					(1 - oggBlob.size / audio.byteLength) * 100,
-				),
-			});
-			return oggBlob;
-		}
-	}
-
-	const blob = audio instanceof Blob ? audio : pcmToWavBlob(audio);
-
-	// WAV uploads and synthesized PCM blobs are still worth compressing
-	// for cloud transcription.
-	if (isUpload && tauri && blobLooksLikeWav(blob)) {
-		const { data: oggBlob, error: encodeError } =
-			await tauri.audioEncoder.encodeWavToOpusOgg(blob);
-		if (encodeError) {
-			report.info({
-				title: 'Audio compression skipped',
-				description: `${encodeError.message}. Uploading original audio instead.`,
-				cause: encodeError,
-			});
-			analytics.logEvent({
-				type: 'compression_failed',
-				provider: service,
-				error_message: encodeError.message,
-			});
-			return blob;
-		}
-		analytics.logEvent({
-			type: 'compression_completed',
-			provider: service,
-			original_size: blob.size,
-			compressed_size: oggBlob.size,
-			compression_ratio: Math.round((1 - oggBlob.size / blob.size) * 100),
+async function loadForCloudUpload(
+	recordingId: string,
+): Promise<Result<Blob, TranscriptionError>> {
+	if (tauri) {
+		const { data: oggBytes, error } =
+			await commands.encodeRecordingForUpload(recordingId);
+		if (error === null) return Ok(new Blob([oggBytes], { type: 'audio/ogg' }));
+		report.info({
+			title: 'Audio compression skipped',
+			description: `${error}. Uploading uncompressed audio instead.`,
 		});
-		return oggBlob;
+		analytics.logEvent({
+			type: 'compression_failed',
+			provider: settings.get('transcription.service'),
+			error_message: error,
+		});
 	}
 
-	return blob;
+	const { data: rawBlob, error: blobError } =
+		await services.blobs.audio.getBlob(recordingId);
+	if (blobError) return Err(blobError);
+	return Ok(rawBlob);
 }
 
 /**
- * Transcribe a recorder audio payload through the configured service.
- * This is the canonical entry point for recorder output. Cloud
- * transcription of an in-memory PCM payload skips the WAV synthesis +
- * decode roundtrip entirely; a Blob payload (navigator, VAD, file
- * upload, history replay) passes through unchanged unless it is a WAV
- * blob for an upload service.
+ * Transcribe a saved recording by id. This is the single canonical entry
+ * point for transcription:
+ *
+ * - The cpal stop path saves the WAV via Rust and returns the id.
+ * - The navigator / VAD / file-upload paths save the blob via the
+ *   recordings blob store and pass the id here.
+ *
+ * Local transcription always goes through `transcribe_recording(id)`.
+ * Cloud transcription uploads compressed bytes derived from the saved file
+ * when possible, falling back to the raw blob.
  */
 export async function transcribeAudio(
-	audio: RecorderAudio,
+	recordingId: string,
 ): Promise<Result<string, TranscriptionError>> {
 	const selectedService = settings.get('transcription.service');
 
@@ -157,11 +98,9 @@ export async function transcribeAudio(
 		provider: selectedService,
 	});
 
-	const audioToTranscribe = await prepareForService(audio, selectedService);
-	const transcriptionResult = await dispatchTranscription(
-		audioToTranscribe,
-		selectedService,
-	);
+	const transcriptionResult = isUploadTranscriptionService(selectedService)
+		? await dispatchCloudTranscription(recordingId, selectedService)
+		: await dispatchLocalTranscription(recordingId, selectedService);
 
 	const duration = Date.now() - startTime;
 	if (transcriptionResult.error) {
@@ -182,10 +121,41 @@ export async function transcribeAudio(
 	return transcriptionResult;
 }
 
-async function dispatchTranscription(
-	audio: Blob,
+async function dispatchLocalTranscription(
+	recordingId: string,
 	selectedService: TranscriptionServiceId,
 ): Promise<Result<string, TranscriptionError>> {
+	const outputLanguage = getOutputLanguage();
+	const prompt = settings.get('transcription.prompt');
+
+	switch (selectedService) {
+		case 'whispercpp':
+			return services.transcriptions.whispercpp.transcribe(recordingId, {
+				outputLanguage,
+				modelPath: deviceConfig.get('transcription.whispercpp.modelPath'),
+				prompt,
+			});
+		case 'parakeet':
+			return services.transcriptions.parakeet.transcribe(recordingId, {
+				modelPath: deviceConfig.get('transcription.parakeet.modelPath'),
+			});
+		case 'moonshine':
+			return services.transcriptions.moonshine.transcribe(recordingId, {
+				modelPath: deviceConfig.get('transcription.moonshine.modelPath'),
+			});
+		default:
+			return TranscriptionOperationError.NoTranscriptionServiceSelected();
+	}
+}
+
+async function dispatchCloudTranscription(
+	recordingId: string,
+	selectedService: TranscriptionServiceId,
+): Promise<Result<string, TranscriptionError>> {
+	const { data: audio, error: loadError } =
+		await loadForCloudUpload(recordingId);
+	if (loadError) return Err(loadError);
+
 	const outputLanguage = getOutputLanguage();
 	const prompt = settings.get('transcription.prompt');
 	const temperature = String(settings.get('transcription.temperature'));
@@ -271,40 +241,6 @@ async function dispatchTranscription(
 				},
 			);
 			if (error) return Err(error);
-			return Ok(data);
-		}
-		case 'whispercpp': {
-			const { data, error } =
-				await services.transcriptions.whispercpp.transcribe(audio, {
-					outputLanguage,
-					modelPath: deviceConfig.get('transcription.whispercpp.modelPath'),
-					prompt,
-				});
-			if (error) {
-				return Err(error);
-			}
-			return Ok(data);
-		}
-		case 'parakeet': {
-			const { data, error } = await services.transcriptions.parakeet.transcribe(
-				audio,
-				{
-					modelPath: deviceConfig.get('transcription.parakeet.modelPath'),
-				},
-			);
-			if (error) {
-				return Err(error);
-			}
-			return Ok(data);
-		}
-		case 'moonshine': {
-			const { data, error } =
-				await services.transcriptions.moonshine.transcribe(audio, {
-					modelPath: deviceConfig.get('transcription.moonshine.modelPath'),
-				});
-			if (error) {
-				return Err(error);
-			}
 			return Ok(data);
 		}
 		default:

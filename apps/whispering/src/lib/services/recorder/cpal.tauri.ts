@@ -1,11 +1,7 @@
-import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { createLogger } from 'wellcrafted/logger';
-import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
-import {
-	RECORDER_OUTPUT_RATE,
-	type WhisperingRecordingState,
-} from '$lib/constants/audio';
+import { Err, Ok, type Result } from 'wellcrafted/result';
+import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { categorizeRecorderError } from '$lib/services/recorder/categorize-error';
 import {
 	asDeviceIdentifier,
@@ -14,40 +10,19 @@ import {
 	type DeviceAcquisitionOutcome,
 	RecorderError,
 	type RecorderService,
-	type Recording,
+	type RecordingSession,
 } from '$lib/services/recorder/types';
+import { commands } from '$lib/tauri/commands';
 
 const log = createLogger('whispering/recorder/cpal');
-
-/**
- * Parse the binary response from `stop_recording`. Wire layout: raw
- * little-endian f32 samples, no header. The recorder's contract is "16 kHz
- * mono" (see `RECORDER_OUTPUT_RATE`), so rate and channels are not on the
- * wire; if the contract ever changes, both sides grow a header together.
- *
- * The `Float32Array` is a zero-copy view over the IPC body, not a
- * decimal-decoded array of doubles. For a 30 s clip this collapses the
- * post-stop critical path by ~150-300 ms compared to JSON `Vec<f32>`.
- */
-function parsePcmIpcBody(
-	buffer: ArrayBuffer,
-): Result<Float32Array, RecorderError> {
-	if (buffer.byteLength % 4 !== 0) {
-		return RecorderError.InvalidPcmIpc({
-			reason: `byte length not a multiple of 4 (f32 size)`,
-			byteLength: buffer.byteLength,
-		});
-	}
-	return Ok(new Float32Array(buffer));
-}
 
 /**
  * Enumerates available recording devices from the system.
  */
 const enumerateDevices = async (): Promise<Result<Device[], RecorderError>> => {
 	const { data: deviceNames, error: enumerateRecordingDevicesError } =
-		await invoke<string[]>('enumerate_recording_devices');
-	if (enumerateRecordingDevicesError) {
+		await commands.enumerateRecordingDevices();
+	if (enumerateRecordingDevicesError !== null) {
 		return RecorderError.EnumerateDevices({
 			cause: enumerateRecordingDevicesError,
 		});
@@ -65,19 +40,23 @@ const enumerateDevices = async (): Promise<Result<Device[], RecorderError>> => {
  * CPAL recorder service that uses the Rust CPAL backend.
  *
  * Constructed via a factory so the per-session lifecycle (stop/cancel/
- * subscribe) lives on the returned `Recording`. The service itself only
- * holds a pointer to the active session for rehydration through
+ * subscribe) lives on the returned `RecordingSession`. The service itself
+ * only holds a pointer to the active session for rehydration through
  * `getActiveRecording`; once stop/cancel runs, that pointer clears.
  *
  * Unlike navigator, a cpal session can outlive a JS reload because the
  * Rust process keeps the cpal stream alive. `getActiveRecording` consults
- * Rust via `get_current_recording_id` and reattaches a new `Recording`
- * wrapper if Rust still has one going.
+ * Rust via `get_current_recording_id` and reattaches a new
+ * `RecordingSession` wrapper if Rust still has one going.
+ *
+ * Stop returns a `RecordingArtifact` handle: Rust writes the durable WAV
+ * to `<appDataDir>/recordings/{id}.wav` and the JS side refers to the
+ * recording by id from then on. There is no raw PCM on the wire.
  */
 function createCpalRecorder(): RecorderService {
-	let activeRecording: Recording | null = null;
+	let activeSession: RecordingSession | null = null;
 
-	function buildRecording(recordingId: string): Recording {
+	function buildSession(recordingId: string): RecordingSession {
 		const subscribers = new Set<(s: WhisperingRecordingState) => void>();
 		let currentState: WhisperingRecordingState = 'RECORDING';
 		let tauriUnlisten: Promise<UnlistenFn> | null = null;
@@ -94,24 +73,24 @@ function createCpalRecorder(): RecorderService {
 
 		const ensureTauriListener = () => {
 			if (tauriUnlisten) return;
-			// Rust emits 'recorder:state-changed' from every mutation path (see
-			// src-tauri/src/recorder/commands.rs). Forward to subscribers so
-			// Rust-initiated transitions (future auto-stop, device disconnect)
-			// reach the UI.
+			// Rust emits 'recorder:state-changed' from every mutation path
+			// (see src-tauri/src/recorder/commands.rs). Forward to subscribers
+			// so Rust-initiated transitions (future auto-stop, device
+			// disconnect) reach the UI.
 			tauriUnlisten = listen<WhisperingRecordingState>(
 				'recorder:state-changed',
 				(event) => notify(event.payload),
 			);
 		};
 
-		// Takes `recording` as an argument rather than closing over the const
-		// declared below. Both work because teardown only runs from stop/cancel
-		// handlers (which can only fire after `recording` is bound), but the
-		// explicit argument keeps the function TDZ-safe if a future caller
-		// invokes teardown from a path declared above the `recording = ...`
-		// initializer.
-		const teardown = (recording: Recording) => {
-			if (activeRecording === recording) activeRecording = null;
+		// Takes `session` as an argument rather than closing over the const
+		// declared below. Both work because teardown only runs from
+		// stop/cancel handlers (which can only fire after `session` is
+		// bound), but the explicit argument keeps the function TDZ-safe if a
+		// future caller invokes teardown from a path declared above the
+		// `session = ...` initializer.
+		const teardown = (session: RecordingSession) => {
+			if (activeSession === session) activeSession = null;
 			if (tauriUnlisten) {
 				void tauriUnlisten.then((unlisten) => unlisten());
 				tauriUnlisten = null;
@@ -119,52 +98,36 @@ function createCpalRecorder(): RecorderService {
 			notify('IDLE');
 		};
 
-		// Close the Rust-side session and tear down JS state. Used by both
-		// the happy path and the parse-failure path so a malformed IPC body
-		// can't leave a zombie session in Rust or a stale activeRecording
-		// pointer in JS. Takes `recording` explicitly for the same TDZ
-		// reason `teardown` does.
-		const closeAndTeardown = async (
-			recording: Recording,
-			sendStatus: (args: { title: string; description: string }) => void,
-		) => {
-			sendStatus({
-				title: '🔄 Closing Session',
-				description: 'Cleaning up recording resources...',
-			});
-			const { error: closeError } = await invoke<void>(
-				'close_recording_session',
-			);
-			if (closeError) {
-				log.error(closeError);
-			}
-			teardown(recording);
-		};
-
-		const recording: Recording = {
+		const session: RecordingSession = {
 			recordingId,
 			backend: 'cpal',
 
 			stop: async ({ sendStatus }) => {
-				const { data: buffer, error: stopRecordingError } =
-					await invoke<ArrayBuffer>('stop_recording');
-				if (stopRecordingError) {
-					teardown(recording);
+				sendStatus({
+					title: '⏸️ Saving recording',
+					description: 'Writing the WAV artifact to disk...',
+				});
+				const { data: artifact, error: stopRecordingError } =
+					await commands.stopRecording();
+				if (stopRecordingError !== null) {
+					teardown(session);
 					return RecorderError.StopFailed({ cause: stopRecordingError });
 				}
 
-				const { data: samples, error: parseError } = parsePcmIpcBody(buffer);
-				if (parseError) {
-					await closeAndTeardown(recording, sendStatus);
-					return Err(parseError);
-				}
+				// Rust's `stop_recording` returns the artifact handle but does
+				// not close the worker; we still own the cpal stream and the
+				// worker thread. Send `close_recording_session` so Rust can
+				// join the worker and free the stream.
+				sendStatus({
+					title: '🔄 Closing Session',
+					description: 'Cleaning up recording resources...',
+				});
+				const { error: closeError } = await commands.closeRecordingSession();
+				if (closeError !== null)
+					log.error(RecorderError.StopFailed({ cause: closeError }));
+				teardown(session);
 
-				const durationMs = Math.round(
-					(samples.length / RECORDER_OUTPUT_RATE) * 1000,
-				);
-
-				await closeAndTeardown(recording, sendStatus);
-				return Ok({ audio: samples, recordingId, durationMs });
+				return Ok({ kind: 'artifact', artifact });
 			},
 
 			cancel: async ({ sendStatus }) => {
@@ -176,8 +139,8 @@ function createCpalRecorder(): RecorderService {
 
 				// cancel_recording on the Rust side discards the in-flight
 				// samples and tears down the session worker. One round trip.
-				const { error: cancelError } = await invoke<void>('cancel_recording');
-				if (cancelError) {
+				const { error: cancelError } = await commands.cancelRecording();
+				if (cancelError !== null) {
 					sendStatus({
 						title: '❌ Cancel Failed',
 						description:
@@ -185,7 +148,7 @@ function createCpalRecorder(): RecorderService {
 					});
 				}
 
-				teardown(recording);
+				teardown(session);
 				return Ok({ status: 'cancelled' });
 			},
 
@@ -201,27 +164,26 @@ function createCpalRecorder(): RecorderService {
 			},
 		};
 
-		return recording;
+		return session;
 	}
 
 	return {
 		getActiveRecording: async (): Promise<
-			Result<Recording | null, RecorderError>
+			Result<RecordingSession | null, RecorderError>
 		> => {
-			// If we still hold the in-memory pointer, prefer it; otherwise probe
-			// Rust in case a recording outlived a JS reload.
-			if (activeRecording) return Ok(activeRecording);
+			// If we still hold the in-memory pointer, prefer it; otherwise
+			// probe Rust in case a recording session outlived a JS reload.
+			if (activeSession) return Ok(activeSession);
 
-			const { data: liveRecordingId, error: getIdError } = await invoke<
-				string | null
-			>('get_current_recording_id');
-			if (getIdError) {
+			const { data: liveRecordingId, error: getIdError } =
+				await commands.getCurrentRecordingId();
+			if (getIdError !== null) {
 				return RecorderError.GetStateFailed({ cause: getIdError });
 			}
 			if (!liveRecordingId) return Ok(null);
 
-			const rehydrated = buildRecording(liveRecordingId);
-			activeRecording = rehydrated;
+			const rehydrated = buildSession(liveRecordingId);
+			activeSession = rehydrated;
 			return Ok(rehydrated);
 		},
 
@@ -232,7 +194,7 @@ function createCpalRecorder(): RecorderService {
 			{ sendStatus },
 		) => {
 			const { data: devices, error: enumerateError } = await enumerateDevices();
-			if (enumerateError) return Err(enumerateError);
+			if (enumerateError !== null) return Err(enumerateError);
 
 			const deviceIds = devices.map((d) => d.id);
 			const fallbackDeviceId = deviceIds.at(0);
@@ -282,19 +244,15 @@ function createCpalRecorder(): RecorderService {
 					'Initializing your recording session and checking microphone access...',
 			});
 
-			const sampleRateNum = sampleRate
-				? Number.parseInt(sampleRate, 10)
-				: undefined;
+			const sampleRateNum = sampleRate ? Number.parseInt(sampleRate, 10) : null;
 
-			const { error: initRecordingSessionError } = await invoke(
-				'init_recording_session',
-				{
+			const { error: initRecordingSessionError } =
+				await commands.initRecordingSession(
 					deviceIdentifier,
 					recordingId,
-					sampleRate: sampleRateNum,
-				},
-			);
-			if (initRecordingSessionError)
+					sampleRateNum,
+				);
+			if (initRecordingSessionError !== null)
 				return (
 					categorizeRecorderError(initRecordingSessionError) ??
 					RecorderError.InitFailed({
@@ -307,33 +265,18 @@ function createCpalRecorder(): RecorderService {
 				description:
 					'Recording session initialized, now starting to capture audio...',
 			});
-			const { error: startRecordingError } =
-				await invoke<void>('start_recording');
-			if (startRecordingError)
+			const { error: startRecordingError } = await commands.startRecording();
+			if (startRecordingError !== null)
 				return (
 					categorizeRecorderError(startRecordingError) ??
 					RecorderError.StartFailed({ cause: startRecordingError })
 				);
 
-			const recording = buildRecording(recordingId);
-			activeRecording = recording;
-			return Ok({ recording, deviceAcquisition: deviceOutcome });
+			const session = buildSession(recordingId);
+			activeSession = session;
+			return Ok({ session, deviceAcquisition: deviceOutcome });
 		},
 	};
 }
 
 export const CpalRecorderServiceLive: RecorderService = createCpalRecorder();
-
-/**
- * Wrapper function for Tauri invoke calls that handles errors consistently.
- * Converts Tauri invoke calls into Result types for better error handling.
- *
- * @param command - The Tauri command to invoke
- * @param args - Optional arguments to pass to the command
- */
-async function invoke<T>(command: string, args?: Record<string, unknown>) {
-	return tryAsync({
-		try: async () => await tauriInvoke<T>(command, args),
-		catch: (error) => RecorderError.InvokeFailed({ command, cause: error }),
-	});
-}

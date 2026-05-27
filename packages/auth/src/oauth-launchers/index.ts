@@ -61,7 +61,7 @@ export type OAuthClientError = InferErrors<typeof OAuthClientError>;
  * Browser redirect flows can use `sessionStorage`; native app flows usually
  * need storage that survives leaving the app and returning through a deep link.
  */
-export type OAuthTemporaryStorage = {
+type OAuthTemporaryStorage = {
 	/**
 	 * Read the serialized PKCE transaction for this OAuth client.
 	 *
@@ -93,7 +93,7 @@ export type OAuthTemporaryStorage = {
  * The client stores that per-launch value in the temporary transaction so token
  * exchange uses the same redirect URI that created the authorization URL.
  */
-export type OAuthClientConfig = {
+type OAuthClientConfig = {
 	/**
 	 * OAuth issuer URL. For Epicenter deployments this is `${baseURL}/auth`.
 	 */

@@ -21,14 +21,20 @@ import {
 	createBrowserOAuthLauncher,
 	createExtensionOAuthLauncher,
 	createOAuthClient,
-	type OAuthTemporaryStorage,
 } from './index.js';
+
+type MaybePromise<T> = T | Promise<T>;
+type MemoryOAuthStorage = {
+	getItem: (key: string) => MaybePromise<string | null>;
+	setItem: (key: string, value: string) => MaybePromise<void>;
+	removeItem: (key: string) => MaybePromise<void>;
+};
 
 const REDIRECT_URI = 'http://app.test/auth/callback';
 
 function createMemoryStorage(seed: Record<string, string> = {}) {
 	const values = new Map(Object.entries(seed));
-	const storage: OAuthTemporaryStorage = {
+	const storage: MemoryOAuthStorage = {
 		getItem: (key) => values.get(key) ?? null,
 		setItem: (key, value) => {
 			values.set(key, value);

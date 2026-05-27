@@ -1,7 +1,7 @@
 /**
  * Tauri-only capability namespace. Everything that requires the Tauri
- * runtime lives in this file: fs, command, permissions, tray,
- * globalShortcuts, autostart. The subset that needs TanStack caching,
+ * runtime lives in this file: fs, permissions, tray, globalShortcuts,
+ * autostart. The subset that needs TanStack caching,
  * error transformation, or invalidation is exposed in the same shape
  * (no sub-namespace), with each leaf picking one canonical call form.
  *
@@ -122,29 +122,6 @@ const fs = {
 		}),
 };
 
-// command -----------------------------------------------------------
-const CommandError = defineErrors({
-	ExecuteFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to execute command: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-});
-type CommandError = InferErrors<typeof CommandError>;
-
-const command = {
-	/**
-	 * Execute a command and wait for it to complete.
-	 * Commands are parsed and executed directly without shell wrappers on
-	 * all platforms; Windows uses CREATE_NO_WINDOW to suppress the console
-	 * flash. See https://github.com/EpicenterHQ/epicenter/issues/815.
-	 */
-	async execute(cmd: string) {
-		const { data, error } = await commands.executeCommand(cmd);
-		if (error !== null) return CommandError.ExecuteFailed({ cause: error });
-		return Ok(data);
-	},
-};
-
 // permissions -------------------------------------------------------
 const PermissionsError = defineErrors({
 	CheckAccessibility: ({ cause }: { cause: unknown }) => ({
@@ -153,6 +130,10 @@ const PermissionsError = defineErrors({
 	}),
 	RequestAccessibility: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to request accessibility permissions: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	OpenAccessibilitySettings: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to open accessibility settings: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 	CheckMicrophone: ({ cause }: { cause: unknown }) => ({
@@ -193,6 +174,15 @@ const permissions = {
 				catch: (error) =>
 					PermissionsError.RequestAccessibility({ cause: error }),
 			});
+		},
+
+		async openSettings() {
+			if (!IS_MACOS) return Ok(undefined);
+			const { error } = await commands.openAccessibilitySettings();
+			if (error !== null) {
+				return PermissionsError.OpenAccessibilitySettings({ cause: error });
+			}
+			return Ok(undefined);
 		},
 	},
 
@@ -492,7 +482,6 @@ const globalShortcuts = {
 // `requireTauri()` returns the asserted form for `.tauri.ts` callers.
 const tauriImpl = {
 	fs,
-	command,
 	permissions,
 	window,
 	tray,

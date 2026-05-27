@@ -17,7 +17,6 @@
 	import { tauri } from '$lib/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
-	import DesktopOutputFolder from './DesktopOutputFolder.svelte';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
 
@@ -290,15 +289,6 @@
 					</Select.Root>
 					<Field.Description>
 						Higher sample rates provide better quality but create larger files
-					</Field.Description>
-				</Field.Field>
-
-				<Field.Field>
-					<Field.Label for="output-folder">Recording Output Folder</Field.Label>
-					<DesktopOutputFolder></DesktopOutputFolder>
-					<Field.Description>
-						Choose where to save your recordings. Default location is secure and
-						managed by the app.
 					</Field.Description>
 				</Field.Field>
 			{/if}

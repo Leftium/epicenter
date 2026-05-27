@@ -5,8 +5,7 @@
 	It only renders on desktop (Tauri) environments and gracefully handles errors.
 
 	Use cases:
-	- Opening data folders (recordings, transformations, etc.)
-	- Opening user-configured output directories
+	- Opening app data folders (recordings, transformations, etc.)
 	- Providing quick access to app data locations
 
 	Example usage:

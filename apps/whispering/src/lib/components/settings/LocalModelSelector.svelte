@@ -7,13 +7,14 @@
 	import FolderOpen from '@lucide/svelte/icons/folder-open';
 	import Paperclip from '@lucide/svelte/icons/paperclip';
 	import X from '@lucide/svelte/icons/x';
-	import { basename } from '@tauri-apps/api/path';
+	import { basename, join } from '@tauri-apps/api/path';
 	import { open } from '@tauri-apps/plugin-dialog';
-	import { readDir } from '@tauri-apps/plugin-fs';
+	import { copyFile, mkdir, readDir } from '@tauri-apps/plugin-fs';
 	import type { Snippet } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { Ok, tryAsync } from 'wellcrafted/result';
 	import type { LocalModelConfig } from '$lib/constants/local-models';
+	import { PATHS } from '$lib/constants/paths';
 	import { tauri } from '$lib/tauri';
 	import LocalModelDownloadCard from './LocalModelDownloadCard.svelte';
 
@@ -79,6 +80,38 @@
 	);
 	const isPrebuiltModel = $derived(!!prebuiltModelInfo);
 
+	async function getModelRoot() {
+		const engine = models[0]?.engine;
+		switch (engine) {
+			case 'whispercpp':
+				return PATHS.MODELS.WHISPER();
+			case 'parakeet':
+				return PATHS.MODELS.PARAKEET();
+			case 'moonshine':
+				return PATHS.MODELS.MOONSHINE();
+			default:
+				throw new Error('No local model engine configured');
+		}
+	}
+
+	async function copyDirectory(sourceDir: string, destinationDir: string) {
+		await mkdir(destinationDir, { recursive: true });
+		const entries = await readDir(sourceDir);
+
+		for (const entry of entries) {
+			const sourcePath = await join(sourceDir, entry.name);
+			const destinationPath = await join(destinationDir, entry.name);
+
+			if (entry.isDirectory) {
+				await copyDirectory(sourcePath, destinationPath);
+			} else if (entry.isFile) {
+				await copyFile(sourcePath, destinationPath);
+			} else {
+				throw new Error('Selected model directory cannot include symlinks');
+			}
+		}
+	}
+
 	/**
 	 * Open file/folder browser for manual model selection
 	 */
@@ -87,8 +120,10 @@
 
 		await tryAsync({
 			try: async () => {
+				const modelRoot = await getModelRoot();
+				await mkdir(modelRoot, { recursive: true });
+
 				if (fileSelectionMode === 'directory') {
-					// Directory selection for folder-based models
 					const selected = await open({
 						directory: true,
 						multiple: false,
@@ -96,18 +131,17 @@
 					});
 
 					if (selected) {
-						// Validate that it's a directory with expected files
 						const entries = await readDir(selected);
-						if (!entries || entries.length === 0) {
-							toast.error('Selected directory appears to be empty');
-							return;
+						if (entries.length === 0) {
+							throw new Error('Selected directory appears to be empty');
 						}
-
-						value = selected;
-						toast.success('Model directory selected');
+						const directoryName = await basename(selected);
+						const importedPath = await join(modelRoot, directoryName);
+						await copyDirectory(selected, importedPath);
+						value = importedPath;
+						toast.success('Model directory imported');
 					}
 				} else {
-					// File selection for single-file models
 					const filters =
 						fileExtensions.length > 0
 							? [
@@ -125,8 +159,11 @@
 					});
 
 					if (selected) {
-						value = selected;
-						toast.success('Model file selected');
+						const fileName = await basename(selected);
+						const importedPath = await join(modelRoot, fileName);
+						await copyFile(selected, importedPath);
+						value = importedPath;
+						toast.success('Model file imported');
 					}
 				}
 			},

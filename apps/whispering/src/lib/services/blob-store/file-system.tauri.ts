@@ -51,10 +51,7 @@ export function createFileSystemBlobStore() {
 							return idsToDelete.has(id);
 						})
 						.map((file) => file.name);
-					const { error } = await commands.deleteFilesInDirectory(
-						recordingsPath,
-						filenames,
-					);
+					const { error } = await commands.deleteRecordingFiles(filenames);
 					if (error !== null) throw error;
 				},
 				catch: (error) => BlobError.WriteFailed({ cause: error }),
@@ -118,10 +115,7 @@ export function createFileSystemBlobStore() {
 
 					const allFiles = await readDir(recordingsPath);
 					const filenames = allFiles.map((file) => file.name);
-					const { error } = await commands.deleteFilesInDirectory(
-						recordingsPath,
-						filenames,
-					);
+					const { error } = await commands.deleteRecordingFiles(filenames);
 					if (error !== null) throw error;
 				},
 				catch: (error) => BlobError.WriteFailed({ cause: error }),

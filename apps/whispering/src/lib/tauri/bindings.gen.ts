@@ -92,72 +92,44 @@ export const commands = {
 	setUnloadPolicy: (policy: string) =>
 		__TAURI_INVOKE<void>('set_unload_policy', { policy }),
 	/**
-	 *  Execute a command and wait for it to complete.
+	 *  Open macOS Accessibility settings.
 	 *
-	 *  Parses the command string into program and arguments, then executes directly
-	 *  without using a shell wrapper. This approach provides:
-	 *  - Consistent behavior across all platforms
-	 *  - No shell injection vulnerabilities
-	 *  - Lower process overhead
-	 *  - PATH resolution still works via Command::new()
-	 *
-	 *  On Windows, also uses CREATE_NO_WINDOW flag to prevent console window flash (GitHub issue #815).
-	 *
-	 *  # Arguments
-	 *  * `command` - The command to execute as a string
-	 *
-	 *  # Returns
-	 *  Result containing the command output (stdout, stderr, exit code) or error message
-	 *
-	 *  # Examples
-	 *  ```ignore
-	 *  execute_command("uname -a".to_string()).await?;
-	 *  execute_command("git --version".to_string()).await?;
-	 *  ```
+	 *  This is intentionally a fixed command instead of a general command
+	 *  runner. The app only needs this one OS handoff, so the frontend should
+	 *  not receive shell or process execution privileges.
 	 */
-	executeCommand: (command: string) =>
-		typedError<CommandOutput, string>(
-			__TAURI_INVOKE('execute_command', { command }),
-		),
+	openAccessibilitySettings: () =>
+		typedError<null, string>(__TAURI_INVOKE('open_accessibility_settings')),
 	/**
 	 *  Deletes files inside a directory by filename.
 	 *  Validates filenames are single path components (no traversal).
 	 *  Uses Rayon for parallel deletion. Silently skips missing files.
 	 *
 	 *  # Arguments
-	 *  * `directory` - Absolute path to the directory containing the files
 	 *  * `filenames` - Array of leaf filenames to delete
 	 */
-	deleteFilesInDirectory: (directory: string, filenames: string[]) =>
+	deleteRecordingFiles: (filenames: string[]) =>
 		typedError<number, string>(
-			__TAURI_INVOKE('delete_files_in_directory', { directory, filenames }),
+			__TAURI_INVOKE('delete_recording_files', { filenames }),
 		),
 	/**
 	 *  Writes markdown files to disk atomically using a temporary file plus persist.
-	 *  Validates all filenames upfront\u2014no files are written if any name is invalid.
+	 *  Validates all filenames before writing so invalid names do not touch disk.
 	 *
 	 *  # Arguments
-	 *  * `directory` - Absolute path to the output directory
 	 *  * `files` - Array of `{ filename, content }` pairs to write
 	 *
 	 *  # Returns
 	 *  * `Ok(())` - All files written successfully
 	 *  * `Err(String)` - Error if any write fails (earlier files may already be on disk)
 	 */
-	writeMarkdownFiles: (directory: string, files: MarkdownFile[]) =>
+	writeRecordingMarkdownFiles: (files: MarkdownFile[]) =>
 		typedError<null, string>(
-			__TAURI_INVOKE('write_markdown_files', { directory, files }),
+			__TAURI_INVOKE('write_recording_markdown_files', { files }),
 		),
 };
 
 /* Types */
-export type CommandOutput = {
-	code: number | null;
-	signal: number | null;
-	stdout: string;
-	stderr: string;
-};
-
 export type MarkdownFile = {
 	filename: string;
 	content: string;

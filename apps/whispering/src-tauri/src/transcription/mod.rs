@@ -8,7 +8,7 @@ pub use model_manager::ModelManager;
 use model_manager::UnloadPolicy;
 use serde::Deserialize;
 use std::path::PathBuf;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use transcribe_rs::onnx::moonshine::MoonshineVariant;
 use transcribe_rs::onnx::parakeet::{ParakeetParams, TimestampGranularity};
 use transcribe_rs::whisper_cpp::WhisperInferenceParams;
@@ -71,6 +71,30 @@ impl TranscribeRequest {
             TranscribeRequest::Moonshine { .. } => "Moonshine",
         }
     }
+
+    fn constrain_model_path(self, app: &AppHandle) -> Result<Self, TranscriptionError> {
+        match self {
+            TranscribeRequest::Whisper {
+                model_path,
+                language,
+                initial_prompt,
+            } => Ok(TranscribeRequest::Whisper {
+                model_path: app_model_path(app, model_path)?,
+                language,
+                initial_prompt,
+            }),
+            TranscribeRequest::Parakeet { model_path } => Ok(TranscribeRequest::Parakeet {
+                model_path: app_model_path(app, model_path)?,
+            }),
+            TranscribeRequest::Moonshine {
+                model_path,
+                variant,
+            } => Ok(TranscribeRequest::Moonshine {
+                model_path: app_model_path(app, model_path)?,
+                variant,
+            }),
+        }
+    }
 }
 
 /// Canonical transcribe-by-id path. Resolves the audio file under
@@ -87,9 +111,10 @@ pub async fn transcribe_recording(
     app_handle: AppHandle,
     model_manager: State<'_, ModelManager>,
 ) -> Result<String, TranscriptionError> {
-    let samples = read_artifact_samples(&app_handle, &recording_id).map_err(|e| {
-        TranscriptionError::AudioReadError { message: e }
-    })?;
+    let config = config.constrain_model_path(&app_handle)?;
+
+    let samples = read_artifact_samples(&app_handle, &recording_id)
+        .map_err(|e| TranscriptionError::AudioReadError { message: e })?;
 
     let manager = model_manager.inner().clone();
     tauri::async_runtime::spawn_blocking(move || run_inference(samples, config, manager))
@@ -123,6 +148,33 @@ fn transcription_err(e: impl std::fmt::Display) -> TranscriptionError {
     TranscriptionError::TranscriptionError {
         message: e.to_string(),
     }
+}
+
+fn model_load_err(e: impl std::fmt::Display) -> TranscriptionError {
+    TranscriptionError::ModelLoadError {
+        message: e.to_string(),
+    }
+}
+
+fn app_model_path(app: &AppHandle, model_path: String) -> Result<String, TranscriptionError> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(model_load_err)?
+        .canonicalize()
+        .map_err(|e| model_load_err(format!("resolve app data directory: {}", e)))?;
+    let models_dir = app_data_dir.join("models");
+    let path = PathBuf::from(&model_path)
+        .canonicalize()
+        .map_err(|e| model_load_err(format!("resolve model path {}: {}", model_path, e)))?;
+
+    if !path.starts_with(&models_dir) {
+        return Err(model_load_err(
+            "Local model path must be inside the app data models directory",
+        ));
+    }
+
+    Ok(path.to_string_lossy().to_string())
 }
 
 /// Synchronous inference dispatch. Runs on a blocking-pool thread; all

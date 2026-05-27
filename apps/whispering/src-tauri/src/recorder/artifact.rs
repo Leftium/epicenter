@@ -90,14 +90,16 @@ fn validate_recording_id(id: &str) -> Result<(), String> {
         || id == ".."
         || id.contains("..")
     {
-        return Err(format!("recording id '{id}' contains path separators or traversal"));
+        return Err(format!(
+            "recording id '{id}' contains path separators or traversal"
+        ));
     }
     Ok(())
 }
 
 /// Resolve the directory that holds all recording artifacts. Created on
 /// demand on the first write; readers expect it to exist.
-fn recordings_dir(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn recordings_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let app_data = app
         .path()
         .app_data_dir()
@@ -122,9 +124,8 @@ fn recording_path(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
 fn find_recording_path(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
     validate_recording_id(id)?;
     let dir = recordings_dir(app)?;
-    let entries = std::fs::read_dir(&dir).map_err(|e| {
-        format!("read recordings dir {}: {e}", dir.display())
-    })?;
+    let entries = std::fs::read_dir(&dir)
+        .map_err(|e| format!("read recordings dir {}: {e}", dir.display()))?;
     let prefix = format!("{id}.");
     for entry in entries.flatten() {
         let name = entry.file_name();
@@ -173,10 +174,9 @@ pub fn write_artifact(
 /// navigator-saved webm/opus/mp4, etc.).
 pub fn read_artifact_samples(app: &AppHandle, id: &str) -> Result<Vec<f32>, String> {
     let path = find_recording_path(app, id)?;
-    let bytes = std::fs::read(&path)
-        .map_err(|e| format!("read artifact {}: {e}", path.display()))?;
-    decode_to_pcm16k_mono(&bytes)
-        .map_err(|e| format!("decode artifact {}: {e}", path.display()))
+    let bytes =
+        std::fs::read(&path).map_err(|e| format!("read artifact {}: {e}", path.display()))?;
+    decode_to_pcm16k_mono(&bytes).map_err(|e| format!("decode artifact {}: {e}", path.display()))
 }
 
 /// Delete a recording's audio file. Idempotent: a missing file is not an
@@ -221,7 +221,8 @@ fn write_pcm_as_wav(path: &Path, samples: &[f32]) -> Result<(), String> {
 
     // RIFF header
     w.write_all(b"RIFF").map_err(io_err(path))?;
-    w.write_all(&file_size.to_le_bytes()).map_err(io_err(path))?;
+    w.write_all(&file_size.to_le_bytes())
+        .map_err(io_err(path))?;
     w.write_all(b"WAVE").map_err(io_err(path))?;
     // fmt chunk
     w.write_all(b"fmt ").map_err(io_err(path))?;
@@ -232,7 +233,8 @@ fn write_pcm_as_wav(path: &Path, samples: &[f32]) -> Result<(), String> {
     w.write_all(&channels.to_le_bytes()).map_err(io_err(path))?;
     w.write_all(&rate.to_le_bytes()).map_err(io_err(path))?;
     let byte_rate: u32 = rate * channels as u32 * bytes_per_sample;
-    w.write_all(&byte_rate.to_le_bytes()).map_err(io_err(path))?;
+    w.write_all(&byte_rate.to_le_bytes())
+        .map_err(io_err(path))?;
     let block_align: u16 = channels * bytes_per_sample as u16;
     w.write_all(&block_align.to_le_bytes())
         .map_err(io_err(path))?;
@@ -240,7 +242,8 @@ fn write_pcm_as_wav(path: &Path, samples: &[f32]) -> Result<(), String> {
         .map_err(io_err(path))?;
     // data chunk
     w.write_all(b"data").map_err(io_err(path))?;
-    w.write_all(&data_size.to_le_bytes()).map_err(io_err(path))?;
+    w.write_all(&data_size.to_le_bytes())
+        .map_err(io_err(path))?;
     for &s in samples {
         w.write_all(&s.to_le_bytes()).map_err(io_err(path))?;
     }

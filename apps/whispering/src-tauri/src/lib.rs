@@ -8,23 +8,19 @@ pub mod audio;
 use audio::encode_recording_for_upload;
 pub mod recorder;
 use recorder::commands::{
-    cancel_recording, close_recording_session, delete_recording,
-    enumerate_recording_devices, get_current_recording_id, init_recording_session,
-    start_recording, stop_recording,
+    cancel_recording, close_recording_session, delete_recording, enumerate_recording_devices,
+    get_current_recording_id, init_recording_session, start_recording, stop_recording,
 };
 use recorder::recorder::Recorder;
 
 pub mod transcription;
 use transcription::{set_unload_policy, transcribe_recording, ModelManager};
 
-pub mod windows_path;
-use windows_path::fix_windows_path;
-
 pub mod command;
-use command::execute_command;
+use command::open_accessibility_settings;
 
 pub mod markdown;
-use markdown::{delete_files_in_directory, write_markdown_files};
+use markdown::{delete_recording_files, write_recording_markdown_files};
 
 /// Specta-known commands: every app command except the one that returns a
 /// raw `tauri::ipc::Response` (which is not `specta::Type`). The builder
@@ -45,9 +41,9 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             delete_recording,
             transcribe_recording,
             set_unload_policy,
-            execute_command,
-            delete_files_in_directory,
-            write_markdown_files,
+            open_accessibility_settings,
+            delete_recording_files,
+            write_recording_markdown_files,
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
 }
@@ -126,15 +122,6 @@ pub async fn run() {
         previous_hook(panic_info);
     }));
 
-    // Fix PATH environment for GUI applications on macOS and Linux.
-    // Tauri-launched processes don't inherit the user's shell PATH, so any
-    // command we spawn (Homebrew-installed binaries, etc.) needs this.
-    let _ = fix_path_env::fix();
-
-    // Fix Windows PATH inheritance bug so spawned child processes resolve
-    // commands from PATH the same way the parent does.
-    fix_windows_path();
-
     // ONNX Runtime accelerator for Parakeet and Moonshine. `OrtAccelerator::Auto`
     // picks the best provider that's compiled in (CoreML on macOS, CPU on Linux),
     // but it deliberately excludes DirectML because DirectML needs sequential ORT
@@ -178,7 +165,6 @@ pub async fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .manage(Mutex::new(Recorder::new()))
@@ -215,8 +201,8 @@ pub async fn run() {
     // each invocation can only be consumed by one handler.
     let specta_builder = make_specta_builder();
     let specta_handler = tauri_specta::Builder::invoke_handler(&specta_builder);
-    let raw_handler =
-        tauri::generate_handler![encode_recording_for_upload] as fn(tauri::ipc::Invoke<tauri::Wry>) -> bool;
+    let raw_handler = tauri::generate_handler![encode_recording_for_upload]
+        as fn(tauri::ipc::Invoke<tauri::Wry>) -> bool;
     let builder = builder.invoke_handler(move |invoke| {
         if invoke.message.command() == "encode_recording_for_upload" {
             raw_handler(invoke)

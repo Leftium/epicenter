@@ -122,9 +122,7 @@ Stuffing those into the same per-service folder pattern made them lie. The "brow
 // $lib/tauri.tauri.ts
 const tauriImpl = {
   fs: { pathToBlob, pathsToFiles },
-  command: { execute },
   permissions: { accessibility, microphone },
-  audioEncoder: { encodeWavToOpusOgg, encodePcmToOpusOgg },
   window: { setAlwaysOnTop },
   tray: { setIcon },
   globalShortcuts: { registerCommand, unregisterCommand, unregisterAll },

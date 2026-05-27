@@ -6,9 +6,9 @@ metadata:
   forked: 2026-05-17
 ---
 
-This skill takes the current conversation context and codebase understanding and produces a PRD. Do NOT interview the user - just synthesize what you already know.
+This skill takes the current conversation context and codebase understanding and produces a PRD. Do not interview the user. Just synthesize what you already know.
 
-The issue tracker and triage label vocabulary should have been provided to you - run `/setup-matt-pocock-skills` if not.
+The issue tracker and triage label vocabulary should have been provided to you. Run `/setup-matt-pocock-skills` if not.
 
 ## Process
 
@@ -20,7 +20,7 @@ A deep module (as opposed to a shallow module) is one which encapsulates a lot o
 
 Check with the user that these modules match their expectations. Check with the user which modules they want tests written for.
 
-3. Write the PRD using the template below, then publish it to the project issue tracker. Apply the `ready-for-agent` triage label - no need for additional triage.
+3. Write the PRD using the template below, then publish it to the project issue tracker. Apply the `ready-for-agent` triage label. No additional triage is needed.
 
 <prd-template>
 
@@ -56,9 +56,9 @@ A list of implementation decisions that were made. This can include:
 - API contracts
 - Specific interactions
 
-Do NOT include specific file paths or code snippets. They may end up being outdated very quickly.
+Do not include specific file paths or code snippets. They may end up being outdated very quickly.
 
-Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it within the relevant decision and note briefly that it came from a prototype. Trim to the decision-rich parts - not a working demo, just the important bits.
+Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it within the relevant decision and note briefly that it came from a prototype. Trim to the decision-rich parts, not a working demo.
 
 ## Testing Decisions
 
@@ -68,9 +68,13 @@ A list of testing decisions that were made. Include:
 - Which modules will be tested
 - Prior art for the tests (i.e. similar types of tests in the codebase)
 
-## Out of Scope
+## Deferred, Refused, Opportunistic
 
-A description of the things that are out of scope for this PRD.
+Separate adjacent work by decision type:
+
+- Deferred: not required now, allowed later.
+- Refused: deliberately not part of the product or design.
+- Opportunistic: not required, but acceptable to fix if discovered and grounded.
 
 ## Further Notes
 

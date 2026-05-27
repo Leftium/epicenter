@@ -12,31 +12,39 @@ Use this skill after code changes and before final handoff. The goal is a hard
 second read: catch stale abstractions, dead paths, bad ownership, and confusing
 names while the edit context is still fresh.
 
-Do not silently fix structural concerns. Flag what is wrong and explain why
-before touching it.
+Do not silently fix structural concerns. First name what is wrong and why it
+matters, then fix it when it clears the evidence bar below.
 
-## Scope
+## Lane, Evidence, Boundaries
 
-Scope is set by the user's signal, not by who introduced the smell.
+The user's request sets the lane. Evidence can widen the lane. Explicit user
+limits close it.
 
 ```txt
-No cleanup signal (a focused change)        flag only; edit just direct
-                                            compile or test failures
-"continue through cleanup", "expand scope   well-grounded adjacent fixes are
-aggressively", "do the worthwhile ones",    in scope, including pre-existing
-"clean this up"                             smells this review surfaced
+Fix now:
+  grounded correctness, invariant, public API, verification,
+  and serious clarity issues on the touched path
+
+Report:
+  speculative cleanup, cosmetic cleanup, taste-only cleanup,
+  and issues with weak evidence
+
+Pause:
+  explicit user limits, product direction, destructive actions,
+  broad reshaping, or unclear ownership
 ```
 
-Two things never move when scope widens:
+Two things never move when the lane widens:
 
-- Scope never widens silently. Every expanded edit is still flagged first,
-  and lands as its own commit.
+- The lane never widens silently. Every expanded edit is still flagged first,
+  and stays easy to review, with a separate commit when commits are being made.
 - The evidence bar never drops. "Within reason" still means grounded in
   caller counts, a real invariant, or a named smell, never a hunch. A user
   signal widens what you may touch; it does not lower the bar for why.
 
-Authorship is not the gate. A smell the review uncovered is in scope on the
-right signal even if an earlier commit, not this change, introduced it.
+Authorship is not the gate. A smell the review uncovered can belong in the lane
+when it is clear, important, and grounded, even if an earlier commit introduced
+it. Explicit user limits still win.
 
 ## Related Skills
 
@@ -65,7 +73,7 @@ yjs                     CRDT documents, shared types, transactions, conflict beh
 4. Run the mental inlining pass.
 5. Run the smell and invariant checks.
 6. Review API shape, naming, and file organization.
-7. Run diagnostics and tests appropriate to the changed scope.
+7. Run diagnostics and tests appropriate to the changed lane.
 8. Report findings before making cleanup edits unless the issue is a direct
    compile or test failure.
 

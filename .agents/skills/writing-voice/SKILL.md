@@ -44,7 +44,7 @@ Patterns that scream "AI wrote this":
 - **AI adjectives**: "perfectly", "effortlessly", "beautifully"
 - **Space-hyphen-space**: "The code works - the tests pass"
 - **Overusing fragments**: "Every. Single. Time." (once is emphasis, twice is a pattern)
-- **Staccato buildup**: Setup. Fragment. Fragment. Fragment. Punchline. This "dramatic reveal" pattern feels manufactured. Combine into one flowing sentence with em dashes or semicolons instead.
+- **Staccato buildup**: Setup. Fragment. Fragment. Fragment. Punchline. This "dramatic reveal" pattern feels manufactured. Combine into one flowing sentence with semicolons or periods instead.
 - **Forced specificity**: Random numbers that don't add meaning
 
 ## Punctuation

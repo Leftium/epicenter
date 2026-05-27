@@ -19,7 +19,6 @@ import { BlobError, type BlobStore } from './types';
  * Directory structure:
  * - recordings/
  *   - {id}.{ext} (audio file: .wav, .opus, .mp3, etc.)
- *   - {id}.md (metadata materialized by workspace, NOT written by this service)
  */
 export function createFileSystemBlobStore() {
 	return {
@@ -48,7 +47,7 @@ export function createFileSystemBlobStore() {
 					const filenames = allFiles
 						.filter((file) => {
 							const id = file.name.split('.')[0] ?? '';
-							return idsToDelete.has(id);
+							return idsToDelete.has(id) && isAudioFilename(file.name);
 						})
 						.map((file) => file.name);
 					const { error } = await commands.deleteFilesInDirectory(
@@ -112,7 +111,9 @@ export function createFileSystemBlobStore() {
 					if (!dirExists) return undefined;
 
 					const allFiles = await readDir(recordingsPath);
-					const filenames = allFiles.map((file) => file.name);
+					const filenames = allFiles
+						.filter((file) => isAudioFilename(file.name))
+						.map((file) => file.name);
 					const { error } = await commands.deleteFilesInDirectory(
 						recordingsPath,
 						{ kind: 'filenames', filenames },
@@ -125,6 +126,10 @@ export function createFileSystemBlobStore() {
 	} satisfies BlobStore;
 }
 
+function isAudioFilename(filename: string) {
+	return !filename.endsWith('.md');
+}
+
 /**
  * Helper function to find audio file by ID.
  * Reads directory once and finds the matching file by ID prefix.
@@ -133,7 +138,7 @@ export function createFileSystemBlobStore() {
 async function findAudioFile(dir: string, id: string): Promise<string | null> {
 	const files = await readDir(dir);
 	const audioFile = files.find(
-		(f) => f.name.startsWith(`${id}.`) && !f.name.endsWith('.md'),
+		(f) => f.name.startsWith(`${id}.`) && isAudioFilename(f.name),
 	);
 	return audioFile?.name ?? null;
 }

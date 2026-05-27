@@ -39,12 +39,14 @@ export const PATHS = {
 	/**
 	 * Paths for the file-system database (desktop only).
 	 *
-	 * The desktop app stores data as markdown files with YAML frontmatter, organized into
-	 * three directories:
+	 * The desktop app stores recording audio blobs in appdata. Recording rows
+	 * live in the workspace database; markdown export is a separate,
+	 * user-selected folder.
+	 *
+	 * Transformation helpers still point at appdata markdown directories:
 	 *
 	 * ```
 	 * recordings/
-	 *   {id}.md      <- metadata + transcribed text
 	 *   {id}.webm    <- audio file (extension varies: .webm, .mp3, .wav, etc.)
 	 * transformations/
 	 *   {id}.md      <- transformation configuration
@@ -55,10 +57,11 @@ export const PATHS = {
 	 * ## Helper Types
 	 *
 	 * **Directory helpers** (`RECORDINGS`, `TRANSFORMATIONS`, `TRANSFORMATION_RUNS`):
-	 * Return the base directory path. Use these when you need to list files, check if
-	 * the directory exists, or pass to Rust commands that operate on directories.
+	 * Return the base directory path. Use these when you need to list files,
+	 * check if the directory exists, or pass to Rust commands that operate on
+	 * directories.
 	 *
-	 * **Typed file helpers** (`RECORDING_MD`, `RECORDING_AUDIO`, `TRANSFORMATION_MD`, `TRANSFORMATION_RUN_MD`):
+	 * **Typed file helpers** (`RECORDING_AUDIO`, `TRANSFORMATION_MD`, `TRANSFORMATION_RUN_MD`):
 	 * Return the absolute path to a specific file type given an ID. Use these when you
 	 * know exactly what file you're targeting (reading, writing, or deleting a specific record).
 	 *
@@ -71,13 +74,12 @@ export const PATHS = {
 		 * ============================================================================
 		 * RECORDINGS
 		 * ============================================================================
-		 * Each recording consists of two files sharing the same ID:
-		 * - {id}.md: Markdown file with YAML frontmatter (metadata) and body (transcribed text)
+		 * The recordings appdata directory stores audio blobs only:
 		 * - {id}.{ext}: Audio file (extension depends on recording format: webm, mp3, wav, etc.)
 		 */
 
 		/**
-		 * Base directory containing all recording files.
+		 * Base directory containing recording audio files.
 		 *
 		 * Use this when you need to:
 		 * - List all files in the recordings directory
@@ -90,38 +92,12 @@ export const PATHS = {
 		 * ```typescript
 		 * const recordingsPath = await PATHS.DB.RECORDINGS();
 		 * const files = await readDir(recordingsPath);
-		 * const contents = await readMarkdownFiles(recordingsPath);
 		 * ```
 		 */
 		async RECORDINGS() {
 			const { appDataDir, join } = await import('@tauri-apps/api/path');
 			const dir = await appDataDir();
 			return join(dir, 'recordings');
-		},
-
-		/**
-		 * Path to a recording's markdown metadata file.
-		 *
-		 * The markdown file contains:
-		 * - YAML frontmatter: id, title, subtitle, timestamp, transcriptionStatus, etc.
-		 * - Body: the transcribed text content
-		 *
-		 * Use this when you need to read, write, or delete a specific recording's metadata.
-		 *
-		 * @param id - The recording's unique identifier
-		 * @returns Absolute path to `recordings/{id}.md`
-		 *
-		 * @example
-		 * ```typescript
-		 * const mdPath = await PATHS.DB.RECORDING_MD('abc123');
-		 * const content = await readTextFile(mdPath);
-		 * const { data: frontmatter, content: transcribedText } = matter(content);
-		 * ```
-		 */
-		async RECORDING_MD(id: string) {
-			const { appDataDir, join } = await import('@tauri-apps/api/path');
-			const dir = await appDataDir();
-			return join(dir, 'recordings', `${id}.md`);
 		},
 
 		/**
@@ -151,15 +127,14 @@ export const PATHS = {
 		 * Path to any file in the recordings directory given its full filename.
 		 *
 		 * Use this when you have the complete filename (e.g., from `readDir`) and need
-		 * the absolute path. This is the generic fallback when you don't know whether
-		 * you're dealing with a .md file or an audio file.
+		 * the absolute path for an audio blob whose extension was discovered at runtime.
 		 *
 		 * Common use cases:
 		 * - Iterating over directory contents to build paths for bulk operations
 		 * - Looking up audio files where the extension is unknown (scan directory, find match)
 		 * - Deleting files when you only have the filename from a directory listing
 		 *
-		 * @param filename - The complete filename including extension (e.g., 'abc123.md', 'abc123.webm')
+		 * @param filename - The complete audio filename including extension (e.g., 'abc123.webm')
 		 * @returns Absolute path to `recordings/{filename}`
 		 *
 		 * @example

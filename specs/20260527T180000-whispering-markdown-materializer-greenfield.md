@@ -555,12 +555,13 @@ Out of scope:
 
 ### Wave 6: Remove old appdata projection
 
-- [ ] Stop attaching export against `PATHS.DB.RECORDINGS()`.
-- [ ] Remove old references to appdata markdown as storage.
-- [ ] Update `PATHS.DB` docs to describe audio storage only unless a helper is still needed.
-- [ ] Remove unused `utils/frontmatter.ts` if no caller remains.
-- [ ] Re-run symbol searches for `recording-materializer`, `writeMarkdownFiles`, `MarkdownFile`, `frontmatter`, and `{id}.md`.
-- [ ] Stranded appdata `.md` files: leave them in place. Note in the release changelog that users can delete the legacy `recordings/` folder under appdata if they want. Whispering itself does not touch it. Refused: an auto-cleanup pass at startup, which would silently delete user files in a folder Whispering no longer claims.
+- [x] Stop attaching export against `PATHS.DB.RECORDINGS()`.
+- [x] Remove old references to appdata markdown as storage.
+- [x] Update `PATHS.DB` docs to describe audio storage only unless a helper is still needed.
+- [x] Remove unused `utils/frontmatter.ts` if no caller remains.
+- [x] Re-run symbol searches for `recording-materializer`, `writeMarkdownFiles`, `MarkdownFile`, `frontmatter`, and `{id}.md`.
+- [x] Stranded appdata `.md` files: leave them in place. Note in the release changelog that users can delete the legacy `recordings/` folder under appdata if they want. Whispering itself does not touch it. Refused: an auto-cleanup pass at startup, which would silently delete user files in a folder Whispering no longer claims.
+  > **Verification note**: Removed the appdata export attachment from `openWhispering`, removed the `RECORDING_MD` appdata helper, deleted the unused frontmatter utility, and added `docs/release-notes/v7.11.1.md` with the legacy-file note. Blob cleanup now filters out `.md` files so stranded appdata markdown remains untouched. The symbol search now finds markdown names only in the explicit exporter, Rust markdown command, transformation docs, release note, spec text, and comments that say recording artifact writes do not touch markdown.
 
 ## Verification
 

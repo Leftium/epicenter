@@ -1,7 +1,6 @@
 /** Recording markdown export is attached only from the Tauri workspace entry. */
 
 import { attachBroadcastChannel, attachIndexedDb } from '@epicenter/workspace';
-import { PATHS } from '$lib/constants/paths';
 import { attachRecordingMarkdownExport } from '$lib/recording-markdown-export';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { createWhisperingWorkspace } from './index';
@@ -11,11 +10,6 @@ export function openWhispering() {
 
 	const idb = attachIndexedDb(workspace.ydoc);
 	attachBroadcastChannel(workspace.ydoc);
-
-	attachRecordingMarkdownExport(workspace.ydoc, workspace.tables.recordings, {
-		dir: PATHS.DB.RECORDINGS(),
-		waitFor: idb.whenLoaded,
-	});
 
 	let recordingsExport:
 		| ReturnType<typeof attachRecordingMarkdownExport>

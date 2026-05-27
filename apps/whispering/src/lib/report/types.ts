@@ -14,12 +14,6 @@ export type Notice = {
 
 export type Problem = Notice & { cause: AnyTaggedError };
 
-export type LoadingHandle = {
-	resolve: (r: Notice) => void;
-	reject: (r: Problem) => void;
-	update: (r: Notice) => void;
-};
-
 export type Level = 'error' | 'success' | 'info' | 'loading';
 
 export type ReportEvent = {

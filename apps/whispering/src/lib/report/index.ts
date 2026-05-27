@@ -9,14 +9,13 @@ import { resolveDisplay } from './display';
 import { osNotifySink } from './os-notify';
 import type {
 	Level,
-	LoadingHandle,
 	Notice,
 	NoticeAction,
 	Problem,
 	ReportEvent,
 } from './types';
 
-export type { LoadingHandle, Notice, NoticeAction, Problem } from './types';
+export type { Notice, NoticeAction, Problem } from './types';
 
 const SOURCE = 'whispering/report';
 
@@ -39,16 +38,21 @@ export const report = {
 	info(notice: Notice): void {
 		emit('info', notice);
 	},
-	loading(notice: Notice): LoadingHandle {
+	loading(notice: Notice) {
 		const id = nanoid();
 		emit('loading', notice, id);
 		return {
-			resolve: (r) => emit('success', r, id),
-			reject: (r) => emit('error', r, id),
-			update: (r) => emit('loading', r, id),
+			/** Resolve the loading notice as a success notice. */
+			resolve: (r: Notice) => emit('success', r, id),
+			/** Resolve the loading notice as an error notice. */
+			reject: (r: Problem) => emit('error', r, id),
+			/** Replace the displayed loading notice content. */
+			update: (r: Notice) => emit('loading', r, id),
 		};
 	},
 };
+
+export type LoadingHandle = ReturnType<typeof report.loading>;
 
 /**
  * Diagnostic-only logger. Use for events that should appear in console for

@@ -47,6 +47,11 @@ REPEAT until spec is complete
 FINAL REVIEW (run post-implementation-review, update spec status, add review section)
 ```
 
+Default to continuing. After a wave passes verification, move to the next
+unchecked item until the spec is complete. Ask the user only when continuing
+requires a product decision, destructive action, broad reshape, or resolving a
+conflict with current code.
+
 ## Phase 0: Preflight the Spec
 
 Before planning waves, make sure the spec has a current execution path.
@@ -119,7 +124,7 @@ Wave 3: [Integration, consumers of Wave 2]
   - Commit: combine with Wave 2 if the API and consumers should be reviewed together
 ```
 
-Proceed after planning unless the spec has unresolved product choices, architecture choices, destructive actions, broad reshape risk, or conflicts with current code. Surface those blockers and pause for user input.
+Proceed after planning. Ask first only for product choices, destructive actions, broad reshape risk, or conflicts with current code.
 
 ## Phase 3: Execute Waves
 
@@ -132,7 +137,7 @@ Use sub-agents for owned implementation work when they are available. They are s
 - **Independent tasks**: Launch sub-agents in parallel when write sets do not overlap. Each gets a focused prompt with only the context it needs: the relevant spec section, the files it owns, and the patterns to follow.
 - **Dependent tasks**: Launch sub-agents sequentially when one task imports from another task's output or modifies the same files. Wait for one to complete before launching the next. The second agent gets the output/context from the first.
 - **Local tasks**: Keep work local when the task is tightly coupled, urgent, too ambiguous to delegate, or likely to block the next orchestration step.
-- **Keep changes coherent**: Treat the spec as the execution spine, not a file whitelist. Implement the spec first. When grounded issues surface, fix what protects correctness, verification, API coherence, or serious clarity, and record the deviation. Pause for product direction, destructive actions, broad reshaping, or explicit limits.
+- **Keep changes coherent**: Treat the spec as the execution spine, not a file whitelist. Implement the spec first; fix grounded correctness, verification, API, and serious clarity issues you uncover; record meaningful deviations.
 
 ### 2. Verify the Wave
 
@@ -232,7 +237,7 @@ When spinning up sub-agents, each agent needs:
 - **The files it should read** before making changes
 - **The primary files it owns**
 - **The patterns to follow** (reference relevant skills)
-- **Explicit limits and pause triggers**
+- **Questions that need the user**: product decisions, destructive actions, broad reshaping, or current-code conflicts
 
 Keep sub-agent prompts focused. A sub-agent that knows too much will try to do too much.
 
@@ -254,7 +259,7 @@ Keep sub-agent prompts focused. A sub-agent that knows too much will try to do t
 "Let me just start implementing..."
 ```
 
-No. Read the spec, plan waves, then execute. Pause only for unresolved product choices, architecture choices, destructive actions, broad reshape risk, or conflicts with current code.
+No. Read the spec, plan waves, then execute. Planning should start the work, not become a reason to stop.
 
 ### Giant Wave
 
@@ -296,7 +301,7 @@ Before starting:
 - [ ] Read active sections first
 - [ ] Identify phases and dependencies
 - [ ] Plan waves (parallel vs sequential)
-- [ ] Surface blockers that need user input
+- [ ] Surface decisions that need user input
 
 For each wave:
 

@@ -114,24 +114,20 @@ Never let evidence questions hide behind design coherence. Verify before deletin
 
 ---
 
-## Adjacent Work Language
+## Adjacent Work
 
-Do not use one rejection bucket for adjacent work. Separate work by decision
-type:
+Most specs do not need a section for adjacent work. When adjacent work matters,
+write only what the implementer needs:
 
 ```txt
 Deferred:
   not required now, allowed later
 
-Refused:
-  deliberately not part of the product or design
-
 Opportunistic:
   not required, but acceptable to fix if discovered and grounded
 ```
 
-This keeps the spec from turning omissions into forbidden work. A spec is an
-execution spine, not a file whitelist.
+A spec is an execution spine, not a file whitelist.
 
 ---
 
@@ -406,24 +402,12 @@ This section signals "you decide this" to the implementer. Include your recommen
    - **Recommendation**: [Suggestion or "Defer until X"]
 ```
 
-### Deferred, Refused, Opportunistic
-
-Use this section when the work has adjacent decisions that should not all be
-treated the same.
+### Adjacent Work
 
 ```markdown
-## Deferred, Refused, Opportunistic
-
-### Deferred
+## Adjacent Work
 
 - [Decision or feature]: [Why it is not required now, and what would bring it back.]
-
-### Refused
-
-- [Decision or feature]: [Why this should not be part of the product or design.]
-
-### Opportunistic
-
 - [Issue or cleanup]: [Why it is not required, but may be fixed if discovered and grounded.]
 ```
 
@@ -529,7 +513,7 @@ If your spec is too prescriptive, the agent will blindly follow it. If it's too 
 - [ ] Design decisions have classes
 - [ ] Class 1 decisions were verified
 - [ ] Class 3 keeps are logged with `Revisit when:`
-- [ ] Deferred, refused, and opportunistic adjacent work is separated when relevant
+- [ ] Adjacent work is included only when it clarifies implementation
 - [ ] Catalogs (when introducing a primitive set: code block + rejected candidates table)
 - [ ] Architecture (ASCII diagrams)
 - [ ] Visual rhythm: prose is broken up with code, tables, trees, or diagrams where relationships matter

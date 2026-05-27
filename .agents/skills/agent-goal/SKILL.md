@@ -13,14 +13,14 @@ The best goal is both a directive and a completion condition:
 /goal [do the work] until [observable condition is true].
 ```
 
-Treat the goal as a contract. It should tell the agent what to do, what evidence proves it, the intended lane, explicit limits, and when to stop or pause.
+Treat the goal as a contract. It should tell the agent what to do, what evidence proves it, and where to start.
 
 The highest-signal goal answers three questions:
 
 ```txt
 What should change?
 How will the agent prove it changed?
-What should make the agent stop, pause, or ask?
+Where should the agent start?
 ```
 
 ## Core Shape
@@ -28,7 +28,7 @@ What should make the agent stop, pause, or ask?
 Use this structure unless the user needs a different format:
 
 ```txt
-/goal Complete [single objective] in [lane]. First read [required context]. Work in checkpoints. After each checkpoint, surface evidence from [validation]. Stop when [verifiable end state]. Pause if [risk or ambiguity].
+/goal Complete [single objective] in [lane]. First read [required context]. Work in checkpoints. After each checkpoint, surface evidence from [validation]. Continue until [verifiable end state].
 ```
 
 Include only execution-critical details:
@@ -37,8 +37,7 @@ Include only execution-critical details:
 - Lane: files, package, app, branch, issue, spec, backlog label, or intended work area.
 - Context: plans, docs, issue links, logs, screenshots, traces, commands, or acceptance criteria to inspect first.
 - Evidence: command output, tests, build result, screenshot comparison, eval score, file count, clean git status, or reviewed artifact.
-- Stop condition: the exact state that means the goal is achieved.
-- Pause condition: user decision, missing credentials, failing external service, destructive action, conflict with an explicit limit, or repeated failed attempts.
+- Done condition: the exact state that means the goal is achieved.
 
 ## Rules
 
@@ -47,9 +46,9 @@ Include only execution-critical details:
 3. Make "done" observable. Prefer "`bun test packages/workspace` exits 0" over "tests pass"; prefer "all checked items in `PLAN.md` are complete" over "finish the plan."
 4. Tell the agent to surface evidence in the transcript. Goal evaluators judge what the worker has shown, not private intent.
 5. Put long requirements in a plan or spec, then point the goal at that file. Do not paste a huge spec into `/goal`.
-6. Ask for checkpoints when the work spans multiple turns. Each checkpoint should produce a small status note: changed, verified, remaining, blocked.
-7. Bound runaway work. Add a stop or pause clause such as "pause after 3 failed attempts on the same test" or "stop after 20 turns with a summary of remaining blockers."
-8. Name explicit limits and pause triggers. Do not turn ordinary focus into a ban list.
+6. Ask for checkpoints when the work spans multiple turns. Each checkpoint should produce a small status note: changed, verified, remaining, questions.
+7. Bound runaway work with evidence. For example: "after 3 failed attempts on the same test, report the root cause and smallest next question."
+8. Ordinary focus should not stop grounded fixes.
 9. Do not use `/goal` for vague wishes, unrelated chores, open-ended research, or work where the agent cannot produce evidence.
 10. Keep the condition judgeable from the transcript. If a separate verifier read only the conversation after each turn, it should be able to tell whether the goal is met.
 
@@ -70,8 +69,8 @@ Lane
 Method
   What should the agent read first, and how should it checkpoint?
 
-Limits
-  What should cause a pause instead of more guessing?
+Start
+  Where should the agent begin?
 ```
 
 Then compress that into one goal.
@@ -120,37 +119,37 @@ If the evidence is weak, rewrite the goal until completion can be judged from co
 Plan execution:
 
 ```txt
-/goal Implement `specs/[file].md` in checkpoints until every checklist item is complete, the review section is filled in, and `[final validation command]` exits 0. First read the spec and the files it names. After each checkpoint, update the checklist and surface the validation result. Pause if the spec conflicts with current code or needs a product decision.
+/goal Implement `specs/[file].md` in checkpoints until every checklist item is complete, the review section is filled in, and `[final validation command]` exits 0. First read the spec and the files it names. After each checkpoint, update the checklist and surface the validation result. Continue unless the spec conflicts with current code or needs a product decision.
 ```
 
 Failing tests:
 
 ```txt
-/goal Fix the failing tests in `[lane]` until `[test command]` exits 0 and no unrelated speculative changes are present. First run the command and inspect the failures. Work from the smallest root cause outward. After each fix, rerun the targeted test and report the result. Pause before deleting tests, weakening assertions, or crossing an explicit limit.
+/goal Fix the failing tests in `[lane]` until `[test command]` exits 0 and no unrelated speculative changes are present. First run the command and inspect the failures. Work from the smallest root cause outward. After each fix, rerun the targeted test and report the result. Ask before deleting tests or weakening assertions.
 ```
 
 Migration:
 
 ```txt
-/goal Migrate `[old path or system]` to `[new path or system]` until all callers use the new path, parity checks pass, and `[final validation command]` exits 0. First read `[migration plan or docs]` and identify callers. Work in checkpoints with validation after each checkpoint. Pause before changing unrelated public APIs, or if compatibility, data migration, or rollback policy is ambiguous.
+/goal Migrate `[old path or system]` to `[new path or system]` until all callers use the new path, parity checks pass, and `[final validation command]` exits 0. First read `[migration plan or docs]` and identify callers. Work in checkpoints with validation after each checkpoint. Ask before changing unrelated public APIs, or if compatibility, data migration, or rollback policy is ambiguous.
 ```
 
 Prototype:
 
 ```txt
-/goal Build a polished first version of `[app or feature]` inside `[lane]` until the primary flow works end to end, the app builds and runs, and `[visual or command validation]` confirms the expected behavior. First read `[plan or reference]`. Work in checkpoints and surface screenshots or command output as evidence. Pause if the data model or user flow is unclear.
+/goal Build a polished first version of `[app or feature]` inside `[lane]` until the primary flow works end to end, the app builds and runs, and `[visual or command validation]` confirms the expected behavior. First read `[plan or reference]`. Work in checkpoints and surface screenshots or command output as evidence. Ask if the data model or user flow is unclear.
 ```
 
 Backlog or issue queue:
 
 ```txt
-/goal Work through `[queue or label]` until every item is closed or has a documented blocker. First list the queue and choose the smallest safe item. For each item, make the smallest grounded fix, run `[validation]`, and report the result before moving on. Stop when the queue is empty. Pause if an item needs credentials, product judgment, or crossing an explicit limit.
+/goal Work through `[queue or label]` until every item is closed or has a documented reason it needs user input. First list the queue and choose the smallest safe item. For each item, make the smallest grounded fix, run `[validation]`, and report the result before moving on. Stop when the queue is empty.
 ```
 
 Eval or prompt loop:
 
 ```txt
-/goal Improve `[prompt or system]` until `[eval command]` reaches `[target score]` or no further targeted improvement is justified. First run the eval and inspect failures. Make minimal edits, rerun the eval after each change, and report score changes. Pause if improvement requires product or policy guidance.
+/goal Improve `[prompt or system]` until `[eval command]` reaches `[target score]` or no further targeted improvement is justified. First run the eval and inspect failures. Make minimal edits, rerun the eval after each change, and report score changes. Ask if improvement requires product or policy guidance.
 ```
 
 ## Bad To Good
@@ -164,7 +163,7 @@ Weak:
 Strong:
 
 ```txt
-/goal Fix the checkout regressions tracked in `issues/checkout.md` until every listed reproduction passes, `bun test apps/storefront` exits 0, and the final status names any intentionally deferred issues. Work only in `apps/storefront` and shared checkout packages. Pause before changing payment provider contracts or deleting tests.
+/goal Fix the checkout regressions tracked in `issues/checkout.md` until every listed reproduction passes, `bun test apps/storefront` exits 0, and the final status names any intentionally deferred issues. Work only in `apps/storefront` and shared checkout packages. Ask before changing payment provider contracts or deleting tests.
 ```
 
 Weak:
@@ -176,7 +175,7 @@ Weak:
 Strong:
 
 ```txt
-/goal Complete `specs/20260514T120000 auth-migration.md` until every checklist item is checked, all auth callers compile against the new service, `bun test packages/auth apps/api` exits 0, and `git diff` shows no unrelated speculative edits. Update the spec after each checkpoint. Pause if the old API has undocumented behavior that needs a compatibility decision.
+/goal Complete `specs/20260514T120000 auth-migration.md` until every checklist item is checked, all auth callers compile against the new service, `bun test packages/auth apps/api` exits 0, and `git diff` shows no unrelated speculative edits. Update the spec after each checkpoint. Ask if the old API has undocumented behavior that needs a compatibility decision.
 ```
 
 ## Final Check
@@ -187,5 +186,5 @@ Before handing back a goal, verify:
 - It has one main objective.
 - It names the evidence that proves completion.
 - It tells the agent to surface that evidence.
-- It names the lane, explicit limits, and pause triggers.
-- It says when to pause instead of continuing blindly.
+- It names where to start.
+- It tells the agent to continue until the evidence proves completion.

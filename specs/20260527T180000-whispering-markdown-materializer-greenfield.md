@@ -1,9 +1,10 @@
 # Whispering Recording Markdown Export
 
 **Date**: 2026-05-27
-**Status**: Implemented
+**Status**: Superseded by `specs/20260527T210000-whispering-markdown-export-greenfield-grill.md`
 **Owner**: Whispering
 **Supersedes**: `specs/20260415T170000-recording-data-architecture.md` for the active markdown decision path
+**Superseded by**: `specs/20260527T210000-whispering-markdown-export-greenfield-grill.md` — greenfield grill refused the user-selected live export folder in favor of one-shot export
 
 ## One Sentence
 

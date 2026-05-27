@@ -26,13 +26,13 @@ Load these on demand based on what you're working on:
 - If working with **toast notifications for errors** (`toastOnError`, `extractErrorMessage` in UI), read [references/toast-on-error.md](references/toast-on-error.md)
 - If working with **real-world codebase examples and wrapping scenario guidelines**, read [references/real-world-examples.md](references/real-world-examples.md)
 - If working with **HTTP route handlers and status-response error conversion**, read [references/http-handlers.md](references/http-handlers.md)
-- If working with **workspace actions** (`defineQuery` / `defineMutation` — when to throw vs. return `Err`, how remote callers see your errors, `ActionFailed` semantics), read [../workspace-api/references/action-return-shapes.md](../workspace-api/references/action-return-shapes.md)
+- If working with **workspace actions** (`defineQuery` / `defineMutation` : when to throw vs. return `Err`, how remote callers see your errors, `ActionFailed` semantics), read [../workspace-api/references/action-return-shapes.md](../workspace-api/references/action-return-shapes.md)
 
 ## Use trySync/tryAsync Instead of try-catch for Graceful Error Handling
 
 When handling errors that can be gracefully recovered from, use `trySync` (for synchronous code) or `tryAsync` (for asynchronous code) from wellcrafted instead of traditional try-catch blocks. This provides better type safety and explicit error handling.
 
-> **Related Skills**: See `services-layer` skill for `defineErrors` patterns and service architecture. See `query-layer` skill for error transformation to `WhisperingError`.
+> **Related Skills**: See `services-layer` skill for `defineErrors` patterns and service architecture. See `query-layer` skill for RPC error pass-through and report-boundary presentation.
 
 ### The Pattern
 
@@ -72,7 +72,7 @@ const syncResult = trySync({
 	catch: (error) => {
 		// For recoverable errors, return Ok with fallback value
 		return Ok('fallback-value');
-		// For unrecoverable errors, pass the raw cause — the constructor handles extractErrorMessage
+		// For unrecoverable errors, pass the raw cause : the constructor handles extractErrorMessage
 		return CompletionError.ConnectionFailed({ cause: error });
 	},
 });
@@ -116,6 +116,25 @@ const userResult = await tryAsync({...});
 if (userResult.error) return userResult; // Returns the full Result
 ```
 
+## Whispering RPC Error Flow
+
+Whispering `$lib/rpc` adapters preserve tagged errors from services and operations. They should return `Err(error)` or the operation result directly, not convert errors into user-facing `{ title, description }` objects.
+
+```typescript
+const { data, error } = await services.blobs.audio.getBlob(recording.id);
+if (error) return Err(error);
+return Ok(data);
+```
+
+Presentation happens at the UI or operation boundary:
+
+```typescript
+if (error) {
+	report.error({ cause: error });
+	return;
+}
+```
+
 ### Examples
 
 ```typescript
@@ -155,7 +174,7 @@ const { data: content } = await tryAsync({
 });
 
 // EITHER: Error propagation (works with both)
-// Pass the raw caught error as cause — the defineErrors constructor calls extractErrorMessage
+// Pass the raw caught error as cause : the defineErrors constructor calls extractErrorMessage
 const { data, error } = await tryAsync({
 	try: () => criticalOperation(),
 	catch: (error) =>
@@ -164,15 +183,15 @@ const { data, error } = await tryAsync({
 if (error) return Err(error);
 ```
 
-## Consuming Result values — destructure `error` explicitly
+## Consuming Result values : destructure `error` explicitly
 
 When reading a `Result<T, E>` that a library (or your own code) returns
-— like `table.get(id)`, `tryAsync(...)`, or a service method — **always
+: like `table.get(id)`, `tryAsync(...)`, or a service method : **always
 destructure both `data` and `error` and check `error` on its own line**,
 even when both paths should produce the same action.
 
 ```typescript
-// ✅ GOOD — error is destructured and checked explicitly
+// ✅ GOOD : error is destructured and checked explicitly
 const { data: row, error } = table.get(id);
 if (error) {
   console.warn('[context] corrupted row:', error.message);
@@ -181,7 +200,7 @@ if (error) {
 if (row === null) return null;       // legitimate absence
 use(row);                             // row: TRow
 
-// ❌ BAD — relies on "data is null if error exists" by coincidence
+// ❌ BAD : relies on "data is null if error exists" by coincidence
 const { data: row } = table.get(id);  // error silently swallowed
 if (row === null) return null;
 use(row);
@@ -201,10 +220,10 @@ Why:
 
 If both cases *genuinely* produce the same action (no log, no toast,
 no retry, no distinction worth writing down), one combined condition
-is fine — as long as `error` is still destructured:
+is fine : as long as `error` is still destructured:
 
 ```typescript
-// ✅ OK — error destructured, both cases deliberately collapsed
+// ✅ OK : error destructured, both cases deliberately collapsed
 const { data: row, error } = table.get(id);
 if (error || row === null) continue;  // skip in both cases
 use(row);
@@ -232,7 +251,7 @@ if (row === null) {
 use(row);
 ```
 
-This is the form to prefer by default — collapse back only when
+This is the form to prefer by default : collapse back only when
 there's truly nothing distinct to say.
 
 ## When to Use trySync vs tryAsync vs try-catch
@@ -257,11 +276,11 @@ there's truly nothing distinct to say.
 
 ## Logging errors
 
-Typed errors are structured values, so they're also what the `wellcrafted/logger` wants. `log.warn` / `log.error` take a typed error unary — no message argument, no format string. The error owns its message, and the log sink gets the full object (name, fields, cause) alongside it.
+Typed errors are structured values, so they're also what the `wellcrafted/logger` wants. `log.warn` / `log.error` take a typed error unary : no message argument, no format string. The error owns its message, and the log sink gets the full object (name, fields, cause) alongside it.
 
 ### The canonical pattern
 
-Mint the typed error inside `catch:`, then branch on the Result and log inside the branch. The caller picks the level (`.warn` for recoverable, `.error` for loud) at the call site — matching Rust's `tracing::warn!(?err)` convention, where level lives at the call site and never on the error variant.
+Mint the typed error inside `catch:`, then branch on the Result and log inside the branch. The caller picks the level (`.warn` for recoverable, `.error` for loud) at the call site : matching Rust's `tracing::warn!(?err)` convention, where level lives at the call site and never on the error variant.
 
 ```ts
 import { createLogger } from 'wellcrafted/logger';
@@ -290,11 +309,11 @@ Most epicenter call sites need the Ok branch's data locally, so they branch firs
 
 `log.warn` / `log.error` accept either the raw tagged error (`result.error` after narrowing) or the `Err`-wrapped factory output (`MyError.Variant({ ... })`) and unwrap structurally.
 
-For the rarer Result-chain shape (`tryAsync(...).then(...)` where the Result flows out of the function), `tapErr(log.warn)` from `wellcrafted/result` is the combinator — see the logging SKILL's See also section.
+For the rarer Result-chain shape (`tryAsync(...).then(...)` where the Result flows out of the function), `tapErr(log.warn)` from `wellcrafted/result` is the combinator : see the logging SKILL's See also section.
 
 ### Why no `log.error(message, error)`?
 
-Level is context-dependent (same error can be `warn` on a retry, `error` on the last attempt) and message lives on the error variant. That's the whole point of `defineErrors` — the variant's `message:` template encodes the "what operation failed" clause. Duplicating it at the call site would drift and rot.
+Level is context-dependent (same error can be `warn` on a retry, `error` on the last attempt) and message lives on the error variant. That's the whole point of `defineErrors` : the variant's `message:` template encodes the "what operation failed" clause. Duplicating it at the call site would drift and rot.
 
 ### Testing with `memorySink`
 

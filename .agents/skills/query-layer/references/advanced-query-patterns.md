@@ -8,64 +8,64 @@ Read when implementing cache updates, defining query/mutation patterns, wiring t
 
 ### Optimistic Updates Pattern
 
-Update the cache immediately, then sync with server:
+Update the cache immediately, then sync with the owning service or operation:
 
 ```typescript
-create: defineMutation({
-  mutationKey: ['db', 'recordings', 'create'] as const,
-  mutationFn: async (params: { recording: Recording; audio: Blob }) => {
-    const { error } = await services.db.recordings.create(params);
-    if (error) return Err(error);
+export const recordingKeys = defineKeys({
+	all: ['recordings'],
+	latest: ['recordings', 'latest'],
+	byId: (id: string) => ['recordings', id] as const,
+	create: ['recordings', 'create'],
+});
 
-    // Optimistic cache updates - UI updates instantly
-    queryClient.setQueryData<Recording[]>(
-      dbKeys.recordings.all,
-      (oldData) => [...(oldData || []), params.recording],
-    );
-    queryClient.setQueryData<Recording>(
-      dbKeys.recordings.byId(params.recording.id),
-      params.recording,
-    );
+export const recordings = {
+	create: defineMutation({
+		mutationKey: recordingKeys.create,
+		mutationFn: async (params: { recording: Recording; audio: Blob }) => {
+			const { error } = await services.recordings.create(params);
+			if (error) return Err(error);
 
-    // Invalidate to refetch fresh data in background
-    queryClient.invalidateQueries({ queryKey: dbKeys.recordings.all });
-    queryClient.invalidateQueries({ queryKey: dbKeys.recordings.latest });
+			queryClient.setQueryData<Recording[]>(recordingKeys.all, (oldData) => [
+				...(oldData ?? []),
+				params.recording,
+			]);
+			queryClient.setQueryData<Recording>(
+				recordingKeys.byId(params.recording.id),
+				params.recording,
+			);
 
-    return Ok(undefined);
-  },
-}),
+			queryClient.invalidateQueries({ queryKey: recordingKeys.all });
+			queryClient.invalidateQueries({ queryKey: recordingKeys.latest });
+
+			return Ok(undefined);
+		},
+	}),
+};
 ```
 
 ### Query Keys Pattern
 
-Organize keys hierarchically for targeted invalidation:
+Define one exported key map beside the module that owns the cache identity:
 
 ```typescript
-export const dbKeys = {
-	recordings: {
-		all: ['db', 'recordings'] as const,
-		latest: ['db', 'recordings', 'latest'] as const,
-		byId: (id: string) => ['db', 'recordings', id] as const,
-	},
-	transformations: {
-		all: ['db', 'transformations'] as const,
-		byId: (id: string) => ['db', 'transformations', id] as const,
-	},
-};
+export const audioKeys = defineKeys({
+	playbackUrl: (id: string) => ['audio', 'playbackUrl', id] as const,
+});
 ```
+
+Static keys do not need `as const`; key factories use `as const` when literal positions matter.
 
 ## Query Definition Examples
 
 ### Basic Query
 
 ```typescript
-export const db = {
-	recordings: {
-		getAll: defineQuery({
-			queryKey: dbKeys.recordings.all,
-			queryFn: () => services.db.recordings.getAll(),
+export const audio = {
+	getPlaybackUrl: (id: Accessor<string>) =>
+		defineQuery({
+			queryKey: audioKeys.playbackUrl(id()),
+			queryFn: () => services.blobs.audio.ensurePlaybackUrl(id()),
 		}),
-	},
 };
 ```
 
@@ -73,114 +73,89 @@ export const db = {
 
 ```typescript
 getLatest: defineQuery({
-  queryKey: dbKeys.recordings.latest,
-  queryFn: () => services.db.recordings.getLatest(),
-  // Use cached data if available
-  initialData: () =>
-    queryClient
-      .getQueryData<Recording[]>(dbKeys.recordings.all)
-      ?.toSorted((a, b) =>
-        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-      )[0] ?? null,
-  initialDataUpdatedAt: () =>
-    queryClient.getQueryState(dbKeys.recordings.all)?.dataUpdatedAt,
-}),
+	queryKey: recordingKeys.latest,
+	queryFn: () => services.recordings.getLatest(),
+	initialData: () =>
+		queryClient
+			.getQueryData<Recording[]>(recordingKeys.all)
+			?.toSorted(
+				(a, b) =>
+					new Date(b.timestamp).getTime() -
+					new Date(a.timestamp).getTime(),
+			)[0] ?? null,
+	initialDataUpdatedAt: () =>
+		queryClient.getQueryState(recordingKeys.all)?.dataUpdatedAt,
+});
 ```
 
 ### Parameterized Query with Accessor
 
 ```typescript
 getById: (id: Accessor<string>) =>
-  defineQuery({
-    queryKey: dbKeys.recordings.byId(id()),
-    queryFn: () => services.db.recordings.getById(id()),
-    initialData: () =>
-      queryClient
-        .getQueryData<Recording[]>(dbKeys.recordings.all)
-        ?.find((r) => r.id === id()) ?? null,
-  }),
+	defineQuery({
+		queryKey: recordingKeys.byId(id()),
+		queryFn: () => services.recordings.getById(id()),
+		initialData: () =>
+			queryClient
+				.getQueryData<Recording[]>(recordingKeys.all)
+				?.find((recording) => recording.id === id()) ?? null,
+	});
 ```
 
-### Mutation with Callbacks
+### Mutation Over an Operation
+
+Use RPC when shared UI needs mutation state over an operation:
 
 ```typescript
-startRecording: defineMutation({
-  mutationKey: recorderKeys.startRecording,
-  mutationFn: async ({ toastId }) => {
-    const { data, error } = await recorderService().startRecording(params, {
-      sendStatus: (options) => notify.loading.execute({ id: toastId, ...options }),
-    });
+export const transcriptionKeys = defineKeys({
+	isTranscribing: ['transcription', 'isTranscribing'],
+});
 
-    if (error) {
-      return Err({
-        title: '❌ Failed to start recording',
-        description: error.message,
-        action: { type: 'more-details', error },
-      });
-    }
-    return Ok(data);
-  },
-  // Invalidate state after mutation completes
-  onSettled: () => queryClient.invalidateQueries({ queryKey: recorderKeys.recorderState }),
-}),
-```
+export const transcription = {
+	transcribeRecording: defineMutation({
+		mutationKey: transcriptionKeys.isTranscribing,
+		mutationFn: async (recording: Recording) => {
+			recordings.update(recording.id, { transcriptionStatus: 'TRANSCRIBING' });
 
-## RPC Namespace
+			const { data, error } = await transcribeAudio(recording.id);
+			if (error) {
+				recordings.update(recording.id, { transcriptionStatus: 'FAILED' });
+				return Err(error);
+			}
 
-All queries are bundled into a unified `rpc` namespace:
-
-```typescript
-// query/index.ts
-export const rpc = {
-	db,
-	recorder,
-	transcription,
-	clipboard,
-	sound,
-	analytics,
-	notify,
-	// ... all feature modules
-} as const;
-
-// Usage anywhere in the app
-import { rpc } from '$lib/query';
-
-// Reactive (in components)
-const query = createQuery(() => rpc.db.recordings.getAll.options);
-
-// Imperative (in handlers/workflows)
-const { data, error } = await rpc.recorder.startRecording.execute({ toastId });
-```
-
-## Notify API Example
-
-The query layer can coordinate multiple services:
-
-```typescript
-export const notify = {
-	success: defineMutation({
-		mutationFn: async (options: NotifyOptions) => {
-			// Show both toast AND OS notification
-			services.toast.success(options);
-			await services.notification.show({ ...options, variant: 'success' });
-			return Ok(undefined);
-		},
-	}),
-
-	error: defineMutation({
-		mutationFn: async (error: UserError) => {
-			services.toast.error(error);
-			await services.notification.show({ ...error, variant: 'error' });
-			return Ok(undefined);
-		},
-	}),
-
-	loading: defineMutation({
-		mutationFn: async (options: LoadingOptions) => {
-			// Only toast for loading states (no OS notification spam)
-			services.toast.loading(options);
-			return Ok(undefined);
+			recordings.update(recording.id, {
+				transcript: data,
+				transcriptionStatus: 'DONE',
+			});
+			return Ok(data);
 		},
 	}),
 };
 ```
+
+## RPC Namespace
+
+All adapters are bundled into a unified `rpc` namespace:
+
+```typescript
+// rpc/index.ts
+export const rpc = {
+	audio,
+	download,
+	transcription,
+	transformer,
+} as const;
+
+// Usage anywhere in the app
+import { rpc } from '$lib/rpc';
+
+// Reactive in components
+const query = createQuery(() =>
+	rpc.audio.getPlaybackUrl(() => recordingId).options,
+);
+
+// Imperative in handlers/workflows
+const { data, error } = await rpc.download.downloadRecording(recording);
+```
+
+Keep user delivery effects outside `$lib/rpc`. Components and operations use `$lib/report` when they need to show errors, loading state, sounds, notifications, or other user-facing side effects.

@@ -1,16 +1,18 @@
 # RPC Layer
 
-Thin, side-effect-free TanStack adapters over services. Each module here wraps a service call with the things components need to observe it reactively: cache keys for queries, error transformation, and cache invalidation for mutations. Folder name matches the exported barrel: `import { rpc } from '$lib/rpc'`.
+Thin TanStack adapters over services, state, or operations. Each module here adds the things components need to observe work reactively: cache keys for queries, mutation lifecycle state, and cache invalidation. Folder name matches the exported barrel: `import { rpc } from '$lib/rpc'`.
 
-## What lives here
+## Current modules
 
-| Module             | Shape    | Where it is observed                                                       |
-| ------------------ | -------- | -------------------------------------------------------------------------- |
-| `audio.ts`         | query    | `RenderAudioUrl.svelte`, `(app)/+page.svelte`, `EditRecordingModal.svelte` |
-| `download.ts`      | mutation | `RecordingRowActions.svelte`                                               |
-| `transcription.ts` | mutation | `recordings/+page.svelte`, `RecordingRowActions.svelte`                    |
-| `transformer.ts`   | mutation | `TransformationPicker.svelte`, `Test.svelte`                               |
-| `client.ts`        | infra    | `QueryClient` + `defineQuery` / `defineMutation`                           |
+These examples are not an ownership map. Check call sites before changing a module.
+
+| Module             | Shape    | What it observes                                           |
+| ------------------ | -------- | ---------------------------------------------------------- |
+| `audio.ts`         | query    | Playback URLs from blob storage                            |
+| `download.ts`      | mutation | Download service lifecycle                                 |
+| `transcription.ts` | mutation | Transcription operation lifecycle and transcribing status   |
+| `transformer.ts`   | mutation | Transformation operation lifecycle                         |
+| `client.ts`        | infra    | `QueryClient` + `defineQuery` / `defineMutation` factories |
 
 ## The `rpc` barrel
 
@@ -32,12 +34,14 @@ const transcribeRecordings = createMutation(
 
 A module belongs here if it has the **adapter shape**:
 
-- Wraps a single service call (or a tight composition of two).
-- Side-effect-free at the work level: no toasts, sounds, analytics, pipelines, or settings writes. The only "effects" allowed are TanStack cache reads, writes, and invalidations.
-- Adds a cache key (queries) and/or error transformation to `tagged error`.
+- Wraps a single service call, state query, or operation that components need to observe.
+- Keeps UI effects out: no toasts, sounds, analytics, or copy. The only effects allowed here are TanStack cache reads, writes, invalidations, and operation calls whose lifecycle is the thing being observed.
+- Adds a cache key for query or mutation identity.
 - Useful to multiple observers, or earns its own module by participating in cache invalidation.
 
-If your work has side effects beyond cache, it's an **orchestration** and belongs in `$lib/operations/`. Orchestrations are imperative use-case functions. Components that need `mutation.isPending` over an orchestration wrap it locally:
+If your work coordinates a user workflow, put the workflow in `$lib/operations/`. The RPC layer may expose a thin mutation wrapper over that operation when shared UI needs `isPending`, `isMutating`, or a named mutation key.
+
+For one-off local lifecycle state, wrap the operation in the component instead:
 
 ```svelte
 <script lang="ts">
@@ -55,28 +59,23 @@ If your work has side effects beyond cache, it's an **orchestration** and belong
 <Button disabled={isPreparing} onclick={...}>...</Button>
 ```
 
-This isn't an exception to the rule: it's a direct consequence of it. Orchestrations aren't adapter-shaped, so they don't live here; observing their lifecycle is the component's concern, not the rpc layer's.
+Cross-adapter coordination still belongs in operations. An RPC file should not import a sibling RPC module just to sequence work.
 
 ## Canonical module shape
 
 Keep each adapter file in source-of-truth order:
 
 ```ts
-const ExampleError = defineErrors({
-  MissingThing: () => ({ message: 'Could not find the requested thing.' }),
-});
-type ExampleError = InferErrors<typeof ExampleError>;
-
-type TransformThingInput = {
-  id: string;
-  input: string;
-};
-
 export const exampleKeys = defineKeys({
   all: ['example'],
   detail: (id: string) => ['example', 'detail', id] as const,
   transformThing: ['example', 'transformThing'],
 });
+
+const ExampleError = defineErrors({
+  MissingThing: () => ({ message: 'Could not find the requested thing.' }),
+});
+type ExampleError = InferErrors<typeof ExampleError>;
 
 export const example = {
   detail: (id: Accessor<string>) =>
@@ -87,7 +86,7 @@ export const example = {
 
   transformThing: defineMutation({
     mutationKey: exampleKeys.transformThing,
-    mutationFn: (params: TransformThingInput) =>
+    mutationFn: (params: { id: string; input: string }) =>
       services.example.transform(params),
   }),
 };
@@ -100,17 +99,18 @@ Rules:
 - Key factories need `as const` when the literal positions matter, like `['audio', 'playbackUrl', id] as const`.
 - Keep keys in the owning module unless another layer must share the same fallback key, like web settings importing `autostartKeys` when Tauri is unavailable.
 - Keep adapter-specific errors local unless another module needs to name that exact error union.
-- Name input object types when a mutation takes a structured parameter. Inline the type only for single-use primitives.
+- Inline small single-use input objects. Name an input type only when it is reused, exported, large enough to obscure the function, or carries domain meaning. Put named input types immediately before the adapter namespace that uses them.
 - If you export the exact return shape of a `create*` factory, derive it with `ReturnType<typeof createThing>` instead of duplicating the object shape.
 
 ## Dependency direction
 
 ```
-$lib/operations/  →  $lib/rpc/  →  $lib/services/ + $lib/state/
+$lib/ui/          ->  $lib/rpc/  ->  $lib/services/ + $lib/state/
+                              \->  $lib/operations/
 ```
 
-- `rpc/` may not import from `operations/`. If you find yourself wanting to, the work you're wrapping is probably an orchestration.
-- A file in `rpc/` may import from `rpc/client` (the shared infra) but not from another sibling in `rpc/`. Cross-adapter coordination is an orchestration.
+- `rpc/` may wrap operations when the UI needs shared TanStack mutation state over that operation.
+- `rpc/` may import from `rpc/client` (the shared infra), but not from another sibling in `rpc/`. Cross-adapter coordination is an orchestration.
 
 ## Errors flow through unchanged
 
@@ -139,13 +139,15 @@ UI (.svelte)
   │  createMutation(() => ({ mutationFn: ... }))← local lifecycle over an orchestration
   │  await <operation>(...)                     ← fire-and-forget orchestrations
   ▼
+$lib/rpc/*          TanStack adapters (this directory)
+  │                 wraps services/state directly, or wraps an operation when
+  │                 shared UI needs mutation state
+  ├──▶
 $lib/operations/*   imperative orchestrations (delivery, recording, upload,
                     pipeline, transcribe, transform, transformation-clipboard,
                     analytics, sound, shortcuts)
   ▼
-$lib/rpc/*          TanStack adapters (this directory)
-  ▼
-$lib/services/*     pure, Result-typed
+$lib/services/*     UI-free, Result-typed
 $lib/state/*        reactive (Svelte runes, Yjs)
 ```
 

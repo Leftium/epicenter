@@ -8,9 +8,9 @@ metadata:
 
 # Services Layer Patterns
 
-This skill documents how to implement services in the Whispering architecture. Services are pure, isolated business logic with no UI dependencies that return `Result<T, E>` types for error handling.
+This skill documents how to implement services in the Whispering architecture. Services are UI-free business logic with explicit app inputs and `Result<T, E>` return types.
 
-> **Related Skills**: See `error-handling` for trySync/tryAsync patterns. See `define-errors` for error variant factories. See `query-layer` for consuming services with TanStack Query.
+> **Related Skills**: See `error-handling` for trySync/tryAsync patterns. See `define-errors` for error variant factories. See `query-layer` for consuming services from `$lib/rpc` with TanStack Query.
 
 ## When to Apply This Skill
 
@@ -23,7 +23,7 @@ Use this pattern when you need to:
 
 ## Core Architecture
 
-Services follow a three-layer architecture: **Service** → **Query** → **UI**
+Services follow a three-layer architecture: **Service** -> **RPC/Query** -> **UI**
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌──────────────┐
@@ -77,7 +77,7 @@ return CompletionError.MissingParam({ param: 'apiKey' });
 
 `defineErrors({ ... })` takes an object of factory functions and returns a namespace object. Each key becomes a variant:
 
-- **`name` is auto-stamped** from the key (e.g., key `NotFound` → `error.name === 'NotFound'`)
+- **`name` is auto-stamped** from the key (e.g., key `NotFound` -> `error.name === 'NotFound'`)
 - **The factory function IS the message generator** : it returns `{ message, ...fields }`
 - **Each variant returns `Err<...>` directly** : no separate `FooErr` constructor needed
 - **Types use `InferError` / `InferErrors`** : not `ReturnType`
@@ -104,9 +104,9 @@ const HttpError = defineErrors({
 
 // Usage : pass raw objects, constructor derives fields
 return HttpError.Response({ response, body: await response.json() });
-// error.message → "HTTP 401: Unauthorized"
-// error.status  → 401 (derived from response, flat on the object)
-// error.name    → "Response"
+// error.message -> "HTTP 401: Unauthorized"
+// error.status  -> 401 (derived from response, flat on the object)
+// error.name    -> "Response"
 ```
 
 ### Error Type Examples from the Codebase
@@ -147,7 +147,7 @@ type ConnectionError = InferError<typeof HttpError.Connection>;
 ## Key Rules
 
 1. **Services never import settings** - Pass configuration as parameters
-2. **Services never import UI code** - No toasts, no notifications, no WhisperingError
+2. **Services never import UI code** - No toasts, no notifications, no report calls
 3. **Always return Result types** - Never throw errors
 4. **Use trySync/tryAsync** - See the error-handling skill for details
 5. **Export factory + Live instance** - Factory for testing, Live for production

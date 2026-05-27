@@ -36,6 +36,7 @@ Use this skill when you are:
 
 ## Core Rules
 
+- Workspace action `defineQuery` / `defineMutation` factories are not Whispering `$lib/rpc` adapters from `wellcrafted/query`. Do not apply workspace action input-schema rules to Whispering RPC modules.
 - `_v` is library-managed. Never declare it as a column, never set it on a write, never read it off a row. Single-version tables drop the versioning surface entirely; multi-version tables expose it only inside the `migrate` function as `({ value, version })`.
 - Columns are TypeBox schemas. Prefer the `column.*` sugar (`column.string`, `column.number`, `column.boolean`, `column.enum`, `column.json`, `column.nullable`, `column.dateTime`, `column.ianaTimeZone`); raw `Type.X()` is allowed and the `FlatJsonTSchema` constraint enforces SQLite-mappable shapes either way.
 - Derive row types with `InferTableRow<typeof tableDefinition>` in the same module that defines the table. Consumers import the type from the workspace definition module.

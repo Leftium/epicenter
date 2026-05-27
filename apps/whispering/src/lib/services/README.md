@@ -1,10 +1,10 @@
 # Services Layer
 
-The services layer provides pure, isolated business logic with no UI dependencies. Services handle platform differences (Desktop/Web) transparently and return consistent `Result<T, E>` types for error handling.
+The services layer provides UI-free business logic with explicit app inputs. Services handle platform differences (desktop/web) transparently and return consistent `Result<T, E>` types for error handling.
 
 ## How Services Are Consumed
 
-Services are pure functions consumed by orchestrations in `$lib/operations/` and by the rpc adapters in `$lib/rpc/`. Configuration is injected at the call site; services know nothing about settings or reactive state. Example from `operations/transcribe.ts`:
+Services are consumed by orchestrations in `$lib/operations/` and by adapters in `$lib/rpc/`. Configuration is injected at the consuming edge, usually operations; RPC only does this when the adapter directly owns the use case. Services know nothing about app settings, Svelte state, reporting, or UI state. Example from `operations/transcribe.ts`:
 
 ```typescript
 case 'OpenAI': {
@@ -26,13 +26,12 @@ case 'OpenAI': {
 
 **Notice how services are:**
 
-- **Pure**: Accept explicit parameters, no hidden dependencies
-- **Isolated**: No knowledge of UI state, settings, or reactive state
-- **Testable**: Easy to unit test with mock parameters
-- **Consistent**: All return `Result<T, E>` types for uniform error handling
-- **Platform-agnostic**: Same interface works on desktop and web
+- **UI-free**: No report calls, toasts, notifications, or component dependencies
+- **Explicit**: Accept app configuration as parameters, no hidden settings reads
+- **Result-typed**: Return `Result<T, E>` for uniform error handling
+- **Platform-aware behind one API**: Same interface works on desktop and web, even when the implementation performs platform IO or keeps service-local runtime state
 
-Orchestrations read settings and inject the config; the rpc layer adds caching/reactivity.
+Orchestrations usually read settings and inject config; the rpc layer adds caching, mutation lifecycle state, and invalidation.
 
 ### Build-Time Platform Injection
 
@@ -67,7 +66,7 @@ import { tauri, type Tauri } from '$lib/tauri';
 // 1. Shared code (runs on web and Tauri): narrow once.
 if (tauri) {
   await tauri.fs.pathToBlob(path);
-  await tauri.audioEncoder.encodeWavToOpusOgg(wavBlob);
+  await tauri.window.setAlwaysOnTop(true);
 }
 
 // 2. Shared helpers called only inside an `if (tauri)` block:
@@ -86,8 +85,8 @@ See `docs/articles/20260526T012526-tauri-is-both-the-namespace-and-the-platform-
 > **💡 Three kinds of dependency injection**
 >
 > - **Build-time platform DI** (suffix files): for services that have a real implementation on both platforms. `text`, `os`, `sound`, `download`, `analytics`, `http`, `blob-store`, `recorder`. Each has `index.tauri.ts` + `index.browser.ts` + `types.ts`. Vite picks one at build time.
-> - **Tauri-only namespace** (`$lib/tauri`): for capabilities that exist only on Tauri (fs, command, permissions, audioEncoder, window, tray, globalShortcuts, autostart). One file holds all of them. Consumers either narrow with `if (tauri)`, prop-drill the narrowed value into helpers, or call `requireTauri()` from inside a `.tauri.ts` file.
-> - **Runtime DI** (switch on `settings.value`): for user-pick providers like `transcription` and `completion`.
+> - **Tauri-only namespace** (`$lib/tauri`): for capabilities that exist only on Tauri (fs, command, permissions, window, tray, globalShortcuts, autostart). One file holds the current namespace capabilities. Consumers either narrow with `if (tauri)`, prop-drill the narrowed value into helpers, or call `requireTauri()` from inside a `.tauri.ts` file.
+> - **Runtime DI** (switch on `settings` and `deviceConfig`): for user-pick providers like `transcription` and `completion`.
 >
 > See `docs/articles/20260526T012650-two-switches-build-time-and-runtime.md` for the platform-vs-settings walkthrough.
 
@@ -95,7 +94,7 @@ See `docs/articles/20260526T012526-tauri-is-both-the-namespace-and-the-platform-
 
 ### What Are Services?
 
-Services are collections of pure functions that:
+Services are UI-free modules that:
 
 - Accept explicit parameters (no hidden dependencies)
 - Return `Result<T, E>` types for consistent error handling
@@ -226,7 +225,7 @@ type MyError = InferErrors<typeof MyError>;
 
 The caller is responsible for reporting service errors. This separation ensures:
 
-- Services remain pure and testable
+- Services remain UI-free and testable
 - Error types can evolve independently
 - UI concerns don't leak into business logic
 
@@ -378,22 +377,22 @@ export function createClipboardServiceWeb(): ClipboardService {
 
 ## Configuration Injection
 
-Services are pure and accept configuration as parameters. We never import/use global variables like `settings.value`; that's for the rpc layer.
+Services accept configuration as parameters. We never import or use app globals like `settings` or `deviceConfig` inside services; the consuming edge injects those values. In Whispering that is usually `$lib/operations`, and only occasionally `$lib/rpc` when an adapter directly owns the use case.
 
 ```typescript
-// ✅ CORRECT - Pure service
+// CORRECT: service gets app config as input
 export function createCompletionService() {
 	return {
 		async complete({ apiKey, prompt }) {
-			const client = new OpenAI({ apiKey }); // Injected from rpc layer
+			const client = new OpenAI({ apiKey });
 			// ...
 		},
 	};
 }
 
-// Query layer injects settings
+// Consuming edge injects settings
 const result = await services.completion.openai.complete({
-	apiKey: settings.value['apiKeys.openai'], // Query layer responsibility
+	apiKey: deviceConfig.get('apiKeys.openai'),
 	prompt,
 });
 ```
@@ -414,16 +413,17 @@ User-facing reporting (toast + OS notification) is owned by `$lib/report`, not t
 
 ### Tauri-only capabilities (`$lib/tauri`)
 
-All eight Tauri-only capabilities live inline in one file at `$lib/tauri.tauri.ts`. The companion `$lib/tauri.browser.ts` exports `tauri = null` plus a throwing `requireTauri` stub. Consumers access via `if (tauri) { tauri.<cap>.method() }`, by prop-drilling the narrowed value, or by calling `requireTauri()` from inside a `.tauri.ts` file.
+Tauri-only namespace capabilities live inline in one file at `$lib/tauri.tauri.ts`. The companion `$lib/tauri.browser.ts` exports `tauri = null` plus a throwing `requireTauri` stub. Consumers access via `if (tauri) { tauri.<cap>.method() }`, by prop-drilling the narrowed value, or by calling `requireTauri()` from inside a `.tauri.ts` file.
 
 - `tauri.fs` - Filesystem operations (pathToBlob, pathsToFiles)
 - `tauri.command` - Shell command execution (execute)
 - `tauri.permissions` - macOS accessibility/microphone permission flows
-- `tauri.audioEncoder` - In-process libopus encoder for cloud upload compression (encodeWavToOpusOgg, encodePcmToOpusOgg)
 - `tauri.window` - Window operations (setAlwaysOnTop)
 - `tauri.tray` - System tray icon (setIcon)
 - `tauri.globalShortcuts` - OS-level shortcut registration (registerCommand, unregisterCommand, unregisterAll)
 - `tauri.autostart` - Launch-at-login toggle (isEnabled, enable, disable)
+
+App-owned Rust commands that are not general reusable capabilities live in `$lib/tauri/commands`. Upload encoding is one of those commands: `commands.encodeRecordingForUpload` is called by the transcription operation before cloud upload.
 
 Each leaf picks one canonical call form: TanStack-backed (via `defineQuery`/`defineMutation`) where caching, reactivity, or post-mutation invalidation matter; plain Result functions where they don't. There is no separate `tauri.rpc` sub-namespace.
 
@@ -436,7 +436,7 @@ The cpal recorder (`services/recorder/cpal.tauri.ts`) stays under `services/` be
 - `transcription/` - Speech-to-text (OpenAI, Groq, ElevenLabs, Speaches, local Whisper/Parakeet/Moonshine)
 - `completion/` - LLM completions (OpenAI, Anthropic, Google, Groq)
 
-Recording state itself is owned by `$lib/state/manual-recorder.svelte.ts` and `$lib/state/vad-recorder.svelte.ts`, not by services. Services are pure operations; state lives one level up.
+Recording state itself is owned by `$lib/state/manual-recorder.svelte.ts` and `$lib/state/vad-recorder.svelte.ts`, not by services. Services may hold service-local runtime state, like a platform recorder's active session, but app-visible state lives one level up.
 
 ## Quick Start
 
@@ -477,10 +477,10 @@ Vite picks `.browser.ts` for web builds, `.tauri.ts` for Tauri builds. Consumers
 
 | Aspect             | Services              | RPC Layer              |
 | ------------------ | --------------------- | ---------------------- |
-| **State**          | Stateless             | Stateful (cache)       |
-| **Dependencies**   | Explicit parameters   | Settings, state        |
+| **State**          | Service-local only    | Cache and observed lifecycle state |
+| **Dependencies**   | Explicit parameters   | Services, state, operations |
 | **Error Handling** | Result types          | Tagged errors pass through |
 | **Usage**          | Direct function calls | TanStack Query         |
 | **Reactivity**     | None                  | Reactive subscriptions |
 
-Services provide pure business logic. The rpc layer adds caching, reactivity, and mutation observability.
+Services provide UI-free, Result-typed capabilities. The rpc layer adds caching, reactivity, mutation observability, and shared cache identity.

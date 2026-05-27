@@ -1,6 +1,5 @@
 import type { Table } from '@epicenter/workspace';
 import yaml from 'js-yaml';
-import { writable, type Readable } from 'svelte/store';
 import { createLogger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
 import { report } from './report';
@@ -9,6 +8,12 @@ import type { Recording } from './workspace';
 
 const log = createLogger('whispering/recording-markdown-export');
 const REALTIME_CHUNK_SIZE = 100;
+const REBUILD_CHUNK_SIZE = 250;
+
+export type RecordingMarkdownRebuildResult = {
+	deleted: number;
+	written: number;
+};
 
 /**
  * Serialize a recording row to a markdown file.
@@ -36,20 +41,20 @@ export function attachRecordingMarkdownExport(
 	ydoc: Y.Doc,
 	recordings: Table<Recording>,
 	config: {
+		dir: string | Promise<string>;
 		waitFor: Promise<unknown>;
 	},
 ) {
+	// Serialized promise chain: observer batches complete sequentially so
+	// rapid changes don't produce overlapping Rust invoke calls.
 	let syncQueue = Promise.resolve();
 	let isDisposed = false;
 	let scheduled = false;
 	let hasShownFailureToast = false;
 	const pendingIds = new Set<string>();
-	const lastErrorWritable = writable<{ at: Date; error: unknown } | null>(null);
-	const lastError: Readable<{ at: Date; error: unknown } | null> =
-		lastErrorWritable;
+	const dirPromise = Promise.resolve(config.dir);
 
 	function recordFailure(error: unknown) {
-		lastErrorWritable.set({ at: new Date(), error });
 		log.error(
 			error instanceof Error
 				? error
@@ -72,27 +77,58 @@ export function attachRecordingMarkdownExport(
 
 	async function writeFiles(
 		files: ReturnType<typeof toRecordingMarkdownFile>[],
+		chunkSize = REALTIME_CHUNK_SIZE,
 	) {
-		for (const chunk of chunks(files, REALTIME_CHUNK_SIZE)) {
-			if (isDisposed) return;
-			const { error } = await commands.writeRecordingMarkdownFiles(chunk);
+		if (files.length === 0) return 0;
+
+		const dir = await dirPromise;
+		let written = 0;
+		for (const chunk of chunks(files, chunkSize)) {
+			if (isDisposed) return written;
+			const { error } = await commands.writeMarkdownFiles(dir, chunk);
 			if (error !== null) throw error;
+			written += chunk.length;
 		}
+		return written;
 	}
 
 	async function deleteFiles(filenames: string[]) {
+		if (filenames.length === 0) return;
+
+		const dir = await dirPromise;
 		for (const chunk of chunks(filenames, REALTIME_CHUNK_SIZE)) {
 			if (isDisposed) return;
-			const { error } = await commands.deleteRecordingFiles(chunk);
+			const { error } = await commands.deleteFilesInDirectory(dir, {
+				kind: 'filenames',
+				filenames: chunk,
+			});
 			if (error !== null) throw error;
 		}
 	}
 
 	async function writeAllRecordings() {
-		if (isDisposed) return;
+		if (isDisposed) return 0;
 
 		const files = recordings.getAllValid().map(toRecordingMarkdownFile);
-		await writeFiles(files);
+		return writeFiles(files);
+	}
+
+	async function rebuildAllRecordings(): Promise<RecordingMarkdownRebuildResult> {
+		if (isDisposed) return { deleted: 0, written: 0 };
+
+		const dir = await dirPromise;
+		const { data: deleted, error } = await commands.deleteFilesInDirectory(
+			dir,
+			{
+				kind: 'extension',
+				extension: 'md',
+			},
+		);
+		if (error !== null) throw error;
+
+		const files = recordings.getAllValid().map(toRecordingMarkdownFile);
+		const written = await writeFiles(files, REBUILD_CHUNK_SIZE);
+		return { deleted, written };
 	}
 
 	async function flushIds(ids: string[]) {
@@ -133,36 +169,45 @@ export function attachRecordingMarkdownExport(
 		schedule(changedIds);
 	});
 
+	function dispose() {
+		if (isDisposed) return;
+		isDisposed = true;
+		unsubscribe();
+	}
+
 	const whenExported = (async () => {
 		await config.waitFor;
-		syncQueue = syncQueue.then(writeAllRecordings).catch(recordFailure);
+		syncQueue = syncQueue
+			.then(async () => {
+				await writeAllRecordings();
+			})
+			.catch(recordFailure);
 		await syncQueue;
 	})();
 
-	ydoc.once('destroy', () => {
-		unsubscribe();
-	});
+	ydoc.once('destroy', dispose);
 
 	return {
 		/** Resolves after the initial markdown export attempt completes. */
 		whenExported,
-		/** Latest background export failure, or null after a successful reset path. */
-		lastError,
 		/** Re-export every current recording row to markdown. */
-		async rebuild() {
-			lastErrorWritable.set(null);
+		async rebuild(): Promise<RecordingMarkdownRebuildResult> {
 			hasShownFailureToast = false;
-			syncQueue = syncQueue.then(writeAllRecordings).catch(recordFailure);
+			let result: RecordingMarkdownRebuildResult | undefined;
+			let failure: unknown;
+			syncQueue = syncQueue
+				.then(async () => {
+					result = await rebuildAllRecordings();
+				})
+				.catch((error) => {
+					failure = error;
+					recordFailure(error);
+				});
 			await syncQueue;
+			if (failure !== undefined) throw failure;
+			return result ?? { deleted: 0, written: 0 };
 		},
 		/** Stop observing recording changes and skip future writes. */
-		[Symbol.dispose]() {
-			isDisposed = true;
-			unsubscribe();
-		},
+		[Symbol.dispose]: dispose,
 	};
 }
-
-export type RecordingMarkdownExport = ReturnType<
-	typeof attachRecordingMarkdownExport
->;

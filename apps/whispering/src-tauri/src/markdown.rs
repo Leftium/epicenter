@@ -1,11 +1,9 @@
-use crate::recorder::artifact::recordings_dir;
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::fs;
 use std::io::Write;
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
-use tauri::AppHandle;
 use tempfile::NamedTempFile;
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -14,6 +12,13 @@ use tempfile::NamedTempFile;
 pub struct MarkdownFile {
     filename: String,
     content: String,
+}
+
+#[derive(serde::Deserialize, specta::Type)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum DeleteFilesSelection {
+    Filenames { filenames: Vec<String> },
+    Extension { extension: String },
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -33,12 +38,29 @@ fn validate_leaf_filename(filename: &str) -> Result<&str, String> {
     Ok(filename)
 }
 
+fn validate_extension(extension: &str) -> Result<&str, String> {
+    validate_leaf_filename(extension)
+}
+
+fn delete_paths(paths: Vec<PathBuf>) -> u32 {
+    let deleted = AtomicU32::new(0);
+
+    paths.par_iter().for_each(|path| {
+        if path.exists() && path.is_file() && fs::remove_file(path).is_ok() {
+            deleted.fetch_add(1, Ordering::Relaxed);
+        }
+    });
+
+    deleted.load(Ordering::Relaxed)
+}
+
 // ── Commands ────────────────────────────────────────────────────────────────
 
 /// Writes markdown files to disk atomically using a temporary file plus persist.
-/// Validates all filenames before writing so invalid names do not touch disk.
+/// Validates all filenames upfront. No files are written if any name is invalid.
 ///
 /// # Arguments
+/// * `directory` - Absolute path to the output directory
 /// * `files` - Array of `{ filename, content }` pairs to write
 ///
 /// # Returns
@@ -46,13 +68,17 @@ fn validate_leaf_filename(filename: &str) -> Result<&str, String> {
 /// * `Err(String)` - Error if any write fails (earlier files may already be on disk)
 #[tauri::command]
 #[specta::specta]
-pub async fn write_recording_markdown_files(
-    app_handle: AppHandle,
+pub async fn write_markdown_files(
+    directory: String,
     files: Vec<MarkdownFile>,
 ) -> Result<(), String> {
-    let dir_path = recordings_dir(&app_handle)?;
-
     tokio::task::spawn_blocking(move || {
+        let dir_path = PathBuf::from(&directory);
+
+        if !dir_path.is_absolute() {
+            return Err(format!("Directory must be absolute: {}", directory));
+        }
+
         // Two-pass approach: validate all filenames first, then write.
         // If any filename is invalid or duplicated, no files touch disk.
         let validated: Vec<&str> = {
@@ -69,7 +95,7 @@ pub async fn write_recording_markdown_files(
         };
 
         fs::create_dir_all(&dir_path)
-            .map_err(|e| format!("Failed to create directory {}: {}", dir_path.display(), e))?;
+            .map_err(|e| format!("Failed to create directory {}: {}", directory, e))?;
 
         for (file, filename) in files.iter().zip(validated.iter()) {
             let path = dir_path.join(filename);
@@ -89,37 +115,61 @@ pub async fn write_recording_markdown_files(
 }
 
 /// Deletes files inside a directory by filename.
-/// Validates filenames are single path components (no traversal).
+/// Validates filenames and extensions are single path components (no traversal).
 /// Uses Rayon for parallel deletion. Silently skips missing files.
 ///
 /// # Arguments
-/// * `filenames` - Array of leaf filenames to delete
+/// * `directory` - Absolute path to the directory containing the files
+/// * `selection` - Either named leaf filenames or one file extension
 #[tauri::command]
 #[specta::specta]
-pub async fn delete_recording_files(
-    app_handle: AppHandle,
-    filenames: Vec<String>,
+pub async fn delete_files_in_directory(
+    directory: String,
+    selection: DeleteFilesSelection,
 ) -> Result<u32, String> {
-    let dir_path = recordings_dir(&app_handle)?;
-
     tokio::task::spawn_blocking(move || {
-        let validated: Vec<&str> = filenames
-            .iter()
-            .map(|f| validate_leaf_filename(f))
-            .collect::<Result<Vec<_>, _>>()?;
+        let dir_path = PathBuf::from(&directory);
 
-        let deleted = AtomicU32::new(0);
+        if !dir_path.is_absolute() {
+            return Err(format!("Directory must be absolute: {}", directory));
+        }
 
-        validated.par_iter().for_each(|filename| {
-            let path = dir_path.join(filename);
-            if path.exists() && path.is_file() {
-                if fs::remove_file(&path).is_ok() {
-                    deleted.fetch_add(1, Ordering::Relaxed);
-                }
+        match selection {
+            DeleteFilesSelection::Filenames { filenames } => {
+                let validated: Vec<&str> = filenames
+                    .iter()
+                    .map(|f| validate_leaf_filename(f))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(delete_paths(
+                    validated
+                        .iter()
+                        .map(|filename| dir_path.join(filename))
+                        .collect(),
+                ))
             }
-        });
+            DeleteFilesSelection::Extension { extension } => {
+                let extension = validate_extension(&extension)?;
+                if !dir_path.exists() {
+                    return Ok(0);
+                }
+                if !dir_path.is_dir() {
+                    return Err(format!("Directory is not a folder: {}", directory));
+                }
 
-        Ok::<u32, String>(deleted.load(Ordering::Relaxed))
+                let paths = fs::read_dir(&dir_path)
+                    .map_err(|e| format!("Failed to read directory {}: {}", directory, e))?
+                    .filter_map(|entry| entry.ok())
+                    .map(|entry| entry.path())
+                    .filter(|path| path.is_file())
+                    .filter(|path| {
+                        path.extension()
+                            .is_some_and(|path_extension| path_extension == extension)
+                    })
+                    .collect();
+
+                Ok(delete_paths(paths))
+            }
+        }
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))?

@@ -543,14 +543,15 @@ Out of scope:
 - [x] Replace append-only batch queue with latest-state coalescing queue.
 - [x] Read table rows at flush time.
 - [x] Chunk write and delete calls.
-- [x] Surface projection failures to the user. Concretely: expose `lastError: { at: Date; error: unknown } | null` on the exporter return as a reactive store; render it in the same settings panel row that owns the folder picker. Toast once per session on the first failure so the user knows to look. Subsequent failures update the panel only, until the user changes the folder or runs rebuild.
-  > **Verification note**: The queue now stores changed ids in a `Set`, flushes them in one microtask, reads rows during `flushIds`, and sends chunked bulk IPC calls. `bun run check` and `bun test apps/whispering` pass.
+- [x] Surface projection failures with logging and a once-per-session toast. Do not expose the exporter handle as a Svelte store only for the settings row.
+  > **Verification note**: The queue now stores changed ids in a `Set`, flushes them in one microtask, reads rows during `flushIds`, and sends chunked bulk IPC calls. `bun run check` and `bun test apps/whispering` pass. A follow-up rollback removed the reactive `lastError` UI bridge because it was not earning the extra public surface.
 
 ### Wave 5: Add rebuild repair action
 
-- [ ] Implement `rebuild` by deleting existing `.md` files and then writing all valid rows.
-- [ ] Return `{ deleted, written }`.
-- [ ] Wire it as a settings repair action if the export folder is configured.
+- [x] Implement `rebuild` by deleting existing `.md` files and then writing all valid rows.
+- [x] Return `{ deleted, written }`.
+- [x] Wire it as a settings repair action if the export folder is configured.
+  > **Verification note**: Extended the existing `delete_files_in_directory` Rust command with a tagged selector so rebuild can delete all immediate `.md` files without TypeScript filesystem IO or a second delete command. Regenerated Specta bindings and kept realtime deletes on explicit filenames. `cargo test --manifest-path apps/whispering/src-tauri/Cargo.toml export_types`, `bun run check`, and `bun test apps/whispering` pass.
 
 ### Wave 6: Remove old appdata projection
 

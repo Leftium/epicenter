@@ -9,6 +9,7 @@
 import type { Result } from 'wellcrafted/result';
 import type {
 	LocalModelState,
+	ModelStateEvent,
 	RecordingArtifact,
 	TranscriptionConfig,
 	TranscriptionError,
@@ -61,6 +62,35 @@ type _GetTranscriptionState = Expect<
 	Equal<
 		ReturnType<typeof commands.getTranscriptionState>,
 		Promise<LocalModelState>
+	>
+>;
+
+type _ModelStateEventShape = Expect<
+	Equal<
+		ModelStateEvent,
+		| { kind: 'loading_started'; state: LocalModelState }
+		| {
+				kind: 'loading_completed';
+				state: LocalModelState;
+				elapsedMs: number;
+		  }
+		| { kind: 'loading_failed'; state: LocalModelState; error: string }
+		| { kind: 'inference_started'; state: LocalModelState }
+		| {
+				kind: 'inference_completed';
+				state: LocalModelState;
+				elapsedMs: number;
+		  }
+		| { kind: 'inference_failed'; state: LocalModelState; error: string }
+		| {
+				kind: 'unloaded';
+				state: LocalModelState;
+				reason:
+					| { kind: 'immediate' }
+					| { kind: 'idle'; idleSecs: number }
+					| { kind: 'config_changed' };
+		  }
+		| { kind: 'selection_changed'; state: LocalModelState }
 	>
 >;
 

@@ -142,13 +142,10 @@ export type MarkdownFile = {
  *  `tag = "kind"` matches `ModelStatus` and `UnloadReason` so the FE pattern
  *  is uniform: `switch (event.kind)`.
  * 
- *  `tauri_specta::Event` + `event_name = "..."` keys the TS export at the
- *  custom channel name. Without the explicit name, the derive kebab-cases
- *  the type ident (`model-state-event`) which would break the existing FE
- *  listener. `collect_events![ModelStateEvent]` in `lib.rs` registers the
- *  type so the regen surface picks it up.
+ *  `lib.rs` exports this payload type directly because the FE listens on
+ *  `EVENT_CHANNEL` manually.
  */
-export type ModelStateEvent = { kind: "loading_started"; state: LocalModelState } | { kind: "loading_completed"; state: LocalModelState; elapsed_ms: number } | { kind: "loading_failed"; state: LocalModelState; error: string } | { kind: "unloaded"; state: LocalModelState; reason: UnloadReason } | { kind: "selection_changed"; state: LocalModelState };
+export type ModelStateEvent = { kind: "loading_started"; state: LocalModelState } | { kind: "loading_completed"; state: LocalModelState; elapsedMs: number } | { kind: "loading_failed"; state: LocalModelState; error: string } | { kind: "inference_started"; state: LocalModelState } | { kind: "inference_completed"; state: LocalModelState; elapsedMs: number } | { kind: "inference_failed"; state: LocalModelState; error: string } | { kind: "unloaded"; state: LocalModelState; reason: UnloadReason } | { kind: "selection_changed"; state: LocalModelState };
 
 /**
  *  Lifecycle state of the resident model. Owned by an `Arc<RwLock<...>>`
@@ -289,4 +286,3 @@ function makeEvent<T>(name: string, serialize?: (payload: T) => unknown, deseria
 
     return Object.assign(fn, base);
 }
-

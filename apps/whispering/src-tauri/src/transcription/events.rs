@@ -1,11 +1,7 @@
 use super::config::Engine;
 use serde::{Deserialize, Serialize};
-use tauri_specta::Event;
 
-/// Channel name for every model lifecycle event. The same constant is bound
-/// to the `tauri_specta(event_name = "...")` attribute on `ModelStateEvent`
-/// below so the Rust emitter, the specta-emitted TS binding, and the FE
-/// `listen<ModelStateEvent>(...)` call all key off one symbol.
+/// Channel name for every model lifecycle event.
 pub const EVENT_CHANNEL: &str = "transcription://model-state";
 
 /// Snapshot of everything observable about the resident model. Every event
@@ -37,7 +33,8 @@ pub enum ModelStatus {
     /// `with_engine` is currently inside the user closure (transcribe call).
     /// The cache lock is held; `snapshot()` reports this without contending.
     Inferring,
-    /// The last attempt to load or transcribe failed. The cache is empty.
+    /// The last attempt to load or transcribe failed. Inference failures may
+    /// leave the engine resident so a later transcription can reuse it.
     Error { message: String },
 }
 
@@ -45,7 +42,11 @@ pub enum ModelStatus {
 /// (`ModelStateEvent::Unloaded`) rather than fanned out into per-reason
 /// variants so the FE has one branch to handle.
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum UnloadReason {
     /// Synchronous eviction after a transcription completed under the
     /// `Immediately` unload policy.
@@ -65,14 +66,14 @@ pub enum UnloadReason {
 /// `tag = "kind"` matches `ModelStatus` and `UnloadReason` so the FE pattern
 /// is uniform: `switch (event.kind)`.
 ///
-/// `tauri_specta::Event` + `event_name = "..."` keys the TS export at the
-/// custom channel name. Without the explicit name, the derive kebab-cases
-/// the type ident (`model-state-event`) which would break the existing FE
-/// listener. `collect_events![ModelStateEvent]` in `lib.rs` registers the
-/// type so the regen surface picks it up.
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, Event)]
-#[tauri_specta(event_name = "transcription://model-state")]
-#[serde(tag = "kind", rename_all = "snake_case")]
+/// `lib.rs` exports this payload type directly because the FE listens on
+/// `EVENT_CHANNEL` manually.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+#[serde(
+    tag = "kind",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum ModelStateEvent {
     LoadingStarted {
         state: LocalModelState,
@@ -83,6 +84,18 @@ pub enum ModelStateEvent {
         elapsed_ms: u64,
     },
     LoadingFailed {
+        state: LocalModelState,
+        error: String,
+    },
+    InferenceStarted {
+        state: LocalModelState,
+    },
+    InferenceCompleted {
+        state: LocalModelState,
+        #[specta(type = u32)]
+        elapsed_ms: u64,
+    },
+    InferenceFailed {
         state: LocalModelState,
         error: String,
     },

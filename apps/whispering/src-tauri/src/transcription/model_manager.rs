@@ -4,7 +4,7 @@ use super::events::{LocalModelState, ModelStateEvent, ModelStatus, UnloadReason,
 use log::{debug, info, warn};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, RwLock};
+use std::sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 use transcribe_rs::onnx::moonshine::{MoonshineModel, MoonshineVariant};
@@ -46,11 +46,16 @@ pub struct ModelManager {
     /// `(engine, model_path)` without touching the cache mutex.
     config: Arc<RwLock<Option<TranscriptionConfig>>>,
 
-    /// Lock-free status field for `snapshot()`. Mutated only by `with_engine`
-    /// and the eviction paths; never held across a long operation. The cache
-    /// mutex stays held across inference, but `status` does not, so snapshot
-    /// never blocks behind a transcription.
+    /// Cache-independent status field for `snapshot()`. Mutated by load,
+    /// inference, and eviction paths; never held across a long operation.
+    /// The cache mutex stays held across inference, but `status` does not,
+    /// so snapshot never blocks behind a transcription.
     status: Arc<RwLock<ModelStatus>>,
+
+    /// Logical identity token for the selected `(engine, model_path)`. Older
+    /// operations may finish, but they must not publish state after a newer
+    /// model selection.
+    model_generation: Arc<AtomicU64>,
 
     /// Handle used for `Emitter::emit` on the lifecycle event channel.
     /// Constructed once in `setup` and cloned cheaply through `Clone` on
@@ -65,6 +70,7 @@ impl ModelManager {
             last_activity_ms: Arc::new(AtomicU64::new(now_millis())),
             config: Arc::new(RwLock::new(None)),
             status: Arc::new(RwLock::new(ModelStatus::Idle)),
+            model_generation: Arc::new(AtomicU64::new(0)),
             app,
         }
     }
@@ -98,22 +104,29 @@ impl ModelManager {
             }
         };
 
-        let needs_preload = {
+        let (preload_generation, selection_state) = {
             let mut guard = self.write_config();
-            let preload = should_preload(guard.as_ref(), &config);
+            let needs_preload = should_preload(guard.as_ref(), &config);
+            let generation =
+                needs_preload.then(|| self.model_generation.fetch_add(1, Ordering::SeqCst) + 1);
             *guard = Some(config.clone());
-            preload
+            let selection_state = needs_preload.then(|| {
+                let status = ModelStatus::Idle;
+                self.set_status(status.clone());
+                state_for_config(&config, status)
+            });
+            (generation, selection_state)
         };
 
         // Always notify: SelectionChanged is the FE's signal to refresh model
         // identity displays even when the engine/path are the same.
         self.emit(ModelStateEvent::SelectionChanged {
-            state: self.snapshot(),
+            state: selection_state.unwrap_or_else(|| self.snapshot()),
         });
 
-        if !needs_preload {
+        let Some(generation) = preload_generation else {
             return;
-        }
+        };
 
         // Hand off the eviction + preload to a background thread so this
         // command returns immediately. The eviction itself takes the cache
@@ -124,8 +137,11 @@ impl ModelManager {
         // → LoadingStarted → LoadingCompleted | LoadingFailed.
         let this = self.clone();
         tauri::async_runtime::spawn_blocking(move || {
+            if !this.is_current_model_generation(generation) {
+                return;
+            }
             this.evict_with_reason(UnloadReason::ConfigChanged);
-            if let Err(err) = this.preload(&config) {
+            if let Err(err) = this.preload(config, generation) {
                 warn!("[Transcription] preload failed: {}", err);
             }
         });
@@ -174,6 +190,19 @@ impl ModelManager {
             .unwrap_or_else(|poisoned| poisoned.into_inner().clone())
     }
 
+    fn read_config_with_generation(&self) -> Option<(TranscriptionConfig, u64)> {
+        let guard = self.read_config_guard();
+        let config = guard.clone()?;
+        let generation = self.model_generation.load(Ordering::SeqCst);
+        Some((config, generation))
+    }
+
+    fn read_config_guard(&self) -> RwLockReadGuard<'_, Option<TranscriptionConfig>> {
+        self.config
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     fn current_policy(&self) -> UnloadPolicy {
         self.read_config()
             .map(|c| c.unload_policy)
@@ -213,7 +242,7 @@ impl ModelManager {
     /// validates the samples, then routes to the engine-specific path.
     /// Called from a blocking-pool thread.
     pub fn transcribe(&self, samples: Vec<f32>) -> Result<String, TranscriptionError> {
-        let Some(config) = self.read_config() else {
+        let Some((config, generation)) = self.read_config_with_generation() else {
             return Err(TranscriptionError::NoConfig {
                 message:
                     "Transcription config not set. The frontend must call setTranscriptionConfig first."
@@ -248,7 +277,7 @@ impl ModelManager {
                 params.suppress_non_speech_tokens = true;
                 params.no_speech_thold = 0.2;
 
-                self.with_whisper(model_path, |engine| {
+                self.with_whisper(&config, generation, model_path, |engine| {
                     let result = engine
                         .transcribe_with(&samples, &params)
                         .map_err(transcription_err)?;
@@ -260,7 +289,7 @@ impl ModelManager {
                     timestamp_granularity: Some(TimestampGranularity::Segment),
                     ..Default::default()
                 };
-                self.with_parakeet(model_path, |engine| {
+                self.with_parakeet(&config, generation, model_path, |engine| {
                     let result = engine
                         .transcribe_with(&samples, &params)
                         .map_err(transcription_err)?;
@@ -269,7 +298,7 @@ impl ModelManager {
             }
             EngineKind::Moonshine => {
                 let variant = parse_moonshine_variant(&config.model_path)?;
-                self.with_moonshine(model_path, variant, |engine| {
+                self.with_moonshine(&config, generation, model_path, variant, |engine| {
                     let result = engine
                         .transcribe(&samples, &TranscribeOptions::default())
                         .map_err(transcription_err)?;
@@ -289,29 +318,74 @@ impl ModelManager {
 
     // ── Preload ───────────────────────────────────────────────────────
 
-    /// Load the configured model without running inference. Drives the same
-    /// `with_engine` machinery the transcribe path uses; the closure body is
-    /// a no-op so the lifecycle ends in `Ready`, not `Inferring → Ready`.
-    fn preload(&self, config: &TranscriptionConfig) -> Result<(), TranscriptionError> {
+    /// Load the configured model without running inference. Preload drives
+    /// loading events only; inference events are reserved for real
+    /// transcriptions.
+    fn preload(
+        &self,
+        config: TranscriptionConfig,
+        generation: u64,
+    ) -> Result<(), TranscriptionError> {
+        if !self.is_current_model_generation(generation) {
+            return Ok(());
+        }
         let model_path = PathBuf::from(&config.model_path);
         match config.engine {
-            EngineKind::Whispercpp => self.with_whisper(model_path, |_| Ok(())),
-            EngineKind::Parakeet => self.with_parakeet(model_path, |_| Ok(())),
+            EngineKind::Whispercpp => {
+                self.ensure_loaded(
+                    &config,
+                    model_path,
+                    |e| matches!(e, Engine::Whisper(_)),
+                    |path| {
+                        WhisperEngine::load(path)
+                            .map(Engine::Whisper)
+                            .map_err(|e| format!("Failed to load Whisper model: {}", e))
+                    },
+                    LoadCaller::Preload { generation },
+                )?;
+            }
+            EngineKind::Parakeet => {
+                self.ensure_loaded(
+                    &config,
+                    model_path,
+                    |e| matches!(e, Engine::Parakeet(_)),
+                    |path| {
+                        ParakeetModel::load(path, &Quantization::Int8)
+                            .map(Engine::Parakeet)
+                            .map_err(|e| format!("Failed to load Parakeet model: {}", e))
+                    },
+                    LoadCaller::Preload { generation },
+                )?;
+            }
             EngineKind::Moonshine => {
                 let variant = parse_moonshine_variant(&config.model_path)?;
-                self.with_moonshine(model_path, variant, |_| Ok(()))
+                self.ensure_loaded(
+                    &config,
+                    model_path,
+                    |e| matches!(e, Engine::Moonshine(_)),
+                    |path| {
+                        MoonshineModel::load(path, variant, &Quantization::default())
+                            .map(Engine::Moonshine)
+                            .map_err(|e| format!("Failed to load Moonshine model: {}", e))
+                    },
+                    LoadCaller::Preload { generation },
+                )?;
             }
         }
+        Ok(())
     }
 
     // ── Engine cache + eviction ───────────────────────────────────────
 
     fn with_whisper<T>(
         &self,
+        config: &TranscriptionConfig,
+        generation: u64,
         model_path: PathBuf,
         f: impl FnOnce(&mut WhisperEngine) -> Result<T, TranscriptionError>,
     ) -> Result<T, TranscriptionError> {
         self.with_engine(
+            config,
             model_path,
             |e| matches!(e, Engine::Whisper(_)),
             |path| {
@@ -319,6 +393,7 @@ impl ModelManager {
                     .map(Engine::Whisper)
                     .map_err(|e| format!("Failed to load Whisper model: {}", e))
             },
+            LoadCaller::Transcription { generation },
             |engine| match engine {
                 Engine::Whisper(e) => f(e),
                 _ => unreachable!("can_reuse guarantees Whisper variant"),
@@ -328,10 +403,13 @@ impl ModelManager {
 
     fn with_parakeet<T>(
         &self,
+        config: &TranscriptionConfig,
+        generation: u64,
         model_path: PathBuf,
         f: impl FnOnce(&mut ParakeetModel) -> Result<T, TranscriptionError>,
     ) -> Result<T, TranscriptionError> {
         self.with_engine(
+            config,
             model_path,
             |e| matches!(e, Engine::Parakeet(_)),
             |path| {
@@ -339,6 +417,7 @@ impl ModelManager {
                     .map(Engine::Parakeet)
                     .map_err(|e| format!("Failed to load Parakeet model: {}", e))
             },
+            LoadCaller::Transcription { generation },
             |engine| match engine {
                 Engine::Parakeet(e) => f(e),
                 _ => unreachable!("can_reuse guarantees Parakeet variant"),
@@ -348,11 +427,14 @@ impl ModelManager {
 
     fn with_moonshine<T>(
         &self,
+        config: &TranscriptionConfig,
+        generation: u64,
         model_path: PathBuf,
         variant: MoonshineVariant,
         f: impl FnOnce(&mut MoonshineModel) -> Result<T, TranscriptionError>,
     ) -> Result<T, TranscriptionError> {
         self.with_engine(
+            config,
             model_path,
             |e| matches!(e, Engine::Moonshine(_)),
             |path| {
@@ -360,6 +442,7 @@ impl ModelManager {
                     .map(Engine::Moonshine)
                     .map_err(|e| format!("Failed to load Moonshine model: {}", e))
             },
+            LoadCaller::Transcription { generation },
             |engine| match engine {
                 Engine::Moonshine(e) => f(e),
                 _ => unreachable!("can_reuse guarantees Moonshine variant"),
@@ -367,37 +450,47 @@ impl ModelManager {
         )
     }
 
-    /// Hold the cache lock across load and use. If `(path, engine kind)`
-    /// matches the cache, reuse; otherwise drop, load fresh, then run the
-    /// user closure under the same lock. Status transitions and events fire
-    /// at each stage so a snapshot or listener sees the lifecycle.
+    /// Hold the cache lock across load. If `(path, engine kind)` matches the
+    /// cache, reuse; otherwise drop and load fresh under the same lock.
+    /// Stale background preloads drop their loaded engine instead of
+    /// publishing or caching it; stale transcriptions keep their engine long
+    /// enough to preserve transcript behavior, but stop publishing state.
     ///
     /// Holding the cache lock across `emit` is safe: Tauri's emit is sync
     /// and FE handlers run on the JS event loop, so no Rust caller can
     /// re-enter and contend on this mutex.
-    ///
-    /// Status sequence for a load-then-use call:
-    ///   Idle/Ready → Loading → Ready → Inferring → Ready
-    /// For a preload (no-op closure): the `Inferring → Ready` step still
-    /// runs but observers do not perceive it (closure returns instantly).
-    fn with_engine<T>(
+    fn ensure_loaded(
         &self,
+        config: &TranscriptionConfig,
         model_path: PathBuf,
         can_reuse: impl Fn(&Engine) -> bool,
         load: impl FnOnce(&Path) -> Result<Engine, String>,
-        use_engine: impl FnOnce(&mut Engine) -> Result<T, TranscriptionError>,
-    ) -> Result<T, TranscriptionError> {
-        self.touch_activity();
+        caller: LoadCaller,
+    ) -> Result<EnsureLoaded<'_>, TranscriptionError> {
+        if caller.is_preload() && !self.is_current_model_generation(caller.generation()) {
+            return Ok(EnsureLoaded::Stale);
+        }
+
         let mut guard = lock_cached(&self.cached);
+
+        if caller.is_preload() && !self.is_current_model_generation(caller.generation()) {
+            return Ok(EnsureLoaded::Stale);
+        }
 
         let reuse = matches!(&*guard, Some((p, e)) if p == &model_path && can_reuse(e));
 
         if !reuse {
             let _ = guard.take();
-            self.set_status(ModelStatus::Loading);
-            self.emit(ModelStateEvent::LoadingStarted {
-                state: self.snapshot(),
+            let loading_started = self.with_current_model_generation(caller.generation(), || {
+                let status = ModelStatus::Loading;
+                self.set_status(status.clone());
+                self.emit(ModelStateEvent::LoadingStarted {
+                    state: state_for_config(config, status),
+                });
             });
+            if caller.is_preload() && loading_started.is_none() {
+                return Ok(EnsureLoaded::Stale);
+            }
             let started = Instant::now();
             match load(&model_path) {
                 Ok(engine) => {
@@ -407,39 +500,111 @@ impl ModelManager {
                         model_path.display(),
                         elapsed_ms
                     );
-                    *guard = Some((model_path, engine));
-                    self.set_status(ModelStatus::Ready);
-                    self.emit(ModelStateEvent::LoadingCompleted {
-                        state: self.snapshot(),
-                        elapsed_ms,
-                    });
+                    if caller.is_preload() {
+                        let Some(()) =
+                            self.with_current_model_generation(caller.generation(), || {
+                                *guard = Some((model_path, engine));
+                                let status = ModelStatus::Ready;
+                                self.set_status(status.clone());
+                                self.emit(ModelStateEvent::LoadingCompleted {
+                                    state: state_for_config(config, status),
+                                    elapsed_ms,
+                                });
+                            })
+                        else {
+                            return Ok(EnsureLoaded::Stale);
+                        };
+                    } else {
+                        *guard = Some((model_path, engine));
+                        let _ = self.with_current_model_generation(caller.generation(), || {
+                            let status = ModelStatus::Ready;
+                            self.set_status(status.clone());
+                            self.emit(ModelStateEvent::LoadingCompleted {
+                                state: state_for_config(config, status),
+                                elapsed_ms,
+                            });
+                        });
+                    }
                 }
                 Err(message) => {
-                    self.set_status(ModelStatus::Error {
-                        message: message.clone(),
-                    });
-                    self.emit(ModelStateEvent::LoadingFailed {
-                        state: self.snapshot(),
-                        error: message.clone(),
+                    if caller.is_preload() && !self.is_current_model_generation(caller.generation())
+                    {
+                        return Ok(EnsureLoaded::Stale);
+                    }
+                    let _ = self.with_current_model_generation(caller.generation(), || {
+                        let status = ModelStatus::Error {
+                            message: message.clone(),
+                        };
+                        self.set_status(status.clone());
+                        self.emit(ModelStateEvent::LoadingFailed {
+                            state: state_for_config(config, status),
+                            error: message.clone(),
+                        });
                     });
                     return Err(TranscriptionError::ModelLoadError { message });
                 }
             }
         }
 
+        Ok(EnsureLoaded::Loaded(guard))
+    }
+
+    /// Hold the cache lock across load and use. Preloading calls only
+    /// `ensure_loaded`; real transcriptions additionally emit semantic
+    /// inference events around the user closure.
+    fn with_engine<T>(
+        &self,
+        config: &TranscriptionConfig,
+        model_path: PathBuf,
+        can_reuse: impl Fn(&Engine) -> bool,
+        load: impl FnOnce(&Path) -> Result<Engine, String>,
+        caller: LoadCaller,
+        use_engine: impl FnOnce(&mut Engine) -> Result<T, TranscriptionError>,
+    ) -> Result<T, TranscriptionError> {
+        self.touch_activity();
+        let mut guard = match self.ensure_loaded(config, model_path, can_reuse, load, caller)? {
+            EnsureLoaded::Loaded(guard) => guard,
+            EnsureLoaded::Stale => unreachable!("stale cache loads only abort preloads"),
+        };
+
         let (_, engine) = guard.as_mut().expect("cache slot populated above");
-        self.set_status(ModelStatus::Inferring);
+        let _ = self.with_current_model_generation(caller.generation(), || {
+            let status = ModelStatus::Inferring;
+            self.set_status(status.clone());
+            self.emit(ModelStateEvent::InferenceStarted {
+                state: state_for_config(config, status),
+            });
+        });
+        let started = Instant::now();
         let result = use_engine(engine);
+        let elapsed_ms = started.elapsed().as_millis() as u64;
         self.touch_activity();
         match &result {
-            Ok(_) => self.set_status(ModelStatus::Ready),
+            Ok(_) => {
+                let _ = self.with_current_model_generation(caller.generation(), || {
+                    let status = ModelStatus::Ready;
+                    self.set_status(status.clone());
+                    self.emit(ModelStateEvent::InferenceCompleted {
+                        state: state_for_config(config, status),
+                        elapsed_ms,
+                    });
+                });
+            }
             Err(e) => {
                 // Don't clear the cache on inference failure: the engine is
                 // still loaded and the next call may succeed (transient FFI
                 // or input issue). The status reflects the last result; a
                 // successful next call flips it back to Ready.
-                self.set_status(ModelStatus::Error {
-                    message: e.to_string(),
+                let message = e.to_string();
+                let _ = self.with_current_model_generation(caller.generation(), || {
+                    let status = ModelStatus::Error {
+                        message: message.clone(),
+                    };
+                    self.set_status(status.clone());
+                    self.emit(ModelStateEvent::InferenceFailed {
+                        state: state_for_config(config, status),
+                        error: message,
+                    });
                 });
             }
         }
@@ -533,12 +698,60 @@ impl ModelManager {
             warn!("[Transcription] failed to emit model-state event: {}", err);
         }
     }
+
+    fn is_current_model_generation(&self, generation: u64) -> bool {
+        self.model_generation.load(Ordering::SeqCst) == generation
+    }
+
+    fn with_current_model_generation<T>(
+        &self,
+        generation: u64,
+        f: impl FnOnce() -> T,
+    ) -> Option<T> {
+        // The read lock closes the check-then-publish gap against
+        // set_transcription_config, whose write lock bumps the generation.
+        let _guard = self.read_config_guard();
+        self.is_current_model_generation(generation).then(f)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum LoadCaller {
+    Preload { generation: u64 },
+    Transcription { generation: u64 },
+}
+
+impl LoadCaller {
+    fn generation(self) -> u64 {
+        match self {
+            LoadCaller::Preload { generation } | LoadCaller::Transcription { generation } => {
+                generation
+            }
+        }
+    }
+
+    fn is_preload(self) -> bool {
+        matches!(self, LoadCaller::Preload { .. })
+    }
+}
+
+enum EnsureLoaded<'a> {
+    Loaded(MutexGuard<'a, Cached>),
+    Stale,
 }
 
 /// Replace NaN/Inf with 0.0 and cap length so a malformed sample buffer
 /// never reaches whisper.cpp's FFI boundary (where a `GGML_ASSERT` would
 /// abort the process and bypass any Rust-level recovery). Cheap insurance
 /// against the most common abort class.
+fn state_for_config(config: &TranscriptionConfig, status: ModelStatus) -> LocalModelState {
+    LocalModelState {
+        engine: Some(config.engine),
+        model_path: Some(config.model_path.clone()),
+        status,
+    }
+}
+
 fn sanitize_samples(mut samples: Vec<f32>) -> Vec<f32> {
     // Cap at one hour of mono 16kHz audio. Beyond this we don't run
     // inference reliably anyway and the FE imposes its own caps; this
@@ -572,9 +785,9 @@ fn parse_moonshine_variant(model_path: &str) -> Result<MoonshineVariant, Transcr
         })?;
     // Naming convention: moonshine-{variant}-{lang}. Match on the variant
     // segment between the first and last hyphen-bounded fields.
-    if stem.contains("-tiny-") || stem.ends_with("-tiny") {
+    if stem.starts_with("moonshine-tiny-") || stem == "moonshine-tiny" {
         Ok(MoonshineVariant::Tiny)
-    } else if stem.contains("-base-") || stem.ends_with("-base") {
+    } else if stem.starts_with("moonshine-base-") || stem == "moonshine-base" {
         Ok(MoonshineVariant::Base)
     } else {
         Err(TranscriptionError::ConfigError {
@@ -665,5 +878,22 @@ mod tests {
     fn parse_moonshine_variant_rejects_unknown_names() {
         assert!(parse_moonshine_variant("/models/moonshine-large-en").is_err());
         assert!(parse_moonshine_variant("/models/whisper-tiny").is_err());
+    }
+
+    #[test]
+    fn state_for_config_uses_captured_model_identity() {
+        let config = TranscriptionConfig {
+            engine: EngineKind::Parakeet,
+            model_path: "/models/parakeet".to_string(),
+            language: Some("en".to_string()),
+            initial_prompt: None,
+            unload_policy: UnloadPolicy::AfterFiveMinutes,
+        };
+
+        let state = state_for_config(&config, ModelStatus::Inferring);
+
+        assert_eq!(state.engine, Some(EngineKind::Parakeet));
+        assert_eq!(state.model_path, Some("/models/parakeet".to_string()));
+        assert_eq!(state.status, ModelStatus::Inferring);
     }
 }

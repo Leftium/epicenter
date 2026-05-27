@@ -5,16 +5,17 @@ use tauri_plugin_aptabase::EventTracker;
 use tauri_plugin_log::{Target, TargetKind};
 
 pub mod audio;
-use audio::{encode_upload_audio, encode_upload_pcm};
+use audio::encode_recording_for_upload;
 pub mod recorder;
 use recorder::commands::{
-    cancel_recording, close_recording_session, enumerate_recording_devices,
-    get_current_recording_id, init_recording_session, start_recording, stop_recording,
+    cancel_recording, close_recording_session, delete_recording,
+    enumerate_recording_devices, get_current_recording_id, init_recording_session,
+    start_recording, stop_recording,
 };
 use recorder::recorder::Recorder;
 
 pub mod transcription;
-use transcription::{set_unload_policy, transcribe_audio, ModelManager};
+use transcription::{set_unload_policy, transcribe_recording, ModelManager};
 
 pub mod windows_path;
 use windows_path::fix_windows_path;
@@ -182,9 +183,9 @@ pub async fn run() {
         start_recording,
         stop_recording,
         cancel_recording,
-        transcribe_audio,
-        encode_upload_audio,
-        encode_upload_pcm,
+        delete_recording,
+        transcribe_recording,
+        encode_recording_for_upload,
         set_unload_policy,
         send_sigint,
         // Command execution (prevents console window flash on Windows)

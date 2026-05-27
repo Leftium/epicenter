@@ -14,7 +14,7 @@
 //! The cpal callback never blocks: it downmixes to mono and ships
 //! samples through an mpsc channel. The consumer worker accumulates,
 //! resamples to 16 kHz at finalize, pads sub-1s clips, and emits the
-//! canonical [`CapturedPcm`].
+//! canonical [`CapturedSamples`].
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, Stream};
@@ -25,11 +25,25 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use crate::audio::resample_mono;
-use crate::recorder::artifact::CapturedPcm;
 
 /// Simple result type using String for errors. Errors cross the IPC
 /// boundary as plain strings so the JS side renders them in toasts.
 pub type Result<T> = std::result::Result<T, String>;
+
+/// Mono 16 kHz f32 PCM captured by the consumer worker. Internal to the
+/// Rust process: this never crosses the IPC boundary. The recorder's stop
+/// path hands this to the artifact writer, which produces a durable WAV
+/// file under `<appDataDir>/recordings/{id}.wav`. JS only ever sees the
+/// resulting `RecordingArtifact` handle.
+pub struct CapturedSamples {
+    pub samples: Vec<f32>,
+}
+
+impl CapturedSamples {
+    pub fn duration_ms(&self) -> u64 {
+        (self.samples.len() as f64 / TARGET_RATE as f64 * 1000.0).round() as u64
+    }
+}
 
 /// Target rate for every recording. All local transcription engines
 /// (whispercpp, parakeet, moonshine) want 16 kHz mono; the cloud
@@ -46,7 +60,7 @@ const SHORT_RECORDING_PAD_SAMPLES: usize = 20_000;
 #[derive(Debug)]
 enum RecorderCmd {
     Start(mpsc::Sender<()>),
-    Stop(mpsc::Sender<Result<CapturedPcm>>),
+    Stop(mpsc::Sender<Result<CapturedSamples>>),
     Cancel(mpsc::Sender<Result<()>>),
     Shutdown,
 }
@@ -176,7 +190,7 @@ impl Recorder {
     }
 
     /// Stop recording and consume the worker's PCM.
-    pub fn stop_recording(&mut self) -> Result<CapturedPcm> {
+    pub fn stop_recording(&mut self) -> Result<CapturedSamples> {
         let tx = self
             .cmd_tx
             .as_ref()
@@ -218,13 +232,21 @@ impl Recorder {
     }
 
     /// Recording id of the active session, if any. Surfaced for the JS
-    /// reload-reattach path.
+    /// reload-reattach path: only returns while the recorder is actively
+    /// capturing, so a stopped-but-not-closed session does not look live.
     pub fn get_current_recording_id(&self) -> Option<String> {
         if self.is_recording.load(Ordering::Acquire) {
             self.current_recording_id.clone()
         } else {
             None
         }
+    }
+
+    /// Session id without the is_recording gate. Used by `stop_recording`
+    /// to address the artifact write after the worker has already flipped
+    /// the recording flag down.
+    pub fn session_id(&self) -> Option<String> {
+        self.current_recording_id.clone()
     }
 }
 
@@ -289,8 +311,8 @@ fn run_consumer(
     }
 }
 
-/// Resample to 16 kHz if needed, pad short clips, build the PCM.
-fn finalize(buffer: Vec<f32>, device_rate: u32) -> Result<CapturedPcm> {
+/// Resample to 16 kHz if needed, pad short clips, build the samples.
+fn finalize(buffer: Vec<f32>, device_rate: u32) -> Result<CapturedSamples> {
     let samples = if device_rate == TARGET_RATE {
         buffer
     } else {
@@ -307,7 +329,7 @@ fn finalize(buffer: Vec<f32>, device_rate: u32) -> Result<CapturedPcm> {
         samples.resize(SHORT_RECORDING_PAD_SAMPLES, 0.0);
     }
 
-    Ok(CapturedPcm { samples })
+    Ok(CapturedSamples { samples })
 }
 
 /// Find a recording device by name. Treats "default" case-insensitively.
@@ -590,14 +612,11 @@ mod tests {
     }
 
     #[test]
-    fn captured_pcm_to_binary_writes_samples_only() {
-        let pcm = CapturedPcm {
-            samples: vec![0.5, -0.5, 0.25],
+    fn captured_samples_duration_ms_rounds_to_nearest_ms() {
+        // 1601 samples at 16 kHz = 100.0625 ms.
+        let s = CapturedSamples {
+            samples: vec![0.0; 1601],
         };
-        let bytes = pcm.to_binary();
-        assert_eq!(bytes.len(), 3 * 4);
-        assert_eq!(&bytes[0..4], 0.5f32.to_le_bytes());
-        assert_eq!(&bytes[4..8], (-0.5f32).to_le_bytes());
-        assert_eq!(&bytes[8..12], 0.25f32.to_le_bytes());
+        assert_eq!(s.duration_ms(), 100);
     }
 }

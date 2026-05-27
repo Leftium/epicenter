@@ -1,27 +1,23 @@
 mod error;
 mod model_manager;
 
-use crate::audio;
+use crate::recorder::read_artifact_samples;
 use error::TranscriptionError;
 use log::{debug, info, warn};
 pub use model_manager::ModelManager;
 use model_manager::UnloadPolicy;
 use serde::Deserialize;
 use std::path::PathBuf;
-use tauri::ipc::{InvokeBody, Request};
+use tauri::{AppHandle, State};
 use transcribe_rs::onnx::moonshine::MoonshineVariant;
 use transcribe_rs::onnx::parakeet::{ParakeetParams, TimestampGranularity};
 use transcribe_rs::whisper_cpp::WhisperInferenceParams;
 use transcribe_rs::{SpeechModel, TranscribeOptions};
 
-/// Engine-tagged request body sent in the `x-transcribe-config` header of
-/// the `transcribe_audio` command. The audio bytes travel in the raw body,
-/// this carries the engine choice plus engine-specific knobs.
-///
-/// Wire tags match the FE settings (`transcription.service`):
-/// `whispercpp` / `parakeet` / `moonshine`. The Whisper variant uses an
-/// explicit serde rename because the implementation is whisper.cpp, not
-/// just "whisper".
+/// Engine-tagged request body. JS serializes one of these as the `config`
+/// JSON argument on the `transcribe_recording` command. Wire tags match
+/// the FE settings (`transcription.service`): `whispercpp` / `parakeet` /
+/// `moonshine`.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "engine", rename_all = "lowercase")]
 enum TranscribeRequest {
@@ -73,51 +69,31 @@ impl TranscribeRequest {
     }
 }
 
-/// Unified transcription Tauri command.
-///
-/// Audio bytes arrive as the raw IPC body (`InvokeBody::Raw`), which avoids
-/// the ~3x overhead of serializing a `Vec<u8>` as a JSON array of numbers.
-/// Engine selection and per-engine knobs travel as JSON in the
-/// `x-transcribe-config` header.
-///
-/// JS call shape:
-/// ```js
-/// invoke('transcribe_audio', audioArrayBuffer, {
-///   headers: { 'x-transcribe-config': JSON.stringify(config) }
-/// })
-/// ```
+/// Canonical transcribe-by-id path. Resolves the audio file under
+/// `<appDataDir>/recordings/{recordingId}.*` (cpal-written WAV,
+/// navigator-saved webm/opus/mp4, etc.), decodes, runs inference. This
+/// is the single entry point for every local transcription call: cpal
+/// stop, navigator/VAD/file-upload (after the pipeline saves), retry,
+/// history replay.
 #[tauri::command]
-pub async fn transcribe_audio(
-    request: Request<'_>,
-    model_manager: tauri::State<'_, ModelManager>,
+pub async fn transcribe_recording(
+    recording_id: String,
+    config: serde_json::Value,
+    app_handle: AppHandle,
+    model_manager: State<'_, ModelManager>,
 ) -> Result<String, TranscriptionError> {
-    let audio_data = match request.body() {
-        InvokeBody::Raw(bytes) => bytes.clone(),
-        InvokeBody::Json(_) => {
-            return Err(TranscriptionError::AudioReadError {
-                message: "Audio must be sent as the raw IPC body, not JSON".to_string(),
-            })
+    let req: TranscribeRequest = serde_json::from_value(config).map_err(|e| {
+        TranscriptionError::TranscriptionError {
+            message: format!("Invalid transcribe config JSON: {}", e),
         }
-    };
+    })?;
 
-    let config_header = request
-        .headers()
-        .get("x-transcribe-config")
-        .ok_or_else(|| TranscriptionError::TranscriptionError {
-            message: "Missing x-transcribe-config header on transcribe_audio call".to_string(),
-        })?
-        .to_str()
-        .map_err(|e| TranscriptionError::TranscriptionError {
-            message: format!("Invalid x-transcribe-config header bytes: {}", e),
-        })?;
-
-    let req: TranscribeRequest =
-        serde_json::from_str(config_header).map_err(|e| TranscriptionError::TranscriptionError {
-            message: format!("Invalid x-transcribe-config JSON: {}", e),
-        })?;
+    let samples = read_artifact_samples(&app_handle, &recording_id).map_err(|e| {
+        TranscriptionError::AudioReadError { message: e }
+    })?;
 
     let manager = model_manager.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || run_transcription(audio_data, req, manager))
+    tauri::async_runtime::spawn_blocking(move || run_inference(samples, req, manager))
         .await
         .map_err(join_err)?
 }
@@ -130,7 +106,7 @@ pub async fn transcribe_audio(
 /// rather than erroring, so a future rename or corrupt localStorage value
 /// never breaks transcription.
 #[tauri::command]
-pub fn set_unload_policy(policy: String, model_manager: tauri::State<'_, ModelManager>) {
+pub fn set_unload_policy(policy: String, model_manager: State<'_, ModelManager>) {
     model_manager.set_policy(UnloadPolicy::from_wire(&policy));
 }
 
@@ -149,34 +125,29 @@ fn transcription_err(e: impl std::fmt::Display) -> TranscriptionError {
     }
 }
 
-/// The synchronous work function. Sample prep, model load, and inference
-/// all happen on a blocking-pool thread. All engine dispatch lives here.
-fn run_transcription(
-    audio_data: Vec<u8>,
+/// Synchronous inference dispatch. Runs on a blocking-pool thread; all
+/// engine-specific knobs live here.
+fn run_inference(
+    samples: Vec<f32>,
     request: TranscribeRequest,
     manager: ModelManager,
 ) -> Result<String, TranscriptionError> {
     let engine_label = request.engine_label();
     info!(
-        "[Transcription] starting {} transcription: audio_bytes={}",
+        "[Transcription] starting {} transcription: pcm_samples={}",
         engine_label,
-        audio_data.len(),
+        samples.len(),
     );
 
-    let samples = audio::decode_to_pcm16k_mono(&audio_data).map_err(|e| {
-        TranscriptionError::AudioReadError {
-            message: e.to_string(),
-        }
-    })?;
-    debug!(
-        "[Transcription] decoded {} samples for {} engine",
-        samples.len(),
-        engine_label,
-    );
     if samples.is_empty() {
-        warn!("[Transcription] decoder produced zero samples, returning empty transcript");
+        warn!("[Transcription] zero samples, returning empty transcript");
         return Ok(String::new());
     }
+    debug!(
+        "[Transcription] running {} on {} samples",
+        engine_label,
+        samples.len(),
+    );
 
     let transcript = match request {
         TranscribeRequest::Whisper {
@@ -218,8 +189,6 @@ fn run_transcription(
             model_path,
             variant,
         } => manager.with_moonshine(PathBuf::from(model_path), variant.into(), |engine| {
-            // Moonshine doesn't expose model-specific inference params we use, so use the
-            // SpeechModel trait's default-options path.
             let result = engine
                 .transcribe(&samples, &TranscribeOptions::default())
                 .map_err(transcription_err)?;
@@ -232,8 +201,6 @@ fn run_transcription(
         engine_label,
         transcript.len()
     );
-    // For the `Immediately` policy, drop the resident model now that this
-    // transcription is done. No-op for any other policy.
     manager.evict_if_immediate();
     Ok(transcript)
 }

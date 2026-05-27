@@ -17,7 +17,7 @@ mod encode;
 mod error;
 mod resample;
 
-pub use command::{encode_upload_audio, encode_upload_pcm};
+pub use command::encode_recording_for_upload;
 pub use decode::decode_to_pcm16k_mono;
 pub use encode::encode_pcm_to_opus_ogg;
 pub use error::AudioError;

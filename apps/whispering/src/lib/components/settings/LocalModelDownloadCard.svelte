@@ -18,11 +18,11 @@
 	import { fetch } from '@tauri-apps/plugin-http';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { Ok, tryAsync } from 'wellcrafted/result';
-	import { PATHS } from '$lib/constants/paths';
 	import {
 		isModelFileSizeValid,
 		type LocalModelConfig,
-	} from '$lib/services/transcription/local/types';
+	} from '$lib/constants/local-models';
+	import { PATHS } from '$lib/constants/paths';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 
 	let {

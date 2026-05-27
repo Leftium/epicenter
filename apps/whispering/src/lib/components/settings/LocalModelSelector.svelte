@@ -13,7 +13,7 @@
 	import type { Snippet } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { Ok, tryAsync } from 'wellcrafted/result';
-	import type { LocalModelConfig } from '$lib/services/transcription/local/types';
+	import type { LocalModelConfig } from '$lib/constants/local-models';
 	import { tauri } from '$lib/tauri';
 	import LocalModelDownloadCard from './LocalModelDownloadCard.svelte';
 

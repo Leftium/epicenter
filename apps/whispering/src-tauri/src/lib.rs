@@ -29,26 +29,14 @@ use command::{execute_command, spawn_command};
 pub mod markdown;
 use markdown::{count_markdown_files, delete_files_in_directory, read_markdown_files, write_markdown_files};
 
-/// Collect every specta-annotated command into one tauri-specta builder.
+/// Specta-known commands: every app command except the one that returns a
+/// raw `tauri::ipc::Response` (which is not `specta::Type`). The builder
+/// owns BOTH the runtime handler for these commands (see `run`) and the
+/// TypeScript binding export (see `export_types` test).
 ///
-/// Two things live on this builder: the runtime invoke handler (which
-/// replaces `tauri::generate_handler!` for the specta-known commands in
-/// Wave 2) and the typescript exporter.
-///
-/// Two commands are intentionally excluded:
-/// - `encode_recording_for_upload` returns a raw `tauri::ipc::Response`
-///   which specta cannot introspect. It stays hand-rolled at the JS
-///   boundary (see `src/lib/tauri/commands.ts` in Wave 2) and gets
-///   registered through the legacy `tauri::generate_handler!`.
-/// - `count_markdown_files`, `read_markdown_files`, `send_sigint` have
-///   zero JS callers (verified via grep). They stay registered through
-///   the legacy handler until Wave 7's dead-command removal so the wire
-///   still works for any out-of-tree caller.
-///
-/// Currently only the `#[cfg(test)] export_types` consumer uses this
-/// builder; Wave 2 wires it into `tauri::Builder::invoke_handler`. The
-/// `#[allow(dead_code)]` is intentional and goes away at that point.
-#[allow(dead_code)]
+/// The three dead commands (`send_sigint`, `read_markdown_files`,
+/// `count_markdown_files`) stay in the builder for now so we have one
+/// source of truth; Wave 7 deletes them outright.
 fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
     tauri_specta::Builder::<tauri::Wry>::new()
         .commands(tauri_specta::collect_commands![
@@ -64,8 +52,11 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             delete_recording,
             transcribe_recording,
             set_unload_policy,
+            send_sigint,
             execute_command,
             spawn_command,
+            read_markdown_files,
+            count_markdown_files,
             delete_files_in_directory,
             write_markdown_files,
         ])
@@ -227,32 +218,23 @@ pub async fn run() {
             }));
     }
 
-    // Register command handlers (same for all platforms now)
-    let builder = builder.invoke_handler(tauri::generate_handler![
-        write_text,
-        simulate_enter_keystroke,
-        // Audio recorder commands
-        get_current_recording_id,
-        enumerate_recording_devices,
-        init_recording_session,
-        close_recording_session,
-        start_recording,
-        stop_recording,
-        cancel_recording,
-        delete_recording,
-        transcribe_recording,
-        encode_recording_for_upload,
-        set_unload_policy,
-        send_sigint,
-        // Command execution (prevents console window flash on Windows)
-        execute_command,
-        spawn_command,
-        // Filesystem utilities
-        read_markdown_files,
-        count_markdown_files,
-        delete_files_in_directory,
-        write_markdown_files,
-    ]);
+    // Compose two handlers by command name. The specta builder owns every
+    // command in its `collect_commands!` list and is the source of truth for
+    // TS bindings. `encode_recording_for_upload` (raw `tauri::ipc::Response`
+    // return) is outside specta's reach, so it gets its own
+    // `generate_handler!`. We route by name because `Invoke` is not Clone:
+    // each invocation can only be consumed by one handler.
+    let specta_builder = make_specta_builder();
+    let specta_handler = tauri_specta::Builder::invoke_handler(&specta_builder);
+    let raw_handler =
+        tauri::generate_handler![encode_recording_for_upload] as fn(tauri::ipc::Invoke<tauri::Wry>) -> bool;
+    let builder = builder.invoke_handler(move |invoke| {
+        if invoke.message.command() == "encode_recording_for_upload" {
+            raw_handler(invoke)
+        } else {
+            specta_handler(invoke)
+        }
+    });
 
     let app = builder
         .build(tauri::generate_context!())

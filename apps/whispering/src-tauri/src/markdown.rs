@@ -39,7 +39,7 @@ fn validate_leaf_filename(filename: &str) -> Result<&str, String> {
 /// * `directory_path` - Absolute path to the directory containing .md files
 #[tauri::command]
 #[specta::specta]
-pub async fn count_markdown_files(directory_path: String) -> Result<usize, String> {
+pub async fn count_markdown_files(directory_path: String) -> Result<u32, String> {
     tokio::task::spawn_blocking(move || {
         let dir_path = PathBuf::from(&directory_path);
 
@@ -59,7 +59,7 @@ pub async fn count_markdown_files(directory_path: String) -> Result<usize, Strin
             })
             .count();
 
-        Ok::<usize, String>(count)
+        Ok::<u32, String>(u32::try_from(count).unwrap_or(u32::MAX))
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))?

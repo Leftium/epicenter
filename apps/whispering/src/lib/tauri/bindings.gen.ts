@@ -64,6 +64,11 @@ export const commands = {
 	 */
 	setUnloadPolicy: (policy: string) => __TAURI_INVOKE<void>("set_unload_policy", { policy }),
 	/**
+	 *  Send a SIGINT signal to a process by PID.
+	 *  This is equivalent to Ctrl+C and allows graceful shutdown.
+	 */
+	sendSigint: (pid: number) => __TAURI_INVOKE<SignalResult>("send_sigint", { pid }),
+	/**
 	 *  Execute a command and wait for it to complete.
 	 * 
 	 *  Parses the command string into program and arguments, then executes directly
@@ -113,6 +118,21 @@ export const commands = {
 	 *  ```
 	 */
 	spawnCommand: (command: string) => typedError<number, string>(__TAURI_INVOKE("spawn_command", { command })),
+	/**
+	 *  Reads all markdown files from a directory in parallel.
+	 *  Uses Rayon for parallel I/O.
+	 * 
+	 *  # Arguments
+	 *  * `directory_path` - Absolute path to the directory containing .md files
+	 */
+	readMarkdownFiles: (directoryPath: string) => typedError<string[], string>(__TAURI_INVOKE("read_markdown_files", { directoryPath })),
+	/**
+	 *  Counts markdown files in a directory without reading their contents.
+	 * 
+	 *  # Arguments
+	 *  * `directory_path` - Absolute path to the directory containing .md files
+	 */
+	countMarkdownFiles: (directoryPath: string) => typedError<number, string>(__TAURI_INVOKE("count_markdown_files", { directoryPath })),
 	/**
 	 *  Deletes files inside a directory by filename.
 	 *  Validates filenames are single path components (no traversal).
@@ -180,6 +200,11 @@ export type RecordingArtifact = {
 	durationMs: number,
 	byteLength: number,
 	mimeType: string,
+};
+
+export type SignalResult = {
+	success: boolean,
+	message: string,
 };
 
 /**

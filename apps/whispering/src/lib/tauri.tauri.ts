@@ -1,7 +1,7 @@
 /**
  * Tauri-only capability namespace. Everything that requires the Tauri
- * runtime lives in this file: fs, permissions, tray, globalShortcuts,
- * autostart. The subset that needs TanStack caching,
+ * runtime lives in this file: fs, permissions, window, tray,
+ * globalShortcuts, autostart. The subset that needs TanStack caching,
  * error transformation, or invalidation is exposed in the same shape
  * (no sub-namespace), with each leaf picking one canonical call form.
  *
@@ -18,13 +18,13 @@
  * Two patterns, one for each use case:
  *
  *     import { tauri } from '$lib/tauri';
- *     if (tauri) await tauri.fs.pathToBlob(path);
+ *     if (tauri) await tauri.fs.pathsToFiles(paths);
  *     // or
- *     await tauri?.fs.pathToBlob(path);
+ *     await tauri?.fs.pathsToFiles(paths);
  *
  *     // Inside *.tauri.ts files only (build guarantees Tauri runtime):
  *     import { tauriOnly } from '$lib/tauri';
- *     await tauriOnly.fs.pathToBlob(path);
+ *     await tauriOnly.fs.pathsToFiles(paths);
  *
  * `tauri` doubles as the platform check: truthy means we're on Tauri
  * and the whole namespace is available. There is no separate
@@ -66,7 +66,6 @@ import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { IS_MACOS } from '$lib/constants/platform';
 import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
 import { autostartKeys } from '$lib/tauri/autostart-keys';
-import { commands } from '$lib/tauri/commands';
 import {
 	type Accelerator,
 	AcceleratorError,
@@ -76,11 +75,6 @@ import {
 
 // fs ----------------------------------------------------------------
 const FsError = defineErrors({
-	ReadBlobFailed: ({ path, cause }: { path: string; cause: unknown }) => ({
-		message: `Failed to read file as Blob: ${path}: ${extractErrorMessage(cause)}`,
-		path,
-		cause,
-	}),
 	ReadFilesFailed: ({ paths, cause }: { paths: string[]; cause: unknown }) => ({
 		message: `Failed to read files: ${paths.join(', ')}: ${extractErrorMessage(cause)}`,
 		paths,
@@ -99,15 +93,6 @@ async function readFileWithMimeType(path: string): Promise<{
 }
 
 const fs = {
-	pathToBlob: (path: string) =>
-		tryAsync({
-			try: async () => {
-				const { bytes, mimeType } = await readFileWithMimeType(path);
-				return new Blob([bytes], { type: mimeType });
-			},
-			catch: (error) => FsError.ReadBlobFailed({ path, cause: error }),
-		}),
-
 	pathsToFiles: (paths: string[]) =>
 		tryAsync({
 			try: () =>

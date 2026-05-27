@@ -3,12 +3,12 @@ import {
 	exists,
 	mkdir,
 	readDir,
+	readFile,
 	writeFile as tauriWriteFile,
 } from '@tauri-apps/plugin-fs';
 import mime from 'mime';
 import { tryAsync } from 'wellcrafted/result';
 import { PATHS } from '$lib/constants/paths';
-import { tauriOnly } from '$lib/tauri';
 import { commands } from '$lib/tauri/commands';
 import { BlobError, type BlobStore } from './types';
 
@@ -70,11 +70,7 @@ export function createFileSystemBlobStore() {
 
 					const audioPath = await PATHS.DB.RECORDING_FILE(audioFilename);
 
-					const { data: blob, error } =
-						await tauriOnly.fs.pathToBlob(audioPath);
-					if (error) throw error;
-
-					return blob;
+					return await readFileAsBlob(audioPath);
 				},
 				catch: (error) => BlobError.ReadFailed({ cause: error }),
 			});
@@ -134,4 +130,11 @@ async function findAudioFile(dir: string, id: string): Promise<string | null> {
 		(f) => f.name.startsWith(`${id}.`) && !f.name.endsWith('.md'),
 	);
 	return audioFile?.name ?? null;
+}
+
+async function readFileAsBlob(path: string): Promise<Blob> {
+	// Cast is safe: Tauri's readFile always returns ArrayBuffer-backed Uint8Array.
+	const bytes = (await readFile(path)) as Uint8Array<ArrayBuffer>;
+	const mimeType = mime.getType(path) ?? 'application/octet-stream';
+	return new Blob([bytes], { type: mimeType });
 }

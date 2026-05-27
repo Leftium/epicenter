@@ -1,7 +1,7 @@
 /**
- * Web runtime: every Tauri capability is absent. The default export
- * matches the shared platform check from `./tauri.tauri.ts` but always
- * returns `null`.
+ * Web runtime: every Tauri capability is absent. The named `tauri`
+ * export matches the shared platform check from `./tauri.tauri.ts` but
+ * always returns `null`.
  *
  * Vite picks this file via `resolve.extensions` for web builds.
  * TypeScript resolves `import { tauri } from '$lib/tauri'` to the

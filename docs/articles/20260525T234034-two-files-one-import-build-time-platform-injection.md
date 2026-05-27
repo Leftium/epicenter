@@ -121,7 +121,7 @@ Stuffing those into the same per-service folder pattern made them lie. The "brow
 ```ts
 // $lib/tauri.tauri.ts
 export const tauriOnly = {
-  fs: { pathToBlob, pathsToFiles },
+  fs: { pathsToFiles },
   permissions: { accessibility, microphone },
   window: { setAlwaysOnTop },
   tray: { setIcon },
@@ -145,9 +145,9 @@ Consumers do:
 ```ts
 import { tauri } from '$lib/tauri';
 
-if (tauri) await tauri.fs.pathToBlob(path);
+if (tauri) await tauri.fs.pathsToFiles(paths);
 // or
-await tauri?.fs.pathToBlob(path);
+await tauri?.fs.pathsToFiles(paths);
 ```
 
 The variable doubles as both the namespace and the platform boolean. `if (tauri)` answers "are we on Tauri?" and gives you the namespace in the same line. No separate `window.__TAURI_INTERNALS__` check, no separate import, no separate stub per capability.
@@ -189,7 +189,7 @@ Tauri-only capabilities go through one optional chain:
 ```ts
 import { tauri } from '$lib/tauri';
 
-await tauri?.fs.pathToBlob(path);
+await tauri?.fs.pathsToFiles(paths);
 if (tauri) await tauri.tray.setIcon({ icon: 'IDLE' });
 ```
 
@@ -205,7 +205,7 @@ The clean test: can the answer change between now and the next call? If yes, run
 
 ## If you want to copy this
 
-The whole pattern is about 60 lines of Vite config plus filename discipline. The hardest part isn't the mechanism; it's deciding which services to split and which to leave alone. Our rule of thumb: split if both platforms have a real implementation. Stub if only one does and the import path is reachable from shared code.
+The whole pattern is about 60 lines of Vite config plus filename discipline. The hardest part isn't the mechanism; it's deciding which services to split and which to leave alone. Our rule of thumb: split if both platforms have a real implementation. Use the `$lib/tauri` namespace when a capability is Tauri-only and reachable from shared code.
 
 If you want to see the actual code, the relevant files are:
 

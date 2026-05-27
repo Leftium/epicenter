@@ -8,7 +8,7 @@ That two-state shape is the whole point. The variable doubles as a boolean: if `
 import { tauri } from '$lib/tauri';
 
 if (tauri) {
-  await tauri.fs.pathToBlob(path);
+  await tauri.fs.pathsToFiles(paths);
 }
 ```
 
@@ -40,7 +40,7 @@ The namespace fixes both halves at once. The capability is `null` on web, so the
 ```ts
 import { tauri } from '$lib/tauri';
 
-await tauri.fs.pathToBlob(path);
+await tauri.fs.pathsToFiles(paths);
 //    ^ 'tauri' is possibly 'null'.
 ```
 
@@ -51,8 +51,7 @@ The narrowing then gives you both: you're on Tauri AND `tauri` is the namespace.
 ```ts
 if (tauri) {
   // here, `tauri` is the full namespace, not `null`
-  await tauri.fs.pathToBlob(path);
-  await tauri.permissions.accessibility.openSettings();
+  await tauri.fs.pathsToFiles(paths);
   await tauri.autostart.enable();
 }
 ```
@@ -219,7 +218,7 @@ The replacement is a named export from the same `$lib/tauri` module:
 // file-system.tauri.ts (new)
 import { tauriOnly } from '$lib/tauri';
 
-const { data: blob } = await tauriOnly.fs.pathToBlob(audioPath);
+const { data: files } = await tauriOnly.fs.pathsToFiles(paths);
 ```
 
 `tauriOnly` is a `Tauri` (non-null) namespace on Tauri builds. The browser shim does not export it. If anyone imports it from shared code that reaches the web bundle, the browser build fails instead of shipping a runtime assertion.
@@ -267,7 +266,7 @@ Most apps want both patterns. They solve different problems.
 
 ## What lives in `tauri`
 
-Today: file system, macOS permission flows, window control, system tray, global shortcuts, autostart. Each leaf picks one canonical call form. Autostart uses TanStack because the settings UI observes and invalidates it; tray, shortcuts, fs, window, and permission helpers are plain Result-returning functions. There is no `tauri.rpc` sub-namespace any more.
+Today: file import helpers, macOS permission flows, window control, system tray, global shortcuts, autostart. Each leaf picks one canonical call form. Autostart uses TanStack because the settings UI observes and invalidates it; tray, shortcuts, fs, and window are plain Result-returning functions. App-owned Rust commands, including accessibility settings and upload encoding, live in `$lib/tauri/commands`. There is no `tauri.rpc` sub-namespace any more.
 
 Adding a new Tauri-only capability is one section in one file:
 
@@ -280,7 +279,7 @@ const newCap = {
 };
 
 const _tauri = {
-  fs, command, /* ... */, newCap,
+  fs, permissions, /* ... */, newCap,
 };
 ```
 

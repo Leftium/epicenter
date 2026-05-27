@@ -64,7 +64,7 @@ import { tauri, type Tauri } from '$lib/tauri';
 
 // 1. Shared code (runs on web and Tauri): narrow once.
 if (tauri) {
-  await tauri.fs.pathToBlob(path);
+  await tauri.fs.pathsToFiles(paths);
   await tauri.window.setAlwaysOnTop(true);
 }
 
@@ -76,7 +76,7 @@ async function useTrayIcon(tauri: Tauri) {
 
 // 3. Inside *.tauri.ts files (build system already gated): tauriOnly.
 import { tauriOnly } from '$lib/tauri';
-await tauriOnly.fs.pathToBlob(audioPath);
+await tauriOnly.globalShortcuts.unregisterAll();
 ```
 
 See `docs/articles/20260526T012526-tauri-is-both-the-namespace-and-the-platform-check.md` for the full pattern walkthrough, and `specs/20260526T000140-collapse-tauri-only-services-into-namespace.md` for the original rationale.
@@ -414,14 +414,14 @@ User-facing reporting (toast + OS notification) is owned by `$lib/report`, not t
 
 Tauri-only namespace capabilities live inline in one file at `$lib/tauri.tauri.ts`. The companion `$lib/tauri.browser.ts` exports only `tauri = null`, so `tauriOnly` misuse fails in browser builds. Consumers access via `if (tauri) { tauri.<cap>.method() }`, by prop-drilling the narrowed value, or by importing `tauriOnly` from inside a `.tauri.ts` file.
 
-- `tauri.fs` - Filesystem operations (pathToBlob, pathsToFiles)
+- `tauri.fs` - Filesystem operations (pathsToFiles)
 - `tauri.permissions` - macOS accessibility/microphone permission flows
 - `tauri.window` - Window operations (setAlwaysOnTop)
 - `tauri.tray` - System tray icon (setIcon)
 - `tauri.globalShortcuts` - OS-level shortcut registration (registerCommand, unregisterCommand, unregisterAll)
 - `tauri.autostart` - Launch-at-login toggle (isEnabled, enable, disable)
 
-App-owned Rust commands that are not general reusable capabilities live in `$lib/tauri/commands`. Upload encoding is one of those commands: `commands.encodeRecordingForUpload` is called by the transcription operation before cloud upload.
+App-owned Rust commands that are not general reusable capabilities live in `$lib/tauri/commands`. Accessibility settings and upload encoding are examples: `commands.openAccessibilitySettings` opens System Settings, and `commands.encodeRecordingForUpload` is called by the transcription operation before cloud upload.
 
 Each leaf picks one canonical call form: TanStack-backed (via `defineQuery`/`defineMutation`) where caching, reactivity, or post-mutation invalidation matter; plain Result functions where they don't. There is no separate `tauri.rpc` sub-namespace.
 

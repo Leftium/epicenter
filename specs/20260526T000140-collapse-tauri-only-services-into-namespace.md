@@ -7,7 +7,7 @@
 
 ## TL;DR
 
-Move all Tauri-only capabilities (`fs`, `command`, `permissions`, `ffmpeg`, `tray`, `globalShortcuts`, `autostart`) out of `apps/whispering/src/lib/services/<cap>/` and into a single file `apps/whispering/src/lib/tauri.tauri.ts`. Replace the per-capability `index.browser.ts` throwing stubs with one file: `tauri.browser.ts`, which exports only `tauri = null`. Shared consumers use `import { tauri } from '$lib/tauri'` and narrow with `if (tauri)` or optional chaining. Tauri-gated `*.tauri.ts` files use `import { tauriOnly } from '$lib/tauri'`. The `services/` folder shrinks to only genuinely dual-implementation services (`clipboard`, `text`, `http`, `notifications`, `os`, `sound`, `download`, `analytics`, `blob-store`, `recorder`).
+Move Tauri-only reusable capabilities (`fs`, `permissions`, `window`, `tray`, `globalShortcuts`, `autostart`) out of `apps/whispering/src/lib/services/<cap>/` and into a single file `apps/whispering/src/lib/tauri.tauri.ts`. Replace the per-capability `index.browser.ts` throwing stubs with one file: `tauri.browser.ts`, which exports only `tauri = null`. Shared consumers use `import { tauri } from '$lib/tauri'` and narrow with `if (tauri)` or optional chaining. Tauri-gated `*.tauri.ts` files use `import { tauriOnly } from '$lib/tauri'`. App-owned Rust commands, including shell execution and upload encoding, live in `$lib/tauri/commands`. The `services/` folder shrinks to only genuinely dual-implementation services (`clipboard`, `text`, `http`, `notifications`, `os`, `sound`, `download`, `analytics`, `blob-store`, `recorder`).
 
 Current implementation note: the original sketch used a default export and non-null assertions in Tauri-only files. The shipped API uses named exports instead. `tauri` is nullable and browser-safe; `tauriOnly` is non-null and intentionally absent from `tauri.browser.ts`.
 
@@ -66,7 +66,6 @@ apps/whispering/src/lib/
 // $lib/tauri.tauri.ts
 import { invoke } from '@tauri-apps/api/core';
 import { readFile } from '@tauri-apps/plugin-fs';
-import { Command } from '@tauri-apps/plugin-shell';
 import { register, unregister } from '@tauri-apps/plugin-global-shortcut';
 import { TrayIcon } from '@tauri-apps/api/tray';
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
@@ -75,35 +74,19 @@ import { tryAsync, Ok } from 'wellcrafted/result';
 
 // fs ----------------------------------------------------------------
 export const FsError = defineErrors({
-  ReadBlobFailed: ['cause'],
-  ReadFileFailed: ['cause'],
   ReadFilesFailed: ['cause'],
 });
 
 const fs = {
-  pathToBlob: (path: string) => tryAsync({ /* ... */ }),
-  pathToFile: (path: string) => tryAsync({ /* ... */ }),
   pathsToFiles: (paths: string[]) => tryAsync({ /* ... */ }),
 };
 
-// command -----------------------------------------------------------
-export const CommandError = defineErrors({
-  ExecuteFailed: ['cause'],
-  SpawnFailed: ['cause'],
-});
-
-const command = {
-  execute: (cmd: ShellCommand) => tryAsync({ /* ... */ }),
-  spawn: (cmd: ShellCommand) => tryAsync({ /* ... */ }),
-};
-
-// permissions, ffmpeg, tray, globalShortcuts, autostart follow the same shape
+// permissions, window, tray, globalShortcuts, autostart follow the same shape
 
 export const tauriOnly = {
   fs,
-  command,
   permissions,
-  ffmpeg,
+  window,
   tray,
   globalShortcuts,
   autostart,
@@ -133,12 +116,12 @@ import { tauri } from '$lib/tauri';
 
 // Imperative gate
 if (tauri) {
-  await tauri.fs.pathToBlob(path);
+  await tauri.fs.pathsToFiles(paths);
   await tauri.tray.setIcon('IDLE');
 }
 
 // Or optional chain
-await tauri?.fs.pathToBlob(path);
+await tauri?.fs.pathsToFiles(paths);
 ```
 
 The optional chain is the platform gate. No `window.__TAURI_INTERNALS__` at call sites. No `await import()` for module loading. The variable name (`tauri`) tells the reader what's gated. The type system forces the narrow.
@@ -148,7 +131,7 @@ Inside `*.tauri.ts` files, the build suffix is already the gate:
 ```ts
 import { tauriOnly } from '$lib/tauri';
 
-await tauriOnly.fs.pathToBlob(path);
+await tauriOnly.fs.pathsToFiles(paths);
 ```
 
 ## Type story
@@ -171,9 +154,7 @@ This is why the browser file does not need to import any type. The `.tauri.ts` f
 | `services/fs/index.tauri.ts` | inlined into `tauri.tauri.ts` |
 | `services/fs/index.browser.ts` | no longer needed (`$lib/tauri` resolves to `tauri.browser.ts`) |
 | `services/fs/` (folder) | empty after the two deletes above |
-| `services/command/*` | same pattern as fs |
 | `services/permissions/*` | same |
-| `services/ffmpeg/index.{tauri,browser}.ts` | same; `ffmpeg/shared.ts` moves to `lib/constants/ffmpeg.ts` (platform-neutral) |
 | `services/global-shortcut-manager/*` | same |
 | `services/autostart/index.tauri.ts` | same |
 | `services/tray/index.tauri.ts` | same |
@@ -181,7 +162,7 @@ This is why the browser file does not need to import any type. The `.tauri.ts` f
 | Stub pattern paragraphs in `services/README.md` | obsolete |
 | Stub explanation in `ARCHITECTURE.md` | obsolete |
 
-Total: ~13 source files, ~50 lines of README/ARCHITECTURE prose.
+The exact count changed as app-owned commands moved to `$lib/tauri/commands`, but the deletion rule stayed the same: no per-capability browser stubs for Tauri-only surfaces.
 
 ## What stays in `services/`
 
@@ -208,7 +189,7 @@ Three patterns coexist in `services/` after the migration, and the folder layout
 
 1. **Suffix DI (clipboard, text, http, notifications, os, sound, download, analytics, blob-store, recorder)**: dual-impl, Vite picks the file at build time.
 2. **Runtime DI (transcription, transformations, completion)**: one set of files, branches at call time on `settings.value`.
-3. **Tauri-only**: not in `services/` anymore. Lives in `lib/tauri.ts`.
+3. **Tauri-only**: not in `services/` anymore. Lives behind `$lib/tauri`, backed by `tauri.tauri.ts` and `tauri.browser.ts`.
 
 ## Migration plan
 
@@ -216,17 +197,17 @@ Six waves. Each is independently revertable.
 
 ### Wave 1: scaffold the new namespace
 
-Create `apps/whispering/src/lib/tauri.tauri.ts` with one capability ported (`ffmpeg`, picking up where the existing probe at commit `6708a1d93` left off). Create `apps/whispering/src/lib/tauri.browser.ts` with `export const tauri = null;`. Don't touch any consumers yet. Verify both builds pass.
+Create `apps/whispering/src/lib/tauri.tauri.ts` with one capability ported. Create `apps/whispering/src/lib/tauri.browser.ts` with `export const tauri = null;`. Don't touch any consumers yet. Verify both builds pass.
 
 ### Wave 2: migrate `transcribe.ts` to the namespace
 
-Rewrite `apps/whispering/src/lib/operations/transcribe.ts` from the current `await import('$lib/tauri/ffmpeg')` pattern (from the probe) to `import { tauri } from '$lib/tauri'; if (tauri) { /* ... */ }`. Delete the old `lib/tauri/ffmpeg.ts` from the probe. This validates the consumer pattern with one capability.
+Rewrite one shared consumer to `import { tauri } from '$lib/tauri'; if (tauri) { /* ... */ }`. This validates the consumer pattern with one capability.
 
 ### Wave 3: port the remaining six capabilities into `tauri.tauri.ts`
 
-Move `fs`, `command`, `permissions`, `tray`, `globalShortcuts`, `autostart` from their `services/<cap>/index.tauri.ts` files into sections of `tauri.tauri.ts`. Keep `ffmpeg/shared.ts` at `lib/constants/ffmpeg.ts` (it's platform-neutral; web consumers need it too).
+Move `fs`, `permissions`, `window`, `tray`, `globalShortcuts`, `autostart` from their old service files into sections of `tauri.tauri.ts`.
 
-Delete the old `services/<cap>/` folders for these seven capabilities (`fs`, `command`, `permissions`, `ffmpeg`, `tray`, `globalShortcuts`, `autostart`).
+Delete the old `services/<cap>/` folders for these Tauri-only capabilities.
 
 Delete `services/_tauri-stub.ts`.
 
@@ -236,8 +217,7 @@ For each file that statically imports a former Tauri-only service, rewrite to us
 
 - `routes/(app)/+page.svelte` (fs for file-drop)
 - `register-permissions.ts` (permissions)
-- `macos-enable-accessibility/+page.{svelte,ts}` (command + permissions)
-- `install-ffmpeg/+page.svelte` (command + fs)
+- `macos-enable-accessibility/+page.{svelte,ts}` (permissions)
 - `GlobalKeyboardShortcutRecorder.svelte` (global-shortcut-manager)
 
 ### Wave 5: migrate Tauri-only consumers (`rpc/desktop/*.tauri.ts`)
@@ -303,21 +283,21 @@ The test for which pattern fits:
 
 ## Open questions
 
-1. **Should `ffmpeg/shared.ts` move to `lib/constants/ffmpeg.ts` or stay near the Tauri namespace?** It's used by both web (settings UI for compression options) and the Tauri ffmpeg impl. Putting it at `lib/constants/ffmpeg.ts` matches how other neutral constants are organized. Lean: move it.
+1. **What belongs outside the namespace?** App-owned Rust commands live in `$lib/tauri/commands`, not in `tauri.tauri.ts`. That includes shell command execution and upload encoding.
 
 2. **Naming: `globalShortcuts` vs `globalShortcutManager`?** The current folder is `services/global-shortcut-manager/`. Inside the namespace, the manager noun is redundant (everything in `tauri` is a manager of something). Lean: rename to `globalShortcuts` for brevity.
 
-3. **Naming: `tauri?.fs.pathToBlob` vs `tauri?.fs.FsServiceLive.pathToBlob`?** The current Tauri-only services wrap their methods in a `XxxServiceLive` object (matching the dual-impl pattern). In the namespace, the extra wrapping is noise. Lean: drop the `XxxServiceLive` indirection; the namespace key (`fs`, `command`, ...) does the job that wrapping used to do.
+3. **Naming: `tauri?.fs.pathsToFiles` vs `tauri?.fs.FsServiceLive.pathsToFiles`?** The current Tauri-only services wrap their methods in a `XxxServiceLive` object (matching the dual-impl pattern). In the namespace, the extra wrapping is noise. Lean: drop the `XxxServiceLive` indirection; the namespace key (`fs`, `permissions`, ...) does the job that wrapping used to do.
 
 ## Estimated cost
 
-Half a working day for the full migration. Each wave is small (~30 minutes to ~2 hours), reviewable in isolation, and revertable without touching adjacent waves. The ffmpeg probe already validated the consumer pattern, so there's no exploratory phase left.
+Half a working day for the full migration. Each wave is small (~30 minutes to ~2 hours), reviewable in isolation, and revertable without touching adjacent waves.
 
 ## What this enables next
 
 Once the namespace exists and the consumer pattern is established, two follow-ups become cleaner:
 
 - **Tauri version checks.** If we ever need to gate on Tauri version (e.g., a capability only available in Tauri 2.5+), the namespace is the natural place to add a `version` field or feature flags.
-- **Mock Tauri for tests.** A test harness can `vi.mock('$lib/tauri', () => ({ default: mockNamespace }))` once. Today, mocking would require mocking each `services/<cap>/index.tauri.ts` individually.
+- **Mock Tauri for tests.** A test harness can `vi.mock('$lib/tauri', () => ({ tauri: mockNamespace, tauriOnly: mockNamespace }))` once. Previously, mocking required mocking each `services/<cap>/index.tauri.ts` individually.
 
 Neither is part of this spec. Both are cheaper after the migration than before it.

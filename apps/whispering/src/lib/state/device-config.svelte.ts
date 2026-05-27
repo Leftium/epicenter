@@ -1,7 +1,6 @@
 import {
 	createPersistedMap,
 	defineEntry,
-	type PersistedMap,
 } from '@epicenter/svelte';
 import { type } from 'arktype';
 import { extractErrorMessage } from 'wellcrafted/error';
@@ -113,19 +112,10 @@ const DEVICE_DEFINITIONS = {
 
 type DeviceConfigDefs = typeof DEVICE_DEFINITIONS;
 export type DeviceConfigKey = keyof DeviceConfigDefs & string;
-type DeviceConfigValue<TKey extends DeviceConfigKey> =
-	DeviceConfigDefs[TKey]['defaultValue'];
 
 // ── Singleton ────────────────────────────────────────────────────────────────
 
-type DeviceConfig = PersistedMap<typeof DEVICE_DEFINITIONS> & {
-	observe<TKey extends DeviceConfigKey>(
-		key: TKey,
-		callback: (value: DeviceConfigValue<TKey>) => void,
-	): () => void;
-};
-
-const persistedDeviceConfig = createPersistedMap({
+export const deviceConfig = createPersistedMap({
 	prefix: 'whispering.device.',
 	definitions: DEVICE_DEFINITIONS,
 	onError: (key) => {
@@ -141,45 +131,3 @@ const persistedDeviceConfig = createPersistedMap({
 		});
 	},
 });
-
-const observers = new Map<string, Set<(value: unknown) => void>>();
-
-function notifyDeviceConfigObservers(key: string, value: unknown) {
-	for (const observer of observers.get(key) ?? []) {
-		observer(value);
-	}
-}
-
-export const deviceConfig: DeviceConfig = {
-	...persistedDeviceConfig,
-
-	set(key, value) {
-		persistedDeviceConfig.set(key, value);
-		notifyDeviceConfigObservers(key, value);
-	},
-
-	update(updates) {
-		persistedDeviceConfig.update(updates);
-		for (const [key, value] of Object.entries(updates)) {
-			notifyDeviceConfigObservers(key, value);
-		}
-	},
-
-	reset() {
-		persistedDeviceConfig.reset();
-		for (const key of Object.keys(DEVICE_DEFINITIONS) as DeviceConfigKey[]) {
-			notifyDeviceConfigObservers(key, persistedDeviceConfig.get(key));
-		}
-	},
-
-	observe(key, callback) {
-		const keyObservers = observers.get(key) ?? new Set();
-		keyObservers.add(callback as (value: unknown) => void);
-		observers.set(key, keyObservers);
-
-		return () => {
-			keyObservers.delete(callback as (value: unknown) => void);
-			if (keyObservers.size === 0) observers.delete(key);
-		};
-	},
-};

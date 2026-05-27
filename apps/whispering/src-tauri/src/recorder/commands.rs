@@ -96,8 +96,8 @@ pub async fn stop_recording(
         let id = recorder
             .session_id()
             .ok_or_else(|| "no active recording session at stop".to_string())?;
-        let captured = recorder.stop_recording()?;
-        (id, captured.samples)
+        let samples = recorder.stop_recording()?;
+        (id, samples)
     };
 
     let artifact = write_artifact(&app_handle, &recording_id, &samples)?;

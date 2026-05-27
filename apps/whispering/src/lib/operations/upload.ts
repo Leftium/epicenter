@@ -66,7 +66,7 @@ export async function uploadRecordings({
 					kind: 'blob',
 					blob: audioBlob,
 					recordingId: nanoid(),
-					durationMs: 0,
+					durationMs: null,
 				},
 				durationMs: null,
 				toastId,

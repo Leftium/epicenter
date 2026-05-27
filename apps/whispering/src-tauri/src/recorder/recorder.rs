@@ -13,8 +13,10 @@
 //!
 //! The cpal callback never blocks: it downmixes to mono and ships
 //! samples through an mpsc channel. The consumer worker accumulates,
-//! resamples to 16 kHz at finalize, pads sub-1s clips, and emits the
-//! canonical [`CapturedSamples`].
+//! resamples to 16 kHz at finalize, pads sub-1s clips, and hands the
+//! resulting `Vec<f32>` (mono 16 kHz PCM) back to the command layer,
+//! which writes the durable WAV artifact and emits the small handle JS
+//! sees over IPC.
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, Stream};
@@ -29,21 +31,6 @@ use crate::audio::resample_mono;
 /// Simple result type using String for errors. Errors cross the IPC
 /// boundary as plain strings so the JS side renders them in toasts.
 pub type Result<T> = std::result::Result<T, String>;
-
-/// Mono 16 kHz f32 PCM captured by the consumer worker. Internal to the
-/// Rust process: this never crosses the IPC boundary. The recorder's stop
-/// path hands this to the artifact writer, which produces a durable WAV
-/// file under `<appDataDir>/recordings/{id}.wav`. JS only ever sees the
-/// resulting `RecordingArtifact` handle.
-pub struct CapturedSamples {
-    pub samples: Vec<f32>,
-}
-
-impl CapturedSamples {
-    pub fn duration_ms(&self) -> u64 {
-        (self.samples.len() as f64 / TARGET_RATE as f64 * 1000.0).round() as u64
-    }
-}
 
 /// Target rate for every recording. All local transcription engines
 /// (whispercpp, parakeet, moonshine) want 16 kHz mono; the cloud
@@ -60,7 +47,7 @@ const SHORT_RECORDING_PAD_SAMPLES: usize = 20_000;
 #[derive(Debug)]
 enum RecorderCmd {
     Start(mpsc::Sender<()>),
-    Stop(mpsc::Sender<Result<CapturedSamples>>),
+    Stop(mpsc::Sender<Result<Vec<f32>>>),
     Cancel(mpsc::Sender<Result<()>>),
     Shutdown,
 }
@@ -189,8 +176,8 @@ impl Recorder {
         Ok(())
     }
 
-    /// Stop recording and consume the worker's PCM.
-    pub fn stop_recording(&mut self) -> Result<CapturedSamples> {
+    /// Stop recording and consume the worker's mono 16 kHz PCM.
+    pub fn stop_recording(&mut self) -> Result<Vec<f32>> {
         let tx = self
             .cmd_tx
             .as_ref()
@@ -198,13 +185,9 @@ impl Recorder {
         let (reply_tx, reply_rx) = mpsc::channel();
         tx.send(RecorderCmd::Stop(reply_tx))
             .map_err(|e| format!("Failed to send stop command: {e}"))?;
-        let result = reply_rx
+        reply_rx
             .recv()
-            .map_err(|e| format!("Worker dropped stop reply: {e}"))?;
-        let pcm = result?;
-        let duration_seconds = pcm.samples.len() as f32 / TARGET_RATE as f32;
-        info!("Recording stopped: {duration_seconds:.2}s");
-        Ok(pcm)
+            .map_err(|e| format!("Worker dropped stop reply: {e}"))?
     }
 
     /// Cancel the active recording, discarding any in-flight samples.
@@ -312,7 +295,7 @@ fn run_consumer(
 }
 
 /// Resample to 16 kHz if needed, pad short clips, build the samples.
-fn finalize(buffer: Vec<f32>, device_rate: u32) -> Result<CapturedSamples> {
+fn finalize(buffer: Vec<f32>, device_rate: u32) -> Result<Vec<f32>> {
     let samples = if device_rate == TARGET_RATE {
         buffer
     } else {
@@ -329,7 +312,7 @@ fn finalize(buffer: Vec<f32>, device_rate: u32) -> Result<CapturedSamples> {
         samples.resize(SHORT_RECORDING_PAD_SAMPLES, 0.0);
     }
 
-    Ok(CapturedSamples { samples })
+    Ok(samples)
 }
 
 /// Find a recording device by name. Treats "default" case-insensitively.
@@ -611,12 +594,4 @@ mod tests {
         assert_eq!(mono, input);
     }
 
-    #[test]
-    fn captured_samples_duration_ms_rounds_to_nearest_ms() {
-        // 1601 samples at 16 kHz = 100.0625 ms.
-        let s = CapturedSamples {
-            samples: vec![0.0; 1601],
-        };
-        assert_eq!(s.duration_ms(), 100);
-    }
 }

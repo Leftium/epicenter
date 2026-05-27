@@ -185,10 +185,6 @@ export const RecorderError = defineErrors({
 		message: `Failed to acquire recording stream: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
-	ReadFileFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Unable to read recording file: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
 	GetStateFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to get recorder state: ${extractErrorMessage(cause)}`,
 		cause,
@@ -261,11 +257,17 @@ export type RecordingArtifact = {
  *   is the canonical reference for transcribe/upload/delete. JS does not
  *   touch the bytes itself.
  * - `kind: 'blob'`: navigator (browser MediaRecorder) returned encoded
- *   container bytes (webm/opus, mp4/AAC) the JS side already holds in
- *   memory. This path stays for browser builds and for in-Tauri navigator
- *   recordings; the transcribe layer uploads/decodes the blob the old
- *   way. There is intentionally no `Float32Array` arm: raw PCM never
- *   exists as a general front-end value.
+ *   container bytes (webm/opus, mp4/AAC) the JS side holds in memory.
+ *   The pipeline persists it through the recordings blob store so the
+ *   id-addressed Rust commands work on it too. There is intentionally
+ *   no `Float32Array` arm: raw PCM never exists as a general front-end
+ *   value.
+ *
+ * `durationMs` lives on whichever arm naturally carries it (the cpal
+ * artifact stat, the navigator wall-clock measurement). VAD and file
+ * uploads have no notion of duration at the recorder boundary; they
+ * synthesize a `kind: 'blob'` result from outside the recorder and pass
+ * `null` for duration at the pipeline boundary.
  */
 export type RecorderStopResult =
 	| { kind: 'artifact'; artifact: RecordingArtifact }
@@ -273,7 +275,7 @@ export type RecorderStopResult =
 			kind: 'blob';
 			blob: Blob;
 			recordingId: string;
-			durationMs: number;
+			durationMs: number | null;
 	  };
 
 /**

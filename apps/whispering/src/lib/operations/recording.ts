@@ -127,7 +127,7 @@ export async function stopManualRecording() {
 	analytics.logEvent({
 		type: 'manual_recording_completed',
 		blob_size: byteLength,
-		duration: durationMs,
+		duration: durationMs ?? undefined,
 	});
 
 	await processRecordingPipeline({
@@ -221,7 +221,7 @@ export async function startVadRecording() {
 					kind: 'blob',
 					blob,
 					recordingId: nanoid(),
-					durationMs: 0,
+					durationMs: null,
 				},
 				durationMs: null,
 				toastId: speechToastId,

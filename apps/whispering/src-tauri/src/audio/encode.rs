@@ -14,7 +14,6 @@ use audiopus::{
     Application as OpusApplication, Bitrate as OpusBitrate, Channels as OpusChannels,
     SampleRate as OpusSampleRate, Signal as OpusSignal, coder::Encoder as OpusEncoder,
 };
-use hound::{SampleFormat, WavReader};
 use log::debug;
 use ogg::{PacketWriteEndInfo, PacketWriter};
 
@@ -44,28 +43,6 @@ const MAX_PACKET_BYTES: usize = 4000;
 /// Serial number used for the single Opus logical stream in the OGG file.
 /// A constant is fine because we only ever write one stream per blob.
 const OGG_SERIAL: u32 = 0x57_48_53_50; // "WHSP"
-
-/// Encode a WAV blob to an OGG/Opus blob at the default voice bitrate.
-///
-/// Accepts mono or stereo, 16-bit integer or 32-bit float WAV (the formats
-/// cpal writes). Returns `AudioError::DecodeFailed` for non-WAV input so
-/// callers can fall back to uploading the original blob uncompressed.
-///
-/// This path exists for the longform `File` artifact (cpal records native-
-/// rate WAV) and for legacy callers that pass a Blob through. The cpal
-/// dictation path bypasses this entirely via `encode_pcm_to_opus_ogg`.
-pub fn encode_wav_to_opus_ogg(wav_bytes: &[u8]) -> Result<Vec<u8>, AudioError> {
-    debug!("[Audio Encode] encoding {} WAV bytes", wav_bytes.len());
-
-    let (samples_mono, source_rate) = read_wav_to_mono_f32(wav_bytes)?;
-    debug!(
-        "[Audio Encode] decoded WAV: {} mono samples @ {} Hz",
-        samples_mono.len(),
-        source_rate,
-    );
-
-    encode_pcm_to_opus_ogg(&samples_mono, source_rate, 1)
-}
 
 /// Encode an in-memory mono f32 PCM buffer to an OGG/Opus blob.
 ///
@@ -119,56 +96,6 @@ pub fn encode_pcm_to_opus_ogg(
 
     drop(packet_writer);
     Ok(out.into_inner())
-}
-
-/// Decode a WAV byte slice into mono f32 samples at the source rate. Mono
-/// is produced by averaging channels; sample format is normalized from
-/// either i16 or f32. Other formats are rejected because cpal never
-/// produces them.
-fn read_wav_to_mono_f32(wav_bytes: &[u8]) -> Result<(Vec<f32>, u32), AudioError> {
-    let mut reader = WavReader::new(Cursor::new(wav_bytes))
-        .map_err(|e| AudioError::decode(format!("wav parse failed: {e}")))?;
-
-    let spec = reader.spec();
-    let sample_rate = spec.sample_rate;
-    let channels = spec.channels as usize;
-
-    if channels == 0 {
-        return Err(AudioError::unsupported("wav reports zero channels"));
-    }
-
-    let interleaved: Vec<f32> = match (spec.sample_format, spec.bits_per_sample) {
-        (SampleFormat::Float, 32) => reader
-            .samples::<f32>()
-            .collect::<Result<Vec<f32>, _>>()
-            .map_err(|e| AudioError::decode(format!("wav f32 read failed: {e}")))?,
-        (SampleFormat::Int, bps) => {
-            // Normalize integer samples by their max magnitude. hound reports
-            // `bits_per_sample`; the i32 sample value is sign-extended so
-            // scaling by `1 / (2^(bps-1))` produces ±1.0.
-            let scale = 1.0 / ((1u64 << (bps - 1)) as f32);
-            reader
-                .samples::<i32>()
-                .map(|r| r.map(|s| s as f32 * scale))
-                .collect::<Result<Vec<f32>, _>>()
-                .map_err(|e| AudioError::decode(format!("wav int read failed: {e}")))?
-        }
-        (fmt, bps) => {
-            return Err(AudioError::unsupported(format!(
-                "wav sample format {fmt:?} @ {bps} bits is unsupported",
-            )));
-        }
-    };
-
-    if channels == 1 {
-        return Ok((interleaved, sample_rate));
-    }
-
-    let mono: Vec<f32> = interleaved
-        .chunks_exact(channels)
-        .map(|frame| frame.iter().sum::<f32>() / channels as f32)
-        .collect();
-    Ok((mono, sample_rate))
 }
 
 /// Construct a libopus encoder configured for voice transcription.
@@ -331,8 +258,15 @@ mod tests {
 
     #[test]
     fn encoded_blob_starts_with_ogg_magic_and_opushead() {
-        let wav = make_sine_wav(0.5, 16_000, 440.0);
-        let ogg_bytes = encode_wav_to_opus_ogg(&wav).expect("encode");
+        let secs = 0.5f32;
+        let rate = 16_000u32;
+        let samples: Vec<f32> = (0..(secs * rate as f32) as usize)
+            .map(|i| {
+                (2.0 * std::f32::consts::PI * 440.0 * i as f32 / rate as f32).sin()
+                    * 0.5
+            })
+            .collect();
+        let ogg_bytes = encode_pcm_to_opus_ogg(&samples, rate, 1).expect("encode");
 
         // OGG pages start with "OggS"; the first audio data after the page
         // header is the OpusHead identification packet.
@@ -345,27 +279,18 @@ mod tests {
     }
 
     #[test]
-    fn non_wav_input_returns_decode_error() {
-        let garbage = vec![0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE];
-        let result = encode_wav_to_opus_ogg(&garbage);
-        assert!(
-            matches!(result, Err(AudioError::DecodeFailed { .. })),
-            "expected DecodeFailed, got {result:?}",
-        );
-    }
-
-    #[test]
     fn roundtrip_5s_sine_preserves_duration_and_frequency() {
-        // 5 s @ 16 kHz, 440 Hz sine. Roundtrip: WAV -> Opus/OGG -> decoder.
-        // The decoder lands on 16 kHz mono, so frame counts and bin sizes
-        // line up trivially.
+        // 5 s @ 16 kHz, 440 Hz sine. Roundtrip: WAV (cpal artifact shape) ->
+        // decode_to_pcm16k_mono -> encode_pcm_to_opus_ogg -> decoder. This
+        // mirrors what `encode_recording_for_upload` does at runtime.
         let secs = 5.0f32;
         let in_rate = 16_000u32;
         let target_rate = 16_000u32;
         let freq_hz = 440.0f32;
         let wav = make_sine_wav(secs, in_rate, freq_hz);
 
-        let ogg_bytes = encode_wav_to_opus_ogg(&wav).expect("encode");
+        let pcm = decode_to_pcm16k_mono(&wav).expect("decode wav");
+        let ogg_bytes = encode_pcm_to_opus_ogg(&pcm, target_rate, 1).expect("encode");
         let decoded = decode_to_pcm16k_mono(&ogg_bytes).expect("decode");
 
         // Duration: ±50 ms tolerance per the spec's success criterion.

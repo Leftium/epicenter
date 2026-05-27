@@ -295,8 +295,9 @@ export function createOAuthClient({
 	/**
 	 * Exchange a callback URL for a token grant.
 	 *
-	 * Call only after `isCallback` or an equivalent runtime signal says a real
-	 * callback arrived. A missing transaction here means a callback was received
+	 * Call only after a runtime signal says a real callback arrived: a redirect
+	 * to the registered redirect URI, a deep link, or the response URL from a
+	 * web-auth flow. A missing transaction here means a callback was received
 	 * without the PKCE verifier that created it.
 	 */
 	async function exchangeCallback(

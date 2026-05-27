@@ -1,13 +1,10 @@
 import { toast as sonner } from '@epicenter/ui/sonner';
 import { nanoid } from 'nanoid/non-secure';
 import type { AnyTaggedError } from 'wellcrafted/error';
-import {
-	type LogEvent,
-	consoleSink as wellcraftedConsoleSink,
-} from 'wellcrafted/logger';
+import { type LogEvent, consoleSink } from 'wellcrafted/logger';
 import { moreDetailsDialog } from '$lib/components/MoreDetailsDialog.svelte';
-import { resolveDisplay } from './display';
-import { osNotifySink } from './os-notify';
+import { humanize } from './humanize';
+import { osNotify } from './os-notify';
 import type { Level, Notice, NoticeAction, Problem } from './types';
 
 export type { Notice, NoticeAction, Problem } from './types';
@@ -56,7 +53,7 @@ export type LoadingHandle = ReturnType<typeof report.loading>;
  */
 export const log = {
 	info(message: string, data?: unknown): void {
-		wellcraftedConsoleSink({
+		consoleSink({
 			ts: Date.now(),
 			level: 'info',
 			source: SOURCE,
@@ -69,17 +66,19 @@ export const log = {
 // ── Internals ─────────────────────────────────────────────────────────────
 
 /**
- * Fan a notice out to the console, toast, and OS-notification sinks.
+ * Fan a notice out to the console, toast, and OS-notification surfaces.
  *
  * `id` is the sonner toast correlation id: pass it from the loading family so
  * resolve/reject/update can target the same toast. Omit it for one-shot
  * error/success/info reports.
  */
 function emit(level: Level, notice: Notice, id?: string): void {
-	const { title, description } = resolveDisplay(notice);
+	const title =
+		(notice.title ?? humanize(notice.cause?.name ?? '')) || 'Notice';
+	const description = notice.description ?? notice.cause?.message;
 
 	if (level !== 'loading') {
-		wellcraftedConsoleSink({
+		consoleSink({
 			ts: Date.now(),
 			level: level === 'error' ? 'error' : 'info',
 			source: SOURCE,
@@ -96,7 +95,9 @@ function emit(level: Level, notice: Notice, id?: string): void {
 		action: notice.action ?? defaultMoreDetailsAction(level, notice.cause),
 	});
 
-	osNotifySink(level, notice);
+	if (level === 'error' && !document.hasFocus()) {
+		void osNotify(title, description);
+	}
 }
 
 function defaultMoreDetailsAction(

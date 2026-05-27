@@ -14,7 +14,6 @@
 	import User from '@lucide/svelte/icons/user';
 	import { createQuery, QueryClient } from '@tanstack/svelte-query';
 	import { extractErrorMessage } from 'wellcrafted/error';
-	import { defineKeys } from 'wellcrafted/query';
 
 	const accountProfileQueryClient = new QueryClient({
 		defaultOptions: {
@@ -30,10 +29,6 @@
 			email: string;
 		};
 	};
-
-	const accountProfileKeys = defineKeys({
-		profile: (ownerId: string | null) => ['account-profile', ownerId] as const,
-	});
 
 	/**
 	 * Shared account popover.
@@ -85,7 +80,7 @@
 	);
 	const profile = createQuery(
 		() => ({
-			queryKey: accountProfileKeys.profile(accountCacheKey),
+			queryKey: ['account-profile', accountCacheKey],
 			queryFn: async (): Promise<AccountProfile> => {
 				const response = await auth.fetch('/api/session');
 				if (!response.ok) {

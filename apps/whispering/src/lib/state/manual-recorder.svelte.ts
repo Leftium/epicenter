@@ -3,7 +3,6 @@ import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { defineQuery } from '$lib/rpc/client';
-import { manualRecorderKeys } from '$lib/rpc/keys';
 import { services } from '$lib/services';
 import { CpalRecorderServiceLive } from '$lib/services/recorder';
 import {
@@ -136,7 +135,7 @@ function createManualRecorder() {
 		},
 
 		enumerateDevices: defineQuery({
-			queryKey: manualRecorderKeys.devices,
+			queryKey: ['recorder', 'devices'],
 			queryFn: async () => {
 				const { data, error } =
 					await resolveServiceForStart().enumerateDevices();

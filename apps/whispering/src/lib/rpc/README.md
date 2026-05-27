@@ -11,7 +11,6 @@ Thin, side-effect-free TanStack adapters over services. Each module here wraps a
 | `transcription.ts` | mutation | `recordings/+page.svelte`, `RecordingRowActions.svelte`                    |
 | `transformer.ts`   | mutation | `TransformationPicker.svelte`, `Test.svelte`                               |
 | `client.ts`        | infra    | `QueryClient` + `defineQuery` / `defineMutation`                           |
-| `desktop/`         | barrel   | desktop-only adapters (not part of the cross-platform `rpc` barrel)        |
 
 ## The `rpc` barrel
 

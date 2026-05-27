@@ -8,7 +8,7 @@ import { sound } from '$lib/operations/sound';
 import { transcribeAudio } from '$lib/operations/transcribe';
 import { runTransformation } from '$lib/operations/transform';
 import { services } from '$lib/services';
-import { pcmToWavBlob } from '$lib/services/recorder/artifact';
+import { pcmToWavBlob } from '$lib/services/recorder/pcm-to-wav';
 import type { RecorderAudio } from '$lib/services/recorder/types';
 import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';

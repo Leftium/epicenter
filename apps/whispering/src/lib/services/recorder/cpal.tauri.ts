@@ -29,11 +29,11 @@ const log = createLogger('whispering/recorder/cpal');
  * decimal-decoded array of doubles. For a 30 s clip this collapses the
  * post-stop critical path by ~150-300 ms compared to JSON `Vec<f32>`.
  */
-function parseArtifact(
+function parsePcmIpcBody(
 	buffer: ArrayBuffer,
 ): Result<Float32Array, RecorderError> {
 	if (buffer.byteLength % 4 !== 0) {
-		return RecorderError.InvalidArtifactIpc({
+		return RecorderError.InvalidPcmIpc({
 			reason: `byte length not a multiple of 4 (f32 size)`,
 			byteLength: buffer.byteLength,
 		});
@@ -153,7 +153,7 @@ function createCpalRecorder(): RecorderService {
 					return RecorderError.StopFailed({ cause: stopRecordingError });
 				}
 
-				const { data: samples, error: parseError } = parseArtifact(buffer);
+				const { data: samples, error: parseError } = parsePcmIpcBody(buffer);
 				if (parseError) {
 					await closeAndTeardown(recording, sendStatus);
 					return Err(parseError);

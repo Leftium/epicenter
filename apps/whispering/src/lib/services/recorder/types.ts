@@ -198,7 +198,7 @@ export const RecorderError = defineErrors({
 		command,
 		cause,
 	}),
-	InvalidArtifactIpc: ({
+	InvalidPcmIpc: ({
 		reason,
 		byteLength,
 	}: {

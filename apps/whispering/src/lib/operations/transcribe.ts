@@ -8,7 +8,7 @@ import { analytics } from '$lib/operations/analytics';
 import { notify } from '$lib/operations/notify';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { services } from '$lib/services';
-import { pcmToWavBlob } from '$lib/services/recorder/artifact';
+import { pcmToWavBlob } from '$lib/services/recorder/pcm-to-wav';
 import type { RecorderAudio } from '$lib/services/recorder/types';
 import { TRANSCRIPTION_SERVICES } from '$lib/services/transcription/registry';
 import { deviceConfig } from '$lib/state/device-config.svelte';
@@ -173,17 +173,6 @@ export async function transcribeAudio(
 	}
 
 	return transcriptionResult;
-}
-
-/**
- * Transcribe a pre-existing Blob. Kept for the history re-transcribe
- * path (`services.blobs.audio.getBlob` returns a Blob). Routes through
- * `transcribeAudio`, which narrows on `instanceof Blob`.
- */
-export async function transcribeBlob(
-	blob: Blob,
-): Promise<Result<string, WhisperingError>> {
-	return transcribeAudio(blob);
 }
 
 async function dispatchTranscription(

@@ -1,24 +1,15 @@
 import { RECORDER_OUTPUT_RATE } from '$lib/constants/audio';
 
 /**
- * Materialize in-memory PCM as a WAV blob. Used at the boundary with
- * code paths that consume Blobs (history persistence, the navigator-shaped
- * transcription dispatch).
+ * Materialize the recorder's in-memory PCM as a mono 16 kHz IEEE Float
+ * WAV blob. Used at the boundary with code paths that consume Blobs
+ * (history persistence, the navigator-shaped transcription dispatch).
  *
  * Mono 16 kHz is the recorder's contract (`RECORDER_OUTPUT_RATE`); both
  * are baked into the WAV header here. If the contract ever changes, this
  * grows back to taking rate/channels parameters.
  */
 export function pcmToWavBlob(samples: Float32Array): Blob {
-	return new Blob([encodePcmAsWav(samples)], { type: 'audio/wav' });
-}
-
-/**
- * Build a minimal IEEE Float 32-bit mono WAV file in memory from the
- * recorder's PCM samples. Matches the format the previous Rust WAV writer
- * produced, so downstream decoders see one shape.
- */
-function encodePcmAsWav(samples: Float32Array): ArrayBuffer {
 	const bitsPerSample = 32;
 	const bytesPerSample = bitsPerSample / 8;
 	const channels = 1;
@@ -53,7 +44,7 @@ function encodePcmAsWav(samples: Float32Array): ArrayBuffer {
 		new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength),
 	);
 
-	return buf;
+	return new Blob([buf], { type: 'audio/wav' });
 }
 
 function writeAscii(view: DataView, offset: number, str: string): void {

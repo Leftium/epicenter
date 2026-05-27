@@ -17,4 +17,7 @@ export const PROVIDER_MODELS = {
 export type Provider = keyof typeof PROVIDER_MODELS;
 
 export const DEFAULT_PROVIDER = 'gemini' satisfies Provider;
-export const DEFAULT_MODEL = 'gemini-3.1-flash-lite-preview' as const;
+type DefaultProviderModel =
+	(typeof PROVIDER_MODELS)[typeof DEFAULT_PROVIDER][number];
+export const DEFAULT_MODEL =
+	'gemini-3.1-flash-lite-preview' satisfies DefaultProviderModel;

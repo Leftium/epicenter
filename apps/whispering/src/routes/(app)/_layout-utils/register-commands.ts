@@ -33,28 +33,15 @@ const DEFAULT_GLOBAL_SHORTCUTS = {
 	runTransformationOnClipboard: `${CommandOrControl}+Shift+R`,
 } as const satisfies Record<Command['id'], string | null>;
 
-type LocalShortcutKey =
-	| 'shortcut.toggleManualRecording'
-	| 'shortcut.cancelManualRecording'
-	| 'shortcut.toggleVadRecording'
-	| 'shortcut.pushToTalk'
-	| 'shortcut.openTransformationPicker'
-	| 'shortcut.runTransformationOnClipboard';
+type LocalShortcutKey = `shortcut.${Command['id']}`;
+type GlobalShortcutKey = `shortcuts.global.${Command['id']}`;
 
-type GlobalShortcutKey =
-	| 'shortcuts.global.toggleManualRecording'
-	| 'shortcuts.global.cancelManualRecording'
-	| 'shortcuts.global.toggleVadRecording'
-	| 'shortcuts.global.pushToTalk'
-	| 'shortcuts.global.openTransformationPicker'
-	| 'shortcuts.global.runTransformationOnClipboard';
-
-function getLocalShortcutKey(commandId: string): LocalShortcutKey {
-	return `shortcut.${commandId}` as LocalShortcutKey;
+function getLocalShortcutKey(commandId: Command['id']): LocalShortcutKey {
+	return `shortcut.${commandId}`;
 }
 
-function getGlobalShortcutKey(commandId: string): GlobalShortcutKey {
-	return `shortcuts.global.${commandId}` as GlobalShortcutKey;
+function getGlobalShortcutKey(commandId: Command['id']): GlobalShortcutKey {
+	return `shortcuts.global.${commandId}`;
 }
 
 /**

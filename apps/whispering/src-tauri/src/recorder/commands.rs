@@ -1,6 +1,4 @@
-use crate::recorder::artifact::{
-    delete_artifact, write_artifact, RecordingArtifact,
-};
+use crate::recorder::artifact::{delete_artifact, write_artifact, RecordingArtifact};
 use crate::recorder::recorder::{Recorder, Result};
 use log::{debug, info, warn};
 use serde::Serialize;
@@ -163,10 +161,7 @@ pub async fn get_current_recording_id(
 /// so the JS side can call this without first checking existence.
 #[tauri::command]
 #[specta::specta]
-pub async fn delete_recording(
-    recording_id: String,
-    app_handle: AppHandle,
-) -> Result<()> {
+pub async fn delete_recording(recording_id: String, app_handle: AppHandle) -> Result<()> {
     info!("Deleting recording artifact: {recording_id}");
     delete_artifact(&app_handle, &recording_id)
 }

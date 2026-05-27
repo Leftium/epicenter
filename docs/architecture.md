@@ -92,7 +92,7 @@ createWorkspace()
     -> fuji() (project mount)
 ```
 
-Use `defineWorkspaceBundle()` when returning the composed object so TypeScript keeps the exact inferred bundle shape after spreads.
+Use `defineWorkspace()` when returning the composed object so TypeScript keeps the exact inferred bundle shape after spreads.
 
 ### 4. Runtime openers attach resources
 There is no plugin chain. Persistence, indexing, and materializers all mount through `attach*` functions; the workspace's network surface (sync + presence + dispatch) mounts through the `openCollaboration` primitive. Runtime openers compose them inline against `workspace.ydoc` after `create<App>Workspace()`.
@@ -208,7 +208,7 @@ import {
 	attachIndexedDb,
 	defineActions,
 	defineQuery,
-	defineWorkspaceBundle,
+	defineWorkspace,
 	openCollaboration,
 	roomWsUrl,
 } from '@epicenter/workspace';
@@ -235,7 +235,7 @@ export function openOpensidianBrowser() {
 		waitFor: idb.whenLoaded,
 		actions,
 	});
-	return defineWorkspaceBundle({ ...workspace, idb, collaboration, sqliteIndex, actions });
+	return defineWorkspace({ ...workspace, idb, collaboration, sqliteIndex, actions });
 }
 ```
 

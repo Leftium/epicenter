@@ -23,7 +23,7 @@ import {
 	defineActions,
 	defineMutation,
 	defineTable,
-	defineWorkspaceBundle,
+	defineWorkspace,
 	docGuid,
 	generateId,
 	type InferTableRow,
@@ -179,7 +179,7 @@ export function createHoneycrispWorkspace(opts: { keyring: () => Keyring }) {
 		};
 	});
 
-	return defineWorkspaceBundle({
+	return defineWorkspace({
 		...workspace,
 		actions,
 		noteBodyDocs,

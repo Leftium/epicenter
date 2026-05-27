@@ -21,7 +21,7 @@ import {
 	attachLocalStorage,
 	createDisposableCache,
 	type DeviceId,
-	defineWorkspaceBundle,
+	defineWorkspace,
 	openCollaboration,
 	roomWsUrl,
 	wipeLocalStorage,
@@ -97,7 +97,7 @@ export function openFujiBrowser({
 		entryContentDocs,
 	});
 
-	return defineWorkspaceBundle({
+	return defineWorkspace({
 		...workspace,
 		actions: workspace.actions,
 		markdown,

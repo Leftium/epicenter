@@ -18,7 +18,7 @@ import type { SignedIn } from '@epicenter/svelte';
 import {
 	attachLocalStorage,
 	type DeviceId,
-	defineWorkspaceBundle,
+	defineWorkspace,
 	openCollaboration,
 	roomWsUrl,
 	wipeLocalStorage,
@@ -52,7 +52,7 @@ export function openZhongwenBrowser({
 		actions: workspace.actions,
 	});
 
-	return defineWorkspaceBundle({
+	return defineWorkspace({
 		...workspace,
 		idb,
 		collaboration,

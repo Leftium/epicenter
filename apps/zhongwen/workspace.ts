@@ -21,7 +21,7 @@ import {
 	defineActions,
 	defineKv,
 	defineTable,
-	defineWorkspaceBundle,
+	defineWorkspace,
 	generateId,
 	type Id,
 	type InferTableRow,
@@ -104,7 +104,7 @@ export function createZhongwenWorkspace(opts: { keyring: () => Keyring }) {
 	});
 	const actions = defineActions({});
 
-	return defineWorkspaceBundle({
+	return defineWorkspace({
 		...workspace,
 		actions,
 		[Symbol.dispose]() {

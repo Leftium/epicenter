@@ -21,7 +21,7 @@ import {
 	attachLocalStorage,
 	createDisposableCache,
 	type DeviceId,
-	defineWorkspaceBundle,
+	defineWorkspace,
 	openCollaboration,
 	roomWsUrl,
 	wipeLocalStorage,
@@ -90,7 +90,7 @@ export function openHoneycrispBrowser({
 		};
 	});
 
-	return defineWorkspaceBundle({
+	return defineWorkspace({
 		...workspace,
 		actions: workspace.actions,
 		idb,

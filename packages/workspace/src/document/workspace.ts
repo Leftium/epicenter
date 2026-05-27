@@ -74,16 +74,14 @@ export type Workspace<
 };
 
 /**
- * Type-check a workspace-shaped object while preserving its exact inferred type.
- *
- * Named "bundle" to avoid colliding with `defineWorkspace`, the daemon config
- * helper for declaring a route-openable workspace.
+ * Type-check a live workspace bundle while preserving its exact inferred type.
  *
  * Use this when a runtime opener returns `{ ...workspace, ...runtimeExtras }`
  * and direct `satisfies Workspace<...>` would force the caller to restate table,
  * KV, action, or runtime generics that TypeScript can infer from the object.
+ * Runtime behavior is identity: the same object is returned unchanged.
  */
-export function defineWorkspaceBundle<
+export function defineWorkspace<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
 	TActions extends ActionRegistry,
@@ -200,7 +198,7 @@ export function createWorkspace<
 
 	const kv = createKv(attachStore(KV_KEY), options.kv);
 
-	return defineWorkspaceBundle({
+	return defineWorkspace({
 		ydoc,
 		tables,
 		kv,

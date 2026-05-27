@@ -30,7 +30,7 @@ import {
 	defineMutation,
 	defineQuery,
 	defineTable,
-	defineWorkspaceBundle,
+	defineWorkspace,
 	docGuid,
 	generateId,
 	type IanaTimeZone,
@@ -153,7 +153,7 @@ export function createFujiWorkspace(opts: { keyring: () => Keyring }) {
 		};
 	});
 
-	return defineWorkspaceBundle({
+	return defineWorkspace({
 		...workspace,
 		actions,
 		entryContentDocs,

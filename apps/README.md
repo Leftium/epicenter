@@ -16,7 +16,7 @@ open<App>Daemon()
 open<App>Tauri()
   runtime-specific wiring
 
-defineWorkspaceBundle()
+defineWorkspace()
   preserves the inferred bundle shape after composition
 ```
 
@@ -47,6 +47,6 @@ Browser and desktop code compose runtime-only attachments around the same `creat
 
 1. Add `apps/<app>/workspace.ts` or `apps/<app>/src/lib/workspace.ts`, following the package's existing layout.
 2. Point `package.json` `exports["."]` at the workspace contract file.
-3. Add `create<App>Workspace()` and return `defineWorkspaceBundle({ ...workspace, actions, ...sharedChildDocs })`.
-4. Add `apps/<app>/daemon.ts` exporting `open<App>Daemon(ctx)` as a free factory. The project's `epicenter.config.ts` default-exports `defineWorkspace({ open: openXDaemon })` (single-workspace shape) or registers it under `defineConfig({ daemon: { routes: { ... } } })` (multi-route monorepo shape).
+3. Add `create<App>Workspace()` and return `defineWorkspace({ ...workspace, actions, ...sharedChildDocs })`.
+4. Add `apps/<app>/daemon.ts` exporting `open<App>Daemon(ctx)` as a free factory. The project's `epicenter.config.ts` exports a mount with `defineMount({ open: openXDaemon })` when explicit typing is useful, or registers the opener through the current project config shape for multi-mount projects.
 5. Run `epicenter daemon up -C <project>` and confirm the route appears in `epicenter list`.

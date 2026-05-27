@@ -28,7 +28,7 @@ import {
 	attachLocalStorage,
 	createDisposableCache,
 	type DeviceId,
-	defineWorkspaceBundle,
+	defineWorkspace,
 	openCollaboration,
 	roomWsUrl,
 	wipeLocalStorage,
@@ -146,7 +146,7 @@ export function openOpensidianBrowser({
 		workspace[Symbol.dispose]();
 	}
 
-	return defineWorkspaceBundle({
+	return defineWorkspace({
 		...workspace,
 		idb,
 		fileContentDocs,

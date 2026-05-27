@@ -26,7 +26,7 @@ import {
 	createWorkspace,
 	defineActions,
 	defineTable,
-	defineWorkspaceBundle,
+	defineWorkspace,
 	generateId,
 	type Id,
 	type InferTableRow,
@@ -182,7 +182,7 @@ export function createOpensidianWorkspace(opts: { keyring: () => Keyring }) {
 		};
 	});
 
-	return defineWorkspaceBundle({
+	return defineWorkspace({
 		...workspace,
 		actions,
 		fileContentDocs,

@@ -34,7 +34,7 @@ import {
 	createWorkspace,
 	defineActions,
 	defineMutation,
-	defineWorkspaceBundle,
+	defineWorkspace,
 	column,
 	defineTable,
 	openCollaboration,
@@ -71,7 +71,7 @@ function createMyAppWorkspace(opts: { keyring: SignedIn['keyring'] }) {
 		}),
 	});
 
-	return defineWorkspaceBundle({
+	return defineWorkspace({
 		...workspace,
 		actions,
 	});
@@ -104,7 +104,7 @@ export function openMyAppBrowser({
 		actions: workspace.actions,
 	});
 
-	return defineWorkspaceBundle({
+	return defineWorkspace({
 		...workspace,
 		idb,
 		collab,

@@ -7,7 +7,7 @@
  * sync.
  */
 
-import { defineWorkspaceBundle } from '@epicenter/workspace';
+import { defineWorkspace } from '@epicenter/workspace';
 import { defineMount } from '@epicenter/workspace/daemon';
 import { attachProjectInfrastructure } from '@epicenter/workspace/node';
 import { createZhongwenWorkspace } from './workspace.js';
@@ -28,7 +28,7 @@ export function zhongwen() {
 				actions: workspace.actions,
 			});
 
-			return defineWorkspaceBundle({
+			return defineWorkspace({
 				...workspace,
 				...infrastructure,
 			});

@@ -8,7 +8,7 @@
  */
 
 import { isAbsolute, join } from 'node:path';
-import { defineWorkspaceBundle } from '@epicenter/workspace';
+import { defineWorkspace } from '@epicenter/workspace';
 import { defineMount } from '@epicenter/workspace/daemon';
 import {
 	attachMarkdownMaterializer,
@@ -74,7 +74,7 @@ export function honeycrisp(opts: HoneycrispMountOptions = {}) {
 				actions: workspace.actions,
 			});
 
-			return defineWorkspaceBundle({
+			return defineWorkspace({
 				...workspace,
 				...infrastructure,
 			});

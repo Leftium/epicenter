@@ -18,7 +18,7 @@ open<App>Daemon()
 open<App>Tauri()
   runtime-specific wiring: storage, sync, materializers, platform services
 
-defineWorkspaceBundle()
+defineWorkspace()
   preserves the exact inferred bundle shape after composition
 ```
 
@@ -122,7 +122,7 @@ Every exported function in this package falls into one of three verbs. The prefi
 
 | Verb | Side effect | Input | Output | Examples |
 |---|---|---|---|---|
-| `define*` | **None**: pure data or type contract | Schemas, defaults, typed bundle values | Plain config object or same value back | `defineTable`, `defineKv`, `defineMutation`, `defineQuery`, `defineWorkspaceBundle` |
+| `define*` | **None**: pure data or type contract | Schemas, defaults, typed bundle values | Plain config object or same value back | `defineTable`, `defineKv`, `defineMutation`, `defineQuery`, `defineWorkspace` |
 | `create*` | **Constructs**: bundles, models, registries, or pure definitions | Definitions, options | Disposable bundle or pure value | `createWorkspace` (root bundle: ydoc + tables + kv + empty actions + dispose), `createFujiWorkspace` (app model), `createDisposableCache` (refcounted per-row cache) |
 | `attach*` | **Mutates a Y.Doc**: binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config (the three materializers take the bundle from `createWorkspace`) | Typed handle, non-idempotent, hold the reference | `attachRichText`, `attachPlainText`, `attachTimeline`, `attachIndexedDb`, `attachLocalStorage`, `attachYjsLog`, `attachBroadcastChannel`, `attachMarkdownMaterializer`, `attachBunSqliteMaterializer`, `attachTursoMaterializer` |
 | `open*` | **Opens a runtime over a Y.Doc or a local resource**: returns a typed handle with its own teardown. The Y.Doc-bound case (`openCollaboration`) registers `ydoc.on('destroy')` like `attach*` does; the resource case (`openSqliteReader`) takes no Y.Doc and returns a `[Symbol.dispose]()` handle. | Y.Doc + config, or resource config | Typed runtime handle | `openCollaboration`, `openSqliteReader`, `openWriterSqlite` |
@@ -143,7 +143,7 @@ Apps usually wrap `createWorkspace` in a per-app factory next to their schema so
 
 ```ts
 // apps/my-app/workspace.ts
-import { createWorkspace, defineWorkspaceBundle } from '@epicenter/workspace';
+import { createWorkspace, defineWorkspace } from '@epicenter/workspace';
 
 export function createMyAppWorkspace(opts: { keyring: () => Keyring }) {
 	const workspace = createWorkspace({
@@ -154,7 +154,7 @@ export function createMyAppWorkspace(opts: { keyring: () => Keyring }) {
 	});
 	const actions = createMyAppActions(workspace);
 
-	return defineWorkspaceBundle({
+	return defineWorkspace({
 		...workspace,
 		actions,
 	});
@@ -167,7 +167,7 @@ Minimal encrypted browser workspace: encryption + owner-scoped IndexedDB + cross
 import {
 	attachLocalStorage,
 	createDeviceId,
-	defineWorkspaceBundle,
+	defineWorkspace,
 	openCollaboration,
 	roomWsUrl,
 	wipeLocalStorage,
@@ -205,7 +205,7 @@ export function openApp({
 		actions: workspace.actions,
 	});
 
-	return defineWorkspaceBundle({
+	return defineWorkspace({
 		...workspace,
 		idb,
 		collaboration,

@@ -228,11 +228,7 @@ function createCpalRecorder(): RecorderService {
 		enumerateDevices,
 
 		startRecording: async (
-			{
-				selectedDeviceId,
-				recordingId,
-				sampleRate,
-			}: CpalRecordingParams,
+			{ selectedDeviceId, recordingId, sampleRate }: CpalRecordingParams,
 			{ sendStatus },
 		) => {
 			const { data: devices, error: enumerateError } = await enumerateDevices();

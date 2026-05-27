@@ -236,16 +236,17 @@ async function dispatchTranscription(
 			return Ok(data);
 		}
 		case 'Deepgram': {
-			const { data, error } =
-				await services.transcriptions.deepgram.transcribe(audio, {
+			const { data, error } = await services.transcriptions.deepgram.transcribe(
+				audio,
+				{
 					outputLanguage,
 					prompt,
 					temperature,
 					apiKey: deviceConfig.get('apiKeys.deepgram'),
 					modelName: settings.get('transcription.deepgram.model'),
-				});
-			if (error)
-				return services.transcriptions.deepgram.toWhisperingErr(error);
+				},
+			);
+			if (error) return services.transcriptions.deepgram.toWhisperingErr(error);
 			return Ok(data);
 		}
 		case 'Mistral': {

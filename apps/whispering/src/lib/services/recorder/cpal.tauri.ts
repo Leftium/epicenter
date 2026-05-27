@@ -1,7 +1,6 @@
-import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { createLogger } from 'wellcrafted/logger';
-import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { categorizeRecorderError } from '$lib/services/recorder/categorize-error';
 import {
@@ -11,9 +10,9 @@ import {
 	type DeviceAcquisitionOutcome,
 	RecorderError,
 	type RecorderService,
-	type RecordingArtifact,
 	type RecordingSession,
 } from '$lib/services/recorder/types';
+import { commands } from '$lib/tauri/commands';
 
 const log = createLogger('whispering/recorder/cpal');
 
@@ -22,8 +21,8 @@ const log = createLogger('whispering/recorder/cpal');
  */
 const enumerateDevices = async (): Promise<Result<Device[], RecorderError>> => {
 	const { data: deviceNames, error: enumerateRecordingDevicesError } =
-		await invoke<string[]>('enumerate_recording_devices');
-	if (enumerateRecordingDevicesError) {
+		await commands.enumerateRecordingDevices();
+	if (enumerateRecordingDevicesError !== null) {
 		return RecorderError.EnumerateDevices({
 			cause: enumerateRecordingDevicesError,
 		});
@@ -109,8 +108,8 @@ function createCpalRecorder(): RecorderService {
 					description: 'Writing the WAV artifact to disk...',
 				});
 				const { data: artifact, error: stopRecordingError } =
-					await invoke<RecordingArtifact>('stop_recording');
-				if (stopRecordingError) {
+					await commands.stopRecording();
+				if (stopRecordingError !== null) {
 					teardown(session);
 					return RecorderError.StopFailed({ cause: stopRecordingError });
 				}
@@ -123,10 +122,9 @@ function createCpalRecorder(): RecorderService {
 					title: '🔄 Closing Session',
 					description: 'Cleaning up recording resources...',
 				});
-				const { error: closeError } = await invoke<void>(
-					'close_recording_session',
-				);
-				if (closeError) log.error(closeError);
+				const { error: closeError } = await commands.closeRecordingSession();
+				if (closeError !== null)
+					log.error(RecorderError.StopFailed({ cause: closeError }));
 				teardown(session);
 
 				return Ok({ kind: 'artifact', artifact });
@@ -141,8 +139,8 @@ function createCpalRecorder(): RecorderService {
 
 				// cancel_recording on the Rust side discards the in-flight
 				// samples and tears down the session worker. One round trip.
-				const { error: cancelError } = await invoke<void>('cancel_recording');
-				if (cancelError) {
+				const { error: cancelError } = await commands.cancelRecording();
+				if (cancelError !== null) {
 					sendStatus({
 						title: '❌ Cancel Failed',
 						description:
@@ -177,10 +175,9 @@ function createCpalRecorder(): RecorderService {
 			// probe Rust in case a recording session outlived a JS reload.
 			if (activeSession) return Ok(activeSession);
 
-			const { data: liveRecordingId, error: getIdError } = await invoke<
-				string | null
-			>('get_current_recording_id');
-			if (getIdError) {
+			const { data: liveRecordingId, error: getIdError } =
+				await commands.getCurrentRecordingId();
+			if (getIdError !== null) {
 				return RecorderError.GetStateFailed({ cause: getIdError });
 			}
 			if (!liveRecordingId) return Ok(null);
@@ -197,7 +194,7 @@ function createCpalRecorder(): RecorderService {
 			{ sendStatus },
 		) => {
 			const { data: devices, error: enumerateError } = await enumerateDevices();
-			if (enumerateError) return Err(enumerateError);
+			if (enumerateError !== null) return Err(enumerateError);
 
 			const deviceIds = devices.map((d) => d.id);
 			const fallbackDeviceId = deviceIds.at(0);
@@ -249,17 +246,15 @@ function createCpalRecorder(): RecorderService {
 
 			const sampleRateNum = sampleRate
 				? Number.parseInt(sampleRate, 10)
-				: undefined;
+				: null;
 
-			const { error: initRecordingSessionError } = await invoke(
-				'init_recording_session',
-				{
+			const { error: initRecordingSessionError } =
+				await commands.initRecordingSession(
 					deviceIdentifier,
 					recordingId,
-					sampleRate: sampleRateNum,
-				},
-			);
-			if (initRecordingSessionError)
+					sampleRateNum,
+				);
+			if (initRecordingSessionError !== null)
 				return (
 					categorizeRecorderError(initRecordingSessionError) ??
 					RecorderError.InitFailed({
@@ -272,9 +267,8 @@ function createCpalRecorder(): RecorderService {
 				description:
 					'Recording session initialized, now starting to capture audio...',
 			});
-			const { error: startRecordingError } =
-				await invoke<void>('start_recording');
-			if (startRecordingError)
+			const { error: startRecordingError } = await commands.startRecording();
+			if (startRecordingError !== null)
 				return (
 					categorizeRecorderError(startRecordingError) ??
 					RecorderError.StartFailed({ cause: startRecordingError })
@@ -288,17 +282,3 @@ function createCpalRecorder(): RecorderService {
 }
 
 export const CpalRecorderServiceLive: RecorderService = createCpalRecorder();
-
-/**
- * Wrapper function for Tauri invoke calls that handles errors consistently.
- * Converts Tauri invoke calls into Result types for better error handling.
- *
- * @param command - The Tauri command to invoke
- * @param args - Optional arguments to pass to the command
- */
-async function invoke<T>(command: string, args?: Record<string, unknown>) {
-	return tryAsync({
-		try: async () => await tauriInvoke<T>(command, args),
-		catch: (error) => RecorderError.InvokeFailed({ command, cause: error }),
-	});
-}

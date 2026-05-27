@@ -12,6 +12,7 @@ import { TRANSCRIPTION_SERVICES } from '$lib/services/transcription/registry';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { tauri } from '$lib/tauri';
+import { commands } from '$lib/tauri/commands';
 
 /**
  * Services that upload audio bytes to a remote endpoint (cloud APIs +
@@ -47,17 +48,17 @@ async function loadForCloudUpload(
 	recordingId: string,
 ): Promise<Result<Blob, WhisperingError>> {
 	if (tauri) {
-		const { data: oggBlob, error } =
-			await tauri.audioEncoder.encodeRecordingForUpload(recordingId);
-		if (!error) return Ok(oggBlob);
+		const { data: oggBytes, error } =
+			await commands.encodeRecordingForUpload(recordingId);
+		if (error === null) return Ok(new Blob([oggBytes], { type: 'audio/ogg' }));
 		notify.warning({
 			title: 'Audio compression skipped',
-			description: `${error.message}. Uploading uncompressed audio instead.`,
+			description: `${error}. Uploading uncompressed audio instead.`,
 		});
 		analytics.logEvent({
 			type: 'compression_failed',
 			provider: settings.get('transcription.service'),
-			error_message: error.message,
+			error_message: error,
 		});
 		// Fall through to the blob-store path below.
 	}

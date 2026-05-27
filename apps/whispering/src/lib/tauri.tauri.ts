@@ -1,6 +1,6 @@
 /**
  * Tauri-only capability namespace. Everything that requires the Tauri
- * runtime lives in this file: fs, command, permissions, audioEncoder, tray,
+ * runtime lives in this file: fs, command, permissions, tray,
  * globalShortcuts, autostart. The subset that needs TanStack caching,
  * error transformation, or invalidation is exposed in the same shape
  * (no sub-namespace), with each leaf picking one canonical call form.
@@ -36,7 +36,6 @@
  * See `specs/20260526T000140-collapse-tauri-only-services-into-namespace.md`.
  */
 
-import { invoke } from '@tauri-apps/api/core';
 import { Menu, MenuItem } from '@tauri-apps/api/menu';
 import { basename, resolveResource } from '@tauri-apps/api/path';
 import { TrayIcon } from '@tauri-apps/api/tray';
@@ -54,7 +53,6 @@ import {
 	unregisterAll as tauriUnregisterAll,
 } from '@tauri-apps/plugin-global-shortcut';
 import { exit } from '@tauri-apps/plugin-process';
-import type { Child, ChildProcess } from '@tauri-apps/plugin-shell';
 import mime from 'mime';
 import {
 	defineErrors,
@@ -70,6 +68,7 @@ import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { IS_MACOS } from '$lib/constants/platform';
 import { WhisperingErr } from '$lib/result';
 import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
+import { commands } from '$lib/tauri/commands';
 import {
 	type Accelerator,
 	AcceleratorError,
@@ -162,12 +161,8 @@ const command = {
 	 * flash. See https://github.com/EpicenterHQ/epicenter/issues/815.
 	 */
 	async execute(cmd: string) {
-		const { data, error } = await tryAsync({
-			try: () =>
-				invoke<ChildProcess<string>>('execute_command', { command: cmd }),
-			catch: (error) => CommandError.ExecuteFailed({ cause: error }),
-		});
-		if (error) return Err(error);
+		const { data, error } = await commands.executeCommand(cmd);
+		if (error !== null) return CommandError.ExecuteFailed({ cause: error });
 		return Ok(data);
 	},
 
@@ -176,16 +171,10 @@ const command = {
 	 * Child instance that can be used to control the process.
 	 */
 	async spawn(cmd: string) {
-		const { data, error } = await tryAsync({
-			try: async () => {
-				const pid = await invoke<number>('spawn_command', { command: cmd });
-				const { Child } = await import('@tauri-apps/plugin-shell');
-				return new Child(pid) as Child;
-			},
-			catch: (error) => CommandError.SpawnFailed({ cause: error }),
-		});
-		if (error) return Err(error);
-		return Ok(data);
+		const { data: pid, error } = await commands.spawnCommand(cmd);
+		if (error !== null) return CommandError.SpawnFailed({ cause: error });
+		const { Child } = await import('@tauri-apps/plugin-shell');
+		return Ok(new Child(pid));
 	},
 };
 
@@ -266,34 +255,6 @@ const permissions = {
 				catch: (error) => PermissionsError.RequestMicrophone({ cause: error }),
 			});
 		},
-	},
-};
-
-// audioEncoder ------------------------------------------------------
-// Compress a saved recording artifact into OGG/Opus by id. Rust reads
-// the file from `<appDataDir>/recordings/{id}.{ext}`, Symphonia decodes
-// whichever container the source produced, and libopus re-encodes at
-// the voice bitrate. JS never holds the audio bytes.
-const AudioEncoderError = defineErrors({
-	EncodeFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Audio encode failed: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-});
-type AudioEncoderError = InferErrors<typeof AudioEncoderError>;
-
-const audioEncoder = {
-	async encodeRecordingForUpload(
-		recordingId: string,
-	): Promise<Result<Blob, AudioEncoderError>> {
-		const { data: oggBytes, error } = await tryAsync({
-			try: () =>
-				invoke<ArrayBuffer>('encode_recording_for_upload', { recordingId }),
-			catch: (cause) => AudioEncoderError.EncodeFailed({ cause }),
-		});
-
-		if (error) return Err(error);
-		return Ok(new Blob([oggBytes], { type: 'audio/ogg' }));
 	},
 };
 
@@ -640,7 +601,6 @@ const tauriImpl = {
 	fs,
 	command,
 	permissions,
-	audioEncoder,
 	window,
 	tray,
 	globalShortcuts,

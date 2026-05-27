@@ -222,22 +222,15 @@ export type NavigatorRecordingParams = BaseRecordingParams & {
 };
 
 /**
- * Durable, Rust-owned recording artifact returned by the cpal stop path.
- * The id maps deterministically to a WAV file under
- * `<appDataDir>/recordings/{id}.wav`. JS treats the file as opaque: every
- * later operation (transcribe, encode for upload, playback, delete) goes
- * through the id, never a raw path.
- *
- * `mimeType` is always `'audio/wav'` today because the cpal recorder is
- * the only producer; if a future producer lands (e.g. a navigator-on-Tauri
- * artifact saved as webm), this widens to the source mime.
+ * Re-exported from the tauri-specta boundary so this module's
+ * `RecorderStopResult` is structurally identical to what `commands.stopRecording`
+ * returns. The Rust `RecordingArtifact` struct is the single source of truth;
+ * the boundary file generates the TS shape (`mimeType: string` since cpal is
+ * currently the only producer but a future navigator-on-Tauri save could emit
+ * other mimes).
  */
-export type RecordingArtifact = {
-	id: string;
-	durationMs: number;
-	byteLength: number;
-	mimeType: 'audio/wav';
-};
+export type { RecordingArtifact } from '$lib/tauri/commands';
+import type { RecordingArtifact } from '$lib/tauri/commands';
 
 /**
  * Output of `RecordingSession.stop()`. One of two physical shapes:

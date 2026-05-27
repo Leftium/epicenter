@@ -1,49 +1,24 @@
-import { invoke } from '@tauri-apps/api/core';
 import { stat } from '@tauri-apps/plugin-fs';
-import { type } from 'arktype';
-import { extractErrorMessage } from 'wellcrafted/error';
 import { Ok, tryAsync } from 'wellcrafted/result';
 import { WhisperingErr, type WhisperingResult } from '$lib/result';
-
-import type { MoonshineVariant } from './types';
+import {
+	commands,
+	type TranscribeRequest,
+	type TranscriptionError,
+} from '$lib/tauri/commands';
 
 /**
- * Engine-tagged config sent as the `config` argument to the
- * `transcribe_recording` Tauri command. Mirrors `TranscribeRequest` on
- * the Rust side.
+ * The Rust `TranscribeRequest` enum (`#[serde(tag = "engine", rename_all =
+ * "lowercase")]`) is the single source of truth for this argument shape;
+ * the boundary file re-exports the generated TS union. We keep the local
+ * alias `TranscribeConfig` so engine adapters that already import it stay
+ * unchanged.
  *
- * The `engine` tag values match `transcription.service` in user settings
- * so the same string flows: settings → service selector → wire → Rust
- * dispatch. The Rust enum variant is named `Whisper` but serializes as
- * `whispercpp` (see `#[serde(rename)]` in mod.rs).
+ * The `engine` tag values match `transcription.service` in user settings.
+ * The Rust enum variant is named `Whisper` but serializes as `whispercpp`
+ * (see `#[serde(rename)]` on the Rust side).
  */
-export type TranscribeConfig =
-	| {
-			engine: 'whispercpp';
-			modelPath: string;
-			language: string | null;
-			initialPrompt: string | null;
-	  }
-	| {
-			engine: 'parakeet';
-			modelPath: string;
-	  }
-	| {
-			engine: 'moonshine';
-			modelPath: string;
-			variant: MoonshineVariant;
-	  };
-
-/**
- * User-facing display name for each engine. The wire-side `engine` tag
- * is the settings key; this is what appears in error titles like
- * "❌ Unexpected Whisper C++ Error".
- */
-const ENGINE_DISPLAY_NAME: Record<TranscribeConfig['engine'], string> = {
-	whispercpp: 'Whisper C++',
-	parakeet: 'Parakeet',
-	moonshine: 'Moonshine',
-};
+export type TranscribeConfig = TranscribeRequest;
 
 /**
  * Validate that `modelPath` exists and is the expected `kind`. All three
@@ -108,50 +83,29 @@ export async function requireExistingModelPath(
 }
 
 /**
- * Single arktype schema for all errors returned by the unified
- * `transcribe_recording` command. Each engine surfaces the same four
- * variants; the only one specific to Whisper is `GpuError`, which
- * Parakeet and Moonshine never emit in practice.
- */
-const LocalTranscriptionErrorType = type({
-	name: "'AudioReadError' | 'GpuError' | 'ModelLoadError' | 'TranscriptionError'",
-	message: 'string',
-});
-
-/**
  * Shared error mapping for the unified `transcribe_recording` command. Each
  * per-engine service used to duplicate this switch with minor copy
  * variations; the only per-engine variation is the display name, which
  * we derive from the config tag.
  */
 function mapLocalTranscriptionError(
-	unknownError: unknown,
-	engineDisplayName: string,
+	error: TranscriptionError,
 ): WhisperingResult<never> {
-	const parsed = LocalTranscriptionErrorType(unknownError);
-	if (parsed instanceof type.errors) {
-		return WhisperingErr({
-			title: `❌ Unexpected ${engineDisplayName} Error`,
-			description: extractErrorMessage(unknownError),
-			action: { type: 'more-details', error: unknownError },
-		});
-	}
-
-	switch (parsed.name) {
+	switch (error.name) {
 		case 'ModelLoadError':
 			return WhisperingErr({
 				title: '🤖 Model Loading Error',
-				description: parsed.message,
+				description: error.message,
 				action: {
 					type: 'more-details',
-					error: new Error(parsed.message),
+					error: new Error(error.message),
 				},
 			});
 
 		case 'GpuError':
 			return WhisperingErr({
 				title: '🎮 GPU Error',
-				description: parsed.message,
+				description: error.message,
 				action: {
 					type: 'link',
 					label: 'Configure settings',
@@ -162,20 +116,20 @@ function mapLocalTranscriptionError(
 		case 'AudioReadError':
 			return WhisperingErr({
 				title: '🔊 Audio Read Error',
-				description: parsed.message,
+				description: error.message,
 				action: {
 					type: 'more-details',
-					error: new Error(parsed.message),
+					error: new Error(error.message),
 				},
 			});
 
 		case 'TranscriptionError':
 			return WhisperingErr({
 				title: '❌ Transcription Error',
-				description: parsed.message,
+				description: error.message,
 				action: {
 					type: 'more-details',
-					error: new Error(parsed.message),
+					error: new Error(error.message),
 				},
 			});
 	}
@@ -193,16 +147,10 @@ export async function transcribeRecording(
 	recordingId: string,
 	config: TranscribeConfig,
 ): Promise<WhisperingResult<string>> {
-	return tryAsync({
-		try: () =>
-			invoke<string>('transcribe_recording', {
-				recordingId,
-				config,
-			}),
-		catch: (unknownError) =>
-			mapLocalTranscriptionError(
-				unknownError,
-				ENGINE_DISPLAY_NAME[config.engine],
-			),
-	});
+	const { data, error } = await commands.transcribeRecording(
+		recordingId,
+		config,
+	);
+	if (error !== null) return mapLocalTranscriptionError(error);
+	return Ok(data);
 }

@@ -71,10 +71,11 @@ yjs                     CRDT documents, shared types, transactions, conflict beh
 2. Re-read each touched file from top to bottom.
 3. List every file read as an ASCII tree before analysis.
 4. Run the mental inlining pass.
-5. Run the smell and invariant checks.
-6. Review API shape, naming, and file organization.
-7. Run diagnostics and tests appropriate to the changed lane.
-8. Report findings before making cleanup edits unless the issue is a direct
+5. Run the ownership and collapse check.
+6. Run the smell and invariant checks.
+7. Review API shape, naming, and file organization.
+8. Run diagnostics and tests appropriate to the changed lane.
+9. Report findings before making cleanup edits unless the issue is a direct
    compile or test failure.
 
 The ASCII tree is not decoration. It forces the review to show its evidence.
@@ -107,6 +108,36 @@ Does this component prop exist for real reuse, or only to pass through values?
 Keep indirection when it owns a real invariant, isolates unsafe input, names
 non-obvious domain behavior, supports several real callers, or protects a public
 contract. Otherwise, mark it as inlineable.
+
+## Ownership And Collapse Check
+
+Before accepting the final shape, replay the change as if designing it from
+scratch:
+
+```txt
+What object owns the runtime lifetime?
+What object owns the durable state?
+What object owns the user-visible state?
+Which props exist only because of a stale file split?
+Which calls need `untrack`, and would moving ownership remove that need?
+```
+
+Count callers for every new or changed helper, component, factory, wrapper, and
+export. A one-caller boundary is guilty until it proves it owns one of these:
+
+```txt
+a lifecycle that must be isolated from parent rerenders
+an unsafe parse, network, storage, or external-library boundary
+a repeated domain operation with several real callers
+a public contract that downstream code imports
+a long imperative block whose helper name explains the phase
+```
+
+If a boundary only passes a stable handle, callback, or raw library object to
+another one-call wrapper, collapse it. In particular, treat `untrack` inside an
+imperative widget setup as a design prompt: sometimes it is the right tool for a
+stable callback, but it can also reveal that the prop should not be reactive or
+should not cross the component boundary at all.
 
 ## Smell Check
 

@@ -114,6 +114,27 @@ Never let evidence questions hide behind design coherence. Verify before deletin
 
 ---
 
+## Adjacent Work Language
+
+Do not use one rejection bucket for adjacent work. Separate work by decision
+type:
+
+```txt
+Deferred:
+  not required now, allowed later
+
+Refused:
+  deliberately not part of the product or design
+
+Opportunistic:
+  not required, but acceptable to fix if discovered and grounded
+```
+
+This keeps the spec from turning omissions into forbidden work. A spec is an
+execution spine, not a file whitelist.
+
+---
+
 ## Document Structure
 
 ### Header (Required)
@@ -209,7 +230,7 @@ Use a table for traceability. Every material decision should have a class and ra
 | [Decision point]    | 1 evidence  | [What you chose] | [Source, test, or version checked] |
 | [Decision point]    | 2 coherence | [What you chose] | [How this follows the thesis]   |
 | [Decision point]    | 3 taste     | [What you chose] | [Constraint and trade-off]      |
-| [Deferred decision] | Deferred    | Deferred         | [Why it's out of scope for now] |
+| [Deferred decision] | Deferred    | Deferred         | [Why it is deferred and what would bring it back] |
 ```
 
 ### Architecture
@@ -385,6 +406,27 @@ This section signals "you decide this" to the implementer. Include your recommen
    - **Recommendation**: [Suggestion or "Defer until X"]
 ```
 
+### Deferred, Refused, Opportunistic
+
+Use this section when the work has adjacent decisions that should not all be
+treated the same.
+
+```markdown
+## Deferred, Refused, Opportunistic
+
+### Deferred
+
+- [Decision or feature]: [Why it is not required now, and what would bring it back.]
+
+### Refused
+
+- [Decision or feature]: [Why this should not be part of the product or design.]
+
+### Opportunistic
+
+- [Issue or cleanup]: [Why it is not required, but may be fixed if discovered and grounded.]
+```
+
 ### Decisions Log
 
 Use this section only for Class 3 keeps. Each entry must name the constraint and a revisit trigger.
@@ -487,6 +529,7 @@ If your spec is too prescriptive, the agent will blindly follow it. If it's too 
 - [ ] Design decisions have classes
 - [ ] Class 1 decisions were verified
 - [ ] Class 3 keeps are logged with `Revisit when:`
+- [ ] Deferred, refused, and opportunistic adjacent work is separated when relevant
 - [ ] Catalogs (when introducing a primitive set: code block + rejected candidates table)
 - [ ] Architecture (ASCII diagrams)
 - [ ] Visual rhythm: prose is broken up with code, tables, trees, or diagrams where relationships matter

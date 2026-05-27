@@ -19,8 +19,8 @@ A handoff prompt is a cold execution brief. The recipient has never seen this co
 | Planning document, lives in `specs/*.md` | Communication artifact, lives in clipboard |
 | Tracks progress with checkboxes | Single-shot fire-and-forget |
 | Assumes the reader has repo access and can explore | Assumes the reader has zero context |
-| Leaves open questions for the implementer | Closes all questions:the recipient shouldn't need to ask |
-| Iterative:you come back and update it | One shot:you won't get to clarify |
+| Leaves open questions for the implementer | Closes all questions: the recipient shouldn't need to ask |
+| Iterative: you come back and update it | One shot: you won't get to clarify |
 
 A spec says "here's the plan." A handoff prompt says "here's everything you need to do it right now."
 
@@ -41,7 +41,7 @@ Not: "Build a page that explains the app." The recipient needs exact locations.
 
 ### Context
 
-Everything the recipient needs to understand the codebase without reading it. This is the most important section:it's what makes the prompt self-contained.
+Everything the recipient needs to understand the codebase without reading it. This is the most important section: it makes the prompt self-contained.
 
 What to include depends on the handoff type:
 
@@ -68,7 +68,7 @@ IndexedDB persistence, and an in-browser SQLite index.
 
 ### Requirements
 
-What to build. Be exhaustive:the recipient can't ask clarifying questions.
+What to build. Be exhaustive: the recipient can't ask clarifying questions.
 
 For UI work: describe each section with what it contains, what components to use, what data it displays, and how it behaves.
 
@@ -78,7 +78,7 @@ If there's a choice to make (which component, which layout, which approach), mak
 
 ### MUST DO
 
-Non-negotiable requirements. Keep this short:only things that genuinely can't be left to judgment.
+Non-negotiable requirements. Keep this short: only things that genuinely can't be left to judgment.
 
 ```
 ## MUST DO
@@ -86,17 +86,17 @@ Non-negotiable requirements. Keep this short:only things that genuinely can't be
 - Use components from `@epicenter/ui/*` and `@lucide/svelte`
 ```
 
-### MUST NOT DO
+### Explicit Limits
 
-Hard blocks only. Things that are genuinely never acceptable for this task:not soft preferences, not style guidance. Litmus test: would this be wrong regardless of context? If yes, hard block. If "it depends," leave it out. The agent uses judgment for everything else.
+Explicit limits only. Things that are genuinely never acceptable for this task, not soft preferences, not style guidance. Litmus test: would this be wrong regardless of context? If yes, name it as an explicit limit. If "it depends," leave it out. The agent uses judgment for everything else.
 
 ```
-## MUST NOT DO
+## Explicit Limits
 - Do not suppress TypeScript errors with `@ts-ignore` or `as any`
 - Do not delete or skip existing tests to make the build pass
 ```
 
-Think about what the recipient might do wrong and preempt it. But only the things that would actually break something or violate a hard constraint.
+Think about what the recipient might do wrong and preempt it. But only the things that would actually break something or violate a true non-negotiable.
 
 ## Drafting Process
 
@@ -108,7 +108,7 @@ Think about what the recipient might do wrong and preempt it. But only the thing
 
 4. **Close all decisions.** A spec can leave open questions. A handoff prompt cannot. If there's a choice to make, make it.
 
-5. **Scope aggressively.** The tighter the scope, the better the output. "Create 3 files" beats "build the feature." "Modify only these 2 existing files" beats "update as needed."
+5. **Name the lane.** The tighter the lane, the better the output. "Create 3 files" beats "build the feature." "These 2 existing files are the primary owned files" beats "update as needed." A lane is a coordination tool, not a no-fix rule. If adjacent grounded fixes are acceptable, say so once. Use explicit limits only for edits that are truly forbidden.
 
 6. **Test mentally.** Read the prompt as if you've never seen this codebase. Could you execute it? If you'd need to grep for something, that information should be in the prompt.
 
@@ -142,22 +142,22 @@ Which ones? The recipient doesn't know what "standard" means in this project. Li
 ### Leaving decisions open
 
 ```
-You could use either a Card grid or an Accordion for this section:pick whichever works better.
+You could use either a Card grid or an Accordion for this section: pick whichever works better.
 ```
 
 Pick one. The recipient will waste time deliberating instead of building.
 
-### Overloading MUST NOT DO
+### Overloading Explicit Limits
 
 ```
-## MUST NOT DO
+## Explicit Limits
 - Do not install any new dependencies
 - Do not use images or external assets
 - Do not make the page feel like a SaaS landing page
 - Do not use inline styles
 ```
 
-The first item might be a hard block. The rest are preferences. Mixing them dilutes the signal. Hard blocks only.
+The first item might be an explicit limit. The rest are preferences. Mixing them dilutes the signal. Only true limits belong here.
 
 ## Good vs Bad
 
@@ -181,7 +181,7 @@ const cache = createDisposableCache((id: string) => {
 export const ws = cache.open('opensidian');
 \`\`\`
 
-MUST NOT: suppress TypeScript errors, delete existing tests to pass build.
+Explicit limits: suppressing TypeScript errors, deleting existing tests to pass build.
 ```
 
 ### Bad (vague, open-ended, assumes context)

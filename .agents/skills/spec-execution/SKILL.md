@@ -85,7 +85,7 @@ Breaking API changes are allowed inside a wave. The boundary matters: by the end
 
 ### Deciding Parallel vs Sequential
 
-Use sub-agents whenever the runtime permits and the task can be scoped cleanly. The question is whether each task is small, bounded, and non-overlapping enough to delegate safely, and whether delegated tasks should run concurrently or sequentially.
+Use sub-agents whenever the runtime permits and the task has a clean ownership boundary. The question is whether each task is small, bounded, and non-overlapping enough to delegate safely, and whether delegated tasks should run concurrently or sequentially.
 
 | Condition | Ordering |
 | --- | --- |
@@ -119,7 +119,7 @@ Wave 3: [Integration, consumers of Wave 2]
   - Commit: combine with Wave 2 if the API and consumers should be reviewed together
 ```
 
-Proceed after planning unless the spec has unresolved product choices, architecture choices, destructive actions, broad scope risk, or conflicts with current code. Surface those blockers and pause for user input.
+Proceed after planning unless the spec has unresolved product choices, architecture choices, destructive actions, broad reshape risk, or conflicts with current code. Surface those blockers and pause for user input.
 
 ## Phase 3: Execute Waves
 
@@ -127,12 +127,12 @@ For each wave:
 
 ### 1. Execute Tasks
 
-Use sub-agents for scoped implementation work when they are available. They are strongest when each agent owns a bounded task, a clear file set, and a non-overlapping write surface. The primary agent still owns orchestration, integration, verification, spec updates, and final review.
+Use sub-agents for owned implementation work when they are available. They are strongest when each agent owns a bounded task, a clear file set, and a non-overlapping write surface. The primary agent still owns orchestration, integration, verification, spec updates, and final review.
 
-- **Independent tasks**: Launch sub-agents in parallel when write sets do not overlap. Each gets a focused prompt with only the context it needs: the relevant spec section, the files to modify, and the patterns to follow.
+- **Independent tasks**: Launch sub-agents in parallel when write sets do not overlap. Each gets a focused prompt with only the context it needs: the relevant spec section, the files it owns, and the patterns to follow.
 - **Dependent tasks**: Launch sub-agents sequentially when one task imports from another task's output or modifies the same files. Wait for one to complete before launching the next. The second agent gets the output/context from the first.
 - **Local tasks**: Keep work local when the task is tightly coupled, urgent, too ambiguous to delegate, or likely to block the next orchestration step.
-- **Keep changes minimal**: Each task should do exactly what the spec says. No bonus refactors, no "while I'm here" improvements.
+- **Keep changes coherent**: Treat the spec as the execution spine, not a file whitelist. Implement the spec first. When grounded issues surface, fix what protects correctness, verification, API coherence, or serious clarity, and record the deviation. Pause for product direction, destructive actions, broad reshaping, or explicit limits.
 
 ### 2. Verify the Wave
 
@@ -205,11 +205,11 @@ After all waves complete:
 **Completed**: [Date]
 **Branch**: [branch-name]
 
-### Summary
+### What Landed
 
 [2-3 sentences on what was built and how it differs from the original plan]
 
-### Deviations from Spec
+### Deviations and Discoveries
 
 - [What changed and why]
 
@@ -220,6 +220,8 @@ After all waves complete:
 
 4. **Final commit or final amend/squash** with the review section included, matching the commit strategy chosen earlier
 
+This review section is spec bookkeeping, not the pull request body. When writing the PR, load `git` and follow the PR narrative guidance there.
+
 ## Sub-Agent Prompts
 
 The primary agent orchestrates: it plans waves, launches sub-agents when useful, verifies results, updates the spec, and commits. It may implement tightly coupled or blocking work directly when delegation would add coordination cost or risk.
@@ -228,9 +230,9 @@ When spinning up sub-agents, each agent needs:
 
 - **The specific spec section** it's implementing (not the whole spec)
 - **The files it should read** before making changes
-- **The files it should modify** (and only those files)
+- **The primary files it owns**
 - **The patterns to follow** (reference relevant skills)
-- **What NOT to do**: stay in lane, don't touch other files
+- **Explicit limits and pause triggers**
 
 Keep sub-agent prompts focused. A sub-agent that knows too much will try to do too much.
 
@@ -239,7 +241,7 @@ Keep sub-agent prompts focused. A sub-agent that knows too much will try to do t
 | Situation | Response |
 | --- | --- |
 | Type-check fails after a wave | Fix before moving on. Don't carry broken state. |
-| Sub-agent made changes outside its scope | Revert the out-of-scope changes. Keep only what was asked for. |
+| Sub-agent changed files outside its owned lane | Inspect them. Revert speculative or unrelated edits. Keep grounded correctness or verification fixes, then record the deviation in the spec. |
 | Spec item is ambiguous mid-implementation | Stop. Ask the user. Add clarification to the spec. |
 | Discovery invalidates a later spec phase | Update the spec's plan. Inform the user. Re-plan remaining waves. |
 | Tests fail | Fix the tests or the code. Update spec if the test failure reveals a spec gap. |
@@ -252,7 +254,7 @@ Keep sub-agent prompts focused. A sub-agent that knows too much will try to do t
 "Let me just start implementing..."
 ```
 
-No. Read the spec, plan waves, then execute. Pause only for unresolved product choices, architecture choices, destructive actions, broad scope risk, or conflicts with current code.
+No. Read the spec, plan waves, then execute. Pause only for unresolved product choices, architecture choices, destructive actions, broad reshape risk, or conflicts with current code.
 
 ### Giant Wave
 

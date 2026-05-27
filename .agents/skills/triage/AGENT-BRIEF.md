@@ -1,6 +1,6 @@
 # Writing Agent Briefs
 
-An agent brief is a structured comment posted on a GitHub issue when it moves to `ready-for-agent`. It is the authoritative specification that an AFK agent will work from. The original issue body and discussion are context - the agent brief is the contract.
+An agent brief is a structured comment posted on a GitHub issue when it moves to `ready-for-agent`. It is the authoritative specification that an AFK agent will work from. The original issue body and discussion are context; the agent brief is the contract.
 
 ## Principles
 
@@ -10,7 +10,7 @@ The issue may sit in `ready-for-agent` for days or weeks. The codebase will chan
 
 - **Do** describe interfaces, types, and behavioral contracts
 - **Do** name specific types, function signatures, or config shapes that the agent should look for or modify
-- **Don't** reference file paths - they go stale
+- **Don't** reference file paths. They go stale.
 - **Don't** reference line numbers
 - **Don't** assume the current implementation structure will remain the same
 
@@ -30,9 +30,9 @@ The agent needs to know when it's done. Every agent brief must have concrete, te
 - **Good:** "Running `gh issue list --label needs-triage` returns issues that have been through initial classification"
 - **Bad:** "Triage should work correctly"
 
-### Explicit scope boundaries
+### Explicit limits
 
-State what is out of scope. This prevents the agent from gold-plating or making assumptions about adjacent features.
+Name product limits, behavior limits, and work the maintainer has deliberately rejected. These limits are pause triggers for speculative expansion. They are not a reason to ignore clear correctness, security, data-loss, verification, or API-contract issues discovered while doing the assigned work.
 
 ## Template
 
@@ -51,18 +51,19 @@ Describe what should happen after the agent's work is complete.
 Be specific about edge cases and error conditions.
 
 **Key interfaces:**
-- `TypeName` - what needs to change and why
-- `functionName()` return type - what it currently returns vs what it should return
-- Config shape - any new configuration options needed
+- `TypeName`: what needs to change and why
+- `functionName()` return type: what it currently returns vs what it should return
+- Config shape: any new configuration options needed
 
 **Acceptance criteria:**
 - [ ] Specific, testable criterion 1
 - [ ] Specific, testable criterion 2
 - [ ] Specific, testable criterion 3
 
-**Out of scope:**
-- Thing that should NOT be changed or addressed in this issue
-- Adjacent feature that might seem related but is separate
+**Explicit limits:**
+- Thing that should not be changed or addressed in this issue
+- Adjacent product feature that might seem related but is separate
+- Decisions that need maintainer approval before expanding
 ```
 
 ## Examples
@@ -85,7 +86,7 @@ Truncation should break at the last word boundary before 1024 characters
 and append "..." to indicate truncation.
 
 **Key interfaces:**
-- The `SkillMetadata` type's `description` field - no type change needed,
+- The `SkillMetadata` type's `description` field: no type change needed,
   but the validation/processing logic that populates it needs to respect
   word boundaries
 - Any function that reads SKILL.md frontmatter and extracts the description
@@ -97,7 +98,7 @@ and append "..." to indicate truncation.
 - [ ] Truncated descriptions end with "..."
 - [ ] The total length including "..." does not exceed 1024 chars
 
-**Out of scope:**
+**Explicit limits:**
 - Changing the 1024 char limit itself
 - Multi-line description support
 ```
@@ -108,7 +109,7 @@ and append "..." to indicate truncation.
 ## Agent Brief
 
 **Category:** enhancement
-**Summary:** Add `.out-of-scope/` directory support for tracking rejected feature requests
+**Summary:** Add product-exclusion records for rejected feature requests
 
 **Current behavior:**
 When a feature request is rejected, the issue is closed with a `wontfix` label
@@ -123,7 +124,7 @@ requested the feature. When triaging new issues, these files should be
 checked for matches.
 
 **Key interfaces:**
-- Markdown file format in `.out-of-scope/` - each file should have a
+- Markdown file format in `.out-of-scope/`: each file should have a
   `# Concept Name` heading, a `**Decision:**` line, a `**Reason:**` line,
   and a `**Prior requests:**` list with issue links
 - The triage workflow should read all `.out-of-scope/*.md` files early
@@ -137,7 +138,7 @@ checked for matches.
 - [ ] During triage, existing `.out-of-scope/` files are checked and surfaced
       when a new issue matches a prior rejection
 
-**Out of scope:**
+**Explicit limits:**
 - Automated matching (human confirms the match)
 - Reopening previously rejected features
 - Bug reports (only enhancement rejections go to `.out-of-scope/`)
@@ -164,5 +165,5 @@ This is bad because:
 - Vague description ("the triage thing is broken")
 - References file paths and line numbers that will go stale
 - No acceptance criteria
-- No scope boundaries
+- No explicit limits
 - No description of current vs desired behavior

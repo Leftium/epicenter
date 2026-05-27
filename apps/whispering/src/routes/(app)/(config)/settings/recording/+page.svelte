@@ -1,5 +1,6 @@
 <script lang="ts">
 	import * as Alert from '@epicenter/ui/alert';
+	import { Button } from '@epicenter/ui/button';
 	import * as Field from '@epicenter/ui/field';
 	import { Link } from '@epicenter/ui/link';
 	import * as Select from '@epicenter/ui/select';
@@ -14,11 +15,12 @@
 		asDeviceIdentifier,
 		type DeviceIdentifier,
 	} from '$lib/services/recorder/types';
+	import { exportRecordingsMarkdown } from '$lib/recording-markdown-export';
+	import { report } from '$lib/report';
 	import { tauri } from '$lib/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
-	import RecordingMarkdownExportButton from './RecordingMarkdownExportButton.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
 
 	// Derived labels for select triggers
@@ -67,6 +69,29 @@
 		!tauri ||
 			deviceConfig.get('recording.method') === 'navigator',
 	);
+
+	let isExportingMarkdown = $state(false);
+
+	async function exportRecordingMarkdown() {
+		if (isExportingMarkdown) return;
+		isExportingMarkdown = true;
+		const { data, error } = await exportRecordingsMarkdown();
+		isExportingMarkdown = false;
+
+		if (error !== null) {
+			report.error({
+				title: 'Recording markdown export failed',
+				cause: error,
+			});
+			return;
+		}
+		if (data === null) return;
+
+		report.success({
+			title: 'Recording markdown exported',
+			description: `Wrote ${data.written} ${data.written === 1 ? 'file' : 'files'} to ${data.dir}.`,
+		});
+	}
 
 	function getManualDeviceId(method: 'cpal' | 'navigator') {
 		switch (method) {
@@ -241,7 +266,13 @@
 			{#if tauri}
 				<Field.Field>
 					<Field.Label>Recording markdown export</Field.Label>
-					<RecordingMarkdownExportButton />
+					<Button
+						variant="outline"
+						onclick={exportRecordingMarkdown}
+						disabled={isExportingMarkdown}
+					>
+						{isExportingMarkdown ? 'Exporting…' : 'Export markdown…'}
+					</Button>
 					<Field.Description>
 						Write every current recording's transcript to a folder you choose.
 						The files are snapshots: later edits in Whispering do not update

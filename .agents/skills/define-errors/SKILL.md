@@ -82,9 +82,9 @@ export type DbError = InferErrors<typeof DbError>;
 
 // Call site
 return DbError.NotFound({ table: 'users', id: '123' });
-// error.message → "users '123' not found"
-// error.table   → "users"
-// error.id      → "123"
+// error.message -> "users '123' not found"
+// error.table   -> "users"
+// error.id      -> "123"
 ```
 
 ### 3. Variant with cause : extractErrorMessage inside the factory
@@ -345,6 +345,12 @@ type CallResult<T> = Result<T, CallError>;
 **Why**: every wellcrafted helper (`isOk`/`isErr`, `tryAsync`/`trySync`, `unwrap`, `tapErr`, the logger's `"name" in err` discriminator) operates on `{ data, error }`. `{ ok }` returns can't compose with any of it. Each ad-hoc invention loses ecosystem leverage and forces every consumer to learn one more shape.
 
 **Wire-format corollary**: when a `Result` crosses a serialization boundary (RPC, IPC, HTTP), the `defineErrors` `{ name, message, ...fields }` shape **is** the wire form. The receiver reconstructs by reading `error.name` to dispatch : no `{ ok }` wrapper needed.
+
+## Whispering RPC Boundary
+
+In Whispering, `$lib/rpc` preserves tagged errors. Do not convert service or operation errors into `{ title, description }` or another user-facing wrapper inside an RPC adapter. UI and operation code choose display copy with `$lib/report`, usually `report.error({ cause: error })`.
+
+Define an RPC-local `defineErrors` namespace only when the adapter itself owns a failure that no lower layer can own, such as a missing state lookup before calling an operation.
 
 **Note : state machines are not Results**: discriminated unions like `{ state: 'in-use' | 'orphan' | 'clean' }` for a startup gate, or `{ outcome: 'graceful' | 'sigterm' }` for a shutdown, are genuine state enums and should stay as discriminated unions. The smell is *errors* dressed as `{ ok }` flags, not state-enums.
 

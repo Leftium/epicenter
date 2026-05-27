@@ -105,9 +105,14 @@ export const commands = {
 };
 
 export type {
+	Engine,
+	LocalModelState,
 	MarkdownFile,
-	MoonshineVariantWire,
+	ModelStateEvent,
+	ModelStatus,
 	RecordingArtifact,
-	TranscribeRequest,
+	TranscriptionConfig,
 	TranscriptionError,
+	UnloadPolicy,
+	UnloadReason,
 } from './bindings.gen';

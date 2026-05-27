@@ -1,6 +1,6 @@
 import { partitionResults } from 'wellcrafted/result';
 import { goto } from '$app/navigation';
-import { commands } from '$lib/commands';
+import { type Command, commands } from '$lib/commands';
 import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
 import { localShortcuts } from '$lib/operations/shortcuts';
 import { report } from '$lib/report';
@@ -14,47 +14,34 @@ import { tauri } from '$lib/tauri';
 import type { Accelerator } from '$lib/utils/accelerator';
 
 /** Default values for in-app (local) shortcuts. Keyed by command id string. */
-const DEFAULT_LOCAL_SHORTCUTS: Record<string, string | null> = {
+const DEFAULT_LOCAL_SHORTCUTS = {
 	pushToTalk: 'p',
 	toggleManualRecording: ' ',
 	cancelManualRecording: 'c',
 	toggleVadRecording: 'v',
 	openTransformationPicker: 't',
 	runTransformationOnClipboard: 'r',
-};
+} as const satisfies Record<Command['id'], string | null>;
 
 /** Default values for global OS shortcuts. Keyed by command id string. */
-const DEFAULT_GLOBAL_SHORTCUTS: Record<string, string | null> = {
+const DEFAULT_GLOBAL_SHORTCUTS = {
 	pushToTalk: `${CommandOrAlt}+Shift+D`,
 	toggleManualRecording: `${CommandOrControl}+Shift+;`,
 	cancelManualRecording: `${CommandOrControl}+Shift+'`,
 	toggleVadRecording: null,
 	openTransformationPicker: `${CommandOrControl}+Shift+X`,
 	runTransformationOnClipboard: `${CommandOrControl}+Shift+R`,
-};
+} as const satisfies Record<Command['id'], string | null>;
 
-type LocalShortcutKey =
-	| 'shortcut.toggleManualRecording'
-	| 'shortcut.cancelManualRecording'
-	| 'shortcut.toggleVadRecording'
-	| 'shortcut.pushToTalk'
-	| 'shortcut.openTransformationPicker'
-	| 'shortcut.runTransformationOnClipboard';
+type LocalShortcutKey = `shortcut.${Command['id']}`;
+type GlobalShortcutKey = `shortcuts.global.${Command['id']}`;
 
-type GlobalShortcutKey =
-	| 'shortcuts.global.toggleManualRecording'
-	| 'shortcuts.global.cancelManualRecording'
-	| 'shortcuts.global.toggleVadRecording'
-	| 'shortcuts.global.pushToTalk'
-	| 'shortcuts.global.openTransformationPicker'
-	| 'shortcuts.global.runTransformationOnClipboard';
-
-function getLocalShortcutKey(commandId: string): LocalShortcutKey {
-	return `shortcut.${commandId}` as LocalShortcutKey;
+function getLocalShortcutKey(commandId: Command['id']): LocalShortcutKey {
+	return `shortcut.${commandId}`;
 }
 
-function getGlobalShortcutKey(commandId: string): GlobalShortcutKey {
-	return `shortcuts.global.${commandId}` as GlobalShortcutKey;
+function getGlobalShortcutKey(commandId: Command['id']): GlobalShortcutKey {
+	return `shortcuts.global.${commandId}`;
 }
 
 /**

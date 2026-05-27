@@ -127,7 +127,7 @@ export function attachTursoMaterializer<
 	// Turso's Statement (Promise-returning run/get/all) is structurally
 	// compatible with MirrorStatement (MaybePromise-returning), so prepare()
 	// can return the native Statement directly. No wrapper.
-	const db: MirrorDatabase = {
+	const db = {
 		async run(sql) {
 			const client = await clientPromise;
 			await client.exec(sql);
@@ -136,7 +136,7 @@ export function attachTursoMaterializer<
 			const client = await clientPromise;
 			return client.prepare(sql);
 		},
-	};
+	} satisfies MirrorDatabase;
 
 	const core = attachSqliteMaterializerCore<TTables, TFts>(ydoc, {
 		db,

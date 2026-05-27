@@ -1,6 +1,6 @@
 ---
 name: query-layer
-description: Query layer with TanStack Query, error transformation, runtime DI. Use for createQuery, createMutation, queries/mutations, reactive data management.
+description: Query/RPC layer with TanStack Query, defineKeys, service composition, runtime DI. Use for createQuery, createMutation, queries/mutations, reactive data management.
 metadata:
   author: epicenter
   version: '2.0'
@@ -10,7 +10,7 @@ metadata:
 
 ## Reference Repositories
 
-- [TanStack Query](https://github.com/tanstack/query) — Async state management for data fetching
+- [TanStack Query](https://github.com/tanstack/query): async state management for data fetching
 
 ## Upstream Grounding
 
@@ -18,16 +18,17 @@ When TanStack Query behavior, Svelte adapter types, cache invalidation semantics
 
 Skip DeepWiki for stable basics and repo-local patterns already documented below.
 
-The query layer is the reactive bridge between UI components and the service layer. It wraps pure service functions with caching, reactivity, and state management using TanStack Query and WellCrafted factories.
+The query/RPC layer is the reactive bridge between UI components and the service layer. It wraps service functions or observable operations with caching, mutation lifecycle state, invalidation, and direct imperative access using TanStack Query and WellCrafted factories.
 
-> **Related Skills**: See `services-layer` for the service layer these queries consume. See `svelte` for Svelte-specific TanStack Query patterns. See `error-handling` for toast-on-error patterns—how errors from Results surface to users via `toastOnError` and `extractErrorMessage`.
+> **Related Skills**: See `services-layer` for the service layer these queries consume. See `svelte` for Svelte-specific TanStack Query patterns. See `error-handling` for toast/report patterns after Results reach the UI boundary.
 
 ## When to Apply This Skill
 
 Use this pattern when you need to:
 
 - Create queries or mutations that consume services
-- Transform service-layer errors into user-facing error types
+- Define canonical query and mutation keys with `defineKeys`
+- Decide whether work belongs in `$lib/rpc`, `$lib/operations`, or `$lib/services`
 - Implement runtime service selection based on user settings
 - Add optimistic cache updates for instant UI feedback
 - Understand the dual interface pattern (reactive vs imperative)
@@ -37,50 +38,89 @@ Use this pattern when you need to:
 ```
 ┌─────────────┐     ┌─────────────┐     ┌──────────────┐
 │     UI      │ --> │  RPC/Query  │ --> │   Services   │
-│ Components  │     │    Layer    │     │    (Pure)    │
+│ Components  │     │    Layer    │     │  (UI-free)   │
 └─────────────┘     └─────────────┘     └──────────────┘
       ↑                    │
       └────────────────────┘
          Reactive Updates
 ```
 
-**Query Layer Responsibilities:**
+**Query/RPC Layer Responsibilities:**
 
 - Call services with injected settings/configuration
-- Transform service errors to user-facing error types for display
+- Preserve typed service and operation errors unless the adapter introduces a new local failure
 - Manage TanStack Query cache for optimistic updates
 - Provide dual interfaces: reactive (`.options`) and imperative (`.execute()`)
+- Own shared cache identity through exported `*Keys` maps
 
-## Error Transformation Pattern
+## Canonical Whispering RPC Module Shape
 
-**Critical**: Service errors should be transformed to user-facing error types at the query layer boundary.
-
-### Three-Layer Error Flow
-
-```
-Service Layer         →  Query Layer           →  UI Layer
-TaggedError<'Name'>   →  UserFacingError       →  Toast notification
-(domain-specific)        (display-ready)          (display)
-```
-
-### Standard Error Transformation
+For Whispering-style `$lib/rpc` modules, keep source-of-truth declarations close to the work they describe:
 
 ```typescript
-import { Err, Ok } from 'wellcrafted/result';
+export const exampleKeys = defineKeys({
+	playbackUrl: (id: string) => ['example', 'playbackUrl', id] as const,
+	transformRecording: ['example', 'transformRecording'],
+});
 
-// In query layer - transform service error to user-facing error
-const { data, error } = await services.recorder.startRecording(params);
+const ExampleRpcError = defineErrors({
+	RecordingNotFound: () => ({
+		message: 'Could not find the selected recording.',
+	}),
+});
+type ExampleRpcError = InferErrors<typeof ExampleRpcError>;
 
-if (error) {
-	return Err({
-		title: '❌ Failed to start recording',
-		description: error.message,
-		action: { type: 'more-details', error },
-	});
-}
+export const example = {
+	playbackUrl: (id: Accessor<string>) =>
+		defineQuery({
+			queryKey: exampleKeys.playbackUrl(id()),
+			queryFn: () => services.blobs.audio.ensurePlaybackUrl(id()),
+		}),
 
-return Ok(data);
+	transformRecording: defineMutation({
+		mutationKey: exampleKeys.transformRecording,
+		mutationFn: (params: {
+			recordingId: string;
+			transformation: Transformation;
+		}) =>
+			runTransformation(params),
+	}),
+};
 ```
+
+Rules:
+
+- Export `*Keys = defineKeys({ ... })` beside the adapter or state module that owns the work.
+- Static keys do not need `as const`; key factories use `as const` when literal positions matter.
+- Keep keys in the owning module unless another layer needs the same fallback identity.
+- Inline small single-use input objects. Name an input type only when it is reused, exported, large enough to obscure the function, or carries domain meaning. Put named input types immediately before the adapter namespace that uses them.
+- Keep adapter-local `defineErrors` namespaces local unless another module needs to name that exact union.
+
+## Adapter Boundary: RPC vs Operations
+
+Use `$lib/rpc` as the shared TanStack observation surface. It may wrap a direct service/state call, or a `$lib/operations` entry point when shared UI needs `isPending`, `isMutating`, invalidation, or a named mutation key over that operation.
+
+Keep orchestration in `$lib/operations`: delivery, reporting, sounds, analytics, clipboard writes, and multi-step workflows. A one-off component can observe an operation locally with `createMutation(() => ({ mutationFn }))` instead of promoting it into `$lib/rpc`.
+
+## Dependency Direction
+
+```txt
+UI -> operations/* -> services/* + state/* + $lib/tauri
+UI -> rpc/*        -> services/* or operations/*, plus narrow state reads/writes for observed lifecycle
+```
+
+RPC modules import `rpc/client`, services, state, or operations. They do not import sibling RPC modules just to sequence work; cross-adapter coordination belongs in operations.
+
+## Error Flow
+
+In Whispering, service and operation errors are already tagged errors. RPC adapters pass them through. The UI/report boundary decides how to present them.
+
+```txt
+Service / Operation       ->  RPC Adapter       ->  UI / Report
+TaggedError<'Name'>           same error            report.error({ cause: error })
+```
+
+Only define an RPC-local error when the adapter itself discovers a failure that no lower layer can own, such as a missing recording lookup before calling an operation.
 
 ## Dual Interface Pattern
 
@@ -93,23 +133,25 @@ Use in Svelte components for automatic state management. Pass `.options` (a stat
 ```svelte
 <script lang="ts">
 	import { createQuery, createMutation } from '@tanstack/svelte-query';
-	import { rpc } from '$lib/query';
+	import { rpc } from '$lib/rpc';
 
 	// Reactive query - wrap in accessor function, access .options (no parentheses)
-	const recorderState = createQuery(() => rpc.recorder.getRecorderState.options);
+	const playbackUrl = createQuery(() =>
+		rpc.audio.getPlaybackUrl(() => recordingId).options,
+	);
 
 	// Reactive mutation - same pattern
 	const transformRecording = createMutation(
-		rpc.transformer.transformRecording.options,
+		() => rpc.transformer.transformRecording.options,
 	);
 </script>
 
-{#if recorderState.isPending}
+{#if playbackUrl.isPending}
 	<Spinner />
-{:else if recorderState.error}
-	<Error message={recorderState.error.description} />
+{:else if playbackUrl.error}
+	<Error message={playbackUrl.error.message} />
 {:else}
-	<RecorderIndicator state={recorderState.data} />
+	<AudioPlayer src={playbackUrl.data} />
 {/if}
 ```
 
@@ -125,19 +167,19 @@ async function handleTransform(recordingId: string, transformation: Transformati
 		transformation,
 	});
 	if (error) {
-		notify.error(error);
+		report.error({ cause: error });
 		return;
 	}
-	notify.success({ title: 'Transformation complete' });
+	report.success({ title: 'Transformation complete' });
 }
 
 // In a sequential workflow
 async function stopAndTranscribe(toastId: string) {
-	const { data: blobData, error: stopError } =
-		await rpc.recorder.stopRecording({ toastId });
+	const { data: url, error: playbackUrlError } =
+		await rpc.audio.getPlaybackUrl(() => recordingId).fetch();
 
-	if (stopError) {
-		notify.error(stopError);
+	if (playbackUrlError) {
+		report.error({ cause: playbackUrlError });
 		return;
 	}
 
@@ -157,10 +199,10 @@ async function stopAndTranscribe(toastId: string) {
 
 ## Key Rules
 
-1. **Always transform errors at query boundary** - Never return raw service errors
+1. **Use `defineKeys` for shared cache identity** - Export the key map beside the owner
 2. **Use `.options` (no parentheses)** - It's a static object, wrap in accessor for Svelte
-3. **Never double-wrap errors** - Each error is wrapped exactly once
-4. **Services are pure, queries inject settings** - Services take explicit params
+3. **Do not translate tagged errors by default** - Pass service/operation errors through to the report boundary
+4. **Services receive explicit app inputs** - The consuming edge injects settings and device config
 5. **Use imperative calls in `.ts` files** - `createMutation` requires component context
 6. **Update cache optimistically** - Better UX for mutations
 
@@ -168,10 +210,10 @@ async function stopAndTranscribe(toastId: string) {
 
 Load these on demand based on what you're working on:
 
-- If working with **error transformation examples and anti-patterns**, read [references/error-transformation-patterns.md](references/error-transformation-patterns.md)
+- If working with **error pass-through examples and anti-patterns**, read [references/error-transformation-patterns.md](references/error-transformation-patterns.md)
 - If working with **runtime dependency injection and service selection**, read [references/runtime-dependency-injection.md](references/runtime-dependency-injection.md)
 - If working with **cache management, query definitions, RPC namespace, or notify coordination**, read [references/advanced-query-patterns.md](references/advanced-query-patterns.md)
 
-- See `apps/whispering/src/lib/query/README.md` for detailed architecture
+- See `apps/whispering/src/lib/rpc/README.md` for detailed architecture
 - See the `services-layer` skill for how services are implemented
 - See the `error-handling` skill for trySync/tryAsync patterns and toast-on-error conventions

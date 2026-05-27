@@ -1,5 +1,10 @@
 import { MicVAD, utils } from '@ricky0123/vad-web';
-import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { defineKeys } from 'wellcrafted/query';
 import { Err, Ok, tryAsync, trySync } from 'wellcrafted/result';
 import type { VadState } from '$lib/constants/audio';
 import { defineQuery } from '$lib/rpc/client';
@@ -35,6 +40,11 @@ const VadRecorderError = defineErrors({
 		message: `Failed to stop Voice Activity Detector. ${extractErrorMessage(cause)}`,
 		cause,
 	}),
+});
+type VadRecorderError = InferErrors<typeof VadRecorderError>;
+
+export const vadKeys = defineKeys({
+	devices: ['vad', 'devices'],
 });
 
 /**
@@ -81,7 +91,7 @@ function createVadRecorder() {
 		 * - With createQuery: `createQuery(() => vadRecorder.enumerateDevices.options)`
 		 */
 		enumerateDevices: defineQuery({
-			queryKey: ['vad', 'devices'],
+			queryKey: vadKeys.devices,
 			queryFn: async () => {
 				const { data, error } = await enumerateDevices();
 				if (error)

@@ -21,7 +21,7 @@
 	const combobox = useCombobox();
 
 	const readFromClipboard = defineQuery({
-		queryKey: ['text', 'readFromClipboard'] as const,
+		queryKey: ['text', 'readFromClipboard'],
 		queryFn: () => services.text.readFromClipboard(),
 	});
 

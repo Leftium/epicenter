@@ -25,7 +25,7 @@ Skip DeepWiki for stable basics and repo-local patterns already documented here 
 ## Related Skills
 
 - `query-layer`: TanStack Query integration
-- `error-handling`: `toastOnError`, `extractErrorMessage`, and component error handling
+- `error-handling`: `$lib/report`, `extractErrorMessage`, and component error handling
 - `styling`: CSS and Tailwind conventions, including the flex column scroll trap
 - `epicenter-ui`: loading, empty, pending, tooltip, and component selection patterns
 
@@ -60,6 +60,47 @@ Use this skill when you need to:
 - For workspace string fields, prefer commit-on-blur over writing a CRDT transaction on every keystroke.
 - Keep component props inline and push large view-mode branches into focused child components. Read [component and UI patterns](references/component-ui-patterns.md).
 - Use local `@epicenter/ui` loading, empty, pending, and tooltip components before ad hoc markup.
+
+## TanStack Query With Whispering RPC
+
+Whispering components consume shared RPC adapters through `.options` inside an accessor:
+
+```svelte
+<script lang="ts">
+	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { rpc } from '$lib/rpc';
+
+	const playbackUrl = createQuery(() =>
+		rpc.audio.getPlaybackUrl(() => recordingId).options,
+	);
+
+	const transformRecording = createMutation(
+		() => rpc.transformer.transformRecording.options,
+	);
+</script>
+```
+
+For a component-local operation lifecycle, do not add a new RPC adapter only to observe `isPending`. Wrap the operation locally:
+
+```svelte
+<script lang="ts">
+	import { createMutation } from '@tanstack/svelte-query';
+	import { startManualRecording } from '$lib/operations/recording';
+
+	const startRecording = createMutation(() => ({
+		mutationFn: startManualRecording,
+	}));
+</script>
+```
+
+Whispering error presentation goes through `$lib/report` at the UI or operation boundary:
+
+```typescript
+if (error) {
+	report.error({ cause: error });
+	return;
+}
+```
 
 ## Reference Map
 

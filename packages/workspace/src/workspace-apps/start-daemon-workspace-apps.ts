@@ -113,7 +113,7 @@ async function openOneDaemonRoute({
 	auth: WorkspaceAuthClient;
 	ownerId: OwnerId;
 }): Promise<Result<StartedDaemonRoute, WorkspaceAppError>> {
-	const ctx: DaemonWorkspaceContext = {
+	const ctx = {
 		projectDir,
 		route,
 		yDocClientId: hashYDocClientId(projectDir),
@@ -125,7 +125,7 @@ async function openOneDaemonRoute({
 		// reference directly is safe (no `.bind(auth)` needed).
 		openWebSocket: auth.openWebSocket,
 		onReconnectSignal: auth.onStateChange,
-	};
+	} satisfies DaemonWorkspaceContext;
 	try {
 		const runtime = await definition.open(ctx);
 		return Ok({ route, runtime });

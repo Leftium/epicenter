@@ -120,11 +120,11 @@ export function attachEncryptedIndexedDb(
 		]);
 	});
 
-	const attachment: IndexedDbAttachment = {
+	const attachment = {
 		whenLoaded,
 		clearLocal: () => clearDocument(databaseName),
 		whenDisposed,
-	};
+	} satisfies IndexedDbAttachment;
 
 	async function addEncryptedUpdate(
 		updatesStore: IDBObjectStore,

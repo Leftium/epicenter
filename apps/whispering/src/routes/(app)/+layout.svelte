@@ -8,8 +8,10 @@
 	import { analytics } from '$lib/operations/analytics';
 	import { services } from '$lib/services';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
+	import { localModel } from '$lib/state/local-model.svelte';
+	import { settings } from '$lib/state/settings.svelte';
 	import { tauri } from '$lib/tauri';
-	import { commands } from '$lib/tauri/commands';
+	import { commands, type Engine } from '$lib/tauri/commands';
 	import AppLayout from './_components/AppLayout.svelte';
 	import BottomNav from './_components/BottomNav.svelte';
 	import VerticalNav from './_components/VerticalNav.svelte';
@@ -21,6 +23,16 @@
 
 	let sidebarOpen = $state(false);
 	let unlistenNavigate: UnlistenFn | null = null;
+	let unlistenLocalModel: UnlistenFn | null = null;
+
+	const LOCAL_ENGINES = new Set<Engine>(['whispercpp', 'parakeet', 'moonshine']);
+	function isLocalEngine(serviceId: string): serviceId is Engine {
+		return LOCAL_ENGINES.has(serviceId as Engine);
+	}
+
+	function modelPathKey(engine: Engine) {
+		return `transcription.${engine}.modelPath` as const;
+	}
 
 	// Sidebar when wide, bottom bar on narrow viewports (phone, small window).
 	const isNarrow = new MediaQuery('(max-width: 767px)');
@@ -35,19 +47,39 @@
 		analytics.logEvent({ type: 'app_started' });
 	});
 
-	// Push the local-model unload policy to Rust whenever it changes. Rust
-	// owns the eviction (synchronous for `immediately`, idle-watcher for
-	// timed values); the FE just mirrors the current device-config value.
-	// Fires once on mount and on every subsequent change.
+	// Push the ambient transcription config to Rust whenever it changes. Rust
+	// owns the resident model lifecycle (cache, preload, eviction); the FE
+	// just mirrors the current settings on a single channel.
+	// - Drift in (engine, modelPath) triggers a background preload.
+	// - Other field changes (language, prompt, unloadPolicy) take effect on
+	//   the next transcription with no reload.
+	// Fires once on mount (per local engine) and on every subsequent change.
 	$effect(() => {
 		if (!tauri) return;
-		const policy = deviceConfig.get('transcription.localModelUnloadPolicy');
-		commands.setUnloadPolicy(policy).catch((err) => {
-			console.error('Failed to push unload policy to Rust:', err);
-		});
+		const service = settings.get('transcription.service');
+		if (!isLocalEngine(service)) return;
+
+		const modelPath = deviceConfig.get(modelPathKey(service));
+		if (!modelPath) return;
+
+		const language = settings.get('transcription.language');
+		const prompt = settings.get('transcription.prompt');
+		void commands
+			.setTranscriptionConfig({
+				engine: service,
+				modelPath,
+				language: language === 'auto' ? null : language,
+				initialPrompt: prompt || null,
+				unloadPolicy: deviceConfig.get('transcription.localModelUnloadPolicy'),
+			})
+			.catch((err) => {
+				console.error('Failed to push transcription config to Rust:', err);
+			});
 	});
 
-	// Listen for navigation events from other windows
+	// Listen for navigation events from other windows and subscribe to the
+	// local-model lifecycle so any consumer (`localModel.isBusy`, etc.) can
+	// react to load / inference / eviction events.
 	onMount(async () => {
 		if (!tauri) return;
 		unlistenNavigate = await listen<{ path: string }>(
@@ -56,10 +88,12 @@
 				goto(event.payload.path);
 			},
 		);
+		unlistenLocalModel = await localModel.attach();
 	});
 
 	onDestroy(() => {
 		unlistenNavigate?.();
+		unlistenLocalModel?.();
 	});
 </script>
 

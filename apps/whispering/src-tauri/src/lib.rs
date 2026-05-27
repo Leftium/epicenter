@@ -14,7 +14,10 @@ use recorder::commands::{
 use recorder::recorder::Recorder;
 
 pub mod transcription;
-use transcription::{set_unload_policy, transcribe_recording, ModelManager};
+use transcription::{
+    get_transcription_state, set_transcription_config, transcribe_recording, ModelManager,
+    ModelStateEvent,
+};
 
 pub mod command;
 use command::open_accessibility_settings;
@@ -40,11 +43,17 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cancel_recording,
             delete_recording,
             transcribe_recording,
-            set_unload_policy,
             open_accessibility_settings,
             delete_recording_files,
             write_recording_markdown_files,
+            set_transcription_config,
+            get_transcription_state,
         ])
+        // Register every event type the FE listens to. Without this, specta
+        // drops the event payload from `bindings.gen.ts` because no command
+        // references it. The `event(name = "...")` attribute on each event
+        // keeps the channel name stable across the rename.
+        .events(tauri_specta::collect_events![ModelStateEvent])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
 }
 
@@ -168,13 +177,15 @@ pub async fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .manage(Mutex::new(Recorder::new()))
-        .manage(ModelManager::new())
         .setup(|app| {
-            // Start the model idle watcher. It runs on the Tauri async
-            // runtime, sleeps between checks, and drops the resident
-            // model when the configured idle timeout elapses.
-            let manager = app.state::<ModelManager>().inner().clone();
+            // ModelManager owns an `AppHandle` for emitting lifecycle events
+            // on the `transcription://model-state` channel, so it cannot be
+            // constructed at builder-time (no app handle exists yet). Move
+            // construction into setup; everything that needs it reads via
+            // `app.state::<ModelManager>()`.
+            let manager = ModelManager::new(app.handle().clone());
             manager.start_idle_watcher();
+            app.manage(manager);
             Ok(())
         });
 

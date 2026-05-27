@@ -112,7 +112,12 @@ function convertToKeyCode(
 	if (FUNCTION_KEY_PATTERN.test(key)) {
 		return key.toUpperCase() as AcceleratorKeyCode;
 	}
-	const mappedKey = KEYBOARD_EVENT_SPECIAL_KEY_TO_ACCELERATOR_KEY_CODE_MAP[key];
+	const mappedKey =
+		key in KEYBOARD_EVENT_SPECIAL_KEY_TO_ACCELERATOR_KEY_CODE_MAP
+			? KEYBOARD_EVENT_SPECIAL_KEY_TO_ACCELERATOR_KEY_CODE_MAP[
+					key as keyof typeof KEYBOARD_EVENT_SPECIAL_KEY_TO_ACCELERATOR_KEY_CODE_MAP
+				]
+			: null;
 	if (mappedKey) return mappedKey;
 	if (
 		ACCELERATOR_PUNCTUATION_KEYS.includes(

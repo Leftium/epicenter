@@ -32,8 +32,14 @@ export const BC_ORIGIN = Symbol.for('@epicenter/sync/bc-origin');
  * Realtime transport listeners use this list to avoid forwarding an update
  * back through another realtime transport.
  */
-const TRANSPORT_ORIGINS: readonly unknown[] = [SYNC_ORIGIN, BC_ORIGIN];
+const TRANSPORT_ORIGINS = [
+	SYNC_ORIGIN,
+	BC_ORIGIN,
+] as const satisfies readonly unknown[];
 
 export function isTransportOrigin(origin: unknown): boolean {
-	return TRANSPORT_ORIGINS.includes(origin);
+	return (
+		typeof origin === 'symbol' &&
+		TRANSPORT_ORIGINS.some((transportOrigin) => transportOrigin === origin)
+	);
 }

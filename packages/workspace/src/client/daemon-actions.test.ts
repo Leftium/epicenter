@@ -15,14 +15,14 @@ function makeStubClient() {
 	const unreachable = () => {
 		throw new Error('stub: not used by these tests');
 	};
-	const client: DaemonClient = {
+	const client = {
 		peers: unreachable as DaemonClient['peers'],
 		list: unreachable as DaemonClient['list'],
 		run: (input: RunRequest) => {
 			calls.push({ method: 'run', arg: input });
 			return Promise.resolve(Ok(null)) as ReturnType<DaemonClient['run']>;
 		},
-	};
+	} satisfies DaemonClient;
 	return { client, calls };
 }
 

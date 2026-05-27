@@ -6,6 +6,7 @@
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { ALWAYS_ON_TOP_MODE_OPTIONS } from '$lib/constants/ui';
 	import { report } from '$lib/report';
+	import { autostartKeys } from '$lib/tauri/autostart-keys';
 	import { tauri } from '$lib/tauri';
 	import { settings } from '$lib/state/settings.svelte';
 
@@ -46,7 +47,7 @@
 		tauri
 			? tauri.autostart.isEnabled.options
 			: {
-					queryKey: ['autostart', 'isEnabled'] as const,
+					queryKey: autostartKeys.isEnabled,
 					queryFn: async () => false,
 					enabled: false,
 					initialData: false,
@@ -56,7 +57,7 @@
 		tauri
 			? tauri.autostart.enable.options
 			: {
-					mutationKey: ['autostart', 'enable'] as const,
+					mutationKey: autostartKeys.enable,
 					mutationFn: async () => undefined,
 				},
 	);
@@ -64,7 +65,7 @@
 		tauri
 			? tauri.autostart.disable.options
 			: {
-					mutationKey: ['autostart', 'disable'] as const,
+					mutationKey: autostartKeys.disable,
 					mutationFn: async () => undefined,
 				},
 	);

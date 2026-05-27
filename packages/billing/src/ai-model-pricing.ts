@@ -17,7 +17,7 @@ type SupportedModel =
 	| (typeof OPENAI_CHAT_MODELS)[number]
 	| (typeof GeminiTextModels)[number];
 
-export const MODEL_CREDITS: Partial<Record<SupportedModel, number>> = {
+export const MODEL_CREDITS = {
 	// OpenAI: nano/mini (1 credit)
 	'gpt-5-nano': 1,
 	'gpt-4.1-nano': 1,
@@ -88,7 +88,7 @@ export const MODEL_CREDITS: Partial<Record<SupportedModel, number>> = {
 	'gemini-3.1-pro-preview': 5,
 	'gemini-3-pro-preview': 5,
 	'gemini-2.5-pro': 5,
-};
+} as const satisfies Partial<Record<SupportedModel, number>>;
 
 /** Coarse provider classification used by the dashboard model-cost
  *  table. Models that do not match any prefix are labeled "Unknown"

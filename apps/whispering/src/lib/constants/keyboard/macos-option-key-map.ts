@@ -6,7 +6,7 @@ import type { KeyboardEventPossibleKey } from './browser/possible-keys';
  * instead of the normal key events. This mapping allows us to normalize these
  * back to their original keys for consistent shortcut handling.
  */
-const OPTION_KEY_CHARACTER_MAP: Record<string, KeyboardEventPossibleKey> = {
+const OPTION_KEY_CHARACTER_MAP = {
 	// Option + Letters (A-Z)
 	å: 'a', // Option+A
 	'∫': 'b', // Option+B
@@ -47,7 +47,7 @@ const OPTION_KEY_CHARACTER_MAP: Record<string, KeyboardEventPossibleKey> = {
 	'÷': '/', // Option+/
 	'≥': '.', // Option+.
 	'≤': ',', // Option+,
-};
+} as const satisfies Record<string, KeyboardEventPossibleKey>;
 
 /**
  * Normalizes macOS Option+Key special characters back to their base keys.
@@ -71,7 +71,11 @@ export function normalizeOptionKeyCharacter(
 	if (key.length !== 1) return key;
 
 	// Return the normalized key or the original if not found
-	return OPTION_KEY_CHARACTER_MAP[key] ?? key;
+	const normalizedKey =
+		key in OPTION_KEY_CHARACTER_MAP
+			? OPTION_KEY_CHARACTER_MAP[key as keyof typeof OPTION_KEY_CHARACTER_MAP]
+			: null;
+	return normalizedKey ?? key;
 }
 
 /**

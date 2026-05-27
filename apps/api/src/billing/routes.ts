@@ -99,7 +99,6 @@ billingRoutes.get('/plans', async (c) => c.json(await svc(c).listPlans()));
 
 billingRoutes.get('/models', (c) => {
 	const models = Object.entries(MODEL_CREDITS)
-		.filter((entry): entry is [string, number] => entry[1] !== undefined)
 		.map(([model, credits]) => ({
 			model,
 			provider: providerOf(model),

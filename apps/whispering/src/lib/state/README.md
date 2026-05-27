@@ -30,7 +30,7 @@ settings.set('recording.mode', 'vad');
 
 ### `recordings.svelte.ts`
 
-Recording metadata backed by Yjs workspace table. SvelteMap provides per-key reactivity—updating one recording doesn't re-render the entire list. Audio blobs are NOT stored here (too large for CRDTs); use `DbService.recordings.getAudioBlob()` for audio access.
+Recording metadata backed by Yjs workspace table. SvelteMap provides per-key reactivity: updating one recording doesn't re-render the entire list. Audio blobs are not stored here because they are too large for CRDTs; use `$lib/rpc/audio` for playback URLs and `services.blobs.audio` for raw blob access.
 
 ```typescript
 import { recordings } from '$lib/state/recordings.svelte';
@@ -138,5 +138,15 @@ Use the rpc layer (`$lib/rpc/`) instead when you need:
 - Mutations with optimistic updates
 - Background refresh and stale-while-revalidate
 - TanStack Query devtools integration
+
+If a state module still exposes a TanStack query for one live concern, keep the key map beside the state owner:
+
+```typescript
+export const recorderKeys = defineKeys({
+	devices: ['recorder', 'devices'],
+});
+```
+
+Use the same module shape as `$lib/rpc/`: exported `*Keys` for shared cache identity, local `defineErrors` namespaces for state-owned failures, named input object types for structured public methods, and `ReturnType<typeof createThing>` when exporting the exact shape returned by a factory.
 
 See `$lib/rpc/README.md` for the rpc layer documentation.

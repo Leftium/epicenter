@@ -1,7 +1,7 @@
 import { NavigatorRecorderServiceLive } from './navigator';
 import type { RecorderService } from './types';
 
-export type { RecorderError, RecorderService, Recording } from './types';
+export type { RecorderError, RecorderService, RecordingSession } from './types';
 
 export { NavigatorRecorderServiceLive };
 

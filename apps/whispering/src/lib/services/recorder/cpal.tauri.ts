@@ -14,7 +14,7 @@ import {
 	type DeviceAcquisitionOutcome,
 	RecorderError,
 	type RecorderService,
-	type Recording,
+	type RecordingSession,
 } from '$lib/services/recorder/types';
 
 const log = createLogger('whispering/recorder/cpal');
@@ -65,19 +65,19 @@ const enumerateDevices = async (): Promise<Result<Device[], RecorderError>> => {
  * CPAL recorder service that uses the Rust CPAL backend.
  *
  * Constructed via a factory so the per-session lifecycle (stop/cancel/
- * subscribe) lives on the returned `Recording`. The service itself only
+ * subscribe) lives on the returned `RecordingSession`. The service itself only
  * holds a pointer to the active session for rehydration through
  * `getActiveRecording`; once stop/cancel runs, that pointer clears.
  *
  * Unlike navigator, a cpal session can outlive a JS reload because the
  * Rust process keeps the cpal stream alive. `getActiveRecording` consults
- * Rust via `get_current_recording_id` and reattaches a new `Recording`
+ * Rust via `get_current_recording_id` and reattaches a new `RecordingSession`
  * wrapper if Rust still has one going.
  */
 function createCpalRecorder(): RecorderService {
-	let activeRecording: Recording | null = null;
+	let activeSession: RecordingSession | null = null;
 
-	function buildRecording(recordingId: string): Recording {
+	function buildSession(recordingId: string): RecordingSession {
 		const subscribers = new Set<(s: WhisperingRecordingState) => void>();
 		let currentState: WhisperingRecordingState = 'RECORDING';
 		let tauriUnlisten: Promise<UnlistenFn> | null = null;
@@ -104,14 +104,14 @@ function createCpalRecorder(): RecorderService {
 			);
 		};
 
-		// Takes `recording` as an argument rather than closing over the const
+		// Takes `session` as an argument rather than closing over the const
 		// declared below. Both work because teardown only runs from stop/cancel
-		// handlers (which can only fire after `recording` is bound), but the
+		// handlers (which can only fire after `session` is bound), but the
 		// explicit argument keeps the function TDZ-safe if a future caller
-		// invokes teardown from a path declared above the `recording = ...`
+		// invokes teardown from a path declared above the `session = ...`
 		// initializer.
-		const teardown = (recording: Recording) => {
-			if (activeRecording === recording) activeRecording = null;
+		const teardown = (session: RecordingSession) => {
+			if (activeSession === session) activeSession = null;
 			if (tauriUnlisten) {
 				void tauriUnlisten.then((unlisten) => unlisten());
 				tauriUnlisten = null;
@@ -121,11 +121,11 @@ function createCpalRecorder(): RecorderService {
 
 		// Close the Rust-side session and tear down JS state. Used by both
 		// the happy path and the parse-failure path so a malformed IPC body
-		// can't leave a zombie session in Rust or a stale activeRecording
-		// pointer in JS. Takes `recording` explicitly for the same TDZ
+		// can't leave a zombie session in Rust or a stale activeSession
+		// pointer in JS. Takes `session` explicitly for the same TDZ
 		// reason `teardown` does.
 		const closeAndTeardown = async (
-			recording: Recording,
+			session: RecordingSession,
 			sendStatus: (args: { title: string; description: string }) => void,
 		) => {
 			sendStatus({
@@ -138,10 +138,10 @@ function createCpalRecorder(): RecorderService {
 			if (closeError) {
 				log.error(closeError);
 			}
-			teardown(recording);
+			teardown(session);
 		};
 
-		const recording: Recording = {
+		const session: RecordingSession = {
 			recordingId,
 			backend: 'cpal',
 
@@ -149,13 +149,13 @@ function createCpalRecorder(): RecorderService {
 				const { data: buffer, error: stopRecordingError } =
 					await invoke<ArrayBuffer>('stop_recording');
 				if (stopRecordingError) {
-					teardown(recording);
+					teardown(session);
 					return RecorderError.StopFailed({ cause: stopRecordingError });
 				}
 
 				const { data: samples, error: parseError } = parsePcmIpcBody(buffer);
 				if (parseError) {
-					await closeAndTeardown(recording, sendStatus);
+					await closeAndTeardown(session, sendStatus);
 					return Err(parseError);
 				}
 
@@ -163,7 +163,7 @@ function createCpalRecorder(): RecorderService {
 					(samples.length / RECORDER_OUTPUT_RATE) * 1000,
 				);
 
-				await closeAndTeardown(recording, sendStatus);
+				await closeAndTeardown(session, sendStatus);
 				return Ok({ audio: samples, recordingId, durationMs });
 			},
 
@@ -185,7 +185,7 @@ function createCpalRecorder(): RecorderService {
 					});
 				}
 
-				teardown(recording);
+				teardown(session);
 				return Ok({ status: 'cancelled' });
 			},
 
@@ -201,16 +201,16 @@ function createCpalRecorder(): RecorderService {
 			},
 		};
 
-		return recording;
+		return session;
 	}
 
 	return {
 		getActiveRecording: async (): Promise<
-			Result<Recording | null, RecorderError>
+			Result<RecordingSession | null, RecorderError>
 		> => {
 			// If we still hold the in-memory pointer, prefer it; otherwise probe
-			// Rust in case a recording outlived a JS reload.
-			if (activeRecording) return Ok(activeRecording);
+			// Rust in case a recording session outlived a JS reload.
+			if (activeSession) return Ok(activeSession);
 
 			const { data: liveRecordingId, error: getIdError } = await invoke<
 				string | null
@@ -220,8 +220,8 @@ function createCpalRecorder(): RecorderService {
 			}
 			if (!liveRecordingId) return Ok(null);
 
-			const rehydrated = buildRecording(liveRecordingId);
-			activeRecording = rehydrated;
+			const rehydrated = buildSession(liveRecordingId);
+			activeSession = rehydrated;
 			return Ok(rehydrated);
 		},
 
@@ -315,9 +315,9 @@ function createCpalRecorder(): RecorderService {
 					RecorderError.StartFailed({ cause: startRecordingError })
 				);
 
-			const recording = buildRecording(recordingId);
-			activeRecording = recording;
-			return Ok({ recording, deviceAcquisition: deviceOutcome });
+			const session = buildSession(recordingId);
+			activeSession = session;
+			return Ok({ session, deviceAcquisition: deviceOutcome });
 		},
 	};
 }

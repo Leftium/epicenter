@@ -239,7 +239,7 @@ export type NavigatorRecordingParams = BaseRecordingParams & {
 /**
  * Audio payload accepted by the pipeline and the transcribe layer.
  * Describes only the bytes. Capture-session metadata such as `recordingId`
- * and `durationMs` belongs to the `Recording.stop()` result, not here.
+ * and `durationMs` belongs to the `RecordingSession.stop()` result, not here.
  *
  * Two physical shapes:
  * - `Float32Array`: in-memory mono PCM at 16 kHz from the cpal recorder.
@@ -265,17 +265,17 @@ export type StartRecordingParams =
 /**
  * A live recording session bound to the backend that started it.
  *
- * The `Recording` is the unit of lifecycle: it knows its own backend, owns
+ * The `RecordingSession` is the unit of lifecycle: it knows its own backend, owns
  * its own teardown, and exposes per-session state changes. Toggling
  * `recording.method` after construction has no effect on an in-flight
- * Recording, which is what fixes the swap-mid-recording leak.
+ * RecordingSession, which is what fixes the swap-mid-recording leak.
  *
  * The `subscribe` handler is invoked synchronously with the current state on
  * subscribe (so callers don't have to mirror "I just started" themselves),
  * then again whenever the session transitions, ending with 'IDLE' on
  * stop/cancel.
  */
-export type Recording = {
+export type RecordingSession = {
 	readonly recordingId: string;
 	readonly backend: 'navigator' | 'cpal';
 	stop(callbacks: {
@@ -293,20 +293,20 @@ export type Recording = {
 };
 
 /**
- * Factory for `Recording` sessions. Services no longer carry mutable
- * start/stop state directly; instead `startRecording` returns a Recording
+ * Factory for recording sessions. Services no longer carry mutable
+ * start/stop state directly; instead `startRecording` returns a RecordingSession
  * whose methods are bound to the backend that produced it.
  */
 export type RecorderService = {
 	/**
-	 * Probe for a Recording that already exists at module-load time. CPAL
+	 * Probe for a RecordingSession that already exists at module-load time. CPAL
 	 * sessions can outlive a JS reload because the Rust process keeps the
 	 * stream; navigator sessions cannot survive a reload and will always
 	 * return null after one.
 	 *
-	 * Returns the live Recording bound to this backend, or null if none.
+	 * Returns the live RecordingSession bound to this backend, or null if none.
 	 */
-	getActiveRecording(): Promise<Result<Recording | null, RecorderError>>;
+	getActiveRecording(): Promise<Result<RecordingSession | null, RecorderError>>;
 
 	/**
 	 * Enumerate available recording devices with their labels and identifiers
@@ -314,8 +314,8 @@ export type RecorderService = {
 	enumerateDevices(): Promise<Result<Device[], RecorderError>>;
 
 	/**
-	 * Start a new recording session, returning the Recording handle along
-	 * with the device acquisition outcome. The caller holds the Recording
+	 * Start a new recording session, returning the RecordingSession handle along
+	 * with the device acquisition outcome. The caller holds the RecordingSession
 	 * and uses its `stop`/`cancel`/`subscribe` for the rest of the session.
 	 */
 	startRecording(
@@ -326,7 +326,7 @@ export type RecorderService = {
 	): Promise<
 		Result<
 			{
-				recording: Recording;
+				session: RecordingSession;
 				deviceAcquisition: DeviceAcquisitionOutcome;
 			},
 			RecorderError

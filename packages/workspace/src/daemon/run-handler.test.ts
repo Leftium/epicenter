@@ -55,11 +55,11 @@ function fakeEntry({
 
 describe('executeRun peer dispatch', () => {
 	test('relay RecipientOffline surfaces as PeerNotFound with sync status', async () => {
-		const syncStatus: SyncStatus = {
+		const syncStatus = {
 			phase: 'connecting',
 			retries: 2,
 			lastError: { type: 'connection' },
-		};
+		} as const satisfies SyncStatus;
 		const runSyncStatus = {
 			phase: 'connecting',
 			retries: 2,

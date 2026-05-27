@@ -64,7 +64,7 @@ function testRuntime(
 
 describe('startDaemonWorkspaceApps', () => {
 	test('opens every configured daemon route and returns the started routes', async () => {
-		const routes: Record<string, DaemonWorkspaceDefinition> = {
+		const routes = {
 			alpha: {
 				async open(ctx: DaemonWorkspaceContext) {
 					expect(ctx.route).toBe('alpha');
@@ -77,7 +77,7 @@ describe('startDaemonWorkspaceApps', () => {
 					return testRuntime();
 				},
 			},
-		};
+		} satisfies Record<string, DaemonWorkspaceDefinition>;
 
 		const result = await startDaemonWorkspaceApps({
 			projectDir,
@@ -94,7 +94,7 @@ describe('startDaemonWorkspaceApps', () => {
 
 	test('disposes successfully opened runtimes when a sibling open fails', async () => {
 		const goodMarker = disposeMarkerPath('good');
-		const routes: Record<string, DaemonWorkspaceDefinition> = {
+		const routes = {
 			good: {
 				async open() {
 					return testRuntime(() => writeFileSync(goodMarker, 'disposed'));
@@ -105,7 +105,7 @@ describe('startDaemonWorkspaceApps', () => {
 					throw new Error('boom');
 				},
 			},
-		};
+		} satisfies Record<string, DaemonWorkspaceDefinition>;
 
 		const result = await startDaemonWorkspaceApps({
 			projectDir,

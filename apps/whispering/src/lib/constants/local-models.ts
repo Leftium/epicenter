@@ -8,8 +8,6 @@
  * dispatch lives in `$lib/operations/transcribe.ts`.
  */
 
-import { regex } from 'arkregex';
-
 /**
  * Supported languages for Moonshine models.
  *
@@ -37,22 +35,14 @@ export type MoonshineLanguage = (typeof MOONSHINE_LANGUAGES)[number];
  * Moonshine architecture variants. Determines layer count and hidden
  * dimensions; transcribe-rs needs this to load the ONNX files since they
  * don't self-describe their architecture.
+ *
+ * Variant inference from the directory name lives in Rust
+ * (`transcription/model_manager.rs::parse_moonshine_variant`), since that
+ * is the only consumer and the wire format is owned by the loader.
  */
 export const MOONSHINE_VARIANTS = ['tiny', 'base'] as const;
 
 export type MoonshineVariant = (typeof MOONSHINE_VARIANTS)[number];
-
-/**
- * Type-safe regex pattern for validating Moonshine model paths.
- * Matches paths ending with `moonshine-{variant}-{lang}`. The captured
- * variant is forwarded on the wire to Rust.
- */
-export const MOONSHINE_DIR_PATTERN = regex.as<
-	`${string}moonshine-${MoonshineVariant}-${MoonshineLanguage}`,
-	{ captures: [MoonshineVariant, MoonshineLanguage] }
->(
-	`moonshine-(${MOONSHINE_VARIANTS.join('|')})-(${MOONSHINE_LANGUAGES.join('|')})$`,
-);
 
 /**
  * Base configuration for a local AI model that can be downloaded and used
@@ -239,8 +229,8 @@ export const PARAKEET_MODELS = [
  * These are ONNX models using encoder-decoder architecture with KV caching.
  *
  * Model directories MUST follow the format `moonshine-{variant}-{lang}`
- * because the variant is parsed from the directory name at transcribe time
- * (see `MOONSHINE_DIR_PATTERN`).
+ * because Rust's `parse_moonshine_variant` reads the variant out of the
+ * directory name at transcribe time.
  *
  * Note: Language-specific models (ar, zh, ja, ko, uk, vi, es) exist but only
  * have float versions available. We provide quantized English models for now

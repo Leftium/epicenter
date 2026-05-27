@@ -58,10 +58,6 @@ export const LocalPreflightError = defineErrors({
 		actualSizeMb,
 		expectedSizeMb,
 	}),
-	InvalidMoonshineDirectoryName: () => ({
-		message:
-			'Model path must end with moonshine-{variant}-{lang} (e.g., "moonshine-tiny-en", "moonshine-base-en")',
-	}),
 });
 export type LocalPreflightError = InferErrors<typeof LocalPreflightError>;
 

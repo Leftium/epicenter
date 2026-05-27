@@ -5,9 +5,7 @@ import { FUNCTION_KEY_PATTERN } from './patterns';
  * Display labels for browser keys that need human-readable representation.
  * Exhaustive mapping for all non-trivial keys.
  */
-const BROWSER_KEY_DISPLAY_LABELS: Partial<
-	Record<KeyboardEventSupportedKey, string>
-> = {
+const BROWSER_KEY_DISPLAY_LABELS = {
 	// Whitespace (PRIMARY FIX)
 	' ': 'Space',
 	enter: 'Enter',
@@ -80,7 +78,7 @@ const BROWSER_KEY_DISPLAY_LABELS: Partial<
 	select: 'Select',
 	zoomout: 'Zoom Out',
 	zoomin: 'Zoom In',
-};
+} as const satisfies Partial<Record<KeyboardEventSupportedKey, string>>;
 
 /**
  * Gets display label for a full shortcut string.
@@ -106,7 +104,12 @@ export function getShortcutDisplayLabel(shortcut: string | null): string {
  * Internal helper: formats a single key for display.
  */
 function formatKeyForDisplay(key: string): string {
-	const label = BROWSER_KEY_DISPLAY_LABELS[key as KeyboardEventSupportedKey];
+	const label =
+		key in BROWSER_KEY_DISPLAY_LABELS
+			? BROWSER_KEY_DISPLAY_LABELS[
+					key as keyof typeof BROWSER_KEY_DISPLAY_LABELS
+				]
+			: null;
 	if (label) return label;
 
 	// Single letters: uppercase

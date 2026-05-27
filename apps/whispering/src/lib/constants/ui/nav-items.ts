@@ -21,7 +21,7 @@ const matchesRoute = (href: string) => (pathname: string) =>
  * Add new top-level routes here — both `VerticalNav` and `BottomNav` consume
  * this array, so changes propagate automatically.
  */
-export const NAV_ITEMS: NavItem[] = [
+export const NAV_ITEMS = [
 	{
 		label: 'Home',
 		href: '/',
@@ -46,4 +46,4 @@ export const NAV_ITEMS: NavItem[] = [
 		icon: SettingsIcon,
 		isActive: matchesRoute('/settings'),
 	},
-];
+] as const satisfies readonly NavItem[];

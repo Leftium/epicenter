@@ -34,7 +34,7 @@ type ActiveSession = {
  * `RecordingSession` so toggling the backend setting mid-recording does not
  * misroute teardown.
  */
-function createNavigatorRecorder(): RecorderService {
+function createNavigatorRecorder() {
 	let activeSession: ActiveSession | null = null;
 
 	function buildSession(args: {
@@ -43,7 +43,7 @@ function createNavigatorRecorder(): RecorderService {
 		mediaRecorder: MediaRecorder;
 		recordedChunks: Blob[];
 		startedAtMs: number;
-	}): { activeSession: ActiveSession; session: RecordingSession } {
+	}) {
 		const { recordingId, stream, mediaRecorder, recordedChunks, startedAtMs } =
 			args;
 		const subscribers = new Set<(s: WhisperingRecordingState) => void>();
@@ -65,7 +65,7 @@ function createNavigatorRecorder(): RecorderService {
 			notify('IDLE');
 		};
 
-		const recordingSession: RecordingSession = {
+		const recordingSession = {
 			recordingId,
 			backend: 'navigator',
 
@@ -128,15 +128,21 @@ function createNavigatorRecorder(): RecorderService {
 					subscribers.delete(handler);
 				};
 			},
-		};
+		} satisfies RecordingSession;
 
-		const sessionRecord: ActiveSession = {
+		const sessionRecord = {
 			stream,
 			mediaRecorder,
 			recordedChunks,
 			session: recordingSession,
+		} satisfies ActiveSession;
+		return {
+			activeSession: sessionRecord,
+			session: recordingSession,
+		} satisfies {
+			activeSession: ActiveSession;
+			session: RecordingSession;
 		};
-		return { activeSession: sessionRecord, session: recordingSession };
 	}
 
 	return {
@@ -216,11 +222,11 @@ function createNavigatorRecorder(): RecorderService {
 
 			return Ok({ session, deviceAcquisition: deviceOutcome });
 		},
-	};
+	} satisfies RecorderService;
 }
 
-export const NavigatorRecorderServiceLive: RecorderService =
-	createNavigatorRecorder();
+export const NavigatorRecorderServiceLive =
+	createNavigatorRecorder() satisfies RecorderService;
 
 /**
  * Determines the best supported audio MIME type for the current browser.

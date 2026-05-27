@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT_BARREL = fileURLToPath(new URL('./index.ts', import.meta.url));
 
-const FORBIDDEN_PATTERNS: { pattern: RegExp; label: string }[] = [
+const FORBIDDEN_PATTERNS = [
 	{ pattern: /\bfrom\s+['"]node:/, label: "import from 'node:*'" },
 	{ pattern: /\bfrom\s+['"]bun:/, label: "import from 'bun:*'" },
 	{ pattern: /\bfrom\s+['"]env-paths['"]/, label: "import from 'env-paths'" },
@@ -32,7 +32,7 @@ const FORBIDDEN_PATTERNS: { pattern: RegExp; label: string }[] = [
 	},
 	{ pattern: /\bBun\s*\./, label: 'reference to Bun.*' },
 	{ pattern: /\bprocess\s*\.\s*env\b/, label: 'reference to process.env' },
-];
+] as const satisfies readonly { pattern: RegExp; label: string }[];
 
 /**
  * Strip `import type` / `export type` lines so type-only references to

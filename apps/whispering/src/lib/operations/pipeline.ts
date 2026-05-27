@@ -63,10 +63,18 @@ export async function processRecordingPipeline({
 			source.blob,
 		);
 		if (saveError) {
+			// Transcription reads by id from disk: if the save failed there
+			// is nothing to transcribe. Bailing here surfaces the real
+			// failure instead of the misleading "no recording artifact
+			// found" the transcribe path would emit on the empty directory.
+			recordings.update(recordingId, { transcriptionStatus: 'FAILED' });
 			report.error({
-				title: 'Audio not saved',
+				title: 'Failed to save recording',
+				description:
+					'We could not write the recording bytes; transcription cannot continue.',
 				cause: saveError,
 			});
+			return;
 		}
 	}
 

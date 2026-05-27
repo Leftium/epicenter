@@ -16,11 +16,12 @@
 		asDeviceIdentifier,
 		type DeviceIdentifier,
 	} from '$lib/services/recorder/types';
-	import { exportRecordingsMarkdown } from '$lib/recording-markdown-export';
 	import { report } from '$lib/report';
 	import { tauri } from '$lib/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
+	import { whispering } from '$lib/whispering/client';
+	import DesktopOutputFolder from './DesktopOutputFolder.svelte';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
 
@@ -72,7 +73,7 @@
 	);
 
 	const exportMarkdown = createMutation(() => ({
-		mutationFn: exportRecordingsMarkdown,
+		mutationFn: whispering.actions.recordings_export_markdown,
 	}));
 
 	function getManualDeviceId(method: 'cpal' | 'navigator') {

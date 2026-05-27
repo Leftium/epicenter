@@ -1,5 +1,10 @@
 import { nanoid } from 'nanoid/non-secure';
-import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { defineKeys } from 'wellcrafted/query';
 import { Err, Ok } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { defineQuery } from '$lib/rpc/client';
@@ -27,6 +32,11 @@ const ManualRecorderError = defineErrors({
 	NoActiveRecording: () => ({
 		message: 'No active recording session to stop. Start a recording first.',
 	}),
+});
+type ManualRecorderError = InferErrors<typeof ManualRecorderError>;
+
+export const manualRecorderKeys = defineKeys({
+	devices: ['recorder', 'devices'],
 });
 
 /**
@@ -135,7 +145,7 @@ function createManualRecorder() {
 		},
 
 		enumerateDevices: defineQuery({
-			queryKey: ['recorder', 'devices'],
+			queryKey: manualRecorderKeys.devices,
 			queryFn: async () => {
 				const { data, error } =
 					await resolveServiceForStart().enumerateDevices();

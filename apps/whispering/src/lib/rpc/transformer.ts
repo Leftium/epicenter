@@ -1,4 +1,5 @@
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import { defineKeys } from 'wellcrafted/query';
 import type { Result } from 'wellcrafted/result';
 import {
 	runTransformation,
@@ -15,6 +16,11 @@ const TransformerRpcError = defineErrors({
 });
 type TransformerRpcError = InferErrors<typeof TransformerRpcError>;
 
+export const transformerKeys = defineKeys({
+	transformInput: ['transformer', 'transformInput'],
+	transformRecording: ['transformer', 'transformRecording'],
+});
+
 /**
  * Observed mutations around runTransformation. The pipeline logic lives in
  * $lib/operations/transform; this file just wraps it with TanStack mutation
@@ -22,7 +28,7 @@ type TransformerRpcError = InferErrors<typeof TransformerRpcError>;
  */
 export const transformer = {
 	transformInput: defineMutation({
-		mutationKey: ['transformer', 'transformInput'],
+		mutationKey: transformerKeys.transformInput,
 		mutationFn: ({
 			input,
 			transformation,
@@ -34,7 +40,7 @@ export const transformer = {
 	}),
 
 	transformRecording: defineMutation({
-		mutationKey: ['transformer', 'transformRecording'],
+		mutationKey: transformerKeys.transformRecording,
 		mutationFn: ({
 			recordingId,
 			transformation,

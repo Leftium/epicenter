@@ -1,3 +1,4 @@
+import { defineKeys } from 'wellcrafted/query';
 import { Err, type Result } from 'wellcrafted/result';
 import { defineMutation } from '$lib/rpc/client';
 import { services } from '$lib/services';
@@ -5,9 +6,13 @@ import type { BlobError } from '$lib/services/blob-store';
 import type { DownloadError } from '$lib/services/download';
 import type { Recording } from '$lib/state/recordings.svelte';
 
+export const downloadKeys = defineKeys({
+	downloadRecording: ['download', 'downloadRecording'],
+});
+
 export const download = {
 	downloadRecording: defineMutation({
-		mutationKey: ['download', 'downloadRecording'],
+		mutationKey: downloadKeys.downloadRecording,
 		mutationFn: async (
 			recording: Recording,
 		): Promise<Result<void, BlobError | DownloadError>> => {

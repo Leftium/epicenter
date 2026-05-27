@@ -12,7 +12,7 @@
 import { defineWorkspace } from '@epicenter/workspace';
 import { defineMount } from '@epicenter/workspace/daemon';
 import { attachProjectInfrastructure } from '@epicenter/workspace/node';
-import { createOpensidianWorkspace } from './workspace.js';
+import { createOpensidianWorkspace } from './opensidian.js';
 
 export function opensidian() {
 	return defineMount({

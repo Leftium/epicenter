@@ -5,7 +5,8 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
-		".": "./workspace.ts",
+		".": "./opensidian.ts",
+		"./browser": "./opensidian.browser.ts",
 		"./project": "./project.ts"
 	},
 	"scripts": {

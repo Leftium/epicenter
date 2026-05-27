@@ -34,8 +34,8 @@ import {
 	wipeLocalStorage,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
-import { createOpensidianWorkspace } from 'opensidian';
-import { createOpensidianActions } from './actions';
+import { createOpensidianWorkspace } from './opensidian';
+import { createOpensidianActions } from './opensidian.browser.actions';
 
 export function openOpensidianBrowser({
 	signedIn,

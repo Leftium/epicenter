@@ -31,17 +31,19 @@ File sizes today:
 
 ### Duplicated (target this)
 
-**OpenAI / Groq / Mistral** all use OpenAI-shaped SDKs (`groq-sdk` and `mistralai` extend the OpenAI SDK contract). Compare openai.ts:85-180 with groq.ts:77-167 with a 3-way diff — the differences are:
+**OpenAI / Groq** use OpenAI-SDK-shaped clients (`groq-sdk` extends the OpenAI SDK contract). Compare openai.ts:85-180 with groq.ts:77-167 with a 2-way diff — the differences are:
 
 ```
-            openai          groq                       mistral
-SDK         OpenAI          Groq                       Mistral (TBD)
-ApiKey      'sk-'           'gsk_' | 'xai-'            'mistral-' (TBD)
-MaxSizeMb   25              25                         25 (TBD)
-Errors      +PayloadTooLarge,+UnsupportedMediaType     (TBD)
+            openai          groq
+SDK         OpenAI          Groq
+ApiKey      'sk-'           'gsk_' | 'xai-'
+MaxSizeMb   25              25
+Errors      +PayloadTooLarge, +UnsupportedMediaType
 ```
 
 Everything else (file-size guard, File construction, `tryAsync` body, status→error switch, `customFetch` plumbing, `dangerouslyAllowBrowser`, `audio.transcriptions.create` call shape) is mechanical repetition. This is the target.
+
+**Mistral is NOT a target** (verified): although `mistralai` is OpenAI-shaped in spirit, it exposes `client.audio.transcriptions.complete()` instead of `.create()`. The different method name means the SDK call shape is incompatible with a shared OpenAI-SDK adapter. It also lacks API-key format validation and adds an `InvalidResponse` variant. Leave Mistral in its own file.
 
 ### Not duplicated (leave alone)
 
@@ -153,7 +155,7 @@ export const OpenaiTranscriptionServiceLive = {
 - Pro: no API churn for consumers.
 - Con: three names for one type can confuse readers grepping for the error definition.
 
-**Recommendation**: Option A. Grep for `OpenaiError\.` / `GroqError\.` / `MistralError\.` usages before deciding — if zero callers pattern-match on `error.name`, A is cleanest. If anyone does, fall back to C.
+**Recommendation**: Option A. **Audited (2026-05-27):** zero callsites in `apps/whispering/src` pattern-match on any provider-error name (in fact zero callsites pattern-match on `error.name` at all). Option A is safe.
 
 ### 3. Optional: collapse self-hosted `speaches` into the same family?
 
@@ -177,12 +179,12 @@ Speaches uses an OpenAI-compatible Whisper API at a user-provided URL. It does N
 ## Estimated impact
 
 ```
-Before (5 SDK-shape providers + 1 self-hosted): ~840 lines
-After  (openai-shaped helper + 3 thin providers + 1 self-hosted + 2 untouched): ~520 lines
-Net:   -320 lines, one new file, no behavior change
+Before (openai 180 + groq 166 + 4 untouched): ~840 lines total transcription/
+After  (openai-shaped helper ~180 + openai 35 + groq 35 + 4 untouched): ~740 lines
+Net:   ~ -100 lines, one new file, no behavior change
 ```
 
-If only OpenAI + Groq fit cleanly (Mistral SDK turns out non-conforming), estimate drops to -200 lines.
+The Mistral verification (above) confirmed it's NOT a target, so the impact is more modest than the original estimate.
 
 ---
 
@@ -192,12 +194,11 @@ If only OpenAI + Groq fit cleanly (Mistral SDK turns out non-conforming), estima
 >
 > Concretely:
 >
-> 1. Verify that `apps/whispering/src/lib/services/transcription/cloud/mistral.ts` uses an OpenAI-SDK-shaped client (look for `audio.transcriptions.create`). If yes, it's a target. If not, it stays out of scope.
-> 2. Create `apps/whispering/src/lib/services/transcription/cloud/openai-shaped.ts` per the spec's "Proposed shape" §1. The shared error type goes here.
-> 3. Rewrite `openai.ts`, `groq.ts`, and (if §1 confirms) `mistral.ts` to ~30-40 lines each, delegating to the helper.
-> 4. Decide error type strategy. Default is Option A (single shared error). Before deciding, grep `OpenaiError\.|GroqError\.|MistralError\.` across `apps/whispering/src` — if there are no callsite usages, choose A and delete the per-provider error types. If there are, choose C.
-> 5. Do NOT touch `elevenlabs.ts`, `deepgram.ts`, or `speaches.ts`. They have different shapes; the spec is explicit about leaving them alone.
-> 6. Do NOT inline the cloud dispatch into `transcribe.ts`. The cloud services are real HTTP work; the switch stays.
-> 7. Commit in two waves matching the local pattern: wave 1 introduces the helper alongside, wave 2 migrates each provider and removes any duplicated definitions.
-> 8. `bun run typecheck` from `apps/whispering` must pass after each wave.
-> 9. Verification gate: see spec.
+> 1. Create `apps/whispering/src/lib/services/transcription/cloud/openai-shaped.ts` per the spec's "Proposed shape" §1. The shared `CloudOpenAIShapedError` type lives here.
+> 2. Rewrite `openai.ts` and `groq.ts` to ~30-40 lines each, delegating to the helper.
+> 3. Use error strategy **Option A** (single shared error). The audit found zero callsite pattern-matches on provider-error names, so deleting `OpenaiError` / `GroqError` and replacing with the shared type is safe.
+> 4. Do NOT touch `mistral.ts`, `elevenlabs.ts`, `deepgram.ts`, or `speaches.ts`. They have different shapes; the spec is explicit about leaving them alone (Mistral uses `.complete()` not `.create()`, so it doesn't fit the adapter).
+> 5. Do NOT inline the cloud dispatch into `transcribe.ts`. The cloud services are real HTTP work; the switch stays.
+> 6. Commit in two waves matching the local pattern: wave 1 introduces the helper alongside, wave 2 migrates the two providers and removes the duplicated definitions.
+> 7. `bun run typecheck` from `apps/whispering` must pass after each wave.
+> 8. Verification gate: see spec.

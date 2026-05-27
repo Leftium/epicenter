@@ -8,7 +8,7 @@ import {
 import mime from 'mime';
 import { tryAsync } from 'wellcrafted/result';
 import { PATHS } from '$lib/constants/paths';
-import { requireTauri } from '$lib/tauri';
+import { tauriOnly } from '$lib/tauri';
 import { commands } from '$lib/tauri/commands';
 import { BlobError, type BlobStore } from './types';
 
@@ -70,9 +70,8 @@ export function createFileSystemBlobStore() {
 
 					const audioPath = await PATHS.DB.RECORDING_FILE(audioFilename);
 
-					// Use existing fsService.pathToBlob utility
 					const { data: blob, error } =
-						await requireTauri().fs.pathToBlob(audioPath);
+						await tauriOnly.fs.pathToBlob(audioPath);
 					if (error) throw error;
 
 					return blob;

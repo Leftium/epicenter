@@ -456,7 +456,7 @@ stop: async ({ sendStatus }) => {
     sendStatus({ title: '📁 Reading Recording', /* ... */ });
 
     const { data: blob, error: readRecordingFileError } =
-        await requireTauri().fs.pathToBlob(filePath);
+        await tauriOnly.fs.pathToBlob(filePath);
     if (readRecordingFileError) { /* ... */ }
 
     /* close session, teardown */
@@ -520,7 +520,7 @@ async function prepareForService(artifact: AudioArtifact, service: string): Prom
         // local engines: wrap as WAV for the existing Blob-based service interface
         return pcmToWavBlob(artifact);
     }
-    if (artifact.kind === 'file') return await requireTauri().fs.pathToBlob(artifact.path);
+    if (artifact.kind === 'file') return await tauriOnly.fs.pathToBlob(artifact.path);
     return new Blob([artifact.bytes], { type: artifact.mime });
 }
 ```
@@ -569,7 +569,7 @@ async function prepareForService(artifact: AudioArtifact, service: string): Prom
 
 - [ ] **4.1** Delete `AudioRecording` struct (`recorder.rs:17-23`) and `audio_data: Vec<f32>`.
 - [ ] **4.2** Delete `pad_short_recording` from `wav_writer.rs` (it now lives in the consumer; `WavWriter` becomes a pure WAV-writing primitive).
-- [ ] **4.3** Audit `requireTauri().fs.pathToBlob` call sites; if cpal stop was the only caller, mark and remove if dead.
+- [ ] **4.3** Audit `tauriOnly.fs.pathToBlob` call sites; if cpal stop was the only caller, mark and remove if dead.
 - [ ] **4.4** Audit `encodeWavToOpusOgg` JS callers; if dictation path no longer calls it, keep the Rust function (longform may use it) but document.
 
 ### Wave 5 (deferred, not in this spec)

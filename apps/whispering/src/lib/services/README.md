@@ -57,7 +57,7 @@ export default defineConfig({
 });
 ```
 
-Tauri-only capabilities don't live in `services/`. They live in a single file at `$lib/tauri.tauri.ts` with a `$lib/tauri.browser.ts` companion that exports a `null` namespace plus a throwing `requireTauri` stub. Consumers pick one of three call shapes depending on where they sit:
+Tauri-only capabilities don't live in `services/`. They live in a single file at `$lib/tauri.tauri.ts` with a `$lib/tauri.browser.ts` companion that exports only a `null` namespace. Consumers pick one of three call shapes depending on where they sit:
 
 ```ts
 import { tauri, type Tauri } from '$lib/tauri';
@@ -74,9 +74,9 @@ async function useTrayIcon(tauri: Tauri) {
   await tauri.tray.setIcon({ icon: 'IDLE' });
 }
 
-// 3. Inside *.tauri.ts files (build system already gated): requireTauri.
-import { requireTauri } from '$lib/tauri';
-await requireTauri().fs.pathToBlob(audioPath);
+// 3. Inside *.tauri.ts files (build system already gated): tauriOnly.
+import { tauriOnly } from '$lib/tauri';
+await tauriOnly.fs.pathToBlob(audioPath);
 ```
 
 See `docs/articles/20260526T012526-tauri-is-both-the-namespace-and-the-platform-check.md` for the full pattern walkthrough, and `specs/20260526T000140-collapse-tauri-only-services-into-namespace.md` for the original rationale.
@@ -84,7 +84,7 @@ See `docs/articles/20260526T012526-tauri-is-both-the-namespace-and-the-platform-
 > **💡 Three kinds of dependency injection**
 >
 > - **Build-time platform DI** (suffix files): for services that have a real implementation on both platforms. `text`, `os`, `sound`, `download`, `analytics`, `http`, `blob-store`, `recorder`. Each has `index.tauri.ts` + `index.browser.ts` + `types.ts`. Vite picks one at build time.
-> - **Tauri-only namespace** (`$lib/tauri`): for capabilities that exist only on Tauri (fs, permissions, window, tray, globalShortcuts, autostart). One file holds the current namespace capabilities. Consumers either narrow with `if (tauri)`, prop-drill the narrowed value into helpers, or call `requireTauri()` from inside a `.tauri.ts` file.
+> - **Tauri-only namespace** (`$lib/tauri`): for capabilities that exist only on Tauri (fs, permissions, window, tray, globalShortcuts, autostart). One file holds the current namespace capabilities. Consumers either narrow with `if (tauri)`, prop-drill the narrowed value into helpers, or import `tauriOnly` from inside a `.tauri.ts` file.
 > - **Runtime DI** (switch on `settings` and `deviceConfig`): for user-pick providers like `transcription` and `completion`.
 >
 > See `docs/articles/20260526T012650-two-switches-build-time-and-runtime.md` for the platform-vs-settings walkthrough.
@@ -412,7 +412,7 @@ User-facing reporting (toast + OS notification) is owned by `$lib/report`, not t
 
 ### Tauri-only capabilities (`$lib/tauri`)
 
-Tauri-only namespace capabilities live inline in one file at `$lib/tauri.tauri.ts`. The companion `$lib/tauri.browser.ts` exports `tauri = null` plus a throwing `requireTauri` stub. Consumers access via `if (tauri) { tauri.<cap>.method() }`, by prop-drilling the narrowed value, or by calling `requireTauri()` from inside a `.tauri.ts` file.
+Tauri-only namespace capabilities live inline in one file at `$lib/tauri.tauri.ts`. The companion `$lib/tauri.browser.ts` exports only `tauri = null`, so `tauriOnly` misuse fails in browser builds. Consumers access via `if (tauri) { tauri.<cap>.method() }`, by prop-drilling the narrowed value, or by importing `tauriOnly` from inside a `.tauri.ts` file.
 
 - `tauri.fs` - Filesystem operations (pathToBlob, pathsToFiles)
 - `tauri.permissions` - macOS accessibility/microphone permission flows

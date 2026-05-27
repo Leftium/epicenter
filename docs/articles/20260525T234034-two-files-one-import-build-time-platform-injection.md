@@ -120,7 +120,7 @@ Stuffing those into the same per-service folder pattern made them lie. The "brow
 
 ```ts
 // $lib/tauri.tauri.ts
-const tauriImpl = {
+export const tauriOnly = {
   fs: { pathToBlob, pathsToFiles },
   permissions: { accessibility, microphone },
   window: { setAlwaysOnTop },
@@ -129,8 +129,8 @@ const tauriImpl = {
   autostart: { isEnabled, enable, disable },
 };
 
-export type Tauri = typeof tauriImpl;
-export const tauri: Tauri | null = tauriImpl;
+export type Tauri = typeof tauriOnly;
+export const tauri: Tauri | null = tauriOnly;
 ```
 
 The companion is one line:

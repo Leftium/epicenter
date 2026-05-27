@@ -15,7 +15,7 @@
  * builds via `moduleSuffixes` in `tsconfig.json`, so consumers always
  * see the full `Tauri | null` shape.
  *
- * Two exports, one for each use case:
+ * Two patterns, one for each use case:
  *
  *     import { tauri } from '$lib/tauri';
  *     if (tauri) await tauri.fs.pathToBlob(path);
@@ -23,8 +23,8 @@
  *     await tauri?.fs.pathToBlob(path);
  *
  *     // Inside *.tauri.ts files only (build guarantees Tauri runtime):
- *     import { requireTauri } from '$lib/tauri';
- *     await requireTauri().fs.pathToBlob(path);
+ *     import { tauriOnly } from '$lib/tauri';
+ *     await tauriOnly.fs.pathToBlob(path);
  *
  * `tauri` doubles as the platform check: truthy means we're on Tauri
  * and the whole namespace is available. There is no separate
@@ -472,10 +472,9 @@ const globalShortcuts = {
 };
 
 // barrel ------------------------------------------------------------
-// Local `tauriImpl` holds the non-null namespace on Tauri builds. The
-// `tauri` export widens it to `Tauri | null` so consumers narrow;
-// `requireTauri()` returns the asserted form for `.tauri.ts` callers.
-const tauriImpl = {
+// `tauriOnly` is the non-null namespace for `.tauri.ts` files. The
+// `tauri` export widens it to `Tauri | null` so shared consumers narrow.
+export const tauriOnly = {
 	fs,
 	permissions,
 	window,
@@ -485,24 +484,10 @@ const tauriImpl = {
 };
 
 /** Shape of the Tauri capability namespace (non-null). */
-export type Tauri = typeof tauriImpl;
+export type Tauri = typeof tauriOnly;
 
 /**
  * The Tauri capability namespace, or `null` on web builds.
  * Doubles as the platform check: truthy means Tauri.
  */
-export const tauri: Tauri | null = tauriImpl;
-
-/**
- * Returns the Tauri namespace, asserting we're on Tauri.
- *
- * Use ONLY inside `*.tauri.ts` files where the build system guarantees
- * this module loads only on Tauri. Throws on web, which should be
- * unreachable given the suffix routing.
- */
-export function requireTauri(): Tauri {
-	if (!tauri) {
-		throw new Error('requireTauri() called outside Tauri runtime');
-	}
-	return tauri;
-}
+export const tauri: Tauri | null = tauriOnly;

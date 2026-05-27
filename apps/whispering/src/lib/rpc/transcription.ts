@@ -7,20 +7,16 @@ import type { BlobError } from '$lib/services/blob-store';
 import type { Recording } from '$lib/state/recordings.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
 
-const transcriptionKeys = {
-	isTranscribing: ['transcription', 'isTranscribing'] as const,
-} as const;
+const isTranscribingKey = ['transcription', 'isTranscribing'] as const;
 
 export const transcription = {
 	isCurrentlyTranscribing() {
 		return (
-			queryClient.isMutating({
-				mutationKey: transcriptionKeys.isTranscribing,
-			}) > 0
+			queryClient.isMutating({ mutationKey: isTranscribingKey }) > 0
 		);
 	},
 	transcribeRecording: defineMutation({
-		mutationKey: transcriptionKeys.isTranscribing,
+		mutationKey: isTranscribingKey,
 		mutationFn: async (
 			recording: Recording,
 		): Promise<Result<string, BlobError | AnyTaggedError>> => {
@@ -46,7 +42,7 @@ export const transcription = {
 	}),
 
 	transcribeRecordings: defineMutation({
-		mutationKey: transcriptionKeys.isTranscribing,
+		mutationKey: isTranscribingKey,
 		mutationFn: async (recordings: Recording[]) => {
 			const results = await Promise.all(
 				recordings.map(async (recording) => {

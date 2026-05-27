@@ -15,11 +15,6 @@ const TransformerRpcError = defineErrors({
 });
 type TransformerRpcError = InferErrors<typeof TransformerRpcError>;
 
-const transformerKeys = {
-	transformInput: ['transformer', 'transformInput'] as const,
-	transformRecording: ['transformer', 'transformRecording'] as const,
-};
-
 /**
  * Observed mutations around runTransformation. The pipeline logic lives in
  * $lib/operations/transform; this file just wraps it with TanStack mutation
@@ -27,7 +22,7 @@ const transformerKeys = {
  */
 export const transformer = {
 	transformInput: defineMutation({
-		mutationKey: transformerKeys.transformInput,
+		mutationKey: ['transformer', 'transformInput'] as const,
 		mutationFn: ({
 			input,
 			transformation,
@@ -39,7 +34,7 @@ export const transformer = {
 	}),
 
 	transformRecording: defineMutation({
-		mutationKey: transformerKeys.transformRecording,
+		mutationKey: ['transformer', 'transformRecording'] as const,
 		mutationFn: ({
 			recordingId,
 			transformation,

@@ -22,6 +22,6 @@ export function openWhispering() {
 		...workspace,
 		idb,
 		recordingsFs,
-		whenReady: Promise.all([idb.whenLoaded, recordingsFs.whenFlushed]),
+		whenReady: idb.whenLoaded,
 	};
 }

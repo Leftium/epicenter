@@ -57,8 +57,6 @@ export const report = {
 	},
 };
 
-export type LoadingHandle = ReturnType<typeof report.loading>;
-
 /**
  * Diagnostic-only logger. Use for events that should appear in console for
  * debugging but should NEVER surface to the user as a toast or OS notification

@@ -22,26 +22,47 @@ const INITIAL_STATE: LocalModelState = {
  * snapshot (the next event will correct it). Sequence numbers would let us
  * dedupe perfectly but are overkill: every event carries a full state, so a
  * single missed event self-heals on the next transition.
+ *
+ * Shape mirrors `recordings.svelte.ts` / `vad-recorder.svelte.ts`: factory
+ * function with a `$state` closure variable and a return object that exposes
+ * a reactive getter plus operations.
  */
-class LocalModel {
-	state = $state<LocalModelState>(INITIAL_STATE);
+function createLocalModel() {
+	let state = $state<LocalModelState>(INITIAL_STATE);
 
-	async attach(): Promise<UnlistenFn> {
-		if (!tauri) return () => {};
-		const unlisten = await listen<ModelStateEvent>(
-			'transcription://model-state',
-			(event) => {
-				this.state = event.payload.state;
-			},
-		);
-		this.state = await commands.getTranscriptionState();
-		return unlisten;
-	}
+	return {
+		/** Reactive view of the resident model and its lifecycle status. */
+		get state(): LocalModelState {
+			return state;
+		},
 
-	get isBusy(): boolean {
-		const kind = this.state.status.kind;
-		return kind === 'loading' || kind === 'inferring';
-	}
+		/** True while the model is loading or running inference. */
+		get isBusy(): boolean {
+			return (
+				state.status.kind === 'loading' || state.status.kind === 'inferring'
+			);
+		},
+
+		/**
+		 * Subscribe to the model-state event channel and seed the initial
+		 * snapshot. Returns the unlisten function for the caller's lifecycle
+		 * (typically the root layout's `onDestroy`).
+		 *
+		 * No-op outside Tauri; returns a no-op unlisten so callers don't need
+		 * to branch on `tauri`.
+		 */
+		async attach(): Promise<UnlistenFn> {
+			if (!tauri) return () => {};
+			const unlisten = await listen<ModelStateEvent>(
+				'transcription://model-state',
+				(event) => {
+					state = event.payload.state;
+				},
+			);
+			state = await commands.getTranscriptionState();
+			return unlisten;
+		},
+	};
 }
 
-export const localModel = new LocalModel();
+export const localModel = createLocalModel();

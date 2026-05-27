@@ -17,6 +17,7 @@ use recorder::recorder::Recorder;
 pub mod transcription;
 use transcription::{
     get_transcription_state, set_transcription_config, transcribe_recording, ModelManager,
+    ModelStateEvent,
 };
 
 pub mod windows_path;
@@ -52,6 +53,11 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             delete_files_in_directory,
             write_markdown_files,
         ])
+        // Register every event type the FE listens to. Without this, specta
+        // drops the event payload from `bindings.gen.ts` because no command
+        // references it. The `event(name = "...")` attribute on each event
+        // keeps the channel name stable across the rename.
+        .events(tauri_specta::collect_events![ModelStateEvent])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
 }
 

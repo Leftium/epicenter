@@ -130,74 +130,100 @@ export async function transcribeAudio(
 	return transcriptionResult;
 }
 
+/**
+ * Per-engine FE preflight metadata. Each local engine validates the same
+ * way (path exists + is the expected `kind`); whispercpp adds a truncated-
+ * download check because corrupted .bin files load successfully but produce
+ * garbage transcripts. Putting it in a table makes the per-engine data
+ * legible in one place; the dispatch loop stays linear.
+ *
+ * Moonshine directory-name validation lives in Rust
+ * (`parse_moonshine_variant`) since the wire format is the loader's concern.
+ */
+const LOCAL_ENGINE_PREFLIGHT = {
+	whispercpp: {
+		kind: 'file',
+		displayName: 'Whisper C++',
+		modelPathKey: 'transcription.whispercpp.modelPath',
+	},
+	parakeet: {
+		kind: 'directory',
+		displayName: 'Parakeet',
+		modelPathKey: 'transcription.parakeet.modelPath',
+	},
+	moonshine: {
+		kind: 'directory',
+		displayName: 'Moonshine',
+		modelPathKey: 'transcription.moonshine.modelPath',
+	},
+} as const satisfies Record<
+	'whispercpp' | 'parakeet' | 'moonshine',
+	{
+		kind: 'file' | 'directory';
+		displayName: string;
+		modelPathKey:
+			| 'transcription.whispercpp.modelPath'
+			| 'transcription.parakeet.modelPath'
+			| 'transcription.moonshine.modelPath';
+	}
+>;
+
+type LocalEngineId = keyof typeof LOCAL_ENGINE_PREFLIGHT;
+
+function isLocalEngineId(id: TranscriptionServiceId): id is LocalEngineId {
+	return id in LOCAL_ENGINE_PREFLIGHT;
+}
+
+/**
+ * Whisper .bin downloads can finish at a smaller-than-expected size when the
+ * connection drops mid-stream. The file still loads via whisper.cpp but
+ * produces nonsense transcripts. Catalog match is best-effort: only models
+ * we recognize from `WHISPER_MODELS` have an expected size to compare.
+ */
+async function checkWhisperTruncation(
+	modelPath: string,
+): Promise<Result<void, LocalPreflightError>> {
+	const modelConfig = WHISPER_MODELS.find((m) =>
+		modelPath.endsWith(m.file.filename),
+	);
+	if (!modelConfig) return Ok(undefined);
+
+	const { data: fileStats } = await tryAsync({
+		try: () => stat(modelPath),
+		catch: () => Ok(null),
+	});
+	if (!fileStats) return Ok(undefined);
+
+	if (!isModelFileSizeValid(fileStats.size, modelConfig.sizeBytes)) {
+		return LocalPreflightError.CorruptedModelFile({
+			actualSizeMb: Math.round(fileStats.size / 1000000),
+			expectedSizeMb: Math.round(modelConfig.sizeBytes / 1000000),
+		});
+	}
+	return Ok(undefined);
+}
+
 async function dispatchLocalTranscription(
 	recordingId: string,
 	selectedService: TranscriptionServiceId,
 ): Promise<Result<string, TranscriptionError>> {
-	// FE preflight: every local engine needs a model path on disk. Rust will
-	// also fail loudly via `ModelLoadError`, but checking here lets us return
-	// a much better error message (per-engine display name, file vs directory
-	// guidance) and short-circuit before round-tripping through the IPC.
-	switch (selectedService) {
-		case 'whispercpp': {
-			const modelPath = deviceConfig.get('transcription.whispercpp.modelPath');
-			const validation = await requireExistingModelPath(
-				modelPath,
-				'file',
-				'Whisper C++',
-			);
-			if (validation.error) return validation;
+	if (!isLocalEngineId(selectedService)) {
+		return TranscriptionOperationError.NoTranscriptionServiceSelected();
+	}
 
-			// Whisper-specific: an interrupted download still loads but produces
-			// garbage transcripts. Only files we recognize from WHISPER_MODELS
-			// have an expected size to compare against.
-			const modelConfig = WHISPER_MODELS.find((m) =>
-				modelPath.endsWith(m.file.filename),
-			);
-			if (modelConfig) {
-				const { data: fileStats } = await tryAsync({
-					try: () => stat(modelPath),
-					catch: () => Ok(null),
-				});
-				if (
-					fileStats &&
-					!isModelFileSizeValid(fileStats.size, modelConfig.sizeBytes)
-				) {
-					return LocalPreflightError.CorruptedModelFile({
-						actualSizeMb: Math.round(fileStats.size / 1000000),
-						expectedSizeMb: Math.round(modelConfig.sizeBytes / 1000000),
-					});
-				}
-			}
-			break;
-		}
-		case 'parakeet': {
-			const modelPath = deviceConfig.get('transcription.parakeet.modelPath');
-			const validation = await requireExistingModelPath(
-				modelPath,
-				'directory',
-				'Parakeet',
-			);
-			if (validation.error) return validation;
-			break;
-		}
-		case 'moonshine': {
-			// Directory-name validation (must end with moonshine-{variant}-{lang})
-			// is owned by Rust now: `parse_moonshine_variant` returns a
-			// structured `ConfigError` when the name is malformed. Keeping the
-			// existence check here for the same UX-message reason as the other
-			// engines.
-			const modelPath = deviceConfig.get('transcription.moonshine.modelPath');
-			const validation = await requireExistingModelPath(
-				modelPath,
-				'directory',
-				'Moonshine',
-			);
-			if (validation.error) return validation;
-			break;
-		}
-		default:
-			return TranscriptionOperationError.NoTranscriptionServiceSelected();
+	// FE preflight: Rust would also fail via `ModelLoadError`, but the FE
+	// owns better UX strings (per-engine display name, file-vs-directory
+	// guidance) and can short-circuit before the IPC round-trip.
+	const { kind, displayName, modelPathKey } =
+		LOCAL_ENGINE_PREFLIGHT[selectedService];
+	const modelPath = deviceConfig.get(modelPathKey);
+
+	const validation = await requireExistingModelPath(modelPath, kind, displayName);
+	if (validation.error) return validation;
+
+	if (selectedService === 'whispercpp') {
+		const truncated = await checkWhisperTruncation(modelPath);
+		if (truncated.error) return truncated;
 	}
 
 	// Rust reads engine, modelPath, language, prompt, and unloadPolicy from

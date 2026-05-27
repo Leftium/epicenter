@@ -1,10 +1,10 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { tauri } from '$lib/tauri';
 import {
 	commands,
 	type LocalModelState,
 	type ModelStateEvent,
 } from '$lib/tauri/commands';
-import { tauri } from '$lib/tauri';
 
 const INITIAL_STATE: LocalModelState = {
 	engine: null,

@@ -218,7 +218,11 @@ async function dispatchLocalTranscription(
 		LOCAL_ENGINE_PREFLIGHT[selectedService];
 	const modelPath = deviceConfig.get(modelPathKey);
 
-	const validation = await requireExistingModelPath(modelPath, kind, displayName);
+	const validation = await requireExistingModelPath(
+		modelPath,
+		kind,
+		displayName,
+	);
 	if (validation.error) return validation;
 
 	if (selectedService === 'whispercpp') {

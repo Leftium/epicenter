@@ -43,7 +43,7 @@ const DEVICE_DEFINITIONS = {
 		type.enumerated(...BITRATES_KBPS),
 		DEFAULT_BITRATE_KBPS,
 	),
-	'recording.markdownExportDir': defineEntry(type('string | null'), null),
+	'recording.cpal.outputFolder': defineEntry(type('string | null'), null),
 	'recording.cpal.sampleRate': defineEntry(
 		type("'16000' | '44100' | '48000'"),
 		'16000',

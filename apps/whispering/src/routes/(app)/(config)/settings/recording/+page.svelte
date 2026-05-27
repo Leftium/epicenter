@@ -18,7 +18,6 @@
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
-	import RecordingMarkdownExportFolder from './RecordingMarkdownExportFolder.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
 
 	// Derived labels for select triggers
@@ -238,19 +237,6 @@
 		{/if}
 
 		{#if settings.get('recording.mode') === 'manual' || settings.get('recording.mode') === 'vad'}
-			{#if tauri}
-				<Field.Field>
-					<Field.Label for="recording-markdown-export-folder">
-						Recording markdown export folder
-					</Field.Label>
-					<RecordingMarkdownExportFolder />
-					<Field.Description>
-						Choose a folder for read-only transcript markdown files. Clearing
-						the folder stops future exports and leaves existing files in place.
-					</Field.Description>
-				</Field.Field>
-			{/if}
-
 			{#if isUsingNavigatorMethod}
 				<!-- Browser method settings -->
 				<Field.Field>

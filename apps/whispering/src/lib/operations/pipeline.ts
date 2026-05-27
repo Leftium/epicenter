@@ -1,12 +1,13 @@
 import { nanoid } from 'nanoid/non-secure';
+import { goto } from '$app/navigation';
 import {
 	deliverTranscriptionResult,
 	deliverTransformationResult,
 } from '$lib/operations/delivery';
-import { notify } from '$lib/operations/notify';
 import { sound } from '$lib/operations/sound';
 import { transcribeAudio } from '$lib/operations/transcribe';
 import { runTransformation } from '$lib/operations/transform';
+import { report } from '$lib/report';
 import { services } from '$lib/services';
 import { pcmToWavBlob } from '$lib/services/recorder/pcm-to-wav';
 import type { RecorderAudio } from '$lib/services/recorder/types';
@@ -17,24 +18,29 @@ import { transformations } from '$lib/state/transformations.svelte';
 /**
  * Processes a recording through the full pipeline: save -> transcribe -> transform.
  *
+ * The transcribe and transform steps each own their own loading toast; the
+ * delivery layer resolves them with the success message that already
+ * includes "copied to clipboard" / "written to cursor" flags. No outer
+ * pipeline-level toast is needed; the delivery messages ARE the completion
+ * signal.
+ *
  * @param recordingId - Optional recording ID. When provided (e.g., from CPAL recorder),
  * the ID was generated earlier in the pipeline and is passed through for consistency.
  * When omitted (e.g., VAD recording, file uploads), a new ID is generated here.
+ * @param source - Whether the audio came from a live recording (default) or a
+ * file upload. Drives the success-toast copy ("Recording transcribed" vs
+ * "File transcribed"). The transcription/transform/delivery logic is identical.
  */
 export async function processRecordingPipeline({
 	audio,
 	recordingId,
 	durationMs,
-	toastId,
-	completionTitle,
-	completionDescription,
+	source = 'recording',
 }: {
 	audio: RecorderAudio;
 	recordingId?: string;
 	durationMs: number | null;
-	toastId: string;
-	completionTitle: string;
-	completionDescription: string;
+	source?: 'recording' | 'upload';
 }) {
 	const now = new Date().toISOString();
 	const newRecordingId = recordingId ?? nanoid();
@@ -49,9 +55,7 @@ export async function processRecordingPipeline({
 		transcriptionStatus: 'UNPROCESSED',
 	} as const;
 
-	const transcribeToastId = nanoid();
-	notify.loading({
-		id: transcribeToastId,
+	const transcribeLoading = report.loading({
 		title: '📋 Transcribing...',
 		description: 'Your recording is being transcribed...',
 	});
@@ -70,40 +74,24 @@ export async function processRecordingPipeline({
 
 	if (transcribeError) {
 		recordings.update(recording.id, { transcriptionStatus: 'FAILED' });
-		if (transcribeError.name === 'WhisperingError') {
-			notify.error({ id: transcribeToastId, ...transcribeError });
-			return;
-		}
-		notify.error({
-			id: transcribeToastId,
-			title: '❌ Failed to transcribe recording',
-			description: 'Your recording could not be transcribed.',
-			action: { type: 'more-details', error: transcribeError },
-		});
+		transcribeLoading.reject({ cause: transcribeError });
 		return;
 	}
 
 	sound.playSoundIfEnabled('transcriptionComplete');
-	await deliverTranscriptionResult({
+	const transcribeNotice = await deliverTranscriptionResult({
 		text: transcribedText,
-		toastId: transcribeToastId,
+		source,
 	});
+	transcribeLoading.resolve(transcribeNotice);
 
 	const { error: saveAudioError } = await saveAudioPromise;
 	if (saveAudioError) {
-		notify.warning({
-			id: toastId,
-			title: '⚠️ Audio not saved',
-			description: 'Transcription delivered but audio blob was not saved.',
-			action: { type: 'more-details', error: saveAudioError },
+		report.error({
+			title: 'Audio not saved',
+			cause: saveAudioError,
 		});
 	}
-
-	notify.success({
-		id: toastId,
-		title: completionTitle,
-		description: completionDescription,
-	});
 
 	recordings.update(recording.id, {
 		transcript: transcribedText,
@@ -116,56 +104,39 @@ export async function processRecordingPipeline({
 	const transformation = transformations.get(transformationId);
 	if (!transformation) {
 		settings.set('transformation.selectedId', null);
-		notify.warning({
-			title: '⚠️ No matching transformation found',
+		report.info({
+			title: 'No matching transformation found',
 			description:
 				'No matching transformation found. Please select a different transformation.',
 			action: {
-				type: 'link',
 				label: 'Select a different transformation',
-				href: '/transformations',
+				onClick: () => goto('/transformations'),
 			},
 		});
 		return;
 	}
 
-	const transformToastId = nanoid();
-	notify.loading({
-		id: transformToastId,
+	const transformLoading = report.loading({
 		title: '🔄 Running transformation...',
 		description:
 			'Applying your selected transformation to the transcribed text...',
 	});
 
-	const { data: result, error: transformError } = await runTransformation({
-		input: transcribedText,
-		transformation,
-		recordingId: recording.id,
-	});
+	const { data: transformedText, error: transformError } =
+		await runTransformation({
+			input: transcribedText,
+			transformation,
+			recordingId: recording.id,
+		});
 	if (transformError) {
-		notify.error({
-			id: transformToastId,
-			title: '⚠️ Transformation failed',
-			description: transformError.message,
-			action: { type: 'more-details', error: transformError },
-		});
-		return;
-	}
-
-	if (result.status === 'failed') {
-		notify.error({
-			id: transformToastId,
-			title: '⚠️ Transformation error',
-			description: result.error,
-			action: { type: 'more-details', error: result.error },
-		});
+		transformLoading.reject({ cause: transformError });
 		return;
 	}
 
 	sound.playSoundIfEnabled('transformationComplete');
 
-	await deliverTransformationResult({
-		text: result.output,
-		toastId: transformToastId,
+	const transformNotice = await deliverTransformationResult({
+		text: transformedText,
 	});
+	transformLoading.resolve(transformNotice);
 }

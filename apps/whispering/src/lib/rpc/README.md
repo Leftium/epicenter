@@ -4,16 +4,15 @@ Thin, side-effect-free TanStack adapters over services. Each module here wraps a
 
 ## What lives here
 
-| Module                  | Shape    | Where it is observed                                                       |
-| ----------------------- | -------- | -------------------------------------------------------------------------- |
-| `audio.ts`              | query    | `RenderAudioUrl.svelte`, `(app)/+page.svelte`, `EditRecordingModal.svelte` |
-| `text.ts`               | query    | `transform-clipboard/+page.svelte`                                         |
-| `download.ts`           | mutation | `RecordingRowActions.svelte`                                               |
-| `transcription.ts`      | mutation | `recordings/+page.svelte`, `RecordingRowActions.svelte`                    |
-| `transformer.ts`        | mutation | `TransformationPicker.svelte`, `Test.svelte`                               |
-| `client.ts`             | infra    | `QueryClient` + `defineQuery` / `defineMutation`                           |
-| `transcription-errors/` | leaves   | error transformers shared with `operations/transcribe`                     |
-| `desktop/`              | barrel   | desktop-only adapters (not part of the cross-platform `rpc` barrel)        |
+| Module             | Shape    | Where it is observed                                                       |
+| ------------------ | -------- | -------------------------------------------------------------------------- |
+| `audio.ts`         | query    | `RenderAudioUrl.svelte`, `(app)/+page.svelte`, `EditRecordingModal.svelte` |
+| `text.ts`          | query    | `transform-clipboard/+page.svelte`                                         |
+| `download.ts`      | mutation | `RecordingRowActions.svelte`                                               |
+| `transcription.ts` | mutation | `recordings/+page.svelte`, `RecordingRowActions.svelte`                    |
+| `transformer.ts`   | mutation | `TransformationPicker.svelte`, `Test.svelte`                               |
+| `client.ts`        | infra    | `QueryClient` + `defineQuery` / `defineMutation`                           |
+| `desktop/`         | barrel   | desktop-only adapters (not part of the cross-platform `rpc` barrel)        |
 
 ## The `rpc` barrel
 
@@ -37,7 +36,7 @@ A module belongs here if it has the **adapter shape**:
 
 - Wraps a single service call (or a tight composition of two).
 - Side-effect-free at the work level: no toasts, sounds, analytics, pipelines, or settings writes. The only "effects" allowed are TanStack cache reads, writes, and invalidations.
-- Adds a cache key (queries) and/or error transformation to `WhisperingError`.
+- Adds a cache key (queries) and/or error transformation to `tagged error`.
 - Useful to multiple observers, or earns its own module by participating in cache invalidation.
 
 If your work has side effects beyond cache, it's an **orchestration** and belongs in `$lib/operations/`. Orchestrations are imperative use-case functions. Components that need `mutation.isPending` over an orchestration wrap it locally:
@@ -69,21 +68,16 @@ $lib/operations/  →  $lib/rpc/  →  $lib/services/ + $lib/state/
 - `rpc/` may not import from `operations/`. If you find yourself wanting to, the work you're wrapping is probably an orchestration.
 - A file in `rpc/` may import from `rpc/client` (the shared infra) but not from another sibling in `rpc/`. Cross-adapter coordination is an orchestration.
 
-## Error transformation
+## Errors flow through unchanged
 
-Services return their own typed errors. Adapters transform service errors into `WhisperingError` so toast/notification consumers can render them uniformly.
+Services and operations return tagged errors built with `defineErrors` from `wellcrafted/error`. RPC adapters pass them through without translation; the component (or the operation it dispatches into) decides what the user should see by calling `report.error`, `report.info`, etc., from `$lib/report`.
 
 ```ts
 transcribeRecording: defineMutation({
   mutationFn: async (recording: Recording) => {
-    const { data, error } = await services.blobs.audio.getBlob(recording.id);
-    if (error) {
-      return WhisperingErr({
-        title: '⚠️ Failed to fetch audio',
-        description: `Unable to load audio for recording: ${error.message}`,
-      });
-    }
-    // ...
+    const { data: blob, error } = await services.blobs.audio.getBlob(recording.id);
+    if (error) return Err(error); // tagged error from the service, unchanged
+    return services.transcriptions.openai.transcribe(blob, options);
   },
 });
 ```
@@ -101,9 +95,9 @@ UI (.svelte)
   │  createMutation(() => ({ mutationFn: ... }))← local lifecycle over an orchestration
   │  await <operation>(...)                     ← fire-and-forget orchestrations
   ▼
-$lib/operations/*   imperative orchestrations (notify, delivery, recording, upload,
-                    pipeline, transcribe, transformation-clipboard, analytics,
-                    sound, shortcuts)
+$lib/operations/*   imperative orchestrations (delivery, recording, upload,
+                    pipeline, transcribe, transform, transformation-clipboard,
+                    analytics, sound, shortcuts)
   ▼
 $lib/rpc/*          TanStack adapters (this directory)
   ▼

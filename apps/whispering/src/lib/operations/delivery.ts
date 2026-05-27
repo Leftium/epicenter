@@ -1,275 +1,113 @@
+import { goto } from '$app/navigation';
 import { WHISPERING_RECORDINGS_PATHNAME } from '$lib/constants/app';
-import { notify } from '$lib/operations/notify';
-import type { WhisperingError } from '$lib/result';
+import { type Notice, report } from '$lib/report';
 import { services } from '$lib/services';
 import type { TextError } from '$lib/services/text';
 import { settings } from '$lib/state/settings.svelte';
 
+type TranscriptionSource = 'recording' | 'upload';
+
+const TRANSCRIPTION_SUCCESS_COPY = {
+	recording: '📝 Recording transcribed',
+	upload: '📁 File transcribed',
+} as const satisfies Record<TranscriptionSource, string>;
+
 /**
- * Delivers transcript to the user according to their text output preferences.
- *
- * Shows a success toast, optionally copies to clipboard, optionally writes to
- * cursor, and provides fallback UI actions when automatic operations fail.
- *
- * @param text - The transcript to deliver
- * @param toastId - Unique ID for toast notifications to prevent duplicates
+ * Delivers transcript to the user according to their text output preferences
+ * (copy to clipboard, write to cursor, simulate enter). Side-effect failures
+ * surface as independent toasts. Returns the success Notice the caller passes
+ * to `loading.resolve(...)`; ownership of the loading handle stays with the
+ * caller.
  */
 export async function deliverTranscriptionResult({
 	text,
-	toastId,
+	source = 'recording',
 }: {
 	text: string;
-	toastId: string;
-}) {
-	let copied = false;
-	let written = false;
-
-	const offerManualCopy = () =>
-		notify.success({
-			id: toastId,
-			title: '📝 Recording transcribed!',
-			description: text,
-			action: {
-				type: 'button',
-				label: 'Copy to clipboard',
-				onClick: async () => {
-					const { error } = await services.text.copyToClipboard(text);
-					if (error) {
-						notify.error({
-							title: 'Error copying transcript to clipboard',
-							description: error.message,
-							action: { type: 'more-details', error },
-						});
-						return;
-					}
-					notify.success({
-						id: toastId,
-						title: 'Copied transcript to clipboard!',
-						description: text,
-					});
-				},
-			},
-		});
-
-	const warnAutoCopyFailed = (error: TextError) => {
-		notify.warning({
-			title: "Couldn't copy to clipboard",
-			description: error.message,
-			action: { type: 'more-details', error },
-		});
-	};
-
-	const warnWriteToCursorFailed = (error: TextError | WhisperingError) => {
-		if (error.name === 'WhisperingError') {
-			notify[error.severity](error);
-			return;
-		}
-		notify.warning({
-			title: 'Unable to write to cursor automatically',
-			description: error.message,
-			action: { type: 'more-details', error },
-		});
-	};
-
-	const showSuccessNotification = () => {
-		if (copied && written) {
-			notify.success({
-				id: toastId,
-				title:
-					'📝 Recording transcribed, copied to clipboard, and written to cursor!',
-				description: text,
-				action: {
-					type: 'link',
-					label: 'Go to recordings',
-					href: WHISPERING_RECORDINGS_PATHNAME,
-				},
-			});
-		} else if (copied) {
-			notify.success({
-				id: toastId,
-				title: '📝 Recording transcribed and copied to clipboard!',
-				description: text,
-				action: {
-					type: 'link',
-					label: 'Go to recordings',
-					href: WHISPERING_RECORDINGS_PATHNAME,
-				},
-			});
-		} else if (written) {
-			notify.success({
-				id: toastId,
-				title: '📝 Recording transcribed and written to cursor!',
-				description: text,
-				action: {
-					type: 'link',
-					label: 'Go to recordings',
-					href: WHISPERING_RECORDINGS_PATHNAME,
-				},
-			});
-		} else {
-			offerManualCopy();
-		}
-	};
-
-	if (settings.get('output.transcription.clipboard')) {
-		const { error: copyError } = await services.text.copyToClipboard(text);
-		if (!copyError) {
-			copied = true;
-		} else {
-			warnAutoCopyFailed(copyError);
-		}
-	}
-
-	if (settings.get('output.transcription.cursor')) {
-		const { error: writeError } = await services.text.writeToCursor(text);
-		if (!writeError) {
-			written = true;
-			if (settings.get('output.transcription.enter')) {
-				const { error: enterError } =
-					await services.text.simulateEnterKeystroke();
-				if (enterError) {
-					notify.warning({
-						title: 'Unable to simulate Enter keystroke',
-						description: enterError.message,
-						action: { type: 'more-details', error: enterError },
-					});
-				}
-			}
-		} else {
-			warnWriteToCursorFailed(writeError);
-		}
-	}
-
-	showSuccessNotification();
+	source?: TranscriptionSource;
+}): Promise<Notice> {
+	return deliverResult({
+		text,
+		successCopy: TRANSCRIPTION_SUCCESS_COPY[source],
+		settingsScope: 'transcription',
+	});
 }
 
 /**
- * Delivers transformed text to the user according to their text output preferences.
- *
- * Shows a success toast, optionally copies to clipboard, optionally writes to
- * cursor, and provides fallback UI actions when automatic operations fail.
- *
- * @param text - The transformed text to deliver
- * @param toastId - Unique ID for toast notifications to prevent duplicates
+ * Delivers transformed text to the user according to their text output
+ * preferences. Returns the success Notice the caller passes to
+ * `loading.resolve(...)`.
  */
 export async function deliverTransformationResult({
 	text,
-	toastId,
 }: {
 	text: string;
-	toastId: string;
-}) {
+}): Promise<Notice> {
+	return deliverResult({
+		text,
+		successCopy: '🔄 Transformation complete',
+		settingsScope: 'transformation',
+	});
+}
+
+async function deliverResult({
+	text,
+	successCopy,
+	settingsScope,
+}: {
+	text: string;
+	successCopy: string;
+	settingsScope: 'transcription' | 'transformation';
+}): Promise<Notice> {
+	const goToRecordings = {
+		label: 'Go to recordings',
+		onClick: () => goto(WHISPERING_RECORDINGS_PATHNAME),
+	};
+
+	const copyToClipboardAction = {
+		label: 'Copy to clipboard',
+		onClick: async () => {
+			const { error } = await services.text.copyToClipboard(text);
+			if (error) {
+				report.error({
+					title: "Couldn't copy to clipboard",
+					cause: error,
+				});
+				return;
+			}
+			report.success({
+				title: 'Copied to clipboard!',
+				description: text,
+			});
+		},
+	};
+
 	let copied = false;
 	let written = false;
 
-	const offerManualCopy = () =>
-		notify.success({
-			id: toastId,
-			title: '🔄 Transformation complete!',
-			description: text,
-			action: {
-				type: 'button',
-				label: 'Copy to clipboard',
-				onClick: async () => {
-					const { error } = await services.text.copyToClipboard(text);
-					if (error) {
-						notify.error({
-							title: 'Error copying transformed text to clipboard',
-							description: error.message,
-							action: { type: 'more-details', error },
-						});
-						return;
-					}
-					notify.success({
-						id: toastId,
-						title: 'Copied transformed text to clipboard!',
-						description: text,
-					});
-				},
-			},
-		});
-
-	const warnAutoCopyFailed = (error: TextError) => {
-		notify.warning({
-			title: "Couldn't copy to clipboard",
-			description: error.message,
-			action: { type: 'more-details', error },
-		});
-	};
-
-	const warnWriteToCursorFailed = (error: TextError | WhisperingError) => {
-		if (error.name === 'WhisperingError') {
-			notify[error.severity](error);
-			return;
-		}
-		notify.error({
-			title: 'Error writing transformed text to cursor',
-			description: error.message,
-			action: { type: 'more-details', error },
-		});
-	};
-
-	const showSuccessNotification = () => {
-		if (copied && written) {
-			notify.success({
-				id: toastId,
-				title:
-					'🔄 Transformation complete, copied to clipboard, and written to cursor!',
-				description: text,
-				action: {
-					type: 'link',
-					label: 'Go to recordings',
-					href: WHISPERING_RECORDINGS_PATHNAME,
-				},
-			});
-		} else if (copied) {
-			notify.success({
-				id: toastId,
-				title: '🔄 Transformation complete and copied to clipboard!',
-				description: text,
-				action: {
-					type: 'link',
-					label: 'Go to recordings',
-					href: WHISPERING_RECORDINGS_PATHNAME,
-				},
-			});
-		} else if (written) {
-			notify.success({
-				id: toastId,
-				title: '🔄 Transformation complete and written to cursor!',
-				description: text,
-				action: {
-					type: 'link',
-					label: 'Go to recordings',
-					href: WHISPERING_RECORDINGS_PATHNAME,
-				},
-			});
-		} else {
-			offerManualCopy();
-		}
-	};
-
-	if (settings.get('output.transformation.clipboard')) {
+	if (settings.get(`output.${settingsScope}.clipboard`)) {
 		const { error: copyError } = await services.text.copyToClipboard(text);
 		if (!copyError) {
 			copied = true;
 		} else {
-			warnAutoCopyFailed(copyError);
+			report.error({
+				title: "Couldn't copy to clipboard",
+				cause: copyError,
+			});
 		}
 	}
 
-	if (settings.get('output.transformation.cursor')) {
+	if (settings.get(`output.${settingsScope}.cursor`)) {
 		const { error: writeError } = await services.text.writeToCursor(text);
 		if (!writeError) {
 			written = true;
-			if (settings.get('output.transformation.enter')) {
+			if (settings.get(`output.${settingsScope}.enter`)) {
 				const { error: enterError } =
 					await services.text.simulateEnterKeystroke();
 				if (enterError) {
-					notify.warning({
+					report.info({
 						title: 'Unable to simulate Enter keystroke',
-						description: enterError.message,
-						action: { type: 'more-details', error: enterError },
+						cause: enterError,
 					});
 				}
 			}
@@ -278,5 +116,38 @@ export async function deliverTransformationResult({
 		}
 	}
 
-	showSuccessNotification();
+	if (copied && written) {
+		return {
+			title: `${successCopy}, copied to clipboard, and written to cursor!`,
+			description: text,
+			action: goToRecordings,
+		};
+	}
+	if (copied) {
+		return {
+			title: `${successCopy} and copied to clipboard!`,
+			description: text,
+			action: goToRecordings,
+		};
+	}
+	if (written) {
+		return {
+			title: `${successCopy} and written to cursor!`,
+			description: text,
+			action: goToRecordings,
+		};
+	}
+	return {
+		title: `${successCopy}!`,
+		description: text,
+		action: copyToClipboardAction,
+	};
+
+	function warnWriteToCursorFailed(error: TextError) {
+		report.info({
+			title: 'Unable to write to cursor automatically',
+			cause: error,
+			action: copyToClipboardAction,
+		});
+	}
 }

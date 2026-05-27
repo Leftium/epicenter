@@ -12,10 +12,10 @@
 	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { createMutation } from '@tanstack/svelte-query';
-	import { nanoid } from 'nanoid/non-secure';
+	import type { AnyTaggedError } from 'wellcrafted/error';
 	import { deliverTranscriptionResult } from '$lib/operations/delivery';
-	import { notify } from '$lib/operations/notify';
 	import { sound } from '$lib/operations/sound';
+	import { report } from '$lib/report';
 	import { rpc } from '$lib/rpc';
 	import { recordings } from '$lib/state/recordings.svelte';
 	import { transformationRuns } from '$lib/state/transformation-runs.svelte';
@@ -60,32 +60,25 @@
 						? 'Retry transcription'
 						: 'Transcription failed - click to try again'}
 			onclick={() => {
-				const toastId = nanoid();
-				notify.loading({
-					id: toastId,
-					title: '📋 Transcribing...',
+				const loading = report.loading({
+					title: 'Transcribing...',
 					description: 'Your recording is being transcribed...',
 				});
 				transcribeRecording.mutate(recording, {
 					onError: (error) => {
-						if (error.name === 'WhisperingError') {
-							notify.error({ id: toastId, ...error });
-							return;
-						}
-						notify.error({
-							id: toastId,
-							title: '❌ Failed to transcribe recording',
+						loading.reject({
+							cause: error as AnyTaggedError,
+							title: 'Failed to transcribe recording',
 							description: 'Your recording could not be transcribed.',
-							action: { type: 'more-details', error: error },
 						});
 					},
-					onSuccess: (transcribedText) => {
+					onSuccess: async (transcribedText) => {
 						sound.playSoundIfEnabled('transcriptionComplete');
 
-						deliverTranscriptionResult({
+						const notice = await deliverTranscriptionResult({
 							text: transcribedText,
-							toastId,
 						});
+						loading.resolve(notice);
 					},
 				});
 			}}
@@ -134,18 +127,14 @@
 			onclick={() =>
 				downloadRecording.mutate(recording, {
 					onError: (error) => {
-						if (error.name === 'WhisperingError') {
-							notify.error(error);
-							return;
-						}
-						notify.error({
+						report.error({
+							cause: error as AnyTaggedError,
 							title: 'Failed to download recording!',
 							description: 'Your recording could not be downloaded.',
-							action: { type: 'more-details', error },
 						});
 					},
 					onSuccess: () => {
-						notify.success({
+						report.success({
 							title: 'Recording downloaded!',
 							description: 'Your recording has been downloaded.',
 						});

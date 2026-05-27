@@ -1,9 +1,8 @@
-import { nanoid } from 'nanoid/non-secure';
 import { defineErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import { analytics } from '$lib/operations/analytics';
-import { notify } from '$lib/operations/notify';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
+import { report } from '$lib/report';
 import { settings } from '$lib/state/settings.svelte';
 
 const { NoImportableFiles } = defineErrors({
@@ -44,8 +43,8 @@ export async function uploadRecordings({
 	}
 
 	if (invalidFiles.length > 0) {
-		notify.warning({
-			title: '⚠️ Some files were skipped',
+		report.info({
+			title: 'Some files were skipped',
 			description: `${invalidFiles.length} file(s) were not audio or video files`,
 		});
 	}
@@ -60,13 +59,10 @@ export async function uploadRecordings({
 				blob_size: audioBlob.size,
 			});
 
-			const toastId = nanoid();
 			await processRecordingPipeline({
 				audio: audioBlob,
 				durationMs: null,
-				toastId,
-				completionTitle: '📁 File uploaded successfully!',
-				completionDescription: file.name,
+				source: 'upload',
 			});
 		}),
 	);

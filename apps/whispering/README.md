@@ -696,9 +696,22 @@ Adding a new transcription service involves four main steps:
 
    ```typescript
    // Example: src/lib/services/transcription/cloud/your-service.ts
-   import { WhisperingErr, type WhisperingError } from '$lib/result';
-   import type { Settings } from '$lib/settings';
-   import { Err, Ok, tryAsync, type Result } from 'wellcrafted/result';
+   import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
+   import { Ok, tryAsync, type Result } from 'wellcrafted/result';
+
+   // Define a tagged error for this service. Variant names should humanize
+   // cleanly (see $lib/report/humanize) since the report spine derives
+   // toast titles from them by default.
+   export const YourServiceError = defineErrors({
+     MissingApiKey: () => ({
+       message: 'YourService API key is required',
+     }),
+     Unexpected: ({ cause }: { cause: unknown }) => ({
+       message: extractErrorMessage(cause),
+       cause,
+     }),
+   });
+   export type YourServiceError = InferErrors<typeof YourServiceError>;
 
    // Define your models directly in the service file
    export const YOUR_SERVICE_MODELS = [
@@ -707,61 +720,35 @@ Adding a new transcription service involves four main steps:
    		description: 'Description of what makes this model special',
    		cost: '$0.XX/hour',
    	},
-   	{
-   		name: 'model-v2',
-   		description: 'A faster variant with different trade-offs',
-   		cost: '$0.YY/hour',
-   	},
    ] as const;
 
    export type YourServiceModel = (typeof YOUR_SERVICE_MODELS)[number];
 
-   export function createYourServiceTranscriptionService() {
-   	return {
-   		async transcribe(
-   			audioBlob: Blob,
-   			options: {
-   				prompt: string;
-   				temperature: string;
-   				outputLanguage: Settings['transcription.outputLanguage'];
-   				apiKey: string;
-   				modelName: (string & {}) | YourServiceModel['name'];
-   				// Add any service-specific options
-   			},
-   		): Promise<Result<string, WhisperingError>> {
-   			// Validate API key
-   			if (!options.apiKey) {
-   				return WhisperingErr({
-   					title: '🔑 API Key Required',
-   					description: 'Please enter your YourService API key in settings.',
-   					action: {
-   						type: 'link',
-   						label: 'Add API key',
-   						href: '/settings/transcription',
-   					},
-   				});
-   			}
-
-   			// Make the API call
-   			const { data, error } = await tryAsync({
-   				try: () => yourServiceClient.transcribe(audioBlob, options),
-   				catch: (error) =>
-   					WhisperingErr({
-   						title: '❌ Transcription Failed',
-   						description: error.message,
-   						action: { type: 'more-details', error },
-   					}),
-   			});
-
-   			if (error) return Err(error);
-   			return Ok(data.text.trim());
+   export const YourServiceTranscriptionServiceLive = {
+   	async transcribe(
+   		audioBlob: Blob,
+   		options: {
+   			prompt: string;
+   			temperature: string;
+   			outputLanguage: string;
+   			apiKey: string;
+   			modelName: (string & {}) | YourServiceModel['name'];
    		},
-   	};
-   }
+   	): Promise<Result<string, YourServiceError>> {
+   		if (!options.apiKey) return YourServiceError.MissingApiKey();
 
-   export const YourServiceTranscriptionServiceLive =
-   	createYourServiceTranscriptionService();
+   		return tryAsync({
+   			try: async () => {
+   				const data = await yourServiceClient.transcribe(audioBlob, options);
+   				return data.text.trim();
+   			},
+   			catch: (error) => YourServiceError.Unexpected({ cause: error }),
+   		});
+   	},
+   };
    ```
+
+   The call site in `src/lib/operations/transcribe.ts` decides how to present any error from the service: by default `report.error({ cause: error })` auto-derives a title from the variant name and a description from the message. Override inline only when context-specific copy or an action helps.
 
    Don't forget to export your service in `src/lib/services/transcription/index.ts`:
 
@@ -916,45 +903,37 @@ AI transformations in Whispering use completion services that can be integrated 
 
    ```typescript
    // src/lib/services/completion/your-provider.ts
-   import { WhisperingErr, type WhisperingError } from '$lib/result';
-   import { Err, Ok, tryAsync, type Result } from 'wellcrafted/result';
+   import { defineErrors, extractErrorMessage, type InferErrors } from 'wellcrafted/error';
+   import { tryAsync, type Result } from 'wellcrafted/result';
 
-   export function createYourProviderCompletionService() {
-   	return {
-   		async complete(options: {
-   			apiKey: string;
-   			model: string;
-   			systemPrompt: string;
-   			userPrompt: string;
-   			temperature?: number;
-   		}): Promise<Result<string, WhisperingError>> {
-   			// Validate API key
-   			if (!options.apiKey) {
-   				return WhisperingErr({
-   					title: '🔑 API Key Required',
-   					description: 'Please add your YourProvider API key.',
-   				});
-   			}
+   export const YourProviderError = defineErrors({
+     MissingApiKey: () => ({ message: 'YourProvider API key is required' }),
+     Unexpected: ({ cause }: { cause: unknown }) => ({
+       message: extractErrorMessage(cause),
+       cause,
+     }),
+   });
+   export type YourProviderError = InferErrors<typeof YourProviderError>;
 
-   			// Make the completion request
-   			const { data, error } = await tryAsync({
-   				try: () => yourProviderClient.complete(options),
-   				catch: (error) =>
-   					WhisperingErr({
-   						title: '❌ Completion Failed',
-   						description: error.message,
-   						action: { type: 'more-details', error },
-   					}),
-   			});
+   export const YourProviderCompletionServiceLive = {
+   	async complete(options: {
+   		apiKey: string;
+   		model: string;
+   		systemPrompt: string;
+   		userPrompt: string;
+   		temperature?: number;
+   	}): Promise<Result<string, YourProviderError>> {
+   		if (!options.apiKey) return YourProviderError.MissingApiKey();
 
-   			if (error) return Err(error);
-   			return Ok(data.text);
-   		},
-   	};
-   }
-
-   export const YourProviderCompletionServiceLive =
-   	createYourProviderCompletionService();
+   		return tryAsync({
+   			try: async () => {
+   				const data = await yourProviderClient.complete(options);
+   				return data.text;
+   			},
+   			catch: (error) => YourProviderError.Unexpected({ cause: error }),
+   		});
+   	},
+   };
    ```
 
 2. **Register the service** in `src/lib/services/completion/index.ts`:
@@ -999,42 +978,33 @@ AI transformations in Whispering use completion services that can be integrated 
 
 ##### Error Handling Best Practices
 
-Always use the `WhisperingErr` helper for user-facing errors:
+Services return tagged errors via `defineErrors`. The call site decides what the user sees by calling `report.error`, `report.info`, `report.success`, or `report.loading` from `$lib/report`. The toast and OS notification surfaces are sinks the spine fans out to.
 
 ```typescript
-// Good: User-friendly error with action
-return WhisperingErr({
-	title: '⏱️ Rate Limit Reached',
-	description: 'Too many requests. Please try again in a few minutes.',
-	action: {
-		type: 'link',
-		label: 'View rate limits',
-		href: 'https://yourservice.com/rate-limits',
-	},
-});
+// Service: return a tagged error, not pre-baked UI copy.
+return YourServiceError.RateLimit({ retryAfterSec });
 
-// Handle different error types
-if (error.status === 401) {
-	return WhisperingErr({
-		title: '🔑 Invalid API Key',
-		description: 'Your API key appears to be invalid or expired.',
-		action: {
-			type: 'link',
-			label: 'Update API key',
-			href: '/settings/transcription',
-		},
-	});
+// Call site: default rendering auto-derives the title from the variant name
+// ("Rate limit") and the description from the error's message field.
+if (error) {
+	report.error({ cause: error });
+	return;
 }
 
-// Use with tryAsync for automatic error mapping
+// Inline override only when context-specific copy or an action helps.
+if (error.name === 'Unauthorized') {
+	report.error({
+		cause: error,
+		title: 'Authentication required',
+		action: { label: 'Update API key', onClick: () => goto('/settings') },
+	});
+	return;
+}
+
+// Pair with tryAsync for catch-side error construction.
 const { data, error } = await tryAsync({
 	try: () => apiClient.makeRequest(),
-	catch: (error) =>
-		WhisperingErr({
-			title: '❌ Request Failed',
-			description: error.message,
-			action: { type: 'more-details', error },
-		}),
+	catch: (cause) => YourServiceError.Unexpected({ cause }),
 });
 ```
 
@@ -1049,14 +1019,13 @@ import { createYourServiceTranscriptionService } from './your-service';
 
 describe('YourService Transcription', () => {
 	it('should handle missing API key', async () => {
-		const service = createYourServiceTranscriptionService();
-		const result = await service.transcribe(new Blob(), {
+		const result = await YourServiceTranscriptionServiceLive.transcribe(new Blob(), {
 			apiKey: '',
 			// other options
-		});
+		} as any);
 
 		expect(result.error).toBeDefined();
-		expect(result.error?.title).toContain('API Key Required');
+		expect(result.error?.name).toBe('MissingApiKey');
 	});
 
 	// Add more tests

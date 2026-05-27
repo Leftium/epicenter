@@ -17,12 +17,12 @@ import type { Keyring } from '@epicenter/encryption';
 import { Ok, type Result } from 'wellcrafted/result';
 import type {
 	AuthClient,
-	OAuthLaunchResult,
 	OAuthTokenGrant,
 	PersistedAuth,
 	PersistedAuthStorage,
 } from './index.js';
 import { asUserId, createOAuthAppAuth } from './index.js';
+import type { OAuthLaunchResult } from './oauth-launchers/contract.js';
 
 const now = 1_000_000;
 
@@ -724,6 +724,44 @@ test('auth.fetch resolves relative API paths against the auth base URL', async (
 		{
 			url: 'http://localhost:8787/api/session',
 			authorization: 'Bearer access-token',
+		},
+	]);
+	auth[Symbol.dispose]();
+});
+
+test('auth.fetch preserves iterable init headers when attaching bearer', async () => {
+	const setup = createStorage(cell());
+	const seenHeaders: Array<{
+		authorization: string | null;
+		custom: string | null;
+	}> = [];
+	const auth = createOAuthAppAuth({
+		baseURL: 'http://localhost:8787',
+		clientId: 'client-1',
+		now: () => now,
+		persistedAuthStorage: setup.storage,
+		launcher: { startSignIn: async () => launched() },
+		fetch: async (input, init) => {
+			if (String(input).endsWith('/api/session')) {
+				return json(apiSessionBody('user-1'));
+			}
+			const headers = new Headers(init?.headers);
+			seenHeaders.push({
+				authorization: headers.get('authorization'),
+				custom: headers.get('x-custom'),
+			});
+			return new Response(null, { status: 204 });
+		},
+	});
+
+	await auth.fetch('http://localhost:8787/resource', {
+		headers: new Map([['x-custom', 'from-map']]) as unknown as HeadersInit,
+	});
+
+	expect(seenHeaders).toEqual([
+		{
+			authorization: 'Bearer access-token',
+			custom: 'from-map',
 		},
 	]);
 	auth[Symbol.dispose]();

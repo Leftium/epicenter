@@ -597,17 +597,9 @@ function headersFromRequest(input: Request | string | URL, init?: RequestInit) {
 	const source = init?.headers;
 	if (!source) return headers;
 
-	if (source instanceof Headers) {
-		source.forEach((value, key) => {
-			headers.set(key, value);
-		});
-		return headers;
-	}
-
-	const entries = Array.isArray(source) ? source : Object.entries(source);
-	for (const [key, value] of entries) {
+	new Headers(source).forEach((value, key) => {
 		headers.set(key, value);
-	}
+	});
 	return headers;
 }
 

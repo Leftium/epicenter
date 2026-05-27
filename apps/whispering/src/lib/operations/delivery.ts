@@ -1,8 +1,7 @@
 import { goto } from '$app/navigation';
 import { WHISPERING_RECORDINGS_PATHNAME } from '$lib/constants/app';
-import { type Notice, report } from '$lib/report';
+import { report } from '$lib/report';
 import { services } from '$lib/services';
-import type { TextError } from '$lib/services/text';
 import { settings } from '$lib/state/settings.svelte';
 
 type TranscriptionSource = 'recording' | 'upload';
@@ -25,7 +24,7 @@ export async function deliverTranscriptionResult({
 }: {
 	text: string;
 	source?: TranscriptionSource;
-}): Promise<Notice> {
+}) {
 	return deliverResult({
 		text,
 		successCopy: TRANSCRIPTION_SUCCESS_COPY[source],
@@ -42,7 +41,7 @@ export async function deliverTransformationResult({
 	text,
 }: {
 	text: string;
-}): Promise<Notice> {
+}) {
 	return deliverResult({
 		text,
 		successCopy: '🔄 Transformation complete',
@@ -58,7 +57,7 @@ async function deliverResult({
 	text: string;
 	successCopy: string;
 	settingsScope: 'transcription' | 'transformation';
-}): Promise<Notice> {
+}) {
 	const goToRecordings = {
 		label: 'Go to recordings',
 		onClick: () => goto(WHISPERING_RECORDINGS_PATHNAME),
@@ -112,7 +111,11 @@ async function deliverResult({
 				}
 			}
 		} else {
-			warnWriteToCursorFailed(writeError);
+			report.info({
+				title: 'Unable to write to cursor automatically',
+				cause: writeError,
+				action: copyToClipboardAction,
+			});
 		}
 	}
 
@@ -142,12 +145,4 @@ async function deliverResult({
 		description: text,
 		action: copyToClipboardAction,
 	};
-
-	function warnWriteToCursorFailed(error: TextError) {
-		report.info({
-			title: 'Unable to write to cursor automatically',
-			cause: error,
-			action: copyToClipboardAction,
-		});
-	}
 }

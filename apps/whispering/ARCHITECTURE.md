@@ -29,7 +29,7 @@ src/lib/services/clipboard/
 
 ```ts
 // vite.config.ts
-const isTauri = process.env.TAURI_PLATFORM !== undefined;
+const isTauri = process.env.TAURI_ENV_PLATFORM !== undefined;
 export default defineConfig({
   resolve: {
     extensions: isTauri

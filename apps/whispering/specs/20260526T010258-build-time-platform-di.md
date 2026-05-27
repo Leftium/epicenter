@@ -64,7 +64,7 @@ Consumers always write `import { ClipboardService } from '$lib/clipboard/service
 // vite.config.ts
 import { defineConfig } from 'vite';
 
-const isTauri = process.env.TAURI_PLATFORM !== undefined;
+const isTauri = process.env.TAURI_ENV_PLATFORM !== undefined;
 
 export default defineConfig({
   resolve: {
@@ -283,7 +283,7 @@ These stay as `{#if window.__TAURI_INTERNALS__}` because they're rendering decis
 `apps/whispering/vite.config.ts`:
 
 ```ts
-const isTauri = process.env.TAURI_PLATFORM !== undefined;
+const isTauri = process.env.TAURI_ENV_PLATFORM !== undefined;
 
 export default defineConfig({
   resolve: {
@@ -298,7 +298,7 @@ export default defineConfig({
 Notes:
 - On Tauri builds, `.tauri.ts` is tried first; missing → falls through to `.ts`.
 - On web builds, `.tauri.ts` is NOT in the extensions list, so a web bundle that imports a Tauri-only path fails at build time. This is the desired safety: web cannot accidentally bundle Tauri code.
-- `TAURI_PLATFORM` is set by Tauri's CLI automatically during `tauri dev` and `tauri build`. No manual env var management.
+- `TAURI_ENV_PLATFORM` is set by Tauri's CLI automatically during `tauri dev` and `tauri build`. No manual env var management.
 
 ## tsconfig (exact)
 
@@ -347,7 +347,7 @@ Top-level `services/README.md` is rewritten in Wave 5 to describe the suffix con
 
 ### Wave 1: Wire up Vite (one PR, no service touched)
 
-- [ ] Edit `apps/whispering/vite.config.ts` to set `resolve.extensions` based on `process.env.TAURI_PLATFORM`.
+- [ ] Edit `apps/whispering/vite.config.ts` to set `resolve.extensions` based on `process.env.TAURI_ENV_PLATFORM`.
 - [ ] Create `apps/whispering/src/lib/.platform-probe.ts` (web stub: `export const target = 'web';`) and `apps/whispering/src/lib/.platform-probe.tauri.ts` (`export const target = 'tauri';`).
 - [ ] In `routes/(app)/+layout.svelte` (or any entry), add a dev-only `console.log` importing the probe.
 - [ ] `bun run dev` on web: log says `web`. `bun run dev:local` (Tauri): log says `tauri`.

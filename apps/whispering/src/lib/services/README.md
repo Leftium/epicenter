@@ -49,7 +49,7 @@ Consumers always write `import { TextServiceLive } from '$lib/services/text'`. T
 
 ```ts
 // vite.config.ts (sketch)
-const isTauri = process.env.TAURI_PLATFORM !== undefined;
+const isTauri = process.env.TAURI_ENV_PLATFORM !== undefined;
 export default defineConfig({
   resolve: {
     extensions: isTauri
@@ -104,7 +104,7 @@ Services are collections of pure functions that:
 
 ### Platform Detection
 
-Vite picks the right file at build time based on `process.env.TAURI_PLATFORM`. Consumers import without naming the platform:
+Vite picks the right file at build time based on `process.env.TAURI_ENV_PLATFORM`. Consumers import without naming the platform:
 
 ```typescript
 // Resolves to services/text/index.browser.ts on web,

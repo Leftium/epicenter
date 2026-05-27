@@ -19,10 +19,15 @@ type RecordingMarkdownExportError = InferErrors<
 	typeof RecordingMarkdownExportError
 >;
 
-type RecordingMarkdownExportResult = {
-	dir: string;
-	written: number;
-};
+type RecordingMarkdownExportResult =
+	| {
+			status: 'cancelled';
+	  }
+	| {
+			status: 'exported';
+			dir: string;
+			written: number;
+	  };
 
 /**
  * Serialize a recording row to a markdown file.
@@ -41,11 +46,10 @@ function toRecordingMarkdownFile(row: Recording) {
 /**
  * Open a folder picker and write every current recording as a markdown file
  * to the chosen folder. Snapshot at click time: later edits in Whispering
- * do not update the exported files. Resolves to `null` when the user
- * cancels the dialog.
+ * do not update the exported files.
  */
 export async function exportRecordingsMarkdown(): Promise<
-	Result<RecordingMarkdownExportResult | null, RecordingMarkdownExportError>
+	Result<RecordingMarkdownExportResult, RecordingMarkdownExportError>
 > {
 	return tryAsync({
 		try: async () => {
@@ -55,15 +59,16 @@ export async function exportRecordingsMarkdown(): Promise<
 				multiple: false,
 				title: 'Choose folder for recording markdown export',
 			});
-			if (typeof selected !== 'string') return null;
+			if (typeof selected !== 'string') return { status: 'cancelled' };
 
 			const files = whispering.tables.recordings
 				.getAllValid()
 				.map(toRecordingMarkdownFile);
 			const { error } = await commands.writeMarkdownFiles(selected, files);
 			if (error !== null) throw error;
-			return { dir: selected, written: files.length };
+			return { status: 'exported', dir: selected, written: files.length };
 		},
-		catch: (error) => RecordingMarkdownExportError.WriteFailed({ cause: error }),
+		catch: (error) =>
+			RecordingMarkdownExportError.WriteFailed({ cause: error }),
 	});
 }

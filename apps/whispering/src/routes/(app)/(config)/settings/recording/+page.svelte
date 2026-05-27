@@ -5,6 +5,7 @@
 	import { Link } from '@epicenter/ui/link';
 	import * as Select from '@epicenter/ui/select';
 	import InfoIcon from '@lucide/svelte/icons/info';
+	import { createMutation } from '@tanstack/svelte-query';
 	import {
 		BITRATE_OPTIONS,
 		RECORDING_MODE_OPTIONS,
@@ -70,28 +71,9 @@
 			deviceConfig.get('recording.method') === 'navigator',
 	);
 
-	let isExportingMarkdown = $state(false);
-
-	async function exportRecordingMarkdown() {
-		if (isExportingMarkdown) return;
-		isExportingMarkdown = true;
-		const { data, error } = await exportRecordingsMarkdown();
-		isExportingMarkdown = false;
-
-		if (error !== null) {
-			report.error({
-				title: 'Recording markdown export failed',
-				cause: error,
-			});
-			return;
-		}
-		if (data === null) return;
-
-		report.success({
-			title: 'Recording markdown exported',
-			description: `Wrote ${data.written} ${data.written === 1 ? 'file' : 'files'} to ${data.dir}.`,
-		});
-	}
+	const exportMarkdown = createMutation(() => ({
+		mutationFn: exportRecordingsMarkdown,
+	}));
 
 	function getManualDeviceId(method: 'cpal' | 'navigator') {
 		switch (method) {
@@ -268,10 +250,28 @@
 					<Field.Label>Recording markdown export</Field.Label>
 					<Button
 						variant="outline"
-						onclick={exportRecordingMarkdown}
-						disabled={isExportingMarkdown}
+						onclick={() => {
+							exportMarkdown.mutate(undefined, {
+								onSuccess: ({ data, error }) => {
+									if (error !== null) {
+										report.error({
+											title: 'Recording markdown export failed',
+											cause: error,
+										});
+										return;
+									}
+									if (data.status === 'cancelled') return;
+
+									report.success({
+										title: 'Recording markdown exported',
+										description: `Wrote ${data.written} ${data.written === 1 ? 'file' : 'files'} to ${data.dir}.`,
+									});
+								},
+							});
+						}}
+						disabled={exportMarkdown.isPending}
 					>
-						{isExportingMarkdown ? 'Exporting…' : 'Export markdown…'}
+						{exportMarkdown.isPending ? 'Exporting...' : 'Export markdown...'}
 					</Button>
 					<Field.Description>
 						Write every current recording's transcript to a folder you choose.

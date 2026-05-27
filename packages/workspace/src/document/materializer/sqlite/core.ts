@@ -374,7 +374,7 @@ export function attachSqliteMaterializerCore<
 
 	const whenFlushed = initialize();
 
-	const base: SqliteMaterializerCommon = {
+	const base = {
 		whenFlushed,
 		count: defineQuery({
 			title: 'Row count',
@@ -388,7 +388,7 @@ export function attachSqliteMaterializerCore<
 			input: Type.Object({ table: Type.Optional(Type.String()) }),
 			handler: ({ table: tableName }) => rebuild(tableName),
 		}),
-	};
+	} satisfies SqliteMaterializerCommon;
 
 	// The conditional return type collapses to `base` when no FTS was passed.
 	// The cast is local: the runtime branch matches the type-level branch.

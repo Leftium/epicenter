@@ -216,27 +216,30 @@ async function dispatchCloudTranscription(
 			return Ok(data);
 		}
 		case 'Deepgram': {
-			const { data, error } =
-				await services.transcriptions.deepgram.transcribe(audio, {
+			const { data, error } = await services.transcriptions.deepgram.transcribe(
+				audio,
+				{
 					outputLanguage,
 					prompt,
 					temperature,
 					apiKey: deviceConfig.get('apiKeys.deepgram'),
 					modelName: settings.get('transcription.deepgram.model'),
-				});
-			if (error)
-				return services.transcriptions.deepgram.toWhisperingErr(error);
+				},
+			);
+			if (error) return services.transcriptions.deepgram.toWhisperingErr(error);
 			return Ok(data);
 		}
 		case 'Mistral': {
-			const { data, error } =
-				await services.transcriptions.mistral.transcribe(audio, {
+			const { data, error } = await services.transcriptions.mistral.transcribe(
+				audio,
+				{
 					outputLanguage,
 					prompt,
 					temperature,
 					apiKey: deviceConfig.get('apiKeys.mistral'),
 					modelName: settings.get('transcription.mistral.model'),
-				});
+				},
+			);
 			if (error) return services.transcriptions.mistral.toWhisperingErr(error);
 			return Ok(data);
 		}

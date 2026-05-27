@@ -15,13 +15,14 @@
 	import { tauri } from '$lib/tauri';
 	import { rpc } from '$lib/rpc';
 	import { defineQuery } from '$lib/rpc/client';
+	import { textKeys } from '$lib/rpc/keys';
 	import { services } from '$lib/services';
 	import * as transformClipboardWindow from './transformClipboardWindow.tauri';
 
 	const combobox = useCombobox();
 
 	const readFromClipboard = defineQuery({
-		queryKey: ['text', 'readFromClipboard'] as const,
+		queryKey: textKeys.readFromClipboard,
 		queryFn: () => services.text.readFromClipboard(),
 	});
 

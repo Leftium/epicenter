@@ -2,17 +2,20 @@ import type { AnyTaggedError } from 'wellcrafted/error';
 import { Err, Ok, partitionResults, type Result } from 'wellcrafted/result';
 import { transcribeAudio } from '$lib/operations/transcribe';
 import { defineMutation, queryClient } from '$lib/rpc/client';
+import { transcriptionKeys } from '$lib/rpc/keys';
 import type { Recording } from '$lib/state/recordings.svelte';
 import { recordings } from '$lib/state/recordings.svelte';
 
-const isTranscribingKey = ['transcription', 'isTranscribing'] as const;
-
 export const transcription = {
 	isCurrentlyTranscribing() {
-		return queryClient.isMutating({ mutationKey: isTranscribingKey }) > 0;
+		return (
+			queryClient.isMutating({
+				mutationKey: transcriptionKeys.isTranscribing,
+			}) > 0
+		);
 	},
 	transcribeRecording: defineMutation({
-		mutationKey: isTranscribingKey,
+		mutationKey: transcriptionKeys.isTranscribing,
 		mutationFn: async (
 			recording: Recording,
 		): Promise<Result<string, AnyTaggedError>> => {
@@ -33,7 +36,7 @@ export const transcription = {
 	}),
 
 	transcribeRecordings: defineMutation({
-		mutationKey: isTranscribingKey,
+		mutationKey: transcriptionKeys.isTranscribing,
 		mutationFn: async (recordings: Recording[]) => {
 			const results = await Promise.all(
 				recordings.map((recording) => transcribeAudio(recording.id)),

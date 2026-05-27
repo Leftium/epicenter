@@ -1,5 +1,6 @@
 import type { Accessor } from '@tanstack/svelte-query';
 import { defineQuery } from '$lib/rpc/client';
+import { audioKeys } from '$lib/rpc/keys';
 import { services } from '$lib/services';
 
 export const audio = {
@@ -10,7 +11,7 @@ export const audio = {
 	 */
 	getPlaybackUrl: (id: Accessor<string>) =>
 		defineQuery({
-			queryKey: ['audio', 'playbackUrl', id()],
+			queryKey: audioKeys.playbackUrl(id()),
 			queryFn: () => services.blobs.audio.ensurePlaybackUrl(id()),
 		}),
 };

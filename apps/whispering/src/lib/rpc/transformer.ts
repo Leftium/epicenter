@@ -5,6 +5,7 @@ import {
 	type TransformError,
 } from '$lib/operations/transform';
 import { defineMutation } from '$lib/rpc/client';
+import { transformerKeys } from '$lib/rpc/keys';
 import { recordings } from '$lib/state/recordings.svelte';
 import type { Transformation } from '$lib/workspace';
 
@@ -22,7 +23,7 @@ type TransformerRpcError = InferErrors<typeof TransformerRpcError>;
  */
 export const transformer = {
 	transformInput: defineMutation({
-		mutationKey: ['transformer', 'transformInput'],
+		mutationKey: transformerKeys.transformInput,
 		mutationFn: ({
 			input,
 			transformation,
@@ -34,7 +35,7 @@ export const transformer = {
 	}),
 
 	transformRecording: defineMutation({
-		mutationKey: ['transformer', 'transformRecording'],
+		mutationKey: transformerKeys.transformRecording,
 		mutationFn: ({
 			recordingId,
 			transformation,

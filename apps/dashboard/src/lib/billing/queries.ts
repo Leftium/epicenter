@@ -17,6 +17,9 @@ export const billingKeys = defineKeys({
 	events: (params: EventsQuery) => ['billing', 'events', params] as const,
 	plans: ['billing', 'plans'],
 	models: ['billing', 'models'],
+	topUp: ['billing', 'top-up'],
+	preview: ['billing', 'preview'],
+	checkoutPlan: ['billing', 'checkout-plan'],
 });
 
 export const billing = {
@@ -50,19 +53,19 @@ export const billing = {
 	}),
 
 	topUp: defineMutation({
-		mutationKey: [...billingKeys.all, 'top-up'],
+		mutationKey: billingKeys.topUp,
 		mutationFn: (successUrl?: string) =>
 			billingApi.checkoutTopUp({ successUrl }),
 	}),
 
 	previewPlanChange: defineMutation({
-		mutationKey: [...billingKeys.all, 'preview'],
+		mutationKey: billingKeys.preview,
 		mutationFn: (params: { planId: string }) =>
 			billingApi.previewPlanChange(params),
 	}),
 
 	checkoutPlan: defineMutation({
-		mutationKey: [...billingKeys.all, 'checkout-plan'],
+		mutationKey: billingKeys.checkoutPlan,
 		mutationFn: (params: { planId: string; successUrl?: string }) =>
 			billingApi.checkoutPlan(params),
 	}),

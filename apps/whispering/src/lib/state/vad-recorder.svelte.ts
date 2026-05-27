@@ -3,6 +3,7 @@ import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, tryAsync, trySync } from 'wellcrafted/result';
 import type { VadState } from '$lib/constants/audio';
 import { defineQuery } from '$lib/rpc/client';
+import { vadKeys } from '$lib/rpc/keys';
 import {
 	cleanupRecordingStream,
 	enumerateDevices,
@@ -81,7 +82,7 @@ function createVadRecorder() {
 		 * - With createQuery: `createQuery(() => vadRecorder.enumerateDevices.options)`
 		 */
 		enumerateDevices: defineQuery({
-			queryKey: ['vad', 'devices'],
+			queryKey: vadKeys.devices,
 			queryFn: async () => {
 				const { data, error } = await enumerateDevices();
 				if (error)

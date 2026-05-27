@@ -1,36 +1,34 @@
-import { nanoid } from 'nanoid/non-secure';
+import { goto } from '$app/navigation';
 import {
 	deliverTranscriptionResult,
 	deliverTransformationResult,
 } from '$lib/operations/delivery';
-import { notify } from '$lib/operations/notify';
 import { sound } from '$lib/operations/sound';
 import { transcribeAudio } from '$lib/operations/transcribe';
 import { runTransformation } from '$lib/operations/transform';
+import { report } from '$lib/report';
 import { services } from '$lib/services';
 import type { RecorderStopResult } from '$lib/services/recorder/types';
 import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { transformations } from '$lib/state/transformations.svelte';
 
+type DeliverySource = 'recording' | 'upload';
+
 /**
  * Argument shape for the pipeline. The recorder produces a
  * `RecorderStopResult`; the VAD path and file-upload path build the
- * equivalent shape with `kind: 'blob'`. The pipeline picks an id from
- * the result (or generates one for legacy blob callers that don't carry
- * one yet) and treats the recording as a Rust-owned artifact from then on.
+ * equivalent shape with `kind: 'blob'`.
  */
 type PipelineInput = {
 	source: RecorderStopResult;
 	durationMs: number | null;
-	toastId: string;
-	completionTitle: string;
-	completionDescription: string;
+	deliverySource?: DeliverySource;
 };
 
 /**
- * Processes a recording through the full pipeline: persist artifact ->
- * transcribe by id -> transform.
+ * Processes a recording through the full pipeline: persist artifact,
+ * transcribe by id, then transform.
  *
  * Audio bytes never live in pipeline state. For cpal sources Rust has
  * already written the durable artifact at
@@ -41,9 +39,7 @@ type PipelineInput = {
 export async function processRecordingPipeline({
 	source,
 	durationMs,
-	toastId,
-	completionTitle,
-	completionDescription,
+	deliverySource = 'recording',
 }: PipelineInput) {
 	const now = new Date().toISOString();
 	const recordingId =
@@ -61,30 +57,20 @@ export async function processRecordingPipeline({
 
 	recordings.set(recording);
 
-	// Persist the audio before transcription. For cpal artifacts this is
-	// a no-op (Rust already wrote the WAV). For blobs we save through the
-	// recordings blob store, which writes to the same on-disk location in
-	// Tauri (`recordings/{id}.{ext}`) and to IndexedDB on the web. The
-	// next steps look the file up by id, so this save MUST complete first.
 	if (source.kind === 'blob') {
 		const { error: saveError } = await services.blobs.audio.save(
 			recordingId,
 			source.blob,
 		);
 		if (saveError) {
-			notify.warning({
-				id: toastId,
-				title: '⚠️ Audio not saved',
-				description:
-					'We could not save the recording bytes; transcription will continue but history playback will be unavailable.',
-				action: { type: 'more-details', error: saveError },
+			report.error({
+				title: 'Audio not saved',
+				cause: saveError,
 			});
 		}
 	}
 
-	const transcribeToastId = nanoid();
-	notify.loading({
-		id: transcribeToastId,
+	const transcribeLoading = report.loading({
 		title: '📋 Transcribing...',
 		description: 'Your recording is being transcribed...',
 	});
@@ -94,30 +80,16 @@ export async function processRecordingPipeline({
 
 	if (transcribeError) {
 		recordings.update(recordingId, { transcriptionStatus: 'FAILED' });
-		if (transcribeError.name === 'WhisperingError') {
-			notify.error({ id: transcribeToastId, ...transcribeError });
-			return;
-		}
-		notify.error({
-			id: transcribeToastId,
-			title: '❌ Failed to transcribe recording',
-			description: 'Your recording could not be transcribed.',
-			action: { type: 'more-details', error: transcribeError },
-		});
+		transcribeLoading.reject({ cause: transcribeError });
 		return;
 	}
 
 	sound.playSoundIfEnabled('transcriptionComplete');
-	await deliverTranscriptionResult({
+	const transcribeNotice = await deliverTranscriptionResult({
 		text: transcribedText,
-		toastId: transcribeToastId,
+		source: deliverySource,
 	});
-
-	notify.success({
-		id: toastId,
-		title: completionTitle,
-		description: completionDescription,
-	});
+	transcribeLoading.resolve(transcribeNotice);
 
 	recordings.update(recordingId, {
 		transcript: transcribedText,
@@ -130,56 +102,39 @@ export async function processRecordingPipeline({
 	const transformation = transformations.get(transformationId);
 	if (!transformation) {
 		settings.set('transformation.selectedId', null);
-		notify.warning({
-			title: '⚠️ No matching transformation found',
+		report.info({
+			title: 'No matching transformation found',
 			description:
 				'No matching transformation found. Please select a different transformation.',
 			action: {
-				type: 'link',
 				label: 'Select a different transformation',
-				href: '/transformations',
+				onClick: () => goto('/transformations'),
 			},
 		});
 		return;
 	}
 
-	const transformToastId = nanoid();
-	notify.loading({
-		id: transformToastId,
+	const transformLoading = report.loading({
 		title: '🔄 Running transformation...',
 		description:
 			'Applying your selected transformation to the transcribed text...',
 	});
 
-	const { data: result, error: transformError } = await runTransformation({
-		input: transcribedText,
-		transformation,
-		recordingId,
-	});
+	const { data: transformedText, error: transformError } =
+		await runTransformation({
+			input: transcribedText,
+			transformation,
+			recordingId,
+		});
 	if (transformError) {
-		notify.error({
-			id: transformToastId,
-			title: '⚠️ Transformation failed',
-			description: transformError.message,
-			action: { type: 'more-details', error: transformError },
-		});
-		return;
-	}
-
-	if (result.status === 'failed') {
-		notify.error({
-			id: transformToastId,
-			title: '⚠️ Transformation error',
-			description: result.error,
-			action: { type: 'more-details', error: result.error },
-		});
+		transformLoading.reject({ cause: transformError });
 		return;
 	}
 
 	sound.playSoundIfEnabled('transformationComplete');
 
-	await deliverTransformationResult({
-		text: result.output,
-		toastId: transformToastId,
+	const transformNotice = await deliverTransformationResult({
+		text: transformedText,
 	});
+	transformLoading.resolve(transformNotice);
 }

@@ -1,21 +1,19 @@
-import { Ok, type Result } from 'wellcrafted/result';
-import { runTransformation } from '$lib/operations/transform';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import type { Result } from 'wellcrafted/result';
 import {
-	WhisperingErr,
-	type WhisperingError,
-	type WhisperingResult,
-} from '$lib/result';
+	runTransformation,
+	type TransformError,
+} from '$lib/operations/transform';
 import { defineMutation } from '$lib/rpc/client';
 import { recordings } from '$lib/state/recordings.svelte';
-import type {
-	TerminalTransformationRunResult,
-	Transformation,
-} from '$lib/workspace';
+import type { Transformation } from '$lib/workspace';
 
-const transformerKeys = {
-	transformInput: ['transformer', 'transformInput'] as const,
-	transformRecording: ['transformer', 'transformRecording'] as const,
-};
+const TransformerRpcError = defineErrors({
+	RecordingNotFound: () => ({
+		message: 'Could not find the selected recording.',
+	}),
+});
+type TransformerRpcError = InferErrors<typeof TransformerRpcError>;
 
 /**
  * Observed mutations around runTransformation. The pipeline logic lives in
@@ -24,67 +22,35 @@ const transformerKeys = {
  */
 export const transformer = {
 	transformInput: defineMutation({
-		mutationKey: transformerKeys.transformInput,
-		mutationFn: async ({
+		mutationKey: ['transformer', 'transformInput'] as const,
+		mutationFn: ({
 			input,
 			transformation,
 		}: {
 			input: string;
 			transformation: Transformation;
-		}): Promise<WhisperingResult<string>> => {
-			const { data: result, error: runError } = await runTransformation({
-				input,
-				transformation,
-				recordingId: null,
-			});
-
-			if (runError)
-				return WhisperingErr({
-					title: '⚠️ Transformation failed',
-					serviceError: runError,
-				});
-
-			if (result.status === 'failed')
-				return WhisperingErr({
-					title: '⚠️ Transformation failed',
-					description: result.error,
-					action: { type: 'more-details', error: result.error },
-				});
-
-			return Ok(result.output);
-		},
+		}): Promise<Result<string, TransformError>> =>
+			runTransformation({ input, transformation, recordingId: null }),
 	}),
 
 	transformRecording: defineMutation({
-		mutationKey: transformerKeys.transformRecording,
-		mutationFn: async ({
+		mutationKey: ['transformer', 'transformRecording'] as const,
+		mutationFn: ({
 			recordingId,
 			transformation,
 		}: {
 			recordingId: string;
 			transformation: Transformation;
-		}): Promise<Result<TerminalTransformationRunResult, WhisperingError>> => {
+		}): Promise<Result<string, TransformError | TransformerRpcError>> => {
 			const recording = recordings.get(recordingId);
-			if (!recording) {
-				return WhisperingErr({
-					title: '⚠️ Recording not found',
-					description: 'Could not find the selected recording.',
-				});
-			}
+			if (!recording)
+				return Promise.resolve(TransformerRpcError.RecordingNotFound());
 
-			const { data: result, error: runError } = await runTransformation({
+			return runTransformation({
 				input: recording.transcript,
 				transformation,
 				recordingId,
 			});
-
-			if (runError)
-				return WhisperingErr({
-					title: '⚠️ Transformation failed',
-					serviceError: runError,
-				});
-
-			return Ok(result);
 		},
 	}),
 };

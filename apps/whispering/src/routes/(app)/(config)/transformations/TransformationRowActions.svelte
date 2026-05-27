@@ -3,7 +3,7 @@
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { Skeleton } from '@epicenter/ui/skeleton';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { notify } from '$lib/operations/notify';
+	import { report } from '$lib/report';
 	import { transformations } from '$lib/state/transformations.svelte';
 	import EditTransformationModal from './EditTransformationModal.svelte';
 
@@ -28,7 +28,7 @@
 					confirm: { text: 'Delete', variant: 'destructive' },
 					onConfirm: () => {
 						transformations.delete(transformation.id);
-						notify.success({
+						report.success({
 							title: 'Deleted transformation!',
 							description: 'Your transformation has been deleted successfully.',
 						});

@@ -1,5 +1,5 @@
 import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
-import { notify } from '$lib/operations/notify';
+import { report } from '$lib/report';
 import { services } from '$lib/services';
 import { type Recording, recordings } from '$lib/state/recordings.svelte';
 
@@ -53,7 +53,7 @@ export const recordingActions = {
 					services.blobs.audio.revokeUrl(recording.id);
 					recordings.delete(recording.id);
 				}
-				notify.success({
+				report.success({
 					title: `Deleted ${noun}!`,
 					description: `Your ${noun} ${isSingle ? 'has' : 'have'} been deleted.`,
 				});

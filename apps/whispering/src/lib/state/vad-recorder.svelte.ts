@@ -1,16 +1,41 @@
 import { MicVAD, utils } from '@ricky0123/vad-web';
-import { extractErrorMessage } from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, tryAsync, trySync } from 'wellcrafted/result';
 import type { VadState } from '$lib/constants/audio';
-import { WhisperingErr } from '$lib/result';
 import { defineQuery } from '$lib/rpc/client';
 import {
 	cleanupRecordingStream,
 	enumerateDevices,
 	getRecordingStream,
 } from '$lib/services/device-stream';
-import { asDeviceIdentifier } from '$lib/services/recorder/types';
+import {
+	asDeviceIdentifier,
+	type UpdateStatusMessageFn,
+} from '$lib/services/recorder/types';
 import { deviceConfig } from '$lib/state/device-config.svelte';
+
+const VadRecorderError = defineErrors({
+	EnumerateDevicesFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to enumerate devices: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	AlreadyActive: () => ({
+		message: 'Stop the current session before starting a new one.',
+	}),
+	InitializeFailed: ({ cause }: { cause: unknown }) => ({
+		message:
+			'Voice activity detection could not be started. Your microphone may be in use by another application.',
+		cause,
+	}),
+	StartFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to start Voice Activity Detector. ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	StopFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to stop Voice Activity Detector. ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
 
 /**
  * Creates a Voice Activity Detection (VAD) recorder with reactive state.
@@ -59,12 +84,8 @@ function createVadRecorder() {
 			queryKey: ['vad', 'devices'],
 			queryFn: async () => {
 				const { data, error } = await enumerateDevices();
-				if (error) {
-					return WhisperingErr({
-						title: '❌ Failed to enumerate devices',
-						serviceError: error,
-					});
-				}
+				if (error)
+					return VadRecorderError.EnumerateDevicesFailed({ cause: error });
 				return Ok(data);
 			},
 		}),
@@ -78,21 +99,16 @@ function createVadRecorder() {
 			onSpeechEnd,
 			onVADMisfire,
 			onSpeechRealStart,
+			sendStatus,
 		}: {
 			onSpeechStart: () => void;
 			onSpeechEnd: (blob: Blob) => void;
 			onVADMisfire?: () => void;
 			onSpeechRealStart?: () => void;
+			sendStatus: UpdateStatusMessageFn;
 		}) {
 			// Prevent starting if already active
-			if (_session) {
-				return WhisperingErr({
-					title: '⚠️ VAD already active',
-					description: 'Stop the current session before starting a new one.',
-				});
-			}
-
-			console.log('Starting VAD recording');
+			if (_session) return VadRecorderError.AlreadyActive();
 
 			// Get device ID from settings
 			const configuredDeviceId = deviceConfig.get(
@@ -106,17 +122,10 @@ function createVadRecorder() {
 			const { data: streamResult, error: streamError } =
 				await getRecordingStream({
 					selectedDeviceId: deviceId,
-					sendStatus: (status) => {
-						console.log('VAD getRecordingStream status update:', status);
-					},
+					sendStatus,
 				});
 
-			if (streamError) {
-				return WhisperingErr({
-					title: '❌ Failed to get recording stream',
-					serviceError: streamError,
-				});
-			}
+			if (streamError) return Err(streamError);
 
 			const { stream, deviceOutcome } = streamResult;
 
@@ -145,13 +154,7 @@ function createVadRecorder() {
 						},
 						model: 'v5',
 					}),
-				catch: (error) =>
-					WhisperingErr({
-						title: '❌ Failed to initialize VAD',
-						description:
-							'Voice activity detection could not be started. Your microphone may be in use by another application.',
-						action: { type: 'more-details', error },
-					}),
+				catch: (error) => VadRecorderError.InitializeFailed({ cause: error }),
 			});
 
 			if (initializeVadError) {
@@ -163,12 +166,7 @@ function createVadRecorder() {
 			// Start listening
 			const { error: startError } = trySync({
 				try: () => newVad.start(),
-				catch: (error) =>
-					WhisperingErr({
-						title: '❌ Failed to start VAD',
-						description: `Failed to start Voice Activity Detector. ${extractErrorMessage(error)}`,
-						action: { type: 'more-details', error },
-					}),
+				catch: (error) => VadRecorderError.StartFailed({ cause: error }),
 			});
 
 			if (startError) {
@@ -195,12 +193,7 @@ function createVadRecorder() {
 			const { vad, stream } = _session;
 			const { error: destroyError } = trySync({
 				try: () => vad.destroy(),
-				catch: (error) =>
-					WhisperingErr({
-						title: '❌ Failed to stop VAD',
-						description: `Failed to stop Voice Activity Detector. ${extractErrorMessage(error)}`,
-						action: { type: 'more-details', error },
-					}),
+				catch: (error) => VadRecorderError.StopFailed({ cause: error }),
 			});
 
 			// Always clean up, even if dispose had an error

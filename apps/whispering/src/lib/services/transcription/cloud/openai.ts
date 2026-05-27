@@ -5,8 +5,6 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, type Result, tryAsync, trySync } from 'wellcrafted/result';
-import { WhisperingErr } from '$lib/result';
-import * as toasts from '$lib/rpc/transcription-errors/shared';
 import { customFetch } from '$lib/services/http';
 import { getAudioExtension } from '$lib/services/transcription/utils';
 
@@ -99,7 +97,7 @@ export const OpenaiTranscriptionServiceLive = {
 		const isUsingCustomEndpoint = Boolean(options.baseURL);
 
 		// Custom endpoints (reverse proxies, OpenAI-compatible servers) may have
-		// different auth schemes or no auth — skip API-key format checks.
+		// different auth schemes or no auth, skip API-key format checks.
 		if (!isUsingCustomEndpoint) {
 			if (!options.apiKey) return OpenaiError.MissingApiKey();
 			if (!options.apiKey.startsWith('sk-')) {
@@ -178,40 +176,5 @@ export const OpenaiTranscriptionServiceLive = {
 				}
 			},
 		});
-	},
-
-	toWhisperingErr(error: OpenaiError) {
-		switch (error.name) {
-			case 'MissingApiKey':
-				return WhisperingErr(toasts.apiKeyRequired('OpenAI'));
-			case 'InvalidApiKeyFormat':
-				return WhisperingErr(toasts.invalidApiKeyFormat('OpenAI', '"sk-"'));
-			case 'FileTooLarge':
-				return WhisperingErr(toasts.fileTooLarge(error));
-			case 'FileCreationFailed':
-				return WhisperingErr(toasts.fileCreationFailed(error));
-			case 'BadRequest':
-				return WhisperingErr(toasts.badRequest('OpenAI', error));
-			case 'Unauthorized':
-				return WhisperingErr(toasts.unauthorized(error));
-			case 'PermissionDenied':
-				return WhisperingErr(toasts.permissionDenied(error));
-			case 'NotFound':
-				return WhisperingErr(toasts.notFound(error));
-			case 'PayloadTooLarge':
-				return WhisperingErr(toasts.payloadTooLarge(error));
-			case 'UnsupportedMediaType':
-				return WhisperingErr(toasts.unsupportedMediaType(error));
-			case 'UnprocessableEntity':
-				return WhisperingErr(toasts.unprocessableEntity(error));
-			case 'RateLimit':
-				return WhisperingErr(toasts.rateLimit(error));
-			case 'ServiceUnavailable':
-				return WhisperingErr(toasts.serviceUnavailable('OpenAI', error));
-			case 'Connection':
-				return WhisperingErr(toasts.connectionIssue('OpenAI', error));
-			case 'Unexpected':
-				return WhisperingErr(toasts.unexpected(error));
-		}
 	},
 };

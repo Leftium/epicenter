@@ -1,3 +1,4 @@
+import { type AnyTaggedError, defineErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
 	SUPPORTED_LANGUAGES,
@@ -5,8 +6,7 @@ import {
 } from '$lib/constants/languages';
 import type { TranscriptionServiceId } from '$lib/constants/transcription';
 import { analytics } from '$lib/operations/analytics';
-import { notify } from '$lib/operations/notify';
-import { WhisperingErr, type WhisperingError } from '$lib/result';
+import { report } from '$lib/report';
 import { services } from '$lib/services';
 import { TRANSCRIPTION_SERVICES } from '$lib/services/transcription/registry';
 import { deviceConfig } from '$lib/state/device-config.svelte';
@@ -14,10 +14,17 @@ import { settings } from '$lib/state/settings.svelte';
 import { tauri } from '$lib/tauri';
 import { commands } from '$lib/tauri/commands';
 
+export type TranscriptionError = AnyTaggedError;
+
+const TranscriptionOperationError = defineErrors({
+	NoTranscriptionServiceSelected: () => ({
+		message: 'Please select a transcription service in settings.',
+	}),
+});
+
 /**
- * Services that upload audio bytes to a remote endpoint (cloud APIs +
- * self-hosted). Local engines (whispercpp, parakeet, moonshine) read the
- * recording artifact from disk via the Rust `transcribe_recording`
+ * Services that upload audio bytes to a remote endpoint. Local engines read
+ * the recording artifact from disk via the Rust `transcribe_recording`
  * command.
  */
 function isUploadTranscriptionService(
@@ -40,18 +47,18 @@ function getOutputLanguage(): SupportedLanguage {
 /**
  * Materialize the bytes to upload for a cloud transcription. The recording
  * is already saved under `recordings/{id}.{ext}`; in Tauri we round-trip
- * through Rust's libopus to land on a 24 kbps voice VBR opus blob (the
- * canonical compressed-upload shape). On the web there is no Rust, so we
- * fetch the original bytes from the blob store and upload them as-is.
+ * through Rust's libopus to land on a compressed opus blob. On the web
+ * there is no Rust, so we fetch the original bytes from the blob store and
+ * upload them as-is.
  */
 async function loadForCloudUpload(
 	recordingId: string,
-): Promise<Result<Blob, WhisperingError>> {
+): Promise<Result<Blob, TranscriptionError>> {
 	if (tauri) {
 		const { data: oggBytes, error } =
 			await commands.encodeRecordingForUpload(recordingId);
 		if (error === null) return Ok(new Blob([oggBytes], { type: 'audio/ogg' }));
-		notify.warning({
+		report.info({
 			title: 'Audio compression skipped',
 			description: `${error}. Uploading uncompressed audio instead.`,
 		});
@@ -60,18 +67,11 @@ async function loadForCloudUpload(
 			provider: settings.get('transcription.service'),
 			error_message: error,
 		});
-		// Fall through to the blob-store path below.
 	}
 
 	const { data: rawBlob, error: blobError } =
 		await services.blobs.audio.getBlob(recordingId);
-	if (blobError) {
-		return WhisperingErr({
-			title: '❌ Could not read recording',
-			description: blobError.message,
-			action: { type: 'more-details', error: blobError },
-		});
-	}
+	if (blobError) return Err(blobError);
 	return Ok(rawBlob);
 }
 
@@ -81,16 +81,15 @@ async function loadForCloudUpload(
  *
  * - The cpal stop path saves the WAV via Rust and returns the id.
  * - The navigator / VAD / file-upload paths save the blob via the
- *   recordings blob store (which writes to the same on-disk location in
- *   Tauri, or to IndexedDB in browser builds) and pass the id here.
+ *   recordings blob store and pass the id here.
  *
  * Local transcription always goes through `transcribe_recording(id)`.
- * Cloud transcription uploads compressed bytes derived from the saved
- * file (Rust libopus in Tauri, raw blob in browser).
+ * Cloud transcription uploads compressed bytes derived from the saved file
+ * when possible, falling back to the raw blob.
  */
 export async function transcribeAudio(
 	recordingId: string,
-): Promise<Result<string, WhisperingError>> {
+): Promise<Result<string, TranscriptionError>> {
 	const selectedService = settings.get('transcription.service');
 
 	const startTime = Date.now();
@@ -99,17 +98,17 @@ export async function transcribeAudio(
 		provider: selectedService,
 	});
 
-	const result = isUploadTranscriptionService(selectedService)
+	const transcriptionResult = isUploadTranscriptionService(selectedService)
 		? await dispatchCloudTranscription(recordingId, selectedService)
 		: await dispatchLocalTranscription(recordingId, selectedService);
 
 	const duration = Date.now() - startTime;
-	if (result.error) {
+	if (transcriptionResult.error) {
 		analytics.logEvent({
 			type: 'transcription_failed',
 			provider: selectedService,
-			error_title: result.error.title,
-			error_description: result.error.description,
+			error_name: transcriptionResult.error.name,
+			error_message: transcriptionResult.error.message,
 		});
 	} else {
 		analytics.logEvent({
@@ -119,13 +118,13 @@ export async function transcribeAudio(
 		});
 	}
 
-	return result;
+	return transcriptionResult;
 }
 
 async function dispatchLocalTranscription(
 	recordingId: string,
 	selectedService: TranscriptionServiceId,
-): Promise<Result<string, WhisperingError>> {
+): Promise<Result<string, TranscriptionError>> {
 	const outputLanguage = getOutputLanguage();
 	const prompt = settings.get('transcription.prompt');
 
@@ -145,17 +144,14 @@ async function dispatchLocalTranscription(
 				modelPath: deviceConfig.get('transcription.moonshine.modelPath'),
 			});
 		default:
-			return WhisperingErr({
-				title: '⚠️ Unknown local service',
-				description: `Service "${selectedService}" was routed to local transcription but has no handler.`,
-			});
+			return TranscriptionOperationError.NoTranscriptionServiceSelected();
 	}
 }
 
 async function dispatchCloudTranscription(
 	recordingId: string,
 	selectedService: TranscriptionServiceId,
-): Promise<Result<string, WhisperingError>> {
+): Promise<Result<string, TranscriptionError>> {
 	const { data: audio, error: loadError } =
 		await loadForCloudUpload(recordingId);
 	if (loadError) return Err(loadError);
@@ -177,7 +173,7 @@ async function dispatchCloudTranscription(
 					baseURL: deviceConfig.get('apiEndpoints.openai') || undefined,
 				},
 			);
-			if (error) return services.transcriptions.openai.toWhisperingErr(error);
+			if (error) return Err(error);
 			return Ok(data);
 		}
 		case 'Groq': {
@@ -192,17 +188,21 @@ async function dispatchCloudTranscription(
 					baseURL: deviceConfig.get('apiEndpoints.groq') || undefined,
 				},
 			);
-			if (error) return services.transcriptions.groq.toWhisperingErr(error);
+			if (error) return Err(error);
 			return Ok(data);
 		}
-		case 'speaches':
-			return services.transcriptions.speaches.transcribe(audio, {
-				outputLanguage,
-				prompt,
-				temperature,
-				modelId: deviceConfig.get('transcription.speaches.modelId'),
-				baseUrl: deviceConfig.get('transcription.speaches.baseUrl'),
-			});
+		case 'speaches': {
+			const { data: speachesData, error: speachesError } =
+				await services.transcriptions.speaches.transcribe(audio, {
+					outputLanguage,
+					prompt,
+					temperature,
+					modelId: deviceConfig.get('transcription.speaches.modelId'),
+					baseUrl: deviceConfig.get('transcription.speaches.baseUrl'),
+				});
+			if (speachesError) return Err(speachesError);
+			return Ok(speachesData);
+		}
 		case 'ElevenLabs': {
 			const { data, error } =
 				await services.transcriptions.elevenlabs.transcribe(audio, {
@@ -212,39 +212,38 @@ async function dispatchCloudTranscription(
 					apiKey: deviceConfig.get('apiKeys.elevenlabs'),
 					modelName: settings.get('transcription.elevenlabs.model'),
 				});
-			if (error)
-				return services.transcriptions.elevenlabs.toWhisperingErr(error);
+			if (error) return Err(error);
 			return Ok(data);
 		}
 		case 'Deepgram': {
-			const { data, error } =
-				await services.transcriptions.deepgram.transcribe(audio, {
+			const { data, error } = await services.transcriptions.deepgram.transcribe(
+				audio,
+				{
 					outputLanguage,
 					prompt,
 					temperature,
 					apiKey: deviceConfig.get('apiKeys.deepgram'),
 					modelName: settings.get('transcription.deepgram.model'),
-				});
-			if (error)
-				return services.transcriptions.deepgram.toWhisperingErr(error);
+				},
+			);
+			if (error) return Err(error);
 			return Ok(data);
 		}
 		case 'Mistral': {
-			const { data, error } =
-				await services.transcriptions.mistral.transcribe(audio, {
+			const { data, error } = await services.transcriptions.mistral.transcribe(
+				audio,
+				{
 					outputLanguage,
 					prompt,
 					temperature,
 					apiKey: deviceConfig.get('apiKeys.mistral'),
 					modelName: settings.get('transcription.mistral.model'),
-				});
-			if (error) return services.transcriptions.mistral.toWhisperingErr(error);
+				},
+			);
+			if (error) return Err(error);
 			return Ok(data);
 		}
 		default:
-			return WhisperingErr({
-				title: '⚠️ Unknown cloud service',
-				description: `Service "${selectedService}" was routed to cloud transcription but has no handler.`,
-			});
+			return TranscriptionOperationError.NoTranscriptionServiceSelected();
 	}
 }

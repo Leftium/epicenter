@@ -1,6 +1,7 @@
-import type { WhisperingResult } from '$lib/result';
+import type { Result } from 'wellcrafted/result';
 
 import {
+	type LocalTranscriptionError,
 	requireExistingModelPath,
 	transcribeRecording,
 } from './local-transcription';
@@ -53,7 +54,7 @@ export const ParakeetTranscriptionServiceLive = {
 	async transcribe(
 		recordingId: string,
 		options: { modelPath: string },
-	): Promise<WhisperingResult<string>> {
+	): Promise<Result<string, LocalTranscriptionError>> {
 		const validation = await requireExistingModelPath(
 			options.modelPath,
 			'directory',

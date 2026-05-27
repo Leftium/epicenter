@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Command } from '$lib/commands';
 	import type { KeyboardEventSupportedKey } from '$lib/constants/keyboard';
-	import { notify } from '$lib/operations/notify';
+	import { report } from '$lib/report';
 	import { localShortcuts } from '$lib/operations/shortcuts';
 	import {
 		arrayToShortcutString,
@@ -32,12 +32,11 @@
 			const { error: unregisterError } =
 				await localShortcuts.unregisterCommand({
 					commandId: command.id as CommandId,
-				});
+			});
 			if (unregisterError) {
-				notify.error({
+				report.error({
 					title: 'Error unregistering local shortcut',
-					description: unregisterError.message,
-					action: { type: 'more-details', error: unregisterError },
+					cause: unregisterError,
 				});
 			}
 			const { error: registerError } = await localShortcuts.registerCommand(
@@ -48,10 +47,9 @@
 			);
 
 			if (registerError) {
-				notify.error({
+				report.error({
 					title: 'Error registering local shortcut',
-					description: registerError.message,
-					action: { type: 'more-details', error: registerError },
+					cause: registerError,
 				});
 				return;
 			}
@@ -61,7 +59,7 @@
 				arrayToShortcutString(keyCombination),
 			);
 
-			notify.success({
+			report.success({
 				title: `Local shortcut set to ${keyCombination}`,
 				description: `Press the shortcut to trigger "${command.title}"`,
 			});
@@ -70,17 +68,16 @@
 			const { error: unregisterError } =
 				await localShortcuts.unregisterCommand({
 					commandId: command.id as CommandId,
-				});
+			});
 			if (unregisterError) {
-				notify.error({
+				report.error({
 					title: 'Error clearing local shortcut',
-					description: unregisterError.message,
-					action: { type: 'more-details', error: unregisterError },
+					cause: unregisterError,
 				});
 			}
 			settings.set(`shortcut.${command.id}`, null);
 
-			notify.success({
+			report.success({
 				title: 'Local shortcut cleared',
 				description: `Please set a new shortcut to trigger "${command.title}"`,
 			});

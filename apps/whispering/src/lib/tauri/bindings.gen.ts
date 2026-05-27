@@ -89,31 +89,6 @@ export const commands = {
 	 */
 	executeCommand: (command: string) => typedError<CommandOutput, string>(__TAURI_INVOKE("execute_command", { command })),
 	/**
-	 *  Spawn a child process without waiting for it to complete.
-	 * 
-	 *  Parses the command string into program and arguments, then spawns directly
-	 *  without using a shell wrapper. This approach provides:
-	 *  - Consistent behavior across all platforms
-	 *  - No shell injection vulnerabilities
-	 *  - Lower process overhead
-	 *  - PATH resolution still works via Command::new()
-	 * 
-	 *  On Windows, also uses CREATE_NO_WINDOW flag to prevent console window flash (GitHub issue #815).
-	 * 
-	 *  # Arguments
-	 *  * `command` - The command to spawn as a string
-	 * 
-	 *  # Returns
-	 *  Result containing the process ID or error message
-	 * 
-	 *  # Examples
-	 *  ```ignore
-	 *  // Long-running process (e.g., a sidecar daemon)
-	 *  spawn_command("my-sidecar --listen 127.0.0.1:9000".to_string()).await?;
-	 *  ```
-	 */
-	spawnCommand: (command: string) => typedError<number, string>(__TAURI_INVOKE("spawn_command", { command })),
-	/**
 	 *  Deletes files inside a directory by filename.
 	 *  Validates filenames are single path components (no traversal).
 	 *  Uses Rayon for parallel deletion. Silently skips missing files.

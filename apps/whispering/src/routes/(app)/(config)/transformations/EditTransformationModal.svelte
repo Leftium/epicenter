@@ -8,7 +8,7 @@
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { Editor } from '$lib/components/transformations-editor';
-	import { notify } from '$lib/operations/notify';
+	import { report } from '$lib/report';
 	import { transformationSteps } from '$lib/state/transformation-steps.svelte';
 	import {
 		saveTransformationWithSteps,
@@ -73,7 +73,7 @@
 			$state.snapshot(workingSteps),
 		);
 
-		notify.success({
+		report.success({
 			title: 'Updated transformation!',
 			description: 'Your transformation has been updated successfully.',
 		});
@@ -143,7 +143,7 @@
 							);
 							transformations.delete(transformation.id);
 							isDialogOpen = false;
-							notify.success({
+							report.success({
 								title: 'Deleted transformation!',
 								description:
 									'Your transformation has been deleted successfully.',

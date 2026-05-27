@@ -21,7 +21,7 @@ pub mod windows_path;
 use windows_path::fix_windows_path;
 
 pub mod command;
-use command::{execute_command, spawn_command};
+use command::execute_command;
 
 pub mod markdown;
 use markdown::{delete_files_in_directory, write_markdown_files};
@@ -46,7 +46,6 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             transcribe_recording,
             set_unload_policy,
             execute_command,
-            spawn_command,
             delete_files_in_directory,
             write_markdown_files,
         ])

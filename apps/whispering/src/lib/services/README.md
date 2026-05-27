@@ -4,36 +4,23 @@ The services layer provides pure, isolated business logic with no UI dependencie
 
 ## How Services Are Consumed
 
-Services are consumed through the rpc layer, which wraps them with caching, reactivity, and state management. Here's a real example showing how isolated, testable services are used:
+Services are pure functions consumed by orchestrations in `$lib/operations/` and by the rpc adapters in `$lib/rpc/`. Configuration is injected at the call site; services know nothing about settings or reactive state. Example from `operations/transcribe.ts`:
 
 ```typescript
-// From: /lib/rpc/transcription.ts
-async function transcribeBlob(
-	blob: Blob,
-): Promise<Result<string, WhisperingError>> {
-	const selectedService =
-		settings.value['transcription.selectedTranscriptionService'];
-
-	switch (selectedService) {
-		case 'OpenAI':
-			// Pure service call with explicit parameters
-			return services.transcriptions.openai.transcribe(blob, {
-				outputLanguage: settings.value['transcription.outputLanguage'],
-				prompt: settings.value['transcription.prompt'],
-				temperature: settings.value['transcription.temperature'],
-				apiKey: settings.value['apiKeys.openai'],
-				modelName: settings.value['transcription.openai.model'],
-			});
-		case 'Groq':
-			// Same interface, different implementation
-			return services.transcriptions.groq.transcribe(blob, {
-				outputLanguage: settings.value['transcription.outputLanguage'],
-				prompt: settings.value['transcription.prompt'],
-				temperature: settings.value['transcription.temperature'],
-				apiKey: settings.value['apiKeys.groq'],
-				modelName: settings.value['transcription.groq.model'],
-			});
-	}
+case 'OpenAI': {
+	const { data, error } = await services.transcriptions.openai.transcribe(
+		audio,
+		{
+			outputLanguage,
+			prompt,
+			temperature,
+			apiKey: deviceConfig.get('apiKeys.openai'),
+			modelName: settings.get('transcription.openai.model'),
+			baseURL: deviceConfig.get('apiEndpoints.openai') || undefined,
+		},
+	);
+	if (error) return Err(error);
+	return Ok(data);
 }
 ```
 
@@ -45,7 +32,7 @@ async function transcribeBlob(
 - **Consistent**: All return `Result<T, E>` types for uniform error handling
 - **Platform-agnostic**: Same interface works on desktop and web
 
-The rpc layer injects configuration (like `settings.value`) and handles caching/reactivity, while services focus purely on business logic.
+Orchestrations read settings and inject the config; the rpc layer adds caching/reactivity.
 
 ### Build-Time Platform Injection
 
@@ -98,8 +85,8 @@ See `docs/articles/20260526T012526-tauri-is-both-the-namespace-and-the-platform-
 
 > **💡 Three kinds of dependency injection**
 >
-> - **Build-time platform DI** (suffix files): for services that have a real implementation on both platforms. `text`, `notifications`, `os`, `sound`, `download`, `analytics`, `http`, `blob-store`, `recorder`. Each has `index.tauri.ts` + `index.browser.ts` + `types.ts`. Vite picks one at build time.
-> - **Tauri-only namespace** (`$lib/tauri`): for capabilities that exist only on Tauri (fs, command, permissions, audioEncoder, tray, globalShortcuts, autostart). One file holds all of them. Consumers either narrow with `if (tauri)`, prop-drill the narrowed value into helpers, or call `requireTauri()` from inside a `.tauri.ts` file.
+> - **Build-time platform DI** (suffix files): for services that have a real implementation on both platforms. `text`, `os`, `sound`, `download`, `analytics`, `http`, `blob-store`, `recorder`. Each has `index.tauri.ts` + `index.browser.ts` + `types.ts`. Vite picks one at build time.
+> - **Tauri-only namespace** (`$lib/tauri`): for capabilities that exist only on Tauri (fs, command, permissions, audioEncoder, window, tray, globalShortcuts, autostart). One file holds all of them. Consumers either narrow with `if (tauri)`, prop-drill the narrowed value into helpers, or call `requireTauri()` from inside a `.tauri.ts` file.
 > - **Runtime DI** (switch on `settings.value`): for user-pick providers like `transcription` and `completion`.
 >
 > See `docs/articles/20260526T012650-two-switches-build-time-and-runtime.md` for the platform-vs-settings walkthrough.
@@ -175,13 +162,13 @@ type DeviceStreamError = InferErrors<typeof DeviceStreamError>;
 
 ### Error Handling Architecture
 
-The error handling follows a clear pattern across three layers:
+Tagged errors flow through every layer unchanged:
 
-1. **Service Layer**: Returns domain-specific errors via `defineErrors`
-2. **RPC Layer**: Wraps service errors into `WhisperingError` objects
-3. **UI Layer**: Displays `WhisperingError` objects in toasts without re-wrapping
+1. **Service layer**: returns domain-specific tagged errors via `defineErrors`.
+2. **Operation / RPC layer**: passes them up; no translation step.
+3. **UI / report spine**: the call site calls `report.error({ cause: err })`. The toast sink derives the title from `err.name` (via `humanize`), the description from `err.message`, and renders a "More details" action by default.
 
-This pattern ensures consistent error handling and avoids double-wrapping errors.
+Inline overrides at the call site are how context-specific copy lands ("Authentication required" with a settings CTA), not via a translator function.
 
 ### Error Type Best Practices
 
@@ -221,11 +208,11 @@ This pattern ensures consistent error handling and avoids double-wrapping errors
 
 ### Important: Services Don't Know About UI
 
-Services should **never** import or use `WhisperingError`. That transformation happens in the rpc layer:
+Services should **never** import or use `report`. User-facing reporting happens at operation and route boundaries:
 
 ```typescript
-// ❌ WRONG - Service shouldn't know about WhisperingError
-import { WhisperingError } from '$lib/result';
+// ❌ WRONG - Service shouldn't know about user-facing reports
+import { report } from '$lib/report';
 
 // ✅ CORRECT - Service uses its own error type
 const MyError = defineErrors({
@@ -237,7 +224,7 @@ const MyError = defineErrors({
 type MyError = InferErrors<typeof MyError>;
 ```
 
-The rpc layer is responsible for transforming service errors into `WhisperingError` for toast notifications. This separation ensures:
+The caller is responsible for reporting service errors. This separation ensures:
 
 - Services remain pure and testable
 - Error types can evolve independently
@@ -293,22 +280,21 @@ This example shows:
 - Clean call sites passing raw errors as `{ cause: error }`
 - Error mapping when consuming other services
 
-### Anti-Pattern: Double Wrapping
+### Anti-Pattern: Re-wrapping Tagged Errors
 
-Never wrap an already-wrapped error. The rpc layer handles the single transformation from service error to `WhisperingError`:
+Don't translate tagged errors into another tagged error at the call site. Pass them through and override copy inline if needed:
 
 ```typescript
-// ❌ BAD: Service returns tagged error, query wraps it, then UI wraps again
+// ❌ BAD: synthesise a different tagged shape to attach UI strings
 if (error) {
-	const whisperingError = WhisperingError({
-		/* ... */
+	report.error({
+		cause: { name: 'TranscriptionFailed', message: error.message },
 	});
-	notify.error.execute({ ...whisperingError.error }); // Double wrapping!
 }
 
-// ✅ GOOD: Service returns tagged error, query wraps it, UI uses directly
+// ✅ GOOD: pass the service's tagged error directly
 if (error) {
-	notify.error.execute(error); // Already a WhisperingError from rpc layer
+	report.error({ cause: error }); // title humanised from error.name
 }
 ```
 
@@ -392,7 +378,7 @@ export function createClipboardServiceWeb(): ClipboardService {
 
 ## Configuration Injection
 
-Services are pure and accept configuration as parameters. We never import/use global variables like `settings.value`—that's for the rpc layer.
+Services are pure and accept configuration as parameters. We never import/use global variables like `settings.value`; that's for the rpc layer.
 
 ```typescript
 // ✅ CORRECT - Pure service
@@ -420,24 +406,26 @@ const result = await services.completion.openai.complete({
 - `recorder/types.ts` - Shared `RecorderService` interface, error types, params
 - `device-stream.ts` - `getRecordingStream` and `enumerateDevices` shared by recorder backends
 - `local-shortcut-manager.ts` - In-window keyboard shortcuts
-- `toast.ts` - In-app toast notifications (Sonner)
 - `text/` - Clipboard operations
 - `blob-store/` - Audio blob persistence (IndexedDB on web, fs on desktop)
-- `analytics/`, `download/`, `http/`, `notifications/`, `os/`, `sound/` - Platform-specific implementations behind a unified interface
+- `analytics/`, `download/`, `http/`, `os/`, `sound/` - Platform-specific implementations behind a unified interface
+
+User-facing reporting (toast + OS notification) is owned by `$lib/report`, not the services layer.
 
 ### Tauri-only capabilities (`$lib/tauri`)
 
-All seven Tauri-only capabilities live inline in one file at `$lib/tauri.tauri.ts`. The companion `$lib/tauri.browser.ts` exports `tauri = null` plus a throwing `requireTauri` stub. Consumers access via `if (tauri) { tauri.<cap>.method() }`, by prop-drilling the narrowed value, or by calling `requireTauri()` from inside a `.tauri.ts` file.
+All eight Tauri-only capabilities live inline in one file at `$lib/tauri.tauri.ts`. The companion `$lib/tauri.browser.ts` exports `tauri = null` plus a throwing `requireTauri` stub. Consumers access via `if (tauri) { tauri.<cap>.method() }`, by prop-drilling the narrowed value, or by calling `requireTauri()` from inside a `.tauri.ts` file.
 
-- `tauri.fs` - Filesystem operations (pathToBlob, pathToFile, pathsToFiles)
-- `tauri.command` - Shell command execution (execute, spawn)
+- `tauri.fs` - Filesystem operations (pathToBlob, pathsToFiles)
+- `tauri.command` - Shell command execution (execute)
 - `tauri.permissions` - macOS accessibility/microphone permission flows
-- `tauri.audioEncoder` - In-process libopus encoder for cloud upload compression (encodeWavToOpusOgg)
+- `tauri.audioEncoder` - In-process libopus encoder for cloud upload compression (encodeWavToOpusOgg, encodePcmToOpusOgg)
+- `tauri.window` - Window operations (setAlwaysOnTop)
 - `tauri.tray` - System tray icon (setIcon)
 - `tauri.globalShortcuts` - OS-level shortcut registration (registerCommand, unregisterCommand, unregisterAll)
 - `tauri.autostart` - Launch-at-login toggle (isEnabled, enable, disable)
 
-Each leaf picks one canonical call form: TanStack-wrapped (via `defineQuery`/`defineMutation`) where caching, reactivity, or post-mutation invalidation matter; plain async functions where they don't. There is no separate `tauri.rpc` sub-namespace.
+Each leaf picks one canonical call form: TanStack-backed (via `defineQuery`/`defineMutation`) where caching, reactivity, or post-mutation invalidation matter; plain Result functions where they don't. There is no separate `tauri.rpc` sub-namespace.
 
 Pure accelerator parsing (validate-format, pressed-keys-to-accelerator, the `Accelerator` brand) doesn't need the Tauri runtime and lives in `$lib/utils/accelerator.ts`. The Tauri-side registration code consumes the same types.
 
@@ -487,12 +475,12 @@ Vite picks `.browser.ts` for web builds, `.tauri.ts` for Tauri builds. Consumers
 
 ## Services vs RPC Layer
 
-| Aspect             | Services              | RPC Layer            |
+| Aspect             | Services              | RPC Layer              |
 | ------------------ | --------------------- | ---------------------- |
 | **State**          | Stateless             | Stateful (cache)       |
 | **Dependencies**   | Explicit parameters   | Settings, state        |
-| **Error Handling** | Result types          | Result + UI toasts     |
+| **Error Handling** | Result types          | Tagged errors pass through |
 | **Usage**          | Direct function calls | TanStack Query         |
 | **Reactivity**     | None                  | Reactive subscriptions |
 
-Services provide pure business logic. The rpc layer adds caching, reactivity, and UI integration.
+Services provide pure business logic. The rpc layer adds caching, reactivity, and mutation observability.

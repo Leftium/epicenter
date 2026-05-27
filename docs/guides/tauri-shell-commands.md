@@ -1,6 +1,6 @@
 # Accessing Shell Commands in Tauri Apps
 
-When building a Tauri desktop application, you often need to execute command-line tools like `ffmpeg`, `git`, or other system utilities. But here's the thing that took me way too long to realize: GUI applications on macOS and Linux don't inherit the same PATH environment that your terminal has. And on Windows, there's a completely different bug where child processes sometimes can't find executables even when they're in PATH.
+When building a Tauri desktop application, you sometimes need to execute command-line tools like `git` or other system utilities. But here's the thing that took me way too long to realize: GUI applications on macOS and Linux don't inherit the same PATH environment that your terminal has. And on Windows, there's a completely different bug where child processes sometimes can't find executables even when they're in PATH.
 
 This guide shows you how to properly access shell commands in a Tauri v2 app, covering both the security configuration and the PATH fixes needed for reliable command execution.
 
@@ -8,75 +8,25 @@ This guide shows you how to properly access shell commands in a Tauri v2 app, co
 
 You need to do two things to reliably execute shell commands in Tauri:
 
-1. **Wrap commands with a shell interpreter** (`sh -c` on Unix, `cmd /c` on Windows)
+1. **Parse command strings into program + args** instead of routing through a shell
 2. **Fix the PATH environment** so GUI apps can find command-line tools
 
 Let's dive into each.
 
-## Part 1: Shell Wrapping and Security Configuration
+## Part 1: Direct Command Execution
 
-### Why Shell Wrapping?
+### Why direct execution?
 
-When you want to run a command like `ffmpeg -f avfoundation -list_devices true -i ""`, you can't just execute `ffmpeg` directly. You need a shell to:
-- Resolve the command from PATH
-- Handle command-line arguments properly
-- Support shell features like pipes, redirects, and wildcards
+Shell wrappers make every call more powerful than it needs to be. The current app command path parses a command string into a program and arguments, then executes it through Rust's `std::process::Command`. That keeps PATH resolution while avoiding shell injection risk and shell-specific quoting behavior.
 
-### The Command Service Pattern
+### The Command Namespace
 
-Instead of using Tauri's `Command` API directly everywhere, create a command service that handles platform differences:
+Use the Tauri namespace rather than importing Tauri shell APIs across the app:
 
 ```typescript
-// src/lib/services/command/types.ts
-export type CommandService = {
-  /**
-   * Execute a shell command and return the output.
-   * 
-   * The command is automatically wrapped with the appropriate shell for the platform:
-   * - Windows: `cmd /c <command>`
-   * - Unix/macOS: `sh -c <command>`
-   * 
-   * This allows commands to use shell features like pipes, redirects, and PATH resolution.
-   */
-  execute: (command: ShellCommand) => Promise<Result<ChildProcess<string>, CommandServiceError>>;
+import { requireTauri } from '$lib/tauri';
 
-  /**
-   * Spawn a shell command as a child process.
-   * 
-   * The command is automatically wrapped with the appropriate shell for the platform:
-   * - Windows: `cmd /c <command>`
-   * - Unix/macOS: `sh -c <command>`
-   * 
-   * This allows long-running processes to be spawned and controlled (e.g., FFmpeg recording).
-   */
-  spawn: (command: ShellCommand) => Promise<Result<Child, CommandServiceError>>;
-};
-```
-
-```typescript
-// src/lib/services/command/desktop.ts
-import { IS_WINDOWS } from '$lib/constants/platform';
-import { Command } from '@tauri-apps/plugin-shell';
-
-export function createCommandServiceDesktop(): CommandService {
-  function createPlatformCommand(command: ShellCommand) {
-    return IS_WINDOWS
-      ? Command.create('cmd', ['/c', command])
-      : Command.create('sh', ['-c', command]);
-  }
-
-  return {
-    async execute(command) {
-      const cmd = createPlatformCommand(command);
-      return await cmd.execute();
-    },
-
-    async spawn(command) {
-      const cmd = createPlatformCommand(command);
-      return await cmd.spawn();
-    },
-  };
-}
+const { data, error } = await requireTauri().command.execute('open .');
 ```
 
 ### Tauri Capabilities Configuration
@@ -87,43 +37,16 @@ For this to work, you need to configure Tauri's security capabilities to allow s
 {
   "permissions": [
     {
-      "identifier": "shell:allow-execute",
-      "allow": [
-        {
-          "name": "cmd",
-          "cmd": "cmd",
-          "args": ["/c", { "validator": ".*" }]
-        },
-        {
-          "name": "sh",
-          "cmd": "sh",
-          "args": ["-c", { "validator": ".*" }]
-        }
-      ]
-    },
-    {
-      "identifier": "shell:allow-spawn",
-      "allow": [
-        {
-          "name": "cmd",
-          "cmd": "cmd",
-          "args": ["/c", { "validator": ".*" }]
-        },
-        {
-          "name": "sh",
-          "cmd": "sh",
-          "args": ["-c", { "validator": ".*" }]
-        }
-      ]
+      "identifier": "core:default"
     }
   ]
 }
 ```
 
 Key points:
-- **Both permissions needed**: `shell:allow-execute` for one-shot commands, `shell:allow-spawn` for long-running processes
-- **Scoped commands**: Each permission needs its own command definitions
-- **Specific args**: We only allow `-c` for sh and `/c` for cmd, followed by any command string
+- **No shell plugin permission is needed** for the app's current command path
+- **One command shape**: `tauri.command.execute(command)` is the supported app surface
+- **No long-running spawn surface**: background recorders are owned by dedicated recorder commands
 
 ## Part 2: Fixing the PATH Environment
 
@@ -192,43 +115,26 @@ pub fn fix_windows_path() {
 
 This weird workaround (getting PATH and immediately setting it back) forces Rust's `std::process::Command` to properly pass PATH to child processes.
 
-## Usage Example: FFmpeg Recording
+## Usage Example: Opening System Settings
 
-Here's how it all comes together for executing FFmpeg commands:
+Here's how it all comes together for a one-shot system command:
 
 ```typescript
-import { asShellCommand } from '$lib/services/command';
+import { requireTauri } from '$lib/tauri';
 
-// Enumerate recording devices
-const command = asShellCommand(
-  IS_MACOS 
-    ? 'ffmpeg -f avfoundation -list_devices true -i ""'
-    : IS_WINDOWS
-    ? 'ffmpeg -list_devices true -f dshow -i dummy'
-    : 'arecord -l'
-);
+const command =
+  'open x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility';
 
-const result = await services.command.execute(command);
-
-// Start recording (long-running process)
-const recordCommand = asShellCommand(
-  `ffmpeg -f ${format} -i ${deviceInput} -acodec pcm_s16le -ar 16000 "${outputPath}"`
-);
-
-const child = await services.command.spawn(recordCommand);
-// ... later
-await child.kill();
+const result = await requireTauri().command.execute(command);
 ```
 
 ## Common Pitfalls
 
-1. **Forgetting spawn permissions**: If you only configure `shell:allow-execute`, spawn commands will fail with "Scoped command sh not found"
+1. **Not fixing PATH**: Your app works in development (launched from terminal) but fails in production (launched from dock/installer)
 
-2. **Not fixing PATH**: Your app works in development (launched from terminal) but fails in production (launched from dock/installer)
+2. **Expecting shell features**: The command path does not use `sh -c` or `cmd /c`, so pipes, redirects, glob expansion, and shell builtins are not available
 
-3. **Wrong shell flags**: Using incorrect flags like `sh -C` instead of `sh -c` will cause command execution to fail
-
-4. **Platform assumptions**: Always test on all target platforms; PATH and shell behavior varies significantly
+3. **Platform assumptions**: Always test on all target platforms; PATH and executable lookup behavior varies significantly
 
 ## Testing Your Setup
 
@@ -240,9 +146,9 @@ await child.kill();
 ## Summary
 
 Accessing shell commands in Tauri requires:
-1. Wrapping commands with platform-appropriate shells (`sh -c` or `cmd /c`)
-2. Configuring Tauri capabilities for both execute and spawn operations
+1. Executing through the app's `$lib/tauri` namespace
+2. Parsing command strings into program + args, not shell wrappers
 3. Fixing PATH environment for GUI applications on all platforms
-4. Creating a command service abstraction to handle platform differences
+4. Keeping long-running native work behind dedicated Tauri commands
 
 With this setup, your Tauri app can reliably execute command-line tools regardless of how it's launched or what platform it's running on.

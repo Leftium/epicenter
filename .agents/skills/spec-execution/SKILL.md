@@ -205,11 +205,11 @@ After all waves complete:
 **Completed**: [Date]
 **Branch**: [branch-name]
 
-### Summary
+### What Landed
 
 [2-3 sentences on what was built and how it differs from the original plan]
 
-### Deviations from Spec
+### Deviations and Discoveries
 
 - [What changed and why]
 
@@ -219,6 +219,8 @@ After all waves complete:
 ```
 
 4. **Final commit or final amend/squash** with the review section included, matching the commit strategy chosen earlier
+
+This review section is spec bookkeeping, not the pull request body. When writing the PR, load `git` and follow the PR narrative guidance there.
 
 ## Sub-Agent Prompts
 

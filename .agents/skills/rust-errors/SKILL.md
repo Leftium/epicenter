@@ -9,7 +9,7 @@ metadata:
 # Rust to TypeScript Error Handling
 ## Reference Repositories
 
-- [Tauri](https://github.com/tauri-apps/tauri) — Desktop app framework (source of Rust-to-TypeScript error patterns)
+- [Tauri](https://github.com/tauri-apps/tauri): Desktop app framework (source of Rust-to-TypeScript error patterns)
 
 ## When to Apply This Skill
 
@@ -140,6 +140,18 @@ The Rust enum serializes to this TypeScript-friendly format:
 4. **Don't use `content` attribute**: Avoid `#[serde(tag = "name", content = "data")]` as it creates nested structures
 5. **Keep enums private when possible**: Only make public if used across modules
 
+## Tauri Command Surface Rules
+
+For Tauri commands that generate TypeScript bindings:
+
+- Derive `Serialize`, `Deserialize` when the value crosses the IPC boundary both ways.
+- Derive `specta::Type` for command inputs, outputs, and event payloads that appear in generated bindings.
+- Keep the Rust enum variant name aligned with the TypeScript discriminant unless there is a deliberate `#[serde(rename = "...")]`.
+- Keep user-facing message strings on the error variant with `thiserror`; do not make TypeScript reconstruct Rust context from separate fields unless the UI needs structured handling.
+- Register events in the Tauri specta builder even if the event type is not returned by a command.
+
+Generated bindings are a contract check, not just output. If a Rust change should alter the TypeScript command or event surface, regenerate bindings and review the generated diff. If the generated diff is large but the public IPC shape did not change, stop and find why before committing it.
+
 ### Anti-Patterns to Avoid
 
 ```rust
@@ -179,8 +191,8 @@ This pattern ensures clean, type-safe error handling across the Rust-TypeScript 
 | `tracing::trace!(...)` | `log.trace(message, data?)` | Per-token / per-message noise for deep debugging |
 | `tracing::debug!(...)` | `log.debug(message, data?)` | Internal state transitions (handshakes, cache fills) |
 | `tracing::info!(...)` | `log.info(message, data?)` | Lifecycle events (connected, loaded, flushed) |
-| `tracing::warn!(?err)` | `log.warn(err)` | Recoverable failure — retry path, fallback taken |
-| `tracing::error!(?err)` | `log.error(err)` | Unrecoverable at this layer — call it loudly |
+| `tracing::warn!(?err)` | `log.warn(err)` | Recoverable failure: retry path, fallback taken |
+| `tracing::error!(?err)` | `log.error(err)` | Unrecoverable at this layer: call it loudly |
 
 `tracing` has no `fatal`; neither do we. Process termination is the app's decision (`process.exit`), not the library's.
 
@@ -198,7 +210,7 @@ log.warn(CacheError.Miss({ key }));  // recoverable
 log.error(CacheError.Miss({ key })); // terminal
 ```
 
-No Rust logging crate attaches level to the error type (`thiserror`, `anyhow`, `slog`, `log`). `miette` is the exception — but `miette` is a compiler-diagnostics library, not a general logger. We follow `tracing`: level is context, not identity.
+No Rust logging crate attaches level to the error type (`thiserror`, `anyhow`, `slog`, `log`). `miette` is the exception, but it is a compiler-diagnostics library, not a general logger. We follow `tracing`: level is context, not identity.
 
 ### The `?err` idiom ↔ `tapErr`
 
@@ -219,4 +231,4 @@ const result = await tryAsync({
 
 Both: pass-through on success, log the structured error on failure.
 
-In practice this shape is rare in epicenter — most call sites need the Ok data locally and so branch on `result.error` and log inside the branch. Reach for `tapErr` only when the Result flows out of the function in a `.then(...)` chain.
+In practice this shape is rare in epicenter. Most call sites need the Ok data locally and so branch on `result.error` and log inside the branch. Reach for `tapErr` only when the Result flows out of the function in a `.then(...)` chain.

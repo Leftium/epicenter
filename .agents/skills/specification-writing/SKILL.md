@@ -123,9 +123,6 @@ write only what the implementer needs:
 Deferred:
   not required now, allowed later
 
-Rejected product direction:
-  deliberately not part of the product or design
-
 Opportunistic:
   not required, but acceptable to fix if discovered and grounded
 ```
@@ -411,8 +408,6 @@ This section signals "you decide this" to the implementer. Include your recommen
 ## Adjacent Work
 
 - [Decision or feature]: [Why it is not required now, and what would bring it back.]
-- [Rejected product direction]: [Why this should not be part of the product or design.]
-
 - [Issue or cleanup]: [Why it is not required, but may be fixed if discovered and grounded.]
 ```
 

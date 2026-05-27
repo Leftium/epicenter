@@ -11,7 +11,7 @@
  * canonical schema.
  *
  * Composition lives elsewhere:
- *  - `apps/fuji/src/lib/browser.ts`  → `openFujiBrowser({ signedIn, deviceId })`
+ *  - `apps/fuji/fuji.browser.ts`    → `openFujiBrowser({ signedIn, deviceId })`
  *  - `apps/fuji/project.ts`          → `fuji(opts?)` mount factory
  *  - `examples/fuji/epicenter.config.ts` → canonical project layout composition
  *

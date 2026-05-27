@@ -29,7 +29,7 @@ import {
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
-import { createFujiWorkspace } from './src/lib/workspace.js';
+import { createFujiWorkspace } from './fuji.workspace.js';
 
 export type FujiMountOptions = {
 	/** Markdown directory; relative paths resolve against `projectDir`. */

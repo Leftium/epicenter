@@ -5,7 +5,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
-		".": "./src/lib/workspace.ts",
+		".": "./fuji.workspace.ts",
 		"./project": "./project.ts"
 	},
 	"scripts": {

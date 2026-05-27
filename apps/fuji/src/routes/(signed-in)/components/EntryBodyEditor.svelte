@@ -24,7 +24,7 @@
 	import 'prosemirror-view/style/prosemirror.css';
 	import { redo, undo, ySyncPlugin, yUndoPlugin } from 'y-prosemirror';
 	import { requireFuji } from '$lib/session';
-	import type { EntryId } from '$lib/workspace';
+	import type { EntryId } from '../../../../fuji.workspace';
 
 	let {
 		entryId,

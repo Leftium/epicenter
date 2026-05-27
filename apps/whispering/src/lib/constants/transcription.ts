@@ -159,8 +159,9 @@ export const TRANSCRIPTION = {
 	},
 
 	// ── Local services ──────────────────────────────────────────────
-	// Models are null — download metadata (file URLs, sizes, ONNX configs)
-	// stays co-located with service implementations.
+	// Models are null here because the local model catalogs (download URLs,
+	// sizes, ONNX directory shapes) live in `./local-models.ts`. This map
+	// only carries the user-facing label and capability flags.
 	whispercpp: {
 		label: 'Whisper C++',
 		location: 'local',

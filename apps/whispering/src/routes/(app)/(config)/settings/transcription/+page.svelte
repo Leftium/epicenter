@@ -20,13 +20,15 @@
 	import TranscriptionServiceSelect from '$lib/components/settings/TranscriptionServiceSelect.svelte';
 	import { SUPPORTED_LANGUAGES_OPTIONS } from '$lib/constants/languages';
 	import {
+		MOONSHINE_MODELS,
+		PARAKEET_MODELS,
+		WHISPER_MODELS,
+	} from '$lib/constants/local-models';
+	import {
 		LOCAL_MODEL_UNLOAD_POLICY_OPTIONS,
 		type LocalModelUnloadPolicy,
 		TRANSCRIPTION,
 	} from '$lib/constants/transcription';
-	import { MOONSHINE_MODELS } from '$lib/services/transcription/local/moonshine';
-	import { PARAKEET_MODELS } from '$lib/services/transcription/local/parakeet';
-	import { WHISPER_MODELS } from '$lib/services/transcription/local/whispercpp';
 	import { tauri } from '$lib/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';

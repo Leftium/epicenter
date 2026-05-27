@@ -23,7 +23,7 @@ function create(itemOrItems: T | T[]): Promise<Result<void, E>> {
 
 1. **Accept `T | T[]`** as the parameter type
 2. **Normalize** with `Array.isArray()` at the top of the function
-3. **All logic** works against the array — one code path
+3. **All logic** works against the array : one code path
 
 ```typescript
 function createServer(clientOrClients: Client | Client[], options?: Options) {
@@ -84,7 +84,7 @@ function createServer(
 }
 ```
 
-### Database Service (`apps/whispering/src/lib/services/isomorphic/db/web.ts`)
+### Service Method
 
 ```typescript
 delete: async (recordingOrRecordings) => {
@@ -93,30 +93,39 @@ delete: async (recordingOrRecordings) => {
     : [recordingOrRecordings];
   const ids = recordings.map((r) => r.id);
   return tryAsync({
-    try: () => db.recordings.bulkDelete(ids),
-    catch: (error) => DbError.MutationFailed({ cause: error }),
+    try: () => store.bulkDelete(ids),
+    catch: (error) => RecordingStoreError.MutationFailed({ cause: error }),
   });
 },
 ```
 
-### Query Mutations (`apps/whispering/src/lib/query/isomorphic/db.ts`)
+### RPC Mutation
 
 ```typescript
-delete: defineMutation({
-  mutationFn: async (recordings: Recording | Recording[]) => {
-    const recordingsArray = Array.isArray(recordings)
-      ? recordings
-      : [recordings];
+export const recordingKeys = defineKeys({
+	delete: ['recordings', 'delete'],
+});
 
-    for (const recording of recordingsArray) {
-      services.db.recordings.revokeAudioUrl(recording.id);
-    }
+type DeleteRecordingsInput = Recording | Recording[];
 
-    const { error } = await services.db.recordings.delete(recordingsArray);
-    if (error) return Err(error);
-    return Ok(undefined);
-  },
-}),
+export const recordings = {
+	delete: defineMutation({
+		mutationKey: recordingKeys.delete,
+		mutationFn: async (recordings: DeleteRecordingsInput) => {
+			const recordingsArray = Array.isArray(recordings)
+				? recordings
+				: [recordings];
+
+			for (const recording of recordingsArray) {
+				services.blobs.audio.revokePlaybackUrl(recording.id);
+			}
+
+			const { error } = await services.recordings.delete(recordingsArray);
+			if (error) return Err(error);
+			return Ok(undefined);
+		},
+	}),
+};
 ```
 
 ## Anti-Patterns
@@ -156,4 +165,4 @@ function create(itemOrItems: T | T[]) {
 
 ## References
 
-- [Full article](../../docs/articles/single-or-array-overload-pattern.md) — detailed explanation with more examples
+- [Full article](../../docs/articles/single-or-array-overload-pattern.md) : detailed explanation with more examples

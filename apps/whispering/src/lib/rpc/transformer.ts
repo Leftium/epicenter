@@ -1,4 +1,5 @@
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import { defineKeys } from 'wellcrafted/query';
 import type { Result } from 'wellcrafted/result';
 import {
 	runTransformation,
@@ -15,6 +16,21 @@ const TransformerRpcError = defineErrors({
 });
 type TransformerRpcError = InferErrors<typeof TransformerRpcError>;
 
+type TransformInputParams = {
+	input: string;
+	transformation: Transformation;
+};
+
+type TransformRecordingParams = {
+	recordingId: string;
+	transformation: Transformation;
+};
+
+export const transformerKeys = defineKeys({
+	transformInput: ['transformer', 'transformInput'],
+	transformRecording: ['transformer', 'transformRecording'],
+});
+
 /**
  * Observed mutations around runTransformation. The pipeline logic lives in
  * $lib/operations/transform; this file just wraps it with TanStack mutation
@@ -22,26 +38,22 @@ type TransformerRpcError = InferErrors<typeof TransformerRpcError>;
  */
 export const transformer = {
 	transformInput: defineMutation({
-		mutationKey: ['transformer', 'transformInput'] as const,
+		mutationKey: transformerKeys.transformInput,
 		mutationFn: ({
 			input,
 			transformation,
-		}: {
-			input: string;
-			transformation: Transformation;
-		}): Promise<Result<string, TransformError>> =>
+		}: TransformInputParams): Promise<Result<string, TransformError>> =>
 			runTransformation({ input, transformation, recordingId: null }),
 	}),
 
 	transformRecording: defineMutation({
-		mutationKey: ['transformer', 'transformRecording'] as const,
+		mutationKey: transformerKeys.transformRecording,
 		mutationFn: ({
 			recordingId,
 			transformation,
-		}: {
-			recordingId: string;
-			transformation: Transformation;
-		}): Promise<Result<string, TransformError | TransformerRpcError>> => {
+		}: TransformRecordingParams): Promise<
+			Result<string, TransformError | TransformerRpcError>
+		> => {
 			const recording = recordings.get(recordingId);
 			if (!recording)
 				return Promise.resolve(TransformerRpcError.RecordingNotFound());

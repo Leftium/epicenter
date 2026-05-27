@@ -65,6 +65,7 @@ import type { Command, ShortcutEventState } from '$lib/commands';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { IS_MACOS } from '$lib/constants/platform';
 import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
+import { autostartKeys } from '$lib/tauri/autostart-keys';
 import { commands } from '$lib/tauri/commands';
 import {
 	type Accelerator,
@@ -406,11 +407,9 @@ type AutostartError = InferErrors<typeof AutostartError>;
 // One canonical call shape per leaf; no `tauri.X.Y` vs `tauri.rpc.X.Y`
 // duplication.
 
-const autostartIsEnabledKey = ['autostart', 'isEnabled'] as const;
-
 const autostart = {
 	isEnabled: defineQuery({
-		queryKey: autostartIsEnabledKey,
+		queryKey: autostartKeys.isEnabled,
 		queryFn: () =>
 			tryAsync({
 				try: () => isAutostartEnabled(),
@@ -419,24 +418,24 @@ const autostart = {
 		initialData: false,
 	}),
 	enable: defineMutation({
-		mutationKey: ['autostart', 'enable'] as const,
+		mutationKey: autostartKeys.enable,
 		mutationFn: () =>
 			tryAsync({
 				try: () => enableAutostart(),
 				catch: (error) => AutostartError.EnableFailed({ cause: error }),
 			}),
 		onSettled: () =>
-			queryClient.invalidateQueries({ queryKey: autostartIsEnabledKey }),
+			queryClient.invalidateQueries({ queryKey: autostartKeys.isEnabled }),
 	}),
 	disable: defineMutation({
-		mutationKey: ['autostart', 'disable'] as const,
+		mutationKey: autostartKeys.disable,
 		mutationFn: () =>
 			tryAsync({
 				try: () => disableAutostart(),
 				catch: (error) => AutostartError.DisableFailed({ cause: error }),
 			}),
 		onSettled: () =>
-			queryClient.invalidateQueries({ queryKey: autostartIsEnabledKey }),
+			queryClient.invalidateQueries({ queryKey: autostartKeys.isEnabled }),
 	}),
 };
 

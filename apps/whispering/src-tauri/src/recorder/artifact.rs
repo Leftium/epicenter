@@ -149,22 +149,16 @@ pub fn write_artifact(
     })
 }
 
-/// Read and decode an artifact to 16 kHz mono f32 PCM. Used by the
-/// transcribe-from-recording-id path. Accepts any container Symphonia can
-/// decode (cpal-written WAV, navigator-saved webm/opus/mp4, etc.).
+/// Read and decode an artifact to 16 kHz mono f32 PCM. Shared by the
+/// transcribe-from-recording-id path and the cloud-upload re-encode path.
+/// Accepts any container Symphonia can decode (cpal-written WAV,
+/// navigator-saved webm/opus/mp4, etc.).
 pub fn read_artifact_samples(app: &AppHandle, id: &str) -> Result<Vec<f32>, String> {
     let path = find_recording_path(app, id)?;
     let bytes = std::fs::read(&path)
         .map_err(|e| format!("read artifact {}: {e}", path.display()))?;
     decode_to_pcm16k_mono(&bytes)
         .map_err(|e| format!("decode artifact {}: {e}", path.display()))
-}
-
-/// Read the raw bytes of an artifact. Used by the cloud-upload path which
-/// re-encodes (or repackages) the bytes as Opus inside Rust.
-pub fn read_artifact_bytes(app: &AppHandle, id: &str) -> Result<Vec<u8>, String> {
-    let path = find_recording_path(app, id)?;
-    std::fs::read(&path).map_err(|e| format!("read artifact {}: {e}", path.display()))
 }
 
 /// Delete a recording's audio file. Idempotent: a missing file is not an

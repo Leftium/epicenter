@@ -28,22 +28,10 @@ import { Ok, type Result } from 'wellcrafted/result';
 
 import type { Mount } from '../daemon/define-mount.js';
 import type { ProjectDir } from '../shared/types.js';
-
-export const PROJECT_CONFIG_FILENAME = 'epicenter.config.ts';
-
-export const DEFAULT_PROJECT_CONFIG_SOURCE = `// Default-export a Mount (single-mount) or a Mount[] (multi-mount).
-// Example:
-//
-//   import { fuji } from '@epicenter/fuji/project';
-//   export default fuji();
-//
-//   // or, for multiple apps in one project:
-//   import { fuji } from '@epicenter/fuji/project';
-//   import { notes } from '@epicenter/honeycrisp/project';
-//   export default [fuji(), notes()];
-
-export default [];
-`;
+import {
+	DEFAULT_PROJECT_CONFIG_SOURCE,
+	PROJECT_CONFIG_FILENAME,
+} from './project-config-source.js';
 
 export const ProjectConfigError = defineErrors({
 	ProjectConfigNotFound: ({
@@ -127,6 +115,7 @@ function isDefaultConfigSelfImportMiss(
 	return (
 		extractErrorMessage(cause).includes(
 			"Cannot find module '@epicenter/workspace'",
-		) && readFileSync(projectConfigPath, 'utf8') === DEFAULT_PROJECT_CONFIG_SOURCE
+		) &&
+		readFileSync(projectConfigPath, 'utf8') === DEFAULT_PROJECT_CONFIG_SOURCE
 	);
 }

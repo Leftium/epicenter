@@ -131,7 +131,7 @@ export {
 // keeping them out of this root barrel stops browser bundles (fuji,
 // whispering, etc.) from traversing `node:*` modules. Daemon runtime and
 // log paths live in `@epicenter/workspace/daemon/paths.ts`.
-export { DEFAULT_PROJECT_CONFIG_SOURCE } from './config/load-project-config.js';
+export { DEFAULT_PROJECT_CONFIG_SOURCE } from './config/project-config-source.js';
 export { defineMount } from './daemon/define-mount.js';
 export type { ProjectDir } from './shared/types';
 

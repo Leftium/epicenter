@@ -181,7 +181,7 @@ Tests live in `*.test.ts` next to the implementation. Use `createWorkspace({ id:
 
 ## Canonical references
 
-- `apps/whispering/src/lib/whispering/tauri.ts`: IndexedDB + BroadcastChannel + recording markdown export
+- `apps/whispering/src/lib/whispering/client.tauri.ts`: IndexedDB + BroadcastChannel + recording markdown export
 - `apps/fuji/src/lib/browser.ts`: encryption + IndexedDB + sync + server-owned presence
 - `packages/workspace/README.md`: quick start
 - `packages/workspace/SYNC_ARCHITECTURE.md`: multi-device sync design

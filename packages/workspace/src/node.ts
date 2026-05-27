@@ -13,10 +13,10 @@ export type {
 export { buildDaemonActions } from './client/daemon-actions.js';
 export { findProjectRoot } from './client/find-project-root.js';
 export {
-	DEFAULT_PROJECT_CONFIG_SOURCE,
 	loadProjectConfig,
 	ProjectConfigError,
 } from './config/load-project-config.js';
+export { DEFAULT_PROJECT_CONFIG_SOURCE } from './config/project-config-source.js';
 export { PeerSnapshot, RunRequest } from './daemon/app.js';
 export {
 	type AttachProjectInfrastructureOptions,

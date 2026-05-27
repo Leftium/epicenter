@@ -1,10 +1,9 @@
 /**
- * Whispering's Tauri workspace opener.
+ * Tauri runtime client for Whispering.
  *
- * Conceptually this is `openWhisperingTauri()`: it creates the shared
- * `createWhisperingWorkspace()` model, then attaches Tauri-runtime resources
- * around it. The export name predates the repo-wide `open<App>Tauri` naming
- * convention.
+ * Creates the shared workspace model, attaches local persistence and
+ * same-device broadcast sync, then adds native actions that are only available
+ * in the desktop app.
  */
 
 import {
@@ -14,6 +13,7 @@ import {
 	defineMutation,
 	defineWorkspace,
 } from '@epicenter/workspace';
+import { open } from '@tauri-apps/plugin-dialog';
 import yaml from 'js-yaml';
 import {
 	defineErrors,
@@ -70,7 +70,6 @@ export function openWhispering() {
 				> =>
 					tryAsync({
 						try: async () => {
-							const { open } = await import('@tauri-apps/plugin-dialog');
 							const selected = await open({
 								directory: true,
 								multiple: false,
@@ -107,3 +106,5 @@ export function openWhispering() {
 		whenReady: idb.whenLoaded,
 	});
 }
+
+export const whispering = openWhispering();

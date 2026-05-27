@@ -129,17 +129,6 @@ type OAuthTransaction = {
 	redirectUri: string;
 };
 
-type RedirectTo = (url: string) => MaybePromise<void>;
-type LaunchWebAuthFlow = (url: string) => Promise<string>;
-type BrowserOAuthLauncherConfig = OAuthClientConfig & {
-	redirectUri: string;
-	redirectTo?: RedirectTo;
-};
-type ExtensionOAuthLauncherConfig = OAuthClientConfig & {
-	redirectUri: string;
-	launchWebAuthFlow: LaunchWebAuthFlow;
-};
-
 const DEFAULT_SCOPE = EPICENTER_OAUTH_SCOPE;
 
 /**
@@ -157,7 +146,10 @@ export function createBrowserOAuthLauncher({
 	},
 	redirectUri,
 	...config
-}: BrowserOAuthLauncherConfig) {
+}: OAuthClientConfig & {
+	redirectUri: string;
+	redirectTo?: (url: string) => MaybePromise<void>;
+}) {
 	const client = createOAuthClient(config);
 	return {
 		async startSignIn() {
@@ -193,7 +185,10 @@ export function createExtensionOAuthLauncher({
 	launchWebAuthFlow,
 	redirectUri,
 	...config
-}: ExtensionOAuthLauncherConfig) {
+}: OAuthClientConfig & {
+	redirectUri: string;
+	launchWebAuthFlow: (url: string) => Promise<string>;
+}) {
 	const client = createOAuthClient(config);
 	return {
 		async startSignIn() {

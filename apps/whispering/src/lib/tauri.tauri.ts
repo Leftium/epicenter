@@ -253,9 +253,7 @@ const audioEncoder = {
 	 * rather than failing the whole transcription: compression is an
 	 * optimization, not a correctness requirement.
 	 */
-	encodeWavToOpusOgg(
-		wavBlob: Blob,
-	): Promise<Result<Blob, AudioEncoderError>> {
+	encodeWavToOpusOgg(wavBlob: Blob): Promise<Result<Blob, AudioEncoderError>> {
 		return tryAsync({
 			try: async () => {
 				const wavBuffer = await wavBlob.arrayBuffer();
@@ -415,9 +413,7 @@ async function registerShortcut({
 	accelerator: Accelerator;
 	callback: (state: ShortcutEventState) => void;
 	on: ShortcutEventState[];
-}): Promise<
-	Result<void, InvalidAcceleratorError | ShortcutError>
-> {
+}): Promise<Result<void, InvalidAcceleratorError | ShortcutError>> {
 	const { error: unregisterError } = await unregisterShortcut(accelerator);
 	if (unregisterError) return Err(unregisterError);
 

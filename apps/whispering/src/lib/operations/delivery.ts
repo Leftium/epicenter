@@ -37,11 +37,7 @@ export async function deliverTranscriptionResult({
  * preferences. Returns the success Notice the caller passes to
  * `loading.resolve(...)`.
  */
-export async function deliverTransformationResult({
-	text,
-}: {
-	text: string;
-}) {
+export async function deliverTransformationResult({ text }: { text: string }) {
 	return deliverResult({
 		text,
 		successCopy: '🔄 Transformation complete',

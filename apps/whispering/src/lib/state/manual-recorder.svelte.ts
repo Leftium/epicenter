@@ -145,7 +145,11 @@ function createManualRecorder() {
 			},
 		}),
 
-		async startRecording({ sendStatus }: { sendStatus: UpdateStatusMessageFn }) {
+		async startRecording({
+			sendStatus,
+		}: {
+			sendStatus: UpdateStatusMessageFn;
+		}) {
 			await bootstrapped;
 			if (_current) return ManualRecorderError.AlreadyRecording();
 			const service = resolveServiceForStart();
@@ -175,7 +179,9 @@ function createManualRecorder() {
 
 		async cancelRecording({
 			sendStatus,
-		}: { sendStatus: UpdateStatusMessageFn }) {
+		}: {
+			sendStatus: UpdateStatusMessageFn;
+		}) {
 			await bootstrapped;
 			if (!_current) return Ok({ status: 'no-recording' as const });
 			const { data: cancelResult, error: cancelRecordingError } =

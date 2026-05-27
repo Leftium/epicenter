@@ -11,9 +11,7 @@ const isTranscribingKey = ['transcription', 'isTranscribing'] as const;
 
 export const transcription = {
 	isCurrentlyTranscribing() {
-		return (
-			queryClient.isMutating({ mutationKey: isTranscribingKey }) > 0
-		);
+		return queryClient.isMutating({ mutationKey: isTranscribingKey }) > 0;
 	},
 	transcribeRecording: defineMutation({
 		mutationKey: isTranscribingKey,

@@ -43,7 +43,8 @@ export const transformer = {
 			transformation: Transformation;
 		}): Promise<Result<string, TransformError | TransformerRpcError>> => {
 			const recording = recordings.get(recordingId);
-			if (!recording) return Promise.resolve(TransformerRpcError.RecordingNotFound());
+			if (!recording)
+				return Promise.resolve(TransformerRpcError.RecordingNotFound());
 
 			return runTransformation({
 				input: recording.transcript,

@@ -2,7 +2,7 @@ import { goto } from '$app/navigation';
 import { analytics } from '$lib/operations/analytics';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { sound } from '$lib/operations/sound';
-import { type Notice, log, report } from '$lib/report';
+import { log, type Notice, report } from '$lib/report';
 import type { DeviceAcquisitionOutcome } from '$lib/services/recorder/types';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';

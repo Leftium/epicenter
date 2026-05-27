@@ -22,7 +22,7 @@ type TransformerRpcError = InferErrors<typeof TransformerRpcError>;
  */
 export const transformer = {
 	transformInput: defineMutation({
-		mutationKey: ['transformer', 'transformInput'] as const,
+		mutationKey: ['transformer', 'transformInput'],
 		mutationFn: ({
 			input,
 			transformation,
@@ -34,7 +34,7 @@ export const transformer = {
 	}),
 
 	transformRecording: defineMutation({
-		mutationKey: ['transformer', 'transformRecording'] as const,
+		mutationKey: ['transformer', 'transformRecording'],
 		mutationFn: ({
 			recordingId,
 			transformation,

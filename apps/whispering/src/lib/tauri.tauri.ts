@@ -419,7 +419,7 @@ const autostart = {
 		initialData: false,
 	}),
 	enable: defineMutation({
-		mutationKey: ['autostart', 'enable'] as const,
+		mutationKey: ['autostart', 'enable'],
 		mutationFn: () =>
 			tryAsync({
 				try: () => enableAutostart(),
@@ -429,7 +429,7 @@ const autostart = {
 			queryClient.invalidateQueries({ queryKey: autostartIsEnabledKey }),
 	}),
 	disable: defineMutation({
-		mutationKey: ['autostart', 'disable'] as const,
+		mutationKey: ['autostart', 'disable'],
 		mutationFn: () =>
 			tryAsync({
 				try: () => disableAutostart(),

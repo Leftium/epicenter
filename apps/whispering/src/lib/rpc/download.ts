@@ -7,7 +7,7 @@ import type { Recording } from '$lib/state/recordings.svelte';
 
 export const download = {
 	downloadRecording: defineMutation({
-		mutationKey: ['download', 'downloadRecording'] as const,
+		mutationKey: ['download', 'downloadRecording'],
 		mutationFn: async (
 			recording: Recording,
 		): Promise<Result<void, BlobError | DownloadError>> => {

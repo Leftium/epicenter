@@ -6,17 +6,18 @@
  */
 
 import type { EventsQuery, UsageQuery } from '@epicenter/billing/contracts';
+import { defineKeys } from 'wellcrafted/query';
 import { defineMutation, defineQuery } from '$lib/query/client';
 import { billingApi } from './api';
 
-export const billingKeys = {
-	all: ['billing'] as const,
-	overview: ['billing', 'overview'] as const,
+export const billingKeys = defineKeys({
+	all: ['billing'],
+	overview: ['billing', 'overview'],
 	usage: (params: UsageQuery) => ['billing', 'usage', params] as const,
 	events: (params: EventsQuery) => ['billing', 'events', params] as const,
-	plans: ['billing', 'plans'] as const,
-	models: ['billing', 'models'] as const,
-};
+	plans: ['billing', 'plans'],
+	models: ['billing', 'models'],
+});
 
 export const billing = {
 	overview: defineQuery({
@@ -49,19 +50,19 @@ export const billing = {
 	}),
 
 	topUp: defineMutation({
-		mutationKey: [...billingKeys.all, 'top-up'] as const,
+		mutationKey: [...billingKeys.all, 'top-up'],
 		mutationFn: (successUrl?: string) =>
 			billingApi.checkoutTopUp({ successUrl }),
 	}),
 
 	previewPlanChange: defineMutation({
-		mutationKey: [...billingKeys.all, 'preview'] as const,
+		mutationKey: [...billingKeys.all, 'preview'],
 		mutationFn: (params: { planId: string }) =>
 			billingApi.previewPlanChange(params),
 	}),
 
 	checkoutPlan: defineMutation({
-		mutationKey: [...billingKeys.all, 'checkout-plan'] as const,
+		mutationKey: [...billingKeys.all, 'checkout-plan'],
 		mutationFn: (params: { planId: string; successUrl?: string }) =>
 			billingApi.checkoutPlan(params),
 	}),

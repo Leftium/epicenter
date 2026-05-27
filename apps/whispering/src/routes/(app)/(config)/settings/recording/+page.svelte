@@ -18,6 +18,7 @@
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
+	import RecordingMarkdownExportButton from './RecordingMarkdownExportButton.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
 
 	// Derived labels for select triggers
@@ -237,6 +238,18 @@
 		{/if}
 
 		{#if settings.get('recording.mode') === 'manual' || settings.get('recording.mode') === 'vad'}
+			{#if tauri}
+				<Field.Field>
+					<Field.Label>Recording markdown export</Field.Label>
+					<RecordingMarkdownExportButton />
+					<Field.Description>
+						Write every current recording's transcript to a folder you choose.
+						The files are snapshots: later edits in Whispering do not update
+						them. Run the export again to refresh.
+					</Field.Description>
+				</Field.Field>
+			{/if}
+
 			{#if isUsingNavigatorMethod}
 				<!-- Browser method settings -->
 				<Field.Field>

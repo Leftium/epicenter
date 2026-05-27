@@ -62,7 +62,6 @@ import {
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { goto } from '$app/navigation';
 import type { Command, ShortcutEventState } from '$lib/commands';
-import { commandCallbacks } from '$lib/commands';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { IS_MACOS } from '$lib/constants/platform';
 import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
@@ -455,7 +454,7 @@ const tray = {
 };
 
 const globalShortcuts = {
-	registerCommand({
+	async registerCommand({
 		command: cmd,
 		// Parameter may contain legacy "CommandOrControl" syntax.
 		// Legacy: "CommandOrControl+Shift+R" -> Modern: "Command+Shift+R"
@@ -465,6 +464,7 @@ const globalShortcuts = {
 		command: Command;
 		accelerator: Accelerator;
 	}) {
+		const { commandCallbacks } = await import('$lib/commands');
 		const accel = legacyAcceleratorString.replace(
 			'CommandOrControl',
 			IS_MACOS ? 'Command' : 'Control',

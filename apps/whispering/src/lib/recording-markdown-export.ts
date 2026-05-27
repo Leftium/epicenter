@@ -1,6 +1,6 @@
 import type { Table } from '@epicenter/workspace';
 import yaml from 'js-yaml';
-import { type Readable, writable } from 'svelte/store';
+import { writable, type Readable } from 'svelte/store';
 import { createLogger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
 import { report } from './report';
@@ -10,13 +10,11 @@ import type { Recording } from './workspace';
 const log = createLogger('whispering/recording-markdown-export');
 const REALTIME_CHUNK_SIZE = 100;
 
-export type RecordingMarkdownExport = {
-	whenExported: Promise<void>;
-	lastError: Readable<{ at: Date; error: unknown } | null>;
-	rebuild(): Promise<void>;
-	[Symbol.dispose](): void;
-};
-
+/**
+ * Serialize a recording row to a markdown file.
+ *
+ * Puts `transcript` in the body and all other metadata in YAML frontmatter.
+ */
 function toRecordingMarkdownFile(row: Recording) {
 	const { transcript, ...frontmatter } = row;
 	const yamlStr = yaml.dump(frontmatter, { lineWidth: -1 });
@@ -46,10 +44,12 @@ export function attachRecordingMarkdownExport(
 	let scheduled = false;
 	let hasShownFailureToast = false;
 	const pendingIds = new Set<string>();
-	const lastError = writable<{ at: Date; error: unknown } | null>(null);
+	const lastErrorWritable = writable<{ at: Date; error: unknown } | null>(null);
+	const lastError: Readable<{ at: Date; error: unknown } | null> =
+		lastErrorWritable;
 
 	function recordFailure(error: unknown) {
-		lastError.set({ at: new Date(), error });
+		lastErrorWritable.set({ at: new Date(), error });
 		log.error(
 			error instanceof Error
 				? error
@@ -144,17 +144,25 @@ export function attachRecordingMarkdownExport(
 	});
 
 	return {
+		/** Resolves after the initial markdown export attempt completes. */
 		whenExported,
+		/** Latest background export failure, or null after a successful reset path. */
 		lastError,
+		/** Re-export every current recording row to markdown. */
 		async rebuild() {
-			lastError.set(null);
+			lastErrorWritable.set(null);
 			hasShownFailureToast = false;
 			syncQueue = syncQueue.then(writeAllRecordings).catch(recordFailure);
 			await syncQueue;
 		},
+		/** Stop observing recording changes and skip future writes. */
 		[Symbol.dispose]() {
 			isDisposed = true;
 			unsubscribe();
 		},
-	} satisfies RecordingMarkdownExport;
+	};
 }
+
+export type RecordingMarkdownExport = ReturnType<
+	typeof attachRecordingMarkdownExport
+>;

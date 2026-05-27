@@ -1,32 +1,15 @@
-/**
- * Attach a desktop-only materializer that mirrors the `recordings` table into
- * `{id}.md` files on disk. No-op in the browser.
- *
- * Observes the table and invokes Tauri Rust commands through a serialized
- * promise chain so rapid
- * changes never produce overlapping writes.
- */
-
-import yaml from 'js-yaml';
 import type { Table } from '@epicenter/workspace';
-import { defineErrors } from 'wellcrafted/error';
+import yaml from 'js-yaml';
 import { createLogger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
-import { tauri } from './tauri';
 import { commands } from './tauri/commands';
 import type { Recording } from './workspace';
 
-const log = createLogger('whispering/recording-materializer');
-const RecordingMaterializerError = defineErrors({
-	WriteFailed: ({ cause }: { cause: unknown }) => ({
-		message: 'Failed to write recording markdown files',
-		cause,
-	}),
-});
+const log = createLogger('whispering/recording-markdown-export');
 
-type RecordingMarkdownFilesAttachment = {
-	/** Resolves after the initial flush of existing rows completes. */
-	whenFlushed: Promise<void>;
+export type RecordingMarkdownExport = {
+	whenExported: Promise<void>;
+	rebuild(): Promise<void>;
 	[Symbol.dispose](): void;
 };
 
@@ -44,33 +27,39 @@ function toRecordingMarkdownFile(row: Recording) {
 	};
 }
 
-export function attachRecordingMarkdownFiles(
+export function attachRecordingMarkdownExport(
 	ydoc: Y.Doc,
 	recordings: Table<Recording>,
 	config: {
 		waitFor: Promise<unknown>;
 	},
 ) {
-	if (!tauri) {
-		return {
-			whenFlushed: Promise.resolve(),
-			[Symbol.dispose]() {},
-		} satisfies RecordingMarkdownFilesAttachment;
+	let syncQueue = Promise.resolve();
+	let isDisposed = false;
+
+	async function writeAllRecordings() {
+		if (isDisposed) return;
+
+		const files = recordings.getAllValid().map(toRecordingMarkdownFile);
+		if (files.length) {
+			const { error } = await commands.writeRecordingMarkdownFiles(files);
+			if (error !== null) throw error;
+		}
 	}
 
-	// Serialized promise chain: observer batches complete sequentially so
-	// rapid changes don't produce overlapping Rust invoke calls.
-	let syncQueue = Promise.resolve();
-
 	const unsubscribe = recordings.observe((changedIds) => {
+		if (isDisposed) return;
+
 		syncQueue = syncQueue
 			.then(async () => {
+				if (isDisposed) return;
+
 				const toWrite: { filename: string; content: string }[] = [];
 				const toDelete: string[] = [];
 
 				for (const id of changedIds) {
 					const { data: row, error } = recordings.get(id);
-					if (error) continue; // invalid row, leave existing file alone
+					if (error) continue;
 					if (row === null) {
 						toDelete.push(`${id}.md`);
 					} else {
@@ -89,19 +78,17 @@ export function attachRecordingMarkdownFiles(
 				}
 			})
 			.catch((error) => {
-				log.warn(RecordingMaterializerError.WriteFailed({ cause: error }));
+				log.error(
+					error instanceof Error
+						? error
+						: new Error('Recording markdown export failed', { cause: error }),
+				);
 			});
 	});
 
-	const whenFlushed = (async () => {
+	const whenExported = (async () => {
 		await config.waitFor;
-		syncQueue = syncQueue.then(async () => {
-			const files = recordings.getAllValid().map(toRecordingMarkdownFile);
-			if (files.length) {
-				const { error } = await commands.writeRecordingMarkdownFiles(files);
-				if (error !== null) throw error;
-			}
-		});
+		syncQueue = syncQueue.then(writeAllRecordings);
 		await syncQueue;
 	})();
 
@@ -110,9 +97,14 @@ export function attachRecordingMarkdownFiles(
 	});
 
 	return {
-		whenFlushed,
+		whenExported,
+		async rebuild() {
+			syncQueue = syncQueue.then(writeAllRecordings);
+			await syncQueue;
+		},
 		[Symbol.dispose]() {
+			isDisposed = true;
 			unsubscribe();
 		},
-	} satisfies RecordingMarkdownFilesAttachment;
+	} satisfies RecordingMarkdownExport;
 }

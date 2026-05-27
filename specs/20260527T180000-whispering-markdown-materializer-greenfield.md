@@ -532,10 +532,11 @@ Out of scope:
 
 ### Wave 3: Rename and reshape the exporter
 
-- [ ] Rename `recording-materializer.ts` to `recording-markdown-export.ts`.
-- [ ] Return `{ whenExported, rebuild, [Symbol.dispose] }`. `[Symbol.dispose]` unsubscribes the observer, sets an `isDisposed` flag the queue checks before flushing, and lets any in-flight Rust IPC call settle (do not race-cancel it).
-- [ ] Remove browser no-op language: this module is imported only from `apps/whispering/src/lib/whispering/tauri.ts`.
-- [ ] Keep `write_markdown_files` and `delete_files_in_directory` as the only IO surface. Do not call `@tauri-apps/plugin-fs` directly from the exporter.
+- [x] Rename `recording-materializer.ts` to `recording-markdown-export.ts`.
+- [x] Return `{ whenExported, rebuild, [Symbol.dispose] }`. `[Symbol.dispose]` unsubscribes the observer, sets an `isDisposed` flag the queue checks before flushing, and lets any in-flight Rust IPC call settle (do not race-cancel it).
+- [x] Remove browser no-op language: this module is imported only from `apps/whispering/src/lib/whispering/tauri.ts`.
+- [x] Keep `write_markdown_files` and `delete_files_in_directory` as the only IO surface. Do not call `@tauri-apps/plugin-fs` directly from the exporter.
+  > **Verification note**: `bun --filter @epicenter/whispering typecheck` passes. `bun test apps/whispering` passes. `bun run check` was run and still fails on unrelated repo-wide lint/typecheck diagnostics outside Whispering exporter changes.
 
 ### Wave 4: Add coalescing queue
 

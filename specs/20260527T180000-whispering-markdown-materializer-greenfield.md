@@ -540,10 +540,11 @@ Out of scope:
 
 ### Wave 4: Add coalescing queue
 
-- [ ] Replace append-only batch queue with latest-state coalescing queue.
-- [ ] Read table rows at flush time.
-- [ ] Chunk write and delete calls.
-- [ ] Surface projection failures to the user. Concretely: expose `lastError: { at: Date; error: unknown } | null` on the exporter return as a reactive store; render it in the same settings panel row that owns the folder picker. Toast once per session on the first failure so the user knows to look. Subsequent failures update the panel only, until the user changes the folder or runs rebuild.
+- [x] Replace append-only batch queue with latest-state coalescing queue.
+- [x] Read table rows at flush time.
+- [x] Chunk write and delete calls.
+- [x] Surface projection failures to the user. Concretely: expose `lastError: { at: Date; error: unknown } | null` on the exporter return as a reactive store; render it in the same settings panel row that owns the folder picker. Toast once per session on the first failure so the user knows to look. Subsequent failures update the panel only, until the user changes the folder or runs rebuild.
+  > **Verification note**: The queue now stores changed ids in a `Set`, flushes them in one microtask, reads rows during `flushIds`, and sends chunked bulk IPC calls. `bun run check` and `bun test apps/whispering` pass.
 
 ### Wave 5: Add rebuild repair action
 

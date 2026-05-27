@@ -20,13 +20,15 @@
 	import TranscriptionServiceSelect from '$lib/components/settings/TranscriptionServiceSelect.svelte';
 	import { SUPPORTED_LANGUAGES_OPTIONS } from '$lib/constants/languages';
 	import {
+		MOONSHINE_MODELS,
+		PARAKEET_MODELS,
+		WHISPER_MODELS,
+	} from '$lib/constants/local-models';
+	import {
 		LOCAL_MODEL_UNLOAD_POLICY_OPTIONS,
 		type LocalModelUnloadPolicy,
 		TRANSCRIPTION,
 	} from '$lib/constants/transcription';
-	import { MOONSHINE_MODELS } from '$lib/services/transcription/local/moonshine';
-	import { PARAKEET_MODELS } from '$lib/services/transcription/local/parakeet';
-	import { WHISPER_MODELS } from '$lib/services/transcription/local/whispercpp';
 	import { tauri } from '$lib/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
@@ -733,28 +735,6 @@
 						: 'Parakeet automatically detects the language'}
 				</Field.Description>
 			{/if}
-		</Field.Field>
-
-		<Field.Field>
-			<Field.Label for="temperature">Temperature</Field.Label>
-			<Input
-				id="temperature"
-				type="number"
-				min="0"
-				max="1"
-				step="0.1"
-				placeholder="0"
-				autocomplete="off"
-				disabled={!currentServiceCapabilities.supportsTemperature}
-				bind:value={() => settings.get('transcription.temperature'),
-					(value) =>
-						settings.set('transcription.temperature', Number(value))}
-			/>
-			<Field.Description>
-				{currentServiceCapabilities.supportsTemperature
-					? "Controls randomness in the model's output. 0 is focused and deterministic, 1 is more creative."
-					: 'Temperature is not supported for local models (transcribe-rs)'}
-			</Field.Description>
 		</Field.Field>
 
 		<Field.Field>

@@ -87,7 +87,6 @@ export const OpenaiTranscriptionServiceLive = {
 		audioBlob: Blob,
 		options: {
 			prompt: string;
-			temperature: string;
 			outputLanguage: string;
 			apiKey: string;
 			modelName: string;
@@ -137,9 +136,6 @@ export const OpenaiTranscriptionServiceLive = {
 							? options.outputLanguage
 							: undefined,
 					prompt: options.prompt || undefined,
-					temperature: options.temperature
-						? Number.parseFloat(options.temperature)
-						: undefined,
 				});
 				return transcription.text.trim();
 			},

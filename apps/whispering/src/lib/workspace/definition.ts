@@ -264,6 +264,13 @@ const sound = {
  * Uses `output.*` prefix to separate post-processing behavior from service
  * configuration: avoids polluting `transcription.*` and `transformation.*`
  * namespaces with unrelated concerns.
+ *
+ * Cursor default asymmetry (transcription=true, transformation=false): when a
+ * transformation runs on the just-finished transcription, the transcription
+ * has already typed itself at the cursor. Defaulting transformation.cursor to
+ * true would double-type. Users who turn off transcription.cursor specifically
+ * to let the transformation be the cursor output can flip the transformation
+ * toggle on.
  */
 const output = {
 	'output.transcription.clipboard': defineKv(column.boolean(), () => true),
@@ -307,8 +314,7 @@ const recording = {
  * Transcription service and per-service model selections.
  *
  * Each service's model is its own KV entry so switching from OpenAI to Groq and
- * back preserves your OpenAI model choice. `temperature` is stored as a number
- * (0 to 1): the old settings schema used a string for localStorage.
+ * back preserves your OpenAI model choice.
  *
  * @see {@link https://github.com/EpicenterHQ/epicenter/blob/main/specs/20260312T170000-whispering-workspace-polish-and-migration.md | Spec Decision 2}
  */
@@ -339,10 +345,6 @@ const transcription = {
 	),
 	'transcription.language': defineKv(column.string(), () => 'auto'),
 	'transcription.prompt': defineKv(column.string(), () => ''),
-	'transcription.temperature': defineKv(
-		column.number({ minimum: 0, maximum: 1 }),
-		() => 0,
-	),
 } as const;
 
 /**
@@ -376,14 +378,6 @@ const shortcuts = {
 		column.nullable(column.string()),
 		(): string | null => ' ',
 	),
-	'shortcut.startManualRecording': defineKv(
-		column.nullable(column.string()),
-		(): string | null => null,
-	),
-	'shortcut.stopManualRecording': defineKv(
-		column.nullable(column.string()),
-		(): string | null => null,
-	),
 	'shortcut.cancelManualRecording': defineKv(
 		column.nullable(column.string()),
 		(): string | null => 'c',
@@ -391,14 +385,6 @@ const shortcuts = {
 	'shortcut.toggleVadRecording': defineKv(
 		column.nullable(column.string()),
 		(): string | null => 'v',
-	),
-	'shortcut.startVadRecording': defineKv(
-		column.nullable(column.string()),
-		(): string | null => null,
-	),
-	'shortcut.stopVadRecording': defineKv(
-		column.nullable(column.string()),
-		(): string | null => null,
 	),
 	'shortcut.pushToTalk': defineKv(
 		column.nullable(column.string()),

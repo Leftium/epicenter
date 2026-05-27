@@ -1,4 +1,9 @@
-// Direct imports and re-exports from organized services
+// Direct imports and re-exports from organized services.
+//
+// Local-engine dispatch is inlined in `$lib/operations/transcribe.ts` (one
+// switch over `selectedService`) and routes through Rust's typed
+// `transcribe_recording` command. The download catalogs live in
+// `$lib/constants/local-models.ts`.
 
 // Cloud transcription services
 import { DeepgramTranscriptionServiceLive } from './cloud/deepgram';
@@ -6,11 +11,6 @@ import { ElevenLabsTranscriptionServiceLive } from './cloud/elevenlabs';
 import { GroqTranscriptionServiceLive } from './cloud/groq';
 import { MistralTranscriptionServiceLive } from './cloud/mistral';
 import { OpenaiTranscriptionServiceLive } from './cloud/openai';
-// Local transcription services
-import { MoonshineTranscriptionServiceLive } from './local/moonshine';
-import { ParakeetTranscriptionServiceLive } from './local/parakeet';
-import { WhisperCppTranscriptionServiceLive } from './local/whispercpp';
-
 // Self-hosted transcription services
 import { SpeachesTranscriptionServiceLive } from './self-hosted/speaches';
 
@@ -19,9 +19,6 @@ export {
 	ElevenLabsTranscriptionServiceLive as elevenlabs,
 	GroqTranscriptionServiceLive as groq,
 	MistralTranscriptionServiceLive as mistral,
-	MoonshineTranscriptionServiceLive as moonshine,
 	OpenaiTranscriptionServiceLive as openai,
-	ParakeetTranscriptionServiceLive as parakeet,
 	SpeachesTranscriptionServiceLive as speaches,
-	WhisperCppTranscriptionServiceLive as whispercpp,
 };

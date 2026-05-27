@@ -39,7 +39,6 @@ export const TRANSCRIPTION = {
 		],
 		capabilities: {
 			supportsPrompt: true,
-			supportsTemperature: true,
 			supportsLanguage: true,
 		},
 	},
@@ -63,7 +62,6 @@ export const TRANSCRIPTION = {
 		],
 		capabilities: {
 			supportsPrompt: true,
-			supportsTemperature: true,
 			supportsLanguage: true,
 		},
 	},
@@ -93,7 +91,6 @@ export const TRANSCRIPTION = {
 		],
 		capabilities: {
 			supportsPrompt: true,
-			supportsTemperature: true,
 			supportsLanguage: true,
 		},
 	},
@@ -134,7 +131,6 @@ export const TRANSCRIPTION = {
 		],
 		capabilities: {
 			supportsPrompt: true,
-			supportsTemperature: true,
 			supportsLanguage: true,
 		},
 	},
@@ -158,21 +154,20 @@ export const TRANSCRIPTION = {
 		],
 		capabilities: {
 			supportsPrompt: true,
-			supportsTemperature: true,
 			supportsLanguage: true,
 		},
 	},
 
 	// ── Local services ──────────────────────────────────────────────
-	// Models are null — download metadata (file URLs, sizes, ONNX configs)
-	// stays co-located with service implementations.
+	// Models are null here because the local model catalogs (download URLs,
+	// sizes, ONNX directory shapes) live in `./local-models.ts`. This map
+	// only carries the user-facing label and capability flags.
 	whispercpp: {
 		label: 'Whisper C++',
 		location: 'local',
 		models: null,
 		capabilities: {
 			supportsPrompt: true,
-			supportsTemperature: false,
 			supportsLanguage: true,
 		},
 	},
@@ -182,7 +177,6 @@ export const TRANSCRIPTION = {
 		models: null,
 		capabilities: {
 			supportsPrompt: false,
-			supportsTemperature: false,
 			supportsLanguage: false,
 		},
 	},
@@ -192,7 +186,6 @@ export const TRANSCRIPTION = {
 		models: null,
 		capabilities: {
 			supportsPrompt: false,
-			supportsTemperature: false,
 			supportsLanguage: false,
 		},
 	},
@@ -205,7 +198,6 @@ export const TRANSCRIPTION = {
 		models: null,
 		capabilities: {
 			supportsPrompt: true,
-			supportsTemperature: true,
 			supportsLanguage: true,
 		},
 	},

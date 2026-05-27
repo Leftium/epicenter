@@ -1,20 +1,20 @@
 ---
 name: git
-description: 'Git commits and PRs using conventional commits. Use when: "commit this", "stage and commit", "write a commit message", "create a PR", or reviewing PR descriptions.'
+description: 'Git commits and branches using Epicenter conventions. Use when staging files, writing commit messages, splitting commits, checking standalone commits, creating branches, or inspecting commit history. For pull request titles and bodies, use the pull-request skill.'
 metadata:
   author: epicenter
   version: '2.0'
 ---
 
-# Git Commit and Pull Request Guidelines
+# Git Commit Guidelines
 
-> **Related Skills**: See `standalone-commits` for making each commit reviewable and auditable. See `incremental-commits` for breaking multi-file changes into ordered waves.
+> **Related Skills**: See [standalone-commits](../standalone-commits/SKILL.md) for making each commit reviewable and auditable. See [incremental-commits](../incremental-commits/SKILL.md) for breaking multi-file changes into ordered waves. See [pull-request](../pull-request/SKILL.md) for PR titles, descriptions, changelog entries, issue references, and merge guidance.
 
-## Skill Shape
+## Use This For
 
-Keep commits, branch orchestration, and pull requests in this one skill. They are usually one workflow in practice: inspect the diff, split commits, push branches, write PR descriptions, merge in order. Split out a separate pull-request skill only if PR writing starts needing its own scripts, templates, or long reference set that makes the git skill noisy.
+Use this skill to inspect diffs, split commits, stage specific files, write commit messages, and manage branches.
 
-For now, keep the top-level skill small and put detailed PR writing guidance in `references/pull-request-guidelines.md`.
+If the task asks for a PR title, PR body, changelog entry, issue link, username verification, CODEOWNERS note, or merge strategy, use [pull-request](../pull-request/SKILL.md).
 
 ## When to Apply This Skill
 
@@ -23,17 +23,12 @@ Use this pattern when you need to:
 - Write commit messages that follow conventional commit rules.
 - Check whether a staged commit is reviewable as a standalone unit.
 - Decide commit type/scope formatting and breaking-change notation.
-- Draft PR descriptions as continuous narrative prose, opening with WHY.
-- Add required user-facing changelog entries for `feat:`/`fix:` PRs.
-- Review commit/PR text for anti-patterns like AI/tool attribution.
+- Create or switch branches.
+- Review commit text for anti-patterns like AI/tool attribution.
 
 ## References
 
-Load these on demand based on what you're working on:
-
-- If working with **changelog entries for `feat:`/`fix:` PRs**, read [references/changelog-entries.md](references/changelog-entries.md)
-- If working with **PR description structure, API examples, and visual communication**, read [references/pull-request-guidelines.md](references/pull-request-guidelines.md)
-- If working with **GitHub issue linking, username verification, or merge strategy**, read [references/github-pr-operations.md](references/github-pr-operations.md)
+This skill keeps its rules inline. For PR work, use [pull-request](../pull-request/SKILL.md).
 
 ## Conventional Commits Format
 

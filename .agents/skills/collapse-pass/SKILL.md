@@ -72,8 +72,8 @@ Use this quick table before staging:
 
 ```txt
 boundary             callers  earns itself by
-EntryBodyEditor      1        owns editor doc and widget lifetime
-ProseMirrorEditor    1        no, only passed a stable fragment
+WidgetHost           1        owns resource and widget lifetime
+WidgetView           1        no, only passes a stable handle
 ```
 
 One-caller boundaries can stay when they isolate a lifecycle, unsafe boundary,

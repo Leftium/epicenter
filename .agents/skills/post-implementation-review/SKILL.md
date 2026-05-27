@@ -1,6 +1,6 @@
 ---
 name: post-implementation-review
-description: "Hub for the broad second-read pass after an implementation: list every touched file as an ASCII tree, mentally inline helpers, audit dead paths and stale imports, name invariant owners, sanity-check API shape and naming. Delegates to focused skills (refactoring, code-audit, one-sentence-test, approachability-audit, cohesive-clean-breaks, testing, typescript, svelte, yjs). Use after finishing an implementation, before handoff, or when the user says 'review what you just did', 'second pass', 'final sweep'."
+description: "Hub for the broad second-read pass after an implementation: list every touched file as an ASCII tree, mentally inline helpers, audit dead paths and stale imports, name invariant owners, sanity-check API shape and naming. Delegates to focused skills (collapse-pass, cohesive-clean-breaks, greenfield-clean-breaks, refactoring, code-audit, one-sentence-test, approachability-audit, testing, typescript, svelte, yjs). Use after finishing an implementation, before handoff, or when the user says 'review what you just did', 'second pass', 'final sweep'."
 metadata:
   author: epicenter
   version: '1.0'
@@ -54,15 +54,17 @@ focused skill first, then escalate here when the work needs a full final pass.
 Load only the skills that match the touched surface:
 
 ```txt
-cohesive-clean-breaks   public API, package boundary, config, lifecycle, naming, or ownership change
-refactoring             caller counts, inlining, dead exports, stale imports, straggler sweep
-approachability-audit   too many hops, misleading names, clever types, first-read confusion
-code-audit              recurring repo smells and grep-based checks
-one-sentence-test       new abstraction, wrapper, option, endpoint, command, or module
-testing                 test files or changed behavior that needs coverage
-typescript              type organization, inference, runtime schema, type tests
-svelte                  Svelte components, stores, runes, query usage, UI state
-yjs                     CRDT documents, shared types, transactions, conflict behavior
+collapse-pass            continuous deletion of unearned indirection
+cohesive-clean-breaks    public API, package boundary, config, lifecycle, naming, or ownership change
+greenfield-clean-breaks  compatibility refusal and ideal-shape review
+refactoring              caller counts, inlining, dead exports, stale imports, straggler sweep
+approachability-audit    too many hops, misleading names, clever types, first-read confusion
+code-audit               recurring repo smells and grep-based checks
+one-sentence-test        new abstraction, wrapper, option, endpoint, command, or module
+testing                  test files or changed behavior that needs coverage
+typescript               type organization, inference, runtime schema, type tests
+svelte                   Svelte components, stores, runes, query usage, UI state
+yjs                      CRDT documents, shared types, transactions, conflict behavior
 ```
 
 ## Review Order

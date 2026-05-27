@@ -507,27 +507,28 @@ The shared parts (waitFor, isDisposed, ydoc.once destroy, serialized promise cha
 
 Setting:
 
-- [ ] Add the device-local key `recording.markdownExportDir: string | null`, default `null`. Do not sync to other devices: filesystem paths are device specific.
-- [ ] Pick the existing Whispering device-local settings module to host the key. Do not introduce a new module.
+- [x] Add the device-local key `recording.markdownExportDir: string | null`, default `null`. Do not sync to other devices: filesystem paths are device specific.
+- [x] Pick the existing Whispering device-local settings module to host the key. Do not introduce a new module.
 
 Folder picker UI:
 
-- [ ] Add a settings panel row labelled "Recording markdown export folder."
-- [ ] "Choose folder" invokes `@tauri-apps/plugin-dialog` `open({ directory: true })` and writes the absolute path into the setting on selection.
-- [ ] "Clear" sets the value to `null`.
-- [ ] Show the current absolute path next to the buttons when set.
+- [x] Add a settings panel row labelled "Recording markdown export folder."
+- [x] "Choose folder" invokes `@tauri-apps/plugin-dialog` `open({ directory: true })` and writes the absolute path into the setting on selection.
+- [x] "Clear" sets the value to `null`.
+- [x] Show the current absolute path next to the buttons when set.
 
 Reactive wiring:
 
-- [ ] In Whispering's Tauri startup, observe the setting and react to transitions:
+- [x] In Whispering's Tauri startup, observe the setting and react to transitions:
   - `null` to a path: attach the exporter against the new path; do not await `whenExported` in the critical path.
   - one path to a different path: call `[Symbol.dispose]` on the current exporter, then attach a new one. Existing files at the old path stay on disk.
   - a path to `null`: call `[Symbol.dispose]` on the current exporter. Leave existing files on disk.
-- [ ] The exporter never reads the setting itself. Reactivity lives in the Tauri startup wiring, not inside the exporter.
+- [x] The exporter never reads the setting itself. Reactivity lives in the Tauri startup wiring, not inside the exporter.
 
 Out of scope:
 
-- [ ] Do not backfill any files from the old appdata location. Wave 6 owns appdata cleanup.
+- [x] Do not backfill any files from the old appdata location. Wave 6 owns appdata cleanup.
+  > **Verification note**: Added a focused `deviceConfig.observe` API for non-component startup wiring. `bun --filter @epicenter/whispering typecheck` passes. `bun test apps/whispering` passes. `bun run check` was run and still fails on unrelated repo-wide lint/typecheck diagnostics, including existing `@epicenter/client` and `@epicenter/landing` typecheck failures.
 
 ### Wave 3: Rename and reshape the exporter
 

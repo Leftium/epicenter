@@ -27,6 +27,7 @@ const RecordingMaterializerError = defineErrors({
 type RecordingMarkdownFilesAttachment = {
 	/** Resolves after the initial flush of existing rows completes. */
 	whenFlushed: Promise<void>;
+	[Symbol.dispose](): void;
 };
 
 /**
@@ -53,6 +54,7 @@ export function attachRecordingMarkdownFiles(
 	if (!tauri) {
 		return {
 			whenFlushed: Promise.resolve(),
+			[Symbol.dispose]() {},
 		} satisfies RecordingMarkdownFilesAttachment;
 	}
 
@@ -107,5 +109,10 @@ export function attachRecordingMarkdownFiles(
 		unsubscribe();
 	});
 
-	return { whenFlushed } satisfies RecordingMarkdownFilesAttachment;
+	return {
+		whenFlushed,
+		[Symbol.dispose]() {
+			unsubscribe();
+		},
+	} satisfies RecordingMarkdownFilesAttachment;
 }

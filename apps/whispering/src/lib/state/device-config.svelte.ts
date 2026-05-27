@@ -43,6 +43,7 @@ const DEVICE_DEFINITIONS = {
 		type.enumerated(...BITRATES_KBPS),
 		DEFAULT_BITRATE_KBPS,
 	),
+	'recording.markdownExportDir': defineEntry(type('string | null'), null),
 	'recording.cpal.sampleRate': defineEntry(
 		type("'16000' | '44100' | '48000'"),
 		'16000',
@@ -112,23 +113,73 @@ const DEVICE_DEFINITIONS = {
 
 type DeviceConfigDefs = typeof DEVICE_DEFINITIONS;
 export type DeviceConfigKey = keyof DeviceConfigDefs & string;
+type DeviceConfigValue<TKey extends DeviceConfigKey> =
+	DeviceConfigDefs[TKey]['defaultValue'];
 
 // ── Singleton ────────────────────────────────────────────────────────────────
 
-export const deviceConfig: PersistedMap<typeof DEVICE_DEFINITIONS> =
-	createPersistedMap({
-		prefix: 'whispering.device.',
-		definitions: DEVICE_DEFINITIONS,
-		onError: (key) => {
-			log.info(`Invalid device config for "${key}", using default`);
-		},
-		onUpdateError: (_key, error) => {
-			report.error({
-				title: 'Error updating device config',
-				cause: {
-					name: 'DeviceConfigUpdateFailed',
-					message: extractErrorMessage(error),
-				},
-			});
-		},
-	});
+type DeviceConfig = PersistedMap<typeof DEVICE_DEFINITIONS> & {
+	observe<TKey extends DeviceConfigKey>(
+		key: TKey,
+		callback: (value: DeviceConfigValue<TKey>) => void,
+	): () => void;
+};
+
+const persistedDeviceConfig = createPersistedMap({
+	prefix: 'whispering.device.',
+	definitions: DEVICE_DEFINITIONS,
+	onError: (key) => {
+		log.info(`Invalid device config for "${key}", using default`);
+	},
+	onUpdateError: (_key, error) => {
+		report.error({
+			title: 'Error updating device config',
+			cause: {
+				name: 'DeviceConfigUpdateFailed',
+				message: extractErrorMessage(error),
+			},
+		});
+	},
+});
+
+const observers = new Map<string, Set<(value: unknown) => void>>();
+
+function notifyDeviceConfigObservers(key: string, value: unknown) {
+	for (const observer of observers.get(key) ?? []) {
+		observer(value);
+	}
+}
+
+export const deviceConfig: DeviceConfig = {
+	...persistedDeviceConfig,
+
+	set(key, value) {
+		persistedDeviceConfig.set(key, value);
+		notifyDeviceConfigObservers(key, value);
+	},
+
+	update(updates) {
+		persistedDeviceConfig.update(updates);
+		for (const [key, value] of Object.entries(updates)) {
+			notifyDeviceConfigObservers(key, value);
+		}
+	},
+
+	reset() {
+		persistedDeviceConfig.reset();
+		for (const key of Object.keys(DEVICE_DEFINITIONS) as DeviceConfigKey[]) {
+			notifyDeviceConfigObservers(key, persistedDeviceConfig.get(key));
+		}
+	},
+
+	observe(key, callback) {
+		const keyObservers = observers.get(key) ?? new Set();
+		keyObservers.add(callback as (value: unknown) => void);
+		observers.set(key, keyObservers);
+
+		return () => {
+			keyObservers.delete(callback as (value: unknown) => void);
+			if (keyObservers.size === 0) observers.delete(key);
+		};
+	},
+};

@@ -176,25 +176,6 @@ test('extension launcher returns completed grant after web-auth callback', async
 	);
 });
 
-test('isCallback classifies OAuth callback URLs', () => {
-	const { storage } = createMemoryStorage();
-	const client = createOAuthClient({
-		issuer: 'http://auth.test/auth',
-		clientId: 'client-1',
-		resource: 'http://auth.test',
-		storage,
-		fetch: createFetch(),
-	});
-
-	expect(client.isCallback('http://app.test/auth/callback?code=code-1')).toBe(
-		true,
-	);
-	expect(
-		client.isCallback('http://app.test/auth/callback?error=access_denied'),
-	).toBe(true);
-	expect(client.isCallback('http://app.test/sign-in')).toBe(false);
-});
-
 test('exchangeCallback rejects missing stored transaction', async () => {
 	const { storage } = createMemoryStorage();
 	const client = createOAuthClient({

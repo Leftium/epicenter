@@ -153,7 +153,8 @@ export function createBrowserOAuthLauncher({
 	const client = createOAuthClient(config);
 	return {
 		async startSignIn() {
-			if (client.isCallback(window.location.href)) {
+			const callbackParams = new URL(window.location.href).searchParams;
+			if (callbackParams.has('code') || callbackParams.has('error')) {
 				const callbackResult = await client.exchangeCallback(
 					window.location.href,
 				);
@@ -292,20 +293,6 @@ export function createOAuthClient({
 	}
 
 	/**
-	 * Classify a URL as an OAuth callback without touching transaction storage.
-	 *
-	 * Browser redirect launchers use this before deciding whether the current
-	 * page load should exchange a callback or start a new authorization request.
-	 */
-	function isCallback(url: string | URL): boolean {
-		const callbackUrl = new URL(url);
-		return (
-			callbackUrl.searchParams.has('code') ||
-			callbackUrl.searchParams.has('error')
-		);
-	}
-
-	/**
 	 * Exchange a callback URL for a token grant.
 	 *
 	 * Call only after `isCallback` or an equivalent runtime signal says a real
@@ -400,7 +387,6 @@ export function createOAuthClient({
 
 	return {
 		createAuthorizationUrl,
-		isCallback,
 		exchangeCallback,
 	};
 }

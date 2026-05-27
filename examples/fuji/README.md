@@ -19,13 +19,14 @@ this example changes with it.
 examples/fuji/
 ├── package.json           dependencies (this file)
 ├── tsconfig.json          extends the repo base
-├── epicenter.config.ts    REQUIRED. Marker + workspace definition.
+├── epicenter.config.ts    REQUIRED. Marker + mount factory call.
 ├── .gitignore             Epicenter-managed (.epicenter/)
 ├── entries/               table data as markdown (committed)
 │   ├── welcome.md
 │   └── hello-fuji.md
 └── .epicenter/            created on first daemon run; gitignored
-    ├── yjs.db
+    ├── yjs/
+    │   └── epicenter.fuji.db
     └── sqlite.db
 ```
 
@@ -37,7 +38,7 @@ bun x epicenter daemon up -C examples/fuji
 ```
 
 On first run the daemon creates `.epicenter/` and writes `sqlite.db` plus the
-Yjs persistence files used by `attachProjectInfrastructure`. The current daemon
+Yjs persistence file used by `attachProjectInfrastructure`. The current mount
 materializes the live Y.Doc out to markdown and SQLite. The project-layout
 spec's next step is markdown-to-Y.Doc hydration, where files in `entries/`
 become the human-editable source that can rebuild the runtime cache.
@@ -56,7 +57,7 @@ daemon will rebuild it on next run.
 
 ## Edit a note
 
-Today, edit through daemon actions or a connected Fuji runtime and watch the
+Today, edit through mount actions or a connected Fuji runtime and watch the
 markdown and SQLite projections update. The reverse direction, editing
 `entries/*.md` and having the daemon ingest it back into the Y.Doc, is the
 planned markdown hydration work described in the project-layout spec.
@@ -84,7 +85,7 @@ workspace.
 ## What this example deliberately omits
 
 - Auth and sync. The example is local-only; no `epicenter auth login` step.
-- Browser or Tauri frontend. The example is daemon-only.
+- Browser or Tauri frontend. The example is daemon-hosted only.
 - Custom path overrides. Materializer paths use the spec's default
   (`.epicenter/sqlite.db` and `./entries/`).
 - Multi-workspace orchestration. One workspace per project is the canonical

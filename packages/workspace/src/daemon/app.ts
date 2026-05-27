@@ -64,7 +64,7 @@ export type PeerSnapshot = typeof PeerSnapshot.infer;
  * Build the daemon's Hono app. Tests import this directly; production serves
  * the app through the daemon server factory.
  *
- * `/list` exposes mount-qualified action keys. `/run` uses that same prefix to
+ * `/list` exposes mount-prefixed action paths. `/run` uses that same prefix to
  * pick the hosted runtime before dispatching the action key locally or over
  * RPC.
  */

@@ -1,5 +1,5 @@
 /**
- * Source of truth for mount-qualified daemon action paths.
+ * Source of truth for mount-prefixed daemon action paths.
  *
  * `/list` publishes action keys in this format, and `/run` accepts the same
  * format from the CLI. Mount validation rejects dots in mount names, so the
@@ -19,10 +19,7 @@ type ParsedDaemonActionPath = {
  * keeps `/list` manifest keys and `/run` suggestion lines aligned on the same
  * mount qualifier rule.
  */
-export function joinDaemonActionPath(
-	mount: string,
-	localPath: string,
-): string {
+export function joinDaemonActionPath(mount: string, localPath: string): string {
 	return localPath ? `${mount}.${localPath}` : mount;
 }
 

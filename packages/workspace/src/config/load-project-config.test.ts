@@ -44,9 +44,7 @@ describe('loadProjectConfig', () => {
 	});
 
 	test('normalizes a single Mount default export into a one-element array', async () => {
-		writeConfig(
-			"export default { name: 'demo', open() {} };\n",
-		);
+		writeConfig("export default { name: 'demo', open() {} };\n");
 
 		const { data, error } = await loadProjectConfig(projectDir);
 		if (error !== null) throw new Error(error.message);
@@ -74,7 +72,7 @@ describe('loadProjectConfig', () => {
 	});
 
 	test('throws with the config path when the default export is neither a Mount nor a Mount[]', async () => {
-		writeConfig('export default { daemon: { routes: {} } };\n');
+		writeConfig('export default { notAMount: true };\n');
 
 		await expect(loadProjectConfig(projectDir)).rejects.toThrow(
 			`loadProjectConfig: ${join(projectDir, 'epicenter.config.ts')} must default-export a Mount or Mount[]`,
@@ -82,9 +80,7 @@ describe('loadProjectConfig', () => {
 	});
 
 	test('throws when the Mount[] default export contains a non-Mount value', async () => {
-		writeConfig(
-			"export default [{ name: 'demo', open() {} }, { open: 1 }];\n",
-		);
+		writeConfig("export default [{ name: 'demo', open() {} }, { open: 1 }];\n");
 
 		await expect(loadProjectConfig(projectDir)).rejects.toThrow(
 			`loadProjectConfig: ${join(projectDir, 'epicenter.config.ts')} default-exports an array containing a non-Mount value.`,

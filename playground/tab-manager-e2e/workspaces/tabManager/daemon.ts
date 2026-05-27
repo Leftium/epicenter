@@ -5,6 +5,7 @@
  * Run with:
  *
  * ```bash
+ * # playground/tab-manager-e2e/epicenter.config.ts default-exports this mount.
  * epicenter daemon up -C playground/tab-manager-e2e
  * ```
  */

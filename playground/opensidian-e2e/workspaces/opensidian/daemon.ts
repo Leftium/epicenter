@@ -36,7 +36,7 @@ import Type from 'typebox';
 import * as Y from 'yjs';
 import { prepareMarkdownFiles } from '../../prepare-markdown-files';
 
-const SERVER_URL = process.env.EPICENTER_SERVER ?? 'https://api.epicenter.so';
+const SERVER_URL = process.env.EPICENTER_API_URL ?? 'https://api.epicenter.so';
 
 async function openOpensidianPlayground({
 	projectDir,

@@ -1,6 +1,6 @@
 /**
  * `epicenter run <mount.action_key> [input]`: invoke a `defineQuery` or
- * `defineMutation` by mount-qualified snake_case action key through the local
+ * `defineMutation` by mount-prefixed action path through the local
  * `epicenter daemon up` daemon.
  *
  * `input` is JSON: inline positional, `@file.json` (curl convention), or stdin.
@@ -49,7 +49,7 @@ export const runCommand = cmd({
 			.positional('action', {
 				type: 'string',
 				demandOption: true,
-				describe: 'Mount-qualified action key, e.g. notes.notes_add',
+				describe: 'Mount-prefixed action path, e.g. notes.notes_add',
 			})
 			.positional('input', {
 				type: 'string',

@@ -185,7 +185,7 @@ export function createFujiActions(workspace: FujiActionHost) {
 	return defineActions({
 		entries_get: defineQuery({
 			title: 'Get Entry',
-			description: 'Read one entry by ID from the daemon workspace.',
+			description: 'Read one entry by ID from the Fuji workspace.',
 			input: Type.Object({
 				id: Type.String({ description: 'Entry ID to read' }),
 			}),
@@ -195,21 +195,21 @@ export function createFujiActions(workspace: FujiActionHost) {
 		}),
 		entries_get_all_valid: defineQuery({
 			title: 'List Valid Entries',
-			description: 'Read all valid entries from the daemon workspace.',
+			description: 'Read all valid entries from the Fuji workspace.',
 			handler: () => {
 				return tables.entries.getAllValid();
 			},
 		}),
 		entries_count: defineQuery({
 			title: 'Count Entries',
-			description: 'Count entries in the daemon workspace.',
+			description: 'Count entries in the Fuji workspace.',
 			handler: () => {
 				return tables.entries.count();
 			},
 		}),
 		entries_has: defineQuery({
 			title: 'Has Entry',
-			description: 'Check whether an entry exists in the daemon workspace.',
+			description: 'Check whether an entry exists in the Fuji workspace.',
 			input: Type.Object({
 				id: Type.String({ description: 'Entry ID to check' }),
 			}),

@@ -1,6 +1,6 @@
 # @epicenter/cli
 
-> Introspect and invoke `defineQuery` / `defineMutation` actions exposed by configured daemon routes, locally or on a peer that's online right now.
+> Introspect and invoke `defineQuery` / `defineMutation` actions exposed by configured project mounts, locally or on a peer that's online right now.
 
 Each verb is a one-line shell shortcut for one workspace primitive:
 
@@ -35,7 +35,7 @@ The same env var and scripts apply to every command that talks to the API, inclu
 
 ## Commands
 
-`epicenter daemon up` opens every route listed in the project's `epicenter.config.ts`. `list`, `run`, and `peers` dispatch to that local daemon over its Unix socket.
+`epicenter daemon up` opens every mount listed in the project's `epicenter.config.ts`. `list`, `run`, and `peers` dispatch to that local daemon over its Unix socket.
 
 ```bash
 epicenter auth login
@@ -111,7 +111,7 @@ import { connectDaemonActions } from '@epicenter/workspace/node';
 import type { createFujiActions } from '@epicenter/fuji';
 
 const fuji = await connectDaemonActions<ReturnType<typeof createFujiActions>>({
-	route: 'fuji',
+	mount: 'fuji',
 });
 
 await fuji.entries_update({ id, tags: ['triaged'] });

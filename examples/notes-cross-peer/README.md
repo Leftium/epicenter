@@ -32,8 +32,8 @@ bun x epicenter run notes.notes.add --peer notes-repro-peer-a '{"body":"from pee
 ```
 
 To inspect peer-a's full action manifest from peer-b, write a script
-(the CLI no longer offers a flag for this. See `packages/cli/README.md`
-under "Local vs. remote"):
+(the CLI no longer offers a flag for this; use the scripting API in
+`packages/cli/README.md` for local daemon calls):
 
 ```ts
 // examples/notes-cross-peer/inspect-peer.ts

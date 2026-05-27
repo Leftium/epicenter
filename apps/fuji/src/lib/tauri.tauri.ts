@@ -22,10 +22,10 @@ const markdown = {
 	},
 };
 
-const tauriImpl = {
+export const tauriOnly = {
 	markdown,
 };
 
-export type Tauri = typeof tauriImpl;
+export type Tauri = typeof tauriOnly;
 
-export const tauri: Tauri | null = tauriImpl;
+export const tauri: Tauri | null = tauriOnly;

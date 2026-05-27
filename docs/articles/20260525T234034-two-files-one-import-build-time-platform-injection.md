@@ -137,8 +137,7 @@ The companion is one line:
 
 ```ts
 // $lib/tauri.browser.ts
-import type { Tauri } from './tauri.tauri';
-export const tauri: Tauri | null = null;
+export const tauri = null;
 ```
 
 Consumers do:

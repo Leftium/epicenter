@@ -1,5 +1,8 @@
 /**
  * OOB OAuth launcher tests.
+ * This is the CLI transport version of the launcher contract: it owns browser
+ * opening and pasted-code collection, but still returns only an OAuth grant.
+ * Machine auth fills in persisted identity after `/api/session`.
  *
  * Covers:
  * - happy path: token response -> 3-field OAuthTokenGrant
@@ -109,7 +112,9 @@ test('happy path returns a 3-field OAuthTokenGrant', async () => {
 		accessTokenExpiresAt: NOW + 3_600_000,
 	});
 	expect(tokenRequests).toHaveLength(1);
-	const { url, body } = tokenRequests[0]!;
+	const request = tokenRequests[0];
+	if (!request) throw new Error('Expected token request.');
+	const { url, body } = request;
 	expect(url).toBe('http://localhost:8787/auth/oauth2/token');
 	expect(body.get('grant_type')).toBe('authorization_code');
 	expect(body.get('code')).toBe('CODE123');
@@ -150,7 +155,8 @@ test('PKCE verifier and challenge are linked', async () => {
 	expect(receivedVerifier).toBeTruthy();
 	const urlLine = printed[0];
 	expect(urlLine).toBeDefined();
-	const url = new URL(urlLine!);
+	if (!urlLine) throw new Error('Expected authorize URL line.');
+	const url = new URL(urlLine);
 	expect(url.searchParams.get('state')).toBeNull();
 	const challenge = url.searchParams.get('code_challenge');
 	const method = url.searchParams.get('code_challenge_method');

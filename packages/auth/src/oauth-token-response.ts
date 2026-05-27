@@ -39,6 +39,10 @@ export type OAuthTokenResponseError = InferErrors<
  * storage: grants must be bearer tokens with an access token, a refresh token
  * (or refresh fallback during rotation), and a positive `expires_in` value that
  * becomes an absolute refresh hint.
+ *
+ * `fallbackRefreshToken` is only for refresh-token rotation. Some OAuth servers
+ * omit `refresh_token` when the existing refresh token remains valid; initial
+ * authorization-code exchanges must not pass a fallback.
  */
 export function parseOAuthTokenGrant(
 	payload: unknown,

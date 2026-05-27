@@ -13,6 +13,13 @@ import type { OAuthLauncher, OAuthLaunchResult } from './contract.js';
 
 export type { OAuthLauncher, OAuthLaunchResult } from './contract.js';
 
+/**
+ * Failures before auth core receives a token grant.
+ *
+ * These errors stay on the launcher side of the boundary. Auth core only sees
+ * either a completed `OAuthTokenGrant`, a launched transport, or a failed
+ * launcher result that it wraps as `StartSignInFailed`.
+ */
 export const OAuthClientError = defineErrors({
 	MissingCallbackTransaction: () => ({
 		message:
@@ -64,8 +71,26 @@ export type OAuthClientError = InferErrors<typeof OAuthClientError>;
  * need storage that survives leaving the app and returning through a deep link.
  */
 export type OAuthTemporaryStorage = {
+	/**
+	 * Read the serialized PKCE transaction for this OAuth client.
+	 *
+	 * Browser launchers usually pass `sessionStorage`; native launchers can use
+	 * any small async store that survives the browser round trip.
+	 */
 	getItem(key: string): MaybePromise<string | null>;
+	/**
+	 * Store the serialized transaction before opening the authorize URL.
+	 *
+	 * The transaction must be written before redirecting, otherwise the callback
+	 * cannot prove that the returned `state` and verifier came from this client.
+	 */
 	setItem(key: string, value: string): MaybePromise<void>;
+	/**
+	 * Clear the transaction after a successful token exchange.
+	 *
+	 * Failed exchanges leave the transaction intact so the caller can surface the
+	 * failure without destroying the user's current sign-in attempt.
+	 */
 	removeItem(key: string): MaybePromise<void>;
 };
 
@@ -78,11 +103,30 @@ export type OAuthTemporaryStorage = {
  * exchange uses the same redirect URI that created the authorization URL.
  */
 export type OAuthClientConfig = {
+	/**
+	 * OAuth issuer URL. For Epicenter deployments this is `${baseURL}/auth`.
+	 */
 	issuer: string;
+	/**
+	 * Public OAuth client id registered with the Epicenter API.
+	 */
 	clientId: string;
+	/**
+	 * Resource server URL. Sent as the OAuth resource indicator and used by the
+	 * API when issuing audience-bound access tokens.
+	 */
 	resource: string;
+	/**
+	 * Space-delimited OAuth scopes. Defaults to the app-client scope.
+	 */
 	scope?: string;
+	/**
+	 * Temporary PKCE transaction storage. This is not durable auth storage.
+	 */
 	storage: OAuthTemporaryStorage;
+	/**
+	 * Fetch implementation used for discovery and token exchange.
+	 */
 	fetch?: AuthFetch;
 };
 
@@ -216,6 +260,13 @@ export function createOAuthClient({
 		return await oauth.processDiscoveryResponse(issuerUrl, response);
 	}
 
+	/**
+	 * Create the hosted authorization URL and persist its matching transaction.
+	 *
+	 * Call this immediately before opening the browser. The same `redirectUri`
+	 * is stored with the verifier so `exchangeCallback` can use the exact value
+	 * that produced the authorization code.
+	 */
 	async function createAuthorizationUrl(
 		redirectUri: string,
 	): Promise<Result<URL, OAuthClientError>> {
@@ -225,11 +276,14 @@ export function createOAuthClient({
 			const codeVerifier = oauth.generateRandomCodeVerifier();
 			const codeChallenge =
 				await oauth.calculatePKCECodeChallenge(codeVerifier);
-			await writeTransaction({
-				state,
-				codeVerifier,
-				redirectUri,
-			});
+			await storage.setItem(
+				storageKey,
+				JSON.stringify({
+					state,
+					codeVerifier,
+					redirectUri,
+				} satisfies OAuthTransaction),
+			);
 
 			const authorizationEndpoint = as.authorization_endpoint;
 			if (!authorizationEndpoint) {
@@ -251,6 +305,12 @@ export function createOAuthClient({
 		}
 	}
 
+	/**
+	 * Classify a URL as an OAuth callback without touching transaction storage.
+	 *
+	 * Browser redirect launchers use this before deciding whether the current
+	 * page load should exchange a callback or start a new authorization request.
+	 */
 	function isCallback(url: string | URL): boolean {
 		const callbackUrl = new URL(url);
 		return (
@@ -259,6 +319,13 @@ export function createOAuthClient({
 		);
 	}
 
+	/**
+	 * Exchange a callback URL for a token grant.
+	 *
+	 * Call only after `isCallback` or an equivalent runtime signal says a real
+	 * callback arrived. A missing transaction here means a callback was received
+	 * without the PKCE verifier that created it.
+	 */
 	async function exchangeCallback(
 		url: string | URL,
 	): Promise<Result<OAuthTokenGrant, OAuthClientError>> {
@@ -312,10 +379,12 @@ export function createOAuthClient({
 		}
 	}
 
-	async function writeTransaction(transaction: OAuthTransaction) {
-		await storage.setItem(storageKey, JSON.stringify(transaction));
-	}
-
+	/**
+	 * Read and validate the stored transaction before token exchange.
+	 *
+	 * A corrupt cell is treated like a missing transaction: the callback really
+	 * arrived, but the client no longer has the verifier needed to exchange it.
+	 */
 	async function readTransaction(): Promise<OAuthTransaction | null> {
 		const raw = await storage.getItem(storageKey);
 		if (!raw) return null;

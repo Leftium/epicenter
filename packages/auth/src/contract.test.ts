@@ -1,6 +1,10 @@
 /**
  * Auth Client Contract Tests
  *
+ * Pins the auth core side of the OAuth split. Launchers may return a token
+ * grant, but only auth core can verify `/api/session`, persist identity, refresh
+ * the grant, and attach bearer credentials to fetch or WebSocket transports.
+ *
  * Covers:
  * - PersistedAuth = { grant, userId, ownerId, keyring } shape
  * - AuthState three variants; profile data is absent from state

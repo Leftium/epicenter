@@ -29,6 +29,13 @@ import type {
 } from '../oauth-launchers/contract.js';
 import { parseOAuthTokenGrant } from '../oauth-token-response.js';
 
+/**
+ * CLI transport failures before machine auth can persist a session.
+ *
+ * These errors intentionally describe OOB mechanics only: browser opening,
+ * pasted-code cancellation, and token endpoint response shape. `/api/session`
+ * identity lookup belongs to `loginWithOob`.
+ */
 export const OobLauncherError = defineErrors({
 	TokenExchangeFailed: ({
 		status,
@@ -56,15 +63,49 @@ export const OobLauncherError = defineErrors({
 export type OobLauncherError = InferErrors<typeof OobLauncherError>;
 
 export type CreateOobOAuthLauncherConfig = {
+	/**
+	 * Epicenter API origin. The default points at production.
+	 */
 	baseURL?: string;
+	/**
+	 * Public OAuth client id for CLI login.
+	 */
 	clientId: string;
+	/**
+	 * OOB callback registered for this API deployment.
+	 *
+	 * Production callers should use the default. Tests and local deployments pass
+	 * this only when the trusted OAuth client table was seeded with a different
+	 * callback URL.
+	 */
 	redirectUri?: string;
+	/**
+	 * OAuth scopes requested by the CLI. Defaults to Epicenter's app-client scope.
+	 */
 	scopes?: readonly string[];
+	/**
+	 * Best-effort browser opener. The printed URL remains the source of truth.
+	 */
 	openBrowser?: (url: string) => Promise<void> | void;
+	/**
+	 * Reads the one-time code pasted from the hosted CLI callback page.
+	 */
 	readCode?: () => Promise<string>;
+	/**
+	 * Output sink for the authorize URL and paste prompt.
+	 */
 	print?: (line: string) => void;
+	/**
+	 * Fetch implementation used only for the token exchange.
+	 */
 	fetch?: AuthFetch;
+	/**
+	 * Crypto implementation used for PKCE verifier and challenge generation.
+	 */
 	crypto?: Crypto;
+	/**
+	 * Clock used to convert `expires_in` into the persisted grant refresh hint.
+	 */
 	now?: () => number;
 };
 
@@ -91,7 +132,9 @@ export function createOobOAuthLauncher({
 }: CreateOobOAuthLauncherConfig): OAuthLauncher {
 	return {
 		async startSignIn(): Promise<Result<OAuthLaunchResult, OobLauncherError>> {
-			const codeVerifier = base64UrlEncode(randomBytes(crypto, 32));
+			const verifierBytes = new Uint8Array(32);
+			crypto.getRandomValues(verifierBytes);
+			const codeVerifier = base64UrlEncode(verifierBytes);
 			const challengeBytes = new Uint8Array(
 				await crypto.subtle.digest(
 					'SHA-256',
@@ -182,12 +225,6 @@ export function createOobOAuthLauncher({
 			return Ok({ status: 'completed', grant } satisfies OAuthLaunchResult);
 		},
 	};
-}
-
-function randomBytes(crypto: Crypto, byteLength: number): Uint8Array {
-	const bytes = new Uint8Array(byteLength);
-	crypto.getRandomValues(bytes);
-	return bytes;
 }
 
 function base64UrlEncode(bytes: Uint8Array): string {

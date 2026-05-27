@@ -34,19 +34,62 @@ export type PersistedAuthStorage = {
 
 type AuthFetchInput = Request | string | URL;
 
+/**
+ * Fetch-compatible transport used by auth-owned HTTP calls.
+ *
+ * Consumers usually pass `auth.fetch` into API clients. Tests and machine auth
+ * inject this shape so the auth runtime can exercise refresh, revoke, and
+ * bearer attach without depending on global `fetch`.
+ */
 export type AuthFetch = (
 	input: AuthFetchInput,
 	init?: RequestInit,
 ) => Promise<Response>;
 
+/**
+ * Construction inputs for the framework-agnostic auth runtime.
+ *
+ * The caller supplies storage and a launcher. Auth core then owns the durable
+ * session cell, refresh, `/api/session` verification, and bearer-bearing
+ * transports. Launchers never write persisted identity, and app code never
+ * reads raw tokens.
+ */
 export type CreateOAuthAppAuthConfig = {
+	/**
+	 * Epicenter API origin. Defaults to the production API and is used for
+	 * relative API paths, OAuth refresh/revoke routes, and session verification.
+	 */
 	baseURL?: string;
+	/**
+	 * Public OAuth client id registered for this runtime.
+	 */
 	clientId: string;
+	/**
+	 * Durable storage for the single persisted auth cell.
+	 */
 	persistedAuthStorage: PersistedAuthStorage;
+	/**
+	 * Runtime-specific sign-in transport. It either returns a token grant or
+	 * reports that control has moved to a later redirect/deep-link callback.
+	 */
 	launcher: OAuthLauncher;
+	/**
+	 * Fetch implementation for API session, refresh, revoke, and authenticated
+	 * resource calls.
+	 */
 	fetch?: AuthFetch;
+	/**
+	 * WebSocket constructor. Tests and non-browser runtimes inject this because
+	 * browsers do not allow request headers during WebSocket upgrades.
+	 */
 	WebSocket?: typeof WebSocket;
+	/**
+	 * Clock used for refresh-skew checks and refresh-token grant parsing.
+	 */
 	now?: () => number;
+	/**
+	 * Library logger for subscriber and refresh failures.
+	 */
 	log?: Logger;
 };
 
@@ -459,6 +502,14 @@ export function createOAuthAppAuth({
 	};
 }
 
+/**
+ * Owns the in-memory projection of the persisted auth cell.
+ *
+ * This is a one-caller helper, but it earns the boundary by keeping the storage
+ * write queue, listener fan-out, and public state projection in one small
+ * runtime object. OAuth flow code mutates the runtime through verbs instead of
+ * rewriting state shapes directly.
+ */
 function createAuthSessionRuntime({
 	initialPersistedAuth,
 	persistedAuthStorage,
@@ -590,6 +641,12 @@ function authStatesEqual(left: AuthState, right: AuthState) {
 	);
 }
 
+/**
+ * Merge Request headers with RequestInit headers using Fetch's own normalization.
+ *
+ * This stays as a helper because `HeadersInit` accepts several runtime shapes,
+ * including iterable entries that TypeScript does not always model directly.
+ */
 function headersFromRequest(input: Request | string | URL, init?: RequestInit) {
 	const headers = new Headers(
 		input instanceof Request ? input.headers : undefined,

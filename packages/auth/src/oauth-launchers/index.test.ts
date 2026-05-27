@@ -3,6 +3,9 @@
  *
  * Verifies the shared OAuth 2.1 PKCE launcher used by browser and extension
  * app auth adapters.
+ * The tests pin the ownership split: the OAuth client owns PKCE, state,
+ * transaction storage, callback classification, and token exchange; launchers
+ * only choose how the runtime reaches the callback URL.
  *
  * Key behaviors:
  * - Authorization URLs include PKCE, default scopes, state, and resource
@@ -123,7 +126,9 @@ test('browser launcher returns launched after starting redirect', async () => {
 		expect(result.error).toBeNull();
 		expect(result.data).toEqual({ status: 'launched' });
 		expect(redirects).toHaveLength(1);
-		expect(new URL(redirects[0]!).searchParams.get('redirect_uri')).toBe(
+		const redirect = redirects[0];
+		if (!redirect) throw new Error('Expected browser redirect URL.');
+		expect(new URL(redirect).searchParams.get('redirect_uri')).toBe(
 			REDIRECT_URI,
 		);
 	} finally {
@@ -154,13 +159,21 @@ test('extension launcher returns completed grant after web-auth callback', async
 		},
 	});
 
+	const before = Date.now();
 	const result = expectOk(await launcher.startSignIn());
+	const after = Date.now();
 
 	expect(result.status).toBe('completed');
 	if (result.status !== 'completed') {
 		throw new Error('Expected completed extension OAuth launch.');
 	}
 	expect(result.grant.accessToken).toBe('access-token');
+	expect(result.grant.accessTokenExpiresAt).toBeGreaterThanOrEqual(
+		before + 900_000,
+	);
+	expect(result.grant.accessTokenExpiresAt).toBeLessThanOrEqual(
+		after + 900_000,
+	);
 });
 
 test('isCallback classifies OAuth callback URLs', () => {
@@ -272,7 +285,6 @@ test('exchangeCallback returns token result after successful exchange', async ()
 		}),
 	});
 	let tokenBody: URLSearchParams | undefined;
-	const now = Date.now();
 	const client = createOAuthClient({
 		issuer: 'http://auth.test/auth',
 		clientId: 'client-1',
@@ -285,15 +297,18 @@ test('exchangeCallback returns token result after successful exchange', async ()
 		}),
 	});
 
+	const before = Date.now();
 	const data = expectOk(
 		await client.exchangeCallback(
 			'http://app.test/auth/callback?code=code-1&state=state-1',
 		),
 	);
+	const after = Date.now();
 
 	expect(data.accessToken).toBe('access-token');
 	expect(data.refreshToken).toBe('refresh-token');
-	expect(data.accessTokenExpiresAt).toBeGreaterThanOrEqual(now + 899_000);
+	expect(data.accessTokenExpiresAt).toBeGreaterThanOrEqual(before + 900_000);
+	expect(data.accessTokenExpiresAt).toBeLessThanOrEqual(after + 900_000);
 	expect(tokenBody?.get('redirect_uri')).toBe(REDIRECT_URI);
 	expect(tokenBody?.get('resource')).toBe('http://auth.test');
 	expect(values.size).toBe(0);

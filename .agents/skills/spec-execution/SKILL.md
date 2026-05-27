@@ -132,7 +132,7 @@ Use sub-agents for owned implementation work when they are available. They are s
 - **Independent tasks**: Launch sub-agents in parallel when write sets do not overlap. Each gets a focused prompt with only the context it needs: the relevant spec section, the files it owns, and the patterns to follow.
 - **Dependent tasks**: Launch sub-agents sequentially when one task imports from another task's output or modifies the same files. Wait for one to complete before launching the next. The second agent gets the output/context from the first.
 - **Local tasks**: Keep work local when the task is tightly coupled, urgent, too ambiguous to delegate, or likely to block the next orchestration step.
-- **Keep changes coherent**: Treat the spec as the execution spine, not a file whitelist. Implement the spec first. When grounded issues surface, fix what protects correctness, verification, API coherence, or serious clarity, and record the deviation. Pause for product direction, destructive actions, broad reshaping, or explicit hard boundaries.
+- **Keep changes coherent**: Treat the spec as the execution spine, not a file whitelist. Implement the spec first. When grounded issues surface, fix what protects correctness, verification, API coherence, or serious clarity, and record the deviation. Pause for product direction, destructive actions, broad reshaping, or explicit limits.
 
 ### 2. Verify the Wave
 
@@ -230,7 +230,7 @@ When spinning up sub-agents, each agent needs:
 - **The files it should read** before making changes
 - **The primary files it owns**
 - **The patterns to follow** (reference relevant skills)
-- **Hard boundaries and pause triggers**
+- **Explicit limits and pause triggers**
 
 Keep sub-agent prompts focused. A sub-agent that knows too much will try to do too much.
 

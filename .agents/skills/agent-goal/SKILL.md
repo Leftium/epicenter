@@ -13,7 +13,7 @@ The best goal is both a directive and a completion condition:
 /goal [do the work] until [observable condition is true].
 ```
 
-Treat the goal as a contract. It should tell the agent what to do, what evidence proves it, the intended lane, hard limits, and when to stop or pause.
+Treat the goal as a contract. It should tell the agent what to do, what evidence proves it, the intended lane, explicit limits, and when to stop or pause.
 
 The highest-signal goal answers three questions:
 
@@ -38,7 +38,7 @@ Include only execution-critical details:
 - Context: plans, docs, issue links, logs, screenshots, traces, commands, or acceptance criteria to inspect first.
 - Evidence: command output, tests, build result, screenshot comparison, eval score, file count, clean git status, or reviewed artifact.
 - Stop condition: the exact state that means the goal is achieved.
-- Pause condition: user decision, missing credentials, failing external service, destructive action, hard-boundary conflict, or repeated failed attempts.
+- Pause condition: user decision, missing credentials, failing external service, destructive action, conflict with an explicit limit, or repeated failed attempts.
 
 ## Rules
 
@@ -49,7 +49,7 @@ Include only execution-critical details:
 5. Put long requirements in a plan or spec, then point the goal at that file. Do not paste a huge spec into `/goal`.
 6. Ask for checkpoints when the work spans multiple turns. Each checkpoint should produce a small status note: changed, verified, remaining, blocked.
 7. Bound runaway work. Add a stop or pause clause such as "pause after 3 failed attempts on the same test" or "stop after 20 turns with a summary of remaining blockers."
-8. Name hard limits and pause triggers. Do not turn ordinary focus into a ban list.
+8. Name explicit limits and pause triggers. Do not turn ordinary focus into a ban list.
 9. Do not use `/goal` for vague wishes, unrelated chores, open-ended research, or work where the agent cannot produce evidence.
 10. Keep the condition judgeable from the transcript. If a separate verifier read only the conversation after each turn, it should be able to tell whether the goal is met.
 
@@ -126,7 +126,7 @@ Plan execution:
 Failing tests:
 
 ```txt
-/goal Fix the failing tests in `[lane]` until `[test command]` exits 0 and no unrelated speculative changes are present. First run the command and inspect the failures. Work from the smallest root cause outward. After each fix, rerun the targeted test and report the result. Pause before deleting tests, weakening assertions, or crossing a hard boundary.
+/goal Fix the failing tests in `[lane]` until `[test command]` exits 0 and no unrelated speculative changes are present. First run the command and inspect the failures. Work from the smallest root cause outward. After each fix, rerun the targeted test and report the result. Pause before deleting tests, weakening assertions, or crossing an explicit limit.
 ```
 
 Migration:
@@ -144,7 +144,7 @@ Prototype:
 Backlog or issue queue:
 
 ```txt
-/goal Work through `[queue or label]` until every item is closed or has a documented blocker. First list the queue and choose the smallest safe item. For each item, make the smallest grounded fix, run `[validation]`, and report the result before moving on. Stop when the queue is empty. Pause if an item needs credentials, product judgment, or crossing a hard boundary.
+/goal Work through `[queue or label]` until every item is closed or has a documented blocker. First list the queue and choose the smallest safe item. For each item, make the smallest grounded fix, run `[validation]`, and report the result before moving on. Stop when the queue is empty. Pause if an item needs credentials, product judgment, or crossing an explicit limit.
 ```
 
 Eval or prompt loop:
@@ -187,5 +187,5 @@ Before handing back a goal, verify:
 - It has one main objective.
 - It names the evidence that proves completion.
 - It tells the agent to surface that evidence.
-- It names the lane, hard limits, and pause triggers.
+- It names the lane, explicit limits, and pause triggers.
 - It says when to pause instead of continuing blindly.

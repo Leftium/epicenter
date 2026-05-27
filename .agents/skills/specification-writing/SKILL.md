@@ -114,7 +114,7 @@ Never let evidence questions hide behind design coherence. Verify before deletin
 
 ---
 
-## Boundary Language
+## Adjacent Work Language
 
 Do not use "out of scope" as a junk drawer. Separate work by decision type:
 

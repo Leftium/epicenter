@@ -15,7 +15,7 @@ names while the edit context is still fresh.
 Do not silently fix structural concerns. First name what is wrong and why it
 matters, then fix it when it clears the evidence bar below.
 
-## Lane, Evidence, Boundaries
+## Lane, Evidence, Limits
 
 The user's request sets the lane. Evidence can widen the lane. Explicit user
 limits close it.

@@ -75,24 +75,24 @@ pub async fn start_recording(
     Ok(())
 }
 
-/// Returns the captured artifact as a binary IPC body, not JSON. The
-/// wire layout is documented on `AudioArtifact::to_binary`. Avoids the
-/// 5-7 MB JSON serialize/parse round trip a 30 s clip would cost
-/// otherwise.
+/// Returns the captured PCM as a binary IPC body, not JSON. The wire
+/// layout is documented on `CapturedPcm::to_binary`: raw little-endian
+/// f32 samples, no header. Avoids the 5-7 MB JSON serialize/parse round
+/// trip a 30 s clip would cost otherwise.
 #[tauri::command]
 pub async fn stop_recording(
     recorder: State<'_, Mutex<Recorder>>,
     app_handle: AppHandle,
 ) -> Result<Response> {
     info!("Stopping recording");
-    let artifact = {
+    let pcm = {
         let mut recorder = recorder
             .lock()
             .map_err(|e| format!("Failed to lock recorder: {e}"))?;
         recorder.stop_recording()?
     };
     emit_recording_state(&app_handle, RecordingState::Idle);
-    Ok(Response::new(artifact.to_binary()))
+    Ok(Response::new(pcm.to_binary()))
 }
 
 #[tauri::command]

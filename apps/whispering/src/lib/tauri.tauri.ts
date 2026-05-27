@@ -309,32 +309,27 @@ const audioEncoder = {
 	},
 
 	/**
-	 * Compress a mono f32 PCM buffer into OGG/Opus. Used by the dictation
-	 * cpal path: the recorder returns samples already in memory, so we
-	 * skip the WAV synthesis + decode round-trip and hand the samples
-	 * straight to libopus.
+	 * Compress the recorder's in-memory mono 16 kHz PCM into OGG/Opus.
+	 * Used by the dictation cpal path: the recorder returns samples already
+	 * in memory, so we skip the WAV synthesis + decode round-trip and hand
+	 * the samples straight to libopus.
 	 *
-	 * Body packing mirrors the Rust `encode_upload_pcm` handler:
-	 * `[u32 rate][u16 channels][u16 pad][f32 samples...]` (little-endian).
+	 * Wire format mirrors `encode_upload_pcm`: raw little-endian f32 samples,
+	 * no header. The rate/channels are a recorder contract, not on the wire.
 	 */
-	async encodePcmToOpusOgg(args: {
-		samples: Float32Array;
-		rate: number;
-		channels: number;
-	}): Promise<Result<Blob, AudioEncoderError>> {
-		const { samples, rate, channels } = args;
-		const headerSize = 8;
-		const buf = new ArrayBuffer(headerSize + samples.byteLength);
-		const view = new DataView(buf);
-		view.setUint32(0, rate, true);
-		view.setUint16(4, channels, true);
-		view.setUint16(6, 0, true); // reserved
-		new Uint8Array(buf, headerSize).set(
-			new Uint8Array(samples.buffer, samples.byteOffset, samples.byteLength),
+	async encodePcmToOpusOgg(
+		samples: Float32Array,
+	): Promise<Result<Blob, AudioEncoderError>> {
+		// Tauri's IPC body accepts a Uint8Array (or ArrayBuffer). A typed-array
+		// view over the samples is zero-copy; no need to allocate a copy.
+		const body = new Uint8Array(
+			samples.buffer,
+			samples.byteOffset,
+			samples.byteLength,
 		);
 
 		const { data: oggBytes, error } = await tryAsync({
-			try: () => invoke<ArrayBuffer>('encode_upload_pcm', buf),
+			try: () => invoke<ArrayBuffer>('encode_upload_pcm', body),
 			catch: (cause) => AudioEncoderError.EncodeFailed({ cause }),
 		});
 

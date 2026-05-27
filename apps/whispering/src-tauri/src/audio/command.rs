@@ -13,6 +13,11 @@ use tauri::ipc::{InvokeBody, Request, Response};
 
 use super::encode::{encode_pcm_to_opus_ogg, encode_wav_to_opus_ogg};
 
+/// The sample rate at which the cpal recorder emits captured PCM. The
+/// Rust recorder resamples every device to this rate before finalize, so
+/// every `encode_upload_pcm` payload arrives at this rate.
+const RECORDER_OUTPUT_RATE: u32 = 16_000;
+
 /// Compress a WAV audio blob into OGG/Opus for cloud transcription upload.
 ///
 /// Audio bytes arrive as the raw IPC body. The output bitrate is fixed at
@@ -46,21 +51,17 @@ pub async fn encode_upload_audio(request: Request<'_>) -> Result<Response, Strin
 
 /// Compress an in-memory PCM buffer into OGG/Opus for cloud transcription
 /// upload. Used by the dictation cpal path: the recorder produces a mono
-/// f32 buffer in memory, we hand it straight to libopus without any WAV
-/// round-trip.
+/// 16 kHz f32 buffer in memory, we hand it straight to libopus without any
+/// WAV round-trip.
 ///
-/// Body layout (little-endian):
-/// ```text
-///   bytes 0..4    : u32   sample_rate
-///   bytes 4..6    : u16   channels
-///   bytes 6..8    : u16   reserved (pad)
-///   bytes 8..     : f32[] interleaved samples
-/// ```
+/// Body layout: raw little-endian f32 samples back to back, no header.
+/// The recorder's contract is "16 kHz mono"; this handler hardcodes those
+/// values when calling the general-purpose encoder. If the contract ever
+/// changes, both sides grow a header together.
 ///
 /// JS call shape:
 /// ```js
-/// const buf = packPcm(rate, channels, samples);
-/// const compressed = await invoke('encode_upload_pcm', buf);
+/// const compressed = await invoke('encode_upload_pcm', samples.buffer);
 /// ```
 #[tauri::command]
 pub async fn encode_upload_pcm(request: Request<'_>) -> Result<Response, String> {
@@ -73,30 +74,20 @@ pub async fn encode_upload_pcm(request: Request<'_>) -> Result<Response, String>
         }
     };
 
-    if body.len() < 8 {
+    if body.len() % 4 != 0 {
         return Err(format!(
-            "PCM body too short: expected at least 8 header bytes, got {}",
+            "PCM byte length not a multiple of 4 (f32 size): got {} bytes",
             body.len()
         ));
     }
 
-    let rate = u32::from_le_bytes([body[0], body[1], body[2], body[3]]);
-    let channels = u16::from_le_bytes([body[4], body[5]]);
-    let samples_bytes = &body[8..];
-    if samples_bytes.len() % 4 != 0 {
-        return Err(format!(
-            "PCM sample bytes not a multiple of 4 (f32 size): got {} trailing bytes",
-            samples_bytes.len()
-        ));
-    }
-
-    let samples: Vec<f32> = samples_bytes
+    let samples: Vec<f32> = body
         .chunks_exact(4)
         .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
         .collect();
 
     tauri::async_runtime::spawn_blocking(move || {
-        encode_pcm_to_opus_ogg(&samples, rate, channels)
+        encode_pcm_to_opus_ogg(&samples, RECORDER_OUTPUT_RATE, 1)
     })
     .await
     .map_err(|e| format!("background encode task failed: {e}"))?

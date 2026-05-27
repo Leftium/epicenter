@@ -8,8 +8,8 @@ import { analytics } from '$lib/operations/analytics';
 import { notify } from '$lib/operations/notify';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { services } from '$lib/services';
-import { artifactToBlob } from '$lib/services/recorder/artifact';
-import type { AudioArtifact } from '$lib/services/recorder/types';
+import { pcmToWavBlob } from '$lib/services/recorder/artifact';
+import type { RecorderAudio } from '$lib/services/recorder/types';
 import { TRANSCRIPTION_SERVICES } from '$lib/services/transcription/registry';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
@@ -52,28 +52,25 @@ function getOutputLanguage(): SupportedLanguage {
 }
 
 /**
- * Pick the cheapest valid Blob shape for a given service + artifact.
+ * Pick the cheapest valid Blob shape for a given service + audio payload.
  *
- * Cloud / self-hosted services want compressed bytes for upload:
- * `Pcm` artifacts go straight through libopus (one encode hop, no
- * container synthesis), `Blob` artifacts that look like WAV go through
- * the WAV-bytes encoder (one decode + one encode). Local engines decode
- * the blob in-process via Symphonia, so we just materialize whichever
- * Blob is nearest.
+ * Cloud / self-hosted services want compressed bytes for upload: PCM
+ * (Float32Array) goes straight through libopus (one encode hop, no
+ * container synthesis), Blob payloads that look like WAV go through the
+ * WAV-bytes encoder (one decode + one encode). Local engines decode the
+ * blob in-process via Symphonia, so we just materialize whichever Blob
+ * is nearest.
  */
 async function prepareForService(
-	artifact: AudioArtifact,
+	audio: RecorderAudio,
 	service: TranscriptionServiceId,
 ): Promise<Result<Blob, WhisperingError>> {
 	const isUpload = isUploadTranscriptionService(service);
 
-	// Fast path: Pcm + cloud upload. One opus encode, no WAV synthesis.
-	if (isUpload && tauri && artifact.kind === 'pcm') {
-		const { data: oggBlob, error } = await tauri.audioEncoder.encodePcmToOpusOgg({
-			samples: artifact.samples,
-			rate: artifact.rate,
-			channels: artifact.channels,
-		});
+	// Fast path: PCM + cloud upload. One opus encode, no WAV synthesis.
+	if (isUpload && tauri && audio instanceof Float32Array) {
+		const { data: oggBlob, error } =
+			await tauri.audioEncoder.encodePcmToOpusOgg(audio);
 		if (error) {
 			notify.warning({
 				title: 'Audio compression skipped',
@@ -89,17 +86,17 @@ async function prepareForService(
 			analytics.logEvent({
 				type: 'compression_completed',
 				provider: service,
-				original_size: artifact.samples.byteLength,
+				original_size: audio.byteLength,
 				compressed_size: oggBlob.size,
 				compression_ratio: Math.round(
-					(1 - oggBlob.size / artifact.samples.byteLength) * 100,
+					(1 - oggBlob.size / audio.byteLength) * 100,
 				),
 			});
 			return Ok(oggBlob);
 		}
 	}
 
-	const blob = artifactToBlob(artifact);
+	const blob = audio instanceof Blob ? audio : pcmToWavBlob(audio);
 
 	// WAV uploads and synthesized PCM blobs are still worth compressing
 	// for cloud transcription.
@@ -132,14 +129,15 @@ async function prepareForService(
 }
 
 /**
- * Transcribe an audio artifact through the configured service. This is
- * the canonical entry point for recorder output. Cloud transcription of
- * a `Pcm` artifact skips the WAV synthesis + decode roundtrip entirely;
- * a `Blob` artifact (navigator, VAD, file upload, history replay) passes
- * through unchanged unless it is a WAV blob for an upload service.
+ * Transcribe a recorder audio payload through the configured service.
+ * This is the canonical entry point for recorder output. Cloud
+ * transcription of an in-memory PCM payload skips the WAV synthesis +
+ * decode roundtrip entirely; a Blob payload (navigator, VAD, file
+ * upload, history replay) passes through unchanged unless it is a WAV
+ * blob for an upload service.
  */
-export async function transcribeArtifact(
-	artifact: AudioArtifact,
+export async function transcribeAudio(
+	audio: RecorderAudio,
 ): Promise<Result<string, WhisperingError>> {
 	const selectedService = settings.get('transcription.service');
 
@@ -150,7 +148,7 @@ export async function transcribeArtifact(
 	});
 
 	const { data: audioToTranscribe, error: prepareError } =
-		await prepareForService(artifact, selectedService);
+		await prepareForService(audio, selectedService);
 	if (prepareError) return Err(prepareError);
 
 	const transcriptionResult = await dispatchTranscription(
@@ -179,14 +177,13 @@ export async function transcribeArtifact(
 
 /**
  * Transcribe a pre-existing Blob. Kept for the history re-transcribe
- * path (`services.blobs.audio.getBlob` returns a Blob) and the file
- * upload UI. Internally wraps the Blob as a `kind: 'blob'` artifact and
- * routes through `transcribeArtifact`.
+ * path (`services.blobs.audio.getBlob` returns a Blob). Routes through
+ * `transcribeAudio`, which narrows on `instanceof Blob`.
  */
 export async function transcribeBlob(
 	blob: Blob,
 ): Promise<Result<string, WhisperingError>> {
-	return transcribeArtifact({ kind: 'blob', blob });
+	return transcribeAudio(blob);
 }
 
 async function dispatchTranscription(

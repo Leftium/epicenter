@@ -198,6 +198,17 @@ export const RecorderError = defineErrors({
 		command,
 		cause,
 	}),
+	InvalidArtifactIpc: ({
+		reason,
+		byteLength,
+	}: {
+		reason: string;
+		byteLength: number;
+	}) => ({
+		message: `Malformed PCM IPC body (${byteLength} bytes): ${reason}`,
+		reason,
+		byteLength,
+	}),
 });
 export type RecorderError = InferErrors<typeof RecorderError>;
 
@@ -226,30 +237,23 @@ export type NavigatorRecordingParams = BaseRecordingParams & {
 };
 
 /**
- * Canonical audio artifact emitted by every recorder path.
- * Describes only the audio payload. Capture-session metadata such as
- * `recordingId` and `durationMs` belongs to the `Recording.stop()` result.
+ * Audio payload accepted by the pipeline and the transcribe layer.
+ * Describes only the bytes. Capture-session metadata such as `recordingId`
+ * and `durationMs` belongs to the `Recording.stop()` result, not here.
  *
- * Two variants only:
- * - `pcm`: in-memory mono PCM @ 16 kHz from the cpal recorder. Cheapest
- *   input for both cloud (direct opus encode) and local (no decode)
- *   transcription.
- * - `blob`: container bytes from anywhere else: navigator (Opus/WebM
- *   or mp4/AAC), VAD speech captures, file uploads, history replays.
- *   The transcribe layer either passes it through or compresses if the
- *   bytes look like an unencoded WAV.
+ * Two physical shapes:
+ * - `Float32Array`: in-memory mono PCM at 16 kHz from the cpal recorder.
+ *   The sample rate is a recorder contract (`RECORDER_OUTPUT_RATE`), not
+ *   a per-payload field. Cheapest input for both cloud (direct opus
+ *   encode) and local (no decode) transcription.
+ * - `Blob`: container bytes from anywhere else, navigator (Opus/WebM or
+ *   mp4/AAC), VAD speech captures, file uploads, history replays. The
+ *   transcribe layer either passes it through or compresses if the bytes
+ *   look like an unencoded WAV.
+ *
+ * Branches with `instanceof Blob`; the alternative is `Float32Array`.
  */
-export type AudioArtifact =
-	| {
-			kind: 'pcm';
-			samples: Float32Array;
-			rate: number;
-			channels: number;
-	  }
-	| {
-			kind: 'blob';
-			blob: Blob;
-	  };
+export type RecorderAudio = Float32Array | Blob;
 
 /**
  * Discriminated union for recording parameters based on method
@@ -278,7 +282,7 @@ export type Recording = {
 		sendStatus: UpdateStatusMessageFn;
 	}): Promise<
 		Result<
-			{ artifact: AudioArtifact; recordingId: string; durationMs: number },
+			{ audio: RecorderAudio; recordingId: string; durationMs: number },
 			RecorderError
 		>
 	>;

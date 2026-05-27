@@ -62,7 +62,8 @@ export async function uploadRecordings({
 
 			const toastId = nanoid();
 			await processRecordingPipeline({
-				artifact: { kind: 'blob', blob: audioBlob },
+				audio: audioBlob,
+				durationMs: null,
 				toastId,
 				completionTitle: '📁 File uploaded successfully!',
 				completionDescription: file.name,

@@ -1,33 +1,28 @@
-import type { AudioArtifact } from './types';
+import { RECORDER_OUTPUT_RATE } from '$lib/constants/audio';
 
 /**
- * Materialize an artifact as a `Blob`. Used at the boundary with code
- * paths that consume Blobs (history persistence, the legacy
- * navigator-shaped transcription dispatch).
+ * Materialize in-memory PCM as a WAV blob. Used at the boundary with
+ * code paths that consume Blobs (history persistence, the navigator-shaped
+ * transcription dispatch).
  *
- * - `pcm` -> in-memory WAV synthesis (IEEE Float, mono). Cheap; bounded
- *   by recording length.
- * - `blob` -> identity.
+ * Mono 16 kHz is the recorder's contract (`RECORDER_OUTPUT_RATE`); both
+ * are baked into the WAV header here. If the contract ever changes, this
+ * grows back to taking rate/channels parameters.
  */
-export function artifactToBlob(artifact: AudioArtifact): Blob {
-	if (artifact.kind === 'blob') return artifact.blob;
-	const wavBuffer = encodePcmAsWav(artifact);
-	return new Blob([wavBuffer], { type: 'audio/wav' });
+export function pcmToWavBlob(samples: Float32Array): Blob {
+	return new Blob([encodePcmAsWav(samples)], { type: 'audio/wav' });
 }
 
 /**
- * Build a minimal IEEE Float 32-bit WAV file in memory from a mono PCM
- * artifact. Matches the format the previous Rust WAV writer produced,
- * so downstream decoders see one shape.
+ * Build a minimal IEEE Float 32-bit mono WAV file in memory from the
+ * recorder's PCM samples. Matches the format the previous Rust WAV writer
+ * produced, so downstream decoders see one shape.
  */
-function encodePcmAsWav(artifact: {
-	samples: Float32Array;
-	rate: number;
-	channels: number;
-}): ArrayBuffer {
-	const { samples, rate, channels } = artifact;
+function encodePcmAsWav(samples: Float32Array): ArrayBuffer {
 	const bitsPerSample = 32;
 	const bytesPerSample = bitsPerSample / 8;
+	const channels = 1;
+	const rate = RECORDER_OUTPUT_RATE;
 	const dataSize = samples.byteLength;
 	const fileSize = 36 + dataSize;
 	const buf = new ArrayBuffer(44 + dataSize);

@@ -1,11 +1,14 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { createLogger } from 'wellcrafted/logger';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
-import type { WhisperingRecordingState } from '$lib/constants/audio';
+import {
+	RECORDER_OUTPUT_RATE,
+	type WhisperingRecordingState,
+} from '$lib/constants/audio';
 import { categorizeRecorderError } from '$lib/services/recorder/categorize-error';
 import {
 	asDeviceIdentifier,
-	type AudioArtifact,
 	type CpalRecordingParams,
 	type Device,
 	type DeviceAcquisitionOutcome,
@@ -14,28 +17,28 @@ import {
 	type Recording,
 } from '$lib/services/recorder/types';
 
+const log = createLogger('whispering/recorder/cpal');
+
 /**
- * Parse the binary response from `stop_recording`. Wire layout (LE):
- *   bytes 0..4   : u32  rate
- *   bytes 4..6   : u16  channels
- *   bytes 6..8   : u16  padding (aligns samples to f32 boundary)
- *   bytes 8..    : f32[] samples
+ * Parse the binary response from `stop_recording`. Wire layout: raw
+ * little-endian f32 samples, no header. The recorder's contract is "16 kHz
+ * mono" (see `RECORDER_OUTPUT_RATE`), so rate and channels are not on the
+ * wire; if the contract ever changes, both sides grow a header together.
  *
  * The `Float32Array` is a zero-copy view over the IPC body, not a
  * decimal-decoded array of doubles. For a 30 s clip this collapses the
  * post-stop critical path by ~150-300 ms compared to JSON `Vec<f32>`.
  */
-function parseArtifact(buffer: ArrayBuffer): Extract<AudioArtifact, { kind: 'pcm' }> {
-	const view = new DataView(buffer);
-	const rate = view.getUint32(0, true);
-	const channels = view.getUint16(4, true);
-	const samples = new Float32Array(buffer, 8);
-	return {
-		kind: 'pcm',
-		samples,
-		rate,
-		channels,
-	};
+function parseArtifact(
+	buffer: ArrayBuffer,
+): Result<Float32Array, RecorderError> {
+	if (buffer.byteLength % 4 !== 0) {
+		return RecorderError.InvalidArtifactIpc({
+			reason: `byte length not a multiple of 4 (f32 size)`,
+			byteLength: buffer.byteLength,
+		});
+	}
+	return Ok(new Float32Array(buffer));
 }
 
 /**
@@ -116,6 +119,28 @@ function createCpalRecorder(): RecorderService {
 			notify('IDLE');
 		};
 
+		// Close the Rust-side session and tear down JS state. Used by both
+		// the happy path and the parse-failure path so a malformed IPC body
+		// can't leave a zombie session in Rust or a stale activeRecording
+		// pointer in JS. Takes `recording` explicitly for the same TDZ
+		// reason `teardown` does.
+		const closeAndTeardown = async (
+			recording: Recording,
+			sendStatus: (args: { title: string; description: string }) => void,
+		) => {
+			sendStatus({
+				title: '🔄 Closing Session',
+				description: 'Cleaning up recording resources...',
+			});
+			const { error: closeError } = await invoke<void>(
+				'close_recording_session',
+			);
+			if (closeError) {
+				log.error(closeError);
+			}
+			teardown(recording);
+		};
+
 		const recording: Recording = {
 			recordingId,
 			backend: 'cpal',
@@ -128,24 +153,18 @@ function createCpalRecorder(): RecorderService {
 					return RecorderError.StopFailed({ cause: stopRecordingError });
 				}
 
-				const artifact = parseArtifact(buffer);
-				const durationMs = Math.round(
-					(artifact.samples.length / artifact.rate / artifact.channels) * 1000,
-				);
-
-				sendStatus({
-					title: '🔄 Closing Session',
-					description: 'Cleaning up recording resources...',
-				});
-				const { error: closeError } = await invoke<void>(
-					'close_recording_session',
-				);
-				if (closeError) {
-					console.error('Failed to close recording session:', closeError);
+				const { data: samples, error: parseError } = parseArtifact(buffer);
+				if (parseError) {
+					await closeAndTeardown(recording, sendStatus);
+					return Err(parseError);
 				}
 
-				teardown(recording);
-				return Ok({ artifact, recordingId, durationMs });
+				const durationMs = Math.round(
+					(samples.length / RECORDER_OUTPUT_RATE) * 1000,
+				);
+
+				await closeAndTeardown(recording, sendStatus);
+				return Ok({ audio: samples, recordingId, durationMs });
 			},
 
 			cancel: async ({ sendStatus }) => {

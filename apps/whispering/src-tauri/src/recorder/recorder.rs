@@ -14,7 +14,7 @@
 //! The cpal callback never blocks: it downmixes to mono and ships
 //! samples through an mpsc channel. The consumer worker accumulates,
 //! resamples to 16 kHz at finalize, pads sub-1s clips, and emits the
-//! canonical [`AudioArtifact`].
+//! canonical [`CapturedPcm`].
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, Stream};
@@ -25,7 +25,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use crate::audio::resample_mono;
-use crate::recorder::artifact::AudioArtifact;
+use crate::recorder::artifact::CapturedPcm;
 
 /// Simple result type using String for errors. Errors cross the IPC
 /// boundary as plain strings so the JS side renders them in toasts.
@@ -46,7 +46,7 @@ const SHORT_RECORDING_PAD_SAMPLES: usize = 20_000;
 #[derive(Debug)]
 enum RecorderCmd {
     Start(mpsc::Sender<()>),
-    Stop(mpsc::Sender<Result<AudioArtifact>>),
+    Stop(mpsc::Sender<Result<CapturedPcm>>),
     Cancel(mpsc::Sender<Result<()>>),
     Shutdown,
 }
@@ -175,8 +175,8 @@ impl Recorder {
         Ok(())
     }
 
-    /// Stop recording and consume the worker's artifact.
-    pub fn stop_recording(&mut self) -> Result<AudioArtifact> {
+    /// Stop recording and consume the worker's PCM.
+    pub fn stop_recording(&mut self) -> Result<CapturedPcm> {
         let tx = self
             .cmd_tx
             .as_ref()
@@ -187,11 +187,10 @@ impl Recorder {
         let result = reply_rx
             .recv()
             .map_err(|e| format!("Worker dropped stop reply: {e}"))?;
-        let artifact = result?;
-        let duration_seconds =
-            artifact.samples.len() as f32 / artifact.rate as f32 / artifact.channels as f32;
+        let pcm = result?;
+        let duration_seconds = pcm.samples.len() as f32 / TARGET_RATE as f32;
         info!("Recording stopped: {duration_seconds:.2}s");
-        Ok(artifact)
+        Ok(pcm)
     }
 
     /// Cancel the active recording, discarding any in-flight samples.
@@ -290,8 +289,8 @@ fn run_consumer(
     }
 }
 
-/// Resample to 16 kHz if needed, pad short clips, build the artifact.
-fn finalize(buffer: Vec<f32>, device_rate: u32) -> Result<AudioArtifact> {
+/// Resample to 16 kHz if needed, pad short clips, build the PCM.
+fn finalize(buffer: Vec<f32>, device_rate: u32) -> Result<CapturedPcm> {
     let samples = if device_rate == TARGET_RATE {
         buffer
     } else {
@@ -308,11 +307,7 @@ fn finalize(buffer: Vec<f32>, device_rate: u32) -> Result<AudioArtifact> {
         samples.resize(SHORT_RECORDING_PAD_SAMPLES, 0.0);
     }
 
-    Ok(AudioArtifact {
-        samples,
-        rate: TARGET_RATE,
-        channels: 1,
-    })
+    Ok(CapturedPcm { samples })
 }
 
 /// Find a recording device by name. Treats "default" case-insensitively.
@@ -595,17 +590,14 @@ mod tests {
     }
 
     #[test]
-    fn artifact_to_binary_writes_header_and_samples() {
-        let artifact = AudioArtifact {
+    fn captured_pcm_to_binary_writes_samples_only() {
+        let pcm = CapturedPcm {
             samples: vec![0.5, -0.5, 0.25],
-            rate: 16_000,
-            channels: 1,
         };
-        let bytes = artifact.to_binary();
-        assert_eq!(&bytes[0..4], 16_000u32.to_le_bytes());
-        assert_eq!(&bytes[4..6], 1u16.to_le_bytes());
-        assert_eq!(&bytes[6..8], 0u16.to_le_bytes());
-        assert_eq!(bytes.len(), 8 + 3 * 4);
-        assert_eq!(&bytes[8..12], 0.5f32.to_le_bytes());
+        let bytes = pcm.to_binary();
+        assert_eq!(bytes.len(), 3 * 4);
+        assert_eq!(&bytes[0..4], 0.5f32.to_le_bytes());
+        assert_eq!(&bytes[4..8], (-0.5f32).to_le_bytes());
+        assert_eq!(&bytes[8..12], 0.25f32.to_le_bytes());
     }
 }

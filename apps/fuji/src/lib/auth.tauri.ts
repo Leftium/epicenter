@@ -17,6 +17,8 @@ import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { Ok, type Result } from 'wellcrafted/result';
 
+const OAUTH_CALLBACK_TIMEOUT_MS = 10 * 60 * 1000;
+
 export const auth = createOAuthAppAuth({
 	baseURL: APP_URLS.API,
 	clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,
@@ -38,7 +40,9 @@ function createFujiOAuthLauncher(): OAuthLauncher {
 		issuer: `${APP_URLS.API}/auth`,
 		clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,
 		resource: APP_URLS.API,
-		storage: window.sessionStorage,
+		// Deep-link callbacks can cold-start the app; sessionStorage would lose
+		// the PKCE transaction.
+		storage: window.localStorage,
 	});
 
 	return {
@@ -76,38 +80,53 @@ function createFujiOAuthLauncher(): OAuthLauncher {
 }
 
 // Tauri can deliver arbitrary URLs for the registered scheme. Claim only the
-// exact OAuth redirect endpoint; the OAuth client still validates state.
+// exact OAuth redirect endpoint when it carries an OAuth callback payload.
 function isRedirectUrl(url: string, redirectUri: string): boolean {
-	return url === redirectUri || url.startsWith(`${redirectUri}?`);
+	if (url !== redirectUri && !url.startsWith(`${redirectUri}?`)) return false;
+	try {
+		const callbackUrl = new URL(url);
+		return (
+			callbackUrl.searchParams.has('code') ||
+			callbackUrl.searchParams.has('error')
+		);
+	} catch {
+		return false;
+	}
 }
 
 // Install the deep-link listener before opening the browser, then resolve the
 // first matching callback URL. Token exchange happens after URL capture.
-async function waitForRedirectUrl({
+function waitForRedirectUrl({
 	authorizationUrl,
 	redirectUri,
 }: {
 	authorizationUrl: string;
 	redirectUri: string;
-}) {
-	return await new Promise<Result<string, OAuthClientError>>((resolve) => {
+}): Promise<Result<string, OAuthClientError>> {
+	return new Promise<Result<string, OAuthClientError>>((resolve) => {
 		let settled = false;
-		let callbackClaimed = false;
 		let unlisten: UnlistenFn | null = null;
 
 		const settle = (result: Result<string, OAuthClientError>) => {
 			if (settled) return;
 			settled = true;
+			window.clearTimeout(timeout);
 			unlisten?.();
 			resolve(result);
 		};
 
+		const timeout = window.setTimeout(() => {
+			settle(
+				OAuthClientError.LaunchFailed({
+					cause: new Error('Timed out waiting for OAuth callback.'),
+				}),
+			);
+		}, OAUTH_CALLBACK_TIMEOUT_MS);
+
 		onOpenUrl((urls) => {
-			if (callbackClaimed) return;
+			if (settled) return;
 			const callbackUrl = urls.find((url) => isRedirectUrl(url, redirectUri));
 			if (!callbackUrl) return;
-			callbackClaimed = true;
-			unlisten?.();
 			settle(Ok(callbackUrl));
 		})
 			.then((nextUnlisten) => {

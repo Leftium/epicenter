@@ -98,7 +98,7 @@ function createCpalRecorder(): RecorderService {
 			notify('IDLE');
 		};
 
-		const session: RecordingSession = {
+		const session = {
 			recordingId,
 			backend: 'cpal',
 
@@ -162,7 +162,7 @@ function createCpalRecorder(): RecorderService {
 					subscribers.delete(handler);
 				};
 			},
-		};
+		} satisfies RecordingSession;
 
 		return session;
 	}

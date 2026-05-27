@@ -70,12 +70,12 @@ export const log = {
 // ── Internals ─────────────────────────────────────────────────────────────
 
 function emit(level: Level, notice: Notice, id?: string): void {
-	const event: ReportEvent = {
+	const event = {
 		ts: Date.now(),
 		level,
 		source: SOURCE,
 		data: id !== undefined ? { ...notice, id } : notice,
-	};
+	} satisfies ReportEvent;
 	consoleSink(event);
 	toastSink(event);
 	osNotifySink(event);

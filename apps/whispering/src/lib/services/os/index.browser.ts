@@ -48,15 +48,19 @@ function getPlatformFromClientHints(
 	const platform = navigator.userAgentData.platform.toLowerCase();
 
 	// Direct mapping from client hints to OsType
-	const platformMap: Record<string, OsType> = {
+	const platformMap = {
 		windows: 'windows',
 		macos: 'macos',
 		linux: 'linux',
 		android: 'android',
 		ios: 'ios',
-	};
+	} as const satisfies Record<string, OsType>;
 
-	return platformMap[platform] ?? null;
+	const detectedPlatform =
+		platform in platformMap
+			? platformMap[platform as keyof typeof platformMap]
+			: null;
+	return detectedPlatform ?? null;
 }
 
 /** iOS device user agent pattern */

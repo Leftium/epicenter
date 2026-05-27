@@ -65,7 +65,7 @@ function createNavigatorRecorder(): RecorderService {
 			notify('IDLE');
 		};
 
-		const recordingSession: RecordingSession = {
+		const recordingSession = {
 			recordingId,
 			backend: 'navigator',
 
@@ -128,14 +128,14 @@ function createNavigatorRecorder(): RecorderService {
 					subscribers.delete(handler);
 				};
 			},
-		};
+		} satisfies RecordingSession;
 
-		const sessionRecord: ActiveSession = {
+		const sessionRecord = {
 			stream,
 			mediaRecorder,
 			recordedChunks,
 			session: recordingSession,
-		};
+		} satisfies ActiveSession;
 		return { activeSession: sessionRecord, session: recordingSession };
 	}
 

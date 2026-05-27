@@ -14,24 +14,24 @@ import { tauri } from '$lib/tauri';
 import type { Accelerator } from '$lib/utils/accelerator';
 
 /** Default values for in-app (local) shortcuts. Keyed by command id string. */
-const DEFAULT_LOCAL_SHORTCUTS: Record<string, string | null> = {
+const DEFAULT_LOCAL_SHORTCUTS = {
 	pushToTalk: 'p',
 	toggleManualRecording: ' ',
 	cancelManualRecording: 'c',
 	toggleVadRecording: 'v',
 	openTransformationPicker: 't',
 	runTransformationOnClipboard: 'r',
-};
+} as const satisfies Record<string, string | null>;
 
 /** Default values for global OS shortcuts. Keyed by command id string. */
-const DEFAULT_GLOBAL_SHORTCUTS: Record<string, string | null> = {
+const DEFAULT_GLOBAL_SHORTCUTS = {
 	pushToTalk: `${CommandOrAlt}+Shift+D`,
 	toggleManualRecording: `${CommandOrControl}+Shift+;`,
 	cancelManualRecording: `${CommandOrControl}+Shift+'`,
 	toggleVadRecording: null,
 	openTransformationPicker: `${CommandOrControl}+Shift+X`,
 	runTransformationOnClipboard: `${CommandOrControl}+Shift+R`,
-};
+} as const satisfies Record<string, string | null>;
 
 type LocalShortcutKey =
 	| 'shortcut.toggleManualRecording'

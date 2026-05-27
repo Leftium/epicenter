@@ -90,7 +90,8 @@ export async function migrateOldSettings(): Promise<void> {
 	// fires once with all changes, not 43 individual updates.
 
 	whispering.ydoc.transact(() => {
-		for (const { oldKey, newKey, convert } of WORKSPACE_KEY_MAP) {
+		for (const keyMapping of WORKSPACE_KEY_MAP) {
+			const { oldKey, newKey } = keyMapping;
 			trySync({
 				try: () => {
 					const raw = oldSettings?.[oldKey];
@@ -99,7 +100,7 @@ export async function migrateOldSettings(): Promise<void> {
 					// First-write-wins: skip if user already changed this setting
 					if (getKv(newKey) !== getKvDefault(newKey)) return;
 
-					const value = convert ? convert(raw) : raw;
+					const value = 'convert' in keyMapping ? keyMapping.convert(raw) : raw;
 					if (value === undefined) return;
 
 					setKv(newKey, value);
@@ -175,11 +176,7 @@ function toInteger(raw: unknown): number | undefined {
  * Maps old `whispering-settings` blob keys to new workspace KV keys.
  * Two keys require type conversion (string → number).
  */
-const WORKSPACE_KEY_MAP: readonly {
-	oldKey: string;
-	newKey: string;
-	convert?: (raw: unknown) => unknown;
-}[] = [
+const WORKSPACE_KEY_MAP = [
 	// Sound toggles
 	{ oldKey: 'sound.playOn.manual-start', newKey: 'sound.manualStart' },
 	{ oldKey: 'sound.playOn.manual-stop', newKey: 'sound.manualStop' },
@@ -295,7 +292,11 @@ const WORKSPACE_KEY_MAP: readonly {
 		oldKey: 'shortcuts.local.runTransformationOnClipboard',
 		newKey: 'shortcut.runTransformationOnClipboard',
 	},
-] as const;
+] as const satisfies readonly {
+	oldKey: string;
+	newKey: string;
+	convert?: (raw: unknown) => unknown;
+}[];
 
 /**
  * Maps old blob keys to new device config keys.
@@ -304,7 +305,7 @@ const WORKSPACE_KEY_MAP: readonly {
  *   2. `whispering-device-config` monolithic blob (from brief interim period)
  *   3. `whispering-settings` original blob
  */
-const DEVICE_KEY_MAP: readonly { oldKey: string; newKey: string }[] = [
+const DEVICE_KEY_MAP = [
 	// API keys
 	{ oldKey: 'apiKeys.openai', newKey: 'apiKeys.openai' },
 	{ oldKey: 'apiKeys.anthropic', newKey: 'apiKeys.anthropic' },
@@ -387,4 +388,4 @@ const DEVICE_KEY_MAP: readonly { oldKey: string; newKey: string }[] = [
 		oldKey: 'shortcuts.global.runTransformationOnClipboard',
 		newKey: 'shortcuts.global.runTransformationOnClipboard',
 	},
-] as const;
+] as const satisfies readonly { oldKey: string; newKey: string }[];

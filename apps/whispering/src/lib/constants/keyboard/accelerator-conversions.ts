@@ -17,9 +17,7 @@ import type {
  *
  * @see https://www.electronjs.org/docs/latest/api/accelerator
  */
-export const KEYBOARD_EVENT_SPECIAL_KEY_TO_ACCELERATOR_KEY_CODE_MAP: Partial<
-	Record<string, AcceleratorKeyCode>
-> = {
+export const KEYBOARD_EVENT_SPECIAL_KEY_TO_ACCELERATOR_KEY_CODE_MAP = {
 	// Arrow keys
 	arrowup: 'Up',
 	arrowdown: 'Down',
@@ -55,7 +53,7 @@ export const KEYBOARD_EVENT_SPECIAL_KEY_TO_ACCELERATOR_KEY_CODE_MAP: Partial<
 	capslock: 'Capslock',
 	numlock: 'Numlock',
 	scrolllock: 'Scrolllock',
-} as const;
+} as const satisfies Partial<Record<string, AcceleratorKeyCode>>;
 
 /**
  * Defines the standard sort priority for accelerator modifiers.
@@ -71,10 +69,7 @@ export const KEYBOARD_EVENT_SPECIAL_KEY_TO_ACCELERATOR_KEY_CODE_MAP: Partial<
  * );
  * ```
  */
-export const ACCELERATOR_MODIFIER_SORT_PRIORITY: Record<
-	AcceleratorModifier,
-	number
-> = {
+export const ACCELERATOR_MODIFIER_SORT_PRIORITY = {
 	Command: 1,
 	Cmd: 1,
 	Control: 1,
@@ -85,4 +80,4 @@ export const ACCELERATOR_MODIFIER_SORT_PRIORITY: Record<
 	Shift: 4,
 	Super: 5,
 	Meta: 5,
-} as const;
+} as const satisfies Record<AcceleratorModifier, number>;

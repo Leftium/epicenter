@@ -88,7 +88,6 @@ export const DeepgramTranscriptionServiceLive = {
 		audioBlob: Blob,
 		options: {
 			prompt: string;
-			temperature: string;
 			outputLanguage: string;
 			apiKey: string;
 			modelName: string;

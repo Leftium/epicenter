@@ -17,11 +17,7 @@ import type { Accelerator } from '$lib/utils/accelerator';
 const DEFAULT_LOCAL_SHORTCUTS: Record<string, string | null> = {
 	pushToTalk: 'p',
 	toggleManualRecording: ' ',
-	startManualRecording: null,
-	stopManualRecording: null,
 	cancelManualRecording: 'c',
-	startVadRecording: null,
-	stopVadRecording: null,
 	toggleVadRecording: 'v',
 	openTransformationPicker: 't',
 	runTransformationOnClipboard: 'r',
@@ -31,11 +27,7 @@ const DEFAULT_LOCAL_SHORTCUTS: Record<string, string | null> = {
 const DEFAULT_GLOBAL_SHORTCUTS: Record<string, string | null> = {
 	pushToTalk: `${CommandOrAlt}+Shift+D`,
 	toggleManualRecording: `${CommandOrControl}+Shift+;`,
-	startManualRecording: null,
-	stopManualRecording: null,
 	cancelManualRecording: `${CommandOrControl}+Shift+'`,
-	startVadRecording: null,
-	stopVadRecording: null,
 	toggleVadRecording: null,
 	openTransformationPicker: `${CommandOrControl}+Shift+X`,
 	runTransformationOnClipboard: `${CommandOrControl}+Shift+R`,
@@ -43,24 +35,16 @@ const DEFAULT_GLOBAL_SHORTCUTS: Record<string, string | null> = {
 
 type LocalShortcutKey =
 	| 'shortcut.toggleManualRecording'
-	| 'shortcut.startManualRecording'
-	| 'shortcut.stopManualRecording'
 	| 'shortcut.cancelManualRecording'
 	| 'shortcut.toggleVadRecording'
-	| 'shortcut.startVadRecording'
-	| 'shortcut.stopVadRecording'
 	| 'shortcut.pushToTalk'
 	| 'shortcut.openTransformationPicker'
 	| 'shortcut.runTransformationOnClipboard';
 
 type GlobalShortcutKey =
 	| 'shortcuts.global.toggleManualRecording'
-	| 'shortcuts.global.startManualRecording'
-	| 'shortcuts.global.stopManualRecording'
 	| 'shortcuts.global.cancelManualRecording'
 	| 'shortcuts.global.toggleVadRecording'
-	| 'shortcuts.global.startVadRecording'
-	| 'shortcuts.global.stopVadRecording'
 	| 'shortcuts.global.pushToTalk'
 	| 'shortcuts.global.openTransformationPicker'
 	| 'shortcuts.global.runTransformationOnClipboard';

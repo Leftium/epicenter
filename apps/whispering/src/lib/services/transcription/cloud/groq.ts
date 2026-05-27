@@ -79,7 +79,6 @@ export const GroqTranscriptionServiceLive = {
 		audioBlob: Blob,
 		options: {
 			prompt: string;
-			temperature: string;
 			outputLanguage: string;
 			apiKey: string;
 			modelName: string;
@@ -127,9 +126,6 @@ export const GroqTranscriptionServiceLive = {
 							? undefined
 							: options.outputLanguage,
 					prompt: options.prompt ? options.prompt : undefined,
-					temperature: options.temperature
-						? Number.parseFloat(options.temperature)
-						: undefined,
 				});
 				return transcription.text.trim();
 			},

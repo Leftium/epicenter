@@ -87,14 +87,6 @@ const DEVICE_DEFINITIONS = {
 		type('string | null'),
 		`${CommandOrControl}+Shift+;` as string | null,
 	),
-	'shortcuts.global.startManualRecording': defineEntry(
-		type('string | null'),
-		null,
-	),
-	'shortcuts.global.stopManualRecording': defineEntry(
-		type('string | null'),
-		null,
-	),
 	'shortcuts.global.cancelManualRecording': defineEntry(
 		type('string | null'),
 		`${CommandOrControl}+Shift+'` as string | null,
@@ -103,11 +95,6 @@ const DEVICE_DEFINITIONS = {
 		type('string | null'),
 		null,
 	),
-	'shortcuts.global.startVadRecording': defineEntry(
-		type('string | null'),
-		null,
-	),
-	'shortcuts.global.stopVadRecording': defineEntry(type('string | null'), null),
 	'shortcuts.global.pushToTalk': defineEntry(
 		type('string | null'),
 		`${CommandOrAlt}+Shift+D` as string | null,

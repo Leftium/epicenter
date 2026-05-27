@@ -29,7 +29,6 @@ export const ElevenLabsTranscriptionServiceLive = {
 		audioBlob: Blob,
 		options: {
 			prompt: string;
-			temperature: string;
 			outputLanguage: string;
 			apiKey: string;
 			modelName: string;

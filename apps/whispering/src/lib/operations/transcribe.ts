@@ -1,13 +1,24 @@
+import { stat } from '@tauri-apps/plugin-fs';
 import { type AnyTaggedError, defineErrors } from 'wellcrafted/error';
-import { Err, Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import {
 	SUPPORTED_LANGUAGES,
 	type SupportedLanguage,
 } from '$lib/constants/languages';
+import {
+	isModelFileSizeValid,
+	MOONSHINE_DIR_PATTERN,
+	WHISPER_MODELS,
+} from '$lib/constants/local-models';
 import type { TranscriptionServiceId } from '$lib/constants/transcription';
 import { analytics } from '$lib/operations/analytics';
 import { report } from '$lib/report';
 import { services } from '$lib/services';
+import {
+	LocalTranscriptionError,
+	requireExistingModelPath,
+	transcribeRecording,
+} from '$lib/services/transcription/local-transcription';
 import { TRANSCRIPTION_SERVICES } from '$lib/services/transcription/registry';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
@@ -125,24 +136,85 @@ async function dispatchLocalTranscription(
 	recordingId: string,
 	selectedService: TranscriptionServiceId,
 ): Promise<Result<string, TranscriptionError>> {
-	const outputLanguage = getOutputLanguage();
-	const prompt = settings.get('transcription.prompt');
-
 	switch (selectedService) {
-		case 'whispercpp':
-			return services.transcriptions.whispercpp.transcribe(recordingId, {
-				outputLanguage,
-				modelPath: deviceConfig.get('transcription.whispercpp.modelPath'),
-				prompt,
+		case 'whispercpp': {
+			const modelPath = deviceConfig.get('transcription.whispercpp.modelPath');
+			const validation = await requireExistingModelPath(
+				modelPath,
+				'file',
+				'Whisper C++',
+			);
+			if (validation.error) return validation;
+
+			// Whisper-specific: an interrupted download still loads but produces
+			// garbage transcripts. Only files we recognize from WHISPER_MODELS
+			// have an expected size to compare against.
+			const modelConfig = WHISPER_MODELS.find((m) =>
+				modelPath.endsWith(m.file.filename),
+			);
+			if (modelConfig) {
+				const { data: fileStats } = await tryAsync({
+					try: () => stat(modelPath),
+					catch: () => Ok(null),
+				});
+				if (
+					fileStats &&
+					!isModelFileSizeValid(fileStats.size, modelConfig.sizeBytes)
+				) {
+					return LocalTranscriptionError.CorruptedModelFile({
+						actualSizeMb: Math.round(fileStats.size / 1000000),
+						expectedSizeMb: Math.round(modelConfig.sizeBytes / 1000000),
+					});
+				}
+			}
+
+			const outputLanguage = getOutputLanguage();
+			const prompt = settings.get('transcription.prompt');
+			return transcribeRecording(recordingId, {
+				engine: 'whispercpp',
+				modelPath,
+				language: outputLanguage === 'auto' ? null : outputLanguage,
+				initialPrompt: prompt || null,
 			});
-		case 'parakeet':
-			return services.transcriptions.parakeet.transcribe(recordingId, {
-				modelPath: deviceConfig.get('transcription.parakeet.modelPath'),
+		}
+		case 'parakeet': {
+			const modelPath = deviceConfig.get('transcription.parakeet.modelPath');
+			const validation = await requireExistingModelPath(
+				modelPath,
+				'directory',
+				'Parakeet',
+			);
+			if (validation.error) return validation;
+
+			return transcribeRecording(recordingId, {
+				engine: 'parakeet',
+				modelPath,
 			});
-		case 'moonshine':
-			return services.transcriptions.moonshine.transcribe(recordingId, {
-				modelPath: deviceConfig.get('transcription.moonshine.modelPath'),
+		}
+		case 'moonshine': {
+			const modelPath = deviceConfig.get('transcription.moonshine.modelPath');
+			const validation = await requireExistingModelPath(
+				modelPath,
+				'directory',
+				'Moonshine',
+			);
+			if (validation.error) return validation;
+
+			// Moonshine's ONNX files don't self-describe their architecture; the
+			// variant is encoded in the directory name (see
+			// MOONSHINE_DIR_PATTERN) and forwarded to Rust on the wire.
+			const match = MOONSHINE_DIR_PATTERN.exec(modelPath);
+			if (!match) {
+				return LocalTranscriptionError.InvalidMoonshineDirectoryName();
+			}
+			const [, variant] = match;
+
+			return transcribeRecording(recordingId, {
+				engine: 'moonshine',
+				modelPath,
+				variant,
 			});
+		}
 		default:
 			return TranscriptionOperationError.NoTranscriptionServiceSelected();
 	}

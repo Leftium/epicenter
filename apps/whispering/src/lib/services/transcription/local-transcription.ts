@@ -14,9 +14,7 @@ import {
 /**
  * The Rust `TranscribeRequest` enum (`#[serde(tag = "engine", rename_all =
  * "lowercase")]`) is the single source of truth for this argument shape;
- * the boundary file re-exports the generated TS union. We keep the local
- * alias `TranscribeConfig` so engine adapters that already import it stay
- * unchanged.
+ * the boundary file re-exports the generated TS union.
  */
 export type TranscribeConfig = TranscribeRequest;
 
@@ -57,18 +55,25 @@ export const LocalTranscriptionError = defineErrors({
 		engineDisplayName,
 		kind,
 	}),
-	ModelLoadError: ({ message }: { message: string }) => ({
-		message,
+	CorruptedModelFile: ({
+		actualSizeMb,
+		expectedSizeMb,
+	}: {
+		actualSizeMb: number;
+		expectedSizeMb: number;
+	}) => ({
+		message: `The model file is ${actualSizeMb}MB but should be ~${expectedSizeMb}MB. This usually happens when a download was interrupted. Please delete and re-download the model.`,
+		actualSizeMb,
+		expectedSizeMb,
 	}),
-	GpuError: ({ message }: { message: string }) => ({
-		message,
+	InvalidMoonshineDirectoryName: () => ({
+		message:
+			'Model path must end with moonshine-{variant}-{lang} (e.g., "moonshine-tiny-en", "moonshine-base-en")',
 	}),
-	AudioReadError: ({ message }: { message: string }) => ({
-		message,
-	}),
-	TranscriptionError: ({ message }: { message: string }) => ({
-		message,
-	}),
+	ModelLoadError: ({ message }: { message: string }) => ({ message }),
+	GpuError: ({ message }: { message: string }) => ({ message }),
+	AudioReadError: ({ message }: { message: string }) => ({ message }),
+	TranscriptionError: ({ message }: { message: string }) => ({ message }),
 	UnexpectedLocalError: ({ cause }: { cause: unknown }) => ({
 		message: extractErrorMessage(cause),
 		cause,
@@ -79,8 +84,8 @@ export type LocalTranscriptionError = InferErrors<
 >;
 
 /**
- * Validate that `modelPath` exists and is the expected `kind`. All three
- * local services share this exact preflight.
+ * Validate that `modelPath` exists and is the expected `kind`. All local
+ * engines share this exact preflight.
  */
 export async function requireExistingModelPath(
 	modelPath: string,
@@ -122,15 +127,11 @@ function mapLocalTranscriptionError(
 ): Result<never, LocalTranscriptionError> {
 	switch (error.name) {
 		case 'ModelLoadError':
-			return LocalTranscriptionError.ModelLoadError({
-				message: error.message,
-			});
+			return LocalTranscriptionError.ModelLoadError({ message: error.message });
 		case 'GpuError':
 			return LocalTranscriptionError.GpuError({ message: error.message });
 		case 'AudioReadError':
-			return LocalTranscriptionError.AudioReadError({
-				message: error.message,
-			});
+			return LocalTranscriptionError.AudioReadError({ message: error.message });
 		case 'TranscriptionError':
 			return LocalTranscriptionError.TranscriptionError({
 				message: error.message,

@@ -86,7 +86,7 @@ See `docs/articles/20260526T012526-tauri-is-both-the-namespace-and-the-platform-
 > **💡 Three kinds of dependency injection**
 >
 > - **Build-time platform DI** (suffix files): for services that have a real implementation on both platforms. `text`, `os`, `sound`, `download`, `analytics`, `http`, `blob-store`, `recorder`. Each has `index.tauri.ts` + `index.browser.ts` + `types.ts`. Vite picks one at build time.
-> - **Tauri-only namespace** (`$lib/tauri`): for capabilities that exist only on Tauri (fs, command, permissions, audioEncoder, tray, globalShortcuts, autostart). One file holds all of them. Consumers either narrow with `if (tauri)`, prop-drill the narrowed value into helpers, or call `requireTauri()` from inside a `.tauri.ts` file.
+> - **Tauri-only namespace** (`$lib/tauri`): for capabilities that exist only on Tauri (fs, command, permissions, audioEncoder, window, tray, globalShortcuts, autostart). One file holds all of them. Consumers either narrow with `if (tauri)`, prop-drill the narrowed value into helpers, or call `requireTauri()` from inside a `.tauri.ts` file.
 > - **Runtime DI** (switch on `settings.value`): for user-pick providers like `transcription` and `completion`.
 >
 > See `docs/articles/20260526T012650-two-switches-build-time-and-runtime.md` for the platform-vs-settings walkthrough.
@@ -378,7 +378,7 @@ export function createClipboardServiceWeb(): ClipboardService {
 
 ## Configuration Injection
 
-Services are pure and accept configuration as parameters. We never import/use global variables like `settings.value`—that's for the rpc layer.
+Services are pure and accept configuration as parameters. We never import/use global variables like `settings.value`; that's for the rpc layer.
 
 ```typescript
 // ✅ CORRECT - Pure service
@@ -414,17 +414,18 @@ User-facing reporting (toast + OS notification) is owned by `$lib/report`, not t
 
 ### Tauri-only capabilities (`$lib/tauri`)
 
-All seven Tauri-only capabilities live inline in one file at `$lib/tauri.tauri.ts`. The companion `$lib/tauri.browser.ts` exports `tauri = null` plus a throwing `requireTauri` stub. Consumers access via `if (tauri) { tauri.<cap>.method() }`, by prop-drilling the narrowed value, or by calling `requireTauri()` from inside a `.tauri.ts` file.
+All eight Tauri-only capabilities live inline in one file at `$lib/tauri.tauri.ts`. The companion `$lib/tauri.browser.ts` exports `tauri = null` plus a throwing `requireTauri` stub. Consumers access via `if (tauri) { tauri.<cap>.method() }`, by prop-drilling the narrowed value, or by calling `requireTauri()` from inside a `.tauri.ts` file.
 
 - `tauri.fs` - Filesystem operations (pathToBlob, pathToFile, pathsToFiles)
 - `tauri.command` - Shell command execution (execute, spawn)
 - `tauri.permissions` - macOS accessibility/microphone permission flows
 - `tauri.audioEncoder` - In-process libopus encoder for cloud upload compression (encodeWavToOpusOgg)
+- `tauri.window` - Window operations (setAlwaysOnTop)
 - `tauri.tray` - System tray icon (setIcon)
 - `tauri.globalShortcuts` - OS-level shortcut registration (registerCommand, unregisterCommand, unregisterAll)
 - `tauri.autostart` - Launch-at-login toggle (isEnabled, enable, disable)
 
-Each leaf picks one canonical call form: TanStack-wrapped (via `defineQuery`/`defineMutation`) where caching, reactivity, or post-mutation invalidation matter; plain async functions where they don't. There is no separate `tauri.rpc` sub-namespace.
+Each leaf picks one canonical call form: TanStack-backed (via `defineQuery`/`defineMutation`) where caching, reactivity, or post-mutation invalidation matter; plain Result functions where they don't. There is no separate `tauri.rpc` sub-namespace.
 
 Pure accelerator parsing (validate-format, pressed-keys-to-accelerator, the `Accelerator` brand) doesn't need the Tauri runtime and lives in `$lib/utils/accelerator.ts`. The Tauri-side registration code consumes the same types.
 

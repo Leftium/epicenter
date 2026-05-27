@@ -16,11 +16,4 @@ export type Problem = Notice & { cause: AnyTaggedError };
 
 export type Level = 'error' | 'success' | 'info' | 'loading';
 
-export type ReportEvent = {
-	ts: number;
-	level: Level;
-	source: string;
-	data: Notice & { id?: string };
-};
-
-export type OsNotifySink = (event: ReportEvent) => void;
+export type OsNotifySink = (level: Level, notice: Notice) => void;

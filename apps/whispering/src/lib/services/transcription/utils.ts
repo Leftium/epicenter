@@ -21,13 +21,9 @@ export function getAudioExtension(mimeType: string): string {
 	// - 'weba' for audio/webm (should be 'webm')
 	// - 'oga' for audio/ogg (should be 'ogg')
 	// Groq/OpenAI/Mistral support: flac, mp3, mp4, mpeg, mpga, m4a, ogg, opus, wav, webm
-	const extensionMapping = {
+	const extensionMapping: Record<string, string> = {
 		weba: 'webm',
 		oga: 'ogg',
-	} as const satisfies Record<string, string>;
-	const mappedExtension =
-		extension in extensionMapping
-			? extensionMapping[extension as keyof typeof extensionMapping]
-			: null;
-	return mappedExtension ?? extension;
+	};
+	return extensionMapping[extension] ?? extension;
 }

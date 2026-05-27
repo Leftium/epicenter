@@ -83,12 +83,12 @@ describe('convertEpicenterLinksToWikilinks', () => {
 
 describe('convertWikilinksToEpicenterLinks', () => {
 	const resolve = (name: string) => {
-		const lookup = {
+		const lookup: Record<string, string> = {
 			'First Note': SAMPLE_REF,
 			'Project Plan': 'epicenter://opensidian/files/def-456',
-		} as const satisfies Record<string, string>;
+		};
 
-		return name in lookup ? lookup[name as keyof typeof lookup] : null;
+		return lookup[name] ?? null;
 	};
 
 	test('converts wikilinks to epicenter links', () => {

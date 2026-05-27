@@ -1,6 +1,6 @@
 import { partitionResults } from 'wellcrafted/result';
 import { goto } from '$app/navigation';
-import { commands } from '$lib/commands';
+import { type Command, commands } from '$lib/commands';
 import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
 import { localShortcuts } from '$lib/operations/shortcuts';
 import { report } from '$lib/report';
@@ -21,7 +21,7 @@ const DEFAULT_LOCAL_SHORTCUTS = {
 	toggleVadRecording: 'v',
 	openTransformationPicker: 't',
 	runTransformationOnClipboard: 'r',
-} as const satisfies Record<string, string | null>;
+} as const satisfies Record<Command['id'], string | null>;
 
 /** Default values for global OS shortcuts. Keyed by command id string. */
 const DEFAULT_GLOBAL_SHORTCUTS = {
@@ -31,7 +31,7 @@ const DEFAULT_GLOBAL_SHORTCUTS = {
 	toggleVadRecording: null,
 	openTransformationPicker: `${CommandOrControl}+Shift+X`,
 	runTransformationOnClipboard: `${CommandOrControl}+Shift+R`,
-} as const satisfies Record<string, string | null>;
+} as const satisfies Record<Command['id'], string | null>;
 
 type LocalShortcutKey =
 	| 'shortcut.toggleManualRecording'

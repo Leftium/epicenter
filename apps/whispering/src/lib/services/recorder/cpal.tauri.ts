@@ -53,10 +53,10 @@ const enumerateDevices = async (): Promise<Result<Device[], RecorderError>> => {
  * to `<appDataDir>/recordings/{id}.wav` and the JS side refers to the
  * recording by id from then on. There is no raw PCM on the wire.
  */
-function createCpalRecorder(): RecorderService {
+function createCpalRecorder() {
 	let activeSession: RecordingSession | null = null;
 
-	function buildSession(recordingId: string): RecordingSession {
+	function buildSession(recordingId: string) {
 		const subscribers = new Set<(s: WhisperingRecordingState) => void>();
 		let currentState: WhisperingRecordingState = 'RECORDING';
 		let tauriUnlisten: Promise<UnlistenFn> | null = null;
@@ -276,7 +276,8 @@ function createCpalRecorder(): RecorderService {
 			activeSession = session;
 			return Ok({ session, deviceAcquisition: deviceOutcome });
 		},
-	};
+	} satisfies RecorderService;
 }
 
-export const CpalRecorderServiceLive: RecorderService = createCpalRecorder();
+export const CpalRecorderServiceLive =
+	createCpalRecorder() satisfies RecorderService;

@@ -168,10 +168,10 @@ export function createOAuthClient({
 	fetch: fetchImpl,
 }: OAuthClientConfig) {
 	const storageKey = `epicenter.oauth.${clientId}`;
-	const client: oauth.Client = {
+	const client = {
 		client_id: clientId,
 		token_endpoint_auth_method: 'none',
-	};
+	} satisfies oauth.Client;
 
 	const httpOptions = {
 		[oauth.allowInsecureRequests]: new URL(issuer).protocol === 'http:',

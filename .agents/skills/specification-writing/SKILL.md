@@ -116,7 +116,8 @@ Never let evidence questions hide behind design coherence. Verify before deletin
 
 ## Adjacent Work Language
 
-Do not use "out of scope" as a junk drawer. Separate work by decision type:
+Do not use one rejection bucket for adjacent work. Separate work by decision
+type:
 
 ```txt
 Deferred:

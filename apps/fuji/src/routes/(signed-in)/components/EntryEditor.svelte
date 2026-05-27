@@ -1,8 +1,6 @@
 <script lang="ts">
-	import { fromDisposableCache } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
-	import { Loading } from '@epicenter/ui/loading';
 	import { ZonedNaturalLanguageDateInput } from '@epicenter/ui/natural-language-date-input';
 	import * as Popover from '@epicenter/ui/popover';
 	import { toastOnError } from '@epicenter/ui/sonner';
@@ -11,11 +9,11 @@
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
 	import { goto } from '$app/navigation';
-	import ProseMirrorEditor from '$lib/components/ProseMirrorEditor.svelte';
 	import TagInput from '$lib/components/TagInput.svelte';
 	import { formatInZone } from '$lib/format';
 	import { requireFuji } from '$lib/session';
 	import type { Entry } from '$lib/workspace';
+	import EntryBodyEditor from './EntryBodyEditor.svelte';
 
 	let { entry }: { entry: Entry } = $props();
 	const fuji = requireFuji();
@@ -31,8 +29,6 @@
 			"Couldn't save changes",
 		);
 	}
-
-	const contentDoc = fromDisposableCache(fuji.entryContentDocs, () => entry.id);
 
 	let wordCount = $state(0);
 	let isDatePopoverOpen = $state(false);
@@ -162,16 +158,12 @@
 	</div>
 
 	<!-- Editor body -->
-	{#await contentDoc.current.idb.whenLoaded}
-		<Loading class="flex-1" />
-	{:then _}
-		{#key contentDoc.current.body.binding}
-			<ProseMirrorEditor
-				yxmlfragment={contentDoc.current.body.binding}
-				onWordCountChange={(count) => (wordCount = count)}
-			/>
-		{/key}
-	{/await}
+	{#key entry.id}
+		<EntryBodyEditor
+			entryId={entry.id}
+			onWordCountChange={(count) => (wordCount = count)}
+		/>
+	{/key}
 
 	<!-- Status bar -->
 	<div

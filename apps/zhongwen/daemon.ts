@@ -29,7 +29,7 @@ export function openZhongwenDaemon({
 		deviceId,
 		openWebSocket,
 		onReconnectSignal,
-		actions: {},
+		actions: workspace.actions,
 	});
 }
 

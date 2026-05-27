@@ -1,6 +1,7 @@
 /**
- * Opensidian workspace schema: id, branded types, tables, actions factory, and
- * per-row derived guids. Pure data. No Y.Doc, no encryption, no openers.
+ * Opensidian workspace contract: id, branded types, tables, base actions, and
+ * per-row child document models. Isomorphic: no IndexedDB, WebSockets, Svelte
+ * state, browser shell APIs, or daemon process lifecycle.
  *
  * Distribution: `apps/opensidian/package.json` exports this file as the
  * `opensidian` package root. Browser code, daemon code, and tests all import
@@ -19,17 +20,21 @@ import {
 	filesTable,
 } from '@epicenter/filesystem';
 import {
+	attachTimeline,
 	column,
+	createDisposableCache,
 	createWorkspace,
 	defineTable,
 	generateId,
 	type Id,
 	type InferTableRow,
 	type Keyring,
+	onLocalUpdate,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
+import * as Y from 'yjs';
 
 export const OPENSIDIAN_ID = 'epicenter.opensidian';
 
@@ -132,15 +137,17 @@ const toolTrustTable = defineTable({
 export type ToolTrust = InferTableRow<typeof toolTrustTable>;
 
 /**
- * Build an Opensidian workspace bundle: `{ ydoc, tables, kv, [Symbol.dispose] }`.
+ * Build an Opensidian workspace bundle:
+ * `{ ydoc, tables, kv, actions, fileContentDocs }`.
  *
  * Combines the filesystem-backed notes table with the chat tables so the app
  * can store notes, conversations, messages, and tool approvals in one schema.
  *
- * Encrypted under the supplied keyring. Used by browser, daemon, and tests.
+ * Encrypted under the supplied keyring. Runtime openers attach persistence,
+ * sync, browser services, materializers, and UI state around this shared model.
  */
 export function createOpensidianWorkspace(opts: { keyring: () => Keyring }) {
-	return createWorkspace({
+	const workspace = createWorkspace({
 		id: OPENSIDIAN_ID,
 		keyring: opts.keyring,
 		tables: {
@@ -151,6 +158,34 @@ export function createOpensidianWorkspace(opts: { keyring: () => Keyring }) {
 		},
 		kv: {},
 	});
+	const fileContentDocs = createDisposableCache((fileId: FileId) => {
+		const childYdoc = new Y.Doc({
+			guid: opensidianFileContentDocGuid(fileId),
+			gc: true,
+		});
+
+		onLocalUpdate(childYdoc, () =>
+			workspace.tables.files.update(fileId, { updatedAt: Date.now() }),
+		);
+
+		return {
+			ydoc: childYdoc,
+			content: attachTimeline(childYdoc),
+			[Symbol.dispose]() {
+				childYdoc.destroy();
+			},
+		};
+	});
+
+	return {
+		...workspace,
+		actions: {},
+		fileContentDocs,
+		[Symbol.dispose]() {
+			fileContentDocs[Symbol.dispose]();
+			workspace[Symbol.dispose]();
+		},
+	};
 }
 export type OpensidianWorkspace = ReturnType<typeof createOpensidianWorkspace>;
 

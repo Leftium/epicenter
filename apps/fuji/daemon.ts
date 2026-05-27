@@ -26,7 +26,7 @@ import {
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
-import { createFujiActions, createFujiWorkspace } from './src/lib/workspace.js';
+import { createFujiWorkspace } from './src/lib/workspace.js';
 
 export function openFujiDaemon({
 	projectDir,
@@ -40,7 +40,6 @@ export function openFujiDaemon({
 }: DaemonWorkspaceContext) {
 	const workspace = createFujiWorkspace({ keyring });
 	workspace.ydoc.clientID = yDocClientId;
-	const actions = createFujiActions(workspace);
 
 	attachBunSqliteMaterializer(workspace, {
 		filePath: sqlitePath(projectDir, workspace.ydoc.guid),
@@ -57,7 +56,7 @@ export function openFujiDaemon({
 		deviceId,
 		openWebSocket,
 		onReconnectSignal,
-		actions,
+		actions: workspace.actions,
 	});
 }
 

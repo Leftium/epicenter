@@ -10,9 +10,9 @@
  *   2. infrastructure: Yjs log persistence + cloud sync via
  *      `attachDaemonInfrastructure`
  *
- * Daemon-side `actions: {}` is intentional: Opensidian's file and shell
- * actions need browser services (Yjs filesystem, in-browser SQLite, just-bash)
- * and stay in the app runtime.
+ * The shared workspace currently exposes no daemon actions. Opensidian's file
+ * and shell actions need browser services (Yjs filesystem, in-browser SQLite,
+ * just-bash) and are added only by the browser runtime.
  */
 
 import type { DaemonWorkspaceContext } from '@epicenter/workspace/daemon';
@@ -37,7 +37,7 @@ export function openOpensidianDaemon({
 		deviceId,
 		openWebSocket,
 		onReconnectSignal,
-		actions: {},
+		actions: workspace.actions,
 	});
 }
 

@@ -1,6 +1,7 @@
 /**
- * Zhongwen workspace schema: id, branded types, tables, kv, and actions.
- * Pure data. No Y.Doc, no encryption, no openers.
+ * Zhongwen workspace contract: id, branded types, tables, kv, actions, and
+ * the workspace factory. Isomorphic: no IndexedDB, WebSockets, Svelte state,
+ * browser APIs, or daemon process lifecycle.
  *
  * Distribution: this file is the `@epicenter/zhongwen` package root export.
  * Browser and daemon entrypoints import the schema from here and compose
@@ -84,7 +85,7 @@ export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function createZhongwenWorkspace(opts: { keyring: () => Keyring }) {
-	return createWorkspace({
+	const workspace = createWorkspace({
 		id: ZHONGWEN_ID,
 		keyring: opts.keyring,
 		tables: {
@@ -95,5 +96,13 @@ export function createZhongwenWorkspace(opts: { keyring: () => Keyring }) {
 			showPinyin: defineKv(Type.Boolean(), () => true),
 		},
 	});
+
+	return {
+		...workspace,
+		actions: {},
+		[Symbol.dispose]() {
+			workspace[Symbol.dispose]();
+		},
+	};
 }
 export type ZhongwenWorkspace = ReturnType<typeof createZhongwenWorkspace>;

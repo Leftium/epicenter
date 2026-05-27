@@ -48,7 +48,7 @@ export function openZhongwenBrowser({
 		openWebSocket: signedIn.openWebSocket,
 		onReconnectSignal: signedIn.onReconnectSignal,
 		waitFor: idb.whenLoaded,
-		actions: {},
+		actions: workspace.actions,
 	});
 
 	return {

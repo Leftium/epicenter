@@ -27,10 +27,7 @@ import {
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
-import {
-	createHoneycrispActions,
-	createHoneycrispWorkspace,
-} from './workspace.js';
+import { createHoneycrispWorkspace } from './workspace.js';
 
 export function openHoneycrispDaemon({
 	projectDir,
@@ -44,7 +41,6 @@ export function openHoneycrispDaemon({
 }: DaemonWorkspaceContext) {
 	const workspace = createHoneycrispWorkspace({ keyring });
 	workspace.ydoc.clientID = yDocClientId;
-	const actions = createHoneycrispActions(workspace);
 
 	attachBunSqliteMaterializer(workspace, {
 		filePath: sqlitePath(projectDir, workspace.ydoc.guid),
@@ -62,7 +58,7 @@ export function openHoneycrispDaemon({
 		deviceId,
 		openWebSocket,
 		onReconnectSignal,
-		actions,
+		actions: workspace.actions,
 	});
 }
 

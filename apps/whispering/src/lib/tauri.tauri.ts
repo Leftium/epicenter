@@ -87,7 +87,6 @@ const FsError = defineErrors({
 		cause,
 	}),
 });
-type FsError = InferErrors<typeof FsError>;
 
 async function readFileWithMimeType(path: string): Promise<{
 	bytes: Uint8Array<ArrayBuffer>;
@@ -130,7 +129,6 @@ const CommandError = defineErrors({
 		cause,
 	}),
 });
-type CommandError = InferErrors<typeof CommandError>;
 
 const command = {
 	/**
@@ -165,7 +163,6 @@ const PermissionsError = defineErrors({
 		cause,
 	}),
 });
-type PermissionsError = InferErrors<typeof PermissionsError>;
 
 const permissions = {
 	accessibility: {
@@ -176,7 +173,7 @@ const permissions = {
 					const { checkAccessibilityPermission } = await import(
 						'tauri-plugin-macos-permissions-api'
 					);
-					return await checkAccessibilityPermission();
+					return checkAccessibilityPermission();
 				},
 				catch: (error) => PermissionsError.CheckAccessibility({ cause: error }),
 			});
@@ -189,7 +186,7 @@ const permissions = {
 					const { requestAccessibilityPermission } = await import(
 						'tauri-plugin-macos-permissions-api'
 					);
-					return await requestAccessibilityPermission();
+					return requestAccessibilityPermission();
 				},
 				catch: (error) =>
 					PermissionsError.RequestAccessibility({ cause: error }),
@@ -205,7 +202,7 @@ const permissions = {
 					const { checkMicrophonePermission } = await import(
 						'tauri-plugin-macos-permissions-api'
 					);
-					return await checkMicrophonePermission();
+					return checkMicrophonePermission();
 				},
 				catch: (error) => PermissionsError.CheckMicrophone({ cause: error }),
 			});
@@ -218,7 +215,7 @@ const permissions = {
 					const { requestMicrophonePermission } = await import(
 						'tauri-plugin-macos-permissions-api'
 					);
-					return await requestMicrophonePermission();
+					return requestMicrophonePermission();
 				},
 				catch: (error) => PermissionsError.RequestMicrophone({ cause: error }),
 			});
@@ -238,7 +235,6 @@ const TrayError = defineErrors({
 		cause,
 	}),
 });
-type TrayError = InferErrors<typeof TrayError>;
 
 const TRAY_ID = 'whispering-tray';
 let trayPromise: ReturnType<typeof initTray> | null = null;
@@ -399,7 +395,6 @@ const AutostartError = defineErrors({
 		cause,
 	}),
 });
-type AutostartError = InferErrors<typeof AutostartError>;
 
 // Public namespaces ------------------------------------------------
 // Each capability picks ONE shape per method: TanStack where reactivity,

@@ -78,10 +78,7 @@ async function loadForCloudUpload(
 		});
 	}
 
-	const { data: rawBlob, error: blobError } =
-		await services.blobs.audio.getBlob(recordingId);
-	if (blobError) return Err(blobError);
-	return Ok(rawBlob);
+	return services.blobs.audio.getBlob(recordingId);
 }
 
 /**
@@ -249,80 +246,54 @@ async function dispatchCloudTranscription(
 
 	switch (selectedService) {
 		case 'OpenAI': {
-			const { data, error } = await services.transcriptions.openai.transcribe(
-				audio,
-				{
-					outputLanguage,
-					prompt,
-					apiKey: deviceConfig.get('apiKeys.openai'),
-					modelName: settings.get('transcription.openai.model'),
-					baseURL: deviceConfig.get('apiEndpoints.openai') || undefined,
-				},
-			);
-			if (error) return Err(error);
-			return Ok(data);
+			return services.transcriptions.openai.transcribe(audio, {
+				outputLanguage,
+				prompt,
+				apiKey: deviceConfig.get('apiKeys.openai'),
+				modelName: settings.get('transcription.openai.model'),
+				baseURL: deviceConfig.get('apiEndpoints.openai') || undefined,
+			});
 		}
 		case 'Groq': {
-			const { data, error } = await services.transcriptions.groq.transcribe(
-				audio,
-				{
-					outputLanguage,
-					prompt,
-					apiKey: deviceConfig.get('apiKeys.groq'),
-					modelName: settings.get('transcription.groq.model'),
-					baseURL: deviceConfig.get('apiEndpoints.groq') || undefined,
-				},
-			);
-			if (error) return Err(error);
-			return Ok(data);
+			return services.transcriptions.groq.transcribe(audio, {
+				outputLanguage,
+				prompt,
+				apiKey: deviceConfig.get('apiKeys.groq'),
+				modelName: settings.get('transcription.groq.model'),
+				baseURL: deviceConfig.get('apiEndpoints.groq') || undefined,
+			});
 		}
 		case 'speaches': {
-			const { data: speachesData, error: speachesError } =
-				await services.transcriptions.speaches.transcribe(audio, {
-					outputLanguage,
-					prompt,
-					modelId: deviceConfig.get('transcription.speaches.modelId'),
-					baseUrl: deviceConfig.get('transcription.speaches.baseUrl'),
-				});
-			if (speachesError) return Err(speachesError);
-			return Ok(speachesData);
+			return services.transcriptions.speaches.transcribe(audio, {
+				outputLanguage,
+				prompt,
+				modelId: deviceConfig.get('transcription.speaches.modelId'),
+				baseUrl: deviceConfig.get('transcription.speaches.baseUrl'),
+			});
 		}
 		case 'ElevenLabs': {
-			const { data, error } =
-				await services.transcriptions.elevenlabs.transcribe(audio, {
-					outputLanguage,
-					prompt,
-					apiKey: deviceConfig.get('apiKeys.elevenlabs'),
-					modelName: settings.get('transcription.elevenlabs.model'),
-				});
-			if (error) return Err(error);
-			return Ok(data);
+			return services.transcriptions.elevenlabs.transcribe(audio, {
+				outputLanguage,
+				prompt,
+				apiKey: deviceConfig.get('apiKeys.elevenlabs'),
+				modelName: settings.get('transcription.elevenlabs.model'),
+			});
 		}
 		case 'Deepgram': {
-			const { data, error } = await services.transcriptions.deepgram.transcribe(
-				audio,
-				{
-					outputLanguage,
-					prompt,
-					apiKey: deviceConfig.get('apiKeys.deepgram'),
-					modelName: settings.get('transcription.deepgram.model'),
-				},
-			);
-			if (error) return Err(error);
-			return Ok(data);
+			return services.transcriptions.deepgram.transcribe(audio, {
+				outputLanguage,
+				prompt,
+				apiKey: deviceConfig.get('apiKeys.deepgram'),
+				modelName: settings.get('transcription.deepgram.model'),
+			});
 		}
 		case 'Mistral': {
-			const { data, error } = await services.transcriptions.mistral.transcribe(
-				audio,
-				{
-					outputLanguage,
-					prompt,
-					apiKey: deviceConfig.get('apiKeys.mistral'),
-					modelName: settings.get('transcription.mistral.model'),
-				},
-			);
-			if (error) return Err(error);
-			return Ok(data);
+			return services.transcriptions.mistral.transcribe(audio, {
+				outputLanguage,
+				prompt,
+				apiKey: deviceConfig.get('apiKeys.mistral'),
+				modelName: settings.get('transcription.mistral.model'),
+			});
 		}
 		default:
 			return TranscriptionOperationError.NoTranscriptionServiceSelected();

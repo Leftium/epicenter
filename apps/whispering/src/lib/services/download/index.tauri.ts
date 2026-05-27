@@ -1,6 +1,6 @@
 import { save } from '@tauri-apps/plugin-dialog';
 import { writeFile } from '@tauri-apps/plugin-fs';
-import { Err, Ok, tryAsync } from 'wellcrafted/result';
+import { Err, tryAsync } from 'wellcrafted/result';
 import { getAudioExtension } from '$lib/services/transcription/utils';
 import type { DownloadService } from './types';
 import { DownloadError } from './types';
@@ -21,14 +21,12 @@ export const DownloadServiceLive = {
 		if (path === null) {
 			return DownloadError.SaveCancelled();
 		}
-		const { error: writeError } = await tryAsync({
+		return tryAsync({
 			try: async () => {
 				const contents = new Uint8Array(await blob.arrayBuffer());
 				await writeFile(path, contents);
 			},
 			catch: (error) => DownloadError.WriteFailed({ cause: error }),
 		});
-		if (writeError) return Err(writeError);
-		return Ok(undefined);
 	},
 } satisfies DownloadService;

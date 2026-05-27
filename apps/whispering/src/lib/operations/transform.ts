@@ -73,13 +73,15 @@ export const TransformError = defineErrors({
 });
 export type TransformError = InferErrors<typeof TransformError>;
 
+type StepError = string | { message: string };
+
 async function handleStep({
 	input,
 	step,
 }: {
 	input: string;
 	step: TransformationStep;
-}): Promise<Result<string, string>> {
+}): Promise<Result<string, StepError>> {
 	switch (step.type) {
 		case 'find_replace': {
 			const { findText, replaceText, useRegex } = step;
@@ -116,28 +118,24 @@ async function handleStep({
 					?.trim();
 				const baseUrl = stepBaseUrl || defaultBaseUrl || '';
 
-				const { data, error } = await services.completions.custom.complete({
+				return services.completions.custom.complete({
 					apiKey: deviceConfig.get('apiKeys.custom'),
 					model,
 					baseUrl,
 					systemPrompt,
 					userPrompt,
 				});
-				if (error) return Err(error.message);
-				return Ok(data);
 			}
 
 			const config = STANDARD_PROVIDER_CONFIG[inferenceProvider];
 			if (!config) return Err(`Unsupported provider: ${inferenceProvider}`);
 
-			const { data, error } = await config.service.complete({
+			return config.service.complete({
 				apiKey: deviceConfig.get(config.apiKeyPath),
 				model: step[config.modelKey] as string,
 				systemPrompt,
 				userPrompt,
 			});
-			if (error) return Err(error.message);
-			return Ok(data);
 		}
 
 		default:
@@ -210,13 +208,14 @@ export async function runTransformation({
 		});
 
 		if (isErr(handleStepResult)) {
+			const stepError = extractErrorMessage(handleStepResult.error);
 			const failedNow = new Date().toISOString();
 			transformationStepRuns.set({
 				...stepRun,
 				result: {
 					status: 'failed',
 					completedAt: failedNow,
-					error: handleStepResult.error,
+					error: stepError,
 				},
 			});
 			transformationRuns.set({
@@ -224,10 +223,10 @@ export async function runTransformation({
 				result: {
 					status: 'failed',
 					completedAt: failedNow,
-					error: handleStepResult.error,
+					error: stepError,
 				},
 			} satisfies TransformationRun);
-			return TransformError.StepFailed({ message: handleStepResult.error });
+			return TransformError.StepFailed({ message: stepError });
 		}
 
 		const handleStepOutput = handleStepResult.data;

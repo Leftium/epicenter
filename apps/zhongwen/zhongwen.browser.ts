@@ -23,7 +23,7 @@ import {
 	roomWsUrl,
 	wipeLocalStorage,
 } from '@epicenter/workspace';
-import { createZhongwenWorkspace } from '@epicenter/zhongwen';
+import { createZhongwenWorkspace } from './zhongwen';
 
 export function openZhongwenBrowser({
 	signedIn,

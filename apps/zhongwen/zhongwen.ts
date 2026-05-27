@@ -3,14 +3,15 @@
  * the workspace factory. Isomorphic: no IndexedDB, WebSockets, Svelte state,
  * browser APIs, or daemon process lifecycle.
  *
- * Distribution: this file is the `@epicenter/zhongwen` package root export.
- * Browser and daemon entrypoints import the schema from here and compose
- * runtime-specific attachments around it. The table and KV shapes here are
- * the wire contract for sync; forking a column shape breaks sync
- * compatibility with peers running the canonical schema.
+ * Distribution: this file is the `@epicenter/zhongwen` package root file
+ * (the target of the package's `"."` export). Browser and daemon entrypoints
+ * import the schema from here and compose runtime-specific attachments
+ * around it. The table and KV shapes here are the wire contract for sync;
+ * forking a column shape breaks sync compatibility with peers running the
+ * canonical schema.
  *
  * Composition lives elsewhere:
- *  - `apps/zhongwen/src/routes/(signed-in)/zhongwen/browser.ts`
+ *  - `apps/zhongwen/zhongwen.browser.ts`
  *      → `openZhongwenBrowser({ signedIn, deviceId })`
  *  - `apps/zhongwen/project.ts` → `zhongwen()` mount factory
  */

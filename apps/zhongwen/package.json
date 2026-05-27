@@ -5,7 +5,7 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
-		".": "./workspace.ts",
+		".": "./zhongwen.ts",
 		"./project": "./project.ts"
 	},
 	"scripts": {

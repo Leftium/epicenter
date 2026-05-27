@@ -10,7 +10,7 @@
 import { defineWorkspace } from '@epicenter/workspace';
 import { defineMount } from '@epicenter/workspace/daemon';
 import { attachProjectInfrastructure } from '@epicenter/workspace/node';
-import { createZhongwenWorkspace } from './workspace.js';
+import { createZhongwenWorkspace } from './zhongwen.js';
 
 export function zhongwen() {
 	return defineMount({

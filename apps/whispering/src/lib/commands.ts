@@ -2,9 +2,7 @@ import type { ShortcutEvent } from '@tauri-apps/plugin-global-shortcut';
 import {
 	cancelManualRecording,
 	startManualRecording,
-	startVadRecording,
 	stopManualRecording,
-	stopVadRecording,
 	toggleManualRecording,
 	toggleVadRecording,
 } from '$lib/operations/recording';
@@ -62,34 +60,10 @@ export const commands = [
 		callback: () => toggleManualRecording(),
 	},
 	{
-		id: 'startManualRecording',
-		title: 'Start recording',
-		on: ['Pressed'],
-		callback: () => startManualRecording(),
-	},
-	{
-		id: 'stopManualRecording',
-		title: 'Stop recording',
-		on: ['Pressed'],
-		callback: () => stopManualRecording(),
-	},
-	{
 		id: 'cancelManualRecording',
 		title: 'Cancel recording',
 		on: ['Pressed'],
 		callback: () => cancelManualRecording(),
-	},
-	{
-		id: 'startVadRecording',
-		title: 'Start voice activated recording',
-		on: ['Pressed'],
-		callback: () => startVadRecording(),
-	},
-	{
-		id: 'stopVadRecording',
-		title: 'Stop voice activated recording',
-		on: ['Pressed'],
-		callback: () => stopVadRecording(),
 	},
 	{
 		id: 'toggleVadRecording',

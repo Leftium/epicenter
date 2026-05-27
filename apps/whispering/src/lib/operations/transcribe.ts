@@ -229,7 +229,6 @@ async function dispatchCloudTranscription(
 
 	const outputLanguage = getOutputLanguage();
 	const prompt = settings.get('transcription.prompt');
-	const temperature = String(settings.get('transcription.temperature'));
 
 	switch (selectedService) {
 		case 'OpenAI': {
@@ -238,7 +237,6 @@ async function dispatchCloudTranscription(
 				{
 					outputLanguage,
 					prompt,
-					temperature,
 					apiKey: deviceConfig.get('apiKeys.openai'),
 					modelName: settings.get('transcription.openai.model'),
 					baseURL: deviceConfig.get('apiEndpoints.openai') || undefined,
@@ -253,7 +251,6 @@ async function dispatchCloudTranscription(
 				{
 					outputLanguage,
 					prompt,
-					temperature,
 					apiKey: deviceConfig.get('apiKeys.groq'),
 					modelName: settings.get('transcription.groq.model'),
 					baseURL: deviceConfig.get('apiEndpoints.groq') || undefined,
@@ -267,7 +264,6 @@ async function dispatchCloudTranscription(
 				await services.transcriptions.speaches.transcribe(audio, {
 					outputLanguage,
 					prompt,
-					temperature,
 					modelId: deviceConfig.get('transcription.speaches.modelId'),
 					baseUrl: deviceConfig.get('transcription.speaches.baseUrl'),
 				});
@@ -279,7 +275,6 @@ async function dispatchCloudTranscription(
 				await services.transcriptions.elevenlabs.transcribe(audio, {
 					outputLanguage,
 					prompt,
-					temperature,
 					apiKey: deviceConfig.get('apiKeys.elevenlabs'),
 					modelName: settings.get('transcription.elevenlabs.model'),
 				});
@@ -292,7 +287,6 @@ async function dispatchCloudTranscription(
 				{
 					outputLanguage,
 					prompt,
-					temperature,
 					apiKey: deviceConfig.get('apiKeys.deepgram'),
 					modelName: settings.get('transcription.deepgram.model'),
 				},
@@ -306,7 +300,6 @@ async function dispatchCloudTranscription(
 				{
 					outputLanguage,
 					prompt,
-					temperature,
 					apiKey: deviceConfig.get('apiKeys.mistral'),
 					modelName: settings.get('transcription.mistral.model'),
 				},

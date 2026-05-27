@@ -13,7 +13,6 @@ case 'OpenAI': {
 		{
 			outputLanguage,
 			prompt,
-			temperature,
 			apiKey: deviceConfig.get('apiKeys.openai'),
 			modelName: settings.get('transcription.openai.model'),
 			baseURL: deviceConfig.get('apiEndpoints.openai') || undefined,

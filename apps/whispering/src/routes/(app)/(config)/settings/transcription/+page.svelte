@@ -738,28 +738,6 @@
 		</Field.Field>
 
 		<Field.Field>
-			<Field.Label for="temperature">Temperature</Field.Label>
-			<Input
-				id="temperature"
-				type="number"
-				min="0"
-				max="1"
-				step="0.1"
-				placeholder="0"
-				autocomplete="off"
-				disabled={!currentServiceCapabilities.supportsTemperature}
-				bind:value={() => settings.get('transcription.temperature'),
-					(value) =>
-						settings.set('transcription.temperature', Number(value))}
-			/>
-			<Field.Description>
-				{currentServiceCapabilities.supportsTemperature
-					? "Controls randomness in the model's output. 0 is focused and deterministic, 1 is more creative."
-					: 'Temperature is not supported for local models (transcribe-rs)'}
-			</Field.Description>
-		</Field.Field>
-
-		<Field.Field>
 			<Field.Label for="transcription-prompt">System Prompt</Field.Label>
 			<Textarea
 				id="transcription-prompt"

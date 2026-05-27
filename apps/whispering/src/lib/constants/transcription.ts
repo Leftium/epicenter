@@ -39,7 +39,6 @@ export const TRANSCRIPTION = {
 		],
 		capabilities: {
 			supportsPrompt: true,
-			supportsTemperature: true,
 			supportsLanguage: true,
 		},
 	},
@@ -63,7 +62,6 @@ export const TRANSCRIPTION = {
 		],
 		capabilities: {
 			supportsPrompt: true,
-			supportsTemperature: true,
 			supportsLanguage: true,
 		},
 	},
@@ -93,7 +91,6 @@ export const TRANSCRIPTION = {
 		],
 		capabilities: {
 			supportsPrompt: true,
-			supportsTemperature: true,
 			supportsLanguage: true,
 		},
 	},
@@ -134,7 +131,6 @@ export const TRANSCRIPTION = {
 		],
 		capabilities: {
 			supportsPrompt: true,
-			supportsTemperature: true,
 			supportsLanguage: true,
 		},
 	},
@@ -158,7 +154,6 @@ export const TRANSCRIPTION = {
 		],
 		capabilities: {
 			supportsPrompt: true,
-			supportsTemperature: true,
 			supportsLanguage: true,
 		},
 	},
@@ -173,7 +168,6 @@ export const TRANSCRIPTION = {
 		models: null,
 		capabilities: {
 			supportsPrompt: true,
-			supportsTemperature: false,
 			supportsLanguage: true,
 		},
 	},
@@ -183,7 +177,6 @@ export const TRANSCRIPTION = {
 		models: null,
 		capabilities: {
 			supportsPrompt: false,
-			supportsTemperature: false,
 			supportsLanguage: false,
 		},
 	},
@@ -193,7 +186,6 @@ export const TRANSCRIPTION = {
 		models: null,
 		capabilities: {
 			supportsPrompt: false,
-			supportsTemperature: false,
 			supportsLanguage: false,
 		},
 	},
@@ -206,7 +198,6 @@ export const TRANSCRIPTION = {
 		models: null,
 		capabilities: {
 			supportsPrompt: true,
-			supportsTemperature: true,
 			supportsLanguage: true,
 		},
 	},

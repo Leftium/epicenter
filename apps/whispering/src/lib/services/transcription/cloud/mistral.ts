@@ -72,7 +72,6 @@ export const MistralTranscriptionServiceLive = {
 		audioBlob: Blob,
 		options: {
 			prompt: string;
-			temperature: string;
 			outputLanguage: string;
 			apiKey: string;
 			modelName: string;
@@ -109,9 +108,6 @@ export const MistralTranscriptionServiceLive = {
 						options.outputLanguage !== 'auto'
 							? options.outputLanguage
 							: undefined,
-					temperature: options.temperature
-						? Number.parseFloat(options.temperature)
-						: undefined,
 				}),
 			catch: (error) => {
 				if (error instanceof MistralConnectionError) {

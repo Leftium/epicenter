@@ -81,7 +81,6 @@ export const SpeachesTranscriptionServiceLive = {
 		audioBlob: Blob,
 		options: {
 			prompt: string;
-			temperature: string;
 			outputLanguage: string;
 			modelId: string;
 			baseUrl: string;
@@ -99,8 +98,6 @@ export const SpeachesTranscriptionServiceLive = {
 			formData.append('language', options.outputLanguage);
 		}
 		if (options.prompt) formData.append('prompt', options.prompt);
-		if (options.temperature)
-			formData.append('temperature', options.temperature);
 
 		const { data: whisperApiResponse, error: postError } =
 			await HttpServiceLive.post({

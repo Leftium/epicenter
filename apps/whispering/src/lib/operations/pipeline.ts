@@ -5,11 +5,11 @@ import {
 } from '$lib/operations/delivery';
 import { notify } from '$lib/operations/notify';
 import { sound } from '$lib/operations/sound';
-import { transcribeArtifact } from '$lib/operations/transcribe';
+import { transcribeAudio } from '$lib/operations/transcribe';
 import { runTransformation } from '$lib/operations/transform';
 import { services } from '$lib/services';
-import { artifactToBlob } from '$lib/services/recorder/artifact';
-import type { AudioArtifact } from '$lib/services/recorder/types';
+import { pcmToWavBlob } from '$lib/services/recorder/pcm-to-wav';
+import type { RecorderAudio } from '$lib/services/recorder/types';
 import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { transformations } from '$lib/state/transformations.svelte';
@@ -22,14 +22,16 @@ import { transformations } from '$lib/state/transformations.svelte';
  * When omitted (e.g., VAD recording, file uploads), a new ID is generated here.
  */
 export async function processRecordingPipeline({
-	artifact,
+	audio,
 	recordingId,
+	durationMs,
 	toastId,
 	completionTitle,
 	completionDescription,
 }: {
-	artifact: AudioArtifact;
+	audio: RecorderAudio;
 	recordingId?: string;
+	durationMs: number | null;
 	toastId: string;
 	completionTitle: string;
 	completionDescription: string;
@@ -43,7 +45,7 @@ export async function processRecordingPipeline({
 		recordedAt: now,
 		updatedAt: now,
 		transcript: '',
-		duration: null,
+		duration: durationMs,
 		transcriptionStatus: 'UNPROCESSED',
 	} as const;
 
@@ -55,15 +57,13 @@ export async function processRecordingPipeline({
 	});
 
 	recordings.set(recording);
-	// History save still consumes a Blob today. Materialize once and run
-	// the save in parallel with transcription; for Pcm artifacts this is
-	// in-memory WAV synthesis (cheap), for File it's a disk read.
+	// History save consumes a Blob: PCM gets WAV-synthesized once, Blob is
+	// passed through. Run the save in parallel with transcription.
 	const saveAudioPromise = (async () => {
-		const { data: blob, error } = await artifactToBlob(artifact);
-		if (error) return { data: null, error } as const;
+		const blob = audio instanceof Blob ? audio : pcmToWavBlob(audio);
 		return await services.blobs.audio.save(recording.id, blob);
 	})();
-	const transcribePromise = transcribeArtifact(artifact);
+	const transcribePromise = transcribeAudio(audio);
 
 	const { data: transcribedText, error: transcribeError } =
 		await transcribePromise;

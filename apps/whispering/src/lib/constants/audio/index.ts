@@ -21,6 +21,7 @@ export {
 } from './recording-states';
 export {
 	DEFAULT_SAMPLE_RATE,
+	RECORDER_OUTPUT_RATE,
 	SAMPLE_RATE_OPTIONS,
 	SAMPLE_RATES,
 	type SampleRate,

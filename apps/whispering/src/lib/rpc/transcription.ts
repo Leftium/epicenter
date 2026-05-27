@@ -1,5 +1,5 @@
 import { Err, Ok, partitionResults, type Result } from 'wellcrafted/result';
-import { transcribeBlob } from '$lib/operations/transcribe';
+import { transcribeAudio } from '$lib/operations/transcribe';
 import { WhisperingErr, type WhisperingError } from '$lib/result';
 import { defineMutation, queryClient } from '$lib/rpc/client';
 import { services } from '$lib/services';
@@ -35,7 +35,7 @@ export const transcription = {
 
 			recordings.update(recording.id, { transcriptionStatus: 'TRANSCRIBING' });
 			const { data: transcribedText, error: transcribeError } =
-				await transcribeBlob(audioBlob);
+				await transcribeAudio(audioBlob);
 			if (transcribeError) {
 				recordings.update(recording.id, { transcriptionStatus: 'FAILED' });
 				return Err(transcribeError);
@@ -64,7 +64,7 @@ export const transcription = {
 						});
 					}
 
-					return await transcribeBlob(audioBlob);
+					return await transcribeAudio(audioBlob);
 				}),
 			);
 			const partitionedResults = partitionResults(results);

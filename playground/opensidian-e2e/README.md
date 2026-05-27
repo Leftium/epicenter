@@ -18,6 +18,11 @@ This stores your credentials at `<dataDir>/auth/<host>.json`, where `dataDir` is
 
 ## Usage
 
+This playground predates the current config-owned daemon loader. To run it
+today, add an `epicenter.config.ts` at `playground/opensidian-e2e/` that
+registers `workspaces/opensidian/daemon.ts`, or move the daemon into a current
+project folder. `workspaces/` is not scanned automatically.
+
 Run the workspace:
 
 ```bash
@@ -29,7 +34,10 @@ EPICENTER_SERVER=http://localhost:8787 \
   epicenter daemon up -C playground/opensidian-e2e
 ```
 
-Daemon startup imports `workspaces/opensidian/daemon.ts`, which kicks off persistence, sync, markdown materialization, and the SQLite mirror. The process stays alive until Ctrl+C or `epicenter daemon down`.
+Daemon startup imports the routes declared by `epicenter.config.ts`. When that
+config points at `workspaces/opensidian/daemon.ts`, the daemon kicks off
+persistence, sync, markdown materialization, and the SQLite mirror. The process
+stays alive until Ctrl+C or `epicenter daemon down`.
 
 Invoke a defined action:
 
@@ -65,9 +73,10 @@ bun run scripts/list-files.ts
 
 ```
 playground/opensidian-e2e/
+├── epicenter.config.ts              # Required by the current daemon loader
 ├── workspaces/
 │   └── opensidian/
-│       └── daemon.ts                  # Folder-routed daemon extension
+│       └── daemon.ts                  # Project-local daemon module
 └── .epicenter/
     ├── yjs/
     │   ├── opensidian.db              # Yjs CRDT update log (source of truth)

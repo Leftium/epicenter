@@ -1,4 +1,11 @@
-/** Recording markdown export is attached only from the Tauri workspace entry. */
+/**
+ * Whispering's Tauri workspace opener.
+ *
+ * Conceptually this is `openWhisperingTauri()`: it creates the shared
+ * `createWhisperingWorkspace()` model, then attaches Tauri-runtime resources
+ * around it. The export name predates the repo-wide `open<App>Tauri` naming
+ * convention.
+ */
 
 import { attachBroadcastChannel, attachIndexedDb } from '@epicenter/workspace';
 import { attachRecordingMarkdownExport } from '$lib/recording-markdown-export';

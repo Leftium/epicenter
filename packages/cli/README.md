@@ -58,7 +58,20 @@ epicenter peers -C ~/vault
 
 ## Daemon Extensions
 
-`epicenter.config.ts` owns route identity. The daemon module path is only an import chosen by the project, and one daemon process can host every route in the map.
+`epicenter.config.ts` owns project discovery. The default shape is one project folder with one workspace definition:
+
+```ts
+import { openFujiDaemon } from '@epicenter/fuji/daemon';
+import { defineWorkspace } from '@epicenter/workspace';
+
+export default defineWorkspace({
+	open: openFujiDaemon,
+});
+```
+
+In that single-workspace shape, the route name comes from the project folder basename. If the folder is `fuji`, actions are exposed as `fuji.<action_key>`.
+
+Multi-route projects still use `defineConfig({ daemon: { routes } })`. The daemon module path is only an import chosen by the project, and one daemon process can host every route in the map.
 
 ```
 my-vault/
@@ -89,7 +102,7 @@ The imported module exports a route-agnostic daemon workspace definition. The ro
 import { defineWorkspace } from '@epicenter/workspace';
 
 export default defineWorkspace({
-	async open({ keyring, openWebSocket, projectDir, route, owner, deviceId, yDocClientId }) {
+	async open({ keyring, openWebSocket, projectDir, route, ownerId, deviceId, yDocClientId }) {
 		// Open the long-lived local runtime.
 		// `route` was supplied by epicenter.config.ts (or derived from the
 		// project directory's basename in single-workspace projects).

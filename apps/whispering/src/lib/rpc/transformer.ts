@@ -16,6 +16,16 @@ const TransformerRpcError = defineErrors({
 });
 type TransformerRpcError = InferErrors<typeof TransformerRpcError>;
 
+type TransformInputParams = {
+	input: string;
+	transformation: Transformation;
+};
+
+type TransformRecordingParams = {
+	recordingId: string;
+	transformation: Transformation;
+};
+
 export const transformerKeys = defineKeys({
 	transformInput: ['transformer', 'transformInput'],
 	transformRecording: ['transformer', 'transformRecording'],
@@ -32,10 +42,7 @@ export const transformer = {
 		mutationFn: ({
 			input,
 			transformation,
-		}: {
-			input: string;
-			transformation: Transformation;
-		}): Promise<Result<string, TransformError>> =>
+		}: TransformInputParams): Promise<Result<string, TransformError>> =>
 			runTransformation({ input, transformation, recordingId: null }),
 	}),
 
@@ -44,10 +51,9 @@ export const transformer = {
 		mutationFn: ({
 			recordingId,
 			transformation,
-		}: {
-			recordingId: string;
-			transformation: Transformation;
-		}): Promise<Result<string, TransformError | TransformerRpcError>> => {
+		}: TransformRecordingParams): Promise<
+			Result<string, TransformError | TransformerRpcError>
+		> => {
 			const recording = recordings.get(recordingId);
 			if (!recording)
 				return Promise.resolve(TransformerRpcError.RecordingNotFound());

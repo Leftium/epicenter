@@ -16,7 +16,6 @@ export const download = {
 		mutationFn: async (
 			recording: Recording,
 		): Promise<Result<void, BlobError | DownloadError>> => {
-			// Fetch audio blob by ID
 			const { data: audioBlob, error: getAudioBlobError } =
 				await services.blobs.audio.getBlob(recording.id);
 

@@ -57,6 +57,52 @@ If your work has side effects beyond cache, it's an **orchestration** and belong
 
 This isn't an exception to the rule: it's a direct consequence of it. Orchestrations aren't adapter-shaped, so they don't live here; observing their lifecycle is the component's concern, not the rpc layer's.
 
+## Canonical module shape
+
+Keep each adapter file in source-of-truth order:
+
+```ts
+const ExampleError = defineErrors({
+  MissingThing: () => ({ message: 'Could not find the requested thing.' }),
+});
+type ExampleError = InferErrors<typeof ExampleError>;
+
+type TransformThingInput = {
+  id: string;
+  input: string;
+};
+
+export const exampleKeys = defineKeys({
+  all: ['example'],
+  detail: (id: string) => ['example', 'detail', id] as const,
+  transformThing: ['example', 'transformThing'],
+});
+
+export const example = {
+  detail: (id: Accessor<string>) =>
+    defineQuery({
+      queryKey: exampleKeys.detail(id()),
+      queryFn: () => services.example.detail(id()),
+    }),
+
+  transformThing: defineMutation({
+    mutationKey: exampleKeys.transformThing,
+    mutationFn: (params: TransformThingInput) =>
+      services.example.transform(params),
+  }),
+};
+```
+
+Rules:
+
+- Define keys with `defineKeys` and export the key map beside the adapter that owns it.
+- Static key entries do not need `as const`; `defineKeys` preserves literal tuple types for them.
+- Key factories need `as const` when the literal positions matter, like `['audio', 'playbackUrl', id] as const`.
+- Keep keys in the owning module unless another layer must share the same fallback key, like web settings importing `autostartKeys` when Tauri is unavailable.
+- Keep adapter-specific errors local unless another module needs to name that exact error union.
+- Name input object types when a mutation takes a structured parameter. Inline the type only for single-use primitives.
+- If you export the exact return shape of a `create*` factory, derive it with `ReturnType<typeof createThing>` instead of duplicating the object shape.
+
 ## Dependency direction
 
 ```

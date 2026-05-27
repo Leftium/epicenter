@@ -2,9 +2,9 @@
 
 Two-peer minimal repro for the `system.describe` cross-peer fetch.
 
-Both project configs register a `notes` daemon route. Each route imports a daemon module from `workspaces/notes/daemon.ts`, but the route identity comes from `epicenter.config.ts`; `workspaces/` is only the source layout. The two daemon modules construct the same workspace (`epicenter.notes-repro`) with distinct peer ids, so each appears in the other's awareness.
+Both project configs default-export a `notes` mount from `workspaces/notes/daemon.ts`. `Mount.name` is the canonical CLI prefix. The two mount modules construct the same workspace (`epicenter.notes-repro`) with distinct peer ids, so each appears in the other's awareness.
 
-This example runs one daemon process per project directory. In a normal project, one daemon process can host many route keys from the same `daemon.routes` map. This repro keeps peer-a and peer-b in separate project directories so they behave like two different machines.
+This example runs one daemon process per project directory. In a normal project, one daemon can host many mounts (default-export `Mount[]`). This repro keeps peer-a and peer-b in separate project directories so they behave like two different machines.
 
 Exercises `createRemoteClient({ awareness, rpc }).describe(peerId)` end-to-end against the deployed API.
 

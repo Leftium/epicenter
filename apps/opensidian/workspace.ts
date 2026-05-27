@@ -11,7 +11,7 @@
  *
  * Composition lives elsewhere:
  *  - `apps/opensidian/src/lib/opensidian/browser.ts` -> `openOpensidianBrowser({ signedIn, deviceId })`
- *  - `apps/opensidian/daemon.ts`                     -> `openOpensidianDaemon(ctx)`
+ *  - `apps/opensidian/project.ts`                    -> `opensidian()` mount factory
  */
 
 import {

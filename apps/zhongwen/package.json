@@ -6,7 +6,7 @@
 	"type": "module",
 	"exports": {
 		".": "./workspace.ts",
-		"./daemon": "./daemon.ts"
+		"./project": "./project.ts"
 	},
 	"scripts": {
 		"dev": "bun run dev:local",

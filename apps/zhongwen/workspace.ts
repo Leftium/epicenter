@@ -12,7 +12,7 @@
  * Composition lives elsewhere:
  *  - `apps/zhongwen/src/routes/(signed-in)/zhongwen/browser.ts`
  *      → `openZhongwenBrowser({ signedIn, deviceId })`
- *  - `apps/zhongwen/daemon.ts` → `openZhongwenDaemon(ctx)`
+ *  - `apps/zhongwen/project.ts` → `zhongwen()` mount factory
  */
 
 import {

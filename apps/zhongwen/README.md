@@ -8,13 +8,13 @@ Bilingual Chinese-English chat app for learning Mandarin. Users ask questions in
 
 **Markdown + pinyin**: Assistant messages are parsed with `marked` (GFM, breaks enabled) into HTML, then `annotateHtml()` in `src/lib/pinyin/annotate.ts` walks text nodes (splitting on HTML tags via regex) and wraps CJK runs with `<ruby>` pinyin tags using `pinyin-pro`. Output is sanitized with DOMPurify (allowing ruby/rt/rp), memoized via `$derived` in `AssistantMessagePart.svelte`, and rendered via `{@html}` inside `<div class="prose prose-sm">`.
 
-**Workspace state**: `createZhongwenWorkspace()` in `workspace.ts` is the shared isomorphic model. It defines `epicenter.zhongwen`, the `conversations` and `chatMessages` tables, the `showPinyin` KV value, and the app action registry. `openZhongwenBrowser()` attaches encrypted local storage and collaboration around that model. `openZhongwenDaemon()` attaches daemon persistence and sync around the same model.
+**Workspace state**: `createZhongwenWorkspace()` in `workspace.ts` is the shared isomorphic model. It defines `epicenter.zhongwen`, the `conversations` and `chatMessages` tables, the `showPinyin` KV value, and the app action registry. `openZhongwenBrowser()` attaches encrypted local storage and collaboration around that model. `zhongwen()` returns the project mount that attaches daemon persistence and sync around the same model.
 
 ```txt
 createWorkspace()
   -> createZhongwenWorkspace()
     -> openZhongwenBrowser()
-    -> openZhongwenDaemon()
+    -> zhongwen() (project mount)
 ```
 
 **UI state**: `createChatState()` in `src/routes/(signed-in)/chat/chat-state.svelte.ts` is a Svelte 5 factory for the live chat UI. It bridges workspace-backed conversations with the streaming `ChatClient` handles used while a model response is in flight.

@@ -44,9 +44,9 @@ For ranked search with snippets, use `openSqliteReader({ filePath: sqlitePath(..
 
 ## Writes: typed actions through the daemon
 
-`connectDaemonActions<TActions>({ route, projectDir })` returns a typed proxy. `route` is the daemon route name (`'fuji'` for the Fuji example); the proxy translates `fuji.entries_update({ ... })` into a `POST /run` over the daemon's Unix socket in the OS runtime directory. The daemon invokes the action in-process against the live Y.Doc and returns a JSON `Result<T>`.
+`connectDaemonActions<TActions>({ route, projectDir })` returns a typed proxy. `route` is the mount name (`'fuji'` for the Fuji example); the proxy translates `fuji.entries_update({ ... })` into a `POST /run` over the daemon's Unix socket in the OS runtime directory. The daemon invokes the action in-process against the live Y.Doc and returns a JSON `Result<T>`.
 
-The route name is the key under `daemon.routes` in `epicenter.config.ts`. Daemon modules do not declare their own route, and `workspaces/` is only a folder convention for keeping source files tidy.
+The mount name comes from the `Mount.name` field on the value `epicenter.config.ts` default-exports. App-package factories like `fuji()` carry their canonical name internally.
 
 Two consequences fall out:
 

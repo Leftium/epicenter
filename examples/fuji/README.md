@@ -37,7 +37,7 @@ bun x epicenter daemon up -C examples/fuji
 ```
 
 On first run the daemon creates `.epicenter/` and writes `sqlite.db` plus the
-Yjs persistence files used by `attachDaemonInfrastructure`. The current daemon
+Yjs persistence files used by `attachProjectInfrastructure`. The current daemon
 materializes the live Y.Doc out to markdown and SQLite. The project-layout
 spec's next step is markdown-to-Y.Doc hydration, where files in `entries/`
 become the human-editable source that can rebuild the runtime cache.

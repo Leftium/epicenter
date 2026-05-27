@@ -31,8 +31,8 @@ createFujiWorkspace()
   Fuji's shared isomorphic model: id, tables, actions, child docs
 
 openFujiBrowser()
-openFujiDaemon()
-  runtime-specific wiring
+fuji()
+  runtime-specific wiring (browser opener, project mount factory)
 
 defineWorkspaceBundle()
   preserves the inferred bundle shape after composition
@@ -121,24 +121,17 @@ bun dev
 
 This starts the app dev server on port 5174. Auth and sync expect the local API on `localhost:8787`; start it from the repo root with `bun run dev:api`.
 
-Fuji's daemon route is registered from the project root. It is not discovered from `.epicenter/` or the `workspaces/` folder. A project that wants the Fuji route needs an `epicenter.config.ts` like this:
+Fuji's mount is registered from the project root. It is not discovered from `.epicenter/` or any source folder. A project that wants the Fuji mount needs an `epicenter.config.ts` like this:
 
 ```ts
-import { defineConfig } from '@epicenter/workspace';
-import fuji from './workspaces/fuji/daemon.ts';
+import { fuji } from '@epicenter/fuji/project';
 
-export default defineConfig({
-	daemon: {
-		routes: {
-			fuji,
-		},
-	},
-});
+export default fuji();
 ```
 
-The `fuji` key is the route identity. The imported daemon module defines Fuji's runtime and can live anywhere; `workspaces/fuji/daemon.ts` is just the layout used in this example.
+`fuji()` is a factory that returns a `Mount` carrying its own canonical name (`fuji`). Pass options to override defaults (`fuji({ markdownDir: '.', sqliteFile: '.epicenter/sqlite.db' })`).
 
-`epicenter daemon up -C <project>` starts every route in `daemon.routes` inside one daemon process. It creates `.epicenter/` for generated project data when it is missing, but sockets and daemon logs live in platform user paths instead of inside the project.
+`epicenter daemon up -C <project>` starts every mount declared in `epicenter.config.ts` inside one daemon process. It creates `.epicenter/` for generated project data when it is missing, but sockets and daemon logs live in platform user paths instead of inside the project.
 
 ---
 

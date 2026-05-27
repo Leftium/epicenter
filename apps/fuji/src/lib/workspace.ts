@@ -12,7 +12,7 @@
  *
  * Composition lives elsewhere:
  *  - `apps/fuji/src/lib/browser.ts`  → `openFujiBrowser({ signedIn, deviceId })`
- *  - `apps/fuji/daemon.ts`           → `openFujiDaemon(ctx)`
+ *  - `apps/fuji/project.ts`          → `fuji(opts?)` mount factory
  *  - `examples/fuji/epicenter.config.ts` → canonical project layout composition
  *
  * The workspace factory returns actions under `workspace.actions`; runtime

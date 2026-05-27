@@ -1,5 +1,5 @@
 /**
- * E2E playground daemon: syncs the Tab Manager workspace from the Epicenter
+ * E2E playground mount: syncs the Tab Manager workspace from the Epicenter
  * API to local persistence and markdown files.
  *
  * Run with:
@@ -12,10 +12,10 @@
 import { createTabManagerWorkspace } from '@epicenter/tab-manager';
 import {
 	defineActions,
-	defineWorkspace,
 	openCollaboration,
 	roomWsUrl,
 } from '@epicenter/workspace';
+import { defineMount } from '@epicenter/workspace/daemon';
 import {
 	attachMarkdownMaterializer,
 	slugFilename,
@@ -24,7 +24,8 @@ import { attachYjsLog, markdownPath, yjsPath } from '@epicenter/workspace/node';
 
 const SERVER_URL = 'https://api.epicenter.so';
 
-export default defineWorkspace({
+export default defineMount({
+	name: 'tabManager',
 	async open({
 		projectDir,
 		yDocClientId,

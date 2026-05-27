@@ -86,17 +86,17 @@ Non-negotiable requirements. Keep this short: only things that genuinely can't b
 - Use components from `@epicenter/ui/*` and `@lucide/svelte`
 ```
 
-### Explicit Limits
+### Blockers
 
-Explicit limits only. Things that are genuinely never acceptable for this task, not soft preferences, not style guidance. Litmus test: would this be wrong regardless of context? If yes, name it as an explicit limit. If "it depends," leave it out. The agent uses judgment for everything else.
+Use this section only for true blockers: destructive actions, product calls, security boundaries, deleted tests, suppressed type errors, or files the user explicitly forbade. Do not list ordinary focus, preferences, or "nice to avoid" items here.
 
 ```
-## Explicit Limits
+## Blockers
 - Do not suppress TypeScript errors with `@ts-ignore` or `as any`
 - Do not delete or skip existing tests to make the build pass
 ```
 
-Think about what the recipient might do wrong and preempt it. But only the things that would actually break something or violate a true non-negotiable.
+Everything else stays in Requirements or Context.
 
 ## Drafting Process
 
@@ -108,7 +108,7 @@ Think about what the recipient might do wrong and preempt it. But only the thing
 
 4. **Close all decisions.** A spec can leave open questions. A handoff prompt cannot. If there's a choice to make, make it.
 
-5. **Name the lane.** The tighter the lane, the better the output. "Create 3 files" beats "build the feature." "These 2 existing files are the primary owned files" beats "update as needed." A lane is a coordination tool, not a no-fix rule. If adjacent grounded fixes are acceptable, say so once. Use explicit limits only for edits that are truly forbidden.
+5. **Name the lane.** Say what files, package, app, or spec the recipient should start with. A lane coordinates work; it is not a refusal rule.
 
 6. **Test mentally.** Read the prompt as if you've never seen this codebase. Could you execute it? If you'd need to grep for something, that information should be in the prompt.
 
@@ -147,17 +147,17 @@ You could use either a Card grid or an Accordion for this section: pick whicheve
 
 Pick one. The recipient will waste time deliberating instead of building.
 
-### Overloading Explicit Limits
+### Overloading Blockers
 
 ```
-## Explicit Limits
+## Blockers
 - Do not install any new dependencies
 - Do not use images or external assets
 - Do not make the page feel like a SaaS landing page
 - Do not use inline styles
 ```
 
-The first item might be an explicit limit. The rest are preferences. Mixing them dilutes the signal. Only true limits belong here.
+The first item might be an explicit limit. The rest are preferences. Put preferences in Requirements.
 
 ## Good vs Bad
 
@@ -181,7 +181,7 @@ const cache = createDisposableCache((id: string) => {
 export const ws = cache.open('opensidian');
 \`\`\`
 
-Explicit limits: suppressing TypeScript errors, deleting existing tests to pass build.
+Blockers: suppressing TypeScript errors, deleting existing tests to pass build.
 ```
 
 ### Bad (vague, open-ended, assumes context)

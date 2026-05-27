@@ -114,24 +114,23 @@ Never let evidence questions hide behind design coherence. Verify before deletin
 
 ---
 
-## Adjacent Work Language
+## Adjacent Work
 
-Do not use one rejection bucket for adjacent work. Separate work by decision
-type:
+Do not make one bucket that implies every omitted item is forbidden. When
+adjacent work matters, use only the distinctions the implementer needs:
 
 ```txt
 Deferred:
   not required now, allowed later
 
-Refused:
+Rejected product direction:
   deliberately not part of the product or design
 
 Opportunistic:
   not required, but acceptable to fix if discovered and grounded
 ```
 
-This keeps the spec from turning omissions into forbidden work. A spec is an
-execution spine, not a file whitelist.
+A spec is an execution spine, not a file whitelist.
 
 ---
 
@@ -406,19 +405,18 @@ This section signals "you decide this" to the implementer. Include your recommen
    - **Recommendation**: [Suggestion or "Defer until X"]
 ```
 
-### Deferred, Refused, Opportunistic
+### Adjacent Work
 
-Use this section when the work has adjacent decisions that should not all be
-treated the same.
+Use this section only when adjacent decisions would otherwise be ambiguous.
 
 ```markdown
-## Deferred, Refused, Opportunistic
+## Adjacent Work
 
 ### Deferred
 
 - [Decision or feature]: [Why it is not required now, and what would bring it back.]
 
-### Refused
+### Rejected product direction
 
 - [Decision or feature]: [Why this should not be part of the product or design.]
 

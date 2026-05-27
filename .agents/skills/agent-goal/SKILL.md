@@ -13,14 +13,14 @@ The best goal is both a directive and a completion condition:
 /goal [do the work] until [observable condition is true].
 ```
 
-Treat the goal as a contract. It should tell the agent what to do, what evidence proves it, the intended lane, explicit limits, and when to stop or pause.
+Treat the goal as a contract. It should tell the agent what to do, what evidence proves it, where to start, and what would truly block completion.
 
 The highest-signal goal answers three questions:
 
 ```txt
 What should change?
 How will the agent prove it changed?
-What should make the agent stop, pause, or ask?
+What would truly block completion?
 ```
 
 ## Core Shape
@@ -28,7 +28,7 @@ What should make the agent stop, pause, or ask?
 Use this structure unless the user needs a different format:
 
 ```txt
-/goal Complete [single objective] in [lane]. First read [required context]. Work in checkpoints. After each checkpoint, surface evidence from [validation]. Stop when [verifiable end state]. Pause if [risk or ambiguity].
+/goal Complete [single objective] in [lane]. First read [required context]. Work in checkpoints. After each checkpoint, surface evidence from [validation]. Continue until [verifiable end state]. Pause only for [real blocker].
 ```
 
 Include only execution-critical details:
@@ -38,7 +38,7 @@ Include only execution-critical details:
 - Context: plans, docs, issue links, logs, screenshots, traces, commands, or acceptance criteria to inspect first.
 - Evidence: command output, tests, build result, screenshot comparison, eval score, file count, clean git status, or reviewed artifact.
 - Stop condition: the exact state that means the goal is achieved.
-- Pause condition: user decision, missing credentials, failing external service, destructive action, conflict with an explicit limit, or repeated failed attempts.
+- Real blocker: user decision, missing credentials, failing external service, destructive action, explicit user limit, or repeated failed attempts.
 
 ## Rules
 
@@ -48,8 +48,8 @@ Include only execution-critical details:
 4. Tell the agent to surface evidence in the transcript. Goal evaluators judge what the worker has shown, not private intent.
 5. Put long requirements in a plan or spec, then point the goal at that file. Do not paste a huge spec into `/goal`.
 6. Ask for checkpoints when the work spans multiple turns. Each checkpoint should produce a small status note: changed, verified, remaining, blocked.
-7. Bound runaway work. Add a stop or pause clause such as "pause after 3 failed attempts on the same test" or "stop after 20 turns with a summary of remaining blockers."
-8. Name explicit limits and pause triggers. Do not turn ordinary focus into a ban list.
+7. Bound runaway work. Add a clause such as "pause after 3 failed attempts on the same test" or "stop after 20 turns with a summary of remaining blockers."
+8. Name real blockers, not a ban list. Ordinary focus should not stop grounded fixes.
 9. Do not use `/goal` for vague wishes, unrelated chores, open-ended research, or work where the agent cannot produce evidence.
 10. Keep the condition judgeable from the transcript. If a separate verifier read only the conversation after each turn, it should be able to tell whether the goal is met.
 
@@ -70,7 +70,7 @@ Lane
 Method
   What should the agent read first, and how should it checkpoint?
 
-Limits
+Blockers
   What should cause a pause instead of more guessing?
 ```
 
@@ -120,7 +120,7 @@ If the evidence is weak, rewrite the goal until completion can be judged from co
 Plan execution:
 
 ```txt
-/goal Implement `specs/[file].md` in checkpoints until every checklist item is complete, the review section is filled in, and `[final validation command]` exits 0. First read the spec and the files it names. After each checkpoint, update the checklist and surface the validation result. Pause if the spec conflicts with current code or needs a product decision.
+/goal Implement `specs/[file].md` in checkpoints until every checklist item is complete, the review section is filled in, and `[final validation command]` exits 0. First read the spec and the files it names. After each checkpoint, update the checklist and surface the validation result. Continue unless the spec conflicts with current code or needs a product decision.
 ```
 
 Failing tests:
@@ -144,7 +144,7 @@ Prototype:
 Backlog or issue queue:
 
 ```txt
-/goal Work through `[queue or label]` until every item is closed or has a documented blocker. First list the queue and choose the smallest safe item. For each item, make the smallest grounded fix, run `[validation]`, and report the result before moving on. Stop when the queue is empty. Pause if an item needs credentials, product judgment, or crossing an explicit limit.
+/goal Work through `[queue or label]` until every item is closed or has a documented blocker. First list the queue and choose the smallest safe item. For each item, make the smallest grounded fix, run `[validation]`, and report the result before moving on. Stop when the queue is empty. Pause if an item needs credentials, product judgment, or an explicit user limit.
 ```
 
 Eval or prompt loop:
@@ -187,5 +187,5 @@ Before handing back a goal, verify:
 - It has one main objective.
 - It names the evidence that proves completion.
 - It tells the agent to surface that evidence.
-- It names the lane, explicit limits, and pause triggers.
-- It says when to pause instead of continuing blindly.
+- It names the lane and real blockers.
+- It tells the agent to continue until the evidence proves completion.

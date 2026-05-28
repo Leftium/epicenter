@@ -1,3 +1,4 @@
+import { type } from 'arktype';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 
 /**
@@ -73,3 +74,27 @@ export const BillingError = defineErrors({
  * statements with `default: error satisfies never`.
  */
 export type BillingError = InferErrors<typeof BillingError>;
+
+/**
+ * Runtime schema for the serialized `BillingError` envelope on the wire.
+ *
+ * `c.json(BillingError.ProviderRequestFailed(...))` serializes the wellcrafted
+ * `Err` shape `{ data: null, error: { name, message, statusCode, code? } }`.
+ * The dashboard receives that across an untrusted network boundary, so it
+ * validates against this schema before trusting the body as a `BillingError`
+ * rather than duck-checking a single `name` key. `code` is optional because
+ * `JSON.stringify` drops `code: undefined`. Undeclared keys are ignored, so the
+ * server can add fields without breaking older clients.
+ *
+ * This schema and the `defineErrors` factory above are two representations of
+ * one contract; their agreement is pinned by `errors.test.ts`.
+ */
+export const BillingErrorEnvelope = type({
+	data: 'null',
+	error: {
+		name: "'ProviderRequestFailed'",
+		message: 'string',
+		statusCode: 'number',
+		'code?': 'string',
+	},
+});

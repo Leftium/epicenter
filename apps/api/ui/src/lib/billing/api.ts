@@ -22,7 +22,8 @@ import type {
 	UsageQuery,
 	UsageSeries,
 } from '$api/billing/contracts';
-import type { BillingError } from '$api/billing/errors';
+import { BillingError, BillingErrorEnvelope } from '$api/billing/errors';
+import { type } from 'arktype';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { auth } from '$platform/auth';
@@ -55,8 +56,11 @@ type BillingResult<T> = Result<T, BillingApiError | BillingError>;
  * sends the wellcrafted envelope `{ data: null, error: BillingError }` carrying
  * the upstream status code and Autumn `code`, so we surface that structured
  * error instead of collapsing it to a status line: the dashboard can branch on
- * `error.statusCode === 402` (insufficient credits) or `error.code`. Non-JSON
- * or envelope-less bodies fall back to a generic request failure.
+ * `error.statusCode === 402` (insufficient credits) or `error.code`. The body
+ * is runtime-validated against `BillingErrorEnvelope` before we trust it; a
+ * non-JSON, malformed, or envelope-less body falls back to a generic request
+ * failure. We rebuild the error through the shared `BillingError` factory so
+ * the value the dashboard holds is canonical, not whatever shape arrived.
  */
 async function readResponse<TResponse>(
 	endpoint: string,
@@ -70,25 +74,18 @@ async function readResponse<TResponse>(
 
 	if (res.ok) return Ok(body as TResponse);
 
-	if (isBillingErrorEnvelope(body)) return Err(body.error);
-	return BillingApiError.RequestFailed({
-		endpoint,
-		cause: new Error(`${res.status} ${res.statusText}`),
+	const envelope = BillingErrorEnvelope(body);
+	if (envelope instanceof type.errors) {
+		return BillingApiError.RequestFailed({
+			endpoint,
+			cause: new Error(`${res.status} ${res.statusText}`),
+		});
+	}
+	return BillingError.ProviderRequestFailed({
+		statusCode: envelope.error.statusCode,
+		code: envelope.error.code,
+		message: envelope.error.message,
 	});
-}
-
-/** Untrusted-boundary check that a non-OK body is the billing error envelope. */
-function isBillingErrorEnvelope(
-	body: unknown,
-): body is { error: BillingError } {
-	return (
-		typeof body === 'object' &&
-		body !== null &&
-		'error' in body &&
-		typeof (body as { error: unknown }).error === 'object' &&
-		(body as { error: unknown }).error !== null &&
-		'name' in (body as { error: object }).error
-	);
 }
 
 async function get<TResponse>(endpoint: string): Promise<BillingResult<TResponse>> {

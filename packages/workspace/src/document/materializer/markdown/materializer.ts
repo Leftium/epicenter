@@ -52,6 +52,10 @@ const GitAutosaveError = defineErrors({
 		message: `git autosave: git commit failed: ${stderr.trim()}`,
 		stderr,
 	}),
+	EnablementCheckFailed: ({ cause }: { cause: unknown }) => ({
+		message: `git autosave: enablement check failed: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
 });
 
 export const MaterializerPushError = defineErrors({
@@ -805,7 +809,7 @@ function createGitAutosave({
 					dirty.add(path);
 					schedule();
 				},
-				(cause) => log.warn(new Error(extractErrorMessage(cause))),
+				(cause) => log.warn(GitAutosaveError.EnablementCheckFailed({ cause })),
 			);
 		},
 		dispose(): void {

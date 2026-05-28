@@ -89,8 +89,9 @@ export type SubscriptionPlan = {
 };
 
 /** One-off top-up plan. Attaches a prepaid bag of credits with no
- *  recurring price and no reset. */
-export type OneOffTopUpPlan = {
+ *  recurring price and no reset. Part of the `Plan` union; not imported by
+ *  name elsewhere, so it stays module-private. */
+type OneOffTopUpPlan = {
 	id: PlanId;
 	kind: 'oneOffTopUp';
 	displayName: string;

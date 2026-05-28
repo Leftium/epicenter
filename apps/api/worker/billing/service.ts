@@ -17,10 +17,12 @@
  * `listUsage`, ...) call Autumn directly and let a provider failure THROW; the
  * single `onError` boundary in `routes.ts` turns it into the opaque 503. The
  * usage guards (`reserveAiChat`, `reserveAssetStorage`) instead wrap their
- * Autumn calls in `tryAutumn` and RETURN `Result`, because a guard has already
- * taken a reservation lock and must settle it (release the hold) before
- * responding: it cannot just throw. So "reads throw, guards return" is the
- * reservation lifecycle showing through, not an inconsistency.
+ * Autumn calls in `tryAutumn` and RETURN `Result`, because a guard takes a
+ * reservation lock the policy must settle (confirm or release) around the
+ * response via the after-response queue. Returning the reservation lets the
+ * policy settle it; throwing would skip the settle and leave the hold to expire
+ * only at its TTL. So "reads throw, guards return" is the reservation lifecycle
+ * showing through, not an inconsistency.
  */
 
 import type { UserId } from '@epicenter/auth';
@@ -75,21 +77,12 @@ type Identity = {
 const LOCK_TTL_MS = 15 * 60_000;
 
 /**
- * A held credit reservation taken by {@link createBillingService}'s
- * `reserveAiChat`. The `lockId` is captured in the closure and never escapes
- * the service: the policy commits with `confirm()` on success or rolls back
- * with `release()` on a pre-stream failure, so the lock action can't be
- * mispaired.
+ * A held reservation taken by `reserveAiChat` or `reserveAssetStorage`. The
+ * `lockId` is captured in the closure and never escapes the service: the policy
+ * commits with `confirm()` on success or rolls back with `release()` on
+ * failure, so the lock action can't be mispaired.
  */
-type AiReservation = {
-	credits: number;
-	confirm(): Promise<Result<void, BillingError>>;
-	release(): Promise<Result<void, BillingError>>;
-};
-
-/** A held storage reservation taken by `reserveAssetStorage`, same lifecycle
- *  as {@link AiReservation}. */
-type AssetStorageReservation = {
+type Reservation = {
 	confirm(): Promise<Result<void, BillingError>>;
 	release(): Promise<Result<void, BillingError>>;
 };
@@ -130,7 +123,7 @@ export function createBillingService(
 	async function reserveAiChat(input: {
 		model: string;
 		provider: string | undefined;
-	}): Promise<Result<AiReservation, AiChatError | BillingError>> {
+	}): Promise<Result<Reservation, AiChatError | BillingError>> {
 		const credits = MODEL_CREDITS[input.model as keyof typeof MODEL_CREDITS];
 		if (credits === undefined) {
 			return AiChatError.UnknownModel({ model: input.model });
@@ -176,7 +169,6 @@ export function createBillingService(
 		}
 
 		return Ok({
-			credits,
 			confirm: () => finalizeLock(lockId, 'confirm'),
 			release: () => finalizeLock(lockId, 'release'),
 		});
@@ -190,7 +182,7 @@ export function createBillingService(
 	 */
 	async function reserveAssetStorage(input: {
 		sizeBytes: number;
-	}): Promise<Result<AssetStorageReservation, AssetError | BillingError>> {
+	}): Promise<Result<Reservation, AssetError | BillingError>> {
 		// Seed the customer so the storage balance materializes from the
 		// auto-enable free plan before we reserve against it. A provider outage
 		// fails closed.
@@ -317,8 +309,9 @@ export function createBillingService(
 
 		function renderCard(planId: PlanId): BillingPlanCard {
 			const plan = PLANS[planId];
-			// VISIBLE_SUBSCRIPTION_PLAN_IDS never contains the top-up plan;
-			// this narrow is the type-level proof of that invariant.
+			// Runtime guard, not a type-level proof: VISIBLE_SUBSCRIPTION_PLAN_IDS
+			// is hand-maintained, so nothing in the type system stops the top-up
+			// id from being added there. This throw catches that mistake.
 			if (plan.kind !== 'subscription') {
 				throw new Error(`Plan ${planId} is not a subscription plan`);
 			}

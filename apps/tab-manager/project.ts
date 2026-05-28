@@ -21,7 +21,7 @@ import {
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
-import { createTabManagerWorkspace } from './src/lib/workspace/definition.js';
+import { createTabManager } from './src/lib/workspace/definition.js';
 
 export type TabManagerMountOptions = {
 	/** Markdown directory; relative paths resolve against `projectDir`. */
@@ -47,7 +47,7 @@ export function tabManager(opts: TabManagerMountOptions = {}) {
 				onReconnectSignal,
 			} = ctx;
 
-			const workspace = createTabManagerWorkspace({ keyring });
+			const workspace = createTabManager({ keyring });
 			workspace.ydoc.clientID = yDocClientId;
 
 			const sqliteFile =
@@ -78,7 +78,6 @@ export function tabManager(opts: TabManagerMountOptions = {}) {
 			});
 
 			const actions = defineActions({
-				...workspace.actions,
 				...markdown.actions,
 			});
 

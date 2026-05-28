@@ -88,7 +88,7 @@ function appCallbacks(
  * `https://api.acme.com` and `wrangler dev` on a custom port each register
  * their own callbacks without anyone editing this file.
  *
- * The API seed (`seedTrustedOAuthClients`) calls this at deploy time;
+ * The API `oauth:seed` deploy script calls this to upsert the client rows;
  * `authPlugins` calls it to derive the trusted-client-id set.
  */
 export function buildTrustedOAuthClients(apiBaseURL: string) {

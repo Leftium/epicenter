@@ -62,7 +62,11 @@ export const chargeAiCreditsWithAutumn = createMiddleware<Env>(
 
 		await next();
 
-		// Successful streams keep the deducted credits. Any 4xx/5xx refunds.
+		// Refund only failures that surface as a non-OK status: a handler error
+		// before streaming begins (e.g. provider not configured), where no work
+		// was done. Once the SSE stream starts the status is already 200, so a
+		// mid-stream provider failure is invisible here and is non-refundable by
+		// design: those provider tokens were already consumed.
 		if (c.res.status >= 400) {
 			c.var.afterResponse.push(billing.refundAiCharge(guardAllow.credits));
 		}

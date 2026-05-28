@@ -4,32 +4,40 @@
 **Status**: Completed
 **Branch**: `refactor/remove-execute-calls`
 
+> Historical note: this spec describes an older Wellcrafted API migration. The current API is stricter: shared queries are not callable and expose `.fetch()` plus `.ensure()` for imperative use; shared mutations are callable and do not expose public `.execute()`.
+
 ## Summary
 
-Simplify the codebase by removing redundant `.execute()` method calls on mutations. Since wellcrafted v0.26.0, mutation definitions are directly callable functions, making `.execute()` unnecessary.
+Simplify the codebase by removing redundant `.execute()` method calls on mutations. In the current Wellcrafted API, mutation definitions are directly callable functions and `.execute()` is not public API.
 
 ## Background
 
-The wellcrafted library (v0.26.0+) made query and mutation definitions directly callable:
+The current wellcrafted library keeps imperative query and mutation usage explicit:
 
 ```typescript
 const createUser = defineMutation({...});
 
-// OLD: Explicit .execute() call
+// Old: Explicit .execute() call
 const { data, error } = await createUser.execute({ name: 'John' });
 
-// NEW: Direct call (recommended)
+// Current: Direct mutation call
 const { data, error } = await createUser({ name: 'John' });
+
+const userQuery = defineQuery({...});
+
+// Current: Explicit query cache policy
+const fresh = await userQuery.fetch();
+const cached = await userQuery.ensure();
 ```
 
-Both patterns are equivalent; they reference the same function. The direct call is now the recommended primary pattern.
+Queries are not callable. Mutations are callable.
 
 ## Implementation Details
 
 ### How It Works (from wellcrafted source)
 
 ```typescript
-// wellcrafted uses Object.assign to make the function callable with properties
+// wellcrafted uses Object.assign to make mutation definitions callable with properties
 async function execute(variables: TVariables) {
 	try {
 		return Ok(await runMutation(queryClient, newOptions, variables));
@@ -40,7 +48,6 @@ async function execute(variables: TVariables) {
 
 return Object.assign(execute, {
 	options: newOptions, // Static property (not a function!)
-	execute, // Same function reference
 });
 ```
 
@@ -103,7 +110,7 @@ NEW: await rpc.db.recordings.delete(recording)
 
 ## Notes
 
-- `.execute()` still works and isn't deprecated; this is purely a simplification
+- `.execute()` was removed from the public Wellcrafted mutation surface after this migration
 - The change is cosmetic but improves code readability
 - No runtime behavior changes
 - `.options` is already a property (changed in v0.26.0), not `.options()`

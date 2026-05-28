@@ -126,10 +126,10 @@ Build TanStack Query wrappers that call the `/api/autumn/*` routes. These are th
 - [ ] **A.7** Create `aggregateAutumnEvents(featureId, range)` — calls `POST /api/autumn/events.aggregate`
 - [ ] **A.8** Add error handling: expired sessions → re-auth, failed checkout → show error, network failures → retry
 
-**Pattern**: Each wrapper is a function that returns a TanStack Query `queryOptions` or `mutationOptions` object. Example:
+**Pattern**: Each wrapper is a function that returns a Wellcrafted `queryOptions` or `mutationOptions` object for TanStack Query. Example:
 
 ```ts
-import { queryOptions } from '@tanstack/svelte-query';
+import { queryOptions } from 'wellcrafted/query';
 
 export function autumnCustomerQuery() {
   return queryOptions({

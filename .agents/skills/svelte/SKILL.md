@@ -85,11 +85,15 @@ For a component-local operation lifecycle, do not add a new RPC adapter only to 
 ```svelte
 <script lang="ts">
 	import { createMutation } from '@tanstack/svelte-query';
+	import { mutationOptions } from 'wellcrafted/query';
 	import { startManualRecording } from '$lib/operations/recording';
 
-	const startRecording = createMutation(() => ({
-		mutationFn: startManualRecording,
-	}));
+	const startRecording = createMutation(() =>
+		mutationOptions({
+			mutationKey: ['recording', 'startManual'],
+			mutationFn: startManualRecording,
+		}),
+	);
 </script>
 ```
 

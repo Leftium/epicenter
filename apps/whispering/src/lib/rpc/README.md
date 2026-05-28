@@ -46,13 +46,26 @@ For one-off local lifecycle state, wrap the operation in the component instead:
 ```svelte
 <script lang="ts">
   import { createMutation } from '@tanstack/svelte-query';
+  import { mutationOptions } from 'wellcrafted/query';
   import {
     startManualRecording,
     stopManualRecording,
   } from '$lib/operations/recording';
 
-  const startMutation = createMutation(() => ({ mutationFn: startManualRecording }));
-  const stopMutation  = createMutation(() => ({ mutationFn: stopManualRecording  }));
+  const startMutation = createMutation(() =>
+    mutationOptions({
+      mutationKey: ['recording', 'startManual'],
+      mutationFn: startManualRecording,
+    }),
+  );
+
+  const stopMutation = createMutation(() =>
+    mutationOptions({
+      mutationKey: ['recording', 'stopManual'],
+      mutationFn: stopManualRecording,
+    }),
+  );
+
   const isPreparing = $derived(startMutation.isPending || stopMutation.isPending);
 </script>
 

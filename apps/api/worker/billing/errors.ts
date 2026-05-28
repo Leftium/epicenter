@@ -1,4 +1,3 @@
-import { type } from 'arktype';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 
 /**
@@ -30,6 +29,13 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  * The full original error (status, body, class) is recorded for operators at
  * the adapter boundary ({@link file://./autumn.ts} `mapAutumnError`), so the
  * wire stays thin while the log stays fat.
+ *
+ * The wire contract is the fixed **503** status, not the body shape. A provider
+ * failure is the only thing the billing surface answers with 503 (every domain
+ * error carries its own status; non-provider throws become 500), so the
+ * dashboard rebuilds this canonical error from the 503 alone and never has to
+ * validate the serialized body. See `readResponse` in
+ * {@link file://../../../ui/src/lib/billing/api.ts}.
  *
  * @example
  * ```ts
@@ -63,26 +69,3 @@ export const BillingError = defineErrors({
  * statements with `default: error satisfies never`.
  */
 export type BillingError = InferErrors<typeof BillingError>;
-
-/**
- * Runtime schema for the serialized `BillingError` envelope on the wire.
- *
- * `c.json(BillingError.ProviderRequestFailed(...))` serializes the wellcrafted
- * `Err` shape `{ data: null, error: { name, message } }`. The dashboard
- * receives that across an untrusted network boundary, so it validates against
- * this schema before trusting the body as a `BillingError` rather than
- * duck-checking a single `name` key.
- *
- * The schema validates only the discriminant (`data: null` plus the `name`
- * literal), not `message`. The message is a fixed string the client rebuilds
- * from the factory, so the wire value is never read; validating it would only
- * make the client reject an otherwise-valid billing error that happened to omit
- * it. Undeclared keys are ignored, so the server can keep sending `message` (and
- * add fields) without breaking the client.
- */
-export const BillingErrorEnvelope = type({
-	data: 'null',
-	error: {
-		name: "'ProviderRequestFailed'",
-	},
-});

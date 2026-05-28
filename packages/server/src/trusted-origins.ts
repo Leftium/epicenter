@@ -1,4 +1,4 @@
-import { APPS, localUrl, prodOrigins } from '@epicenter/constants/apps';
+import { APPS, appUrl } from '@epicenter/constants/apps';
 
 /**
  * Pinned Chrome extension origin for the tab-manager.
@@ -34,6 +34,6 @@ const TAB_MANAGER_CHROME_EXTENSION_ORIGIN =
 export const TRUSTED_ORIGINS: string[] = Object.freeze([
 	'tauri://localhost',
 	TAB_MANAGER_CHROME_EXTENSION_ORIGIN,
-	...Object.values(APPS).flatMap((app) => [...prodOrigins(app), localUrl(app)]),
+	...Object.values(APPS).flatMap(appUrl.all),
 	`http://${new URL(APPS.API.url).host}`,
 ]) as string[];

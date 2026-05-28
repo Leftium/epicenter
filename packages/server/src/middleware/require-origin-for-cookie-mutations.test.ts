@@ -9,11 +9,11 @@
  */
 
 import { expect, test } from 'bun:test';
-import { APPS, localUrl } from '@epicenter/constants/apps';
+import { APPS, appUrl } from '@epicenter/constants/apps';
 import { Hono } from 'hono';
 import { requireOriginForCookieMutations } from './require-origin-for-cookie-mutations.js';
 
-const TRUSTED_ORIGIN = localUrl(APPS.API);
+const TRUSTED_ORIGIN = appUrl.local(APPS.API);
 
 test('CSRF guard rejects cookie-auth POST from a non-trusted origin', async () => {
 	const app = createCsrfTestApp();

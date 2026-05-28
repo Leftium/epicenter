@@ -30,7 +30,7 @@
  * dev origin. The connection string comes from `DATABASE_URL` (Infisical /ops
  * in prod) or the committed local default, matching `drizzle.config.ts`.
  */
-import { APPS, localUrl } from '@epicenter/constants/apps';
+import { APPS, appUrl } from '@epicenter/constants/apps';
 import {
 	buildTrustedOAuthClients,
 	projectTrustedOAuthClientToRow,
@@ -39,7 +39,7 @@ import pg from 'pg';
 import { LOCAL_DATABASE_URL } from '../env';
 
 const baseURL =
-	process.env.SEED_TARGET === 'prod' ? APPS.API.url : localUrl(APPS.API);
+	process.env.SEED_TARGET === 'prod' ? APPS.API.url : appUrl.local(APPS.API);
 const connectionString = process.env.DATABASE_URL ?? LOCAL_DATABASE_URL;
 
 const UPSERT = `

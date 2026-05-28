@@ -1,5 +1,5 @@
 import type { SchemaClient } from '@better-auth/oauth-provider';
-import { APPS, localUrl, prodOrigins } from '#apps';
+import { APPS, appUrl } from '#apps';
 import { OAUTH_ROUTES } from './oauth-routes.js';
 
 /**
@@ -76,19 +76,17 @@ export const EPICENTER_OAUTH_SCOPE = EPICENTER_OAUTH_SCOPES.join(' ');
 const AUTH_CALLBACK_PATH = '/auth/callback';
 
 /**
- * Every redirect URI for an app that owns its origin: the dev
- * `http://localhost:<port>` origin plus each production origin
- * ({@link prodOrigins}), joined to {@link AUTH_CALLBACK_PATH}. Used by Fuji,
- * Honeycrisp, Opensidian, and Zhongwen.
+ * Every redirect URI for an app that owns its origin: each origin the app
+ * answers on ({@link appUrl.all}, i.e. dev plus prod) joined to
+ * {@link AUTH_CALLBACK_PATH}. Used by Fuji, Honeycrisp, Opensidian, and
+ * Zhongwen.
  */
 function appCallbacks(app: {
 	port: number;
 	url: string;
 	aliases?: readonly string[];
 }): string[] {
-	return [localUrl(app), ...prodOrigins(app)].map(
-		(origin) => `${origin}${AUTH_CALLBACK_PATH}`,
-	);
+	return appUrl.all(app).map((origin) => `${origin}${AUTH_CALLBACK_PATH}`);
 }
 
 /**

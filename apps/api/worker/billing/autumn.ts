@@ -6,18 +6,28 @@
  *
  *   createAutumnClient(env)   build the per-request client with the
  *                             fail-closed invariant baked in.
- *   mapAutumnError(error)     translate any thrown provider failure into the
- *                             opaque `BillingError` envelope.
- *   isAutumnError(error)      narrow a throw to a provider failure (vs a bug),
+ *   mapAutumnError(error)     log the full provider failure for operators, then
+ *                             translate it into the opaque `BillingError`.
+ *   isProviderError(error)    narrow a throw to a provider failure (vs a bug),
  *                             so route `onError` can rethrow real 500s.
  *   tryAutumn(fn)             run a provider call and return a `Result`,
  *                             mapping a throw to `BillingError`.
+ *
+ * Provider failures arrive as two sibling class families (verified against
+ * autumn-js@1.2.5): `AutumnError` for an HTTP non-2xx response, and the
+ * `HTTPClientError` family (`ConnectionError`, `RequestTimeoutError`, ...) for a
+ * network/transport failure. They share only the JS `Error` base, so a single
+ * `instanceof AutumnError` check MISSES every network failure: hence
+ * `isProviderError` checks both.
  */
 
-import { Autumn, AutumnError } from 'autumn-js';
+import { Autumn, AutumnError, HTTPClientError } from 'autumn-js';
 import { extractErrorMessage } from 'wellcrafted/error';
+import { createLogger } from 'wellcrafted/logger';
 import { type Result, tryAsync } from 'wellcrafted/result';
 import { BillingError } from './errors.js';
+
+const log = createLogger('billing/autumn');
 
 /**
  * Build a per-request Autumn client.
@@ -34,31 +44,42 @@ export function createAutumnClient(env: { AUTUMN_SECRET_KEY: string }): Autumn {
 }
 
 /**
- * Map any thrown provider failure to the opaque `BillingError` envelope.
+ * Record the full provider failure for operators, then map it to the opaque
+ * `BillingError` for the wire.
  *
- * One total path: an `AutumnError` (non-2xx provider response) and a raw
- * network/connection throw both reduce to a single human-readable message. We
- * deliberately do NOT parse the provider body for a machine `code` or forward
- * its HTTP status: a `BillingError` is "billing is temporarily unavailable,"
- * and it always answers with a fixed 503 at the HTTP boundary.
+ * This is the single chokepoint where every provider failure is observed: it is
+ * called by `tryAutumn` (guard + reservation paths) and by the route `onError`.
+ * The original error carries the only diagnostic detail we keep (status, body,
+ * class, cause); the wire error is a fixed user-facing message. A 4xx means
+ * Autumn rejected OUR request (most likely a bug in our call), so it logs at
+ * `error`; a 5xx or a network/transport failure is a transient provider outage,
+ * so `warn`.
  *
  * Returns the wellcrafted `Err` envelope (what the `defineErrors` factory
  * produces), so it drops straight into a `tryAsync` `catch` or a `c.json`.
  */
 export function mapAutumnError(error: unknown) {
-	return BillingError.ProviderRequestFailed({
-		message: extractErrorMessage(error),
-	});
+	const loggable =
+		error instanceof Error ? error : new Error(extractErrorMessage(error));
+	if (error instanceof AutumnError && error.statusCode < 500) {
+		log.error(loggable);
+	} else {
+		log.warn(loggable);
+	}
+	return BillingError.ProviderRequestFailed();
 }
 
 /**
- * Narrow a throw to a provider failure. Route `onError` uses this to translate
- * provider failures into the billing envelope while rethrowing everything else
- * (a programming bug) to a real 500 rather than a misleading "provider
- * unreachable" response.
+ * Narrow a throw to a provider failure (HTTP non-2xx OR network/transport),
+ * versus a programming bug in our own handler code. Route `onError` uses this
+ * to translate provider failures into the billing envelope while rethrowing
+ * everything else to a real 500: a `TypeError` in our mapping code should be a
+ * 500, not a misleading "provider unreachable" 503.
  */
-export function isAutumnError(error: unknown): error is AutumnError {
-	return error instanceof AutumnError;
+export function isProviderError(
+	error: unknown,
+): error is AutumnError | HTTPClientError {
+	return error instanceof AutumnError || error instanceof HTTPClientError;
 }
 
 /**

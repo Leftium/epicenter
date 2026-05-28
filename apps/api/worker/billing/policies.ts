@@ -5,10 +5,12 @@
  * Each policy is a thin shell around the billing service. The service owns
  * the Autumn round-trips and the reservation lock (the `lockId` never leaves
  * it); policies own only HTTP shape: pulling fields off the request, forwarding
- * the guard's typed error to `c.json`, and scheduling the reservation's
- * `confirm`/`release` (or a delete credit) on the after-response queue from
- * `@epicenter/server` via {@link scheduleBillingSettlement}, which logs any
- * post-response failure rather than dropping it.
+ * the guard's typed error to `c.json`, and pushing the reservation's
+ * `confirm`/`release` (or a delete credit) onto the after-response queue from
+ * `@epicenter/server`. Those settlement ops return a `Result` (they never
+ * reject) and the adapter logs any provider failure at its source, so a failed
+ * finalize is recorded rather than silently swallowed by the queue's
+ * `Promise.allSettled`, with no separate settlement wrapper needed.
  *
  *   chargeAiCreditsWithAutumn      Around `/api/ai/chat`. Reserves credits
  *                                  (a lock) before the call, then confirms on
@@ -38,7 +40,6 @@ import type { Env } from '@epicenter/server';
 import { createMiddleware } from 'hono/factory';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { BillingError } from './errors.js';
-import { scheduleBillingSettlement } from './settlement.js';
 import { createBillingService } from './service.js';
 
 type AiChatBody = {
@@ -101,11 +102,10 @@ export const chargeAiCreditsWithAutumn = createMiddleware<Env>(
 		// failure (>= 400) where no work was done. Once the SSE stream starts the
 		// status is already 200, so a mid-stream provider failure commits by
 		// design: those provider tokens were consumed and are non-refundable. A
-		// failed confirm self-heals via the lock TTL (an undercharge), so it logs
-		// at `error` but recovers; a failed release self-heals fully, so `warn`.
-		const failedBeforeStream = c.res.status >= 400;
-		scheduleBillingSettlement(c, failedBeforeStream ? 'warn' : 'error', () =>
-			failedBeforeStream ? reservation.release() : reservation.confirm(),
+		// failed finalize is logged at the adapter and self-heals via the lock
+		// TTL, so the policy just keeps the op on the after-response queue.
+		c.var.afterResponse.push(
+			c.res.status >= 400 ? reservation.release() : reservation.confirm(),
 		);
 	},
 );
@@ -139,11 +139,9 @@ export const trackAssetStorageWithAutumn = createMiddleware<Env>(
 
 			// Commit the reservation on a successful upload (201); release it
 			// otherwise so a failed upload does not hold quota until the lock TTL.
-			// Both self-heal via the lock TTL, so confirm logs at `error` and
-			// release at `warn`.
-			const uploaded = c.res.status === 201;
-			scheduleBillingSettlement(c, uploaded ? 'error' : 'warn', () =>
-				uploaded ? reservation.confirm() : reservation.release(),
+			// A failed finalize is logged at the adapter and self-heals via the TTL.
+			c.var.afterResponse.push(
+				c.res.status === 201 ? reservation.confirm() : reservation.release(),
 			);
 			return;
 		}
@@ -159,10 +157,10 @@ export const trackAssetStorageWithAutumn = createMiddleware<Env>(
 				userEmail: c.var.user.email,
 			});
 			// A delete credit has no lock to expire, so a failure leaves quota
-			// consumed permanently: log at `error`.
-			scheduleBillingSettlement(c, 'error', () =>
-				billing.creditAssetStorage(size),
-			);
+			// consumed permanently. The adapter logs it; durable recovery (an
+			// idempotency-keyed retry plus a storage reconciliation sweep) is a
+			// tracked follow-up, since storage bytes are recomputable.
+			c.var.afterResponse.push(billing.creditAssetStorage(size));
 			return;
 		}
 

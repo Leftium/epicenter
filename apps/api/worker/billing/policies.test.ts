@@ -9,10 +9,9 @@
  * at its module boundary; these tests own only the policy's HTTP orchestration.
  *
  * The reservation object hides the `lockId`: the policy only ever calls
- * `confirm()` / `release()`, so there is no lock action to mispair. Settlement
- * runs through `scheduleBillingSettlement`, which invokes the op eagerly (to
- * push its promise onto `afterResponse`), so confirm/release/credit are
- * recorded synchronously during the request.
+ * `confirm()` / `release()`, so there is no lock action to mispair. The policy
+ * pushes the settlement op onto `afterResponse` by calling it, so
+ * confirm/release/credit are recorded synchronously during the request.
  *
  * A worker crash between reserve and finalize is intentionally NOT exercised:
  * that path is covered by Autumn's lock TTL auto-release, not by code here.

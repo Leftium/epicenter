@@ -19,22 +19,19 @@ function overTheWire(value: unknown): unknown {
 	return JSON.parse(JSON.stringify(value));
 }
 
-test('a serialized BillingError validates and preserves the opaque message', () => {
-	const wire = overTheWire(
-		BillingError.ProviderRequestFailed({
-			message: 'Billing provider unreachable',
-		}),
-	);
+test('a serialized BillingError validates and carries the fixed opaque message', () => {
+	const wire = overTheWire(BillingError.ProviderRequestFailed());
 
 	const envelope = BillingErrorEnvelope(wire);
 	if (envelope instanceof type.errors) {
 		throw new Error(`Expected a valid envelope: ${envelope.summary}`);
 	}
 
-	expect(envelope.error).toMatchObject({
-		name: 'ProviderRequestFailed',
-		message: 'Billing provider unreachable',
-	});
+	expect(envelope.error.name).toBe('ProviderRequestFailed');
+	// The message is a fixed user-facing string, never the provider's wording.
+	expect(envelope.error.message).toBe(
+		'Billing is temporarily unavailable. Please try again.',
+	);
 });
 
 test('the envelope rejects bodies that are not the BillingError shape', () => {

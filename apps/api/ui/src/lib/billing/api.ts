@@ -80,9 +80,7 @@ async function readResponse<TResponse>(
 			cause: new Error(`${res.status} ${res.statusText}`),
 		});
 	}
-	return BillingError.ProviderRequestFailed({
-		message: envelope.error.message,
-	});
+	return BillingError.ProviderRequestFailed();
 }
 
 async function get<TResponse>(endpoint: string): Promise<BillingResult<TResponse>> {

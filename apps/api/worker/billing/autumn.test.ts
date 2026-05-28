@@ -1,45 +1,61 @@
 /**
- * Autumn adapter translation tests.
+ * Autumn adapter translation + discrimination tests.
  *
- * After the boundary cleanup there is no provider status or machine `code` to
- * branch on: any thrown provider failure collapses to one opaque
- * `BillingError.ProviderRequestFailed` whose message is the error's message.
- * These pin that total mapping and the `isAutumnError` discriminator that lets
- * route `onError` rethrow real bugs.
+ * After the boundary cleanup any thrown provider failure collapses to one
+ * opaque `BillingError.ProviderRequestFailed` with a fixed user-facing message
+ * (the original error's detail is logged for operators, never put on the wire).
+ * These pin that total mapping and, critically, that `isProviderError` narrows
+ * BOTH provider class families: `AutumnError` (HTTP non-2xx) AND the
+ * `HTTPClientError` network family. A discriminator that only checked
+ * `AutumnError` would let a network outage on a dashboard read fall through to a
+ * generic 500 instead of the fail-closed 503 billing envelope.
  */
 
-import { AutumnError } from 'autumn-js';
+import { AutumnError, ConnectionError } from 'autumn-js';
 import { expect, test } from 'bun:test';
-import { isAutumnError, mapAutumnError } from './autumn.js';
+import { isProviderError, mapAutumnError } from './autumn.js';
 
-function makeAutumnError(message: string, body: string): AutumnError {
+const FIXED_MESSAGE = 'Billing is temporarily unavailable. Please try again.';
+
+function makeAutumnError(message: string, status: number): AutumnError {
+	const body = JSON.stringify({ message });
 	return new AutumnError(message, {
-		response: new Response(body, { status: 500 }),
+		response: new Response(body, { status }),
 		request: new Request('https://api.useautumn.com/check'),
 		body,
 	});
 }
 
-test('an AutumnError maps to ProviderRequestFailed carrying its message', () => {
-	const { error } = mapAutumnError(
-		makeAutumnError('Autumn API error', '{"code":"server_error"}'),
-	);
+test('an AutumnError maps to the fixed opaque message, not the provider wording', () => {
+	const { error } = mapAutumnError(makeAutumnError('Autumn API error', 500));
 	expect(error).toMatchObject({
 		name: 'ProviderRequestFailed',
-		message: 'Autumn API error',
+		message: FIXED_MESSAGE,
 	});
 });
 
 test('a non-AutumnError throw (network failure) maps the same way, fail closed', () => {
 	const { error } = mapAutumnError(new TypeError('network down'));
-	expect(error).toMatchObject({
-		name: 'ProviderRequestFailed',
-		message: 'network down',
-	});
+	expect(error.message).toBe(FIXED_MESSAGE);
 });
 
-test('isAutumnError narrows provider failures from programming bugs', () => {
-	expect(isAutumnError(makeAutumnError('x', 'x'))).toBe(true);
-	expect(isAutumnError(new Error('a bug in a handler'))).toBe(false);
-	expect(isAutumnError('500 Internal Server Error')).toBe(false);
+test('isProviderError narrows an HTTP non-2xx (AutumnError)', () => {
+	expect(isProviderError(makeAutumnError('boom', 503))).toBe(true);
+});
+
+test('isProviderError narrows a network failure (HTTPClientError family)', () => {
+	// Regression: a ConnectionError is NOT an AutumnError. A discriminator that
+	// only checked `instanceof AutumnError` would 500 a provider outage on a
+	// dashboard read instead of failing closed to 503.
+	expect(isProviderError(new ConnectionError('Unable to make request'))).toBe(
+		true,
+	);
+});
+
+test('isProviderError rejects programming bugs so they stay real 500s', () => {
+	expect(isProviderError(new Error('a bug in a handler'))).toBe(false);
+	expect(isProviderError(new TypeError('cannot read x of undefined'))).toBe(
+		false,
+	);
+	expect(isProviderError('500 Internal Server Error')).toBe(false);
 });

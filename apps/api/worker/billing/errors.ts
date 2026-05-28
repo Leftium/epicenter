@@ -24,14 +24,21 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  * The `ProviderRequestFailed` name avoids leaking the vendor: a future
  * swap to direct Stripe integration would not force a client rename.
  *
+ * The message is a fixed, user-facing string owned here, not the provider's
+ * wording: a card processor's "Request failed with status 500" or a transport
+ * library's "Unable to make request" is noise to a user and leaks the vendor.
+ * The full original error (status, body, class) is recorded for operators at
+ * the adapter boundary ({@link file://./autumn.ts} `mapAutumnError`), so the
+ * wire stays thin while the log stays fat.
+ *
  * @example
  * ```ts
- * // Server: the billing-routes onError boundary maps any thrown Autumn
+ * // Server: the billing-routes onError boundary maps any thrown provider
  * // failure through the adapter; non-provider throws rethrow to a 500.
- * import { isAutumnError, mapAutumnError } from './autumn.js';
+ * import { isProviderError, mapAutumnError } from './autumn.js';
  *
  * billingRoutes.onError((err, c) => {
- *   if (!isAutumnError(err)) throw err;
+ *   if (!isProviderError(err)) throw err;
  *   return c.json(mapAutumnError(err), 503);
  * });
  *
@@ -44,8 +51,8 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  * ```
  */
 export const BillingError = defineErrors({
-	ProviderRequestFailed: ({ message }: { message: string }) => ({
-		message,
+	ProviderRequestFailed: () => ({
+		message: 'Billing is temporarily unavailable. Please try again.',
 	}),
 });
 

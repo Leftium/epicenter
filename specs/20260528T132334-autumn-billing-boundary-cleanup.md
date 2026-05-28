@@ -1,6 +1,6 @@
 # Autumn billing boundary cleanup
 
-Status: IMPLEMENTED 2026-05-28. Open Question 1 resolved: structured logging now (Option A); durable retry deferred to a credit-path follow-up. Open Question 4 resolved: bucket-1 conversion UX is a separate spec (spec B), cleanup shipped first. Verified: `bun test apps/api/worker/billing` 17 pass; `apps/api` and `apps/api/ui` typecheck clean; clean-break grep sweep clean.
+Status: IMPLEMENTED 2026-05-28, then REVISED after an adversarial grill (fleet of agents + autumn-js ground-truth). See Section 10 for the revisions, which supersede specific earlier decisions. Verified after revision: `bun test apps/api/worker/billing` 15 pass; `apps/api` tsc clean; `apps/api/ui` svelte-check 0 errors.
 
 ## 1. One sentence
 
@@ -428,3 +428,94 @@ Key points:
 ### Open Question 4: RESOLVED -> separate spec, after this cleanup
 
 Decided 2026-05-28: this spec stays server-boundary-only and ships first. The bucket-1 conversion UX gets its own spec (spec B), disjoint file set (`apps/api/ui` + the `chat-state.svelte.ts` consumers), so each reviews coherently. Spec B scope: a reusable upsell affordance (inline card or dialog, not a toast) triggered by `AiChatError.InsufficientCredits` / `ModelRequiresPaidPlan` / `AssetError.StorageLimitExceeded`; inline error+retry states for the dashboard read queries (`overview`/`plans`/`usage`) instead of silent `?.` empties; and wiring the chat clients to branch on `chat.error.detail.name` instead of `console.error`.
+
+## 10. Post-grill revisions (2026-05-28)
+
+After the first implementation, a fleet of agents + autumn-js@1.2.5 ground-truth
+verification surfaced a real correctness bug and two design improvements. These
+supersede the earlier decisions where they conflict.
+
+### 10.1 BLOCKER fixed: the read path did not fail closed on a network error
+
+Ground truth: `AutumnError` (HTTP non-2xx) and the `HTTPClientError` family
+(`ConnectionError`, `RequestTimeoutError`, ...) are SIBLINGS; both are exported;
+they share only the JS `Error` base. With `failOpen: false`, a network/transport
+failure throws an `HTTPClientError`, NOT an `AutumnError`.
+
+So the original `isAutumnError = error instanceof AutumnError` MISSED every
+network failure. The guard path was fine (it wraps calls in `tryAutumn`, which
+catches `unknown`), but the dashboard READS throw raw to `onError`, which only
+caught `AutumnError`. Result: same provider outage answered 503 on the guard
+path and 500 on the read path.
+
+Fix: `isAutumnError` -> `isProviderError(error): error is AutumnError |
+HTTPClientError` = `instanceof AutumnError || instanceof HTTPClientError`. A real
+programming bug (`TypeError` in our mapping) still rethrows to a true 500.
+Regression test added in `autumn.test.ts`. Supersedes decision 8.
+
+### 10.2 Wire message is now a fixed opaque string; operator fidelity moves to logs
+
+`mapAutumnError` previously set `message: extractErrorMessage(error)`, which
+leaks the vendor's wording ("Autumn API error", "Unable to make request") to the
+user, contradicting the opacity goal. And it discarded the rich detail (status,
+body, class) that operators need.
+
+Fix: `BillingError.ProviderRequestFailed` is now a zero-arg factory with a fixed
+user-facing message. `mapAutumnError` LOGS the full original error first (4xx =
+"Autumn rejected our request", likely our bug -> `error`; 5xx/network = transient
+-> `warn`), then returns the opaque error. The adapter is the single chokepoint
+where every provider failure is observed (it is called by `tryAutumn` on the
+guard/reservation paths and by `onError` on the read path). Thin wire, fat log.
+Supersedes decisions 1 and 6 (message handling).
+
+### 10.3 settlement.ts deleted (collapsed into the adapter log)
+
+Once `mapAutumnError` logs at the source, the `scheduleBillingSettlement` helper
+was redundant: `confirm`/`release`/`credit` return a `Result` (never reject), a
+failure is already logged by the adapter, and the policy just pushes the op onto
+`afterResponse` to keep it alive for the request lifetime. Deleted
+`settlement.ts` + `settlement.test.ts` and inlined the push. This drops the
+per-op `warn`/`error` severity nuance, which the lock TTL self-heal (confirm/
+release) and the reconciliation plan below (credit) make unnecessary. Supersedes
+decision 3 and the settlement checklist items.
+
+### 10.4 BillingError stays ONE opaque variant (fidelity question answered)
+
+Considered: split into provider-down vs provider-rejected-our-request vs
+our-bug. Decision: no. The user-actionable states (out of credits, needs paid
+plan, storage full) already live on `AiChatError` / `AssetError`. The "is it
+Autumn-internal vs our bug" distinction the operator wants is a LOGGING concern,
+now served by 10.2's severity split, not a wire-contract concern. Adding wire
+variants would re-bloat the contract for a distinction no client consumes.
+
+Known limitation (accepted): the dashboard WRITE routes (`checkout`, `preview`,
+`portal`) send a provider 4xx (e.g. `invalid_plan`) through `onError` as a 503
+"temporarily unavailable." For this app, card entry happens on Stripe's hosted
+page, so an attach 4xx is almost always our own bad request, now visible in logs
+at `error` level (10.2). Richer typed checkout errors are deferred to spec B if
+a real user-actionable attach failure surfaces.
+
+### 10.5 Open Question 1 REVISED: durable retry is the wrong tool; reconciliation + native idempotency dominate
+
+Decisive finding: Autumn's `track` natively accepts an `idempotencyKey` (dedupes
+retries) AND negative values (credits balance back). And `waitUntil` is
+explicitly NOT durable (Cloudflare docs: dropped work is "simply lost"). So the
+credit-back leak is real, but a Cloudflare Queue / DO alarm is over-engineering:
+both are at-least-once with no built-in dedupe (you write idempotency yourself),
+both add infra (consumer worker / DO class + migration + paid plan), and both
+still miss the "never enqueued" failure class.
+
+Cheaper pattern that dominates on correctness-per-maintenance:
+1. Pass a deterministic `idempotencyKey` to `track(-bytes)` and retry it inline.
+2. Add a low-frequency reconciliation Cron Trigger that recomputes authoritative
+   storage bytes per subject and corrects the Autumn balance. Storage total is
+   recomputable by construction, so a missed credit self-heals on the next sweep,
+   and this covers strictly more failure modes (dropped `waitUntil`, bugs that
+   never enqueued) than any per-event retry.
+3. log + alert as the floor (now provided by the adapter), not the mechanism.
+
+This REPLACES the "durable retry follow-up." The follow-up spec (spec C) is
+"idempotency key + storage reconciliation cron," not a queue. Sources: Stripe
+error-handling/idempotent-requests docs, Cloudflare context/Queues/DO-alarms
+docs, Autumn track reference, transactional-outbox + billing-reconciliation
+writeups.

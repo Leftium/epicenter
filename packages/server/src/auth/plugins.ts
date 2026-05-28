@@ -1,5 +1,5 @@
 import { oauthProvider } from '@better-auth/oauth-provider';
-import { JWT_SIGNING } from '@epicenter/constants/auth';
+import { JWT_SIGNING_ALG } from '@epicenter/constants/auth';
 import {
 	buildTrustedOAuthClients,
 	EPICENTER_OAUTH_SCOPES,
@@ -22,17 +22,21 @@ export function authPlugins(apiBaseURL: string) {
 		buildTrustedOAuthClients(apiBaseURL).map((client) => client.clientId),
 	);
 	return [
-		// `JWT_SIGNING` (ES256, P-256 ECDSA) signs the id_token and JWT access
-		// tokens, and `id_token_signing_alg_values_supported` on
-		// `/.well-known/openid-configuration` reflects it. See that constant for
-		// why ES256 is pinned over the `jose` EdDSA default.
+		// `JWT_SIGNING_ALG` (ES256, P-256 ECDSA) signs the id_token and JWT
+		// access tokens. `id_token_signing_alg_values_supported` on
+		// `/.well-known/openid-configuration` is derived from this same
+		// `keyPairConfig.alg` by the OAuth provider plugin, not a second
+		// hardcoded list, so the advertised alg and the signing alg cannot
+		// drift. See that constant for why ES256 is pinned over the `jose`
+		// EdDSA default, and why `alg` is the only thing we configure (Better
+		// Auth derives the key shape from it).
 		//
 		// `keyPairConfig.alg` governs only newly minted keys. If the `jwks`
 		// table ever holds a row of another algorithm (such as a pre-ES256
 		// Ed25519 key), signing crashes because `importJWK` rejects the
 		// mismatch. The fix is to delete that stale row so Better Auth mints a
 		// compliant key, not to filter the table in this read path.
-		jwt({ jwks: { keyPairConfig: { alg: JWT_SIGNING.alg } } }),
+		jwt({ jwks: { keyPairConfig: { alg: JWT_SIGNING_ALG } } }),
 		oauthProvider({
 			loginPage: '/sign-in',
 			consentPage: '/consent',

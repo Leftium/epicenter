@@ -13,6 +13,27 @@ import { authPlugins } from './plugins.js';
 type Db = NodePgDatabase<typeof schema>;
 
 /**
+ * `authPlugins(baseURL)` builds the trusted-client `Set` and the JWT / OAuth
+ * plugin descriptors. All of it depends only on `baseURL`, which is stable per
+ * deployment, so build it once per `baseURL` instead of on every request.
+ *
+ * Sharing the descriptors across requests in an isolate is safe: Better Auth
+ * copies the plugin array (`plugins.concat`) and only reads each descriptor
+ * during `runPluginInit`, never mutating it. The per-request pg client is the
+ * one genuinely per-request input and stays out of this cache (it goes through
+ * the drizzle adapter below).
+ */
+const pluginsByBaseURL = new Map<string, ReturnType<typeof authPlugins>>();
+
+function pluginsForBaseURL(baseURL: string) {
+	const cached = pluginsByBaseURL.get(baseURL);
+	if (cached) return cached;
+	const plugins = authPlugins(baseURL);
+	pluginsByBaseURL.set(baseURL, plugins);
+	return plugins;
+}
+
+/**
  * Assemble and return a configured `betterAuth()` instance from runtime deps.
  *
  * Cloudflare Workers doesn't expose `env` or database connections at module scope,
@@ -159,6 +180,6 @@ export function createAuth({
 		verification: {
 			storeInDatabase: true,
 		},
-		plugins: authPlugins(baseURL),
+		plugins: pluginsForBaseURL(baseURL),
 	} satisfies BetterAuthOptions);
 }

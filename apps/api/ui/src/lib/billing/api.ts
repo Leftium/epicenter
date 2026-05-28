@@ -22,8 +22,9 @@ import type {
 	UsageQuery,
 	UsageSeries,
 } from '$api/billing/contracts';
+import type { BillingError } from '$api/billing/errors';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
-import { type Result, tryAsync } from 'wellcrafted/result';
+import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { auth } from '$platform/auth';
 
 /** Tagged error for the billing API boundary. Covers network failures
@@ -45,35 +46,75 @@ export type BillingApiError = import('wellcrafted/error').InferErrors<
 	typeof BillingApiError
 >;
 
-async function get<TResponse>(
+/** Either boundary error: a local fetch/parse failure or the server's own
+ *  structured billing error. */
+type BillingResult<T> = Result<T, BillingApiError | BillingError>;
+
+/**
+ * Interpret a billing response. On a non-OK status the billing routes' onError
+ * sends the wellcrafted envelope `{ data: null, error: BillingError }` carrying
+ * the upstream status code and Autumn `code`, so we surface that structured
+ * error instead of collapsing it to a status line: the dashboard can branch on
+ * `error.statusCode === 402` (insufficient credits) or `error.code`. Non-JSON
+ * or envelope-less bodies fall back to a generic request failure.
+ */
+async function readResponse<TResponse>(
 	endpoint: string,
-): Promise<Result<TResponse, BillingApiError>> {
-	return tryAsync({
-		try: async () => {
-			const res = await auth.fetch(endpoint);
-			if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-			return (await res.json()) as TResponse;
-		},
+	res: Response,
+): Promise<BillingResult<TResponse>> {
+	const { data: body, error: parseError } = await tryAsync({
+		try: () => res.json() as Promise<unknown>,
 		catch: (cause) => BillingApiError.RequestFailed({ endpoint, cause }),
 	});
+	if (parseError) return Err(parseError);
+
+	if (res.ok) return Ok(body as TResponse);
+
+	if (isBillingErrorEnvelope(body)) return Err(body.error);
+	return BillingApiError.RequestFailed({
+		endpoint,
+		cause: new Error(`${res.status} ${res.statusText}`),
+	});
+}
+
+/** Untrusted-boundary check that a non-OK body is the billing error envelope. */
+function isBillingErrorEnvelope(
+	body: unknown,
+): body is { error: BillingError } {
+	return (
+		typeof body === 'object' &&
+		body !== null &&
+		'error' in body &&
+		typeof (body as { error: unknown }).error === 'object' &&
+		(body as { error: unknown }).error !== null &&
+		'name' in (body as { error: object }).error
+	);
+}
+
+async function get<TResponse>(endpoint: string): Promise<BillingResult<TResponse>> {
+	const { data: res, error } = await tryAsync({
+		try: () => auth.fetch(endpoint),
+		catch: (cause) => BillingApiError.RequestFailed({ endpoint, cause }),
+	});
+	if (error) return Err(error);
+	return readResponse<TResponse>(endpoint, res);
 }
 
 async function post<TBody, TResponse>(
 	endpoint: string,
 	body: TBody,
-): Promise<Result<TResponse, BillingApiError>> {
-	return tryAsync({
-		try: async () => {
-			const res = await auth.fetch(endpoint, {
+): Promise<BillingResult<TResponse>> {
+	const { data: res, error } = await tryAsync({
+		try: () =>
+			auth.fetch(endpoint, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(body),
-			});
-			if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-			return (await res.json()) as TResponse;
-		},
+			}),
 		catch: (cause) => BillingApiError.RequestFailed({ endpoint, cause }),
 	});
+	if (error) return Err(error);
+	return readResponse<TResponse>(endpoint, res);
 }
 
 export const billingApi = {

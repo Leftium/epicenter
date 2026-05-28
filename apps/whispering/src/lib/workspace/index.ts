@@ -1,6 +1,6 @@
 export {
 	type CompletedResult,
-	createWhisperingWorkspace,
+	createWhispering,
 	type FailedResult,
 	type Recording,
 	type RunningResult,

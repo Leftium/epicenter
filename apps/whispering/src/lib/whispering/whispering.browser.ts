@@ -8,13 +8,15 @@
  */
 
 import {
+	attachBroadcastChannel,
+	attachIndexedDb,
 	defineActions,
 	defineMutation,
 	defineWorkspace,
 } from '@epicenter/workspace';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
-import { openWhisperingBase } from './whispering-base';
+import { createWhispering } from '$lib/workspace';
 
 const RecordingMarkdownExportError = defineErrors({
 	Unsupported: () => ({
@@ -36,7 +38,10 @@ type RecordingMarkdownExportResult =
 	  };
 
 export function openWhispering() {
-	const { workspace, whenReady } = openWhisperingBase();
+	const workspace = createWhispering();
+
+	const idb = attachIndexedDb(workspace.ydoc);
+	attachBroadcastChannel(workspace.ydoc);
 
 	return defineWorkspace({
 		...workspace,
@@ -50,7 +55,7 @@ export function openWhispering() {
 				> => RecordingMarkdownExportError.Unsupported(),
 			}),
 		}),
-		whenReady,
+		whenReady: idb.whenLoaded,
 	});
 }
 

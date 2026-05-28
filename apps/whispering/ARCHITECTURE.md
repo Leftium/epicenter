@@ -20,11 +20,11 @@ Whispering uses the same workspace composition vocabulary as the rest of the rep
 
 ```txt
 createWorkspace()
-  -> createWhisperingWorkspace()
+  -> createWhispering()
     -> openWhispering()
 ```
 
-`createWhisperingWorkspace()` in `src/lib/workspace/definition.ts` is the shared model. It defines the workspace id, tables, and KV schema with no platform APIs.
+`createWhispering()` in `src/lib/workspace/definition.ts` is the shared model. It defines the workspace id, tables, and KV schema with no platform APIs.
 
 `openWhispering()` in `src/lib/whispering/tauri.ts` is the Tauri runtime opener. It creates the shared model, attaches IndexedDB persistence, attaches BroadcastChannel, and attaches the recording markdown export when a folder is configured. The name predates the newer `open<App>Tauri()` convention; conceptually it is Whispering's Tauri opener.
 

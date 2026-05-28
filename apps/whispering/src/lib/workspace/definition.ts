@@ -403,7 +403,7 @@ const shortcuts = {
 	),
 } as const;
 
-export function createWhisperingWorkspace() {
+export function createWhispering() {
 	/**
 	 * Whispering KV schemas: ~40 entries for synced preferences. Defined locally
 	 * so the raw schema map is not a module-level export. Callers reach the

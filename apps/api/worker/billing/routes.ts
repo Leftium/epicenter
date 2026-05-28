@@ -17,8 +17,7 @@ import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { MODEL_CREDITS, providerOf } from './ai-model-pricing.js';
 import { CHECKOUT_PLAN_IDS } from './catalog.js';
 import type { ModelCostGuide } from './contracts.js';
-import { BillingError } from './errors.js';
-import { createBillingService } from './service.js';
+import { createBillingService, toBillingError } from './service.js';
 import { BILLING_ROUTES } from './url.js';
 
 const billingRoutes = new Hono<Env>();
@@ -31,28 +30,8 @@ const billingRoutes = new Hono<Env>();
 // non-JSON so the upstream text is never silently dropped.
 billingRoutes.onError((err, c) => {
 	if (!(err instanceof AutumnError)) throw err;
-
-	let code: string | undefined;
-	let message: string = err.body;
-	try {
-		const parsed = JSON.parse(err.body) as unknown;
-		if (parsed && typeof parsed === 'object') {
-			const record = parsed as { code?: unknown; message?: unknown };
-			if (typeof record.code === 'string') code = record.code;
-			if (typeof record.message === 'string') message = record.message;
-		}
-	} catch {
-		// non-JSON body; `message` already holds the raw text
-	}
-
-	return c.json(
-		BillingError.ProviderRequestFailed({
-			statusCode: err.statusCode,
-			code,
-			message,
-		}),
-		err.statusCode as ContentfulStatusCode,
-	);
+	const envelope = toBillingError(err);
+	return c.json(envelope, envelope.error.statusCode as ContentfulStatusCode);
 });
 
 function svc(c: Context<Env>) {

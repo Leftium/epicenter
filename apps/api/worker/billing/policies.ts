@@ -2,30 +2,41 @@
  * Cloud-only deployment policies that wrap `@epicenter/server` mount
  * primitives with Autumn-backed billing.
  *
- * Each policy is a thin shell around the billing service. The service
- * owns the Autumn round-trips and DTO mapping; policies own only HTTP
- * shape: pulling fields off the request, forwarding the guard's typed
- * error (and its baked-in status) to `c.json`, and queueing refunds onto
- * the after-response promise queue from `@epicenter/server`.
+ * Each policy is a thin shell around the billing service. The service owns
+ * the Autumn round-trips and DTO mapping; policies own only HTTP shape:
+ * generating a reservation lock id, pulling fields off the request,
+ * forwarding the guard's typed error to `c.json`, and queueing the
+ * confirm/release finalize onto the after-response queue from
+ * `@epicenter/server`.
  *
- *   chargeAiCreditsWithAutumn      Around `/api/ai/chat`. Resolves the
- *                                  model from the chat body, asks the
- *                                  service to atomically check + deduct
- *                                  credits, and queues a refund when the
- *                                  handler responds 4xx/5xx. BYOK
- *                                  callers bypass billing entirely.
- *   trackAssetStorageWithAutumn    Around `/api/.../assets`. Atomically
- *                                  reserves storage on POST uploads (check +
- *                                  deduct in one call), refunds the bytes on
- *                                  any non-201, and releases bytes on 204
- *                                  DELETE responses (size carried via header).
+ *   chargeAiCreditsWithAutumn      Around `/api/ai/chat`. Reserves credits
+ *                                  (a lock) before the call, then confirms on
+ *                                  success or releases on a pre-stream failure.
+ *                                  BYOK callers bypass billing entirely.
+ *   trackAssetStorageWithAutumn    Around `/api/.../assets`. Reserves storage
+ *                                  on POST uploads (a lock), confirms on 201
+ *                                  and releases otherwise, and credits bytes
+ *                                  back on 204 DELETE (size carried via header).
+ *
+ * Reservations use Autumn's lock + `balances.finalize` rather than
+ * deduct-then-refund: if the worker dies before finalizing, Autumn
+ * auto-releases the hold at its TTL, so a failed request can never silently
+ * overcharge. When the provider is unreachable the guard returns a structured
+ * `BillingError` (fail closed), so these surfaces answer with a billing
+ * envelope instead of a naked 500.
  *
  * The library remains billing-agnostic; everything here is cloud-only.
  */
 
-import { AiChatErrorStatus } from '@epicenter/constants/ai-chat-errors';
+import {
+	type AiChatError,
+	AiChatErrorStatus,
+} from '@epicenter/constants/ai-chat-errors';
+import type { AssetError } from '@epicenter/constants/asset-errors';
 import type { Env } from '@epicenter/server';
 import { createMiddleware } from 'hono/factory';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import type { BillingError } from './errors.js';
 import { createBillingService } from './service.js';
 
 type AiChatBody = {
@@ -33,13 +44,37 @@ type AiChatBody = {
 	apiKey?: string;
 };
 
+/**
+ * Resolve the HTTP status for an AI guard failure. `BillingError` carries its
+ * own `statusCode` (the upstream provider status, or 503 when unreachable);
+ * every `AiChatError` variant maps through the sibling status table.
+ */
+function aiGuardStatus(error: AiChatError | BillingError): ContentfulStatusCode {
+	if (error.name === 'ProviderRequestFailed') {
+		return error.statusCode as ContentfulStatusCode;
+	}
+	return AiChatErrorStatus[error.name];
+}
+
+/**
+ * Resolve the HTTP status for a storage guard failure. `BillingError` carries
+ * its own `statusCode`; every `AssetError` variant bakes in its `status`.
+ */
+function storageGuardStatus(
+	error: AssetError | BillingError,
+): ContentfulStatusCode {
+	if (error.name === 'ProviderRequestFailed') {
+		return error.statusCode as ContentfulStatusCode;
+	}
+	return error.status;
+}
+
 export const chargeAiCreditsWithAutumn = createMiddleware<Env>(
 	async (c, next) => {
 		const body = (await c.req.json().catch(() => ({}))) as AiChatBody;
 
-		// BYOK: caller-provided key bypasses billing. The library handler
-		// reads the same body and uses the caller key over the deployment
-		// key, so no credits get consumed.
+		// BYOK: caller-provided key bypasses billing. The library handler reads
+		// the same body and prefers the caller key, so no credits are consumed.
 		if (body.apiKey) {
 			return next();
 		}
@@ -49,27 +84,24 @@ export const chargeAiCreditsWithAutumn = createMiddleware<Env>(
 			userEmail: c.var.user.email,
 		});
 
-		const { data: guardAllow, error: guardError } = await billing.guardAiChat({
+		const lockId = crypto.randomUUID();
+		const { error: guardError } = await billing.guardAiChat({
 			model: body.data?.model ?? '',
 			provider: body.data?.provider,
+			lockId,
 		});
 		if (guardError) {
-			return c.json(
-				{ data: null, error: guardError },
-				AiChatErrorStatus[guardError.name],
-			);
+			return c.json({ data: null, error: guardError }, aiGuardStatus(guardError));
 		}
 
 		await next();
 
-		// Refund only failures that surface as a non-OK status: a handler error
-		// before streaming begins (e.g. provider not configured), where no work
-		// was done. Once the SSE stream starts the status is already 200, so a
-		// mid-stream provider failure is invisible here and is non-refundable by
-		// design: those provider tokens were already consumed.
-		if (c.res.status >= 400) {
-			c.var.afterResponse.push(billing.refundAiCharge(guardAllow.credits));
-		}
+		// Commit the reserved credits on success; release them on a pre-stream
+		// failure (>= 400) where no work was done. Once the SSE stream starts the
+		// status is already 200, so a mid-stream provider failure commits by
+		// design: those provider tokens were consumed and are non-refundable.
+		const action = c.res.status >= 400 ? 'release' : 'confirm';
+		c.var.afterResponse.push(billing.finalizeAiCharge(lockId, action));
 	},
 );
 
@@ -81,7 +113,7 @@ export const trackAssetStorageWithAutumn = createMiddleware<Env>(
 			const parsed = await c.req.parseBody({ all: false }).catch(() => null);
 			const file = parsed?.file;
 			if (!(file instanceof File)) {
-				// Library will return 400 for missing-file; nothing to charge.
+				// Library will return 400 for missing-file; nothing to reserve.
 				return next();
 			}
 
@@ -89,18 +121,24 @@ export const trackAssetStorageWithAutumn = createMiddleware<Env>(
 				userId: c.var.user.id,
 				userEmail: c.var.user.email,
 			});
-			const { error: guardError } = await billing.guardAssetUpload(file.size);
+			const lockId = crypto.randomUUID();
+			const { error: guardError } = await billing.reserveAssetStorage({
+				sizeBytes: file.size,
+				lockId,
+			});
 			if (guardError) {
-				return c.json({ data: null, error: guardError }, guardError.status);
+				return c.json(
+					{ data: null, error: guardError },
+					storageGuardStatus(guardError),
+				);
 			}
 
 			await next();
 
-			// The guard already deducted atomically. A non-201 means the upload
-			// did not persist, so refund the reserved bytes.
-			if (c.res.status !== 201) {
-				c.var.afterResponse.push(billing.releaseAssetStorage(file.size));
-			}
+			// Commit the reservation on a successful upload (201); release it
+			// otherwise so a failed upload does not hold quota until the lock TTL.
+			const action = c.res.status === 201 ? 'confirm' : 'release';
+			c.var.afterResponse.push(billing.finalizeAssetStorage(lockId, action));
 			return;
 		}
 
@@ -114,7 +152,7 @@ export const trackAssetStorageWithAutumn = createMiddleware<Env>(
 				userId: c.var.user.id,
 				userEmail: c.var.user.email,
 			});
-			c.var.afterResponse.push(billing.releaseAssetStorage(size));
+			c.var.afterResponse.push(billing.creditAssetStorage(size));
 			return;
 		}
 

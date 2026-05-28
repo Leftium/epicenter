@@ -71,16 +71,18 @@ export type BillingError = InferErrors<typeof BillingError>;
  * `Err` shape `{ data: null, error: { name, message } }`. The dashboard
  * receives that across an untrusted network boundary, so it validates against
  * this schema before trusting the body as a `BillingError` rather than
- * duck-checking a single `name` key. Undeclared keys are ignored, so the server
- * can add fields without breaking older clients.
+ * duck-checking a single `name` key.
  *
- * This schema and the `defineErrors` factory above are two representations of
- * one contract; their agreement is pinned by `errors.test.ts`.
+ * The schema validates only the discriminant (`data: null` plus the `name`
+ * literal), not `message`. The message is a fixed string the client rebuilds
+ * from the factory, so the wire value is never read; validating it would only
+ * make the client reject an otherwise-valid billing error that happened to omit
+ * it. Undeclared keys are ignored, so the server can keep sending `message` (and
+ * add fields) without breaking the client.
  */
 export const BillingErrorEnvelope = type({
 	data: 'null',
 	error: {
 		name: "'ProviderRequestFailed'",
-		message: 'string',
 	},
 });

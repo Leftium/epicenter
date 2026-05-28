@@ -12,6 +12,15 @@
  * `createBillingService(env, { userId, userEmail })`. The service does
  * NOT cache the customer across calls; each public method makes the
  * Autumn calls it needs and returns its result.
+ *
+ * Two error shapes, on purpose. Dashboard reads (`getOverview`, `listPlans`,
+ * `listUsage`, ...) call Autumn directly and let a provider failure THROW; the
+ * single `onError` boundary in `routes.ts` turns it into the opaque 503. The
+ * usage guards (`reserveAiChat`, `reserveAssetStorage`) instead wrap their
+ * Autumn calls in `tryAutumn` and RETURN `Result`, because a guard has already
+ * taken a reservation lock and must settle it (release the hold) before
+ * responding: it cannot just throw. So "reads throw, guards return" is the
+ * reservation lifecycle showing through, not an inconsistency.
  */
 
 import type { UserId } from '@epicenter/auth';

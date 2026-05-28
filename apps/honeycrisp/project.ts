@@ -57,7 +57,7 @@ export function honeycrisp(opts: HoneycrispMountOptions = {}) {
 					? markdownPath(projectDir, workspace.ydoc.guid)
 					: resolveProjectPath(projectDir, opts.markdownDir);
 
-			attachBunSqliteMaterializer(workspace, {
+			const sqlite = attachBunSqliteMaterializer(workspace, {
 				filePath: sqliteFile,
 				log: createLogger(`${mount}-sqlite`),
 			});
@@ -70,6 +70,7 @@ export function honeycrisp(opts: HoneycrispMountOptions = {}) {
 
 			const actions = defineActions({
 				...workspace.actions,
+				...sqlite.actions,
 				...markdown.actions,
 			});
 

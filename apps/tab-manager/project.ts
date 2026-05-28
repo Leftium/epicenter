@@ -59,7 +59,7 @@ export function tabManager(opts: TabManagerMountOptions = {}) {
 					? markdownPath(projectDir, workspace.ydoc.guid)
 					: resolveProjectPath(projectDir, opts.markdownDir);
 
-			attachBunSqliteMaterializer(workspace, {
+			const sqlite = attachBunSqliteMaterializer(workspace, {
 				filePath: sqliteFile,
 				fts: {
 					bookmarks: ['title', 'url'],
@@ -78,6 +78,7 @@ export function tabManager(opts: TabManagerMountOptions = {}) {
 			});
 
 			const actions = defineActions({
+				...sqlite.actions,
 				...markdown.actions,
 			});
 

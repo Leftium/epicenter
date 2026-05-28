@@ -68,7 +68,7 @@ export function fuji(opts: FujiMountOptions = {}) {
 					? markdownPath(projectDir, workspace.ydoc.guid)
 					: resolveProjectPath(projectDir, opts.markdownDir);
 
-			attachBunSqliteMaterializer(workspace, {
+			const sqlite = attachBunSqliteMaterializer(workspace, {
 				filePath: sqliteFile,
 				log: createLogger(`${mount}-sqlite`),
 			});
@@ -80,6 +80,7 @@ export function fuji(opts: FujiMountOptions = {}) {
 
 			const actions = defineActions({
 				...workspace.actions,
+				...sqlite.actions,
 				...markdown.actions,
 			});
 

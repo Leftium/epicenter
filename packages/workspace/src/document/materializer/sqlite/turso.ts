@@ -72,7 +72,7 @@ export type AttachTursoMaterializerOptions<
 	/**
 	 * Optional FTS5 configuration. Keys must match `workspace.tables` keys; values
 	 * list the columns of that table's row to include in the FTS index.
-	 * When provided, the result exposes `materializer.fts.search(...)`;
+	 * When provided, the result exposes `materializer.actions.sqlite_search(...)`;
 	 * when omitted, the `fts` namespace is absent from the return type.
 	 */
 	fts?: TFts;

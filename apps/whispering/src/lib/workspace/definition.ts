@@ -1,7 +1,10 @@
 import {
 	column,
+	createWorkspace,
 	defineKv,
 	defineTable,
+	defineWorkspace,
+	type InferKvValue,
 	type InferTableRow,
 } from '@epicenter/workspace';
 import { type Static, Type } from 'typebox';
@@ -400,30 +403,74 @@ const shortcuts = {
 	),
 } as const;
 
-/**
- * Whispering table schemas: 5 normalized tables for domain data.
- * Consumed by `createWhisperingWorkspace` (which wraps `createWorkspace`).
- */
-export const whisperingTables = {
-	recordings,
-	transformations,
-	transformationSteps,
-	transformationRuns,
-	transformationStepRuns,
-};
+export function createWhisperingWorkspace() {
+	/**
+	 * Whispering KV schemas: ~40 entries for synced preferences. Defined locally
+	 * so the raw schema map is not a module-level export. Callers reach the
+	 * defaults and key list through the `settings` namespace on the returned
+	 * workspace bundle.
+	 */
+	const kvDefinitions = {
+		...sound,
+		...output,
+		...ui,
+		...dataRetention,
+		...recording,
+		...transcription,
+		...transformation,
+		...analytics,
+		...shortcuts,
+	};
+	type SettingKey = keyof typeof kvDefinitions & string;
 
-/**
- * Whispering KV schemas: ~40 entries for synced preferences.
- * Consumed by `createWhisperingWorkspace` (which wraps `createWorkspace`).
- */
-export const whisperingKv = {
-	...sound,
-	...output,
-	...ui,
-	...dataRetention,
-	...recording,
-	...transcription,
-	...transformation,
-	...analytics,
-	...shortcuts,
-};
+	const workspace = createWorkspace({
+		id: 'whispering',
+		tables: {
+			recordings,
+			transformations,
+			transformationSteps,
+			transformationRuns,
+			transformationStepRuns,
+		},
+		kv: kvDefinitions,
+	});
+
+	const settingKeys = Object.keys(kvDefinitions) as SettingKey[];
+
+	return defineWorkspace({
+		...workspace,
+		/**
+		 * Synced setting metadata for the Whispering workspace.
+		 *
+		 * Owns the KV schema map: callers never see the raw `defineKv` definitions.
+		 * Use `kv.get`/`kv.set`/`kv.observeAll` for live values; reach for `settings`
+		 * for the key list, per-key defaults, and the bulk reset.
+		 */
+		settings: {
+			/** Every synced setting key, in declaration order. */
+			keys: settingKeys,
+			/** Return the default value for a setting key (factory-evaluated). */
+			getDefault<K extends SettingKey>(
+				key: K,
+			): InferKvValue<(typeof kvDefinitions)[K]> {
+				return kvDefinitions[key].defaultValue() as InferKvValue<
+					(typeof kvDefinitions)[K]
+				>;
+			},
+			/**
+			 * Reset every synced workspace setting to its default in a single Yjs
+			 * transaction (one `observeAll` firing, not one per key).
+			 */
+			reset(): void {
+				workspace.ydoc.transact(() => {
+					for (const key of settingKeys) {
+						(workspace.kv.set as (key: string, value: unknown) => void)(
+							key,
+							kvDefinitions[key].defaultValue(),
+						);
+					}
+				});
+			},
+		},
+	});
+}

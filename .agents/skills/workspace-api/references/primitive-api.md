@@ -63,14 +63,14 @@ For the app's top-level workspace doc, never call `new Y.Doc` directly. Use `cre
 
 ```typescript
 import { createWorkspace, defineActions, defineWorkspace } from '@epicenter/workspace';
-import { honeycrispTables } from './definition';
+import { foldersTable, notesTable } from './definition';
 
 // Encrypted app: pass a `keyring` accessor.
 export function createHoneycrispWorkspace(opts: { keyring: () => Keyring }) {
   const workspace = createWorkspace({
     id: HONEYCRISP_ID,
     keyring: opts.keyring,
-    tables: honeycrispTables,
+    tables: { folders: foldersTable, notes: notesTable },
     kv: {},
   });
 
@@ -87,8 +87,10 @@ export function createHoneycrispWorkspace(opts: { keyring: () => Keyring }) {
 export function createWhisperingWorkspace() {
   const workspace = createWorkspace({
     id: 'whispering',
-    tables: whisperingTables,
-    kv: whisperingKv,
+    tables: { recordings },
+    kv: {
+      'ui.alwaysOnTop': defineKv(column.boolean(), () => false),
+    },
   });
 
   return defineWorkspace({
@@ -138,7 +140,7 @@ Encryption is no longer a separate `attachEncryption` step. It's an optional `ke
 const workspace = createWorkspace({
   id: HONEYCRISP_ID,
   keyring: () => requireSignedIn(auth).keyring,  // accessor: read at attach time
-  tables: honeycrispTables,
+  tables: { folders: foldersTable, notes: notesTable },
   kv: {},
 });
 ```

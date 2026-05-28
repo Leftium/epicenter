@@ -90,7 +90,7 @@ export function openFujiBrowser({
 }
 ```
 
-`createFuji({ keyring })` is the per-app helper that wraps `createWorkspace({ id: FUJI_ID, keyring, tables: fujiTables, kv })`, adds `workspace.actions`, adds `entryContentDocs`, and returns the standard `{ ydoc, tables, kv, actions, entryContentDocs, [Symbol.dispose] }` bundle through `defineWorkspace()`.
+`createFuji({ keyring })` is the per-app helper that wraps `createWorkspace({ id: FUJI_ID, keyring, tables: { entries: entriesTable }, kv })`, adds `workspace.actions`, adds `entryContentDocs`, and returns the standard `{ ydoc, tables, kv, actions, entryContentDocs, [Symbol.dispose] }` bundle through `defineWorkspace()`.
 
 The browser bundle exposes concrete resources like `idb`, `collaboration`, and child document collections. Auth state flows through `session.current`; when present, it carries the Fuji bundle, and pages reach it via the module-level `requireFuji()` exported from `$lib/session` (throws if called without an authenticated session). Local cleanup runs through `bundle.wipe()`, which destroys the live Y.Docs and then calls `wipeLocalStorage({ server: signedIn.server, ownerId: signedIn.ownerId })` to drop every encrypted IDB database for that owner. It is a separate explicit action, not part of sign-out.
 

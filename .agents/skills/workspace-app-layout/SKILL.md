@@ -84,7 +84,7 @@ import {
 	defineActions,
 	defineWorkspace,
 } from '@epicenter/workspace';
-import { fujiTables } from '../workspace.js';
+import { entriesTable } from '../workspace.js';
 
 export function openFuji({
 	keyring,
@@ -96,7 +96,7 @@ export function openFuji({
 	const workspace = createWorkspace({
 		id: 'epicenter.fuji',
 		keyring,
-		tables: fujiTables,
+		tables: { entries: entriesTable },
 		kv: {},
 	});
 	if (clientID !== undefined) workspace.ydoc.clientID = clientID;

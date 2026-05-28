@@ -137,8 +137,6 @@ export type Note = InferTableRow<typeof notesTable>;
 
 // ─── Workspace factory ────────────────────────────────────────────────────────
 
-const honeycrispTables = { folders: foldersTable, notes: notesTable };
-
 /**
  * Build a Honeycrisp workspace bundle:
  * `{ ydoc, tables, kv, actions, noteBodyDocs }`.
@@ -150,7 +148,7 @@ export function createHoneycrisp(opts: { keyring: () => Keyring }) {
 	const workspace = createWorkspace({
 		id: HONEYCRISP_ID,
 		keyring: opts.keyring,
-		tables: honeycrispTables,
+		tables: { folders: foldersTable, notes: notesTable },
 		kv: {},
 	});
 	const { tables } = workspace;

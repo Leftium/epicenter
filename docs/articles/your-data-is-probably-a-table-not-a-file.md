@@ -36,7 +36,11 @@ const notesTable = defineTable(
   }
 });
 
-export const honeycrispTables = { folders: foldersTable, notes: notesTable };
+const workspace = createWorkspace({
+  id: HONEYCRISP_ID,
+  tables: { folders: foldersTable, notes: notesTable },
+  kv: {},
+});
 ```
 
 Every note has a known shape: `title`, `preview`, `folderId`, timestamps. The UI reads them with `table.getAllValid()`, filters with `table.filter(...)`, and writes with `table.set(...)`. Rich text content lives in a separate per-note Y.Doc kept in a `createDisposableCache(...)` keyed by note id; the metadata row holds whatever the editor needs to find that content.
@@ -50,11 +54,15 @@ Opensidian is a local-first note editor with a built-in bash terminal. Users cre
 ```typescript
 import { filesTable } from '@epicenter/filesystem';
 
-export const opensidianTables = {
-  files: filesTable,
-  conversations: conversationsTable,
-  chatMessages: chatMessagesTable,
-};
+const workspace = createWorkspace({
+  id: OPENSIDIAN_ID,
+  tables: {
+    files: filesTable,
+    conversations: conversationsTable,
+    chatMessages: chatMessagesTable,
+  },
+  kv: {},
+});
 ```
 
 The `filesTable` comes from `@epicenter/filesystem`. It defines rows with `name`, `parentId`, `type` (file or folder), `size`, timestamps, and soft-delete state. That table gets passed to `attachTables(ydoc, ...)` like any other table, because that's what it is.

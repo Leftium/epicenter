@@ -112,8 +112,6 @@ const entriesTable = defineTable(
 
 export type Entry = InferTableRow<typeof entriesTable>;
 
-const fujiTables = { entries: entriesTable };
-
 /**
  * Build a Fuji workspace bundle: `{ ydoc, tables, kv, actions, entryContentDocs }`.
  *
@@ -124,7 +122,7 @@ export function createFuji(opts: { keyring: () => Keyring }) {
 	const workspace = createWorkspace({
 		id: FUJI_ID,
 		keyring: opts.keyring,
-		tables: fujiTables,
+		tables: { entries: entriesTable },
 		kv: {},
 	});
 	const { tables } = workspace;

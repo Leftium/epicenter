@@ -21,5 +21,4 @@ export {
 	TAB_MANAGER_ID,
 	type TabManagerWorkspace,
 	type ToolTrust,
-	tabManagerTables,
 } from './definition';

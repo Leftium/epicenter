@@ -138,13 +138,6 @@ const toolTrustTable = defineTable({
 });
 export type ToolTrust = InferTableRow<typeof toolTrustTable>;
 
-const opensidianTables = {
-	files: filesTable,
-	conversations: conversationsTable,
-	chatMessages: chatMessagesTable,
-	toolTrust: toolTrustTable,
-};
-
 /**
  * Build an Opensidian workspace bundle:
  * `{ ydoc, tables, kv, actions, fileContentDocs }`.
@@ -159,7 +152,12 @@ export function createOpensidian(opts: { keyring: () => Keyring }) {
 	const workspace = createWorkspace({
 		id: OPENSIDIAN_ID,
 		keyring: opts.keyring,
-		tables: opensidianTables,
+		tables: {
+			files: filesTable,
+			conversations: conversationsTable,
+			chatMessages: chatMessagesTable,
+			toolTrust: toolTrustTable,
+		},
 		kv: {},
 	});
 	const fileContentDocs = createDisposableCache((fileId: FileId) => {

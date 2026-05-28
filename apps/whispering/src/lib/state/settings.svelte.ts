@@ -1,19 +1,14 @@
-import type { InferKvValue } from '@epicenter/workspace';
 import { SvelteMap } from 'svelte/reactivity';
 import { whispering } from '$lib/whispering/whispering';
-import { whisperingKv } from '$lib/workspace';
 
-const KV_DEFINITIONS = whisperingKv;
-type KvKey = keyof typeof KV_DEFINITIONS & string;
-
-type KvDefs = typeof KV_DEFINITIONS;
+type Kv = typeof whispering.kv;
 
 function createSettings() {
 	const map = new SvelteMap<string, unknown>();
 
 	// Initialize SvelteMap with current values for ALL KV keys.
 	// kv.get() always returns a valid value (stored value or defaultValue).
-	for (const key of Object.keys(KV_DEFINITIONS) as KvKey[]) {
+	for (const key of whispering.settings.keys) {
 		map.set(key, whispering.kv.get(key));
 	}
 
@@ -36,31 +31,20 @@ function createSettings() {
 		 * reactive SvelteMap. Components reading this will re-render when the
 		 * value changes (from local writes OR remote sync).
 		 */
-		get<K extends keyof KvDefs & string>(key: K): InferKvValue<KvDefs[K]> {
-			return map.get(key) as InferKvValue<KvDefs[K]>;
-		},
+		get: ((key) => map.get(key)) as Kv['get'],
 
 		/**
 		 * Set a synced workspace setting. Writes to Yjs KV, which fires the
-		 * observer, which updates the SvelteMap. Unidirectional — never set
+		 * observer, which updates the SvelteMap. Unidirectional: never set
 		 * the SvelteMap directly.
 		 */
-		set<K extends keyof KvDefs & string>(
-			key: K,
-			value: InferKvValue<KvDefs[K]>,
-		) {
-			whispering.kv.set(key, value);
-		},
+		set: whispering.kv.set,
 
 		/**
-		 * Reset all workspace settings to their default values.
-		 * Iterates every KV definition and writes its defaultValue to Yjs KV.
+		 * Reset all workspace settings to their default values in a single
+		 * Yjs transaction.
 		 */
-		reset() {
-			for (const key of Object.keys(KV_DEFINITIONS) as KvKey[]) {
-				whispering.kv.set(key, KV_DEFINITIONS[key].defaultValue());
-			}
-		},
+		reset: whispering.settings.reset,
 	};
 }
 

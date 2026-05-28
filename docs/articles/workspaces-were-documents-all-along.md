@@ -87,7 +87,7 @@ The third rewrite was mechanical. Delete `defineWorkspace`. Have apps call `defi
 const fuji = defineDocument((id: string) => {
   const ydoc = new Y.Doc({ guid: id, gc: false });
 
-  const tables = attachTables(ydoc, fujiTables);
+  const tables = attachTables(ydoc, { entries: entriesTable });
   const kv = attachKv(ydoc, {});
   const awareness = attachAwareness(ydoc, {});
   const enc = attachEncryption(ydoc, { tables, kv });

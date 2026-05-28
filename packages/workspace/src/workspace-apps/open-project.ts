@@ -6,7 +6,7 @@
  * startup path:
  *
  *   1. `loadProjectConfig(projectDir)` imports `epicenter.config.ts` and
- *      validates that its default export is a `Mount` / `Mount[]`.
+ *      validates that its default export is a `Mount[]`.
  *   2. Refuse to start when machine auth is signed out, then validate the
  *      configured mount names.
  *   3. Build a per-mount `MountContext` and run every `open(ctx)` in parallel.

@@ -41,16 +41,6 @@ describe('loadProjectConfig', () => {
 		});
 	});
 
-	test('normalizes a single Mount default export into a Mount[]', async () => {
-		writeConfig("export default { name: 'demo', open() {} };\n");
-
-		const { data, error } = await loadProjectConfig(projectDir);
-		if (error !== null) throw new Error(error.message);
-		expect(data).toHaveLength(1);
-		expect(data[0]?.name).toBe('demo');
-		expect(data[0]?.open).toBeFunction();
-	});
-
 	test('passes through a Mount[] default export', async () => {
 		writeConfig(
 			"export default [{ name: 'a', open() {} }, { name: 'b', open() {} }];\n",
@@ -69,7 +59,7 @@ describe('loadProjectConfig', () => {
 		expect(data).toEqual([]);
 	});
 
-	test('rejects a default export that is neither a Mount nor Mount[]', async () => {
+	test('rejects a non-array default export', async () => {
 		writeConfig('export default { notAMount: true };\n');
 
 		const { error } = await loadProjectConfig(projectDir);
@@ -79,22 +69,15 @@ describe('loadProjectConfig', () => {
 		});
 	});
 
+	test('rejects a bare Mount that is not wrapped in an array', async () => {
+		writeConfig("export default { name: 'demo', open() {} };\n");
+
+		const { error } = await loadProjectConfig(projectDir);
+		expect(error?.name).toBe('ProjectConfigInvalid');
+	});
+
 	test('rejects a Mount[] containing a non-Mount value', async () => {
 		writeConfig("export default [{ name: 'demo', open() {} }, { open: 1 }];\n");
-
-		const { error } = await loadProjectConfig(projectDir);
-		expect(error?.name).toBe('ProjectConfigInvalid');
-	});
-
-	test('rejects a Mount that lacks open()', async () => {
-		writeConfig("export default { name: 'demo' };\n");
-
-		const { error } = await loadProjectConfig(projectDir);
-		expect(error?.name).toBe('ProjectConfigInvalid');
-	});
-
-	test('rejects a Mount that lacks a string name', async () => {
-		writeConfig('export default { open() {} };\n');
 
 		const { error } = await loadProjectConfig(projectDir);
 		expect(error?.name).toBe('ProjectConfigInvalid');

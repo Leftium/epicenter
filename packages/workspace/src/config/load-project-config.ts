@@ -1,15 +1,10 @@
 /**
  * Load a project's `epicenter.config.ts` and return its mount list.
  *
- * The config default-exports one of:
+ * The config default-exports a `Mount[]`. One app is a list of one:
  *
- *   - a single `Mount`:
- *       `export default fuji();`
- *
- *   - a `Mount[]`:
- *       `export default [fuji(), notes()];`
- *
- * Both forms normalize to `Mount[]` so callers do not branch on shape.
+ *   `export default [fuji()];`
+ *   `export default [fuji(), notes()];`
  *
  * `epicenter.config.ts` is dynamically imported, so its default export crosses
  * a runtime boundary where TypeScript types are erased and nothing typechecks
@@ -93,18 +88,11 @@ export async function loadProjectConfig(
 	if (importError !== null) return Err(importError);
 
 	const value = module.default;
-	if (Array.isArray(value)) {
-		if (value.every(isMount)) return Ok(value);
-		return ProjectConfigError.ProjectConfigInvalid({
-			projectConfigPath,
-			detail:
-				'an array entry is not a Mount (each needs a string `name` and an `open` function)',
-		});
-	}
-	if (isMount(value)) return Ok([value]);
+	if (Array.isArray(value) && value.every(isMount)) return Ok(value);
 	return ProjectConfigError.ProjectConfigInvalid({
 		projectConfigPath,
-		detail: 'the default export must be a Mount or a Mount[]',
+		detail:
+			'the default export must be a Mount[] (each entry needs a string `name` and an `open` function)',
 	});
 }
 

@@ -3,31 +3,10 @@ import {
 	type CreateMutationOptions,
 	type CreateMutationResult,
 	createMutation,
-	type MutationFunctionContext,
 	type QueryClient,
 } from '@tanstack/svelte-query';
-import {
-	type Result,
-	type UnwrapErr,
-	type UnwrapOk,
-	unwrap,
-} from 'wellcrafted/result';
-
-type MaybePromise<T> = T | Promise<T>;
-
-/**
- * The exact shape a Result-aware mutation function must return.
- *
- * This is intentionally local to the adapter. Callers should name the operation
- * itself, not the intermediate Result extraction type.
- */
-type ResultMutationFnReturn = MaybePromise<Result<unknown, unknown>>;
-
-type MutationData<TMutationFnReturn extends ResultMutationFnReturn> = UnwrapOk<
-	Awaited<TMutationFnReturn>
->;
-type MutationError<TMutationFnReturn extends ResultMutationFnReturn> =
-	UnwrapErr<Awaited<TMutationFnReturn>>;
+import { mutationOptions } from 'wellcrafted/query';
+import type { Result } from 'wellcrafted/result';
 
 /**
  * TanStack mutation options after translating the Result payload into
@@ -38,22 +17,18 @@ type MutationError<TMutationFnReturn extends ResultMutationFnReturn> =
  * mutation shape.
  */
 type ResultMutationOptions<
-	TMutationFnReturn extends ResultMutationFnReturn,
+	TData,
+	TError,
 	TVariables = void,
-	TOnMutateResult = unknown,
+	TContext = unknown,
 > = Omit<
-	CreateMutationOptions<
-		MutationData<TMutationFnReturn>,
-		MutationError<TMutationFnReturn>,
-		TVariables,
-		TOnMutateResult
-	>,
+	CreateMutationOptions<TData, TError, TVariables, TContext>,
 	'mutationFn'
 > & {
+	mutationKey: readonly unknown[];
 	mutationFn: (
 		variables: TVariables,
-		context: MutationFunctionContext,
-	) => TMutationFnReturn;
+	) => Result<TData, TError> | Promise<Result<TData, TError>>;
 };
 
 /**
@@ -66,8 +41,9 @@ type ResultMutationOptions<
  * lifecycle callbacks and template reads preserve the operation's own success
  * and error types.
  *
- * The operation itself still returns a Result. This adapter unwraps at the
- * TanStack boundary because TanStack records mutation errors from thrown values.
+ * Prefer calling TanStack's `createMutation` with Wellcrafted's
+ * `mutationOptions` directly. This helper stays as a compatibility wrapper for
+ * older internal call sites.
  *
  * Promote the operation to a shared `defineMutation` only when it needs a stable
  * mutation key, shared invalidation, optimistic updates, or multiple consumers.
@@ -76,6 +52,7 @@ type ResultMutationOptions<
  * ```svelte
  * <script lang="ts">
  * 	const startSignIn = createResultMutation(() => ({
+ * 		mutationKey: ['auth', 'startSignIn'],
  * 		mutationFn: () => auth.startSignIn(),
  * 	}));
  *
@@ -91,32 +68,16 @@ type ResultMutationOptions<
  * ```
  */
 export function createResultMutation<
-	TMutationFnReturn extends ResultMutationFnReturn,
+	TData,
+	TError,
 	TVariables = void,
-	TOnMutateResult = unknown,
+	TContext = unknown,
 >(
-	options: Accessor<
-		ResultMutationOptions<TMutationFnReturn, TVariables, TOnMutateResult>
-	>,
+	options: Accessor<ResultMutationOptions<TData, TError, TVariables, TContext>>,
 	queryClient?: Accessor<QueryClient>,
-): CreateMutationResult<
-	MutationData<TMutationFnReturn>,
-	MutationError<TMutationFnReturn>,
-	TVariables,
-	TOnMutateResult
-> {
-	return createMutation(() => {
-		const current = options();
-
-		return {
-			...current,
-			mutationFn: async (
-				variables: TVariables,
-				context: MutationFunctionContext,
-			) => {
-				const result = await current.mutationFn(variables, context);
-				return unwrap(result) as MutationData<TMutationFnReturn>;
-			},
-		};
-	}, queryClient);
+): CreateMutationResult<TData, TError, TVariables, TContext> {
+	return createMutation(
+		() => mutationOptions<TData, TError, TVariables, TContext>(options()),
+		queryClient,
+	);
 }

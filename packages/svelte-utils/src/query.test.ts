@@ -20,6 +20,7 @@ type TestInput = {
 
 function createTypedMutation() {
 	return createResultMutation(() => ({
+		mutationKey: ['test', 'save'],
 		mutationFn: (_input: TestInput): Result<'saved', TestError> =>
 			Ok('saved' as const),
 		onError: (error) => {
@@ -35,6 +36,7 @@ function createTypedMutation() {
 
 function createAsyncTypedMutation() {
 	return createResultMutation(() => ({
+		mutationKey: ['test', 'async'],
 		mutationFn: async (): Promise<Result<42, TestError>> => Ok(42 as const),
 	}));
 }

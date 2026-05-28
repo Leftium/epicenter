@@ -12,9 +12,13 @@
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import User from '@lucide/svelte/icons/user';
-	import { createQuery, QueryClient } from '@tanstack/svelte-query';
+	import {
+		createMutation,
+		createQuery,
+		QueryClient,
+	} from '@tanstack/svelte-query';
 	import { extractErrorMessage } from 'wellcrafted/error';
-	import { createResultMutation } from '../query.js';
+	import { mutationOptions } from 'wellcrafted/query';
 
 	const accountProfileQueryClient = new QueryClient({
 		defaultOptions: {
@@ -94,22 +98,26 @@
 	const accountLabel = $derived(
 		profile.data?.user.email ?? (profile.error ? 'Offline' : 'Loading...'),
 	);
-	const signOut = createResultMutation(
-		() => ({
-			mutationFn: () => auth.signOut(),
-			onMutate: () => {
-				popoverOpen = false;
-			},
-			onError: (error) => {
-				toastOnError(error, 'Failed to sign out');
-			},
-		}),
+	const signOut = createMutation(
+		() =>
+			mutationOptions({
+				mutationKey: ['account', 'signOut'],
+				mutationFn: () => auth.signOut(),
+				onMutate: () => {
+					popoverOpen = false;
+				},
+				onError: (error) => {
+					toastOnError(error, 'Failed to sign out');
+				},
+			}),
 		() => accountProfileQueryClient,
 	);
-	const startSignIn = createResultMutation(
-		() => ({
-			mutationFn: () => auth.startSignIn(),
-		}),
+	const startSignIn = createMutation(
+		() =>
+			mutationOptions({
+				mutationKey: ['account', 'startSignIn'],
+				mutationFn: () => auth.startSignIn(),
+			}),
 		() => accountProfileQueryClient,
 	);
 

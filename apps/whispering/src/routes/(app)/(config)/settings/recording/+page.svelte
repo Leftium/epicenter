@@ -6,6 +6,7 @@
 	import * as Select from '@epicenter/ui/select';
 	import InfoIcon from '@lucide/svelte/icons/info';
 	import { createMutation } from '@tanstack/svelte-query';
+	import { mutationOptions } from 'wellcrafted/query';
 	import {
 		BITRATE_OPTIONS,
 		RECORDING_MODE_OPTIONS,
@@ -71,9 +72,12 @@
 			deviceConfig.get('recording.method') === 'navigator',
 	);
 
-	const exportMarkdown = createMutation(() => ({
-		mutationFn: whispering.actions.recordings_export_markdown,
-	}));
+	const exportMarkdown = createMutation(() =>
+		mutationOptions({
+			mutationKey: ['recordings', 'exportMarkdown'],
+			mutationFn: whispering.actions.recordings_export_markdown,
+		}),
+	);
 
 	function getManualDeviceId(method: 'cpal' | 'navigator') {
 		switch (method) {
@@ -252,19 +256,18 @@
 						variant="outline"
 						onclick={() => {
 							exportMarkdown.mutate(undefined, {
-								onSuccess: ({ data, error }) => {
-									if (error !== null) {
-										report.error({
-											title: 'Recording markdown export failed',
-											cause: error,
-										});
-										return;
-									}
+								onSuccess: (data) => {
 									if (data.status === 'cancelled') return;
 
 									report.success({
 										title: 'Recording markdown exported',
 										description: `Wrote ${data.written} ${data.written === 1 ? 'file' : 'files'} to ${data.dir}.`,
+									});
+								},
+								onError: (error) => {
+									report.error({
+										title: 'Recording markdown export failed',
+										cause: error,
 									});
 								},
 							});

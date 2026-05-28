@@ -1,5 +1,6 @@
 import type { SchemaClient } from '@better-auth/oauth-provider';
 import { APPS, localUrl } from '#apps';
+import { OAUTH_ROUTES } from './oauth-routes.js';
 
 /**
  * Dev port for the dashboard SPA. The dashboard is served at
@@ -87,8 +88,8 @@ function appCallbacks(
  * `https://api.acme.com` and `wrangler dev` on a custom port each register
  * their own callbacks without anyone editing this file.
  *
- * The API seed (`ensureTrustedOAuthClients`) calls this once per worker at
- * cold boot; `authPlugins` calls it to derive the trusted-client-id set.
+ * The API seed (`seedTrustedOAuthClients`) calls this at deploy time;
+ * `authPlugins` calls it to derive the trusted-client-id set.
  */
 export function buildTrustedOAuthClients(apiBaseURL: string) {
 	return [
@@ -138,7 +139,7 @@ export function buildTrustedOAuthClients(apiBaseURL: string) {
 			clientId: EPICENTER_CLI_OAUTH_CLIENT_ID,
 			name: 'Epicenter CLI',
 			type: 'native',
-			redirectUris: [`${apiBaseURL}/auth/cli-callback`],
+			redirectUris: [OAUTH_ROUTES.cliCallback.url(apiBaseURL)],
 		},
 	] as const satisfies readonly TrustedOAuthClient[];
 }

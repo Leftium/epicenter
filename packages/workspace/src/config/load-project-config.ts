@@ -11,8 +11,15 @@
  *
  * Both forms normalize to `Mount[]` so callers do not branch on shape.
  *
- * Mount detection is duck-typed: a value is a `Mount` iff it has a string
- * `name` and a function `open`.
+ * `epicenter.config.ts` is dynamically imported, so its default export crosses
+ * a runtime boundary where TypeScript types are erased and nothing typechecks
+ * the user's file first. `isMount` is therefore real input validation, not a
+ * stand-in for a nominal type: it asserts the exact two members the daemon
+ * consumes (`name: string`, `open: function`) so a malformed config fails with
+ * a clear, structured error pointed at the file instead of a cryptic
+ * `TypeError` deep in startup.
+ *
+ * Every failure is a `ProjectConfigError` variant; this function never throws.
  */
 
 import { existsSync } from 'node:fs';
@@ -24,7 +31,7 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 import type { Mount } from '../daemon/define-mount.js';
 import type { ProjectDir } from '../shared/types.js';
@@ -39,6 +46,28 @@ export const ProjectConfigError = defineErrors({
 		message: `Project config not found at ${projectConfigPath}`,
 		projectConfigPath,
 	}),
+	ProjectConfigImportFailed: ({
+		projectConfigPath,
+		cause,
+	}: {
+		projectConfigPath: string;
+		cause: unknown;
+	}) => ({
+		message: `Failed to load project config at ${projectConfigPath}: ${extractErrorMessage(cause)}`,
+		projectConfigPath,
+		cause,
+	}),
+	ProjectConfigInvalid: ({
+		projectConfigPath,
+		detail,
+	}: {
+		projectConfigPath: string;
+		detail: string;
+	}) => ({
+		message: `Invalid project config at ${projectConfigPath}: ${detail}.`,
+		projectConfigPath,
+		detail,
+	}),
 });
 export type ProjectConfigError = InferErrors<typeof ProjectConfigError>;
 
@@ -50,31 +79,33 @@ export async function loadProjectConfig(
 		return ProjectConfigError.ProjectConfigNotFound({ projectConfigPath });
 	}
 
-	const module = await importProjectConfig(projectConfigPath);
-	if (!('default' in module)) {
-		throw new Error(
-			`loadProjectConfig: ${projectConfigPath} must default-export a Mount or Mount[].`,
-		);
-	}
-
-	const fail = (reason: string): never => {
-		throw new Error(`loadProjectConfig: ${projectConfigPath} ${reason}`);
-	};
+	const { data: module, error: importError } = await tryAsync({
+		try: () =>
+			import(pathToFileURL(projectConfigPath).href) as Promise<{
+				default?: unknown;
+			}>,
+		catch: (cause) =>
+			ProjectConfigError.ProjectConfigImportFailed({
+				projectConfigPath,
+				cause,
+			}),
+	});
+	if (importError !== null) return Err(importError);
 
 	const value = module.default;
-
 	if (Array.isArray(value)) {
-		for (const entry of value) {
-			if (!isMount(entry)) {
-				fail('default-exports an array containing a non-Mount value.');
-			}
-		}
-		return Ok(value as Mount[]);
+		if (value.every(isMount)) return Ok(value);
+		return ProjectConfigError.ProjectConfigInvalid({
+			projectConfigPath,
+			detail:
+				'an array entry is not a Mount (each needs a string `name` and an `open` function)',
+		});
 	}
-	if (isMount(value)) {
-		return Ok([value]);
-	}
-	return fail('must default-export a Mount or Mount[].');
+	if (isMount(value)) return Ok([value]);
+	return ProjectConfigError.ProjectConfigInvalid({
+		projectConfigPath,
+		detail: 'the default export must be a Mount or a Mount[]',
+	});
 }
 
 function isMount(value: unknown): value is Mount {
@@ -86,19 +117,4 @@ function isMount(value: unknown): value is Mount {
 		'open' in value &&
 		typeof (value as { open: unknown }).open === 'function'
 	);
-}
-
-async function importProjectConfig(
-	projectConfigPath: string,
-): Promise<{ default?: unknown }> {
-	try {
-		return (await import(pathToFileURL(projectConfigPath).href)) as {
-			default?: unknown;
-		};
-	} catch (cause) {
-		throw new Error(
-			`loadProjectConfig: failed to load ${projectConfigPath}: ${extractErrorMessage(cause)}`,
-			{ cause },
-		);
-	}
 }

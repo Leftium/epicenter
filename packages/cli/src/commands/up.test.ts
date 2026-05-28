@@ -269,16 +269,17 @@ describe('runUp: failure cleanup', () => {
 		}
 	});
 
-	test('releases the daemon lease when config loading throws', async () => {
+	test('releases the daemon lease when config loading fails', async () => {
 		writeFileSync(join(workDir, 'epicenter.config.ts'), 'export default {;\n');
 
-		await expect(
-			runUp({
+		const error = expectErr(
+			await runUp({
 				projectDir: workDir,
 				quiet: true,
 				createAuthClient: stubAuthFactory,
 			}),
-		).rejects.toThrow('loadProjectConfig: failed to load');
+		);
+		expect(error.name).toBe('ProjectConfigImportFailed');
 
 		const lease = expectOk(claimDaemonLease(workDir));
 		lease.release();

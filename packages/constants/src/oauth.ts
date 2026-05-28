@@ -1,5 +1,5 @@
 import type { SchemaClient } from '@better-auth/oauth-provider';
-import { APPS, localUrl } from '#apps';
+import { APPS, localUrl, prodOrigins } from '#apps';
 import { OAUTH_ROUTES } from './oauth-routes.js';
 
 /**
@@ -69,15 +69,26 @@ export const EPICENTER_OAUTH_SCOPES = [
 export const EPICENTER_OAUTH_SCOPE = EPICENTER_OAUTH_SCOPES.join(' ');
 
 /**
- * Every redirect URI for an app: the dev `http://localhost:<port>` origin
- * plus every entry in `APPS[*].urls`, each joined to `path`. Used for apps
- * that own their origin (Fuji, Honeycrisp, Opensidian, Zhongwen).
+ * Path every first-party app receives the OAuth callback at, on each of its
+ * origins. A convention shared by all origin-owning apps, not a per-app
+ * choice, so it lives here rather than as an {@link appCallbacks} argument.
  */
-function appCallbacks(
-	app: { port: number; urls: readonly string[] },
-	path: string,
-): string[] {
-	return [localUrl(app), ...app.urls].map((origin) => `${origin}${path}`);
+const AUTH_CALLBACK_PATH = '/auth/callback';
+
+/**
+ * Every redirect URI for an app that owns its origin: the dev
+ * `http://localhost:<port>` origin plus each production origin
+ * ({@link prodOrigins}), joined to {@link AUTH_CALLBACK_PATH}. Used by Fuji,
+ * Honeycrisp, Opensidian, and Zhongwen.
+ */
+function appCallbacks(app: {
+	port: number;
+	url: string;
+	aliases?: readonly string[];
+}): string[] {
+	return [localUrl(app), ...prodOrigins(app)].map(
+		(origin) => `${origin}${AUTH_CALLBACK_PATH}`,
+	);
 }
 
 /**
@@ -107,7 +118,7 @@ export function buildTrustedOAuthClients(apiBaseURL: string) {
 			name: 'Fuji',
 			type: 'user-agent-based',
 			redirectUris: [
-				...appCallbacks(APPS.FUJI, '/auth/callback'),
+				...appCallbacks(APPS.FUJI),
 				EPICENTER_FUJI_TAURI_OAUTH_REDIRECT_URI,
 			],
 		},
@@ -115,13 +126,13 @@ export function buildTrustedOAuthClients(apiBaseURL: string) {
 			clientId: EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
 			name: 'Honeycrisp',
 			type: 'user-agent-based',
-			redirectUris: appCallbacks(APPS.HONEYCRISP, '/auth/callback'),
+			redirectUris: appCallbacks(APPS.HONEYCRISP),
 		},
 		{
 			clientId: EPICENTER_OPENSIDIAN_OAUTH_CLIENT_ID,
 			name: 'Opensidian',
 			type: 'user-agent-based',
-			redirectUris: appCallbacks(APPS.OPENSIDIAN, '/auth/callback'),
+			redirectUris: appCallbacks(APPS.OPENSIDIAN),
 		},
 		{
 			clientId: EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID,
@@ -133,7 +144,7 @@ export function buildTrustedOAuthClients(apiBaseURL: string) {
 			clientId: EPICENTER_ZHONGWEN_OAUTH_CLIENT_ID,
 			name: 'Zhongwen',
 			type: 'user-agent-based',
-			redirectUris: appCallbacks(APPS.ZHONGWEN, '/auth/callback'),
+			redirectUris: appCallbacks(APPS.ZHONGWEN),
 		},
 		{
 			clientId: EPICENTER_CLI_OAUTH_CLIENT_ID,

@@ -14,6 +14,6 @@ const isDev = import.meta.env.MODE !== 'production';
 export const APP_URLS = Object.fromEntries(
 	Object.entries(APPS).map(([id, app]) => [
 		id,
-		isDev ? `http://localhost:${app.port}` : app.urls[0],
+		isDev ? `http://localhost:${app.port}` : app.url,
 	]),
 ) as { readonly [K in AppId]: string };

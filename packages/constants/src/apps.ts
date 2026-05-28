@@ -1,9 +1,10 @@
 /**
  * Single source of truth for all Epicenter app URLs and ports.
  *
- * Each app declares its dev port and production URLs. The first URL in
- * `urls` is the canonical production URL (used by Vite prod builds).
- * All URLs are included in CORS and trusted origins.
+ * Each app declares its dev `port` and canonical production `url`. Apps
+ * reachable at more than one domain add `aliases`. The canonical `url` is
+ * used by Vite prod builds; `url` plus `aliases` together are included in
+ * CORS and trusted origins (see {@link prodOrigins}).
  *
  * To add an app: add an entry here. TypeScript enforces that every
  * consumer picks it up automatically.
@@ -24,16 +25,17 @@
 export const PRODUCTION_API_URL = 'https://api.epicenter.so';
 
 export const APPS = {
-	API: { port: 8787, urls: [PRODUCTION_API_URL] },
-	SH: { port: 5173, urls: ['https://epicenter.sh'] },
-	AUDIO: { port: 1420, urls: ['https://whispering.epicenter.so'] },
-	FUJI: { port: 5174, urls: ['https://fuji.epicenter.so'] },
-	HONEYCRISP: { port: 5175, urls: ['https://honeycrisp.epicenter.so'] },
+	API: { port: 8787, url: PRODUCTION_API_URL },
+	SH: { port: 5173, url: 'https://epicenter.sh' },
+	AUDIO: { port: 1420, url: 'https://whispering.epicenter.so' },
+	FUJI: { port: 5174, url: 'https://fuji.epicenter.so' },
+	HONEYCRISP: { port: 5175, url: 'https://honeycrisp.epicenter.so' },
 	OPENSIDIAN: {
 		port: 5176,
-		urls: ['https://opensidian.com', 'https://opensidian.epicenter.so'],
+		url: 'https://opensidian.com',
+		aliases: ['https://opensidian.epicenter.so'],
 	},
-	ZHONGWEN: { port: 8888, urls: ['https://zhongwen.epicenter.so'] },
+	ZHONGWEN: { port: 8888, url: 'https://zhongwen.epicenter.so' },
 } as const;
 
 export type AppId = keyof typeof APPS;
@@ -54,6 +56,20 @@ export function localUrl<Port extends number>(app: {
 	port: Port;
 }) {
 	return `http://localhost:${app.port}` as const;
+}
+
+/**
+ * Every production origin an app answers on: its canonical `url` plus any
+ * `aliases`. Single owner for expanding the canonical-plus-alias pair into a
+ * flat list, read by CORS trusted origins and OAuth redirect URIs. Only apps
+ * reachable at more than one domain (e.g. Opensidian) declare `aliases`; for
+ * everyone else this is a one-element list.
+ */
+export function prodOrigins(app: {
+	url: string;
+	aliases?: readonly string[];
+}): readonly string[] {
+	return [app.url, ...(app.aliases ?? [])];
 }
 
 /**

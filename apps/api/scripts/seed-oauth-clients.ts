@@ -39,7 +39,7 @@ import pg from 'pg';
 import { LOCAL_DATABASE_URL } from '../env';
 
 const baseURL =
-	process.env.SEED_TARGET === 'prod' ? APPS.API.urls[0] : localUrl(APPS.API);
+	process.env.SEED_TARGET === 'prod' ? APPS.API.url : localUrl(APPS.API);
 const connectionString = process.env.DATABASE_URL ?? LOCAL_DATABASE_URL;
 
 const UPSERT = `

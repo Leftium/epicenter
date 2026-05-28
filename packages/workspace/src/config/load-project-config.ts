@@ -15,7 +15,7 @@
  * `name` and a function `open`.
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -28,10 +28,7 @@ import { Ok, type Result } from 'wellcrafted/result';
 
 import type { Mount } from '../daemon/define-mount.js';
 import type { ProjectDir } from '../shared/types.js';
-import {
-	DEFAULT_PROJECT_CONFIG_SOURCE,
-	PROJECT_CONFIG_FILENAME,
-} from './project-config-source.js';
+import { PROJECT_CONFIG_FILENAME } from './project-config-source.js';
 
 export const ProjectConfigError = defineErrors({
 	ProjectConfigNotFound: ({
@@ -99,24 +96,9 @@ async function importProjectConfig(
 			default?: unknown;
 		};
 	} catch (cause) {
-		if (isDefaultConfigSelfImportMiss(projectConfigPath, cause)) {
-			return { default: [] satisfies Mount[] };
-		}
 		throw new Error(
 			`loadProjectConfig: failed to load ${projectConfigPath}: ${extractErrorMessage(cause)}`,
 			{ cause },
 		);
 	}
-}
-
-function isDefaultConfigSelfImportMiss(
-	projectConfigPath: string,
-	cause: unknown,
-): boolean {
-	return (
-		extractErrorMessage(cause).includes(
-			"Cannot find module '@epicenter/workspace'",
-		) &&
-		readFileSync(projectConfigPath, 'utf8') === DEFAULT_PROJECT_CONFIG_SOURCE
-	);
 }

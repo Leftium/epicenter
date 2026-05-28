@@ -26,10 +26,10 @@ import {
 	type DaemonMetadata,
 	DEFAULT_PROJECT_CONFIG_SOURCE,
 	findProjectRoot,
-	loadProjectConfig,
+	openProject,
+	type ProjectConfigError,
 	StartupError,
 	startDaemonServer,
-	startProjectMounts,
 	unlinkMetadata,
 	type WorkspaceAppError,
 	writeMetadata,
@@ -97,13 +97,19 @@ type UpHandle = {
  * process; tests call it directly and assert on the returned handle.
  *
  * A SQLite daemon lease claims ownership before any mount opens. After that,
- * `loadProjectConfig` imports the config, `startProjectMounts` opens every
- * configured mount, and `startDaemonServer` binds the socket.
+ * `openProject` imports `epicenter.config.ts` and opens every configured
+ * mount, and `startDaemonServer` binds the socket.
  */
 export async function runUp(
 	options: UpOptions,
 ): Promise<
-	Result<UpHandle, WorkspaceAppError | StartupError | MachineAuthStorageError>
+	Result<
+		UpHandle,
+		| ProjectConfigError
+		| WorkspaceAppError
+		| StartupError
+		| MachineAuthStorageError
+	>
 > {
 	const projectDir = realpathSync(resolveProjectForUp(options.projectDir));
 	provisionProject(projectDir);
@@ -134,15 +140,7 @@ export async function runUp(
 	const auth = authResult.data;
 	stack.defer(() => auth[Symbol.dispose]());
 
-	const { data: mountsConfig, error: configError } =
-		await loadProjectConfig(projectDir);
-	if (configError !== null) throw new Error(configError.message);
-
-	const startResult = await startProjectMounts({
-		projectDir,
-		auth,
-		mounts: mountsConfig,
-	});
+	const startResult = await openProject({ projectDir, auth });
 	if (startResult.error) return startResult;
 	const mounts = startResult.data;
 	stack.defer(() =>

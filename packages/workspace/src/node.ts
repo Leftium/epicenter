@@ -12,10 +12,7 @@ export type {
 } from './client/daemon-actions.js';
 export { buildDaemonActions } from './client/daemon-actions.js';
 export { findProjectRoot } from './client/find-project-root.js';
-export {
-	loadProjectConfig,
-	ProjectConfigError,
-} from './config/load-project-config.js';
+export { ProjectConfigError } from './config/load-project-config.js';
 export { DEFAULT_PROJECT_CONFIG_SOURCE } from './config/project-config-source.js';
 export { PeerSnapshot, RunRequest } from './daemon/app.js';
 export {
@@ -96,6 +93,6 @@ export type {
 } from './workspace-apps/auth-client.js';
 export { WorkspaceAppError } from './workspace-apps/errors.js';
 export {
-	type StartProjectMountsOptions,
-	startProjectMounts,
-} from './workspace-apps/start-project-mounts.js';
+	type OpenProjectOptions,
+	openProject,
+} from './workspace-apps/open-project.js';

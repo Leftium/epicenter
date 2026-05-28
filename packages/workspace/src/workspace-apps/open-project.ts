@@ -1,23 +1,35 @@
 /**
- * Project-mount startup.
+ * Open a project: the single daemon entry point from `epicenter.config.ts` to
+ * live mount runtimes.
  *
- * `startProjectMounts()` is the daemon entry point: validate the mounts from
- * `epicenter.config.ts`, run every `open(ctx)` in parallel, and either return
- * the started mounts or dispose the successfully opened ones if any sibling
- * failed.
+ * `openProject()` is what `epicenter daemon up` calls. It owns the whole
+ * startup path:
  *
- * The host owns auth lifecycle. It refuses to start when machine auth is
- * signed-out, then builds a per-mount `MountContext` carrying the lazy
- * `keyring` reader (with a sign-out guard) plus the auth-derived function
- * refs (`openWebSocket`, `onReconnectSignal`) the mount forwards into
- * `openCollaboration`.
+ *   1. `loadProjectConfig(projectDir)` imports `epicenter.config.ts` and
+ *      validates that its default export is a `Mount` / `Mount[]`.
+ *   2. Refuse to start when machine auth is signed out, then validate the
+ *      configured mount names.
+ *   3. Build a per-mount `MountContext` and run every `open(ctx)` in parallel.
+ *      If any open fails, dispose the successfully opened runtimes before
+ *      returning the first failure as a structured error.
+ *
+ * The host owns auth lifecycle. Each `MountContext` carries the lazy `keyring`
+ * reader (with a sign-out guard) plus the auth-derived function refs
+ * (`openWebSocket`, `onReconnectSignal`) the mount forwards into
+ * `openCollaboration`. Config-discovery errors and startup errors flow back as
+ * one `Result` union.
  */
 
 import { resolve } from 'node:path';
+
 import type { OwnerId } from '@epicenter/constants/identity';
 import type { Keyring } from '@epicenter/encryption';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 
+import {
+	loadProjectConfig,
+	type ProjectConfigError,
+} from '../config/load-project-config.js';
 import type { Mount, MountContext } from '../daemon/define-mount.js';
 import { validateMountNames } from '../daemon/mount-validation.js';
 import type { StartedMount } from '../daemon/types.js';
@@ -27,24 +39,29 @@ import type { ProjectDir } from '../shared/types.js';
 import type { WorkspaceAuthClient } from './auth-client.js';
 import { WorkspaceAppError } from './errors.js';
 
-export type StartProjectMountsOptions = {
+export type OpenProjectOptions = {
 	projectDir: ProjectDir | string;
 	auth: WorkspaceAuthClient;
-	mounts: readonly Mount[];
 };
 
 /**
- * Bring every configured mount online.
+ * Bring a project's daemon online: import its config, then open every mount it
+ * declares. Returns the started mounts or the first config/startup error.
  *
  * Opens run in parallel because each mount owns its own resources. If any open
  * fails, every successfully opened runtime is disposed before returning the
- * first failure as a structured error.
+ * first failure.
  */
-export async function startProjectMounts(
-	options: StartProjectMountsOptions,
-): Promise<Result<StartedMount[], WorkspaceAppError>> {
-	const { auth, mounts } = options;
+export async function openProject(
+	options: OpenProjectOptions,
+): Promise<Result<StartedMount[], ProjectConfigError | WorkspaceAppError>> {
+	const { auth } = options;
 	const projectDir = resolve(options.projectDir) as ProjectDir;
+
+	const { data: mounts, error: configError } =
+		await loadProjectConfig(projectDir);
+	if (configError !== null) return Err(configError);
+
 	if (auth.state.status === 'signed-out') {
 		return WorkspaceAppError.WorkspaceAuthSignedOut();
 	}

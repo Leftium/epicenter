@@ -134,14 +134,14 @@ export async function runUp(
 	const auth = authResult.data;
 	stack.defer(() => auth[Symbol.dispose]());
 
-	const { data: configMounts, error: configError } =
+	const { data: mountsConfig, error: configError } =
 		await loadProjectConfig(projectDir);
 	if (configError !== null) throw new Error(configError.message);
 
 	const startResult = await startProjectMounts({
 		projectDir,
 		auth,
-		mounts: configMounts,
+		mounts: mountsConfig,
 	});
 	if (startResult.error) return startResult;
 	const mounts = startResult.data;

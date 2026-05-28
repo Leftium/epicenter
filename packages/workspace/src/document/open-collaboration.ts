@@ -275,7 +275,7 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		 * Fire a dispatch over the collaboration WebSocket. Always returns
 		 * `Result<unknown, DispatchError>`.
 		 */
-		dispatch(req: DispatchRequest) {
+		dispatch(req: DispatchRequest): Promise<Result<unknown, DispatchError>> {
 			if (req.signal?.aborted) {
 				return Promise.resolve(
 					DispatchError.Cancelled({ reason: req.signal.reason }),
@@ -290,7 +290,7 @@ export function openCollaboration<TActions extends ActionRegistry>(
 			}
 
 			const id = crypto.randomUUID();
-			return new Promise((resolve) => {
+			return new Promise<Result<unknown, DispatchError>>((resolve) => {
 				let settle: (result: Result<unknown, DispatchError>) => void;
 				const onAbort = () => {
 					settle(DispatchError.Cancelled({ reason: req.signal?.reason }));

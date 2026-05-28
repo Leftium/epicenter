@@ -1,18 +1,18 @@
 /**
- * Load a project's `epicenter.config.ts` and return its mounts.
+ * Load a project's `epicenter.config.ts` and return its mount list.
  *
  * The config default-exports one of:
  *
- *   - a single `Mount` (the common case):
+ *   - a single `Mount`:
  *       `export default fuji();`
  *
- *   - a `Mount[]` for multi-mount projects:
+ *   - a `Mount[]`:
  *       `export default [fuji(), notes()];`
  *
- * Mount detection is duck-typed: a value is a Mount iff it has a string `name`
- * and a function `open`. There is no wrapper helper (no `defineProject`); the
- * mount factory IS the config. The loader returns a normalized `Mount[]` so
- * callers don't branch on shape.
+ * Both forms normalize to `Mount[]` so callers do not branch on shape.
+ *
+ * Mount detection is duck-typed: a value is a `Mount` iff it has a string
+ * `name` and a function `open`.
  */
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -65,6 +65,7 @@ export async function loadProjectConfig(
 	};
 
 	const value = module.default;
+
 	if (Array.isArray(value)) {
 		for (const entry of value) {
 			if (!isMount(entry)) {
@@ -99,7 +100,7 @@ async function importProjectConfig(
 		};
 	} catch (cause) {
 		if (isDefaultConfigSelfImportMiss(projectConfigPath, cause)) {
-			return { default: [] };
+			return { default: [] satisfies Mount[] };
 		}
 		throw new Error(
 			`loadProjectConfig: failed to load ${projectConfigPath}: ${extractErrorMessage(cause)}`,

@@ -2,13 +2,13 @@
  * Project config loading tests.
  *
  * Verifies that `epicenter.config.ts` is discovered, imported, and runtime
- * validated before daemon startup consumes the mounts.
+ * validated before daemon startup consumes the mount list.
  *
  * Key behaviors:
  * - missing configs return a typed not-found error
- * - a Mount default export normalizes to a single-element array
- * - a Mount[] default export passes through
- * - non-Mount values are rejected with the config path in the failure
+ * - a single `Mount` default export normalizes to `[mount]`
+ * - a `Mount[]` default export passes through
+ * - non-Mount values are rejected with the config path
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -43,7 +43,7 @@ describe('loadProjectConfig', () => {
 		});
 	});
 
-	test('normalizes a single Mount default export into a one-element array', async () => {
+	test('normalizes a single Mount default export into a Mount[]', async () => {
 		writeConfig("export default { name: 'demo', open() {} };\n");
 
 		const { data, error } = await loadProjectConfig(projectDir);
@@ -63,7 +63,7 @@ describe('loadProjectConfig', () => {
 		expect(data.map((mount) => mount.name)).toEqual(['a', 'b']);
 	});
 
-	test('returns an empty array for an empty Mount[] default export', async () => {
+	test('passes through an empty Mount[] default export', async () => {
 		writeConfig('export default [];\n');
 
 		const { data, error } = await loadProjectConfig(projectDir);
@@ -71,7 +71,7 @@ describe('loadProjectConfig', () => {
 		expect(data).toEqual([]);
 	});
 
-	test('throws with the config path when the default export is neither a Mount nor a Mount[]', async () => {
+	test('throws with the config path when the default export is neither a Mount nor Mount[]', async () => {
 		writeConfig('export default { notAMount: true };\n');
 
 		await expect(loadProjectConfig(projectDir)).rejects.toThrow(

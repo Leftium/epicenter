@@ -297,7 +297,10 @@ export async function loginWithOob({
 	if (launchResult?.status !== 'completed') {
 		return Err(
 			MachineAuthRequestError.RequestFailed({
-				cause: new Error('OOB launcher returned no grant.'),
+				cause: {
+					message: 'OOB launcher returned no grant.',
+					launchStatus: launchResult?.status,
+				},
 			}).error,
 		);
 	}
@@ -533,9 +536,10 @@ async function fetchApiSession(
 	if (response.status !== 200) {
 		return Err(
 			MachineAuthRequestError.RequestFailed({
-				cause: new Error(
-					`${API_ROUTES.session.pattern} returned ${response.status}.`,
-				),
+				cause: {
+					message: `${API_ROUTES.session.pattern} returned ${response.status}.`,
+					status: response.status,
+				},
 			}).error,
 		);
 	}

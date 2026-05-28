@@ -262,9 +262,10 @@ export function createOAuthAppAuth({
 				return ApiSessionRequestError.AuthRejected({ status: response.status });
 			}
 			return ApiSessionRequestError.Unavailable({
-				cause: new Error(
-					`${API_ROUTES.session.pattern} failed with ${response.status}.`,
-				),
+				cause: {
+					message: `${API_ROUTES.session.pattern} failed with ${response.status}.`,
+					status: response.status,
+				},
 			});
 		}
 		try {
@@ -446,7 +447,7 @@ export function createOAuthAppAuth({
 							return completeSignInWithGrant(launchResult.grant, generation);
 					}
 					return AuthError.StartSignInFailed({
-						cause: new Error('OAuth launcher returned no launch result.'),
+						cause: { message: 'OAuth launcher returned no launch result.' },
 					});
 				} catch (cause) {
 					if (!isCurrentSignIn(generation)) {

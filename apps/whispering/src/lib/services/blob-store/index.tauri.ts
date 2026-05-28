@@ -49,7 +49,7 @@ export const AudioBlobStoreLive = {
 		}
 
 		return BlobError.ReadFailed({
-			cause: new Error(`Blob not found for key ${key}`),
+			cause: { message: `blob not found for key "${key}"`, key },
 		});
 	},
 
@@ -65,7 +65,7 @@ export const AudioBlobStoreLive = {
 		}
 
 		return BlobError.ReadFailed({
-			cause: new Error(`Blob not found for key ${key}`),
+			cause: { message: `blob not found for key "${key}"`, key },
 		});
 	},
 

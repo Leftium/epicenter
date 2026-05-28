@@ -162,7 +162,6 @@ export function createOpensidian(opts: { keyring: () => Keyring }) {
 		tables: opensidianTables,
 		kv: {},
 	});
-	const actions = defineActions({});
 	const fileContentDocs = createDisposableCache((fileId: FileId) => {
 		const childYdoc = new Y.Doc({
 			guid: opensidianFileContentDocGuid(fileId),
@@ -184,7 +183,7 @@ export function createOpensidian(opts: { keyring: () => Keyring }) {
 
 	return defineWorkspace({
 		...workspace,
-		actions,
+		actions: defineActions({}),
 		fileContentDocs,
 		[Symbol.dispose]() {
 			fileContentDocs[Symbol.dispose]();

@@ -181,7 +181,7 @@ For a type-narrowed success payload against a known target registry, lift throug
 
 ```ts
 import { typedDispatch } from '@epicenter/workspace';
-import type { TabManagerActions } from '@epicenter/tab-manager/actions';
+import type { TabManagerActions } from '@epicenter/tab-manager';
 
 const tabManager = typedDispatch<TabManagerActions>(collaboration.dispatch);
 const { data } = await tabManager({

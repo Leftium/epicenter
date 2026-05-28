@@ -1,4 +1,4 @@
-export { createTabManagerActions } from './actions';
+export type { TabManagerActions } from '../tab-manager/extension';
 export {
 	asChatMessageId,
 	asConversationId,

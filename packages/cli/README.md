@@ -108,9 +108,9 @@ Use scripts for anything beyond one-shot CLI calls:
 
 ```ts
 import { connectDaemonActions } from '@epicenter/workspace/node';
-import type { createFujiActions } from '@epicenter/fuji';
+import type { FujiActions } from '@epicenter/fuji';
 
-const fuji = await connectDaemonActions<ReturnType<typeof createFujiActions>>({
+const fuji = await connectDaemonActions<FujiActions>({
 	mount: 'fuji',
 });
 

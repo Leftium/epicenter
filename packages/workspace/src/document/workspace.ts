@@ -7,14 +7,19 @@
  * ```ts
  * const ydoc = new Y.Doc({ guid, gc: true });
  * const { tables, kv } = attachEncryption(ydoc, { keyring, tables, kv });
- * const actions = createXActions(tables);
  * ```
  *
  * becomes
  *
  * ```ts
  * using workspace = createWorkspace({ id, keyring, tables, kv });
- * const actions = createXActions(workspace);
+ * return defineWorkspace({
+ *   ...workspace,
+ *   actions: defineActions({ ... }),
+ *   [Symbol.dispose]() {
+ *     workspace[Symbol.dispose]();
+ *   },
+ * });
  * ```
  *
  * ## Encrypted vs plaintext

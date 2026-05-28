@@ -29,7 +29,6 @@ import {
 	type InferTableRow,
 	type Keyring,
 	onLocalUpdate,
-	type Tables,
 } from '@epicenter/workspace';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
@@ -139,8 +138,6 @@ export type Note = InferTableRow<typeof notesTable>;
 // ─── Workspace factory ────────────────────────────────────────────────────────
 
 const honeycrispTables = { folders: foldersTable, notes: notesTable };
-type HoneycrispTables = typeof honeycrispTables;
-type HoneycrispActionHost = { tables: Tables<HoneycrispTables> };
 
 /**
  * Build a Honeycrisp workspace bundle:
@@ -156,7 +153,7 @@ export function createHoneycrisp(opts: { keyring: () => Keyring }) {
 		tables: honeycrispTables,
 		kv: {},
 	});
-	const actions = createHoneycrispActions(workspace);
+	const { tables } = workspace;
 	const noteBodyDocs = createDisposableCache((noteId: NoteId) => {
 		const childYdoc = new Y.Doc({
 			guid: noteBodyDocGuid(noteId),
@@ -181,7 +178,29 @@ export function createHoneycrisp(opts: { keyring: () => Keyring }) {
 
 	return defineWorkspace({
 		...workspace,
-		actions,
+		actions: defineActions({
+			/**
+			 * Delete a folder and move all its notes to unfiled.
+			 *
+			 * Re-parents every note in the folder (sets `folderId` to null)
+			 * and deletes the folder row. Selection clearing is handled by the
+			 * Svelte state layer (folders) via URL search params.
+			 */
+			folders_delete: defineMutation({
+				description: 'Delete a folder and re-parent its notes to unfiled',
+				input: Type.Object({ folderId: Type.String() }),
+				handler: ({ folderId: rawId }) => {
+					const folderId = asFolderId(rawId);
+					const folderNotes = tables.notes
+						.getAllValid()
+						.filter((n) => n.folderId === folderId);
+					for (const note of folderNotes) {
+						tables.notes.update(note.id, { folderId: null });
+					}
+					tables.folders.delete(folderId);
+				},
+			}),
+		}),
 		noteBodyDocs,
 		[Symbol.dispose]() {
 			noteBodyDocs[Symbol.dispose]();
@@ -206,39 +225,4 @@ export function noteBodyDocGuid(noteId: NoteId): string {
 	});
 }
 
-// ─── Actions ──────────────────────────────────────────────────────────────────
-
-/**
- * Cross-table mutations layered on workspace tables.
- *
- * Includes operations that touch multiple tables in a single logical action
- * (e.g. folder deletion with note re-parenting). Simple single-table CRUD
- * stays in the Svelte state files.
- */
-export function createHoneycrispActions(workspace: HoneycrispActionHost) {
-	const { tables } = workspace;
-	return defineActions({
-		/**
-		 * Delete a folder and move all its notes to unfiled.
-		 *
-		 * Re-parents every note in the folder (sets `folderId` to null)
-		 * and deletes the folder row. Selection clearing is handled by the
-		 * Svelte state layer (folders) via URL search params.
-		 */
-		folders_delete: defineMutation({
-			description: 'Delete a folder and re-parent its notes to unfiled',
-			input: Type.Object({ folderId: Type.String() }),
-			handler: ({ folderId: rawId }) => {
-				const folderId = asFolderId(rawId);
-				const folderNotes = tables.notes
-					.getAllValid()
-					.filter((n) => n.folderId === folderId);
-				for (const note of folderNotes) {
-					tables.notes.update(note.id, { folderId: null });
-				}
-				tables.folders.delete(folderId);
-			},
-		}),
-	});
-}
-export type HoneycrispActions = ReturnType<typeof createHoneycrispActions>;
+export type HoneycrispActions = HoneycrispWorkspace['actions'];

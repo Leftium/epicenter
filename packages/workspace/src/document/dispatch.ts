@@ -179,7 +179,7 @@ export type TypedDispatch<TTargetActions extends ActionRegistry> = <
  *
  * ```ts
  * import { typedDispatch } from '@epicenter/workspace';
- * import type { TabManagerActions } from '@epicenter/tab-manager/actions';
+ * import type { TabManagerActions } from '@epicenter/tab-manager';
  *
  * const tabManager = typedDispatch<TabManagerActions>(collab.dispatch);
  * await tabManager({

@@ -103,11 +103,10 @@ export function createZhongwen(opts: { keyring: () => Keyring }) {
 		tables: zhongwenTables,
 		kv: zhongwenKv,
 	});
-	const actions = defineActions({});
 
 	return defineWorkspace({
 		...workspace,
-		actions,
+		actions: defineActions({}),
 		[Symbol.dispose]() {
 			workspace[Symbol.dispose]();
 		},

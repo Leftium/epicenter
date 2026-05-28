@@ -143,7 +143,12 @@ Apps usually wrap `createWorkspace` in a per-app factory next to their schema so
 
 ```ts
 // apps/my-app/workspace.ts
-import { createWorkspace, defineWorkspace } from '@epicenter/workspace';
+import {
+	createWorkspace,
+	defineActions,
+	defineMutation,
+	defineWorkspace,
+} from '@epicenter/workspace';
 
 export function createMyAppWorkspace(opts: { keyring: () => Keyring }) {
 	const workspace = createWorkspace({
@@ -152,11 +157,19 @@ export function createMyAppWorkspace(opts: { keyring: () => Keyring }) {
 		tables: myAppTables,
 		kv: {},
 	});
-	const actions = createMyAppActions(workspace);
 
 	return defineWorkspace({
 		...workspace,
-		actions,
+		actions: defineActions({
+			items_archive: defineMutation({
+				input: Type.Object({ id: Type.String() }),
+				handler: ({ id }) =>
+					workspace.tables.items.update(id, { archived: true }),
+			}),
+		}),
+		[Symbol.dispose]() {
+			workspace[Symbol.dispose]();
+		},
 	});
 }
 ```
@@ -445,7 +458,7 @@ Actions are callable functions with metadata.
 
 - `defineQuery(...)` creates a read action
 - `defineMutation(...)` creates a write action
-- Include them in your bundle as `actions: defineActions({...})` (typically via a `createMyAppActions({ tables, batch })` helper defined nearby). The helper enforces snake_case ASCII keys at compile time and runtime; consumers index by string or iterate with `Object.entries`.
+- Include them in your bundle as `actions: defineActions({...})` directly on the returned workspace object. Usually keep them inline inside `create<App>Workspace()`; extract a helper only when it owns a real invariant or is shared by multiple runtime builders. `defineActions` enforces snake_case ASCII keys at compile time and runtime; consumers index by string or iterate with `Object.entries`.
 
 Handlers close over `tables`, `kv`, and anything else the builder has in scope through normal JavaScript closure. They do not receive a framework context object.
 
@@ -1100,6 +1113,7 @@ import {
 	defineActions,
 	defineQuery,
 	defineTable,
+	defineWorkspace,
 } from '@epicenter/workspace';
 
 const posts = defineTable({
@@ -1115,21 +1129,25 @@ function openPosts() {
 		kv: {},
 	});
 
-	const actions = defineActions({
-		posts_list: defineQuery({
-			title: 'List Posts',
-			description: 'List all posts.',
-			handler: () => workspace.tables.posts.getAllValid(),
+	return defineWorkspace({
+		...workspace,
+		actions: defineActions({
+			posts_list: defineQuery({
+				title: 'List Posts',
+				description: 'List all posts.',
+				handler: () => workspace.tables.posts.getAllValid(),
+			}),
+			posts_get_by_id: defineQuery({
+				title: 'Get Post',
+				description: 'Get one post by ID.',
+				input: Type.Object({ id: workspace.tables.posts.schema.properties.id }),
+				handler: ({ id }) => workspace.tables.posts.get(id),
+			}),
 		}),
-		posts_get_by_id: defineQuery({
-			title: 'Get Post',
-			description: 'Get one post by ID.',
-			input: Type.Object({ id: workspace.tables.posts.schema.properties.id }),
-			handler: ({ id }) => workspace.tables.posts.get(id),
-		}),
+		[Symbol.dispose]() {
+			workspace[Symbol.dispose]();
+		},
 	});
-
-	return { ...workspace, actions };
 }
 
 const workspace = openPosts();
@@ -1149,6 +1167,7 @@ import {
 	defineActions,
 	defineMutation,
 	defineTable,
+	defineWorkspace,
 	generateId,
 } from '@epicenter/workspace';
 
@@ -1165,26 +1184,33 @@ function openPosts() {
 		kv: {},
 	});
 
-	const actions = defineActions({
-		posts_create: defineMutation({
-			title: 'Create Post',
-			description: 'Create a new post row.',
-			input: Type.Object({ title: workspace.tables.posts.schema.properties.title }),
-			handler: ({ title }) => {
-				const id = generateId();
-				workspace.tables.posts.set({ id, title, published: false });
-				return { id };
-			},
+	return defineWorkspace({
+		...workspace,
+		actions: defineActions({
+			posts_create: defineMutation({
+				title: 'Create Post',
+				description: 'Create a new post row.',
+				input: Type.Object({
+					title: workspace.tables.posts.schema.properties.title,
+				}),
+				handler: ({ title }) => {
+					const id = generateId();
+					workspace.tables.posts.set({ id, title, published: false });
+					return { id };
+				},
+			}),
+			posts_publish: defineMutation({
+				title: 'Publish Post',
+				description: 'Mark a post as published.',
+				input: Type.Object({ id: Type.String() }),
+				handler: ({ id }) =>
+					workspace.tables.posts.update(id, { published: true }),
+			}),
 		}),
-		posts_publish: defineMutation({
-			title: 'Publish Post',
-			description: 'Mark a post as published.',
-			input: Type.Object({ id: Type.String() }),
-			handler: ({ id }) => workspace.tables.posts.update(id, { published: true }),
-		}),
+		[Symbol.dispose]() {
+			workspace[Symbol.dispose]();
+		},
 	});
-
-	return { ...workspace, actions };
 }
 
 void openPosts;

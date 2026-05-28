@@ -233,13 +233,10 @@ export const ACTION_KEY_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
  *
  * @example
  * ```ts
- * export function createFujiActions(tables: FujiTables) {
- *   return defineActions({
- *     entries_create: defineMutation({ ... }),
- *     entries_update: defineMutation({ ... }),
- *   });
- * }
- * export type FujiActions = ReturnType<typeof createFujiActions>;
+ * const actions = defineActions({
+ *   entries_create: defineMutation({ ... }),
+ *   entries_update: defineMutation({ ... }),
+ * });
  * ```
  */
 export function defineActions<T extends ActionRegistry>(

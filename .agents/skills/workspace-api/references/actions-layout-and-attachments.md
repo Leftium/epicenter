@@ -1,41 +1,57 @@
 # Workspace Actions, Layout, And Attachments
 
-Detailed guidance for action factories, action return surfaces, JSDoc, workspace file layout, attachment ordering, and `connectWorkspace`.
+Detailed guidance for inline action registries, action return surfaces, JSDoc, workspace file layout, attachment ordering, and `connectWorkspace`.
 
 ## Actions
 
-Actions wrap table operations as `defineMutation` (writes) or `defineQuery` (reads). Build them in a small factory that takes the `Workspace` bundle (from `createWorkspace`) and closes over `workspace.tables` and `workspace.ydoc.transact` as needed.
+Actions wrap table operations as `defineMutation` (writes) or `defineQuery` (reads). Define them inline on the returned workspace object when they only need the workspace bundle. Extract a factory only when it is shared by multiple builders or owns an invariant that would be harder to see inline.
 
 ```typescript
-import { defineMutation, defineQuery, type Workspace } from '@epicenter/workspace';
+import {
+	createWorkspace,
+	defineActions,
+	defineMutation,
+	defineWorkspace,
+} from '@epicenter/workspace';
 import { Type } from 'typebox';
 
-export function createBlogActions(workspace: Workspace<typeof blogTables>) {
+export function createBlogWorkspace() {
+	const workspace = createWorkspace({
+		id: 'epicenter.blog',
+		tables: blogTables,
+		kv: {},
+	});
 	const { tables, ydoc } = workspace;
 	const batch = (fn: () => void) => ydoc.transact(fn);
-	return {
-		/**
-		 * Mark a post as published and record the publication timestamp.
-		 *
-		 * Separated from a raw `tables.posts.update()` call because publish
-		 * involves setting multiple fields atomically and may trigger side
-		 * effects (notifications, RSS rebuild) in future versions.
-		 */
-		publish: defineMutation({
-			description: 'Publish a draft post',
-			input: Type.Object({ id: tables.posts.schema.properties.id }),
-			handler: ({ id }) => {
-				batch(() => {
-					tables.posts.update(id, { published: true, publishedAt: Date.now() });
-				});
-			},
-		}),
-	};
-}
 
-// At the client/entry layer:
-//   const workspace = createBlogWorkspace();
-//   const actions   = createBlogActions(workspace);
+	return defineWorkspace({
+		...workspace,
+		actions: defineActions({
+			/**
+			 * Mark a post as published and record the publication timestamp.
+			 *
+			 * Separated from a raw `tables.posts.update()` call because publish
+			 * involves setting multiple fields atomically and may trigger side
+			 * effects (notifications, RSS rebuild) in future versions.
+			 */
+			posts_publish: defineMutation({
+				description: 'Publish a draft post',
+				input: Type.Object({ id: tables.posts.schema.properties.id }),
+				handler: ({ id }) => {
+					batch(() => {
+						tables.posts.update(id, {
+							published: true,
+							publishedAt: Date.now(),
+						});
+					});
+				},
+			}),
+		}),
+		[Symbol.dispose]() {
+			workspace[Symbol.dispose]();
+		},
+	});
+}
 ```
 
 For full input composition guidance (full-row writes, narrow patches, blanket PATCH, id-only inputs), see [Deriving action input schemas](deriving-action-inputs.md).
@@ -89,60 +105,33 @@ importFromDisk: defineMutation({ description: 'Import skills from an agentskills
 
 ## Workspace File Structure
 
-Each app splits workspace code into an **isomorphic `workspace/` folder** and a **runtime-specific `client.ts`**:
+Default to one shared workspace file plus runtime-specific openers. Split files only when the schema, runtime opener, or action registry has grown enough to earn a boundary.
 
 ```
 src/lib/
 |
-|-- workspace/                          <- 100% isomorphic (safe for Node, Bun, browser)
-|   |-- definition.ts                   <- Schema: defineTable, defineKv, branded IDs
-|   |-- create-workspace.ts             <- createXWorkspace(opts): wraps createWorkspace({ id, tables, kv, keyring? })
-|   |-- actions.ts                      <- Isomorphic action factory: createXActions(workspace)
-|   +-- index.ts                        <- Barrel: re-exports definition + workspace factory + actions
+|-- workspace.ts                        <- Isomorphic schema, branded IDs, createXWorkspace(), inline pure actions
+|-- browser.ts                          <- Browser attachments around createXWorkspace()
+|-- daemon.ts                           <- Daemon attachments around createXWorkspace()
 |
-+-- client.ts                           <- Runtime singleton: calls createXWorkspace + composes
-                                           attachIndexedDb/attachYjsLog, openCollaboration,
-                                           materializers, and runtime-specific actions
++-- client.ts                           <- Optional runtime singleton
 ```
 
 ```
-                    +-------------------------+
-                    |     definition.ts        |
-                    |  tables, KV, branded IDs |
-                    +------------+------------+
-                                 | imports
-                    +------------v-------------+
-                    |   create-workspace.ts    |
-                    |  createXWorkspace(opts)  |
-                    |  -> createWorkspace({    |
-                    |       id, tables, kv,    |
-                    |       keyring? })        |
-                    +------------+-------------+
-                                 | imports
-                    +------------v------------+
-                    |     actions.ts          |
-                    |  createXActions(ws)     |
-                    +------------+------------+
-                                 | imports
-   +-----------------------------+-----------------------------+
-   |                             |                             |
-   v                             v                             v
-+--------------+   +------------------+   +------------------+
-| client.ts    |   | server-client.ts |   | cli-client.ts    |
-| (browser)    |   | (Node/Bun)       |   | (CLI)            |
-| attachIndex...|  | attachYjsLog     |   | attachYjsLog     |
-| openCollab   |   | openCollab       |   | (no sync)        |
-| Chrome APIs  |   | Node fs APIs     |   |                  |
-+--------------+   +------------------+   +------------------+
+workspace.ts
+  createWorkspace({ id, tables, kv, keyring? })
+    -> defineWorkspace({ ...workspace, actions: defineActions({ ... }) })
+
+browser.ts / daemon.ts / script.ts
+  createXWorkspace()
+    -> attach persistence, sync, materializers, and runtime actions inline
 ```
 
 ### Layering Rules
 
-1. **`definition.ts`**: Pure schema. `defineTable()`, `defineKv()`, branded ID types and generators. Isomorphic.
-2. **`create-workspace.ts`**: Per-app wrapper around `createWorkspace({ id, tables, kv, keyring? })`. Encrypted apps accept a `keyring` opt; plaintext apps omit it. Isomorphic.
-3. **`actions.ts`**: Factory that takes the `Workspace` bundle and returns an action tree of `defineQuery`/`defineMutation`. Isomorphic: no browser/Node APIs.
-4. **`index.ts`**: Barrel that re-exports from `definition.ts`, `create-workspace.ts`, and `actions.ts` only. **Never re-exports from `client.ts`.** This is the import path for `$lib/workspace` and the package.json subpath export.
-5. **`client.ts`**: Lives **outside** the `workspace/` folder at `src/lib/client.ts`. Calls the app's `createXWorkspace(...)` factory to get the bundle, then composes runtime-specific attachments (IndexedDB vs SQLite, browser vs Node APIs) onto `workspace.ydoc` (or, for materializers, onto the bundle), and assembles runtime-specific actions. Singleton apps export the bundle directly (`export const workspace = createXWorkspace(...)`). Per-row document caches use `createDisposableCache(builder)` beside that singleton.
+1. **`workspace.ts` or `workspace/index.ts`**: Pure schema, branded IDs, `createXWorkspace(...)`, inline pure actions, and child-doc identity. Isomorphic.
+2. **`browser.ts`, `daemon.ts`, `script.ts`**: Runtime builders. Call `createXWorkspace(...)`, then compose persistence, sync, materializers, and runtime-specific actions inline.
+3. **`client.ts`**: Optional singleton. It owns side effects such as auth subscriptions, persisted UI state, and module-level construction.
 
 ### Import Convention
 
@@ -154,13 +143,12 @@ import { workspace, auth } from '$lib/client';
 import { type Note, type NoteId, generateNoteId } from '$lib/workspace';
 
 // Other packages in the monorepo:
-import { createHoneycrisp } from '@epicenter/honeycrisp/workspace';
-import { honeycrispTables } from '@epicenter/honeycrisp/definition';
+import { createHoneycrispWorkspace, type HoneycrispActions } from '@epicenter/honeycrisp';
 ```
 
 ### Package.json Subpath Exports
 
-Each app exports a single `./workspace` subpath pointing to the barrel:
+Each app exports its shared workspace surface from the package root or a single `./workspace` subpath:
 
 ```json
 {
@@ -170,35 +158,35 @@ Each app exports a single `./workspace` subpath pointing to the barrel:
 }
 ```
 
-The barrel is 100% isomorphic, so this single subpath is safe for any consumer (server, CLI, other apps). The separate `./definition` subpath is no longer needed since the barrel already re-exports everything from `definition.ts`.
+The exported workspace surface is isomorphic, so it is safe for any consumer (server, CLI, other apps). Avoid separate `./definition` and `./actions` subpaths unless a real external consumer needs that split.
 
 ### Isomorphic vs Runtime-Specific Actions
 
-Isomorphic actions (table reads/writes, portable logic) belong in the exported `actions.ts` factory. Runtime-specific actions, whether browser APIs, Chrome extension APIs, Node/Bun filesystem calls, or Tauri commands, live in the `client.ts` builder where the relevant attachments and APIs are in scope.
+Isomorphic actions (table reads/writes, portable logic) belong inline in the workspace builder. Runtime-specific actions, whether browser APIs, Chrome extension APIs, Node/Bun filesystem calls, or Tauri commands, live in the runtime builder where the relevant attachments and APIs are in scope.
 
 ```typescript
-// workspace/create-workspace.ts: isomorphic workspace factory
+// workspace.ts: isomorphic workspace factory
 export function createMyAppWorkspace() {
-  return createWorkspace({
+  const workspace = createWorkspace({
     id: 'epicenter.myapp',
     tables: myAppTables,
     kv: myAppKv,
   });
-}
-
-// workspace/actions.ts: isomorphic actions (exported via barrel)
-export function createMyAppActions(workspace: Workspace<typeof myAppTables>) {
   const { tables } = workspace;
-  return {
-    devices: {
-      list: defineQuery({
+
+  return defineWorkspace({
+    ...workspace,
+    actions: defineActions({
+      devices_list: defineQuery({
         title: 'List Devices',
         description: 'List all synced devices.',
-        input: Type.Object({}),
         handler: () => ({ devices: tables.devices.getAllValid() }),
       }),
+    }),
+    [Symbol.dispose]() {
+      workspace[Symbol.dispose]();
     },
-  };
+  });
 }
 
 // src/lib/client.ts: browser-specific attachments + runtime actions
@@ -207,7 +195,7 @@ export const workspace = createMyAppWorkspace();
 const idb = attachIndexedDb(workspace.ydoc);
 
 const actions = defineActions({
-  ...createMyAppActions(workspace),
+  ...workspace.actions,
   tabs_close: defineMutation({
     title: 'Close Tabs',
     description: 'Close browser tabs by ID.',
@@ -284,5 +272,3 @@ await workspace.dispose();
 Writes propagate through sync to the daemon, which owns the materializer (markdown, SQLite mirror, etc.).
 
 Use `connectWorkspace` for one-off scripts and agent-written automation. Use `epicenter.config.ts` to register long-running daemon modules and materializers that need persistence and custom workspace-specific extensions. A per-route `daemon.ts` file is a conventional module layout, not a discovery rule.
-
-

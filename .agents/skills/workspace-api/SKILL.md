@@ -8,7 +8,7 @@ metadata:
 
 # Workspace API
 
-Use this skill for Epicenter workspace definitions, table and KV access, action factories, attachment composition, collaboration setup, and workspace connections.
+Use this skill for Epicenter workspace definitions, table and KV access, inline action registries, attachment composition, collaboration setup, and workspace connections.
 
 ## Reference Repositories
 
@@ -43,18 +43,18 @@ Use this skill when you are:
 - Do not re-derive row types from runtime table methods or relay them through state files.
 - KV stores use `defineKv(schema, defaultValue)` where `defaultValue` is a **factory** `() => Static<S>`. Prefer one scalar per dot-namespaced key unless the value is a true atomic object.
 - Every table `id` and string foreign key uses a branded type plus a co-located generator. The brand lives as a pure type alias (`type X = string & Brand<'X'>`); the generator uses `generateId<X>()`. Call sites use the generator, never a direct cast.
-- Isomorphic actions belong in `workspace/actions.ts` factories that take the `Workspace` bundle (`createXActions(workspace)`) and read `workspace.tables` / `workspace.ydoc.transact` internally. Runtime-specific actions live in the runtime builder where browser, Node, Tauri, or extension APIs are in scope.
+- Put isomorphic actions directly on the returned workspace as `actions: defineActions({ ... })` inside `create<App>Workspace()`. Avoid a separate `const actions` unless the same registry must be passed to another owner before return. Extract `createXActions(workspace)` only when the action set is shared, large enough to earn a file, or owns a real invariant. Runtime-specific actions live in the runtime builder where browser, Node, Tauri, or extension APIs are in scope.
 - Construct a workspace with `createWorkspace({ id, tables, kv, keyring? })` (or a per-app wrapper like `createHoneycrispWorkspace`). Plaintext apps omit `keyring`; encrypted apps pass the signed-in keyring callback. The bundle exposes `{ ydoc, tables, kv, [Symbol.dispose] }` and `using workspace` cascades disposal to every store. Only the three materializers (`attachBunSqliteMaterializer`, `attachTursoMaterializer`, `attachMarkdownMaterializer`) take the bundle; persistence, log, and sync primitives take `workspace.ydoc`.
 - Local action calls see the handler shape directly. Remote dispatch wraps raw values and failures in `Promise<Result<T, DispatchError>>`. Read the action return reference before changing handler failure behavior.
 - Every action method inside the workspace action object should have JSDoc that adds developer-facing value beyond the short `description` field.
-- Keep `workspace/definition.ts` and `workspace/actions.ts` isomorphic. Keep `client.ts` runtime-specific and outside the `workspace/` folder.
+- Keep workspace schema and inline actions isomorphic. If an action file is extracted, it must stay isomorphic too. Keep `client.ts` runtime-specific and outside the `workspace/` folder.
 - Compose attachments inline in the builder after calling `createWorkspace`. Avoid wrapper helpers that hide ordering unless the abstraction owns a real invariant.
 - Use `connectWorkspace()` for one-off Bun scripts that need a connected workspace without app UI bootstrapping.
 
 ## Reference Map
 
 - [Schema definition patterns](references/schema-definition-patterns.md): `defineTable`, `defineKv`, row type inference, KV scalar design, and branded IDs.
-- [Actions, layout, and attachments](references/actions-layout-and-attachments.md): action factories, JSDoc, workspace file layout, attachment ordering, and `connectWorkspace`.
+- [Actions, layout, and attachments](references/actions-layout-and-attachments.md): inline actions, JSDoc, workspace file layout, attachment ordering, and `connectWorkspace`.
 - [Deriving action input schemas](references/deriving-action-inputs.md): use `tables.X.schema` and `schema.properties.X` to compose `defineQuery`/`defineMutation` input schemas inline. No helper layer.
 - [Action return shapes](references/action-return-shapes.md): local vs remote action return contracts and error normalization.
 - [Table, KV, CRUD, and observation](references/table-kv-crud-observation.md): table/KV read, write, observe, and derived-state details.

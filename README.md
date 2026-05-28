@@ -185,7 +185,7 @@ Also in the repo: [Fuji](apps/fuji) (personal CMS), [Zhongwen](apps/zhongwen) (M
 | [`@epicenter/workspace`](packages/workspace) | Core library. Typed schemas, Yjs CRDTs, extension builder, E2E encryption, materializers. Everything builds on this. | MIT |
 | [`@epicenter/sync`](packages/sync) | Yjs sync protocol encoding/decoding. Dumb server, smart client; protocol framing is separate from transport. | AGPL-3.0 |
 | [`@epicenter/ui`](packages/ui) | shadcn-svelte component library shared across all apps. | MIT |
-| [`@epicenter/svelte`](packages/svelte-utils) | Svelte 5 integration: persisted state, auth, workspace gate, TanStack Query helpers. | MIT |
+| [`@epicenter/svelte`](packages/svelte-utils) | Svelte 5 integration: persisted state, auth UI, and workspace gates. | MIT |
 | [`@epicenter/filesystem`](packages/filesystem) | POSIX-style virtual filesystem over Yjs workspace tables. `mkdir`, `mv`, `rm`, `stat`. | MIT |
 | [`@epicenter/skills`](packages/skills) | Skill and reference tables for AI-enhanced workspace apps. | AGPL-3.0 |
 | [`@epicenter/ai`](packages/ai) | Bridges workspace actions with LLM tool calling. | AGPL-3.0 |

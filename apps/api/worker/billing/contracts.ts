@@ -14,6 +14,8 @@
  * returns `{ portalUrl: string }` rather than a vendor envelope.
  */
 
+import { type } from 'arktype';
+
 /** Snapshot of the customer's current plan and credit balance. */
 export type BillingOverview = {
 	/** Display name of the active plan, resolved server-side from the
@@ -151,14 +153,16 @@ export type ModelCostGuide = {
 // Request shapes (dashboard -> server)
 // ---------------------------------------------------------------------
 
-/** Usage query window. Validated server-side via arktype. */
-export type UsageQuery = {
-	range?: '24h' | '7d' | '30d' | '90d' | 'last_cycle';
-	binSize?: 'hour' | 'day' | 'month';
-	groupBy?: 'model' | 'provider';
-	maxGroups?: number;
-};
+/** Usage query window. The arktype schema is the single source of truth: the
+ *  server validates the request body with it, the dashboard derives its type
+ *  from it. */
+export const usageQuerySchema = type({
+	'range?': "'24h' | '7d' | '30d' | '90d' | 'last_cycle' | undefined",
+	'binSize?': "'hour' | 'day' | 'month' | undefined",
+	'groupBy?': "'model' | 'provider' | undefined",
+	'maxGroups?': 'number | undefined',
+});
+export type UsageQuery = typeof usageQuerySchema.infer;
 
-export type EventsQuery = {
-	limit?: number;
-};
+export const eventsQuerySchema = type({ 'limit?': 'number | undefined' });
+export type EventsQuery = typeof eventsQuerySchema.infer;

@@ -15,7 +15,11 @@ import { type Context, Hono, type MiddlewareHandler } from 'hono';
 import { MODEL_CREDITS, providerOf } from './ai-model-pricing.js';
 import { isProviderError, mapAutumnError } from './autumn.js';
 import { CHECKOUT_PLAN_IDS } from './catalog.js';
-import type { ModelCostGuide } from './contracts.js';
+import {
+	eventsQuerySchema,
+	type ModelCostGuide,
+	usageQuerySchema,
+} from './contracts.js';
 import { createBillingService } from './service.js';
 
 /** Single source for the billing URL prefix. The auth glob and the route mount
@@ -43,17 +47,6 @@ function svc(c: Context<Env>) {
 		userEmail: c.var.user.email,
 	});
 }
-
-const usageQuerySchema = type({
-	'range?': "'24h' | '7d' | '30d' | '90d' | 'last_cycle' | undefined",
-	'binSize?': "'hour' | 'day' | 'month' | undefined",
-	'groupBy?': "'model' | 'provider' | undefined",
-	'maxGroups?': 'number | undefined',
-});
-
-const eventsQuerySchema = type({
-	'limit?': 'number | undefined',
-});
 
 const previewPlanSchema = type({ planId: 'string' });
 

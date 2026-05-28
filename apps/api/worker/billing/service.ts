@@ -93,25 +93,6 @@ export function createBillingService(
 ) {
 	const autumn = createAutumnClient(env);
 
-	/** Finalize a held lock. Both reservation kinds share this. */
-	function finalizeLock(
-		lockId: string,
-		action: 'confirm' | 'release',
-	): Promise<Result<void, BillingError>> {
-		return tryAutumn(async () => {
-			await autumn.balances.finalize({ lockId, action });
-		});
-	}
-
-	/** Load Autumn customer with subscriptions + balances expanded. */
-	async function loadCustomer() {
-		return autumn.customers.getOrCreate({
-			customerId: identity.userId,
-			email: identity.userEmail,
-			expand: ['subscriptions.plan', 'balances.feature'],
-		});
-	}
-
 	// ----- AI guard -----------------------------------------------------
 
 	/**
@@ -465,6 +446,27 @@ export function createBillingService(
 			returnUrl: input.returnUrl,
 		});
 		return { portalUrl: result.url };
+	}
+
+	// ----- Private helpers (closed over `autumn`/`identity`) ------------
+
+	/** Finalize a held lock. Both reservation kinds share this. */
+	function finalizeLock(
+		lockId: string,
+		action: 'confirm' | 'release',
+	): Promise<Result<void, BillingError>> {
+		return tryAutumn(async () => {
+			await autumn.balances.finalize({ lockId, action });
+		});
+	}
+
+	/** Load Autumn customer with subscriptions + balances expanded. */
+	async function loadCustomer() {
+		return autumn.customers.getOrCreate({
+			customerId: identity.userId,
+			email: identity.userEmail,
+			expand: ['subscriptions.plan', 'balances.feature'],
+		});
 	}
 
 	return {

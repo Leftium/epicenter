@@ -146,24 +146,22 @@ export function createBillingService(
 			email: identity.userEmail,
 		});
 
+		// `sendEvent: true` makes the check and the deduction one atomic Autumn
+		// call, so two concurrent uploads cannot both pass against the same
+		// balance. The caller refunds via `releaseAssetStorage` if the upload
+		// does not persist. (Non-consumable features reject the lock/reserve
+		// pattern, so deduct-then-refund is the only race-free option.)
 		const { allowed } = await autumn.check({
 			customerId: identity.userId,
 			featureId: FEATURE_IDS.storageBytes,
 			requiredBalance: fileSize,
+			sendEvent: true,
 		});
 
 		if (!allowed) {
 			return AssetError.StorageLimitExceeded({ requestedBytes: fileSize });
 		}
 		return Ok(undefined);
-	}
-
-	function trackAssetUpload(sizeBytes: number): Promise<unknown> {
-		return autumn.track({
-			customerId: identity.userId,
-			featureId: FEATURE_IDS.storageBytes,
-			value: sizeBytes,
-		});
 	}
 
 	function releaseAssetStorage(sizeBytes: number): Promise<unknown> {
@@ -417,7 +415,6 @@ export function createBillingService(
 		guardAiChat,
 		refundAiCharge,
 		guardAssetUpload,
-		trackAssetUpload,
 		releaseAssetStorage,
 		getOverview,
 		listPlans,

@@ -14,11 +14,11 @@
  *                                  credits, and queues a refund when the
  *                                  handler responds 4xx/5xx. BYOK
  *                                  callers bypass billing entirely.
- *   trackAssetStorageWithAutumn    Around `/api/.../assets`. Pre-flights
- *                                  POST uploads against storage balance,
- *                                  tracks usage on 201 responses,
- *                                  releases bytes on 204 DELETE
- *                                  responses (size carried via header).
+ *   trackAssetStorageWithAutumn    Around `/api/.../assets`. Atomically
+ *                                  reserves storage on POST uploads (check +
+ *                                  deduct in one call), refunds the bytes on
+ *                                  any non-201, and releases bytes on 204
+ *                                  DELETE responses (size carried via header).
  *
  * The library remains billing-agnostic; everything here is cloud-only.
  */
@@ -92,8 +92,10 @@ export const trackAssetStorageWithAutumn = createMiddleware<Env>(
 
 			await next();
 
-			if (c.res.status === 201) {
-				c.var.afterResponse.push(billing.trackAssetUpload(file.size));
+			// The guard already deducted atomically. A non-201 means the upload
+			// did not persist, so refund the reserved bytes.
+			if (c.res.status !== 201) {
+				c.var.afterResponse.push(billing.releaseAssetStorage(file.size));
 			}
 			return;
 		}

@@ -10,9 +10,9 @@ In `.svelte` files, use `createMutation` for user-triggered async operations whe
 
 `createMutation` is the component operation lifecycle primitive. It is not reserved for cache invalidation, retry policy, or shared mutation keys.
 
-Use `defineMutation` in `$lib/rpc` when the operation has shared query-layer identity: multiple consumers, cache invalidation, optimistic updates, `useIsMutating`, or a reusable RPC boundary. For a one-off component action, keep the operation as a plain function in `$lib/operations`, `$lib/services`, or a focused module, then wrap it locally with `createMutation(() => ({ mutationFn }))`.
+Use `defineMutation` in `$lib/rpc` when the operation has shared query-layer identity: multiple consumers, cache invalidation, optimistic updates, `useIsMutating`, or a reusable RPC boundary. For a one-off Result-returning component action, keep the operation as a plain function in `$lib/operations`, `$lib/services`, or a focused module, then wrap it locally with `createMutation(() => mutationOptions({ mutationKey, mutationFn }))`.
 
-Use direct `await` or `.execute()` when no template lifecycle state is observed, when the code runs outside component context, or when a sequential workflow would become harder to read as mutation callbacks.
+Use direct `await` when no template lifecycle state is observed, when the code runs outside component context, or when a sequential workflow would become harder to read as mutation callbacks. Shared Wellcrafted mutations are callable, so imperative RPC mutation usage is `await rpc.thing(input)`.
 
 ## Async Button Pattern
 
@@ -65,30 +65,33 @@ For component-local operation lifecycle, wrap the function locally:
 ```svelte
 <script lang="ts">
 	import { createMutation } from '@tanstack/svelte-query';
+	import { mutationOptions } from 'wellcrafted/query';
 	import { exportRecordingsMarkdown } from '$lib/recording-markdown-export';
 	import { report } from '$lib/report';
 
-	const exportMarkdown = createMutation(() => ({
-		mutationFn: exportRecordingsMarkdown,
-	}));
+	const exportMarkdown = createMutation(() =>
+		mutationOptions({
+			mutationKey: ['recordings', 'exportMarkdown'],
+			mutationFn: exportRecordingsMarkdown,
+		}),
+	);
 </script>
 
 <Button
 	onclick={() => {
 		exportMarkdown.mutate(undefined, {
-			onSuccess: ({ data, error }) => {
-				if (error !== null) {
-					report.error({
-						title: 'Recording markdown export failed',
-						cause: error,
-					});
-					return;
-				}
+			onSuccess: (data) => {
 				if (data.status === 'cancelled') return;
 
 				report.success({
 					title: 'Recording markdown exported',
 					description: `Wrote ${data.written} ${data.written === 1 ? 'file' : 'files'} to ${data.dir}.`,
+				});
+			},
+			onError: (error) => {
+				report.error({
+					title: 'Recording markdown export failed',
+					cause: error,
 				});
 			},
 		});
@@ -103,11 +106,11 @@ Do not create an RPC adapter only to get `isPending` for one component. Local `c
 
 ## Direct Await Pattern
 
-In `.ts` files, use `.execute()` or direct `await` because `createMutation` requires component context:
+In `.ts` files, use direct `await` because `createMutation` requires component context. For shared Wellcrafted mutations, call the mutation definition directly:
 
 ```typescript
 // In a .ts file (e.g., load function, utility)
-const result = await rpc.sessions.createSession.execute({
+const result = await rpc.sessions.createSession({
 	body: { title: 'New Session' },
 });
 

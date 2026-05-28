@@ -1,5 +1,6 @@
 # The Accessor Pattern: Why Your Svelte 5 Queries Need Functions, Not Values
-> **Note**: The code examples below use `rpc.db.recordings.getById` and `dbKeys`, which were removed when recordings migrated to Yjs workspace state modules. The accessor pattern itself is still essential—it applies to all remaining TanStack Query usage (e.g., `rpc.audio.getPlaybackUrl(() => id)`).
+
+> **Note**: Some older examples in this article mention `rpc.db.recordings.getById` and `dbKeys`, which were removed when recordings migrated to Yjs workspace state modules. The accessor pattern itself is still essential. It applies to remaining TanStack Query usage, such as `rpc.audio.getPlaybackUrl(() => id)`.
 
 
 You change `recordingId` from `'abc'` to `'xyz'`, but the audio player doesn't update. The UI is stuck showing the old recording. You've just hit the accessor pattern problem.
@@ -308,13 +309,13 @@ recordingId = 'xyz';  // Signal updates
 
 The accessor function is called EACH TIME the query needs to evaluate. This maintains the reactive subscription.
 
-## Common Mistake: Using .fetch() or .execute()
+## Common Mistake: Using .fetch() For Reactive Reads
 
 You might see this pattern and think you can skip the accessor when using `.fetch()`:
 
 ```typescript
 // This seems fine, right?
-const { data, error } = await rpc.db.transformations.getById(() => transformationId).fetch();
+const { data, error } = await rpc.audio.getPlaybackUrl(() => recordingId).fetch();
 ```
 
 This works, but it's not reactive. `.fetch()` is for imperative, one-time queries. It doesn't subscribe to changes.
@@ -322,9 +323,9 @@ This works, but it's not reactive. `.fetch()` is for imperative, one-time querie
 For reactive queries in components, always use `createQuery` with accessors:
 
 ```typescript
-// Reactive - updates when transformationId changes
+// Reactive: updates when recordingId changes
 const query = createQuery(
-  rpc.db.transformations.getById(() => transformationId).options
+  rpc.audio.getPlaybackUrl(() => recordingId).options
 );
 ```
 
@@ -341,7 +342,7 @@ const query = createQuery(
 );
 
 // Or if you're using .fetch() imperatively
-const { data } = await rpc.db.recordings.getById(() => someId).fetch();
+const { data } = await rpc.audio.getPlaybackUrl(() => someId).fetch();
 ```
 
 But in practice, most component queries need reactivity. When in doubt, use an accessor.

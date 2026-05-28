@@ -110,9 +110,9 @@
 						{/if}
 					</Card.Content>
 					<Card.Footer>
-						{#if card.cta === 'Current'}
+						{#if card.cta === 'Current' || card.cta === 'Scheduled'}
 							<Button variant="outline" class="w-full" disabled>
-								Current plan
+								{card.cta === 'Current' ? 'Current plan' : 'Scheduled'}
 								{#if card.isTrialing}
 									&nbsp;(trial)
 								{/if}

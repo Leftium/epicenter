@@ -222,19 +222,21 @@ export function createBillingService(
 	}
 
 	async function listPlans(): Promise<BillingPlansView> {
-		const [customer, autumnPlans] = await Promise.all([
-			loadCustomer(),
+		// Seed the customer (so plans.list reflects the auto-enabled free plan
+		// and any active subscription), then read per-plan eligibility. Autumn
+		// owns the customer's relationship to each plan; the card no longer
+		// compares plan ids client-side.
+		const [, autumnPlans] = await Promise.all([
+			autumn.customers.getOrCreate({
+				customerId: identity.userId,
+				email: identity.userEmail,
+			}),
 			autumn.plans.list({ customerId: identity.userId }),
 		]);
 
 		const eligibilityByPlanId = new Map(
-			(autumnPlans.list ?? []).map(
-				(p) => [p.id, p.customerEligibility?.attachAction] as const,
-			),
+			(autumnPlans.list ?? []).map((p) => [p.id, p.customerEligibility] as const),
 		);
-
-		const mainSub = customer.subscriptions.find((s) => !s.addOn) ?? null;
-		const currentPlanId = mainSub?.planId ?? PLAN_IDS.free;
 
 		function renderCard(planId: PlanId): BillingPlanCard {
 			const plan = PLANS[planId];
@@ -259,23 +261,7 @@ export function createBillingService(
 				? `$${formatUsd(plan.credits.overage.priceUsd)}/${plan.credits.overage.billingUnits} overage`
 				: null;
 
-			// A monthly plan and its annual counterpart are distinct products.
-			// Only the exact active plan id is "Current"; the other cycle stays
-			// a "Switch" so monthly subscribers can convert to annual.
-			const isCurrent = currentPlanId === planId;
-
-			let cta: BillingPlanCard['cta'];
-			if (isCurrent) {
-				cta = 'Current';
-			} else {
-				const action = eligibilityByPlanId.get(planId);
-				cta =
-					action === 'upgrade'
-						? 'Upgrade'
-						: action === 'downgrade'
-							? 'Downgrade'
-							: 'Switch';
-			}
+			const eligibility = eligibilityByPlanId.get(planId);
 
 			return {
 				id: plan.id,
@@ -286,8 +272,8 @@ export function createBillingService(
 				displayedOverage,
 				rollover: plan.rollover,
 				isRecommended: plan.isRecommended,
-				cta,
-				isTrialing: mainSub?.trialEndsAt != null && mainSub.planId === plan.id,
+				cta: resolveCta(eligibility?.attachAction, eligibility?.status),
+				isTrialing: eligibility?.trialing ?? false,
 			};
 		}
 
@@ -429,4 +415,28 @@ export function createBillingService(
 
 function formatUsd(amount: number): string {
 	return Number.isInteger(amount) ? `${amount}` : amount.toFixed(2);
+}
+
+/**
+ * Map Autumn's per-plan eligibility to a dashboard CTA. Autumn is the single
+ * owner of the customer's relationship to a plan: `attachAction` says what
+ * attaching would do, and the inert `none` case splits on `status` (the active
+ * plan vs a scheduled change to it). `attachAction` is an open enum, so an
+ * unrecognized value falls back to the generic actionable 'Switch' rather than
+ * silently masquerading as 'Current'.
+ */
+function resolveCta(
+	attachAction: string | undefined,
+	status: string | undefined,
+): BillingPlanCard['cta'] {
+	switch (attachAction) {
+		case 'none':
+			return status === 'scheduled' ? 'Scheduled' : 'Current';
+		case 'upgrade':
+			return 'Upgrade';
+		case 'downgrade':
+			return 'Downgrade';
+		default:
+			return 'Switch';
+	}
 }

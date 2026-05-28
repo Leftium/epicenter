@@ -60,10 +60,12 @@ export type BillingPlanCard = {
 	displayedOverage: string | null;
 	rollover: boolean;
 	isRecommended: boolean;
-	/** Button label / state. `'Current'` means the plan is already active;
-	 *  the other three are upgrade-relative verbs from the provider. */
-	cta: 'Current' | 'Upgrade' | 'Downgrade' | 'Switch';
-	/** True when the active subscription is in a free trial for this plan. */
+	/** Button label / state, resolved server-side from Autumn's per-plan
+	 *  eligibility. `'Current'` is the active plan, `'Scheduled'` is a queued
+	 *  change to this plan, the rest are attach-relative actions from the
+	 *  provider. Not actionable: `'Current'`, `'Scheduled'`. */
+	cta: 'Current' | 'Scheduled' | 'Upgrade' | 'Downgrade' | 'Switch';
+	/** True when the customer is on a free trial of this plan (per Autumn). */
 	isTrialing: boolean;
 };
 

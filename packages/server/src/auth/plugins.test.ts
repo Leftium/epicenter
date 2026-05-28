@@ -1,13 +1,15 @@
 /**
- * Trusted OAuth Client Tests
+ * Auth plugin (OAuth server) tests.
  *
- * Verifies the first-party OAuth client registry and the Better Auth client
- * rows generated from it.
+ * Verifies the first-party OAuth client registry projected by
+ * `@epicenter/constants/oauth` and the Better Auth behavior `authPlugins`
+ * wires around it.
  *
  * Key behaviors:
  * - Trusted registry clients are projected as public PKCE clients
  * - Trusted clients skip consent during authorization
  * - Registered non-trusted clients still require consent
+ * - A clean JWKS table mints an ES256/P-256 signing key
  */
 
 import { expect, test } from 'bun:test';
@@ -16,13 +18,13 @@ import {
 	EPICENTER_CLI_OAUTH_CLIENT_ID,
 	EPICENTER_FUJI_OAUTH_CLIENT_ID,
 	EPICENTER_OAUTH_SCOPES,
+	projectTrustedOAuthClientToRow,
 	type TrustedOAuthClient,
 } from '@epicenter/constants/oauth';
 import { betterAuth } from 'better-auth';
 import { type MemoryDB, memoryAdapter } from 'better-auth/adapters/memory';
 import { generateCodeChallenge } from 'better-auth/oauth2';
 import { authPlugins } from './plugins.js';
-import { projectTrustedOAuthClientToRow } from './trusted-oauth-clients.js';
 
 const trustedClientFixture = {
 	clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,

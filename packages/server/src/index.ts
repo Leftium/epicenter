@@ -15,14 +15,11 @@
  */
 
 // Deploy-time admin operations (OAuth client seeding) live in each
-// deployment's own scripts (`apps/api` `oauth:seed:*`), not in this barrel: the
-// script owns the `pg` connection and the raw upsert. This keeps `pg`,
-// `node-postgres`, and the extra `drizzle` graph out of the worker's module and
-// type programs. The seed reuses the pure row projection via the
-// `@epicenter/server/oauth-clients` entry, which carries no better-auth, `pg`,
-// or runtime `drizzle`, so importing it never pulls the request-path auth graph
-// into a script's program (that flips which duplicate `@better-auth/core` copy
-// TypeScript canonicalizes).
+// deployment's own scripts (`apps/api` `oauth:seed:*`), not in this barrel, so
+// `pg` and the drizzle query-builder graph stay out of the worker's module and
+// type programs. The seed builds rows from `projectTrustedOAuthClientToRow` in
+// `@epicenter/constants/oauth` (beside `buildTrustedOAuthClients`, its input),
+// so it never imports this request-path auth barrel.
 //
 // Auth middleware. `authApp` is mounted directly; the AI surface accepts
 // `requireBearerUser` via `mountAiApp({ auth })`. Most owner-partitioned

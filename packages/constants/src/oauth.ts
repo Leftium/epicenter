@@ -143,3 +143,40 @@ export function buildTrustedOAuthClients(apiBaseURL: string) {
 		},
 	] as const satisfies readonly TrustedOAuthClient[];
 }
+
+/**
+ * Project a checked-in trusted client into Better Auth's `oauth_client` row.
+ *
+ * Used by the `apps/api` `oauth:seed` deploy script and by the auth tests that
+ * need the exact row Better Auth stores. It owns the trusted-client invariant:
+ * first-party apps are public PKCE clients (PKCE required, consent skipped,
+ * authorization-code grant, the common Epicenter scopes).
+ *
+ * This lives beside {@link buildTrustedOAuthClients} (its input) rather than in
+ * `@epicenter/server`, so the seed script reaches it without importing the
+ * request-path auth barrel. The returned shape mirrors the `oauth_client`
+ * table; the seed's parameterized `INSERT` is the write-time contract, so the
+ * column list there must stay in sync with these fields.
+ */
+export function projectTrustedOAuthClientToRow(
+	client: TrustedOAuthClient,
+	now = new Date(),
+) {
+	return {
+		id: client.clientId,
+		clientId: client.clientId,
+		disabled: false,
+		skipConsent: true,
+		scopes: [...EPICENTER_OAUTH_SCOPES],
+		createdAt: now,
+		updatedAt: now,
+		name: client.name,
+		redirectUris: [...client.redirectUris],
+		tokenEndpointAuthMethod: 'none',
+		grantTypes: ['authorization_code'],
+		responseTypes: ['code'],
+		public: true,
+		type: client.type,
+		requirePKCE: true,
+	};
+}

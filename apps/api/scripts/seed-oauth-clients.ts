@@ -15,12 +15,10 @@
  *
  * The connection and the upsert live here in `apps/api`, not in
  * `@epicenter/server`, so `pg` and the drizzle query-builder graph stay out of
- * the worker's module and type programs. The server package contributes only
- * the pure `projectTrustedOAuthClientToRow` projection (which owns the
- * trusted-client invariant), imported through `@epicenter/server/oauth-clients`
- * rather than the request-path barrel: that narrow entry carries no better-auth
- * graph, so importing it does not flip which duplicate `@better-auth/core` copy
- * TypeScript canonicalizes for this program.
+ * the worker's module and type programs. The row shape and the trusted-client
+ * invariant come from `projectTrustedOAuthClientToRow` in
+ * `@epicenter/constants/oauth` (beside `buildTrustedOAuthClients`, its input),
+ * so this script never imports the request-path auth barrel.
  *
  * The upsert is raw parameterized SQL rather than a drizzle query: the
  * `oauth_client` table object is built against `@epicenter/server`'s
@@ -33,8 +31,10 @@
  * in prod) or the committed local default, matching `drizzle.config.ts`.
  */
 import { APPS, localUrl } from '@epicenter/constants/apps';
-import { buildTrustedOAuthClients } from '@epicenter/constants/oauth';
-import { projectTrustedOAuthClientToRow } from '@epicenter/server/oauth-clients';
+import {
+	buildTrustedOAuthClients,
+	projectTrustedOAuthClientToRow,
+} from '@epicenter/constants/oauth';
 import pg from 'pg';
 import { LOCAL_DATABASE_URL } from '../env';
 

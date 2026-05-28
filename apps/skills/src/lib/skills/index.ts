@@ -1,1 +1,1 @@
-export { createSkillsWorkspace } from '@epicenter/skills';
+export { createSkills } from '@epicenter/skills';

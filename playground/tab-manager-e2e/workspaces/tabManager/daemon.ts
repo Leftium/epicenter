@@ -10,7 +10,7 @@
  * ```
  */
 
-import { createTabManagerWorkspace } from '@epicenter/tab-manager';
+import { createTabManager } from '@epicenter/tab-manager';
 import {
 	defineActions,
 	openCollaboration,
@@ -36,7 +36,7 @@ export default defineMount({
 		openWebSocket,
 		onReconnectSignal,
 	}) {
-		const workspace = createTabManagerWorkspace({ keyring });
+		const workspace = createTabManager({ keyring });
 		workspace.ydoc.clientID = yDocClientId;
 		const { ydoc, tables, kv } = workspace;
 

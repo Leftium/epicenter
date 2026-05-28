@@ -5,7 +5,7 @@
 > chain, and later an owner factory that wrapped the encryption, local
 > storage, and per-owner wipe paths behind a single object. Both shapes
 > are gone. There is one pattern today: `createWorkspace()` builds the low-level
-> bundle, `create<App>Workspace()` defines the app's shared isomorphic model,
+> bundle, `create<App>()` defines the app's shared isomorphic model,
 > and `open<App>Browser()` attaches browser storage and sync inline.
 >
 > Rather than maintain two versions of the same narrative, this guide also
@@ -19,7 +19,7 @@
 
 The hosted hub at `https://api.epicenter.so` handles auth, real-time sync, AI inference, and encryption key derivation. It runs on Cloudflare Workers with Durable Objects. Cloud sync enters through `/api/owners/:ownerId/rooms/:roomId` (the same path in both personal and team mode): a cloud doc is owned by the authenticated `ownerId` and addressed by its `ydoc.guid`, and the server resolves the room from the auth token. Browser apps and the workspace daemon both use this route.
 
-On the client, `@epicenter/workspace` exposes the primitives directly: define your schema with `defineTable` / `defineKv`, call `createWorkspace({ id, keyring, tables, kv })` inside a per-app `create<App>Workspace()` helper, then attach `attachLocalStorage` and `openCollaboration` inside `open<App>Browser()`. Authenticate with `@epicenter/auth` and gate the workspace lifecycle on signed-in identity with `createSession` from `@epicenter/svelte`.
+On the client, `@epicenter/workspace` exposes the primitives directly: define your schema with `defineTable` / `defineKv`, call `createWorkspace({ id, keyring, tables, kv })` inside a per-app `create<App>()` helper, then attach `attachLocalStorage` and `openCollaboration` inside `open<App>Browser()`. Authenticate with `@epicenter/auth` and gate the workspace lifecycle on signed-in identity with `createSession` from `@epicenter/svelte`.
 
 ## Minimal cloud workspace shape
 
@@ -54,7 +54,7 @@ const myAppTables = {
 	}),
 };
 
-function createMyAppWorkspace(opts: { keyring: SignedIn['keyring'] }) {
+function createMyApp(opts: { keyring: SignedIn['keyring'] }) {
 	const workspace = createWorkspace({
 		id: MY_APP_ID,
 		keyring: opts.keyring,
@@ -84,7 +84,7 @@ export function openMyAppBrowser({
 	signedIn: SignedIn;
 	deviceId: string;
 }) {
-	const workspace = createMyAppWorkspace({ keyring: signedIn.keyring });
+	const workspace = createMyApp({ keyring: signedIn.keyring });
 
 	const idb = attachLocalStorage(workspace.ydoc, {
 		server: signedIn.server,

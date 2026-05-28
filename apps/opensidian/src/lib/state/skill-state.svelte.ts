@@ -1,6 +1,6 @@
 import {
+	createSkills,
 	createSkillsActions,
-	createSkillsWorkspace,
 	referenceContentDocGuid,
 	skillInstructionsDocGuid,
 } from '@epicenter/skills';
@@ -60,7 +60,7 @@ export function createSkillState({
 }: {
 	workspace: OpensidianBrowser;
 }) {
-	const globalSkillsWorkspace = openGlobalSkillsWorkspace();
+	const globalSkillsDoc = openGlobalSkills();
 	let globalSkills = $state<GlobalSkill[]>([]);
 	let vaultSkills = $state<VaultSkill[]>([]);
 	let loading = $state(false);
@@ -70,12 +70,10 @@ export function createSkillState({
 
 		const { data } = await tryAsync({
 			try: async () => {
-				await globalSkillsWorkspace.idb.whenLoaded;
-				const catalog = globalSkillsWorkspace.actions.list_skills();
+				await globalSkillsDoc.idb.whenLoaded;
+				const catalog = globalSkillsDoc.actions.list_skills();
 				const loadedSkills = await Promise.all(
-					catalog.map(({ id }) =>
-						globalSkillsWorkspace.actions.get_skill({ id }),
-					),
+					catalog.map(({ id }) => globalSkillsDoc.actions.get_skill({ id })),
 				);
 
 				return loadedSkills
@@ -150,15 +148,15 @@ export function createSkillState({
 		},
 
 		[Symbol.dispose]() {
-			globalSkillsWorkspace[Symbol.dispose]();
+			globalSkillsDoc[Symbol.dispose]();
 		},
 	};
 }
 
 export type SkillState = ReturnType<typeof createSkillState>;
 
-function openGlobalSkillsWorkspace() {
-	const doc = createSkillsWorkspace();
+function openGlobalSkills() {
+	const doc = createSkills();
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
 

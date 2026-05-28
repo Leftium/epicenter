@@ -56,7 +56,7 @@ who forks and distributes a modified binary shares the changes back.
     - apps/zhongwen              (@epicenter/zhongwen)   mandarin chat
     - apps/tab-manager           (@epicenter/tab-manager) browser extension
     - apps/skills                (skills)                agent skill editor
-    - apps/breddit               (@epicenter/breddit)    reddit importer
+    - apps/reddit                (@epicenter/reddit)     reddit importer
     - apps/landing               (@epicenter/landing)    public site
     - apps/posthog-reverse-proxy (@epicenter/posthog-reverse-proxy) analytics
 

@@ -4,7 +4,7 @@
  * Single source of truth for "how Opensidian mounts in a browser." Calls
  * Tier 1 primitives inline so every line is visible top-to-bottom:
  *
- *  1. workspace root doc (encrypted tables + KV via createOpensidianWorkspace)
+ *  1. workspace root doc (encrypted tables + KV via createOpensidian)
  *  2. local storage + cloud sync for root (attachLocalStorage + openCollaboration)
  *  3. runtime storage + sync around the shared per-file child docs
  *  4. file system, sqlite index, bash, and action registry
@@ -34,7 +34,7 @@ import {
 	wipeLocalStorage,
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
-import { createOpensidianWorkspace } from './opensidian';
+import { createOpensidian } from './opensidian';
 import { createOpensidianActions } from './opensidian.browser.actions';
 
 export function openOpensidianBrowser({
@@ -44,7 +44,7 @@ export function openOpensidianBrowser({
 	signedIn: SignedIn;
 	deviceId: DeviceId;
 }) {
-	const workspace = createOpensidianWorkspace({ keyring: signedIn.keyring });
+	const workspace = createOpensidian({ keyring: signedIn.keyring });
 	const { ydoc, tables } = workspace;
 
 	const idb = attachLocalStorage(ydoc, {

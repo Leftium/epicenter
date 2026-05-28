@@ -245,13 +245,13 @@ Run on a timer or piggyback on an existing periodic task.
 Not every workspace needs dispatch. A notes workspace has no runtime-specific actions. Adding a `requests` table is an explicit choice:
 
 > Historical note: the example below uses an older workspace definition shape.
-> Current apps put actions in the bundle returned by `create<App>Workspace()`
+> Current apps put actions in the bundle returned by `create<App>()`
 > and pass that registry to `openCollaboration()` or
 > `attachProjectInfrastructure()`. Treat the request-table idea as architectural
 > background, not current setup code.
 
 ```typescript
-const tabManagerWorkspace = defineWorkspace({
+const tabManager = defineWorkspace({
 	id: 'tab-manager',
 	tables: {
 		tabs,

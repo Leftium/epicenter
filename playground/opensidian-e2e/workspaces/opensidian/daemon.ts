@@ -29,7 +29,7 @@ import {
 	yjsPath,
 } from '@epicenter/workspace/node';
 import {
-	createOpensidianWorkspace,
+	createOpensidian,
 	opensidianFileContentDocGuid,
 } from 'opensidian';
 import Type from 'typebox';
@@ -47,7 +47,7 @@ async function openOpensidianPlayground({
 	openWebSocket,
 	onReconnectSignal,
 }: MountContext) {
-	const workspace = createOpensidianWorkspace({ keyring });
+	const workspace = createOpensidian({ keyring });
 	workspace.ydoc.clientID = yDocClientId;
 	const { ydoc, tables, kv } = workspace;
 	const workspaceId = ydoc.guid;

@@ -277,15 +277,15 @@ const redditKv = {
 	),
 };
 
-export function createBredditWorkspace() {
+export function createRedditImport() {
 	// no persistence/sync/encryption: in-memory-only importer target
 	return createWorkspace({
-		id: 'reddit',
+		id: 'epicenter.reddit',
 		tables: redditTables,
 		kv: redditKv,
 	});
 }
 
-export const redditWorkspace = createBredditWorkspace();
+export const redditImport = createRedditImport();
 
-export type RedditWorkspace = typeof redditWorkspace;
+export type RedditImport = typeof redditImport;

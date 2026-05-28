@@ -1,7 +1,7 @@
 import type { Skill } from '@epicenter/skills';
 import { fromTable } from '@epicenter/svelte';
 import { generateId } from '@epicenter/workspace';
-import { skills as skillsWorkspace } from '$lib/skills/client';
+import { skills as skillsDoc } from '$lib/skills/client';
 
 export type SkillMetadataUpdate = Partial<
 	Pick<Skill, 'name' | 'description' | 'license' | 'compatibility'>
@@ -26,8 +26,8 @@ export type SkillMetadataUpdate = Partial<
  * ```
  */
 function createSkillsState() {
-	const skillsMap = fromTable(skillsWorkspace.tables.skills);
-	const referencesMap = fromTable(skillsWorkspace.tables.references);
+	const skillsMap = fromTable(skillsDoc.tables.skills);
+	const referencesMap = fromTable(skillsDoc.tables.references);
 
 	const skills = $derived(
 		[...skillsMap.values()].sort((a, b) => a.name.localeCompare(b.name)),
@@ -90,7 +90,7 @@ function createSkillsState() {
 		 */
 		createSkill(name: string) {
 			const id = generateId();
-			skillsWorkspace.tables.skills.set({
+			skillsDoc.tables.skills.set({
 				id,
 				name,
 				description: 'TODO: describe when and why to use this skill.',
@@ -111,7 +111,7 @@ function createSkillsState() {
 		 * license, and compatibility are editable through this method.
 		 */
 		updateSkill(id: string, updates: SkillMetadataUpdate) {
-			skillsWorkspace.tables.skills.update(id, {
+			skillsDoc.tables.skills.update(id, {
 				...updates,
 				updatedAt: Date.now(),
 			});
@@ -125,13 +125,13 @@ function createSkillsState() {
 		 * alphabetically, or clears the selection if none remain.
 		 */
 		deleteSkill(id: string) {
-			skillsWorkspace.ydoc.transact(() => {
+			skillsDoc.ydoc.transact(() => {
 				for (const ref of referencesMap.values()) {
 					if (ref.skillId === id) {
-						skillsWorkspace.tables.references.delete(ref.id);
+						skillsDoc.tables.references.delete(ref.id);
 					}
 				}
-				skillsWorkspace.tables.skills.delete(id);
+				skillsDoc.tables.skills.delete(id);
 			});
 
 			if (selectedSkillId === id) {
@@ -147,7 +147,7 @@ function createSkillsState() {
 		 */
 		createReference(skillId: string, path: string) {
 			const id = generateId();
-			skillsWorkspace.tables.references.set({
+			skillsDoc.tables.references.set({
 				id,
 				skillId,
 				path,
@@ -158,7 +158,7 @@ function createSkillsState() {
 
 		/** Remove a file reference by ID. */
 		deleteReference(id: string) {
-			skillsWorkspace.tables.references.delete(id);
+			skillsDoc.tables.references.delete(id);
 		},
 	};
 }

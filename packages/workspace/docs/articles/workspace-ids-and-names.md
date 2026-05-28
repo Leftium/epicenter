@@ -2,7 +2,7 @@
 
 > Historical note: this article describes an older `defineWorkspace({ id, name })`
 > dependency model. Current apps use `createWorkspace({ id })` inside
-> `create<App>Workspace()`, then expose runtime-specific openers such as
+> `create<App>()`, then expose runtime-specific openers such as
 > `open<App>Browser()` and `open<App>Daemon()`. Keep reading for the naming
 > rationale, not the current API shape.
 

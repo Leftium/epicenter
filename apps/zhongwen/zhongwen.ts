@@ -96,7 +96,7 @@ const zhongwenKv = {
 // Workspace Factory
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function createZhongwenWorkspace(opts: { keyring: () => Keyring }) {
+export function createZhongwen(opts: { keyring: () => Keyring }) {
 	const workspace = createWorkspace({
 		id: ZHONGWEN_ID,
 		keyring: opts.keyring,
@@ -113,4 +113,4 @@ export function createZhongwenWorkspace(opts: { keyring: () => Keyring }) {
 		},
 	});
 }
-export type ZhongwenWorkspace = ReturnType<typeof createZhongwenWorkspace>;
+export type ZhongwenWorkspace = ReturnType<typeof createZhongwen>;

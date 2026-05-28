@@ -6,13 +6,13 @@ A typed interface over Y.js for apps that need to evolve their data schema over 
 
 This is a wrapper around Y.js that handles schema versioning. Local-first apps can't run migration scripts, so data has to evolve gracefully. Old data coexists with new. The Workspace API bakes that into the design: define your schemas once with versions, write a migration function, and everything else is typed.
 
-The pattern: `createWorkspace({ id, tables, kv, keyring? })` constructs the low-level workspace `Y.Doc` with tables and KV mounted. Apps wrap that in `create<App>Workspace()` to define the shared isomorphic model: id, tables, actions, deterministic child docs, and disposal. Runtime openers such as `open<App>Browser()`, `open<App>Daemon()`, and `open<App>Tauri()` compose additional `attach*` / `open*` primitives around that model and return the exact shape the runtime needs. Use `defineWorkspace()` when returning a composed bundle so TypeScript preserves the inferred shape after spreads.
+The pattern: `createWorkspace({ id, tables, kv, keyring? })` constructs the low-level workspace `Y.Doc` with tables and KV mounted. Apps wrap that in `create<App>()` to define the shared isomorphic model: id, tables, actions, deterministic child docs, and disposal. Runtime openers such as `open<App>Browser()`, `open<App>Daemon()`, and `open<App>Tauri()` compose additional `attach*` / `open*` primitives around that model and return the exact shape the runtime needs. Use `defineWorkspace()` when returning a composed bundle so TypeScript preserves the inferred shape after spreads.
 
 ```
 +----------------------------------------------------------------+
 | Your App                                                       |
 +----------------------------------------------------------------+
-| create<App>Workspace(): shared model                              |
+| create<App>(): shared model                                    |
 | open<App>Browser/Daemon/Tauri(): runtime attachments              |
 +----------------------------------------------------------------+
 | createWorkspace({ id, tables, kv, keyring? })                  |
@@ -32,7 +32,7 @@ The pattern: `createWorkspace({ id, tables, kv, keyring? })` constructs the low-
 Three prefixes, each with a consistent meaning:
 
 - **`define*`** is pure: no Y.Doc, no side effects. Schemas, KV definitions, action factories, or type-preserving wrappers such as `defineWorkspace`.
-- **`create*`** constructs a model, registry, or cache. `createWorkspace` creates the low-level Y.Doc bundle; `create<App>Workspace` creates an app's shared isomorphic model.
+- **`create*`** constructs a model, registry, or cache. `createWorkspace` creates the low-level Y.Doc bundle; `create<App>` creates an app's shared isomorphic model.
 - **`open*`** constructs or receives a model and attaches runtime lifecycle: browser storage, daemon sync, SQLite readers, or Tauri services.
 - **`attach*`** binds a capability to an existing `Y.Doc` (or, in one documented cross-package case, to a sibling attachment). Side-effectful: registers observers or destroy listeners at call time. Returns a typed handle.
 

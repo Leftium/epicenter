@@ -44,7 +44,7 @@ We do not protect against scenario 3 for our consumer apps (Whispering, Honeycri
 **Rationale:**
 - Libraries: we want developers to embed `@epicenter/workspace` in their own projects with zero friction. AGPL would forbid that for closed-source consumers, killing adoption. The library is not what we sell.
 - Consumer apps: AGPL on a desktop or browser app is mostly signaling. AGPL §13 ("network use is distribution") does not trigger when a user runs the app locally on their own machine. Practically, AGPL collapses to GPL semantics for these apps. We accept the weaker protection in exchange for the simpler "everything is permissive" story for users and contributors.
-- Internal/glue apps: things like `apps/landing`, `apps/posthog-reverse-proxy`, and `apps/breddit` are not commercially load-bearing. MIT removes any debate.
+- Internal/glue apps: things like `apps/landing`, `apps/posthog-reverse-proxy`, and `apps/reddit` are not commercially load-bearing. MIT removes any debate.
 
 ### Tier 2: AGPL-3.0
 
@@ -106,7 +106,7 @@ This is not blocking and not scheduled. Trigger to execute: `apps/api` becomes p
 | `apps/zhongwen` | MIT | Mandarin chat app |
 | `apps/tab-manager` | MIT | Browser extension |
 | `apps/skills` | MIT | Agent skill editor |
-| `apps/breddit` | MIT | Reddit data importer |
+| `apps/reddit` | MIT | Reddit data importer |
 | `apps/landing` | MIT | Public site |
 | `apps/posthog-reverse-proxy` | MIT | Analytics proxy |
 | `packages/sync` | AGPL-3.0 | Yjs sync protocol |

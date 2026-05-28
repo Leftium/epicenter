@@ -94,7 +94,7 @@ export function openFujiBrowser({
 	signedIn: SignedIn;
 	deviceId: DeviceId;
 }) {
-	const workspace = createFujiWorkspace({ keyring: signedIn.keyring });
+	const workspace = createFuji({ keyring: signedIn.keyring });
 
 	const idb = attachLocalStorage(workspace.ydoc, {
 		server: signedIn.server,
@@ -117,7 +117,7 @@ export function openFujiBrowser({
 }
 ```
 
-`createFujiWorkspace({ keyring })` is the per-app helper that wraps `createWorkspace` with Fuji's typed `tables` and `kv` schemas, adds Fuji actions and shared child-doc models, and returns the same `{ ydoc, tables, kv, actions, [Symbol.dispose] }` bundle shape through `defineWorkspace`.
+`createFuji({ keyring })` is the per-app helper that wraps `createWorkspace` with Fuji's typed `tables` and `kv` schemas, adds Fuji actions and shared child-doc models, and returns the same `{ ydoc, tables, kv, actions, [Symbol.dispose] }` bundle shape through `defineWorkspace`.
 
 `attachLocalStorage` reads exactly `{ server, ownerId, keyring }` from the explicit options object. The call site destructures `signedIn` so the dependency is visible in the code, not implied by structural typing.
 

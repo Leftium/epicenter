@@ -1,6 +1,6 @@
 # Epicenter architecture
 Epicenter is one composition story. The core packages define the local-first model, the middle layer turns that model into app-shaped tools, and the apps decide which runtime pieces to compose.
-The current center is `createWorkspace -> create<App>Workspace -> open<App>Browser/open<App>Daemon/open<App>Tauri`. That order matters because Epicenter keeps schema definition pure, keeps the shared app model isomorphic, and pushes runtime side effects to the edge.
+The current center is `createWorkspace -> create<App> -> open<App>Browser/open<App>Daemon/open<App>Tauri`. That order matters because Epicenter keeps schema definition pure, keeps the shared app model isomorphic, and pushes runtime side effects to the edge.
 This is the five-minute map. It explains how the packages interlock without redoing the full `@epicenter/workspace` README.
 
 ## The stack in one picture
@@ -36,7 +36,7 @@ The dependency shape runs bottom to top. Apps depend on middleware; middleware d
 `@epicenter/constants` is the routing glue. It gives apps one source of truth for URLs, ports, and versioning so sync endpoints, auth URLs, and cross-app links do not drift.
 `@epicenter/ui` is the shared presentation layer. It knows Svelte components, not Yjs semantics.
 The middleware layer is where workspace data starts feeling like an application. `@epicenter/svelte` turns workspace helpers into reactive Svelte state, `@epicenter/filesystem` turns workspace rows and documents into a POSIX-style filesystem, `@epicenter/skills` proves that whole workspaces can be packaged and embedded as data products, and `@epicenter/workspace/ai` bridges workspace actions into LLM-callable tools.
-The apps are thin by comparison. Each app owns a shared `create<App>Workspace()` model, then runtime openers attach browser, daemon, or Tauri concerns on top.
+The apps are thin by comparison. Each app owns a shared `create<App>()` model, then runtime openers attach browser, daemon, or Tauri concerns on top.
 
 ## The lifecycle: define, create, open, attach
 The verbs are the architecture. If you remember nothing else, remember that Epicenter keeps these stages separate on purpose.
@@ -87,7 +87,7 @@ Apps wrap `createWorkspace` in a per-app factory. That is where the app id, tabl
 
 ```txt
 createWorkspace()
-  -> createFujiWorkspace()
+  -> createFuji()
     -> openFujiBrowser()
     -> fuji() (project mount)
 ```
@@ -95,7 +95,7 @@ createWorkspace()
 Use `defineWorkspace()` when returning the composed object so TypeScript keeps the exact inferred bundle shape after spreads.
 
 ### 4. Runtime openers attach resources
-There is no plugin chain. Persistence, indexing, and materializers all mount through `attach*` functions; the workspace's network surface (sync + presence + dispatch) mounts through the `openCollaboration` primitive. Runtime openers compose them inline against `workspace.ydoc` after `create<App>Workspace()`.
+There is no plugin chain. Persistence, indexing, and materializers all mount through `attach*` functions; the workspace's network surface (sync + presence + dispatch) mounts through the `openCollaboration` primitive. Runtime openers compose them inline against `workspace.ydoc` after `create<App>()`.
 
 The example below syncs a cloud document. A cloud doc is owned by the authenticated `ownerId` and addressed by its own `ydoc.guid`, so the client builds the URL with `roomWsUrl({ baseURL, ownerId, guid: ydoc.guid, deviceId })`; the server resolves it from the authenticated owner and room id. There is no workspace lookup.
 
@@ -201,7 +201,7 @@ typed rows  settings       per-row content docs      indexes/materializers
 That model is why Epicenter can mix SQL-like lookup, filesystem semantics, and collaborative document editing without splitting the truth into three different stores. They are three views over one CRDT core.
 
 ## Opensidian is the best concrete example
-Opensidian composes nearly every layer inline in a per-app browser opener. Its schema starts with `filesTable` from `@epicenter/filesystem`, adds chat tables locally, and constructs the shared app model with `createOpensidianWorkspace`.
+Opensidian composes nearly every layer inline in a per-app browser opener. Its schema starts with `filesTable` from `@epicenter/filesystem`, adds chat tables locally, and constructs the shared app model with `createOpensidian`.
 
 ```ts
 import {
@@ -212,10 +212,10 @@ import {
 	openCollaboration,
 	roomWsUrl,
 } from '@epicenter/workspace';
-import { createOpensidianWorkspace } from 'opensidian';
+import { createOpensidian } from 'opensidian';
 
 export function openOpensidianBrowser() {
-	const workspace = createOpensidianWorkspace({ keyring: signedIn.keyring });
+	const workspace = createOpensidian({ keyring: signedIn.keyring });
 	const idb = attachIndexedDb(workspace.ydoc);
 	const sqliteIndex = createSqliteIndex({ ydoc: workspace.ydoc, tables: workspace.tables });
 	const actions = defineActions({
@@ -242,7 +242,7 @@ export function openOpensidianBrowser() {
 That bundle then feeds other middleware packages. `attachYjsFileSystem(workspace.tables.files, workspace.filesContent)` turns the files table plus content docs into a real virtual filesystem; `actionsToAiTools(workspace)` from `@epicenter/workspace/ai` turns workspace actions into chat tools; per-row content docs use sub-doc primitives like `attachRichText`; `createCookieAuth()` or `createBearerAuth()` from `@epicenter/auth-svelte` coordinates identity, fetch, and WebSocket auth while `@epicenter/auth` provides the signed-in identity used by lazy encryption key callbacks.
 
 ```text
-createOpensidianWorkspace({ keyring })
+createOpensidian({ keyring })
     |
     +-- workspace.ydoc, workspace.tables, workspace.kv
     +-- attachIndexedDb(workspace.ydoc)
@@ -270,6 +270,6 @@ This is what "smart client" means here. The client can boot locally, read persis
 This is what "dumb server" means here. The server helps peers find each other and exchange updates, but it is not where the data model becomes valid or meaningful.
 
 ## The shortest accurate mental model
-Epicenter defines data first. `@epicenter/workspace` gives that data a live Yjs document via `createWorkspace({ id, tables, kv })`, app packages wrap it as `create<App>Workspace()`, runtime openers attach durability and transport, middleware packages reinterpret the same bundle for files, skills, Svelte state, and AI tools, and the apps compose those layers into actual products.
+Epicenter defines data first. `@epicenter/workspace` gives that data a live Yjs document via `createWorkspace({ id, tables, kv })`, app packages wrap it as `create<App>()`, runtime openers attach durability and transport, middleware packages reinterpret the same bundle for files, skills, Svelte state, and AI tools, and the apps compose those layers into actual products.
 
 Everything after that is detail. Useful detail, but still detail.

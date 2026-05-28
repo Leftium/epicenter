@@ -149,7 +149,7 @@ type HoneycrispActionHost = { tables: Tables<HoneycrispTables> };
  * Encrypted under the supplied keyring. Runtime openers attach persistence,
  * sync, materializers, and UI state around this shared model.
  */
-export function createHoneycrispWorkspace(opts: { keyring: () => Keyring }) {
+export function createHoneycrisp(opts: { keyring: () => Keyring }) {
 	const workspace = createWorkspace({
 		id: HONEYCRISP_ID,
 		keyring: opts.keyring,
@@ -189,7 +189,7 @@ export function createHoneycrispWorkspace(opts: { keyring: () => Keyring }) {
 		},
 	});
 }
-export type HoneycrispWorkspace = ReturnType<typeof createHoneycrispWorkspace>;
+export type HoneycrispWorkspace = ReturnType<typeof createHoneycrisp>;
 
 /**
  * Deterministic guid of a note's rich-text body sub-doc.

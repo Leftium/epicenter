@@ -31,7 +31,7 @@ createWorkspace()
 The rule is the same as Fuji and Honeycrisp:
 
 ```txt
-create<App>Workspace()
+create<App>()
   shared isomorphic model
 
 open<App>Browser/open<App>Daemon/open<App>Tauri()

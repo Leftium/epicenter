@@ -10,13 +10,13 @@
 import { defineWorkspace } from '@epicenter/workspace';
 import { defineMount } from '@epicenter/workspace/daemon';
 import { attachProjectInfrastructure } from '@epicenter/workspace/node';
-import { createZhongwenWorkspace } from './zhongwen.js';
+import { createZhongwen } from './zhongwen.js';
 
 export function zhongwen() {
 	return defineMount({
 		name: 'zhongwen',
 		open(ctx) {
-			const workspace = createZhongwenWorkspace({ keyring: ctx.keyring });
+			const workspace = createZhongwen({ keyring: ctx.keyring });
 			workspace.ydoc.clientID = ctx.yDocClientId;
 
 			const infrastructure = attachProjectInfrastructure(workspace.ydoc, {

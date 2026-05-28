@@ -13,7 +13,7 @@
 import { describe, expect, test } from 'bun:test';
 import { zipSync } from 'fflate';
 import { importRedditExport } from './index.js';
-import { createBredditWorkspace } from './workspace.js';
+import { createRedditImport } from './workspace.js';
 
 /** Create a mock Reddit export ZIP from filename → CSV text entries */
 function createZip(entries: Record<string, string>): Blob {
@@ -25,7 +25,7 @@ function createZip(entries: Record<string, string>): Blob {
 }
 
 function setup() {
-	const workspace = createBredditWorkspace();
+	const workspace = createRedditImport();
 	return { workspace };
 }
 

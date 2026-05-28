@@ -21,7 +21,7 @@ import {
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
-import { createHoneycrispWorkspace } from './honeycrisp.js';
+import { createHoneycrisp } from './honeycrisp.js';
 
 export type HoneycrispMountOptions = {
 	markdownDir?: string;
@@ -43,7 +43,7 @@ export function honeycrisp(opts: HoneycrispMountOptions = {}) {
 				onReconnectSignal,
 			} = ctx;
 
-			const workspace = createHoneycrispWorkspace({ keyring });
+			const workspace = createHoneycrisp({ keyring });
 			workspace.ydoc.clientID = yDocClientId;
 
 			const sqliteFile =

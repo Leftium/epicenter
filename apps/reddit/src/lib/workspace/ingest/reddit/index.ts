@@ -11,9 +11,9 @@
  *
  * Usage:
  * ```typescript
- * import { importRedditExport, redditWorkspace } from './ingest/reddit';
+ * import { importRedditExport, redditImport } from './ingest/reddit';
  *
- * const stats = await importRedditExport(zipFile, redditWorkspace);
+ * const stats = await importRedditExport(zipFile, redditImport);
  * console.log(`Imported ${stats.totalRows} rows`);
  * ```
  */
@@ -22,9 +22,9 @@ import { type } from 'arktype';
 import { snakify } from '../snakify.js';
 import { csvSchemas, type TableName } from './csv-schemas.js';
 import { type ParsedRedditData, parseRedditZip } from './parse.js';
-import { type RedditWorkspace, redditWorkspace } from './workspace.js';
+import { type RedditImport, redditImport } from './workspace.js';
 
-export { type RedditWorkspace, redditWorkspace };
+export { type RedditImport, redditImport };
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -51,9 +51,9 @@ export type ImportProgress = {
 	table?: string;
 };
 
-// Workspace bundle type — the `redditWorkspace` singleton or any other
-// `createBredditWorkspace()` instance.
-type RedditWorkspaceClient = RedditWorkspace;
+// Import target type: the `redditImport` singleton or any other
+// `createRedditImport()` instance.
+type RedditImportTarget = RedditImport;
 
 /**
  * Coerce `undefined` fields to `null`.
@@ -152,13 +152,13 @@ function transformKv(raw: ParsedRedditData): KvData {
  * Import a Reddit GDPR export ZIP file into the workspace.
  *
  * @param input - ZIP file as Blob, File, or ArrayBuffer
- * @param workspace - Reddit workspace bundle (singleton `redditWorkspace` or `createBredditWorkspace()`)
+ * @param workspace - Reddit import target (singleton `redditImport` or `createRedditImport()`)
  * @param options - Optional progress callback
  * @returns Import statistics
  */
 export async function importRedditExport(
 	input: Blob | ArrayBuffer,
-	workspace: RedditWorkspaceClient,
+	workspace: RedditImportTarget,
 	{ onProgress }: { onProgress?: (progress: ImportProgress) => void } = {},
 ): Promise<ImportStats> {
 	const stats: ImportStats = {

@@ -2,7 +2,7 @@ import { createWorkspace } from '@epicenter/workspace';
 import { SKILLS_WORKSPACE_ID } from './constants.js';
 import { referencesTable, skillsTable } from './tables.js';
 
-export function createSkillsWorkspace({
+export function createSkills({
 	workspaceId = SKILLS_WORKSPACE_ID,
 	clientID,
 }: {

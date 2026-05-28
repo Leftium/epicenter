@@ -123,7 +123,7 @@ export type FujiActionHost = { tables: Tables<FujiTables> };
  * Encrypted under the supplied keyring; the same factory is used in both
  * browser and daemon entrypoints.
  */
-export function createFujiWorkspace(opts: { keyring: () => Keyring }) {
+export function createFuji(opts: { keyring: () => Keyring }) {
 	const workspace = createWorkspace({
 		id: FUJI_ID,
 		keyring: opts.keyring,
@@ -163,7 +163,7 @@ export function createFujiWorkspace(opts: { keyring: () => Keyring }) {
 		},
 	});
 }
-export type FujiWorkspace = ReturnType<typeof createFujiWorkspace>;
+export type FujiWorkspace = ReturnType<typeof createFuji>;
 
 /**
  * Deterministic guid of an entry's rich-text content sub-doc.

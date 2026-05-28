@@ -12,10 +12,10 @@ import {
 } from '@epicenter/workspace';
 import { clearDocument } from 'y-indexeddb';
 import * as Y from 'yjs';
-import { createSkillsWorkspace } from './index.js';
+import { createSkills } from './index.js';
 
 export function openSkillsBrowser() {
-	const doc = createSkillsWorkspace();
+	const doc = createSkills();
 	const idb = attachIndexedDb(doc.ydoc);
 	attachBroadcastChannel(doc.ydoc);
 

@@ -4,7 +4,7 @@
  * Single source of truth for "how Honeycrisp mounts in a browser." Calls
  * Tier 1 primitives inline so every line is visible top-to-bottom:
  *
- *  1. workspace root doc (encrypted tables + KV via createHoneycrispWorkspace)
+ *  1. workspace root doc (encrypted tables + KV via createHoneycrisp)
  *  2. local storage + cloud sync for root (attachLocalStorage + openCollaboration)
  *  3. runtime storage + sync around the shared per-note child docs
  *
@@ -26,7 +26,7 @@ import {
 	roomWsUrl,
 	wipeLocalStorage,
 } from '@epicenter/workspace';
-import { createHoneycrispWorkspace, type NoteId } from './honeycrisp';
+import { createHoneycrisp, type NoteId } from './honeycrisp';
 
 export function openHoneycrispBrowser({
 	signedIn,
@@ -35,7 +35,7 @@ export function openHoneycrispBrowser({
 	signedIn: SignedIn;
 	deviceId: DeviceId;
 }) {
-	const workspace = createHoneycrispWorkspace({ keyring: signedIn.keyring });
+	const workspace = createHoneycrisp({ keyring: signedIn.keyring });
 
 	const idb = attachLocalStorage(workspace.ydoc, {
 		server: signedIn.server,

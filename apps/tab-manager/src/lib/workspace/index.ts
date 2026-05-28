@@ -9,7 +9,7 @@ export {
 	type ChatMessageId,
 	type Conversation,
 	type ConversationId,
-	createTabManagerWorkspace,
+	createTabManager,
 	type Device,
 	type DeviceId,
 	generateBookmarkId,

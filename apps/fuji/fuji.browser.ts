@@ -4,7 +4,7 @@
  * Single source of truth for "how Fuji mounts in a browser." Calls Tier 1
  * primitives inline so every line is visible top-to-bottom:
  *
- *  1. workspace root doc (encrypted tables + KV via createFujiWorkspace)
+ *  1. workspace root doc (encrypted tables + KV via createFuji)
  *  2. local storage + cloud sync for root (attachLocalStorage + openCollaboration)
  *  3. runtime storage + sync around the shared per-entry child docs
  *
@@ -26,7 +26,7 @@ import {
 	roomWsUrl,
 	wipeLocalStorage,
 } from '@epicenter/workspace';
-import { createFujiWorkspace, type EntryId } from './fuji.workspace';
+import { createFuji, type EntryId } from './fuji.workspace';
 import { createFujiMarkdownActions } from './src/lib/markdown-materializer';
 
 export function openFujiBrowser({
@@ -36,7 +36,7 @@ export function openFujiBrowser({
 	signedIn: SignedIn;
 	deviceId: DeviceId;
 }) {
-	const workspace = createFujiWorkspace({ keyring: signedIn.keyring });
+	const workspace = createFuji({ keyring: signedIn.keyring });
 
 	const idb = attachLocalStorage(workspace.ydoc, {
 		server: signedIn.server,

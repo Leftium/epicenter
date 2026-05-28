@@ -8,7 +8,7 @@
  * root) and the SQLite file.
  *
  * What this does:
- *   1. workspace root doc (encrypted tables + KV via createFujiWorkspace)
+ *   1. workspace root doc (encrypted tables + KV via createFuji)
  *   2. SQLite materializer at `opts.sqliteFile ?? sqlitePath(...)`
  *   3. Markdown materializer at `opts.markdownDir ?? markdownPath(...)`
  *   4. infrastructure: Yjs log persistence + cloud sync via
@@ -29,7 +29,7 @@ import {
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
-import { createFujiWorkspace } from './fuji.workspace.js';
+import { createFuji } from './fuji.workspace.js';
 
 export type FujiMountOptions = {
 	/** Markdown directory; relative paths resolve against `projectDir`. */
@@ -53,7 +53,7 @@ export function fuji(opts: FujiMountOptions = {}) {
 				onReconnectSignal,
 			} = ctx;
 
-			const workspace = createFujiWorkspace({ keyring });
+			const workspace = createFuji({ keyring });
 			workspace.ydoc.clientID = yDocClientId;
 
 			const sqliteFile =

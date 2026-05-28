@@ -4,7 +4,7 @@
  * Single source of truth for "how Zhongwen mounts in a browser." Calls Tier 1
  * primitives inline so every line is visible top-to-bottom:
  *
- *  1. workspace root doc (encrypted tables + KV via createZhongwenWorkspace)
+ *  1. workspace root doc (encrypted tables + KV via createZhongwen)
  *  2. local storage + cloud sync for root (attachLocalStorage + openCollaboration)
  *
  * Zhongwen has no child docs and no daemon actions; the root doc is the
@@ -23,7 +23,7 @@ import {
 	roomWsUrl,
 	wipeLocalStorage,
 } from '@epicenter/workspace';
-import { createZhongwenWorkspace } from './zhongwen';
+import { createZhongwen } from './zhongwen';
 
 export function openZhongwenBrowser({
 	signedIn,
@@ -32,7 +32,7 @@ export function openZhongwenBrowser({
 	signedIn: SignedIn;
 	deviceId: DeviceId;
 }) {
-	const workspace = createZhongwenWorkspace({ keyring: signedIn.keyring });
+	const workspace = createZhongwen({ keyring: signedIn.keyring });
 
 	const idb = attachLocalStorage(workspace.ydoc, {
 		server: signedIn.server,

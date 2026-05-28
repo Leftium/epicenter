@@ -155,7 +155,7 @@ const opensidianTables = {
  * Encrypted under the supplied keyring. Runtime openers attach persistence,
  * sync, browser services, materializers, and UI state around this shared model.
  */
-export function createOpensidianWorkspace(opts: { keyring: () => Keyring }) {
+export function createOpensidian(opts: { keyring: () => Keyring }) {
 	const workspace = createWorkspace({
 		id: OPENSIDIAN_ID,
 		keyring: opts.keyring,
@@ -192,7 +192,7 @@ export function createOpensidianWorkspace(opts: { keyring: () => Keyring }) {
 		},
 	});
 }
-export type OpensidianWorkspace = ReturnType<typeof createOpensidianWorkspace>;
+export type OpensidianWorkspace = ReturnType<typeof createOpensidian>;
 
 /**
  * Deterministic guid of a file's content sub-doc.

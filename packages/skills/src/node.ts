@@ -1,7 +1,7 @@
 /**
  * @fileoverview Server-side entry for the shared skills workspace.
  *
- * Exports `openSkillsNodeWorkspace`: a direct Node/Bun workspace opener with
+ * Exports `openSkillsNode`: a direct Node/Bun workspace opener with
  * NO IndexedDB / BroadcastChannel attachments and WITH `import_from_disk` /
  * `export_to_disk` actions.
  *
@@ -10,9 +10,9 @@
  *
  * @example
  * ```typescript
- * import { openSkillsNodeWorkspace } from '@epicenter/skills/node';
+ * import { openSkillsNode } from '@epicenter/skills/node';
  *
- * using workspace = openSkillsNodeWorkspace({ workspaceId: 'epicenter.skills' });
+ * using workspace = openSkillsNode({ workspaceId: 'epicenter.skills' });
  * await workspace.actions.import_from_disk({ dir: '.agents/skills' });
  * await workspace.actions.export_to_disk({ dir: '.agents/skills' });
  * ```
@@ -44,7 +44,7 @@ import { serializeSkillMd } from './serialize.js';
 import { skillInstructionsDocGuid } from './skill-instructions-docs.js';
 import { createSkillsActions } from './skills-actions.js';
 import type { Skill } from './tables.js';
-import { createSkillsWorkspace } from './workspace.js';
+import { createSkills } from './workspace.js';
 
 export { SKILLS_WORKSPACE_ID } from './constants.js';
 export type { Reference, Skill } from './tables.js';
@@ -74,12 +74,8 @@ export type SkillsIoError = InferErrors<typeof SkillsIoError>;
  * scripts do not need the browser cache's shared live identity or local
  * IndexedDB reset behavior.
  */
-export function openSkillsNodeWorkspace({
-	workspaceId,
-}: {
-	workspaceId: string;
-}) {
-	const doc = createSkillsWorkspace({ workspaceId });
+export function openSkillsNode({ workspaceId }: { workspaceId: string }) {
+	const doc = createSkills({ workspaceId });
 	const { tables } = doc;
 
 	function openInstructionsDoc(skillId: string) {

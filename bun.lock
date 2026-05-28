@@ -55,22 +55,6 @@
         "wrangler": "catalog:",
       },
     },
-    "apps/breddit": {
-      "name": "@epicenter/breddit",
-      "version": "0.0.1",
-      "dependencies": {
-        "@epicenter/workspace": "workspace:*",
-        "@sindresorhus/slugify": "catalog:",
-        "arktype": "catalog:",
-        "fflate": "catalog:",
-        "typebox": "catalog:",
-        "yjs": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
     "apps/dashboard": {
       "name": "@epicenter/dashboard",
       "version": "0.0.1",
@@ -295,6 +279,22 @@
       "devDependencies": {
         "@cloudflare/workers-types": "^4.20250803.0",
         "wrangler": "catalog:",
+      },
+    },
+    "apps/reddit": {
+      "name": "@epicenter/reddit",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/workspace": "workspace:*",
+        "@sindresorhus/slugify": "catalog:",
+        "arktype": "catalog:",
+        "fflate": "catalog:",
+        "typebox": "catalog:",
+        "yjs": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "apps/skills": {
@@ -1106,8 +1106,6 @@
 
     "@epicenter/billing": ["@epicenter/billing@workspace:packages/billing"],
 
-    "@epicenter/breddit": ["@epicenter/breddit@workspace:apps/breddit"],
-
     "@epicenter/cli": ["@epicenter/cli@workspace:packages/cli"],
 
     "@epicenter/client": ["@epicenter/client@workspace:packages/client"],
@@ -1127,6 +1125,8 @@
     "@epicenter/landing": ["@epicenter/landing@workspace:apps/landing"],
 
     "@epicenter/posthog-reverse-proxy": ["@epicenter/posthog-reverse-proxy@workspace:apps/posthog-reverse-proxy"],
+
+    "@epicenter/reddit": ["@epicenter/reddit@workspace:apps/reddit"],
 
     "@epicenter/server": ["@epicenter/server@workspace:packages/server"],
 

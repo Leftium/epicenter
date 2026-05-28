@@ -23,7 +23,7 @@ import {
 import { assembleMarkdown } from '@epicenter/workspace/markdown';
 import { attachYjsLog } from '@epicenter/workspace/node';
 import {
-	createOpensidianWorkspace,
+	createOpensidian,
 	opensidianFileContentDocGuid,
 } from 'opensidian';
 import * as Y from 'yjs';
@@ -47,7 +47,7 @@ function dbPath(id: string) {
 
 /** Create a workspace client with filesystem persistence for testing. */
 function createTestClient() {
-	const workspace = createOpensidianWorkspace({
+	const workspace = createOpensidian({
 		keyring: () => TEST_ENCRYPTION_KEYS,
 	});
 	attachYjsLog(workspace.ydoc, {
@@ -192,7 +192,7 @@ describe('e2e: opensidian pushFromMarkdown', () => {
 	const IMPORT_FILES_DIR = join(IMPORT_DIR, 'files');
 
 	function createImportClient() {
-		const workspace = createOpensidianWorkspace({
+		const workspace = createOpensidian({
 			keyring: () => TEST_ENCRYPTION_KEYS,
 		});
 		attachYjsLog(workspace.ydoc, {

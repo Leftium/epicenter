@@ -12,13 +12,13 @@
 import { defineWorkspace } from '@epicenter/workspace';
 import { defineMount } from '@epicenter/workspace/daemon';
 import { attachProjectInfrastructure } from '@epicenter/workspace/node';
-import { createOpensidianWorkspace } from './opensidian.js';
+import { createOpensidian } from './opensidian.js';
 
 export function opensidian() {
 	return defineMount({
 		name: 'opensidian',
 		open(ctx) {
-			const workspace = createOpensidianWorkspace({ keyring: ctx.keyring });
+			const workspace = createOpensidian({ keyring: ctx.keyring });
 			workspace.ydoc.clientID = ctx.yDocClientId;
 
 			const infrastructure = attachProjectInfrastructure(workspace.ydoc, {

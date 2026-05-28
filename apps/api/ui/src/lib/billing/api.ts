@@ -22,15 +22,15 @@ import type {
 	UsageQuery,
 	UsageSeries,
 } from '$api/billing/contracts';
-import { BillingError, BillingErrorEnvelope } from '$api/billing/errors';
-import { type } from 'arktype';
+import { BillingError } from '$api/billing/errors';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
-import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
+import { Err, type Result, tryAsync } from 'wellcrafted/result';
 import { auth } from '$platform/auth';
 
-/** Tagged error for the billing API boundary. Covers network failures
- *  (fetch throws) and non-OK HTTP responses (the status guard throws). */
+/** Tagged error for the billing API boundary, split by what actually failed. */
 export const BillingApiError = defineErrors({
+	/** No response we could read: `fetch` threw (offline, DNS, CORS) or the OK
+	 *  body failed to parse. `cause` is the genuine thrown value. */
 	RequestFailed: ({
 		endpoint,
 		cause,
@@ -42,6 +42,23 @@ export const BillingApiError = defineErrors({
 		endpoint,
 		cause,
 	}),
+	/** The request completed with a non-OK status that is not the billing
+	 *  routes' structured 503. The status is known, so we carry it as typed
+	 *  data rather than fabricating an Error to feed a message extractor. */
+	UnexpectedStatus: ({
+		endpoint,
+		status,
+		statusText,
+	}: {
+		endpoint: string;
+		status: number;
+		statusText: string;
+	}) => ({
+		message: `Request to ${endpoint} returned ${status} ${statusText}.`,
+		endpoint,
+		status,
+		statusText,
+	}),
 });
 export type BillingApiError = import('wellcrafted/error').InferErrors<
 	typeof BillingApiError
@@ -52,35 +69,30 @@ export type BillingApiError = import('wellcrafted/error').InferErrors<
 type BillingResult<T> = Result<T, BillingApiError | BillingError>;
 
 /**
- * Interpret a billing response. On a non-OK status the billing routes' onError
- * sends the wellcrafted envelope `{ data: null, error: BillingError }`: an
- * opaque "billing provider failed" message we render as-is (the actionable
- * billing states live on the AI/asset surfaces, not here). The body is
- * runtime-validated against `BillingErrorEnvelope` before we trust it; a
- * non-JSON, malformed, or envelope-less body falls back to a generic request
- * failure. We rebuild the error through the shared `BillingError` factory so
- * the value the dashboard holds is canonical, not whatever shape arrived.
+ * Interpret a billing response. The wire contract is the status code, not the
+ * body shape: the billing routes fail closed to a fixed 503 for any provider
+ * failure (every actionable billing state lives on the AI/asset surfaces with
+ * its own status), so we rebuild the canonical `BillingError` from the 503
+ * alone. Any other non-OK status is an unexpected boundary failure we surface
+ * with its status. The body is parsed only on the OK path.
  */
 async function readResponse<TResponse>(
 	endpoint: string,
 	res: Response,
 ): Promise<BillingResult<TResponse>> {
-	const { data: body, error: parseError } = await tryAsync({
-		try: () => res.json() as Promise<unknown>,
-		catch: (cause) => BillingApiError.RequestFailed({ endpoint, cause }),
-	});
-	if (parseError) return Err(parseError);
-
-	if (res.ok) return Ok(body as TResponse);
-
-	const envelope = BillingErrorEnvelope(body);
-	if (envelope instanceof type.errors) {
-		return BillingApiError.RequestFailed({
+	if (!res.ok) {
+		if (res.status === 503) return BillingError.ProviderRequestFailed();
+		return BillingApiError.UnexpectedStatus({
 			endpoint,
-			cause: new Error(`${res.status} ${res.statusText}`),
+			status: res.status,
+			statusText: res.statusText,
 		});
 	}
-	return BillingError.ProviderRequestFailed();
+
+	return tryAsync({
+		try: () => res.json() as Promise<TResponse>,
+		catch: (cause) => BillingApiError.RequestFailed({ endpoint, cause }),
+	});
 }
 
 async function get<TResponse>(endpoint: string): Promise<BillingResult<TResponse>> {

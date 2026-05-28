@@ -3,11 +3,12 @@
  * primitives with Autumn-backed billing.
  *
  * Each policy is a thin shell around the billing service. The service owns
- * the Autumn round-trips and DTO mapping; policies own only HTTP shape:
- * generating a reservation lock id, pulling fields off the request,
- * forwarding the guard's typed error to `c.json`, and queueing the
- * confirm/release finalize onto the after-response queue from
- * `@epicenter/server`.
+ * the Autumn round-trips and the reservation lock (the `lockId` never leaves
+ * it); policies own only HTTP shape: pulling fields off the request, forwarding
+ * the guard's typed error to `c.json`, and scheduling the reservation's
+ * `confirm`/`release` (or a delete credit) on the after-response queue from
+ * `@epicenter/server` via {@link scheduleBillingSettlement}, which logs any
+ * post-response failure rather than dropping it.
  *
  *   chargeAiCreditsWithAutumn      Around `/api/ai/chat`. Reserves credits
  *                                  (a lock) before the call, then confirms on
@@ -37,6 +38,7 @@ import type { Env } from '@epicenter/server';
 import { createMiddleware } from 'hono/factory';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { BillingError } from './errors.js';
+import { scheduleBillingSettlement } from './settlement.js';
 import { createBillingService } from './service.js';
 
 type AiChatBody = {
@@ -45,27 +47,26 @@ type AiChatBody = {
 };
 
 /**
- * Resolve the HTTP status for an AI guard failure. `BillingError` carries its
- * own `statusCode` (the upstream provider status, or 503 when unreachable);
- * every `AiChatError` variant maps through the sibling status table.
+ * Resolve the HTTP status for an AI guard failure. A `BillingError` means the
+ * provider call failed and we fail closed, so it answers with a fixed 503
+ * (entitlement unverifiable -> service unavailable); the actionable
+ * `AiChatError` variants map through the sibling status table. 503 is a trusted
+ * literal, so no cast on an untrusted provider value.
  */
 function aiGuardStatus(error: AiChatError | BillingError): ContentfulStatusCode {
-	if (error.name === 'ProviderRequestFailed') {
-		return error.statusCode as ContentfulStatusCode;
-	}
+	if (error.name === 'ProviderRequestFailed') return 503;
 	return AiChatErrorStatus[error.name];
 }
 
 /**
- * Resolve the HTTP status for a storage guard failure. `BillingError` carries
- * its own `statusCode`; every `AssetError` variant bakes in its `status`.
+ * Resolve the HTTP status for a storage guard failure. A `BillingError` is a
+ * fail-closed provider failure (fixed 503); every `AssetError` variant bakes in
+ * its own `status`.
  */
 function storageGuardStatus(
 	error: AssetError | BillingError,
 ): ContentfulStatusCode {
-	if (error.name === 'ProviderRequestFailed') {
-		return error.statusCode as ContentfulStatusCode;
-	}
+	if (error.name === 'ProviderRequestFailed') return 503;
 	return error.status;
 }
 
@@ -84,12 +85,12 @@ export const chargeAiCreditsWithAutumn = createMiddleware<Env>(
 			userEmail: c.var.user.email,
 		});
 
-		const lockId = crypto.randomUUID();
-		const { error: guardError } = await billing.guardAiChat({
-			model: body.data?.model ?? '',
-			provider: body.data?.provider,
-			lockId,
-		});
+		const { data: reservation, error: guardError } = await billing.reserveAiChat(
+			{
+				model: body.data?.model ?? '',
+				provider: body.data?.provider,
+			},
+		);
 		if (guardError) {
 			return c.json({ data: null, error: guardError }, aiGuardStatus(guardError));
 		}
@@ -99,9 +100,13 @@ export const chargeAiCreditsWithAutumn = createMiddleware<Env>(
 		// Commit the reserved credits on success; release them on a pre-stream
 		// failure (>= 400) where no work was done. Once the SSE stream starts the
 		// status is already 200, so a mid-stream provider failure commits by
-		// design: those provider tokens were consumed and are non-refundable.
-		const action = c.res.status >= 400 ? 'release' : 'confirm';
-		c.var.afterResponse.push(billing.finalizeAiCharge(lockId, action));
+		// design: those provider tokens were consumed and are non-refundable. A
+		// failed confirm self-heals via the lock TTL (an undercharge), so it logs
+		// at `error` but recovers; a failed release self-heals fully, so `warn`.
+		const failedBeforeStream = c.res.status >= 400;
+		scheduleBillingSettlement(c, failedBeforeStream ? 'warn' : 'error', () =>
+			failedBeforeStream ? reservation.release() : reservation.confirm(),
+		);
 	},
 );
 
@@ -121,11 +126,8 @@ export const trackAssetStorageWithAutumn = createMiddleware<Env>(
 				userId: c.var.user.id,
 				userEmail: c.var.user.email,
 			});
-			const lockId = crypto.randomUUID();
-			const { error: guardError } = await billing.reserveAssetStorage({
-				sizeBytes: file.size,
-				lockId,
-			});
+			const { data: reservation, error: guardError } =
+				await billing.reserveAssetStorage({ sizeBytes: file.size });
 			if (guardError) {
 				return c.json(
 					{ data: null, error: guardError },
@@ -137,8 +139,12 @@ export const trackAssetStorageWithAutumn = createMiddleware<Env>(
 
 			// Commit the reservation on a successful upload (201); release it
 			// otherwise so a failed upload does not hold quota until the lock TTL.
-			const action = c.res.status === 201 ? 'confirm' : 'release';
-			c.var.afterResponse.push(billing.finalizeAssetStorage(lockId, action));
+			// Both self-heal via the lock TTL, so confirm logs at `error` and
+			// release at `warn`.
+			const uploaded = c.res.status === 201;
+			scheduleBillingSettlement(c, uploaded ? 'error' : 'warn', () =>
+				uploaded ? reservation.confirm() : reservation.release(),
+			);
 			return;
 		}
 
@@ -152,7 +158,11 @@ export const trackAssetStorageWithAutumn = createMiddleware<Env>(
 				userId: c.var.user.id,
 				userEmail: c.var.user.email,
 			});
-			c.var.afterResponse.push(billing.creditAssetStorage(size));
+			// A delete credit has no lock to expire, so a failure leaves quota
+			// consumed permanently: log at `error`.
+			scheduleBillingSettlement(c, 'error', () =>
+				billing.creditAssetStorage(size),
+			);
 			return;
 		}
 

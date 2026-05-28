@@ -53,11 +53,10 @@ type BillingResult<T> = Result<T, BillingApiError | BillingError>;
 
 /**
  * Interpret a billing response. On a non-OK status the billing routes' onError
- * sends the wellcrafted envelope `{ data: null, error: BillingError }` carrying
- * the upstream status code and Autumn `code`, so we surface that structured
- * error instead of collapsing it to a status line: the dashboard can branch on
- * `error.statusCode === 402` (insufficient credits) or `error.code`. The body
- * is runtime-validated against `BillingErrorEnvelope` before we trust it; a
+ * sends the wellcrafted envelope `{ data: null, error: BillingError }`: an
+ * opaque "billing provider failed" message we render as-is (the actionable
+ * billing states live on the AI/asset surfaces, not here). The body is
+ * runtime-validated against `BillingErrorEnvelope` before we trust it; a
  * non-JSON, malformed, or envelope-less body falls back to a generic request
  * failure. We rebuild the error through the shared `BillingError` factory so
  * the value the dashboard holds is canonical, not whatever shape arrived.
@@ -82,8 +81,6 @@ async function readResponse<TResponse>(
 		});
 	}
 	return BillingError.ProviderRequestFailed({
-		statusCode: envelope.error.statusCode,
-		code: envelope.error.code,
 		message: envelope.error.message,
 	});
 }

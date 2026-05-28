@@ -11,27 +11,24 @@
 import type { Env } from '@epicenter/server';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
-import { AutumnError } from 'autumn-js';
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
-import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { MODEL_CREDITS, providerOf } from './ai-model-pricing.js';
+import { isAutumnError, mapAutumnError } from './autumn.js';
 import { CHECKOUT_PLAN_IDS } from './catalog.js';
 import type { ModelCostGuide } from './contracts.js';
-import { createBillingService, toBillingError } from './service.js';
+import { createBillingService } from './service.js';
 import { BILLING_ROUTES } from './url.js';
 
 const billingRoutes = new Hono<Env>();
 
-// Translate Autumn SDK throws into the repo-wide wellcrafted envelope.
-// Non-AutumnError throws (network failures, programming errors) bubble
-// to the parent app's default handler for a generic 500. The body of
-// an AutumnError is a raw HTTP body string; parse JSON when we can so
-// downstream consumers see `{ code, message }`, fall through to raw on
-// non-JSON so the upstream text is never silently dropped.
+// A thrown provider failure becomes the opaque billing envelope at a fixed 503
+// (entitlement/data unverifiable -> service unavailable). Anything that is NOT
+// a provider failure (a programming bug in a handler) rethrows to the parent
+// app's default handler for a real 500, rather than masquerading as "provider
+// unreachable."
 billingRoutes.onError((err, c) => {
-	if (!(err instanceof AutumnError)) throw err;
-	const envelope = toBillingError(err);
-	return c.json(envelope, envelope.error.statusCode as ContentfulStatusCode);
+	if (!isAutumnError(err)) throw err;
+	return c.json(mapAutumnError(err), 503);
 });
 
 function svc(c: Context<Env>) {

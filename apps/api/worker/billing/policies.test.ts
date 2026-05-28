@@ -1,61 +1,86 @@
 /**
- * Storage policy accounting tests.
+ * Policy reservation-lifecycle tests.
  *
- * Pins the no-overcharge contract of `trackAssetStorageWithAutumn`: a reserved
- * lock is committed (`confirm`) only on a successful upload and rolled back
- * (`release`) on any non-201, and a guard failure answers with the structured
- * billing envelope without reserving or calling the downstream handler. The
- * Autumn round-trips are mocked at the service boundary; this test owns only
- * the policy's HTTP orchestration.
+ * Pins the no-overcharge contract of both Autumn policies: a reserved lock is
+ * committed (`confirm`) only on a successful response and rolled back
+ * (`release`) otherwise, a guard failure answers with the structured billing
+ * envelope without reserving or calling the downstream handler, and a delete
+ * credits the freed bytes back. The service (every Autumn round-trip) is mocked
+ * at its module boundary; these tests own only the policy's HTTP orchestration.
  *
- * A worker crash between reserve and finalize is intentionally NOT exercised
- * here: that path is covered by Autumn's lock TTL auto-release, not by code in
- * this repo.
+ * The reservation object hides the `lockId`: the policy only ever calls
+ * `confirm()` / `release()`, so there is no lock action to mispair. Settlement
+ * runs through `scheduleBillingSettlement`, which invokes the op eagerly (to
+ * push its promise onto `afterResponse`), so confirm/release/credit are
+ * recorded synchronously during the request.
+ *
+ * A worker crash between reserve and finalize is intentionally NOT exercised:
+ * that path is covered by Autumn's lock TTL auto-release, not by code here.
  */
 
+import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import { AssetError } from '@epicenter/constants/asset-errors';
 import type { Env } from '@epicenter/server';
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { Ok, type Result } from 'wellcrafted/result';
 
-// `AssetError.StorageLimitExceeded(...)` already returns `Err<payload>`, so the
-// Result's error type is that payload, not the `Err` wrapper.
-type ReserveOutcome = Result<
-	void,
+type AiReserveOutcome = Result<
+	{ credits: number },
+	| ReturnType<typeof AiChatError.UnknownModel>['error']
+	| ReturnType<typeof AiChatError.InsufficientCredits>['error']
+>;
+type AssetReserveOutcome = Result<
+	Record<never, never>,
 	ReturnType<typeof AssetError.StorageLimitExceeded>['error']
 >;
 
-const finalizeCalls: Array<{ lockId: string; action: 'confirm' | 'release' }> = [];
+const finalizeCalls: Array<'confirm' | 'release'> = [];
 const creditCalls: number[] = [];
-let reserveOutcome: ReserveOutcome = Ok(undefined);
+let aiReserveOutcome: AiReserveOutcome = Ok({ credits: 5 });
+let assetReserveOutcome: AssetReserveOutcome = Ok({});
+
+/** A reservation whose confirm/release record the action and resolve Ok. */
+function recordingReservation() {
+	return {
+		confirm: () => {
+			finalizeCalls.push('confirm');
+			return Promise.resolve(Ok(undefined));
+		},
+		release: () => {
+			finalizeCalls.push('release');
+			return Promise.resolve(Ok(undefined));
+		},
+	};
+}
 
 mock.module('./service.js', () => ({
 	createBillingService: () => ({
-		reserveAssetStorage: async (_input: { sizeBytes: number; lockId: string }) =>
-			reserveOutcome,
-		finalizeAssetStorage: (lockId: string, action: 'confirm' | 'release') => {
-			finalizeCalls.push({ lockId, action });
-			return Promise.resolve();
-		},
+		reserveAiChat: async (_input: { model: string; provider?: string }) =>
+			aiReserveOutcome.error
+				? aiReserveOutcome
+				: Ok({ ...aiReserveOutcome.data, ...recordingReservation() }),
+		reserveAssetStorage: async (_input: { sizeBytes: number }) =>
+			assetReserveOutcome.error ? assetReserveOutcome : Ok(recordingReservation()),
 		creditAssetStorage: (sizeBytes: number) => {
 			creditCalls.push(sizeBytes);
-			return Promise.resolve();
+			return Promise.resolve(Ok(undefined));
 		},
 	}),
 }));
 
-const { trackAssetStorageWithAutumn } = await import('./policies.js');
+const { chargeAiCreditsWithAutumn, trackAssetStorageWithAutumn } = await import(
+	'./policies.js'
+);
 
 beforeEach(() => {
 	finalizeCalls.length = 0;
 	creditCalls.length = 0;
-	reserveOutcome = Ok(undefined);
+	aiReserveOutcome = Ok({ credits: 5 });
+	assetReserveOutcome = Ok({});
 });
 
-/** Mount the policy around a stub upload handler that returns `downstreamStatus`. */
-function makeApp(downstreamStatus: 201 | 500 | 204) {
-	const app = new Hono<Env>();
+function withContext(app: Hono<Env>) {
 	app.use('*', async (c, next) => {
 		c.set('afterResponse', []);
 		c.set('user', {
@@ -64,6 +89,68 @@ function makeApp(downstreamStatus: 201 | 500 | 204) {
 		} as Env['Variables']['user']);
 		await next();
 	});
+	return app;
+}
+
+// ----- AI chat policy --------------------------------------------------
+
+/** Mount the AI policy around a stub chat handler that returns `downstreamStatus`. */
+function makeAiApp(downstreamStatus: 200 | 500) {
+	const app = withContext(new Hono<Env>());
+	app.use('/ai/chat', chargeAiCreditsWithAutumn);
+	app.post('/ai/chat', (c) => c.body(null, downstreamStatus));
+	return app;
+}
+
+function aiRequest(app: Hono<Env>, body: unknown) {
+	return app.request('/ai/chat', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(body),
+	});
+}
+
+test('a successful chat (200) confirms the reservation', async () => {
+	const res = await aiRequest(makeAiApp(200), { data: { model: 'gpt' } });
+
+	expect(res.status).toBe(200);
+	expect(finalizeCalls).toEqual(['confirm']);
+});
+
+test('a pre-stream failure (>= 400) releases the reservation, never charging', async () => {
+	const res = await aiRequest(makeAiApp(500), { data: { model: 'gpt' } });
+
+	expect(res.status).toBe(500);
+	expect(finalizeCalls).toEqual(['release']);
+});
+
+test('a BYOK key bypasses billing entirely (no reservation)', async () => {
+	const res = await aiRequest(makeAiApp(200), {
+		data: { model: 'gpt' },
+		apiKey: 'sk-user-key',
+	});
+
+	expect(res.status).toBe(200);
+	expect(finalizeCalls).toHaveLength(0);
+});
+
+test('an AI guard rejection answers with the envelope and reserves nothing', async () => {
+	aiReserveOutcome = AiChatError.InsufficientCredits({ balance: 0 });
+
+	const res = await aiRequest(makeAiApp(200), { data: { model: 'gpt' } });
+
+	expect(res.status).toBe(402);
+	const body = (await res.json()) as { data: unknown; error: { name: string } };
+	expect(body.data).toBeNull();
+	expect(body.error.name).toBe('InsufficientCredits');
+	expect(finalizeCalls).toHaveLength(0);
+});
+
+// ----- Asset storage policy --------------------------------------------
+
+/** Mount the storage policy around a stub upload/delete handler. */
+function makeAssetApp(downstreamStatus: 201 | 500 | 204) {
+	const app = withContext(new Hono<Env>());
 	app.use('/assets', trackAssetStorageWithAutumn);
 	app.post('/assets', (c) => c.body(null, downstreamStatus));
 	app.delete('/assets', (c) => {
@@ -79,32 +166,30 @@ function uploadForm() {
 	return form;
 }
 
-test('a successful upload (201) commits the reservation', async () => {
-	const res = await makeApp(201).request('/assets', {
+test('a successful upload (201) confirms the reservation', async () => {
+	const res = await makeAssetApp(201).request('/assets', {
 		method: 'POST',
 		body: uploadForm(),
 	});
 
 	expect(res.status).toBe(201);
-	expect(finalizeCalls).toHaveLength(1);
-	expect(finalizeCalls[0]?.action).toBe('confirm');
+	expect(finalizeCalls).toEqual(['confirm']);
 });
 
 test('a failed upload (500) releases the reservation, never charging', async () => {
-	const res = await makeApp(500).request('/assets', {
+	const res = await makeAssetApp(500).request('/assets', {
 		method: 'POST',
 		body: uploadForm(),
 	});
 
 	expect(res.status).toBe(500);
-	expect(finalizeCalls).toHaveLength(1);
-	expect(finalizeCalls[0]?.action).toBe('release');
+	expect(finalizeCalls).toEqual(['release']);
 });
 
-test('a guard rejection answers with the structured envelope and reserves nothing', async () => {
-	reserveOutcome = AssetError.StorageLimitExceeded({ requestedBytes: 1024 });
+test('a storage guard rejection answers with the envelope and reserves nothing', async () => {
+	assetReserveOutcome = AssetError.StorageLimitExceeded({ requestedBytes: 1024 });
 
-	const res = await makeApp(201).request('/assets', {
+	const res = await makeAssetApp(201).request('/assets', {
 		method: 'POST',
 		body: uploadForm(),
 	});
@@ -113,12 +198,11 @@ test('a guard rejection answers with the structured envelope and reserves nothin
 	const body = (await res.json()) as { data: unknown; error: { name: string } };
 	expect(body.data).toBeNull();
 	expect(body.error.name).toBe('StorageLimitExceeded');
-	// Reservation never committed and the upload handler never ran.
 	expect(finalizeCalls).toHaveLength(0);
 });
 
 test('a delete (204) credits the freed bytes back', async () => {
-	const res = await makeApp(204).request('/assets', { method: 'DELETE' });
+	const res = await makeAssetApp(204).request('/assets', { method: 'DELETE' });
 
 	expect(res.status).toBe(204);
 	expect(creditCalls).toEqual([4096]);

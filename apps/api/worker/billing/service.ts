@@ -1,23 +1,23 @@
 /**
  * Billing service.
  *
- * Owns every Autumn round-trip in the cloud worker. Routes and policies
- * call into this service, which returns Epicenter DTOs from
- * `./contracts.ts`. Nothing outside this module imports
- * `autumn-js` at runtime.
+ * Owns every billing domain operation in the cloud worker. Routes and
+ * policies call into this service, which returns Epicenter DTOs from
+ * `./contracts.ts` (dashboard reads) or reservation objects (the AI and
+ * storage guards). It never imports `autumn-js`: the Autumn SDK lives
+ * behind `./autumn.ts`, which builds the client, wraps each round-trip in
+ * `tryAutumn`, and translates provider throws into `BillingError`.
  *
  * Lifecycle: one service per request. Construct via
  * `createBillingService(env, { userId, userEmail })`. The service does
  * NOT cache the customer across calls; each public method makes the
- * Autumn calls it needs and returns a DTO.
+ * Autumn calls it needs and returns its result.
  */
 
 import type { UserId } from '@epicenter/auth';
 import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import { AssetError } from '@epicenter/constants/asset-errors';
-import { Autumn, AutumnError } from 'autumn-js';
-import { extractErrorMessage } from 'wellcrafted/error';
-import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import { MODEL_CREDITS } from './ai-model-pricing.js';
 import {
 	type CheckoutPlanId,
@@ -42,7 +42,8 @@ import type {
 	UsageQuery,
 	UsageSeries,
 } from './contracts.js';
-import { BillingError } from './errors.js';
+import { createAutumnClient, tryAutumn } from './autumn.js';
+import type { BillingError } from './errors.js';
 
 // ---------------------------------------------------------------------
 // Types
@@ -59,59 +60,46 @@ type Identity = {
 // Construction
 // ---------------------------------------------------------------------
 
-/**
- * Build a per-request billing service.
- *
- * The Autumn SDK defaults `failOpen: true`, meaning a vendor outage
- * causes `check()` to silently allow the request. That is the wrong
- * default for paid features: if we can't verify entitlement, we must
- * reject. We pass `failOpen: false` so every billing check fails CLOSED.
- */
+/** How long a reservation lock holds the balance before Autumn auto-releases
+ *  it. If the worker dies before finalizing, the hold expires here, so a failed
+ *  request never permanently consumes credits or quota. */
 const LOCK_TTL_MS = 15 * 60_000;
 
 /**
- * Map any thrown Autumn failure to the structured `BillingError` envelope.
- *
- * `AutumnError` carries an upstream HTTP status and a JSON body ({ code,
- * message }); we surface those so callers branch on `statusCode`/`code`. Any
- * other throw means the provider was unreachable, so we fail closed as a 503:
- * when entitlement cannot be verified, deny rather than allow.
+ * A held credit reservation taken by {@link createBillingService}'s
+ * `reserveAiChat`. The `lockId` is captured in the closure and never escapes
+ * the service: the policy commits with `confirm()` on success or rolls back
+ * with `release()` on a pre-stream failure, so the lock action can't be
+ * mispaired.
  */
-export function toBillingError(error: unknown) {
-	if (error instanceof AutumnError) {
-		let code: string | undefined;
-		let message: string = error.body;
-		try {
-			const parsed = JSON.parse(error.body) as unknown;
-			if (parsed && typeof parsed === 'object') {
-				const record = parsed as { code?: unknown; message?: unknown };
-				if (typeof record.code === 'string') code = record.code;
-				if (typeof record.message === 'string') message = record.message;
-			}
-		} catch {
-			// non-JSON body; `message` already holds the raw text
-		}
-		return BillingError.ProviderRequestFailed({
-			statusCode: error.statusCode,
-			code,
-			message,
-		});
-	}
-	return BillingError.ProviderRequestFailed({
-		statusCode: 503,
-		code: undefined,
-		message: extractErrorMessage(error),
-	});
-}
+type AiReservation = {
+	credits: number;
+	confirm(): Promise<Result<void, BillingError>>;
+	release(): Promise<Result<void, BillingError>>;
+};
+
+/** A held storage reservation taken by `reserveAssetStorage`, same lifecycle
+ *  as {@link AiReservation}. */
+type AssetStorageReservation = {
+	confirm(): Promise<Result<void, BillingError>>;
+	release(): Promise<Result<void, BillingError>>;
+};
 
 export function createBillingService(
 	env: { AUTUMN_SECRET_KEY: string },
 	identity: Identity,
 ) {
-	const autumn = new Autumn({
-		secretKey: env.AUTUMN_SECRET_KEY,
-		failOpen: false,
-	});
+	const autumn = createAutumnClient(env);
+
+	/** Finalize a held lock. Both reservation kinds share this. */
+	function finalizeLock(
+		lockId: string,
+		action: 'confirm' | 'release',
+	): Promise<Result<void, BillingError>> {
+		return tryAutumn(async () => {
+			await autumn.balances.finalize({ lockId, action });
+		});
+	}
 
 	/** Load Autumn customer with subscriptions + balances expanded. */
 	async function loadCustomer() {
@@ -124,11 +112,16 @@ export function createBillingService(
 
 	// ----- AI guard -----------------------------------------------------
 
-	async function guardAiChat(input: {
+	/**
+	 * Reserve AI credits for one chat call. On success returns a reservation the
+	 * policy commits or releases around the downstream handler; on failure
+	 * returns a typed reason (unknown model, free-tier ceiling, insufficient
+	 * balance, or a fail-closed provider outage).
+	 */
+	async function reserveAiChat(input: {
 		model: string;
 		provider: string | undefined;
-		lockId: string;
-	}): Promise<Result<{ credits: number }, AiChatError | BillingError>> {
+	}): Promise<Result<AiReservation, AiChatError | BillingError>> {
 		const credits = MODEL_CREDITS[input.model as keyof typeof MODEL_CREDITS];
 		if (credits === undefined) {
 			return AiChatError.UnknownModel({ model: input.model });
@@ -136,10 +129,9 @@ export function createBillingService(
 
 		// Resolve the active plan from a single customer fetch. A billing-provider
 		// outage fails closed: entitlement cannot be verified, so deny.
-		const { data: customer, error: customerError } = await tryAsync({
-			try: () => loadCustomer(),
-			catch: (error) => toBillingError(error),
-		});
+		const { data: customer, error: customerError } = await tryAutumn(() =>
+			loadCustomer(),
+		);
 		if (customerError) return Err(customerError);
 
 		const mainSub = customer.subscriptions.find((s) => !s.addOn) ?? null;
@@ -151,113 +143,99 @@ export function createBillingService(
 		}
 
 		// Reserve the credits with a lock instead of an immediate deduct: the lock
-		// holds the balance (concurrent calls can't double-spend) and
-		// `finalizeAiCharge` commits on success or releases on failure. If the
-		// worker dies before finalizing, Autumn auto-releases at `expiresAt`, so a
-		// failed call never permanently consumes credits.
-		const { data: check, error: checkError } = await tryAsync({
-			try: () =>
-				autumn.check({
-					customerId: identity.userId,
-					featureId: FEATURE_IDS.aiUsage,
-					requiredBalance: credits,
-					lock: {
-						lockId: input.lockId,
-						enabled: true,
-						expiresAt: Date.now() + LOCK_TTL_MS,
-					},
-					withPreview: true,
-					properties: { model: input.model, provider: input.provider },
-				}),
-			catch: (error) => toBillingError(error),
-		});
+		// holds the balance (concurrent calls can't double-spend) and the returned
+		// reservation commits on success or releases on a pre-stream failure. If
+		// the worker dies before finalizing, Autumn auto-releases at `expiresAt`,
+		// so a failed call never permanently consumes credits.
+		const lockId = crypto.randomUUID();
+		const { data: check, error: checkError } = await tryAutumn(() =>
+			autumn.check({
+				customerId: identity.userId,
+				featureId: FEATURE_IDS.aiUsage,
+				requiredBalance: credits,
+				lock: {
+					lockId,
+					enabled: true,
+					expiresAt: Date.now() + LOCK_TTL_MS,
+				},
+				properties: { model: input.model, provider: input.provider },
+			}),
+		);
 		if (checkError) return Err(checkError);
 		if (!check.allowed) {
 			return AiChatError.InsufficientCredits({ balance: check.balance });
 		}
 
-		return Ok({ credits });
+		return Ok({
+			credits,
+			confirm: () => finalizeLock(lockId, 'confirm'),
+			release: () => finalizeLock(lockId, 'release'),
+		});
 	}
-
-	/**
-	 * Commit (`confirm`) or roll back (`release`) a credit reservation taken by
-	 * {@link guardAiChat}. Pushed onto the after-response queue by the policy.
-	 */
-	function finalizeAiCharge(
-		lockId: string,
-		action: 'confirm' | 'release',
-	): Promise<unknown> {
-		return autumn.balances.finalize({ lockId, action });
-	}
-
 
 	// ----- Storage guard ------------------------------------------------
 
+	/**
+	 * Reserve storage bytes for one upload. Same reservation lifecycle as
+	 * {@link reserveAiChat}: the policy confirms on a 201 or releases otherwise.
+	 */
 	async function reserveAssetStorage(input: {
 		sizeBytes: number;
-		lockId: string;
-	}): Promise<Result<void, AssetError | BillingError>> {
+	}): Promise<Result<AssetStorageReservation, AssetError | BillingError>> {
 		// Seed the customer so the storage balance materializes from the
 		// auto-enable free plan before we reserve against it. A provider outage
 		// fails closed.
-		const { error: seedError } = await tryAsync({
-			try: () =>
-				autumn.customers.getOrCreate({
-					customerId: identity.userId,
-					email: identity.userEmail,
-				}),
-			catch: (error) => toBillingError(error),
-		});
+		const { error: seedError } = await tryAutumn(() =>
+			autumn.customers.getOrCreate({
+				customerId: identity.userId,
+				email: identity.userEmail,
+			}),
+		);
 		if (seedError) return Err(seedError);
 
 		// Reserve the bytes with a lock instead of deduct-then-refund: the lock
 		// holds the balance atomically (two concurrent uploads can't both pass)
-		// and `finalizeAssetStorage` commits on a 201 or releases otherwise. If
+		// and the returned reservation commits on a 201 or releases otherwise. If
 		// the worker dies before finalizing, Autumn auto-releases at `expiresAt`,
-		// so a failed upload never permanently consumes quota (the overcharge the
-		// old waitUntil refund could silently leak).
-		const { data: check, error: checkError } = await tryAsync({
-			try: () =>
-				autumn.check({
-					customerId: identity.userId,
-					featureId: FEATURE_IDS.storageBytes,
-					requiredBalance: input.sizeBytes,
-					lock: {
-						lockId: input.lockId,
-						enabled: true,
-						expiresAt: Date.now() + LOCK_TTL_MS,
-					},
-				}),
-			catch: (error) => toBillingError(error),
-		});
+		// so a failed upload never permanently consumes quota.
+		const lockId = crypto.randomUUID();
+		const { data: check, error: checkError } = await tryAutumn(() =>
+			autumn.check({
+				customerId: identity.userId,
+				featureId: FEATURE_IDS.storageBytes,
+				requiredBalance: input.sizeBytes,
+				lock: {
+					lockId,
+					enabled: true,
+					expiresAt: Date.now() + LOCK_TTL_MS,
+				},
+			}),
+		);
 		if (checkError) return Err(checkError);
 		if (!check.allowed) {
 			return AssetError.StorageLimitExceeded({ requestedBytes: input.sizeBytes });
 		}
-		return Ok(undefined);
-	}
-
-	/**
-	 * Commit (`confirm`) or roll back (`release`) a storage reservation taken by
-	 * {@link reserveAssetStorage}.
-	 */
-	function finalizeAssetStorage(
-		lockId: string,
-		action: 'confirm' | 'release',
-	): Promise<unknown> {
-		return autumn.balances.finalize({ lockId, action });
+		return Ok({
+			confirm: () => finalizeLock(lockId, 'confirm'),
+			release: () => finalizeLock(lockId, 'release'),
+		});
 	}
 
 	/**
 	 * Credit storage bytes back after a delete. A delete has no prior
 	 * reservation to finalize, so this is a direct negative-usage track of the
-	 * freed bytes.
+	 * freed bytes. Unlike a lock, this does not self-heal on failure, so the
+	 * policy logs a failed credit at `error`.
 	 */
-	function creditAssetStorage(sizeBytes: number): Promise<unknown> {
-		return autumn.track({
-			customerId: identity.userId,
-			featureId: FEATURE_IDS.storageBytes,
-			value: -sizeBytes,
+	function creditAssetStorage(
+		sizeBytes: number,
+	): Promise<Result<void, BillingError>> {
+		return tryAutumn(async () => {
+			await autumn.track({
+				customerId: identity.userId,
+				featureId: FEATURE_IDS.storageBytes,
+				value: -sizeBytes,
+			});
 		});
 	}
 
@@ -488,10 +466,8 @@ export function createBillingService(
 	}
 
 	return {
-		guardAiChat,
-		finalizeAiCharge,
+		reserveAiChat,
 		reserveAssetStorage,
-		finalizeAssetStorage,
 		creditAssetStorage,
 		getOverview,
 		listPlans,

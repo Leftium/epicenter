@@ -19,12 +19,10 @@ function overTheWire(value: unknown): unknown {
 	return JSON.parse(JSON.stringify(value));
 }
 
-test('a serialized BillingError validates and preserves statusCode + code', () => {
+test('a serialized BillingError validates and preserves the opaque message', () => {
 	const wire = overTheWire(
 		BillingError.ProviderRequestFailed({
-			statusCode: 402,
-			code: 'insufficient_balance',
-			message: 'Not enough credits',
+			message: 'Billing provider unreachable',
 		}),
 	);
 
@@ -35,52 +33,22 @@ test('a serialized BillingError validates and preserves statusCode + code', () =
 
 	expect(envelope.error).toMatchObject({
 		name: 'ProviderRequestFailed',
-		statusCode: 402,
-		code: 'insufficient_balance',
-		message: 'Not enough credits',
+		message: 'Billing provider unreachable',
 	});
-});
-
-test('the envelope validates when code is absent (JSON drops undefined)', () => {
-	const wire = overTheWire(
-		BillingError.ProviderRequestFailed({
-			statusCode: 503,
-			code: undefined,
-			message: 'Billing provider unreachable',
-		}),
-	);
-
-	// `JSON.stringify` drops `code: undefined`, so the wire body has no `code`
-	// key at all. The schema treats `code` as optional precisely for this.
-	const wireError = (wire as { error: Record<string, unknown> }).error;
-	expect('code' in wireError).toBe(false);
-
-	const envelope = BillingErrorEnvelope(wire);
-	if (envelope instanceof type.errors) {
-		throw new Error(`Expected a valid envelope: ${envelope.summary}`);
-	}
-	expect(envelope.error.statusCode).toBe(503);
-	expect(envelope.error.code).toBeUndefined();
 });
 
 test('the envelope rejects bodies that are not the BillingError shape', () => {
 	const malformed: unknown[] = [
 		null,
 		{},
-		// missing statusCode + message
+		// missing message
 		{ data: null, error: { name: 'ProviderRequestFailed' } },
 		// wrong discriminant
-		{
-			data: null,
-			error: { name: 'SomethingElse', statusCode: 500, message: 'x' },
-		},
-		// statusCode is a string, not a number
-		{
-			data: null,
-			error: { name: 'ProviderRequestFailed', statusCode: '500', message: 'x' },
-		},
+		{ data: null, error: { name: 'SomethingElse', message: 'x' } },
+		// message is a number, not a string
+		{ data: null, error: { name: 'ProviderRequestFailed', message: 500 } },
 		// envelope-less (no `data: null`): a bare error object
-		{ name: 'ProviderRequestFailed', statusCode: 500, message: 'x' },
+		{ name: 'ProviderRequestFailed', message: 'x' },
 		// a plain status line, the shape the old duck-check could not catch
 		'500 Internal Server Error',
 	];

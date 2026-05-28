@@ -12,6 +12,11 @@
 declare global {
 	namespace Cloudflare {
 		interface Env {
+			// The deployment's public origin is NOT read from `c.env` here. The
+			// hosted cloud bakes a constant while a self-host reads operator
+			// config, so each deployment hands `createServerApp` its own
+			// `resolveOrigin(env)` instead of the library reaching for a shared
+			// var name. See server-app.ts.
 			HYPERDRIVE: Hyperdrive;
 			ROOM: DurableObjectNamespace<
 				import('./room/backends/cloudflare/durable-object.js').Room

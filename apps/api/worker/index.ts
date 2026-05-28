@@ -13,6 +13,7 @@
  * knobs (ownership rule, optional cloud policies, auth choice for AI).
  */
 
+import { PRODUCTION_API_URL } from '@epicenter/constants/apps';
 import {
 	authApp,
 	createServerApp,
@@ -34,7 +35,13 @@ import { mountBillingApi } from './billing/routes.js';
 
 const ownership = personal();
 
-const app = createServerApp();
+// The hosted cloud's public origin never changes per deploy, so it is baked
+// from the constants source of truth rather than duplicated into wrangler.jsonc
+// vars. Local dev injects `API_PUBLIC_ORIGIN=http://localhost:8787` via
+// scripts/dev.ts; production falls through to PRODUCTION_API_URL.
+const app = createServerApp({
+	resolveOrigin: (env) => env.API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL,
+});
 
 // Public health endpoint at root.
 app.get('/', (c) =>

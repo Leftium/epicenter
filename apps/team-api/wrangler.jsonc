@@ -11,6 +11,9 @@
 	// team() ownership rule. Anyone outside this set gets 403 NotTeamMember
 	// at the boundary, regardless of whether they can sign in.
 	"vars": {
+		// API_PUBLIC_ORIGIN: this deployment's public origin. Self-hosters set
+		// their own domain here; it is the Better Auth issuer + token audience.
+		"API_PUBLIC_ORIGIN": "https://team-api.example.com",
 		"ALLOWED_MEMBER_EMAILS": "",
 		"GOOGLE_CLIENT_ID": ""
 	},

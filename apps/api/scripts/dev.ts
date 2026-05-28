@@ -1,5 +1,6 @@
 import { rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { APPS, localUrl } from '@epicenter/constants/apps';
 
 const apiRoot = resolve(import.meta.dir, '..');
 const dashboardBuild = resolve(apiRoot, 'ui/build/dashboard');
@@ -34,7 +35,18 @@ if (auth.exitCode !== 0 || !auth.stdout.toString().trim()) {
 const wrangler =
 	await Bun.$`infisical run --silent --env=dev --path=/api -- wrangler dev`
 		.cwd(apiRoot)
-		.env({ ...Bun.env, CLOUDFLARE_INCLUDE_PROCESS_ENV: 'true' })
+		// API_PUBLIC_ORIGIN is the canonical auth origin (Better Auth baseURL,
+		// OAuth issuer, token audience). Production bakes PRODUCTION_API_URL in
+		// worker/index.ts; dev overrides it to localhost here so signed cookies
+		// and the issuer match the host the browser hits. The value is derived
+		// from the same APPS source of truth the dashboard proxy and OAuth seed
+		// read, so the port can never drift. CLOUDFLARE_INCLUDE_PROCESS_ENV lifts
+		// it (and the Infisical dev secrets) onto the worker's `c.env`.
+		.env({
+			...Bun.env,
+			CLOUDFLARE_INCLUDE_PROCESS_ENV: 'true',
+			API_PUBLIC_ORIGIN: localUrl(APPS.API),
+		})
 		.nothrow();
 
 process.exit(wrangler.exitCode);

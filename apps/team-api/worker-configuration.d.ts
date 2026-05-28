@@ -24,6 +24,7 @@ declare namespace Cloudflare {
 		// Durable Object: Yjs sync rooms
 		ROOM: DurableObjectNamespace<import('./worker/index').Room>;
 		// vars (wrangler.jsonc)
+		API_PUBLIC_ORIGIN: string;
 		ALLOWED_MEMBER_EMAILS: string;
 		GOOGLE_CLIENT_ID: string;
 		// secrets (wrangler secret put)

@@ -42,7 +42,12 @@ const ownership = team({
 	},
 });
 
-const app = createServerApp();
+// Self-hosters set their own public origin in wrangler.jsonc (`API_PUBLIC_ORIGIN`):
+// their domain, not Epicenter Cloud's. It is operator config, not a baked
+// constant, so it is read straight from `c.env`.
+const app = createServerApp({
+	resolveOrigin: (env) => env.API_PUBLIC_ORIGIN,
+});
 
 app.get('/', (c) =>
 	c.json({ mode: 'team', version: '0.1.0', runtime: 'cloudflare' }),

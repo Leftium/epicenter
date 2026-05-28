@@ -6,6 +6,7 @@
 	"description": "Shared Hono server for Epicenter cloud and self-hosted team deployments.",
 	"exports": {
 		".": "./src/index.ts",
+		"./oauth-clients": "./src/auth/trusted-oauth-clients.ts",
 		"./schema": "./src/db/schema/index.ts"
 	},
 	"scripts": {

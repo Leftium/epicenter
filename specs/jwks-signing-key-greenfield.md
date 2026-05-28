@@ -257,17 +257,59 @@ C3 (alg one-owner)     FIXED. JWT_SIGNING in @epicenter/constants/auth owns
 C1 (cleanup earned?)   Resolved toward NO library surface: raw-SQL deployment op.
 ```
 
-### Still open (for the debate / user analysis)
+### Resolved by the Option D experiment (this commit)
+
+SEED placement: Option D landed, with one correction. The experiment confirmed
+the spec's hypothesis: removing the pg/drizzle-bound deploy helpers from
+`@epicenter/server`'s program makes the server typecheck green. But a naive
+Option D (seed script imports the `@epicenter/server` request-path barrel for
+`projectTrustedOAuthClientToRow`) just relocates the better-auth dup: the barrel
+transitively pulls `plugins.ts` / `create-auth.ts` / `routes/auth.ts` into the
+script's resolution, which re-rolls which `@better-auth/core` copy TypeScript
+canonicalizes and flips `apps/api` from pass to fail (the whack-a-mole of
+`20260528T120000-deploy-helper-duplicate-package-typecheck.md` §2.2).
+
+The landing shape that clears BOTH typechecks:
 
 ```
-- SEED placement: Option D app-script vs Option C db-param library helper. Seed
-  needs a structured upsert, so it carries drizzle regardless; whether moving it
-  to apps/api fully clears the server better-auth dup is the experiment to run.
-- Whether to keep a committed raw-SQL cleanup script (turnkey for self-hosters)
-  or treat the prod fix as purely operational (one-time SQL) with a documented
-  note. I lean: keep the tiny script; it is cheap and self-hosters can hit the
-  same drift.
+packages/server/src/auth/jwks.ts          DELETED (cleanupStaleJwks + isPolicyJwk gone)
+packages/server/src/admin.ts              DELETED (no library deploy-time admin surface)
+packages/server/package.json              -"./admin"; +"./oauth-clients"
+packages/server/src/auth/trusted-oauth-clients.ts
+                                          seedTrustedOAuthClients removed; only the pure
+                                          projectTrustedOAuthClientToRow remains; schema
+                                          import is now `import type` (no runtime pg/drizzle)
+apps/api/scripts/seed-oauth-clients.ts    owns pg + a raw parameterized upsert; reuses the
+                                          projection via @epicenter/server/oauth-clients
+apps/api/scripts/cleanup-stale-jwks.ts    DELETED (cleanup is the one-time SQL below)
 ```
+
+Two pieces make this work together:
+
+1. The seed runs as **raw parameterized SQL**, not a drizzle query, so it never
+   compares `apps/api`'s `drizzle-orm` copy against the server-schema table
+   object (that comparison is the drizzle dup Option D §4 warned about).
+2. The projection is reused through a narrow `@epicenter/server/oauth-clients`
+   entry that carries no better-auth, `pg`, or runtime `drizzle`. Importing it
+   keeps the request-path auth graph out of the script's program, so the
+   better-auth copy canonicalization does not flip `apps/api`.
+
+Net: server typecheck green; `apps/api` has zero non-billing typecheck errors.
+The library exposes no pg-bound admin surface, matching the repo thesis.
+
+Cleanup tooling: DELETED, not kept as a turnkey script. The one-time fix and the
+self-hoster recovery for the same EdDSA->ES256 drift is a single SQL statement,
+run against the deployment's database (prod via `infisical run --env=prod
+--path=/ops -- ...`):
+
+```sql
+DELETE FROM jwks
+WHERE (public_key::jsonb->>'kty') IS DISTINCT FROM 'EC'
+   OR (public_key::jsonb->>'crv') IS DISTINCT FROM 'P-256';
+```
+
+Better Auth mints a compliant ES256/P-256 key on the next sign. `IS DISTINCT
+FROM` also removes rows with malformed or null key material, not just Ed25519.
 
 ## 11. Invariants that must not change
 

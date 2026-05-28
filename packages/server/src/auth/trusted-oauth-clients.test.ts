@@ -109,6 +109,67 @@ test('trusted OAuth client exchanges code for API-origin access token', async ()
 	expect(payload.iss).toBe(`${setup.baseURL}/auth`);
 });
 
+test('trusted CLI OAuth client exchanges code with PKCE', async () => {
+	const baseURL = 'http://localhost:47878';
+	const cliClient = findCliClient(baseURL);
+	const setup = createTrustedClientTestAuth({
+		trustedClient: cliClient,
+		baseURL,
+	});
+
+	const cookie = await signUpTestUser(setup.auth, setup.baseURL);
+	const code = await authorize(setup, {
+		clientId: EPICENTER_CLI_OAUTH_CLIENT_ID,
+		cookie,
+		redirectUri: cliClient.redirectUris[0],
+	});
+	if (!code) throw new Error('Expected authorization code');
+
+	const response = await setup.auth.handler(
+		new Request(`${setup.baseURL}/auth/oauth2/token`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/x-www-form-urlencoded' },
+			body: new URLSearchParams({
+				grant_type: 'authorization_code',
+				code,
+				code_verifier: verifier,
+				client_id: EPICENTER_CLI_OAUTH_CLIENT_ID,
+				redirect_uri: cliClient.redirectUris[0],
+				resource: setup.baseURL,
+			}),
+		}),
+	);
+	const body = (await response.json()) as {
+		access_token?: unknown;
+		refresh_token?: unknown;
+		scope?: unknown;
+		token_type?: unknown;
+	};
+
+	expect(response.status).toBe(200);
+	expect(body).toMatchObject({
+		token_type: 'Bearer',
+		scope: EPICENTER_OAUTH_SCOPES.join(' '),
+	});
+	expect(typeof body.access_token).toBe('string');
+	expect(typeof body.refresh_token).toBe('string');
+});
+
+test('clean JWKS table mints an ES256/P-256 signing key', async () => {
+	const setup = createTrustedClientTestAuth();
+
+	const response = await setup.auth.handler(
+		new Request(`${setup.baseURL}/auth/jwks`),
+	);
+	const body = (await response.json()) as {
+		keys: Array<Record<string, unknown>>;
+	};
+	const [key] = body.keys;
+
+	expect(response.status).toBe(200);
+	expect(key).toMatchObject({ alg: 'ES256', kty: 'EC', crv: 'P-256' });
+});
+
 test('buildTrustedOAuthClients gives the CLI a callback at each deployment baseURL', () => {
 	for (const baseURL of [
 		'https://api.epicenter.so',

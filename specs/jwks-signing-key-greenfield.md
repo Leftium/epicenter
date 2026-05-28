@@ -120,6 +120,12 @@ for a one-time incident.
 
 ## 8. Where the enforcement lives (the boundary that emerged in parallel)
 
+> SUPERSEDED by §12 and §13. This section argues `cleanupStaleJwks` earns a home
+> in `@epicenter/server/admin`. The later decision rejects that: there is no
+> library cleanup surface. `jwks.ts` (`cleanupStaleJwks` + `isPolicyJwk`) was
+> deleted, and the EdDSA->ES256 drift fix is a one-time SQL delete (§12, §13).
+> Kept for the debate record only.
+
 A second agent is building `@epicenter/server/admin` as a separate entry that
 holds pg-importing deploy-time ops, kept out of the request-path barrel:
 
@@ -249,11 +255,12 @@ B  (version override)  DEAD. Confirmed by two independent runs.
 C2 (alg)               KEEP ES256. A scoped one-row DELETE is cheaper than
                        re-verifying EdDSA across browser/Tauri-Rust/mobile and
                        re-migrating keys. Revisit only on verifier evidence.
-C3 (alg one-owner)     FIXED. JWT_SIGNING in @epicenter/constants/auth owns
-                       { alg, kty, crv } together. plugins.ts reads .alg;
-                       isPolicyJwk reads { kty, crv }. Placed in a better-auth-
-                       free module on purpose so the cleanup path never imports
-                       better-auth (same module-graph hygiene as the pg split).
+C3 (alg one-owner)     FIXED, then narrowed. Superseded by §13: with isPolicyJwk
+                       deleted, { kty, crv } had no live consumer, so the constant
+                       is now JWT_SIGNING_ALG = 'ES256' (algorithm only). Better
+                       Auth derives the EC / P-256 key shape from that alg; the
+                       one-time cleanup SQL hardcodes kty=EC / crv=P-256 on its
+                       own. The constant stays a better-auth-free leaf module.
 C1 (cleanup earned?)   Resolved toward NO library surface: raw-SQL deployment op.
 ```
 
@@ -319,3 +326,33 @@ audience https://api.epicenter.so
 CLI client id epicenter-cli
 routes /auth/cli-callback, /auth/oauth2/authorize, /auth/oauth2/token
 ```
+
+## 13. Final constant shape (landed)
+
+Once `jwks.ts` (`cleanupStaleJwks` + `isPolicyJwk`) was deleted, the only live
+reader of the signing constant was `plugins.ts`, and it reads `alg` alone. So the
+constant collapsed from a three-field policy object to a single algorithm:
+
+```
+before  JWT_SIGNING = { alg: 'ES256', kty: 'EC', crv: 'P-256' }   // kty/crv dead
+after   JWT_SIGNING_ALG = 'ES256'                                  // alg only
+```
+
+Grounded in installed `better-auth@1.5.6`:
+
+```
+gen-Crf1mz_x.mjs:29-36   alg 'ES256' -> generateKeyPair('ES256', { extractable })
+                         crv is destructured out and never passed for ES256
+utils.mjs:10,24          sign/import read keyPairConfig.alg || 'EdDSA'; alg only
+types (JWKOptions)       ES256 member is { alg: 'ES256'; crv?: never }
+```
+
+So `{ kty: 'EC', crv: 'P-256' }` on the published JWK is `jose`'s output for an
+ES256 key, not config Epicenter supplies. `plugins.test.ts` proves a clean table
+publishes that shape. The one-time cleanup SQL hardcodes `kty=EC` / `crv=P-256`
+independently (it is a different concern: identifying durable non-policy rows),
+so removing them from the constant does not weaken cleanup.
+
+ES256 is retained over EdDSA (C2): EdDSA is cryptographically fine and now in
+FIPS 186-5, but ES256 stays the broader-compatibility default across browser
+`jose`, Tauri Rust, and mobile until a real cross-verifier audit says otherwise.

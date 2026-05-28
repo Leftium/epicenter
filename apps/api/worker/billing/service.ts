@@ -19,6 +19,7 @@ import { Autumn } from 'autumn-js';
 import { Ok, type Result } from 'wellcrafted/result';
 import { MODEL_CREDITS } from './ai-model-pricing.js';
 import {
+	type CheckoutPlanId,
 	FEATURE_IDS,
 	FREE_TIER_MAX_CREDITS_PER_CALL,
 	getPlan,
@@ -260,12 +261,10 @@ export function createBillingService(
 				? `$${formatUsd(plan.credits.overage.priceUsd)}/${plan.credits.overage.billingUnits} overage`
 				: null;
 
-			// Annual cards highlight the matching monthly subscription (and
-			// vice versa) so the user sees which cycle they are on.
-			const isCurrent =
-				currentPlanId === planId ||
-				(plan.monthlyEquivalentId !== null &&
-					plan.monthlyEquivalentId === currentPlanId);
+			// A monthly plan and its annual counterpart are distinct products.
+			// Only the exact active plan id is "Current"; the other cycle stays
+			// a "Switch" so monthly subscribers can convert to annual.
+			const isCurrent = currentPlanId === planId;
 
 			let cta: BillingPlanCard['cta'];
 			if (isCurrent) {
@@ -372,7 +371,7 @@ export function createBillingService(
 	}
 
 	async function checkoutPlan(input: {
-		planId: string;
+		planId: CheckoutPlanId;
 		successUrl?: string | undefined;
 	}): Promise<CheckoutResult> {
 		// Rollover plans carry the credit wallet across the upgrade. The

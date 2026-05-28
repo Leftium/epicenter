@@ -84,9 +84,6 @@ export type SubscriptionPlan = {
 	basePrice: { amountUsd: number; interval: 'month' | 'year' } | null;
 	/** Free trial offered at attach time. */
 	freeTrial: { days: number; cardRequired: boolean } | null;
-	/** For annual plans: the id of the equivalent monthly subscription.
-	 *  Used to render "annualized monthly" pricing on the upgrade UI. */
-	monthlyEquivalentId: PlanId | null;
 	credits: CreditPolicy;
 	storage: StoragePolicy;
 };
@@ -120,7 +117,6 @@ export const PLANS = {
 		autoEnable: true,
 		basePrice: null,
 		freeTrial: null,
-		monthlyEquivalentId: null,
 		credits: { grantedPerCycle: 50, reset: 'month', overage: null },
 		storage: { includedBytes: 0, overagePerGbUsd: 0 },
 	},
@@ -134,7 +130,6 @@ export const PLANS = {
 		autoEnable: false,
 		basePrice: { amountUsd: 20, interval: 'month' },
 		freeTrial: null,
-		monthlyEquivalentId: null,
 		credits: {
 			grantedPerCycle: 2500,
 			reset: 'month',
@@ -152,7 +147,6 @@ export const PLANS = {
 		autoEnable: false,
 		basePrice: { amountUsd: 60, interval: 'month' },
 		freeTrial: { days: 14, cardRequired: false },
-		monthlyEquivalentId: null,
 		credits: {
 			grantedPerCycle: 10_000,
 			reset: 'month',
@@ -170,7 +164,6 @@ export const PLANS = {
 		autoEnable: false,
 		basePrice: { amountUsd: 200, interval: 'month' },
 		freeTrial: null,
-		monthlyEquivalentId: null,
 		credits: {
 			grantedPerCycle: 50_000,
 			reset: 'month',
@@ -188,7 +181,6 @@ export const PLANS = {
 		autoEnable: false,
 		basePrice: { amountUsd: 200, interval: 'year' },
 		freeTrial: null,
-		monthlyEquivalentId: PLAN_IDS.pro,
 		credits: {
 			grantedPerCycle: 2500,
 			reset: 'month',
@@ -206,7 +198,6 @@ export const PLANS = {
 		autoEnable: false,
 		basePrice: { amountUsd: 600, interval: 'year' },
 		freeTrial: null,
-		monthlyEquivalentId: PLAN_IDS.ultra,
 		credits: {
 			grantedPerCycle: 10_000,
 			reset: 'month',
@@ -224,7 +215,6 @@ export const PLANS = {
 		autoEnable: false,
 		basePrice: { amountUsd: 2000, interval: 'year' },
 		freeTrial: null,
-		monthlyEquivalentId: PLAN_IDS.max,
 		credits: {
 			grantedPerCycle: 50_000,
 			reset: 'month',
@@ -248,6 +238,18 @@ export const VISIBLE_SUBSCRIPTION_PLAN_IDS = {
 	monthly: [PLAN_IDS.pro, PLAN_IDS.ultra, PLAN_IDS.max],
 	annual: [PLAN_IDS.proAnnual, PLAN_IDS.ultraAnnual, PLAN_IDS.maxAnnual],
 } as const;
+
+/** Plan ids a customer may attach through `/api/billing/checkout/plan`: the
+ *  flat union of every visible subscription card. The checkout route validates
+ *  its `planId` against this list, so the auto-enable free plan, the top-up
+ *  add-on, and retired ids can never be attached through the subscription
+ *  endpoint. Single source: derived from the visible cards, never hand-listed. */
+export const CHECKOUT_PLAN_IDS = [
+	...VISIBLE_SUBSCRIPTION_PLAN_IDS.monthly,
+	...VISIBLE_SUBSCRIPTION_PLAN_IDS.annual,
+] as const;
+
+export type CheckoutPlanId = (typeof CHECKOUT_PLAN_IDS)[number];
 
 /** Resolve a Plan by id. Returns undefined for unknown ids
  *  (e.g. legacy plans that have been retired). */

@@ -15,6 +15,7 @@ import { AutumnError } from 'autumn-js';
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { MODEL_CREDITS, providerOf } from './ai-model-pricing.js';
+import { CHECKOUT_PLAN_IDS } from './catalog.js';
 import type { ModelCostGuide } from './contracts.js';
 import { BillingError } from './errors.js';
 import { createBillingService } from './service.js';
@@ -75,7 +76,7 @@ const eventsQuerySchema = type({
 const previewPlanSchema = type({ planId: 'string' });
 
 const checkoutPlanSchema = type({
-	planId: 'string',
+	planId: type.enumerated(...CHECKOUT_PLAN_IDS),
 	'successUrl?': 'string | undefined',
 });
 

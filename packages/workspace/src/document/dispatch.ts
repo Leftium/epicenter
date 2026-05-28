@@ -220,7 +220,7 @@ export function interpretDispatchResult(
 		!('error' in body)
 	) {
 		return DispatchError.NetworkFailed({
-			cause: new Error('Dispatch result was not a Result'),
+			cause: { reason: 'dispatch result was not a Result envelope', body },
 		});
 	}
 
@@ -236,9 +236,7 @@ export function interpretDispatchResult(
 	// factory reads only its own fields and ignores the extra `name`.
 	if (!checkDispatchErrorWire.Check(error)) {
 		return DispatchError.NetworkFailed({
-			cause: new Error(
-				`Dispatch error was not a recognized wire variant: ${JSON.stringify(error)}`,
-			),
+			cause: { reason: 'unrecognized dispatch error wire variant', error },
 		});
 	}
 	switch (error.name) {

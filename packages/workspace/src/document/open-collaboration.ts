@@ -284,7 +284,10 @@ export function openCollaboration<TActions extends ActionRegistry>(
 			if (supervisor.status.phase !== 'connected') {
 				return Promise.resolve(
 					DispatchError.NetworkFailed({
-						cause: new Error('Dispatch socket is not connected'),
+						cause: {
+							reason: 'dispatch socket is not connected',
+							phase: supervisor.status.phase,
+						},
 					}),
 				);
 			}
@@ -298,7 +301,10 @@ export function openCollaboration<TActions extends ActionRegistry>(
 				const ceiling = setTimeout(() => {
 					settle(
 						DispatchError.NetworkFailed({
-							cause: new Error('No dispatch result from relay'),
+							cause: {
+								reason: 'no dispatch result from relay before ceiling',
+								timeoutMs: DISPATCH_RESPONSE_CEILING_MS,
+							},
 						}),
 					);
 				}, DISPATCH_RESPONSE_CEILING_MS);

@@ -1,11 +1,10 @@
 /**
  * Typed fetch client for the `/api/billing/*` surface.
  *
- * Responses come back as Epicenter DTOs from
- * `@epicenter/billing/contracts`; the dashboard never imports
- * `autumn-js` or sees its wire shapes. Each method returns
- * `Result<T, BillingApiError>` so consumers destructure
- * `{ data, error }` instead of try/catch.
+ * Responses come back as Epicenter DTOs from `$api/billing/contracts`
+ * (sibling Worker code); the dashboard never imports `autumn-js` or sees
+ * its wire shapes. Each method returns `Result<T, BillingApiError>` so
+ * consumers destructure `{ data, error }` instead of try/catch.
  *
  * Uses `auth.fetch` so the first-party auth cookie rides along on
  * every request. Same-origin deployment; no CORS config needed.
@@ -22,7 +21,7 @@ import type {
 	PortalSession,
 	UsageQuery,
 	UsageSeries,
-} from '@epicenter/billing/contracts';
+} from '$api/billing/contracts';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { type Result, tryAsync } from 'wellcrafted/result';
 import { auth } from '$platform/auth';

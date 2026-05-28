@@ -8,17 +8,17 @@
  * be mounted without it.
  */
 
-import { MODEL_CREDITS, providerOf } from '@epicenter/billing/ai-model-pricing';
-import type { ModelCostGuide } from '@epicenter/billing/contracts';
-import { API_ROUTES } from '@epicenter/constants/api-routes';
-import { BillingError } from '@epicenter/constants/billing-errors';
 import type { Env } from '@epicenter/server';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { AutumnError } from 'autumn-js';
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
+import { MODEL_CREDITS, providerOf } from './ai-model-pricing.js';
+import type { ModelCostGuide } from './contracts.js';
+import { BillingError } from './errors.js';
 import { createBillingService } from './service.js';
+import { BILLING_ROUTES } from './url.js';
 
 const billingRoutes = new Hono<Env>();
 
@@ -144,6 +144,6 @@ export function mountBillingApi(
 	app: Hono<Env>,
 	opts: { auth: MiddlewareHandler },
 ): void {
-	app.use(API_ROUTES.billing.prefixPattern, opts.auth);
+	app.use(BILLING_ROUTES.prefixPattern, opts.auth);
 	app.route('/api/billing', billingRoutes);
 }

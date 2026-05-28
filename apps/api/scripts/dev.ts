@@ -2,10 +2,10 @@ import { rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 const apiRoot = resolve(import.meta.dir, '..');
-const dashboardBuild = resolve(apiRoot, '../dashboard/build/dashboard');
+const dashboardBuild = resolve(apiRoot, 'ui/build/dashboard');
 const devVars = resolve(apiRoot, '.dev.vars');
 
-// The dashboard SPA is built into apps/dashboard/build/dashboard/ (SvelteKit
+// The dashboard SPA is built into apps/api/ui/build/dashboard/ (SvelteKit
 // adapter-static + paths.base='/dashboard'). Wrangler errors if its assets
 // directory does not exist, even when the dashboard has not been built yet.
 await Bun.$`mkdir -p ${dashboardBuild}`;

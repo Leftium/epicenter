@@ -64,37 +64,28 @@ Deployables split by infrastructure and operational boundary.
 Hono modules split by code composition boundary.
 ```
 
-Hosted Epicenter is moving toward three public domains served by two deployables:
+Epicenter ships one shared server library and two deployables. The library is `packages/server`; the deployables compose it with different ownership rules:
 
 ```txt
-accounts.epicenter.so
-  OAuth issuer, sign-in, consent, token issuance
-  served by apps/server
+apps/api          hosted personal cloud  (api.epicenter.so)
+                  composes packages/server with personal()
+                  bundles billing routes, dashboard SPA, Autumn policies
+                  worker/ + ui/ deploy as one Cloudflare Worker
 
-sync.epicenter.so
-  workspace identity, workspace sync, document sync
-  served by apps/server
-
-api.epicenter.so
-  hosted Cloud APIs, billing, storage registry, dashboard
-  served by apps/cloud
+apps/team-api     self-hosted team reference  (community-supported)
+                  composes packages/server with team({ isMember })
+                  no billing surface, no dashboard, deployment-owned secrets
+                  trust boundary: deployer holds ENCRYPTION_SECRETS
+                                   -> functionally zero-knowledge against Epicenter
 ```
 
-Inside each deployable, route groups are mountable Hono modules:
-
-```txt
-apps/server
-  createAccountsRoutes()
-  createSyncRoutes()
-
-apps/cloud
-  createCloudResourceRoutes()
-  createDashboardRoutes()
-```
-
-This keeps the self-hostable server free of Postgres and billing dependencies,
-while still making accounts, sync, Cloud APIs, and dashboard routes easy to
-split later if their operational needs diverge.
+Inside `packages/server`, route groups mount onto a shared Hono app via
+`mountSessionApp`, `mountRoomsApp`, `mountAssetsApp`, `mountAiApp`, and `authApp`.
+The `personal()` and `team({ isMember })` factories choose the partition rule;
+everything else is shared. The hosted-only billing code (`packages/billing`'s
+old contents, plus `/api/billing/*` routes and the dashboard SPA) lives inside
+`apps/api/worker/billing/` and `apps/api/ui/`. Self-hosted team deployments
+never see it.
 
 ```
                               ┌──────────────────────────────────┐
@@ -176,7 +167,7 @@ The dependency flow is strict: core has zero upward dependencies, middleware onl
   </tr>
 </table>
 
-Also in the repo: [Fuji](apps/fuji) (personal CMS), [Zhongwen](apps/zhongwen) (Mandarin learning chat), [Skills Editor](apps/skills) (agent skill manager), [Dashboard](apps/dashboard) (billing UI), and [Landing](apps/landing) (public site).
+Also in the repo: [Fuji](apps/fuji) (personal CMS), [Zhongwen](apps/zhongwen) (Mandarin learning chat), [Skills Editor](apps/skills) (agent skill manager), and [Landing](apps/landing) (public site).
 
 ## Packages
 

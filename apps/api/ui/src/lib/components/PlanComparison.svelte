@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { BillingPlanCard } from '@epicenter/billing/contracts';
+	import type { BillingPlanCard } from '$api/billing/contracts';
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';

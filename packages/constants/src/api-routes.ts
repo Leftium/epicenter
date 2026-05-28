@@ -83,9 +83,6 @@ export const API_ROUTES = {
 			url: (baseURL: string) => `${stripTrailing(baseURL)}/api/ai/chat`,
 		},
 	},
-	billing: {
-		prefixPattern: '/api/billing/*',
-		url: (baseURL: string, sub: string) =>
-			`${stripTrailing(baseURL)}/api/billing/${sub.replace(/^\/+/, '')}`,
-	},
 } as const;
+// Billing URL builder lives in apps/api/worker/billing/url.ts (BILLING_ROUTES):
+// `/api/billing/*` is hosted-only and self-hosted team deployments never mount it.

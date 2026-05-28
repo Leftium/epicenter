@@ -1,0 +1,75 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "team-api",
+	"main": "worker/index.ts",
+	"compatibility_date": "2026-03-06",
+	"compatibility_flags": ["nodejs_compat"],
+	"send_metrics": false,
+
+	// --- Deployment-owned vars ---
+	// ALLOWED_MEMBER_EMAILS: comma-separated list of emails admitted by the
+	// team() ownership rule. Anyone outside this set gets 403 NotTeamMember
+	// at the boundary, regardless of whether they can sign in.
+	"vars": {
+		"ALLOWED_MEMBER_EMAILS": "",
+		"GOOGLE_CLIENT_ID": ""
+	},
+
+	// --- Deployment-owned secrets ---
+	// Set via `wrangler secret put`. ENCRYPTION_SECRETS controls the trust
+	// boundary: it lives only in this deployment's environment, so Epicenter
+	// cannot decrypt anything stored here. Self-hosted = functionally
+	// zero-knowledge against Epicenter.
+	"secrets": {
+		"required": [
+			"BETTER_AUTH_SECRET",
+			"ENCRYPTION_SECRETS",
+			"GOOGLE_CLIENT_SECRET",
+			"OPENAI_API_KEY",
+			"GEMINI_API_KEY"
+		]
+	},
+
+	// --- KV: Session cache (Better Auth SecondaryStorage) ---
+	// Create with: bunx wrangler kv namespace create "<your-namespace>"
+	"kv_namespaces": [
+		{
+			"binding": "SESSION_KV",
+			"id": "<your-kv-namespace-id>"
+		}
+	],
+
+	// --- Durable Objects ---
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "ROOM",
+				"class_name": "Room"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["Room"]
+		}
+	],
+
+	// --- Hyperdrive: Postgres connection pool ---
+	// Create with: bunx wrangler hyperdrive create <name> --connection-string="postgres://..."
+	"hyperdrive": [
+		{
+			"binding": "HYPERDRIVE",
+			"id": "<your-hyperdrive-id>",
+			"localConnectionString": "postgres://postgres:postgres@localhost:5432/team_api"
+		}
+	],
+
+	// --- R2: Asset storage ---
+	"r2_buckets": [
+		{
+			"binding": "ASSETS_BUCKET",
+			"bucket_name": "<your-r2-bucket>"
+		}
+	]
+}

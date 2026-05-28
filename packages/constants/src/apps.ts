@@ -14,7 +14,7 @@
  * and as the fallback for {@link EPICENTER_API_URL}. The dashboard SPA is
  * served at `api.epicenter.so/dashboard` (same origin as the API) so it does
  * not get its own APPS entry; its dev port lives inline in
- * `apps/dashboard/vite.config.ts`.
+ * `apps/api/ui/vite.config.ts`.
  */
 const PRODUCTION_API_URL = 'https://api.epicenter.so';
 

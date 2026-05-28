@@ -1,6 +1,6 @@
 {
-	"name": "@epicenter/dashboard",
-	"description": "Billing and credits dashboard for Epicenter customers",
+	"name": "@epicenter/api-ui",
+	"description": "Dashboard SPA bundled with apps/api (billing and credits)",
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",
@@ -31,7 +31,6 @@
 	"dependencies": {
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/auth-svelte": "workspace:*",
-		"@epicenter/billing": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@tanstack/svelte-query": "catalog:",

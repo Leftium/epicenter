@@ -3,8 +3,8 @@
  *
  * The atmn CLI imports the entry points here from `apps/api/autumn.config.ts`
  * and pushes them to Autumn. Every value is derived from
- * `@epicenter/billing/catalog`: there is no second source of pricing
- * truth. Subscription plans become recurring `plan()` definitions;
+ * `./catalog.ts`: there is no second source of pricing truth.
+ * Subscription plans become recurring `plan()` definitions;
  * the credit top-up plan becomes a one-off `addOn: true` plan whose
  * single item is `interval: 'one_off'` with a prepaid billing method.
  */
@@ -14,7 +14,7 @@ import {
 	PLAN_IDS,
 	PLANS,
 	type SubscriptionPlan,
-} from '@epicenter/billing/catalog';
+} from './catalog.js';
 import { feature, item, type PlanItem, plan } from 'atmn';
 
 // ---------------------------------------------------------------------

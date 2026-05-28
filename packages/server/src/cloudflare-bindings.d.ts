@@ -1,8 +1,9 @@
 /**
  * Cloudflare bindings the `@epicenter/server` library reads from `c.env`.
  *
- * Each consuming deployment (apps/api for cloud, apps/server-team for
- * self-hosted) merges its own `Cloudflare.Env` via `wrangler types`. This
+ * Each consuming deployment (apps/api for hosted personal cloud,
+ * apps/team-api for self-hosted team) merges its own `Cloudflare.Env`
+ * via `wrangler types`. This
  * declaration teaches the library compiler that the names it reads are
  * required to exist on `Cloudflare.Env`. Optional cloud-only bindings
  * (Autumn, admin IDs, dashboard ASSETS fetcher) live in apps/api's

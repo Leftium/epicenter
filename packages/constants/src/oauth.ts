@@ -5,7 +5,7 @@ import { APPS, localUrl } from '#apps';
  * Dev port for the dashboard SPA. The dashboard is served at
  * `api.epicenter.so/dashboard` in production (same origin as the API), so it
  * has no `APPS` entry. In dev it runs on its own Vite server; this port is
- * the single source of truth, mirrored by `apps/dashboard/vite.config.ts`.
+ * the single source of truth, mirrored by `apps/api/ui/vite.config.ts`.
  */
 const DASHBOARD_DEV_PORT = 5178;
 

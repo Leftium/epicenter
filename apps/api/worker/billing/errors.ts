@@ -24,7 +24,7 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  * ```ts
  * // Server: runtime usage at the billing-routes onError boundary.
  * import { AutumnError } from 'autumn-js';
- * import { BillingError } from '@epicenter/constants/billing-errors';
+ * import { BillingError } from './errors.js';
  *
  * billingRoutes.onError((err, c) => {
  *   if (!(err instanceof AutumnError)) throw err;
@@ -39,8 +39,8 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  *   );
  * });
  *
- * // Client: type-only narrowing
- * import type { BillingError } from '@epicenter/constants/billing-errors';
+ * // Client: type-only narrowing (from apps/api/ui via $api alias)
+ * import type { BillingError } from '$api/billing/errors';
  * function handle(error: BillingError) {
  *   switch (error.name) {
  *     case 'ProviderRequestFailed':

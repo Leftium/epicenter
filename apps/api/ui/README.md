@@ -39,12 +39,12 @@ git clone https://github.com/EpicenterHQ/epicenter.git
 cd epicenter
 bun install
 
-# Start the API first (must be running at localhost:8787)
+# Start the Worker first (must be running at localhost:8787)
 cd apps/api
-bun run dev:local
+bun run dev
 
 # Then start the dashboard (in another terminal)
-cd apps/dashboard
+cd apps/api/ui
 bun run dev:local
 ```
 

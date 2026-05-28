@@ -3,7 +3,7 @@
  *
  * Owns every Autumn round-trip in the cloud worker. Routes and policies
  * call into this service, which returns Epicenter DTOs from
- * `@epicenter/billing/contracts`. Nothing outside this module imports
+ * `./contracts.ts`. Nothing outside this module imports
  * `autumn-js` at runtime.
  *
  * Lifecycle: one service per request. Construct via
@@ -13,7 +13,11 @@
  */
 
 import type { UserId } from '@epicenter/auth';
-import { MODEL_CREDITS } from '@epicenter/billing/ai-model-pricing';
+import { AiChatError } from '@epicenter/constants/ai-chat-errors';
+import { AssetError } from '@epicenter/constants/asset-errors';
+import { Autumn } from 'autumn-js';
+import { Ok, type Result } from 'wellcrafted/result';
+import { MODEL_CREDITS } from './ai-model-pricing.js';
 import {
 	FEATURE_IDS,
 	FREE_TIER_MAX_CREDITS_PER_CALL,
@@ -22,7 +26,7 @@ import {
 	PLANS,
 	type PlanId,
 	VISIBLE_SUBSCRIPTION_PLAN_IDS,
-} from '@epicenter/billing/catalog';
+} from './catalog.js';
 import type {
 	BillingEvent,
 	BillingEventsPage,
@@ -35,11 +39,7 @@ import type {
 	PortalSession,
 	UsageQuery,
 	UsageSeries,
-} from '@epicenter/billing/contracts';
-import { AiChatError } from '@epicenter/constants/ai-chat-errors';
-import { AssetError } from '@epicenter/constants/asset-errors';
-import { Autumn } from 'autumn-js';
-import { Ok, type Result } from 'wellcrafted/result';
+} from './contracts.js';
 
 // ---------------------------------------------------------------------
 // Types

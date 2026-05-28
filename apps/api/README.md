@@ -1,8 +1,10 @@
-# Epicenter API
+# Epicenter API (Hosted Personal Cloud)
 
-The hub server. Handles authentication, real-time sync, and AI inference: everything that needs a single authority across devices.
+Epicenter Cloud Worker. Handles authentication, real-time sync, AI inference, and billing for the hosted personal cloud product. Composes `@epicenter/server` with the `personal()` ownership rule.
 
-Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed. If you host a modified version, you share your changes. Self-hosting the unmodified server is encouraged; see the encryption and trust model below.
+This folder is a single Cloudflare Worker deployment: `worker/` (Hono code) and `ui/` (SvelteKit dashboard SPA) ship together. Self-hosted team deployments live in the sibling `apps/team-api`; they compose the same `@epicenter/server` library with `team({ isMember })` and no billing surface.
+
+Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. AGPL-3.0 licensed. If you host a modified version, you share your changes. See `apps/team-api` for the self-hosted reference and the encryption/trust model below.
 
 Runs on Cloudflare Workers with Durable Objects. Cloud sync opens documents through `/api/owners/:ownerId/rooms/:room` (the same path in both personal and team mode): a cloud doc is owned by the authenticated `ownerId` and addressed by its `ydoc.guid`, and the route resolves the DO name `owners/${ownerId}/rooms/${room}` from the auth token. In personal mode `ownerId === user.id`; in team mode `ownerId === 'team'`. Browser apps and the workspace daemon both use this route. The Hono route's auth middleware authorizes the caller before it builds the internal room name.
 

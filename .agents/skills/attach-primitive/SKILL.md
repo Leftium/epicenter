@@ -44,16 +44,19 @@ attachAwareness(ydoc, defs)
 attachRichText(ydoc) / attachPlainText(ydoc) / attachTimeline(ydoc)
 ```
 
-Table and KV stores are no longer attached one-by-one. They are constructed as a bundle by `createWorkspace({ id, tables, kv, keyring? })`, which owns the Y.Doc's lifecycle and exposes `workspace.ydoc`, `workspace.tables`, and `workspace.kv`. Pass `workspace.ydoc` into the remaining `attach*` primitives; pass the whole `workspace` (or its `tables` record) into the materializers.
+Table and KV stores are no longer attached one-by-one. They are constructed as a bundle by `createWorkspace({ id, tables, kv, keyring? })`, which owns the Y.Doc's lifecycle and exposes `workspace.ydoc`, `workspace.tables`, and `workspace.kv`. Pass `workspace.ydoc` into the remaining `attach*` primitives; pass the whole `workspace` bundle (the `{ ydoc, tables }` pair) into the materializers.
 
-**Materializers** follow the same `attachX(ydoc, opts)` shape: pass the `tables` record (or an object subset) to choose what to mirror, and keep per-table customization in sibling option slots keyed by table name:
+**Materializers** take the `workspace` bundle as the subject (not a bare ydoc): `attachX(workspace, opts)`. They read `workspace.tables` themselves; you do not pass a separate `tables` slot. The two materializer families select what to mirror differently, on purpose:
+
+- **SQLite** mirrors *every* table in `workspace.tables`. A full queryable mirror is cheap and wanted, so there is no selection slot. `fts` is optional per-table config, keyed by table name.
+- **Markdown** mirrors a *human-facing subset*. Dumping every internal table as `.md` files is unwanted, so selection is required: `perTable[name]` presence selects the table, and its value configures it. A table with no `perTable` entry is skipped. Pass `{}` to mirror a table with all defaults.
 
 ```ts
-attachMarkdownMaterializer(ydoc, {
+attachMarkdownMaterializer(workspace, {
   dir,
   waitFor,
-  tables,
   perTable: {
+    // Presence selects; the value configures. Tables absent here are skipped.
     files: {
       filename: slugFilename('title'),
       // Most real tables store body content in a separate Y.Doc (via
@@ -66,19 +69,18 @@ attachMarkdownMaterializer(ydoc, {
         return { frontmatter: { id: row.id, name: row.name }, body: doc.content.read() };
       },
     },
+    devices: {}, // selected, all defaults
   },
-  kv,
 });
 
-attachBunSqliteMaterializer(ydoc, {
+attachBunSqliteMaterializer(workspace, {
   filePath,
   waitFor,
-  tables,
   fts: { posts: ['title'] },
 });
 ```
 
-Per-table customization lives in `perTable: { [tableName]: { ... } }` (markdown) and FTS column opt-in lives in `fts: { [tableName]: ColumnKey[] }` (SQLite). Both slots narrow against `keyof tables`, so keys autocomplete and typos error at the call site. Passing the bare `tables` record mirrors every entry; an object subset (`tables: { files: tables.files }`) mirrors only what you list.
+Per-table customization lives in `perTable: { [tableName]: { ... } }` (markdown) and FTS column opt-in lives in `fts: { [tableName]: ColumnKey[] }` (SQLite). Both slots narrow against `keyof workspace.tables`, so keys autocomplete and typos error at the call site.
 
 The SQLite result surfaces FTS on a nested namespace: `sqlite.fts.search({ table, query })` exists when `fts: {...}` was passed; when omitted, `sqlite.fts` is absent from the return type entirely. Single attach call, single `whenFlushed` barrier; the FTS DDL and triggers run between table DDL and the bulk insert so triggers populate `<table>_fts` for free.
 
@@ -114,7 +116,7 @@ workspace[Symbol.dispose]();       // cascades to ydoc.destroy()
 
 The workspace bundle owns the stores' lifecycle: `using workspace = createWorkspace(...)` triggers cascade disposal. Passing `keyring` switches encryption on at construction; without it the stores are plaintext. One call, atomic registration, no temporal window for mid-session attachment.
 
-The materializer primitives are the remaining "named slots in, constructed handle out" `attach*` shape: see the materializer block above. They take the already-constructed `tables` record off `workspace` (or an object subset of it) and a `perTable` / `fts` sibling slot for per-table customization.
+The materializer primitives are the remaining "subject in, constructed handle out" `attach*` shape: see the materializer block above. They take the `workspace` bundle as the subject, read `workspace.tables` themselves, and accept a `perTable` (markdown) or `fts` (SQLite) sibling slot for per-table customization.
 
 ## Invariants
 
@@ -150,10 +152,9 @@ const cache = createDisposableCache((id: string) => {
     url, openWebSocket, replicaId, actions,
     waitFor: idb.whenLoaded,
   });
-  const markdown   = attachMarkdownMaterializer(ydoc, {
+  const markdown   = attachMarkdownMaterializer(workspace, {
     dir,
     waitFor: collaboration.whenConnected,
-    tables,
     perTable: { posts: { filename: slugFilename('title') } },
   });
 
@@ -200,5 +201,5 @@ Use it whenever a primitive's startup must follow another's. Examples:
 - `packages/workspace/src/document/attach-indexed-db.ts` ; the canonical 40-line example.
 - `packages/workspace/src/document/open-collaboration.ts` ; document collaboration surface with sync, presence, peers, and action dispatch.
 - `packages/workspace/src/create-workspace.ts` ; the bundle factory; takes `{ id, tables, kv, keyring? }` and returns `{ ydoc, tables, kv, [Symbol.dispose] }` after one atomic construction (and one keyring derivation when encrypted).
-- `packages/workspace/src/document/materializer/markdown/materializer.ts` ; tables and optional `perTable` in the options bag, keyed by table name.
+- `packages/workspace/src/document/materializer/markdown/materializer.ts` ; `workspace` subject, `perTable` presence both selects and configures, keyed by table name.
 - `apps/whispering/src/lib/client.ts`: full singleton composition.

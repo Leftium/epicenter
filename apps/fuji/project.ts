@@ -16,10 +16,11 @@
  */
 
 import { isAbsolute, join } from 'node:path';
-import { defineWorkspace } from '@epicenter/workspace';
+import { defineActions, defineWorkspace } from '@epicenter/workspace';
 import { defineMount } from '@epicenter/workspace/daemon';
 import {
 	attachMarkdownMaterializer,
+	type GitAutosaveConfig,
 	slugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
@@ -36,6 +37,8 @@ export type FujiMountOptions = {
 	markdownDir?: string;
 	/** SQLite file path; relative paths resolve against `projectDir`. */
 	sqliteFile?: string;
+	/** Enable per-materializer Git autosave for markdown output. */
+	git?: GitAutosaveConfig;
 };
 
 export function fuji(opts: FujiMountOptions = {}) {
@@ -69,9 +72,15 @@ export function fuji(opts: FujiMountOptions = {}) {
 				filePath: sqliteFile,
 				log: createLogger(`${mount}-sqlite`),
 			});
-			attachMarkdownMaterializer(workspace, {
+			const markdown = attachMarkdownMaterializer(workspace, {
 				dir: mdDir,
 				perTable: { entries: { filename: slugFilename('title') } },
+				git: opts.git,
+			});
+
+			const actions = defineActions({
+				...workspace.actions,
+				...markdown.actions,
 			});
 
 			const infrastructure = attachProjectInfrastructure(workspace.ydoc, {
@@ -80,12 +89,14 @@ export function fuji(opts: FujiMountOptions = {}) {
 				deviceId,
 				openWebSocket,
 				onReconnectSignal,
-				actions: workspace.actions,
+				actions,
 			});
 
 			return defineWorkspace({
 				...workspace,
 				...infrastructure,
+				markdown,
+				actions,
 			});
 		},
 	});

@@ -1,5 +1,7 @@
 import { mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { $ } from 'bun';
+import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import {
 	defineErrors,
@@ -12,6 +14,7 @@ import type * as Y from 'yjs';
 import { convertEpicenterLinksToWikilinks } from '../../../links.js';
 import { assembleMarkdown } from '../../../markdown/assemble-markdown.js';
 import { parseMarkdownFile } from '../../../markdown/parse-markdown-file.js';
+import { defineActions, defineMutation } from '../../../shared/actions.js';
 import type { MaybePromise } from '../../../shared/types.js';
 import { type BaseRow, type Table, TableParseError } from '../../table.js';
 import type { AnyTable, TablesRecord } from '../shared.js';
@@ -37,6 +40,17 @@ const MaterializerWriteError = defineErrors({
 		message: `[markdown-materializer] table write failed for "${tableName}": ${extractErrorMessage(cause)}`,
 		tableName,
 		cause,
+	}),
+});
+
+const GitAutosaveError = defineErrors({
+	GitAddFailed: ({ stderr }: { stderr: string }) => ({
+		message: `git autosave: git add failed: ${stderr.trim()}`,
+		stderr,
+	}),
+	GitCommitFailed: ({ stderr }: { stderr: string }) => ({
+		message: `git autosave: git commit failed: ${stderr.trim()}`,
+		stderr,
 	}),
 });
 
@@ -82,6 +96,12 @@ export type PushEvent =
 			error: MaterializerPushError | TableParseError;
 	  };
 
+type MaterializerWriteEvent = {
+	kind: 'wrote' | 'unlinked';
+	path: string;
+	tableName: string;
+};
+
 /** Aggregated result of one `push` invocation. */
 export type PushResult = {
 	imported: number;
@@ -124,6 +144,12 @@ export type PerTableConfig<TTables extends TablesRecord> = {
 	[K in keyof TTables]?: TTables[K] extends Table<infer TRow>
 		? MarkdownTableConfig<TRow>
 		: never;
+};
+
+export type GitAutosaveConfig = {
+	author?: { name: string; email: string };
+	quietMs?: number;
+	maxBatchMs?: number;
 };
 
 type RegisteredTable = {
@@ -172,6 +198,23 @@ async function rowToMarkdownFile<TRow extends BaseRow>(
 }
 
 /**
+ * Best-effort unlink. Returns `true` when the file actually went away (so the
+ * observer can emit `unlinked`); `false` when it was already missing or the
+ * remove failed.
+ */
+async function tryUnlink(
+	directory: string,
+	filename: string,
+): Promise<boolean> {
+	try {
+		await unlink(join(directory, filename));
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
  * Write a markdown file under `directory`, creating any intermediate
  * subdirectories implied by a filename like `"archive/old.md"`.
  */
@@ -196,12 +239,13 @@ async function writeMarkdownFile(
  * `perTable` entry are skipped. To mirror with defaults, pass an empty
  * config (`perTable: { notes: {} }`).
  *
- * Exposes three mutations:
- * - `push`: disk to workspace. Import .md files as rows (additive).
- * - `pull`: workspace to disk. Write every row as .md file (additive).
- * - `rebuild`: workspace to disk, destructive. Clear output dir then rewrite
- *   all rows. Use for orphan cleanup or after config changes.
- *   Matches the sqlite materializer's `rebuild` for cross-materializer parity.
+ * Exposes three mutations under `.actions`, each ready to spread into a
+ * workspace's action registry:
+ * - `markdown_push`: disk to workspace. Import .md files as rows (additive).
+ * - `markdown_pull`: workspace to disk. Write every row as .md file (additive).
+ * - `markdown_rebuild`: workspace to disk, destructive. Clear output dir then
+ *   rewrite all rows. Use for orphan cleanup or after config changes.
+ *   Mirrors the sqlite materializer's `rebuild` for cross-materializer parity.
  *
  * Teardown is hooked to `workspace.ydoc` via `once('destroy', ...)`; callers
  * never call a dispose method; destroying the workspace cascades.
@@ -230,6 +274,7 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 		perTable,
 		waitFor,
 		log = createLogger('markdown-materializer'),
+		git,
 	}: {
 		/** Base output directory. Accepts a string or async getter for lazy path resolution. */
 		dir: string | (() => MaybePromise<string>);
@@ -252,6 +297,8 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 		 * Defaults to a console-backed logger.
 		 */
 		log?: Logger;
+		/** Enables Git autosave for files written by this materializer. */
+		git?: GitAutosaveConfig;
 	},
 ) {
 	const { ydoc, tables } = workspace;
@@ -268,6 +315,13 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 	const resolveDir = async () =>
 		typeof dir === 'function' ? await dir() : dir;
 
+	const gitAutosave = git
+		? createGitAutosave({ dir: resolveDir, config: git, log })
+		: undefined;
+	const emitWrite = (event: MaterializerWriteEvent): void => {
+		gitAutosave?.enqueue(event.path);
+	};
+
 	// ── Per-table materialization ───────────────────────────────
 
 	async function materializeTable(
@@ -283,6 +337,11 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 			const { filename, content } = await rowToMarkdownFile(row, config);
 			await writeMarkdownFile(directory, filename, content);
 			filenames.set(row.id, filename);
+			emitWrite({
+				kind: 'wrote',
+				path: join(directory, filename),
+				tableName: table.name,
+			});
 		}
 
 		// Sequential writes inside the observer avoid rename races; a parallel
@@ -296,18 +355,38 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 					if (error || row === null) {
 						const previous = filenames.get(id);
 						if (previous) {
-							await unlink(join(directory, previous)).catch(() => {});
+							const removed = await tryUnlink(directory, previous);
 							filenames.delete(id);
+							if (removed) {
+								emitWrite({
+									kind: 'unlinked',
+									path: join(directory, previous),
+									tableName: table.name,
+								});
+							}
 						}
 						continue;
 					}
 
 					const { filename, content } = await rowToMarkdownFile(row, config);
 					const previous = filenames.get(id);
-					if (previous && previous !== filename)
-						await unlink(join(directory, previous)).catch(() => {});
+					if (previous && previous !== filename) {
+						const removed = await tryUnlink(directory, previous);
+						if (removed) {
+							emitWrite({
+								kind: 'unlinked',
+								path: join(directory, previous),
+								tableName: table.name,
+							});
+						}
+					}
 					await writeMarkdownFile(directory, filename, content);
 					filenames.set(id, filename);
+					emitWrite({
+						kind: 'wrote',
+						path: join(directory, filename),
+						tableName: table.name,
+					});
 				}
 			})().catch((cause) => {
 				log.warn(
@@ -325,6 +404,7 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 	function dispose() {
 		if (isDisposed) return;
 		isDisposed = true;
+		gitAutosave?.dispose();
 		for (const entry of registered.values()) entry.unsubscribe?.();
 	}
 
@@ -340,6 +420,7 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 
 		const baseDir = await resolveDir();
 		await mkdir(baseDir, { recursive: true });
+		await gitAutosave?.initialize();
 
 		for (const entry of registered.values()) {
 			if (isDisposed) return;
@@ -475,8 +556,18 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 				const files = await readdir(directory);
 				for (const filename of files) {
 					if (!filename.endsWith('.md')) continue;
-					await unlink(join(directory, filename)).catch(() => {});
-					deleted++;
+					const path = join(directory, filename);
+					await unlink(path).then(
+						() => {
+							deleted++;
+							emitWrite({
+								kind: 'unlinked',
+								path,
+								tableName: entry.table.name,
+							});
+						},
+						() => undefined,
+					);
 				}
 			} catch {
 				// Directory doesn't exist yet. Fine.
@@ -489,6 +580,11 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 					entry.config,
 				);
 				await writeMarkdownFile(directory, filename, content);
+				emitWrite({
+					kind: 'wrote',
+					path: join(directory, filename),
+					tableName: entry.table.name,
+				});
 				written++;
 			}
 		}
@@ -523,6 +619,11 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 					entry.config,
 				);
 				await writeMarkdownFile(directory, filename, content);
+				emitWrite({
+					kind: 'wrote',
+					path: join(directory, filename),
+					tableName: entry.table.name,
+				});
 				written++;
 			}
 		}
@@ -533,15 +634,184 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 
 	return {
 		whenFlushed,
-		/** Read markdown files from disk and import rows into registered tables. */
-		push: pushMarkdownFiles,
-		/** Re-serialize all valid rows from registered tables to markdown files on disk. */
-		pull: pullMarkdownFiles,
-		/**
-		 * Delete existing `.md` files in registered table directories and
-		 * re-serialize all valid rows. Destructive: removes orphan files left by
-		 * deleted rows or stale configs.
-		 */
-		rebuild: rebuildMarkdownFiles,
+		actions: defineActions({
+			markdown_push: defineMutation({
+				title: 'Push Markdown',
+				description:
+					'Read .md files from disk and import rows into registered tables.',
+				handler: pushMarkdownFiles,
+			}),
+			markdown_pull: defineMutation({
+				title: 'Pull Markdown',
+				description:
+					'Write every valid row from registered tables to .md files on disk.',
+				handler: pullMarkdownFiles,
+			}),
+			markdown_rebuild: defineMutation({
+				title: 'Rebuild Markdown',
+				description:
+					'Destructive: delete existing .md files in registered table directories and re-serialize all valid rows. Optionally limit to one table.',
+				input: Type.Object({
+					tableName: Type.Optional(
+						Type.String({
+							description:
+								'Limit rebuild to one registered table; omit for all tables.',
+						}),
+					),
+				}),
+				handler: ({ tableName }) => rebuildMarkdownFiles(tableName),
+			}),
+		}),
+	};
+}
+
+export type MarkdownMaterializer = ReturnType<
+	typeof attachMarkdownMaterializer
+>;
+
+function createGitAutosave({
+	dir,
+	config,
+	log,
+}: {
+	dir: () => Promise<string>;
+	config: GitAutosaveConfig;
+	log: Logger;
+}) {
+	const {
+		author: { name = 'Autosave', email = 'autosave@epicenter.local' } = {},
+		quietMs = 5_000,
+		maxBatchMs = 60_000,
+	} = config;
+
+	const dirty = new Set<string>();
+	let isEnabled: boolean | undefined;
+	let enablement: Promise<boolean> | undefined;
+	let isDisposed = false;
+	let quietTimer: ReturnType<typeof setTimeout> | undefined;
+	let maxBatchTimer: ReturnType<typeof setTimeout> | undefined;
+
+	function clearTimers(): void {
+		if (quietTimer !== undefined) {
+			clearTimeout(quietTimer);
+			quietTimer = undefined;
+		}
+		if (maxBatchTimer !== undefined) {
+			clearTimeout(maxBatchTimer);
+			maxBatchTimer = undefined;
+		}
+	}
+
+	async function ensureEnabled(): Promise<boolean> {
+		if (isEnabled !== undefined) return isEnabled;
+		if (enablement !== undefined) return enablement;
+		enablement = (async () => {
+			const baseDir = await dir();
+			const result = await $`git rev-parse --is-inside-work-tree`
+				.cwd(baseDir)
+				.nothrow()
+				.quiet();
+			isEnabled =
+				result.exitCode === 0 && result.stdout.toString().trim() === 'true';
+			if (!isEnabled) log.info('git autosave: not in a git repo; skipping');
+			return isEnabled;
+		})().finally(() => {
+			enablement = undefined;
+		});
+		return enablement;
+	}
+
+	function schedule(): void {
+		if (isDisposed) return;
+		if (quietTimer !== undefined) clearTimeout(quietTimer);
+		quietTimer = setTimeout(() => {
+			quietTimer = undefined;
+			void stageAndCommit();
+		}, quietMs);
+		if (maxBatchTimer === undefined) {
+			maxBatchTimer = setTimeout(() => {
+				maxBatchTimer = undefined;
+				void stageAndCommit();
+			}, maxBatchMs);
+		}
+	}
+
+	async function stageAndCommit(): Promise<void> {
+		if (isDisposed) return;
+		clearTimers();
+		const batch = [...dirty];
+		dirty.clear();
+		if (batch.length === 0) return;
+		if (!(await ensureEnabled())) return;
+		await commitBatch(batch, false);
+	}
+
+	async function commitBatch(
+		batch: readonly string[],
+		retried: boolean,
+	): Promise<void> {
+		const baseDir = await dir();
+		const add = await $`git add -- ${batch}`.cwd(baseDir).nothrow().quiet();
+		if (add.exitCode !== 0) {
+			const stderr = add.stderr.toString();
+			if (!retried && stderr.includes('index.lock')) {
+				await Bun.sleep(250);
+				await commitBatch(batch, true);
+				return;
+			}
+			log.warn(GitAutosaveError.GitAddFailed({ stderr }));
+			return;
+		}
+
+		const message = `Autosave (${batch.length} changes)`;
+		const commit =
+			await $`git -c commit.gpgsign=false commit --no-gpg-sign -m ${message} -- ${batch}`
+				.cwd(baseDir)
+				.env({
+					...process.env,
+					GIT_AUTHOR_NAME: name,
+					GIT_AUTHOR_EMAIL: email,
+					GIT_COMMITTER_NAME: name,
+					GIT_COMMITTER_EMAIL: email,
+				})
+				.nothrow()
+				.quiet();
+		if (commit.exitCode === 0) return;
+
+		const output = `${commit.stdout.toString()}\n${commit.stderr.toString()}`;
+		if (
+			output.includes('nothing to commit') ||
+			output.includes('nothing added to commit')
+		) {
+			return;
+		}
+		if (!retried && output.includes('index.lock')) {
+			await Bun.sleep(250);
+			await commitBatch(batch, true);
+			return;
+		}
+		log.warn(GitAutosaveError.GitCommitFailed({ stderr: output }));
+	}
+
+	return {
+		async initialize(): Promise<void> {
+			await ensureEnabled();
+		},
+		enqueue(path: string): void {
+			if (isDisposed) return;
+			void ensureEnabled().then(
+				(enabled) => {
+					if (!enabled || isDisposed) return;
+					dirty.add(path);
+					schedule();
+				},
+				(cause) => log.warn(new Error(extractErrorMessage(cause))),
+			);
+		},
+		dispose(): void {
+			isDisposed = true;
+			clearTimers();
+			dirty.clear();
+		},
 	};
 }

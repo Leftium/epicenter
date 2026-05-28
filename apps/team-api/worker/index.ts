@@ -31,10 +31,11 @@ import {
 
 const ownership = team({
 	isMember: (c) => {
+		const raw = (c.env.ALLOWED_MEMBER_EMAILS ?? '') as string;
 		const allowed = new Set(
-			(c.env.ALLOWED_MEMBER_EMAILS ?? '')
+			raw
 				.split(',')
-				.map((s) => s.trim())
+				.map((s: string) => s.trim())
 				.filter(Boolean),
 		);
 		return allowed.has(c.var.user.email);

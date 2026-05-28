@@ -3,7 +3,7 @@
 // Runtime types generated with workerd@1.20260401.1 2026-03-06 nodejs_compat
 declare namespace Cloudflare {
 	interface GlobalProps {
-		mainModule: typeof import('./src/index');
+		mainModule: typeof import('./worker/index');
 		durableNamespaces: 'Room';
 	}
 	interface Env {
@@ -19,7 +19,7 @@ declare namespace Cloudflare {
 		OPENAI_API_KEY: string;
 		AUTUMN_SECRET_KEY: string;
 		GEMINI_API_KEY: string;
-		ROOM: DurableObjectNamespace<import('./src/index').Room>;
+		ROOM: DurableObjectNamespace<import('./worker/index').Room>;
 	}
 }
 interface Env extends Cloudflare.Env {}

@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -22,7 +21,6 @@
         "@better-auth/drizzle-adapter": "catalog:",
         "@better-auth/oauth-provider": "catalog:",
         "@epicenter/auth": "workspace:*",
-        "@epicenter/billing": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
         "@epicenter/server": "workspace:*",
@@ -55,13 +53,12 @@
         "wrangler": "catalog:",
       },
     },
-    "apps/dashboard": {
-      "name": "@epicenter/dashboard",
+    "apps/api/ui": {
+      "name": "@epicenter/api-ui",
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/auth": "workspace:*",
         "@epicenter/auth-svelte": "workspace:*",
-        "@epicenter/billing": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@tanstack/svelte-query": "catalog:",
@@ -378,6 +375,20 @@
         "wxt": "^0.20.8",
       },
     },
+    "apps/team-api": {
+      "name": "@epicenter/team-api",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/server": "workspace:*",
+        "hono": "catalog:",
+      },
+      "devDependencies": {
+        "@cloudflare/workers-types": "^4.20260405.1",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+        "wrangler": "catalog:",
+      },
+    },
     "apps/whispering": {
       "name": "@epicenter/whispering",
       "version": "7.11.0",
@@ -567,15 +578,6 @@
       },
       "peerDependencies": {
         "svelte": "^5.0.0",
-      },
-    },
-    "packages/billing": {
-      "name": "@epicenter/billing",
-      "version": "0.1.0",
-      "devDependencies": {
-        "@tanstack/ai-gemini": "catalog:",
-        "@tanstack/ai-openai": "catalog:",
-        "typescript": "catalog:",
       },
     },
     "packages/cli": {
@@ -1100,19 +1102,17 @@
 
     "@epicenter/api": ["@epicenter/api@workspace:apps/api"],
 
+    "@epicenter/api-ui": ["@epicenter/api-ui@workspace:apps/api/ui"],
+
     "@epicenter/auth": ["@epicenter/auth@workspace:packages/auth"],
 
     "@epicenter/auth-svelte": ["@epicenter/auth-svelte@workspace:packages/auth-svelte"],
-
-    "@epicenter/billing": ["@epicenter/billing@workspace:packages/billing"],
 
     "@epicenter/cli": ["@epicenter/cli@workspace:packages/cli"],
 
     "@epicenter/client": ["@epicenter/client@workspace:packages/client"],
 
     "@epicenter/constants": ["@epicenter/constants@workspace:packages/constants"],
-
-    "@epicenter/dashboard": ["@epicenter/dashboard@workspace:apps/dashboard"],
 
     "@epicenter/encryption": ["@epicenter/encryption@workspace:packages/encryption"],
 
@@ -1137,6 +1137,8 @@
     "@epicenter/sync": ["@epicenter/sync@workspace:packages/sync"],
 
     "@epicenter/tab-manager": ["@epicenter/tab-manager@workspace:apps/tab-manager"],
+
+    "@epicenter/team-api": ["@epicenter/team-api@workspace:apps/team-api"],
 
     "@epicenter/ui": ["@epicenter/ui@workspace:packages/ui"],
 

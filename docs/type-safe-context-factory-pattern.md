@@ -89,23 +89,40 @@ When you use `bind:value` with a getter and setter function, the type flows thro
 
 ## Query Factories
 
-You could import `defineQuery` and `defineMutation` separately and use them with any query client:
+The Wellcrafted query API has two scopes. Hook-local adapters (`queryOptions` and `mutationOptions`) do not need a client because they only produce hook options. Reusable definitions (`defineQuery` and `defineMutation`) do need a client because their imperative APIs run through TanStack Query.
 
 ```typescript
-// Before
 import { QueryClient } from '@tanstack/svelte-query';
-import { defineQuery, defineMutation } from 'wellcrafted/query';
+import {
+	createQueryFactories,
+	mutationOptions,
+	queryOptions,
+} from 'wellcrafted/query';
 
 const queryClient = new QueryClient();
-
-// defineQuery and defineMutation are separate imports
-// Nothing ties them to this specific queryClient
 ```
 
-The `createQueryFactories` factory takes a query client and returns both functions bound to it:
+Use hook-local adapters at one call site:
 
 ```typescript
-// After
+const user = createQuery(() =>
+	queryOptions({
+		queryKey: ['user', userId],
+		queryFn: () => services.getUser(userId),
+	}),
+);
+
+const save = createMutation(() =>
+	mutationOptions({
+		mutationKey: ['user', 'save'],
+		mutationFn: (input: SaveUserInput) => services.saveUser(input),
+	}),
+);
+```
+
+Use `createQueryFactories` when a shared query module needs reusable definitions:
+
+```typescript
 import { QueryClient } from '@tanstack/svelte-query';
 import { createQueryFactories } from 'wellcrafted/query';
 
@@ -113,7 +130,7 @@ const queryClient = new QueryClient();
 const { defineQuery, defineMutation } = createQueryFactories(queryClient);
 ```
 
-All queries and mutations defined with these functions share the same client. You can't accidentally use a query definition with the wrong client.
+All queries and mutations defined with these functions share the same client. Queries expose `.options`, `.fetch()`, and `.ensure()`; they are not callable. Mutations expose `.options` and are callable; they do not expose `.execute()`.
 
 ## When to Use It
 

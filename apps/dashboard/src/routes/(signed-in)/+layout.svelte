@@ -1,16 +1,20 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';
-	import { createResultMutation } from '@epicenter/svelte/query';
 	import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+	import { createMutation } from '@tanstack/svelte-query';
+	import { mutationOptions } from 'wellcrafted/query';
 	import UserMenu from '$lib/components/UserMenu.svelte';
 	import { auth } from '$platform/auth';
 
 	let { children } = $props();
 
-	const startSignIn = createResultMutation(() => ({
-		mutationFn: () => auth.startSignIn(),
-	}));
+	const startSignIn = createMutation(() =>
+		mutationOptions({
+			mutationKey: ['auth', 'startSignIn'],
+			mutationFn: () => auth.startSignIn(),
+		}),
+	);
 </script>
 
 {#if auth.state.status === 'signed-in'}

@@ -203,7 +203,7 @@ USER ASKS: "Write a Svelte component with a mutation"
      - Core patterns, $derived, reactive state conventions
      - Cross-references: "See references/tanstack-query-mutations.md"
   3. Agent reads references/tanstack-query-mutations.md (~150 lines)
-     - createMutation pattern, .execute() in .ts files, onSuccess/onError
+     - createMutation pattern, direct mutation calls in .ts files, `.fetch()` and `.ensure()` for queries, onSuccess/onError
 
   TOTAL CONTEXT: ~4,000 tokens (vs ~7,800 tokens loading everything)
 

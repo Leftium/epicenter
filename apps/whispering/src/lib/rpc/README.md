@@ -46,13 +46,26 @@ For one-off local lifecycle state, wrap the operation in the component instead:
 ```svelte
 <script lang="ts">
   import { createMutation } from '@tanstack/svelte-query';
+  import { mutationOptions } from 'wellcrafted/query';
   import {
     startManualRecording,
     stopManualRecording,
   } from '$lib/operations/recording';
 
-  const startMutation = createMutation(() => ({ mutationFn: startManualRecording }));
-  const stopMutation  = createMutation(() => ({ mutationFn: stopManualRecording  }));
+  const startMutation = createMutation(() =>
+    mutationOptions({
+      mutationKey: ['recording', 'startManual'],
+      mutationFn: startManualRecording,
+    }),
+  );
+
+  const stopMutation = createMutation(() =>
+    mutationOptions({
+      mutationKey: ['recording', 'stopManual'],
+      mutationFn: stopManualRecording,
+    }),
+  );
+
   const isPreparing = $derived(startMutation.isPending || stopMutation.isPending);
 </script>
 
@@ -60,6 +73,8 @@ For one-off local lifecycle state, wrap the operation in the component instead:
 ```
 
 Cross-adapter coordination still belongs in operations. An RPC file should not import a sibling RPC module just to sequence work.
+
+If the one-off operation returns a Wellcrafted `Result`, use `mutationOptions({ mutationKey, mutationFn })` at the hook call site so TanStack receives data and error through its normal channels.
 
 ## Canonical module shape
 
@@ -128,7 +143,18 @@ transcribeRecording: defineMutation({
 
 ## Imperative escape hatches
 
-Every `defineQuery`/`defineMutation` returned object is also directly callable and exposes `.fetch()` / `.execute()` for imperative use. Prefer plain async functions in `$lib/operations/` for code that is not observed by a component, instead of reaching for `.execute()` on a mutation.
+Queries expose `.fetch()` and `.ensure()` for imperative reads. Use `.fetch()` when freshness matters, and `.ensure()` when cache-first behavior is acceptable.
+
+Mutations are callable for imperative writes:
+
+```ts
+const { error } = await rpc.transformer.transformRecording({
+  recordingId,
+  transformation,
+});
+```
+
+Prefer plain async functions in `$lib/operations/` for code that is not observed by a component, instead of promoting every workflow into `$lib/rpc`.
 
 ## Architecture context
 
@@ -136,7 +162,7 @@ Every `defineQuery`/`defineMutation` returned object is also directly callable a
 UI (.svelte)
   │  createQuery(() => rpc.<x>.options)         ← shared cached reads
   │  createMutation(() => rpc.<y>.options)      ← shared mutations w/ cache invalidation
-  │  createMutation(() => ({ mutationFn: ... }))← local lifecycle over an orchestration
+  │  createMutation(() => mutationOptions(...)) ← local lifecycle over an orchestration
   │  await <operation>(...)                     ← fire-and-forget orchestrations
   ▼
 $lib/rpc/*          TanStack adapters (this directory)

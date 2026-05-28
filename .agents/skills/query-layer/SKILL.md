@@ -31,7 +31,7 @@ Use this pattern when you need to:
 - Decide whether work belongs in `$lib/rpc`, `$lib/operations`, or `$lib/services`
 - Implement runtime service selection based on user settings
 - Add optimistic cache updates for instant UI feedback
-- Understand the dual interface pattern (reactive vs imperative)
+- Understand hook-local adapters and reusable query definitions
 
 ## Core Architecture
 
@@ -50,8 +50,23 @@ Use this pattern when you need to:
 - Call services with injected settings/configuration
 - Preserve typed service and operation errors unless the adapter introduces a new local failure
 - Manage TanStack Query cache for optimistic updates
-- Provide dual interfaces: reactive (`.options`) and imperative (`.execute()`)
+- Provide hook-ready `.options` for shared definitions and explicit imperative APIs where they exist
 - Own shared cache identity through exported `*Keys` maps
+
+## Wellcrafted Query API Shape
+
+| Scope | Query | Mutation |
+| --- | --- | --- |
+| Hook-local | `queryOptions(input)` | `mutationOptions(input)` |
+| Reusable definition | `defineQuery(input)` | `defineMutation(input)` |
+
+Use `queryOptions` and `mutationOptions` at one hook call site when no imperative API or shared query identity is needed.
+
+Use `defineQuery` and `defineMutation` in shared `$lib/rpc` / `$lib/query` modules.
+
+Queries expose `.options`, `.fetch()`, and `.ensure()`. They are not callable.
+
+Mutations expose `.options` and are callable. They do not expose `.execute()`.
 
 ## Canonical Whispering RPC Module Shape
 
@@ -100,7 +115,7 @@ Rules:
 
 Use `$lib/rpc` as the shared TanStack observation surface. It may wrap a direct service/state call, or a `$lib/operations` entry point when UI needs shared mutation identity: multiple consumers, cache invalidation, optimistic updates, `useIsMutating`, or a named mutation key over that operation.
 
-Keep orchestration in `$lib/operations`: delivery, reporting, sounds, analytics, clipboard writes, and multi-step workflows. A one-off component can observe an operation locally with `createMutation(() => ({ mutationFn }))` instead of promoting it into `$lib/rpc`.
+Keep orchestration in `$lib/operations`: delivery, reporting, sounds, analytics, clipboard writes, and multi-step workflows. A one-off component can observe a Result-returning operation locally with `createMutation(() => mutationOptions({ mutationKey, mutationFn }))` instead of promoting it into `$lib/rpc`.
 
 Lack of cache invalidation is not a reason to avoid `createMutation` in a Svelte component. If the template observes operation lifecycle state such as `isPending`, disabled controls, loading text, success handling, or error handling, local `createMutation` is the preferred wrapper.
 
@@ -124,17 +139,18 @@ TaggedError<'Name'>           same error            report.error({ cause: error 
 
 Only define an RPC-local error when the adapter itself discovers a failure that no lower layer can own, such as a missing recording lookup before calling an operation.
 
-## Dual Interface Pattern
+## Reactive And Imperative Use
 
-Query-layer adapters provide two ways to use shared operations. Component-local operations can use the same reactive shape with inline `createMutation(() => ({ mutationFn }))`.
+Query-layer adapters provide reactive hook usage and explicit imperative usage. Component-local Result-returning operations can use the same reactive shape with `mutationOptions`.
 
-### Reactive Interface: `.options` Or Local `mutationFn`
+### Reactive Interface: `.options` Or Hook-Local Options
 
-Use in Svelte components when the template reads lifecycle state. Pass `.options` (a static object) inside an accessor function for shared RPC operations. For one-off component operations, pass a local `mutationFn`:
+Use in Svelte components when the template reads lifecycle state. Pass `.options` (a static object) inside an accessor function for shared RPC operations. For one-off component operations, use `queryOptions` or `mutationOptions`:
 
 ```svelte
 <script lang="ts">
 	import { createQuery, createMutation } from '@tanstack/svelte-query';
+	import { mutationOptions } from 'wellcrafted/query';
 	import { rpc } from '$lib/rpc';
 	import { exportRecordingsMarkdown } from '$lib/recording-markdown-export';
 
@@ -146,9 +162,12 @@ Use in Svelte components when the template reads lifecycle state. Pass `.options
 		() => rpc.transformer.transformRecording.options,
 	);
 
-	const exportMarkdown = createMutation(() => ({
-		mutationFn: exportRecordingsMarkdown,
-	}));
+	const exportMarkdown = createMutation(() =>
+		mutationOptions({
+			mutationKey: ['recordings', 'exportMarkdown'],
+			mutationFn: exportRecordingsMarkdown,
+		}),
+	);
 </script>
 
 {#if playbackUrl.isPending}
@@ -160,7 +179,7 @@ Use in Svelte components when the template reads lifecycle state. Pass `.options
 {/if}
 ```
 
-### Imperative Interface: `.execute()` / `.fetch()` / Direct Await
+### Imperative Interface: Queries Choose Cache Policy, Mutations Are Callable
 
 Use outside component context, or inside Svelte workflows that do not expose pending, success, or error state to the template:
 
@@ -192,14 +211,18 @@ async function stopAndTranscribe(toastId: string) {
 }
 ```
 
+Use `.fetch()` when the user action asks for freshness or validation against current external state. Use `.ensure()` when cache-first behavior is acceptable, such as preloaders or setup flows.
+
 ### When to Use Each
 
 | Situation | Pattern |
 | --------- | ------- |
 | Component reads server or async data | `createQuery(() => rpc.thing.options)` |
 | Shared mutation identity, invalidation, optimistic update, or multiple consumers | `defineMutation` in `$lib/rpc`, consumed with `createMutation(() => rpc.thing.options)` |
-| One-off Svelte button/action with observed pending, success, or error state | Local `createMutation(() => ({ mutationFn }))` |
-| `.ts` file, command workflow, service orchestration, or Svelte action with no observed lifecycle state | `.execute()`, `.fetch()`, or direct `await` |
+| One-off Svelte button/action with observed pending, success, or error state | Local `createMutation(() => mutationOptions({ mutationKey, mutationFn }))` |
+| Imperative query read | `rpc.thing(...).fetch()` or `rpc.thing(...).ensure()` |
+| Imperative mutation | `rpc.thing(input)` |
+| Plain operation with no observed lifecycle state | Direct `await operation(input)` |
 
 ## Key Rules
 

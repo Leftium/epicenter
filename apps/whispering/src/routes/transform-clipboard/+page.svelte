@@ -8,27 +8,25 @@
 	import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 	import { onDestroy, onMount } from 'svelte';
+	import { queryOptions } from 'wellcrafted/query';
 	import TransformationPickerBody from '$lib/components/TransformationPickerBody.svelte';
 	import { deliverTransformationResult } from '$lib/operations/delivery';
 	import { report } from '$lib/report';
 	import { sound } from '$lib/operations/sound';
 	import { tauri } from '$lib/tauri';
 	import { rpc } from '$lib/rpc';
-	import { defineQuery } from '$lib/rpc/client';
 	import { services } from '$lib/services';
 	import * as transformClipboardWindow from './transformClipboardWindow.tauri';
 
 	const combobox = useCombobox();
 
-	const readFromClipboard = defineQuery({
-		queryKey: ['text', 'readFromClipboard'],
-		queryFn: () => services.text.readFromClipboard(),
-	});
-
-	const clipboardQuery = createQuery(() => ({
-		...readFromClipboard.options,
-		refetchInterval: 1000,
-	}));
+	const clipboardQuery = createQuery(() =>
+		queryOptions({
+			queryKey: ['text', 'readFromClipboard'],
+			queryFn: () => services.text.readFromClipboard(),
+			refetchInterval: 1000,
+		}),
+	);
 
 	const clipboardText = $derived(clipboardQuery.data ?? '');
 

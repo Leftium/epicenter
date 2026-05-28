@@ -84,5 +84,5 @@ export const API_ROUTES = {
 		},
 	},
 } as const;
-// Billing URL builder lives in apps/api/worker/billing/url.ts (BILLING_ROUTES):
-// `/api/billing/*` is hosted-only and self-hosted team deployments never mount it.
+// The billing prefix (`/api/billing`) lives in apps/api/worker/billing/routes.ts:
+// it is hosted-only and self-hosted team deployments never mount it.

@@ -17,7 +17,10 @@ import { isProviderError, mapAutumnError } from './autumn.js';
 import { CHECKOUT_PLAN_IDS } from './catalog.js';
 import type { ModelCostGuide } from './contracts.js';
 import { createBillingService } from './service.js';
-import { BILLING_ROUTES } from './url.js';
+
+/** Single source for the billing URL prefix. The auth glob and the route mount
+ *  below both derive from it. Hosted-only; see {@link mountBillingApi}. */
+const BILLING_PREFIX = '/api/billing';
 
 const billingRoutes = new Hono<Env>();
 
@@ -124,6 +127,6 @@ export function mountBillingApi(
 	app: Hono<Env>,
 	opts: { auth: MiddlewareHandler },
 ): void {
-	app.use(BILLING_ROUTES.prefixPattern, opts.auth);
-	app.route('/api/billing', billingRoutes);
+	app.use(`${BILLING_PREFIX}/*`, opts.auth);
+	app.route(BILLING_PREFIX, billingRoutes);
 }

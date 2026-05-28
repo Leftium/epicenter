@@ -15,7 +15,6 @@
  *      `attachProjectInfrastructure`
  */
 
-import { isAbsolute, join } from 'node:path';
 import { defineActions, defineWorkspace } from '@epicenter/workspace';
 import { defineMount } from '@epicenter/workspace/daemon';
 import {
@@ -27,6 +26,7 @@ import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/mater
 import {
 	attachProjectInfrastructure,
 	markdownPath,
+	resolveProjectPath,
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
@@ -60,13 +60,11 @@ export function fuji(opts: FujiMountOptions = {}) {
 			workspace.ydoc.clientID = yDocClientId;
 
 			const sqliteFile =
-				opts.sqliteFile === undefined
-					? sqlitePath(projectDir, workspace.ydoc.guid)
-					: resolveProjectPath(projectDir, opts.sqliteFile);
+				resolveProjectPath(projectDir, opts.sqliteFile) ??
+				sqlitePath(projectDir, workspace.ydoc.guid);
 			const mdDir =
-				opts.markdownDir === undefined
-					? markdownPath(projectDir, workspace.ydoc.guid)
-					: resolveProjectPath(projectDir, opts.markdownDir);
+				resolveProjectPath(projectDir, opts.markdownDir) ??
+				markdownPath(projectDir, workspace.ydoc.guid);
 
 			const sqlite = attachBunSqliteMaterializer(workspace, {
 				filePath: sqliteFile,
@@ -104,7 +102,3 @@ export function fuji(opts: FujiMountOptions = {}) {
 }
 
 export type FujiMount = ReturnType<typeof fuji>;
-
-function resolveProjectPath(projectDir: string, value: string): string {
-	return isAbsolute(value) ? value : join(projectDir, value);
-}

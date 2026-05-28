@@ -83,6 +83,7 @@ export {
 export { openWorkspaceSqlite } from './document/open-workspace-sqlite.js';
 export {
 	markdownPath,
+	resolveProjectPath,
 	sqlitePath,
 	yjsPath,
 } from './document/workspace-paths.js';

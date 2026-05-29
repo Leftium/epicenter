@@ -25,8 +25,6 @@
 
 	const isDeviceSelected = $derived(!!selectedDeviceId);
 
-	const recorderLabel = $derived(tauri ? 'CPAL' : 'Navigator');
-
 	const getDevicesQuery = createQuery(() => ({
 		...manualRecorder.enumerateDevices.options,
 		enabled: combobox.open,
@@ -37,6 +35,16 @@
 			report.info({ cause: getDevicesQuery.error });
 		}
 	});
+
+	async function requestMicrophoneAccess() {
+		if (!tauri) return;
+		const { error } = await tauri.permissions.microphone.request();
+		if (error) {
+			report.error({ cause: error });
+			return;
+		}
+		await getDevicesQuery.refetch();
+	}
 </script>
 
 <Popover.Root bind:open={combobox.open}>
@@ -45,8 +53,8 @@
 			<Button
 				{...props}
 				tooltip={isDeviceSelected
-					? `Change ${recorderLabel} recording device`
-					: `Select ${recorderLabel} recording device`}
+					? 'Change microphone'
+					: 'Select microphone'}
 				role="combobox"
 				aria-expanded={combobox.open}
 				variant="ghost"
@@ -72,8 +80,19 @@
 							Loading devices...
 						</div>
 					{:else if getDevicesQuery.isError}
-						<div class="p-4 text-center text-sm text-destructive">
-							{getDevicesQuery.error.message}
+						<div class="space-y-3 p-4 text-center">
+							<p class="text-sm text-destructive">
+								{getDevicesQuery.error.message}
+							</p>
+							{#if tauri}
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={requestMicrophoneAccess}
+								>
+									Grant microphone access
+								</Button>
+							{/if}
 						</div>
 					{:else}
 						{#each getDevicesQuery.data as device (device.id)}

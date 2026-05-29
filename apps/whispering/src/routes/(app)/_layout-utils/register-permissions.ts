@@ -1,4 +1,4 @@
-import { toast, toastOnError } from '@epicenter/ui/sonner';
+import { toast } from '@epicenter/ui/sonner';
 import { nanoid } from 'nanoid/non-secure';
 import { goto } from '$app/navigation';
 import { IS_MACOS } from '$lib/constants/platform';
@@ -42,53 +42,5 @@ export function registerAccessibilityPermission() {
 	// Return cleanup function
 	return () => {
 		toast.dismiss(accessibilityToastId);
-	};
-}
-
-export function registerMicrophonePermission() {
-	// Only run on macOS desktop
-	if (!IS_MACOS || !tauri) return;
-
-	const microphoneToastId = nanoid();
-
-	// Check microphone permission once on mount
-	(async () => {
-		const { data: isMicrophoneGranted, error } =
-			await tauri.permissions.microphone.check();
-
-		if (error) {
-			console.error('Failed to check microphone permissions:', error);
-			return;
-		}
-
-		if (!isMicrophoneGranted) {
-			// Toast if permission not granted
-			toast.info('Microphone Permission Required', {
-				id: microphoneToastId,
-				description: 'Whispering needs microphone access to record audio',
-				duration: Number.POSITIVE_INFINITY,
-				action: {
-					label: 'Enable Permission',
-					onClick: async () => {
-						if (!tauri) return;
-						const { error: requestError } =
-							await tauri.permissions.microphone.request();
-
-						if (requestError)
-							return toastOnError(
-								requestError,
-								'Failed to request microphone permission',
-							);
-						// Dismiss the toast after requesting
-						toast.dismiss(microphoneToastId);
-					},
-				},
-			});
-		}
-	})();
-
-	// Return cleanup function
-	return () => {
-		toast.dismiss(microphoneToastId);
 	};
 }

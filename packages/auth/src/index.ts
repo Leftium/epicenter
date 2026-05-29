@@ -13,6 +13,8 @@ export {
 	createOAuthAppAuth,
 } from './create-oauth-app-auth.js';
 export {
+	type AsyncAuthCellStore,
 	createWebStoragePersistedAuthStorage,
+	loadPersistedAuthStorage,
 	type PersistedAuthStorage,
 } from './persisted-auth-storage.js';

@@ -76,3 +76,39 @@ export function createWebStoragePersistedAuthStorage({
 		},
 	};
 }
+
+/**
+ * An asynchronous string store: read the serialized cell (or `null` when
+ * absent), write a serialized cell, or write `null` to remove it. The minimal
+ * surface a runtime with an async substrate (an extension's `chrome.storage`,
+ * a file) supplies; it traffics only in opaque strings, never the cell shape.
+ */
+export type AsyncAuthCellStore = {
+	read: () => Promise<string | null>;
+	write: (serialized: string | null) => Promise<void>;
+};
+
+/**
+ * Pre-load an async-backed cell into a synchronous {@link PersistedAuthStorage}.
+ *
+ * The auth runtime reads `get()` once, synchronously, at construction, so an
+ * async store cannot satisfy the contract directly. Await this before
+ * constructing the client (the app's existing readiness gate is the natural
+ * place); `get()` then returns the value read at load time, and `set()`
+ * forwards writes to the store. Write failures propagate, matching the Web
+ * Storage adapter.
+ */
+export async function loadPersistedAuthStorage(
+	store: AsyncAuthCellStore,
+): Promise<PersistedAuthStorage> {
+	let cached = parsePersistedAuthCell(await store.read());
+	return {
+		get() {
+			return cached;
+		},
+		set(value) {
+			cached = value;
+			return store.write(value === null ? null : serializePersistedAuthCell(value));
+		},
+	};
+}

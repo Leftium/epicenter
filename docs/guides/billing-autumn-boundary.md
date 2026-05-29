@@ -8,8 +8,9 @@ files. If you are about to change anything in this folder, read this first.
 
 > Meter and gate paid usage (AI credits, storage bytes) against Autumn as the
 > billing source of truth, while assuming Autumn can be slow, wrong, or down at
-> any moment, so it must never over-charge, never hand out free usage during an
-> outage, and never leak its internals to the user.
+> any moment, so it must deny work when entitlement cannot be verified, never
+> permanently charge for work that did not happen, and never leak provider
+> internals to the user.
 
 Every design choice below is a consequence of that second clause. If a piece of
 code does not serve "treat the provider as fallible and untrusted," it is
@@ -27,8 +28,8 @@ routes.ts        HTTP shape: validate body, delegate, translate thrown errors
 service.ts       one facade per request: every billing operation, returns DTOs
         │
         ▼
-autumn.ts        the ONLY file that imports autumn-js. builds the client,
-        │        wraps each round-trip, translates provider failures
+autumn.ts        the ONLY file that imports autumn-js. builds the client with
+        │        failOpen: false, classifies provider failures, logs details
         ▼
 Autumn (external, fallible)
 ```
@@ -37,7 +38,26 @@ Autumn (external, fallible)
 `@epicenter/server`) with the same `service.ts`, to reserve quota around work
 the library does not know is billable.
 
-## The thing that confuses everyone: two error paths
+Be precise about the boundary. `autumn.ts` is not a full provider-swapping
+adapter. `service.ts` still speaks Autumn-shaped concepts: `check`, `track`,
+subscriptions, balances, and plan eligibility. That is intentional. The useful
+boundary is narrower: one SDK import site, one fail-closed client default, and
+one place that turns provider failures into our billing error.
+
+## Three error buckets, two error paths
+
+Keep these separate:
+
+```
+provider error     AutumnError or HTTPClientError. Provider failed or rejected
+                   our provider-level request. Opaque BillingError, fixed 503.
+
+domain error       Credits, plan, model, or storage state denies the user.
+                   Typed surface error with an actionable status and payload.
+
+programmer error   Our code is wrong. TypeError, bad mapping, impossible branch.
+                   Rethrow to the parent app so it becomes a real 500.
+```
 
 There are two ways a provider failure reaches the client, and they look
 inconsistent until you see why.
@@ -54,10 +74,11 @@ getOverview, listPlans, listUsage…     reserveAiChat, reserveAssetStorage
    503 envelope                           4xx/503 envelope
 ```
 
-Why the asymmetry: a guard cannot just throw, because it has already taken a
-**reservation** and must settle it (release the hold) before responding. A read
-has no reservation to clean up, so it lets the error throw to the single
-`onError` boundary in `routes.ts`. The split is real work, not inconsistency.
+Why the asymmetry: a guard cannot just throw after it has taken a
+**reservation**, because the policy still needs the reservation object so it can
+settle the hold around the downstream response. A read has no reservation to
+clean up, so it lets provider errors throw to the single `onError` boundary in
+`routes.ts`. The split is real work, not inconsistency.
 
 ## Reservations: reserve, then confirm or release
 
@@ -96,6 +117,16 @@ reserve and settle simply lets the hold expire at the TTL: no charge, no manual
 recovery. That crash-safety is what the lock buys. (We never pass
 `override_value`, so we are not using the lock's variable-amount feature; the
 TTL auto-release is the whole justification.)
+
+The lock is biased against permanent overcharge, not against every possible
+undercharge. If the downstream work succeeds but the after-response
+`confirm()` cannot reach Autumn, the hold eventually expires and the user may
+not be charged for that completed work. That is intentional: the pre-work guard
+still fails closed when entitlement cannot be verified, and the post-work
+settlement prefers a bounded undercharge over permanently charging a user for
+work that failed or could not be settled. For AI streams, once the stream has
+started the HTTP status is already 200, so a later model/provider failure still
+confirms by design: provider tokens were consumed and cannot be refunded.
 
 ## Errors: opaque on the wire, fat in the logs
 
@@ -147,6 +178,16 @@ transient outage). It is defensible operational signal, but it is the only place
 the two error tiers are treated differently, and the only branch you could
 delete with zero behavior change.
 
+## The real caveat
+
+Storage delete credits are not locks. A successful DELETE reports the deleted
+byte count after the library finishes, then `creditAssetStorage` sends a
+negative usage event to Autumn. If that post-response credit fails, there is no
+lock TTL to repair it, and the user's storage quota remains too high until a
+future reconciliation job fixes it. That risk is accepted for now because stored
+bytes are recomputable from the asset index, and it is isolated to deletes
+rather than upload admission.
+
 ## If you are changing this folder
 
 - Adding a new billable operation: it goes through `service.ts`, which calls
@@ -155,5 +196,7 @@ delete with zero behavior change.
   reservation the policy settles around `next()`.
 - A new dashboard read: let Autumn throw; `routes.ts` `onError` turns a provider
   failure into the opaque 503 and rethrows real bugs to a 500.
+- A new post-response credit without a lock needs an explicit recovery story.
+  Locks self-heal at TTL; direct `track` calls do not.
 - Never widen the `BillingError` message to include provider text. That is the
   one invariant the whole error design protects.

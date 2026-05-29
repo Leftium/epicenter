@@ -47,32 +47,6 @@ type AiChatBody = {
 	apiKey?: string;
 };
 
-/**
- * Resolve the HTTP status for an AI guard failure. A `BillingError` means the
- * provider call failed and we fail closed, so it answers with a fixed 503
- * (entitlement unverifiable -> service unavailable); the actionable
- * `AiChatError` variants map through the sibling status table. 503 is a trusted
- * literal, so no cast on an untrusted provider value.
- */
-function aiGuardStatus(
-	error: AiChatError | BillingError,
-): ContentfulStatusCode {
-	if (error.name === 'ProviderRequestFailed') return 503;
-	return AiChatErrorStatus[error.name];
-}
-
-/**
- * Resolve the HTTP status for a storage guard failure. A `BillingError` is a
- * fail-closed provider failure (fixed 503); every `AssetError` variant bakes in
- * its own `status`.
- */
-function storageGuardStatus(
-	error: AssetError | BillingError,
-): ContentfulStatusCode {
-	if (error.name === 'ProviderRequestFailed') return 503;
-	return error.status;
-}
-
 export const chargeAiCreditsWithAutumn = createMiddleware<Env>(
 	async (c, next) => {
 		const body = (await c.req.json().catch(() => ({}))) as AiChatBody;
@@ -172,3 +146,29 @@ export const trackAssetStorageWithAutumn = createMiddleware<Env>(
 		return next();
 	},
 );
+
+/**
+ * Resolve the HTTP status for an AI guard failure. A `BillingError` means the
+ * provider call failed and we fail closed, so it answers with a fixed 503
+ * (entitlement unverifiable -> service unavailable); the actionable
+ * `AiChatError` variants map through the sibling status table. 503 is a trusted
+ * literal, so no cast on an untrusted provider value.
+ */
+function aiGuardStatus(
+	error: AiChatError | BillingError,
+): ContentfulStatusCode {
+	if (error.name === 'ProviderRequestFailed') return 503;
+	return AiChatErrorStatus[error.name];
+}
+
+/**
+ * Resolve the HTTP status for a storage guard failure. A `BillingError` is a
+ * fail-closed provider failure (fixed 503); every `AssetError` variant bakes in
+ * its own `status`.
+ */
+function storageGuardStatus(
+	error: AssetError | BillingError,
+): ContentfulStatusCode {
+	if (error.name === 'ProviderRequestFailed') return 503;
+	return error.status;
+}

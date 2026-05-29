@@ -26,6 +26,22 @@ import { createBillingService } from './service.js';
  *  below both derive from it. Hosted-only; see {@link mountBillingApi}. */
 const BILLING_PREFIX = '/api/billing';
 
+/**
+ * Mount the cloud billing data plane on the server app.
+ *
+ * Bundles auth (the dashboard reaches this with cookie sessions; admin
+ * scripts reach it with OAuth bearers) and the route mount into one
+ * call. Lives in apps/api, not @epicenter/server, because Autumn is
+ * cloud-only deployment policy.
+ */
+export function mountBillingApi(
+	app: Hono<Env>,
+	opts: { auth: MiddlewareHandler },
+): void {
+	app.use(`${BILLING_PREFIX}/*`, opts.auth);
+	app.route(BILLING_PREFIX, billingRoutes);
+}
+
 const billingRoutes = new Hono<Env>();
 
 // A thrown provider failure becomes the opaque billing envelope at a fixed 503
@@ -107,19 +123,3 @@ billingRoutes.get('/portal', async (c) => {
 		c.req.query('returnUrl') ?? new URL('/dashboard', c.req.url).toString();
 	return c.json(await svc(c).openPortal({ returnUrl }));
 });
-
-/**
- * Mount the cloud billing data plane on the server app.
- *
- * Bundles auth (the dashboard reaches this with cookie sessions; admin
- * scripts reach it with OAuth bearers) and the route mount into one
- * call. Lives in apps/api, not @epicenter/server, because Autumn is
- * cloud-only deployment policy.
- */
-export function mountBillingApi(
-	app: Hono<Env>,
-	opts: { auth: MiddlewareHandler },
-): void {
-	app.use(`${BILLING_PREFIX}/*`, opts.auth);
-	app.route(BILLING_PREFIX, billingRoutes);
-}

@@ -1,8 +1,9 @@
 /**
  * Autumn SDK adapter: the only file in `billing/` that imports `autumn-js`.
  *
- * Everything that knows about the provider lives here, so the service,
- * policies, and routes stay vendor-agnostic:
+ * The service still speaks Autumn's domain shape (`check`, `track`,
+ * subscriptions, balances). This file owns the SDK import, client defaults,
+ * and provider error translation:
  *
  *   createAutumnClient(env)   build the per-request client with the
  *                             fail-closed invariant baked in.
@@ -10,8 +11,9 @@
  *                             translate it into the opaque `BillingError`.
  *   isProviderError(error)    narrow a throw to a provider failure (vs a bug),
  *                             so route `onError` can rethrow real 500s.
- *   tryAutumn(fn)             run a provider call and return a `Result`,
- *                             mapping a throw to `BillingError`.
+ *   tryAutumn(fn)             run a provider call and return a `Result`.
+ *                             Provider failures become `BillingError`; real
+ *                             bugs keep throwing.
  *
  * Provider failures arrive as two sibling class families (verified against
  * autumn-js@1.2.5): `AutumnError` for an HTTP non-2xx response, and the
@@ -48,7 +50,9 @@ export function createAutumnClient(env: { AUTUMN_SECRET_KEY: string }): Autumn {
  * `BillingError` for the wire.
  *
  * This is the single chokepoint where every provider failure is observed: it is
- * called by `tryAutumn` (guard + reservation paths) and by the route `onError`.
+ * called by `tryAutumn` (guard + reservation paths) and by the route `onError`
+ * after `isProviderError` has already separated provider failures from local
+ * bugs.
  * The original error carries the only diagnostic detail we keep (status, body,
  * class, cause); the wire error is a fixed user-facing message. A 4xx means
  * Autumn rejected OUR request (most likely a bug in our call), so it logs at
@@ -83,12 +87,18 @@ export function isProviderError(
 }
 
 /**
- * Run a provider call and return a `Result`, mapping any throw (the fail-closed
- * path under `failOpen: false`) to a `BillingError`. The service's domain
- * operations wrap every Autumn round-trip in this.
+ * Run a provider call and return a `Result`. Provider throws (the fail-closed
+ * path under `failOpen: false`) become `BillingError`; non-provider throws are
+ * rethrown so local bugs do not masquerade as "billing unavailable."
  */
 export function tryAutumn<T>(
 	fn: () => Promise<T>,
 ): Promise<Result<T, BillingError>> {
-	return tryAsync({ try: fn, catch: mapAutumnError });
+	return tryAsync({
+		try: fn,
+		catch: (error) => {
+			if (!isProviderError(error)) throw error;
+			return mapAutumnError(error);
+		},
+	});
 }

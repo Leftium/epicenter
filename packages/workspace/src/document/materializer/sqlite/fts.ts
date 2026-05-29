@@ -194,10 +194,10 @@ async function ftsSearch(
  * Internal factory that owns the materializer's FTS surface.
  *
  * Constructed by `attachSqliteMaterializerCore` only when the caller passed an
- * `fts` option. Holds the FTS column map, exposes a `beforeFullLoad()` setup
- * pass that runs after table DDL and before the bulk insert (so triggers
- * populate `<table>_fts` for free during the existing full-load), and surfaces
- * the `search` action that lands on `materializer.actions.sqlite_search`.
+ * `fts` option. Holds the FTS column map, exposes a `setupForBulkLoad()` pass
+ * that installs FTS virtual tables and triggers after table DDL and before the
+ * bulk insert, and surfaces the `search` action that lands on
+ * `materializer.actions.sqlite_search`.
  *
  * Pure construction at call time: registers no listeners and runs no DDL.
  * Returning the factory unconditionally would be fine; the caller decides
@@ -222,7 +222,7 @@ export function createSqliteFtsLayer<TTables extends TablesRecord>({
 		}
 	}
 
-	async function beforeFullLoad(): Promise<void> {
+	async function setupForBulkLoad(): Promise<void> {
 		for (const [tableName, columns] of ftsColumns) {
 			await setupFtsTable(db, tableName, columns);
 		}
@@ -255,7 +255,7 @@ export function createSqliteFtsLayer<TTables extends TablesRecord>({
 		},
 	});
 
-	return { beforeFullLoad, search };
+	return { setupForBulkLoad, search };
 }
 
 // ════════════════════════════════════════════════════════════════════════════

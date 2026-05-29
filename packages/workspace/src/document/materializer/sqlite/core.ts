@@ -289,10 +289,11 @@ export function attachSqliteMaterializerCore<
 				await db.run(generateDdl(tableName, entry.table.schema));
 			}
 
-			// FTS DDL + triggers run after table DDL and before the bulk insert, so
-			// the AFTER INSERT triggers populate `<table>_fts` for free during the
-			// existing full-load. This is the load-bearing ordering invariant.
-			await ftsLayer?.beforeFullLoad();
+			if (ftsLayer !== undefined) {
+				// FTS triggers must exist before the bulk insert so full-load rows
+				// populate `<table>_fts` through the normal INSERT triggers.
+				await ftsLayer.setupForBulkLoad();
+			}
 
 			if (isDisposed) return;
 

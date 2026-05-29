@@ -400,9 +400,8 @@ const result = await services.completion.openai.complete({
 
 ### Cross-platform (`services/`)
 
-- `recorder/index.*.ts` - Build-time manual recorder boundary: CPAL on desktop, Navigator on web
-- `recorder/cpal.tauri.ts` - Desktop manual recording through the native CPAL backend
-- `recorder/navigator.ts` - Web manual recording through MediaRecorder
+- `recorder/index.tauri.ts` - Desktop manual recording through the native CPAL backend
+- `recorder/index.browser.ts` - Web manual recording through MediaRecorder
 - `recorder/types.ts` - Shared `RecorderService` interface, error types, params
 - `device-stream.ts` - `getRecordingStream` and `enumerateDevices` shared by recorder backends
 - `local-shortcut-manager.ts` - In-window keyboard shortcuts
@@ -429,7 +428,7 @@ Each leaf picks one canonical call form: TanStack-backed (via `defineQuery`/`def
 
 Pure accelerator parsing (validate-format, pressed-keys-to-accelerator, the `Accelerator` brand) doesn't need the Tauri runtime and lives in `$lib/utils/accelerator.ts`. The Tauri-side registration code consumes the same types.
 
-The cpal recorder (`services/recorder/cpal.tauri.ts`) stays under `services/` because it's a sibling of `navigator.ts` and the recorder folder exposes both through its own suffix files.
+The manual recorder lives under `services/recorder/index.*.ts` because the recorder folder exposes one platform-owned manual recorder through suffix files.
 
 ### Multi-provider services
 

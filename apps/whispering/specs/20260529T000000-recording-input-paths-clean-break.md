@@ -27,7 +27,7 @@ Current:
     -> transcribe by recording id
 ```
 
-The current code has already moved toward the target. CPAL returns a Rust-owned artifact handle, not raw bytes (`apps/whispering/src/lib/services/recorder/cpal.tauri.ts:130`). Navigator returns a `Blob` made from MediaRecorder chunks (`apps/whispering/src/lib/services/recorder/navigator.ts:102`). The pipeline persists both under one recording id before transcription (`apps/whispering/src/lib/operations/pipeline.ts`).
+The current code has already moved toward the target. CPAL returns a Rust-owned artifact handle, not raw bytes (`apps/whispering/src/lib/services/recorder/index.tauri.ts`). Navigator returns a `Blob` made from MediaRecorder chunks (`apps/whispering/src/lib/services/recorder/index.browser.ts`). The pipeline persists both under one recording id before transcription (`apps/whispering/src/lib/operations/pipeline.ts`).
 
 That unified id shape is good. The runtime desktop capture choice is the part that no longer earns its keep.
 
@@ -72,7 +72,7 @@ VAD is different from manual recording. Today VAD is browser-owned on every plat
 
 ## Implemented Shape After Wave 2
 
-Manual recording now resolves through `ManualRecorderLive` from `$lib/services/recorder`. The Tauri barrel re-exports the CPAL implementation's `ManualRecorderLive`; the browser barrel re-exports the Navigator implementation's `ManualRecorderLive`. The old `recording.method` key is gone from device config, migration mapping, manual recorder state, and the recording settings UI.
+Manual recording now resolves through `ManualRecorderLive` from `$lib/services/recorder`. The Tauri implementation lives in `index.tauri.ts`; the browser implementation lives in `index.browser.ts`. The old `recording.method` key is gone from device config, migration mapping, manual recorder state, and the recording settings UI.
 
 The pre-change "Current Shape" section remains as the historical problem statement. For live code, use this section and the implementation progress notes below.
 
@@ -229,7 +229,7 @@ pipeline/UI state
 
 The overlay window composes those signals. Do not publish a broad `recorder:phase` enum that includes `transcribing` or `uploading`; that would turn the recorder into a fake workflow aggregator.
 
-`commands.rs` already emits `recorder:state-changed` through `AppHandle.emit` (`apps/whispering/src-tauri/src/recorder/commands.rs:19`). Treat `recorder:phase` as a replacement for that channel, not a second source of truth. Migrate the existing consumers in the same wave: the CPAL listener in `cpal.tauri.ts`, the `WhisperingRecordingState` arktype, and tray icon mapping in `tauri.tauri.ts` / `recording-states.ts`.
+`commands.rs` already emits `recorder:state-changed` through `AppHandle.emit` (`apps/whispering/src-tauri/src/recorder/commands.rs:19`). Treat `recorder:phase` as a replacement for that channel, not a second source of truth. Migrate the existing consumers in the same wave: the CPAL listener in `index.tauri.ts`, the `WhisperingRecordingState` arktype, and tray icon mapping in `tauri.tauri.ts` / `recording-states.ts`.
 
 If `stopping` exists, Rust must emit it before `write_artifact` in `stop_recording`. Otherwise remove `stopping` from the enum. Do not add a phase value that no path can publish.
 
@@ -297,7 +297,7 @@ If Tauri desktop refuses Navigator for manual recording, these paths become unne
 | Bitrate UI on desktop manual | Hide Navigator bitrate from Tauri manual recording. Keep it for web manual only. VAD emits WAV via `utils.encodeWAV` and ignores `recording.navigator.bitrateKbps`. | `apps/whispering/src/routes/(app)/(config)/settings/recording/+page.svelte:287`, `apps/whispering/src/lib/state/vad-recorder.svelte.ts:154` |
 | Sample-rate UI on web | Hide CPAL sample-rate controls from web. Keep them only in Tauri. | `apps/whispering/src/routes/(app)/(config)/settings/recording/+page.svelte:317` |
 | Web local provider affordance | Hide local transcription providers from the web build and add a guard in `dispatchLocalTranscription` for web. Prefer a platform-resolved provider registry if the web bundle should not import local provider metadata at all. | `apps/whispering/src/lib/components/settings/selectors/TranscriptionSelector.svelte:101`, `apps/whispering/src/lib/components/settings/TranscriptionServiceSelect.svelte:35`, `apps/whispering/src/lib/operations/transcribe.ts:216` |
-| Recorder state events | Replace `recorder:state-changed` with typed recorder phase events, or explicitly keep the old channel and drop `recorder:phase`. If replacing, migrate CPAL listener, arktype recording state, and tray icon mapping in the same wave. | `apps/whispering/src-tauri/src/recorder/commands.rs:10`, `apps/whispering/src/lib/services/recorder/cpal.tauri.ts:81`, `apps/whispering/src/lib/constants/audio/recording-states.ts:6`, `apps/whispering/src/lib/tauri.tauri.ts:219` |
+| Recorder state events | Replace `recorder:state-changed` with typed recorder phase events, or explicitly keep the old channel and drop `recorder:phase`. If replacing, migrate CPAL listener, arktype recording state, and tray icon mapping in the same wave. | `apps/whispering/src-tauri/src/recorder/commands.rs:10`, `apps/whispering/src/lib/services/recorder/index.tauri.ts`, `apps/whispering/src/lib/constants/audio/recording-states.ts:6`, `apps/whispering/src/lib/tauri.tauri.ts:219` |
 | Recording artifact metadata | Verify live consumers of `RecordingArtifact.durationMs` and `byteLength`. `byteLength` no longer represents upload size after cloud re-encoding. Keep only fields with named consumers. | `apps/whispering/src-tauri/src/recorder/artifact.rs:61`, `apps/whispering/src/lib/operations/transcribe.ts:63` |
 | Artifact comments | Re-scope comments that mention navigator WebM as a future Tauri artifact producer. Multi-container decode remains earned by file upload and web/blob persistence, not desktop manual Navigator. | `apps/whispering/src-tauri/src/recorder/artifact.rs:34` |
 | Docs | Update service README lines that describe Navigator as "browser + desktop fallback", the build-time DI spec section that preserves runtime recorder choice, and inline comments that explain CPAL nullability through `recording.method`. | `apps/whispering/src/lib/services/README.md:403`, `apps/whispering/specs/20260526T010258-build-time-platform-di.md:234`, `apps/whispering/src/lib/services/recorder/index.browser.ts:12` |

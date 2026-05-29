@@ -276,8 +276,8 @@ function createCpalRecorder() {
 			activeSession = session;
 			return Ok({ session, deviceAcquisition: deviceOutcome });
 		},
-	} satisfies RecorderService;
+	} satisfies RecorderService<CpalRecordingParams>;
 }
 
 export const CpalRecorderServiceLive =
-	createCpalRecorder() satisfies RecorderService;
+	createCpalRecorder() satisfies RecorderService<CpalRecordingParams>;

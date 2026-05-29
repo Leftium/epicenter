@@ -13,10 +13,7 @@
 		SAMPLE_RATE_OPTIONS,
 	} from '$lib/constants/audio';
 	import { IS_LINUX, IS_MACOS } from '$lib/constants/platform';
-	import {
-		asDeviceIdentifier,
-		type DeviceIdentifier,
-	} from '$lib/services/recorder/types';
+	import { asDeviceIdentifier } from '$lib/services/recorder/types';
 	import { report } from '$lib/report';
 	import { tauri } from '$lib/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
@@ -44,32 +41,8 @@
 		)?.label,
 	);
 
-	const RECORDING_METHOD_OPTIONS = [
-		{
-			value: 'cpal',
-			label: 'CPAL',
-			description: IS_MACOS
-				? 'Native Rust audio method. Records uncompressed WAV, reliable with shortcuts. Works with all transcription methods.'
-				: 'Native Rust audio method. Records uncompressed WAV format. Works with all transcription methods.',
-		},
-		{
-			value: 'navigator',
-			label: 'Browser API',
-			description: IS_MACOS
-				? 'Web MediaRecorder API. Creates compressed files (WebM/Opus) suitable for cloud transcription. May have delays with shortcuts when app is in background (macOS AppNap).'
-				: 'Web MediaRecorder API. Creates compressed files (WebM/Opus) suitable for cloud transcription.',
-		},
-	];
-
-	const recordingMethodLabel = $derived(
-		RECORDING_METHOD_OPTIONS.find(
-			(o) => o.value === deviceConfig.get('recording.method'),
-		)?.label,
-	);
-
-	const isUsingNavigatorMethod = $derived(
-		!tauri ||
-			deviceConfig.get('recording.method') === 'navigator',
+	const manualDeviceConfigKey = $derived(
+		tauri ? 'recording.cpal.deviceId' : 'recording.navigator.deviceId',
 	);
 
 	const exportMarkdown = createMutation(() =>
@@ -78,29 +51,6 @@
 			mutationFn: whispering.actions.recordings_export_markdown,
 		}),
 	);
-
-	function getManualDeviceId(method: 'cpal' | 'navigator') {
-		switch (method) {
-			case 'cpal':
-				return deviceConfig.get('recording.cpal.deviceId');
-			case 'navigator':
-				return deviceConfig.get('recording.navigator.deviceId');
-		}
-	}
-
-	function setManualDeviceId(
-		method: 'cpal' | 'navigator',
-		selected: DeviceIdentifier | null,
-	) {
-		switch (method) {
-			case 'cpal':
-				deviceConfig.set('recording.cpal.deviceId', selected);
-				break;
-			case 'navigator':
-				deviceConfig.set('recording.navigator.deviceId', selected);
-				break;
-		}
-	}
 </script>
 
 <svelte:head> <title>Recording Settings - Whispering</title> </svelte:head>
@@ -138,69 +88,13 @@
 			</Field.Description>
 		</Field.Field>
 
-		{#if tauri && settings.get('recording.mode') === 'manual'}
-			<Field.Field>
-				<Field.Label for="recording-method">Recording Method</Field.Label>
-				<Select.Root
-					type="single"
-					bind:value={() => deviceConfig.get('recording.method'),
-						(selected) => {
-							if (selected)
-							deviceConfig.set(
-									'recording.method',
-									selected as 'cpal' | 'navigator',
-								);
-						}}
-				>
-					<Select.Trigger id="recording-method" class="w-full">
-						{recordingMethodLabel ?? 'Select a recording method'}
-					</Select.Trigger>
-					<Select.Content>
-						{#each RECORDING_METHOD_OPTIONS as item}
-							<Select.Item value={item.value} label={item.label}>
-								<div class="flex flex-col gap-0.5">
-									<div class="font-medium">{item.label}</div>
-									{#if item.description}
-										<div class="text-xs text-muted-foreground">
-											{item.description}
-										</div>
-									{/if}
-								</div>
-							</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-				<Field.Description>
-					{RECORDING_METHOD_OPTIONS.find(
-					(option) => option.value === deviceConfig.get('recording.method'),
-					)?.description}
-				</Field.Description>
-			</Field.Field>
-
-			{#if IS_MACOS && deviceConfig.get('recording.method') === 'navigator'}
-				<Alert.Root class="border-warning/20 bg-warning/5">
-					<InfoIcon class="size-4 text-warning dark:text-warning" />
-					<Alert.Title class="text-warning dark:text-warning">
-						Global Shortcuts May Be Unreliable
-					</Alert.Title>
-					<Alert.Description>
-						When using the navigator recorder, macOS App Nap may prevent the
-						browser recording logic from starting when not in focus. Consider
-						using the CPAL method for reliable global shortcut support.
-					</Alert.Description>
-				</Alert.Root>
-			{/if}
-
-		{/if}
-
 		{#if settings.get('recording.mode') === 'manual'}
-			{@const method = deviceConfig.get('recording.method')}
 			<ManualSelectRecordingDevice
 				bind:selected={() => {
-					const selected = getManualDeviceId(method);
+					const selected = deviceConfig.get(manualDeviceConfigKey);
 					return selected ? asDeviceIdentifier(selected) : null;
 					},
-					(selected) => setManualDeviceId(method, selected)}
+					(selected) => deviceConfig.set(manualDeviceConfigKey, selected)}
 			/>
 		{:else if settings.get('recording.mode') === 'vad'}
 			{#if IS_LINUX}
@@ -224,6 +118,18 @@
 					</Alert.Description>
 				</Alert.Root>
 			{:else}
+				{#if tauri && IS_MACOS}
+					<Alert.Root class="border-warning/20 bg-warning/5">
+						<InfoIcon class="size-4 text-warning dark:text-warning" />
+						<Alert.Title class="text-warning dark:text-warning">
+							Global Shortcuts May Be Unreliable
+						</Alert.Title>
+						<Alert.Description>
+							VAD uses browser-owned capture. macOS App Nap may delay browser
+							recording logic when Whispering is not in focus.
+						</Alert.Description>
+					</Alert.Root>
+				{/if}
 				<Alert.Root class="border-blue-500/20 bg-blue-500/5">
 					<InfoIcon class="size-4 text-blue-600 dark:text-blue-400" />
 					<Alert.Title class="text-blue-600 dark:text-blue-400">
@@ -232,8 +138,7 @@
 					<Alert.Description>
 						VAD mode uses the browser's Web Audio API for real-time voice
 						detection and records via the browser's MediaRecorder API. Audio is
-						encoded to uncompressed WAV format. VAD mode runs the browser
-						recorder regardless of the CPAL/Browser API selection above.
+						encoded to uncompressed WAV format.
 					</Alert.Description>
 				</Alert.Root>
 			{/if}
@@ -283,9 +188,10 @@
 					</Field.Description>
 				</Field.Field>
 			{/if}
+		{/if}
 
-			{#if isUsingNavigatorMethod}
-				<!-- Browser method settings -->
+		{#if settings.get('recording.mode') === 'manual'}
+			{#if !tauri}
 				<Field.Field>
 					<Field.Label for="bit-rate">Bitrate</Field.Label>
 					<Select.Root
@@ -293,7 +199,7 @@
 						bind:value={() => deviceConfig.get('recording.navigator.bitrateKbps'),
 							(selected) => {
 								if (selected)
-							deviceConfig.set(
+									deviceConfig.set(
 										'recording.navigator.bitrateKbps',
 										selected,
 									);
@@ -314,7 +220,6 @@
 					</Field.Description>
 				</Field.Field>
 			{:else}
-				<!-- CPAL method settings -->
 				<Field.Field>
 					<Field.Label for="sample-rate">Sample Rate</Field.Label>
 					<Select.Root
@@ -322,7 +227,7 @@
 						bind:value={() => deviceConfig.get('recording.cpal.sampleRate'),
 							(selected) => {
 								if (selected)
-							deviceConfig.set('recording.cpal.sampleRate', selected);
+									deviceConfig.set('recording.cpal.sampleRate', selected);
 							}}
 					>
 						<Select.Trigger id="sample-rate" class="w-full">

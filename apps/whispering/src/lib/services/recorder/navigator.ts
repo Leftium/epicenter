@@ -222,11 +222,11 @@ function createNavigatorRecorder() {
 
 			return Ok({ session, deviceAcquisition: deviceOutcome });
 		},
-	} satisfies RecorderService;
+	} satisfies RecorderService<NavigatorRecordingParams>;
 }
 
 export const NavigatorRecorderServiceLive =
-	createNavigatorRecorder() satisfies RecorderService;
+	createNavigatorRecorder() satisfies RecorderService<NavigatorRecordingParams>;
 
 /**
  * Determines the best supported audio MIME type for the current browser.

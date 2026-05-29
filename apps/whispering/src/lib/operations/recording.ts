@@ -9,6 +9,7 @@ import { deviceConfig } from '$lib/state/device-config.svelte';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
+import { tauri } from '$lib/tauri';
 
 function handleDeviceAcquisitionOutcome(
 	outcome: DeviceAcquisitionOutcome,
@@ -71,8 +72,10 @@ export async function startManualRecording() {
 			'🎙️ Whispering is recording...',
 			'Speak now and stop recording when done',
 			(deviceId) => {
-				const method = deviceConfig.get('recording.method');
-				deviceConfig.set(`recording.${method}.deviceId`, deviceId);
+				deviceConfig.set(
+					tauri ? 'recording.cpal.deviceId' : 'recording.navigator.deviceId',
+					deviceId,
+				);
 			},
 		),
 	);

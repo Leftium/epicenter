@@ -44,11 +44,35 @@ Every consult must fit in one pass:
 4. Say what answer shape is useful.
 5. Tell Claude not to edit files, commit, push, delete, run destructive commands, or perform remote admin operations.
 
-Run repo consults with read/search tools only:
+For architecture or API-shape questions, ask Claude to start with one concrete sentence describing the current surface, then look for radical options, asymmetric wins, and clean breaks before suggesting local patches.
+
+Do not paste a template mechanically. Write the prompt a sharp senior engineer would send to another senior engineer.
+
+## Running The Consult
+
+If the user wants to run it themselves, provide only the prompt.
+
+If the user wants Codex to run it, or asks for Claude's judgment as part of the work, prefer the repo wrapper:
+
+```bash
+bun run claude:consult -- \
+  --mode review \
+  --question "Find behavioral bugs in this diff only"
+```
+
+Pipe narrow context into the wrapper or pass specific files with repeatable `--context` flags. Use `--mode review`, `--mode design`, `--mode tests`, or `--mode docs` to pick the critique lens.
+
+The wrapper uses `claude -p`, `--output-format json`, `--max-budget-usd`, and `--max-turns`. It intentionally loads the user's normal Claude Code config by default because the local Claude login can live there. Use the wrapper's `--bare` flag only when bare mode is known to have working auth.
+
+By default, pass context directly and do not expose read/search tools. The wrapper always denies `Edit`, `Write`, and `Bash`. Add `--read-files` only when Claude needs to read or search extra repo files. In that mode, the wrapper uses `--tools Read,Grep,Glob` and `--allowedTools Read,Grep,Glob`.
+
+Use a direct `claude -p` call only when the wrapper does not fit the question. For repo consults, restrict Claude to read/search tools:
 
 ```bash
 claude -p "[prompt]" \
   --tools "Read,Grep,Glob" \
+  --allowedTools "Read,Grep,Glob" \
+  --disallowedTools "Edit,Write,Bash" \
   --output-format json \
   --max-budget-usd 1
 ```
@@ -56,6 +80,8 @@ claude -p "[prompt]" \
 Add `--max-turns` when the local Claude CLI supports it. Do not set `--model` unless the user explicitly asks for a model.
 
 For pure judgment consults that do not need workspace files, omit `--tools`.
+
+Bare mode may not see the user's Claude Code login. If a `--bare` call reports `Not logged in`, retry without `--bare` before changing auth state.
 
 ## Scouts
 

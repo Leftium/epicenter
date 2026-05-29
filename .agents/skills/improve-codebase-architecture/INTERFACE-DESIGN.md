@@ -35,10 +35,10 @@ Each sub-agent outputs:
 2. Usage example showing how callers use it
 3. What the implementation hides behind the seam
 4. Dependency strategy and adapters (see [DEEPENING.md](DEEPENING.md))
-5. Trade-offs - where leverage is high, where it's thin
+5. Trade-offs: where leverage is high, where it's thin
 
 ### 3. Present and compare
 
 Present designs sequentially so the user can absorb each one, then compare them in prose. Contrast by **depth** (leverage at the interface), **locality** (where change concentrates), and **seam placement**.
 
-After comparing, give your own recommendation: which design you think is strongest and why. If elements from different designs would combine well, propose a hybrid. Be opinionated - the user wants a strong read, not a menu.
+After comparing, give your own recommendation: which design you think is strongest and why. Pick the one design you would want to own and maintain long term. Be opinionated: the user wants a strong read, not a menu.

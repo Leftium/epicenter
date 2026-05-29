@@ -169,7 +169,7 @@ Lifecycle
 ...
 
 Findings
-1. [P1] file:line Problem, why it matters, smallest fix.
+1. [P1] file:line Problem, why it matters, greenfield correction.
 
 Would simplify
 - ...
@@ -191,7 +191,7 @@ Findings must lead. Do not bury bugs under prose.
 If the user asks you to act on the grill:
 
 1. Add or adjust focused tests first.
-2. Make the smallest coherent edit.
+2. Make the greenfield correction that resolves the problem at its real owner.
 3. Re-read every touched file.
 4. Run package typecheck and tests.
 5. Stage only the files you touched when the user asks for staging.

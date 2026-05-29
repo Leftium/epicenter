@@ -321,7 +321,7 @@ For a loader, convention, or framework change, make the new rule small enough to
 <root>/<name>/<entrypoint>.ts
 ```
 
-Then show the smallest user-written module that proves the contract:
+Then show the clearest user-written module that proves the contract:
 
 ```ts
 export default defineFeature({
@@ -386,7 +386,7 @@ Specific. Falsifiable. A reader who disagrees can point to which sentence is wro
 
 **4. Name every type that died as an explicit inventory; name the survivor with the reason it earned its keep.**
 
-> `Document` (a structural contract for "what a workspace returns"), `DocumentBundle`, `DocumentHandle` (a refcounted brand around bundles), `DocumentFactory`, `createDocumentFactory`, `defineDocument`, `defineWorkspace`, `ActionIndex` (a flat map of branded actions walked from arbitrary bundles), `iterateActions`, `ACTION_BRAND` (the symbol that made the walk possible), `entry.handle` envelope in the CLI loader — all gone. What's left is the smallest set of primitives that can build everything those layers were built to do, plus one piece of factory-shaped infrastructure (`createDisposableCache`) that survived because it does work the caller can't trivially do inline: refcount + grace-period teardown for any `Disposable`.
+> `Document` (a structural contract for "what a workspace returns"), `DocumentBundle`, `DocumentHandle` (a refcounted brand around bundles), `DocumentFactory`, `createDocumentFactory`, `defineDocument`, `defineWorkspace`, `ActionIndex` (a flat map of branded actions walked from arbitrary bundles), `iterateActions`, `ACTION_BRAND` (the symbol that made the walk possible), `entry.handle` envelope in the CLI loader: all gone. What's left is the terminal primitive set that can build everything those layers were built to do, plus one piece of factory-shaped infrastructure (`createDisposableCache`) that survived because it does work the caller can't trivially do inline: refcount + grace-period teardown for any `Disposable`.
 
 Not "and other types" — the actual list, parenthetically annotated. Two reasons: (a) it lets the reader grep, (b) it forces the author to verify the inventory is exhaustive. The survivor gets a *justification* in the same sentence — not "we kept the cache" but "survived because it does work the caller can't trivially do inline." Without that justification, the reader assumes the survivor is leftover scaffolding and tries to delete it later.
 
@@ -478,11 +478,11 @@ This grounds the reader in scope after they've absorbed the narrative. It's the 
 
 #### Default: Continuous Prose
 
-Every PR—simple or complex—uses continuous prose as the default format. Write paragraphs that flow naturally, interleaved with code snippets and diagrams where they add clarity. No section headers, no numbered steps, no bullet-point changelogs.
+Every PR, simple or complex, uses continuous prose as the default format. Write paragraphs that flow naturally, interleaved with code snippets and diagrams where they add clarity. No section headers, no numbered steps, no bullet-point changelogs.
 
-The rhythm is: context paragraph → code/diagram → explanation paragraph → code/diagram → ...
+The rhythm is: context paragraph -> code/diagram -> explanation paragraph -> code/diagram -> ...
 
-For a small fix, two paragraphs suffice. For a large feature, you'll write more paragraphs with more visuals—but the FORMAT stays the same. The difference is length, not structure.
+For a focused correction, two paragraphs suffice. For a large feature, you'll write more paragraphs with more visuals, but the FORMAT stays the same. The difference is length, not structure.
 
 **Example (simple fix)**:
 

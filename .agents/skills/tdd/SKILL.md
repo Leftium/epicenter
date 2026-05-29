@@ -49,7 +49,7 @@ RIGHT (vertical):
 
 When exploring the codebase, use the project's domain glossary so that test names and interface vocabulary match the project's language, and respect ADRs in the area you're touching.
 
-Before writing code, identify the smallest observable behavior that proves the path works. Ask the user only when the public interface, behavior priority, or acceptance criteria are unclear.
+Before writing code, identify the first observable behavior that proves the intended design works. Ask the user only when the public interface, behavior priority, or acceptance criteria are unclear.
 
 - [ ] Identify the public interface the behavior should exercise
 - [ ] Choose the first behavior to test
@@ -67,7 +67,7 @@ Write ONE test that confirms ONE thing about the system:
 
 ```
 RED:   Write test for first behavior → test fails
-GREEN: Write minimal code to pass → test passes
+GREEN: Write the real implementation for that behavior → test passes
 ```
 
 This is your tracer bullet - proves the path works end-to-end.
@@ -78,13 +78,13 @@ For each remaining behavior:
 
 ```
 RED:   Write next test → fails
-GREEN: Minimal code to pass → passes
+GREEN: Extend that implementation to cover the new behavior → passes
 ```
 
 Rules:
 
 - One test at a time
-- Only enough code to pass current test
+- Build the intended design behavior by behavior
 - Don't anticipate future tests
 - Keep tests focused on observable behavior
 
@@ -106,6 +106,6 @@ After all tests pass, look for [refactor candidates](refactoring.md):
 [ ] Test describes behavior, not implementation
 [ ] Test uses public interface only
 [ ] Test would survive internal refactor
-[ ] Code is minimal for this test
+[ ] Code belongs to the intended design, not a temporary stopgap
 [ ] No speculative features added
 ```

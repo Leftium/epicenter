@@ -5,8 +5,8 @@
  * on `billingKeys.all` clears every billing view in one call.
  */
 
-import type { EventsQuery, UsageQuery } from '$api/billing/contracts';
 import { defineKeys } from 'wellcrafted/query';
+import type { EventsQuery, UsageQuery } from '$api/billing/contracts';
 import { defineMutation, defineQuery } from '$lib/query/client';
 import { billingApi } from './api';
 

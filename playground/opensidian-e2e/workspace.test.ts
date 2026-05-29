@@ -22,10 +22,7 @@ import {
 } from '@epicenter/workspace';
 import { assembleMarkdown } from '@epicenter/workspace/markdown';
 import { attachYjsLog } from '@epicenter/workspace/node';
-import {
-	createOpensidian,
-	opensidianFileContentDocGuid,
-} from 'opensidian';
+import { createOpensidian, opensidianFileContentDocGuid } from 'opensidian';
 import * as Y from 'yjs';
 import { pushFromMarkdown } from './push-from-markdown';
 

@@ -11,8 +11,8 @@
  * generic 500 instead of the fail-closed 503 billing envelope.
  */
 
-import { AutumnError, ConnectionError } from 'autumn-js';
 import { expect, test } from 'bun:test';
+import { AutumnError, ConnectionError } from 'autumn-js';
 import { isProviderError, mapAutumnError } from './autumn.js';
 
 const FIXED_MESSAGE = 'Billing is temporarily unavailable. Please try again.';

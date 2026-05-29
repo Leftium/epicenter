@@ -17,10 +17,10 @@
  * that path is covered by Autumn's lock TTL auto-release, not by code here.
  */
 
+import { beforeEach, expect, mock, test } from 'bun:test';
 import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import { AssetError } from '@epicenter/constants/asset-errors';
 import type { Env } from '@epicenter/server';
-import { beforeEach, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { Ok, type Result } from 'wellcrafted/result';
 
@@ -60,7 +60,9 @@ mock.module('./service.js', () => ({
 				? aiReserveOutcome
 				: Ok({ ...aiReserveOutcome.data, ...recordingReservation() }),
 		reserveAssetStorage: async (_input: { sizeBytes: number }) =>
-			assetReserveOutcome.error ? assetReserveOutcome : Ok(recordingReservation()),
+			assetReserveOutcome.error
+				? assetReserveOutcome
+				: Ok(recordingReservation()),
 		creditAssetStorage: (sizeBytes: number) => {
 			creditCalls.push(sizeBytes);
 			return Promise.resolve(Ok(undefined));
@@ -186,7 +188,9 @@ test('a failed upload (500) releases the reservation, never charging', async () 
 });
 
 test('a storage guard rejection answers with the envelope and reserves nothing', async () => {
-	assetReserveOutcome = AssetError.StorageLimitExceeded({ requestedBytes: 1024 });
+	assetReserveOutcome = AssetError.StorageLimitExceeded({
+		requestedBytes: 1024,
+	});
 
 	const res = await makeAssetApp(201).request('/assets', {
 		method: 'POST',

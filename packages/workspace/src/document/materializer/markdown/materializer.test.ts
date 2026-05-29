@@ -526,7 +526,9 @@ describe('rebuild', () => {
 		await workspace.materializer.actions.markdown_pull();
 		await writeTestFile('notes/orphan.md', '---\nid: x\nbody: gone\n---\n');
 
-		const result = await workspace.materializer.actions.markdown_rebuild({ tableName: 'posts' });
+		const result = await workspace.materializer.actions.markdown_rebuild({
+			tableName: 'posts',
+		});
 
 		expect(result.deleted).toBe(1); // p1.md
 		expect(result.written).toBe(1); // p1 re-written
@@ -540,9 +542,11 @@ describe('rebuild', () => {
 
 	test('throws on unknown table name', async () => {
 		const { workspace } = await setup({ perTable: { posts: {} } });
-		await expect(workspace.materializer.actions.markdown_rebuild({ tableName: 'notAThing' })).rejects.toThrow(
-			/not in the materialized table set/,
-		);
+		await expect(
+			workspace.materializer.actions.markdown_rebuild({
+				tableName: 'notAThing',
+			}),
+		).rejects.toThrow(/not in the materialized table set/);
 
 		workspace[Symbol.dispose]();
 	});

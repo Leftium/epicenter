@@ -24,8 +24,8 @@ import {
 	mountAssetsApp,
 	mountRoomsApp,
 	mountSessionApp,
-	requireBearerUser,
 	Room,
+	requireBearerUser,
 	team,
 } from '@epicenter/server';
 

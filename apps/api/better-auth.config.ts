@@ -25,10 +25,10 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
-import { LOCAL_DATABASE_URL } from './env';
 import { BASE_AUTH_CONFIG } from '../../packages/server/src/auth/base-config';
 import { authPlugins } from '../../packages/server/src/auth/plugins';
 import * as schema from '../../packages/server/src/db/schema';
+import { LOCAL_DATABASE_URL } from './env';
 
 const env = type({
 	BETTER_AUTH_SECRET: 'string',

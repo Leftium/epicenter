@@ -30,6 +30,7 @@ import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import { AssetError } from '@epicenter/constants/asset-errors';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import { MODEL_CREDITS } from './ai-model-pricing.js';
+import { createAutumnClient, tryAutumn } from './autumn.js';
 import {
 	type CheckoutPlanId,
 	FEATURE_IDS,
@@ -53,7 +54,6 @@ import type {
 	UsageQuery,
 	UsageSeries,
 } from './contracts.js';
-import { createAutumnClient, tryAutumn } from './autumn.js';
 import type { BillingError } from './errors.js';
 
 // ---------------------------------------------------------------------
@@ -195,7 +195,9 @@ export function createBillingService(
 		);
 		if (checkError) return Err(checkError);
 		if (!check.allowed) {
-			return AssetError.StorageLimitExceeded({ requestedBytes: input.sizeBytes });
+			return AssetError.StorageLimitExceeded({
+				requestedBytes: input.sizeBytes,
+			});
 		}
 		return Ok({
 			confirm: () => finalizeLock(lockId, 'confirm'),
@@ -220,7 +222,6 @@ export function createBillingService(
 			});
 		});
 	}
-
 
 	// ----- Dashboard data plane -----------------------------------------
 
@@ -285,7 +286,9 @@ export function createBillingService(
 		]);
 
 		const eligibilityByPlanId = new Map(
-			(autumnPlans.list ?? []).map((p) => [p.id, p.customerEligibility] as const),
+			(autumnPlans.list ?? []).map(
+				(p) => [p.id, p.customerEligibility] as const,
+			),
 		);
 
 		function renderCard(planId: PlanId): BillingPlanCard {

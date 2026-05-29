@@ -54,7 +54,9 @@ type AiChatBody = {
  * `AiChatError` variants map through the sibling status table. 503 is a trusted
  * literal, so no cast on an untrusted provider value.
  */
-function aiGuardStatus(error: AiChatError | BillingError): ContentfulStatusCode {
+function aiGuardStatus(
+	error: AiChatError | BillingError,
+): ContentfulStatusCode {
 	if (error.name === 'ProviderRequestFailed') return 503;
 	return AiChatErrorStatus[error.name];
 }
@@ -86,14 +88,16 @@ export const chargeAiCreditsWithAutumn = createMiddleware<Env>(
 			userEmail: c.var.user.email,
 		});
 
-		const { data: reservation, error: guardError } = await billing.reserveAiChat(
-			{
+		const { data: reservation, error: guardError } =
+			await billing.reserveAiChat({
 				model: body.data?.model ?? '',
 				provider: body.data?.provider,
-			},
-		);
+			});
 		if (guardError) {
-			return c.json({ data: null, error: guardError }, aiGuardStatus(guardError));
+			return c.json(
+				{ data: null, error: guardError },
+				aiGuardStatus(guardError),
+			);
 		}
 
 		await next();

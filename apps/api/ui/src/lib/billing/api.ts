@@ -10,6 +10,8 @@
  * every request. Same-origin deployment; no CORS config needed.
  */
 
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
+import { Err, type Result, tryAsync } from 'wellcrafted/result';
 import type {
 	BillingEventsPage,
 	BillingOverview,
@@ -23,8 +25,6 @@ import type {
 	UsageSeries,
 } from '$api/billing/contracts';
 import { BillingError } from '$api/billing/errors';
-import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
-import { Err, type Result, tryAsync } from 'wellcrafted/result';
 import { auth } from '$platform/auth';
 
 /** Tagged error for the billing API boundary, split by what actually failed. */
@@ -95,7 +95,9 @@ async function readResponse<TResponse>(
 	});
 }
 
-async function get<TResponse>(endpoint: string): Promise<BillingResult<TResponse>> {
+async function get<TResponse>(
+	endpoint: string,
+): Promise<BillingResult<TResponse>> {
 	const { data: res, error } = await tryAsync({
 		try: () => auth.fetch(endpoint),
 		catch: (cause) => BillingApiError.RequestFailed({ endpoint, cause }),

@@ -9,13 +9,13 @@
  * single item is `interval: 'one_off'` with a prepaid billing method.
  */
 
+import { feature, item, type PlanItem, plan } from 'atmn';
 import {
 	FEATURE_IDS,
 	PLAN_IDS,
 	PLANS,
 	type SubscriptionPlan,
 } from './catalog.js';
-import { feature, item, type PlanItem, plan } from 'atmn';
 
 // ---------------------------------------------------------------------
 // Features

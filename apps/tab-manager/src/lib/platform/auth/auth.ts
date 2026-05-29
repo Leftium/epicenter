@@ -1,30 +1,39 @@
 /**
  * Auth state for the tab manager Chrome extension.
  *
- * Exports persisted auth storage and the OAuth sign-in launcher. The auth
- * client itself is created after storage readiness in `../../session.svelte`.
+ * Exports the persisted auth cell loader and the OAuth sign-in launcher. The
+ * auth client itself is created after the cell has loaded, in
+ * `../../session.svelte`.
  *
  * @see {@link ../../session.svelte} auth, workspace, and identity wiring
- * @see {@link ../../state/storage-state.svelte} chrome.storage reactive wrapper
  */
 
-import { PersistedAuth } from '@epicenter/auth';
+import { loadPersistedAuthStorage } from '@epicenter/auth';
 import { createExtensionOAuthLauncher } from '@epicenter/auth/oauth-launchers';
 import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { APP_URLS } from '@epicenter/constants/vite';
-import { createStorageState } from '../../state/storage-state.svelte';
+import { storage } from '@wxt-dev/storage';
 
 /**
  * Persisted auth cell in `chrome.storage.local`.
  *
- * Older builds persisted under `local:auth.session` with a bundled auth
- * shape. After this migration, schema validation fails for the legacy shape
- * and the cell reads as null, forcing a one-time sign-in. Workspace IndexedDB
- * data is keyed by userId and survives the reset.
+ * The serialized cell is owned by `@epicenter/auth`; this module only supplies
+ * async read/write over an opaque string. Older builds persisted a bundled
+ * shape under `local:auth.session`; the new key resets cleanly, and a corrupt
+ * or legacy cell validates to null, forcing a one-time sign-in. Workspace
+ * IndexedDB data is keyed by userId and survives the reset.
+ *
+ * `loadPersistedAuthStorage` resolves once chrome.storage has been read;
+ * `../../session.svelte` awaits it before constructing the auth client.
  */
-export const persistedAuthStorage = createStorageState('local:auth.persisted', {
-	fallback: null,
-	schema: PersistedAuth.or('null'),
+const authCell = storage.defineItem<string>('local:auth.persisted');
+
+export const persistedAuthStoragePromise = loadPersistedAuthStorage({
+	read: () => authCell.getValue(),
+	write: (serialized) =>
+		serialized === null
+			? authCell.removeValue()
+			: authCell.setValue(serialized),
 });
 
 export const oauthLauncher = createExtensionOAuthLauncher({

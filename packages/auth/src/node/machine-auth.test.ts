@@ -15,9 +15,9 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { asOwnerId } from '@epicenter/constants/identity';
 import { expectErr, expectOk } from 'wellcrafted/testing';
+import type { AuthFetch } from '../auth-contract.js';
 import type { PersistedAuth } from '../auth-types.js';
 import { asUserId } from '../auth-types.js';
-import type { AuthFetch } from '../create-oauth-app-auth.js';
 import {
 	createMachineAuthClient,
 	loginWithOob,

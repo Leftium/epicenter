@@ -1,5 +1,7 @@
+import { OAUTH_ROUTES } from '@epicenter/constants/oauth-routes';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
+import type { AuthFetch } from './auth-contract.js';
 import type { OAuthTokenGrant } from './auth-types.js';
 
 /**
@@ -8,7 +10,7 @@ import type { OAuthTokenGrant } from './auth-types.js';
  * {@link parseOAuthTokenGrant}: missing or non-string fields, a wrong
  * `token_type`, or a non-object payload.
  */
-export const OAuthTokenResponseError = defineErrors({
+const OAuthTokenResponseError = defineErrors({
 	InvalidResponse: () => ({
 		message: 'Expected OAuth token response to be an object.',
 	}),
@@ -27,9 +29,7 @@ export const OAuthTokenResponseError = defineErrors({
 	}),
 });
 
-export type OAuthTokenResponseError = InferErrors<
-	typeof OAuthTokenResponseError
->;
+type OAuthTokenResponseError = InferErrors<typeof OAuthTokenResponseError>;
 
 /**
  * Normalize an OAuth token endpoint payload into Epicenter's persisted grant.
@@ -95,4 +95,83 @@ export function parseOAuthTokenGrant(
 		refreshToken: nextRefreshToken,
 		accessTokenExpiresAt: now() + expiresIn * 1000,
 	});
+}
+
+/**
+ * Exchange a refresh token at the OAuth token endpoint and normalize the
+ * response into a fresh grant. Throws on a non-OK response or an invalid
+ * payload; callers treat a throw as "refresh failed, pause network auth".
+ */
+export async function refreshOAuthTokenWithEndpoint({
+	baseURL,
+	clientId,
+	grant,
+	fetch,
+	now,
+}: {
+	baseURL: string;
+	clientId: string;
+	grant: OAuthTokenGrant;
+	fetch: AuthFetch;
+	now: () => number;
+}): Promise<OAuthTokenGrant> {
+	const body = new URLSearchParams({
+		grant_type: 'refresh_token',
+		refresh_token: grant.refreshToken,
+		client_id: clientId,
+		resource: baseURL,
+	});
+	const response = await fetch(OAUTH_ROUTES.token.url(baseURL), {
+		method: 'POST',
+		body,
+		headers: { 'content-type': 'application/x-www-form-urlencoded' },
+		credentials: 'omit',
+	});
+	if (!response.ok) {
+		throw new Error(`OAuth refresh failed with ${response.status}.`);
+	}
+	const data = await response.json();
+	const { data: parsed, error } = parseOAuthTokenGrant(data, {
+		now,
+		fallbackRefreshToken: grant.refreshToken,
+	});
+	if (error) {
+		throw new Error(
+			`OAuth refresh produced an invalid grant: ${error.message}`,
+			{ cause: error },
+		);
+	}
+	return parsed;
+}
+
+/**
+ * Best-effort revoke of a refresh token at the OAuth revoke endpoint. Throws
+ * on a non-OK response; sign-out swallows that because local auth is already
+ * cleared by the time this runs.
+ */
+export async function revokeOAuthRefreshTokenWithEndpoint({
+	baseURL,
+	clientId,
+	refreshToken,
+	fetch,
+}: {
+	baseURL: string;
+	clientId: string;
+	refreshToken: string;
+	fetch: AuthFetch;
+}) {
+	const body = new URLSearchParams({
+		client_id: clientId,
+		token: refreshToken,
+		token_type_hint: 'refresh_token',
+	});
+	const response = await fetch(OAUTH_ROUTES.revoke.url(baseURL), {
+		method: 'POST',
+		body,
+		headers: { 'content-type': 'application/x-www-form-urlencoded' },
+		credentials: 'omit',
+	});
+	if (!response.ok) {
+		throw new Error(`OAuth revoke failed with ${response.status}.`);
+	}
 }

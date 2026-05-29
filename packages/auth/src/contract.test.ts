@@ -19,12 +19,11 @@ import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
 import { asOwnerId } from '@epicenter/constants/identity';
 import type { Keyring } from '@epicenter/encryption';
 import { Ok, type Result } from 'wellcrafted/result';
-import type {
-	AuthClient,
-	OAuthTokenGrant,
-	PersistedAuth,
-	PersistedAuthStorage,
-} from './index.js';
+// PersistedAuth and OAuthTokenGrant are intentionally not on the public root:
+// they are the credential-shaped cell and grant, internal to auth core.
+// Import them from their source module.
+import type { OAuthTokenGrant, PersistedAuth } from './auth-types.js';
+import type { AuthClient, PersistedAuthStorage } from './index.js';
 import { asUserId, createOAuthAppAuth } from './index.js';
 import type { OAuthLaunchResult } from './oauth-launchers/contract.js';
 
@@ -72,7 +71,7 @@ function createStorage(initial: PersistedAuth | null = null) {
 	let current = initial;
 	const saved: Array<PersistedAuth | null> = [];
 	const storage: PersistedAuthStorage = {
-		get: () => current,
+		initial: current,
 		set: async (next) => {
 			current = next;
 			saved.push(next);
@@ -1022,7 +1021,7 @@ test('signOut remains the final storage write when refresh persistence is in fli
 		resolveRefreshWrite = r;
 	});
 	const storage: PersistedAuthStorage = {
-		get: () => current,
+		initial: current,
 		set: async (next) => {
 			if (next?.grant.accessToken === 'new-access') {
 				markRefreshWriteStarted();

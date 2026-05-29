@@ -28,6 +28,18 @@ export type AuthState =
 			keyring: Keyring;
 	  };
 
+/**
+ * Fetch-compatible transport used by auth-owned HTTP calls.
+ *
+ * Consumers usually pass `auth.fetch` into API clients. Tests and machine auth
+ * inject this shape so the auth runtime can exercise refresh, revoke, and
+ * bearer attach without depending on global `fetch`.
+ */
+export type AuthFetch = (
+	input: Request | string | URL,
+	init?: RequestInit,
+) => Promise<Response>;
+
 export type AuthClient = {
 	state: AuthState;
 	/**

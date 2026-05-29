@@ -30,16 +30,14 @@ import {
 } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
-import type { AuthClient } from '../auth-contract.js';
+import type { AuthClient, AuthFetch } from '../auth-contract.js';
 import {
 	ApiSessionResponse,
 	PersistedAuth,
 	type UserId,
 } from '../auth-types.js';
-import {
-	type AuthFetch,
-	createOAuthAppAuth,
-} from '../create-oauth-app-auth.js';
+import { createOAuthAppAuth } from '../create-oauth-app-auth.js';
+import { serializePersistedAuth } from '../persisted-auth-storage.js';
 import { createOobOAuthLauncher } from './oob-launcher.js';
 
 /**
@@ -81,15 +79,13 @@ export function machineAuthFilePath({
 	return path.join(dataDir, 'auth', `${host.replaceAll(':', '_')}.json`);
 }
 
-export const MachineAuthRequestError = defineErrors({
+const MachineAuthRequestError = defineErrors({
 	RequestFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Auth transport request failed: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
-export type MachineAuthRequestError = InferErrors<
-	typeof MachineAuthRequestError
->;
+type MachineAuthRequestError = InferErrors<typeof MachineAuthRequestError>;
 
 export const MachineAuthStorageError = defineErrors({
 	StorageFailed: ({ cause }: { cause: unknown }) => ({
@@ -199,7 +195,7 @@ async function saveMachineTokens(
 			}
 			await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
 			const tmp = `${filePath}.tmp`;
-			await fs.writeFile(tmp, JSON.stringify(PersistedAuth.assert(value)), {
+			await fs.writeFile(tmp, serializePersistedAuth(value), {
 				mode: 0o600,
 			});
 			await fs.rename(tmp, filePath);
@@ -215,7 +211,7 @@ async function saveMachineTokens(
  * <email>" without a second round-trip. `email` may be empty when the
  * machine is offline during `status`.
  */
-export type MachineIdentity = {
+type MachineIdentity = {
 	user: { id: UserId; email: string };
 	keyring: Keyring;
 };
@@ -229,7 +225,7 @@ type CommonConfig = {
 	now?: () => number;
 };
 
-export type LoginWithOobConfig = CommonConfig & {
+type LoginWithOobConfig = CommonConfig & {
 	/**
 	 * Optional OOB callback override for tests and local trusted-client fixtures.
 	 * Production login uses the callback derived from `baseURL`.
@@ -249,14 +245,14 @@ export type LoginWithOobConfig = CommonConfig & {
 	readCode?: () => Promise<string>;
 };
 
-export type LoginWithOobResult = { identity: MachineIdentity };
+type LoginWithOobResult = { identity: MachineIdentity };
 
-export type StatusResult =
+type StatusResult =
 	| { status: 'signedOut' }
 	| { status: 'valid'; identity: MachineIdentity }
 	| { status: 'unverified'; identity: MachineIdentity };
 
-export type LogoutResult = { status: 'signedOut' } | { status: 'loggedOut' };
+type LogoutResult = { status: 'signedOut' } | { status: 'loggedOut' };
 
 /**
  * Run the OOB OAuth dance, call `/api/session` for the local workspace identity,
@@ -481,7 +477,6 @@ export async function createMachineAuthClient({
 			}).error,
 		);
 	}
-	let currentCell: PersistedAuth | null = loaded.data;
 	return Ok(
 		createOAuthAppAuth({
 			baseURL,
@@ -497,13 +492,12 @@ export async function createMachineAuthClient({
 					),
 			},
 			persistedAuthStorage: {
-				get: () => currentCell,
+				initial: loaded.data,
 				set: async (next) => {
 					const saved = await saveMachineTokens(next, {
 						filePath: authFilePath,
 					});
 					if (saved.error) throw saved.error;
-					currentCell = next;
 				},
 			},
 			fetch,

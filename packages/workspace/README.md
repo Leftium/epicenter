@@ -1,4 +1,4 @@
-# Epicenter: YJS-First Collaborative Workspace System
+# Epicenter: Yjs-First Collaborative Workspace System
 
 The hard problem with local-first apps is synchronization. If each device has its own SQLite file, how do you keep them in sync? If each device has its own markdown folder, same question.
 
@@ -124,7 +124,7 @@ Every exported function in this package falls into one of three verbs. The prefi
 |---|---|---|---|---|
 | `define*` | **None**: pure data or type contract | Schemas, defaults, typed bundle values | Plain config object or same value back | `defineTable`, `defineKv`, `defineMutation`, `defineQuery`, `defineWorkspace` |
 | `create*` | **Constructs**: bundles, models, registries, or pure definitions | Definitions, options | Disposable bundle or pure value | `createWorkspace` (root bundle: ydoc + tables + kv + empty actions + dispose), `createFuji` (app model), `createDisposableCache` (refcounted per-row cache) |
-| `attach*` | **Mutates a Y.Doc**: binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config (the three materializers take the bundle from `createWorkspace`) | Typed handle, non-idempotent, hold the reference | `attachRichText`, `attachPlainText`, `attachTimeline`, `attachIndexedDb`, `attachLocalStorage`, `attachYjsLog`, `attachBroadcastChannel`, `attachMarkdownMaterializer`, `attachBunSqliteMaterializer`, `attachTursoMaterializer` |
+| `attach*` | **Mutates a Y.Doc**: binds a slot, registers `ydoc.on('destroy')` | An existing `Y.Doc` + config (workspace materializers take the bundle from `createWorkspace`) | Typed handle, non-idempotent, hold the reference | `attachRichText`, `attachPlainText`, `attachTimeline`, `attachIndexedDb`, `attachLocalStorage`, `attachYjsLog`, `attachBroadcastChannel`, `attachMarkdownMaterializer`, `attachBunSqliteMaterializer` |
 | `open*` | **Opens a runtime over a Y.Doc or a local resource**: returns a typed handle with its own teardown. The Y.Doc-bound case (`openCollaboration`) registers `ydoc.on('destroy')` like `attach*` does; the resource case (`openSqliteReader`) takes no Y.Doc and returns a `[Symbol.dispose]()` handle. | Y.Doc + config, or resource config | Typed runtime handle | `openCollaboration`, `openSqliteReader`, `openWriterSqlite` |
 
 `createDisposableCache(build, opts?)` is the refcounted cache primitive. The
@@ -859,7 +859,7 @@ Browser apps use `attachIndexedDb(ydoc)` for unauthenticated docs, or `attachLoc
 
 For authenticated apps, call `await wipeLocalStorage({ server, ownerId })` after disposing the bundle to delete every owner-scoped encrypted IDB database on the current browser profile (sign-out, "delete my local data", account switch).
 
-`attachSqliteMaterializer` and `attachMarkdownMaterializer` are not persistence: they project workspace rows into queryable SQLite tables or `.md` files. See the materializer subsections below.
+`attachBunSqliteMaterializer` and `attachMarkdownMaterializer` are not persistence: they project workspace rows into queryable SQLite tables or `.md` files. See the materializer subsections below.
 
 ```typescript
 import {
@@ -1027,13 +1027,12 @@ function openBlog() {
 }
 
 // After mirror.whenFlushed:
-// blog.mirror.fts.search({ table: 'posts', query: 'hello' });
-// blog.mirror.count({ table: 'posts' });
-// blog.mirror.rebuild({ table: 'posts' });
+// blog.mirror.actions.sqlite_search({ table: 'posts', query: 'hello' });
+// blog.mirror.actions.sqlite_rebuild({ table: 'posts' });
 void openBlog;
 ```
 
-The materializer owns the SQLite file end-to-end. When you pass `fts: {...}`, the result exposes a nested `mirror.fts` namespace with the search action; omit `fts` and `mirror.fts` is absent from the return type entirely.
+The Bun SQLite materializer owns the daemon's queryable SQLite mirror file. When you pass `fts: {...}`, the returned `actions` registry includes `sqlite_search`; omit `fts` and the search action is absent.
 
 ## Workspace Dependencies
 
@@ -1301,15 +1300,15 @@ if (createAction.type === 'mutation') {
 
 All attachments, schema definitions, and the `createDisposableCache` primitive
 live at the package root. The only
-subpath exports today are the materializers (which pull in heavier dependencies)
-and a few utility surfaces.
+subpath exports keep runtime-specific and heavier surfaces out of the root
+browser-safe entry point.
 
 | Import path | What it exports | Public today |
 | --- | --- | --- |
 | `@epicenter/workspace` | `createDisposableCache`, `defineTable`, `defineKv`, browser-safe `attach*` (tables, kv, indexeddb, broadcast-channel, encryption, rich-text, plain-text, timeline), `openCollaboration`, `roomWsUrl`, action helpers, `onLocalUpdate`, `docGuid`, ids, dates, types | Yes |
-| `@epicenter/workspace/node` | Bun/Node `attach*` and `open*` (`attachYjsLog`, `attachYjsLogReader`, `openSqliteReader`, `openWriterSqlite`), daemon helpers, workspace paths | Yes |
+| `@epicenter/workspace/node` | Bun/Node `attach*` and `open*` (`attachYjsLog`, `attachYjsLogReader`, `openSqliteReader`, `openWorkspaceSqlite`, `openWriterSqlite`), daemon clients (`connectDaemonActions`, `findProjectRoot`), workspace paths | Yes |
 | `@epicenter/workspace/document/materializer/markdown` | `attachMarkdownMaterializer`, serializers | Yes |
-| `@epicenter/workspace/document/materializer/sqlite` | `attachSqliteMaterializer`, `generateDdl`, types | Yes |
+| `@epicenter/workspace/document/materializer/sqlite` | `attachBunSqliteMaterializer`, `generateDdl`, types | Yes |
 | `@epicenter/workspace/ai` | `actionsToAiTools` (TanStack AI bindings) | Yes |
 
 ## Architecture & Lifecycle

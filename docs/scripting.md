@@ -36,7 +36,7 @@ That is the whole API. No machine auth in the script process, no encryption setu
 
 ## Reads: the SQLite materializer
 
-`openWorkspaceSqlite(projectDir, workspaceId)` returns a `bun:sqlite` `Database` opened against `.epicenter/sqlite/<workspaceId>.db`. `.epicenter/` is generated project data, not a source layout or route registry. The daemon's `attachSqliteMaterializer` keeps that file fresh; the script opens it read-only with `PRAGMA query_only = 1`, so an errant `INSERT` fails at the driver instead of silently diverging.
+`openWorkspaceSqlite(projectDir, workspaceId)` returns a `bun:sqlite` `Database` opened against `.epicenter/sqlite/<workspaceId>.db`. `.epicenter/` is generated project data, not a source layout or route registry. The daemon's `attachBunSqliteMaterializer` keeps that file fresh; the script opens it read-only with `PRAGMA query_only = 1`, so an errant `INSERT` fails at the driver instead of silently diverging.
 
 The materializer is the same SQL surface the daemon serves to the SPA: column-typed rows, FTS5 indexes, normal joins. Query cost is `O(rows-returned)` rather than `O(history)`, so cron jobs do not pay the seconds-of-Y.Doc-replay tax that an in-process snapshot would cost.
 

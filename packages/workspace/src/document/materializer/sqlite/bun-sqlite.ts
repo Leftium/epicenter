@@ -4,8 +4,10 @@
  * writer-side WAL pragmas), mirrors every table in `workspace.tables` into
  * it, and closes the handle when the workspace's ydoc is destroyed.
  *
- * Daemon-side. For browser/in-memory use, see `attachTursoMaterializer`
- * in the sibling `./turso.ts`.
+ * Daemon-side. Browser and Tauri SQLite writers are intentionally not part of
+ * this public surface; add a new materializer only when a real runtime caller
+ * earns that product path.
+ *
  *
  * @example
  * ```ts

@@ -1,9 +1,9 @@
 /**
  * Convenience reader for the daemon's SQLite materializer.
  *
- * The daemon's `attachSqliteMaterializer` writes a queryable mirror at
- * `sqlitePath(projectDir, workspaceId)`. Scripts open that same file
- * read-only to issue plain SQL, bypassing the Y.Doc replay cost.
+ * The daemon's `attachBunSqliteMaterializer` writes a queryable mirror at
+ * `sqlitePath(projectDir, workspaceId)`. Scripts open that same file read-only
+ * to issue plain SQL, bypassing the Y.Doc replay cost.
  *
  * For ranked FTS5 search plus snippet helpers, use `openSqliteReader`
  * instead; this function intentionally returns a bare `bun:sqlite`

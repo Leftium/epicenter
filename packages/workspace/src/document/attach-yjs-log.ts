@@ -9,8 +9,8 @@
  * read-only consumers (script-side mirrors, the daemon-as-materializer-worker
  * design).
  *
- * Distinct from `attachSqliteMaterializer`, which writes a different file
- * with derived per-table rows for SQL queries. This module is the Y.Doc-
+ * Distinct from `attachBunSqliteMaterializer`, which writes a different file
+ * with derived per-table rows for SQL queries. This module is the Y.Doc
  * update-log layer; that one is the projection layer.
  *
  * The on-disk format is shared with `attachYjsLogReader`. If you change

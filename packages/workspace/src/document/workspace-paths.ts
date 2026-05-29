@@ -7,9 +7,8 @@
  *   sqlite/<id>.db  Queryable SQL surface (open with `sqlite3`, FTS5)
  *   md/<id>/        Markdown surface (open with your editor)
  *
- * All three are derived state the daemon writes; scripts and other readers
- * open them. The yjs file is the source of truth; sqlite and md are
- * projections the materializer keeps in sync.
+ * The daemon writes all three. The yjs file is the source of truth; sqlite and
+ * md are projections the materializers keep in sync.
  *
  * For daemon-process paths (sockets, log, metadata sidecar), see
  * `daemon/paths.ts`. Different audience, different rationale.
@@ -71,8 +70,9 @@ export function yjsPath(projectDir: string, workspaceId: string): string {
  * Path to a workspace's SQLite mirror file (the queryable SQL surface).
  *
  * Convention: `<projectDir>/.epicenter/sqlite/<workspaceId>.db`. The daemon's
- * `attachSqliteMaterializer` writes this file (in WAL journal mode); script
- * peers open the same path read-only via `openSqliteReader`.
+ * `attachBunSqliteMaterializer` writes this file (in WAL journal mode);
+ * script peers open the same path read-only via `openWorkspaceSqlite` for plain
+ * SQL or `openSqliteReader` for FTS snippets.
  *
  * Distinct from `yjsPath`: the yjs file is the role (durability of the
  * Y.Doc update log; SQLite is implementation detail and you never open it

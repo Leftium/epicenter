@@ -1,16 +1,14 @@
 /**
- * SQLite materializer core: the shared body that backend-specific
- * `attach*` factories wrap. Mirrors workspace table rows into a SQLite-shaped
- * mirror via the internal {@link MirrorDatabase} contract.
+ * SQLite materializer core: the internal body wrapped by
+ * `attachBunSqliteMaterializer`. Mirrors workspace table rows into a
+ * SQLite-shaped mirror via the internal {@link MirrorDatabase} contract.
  *
- * Public callers use the per-backend factories (e.g.
- * `attachBunSqliteMaterializer`), which own the native client lifecycle and
- * adapt it to {@link MirrorDatabase} before calling
- * {@link attachSqliteMaterializerCore} here.
+ * Public callers use `attachBunSqliteMaterializer`, which owns the native
+ * client lifecycle and forwards the client here.
  *
  * Teardown is hooked to the ydoc via `ydoc.once('destroy', ...)`. The
- * per-backend factory registers its own destroy handler too to close the
- * underlying native client.
+ * `attachBunSqliteMaterializer` registers its own destroy handler too to close
+ * the underlying native client.
  *
  * @internal
  * @module
@@ -39,13 +37,11 @@ import { createSqliteFtsLayer } from './fts.js';
 /**
  * Minimal SQL executor the materializer body talks to.
  *
- * Structurally compatible with sync drivers (`bun:sqlite`, `better-sqlite3`)
- * and async WASM drivers (`@libsql/client`, `@tursodatabase/database`). The
- * materializer `await`s every call, so sync drivers work without an adapter.
+ * Structurally compatible with sync drivers (`bun:sqlite`, `better-sqlite3`).
+ * The materializer `await`s every call, so sync drivers work without an
+ * adapter while tests can still use a small structural double.
  *
- * Kept internal: each per-backend `attach*` factory (e.g.
- * `attachBunSqliteMaterializer`) owns the adapter from a native client to
- * this contract. Consumers never construct or pass one in.
+ * Kept internal: consumers never construct or pass one in.
  *
  * @internal
  */
@@ -107,10 +103,8 @@ type RegisteredTable = {
 };
 
 /**
- * Internal shared materializer body. Each per-backend factory
- * (`attachBunSqliteMaterializer`, `attachTursoMaterializer`) constructs
- * an adapter from its native client to {@link MirrorDatabase} and forwards
- * into this function.
+ * Internal shared materializer body. `attachBunSqliteMaterializer` forwards
+ * its native client to this function.
  *
  * Callers outside this directory should not import this directly.
  *
@@ -374,9 +368,9 @@ export function attachSqliteMaterializerCore<
 /**
  * Build an UPSERT statement: insert with `ON CONFLICT(id) DO UPDATE`.
  *
- * Avoids `INSERT OR REPLACE` because Turso's Rust engine doesn't support
- * that form yet (parses as "INSERT OR REPLACE is only supported with
- * UPSERT"). Standard UPSERT works across bun:sqlite, libSQL, and Turso.
+ * Avoids `INSERT OR REPLACE` so updates preserve standard UPSERT semantics.
+ * Standard UPSERT works across SQLite-compatible engines and keeps this helper
+ * portable for tests.
  *
  * When `keys.length === 1` (just `id`), there's nothing to update on
  * conflict, so the statement collapses to `INSERT ... ON CONFLICT DO NOTHING`

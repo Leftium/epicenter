@@ -89,6 +89,13 @@ export async function loadProjectConfig(
 
 	const value = module.default;
 	if (Array.isArray(value) && value.every(isMount)) return Ok(value);
+	if (isMount(value)) {
+		return ProjectConfigError.ProjectConfigInvalid({
+			projectConfigPath,
+			detail:
+				'the default export is a single Mount; wrap it in an array, for example `export default [fuji()]`',
+		});
+	}
 	return ProjectConfigError.ProjectConfigInvalid({
 		projectConfigPath,
 		detail:

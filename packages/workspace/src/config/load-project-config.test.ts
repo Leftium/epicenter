@@ -73,7 +73,11 @@ describe('loadProjectConfig', () => {
 		writeConfig("export default { name: 'demo', open() {} };\n");
 
 		const { error } = await loadProjectConfig(projectDir);
-		expect(error?.name).toBe('ProjectConfigInvalid');
+		expect(error).toMatchObject({
+			name: 'ProjectConfigInvalid',
+			detail:
+				'the default export is a single Mount; wrap it in an array, for example `export default [fuji()]`',
+		});
 	});
 
 	test('rejects a Mount[] containing a non-Mount value', async () => {

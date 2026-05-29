@@ -44,7 +44,7 @@ import {
 import { Format } from 'typebox/format';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
-import { DateTimeString } from '../../shared/datetime-string';
+import type { DateTimeString } from '../../shared/datetime-string';
 import {
 	IANA_TIME_ZONE_FORMAT,
 	IanaTimeZone,
@@ -96,6 +96,11 @@ export const boolean = Type.Boolean;
  */
 export const literal = Type.Literal;
 
+type EnumMembers<T extends readonly TLiteralValue[]> = [
+	TLiteral<T[number] & TLiteralValue>,
+	...TLiteral<T[number] & TLiteralValue>[],
+];
+
 /**
  * Enum-of-literals column. Produces `Type.Union<TLiteral[]>` (anyOf-of-const).
  * The SQLite materializer's `deriveCheck` emits this shape as
@@ -107,11 +112,12 @@ export const literal = Type.Literal;
 export function enum_<const T extends readonly TLiteralValue[]>(
 	values: T,
 	opts?: TSchemaOptions,
-): TUnion<{ -readonly [K in keyof T]: TLiteral<T[K] & TLiteralValue> }> {
+): TUnion<EnumMembers<T>> {
+	if (values.length === 0) {
+		throw new Error('column.enum requires at least one value');
+	}
 	const members = values.map((v) => Type.Literal(v));
-	return Type.Union(members, opts) as TUnion<{
-		-readonly [K in keyof T]: TLiteral<T[K] & TLiteralValue>;
-	}>;
+	return Type.Union(members, opts) as TUnion<EnumMembers<T>>;
 }
 
 /**

@@ -126,7 +126,7 @@ export {
 // ════════════════════════════════════════════════════════════════════════════
 
 // Node-only helpers that resolve real paths (`findProjectRoot`,
-// `loadProjectConfig`, etc.) import `node:fs`, `node:path`, or `node:os`
+// `openProject`, etc.) import `node:fs`, `node:path`, or `node:os`
 // at module top level. They are exported from `@epicenter/workspace/node`;
 // keeping them out of this root barrel stops browser bundles (fuji,
 // whispering, etc.) from traversing `node:*` modules. Daemon runtime and

@@ -44,7 +44,7 @@ const sync = attachSync(base.ydoc, { url, loadToken, waitFor: idb.whenLoaded });
 
 export const workspace = Object.assign(base, {
   idb, sync,
-  actions: createFujiActions(base.tables),
+  actions: defineActions({ ... }),
   whenReady: idb.whenLoaded,
 });
 ```
@@ -87,7 +87,7 @@ The third rewrite was mechanical. Delete `defineWorkspace`. Have apps call `defi
 const fuji = defineDocument((id: string) => {
   const ydoc = new Y.Doc({ guid: id, gc: false });
 
-  const tables = attachTables(ydoc, fujiTables);
+  const tables = attachTables(ydoc, { entries: entriesTable });
   const kv = attachKv(ydoc, {});
   const awareness = attachAwareness(ydoc, {});
   const enc = attachEncryption(ydoc, { tables, kv });
@@ -103,7 +103,7 @@ const fuji = defineDocument((id: string) => {
 
   return {
     id, ydoc, tables: tables.helpers, kv: kv.helper, awareness, enc, idb, sync,
-    actions: createFujiActions(tables.helpers),
+    actions: defineActions({ ... }),
     whenReady: idb.whenReady,
     whenDisposed: Promise.all([idb.whenDisposed, sync.whenDisposed, enc.whenDisposed]).then(() => {}),
     [Symbol.dispose]() { ydoc.destroy(); },

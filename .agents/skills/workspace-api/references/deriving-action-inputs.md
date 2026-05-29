@@ -19,7 +19,7 @@ tables.notes.schema.properties.title // TSchema for the `title` column
 // ... one entry per column declared in the latest version
 ```
 
-Same `TObject` either way. Reach for the handle accessor (`tables.notes.schema`) from action factories where you already have the attached `tables`; reach for `definition.schema` from code that holds the definition without the handle (e.g. codegen, DDL).
+Same `TObject` either way. Reach for the handle accessor (`tables.notes.schema`) from inline workspace actions where you already have the attached `tables`; reach for `definition.schema` from code that holds the definition without the handle (e.g. codegen, DDL).
 
 ## Composition Pattern: No Helper Needed
 

@@ -7,17 +7,18 @@
  * SQLite file.
  */
 
-import { isAbsolute, join } from 'node:path';
-import { defineWorkspace } from '@epicenter/workspace';
+import { defineActions, defineWorkspace } from '@epicenter/workspace';
 import { defineMount } from '@epicenter/workspace/daemon';
 import {
 	attachMarkdownMaterializer,
+	type GitAutosaveConfig,
 	slugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import {
 	attachProjectInfrastructure,
 	markdownPath,
+	resolveProjectPath,
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
@@ -26,6 +27,7 @@ import { createHoneycrisp } from './honeycrisp.js';
 export type HoneycrispMountOptions = {
 	markdownDir?: string;
 	sqliteFile?: string;
+	git?: GitAutosaveConfig;
 };
 
 export function honeycrisp(opts: HoneycrispMountOptions = {}) {
@@ -47,22 +49,27 @@ export function honeycrisp(opts: HoneycrispMountOptions = {}) {
 			workspace.ydoc.clientID = yDocClientId;
 
 			const sqliteFile =
-				opts.sqliteFile === undefined
-					? sqlitePath(projectDir, workspace.ydoc.guid)
-					: resolveProjectPath(projectDir, opts.sqliteFile);
+				resolveProjectPath(projectDir, opts.sqliteFile) ??
+				sqlitePath(projectDir, workspace.ydoc.guid);
 			const mdDir =
-				opts.markdownDir === undefined
-					? markdownPath(projectDir, workspace.ydoc.guid)
-					: resolveProjectPath(projectDir, opts.markdownDir);
+				resolveProjectPath(projectDir, opts.markdownDir) ??
+				markdownPath(projectDir, workspace.ydoc.guid);
 
-			attachBunSqliteMaterializer(workspace, {
+			const sqlite = attachBunSqliteMaterializer(workspace, {
 				filePath: sqliteFile,
 				log: createLogger(`${mount}-sqlite`),
 			});
 
-			attachMarkdownMaterializer(workspace, {
+			const markdown = attachMarkdownMaterializer(workspace, {
 				dir: mdDir,
 				perTable: { notes: { filename: slugFilename('title') } },
+				git: opts.git,
+			});
+
+			const actions = defineActions({
+				...workspace.actions,
+				...sqlite.actions,
+				...markdown.actions,
 			});
 
 			const infrastructure = attachProjectInfrastructure(workspace.ydoc, {
@@ -71,19 +78,17 @@ export function honeycrisp(opts: HoneycrispMountOptions = {}) {
 				deviceId,
 				openWebSocket,
 				onReconnectSignal,
-				actions: workspace.actions,
+				actions,
 			});
 
 			return defineWorkspace({
 				...workspace,
 				...infrastructure,
+				markdown,
+				actions,
 			});
 		},
 	});
 }
 
 export type HoneycrispMount = ReturnType<typeof honeycrisp>;
-
-function resolveProjectPath(projectDir: string, value: string): string {
-	return isAbsolute(value) ? value : join(projectDir, value);
-}

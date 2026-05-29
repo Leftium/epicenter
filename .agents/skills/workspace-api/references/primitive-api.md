@@ -62,34 +62,52 @@ The builder is a plain function. For a cached, refcounted fan-out surface (share
 For the app's top-level workspace doc, never call `new Y.Doc` directly. Use `createWorkspace`:
 
 ```typescript
-import { createWorkspace } from '@epicenter/workspace';
-import { honeycrispTables } from './definition';
+import { createWorkspace, defineActions, defineWorkspace } from '@epicenter/workspace';
+import { foldersTable, notesTable } from './definition';
 
 // Encrypted app: pass a `keyring` accessor.
 export function createHoneycrispWorkspace(opts: { keyring: () => Keyring }) {
-  return createWorkspace({
+  const workspace = createWorkspace({
     id: HONEYCRISP_ID,
     keyring: opts.keyring,
-    tables: honeycrispTables,
+    tables: { folders: foldersTable, notes: notesTable },
     kv: {},
+  });
+
+  return defineWorkspace({
+    ...workspace,
+    actions: defineActions({}),
+    [Symbol.dispose]() {
+      workspace[Symbol.dispose]();
+    },
   });
 }
 
 // Plaintext app: omit `keyring` entirely.
 export function createWhisperingWorkspace() {
-  return createWorkspace({
+  const workspace = createWorkspace({
     id: 'whispering',
-    tables: whisperingTables,
-    kv: whisperingKv,
+    tables: { recordings },
+    kv: {
+      'ui.alwaysOnTop': defineKv(column.boolean(), () => false),
+    },
+  });
+
+  return defineWorkspace({
+    ...workspace,
+    actions: defineActions({}),
+    [Symbol.dispose]() {
+      workspace[Symbol.dispose]();
+    },
   });
 }
 ```
 
-`createWorkspace` returns `{ ydoc, tables, kv, [Symbol.dispose] }`. Tables and KV are already wired (encrypted when `keyring` is provided, plaintext otherwise). Other primitives attach onto the bundle's `ydoc`:
+`createWorkspace` returns `{ ydoc, tables, kv, [Symbol.dispose] }`. App factories usually wrap it with `defineWorkspace({ ...workspace, actions: defineActions({ ... }) })`. Tables and KV are already wired (encrypted when `keyring` is provided, plaintext otherwise). Other primitives attach onto the bundle's `ydoc`:
 
 ```ts
 const workspace   = createHoneycrispWorkspace({ keyring: signedIn.keyring });
-const actions     = createHoneycrispActions(workspace);     // takes the bundle
+const actions     = workspace.actions;                      // app workspace owns pure actions
 const idb         = attachLocalStorage(workspace.ydoc, {...});
 const collab      = openCollaboration(workspace.ydoc, {...});
 attachBunSqliteMaterializer(workspace, {...});              // materializers take the bundle
@@ -122,7 +140,7 @@ Encryption is no longer a separate `attachEncryption` step. It's an optional `ke
 const workspace = createWorkspace({
   id: HONEYCRISP_ID,
   keyring: () => requireSignedIn(auth).keyring,  // accessor: read at attach time
-  tables: honeycrispTables,
+  tables: { folders: foldersTable, notes: notesTable },
   kv: {},
 });
 ```

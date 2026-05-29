@@ -381,7 +381,7 @@ describe('attachSqliteMaterializerCore', () => {
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([]);
 
-				await testSetup.workspace.sqlite.rebuild({});
+				await testSetup.workspace.sqlite.actions.sqlite_rebuild({});
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([
 					{ id: 'post-1', published: null, title: 'Persisted in Yjs' },
@@ -411,7 +411,9 @@ describe('attachSqliteMaterializerCore', () => {
 				expect(getRows(testSetup.db, 'posts')).toEqual([]);
 				expect(getRows(testSetup.db, 'notes')).toHaveLength(1);
 
-				await testSetup.workspace.sqlite.rebuild({ table: 'posts' });
+				await testSetup.workspace.sqlite.actions.sqlite_rebuild({
+					table: 'posts',
+				});
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([
 					{ id: 'post-1', published: null, title: 'Post row' },
@@ -429,71 +431,10 @@ describe('attachSqliteMaterializerCore', () => {
 				await testSetup.workspace.sqlite.whenFlushed;
 
 				expect(() =>
-					testSetup.workspace.sqlite.rebuild({
+					testSetup.workspace.sqlite.actions.sqlite_rebuild({
 						table: 'nonexistent',
 					}),
 				).toThrow('not in the materialized table set');
-			} finally {
-				await cleanup(testSetup);
-			}
-		});
-	});
-
-	describe('count', () => {
-		test('count returns row count for a materialized table', async () => {
-			const testSetup = setup();
-
-			try {
-				testSetup.workspace.tables.posts.set({
-					id: 'post-1',
-					title: 'First',
-					published: null,
-				});
-				testSetup.workspace.tables.posts.set({
-					id: 'post-2',
-					title: 'Second',
-					published: null,
-				});
-
-				await testSetup.workspace.sqlite.whenFlushed;
-
-				expect(await testSetup.workspace.sqlite.count({ table: 'posts' })).toBe(
-					2,
-				);
-				expect(await testSetup.workspace.sqlite.count({ table: 'notes' })).toBe(
-					0,
-				);
-			} finally {
-				await cleanup(testSetup);
-			}
-		});
-
-		test('count returns 0 for non-existent table', async () => {
-			const testSetup = setup();
-
-			try {
-				await testSetup.workspace.sqlite.whenFlushed;
-
-				expect(
-					await testSetup.workspace.sqlite.count({
-						table: 'nonexistent',
-					}),
-				).toBe(0);
-			} finally {
-				await cleanup(testSetup);
-			}
-		});
-
-		test('count propagates SQLite failures for registered tables', async () => {
-			const testSetup = setup();
-
-			try {
-				await testSetup.workspace.sqlite.whenFlushed;
-				testSetup.db.run('DROP TABLE "posts"');
-
-				await expect(
-					testSetup.workspace.sqlite.count({ table: 'posts' }),
-				).rejects.toThrow();
 			} finally {
 				await cleanup(testSetup);
 			}
@@ -537,17 +478,17 @@ describe('attachSqliteMaterializerCore', () => {
 	// ============================================================================
 
 	describe('search', () => {
-		test('fts namespace is absent when fts is not configured', async () => {
+		test('sqlite_search action is absent when fts is not configured', async () => {
 			const testSetup = setup();
 
 			try {
 				await testSetup.workspace.sqlite.whenFlushed;
 
-				// The setup helper's build callback erases the FTS generic, so
-				// the runtime value is what we assert against: no FTS was passed,
-				// so the layer was never constructed, so `fts` is undefined.
+				// No FTS was passed, so the layer was never constructed and the
+				// search action is never added to the registry.
 				expect(
-					(testSetup.workspace.sqlite as { fts?: unknown }).fts,
+					(testSetup.workspace.sqlite.actions as Record<string, unknown>)
+						.sqlite_search,
 				).toBeUndefined();
 			} finally {
 				await cleanup(testSetup);
@@ -578,11 +519,13 @@ describe('attachSqliteMaterializerCore', () => {
 					await testSetup.workspace.sqlite.whenFlushed;
 
 					const sqliteWithFts = testSetup.workspace.sqlite as unknown as {
-						fts: {
-							search: (input: Record<string, unknown>) => Promise<unknown>;
+						actions: {
+							sqlite_search: (
+								input: Record<string, unknown>,
+							) => Promise<unknown>;
 						};
 					};
-					const results = (await sqliteWithFts.fts.search({
+					const results = (await sqliteWithFts.actions.sqlite_search({
 						table: 'posts',
 						query: 'mirror',
 						limit: 10,
@@ -604,23 +547,20 @@ describe('attachSqliteMaterializerCore', () => {
 	// ============================================================================
 
 	describe('action brand', () => {
-		test('count and rebuild are detectable via isAction()', async () => {
+		test('sqlite_rebuild is detectable via isAction()', async () => {
 			const testSetup = setup();
 
 			try {
 				const { sqlite } = testSetup.workspace;
-				expect(isAction(sqlite.count)).toBe(true);
-				expect(isAction(sqlite.rebuild)).toBe(true);
-
-				expect(isQuery(sqlite.count)).toBe(true);
-				expect(isMutation(sqlite.rebuild)).toBe(true);
+				expect(isAction(sqlite.actions.sqlite_rebuild)).toBe(true);
+				expect(isMutation(sqlite.actions.sqlite_rebuild)).toBe(true);
 			} finally {
 				await cleanup(testSetup);
 			}
 		});
 
 		if (hasFts5) {
-			test('fts.search is detectable via isAction() when configured', async () => {
+			test('sqlite_search is detectable via isAction() when configured', async () => {
 				const testSetup = setup({
 					build: (t) => ({
 						tables: { posts: t.posts },
@@ -631,10 +571,10 @@ describe('attachSqliteMaterializerCore', () => {
 				try {
 					await testSetup.workspace.sqlite.whenFlushed;
 					const sqliteWithFts = testSetup.workspace.sqlite as unknown as {
-						fts: { search: unknown };
+						actions: { sqlite_search: unknown };
 					};
-					expect(isAction(sqliteWithFts.fts.search)).toBe(true);
-					expect(isQuery(sqliteWithFts.fts.search)).toBe(true);
+					expect(isAction(sqliteWithFts.actions.sqlite_search)).toBe(true);
+					expect(isQuery(sqliteWithFts.actions.sqlite_search)).toBe(true);
 				} finally {
 					await cleanup(testSetup);
 				}

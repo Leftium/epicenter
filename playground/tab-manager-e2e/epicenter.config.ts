@@ -1,3 +1,3 @@
 import tabManager from './workspaces/tabManager/daemon.ts';
 
-export default tabManager;
+export default [tabManager];

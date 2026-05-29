@@ -13,7 +13,6 @@ import { createLogger } from 'wellcrafted/logger';
 import { Err, Ok, tryAsync, trySync } from 'wellcrafted/result';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { whispering } from '$lib/whispering/whispering';
-import { whisperingKv } from '$lib/workspace';
 
 // ── Migration state ──────────────────────────────────────────────────────────
 
@@ -59,9 +58,7 @@ function setMigrationState(state: MigrationState): void {
 // literal key types we can't produce from a data-driven loop.
 const setKv = whispering.kv.set as (key: string, value: unknown) => void;
 const getKv = whispering.kv.get as (key: string) => unknown;
-const getKvDefault = (key: string) =>
-	(whisperingKv as Record<string, { defaultValue: unknown }>)[key]
-		?.defaultValue;
+const getKvDefault = whispering.settings.getDefault as (key: string) => unknown;
 
 /**
  * Migrate old settings from the monolithic `whispering-settings` localStorage

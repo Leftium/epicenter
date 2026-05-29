@@ -1,11 +1,12 @@
 import type { SchemaClient } from '@better-auth/oauth-provider';
-import { APPS, localUrl } from '#apps';
+import { APPS, appOrigins } from '#apps';
+import { OAUTH_ROUTES } from './oauth-routes.js';
 
 /**
  * Dev port for the dashboard SPA. The dashboard is served at
  * `api.epicenter.so/dashboard` in production (same origin as the API), so it
  * has no `APPS` entry. In dev it runs on its own Vite server; this port is
- * the single source of truth, mirrored by `apps/dashboard/vite.config.ts`.
+ * the single source of truth, mirrored by `apps/api/ui/vite.config.ts`.
  */
 const DASHBOARD_DEV_PORT = 5178;
 
@@ -68,15 +69,24 @@ export const EPICENTER_OAUTH_SCOPES = [
 export const EPICENTER_OAUTH_SCOPE = EPICENTER_OAUTH_SCOPES.join(' ');
 
 /**
- * Every redirect URI for an app: the dev `http://localhost:<port>` origin
- * plus every entry in `APPS[*].urls`, each joined to `path`. Used for apps
- * that own their origin (Fuji, Honeycrisp, Opensidian, Zhongwen).
+ * Path every first-party app receives the OAuth callback at, on each of its
+ * origins. A convention shared by all origin-owning apps, not a per-app
+ * choice, so it lives here rather than as an {@link appCallbacks} argument.
  */
-function appCallbacks(
-	app: { port: number; urls: readonly string[] },
-	path: string,
-): string[] {
-	return [localUrl(app), ...app.urls].map((origin) => `${origin}${path}`);
+const AUTH_CALLBACK_PATH = '/auth/callback';
+
+/**
+ * Every redirect URI for an app that owns its origin: each origin the app
+ * answers on ({@link appOrigins}, i.e. dev plus prod) joined to
+ * {@link AUTH_CALLBACK_PATH}. Used by Fuji, Honeycrisp, Opensidian, and
+ * Zhongwen.
+ */
+function appCallbacks(app: {
+	port: number;
+	url: string;
+	aliases?: readonly string[];
+}): string[] {
+	return appOrigins(app).map((origin) => `${origin}${AUTH_CALLBACK_PATH}`);
 }
 
 /**
@@ -87,8 +97,8 @@ function appCallbacks(
  * `https://api.acme.com` and `wrangler dev` on a custom port each register
  * their own callbacks without anyone editing this file.
  *
- * The API seed (`ensureTrustedOAuthClients`) calls this once per worker at
- * cold boot; `authPlugins` calls it to derive the trusted-client-id set.
+ * The API `oauth:seed` deploy script calls this to upsert the client rows;
+ * `authPlugins` calls it to derive the trusted-client-id set.
  */
 export function buildTrustedOAuthClients(apiBaseURL: string) {
 	return [
@@ -106,7 +116,7 @@ export function buildTrustedOAuthClients(apiBaseURL: string) {
 			name: 'Fuji',
 			type: 'user-agent-based',
 			redirectUris: [
-				...appCallbacks(APPS.FUJI, '/auth/callback'),
+				...appCallbacks(APPS.FUJI),
 				EPICENTER_FUJI_TAURI_OAUTH_REDIRECT_URI,
 			],
 		},
@@ -114,13 +124,13 @@ export function buildTrustedOAuthClients(apiBaseURL: string) {
 			clientId: EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID,
 			name: 'Honeycrisp',
 			type: 'user-agent-based',
-			redirectUris: appCallbacks(APPS.HONEYCRISP, '/auth/callback'),
+			redirectUris: appCallbacks(APPS.HONEYCRISP),
 		},
 		{
 			clientId: EPICENTER_OPENSIDIAN_OAUTH_CLIENT_ID,
 			name: 'Opensidian',
 			type: 'user-agent-based',
-			redirectUris: appCallbacks(APPS.OPENSIDIAN, '/auth/callback'),
+			redirectUris: appCallbacks(APPS.OPENSIDIAN),
 		},
 		{
 			clientId: EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID,
@@ -132,13 +142,50 @@ export function buildTrustedOAuthClients(apiBaseURL: string) {
 			clientId: EPICENTER_ZHONGWEN_OAUTH_CLIENT_ID,
 			name: 'Zhongwen',
 			type: 'user-agent-based',
-			redirectUris: appCallbacks(APPS.ZHONGWEN, '/auth/callback'),
+			redirectUris: appCallbacks(APPS.ZHONGWEN),
 		},
 		{
 			clientId: EPICENTER_CLI_OAUTH_CLIENT_ID,
 			name: 'Epicenter CLI',
 			type: 'native',
-			redirectUris: [`${apiBaseURL}/auth/cli-callback`],
+			redirectUris: [OAUTH_ROUTES.cliCallback.url(apiBaseURL)],
 		},
 	] as const satisfies readonly TrustedOAuthClient[];
+}
+
+/**
+ * Project a checked-in trusted client into Better Auth's `oauth_client` row.
+ *
+ * Used by the `apps/api` `oauth:seed` deploy script and by the auth tests that
+ * need the exact row Better Auth stores. It owns the trusted-client invariant:
+ * first-party apps are public PKCE clients (PKCE required, consent skipped,
+ * authorization-code grant, the common Epicenter scopes).
+ *
+ * This lives beside {@link buildTrustedOAuthClients} (its input) rather than in
+ * `@epicenter/server`, so the seed script reaches it without importing the
+ * request-path auth barrel. The returned shape mirrors the `oauth_client`
+ * table; the seed's parameterized `INSERT` is the write-time contract, so the
+ * column list there must stay in sync with these fields.
+ */
+export function projectTrustedOAuthClientToRow(
+	client: TrustedOAuthClient,
+	now = new Date(),
+) {
+	return {
+		id: client.clientId,
+		clientId: client.clientId,
+		disabled: false,
+		skipConsent: true,
+		scopes: [...EPICENTER_OAUTH_SCOPES],
+		createdAt: now,
+		updatedAt: now,
+		name: client.name,
+		redirectUris: [...client.redirectUris],
+		tokenEndpointAuthMethod: 'none',
+		grantTypes: ['authorization_code'],
+		responseTypes: ['code'],
+		public: true,
+		type: client.type,
+		requirePKCE: true,
+	};
 }

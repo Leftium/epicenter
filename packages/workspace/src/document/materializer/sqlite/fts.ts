@@ -2,7 +2,7 @@
  * FTS5 full-text search for the SQLite materializer.
  *
  * Owns the FTS5 virtual table DDL, content-sync triggers, the search SQL, and
- * the `search` action exposed on the materializer's nested `fts` namespace.
+ * the `search` action exposed in the materializer's `actions` registry as `sqlite_search`.
  * Kept out of `core.ts` so the materializer body only knows about Y.Doc →
  * SQLite mirroring; the SQLite → FTS5 step lives entirely here.
  *
@@ -217,7 +217,7 @@ async function ftsSearch(
  * `fts` option. Holds the FTS column map, exposes a `beforeFullLoad()` setup
  * pass that runs after table DDL and before the bulk insert (so triggers
  * populate `<table>_fts` for free during the existing full-load), and surfaces
- * the `search` action that lands on `materializer.fts.search`.
+ * the `search` action that lands on `materializer.actions.sqlite_search`.
  *
  * Pure construction at call time: registers no listeners and runs no DDL.
  * Returning the factory unconditionally would be fine; the caller decides

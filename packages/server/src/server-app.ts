@@ -4,32 +4,26 @@
  * normalization, CSRF) and returns a `Hono` instance the deployment
  * mounts every other sub-app on.
  *
- * Reads the deployment's API origin from {@link APPS} so the same code
- * picks the right Better Auth `baseURL` for wrangler dev, localhost, and
- * production without per-deployment branching.
+ * The deployment supplies its own canonical API origin through
+ * {@link CreateServerAppOptions.resolveOrigin}: the hosted cloud bakes a
+ * constant (`apps/api`), a self-host reads operator config (`apps/team-api`).
+ * The library never reaches for a shared `c.env` var name, so the origin is
+ * always explicit and never inferred from the request. This `resolveOrigin`
+ * hook is the first slice of the future runtime port (db, sessionStore,
+ * assets, rooms, afterResponse); see
+ * `specs/20260528T130000-runtime-port-and-public-origin.md`.
  */
 
-import { APPS, localUrl } from '@epicenter/constants/apps';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Hono } from 'hono';
 import pg from 'pg';
 import { createAuth } from './auth/create-auth.js';
-import { ensureTrustedOAuthClients } from './auth/trusted-oauth-clients.js';
 import * as schema from './db/schema/index.js';
 import { corsMiddleware } from './middleware/cors.js';
 import { requireOriginForCookieMutations } from './middleware/require-origin-for-cookie-mutations.js';
 import { singleCredential } from './middleware/single-credential.js';
 import { createDurableObjectRooms } from './room/backends/cloudflare/registry.js';
 import type { Env } from './types.js';
-
-const PRODUCTION_API_ORIGIN = APPS.API.urls[0];
-const LOCAL_API_ORIGIN = localUrl(APPS.API);
-// Wrangler dev serves the API custom domain over plain HTTP, so requests it
-// makes report `Origin: http://api.epicenter.so`. Production Cloudflare
-// upgrades the domain to HTTPS, so a real browser never sends this Origin
-// against the deployed worker; it is a dev-loop artifact. Inlined here, the
-// only consumer, rather than exported from trusted-origins.
-const WRANGLER_DEV_API_ORIGIN = `http://${new URL(PRODUCTION_API_ORIGIN).host}`;
 
 /**
  * Construct the parent `Hono` app every deployment mounts sub-apps onto.
@@ -38,8 +32,7 @@ const WRANGLER_DEV_API_ORIGIN = `http://${new URL(PRODUCTION_API_ORIGIN).host}`;
  *
  *   1. CORS (skips WS upgrades).
  *   2. Per-request pg connection + after-response queue.
- *   3. Better Auth context (baseURL, trusted OAuth client seed, auth
- *      instance).
+ *   3. Better Auth context (baseURL, auth instance).
  *   4. {@link singleCredential}: reject ambiguous auth and lift WS bearer
  *      subprotocol into `Authorization`.
  *
@@ -47,7 +40,21 @@ const WRANGLER_DEV_API_ORIGIN = `http://${new URL(PRODUCTION_API_ORIGIN).host}`;
  * and the rooms registry. The deployment is responsible for exposing a
  * health endpoint on `/`.
  */
-export function createServerApp(): Hono<Env> {
+type CreateServerAppOptions = {
+	/**
+	 * Resolve this deployment's canonical public origin from the per-request
+	 * `c.env`. Becomes the Better Auth `baseURL`, OAuth issuer, and token
+	 * audience, so it must be stable per deployment and never inferred from
+	 * `c.req.url`. `apps/api` returns `env.API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL`
+	 * (dev override, else the baked constant); `apps/team-api` returns the
+	 * operator-set `env.API_PUBLIC_ORIGIN`.
+	 */
+	resolveOrigin: (env: Cloudflare.Env) => string;
+};
+
+export function createServerApp({
+	resolveOrigin,
+}: CreateServerAppOptions): Hono<Env> {
 	const app = new Hono<Env>();
 
 	// 1. CORS
@@ -76,15 +83,15 @@ export function createServerApp(): Hono<Env> {
 		}
 	});
 
-	// 3. Auth context. baseURL flips to localhost during `wrangler dev`
-	// so Better Auth's signed-cookie origin matches the dev host.
+	// 3. Auth context. `resolveOrigin` yields the deployment's canonical auth
+	// origin: the Better Auth baseURL, OAuth issuer, and token audience. It
+	// must be stable per deployment (a self-host gets its own domain, not
+	// Epicenter Cloud's), so the deployment supplies it explicitly, never
+	// inferred from the request. Dev injects localhost via scripts/dev.ts.
+	// First-party OAuth client rows are seeded at deploy time (apps/api
+	// `oauth:seed:*`), so this path only reads.
 	app.use('*', async (c, next) => {
-		const origin = new URL(c.req.url).origin;
-		const baseURL =
-			origin === LOCAL_API_ORIGIN || origin === WRANGLER_DEV_API_ORIGIN
-				? LOCAL_API_ORIGIN
-				: PRODUCTION_API_ORIGIN;
-		await ensureTrustedOAuthClients(c.var.db, baseURL);
+		const baseURL = resolveOrigin(c.env);
 		c.set('authBaseURL', baseURL);
 		c.set(
 			'auth',

@@ -2,13 +2,11 @@
  * Project config loading tests.
  *
  * Verifies that `epicenter.config.ts` is discovered, imported, and runtime
- * validated before daemon startup consumes the mounts.
+ * validated before daemon startup consumes the mount list.
  *
- * Key behaviors:
- * - missing configs return a typed not-found error
- * - a Mount default export normalizes to a single-element array
- * - a Mount[] default export passes through
- * - non-Mount values are rejected with the config path in the failure
+ * Invariant under test: `loadProjectConfig` is total. Every failure mode
+ * (missing file, import/syntax error, wrong-shaped export) comes back as a
+ * specific `ProjectConfigError` variant in the error channel; it never throws.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -43,16 +41,6 @@ describe('loadProjectConfig', () => {
 		});
 	});
 
-	test('normalizes a single Mount default export into a one-element array', async () => {
-		writeConfig("export default { name: 'demo', open() {} };\n");
-
-		const { data, error } = await loadProjectConfig(projectDir);
-		if (error !== null) throw new Error(error.message);
-		expect(data).toHaveLength(1);
-		expect(data[0]?.name).toBe('demo');
-		expect(data[0]?.open).toBeFunction();
-	});
-
 	test('passes through a Mount[] default export', async () => {
 		writeConfig(
 			"export default [{ name: 'a', open() {} }, { name: 'b', open() {} }];\n",
@@ -63,7 +51,7 @@ describe('loadProjectConfig', () => {
 		expect(data.map((mount) => mount.name)).toEqual(['a', 'b']);
 	});
 
-	test('returns an empty array for an empty Mount[] default export', async () => {
+	test('passes through an empty Mount[] default export', async () => {
 		writeConfig('export default [];\n');
 
 		const { data, error } = await loadProjectConfig(projectDir);
@@ -71,51 +59,44 @@ describe('loadProjectConfig', () => {
 		expect(data).toEqual([]);
 	});
 
-	test('throws with the config path when the default export is neither a Mount nor a Mount[]', async () => {
+	test('rejects a non-array default export', async () => {
 		writeConfig('export default { notAMount: true };\n');
 
-		await expect(loadProjectConfig(projectDir)).rejects.toThrow(
-			`loadProjectConfig: ${join(projectDir, 'epicenter.config.ts')} must default-export a Mount or Mount[]`,
-		);
+		const { error } = await loadProjectConfig(projectDir);
+		expect(error).toMatchObject({
+			name: 'ProjectConfigInvalid',
+			projectConfigPath: join(projectDir, 'epicenter.config.ts'),
+		});
 	});
 
-	test('throws when the Mount[] default export contains a non-Mount value', async () => {
+	test('rejects a bare Mount that is not wrapped in an array', async () => {
+		writeConfig("export default { name: 'demo', open() {} };\n");
+
+		const { error } = await loadProjectConfig(projectDir);
+		expect(error?.name).toBe('ProjectConfigInvalid');
+	});
+
+	test('rejects a Mount[] containing a non-Mount value', async () => {
 		writeConfig("export default [{ name: 'demo', open() {} }, { open: 1 }];\n");
 
-		await expect(loadProjectConfig(projectDir)).rejects.toThrow(
-			`loadProjectConfig: ${join(projectDir, 'epicenter.config.ts')} default-exports an array containing a non-Mount value.`,
-		);
+		const { error } = await loadProjectConfig(projectDir);
+		expect(error?.name).toBe('ProjectConfigInvalid');
 	});
 
-	test('throws when a Mount lacks open()', async () => {
-		writeConfig("export default { name: 'demo' };\n");
-
-		await expect(loadProjectConfig(projectDir)).rejects.toThrow(
-			`loadProjectConfig: ${join(projectDir, 'epicenter.config.ts')} must default-export a Mount or Mount[]`,
-		);
-	});
-
-	test('throws when a Mount lacks a string name', async () => {
-		writeConfig('export default { open() {} };\n');
-
-		await expect(loadProjectConfig(projectDir)).rejects.toThrow(
-			`loadProjectConfig: ${join(projectDir, 'epicenter.config.ts')} must default-export a Mount or Mount[]`,
-		);
-	});
-
-	test('throws with the config path when the default export is missing', async () => {
+	test('rejects a config with no default export', async () => {
 		writeConfig('export const config = {};\n');
 
-		await expect(loadProjectConfig(projectDir)).rejects.toThrow(
-			`loadProjectConfig: ${join(projectDir, 'epicenter.config.ts')} must default-export`,
-		);
+		const { error } = await loadProjectConfig(projectDir);
+		expect(error?.name).toBe('ProjectConfigInvalid');
 	});
 
-	test('throws with the config path when the config has bad syntax', async () => {
+	test('reports a structured import error for bad syntax', async () => {
 		writeConfig('export default {;\n');
 
-		await expect(loadProjectConfig(projectDir)).rejects.toThrow(
-			`loadProjectConfig: failed to load ${join(projectDir, 'epicenter.config.ts')}`,
-		);
+		const { error } = await loadProjectConfig(projectDir);
+		expect(error).toMatchObject({
+			name: 'ProjectConfigImportFailed',
+			projectConfigPath: join(projectDir, 'epicenter.config.ts'),
+		});
 	});
 });

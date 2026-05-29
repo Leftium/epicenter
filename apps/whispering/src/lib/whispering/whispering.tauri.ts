@@ -1,9 +1,8 @@
 /**
  * Tauri runtime client for Whispering.
  *
- * Creates the shared workspace model, attaches local persistence and
- * same-device broadcast sync, then adds native actions that are only available
- * in the desktop app.
+ * Builds the workspace, attaches IndexedDB persistence and same-device
+ * broadcast sync, and adds native actions only available in the desktop app.
  */
 
 import {
@@ -22,8 +21,7 @@ import {
 } from 'wellcrafted/error';
 import { type Result, tryAsync } from 'wellcrafted/result';
 import { commands } from '$lib/tauri/commands';
-import type { Recording } from '$lib/workspace';
-import { createWhisperingWorkspace } from './index';
+import { createWhispering, type Recording } from '$lib/workspace';
 
 const RecordingMarkdownExportError = defineErrors({
 	WriteFailed: ({ cause }: { cause: unknown }) => ({
@@ -46,7 +44,7 @@ type RecordingMarkdownExportResult =
 	  };
 
 export function openWhispering() {
-	const workspace = createWhisperingWorkspace();
+	const workspace = createWhispering();
 
 	const idb = attachIndexedDb(workspace.ydoc);
 	attachBroadcastChannel(workspace.ydoc);

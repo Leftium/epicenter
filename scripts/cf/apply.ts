@@ -140,7 +140,7 @@ async function cf<T>(method: string, path: string, body?: unknown): Promise<T> {
 // instead of silently leaving that zone unmanaged.
 const orphans: string[] = [];
 for (const [id, app] of Object.entries(APPS)) {
-	for (const url of app.urls) {
+	for (const url of [app.url, ...('aliases' in app ? app.aliases : [])]) {
 		const host = new URL(url).hostname;
 		const onZone = ZONES.some(
 			(z) => host === z.name || host.endsWith(`.${z.name}`),

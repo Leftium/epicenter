@@ -10,7 +10,7 @@
 		deviceConfig,
 	} from '$lib/state/device-config.svelte';
 	import { createPressedKeys } from '$lib/utils/createPressedKeys.svelte';
-	import { whisperingKv } from '$lib/workspace';
+	import { whispering } from '$lib/whispering/whispering';
 	import GlobalKeyboardShortcutRecorder from './GlobalKeyboardShortcutRecorder.svelte';
 	import LocalKeyboardShortcutRecorder from './LocalKeyboardShortcutRecorder.svelte';
 
@@ -23,10 +23,10 @@
 	/** Look up the definition default for a shortcut key from the correct store. */
 	function getDefaultShortcut(commandId: string): string | null {
 		if (type === 'local') {
-			const defs = whisperingKv as Record<string, { defaultValue: unknown }>;
-			return (
-				(defs[`shortcut.${commandId}`]?.defaultValue as string | null) ?? null
-			);
+			const getDefault = whispering.settings.getDefault as (
+				key: string,
+			) => unknown;
+			return (getDefault(`shortcut.${commandId}`) as string | null) ?? null;
 		}
 		return deviceConfig.getDefault(
 			`shortcuts.global.${commandId}` as DeviceConfigKey,

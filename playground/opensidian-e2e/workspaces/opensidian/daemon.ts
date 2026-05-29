@@ -28,10 +28,7 @@ import {
 	sqlitePath,
 	yjsPath,
 } from '@epicenter/workspace/node';
-import {
-	createOpensidian,
-	opensidianFileContentDocGuid,
-} from 'opensidian';
+import { createOpensidian, opensidianFileContentDocGuid } from 'opensidian';
 import Type from 'typebox';
 import * as Y from 'yjs';
 import { prepareMarkdownFiles } from '../../prepare-markdown-files';

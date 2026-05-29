@@ -1,5 +1,5 @@
 /**
- * Canonical Epicenter project: one mount, declared at the root.
+ * Canonical Epicenter project: one mount in a list, declared at the root.
  *
  * Layout (per specs/20260522T220000-workspace-project-layout.md):
  *   epicenter.config.ts       this file: marker + mount factory call
@@ -16,7 +16,9 @@
 
 import { fuji } from '@epicenter/fuji/project';
 
-export default fuji({
-	markdownDir: '.',
-	sqliteFile: '.epicenter/sqlite.db',
-});
+export default [
+	fuji({
+		markdownDir: '.',
+		sqliteFile: '.epicenter/sqlite.db',
+	}),
+];

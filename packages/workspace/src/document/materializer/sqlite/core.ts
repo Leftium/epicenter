@@ -25,7 +25,7 @@ import {
 } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
-import { defineMutation, defineQuery } from '../../../shared/actions.js';
+import { defineActions, defineMutation } from '../../../shared/actions.js';
 import type { MaybePromise } from '../../../shared/types.js';
 import type { BaseRow, Table } from '../../table.js';
 import type { AnyTable, TablesRecord } from '../shared.js';
@@ -107,29 +107,6 @@ type RegisteredTable = {
 };
 
 /**
- * Common shape returned by `attachSqliteMaterializerCore`. Each backend factory
- * wraps this with its own additions (`client`, `whenConnected`).
- */
-type SqliteMaterializerCommon = {
-	whenFlushed: Promise<void>;
-	count: ReturnType<typeof defineQuery>;
-	rebuild: ReturnType<typeof defineMutation>;
-};
-
-/**
- * FTS slice of the materializer result. Conditional on whether `fts` was
- * passed: when omitted, `fts` is absent from the type entirely.
- */
-type SqliteMaterializerFts<TFts> = [TFts] extends [undefined]
-	? // biome-ignore lint/complexity/noBannedTypes: intentional empty branch when no FTS was configured
-		{}
-	: { fts: { search: ReturnType<typeof defineQuery> } };
-
-/** Result of `attachSqliteMaterializerCore`. `fts` is present iff `fts` opt was passed. */
-export type SqliteMaterializerCoreResult<TFts> = SqliteMaterializerCommon &
-	SqliteMaterializerFts<TFts>;
-
-/**
  * Internal shared materializer body. Each per-backend factory
  * (`attachBunSqliteMaterializer`, `attachTursoMaterializer`) constructs
  * an adapter from its native client to {@link MirrorDatabase} and forwards
@@ -161,9 +138,8 @@ export function attachSqliteMaterializerCore<
 		/**
 		 * Optional FTS5 configuration. Keyed by the same names as `tables`,
 		 * with values listing the columns to include in the FTS index. When
-		 * provided, the returned materializer exposes a nested `fts` namespace
-		 * with the `search` action; when omitted, `fts` is absent from the
-		 * return type entirely.
+		 * provided, the `actions` registry gains a `sqlite_search` action; when
+		 * omitted, only `sqlite_rebuild` is present.
 		 */
 		fts?: TFts;
 		debounceMs?: number;
@@ -179,7 +155,7 @@ export function attachSqliteMaterializerCore<
 		 */
 		log?: Logger;
 	},
-): SqliteMaterializerCoreResult<TFts> {
+) {
 	const registered = new Map<string, RegisteredTable>();
 	for (const [tableName, table] of Object.entries(tables)) {
 		registered.set(tableName, { table: table as AnyTable });
@@ -273,19 +249,7 @@ export function attachSqliteMaterializerCore<
 		}
 	}
 
-	// ── Query / mutation surface ─────────────────────────────────
-
-	async function count(tableName: string): Promise<number> {
-		if (isDisposed) return 0;
-		if (!registered.has(tableName)) return 0;
-
-		const stmt = await db.prepare(
-			`SELECT COUNT(*) AS count FROM ${quoteIdentifier(tableName)}`,
-		);
-		const row = await stmt.get();
-		if (!isRecord(row)) return 0;
-		return Number(row.count ?? 0);
-	}
+	// ── Mutation surface ─────────────────────────────────────────
 
 	async function rebuild(tableName?: string): Promise<void> {
 		if (isDisposed) return;
@@ -374,40 +338,38 @@ export function attachSqliteMaterializerCore<
 
 	const whenFlushed = initialize();
 
-	const base = {
-		whenFlushed,
-		count: defineQuery({
-			title: 'Row count',
-			description: 'Count rows in a materialized table',
-			input: Type.Object({ table: Type.String() }),
-			handler: ({ table: tableName }) => count(tableName),
+	// Every wire-exposed operation lives in one `actions` registry, mirroring
+	// the markdown materializer so a mount spreads `...sqlite.actions`.
+	// `sqlite_rebuild` is always present; `sqlite_search` only when an FTS index
+	// was configured. Two literal branches keep each registry key required
+	// (an optional key would not satisfy the ActionRegistry constraint).
+	const rebuildAction = defineMutation({
+		title: 'Rebuild SQLite mirror',
+		description:
+			'Drop and rebuild the materialized SQLite tables from the Yjs source. Optionally limit to one table.',
+		input: Type.Object({
+			table: Type.Optional(
+				Type.String({
+					description: 'Limit rebuild to one table; omit for all tables.',
+				}),
+			),
 		}),
-		rebuild: defineMutation({
-			title: 'Rebuild materializer',
-			description: 'Drop and rebuild all materialized tables from Yjs source',
-			input: Type.Object({ table: Type.Optional(Type.String()) }),
-			handler: ({ table: tableName }) => rebuild(tableName),
-		}),
-	} satisfies SqliteMaterializerCommon;
+		handler: ({ table: tableName }) => rebuild(tableName),
+	});
 
-	// The conditional return type collapses to `base` when no FTS was passed.
-	// The cast is local: the runtime branch matches the type-level branch.
-	if (ftsLayer === undefined) {
-		return base as SqliteMaterializerCoreResult<TFts>;
-	}
-	return {
-		...base,
-		fts: { search: ftsLayer.search },
-	} as SqliteMaterializerCoreResult<TFts>;
+	const actions = ftsLayer
+		? defineActions({
+				sqlite_rebuild: rebuildAction,
+				sqlite_search: ftsLayer.search,
+			})
+		: defineActions({ sqlite_rebuild: rebuildAction });
+
+	return { whenFlushed, actions };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
 // MODULE-LEVEL HELPERS
 // ════════════════════════════════════════════════════════════════════════════
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 /**
  * Build an UPSERT statement: insert with `ON CONFLICT(id) DO UPDATE`.

@@ -14,6 +14,13 @@
  * applicable). See `apps/api/src/index.ts` for the cloud composition.
  */
 
+// Deploy-time admin operations (OAuth client seeding) live in each
+// deployment's own scripts (`apps/api` `oauth:seed:*`), not in this barrel, so
+// `pg` and the drizzle query-builder graph stay out of the worker's module and
+// type programs. The seed builds rows from `projectTrustedOAuthClientToRow` in
+// `@epicenter/constants/oauth` (beside `buildTrustedOAuthClients`, its input),
+// so it never imports this request-path auth barrel.
+//
 // Auth middleware. `authApp` is mounted directly; the AI surface accepts
 // `requireBearerUser` via `mountAiApp({ auth })`. Most owner-partitioned
 // surfaces wire auth inside their mount primitive and never need these.

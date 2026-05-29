@@ -58,7 +58,7 @@ epicenter peers -C ~/vault
 
 ## Project Mounts
 
-`epicenter.config.ts` owns project discovery. The default export is a `Mount` (single mount) or a `Mount[]` (multi-mount). App packages ship a mount factory that returns a `Mount` carrying its own canonical name.
+`epicenter.config.ts` owns project discovery. The default export is a `Mount[]`. App packages ship a mount factory that returns a `Mount` carrying its own canonical name.
 
 ```ts
 import { fuji } from '@epicenter/fuji/project';
@@ -88,14 +88,16 @@ Writing a custom mount inline uses `defineMount` from `@epicenter/workspace/daem
 ```ts
 import { defineMount } from '@epicenter/workspace/daemon';
 
-export default defineMount({
-	name: 'notes',
-	async open({ keyring, openWebSocket, projectDir, mount, ownerId, deviceId, yDocClientId }) {
-		// Open the long-lived local runtime.
-		// `mount` is the canonical mount name carried on the Mount object.
-		// Return { collaboration, [Symbol.asyncDispose] }.
-	},
-});
+export default [
+	defineMount({
+		name: 'notes',
+		async open({ keyring, openWebSocket, projectDir, mount, ownerId, deviceId, yDocClientId }) {
+			// Open the long-lived local runtime.
+			// `mount` is the canonical mount name carried on the Mount object.
+			// Return { collaboration, [Symbol.asyncDispose] }.
+		},
+	}),
+];
 ```
 
 `Mount.name` is the CLI prefix. Two mounts in one project must have distinct names; duplicates fail before any mount opens.
@@ -108,9 +110,9 @@ Use scripts for anything beyond one-shot CLI calls:
 
 ```ts
 import { connectDaemonActions } from '@epicenter/workspace/node';
-import type { createFujiActions } from '@epicenter/fuji';
+import type { FujiActions } from '@epicenter/fuji';
 
-const fuji = await connectDaemonActions<ReturnType<typeof createFujiActions>>({
+const fuji = await connectDaemonActions<FujiActions>({
 	mount: 'fuji',
 });
 

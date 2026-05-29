@@ -83,9 +83,6 @@ export const API_ROUTES = {
 			url: (baseURL: string) => `${stripTrailing(baseURL)}/api/ai/chat`,
 		},
 	},
-	billing: {
-		prefixPattern: '/api/billing/*',
-		url: (baseURL: string, sub: string) =>
-			`${stripTrailing(baseURL)}/api/billing/${sub.replace(/^\/+/, '')}`,
-	},
 } as const;
+// The billing prefix (`/api/billing`) lives in apps/api/worker/billing/routes.ts:
+// it is hosted-only and self-hosted team deployments never mount it.

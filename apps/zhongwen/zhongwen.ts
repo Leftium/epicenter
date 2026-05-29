@@ -83,15 +83,6 @@ const chatMessagesTable = defineTable({
 });
 export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 
-const zhongwenTables = {
-	conversations: conversationsTable,
-	chatMessages: chatMessagesTable,
-};
-
-const zhongwenKv = {
-	showPinyin: defineKv(Type.Boolean(), () => true),
-};
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Workspace Factory
 // ─────────────────────────────────────────────────────────────────────────────
@@ -100,14 +91,18 @@ export function createZhongwen(opts: { keyring: () => Keyring }) {
 	const workspace = createWorkspace({
 		id: ZHONGWEN_ID,
 		keyring: opts.keyring,
-		tables: zhongwenTables,
-		kv: zhongwenKv,
+		tables: {
+			conversations: conversationsTable,
+			chatMessages: chatMessagesTable,
+		},
+		kv: {
+			showPinyin: defineKv(Type.Boolean(), () => true),
+		},
 	});
-	const actions = defineActions({});
 
 	return defineWorkspace({
 		...workspace,
-		actions,
+		actions: defineActions({}),
 		[Symbol.dispose]() {
 			workspace[Symbol.dispose]();
 		},

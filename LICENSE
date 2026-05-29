@@ -37,7 +37,7 @@ the sync protocol, and the Epicenter-internal packages.
 You're free to run, modify, and self-host any of these. If you distribute
 a modified version, you share the changes back with the community.
 
-For hosted infrastructure (apps/api, apps/dashboard, packages/sync), AGPL
+For hosted infrastructure (apps/api, apps/team-api, packages/sync), AGPL
 §13 extends this to network use: running a modified version as a service
 counts as distribution.
 
@@ -46,9 +46,11 @@ trigger, but the underlying GPL distribution clause still applies: anyone
 who forks and distributes a modified binary shares the changes back.
 
   Apps:
-    - apps/api                   (@epicenter/api)        sync server,
-                                                         auth, AI inference
-    - apps/dashboard             (@epicenter/dashboard)  billing and credits
+    - apps/api                   (@epicenter/api)        hosted personal
+                                                         cloud Worker
+                                                         (worker + ui)
+    - apps/team-api              (@epicenter/team-api)   self-hosted team
+                                                         reference Worker
     - apps/whispering            (@epicenter/whispering) desktop transcription
     - apps/honeycrisp            (@epicenter/honeycrisp) notes app
     - apps/opensidian            (opensidian)            notes + terminal

@@ -12,9 +12,9 @@
  * @example
  * ```ts
  * import { connectDaemonActions } from '@epicenter/workspace/node';
- * import type { createFujiActions } from '@epicenter/fuji';
+ * import type { FujiActions } from '@epicenter/fuji';
  *
- * const fuji = await connectDaemonActions<ReturnType<typeof createFujiActions>>({
+ * const fuji = await connectDaemonActions<FujiActions>({
  *   mount: 'fuji',
  * });
  * await fuji.entries_update({ id, tags: ['untagged'] });

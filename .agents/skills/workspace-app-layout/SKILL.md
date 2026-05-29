@@ -59,7 +59,7 @@ state, network) live only in the singleton (`session.svelte.ts` for shape A,
 
 | File | Shape | Job | Imports | Returns |
 | --- | --- | --- | --- | --- |
-| `index.ts` or `core.ts` | A + B | Isomorphic doc factory | Workspace core, schemas, pure action factories | `ydoc`, tables, kv, encryption, actions, batch, dispose |
+| `index.ts` or `core.ts` | A + B | Isomorphic doc factory | Workspace core, schemas, inline pure actions | `ydoc`, tables, kv, encryption, actions, batch, dispose |
 | `browser.ts` | A + B | Browser factory | Iso factory plus IndexedDB, BroadcastChannel, sync, browser caches | Doc bundle plus browser resources |
 | `extension.ts` / `tauri.ts` | B | Env binding for non-web runtimes | Iso factory plus chrome.storage / Tauri APIs | Doc bundle plus runtime resources |
 | `daemon.ts` | A + B | Long-lived daemon factory | Iso factory plus `attachYjsLog`, `attachSync`, materializers | Doc bundle plus writer persistence and sync |
@@ -79,8 +79,12 @@ use stable Yjs identities.
 
 ```ts
 import type { Keyring } from '@epicenter/encryption';
-import { createWorkspace } from '@epicenter/workspace';
-import { createFujiActions, fujiTables } from '../workspace.js';
+import {
+	createWorkspace,
+	defineActions,
+	defineWorkspace,
+} from '@epicenter/workspace';
+import { entriesTable } from '../workspace.js';
 
 export function openFuji({
 	keyring,
@@ -92,16 +96,20 @@ export function openFuji({
 	const workspace = createWorkspace({
 		id: 'epicenter.fuji',
 		keyring,
-		tables: fujiTables,
+		tables: { entries: entriesTable },
 		kv: {},
 	});
 	if (clientID !== undefined) workspace.ydoc.clientID = clientID;
-	const actions = createFujiActions(workspace.tables);
-	return {
+	return defineWorkspace({
 		...workspace,
-		actions,
+		actions: defineActions({
+			// Define pure workspace actions here.
+		}),
 		batch: (fn: () => void) => workspace.ydoc.transact(fn),
-	};
+		[Symbol.dispose]() {
+			workspace[Symbol.dispose]();
+		},
+	});
 }
 ```
 
@@ -111,10 +119,12 @@ Rules:
   `y-indexeddb`, `BroadcastChannel`, and runtime singletons.
 - Use relative imports for schemas when daemon or script files will import the
   factory outside Vite alias resolution.
-- Put pure actions in the iso factory when they depend only on tables.
+- Put pure actions inline as `actions: defineActions({ ... })` in the returned
+  iso workspace when they depend only on tables.
 - Keep env-bound actions in the env factory when they need filesystem, SQLite,
-  shell, browser persistence, or other runtime state. Opensidian actions stay
-  extracted in `actions.ts`.
+  shell, browser persistence, or other runtime state. Extract only when the
+  runtime action set is shared or owns a boundary that would be harder to read
+  inline.
 
 ## Browser Factory
 

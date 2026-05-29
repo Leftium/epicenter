@@ -15,17 +15,18 @@
  *      `attachProjectInfrastructure`
  */
 
-import { isAbsolute, join } from 'node:path';
-import { defineWorkspace } from '@epicenter/workspace';
+import { defineActions, defineWorkspace } from '@epicenter/workspace';
 import { defineMount } from '@epicenter/workspace/daemon';
 import {
 	attachMarkdownMaterializer,
+	type GitAutosaveConfig,
 	slugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import {
 	attachProjectInfrastructure,
 	markdownPath,
+	resolveProjectPath,
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
@@ -36,6 +37,8 @@ export type FujiMountOptions = {
 	markdownDir?: string;
 	/** SQLite file path; relative paths resolve against `projectDir`. */
 	sqliteFile?: string;
+	/** Enable per-materializer Git autosave for markdown output. */
+	git?: GitAutosaveConfig;
 };
 
 export function fuji(opts: FujiMountOptions = {}) {
@@ -57,21 +60,26 @@ export function fuji(opts: FujiMountOptions = {}) {
 			workspace.ydoc.clientID = yDocClientId;
 
 			const sqliteFile =
-				opts.sqliteFile === undefined
-					? sqlitePath(projectDir, workspace.ydoc.guid)
-					: resolveProjectPath(projectDir, opts.sqliteFile);
+				resolveProjectPath(projectDir, opts.sqliteFile) ??
+				sqlitePath(projectDir, workspace.ydoc.guid);
 			const mdDir =
-				opts.markdownDir === undefined
-					? markdownPath(projectDir, workspace.ydoc.guid)
-					: resolveProjectPath(projectDir, opts.markdownDir);
+				resolveProjectPath(projectDir, opts.markdownDir) ??
+				markdownPath(projectDir, workspace.ydoc.guid);
 
-			attachBunSqliteMaterializer(workspace, {
+			const sqlite = attachBunSqliteMaterializer(workspace, {
 				filePath: sqliteFile,
 				log: createLogger(`${mount}-sqlite`),
 			});
-			attachMarkdownMaterializer(workspace, {
+			const markdown = attachMarkdownMaterializer(workspace, {
 				dir: mdDir,
 				perTable: { entries: { filename: slugFilename('title') } },
+				git: opts.git,
+			});
+
+			const actions = defineActions({
+				...workspace.actions,
+				...sqlite.actions,
+				...markdown.actions,
 			});
 
 			const infrastructure = attachProjectInfrastructure(workspace.ydoc, {
@@ -80,19 +88,17 @@ export function fuji(opts: FujiMountOptions = {}) {
 				deviceId,
 				openWebSocket,
 				onReconnectSignal,
-				actions: workspace.actions,
+				actions,
 			});
 
 			return defineWorkspace({
 				...workspace,
 				...infrastructure,
+				markdown,
+				actions,
 			});
 		},
 	});
 }
 
 export type FujiMount = ReturnType<typeof fuji>;
-
-function resolveProjectPath(projectDir: string, value: string): string {
-	return isAbsolute(value) ? value : join(projectDir, value);
-}

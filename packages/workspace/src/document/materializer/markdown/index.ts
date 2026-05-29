@@ -1,5 +1,7 @@
 export {
 	attachMarkdownMaterializer,
+	type GitAutosaveConfig,
+	type MarkdownMaterializer,
 	MaterializerPushError,
 	type PushEvent,
 	type PushResult,

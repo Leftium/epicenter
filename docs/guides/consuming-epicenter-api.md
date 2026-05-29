@@ -61,19 +61,21 @@ function createMyApp(opts: { keyring: SignedIn['keyring'] }) {
 		tables: myAppTables,
 		kv: {},
 	});
-	const actions = defineActions({
-		notes_create: defineMutation({
-			description: 'Create a note',
-			input: Type.Object({ id: Type.String(), title: Type.String() }),
-			handler: ({ id, title }) => {
-				workspace.tables.notes.set({ id, title });
-			},
-		}),
-	});
 
 	return defineWorkspace({
 		...workspace,
-		actions,
+		actions: defineActions({
+			notes_create: defineMutation({
+				description: 'Create a note',
+				input: Type.Object({ id: Type.String(), title: Type.String() }),
+				handler: ({ id, title }) => {
+					workspace.tables.notes.set({ id, title });
+				},
+			}),
+		}),
+		[Symbol.dispose]() {
+			workspace[Symbol.dispose]();
+		},
 	});
 }
 

@@ -1,5 +1,6 @@
 export {
 	type CompletedResult,
+	createWhispering,
 	type FailedResult,
 	type Recording,
 	type RunningResult,
@@ -9,6 +10,4 @@ export {
 	type TransformationRunResult,
 	type TransformationStep,
 	type TransformationStepRun,
-	whisperingKv,
-	whisperingTables,
 } from './definition';

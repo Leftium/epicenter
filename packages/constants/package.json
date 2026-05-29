@@ -20,7 +20,6 @@
 		"./ai-chat-errors": "./src/ai-chat-errors.ts",
 		"./api-routes": "./src/api-routes.ts",
 		"./asset-errors": "./src/asset-errors.ts",
-		"./billing-errors": "./src/billing-errors.ts",
 		"./oauth-errors": "./src/oauth-errors.ts",
 		"./oauth-routes": "./src/oauth-routes.ts",
 		"./request-guard-errors": "./src/request-guard-errors.ts"

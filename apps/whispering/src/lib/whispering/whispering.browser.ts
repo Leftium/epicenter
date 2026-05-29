@@ -16,7 +16,7 @@ import {
 } from '@epicenter/workspace';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
-import { createWhisperingWorkspace } from './index';
+import { createWhispering } from '$lib/workspace';
 
 const RecordingMarkdownExportError = defineErrors({
 	Unsupported: () => ({
@@ -38,7 +38,7 @@ type RecordingMarkdownExportResult =
 	  };
 
 export function openWhispering() {
-	const workspace = createWhisperingWorkspace();
+	const workspace = createWhispering();
 
 	const idb = attachIndexedDb(workspace.ydoc);
 	attachBroadcastChannel(workspace.ydoc);

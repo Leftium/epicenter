@@ -5,7 +5,8 @@
 	"type": "module",
 	"private": true,
 	"exports": {
-		".": "./src/lib/workspace/index.ts"
+		".": "./src/lib/workspace/index.ts",
+		"./project": "./project.ts"
 	},
 	"scripts": {
 		"dev": "bun run dev:local",

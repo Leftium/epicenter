@@ -1,21 +1,23 @@
 /**
- * Load a project's `epicenter.config.ts` and return its mounts.
+ * Load a project's `epicenter.config.ts` and return its mount list.
  *
- * The config default-exports one of:
+ * The config default-exports a `Mount[]`. One app is a list of one:
  *
- *   - a single `Mount` (the common case):
- *       `export default fuji();`
+ *   `export default [fuji()];`
+ *   `export default [fuji(), notes()];`
  *
- *   - a `Mount[]` for multi-mount projects:
- *       `export default [fuji(), notes()];`
+ * `epicenter.config.ts` is dynamically imported, so its default export crosses
+ * a runtime boundary where TypeScript types are erased and nothing typechecks
+ * the user's file first. `isMount` is therefore real input validation, not a
+ * stand-in for a nominal type: it asserts the exact two members the daemon
+ * consumes (`name: string`, `open: function`) so a malformed config fails with
+ * a clear, structured error pointed at the file instead of a cryptic
+ * `TypeError` deep in startup.
  *
- * Mount detection is duck-typed: a value is a Mount iff it has a string `name`
- * and a function `open`. There is no wrapper helper (no `defineProject`); the
- * mount factory IS the config. The loader returns a normalized `Mount[]` so
- * callers don't branch on shape.
+ * Every failure is a `ProjectConfigError` variant; this function never throws.
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -24,14 +26,11 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import { Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 import type { Mount } from '../daemon/define-mount.js';
 import type { ProjectDir } from '../shared/types.js';
-import {
-	DEFAULT_PROJECT_CONFIG_SOURCE,
-	PROJECT_CONFIG_FILENAME,
-} from './project-config-source.js';
+import { PROJECT_CONFIG_FILENAME } from './project-config-source.js';
 
 export const ProjectConfigError = defineErrors({
 	ProjectConfigNotFound: ({
@@ -41,6 +40,28 @@ export const ProjectConfigError = defineErrors({
 	}) => ({
 		message: `Project config not found at ${projectConfigPath}`,
 		projectConfigPath,
+	}),
+	ProjectConfigImportFailed: ({
+		projectConfigPath,
+		cause,
+	}: {
+		projectConfigPath: string;
+		cause: unknown;
+	}) => ({
+		message: `Failed to load project config at ${projectConfigPath}: ${extractErrorMessage(cause)}`,
+		projectConfigPath,
+		cause,
+	}),
+	ProjectConfigInvalid: ({
+		projectConfigPath,
+		detail,
+	}: {
+		projectConfigPath: string;
+		detail: string;
+	}) => ({
+		message: `Invalid project config at ${projectConfigPath}: ${detail}.`,
+		projectConfigPath,
+		detail,
 	}),
 });
 export type ProjectConfigError = InferErrors<typeof ProjectConfigError>;
@@ -53,30 +74,26 @@ export async function loadProjectConfig(
 		return ProjectConfigError.ProjectConfigNotFound({ projectConfigPath });
 	}
 
-	const module = await importProjectConfig(projectConfigPath);
-	if (!('default' in module)) {
-		throw new Error(
-			`loadProjectConfig: ${projectConfigPath} must default-export a Mount or Mount[].`,
-		);
-	}
-
-	const fail = (reason: string): never => {
-		throw new Error(`loadProjectConfig: ${projectConfigPath} ${reason}`);
-	};
+	const { data: module, error: importError } = await tryAsync({
+		try: () =>
+			import(pathToFileURL(projectConfigPath).href) as Promise<{
+				default?: unknown;
+			}>,
+		catch: (cause) =>
+			ProjectConfigError.ProjectConfigImportFailed({
+				projectConfigPath,
+				cause,
+			}),
+	});
+	if (importError !== null) return Err(importError);
 
 	const value = module.default;
-	if (Array.isArray(value)) {
-		for (const entry of value) {
-			if (!isMount(entry)) {
-				fail('default-exports an array containing a non-Mount value.');
-			}
-		}
-		return Ok(value as Mount[]);
-	}
-	if (isMount(value)) {
-		return Ok([value]);
-	}
-	return fail('must default-export a Mount or Mount[].');
+	if (Array.isArray(value) && value.every(isMount)) return Ok(value);
+	return ProjectConfigError.ProjectConfigInvalid({
+		projectConfigPath,
+		detail:
+			'the default export must be a Mount[] (each entry needs a string `name` and an `open` function)',
+	});
 }
 
 function isMount(value: unknown): value is Mount {
@@ -87,35 +104,5 @@ function isMount(value: unknown): value is Mount {
 		typeof (value as { name: unknown }).name === 'string' &&
 		'open' in value &&
 		typeof (value as { open: unknown }).open === 'function'
-	);
-}
-
-async function importProjectConfig(
-	projectConfigPath: string,
-): Promise<{ default?: unknown }> {
-	try {
-		return (await import(pathToFileURL(projectConfigPath).href)) as {
-			default?: unknown;
-		};
-	} catch (cause) {
-		if (isDefaultConfigSelfImportMiss(projectConfigPath, cause)) {
-			return { default: [] };
-		}
-		throw new Error(
-			`loadProjectConfig: failed to load ${projectConfigPath}: ${extractErrorMessage(cause)}`,
-			{ cause },
-		);
-	}
-}
-
-function isDefaultConfigSelfImportMiss(
-	projectConfigPath: string,
-	cause: unknown,
-): boolean {
-	return (
-		extractErrorMessage(cause).includes(
-			"Cannot find module '@epicenter/workspace'",
-		) &&
-		readFileSync(projectConfigPath, 'utf8') === DEFAULT_PROJECT_CONFIG_SOURCE
 	);
 }

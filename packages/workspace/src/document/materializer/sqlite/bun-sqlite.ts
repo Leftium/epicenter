@@ -113,11 +113,11 @@ export function attachBunSqliteMaterializer<
 		log,
 	});
 
-	// Registered AFTER core's own destroy listener so dispose() runs first
-	// (cancels timers, detaches observers) before the database handle closes.
-	// `close()` can throw if the handle is already shut by a duplicate destroy;
-	// swallow and log rather than letting it escape the destroy listener.
-	ydoc.once('destroy', () => {
+	// Registered after core's destroy listener so disposal starts before the
+	// database handle closes. The close waits for core's sync queue to drain so
+	// an in-flight incremental flush cannot resume against a closed handle.
+	ydoc.once('destroy', async () => {
+		await core.whenDisposed;
 		try {
 			client.close();
 		} catch (cause) {

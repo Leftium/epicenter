@@ -25,7 +25,11 @@ import {
 } from '../../../index.js';
 import { isAction, isMutation, isQuery } from '../../../shared/actions.js';
 import { column } from '../../column/index.js';
-import { attachSqliteMaterializerCore, type MirrorDatabase } from './core.js';
+import {
+	attachSqliteMaterializerCore,
+	type MirrorDatabase,
+	type MirrorStatement,
+} from './core.js';
 
 const postsTable = defineTable({
 	id: column.string(),
@@ -467,6 +471,60 @@ describe('attachSqliteMaterializerCore', () => {
 				await waitForSyncCycle();
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([]);
+			} finally {
+				testSetup.db.close();
+			}
+		});
+
+		test('whenDisposed waits for an in-flight incremental sync', async () => {
+			const testSetup = setup({ debounceMs: 0 });
+			const insertStarted = createDeferred();
+			const allowInsert = createDeferred();
+			const originalPrepare = testSetup.db.prepare.bind(testSetup.db);
+			let insertRunCompleted = false;
+
+			testSetup.db.prepare = async (sql: string): Promise<MirrorStatement> => {
+				const statement = await originalPrepare(sql);
+				if (!sql.startsWith('INSERT INTO "posts"')) return statement;
+
+				return {
+					async run(...params: unknown[]) {
+						insertStarted.resolve();
+						await allowInsert.promise;
+						const result = statement.run(...params);
+						insertRunCompleted = true;
+						return result;
+					},
+					all: statement.all.bind(statement),
+					get: statement.get.bind(statement),
+				};
+			};
+
+			try {
+				await testSetup.workspace.sqlite.whenFlushed;
+
+				testSetup.workspace.tables.posts.set({
+					id: 'post-1',
+					title: 'In-flight row',
+					published: null,
+				});
+				await insertStarted.promise;
+
+				let disposed = false;
+				testSetup.workspace.sqlite.whenDisposed.then(() => {
+					disposed = true;
+				});
+
+				testSetup.workspace[Symbol.dispose]();
+				await Promise.resolve();
+
+				expect(disposed).toBe(false);
+				expect(insertRunCompleted).toBe(false);
+
+				allowInsert.resolve();
+				await testSetup.workspace.sqlite.whenDisposed;
+
+				expect(insertRunCompleted).toBe(true);
 			} finally {
 				testSetup.db.close();
 			}

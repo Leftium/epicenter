@@ -165,6 +165,10 @@ export function attachSqliteMaterializerCore<
 	let pendingSync = new Map<string, Set<string>>();
 	let syncQueue = Promise.resolve();
 	let isDisposed = false;
+	let resolveWhenDisposed!: () => void;
+	const whenDisposed = new Promise<void>((resolve) => {
+		resolveWhenDisposed = resolve;
+	});
 
 	// ── SQL primitives ───────────────────────────────────────────
 
@@ -287,6 +291,7 @@ export function attachSqliteMaterializerCore<
 		isDisposed = true;
 		flushAfterDebounce.cancel();
 		for (const entry of registered.values()) entry.unsubscribe?.();
+		syncQueue.finally(resolveWhenDisposed);
 	}
 
 	ydoc.once('destroy', dispose);
@@ -358,7 +363,7 @@ export function attachSqliteMaterializerCore<
 			})
 		: defineActions({ sqlite_rebuild: rebuildAction });
 
-	return { whenFlushed, actions };
+	return { whenFlushed, whenDisposed, actions };
 }
 
 // ════════════════════════════════════════════════════════════════════════════

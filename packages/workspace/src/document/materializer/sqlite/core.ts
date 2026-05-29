@@ -1,7 +1,7 @@
 /**
  * SQLite materializer core: the internal body wrapped by
  * `attachBunSqliteMaterializer`. Mirrors workspace table rows into a
- * SQLite-shaped mirror via the internal {@link MirrorDatabase} contract.
+ * SQLite mirror via a `bun:sqlite` database.
  *
  * Public callers use `attachBunSqliteMaterializer`, which owns the native
  * client lifecycle and forwards the client here.
@@ -14,61 +14,17 @@
  * @module
  */
 
+import type { Database, SQLQueryBindings } from 'bun:sqlite';
 import { debounce } from '@epicenter/util';
 import Type from 'typebox';
-import {
-	defineErrors,
-	extractErrorMessage,
-	type InferErrors,
-} from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
 import { defineActions, defineMutation } from '../../../shared/actions.js';
-import type { MaybePromise } from '../../../shared/types.js';
 import type { BaseRow, Table } from '../../table.js';
 import type { AnyTable, TablesRecord } from '../shared.js';
 import { generateDdl, quoteIdentifier } from './ddl.js';
 import { createSqliteFtsLayer } from './fts.js';
-
-// ════════════════════════════════════════════════════════════════════════════
-// INTERNAL SQL EXECUTOR CONTRACT
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * Minimal SQL executor the materializer body talks to.
- *
- * Structurally compatible with sync drivers (`bun:sqlite`, `better-sqlite3`).
- * The materializer `await`s every call, so sync drivers work without an
- * adapter while tests can still use a small structural double.
- *
- * Kept internal: consumers never construct or pass one in.
- *
- * @internal
- */
-export type MirrorDatabase = {
-	/** Execute raw SQL that does not return rows. */
-	run(sql: string): MaybePromise<unknown>;
-
-	/** Prepare a reusable statement for repeated reads or writes. */
-	prepare(sql: string): MaybePromise<MirrorStatement>;
-};
-
-/**
- * Internal prepared statement interface. Sibling of {@link MirrorDatabase};
- * each backend adapter constructs these from its native client.
- *
- * @internal
- */
-export type MirrorStatement = {
-	/** Run a statement that writes data or otherwise returns no rows. */
-	run(...params: unknown[]): MaybePromise<unknown>;
-
-	/** Fetch all matching rows as plain objects. */
-	all(...params: unknown[]): MaybePromise<unknown[]>;
-
-	/** Fetch the first matching row, or null if none found. */
-	get(...params: unknown[]): MaybePromise<unknown>;
-};
 
 export type { TablesRecord } from '../shared.js';
 
@@ -86,16 +42,18 @@ export type FtsConfig<TTables extends TablesRecord> = {
 };
 
 /** Errors surfaced by the SQLite materializer's async background sync loop. */
-export const SqliteMaterializerError = defineErrors({
+const SqliteMaterializerError = defineErrors({
 	/** Debounced flush of pending row writes to the mirror database failed. */
 	SyncFailed: ({ cause }: { cause: unknown }) => ({
 		message: `[sqlite-materializer] Failed to sync SQLite materializer: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
+	/** Post-sync disposal tail failed after the materializer detached. */
+	DisposeFailed: ({ cause }: { cause: unknown }) => ({
+		message: `[sqlite-materializer] Failed to dispose SQLite materializer: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
 });
-export type SqliteMaterializerError = InferErrors<
-	typeof SqliteMaterializerError
->;
 
 type RegisteredTable = {
 	table: AnyTable;
@@ -121,9 +79,10 @@ export function attachSqliteMaterializerCore<
 		fts,
 		debounceMs = 100,
 		waitFor,
+		onDisposed,
 		log = createLogger('sqlite-materializer'),
 	}: {
-		db: MirrorDatabase;
+		db: Database;
 		/**
 		 * Workspace tables to mirror. Each entry becomes a SQLite table named
 		 * after the record key.
@@ -143,6 +102,11 @@ export function attachSqliteMaterializerCore<
 		 * for no gate.
 		 */
 		waitFor?: Promise<unknown>;
+		/**
+		 * Runs after the materializer has detached observers and the current
+		 * incremental sync queue has drained.
+		 */
+		onDisposed?: () => void | Promise<void>;
 		/**
 		 * Logger for background failures (debounced sync flush, FTS query).
 		 * Defaults to a console-backed logger with source `sqlite-materializer`.
@@ -165,10 +129,6 @@ export function attachSqliteMaterializerCore<
 	let pendingSync = new Map<string, Set<string>>();
 	let syncQueue = Promise.resolve();
 	let isDisposed = false;
-	let resolveWhenDisposed!: () => void;
-	const whenDisposed = new Promise<void>((resolve) => {
-		resolveWhenDisposed = resolve;
-	});
 
 	// ── SQL primitives ───────────────────────────────────────────
 
@@ -177,7 +137,10 @@ export function attachSqliteMaterializerCore<
 		row: BaseRow & Record<string, unknown>,
 	) {
 		const keys = Object.keys(row);
-		const values = keys.map((key) => serializeValue(row[key]));
+		const values = keys.map((key) => serializeValue(row[key])) as [
+			SQLQueryBindings,
+			...SQLQueryBindings[],
+		];
 
 		const stmt = await db.prepare(buildUpsertSql(tableName, keys));
 		await stmt.run(...values);
@@ -198,7 +161,10 @@ export function attachSqliteMaterializerCore<
 		const stmt = await db.prepare(buildUpsertSql(tableName, keys));
 
 		for (const row of rows) {
-			const values = keys.map((key) => serializeValue(row[key]));
+			const values = keys.map((key) => serializeValue(row[key])) as [
+				SQLQueryBindings,
+				...SQLQueryBindings[],
+			];
 			await stmt.run(...values);
 		}
 	}
@@ -291,7 +257,9 @@ export function attachSqliteMaterializerCore<
 		isDisposed = true;
 		flushAfterDebounce.cancel();
 		for (const entry of registered.values()) entry.unsubscribe?.();
-		syncQueue.finally(resolveWhenDisposed);
+		syncQueue.then(onDisposed).catch((cause: unknown) => {
+			log.error(SqliteMaterializerError.DisposeFailed({ cause }));
+		});
 	}
 
 	ydoc.once('destroy', dispose);
@@ -363,7 +331,7 @@ export function attachSqliteMaterializerCore<
 			})
 		: defineActions({ sqlite_rebuild: rebuildAction });
 
-	return { whenFlushed, whenDisposed, actions };
+	return { whenFlushed, actions };
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -414,9 +382,16 @@ function collectRowKeys(rows: readonly BaseRow[]): string[] {
  * - `boolean` → `0` or `1` (`INTEGER` column)
  * - everything else → passed through as-is
  */
-function serializeValue(value: unknown): unknown {
+function serializeValue(value: unknown): SQLQueryBindings {
 	if (value === null || value === undefined) return null;
-	if (typeof value === 'object') return JSON.stringify(value);
+	if (typeof value === 'object') return JSON.stringify(value) ?? null;
 	if (typeof value === 'boolean') return value ? 1 : 0;
-	return value;
+	if (
+		typeof value === 'string' ||
+		typeof value === 'number' ||
+		typeof value === 'bigint'
+	) {
+		return value;
+	}
+	return String(value);
 }

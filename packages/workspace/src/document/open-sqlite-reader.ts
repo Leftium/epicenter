@@ -46,20 +46,15 @@ export type OpenSqliteReaderOptions = {
 };
 
 /**
- * Read-only handle on the daemon's materialized SQLite mirror.
- *
- * Returned by {@link openSqliteReader}. Disposable via the
- * explicit-resource-management protocol: declare with
- * `using reader = openSqliteReader(...)` and the underlying database
- * handle closes on scope exit.
- */
-/**
  * Open the daemon's SQLite mirror file read-only.
  *
  * The mirror is opened with `{ readonly: true }`; we additionally execute
  * `PRAGMA query_only = ON` so any unintentional write inside a
  * caller-supplied raw SQL string fails. Reads run against WAL snapshot
- * pages without blocking the daemon's writes.
+ * pages without blocking the daemon's writes. The returned handle is
+ * disposable via the explicit-resource-management protocol: declare with
+ * `using reader = openSqliteReader(...)` and the underlying database handle
+ * closes on scope exit.
  *
  * @example
  * ```ts
@@ -71,12 +66,7 @@ export type OpenSqliteReaderOptions = {
  * ```
  */
 export function openSqliteReader({ filePath }: OpenSqliteReaderOptions) {
-	const db = new Database(filePath, { readonly: true });
-	db.run('PRAGMA query_only = ON');
-	// Wait up to 5s on SQLITE_BUSY when a reader opens during a checkpoint
-	// instead of surfacing the error to callers. The writer-side
-	// `openWriterSqlite` setup sets the same value.
-	db.run('PRAGMA busy_timeout = 5000');
+	const db = openReadonlySqlite(filePath);
 
 	let isDisposed = false;
 
@@ -144,3 +134,14 @@ export function openSqliteReader({ filePath }: OpenSqliteReaderOptions) {
 }
 
 export type SqliteReader = ReturnType<typeof openSqliteReader>;
+
+/** @internal Shared read-only SQLite open preamble for local reader helpers. */
+export function openReadonlySqlite(filePath: string): Database {
+	const db = new Database(filePath, { readonly: true });
+	db.run('PRAGMA query_only = ON');
+	// Wait up to 5s on SQLITE_BUSY when a reader opens during a checkpoint
+	// instead of surfacing the error to callers. The writer-side
+	// `openWriterSqlite` setup sets the same value.
+	db.run('PRAGMA busy_timeout = 5000');
+	return db;
+}

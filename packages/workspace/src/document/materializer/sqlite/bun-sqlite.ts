@@ -53,7 +53,7 @@ export type AttachBunSqliteMaterializerOptions<
 	 * Optional FTS5 configuration. Keys must match `workspace.tables` keys; values
 	 * list the columns of that table's row to include in the FTS index.
 	 * When provided, the result exposes `sqlite.actions.sqlite_search(...)`; when
-	 * omitted, the `fts` namespace is absent from the return type.
+	 * omitted, `sqlite.actions` only contains `sqlite_rebuild`.
 	 */
 	fts?: TFts;
 
@@ -110,23 +110,18 @@ export function attachBunSqliteMaterializer<
 		fts,
 		debounceMs,
 		waitFor,
+		onDisposed: () => {
+			try {
+				client.close();
+			} catch (cause) {
+				log.warn(
+					new Error('attachBunSqliteMaterializer: client.close failed', {
+						cause,
+					}),
+				);
+			}
+		},
 		log,
-	});
-
-	// Registered after core's destroy listener so disposal starts before the
-	// database handle closes. The close waits for core's sync queue to drain so
-	// an in-flight incremental flush cannot resume against a closed handle.
-	ydoc.once('destroy', async () => {
-		await core.whenDisposed;
-		try {
-			client.close();
-		} catch (cause) {
-			log.warn(
-				new Error('attachBunSqliteMaterializer: client.close failed', {
-					cause,
-				}),
-			);
-		}
 	});
 
 	return { ...core, client };

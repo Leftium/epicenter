@@ -15,7 +15,7 @@
  * - dispose() stops observers and clears timeouts
  */
 
-import { Database } from 'bun:sqlite';
+import { Database, type SQLQueryBindings } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import {
 	createDisposableCache,
@@ -25,11 +25,7 @@ import {
 } from '../../../index.js';
 import { isAction, isMutation, isQuery } from '../../../shared/actions.js';
 import { column } from '../../column/index.js';
-import {
-	attachSqliteMaterializerCore,
-	type MirrorDatabase,
-	type MirrorStatement,
-} from './core.js';
+import { attachSqliteMaterializerCore } from './core.js';
 
 const postsTable = defineTable({
 	id: column.string(),
@@ -46,31 +42,8 @@ const tableDefinitions = { posts: postsTable, notes: notesTable };
 
 const hasFts5 = canUseFts5();
 
-type TestDb = MirrorDatabase & {
-	raw: Database;
-	sqlCalls: string[];
-	close(): void;
-};
-
-function createTestDb(): TestDb {
-	const raw = new Database(':memory:');
-	const sqlCalls: string[] = [];
-
-	return {
-		raw,
-		sqlCalls,
-		close() {
-			raw.close();
-		},
-		run(sql: string) {
-			sqlCalls.push(sql);
-			return raw.run(sql);
-		},
-		prepare(sql: string) {
-			sqlCalls.push(sql);
-			return raw.prepare(sql);
-		},
-	};
+function createTestDb() {
+	return new Database(':memory:');
 }
 
 type AttachedTables = Tables<typeof tableDefinitions>;
@@ -84,9 +57,10 @@ type SetupBuildResult = {
 type SetupOptions = {
 	build?: (t: AttachedTables) => SetupBuildResult;
 	debounceMs?: number;
+	onDisposed?: () => void;
 };
 
-function setup({ build, debounceMs }: SetupOptions = {}) {
+function setup({ build, debounceMs, onDisposed }: SetupOptions = {}) {
 	const db = createTestDb();
 
 	const cache = createDisposableCache(
@@ -108,6 +82,7 @@ function setup({ build, debounceMs }: SetupOptions = {}) {
 				db,
 				debounceMs,
 				tables: built.tables,
+				onDisposed,
 				// biome-ignore lint/suspicious/noExplicitAny: tests erase row types through the setup helper
 				fts: built.fts as any,
 			});
@@ -154,14 +129,14 @@ async function waitForSyncCycle() {
 	await new Promise((resolve) => setTimeout(resolve, 200));
 }
 
-function getRows(db: TestDb, tableName: string) {
-	return db.raw
+function getRows(db: Database, tableName: string) {
+	return db
 		.prepare(`SELECT * FROM "${tableName}" ORDER BY "id"`)
 		.all() as Record<string, unknown>[];
 }
 
-function hasTable(db: TestDb, tableName: string) {
-	const row = db.raw
+function hasTable(db: Database, tableName: string) {
+	const row = db
 		.prepare('SELECT name FROM sqlite_master WHERE type = ? AND name = ?')
 		.get('table', tableName);
 	return row != null;
@@ -215,12 +190,11 @@ describe('attachSqliteMaterializerCore', () => {
 
 			try {
 				await new Promise((resolve) => setTimeout(resolve, 25));
-				expect(db.sqlCalls).toHaveLength(0);
+				expect(hasTable(db, 'posts')).toBe(false);
 
 				gate.resolve();
 				await workspace.sqlite.whenFlushed;
 
-				expect(db.sqlCalls.length).toBeGreaterThan(0);
 				expect(hasTable(db, 'posts')).toBe(true);
 			} finally {
 				gate.resolve();
@@ -476,29 +450,38 @@ describe('attachSqliteMaterializerCore', () => {
 			}
 		});
 
-		test('whenDisposed waits for an in-flight incremental sync', async () => {
-			const testSetup = setup({ debounceMs: 0 });
+		test('runs onDisposed after an in-flight incremental sync', async () => {
 			const insertStarted = createDeferred();
 			const allowInsert = createDeferred();
+			const disposed = createDeferred();
+			let onDisposedCalled = false;
+			const testSetup = setup({
+				debounceMs: 0,
+				onDisposed: () => {
+					onDisposedCalled = true;
+					disposed.resolve();
+				},
+			});
 			const originalPrepare = testSetup.db.prepare.bind(testSetup.db);
 			let insertRunCompleted = false;
 
-			testSetup.db.prepare = async (sql: string): Promise<MirrorStatement> => {
-				const statement = await originalPrepare(sql);
+			testSetup.db.prepare = ((sql: string, params?: SQLQueryBindings) => {
+				const statement = originalPrepare(sql, params);
 				if (!sql.startsWith('INSERT INTO "posts"')) return statement;
 
 				return {
-					async run(...params: unknown[]) {
+					async run(...params: SQLQueryBindings[]) {
 						insertStarted.resolve();
 						await allowInsert.promise;
-						const result = statement.run(...params);
+						// biome-ignore lint/suspicious/noExplicitAny: Bun's generic statement type cannot express this wrapper
+						const result = (statement.run as any)(...params);
 						insertRunCompleted = true;
 						return result;
 					},
 					all: statement.all.bind(statement),
 					get: statement.get.bind(statement),
 				};
-			};
+			}) as typeof testSetup.db.prepare;
 
 			try {
 				await testSetup.workspace.sqlite.whenFlushed;
@@ -510,20 +493,16 @@ describe('attachSqliteMaterializerCore', () => {
 				});
 				await insertStarted.promise;
 
-				let disposed = false;
-				testSetup.workspace.sqlite.whenDisposed.then(() => {
-					disposed = true;
-				});
-
 				testSetup.workspace[Symbol.dispose]();
 				await Promise.resolve();
 
-				expect(disposed).toBe(false);
+				expect(onDisposedCalled).toBe(false);
 				expect(insertRunCompleted).toBe(false);
 
 				allowInsert.resolve();
-				await testSetup.workspace.sqlite.whenDisposed;
+				await disposed.promise;
 
+				expect(onDisposedCalled).toBe(true);
 				expect(insertRunCompleted).toBe(true);
 			} finally {
 				testSetup.db.close();

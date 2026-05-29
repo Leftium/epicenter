@@ -6,9 +6,9 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
+import type { AuthFetch } from '../auth-contract.js';
 import type { OAuthTokenGrant } from '../auth-types.js';
-import type { AuthFetch } from '../create-oauth-app-auth.js';
-import { parseOAuthTokenGrant } from '../oauth-token-response.js';
+import { parseOAuthTokenGrant } from '../oauth-token-endpoints.js';
 import type { OAuthLauncher, OAuthLaunchResult } from './contract.js';
 
 export type { OAuthLauncher, OAuthLaunchResult } from './contract.js';

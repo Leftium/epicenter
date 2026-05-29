@@ -1,7 +1,6 @@
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
-import { OAUTH_ROUTES } from '@epicenter/constants/oauth-routes';
 import { keyringsEqual } from '@epicenter/encryption';
 import {
 	defineErrors,
@@ -10,7 +9,7 @@ import {
 } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import type { AuthClient, AuthState } from './auth-contract.js';
+import type { AuthClient, AuthFetch, AuthState } from './auth-contract.js';
 import { AuthError } from './auth-errors.js';
 import {
 	ApiSessionResponse,
@@ -18,22 +17,13 @@ import {
 	type PersistedAuth,
 } from './auth-types.js';
 import type { OAuthLauncher } from './oauth-launchers/contract.js';
-import { parseOAuthTokenGrant } from './oauth-token-response.js';
+import {
+	refreshOAuthTokenWithEndpoint,
+	revokeOAuthRefreshTokenWithEndpoint,
+} from './oauth-token-endpoints.js';
 import type { PersistedAuthStorage } from './persisted-auth-storage.js';
 
 type AuthFetchInput = Request | string | URL;
-
-/**
- * Fetch-compatible transport used by auth-owned HTTP calls.
- *
- * Consumers usually pass `auth.fetch` into API clients. Tests and machine auth
- * inject this shape so the auth runtime can exercise refresh, revoke, and
- * bearer attach without depending on global `fetch`.
- */
-export type AuthFetch = (
-	input: AuthFetchInput,
-	init?: RequestInit,
-) => Promise<Response>;
 
 /**
  * Construction inputs for the framework-agnostic auth runtime.
@@ -648,73 +638,4 @@ function headersFromRequest(input: Request | string | URL, init?: RequestInit) {
 		headers.set(key, value);
 	});
 	return headers;
-}
-
-async function refreshOAuthTokenWithEndpoint({
-	baseURL,
-	clientId,
-	grant,
-	fetch,
-	now,
-}: {
-	baseURL: string;
-	clientId: string;
-	grant: OAuthTokenGrant;
-	fetch: AuthFetch;
-	now: () => number;
-}): Promise<OAuthTokenGrant> {
-	const body = new URLSearchParams({
-		grant_type: 'refresh_token',
-		refresh_token: grant.refreshToken,
-		client_id: clientId,
-		resource: baseURL,
-	});
-	const response = await fetch(OAUTH_ROUTES.token.url(baseURL), {
-		method: 'POST',
-		body,
-		headers: { 'content-type': 'application/x-www-form-urlencoded' },
-		credentials: 'omit',
-	});
-	if (!response.ok) {
-		throw new Error(`OAuth refresh failed with ${response.status}.`);
-	}
-	const data = await response.json();
-	const { data: parsed, error } = parseOAuthTokenGrant(data, {
-		now,
-		fallbackRefreshToken: grant.refreshToken,
-	});
-	if (error) {
-		throw new Error(
-			`OAuth refresh produced an invalid grant: ${error.message}`,
-			{ cause: error },
-		);
-	}
-	return parsed;
-}
-
-async function revokeOAuthRefreshTokenWithEndpoint({
-	baseURL,
-	clientId,
-	refreshToken,
-	fetch,
-}: {
-	baseURL: string;
-	clientId: string;
-	refreshToken: string;
-	fetch: AuthFetch;
-}) {
-	const body = new URLSearchParams({
-		client_id: clientId,
-		token: refreshToken,
-		token_type_hint: 'refresh_token',
-	});
-	const response = await fetch(OAUTH_ROUTES.revoke.url(baseURL), {
-		method: 'POST',
-		body,
-		headers: { 'content-type': 'application/x-www-form-urlencoded' },
-		credentials: 'omit',
-	});
-	if (!response.ok) {
-		throw new Error(`OAuth revoke failed with ${response.status}.`);
-	}
 }

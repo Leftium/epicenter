@@ -17,7 +17,7 @@ import { asOwnerId } from '@epicenter/constants/identity';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { PersistedAuth } from '../auth-types.js';
 import { asUserId } from '../auth-types.js';
-import type { AuthFetch } from '../create-oauth-app-auth.js';
+import type { AuthFetch } from '../auth-contract.js';
 import {
 	createMachineAuthClient,
 	loginWithOob,

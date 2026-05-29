@@ -30,16 +30,13 @@ import {
 } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
-import type { AuthClient } from '../auth-contract.js';
+import type { AuthClient, AuthFetch } from '../auth-contract.js';
 import {
 	ApiSessionResponse,
 	PersistedAuth,
 	type UserId,
 } from '../auth-types.js';
-import {
-	type AuthFetch,
-	createOAuthAppAuth,
-} from '../create-oauth-app-auth.js';
+import { createOAuthAppAuth } from '../create-oauth-app-auth.js';
 import { serializePersistedAuthCell } from '../persisted-auth-storage.js';
 import { createOobOAuthLauncher } from './oob-launcher.js';
 

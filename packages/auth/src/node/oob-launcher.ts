@@ -22,12 +22,12 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import type { AuthFetch } from '../create-oauth-app-auth.js';
+import type { AuthFetch } from '../auth-contract.js';
 import type {
 	OAuthLauncher,
 	OAuthLaunchResult,
 } from '../oauth-launchers/contract.js';
-import { parseOAuthTokenGrant } from '../oauth-token-response.js';
+import { parseOAuthTokenGrant } from '../oauth-token-endpoints.js';
 
 /**
  * CLI transport failures before machine auth can persist a session.

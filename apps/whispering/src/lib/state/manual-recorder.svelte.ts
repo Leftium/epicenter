@@ -81,11 +81,13 @@ function createManualRecorder() {
 	// that gate, a user action that fires before bootstrap resolves sees a
 	// stale `_current === null` and either no-ops the cancel (leaking the
 	// Rust session) or double-starts on top of a rehydrated one.
-	const bootstrapped = ManualRecorderLive.resumeActiveSession().then((result) => {
-		const found = result.data ?? null;
-		if (found) attach(found);
-		return result;
-	});
+	const bootstrapped = ManualRecorderLive.resumeActiveSession().then(
+		(result) => {
+			const found = result.data ?? null;
+			if (found) attach(found);
+			return result;
+		},
+	);
 
 	return {
 		get state(): WhisperingRecordingState {

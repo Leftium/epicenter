@@ -169,19 +169,6 @@ const TransformationRunResult = Type.Union([
 export type TransformationRunResult = Static<typeof TransformationRunResult>;
 
 /**
- * Results from runs that have reached a terminal state. Enumerated, not
- * negated: adding a new non-terminal status (e.g. `pending`) means adding
- * a variant above, not silently widening this union.
- */
-const TerminalTransformationRunResult = Type.Union([
-	CompletedResult,
-	FailedResult,
-]);
-export type TerminalTransformationRunResult = Static<
-	typeof TerminalTransformationRunResult
->;
-
-/**
  * Execution records for transformation pipelines. One run per invocation.
  * State queries filter by top-level `recordingId` / `transformationId` and
  * sort by `startedAt`; status-dependent fields live inside `result`.

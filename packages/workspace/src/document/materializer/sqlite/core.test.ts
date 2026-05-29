@@ -25,7 +25,7 @@ import {
 } from '../../../index.js';
 import { isAction, isMutation, isQuery } from '../../../shared/actions.js';
 import { column } from '../../column/index.js';
-import { attachSqliteMaterializerCore, type MirrorDatabase } from './core.js';
+import { attachSqliteMaterializerCore } from './core.js';
 
 const postsTable = defineTable({
 	id: column.string(),
@@ -42,31 +42,8 @@ const tableDefinitions = { posts: postsTable, notes: notesTable };
 
 const hasFts5 = canUseFts5();
 
-type TestDb = MirrorDatabase & {
-	raw: Database;
-	sqlCalls: string[];
-	close(): void;
-};
-
-function createTestDb(): TestDb {
-	const raw = new Database(':memory:');
-	const sqlCalls: string[] = [];
-
-	return {
-		raw,
-		sqlCalls,
-		close() {
-			raw.close();
-		},
-		run(sql: string) {
-			sqlCalls.push(sql);
-			return raw.run(sql);
-		},
-		prepare(sql: string) {
-			sqlCalls.push(sql);
-			return raw.prepare(sql);
-		},
-	};
+function createTestDb() {
+	return new Database(':memory:');
 }
 
 type AttachedTables = Tables<typeof tableDefinitions>;
@@ -150,14 +127,14 @@ async function waitForSyncCycle() {
 	await new Promise((resolve) => setTimeout(resolve, 200));
 }
 
-function getRows(db: TestDb, tableName: string) {
-	return db.raw
+function getRows(db: Database, tableName: string) {
+	return db
 		.prepare(`SELECT * FROM "${tableName}" ORDER BY "id"`)
 		.all() as Record<string, unknown>[];
 }
 
-function hasTable(db: TestDb, tableName: string) {
-	const row = db.raw
+function hasTable(db: Database, tableName: string) {
+	const row = db
 		.prepare('SELECT name FROM sqlite_master WHERE type = ? AND name = ?')
 		.get('table', tableName);
 	return row != null;
@@ -211,12 +188,11 @@ describe('attachSqliteMaterializerCore', () => {
 
 			try {
 				await new Promise((resolve) => setTimeout(resolve, 25));
-				expect(db.sqlCalls).toHaveLength(0);
+				expect(hasTable(db, 'posts')).toBe(false);
 
 				gate.resolve();
 				await workspace.sqlite.whenFlushed;
 
-				expect(db.sqlCalls.length).toBeGreaterThan(0);
 				expect(hasTable(db, 'posts')).toBe(true);
 			} finally {
 				gate.resolve();

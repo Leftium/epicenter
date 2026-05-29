@@ -9,15 +9,12 @@
  * @module
  */
 
+import type { Database } from 'bun:sqlite';
 import Type from 'typebox';
-import {
-	defineErrors,
-	extractErrorMessage,
-	type InferErrors,
-} from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import type { Logger } from 'wellcrafted/logger';
 import { defineQuery } from '../../../shared/actions.js';
-import type { FtsConfig, MirrorDatabase, TablesRecord } from './core.js';
+import type { FtsConfig, TablesRecord } from './core.js';
 import { quoteIdentifier } from './ddl.js';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -42,7 +39,6 @@ const FtsError = defineErrors({
 		cause,
 	}),
 });
-type FtsError = InferErrors<typeof FtsError>;
 
 // ════════════════════════════════════════════════════════════════════════════
 // PUBLIC SEARCH TYPES
@@ -94,7 +90,7 @@ export type SearchResult = {
  * 4. AFTER UPDATE trigger to re-index changed rows
  */
 async function setupFtsTable(
-	db: MirrorDatabase,
+	db: Database,
 	tableName: string,
 	columns: string[],
 ): Promise<void> {
@@ -155,7 +151,7 @@ async function setupFtsTable(
  * or the query fails, returns an empty array with a warning.
  */
 async function ftsSearch(
-	db: MirrorDatabase,
+	db: Database,
 	tableName: string,
 	ftsColumns: string[],
 	query: string,
@@ -215,7 +211,7 @@ export function createSqliteFtsLayer<TTables extends TablesRecord>({
 	fts,
 	log,
 }: {
-	db: MirrorDatabase;
+	db: Database;
 	fts: FtsConfig<TTables>;
 	log: Logger;
 }) {
@@ -268,9 +264,8 @@ export function createSqliteFtsLayer<TTables extends TablesRecord>({
 
 /**
  * Build the shared FTS5 search query used by both the writer-side search action
- * and the read-only SQLite mirror reader. Execution stays caller-owned because
- * the writer path is async through {@link MirrorDatabase}, while the reader
- * path is synchronous through `bun:sqlite`.
+ * and the read-only SQLite mirror reader. Execution stays caller-owned so the
+ * writer action can catch and log FTS failures while the reader stays sync.
  *
  * @internal
  */

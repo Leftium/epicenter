@@ -41,14 +41,15 @@
 import { AuthUser } from '@epicenter/auth';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { AssetError } from '@epicenter/constants/asset-errors';
-import { asOwnerId } from '@epicenter/constants/identity';
+import { asOwnerId, type OwnerId } from '@epicenter/constants/identity';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { Hono, type MiddlewareHandler } from 'hono';
+import { type Context, Hono, type MiddlewareHandler } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { describeRoute } from 'hono-openapi';
 import { customAlphabet } from 'nanoid';
+import { Ok, type Result } from 'wellcrafted/result';
 import { MAX_ASSET_BYTES } from '../constants.js';
 import * as schema from '../db/schema/index.js';
 import { requireCookieOrBearerUser } from '../middleware/require-auth.js';
@@ -56,6 +57,35 @@ import { createRequireOwnership } from '../middleware/require-ownership.js';
 import { assetKey } from '../owner.js';
 import { type OwnershipRule, resolveOwnerPartition } from '../ownership.js';
 import type { Env } from '../types.js';
+
+/**
+ * Authenticate and authorize a private-asset read.
+ *
+ * The conditional GET mounts NO auth upstream (public assets serve without
+ * it), so this is the ONLY owner-isolation check standing between a private
+ * asset and a cross-owner read. It synthesizes `c.var.user` from the request
+ * session, resolves the deployment owner partition through the same
+ * `resolveOwnerPartition` the `requireOwnership` middleware uses, and confirms
+ * it matches the URL `:ownerId`. Keeping the bypass's auth in one named owner
+ * means a test can pin it instead of trusting an inline branch not to rot.
+ */
+async function assertPrivateAssetOwner(
+	c: Context<Env>,
+	ownership: OwnershipRule,
+	urlOwnerId: OwnerId,
+): Promise<Result<void, AssetError>> {
+	const session = await c.var.auth.api.getSession({
+		headers: c.req.raw.headers,
+	});
+	if (!session) return AssetError.Unauthorized();
+	c.set('user', AuthUser.assert(session.user));
+	const { data: ownerPartition, error } = await resolveOwnerPartition(
+		ownership,
+		c,
+	);
+	if (error || urlOwnerId !== ownerPartition) return AssetError.Unauthorized();
+	return Ok(undefined);
+}
 
 /**
  * 21-char alphanumeric ID generator (~108 bits entropy). Used as the
@@ -336,22 +366,12 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 					}
 
 					if (row.visibility === 'private') {
-						const session = await c.var.auth.api.getSession({
-							headers: c.req.raw.headers,
-						});
-						if (!session) {
-							const err = AssetError.Unauthorized();
-							return c.json(err, err.error.status);
-						}
-						c.set('user', AuthUser.assert(session.user));
-						const { data: ownerPartition, error } = await resolveOwnerPartition(
-							ownership,
+						const { error } = await assertPrivateAssetOwner(
 							c,
+							ownership,
+							urlOwnerId,
 						);
-						if (error || urlOwnerId !== ownerPartition) {
-							const err = AssetError.Unauthorized();
-							return c.json(err, err.error.status);
-						}
+						if (error) return c.json({ data: null, error }, error.status);
 					}
 
 					const object = await c.env.ASSETS_BUCKET.get(

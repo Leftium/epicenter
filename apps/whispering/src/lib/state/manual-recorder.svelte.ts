@@ -39,8 +39,8 @@ export const manualRecorderKeys = defineKeys({
  * - Operations: `manualRecorder.startRecording({ sendStatus })` etc.
  * - Device enumeration as a TanStack Query for loading states in selectors
  *
- * Each recording is a `RecordingSession` object returned by the backend that
- * started it. The RecordingSession owns its own stop/cancel/subscribe.
+ * Each recording is a `RecordingSession` object returned by the implementation
+ * that started it. The RecordingSession owns its own stop/cancel/subscribe.
  *
  * Subscription is per-RecordingSession rather than per-service. `attach()`
  * subscribes to the live RecordingSession and `detach()` cleans up on

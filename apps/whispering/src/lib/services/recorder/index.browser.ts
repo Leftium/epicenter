@@ -68,7 +68,6 @@ function createNavigatorRecorder() {
 
 		const recordingSession = {
 			recordingId,
-			backend: 'navigator',
 
 			stop: async ({ sendStatus }) => {
 				sendStatus({

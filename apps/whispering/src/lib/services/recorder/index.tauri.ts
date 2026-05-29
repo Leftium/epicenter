@@ -100,7 +100,6 @@ function createCpalRecorder() {
 
 		const session = {
 			recordingId,
-			backend: 'cpal',
 
 			stop: async ({ sendStatus }) => {
 				sendStatus({

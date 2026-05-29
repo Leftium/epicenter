@@ -195,7 +195,7 @@ export type RecorderError = InferErrors<typeof RecorderError>;
 /**
  * Base parameters shared across manual recorder implementations.
  */
-export type BaseRecordingParams = {
+type BaseRecordingParams = {
 	selectedDeviceId: DeviceIdentifier | null;
 	recordingId: string;
 };
@@ -254,10 +254,10 @@ export type RecorderStopResult =
 	  };
 
 /**
- * A live recording session bound to the backend that started it.
+ * A live recording session returned by the recorder implementation that started it.
  *
- * The `RecordingSession` is the unit of lifecycle: it knows its own backend, owns
- * its own teardown, and exposes per-session state changes.
+ * The `RecordingSession` is the unit of lifecycle: it owns its own teardown and
+ * exposes per-session state changes.
  *
  * The `subscribe` handler is invoked synchronously with the current state on
  * subscribe (so callers don't have to mirror "I just started" themselves),
@@ -266,7 +266,6 @@ export type RecorderStopResult =
  */
 export type RecordingSession = {
 	readonly recordingId: string;
-	readonly backend: 'navigator' | 'cpal';
 	stop(callbacks: {
 		sendStatus: UpdateStatusMessageFn;
 	}): Promise<Result<RecorderStopResult, RecorderError>>;
@@ -279,7 +278,7 @@ export type RecordingSession = {
 /**
  * Factory for recording sessions. Services no longer carry mutable
  * start/stop state directly; instead `startRecording` returns a RecordingSession
- * whose methods are bound to the backend that produced it.
+ * whose methods are bound to the implementation that produced it.
  */
 export type RecorderService<RecordingParams extends BaseRecordingParams> = {
 	/**
@@ -288,7 +287,7 @@ export type RecorderService<RecordingParams extends BaseRecordingParams> = {
 	 * stream; navigator sessions cannot survive a reload and will always
 	 * return null after one.
 	 *
-	 * Returns the live RecordingSession bound to this backend, or null if none.
+	 * Returns the live RecordingSession owned by this implementation, or null if none.
 	 */
 	getActiveRecording(): Promise<Result<RecordingSession | null, RecorderError>>;
 

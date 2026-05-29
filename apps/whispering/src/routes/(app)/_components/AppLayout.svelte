@@ -27,7 +27,7 @@
 		syncLocalShortcutsWithSettings,
 	} from '../_layout-utils/register-commands';
 	import { registerOnboarding } from '../_layout-utils/register-onboarding';
-	import { registerAccessibilityPermission } from '../_layout-utils/register-permissions';
+	import { registerAccessibilityPermission } from '../_layout-utils/register-accessibility-permission';
 	import { syncIconWithRecorderState } from '../_layout-utils/syncIconWithRecorderState.svelte';
 
 	let cleanupAccessibilityPermission: (() => void) | undefined;

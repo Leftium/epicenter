@@ -1,12 +1,11 @@
 /**
- * executeRun peer dispatch tests.
+ * Daemon action handler tests.
  *
- * Verifies the daemon preserves remote dispatch outcomes in one `/run`
- * envelope before the response crosses the IPC boundary. The relay owns
- * reachability: a `RecipientOffline` dispatch error surfaces as
- * `PeerNotFound`, every other dispatch error as `RemoteCallFailed`. The
- * `collab.dispatch` path is faked here so the test can drive those outcomes
- * without spinning up real Yjs sync.
+ * Verifies local invoke and peer dispatch stay separate before the response
+ * crosses the IPC boundary. The relay owns reachability: a
+ * `RecipientOffline` dispatch error surfaces as `PeerNotFound`, every other
+ * dispatch error as `RemoteCallFailed`. The `collab.dispatch` path is faked
+ * here so the test can drive those outcomes without spinning up real Yjs sync.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -17,8 +16,8 @@ import { DispatchError, type DispatchRequest } from '../document/dispatch.js';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import type { ActionRegistry } from '../shared/actions.js';
 import { defineMutation, defineQuery } from '../shared/actions.js';
-import type { RunSyncStatus } from './run-errors.js';
-import { executeRun } from './run-handler.js';
+import type { PeerDispatchSyncStatus } from './action-errors.js';
+import { executeDispatch, executeInvoke } from './action-handler.js';
 import type { DaemonServedMount } from './types.js';
 
 type FakeDispatch = <TOutput = unknown>(
@@ -53,7 +52,7 @@ function fakeEntry({
 	};
 }
 
-describe('executeRun peer dispatch', () => {
+describe('executeDispatch peer dispatch', () => {
 	test('relay RecipientOffline surfaces as PeerNotFound with sync status', async () => {
 		const syncStatus = {
 			phase: 'connecting',
@@ -64,17 +63,17 @@ describe('executeRun peer dispatch', () => {
 			phase: 'connecting',
 			retries: 2,
 			lastErrorType: 'connection',
-		} satisfies RunSyncStatus;
+		} satisfies PeerDispatchSyncStatus;
 		const entry = fakeEntry({
 			syncStatus,
 			dispatch: (async () =>
 				DispatchError.RecipientOffline({ to: 'ghost' })) as FakeDispatch,
 		});
 
-		const result = await executeRun([entry], {
+		const result = await executeDispatch([entry], {
 			actionPath: 'demo.tabs_list',
 			input: undefined,
-			peerTarget: 'ghost',
+			to: 'ghost',
 			waitMs: 25,
 		});
 
@@ -83,7 +82,7 @@ describe('executeRun peer dispatch', () => {
 		if (error.name !== 'PeerNotFound') {
 			throw new Error(`expected PeerNotFound, got ${error.name}`);
 		}
-		expect(error.peerTarget).toBe('ghost');
+		expect(error.to).toBe('ghost');
 		expect(error.syncStatus).toEqual(runSyncStatus);
 	});
 
@@ -98,10 +97,10 @@ describe('executeRun peer dispatch', () => {
 			}) as FakeDispatch,
 		});
 
-		const result = await executeRun([entry], {
+		const result = await executeDispatch([entry], {
 			actionPath: 'demo.tabs_list',
 			input: undefined,
-			peerTarget: 'mac',
+			to: 'mac',
 			waitMs: 25,
 		});
 
@@ -119,10 +118,10 @@ describe('executeRun peer dispatch', () => {
 				})) as FakeDispatch,
 		});
 
-		const result = await executeRun([entry], {
+		const result = await executeDispatch([entry], {
 			actionPath: 'demo.tabs_list',
 			input: undefined,
-			peerTarget: 'mac',
+			to: 'mac',
 			waitMs: 25,
 		});
 
@@ -133,9 +132,30 @@ describe('executeRun peer dispatch', () => {
 		}
 		expect(error.cause).toMatchObject({ name: 'ActionFailed' });
 	});
+
+	test('recipient owns action existence for peer dispatch', async () => {
+		let invokedAction = '';
+		const entry = fakeEntry({
+			actions: {},
+			dispatch: (async (req) => {
+				invokedAction = req.action;
+				return { data: 'ok', error: null };
+			}) as FakeDispatch,
+		});
+
+		const result = await executeDispatch([entry], {
+			actionPath: 'demo.peer_only_action',
+			input: undefined,
+			to: 'mac',
+			waitMs: 25,
+		});
+
+		expectOk(result);
+		expect(invokedAction).toBe('peer_only_action');
+	});
 });
 
-describe('executeRun mount-prefixed routing', () => {
+describe('executeInvoke mount-prefixed routing', () => {
 	test('invokes action under the selected mount', async () => {
 		const entry = fakeEntry({
 			mount: 'notes',
@@ -146,10 +166,9 @@ describe('executeRun mount-prefixed routing', () => {
 			},
 		});
 
-		const result = await executeRun([entry], {
+		const result = await executeInvoke([entry], {
 			actionPath: 'notes.notes_add',
 			input: { body: 'hello' },
-			waitMs: 25,
 		});
 
 		const data = expectOk(result);
@@ -166,10 +185,9 @@ describe('executeRun mount-prefixed routing', () => {
 			},
 		});
 
-		const result = await executeRun([entry], {
+		const result = await executeInvoke([entry], {
 			actionPath: 'notes.notes',
 			input: { body: 'hello' },
-			waitMs: 25,
 		});
 
 		const error = expectErr(result);
@@ -181,12 +199,11 @@ describe('executeRun mount-prefixed routing', () => {
 	});
 
 	test('unknown mount returns available mount suggestions', async () => {
-		const result = await executeRun(
+		const result = await executeInvoke(
 			[fakeEntry({}), fakeEntry({ mount: 'tasks', actions: {} })],
 			{
 				actionPath: 'missing.actions_add',
 				input: undefined,
-				waitMs: 25,
 			},
 		);
 

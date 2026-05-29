@@ -3,11 +3,12 @@
  * routes; the daemon server wires its fetch handler into Bun's listener and
  * the hand-rolled `daemonClient` in `./client.ts` POSTs against it.
  *
- * Each verb is a one-line shell shortcut for one daemon runtime primitive:
+ * Each route is a one-line shell shortcut for one daemon runtime primitive:
  *
- *   /peers  ->  collaboration.devices.list()                       all mounts
- *   /list   ->  flat manifest of `${mount}.${action_key}` -> meta   all mounts
- *   /run    ->  invokeAction(...) | collab.dispatch(...)            mount-routed
+ *   /peers    ->  collaboration.devices.list()                     all mounts
+ *   /list     ->  flat manifest of `${mount}.${action_key}` -> meta all mounts
+ *   /invoke   ->  invokeAction(...)                                 mount-routed
+ *   /dispatch ->  collab.dispatch(...)                              mount-routed
  *
  * Each route returns the handler's `Result<T, DomainErr>` body directly.
  * Unexpected exceptions propagate to Hono's default error handler (HTTP
@@ -20,12 +21,12 @@ import { type } from 'arktype';
 import { Hono } from 'hono';
 import { Ok } from 'wellcrafted/result';
 import { type ActionManifest, toActionMeta } from '../shared/actions.js';
+import { executeDispatch, executeInvoke } from './action-handler.js';
 import { joinDaemonActionPath } from './action-path.js';
-import { executeRun } from './run-handler.js';
 import type { DaemonServedMount } from './types.js';
 
 /**
- * Wire body for `/run`. The schema serves two roles:
+ * Wire body for `/invoke`. The schema serves two roles:
  *
  *   1. Runtime validation at the daemon boundary via
  *      `@hono/standard-validator`. A stale CLI gets a typed 400 instead of a
@@ -37,13 +38,24 @@ import type { DaemonServedMount } from './types.js';
  * value and the type).
  */
 
-export const RunRequest = type({
+export const InvokeRequest = type({
 	actionPath: 'string',
 	input: 'unknown',
-	'peerTarget?': 'string',
+});
+export type InvokeRequest = typeof InvokeRequest.infer;
+
+/**
+ * Wire body for `/dispatch`. Peer dispatch is deliberately separate from
+ * local invoke: the recipient device is the authority for action existence,
+ * and the relay owns reachability.
+ */
+export const PeerDispatchRequest = type({
+	actionPath: 'string',
+	input: 'unknown',
+	to: 'string',
 	waitMs: 'number',
 });
-export type RunRequest = typeof RunRequest.infer;
+export type PeerDispatchRequest = typeof PeerDispatchRequest.infer;
 
 /**
  * Row shape returned by `/peers`. One row per `(mount, deviceId)` pair,
@@ -64,9 +76,9 @@ export type PeerSnapshot = typeof PeerSnapshot.infer;
  * Build the daemon's Hono app. Tests import this directly; production serves
  * the app through the daemon server factory.
  *
- * `/list` exposes mount-prefixed action paths. `/run` uses that same prefix to
- * pick the hosted runtime before dispatching the action key locally or over
- * RPC.
+ * `/list` exposes mount-prefixed action paths. `/invoke` and `/dispatch` use
+ * that same prefix to pick the hosted runtime before executing locally or
+ * routing to a peer.
  */
 export function buildDaemonApp(mounts: readonly DaemonServedMount[]) {
 	return new Hono()
@@ -95,8 +107,12 @@ export function buildDaemonApp(mounts: readonly DaemonServedMount[]) {
 			}
 			return c.json(Ok(manifest));
 		})
-		.post('/run', sValidator('json', RunRequest), async (c) => {
+		.post('/invoke', sValidator('json', InvokeRequest), async (c) => {
 			const request = c.req.valid('json');
-			return c.json(await executeRun(mounts, request));
+			return c.json(await executeInvoke(mounts, request));
+		})
+		.post('/dispatch', sValidator('json', PeerDispatchRequest), async (c) => {
+			const request = c.req.valid('json');
+			return c.json(await executeDispatch(mounts, request));
 		});
 }

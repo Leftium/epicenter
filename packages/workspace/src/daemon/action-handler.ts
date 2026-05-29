@@ -1,49 +1,50 @@
 /**
- * Daemon-side dispatch for the `/run` route. The Hono handler in `app.ts`
- * forwards to `executeRun` here.
+ * Daemon-side action handlers for `/invoke` and `/dispatch`.
  *
- * `epicenter run` is a shell shortcut for one daemon runtime primitive:
+ * Local invoke and peer dispatch stay separate here because they have
+ * different authorities:
  *
- *   request.peerTarget === undefined  ->  invokeAction(...)
- *   request.peerTarget === <deviceId>  ->  collab.dispatch({ to, action, input, signal })
+ *   /invoke   -> this daemon's action registry decides action existence.
+ *   /dispatch -> the recipient peer decides action existence.
  *
- * The dispatch endpoint is HTTP-backed and addresses devices by `deviceId`
- * directly; the relay routes to the most-recently-connected socket for that
- * device. If the relay has no live socket for the target, the dispatch
- * resolves with `RecipientOffline`, which the `/run` route surfaces as
- * `PeerNotFound`; any other dispatch error is forwarded under
+ * Dispatch addresses devices by `deviceId` directly; the relay routes to the
+ * most-recently-connected socket for that device. If the relay has no live
+ * socket for the target, dispatch resolves with `RecipientOffline`, surfaced
+ * here as `PeerNotFound`; any other dispatch error is forwarded under
  * `RemoteCallFailed`.
  *
  * Power-user automation (loops, fan-out across peers, conditional dispatch)
  * lives in vault-style TypeScript scripts that load the workspace library
  * directly. The CLI deliberately does not grow flags that shadow scripting.
  *
- * `executeRun` returns a domain `RunResponse` that the route serializes
- * verbatim. Unexpected exceptions bubble to Hono's non-2xx response path
- * and surface as `HandlerCrashed` on the client side.
+ * Each function returns a domain response that the route serializes verbatim.
+ * Unexpected exceptions bubble to Hono's non-2xx response path and surface as
+ * `HandlerCrashed` on the client side.
  */
 
 import { Ok } from 'wellcrafted/result';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import { invokeAction } from '../shared/actions.js';
-import { joinDaemonActionPath, parseDaemonActionPath } from './action-path.js';
-import type { RunRequest } from './app.js';
 import {
-	RunError,
-	type RunResponse,
-	type RunSyncStatus,
-} from './run-errors.js';
+	InvokeError,
+	type InvokeResponse,
+	PeerDispatchError,
+	type PeerDispatchResponse,
+	type PeerDispatchSyncStatus,
+} from './action-errors.js';
+import { joinDaemonActionPath, parseDaemonActionPath } from './action-path.js';
+import type { InvokeRequest, PeerDispatchRequest } from './app.js';
 import type { DaemonServedMount } from './types.js';
 
-export async function executeRun(
+export async function executeInvoke(
 	mounts: readonly DaemonServedMount[],
-	{ actionPath, input: actionInput, peerTarget, waitMs }: RunRequest,
-): Promise<RunResponse> {
+	{ actionPath, input: actionInput }: InvokeRequest,
+): Promise<InvokeResponse> {
 	const { mount, localPath } = parseDaemonActionPath(actionPath);
 	const mountRuntime = mounts.find((candidate) => candidate.mount === mount);
 	if (!mountRuntime) {
 		const available = mounts.map((candidate) => candidate.mount);
-		return RunError.UsageError({
+		return InvokeError.UsageError({
 			message: `No mount "${mount}". Available: ${available.join(', ')}`,
 			suggestions: available.map((name) => `  ${name}`),
 		});
@@ -53,77 +54,63 @@ export async function executeRun(
 	if (!action) {
 		const descendants = daemonActionSuggestionLines(mountRuntime, localPath);
 		if (descendants.length > 0) {
-			return RunError.UsageError({
+			return InvokeError.UsageError({
 				message: `"${actionPath}" is not a runnable action.`,
 				suggestions: descendants,
 			});
 		}
-		return RunError.UsageError({
+		return InvokeError.UsageError({
 			message: `"${actionPath}" is not defined.`,
 			suggestions: daemonActionNearestSiblingLines(mountRuntime, localPath),
 		});
 	}
 
-	if (peerTarget !== undefined) {
-		return invokeRemote({
-			actionInput,
-			localPath,
-			peerTarget,
-			mountRuntime,
-			waitMs,
-		});
-	}
-
 	const result = await invokeAction(action, actionInput);
 	if (result.error !== null) {
-		return RunError.RuntimeError({ cause: result.error });
+		return InvokeError.RuntimeError({ cause: result.error });
 	}
 	return Ok(result.data);
 }
 
-async function invokeRemote({
-	actionInput,
-	localPath,
-	peerTarget,
-	mountRuntime,
-	waitMs,
-}: {
-	actionInput: unknown;
-	localPath: string;
-	peerTarget: string;
-	mountRuntime: DaemonServedMount;
-	waitMs: number;
-}): Promise<RunResponse> {
+export async function executeDispatch(
+	mounts: readonly DaemonServedMount[],
+	{ actionPath, input: actionInput, to, waitMs }: PeerDispatchRequest,
+): Promise<PeerDispatchResponse> {
+	const { mount, localPath } = parseDaemonActionPath(actionPath);
+	const mountRuntime = mounts.find((candidate) => candidate.mount === mount);
+	if (!mountRuntime) {
+		const available = mounts.map((candidate) => candidate.mount);
+		return PeerDispatchError.UsageError({
+			message: `No mount "${mount}". Available: ${available.join(', ')}`,
+			suggestions: available.map((name) => `  ${name}`),
+		});
+	}
+
 	const { runtime } = mountRuntime;
 
 	const result = await runtime.collaboration.dispatch({
-		to: peerTarget,
+		to,
 		action: localPath,
 		input: actionInput,
 		signal: AbortSignal.timeout(waitMs),
 	});
 
 	if (result.error !== null) {
-		const syncStatus = toRunSyncStatus(runtime.collaboration.status);
-		// Translate the full `DispatchError` union into the `RunError`
-		// taxonomy. `RecipientOffline` is promoted to its own variant because
-		// the renderer maps it to a distinct exit code (3): "you addressed a
-		// device that isn't connected" stays separate from a call that
-		// reached the peer and failed. The relay owns reachability and sits
-		// in the dispatch path, so no client-side presence pre-check is
-		// needed (or correct). The other four variants collapse into
-		// `RemoteCallFailed` (exit code 2); the `satisfies never` default
-		// forces this mapping to be revisited if `DispatchError` grows.
+		const syncStatus = toPeerDispatchSyncStatus(runtime.collaboration.status);
 		switch (result.error.name) {
 			case 'RecipientOffline':
-				return RunError.PeerNotFound({ peerTarget, waitMs, syncStatus });
+				return PeerDispatchError.PeerNotFound({
+					to,
+					waitMs,
+					syncStatus,
+				});
 			case 'ActionNotFound':
 			case 'ActionFailed':
 			case 'Cancelled':
 			case 'NetworkFailed':
-				return RunError.RemoteCallFailed({
+				return PeerDispatchError.RemoteCallFailed({
 					cause: result.error,
-					peerTarget,
+					to,
 					syncStatus,
 				});
 			default:
@@ -133,7 +120,7 @@ async function invokeRemote({
 	return Ok(result.data);
 }
 
-function toRunSyncStatus(status: SyncStatus): RunSyncStatus {
+function toPeerDispatchSyncStatus(status: SyncStatus): PeerDispatchSyncStatus {
 	switch (status.phase) {
 		case 'offline':
 			return { phase: 'offline' };

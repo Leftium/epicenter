@@ -9,7 +9,7 @@
  * - valid mounts are served over the daemon client
  * - invalid mount declarations fail before binding a socket
  * - close stops the listener, removes the socket file, and can run twice
- * - /run dispatches a real action handler over the Unix socket
+ * - /invoke executes a real action handler over the Unix socket
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -145,7 +145,7 @@ describe('startDaemonServer', () => {
 		}
 	});
 
-	test('run dispatches to a real action handler over the socket', async () => {
+	test('invoke executes a real action handler over the socket', async () => {
 		const lease = claimTestLease();
 		const runtime = makeRuntime({
 			echo: defineQuery({ handler: () => 'hello' }),
@@ -158,10 +158,9 @@ describe('startDaemonServer', () => {
 		try {
 			const server = expectOk(serverResult);
 			const data = expectOk(
-				await daemonClient(server.socketPath).run({
+				await daemonClient(server.socketPath).invoke({
 					actionPath: 'demo.echo',
 					input: null,
-					waitMs: 25,
 				}),
 			);
 			expect(data).toBe('hello');

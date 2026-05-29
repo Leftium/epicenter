@@ -5,7 +5,7 @@ describe('FTS search helpers', () => {
 	test('buildFtsSearchSql builds the shared writer and reader query', () => {
 		expect(buildFtsSearchSql('posts', 1)).toBe(
 			'SELECT "posts"."id" AS id,\n' +
-				'  snippet("posts_fts", 1, \'<mark>\', \'</mark>\', \'...\', 64) AS snippet,\n' +
+				"  snippet(\"posts_fts\", 1, '<mark>', '</mark>', '...', 64) AS snippet,\n" +
 				'  rank\n' +
 				'FROM "posts_fts"\n' +
 				'JOIN "posts" ON "posts".rowid = "posts_fts".rowid\n' +

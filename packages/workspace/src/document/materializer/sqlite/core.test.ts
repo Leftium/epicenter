@@ -495,11 +495,11 @@ describe('attachSqliteMaterializerCore', () => {
 			}
 		});
 
-			if (hasFts5) {
-				test('search returns ranked results with snippets when fts is configured', async () => {
-					const testSetup = setup({
-						build: (t) => ({
-							tables: { posts: t.posts, notes: t.notes },
+		if (hasFts5) {
+			test('search returns ranked results with snippets when fts is configured', async () => {
+				const testSetup = setup({
+					build: (t) => ({
+						tables: { posts: t.posts, notes: t.notes },
 						fts: { posts: ['title'] },
 					}),
 				});
@@ -536,57 +536,57 @@ describe('attachSqliteMaterializerCore', () => {
 					expect(results[0]?.snippet).toContain('<mark>');
 					expect(typeof results[0]?.rank).toBe('number');
 				} finally {
-						await cleanup(testSetup);
-					}
+					await cleanup(testSetup);
+				}
+			});
+
+			test('sqlite_search supports snippetColumn', async () => {
+				const testSetup = setup({
+					build: (t) => ({
+						tables: { posts: t.posts },
+						fts: { posts: ['published', 'title'] },
+					}),
 				});
 
-				test('sqlite_search supports snippetColumn', async () => {
-					const testSetup = setup({
-						build: (t) => ({
-							tables: { posts: t.posts },
-							fts: { posts: ['published', 'title'] },
-						}),
+				try {
+					testSetup.workspace.tables.posts.set({
+						id: 'post-1',
+						title: 'Epicenter local-first mirror',
+						published: null,
 					});
 
-					try {
-						testSetup.workspace.tables.posts.set({
-							id: 'post-1',
-							title: 'Epicenter local-first mirror',
-							published: null,
-						});
+					await testSetup.workspace.sqlite.whenFlushed;
 
-						await testSetup.workspace.sqlite.whenFlushed;
-
-						const sqliteWithFts = testSetup.workspace.sqlite as unknown as {
-							actions: {
-								sqlite_search: (
-									input: Record<string, unknown>,
-								) => Promise<unknown>;
-							};
+					const sqliteWithFts = testSetup.workspace.sqlite as unknown as {
+						actions: {
+							sqlite_search: (
+								input: Record<string, unknown>,
+							) => Promise<unknown>;
 						};
-						const results = (await sqliteWithFts.actions.sqlite_search({
-							table: 'posts',
-							query: 'mirror',
-							snippetColumn: 'title',
-						})) as Array<{ id: string; snippet: string; rank: number }>;
-						const fallbackResults = (await sqliteWithFts.actions.sqlite_search({
-							table: 'posts',
-							query: 'mirror',
-							snippetColumn: 'missing',
-						})) as Array<{ id: string; snippet: string; rank: number }>;
+					};
+					const results = (await sqliteWithFts.actions.sqlite_search({
+						table: 'posts',
+						query: 'mirror',
+						snippetColumn: 'title',
+					})) as Array<{ id: string; snippet: string; rank: number }>;
+					const fallbackResults = (await sqliteWithFts.actions.sqlite_search({
+						table: 'posts',
+						query: 'mirror',
+						snippetColumn: 'missing',
+					})) as Array<{ id: string; snippet: string; rank: number }>;
 
-						expect(results).toHaveLength(1);
-						expect(results[0]?.snippet).toContain('<mark>mirror</mark>');
-						expect(fallbackResults).toHaveLength(1);
-						expect(fallbackResults[0]?.snippet).not.toContain(
-							'<mark>mirror</mark>',
-						);
-					} finally {
-						await cleanup(testSetup);
-					}
-				});
-			}
-		});
+					expect(results).toHaveLength(1);
+					expect(results[0]?.snippet).toContain('<mark>mirror</mark>');
+					expect(fallbackResults).toHaveLength(1);
+					expect(fallbackResults[0]?.snippet).not.toContain(
+						'<mark>mirror</mark>',
+					);
+				} finally {
+					await cleanup(testSetup);
+				}
+			});
+		}
+	});
 
 	// ============================================================================
 	// ACTION BRAND Tests

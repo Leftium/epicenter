@@ -4,10 +4,9 @@ The canonical Epicenter project layout demonstrated against `@epicenter/fuji`.
 
 ## What this shows
 
-One project, one workspace, defined inline in `epicenter.config.ts`. Table
-data lives as markdown at the project root and is committed to git. Runtime
-state (Yjs persistence, SQLite materializer) lives under `.epicenter/` and is
-gitignored.
+One project, one Fuji mount, declared in `epicenter.config.ts`. Table data lives
+as markdown at the project root and is committed to git. Runtime state (Yjs
+persistence, SQLite materializer) lives under `.epicenter/` and is gitignored.
 
 This example is the reference implementation of the layout spec at
 `specs/20260522T220000-workspace-project-layout.md`. If the spec changes,
@@ -88,8 +87,8 @@ workspace.
 - Browser or Tauri frontend. The example is daemon-hosted only.
 - Custom path overrides. Materializer paths use the spec's default
   (`.epicenter/sqlite.db` and `./entries/`).
-- Multi-workspace orchestration. One workspace per project is the canonical
-  shape; multi-workspace is a monorepo with sibling projects.
+- Multiple mounts. This example keeps the mount list small so the project
+  layout stays easy to inspect.
 
 ## See also
 

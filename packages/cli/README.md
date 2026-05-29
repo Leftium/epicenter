@@ -69,7 +69,7 @@ export default [fuji()];
 
 The factory carries the canonical mount name (`fuji`), so the CLI addresses actions as `fuji.<action_key>` regardless of the project folder name.
 
-For projects that host more than one app workspace, export an array:
+For projects that host more than one mount, add more entries to the array:
 
 ```ts
 import { fuji } from '@epicenter/fuji/project';

@@ -112,7 +112,7 @@ function writeDemoConfig(): void {
 		[
 			"import demo from './workspaces/demo/daemon.ts';",
 			'',
-			'export default demo;',
+			'export default [demo];',
 			'',
 		].join('\n'),
 	);
@@ -182,7 +182,7 @@ describe('runUp: happy path', () => {
 			expect(handle.mounts[0]?.mount).toBe('demo');
 			expect(
 				readFileSync(join(workDir, 'epicenter.config.ts'), 'utf8'),
-			).toContain('export default demo');
+			).toContain('export default [demo]');
 
 			const sockPath = socketPathFor(workDir);
 			expect(existsSync(sockPath)).toBe(true);

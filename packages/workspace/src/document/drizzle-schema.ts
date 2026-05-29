@@ -3,10 +3,11 @@
  * `TableDefinition`s so callers can use Drizzle's typed query builder on the
  * mirror file opened by {@link openSqliteReader}.
  *
- * Read-only by design. The materializer (`attachSqliteMaterializer`) owns the
- * write path with prepared statements and `serializeValue`. Mixing Drizzle's
- * `{ mode: 'json' }` write encoder with that path would double-stringify;
- * routing only reads through Drizzle keeps the encoders single-owner.
+ * Read-only by design. The materializer (`attachBunSqliteMaterializer`) owns
+ * the write path with prepared statements and `serializeValue`. Mixing
+ * Drizzle's `{ mode: 'json' }` write encoder with that path would
+ * double-stringify; routing only reads through Drizzle keeps the encoders
+ * single-owner.
  *
  * The mirror is a derived cache: Yjs is the source of truth, and rows reach
  * SQLite only after `table.getAllValid()` validates them. So columns map to

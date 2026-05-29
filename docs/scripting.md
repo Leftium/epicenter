@@ -36,15 +36,15 @@ That is the whole API. No machine auth in the script process, no encryption setu
 
 ## Reads: the SQLite materializer
 
-`openWorkspaceSqlite(projectDir, workspaceId)` returns a `bun:sqlite` `Database` opened against `.epicenter/sqlite/<workspaceId>.db`. `.epicenter/` is generated project data, not a source layout or route registry. The daemon's `attachSqliteMaterializer` keeps that file fresh; the script opens it read-only with `PRAGMA query_only = 1`, so an errant `INSERT` fails at the driver instead of silently diverging.
+`openWorkspaceSqlite(projectDir, workspaceId)` returns a `bun:sqlite` `Database` opened against `.epicenter/sqlite/<workspaceId>.db`. `.epicenter/` is generated project data, not a source layout or route registry. The daemon's `attachBunSqliteMaterializer` keeps that file fresh; the script opens it read-only with `PRAGMA query_only = 1`, so an errant `INSERT` fails at the driver instead of silently diverging.
 
 The materializer is the same SQL surface the daemon serves to the SPA: column-typed rows, FTS5 indexes, normal joins. Query cost is `O(rows-returned)` rather than `O(history)`, so cron jobs do not pay the seconds-of-Y.Doc-replay tax that an in-process snapshot would cost.
 
 For ranked search with snippets, use `openSqliteReader({ filePath: sqlitePath(...) })`; it wraps the same database and exposes a `search()` helper. For typed Drizzle queries, pass the returned `db` to `drizzle(db, { schema })` (the per-app schema lives in the app's npm package).
 
-## Writes: typed actions through the daemon
+## Writes: typed invoke through the daemon
 
-`connectDaemonActions<TActions>({ mount, projectDir })` returns a typed proxy. `mount` is the mount name (`'fuji'` for the Fuji example); the proxy translates `fuji.entries_update({ ... })` into a `POST /run` over the daemon's Unix socket in the OS runtime directory. The daemon invokes the action in-process against the live Y.Doc and returns a JSON `Result<T>`.
+`connectDaemonActions<TActions>({ mount, projectDir })` returns a typed proxy. `mount` is the mount name (`'fuji'` for the Fuji example); the proxy translates `fuji.entries_update({ ... })` into a `POST /invoke` over the daemon's Unix socket in the OS runtime directory. The daemon invokes the action in-process against the live Y.Doc and returns a JSON `Result<T>`.
 
 The mount name comes from the `Mount.name` field on the value `epicenter.config.ts` default-exports. App-package factories like `fuji()` carry their canonical name internally.
 

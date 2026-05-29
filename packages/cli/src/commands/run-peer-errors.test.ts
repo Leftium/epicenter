@@ -1,8 +1,8 @@
 /**
  * Error-emission tests for the `run --peer` path.
  *
- * Covers every `DispatchError` variant. Capture `console.error` and assert
- * line-by-line. Dispatch errors are constructed via
+ * Covers every `DispatchError` variant that can reach `RemoteCallFailed`.
+ * Capture `console.error` and assert line-by-line. Dispatch errors are constructed via
  * `DispatchError.X({...}).error` so they match the wire shape exactly.
  */
 
@@ -61,17 +61,6 @@ describe('emitRemoteCallError', () => {
 		);
 		expect(cap.lines).toEqual([
 			'error: "tabs_close" failed on macbook-pro: handler boom',
-		]);
-	});
-
-	test('RecipientOffline labels the peer as gone', () => {
-		cap = captureErrors();
-		emitRemoteCallError(
-			'macbook-pro',
-			DispatchError.RecipientOffline({ to: 'macbook-pro' }).error,
-		);
-		expect(cap.lines).toEqual([
-			'error: peer macbook-pro went offline before responding',
 		]);
 	});
 

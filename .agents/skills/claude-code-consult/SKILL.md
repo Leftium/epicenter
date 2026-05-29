@@ -44,6 +44,8 @@ Every consult must fit in one pass:
 4. Say what answer shape is useful.
 5. Tell Claude not to edit files, commit, push, delete, run destructive commands, or perform remote admin operations.
 
+Design the prompt so Claude can answer without taking a tool turn. A max-turn cap is not a quality budget. It is a hard conversation turn cap, so a consult that spends turns reading, searching, loading instructions, or asking itself for more context can hit the cap before the final answer is emitted. For one-pass consults, pipe the exact diff or pass a few explicit `--context` files and ask Claude to answer from that supplied material first.
+
 For architecture or API-shape questions, ask Claude to start with one concrete sentence describing the current surface, then look for radical options, asymmetric wins, and clean breaks before suggesting local patches.
 
 Do not paste a template mechanically. Write the prompt a sharp senior engineer would send to another senior engineer.
@@ -62,9 +64,41 @@ bun run claude:consult -- \
 
 Pipe narrow context into the wrapper or pass specific files with repeatable `--context` flags. Use `--mode review`, `--mode design`, `--mode tests`, or `--mode docs` to pick the critique lens.
 
-The wrapper uses `claude -p`, `--output-format json`, `--max-budget-usd`, `--max-turns`, and `--permission-mode dontAsk`. It intentionally loads the user's normal Claude Code config by default because the local Claude login can live there. Use the wrapper's `--bare` flag only when bare mode is known to have working auth.
+The wrapper uses `claude -p`, `--output-format json`, `--max-budget-usd`, `--no-session-persistence`, `--disable-slash-commands`, and `--permission-mode dontAsk`. It intentionally loads the user's normal Claude Code config by default because the local Claude login, model choice, and effort level can live there. Use the wrapper's `--bare` flag only when bare mode is known to have working auth.
 
-By default, pass context directly and do not expose read/search tools. The wrapper always denies `Edit`, `Write`, and `Bash`. Add `--read-files` only when Claude needs to read or search extra repo files. In that mode, the wrapper uses `--tools Read,Grep,Glob` and `--allowedTools Read,Grep,Glob`.
+The default budget is `$25` so normal strong consults have room to produce a real answer. Do not use a tiny budget cap as a safety rail for strong models: Claude Code can spend enough on setup or cache creation to hit the cap before a reusable `.result` exists. The wrapper rejects budgets under `$1` because local testing showed very small caps can fail before returning a result.
+
+By default, pass context directly and do not expose read/search tools. The wrapper disables tools with `--tools ""` and always denies `Edit`, `Write`, and `Bash`. Add `--read-files` only when Claude needs to read or search extra repo files. In that mode, the wrapper uses `--tools Read,Grep,Glob` and `--allowedTools Read,Grep,Glob`.
+
+Prefer this shape for reliable consults:
+
+```bash
+git diff -- packages/foo/src/bar.ts \
+  | bun run claude:consult -- \
+    --mode review \
+    --question "Find only behavioral bugs in this diff. If none, say none and name the highest residual risk."
+```
+
+Use `--context` for small, stable context files:
+
+```bash
+bun run claude:consult -- \
+  --mode design \
+  --context packages/foo/src/bar.ts \
+  --context packages/foo/src/bar.test.ts \
+  --question "Is this API boundary cohesive? Answer from these files first."
+```
+
+Avoid broad prompts:
+
+```txt
+review the whole repo
+think deeply until you find all problems
+read whatever files you need
+continue until done
+```
+
+Those shapes convert a consult into an exploration loop. Exploration should be split into scouts with separate budgets and exact scopes.
 
 Use a direct `claude -p` call only when the wrapper does not fit the question. For repo consults, restrict Claude to read/search tools:
 
@@ -78,9 +112,9 @@ claude -p "[prompt]" \
   --max-budget-usd 1
 ```
 
-Add `--max-turns` when the local Claude CLI supports it. Do not set `--model` unless the user explicitly asks for a model.
+Add `--max-turns` only when the user explicitly asks for a hard turn cap. Do not set `--model` or `--effort` unless the user explicitly asks for an override; otherwise, let the local Claude config decide.
 
-For pure judgment consults that do not need workspace files, omit `--tools`.
+For pure judgment consults that do not need workspace files, pass `--tools ""`.
 
 Bare mode may not see the user's Claude Code login. If a `--bare` call reports `Not logged in`, retry without `--bare` before changing auth state.
 
@@ -162,20 +196,22 @@ Never use `bypassPermissions`, `--dangerously-skip-permissions`, or `--allow-dan
 
 ## Blocking Behavior
 
-Consults and scouts are normally blocking because they are one-pass subprocess calls. They should be short and budgeted.
+Consults and scouts are normally blocking because they are one-pass subprocess calls. They should be focused and budgeted.
 
 Workers and large fan-out runs must not block Codex indefinitely. Use a wall-clock timeout when practical. If Claude hangs, runs out of budget, lacks auth, hits a turn limit, or returns generic output, record that and continue with the best local path.
 
 Only stop the overall task for Claude when the user explicitly made Claude's answer the deliverable.
 
+When the wrapper hits `--max-turns` or `--max-budget-usd`, treat the run as failed even if Claude may have reasoned internally. With `--output-format json`, the usable result is the final `.result` string. If the final result is missing, do not infer a partial answer from the failed run. Tighten the prompt, reduce context, remove `--read-files`, or split into scouts.
+
 Do not leave Claude background sessions running. If you use background sessions, capture their IDs, check logs, stop stuck work, and remove finished sessions.
 
 ## Budgets
 
-Every delegated Claude run must have a budget. Prefer the smallest budget and turn count that can answer the prompt.
+Every delegated Claude run must have a budget. Prefer the smallest budget that can answer the prompt, and use turn caps only when truncation is better than waiting.
 
 ```txt
-consult  low budget, short turn cap, blocking is acceptable
+consult  generous budget as the bound, no default turn cap
 scout    low budget per scout, small fan-out, fan-in through Codex
 worker   task-sized budget, wall-clock timeout, diff review required
 ```

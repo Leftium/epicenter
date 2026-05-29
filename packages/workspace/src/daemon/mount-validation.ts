@@ -1,5 +1,5 @@
 // Mount names are config-supplied identifiers (or carried by the Mount itself).
-// They become the prefix of `/list` manifest keys and `/run` action paths
+// They become the prefix of `/list` manifest keys and daemon action paths
 // (`${mount}.${action}`), so they must exclude `.` (the mount boundary) and
 // start with an alphanumeric. The leading-character class also rejects
 // `__proto__` and other underscore-led names.

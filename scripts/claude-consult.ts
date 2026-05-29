@@ -27,8 +27,7 @@ type ClaudeEnvelope = {
 	result?: unknown;
 };
 
-const defaultBudgetUsd = 1;
-const defaultMaxTurns = 3;
+const defaultBudgetUsd = 25;
 
 function parseArgs(argv: string[]) {
 	const options = {
@@ -36,7 +35,7 @@ function parseArgs(argv: string[]) {
 		question: '',
 		context: [] as string[],
 		budgetUsd: defaultBudgetUsd,
-		maxTurns: defaultMaxTurns,
+		maxTurns: undefined as number | undefined,
 		bare: false,
 		readFiles: false,
 	};
@@ -105,6 +104,8 @@ function parseArgs(argv: string[]) {
 	}
 
 	if (!options.question) fail('Missing required --question value');
+	if (options.budgetUsd < 1)
+		fail('--budget-usd must be at least 1 so Claude can return a result');
 
 	return options;
 }
@@ -126,8 +127,8 @@ async function main() {
 		'json',
 		'--max-budget-usd',
 		String(options.budgetUsd),
-		'--max-turns',
-		String(options.maxTurns),
+		'--no-session-persistence',
+		'--disable-slash-commands',
 		'--disallowedTools',
 		'Edit,Write,Bash',
 		'--permission-mode',
@@ -136,6 +137,12 @@ async function main() {
 
 	if (options.readFiles) {
 		args.push('--tools', 'Read,Grep,Glob', '--allowedTools', 'Read,Grep,Glob');
+	} else {
+		args.push('--tools', '');
+	}
+
+	if (options.maxTurns !== undefined) {
+		args.push('--max-turns', String(options.maxTurns));
 	}
 
 	const child = Bun.spawn(['claude', ...args], {
@@ -206,11 +213,12 @@ function buildPrompt(
 		...modeInstructions[options.mode].map((instruction) => `- ${instruction}`),
 		'',
 		'Answer shape:',
+		'- Answer directly from the supplied context before mentioning any missing context.',
 		'- Start with one concrete sentence describing the current surface or risk.',
 		'- Then list findings ordered by severity.',
 		'- For each finding, include evidence from the provided context and the smallest useful next action.',
 		'- Separate facts from opinions.',
-		'- If the evidence is insufficient, say exactly what is missing.',
+		'- If the evidence is insufficient, say exactly what is missing and stop.',
 	];
 
 	if (contextText) {
@@ -250,8 +258,8 @@ Options:
   --question, -q <text>    Required concrete consult question
   --mode <mode>            review | design | tests | docs (default: review)
   --context, -c <path>     Add a file as context, repeatable
-  --budget-usd <amount>    Claude Code max spend cap in USD (default: ${defaultBudgetUsd})
-  --max-turns <count>      Claude Code max turns (default: ${defaultMaxTurns})
+  --budget-usd <amount>    Claude Code max spend cap in USD (default: ${defaultBudgetUsd}, min: 1)
+  --max-turns <count>      Optional Claude Code max turns
   --bare                   Skip ambient Claude Code config. Requires auth that works in bare mode.
   --read-files             Let Claude use Read, Grep, and Glob
 `);

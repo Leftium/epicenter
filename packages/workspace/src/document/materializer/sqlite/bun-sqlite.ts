@@ -4,8 +4,10 @@
  * writer-side WAL pragmas), mirrors every table in `workspace.tables` into
  * it, and closes the handle when the workspace's ydoc is destroyed.
  *
- * Daemon-side. For browser/in-memory use, see `attachTursoMaterializer`
- * in the sibling `./turso.ts`.
+ * Daemon-side. Browser and Tauri SQLite writers are intentionally not part of
+ * this public surface; add a new materializer only when a real runtime caller
+ * earns that product path.
+ *
  *
  * @example
  * ```ts
@@ -51,7 +53,7 @@ export type AttachBunSqliteMaterializerOptions<
 	 * Optional FTS5 configuration. Keys must match `workspace.tables` keys; values
 	 * list the columns of that table's row to include in the FTS index.
 	 * When provided, the result exposes `sqlite.actions.sqlite_search(...)`; when
-	 * omitted, the `fts` namespace is absent from the return type.
+	 * omitted, `sqlite.actions` only contains `sqlite_rebuild`.
 	 */
 	fts?: TFts;
 
@@ -109,22 +111,6 @@ export function attachBunSqliteMaterializer<
 		debounceMs,
 		waitFor,
 		log,
-	});
-
-	// Registered AFTER core's own destroy listener so dispose() runs first
-	// (cancels timers, detaches observers) before the database handle closes.
-	// `close()` can throw if the handle is already shut by a duplicate destroy;
-	// swallow and log rather than letting it escape the destroy listener.
-	ydoc.once('destroy', () => {
-		try {
-			client.close();
-		} catch (cause) {
-			log.warn(
-				new Error('attachBunSqliteMaterializer: client.close failed', {
-					cause,
-				}),
-			);
-		}
 	});
 
 	return { ...core, client };

@@ -1,11 +1,11 @@
 /**
  * Source of truth for mount-prefixed daemon action paths.
  *
- * `/list` publishes action keys in this format, and `/run` accepts the same
- * format from the CLI. Mount validation rejects dots in mount names, so the
- * first dot belongs to the mount boundary. Everything after it is the
- * mount-local action key. Valid action keys are snake_case, so additional dots
- * remain part of an invalid key and resolve as ActionNotFound.
+ * `/list` publishes action keys in this format, and `/invoke` / `/dispatch`
+ * accept the same format from clients. Mount validation rejects dots in mount
+ * names, so the first dot belongs to the mount boundary. Everything after it
+ * is the mount-local action key. Valid action keys are snake_case, so
+ * additional dots remain part of an invalid key and resolve as ActionNotFound.
  */
 type ParsedDaemonActionPath = {
 	mount: string;
@@ -16,7 +16,7 @@ type ParsedDaemonActionPath = {
  * Build the daemon-visible path for a mount-local action.
  *
  * Use this anywhere daemon output names an action for humans or clients. That
- * keeps `/list` manifest keys and `/run` suggestion lines aligned on the same
+ * keeps `/list` manifest keys and action suggestion lines aligned on the same
  * mount qualifier rule.
  */
 export function joinDaemonActionPath(mount: string, localPath: string): string {

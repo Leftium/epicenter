@@ -6,15 +6,21 @@
  */
 
 export { connectDaemonActions } from './client/connect-daemon-actions.js';
-export type {
-	DaemonActionOptions,
-	DaemonActions,
-} from './client/daemon-actions.js';
+export type { DaemonActions } from './client/daemon-actions.js';
 export { buildDaemonActions } from './client/daemon-actions.js';
 export { findProjectRoot } from './client/find-project-root.js';
 export { ProjectConfigError } from './config/load-project-config.js';
 export { DEFAULT_PROJECT_CONFIG_SOURCE } from './config/project-config-source.js';
-export { PeerSnapshot, RunRequest } from './daemon/app.js';
+export {
+	InvokeError,
+	PeerDispatchError,
+	type PeerDispatchSyncStatus,
+} from './daemon/action-errors.js';
+export {
+	InvokeRequest,
+	PeerDispatchRequest,
+	PeerSnapshot,
+} from './daemon/app.js';
 export {
 	type AttachProjectInfrastructureOptions,
 	attachProjectInfrastructure,
@@ -51,11 +57,6 @@ export {
 	metadataPathFor,
 	socketPathFor,
 } from './daemon/paths.js';
-export {
-	RunError,
-	type RunResponse,
-	type RunSyncStatus,
-} from './daemon/run-errors.js';
 export { sweepDaemonRuntimeFiles } from './daemon/runtime-files.js';
 export {
 	type DaemonServer,

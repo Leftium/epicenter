@@ -7,7 +7,8 @@
  *   per route. Each method returns `Promise<Result<T, DomainErr | DaemonError>>`,
  *   merging transport and domain failures into one tagged union the
  *   renderer narrows by `error.name`.
- * - {@link getDaemon}: dispatch decision for `run` / `list` / `peers`.
+ * - {@link getDaemon}: dispatch decision for `invoke` / `dispatch` / `list`
+ *   / `peers`.
  *   Returns a typed client on success, or `Required` when the project has no
  *   live daemon.
  *
@@ -26,10 +27,13 @@ import {
 } from 'wellcrafted/error';
 import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { ActionManifest } from '../shared/actions.js';
-
-import type { PeerSnapshot, RunRequest } from './app.js';
+import type { InvokeError, PeerDispatchError } from './action-errors.js';
+import type {
+	InvokeRequest,
+	PeerDispatchRequest,
+	PeerSnapshot,
+} from './app.js';
 import { socketPathFor } from './paths.js';
-import type { RunError } from './run-errors.js';
 
 /**
  * Tagged-error variants returned by daemon client surfaces. Domain errors
@@ -165,8 +169,15 @@ export function daemonClient(
 	return {
 		peers: () => call<PeerSnapshot[], never>(socketPath, timeoutMs, '/peers'),
 		list: () => call<ActionManifest, never>(socketPath, timeoutMs, '/list'),
-		run: (request: RunRequest) =>
-			call<unknown, RunError>(socketPath, timeoutMs, '/run', request),
+		invoke: (request: InvokeRequest) =>
+			call<unknown, InvokeError>(socketPath, timeoutMs, '/invoke', request),
+		dispatch: (request: PeerDispatchRequest) =>
+			call<unknown, PeerDispatchError>(
+				socketPath,
+				timeoutMs,
+				'/dispatch',
+				request,
+			),
 	};
 }
 
@@ -182,8 +193,8 @@ export type DaemonClient = ReturnType<typeof daemonClient>;
  *   - `Required`: no daemon is running. Renderer prints the
  *     start-with-`daemon up` hint.
  *
- * `run`, `list`, and `peers` are mandatory-daemon commands; if they hit
- * no error they have a typed client to dispatch against.
+ * `invoke`, `dispatch`, `list`, and `peers` are mandatory-daemon commands; if
+ * they hit no error they have a typed client to call.
  */
 export async function getDaemon(
 	projectDir: string,

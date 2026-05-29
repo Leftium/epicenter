@@ -1,8 +1,8 @@
 /**
  * Autumn SDK adapter: the only file in `billing/` that imports `autumn-js`.
  *
- * The service still speaks Autumn's domain shape (`check`, `track`,
- * subscriptions, balances). This file owns the SDK import, client defaults,
+ * The service still speaks Autumn's domain shape (`check`, balances,
+ * subscriptions, plans). This file owns the SDK import, client defaults,
  * and provider error translation:
  *
  *   createAutumnClient(env)   build the per-request client with the

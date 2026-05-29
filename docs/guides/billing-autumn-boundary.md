@@ -40,8 +40,8 @@ Autumn (external, fallible)
 the library does not know is billable.
 
 Be precise about the boundary. `autumn.ts` is not a full provider-swapping
-adapter. `service.ts` still speaks Autumn-shaped concepts: `check`, `track`,
-subscriptions, balances, and plan eligibility. That is intentional. The useful
+adapter. `service.ts` still speaks Autumn-shaped concepts: `check`, balances,
+subscriptions, and plan eligibility. That is intentional. The useful
 boundary is narrower: one SDK import site, one fail-closed client default, and
 one place that turns provider failures into our billing error.
 

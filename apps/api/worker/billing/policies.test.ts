@@ -217,3 +217,18 @@ test('a delete (204) syncs the authoritative storage total', async () => {
 	expect(storageSyncCalls).toEqual([4096]);
 	expect(finalizeCalls).toHaveLength(0);
 });
+
+test('a success without the usage header syncs nothing (guard holds)', async () => {
+	// A 201/204 that omits the header must not push `balances.update({ usage: NaN })`.
+	const app = withContext(new Hono<Env>());
+	app.use('/assets', syncAssetStorageWithAutumn);
+	app.post('/assets', (c) => c.body(null, 201));
+
+	const res = await app.request('/assets', {
+		method: 'POST',
+		body: uploadForm(),
+	});
+
+	expect(res.status).toBe(201);
+	expect(storageSyncCalls).toHaveLength(0);
+});

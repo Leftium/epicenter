@@ -19,15 +19,12 @@ import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
 import { asOwnerId } from '@epicenter/constants/identity';
 import type { Keyring } from '@epicenter/encryption';
 import { Ok, type Result } from 'wellcrafted/result';
-import type {
-	AuthClient,
-	PersistedAuth,
-	PersistedAuthStorage,
-} from './index.js';
+import type { AuthClient, PersistedAuthStorage } from './index.js';
 import { asUserId, createOAuthAppAuth } from './index.js';
-// OAuthTokenGrant is intentionally not on the public root: it is the
-// credential-shaped grant, internal to auth core. Import it from its source.
-import type { OAuthTokenGrant } from './auth-types.js';
+// PersistedAuth and OAuthTokenGrant are intentionally not on the public root:
+// they are the credential-shaped cell and grant, internal to auth core.
+// Import them from their source module.
+import type { OAuthTokenGrant, PersistedAuth } from './auth-types.js';
 import type { OAuthLaunchResult } from './oauth-launchers/contract.js';
 
 const now = 1_000_000;

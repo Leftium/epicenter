@@ -4,7 +4,6 @@ export {
 	ApiSessionResponse,
 	AuthUser,
 	asUserId,
-	PersistedAuth,
 	UserId,
 } from './auth-types.js';
 export {

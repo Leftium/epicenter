@@ -7,9 +7,9 @@ import { log, type Notice, report } from '$lib/report';
 import type { DeviceAcquisitionOutcome } from '$lib/services/recorder/types';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
+import { MANUAL_DEVICE_ID_KEY } from '$lib/state/manual-recorder-params';
 import { settings } from '$lib/state/settings.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
-import { tauri } from '$lib/tauri';
 
 function handleDeviceAcquisitionOutcome(
 	outcome: DeviceAcquisitionOutcome,
@@ -72,10 +72,7 @@ export async function startManualRecording() {
 			'🎙️ Whispering is recording...',
 			'Speak now and stop recording when done',
 			(deviceId) => {
-				deviceConfig.set(
-					tauri ? 'recording.cpal.deviceId' : 'recording.navigator.deviceId',
-					deviceId,
-				);
+				deviceConfig.set(MANUAL_DEVICE_ID_KEY, deviceId);
 			},
 		),
 	);

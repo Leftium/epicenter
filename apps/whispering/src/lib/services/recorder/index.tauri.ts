@@ -244,7 +244,7 @@ function createCpalRecorder() {
 		) => {
 			sendStatus({
 				title: '🎙️ Checking microphone access',
-				description: 'macOS may ask you to allow microphone access.',
+				description: 'Your system may ask you to allow microphone access.',
 			});
 			const { error: permissionError } = await requestMicrophonePermission();
 			if (permissionError) return Err(permissionError);

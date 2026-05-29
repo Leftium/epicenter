@@ -12,15 +12,13 @@
 	import { report } from '$lib/report';
 	import { tauri } from '$lib/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
+	import { MANUAL_DEVICE_ID_KEY } from '$lib/state/manual-recorder-params';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 
 	const combobox = useCombobox();
 
-	const selectedDeviceKey = $derived(
-		tauri ? 'recording.cpal.deviceId' : 'recording.navigator.deviceId',
-	);
 	const selectedDeviceId = $derived(
-		deviceConfig.get(selectedDeviceKey),
+		deviceConfig.get(MANUAL_DEVICE_ID_KEY),
 	);
 
 	const isDeviceSelected = $derived(!!selectedDeviceId);
@@ -101,7 +99,7 @@
 								onSelect={() => {
 									const currentDeviceId = selectedDeviceId;
 									deviceConfig.set(
-										selectedDeviceKey,
+										MANUAL_DEVICE_ID_KEY,
 										currentDeviceId === device.id ? null : device.id,
 									);
 								}}

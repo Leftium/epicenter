@@ -17,6 +17,7 @@
 	import { report } from '$lib/report';
 	import { tauri } from '$lib/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
+	import { MANUAL_DEVICE_ID_KEY } from '$lib/state/manual-recorder-params';
 	import { settings } from '$lib/state/settings.svelte';
 	import { whispering } from '$lib/whispering/whispering';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
@@ -39,10 +40,6 @@
 		BITRATE_OPTIONS.find(
 			(o) => o.value === deviceConfig.get('recording.navigator.bitrateKbps'),
 		)?.label,
-	);
-
-	const manualDeviceConfigKey = $derived(
-		tauri ? 'recording.cpal.deviceId' : 'recording.navigator.deviceId',
 	);
 
 	const exportMarkdown = createMutation(() =>
@@ -91,10 +88,10 @@
 		{#if settings.get('recording.mode') === 'manual'}
 			<ManualSelectRecordingDevice
 				bind:selected={() => {
-					const selected = deviceConfig.get(manualDeviceConfigKey);
+					const selected = deviceConfig.get(MANUAL_DEVICE_ID_KEY);
 					return selected ? asDeviceIdentifier(selected) : null;
 					},
-					(selected) => deviceConfig.set(manualDeviceConfigKey, selected)}
+					(selected) => deviceConfig.set(MANUAL_DEVICE_ID_KEY, selected)}
 			/>
 		{:else if settings.get('recording.mode') === 'vad'}
 			{#if IS_LINUX}

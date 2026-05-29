@@ -21,13 +21,22 @@ const modeInstructions = {
 
 type ConsultMode = keyof typeof modeInstructions;
 
+type ClaudeEnvelope = {
+	errors?: unknown;
+	is_error?: boolean;
+	result?: unknown;
+};
+
+const defaultBudgetUsd = 1;
+const defaultMaxTurns = 3;
+
 function parseArgs(argv: string[]) {
 	const options = {
 		mode: 'review' as ConsultMode,
 		question: '',
 		context: [] as string[],
-		budgetUsd: 1,
-		maxTurns: 3,
+		budgetUsd: defaultBudgetUsd,
+		maxTurns: defaultMaxTurns,
 		bare: false,
 		readFiles: false,
 	};
@@ -62,7 +71,7 @@ function parseArgs(argv: string[]) {
 
 		if (arg === '--budget-usd') {
 			const value = readValue(arg, next);
-			const budgetUsd = Number.parseFloat(value);
+			const budgetUsd = Number(value);
 			if (!Number.isFinite(budgetUsd) || budgetUsd <= 0) {
 				fail(`Invalid --budget-usd value: ${value}`);
 			}
@@ -73,7 +82,7 @@ function parseArgs(argv: string[]) {
 
 		if (arg === '--max-turns') {
 			const value = readValue(arg, next);
-			const maxTurns = Number.parseInt(value, 10);
+			const maxTurns = Number(value);
 			if (!Number.isSafeInteger(maxTurns) || maxTurns <= 0) {
 				fail(`Invalid --max-turns value: ${value}`);
 			}
@@ -215,18 +224,9 @@ function buildPrompt(
 	return sections.join('\n');
 }
 
-function parseClaudeEnvelope(stdout: string): {
-	errors?: unknown;
-	is_error?: boolean;
-	result?: unknown;
-} {
+function parseClaudeEnvelope(stdout: string): ClaudeEnvelope {
 	try {
-		const parsed = JSON.parse(stdout) as {
-			errors?: unknown;
-			is_error?: boolean;
-			result?: unknown;
-		};
-		return parsed;
+		return JSON.parse(stdout) as ClaudeEnvelope;
 	} catch {
 		return {};
 	}
@@ -250,8 +250,8 @@ Options:
   --question, -q <text>    Required concrete consult question
   --mode <mode>            review | design | tests | docs (default: review)
   --context, -c <path>     Add a file as context, repeatable
-  --budget-usd <amount>    Claude Code max budget (default: 1)
-  --max-turns <count>      Claude Code max turns (default: 3)
+  --budget-usd <amount>    Claude Code max spend cap in USD (default: ${defaultBudgetUsd})
+  --max-turns <count>      Claude Code max turns (default: ${defaultMaxTurns})
   --bare                   Skip ambient Claude Code config. Requires auth that works in bare mode.
   --read-files             Let Claude use Read, Grep, and Glob
 `);

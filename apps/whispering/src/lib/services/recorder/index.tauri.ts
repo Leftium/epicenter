@@ -12,20 +12,66 @@ import {
 	type RecorderService,
 	type RecordingSession,
 } from '$lib/services/recorder/types';
+import { tauriOnly } from '$lib/tauri';
 import { commands } from '$lib/tauri/commands';
 
 const log = createLogger('whispering/recorder/cpal');
+
+async function getMicrophonePermissionStatus(): Promise<
+	Result<boolean, RecorderError>
+> {
+	const { data: granted, error } =
+		await tauriOnly.permissions.microphone.check();
+	if (error) {
+		return RecorderError.MicrophonePermissionDenied({ cause: error });
+	}
+	return Ok(granted);
+}
+
+async function requireMicrophonePermission(): Promise<Result<true, RecorderError>> {
+	const { data: granted, error } = await getMicrophonePermissionStatus();
+	if (error) return Err(error);
+	if (granted) return Ok(true);
+
+	return RecorderError.MicrophonePermissionDenied();
+}
+
+async function requestMicrophonePermission(): Promise<Result<true, RecorderError>> {
+	const { data: alreadyGranted, error: checkError } =
+		await getMicrophonePermissionStatus();
+	if (checkError) return Err(checkError);
+	if (alreadyGranted) return Ok(true);
+
+	const { error: requestError } =
+		await tauriOnly.permissions.microphone.request();
+	if (requestError) {
+		return RecorderError.MicrophonePermissionDenied({ cause: requestError });
+	}
+
+	const { data: grantedAfterRequest, error: recheckError } =
+		await getMicrophonePermissionStatus();
+	if (recheckError) return Err(recheckError);
+	if (!grantedAfterRequest) return RecorderError.MicrophonePermissionDenied();
+
+	return Ok(true);
+}
 
 /**
  * Enumerates available recording devices from the system.
  */
 const enumerateDevices = async (): Promise<Result<Device[], RecorderError>> => {
+	const { error: permissionError } = await requireMicrophonePermission();
+	if (permissionError) return Err(permissionError);
+
 	const { data: deviceNames, error: enumerateRecordingDevicesError } =
 		await commands.enumerateRecordingDevices();
 	if (enumerateRecordingDevicesError !== null) {
-		return RecorderError.EnumerateDevices({
-			cause: enumerateRecordingDevicesError,
-		});
+		return (
+			categorizeRecorderError(enumerateRecordingDevicesError) ??
+			RecorderError.EnumerateDevices({
+				cause: enumerateRecordingDevicesError,
+			})
+		);
 	}
 	// On desktop, device names serve as both ID and label
 	return Ok(
@@ -192,6 +238,13 @@ function createCpalRecorder() {
 			{ selectedDeviceId, recordingId, sampleRate }: CpalRecordingParams,
 			{ sendStatus },
 		) => {
+			sendStatus({
+				title: '🎙️ Checking microphone access',
+				description: 'macOS may ask you to allow microphone access.',
+			});
+			const { error: permissionError } = await requestMicrophonePermission();
+			if (permissionError) return Err(permissionError);
+
 			const { data: devices, error: enumerateError } = await enumerateDevices();
 			if (enumerateError !== null) return Err(enumerateError);
 

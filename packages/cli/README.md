@@ -21,12 +21,12 @@ Each verb is a one-line shell shortcut for one workspace primitive:
 
 When you iterate on `apps/api`, you want CLI commands hitting your local server, not prod. The CLI reads `EPICENTER_API_URL` from the environment; named scripts wrap the two real workflows so the target is always explicit.
 
-| I want to... | I run... |
-| --- | --- |
-| Develop against my local API server | `bun run cli:local auth login` |
-| Run from source against prod (rare: bug repro, demos) | `bun run cli auth login` |
-| Use the published binary (end user) | `epicenter auth login` |
-| Override the target anywhere | `EPICENTER_API_URL=https://staging.example.com bun run cli auth login` |
+| I want to...                                          | I run...                                                               |
+| ----------------------------------------------------- | ---------------------------------------------------------------------- |
+| Develop against my local API server                   | `bun run cli:local auth login`                                         |
+| Run from source against prod (rare: bug repro, demos) | `bun run cli auth login`                                               |
+| Use the published binary (end user)                   | `epicenter auth login`                                                 |
+| Override the target anywhere                          | `EPICENTER_API_URL=https://staging.example.com bun run cli auth login` |
 
 Tokens are stored per API target so prod and local sessions coexist. Each target writes one file at `<dataDir>/auth/<host>.json`, where `<dataDir>` is the platform user-data directory from `env-paths('epicenter')` and `<host>` is the API host with `:` replaced by `_`. A fresh `cli:local auth login` will not overwrite your prod session. When `EPICENTER_API_URL` is set, the CLI prints `Using API at <url>.` to stderr once per process. The daemon freezes its target at boot; to retarget, `daemon down` then `daemon up` again.
 
@@ -59,21 +59,21 @@ epicenter peers -C ~/vault
 
 ## Project Mounts
 
-`epicenter.config.ts` owns project discovery. The default export is a `Mount[]`. App packages ship a mount factory that returns a `Mount` carrying its own canonical name.
+`epicenter.config.ts` owns project discovery. The default export is a `Mount[]`. App packages ship mount factories that return `Mount` values; each `Mount.name` owns the CLI prefix.
 
 ```ts
-import { fuji } from '@epicenter/fuji/project';
+import { fuji } from "@epicenter/fuji/project";
 
 export default [fuji()];
 ```
 
-The factory carries the canonical mount name (`fuji`), so the CLI addresses actions as `fuji.<action_key>` regardless of the project folder name.
+The returned `Mount.name` is `fuji`, so the CLI addresses actions as `fuji.<action_key>` regardless of the project folder name.
 
 For projects that host more than one mount, add more entries to the array:
 
 ```ts
-import { fuji } from '@epicenter/fuji/project';
-import { honeycrisp } from '@epicenter/honeycrisp/project';
+import { fuji } from "@epicenter/fuji/project";
+import { honeycrisp } from "@epicenter/honeycrisp/project";
 
 export default [fuji(), honeycrisp()];
 ```
@@ -87,17 +87,25 @@ my-project/
 Writing a custom mount inline uses `defineMount` from `@epicenter/workspace/daemon`:
 
 ```ts
-import { defineMount } from '@epicenter/workspace/daemon';
+import { defineMount } from "@epicenter/workspace/daemon";
 
 export default [
-	defineMount({
-		name: 'notes',
-		async open({ keyring, openWebSocket, projectDir, mount, ownerId, deviceId, yDocClientId }) {
-			// Open the long-lived local runtime.
-			// `mount` is the canonical mount name carried on the Mount object.
-			// Return { collaboration, [Symbol.asyncDispose] }.
-		},
-	}),
+  defineMount({
+    name: "notes",
+    async open({
+      keyring,
+      openWebSocket,
+      projectDir,
+      mount,
+      ownerId,
+      deviceId,
+      yDocClientId,
+    }) {
+      // Open the long-lived local runtime.
+      // `mount` is the canonical mount name carried on the Mount object.
+      // Return { collaboration, [Symbol.asyncDispose] }.
+    },
+  }),
 ];
 ```
 
@@ -110,14 +118,14 @@ export default [
 Use scripts for anything beyond one-shot CLI calls:
 
 ```ts
-import { connectDaemonActions } from '@epicenter/workspace/node';
-import type { FujiActions } from '@epicenter/fuji';
+import { connectDaemonActions } from "@epicenter/workspace/node";
+import type { FujiActions } from "@epicenter/fuji";
 
 const fuji = await connectDaemonActions<FujiActions>({
-	mount: 'fuji',
+  mount: "fuji",
 });
 
-await fuji.entries_update({ id, tags: ['triaged'] });
+await fuji.entries_update({ id, tags: ["triaged"] });
 ```
 
 Scripts get normal TypeScript control flow. The CLI stays small: list, run, peers, and daemon lifecycle.
@@ -125,5 +133,5 @@ Scripts get normal TypeScript control flow. The CLI stays small: list, run, peer
 ## Public API
 
 ```ts
-import { createCLI } from '@epicenter/cli';
+import { createCLI } from "@epicenter/cli";
 ```

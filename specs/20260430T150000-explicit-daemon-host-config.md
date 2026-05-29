@@ -5,12 +5,11 @@
 **Author**: AI-assisted
 **Branch**: codex/daemon-transport-supervisor-integration
 
-**Superseded By**: `20260501T114356-daemon-startup-boundary-and-route-definition-cleanup.md`
+**Superseded By**: Mount-list project config (`export default [fuji()]`)
 
-This spec records the host-definition step that led to the current daemon route
-definition API. The active code no longer uses top-level `hosts`; project config
-uses `defineConfig({ daemon: { routes: [defineFujiDaemon()] } })`, and app
-helpers return `DaemonRouteDefinition` objects with `{ route, start }`.
+This spec records the host-definition step that preceded mount-list project
+config. The active code default-exports a `Mount[]`; app package factories like
+`fuji()` return mounts, and the mount `name` owns the CLI prefix.
 
 ## Overview
 
@@ -26,8 +25,8 @@ Today the loader imports `epicenter.config.ts`, scans named exports, and accepts
 
 ```ts
 export const fuji = openFuji({
-	getToken,
-	peer,
+  getToken,
+  peer,
 });
 ```
 
@@ -49,16 +48,16 @@ This creates problems:
 `epicenter.config.ts` is a host declaration:
 
 ```ts
-import { defineFujiDaemon } from '@epicenter/fuji/daemon';
-import { defineConfig } from '@epicenter/workspace/daemon';
-import { findEpicenterDir } from '@epicenter/workspace/node';
+import { defineFujiDaemon } from "@epicenter/fuji/daemon";
+import { defineConfig } from "@epicenter/workspace/daemon";
+import { findEpicenterDir } from "@epicenter/workspace/node";
 
 const projectDir = findEpicenterDir(import.meta.dir);
 const getToken = async () =>
-	(await sessions.load(EPICENTER_API_URL))?.accessToken ?? null;
+  (await sessions.load(EPICENTER_API_URL))?.accessToken ?? null;
 
 export default defineConfig({
-	hosts: [defineFujiDaemon({ getToken })],
+  hosts: [defineFujiDaemon({ getToken })],
 });
 ```
 
@@ -68,7 +67,7 @@ Scripts import app-specific daemon action helpers instead of importing config ro
 
 ```ts
 // scripts/create-entry.ts
-import { connectFujiDaemonActions } from '@epicenter/fuji/daemon';
+import { connectFujiDaemonActions } from "@epicenter/fuji/daemon";
 
 const fuji = await connectFujiDaemonActions();
 ```
@@ -77,11 +76,11 @@ const fuji = await connectFujiDaemonActions();
 
 Three identifiers stay separate:
 
-| Name | Example | Owner | Meaning |
-| --- | --- | --- | --- |
-| Route key | `fuji` | App daemon subpath | Local daemon address used by `epicenter run fuji.entries.create` |
-| Y.Doc guid | `epicenter.fuji` | Fuji document factory | Durable workspace identity used by storage and sync |
-| Yjs clientID | `hashClientId(projectDir)` | Fuji daemon factory | Writer identity for this process inside Yjs updates |
+| Name         | Example                    | Owner                 | Meaning                                                          |
+| ------------ | -------------------------- | --------------------- | ---------------------------------------------------------------- |
+| Route key    | `fuji`                     | App daemon subpath    | Local daemon address used by `epicenter run fuji.entries.create` |
+| Y.Doc guid   | `epicenter.fuji`           | Fuji document factory | Durable workspace identity used by storage and sync              |
+| Yjs clientID | `hashClientId(projectDir)` | Fuji daemon factory   | Writer identity for this process inside Yjs updates              |
 
 The route key and Y.Doc guid often look related, but they should not be the same source of truth. The Y.Doc guid is a product-level document identity. The route key is a host-level address. Collapsing them would make local deployment naming change storage and sync identity, which is the wrong coupling.
 
@@ -93,7 +92,7 @@ Record-key routes were considered and rejected. In this shape, config keys own r
 
 ```ts
 export default defineConfig({
-	fuji: openFuji({ projectDir, getToken }),
+  fuji: openFuji({ projectDir, getToken }),
 });
 ```
 
@@ -101,21 +100,21 @@ Then scripts need a route string. To avoid drift, config can export constants:
 
 ```ts
 export const routes = {
-	fuji: 'fuji',
+  fuji: "fuji",
 } as const;
 
 export default defineConfig({
-	[routes.fuji]: openFuji({ projectDir, getToken }),
+  [routes.fuji]: openFuji({ projectDir, getToken }),
 });
 ```
 
 That avoids putting a route on the hosted workspace, but it reintroduces config imports in scripts:
 
 ```ts
-import { routes } from '../epicenter.config';
+import { routes } from "../epicenter.config";
 
 const fuji = await connectDaemonActions<FujiActions>({
-	route: routes.fuji,
+  route: routes.fuji,
 });
 ```
 
@@ -123,7 +122,7 @@ The array shape is the chosen direction because app daemon subpaths can provide 
 
 ```ts
 export default defineConfig({
-	hosts: [defineFujiDaemon({ getToken })],
+  hosts: [defineFujiDaemon({ getToken })],
 });
 ```
 
@@ -144,11 +143,11 @@ Custom routes stay possible, but they become an explicit local deployment choice
 
 ```ts
 export default defineConfig({
-	hosts: [defineFujiDaemon({ route: 'blog' })],
+  hosts: [defineFujiDaemon({ route: "blog" })],
 });
 
 const blog = await connectFujiDaemonActions({
-	route: 'blog',
+  route: "blog",
 });
 ```
 
@@ -158,27 +157,27 @@ This does require repeating the override at the custom script call site. That re
 
 The daemon factory should make the normal config short, but the defaults need to respect the identity boundaries above.
 
-| Value | Default | Override? | Rationale |
-| --- | --- | --- | --- |
-| Route key | App daemon constant, e.g. `DEFAULT_FUJI_DAEMON_ROUTE = 'fuji'` | Yes, through `defineFujiDaemon({ route })` | Normal route is app-owned and shared by config and app-specific script helpers |
-| Y.Doc guid | Hard-coded in the app doc factory, e.g. `epicenter.fuji` | No, unless the app adds a separate product feature | Changing storage and sync identity should be deliberate |
-| Yjs clientID | `hashClientId(projectDir)` | Yes, mainly tests | Stable per-project writer identity is the right default |
-| Project dir | Explicit `findEpicenterDir(import.meta.dir)` in config | Yes | `epicenter up -C` means `process.cwd()` may not be the config directory |
-| API URL | `EPICENTER_API_URL` | Yes | Self-hosting and tests need an override |
-| WebSocket impl | Runtime default | Yes | Tests and non-standard runtimes need injection |
-| Peer identity | App daemon default, e.g. `{ id: 'fuji-daemon', name: 'Fuji Daemon', platform: 'node' }` | Yes | Presence identity has an obvious app default, but tests and custom hosts need stable names |
-| Token getter | Prefer default only if dependency boundary stays clean | Yes | The host normally runs on the same machine as `epicenter auth login`, but app daemon subpaths should not grow an accidental CLI package cycle |
-| Script route | App-specific connector default | Yes, by passing `route` to the connector | Avoids drift in the common case while preserving custom route support |
+| Value          | Default                                                                                 | Override?                                          | Rationale                                                                                                                                     |
+| -------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Route key      | App daemon constant, e.g. `DEFAULT_FUJI_DAEMON_ROUTE = 'fuji'`                          | Yes, through `defineFujiDaemon({ route })`         | Normal route is app-owned and shared by config and app-specific script helpers                                                                |
+| Y.Doc guid     | Hard-coded in the app doc factory, e.g. `epicenter.fuji`                                | No, unless the app adds a separate product feature | Changing storage and sync identity should be deliberate                                                                                       |
+| Yjs clientID   | `hashClientId(projectDir)`                                                              | Yes, mainly tests                                  | Stable per-project writer identity is the right default                                                                                       |
+| Project dir    | Explicit `findEpicenterDir(import.meta.dir)` in config                                  | Yes                                                | `epicenter up -C` means `process.cwd()` may not be the config directory                                                                       |
+| API URL        | `EPICENTER_API_URL`                                                                     | Yes                                                | Self-hosting and tests need an override                                                                                                       |
+| WebSocket impl | Runtime default                                                                         | Yes                                                | Tests and non-standard runtimes need injection                                                                                                |
+| Peer identity  | App daemon default, e.g. `{ id: 'fuji-daemon', name: 'Fuji Daemon', platform: 'node' }` | Yes                                                | Presence identity has an obvious app default, but tests and custom hosts need stable names                                                    |
+| Token getter   | Prefer default only if dependency boundary stays clean                                  | Yes                                                | The host normally runs on the same machine as `epicenter auth login`, but app daemon subpaths should not grow an accidental CLI package cycle |
+| Script route   | App-specific connector default                                                          | Yes, by passing `route` to the connector           | Avoids drift in the common case while preserving custom route support                                                                         |
 
 The preferred config is therefore:
 
 ```ts
 const projectDir = findEpicenterDir(import.meta.dir);
 const getToken = async () =>
-	(await sessions.load(EPICENTER_API_URL))?.accessToken ?? null;
+  (await sessions.load(EPICENTER_API_URL))?.accessToken ?? null;
 
 export default defineConfig({
-	hosts: [defineFujiDaemon({ getToken })],
+  hosts: [defineFujiDaemon({ getToken })],
 });
 ```
 
@@ -186,66 +185,69 @@ And the fully explicit form remains available:
 
 ```ts
 export default defineConfig({
-	hosts: [defineFujiDaemon({
-		route: 'blog',
-		getToken,
-		peer: {
-			id: 'custom-fuji-daemon',
-			name: 'Custom Fuji Daemon',
-			platform: 'node',
-		},
-		apiUrl,
-		webSocketImpl,
-	}),
-	],
+  hosts: [
+    defineFujiDaemon({
+      route: "blog",
+      getToken,
+      peer: {
+        id: "custom-fuji-daemon",
+        name: "Custom Fuji Daemon",
+        platform: "node",
+      },
+      apiUrl,
+      webSocketImpl,
+    }),
+  ],
 });
 ```
 
 ## Design Decisions
 
-| Decision | Choice | Rationale |
-| --- | --- | --- |
-| Config shape | `defineConfig({ hosts: DaemonHostDefinition[] })` | No export scanning, no fake single `workspaces` key, and default routes live with app daemon factories |
-| Route id | `DaemonHostDefinition.route` | App daemon subpaths own the normal route and can export matching script helpers |
-| Fuji daemon start result | `DaemonWorkspace` facade only | Persistence and materializers run privately |
-| Readiness | Async host construction | A hosted workspace is ready once the factory resolves. The daemon should not carry a separate `whenReady` field. |
-| Script typing | `ReturnType<typeof createFujiActions>` | Scripts depend on action factories, not config exports |
-| Script route | App-specific connector default | `connectFujiDaemonActions()` can use the same `DEFAULT_FUJI_DAEMON_ROUTE` as `defineFujiDaemon()` |
-| Peer identity default | App daemon factory defaults `peer` | The normal daemon identity is obvious and overrideable |
-| Token default | Conditional default | Add it only if the token helper can live in a small host-runtime module without an app to CLI cycle |
+| Decision                 | Choice                                            | Rationale                                                                                                        |
+| ------------------------ | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Config shape             | `defineConfig({ hosts: DaemonHostDefinition[] })` | No export scanning, no fake single `workspaces` key, and default routes live with app daemon factories           |
+| Route id                 | `DaemonHostDefinition.route`                      | App daemon subpaths own the normal route and can export matching script helpers                                  |
+| Fuji daemon start result | `DaemonWorkspace` facade only                     | Persistence and materializers run privately                                                                      |
+| Readiness                | Async host construction                           | A hosted workspace is ready once the factory resolves. The daemon should not carry a separate `whenReady` field. |
+| Script typing            | `ReturnType<typeof createFujiActions>`            | Scripts depend on action factories, not config exports                                                           |
+| Script route             | App-specific connector default                    | `connectFujiDaemonActions()` can use the same `DEFAULT_FUJI_DAEMON_ROUTE` as `defineFujiDaemon()`                |
+| Peer identity default    | App daemon factory defaults `peer`                | The normal daemon identity is obvious and overrideable                                                           |
+| Token default            | Conditional default                               | Add it only if the token helper can live in a small host-runtime module without an app to CLI cycle              |
 
 ## Target API
 
 ```ts
-import type { Actions } from '@epicenter/workspace';
+import type { Actions } from "@epicenter/workspace";
 
 export type DaemonWorkspace = {
-	actions: Actions;
-	sync?: SyncAttachment;
-	presence?: PeerPresenceAttachment;
-	rpc?: SyncRpcAttachment;
-	[Symbol.dispose](): void;
+  actions: Actions;
+  sync?: SyncAttachment;
+  presence?: PeerPresenceAttachment;
+  rpc?: SyncRpcAttachment;
+  [Symbol.dispose](): void;
 };
 
 export type DaemonHostDefinition = {
-	route: string;
-	start(options: DaemonRouteContext): DaemonWorkspace | Promise<DaemonWorkspace>;
+  route: string;
+  start(
+    options: DaemonRouteContext,
+  ): DaemonWorkspace | Promise<DaemonWorkspace>;
 };
 
 export type EpicenterConfig = {
-	readonly [EPICENTER_CONFIG]: true;
-	hosts: DaemonHostDefinition[];
+  readonly [EPICENTER_CONFIG]: true;
+  hosts: DaemonHostDefinition[];
 };
 
 export function defineConfig({
-	hosts,
+  hosts,
 }: {
-	hosts: DaemonHostDefinition[];
+  hosts: DaemonHostDefinition[];
 }): EpicenterConfig {
-	return Object.freeze({
-		[EPICENTER_CONFIG]: true,
-		hosts: Object.freeze([...hosts]),
-	});
+  return Object.freeze({
+    [EPICENTER_CONFIG]: true,
+    hosts: Object.freeze([...hosts]),
+  });
 }
 ```
 
@@ -266,11 +268,11 @@ Project config hosts daemon workspaces:
 
 ```ts
 // epicenter.config.ts
-import { defineFujiDaemon } from '@epicenter/fuji/daemon';
-import { defineConfig } from '@epicenter/workspace/daemon';
+import { defineFujiDaemon } from "@epicenter/fuji/daemon";
+import { defineConfig } from "@epicenter/workspace/daemon";
 
 export default defineConfig({
-	hosts: [defineFujiDaemon()],
+  hosts: [defineFujiDaemon()],
 });
 ```
 
@@ -278,60 +280,60 @@ Fuji's daemon subpath returns a daemon definition. Its `start()` result exposes 
 
 ```ts
 // @epicenter/fuji/daemon
-export const DEFAULT_FUJI_DAEMON_ROUTE = 'fuji';
+export const DEFAULT_FUJI_DAEMON_ROUTE = "fuji";
 
 export function defineFujiDaemon({
-	route = DEFAULT_FUJI_DAEMON_ROUTE,
-	peer = defaultFujiDaemonPeer(),
-	getToken,
-	apiUrl = EPICENTER_API_URL,
-	webSocketImpl,
+  route = DEFAULT_FUJI_DAEMON_ROUTE,
+  peer = defaultFujiDaemonPeer(),
+  getToken,
+  apiUrl = EPICENTER_API_URL,
+  webSocketImpl,
 }: OpenFujiDaemonOptions) {
-	return defineDaemon({
-		route,
-		start({ projectDir }) {
-			const doc = openFujiDoc({ clientID: hashClientId(projectDir) });
-			const sync = attachSync(doc, {
-				url: websocketUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-				getToken,
-				webSocketImpl,
-			});
+  return defineDaemon({
+    route,
+    start({ projectDir }) {
+      const doc = openFujiDoc({ clientID: hashClientId(projectDir) });
+      const sync = attachSync(doc, {
+        url: websocketUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+        getToken,
+        webSocketImpl,
+      });
 
-			return {
-				actions: doc.actions,
-				sync,
-				presence: sync.attachPresence({ peer }),
-				rpc: sync.attachRpc(doc.actions),
-				[Symbol.dispose]() {
-					doc[Symbol.dispose]();
-				},
-			} satisfies DaemonWorkspace;
-		},
-	});
+      return {
+        actions: doc.actions,
+        sync,
+        presence: sync.attachPresence({ peer }),
+        rpc: sync.attachRpc(doc.actions),
+        [Symbol.dispose]() {
+          doc[Symbol.dispose]();
+        },
+      } satisfies DaemonWorkspace;
+    },
+  });
 }
 
 export function connectFujiDaemonActions({
-	route = DEFAULT_FUJI_DAEMON_ROUTE,
-	projectDir,
+  route = DEFAULT_FUJI_DAEMON_ROUTE,
+  projectDir,
 }: {
-	route?: string;
-	projectDir?: ProjectDir;
+  route?: string;
+  projectDir?: ProjectDir;
 } = {}) {
-	return connectDaemonActions<ReturnType<typeof createFujiActions>>({
-		route,
-		projectDir,
-	});
+  return connectDaemonActions<ReturnType<typeof createFujiActions>>({
+    route,
+    projectDir,
+  });
 }
 ```
 
 Scripts type against action factories, not config exports:
 
 ```ts
-import { connectFujiDaemonActions } from '@epicenter/fuji/daemon';
+import { connectFujiDaemonActions } from "@epicenter/fuji/daemon";
 
 const fuji = await connectFujiDaemonActions();
 
-await fuji.entries.create({ title: 'Hello' });
+await fuji.entries.create({ title: "Hello" });
 ```
 
 Local daemon actions and peer RPC actions are intentionally separate:
@@ -368,10 +370,10 @@ The loader sees one explicit host list:
 ```ts
 const config = module.default;
 const entries = await Promise.all(
-	config.hosts.map(async (definition) => {
-		const workspace = await definition.start({ projectDir, configDir });
-		return { route: definition.route, workspace };
-	}),
+  config.hosts.map(async (definition) => {
+    const workspace = await definition.start({ projectDir, configDir });
+    return { route: definition.route, workspace };
+  }),
 );
 ```
 
@@ -381,43 +383,43 @@ In this model, `epicenter.config.ts` is not a reusable client module. It is the 
 
 ```ts
 export type OpenFujiDaemonOptions = {
-	route?: string;
-	peer?: PeerIdentityInput;
-	getToken: () => Promise<string | null>;
-	projectDir?: ProjectDir;
-	clientID?: number;
-	apiUrl?: string;
-	webSocketImpl?: WebSocketImpl;
+  route?: string;
+  peer?: PeerIdentityInput;
+  getToken: () => Promise<string | null>;
+  projectDir?: ProjectDir;
+  clientID?: number;
+  apiUrl?: string;
+  webSocketImpl?: WebSocketImpl;
 };
 
 export function defineFujiDaemon({
-	route = DEFAULT_FUJI_DAEMON_ROUTE,
-	peer = defaultFujiDaemonPeer(),
-	getToken,
-	apiUrl = EPICENTER_API_URL,
-	webSocketImpl,
+  route = DEFAULT_FUJI_DAEMON_ROUTE,
+  peer = defaultFujiDaemonPeer(),
+  getToken,
+  apiUrl = EPICENTER_API_URL,
+  webSocketImpl,
 }: OpenFujiDaemonOptions) {
-	return defineDaemon({
-		route,
-		start({ projectDir }) {
-			const doc = openFujiDoc({ clientID: hashClientId(projectDir) });
-			const sync = attachSync(doc, {
-				url: websocketUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
-				getToken,
-				webSocketImpl,
-			});
+  return defineDaemon({
+    route,
+    start({ projectDir }) {
+      const doc = openFujiDoc({ clientID: hashClientId(projectDir) });
+      const sync = attachSync(doc, {
+        url: websocketUrl(`${apiUrl}/workspaces/${doc.ydoc.guid}`),
+        getToken,
+        webSocketImpl,
+      });
 
-			return {
-				actions: doc.actions,
-				sync,
-				presence: sync.attachPresence({ peer }),
-				rpc: sync.attachRpc(doc.actions),
-				[Symbol.dispose]() {
-					doc[Symbol.dispose]();
-				},
-			} satisfies DaemonWorkspace;
-		},
-	});
+      return {
+        actions: doc.actions,
+        sync,
+        presence: sync.attachPresence({ peer }),
+        rpc: sync.attachRpc(doc.actions),
+        [Symbol.dispose]() {
+          doc[Symbol.dispose]();
+        },
+      } satisfies DaemonWorkspace;
+    },
+  });
 }
 ```
 
@@ -442,7 +444,7 @@ The host normally runs on the same machine as `epicenter auth login`, so a defau
 
 ```ts
 export default defineConfig({
-	hosts: [defineFujiDaemon()],
+  hosts: [defineFujiDaemon()],
 });
 ```
 
@@ -463,7 +465,7 @@ const credentials = createDefaultCredentialStore();
 const getToken = () => credentials.getBearerToken(EPICENTER_API_URL);
 
 export default defineConfig({
-	hosts: [defineFujiDaemon({ getToken })],
+  hosts: [defineFujiDaemon({ getToken })],
 });
 ```
 
@@ -537,7 +539,7 @@ Network readiness is separate. A normal local action should not wait for `sync.w
 Scripts should not import hosted clients from `epicenter.config.ts`. In the normal case they should import app-specific daemon action helpers from the app package:
 
 ```ts
-import { connectFujiDaemonActions } from '@epicenter/fuji/daemon';
+import { connectFujiDaemonActions } from "@epicenter/fuji/daemon";
 
 const fuji = await connectFujiDaemonActions();
 ```
@@ -546,27 +548,27 @@ The generic primitive still exists for custom routes:
 
 ```ts
 export async function connectDaemonActions<TActions>(options: {
-	route: string;
-	projectDir?: ProjectDir;
+  route: string;
+  projectDir?: ProjectDir;
 }): Promise<DaemonActions<TActions>>;
 ```
 
 App daemon subpaths can build on it:
 
 ```ts
-export const DEFAULT_FUJI_DAEMON_ROUTE = 'fuji';
+export const DEFAULT_FUJI_DAEMON_ROUTE = "fuji";
 
 export function connectFujiDaemonActions({
-	route = DEFAULT_FUJI_DAEMON_ROUTE,
-	projectDir,
+  route = DEFAULT_FUJI_DAEMON_ROUTE,
+  projectDir,
 }: {
-	route?: string;
-	projectDir?: ProjectDir;
+  route?: string;
+  projectDir?: ProjectDir;
 } = {}) {
-	return connectDaemonActions<ReturnType<typeof createFujiActions>>({
-		route,
-		projectDir,
-	});
+  return connectDaemonActions<ReturnType<typeof createFujiActions>>({
+    route,
+    projectDir,
+  });
 }
 ```
 
@@ -575,20 +577,20 @@ export function connectFujiDaemonActions({
 `connectDaemonActions()` should not be confused with `createRemoteClient()`.
 They both return typed action proxies, but their address spaces are different:
 
-| API | Address | Transport | Caller has |
-| --- | --- | --- | --- |
-| `connectDaemonActions<TActions>({ route })` | config route key, e.g. `fuji` | local Unix socket | project directory |
-| `createRemoteClient({ presence, rpc }).actions<TActions>(peerId)` | presence peer id, e.g. `macbook` | sync RPC | live workspace peer |
+| API                                                               | Address                          | Transport         | Caller has          |
+| ----------------------------------------------------------------- | -------------------------------- | ----------------- | ------------------- |
+| `connectDaemonActions<TActions>({ route })`                       | config route key, e.g. `fuji`    | local Unix socket | project directory   |
+| `createRemoteClient({ presence, rpc }).actions<TActions>(peerId)` | presence peer id, e.g. `macbook` | sync RPC          | live workspace peer |
 
 If a project customizes the route, both the host and action helper take the same override:
 
 ```ts
 export default defineConfig({
-	hosts: [defineFujiDaemon({ route: 'blog' })],
+  hosts: [defineFujiDaemon({ route: "blog" })],
 });
 
 const blog = await connectFujiDaemonActions({
-	route: 'blog',
+  route: "blog",
 });
 ```
 

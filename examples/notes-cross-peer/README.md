@@ -2,7 +2,7 @@
 
 Two-peer minimal repro for the `system.describe` cross-peer fetch.
 
-Both project configs default-export a `notes` mount from `workspaces/notes/daemon.ts`. `Mount.name` is the canonical CLI prefix. The two mount modules construct the same workspace (`epicenter.notes-repro`) with distinct peer ids, so each appears in the other's awareness.
+Both project configs default-export a one-item `Mount[]` containing the `notes` mount from `workspaces/notes/daemon.ts`. `Mount.name` is the canonical CLI prefix. The two mount modules construct the same workspace (`epicenter.notes-repro`) with distinct peer ids, so each appears in the other's awareness.
 
 This example runs one daemon process per project directory. In a normal project, one daemon can host many mounts (default-export `Mount[]`). This repro keeps peer-a and peer-b in separate project directories so they behave like two different machines.
 
@@ -37,21 +37,21 @@ To inspect peer-a's full action manifest from peer-b, write a script
 
 ```ts
 // examples/notes-cross-peer/inspect-peer.ts
-import { createRemoteClient } from '@epicenter/workspace';
-import { openNotes } from './notes';
+import { createRemoteClient } from "@epicenter/workspace";
+import { openNotes } from "./notes";
 
 using notes = openNotes({
-	id: 'notes-repro-inspector',
-	name: 'Inspector',
-	platform: 'node',
+  id: "notes-repro-inspector",
+  name: "Inspector",
+  platform: "node",
 });
 
 await notes.whenReady;
 const remote = createRemoteClient({
-	awareness: notes.awareness,
-	rpc: notes.rpc,
+  awareness: notes.awareness,
+  rpc: notes.rpc,
 });
-const result = await remote.describe('notes-repro-peer-a');
+const result = await remote.describe("notes-repro-peer-a");
 console.log(result.error ?? result.data);
 ```
 

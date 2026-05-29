@@ -1,9 +1,14 @@
 # Code-Composed Daemon Route Map
 
 **Date**: 2026-05-20
-**Status**: Implemented
+**Status**: Superseded
 **Author**: Braden + AI-assisted
 **Supersedes**: daemon registration portions of `20260519T150000-epicenter-project-as-first-class.md`
+**Superseded by**: Mount-list project config (`export default [fuji()]`)
+
+> Historical note: this route-map shape is no longer current. Project config
+> now default-exports a `Mount[]` from app package factories such as `fuji()`;
+> the mount `name` owns the CLI prefix.
 
 ## One Sentence
 
@@ -20,25 +25,25 @@ This spec keeps the recent project-config direction but changes the public daemo
 Before this spec, the branch used `epicenter.config.ts` as both project marker and route registry:
 
 ```ts
-import { defineConfig } from '@epicenter/workspace';
-import fuji from './workspaces/fuji/daemon.ts';
-import honeycrisp from './workspaces/honeycrisp/daemon.ts';
+import { defineConfig } from "@epicenter/workspace";
+import fuji from "./workspaces/fuji/daemon.ts";
+import honeycrisp from "./workspaces/honeycrisp/daemon.ts";
 
 export default defineConfig({
-	routes: [fuji, honeycrisp],
+  routes: [fuji, honeycrisp],
 });
 ```
 
 Each daemon module repeats the route:
 
 ```ts
-import { defineDaemonWorkspace } from '@epicenter/workspace/daemon';
+import { defineDaemonWorkspace } from "@epicenter/workspace/daemon";
 
 export default defineDaemonWorkspace({
-	route: 'fuji',
-	async open(ctx) {
-		return runtime;
-	},
+  route: "fuji",
+  async open(ctx) {
+    return runtime;
+  },
 });
 ```
 
@@ -54,17 +59,17 @@ This creates problems:
 Use a route map:
 
 ```ts
-import { defineConfig } from '@epicenter/workspace';
-import fuji from './workspaces/fuji/daemon.ts';
-import honeycrisp from './workspaces/honeycrisp/daemon.ts';
+import { defineConfig } from "@epicenter/workspace";
+import fuji from "./workspaces/fuji/daemon.ts";
+import honeycrisp from "./workspaces/honeycrisp/daemon.ts";
 
 export default defineConfig({
-	daemon: {
-		routes: {
-			fuji,
-			honeycrisp,
-		},
-	},
+  daemon: {
+    routes: {
+      fuji,
+      honeycrisp,
+    },
+  },
 });
 ```
 
@@ -72,10 +77,10 @@ Daemon modules are route-agnostic:
 
 ```ts
 export default defineDaemonWorkspace({
-	async open(ctx) {
-		// ctx.route is "fuji", supplied by the config key.
-		return runtime;
-	},
+  async open(ctx) {
+    // ctx.route is "fuji", supplied by the config key.
+    return runtime;
+  },
 });
 ```
 
@@ -98,40 +103,40 @@ My Vault/
 
 The repository has tried three nearby shapes:
 
-| Shape | Example | Finding |
-| --- | --- | --- |
-| Folder-routed discovery | `workspaces/fuji/daemon.ts` | Good install layout, but too implicit for trusted local code. |
-| Array config registry | `routes: [fuji]` | Explicit enablement, but route identity moves into daemon modules. |
-| Route-map config | `routes: { fuji: defineFujiDaemon() }` | Explicit enablement and route identity in one place. |
+| Shape                   | Example                                | Finding                                                            |
+| ----------------------- | -------------------------------------- | ------------------------------------------------------------------ |
+| Folder-routed discovery | `workspaces/fuji/daemon.ts`            | Good install layout, but too implicit for trusted local code.      |
+| Array config registry   | `routes: [fuji]`                       | Explicit enablement, but route identity moves into daemon modules. |
+| Route-map config        | `routes: { fuji: defineFujiDaemon() }` | Explicit enablement and route identity in one place.               |
 
 **Key finding**: the route map is the best synthesis. It preserves explicit project composition while removing `route: 'fuji'` from daemon modules.
 
 ### External Lessons
 
-| Project | Relevant pattern | Lesson for Epicenter |
-| --- | --- | --- |
-| Cloudflare Workers | Config is the control plane for runtime concerns. | Copy config-owned runtime composition and policy. Do not require pure JSON if local TypeScript composition is valuable. |
-| Hono | Code-first app composition with mounted routes. | Copy route maps inside trusted project code. |
-| Better Auth | Plugins are composed in TypeScript config. | Copy typed extension helpers with options. |
-| WXT | File conventions are ergonomic entrypoint defaults. | Keep `workspaces/<name>/daemon.ts` as convention, not as registry. |
-| SvelteKit | Folder route identity works when routing is the framework's domain. | Avoid blindly copying file routing for trusted daemon execution. |
-| Tauri | Capabilities and local power need explicit control. | Daemon enablement should be visible in project config. |
-| Drizzle | TypeScript config points tooling at runtime artifacts. | Use typed config for project policy and output directories. |
-| Yjs | Document identity is not route identity. | Keep Y.Doc `guid` in workspace code and daemon route in config. |
+| Project            | Relevant pattern                                                    | Lesson for Epicenter                                                                                                    |
+| ------------------ | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Cloudflare Workers | Config is the control plane for runtime concerns.                   | Copy config-owned runtime composition and policy. Do not require pure JSON if local TypeScript composition is valuable. |
+| Hono               | Code-first app composition with mounted routes.                     | Copy route maps inside trusted project code.                                                                            |
+| Better Auth        | Plugins are composed in TypeScript config.                          | Copy typed extension helpers with options.                                                                              |
+| WXT                | File conventions are ergonomic entrypoint defaults.                 | Keep `workspaces/<name>/daemon.ts` as convention, not as registry.                                                      |
+| SvelteKit          | Folder route identity works when routing is the framework's domain. | Avoid blindly copying file routing for trusted daemon execution.                                                        |
+| Tauri              | Capabilities and local power need explicit control.                 | Daemon enablement should be visible in project config.                                                                  |
+| Drizzle            | TypeScript config points tooling at runtime artifacts.              | Use typed config for project policy and output directories.                                                             |
+| Yjs                | Document identity is not route identity.                            | Keep Y.Doc `guid` in workspace code and daemon route in config.                                                         |
 
 ## Design Decisions
 
-| Decision | Class | Choice | Rationale |
-| --- | --- | --- | --- |
-| Project marker | 2 coherence | Keep `epicenter.config.ts` | The existing project-root work already moved toward a file marker and it gives future policy a home. |
-| Project data | 2 coherence | Keep `.epicenter/` generated | Yjs update logs, SQLite materializers, and caches are managed project data, not config or daemon runtime files. |
-| Daemon process count | 2 coherence | One process per project | One auth client, one socket, one lease, one lifecycle. |
-| Daemon route count | 2 coherence | Many routes inside one process | Separate action namespaces and runtimes without separate daemons. |
-| Route identity | 2 coherence | Route map keys | The key is visible, unique by construction, and removes `route` from daemon modules. |
-| Config value style | 3 taste | Compose daemon definitions directly | This is the most TypeScript-native shape and matches the local trusted-project model. |
-| Path strings | 3 taste | Use only for user-owned output paths | Strings like `./notes` are project policy. Strings for daemon modules are less idiomatic than imports. |
-| Markdown materializer output | 2 coherence | Configurable outside `.epicenter/` | Markdown can be a user-owned, git-committed projection. |
-| Workspace source folders | 3 taste | Convention only | `workspaces/` can organize local source, but it is not the daemon registry. |
+| Decision                     | Class       | Choice                               | Rationale                                                                                                       |
+| ---------------------------- | ----------- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| Project marker               | 2 coherence | Keep `epicenter.config.ts`           | The existing project-root work already moved toward a file marker and it gives future policy a home.            |
+| Project data                 | 2 coherence | Keep `.epicenter/` generated         | Yjs update logs, SQLite materializers, and caches are managed project data, not config or daemon runtime files. |
+| Daemon process count         | 2 coherence | One process per project              | One auth client, one socket, one lease, one lifecycle.                                                          |
+| Daemon route count           | 2 coherence | Many routes inside one process       | Separate action namespaces and runtimes without separate daemons.                                               |
+| Route identity               | 2 coherence | Route map keys                       | The key is visible, unique by construction, and removes `route` from daemon modules.                            |
+| Config value style           | 3 taste     | Compose daemon definitions directly  | This is the most TypeScript-native shape and matches the local trusted-project model.                           |
+| Path strings                 | 3 taste     | Use only for user-owned output paths | Strings like `./notes` are project policy. Strings for daemon modules are less idiomatic than imports.          |
+| Markdown materializer output | 2 coherence | Configurable outside `.epicenter/`   | Markdown can be a user-owned, git-committed projection.                                                         |
+| Workspace source folders     | 3 taste     | Convention only                      | `workspaces/` can organize local source, but it is not the daemon registry.                                     |
 
 ## Architecture
 
@@ -169,13 +174,13 @@ project folders like ./notes and ./attachments
 
 ```ts
 export type EpicenterConfig = {
-	daemon?: {
-		routes?: Record<string, DaemonWorkspaceDefinition>;
-	};
+  daemon?: {
+    routes?: Record<string, DaemonWorkspaceDefinition>;
+  };
 };
 
 export function defineConfig(config: EpicenterConfig): EpicenterConfig {
-	return config;
+  return config;
 }
 ```
 
@@ -183,15 +188,15 @@ export function defineConfig(config: EpicenterConfig): EpicenterConfig {
 
 ```ts
 export type DaemonWorkspaceDefinition<
-	TRuntime extends DaemonRuntime = DaemonRuntime,
+  TRuntime extends DaemonRuntime = DaemonRuntime,
 > = {
-	open(ctx: DaemonWorkspaceContext): MaybePromise<TRuntime>;
+  open(ctx: DaemonWorkspaceContext): MaybePromise<TRuntime>;
 };
 
 export function defineDaemonWorkspace<TRuntime extends DaemonRuntime>(
-	definition: DaemonWorkspaceDefinition<TRuntime>,
+  definition: DaemonWorkspaceDefinition<TRuntime>,
 ): DaemonWorkspaceDefinition<TRuntime> {
-	return definition;
+  return definition;
 }
 ```
 
@@ -199,9 +204,9 @@ export function defineDaemonWorkspace<TRuntime extends DaemonRuntime>(
 
 ```ts
 export type StartDaemonWorkspaceAppsOptions = {
-	projectDir: ProjectDir | string;
-	auth: AuthClient;
-	routes: Readonly<Record<string, DaemonWorkspaceDefinition>>;
+  projectDir: ProjectDir | string;
+  auth: AuthClient;
+  routes: Readonly<Record<string, DaemonWorkspaceDefinition>>;
 };
 ```
 
@@ -209,15 +214,15 @@ Startup validates route keys, then passes the key into context:
 
 ```ts
 for (const [route, definition] of Object.entries(routes)) {
-	const ctx: DaemonWorkspaceContext = {
-		projectDir,
-		route,
-		clientId: hashClientId(projectDir),
-		installationId: `${route}-daemon`,
-		attachEncryption,
-		openWebSocket,
-	};
-	await definition.open(ctx);
+  const ctx: DaemonWorkspaceContext = {
+    projectDir,
+    route,
+    clientId: hashClientId(projectDir),
+    installationId: `${route}-daemon`,
+    attachEncryption,
+    openWebSocket,
+  };
+  await definition.open(ctx);
 }
 ```
 
@@ -228,18 +233,18 @@ for (const [route, definition] of Object.entries(routes)) {
 ```ts
 // @epicenter/fuji/daemon
 export default defineDaemonWorkspace({
-	async open(ctx) {
-		const workspace = openFujiWorkspace(ctx.attachEncryption, {
-			clientId: ctx.clientId,
-		});
+  async open(ctx) {
+    const workspace = openFujiWorkspace(ctx.attachEncryption, {
+      clientId: ctx.clientId,
+    });
 
-		return attachDaemonInfrastructure(workspace.ydoc, {
-			projectDir: ctx.projectDir,
-			openWebSocket: ctx.openWebSocket,
-			installationId: ctx.installationId,
-			actions: workspace.actions,
-		});
-	},
+    return attachDaemonInfrastructure(workspace.ydoc, {
+      projectDir: ctx.projectDir,
+      openWebSocket: ctx.openWebSocket,
+      installationId: ctx.installationId,
+      actions: workspace.actions,
+    });
+  },
 });
 ```
 
@@ -258,15 +263,15 @@ My Vault/
 
 ```ts
 // epicenter.config.ts
-import { defineConfig } from '@epicenter/workspace';
-import fuji from './workspaces/fuji/daemon.ts';
+import { defineConfig } from "@epicenter/workspace";
+import fuji from "./workspaces/fuji/daemon.ts";
 
 export default defineConfig({
-	daemon: {
-		routes: {
-			fuji,
-		},
-	},
+  daemon: {
+    routes: {
+      fuji,
+    },
+  },
 });
 ```
 
@@ -278,8 +283,8 @@ Rejected because route identity must live inside daemon modules:
 
 ```ts
 export default defineDaemonWorkspace({
-	route: 'fuji',
-	open(ctx) {},
+  route: "fuji",
+  open(ctx) {},
 });
 ```
 

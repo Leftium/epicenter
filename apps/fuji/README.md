@@ -41,10 +41,10 @@ defineWorkspace()
 Fuji's browser workspace is built once per signed-in session by `createSession`. `openFujiBrowser()` calls `createFuji({ keyring })`, attaches browser storage and sync, then wraps the shared child docs with child-doc storage and sync. The session module receives a `SignedIn` from `createSession` and passes it into the browser factory. `SignedIn` carries the stable owner, keyring reader, server URL, and auth transport functions.
 
 ```ts
-import { openFujiBrowser } from '$lib/browser';
-import { createSession } from '@epicenter/svelte';
-import { createDeviceId } from '@epicenter/workspace';
-import { auth } from '$lib/auth';
+import { openFujiBrowser } from "$lib/browser";
+import { createSession } from "@epicenter/svelte";
+import { createDeviceId } from "@epicenter/workspace";
+import { auth } from "$lib/auth";
 
 export const session = createSession({
   auth,
@@ -86,7 +86,7 @@ export function openFujiBrowser({
     actions: workspace.actions,
   });
   // ... per-entry child docs, wipe(), dispose
-  return { ...workspace, idb, collaboration, /* ... */ };
+  return { ...workspace, idb, collaboration /* ... */ };
 }
 ```
 
@@ -94,7 +94,7 @@ export function openFujiBrowser({
 
 The browser bundle exposes concrete resources like `idb`, `collaboration`, and child document collections. Auth state flows through `session.current`; when present, it carries the Fuji bundle, and pages reach it via the module-level `requireFuji()` exported from `$lib/session` (throws if called without an authenticated session). Local cleanup runs through `bundle.wipe()`, which destroys the live Y.Docs and then calls `wipeLocalStorage({ server: signedIn.server, ownerId: signedIn.ownerId })` to drop every encrypted IDB database for that owner. It is a separate explicit action, not part of sign-out.
 
-For a sibling example of the same pattern with Tauri runtime wiring, see `apps/whispering/src/lib/whispering/tauri.ts`.
+For a sibling example of the same pattern with Tauri runtime wiring, see `apps/whispering/src/lib/whispering/whispering.tauri.ts`.
 
 ### Editor
 
@@ -124,12 +124,17 @@ This starts the app dev server on port 5174. Auth and sync expect the local API 
 Fuji's mount is registered from the project root. It is not discovered from `.epicenter/` or any source folder. A project that wants the Fuji mount needs an `epicenter.config.ts` like this:
 
 ```ts
-import { fuji } from '@epicenter/fuji/project';
+import { fuji } from "@epicenter/fuji/project";
 
-export default [fuji()];
+export default [
+  fuji({
+    markdownDir: ".",
+    sqliteFile: ".epicenter/sqlite.db",
+  }),
+];
 ```
 
-`fuji()` is a factory that returns a `Mount` carrying its own canonical name (`fuji`). `epicenter.config.ts` default-exports a mount list, so a one-mount project still wraps it in an array. Pass options to override defaults (`fuji({ markdownDir: '.', sqliteFile: '.epicenter/sqlite.db' })`).
+`fuji()` returns a `Mount` whose `name` is `fuji`; `Mount.name` is the CLI prefix. `epicenter.config.ts` default-exports a mount list, so a one-mount project still wraps it in an array. Pass options to override defaults.
 
 `epicenter daemon up -C <project>` starts every mount declared in `epicenter.config.ts` inside one daemon process. It creates `.epicenter/` for generated project data when it is missing, but sockets and daemon logs live in platform user paths instead of inside the project.
 

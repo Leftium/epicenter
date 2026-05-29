@@ -11,10 +11,10 @@
  * Drizzle) without extra ceremony.
  */
 
-import type { Database } from 'bun:sqlite';
-import type { ProjectDir } from '../shared/types.js';
-import { openReadonlySqlite } from './open-sqlite-reader.js';
-import { sqlitePath } from './workspace-paths.js';
+import type { Database } from "bun:sqlite";
+import type { ProjectDir } from "../shared/types.js";
+import { openReadonlySqlite } from "./open-sqlite-reader.js";
+import { sqlitePath } from "./workspace-paths.js";
 
 /**
  * Open the daemon's SQLite mirror for a workspace read-only.
@@ -33,13 +33,13 @@ import { sqlitePath } from './workspace-paths.js';
  * import { FUJI_ID } from '@epicenter/fuji';
  *
  * const db = openWorkspaceSqlite(findProjectRoot(), FUJI_ID);
- * const urgent = db.query('SELECT * FROM entries WHERE tag = ?').all('urgent');
+ * const welcome = db.query('SELECT * FROM entries WHERE title = ?').all('Welcome to Fuji');
  * db.close();
  * ```
  */
 export function openWorkspaceSqlite(
-	projectDir: ProjectDir,
-	workspaceId: string,
+  projectDir: ProjectDir,
+  workspaceId: string,
 ): Database {
-	return openReadonlySqlite(sqlitePath(projectDir, workspaceId));
+  return openReadonlySqlite(sqlitePath(projectDir, workspaceId));
 }

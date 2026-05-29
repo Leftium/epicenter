@@ -1,18 +1,16 @@
-import { PersistedAuth } from '@epicenter/auth';
+import { createWebStoragePersistedAuthStorage } from '@epicenter/auth';
 import { createBrowserOAuthLauncher } from '@epicenter/auth/oauth-launchers';
 import { createOAuthAppAuth } from '@epicenter/auth-svelte';
 import { EPICENTER_OPENSIDIAN_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { APP_URLS } from '@epicenter/constants/vite';
-import { createPersistedState } from '@epicenter/svelte';
 import { base } from '$app/paths';
 
 export const auth = createOAuthAppAuth({
 	baseURL: APP_URLS.API,
 	clientId: EPICENTER_OPENSIDIAN_OAUTH_CLIENT_ID,
-	persistedAuthStorage: createPersistedState({
+	persistedAuthStorage: createWebStoragePersistedAuthStorage({
 		key: 'opensidian.auth.persisted',
-		schema: PersistedAuth.or('null'),
-		defaultValue: null,
+		storage: window.localStorage,
 	}),
 	launcher: createBrowserOAuthLauncher({
 		issuer: `${APP_URLS.API}/auth`,

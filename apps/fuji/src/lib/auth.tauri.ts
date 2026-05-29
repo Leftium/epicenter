@@ -1,4 +1,4 @@
-import { PersistedAuth } from '@epicenter/auth';
+import { createWebStoragePersistedAuthStorage } from '@epicenter/auth';
 import {
 	createOAuthClient,
 	OAuthClientError,
@@ -11,7 +11,6 @@ import {
 	EPICENTER_FUJI_TAURI_OAUTH_REDIRECT_URI,
 } from '@epicenter/constants/oauth';
 import { APP_URLS } from '@epicenter/constants/vite';
-import { createPersistedState } from '@epicenter/svelte';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { openUrl } from '@tauri-apps/plugin-opener';
@@ -22,10 +21,9 @@ const OAUTH_CALLBACK_TIMEOUT_MS = 10 * 60 * 1000;
 export const auth = createOAuthAppAuth({
 	baseURL: APP_URLS.API,
 	clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,
-	persistedAuthStorage: createPersistedState({
+	persistedAuthStorage: createWebStoragePersistedAuthStorage({
 		key: 'fuji.auth.persisted',
-		schema: PersistedAuth.or('null'),
-		defaultValue: null,
+		storage: window.localStorage,
 	}),
 	launcher: createFujiOAuthLauncher(),
 });

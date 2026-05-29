@@ -71,7 +71,7 @@ function createStorage(initial: PersistedAuth | null = null) {
 	let current = initial;
 	const saved: Array<PersistedAuth | null> = [];
 	const storage: PersistedAuthStorage = {
-		get: () => current,
+		initial: current,
 		set: async (next) => {
 			current = next;
 			saved.push(next);
@@ -1021,7 +1021,7 @@ test('signOut remains the final storage write when refresh persistence is in fli
 		resolveRefreshWrite = r;
 	});
 	const storage: PersistedAuthStorage = {
-		get: () => current,
+		initial: current,
 		set: async (next) => {
 			if (next?.grant.accessToken === 'new-access') {
 				markRefreshWriteStarted();

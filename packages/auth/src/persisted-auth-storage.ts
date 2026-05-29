@@ -2,18 +2,20 @@ import { PersistedAuth } from './auth-types.js';
 
 /**
  * Storage adapter for the single `PersistedAuth` cell (grant + identity + keyring).
- * Two methods, no watch hook: cross-context sign-out propagates via the
- * server (next bearer-bearing call hits a revoked token and reauth-requires
- * organically). The server is the authority; brief cross-tab desync is
- * acceptable.
  *
- * `get` is synchronous because the auth runtime reads it exactly once, at
- * construction, to seed its state machine. Runtimes whose store is async
- * (an extension's `chrome.storage`, a file) pre-load through
- * {@link loadPersistedAuthStorage} so this read stays synchronous.
+ * `initial` is the cell read once at boot; the auth runtime reads it exactly
+ * once, at construction, to seed its state machine, and never re-reads, so it
+ * is a synchronous snapshot rather than a live getter. Runtimes whose store is
+ * async (an extension's `chrome.storage`, a file) pre-load through
+ * {@link loadPersistedAuthStorage} so `initial` stays synchronous.
+ *
+ * `set` is the only write path. No watch hook: cross-context sign-out
+ * propagates via the server (the next bearer-bearing call hits a revoked token
+ * and reauth-requires organically). The server is the authority; brief
+ * cross-tab desync is acceptable.
  */
 export type PersistedAuthStorage = {
-	get(): PersistedAuth | null;
+	initial: PersistedAuth | null;
 	set(value: PersistedAuth | null): void | Promise<void>;
 };
 
@@ -64,9 +66,7 @@ export function createWebStoragePersistedAuthStorage({
 	storage: Storage;
 }): PersistedAuthStorage {
 	return {
-		get() {
-			return parsePersistedAuthCell(storage.getItem(key));
-		},
+		initial: parsePersistedAuthCell(storage.getItem(key)),
 		set(value) {
 			if (value === null) {
 				storage.removeItem(key);
@@ -91,23 +91,18 @@ export type AsyncAuthCellStore = {
 /**
  * Pre-load an async-backed cell into a synchronous {@link PersistedAuthStorage}.
  *
- * The auth runtime reads `get()` once, synchronously, at construction, so an
+ * The auth runtime reads `initial` once, synchronously, at construction, so an
  * async store cannot satisfy the contract directly. Await this before
  * constructing the client (the app's existing readiness gate is the natural
- * place); `get()` then returns the value read at load time, and `set()`
- * forwards writes to the store. Write failures propagate, matching the Web
- * Storage adapter.
+ * place); `initial` is the value read at load time, and `set()` forwards writes
+ * to the store. Write failures propagate, matching the Web Storage adapter.
  */
 export async function loadPersistedAuthStorage(
 	store: AsyncAuthCellStore,
 ): Promise<PersistedAuthStorage> {
-	let cached = parsePersistedAuthCell(await store.read());
 	return {
-		get() {
-			return cached;
-		},
+		initial: parsePersistedAuthCell(await store.read()),
 		set(value) {
-			cached = value;
 			return store.write(value === null ? null : serializePersistedAuthCell(value));
 		},
 	};

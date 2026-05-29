@@ -479,7 +479,6 @@ export async function createMachineAuthClient({
 			}).error,
 		);
 	}
-	let currentCell: PersistedAuth | null = loaded.data;
 	return Ok(
 		createOAuthAppAuth({
 			baseURL,
@@ -495,13 +494,12 @@ export async function createMachineAuthClient({
 					),
 			},
 			persistedAuthStorage: {
-				get: () => currentCell,
+				initial: loaded.data,
 				set: async (next) => {
 					const saved = await saveMachineTokens(next, {
 						filePath: authFilePath,
 					});
 					if (saved.error) throw saved.error;
-					currentCell = next;
 				},
 			},
 			fetch,

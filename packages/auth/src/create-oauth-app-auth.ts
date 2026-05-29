@@ -140,7 +140,7 @@ export function createOAuthAppAuth({
 	log = createLogger('auth/oauth-app'),
 }: CreateOAuthAppAuthConfig): AuthClient {
 	const authSession = createAuthSessionRuntime({
-		initialPersistedAuth: persistedAuthStorage.get(),
+		initialPersistedAuth: persistedAuthStorage.initial,
 		persistedAuthStorage,
 		log,
 	});

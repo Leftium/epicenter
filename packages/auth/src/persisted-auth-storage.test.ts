@@ -33,7 +33,7 @@ describe('createWebStoragePersistedAuthStorage', () => {
 			storage,
 		});
 
-		expect(persistedAuthStorage.get()).toBeNull();
+		expect(persistedAuthStorage.initial).toBeNull();
 	});
 
 	test('treats a missing cell as signed out', () => {
@@ -42,7 +42,7 @@ describe('createWebStoragePersistedAuthStorage', () => {
 			storage: new MemoryStorage(),
 		});
 
-		expect(persistedAuthStorage.get()).toBeNull();
+		expect(persistedAuthStorage.initial).toBeNull();
 	});
 
 	test('set(null) removes the key', () => {
@@ -76,12 +76,12 @@ describe('loadPersistedAuthStorage', () => {
 		};
 	}
 
-	test('hydrates get() from the async read', async () => {
+	test('hydrates initial from the async read', async () => {
 		const store = trackingStore(serializePersistedAuthCell(cell));
 
 		const persistedAuthStorage = await loadPersistedAuthStorage(store);
 
-		expect(persistedAuthStorage.get()).toEqual(cell);
+		expect(persistedAuthStorage.initial).toEqual(cell);
 	});
 
 	test('a corrupt async cell hydrates as signed out', async () => {
@@ -89,27 +89,25 @@ describe('loadPersistedAuthStorage', () => {
 			trackingStore('{'),
 		);
 
-		expect(persistedAuthStorage.get()).toBeNull();
+		expect(persistedAuthStorage.initial).toBeNull();
 	});
 
-	test('set forwards a serialized write and updates the cached value', async () => {
+	test('set forwards a serialized write to the store', async () => {
 		const store = trackingStore(null);
 		const persistedAuthStorage = await loadPersistedAuthStorage(store);
 
 		await persistedAuthStorage.set(cell);
 
 		expect(store.written).toEqual([serializePersistedAuthCell(cell)]);
-		expect(persistedAuthStorage.get()).toEqual(cell);
 	});
 
-	test('set(null) forwards a remove and clears the cached value', async () => {
+	test('set(null) forwards a remove to the store', async () => {
 		const store = trackingStore(serializePersistedAuthCell(cell));
 		const persistedAuthStorage = await loadPersistedAuthStorage(store);
 
 		await persistedAuthStorage.set(null);
 
 		expect(store.written).toEqual([null]);
-		expect(persistedAuthStorage.get()).toBeNull();
 	});
 });
 

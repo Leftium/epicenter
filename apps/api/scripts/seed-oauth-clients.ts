@@ -36,7 +36,7 @@ import {
 	projectTrustedOAuthClientToRow,
 } from '@epicenter/constants/oauth';
 import pg from 'pg';
-import { LOCAL_DATABASE_URL } from '../env';
+import { LOCAL_DATABASE_URL } from '../wrangler-config';
 
 const baseURL =
 	process.env.SEED_TARGET === 'prod' ? APPS.API.url : localUrl(APPS.API);

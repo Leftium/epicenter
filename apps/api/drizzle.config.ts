@@ -1,5 +1,5 @@
 import { defineConfig } from 'drizzle-kit';
-import { LOCAL_DATABASE_URL } from './env';
+import { LOCAL_DATABASE_URL } from './wrangler-config';
 
 export default defineConfig({
 	dialect: 'postgresql',

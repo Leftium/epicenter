@@ -16,7 +16,7 @@
  *     `infisical run --env=prod` when invoked via `bun run auth:generate`.
  *   - `DATABASE_URL` is read from `process.env` if set (the `:remote` path)
  *     and otherwise falls back to the local Postgres URL parsed from
- *     `wrangler.jsonc` by `env.ts`.
+ *     `wrangler.jsonc` by `wrangler-config.ts`.
  */
 
 import { APPS } from '@epicenter/constants/apps';
@@ -28,7 +28,7 @@ import pg from 'pg';
 import { BASE_AUTH_CONFIG } from '../../packages/server/src/auth/base-config';
 import { authPlugins } from '../../packages/server/src/auth/plugins';
 import * as schema from '../../packages/server/src/db/schema';
-import { LOCAL_DATABASE_URL } from './env';
+import { LOCAL_DATABASE_URL } from './wrangler-config';
 
 const env = type({
 	BETTER_AUTH_SECRET: 'string',

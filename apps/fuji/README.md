@@ -126,10 +126,10 @@ Fuji's mount is registered from the project root. It is not discovered from `.ep
 ```ts
 import { fuji } from '@epicenter/fuji/project';
 
-export default fuji();
+export default [fuji()];
 ```
 
-`fuji()` is a factory that returns a `Mount` carrying its own canonical name (`fuji`). Pass options to override defaults (`fuji({ markdownDir: '.', sqliteFile: '.epicenter/sqlite.db' })`).
+`fuji()` is a factory that returns a `Mount` carrying its own canonical name (`fuji`). `epicenter.config.ts` default-exports a mount list, so a one-mount project still wraps it in an array. Pass options to override defaults (`fuji({ markdownDir: '.', sqliteFile: '.epicenter/sqlite.db' })`).
 
 `epicenter daemon up -C <project>` starts every mount declared in `epicenter.config.ts` inside one daemon process. It creates `.epicenter/` for generated project data when it is missing, but sockets and daemon logs live in platform user paths instead of inside the project.
 

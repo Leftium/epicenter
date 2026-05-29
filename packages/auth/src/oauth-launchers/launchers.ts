@@ -3,8 +3,8 @@ import type { OAuthLauncher, OAuthLaunchResult } from './contract.js';
 import {
 	createOAuthClient,
 	type MaybePromise,
-	OAuthClientError,
 	type OAuthClientConfig,
+	OAuthClientError,
 } from './oauth-client.js';
 
 /**

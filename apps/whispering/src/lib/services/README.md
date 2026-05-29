@@ -400,7 +400,9 @@ const result = await services.completion.openai.complete({
 
 ### Cross-platform (`services/`)
 
-- `recorder/navigator.ts` - MediaRecorder-based audio capture (browser + desktop fallback)
+- `recorder/index.*.ts` - Build-time manual recorder boundary: CPAL on desktop, Navigator on web
+- `recorder/cpal.tauri.ts` - Desktop manual recording through the native CPAL backend
+- `recorder/navigator.ts` - Web manual recording through MediaRecorder
 - `recorder/types.ts` - Shared `RecorderService` interface, error types, params
 - `device-stream.ts` - `getRecordingStream` and `enumerateDevices` shared by recorder backends
 - `local-shortcut-manager.ts` - In-window keyboard shortcuts

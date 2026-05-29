@@ -4,6 +4,11 @@
 **Type**: Build/architecture change (zero behavior change at runtime)
 **Scope**: `apps/whispering/src/lib/services/*`, `apps/whispering/vite.config.ts`, `apps/whispering/tsconfig.json`
 
+**Supersession note (2026-05-29)**: Manual recording is no longer a runtime
+CPAL vs Navigator choice inside the Tauri bundle. The later recording
+clean-break spec fixes manual recording by platform: desktop manual recording
+uses CPAL, web manual recording uses Navigator, and VAD remains browser-owned.
+
 ## Problem
 
 Today, every cross-platform service uses runtime DI:

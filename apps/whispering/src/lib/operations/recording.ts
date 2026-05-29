@@ -6,8 +6,8 @@ import { sound } from '$lib/operations/sound';
 import { log, type Notice, report } from '$lib/report';
 import type { DeviceAcquisitionOutcome } from '$lib/services/recorder/types';
 import { deviceConfig } from '$lib/state/device-config.svelte';
+import { manualRecorderConfig } from '$lib/state/manual-recorder-config';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
-import { MANUAL_DEVICE_ID_KEY } from '$lib/state/manual-recorder-params';
 import { settings } from '$lib/state/settings.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 
@@ -72,7 +72,7 @@ export async function startManualRecording() {
 			'🎙️ Whispering is recording...',
 			'Speak now and stop recording when done',
 			(deviceId) => {
-				deviceConfig.set(MANUAL_DEVICE_ID_KEY, deviceId);
+				manualRecorderConfig.deviceId = deviceId;
 			},
 		),
 	);

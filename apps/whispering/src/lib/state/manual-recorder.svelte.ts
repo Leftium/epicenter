@@ -9,7 +9,7 @@ import {
 	type RecordingSession,
 	type UpdateStatusMessageFn,
 } from '$lib/services/recorder/types';
-import { buildManualStartParams } from '$lib/state/manual-recorder-params';
+import { manualRecorderConfig } from '$lib/state/manual-recorder-config';
 
 const ManualRecorderError = defineErrors({
 	EnumerateDevicesFailed: ({ cause }: { cause: unknown }) => ({
@@ -46,7 +46,7 @@ export const manualRecorderKeys = defineKeys({
  * subscribes to the live RecordingSession and `detach()` cleans up on
  * stop/cancel.
  *
- * On Tauri, state is bootstrapped from CPAL's `getActiveRecording` at module
+ * On Tauri, state is bootstrapped from CPAL's `resumeActiveSession` at module
  * init because a Rust CPAL session can outlive a JS reload. On web, the
  * Navigator recorder returns null after reload.
  */
@@ -81,12 +81,11 @@ function createManualRecorder() {
 	// that gate, a user action that fires before bootstrap resolves sees a
 	// stale `_current === null` and either no-ops the cancel (leaking the
 	// Rust session) or double-starts on top of a rehydrated one.
-	const bootstrapped = ManualRecorderLive.getActiveRecording().then(
-		(result) => {
-			const found = result.data ?? null;
-			if (found) attach(found);
-		},
-	);
+	const bootstrapped = ManualRecorderLive.resumeActiveSession().then((result) => {
+		const found = result.data ?? null;
+		if (found) attach(found);
+		return result;
+	});
 
 	return {
 		get state(): WhisperingRecordingState {
@@ -108,9 +107,10 @@ function createManualRecorder() {
 		}: {
 			sendStatus: UpdateStatusMessageFn;
 		}) {
-			await bootstrapped;
+			const { error: bootstrapError } = await bootstrapped;
+			if (bootstrapError) return Err(bootstrapError);
 			if (_current) return ManualRecorderError.AlreadyRecording();
-			const params = buildManualStartParams(nanoid());
+			const params = manualRecorderConfig.resolveStartParams(nanoid());
 			const { data, error: startRecordingError } =
 				await ManualRecorderLive.startRecording(params, { sendStatus });
 
@@ -121,7 +121,8 @@ function createManualRecorder() {
 		},
 
 		async stopRecording({ sendStatus }: { sendStatus: UpdateStatusMessageFn }) {
-			await bootstrapped;
+			const { error: bootstrapError } = await bootstrapped;
+			if (bootstrapError) return Err(bootstrapError);
 			if (!_current) return ManualRecorderError.NoActiveRecording();
 			return _current.stop({ sendStatus });
 		},
@@ -131,7 +132,8 @@ function createManualRecorder() {
 		}: {
 			sendStatus: UpdateStatusMessageFn;
 		}) {
-			await bootstrapped;
+			const { error: bootstrapError } = await bootstrapped;
+			if (bootstrapError) return Err(bootstrapError);
 			if (!_current) return Ok({ status: 'no-recording' as const });
 			return _current.cancel({ sendStatus });
 		},

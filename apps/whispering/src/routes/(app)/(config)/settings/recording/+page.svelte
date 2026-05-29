@@ -17,7 +17,7 @@
 	import { report } from '$lib/report';
 	import { tauri } from '$lib/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
-	import { MANUAL_DEVICE_ID_KEY } from '$lib/state/manual-recorder-params';
+	import { manualRecorderConfig } from '$lib/state/manual-recorder-config';
 	import { settings } from '$lib/state/settings.svelte';
 	import { whispering } from '$lib/whispering/whispering';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
@@ -88,10 +88,10 @@
 		{#if settings.get('recording.mode') === 'manual'}
 			<ManualSelectRecordingDevice
 				bind:selected={() => {
-					const selected = deviceConfig.get(MANUAL_DEVICE_ID_KEY);
+					const selected = manualRecorderConfig.deviceId;
 					return selected ? asDeviceIdentifier(selected) : null;
 					},
-					(selected) => deviceConfig.set(MANUAL_DEVICE_ID_KEY, selected)}
+					(selected) => (manualRecorderConfig.deviceId = selected)}
 			/>
 		{:else if settings.get('recording.mode') === 'vad'}
 			{#if IS_LINUX}

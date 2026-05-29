@@ -16,28 +16,16 @@ import type {
 } from './types';
 import { RecorderError } from './types';
 
-type ActiveSession = {
-	stream: MediaStream;
-	mediaRecorder: MediaRecorder;
-	recordedChunks: Blob[];
-	session: RecordingSession;
-};
-
 /**
  * Navigator recorder service that uses the MediaRecorder API.
  * Used for web manual recording. Desktop manual recording resolves to the
  * CPAL implementation in `index.tauri.ts`; desktop VAD uses `device-stream`
  * directly and does not go through this service.
  *
- * Constructed via a factory so module-level state is just the single
- * in-flight session, if any. The exposed surface is `startRecording`
- * (factory), `getActiveRecording` (bootstrap), and `enumerateDevices`.
- * Per-session lifecycle (stop/cancel/subscribe) lives on the returned
- * `RecordingSession`.
+ * Constructed via a factory so per-session lifecycle
+ * (stop/cancel/subscribe) lives on the returned `RecordingSession`.
  */
 function createNavigatorRecorder() {
-	let activeSession: ActiveSession | null = null;
-
 	function buildSession(args: {
 		recordingId: string;
 		stream: MediaStream;
@@ -61,7 +49,6 @@ function createNavigatorRecorder() {
 		};
 
 		const teardown = () => {
-			activeSession = null;
 			cleanupRecordingStream(stream);
 			notify('IDLE');
 		};
@@ -130,30 +117,16 @@ function createNavigatorRecorder() {
 			},
 		} satisfies RecordingSession;
 
-		const sessionRecord = {
-			stream,
-			mediaRecorder,
-			recordedChunks,
-			session: recordingSession,
-		} satisfies ActiveSession;
-		return {
-			activeSession: sessionRecord,
-			session: recordingSession,
-		} satisfies {
-			activeSession: ActiveSession;
-			session: RecordingSession;
-		};
+		return recordingSession;
 	}
 
 	return {
-		getActiveRecording: async (): Promise<
+		resumeActiveSession: async (): Promise<
 			Result<RecordingSession | null, RecorderError>
 		> => {
-			// Navigator state lives in this closure, so a JS reload zeroes it
-			// out; the MediaStream/MediaRecorder are also gone in that case.
-			// Always null after a reload; non-null only if startRecording fired
-			// within this module's lifetime and the session is still live.
-			return Ok(activeSession?.session ?? null);
+			// Navigator state lives in this closure, so a JS reload zeroes it out;
+			// the MediaStream/MediaRecorder are also gone in that case.
+			return Ok(null);
 		},
 
 		enumerateDevices: async () => {
@@ -207,14 +180,13 @@ function createNavigatorRecorder() {
 			mediaRecorder.start(TIMESLICE_MS);
 			const startedAtMs = Date.now();
 
-			const { activeSession: sessionRecord, session } = buildSession({
+			const session = buildSession({
 				recordingId,
 				stream,
 				mediaRecorder,
 				recordedChunks,
 				startedAtMs,
 			});
-			activeSession = sessionRecord;
 
 			return Ok({ session, deviceAcquisition: deviceOutcome });
 		},

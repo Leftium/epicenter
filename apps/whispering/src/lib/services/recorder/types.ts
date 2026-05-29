@@ -278,14 +278,14 @@ export type RecordingSession = {
  */
 export type RecorderService<RecordingParams extends BaseRecordingParams> = {
 	/**
-	 * Probe for a RecordingSession that already exists at module-load time. CPAL
-	 * sessions can outlive a JS reload because the Rust process keeps the
-	 * stream; navigator sessions cannot survive a reload and will always
-	 * return null after one.
+	 * Recover a RecordingSession that may have survived a JS reload.
+	 *
+	 * CPAL sessions can outlive a JS reload because Rust keeps the stream;
+	 * navigator sessions cannot survive a reload and return null.
 	 *
 	 * Returns the live RecordingSession owned by this implementation, or null if none.
 	 */
-	getActiveRecording(): Promise<Result<RecordingSession | null, RecorderError>>;
+	resumeActiveSession(): Promise<Result<RecordingSession | null, RecorderError>>;
 
 	/**
 	 * Enumerate available recording devices with their labels and identifiers

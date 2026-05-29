@@ -11,14 +11,13 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { report } from '$lib/report';
 	import { tauri } from '$lib/tauri';
-	import { deviceConfig } from '$lib/state/device-config.svelte';
-	import { MANUAL_DEVICE_ID_KEY } from '$lib/state/manual-recorder-params';
+	import { manualRecorderConfig } from '$lib/state/manual-recorder-config';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 
 	const combobox = useCombobox();
 
 	const selectedDeviceId = $derived(
-		deviceConfig.get(MANUAL_DEVICE_ID_KEY),
+		manualRecorderConfig.deviceId,
 	);
 
 	const isDeviceSelected = $derived(!!selectedDeviceId);
@@ -98,10 +97,8 @@
 								value={`device-${device.id} ${device.label}`}
 								onSelect={() => {
 									const currentDeviceId = selectedDeviceId;
-									deviceConfig.set(
-										MANUAL_DEVICE_ID_KEY,
-										currentDeviceId === device.id ? null : device.id,
-									);
+									manualRecorderConfig.deviceId =
+										currentDeviceId === device.id ? null : device.id;
 								}}
 								class="flex items-center gap-3 px-3 py-2"
 							>

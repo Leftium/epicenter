@@ -91,11 +91,11 @@ const enumerateDevices = async (): Promise<Result<Device[], RecorderError>> => {
  *
  * Constructed via a factory so the per-session lifecycle (stop/cancel/
  * subscribe) lives on the returned `RecordingSession`. The service itself
- * only holds a pointer to the active session for rehydration through
- * `getActiveRecording`; once stop/cancel runs, that pointer clears.
+ * only holds a pointer to the active session for reload recovery through
+ * `resumeActiveSession`; once stop/cancel runs, that pointer clears.
  *
  * Unlike navigator, a cpal session can outlive a JS reload because the
- * Rust process keeps the cpal stream alive. `getActiveRecording` consults
+ * Rust process keeps the cpal stream alive. `resumeActiveSession` consults
  * Rust via `get_current_recording_id` and reattaches a new
  * `RecordingSession` wrapper if Rust still has one going.
  *
@@ -217,7 +217,7 @@ function createCpalRecorder() {
 	}
 
 	return {
-		getActiveRecording: async (): Promise<
+		resumeActiveSession: async (): Promise<
 			Result<RecordingSession | null, RecorderError>
 		> => {
 			// If we still hold the in-memory pointer, prefer it; otherwise

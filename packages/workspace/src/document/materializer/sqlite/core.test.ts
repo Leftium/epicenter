@@ -57,10 +57,9 @@ type SetupBuildResult = {
 type SetupOptions = {
 	build?: (t: AttachedTables) => SetupBuildResult;
 	debounceMs?: number;
-	onDisposed?: () => void;
 };
 
-function setup({ build, debounceMs, onDisposed }: SetupOptions = {}) {
+function setup({ build, debounceMs }: SetupOptions = {}) {
 	const db = createTestDb();
 
 	const cache = createDisposableCache(
@@ -82,7 +81,6 @@ function setup({ build, debounceMs, onDisposed }: SetupOptions = {}) {
 				db,
 				debounceMs,
 				tables: built.tables,
-				onDisposed,
 				// biome-ignore lint/suspicious/noExplicitAny: tests erase row types through the setup helper
 				fts: built.fts as any,
 			});
@@ -144,7 +142,7 @@ function hasTable(db: Database, tableName: string) {
 
 async function cleanup(setupResult: ReturnType<typeof setup>) {
 	setupResult.workspace[Symbol.dispose]();
-	setupResult.db.close();
+	await Promise.resolve();
 }
 
 // ============================================================================
@@ -426,6 +424,8 @@ describe('attachSqliteMaterializerCore', () => {
 	describe('dispose', () => {
 		test('dispose cancels queued sync and ignores later writes', async () => {
 			const testSetup = setup();
+			const originalClose = testSetup.db.close.bind(testSetup.db);
+			testSetup.db.close = () => {};
 
 			try {
 				await testSetup.workspace.sqlite.whenFlushed;
@@ -446,24 +446,19 @@ describe('attachSqliteMaterializerCore', () => {
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([]);
 			} finally {
-				testSetup.db.close();
+				originalClose();
 			}
 		});
 
-		test('runs onDisposed after an in-flight incremental sync', async () => {
+		test('closes SQLite after an in-flight incremental sync', async () => {
 			const insertStarted = createDeferred();
 			const allowInsert = createDeferred();
-			const disposed = createDeferred();
-			let onDisposedCalled = false;
-			const testSetup = setup({
-				debounceMs: 0,
-				onDisposed: () => {
-					onDisposedCalled = true;
-					disposed.resolve();
-				},
-			});
+			const closed = createDeferred();
+			const testSetup = setup({ debounceMs: 0 });
 			const originalPrepare = testSetup.db.prepare.bind(testSetup.db);
+			const originalClose = testSetup.db.close.bind(testSetup.db);
 			let insertRunCompleted = false;
+			let closeCalled = false;
 
 			testSetup.db.prepare = ((sql: string, params?: SQLQueryBindings) => {
 				const statement = originalPrepare(sql, params);
@@ -482,6 +477,11 @@ describe('attachSqliteMaterializerCore', () => {
 					get: statement.get.bind(statement),
 				};
 			}) as typeof testSetup.db.prepare;
+			testSetup.db.close = () => {
+				closeCalled = true;
+				closed.resolve();
+				originalClose();
+			};
 
 			try {
 				await testSetup.workspace.sqlite.whenFlushed;
@@ -496,16 +496,16 @@ describe('attachSqliteMaterializerCore', () => {
 				testSetup.workspace[Symbol.dispose]();
 				await Promise.resolve();
 
-				expect(onDisposedCalled).toBe(false);
+				expect(closeCalled).toBe(false);
 				expect(insertRunCompleted).toBe(false);
 
 				allowInsert.resolve();
-				await disposed.promise;
+				await closed.promise;
 
-				expect(onDisposedCalled).toBe(true);
+				expect(closeCalled).toBe(true);
 				expect(insertRunCompleted).toBe(true);
 			} finally {
-				testSetup.db.close();
+				if (!closeCalled) testSetup.db.close();
 			}
 		});
 	});

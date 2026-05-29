@@ -110,17 +110,6 @@ export function attachBunSqliteMaterializer<
 		fts,
 		debounceMs,
 		waitFor,
-		onDisposed: () => {
-			try {
-				client.close();
-			} catch (cause) {
-				log.warn(
-					new Error('attachBunSqliteMaterializer: client.close failed', {
-						cause,
-					}),
-				);
-			}
-		},
 		log,
 	});
 

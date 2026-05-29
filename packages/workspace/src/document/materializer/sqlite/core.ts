@@ -79,7 +79,6 @@ export function attachSqliteMaterializerCore<
 		fts,
 		debounceMs = 100,
 		waitFor,
-		onDisposed,
 		log = createLogger('sqlite-materializer'),
 	}: {
 		db: Database;
@@ -102,11 +101,6 @@ export function attachSqliteMaterializerCore<
 		 * for no gate.
 		 */
 		waitFor?: Promise<unknown>;
-		/**
-		 * Runs after the materializer has detached observers and the current
-		 * incremental sync queue has drained.
-		 */
-		onDisposed?: () => void | Promise<void>;
 		/**
 		 * Logger for background failures (debounced sync flush, FTS query).
 		 * Defaults to a console-backed logger with source `sqlite-materializer`.
@@ -257,9 +251,11 @@ export function attachSqliteMaterializerCore<
 		isDisposed = true;
 		flushAfterDebounce.cancel();
 		for (const entry of registered.values()) entry.unsubscribe?.();
-		syncQueue.then(onDisposed).catch((cause: unknown) => {
-			log.error(SqliteMaterializerError.DisposeFailed({ cause }));
-		});
+		syncQueue
+			.then(() => db.close())
+			.catch((cause: unknown) => {
+				log.error(SqliteMaterializerError.DisposeFailed({ cause }));
+			});
 	}
 
 	ydoc.once('destroy', dispose);

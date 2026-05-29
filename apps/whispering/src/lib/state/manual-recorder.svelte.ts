@@ -25,7 +25,7 @@ const ManualRecorderError = defineErrors({
 	}),
 });
 
-export const manualRecorderKeys = defineKeys({
+const manualRecorderKeys = defineKeys({
 	devices: ['recorder', 'devices'],
 });
 

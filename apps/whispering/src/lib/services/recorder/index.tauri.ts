@@ -159,6 +159,9 @@ function createCpalRecorder() {
 				const { data: artifact, error: stopRecordingError } =
 					await commands.stopRecording();
 				if (stopRecordingError !== null) {
+					const { error: closeError } = await commands.closeRecordingSession();
+					if (closeError !== null)
+						log.error(RecorderError.StopFailed({ cause: closeError }));
 					teardown(session);
 					return RecorderError.StopFailed({ cause: stopRecordingError });
 				}

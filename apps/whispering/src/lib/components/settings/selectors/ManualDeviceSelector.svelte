@@ -16,12 +16,6 @@
 
 	const combobox = useCombobox();
 
-	const selectedDeviceId = $derived(
-		manualRecorderConfig.deviceId,
-	);
-
-	const isDeviceSelected = $derived(!!selectedDeviceId);
-
 	const getDevicesQuery = createQuery(() => ({
 		...manualRecorder.enumerateDevices.options,
 		enabled: combobox.open,
@@ -49,7 +43,7 @@
 		{#snippet child({ props })}
 			<Button
 				{...props}
-				tooltip={isDeviceSelected
+				tooltip={manualRecorderConfig.deviceId
 					? 'Change microphone'
 					: 'Select microphone'}
 				role="combobox"
@@ -57,7 +51,7 @@
 				variant="ghost"
 				size="icon"
 			>
-				{#if isDeviceSelected}
+				{#if manualRecorderConfig.deviceId}
 					<MicIcon class="size-4 text-green-500" />
 				{:else}
 					<MicIcon class="size-4 text-warning" />
@@ -96,16 +90,17 @@
 							<Command.Item
 								value={`device-${device.id} ${device.label}`}
 								onSelect={() => {
-									const currentDeviceId = selectedDeviceId;
 									manualRecorderConfig.deviceId =
-										currentDeviceId === device.id ? null : device.id;
+										manualRecorderConfig.deviceId === device.id
+											? null
+											: device.id;
 								}}
 								class="flex items-center gap-3 px-3 py-2"
 							>
 								<CheckIcon
 									class={cn(
 										'size-4 shrink-0',
-										selectedDeviceId === device.id
+										manualRecorderConfig.deviceId === device.id
 											? 'opacity-100'
 											: 'opacity-0',
 									)}

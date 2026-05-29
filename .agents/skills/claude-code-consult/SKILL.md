@@ -62,7 +62,7 @@ bun run claude:consult -- \
 
 Pipe narrow context into the wrapper or pass specific files with repeatable `--context` flags. Use `--mode review`, `--mode design`, `--mode tests`, or `--mode docs` to pick the critique lens.
 
-The wrapper uses `claude -p`, `--output-format json`, `--max-budget-usd`, and `--max-turns`. It intentionally loads the user's normal Claude Code config by default because the local Claude login can live there. Use the wrapper's `--bare` flag only when bare mode is known to have working auth.
+The wrapper uses `claude -p`, `--output-format json`, `--max-budget-usd`, `--max-turns`, and `--permission-mode dontAsk`. It intentionally loads the user's normal Claude Code config by default because the local Claude login can live there. Use the wrapper's `--bare` flag only when bare mode is known to have working auth.
 
 By default, pass context directly and do not expose read/search tools. The wrapper always denies `Edit`, `Write`, and `Bash`. Add `--read-files` only when Claude needs to read or search extra repo files. In that mode, the wrapper uses `--tools Read,Grep,Glob` and `--allowedTools Read,Grep,Glob`.
 
@@ -73,6 +73,7 @@ claude -p "[prompt]" \
   --tools "Read,Grep,Glob" \
   --allowedTools "Read,Grep,Glob" \
   --disallowedTools "Edit,Write,Bash" \
+  --permission-mode dontAsk \
   --output-format json \
   --max-budget-usd 1
 ```

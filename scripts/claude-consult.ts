@@ -1,17 +1,5 @@
 #!/usr/bin/env bun
 
-type ConsultMode = 'review' | 'design' | 'tests' | 'docs';
-
-type CliOptions = {
-	mode: ConsultMode;
-	question: string;
-	context: string[];
-	budgetUsd: number;
-	maxTurns: number;
-	bare: boolean;
-	readFiles: boolean;
-};
-
 const modeInstructions = {
 	review: [
 		'Review the provided context for behavioral bugs, regressions, missing tests, and risky assumptions.',
@@ -29,13 +17,15 @@ const modeInstructions = {
 		'Review the provided prose or API docs for vague claims, stale terminology, missing examples, and misleading promises.',
 		'Prefer exact replacement suggestions when a small edit would fix the issue.',
 	],
-} satisfies Record<ConsultMode, string[]>;
+} as const;
 
-function parseArgs(argv: string[]): CliOptions {
-	const options: CliOptions = {
-		mode: 'review',
+type ConsultMode = keyof typeof modeInstructions;
+
+function parseArgs(argv: string[]) {
+	const options = {
+		mode: 'review' as ConsultMode,
 		question: '',
-		context: [],
+		context: [] as string[],
 		budgetUsd: 1,
 		maxTurns: 3,
 		bare: false,
@@ -97,7 +87,7 @@ function parseArgs(argv: string[]): CliOptions {
 			continue;
 		}
 
-		if (arg === '--read-files' || arg === '--with-tools') {
+		if (arg === '--read-files') {
 			options.readFiles = true;
 			continue;
 		}
@@ -111,12 +101,7 @@ function parseArgs(argv: string[]): CliOptions {
 }
 
 function isMode(value: string | undefined): value is ConsultMode {
-	return (
-		value === 'review' ||
-		value === 'design' ||
-		value === 'tests' ||
-		value === 'docs'
-	);
+	return typeof value === 'string' && value in modeInstructions;
 }
 
 async function main() {
@@ -136,6 +121,8 @@ async function main() {
 		String(options.maxTurns),
 		'--disallowedTools',
 		'Edit,Write,Bash',
+		'--permission-mode',
+		'dontAsk',
 	];
 
 	if (options.readFiles) {
@@ -155,7 +142,7 @@ async function main() {
 
 	if (exitCode !== 0) {
 		const envelope = parseClaudeEnvelope(stdout);
-		if (typeof envelope.result === 'string') console.error(envelope.result);
+		printClaudeError(envelope);
 		if (stderr.trim()) console.error(stderr.trim());
 		if (stdout.trim() && typeof envelope.result !== 'string') {
 			console.error(stdout.trim());
@@ -165,7 +152,7 @@ async function main() {
 
 	const envelope = parseClaudeEnvelope(stdout);
 	if (envelope.is_error) {
-		if (typeof envelope.result === 'string') console.error(envelope.result);
+		printClaudeError(envelope);
 		fail('claude returned is_error=true');
 	}
 
@@ -196,7 +183,7 @@ async function readContext(paths: string[]): Promise<string> {
 }
 
 function buildPrompt(
-	options: CliOptions,
+	options: ReturnType<typeof parseArgs>,
 	stdin: string,
 	contextText: string,
 ): string {
@@ -229,17 +216,28 @@ function buildPrompt(
 }
 
 function parseClaudeEnvelope(stdout: string): {
+	errors?: unknown;
 	is_error?: boolean;
 	result?: unknown;
 } {
 	try {
 		const parsed = JSON.parse(stdout) as {
+			errors?: unknown;
 			is_error?: boolean;
 			result?: unknown;
 		};
 		return parsed;
 	} catch {
 		return {};
+	}
+}
+
+function printClaudeError(envelope: ReturnType<typeof parseClaudeEnvelope>) {
+	if (typeof envelope.result === 'string') console.error(envelope.result);
+	if (Array.isArray(envelope.errors)) {
+		for (const error of envelope.errors) {
+			if (typeof error === 'string') console.error(error);
+		}
 	}
 }
 

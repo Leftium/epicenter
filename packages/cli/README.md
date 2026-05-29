@@ -5,13 +5,14 @@
 Each verb is a one-line shell shortcut for one workspace primitive:
 
 ```
-                 +--------+---------------------------------------------+
-                 | Verb   | Workspace primitive                         |
-                 +--------+---------------------------------------------+
-   Enumerate     | list   | Object.entries(collaboration.actions)       |
-   Invoke        | run    | actions[key](input) or dispatch(peer, ...)  |
-   Presence      | peers  | collaboration.devices.list()                |
-                 +--------+---------------------------------------------+
+                 +------------+---------------------------------------------+
+                 | Verb       | Workspace primitive                         |
+                 +------------+---------------------------------------------+
+   Enumerate     | list       | Object.entries(collaboration.actions)       |
+   Invoke        | run        | local daemon invoke                         |
+   Dispatch      | run --peer | relay dispatch to a live peer               |
+   Presence      | peers      | collaboration.devices.list()                |
+                 +------------+---------------------------------------------+
 
  Supporting systems: auth (machine session), daemon (process lifecycle)
 ```
@@ -63,7 +64,7 @@ epicenter peers -C ~/vault
 ```ts
 import { fuji } from '@epicenter/fuji/project';
 
-export default fuji();
+export default [fuji()];
 ```
 
 The factory carries the canonical mount name (`fuji`), so the CLI addresses actions as `fuji.<action_key>` regardless of the project folder name.

@@ -1,10 +1,9 @@
 /**
- * Domain errors and response envelope for the `/run` route.
+ * Domain errors for daemon action routes.
  *
- * Lives daemon-side because the route owns the wire contract: `executeRun`
- * constructs `RunError` variants in `run-handler.ts`, and the response
- * envelope (`RunResponse`) is what the route serializes to JSON. The CLI
- * command imports both for renderer typing.
+ * Local invoke and peer dispatch deliberately use separate response types:
+ * local invoke executes this daemon's action registry, while peer dispatch
+ * asks a recipient device to decide whether it supports the action.
  *
  * Remote call failures keep the remote client error intact so the CLI owns
  * every presentation choice for peer disconnects, timeouts, and other
@@ -16,7 +15,6 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import type { Result } from 'wellcrafted/result';
 
 import type { DispatchError } from '../document/dispatch.js';
 import type {
@@ -24,7 +22,12 @@ import type {
 	SyncFailedReason,
 } from '../document/internal/sync-supervisor.js';
 
-export type RunSyncStatus =
+type PeerDispatchRemoteError = Exclude<
+	DispatchError,
+	{ name: 'RecipientOffline' }
+>;
+
+export type PeerDispatchSyncStatus =
 	| { phase: 'offline' }
 	| {
 			phase: 'connecting';
@@ -34,19 +37,7 @@ export type RunSyncStatus =
 	| { phase: 'connected' }
 	| { phase: 'failed'; reason: SyncFailedReason };
 
-/**
- * CLI-specific failures of the `/run` route. Carrying the failure mode
- * in-band lets the renderer set `process.exitCode` from a single switch,
- * even when the result arrived over IPC.
- *
- * - `UsageError`: bad action key / missing sync; renderer exitCode=1.
- * - `RuntimeError`: action returned Err locally; renderer exitCode=2.
- * - `PeerNotFound`: `--peer <target>` did not resolve within `--wait`;
- *   renderer exitCode=3.
- * - `RemoteCallFailed`: peer resolved but the RPC call itself failed
- *   (timeout, peer disconnected mid-call, wire error); renderer exitCode=2.
- */
-export const RunError = defineErrors({
+export const InvokeError = defineErrors({
 	UsageError: ({
 		message,
 		suggestions,
@@ -58,39 +49,55 @@ export const RunError = defineErrors({
 		message: extractErrorMessage(cause),
 		cause,
 	}),
+});
+export type InvokeError = InferErrors<typeof InvokeError>;
+
+/**
+ * CLI-specific failures of peer dispatch. Carrying the failure mode in-band
+ * lets the renderer set `process.exitCode` from a single switch, even when the
+ * result arrived over IPC.
+ *
+ * - `UsageError`: bad action key / missing sync; renderer exitCode=1.
+ * - `PeerNotFound`: `--peer <target>` did not resolve within `--wait`;
+ *   renderer exitCode=3.
+ * - `RemoteCallFailed`: peer resolved but the RPC call itself failed
+ *   (timeout, peer disconnected mid-call, wire error); renderer exitCode=2.
+ */
+export const PeerDispatchError = defineErrors({
+	UsageError: ({
+		message,
+		suggestions,
+	}: {
+		message: string;
+		suggestions?: string[];
+	}) => ({ message, suggestions }),
 	PeerNotFound: ({
-		peerTarget,
+		to,
 		waitMs,
 		syncStatus,
 	}: {
-		peerTarget: string;
+		to: string;
 		waitMs: number;
-		syncStatus: RunSyncStatus;
+		syncStatus: PeerDispatchSyncStatus;
 	}) => ({
-		message: `no peer matches peer id "${peerTarget}"`,
-		peerTarget,
+		message: `no peer matches peer id "${to}"`,
+		to,
 		waitMs,
 		syncStatus,
 	}),
 	RemoteCallFailed: ({
 		cause,
-		peerTarget,
+		to,
 		syncStatus,
 	}: {
-		peerTarget: string;
-		cause: DispatchError;
-		syncStatus: RunSyncStatus;
+		to: string;
+		cause: PeerDispatchRemoteError;
+		syncStatus: PeerDispatchSyncStatus;
 	}) => ({
 		message: `remote call failed: ${cause.name}`,
 		cause,
-		peerTarget,
+		to,
 		syncStatus,
 	}),
 });
-export type RunError = InferErrors<typeof RunError>;
-
-/**
- * Wire shape of `/run`'s response body. The renderer narrows on
- * `error.name`.
- */
-export type RunResponse = Result<unknown, RunError>;
+export type PeerDispatchError = InferErrors<typeof PeerDispatchError>;

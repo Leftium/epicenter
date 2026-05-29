@@ -3,7 +3,7 @@
  *
  * `/list` describes every hosted mount and prefixes each action key with the
  * mount name. The shared action path helpers are covered here because `/list`
- * and `/run` both rely on the same mount qualifier rules.
+ * and action execution both rely on the same mount qualifier rules.
  */
 
 import { describe, expect, test } from 'bun:test';

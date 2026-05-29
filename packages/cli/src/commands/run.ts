@@ -21,10 +21,10 @@
 import type { DispatchError } from '@epicenter/workspace';
 import {
 	type DaemonError,
-	type RunError as DaemonRunError,
 	getDaemon,
-	type RunRequest,
-	type RunSyncStatus,
+	type InvokeError,
+	type PeerDispatchError,
+	type PeerDispatchSyncStatus,
 } from '@epicenter/workspace/node';
 import { extractErrorMessage } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
@@ -58,7 +58,7 @@ export const runCommand = cmd({
 			.option('C', projectOption)
 			.option('peer', {
 				type: 'string',
-				description: 'Invoke on a remote peer by peer id',
+				description: 'Dispatch to a remote peer by peer id',
 			})
 			.option('wait', {
 				type: 'number',
@@ -73,26 +73,35 @@ export const runCommand = cmd({
 		const waitMs = argv.wait ?? DEFAULT_PEER_WAIT_MS;
 		const actionInput = await resolveInput(argv.input);
 
-		const runRequest: RunRequest = {
-			actionPath: argv.action,
-			input: actionInput,
-			peerTarget,
-			waitMs,
-		};
-
 		const { data: daemon, error: daemonErr } = await getDaemon(argv.C);
 		if (daemonErr) {
 			console.error(daemonErr.message);
 			process.exitCode = 1;
 			return;
 		}
-		const result = await daemon.run(runRequest);
+		if (peerTarget === undefined) {
+			renderRunResult(
+				await daemon.invoke({
+					actionPath: argv.action,
+					input: actionInput,
+				}),
+				argv.format,
+			);
+			return;
+		}
+
+		const result = await daemon.dispatch({
+			actionPath: argv.action,
+			input: actionInput,
+			to: peerTarget,
+			waitMs,
+		});
 		renderRunResult(result, argv.format);
 	},
 });
 
 function renderRunResult(
-	result: Result<unknown, DaemonRunError | DaemonError>,
+	result: Result<unknown, InvokeError | PeerDispatchError | DaemonError>,
 	format: OutputFormat | undefined,
 ): void {
 	if (result.error === null) {
@@ -116,14 +125,14 @@ function renderRunResult(
 			return;
 		case 'PeerNotFound':
 			emitPeerNotFound(
-				result.error.peerTarget,
+				result.error.to,
 				result.error.waitMs,
 				result.error.syncStatus,
 			);
 			process.exitCode = 3;
 			return;
 		case 'RemoteCallFailed': {
-			emitRemoteCallError(result.error.peerTarget, result.error.cause);
+			emitRemoteCallError(result.error.to, result.error.cause);
 			process.exitCode = 2;
 			return;
 		}
@@ -149,7 +158,7 @@ async function resolveInput(input: string | undefined): Promise<unknown> {
 function emitPeerNotFound(
 	target: string,
 	waitMs: number,
-	syncStatus: RunSyncStatus,
+	syncStatus: PeerDispatchSyncStatus,
 ): void {
 	console.error(`error: no peer matches peer id "${target}" after ${waitMs}ms`);
 	console.error(`  reason: ${describePeerMissReason(syncStatus)}`);
@@ -166,12 +175,12 @@ function emitPeerNotFound(
  */
 export function emitRemoteCallError(
 	peerTarget: string,
-	cause: DispatchError,
+	cause: Exclude<DispatchError, { name: 'RecipientOffline' }>,
 ): void {
 	switch (cause.name) {
 		case 'Cancelled':
 			// The daemon owns the dispatch `AbortSignal` (`AbortSignal.timeout(waitMs)`
-			// in run-handler.ts), so a `Cancelled` dispatch error that reaches the
+			// in action-handler.ts), so a `Cancelled` dispatch error that reaches the
 			// CLI is always the `--wait` deadline. Its abort reason is a
 			// `DOMException`, which cannot survive the daemon's JSON response, so
 			// it is not inspected here.
@@ -185,9 +194,6 @@ export function emitRemoteCallError(
 				`error: "${cause.action}" failed on ${peerTarget}: ${cause.cause}`,
 			);
 			return;
-		case 'RecipientOffline':
-			console.error(`error: peer ${peerTarget} went offline before responding`);
-			return;
 		case 'NetworkFailed':
 			console.error(
 				`error: dispatch to ${peerTarget} failed: ${extractErrorMessage(cause.cause)}`,
@@ -198,7 +204,7 @@ export function emitRemoteCallError(
 	}
 }
 
-function describePeerMissReason(status: RunSyncStatus): string {
+function describePeerMissReason(status: PeerDispatchSyncStatus): string {
 	if (status.phase === 'connected') {
 		return 'connected, but no matching peer was visible';
 	}

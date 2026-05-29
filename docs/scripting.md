@@ -42,9 +42,9 @@ The materializer is the same SQL surface the daemon serves to the SPA: column-ty
 
 For ranked search with snippets, use `openSqliteReader({ filePath: sqlitePath(...) })`; it wraps the same database and exposes a `search()` helper. For typed Drizzle queries, pass the returned `db` to `drizzle(db, { schema })` (the per-app schema lives in the app's npm package).
 
-## Writes: typed actions through the daemon
+## Writes: typed invoke through the daemon
 
-`connectDaemonActions<TActions>({ mount, projectDir })` returns a typed proxy. `mount` is the mount name (`'fuji'` for the Fuji example); the proxy translates `fuji.entries_update({ ... })` into a `POST /run` over the daemon's Unix socket in the OS runtime directory. The daemon invokes the action in-process against the live Y.Doc and returns a JSON `Result<T>`.
+`connectDaemonActions<TActions>({ mount, projectDir })` returns a typed proxy. `mount` is the mount name (`'fuji'` for the Fuji example); the proxy translates `fuji.entries_update({ ... })` into a `POST /invoke` over the daemon's Unix socket in the OS runtime directory. The daemon invokes the action in-process against the live Y.Doc and returns a JSON `Result<T>`.
 
 The mount name comes from the `Mount.name` field on the value `epicenter.config.ts` default-exports. App-package factories like `fuji()` carry their canonical name internally.
 

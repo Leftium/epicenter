@@ -20,7 +20,7 @@ import type { MaybePromise } from '../shared/types.js';
 
 /**
  * Collaboration fields the daemon socket app reads while serving `/peers`,
- * `/list`, and `/run`.
+ * `/list`, `/invoke`, and `/dispatch`.
  */
 type DaemonServedCollaboration<
 	TActions extends ActionRegistry = ActionRegistry,

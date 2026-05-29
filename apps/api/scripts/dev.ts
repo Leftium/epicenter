@@ -11,9 +11,9 @@ const devVars = resolve(apiRoot, '.dev.vars');
 // directory does not exist, even when the dashboard has not been built yet.
 await Bun.$`mkdir -p ${dashboardBuild}`;
 
-// Wrangler ignores CLOUDFLARE_INCLUDE_PROCESS_ENV when a .dev.vars file exists,
-// so remove any stale copy before piping secrets through process.env. rm with
-// force only swallows ENOENT; real failures (permissions, busy file) propagate.
+// Keep local secrets in Infisical, not a checked-out .dev.vars file. Wrangler's
+// `secrets.required` support reads required secrets from process.env during
+// local dev; removing stale .dev.vars keeps that source unambiguous.
 await rm(devVars, { force: true });
 
 const auth = await Bun.$`infisical --silent user get token --plain`
@@ -33,20 +33,11 @@ if (auth.exitCode !== 0 || !auth.stdout.toString().trim()) {
 }
 
 const wrangler =
-	await Bun.$`infisical run --silent --env=dev --path=/api -- wrangler dev`
+	await Bun.$`infisical run --silent --env=dev --path=/api -- wrangler dev --var ${`API_PUBLIC_ORIGIN:${localUrl(APPS.API)}`}`
 		.cwd(apiRoot)
-		// API_PUBLIC_ORIGIN is the canonical auth origin (Better Auth baseURL,
-		// OAuth issuer, token audience). Production bakes PRODUCTION_API_URL in
-		// worker/index.ts; dev overrides it to localhost here so signed cookies
-		// and the issuer match the host the browser hits. The value is derived
-		// from the same APPS source of truth the dashboard proxy and OAuth seed
-		// read, so the port can never drift. CLOUDFLARE_INCLUDE_PROCESS_ENV lifts
-		// it (and the Infisical dev secrets) onto the worker's `c.env`.
-		.env({
-			...Bun.env,
-			CLOUDFLARE_INCLUDE_PROCESS_ENV: 'true',
-			API_PUBLIC_ORIGIN: localUrl(APPS.API),
-		})
+		// Dev narrows the public auth origin to localhost with Wrangler's --var
+		// override, derived from the same APPS source as the dashboard proxy and
+		// OAuth seed. Production bakes PRODUCTION_API_URL in worker/index.ts.
 		.nothrow();
 
 process.exit(wrangler.exitCode);

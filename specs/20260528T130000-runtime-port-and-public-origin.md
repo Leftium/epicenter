@@ -19,9 +19,9 @@ apps/api/wrangler.jsonc          vars.API_BASE_URL  = 'https://api.epicenter.so'
 apps/api/scripts/dev.ts          API_BASE_URL       = 'http://localhost:8787'      hand-typed localhost
 ```
 
-and the dev override leaned on `CLOUDFLARE_INCLUDE_PROCESS_ENV=true` plus an
-`rm .dev.vars` dance, because the flag is silently ignored when a `.dev.vars`
-file exists.
+and the dev override initially leaned on `CLOUDFLARE_INCLUDE_PROCESS_ENV=true`
+plus an `rm .dev.vars` dance, because the flag is silently ignored when a
+`.dev.vars` file exists.
 
 ## What shipped (public-origin slice)
 
@@ -50,10 +50,11 @@ Consequences:
 - `apps/api/wrangler.jsonc` no longer carries the origin var at all. Production
   bakes `PRODUCTION_API_URL` from `@epicenter/constants`; `API_PUBLIC_ORIGIN` is a
   dev-only injected override (declared optional in `apps/api/api-public-origin.d.ts`).
-- `dev.ts` injects `API_PUBLIC_ORIGIN: localUrl(APPS.API)`, derived from the same
-  `APPS` source of truth the dashboard proxy and OAuth seed read. The port cannot
-  drift. `CLOUDFLARE_INCLUDE_PROCESS_ENV` stays: it is the Infisical-secret pipe,
-  not just the origin override.
+- `dev.ts` passes `--var API_PUBLIC_ORIGIN:${localUrl(APPS.API)}`, derived from
+  the same `APPS` source of truth the dashboard proxy and OAuth seed read. The
+  port cannot drift. Infisical still supplies required secrets through
+  `process.env`; Wrangler's `secrets.required` config loads those without the
+  broad `CLOUDFLARE_INCLUDE_PROCESS_ENV` bridge.
 - `localUrl` is now literal-typed: `localUrl(APPS.API)` infers
   `"http://localhost:8787"`. Consumers widen to `string` at the Better Auth
   `trustedOrigins` boundary on purpose (a `readonly` tuple leaks into the inferred
@@ -102,5 +103,5 @@ consumes the port.
   manual `ASSETS.fetch` handler in `worker/index.ts` is the correct workaround.
   Leave it.
 - **Generating `.dev.vars`.** Would write Infisical secrets to disk; the current
-  process.env-only path is better hygiene.
+  process.env plus `wrangler dev --var` path is better hygiene.
 ```

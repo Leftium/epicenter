@@ -110,7 +110,7 @@ There are three layers, each with a different URL source:
 | Local dev (drizzle-kit) | `LOCAL_DATABASE_URL` parsed from `wrangler.jsonc` | `db:push:local`, `db:studio:local` |
 | Remote admin | `DATABASE_URL` injected by `infisical run` | `db:migrate:remote`, `db:studio:remote` |
 
-`bun run dev` runs `infisical run -- wrangler dev` with `CLOUDFLARE_INCLUDE_PROCESS_ENV=true`, so Wrangler reads secrets directly from the spawned process. No `.dev.vars` file is produced. Remote database commands use `infisical run` against the prod environment and should be treated as admin operations, not dev mode.
+`bun run dev` runs `infisical run -- wrangler dev --var API_PUBLIC_ORIGIN:http://localhost:8787`. Wrangler reads required secrets from the spawned process via the `secrets.required` config, while the `--var` flag narrowly overrides the hosted origin for local auth. No `.dev.vars` file is produced. Remote database commands use `infisical run` against the prod environment and should be treated as admin operations, not dev mode.
 
 ### Running the server
 

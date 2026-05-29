@@ -38,7 +38,10 @@ For non-Vite contexts (Cloudflare Workers, CLI scripts). Use `APPS` directly.
 import { APPS } from '@epicenter/constants/apps';
 
 // CORS origins:
-const prodOrigins = Object.values(APPS).flatMap(a => a.urls);
+const prodOrigins = Object.values(APPS).flatMap((a) => [
+	a.url,
+	...('aliases' in a ? a.aliases : []),
+]);
 const devOrigins = Object.values(APPS).map(a => `http://localhost:${a.port}`);
 
 // Dev server port:

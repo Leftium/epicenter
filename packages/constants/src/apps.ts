@@ -4,7 +4,7 @@
  * Each app declares its dev `port` and canonical production `url`. Apps
  * reachable at more than one domain add `aliases`. The canonical `url` is
  * used by Vite prod builds; `url` plus `aliases` together are included in
- * CORS and trusted origins (see {@link appUrl}).
+ * CORS and trusted origins (see {@link appOrigins}).
  *
  * To add an app: add an entry here. TypeScript enforces that every
  * consumer picks it up automatically.
@@ -40,42 +40,32 @@ export const APPS = {
 
 export type AppId = keyof typeof APPS;
 
-const local = <Port extends number>(app: { port: Port }) =>
+/**
+ * Local dev URL for an app, derived from its `port`. Single owner for the
+ * `http://localhost:<port>` shape: the dev-server origin override, the OAuth
+ * seed's local target, the Vite dev build, and the CSRF test all read this.
+ *
+ * The `Port` generic preserves the literal port through the template so
+ * `localUrl(APPS.API)` infers `"http://localhost:8787"`, not `string`.
+ * Consumers that hand the result to Better Auth (e.g. `trustedOrigins`)
+ * widen to `string` at that boundary on purpose; see
+ * `packages/server/src/trusted-origins.ts`.
+ */
+export const localUrl = <Port extends number>(app: { port: Port }) =>
 	`http://localhost:${app.port}` as const;
 
-const prod = (app: {
-	url: string;
-	aliases?: readonly string[];
-}): readonly string[] => [app.url, ...(app.aliases ?? [])];
-
-const all = (app: {
+/**
+ * Every origin an app answers on: its dev origin ({@link localUrl}) plus the
+ * canonical `url` and any `aliases`. Single owner for the every-origin list
+ * both CORS trusted origins and OAuth redirect URIs want. Only apps reachable
+ * at more than one domain (e.g. Opensidian) declare `aliases`; for everyone
+ * else this is the dev origin plus the one canonical url.
+ */
+export const appOrigins = (app: {
 	port: number;
 	url: string;
 	aliases?: readonly string[];
-}): readonly string[] => [local(app), ...prod(app)];
-
-/**
- * URL views derived from an {@link APPS} entry (or any app-shaped object,
- * such as the dashboard dev port that has no `APPS` entry of its own).
- * Mirrors the grouping of `OAUTH_ROUTES`: `APPS` stays plain data and every
- * derivation hangs off this one discoverable namespace.
- *
- * - `local`: the dev origin `http://localhost:<port>`. The `Port` generic
- *   preserves the literal port so `appUrl.local(APPS.API)` infers
- *   `"http://localhost:8787"`, not `string`. Consumers that hand the result
- *   to Better Auth (e.g. `trustedOrigins`) widen to `string` at that
- *   boundary on purpose; see `packages/server/src/trusted-origins.ts`.
- * - `prod`: the canonical `url` plus any `aliases`. Only apps reachable at
- *   more than one domain (e.g. Opensidian) declare `aliases`; for everyone
- *   else this is a one-element list.
- * - `all`: the dev + prod union, the every-origin list both CORS trusted
- *   origins and OAuth redirect URIs want.
- *
- * `local`/`prod`/`all` are assembled from module-private consts rather than
- * inline members so `all` can call `local`/`prod` without referencing
- * `appUrl` inside its own initializer (which TypeScript rejects).
- */
-export const appUrl = { local, prod, all } as const;
+}): readonly string[] => [localUrl(app), app.url, ...(app.aliases ?? [])];
 
 /**
  * Default API base URL for Node consumers (CLI, daemon, tests). The constant

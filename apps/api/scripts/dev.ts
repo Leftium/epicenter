@@ -1,6 +1,6 @@
 import { rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { APPS, appUrl } from '@epicenter/constants/apps';
+import { APPS, localUrl } from '@epicenter/constants/apps';
 
 const apiRoot = resolve(import.meta.dir, '..');
 const dashboardBuild = resolve(apiRoot, 'ui/build/dashboard');
@@ -45,7 +45,7 @@ const wrangler =
 		.env({
 			...Bun.env,
 			CLOUDFLARE_INCLUDE_PROCESS_ENV: 'true',
-			API_PUBLIC_ORIGIN: appUrl.local(APPS.API),
+			API_PUBLIC_ORIGIN: localUrl(APPS.API),
 		})
 		.nothrow();
 

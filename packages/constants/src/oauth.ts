@@ -1,5 +1,5 @@
 import type { SchemaClient } from '@better-auth/oauth-provider';
-import { APPS, appUrl } from '#apps';
+import { APPS, appOrigins } from '#apps';
 import { OAUTH_ROUTES } from './oauth-routes.js';
 
 /**
@@ -77,7 +77,7 @@ const AUTH_CALLBACK_PATH = '/auth/callback';
 
 /**
  * Every redirect URI for an app that owns its origin: each origin the app
- * answers on ({@link appUrl.all}, i.e. dev plus prod) joined to
+ * answers on ({@link appOrigins}, i.e. dev plus prod) joined to
  * {@link AUTH_CALLBACK_PATH}. Used by Fuji, Honeycrisp, Opensidian, and
  * Zhongwen.
  */
@@ -86,7 +86,7 @@ function appCallbacks(app: {
 	url: string;
 	aliases?: readonly string[];
 }): string[] {
-	return appUrl.all(app).map((origin) => `${origin}${AUTH_CALLBACK_PATH}`);
+	return appOrigins(app).map((origin) => `${origin}${AUTH_CALLBACK_PATH}`);
 }
 
 /**

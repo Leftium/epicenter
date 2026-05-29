@@ -1,78 +1,30 @@
 /**
- * SQLite materializer core: the shared body that backend-specific
- * `attach*` factories wrap. Mirrors workspace table rows into a SQLite-shaped
- * mirror via the internal {@link MirrorDatabase} contract.
+ * SQLite materializer core: the internal body wrapped by
+ * `attachBunSqliteMaterializer`. Mirrors workspace table rows into a
+ * SQLite mirror via a `bun:sqlite` database.
  *
- * Public callers use the per-backend factories (e.g.
- * `attachBunSqliteMaterializer`), which own the native client lifecycle and
- * adapt it to {@link MirrorDatabase} before calling
- * {@link attachSqliteMaterializerCore} here.
+ * Public callers use `attachBunSqliteMaterializer`, which owns the native
+ * client lifecycle and forwards the client here.
  *
  * Teardown is hooked to the ydoc via `ydoc.once('destroy', ...)`. The
- * per-backend factory registers its own destroy handler too to close the
- * underlying native client.
+ * `attachBunSqliteMaterializer` registers its own destroy handler too to close
+ * the underlying native client.
  *
  * @internal
  * @module
  */
 
+import type { Database, SQLQueryBindings } from 'bun:sqlite';
 import { debounce } from '@epicenter/util';
 import Type from 'typebox';
-import {
-	defineErrors,
-	extractErrorMessage,
-	type InferErrors,
-} from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
 import { defineActions, defineMutation } from '../../../shared/actions.js';
-import type { MaybePromise } from '../../../shared/types.js';
 import type { BaseRow, Table } from '../../table.js';
 import type { AnyTable, TablesRecord } from '../shared.js';
 import { generateDdl, quoteIdentifier } from './ddl.js';
 import { createSqliteFtsLayer } from './fts.js';
-
-// ════════════════════════════════════════════════════════════════════════════
-// INTERNAL SQL EXECUTOR CONTRACT
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * Minimal SQL executor the materializer body talks to.
- *
- * Structurally compatible with sync drivers (`bun:sqlite`, `better-sqlite3`)
- * and async WASM drivers (`@libsql/client`, `@tursodatabase/database`). The
- * materializer `await`s every call, so sync drivers work without an adapter.
- *
- * Kept internal: each per-backend `attach*` factory (e.g.
- * `attachBunSqliteMaterializer`) owns the adapter from a native client to
- * this contract. Consumers never construct or pass one in.
- *
- * @internal
- */
-export type MirrorDatabase = {
-	/** Execute raw SQL that does not return rows. */
-	run(sql: string): MaybePromise<unknown>;
-
-	/** Prepare a reusable statement for repeated reads or writes. */
-	prepare(sql: string): MaybePromise<MirrorStatement>;
-};
-
-/**
- * Internal prepared statement interface. Sibling of {@link MirrorDatabase};
- * each backend adapter constructs these from its native client.
- *
- * @internal
- */
-export type MirrorStatement = {
-	/** Run a statement that writes data or otherwise returns no rows. */
-	run(...params: unknown[]): MaybePromise<unknown>;
-
-	/** Fetch all matching rows as plain objects. */
-	all(...params: unknown[]): MaybePromise<unknown[]>;
-
-	/** Fetch the first matching row, or null if none found. */
-	get(...params: unknown[]): MaybePromise<unknown>;
-};
 
 export type { TablesRecord } from '../shared.js';
 
@@ -90,16 +42,13 @@ export type FtsConfig<TTables extends TablesRecord> = {
 };
 
 /** Errors surfaced by the SQLite materializer's async background sync loop. */
-export const SqliteMaterializerError = defineErrors({
+const SqliteMaterializerError = defineErrors({
 	/** Debounced flush of pending row writes to the mirror database failed. */
 	SyncFailed: ({ cause }: { cause: unknown }) => ({
 		message: `[sqlite-materializer] Failed to sync SQLite materializer: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
-export type SqliteMaterializerError = InferErrors<
-	typeof SqliteMaterializerError
->;
 
 type RegisteredTable = {
 	table: AnyTable;
@@ -107,10 +56,8 @@ type RegisteredTable = {
 };
 
 /**
- * Internal shared materializer body. Each per-backend factory
- * (`attachBunSqliteMaterializer`, `attachTursoMaterializer`) constructs
- * an adapter from its native client to {@link MirrorDatabase} and forwards
- * into this function.
+ * Internal shared materializer body. `attachBunSqliteMaterializer` forwards
+ * its native client to this function.
  *
  * Callers outside this directory should not import this directly.
  *
@@ -129,7 +76,7 @@ export function attachSqliteMaterializerCore<
 		waitFor,
 		log = createLogger('sqlite-materializer'),
 	}: {
-		db: MirrorDatabase;
+		db: Database;
 		/**
 		 * Workspace tables to mirror. Each entry becomes a SQLite table named
 		 * after the record key.
@@ -179,7 +126,10 @@ export function attachSqliteMaterializerCore<
 		row: BaseRow & Record<string, unknown>,
 	) {
 		const keys = Object.keys(row);
-		const values = keys.map((key) => serializeValue(row[key]));
+		const values = keys.map((key) => serializeValue(row[key])) as [
+			SQLQueryBindings,
+			...SQLQueryBindings[],
+		];
 
 		const stmt = await db.prepare(buildUpsertSql(tableName, keys));
 		await stmt.run(...values);
@@ -200,7 +150,10 @@ export function attachSqliteMaterializerCore<
 		const stmt = await db.prepare(buildUpsertSql(tableName, keys));
 
 		for (const row of rows) {
-			const values = keys.map((key) => serializeValue(row[key]));
+			const values = keys.map((key) => serializeValue(row[key])) as [
+				SQLQueryBindings,
+				...SQLQueryBindings[],
+			];
 			await stmt.run(...values);
 		}
 	}
@@ -374,9 +327,9 @@ export function attachSqliteMaterializerCore<
 /**
  * Build an UPSERT statement: insert with `ON CONFLICT(id) DO UPDATE`.
  *
- * Avoids `INSERT OR REPLACE` because Turso's Rust engine doesn't support
- * that form yet (parses as "INSERT OR REPLACE is only supported with
- * UPSERT"). Standard UPSERT works across bun:sqlite, libSQL, and Turso.
+ * Avoids `INSERT OR REPLACE` so updates preserve standard UPSERT semantics.
+ * Standard UPSERT works across SQLite-compatible engines and keeps this helper
+ * portable for tests.
  *
  * When `keys.length === 1` (just `id`), there's nothing to update on
  * conflict, so the statement collapses to `INSERT ... ON CONFLICT DO NOTHING`
@@ -415,9 +368,16 @@ function collectRowKeys(rows: readonly BaseRow[]): string[] {
  * - `boolean` → `0` or `1` (`INTEGER` column)
  * - everything else → passed through as-is
  */
-function serializeValue(value: unknown): unknown {
+function serializeValue(value: unknown): SQLQueryBindings {
 	if (value === null || value === undefined) return null;
-	if (typeof value === 'object') return JSON.stringify(value);
+	if (typeof value === 'object') return JSON.stringify(value) ?? null;
 	if (typeof value === 'boolean') return value ? 1 : 0;
-	return value;
+	if (
+		typeof value === 'string' ||
+		typeof value === 'number' ||
+		typeof value === 'bigint'
+	) {
+		return value;
+	}
+	return String(value);
 }

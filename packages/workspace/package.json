@@ -53,7 +53,6 @@
 		"@epicenter/sync": "workspace:*",
 		"@epicenter/util": "workspace:*",
 		"@sindresorhus/slugify": "catalog:",
-		"@tursodatabase/database": "^0.3.2",
 		"@types/bun": "catalog:",
 		"arkregex": "catalog:",
 		"arktype": "catalog:",

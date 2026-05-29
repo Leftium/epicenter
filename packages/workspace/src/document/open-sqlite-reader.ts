@@ -1,11 +1,11 @@
 /**
  * Read-only handle on the daemon's materialized SQLite mirror file.
  *
- * `attachSqliteMaterializer` runs on the daemon side and writes the mirror in
- * WAL journal mode (one writer, many readers, MVCC snapshots). Script peers
+ * `attachBunSqliteMaterializer` runs on the daemon side and writes the mirror
+ * in WAL journal mode (one writer, many readers, MVCC snapshots). Script peers
  * open the same file via `openSqliteReader({ filePath })`, get a read-only
- * `Database` handle plus an FTS5 `search()` helper symmetric with the
- * writer's, and skip the cold-start cost of computing the index themselves.
+ * `Database` handle plus an FTS5 `search()` helper that uses the writer's
+ * index, and skip the cold-start cost of computing the index themselves.
  *
  * Output handle:
  *   { db, search(table, query, opts?), [Symbol.dispose]() }
@@ -27,7 +27,12 @@
 
 import { Database } from 'bun:sqlite';
 import { quoteIdentifier } from './materializer/sqlite/ddl.js';
-import type { SearchOptions, SearchResult } from './materializer/sqlite/fts.js';
+import {
+	buildFtsSearchSql,
+	mapFtsSearchRows,
+	type SearchOptions,
+	type SearchResult,
+} from './materializer/sqlite/fts.js';
 
 /**
  * Options for {@link openSqliteReader}.
@@ -41,20 +46,15 @@ export type OpenSqliteReaderOptions = {
 };
 
 /**
- * Read-only handle on the daemon's materialized SQLite mirror.
- *
- * Returned by {@link openSqliteReader}. Disposable via the
- * explicit-resource-management protocol: declare with
- * `using reader = openSqliteReader(...)` and the underlying database
- * handle closes on scope exit.
- */
-/**
  * Open the daemon's SQLite mirror file read-only.
  *
  * The mirror is opened with `{ readonly: true }`; we additionally execute
  * `PRAGMA query_only = ON` so any unintentional write inside a
  * caller-supplied raw SQL string fails. Reads run against WAL snapshot
- * pages without blocking the daemon's writes.
+ * pages without blocking the daemon's writes. The returned handle is
+ * disposable via the explicit-resource-management protocol: declare with
+ * `using reader = openSqliteReader(...)` and the underlying database handle
+ * closes on scope exit.
  *
  * @example
  * ```ts
@@ -66,12 +66,7 @@ export type OpenSqliteReaderOptions = {
  * ```
  */
 export function openSqliteReader({ filePath }: OpenSqliteReaderOptions) {
-	const db = new Database(filePath, { readonly: true });
-	db.run('PRAGMA query_only = ON');
-	// Wait up to 5s on SQLITE_BUSY when a reader opens during a checkpoint
-	// instead of surfacing the error to callers. The writer
-	// (`attachSqliteMaterializer`) sets the same value.
-	db.run('PRAGMA busy_timeout = 5000');
+	const db = openReadonlySqlite(filePath);
 
 	let isDisposed = false;
 
@@ -106,28 +101,11 @@ export function openSqliteReader({ filePath }: OpenSqliteReaderOptions) {
 			? Math.max(ftsColumns.indexOf(snippetColumn), 0)
 			: 0;
 
-		const qt = quoteIdentifier(tableName);
-		const qfts = quoteIdentifier(`${tableName}_fts`);
 		const rows = db
-			.query(
-				`SELECT ${qt}.${quoteIdentifier('id')} AS id,\n` +
-					`  snippet(${qfts}, ${snippetColumnIndex}, '<mark>', '</mark>', '...', 64) AS snippet,\n` +
-					`  rank\n` +
-					`FROM ${qfts}\n` +
-					`JOIN ${qt} ON ${qt}.rowid = ${qfts}.rowid\n` +
-					`WHERE ${qfts} MATCH ?\n` +
-					`ORDER BY rank LIMIT ?`,
-			)
+			.query(buildFtsSearchSql(tableName, snippetColumnIndex))
 			.all(trimmed, limit);
 
-		return rows.map((row) => {
-			const result = row as Record<string, unknown>;
-			return {
-				id: String(result.id),
-				snippet: String(result.snippet ?? ''),
-				rank: Number(result.rank ?? 0),
-			};
-		});
+		return mapFtsSearchRows(rows);
 	}
 
 	function dispose() {
@@ -156,3 +134,14 @@ export function openSqliteReader({ filePath }: OpenSqliteReaderOptions) {
 }
 
 export type SqliteReader = ReturnType<typeof openSqliteReader>;
+
+/** @internal Shared read-only SQLite open preamble for local reader helpers. */
+export function openReadonlySqlite(filePath: string): Database {
+	const db = new Database(filePath, { readonly: true });
+	db.run('PRAGMA query_only = ON');
+	// Wait up to 5s on SQLITE_BUSY when a reader opens during a checkpoint
+	// instead of surfacing the error to callers. The writer-side
+	// `openWriterSqlite` setup sets the same value.
+	db.run('PRAGMA busy_timeout = 5000');
+	return db;
+}

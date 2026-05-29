@@ -1,9 +1,9 @@
 /**
  * Convenience reader for the daemon's SQLite materializer.
  *
- * The daemon's `attachSqliteMaterializer` writes a queryable mirror at
- * `sqlitePath(projectDir, workspaceId)`. Scripts open that same file
- * read-only to issue plain SQL, bypassing the Y.Doc replay cost.
+ * The daemon's `attachBunSqliteMaterializer` writes a queryable mirror at
+ * `sqlitePath(projectDir, workspaceId)`. Scripts open that same file read-only
+ * to issue plain SQL, bypassing the Y.Doc replay cost.
  *
  * For ranked FTS5 search plus snippet helpers, use `openSqliteReader`
  * instead; this function intentionally returns a bare `bun:sqlite`
@@ -11,16 +11,17 @@
  * Drizzle) without extra ceremony.
  */
 
-import { Database } from 'bun:sqlite';
+import type { Database } from 'bun:sqlite';
 import type { ProjectDir } from '../shared/types.js';
+import { openReadonlySqlite } from './open-sqlite-reader.js';
 import { sqlitePath } from './workspace-paths.js';
 
 /**
  * Open the daemon's SQLite mirror for a workspace read-only.
  *
- * The returned handle has `journal_mode = WAL` so it shares snapshots with
- * the daemon writer and `query_only = 1` so any accidental write fails at
- * the driver. The caller closes the database with `db.close()` when done.
+ * The returned handle is read-only and has `query_only` enabled so any
+ * accidental write fails at the driver. The caller closes the database with
+ * `db.close()` when done.
  *
  * Throws if no file exists at `sqlitePath(projectDir, workspaceId)`. That
  * usually means the daemon has not yet written its first materializer
@@ -40,10 +41,5 @@ export function openWorkspaceSqlite(
 	projectDir: ProjectDir,
 	workspaceId: string,
 ): Database {
-	const db = new Database(sqlitePath(projectDir, workspaceId), {
-		readonly: true,
-	});
-	db.exec('PRAGMA journal_mode = WAL');
-	db.exec('PRAGMA query_only = 1');
-	return db;
+	return openReadonlySqlite(sqlitePath(projectDir, workspaceId));
 }

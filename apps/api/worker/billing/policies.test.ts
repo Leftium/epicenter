@@ -31,7 +31,7 @@ type AiReserveOutcome = Result<
 	| ReturnType<typeof AiChatError.UnknownModel>['error']
 	| ReturnType<typeof AiChatError.InsufficientCredits>['error']
 >;
-type AssetReserveOutcome = Result<
+type AssetCheckOutcome = Result<
 	void,
 	ReturnType<typeof AssetError.StorageLimitExceeded>['error']
 >;
@@ -39,7 +39,7 @@ type AssetReserveOutcome = Result<
 const finalizeCalls: Array<'confirm' | 'release'> = [];
 const storageSyncCalls: number[] = [];
 let aiReserveOutcome: AiReserveOutcome = Ok({});
-let assetCheckOutcome: AssetReserveOutcome = Ok(undefined);
+let assetCheckOutcome: AssetCheckOutcome = Ok(undefined);
 
 /** A reservation whose confirm/release record the action and resolve Ok. */
 function recordingReservation() {
@@ -61,14 +61,14 @@ mock.module('./service.js', () => ({
 			aiReserveOutcome.error ? aiReserveOutcome : Ok(recordingReservation()),
 		checkAssetStorageUpload: async (_input: { sizeBytes: number }) =>
 			assetCheckOutcome,
-		syncAssetStorageUsage: (totalBytes: number) => {
+		syncAssetStorageUsageTotal: (totalBytes: number) => {
 			storageSyncCalls.push(totalBytes);
 			return Promise.resolve(Ok(undefined));
 		},
 	}),
 }));
 
-const { chargeAiCreditsWithAutumn, trackAssetStorageWithAutumn } = await import(
+const { chargeAiCreditsWithAutumn, syncAssetStorageWithAutumn } = await import(
 	'./policies.js'
 );
 
@@ -150,7 +150,7 @@ test('an AI guard rejection answers with the envelope and reserves nothing', asy
 /** Mount the storage policy around a stub upload/delete handler. */
 function makeAssetApp(downstreamStatus: 201 | 500 | 204) {
 	const app = withContext(new Hono<Env>());
-	app.use('/assets', trackAssetStorageWithAutumn);
+	app.use('/assets', syncAssetStorageWithAutumn);
 	app.post('/assets', (c) =>
 		c.body(null, downstreamStatus, {
 			[ASSET_STORAGE_USAGE_TOTAL_HEADER]: '5120',

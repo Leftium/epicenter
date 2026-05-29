@@ -135,9 +135,8 @@ export function createBillingService(
 		// reservation commits on success or releases on a pre-stream failure. If
 		// the worker dies before finalizing, Autumn auto-releases at `expiresAt`,
 		// so a failed call never permanently consumes credits.
-		const { data: check, error: checkError } = await reserveWithLock({
-			featureId: FEATURE_IDS.aiUsage,
-			requiredBalance: credits,
+		const { data: check, error: checkError } = await reserveAiCreditsWithLock({
+			credits,
 			properties: { model: input.model, provider: input.provider },
 		});
 		if (checkError) return Err(checkError);
@@ -161,16 +160,14 @@ export function createBillingService(
 		// Seed the customer so the storage balance materializes from the
 		// auto-enable free plan before we check against it. A provider outage
 		// fails closed.
-		const { error: seedError } = await seedCustomer();
-		if (seedError) return Err(seedError);
-
-		const { data: check, error: checkError } = await tryAutumn(() =>
-			autumn.check({
+		const { data: check, error: checkError } = await tryAutumn(async () => {
+			await ensureCustomer();
+			return autumn.check({
 				customerId: identity.userId,
 				featureId: FEATURE_IDS.storageBytes,
 				requiredBalance: input.sizeBytes,
-			}),
-		);
+			});
+		});
 		if (checkError) return Err(checkError);
 		if (!check.allowed) {
 			return AssetError.StorageLimitExceeded({
@@ -185,14 +182,11 @@ export function createBillingService(
 	 * successful asset mutation. Storage is a non-consumable feature, so we set
 	 * absolute usage rather than sending upload/delete deltas.
 	 */
-	function syncAssetStorageUsage(
+	function syncAssetStorageUsageTotal(
 		totalBytes: number,
 	): Promise<Result<void, BillingError>> {
 		return tryAutumn(async () => {
-			await autumn.customers.getOrCreate({
-				customerId: identity.userId,
-				email: identity.userEmail,
-			});
+			await ensureCustomer();
 			await autumn.balances.update({
 				customerId: identity.userId,
 				featureId: FEATURE_IDS.storageBytes,
@@ -432,20 +426,19 @@ export function createBillingService(
 	// ----- Private helpers (closed over `autumn`/`identity`) ------------
 
 	/**
-	 * Reserve a held balance with Autumn and hide the lock id behind the
-	 * reservation. Callers keep the domain-specific denied-state mapping.
+	 * Reserve held AI credits with Autumn and hide the lock id behind the
+	 * reservation. The caller maps denied access to the AI domain error.
 	 */
-	function reserveWithLock(input: {
-		featureId: string;
-		requiredBalance: number;
+	function reserveAiCreditsWithLock(input: {
+		credits: number;
 		properties?: Record<string, unknown>;
 	}): Promise<Result<LockedCheck, BillingError>> {
 		const lockId = crypto.randomUUID();
 		return tryAutumn(async () => {
 			const check = await autumn.check({
 				customerId: identity.userId,
-				featureId: input.featureId,
-				requiredBalance: input.requiredBalance,
+				featureId: FEATURE_IDS.aiUsage,
+				requiredBalance: input.credits,
 				lock: {
 					lockId,
 					enabled: true,
@@ -465,7 +458,7 @@ export function createBillingService(
 		});
 	}
 
-	/** Finalize a held lock. Both reservation kinds share this. */
+	/** Finalize a held AI credit lock. */
 	function finalizeLock(
 		lockId: string,
 		action: 'confirm' | 'release',
@@ -484,19 +477,17 @@ export function createBillingService(
 		});
 	}
 
-	function seedCustomer(): Promise<Result<unknown, BillingError>> {
-		return tryAutumn(() =>
-			autumn.customers.getOrCreate({
-				customerId: identity.userId,
-				email: identity.userEmail,
-			}),
-		);
+	function ensureCustomer() {
+		return autumn.customers.getOrCreate({
+			customerId: identity.userId,
+			email: identity.userEmail,
+		});
 	}
 
 	return {
 		reserveAiChat,
 		checkAssetStorageUpload,
-		syncAssetStorageUsage,
+		syncAssetStorageUsageTotal,
 		getOverview,
 		listPlans,
 		listUsage,

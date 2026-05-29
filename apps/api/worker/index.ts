@@ -29,7 +29,7 @@ import {
 import { describeRoute } from 'hono-openapi';
 import {
 	chargeAiCreditsWithAutumn,
-	trackAssetStorageWithAutumn,
+	syncAssetStorageWithAutumn,
 } from './billing/policies.js';
 import { mountBillingApi } from './billing/routes.js';
 
@@ -59,7 +59,7 @@ mountSessionApp(app, { ownership });
 mountRoomsApp(app, { ownership });
 mountAssetsApp(app, {
 	ownership,
-	policies: [trackAssetStorageWithAutumn],
+	policies: [syncAssetStorageWithAutumn],
 });
 mountAiApp(app, {
 	auth: requireBearerUser,

@@ -456,7 +456,7 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
  *
  * Bundles auth (cookie-or-bearer, the assets surface is reachable from
  * both browser apps and API clients), the ownership boundary, optional
- * deployment policies (e.g. `trackAssetStorageWithAutumn` for cloud's
+ * deployment policies (e.g. `syncAssetStorageWithAutumn` for cloud's
  * storage limit), and the route mount into one call.
  *
  * The conditional GET at `/:assetId{21}` is intentionally NOT covered by
@@ -471,7 +471,7 @@ export function mountAssetsApp(
 		ownership: OwnershipRule;
 		/**
 		 * Extra middleware to run after auth + ownership on every authed
-		 * asset route. Cloud passes `[trackAssetStorageWithAutumn]`;
+		 * asset route. Cloud passes `[syncAssetStorageWithAutumn]`;
 		 * self-hosted deployments typically pass nothing.
 		 *
 		 * Typed loosely (`MiddlewareHandler`, defaulting `E = any`) because

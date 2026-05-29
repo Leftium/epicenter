@@ -16,7 +16,7 @@
  *                                  (a lock) before the call, then confirms on
  *                                  success or releases on a pre-stream failure.
  *                                  BYOK callers bypass billing entirely.
- *   trackAssetStorageWithAutumn    Around `/api/.../assets`. Checks storage
+ *   syncAssetStorageWithAutumn     Around `/api/.../assets`. Checks storage
  *                                  before POST uploads, then syncs Autumn to
  *                                  the authoritative asset-table total after
  *                                  successful POST/DELETE mutations.
@@ -96,7 +96,7 @@ export const chargeAiCreditsWithAutumn = createMiddleware<Env>(
 	},
 );
 
-export const trackAssetStorageWithAutumn = createMiddleware<Env>(
+export const syncAssetStorageWithAutumn = createMiddleware<Env>(
 	async (c, next) => {
 		const method = c.req.method;
 
@@ -122,7 +122,7 @@ export const trackAssetStorageWithAutumn = createMiddleware<Env>(
 			await next();
 
 			if (c.res.status === 201) {
-				scheduleStorageUsageSync(c, billing);
+				enqueueStorageUsageSyncFromResponse(c, billing);
 			}
 			return;
 		}
@@ -131,7 +131,7 @@ export const trackAssetStorageWithAutumn = createMiddleware<Env>(
 			await next();
 			if (c.res.status !== 204) return;
 			const billing = billingFor(c);
-			scheduleStorageUsageSync(c, billing);
+			enqueueStorageUsageSyncFromResponse(c, billing);
 			return;
 		}
 
@@ -166,12 +166,12 @@ function storageGuardStatus(
 	return error.status;
 }
 
-function scheduleStorageUsageSync(
+function enqueueStorageUsageSyncFromResponse(
 	c: Context<Env>,
 	billing: ReturnType<typeof createBillingService>,
 ) {
 	const usageHeader = c.res.headers.get(ASSET_STORAGE_USAGE_TOTAL_HEADER);
 	const totalBytes = usageHeader ? Number.parseInt(usageHeader, 10) : null;
 	if (totalBytes == null || Number.isNaN(totalBytes)) return;
-	c.var.afterResponse.push(billing.syncAssetStorageUsage(totalBytes));
+	c.var.afterResponse.push(billing.syncAssetStorageUsageTotal(totalBytes));
 }

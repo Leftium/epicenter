@@ -63,7 +63,7 @@ createServerApp()
   // mountAiApp(app, { auth: requireBearerUser });    // POST /api/ai/chat
 ```
 
-Deliberately absent: `mountBillingApi`, `chargeAiCreditsWithAutumn`, `trackAssetStorageWithAutumn`, any `apps/api/ui` static-asset fallback. The composition shape is the contract.
+Deliberately absent: `mountBillingApi`, `chargeAiCreditsWithAutumn`, `syncAssetStorageWithAutumn`, any `apps/api/ui` static-asset fallback. The composition shape is the contract.
 
 ## See also
 

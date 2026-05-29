@@ -210,14 +210,16 @@ The smallest useful slice is:
 - [x] Add `createWebStoragePersistedAuthStorage({ key, storage })` to `@epicenter/auth` core (next to `PersistedAuth` and the `PersistedAuthStorage` type it implements; it has no Svelte dependency, so it does not belong in `@epicenter/auth-svelte`). `storage` is required, matching the OAuth launcher call sites.
 - [x] Replace localStorage-backed app imports of `PersistedAuth` with the helper.
 - [x] Add a focused static guard that fails when app/client code imports JWT decoding, `jose` verification, or Better Auth resource verifier helpers.
-- [ ] Keep `apps/tab-manager` on its local `createStorageState` shape for now.
-- [ ] Run focused auth tests and typechecks.
+- [x] Keep `apps/tab-manager` on its local `createStorageState` shape for now (migrated in Slice 2 instead of deferred).
+- [x] Run focused auth tests and typechecks.
 
 ### Slice 2
 
-- Add an extension-owned storage helper, probably near the WXT storage wrapper, that hides `PersistedAuth` from `apps/tab-manager`.
-- Consider a node-owned storage adapter for machine auth only if it simplifies the CLI API without obscuring the durable file format tests.
-- Decide whether `PersistedAuth` should stop exporting from `@epicenter/auth` root after every external schema consumer is gone.
+- [x] Extract the cell codec (`parsePersistedAuthCell` / `serializePersistedAuthCell`) into `persisted-auth-storage.ts`; route the Web Storage adapter and `machine-auth`'s write through it. `machine-auth`'s read stays bespoke because it logs the discarded cell.
+- [x] Add `loadPersistedAuthStorage(AsyncAuthCellStore)`: pre-load an async string store into a synchronous `PersistedAuthStorage`. The auth runtime reads `get()` once at construction, so async substrates pre-load behind the app's existing readiness gate rather than forcing an async `get()` on the six synchronous apps.
+- [x] Migrate `apps/tab-manager` onto `loadPersistedAuthStorage` over a WXT `defineItem<string>`. The extension persists an opaque serialized string and imports nothing credential-shaped. Chosen over the side-panel `localStorage` shortcut because `chrome.storage` survives "clear browsing data", matches the app's storage convention, and the readiness gate already exists.
+- [x] Drop `PersistedAuth` (and `OAuthTokenGrant`) from the `@epicenter/auth` root. The `exports` map exposes no path to `auth-types.js`, so apps structurally cannot reach the cell shape; a client-boundary test pins its absence from the root.
+- No node-owned storage adapter: `machine-auth` already owns its file format and its read logs on corruption, which the generic swallow-to-null adapters do not. Forcing it onto a shared reader would be false symmetry.
 
 ### Slice 3
 

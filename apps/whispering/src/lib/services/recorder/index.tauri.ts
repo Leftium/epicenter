@@ -28,7 +28,9 @@ async function getMicrophonePermissionStatus(): Promise<
 	return Ok(granted);
 }
 
-async function requireMicrophonePermission(): Promise<Result<true, RecorderError>> {
+async function requireMicrophonePermission(): Promise<
+	Result<true, RecorderError>
+> {
 	const { data: granted, error } = await getMicrophonePermissionStatus();
 	if (error) return Err(error);
 	if (granted) return Ok(true);
@@ -36,7 +38,9 @@ async function requireMicrophonePermission(): Promise<Result<true, RecorderError
 	return RecorderError.MicrophonePermissionDenied();
 }
 
-async function requestMicrophonePermission(): Promise<Result<true, RecorderError>> {
+async function requestMicrophonePermission(): Promise<
+	Result<true, RecorderError>
+> {
 	const { data: alreadyGranted, error: checkError } =
 		await getMicrophonePermissionStatus();
 	if (checkError) return Err(checkError);

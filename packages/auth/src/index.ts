@@ -11,6 +11,8 @@ export {
 	type AuthFetch,
 	type CreateOAuthAppAuthConfig,
 	createOAuthAppAuth,
+} from './create-oauth-app-auth.js';
+export {
 	createWebStoragePersistedAuthStorage,
 	type PersistedAuthStorage,
-} from './create-oauth-app-auth.js';
+} from './persisted-auth-storage.js';

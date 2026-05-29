@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createWebStoragePersistedAuthStorage } from './create-oauth-app-auth.js';
+import { createWebStoragePersistedAuthStorage } from './persisted-auth-storage.js';
 
 describe('createWebStoragePersistedAuthStorage', () => {
 	test('treats a corrupt cell as signed out', () => {

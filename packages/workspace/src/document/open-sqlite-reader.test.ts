@@ -104,6 +104,26 @@ describe('openSqliteReader', () => {
 		}
 	});
 
+	test('search honors snippetColumn', async () => {
+		const filePath = join(workDir, 'mirror.db');
+		await seedMirrorFile(filePath, [
+			{ id: 'a', title: 'Hello world', body: 'morning notes' },
+		]);
+
+		using mirror = openSqliteReader({ filePath });
+		const hits = mirror.search('entries', 'morning', {
+			snippetColumn: 'body',
+		});
+		const fallbackHits = mirror.search('entries', 'morning', {
+			snippetColumn: 'missing',
+		});
+
+		expect(hits).toHaveLength(1);
+		expect(hits[0]?.snippet).toContain('<mark>morning</mark>');
+		expect(fallbackHits).toHaveLength(1);
+		expect(fallbackHits[0]?.snippet).not.toContain('<mark>morning</mark>');
+	});
+
 	test('search returns empty array for missing FTS table', async () => {
 		const filePath = join(workDir, 'empty.db');
 		await seedMirrorFile(filePath, [], { fts: false });

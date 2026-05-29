@@ -225,7 +225,7 @@ function createNavigatorRecorder() {
 	} satisfies RecorderService<NavigatorRecordingParams>;
 }
 
-export const NavigatorRecorderServiceLive =
+export const ManualRecorderLive =
 	createNavigatorRecorder() satisfies RecorderService<NavigatorRecordingParams>;
 
 /**

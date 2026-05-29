@@ -279,5 +279,5 @@ function createCpalRecorder() {
 	} satisfies RecorderService<CpalRecordingParams>;
 }
 
-export const CpalRecorderServiceLive =
+export const ManualRecorderLive =
 	createCpalRecorder() satisfies RecorderService<CpalRecordingParams>;

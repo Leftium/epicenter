@@ -72,7 +72,7 @@ VAD is different from manual recording. Today VAD is browser-owned on every plat
 
 ## Implemented Shape After Wave 2
 
-Manual recording now resolves through `ManualRecorderLive` from `$lib/services/recorder`. The Tauri barrel maps that export to `CpalRecorderServiceLive`; the browser barrel maps it to `NavigatorRecorderServiceLive`. The old `recording.method` key is gone from device config, migration mapping, manual recorder state, and the recording settings UI.
+Manual recording now resolves through `ManualRecorderLive` from `$lib/services/recorder`. The Tauri barrel re-exports the CPAL implementation's `ManualRecorderLive`; the browser barrel re-exports the Navigator implementation's `ManualRecorderLive`. The old `recording.method` key is gone from device config, migration mapping, manual recorder state, and the recording settings UI.
 
 The pre-change "Current Shape" section remains as the historical problem statement. For live code, use this section and the implementation progress notes below.
 

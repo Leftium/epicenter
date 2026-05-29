@@ -1,11 +1,12 @@
 import { nanoid } from 'nanoid/non-secure';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { defineKeys } from 'wellcrafted/query';
-import { Err, Ok } from 'wellcrafted/result';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { defineQuery } from '$lib/rpc/client';
 import { ManualRecorderLive } from '$lib/services/recorder';
 import {
+	type RecorderError,
 	type RecordingSession,
 	type UpdateStatusMessageFn,
 } from '$lib/services/recorder/types';
@@ -46,9 +47,9 @@ const manualRecorderKeys = defineKeys({
  * subscribes to the live RecordingSession and `detach()` cleans up on
  * stop/cancel.
  *
- * On Tauri, state is bootstrapped from CPAL's `resumeActiveSession` at module
- * init because a Rust CPAL session can outlive a JS reload. On web, the
- * Navigator recorder returns null after reload.
+ * On Tauri, state is bootstrapped from CPAL's `resumeActiveSession` before
+ * the first lifecycle operation because a Rust CPAL session can outlive a JS
+ * reload. On web, the Navigator recorder returns null after reload.
  */
 
 function createManualRecorder() {
@@ -81,13 +82,20 @@ function createManualRecorder() {
 	// that gate, a user action that fires before bootstrap resolves sees a
 	// stale `_current === null` and either no-ops the cancel (leaking the
 	// Rust session) or double-starts on top of a rehydrated one.
-	const bootstrapped = ManualRecorderLive.resumeActiveSession().then(
-		(result) => {
-			const found = result.data ?? null;
+	let bootstrapped: Promise<Result<void, RecorderError>> | null = null;
+
+	function ensureBootstrapped() {
+		bootstrapped ??= ManualRecorderLive.resumeActiveSession().then((result) => {
+			const { data: found, error } = result;
+			if (error) {
+				bootstrapped = null;
+				return Err(error);
+			}
 			if (found) attach(found);
-			return result;
-		},
-	);
+			return Ok(undefined);
+		});
+		return bootstrapped;
+	}
 
 	return {
 		get state(): WhisperingRecordingState {
@@ -109,7 +117,7 @@ function createManualRecorder() {
 		}: {
 			sendStatus: UpdateStatusMessageFn;
 		}) {
-			const { error: bootstrapError } = await bootstrapped;
+			const { error: bootstrapError } = await ensureBootstrapped();
 			if (bootstrapError) return Err(bootstrapError);
 			if (_current) return ManualRecorderError.AlreadyRecording();
 			const params = manualRecorderConfig.resolveStartParams(nanoid());
@@ -123,7 +131,7 @@ function createManualRecorder() {
 		},
 
 		async stopRecording({ sendStatus }: { sendStatus: UpdateStatusMessageFn }) {
-			const { error: bootstrapError } = await bootstrapped;
+			const { error: bootstrapError } = await ensureBootstrapped();
 			if (bootstrapError) return Err(bootstrapError);
 			if (!_current) return ManualRecorderError.NoActiveRecording();
 			return _current.stop({ sendStatus });
@@ -134,7 +142,7 @@ function createManualRecorder() {
 		}: {
 			sendStatus: UpdateStatusMessageFn;
 		}) {
-			const { error: bootstrapError } = await bootstrapped;
+			const { error: bootstrapError } = await ensureBootstrapped();
 			if (bootstrapError) return Err(bootstrapError);
 			if (!_current) return Ok({ status: 'no-recording' as const });
 			return _current.cancel({ sendStatus });

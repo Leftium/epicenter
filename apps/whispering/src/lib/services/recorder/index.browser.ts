@@ -168,10 +168,6 @@ function createNavigatorRecorder() {
 			{ selectedDeviceId, recordingId, bitrateKbps }: NavigatorRecordingParams,
 			{ sendStatus },
 		) => {
-			if (activeSession) {
-				return RecorderError.AlreadyRecording();
-			}
-
 			sendStatus({
 				title: '🎙️ Starting Recording',
 				description: 'Setting up your microphone...',

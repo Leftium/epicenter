@@ -174,9 +174,6 @@ Inline overrides at the call site are how context-specific copy lands ("Authenti
 
    ```typescript
    const RecorderError = defineErrors({
-     AlreadyRecording: () => ({
-       message: 'A recording is already in progress. Please stop the current recording.',
-     }),
      InitFailed: ({ cause }: { cause: unknown }) => ({
        message: `Failed to initialize recorder: ${extractErrorMessage(cause)}`,
        cause,
@@ -232,9 +229,6 @@ The caller is responsible for reporting service errors. This separation ensures:
 
 ```typescript
 const RecorderError = defineErrors({
-	AlreadyRecording: () => ({
-		message: 'A recording is already in progress. Please stop the current recording.',
-	}),
 	StreamAcquisition: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to acquire recording stream: ${extractErrorMessage(cause)}`,
 		cause,
@@ -252,10 +246,6 @@ export function createManualRecorderService() {
 			recordingSettings,
 			{ sendStatus },
 		): Promise<Result<DeviceAcquisitionOutcome, RecorderError>> => {
-			if (activeRecording) {
-				return RecorderError.AlreadyRecording();
-			}
-
 			const { data: streamResult, error: acquireStreamError } =
 				await getRecordingStream(selectedDeviceId, sendStatus);
 

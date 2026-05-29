@@ -165,10 +165,6 @@ export const RecorderError = defineErrors({
 			"We couldn't find any microphone to record from. Please connect a microphone and try again.",
 		cause,
 	}),
-	AlreadyRecording: () => ({
-		message:
-			'A recording is already in progress. Please stop the current recording before starting a new one.',
-	}),
 	InitFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to initialize the audio recorder: ${extractErrorMessage(cause)}`,
 		cause,

@@ -25,7 +25,7 @@ import { Hono } from 'hono';
 import { Ok, type Result } from 'wellcrafted/result';
 
 type AiReserveOutcome = Result<
-	{ credits: number },
+	Record<never, never>,
 	| ReturnType<typeof AiChatError.UnknownModel>['error']
 	| ReturnType<typeof AiChatError.InsufficientCredits>['error']
 >;
@@ -36,7 +36,7 @@ type AssetReserveOutcome = Result<
 
 const finalizeCalls: Array<'confirm' | 'release'> = [];
 const creditCalls: number[] = [];
-let aiReserveOutcome: AiReserveOutcome = Ok({ credits: 5 });
+let aiReserveOutcome: AiReserveOutcome = Ok({});
 let assetReserveOutcome: AssetReserveOutcome = Ok({});
 
 /** A reservation whose confirm/release record the action and resolve Ok. */
@@ -56,9 +56,7 @@ function recordingReservation() {
 mock.module('./service.js', () => ({
 	createBillingService: () => ({
 		reserveAiChat: async (_input: { model: string; provider?: string }) =>
-			aiReserveOutcome.error
-				? aiReserveOutcome
-				: Ok({ ...aiReserveOutcome.data, ...recordingReservation() }),
+			aiReserveOutcome.error ? aiReserveOutcome : Ok(recordingReservation()),
 		reserveAssetStorage: async (_input: { sizeBytes: number }) =>
 			assetReserveOutcome.error
 				? assetReserveOutcome
@@ -77,7 +75,7 @@ const { chargeAiCreditsWithAutumn, trackAssetStorageWithAutumn } = await import(
 beforeEach(() => {
 	finalizeCalls.length = 0;
 	creditCalls.length = 0;
-	aiReserveOutcome = Ok({ credits: 5 });
+	aiReserveOutcome = Ok({});
 	assetReserveOutcome = Ok({});
 });
 

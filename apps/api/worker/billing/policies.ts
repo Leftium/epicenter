@@ -37,6 +37,7 @@ import {
 } from '@epicenter/constants/ai-chat-errors';
 import type { AssetError } from '@epicenter/constants/asset-errors';
 import type { Env } from '@epicenter/server';
+import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import type { BillingError } from './errors.js';
@@ -46,6 +47,13 @@ type AiChatBody = {
 	data?: { model?: string; provider?: string };
 	apiKey?: string;
 };
+
+function billingFor(c: Context<Env>) {
+	return createBillingService(c.env, {
+		userId: c.var.user.id,
+		userEmail: c.var.user.email,
+	});
+}
 
 export const chargeAiCreditsWithAutumn = createMiddleware<Env>(
 	async (c, next) => {
@@ -57,10 +65,7 @@ export const chargeAiCreditsWithAutumn = createMiddleware<Env>(
 			return next();
 		}
 
-		const billing = createBillingService(c.env, {
-			userId: c.var.user.id,
-			userEmail: c.var.user.email,
-		});
+		const billing = billingFor(c);
 
 		const { data: reservation, error: guardError } =
 			await billing.reserveAiChat({
@@ -100,10 +105,7 @@ export const trackAssetStorageWithAutumn = createMiddleware<Env>(
 				return next();
 			}
 
-			const billing = createBillingService(c.env, {
-				userId: c.var.user.id,
-				userEmail: c.var.user.email,
-			});
+			const billing = billingFor(c);
 			const { data: reservation, error: guardError } =
 				await billing.reserveAssetStorage({ sizeBytes: file.size });
 			if (guardError) {
@@ -130,10 +132,7 @@ export const trackAssetStorageWithAutumn = createMiddleware<Env>(
 			const sizeHeader = c.res.headers.get('x-deleted-size-bytes');
 			const size = sizeHeader ? Number.parseInt(sizeHeader, 10) : null;
 			if (size == null || Number.isNaN(size)) return;
-			const billing = createBillingService(c.env, {
-				userId: c.var.user.id,
-				userEmail: c.var.user.email,
-			});
+			const billing = billingFor(c);
 			// A delete credit has no lock to expire, so a failure leaves quota
 			// consumed permanently. The adapter logs it; durable recovery (an
 			// idempotency-keyed retry plus a storage reconciliation sweep) is a

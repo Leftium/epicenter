@@ -140,8 +140,9 @@ function hasTable(db: Database, tableName: string) {
 	return row != null;
 }
 
-async function cleanup(setupResult: ReturnType<typeof setup>) {
+async function disposeAndYieldForClose(setupResult: ReturnType<typeof setup>) {
 	setupResult.workspace[Symbol.dispose]();
+	// In settled cleanup paths, disposal schedules close on the next microtask.
 	await Promise.resolve();
 }
 
@@ -229,7 +230,7 @@ describe('attachSqliteMaterializerCore', () => {
 					{ id: 'post-2', published: 1, title: 'Second row' },
 				]);
 			} finally {
-				await cleanup(testSetup);
+				await disposeAndYieldForClose(testSetup);
 			}
 		});
 
@@ -257,7 +258,7 @@ describe('attachSqliteMaterializerCore', () => {
 					{ id: 'post-1', published: null, title: 'Mirrored post' },
 				]);
 			} finally {
-				await cleanup(testSetup);
+				await disposeAndYieldForClose(testSetup);
 			}
 		});
 	});
@@ -285,7 +286,7 @@ describe('attachSqliteMaterializerCore', () => {
 					{ id: 'post-1', published: 1, title: 'Added later' },
 				]);
 			} finally {
-				await cleanup(testSetup);
+				await disposeAndYieldForClose(testSetup);
 			}
 		});
 
@@ -306,7 +307,7 @@ describe('attachSqliteMaterializerCore', () => {
 
 				expect(getRows(testSetup.db, 'posts')).toEqual([]);
 			} finally {
-				await cleanup(testSetup);
+				await disposeAndYieldForClose(testSetup);
 			}
 		});
 
@@ -332,7 +333,7 @@ describe('attachSqliteMaterializerCore', () => {
 					{ id: 'post-1', published: 0, title: 'After update' },
 				]);
 			} finally {
-				await cleanup(testSetup);
+				await disposeAndYieldForClose(testSetup);
 			}
 		});
 	});
@@ -363,7 +364,7 @@ describe('attachSqliteMaterializerCore', () => {
 					{ id: 'post-1', published: null, title: 'Persisted in Yjs' },
 				]);
 			} finally {
-				await cleanup(testSetup);
+				await disposeAndYieldForClose(testSetup);
 			}
 		});
 
@@ -396,7 +397,7 @@ describe('attachSqliteMaterializerCore', () => {
 				]);
 				expect(getRows(testSetup.db, 'notes')).toHaveLength(1);
 			} finally {
-				await cleanup(testSetup);
+				await disposeAndYieldForClose(testSetup);
 			}
 		});
 
@@ -412,7 +413,7 @@ describe('attachSqliteMaterializerCore', () => {
 					}),
 				).toThrow('not in the materialized table set');
 			} finally {
-				await cleanup(testSetup);
+				await disposeAndYieldForClose(testSetup);
 			}
 		});
 	});
@@ -508,6 +509,69 @@ describe('attachSqliteMaterializerCore', () => {
 				if (!closeCalled) testSetup.db.close();
 			}
 		});
+
+		test('closes SQLite after an in-flight rebuild', async () => {
+			const insertStarted = createDeferred();
+			const allowInsert = createDeferred();
+			const closed = createDeferred();
+			const testSetup = setup({ debounceMs: 0 });
+			const originalPrepare = testSetup.db.prepare.bind(testSetup.db);
+			const originalClose = testSetup.db.close.bind(testSetup.db);
+			let insertRunCompleted = false;
+			let closeCalled = false;
+
+			try {
+				await testSetup.workspace.sqlite.whenFlushed;
+
+				testSetup.workspace.tables.posts.set({
+					id: 'post-1',
+					title: 'Rebuilt row',
+					published: null,
+				});
+				await waitForSyncCycle();
+
+				testSetup.db.prepare = ((sql: string, params?: SQLQueryBindings) => {
+					const statement = originalPrepare(sql, params);
+					if (!sql.startsWith('INSERT INTO "posts"')) return statement;
+
+					return {
+						async run(...params: SQLQueryBindings[]) {
+							insertStarted.resolve();
+							await allowInsert.promise;
+							// biome-ignore lint/suspicious/noExplicitAny: Bun's generic statement type cannot express this wrapper
+							const result = (statement.run as any)(...params);
+							insertRunCompleted = true;
+							return result;
+						},
+						all: statement.all.bind(statement),
+						get: statement.get.bind(statement),
+					};
+				}) as typeof testSetup.db.prepare;
+				testSetup.db.close = () => {
+					closeCalled = true;
+					closed.resolve();
+					originalClose();
+				};
+
+				const rebuild = testSetup.workspace.sqlite.actions.sqlite_rebuild({});
+				await insertStarted.promise;
+
+				testSetup.workspace[Symbol.dispose]();
+				await Promise.resolve();
+
+				expect(closeCalled).toBe(false);
+				expect(insertRunCompleted).toBe(false);
+
+				allowInsert.resolve();
+				await rebuild;
+				await closed.promise;
+
+				expect(closeCalled).toBe(true);
+				expect(insertRunCompleted).toBe(true);
+			} finally {
+				if (!closeCalled) testSetup.db.close();
+			}
+		});
 	});
 
 	// ============================================================================
@@ -528,7 +592,7 @@ describe('attachSqliteMaterializerCore', () => {
 						.sqlite_search,
 				).toBeUndefined();
 			} finally {
-				await cleanup(testSetup);
+				await disposeAndYieldForClose(testSetup);
 			}
 		});
 
@@ -573,7 +637,7 @@ describe('attachSqliteMaterializerCore', () => {
 					expect(results[0]?.snippet).toContain('<mark>');
 					expect(typeof results[0]?.rank).toBe('number');
 				} finally {
-					await cleanup(testSetup);
+					await disposeAndYieldForClose(testSetup);
 				}
 			});
 
@@ -619,7 +683,7 @@ describe('attachSqliteMaterializerCore', () => {
 						'<mark>mirror</mark>',
 					);
 				} finally {
-					await cleanup(testSetup);
+					await disposeAndYieldForClose(testSetup);
 				}
 			});
 		}
@@ -638,7 +702,7 @@ describe('attachSqliteMaterializerCore', () => {
 				expect(isAction(sqlite.actions.sqlite_rebuild)).toBe(true);
 				expect(isMutation(sqlite.actions.sqlite_rebuild)).toBe(true);
 			} finally {
-				await cleanup(testSetup);
+				await disposeAndYieldForClose(testSetup);
 			}
 		});
 
@@ -659,7 +723,7 @@ describe('attachSqliteMaterializerCore', () => {
 					expect(isAction(sqliteWithFts.actions.sqlite_search)).toBe(true);
 					expect(isQuery(sqliteWithFts.actions.sqlite_search)).toBe(true);
 				} finally {
-					await cleanup(testSetup);
+					await disposeAndYieldForClose(testSetup);
 				}
 			});
 		}

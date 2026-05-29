@@ -10,7 +10,7 @@ Use this skill when the local fix might be honoring a bad shape.
 The move is simple: step out of the current abstraction before improving it.
 Sometimes the correct answer is not a cleaner wrapper, a narrower helper, or one
 more option. Sometimes the correct answer is to redesign the surface from the
-product sentence down and delete the compromise that made the code weird.
+product sentence down and delete the old constraint that made the code weird.
 
 Related skills: use [cohesive-clean-breaks](../cohesive-clean-breaks/SKILL.md)
 when the radical option changes public contracts, package boundaries, or
@@ -34,7 +34,7 @@ Use this skill when the user says or implies:
 
 Also use it when implementation gives these signals:
 
-- a small fix touches unrelated layers
+- the direct fix touches unrelated layers
 - a helper needs a second helper to explain it
 - an option exists only to preserve an old mental model
 - code keeps checking an invariant after construction
@@ -62,7 +62,7 @@ User loss:
   Who loses what behavior, migration smoothness, or convenience?
 
 Decision:
-  Take the radical option / take a smaller clean break / keep the current shape
+  Take the radical option / keep the current shape
   because ...
 ```
 
@@ -168,12 +168,6 @@ Choose the radical option when:
 - refusing the old shape leaves the product sentence intact
 - the new system is easier to explain in one sentence
 - migration cost is finite and can be done in one clean wave
-
-Choose a smaller clean break when:
-
-- the radical option is directionally right but too large for this task
-- a local ownership fix removes most of the friction
-- callers can move in one reviewable follow-up
 
 Keep the current shape when:
 

@@ -62,7 +62,7 @@ When reporting findings, prioritize:
 
 1. The one or two biggest readability or ownership smells
 2. Why a new TypeScript developer would stumble there
-3. The smallest fix that improves trust in the code
+3. The greenfield correction that would make the code easiest to trust
 
 When editing code:
 

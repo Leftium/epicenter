@@ -349,7 +349,7 @@ See `typescript` "Go-to-Definition Awareness" for the per-shape mechanics.
 - **Premature extraction**: Extracting a 1-3 line block used 2-3 times into a named helper. The indirection costs more than the duplication. See "Prefer Inline for Trivial Duplications" above.
 - **Abstracting away differences**: Three push constructors with different fields share boilerplate, but a `pushEntry(type, fields: Record<string, unknown>)` helper loses all type safety. The duplication communicates structure.
 - **Type-erasing helpers**: Any helper that accepts `unknown` or `Record<string, any>` to "reduce duplication"
-- **Refactoring while fixing bugs**: Fix the bug minimally first, refactor in a separate commit
+- **Refactoring while fixing bugs**: Fix the bug at the owning boundary first, then use a separate commit for cleanup that is not required by that correction
 - **Batch-committing**: "Cleaned up the module" as one commit with 15 changes: impossible to review or revert
 - **Shotgun inlining**: Inlining everything with 1 caller regardless of context. Respect constructor families and complex logic.
 - **Skipping the straggler sweep**: Refactoring without cleaning up dead references. The code compiles, but the next person reads stale JSDoc and wastes 30 minutes confused about an endpoint that no longer exists.

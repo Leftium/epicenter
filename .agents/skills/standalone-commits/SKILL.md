@@ -121,7 +121,7 @@ feat(sync): add workspace sync types
 
 Problem: The types are unused, untested, and only make sense after a later implementation commit.
 
-Better: Include the smallest implementation or contract test that proves why the types exist.
+Better: Include the contract-level implementation or test that proves why the types exist.
 
 ### Hidden Behavior In Refactor
 

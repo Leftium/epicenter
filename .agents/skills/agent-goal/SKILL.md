@@ -47,7 +47,7 @@ Include only execution-critical details:
 4. Tell the agent to surface evidence in the transcript. Goal evaluators judge what the worker has shown, not private intent.
 5. Put long requirements in a plan or spec, then point the goal at that file. Do not paste a huge spec into `/goal`.
 6. Ask for checkpoints when the work spans multiple turns. Each checkpoint should produce a small status note: changed, verified, remaining, questions.
-7. Bound runaway work with evidence. For example: "after 3 failed attempts on the same test, report the root cause and smallest next question."
+7. Bound runaway work with evidence. For example: "after 3 failed attempts on the same test, report the root cause and the next product or ownership question."
 8. Ordinary focus should not stop grounded fixes.
 9. Do not use `/goal` for vague wishes, unrelated chores, open-ended research, or work where the agent cannot produce evidence.
 10. Keep the condition judgeable from the transcript. If a separate verifier read only the conversation after each turn, it should be able to tell whether the goal is met.
@@ -125,7 +125,7 @@ Plan execution:
 Failing tests:
 
 ```txt
-/goal Fix the failing tests in `[lane]` until `[test command]` exits 0 and no unrelated speculative changes are present. First run the command and inspect the failures. Work from the smallest root cause outward. After each fix, rerun the targeted test and report the result. Ask before deleting tests or weakening assertions.
+/goal Fix the failing tests in `[lane]` until `[test command]` exits 0 and no unrelated speculative changes are present. First run the command and inspect the failures. Work from the owning boundary outward. After each fix, rerun the targeted test and report the result. Ask before deleting tests or weakening assertions.
 ```
 
 Migration:
@@ -143,13 +143,13 @@ Prototype:
 Backlog or issue queue:
 
 ```txt
-/goal Work through `[queue or label]` until every item is closed or has a documented reason it needs user input. First list the queue and choose the smallest safe item. For each item, make the smallest grounded fix, run `[validation]`, and report the result before moving on. Stop when the queue is empty.
+/goal Work through `[queue or label]` until every item is closed or has a documented reason it needs user input. First list the queue and choose the item with the clearest owner and validation path. For each item, make the correction at its owning boundary, run `[validation]`, and report the result before moving on. Stop when the queue is empty.
 ```
 
 Eval or prompt loop:
 
 ```txt
-/goal Improve `[prompt or system]` until `[eval command]` reaches `[target score]` or no further targeted improvement is justified. First run the eval and inspect failures. Make minimal edits, rerun the eval after each change, and report score changes. Ask if improvement requires product or policy guidance.
+/goal Improve `[prompt or system]` until `[eval command]` reaches `[target score]` or no further targeted improvement is justified. First run the eval and inspect failures. Make direct design corrections, rerun the eval after each change, and report score changes. Ask if improvement requires product or policy guidance.
 ```
 
 ## Bad To Good

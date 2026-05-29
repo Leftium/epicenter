@@ -167,33 +167,17 @@ async function ftsSearch(
 		return [];
 	}
 
-	const ftsTableName = `${tableName}_fts`;
 	const snippetColumnIndex = snippetColumn
 		? Math.max(ftsColumns.indexOf(snippetColumn), 0)
 		: 0;
 
 	try {
-		const qt = quoteIdentifier(tableName);
-		const qfts = quoteIdentifier(ftsTableName);
 		const stmt = await db.prepare(
-			`SELECT ${qt}.${quoteIdentifier('id')} AS id,\n` +
-				`  snippet(${qfts}, ${snippetColumnIndex}, '<mark>', '</mark>', '...', 64) AS snippet,\n` +
-				`  rank\n` +
-				`FROM ${qfts}\n` +
-				`JOIN ${qt} ON ${qt}.rowid = ${qfts}.rowid\n` +
-				`WHERE ${qfts} MATCH ?\n` +
-				`ORDER BY rank LIMIT ?`,
+			buildFtsSearchSql(tableName, snippetColumnIndex),
 		);
 		const rows = await stmt.all(trimmed, limit);
 
-		return rows.map((row) => {
-			const result = row as Record<string, unknown>;
-			return {
-				id: String(result.id),
-				snippet: String(result.snippet ?? ''),
-				rank: Number(result.rank ?? 0),
-			};
-		});
+		return mapFtsSearchRows(rows);
 	} catch (cause: unknown) {
 		log?.warn(
 			FtsError.FtsSearchFailed({
@@ -255,8 +239,9 @@ export function createSqliteFtsLayer<TTables extends TablesRecord>({
 			table: Type.String(),
 			query: Type.String(),
 			limit: Type.Optional(Type.Number()),
+			snippetColumn: Type.Optional(Type.String()),
 		}),
-		handler: ({ table, query, limit }) => {
+		handler: ({ table, query, limit, snippetColumn }) => {
 			const columns = ftsColumns.get(table);
 			if (columns === undefined || columns.length === 0) {
 				return Promise.resolve<SearchResult[]>([]);
@@ -266,13 +251,60 @@ export function createSqliteFtsLayer<TTables extends TablesRecord>({
 				table,
 				columns,
 				query,
-				limit !== undefined ? { limit } : undefined,
+				limit !== undefined || snippetColumn !== undefined
+					? { limit, snippetColumn }
+					: undefined,
 				log,
 			);
 		},
 	});
 
 	return { beforeFullLoad, search };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SEARCH SQL HELPERS
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Build the shared FTS5 search query used by both the writer-side search action
+ * and the read-only SQLite mirror reader. Execution stays caller-owned because
+ * the writer path is async through {@link MirrorDatabase}, while the reader
+ * path is synchronous through `bun:sqlite`.
+ *
+ * @internal
+ */
+export function buildFtsSearchSql(
+	tableName: string,
+	snippetColumnIndex: number,
+): string {
+	const qt = quoteIdentifier(tableName);
+	const qfts = quoteIdentifier(`${tableName}_fts`);
+	return (
+		`SELECT ${qt}.${quoteIdentifier('id')} AS id,\n` +
+		`  snippet(${qfts}, ${snippetColumnIndex}, '<mark>', '</mark>', '...', 64) AS snippet,\n` +
+		`  rank\n` +
+		`FROM ${qfts}\n` +
+		`JOIN ${qt} ON ${qt}.rowid = ${qfts}.rowid\n` +
+		`WHERE ${qfts} MATCH ?\n` +
+		`ORDER BY rank LIMIT ?`
+	);
+}
+
+/**
+ * Map SQLite result rows into the public search result shape.
+ *
+ * @internal
+ */
+export function mapFtsSearchRows(rows: readonly unknown[]): SearchResult[] {
+	return rows.map((row) => {
+		const result = row as Record<string, unknown>;
+		return {
+			id: String(result.id),
+			snippet: String(result.snippet ?? ''),
+			rank: Number(result.rank ?? 0),
+		};
+	});
 }
 
 // ════════════════════════════════════════════════════════════════════════════

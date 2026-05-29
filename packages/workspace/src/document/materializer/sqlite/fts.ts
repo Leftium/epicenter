@@ -202,7 +202,7 @@ async function ftsSearch(
  * Pure construction at call time: registers no listeners and runs no DDL.
  * Returning the factory unconditionally would be fine; the caller decides
  * whether to call it based on whether `fts` was provided, so the materializer's
- * return type can omit `fts` entirely when no FTS was configured.
+ * action registry only includes `sqlite_search` when FTS was configured.
  *
  * @internal
  */

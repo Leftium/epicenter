@@ -17,11 +17,7 @@
 import type { Database, SQLQueryBindings } from 'bun:sqlite';
 import { debounce } from '@epicenter/util';
 import Type from 'typebox';
-import {
-	defineErrors,
-	extractErrorMessage,
-	type InferErrors,
-} from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
 import { defineActions, defineMutation } from '../../../shared/actions.js';
@@ -46,16 +42,13 @@ export type FtsConfig<TTables extends TablesRecord> = {
 };
 
 /** Errors surfaced by the SQLite materializer's async background sync loop. */
-export const SqliteMaterializerError = defineErrors({
+const SqliteMaterializerError = defineErrors({
 	/** Debounced flush of pending row writes to the mirror database failed. */
 	SyncFailed: ({ cause }: { cause: unknown }) => ({
 		message: `[sqlite-materializer] Failed to sync SQLite materializer: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
-export type SqliteMaterializerError = InferErrors<
-	typeof SqliteMaterializerError
->;
 
 type RegisteredTable = {
 	table: AnyTable;

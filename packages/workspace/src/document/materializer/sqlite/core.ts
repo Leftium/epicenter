@@ -6,9 +6,8 @@
  * Public callers use `attachBunSqliteMaterializer`, which owns the native
  * client lifecycle and forwards the client here.
  *
- * Teardown is hooked to the ydoc via `ydoc.once('destroy', ...)`. The
- * `attachBunSqliteMaterializer` registers its own destroy handler too to close
- * the underlying native client.
+ * Teardown is hooked to the ydoc via `ydoc.once('destroy', ...)`. Core closes
+ * the underlying native client after queued database work drains.
  *
  * @internal
  * @module
@@ -41,11 +40,16 @@ export type FtsConfig<TTables extends TablesRecord> = {
 		: never;
 };
 
-/** Errors surfaced by the SQLite materializer's async background sync loop. */
+/** Errors surfaced by the SQLite materializer's async database work queue. */
 const SqliteMaterializerError = defineErrors({
 	/** Debounced flush of pending row writes to the mirror database failed. */
 	SyncFailed: ({ cause }: { cause: unknown }) => ({
 		message: `[sqlite-materializer] Failed to sync SQLite materializer: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	/** Post-queue disposal tail failed after the materializer detached. */
+	DisposeFailed: ({ cause }: { cause: unknown }) => ({
+		message: `[sqlite-materializer] Failed to dispose SQLite materializer: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
@@ -116,7 +120,7 @@ export function attachSqliteMaterializerCore<
 			: undefined;
 
 	let pendingSync = new Map<string, Set<string>>();
-	let syncQueue = Promise.resolve();
+	let dbQueue = Promise.resolve();
 	let isDisposed = false;
 
 	// ── SQL primitives ───────────────────────────────────────────
@@ -160,8 +164,14 @@ export function attachSqliteMaterializerCore<
 
 	// ── Sync engine ──────────────────────────────────────────────
 
+	function enqueueDbWork(work: () => Promise<void>): Promise<void> {
+		const result = dbQueue.then(work);
+		dbQueue = result.catch(() => {});
+		return result;
+	}
+
 	const flushAfterDebounce = debounce(() => {
-		syncQueue = syncQueue.then(flushPendingSync).catch((cause: unknown) => {
+		void enqueueDbWork(flushPendingSync).catch((cause: unknown) => {
 			log.error(SqliteMaterializerError.SyncFailed({ cause }));
 		});
 	}, debounceMs);
@@ -214,29 +224,37 @@ export function attachSqliteMaterializerCore<
 					`Cannot rebuild "${tableName}": not in the materialized table set.`,
 				);
 			}
+
+			return enqueueDbWork(async () => {
+				if (isDisposed) return;
+
+				await db.run('BEGIN');
+				try {
+					await db.run(`DELETE FROM ${quoteIdentifier(tableName)}`);
+					await fullLoadTable(tableName, entry.table);
+					await db.run('COMMIT');
+				} catch (error: unknown) {
+					await db.run('ROLLBACK');
+					throw error;
+				}
+			});
+		}
+
+		return enqueueDbWork(async () => {
+			if (isDisposed) return;
+
 			await db.run('BEGIN');
 			try {
-				await db.run(`DELETE FROM ${quoteIdentifier(tableName)}`);
-				await fullLoadTable(tableName, entry.table);
+				for (const [name] of registered)
+					await db.run(`DELETE FROM ${quoteIdentifier(name)}`);
+				for (const [name, entry] of registered)
+					await fullLoadTable(name, entry.table);
 				await db.run('COMMIT');
 			} catch (error: unknown) {
 				await db.run('ROLLBACK');
 				throw error;
 			}
-			return;
-		}
-
-		await db.run('BEGIN');
-		try {
-			for (const [name] of registered)
-				await db.run(`DELETE FROM ${quoteIdentifier(name)}`);
-			for (const [name, entry] of registered)
-				await fullLoadTable(name, entry.table);
-			await db.run('COMMIT');
-		} catch (error: unknown) {
-			await db.run('ROLLBACK');
-			throw error;
-		}
+		});
 	}
 
 	// ── Disposal ────────────────────────────────────────────────
@@ -246,6 +264,11 @@ export function attachSqliteMaterializerCore<
 		isDisposed = true;
 		flushAfterDebounce.cancel();
 		for (const entry of registered.values()) entry.unsubscribe?.();
+		void dbQueue
+			.then(() => db.close())
+			.catch((cause: unknown) => {
+				log.error(SqliteMaterializerError.DisposeFailed({ cause }));
+			});
 	}
 
 	ydoc.once('destroy', dispose);
@@ -259,26 +282,31 @@ export function attachSqliteMaterializerCore<
 		await waitFor;
 		if (isDisposed) return;
 
-		for (const [tableName, entry] of registered) {
-			await db.run(generateDdl(tableName, entry.table.schema));
-		}
+		await enqueueDbWork(async () => {
+			if (isDisposed) return;
 
-		// FTS DDL + triggers run after table DDL and before the bulk insert, so
-		// the AFTER INSERT triggers populate `<table>_fts` for free during the
-		// existing full-load. This is the load-bearing ordering invariant.
-		await ftsLayer?.beforeFullLoad();
+			for (const [tableName, entry] of registered) {
+				await db.run(generateDdl(tableName, entry.table.schema));
+			}
 
-		if (isDisposed) return;
+			if (ftsLayer !== undefined) {
+				// FTS triggers must exist before the bulk insert so full-load rows
+				// populate `<table>_fts` through the normal INSERT triggers.
+				await ftsLayer.setupForBulkLoad();
+			}
 
-		await db.run('BEGIN');
-		try {
-			for (const [tableName, entry] of registered)
-				await fullLoadTable(tableName, entry.table);
-			await db.run('COMMIT');
-		} catch (error: unknown) {
-			await db.run('ROLLBACK');
-			throw error;
-		}
+			if (isDisposed) return;
+
+			await db.run('BEGIN');
+			try {
+				for (const [tableName, entry] of registered)
+					await fullLoadTable(tableName, entry.table);
+				await db.run('COMMIT');
+			} catch (error: unknown) {
+				await db.run('ROLLBACK');
+				throw error;
+			}
+		});
 
 		if (isDisposed) return;
 

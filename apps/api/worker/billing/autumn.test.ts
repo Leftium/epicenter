@@ -1,8 +1,8 @@
 /**
  * Autumn adapter translation + discrimination tests.
  *
- * After the boundary cleanup any thrown provider failure collapses to one
- * opaque `BillingError.ProviderRequestFailed` with a fixed user-facing message
+ * Any thrown provider failure collapses to one opaque
+ * `BillingError.ProviderRequestFailed` with a fixed user-facing message
  * (the original error's detail is logged for operators, never put on the wire).
  * These pin that total mapping and, critically, that `isProviderError` narrows
  * BOTH provider class families: `AutumnError` (HTTP non-2xx) AND the
@@ -13,7 +13,7 @@
 
 import { expect, test } from 'bun:test';
 import { AutumnError, ConnectionError } from 'autumn-js';
-import { isProviderError, mapAutumnError } from './autumn.js';
+import { isProviderError, mapAutumnError, tryAutumn } from './autumn.js';
 
 const FIXED_MESSAGE = 'Billing is temporarily unavailable. Please try again.';
 
@@ -34,9 +34,30 @@ test('an AutumnError maps to the fixed opaque message, not the provider wording'
 	});
 });
 
-test('a non-AutumnError throw (network failure) maps the same way, fail closed', () => {
-	const { error } = mapAutumnError(new TypeError('network down'));
+test('an HTTPClientError maps to the fixed opaque message, fail closed', () => {
+	const { error } = mapAutumnError(
+		new ConnectionError('Unable to make request'),
+	);
 	expect(error.message).toBe(FIXED_MESSAGE);
+});
+
+test('tryAutumn maps provider failures into BillingError', async () => {
+	const { error } = await tryAutumn(async () => {
+		throw new ConnectionError('Unable to make request');
+	});
+
+	expect(error).toMatchObject({
+		name: 'ProviderRequestFailed',
+		message: FIXED_MESSAGE,
+	});
+});
+
+test('tryAutumn rethrows programming bugs instead of mapping them', async () => {
+	await expect(
+		tryAutumn(async () => {
+			throw new TypeError('cannot read x of undefined');
+		}),
+	).rejects.toThrow('cannot read x of undefined');
 });
 
 test('isProviderError narrows an HTTP non-2xx (AutumnError)', () => {

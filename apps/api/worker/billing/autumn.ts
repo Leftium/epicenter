@@ -24,7 +24,6 @@
  */
 
 import { Autumn, AutumnError, HTTPClientError } from 'autumn-js';
-import { extractErrorMessage } from 'wellcrafted/error';
 import { createLogger } from 'wellcrafted/logger';
 import { type Result, tryAsync } from 'wellcrafted/result';
 import { BillingError } from './errors.js';
@@ -62,13 +61,11 @@ export function createAutumnClient(env: { AUTUMN_SECRET_KEY: string }): Autumn {
  * Returns the wellcrafted `Err` envelope (what the `defineErrors` factory
  * produces), so it drops straight into a `tryAsync` `catch` or a `c.json`.
  */
-export function mapAutumnError(error: unknown) {
-	const loggable =
-		error instanceof Error ? error : new Error(extractErrorMessage(error));
+export function mapAutumnError(error: AutumnError | HTTPClientError) {
 	if (error instanceof AutumnError && error.statusCode < 500) {
-		log.error(loggable);
+		log.error(error);
 	} else {
-		log.warn(loggable);
+		log.warn(error);
 	}
 	return BillingError.ProviderRequestFailed();
 }

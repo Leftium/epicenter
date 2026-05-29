@@ -66,9 +66,12 @@ inconsistent until you see why.
 DASHBOARD READS                        USAGE GUARDS
 getOverview, listPlans, listUsage…     reserveAiChat, reserveAssetStorage
         │                                      │
- Autumn throws                          tryAutumn catches -> Result
+ Autumn provider error throws           tryAutumn catches provider error
         │                                      │
- routes.ts onError                      policy forwards error to c.json
+ routes.ts onError                      service returns Result
+        │                                      │
+ provider error -> 503                  policy forwards error to c.json
+ local bug -> real 500                  local bug keeps throwing
         │                                      │
         ▼                                      ▼
    503 envelope                           4xx/503 envelope
@@ -78,7 +81,9 @@ Why the asymmetry: a guard cannot just throw after it has taken a
 **reservation**, because the policy still needs the reservation object so it can
 settle the hold around the downstream response. A read has no reservation to
 clean up, so it lets provider errors throw to the single `onError` boundary in
-`routes.ts`. The split is real work, not inconsistency.
+`routes.ts`. The split is real work, not inconsistency. Both paths should still
+agree on the important rule: provider failures become the opaque billing 503,
+and local programmer bugs stay bugs.
 
 ## Reservations: reserve, then confirm or release
 
@@ -148,6 +153,11 @@ the dashboard can offer a top-up. "Model needs a paid plan" is
 own statuses. So we surface specifics when the user can act, and silence when
 they cannot (our provider broke). That is the right amount, not too much.
 
+A programmer error is neither of those. If a handler throws a `TypeError`, a
+mapper reads the wrong shape, or a local invariant is wrong, that should remain
+a real 500. Do not turn our bug into "billing is temporarily unavailable"; that
+sends the operator and the user looking in the wrong direction.
+
 ## Three things that look like smells and are not
 
 If you come in with fresh eyes (good instinct), these will draw suspicion. Here
@@ -160,6 +170,9 @@ is why each survives:
    `HTTPClientError` (the network never reached it: connection refused, timeout).
    Checking only `AutumnError` would let a real outage become a misleading 500
    instead of a fail-closed 503. The `||` is what makes "fail closed" closed.
+   If duplicate `autumn-js` copies ever appear in the dependency graph, revisit
+   this classifier: `instanceof` depends on both sides using the same class
+   object.
 
 2. **`confirm` vs `release`.** Not two code paths, one line with the action
    flipped. Minimal, not ceremony. (See the reservation diagram above.)

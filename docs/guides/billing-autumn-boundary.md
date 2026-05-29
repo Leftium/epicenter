@@ -7,8 +7,8 @@ first.
 
 ## The one sentence
 
-> Meter and gate paid usage (AI credits, storage bytes) against Autumn as the
-> billing source of truth, while assuming Autumn can be slow, wrong, or down at
+> Meter and gate paid usage against Autumn, while treating the local asset table
+> as the source of truth for stored bytes. Autumn can be slow, wrong, or down at
 > any moment, so it must deny work when entitlement cannot be verified, never
 > permanently charge for work that did not happen, and never leak provider
 > internals to the user.
@@ -65,7 +65,7 @@ inconsistent until you see why.
 
 ```
 DASHBOARD READS                        USAGE GUARDS
-getOverview, listPlans, listUsage…     reserveAiChat, reserveAssetStorage
+getOverview, listPlans, listUsage…     reserveAiChat, checkAssetStorageUpload
         │                                      │
  Autumn provider error throws           tryAutumn catches provider error
         │                                      │
@@ -78,26 +78,25 @@ getOverview, listPlans, listUsage…     reserveAiChat, reserveAssetStorage
    503 envelope                           4xx/503 envelope
 ```
 
-Why the asymmetry: a guard cannot just throw after it has taken a
-**reservation**, because the policy still needs the reservation object so it can
-settle the hold around the downstream response. A read has no reservation to
-clean up, so it lets provider errors throw to the single `onError` boundary in
-`routes.ts`. The split is real work, not inconsistency. Both paths should still
-agree on the important rule: provider failures become the opaque billing 503,
-and local programmer bugs stay bugs.
+Why the asymmetry: a guard is the last stop before expensive or billable work,
+so it returns `Result` and lets the policy shape the HTTP response. A read has
+no work to protect and no post-response operation to schedule, so it lets
+provider errors throw to the single `onError` boundary in `routes.ts`. The split
+is real work, not inconsistency. Both paths should still agree on the important
+rule: provider failures become the opaque billing 503, and local programmer
+bugs stay bugs.
 
-## Reservations: reserve, then confirm or release
+## AI reservations: reserve, then confirm or release
 
-For anything billable that might fail (an AI call, an upload), we do not deduct
-up front and refund on failure. We take a **lock** (a held balance), do the
-work, then commit or roll back.
+For AI calls, we do not deduct up front and refund on failure. We take a
+**lock** (a held balance), do the work, then commit or roll back.
 
 ```
 reserveAiChat ─► autumn.check({ requiredBalance: N,
                                 lock: { lockId, expiresAt: now + 15min } })
                  │  N credits are HELD, not spent
                  ▼
-             do the work (stream the model / write the upload)
+             do the work (stream the model)
                  │
         ┌────────┴─────────┐
    status < 400        status >= 400
@@ -133,6 +132,43 @@ settlement prefers a bounded undercharge over permanently charging a user for
 work that failed or could not be settled. For AI streams, once the stream has
 started the HTTP status is already 200, so a later model/provider failure still
 confirms by design: provider tokens were consumed and cannot be refunded.
+
+## Storage accounting: stock sync, not event deltas
+
+Storage is not an AI-style consumable event. It is a current stock:
+
+```
+asset table SUM(sizeBytes)  ──owns actual stored bytes──►  totalBytes
+        │
+        └── after successful POST/DELETE ──► autumn.balances.update({ usage: totalBytes })
+```
+
+That means the asset table is the accounting source of truth for storage.
+Autumn is still the entitlement and billing projection: uploads call
+`checkAssetStorageUpload` before the library writes to R2, and provider outages
+fail closed with the same opaque `BillingError`. But after a successful upload
+or delete, the library returns `x-storage-usage-total-bytes`, and the cloud
+policy syncs Autumn with `balances.update({ usage: totalBytes })`.
+
+This deliberately refuses two tempting shapes:
+
+1. **No upload lock for storage.** A storage lock creates a second ledger while
+   the real usage is already fully enumerable from the asset table. It also
+   made upload and delete asymmetric: upload reserved bytes, delete sent a
+   negative event.
+2. **No delete delta credit.** `track({ value: -bytes })` is fragile for stock
+   accounting. If one delta is missed, future reads stay wrong until a repair
+   job catches up. Absolute usage sync makes every successful mutation a small
+   reconciliation from the source of truth.
+
+The concurrency tradeoff is intentional. A pre-upload `check()` gates against
+Autumn's last synced usage, then the post-mutation sync overwrites Autumn with
+the actual total. Two concurrent uploads near a hard limit can both pass if the
+provider projection is stale between them. For the current paid storage plans,
+that becomes billable overage rather than data loss. The free tier has zero
+included storage and no overage price, so a correctly synced balance denies the
+first upload. If product later needs hard, no-overage storage ceilings, that
+limit belongs next to the asset table in the write path, not in Autumn locks.
 
 ## Errors: opaque on the wire, fat in the logs
 
@@ -194,13 +230,13 @@ delete with zero behavior change.
 
 ## The real caveat
 
-Storage delete credits are not locks. A successful DELETE reports the deleted
-byte count after the library finishes, then `creditAssetStorage` sends a
-negative usage event to Autumn. If that post-response credit fails, there is no
-lock TTL to repair it, and the user's storage quota remains too high until a
-future reconciliation job fixes it. That risk is accepted for now because stored
-bytes are recomputable from the asset index, and it is isolated to deletes
-rather than upload admission.
+Storage sync is still post-response work. If `balances.update({ usage })` fails
+after a successful upload or delete, Autumn can temporarily disagree with the
+asset table. The important difference from delta tracking is that the next
+successful asset mutation rewrites the absolute total, so drift is not
+cumulative. A scheduled reconciliation sweep can still be useful operationally,
+but it should compute the same `SUM(sizeBytes)` and set absolute usage, not
+replay upload/delete events.
 
 ## If you are changing this folder
 
@@ -208,9 +244,11 @@ rather than upload admission.
   Autumn only via `autumn.ts`. Do not import `autumn-js` anywhere else.
 - A new fallible-work guard: follow `reserveAiChat`: reserve a lock, return a
   reservation the policy settles around `next()`.
+- A new storage mutation: keep the asset table as source of truth, return the
+  post-mutation total, and sync Autumn with absolute `usage`.
 - A new dashboard read: let Autumn throw; `routes.ts` `onError` turns a provider
   failure into the opaque 503 and rethrows real bugs to a 500.
-- A new post-response credit without a lock needs an explicit recovery story.
-  Locks self-heal at TTL; direct `track` calls do not.
+- A new post-response billing operation without a lock needs an explicit
+  recovery story. Locks self-heal at TTL; direct sync calls do not.
 - Never widen the `BillingError` message to include provider text. That is the
   one invariant the whole error design protects.

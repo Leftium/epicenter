@@ -41,6 +41,7 @@
 import { AuthUser } from '@epicenter/auth';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { AssetError } from '@epicenter/constants/asset-errors';
+import { ASSET_STORAGE_USAGE_TOTAL_HEADER } from '@epicenter/constants/asset-headers';
 import { asOwnerId, type OwnerId } from '@epicenter/constants/identity';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
@@ -219,6 +220,7 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 						throw dbError;
 					}
 
+					const totalBytes = await selectOwnerAssetUsageBytes(c);
 					return c.json(
 						{
 							id: assetId,
@@ -229,6 +231,7 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 							originalName: sanitizedFilename,
 						},
 						201,
+						{ [ASSET_STORAGE_USAGE_TOTAL_HEADER]: String(totalBytes) },
 					);
 				},
 			)
@@ -256,13 +259,7 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 					tags: ['assets'],
 				}),
 				async (c) => {
-					const result = await c.var.db
-						.select({
-							total: sql<number>`COALESCE(SUM(${schema.asset.sizeBytes}), 0)`,
-						})
-						.from(schema.asset)
-						.where(eq(schema.asset.ownerId, c.var.ownerId));
-					const total = result[0]?.total ?? 0;
+					const total = await selectOwnerAssetUsageBytes(c);
 					return c.json({ totalBytes: total });
 				},
 			)
@@ -318,7 +315,7 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 								eq(schema.asset.ownerId, c.var.ownerId),
 							),
 						)
-						.returning({ sizeBytes: schema.asset.sizeBytes });
+						.returning({ id: schema.asset.id });
 
 					if (!deleted) {
 						const err = AssetError.NotFound();
@@ -326,10 +323,9 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 					}
 
 					await c.env.ASSETS_BUCKET.delete(assetKey(c.var.ownerId, assetId));
-					// Surface deleted byte count via response header so cloud's
-					// storage policy can refund without re-reading the row.
+					const totalBytes = await selectOwnerAssetUsageBytes(c);
 					return c.body(null, 204, {
-						'x-deleted-size-bytes': String(deleted.sizeBytes),
+						[ASSET_STORAGE_USAGE_TOTAL_HEADER]: String(totalBytes),
 					});
 				},
 			)
@@ -511,4 +507,14 @@ export function mountAssetsApp(
 		...policies,
 	);
 	app.route('/', createAssetsApp({ ownership: opts.ownership }));
+}
+
+async function selectOwnerAssetUsageBytes(c: Context<Env>): Promise<number> {
+	const result = await c.var.db
+		.select({
+			total: sql<number>`COALESCE(SUM(${schema.asset.sizeBytes}), 0)`,
+		})
+		.from(schema.asset)
+		.where(eq(schema.asset.ownerId, c.var.ownerId));
+	return result[0]?.total ?? 0;
 }

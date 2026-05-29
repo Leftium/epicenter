@@ -3,8 +3,8 @@
  *
  * Owns every billing domain operation in the cloud worker. Routes and
  * policies call into this service, which returns Epicenter DTOs from
- * `./contracts.ts` (dashboard reads) or reservation objects (the AI and
- * storage guards). It never imports `autumn-js`: the Autumn SDK lives
+ * `./contracts.ts` (dashboard reads), reservation objects for AI, or storage
+ * guard/sync results. It never imports `autumn-js`: the Autumn SDK lives
  * behind `./autumn.ts`, which builds the client, wraps each round-trip in
  * `tryAutumn`, and translates provider throws into `BillingError`.
  *
@@ -16,13 +16,12 @@
  * Two error shapes, on purpose. Dashboard reads (`getOverview`, `listPlans`,
  * `listUsage`, ...) call Autumn directly and let a provider failure THROW; the
  * single `onError` boundary in `routes.ts` turns it into the opaque 503. The
- * usage guards (`reserveAiChat`, `reserveAssetStorage`) instead wrap their
- * Autumn calls in `tryAutumn` and RETURN `Result`, because a guard takes a
- * reservation lock the policy must settle (confirm or release) around the
- * response via the after-response queue. Returning the reservation lets the
- * policy settle it; throwing would skip the settle and leave the hold to expire
- * only at its TTL. So "reads throw, guards return" is the reservation lifecycle
- * showing through, not an inconsistency.
+ * AI guard (`reserveAiChat`) instead wraps its Autumn calls in `tryAutumn` and
+ * RETURNS `Result`, because it takes a reservation lock the policy must settle
+ * (confirm or release) around the response via the after-response queue.
+ * Storage also returns `Result` because upload admission must fail closed when
+ * entitlement cannot be verified, but storage usage syncs the asset table's
+ * absolute total instead of taking a lock.
  */
 
 import type { UserId } from '@epicenter/auth';
@@ -77,10 +76,10 @@ type Identity = {
 const LOCK_TTL_MS = 15 * 60_000;
 
 /**
- * A held reservation taken by `reserveAiChat` or `reserveAssetStorage`. The
- * `lockId` is captured in the closure and never escapes the service: the policy
- * commits with `confirm()` on success or rolls back with `release()` on
- * failure, so the lock action can't be mispaired.
+ * A held reservation taken by `reserveAiChat`. The `lockId` is captured in the
+ * closure and never escapes the service: the policy commits with `confirm()`
+ * on success or rolls back with `release()` on failure, so the lock action
+ * can't be mispaired.
  */
 type Reservation = {
 	confirm(): Promise<Result<void, BillingError>>;
@@ -152,55 +151,52 @@ export function createBillingService(
 	// ----- Storage guard ------------------------------------------------
 
 	/**
-	 * Reserve storage bytes for one upload. Same reservation lifecycle as
-	 * {@link reserveAiChat}: the policy confirms on a 201 or releases otherwise.
+	 * Check that one upload is allowed against the currently synced Autumn
+	 * storage balance. The asset table owns actual storage bytes; this guard only
+	 * gates the write before the library uploads to R2.
 	 */
-	async function reserveAssetStorage(input: {
+	async function checkAssetStorageUpload(input: {
 		sizeBytes: number;
-	}): Promise<Result<Reservation, AssetError | BillingError>> {
+	}): Promise<Result<void, AssetError | BillingError>> {
 		// Seed the customer so the storage balance materializes from the
-		// auto-enable free plan before we reserve against it. A provider outage
+		// auto-enable free plan before we check against it. A provider outage
 		// fails closed.
-		const { error: seedError } = await tryAutumn(() =>
-			autumn.customers.getOrCreate({
-				customerId: identity.userId,
-				email: identity.userEmail,
-			}),
-		);
+		const { error: seedError } = await seedCustomer();
 		if (seedError) return Err(seedError);
 
-		// Reserve the bytes with a lock instead of deduct-then-refund: the lock
-		// holds the balance atomically (two concurrent uploads can't both pass)
-		// and the returned reservation commits on a 201 or releases otherwise. If
-		// the worker dies before finalizing, Autumn auto-releases at `expiresAt`,
-		// so a failed upload never permanently consumes quota.
-		const { data: check, error: checkError } = await reserveWithLock({
-			featureId: FEATURE_IDS.storageBytes,
-			requiredBalance: input.sizeBytes,
-		});
+		const { data: check, error: checkError } = await tryAutumn(() =>
+			autumn.check({
+				customerId: identity.userId,
+				featureId: FEATURE_IDS.storageBytes,
+				requiredBalance: input.sizeBytes,
+			}),
+		);
 		if (checkError) return Err(checkError);
 		if (!check.allowed) {
 			return AssetError.StorageLimitExceeded({
 				requestedBytes: input.sizeBytes,
 			});
 		}
-		return Ok(check.reservation);
+		return Ok(undefined);
 	}
 
 	/**
-	 * Credit storage bytes back after a delete. A delete has no prior
-	 * reservation to finalize, so this is a direct negative-usage track of the
-	 * freed bytes. Unlike a lock, this does not self-heal on failure, so the
-	 * policy logs a failed credit at `error`.
+	 * Sync Autumn to the asset table's authoritative storage total after a
+	 * successful asset mutation. Storage is a non-consumable feature, so we set
+	 * absolute usage rather than sending upload/delete deltas.
 	 */
-	function creditAssetStorage(
-		sizeBytes: number,
+	function syncAssetStorageUsage(
+		totalBytes: number,
 	): Promise<Result<void, BillingError>> {
 		return tryAutumn(async () => {
-			await autumn.track({
+			await autumn.customers.getOrCreate({
+				customerId: identity.userId,
+				email: identity.userEmail,
+			});
+			await autumn.balances.update({
 				customerId: identity.userId,
 				featureId: FEATURE_IDS.storageBytes,
-				value: -sizeBytes,
+				usage: totalBytes,
 			});
 		});
 	}
@@ -488,10 +484,19 @@ export function createBillingService(
 		});
 	}
 
+	function seedCustomer(): Promise<Result<unknown, BillingError>> {
+		return tryAutumn(() =>
+			autumn.customers.getOrCreate({
+				customerId: identity.userId,
+				email: identity.userEmail,
+			}),
+		);
+	}
+
 	return {
 		reserveAiChat,
-		reserveAssetStorage,
-		creditAssetStorage,
+		checkAssetStorageUpload,
+		syncAssetStorageUsage,
 		getOverview,
 		listPlans,
 		listUsage,

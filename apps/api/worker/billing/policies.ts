@@ -3,30 +3,32 @@
  * primitives with Autumn-backed billing.
  *
  * Each policy is a thin shell around the billing service. The service owns
- * the Autumn round-trips and the reservation lock (the `lockId` never leaves
- * it); policies own only HTTP shape: pulling fields off the request, forwarding
- * the guard's typed error to `c.json`, and pushing the reservation's
- * `confirm`/`release` (or a delete credit) onto the after-response queue from
- * `@epicenter/server`. Those settlement ops return a `Result` (they never
- * reject) and the adapter logs any provider failure at its source, so a failed
- * finalize is recorded rather than silently swallowed by the queue's
- * `Promise.allSettled`, with no separate settlement wrapper needed.
+ * the Autumn round-trips and the AI reservation lock (the `lockId` never
+ * leaves it); policies own only HTTP shape: pulling fields off the request,
+ * forwarding the guard's typed error to `c.json`, and pushing after-response
+ * settlement/sync work onto the queue from `@epicenter/server`. Those ops
+ * return a `Result` (they never reject) and the adapter logs any provider
+ * failure at its source, so a failed finalize or storage sync is recorded
+ * rather than silently swallowed by the queue's `Promise.allSettled`, with no
+ * separate settlement wrapper needed.
  *
  *   chargeAiCreditsWithAutumn      Around `/api/ai/chat`. Reserves credits
  *                                  (a lock) before the call, then confirms on
  *                                  success or releases on a pre-stream failure.
  *                                  BYOK callers bypass billing entirely.
- *   trackAssetStorageWithAutumn    Around `/api/.../assets`. Reserves storage
- *                                  on POST uploads (a lock), confirms on 201
- *                                  and releases otherwise, and credits bytes
- *                                  back on 204 DELETE (size carried via header).
+ *   trackAssetStorageWithAutumn    Around `/api/.../assets`. Checks storage
+ *                                  before POST uploads, then syncs Autumn to
+ *                                  the authoritative asset-table total after
+ *                                  successful POST/DELETE mutations.
  *
- * Reservations use Autumn's lock + `balances.finalize` rather than
+ * AI reservations use Autumn's lock + `balances.finalize` rather than
  * deduct-then-refund: if the worker dies before finalizing, Autumn
  * auto-releases the hold at its TTL, so a failed request can never silently
- * overcharge. When the provider is unreachable the guard returns a structured
- * `BillingError` (fail closed), so these surfaces answer with a billing
- * envelope instead of a naked 500.
+ * overcharge. Storage is different: the asset table owns actual stored bytes,
+ * and Autumn receives absolute usage snapshots after successful writes. When
+ * the provider is unreachable the guard returns a structured `BillingError`
+ * (fail closed), so these surfaces answer with a billing envelope instead of a
+ * naked 500.
  *
  * The library remains billing-agnostic; everything here is cloud-only.
  */
@@ -36,6 +38,7 @@ import {
 	AiChatErrorStatus,
 } from '@epicenter/constants/ai-chat-errors';
 import type { AssetError } from '@epicenter/constants/asset-errors';
+import { ASSET_STORAGE_USAGE_TOTAL_HEADER } from '@epicenter/constants/asset-headers';
 import type { Env } from '@epicenter/server';
 import type { Context } from 'hono';
 import { createMiddleware } from 'hono/factory';
@@ -106,8 +109,9 @@ export const trackAssetStorageWithAutumn = createMiddleware<Env>(
 			}
 
 			const billing = billingFor(c);
-			const { data: reservation, error: guardError } =
-				await billing.reserveAssetStorage({ sizeBytes: file.size });
+			const { error: guardError } = await billing.checkAssetStorageUpload({
+				sizeBytes: file.size,
+			});
 			if (guardError) {
 				return c.json(
 					{ data: null, error: guardError },
@@ -117,27 +121,17 @@ export const trackAssetStorageWithAutumn = createMiddleware<Env>(
 
 			await next();
 
-			// Commit the reservation on a successful upload (201); release it
-			// otherwise so a failed upload does not hold quota until the lock TTL.
-			// A failed finalize is logged at the adapter and self-heals via the TTL.
-			c.var.afterResponse.push(
-				c.res.status === 201 ? reservation.confirm() : reservation.release(),
-			);
+			if (c.res.status === 201) {
+				scheduleStorageUsageSync(c, billing);
+			}
 			return;
 		}
 
 		if (method === 'DELETE') {
 			await next();
 			if (c.res.status !== 204) return;
-			const sizeHeader = c.res.headers.get('x-deleted-size-bytes');
-			const size = sizeHeader ? Number.parseInt(sizeHeader, 10) : null;
-			if (size == null || Number.isNaN(size)) return;
 			const billing = billingFor(c);
-			// A delete credit has no lock to expire, so a failure leaves quota
-			// consumed permanently. The adapter logs it; durable recovery (an
-			// idempotency-keyed retry plus a storage reconciliation sweep) is a
-			// tracked follow-up, since storage bytes are recomputable.
-			c.var.afterResponse.push(billing.creditAssetStorage(size));
+			scheduleStorageUsageSync(c, billing);
 			return;
 		}
 
@@ -170,4 +164,14 @@ function storageGuardStatus(
 ): ContentfulStatusCode {
 	if (error.name === 'ProviderRequestFailed') return 503;
 	return error.status;
+}
+
+function scheduleStorageUsageSync(
+	c: Context<Env>,
+	billing: ReturnType<typeof createBillingService>,
+) {
+	const usageHeader = c.res.headers.get(ASSET_STORAGE_USAGE_TOTAL_HEADER);
+	const totalBytes = usageHeader ? Number.parseInt(usageHeader, 10) : null;
+	if (totalBytes == null || Number.isNaN(totalBytes)) return;
+	c.var.afterResponse.push(billing.syncAssetStorageUsage(totalBytes));
 }

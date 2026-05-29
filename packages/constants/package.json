@@ -19,6 +19,7 @@
 		"./versions": "./src/versions.ts",
 		"./ai-chat-errors": "./src/ai-chat-errors.ts",
 		"./api-routes": "./src/api-routes.ts",
+		"./asset-headers": "./src/asset-headers.ts",
 		"./asset-errors": "./src/asset-errors.ts",
 		"./oauth-errors": "./src/oauth-errors.ts",
 		"./oauth-routes": "./src/oauth-routes.ts",

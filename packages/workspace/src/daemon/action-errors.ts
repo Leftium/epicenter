@@ -1,5 +1,5 @@
 /**
- * Domain errors and response envelopes for daemon action routes.
+ * Domain errors for daemon action routes.
  *
  * Local invoke and peer dispatch deliberately use separate response types:
  * local invoke executes this daemon's action registry, while peer dispatch
@@ -15,13 +15,17 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import type { Result } from 'wellcrafted/result';
 
 import type { DispatchError } from '../document/dispatch.js';
 import type {
 	SyncError,
 	SyncFailedReason,
 } from '../document/internal/sync-supervisor.js';
+
+type PeerDispatchRemoteError = Exclude<
+	DispatchError,
+	{ name: 'RecipientOffline' }
+>;
 
 export type PeerDispatchSyncStatus =
 	| { phase: 'offline' }
@@ -87,7 +91,7 @@ export const PeerDispatchError = defineErrors({
 		syncStatus,
 	}: {
 		to: string;
-		cause: DispatchError;
+		cause: PeerDispatchRemoteError;
 		syncStatus: PeerDispatchSyncStatus;
 	}) => ({
 		message: `remote call failed: ${cause.name}`,
@@ -97,6 +101,3 @@ export const PeerDispatchError = defineErrors({
 	}),
 });
 export type PeerDispatchError = InferErrors<typeof PeerDispatchError>;
-
-export type InvokeResponse = Result<unknown, InvokeError>;
-export type PeerDispatchResponse = Result<unknown, PeerDispatchError>;

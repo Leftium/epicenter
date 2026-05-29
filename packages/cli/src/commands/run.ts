@@ -79,18 +79,23 @@ export const runCommand = cmd({
 			process.exitCode = 1;
 			return;
 		}
-		const result =
-			peerTarget === undefined
-				? await daemon.invoke({
-						actionPath: argv.action,
-						input: actionInput,
-					})
-				: await daemon.dispatch({
-						actionPath: argv.action,
-						input: actionInput,
-						to: peerTarget,
-						waitMs,
-					});
+		if (peerTarget === undefined) {
+			renderRunResult(
+				await daemon.invoke({
+					actionPath: argv.action,
+					input: actionInput,
+				}),
+				argv.format,
+			);
+			return;
+		}
+
+		const result = await daemon.dispatch({
+			actionPath: argv.action,
+			input: actionInput,
+			to: peerTarget,
+			waitMs,
+		});
 		renderRunResult(result, argv.format);
 	},
 });
@@ -170,7 +175,7 @@ function emitPeerNotFound(
  */
 export function emitRemoteCallError(
 	peerTarget: string,
-	cause: DispatchError,
+	cause: Exclude<DispatchError, { name: 'RecipientOffline' }>,
 ): void {
 	switch (cause.name) {
 		case 'Cancelled':
@@ -188,9 +193,6 @@ export function emitRemoteCallError(
 			console.error(
 				`error: "${cause.action}" failed on ${peerTarget}: ${cause.cause}`,
 			);
-			return;
-		case 'RecipientOffline':
-			console.error(`error: peer ${peerTarget} went offline before responding`);
 			return;
 		case 'NetworkFailed':
 			console.error(

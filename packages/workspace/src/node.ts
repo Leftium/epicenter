@@ -13,9 +13,7 @@ export { ProjectConfigError } from './config/load-project-config.js';
 export { DEFAULT_PROJECT_CONFIG_SOURCE } from './config/project-config-source.js';
 export {
 	InvokeError,
-	type InvokeResponse,
 	PeerDispatchError,
-	type PeerDispatchResponse,
 	type PeerDispatchSyncStatus,
 } from './daemon/action-errors.js';
 export {

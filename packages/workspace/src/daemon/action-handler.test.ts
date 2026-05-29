@@ -53,6 +53,22 @@ function fakeEntry({
 }
 
 describe('executeDispatch peer dispatch', () => {
+	test('rejects invalid wait budgets before creating an AbortSignal', async () => {
+		const result = await executeDispatch([fakeEntry({})], {
+			actionPath: 'demo.tabs_list',
+			input: undefined,
+			to: 'mac',
+			waitMs: -1,
+		});
+
+		const error = expectErr(result);
+		expect(error.name).toBe('UsageError');
+		if (error.name !== 'UsageError') {
+			throw new Error(`expected UsageError, got ${error.name}`);
+		}
+		expect(error.message).toBe('`waitMs` must be a non-negative integer.');
+	});
+
 	test('relay RecipientOffline surfaces as PeerNotFound with sync status', async () => {
 		const syncStatus = {
 			phase: 'connecting',

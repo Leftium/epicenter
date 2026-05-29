@@ -64,7 +64,7 @@ epicenter peers -C ~/vault
 ```ts
 import { fuji } from '@epicenter/fuji/project';
 
-export default fuji();
+export default [fuji()];
 ```
 
 The factory carries the canonical mount name (`fuji`), so the CLI addresses actions as `fuji.<action_key>` regardless of the project folder name.

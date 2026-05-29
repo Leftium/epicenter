@@ -22,14 +22,12 @@
  * `HandlerCrashed` on the client side.
  */
 
-import { Ok } from 'wellcrafted/result';
+import { Ok, type Result } from 'wellcrafted/result';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import { invokeAction } from '../shared/actions.js';
 import {
 	InvokeError,
-	type InvokeResponse,
 	PeerDispatchError,
-	type PeerDispatchResponse,
 	type PeerDispatchSyncStatus,
 } from './action-errors.js';
 import { joinDaemonActionPath, parseDaemonActionPath } from './action-path.js';
@@ -39,7 +37,7 @@ import type { DaemonServedMount } from './types.js';
 export async function executeInvoke(
 	mounts: readonly DaemonServedMount[],
 	{ actionPath, input: actionInput }: InvokeRequest,
-): Promise<InvokeResponse> {
+): Promise<Result<unknown, InvokeError>> {
 	const { mount, localPath } = parseDaemonActionPath(actionPath);
 	const mountRuntime = mounts.find((candidate) => candidate.mount === mount);
 	if (!mountRuntime) {
@@ -75,7 +73,13 @@ export async function executeInvoke(
 export async function executeDispatch(
 	mounts: readonly DaemonServedMount[],
 	{ actionPath, input: actionInput, to, waitMs }: PeerDispatchRequest,
-): Promise<PeerDispatchResponse> {
+): Promise<Result<unknown, PeerDispatchError>> {
+	if (!Number.isInteger(waitMs) || waitMs < 0) {
+		return PeerDispatchError.UsageError({
+			message: '`waitMs` must be a non-negative integer.',
+		});
+	}
+
 	const { mount, localPath } = parseDaemonActionPath(actionPath);
 	const mountRuntime = mounts.find((candidate) => candidate.mount === mount);
 	if (!mountRuntime) {

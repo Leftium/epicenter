@@ -1,10 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { PersistedAuth } from './auth-types.js';
 import {
-	type AsyncAuthCellStore,
 	createWebStoragePersistedAuthStorage,
 	loadPersistedAuthStorage,
-	serializePersistedAuthCell,
+	serializePersistedAuth,
 } from './persisted-auth-storage.js';
 
 const cell = PersistedAuth.assert({
@@ -60,9 +59,13 @@ describe('createWebStoragePersistedAuthStorage', () => {
 });
 
 describe('loadPersistedAuthStorage', () => {
-	function trackingStore(initial: string | null): AsyncAuthCellStore & {
+	type TrackingStore = {
+		read: () => Promise<string | null>;
+		write: (serialized: string | null) => Promise<void>;
 		written: Array<string | null>;
-	} {
+	};
+
+	function trackingStore(initial: string | null): TrackingStore {
 		let current = initial;
 		const written: Array<string | null> = [];
 		return {
@@ -77,7 +80,7 @@ describe('loadPersistedAuthStorage', () => {
 	}
 
 	test('hydrates initial from the async read', async () => {
-		const store = trackingStore(serializePersistedAuthCell(cell));
+		const store = trackingStore(serializePersistedAuth(cell));
 
 		const persistedAuthStorage = await loadPersistedAuthStorage(store);
 
@@ -98,11 +101,11 @@ describe('loadPersistedAuthStorage', () => {
 
 		await persistedAuthStorage.set(cell);
 
-		expect(store.written).toEqual([serializePersistedAuthCell(cell)]);
+		expect(store.written).toEqual([serializePersistedAuth(cell)]);
 	});
 
 	test('set(null) forwards a remove to the store', async () => {
-		const store = trackingStore(serializePersistedAuthCell(cell));
+		const store = trackingStore(serializePersistedAuth(cell));
 		const persistedAuthStorage = await loadPersistedAuthStorage(store);
 
 		await persistedAuthStorage.set(null);

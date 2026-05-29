@@ -37,7 +37,7 @@ import {
 	type UserId,
 } from '../auth-types.js';
 import { createOAuthAppAuth } from '../create-oauth-app-auth.js';
-import { serializePersistedAuthCell } from '../persisted-auth-storage.js';
+import { serializePersistedAuth } from '../persisted-auth-storage.js';
 import { createOobOAuthLauncher } from './oob-launcher.js';
 
 /**
@@ -195,7 +195,7 @@ async function saveMachineTokens(
 			}
 			await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
 			const tmp = `${filePath}.tmp`;
-			await fs.writeFile(tmp, serializePersistedAuthCell(value), {
+			await fs.writeFile(tmp, serializePersistedAuth(value), {
 				mode: 0o600,
 			});
 			await fs.rename(tmp, filePath);

@@ -1,9 +1,9 @@
 import { PersistedAuth } from './auth-types.js';
 
 /**
- * Storage adapter for the single `PersistedAuth` cell (grant + identity + keyring).
+ * Storage adapter for the single `PersistedAuth` record (grant + identity + keyring).
  *
- * `initial` is the cell read once at boot; the auth runtime reads it exactly
+ * `initial` is the record read once at boot; the auth runtime reads it exactly
  * once, at construction, to seed its state machine, and never re-reads, so it
  * is a synchronous snapshot rather than a live getter. Runtimes whose store is
  * async (an extension's `chrome.storage`, a file) pre-load through
@@ -20,12 +20,12 @@ export type PersistedAuthStorage = {
 };
 
 /**
- * Decode a stored cell string into a `PersistedAuth`, or `null` when the cell
- * is absent, not JSON, or fails schema validation. The single owner of the
- * "corrupt or legacy cell reads as signed out" rule, shared by every storage
- * adapter whose substrate frames the cell as a string.
+ * Decode a stored record string into a `PersistedAuth`, or `null` when the
+ * record is absent, not JSON, or fails schema validation. The single owner of
+ * the "corrupt or legacy record reads as signed out" rule, shared by every
+ * storage adapter whose substrate frames the record as a string.
  */
-export function parsePersistedAuthCell(raw: string | null): PersistedAuth | null {
+export function parsePersistedAuth(raw: string | null): PersistedAuth | null {
 	if (raw === null) return null;
 	try {
 		return PersistedAuth.assert(JSON.parse(raw));
@@ -35,10 +35,10 @@ export function parsePersistedAuthCell(raw: string | null): PersistedAuth | null
 }
 
 /**
- * Encode a cell for storage. Re-validates before writing so an unvalidated
+ * Encode a record for storage. Re-validates before writing so an unvalidated
  * value can never reach durable storage.
  */
-export function serializePersistedAuthCell(value: PersistedAuth): string {
+export function serializePersistedAuth(value: PersistedAuth): string {
 	return JSON.stringify(PersistedAuth.assert(value));
 }
 
@@ -46,8 +46,8 @@ export function serializePersistedAuthCell(value: PersistedAuth): string {
  * Build a {@link PersistedAuthStorage} over a synchronous Web `Storage`
  * (`localStorage` or `sessionStorage`, in a browser tab or a Tauri webview).
  *
- * `get` returns `null` on a missing, non-JSON, or schema-invalid cell, so a
- * corrupt cell reads as signed-out instead of throwing. `set(null)` removes
+ * `get` returns `null` on a missing, non-JSON, or schema-invalid record, so a
+ * corrupt record reads as signed-out instead of throwing. `set(null)` removes
  * the key. Write failures (`QuotaExceededError`, or `setItem` throwing in
  * private-mode Safari) are intentionally propagated rather than swallowed: a
  * credential that could not be persisted must fail the sign-in or refresh that
@@ -66,44 +66,39 @@ export function createWebStoragePersistedAuthStorage({
 	storage: Storage;
 }): PersistedAuthStorage {
 	return {
-		initial: parsePersistedAuthCell(storage.getItem(key)),
+		initial: parsePersistedAuth(storage.getItem(key)),
 		set(value) {
 			if (value === null) {
 				storage.removeItem(key);
 				return;
 			}
-			storage.setItem(key, serializePersistedAuthCell(value));
+			storage.setItem(key, serializePersistedAuth(value));
 		},
 	};
 }
 
 /**
- * An asynchronous string store: read the serialized cell (or `null` when
- * absent), write a serialized cell, or write `null` to remove it. The minimal
- * surface a runtime with an async substrate (an extension's `chrome.storage`,
- * a file) supplies; it traffics only in opaque strings, never the cell shape.
- */
-export type AsyncAuthCellStore = {
-	read: () => Promise<string | null>;
-	write: (serialized: string | null) => Promise<void>;
-};
-
-/**
- * Pre-load an async-backed cell into a synchronous {@link PersistedAuthStorage}.
+ * Pre-load an async-backed record into a synchronous {@link PersistedAuthStorage}.
  *
  * The auth runtime reads `initial` once, synchronously, at construction, so an
  * async store cannot satisfy the contract directly. Await this before
  * constructing the client (the app's existing readiness gate is the natural
  * place); `initial` is the value read at load time, and `set()` forwards writes
  * to the store. Write failures propagate, matching the Web Storage adapter.
+ *
+ * @param store The async backing store. `read` returns the serialized record
+ * (or `null` when absent); `write` persists a serialized record, or removes it
+ * when passed `null`. It traffics only in opaque strings, never the record
+ * shape.
  */
-export async function loadPersistedAuthStorage(
-	store: AsyncAuthCellStore,
-): Promise<PersistedAuthStorage> {
+export async function loadPersistedAuthStorage(store: {
+	read: () => Promise<string | null>;
+	write: (serialized: string | null) => Promise<void>;
+}): Promise<PersistedAuthStorage> {
 	return {
-		initial: parsePersistedAuthCell(await store.read()),
+		initial: parsePersistedAuth(await store.read()),
 		set(value) {
-			return store.write(value === null ? null : serializePersistedAuthCell(value));
+			return store.write(value === null ? null : serializePersistedAuth(value));
 		},
 	};
 }

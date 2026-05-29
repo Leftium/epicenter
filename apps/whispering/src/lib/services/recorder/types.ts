@@ -285,7 +285,9 @@ export type RecorderService<RecordingParams extends BaseRecordingParams> = {
 	 *
 	 * Returns the live RecordingSession owned by this implementation, or null if none.
 	 */
-	resumeActiveSession(): Promise<Result<RecordingSession | null, RecorderError>>;
+	resumeActiveSession(): Promise<
+		Result<RecordingSession | null, RecorderError>
+	>;
 
 	/**
 	 * Enumerate available recording devices with their labels and identifiers

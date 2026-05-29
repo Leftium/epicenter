@@ -35,7 +35,7 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  * error carries its own status; non-provider throws become 500), so the
  * dashboard rebuilds this canonical error from the 503 alone and never has to
  * validate the serialized body. See `readResponse` in
- * {@link file://../../../ui/src/lib/billing/api.ts}.
+ * {@link file://../../ui/src/lib/billing/api.ts}.
  *
  * @example
  * ```ts

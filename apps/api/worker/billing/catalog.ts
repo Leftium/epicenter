@@ -5,7 +5,7 @@
  * ships to production. The atmn product builder in
  * `apps/api/autumn.config.ts` reads this catalog and emits Autumn
  * `feature()` / `plan()` / `item()` calls; the billing service in
- * `apps/api/src/billing/service.ts` reads the same catalog to resolve
+ * `apps/api/worker/billing/service.ts` reads the same catalog to resolve
  * plan tier semantics (rollover policy, free-tier model-cost ceiling,
  * upgrade-UI recommendation flag); the dashboard reads it through the
  * server-rendered DTOs from `contracts.ts`. Nothing else in the repo

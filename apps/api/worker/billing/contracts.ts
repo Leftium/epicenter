@@ -5,8 +5,7 @@
  * this file. The server's billing service emits these shapes; the
  * dashboard's fetch client consumes them. Neither side imports
  * `autumn-js` directly: every Autumn response is mapped to the Epicenter
- * DTO inside the service so that swapping providers (or sharding billing
- * across more than one provider) is a server-only change.
+ * DTO inside the service before it crosses the HTTP boundary.
  *
  * Field naming is Epicenter-shaped, not Autumn-shaped. For example, the
  * checkout result exposes `checkoutUrl` (nullable when no payment is

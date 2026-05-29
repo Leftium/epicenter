@@ -87,6 +87,12 @@ type Reservation = {
 	release(): Promise<Result<void, BillingError>>;
 };
 
+type LockedCheck = {
+	allowed: boolean;
+	balance: unknown;
+	reservation: Reservation;
+};
+
 export function createBillingService(
 	env: { AUTUMN_SECRET_KEY: string },
 	identity: Identity,
@@ -130,29 +136,17 @@ export function createBillingService(
 		// reservation commits on success or releases on a pre-stream failure. If
 		// the worker dies before finalizing, Autumn auto-releases at `expiresAt`,
 		// so a failed call never permanently consumes credits.
-		const lockId = crypto.randomUUID();
-		const { data: check, error: checkError } = await tryAutumn(() =>
-			autumn.check({
-				customerId: identity.userId,
-				featureId: FEATURE_IDS.aiUsage,
-				requiredBalance: credits,
-				lock: {
-					lockId,
-					enabled: true,
-					expiresAt: Date.now() + LOCK_TTL_MS,
-				},
-				properties: { model: input.model, provider: input.provider },
-			}),
-		);
+		const { data: check, error: checkError } = await reserveWithLock({
+			featureId: FEATURE_IDS.aiUsage,
+			requiredBalance: credits,
+			properties: { model: input.model, provider: input.provider },
+		});
 		if (checkError) return Err(checkError);
 		if (!check.allowed) {
 			return AiChatError.InsufficientCredits({ balance: check.balance });
 		}
 
-		return Ok({
-			confirm: () => finalizeLock(lockId, 'confirm'),
-			release: () => finalizeLock(lockId, 'release'),
-		});
+		return Ok(check.reservation);
 	}
 
 	// ----- Storage guard ------------------------------------------------
@@ -180,29 +174,17 @@ export function createBillingService(
 		// and the returned reservation commits on a 201 or releases otherwise. If
 		// the worker dies before finalizing, Autumn auto-releases at `expiresAt`,
 		// so a failed upload never permanently consumes quota.
-		const lockId = crypto.randomUUID();
-		const { data: check, error: checkError } = await tryAutumn(() =>
-			autumn.check({
-				customerId: identity.userId,
-				featureId: FEATURE_IDS.storageBytes,
-				requiredBalance: input.sizeBytes,
-				lock: {
-					lockId,
-					enabled: true,
-					expiresAt: Date.now() + LOCK_TTL_MS,
-				},
-			}),
-		);
+		const { data: check, error: checkError } = await reserveWithLock({
+			featureId: FEATURE_IDS.storageBytes,
+			requiredBalance: input.sizeBytes,
+		});
 		if (checkError) return Err(checkError);
 		if (!check.allowed) {
 			return AssetError.StorageLimitExceeded({
 				requestedBytes: input.sizeBytes,
 			});
 		}
-		return Ok({
-			confirm: () => finalizeLock(lockId, 'confirm'),
-			release: () => finalizeLock(lockId, 'release'),
-		});
+		return Ok(check.reservation);
 	}
 
 	/**
@@ -452,6 +434,40 @@ export function createBillingService(
 	}
 
 	// ----- Private helpers (closed over `autumn`/`identity`) ------------
+
+	/**
+	 * Reserve a held balance with Autumn and hide the lock id behind the
+	 * reservation. Callers keep the domain-specific denied-state mapping.
+	 */
+	function reserveWithLock(input: {
+		featureId: string;
+		requiredBalance: number;
+		properties?: Record<string, unknown>;
+	}): Promise<Result<LockedCheck, BillingError>> {
+		const lockId = crypto.randomUUID();
+		return tryAutumn(async () => {
+			const check = await autumn.check({
+				customerId: identity.userId,
+				featureId: input.featureId,
+				requiredBalance: input.requiredBalance,
+				lock: {
+					lockId,
+					enabled: true,
+					expiresAt: Date.now() + LOCK_TTL_MS,
+				},
+				...(input.properties ? { properties: input.properties } : {}),
+			});
+
+			return {
+				allowed: check.allowed,
+				balance: check.balance,
+				reservation: {
+					confirm: () => finalizeLock(lockId, 'confirm'),
+					release: () => finalizeLock(lockId, 'release'),
+				},
+			};
+		});
+	}
 
 	/** Finalize a held lock. Both reservation kinds share this. */
 	function finalizeLock(

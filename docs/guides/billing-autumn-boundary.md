@@ -1,8 +1,9 @@
 # Billing and the Autumn boundary
 
 A map of how cloud billing works in `apps/api/worker/billing/`, written so the
-next person (or the next you) does not have to reverse-engineer it from four
-files. If you are about to change anything in this folder, read this first.
+next person (or the next you) does not have to reverse-engineer it from the
+source files. If you are about to change anything in this folder, read this
+first.
 
 ## The one sentence
 

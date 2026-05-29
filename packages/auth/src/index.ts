@@ -4,7 +4,6 @@ export {
 	ApiSessionResponse,
 	AuthUser,
 	asUserId,
-	type OAuthTokenGrant,
 	PersistedAuth,
 	UserId,
 } from './auth-types.js';
@@ -12,5 +11,6 @@ export {
 	type AuthFetch,
 	type CreateOAuthAppAuthConfig,
 	createOAuthAppAuth,
+	createWebStoragePersistedAuthStorage,
 	type PersistedAuthStorage,
 } from './create-oauth-app-auth.js';

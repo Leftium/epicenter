@@ -15,7 +15,7 @@ import { AuthError } from './auth-errors.js';
 import {
 	ApiSessionResponse,
 	type OAuthTokenGrant,
-	type PersistedAuth,
+	PersistedAuth,
 } from './auth-types.js';
 import type { OAuthLauncher } from './oauth-launchers/contract.js';
 import { parseOAuthTokenGrant } from './oauth-token-response.js';
@@ -31,6 +31,49 @@ export type PersistedAuthStorage = {
 	get(): PersistedAuth | null;
 	set(value: PersistedAuth | null): void | Promise<void>;
 };
+
+/**
+ * Build a {@link PersistedAuthStorage} over a synchronous Web `Storage`
+ * (`localStorage` or `sessionStorage`, in a browser tab or a Tauri webview).
+ *
+ * `get` returns `null` on a missing, non-JSON, or schema-invalid cell, so a
+ * corrupt cell reads as signed-out instead of throwing. `set(null)` removes
+ * the key. Write failures (`QuotaExceededError`, or `setItem` throwing in
+ * private-mode Safari) are intentionally propagated rather than swallowed: a
+ * credential that could not be persisted must fail the sign-in or refresh that
+ * produced it, not silently look saved.
+ *
+ * `storage` is required, matching the OAuth launcher call sites that already
+ * pass `window.localStorage` / `window.sessionStorage` explicitly. Keeping the
+ * dependency explicit stops this framework-agnostic helper from reaching for a
+ * `window` global of its own, which would also break under SSR import.
+ */
+export function createWebStoragePersistedAuthStorage({
+	key,
+	storage,
+}: {
+	key: string;
+	storage: Storage;
+}): PersistedAuthStorage {
+	return {
+		get() {
+			const raw = storage.getItem(key);
+			if (raw === null) return null;
+			try {
+				return PersistedAuth.assert(JSON.parse(raw));
+			} catch {
+				return null;
+			}
+		},
+		set(value) {
+			if (value === null) {
+				storage.removeItem(key);
+				return;
+			}
+			storage.setItem(key, JSON.stringify(PersistedAuth.assert(value)));
+		},
+	};
+}
 
 type AuthFetchInput = Request | string | URL;
 

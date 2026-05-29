@@ -21,11 +21,13 @@ import type { Keyring } from '@epicenter/encryption';
 import { Ok, type Result } from 'wellcrafted/result';
 import type {
 	AuthClient,
-	OAuthTokenGrant,
 	PersistedAuth,
 	PersistedAuthStorage,
 } from './index.js';
 import { asUserId, createOAuthAppAuth } from './index.js';
+// OAuthTokenGrant is intentionally not on the public root: it is the
+// credential-shaped grant, internal to auth core. Import it from its source.
+import type { OAuthTokenGrant } from './auth-types.js';
 import type { OAuthLaunchResult } from './oauth-launchers/contract.js';
 
 const now = 1_000_000;

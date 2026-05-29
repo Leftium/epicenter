@@ -10,7 +10,7 @@ import type { OAuthTokenGrant } from './auth-types.js';
  * {@link parseOAuthTokenGrant}: missing or non-string fields, a wrong
  * `token_type`, or a non-object payload.
  */
-export const OAuthTokenResponseError = defineErrors({
+const OAuthTokenResponseError = defineErrors({
 	InvalidResponse: () => ({
 		message: 'Expected OAuth token response to be an object.',
 	}),
@@ -29,9 +29,7 @@ export const OAuthTokenResponseError = defineErrors({
 	}),
 });
 
-export type OAuthTokenResponseError = InferErrors<
-	typeof OAuthTokenResponseError
->;
+type OAuthTokenResponseError = InferErrors<typeof OAuthTokenResponseError>;
 
 /**
  * Normalize an OAuth token endpoint payload into Epicenter's persisted grant.

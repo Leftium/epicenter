@@ -79,15 +79,13 @@ export function machineAuthFilePath({
 	return path.join(dataDir, 'auth', `${host.replaceAll(':', '_')}.json`);
 }
 
-export const MachineAuthRequestError = defineErrors({
+const MachineAuthRequestError = defineErrors({
 	RequestFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Auth transport request failed: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
 });
-export type MachineAuthRequestError = InferErrors<
-	typeof MachineAuthRequestError
->;
+type MachineAuthRequestError = InferErrors<typeof MachineAuthRequestError>;
 
 export const MachineAuthStorageError = defineErrors({
 	StorageFailed: ({ cause }: { cause: unknown }) => ({
@@ -213,7 +211,7 @@ async function saveMachineTokens(
  * <email>" without a second round-trip. `email` may be empty when the
  * machine is offline during `status`.
  */
-export type MachineIdentity = {
+type MachineIdentity = {
 	user: { id: UserId; email: string };
 	keyring: Keyring;
 };
@@ -227,7 +225,7 @@ type CommonConfig = {
 	now?: () => number;
 };
 
-export type LoginWithOobConfig = CommonConfig & {
+type LoginWithOobConfig = CommonConfig & {
 	/**
 	 * Optional OOB callback override for tests and local trusted-client fixtures.
 	 * Production login uses the callback derived from `baseURL`.
@@ -247,14 +245,14 @@ export type LoginWithOobConfig = CommonConfig & {
 	readCode?: () => Promise<string>;
 };
 
-export type LoginWithOobResult = { identity: MachineIdentity };
+type LoginWithOobResult = { identity: MachineIdentity };
 
-export type StatusResult =
+type StatusResult =
 	| { status: 'signedOut' }
 	| { status: 'valid'; identity: MachineIdentity }
 	| { status: 'unverified'; identity: MachineIdentity };
 
-export type LogoutResult = { status: 'signedOut' } | { status: 'loggedOut' };
+type LogoutResult = { status: 'signedOut' } | { status: 'loggedOut' };
 
 /**
  * Run the OOB OAuth dance, call `/api/session` for the local workspace identity,

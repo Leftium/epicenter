@@ -36,7 +36,7 @@ import { parseOAuthTokenGrant } from '../oauth-token-endpoints.js';
  * pasted-code cancellation, and token endpoint response shape. `/api/session`
  * identity lookup belongs to `loginWithOob`.
  */
-export const OobLauncherError = defineErrors({
+const OobLauncherError = defineErrors({
 	TokenExchangeFailed: ({
 		status,
 		body,
@@ -60,9 +60,9 @@ export const OobLauncherError = defineErrors({
 	}),
 });
 
-export type OobLauncherError = InferErrors<typeof OobLauncherError>;
+type OobLauncherError = InferErrors<typeof OobLauncherError>;
 
-export type CreateOobOAuthLauncherConfig = {
+type CreateOobOAuthLauncherConfig = {
 	/**
 	 * Epicenter API origin. The default points at production.
 	 */

@@ -566,6 +566,43 @@ describe('Room sync: binary update fan-out', () => {
 	});
 });
 
+describe('Room connection lifetime', () => {
+	test('a socket past the max lifetime is closed with the reconnect code and its frame is dropped', async () => {
+		const { room } = await makeRoom();
+		const ws = await upgrade(room, 'A');
+		const before = ws.sent.length;
+		// Age the connection past MAX_CONNECTION_LIFETIME_MS (30 min) by
+		// rewriting connectedAt on the stored attachment.
+		const attachment = ws.deserializeAttachment() as { connectedAt: number };
+		ws.serializeAttachment({
+			...attachment,
+			connectedAt: Date.now() - 31 * 60_000,
+		});
+
+		await room.webSocketMessage(
+			ws,
+			toArrayBuffer(encodeSyncStep1({ doc: new Y.Doc() })),
+		);
+
+		// Closed with the transient reconnect code (not the permanent 4401),
+		// and the STEP1 produced no STEP2 reply because the frame was dropped.
+		expect(ws.closeCalls.map((c) => c.code)).toEqual([4408]);
+		expect(ws.sent.slice(before)).toEqual([]);
+	});
+
+	test('a fresh socket is served normally and not closed', async () => {
+		const { room } = await makeRoom();
+		const ws = await upgrade(room, 'A');
+
+		await room.webSocketMessage(
+			ws,
+			toArrayBuffer(encodeSyncStep1({ doc: new Y.Doc() })),
+		);
+
+		expect(ws.closeCalls).toEqual([]);
+	});
+});
+
 describe('Room sync: HTTP sync RPC', () => {
 	test('a malformed sync body resolves to Err(MalformedSyncBody)', async () => {
 		const { room } = await makeRoom();

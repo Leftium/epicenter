@@ -39,6 +39,31 @@ import { createDurableObjectUpdateLog } from './update-log.js';
 const COMPACTION_DELAY_MS = 30_000;
 
 /**
+ * Maximum lifetime of a single WebSocket connection before the server forces
+ * a reconnect (30 minutes).
+ *
+ * Auth is verified once, at the HTTP upgrade, by the rooms route. Without a
+ * bound, a socket opened with a valid bearer would keep operating indefinitely
+ * even after the access token expires (10min TTL) or the session is revoked.
+ * Closing the socket past this age forces the client to reconnect and
+ * re-authenticate at a fresh upgrade: a signed-out or revoked client then fails
+ * closed, while a healthy client refreshes its token transparently. The bound
+ * is intentionally coarser than the access-token TTL to limit reconnect and
+ * presence churn; tighten it if a shorter post-revocation window is required.
+ */
+const MAX_CONNECTION_LIFETIME_MS = 30 * 60_000;
+
+/**
+ * Close code sent when a connection exceeds {@link MAX_CONNECTION_LIFETIME_MS}.
+ *
+ * App-defined (4000-4999) and deliberately not the client's permanent-auth
+ * code (4401): the client's sync supervisor reconnects on every close except
+ * 4401, so this code recycles the socket through a fresh authenticated upgrade
+ * instead of making the client give up.
+ */
+const CONNECTION_LIFETIME_CLOSE_CODE = 4408;
+
+/**
  * Yjs sync + dispatch room backed by a Cloudflare Durable Object.
  *
  * Owns the Hibernation API integration (`acceptWebSocket`,
@@ -188,11 +213,29 @@ export class Room extends DurableObject {
 		});
 	}
 
-	/** Forward inbound messages to the core. */
+	/**
+	 * Forward inbound messages to the core, after enforcing the connection
+	 * lifetime bound.
+	 *
+	 * A socket past {@link MAX_CONNECTION_LIFETIME_MS} is closed instead of
+	 * served, which makes the client reconnect and re-authenticate at a fresh
+	 * upgrade (see {@link CONNECTION_LIFETIME_CLOSE_CODE}). The pending message
+	 * is dropped; Yjs reconciles it on the next SyncStep1 after reconnect, so no
+	 * update is lost. The runtime's `webSocketClose` callback then runs the
+	 * normal cleanup and compaction path.
+	 */
 	override async webSocketMessage(
 		ws: WebSocket,
 		message: ArrayBuffer | string,
 	): Promise<void> {
+		const connection = ws.deserializeAttachment() as Connection | null;
+		if (
+			connection &&
+			Date.now() - connection.connectedAt >= MAX_CONNECTION_LIFETIME_MS
+		) {
+			ws.close(CONNECTION_LIFETIME_CLOSE_CODE, 'connection lifetime exceeded');
+			return;
+		}
 		this.core.handleMessage(ws, message);
 	}
 

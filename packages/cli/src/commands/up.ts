@@ -15,7 +15,7 @@
 
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { AuthClient } from '@epicenter/auth';
+import type { SyncAuthClient } from '@epicenter/auth';
 import {
 	createMachineAuthClient,
 	type MachineAuthStorageError,
@@ -69,7 +69,7 @@ type UpOptions = {
 	 * disk). Tests pass a stub or a deliberately-failing factory to exercise
 	 * the auth-construction seam without seeding files or mutating env vars.
 	 */
-	createAuthClient?: () => Promise<Result<AuthClient, MachineAuthStorageError>>;
+	createAuthClient?: () => Promise<Result<SyncAuthClient, MachineAuthStorageError>>;
 };
 
 /**

@@ -71,9 +71,13 @@ const SameOriginAuthError = defineErrors({
  * This is the cookie-credential sibling of {@link createOAuthAppAuth}, not a
  * mode flag on it: the two are different credential models. Cross-origin and
  * native clients (web app, extension, Tauri, CLI) keep using `createOAuthAppAuth`
- * and PKCE. `openWebSocket` is unsupported here: a same-origin cookie cannot
- * carry the bearer subprotocol the rooms route requires, and a billing surface
- * has no sync.
+ * and PKCE.
+ *
+ * It returns a plain {@link AuthClient}, NOT a `SyncAuthClient`: a same-origin
+ * cookie cannot carry the bearer subprotocol the rooms route requires, so this
+ * client has no `openWebSocket`, and passing it where workspace sync is needed
+ * is a compile error rather than a runtime throw. The only consumer (the
+ * dashboard) is a billing surface with no sync.
  */
 export function createSameOriginCookieAuth({
 	baseURL,
@@ -179,14 +183,6 @@ export function createSameOriginCookieAuth({
 				});
 			}
 			return response;
-		},
-		async openWebSocket(): Promise<WebSocket> {
-			// Invariant: no same-origin cookie client opens a WebSocket. The rooms
-			// route is bearer-only, and the only consumer (the dashboard) has no
-			// sync. Reaching here is a programming error.
-			throw new Error(
-				'createSameOriginCookieAuth does not support openWebSocket.',
-			);
 		},
 		[Symbol.dispose]() {
 			listeners.clear();

@@ -82,6 +82,22 @@ export type AuthClient = {
 	 * omits browser cookies so OAuth tokens remain the resource credential.
 	 */
 	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
+	[Symbol.dispose](): void;
+};
+
+/**
+ * An {@link AuthClient} that can also open authenticated WebSockets for cloud
+ * sync. Only credential models that carry a bearer can do this: the OAuth/PKCE
+ * client ({@link createOAuthAppAuth}) implements it, while the same-origin
+ * cookie client ({@link createSameOriginCookieAuth}) is a plain `AuthClient`
+ * with no `openWebSocket`, because a same-origin cookie cannot carry the bearer
+ * subprotocol the rooms route requires.
+ *
+ * Workspace binding (`createSession`, `openCollaboration`) requires a
+ * `SyncAuthClient`, so passing a cookie client where sync is needed is a
+ * compile error rather than a runtime throw.
+ */
+export type SyncAuthClient = AuthClient & {
 	/**
 	 * Open a WebSocket using the same bearer boundary as `fetch`.
 	 *
@@ -90,5 +106,4 @@ export type AuthClient = {
 	 * protected route code runs.
 	 */
 	openWebSocket(url: string | URL, protocols?: string[]): Promise<WebSocket>;
-	[Symbol.dispose](): void;
 };

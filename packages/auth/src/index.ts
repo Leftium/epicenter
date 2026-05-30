@@ -1,4 +1,9 @@
-export type { AuthClient, AuthFetch, AuthState } from './auth-contract.js';
+export type {
+	AuthClient,
+	AuthFetch,
+	AuthState,
+	SyncAuthClient,
+} from './auth-contract.js';
 export * from './auth-errors.js';
 export {
 	ApiSessionResponse,

@@ -1,4 +1,4 @@
-import type { AuthClient, AuthState } from '@epicenter/auth';
+import type { AuthState, SyncAuthClient } from '@epicenter/auth';
 import type { OwnerId } from '@epicenter/constants/identity';
 
 type SignedInState = Extract<AuthState, { status: 'signed-in' }>;
@@ -46,14 +46,14 @@ export type SignedIn = {
 	 * Bearer-attached WebSocket opener. Pass to
 	 * `openCollaboration({ openWebSocket })`.
 	 */
-	openWebSocket: AuthClient['openWebSocket'];
+	openWebSocket: SyncAuthClient['openWebSocket'];
 	/**
 	 * Auth state-change publication. `openCollaboration` subscribes via
 	 * `onReconnectSignal` to reconnect after token refreshes; that is the
 	 * only current consumer, so the field is named for its purpose at the
 	 * sub site rather than for the publisher's verb.
 	 */
-	onReconnectSignal: AuthClient['onStateChange'];
+	onReconnectSignal: SyncAuthClient['onStateChange'];
 };
 
 /**
@@ -69,14 +69,16 @@ export type SignedIn = {
  * pulls from the live `state.keyring` so refreshed keyrings from
  * `/api/session` are picked up on next access without rebuilding the payload.
  *
- * Requires an `AuthClient` whose `state` is Svelte-reactive (use
- * `@epicenter/svelte/auth`, not `@epicenter/auth` directly).
+ * Requires a `SyncAuthClient` (it threads `auth.openWebSocket` into the payload
+ * for cloud sync) whose `state` is Svelte-reactive (use `@epicenter/svelte/auth`,
+ * not `@epicenter/auth` directly). A same-origin cookie client is a plain
+ * `AuthClient` and cannot be passed here.
  */
 export function createSession<T extends Disposable>({
 	auth,
 	build,
 }: {
-	auth: AuthClient;
+	auth: SyncAuthClient;
 	build: (signedIn: SignedIn) => T;
 }) {
 	let payload = $state<T | null>(null);

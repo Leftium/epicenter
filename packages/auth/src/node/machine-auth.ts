@@ -30,7 +30,7 @@ import {
 } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
-import type { AuthClient, AuthFetch } from '../auth-contract.js';
+import type { AuthFetch, SyncAuthClient } from '../auth-contract.js';
 import {
 	ApiSessionResponse,
 	PersistedAuth,
@@ -448,7 +448,7 @@ export async function logout({
 }
 
 /**
- * Load the persisted cell and construct an `AuthClient` over it. Daemons
+ * Load the persisted cell and construct a `SyncAuthClient` over it. Daemons
  * call this on boot; they never spawn an interactive sign-in launcher.
  *
  * Returns a typed `Result`. `NoSavedSession` means the user must run
@@ -462,7 +462,7 @@ export async function createMachineAuthClient({
 	fetch = globalThis.fetch.bind(globalThis),
 	log = createLogger('machine-auth'),
 	now = Date.now,
-}: CommonConfig = {}): Promise<Result<AuthClient, MachineAuthStorageError>> {
+}: CommonConfig = {}): Promise<Result<SyncAuthClient, MachineAuthStorageError>> {
 	const authFilePath = filePath ?? machineAuthFilePath({ baseURL });
 	const loaded = await loadMachineTokens({
 		filePath: authFilePath,

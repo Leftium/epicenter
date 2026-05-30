@@ -128,17 +128,4 @@ describe('createSameOriginCookieAuth', () => {
 		expect(signOut?.init?.method).toBe('POST');
 		expect(auth.state.status).toBe('signed-out');
 	});
-
-	test('openWebSocket throws (unsupported for cookie clients)', async () => {
-		const fetch: AuthFetch = async () => json({}, 401);
-		const auth = createSameOriginCookieAuth({ baseURL, fetch });
-		await flush();
-		let message = '';
-		try {
-			await auth.openWebSocket('wss://x');
-		} catch (error) {
-			message = String(error);
-		}
-		expect(message).toContain('does not support openWebSocket');
-	});
 });

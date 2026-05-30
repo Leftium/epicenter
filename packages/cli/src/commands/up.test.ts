@@ -29,7 +29,7 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import type { AuthClient } from '@epicenter/auth';
+import type { SyncAuthClient } from '@epicenter/auth';
 import { MachineAuthStorageError } from '@epicenter/auth/node';
 import { asOwnerId } from '@epicenter/constants/identity';
 import {
@@ -64,7 +64,7 @@ const STUB_AUTH = {
 		throw new Error('STUB_AUTH: openWebSocket not implemented');
 	},
 	[Symbol.dispose]: () => {},
-} satisfies AuthClient;
+} satisfies SyncAuthClient;
 
 const stubAuthFactory = async () => Ok(STUB_AUTH);
 

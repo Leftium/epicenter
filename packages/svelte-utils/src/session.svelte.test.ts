@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import type { AuthClient, AuthState } from '@epicenter/auth';
+import type { AuthState, SyncAuthClient } from '@epicenter/auth';
 import { asOwnerId } from '@epicenter/constants/identity';
 import { Ok } from 'wellcrafted/result';
 import { createSession } from './session.svelte.js';
@@ -77,7 +77,7 @@ test('build receives signedIn with projected fields and explicit auth capabiliti
 function createAuthHarness(initial: AuthState) {
 	let state = initial;
 	const listeners = new Set<(state: AuthState) => void>();
-	const auth: AuthClient = {
+	const auth: SyncAuthClient = {
 		get state() {
 			return state;
 		},

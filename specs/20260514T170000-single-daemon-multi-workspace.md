@@ -1,9 +1,13 @@
 # Single Daemon, Many Workspaces
 
 **Date**: 2026-05-14
-**Status**: Phase 1 in progress
+**Status**: Superseded by mount-list project config
 **Author**: Braden + Claude
 **Related**: `20260514T160000-script-surfaces-resolution.md` (scripts call into this daemon over unix socket).
+
+> Historical note: this spec predates `Mount[]` project config. Current
+> `epicenter.config.ts` files default-export mount lists, for example
+> `export default [fuji(), honeycrisp()]`.
 
 ## One sentence
 
@@ -52,16 +56,12 @@ $ ps aux | grep bun
 braden  ...  epicenterd        ← single process
 
 ~/Project/epicenter.config.ts
-  defineConfig({
-    daemon: {
-      routes: [
-        defineFujiRoute(),
-        defineHoneycrispRoute(),
-        defineOpensidianRoute(),
-        defineZhongwenRoute(),
-      ],
-    },
-  })
+  export default [
+    fuji(),
+    honeycrisp(),
+    opensidian(),
+    zhongwen(),
+  ]
 
 ~/Project/.epicenter/
 ├── daemon.sock          ← one socket, all four workspaces reachable
@@ -107,16 +107,11 @@ Instead of each app having its own `epicenter.config.ts`, the root project has o
 
 ```ts
 // epicenter.config.ts at the project root
-import { defineConfig } from '@epicenter/workspace/daemon';
-import { defineFujiRoute } from '@epicenter/fuji/daemon';
-import { defineHoneycrispRoute } from '@epicenter/honeycrisp/daemon';
+import { fuji } from '@epicenter/fuji/project';
+import { honeycrisp } from '@epicenter/honeycrisp/project';
 // ...
 
-export default defineConfig({
-  daemon: {
-    routes: [defineFujiRoute(), defineHoneycrispRoute(), ...],
-  },
-});
+export default [fuji(), honeycrisp(), ...];
 ```
 
 `epicenter daemon up -C <projectRoot>` reads this and starts all four routes inside one process bound to one unix socket. No change to `buildDaemonApp` needed; it already multiplexes routes.

@@ -8,25 +8,32 @@ Mount names come from the `Mount.name` values default-exported by `epicenter.con
 
 ```ts
 import {
-	connectDaemonActions,
-	findProjectRoot,
-	openWorkspaceSqlite,
-} from '@epicenter/workspace/node';
-import { FUJI_ID, type FujiActions } from '@epicenter/fuji';
+  connectDaemonActions,
+  findProjectRoot,
+  openSqliteReader,
+} from "@epicenter/workspace/node";
+import type { FujiActions } from "@epicenter/fuji";
+import { join } from "node:path";
 
 const projectDir = findProjectRoot();
 
 // reads: open the materializer read-only
-const db = openWorkspaceSqlite(projectDir, FUJI_ID);
-const urgent = db.query('SELECT * FROM entries WHERE tag = ?').all('urgent');
+const db = openSqliteReader({
+  filePath: join(projectDir, ".epicenter/sqlite.db"),
+});
+const urgent = db
+  .query(
+    "SELECT * FROM entries WHERE EXISTS (SELECT 1 FROM json_each(entries.tags) WHERE value = ?)",
+  )
+  .all("urgent");
 
 // writes: typed proxy over unix socket to the daemon
 const fuji = await connectDaemonActions<FujiActions>({
-	mount: 'fuji',
-	projectDir,
+  mount: "fuji",
+  projectDir,
 });
 for (const note of urgent) {
-	await fuji.entries_update({ id: note.id, tags: ['triaged'] });
+  await fuji.entries_update({ id: note.id, tags: ["triaged"] });
 }
 
 db.close();
@@ -36,7 +43,7 @@ That is the whole API. No machine auth in the script process, no encryption setu
 
 ## Reads: the SQLite materializer
 
-`openWorkspaceSqlite(projectDir, workspaceId)` returns a `bun:sqlite` `Database` opened against `.epicenter/sqlite/<workspaceId>.db`. `.epicenter/` is generated project data, not a source layout or route registry. The daemon's `attachBunSqliteMaterializer` keeps that file fresh; the script opens it read-only with `PRAGMA query_only = 1`, so an errant `INSERT` fails at the driver instead of silently diverging.
+`openWorkspaceSqlite(projectDir, workspaceId)` returns a `bun:sqlite` `Database` opened against `.epicenter/sqlite/<workspaceId>.db`. Fuji's example project overrides that default to `.epicenter/sqlite.db`, so scripts for that example can use `openSqliteReader({ filePath })` directly. `.epicenter/` is generated project data, not a source layout or route registry. The daemon's `attachBunSqliteMaterializer` keeps that file fresh; the script opens it read-only with `PRAGMA query_only = 1`, so an errant `INSERT` fails at the driver instead of silently diverging.
 
 The materializer is the same SQL surface the daemon serves to the SPA: column-typed rows, FTS5 indexes, normal joins. Query cost is `O(rows-returned)` rather than `O(history)`, so cron jobs do not pay the seconds-of-Y.Doc-replay tax that an in-process snapshot would cost.
 
@@ -46,7 +53,7 @@ For ranked search with snippets, use `openSqliteReader({ filePath: sqlitePath(..
 
 `connectDaemonActions<TActions>({ mount, projectDir })` returns a typed proxy. `mount` is the mount name (`'fuji'` for the Fuji example); the proxy translates `fuji.entries_update({ ... })` into a `POST /invoke` over the daemon's Unix socket in the OS runtime directory. The daemon invokes the action in-process against the live Y.Doc and returns a JSON `Result<T>`.
 
-The mount name comes from the `Mount.name` field on the value `epicenter.config.ts` default-exports. App-package factories like `fuji()` carry their canonical name internally.
+The mount name comes from each `Mount.name` in the `Mount[]` default-exported by `epicenter.config.ts`. App factories like `fuji()` return a mount whose name is `fuji`.
 
 Two consequences fall out:
 

@@ -67,26 +67,18 @@ examples/fuji/
    `- log/
 ```
 
-That project default-exports `defineWorkspace({ open })`. The loader wraps that into a single route and derives the route name from the project folder basename.
+That project default-exports a `Mount[]`. The Fuji mount carries the route name itself.
 
 ```txt
 examples/fuji
-  basename: fuji
-  default export: defineWorkspace({ open })
-  effective route map: { fuji: definition }
+  default export: [fuji({ markdownDir: '.', sqliteFile: '.epicenter/sqlite.db' })]
+  mount name: fuji
 ```
 
-Multi-route projects still exist through `defineConfig({ daemon: { routes } })`:
+Multi-mount projects add more entries to the array:
 
 ```ts
-export default defineConfig({
-	daemon: {
-		routes: {
-			fuji,
-			opensidian,
-		},
-	},
-});
+export default [fuji(), opensidian()];
 ```
 
 That is useful, but it should not be the first mental model.
@@ -157,15 +149,12 @@ Small project:
 `- epicenter.config.ts
 ```
 
-The config can import the package default directly:
+The config imports the package mount factory directly:
 
 ```ts
-import { openFooieDaemon } from '@epicenter/fooie/daemon';
-import { defineWorkspace } from '@epicenter/workspace';
+import { fooie } from "@epicenter/fooie/project";
 
-export default defineWorkspace({
-	open: openFooieDaemon,
-});
+export default [fooie()];
 ```
 
 Customized project:
@@ -234,14 +223,14 @@ openFujiDaemon()
 
 The standard should be:
 
-| Prefix | Meaning | Examples |
-| --- | --- | --- |
-| `create*Workspace` | Build the app's isomorphic Y.Doc bundle | `createFujiWorkspace`, `createHoneycrispWorkspace` |
-| `create*Actions` | Build app actions over a workspace bundle | `createFujiActions` |
-| `open*Browser` | Create the workspace and attach browser runtime resources | `openFujiBrowser` |
-| `open*Daemon` | Create the workspace and attach daemon runtime resources | `openFujiDaemon` |
-| `open*Script` | Create a one-shot Bun or Node script runtime | Proposed |
-| `attach*` | Attach one primitive to an existing doc or workspace | `attachBunSqliteMaterializer`, `attachDaemonInfrastructure` |
+| Prefix             | Meaning                                                   | Examples                                                    |
+| ------------------ | --------------------------------------------------------- | ----------------------------------------------------------- |
+| `create*Workspace` | Build the app's isomorphic Y.Doc bundle                   | `createFujiWorkspace`, `createHoneycrispWorkspace`          |
+| `create*Actions`   | Build app actions over a workspace bundle                 | `createFujiActions`                                         |
+| `open*Browser`     | Create the workspace and attach browser runtime resources | `openFujiBrowser`                                           |
+| `open*Daemon`      | Create the workspace and attach daemon runtime resources  | `openFujiDaemon`                                            |
+| `open*Script`      | Create a one-shot Bun or Node script runtime              | Proposed                                                    |
+| `attach*`          | Attach one primitive to an existing doc or workspace      | `attachBunSqliteMaterializer`, `attachDaemonInfrastructure` |
 
 This gives a simple rule:
 
@@ -313,10 +302,10 @@ The control plane owns a registry:
 
 ```ts
 type ProjectReference = {
-	id: string;
-	name: string;
-	path: string;
-	lastOpenedAt: string;
+  id: string;
+  name: string;
+  path: string;
+  lastOpenedAt: string;
 };
 ```
 
@@ -360,27 +349,27 @@ Scripts should not import daemon entrypoints directly. If a script and daemon ne
 
 ## Decisions So Far
 
-| Decision | Class | Working choice | Rationale |
-| --- | --- | --- | --- |
-| Default project shape | 2 coherence | One project folder, usually one route | Local data has an obvious owner. Cleanup and debugging are easier. |
-| Multi-route support | 2 coherence | Keep as escape hatch | Some real projects may need multiple app workspaces in one daemon process. |
-| `workspaces/` folder | 3 taste | Convention only | It organizes project-local daemon code, but config remains the source of truth. |
-| Control plane ownership | 2 coherence | Control plane stores project references, not project data | Project folders stay portable and inspectable. |
-| Naming | 2 coherence | `create` for construction, `open` for lifecycle, `attach` for primitives | This matches most current app code and clarifies where side effects enter. |
+| Decision                | Class       | Working choice                                                           | Rationale                                                                       |
+| ----------------------- | ----------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| Default project shape   | 2 coherence | One project folder, usually one route                                    | Local data has an obvious owner. Cleanup and debugging are easier.              |
+| Multi-route support     | 2 coherence | Keep as escape hatch                                                     | Some real projects may need multiple app workspaces in one daemon process.      |
+| `workspaces/` folder    | 3 taste     | Convention only                                                          | It organizes project-local daemon code, but config remains the source of truth. |
+| Control plane ownership | 2 coherence | Control plane stores project references, not project data                | Project folders stay portable and inspectable.                                  |
+| Naming                  | 2 coherence | `create` for construction, `open` for lifecycle, `attach` for primitives | This matches most current app code and clarifies where side effects enter.      |
 
 ## Open Questions
 
-1. Should package daemons export `defineWorkspace({ open })` directly, or export only `openFooieDaemon(ctx)` and let project configs wrap it?
+1. Should package daemons export a `Mount` factory directly, or export only `openFooieDaemon(ctx)` and let project configs wrap it?
 
-   Current leaning: export `openFooieDaemon(ctx)`. Project configs should decide whether to use `defineWorkspace` directly or add local customization.
+   Current leaning: export the mount factory. Project configs should decide whether to pass options or add local customization.
 
-2. Should single-workspace projects always derive the route name from the folder basename?
+2. Should single-mount projects ever derive the mount name from the folder basename?
 
-   Current behavior does this. It is nice for tiny projects, but the route name becomes implicit. We may want an explicit route escape hatch for single-workspace configs.
+   Current behavior does not do this. The mount factory carries the name. Folder-derived names are still a possible convenience, but they would make the address implicit.
 
 3. Should `.epicenter/sqlite/<workspaceId>.db` stay the default, or should canonical single-workspace projects prefer `.epicenter/sqlite.db`?
 
-   Current helpers use `<workspaceId>.db`. `examples/fuji` inlines `.epicenter/sqlite.db` to make the root project simpler. This needs a decision before new examples multiply.
+   Current helpers use `<workspaceId>.db`. `examples/fuji` intentionally inlines `.epicenter/sqlite.db` to make the root project simpler.
 
 4. Should markdown projections live under `.epicenter/md/<workspaceId>/` by default, or at a visible project path such as `entries/`?
 

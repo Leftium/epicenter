@@ -1,4 +1,4 @@
-import { APPS, localUrl } from '@epicenter/constants/apps';
+import { APPS, localUrl, prodOrigins } from '@epicenter/constants/apps';
 
 /**
  * Pinned Chrome extension origin for the tab-manager.
@@ -22,10 +22,7 @@ const TAB_MANAGER_CHROME_EXTENSION_ORIGIN =
 const PRODUCTION_TRUSTED_ORIGINS: readonly string[] = [
 	'tauri://localhost',
 	TAB_MANAGER_CHROME_EXTENSION_ORIGIN,
-	...Object.values(APPS).map((app) => app.url),
-	...Object.values(APPS).flatMap(
-		(app) => (app as { aliases?: readonly string[] }).aliases ?? [],
-	),
+	...Object.values(APPS).flatMap(prodOrigins),
 ];
 
 /**
@@ -57,8 +54,6 @@ function isLocalDeployment(baseURL: string): boolean {
 	}
 }
 
-const trustedOriginsCache = new Map<string, string[]>();
-
 /**
  * Origins permitted by CORS and Better Auth's CSRF / redirect checks for a
  * given deployment.
@@ -69,20 +64,17 @@ const trustedOriginsCache = new Map<string, string[]>();
  * auth base URL (`resolveOrigin(env)`), never the request, so this matches the
  * `localhost`-vs-prod fork already used for cookies in `cookie-config.ts`.
  *
- * Cached per `baseURL` and frozen at runtime so the long-lived Cloudflare
- * isolate cannot accumulate mutations across requests. Typed `string[]` (not
- * `readonly string[]`) because Better Auth's `trustedOrigins` is mutable, and
- * the readonly type leaks into its inferred Auth, breaking the OAuth metadata
- * helpers in `app.ts`.
+ * Frozen so the long-lived Cloudflare isolate cannot accumulate mutations
+ * across requests. Typed `string[]` (not `readonly string[]`) because Better
+ * Auth's `trustedOrigins` is mutable, and the readonly type leaks into its
+ * inferred Auth, breaking the OAuth metadata helpers in `app.ts`. Not memoized:
+ * a deployment resolves exactly one `baseURL`, and `createAuth` already rebuilds
+ * the whole Better Auth instance per request, so a cache would dedupe nothing.
  */
 export function buildTrustedOrigins(baseURL: string): string[] {
-	const cached = trustedOriginsCache.get(baseURL);
-	if (cached) return cached;
-	const origins = Object.freeze(
+	return Object.freeze(
 		isLocalDeployment(baseURL)
 			? [...PRODUCTION_TRUSTED_ORIGINS, ...DEVELOPMENT_TRUSTED_ORIGINS]
 			: [...PRODUCTION_TRUSTED_ORIGINS],
 	) as string[];
-	trustedOriginsCache.set(baseURL, origins);
-	return origins;
 }

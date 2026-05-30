@@ -15,9 +15,15 @@ export const BASE_AUTH_CONFIG = {
 	// requireEmailVerification.
 	emailAndPassword: { enabled: false },
 	account: {
-		// Only Google can link. Its email is IdP-verified, so linking a Google
-		// sign-in to an existing same-email account is safe. `email-password` is
-		// deliberately absent because local credentials are disabled above.
+		// Only Google is a trusted linking provider. A trusted provider bypasses
+		// the incoming `emailVerified` check (better-auth 1.5.6 `link-account`
+		// gate: `!isTrustedProvider && !userInfo.emailVerified`), so the set must
+		// contain only IdPs that always assert a verified email. Google does;
+		// GitHub does NOT (it can return an unverified primary email), so GitHub
+		// is intentionally excluded even when enabled in create-auth.ts: an
+		// untrusted GitHub identity only links to an existing same-email account
+		// when GitHub itself reports the email verified. `email-password` is
+		// absent because local credentials are disabled above.
 		accountLinking: {
 			enabled: true,
 			trustedProviders: ['google'],

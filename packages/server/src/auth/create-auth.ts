@@ -21,7 +21,8 @@ type Db = NodePgDatabase<typeof schema>;
  *
  * Wires up:
  * - Drizzle adapter (Postgres via Hyperdrive)
- * - Google OAuth + email/password (from {@link BASE_AUTH_CONFIG})
+ * - Google OAuth, plus GitHub when its credentials are configured
+ *   (email/password is disabled; see {@link BASE_AUTH_CONFIG})
  * - Plugins: JWT (ES256), OAuth provider (PKCE)
  * - Optional cleanup hook for R2 assets when a user is deleted
  * - Cloudflare KV secondary storage for session caching
@@ -62,6 +63,22 @@ export function createAuth({
 				clientId: env.GOOGLE_CLIENT_ID,
 				clientSecret: env.GOOGLE_CLIENT_SECRET,
 			},
+			// GitHub is registered only when a deployment has configured its
+			// credentials, so the team reference deployment (and any self-host)
+			// stays Google-only by default instead of offering a button that
+			// 500s. better-auth requests the `read:user` + `user:email` scopes by
+			// default, so it reads the primary email and GitHub's verification
+			// flag. GitHub is deliberately NOT a trusted linking provider (see
+			// BASE_AUTH_CONFIG): an unverified GitHub email must not link into an
+			// existing account.
+			...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET
+				? {
+						github: {
+							clientId: env.GITHUB_CLIENT_ID,
+							clientSecret: env.GITHUB_CLIENT_SECRET,
+						},
+					}
+				: {}),
 		},
 		session: {
 			expiresIn: 60 * 60 * 24 * 7,

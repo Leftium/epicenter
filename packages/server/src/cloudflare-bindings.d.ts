@@ -27,6 +27,12 @@ declare global {
 			BETTER_AUTH_SECRET: string;
 			GOOGLE_CLIENT_ID: string;
 			GOOGLE_CLIENT_SECRET: string;
+			// GitHub is optional: a deployment that has not registered a GitHub
+			// OAuth app simply does not offer GitHub sign-in. The provider and its
+			// sign-in button are both gated on these being present (see
+			// create-auth.ts and the `/sign-in` route).
+			GITHUB_CLIENT_ID?: string;
+			GITHUB_CLIENT_SECRET?: string;
 			OPENAI_API_KEY: string;
 			GEMINI_API_KEY: string;
 		}

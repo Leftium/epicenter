@@ -1,5 +1,5 @@
 import { on } from 'svelte/events';
-import { IS_MACOS } from '#platform/os';
+import { os } from '#platform/os';
 import {
 	type KeyboardEventPossibleKey,
 	type KeyboardEventSupportedKey,
@@ -75,7 +75,7 @@ export function createPressedKeys({
 			// To fix this, when Option is held on macOS, we normalize these special
 			// characters back to their base keys (e.g., "å" → "a", "ç" → "c").
 			// This ensures keyboard shortcuts work consistently across platforms.
-			if (IS_MACOS && pressedKeys.includes('alt')) {
+			if (os.isApple && pressedKeys.includes('alt')) {
 				key = normalizeOptionKeyCharacter(key);
 			}
 

@@ -17,7 +17,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import { IS_MACOS } from '#platform/os';
+import { os } from '#platform/os';
 import {
 	ACCELERATOR_KEY_CODES,
 	ACCELERATOR_MODIFIER_KEYS,
@@ -145,11 +145,11 @@ function convertToModifier(
 		case 'shift':
 			return 'Shift';
 		case 'alt':
-			return IS_MACOS ? 'Option' : 'Alt';
+			return os.isApple ? 'Option' : 'Alt';
 		case 'meta':
-			return IS_MACOS ? 'Command' : 'Super';
+			return os.isApple ? 'Command' : 'Super';
 		case 'altgraph':
-			return IS_MACOS ? null : 'AltGr';
+			return os.isApple ? null : 'AltGr';
 		case 'super':
 			return 'Super';
 		case 'fn':

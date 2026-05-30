@@ -62,7 +62,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
-import { IS_MACOS } from '#platform/os';
+import { os } from '#platform/os';
 import { goto } from '$app/navigation';
 import type { Command, ShortcutEventState } from '$lib/commands';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
@@ -137,7 +137,7 @@ const PermissionsError = defineErrors({
 const permissions = {
 	accessibility: {
 		async check() {
-			if (!IS_MACOS) return Ok(true);
+			if (!os.isApple) return Ok(true);
 			return tryAsync({
 				try: async () => {
 					const { checkAccessibilityPermission } = await import(
@@ -150,7 +150,7 @@ const permissions = {
 		},
 
 		async request() {
-			if (!IS_MACOS) return Ok(true);
+			if (!os.isApple) return Ok(true);
 			return tryAsync({
 				try: async () => {
 					const { requestAccessibilityPermission } = await import(
@@ -164,7 +164,7 @@ const permissions = {
 		},
 
 		async openSettings() {
-			if (!IS_MACOS) return Ok(undefined);
+			if (!os.isApple) return Ok(undefined);
 			const { error } = await commands.openAccessibilitySettings();
 			if (error !== null) {
 				return PermissionsError.OpenAccessibilitySettings({ cause: error });
@@ -175,7 +175,7 @@ const permissions = {
 
 	microphone: {
 		async check() {
-			if (!IS_MACOS) return Ok(true);
+			if (!os.isApple) return Ok(true);
 			return tryAsync({
 				try: async () => {
 					const { checkMicrophonePermission } = await import(
@@ -188,7 +188,7 @@ const permissions = {
 		},
 
 		async request() {
-			if (!IS_MACOS) return Ok(true);
+			if (!os.isApple) return Ok(true);
 			return tryAsync({
 				try: async () => {
 					const { requestMicrophonePermission } = await import(
@@ -440,7 +440,7 @@ const globalShortcuts = {
 		const { commandCallbacks } = await import('$lib/commands');
 		const accel = legacyAcceleratorString.replace(
 			'CommandOrControl',
-			IS_MACOS ? 'Command' : 'Control',
+			os.isApple ? 'Command' : 'Control',
 		) as Accelerator;
 		return registerShortcut({
 			accelerator: accel,

@@ -13,7 +13,7 @@
 		KEYBOARD_EVENT_SUPPORTED_KEY_SECTIONS,
 		OPTION_DEAD_KEYS,
 	} from '$lib/constants/keyboard';
-	import { IS_MACOS } from '#platform/os';
+	import { os } from '#platform/os';
 
 	let { type }: { type: 'local' | 'global' } = $props();
 	let dialogOpen = $state(false);
@@ -131,7 +131,7 @@
 				</div>
 			</div>
 
-			{#if IS_MACOS}
+			{#if os.isApple}
 				<Alert.Root variant="warning">
 					<AlertTriangle class="size-4" />
 					<Alert.Title>macOS Option Key Limitations</Alert.Title>

@@ -6,7 +6,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import { IS_MACOS } from '#platform/os';
+import { os } from '#platform/os';
 import type { ShortcutEventState } from '$lib/commands';
 import {
 	type KeyboardEventPossibleKey,
@@ -109,7 +109,7 @@ export const LocalShortcutManagerLive = {
 			// To fix this, when Option is held on macOS, we normalize these special
 			// characters back to their base keys (e.g., "å" → "a", "ç" → "c").
 			// This ensures keyboard shortcuts work consistently across platforms.
-			if (IS_MACOS && pressedKeys.includes('alt')) {
+			if (os.isApple && pressedKeys.includes('alt')) {
 				key = normalizeOptionKeyCharacter(key);
 			}
 

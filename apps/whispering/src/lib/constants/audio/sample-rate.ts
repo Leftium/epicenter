@@ -2,9 +2,9 @@
  * Audio sample rate constants and options
  */
 
-export const SAMPLE_RATES = ['16000', '44100', '48000'] as const;
+const SAMPLE_RATES = ['16000', '44100', '48000'] as const;
 
-export type SampleRate = (typeof SAMPLE_RATES)[number];
+type SampleRate = (typeof SAMPLE_RATES)[number];
 
 /**
  * Sample rate metadata for generating options with descriptions
@@ -26,9 +26,6 @@ export const SAMPLE_RATE_OPTIONS = SAMPLE_RATES.map((rate) => ({
 	value: rate,
 	label: `${SAMPLE_RATE_METADATA[rate].shortLabel} - ${SAMPLE_RATE_METADATA[rate].description}`,
 }));
-
-export const DEFAULT_SAMPLE_RATE =
-	'16000' as const satisfies (typeof SAMPLE_RATES)[number];
 
 /**
  * The sample rate at which the cpal recorder emits captured PCM. The Rust

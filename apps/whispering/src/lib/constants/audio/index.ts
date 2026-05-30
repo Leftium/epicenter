@@ -13,16 +13,9 @@ export {
 	type RecordingMode,
 } from './recording-modes';
 export {
-	type CancelRecordingResult,
 	RECORDER_STATE_TO_ICON,
 	VAD_STATE_TO_ICON,
-	VadState,
-	WhisperingRecordingState,
+	type VadState,
+	type WhisperingRecordingState,
 } from './recording-states';
-export {
-	DEFAULT_SAMPLE_RATE,
-	RECORDER_OUTPUT_RATE,
-	SAMPLE_RATE_OPTIONS,
-	SAMPLE_RATES,
-	type SampleRate,
-} from './sample-rate';
+export { RECORDER_OUTPUT_RATE, SAMPLE_RATE_OPTIONS } from './sample-rate';

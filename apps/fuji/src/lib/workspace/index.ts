@@ -10,6 +10,14 @@
  * forking a column shape breaks sync compatibility with peers running the
  * canonical schema.
  *
+ * Purity invariant: this file imports only isomorphic dependencies
+ * (`@epicenter/workspace`, `typebox`, `wellcrafted`, `yjs`). It must never
+ * import app-runtime code: no `$lib`/`.svelte`, no `#platform/*`, no browser or
+ * Tauri APIs, and nothing from `@epicenter/workspace/daemon`. That purity is
+ * what lets the `.` and `./project` package exports stay honest from inside the
+ * app without extracting a separate schema package: the wire contract never
+ * drags runtime code into a consumer.
+ *
  * Composition lives elsewhere:
  *  - `src/lib/workspace/browser.ts` → `openFujiBrowser({ signedIn, deviceId })`
  *  - `src/lib/workspace/project.ts` → `fuji(opts?)` mount factory

@@ -462,7 +462,9 @@ export async function createMachineAuthClient({
 	fetch = globalThis.fetch.bind(globalThis),
 	log = createLogger('machine-auth'),
 	now = Date.now,
-}: CommonConfig = {}): Promise<Result<SyncAuthClient, MachineAuthStorageError>> {
+}: CommonConfig = {}): Promise<
+	Result<SyncAuthClient, MachineAuthStorageError>
+> {
 	const authFilePath = filePath ?? machineAuthFilePath({ baseURL });
 	const loaded = await loadMachineTokens({
 		filePath: authFilePath,

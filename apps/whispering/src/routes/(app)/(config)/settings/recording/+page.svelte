@@ -12,7 +12,7 @@
 		RECORDING_MODE_OPTIONS,
 		SAMPLE_RATE_OPTIONS,
 	} from '$lib/constants/audio';
-	import { IS_LINUX, IS_MACOS } from '#platform/os';
+	import { os } from '#platform/os';
 	import { asDeviceIdentifier } from '$lib/services/recorder/types';
 	import { report } from '$lib/report';
 	import { tauri } from '#platform/tauri';
@@ -94,7 +94,7 @@
 					(selected) => (manualRecorderConfig.deviceId = selected)}
 			/>
 		{:else if settings.get('recording.mode') === 'vad'}
-			{#if IS_LINUX}
+			{#if os.isLinux}
 				<Alert.Root class="border-red-500/20 bg-red-500/5">
 					<InfoIcon class="size-4 text-red-600 dark:text-red-400" />
 					<Alert.Title class="text-red-600 dark:text-red-400">
@@ -115,7 +115,7 @@
 					</Alert.Description>
 				</Alert.Root>
 			{:else}
-				{#if tauri && IS_MACOS}
+				{#if tauri && os.isApple}
 					<Alert.Root class="border-warning/20 bg-warning/5">
 						<InfoIcon class="size-4 text-warning dark:text-warning" />
 						<Alert.Title class="text-warning dark:text-warning">

@@ -7,8 +7,8 @@
  * sync.
  */
 
-import { defineWorkspace } from '@epicenter/workspace';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
+import { defineWorkspace } from '@epicenter/workspace';
 import { defineMount } from '@epicenter/workspace/daemon';
 import { attachProjectInfrastructure } from '@epicenter/workspace/node';
 import { createZhongwen } from './zhongwen.js';

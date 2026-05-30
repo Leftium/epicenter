@@ -11,8 +11,8 @@
 import { defineErrors } from 'wellcrafted/error';
 import { createLogger } from 'wellcrafted/logger';
 import { Err, Ok, tryAsync, trySync } from 'wellcrafted/result';
-import { deviceConfig } from '$lib/state/device-config.svelte';
 import { whispering } from '#platform/whispering';
+import { deviceConfig } from '$lib/state/device-config.svelte';
 
 // ── Migration state ──────────────────────────────────────────────────────────
 

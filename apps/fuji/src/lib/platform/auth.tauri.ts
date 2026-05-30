@@ -5,12 +5,12 @@ import {
 	type OAuthLauncher,
 	type OAuthLaunchResult,
 } from '@epicenter/auth/oauth-launchers';
-import { createOAuthAppAuth } from '@epicenter/svelte/auth';
 import {
 	EPICENTER_FUJI_OAUTH_CLIENT_ID,
 	EPICENTER_FUJI_TAURI_OAUTH_REDIRECT_URI,
 } from '@epicenter/constants/oauth';
 import { APP_URLS } from '@epicenter/constants/vite';
+import { createOAuthAppAuth } from '@epicenter/svelte/auth';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { openUrl } from '@tauri-apps/plugin-opener';

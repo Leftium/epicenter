@@ -11,7 +11,7 @@
 	import XIcon from '@lucide/svelte/icons/x';
 	import { type KeyboardEventSupportedKey } from '$lib/constants/keyboard';
 	import { getShortcutDisplayLabel } from '$lib/utils/keyboard';
-	import { IS_MACOS } from '#platform/os';
+	import { os } from '#platform/os';
 	import { type KeyRecorder } from './create-key-recorder.svelte';
 
 	const {
@@ -97,7 +97,7 @@
 					</p>
 				</div>
 
-				{#if IS_MACOS && !isManualMode}
+				{#if os.isApple && !isManualMode}
 					<Alert.Root variant="warning" class="text-xs">
 						<AlertTriangle class="size-4" />
 						<Alert.Title class="text-xs font-medium"

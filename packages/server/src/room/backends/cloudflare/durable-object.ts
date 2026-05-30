@@ -259,7 +259,10 @@ export class Room extends DurableObject {
 	 */
 	private closeIfExpired(ws: WebSocket, now: number): boolean {
 		const connection = ws.deserializeAttachment() as Connection | null;
-		if (connection && now - connection.connectedAt >= MAX_CONNECTION_LIFETIME_MS) {
+		if (
+			connection &&
+			now - connection.connectedAt >= MAX_CONNECTION_LIFETIME_MS
+		) {
 			ws.close(CONNECTION_LIFETIME_CLOSE_CODE, 'connection lifetime exceeded');
 			return true;
 		}
@@ -274,7 +277,9 @@ export class Room extends DurableObject {
 	 */
 	private async ensureSweepAlarm(): Promise<void> {
 		if ((await this.ctx.storage.getAlarm()) === null) {
-			await this.ctx.storage.setAlarm(Date.now() + CONNECTION_SWEEP_INTERVAL_MS);
+			await this.ctx.storage.setAlarm(
+				Date.now() + CONNECTION_SWEEP_INTERVAL_MS,
+			);
 		}
 	}
 

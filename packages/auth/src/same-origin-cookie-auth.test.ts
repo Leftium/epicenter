@@ -1,6 +1,6 @@
-import { asOwnerId } from '@epicenter/identity';
-import type { Keyring } from '@epicenter/encryption';
 import { describe, expect, test } from 'bun:test';
+import type { Keyring } from '@epicenter/encryption';
+import { asOwnerId } from '@epicenter/identity';
 import type { AuthFetch } from './auth-contract.js';
 import { createSameOriginCookieAuth } from './same-origin-cookie-auth.js';
 
@@ -74,7 +74,9 @@ describe('createSameOriginCookieAuth', () => {
 		const billing = calls.at(-1);
 		expect(billing?.url).toBe(`${baseURL}/api/billing/overview`);
 		expect(billing?.init?.credentials).toBe('include');
-		expect(new Headers(billing?.init?.headers).has('authorization')).toBe(false);
+		expect(new Headers(billing?.init?.headers).has('authorization')).toBe(
+			false,
+		);
 	});
 
 	test('a 401 on a resource call moves a signed-in client to signed-out', async () => {

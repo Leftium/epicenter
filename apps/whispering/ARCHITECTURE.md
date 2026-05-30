@@ -45,30 +45,48 @@ attach*
 
 The service layer contains all business logic as **pure functions** with zero UI dependencies. Services don't know about reactive Svelte variables, user settings, or UI state. They only accept explicit parameters and return `Result<T, E>` types for consistent error handling.
 
-The key innovation is **build-time platform resolution**. Each platform-bound service lives in a folder with both implementations as sibling files; Vite resolves to the matching one based on the build target:
+The key innovation is **build-time platform resolution** via Node-standard `#platform/*` subpath imports. Each platform-bound service lives in a folder with both implementations as sibling files plus a shared contract; the app's `package.json` `imports` map points each seam at the matching file per build condition:
 
 ```
-src/lib/services/clipboard/
-  index.browser.ts    Browser clipboard APIs
-  index.tauri.ts      Tauri clipboard plugin
-  types.ts            Shared interface both impls satisfy
+src/lib/services/recorder/
+  index.browser.ts    Browser MediaRecorder APIs
+  index.tauri.ts      Tauri recorder plugin
+  types.ts            Shared contract both impls are annotated with
 ```
+
+```jsonc
+// package.json
+{
+  "imports": {
+    "#platform/recorder": {
+      "tauri": "./src/lib/services/recorder/index.tauri.ts",
+      "default": "./src/lib/services/recorder/index.browser.ts"
+    }
+  }
+}
+```
+
+The Tauri build activates the `tauri` condition; the web build falls through to `default` (browser):
 
 ```ts
 // vite.config.ts
 const isTauri = process.env.TAURI_ENV_PLATFORM !== undefined;
-export default defineConfig({
+export default defineConfig(async () => ({
   resolve: {
-    extensions: isTauri
-      ? ['.tauri.ts', '.ts', '.json']
-      : ['.browser.ts', '.ts', '.json'],
+    // The `...defaultClientConditions` spread is load-bearing: custom
+    // conditions REPLACE Vite's defaults rather than adding to them.
+    ...(isTauri && { conditions: ['tauri', ...defaultClientConditions] }),
   },
-});
+}));
 ```
 
-Consumers always import `from '$lib/services/clipboard'` without naming the platform. Vite picks `index.tauri.ts` on Tauri builds and `index.browser.ts` on web builds; the off-target file is never bundled. This makes the web bundle structurally unable to ship Tauri APIs and vice versa.
+Consumers (for example the services barrel `src/lib/services/index.ts`) import the bare specifier `from '#platform/recorder'` with **no platform branch at the call site**. Vite resolves `index.tauri.ts` on Tauri builds and `index.browser.ts` on web builds; the off-target file is never resolved, so it is physically absent from the bundle (a build-time guarantee, not Rollup tree-shaking). This makes the web bundle structurally unable to ship Tauri APIs and vice versa: a Tauri-only file imported by shared code fails the web build instead of shipping a broken runtime.
 
-Services are **testable** (just pass mock parameters), **reusable** (work identically anywhere via the shared interface in `types.ts`), and **maintainable** (no hidden runtime branches).
+This mechanism is scoped to `#platform/*` only; every other bare import resolves normally. The editor and `tsc` need no `moduleSuffixes` and no per-target tsconfig: bundler `moduleResolution` reads the `imports` field and lands on `default` (browser) for typechecking. Each impl is annotated with the shared contract (`export const x: Contract = ...`, not `satisfies`, so the concrete type stays hidden and the variants stay in lockstep).
+
+Tauri-only exports (Whispering's `tauriOnly` namespace in `src/lib/tauri.tauri.ts`) are imported **directly** by `.tauri.ts` files (`import { tauriOnly } from '$lib/tauri.tauri'`), not through a `#platform/*` seam, since that seam is null on web. Shared code that only needs the platform boolean reaches it through `import { tauri } from '#platform/tauri'` and checks `if (tauri)`.
+
+Services are **testable** (just pass mock parameters), **reusable** (work identically anywhere via the shared contract in `types.ts`), and **maintainable** (no hidden runtime branches).
 
 The codebase distinguishes two kinds of "which implementation" decisions and uses different mechanisms for each. See `docs/articles/20260526T012650-two-switches-build-time-and-runtime.md` for the walkthrough.
 

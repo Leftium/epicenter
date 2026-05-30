@@ -34,33 +34,48 @@ Orchestrations usually read settings and inject config; the rpc layer adds cachi
 
 ### Build-Time Platform Injection
 
-Services handle **build-time dependency injection** for platform differences through filename suffixes resolved by Vite. The application produces different bundles for web and Tauri; each bundle only contains the implementations that target it.
+Services handle **build-time dependency injection** for platform differences through Node-standard `#platform/*` subpath imports (declared in `package.json`'s `imports` field). The application produces different bundles for web and Tauri; each bundle only contains the implementations that target it.
 
 ```
 services/text/
   index.browser.ts    Web implementation
   index.tauri.ts      Tauri implementation
-  types.ts            Shared interface both impls satisfy
+  types.ts            Shared contract both impls satisfy
 ```
 
-Consumers always write `import { TextServiceLive } from '$lib/services/text'`. They never name the platform. Vite's `resolve.extensions` picks `.browser.ts` for web builds and `.tauri.ts` for Tauri builds; the off-target file is never parsed or bundled.
+```jsonc
+// package.json
+"imports": {
+  "#platform/text": {
+    "tauri": "./src/lib/services/text/index.tauri.ts",
+    "default": "./src/lib/services/text/index.browser.ts"
+  }
+}
+```
+
+Consumers always write `import { TextServiceLive } from '#platform/text'`, with no platform branch at the call site. The web build uses the `default` condition (browser); the Tauri build activates the `tauri` condition in `vite.config.ts`. The off-target file is never resolved, so it is physically absent from the bundle (a build-time guarantee, not Rollup tree-shaking). A Tauri-only file imported by shared code fails the web build instead of shipping a broken runtime.
 
 ```ts
 // vite.config.ts (sketch)
+import { defaultClientConditions } from 'vite';
 const isTauri = process.env.TAURI_ENV_PLATFORM !== undefined;
 export default defineConfig({
   resolve: {
-    extensions: isTauri
-      ? ['.tauri.ts', '.ts', '.json']
-      : ['.browser.ts', '.ts', '.json'],
+    // The `...defaultClientConditions` spread is load-bearing:
+    // custom conditions REPLACE Vite's defaults.
+    ...(isTauri && { conditions: ['tauri', ...defaultClientConditions] }),
   },
 });
 ```
 
+The editor and `tsc` need no `moduleSuffixes` and no per-target tsconfig: `bundler` module resolution reads the `imports` field and lands on `default` (browser) for typecheck. The scope is narrow: only `#platform/*` specifiers are platform-resolved, so nothing else in the bundle is magic.
+
+Each `#platform/*` impl is annotated against the shared contract with `export const TextServiceLive: TextService = ...` (not `satisfies`, which would leak the concrete type and break lockstep across variants).
+
 Tauri-only capabilities don't live in `services/`. They live in a single file at `$lib/tauri.tauri.ts` with a `$lib/tauri.browser.ts` companion that exports only a `null` namespace. Consumers pick one of three call shapes depending on where they sit:
 
 ```ts
-import { tauri, type Tauri } from '$lib/tauri';
+import { tauri, type Tauri } from '#platform/tauri';
 
 // 1. Shared code (runs on web and Tauri): narrow once.
 if (tauri) {
@@ -74,8 +89,10 @@ async function useTrayIcon(tauri: Tauri) {
   await tauri.tray.setIcon({ icon: 'IDLE' });
 }
 
-// 3. Inside *.tauri.ts files (build system already gated): tauriOnly.
-import { tauriOnly } from '$lib/tauri';
+// 3. Inside *.tauri.ts files (build system already gated): tauriOnly,
+//    imported directly from the Tauri marker, not through `#platform/tauri`
+//    (which resolves to `null` on web).
+import { tauriOnly } from '$lib/tauri.tauri';
 await tauriOnly.globalShortcuts.unregisterAll();
 ```
 
@@ -83,8 +100,8 @@ See `docs/articles/20260526T012526-tauri-is-both-the-namespace-and-the-platform-
 
 > **💡 Three kinds of dependency injection**
 >
-> - **Build-time platform DI** (suffix files): for services that have a real implementation on both platforms. `text`, `os`, `sound`, `download`, `analytics`, `http`, `blob-store`, `recorder`. Each has `index.tauri.ts` + `index.browser.ts` + `types.ts`. Vite picks one at build time.
-> - **Tauri-only namespace** (`$lib/tauri`): for capabilities that exist only on Tauri (fs, permissions, window, tray, globalShortcuts, autostart). One file holds the current namespace capabilities. Consumers either narrow with `if (tauri)`, prop-drill the narrowed value into helpers, or import `tauriOnly` from inside a `.tauri.ts` file.
+> - **Build-time platform DI** (`#platform/*` subpath imports): for services that have a real implementation on both platforms. `text`, `os`, `sound`, `download`, `analytics`, `http`, `blob-store`, `recorder`. Each maps a `#platform/<service>` specifier (in `package.json`'s `imports`) to `index.tauri.ts` + `index.browser.ts`, with a shared `types.ts`. The active build condition picks one.
+> - **Tauri-only namespace** (`#platform/tauri`): for capabilities that exist only on Tauri (fs, permissions, window, tray, globalShortcuts, autostart). One file (`$lib/tauri.tauri.ts`) holds the current namespace capabilities. Shared consumers reach them through `import { tauri } from '#platform/tauri'` and either narrow with `if (tauri)`, prop-drill the narrowed value into helpers, or import `tauriOnly` directly from `$lib/tauri.tauri` inside a `.tauri.ts` file.
 > - **Runtime DI** (switch on `settings` and `deviceConfig`): for user-pick providers like `transcription` and `completion`.
 >
 > See `docs/articles/20260526T012650-two-switches-build-time-and-runtime.md` for the platform-vs-settings walkthrough.
@@ -102,12 +119,12 @@ Services are UI-free modules that:
 
 ### Platform Detection
 
-Vite picks the right file at build time based on `process.env.TAURI_ENV_PLATFORM`. Consumers import without naming the platform:
+The build picks the right file at build time. The Tauri build (`process.env.TAURI_ENV_PLATFORM` set) activates the `tauri` condition; the web build falls through to `default`. Consumers import the bare `#platform/*` specifier without naming the platform:
 
 ```typescript
 // Resolves to services/text/index.browser.ts on web,
 // services/text/index.tauri.ts on Tauri.
-import { TextServiceLive } from '$lib/services/text';
+import { TextServiceLive } from '#platform/text';
 ```
 
 ### Result Types
@@ -350,7 +367,8 @@ export function createClipboardServiceWeb(): ClipboardService {
 
 // index.browser.ts - Web impl exports `ClipboardServiceLive` directly
 // index.tauri.ts - Tauri impl exports `ClipboardServiceLive` directly
-// (Vite picks whichever file matches the build target)
+// (the `#platform/text` subpath import resolves whichever file matches
+//  the build target)
 ```
 
 **When to use platform-specific pattern:**
@@ -388,6 +406,8 @@ const result = await services.completion.openai.complete({
 
 ## Available Services
 
+The services barrel (`src/lib/services/index.ts`) imports the platform-split services through `#platform/*` (`analytics`, `blob-store`, `download`, `os`, `sound`, `text`), while non-platform modules (`completion`, `transcription`, `local-shortcut-manager`) stay on relative imports. `recorder` is also a `#platform/*` seam, consumed from `$lib/state/manual-recorder.svelte.ts` rather than the barrel.
+
 ### Cross-platform (`services/`)
 
 - `recorder/index.tauri.ts` - Desktop manual recording through the native CPAL backend
@@ -403,7 +423,7 @@ User-facing reporting (toast + OS notification) is owned by `$lib/report`, not t
 
 ### Tauri-only capabilities (`$lib/tauri`)
 
-Tauri-only namespace capabilities live inline in one file at `$lib/tauri.tauri.ts`. The companion `$lib/tauri.browser.ts` exports only `tauri = null`, so `tauriOnly` misuse fails in browser builds. Consumers access via `if (tauri) { tauri.<cap>.method() }`, by prop-drilling the narrowed value, or by importing `tauriOnly` from inside a `.tauri.ts` file.
+Tauri-only namespace capabilities live inline in one file at `$lib/tauri.tauri.ts`, reached through the `#platform/tauri` seam. The companion `$lib/tauri.browser.ts` resolves to `tauri = null` under the web condition, so `tauriOnly` misuse fails in browser builds. Shared consumers `import { tauri } from '#platform/tauri'` and access via `if (tauri) { tauri.<cap>.method() }`, by prop-drilling the narrowed value, or by importing `tauriOnly` directly from `$lib/tauri.tauri` inside a `.tauri.ts` file.
 
 - `tauri.fs` - Filesystem operations (pathsToFiles)
 - `tauri.permissions` - macOS accessibility/microphone permission flows
@@ -440,27 +460,33 @@ export type MyService = {
 // 2. services/my-service/index.browser.ts - web impl
 import type { MyService } from './types';
 export type { MyError, MyService } from './types';
-export const MyServiceLive = {
+export const MyServiceLive: MyService = {
 	doSomething: async (input) => {
 		/* browser API call */
 	},
-} satisfies MyService;
+};
 
 // 3. services/my-service/index.tauri.ts - Tauri impl
 import type { MyService } from './types';
 export type { MyError, MyService } from './types';
-export const MyServiceLive = {
+export const MyServiceLive: MyService = {
 	doSomething: async (input) => {
 		/* Tauri API call */
 	},
-} satisfies MyService;
+};
 
-// 4. Add to main export at services/index.ts
-import { MyServiceLive } from './my-service';
+// 4. Declare the seam in package.json "imports"
+//   "#platform/my-service": {
+//     "tauri": "./src/lib/services/my-service/index.tauri.ts",
+//     "default": "./src/lib/services/my-service/index.browser.ts"
+//   }
+
+// 5. Add to main export at services/index.ts
+import { MyServiceLive } from '#platform/my-service';
 // ... include in the `services` object
 ```
 
-Vite picks `.browser.ts` for web builds, `.tauri.ts` for Tauri builds. Consumers import `from '$lib/services/my-service'` without naming the platform.
+Annotate each impl with the contract type (`: MyService`), not `satisfies`, so the concrete type stays hidden and the variants stay in lockstep. The web build resolves `index.browser.ts`, the Tauri build resolves `index.tauri.ts`. Consumers import `from '#platform/my-service'` without naming the platform.
 
 ## Services vs RPC Layer
 

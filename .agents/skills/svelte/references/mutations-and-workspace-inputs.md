@@ -256,7 +256,7 @@ When the page is being hidden (tab close, Cmd+W, tab switch, window minimize, iO
 
 ## The default for new apps
 
-Every new app under `apps/*` should ship the safety net in `+layout.svelte` as part of scaffolding. Treat it like `<Toaster />` or `<ModeWatcher />`: a layout-level concern that's free once installed. See `workspace-app-layout` for where this fits in the `+layout.svelte` checklist.
+Every new app under `apps/*` should ship the safety net in `+layout.svelte` as part of scaffolding. Treat it like `<Toaster />` or `<ModeWatcher />`: a layout-level concern that's free once installed. See `workspace-app-composition` for where this fits in the `+layout.svelte` checklist.
 
 ## When NOT to use commit-on-blur
 

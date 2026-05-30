@@ -1,11 +1,11 @@
 # `tauri` is both the namespace and the platform check
 
-Every Tauri-specific capability in Whispering lives under one namespace, exported as `tauri` from `$lib/tauri`. On Tauri builds it's the full namespace. On web builds it's `null`. Same name, same import path, different runtime value.
+Every Tauri-specific capability in Whispering lives under one namespace, exported as `tauri` from `#platform/tauri`. On Tauri builds it's the full namespace. On web builds it's `null`. Same name, same import path, different runtime value.
 
 That two-state shape is the whole point. The variable doubles as a boolean: if `tauri` is truthy you're on Tauri, and you also have the capability surface in the same expression.
 
 ```ts
-import { tauri } from '$lib/tauri';
+import { tauri } from '#platform/tauri';
 
 if (tauri) {
   await tauri.fs.pathsToFiles(paths);
@@ -38,7 +38,7 @@ Two guards for one fact. Either one alone would compile.
 The namespace fixes both halves at once. The capability is `null` on web, so there's nothing to call. The platform check is the truthiness of `tauri`, so it's the same expression. If you forget the check, TypeScript catches you:
 
 ```ts
-import { tauri } from '$lib/tauri';
+import { tauri } from '#platform/tauri';
 
 await tauri.fs.pathsToFiles(paths);
 //    ^ 'tauri' is possibly 'null'.
@@ -60,35 +60,42 @@ Inside the `if`, every capability is reachable without re-checking. The branch i
 
 ## How it's two files behind one import
 
-Vite swaps the file at build time. `tauri.tauri.ts` is the real namespace. `tauri.browser.ts` is the web stub:
+The `#platform/tauri` specifier resolves to a different file at build time. `tauri.tauri.ts` is the real namespace. `tauri.browser.ts` is the web stub:
 
 ```ts
 export const tauri = null;
 ```
 
-The `tauri` export is the platform check. The non-null `tauriOnly` export exists only in `tauri.tauri.ts`, so `.tauri.ts` files can import it directly and browser-bundled misuse fails at build time.
+The `tauri` export is the platform check. The non-null `tauriOnly` export exists only in `tauri.tauri.ts`, so `.tauri.ts` files can import it directly (from `$lib/tauri.tauri`, not through the `#platform/*` seam) and browser-bundled misuse fails at build time.
 
-`vite.config.ts` has:
+The selection lives in the app's `package.json` `imports` map, Node's standard subpath-import mechanism:
 
-```ts
-resolve: {
-  extensions: isTauri
-    ? ['.tauri.ts', '.ts']
-    : ['.browser.ts', '.ts'],
+```json
+"imports": {
+  "#platform/tauri": {
+    "tauri": "./src/lib/tauri.tauri.ts",
+    "default": "./src/lib/tauri.browser.ts"
+  }
 }
 ```
 
-On Tauri builds, `import { tauri } from '$lib/tauri'` resolves to `tauri.tauri.ts`. On web, it resolves to `tauri.browser.ts`. The non-target file isn't bundled.
+The web build takes the `default` condition (browser). The Tauri build activates the `tauri` condition in `vite.config.ts`:
 
-TypeScript needs the same trick for type-checking. `tsconfig.json`:
-
-```json
-"moduleSuffixes": [".tauri", ".browser", ""]
+```ts
+resolve: {
+  ...(isTauri && { conditions: ['tauri', ...defaultClientConditions] }),
+}
 ```
 
-TS always reads `tauri.tauri.ts` for type information, regardless of build. The Tauri file exports the shape; the browser file just has to match at runtime.
+The `...defaultClientConditions` spread is load-bearing: a custom condition list replaces Vite's defaults rather than adding to them, so you have to spread them back in.
+
+On Tauri builds, `import { tauri } from '#platform/tauri'` resolves to `tauri.tauri.ts`. On web, it resolves to `tauri.browser.ts`. The non-target file isn't bundled.
+
+TypeScript needs no extra trick. Under `bundler` module resolution, the editor and typecheck read the `imports` field and land on the `default` (browser) shape, so there's no `moduleSuffixes` and no per-target tsconfig. The browser file exports the shape; the Tauri file just has to match it at runtime.
 
 So the consumer sees one type (`Tauri | null`) on both builds, and the runtime value follows the platform.
+
+Because the wrong-platform file is never resolved, `@tauri-apps` code is physically absent from the web bundle. That's a build-time guarantee from the unselected subpath, not Rollup tree-shaking after the fact. A Tauri-only file pulled into shared code fails the web build instead of shipping a broken runtime.
 
 ## Pushing the narrowing further: prop drilling
 
@@ -101,7 +108,7 @@ This works two ways, depending on whether you're crossing a component boundary o
 ```svelte
 <!-- settings/shortcuts/global/+page.svelte -->
 <script>
-  import { tauri } from '$lib/tauri';
+  import { tauri } from '#platform/tauri';
   import ShortcutTable from '../keyboard-shortcut-recorder/ShortcutTable.svelte';
 </script>
 
@@ -114,7 +121,7 @@ This works two ways, depending on whether you're crossing a component boundary o
 ```svelte
 <!-- ShortcutTable.svelte -->
 <script lang="ts">
-  import type { Tauri } from '$lib/tauri';
+  import type { Tauri } from '#platform/tauri';
   import GlobalKeyboardShortcutRecorder from './GlobalKeyboardShortcutRecorder.svelte';
 
   let { type, tauri }: { type: 'local' | 'global'; tauri?: Tauri } = $props();
@@ -137,7 +144,7 @@ Before (the helper re-narrows what its caller already checked):
 
 ```ts
 // syncIconWithRecorderState.svelte.ts
-import { tauri } from '$lib/tauri';
+import { tauri } from '#platform/tauri';
 
 export function syncIconWithRecorderState() {
   $effect(() => {
@@ -150,7 +157,7 @@ export function syncIconWithRecorderState() {
 ```svelte
 <!-- AppLayout.svelte (caller, before) -->
 <script>
-  import { tauri } from '$lib/tauri';
+  import { tauri } from '#platform/tauri';
   import { syncIconWithRecorderState } from './syncIconWithRecorderState.svelte';
 
   if (tauri) {
@@ -163,7 +170,7 @@ After (helper accepts the asserted namespace; the redundant narrow disappears):
 
 ```ts
 // syncIconWithRecorderState.svelte.ts
-import type { Tauri } from '$lib/tauri';
+import type { Tauri } from '#platform/tauri';
 
 export function syncIconWithRecorderState(tauri: Tauri) {
   $effect(() => {
@@ -175,7 +182,7 @@ export function syncIconWithRecorderState(tauri: Tauri) {
 ```svelte
 <!-- AppLayout.svelte (caller, after) -->
 <script>
-  import { tauri } from '$lib/tauri';
+  import { tauri } from '#platform/tauri';
   import { syncIconWithRecorderState } from './syncIconWithRecorderState.svelte';
 
   if (tauri) {
@@ -198,25 +205,25 @@ Any helper or component that needs Tauri capabilities declares it in its signatu
 
 ## `tauriOnly` for files the build system already gated
 
-There's one case where the prop-drill doesn't fit cleanly: code that lives in a `*.tauri.ts` file. The Vite suffix routing already guarantees the module is only loaded on Tauri builds, so there isn't a caller boundary you can prop-drill from. Yet inside the file, `import { tauri } from '$lib/tauri'` still gives you `Tauri | null`, because TypeScript reads the same nullable shape for both builds.
+There's one case where the prop-drill doesn't fit cleanly: code that lives in a `*.tauri.ts` file. The `imports`-map condition already guarantees the module is only loaded on Tauri builds, so there isn't a caller boundary you can prop-drill from. Yet inside the file, `import { tauri } from '#platform/tauri'` still gives you `Tauri | null`, because TypeScript reads the same nullable shape for both builds.
 
 The historical workaround was a non-null assertion at the top of the file:
 
 ```ts
 // file-system.tauri.ts (old)
-import { tauri } from '$lib/tauri';
-// This file is Tauri-only (suffix `.tauri.ts` keeps it out of web bundles),
+import { tauri } from '#platform/tauri';
+// This file is Tauri-only (the `.tauri.ts` file keeps it out of web bundles),
 // so `tauri` is never null when this module loads.
 const { fs } = tauri!;
 ```
 
 That `tauri!` is fine but ugly: it asserts a fact the filename already encodes. The fact is encoded twice, in two different syntaxes, in two different files. If someone ever imports this from a non-`.tauri.ts` file, the assertion silently lies and you crash with a confusing null property access elsewhere.
 
-The replacement is a named export from the same `$lib/tauri` module:
+The replacement is a named export imported directly from the Tauri module (not through the `#platform/*` seam, which is `null` on web):
 
 ```ts
 // file-system.tauri.ts (new)
-import { tauriOnly } from '$lib/tauri';
+import { tauriOnly } from '$lib/tauri.tauri';
 
 const { data: files } = await tauriOnly.fs.pathsToFiles(paths);
 ```
@@ -259,8 +266,8 @@ No `tauri?.` here. The whole point is that the capability exists on both platfor
 
 The test for which pattern fits:
 
-- **Capability exists on both, with different implementations?** Suffix DI. `services/<cap>/index.{tauri,browser}.ts`, shared interface, single consumer pattern.
-- **Capability only exists on Tauri?** Namespace. `$lib/tauri` with `if (tauri)` or `tauri?.` at consumers.
+- **Capability exists on both, with different implementations?** Platform DI. A `#platform/<cap>` import backed by `index.{tauri,browser}.ts`, shared interface, single consumer pattern.
+- **Capability only exists on Tauri?** Namespace. `#platform/tauri` with `if (tauri)` or `tauri?.` at consumers.
 
 Most apps want both patterns. They solve different problems.
 
@@ -295,8 +302,8 @@ The TypeScript narrowing gives us the rest for free. You can't call into the nam
 
 - `apps/whispering/src/lib/tauri.tauri.ts` is the namespace.
 - `apps/whispering/src/lib/tauri.browser.ts` is the web stub (`tauri = null`; no `tauriOnly` export).
-- `apps/whispering/vite.config.ts` for the build-time switch.
-- `apps/whispering/tsconfig.json` for `moduleSuffixes`.
+- `apps/whispering/package.json` for the `#platform/tauri` entry in the `imports` map.
+- `apps/whispering/vite.config.ts` for the `tauri` condition that selects the build.
 - Any consumer file under `apps/whispering/src/routes/` for a real call site.
 
-Fork it, break it, ship your own version. The whole pattern is about 50 lines of code plus one Vite config line.
+Fork it, break it, ship your own version. The whole pattern is about 50 lines of code plus one `imports` entry and one Vite config line.

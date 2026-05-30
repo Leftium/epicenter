@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../db/schema/index.js';
 import { assetKey } from '../owner.js';
-import { TRUSTED_ORIGINS } from '../trusted-origins.js';
+import { buildTrustedOrigins } from '../trusted-origins.js';
 import { BASE_AUTH_CONFIG } from './base-config.js';
 import { createCookieAdvancedConfig } from './cookie-config.js';
 import { authPlugins } from './plugins.js';
@@ -124,7 +124,7 @@ export function createAuth({
 				},
 			},
 		},
-		trustedOrigins: TRUSTED_ORIGINS,
+		trustedOrigins: buildTrustedOrigins(baseURL),
 		// secondaryStorage = Cloudflare KV as a read-through cache.
 		// Postgres (Germany) is always the source of truth. KV avoids the
 		// ~150ms round-trip on repeated session reads from distant edges.

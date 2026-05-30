@@ -1,23 +1,44 @@
 import { describe, expect, test } from 'bun:test';
-import { TRUSTED_ORIGINS } from './trusted-origins';
+import { APPS, localUrl } from '@epicenter/constants/apps';
+import { buildTrustedOrigins } from './trusted-origins';
 
-describe('TRUSTED_ORIGINS', () => {
+const PROD = buildTrustedOrigins('https://api.epicenter.so');
+const LOCAL = buildTrustedOrigins('http://localhost:8787');
+
+describe('buildTrustedOrigins', () => {
 	test('rejects arbitrary chrome-extension origins (no wildcard regression)', () => {
-		expect(TRUSTED_ORIGINS).not.toContain('chrome-extension://attackerid');
-		expect(TRUSTED_ORIGINS).not.toContain('chrome-extension://*');
-		expect(TRUSTED_ORIGINS.some((o) => o.includes('*'))).toBe(false);
+		expect(PROD).not.toContain('chrome-extension://attackerid');
+		expect(PROD).not.toContain('chrome-extension://*');
+		expect(PROD.some((o) => o.includes('*'))).toBe(false);
 	});
 
 	test('contains exactly one chrome-extension origin (the pinned tab-manager)', () => {
-		const exts = TRUSTED_ORIGINS.filter((o) =>
-			o.startsWith('chrome-extension://'),
-		);
-		expect(exts).toEqual([
-			'chrome-extension://mkbnicfhpacdofmoocppnjjmdfmkkgda',
-		]);
+		const exts = PROD.filter((o) => o.startsWith('chrome-extension://'));
+		expect(exts).toEqual(['chrome-extension://mkbnicfhpacdofmoocppnjjmdfmkkgda']);
+	});
+
+	test('a production deployment does not trust localhost dev origins', () => {
+		expect(PROD).not.toContain(localUrl(APPS.FUJI));
+		expect(PROD).not.toContain(localUrl(APPS.API));
+		expect(PROD).not.toContain(`http://${new URL(APPS.API.url).host}`);
+		// `tauri://localhost` is a legitimate production origin, so the check is
+		// scoped to http(s) localhost dev servers rather than the substring.
+		expect(PROD.some((o) => o.startsWith('http://localhost'))).toBe(false);
+	});
+
+	test('a local deployment trusts the localhost dev origins', () => {
+		expect(LOCAL).toContain(localUrl(APPS.FUJI));
+		expect(LOCAL).toContain(localUrl(APPS.API));
+		expect(LOCAL).toContain(`http://${new URL(APPS.API.url).host}`);
+	});
+
+	test('both deployments trust the production app origins', () => {
+		expect(PROD).toContain(APPS.FUJI.url);
+		expect(LOCAL).toContain(APPS.FUJI.url);
 	});
 
 	test('is frozen so Cloudflare isolates cannot accumulate mutations', () => {
-		expect(Object.isFrozen(TRUSTED_ORIGINS)).toBe(true);
+		expect(Object.isFrozen(PROD)).toBe(true);
+		expect(Object.isFrozen(LOCAL)).toBe(true);
 	});
 });

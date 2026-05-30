@@ -1,7 +1,8 @@
 import { RequestGuardError } from '@epicenter/constants/request-guard-errors';
 import { createMiddleware } from 'hono/factory';
 import { parseBearer } from '../auth/parse-bearer.js';
-import { TRUSTED_ORIGINS } from '../trusted-origins.js';
+import { buildTrustedOrigins } from '../trusted-origins.js';
+import type { Env } from '../types.js';
 
 /**
  * CSRF guard for state-changing cookie-auth requests on `/api/*`. Cookies ride
@@ -10,13 +11,14 @@ import { TRUSTED_ORIGINS } from '../trusted-origins.js';
  * attacker page cannot read the bearer to construct the Authorization header),
  * so they skip the check.
  *
- * Cookie-auth state-changers must carry an `Origin` header in
- * {@link TRUSTED_ORIGINS}. The CORS layer in `app.ts` already restricts
- * `Origin` to the same allow-list for credentialed cross-origin requests; this
- * guard defends the missing-`Origin` case (e.g. an HTML form POST that is a
- * "simple request" per the CORS spec and would not be preflighted).
+ * Cookie-auth state-changers must carry an `Origin` header in the deployment's
+ * trusted-origin allow-list ({@link buildTrustedOrigins}, scoped to
+ * `authBaseURL`). The CORS layer in `app.ts` already restricts `Origin` to the
+ * same allow-list for credentialed cross-origin requests; this guard defends
+ * the missing-`Origin` case (e.g. an HTML form POST that is a "simple request"
+ * per the CORS spec and would not be preflighted).
  */
-export const requireOriginForCookieMutations = createMiddleware(
+export const requireOriginForCookieMutations = createMiddleware<Env>(
 	async (c, next) => {
 		const method = c.req.method;
 		if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
@@ -24,7 +26,7 @@ export const requireOriginForCookieMutations = createMiddleware(
 		}
 		if (parseBearer(c.req.header('authorization') ?? null)) return next();
 		const origin = c.req.header('origin');
-		if (!origin || !TRUSTED_ORIGINS.includes(origin)) {
+		if (!origin || !buildTrustedOrigins(c.var.authBaseURL).includes(origin)) {
 			const err = RequestGuardError.ForbiddenOrigin();
 			return c.json(err, err.error.status);
 		}

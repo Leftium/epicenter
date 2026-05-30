@@ -11,6 +11,7 @@
 import { expect, test } from 'bun:test';
 import { APPS, localUrl } from '@epicenter/constants/apps';
 import { Hono } from 'hono';
+import type { Env } from '../types.js';
 import { requireOriginForCookieMutations } from './require-origin-for-cookie-mutations.js';
 
 const TRUSTED_ORIGIN = localUrl(APPS.API);
@@ -81,7 +82,14 @@ test('CSRF guard admits GET regardless of origin', async () => {
 });
 
 function createCsrfTestApp() {
-	const app = new Hono();
+	const app = new Hono<Env>();
+	// The guard scopes its allow-list to the deployment's authBaseURL. Run the
+	// test as a local deployment so the localhost dev origin under test
+	// (localUrl(APPS.API)) is trusted, mirroring `dev`.
+	app.use('/api/*', async (c, next) => {
+		c.set('authBaseURL', localUrl(APPS.API));
+		await next();
+	});
 	app.use('/api/*', requireOriginForCookieMutations);
 	app.all('/api/billing/*', (c) => c.json({ ok: true }));
 	return app;

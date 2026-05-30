@@ -57,6 +57,15 @@ export function createServerApp({
 }: CreateServerAppOptions): Hono<Env> {
 	const app = new Hono<Env>();
 
+	// 0. Deployment auth origin. Resolved first (a pure read of the env binding,
+	// no DB) so downstream middleware, including CORS and the cookie-CSRF guard,
+	// can scope the trusted-origin allow-list to this deployment. See note 3 for
+	// why the origin is supplied explicitly and never inferred from the request.
+	app.use('*', async (c, next) => {
+		c.set('authBaseURL', resolveOrigin(c.env));
+		await next();
+	});
+
 	// 1. CORS
 	app.use('*', corsMiddleware);
 
@@ -91,14 +100,12 @@ export function createServerApp({
 	// First-party OAuth client rows are seeded at deploy time (apps/api
 	// `oauth:seed:*`), so this path only reads.
 	app.use('*', async (c, next) => {
-		const baseURL = resolveOrigin(c.env);
-		c.set('authBaseURL', baseURL);
 		c.set(
 			'auth',
 			createAuth({
 				db: c.var.db,
 				env: c.env,
-				baseURL,
+				baseURL: c.var.authBaseURL,
 			}),
 		);
 		await next();

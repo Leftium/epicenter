@@ -19,6 +19,13 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  * The variant carries its own HTTP `status` (401), so call sites just
  * forward the baked-in code to `c.json`. No external status mapper required.
  *
+ * `ServerError` (503) is distinct from `InvalidToken`: it means the resource
+ * server could not verify the token because the signing-key (JWKS) endpoint
+ * was unreachable, not because the token is bad. Flattening that case into a
+ * 401 would make clients discard and refresh a perfectly good token (and pause
+ * network auth) over a transient server fault, so it gets its own retryable
+ * status instead.
+ *
  * @example
  * ```ts
  * // Server: runtime usage
@@ -30,6 +37,7 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  * function handle(error: OAuthError) {
  *   switch (error.name) {
  *     case 'InvalidToken':  // missing, malformed, unverifiable, or user-not-found
+ *     case 'ServerError':   // token unverifiable due to a server-side fault
  *   }
  * }
  * ```
@@ -38,6 +46,10 @@ export const OAuthError = defineErrors({
 	InvalidToken: () => ({
 		message: 'OAuth access token is missing, malformed, or unverifiable.',
 		status: 401 as const,
+	}),
+	ServerError: () => ({
+		message: 'OAuth token verification is temporarily unavailable.',
+		status: 503 as const,
 	}),
 });
 

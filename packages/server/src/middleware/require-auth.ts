@@ -51,10 +51,22 @@ async function resolveRequestOAuthUser(
 	if (!accessToken) return OAuthError.InvalidToken();
 
 	const audience = c.var.authBaseURL;
-	const payload = await verifyAccessToken(accessToken, {
-		verifyOptions: { audience, issuer: createOAuthIssuerURL(audience) },
-		jwksUrl: createOAuthJwksURL(audience),
-	}).catch(() => null);
+	let payload: Awaited<ReturnType<typeof verifyAccessToken>>;
+	try {
+		payload = await verifyAccessToken(accessToken, {
+			verifyOptions: { audience, issuer: createOAuthIssuerURL(audience) },
+			jwksUrl: createOAuthJwksURL(audience),
+		});
+	} catch (error) {
+		// Separate "the token is bad" from "we could not reach the signing keys".
+		// The former is a real 401; the latter (a JWKS fetch failure) must be a
+		// retryable 503, or the client would discard and refresh a good token and
+		// pause network auth over a transient server fault. See
+		// {@link isTokenVerificationError}.
+		return isTokenVerificationError(error)
+			? OAuthError.InvalidToken()
+			: OAuthError.ServerError();
+	}
 	const userId = typeof payload?.sub === 'string' ? payload.sub : null;
 	if (!userId) return OAuthError.InvalidToken();
 
@@ -64,6 +76,27 @@ async function resolveRequestOAuthUser(
 	if (!user) return OAuthError.InvalidToken();
 
 	return Ok(AuthUser.assert(user));
+}
+
+/**
+ * Distinguish a token-verification failure (expired, wrong audience/issuer,
+ * bad signature, malformed) from an infrastructure failure (the JWKS endpoint
+ * was unreachable so the token could not be checked at all).
+ *
+ * `jose` tags every token, claim, and signature failure with a stable `code`
+ * that starts with `ERR_J` (e.g. `ERR_JWT_EXPIRED`,
+ * `ERR_JWT_CLAIM_VALIDATION_FAILED`, `ERR_JWS_SIGNATURE_VERIFICATION_FAILED`,
+ * `ERR_JWKS_NO_MATCHING_KEY`), and Better Auth maps expired/invalid tokens to
+ * an `UNAUTHORIZED` API error. A JWKS fetch failure is a plain `Error` with
+ * neither marker, so it falls through to `ServerError`. If Better Auth ever
+ * changes those internals this degrades safely back to the old behavior (treat
+ * the failure as an invalid token).
+ */
+function isTokenVerificationError(error: unknown): boolean {
+	if (typeof error !== 'object' || error === null) return false;
+	if ((error as { status?: unknown }).status === 'UNAUTHORIZED') return true;
+	const code = (error as { code?: unknown }).code;
+	return typeof code === 'string' && code.startsWith('ERR_J');
 }
 
 export const requireCookieOrBearerUser = createMiddleware<Env>(

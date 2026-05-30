@@ -12,7 +12,7 @@
 	import TagInput from '$lib/components/TagInput.svelte';
 	import { formatInZone } from '$lib/format';
 	import { requireFuji } from '$lib/session';
-	import type { Entry } from '../../../../fuji.workspace';
+	import type { Entry } from '../../../../fuji';
 	import EntryBodyEditor from './EntryBodyEditor.svelte';
 
 	let { entry }: { entry: Entry } = $props();

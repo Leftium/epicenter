@@ -3,7 +3,7 @@ import { type } from 'arktype';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { BITRATES_KBPS, DEFAULT_BITRATE_KBPS } from '$lib/constants/audio';
 import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
-import { LOCAL_MODEL_UNLOAD_POLICIES } from '$lib/constants/transcription';
+import { LOCAL_MODEL_UNLOAD_POLICIES } from '$lib/constants/local-model-unload-policy';
 import { log, report } from '$lib/report';
 
 // ── Per-key definitions ──────────────────────────────────────────────────────

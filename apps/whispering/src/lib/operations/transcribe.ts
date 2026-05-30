@@ -5,10 +5,8 @@ import {
 	SUPPORTED_LANGUAGES,
 	type SupportedLanguage,
 } from '$lib/constants/languages';
-import {
-	isModelFileSizeValid,
-	WHISPER_MODELS,
-} from '$lib/constants/local-models';
+import { WHISPER_MODELS } from '$lib/constants/local-models';
+import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
 import type { TranscriptionServiceId } from '$lib/constants/transcription';
 import { analytics } from '$lib/operations/analytics';
 import { report } from '$lib/report';

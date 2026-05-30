@@ -11,14 +11,14 @@ import { type Static, Type } from 'typebox';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
 
+import { ALWAYS_ON_TOP_MODES } from '$lib/constants/always-on-top';
 import { RECORDING_MODES } from '$lib/constants/audio/recording-modes';
 import { INFERENCE_PROVIDER_IDS } from '$lib/constants/inference';
+import { TRANSFORMATION_STEP_TYPES } from '$lib/constants/transformations';
 import {
 	PROVIDERS,
 	TRANSCRIPTION_SERVICE_IDS,
 } from '$lib/services/transcription/providers';
-import { TRANSFORMATION_STEP_TYPES } from '$lib/constants/transformations';
-import { ALWAYS_ON_TOP_MODES } from '$lib/constants/always-on-top';
 
 /**
  * Tables store normalized domain entities. Each row is replaced atomically via

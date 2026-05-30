@@ -20,15 +20,74 @@ import { Ok, type Result } from 'wellcrafted/result';
 import {
 	ACCELERATOR_KEY_CODES,
 	ACCELERATOR_MODIFIER_KEYS,
-	ACCELERATOR_MODIFIER_SORT_PRIORITY,
 	ACCELERATOR_PUNCTUATION_KEYS,
 	type AcceleratorKeyCode,
 	type AcceleratorModifier,
 	FUNCTION_KEY_PATTERN,
-	KEYBOARD_EVENT_SPECIAL_KEY_TO_ACCELERATOR_KEY_CODE_MAP,
 	type KeyboardEventSupportedKey,
 } from '$lib/constants/keyboard';
 import { IS_MACOS } from '#platform/os';
+
+/**
+ * Maps browser KeyboardEvent.key values (lowercased) to Electron/Tauri
+ * accelerator key codes. Handles "special" keys only (arrows, whitespace,
+ * media keys); letters, numbers, F-keys, and punctuation are handled in
+ * convertToKeyCode below.
+ */
+const KEYBOARD_EVENT_SPECIAL_KEY_TO_ACCELERATOR_KEY_CODE_MAP = {
+	// Arrow keys
+	arrowup: 'Up',
+	arrowdown: 'Down',
+	arrowleft: 'Left',
+	arrowright: 'Right',
+
+	// Whitespace
+	' ': 'Space',
+	enter: 'Enter',
+	tab: 'Tab',
+
+	// Special keys
+	escape: 'Escape',
+	backspace: 'Backspace',
+	delete: 'Delete',
+	insert: 'Insert',
+	home: 'Home',
+	end: 'End',
+	pageup: 'PageUp',
+	pagedown: 'PageDown',
+	printscreen: 'PrintScreen',
+
+	// Media keys
+	volumeup: 'VolumeUp',
+	volumedown: 'VolumeDown',
+	volumemute: 'VolumeMute',
+	mediaplaypause: 'MediaPlayPause',
+	mediastop: 'MediaStop',
+	mediatracknext: 'MediaNextTrack',
+	mediatrackprevious: 'MediaPreviousTrack',
+
+	// Lock keys (when used as regular keys, not modifiers)
+	capslock: 'Capslock',
+	numlock: 'Numlock',
+	scrolllock: 'Scrolllock',
+} as const satisfies Partial<Record<string, AcceleratorKeyCode>>;
+
+/**
+ * Sort priority for accelerator modifiers (lower appears first):
+ * Command/Control, then Alt/Option, then AltGr, then Shift, then Super/Meta.
+ */
+const ACCELERATOR_MODIFIER_SORT_PRIORITY = {
+	Command: 1,
+	Cmd: 1,
+	Control: 1,
+	Ctrl: 1,
+	Alt: 2,
+	Option: 2,
+	AltGr: 3,
+	Shift: 4,
+	Super: 5,
+	Meta: 5,
+} as const satisfies Record<AcceleratorModifier, number>;
 
 /**
  * Brand for Electron accelerator strings.

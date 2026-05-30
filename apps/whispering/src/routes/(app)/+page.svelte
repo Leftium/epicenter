@@ -29,7 +29,7 @@
 		type RecordingMode,
 		VAD_STATE_TO_ICON,
 	} from '$lib/constants/audio';
-	import { getShortcutDisplayLabel } from '$lib/constants/keyboard';
+	import { getShortcutDisplayLabel } from '$lib/utils/keyboard';
 	import {
 		stopManualRecording,
 		stopVadRecording,

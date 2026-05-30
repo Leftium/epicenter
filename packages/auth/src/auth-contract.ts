@@ -75,11 +75,13 @@ export type AuthClient = {
 	 */
 	signOut(): Promise<Result<undefined, AuthError>>;
 	/**
-	 * Fetch an API resource through the auth-owned bearer boundary.
+	 * Fetch an API resource through the auth-owned credential boundary.
 	 *
-	 * Use this instead of reading tokens from storage. The client verifies
-	 * `/api/session` before attaching a bearer, refreshes on expiry or 401, and
-	 * omits browser cookies so OAuth tokens remain the resource credential.
+	 * Use this instead of attaching credentials yourself. Each client supplies
+	 * its own credential and surfaces auth failures back into `state`; the
+	 * credential and refresh behavior depend on the model (the OAuth client
+	 * verifies `/api/session` and attaches a refreshed bearer; the same-origin
+	 * cookie client sends the session cookie). See each factory for specifics.
 	 */
 	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
 	[Symbol.dispose](): void;

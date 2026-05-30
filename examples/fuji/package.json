@@ -5,7 +5,7 @@
 	"type": "module",
 	"description": "Canonical Epicenter project layout demonstrated against the @epicenter/fuji workspace.",
 	"scripts": {
-		"test": "bun test"
+		"test": "if find . -name '*.test.ts' -o -name '*.test.tsx' -o -name '*.spec.ts' | grep -q .; then bun test; fi"
 	},
 	"dependencies": {
 		"@epicenter/cli": "workspace:*",

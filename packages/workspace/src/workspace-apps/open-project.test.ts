@@ -21,7 +21,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { asOwnerId } from '@epicenter/util';
+import { asOwnerId } from '@epicenter/identity';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
 import type { WorkspaceAuthClient } from './auth-client.js';

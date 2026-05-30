@@ -1,5 +1,5 @@
 import { ROOM_ROUTE } from '@epicenter/sync';
-import type { OwnerId } from '@epicenter/util';
+import type { OwnerId } from '@epicenter/identity';
 import type { DeviceId } from './device-id.js';
 
 /**

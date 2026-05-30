@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/util';
+import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/identity';
 import { asDeviceId } from './device-id.js';
 import { roomWsUrl } from './transport.js';
 

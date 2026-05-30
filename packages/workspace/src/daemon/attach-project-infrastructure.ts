@@ -23,7 +23,7 @@
  * compose materializers around the same ydoc.
  */
 
-import type { OwnerId } from '@epicenter/util';
+import type { OwnerId } from '@epicenter/identity';
 import type * as Y from 'yjs';
 
 import { attachYjsLog } from '../document/attach-yjs-log.js';

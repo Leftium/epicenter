@@ -91,7 +91,6 @@ export {
 export { hashYDocClientId } from './shared/client-id.js';
 export type {
 	WorkspaceAuthClient,
-	WorkspaceAuthState,
 } from './workspace-apps/auth-client.js';
 export { WorkspaceAppError } from './workspace-apps/errors.js';
 export {

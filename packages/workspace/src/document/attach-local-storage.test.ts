@@ -10,7 +10,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { asOwnerId } from '@epicenter/util';
+import { asOwnerId } from '@epicenter/identity';
 import {
 	base64ToBytes,
 	bytesToBase64,

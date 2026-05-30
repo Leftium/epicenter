@@ -8,7 +8,7 @@ Date: 2026-05-23
 
 Landed across phased commits 2026-05-23 → 2026-05-24. Keystones:
 
-- `af31c870b`: Phase 1, branded `OwnerId` + `OwnershipMode` collapse in `@epicenter/auth` and `@epicenter/encryption`.
+- `af31c870b`: Phase 1, branded `OwnerId` + `OwnershipMode` collapse in `@epicenter/util` and `@epicenter/encryption`.
 - `46b3e0a72`: Phase 2, uniform `owners/:ownerId/` paths and consumer migration across server, workspace, svelte.
 - `438e54700`: DB migration, `asset.userId` and `durableObjectInstance.userId` collapsed into `owner_id`.
 - `eb85a0d9b`: `OwnershipMode` moved into `@epicenter/server` (mode home settled).
@@ -168,7 +168,7 @@ Storing `userId` separately (rather than synthesizing it from `ownerId` like tod
 
 ```ts
 // packages/server/src/owner.ts (collapsed)
-import type { OwnerId } from '@epicenter/auth';
+import type { OwnerId } from '@epicenter/util';
 
 /** Partition segment that prefixes every durable identifier. */
 export type OwnerPath = `owners/${string}`;

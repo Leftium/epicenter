@@ -1,7 +1,7 @@
 /**
  * Server-only derived identifiers built from an `OwnerId`.
  *
- * `OwnerId` itself lives in `@epicenter/auth` because it flows through
+ * `OwnerId` itself lives in `@epicenter/util` because it flows through
  * `/api/session`, the persisted auth cell, and every client (browser,
  * extension, CLI, daemon). What lives here are the durable strings only
  * a server cares about: Durable Object names, R2 object keys, and the

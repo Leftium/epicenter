@@ -9,7 +9,7 @@
  */
 
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import type { OwnerId } from '@epicenter/constants/identity';
+import type { OwnerId } from '@epicenter/util';
 import {
 	column,
 	createWorkspace,

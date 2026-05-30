@@ -78,7 +78,7 @@ export const TEAM_OWNER_ID = asOwnerId('team');
 ```ts
 // packages/server/src/owner.ts
 
-import type { OwnerId } from '@epicenter/constants/identity';
+import type { OwnerId } from '@epicenter/util';
 
 export type RoomDoName = `owners/${string}/rooms/${string}`;
 export type AssetR2Key = `owners/${string}/assets/${string}`;
@@ -101,7 +101,7 @@ Team mode keeps the same shape as personal mode; it just resolves
 workspace daemon all need to talk about Owners to render team-aware UI,
 key local storage, and decide which signed-in account they are operating
 as. None of them should depend on the Hono server library to do that.
-`OwnerId` is a pure type and belongs with shared constants. The derivations
+`OwnerId` is a pure type and belongs with shared utilities. The derivations
 that touch DO names and R2 keys are server-only and stay in
 `@epicenter/server`.
 

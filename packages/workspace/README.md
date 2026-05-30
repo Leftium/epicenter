@@ -906,7 +906,7 @@ import {
 	roomWsUrl,
 } from '@epicenter/workspace';
 import type { AuthClient } from '@epicenter/auth';
-import type { OwnerId } from '@epicenter/constants/identity';
+import type { OwnerId } from '@epicenter/util';
 
 const tabs = defineTable({
 	id: column.string(),

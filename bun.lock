@@ -524,6 +524,7 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/cli": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/util": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "arktype": "catalog:",
         "typebox": "catalog:",
@@ -548,6 +549,8 @@
       "dependencies": {
         "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
+        "@epicenter/sync": "workspace:*",
+        "@epicenter/util": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "catalog:",
         "env-paths": "^3.0.0",
@@ -567,7 +570,7 @@
       },
       "dependencies": {
         "@epicenter/auth": "workspace:*",
-        "@epicenter/constants": "workspace:*",
+        "@epicenter/util": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@hono/standard-validator": "catalog:",
         "arktype": "catalog:",
@@ -592,6 +595,7 @@
       "dependencies": {
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/util": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -602,6 +606,7 @@
       "name": "@epicenter/constants",
       "version": "0.1.0",
       "dependencies": {
+        "@epicenter/util": "workspace:*",
         "arktype": "catalog:",
         "wellcrafted": "catalog:",
       },
@@ -659,6 +664,7 @@
         "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
         "@epicenter/sync": "workspace:*",
+        "@epicenter/util": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@hono/standard-validator": "catalog:",
         "@tanstack/ai": "catalog:",
@@ -709,6 +715,7 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/ui": "workspace:*",
+        "@epicenter/util": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@lucide/svelte": "catalog:",
         "@tanstack/svelte-query": "catalog:",
@@ -729,7 +736,7 @@
       "name": "@epicenter/sync",
       "version": "0.1.0",
       "dependencies": {
-        "@epicenter/constants": "workspace:*",
+        "@epicenter/util": "workspace:*",
         "lib0": "catalog:",
         "wellcrafted": "catalog:",
       },
@@ -783,6 +790,10 @@
     "packages/util": {
       "name": "@epicenter/util",
       "version": "0.0.1",
+      "dependencies": {
+        "arktype": "catalog:",
+        "wellcrafted": "catalog:",
+      },
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",
@@ -792,7 +803,6 @@
       "name": "@epicenter/workspace",
       "version": "0.2.0",
       "dependencies": {
-        "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@epicenter/util": "workspace:*",

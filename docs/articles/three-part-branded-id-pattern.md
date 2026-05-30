@@ -59,7 +59,7 @@ export const SavedTabId = type('string').pipe((s): SavedTabId => s as SavedTabId
 The repo's IDs split as follows:
 
 - **Validator + type + `generate*` only** (workspace-internal): `SavedTabId`, `BookmarkId`, `FileId`'s `RowId` and `ColumnId` siblings, etc. They're minted by the app and never received from outside.
-- **Validator + type + `asXxx` only** (purely external): `UserId`, `OwnerId` from `@epicenter/auth`. The user id is issued by Better Auth and arrives as a typed string; the owner id is the partition key derived from it. Nothing in the codebase mints them.
+- **Validator + type + `asXxx` only** (purely external): `UserId`, `OwnerId` from `@epicenter/util`. The user id is issued by Better Auth and arrives as a typed string; the owner id is the partition key derived from it. Nothing in the codebase mints them.
 - **Validator + type + both helpers** (minted AND received): `FileId`, `ConversationId`, `ChatMessageId`, `EntryId`, `NoteId`, `FolderId`, `DeviceId`. The app generates them with `generate*` and also brands them with `as*` when reading them back from URL params, DB rows, page params, or external strings.
 
 For the third row, the two helpers do unrelated jobs and both earn their keep:

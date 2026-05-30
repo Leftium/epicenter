@@ -1,32 +1,8 @@
-import type { OwnerId } from '@epicenter/util';
-import type { Keyring } from '@epicenter/encryption';
+import type { AuthState } from '@epicenter/identity';
 import type { Result } from 'wellcrafted/result';
 import type { AuthError } from './auth-errors.js';
 
-/**
- * Current auth state for local-first workspace clients.
- *
- * `ownerId` and `keyring` are present in `signed-in` and `reauth-required`
- * because they belong to local workspace operations. Even when the OAuth
- * grant needs reauth, the cached owner id can still pick the right local
- * storage partition and the keyring can still decrypt local workspace data.
- *
- * Auth state carries capability material only. Profile data is fetched by
- * application surfaces that display it; deployment shape (personal vs team)
- * is a property of the server, not this state (see {@link OwnerId}).
- */
-export type AuthState =
-	| { status: 'signed-out' }
-	| {
-			status: 'signed-in';
-			ownerId: OwnerId;
-			keyring: Keyring;
-	  }
-	| {
-			status: 'reauth-required';
-			ownerId: OwnerId;
-			keyring: Keyring;
-	  };
+export type { AuthState };
 
 /**
  * Fetch-compatible transport used by auth-owned HTTP calls.

@@ -87,7 +87,18 @@ export const SyncSupervisorError = defineErrors({
 });
 export type SyncSupervisorError = InferErrors<typeof SyncSupervisorError>;
 
-export type OpenWebSocket = (
+/**
+ * Function that opens a WebSocket to the relay. Matches the shape of
+ * `AuthClient.openWebSocket`: the auth client's bearer-aware opener is the
+ * canonical implementation, but any function with this shape works (tests
+ * pass fakes, alternative deployments may use plain WebSockets).
+ *
+ * Declared here (the lowest sync layer) and re-exported upward via
+ * `open-collaboration`, so there is one declaration rather than a copy per
+ * layer. The re-export follows the existing `open-collaboration ->
+ * sync-supervisor` edge, so it introduces no import cycle.
+ */
+export type OpenWebSocketFn = (
 	url: string | URL,
 	protocols?: string[],
 ) => Promise<WebSocket> | WebSocket;
@@ -95,7 +106,7 @@ export type OpenWebSocket = (
 export type SyncSupervisorConfig = {
 	url: string;
 	waitFor?: Promise<unknown>;
-	openWebSocket?: OpenWebSocket;
+	openWebSocket?: OpenWebSocketFn;
 	log?: Logger;
 	/**
 	 * Receive WebSocket text frames. The supervisor never interprets

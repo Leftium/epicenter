@@ -501,6 +501,10 @@ export async function createMachineAuthClient({
 				},
 			},
 			fetch,
+			// Forward the daemon's log sink so the long-lived client's background
+			// refresh failures land in it, not a default logger. This is the
+			// noisiest, most operationally important path for a daemon.
+			log,
 			now,
 		}),
 	);

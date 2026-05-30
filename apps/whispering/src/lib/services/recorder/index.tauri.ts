@@ -12,11 +12,11 @@ import {
 	type RecorderService,
 	type RecordingSession,
 } from '$lib/services/recorder/types';
+import { commands } from '$lib/tauri/commands';
 // This file is the Tauri impl, so it imports the non-null capability bag
 // directly from the Tauri marker rather than through the `#platform/tauri`
 // seam (which resolves to `null` under the web condition).
 import { tauriOnly } from '$lib/tauri.tauri';
-import { commands } from '$lib/tauri/commands';
 
 const log = createLogger('whispering/recorder/cpal');
 

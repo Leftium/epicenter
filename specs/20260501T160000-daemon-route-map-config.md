@@ -5,23 +5,19 @@
 **Author**: AI-assisted
 **Branch**: codex/explicit-daemon-host-config
 
-**Superseded By**: `20260501T114356-daemon-startup-boundary-and-route-definition-cleanup.md`
+**Superseded By**: Mount-list project config (`export default [fuji()]`)
 
 This spec records an intermediate route-map design. The active API does not use
-`daemon.routes` records. Project config now uses `daemon.routes:
-readonly DaemonRouteDefinition[]`, and each route definition owns `{ route,
-start }` so app packages can share default route names with their action
-connectors.
+`daemon.routes` records. Project config now default-exports a `Mount[]` from app
+package factories such as `fuji()`, and each mount's `name` owns the CLI prefix.
 
 **Do Not Implement This Shape**: Code examples below are historical context for
 the rejected route-map design. The active shape is:
 
 ```ts
-export default defineConfig({
-	daemon: {
-		routes: [defineFujiDaemon()],
-	},
-});
+import { fuji } from "@epicenter/fuji/project";
+
+export default [fuji()];
 ```
 
 Use the superseding startup-boundary spec for implementation details.
@@ -44,12 +40,12 @@ The previous API treated each daemon entry as a host definition:
 
 ```ts
 export default defineConfig({
-	hosts: [
-		defineDaemon({
-			route: 'fuji',
-			start: () => openFujiRuntime(),
-		}),
-	],
+  hosts: [
+    defineDaemon({
+      route: "fuji",
+      start: () => openFujiRuntime(),
+    }),
+  ],
 });
 ```
 
@@ -65,12 +61,12 @@ The config should show the daemon as one project-level concern with named routes
 
 ```ts
 export default defineConfig({
-	daemon: {
-		routes: {
-			fuji: defineFujiDaemon(),
-			notes: notesDaemon(),
-		},
-	},
+  daemon: {
+    routes: {
+      fuji: defineFujiDaemon(),
+      notes: notesDaemon(),
+    },
+  },
 });
 ```
 
@@ -78,13 +74,13 @@ The route key becomes the first CLI path segment. The route module starts the li
 
 ## Historical Design Decisions
 
-| Decision | Choice | Rationale |
-| --- | --- | --- |
-| Config file name | Keep `epicenter.config.ts` | The file remains the project entry point. `daemon.routes` is one section inside it, leaving room for future project-level config. |
-| Top-level daemon shape | `daemon.routes` record | A daemon is one process with many named routes. The record makes route identity visible and prevents duplicate routes by construction. |
-| App helper shape | `defineFujiDaemon() -> DaemonRouteDefinition` | App helpers return delayed callbacks. They do not own local route names. |
-| Workspace identity | Runtime `workspaceId` derived from `doc.ydoc.guid` | The Y.Doc guid is the durable CRDT, sync, and persistence identity. Duplicating it on the route module creates drift. |
-| HTTP framework | Keep Hono internal | Hono serves the local socket API. Fuji and other apps are not HTTP route trees; they are workspace peers behind generic `/run`, `/list`, and `/peers` endpoints. |
+| Decision               | Choice                                             | Rationale                                                                                                                                                        |
+| ---------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Config file name       | Keep `epicenter.config.ts`                         | The file remains the project entry point. `daemon.routes` is one section inside it, leaving room for future project-level config.                                |
+| Top-level daemon shape | `daemon.routes` record                             | A daemon is one process with many named routes. The record makes route identity visible and prevents duplicate routes by construction.                           |
+| App helper shape       | `defineFujiDaemon() -> DaemonRouteDefinition`      | App helpers return delayed callbacks. They do not own local route names.                                                                                         |
+| Workspace identity     | Runtime `workspaceId` derived from `doc.ydoc.guid` | The Y.Doc guid is the durable CRDT, sync, and persistence identity. Duplicating it on the route module creates drift.                                            |
+| HTTP framework         | Keep Hono internal                                 | Hono serves the local socket API. Fuji and other apps are not HTTP route trees; they are workspace peers behind generic `/run`, `/list`, and `/peers` endpoints. |
 
 ## Historical Architecture
 

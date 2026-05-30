@@ -15,8 +15,8 @@
  *      `attachProjectInfrastructure`
  */
 
-import { defineActions, defineWorkspace } from '@epicenter/workspace';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
+import { defineActions, defineWorkspace } from '@epicenter/workspace';
 import { defineMount } from '@epicenter/workspace/daemon';
 import {
 	attachMarkdownMaterializer,

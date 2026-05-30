@@ -22,6 +22,5 @@ convention); the filename can change as the title changes. The daemon
 reconciles the two when a file is renamed.
 
 This file is sibling to `welcome.md`, both in the `entries/` directory.
-Adding a third entry means adding a third file. Removing an entry means
-deleting its file (the daemon picks up the change and applies the deletion
-to the Y.Doc).
+Creating a third entry through the daemon adds a third file. Removing an entry
+through the daemon removes its file.

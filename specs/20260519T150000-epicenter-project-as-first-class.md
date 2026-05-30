@@ -2,13 +2,12 @@
 
 **Status**: Worth committing
 
-> Historical note: this spec predates the current single-workspace default.
-> Current project loading is: `epicenter.config.ts` default-exports
-> `defineWorkspace({ open })` for the usual one-route project, or
-> `defineConfig({ daemon: { routes } })` for the multi-route escape hatch.
-> `workspaces/` is only a source-layout convention.
+> Historical note: this spec predates the current mount-list config shape.
+> Current project loading is: `epicenter.config.ts` default-exports a
+> `Mount[]` from app package factories such as `fuji()`. The mount `name` owns
+> the CLI prefix, and `workspaces/` is only a source-layout convention.
 
-**Path policy (2026-05-22)**: Aligned with `specs/20260522T203209-top-level-epicenter-path-cleanup.md`. The `~/.epicenter/` references in this spec argue for *deleting* that directory; user-global state lives under `env-paths('epicenter')` and daemon runtime files use the OS runtime dir. No new top-level `~/.epicenter/` writes are introduced.
+**Path policy (2026-05-22)**: Aligned with `specs/20260522T203209-top-level-epicenter-path-cleanup.md`. The `~/.epicenter/` references in this spec argue for _deleting_ that directory; user-global state lives under `env-paths('epicenter')` and daemon runtime files use the OS runtime dir. No new top-level `~/.epicenter/` writes are introduced.
 
 Supersedes `specs/20260519T113632-epicenter-project-root-single-marker.md`. That
 spec was a local fix (one marker, walk-up, `daemon up` auto-creates). This
@@ -118,9 +117,9 @@ config-as-registry:
 
 ```ts
 // epicenter.config.ts
-import { defineConfig } from '@epicenter/workspace';
-import fuji from './workspaces/fuji/daemon';
-import opensidian from './workspaces/opensidian/daemon';
+import { defineConfig } from "@epicenter/workspace";
+import fuji from "./workspaces/fuji/daemon";
+import opensidian from "./workspaces/opensidian/daemon";
 
 export default defineConfig({
   routes: [fuji, opensidian],
@@ -272,7 +271,7 @@ one outcome.
 The minimal default written in step 2 is:
 
 ```ts
-import { defineConfig } from '@epicenter/workspace';
+import { defineConfig } from "@epicenter/workspace";
 
 export default defineConfig({});
 ```
@@ -301,17 +300,17 @@ shim is permanent code complexity for a one-time-use migration path.
 Code and docs must use these names. The previous spec's ambiguous
 `epicenterDir` is gone.
 
-| Concept | Name in code | Name in docs |
-|---|---|---|
-| Project root (nearest ancestor with config) | `projectDir: ProjectDir` | "project root" |
-| Project config file | `projectConfigPath` | "project config" |
-| Project data directory | `projectDataDir` | "project data directory" |
-| Workspace route registry (folder convention) | `workspaceRoutesDir` | "workspace routes directory" |
-| User config dir (env-paths config) | `userConfigDir` | "user config" |
-| User data dir | `userDataDir` | "user data" |
-| User cache dir | `userCacheDir` | "user cache" |
-| User log dir | `userLogDir` | "user logs" |
-| OS runtime dir (sockets, leases) | `runtimeDir` | "runtime directory" |
+| Concept                                      | Name in code             | Name in docs                 |
+| -------------------------------------------- | ------------------------ | ---------------------------- |
+| Project root (nearest ancestor with config)  | `projectDir: ProjectDir` | "project root"               |
+| Project config file                          | `projectConfigPath`      | "project config"             |
+| Project data directory                       | `projectDataDir`         | "project data directory"     |
+| Workspace route registry (folder convention) | `workspaceRoutesDir`     | "workspace routes directory" |
+| User config dir (env-paths config)           | `userConfigDir`          | "user config"                |
+| User data dir                                | `userDataDir`            | "user data"                  |
+| User cache dir                               | `userCacheDir`           | "user cache"                 |
+| User log dir                                 | `userLogDir`             | "user logs"                  |
+| OS runtime dir (sockets, leases)             | `runtimeDir`             | "runtime directory"          |
 
 Banned in code: `epicenterDir`, `epicenterHome`, "the epicenter dir."
 
@@ -325,7 +324,7 @@ export function findEpicenterDir(start: string = process.cwd()): ProjectDir {
   let current = resolve(start);
   while (true) {
     const hasWorkspaces = existsSync(join(current, WORKSPACES_DIRNAME));
-    const hasDir = existsSync(join(current, '.epicenter'));
+    const hasDir = existsSync(join(current, ".epicenter"));
     if (hasWorkspaces || hasDir) return current as ProjectDir;
     // ...
   }
@@ -349,17 +348,18 @@ if (!existsSync(workspacesPath)) {
 
 ```ts
 // packages/workspace/src/client/find-project-root.ts
-const CONFIG_FILENAME = 'epicenter.config.ts';
+const CONFIG_FILENAME = "epicenter.config.ts";
 
 export function findProjectRoot(start: string = process.cwd()): ProjectDir {
   let current = resolve(start);
   while (true) {
-    if (existsSync(join(current, CONFIG_FILENAME))) return current as ProjectDir;
+    if (existsSync(join(current, CONFIG_FILENAME)))
+      return current as ProjectDir;
     const parent = dirname(current);
     if (parent === current) {
       throw new Error(
         `findProjectRoot: no ${CONFIG_FILENAME} found walking up from ${start}. ` +
-        `Run \`epicenter daemon up\` to create one.`,
+          `Run \`epicenter daemon up\` to create one.`,
       );
     }
     current = parent;
@@ -369,7 +369,7 @@ export function findProjectRoot(start: string = process.cwd()): ProjectDir {
 
 ```ts
 // packages/workspace/src/config/define-config.ts (new)
-import type { DaemonWorkspaceModule } from '../daemon/define-daemon-workspace.js';
+import type { DaemonWorkspaceModule } from "../daemon/define-daemon-workspace.js";
 
 export type EpicenterConfig = {
   routes?: DaemonWorkspaceModule[];
@@ -386,7 +386,7 @@ export function defineConfig(config: EpicenterConfig): EpicenterConfig {
 
 ```ts
 // packages/workspace/src/daemon/client.ts::getDaemon
-import { findProjectRoot } from '../client/find-project-root.js';
+import { findProjectRoot } from "../client/find-project-root.js";
 
 // MissingConfig variant deleted. Either the project resolves (config exists
 // and was loaded into routes), or findProjectRoot threw upstream.
@@ -396,7 +396,7 @@ import { findProjectRoot } from '../client/find-project-root.js';
 // packages/cli/src/commands/up.ts::runUp
 async function runUp(opts: UpOptions) {
   const projectDir = resolveProjectDir(opts); // walks up, OR auto-creates if -C is fresh
-  await provisionProject(projectDir);          // writes config, .epicenter/, .gitignore
+  await provisionProject(projectDir); // writes config, .epicenter/, .gitignore
   const config = await loadProjectConfig(projectDir);
   const routes = config.routes ?? [];
   // ...claim lease, bind socket, open routes...
@@ -405,9 +405,9 @@ async function runUp(opts: UpOptions) {
 
 ```ts
 // packages/workspace/src/paths/user-paths.ts (new)
-import envPaths from 'env-paths';
+import envPaths from "env-paths";
 
-const paths = envPaths('epicenter', { suffix: '' });
+const paths = envPaths("epicenter", { suffix: "" });
 export const userConfigDir = paths.config;
 export const userDataDir = paths.data;
 export const userCacheDir = paths.cache;
@@ -416,15 +416,15 @@ export const userLogDir = paths.log;
 
 ```ts
 // packages/workspace/src/daemon/paths.ts
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 export function runtimeDir(): string {
   if (process.env.XDG_RUNTIME_DIR) {
-    return join(process.env.XDG_RUNTIME_DIR, 'epicenter');
+    return join(process.env.XDG_RUNTIME_DIR, "epicenter");
   }
   // macOS, Windows (Unix-socket emulation paths), Linux without XDG
-  return join(tmpdir(), 'epicenter');
+  return join(tmpdir(), "epicenter");
 }
 
 export function socketPathFor(dir: string): string {
@@ -432,7 +432,7 @@ export function socketPathFor(dir: string): string {
   if (socketPath.length > 95) {
     throw new Error(
       `socketPathFor: resolved path is ${socketPath.length} bytes, ` +
-      `exceeds safe Unix socket limit (95). projectDir=${dir}`,
+        `exceeds safe Unix socket limit (95). projectDir=${dir}`,
     );
   }
   return socketPath;
@@ -441,7 +441,7 @@ export function socketPathFor(dir: string): string {
 
 ## What `workspaces/` becomes
 
-`workspaces/` stops being a magic registry. It is a *convention* for where
+`workspaces/` stops being a magic registry. It is a _convention_ for where
 humans put route code in a real project. Three legal shapes:
 
 ```
@@ -468,15 +468,15 @@ module, not from scraping the folder name.
 
 `dirHash(realpathSync(projectDir))` keys sockets, leases, and logs.
 
-| Case | Behavior |
-|---|---|
-| Project moves | New realpath → new hash → daemon thinks it is a new project. Old `<old-hash>.sock` and lease are orphaned; cleaned at next `daemon up` startup. |
-| Symlinks | `realpathSync` collapses them. One daemon per real path. |
-| Two checkouts (`app/` and `app-copy/`) | Different real paths → different hashes → independent daemons. |
-| Two users on one machine | `env-paths` and `tmpdir` are per-user. No collision. |
-| `epicenter.config.ts` deleted mid-run | Daemon keeps serving on its socket; next `findProjectRoot` from a subdir fails. User should `epicenter daemon down` first. Documented behavior, not a crash. |
-| Stale `<hash>.sock` after reboot | macOS: cleaned at next `daemon up` (orphan sweep in `runtime-files.ts`). Linux: tmpfs is cleared by the OS. |
-| Symlink at runtime path | `runtimeDir()` does not resolve symlinks; we trust XDG_RUNTIME_DIR / $TMPDIR. |
+| Case                                   | Behavior                                                                                                                                                     |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Project moves                          | New realpath → new hash → daemon thinks it is a new project. Old `<old-hash>.sock` and lease are orphaned; cleaned at next `daemon up` startup.              |
+| Symlinks                               | `realpathSync` collapses them. One daemon per real path.                                                                                                     |
+| Two checkouts (`app/` and `app-copy/`) | Different real paths → different hashes → independent daemons.                                                                                               |
+| Two users on one machine               | `env-paths` and `tmpdir` are per-user. No collision.                                                                                                         |
+| `epicenter.config.ts` deleted mid-run  | Daemon keeps serving on its socket; next `findProjectRoot` from a subdir fails. User should `epicenter daemon down` first. Documented behavior, not a crash. |
+| Stale `<hash>.sock` after reboot       | macOS: cleaned at next `daemon up` (orphan sweep in `runtime-files.ts`). Linux: tmpfs is cleared by the OS.                                                  |
+| Symlink at runtime path                | `runtimeDir()` does not resolve symlinks; we trust XDG_RUNTIME_DIR / $TMPDIR.                                                                                |
 
 ## Patch plan
 
@@ -593,8 +593,8 @@ file away:
 
 ```ts
 // my-project/epicenter.config.ts
-import { defineConfig } from '@epicenter/workspace';
-import fuji from '../../apps/fuji/daemon';
+import { defineConfig } from "@epicenter/workspace";
+import fuji from "../../apps/fuji/daemon";
 export default defineConfig({ routes: [fuji] });
 ```
 

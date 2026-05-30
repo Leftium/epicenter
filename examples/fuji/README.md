@@ -18,7 +18,7 @@ this example changes with it.
 examples/fuji/
 ├── package.json           dependencies (this file)
 ├── tsconfig.json          extends the repo base
-├── epicenter.config.ts    REQUIRED. Marker + mount factory call.
+├── epicenter.config.ts    REQUIRED. Marker + mount list.
 ├── .gitignore             Epicenter-managed (.epicenter/)
 ├── entries/               table data as markdown (committed)
 │   ├── welcome.md
@@ -50,9 +50,9 @@ sqlite> .tables
 sqlite> SELECT id, title FROM entries;
 ```
 
-The SQLite mirror is regenerable from `yjs.db`, which is regenerable from
-the markdown in `entries/`. Anything under `.epicenter/` can be deleted; the
-daemon will rebuild it on next run.
+The SQLite mirror is regenerable from the Yjs persistence file. Once markdown
+hydration lands, that Yjs runtime cache will be regenerable from `entries/`.
+Until then, deleting `.epicenter/` drops the daemon's runtime state.
 
 ## Edit a note
 
@@ -75,18 +75,18 @@ example's `epicenter.config.ts`.
 Current path:
 
 1. **Call a mutation.** Use the CLI's `run` subcommand to invoke the
-   workspace's create action.
+   mount's create action.
 
 Planned path: create `entries/my-new-entry.md` with the same frontmatter shape
-as the existing examples, then let markdown hydration ingest it into the
-workspace.
+as the existing examples, then let markdown hydration ingest it into Fuji's
+Y.Doc.
 
 ## What this example deliberately omits
 
 - Auth and sync. The example is local-only; no `epicenter auth login` step.
 - Browser or Tauri frontend. The example is daemon-hosted only.
-- Custom path overrides. Materializer paths use the spec's default
-  (`.epicenter/sqlite.db` and `./entries/`).
+- Default materializer paths. This example overrides them so SQLite lands at
+  `.epicenter/sqlite.db` and markdown lands under `./entries/`.
 - Multiple mounts. This example keeps the mount list small so the project
   layout stays easy to inspect.
 

@@ -33,7 +33,7 @@ import { sqlitePath } from './workspace-paths.js';
  * import { FUJI_ID } from '@epicenter/fuji';
  *
  * const db = openWorkspaceSqlite(findProjectRoot(), FUJI_ID);
- * const urgent = db.query('SELECT * FROM entries WHERE tag = ?').all('urgent');
+ * const welcome = db.query('SELECT * FROM entries WHERE title = ?').all('Welcome to Fuji');
  * db.close();
  * ```
  */

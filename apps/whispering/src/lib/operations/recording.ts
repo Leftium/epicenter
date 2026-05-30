@@ -1,4 +1,5 @@
 import { nanoid } from 'nanoid/non-secure';
+import { manualRecorderConfig } from '#platform/manual-recorder-config';
 import { goto } from '$app/navigation';
 import { analytics } from '$lib/operations/analytics';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
@@ -7,7 +8,6 @@ import { log, type Notice, report } from '$lib/report';
 import type { DeviceAcquisitionOutcome } from '$lib/services/recorder/types';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
-import { manualRecorderConfig } from '#platform/manual-recorder-config';
 import { settings } from '$lib/state/settings.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 

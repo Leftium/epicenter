@@ -1,10 +1,10 @@
 import { AnalyticsServiceLive } from '#platform/analytics';
 import { AudioBlobStoreLive } from '#platform/blob-store';
-import * as completions from './completion';
 import { DownloadServiceLive } from '#platform/download';
-import { LocalShortcutManagerLive } from './local-shortcut-manager';
 import { PlaySoundServiceLive } from '#platform/sound';
 import { TextServiceLive } from '#platform/text';
+import * as completions from './completion';
+import { LocalShortcutManagerLive } from './local-shortcut-manager';
 import * as transcriptions from './transcription';
 
 /**

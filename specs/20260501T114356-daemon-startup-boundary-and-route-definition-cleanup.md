@@ -4,12 +4,11 @@
 **Status**: Superseded
 **Author**: AI-assisted
 **Branch**: codex/explicit-daemon-host-config
-**Superseded by**: `20260520T120000-code-composed-daemon-route-map.md`
+**Superseded by**: Mount-list project config (`export default [fuji()]`)
 
 > Historical note: this spec's array route shape is not current. Current code
-> rejects route arrays and accepts `defineConfig({ daemon: { routes: { ... } } })`
-> for multi-route projects. The usual single-project shape is
-> `defineWorkspace({ open })`.
+> accepts a `Mount[]` default export from app package factories such as
+> `fuji()`. The mount `name` owns the CLI prefix.
 
 ## One-Sentence Test
 
@@ -27,30 +26,31 @@ The active public daemon types are still a route map of bare callback functions:
 
 ```ts
 export type DaemonRouteContext = {
-	projectDir: ProjectDir;
-	route: string;
+  projectDir: ProjectDir;
+  route: string;
 };
 
 export type DaemonRuntime = {
-	[Symbol.dispose](): void;
-	readonly actions: Actions;
-	readonly sync: SyncAttachment;
-	readonly peerDirectory: PeerDirectory;
-	readonly rpc: SyncRpcAttachment;
+  [Symbol.dispose](): void;
+  readonly actions: Actions;
+  readonly sync: SyncAttachment;
+  readonly peerDirectory: PeerDirectory;
+  readonly rpc: SyncRpcAttachment;
 };
 
-export type DaemonRouteDefinition<TRuntime extends DaemonRuntime = DaemonRuntime> =
-	(options: DaemonRouteContext) => MaybePromise<TRuntime>;
+export type DaemonRouteDefinition<
+  TRuntime extends DaemonRuntime = DaemonRuntime,
+> = (options: DaemonRouteContext) => MaybePromise<TRuntime>;
 
 export type EpicenterConfig<
-	TRoutes extends Record<string, DaemonRouteDefinition> = Record<
-		string,
-		DaemonRouteDefinition
-	>,
+  TRoutes extends Record<string, DaemonRouteDefinition> = Record<
+    string,
+    DaemonRouteDefinition
+  >,
 > = {
-	daemon: {
-		routes: TRoutes;
-	};
+  daemon: {
+    routes: TRoutes;
+  };
 };
 ```
 
@@ -58,11 +58,11 @@ The normal config shape is:
 
 ```ts
 export default defineConfig({
-	daemon: {
-		routes: {
-			fuji: defineFujiDaemon(),
-		},
-	},
+  daemon: {
+    routes: {
+      fuji: defineFujiDaemon(),
+    },
+  },
 });
 ```
 
@@ -92,13 +92,13 @@ This creates problems:
 The config authoring shape stays small:
 
 ```ts
-import { defineConfig } from '@epicenter/workspace/daemon';
-import { defineFujiDaemon } from '@epicenter/fuji/daemon';
+import { defineConfig } from "@epicenter/workspace/daemon";
+import { defineFujiDaemon } from "@epicenter/fuji/daemon";
 
 export default defineConfig({
-	daemon: {
-		routes: [defineFujiDaemon()],
-	},
+  daemon: {
+    routes: [defineFujiDaemon()],
+  },
 });
 ```
 
@@ -108,34 +108,34 @@ The runtime types should read like the system works:
 
 ```ts
 export type DaemonRouteContext = {
-	projectDir: ProjectDir;
-	route: string;
+  projectDir: ProjectDir;
+  route: string;
 };
 
 export type DaemonRuntime = {
-	readonly actions: Actions;
-	readonly sync: SyncAttachment;
-	readonly peerDirectory: PeerDirectory;
-	readonly rpc: SyncRpcAttachment;
-	[Symbol.asyncDispose](): MaybePromise<void>;
+  readonly actions: Actions;
+  readonly sync: SyncAttachment;
+  readonly peerDirectory: PeerDirectory;
+  readonly rpc: SyncRpcAttachment;
+  [Symbol.asyncDispose](): MaybePromise<void>;
 };
 
 export type DaemonRouteDefinition<
-	TRuntime extends DaemonRuntime = DaemonRuntime,
+  TRuntime extends DaemonRuntime = DaemonRuntime,
 > = {
-	route: string;
-	start(context: DaemonRouteContext): MaybePromise<TRuntime>;
+  route: string;
+  start(context: DaemonRouteContext): MaybePromise<TRuntime>;
 };
 
 export type EpicenterConfig = {
-	daemon: {
-		routes: readonly DaemonRouteDefinition[];
-	};
+  daemon: {
+    routes: readonly DaemonRouteDefinition[];
+  };
 };
 
 export type StartedDaemonRoute = {
-	route: string;
-	runtime: DaemonRuntime;
+  route: string;
+  runtime: DaemonRuntime;
 };
 ```
 
@@ -154,19 +154,19 @@ The active code has already removed route metadata. `title` and `workspaceId` do
 Fuji shows the tension:
 
 ```ts
-export const DEFAULT_FUJI_DAEMON_ROUTE = 'fuji';
+export const DEFAULT_FUJI_DAEMON_ROUTE = "fuji";
 
 export function defineFujiDaemon() {
-	return ({ projectDir }: DaemonRouteContext) => {
-		// start Fuji runtime
-	};
+  return ({ projectDir }: DaemonRouteContext) => {
+    // start Fuji runtime
+  };
 }
 
 export function connectFujiDaemonActions({
-	route = DEFAULT_FUJI_DAEMON_ROUTE,
-	projectDir,
+  route = DEFAULT_FUJI_DAEMON_ROUTE,
+  projectDir,
 } = {}) {
-	return connectDaemonActions({ route, projectDir });
+  return connectDaemonActions({ route, projectDir });
 }
 ```
 
@@ -174,11 +174,11 @@ The current config has to repeat the route as a map key:
 
 ```ts
 export default defineConfig({
-	daemon: {
-		routes: {
-			fuji: defineFujiDaemon(),
-		},
-	},
+  daemon: {
+    routes: {
+      fuji: defineFujiDaemon(),
+    },
+  },
 });
 ```
 
@@ -190,9 +190,9 @@ That means an app package owns the default route for scripts, while the config o
 
 ```ts
 export default defineConfig({
-	daemon: {
-		routes: [defineFujiDaemon()],
-	},
+  daemon: {
+    routes: [defineFujiDaemon()],
+  },
 });
 
 const fuji = await connectFujiDaemonActions();
@@ -202,12 +202,12 @@ Custom route names still work, but both sides name the custom mount:
 
 ```ts
 export default defineConfig({
-	daemon: {
-		routes: [defineFujiDaemon({ route: 'blog' })],
-	},
+  daemon: {
+    routes: [defineFujiDaemon({ route: "blog" })],
+  },
 });
 
-const blog = await connectFujiDaemonActions({ route: 'blog' });
+const blog = await connectFujiDaemonActions({ route: "blog" });
 ```
 
 ### Async Construction Pattern
@@ -215,8 +215,7 @@ const blog = await connectFujiDaemonActions({ route: 'blog' });
 The workspace attachment layer uses synchronous construction with async readiness properties:
 
 ```ts
-const sqlite = attachSqlite(ydoc, { filePath })
-	.table(tables.entries);
+const sqlite = attachSqlite(ydoc, { filePath }).table(tables.entries);
 
 await sqlite.whenLoaded;
 ```
@@ -251,33 +250,33 @@ runUp
 
 ## Design Decisions
 
-| Decision | Choice | Rationale |
-| --- | --- | --- |
-| Config shape | `daemon.routes` array | App packages can provide default route definitions, and configs compose them like integrations. |
-| Top-level helper | Rename `defineConfig` to `defineConfig` | The import path already says Epicenter daemon config. The shorter name matches ecosystem convention. |
-| App route helper | Rename `fujiDaemon()` style helpers to `defineFujiDaemon()` | These helpers return route definitions. They do not open resources until `start()` runs. |
+| Decision             | Choice                                                                         | Rationale                                                                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Config shape         | `daemon.routes` array                                                          | App packages can provide default route definitions, and configs compose them like integrations.                                            |
+| Top-level helper     | Rename `defineConfig` to `defineConfig`                                        | The import path already says Epicenter daemon config. The shorter name matches ecosystem convention.                                       |
+| App route helper     | Rename `fujiDaemon()` style helpers to `defineFujiDaemon()`                    | These helpers return route definitions. They do not open resources until `start()` runs.                                                   |
 | App action connector | Rename `openFujiDaemonActions()` style helpers to `connectFujiDaemonActions()` | These helpers talk to an already-running daemon. `connect` matches `connectDaemonActions` and avoids implying local resource construction. |
-| Route entries | `{ route, start }` definitions | This makes the package default route the common source of truth without adding descriptive metadata. |
-| Route metadata | Do not add `title` or `workspaceId` | Route names are local addresses. Y.Doc guid owns workspace identity. Action metadata owns labels. |
-| Duplicate routes | Loader error | Arrays allow duplicates, so `loadDaemonConfig()` must reject them before startup. |
-| Runtime disposal | Use `[Symbol.asyncDispose]` | The runtime should own teardown and await its own attachment barriers. |
-| Config loading | Split parse from start | `runUp` must claim ownership before import and before factory side effects. |
-| Attach primitives | Keep sync construction and readiness promises | This preserves builder chains, module exports, and UI render gates. |
-| Sync connection | Do not await `sync.whenConnected` in daemon startup | `epicenter up` must work offline and report status later. |
-| Local readiness | Route `start()` hooks may await local persistence only when needed | Awaiting SQLite or file materializer readiness is app-specific. The daemon framework should not impose it. |
-| Server startup | Listen with a startup app, then mount routes | The socket becomes the ownership gate before route startup. |
+| Route entries        | `{ route, start }` definitions                                                 | This makes the package default route the common source of truth without adding descriptive metadata.                                       |
+| Route metadata       | Do not add `title` or `workspaceId`                                            | Route names are local addresses. Y.Doc guid owns workspace identity. Action metadata owns labels.                                          |
+| Duplicate routes     | Loader error                                                                   | Arrays allow duplicates, so `loadDaemonConfig()` must reject them before startup.                                                          |
+| Runtime disposal     | Use `[Symbol.asyncDispose]`                                                    | The runtime should own teardown and await its own attachment barriers.                                                                     |
+| Config loading       | Split parse from start                                                         | `runUp` must claim ownership before import and before factory side effects.                                                                |
+| Attach primitives    | Keep sync construction and readiness promises                                  | This preserves builder chains, module exports, and UI render gates.                                                                        |
+| Sync connection      | Do not await `sync.whenConnected` in daemon startup                            | `epicenter up` must work offline and report status later.                                                                                  |
+| Local readiness      | Route `start()` hooks may await local persistence only when needed             | Awaiting SQLite or file materializer readiness is app-specific. The daemon framework should not impose it.                                 |
+| Server startup       | Listen with a startup app, then mount routes                                   | The socket becomes the ownership gate before route startup.                                                                                |
 
 ### Naming Audit
 
-| Current name | Target name | Reason |
-| --- | --- | --- |
-| `defineConfig` | `defineConfig` | The import path already says Epicenter. This matches Vite, Astro, and Nitro style config helpers. |
-| `DaemonRouteContext` | `DaemonRouteContext` | The object is passed to one daemon route starter. It is not the whole config context. |
-| `DaemonRouteDefinition` | `DaemonRouteDefinition` | The value is a route entry object, not a loaded module. |
-| `StartedDaemonRoute` | `StartedDaemonRoute` | The value is a started route plus its runtime. The name should say it is after startup. |
-| `fujiDaemon()` | `defineFujiDaemon()` | The helper returns a route definition and delays side effects until `start()`. |
-| `openFujiDaemonActions()` | `connectFujiDaemonActions()` | The helper connects to an existing daemon over IPC. It does not open the Fuji workspace locally. |
-| `FUJI_DAEMON_ROUTE` | `DEFAULT_FUJI_DAEMON_ROUTE` | The constant is the package default, not necessarily the mounted route in every config. |
+| Current name              | Target name                  | Reason                                                                                            |
+| ------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------- |
+| `defineConfig`            | `defineConfig`               | The import path already says Epicenter. This matches Vite, Astro, and Nitro style config helpers. |
+| `DaemonRouteContext`      | `DaemonRouteContext`         | The object is passed to one daemon route starter. It is not the whole config context.             |
+| `DaemonRouteDefinition`   | `DaemonRouteDefinition`      | The value is a route entry object, not a loaded module.                                           |
+| `StartedDaemonRoute`      | `StartedDaemonRoute`         | The value is a started route plus its runtime. The name should say it is after startup.           |
+| `fujiDaemon()`            | `defineFujiDaemon()`         | The helper returns a route definition and delays side effects until `start()`.                    |
+| `openFujiDaemonActions()` | `connectFujiDaemonActions()` | The helper connects to an existing daemon over IPC. It does not open the Fuji workspace locally.  |
+| `FUJI_DAEMON_ROUTE`       | `DEFAULT_FUJI_DAEMON_ROUTE`  | The constant is the package default, not necessarily the mounted route in every config.           |
 
 Names that should stay:
 
@@ -357,18 +356,18 @@ The server starts with enough app surface for `/ping`. Once routes are ready, it
 
 ```ts
 export type DaemonServer = {
-	readonly socketPath: string;
-	listen(): Promise<Result<UnixSocketServer, StartupError>>;
-	mountRoutes(routes: StartedDaemonRoute[]): void;
-	close(): Promise<void>;
+  readonly socketPath: string;
+  listen(): Promise<Result<UnixSocketServer, StartupError>>;
+  mountRoutes(routes: StartedDaemonRoute[]): void;
+  close(): Promise<void>;
 };
 
 export function createDaemonServer({
-	projectDir,
-	triggerShutdown,
+  projectDir,
+  triggerShutdown,
 }: {
-	projectDir: ProjectDir;
-	triggerShutdown?: () => void;
+  projectDir: ProjectDir;
+  triggerShutdown?: () => void;
 }): DaemonServer;
 ```
 
@@ -378,15 +377,15 @@ Implementation can use a mutable fetch delegate instead of relying on `server.re
 let currentFetch = buildStartingDaemonApp().fetch;
 
 const app = {
-	fetch(request: Request, env: unknown, executionCtx: unknown) {
-		return currentFetch(request, env, executionCtx);
-	},
+  fetch(request: Request, env: unknown, executionCtx: unknown) {
+    return currentFetch(request, env, executionCtx);
+  },
 };
 
 return {
-	mountRoutes(routes) {
-		currentFetch = buildDaemonApp(routes, triggerShutdown).fetch;
-	},
+  mountRoutes(routes) {
+    currentFetch = buildDaemonApp(routes, triggerShutdown).fetch;
+  },
 };
 ```
 
@@ -396,33 +395,33 @@ return {
 
 ```ts
 export type DaemonRouteContext = {
-	projectDir: ProjectDir;
-	route: string;
+  projectDir: ProjectDir;
+  route: string;
 };
 
 export type DaemonRuntime = {
-	readonly actions: Actions;
-	readonly sync: SyncAttachment;
-	readonly peerDirectory: PeerDirectory;
-	readonly rpc: SyncRpcAttachment;
-	[Symbol.asyncDispose](): MaybePromise<void>;
+  readonly actions: Actions;
+  readonly sync: SyncAttachment;
+  readonly peerDirectory: PeerDirectory;
+  readonly rpc: SyncRpcAttachment;
+  [Symbol.asyncDispose](): MaybePromise<void>;
 };
 
 export type DaemonRouteDefinition<
-	TRuntime extends DaemonRuntime = DaemonRuntime,
+  TRuntime extends DaemonRuntime = DaemonRuntime,
 > = {
-	route: string;
-	start(context: DaemonRouteContext): MaybePromise<TRuntime>;
+  route: string;
+  start(context: DaemonRouteContext): MaybePromise<TRuntime>;
 };
 
 export type EpicenterConfig = {
-	daemon: {
-		routes: readonly DaemonRouteDefinition[];
-	};
+  daemon: {
+    routes: readonly DaemonRouteDefinition[];
+  };
 };
 
 export function defineConfig(config: EpicenterConfig): EpicenterConfig {
-	return config;
+  return config;
 }
 ```
 
@@ -430,14 +429,14 @@ export function defineConfig(config: EpicenterConfig): EpicenterConfig {
 
 ```ts
 export type LoadedDaemonConfig = {
-	projectDir: ProjectDir;
-	configPath: string;
-	routes: readonly DaemonRouteDefinition[];
+  projectDir: ProjectDir;
+  configPath: string;
+  routes: readonly DaemonRouteDefinition[];
 };
 
 export type StartedDaemonRoute = {
-	route: string;
-	runtime: DaemonRuntime;
+  route: string;
+  runtime: DaemonRuntime;
 };
 ```
 
@@ -445,11 +444,11 @@ export type StartedDaemonRoute = {
 
 ```ts
 export async function loadDaemonConfig(
-	projectDir: ProjectDir,
+  projectDir: ProjectDir,
 ): Promise<Result<LoadedDaemonConfig, DaemonConfigError>>;
 
 export async function startDaemonRoutes(
-	config: LoadedDaemonConfig,
+  config: LoadedDaemonConfig,
 ): Promise<Result<StartedDaemonRoute[], DaemonConfigError>>;
 ```
 
@@ -458,42 +457,42 @@ export async function startDaemonRoutes(
 ### Route Definition Example
 
 ```ts
-export const DEFAULT_FUJI_DAEMON_ROUTE = 'fuji';
+export const DEFAULT_FUJI_DAEMON_ROUTE = "fuji";
 
 export function defineFujiDaemon({
-	route = DEFAULT_FUJI_DAEMON_ROUTE,
-	...options
+  route = DEFAULT_FUJI_DAEMON_ROUTE,
+  ...options
 }: FujiDaemonOptions = {}): DaemonRouteDefinition {
-	return {
-		route,
-		async start({ projectDir }) {
-			const doc = openFujiDoc({ clientID: hashClientId(projectDir) });
-			const sync = attachSync(doc, syncOptions(options));
-			const awareness = attachAwareness(doc.ydoc, {
-				schema: { peer: PeerIdentity },
-				initial: { peer: peerFromOptions(options) },
-			});
-			const peerDirectory = createPeerDirectory({ awareness, sync });
-			const rpc = sync.attachRpc(doc.actions);
+  return {
+    route,
+    async start({ projectDir }) {
+      const doc = openFujiDoc({ clientID: hashClientId(projectDir) });
+      const sync = attachSync(doc, syncOptions(options));
+      const awareness = attachAwareness(doc.ydoc, {
+        schema: { peer: PeerIdentity },
+        initial: { peer: peerFromOptions(options) },
+      });
+      const peerDirectory = createPeerDirectory({ awareness, sync });
+      const rpc = sync.attachRpc(doc.actions);
 
-			const sqlite = attachSqlite(doc.ydoc, {
-				filePath: sqlitePath(projectDir, doc.ydoc.guid),
-			}).table(doc.tables.entries);
+      const sqlite = attachSqlite(doc.ydoc, {
+        filePath: sqlitePath(projectDir, doc.ydoc.guid),
+      }).table(doc.tables.entries);
 
-			await sqlite.whenLoaded;
+      await sqlite.whenLoaded;
 
-			return {
-				actions: doc.actions,
-				sync,
-				peerDirectory,
-				rpc,
-				async [Symbol.asyncDispose]() {
-					doc[Symbol.dispose]();
-					await sync.whenDisposed;
-				},
-			};
-		},
-	};
+      return {
+        actions: doc.actions,
+        sync,
+        peerDirectory,
+        rpc,
+        async [Symbol.asyncDispose]() {
+          doc[Symbol.dispose]();
+          await sync.whenDisposed;
+        },
+      };
+    },
+  };
 }
 ```
 
@@ -637,7 +636,7 @@ This awaits local SQLite because Fuji daemon actions may depend on the local mir
 
 ### Summary
 
-Implemented the breaking daemon config cleanup. Public daemon config now uses `defineConfig({ daemon: { routes: [...] } })`, app route helpers return `{ route, start }` definitions, and app daemon action helpers use `connect*DaemonActions` names.
+Implemented the breaking daemon config cleanup for that branch. This has since been superseded by mount-list project config, where `epicenter.config.ts` default-exports `Mount[]`.
 
 Daemon startup now claims the Unix socket before importing config. `runUp()` verifies the config file exists, starts a startup server, writes metadata, then imports config, starts route definitions, and mounts the real route app.
 

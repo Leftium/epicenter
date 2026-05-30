@@ -17,6 +17,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
+import { os } from '#platform/os';
 import {
 	ACCELERATOR_KEY_CODES,
 	ACCELERATOR_MODIFIER_KEYS,
@@ -26,7 +27,6 @@ import {
 	FUNCTION_KEY_PATTERN,
 	type KeyboardEventSupportedKey,
 } from '$lib/constants/keyboard';
-import { os } from '#platform/os';
 
 /**
  * Maps browser KeyboardEvent.key values (lowercased) to Electron/Tauri

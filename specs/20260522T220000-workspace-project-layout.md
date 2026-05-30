@@ -4,12 +4,10 @@ Status: draft
 Owner: braden
 Date: 2026-05-22
 
-Current code note (2026-05-27): the default direction in this spec still
-matches current code: a project can default-export `defineWorkspace({ open })`
-from `epicenter.config.ts`. The strong "no more daemon.routes" language below
-is too absolute. `defineConfig({ daemon: { routes: { ... } } })` remains the
-multi-route escape hatch, and `workspaces/` remains a source-layout convention
-only.
+Current code note (2026-05-29): current project config default-exports a
+`Mount[]`. One Fuji project still exports a list of one: `export default
+[fuji()]`. The older `defineWorkspace({ open })` and `daemon.routes` examples
+below are historical context, not the current config shape.
 
 ## 1. Goal
 
@@ -18,7 +16,7 @@ Pin down the on-disk layout for any Epicenter-using project so that:
 - A developer cloning a project can identify it as Epicenter at a glance.
 - A daemon, a CLI, and a Tauri app on the same machine all read and write the same shared user state without coordination via env vars.
 - Markdown is the canonical, human-editable, git-friendly representation of workspace data. Yjs is the runtime collaboration layer; SQLite is a queryable mirror.
-- One workspace per project. Multi-workspace is a monorepo, not a directory-of-workspaces.
+- One project-level mount list. A one-app project still exports a list of one.
 - The platform reserves two things in a project tree, and one in the user's home. Nothing else.
 
 This spec replaces ad-hoc usage of `env-paths`, the `<projectDir>/.epicenter/<resource>/<wsId>` per-resource layout, and the assumption that yjs.db is the committed source of truth.
@@ -27,14 +25,14 @@ This spec replaces ad-hoc usage of `env-paths`, the `<projectDir>/.epicenter/<re
 
 ```
 At a project root:
-  epicenter.config.ts             ← FILE, required. Marker + workspace definition.
+  epicenter.config.ts             ← FILE, required. Marker + mount list.
   .epicenter/                     ← DIR, runtime cache. Auto-created. Gitignored.
 
 In user home:
   ~/.epicenter/                   ← DIR, cross-app user state. Auto-created.
 ```
 
-That's it. No `workspaces/` container. No `workspace.ts` companion file. No `<route>/` subdirectories. One workspace per project; the file at root defines it.
+That's it. No `workspaces/` container. No `workspace.ts` companion file. No `<route>/` subdirectories. The file at the root lists the mounts the daemon opens.
 
 By convention, table data lives in directories at the project root named after the table:
 
@@ -46,11 +44,11 @@ This is convention, not reservation. The actual paths are whatever the developer
 
 ### 2.1 What each reservation is
 
-`epicenter.config.ts` is the *identity* and *definition* of an Epicenter project. `findProjectRoot()` walks up from `process.cwd()` looking for this exact filename. It also default-exports the daemon definition: schema, materializer attachments, sync setup, all inline. Marker and definition collapse into one file because there is one workspace per project.
+`epicenter.config.ts` is the _identity_ of an Epicenter project. `findProjectRoot()` walks up from `process.cwd()` looking for this exact filename. It default-exports the `Mount[]` the daemon opens. App packages own the mount factory, schema, materializer attachments, and sync setup.
 
-`<project>/.epicenter/` is *project-local runtime cache*. The Yjs persistence file, the SQLite materializer mirror, the WAL sidecars. Gitignored. Regenerable. Analogous to `.next/`, `.svelte-kit/`, `.turbo/` for other tools.
+`<project>/.epicenter/` is _project-local runtime cache_. The Yjs persistence file, the SQLite materializer mirror, the WAL sidecars. Gitignored. Regenerable. Analogous to `.next/`, `.svelte-kit/`, `.turbo/` for other tools.
 
-`~/.epicenter/` is *user-and-machine-scoped shared state*. Auth tokens (or a keychain fallback pointer), local device identity, settings shared across Epicenter apps on this machine, logs, schema version stamp. Same absolute path on macOS, Linux, and Windows: `${homedir()}/.epicenter/`. One rule.
+`~/.epicenter/` is _user-and-machine-scoped shared state_. Auth tokens (or a keychain fallback pointer), local device identity, settings shared across Epicenter apps on this machine, logs, schema version stamp. Same absolute path on macOS, Linux, and Windows: `${homedir()}/.epicenter/`. One rule.
 
 ### 2.2 What this changes from the previous draft and from current code
 
@@ -58,22 +56,22 @@ This is convention, not reservation. The actual paths are whatever the developer
 Concept                       Previous draft               This spec
 -------                       --------------               ---------
 Project marker                epicenter.config.ts          epicenter.config.ts
-                              (just a registry)            (registry AND workspace definition)
+                              (just a registry)            (marker AND mount list)
 
-Workspaces per project        many                         one
-                              (under workspaces/<r>/)      (project = workspace)
+Mounts per project            many routes                  one list
+                              (under workspaces/<r>/)      (project = mount host)
 
-Per-workspace definition      workspaces/<r>/workspace.ts  inline in epicenter.config.ts
+Per-mount definition          workspaces/<r>/workspace.ts  app package mount factory
 
 Source of truth in git        workspaces/<r>/yjs.db        committed markdown (./<tableName>/*.md)
 
-Local runtime cache           workspaces/<r>/sqlite.db     .epicenter/sqlite.db
-                              workspaces/<r>/yjs.db        .epicenter/yjs.db (NOT committed)
+Local runtime cache           workspaces/<r>/sqlite.db     .epicenter/sqlite/<id>.db
+                              workspaces/<r>/yjs.db        .epicenter/yjs/<id>.db (NOT committed)
                               workspaces/<r>/md/           (markdown lives at project root)
 
-Multi-workspace               daemon.routes registry       monorepo: sibling projects
+Multiple mounts               daemon.routes registry       more entries in Mount[]
 
-Daemon route concept          required                     vestigial (one workspace = no route prefix)
+Daemon route concept          required                     mount name prefix
 ```
 
 The deepest shift is the source-of-truth inversion. Today, yjs.db is canonical and markdown is derived. This spec makes markdown canonical and yjs.db a regenerable runtime cache. See §7 for the architectural consequences.
@@ -84,19 +82,19 @@ The deepest shift is the source-of-truth inversion. Today, yjs.db is canonical a
 
 ```ts
 // packages/constants/src/platform-paths.ts
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { homedir } from "node:os";
+import { join } from "node:path";
 
-const root = process.env.EPICENTER_HOME ?? join(homedir(), '.epicenter');
+const root = process.env.EPICENTER_HOME ?? join(homedir(), ".epicenter");
 
 export const platformPaths = {
   root,
-  authDir:     join(root, 'auth'),
-  identityDir: join(root, 'identity'),
-  logsDir:     join(root, 'logs'),
-  cacheDir:    join(root, 'cache'),
-  settingsFile: join(root, 'settings.json'),
-  versionFile: join(root, 'version.json'),
+  authDir: join(root, "auth"),
+  identityDir: join(root, "identity"),
+  logsDir: join(root, "logs"),
+  cacheDir: join(root, "cache"),
+  settingsFile: join(root, "settings.json"),
+  versionFile: join(root, "version.json"),
 } as const;
 ```
 
@@ -155,144 +153,77 @@ Linux    libsecret if available; file fallback otherwise
 
 Every Epicenter process reads `version.json` on startup. If `schemaVersion > knownVersion`, the process refuses to write and prints a clear "your CLI is older than this directory" message.
 
-## 4. `epicenter.config.ts` (the marker and the definition)
+## 4. `epicenter.config.ts` (the marker and mount list)
 
 ### 4.1 The contract
 
-- Exact filename: `epicenter.config.ts`. Resolved by `PROJECT_CONFIG_FILENAME` in `packages/workspace/src/config/define-config.ts`.
-- Default-exports a `defineWorkspace({...})` (or equivalent) call that returns a `DaemonWorkspaceDefinition`.
+- Exact filename: `epicenter.config.ts`. Resolved by `PROJECT_CONFIG_FILENAME` in `packages/workspace/src/config/project-config-source.ts`.
+- Default-exports a `Mount[]`. Each entry needs a string `name` and an `open` function.
 - Lives at the project root.
 - It is the only file that makes a directory an Epicenter project.
-- Defines the schema, attaches materializers, and configures sync. All inline. No separate config + workspace files.
+- Lists the mounts the daemon opens. App packages define schema, materializers, and sync inside their mount factories.
 
 ### 4.2 Shape
 
-The file composes a daemon. The composition produces (a) a workspace's schema, (b) materializer attachments with explicit paths, (c) sync infrastructure setup.
+The file chooses mounts. A one-app project is still a list of one:
 
 ```ts
 // epicenter.config.ts (canonical shape)
-import { defineWorkspace } from '@epicenter/workspace';
-import {
-  attachDaemonInfrastructure,
-  openWriterSqlite,
-} from '@epicenter/workspace/node';
-import { attachSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
-import {
-  attachMarkdownMaterializer,
-  slugFilename,
-} from '@epicenter/workspace/document/materializer/markdown';
-import { attachTables, defineTable } from '@epicenter/workspace';
-import { type } from 'arktype';
-import * as Y from 'yjs';
-import { createLogger } from 'wellcrafted/logger';
+import { fuji } from "@epicenter/fuji/project";
 
-const WORKSPACE_GUID = 'epicenter.fuji';
-
-const Entry = defineTable(type({
-  id: 'string',
-  title: 'string',
-  body: 'string',
-}));
-
-export default defineWorkspace({
-  guid: WORKSPACE_GUID,
-
-  async open({ projectDir, openWebSocket, installationId }) {
-    const ydoc = new Y.Doc({ guid: WORKSPACE_GUID });
-    const tables = attachTables(ydoc, { entries: Entry });
-
-    const infra = attachDaemonInfrastructure(ydoc, {
-      projectDir,
-      openWebSocket,
-      installationId,
-      actions: { /* queries, mutations */ },
-    });
-
-    // Materializer paths are explicit and relative to projectDir.
-    // The developer chooses where outputs land.
-    const sqliteDb = openWriterSqlite({
-      filePath: join(projectDir, '.epicenter', 'sqlite.db'),
-      log: createLogger('sqlite'),
-    });
-    ydoc.once('destroy', () => sqliteDb.close());
-
-    attachSqliteMaterializer(ydoc, { db: sqliteDb }).table(tables.entries);
-
-    // The markdown materializer appends `table.name` (or a per-table `dir`
-    // override) to its base `dir`. Passing `dir: projectDir` produces
-    // `<projectDir>/entries/<slug>.md` for the `entries` table.
-    attachMarkdownMaterializer(ydoc, {
-      dir: projectDir,
-    }).table(tables.entries, { filename: slugFilename('title') });
-
-    return infra;
-  },
-});
+export default [fuji()];
 ```
 
 Three things to notice:
 
-1. **No route concept at the disk layer.** One workspace per project; the daemon serves one set of RPCs; no `route.<name>` prefix needed in path computation. (The wire-protocol may keep a route name for compatibility; that's a separate concern.)
-2. **Materializer paths are explicit.** `dir: join(projectDir, 'entries')` says where the markdown goes. There is no implicit "table name becomes directory name" magic; the developer writes it. The convention is just what the example does.
-3. **Yjs.db lives under `.epicenter/`.** That's the developer's choice in the `openWriterSqlite` call. Convention: hidden runtime state under `.epicenter/`.
+1. **The array is the config contract.** `loadProjectConfig()` rejects a bare `fuji()` export.
+2. **Mount names own CLI prefixes.** The `fuji()` factory returns a `Mount` named `fuji`, so actions are addressed as `fuji.<action_key>`.
+3. **Materializer paths stay mount-owned.** Fuji's factory defaults to `.epicenter/md/<workspaceId>/` and `.epicenter/sqlite/<workspaceId>.db`; the example overrides those to `entries/` and `.epicenter/sqlite.db`.
 
 ### 4.3 Project-side helpers
 
-To avoid every project repeating `join(projectDir, '.epicenter', 'sqlite.db')`, the workspace package exposes two path helpers:
+To avoid every mount repeating `.epicenter/<kind>/<workspaceId>` conventions, the workspace package exposes path helpers:
 
 ```ts
-// packages/workspace/src/document/project-paths.ts
-import { join } from 'node:path';
+import { markdownPath, sqlitePath, yjsPath } from "@epicenter/workspace/node";
 
-const HIDDEN_DIR = '.epicenter';
+yjsPath(projectDir, workspace.ydoc.guid);
+// <projectDir>/.epicenter/yjs/<workspaceId>.db
 
-export function epicenterCacheDir(projectDir: string): string {
-  return join(projectDir, HIDDEN_DIR);
-}
+sqlitePath(projectDir, workspace.ydoc.guid);
+// <projectDir>/.epicenter/sqlite/<workspaceId>.db
 
-export function yjsPath(projectDir: string): string {
-  return join(epicenterCacheDir(projectDir), 'yjs.db');
-}
-
-export function sqlitePath(projectDir: string): string {
-  return join(epicenterCacheDir(projectDir), 'sqlite.db');
-}
+markdownPath(projectDir, workspace.ydoc.guid);
+// <projectDir>/.epicenter/md/<workspaceId>
 ```
 
-There is no `tableMarkdownDir` helper. The markdown materializer's `dir` is its *base*, and the table name is auto-appended (or overridable per-table via `.table(t, { dir: 'custom' })`). To put tables at the project root, pass `projectDir` directly:
+The Fuji example intentionally overrides the default markdown and SQLite paths:
 
 ```ts
-import { sqlitePath } from '@epicenter/workspace/node';
-
-// ...
-const sqliteDb = openWriterSqlite({
-  filePath: sqlitePath(projectDir),
-  log: createLogger('sqlite'),
-});
-
-// Table `entries` lands at <projectDir>/entries/<slug>.md (table name appended).
-attachMarkdownMaterializer(ydoc, { dir: projectDir })
-  .table(tables.entries, { filename: slugFilename('title') });
-
-// Or to nest under data/: <projectDir>/data/entries/<slug>.md
-attachMarkdownMaterializer(ydoc, { dir: join(projectDir, 'data') })
-  .table(tables.entries, { filename: slugFilename('title') });
-
-// Or to put one table at a non-conventional path:
-attachMarkdownMaterializer(ydoc, { dir: projectDir })
-  .table(tables.entries, { dir: 'notes', filename: slugFilename('title') });
-// → <projectDir>/notes/<slug>.md
+export default [
+  fuji({
+    markdownDir: ".",
+    sqliteFile: ".epicenter/sqlite.db",
+  }),
+];
 ```
 
-Helpers exist for the paths that always look the same (`.epicenter/yjs.db`, `.epicenter/sqlite.db`). Markdown paths are left as direct `dir:` arguments because the developer's intent (root vs nested vs per-table override) is a choice, not a convention.
+The Yjs path stays on the default convention: `.epicenter/yjs/epicenter.fuji.db`.
 
 ### 4.4 No more `daemon.routes` registry
 
-Today `defineConfig({ daemon: { routes: { fuji } } })` registers many routes under one project. With one workspace per project, the registry has nothing to register. `defineWorkspace({...})` returns the workspace definition directly.
+Older drafts used `defineConfig({ daemon: { routes: { fuji } } })` to register many routes under one project. Current config exports a `Mount[]` instead:
 
-The existing `defineConfig` API is renamed to `defineWorkspace` to match the new semantics. Backwards compatibility is documented in §11.
+```ts
+import { fuji } from "@epicenter/fuji/project";
+import { honeycrisp } from "@epicenter/honeycrisp/project";
 
-## 5. Project layout (one workspace, flat)
+export default [fuji(), honeycrisp()];
+```
+
+The mount's `name` field replaces the route key.
+
+## 5. Project layout (flat mount host)
 
 ### 5.1 Canonical tree
 
@@ -301,7 +232,7 @@ The existing `defineConfig` API is renamed to `defineWorkspace` to match the new
 ├── package.json                         ← bun init writes this
 ├── tsconfig.json                        ← bun init writes this
 ├── README.md                            ← bun init writes this
-├── epicenter.config.ts                  ← REQUIRED. Marker + definition.
+├── epicenter.config.ts                  ← REQUIRED. Marker + mount list.
 ├── .gitignore                           ← Epicenter-managed; one rule (`.epicenter/`)
 ├── entries/                             ← table data as markdown (committable)
 │   ├── welcome.md
@@ -331,11 +262,12 @@ A table directory is the markdown materializer's output for one table. Its path 
 ```
 
 where:
+
 - `materializer.dir` is the base argument passed to `attachMarkdownMaterializer({ dir })`.
 - `table.name` is the table's name, auto-appended by the materializer. Overridable per-table via `.table(t, { dir: 'custom' })`.
 - `filename` comes from the per-table `filename` strategy (default: slug from `id`; commonly `slugFilename('title')`).
 
-Default convention: `dir: projectDir`, no per-table override. Files land at `<projectDir>/<table.name>/<slug>.md`. For the `entries` table, that's `<projectDir>/entries/<slug>.md`.
+Fuji's package default is `.epicenter/md/<workspaceId>/`. The visible `entries/` layout comes from the example override `markdownDir: "."`.
 
 For workspaces with multiple tables:
 
@@ -422,9 +354,7 @@ If a developer wants to commit `sqlite.db` (e.g., to ship a precomputed query da
 
 ```gitignore
 # Epicenter: keep sqlite, ignore yjs and WAL
-.epicenter/yjs.db
-.epicenter/yjs.db-wal
-.epicenter/yjs.db-shm
+.epicenter/yjs/
 .epicenter/sqlite.db-wal
 .epicenter/sqlite.db-shm
 ```
@@ -437,8 +367,8 @@ This is an explicit choice; the default is gitignore everything in `.epicenter/`
 
 ```
 Today:                              This spec:
-yjs.db = source of truth            ./<tableName>/*.md = source of truth (in git)
-md/ = derived from yjs.db           .epicenter/yjs.db = derived from markdown
+yjs/<id>.db = source of truth       ./<tableName>/*.md = source of truth (in git)
+md/ = derived from yjs/<id>.db      .epicenter/yjs/<id>.db = derived from markdown
                                     (runtime cache; rebuilt on demand)
 ```
 
@@ -450,7 +380,7 @@ The current implementation writes one-way: `Y.Doc → markdown`. The reverse dir
 
 To make markdown canonical, three pieces of plumbing are needed:
 
-1. **Hydration**: on daemon start, read markdown files, parse front-matter + body, populate the Y.Doc. If `.epicenter/yjs.db` exists and is consistent with the markdown, skip the rehydration; otherwise rebuild.
+1. **Hydration**: on daemon start, read markdown files, parse front-matter + body, populate the Y.Doc. If `.epicenter/yjs/<workspaceId>.db` exists and is consistent with the markdown, skip the rehydration; otherwise rebuild.
 2. **Reverse watcher**: when a markdown file changes outside the daemon (via editor, git pull, etc.), the daemon picks it up and applies a Y.Doc update.
 3. **Round-trip fidelity**: serialization must round-trip without loss. Markdown front-matter holds non-body fields; the body is the markdown. Yjs CRDT properties (character-level merging) are sacrificed at the markdown layer.
 
@@ -460,7 +390,7 @@ These three are out of scope for this layout spec but assumed as the architectur
 
 ```
 Single peer:
-  - One yjs.db in .epicenter/, one set of markdown files.
+  - One Yjs persistence file in .epicenter/yjs/, one set of markdown files.
   - Edit via daemon → Y.Doc → markdown.
   - Edit markdown directly → daemon picks up via reverse watcher → Y.Doc.
   - Either path produces the same state.
@@ -487,17 +417,17 @@ Reasons:
   - The sync server is the canonical multi-peer truth; git is for content, not state.
 
 Consequence: workspaces ship via markdown. A clone gets entries/*.md.
-The daemon rebuilds .epicenter/yjs.db on first run.
+The daemon rebuilds .epicenter/yjs/<workspaceId>.db on first run.
 ```
 
 ## 8. WAL safety
 
 Less load-bearing now that yjs.db isn't committed. Still relevant for two cases:
 
-1. **Backup**: if a user backs up `.epicenter/yjs.db` (e.g., via Time Machine, rsync), the backup should be consistent. Stop the daemon or run `epicenter checkpoint` before backup.
-2. **Manual inspection**: opening `.epicenter/yjs.db` with `sqlite3` while the daemon is running may show stale state. Stop the daemon first.
+1. **Backup**: if a user backs up `.epicenter/yjs/<workspaceId>.db` (e.g., via Time Machine, rsync), the backup should be consistent. Stop the daemon or run `epicenter checkpoint` before backup.
+2. **Manual inspection**: opening `.epicenter/yjs/<workspaceId>.db` with `sqlite3` while the daemon is running may show stale state. Stop the daemon first.
 
-`epicenter checkpoint` (new CLI subcommand, separate work) runs `PRAGMA wal_checkpoint(TRUNCATE)` on `yjs.db` and `sqlite.db`. Optional pre-backup hook recipe documented but not auto-installed.
+`epicenter checkpoint` (new CLI subcommand, separate work) runs `PRAGMA wal_checkpoint(TRUNCATE)` on the Yjs and SQLite files. Optional pre-backup hook recipe documented but not auto-installed.
 
 ## 9. CLI resolution: walk up, then scan one level down
 
@@ -569,7 +499,7 @@ Reads cwd. If `epicenter.config.ts` already exists, prints "already initialized"
 
 Otherwise:
 
-1. Writes `epicenter.config.ts` with a minimal default-export `defineWorkspace({...})` call.
+1. Writes `epicenter.config.ts` with a minimal `Mount[]` default export.
 2. Writes or appends `.gitignore` with `.epicenter/` rule (idempotent).
 3. Does NOT create `.epicenter/` (lazy on first daemon run).
 4. Does NOT create any table directories (lazy on first materializer write).
@@ -582,27 +512,23 @@ Otherwise:
 
 Next steps:
   1. bun add @epicenter/workspace
-  2. Edit epicenter.config.ts to define your workspace schema.
+  2. Add a mount factory to epicenter.config.ts.
   3. Run `epicenter daemon up` to start.
 ```
 
 ### 10.3 The default `epicenter.config.ts`
 
 ```ts
-import { defineWorkspace } from '@epicenter/workspace';
-import * as Y from 'yjs';
+// Default-export a Mount[] value. Example:
+//
+//   import { fuji } from '@epicenter/fuji/project';
+//
+//   export default [fuji()];
 
-export default defineWorkspace({
-  guid: 'epicenter.default',
-  async open({ projectDir, openWebSocket, installationId }) {
-    const ydoc = new Y.Doc({ guid: 'epicenter.default' });
-    // TODO: define your schema, attach materializers, return infrastructure.
-    throw new Error('epicenter.config.ts: not yet configured.');
-  },
-});
+export default [];
 ```
 
-Throws on first daemon run with a clear message. The developer replaces the throw with their schema and materializer attachments. Minimum-viable scaffolding without pretending to be runnable.
+The empty list is valid but opens no mounts. The developer imports one or more app package factories and returns them in the array.
 
 ## 11. Migration
 
@@ -611,19 +537,19 @@ Throws on first daemon run with a clear message. The developer replaces the thro
 ```
 Today's layout                          New layout
 --------------                          ----------
-<proj>/.epicenter/yjs/<id>.db           <proj>/.epicenter/yjs.db
-<proj>/.epicenter/sqlite/<id>.db        <proj>/.epicenter/sqlite.db
+<proj>/.epicenter/yjs/<id>.db           <proj>/.epicenter/yjs/<id>.db
+<proj>/.epicenter/sqlite/<id>.db        <proj>/.epicenter/sqlite/<id>.db
 <proj>/.epicenter/md/<id>/              <proj>/<tableName>/*.md (writeback target)
 <proj>/.epicenter/log/                  ~/.epicenter/logs/<projectHash>/
-<proj>/.epicenter/persistence/<id>.db   <proj>/.epicenter/yjs.db (rename)
+<proj>/.epicenter/persistence/<id>.db   <proj>/.epicenter/yjs/<id>.db (rename)
 workspaces -> apps symlink at root      (deleted)
 
 API changes
 -----------
-defineConfig({ daemon: { routes: { ... } } })  → defineWorkspace({...}) (one workspace)
-yjsPath(projectDir, workspaceId)               → yjsPath(projectDir)
-sqlitePath(projectDir, workspaceId)            → sqlitePath(projectDir)
-markdownPath(projectDir, workspaceId)          → tableMarkdownDir(projectDir, tableName)
+defineConfig({ daemon: { routes: { ... } } })  → export default [fuji()]
+yjsPath(projectDir, workspaceId)               → unchanged
+sqlitePath(projectDir, workspaceId)            → unchanged
+markdownPath(projectDir, workspaceId)          → unchanged
 ```
 
 ### 11.2 Migration command
@@ -633,12 +559,12 @@ markdownPath(projectDir, workspaceId)          → tableMarkdownDir(projectDir, 
 1. Detect: read `<proj>/.epicenter/{yjs,sqlite,persistence}/*.db` if present.
 2. For each existing yjs file (in `.epicenter/yjs/` or `.epicenter/persistence/`):
    - There must be exactly one workspace's data. If multiple, prompt the developer to pick which is "the" workspace (the rest become orphans to delete manually).
-   - Move `.epicenter/yjs/<id>.db` to `.epicenter/yjs.db`. Similarly for sqlite.
-3. Materialize markdown from the migrated yjs.db into `<proj>/<tableName>/` for each table. The new markdown becomes the committed source of truth.
+   - Keep `.epicenter/yjs/<id>.db` and `.epicenter/sqlite/<id>.db` on the per-workspace path convention.
+3. Materialize markdown from the migrated Yjs file into `<proj>/<tableName>/` for each table. The new markdown becomes the committed source of truth.
 4. Move daemon logs to `~/.epicenter/logs/<projectHash>/`.
 5. Delete now-empty `.epicenter/yjs/`, `.epicenter/sqlite/`, `.epicenter/md/`, `.epicenter/persistence/`, `.epicenter/log/`.
 6. Delete `workspaces -> apps` symlink if present.
-7. Update `epicenter.config.ts`: convert `defineConfig({ daemon: { routes: { fuji } } })` to `export default fuji` (re-exporting the single workspace definition that was registered).
+7. Update `epicenter.config.ts`: convert `defineConfig({ daemon: { routes: { fuji } } })` to `export default [fuji()]`.
 8. Write `.gitignore` with `.epicenter/` rule if absent.
 9. Write `~/.epicenter/version.json` with `schemaVersion: 1`.
 10. Report what moved.
@@ -665,7 +591,7 @@ Continuing with legacy layout for this run.
 
 ### 12.1 Location
 
-`examples/fuji/`. Demonstrates the layout using fuji's existing workspace definition.
+`examples/fuji/`. Demonstrates the layout using Fuji's project mount factory.
 
 ### 12.2 Tree
 
@@ -674,7 +600,7 @@ examples/fuji/
 ├── package.json                       ← bun + @epicenter/workspace, @epicenter/fuji
 ├── tsconfig.json                      ← extends repo base
 ├── README.md                          ← walkthrough
-├── epicenter.config.ts                ← imports openFujiWorkspace, attaches materializers
+├── epicenter.config.ts                ← imports fuji(), exports [fuji(...)]
 ├── .gitignore                         ← just `.epicenter/`
 └── entries/                           ← seed markdown files; committed
     ├── welcome.md
@@ -686,68 +612,34 @@ examples/fuji/
 ### 12.3 The `epicenter.config.ts`
 
 ```ts
-import { defineWorkspace } from '@epicenter/workspace';
-import { openFujiWorkspace } from '@epicenter/fuji';
-import {
-  attachDaemonInfrastructure,
-  openWriterSqlite,
-  sqlitePath,
-} from '@epicenter/workspace/node';
-import { attachSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
-import {
-  attachMarkdownMaterializer,
-  slugFilename,
-} from '@epicenter/workspace/document/materializer/markdown';
-import { createLogger } from 'wellcrafted/logger';
+import { fuji } from "@epicenter/fuji/project";
 
-export default defineWorkspace({
-  guid: 'epicenter.fuji',
-  async open({ projectDir, clientId, installationId, attachEncryption, openWebSocket }) {
-    const workspace = openFujiWorkspace(attachEncryption, { clientId });
-
-    const infra = attachDaemonInfrastructure(workspace.ydoc, {
-      projectDir,
-      openWebSocket,
-      installationId,
-      actions: workspace.actions,
-    });
-
-    const db = openWriterSqlite({
-      filePath: sqlitePath(projectDir),
-      log: createLogger('sqlite'),
-    });
-    workspace.ydoc.once('destroy', () => db.close());
-
-    attachSqliteMaterializer(workspace.ydoc, { db }).table(workspace.tables.entries);
-
-    // `dir: projectDir` + auto-appended table name → <projectDir>/entries/<slug>.md
-    attachMarkdownMaterializer(workspace.ydoc, {
-      dir: projectDir,
-    }).table(workspace.tables.entries, { filename: slugFilename('title') });
-
-    return infra;
-  },
-});
+export default [
+  fuji({
+    markdownDir: ".",
+    sqliteFile: ".epicenter/sqlite.db",
+  }),
+];
 ```
 
 ### 12.4 The seed markdown
 
 ```markdown
-<!-- examples/fuji/entries/welcome.md -->
----
-id: 01HM0000000000000000000000
----
+## <!-- examples/fuji/entries/welcome.md -->
+
+## id: 01HM0000000000000000000000
+
 # Welcome to Fuji
 
-This is a sample entry in a Fuji workspace. Edit this file directly, or use
-the daemon to drive changes. Either way, both representations stay in sync.
+This is a sample entry in a Fuji workspace. Today, drive changes through the
+daemon or a connected Fuji runtime, then watch the markdown projection update.
 ```
 
 ```markdown
-<!-- examples/fuji/entries/hello-fuji.md -->
----
-id: 01HM0000000000000000000001
----
+## <!-- examples/fuji/entries/hello-fuji.md -->
+
+## id: 01HM0000000000000000000001
+
 # Hello Fuji
 
 A second entry to show that the markdown materializer writes one file per row.
@@ -760,8 +652,8 @@ filename is derived from the title for human friendliness.
 ```markdown
 # examples/fuji
 
-A canonical Epicenter project. One workspace, one `epicenter.config.ts`,
-table data as markdown at the project root.
+A canonical Epicenter project. One Fuji mount in `epicenter.config.ts`, table
+data as markdown at the project root.
 
 ## Run it
 
@@ -770,27 +662,24 @@ table data as markdown at the project root.
 
 ## Layout
 
-    epicenter.config.ts   ← the marker; composes the workspace
-    entries/              ← table data (committed; this is the source of truth)
-    .epicenter/           ← runtime cache (gitignored; regenerable)
+    epicenter.config.ts   ← the marker; exports [fuji(...)]
+    entries/              ← table data (committed markdown projection)
+    .epicenter/           ← runtime cache (gitignored)
         yjs.db
         sqlite.db
 
 ## Edit a note
 
-Edit `entries/welcome.md` in any editor. The daemon picks up the change
-and applies it to the Y.Doc; the SQLite materializer reflects it; peers
-on the sync receive the update.
-
-You can also drive edits via the daemon's actions (queries and mutations
-defined in `epicenter.config.ts`).
+Drive edits via the daemon's actions (queries and mutations defined by
+`@epicenter/fuji`) or a connected Fuji runtime. Markdown hydration will make
+direct edits to `entries/*.md` flow back into the Y.Doc.
 ```
 
 ### 12.6 CI assertions
 
 ```
 Assertions (run after `epicenter daemon up` in CI):
-  - .epicenter/yjs.db exists and is non-empty
+  - .epicenter/yjs/epicenter.fuji.db exists and is non-empty
   - .epicenter/sqlite.db exists
   - entries/welcome.md exists (was committed)
   - entries/hello-fuji.md exists (was committed)
@@ -804,7 +693,7 @@ If the spec changes, the example and its assertions change with it.
 
 ### 13.1 Yjs.db absent on first run
 
-`epicenter daemon up` finds no `.epicenter/yjs.db`. It reads markdown from configured table directories, hydrates the Y.Doc, then writes the initial yjs.db. Subsequent runs use the existing yjs.db; the hydration step is skipped unless markdown is detected as newer.
+`epicenter daemon up` finds no `.epicenter/yjs/epicenter.fuji.db`. It reads markdown from configured table directories, hydrates the Y.Doc, then writes the initial Yjs persistence file. Subsequent runs use the existing Yjs file; the hydration step is skipped unless markdown is detected as newer.
 
 (This depends on the markdown → Y.Doc hydration work described in §7.2.)
 
@@ -843,13 +732,13 @@ The lease sqlite at `$XDG_RUNTIME_DIR/epicenter/<projectHash>.lease.sqlite` ensu
 
 ## 15. Open questions (closed where possible)
 
-### 15.1 Should `epicenter.config.ts` ever do more than define one workspace?
+### 15.1 Should `epicenter.config.ts` ever do more than list mounts?
 
-No, for now. The file's purpose is to define exactly one workspace's schema, daemon, and materializer composition. Cross-project settings (auth target, sync server URL) live in `~/.epicenter/settings.json` or env vars. If a need for project-level non-workspace config emerges, revisit.
+No, for now. The file's purpose is to mark the project root and list the mounts the daemon should open. Cross-project settings (auth target, sync server URL) live in `~/.epicenter/settings.json` or env vars. If a need for project-level non-mount config emerges, revisit.
 
-### 15.2 What if a project legitimately needs multiple workspaces in one daemon process?
+### 15.2 What if a project legitimately needs multiple mounts in one daemon process?
 
-Not supported in the canonical layout. The answer is a monorepo with one project per workspace, each with its own daemon. If a process-sharing orchestrator becomes necessary, it's a new tool (an "epicenter orchestrator" config file at the monorepo root), not a complication of the basic project layout.
+Supported by adding more entries to the `Mount[]`. Each mount carries its own `name`, and duplicate names fail before any mount opens.
 
 ### 15.3 Should table directories be visible or hidden?
 
@@ -870,14 +759,14 @@ Yes for their `apps/*/daemon.ts` shape and for how the root `epicenter.config.ts
 ├── package.json                            your file (bun init writes this)
 ├── tsconfig.json                           your file
 ├── README.md                               your file
-├── epicenter.config.ts                     REQUIRED. Marker + workspace definition.
-│                                           Default-exports defineWorkspace({...}).
+├── epicenter.config.ts                     REQUIRED. Marker + mount list.
+│                                           Default-exports Mount[].
 ├── .gitignore                              Epicenter-managed: `.epicenter/`
 ├── <tableName>/                            convention: one dir per table at root,
 │   └── *.md                                visible, COMMITTED. Materializer writes here.
 └── .epicenter/                             runtime cache, GITIGNORED.
-    ├── yjs.db                              Yjs persistence (regenerable from markdown).
-    ├── yjs.db-wal, .db-shm                 WAL sidecars.
+    ├── yjs/<workspaceId>.db                Yjs persistence (regenerable from markdown).
+    ├── yjs/<workspaceId>.db-wal, .db-shm   WAL sidecars.
     ├── sqlite.db                           SQL materializer (regenerable).
     ├── sqlite.db-wal, .db-shm              WAL sidecars.
     └── (other materializer outputs over time)
@@ -901,8 +790,8 @@ Two reservations in the project (one file, one hidden dir). One reservation in u
 ## 17. Implementation order (suggested)
 
 1. **Path resolver swap.** Create `packages/constants/src/platform-paths.ts`. Replace `epicenterEnv` usage with `platformPaths`. Drop env-paths dependency.
-2. **API rename.** `defineConfig` → `defineWorkspace`. Update existing consumers. Keep a deprecated alias for one release.
-3. **Project-side helpers.** Add `yjsPath(projectDir)`, `sqlitePath(projectDir)`, `tableMarkdownDir(projectDir, tableName)` to the workspace package.
+2. **Project config shape.** Default-export `Mount[]` from `epicenter.config.ts`.
+3. **Project-side helpers.** Use `yjsPath(projectDir, workspaceId)`, `sqlitePath(projectDir, workspaceId)`, and `markdownPath(projectDir, workspaceId)` from the workspace package.
 4. **`epicenter init` and `epicenter migrate`.** Implement per §10 and §11.
 5. **Examples/fuji.** Create the canonical example per §12. Wire CI assertions per §12.6.
 6. **Markdown → Y.Doc hydration.** The architectural prerequisite for §7. Substantial; separate workstream.
@@ -911,4 +800,4 @@ Two reservations in the project (one file, one hidden dir). One reservation in u
 9. **Schema version stamp.** Add `~/.epicenter/version.json` write-on-startup and refuse-if-newer check.
 10. **Drop legacy layout support.** One release after `epicenter migrate` lands.
 
-Each item is independently shippable. Items 6 and 7 are the largest and gate the full architectural payoff; until they land, yjs.db is gitignored runtime state but not yet "regenerable from markdown."
+Each item is independently shippable. Items 6 and 7 are the largest and gate the full architectural payoff; until they land, Yjs persistence is gitignored runtime state but not yet "regenerable from markdown."

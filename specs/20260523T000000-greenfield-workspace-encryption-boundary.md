@@ -57,18 +57,25 @@ type OpenEncryptedDocOptions = {
 
 type EncryptedDoc = {
   ydoc: Y.Doc;
-  attachTable<T>(name: string, def: TableDefinition<T>): Table<InferTableRow<T>>;
-  attachReadonlyTable<T>(name: string, def: TableDefinition<T>): ReadonlyTable<InferTableRow<T>>;
+  attachTable<T>(
+    name: string,
+    def: TableDefinition<T>,
+  ): Table<InferTableRow<T>>;
+  attachReadonlyTable<T>(
+    name: string,
+    def: TableDefinition<T>,
+  ): ReadonlyTable<InferTableRow<T>>;
   attachTables<T extends TableDefinitions>(defs: T): Tables<T>;
   attachReadonlyTables<T extends TableDefinitions>(defs: T): ReadonlyTables<T>;
   attachKv<T extends KvDefinitions>(defs: T): Kv<T>;
-  [Symbol.dispose](): void;  // destroys the ydoc
+  [Symbol.dispose](): void; // destroys the ydoc
 };
 
 function openEncryptedDoc(options: OpenEncryptedDocOptions): EncryptedDoc;
 ```
 
 Construction order:
+
 1. `new Y.Doc({ guid: id, gc: true })`.
 2. If `clientId !== undefined`, set `ydoc.clientID = clientId`.
 3. Bind the keyring callback into an internal coordinator (current `attachEncryption(ydoc, { keyring })`).
@@ -125,12 +132,19 @@ One per app per environment. Single source of truth for "how this app mounts in 
 Four plain exports. No `defineWorkspace` umbrella, no `openFujiWorkspace`, no `attachFujiWorkspace`.
 
 ```ts
-export const FUJI_ID = 'epicenter.fuji';
+export const FUJI_ID = "epicenter.fuji";
 export const fujiTables = { entries: entriesTable };
 export const createFujiActions = (tables: FujiTables) =>
-  defineActions({ /* ...existing handlers... */ });
+  defineActions({
+    /* ...existing handlers... */
+  });
 export const entryContentDocGuid = (entryId: EntryId): string =>
-  docGuid({ workspaceId: FUJI_ID, collection: 'entries', rowId: entryId, field: 'content' });
+  docGuid({
+    workspaceId: FUJI_ID,
+    collection: "entries",
+    rowId: entryId,
+    field: "content",
+  });
 
 export type FujiTables = Tables<typeof fujiTables>;
 export type FujiActions = ReturnType<typeof createFujiActions>;
@@ -143,7 +157,10 @@ The old `openFujiWorkspace` / `attachFujiWorkspace` / `touchEntry` / `batch` / `
 Takes exactly `{ signedIn, installationId }`. No `auth` parameter: `signedIn.auth` provides it. No `owner`: deleted.
 
 ```ts
-export function openFujiBrowser({ signedIn, installationId }: {
+export function openFujiBrowser({
+  signedIn,
+  installationId,
+}: {
   signedIn: SignedIn;
   installationId: string;
 }) {
@@ -176,9 +193,15 @@ export function openFujiBrowser({ signedIn, installationId }: {
       actions: {},
     });
     onLocalUpdate(ydoc, () =>
-      tables.entries.update(entryId, { updatedAt: DateTimeString.now() })
+      tables.entries.update(entryId, { updatedAt: DateTimeString.now() }),
     );
-    return { body, sync, [Symbol.dispose]() { ydoc.destroy(); } };
+    return {
+      body,
+      sync,
+      [Symbol.dispose]() {
+        ydoc.destroy();
+      },
+    };
   });
 
   // 4. reconnect everything on auth transitions
@@ -189,7 +212,12 @@ export function openFujiBrowser({ signedIn, installationId }: {
 
   return {
     ydoc: ws.ydoc,
-    tables, kv, actions, idb, collab, entryContentDocs,
+    tables,
+    kv,
+    actions,
+    idb,
+    collab,
+    entryContentDocs,
     async wipe() {
       entryContentDocs[Symbol.dispose]();
       ws[Symbol.dispose]();
@@ -225,14 +253,16 @@ export function openFujiDaemon(ctx: DaemonWorkspaceContext) {
   const actions = createFujiActions(tables);
 
   const sqliteDb = openWriterSqlite({
-    filePath: join(ctx.projectDir, '.epicenter', 'sqlite.db'),
+    filePath: join(ctx.projectDir, ".epicenter", "sqlite.db"),
     log: createLogger(`${ctx.route}-sqlite`),
   });
-  ws.ydoc.once('destroy', () => sqliteDb.close());
+  ws.ydoc.once("destroy", () => sqliteDb.close());
 
   attachSqliteMaterializer(ws.ydoc, { db: sqliteDb }).table(tables.entries);
-  attachMarkdownMaterializer(ws.ydoc, { dir: ctx.projectDir })
-    .table(tables.entries, { filename: slugFilename('title') });
+  attachMarkdownMaterializer(ws.ydoc, { dir: ctx.projectDir }).table(
+    tables.entries,
+    { filename: slugFilename("title") },
+  );
 
   return attachDaemonInfrastructure(ws.ydoc, {
     projectDir: ctx.projectDir,
@@ -248,10 +278,9 @@ export type FujiDaemon = ReturnType<typeof openFujiDaemon>;
 `examples/fuji/epicenter.config.ts` collapses to:
 
 ```ts
-import { defineWorkspace } from '@epicenter/workspace';
-import { openFujiDaemon } from '@epicenter/fuji/daemon';
+import { fuji } from "@epicenter/fuji/project";
 
-export default defineWorkspace({ open: openFujiDaemon });
+export default [fuji()];
 ```
 
 (`defineWorkspace` in this snippet is the existing `define-config.ts` shape, not a new schema umbrella.)
@@ -283,6 +312,7 @@ type DaemonWorkspaceContext = {
 ```
 
 `packages/workspace/src/workspace-apps/start-daemon-workspace-apps.ts`:
+
 - Delete `createDaemonAttachEncryption`.
 - Build `ctx.keyring` inline as a lazy callback that throws on signed-out, identical guard to today's `createDaemonAttachEncryption` closure.
 
@@ -338,44 +368,49 @@ Strict ordering to keep typecheck green between commits:
 5. **Fan-out**: parallel subagents for honeycrisp, zhongwen, opensidian, tab-manager. Each agent works one app end-to-end.
 6. **Verification sweep**: typecheck + tests + grep for stragglers (`LocalOwner`, `owner.attachEncryption`, `owner.attachLocal`, `wipeLocalYjsData`, `createDaemonAttachEncryption`, `openFujiWorkspace` and friends).
 
-Steps 1–2 are one PR's worth of work but can be two commits. Step 3 is one commit. Step 4 is one commit. Step 5 is one commit per app (5 commits or one big squashed commit, author's choice). Step 6 is verification, not a commit.
+Steps 1-2 are one PR's worth of work but can be two commits. Step 3 is one commit. Step 4 is one commit. Step 5 is one commit per app (5 commits or one big squashed commit, author's choice). Step 6 is verification, not a commit.
 
 ## 8. Deletions
 
 Files deleted:
+
 - `packages/workspace/src/document/local-owner.ts`
 - `packages/workspace/src/document/local-owner.test.ts`
 
 Exports removed from `@epicenter/workspace`:
+
 - `LocalOwner` type
 - `createLocalOwner` factory
 - `attachEncryption` free function (consumers go through `openEncryptedDoc`)
 - `EncryptionAttachment` type (becomes internal)
 
 Internal helpers removed:
+
 - `createDaemonAttachEncryption` in `start-daemon-workspace-apps.ts`
 - `LocalOwner.attachEncryption` (1-line delegate)
 - `LocalOwner.attachLocal` (becomes `attachLocalStorage` free function)
 - `LocalOwner.wipeLocalYjsData` (becomes `wipeLocalStorage`, signature drops `guids`)
 
 Per-app deletions:
+
 - `openFujiWorkspace`, `attachFujiWorkspace`, `AttachFujiEncryption` type alias, `touchEntry`, `batch`, `entryContentDocGuid` (becomes free export of same name).
 - Same set for `openHoneycrispWorkspace`, `openZhongwenWorkspace`, `openOpensidianWorkspace`.
 - Tab-manager: it uses `owner.attachEncryption` inline (no `openTabManagerWorkspace` factory); its `extension.ts` rewrites to use primitives directly.
 
 Renames:
+
 - `ownerId` → `subject` everywhere. The IDB/BC prefix string `epicenter.owner.<subject>.yjs.<guid>` stays unchanged (it's a stable on-disk namespace, not a code-level identifier).
 
 ## 9. Invariants and how they get enforced
 
-| Invariant | Enforced by |
-|---|---|
-| Two different subjects on the same browser never share IDB/BC | `attachLocalStorage` derives `databaseName` from `subject` snapshot. Test in new `attach-local-storage.test.ts`. |
-| Workspace root doc is encrypted by construction | `openEncryptedDoc` is the only way to attach tables/KV; it always activates encryption. Plaintext `attachTable` against `ws.ydoc` is type-rejectable but stays a runtime risk; the construction-from-options shape makes it harder to hit accidentally because callers receive `ws.attachTables` not `ws.ydoc + attachTable(ws.ydoc, ...)`. |
-| Keyring rotation works | `keyring: () => SubjectKeyring` callback is read on every encrypt. Existing rotation behavior preserved by `openEncryptedDoc`'s internal coordinator. |
-| `subject` is stable for the lifetime of an attachment | Snapshotted at `attachLocalStorage` call time into `databaseName` string. `Identity.subject: string` (not callback) makes this evident at the type. |
-| Sign-out disposes encrypted Y.Docs before keyring drop | `createSession.reconcile` disposes the build callback's payload on signed-out, before dropping its hold on auth state. The per-app opener's `[Symbol.dispose]()` is the gate; it must call `ws[Symbol.dispose]()` (which destroys the ydoc and triggers each store's `Symbol.dispose`). |
-| `clientId` stable across daemon restarts | `hashClientId(projectDir)` in `start-daemon-workspace-apps.ts`. Unchanged. |
+| Invariant                                                     | Enforced by                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Two different subjects on the same browser never share IDB/BC | `attachLocalStorage` derives `databaseName` from `subject` snapshot. Test in new `attach-local-storage.test.ts`.                                                                                                                                                                                                                            |
+| Workspace root doc is encrypted by construction               | `openEncryptedDoc` is the only way to attach tables/KV; it always activates encryption. Plaintext `attachTable` against `ws.ydoc` is type-rejectable but stays a runtime risk; the construction-from-options shape makes it harder to hit accidentally because callers receive `ws.attachTables` not `ws.ydoc + attachTable(ws.ydoc, ...)`. |
+| Keyring rotation works                                        | `keyring: () => SubjectKeyring` callback is read on every encrypt. Existing rotation behavior preserved by `openEncryptedDoc`'s internal coordinator.                                                                                                                                                                                       |
+| `subject` is stable for the lifetime of an attachment         | Snapshotted at `attachLocalStorage` call time into `databaseName` string. `Identity.subject: string` (not callback) makes this evident at the type.                                                                                                                                                                                         |
+| Sign-out disposes encrypted Y.Docs before keyring drop        | `createSession.reconcile` disposes the build callback's payload on signed-out, before dropping its hold on auth state. The per-app opener's `[Symbol.dispose]()` is the gate; it must call `ws[Symbol.dispose]()` (which destroys the ydoc and triggers each store's `Symbol.dispose`).                                                     |
+| `clientId` stable across daemon restarts                      | `hashClientId(projectDir)` in `start-daemon-workspace-apps.ts`. Unchanged.                                                                                                                                                                                                                                                                  |
 
 ## 10. Open follow-ups (NOT in scope of this spec)
 
@@ -402,21 +437,28 @@ build: (signedIn) => openFujiBrowser({
   installationId: createInstallationId({ storage: localStorage }),
 }),
 
-// browser.ts (~55 LOC) — see §4.2
+// browser.ts (~55 LOC) : see §4.2
 ```
 
 ```ts
 // ─── BEFORE (daemon, fuji) ──────────────────────────────────────────────
 // examples/fuji/epicenter.config.ts
 const fuji = defineDaemonWorkspace({
-  async open({ projectDir, route, clientId, installationId, attachEncryption, openWebSocket }) {
+  async open({
+    projectDir,
+    route,
+    clientId,
+    installationId,
+    attachEncryption,
+    openWebSocket,
+  }) {
     const workspace = openFujiWorkspace(attachEncryption, { clientId });
     // ... materializer wiring inline
   },
 });
 
 // ─── AFTER (daemon, fuji) ───────────────────────────────────────────────
-// apps/fuji/daemon.ts — see §4.3 (openFujiDaemon)
+// apps/fuji/daemon.ts : see §4.3 (openFujiDaemon)
 // examples/fuji/epicenter.config.ts
-export default defineWorkspace({ open: openFujiDaemon });
+export default [fuji()];
 ```

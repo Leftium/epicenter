@@ -5,7 +5,7 @@ import {
 	type OAuthLauncher,
 	type OAuthLaunchResult,
 } from '@epicenter/auth/oauth-launchers';
-import { createOAuthAppAuth } from '@epicenter/auth-svelte';
+import { createOAuthAppAuth } from '@epicenter/svelte/auth';
 import {
 	EPICENTER_FUJI_OAUTH_CLIENT_ID,
 	EPICENTER_FUJI_TAURI_OAUTH_REDIRECT_URI,

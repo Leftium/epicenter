@@ -1,5 +1,5 @@
 import type { AuthClient } from '@epicenter/auth';
-import { createOAuthAppAuth } from '@epicenter/auth-svelte';
+import { createOAuthAppAuth } from '@epicenter/svelte/auth';
 import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createSession } from '@epicenter/svelte';

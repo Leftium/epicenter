@@ -1,6 +1,6 @@
 import { createWebStoragePersistedAuthStorage } from '@epicenter/auth';
 import { createBrowserOAuthLauncher } from '@epicenter/auth/oauth-launchers';
-import { createOAuthAppAuth } from '@epicenter/auth-svelte';
+import { createOAuthAppAuth } from '@epicenter/svelte/auth';
 import { EPICENTER_DASHBOARD_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { base } from '$app/paths';
 

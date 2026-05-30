@@ -70,7 +70,7 @@ export type SignedIn = {
  * `/api/session` are picked up on next access without rebuilding the payload.
  *
  * Requires an `AuthClient` whose `state` is Svelte-reactive (use
- * `@epicenter/auth-svelte`, not `@epicenter/auth` directly).
+ * `@epicenter/svelte/auth`, not `@epicenter/auth` directly).
  */
 export function createSession<T extends Disposable>({
 	auth,

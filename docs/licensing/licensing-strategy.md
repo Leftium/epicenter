@@ -112,13 +112,12 @@ This is not blocking and not scheduled. Trigger to execute: `apps/api` becomes p
 | `packages/sync` | AGPL-3.0 | Yjs sync protocol |
 | `packages/workspace` | MIT | Core CRDT library |
 | `packages/ui` | MIT | shadcn-svelte components |
-| `packages/svelte-utils` (`@epicenter/svelte`) | MIT | Svelte 5 reactive helpers |
+| `packages/svelte-utils` (`@epicenter/svelte`) | AGPL-3.0 | Svelte 5 reactive helpers and auth wrapper |
 | `packages/filesystem` | MIT | POSIX layer over Yjs |
 | `packages/skills` | MIT | Skill definitions |
 | `packages/ai` | MIT | LLM tool bridging |
 | `packages/cli` | MIT | `epicenter` CLI |
 | `packages/auth` | MIT | Auth core |
-| `packages/auth-svelte` | MIT | Svelte auth wrapper |
 | `packages/constants` | MIT | Shared constants |
 
 ## Decision procedure for new packages

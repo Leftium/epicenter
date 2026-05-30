@@ -36,13 +36,13 @@ The repo script manages the Cloudflare pieces for zones listed in `scripts/cf/ap
 Preview the changes:
 
 ```bash
-bun run cf:plan
+bun run cf:plan:remote
 ```
 
 Apply them:
 
 ```bash
-bun run cf:apply
+bun run cf:apply:remote
 ```
 
 The script creates proxied placeholder DNS records for redirect-only hosts, then upserts Cloudflare Single Redirect rules in the `http_request_dynamic_redirect` phase. This is required because Redirect Rules only run when traffic reaches Cloudflare's proxy.

@@ -4,8 +4,8 @@
  * zone we own. Idempotent: reads current values, diffs, PATCHes only what
  * differs. Safe to re-run any time.
  *
- *   bun run cf:plan   preview; exits 2 if drift detected (CI signal)
- *   bun run cf:apply  write changes
+ *   bun run cf:plan:remote   preview; exits 2 if drift detected (CI signal)
+ *   bun run cf:apply:remote  write changes
  *
  * Token: CLOUDFLARE_ZONE_TOKEN with scopes Zone:Read, Zone Settings:Edit,
  * DNS:Edit, and Single Redirect:Edit on all zones in the account. Create at
@@ -216,7 +216,7 @@ for (const zone of ZONES) {
 				dsRecords.push({ zone: zone.name, ds: updated.ds });
 			} else {
 				console.log(
-					`    note    dnssec is "${updated.status}"; DS record not yet returned. Re-run cf:plan once status flips to "active" to print the DS for the registrar.`,
+					`    note    dnssec is "${updated.status}"; DS record not yet returned. Re-run cf:plan:remote once status flips to "active" to print the DS for the registrar.`,
 				);
 			}
 		}

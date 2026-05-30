@@ -39,12 +39,12 @@ Scenario 4 (a hosted competitor) is the one where the license is most load-beari
 
 ### Tier 1: MIT
 
-**Applies to:** the embeddable toolkit libraries: `packages/workspace`, `packages/ui`, `packages/filesystem`, `packages/sync`, plus the toolkit-internal utilities `packages/util` and `packages/encryption`.
+**Applies to:** the embeddable toolkit libraries: `packages/workspace`, `packages/ui`, `packages/filesystem`, `packages/sync`, plus the toolkit-internal packages `packages/util`, `packages/encryption`, and `packages/identity`.
 
 **Rationale:**
 - Libraries: we want developers to embed `@epicenter/workspace` in their own projects with zero friction. AGPL would forbid that for closed-source consumers, killing adoption. The library is not what we sell.
-- Toolkit-internal utilities (`util`, `encryption`): these are dependencies bundled into the MIT toolkit libraries, so they must be MIT-compatible for the toolkit to stay distributable as MIT. They are not separately marketed.
-- MIT-clean closure: the toolkit no longer depends on any AGPL package. `OwnerId` moved to `@epicenter/util`; the room route and bearer subprotocol moved to the now-MIT `@epicenter/sync`; and the daemon takes its API base URL as config instead of importing the hosted constant. `bun run check:licenses` enforces this. `cli` stays AGPL because it also pulls AGPL `auth`.
+- Toolkit-internal packages (`util`, `encryption`, `identity`): these are dependencies bundled into the MIT toolkit libraries, so they must be MIT-compatible for the toolkit to stay distributable as MIT. `@epicenter/identity` owns the capability and identity vocabulary shared by the MIT toolkit and the AGPL auth layer. They are not separately marketed.
+- MIT-clean closure: the toolkit no longer depends on any AGPL package. `OwnerId` and `AuthState` live in `@epicenter/identity`; the room route and bearer subprotocol moved to the now-MIT `@epicenter/sync`; and the daemon takes its API base URL as config instead of importing the hosted constant. `bun run check:licenses` enforces this. `cli` stays AGPL because it also pulls AGPL `auth`.
 
 ### Tier 2: AGPL-3.0
 
@@ -116,6 +116,7 @@ All apps are AGPL-3.0. MIT is reserved for the embeddable toolkit libraries.
 | `packages/filesystem` | MIT | POSIX layer over Yjs (toolkit) |
 | `packages/util` | MIT | Framework-agnostic runtime utilities (toolkit-internal) |
 | `packages/encryption` | MIT | HKDF + blob crypto primitives (toolkit-internal; a dependency of the MIT `workspace`) |
+| `packages/identity` | MIT | Capability and identity vocabulary shared by the MIT toolkit and AGPL auth layer |
 | `packages/sync` | MIT | Yjs sync protocol primitives: wire format, room route, auth subprotocol (toolkit) |
 | `packages/auth` | AGPL-3.0 | Framework-agnostic auth core (private, internal) |
 | `packages/svelte-utils` (`@epicenter/svelte`) | AGPL-3.0 | Svelte 5 reactive helpers and auth wrapper |
@@ -125,7 +126,7 @@ All apps are AGPL-3.0. MIT is reserved for the embeddable toolkit libraries.
 | `packages/server` | AGPL-3.0 | Shared Hono server library |
 | `packages/client` | AGPL-3.0 | API client |
 
-> **MIT-clean closure:** the MIT toolkit's entire dependency closure is MIT. `@epicenter/workspace` no longer imports from any AGPL package: the shared `OwnerId` model moved to `@epicenter/util`, and the room route plus bearer subprotocol moved to the now-MIT `@epicenter/sync`. `cli` stays AGPL because it pulls AGPL `auth`. `bun run check:licenses` walks every package's dependency closure and fails if an MIT package can reach an AGPL one.
+> **MIT-clean closure:** the MIT toolkit's entire dependency closure is MIT. `@epicenter/workspace` no longer imports from any AGPL package: shared capability state lives in `@epicenter/identity`, and the room route plus bearer subprotocol moved to the now-MIT `@epicenter/sync`. `cli` stays AGPL because it pulls AGPL `auth`. `bun run check:licenses` walks every package's dependency closure and fails if an MIT package can reach an AGPL one.
 
 ## Decision procedure for new packages
 

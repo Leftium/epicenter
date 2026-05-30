@@ -4,7 +4,7 @@ This repository contains software under multiple licenses. Each package
 contains its own LICENSE file, and each package.json declares its
 applicable license. This file is the index.
 
-For the reasoning behind the split, see specs/20260428T120000-licensing-strategy.md
+For the reasoning behind the split, see docs/licensing/licensing-strategy.md
 and FINANCIAL_SUSTAINABILITY.md.
 
 ================================================================================
@@ -14,17 +14,21 @@ and FINANCIAL_SUSTAINABILITY.md.
 The following libraries are licensed under the MIT License. The full text
 is in licenses/LICENSE-MIT. These are the local-first-on-Yjs developer
 toolkit: an external developer can `npm install` any of them and embed
-them in a closed-source product.
+them in a closed-source product. (Note: the toolkit's runtime closure can
+pull AGPL packages such as constants and sync; the MIT grant covers the
+listed packages' own source.)
 
     - packages/workspace        (@epicenter/workspace)   typed schemas,
                                                          CRDT tables, sync
     - packages/ui               (@epicenter/ui)          shadcn-svelte
                                                          component library
-    - packages/svelte-utils     (@epicenter/svelte)      Svelte 5
-                                                         framework bridge
     - packages/filesystem       (@epicenter/filesystem)  POSIX layer over
                                                          workspace tables
     - packages/cli              (@epicenter/cli)         the epicenter CLI
+    - packages/util             (@epicenter/util)        toolkit-internal
+                                                         runtime utilities
+    - packages/encryption       (@epicenter/encryption)  toolkit-internal
+                                                         HKDF + blob crypto
 
 ================================================================================
 2. GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
@@ -65,10 +69,15 @@ who forks and distributes a modified binary shares the changes back.
   Packages:
     - packages/sync              (@epicenter/sync)       Yjs sync protocol
     - packages/auth              (@epicenter/auth)       auth core (private)
-    - packages/auth-svelte       (@epicenter/auth-svelte) svelte auth (private)
+    - packages/svelte-utils      (@epicenter/svelte)     svelte reactive
+                                                         helpers + auth
+                                                         wrapper (private)
     - packages/skills            (@epicenter/skills)     workspace skills
     - packages/ai                (@epicenter/ai)         LLM tool bridging
     - packages/constants         (@epicenter/constants)  shared constants
+    - packages/server            (@epicenter/server)     shared Hono server
+                                                         library (private)
+    - packages/client            (@epicenter/client)     API client (private)
 
 ================================================================================
 3. Proprietary (deferred tier, currently empty)
@@ -86,7 +95,7 @@ If this tier is ever populated, modules will live in clearly delineated
 subdirectories with their own LICENSE files declaring "All rights reserved"
 terms, and will be listed here.
 
-See specs/20260428T120000-licensing-strategy.md for the conventions.
+See docs/licensing/licensing-strategy.md for the conventions.
 
 ================================================================================
 

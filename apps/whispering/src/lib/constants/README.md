@@ -2,76 +2,42 @@
 
 ## Purpose
 
-The `constants` directory serves as the centralized source of truth for all immutable values used throughout the Whispering application. This includes configuration values, enumerations, type definitions, and any other values that remain constant during runtime.
+This directory holds immutable, cross-cutting values that more than one part of the app needs and that have no single obvious owner: key vocabularies, the language list, sound names, provider registries, and the setting-value enums the workspace schema validates against.
 
-## Organization Philosophy
+## What belongs here (and what does not)
 
-Constants are organized by **domain** rather than by technical type. This approach prioritizes developer intuition and code maintainability over technical categorization.
+A constant lives with the code that owns its meaning. Only put something here when it is **pure data** and **shared across modules** with no natural home. Everything else lives next to its owner:
 
-### Core Principles
+- **Logic and functions** (formatters, guards, validators, normalizers) live in `$lib/utils` or `$lib/services`, never here. Example: keyboard display formatting and the supported-key guard live in `$lib/utils/keyboard.ts`.
+- **Types owned by one module** live in that module. Example: `CancelRecordingResult` lives in `$lib/services/recorder/types.ts`.
+- **Registries with behavior** live next to their service. The transcription and inference registries stay here only because their service-ID enums are shared vocabulary the workspace schema validates against.
+- **Build-target values** (platform identity) live behind the `#platform/*` seam (see below).
 
-1. **Domain-Driven Structure**: Constants are grouped by their functional area (audio, keyboard, transcription) rather than their type (strings, numbers, objects)
-2. **Single Source of Truth**: Each constant is defined in exactly one place
-3. **Clear Dependencies**: Constants that depend on services or external systems are clearly documented
-4. **Type Safety**: All constants use TypeScript's `as const` assertion for maximum type safety
-5. **Progressive Disclosure**: Common constants are easy to find, specialized ones are nested appropriately
+Rule of thumb: no computed behavior, no functions, no runtime schema objects. If you reach for `arktype` or write a function, it does not belong here.
 
 ## Directory Structure
 
 ```
 constants/
-├── app/                    # Application-wide configuration
-├── audio/                  # Audio recording and playback
-├── database/               # Database schemas and types
-├── inference/              # AI model configurations
-├── keyboard/               # Keyboard shortcuts and mappings
-├── languages/              # Supported languages and i18n
-├── sounds/                 # Sound effect definitions
-├── transcription/          # Speech-to-text services
-└── ui/                     # User interface constants
+├── audio/                  # Recording settings: bitrate, sample-rate, modes, state icons (folder + barrel)
+├── keyboard/               # Key vocabularies and types for accelerators and browser events (folder + barrel)
+├── icons/                  # Provider brand SVG assets
+├── always-on-top.ts        # Window always-on-top setting enum + options
+├── inference.ts            # Text-completion provider/model registry
+├── languages.ts            # Supported transcription languages
+├── local-models.ts         # Local transcription model download catalogs (data only)
+├── local-model-unload-policy.ts  # Memory unload-policy setting (mirrored in Rust)
+├── sounds.ts               # Sound effect names
+├── transcription.ts        # Transcription service registry
+├── transformations.ts      # Transformation step types
+└── urls.ts                 # App route pathnames
 ```
 
-## Directory Overview
-
-### `app/` - Application Configuration
-
-Core application settings that affect the entire system, including URLs, API endpoints, and timing configurations.
-
-### `audio/` - Audio System
-
-Everything related to audio capture and processing, including bitrate settings, recording modes, state management, and media constraints.
-
-### `database/` - Database Constants
-
-Database-related constants including transformation types and database schemas.
-
-### `inference/` - AI Model Configuration
-
-Configuration for AI inference services, organized by provider (OpenAI, Groq, Anthropic, Google).
-
-### `keyboard/` - Input System
-
-Comprehensive keyboard handling for shortcuts and hotkeys, supporting both Electron accelerator keys and browser keyboard events.
-
-### `languages/` - Supported Languages
-
-Language constants for internationalization and transcription language options.
-
-### `sounds/` - Sound Effects
-
-Sound effect name definitions used throughout the application.
-
-### `transcription/` - Speech-to-Text Services
-
-Configuration for transcription services including model definitions and service-specific settings.
-
-### `ui/` - User Interface Constants
-
-UI-related constants including window behavior options and icon mappings.
+Domains with several files keep a folder and a barrel `index.ts` (`audio/`, `keyboard/`). A single-file domain is just a flat file: a one-line barrel re-exporting one file earns nothing.
 
 ## Platform Identity Lives Elsewhere
 
-OS identity (`IS_MACOS`, `IS_LINUX`, `IS_WINDOWS`) is not a constant in this folder. It is a process-constant fact that differs by build target, so it lives behind the `#platform/os` build seam instead:
+OS identity (`IS_MACOS`, `IS_LINUX`, `IS_WINDOWS`) is not a constant in this folder. It is a process-constant fact that differs by build target, so it lives behind the `#platform/os` build seam:
 
 ```typescript
 import { IS_MACOS } from '#platform/os';
@@ -79,97 +45,33 @@ import { IS_MACOS } from '#platform/os';
 
 The seam resolves to a Tauri impl (`@tauri-apps/plugin-os`) or a browser impl (user-agent sniff) at build time via `package.json`'s `imports` field and the `tauri` Vite condition. Each impl detects the OS once at module load and exports plain booleans.
 
-## Import and Export Patterns
+## Import Patterns
 
-### Why We Use Barrel Files
-
-The barrel file acts as a curated public API, making it clear what's intended for external use.
-
-When we move types or functions between files within a barrel, we only update the barrel export rather than changing imports across the entire codebase.
-
-In other words, internal reorganization doesn't break imports.
-
-### How We Export Constants
-
-Each category folder has an `index.ts` barrel file that uses **explicit exports**:
+Import from a domain's folder barrel, or directly from a flat file:
 
 ```typescript
-// ✅ Good - Explicit exports in barrel files
-export { WHISPERING_URL, WHISPERING_RECORDINGS_PATHNAME } from './urls';
-export { DEBOUNCE_TIME_MS } from './timing';
+// Folder domains expose a barrel
+import { SAMPLE_RATE_OPTIONS } from '$lib/constants/audio';
+import { CommandOrControl } from '$lib/constants/keyboard';
+
+// Flat domains are imported directly
+import { SUPPORTED_LANGUAGES_OPTIONS } from '$lib/constants/languages';
+import { TRANSCRIPTION } from '$lib/constants/transcription';
 ```
 
-We avoid wildcard exports:
+Barrels use **explicit** exports (not `export *`) so bundlers can analyze them:
 
 ```typescript
-// ❌ Bad - Don't use wildcards
-export * from './urls';
+// Good
+export { RECORDING_MODES, type RecordingMode } from './recording-modes';
+
+// Avoid
+export * from './recording-modes';
 ```
 
-We do this to mitigate the potential performance downsides/overhead of barrelling (bundlers would have harder time analyzing wildcard exports).
+## Adding a Constant
 
-### How We Import Constants
-
-Always import from the category barrel, not the individual files:
-
-```typescript
-// ✅ Good - Import from category barrels
-import { WHISPERING_URL } from '$lib/constants/app';
-import { DEFAULT_BITRATE_KBPS, RECORDING_MODES } from '$lib/constants/audio';
-```
-
-Don't import from the actual source files:
-
-```typescript
-// ❌ Bad - Don't bypass the barrel
-import { WHISPERING_URL } from '$lib/constants/app/urls';
-import { DEFAULT_BITRATE_KBPS } from '$lib/constants/audio/bitrate';
-```
-
-## Adding New Constants
-
-When adding new constants:
-
-1. **Determine the Domain**: Which functional area does this constant belong to?
-2. **Check for Existing Files**: Can it fit in an existing file within that domain?
-3. **Create New File if Needed**: Use clear, descriptive names
-4. **Add Type Annotations**: Use `as const` and explicit types
-5. **Document Complex Constants**: Add JSDoc comments for non-obvious values
-6. **Update Index Files**: Ensure new constants are properly exported
-
-### Example: Adding a New Transcription Provider
-
-```typescript
-// In transcription/newprovider-models.ts
-/**
- * Available models for NewProvider transcription service
- * @see https://newprovider.com/docs/models
- */
-export const NEWPROVIDER_MODELS = [
-	'fast-whisper-v1',
-	'accurate-whisper-v2',
-] as const;
-
-export type NewProviderModel = (typeof NEWPROVIDER_MODELS)[number];
-
-// In transcription/index.ts - use explicit exports
-export {
-	NEWPROVIDER_MODELS,
-	type NewProviderModel,
-} from './newprovider-models';
-```
-
-## Best Practices
-
-1. Naming Convention: Use UPPER_SNAKE_CASE for constant values
-2. Type Safety: Always use `as const` for literal values
-3. Documentation: Document sources for external values (API docs, specifications)
-4. Avoid Logic: Constants should be pure data, no computed values
-5. Group Related Values: Use objects for related constants that are always used together
-
-If you're unsure where a constant belongs:
-
-1. Consider who uses it (single service vs. multiple consumers)
-2. Think about the domain it represents
-3. Check similar constants for patterns
-4. When in doubt, choose the most specific category
+1. **Is it pure data shared across modules?** If not, put it next to its owner (utils, services, the type's module).
+2. **Pick the domain.** Reuse an existing file or domain before creating a new one.
+3. **Folder or flat file?** A folder with a barrel only once the domain has multiple files. Otherwise a flat `<domain>.ts`.
+4. **Use `as const`** and explicit types. Document non-obvious values with JSDoc.

@@ -14,9 +14,8 @@ and FINANCIAL_SUSTAINABILITY.md.
 The following libraries are licensed under the MIT License. The full text
 is in licenses/LICENSE-MIT. These are the local-first-on-Yjs developer
 toolkit: an external developer can `npm install` any of them and embed
-them in a closed-source product. (Note: the toolkit's runtime closure can
-pull AGPL packages such as constants and sync; the MIT grant covers the
-listed packages' own source.)
+them in a closed-source product. The toolkit's dependency closure is
+entirely MIT; the boundary is enforced by 'bun run check:licenses'.
 
     - packages/workspace        (@epicenter/workspace)   typed schemas,
                                                          CRDT tables, sync
@@ -28,19 +27,20 @@ listed packages' own source.)
                                                          runtime utilities
     - packages/encryption       (@epicenter/encryption)  toolkit-internal
                                                          HKDF + blob crypto
+    - packages/sync             (@epicenter/sync)        Yjs sync protocol
 
 ================================================================================
 2. GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)
 ================================================================================
 
 Everything else Epicenter ships is licensed under AGPL-3.0-or-later. The
-full text is in licenses/LICENSE-AGPL-3.0. This covers all shipped apps,
-the sync protocol, and the Epicenter-internal packages.
+full text is in licenses/LICENSE-AGPL-3.0. This covers all shipped apps and the
+Epicenter-internal packages.
 
 You're free to run, modify, and self-host any of these. If you distribute
 a modified version, you share the changes back with the community.
 
-For hosted infrastructure (apps/api, apps/team-api, packages/sync), AGPL
+For hosted infrastructure (apps/api, apps/team-api), AGPL
 §13 extends this to network use: running a modified version as a service
 counts as distribution.
 

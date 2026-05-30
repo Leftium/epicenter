@@ -173,7 +173,7 @@ Also in the repo: [Fuji](apps/fuji) (personal CMS), [Zhongwen](apps/zhongwen) (M
 | Package | Description | License |
 | --- | --- | --- |
 | [`@epicenter/workspace`](packages/workspace) | Core library. Typed schemas, Yjs CRDTs, extension builder, E2E encryption, materializers. Everything builds on this. | MIT |
-| [`@epicenter/sync`](packages/sync) | Yjs sync protocol encoding/decoding. Dumb server, smart client; protocol framing is separate from transport. | AGPL-3.0 |
+| [`@epicenter/sync`](packages/sync) | Yjs sync protocol encoding/decoding. Dumb server, smart client; protocol framing is separate from transport. | MIT |
 | [`@epicenter/ui`](packages/ui) | shadcn-svelte component library shared across all apps. | MIT |
 | [`@epicenter/svelte`](packages/svelte-utils) | Svelte 5 integration: persisted state, auth UI, and workspace gates. | AGPL-3.0 |
 | [`@epicenter/filesystem`](packages/filesystem) | POSIX-style virtual filesystem over Yjs workspace tables. `mkdir`, `mv`, `rm`, `stat`. | MIT |
@@ -331,8 +331,8 @@ All 112 implemented specs live in [`specs/`](specs/).
 
 Epicenter uses a sharp two-tier split:
 
-- **[MIT](licenses/LICENSE-MIT)** for the local-first-on-Yjs developer toolkit: `@epicenter/workspace`, `@epicenter/ui`, `@epicenter/filesystem`. An external developer can `npm install` any of these and embed them in a closed-source product (their own source is MIT; note the runtime closure can pull AGPL `@epicenter/sync`).
-- **[AGPL-3.0](licenses/LICENSE-AGPL-3.0)** for everything else Epicenter ships: all 12 apps, the sync protocol (`@epicenter/sync`), and the Epicenter-internal packages. Anyone hosting or distributing a modified version must share their changes.
+- **[MIT](licenses/LICENSE-MIT)** for the local-first-on-Yjs developer toolkit: `@epicenter/workspace`, `@epicenter/ui`, `@epicenter/filesystem`, and `@epicenter/sync`. An external developer can `npm install` any of these and embed them in a closed-source product; the toolkit's dependency closure is entirely MIT, enforced by `bun run check:licenses`.
+- **[AGPL-3.0](licenses/LICENSE-AGPL-3.0)** for everything else Epicenter ships: all 12 apps and the Epicenter-internal packages. Anyone hosting or distributing a modified version must share their changes.
 - **Proprietary (deferred, empty)** as an escape hatch only. Revenue comes from hosting Epicenter Cloud, not from selling licenses, so this tier is intended to stay empty.
 
 This follows the same pattern as [Plausible](https://github.com/plausible/analytics) and [PostHog](https://github.com/PostHog/posthog) (AGPL apps and servers, hosted SaaS as revenue), and [Yjs](https://github.com/yjs/yjs) (MIT core library, AGPL `y-redis` server).

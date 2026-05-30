@@ -6,7 +6,7 @@
 
 ## Summary
 
-Epicenter uses two active license tiers. The embeddable toolkit libraries (`workspace`, `ui`, `filesystem`, `cli`, and their internal utilities) are MIT to maximize developer adoption. Everything else Epicenter ships, all apps, the sync protocol, and the internal/server packages, is AGPL-3.0. A third proprietary tier is documented as an escape hatch but deferred indefinitely; revenue comes from hosting, not licensing. There is no Contributor License Agreement; we do not dual-license.
+Epicenter uses two active license tiers. The embeddable toolkit libraries (`workspace`, `ui`, `filesystem`, `sync`, and their internal utilities) are MIT to maximize developer adoption. Everything else Epicenter ships, all apps and the internal/server packages, is AGPL-3.0. A third proprietary tier is documented as an escape hatch but deferred indefinitely; revenue comes from hosting, not licensing. There is no Contributor License Agreement; we do not dual-license.
 
 This document is the canonical reference. The companion document [FINANCIAL_SUSTAINABILITY.md](../FINANCIAL_SUSTAINABILITY.md) is the public-facing narrative for why we made these choices. The root [LICENSE](../LICENSE) is the legal dispatch. This spec is the technical reasoning, threat model, and decision procedure for new packages.
 
@@ -39,21 +39,20 @@ Scenario 4 (a hosted competitor) is the one where the license is most load-beari
 
 ### Tier 1: MIT
 
-**Applies to:** the embeddable toolkit libraries: `packages/workspace`, `packages/ui`, `packages/filesystem`, plus the toolkit-internal utilities `packages/util` and `packages/encryption`.
+**Applies to:** the embeddable toolkit libraries: `packages/workspace`, `packages/ui`, `packages/filesystem`, `packages/sync`, plus the toolkit-internal utilities `packages/util` and `packages/encryption`.
 
 **Rationale:**
 - Libraries: we want developers to embed `@epicenter/workspace` in their own projects with zero friction. AGPL would forbid that for closed-source consumers, killing adoption. The library is not what we sell.
 - Toolkit-internal utilities (`util`, `encryption`): these are dependencies bundled into the MIT toolkit libraries, so they must be MIT-compatible for the toolkit to stay distributable as MIT. They are not separately marketed.
-- Closure caveat: `workspace`/`filesystem` depend transitively on AGPL packages (`constants`, `sync`). Their MIT source is embeddable, but the full runtime closure pulls AGPL. The cli was the sharpest case (it also pulls AGPL `auth`) and is now AGPL. See the toolkit closure caveat in the per-package table.
+- MIT-clean closure: the toolkit no longer depends on any AGPL package. `OwnerId` moved to `@epicenter/util`; the room route and bearer subprotocol moved to the now-MIT `@epicenter/sync`; and the daemon takes its API base URL as config instead of importing the hosted constant. `bun run check:licenses` enforces this. `cli` stays AGPL because it also pulls AGPL `auth`.
 
 ### Tier 2: AGPL-3.0
 
-**Applies to:** all apps (`apps/api`, `apps/team-api`, `apps/whispering`, `apps/honeycrisp`, `apps/opensidian`, `apps/fuji`, `apps/zhongwen`, `apps/tab-manager`, `apps/skills`, `apps/reddit`, `apps/landing`, `apps/posthog-reverse-proxy`), `packages/sync`, `packages/cli`, and the internal packages `packages/auth`, `packages/svelte-utils`, `packages/skills`, `packages/constants`, `packages/server`, `packages/client`.
+**Applies to:** all apps (`apps/api`, `apps/team-api`, `apps/whispering`, `apps/honeycrisp`, `apps/opensidian`, `apps/fuji`, `apps/zhongwen`, `apps/tab-manager`, `apps/skills`, `apps/reddit`, `apps/landing`, `apps/posthog-reverse-proxy`), `packages/cli`, and the internal packages `packages/auth`, `packages/svelte-utils`, `packages/skills`, `packages/constants`, `packages/server`, `packages/client`.
 
 **Rationale:**
 - `apps/api` (hosted cloud: sync server, auth, AI inference; serves the same-origin dashboard SPA from its `ui/`): the infrastructure a competitor would need to clone Epicenter Cloud. AGPL §13 means any hosted fork must publish source, including improvements, which destroys the economics of forking-and-hosting. `apps/team-api` is the self-hosted team reference deployment.
 - Consumer apps: AGPL gives little extra protection on a locally-run app (§13 collapses to GPL semantics), but they are AGPL for a uniform "everything Epicenter ships is AGPL" story and brand consistency. The toolkit libraries are the only MIT surface.
-- `packages/sync` (Yjs sync protocol encoding): the wire format and framing logic of the server. We split it out so the encoding can be referenced by clients without dragging in server code, but the protocol implementation is part of what makes the hosted product work and stays AGPL.
 - Internal packages (`auth`, `svelte-utils`, `skills`, `constants`, `server`, `client`): private glue that composes the apps and hosted server; never marketed as an embeddable library, so AGPL with no adoption cost.
 
 ### Tier 3: Proprietary (deferred)
@@ -117,7 +116,7 @@ All apps are AGPL-3.0. MIT is reserved for the embeddable toolkit libraries.
 | `packages/filesystem` | MIT | POSIX layer over Yjs (toolkit) |
 | `packages/util` | MIT | Framework-agnostic runtime utilities (toolkit-internal) |
 | `packages/encryption` | MIT | HKDF + blob crypto primitives (toolkit-internal; a dependency of the MIT `workspace`) |
-| `packages/sync` | AGPL-3.0 | Yjs sync protocol |
+| `packages/sync` | MIT | Yjs sync protocol primitives: wire format, room route, auth subprotocol (toolkit) |
 | `packages/auth` | AGPL-3.0 | Framework-agnostic auth core (private, internal) |
 | `packages/svelte-utils` (`@epicenter/svelte`) | AGPL-3.0 | Svelte 5 reactive helpers and auth wrapper |
 | `packages/skills` | AGPL-3.0 | Skill definitions |
@@ -126,7 +125,7 @@ All apps are AGPL-3.0. MIT is reserved for the embeddable toolkit libraries.
 | `packages/server` | AGPL-3.0 | Shared Hono server library |
 | `packages/client` | AGPL-3.0 | API client |
 
-> **Toolkit closure caveat:** the MIT toolkit libraries `workspace` and `filesystem` depend transitively on AGPL packages (`constants`, `sync`). Their own source is MIT and embeddable, but the full runtime closure pulls AGPL. The cli was the sharpest case (it also pulls AGPL `auth`) and has been relicensed AGPL accordingly. The remaining MIT libraries are honest about their own source license; a consumer embedding them into a closed-source product must still account for the AGPL packages in the runtime closure.
+> **MIT-clean closure:** the MIT toolkit's entire dependency closure is MIT. `@epicenter/workspace` no longer imports from any AGPL package: the shared `OwnerId` model moved to `@epicenter/util`, and the room route plus bearer subprotocol moved to the now-MIT `@epicenter/sync`. `cli` stays AGPL because it pulls AGPL `auth`. `bun run check:licenses` walks every package's dependency closure and fails if an MIT package can reach an AGPL one.
 
 ## Decision procedure for new packages
 
@@ -134,7 +133,7 @@ When adding a new package or app, ask in order:
 
 1. **Is this an embeddable toolkit library other developers should drop into their own apps (or a utility bundled into one)?** → MIT. No further questions. Confirm its dependency closure is MIT-compatible, or document the AGPL deps.
 2. **Is this an app (desktop, browser extension, CLI app, hosted service) that Epicenter ships?** → AGPL-3.0. Apps are AGPL for brand consistency and the uniform "everything we ship is AGPL, the toolkit is MIT" story, even where §13 gives little practical protection on a locally-run app.
-3. **Is this internal/glue or server infrastructure (auth, server, constants, sync, client) that composes the product rather than being marketed standalone?** → AGPL-3.0.
+3. **Is this internal/glue or server infrastructure (auth, server, constants, client) that composes the product rather than being marketed standalone?** → AGPL-3.0.
 4. **Is there a real paying customer asking for one specific feature that AGPL would let them self-host for free?** → Proprietary, scoped to that feature, in its own subdirectory. Otherwise → AGPL. Never gate speculatively. The proprietary tier is reactive, not prospective.
 
 When in doubt, default to MIT. License changes are easy in one direction (MIT → AGPL/proprietary on new code is fine for the copyright holder) and hard in the other (AGPL → MIT requires consent from every contributor, which is why CLAs exist; we don't have one).

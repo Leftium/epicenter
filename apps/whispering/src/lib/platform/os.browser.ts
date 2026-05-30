@@ -1,4 +1,4 @@
-import type { Os } from './os.types';
+import type { Os } from './types';
 
 /**
  * Web build: there is no native OS API, so identity is inferred from the user
@@ -15,10 +15,14 @@ function detect(): Os {
 	// `userAgentData` is Chromium-only and not in the standard DOM lib types.
 	// Its `platform` is one of 'macOS' | 'iOS' | 'Windows' | 'Linux' | 'Android'
 	// | 'Chrome OS' | 'Unknown'; absent (undefined) on Firefox and Safari.
-	const hint = (navigator as Navigator & { userAgentData?: { platform?: string } })
-		.userAgentData?.platform;
+	const hint = (
+		navigator as Navigator & { userAgentData?: { platform?: string } }
+	).userAgentData?.platform;
 	if (hint) {
-		return { isApple: hint === 'macOS' || hint === 'iOS', isLinux: hint === 'Linux' };
+		return {
+			isApple: hint === 'macOS' || hint === 'iOS',
+			isLinux: hint === 'Linux',
+		};
 	}
 
 	const ua = navigator.userAgent;

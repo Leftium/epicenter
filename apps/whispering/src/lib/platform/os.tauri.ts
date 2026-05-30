@@ -1,5 +1,5 @@
 import { type as osType } from '@tauri-apps/plugin-os';
-import type { Os } from './os.types';
+import type { Os } from './types';
 
 // Tauri reads the real OS synchronously and it never changes during a session,
 // so identity is resolved once at module load. whispering's desktop targets are

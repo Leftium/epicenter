@@ -26,7 +26,7 @@ import {
 	FUNCTION_KEY_PATTERN,
 	type KeyboardEventSupportedKey,
 } from '$lib/constants/keyboard';
-import { IS_MACOS } from '#platform/os';
+import { os } from '#platform/os';
 
 /**
  * Maps browser KeyboardEvent.key values (lowercased) to Electron/Tauri
@@ -145,11 +145,11 @@ function convertToModifier(
 		case 'shift':
 			return 'Shift';
 		case 'alt':
-			return IS_MACOS ? 'Option' : 'Alt';
+			return os.isApple ? 'Option' : 'Alt';
 		case 'meta':
-			return IS_MACOS ? 'Command' : 'Super';
+			return os.isApple ? 'Command' : 'Super';
 		case 'altgraph':
-			return IS_MACOS ? null : 'AltGr';
+			return os.isApple ? null : 'AltGr';
 		case 'super':
 			return 'Super';
 		case 'fn':

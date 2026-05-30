@@ -1,12 +1,12 @@
 import { toast } from '@epicenter/ui/sonner';
 import { nanoid } from 'nanoid/non-secure';
 import { goto } from '$app/navigation';
-import { IS_MACOS } from '#platform/os';
+import { os } from '#platform/os';
 import { tauri } from '#platform/tauri';
 
 export function registerAccessibilityPermission() {
 	// Only run on macOS desktop
-	if (!IS_MACOS || !tauri) return;
+	if (!os.isApple || !tauri) return;
 
 	const accessibilityToastId = nanoid();
 

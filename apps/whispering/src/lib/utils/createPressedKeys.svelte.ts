@@ -4,7 +4,7 @@ import {
 	type KeyboardEventSupportedKey,
 } from '$lib/constants/keyboard';
 import { isSupportedKey, normalizeOptionKeyCharacter } from '$lib/utils/keyboard';
-import { IS_MACOS } from '#platform/os';
+import { os } from '#platform/os';
 
 /**
  * Creates a reactive state manager for tracking pressed keyboard keys.
@@ -72,7 +72,7 @@ export function createPressedKeys({
 			// To fix this, when Option is held on macOS, we normalize these special
 			// characters back to their base keys (e.g., "å" → "a", "ç" → "c").
 			// This ensures keyboard shortcuts work consistently across platforms.
-			if (IS_MACOS && pressedKeys.includes('alt')) {
+			if (os.isApple && pressedKeys.includes('alt')) {
 				key = normalizeOptionKeyCharacter(key);
 			}
 

@@ -37,13 +37,13 @@ Domains with several files keep a folder and a barrel `index.ts` (`audio/`, `key
 
 ## Platform Identity Lives Elsewhere
 
-OS identity (`IS_MACOS`, `IS_LINUX`, `IS_WINDOWS`) is not a constant in this folder. It is a process-constant fact that differs by build target, so it lives behind the `#platform/os` build seam:
+OS identity (`os.isApple`, `os.isLinux`) is not a constant in this folder. It is a process-constant fact that differs by build target, so it lives behind the `#platform/os` build seam:
 
 ```typescript
-import { IS_MACOS } from '#platform/os';
+import { os } from '#platform/os';
 ```
 
-The seam resolves to a Tauri impl (`@tauri-apps/plugin-os`) or a browser impl (user-agent sniff) at build time via `package.json`'s `imports` field and the `tauri` Vite condition. Each impl detects the OS once at module load and exports plain booleans.
+The seam resolves to a Tauri impl (`@tauri-apps/plugin-os`) or a browser impl (user-agent sniff) at build time via `package.json`'s `imports` field and the `tauri` Vite condition. Each impl detects the OS once at module load and exports a typed `os` object (`isApple` covers macOS plus iOS/iPadOS on the web; `isLinux` is desktop Linux).
 
 ## Import Patterns
 

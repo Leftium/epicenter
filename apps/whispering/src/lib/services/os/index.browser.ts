@@ -1,109 +1,34 @@
-import type { OsType } from '@tauri-apps/plugin-os';
-import { regex } from 'arkregex';
-import { type } from 'arktype';
-
-const UserAgentData = type({ platform: 'string' });
-type UserAgentData = typeof UserAgentData.infer;
-
-// Type for navigator with userAgentData support
-type NavigatorWithUAData = Navigator & {
-	userAgentData: UserAgentData;
-};
+import type { Os } from './os.types';
 
 /**
- * Detects the host OS once at module load. The web build has no native OS
- * API, so it infers from User-Agent Client Hints (preferred) or the legacy
- * user agent string. iOS and iPadOS-in-desktop-mode resolve to 'ios', which
- * is deliberately NOT macOS for keyboard-modifier purposes.
+ * Web build: there is no native OS API, so identity is inferred from the user
+ * agent, once, at module load. Prefer User-Agent Client Hints (Chromium exposes
+ * a synchronous low-entropy `platform`) and fall back to the user-agent string
+ * (Firefox, Safari, older browsers). In a non-DOM context (SSR, a Node test)
+ * `navigator` is absent, so both facts resolve to false instead of throwing.
  */
-function detectOs(): OsType {
-	// Try modern User-Agent Client Hints API first
-	if (hasUserAgentData(navigator)) {
-		const maybeOsType = getPlatformFromClientHints(navigator);
-		if (maybeOsType) return maybeOsType;
+function detect(): Os {
+	if (typeof navigator === 'undefined') {
+		return { isApple: false, isLinux: false };
 	}
 
-	// Fallback to traditional user agent detection
-	return getPlatformFromUserAgent(navigator);
-}
+	// `userAgentData` is Chromium-only and not in the standard DOM lib types.
+	// Its `platform` is one of 'macOS' | 'iOS' | 'Windows' | 'Linux' | 'Android'
+	// | 'Chrome OS' | 'Unknown'; absent (undefined) on Firefox and Safari.
+	const hint = (navigator as Navigator & { userAgentData?: { platform?: string } })
+		.userAgentData?.platform;
+	if (hint) {
+		return { isApple: hint === 'macOS' || hint === 'iOS', isLinux: hint === 'Linux' };
+	}
 
-const currentOs = detectOs();
-
-export const IS_MACOS = currentOs === 'macos';
-export const IS_LINUX = currentOs === 'linux';
-export const IS_WINDOWS = currentOs === 'windows';
-
-/**
- * Type guard to check if navigator supports User-Agent Client Hints
- */
-function hasUserAgentData(
-	navigator: Navigator,
-): navigator is NavigatorWithUAData {
-	return (
-		'userAgentData' in navigator &&
-		UserAgentData.allows(navigator.userAgentData)
-	);
-}
-
-/**
- * Attempts to detect platform using modern User-Agent Client Hints API
- * @returns OsType if detected, null otherwise
- */
-function getPlatformFromClientHints(
-	navigator: NavigatorWithUAData,
-): OsType | null {
-	const platform = navigator.userAgentData.platform.toLowerCase();
-
-	// Direct mapping from client hints to OsType
-	const platformMap: Record<string, OsType> = {
-		windows: 'windows',
-		macos: 'macos',
-		linux: 'linux',
-		android: 'android',
-		ios: 'ios',
+	const ua = navigator.userAgent;
+	return {
+		// 'Macintosh' covers macOS and iPadOS-in-desktop-mode; iPhone/iPad/iPod
+		// cover mobile Safari. All are Apple ⌘ platforms, so no Mac-vs-iPad split.
+		isApple: /mac|iphone|ipad|ipod/i.test(ua),
+		// Android user agents also contain 'Linux', so exclude them.
+		isLinux: /linux|x11/i.test(ua) && !/android/i.test(ua),
 	};
-
-	return platformMap[platform] ?? null;
 }
 
-/** iOS device user agent pattern */
-const IOS_DEVICE_PATTERN = regex('ipad|iphone|ipod');
-
-/** Android user agent pattern */
-const ANDROID_PATTERN = regex('android');
-
-/**
- * Detects platform using traditional user agent string parsing
- * @returns OsType based on user agent detection
- */
-function getPlatformFromUserAgent(navigator: Navigator): OsType {
-	const userAgent = navigator.userAgent.toLowerCase();
-	const platform = navigator.platform?.toLowerCase() || '';
-
-	// iOS detection (must be before macOS)
-	// Handles both regular iOS devices and iPadOS in desktop mode
-	if (
-		IOS_DEVICE_PATTERN.test(userAgent) ||
-		(platform.includes('mac') && 'ontouchend' in document)
-	) {
-		return 'ios';
-	}
-
-	// Android detection
-	if (ANDROID_PATTERN.test(userAgent)) {
-		return 'android';
-	}
-
-	// macOS detection
-	if (platform.startsWith('mac')) {
-		return 'macos';
-	}
-
-	// Windows detection
-	if (platform.includes('win')) {
-		return 'windows';
-	}
-
-	// Linux detection (default for Unix-like systems)
-	return 'linux';
-}
+export const os: Os = detect();

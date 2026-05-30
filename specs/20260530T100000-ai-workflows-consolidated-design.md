@@ -307,10 +307,15 @@ auth                              unchanged; only hosted-vs-local-subscription i
 ```txt
 1. REACTIVE rules: yes or no? This is the master question. If yes, the predicate AST is locked in
    (it is the only engine that serves bulk AND reactive). Recommendation: yes.
+   Decision probe: 20260530T113000-ai-workflows-reactive-vs-bulk-only.md argues the opposite v1:
+   bulk-only SQL-alone, with reactive and the predicate AST deferred until real standing rules bite.
 2. Auto-apply row threshold (proposed 10). Minor, one number.
 3. Does "bulk" get a user-facing name, or is it just "the agent did a thing"? Recommendation: no
    user-facing model/mode name. Minor.
 ```
+
+See [AI Workflows: Reactive Rules Versus Bulk One-Shots](./20260530T113000-ai-workflows-reactive-vs-bulk-only.md)
+for the grounded counterargument that recommends bulk-only SQL-alone for v1.
 
 ## Build order (slices)
 
@@ -344,4 +349,9 @@ later  - compileToSql() IF desktop large-N is slow (performance only).
   web-grounded research on durable execution, local-first automation, and portable formats.
   Established reactive-over-scheduled, portable-data-over-TS, and the durable-execution refusal.
   Read for the prior-art table (Actual Budget, Notion, Apple, Obsidian) and the sources.
+
+20260530T113000-ai-workflows-reactive-vs-bulk-only.md
+  decision probe for the one assumption this doc still leaves open: whether reactive rules are worth
+  building at all. Steelmans concrete reactive rules against Fuji entries, tab-manager savedTabs,
+  workspace actions, and the Y.Doc observer pattern, then recommends bulk-only SQL-alone for v1.
 ```

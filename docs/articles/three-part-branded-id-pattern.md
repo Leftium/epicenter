@@ -53,13 +53,13 @@ export const SavedTabId = type('string').pipe((s): SavedTabId => s as SavedTabId
 | Minted fresh by this code                   | `generateXxx()`                                                 |
 | Received as a typed `string` (auth, URL, DB column, page param) | `asXxx(value: string)` syntactic-sugar helper       |
 | Both of the above                           | Both helpers, declared next to the validator                    |
-| Received as `unknown` at a network boundary | None — use the validator's `.assert(unknown)` or schema-level validation |
+| Received as `unknown` at a network boundary | None: use the validator's `.assert(unknown)` or schema-level validation |
 | Set from an external source, never minted   | `asXxx` helper                                                  |
 
 The repo's IDs split as follows:
 
 - **Validator + type + `generate*` only** (workspace-internal): `SavedTabId`, `BookmarkId`, `FileId`'s `RowId` and `ColumnId` siblings, etc. They're minted by the app and never received from outside.
-- **Validator + type + `asXxx` only** (purely external): `UserId`, `OwnerId` from `@epicenter/auth`. The user id is issued by Better Auth and arrives as a typed string; the owner id is the partition key derived from it. Nothing in the codebase mints them.
+- **Validator + type + `asXxx` only** (purely external): `UserId` from `@epicenter/auth` and `OwnerId` from `@epicenter/identity`. The user id is issued by Better Auth and arrives as a typed string; the owner id is the partition key derived from it. Nothing in the codebase mints them.
 - **Validator + type + both helpers** (minted AND received): `FileId`, `ConversationId`, `ChatMessageId`, `EntryId`, `NoteId`, `FolderId`, `DeviceId`. The app generates them with `generate*` and also brands them with `as*` when reading them back from URL params, DB rows, page params, or external strings.
 
 For the third row, the two helpers do unrelated jobs and both earn their keep:

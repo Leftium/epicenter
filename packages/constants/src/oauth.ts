@@ -3,14 +3,6 @@ import { APPS, appOrigins } from '#apps';
 import { OAUTH_ROUTES } from './oauth-routes.js';
 
 /**
- * Dev port for the dashboard SPA. The dashboard is served at
- * `api.epicenter.so/dashboard` in production (same origin as the API), so it
- * has no `APPS` entry. In dev it runs on its own Vite server; this port is
- * the single source of truth, mirrored by `apps/api/ui/vite.config.ts`.
- */
-const DASHBOARD_DEV_PORT = 5178;
-
-/**
  * Shape of one checked-in first-party public OAuth client.
  *
  * Better Auth calls server-side confidential clients `web`. Epicenter's
@@ -49,8 +41,6 @@ export type TrustedOAuthClient = {
  * machine, install, or secret. Every CLI install uses the same value.
  */
 export const EPICENTER_CLI_OAUTH_CLIENT_ID = 'epicenter-cli';
-
-export const EPICENTER_DASHBOARD_OAUTH_CLIENT_ID = 'epicenter-dashboard';
 export const EPICENTER_FUJI_OAUTH_CLIENT_ID = 'epicenter-fuji';
 export const EPICENTER_FUJI_TAURI_OAUTH_REDIRECT_URI =
 	'epicenter-fuji://auth/callback';
@@ -93,7 +83,7 @@ function appCallbacks(app: {
  * Build the checked-in trusted public OAuth clients for a specific
  * deployment. Each client's `redirectUris` resolve against either the app's
  * own origins (Fuji, Honeycrisp, etc.) or the deployment's API base URL
- * (Dashboard and CLI, which both live on the API origin). A self-host at
+ * (the CLI, which lives on the API origin). A self-host at
  * `https://api.acme.com` and `wrangler dev` on a custom port each register
  * their own callbacks without anyone editing this file.
  *
@@ -101,16 +91,10 @@ function appCallbacks(app: {
  * `authPlugins` calls it to derive the trusted-client-id set.
  */
 export function buildTrustedOAuthClients(apiBaseURL: string) {
+	// The same-origin dashboard SPA is not an OAuth client: it authenticates
+	// with the first-party session cookie (see createSameOriginCookieAuth), so
+	// it is deliberately absent from this trusted-client set.
 	return [
-		{
-			clientId: EPICENTER_DASHBOARD_OAUTH_CLIENT_ID,
-			name: 'Epicenter Dashboard',
-			type: 'user-agent-based',
-			redirectUris: [
-				`${apiBaseURL}/dashboard/auth/callback`,
-				`http://localhost:${DASHBOARD_DEV_PORT}/dashboard/auth/callback`,
-			],
-		},
 		{
 			clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,
 			name: 'Fuji',

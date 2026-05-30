@@ -1,5 +1,5 @@
+import type { Tauri } from '#platform/tauri';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
-import type { Tauri } from '$lib/tauri';
 
 export function syncIconWithRecorderState(tauri: Tauri) {
 	$effect(() => {

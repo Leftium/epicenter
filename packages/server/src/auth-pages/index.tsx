@@ -14,10 +14,14 @@ import { AuthLayout } from './layout';
 import { SignInPage } from './sign-in-page';
 import { SignedInPage } from './signed-in-page';
 
-export function renderSignInPage() {
+export function renderSignInPage({
+	githubEnabled,
+}: {
+	githubEnabled: boolean;
+}) {
 	return (
 		<AuthLayout title="Sign in — Epicenter">
-			<SignInPage />
+			<SignInPage githubEnabled={githubEnabled} />
 		</AuthLayout>
 	);
 }

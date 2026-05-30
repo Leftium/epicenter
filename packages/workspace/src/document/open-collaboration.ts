@@ -45,7 +45,10 @@ import {
 	checkDispatchResultFrame,
 	type DispatchRequestFrame,
 } from './dispatch-protocol.js';
-import { createSyncSupervisor } from './internal/sync-supervisor.js';
+import {
+	createSyncSupervisor,
+	type OpenWebSocketFn,
+} from './internal/sync-supervisor.js';
 import {
 	checkPresenceFrame,
 	type PresenceDevice,
@@ -59,15 +62,11 @@ const DISPATCH_RESPONSE_CEILING_MS = 90_000;
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Function that opens a WebSocket to the relay. Matches the shape of
- * `AuthClient.openWebSocket`: the auth client's bearer-aware opener is the
- * canonical implementation, but any function with this shape works (tests
- * pass fakes, alternative deployments may use plain WebSockets).
+ * Re-exported from the sync supervisor (its sole declaration) so consumers
+ * keep importing `OpenWebSocketFn` from `open-collaboration` while the type has
+ * one home. See {@link OpenWebSocketFn} for the contract.
  */
-export type OpenWebSocketFn = (
-	url: string | URL,
-	protocols?: string[],
-) => Promise<WebSocket> | WebSocket;
+export type { OpenWebSocketFn };
 
 /**
  * Subscribe to a wake signal that should trigger a sync reconnect (e.g. an

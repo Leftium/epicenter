@@ -1,9 +1,6 @@
 import type { OsType } from '@tauri-apps/plugin-os';
 import { regex } from 'arkregex';
 import { type } from 'arktype';
-import type { OsService } from './types';
-
-export type { OsError, OsService } from './types';
 
 const UserAgentData = type({ platform: 'string' });
 type UserAgentData = typeof UserAgentData.infer;
@@ -13,18 +10,28 @@ type NavigatorWithUAData = Navigator & {
 	userAgentData: UserAgentData;
 };
 
-export const OsServiceLive = {
-	type(): OsType {
-		// Try modern User-Agent Client Hints API first
-		if (hasUserAgentData(navigator)) {
-			const maybeOsType = getPlatformFromClientHints(navigator);
-			if (maybeOsType) return maybeOsType;
-		}
+/**
+ * Detects the host OS once at module load. The web build has no native OS
+ * API, so it infers from User-Agent Client Hints (preferred) or the legacy
+ * user agent string. iOS and iPadOS-in-desktop-mode resolve to 'ios', which
+ * is deliberately NOT macOS for keyboard-modifier purposes.
+ */
+function detectOs(): OsType {
+	// Try modern User-Agent Client Hints API first
+	if (hasUserAgentData(navigator)) {
+		const maybeOsType = getPlatformFromClientHints(navigator);
+		if (maybeOsType) return maybeOsType;
+	}
 
-		// Fallback to traditional user agent detection
-		return getPlatformFromUserAgent(navigator);
-	},
-} satisfies OsService;
+	// Fallback to traditional user agent detection
+	return getPlatformFromUserAgent(navigator);
+}
+
+const currentOs = detectOs();
+
+export const IS_MACOS = currentOs === 'macos';
+export const IS_LINUX = currentOs === 'linux';
+export const IS_WINDOWS = currentOs === 'windows';
 
 /**
  * Type guard to check if navigator supports User-Agent Client Hints

@@ -5,7 +5,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import { HttpServiceLive } from '$lib/services/http';
+import { HttpServiceLive } from '#platform/http';
 import type { HttpError } from '$lib/services/http/types';
 
 const MAX_FILE_SIZE_MB = 500 as const;

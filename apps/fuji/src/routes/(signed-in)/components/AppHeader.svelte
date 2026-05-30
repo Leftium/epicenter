@@ -8,7 +8,7 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import SearchIcon from '@lucide/svelte/icons/search';
 	import { goto } from '$app/navigation';
-	import { auth } from '$lib/auth';
+	import { auth } from '#platform/auth';
 	import { requireFuji } from '$lib/session';
 	import BulkAddModal from './BulkAddModal.svelte';
 

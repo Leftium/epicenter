@@ -11,8 +11,8 @@
  * mount origin.
  */
 
-import type { OwnerId } from '@epicenter/constants/identity';
 import type { Keyring } from '@epicenter/encryption';
+import type { OwnerId } from '@epicenter/identity';
 import type { DeviceId } from '../document/device-id.js';
 import type {
 	OnReconnectSignal,

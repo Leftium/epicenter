@@ -21,9 +21,8 @@
  */
 
 import { resolve } from 'node:path';
-
-import type { OwnerId } from '@epicenter/constants/identity';
 import type { Keyring } from '@epicenter/encryption';
+import type { OwnerId } from '@epicenter/identity';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 
 import {

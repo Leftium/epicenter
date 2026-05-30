@@ -1,4 +1,5 @@
 import { partitionResults } from 'wellcrafted/result';
+import { tauri } from '#platform/tauri';
 import { goto } from '$app/navigation';
 import { type Command, commands } from '$lib/commands';
 import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
@@ -10,7 +11,6 @@ import {
 } from '$lib/services/local-shortcut-manager';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
-import { tauri } from '$lib/tauri';
 import type { Accelerator } from '$lib/utils/accelerator';
 
 /** Default values for in-app (local) shortcuts. Keyed by command id string. */

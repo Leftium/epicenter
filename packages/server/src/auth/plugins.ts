@@ -41,6 +41,14 @@ export function authPlugins(apiBaseURL: string) {
 			loginPage: '/sign-in',
 			consentPage: '/consent',
 			requirePKCE: true,
+			// JWT access tokens are stateless: the resource server verifies them
+			// against JWKS with no per-request introspection, so a token stays
+			// valid until it expires even after the session or refresh token is
+			// revoked. The plugin default is 3600s (1h); 600s (10min) keeps that
+			// post-revocation window short while the client refreshes
+			// transparently (refresh tokens rotate, and the auth runtime refreshes
+			// on a 60s skew and on any 401). Refresh-token lifetime is unchanged.
+			accessTokenExpiresIn: 600,
 			cachedTrustedClients: trustedOAuthClientIds,
 			validAudiences: [apiBaseURL],
 			allowDynamicClientRegistration: false,

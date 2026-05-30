@@ -30,7 +30,7 @@ export type { DeviceId };
 // row keys, and the dispatch addresses all share one type.
 export { asDeviceId };
 
-export const TAB_MANAGER_ID = 'epicenter.tab-manager';
+export const TAB_MANAGER_ID = 'epicenter-tab-manager';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Branded ID Types

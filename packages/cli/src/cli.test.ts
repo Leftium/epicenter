@@ -6,7 +6,7 @@
  * decoupled from command semantics.
  */
 import { describe, expect, spyOn, test } from 'bun:test';
-import { createCLI } from './cli';
+import { createCLI } from './cli.js';
 
 async function captureHelp(argv: string[] = ['--help']): Promise<string> {
 	const chunks: string[] = [];

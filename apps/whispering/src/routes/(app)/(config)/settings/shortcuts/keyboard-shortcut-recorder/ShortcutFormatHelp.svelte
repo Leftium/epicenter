@@ -13,7 +13,7 @@
 		KEYBOARD_EVENT_SUPPORTED_KEY_SECTIONS,
 		OPTION_DEAD_KEYS,
 	} from '$lib/constants/keyboard';
-	import { IS_MACOS } from '$lib/constants/platform';
+	import { IS_MACOS } from '#platform/os';
 
 	let { type }: { type: 'local' | 'global' } = $props();
 	let dialogOpen = $state(false);

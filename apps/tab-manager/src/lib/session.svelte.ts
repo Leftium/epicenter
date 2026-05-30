@@ -1,8 +1,8 @@
-import type { AuthClient } from '@epicenter/auth';
-import { createOAuthAppAuth } from '@epicenter/auth-svelte';
+import type { SyncAuthClient } from '@epicenter/auth';
 import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createSession } from '@epicenter/svelte';
+import { createOAuthAppAuth } from '@epicenter/svelte/auth';
 import { openCollaboration, roomWsUrl } from '@epicenter/workspace';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { createAiChatState } from './chat/chat-state.svelte';
@@ -36,7 +36,7 @@ export type SessionTools = SessionAiTools['tools'];
  * out and the augmented tab-manager binding (binding fields + `state` +
  * `sessionAiTools`) when signed in.
  */
-let authClient: AuthClient | undefined;
+let authClient: SyncAuthClient | undefined;
 let session: ReturnType<typeof buildSession> | undefined;
 
 const whenReady = Promise.all([
@@ -54,7 +54,7 @@ const whenReady = Promise.all([
 });
 
 function buildSession(
-	auth: AuthClient,
+	auth: SyncAuthClient,
 	profile: Awaited<ReturnType<typeof createDeviceProfile>>,
 ) {
 	return createSession({
@@ -108,7 +108,7 @@ function buildSession(
 }
 
 export const tabManagerSession = {
-	get auth(): AuthClient {
+	get auth(): SyncAuthClient {
 		if (!authClient) {
 			throw new Error('[tab-manager] auth read before storage readiness.');
 		}

@@ -1,5 +1,6 @@
 /**
- * Shared CSS for server-rendered auth pages (sign-in, consent, device, signed-in).
+ * Shared CSS for server-rendered auth pages (sign-in, consent, signed-in,
+ * cli-callback).
  *
  * Matches the Epicenter design system tokens from `packages/ui/src/app.css`
  * using oklch equivalents. System-ui font stack (brand font Manrope is not
@@ -49,28 +50,6 @@ body{
 h1{font-size:1.375rem;font-weight:700;letter-spacing:-.01em;margin-bottom:.25rem}
 .subtitle{color:oklch(0.554 0.046 257.417);font-size:.875rem;margin-bottom:1.75rem}
 
-/* ── Form elements ────────────────────────────────────────── */
-
-label{display:block;font-size:.875rem;font-weight:500;margin-bottom:.375rem}
-
-input{
-	width:100%;
-	padding:.625rem .75rem;
-	border:1px solid oklch(0.929 0.013 255.508);
-	border-radius:8px;
-	font-size:.875rem;
-	font-family:inherit;
-	outline:none;
-	transition:border-color .15s,box-shadow .15s;
-	background:#fff;
-	color:oklch(0.129 0.042 264.695);
-}
-input:focus{border-color:oklch(0.208 0.042 265.755);box-shadow:0 0 0 2px oklch(0.208 0.042 265.755 / .15)}
-input::placeholder{color:oklch(0.554 0.046 257.417)}
-
-.field{margin-bottom:1rem}
-.field:last-of-type{margin-bottom:0}
-
 /* ── Buttons ──────────────────────────────────────────────── */
 
 button,.btn{
@@ -105,23 +84,6 @@ button:disabled,.btn:disabled{opacity:.5;cursor:not-allowed}
 .actions{display:flex;gap:.5rem;margin-top:1.25rem}
 .actions button,.actions .btn{flex:1}
 
-/* ── Separator ────────────────────────────────────────────── */
-
-.separator{
-	display:flex;
-	align-items:center;
-	gap:.75rem;
-	margin:1.25rem 0;
-	color:oklch(0.554 0.046 257.417);
-	font-size:.8125rem;
-}
-.separator::before,.separator::after{
-	content:'';
-	flex:1;
-	height:1px;
-	background:oklch(0.929 0.013 255.508);
-}
-
 /* ── Alert / message ──────────────────────────────────────── */
 
 .msg{
@@ -133,32 +95,8 @@ button:disabled,.btn:disabled{opacity:.5;cursor:not-allowed}
 }
 .msg.ok{background:oklch(0.962 0.044 156.743);color:oklch(0.448 0.119 151.328);border:1px solid oklch(0.871 0.108 152.314)}
 .msg.err{background:oklch(0.971 0.013 17.38);color:oklch(0.577 0.245 27.325);border:1px solid oklch(0.852 0.071 22.018)}
-.msg.warn{background:oklch(0.987 0.026 102.212);color:oklch(0.553 0.135 66.442);border:1px solid oklch(0.905 0.093 99.526)}
 
 .hidden{display:none}
-
-/* ── Toggle link ──────────────────────────────────────────── */
-
-.toggle{
-	text-align:center;
-	font-size:.8125rem;
-	color:oklch(0.554 0.046 257.417);
-	margin-top:1.25rem;
-}
-.toggle button{
-	display:inline;
-	width:auto;
-	padding:0;
-	border:none;
-	background:none;
-	color:oklch(0.208 0.042 265.755);
-	text-decoration:underline;
-	text-underline-offset:3px;
-	cursor:pointer;
-	font-size:inherit;
-	font-weight:inherit;
-}
-.toggle button:hover{opacity:.7}
 
 /* ── Scope list (consent page) ────────────────────────────── */
 
@@ -182,16 +120,6 @@ button:disabled,.btn:disabled{opacity:.5;cursor:not-allowed}
 .client-name{
 	font-weight:600;
 	font-size:1rem;
-}
-
-/* ── Device code input override ───────────────────────────── */
-
-.code-input{
-	font-family:monospace;
-	letter-spacing:.15em;
-	text-align:center;
-	text-transform:uppercase;
-	font-size:1.125rem;
 }
 
 /* ── CLI callback code block ──────────────────────────────── */

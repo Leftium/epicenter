@@ -21,7 +21,7 @@
 	} from '$lib/settings/transcription-validation';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
-	import { tauri } from '$lib/tauri';
+	import { tauri } from '#platform/tauri';
 
 	let { class: className }: { class?: string } = $props();
 

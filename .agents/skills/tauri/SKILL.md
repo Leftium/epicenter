@@ -30,6 +30,32 @@ Use this pattern when you need to:
 - Treat CSP, `devCsp`, asset protocol configuration, `convertFileSrc`, `freezePrototype`, and remote IPC as security-sensitive config.
 - Long-lived Rust objects should be Tauri resources with frontend `ResourceId`s. Do not serialize complex long-lived objects through command responses.
 
+### Webview CSP
+
+Never ship `app.security.csp: null` (that disables CSP entirely). The
+highest-value directive is `connect-src`: locking it to your API origin plus
+Tauri's IPC blocks an injected same-origin script from exfiltrating in-memory
+secrets (tokens, keys) to an attacker host. Set both `csp` (production) and
+`devCsp` (the dev override, which replaces `csp` during `tauri dev`):
+
+```jsonc
+"security": {
+  // Tauri's tauri-codegen hashes every inline <script> in the built
+  // frontendDist and injects the hashes, so production script-src does NOT
+  // need 'unsafe-inline' (a SvelteKit SPA still boots via its hash).
+  "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost https://api.example.com wss://api.example.com; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+  // Dev loads from the Vite server (not the hashed build), so its inline/HMR
+  // scripts ARE unhashed: devCsp must keep 'unsafe-inline' (+ 'unsafe-eval')
+  // and add the localhost dev origins.
+  "devCsp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost http://localhost:5173 ws://localhost:5173 https://api.example.com wss://api.example.com; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; object-src 'none'; base-uri 'self'"
+}
+```
+
+Rules: always include `ipc: http://ipc.localhost` in `connect-src` or `invoke()`
+breaks; only list `asset:` / `http://asset.localhost` if the asset protocol is
+actually enabled (`convertFileSrc`); always smoke-test a real `tauri dev` AND a
+release build, watching the webview console for CSP violations.
+
 ## Typed IPC And Generated Bindings
 
 When a Tauri app uses `tauri-specta`, keep the Rust command registry, generated TypeScript bindings, and handwritten frontend wrapper in sync.

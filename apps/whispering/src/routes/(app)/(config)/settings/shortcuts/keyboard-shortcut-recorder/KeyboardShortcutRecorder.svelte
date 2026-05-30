@@ -9,11 +9,9 @@
 	import Keyboard from '@lucide/svelte/icons/keyboard';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import XIcon from '@lucide/svelte/icons/x';
-	import {
-		getShortcutDisplayLabel,
-		type KeyboardEventSupportedKey,
-	} from '$lib/constants/keyboard';
-	import { IS_MACOS } from '$lib/constants/platform';
+	import { type KeyboardEventSupportedKey } from '$lib/constants/keyboard';
+	import { getShortcutDisplayLabel } from '$lib/utils/keyboard';
+	import { IS_MACOS } from '#platform/os';
 	import { type KeyRecorder } from './create-key-recorder.svelte';
 
 	const {

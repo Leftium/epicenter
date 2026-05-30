@@ -4,10 +4,10 @@
 	import * as Select from '@epicenter/ui/select';
 	import { Switch } from '@epicenter/ui/switch';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
-	import { ALWAYS_ON_TOP_MODE_OPTIONS } from '$lib/constants/ui';
+	import { ALWAYS_ON_TOP_MODE_OPTIONS } from '$lib/constants/always-on-top';
 	import { report } from '$lib/report';
 	import { autostartKeys } from '$lib/tauri/autostart-keys';
-	import { tauri } from '$lib/tauri';
+	import { tauri } from '#platform/tauri';
 	import { settings } from '$lib/state/settings.svelte';
 
 	const retentionItems = [

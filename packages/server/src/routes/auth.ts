@@ -70,7 +70,13 @@ export const authApp = new Hono<Env>()
 				}),
 			);
 		}
-		return c.html(renderSignInPage());
+		return c.html(
+			renderSignInPage({
+				githubEnabled: Boolean(
+					c.env.GITHUB_CLIENT_ID && c.env.GITHUB_CLIENT_SECRET,
+				),
+			}),
+		);
 	})
 	// Server-rendered consent page. Requires a session; redirects to sign-in
 	// (with a callbackURL pointing back) when missing.

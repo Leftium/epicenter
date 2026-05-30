@@ -10,7 +10,6 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { asOwnerId } from '@epicenter/constants/identity';
 import {
 	base64ToBytes,
 	bytesToBase64,
@@ -19,6 +18,7 @@ import {
 	type EncryptedBlob,
 	type Keyring,
 } from '@epicenter/encryption';
+import { asOwnerId } from '@epicenter/identity';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { IDBKeyRange, indexedDB } from 'fake-indexeddb';
 import * as Y from 'yjs';
@@ -240,7 +240,7 @@ describe('attachLocalStorage BroadcastChannel naming', () => {
 	});
 
 	test('uses an owner-scoped channel key without changing ydoc.guid', () => {
-		const ydoc = new Y.Doc({ guid: 'epicenter.fuji' });
+		const ydoc = new Y.Doc({ guid: 'epicenter-fuji' });
 
 		attachLocalStorage(ydoc, {
 			server: SERVER,
@@ -252,9 +252,9 @@ describe('attachLocalStorage BroadcastChannel naming', () => {
 		// channels coordinate with the same name y-indexeddb writes for the
 		// shared database. The owner-scoped portion is everything after.
 		expect(FakeBroadcastChannel.names).toEqual([
-			`yjs.epicenter/${SERVER}/owners/user-123/epicenter.fuji`,
+			`yjs.epicenter/${SERVER}/owners/user-123/epicenter-fuji`,
 		]);
-		expect(ydoc.guid).toBe('epicenter.fuji');
+		expect(ydoc.guid).toBe('epicenter-fuji');
 		ydoc.destroy();
 	});
 });

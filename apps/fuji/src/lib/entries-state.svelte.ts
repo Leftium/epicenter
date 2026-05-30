@@ -1,6 +1,6 @@
 import { fromTable } from '@epicenter/svelte';
-import type { FujiBrowser } from '../../fuji.browser';
-import type { EntryId } from '../../fuji.workspace';
+import type { EntryId } from '$lib/workspace';
+import type { FujiBrowser } from '$lib/workspace/browser';
 
 /**
  * Reactive entries selectors derived from the fuji binding's entries table.

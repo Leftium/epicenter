@@ -68,6 +68,18 @@ export const appOrigins = (app: {
 }): readonly string[] => [localUrl(app), app.url, ...(app.aliases ?? [])];
 
 /**
+ * An app's production origins: its canonical `url` plus any `aliases`, without
+ * the localhost dev origin. The typed parameter (with optional `aliases`) is
+ * what lets `trusted-origins.ts` read `aliases` off `Object.values(APPS)`
+ * without an `as` cast: the union members carry it as `readonly string[] |
+ * undefined` here.
+ */
+export const prodOrigins = (app: {
+	url: string;
+	aliases?: readonly string[];
+}): readonly string[] => [app.url, ...(app.aliases ?? [])];
+
+/**
  * Default API base URL for Node consumers (CLI, daemon, tests). The constant
  * resolves to `process.env.EPICENTER_API_URL` when set, else
  * {@link PRODUCTION_API_URL}. Browsers and Workers lack `process.env`, so

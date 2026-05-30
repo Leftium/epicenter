@@ -79,12 +79,11 @@ The collapse pass should stop and surface to the user (not silently proceed) whe
 Default collapse-pass targets, narrowest to widest:
 
 1. `packages/auth`
-2. `packages/auth-svelte`
-3. `packages/encryption`
-4. `packages/workspace`
-5. `packages/svelte-utils`
-6. `packages/cli`
-7. `apps/api`
+2. `packages/encryption`
+3. `packages/workspace`
+4. `packages/svelte-utils`
+5. `packages/cli`
+6. `apps/api`
 
 Out of scope without an explicit pass declaration:
 

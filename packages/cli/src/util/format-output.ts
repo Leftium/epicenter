@@ -22,13 +22,29 @@ function formatJsonl(values: unknown[]): string {
 /** Output data to stdout with appropriate formatting. */
 export function output(value: unknown, { format }: FormatOptions = {}): void {
 	if (format === 'jsonl') {
-		if (!Array.isArray(value)) {
-			throw new Error('JSONL format requires an array value');
-		}
-		console.log(formatJsonl(value));
+		const rows = Array.isArray(value) ? value : [value];
+		console.log(formatJsonl(rows));
 	} else {
 		console.log(formatJson(value, { format }));
 	}
+}
+
+/**
+ * Emit one error to stderr and set the process exit code. The single owner of
+ * CLI error output: every command routes failures through here so the `error:`
+ * prefix, the target stream, and the exit code are decided in one place. New
+ * commands stay consistent by calling this instead of open-coding console.error.
+ *
+ * `details` are extra stderr lines printed verbatim under the prefixed line:
+ * suggestion lists, a peer-miss reason, a follow-up hint.
+ */
+export function fail(
+	message: string,
+	{ code = 1, details = [] }: { code?: number; details?: string[] } = {},
+): void {
+	console.error(`error: ${message}`);
+	for (const line of details) console.error(line);
+	process.exitCode = code;
 }
 
 /** Yargs options for the shared format flag. */

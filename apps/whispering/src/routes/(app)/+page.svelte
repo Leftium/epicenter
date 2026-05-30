@@ -29,7 +29,7 @@
 		type RecordingMode,
 		VAD_STATE_TO_ICON,
 	} from '$lib/constants/audio';
-	import { getShortcutDisplayLabel } from '$lib/constants/keyboard';
+	import { getShortcutDisplayLabel } from '$lib/utils/keyboard';
 	import {
 		stopManualRecording,
 		stopVadRecording,
@@ -38,7 +38,7 @@
 	import { report } from '$lib/report';
 	import { rpc } from '$lib/rpc';
 	import { services } from '$lib/services';
-	import { tauri } from '$lib/tauri';
+	import { tauri } from '#platform/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';

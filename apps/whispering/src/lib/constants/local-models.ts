@@ -18,7 +18,7 @@
  * Currently only English models are exposed. Other languages can be enabled
  * by uncommenting below once we're ready to support them.
  */
-export const MOONSHINE_LANGUAGES = [
+const MOONSHINE_LANGUAGES = [
 	'en',
 	// 'ar',
 	// 'zh',
@@ -29,7 +29,7 @@ export const MOONSHINE_LANGUAGES = [
 	// 'vi',
 ] as const;
 
-export type MoonshineLanguage = (typeof MOONSHINE_LANGUAGES)[number];
+type MoonshineLanguage = (typeof MOONSHINE_LANGUAGES)[number];
 
 /**
  * Moonshine architecture variants. Determines layer count and hidden
@@ -40,9 +40,9 @@ export type MoonshineLanguage = (typeof MOONSHINE_LANGUAGES)[number];
  * (`transcription/model_manager.rs::parse_moonshine_variant`), since that
  * is the only consumer and the wire format is owned by the loader.
  */
-export const MOONSHINE_VARIANTS = ['tiny', 'base'] as const;
+const MOONSHINE_VARIANTS = ['tiny', 'base'] as const;
 
-export type MoonshineVariant = (typeof MOONSHINE_VARIANTS)[number];
+type MoonshineVariant = (typeof MOONSHINE_VARIANTS)[number];
 
 /**
  * Base configuration for a local AI model that can be downloaded and used
@@ -62,7 +62,7 @@ type BaseModelConfig = {
 };
 
 /** Whisper models are a single .bin file. */
-export type WhisperModelConfig = BaseModelConfig & {
+type WhisperModelConfig = BaseModelConfig & {
 	engine: 'whispercpp';
 	file: {
 		url: string;
@@ -71,7 +71,7 @@ export type WhisperModelConfig = BaseModelConfig & {
 };
 
 /** Parakeet models are multiple ONNX files in a directory. */
-export type ParakeetModelConfig = BaseModelConfig & {
+type ParakeetModelConfig = BaseModelConfig & {
 	engine: 'parakeet';
 	directoryName: string;
 	files: Array<{
@@ -90,15 +90,15 @@ export type ParakeetModelConfig = BaseModelConfig & {
  * layer count and hidden dimensions needed to load the model.
  *
  * Rather than storing the variant separately, we encode it in the
- * `directoryName` (e.g. "moonshine-tiny-en") and extract it at
- * transcription time using `MOONSHINE_DIR_PATTERN`. This avoids redundant
- * metadata while keeping our download configs simple.
+ * `directoryName` (e.g. "moonshine-tiny-en") and parse it back out in Rust
+ * (`transcription/model_manager.rs::parse_moonshine_variant`). This avoids
+ * redundant metadata while keeping our download configs simple.
  *
  * Variant architecture:
  * - "tiny": 6 layers, head_dim=36 (~30 MB quantized)
  * - "base": 8 layers, head_dim=52 (~65 MB quantized)
  */
-export type MoonshineModelConfig = BaseModelConfig & {
+type MoonshineModelConfig = BaseModelConfig & {
 	engine: 'moonshine';
 	language: MoonshineLanguage;
 	directoryName: `moonshine-${MoonshineVariant}-${MoonshineLanguage}`;
@@ -113,18 +113,6 @@ export type LocalModelConfig =
 	| WhisperModelConfig
 	| ParakeetModelConfig
 	| MoonshineModelConfig;
-
-/**
- * At least 90% of the expected size: detects corrupted or interrupted
- * downloads that would otherwise load successfully and produce garbage
- * transcripts (Whisper) or fail to load at all (Parakeet/Moonshine).
- */
-export function isModelFileSizeValid(
-	actualBytes: number,
-	expectedBytes: number,
-): boolean {
-	return actualBytes >= expectedBytes * 0.9;
-}
 
 /**
  * Pre-built Whisper models available for download from Hugging Face.

@@ -1,8 +1,8 @@
 import { createWebStoragePersistedAuthStorage } from '@epicenter/auth';
 import { createBrowserOAuthLauncher } from '@epicenter/auth/oauth-launchers';
-import { createOAuthAppAuth } from '@epicenter/auth-svelte';
 import { EPICENTER_HONEYCRISP_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { APP_URLS } from '@epicenter/constants/vite';
+import { createOAuthAppAuth } from '@epicenter/svelte/auth';
 
 export const auth = createOAuthAppAuth({
 	baseURL: APP_URLS.API,

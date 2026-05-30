@@ -1,7 +1,7 @@
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
 import { keyringsEqual } from '@epicenter/encryption';
+import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -9,7 +9,7 @@ import {
 } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import type { AuthClient, AuthFetch, AuthState } from './auth-contract.js';
+import type { AuthFetch, AuthState, SyncAuthClient } from './auth-contract.js';
 import { AuthError } from './auth-errors.js';
 import {
 	ApiSessionResponse,
@@ -138,7 +138,7 @@ export function createOAuthAppAuth({
 	WebSocket: WebSocketImpl = globalThis.WebSocket,
 	now = Date.now,
 	log = createLogger('auth/oauth-app'),
-}: CreateOAuthAppAuthConfig): AuthClient {
+}: CreateOAuthAppAuthConfig): SyncAuthClient {
 	const authSession = createAuthSessionRuntime({
 		initialPersistedAuth: persistedAuthStorage.initial,
 		persistedAuthStorage,

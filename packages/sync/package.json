@@ -21,12 +21,12 @@
 	"exports": {
 		".": "./src/index.ts"
 	},
-	"license": "AGPL-3.0-or-later",
+	"license": "MIT",
 	"scripts": {
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@epicenter/constants": "workspace:*",
+		"@epicenter/identity": "workspace:*",
 		"lib0": "catalog:",
 		"wellcrafted": "catalog:"
 	},

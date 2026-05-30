@@ -17,6 +17,7 @@ import { getDaemon, type PeerSnapshot } from '@epicenter/workspace/node';
 import { cmd } from '../util/cmd.js';
 import { projectOption } from '../util/common-options.js';
 import {
+	fail,
 	formatOptions,
 	type OutputFormat,
 	output,
@@ -32,14 +33,12 @@ export const peersCommand = cmd({
 	handler: async (argv) => {
 		const { data: daemon, error: daemonErr } = await getDaemon(argv.C);
 		if (daemonErr) {
-			console.error(daemonErr.message);
-			process.exitCode = 1;
+			fail(daemonErr.message);
 			return;
 		}
 		const { data: rows, error } = await daemon.peers();
 		if (error) {
-			console.error(`error: ${error.message}`);
-			process.exitCode = 1;
+			fail(error.message);
 			return;
 		}
 		emit(rows, argv.format);

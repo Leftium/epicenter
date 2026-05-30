@@ -1,11 +1,11 @@
-import { asOwnerId } from '@epicenter/constants/identity';
+import { asOwnerId } from '@epicenter/identity';
 import { type BetterAuthOptions, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { eq } from 'drizzle-orm';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../db/schema/index.js';
 import { assetKey } from '../owner.js';
-import { TRUSTED_ORIGINS } from '../trusted-origins.js';
+import { buildTrustedOrigins } from '../trusted-origins.js';
 import { BASE_AUTH_CONFIG } from './base-config.js';
 import { createCookieAdvancedConfig } from './cookie-config.js';
 import { authPlugins } from './plugins.js';
@@ -21,7 +21,8 @@ type Db = NodePgDatabase<typeof schema>;
  *
  * Wires up:
  * - Drizzle adapter (Postgres via Hyperdrive)
- * - Google OAuth + email/password (from {@link BASE_AUTH_CONFIG})
+ * - Google OAuth, plus GitHub when its credentials are configured
+ *   (email/password is disabled; see {@link BASE_AUTH_CONFIG})
  * - Plugins: JWT (ES256), OAuth provider (PKCE)
  * - Optional cleanup hook for R2 assets when a user is deleted
  * - Cloudflare KV secondary storage for session caching
@@ -43,28 +44,41 @@ export function createAuth({
 		database: drizzleAdapter(db, { provider: 'pg', schema }),
 		baseURL,
 		secret: env.BETTER_AUTH_SECRET,
-		account: {
-			...BASE_AUTH_CONFIG.account,
-			// Better Auth's database strategy validates OAuth callbacks two ways:
-			// 1. A verification record in Postgres (random token, single-use, 10min TTL)
-			// 2. A signed state cookie set during the sign-in POST
-			//
-			// Layer 2 fails in our architecture. The sign-in POST is a cross-origin
-			// fetch from a browser app origin to the API origin, and modern browsers
-			// block third-party Set-Cookie from fetch responses, even with
-			// SameSite=None.
-			// Chrome Privacy Sandbox, Safari ITP, and Firefox ETP all enforce this.
-			// The cookie is never stored, so the callback can't read it back.
-			//
-			// Layer 1 (DB verification) is the primary security mechanism and is
-			// unaffected. skipStateCookieCheck disables only layer 2.
-			skipStateCookieCheck: true,
-		},
+		// `account` (accountLinking) comes from BASE_AUTH_CONFIG via the spread.
+		//
+		// The Better Auth state-cookie check stays ENABLED (its default). The
+		// Google sign-in leg validates the callback two ways: a single-use
+		// Postgres verification record AND a signed state cookie set during the
+		// sign-in POST. An earlier note disabled the cookie check on the theory
+		// that the sign-in POST was a cross-origin fetch whose third-party
+		// Set-Cookie browsers would drop. That is not how this deploys: the only
+		// caller of `/auth/sign-in/social` is the API-hosted sign-in page
+		// (auth-pages/scripts/sign-in.ts), which fetches a same-origin relative
+		// URL, so the state cookie is first-party, stored, and sent on the
+		// Google callback navigation. The cookie binds the callback to the
+		// initiating browser (the DB record alone does not), so keeping the check
+		// on restores that login-CSRF / session-fixation defense.
 		socialProviders: {
 			google: {
 				clientId: env.GOOGLE_CLIENT_ID,
 				clientSecret: env.GOOGLE_CLIENT_SECRET,
 			},
+			// GitHub is registered only when a deployment has configured its
+			// credentials, so the team reference deployment (and any self-host)
+			// stays Google-only by default instead of offering a button that
+			// 500s. better-auth requests the `read:user` + `user:email` scopes by
+			// default, so it reads the primary email and GitHub's verification
+			// flag. GitHub is deliberately NOT a trusted linking provider (see
+			// BASE_AUTH_CONFIG): an unverified GitHub email must not link into an
+			// existing account.
+			...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET
+				? {
+						github: {
+							clientId: env.GITHUB_CLIENT_ID,
+							clientSecret: env.GITHUB_CLIENT_SECRET,
+						},
+					}
+				: {}),
 		},
 		session: {
 			expiresIn: 60 * 60 * 24 * 7,
@@ -127,7 +141,7 @@ export function createAuth({
 				},
 			},
 		},
-		trustedOrigins: TRUSTED_ORIGINS,
+		trustedOrigins: buildTrustedOrigins(baseURL),
 		// secondaryStorage = Cloudflare KV as a read-through cache.
 		// Postgres (Germany) is always the source of truth. KV avoids the
 		// ~150ms round-trip on repeated session reads from distant edges.

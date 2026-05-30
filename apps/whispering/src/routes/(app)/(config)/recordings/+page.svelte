@@ -48,10 +48,10 @@
 	import { format } from 'date-fns';
 	import { createRawSnippet } from 'svelte';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
-	import { PATHS } from '$lib/constants/paths';
+	import { PATHS } from '$lib/services/fs-paths';
 	import { report } from '$lib/report';
 	import { rpc } from '$lib/rpc';
-	import { tauri } from '$lib/tauri';
+	import { tauri } from '#platform/tauri';
 	import { services } from '$lib/services';
 	import { type Recording, recordings } from '$lib/state/recordings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';

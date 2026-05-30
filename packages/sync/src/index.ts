@@ -31,3 +31,4 @@ export {
 	type SyncMessageType,
 	stateVectorsEqual,
 } from './protocol';
+export { ROOM_ROUTE } from './room-route';

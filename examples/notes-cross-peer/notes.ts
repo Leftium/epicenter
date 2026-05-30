@@ -9,7 +9,7 @@
  */
 
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import type { OwnerId } from '@epicenter/constants/identity';
+import type { OwnerId } from '@epicenter/identity';
 import {
 	column,
 	createWorkspace,
@@ -23,7 +23,7 @@ import {
 } from '@epicenter/workspace';
 import Type from 'typebox';
 
-const WORKSPACE_ID = 'epicenter.notes-repro';
+const WORKSPACE_ID = 'epicenter-notes-repro';
 
 const Note = defineTable({
 	id: column.string(),

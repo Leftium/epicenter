@@ -10,8 +10,8 @@
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { report } from '$lib/report';
-	import { tauri } from '$lib/tauri';
-	import { manualRecorderConfig } from '$lib/state/manual-recorder-config';
+	import { tauri } from '#platform/tauri';
+	import { manualRecorderConfig } from '#platform/manual-recorder-config';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 
 	const combobox = useCombobox();

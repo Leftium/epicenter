@@ -6,6 +6,7 @@
  * the Y.Doc update log and SQLite mirror under `.epicenter/`.
  */
 
+import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { defineActions, defineWorkspace } from '@epicenter/workspace';
 import { defineMount } from '@epicenter/workspace/daemon';
 import {
@@ -81,6 +82,7 @@ export function tabManager(opts: TabManagerMountOptions = {}) {
 			});
 
 			const infrastructure = attachProjectInfrastructure(workspace.ydoc, {
+				baseURL: EPICENTER_API_URL,
 				projectDir,
 				ownerId,
 				deviceId,

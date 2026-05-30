@@ -115,7 +115,7 @@ async function setup({
 		{ gcTime: 0 },
 	);
 
-	const workspace = cache.open('test.materializer');
+	const workspace = cache.open('test-materializer');
 	await workspace.whenReady;
 	return { workspace, cache };
 }
@@ -617,7 +617,7 @@ describe('round-trip', () => {
 			};
 		});
 
-		const workspace1 = cache1.open('test.roundtrip.1');
+		const workspace1 = cache1.open('test-roundtrip-1');
 		await workspace1.whenReady;
 
 		workspace1.tables.posts.set({
@@ -662,7 +662,7 @@ describe('round-trip', () => {
 			};
 		});
 
-		const workspace2 = cache2.open('test.roundtrip.2');
+		const workspace2 = cache2.open('test-roundtrip-2');
 		await workspace2.whenReady;
 
 		const result = await workspace2.materializer.actions.markdown_push();

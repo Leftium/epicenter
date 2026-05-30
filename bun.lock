@@ -60,7 +60,6 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/auth": "workspace:*",
-        "@epicenter/auth-svelte": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@tanstack/svelte-query": "catalog:",
@@ -93,7 +92,6 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/auth": "workspace:*",
-        "@epicenter/auth-svelte": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
         "@epicenter/svelte": "workspace:*",
@@ -147,7 +145,6 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/auth": "workspace:*",
-        "@epicenter/auth-svelte": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
         "@epicenter/svelte": "workspace:*",
@@ -218,7 +215,6 @@
       "dependencies": {
         "@codemirror/autocomplete": "^6.20.1",
         "@epicenter/auth": "workspace:*",
-        "@epicenter/auth-svelte": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/skills": "workspace:*",
         "@epicenter/svelte": "workspace:*",
@@ -335,7 +331,6 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/auth": "workspace:*",
-        "@epicenter/auth-svelte": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/ui": "workspace:*",
@@ -472,7 +467,6 @@
       "version": "0.0.1",
       "dependencies": {
         "@epicenter/auth": "workspace:*",
-        "@epicenter/auth-svelte": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/ui": "workspace:*",
@@ -531,6 +525,7 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/cli": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/identity": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "arktype": "catalog:",
         "typebox": "catalog:",
@@ -555,6 +550,8 @@
       "dependencies": {
         "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
+        "@epicenter/identity": "workspace:*",
+        "@epicenter/sync": "workspace:*",
         "arktype": "catalog:",
         "better-auth": "catalog:",
         "env-paths": "^3.0.0",
@@ -566,22 +563,6 @@
         "typescript": "catalog:",
       },
     },
-    "packages/auth-svelte": {
-      "name": "@epicenter/auth-svelte",
-      "version": "0.1.0",
-      "dependencies": {
-        "@epicenter/auth": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "svelte": "catalog:",
-        "svelte-check": "catalog:",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "svelte": "^5.0.0",
-      },
-    },
     "packages/cli": {
       "name": "@epicenter/cli",
       "version": "0.1.0",
@@ -590,7 +571,7 @@
       },
       "dependencies": {
         "@epicenter/auth": "workspace:*",
-        "@epicenter/constants": "workspace:*",
+        "@epicenter/identity": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@hono/standard-validator": "catalog:",
         "arktype": "catalog:",
@@ -615,6 +596,7 @@
       "dependencies": {
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/identity": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -625,6 +607,7 @@
       "name": "@epicenter/constants",
       "version": "0.1.0",
       "dependencies": {
+        "@epicenter/identity": "workspace:*",
         "arktype": "catalog:",
         "wellcrafted": "catalog:",
       },
@@ -672,6 +655,18 @@
         "yjs": "catalog:",
       },
     },
+    "packages/identity": {
+      "name": "@epicenter/identity",
+      "dependencies": {
+        "@epicenter/encryption": "workspace:*",
+        "arktype": "catalog:",
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/server": {
       "name": "@epicenter/server",
       "version": "0.1.0",
@@ -681,6 +676,7 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
+        "@epicenter/identity": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@hono/standard-validator": "catalog:",
@@ -730,8 +726,8 @@
       "dependencies": {
         "@epicenter/api": "workspace:*",
         "@epicenter/auth": "workspace:*",
-        "@epicenter/auth-svelte": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/identity": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@lucide/svelte": "catalog:",
@@ -753,7 +749,7 @@
       "name": "@epicenter/sync",
       "version": "0.1.0",
       "dependencies": {
-        "@epicenter/constants": "workspace:*",
+        "@epicenter/identity": "workspace:*",
         "lib0": "catalog:",
         "wellcrafted": "catalog:",
       },
@@ -816,8 +812,8 @@
       "name": "@epicenter/workspace",
       "version": "0.2.0",
       "dependencies": {
-        "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
+        "@epicenter/identity": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@epicenter/util": "workspace:*",
         "@hono/standard-validator": "catalog:",
@@ -1107,8 +1103,6 @@
 
     "@epicenter/auth": ["@epicenter/auth@workspace:packages/auth"],
 
-    "@epicenter/auth-svelte": ["@epicenter/auth-svelte@workspace:packages/auth-svelte"],
-
     "@epicenter/cli": ["@epicenter/cli@workspace:packages/cli"],
 
     "@epicenter/client": ["@epicenter/client@workspace:packages/client"],
@@ -1122,6 +1116,8 @@
     "@epicenter/fuji": ["@epicenter/fuji@workspace:apps/fuji"],
 
     "@epicenter/honeycrisp": ["@epicenter/honeycrisp@workspace:apps/honeycrisp"],
+
+    "@epicenter/identity": ["@epicenter/identity@workspace:packages/identity"],
 
     "@epicenter/landing": ["@epicenter/landing@workspace:apps/landing"],
 

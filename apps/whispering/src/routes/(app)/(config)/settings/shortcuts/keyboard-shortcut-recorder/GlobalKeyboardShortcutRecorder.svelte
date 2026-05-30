@@ -2,7 +2,7 @@
 	import type { Command } from '$lib/commands';
 	import type { KeyboardEventSupportedKey } from '$lib/constants/keyboard';
 	import { report } from '$lib/report';
-	import type { Tauri } from '$lib/tauri';
+	import type { Tauri } from '#platform/tauri';
 	import {
 		type Accelerator,
 		pressedKeysToAccelerator,

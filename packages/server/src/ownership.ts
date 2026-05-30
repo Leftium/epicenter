@@ -21,12 +21,8 @@
  * of a stale at-sign-up decision.
  */
 
-import {
-	asOwnerId,
-	type OwnerId,
-	TEAM_OWNER_ID,
-} from '@epicenter/constants/identity';
 import { RequestGuardError } from '@epicenter/constants/request-guard-errors';
+import { asOwnerId, type OwnerId, TEAM_OWNER_ID } from '@epicenter/identity';
 import type { Context } from 'hono';
 import { Ok, type Result } from 'wellcrafted/result';
 import type { Env } from './types.js';

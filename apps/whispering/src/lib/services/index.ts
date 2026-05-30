@@ -1,11 +1,10 @@
-import { AnalyticsServiceLive } from './analytics';
-import { AudioBlobStoreLive } from './blob-store';
+import { AnalyticsServiceLive } from '#platform/analytics';
+import { AudioBlobStoreLive } from '#platform/blob-store';
+import { DownloadServiceLive } from '#platform/download';
+import { PlaySoundServiceLive } from '#platform/sound';
+import { TextServiceLive } from '#platform/text';
 import * as completions from './completion';
-import { DownloadServiceLive } from './download';
 import { LocalShortcutManagerLive } from './local-shortcut-manager';
-import { OsServiceLive } from './os';
-import { PlaySoundServiceLive } from './sound';
-import { TextServiceLive } from './text';
 import * as transcriptions from './transcription';
 
 /**
@@ -19,7 +18,6 @@ export const services = {
 	blobs: { audio: AudioBlobStoreLive },
 	download: DownloadServiceLive,
 	localShortcutManager: LocalShortcutManagerLive,
-	os: OsServiceLive,
 	sound: PlaySoundServiceLive,
 	transcriptions,
 } as const;

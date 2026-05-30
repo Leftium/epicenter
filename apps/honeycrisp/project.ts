@@ -7,6 +7,7 @@
  * SQLite file.
  */
 
+import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { defineActions, defineWorkspace } from '@epicenter/workspace';
 import { defineMount } from '@epicenter/workspace/daemon';
 import {
@@ -73,6 +74,7 @@ export function honeycrisp(opts: HoneycrispMountOptions = {}) {
 			});
 
 			const infrastructure = attachProjectInfrastructure(workspace.ydoc, {
+				baseURL: EPICENTER_API_URL,
 				projectDir,
 				ownerId,
 				deviceId,

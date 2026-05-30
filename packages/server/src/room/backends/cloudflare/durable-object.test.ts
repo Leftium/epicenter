@@ -168,10 +168,18 @@ function makeSqlStorage() {
 }
 
 function makeStorage() {
+	let alarm: number | null = null;
 	return {
 		sql: makeSqlStorage(),
-		async setAlarm(_when: number) {},
-		async deleteAlarm() {},
+		async setAlarm(when: number) {
+			alarm = when;
+		},
+		async getAlarm() {
+			return alarm;
+		},
+		async deleteAlarm() {
+			alarm = null;
+		},
 		async deleteAll() {},
 	};
 }
@@ -563,6 +571,61 @@ describe('Room sync: binary update fan-out', () => {
 
 		expect(ws.sent.slice(before)).toEqual([]);
 		expect(ws.closeCalls).toEqual([]);
+	});
+});
+
+describe('Room connection lifetime', () => {
+	test('a socket past the max lifetime is closed with the reconnect code and its frame is dropped', async () => {
+		const { room } = await makeRoom();
+		const ws = await upgrade(room, 'A');
+		const before = ws.sent.length;
+		// Age the connection past MAX_CONNECTION_LIFETIME_MS (30 min) by
+		// rewriting connectedAt on the stored attachment.
+		const attachment = ws.deserializeAttachment() as { connectedAt: number };
+		ws.serializeAttachment({
+			...attachment,
+			connectedAt: Date.now() - 31 * 60_000,
+		});
+
+		await room.webSocketMessage(
+			ws,
+			toArrayBuffer(encodeSyncStep1({ doc: new Y.Doc() })),
+		);
+
+		// Closed with the transient reconnect code (not the permanent 4401),
+		// and the STEP1 produced no STEP2 reply because the frame was dropped.
+		expect(ws.closeCalls.map((c) => c.code)).toEqual([4408]);
+		expect(ws.sent.slice(before)).toEqual([]);
+	});
+
+	test('a fresh socket is served normally and not closed', async () => {
+		const { room } = await makeRoom();
+		const ws = await upgrade(room, 'A');
+
+		await room.webSocketMessage(
+			ws,
+			toArrayBuffer(encodeSyncStep1({ doc: new Y.Doc() })),
+		);
+
+		expect(ws.closeCalls).toEqual([]);
+	});
+
+	test('the alarm sweep closes an idle over-age socket with no inbound frame', async () => {
+		const { room } = await makeRoom();
+		const wsOld = await upgrade(room, 'A');
+		const wsFresh = await upgrade(room, 'B');
+		// Age wsOld past the lifetime; it never sends a frame (the idle case the
+		// per-message check cannot catch).
+		const attachment = wsOld.deserializeAttachment() as { connectedAt: number };
+		wsOld.serializeAttachment({
+			...attachment,
+			connectedAt: Date.now() - 31 * 60_000,
+		});
+
+		await room.alarm();
+
+		expect(wsOld.closeCalls.map((c) => c.code)).toEqual([4408]);
+		expect(wsFresh.closeCalls).toEqual([]);
 	});
 });
 

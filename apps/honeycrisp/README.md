@@ -14,7 +14,7 @@ Single-route SvelteKit app with a three-pane layout: sidebar (folders) → note 
 
 ### Data layer
 
-All shared state lives in an Epicenter workspace (`id: "epicenter.honeycrisp"`). The split follows the repo-wide naming pattern:
+All shared state lives in an Epicenter workspace (`id: "epicenter-honeycrisp"`). The split follows the repo-wide naming pattern:
 
 ```txt
 createHoneycrisp()
@@ -45,7 +45,7 @@ Google sign-in via `@epicenter/svelte/auth-form`. The session is persisted acros
 
 ## Workspace schema
 
-**Workspace ID:** `epicenter.honeycrisp`
+**Workspace ID:** `epicenter-honeycrisp`
 
 ### Tables
 

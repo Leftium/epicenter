@@ -1,25 +1,11 @@
-import { createWebStoragePersistedAuthStorage } from '@epicenter/auth';
-import { createBrowserOAuthLauncher } from '@epicenter/auth/oauth-launchers';
-import { createOAuthAppAuth } from '@epicenter/auth-svelte';
-import { EPICENTER_DASHBOARD_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
-import { base } from '$app/paths';
+import { createSameOriginCookieAuth } from '@epicenter/svelte/auth';
 
-const apiBaseURL = window.location.origin;
-
-export const auth = createOAuthAppAuth({
-	baseURL: apiBaseURL,
-	clientId: EPICENTER_DASHBOARD_OAUTH_CLIENT_ID,
-	persistedAuthStorage: createWebStoragePersistedAuthStorage({
-		key: 'dashboard.auth.persisted',
-		storage: window.localStorage,
-	}),
-	launcher: createBrowserOAuthLauncher({
-		issuer: `${apiBaseURL}/auth`,
-		clientId: EPICENTER_DASHBOARD_OAUTH_CLIENT_ID,
-		redirectUri: `${window.location.origin}${base}/auth/callback`,
-		resource: apiBaseURL,
-		storage: window.sessionStorage,
-	}),
+// The dashboard is served by the API at the same origin (api.epicenter.so/dashboard),
+// so it authenticates with the first-party Better Auth session cookie rather than
+// running PKCE against its own origin. See createSameOriginCookieAuth. The default
+// callbackURL (the current path) returns the user to where they were after sign-in.
+export const auth = createSameOriginCookieAuth({
+	baseURL: window.location.origin,
 });
 
 if (import.meta.hot) {

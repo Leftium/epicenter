@@ -7,7 +7,7 @@ import {
 } from '@tauri-apps/plugin-fs';
 import mime from 'mime';
 import { tryAsync } from 'wellcrafted/result';
-import { PATHS } from '$lib/constants/paths';
+import { PATHS } from '$lib/services/fs-paths';
 import { commands } from '$lib/tauri/commands';
 import { BlobError, type BlobStore } from './types';
 

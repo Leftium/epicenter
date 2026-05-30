@@ -71,7 +71,7 @@ The two canonical library shapes in full:
 	}
 }
 
-// svelte library  — packages/ui, auth-svelte, svelte-utils
+// svelte library  — packages/ui, svelte-utils
 {
 	"extends": "../../tsconfig.dom.json",
 	"compilerOptions": {

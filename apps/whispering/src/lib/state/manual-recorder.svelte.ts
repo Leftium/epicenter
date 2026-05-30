@@ -2,15 +2,15 @@ import { nanoid } from 'nanoid/non-secure';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { defineKeys } from 'wellcrafted/query';
 import { Err, Ok, type Result } from 'wellcrafted/result';
+import { manualRecorderConfig } from '#platform/manual-recorder-config';
+import { ManualRecorderLive } from '#platform/recorder';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { defineQuery } from '$lib/rpc/client';
-import { ManualRecorderLive } from '$lib/services/recorder';
 import {
 	type RecorderError,
 	type RecordingSession,
 	type UpdateStatusMessageFn,
 } from '$lib/services/recorder/types';
-import { manualRecorderConfig } from '$lib/state/manual-recorder-config';
 
 const ManualRecorderError = defineErrors({
 	EnumerateDevicesFailed: ({ cause }: { cause: unknown }) => ({

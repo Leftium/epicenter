@@ -32,7 +32,7 @@ import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
 
-export const ZHONGWEN_ID = 'epicenter.zhongwen';
+export const ZHONGWEN_ID = 'epicenter-zhongwen';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Branded ID Types

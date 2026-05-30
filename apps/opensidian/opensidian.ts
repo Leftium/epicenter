@@ -38,7 +38,7 @@ import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
 import * as Y from 'yjs';
 
-export const OPENSIDIAN_ID = 'epicenter.opensidian';
+export const OPENSIDIAN_ID = 'epicenter-opensidian';
 
 /**
  * Branded conversation ID for a single chat thread.

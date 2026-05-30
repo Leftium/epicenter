@@ -17,7 +17,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { type AuthUser, asUserId } from '@epicenter/auth';
-import { TEAM_OWNER_ID } from '@epicenter/constants/identity';
+import { TEAM_OWNER_ID } from '@epicenter/identity';
 import { Hono } from 'hono';
 import { type OwnershipRule, personal, team } from '../ownership.js';
 import type { Env } from '../types.js';

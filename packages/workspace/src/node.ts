@@ -89,10 +89,7 @@ export {
 	yjsPath,
 } from './document/workspace-paths.js';
 export { hashYDocClientId } from './shared/client-id.js';
-export type {
-	WorkspaceAuthClient,
-	WorkspaceAuthState,
-} from './workspace-apps/auth-client.js';
+export type { WorkspaceAuthClient } from './workspace-apps/auth-client.js';
 export { WorkspaceAppError } from './workspace-apps/errors.js';
 export {
 	type OpenProjectOptions,

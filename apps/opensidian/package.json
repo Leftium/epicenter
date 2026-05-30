@@ -16,14 +16,13 @@
 		"deploy": "bun run build && wrangler deploy",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
-		"test": "bun test ./src/lib/opensidian",
+		"test": "if find src -name '*.test.ts' -o -name '*.test.tsx' -o -name '*.spec.ts' | grep -q .; then bun test; fi",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check": "bun run typecheck"
 	},
 	"dependencies": {
 		"@codemirror/autocomplete": "^6.20.1",
 		"@epicenter/auth": "workspace:*",
-		"@epicenter/auth-svelte": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/skills": "workspace:*",
 		"@epicenter/svelte": "workspace:*",

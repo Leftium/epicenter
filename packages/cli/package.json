@@ -26,11 +26,12 @@
 	},
 	"scripts": {
 		"cli": "bun src/bin.ts",
-		"cli:local": "EPICENTER_API_URL=http://localhost:8787 bun src/bin.ts"
+		"cli:local": "EPICENTER_API_URL=http://localhost:8787 bun src/bin.ts",
+		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
 		"@epicenter/auth": "workspace:*",
-		"@epicenter/constants": "workspace:*",
+		"@epicenter/identity": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@hono/standard-validator": "catalog:",
 		"arktype": "catalog:",
@@ -48,5 +49,5 @@
 		"@types/yargs": "catalog:",
 		"typescript": "catalog:"
 	},
-	"license": "MIT"
+	"license": "AGPL-3.0-or-later"
 }

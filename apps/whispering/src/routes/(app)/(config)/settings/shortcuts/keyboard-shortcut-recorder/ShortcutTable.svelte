@@ -4,13 +4,13 @@
 	import Search from '@lucide/svelte/icons/search';
 	import { commands } from '$lib/commands';
 	import { report } from '$lib/report';
-	import type { Tauri } from '$lib/tauri';
+	import type { Tauri } from '#platform/tauri';
 	import {
 		type DeviceConfigKey,
 		deviceConfig,
 	} from '$lib/state/device-config.svelte';
 	import { createPressedKeys } from '$lib/utils/createPressedKeys.svelte';
-	import { whispering } from '$lib/whispering/whispering';
+	import { whispering } from '#platform/whispering';
 	import GlobalKeyboardShortcutRecorder from './GlobalKeyboardShortcutRecorder.svelte';
 	import LocalKeyboardShortcutRecorder from './LocalKeyboardShortcutRecorder.svelte';
 

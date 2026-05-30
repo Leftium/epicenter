@@ -74,10 +74,11 @@ type OAuthTemporaryStorage = {
 	 */
 	setItem(key: string, value: string): MaybePromise<void>;
 	/**
-	 * Clear the transaction after a successful token exchange.
+	 * Clear the transaction once a callback is being exchanged.
 	 *
-	 * Failed exchanges leave the transaction intact so the caller can surface the
-	 * failure without destroying the user's current sign-in attempt.
+	 * Called as soon as the stored transaction has been read, regardless of
+	 * whether the exchange then succeeds: the verifier is single-use, so a failed
+	 * or abandoned attempt must not leave it behind in durable storage.
 	 */
 	removeItem(key: string): MaybePromise<void>;
 };
@@ -232,6 +233,13 @@ export function createOAuthClient({
 		const transaction = await readTransaction();
 		if (!transaction) return OAuthClientError.MissingCallbackTransaction();
 
+		// Consume the transaction now, before the exchange can fail. It is
+		// single-use (every sign-in mints a fresh verifier via
+		// createAuthorizationUrl), so leaving it on a failed or abandoned
+		// exchange only strands a code_verifier in durable storage. On Tauri that
+		// store is window.localStorage, which never self-clears.
+		await storage.removeItem(storageKey);
+
 		try {
 			const as = await discover();
 			if (callbackUrl.searchParams.get('state') !== transaction.state) {
@@ -268,7 +276,6 @@ export function createOAuthClient({
 				return OAuthClientError.TokenExchangeFailed({ cause: grantError });
 			}
 
-			await storage.removeItem(storageKey);
 			return Ok(grant);
 		} catch (cause) {
 			return OAuthClientError.TokenExchangeFailed({ cause });

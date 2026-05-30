@@ -14,14 +14,15 @@
 	],
 	"exports": {
 		".": "./src/index.ts",
+		"./auth": "./src/auth.svelte.ts",
 		"./account-popover": "./src/account-popover/index.ts",
 		"./workspace-gate": "./src/workspace-gate/index.ts"
 	},
 	"dependencies": {
 		"@epicenter/auth": "workspace:*",
-		"@epicenter/auth-svelte": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/api": "workspace:*",
+		"@epicenter/identity": "workspace:*",
 		"@epicenter/ui": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@lucide/svelte": "catalog:",
@@ -42,5 +43,5 @@
 		"typecheck": "svelte-check --tsconfig ./tsconfig.json",
 		"test": "bun test"
 	},
-	"license": "MIT"
+	"license": "AGPL-3.0-or-later"
 }

@@ -1,4 +1,4 @@
-import { APPS, appOrigins } from '@epicenter/constants/apps';
+import { APPS, localUrl, prodOrigins } from '@epicenter/constants/apps';
 
 /**
  * Pinned Chrome extension origin for the tab-manager.
@@ -11,29 +11,70 @@ const TAB_MANAGER_CHROME_EXTENSION_ORIGIN =
 	'chrome-extension://mkbnicfhpacdofmoocppnjjmdfmkkgda';
 
 /**
- * Origins permitted by both CORS and Better Auth's CSRF check.
+ * Production origins trusted on every deployment: each app's canonical origin
+ * (and aliases), the pinned browser extension, and the Tauri webview origin.
  *
  * Adding an app to `APPS` auto-extends this. Browser extensions are added
- * explicitly with their pinned origin: Chrome via the WXT `key`, Firefox
- * via `browser_specific_settings.gecko.id` plus AMO signing (required, no
+ * explicitly with their pinned origin: Chrome via the WXT `key`, Firefox via
+ * `browser_specific_settings.gecko.id` plus AMO signing (required, no
  * exceptions; self-distributed XPIs get a random per-install UUID).
- *
- * Localhost dev URLs are trusted in production by design so developers can
- * iterate against the deployed API from `localhost:<port>`. Session cookies
- * are still per-origin scoped, so this is not a CSRF vector.
- *
- * The `http://api.epicenter.so` entry is for `wrangler dev`, which serves
- * the custom domain over plain HTTP. In production Cloudflare upgrades the
- * domain to HTTPS, so this Origin is never sent by a real browser there.
  */
-// Frozen at runtime to prevent the long-lived Cloudflare isolate from
-// accumulating mutations across requests. Typed as `string[]` (not
-// `readonly string[]`) because Better Auth's `trustedOrigins` is mutable,
-// and the readonly type leaks into its inferred Auth, breaking the OAuth
-// metadata helpers in `app.ts`.
-export const TRUSTED_ORIGINS: string[] = Object.freeze([
+const PRODUCTION_TRUSTED_ORIGINS: readonly string[] = [
 	'tauri://localhost',
 	TAB_MANAGER_CHROME_EXTENSION_ORIGIN,
-	...Object.values(APPS).flatMap(appOrigins),
+	...Object.values(APPS).flatMap(prodOrigins),
+];
+
+/**
+ * Development-only origins: each app's `localhost:<port>` dev server plus the
+ * plain-HTTP API host that `wrangler dev` serves the custom domain over.
+ *
+ * These are trusted ONLY on a local deployment (see {@link buildTrustedOrigins}).
+ * A production isolate must not trust `localhost`: `trustedOrigins` gates not
+ * just cookie CSRF but Better Auth's `callbackURL` / `redirectTo` open-redirect
+ * allow-list, so a permanent localhost entry needlessly widens the production
+ * surface. Local iteration against the deployed API still works because a
+ * developer runs the API locally too.
+ */
+const DEVELOPMENT_TRUSTED_ORIGINS: readonly string[] = [
+	...Object.values(APPS).map((app) => localUrl(app)),
 	`http://${new URL(APPS.API.url).host}`,
-]) as string[];
+];
+
+function isLocalDeployment(baseURL: string): boolean {
+	try {
+		const { hostname } = new URL(baseURL);
+		return (
+			hostname === 'localhost' ||
+			hostname === '127.0.0.1' ||
+			hostname === '[::1]'
+		);
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Origins permitted by CORS and Better Auth's CSRF / redirect checks for a
+ * given deployment.
+ *
+ * A local deployment additionally trusts the localhost dev origins so a
+ * developer can iterate against a local API; a deployed origin trusts only the
+ * production set. The deployment identity comes from the deployment's own
+ * auth base URL (`resolveOrigin(env)`), never the request, so this matches the
+ * `localhost`-vs-prod fork already used for cookies in `cookie-config.ts`.
+ *
+ * Frozen so the long-lived Cloudflare isolate cannot accumulate mutations
+ * across requests. Typed `string[]` (not `readonly string[]`) because Better
+ * Auth's `trustedOrigins` is mutable, and the readonly type leaks into its
+ * inferred Auth, breaking the OAuth metadata helpers in `app.ts`. Not memoized:
+ * a deployment resolves exactly one `baseURL`, and `createAuth` already rebuilds
+ * the whole Better Auth instance per request, so a cache would dedupe nothing.
+ */
+export function buildTrustedOrigins(baseURL: string): string[] {
+	return Object.freeze(
+		isLocalDeployment(baseURL)
+			? [...PRODUCTION_TRUSTED_ORIGINS, ...DEVELOPMENT_TRUSTED_ORIGINS]
+			: [...PRODUCTION_TRUSTED_ORIGINS],
+	) as string[];
+}

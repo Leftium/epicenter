@@ -34,7 +34,7 @@ import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import * as Y from 'yjs';
 
-export const HONEYCRISP_ID = 'epicenter.honeycrisp';
+export const HONEYCRISP_ID = 'epicenter-honeycrisp';
 
 // ─── Branded IDs ──────────────────────────────────────────────────────────────
 

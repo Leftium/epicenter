@@ -14,8 +14,8 @@
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { Ok, tryAsync } from 'wellcrafted/result';
 	import type { LocalModelConfig } from '$lib/constants/local-models';
-	import { PATHS } from '$lib/constants/paths';
-	import { tauri } from '$lib/tauri';
+	import { PATHS } from '$lib/services/fs-paths';
+	import { tauri } from '#platform/tauri';
 	import LocalModelDownloadCard from './LocalModelDownloadCard.svelte';
 
 	/**

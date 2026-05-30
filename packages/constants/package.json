@@ -13,7 +13,6 @@
 	"exports": {
 		"./apps": "./src/apps.ts",
 		"./auth": "./src/auth.ts",
-		"./identity": "./src/identity.ts",
 		"./oauth": "./src/oauth.ts",
 		"./vite": "./src/vite.ts",
 		"./versions": "./src/versions.ts",
@@ -32,6 +31,7 @@
 		"vite": "catalog:"
 	},
 	"dependencies": {
+		"@epicenter/identity": "workspace:*",
 		"arktype": "catalog:",
 		"wellcrafted": "catalog:"
 	},

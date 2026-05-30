@@ -1,5 +1,5 @@
-import { OwnerId } from '@epicenter/constants/identity';
 import { Keyring } from '@epicenter/encryption';
+import { OwnerId } from '@epicenter/identity';
 import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 
@@ -73,11 +73,9 @@ export type OAuthTokenGrant = typeof OAuthTokenGrant.infer;
  *
  * `userId` is stored explicitly (rather than synthesised from `ownerId`) so
  * the daemon can read it directly in team mode, where `ownerId` is the
- * literal `TEAM_OWNER_ID` and is structurally not a `UserId`. The deployment
- * shape itself (personal vs team) is not stored here: it is a property of
- * the server, not of an authenticated cell, and any consumer that needs to
- * branch on it is asking the wrong question. Branch on `ownerId` instead
- * (`ownerId === TEAM_OWNER_ID` for team, `ownerId === userId` for personal).
+ * literal `TEAM_OWNER_ID` and is structurally not a `UserId`. Deployment
+ * shape (personal vs team) is not stored here; it is a property of the
+ * server. See {@link OwnerId} for the rare derivation a consumer might need.
  */
 export const PersistedAuth = type({
 	'+': 'delete',
@@ -104,10 +102,10 @@ export type PersistedAuth = typeof PersistedAuth.infer;
  * future presentational owner facts (display name, avatar, quota) live in
  * dedicated endpoints rather than the session boot manifest.
  *
- * The deployment shape (personal vs team) is not carried on the wire. The
- * server is configured with it at construction, and clients that need to
- * branch derive it from `ownerId === TEAM_OWNER_ID`. Carrying it twice
- * created a consistency burden with no consumer.
+ * Deployment shape (personal vs team) is not carried on the wire; the server
+ * is configured with it at construction. Carrying it twice created a
+ * consistency burden with no consumer. See {@link OwnerId} for the rare
+ * derivation a consumer might need.
  */
 export const ApiSessionResponse = type({
 	'+': 'delete',

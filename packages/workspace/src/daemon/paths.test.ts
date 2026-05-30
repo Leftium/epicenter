@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
 import { dirHash, socketPathFor } from './paths.js';
 
@@ -31,22 +30,15 @@ describe('daemon/paths', () => {
 	});
 
 	test('socketPathFor rejects unsafe socket paths', () => {
-		// Override the runtime dir with a pathologically long path so the
-		// resolved socket path overflows the guard. Production callers never
-		// see paths this long, but the guard is load-bearing so we exercise it.
-		const longRuntimeDir = mkdtempSync(
-			join(
-				tmpdir(),
-				'epicenter-runtime-path-that-is-way-too-long-for-sockets-',
-			),
+		// A runtime dir long enough that any per-project socket path overflows
+		// the guard, independent of how short os.tmpdir() is in the test
+		// environment. Deriving the long path from tmpdir() was flaky: it only
+		// overflowed when TMPDIR was already long (macOS /var/folders), and
+		// passed under a short TMPDIR (e.g. /tmp). socketPathFor only reads
+		// EPICENTER_RUNTIME_DIR and never stats it, so a synthetic path is fine.
+		process.env.EPICENTER_RUNTIME_DIR = `/run/${'too-long-for-a-unix-domain-socket-'.repeat(4)}`;
+		expect(() => socketPathFor(tmpdir())).toThrow(
+			/exceeds safe Unix socket limit/,
 		);
-		process.env.EPICENTER_RUNTIME_DIR = longRuntimeDir;
-		try {
-			expect(() => socketPathFor(tmpdir())).toThrow(
-				/exceeds safe Unix socket limit/,
-			);
-		} finally {
-			rmSync(longRuntimeDir, { recursive: true, force: true });
-		}
 	});
 });

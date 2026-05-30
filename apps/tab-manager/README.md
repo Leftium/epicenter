@@ -48,7 +48,7 @@ The main UI has a search bar with case-sensitive, regex, and exact-match toggles
 
 ## Workspace schema
 
-Workspace ID: `epicenter.tab-manager`. Six tables:
+Workspace ID: `epicenter-tab-manager`. Six tables:
 
 | Table | Key | Notable fields |
 |---|---|---|

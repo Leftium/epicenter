@@ -5,7 +5,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, type Result, tryAsync, trySync } from 'wellcrafted/result';
-import { customFetch } from '$lib/services/http';
+import { customFetch } from '#platform/http';
 import { getAudioExtension } from '$lib/services/transcription/utils';
 
 const MAX_FILE_SIZE_MB = 25 as const;

@@ -1,5 +1,5 @@
-import { API_ROUTES } from '@epicenter/constants/api-routes';
-import type { OwnerId } from '@epicenter/constants/identity';
+import type { OwnerId } from '@epicenter/identity';
+import { ROOM_ROUTE } from '@epicenter/sync';
 import type { DeviceId } from './device-id.js';
 
 /**
@@ -22,12 +22,12 @@ export type RoomWsUrlOptions = {
  * In personal mode `ownerId` equals the signed-in user's id; in team mode it
  * is the literal `'team'`. The URL shape is uniform across both modes.
  *
- * The path itself comes from `API_ROUTES.room.url(...)` so server route
+ * The path itself comes from `ROOM_ROUTE.url(...)` so server route
  * declarations and client URL construction can never drift. This wrapper
  * adds the `?deviceId=` query and rewrites the `http(s)` scheme to `ws(s)`.
  */
 export function roomWsUrl(options: RoomWsUrlOptions): string {
-	const httpUrl = API_ROUTES.room.url(
+	const httpUrl = ROOM_ROUTE.url(
 		options.baseURL,
 		options.ownerId,
 		options.guid,

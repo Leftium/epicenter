@@ -29,9 +29,9 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import type { AuthClient } from '@epicenter/auth';
+import type { SyncAuthClient } from '@epicenter/auth';
 import { MachineAuthStorageError } from '@epicenter/auth/node';
-import { asOwnerId } from '@epicenter/constants/identity';
+import { asOwnerId } from '@epicenter/identity';
 import {
 	claimDaemonLease,
 	DEFAULT_PROJECT_CONFIG_SOURCE,
@@ -42,7 +42,7 @@ import {
 } from '@epicenter/workspace/node';
 import { Err, Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
-import { runUp } from './up';
+import { runUp } from './up.js';
 
 const STUB_AUTH = {
 	state: {
@@ -64,7 +64,7 @@ const STUB_AUTH = {
 		throw new Error('STUB_AUTH: openWebSocket not implemented');
 	},
 	[Symbol.dispose]: () => {},
-} satisfies AuthClient;
+} satisfies SyncAuthClient;
 
 const stubAuthFactory = async () => Ok(STUB_AUTH);
 

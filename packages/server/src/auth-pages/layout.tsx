@@ -19,7 +19,7 @@ const EPICENTER_MARK =
 </svg></div>`);
 
 /**
- * Shared HTML shell for all auth pages (sign-in, consent, device, signed-in).
+ * Shared HTML shell for all auth pages (sign-in, consent, signed-in, cli-callback).
  *
  * Renders the full `<!DOCTYPE html>` document with viewport meta, the shared
  * CSS, and a centered card wrapper. Each page component is passed as `children`.

@@ -241,31 +241,3 @@ export const KEYBOARD_EVENT_SUPPORTED_KEYS = [
 
 export type KeyboardEventSupportedKey =
 	(typeof KEYBOARD_EVENT_SUPPORTED_KEYS)[number];
-
-/**
- * Type guard that validates whether a KeyboardEventPossibleKey (any key from the browser)
- * is one of our chosen SupportedKeys. This function acts as a gatekeeper,
- * filtering out keys we've decided not to support while providing type safety.
- *
- * When this returns true, TypeScript narrows the type from KeyboardEventPossibleKey to
- * KeyboardEventSupportedKey, giving you compile-time guarantees about the key's validity.
- *
- * @param key - Any key value from KeyboardEvent.key.toLowerCase()
- * @returns True if we've chosen to support this key for shortcuts, false otherwise
- *
- * @example
- * ```typescript
- * const key = e.key.toLowerCase() as KeyboardEventPossibleKey;
- * if (isSupportedKey(key)) {
- *   // TypeScript now knows this is a KeyboardEventSupportedKey - our validated choice!
- *   pressedKeys.push(key);
- * }
- * ```
- */
-export function isSupportedKey(
-	key: KeyboardEventPossibleKey,
-): key is KeyboardEventSupportedKey {
-	return KEYBOARD_EVENT_SUPPORTED_KEYS.includes(
-		key as KeyboardEventSupportedKey,
-	);
-}

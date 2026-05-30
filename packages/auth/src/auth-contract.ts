@@ -1,32 +1,8 @@
-import type { OwnerId } from '@epicenter/constants/identity';
-import type { Keyring } from '@epicenter/encryption';
+import type { AuthState } from '@epicenter/identity';
 import type { Result } from 'wellcrafted/result';
 import type { AuthError } from './auth-errors.js';
 
-/**
- * Current auth state for local-first workspace clients.
- *
- * `ownerId` and `keyring` are present in `signed-in` and `reauth-required`
- * because they belong to local workspace operations. Even when the OAuth
- * grant needs reauth, the cached owner id can still pick the right local
- * storage partition and the keyring can still decrypt local workspace data.
- *
- * Auth state carries capability material only. Profile data is fetched by
- * application surfaces that display it; deployment shape (personal vs team)
- * is derived from `ownerId === TEAM_OWNER_ID` at the rare site that asks.
- */
-export type AuthState =
-	| { status: 'signed-out' }
-	| {
-			status: 'signed-in';
-			ownerId: OwnerId;
-			keyring: Keyring;
-	  }
-	| {
-			status: 'reauth-required';
-			ownerId: OwnerId;
-			keyring: Keyring;
-	  };
+export type { AuthState };
 
 /**
  * Fetch-compatible transport used by auth-owned HTTP calls.
@@ -75,13 +51,31 @@ export type AuthClient = {
 	 */
 	signOut(): Promise<Result<undefined, AuthError>>;
 	/**
-	 * Fetch an API resource through the auth-owned bearer boundary.
+	 * Fetch an API resource through the auth-owned credential boundary.
 	 *
-	 * Use this instead of reading tokens from storage. The client verifies
-	 * `/api/session` before attaching a bearer, refreshes on expiry or 401, and
-	 * omits browser cookies so OAuth tokens remain the resource credential.
+	 * Use this instead of attaching credentials yourself. Each client supplies
+	 * its own credential and surfaces auth failures back into `state`; the
+	 * credential and refresh behavior depend on the model (the OAuth client
+	 * verifies `/api/session` and attaches a refreshed bearer; the same-origin
+	 * cookie client sends the session cookie). See each factory for specifics.
 	 */
 	fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
+	[Symbol.dispose](): void;
+};
+
+/**
+ * An {@link AuthClient} that can also open authenticated WebSockets for cloud
+ * sync. Only credential models that carry a bearer can do this: the OAuth/PKCE
+ * client ({@link createOAuthAppAuth}) implements it, while the same-origin
+ * cookie client ({@link createSameOriginCookieAuth}) is a plain `AuthClient`
+ * with no `openWebSocket`, because a same-origin cookie cannot carry the bearer
+ * subprotocol the rooms route requires.
+ *
+ * Workspace binding (`createSession`, `openCollaboration`) requires a
+ * `SyncAuthClient`, so passing a cookie client where sync is needed is a
+ * compile error rather than a runtime throw.
+ */
+export type SyncAuthClient = AuthClient & {
 	/**
 	 * Open a WebSocket using the same bearer boundary as `fetch`.
 	 *
@@ -90,5 +84,4 @@ export type AuthClient = {
 	 * protected route code runs.
 	 */
 	openWebSocket(url: string | URL, protocols?: string[]): Promise<WebSocket>;
-	[Symbol.dispose](): void;
 };

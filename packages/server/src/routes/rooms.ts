@@ -19,9 +19,9 @@
  * `owner_id` (see auth `before(delete)` hook).
  */
 
-import { API_ROUTES } from '@epicenter/constants/api-routes';
-import type { OwnerId } from '@epicenter/constants/identity';
 import { RequestGuardError } from '@epicenter/constants/request-guard-errors';
+import type { OwnerId } from '@epicenter/identity';
+import { ROOM_ROUTE } from '@epicenter/sync';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';
@@ -126,7 +126,7 @@ async function upsertDoInstance(
  */
 const roomsApp = new Hono<Env>()
 	.get(
-		API_ROUTES.room.pattern,
+		ROOM_ROUTE.pattern,
 		describeRoute({
 			description: 'Get room doc or upgrade to WebSocket',
 			tags: ['rooms'],
@@ -177,7 +177,7 @@ const roomsApp = new Hono<Env>()
 		},
 	)
 	.post(
-		API_ROUTES.room.pattern,
+		ROOM_ROUTE.pattern,
 		describeRoute({
 			description: 'Sync room doc',
 			tags: ['rooms'],
@@ -223,7 +223,7 @@ export function mountRoomsApp(
 	opts: { ownership: OwnershipRule },
 ): void {
 	app.use(
-		API_ROUTES.room.prefixPattern,
+		ROOM_ROUTE.prefixPattern,
 		requireBearerUser,
 		createRequireOwnership(opts.ownership),
 	);

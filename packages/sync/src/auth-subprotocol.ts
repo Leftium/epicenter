@@ -1,5 +1,3 @@
-import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
-
 /**
  * WebSocket subprotocol auth: shared client/server constants.
  *
@@ -23,7 +21,8 @@ import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
 /** Primary subprotocol name every Epicenter client negotiates. */
 export const MAIN_SUBPROTOCOL = 'epicenter';
 
-export { BEARER_SUBPROTOCOL_PREFIX };
+/** Prefix for OAuth bearer tokens carried through WebSocket subprotocols. */
+export const BEARER_SUBPROTOCOL_PREFIX = 'bearer.';
 
 /**
  * Parse a `Sec-WebSocket-Protocol` header value into its list of tokens.

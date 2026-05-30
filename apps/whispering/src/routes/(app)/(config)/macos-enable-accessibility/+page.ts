@@ -1,4 +1,4 @@
-import { tauri } from '$lib/tauri';
+import { tauri } from '#platform/tauri';
 
 export const load = async () => {
 	if (!tauri) {

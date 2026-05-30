@@ -84,7 +84,7 @@ The three-part pattern flexes by what kind of value the third part needs to prod
 Examples in the repo:
 
 - **Workspace IDs minted fresh** (`SavedTabId`, `ConversationId`, `FileId`): validator + type + `generateSavedTabId`. See [Three Parts, One ID](./three-part-branded-id-pattern.md).
-- **Auth IDs from typed strings** (`UserId`, `OwnerId`): validator + type + `asUserId`. See `packages/auth/src/ids.ts`.
+- **Auth and owner IDs from typed strings** (`UserId`, `OwnerId`): validator + type + `asUserId` or `asOwnerId`. See `packages/auth/src/auth-types.ts` and `packages/identity/src/identity.ts`.
 - **Path types** (`AbsolutePath`): often just the type alias, because callers resolve through a `path.resolve()` choke point. See [Absolute Path Type Safety](./absolute-path-type-safety.md).
 
 ## Why PascalCase

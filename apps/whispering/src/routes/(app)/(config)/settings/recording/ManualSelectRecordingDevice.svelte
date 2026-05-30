@@ -7,7 +7,7 @@
 	import type { DeviceIdentifier } from '$lib/services/recorder/types';
 	import { asDeviceIdentifier } from '$lib/services/recorder/types';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
-	import { tauri } from '$lib/tauri';
+	import { tauri } from '#platform/tauri';
 
 	let {
 		selected = $bindable(),

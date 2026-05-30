@@ -11,13 +11,14 @@ import { type Static, Type } from 'typebox';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
 
+import { ALWAYS_ON_TOP_MODES } from '$lib/constants/always-on-top';
 import { RECORDING_MODES } from '$lib/constants/audio/recording-modes';
 import { INFERENCE_PROVIDER_IDS } from '$lib/constants/inference';
 import {
 	TRANSCRIPTION,
 	TRANSCRIPTION_SERVICE_IDS,
 } from '$lib/constants/transcription';
-import { ALWAYS_ON_TOP_MODES } from '$lib/constants/ui/always-on-top';
+import { TRANSFORMATION_STEP_TYPES } from '$lib/constants/transformations';
 
 /**
  * Tables store normalized domain entities. Each row is replaced atomically via
@@ -104,7 +105,7 @@ const transformationSteps = defineTable({
 	id: column.string(),
 	transformationId: column.string(),
 	order: column.number(),
-	type: column.enum(['prompt_transform', 'find_replace']),
+	type: column.enum(TRANSFORMATION_STEP_TYPES),
 
 	// Prompt transform: active provider
 	inferenceProvider: column.enum(INFERENCE_PROVIDER_IDS),
@@ -391,7 +392,7 @@ export function createWhispering() {
 	type SettingKey = keyof typeof kvDefinitions & string;
 
 	const workspace = createWorkspace({
-		id: 'whispering',
+		id: 'epicenter-whispering',
 		tables: {
 			recordings,
 			transformations,

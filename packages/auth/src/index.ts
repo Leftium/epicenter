@@ -1,4 +1,9 @@
-export type { AuthClient, AuthFetch, AuthState } from './auth-contract.js';
+export type {
+	AuthClient,
+	AuthFetch,
+	AuthState,
+	SyncAuthClient,
+} from './auth-contract.js';
 export * from './auth-errors.js';
 export {
 	ApiSessionResponse,
@@ -15,3 +20,7 @@ export {
 	loadPersistedAuthStorage,
 	type PersistedAuthStorage,
 } from './persisted-auth-storage.js';
+export {
+	type CreateSameOriginCookieAuthConfig,
+	createSameOriginCookieAuth,
+} from './same-origin-cookie-auth.js';

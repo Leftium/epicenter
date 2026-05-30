@@ -1,11 +1,11 @@
 import { env } from 'cloudflare:workers';
-import type { OwnerId } from '@epicenter/constants/identity';
 import {
 	deriveKeyring as deriveKeyringFromRoot,
 	type Keyring,
 	parseRootKeyring,
 	type RootKeyring,
 } from '@epicenter/encryption';
+import type { OwnerId } from '@epicenter/identity';
 
 let rootKeyring: RootKeyring;
 try {

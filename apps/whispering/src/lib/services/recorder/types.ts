@@ -5,10 +5,12 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
-import type {
-	CancelRecordingResult,
-	WhisperingRecordingState,
-} from '$lib/constants/audio';
+import type { WhisperingRecordingState } from '$lib/constants/audio';
+
+/** The outcome of cancelling a recording. */
+export type CancelRecordingResult =
+	| { status: 'cancelled' }
+	| { status: 'no-recording' };
 
 /**
  * Callback function for providing real-time status updates during multi-step recording operations.

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { cn } from '@epicenter/ui/utils';
 	import { page } from '$app/state';
-	import { NAV_ITEMS } from '$lib/constants/ui';
+	import { NAV_ITEMS } from './nav-items';
 </script>
 
 <!-- Keep mobile app chrome below Dialog/Drawer z-40 and AlertDialog z-50. -->

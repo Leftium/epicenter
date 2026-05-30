@@ -1,5 +1,5 @@
 import { goto } from '$app/navigation';
-import { WHISPERING_RECORDINGS_PATHNAME } from '$lib/constants/app';
+import { WHISPERING_RECORDINGS_PATHNAME } from '$lib/constants/urls';
 import { report } from '$lib/report';
 import { services } from '$lib/services';
 import { settings } from '$lib/state/settings.svelte';

@@ -23,7 +23,7 @@
 		OpenAiApiKeyInput,
 		OpenRouterApiKeyInput,
 	} from '$lib/components/settings';
-	import { TRANSFORMATION_STEP_TYPE_OPTIONS } from '$lib/constants/database';
+	import { TRANSFORMATION_STEP_TYPE_OPTIONS } from '$lib/constants/transformations';
 	import {
 		INFERENCE,
 		INFERENCE_PROVIDER_OPTIONS,

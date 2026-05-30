@@ -16,6 +16,8 @@ declare namespace Cloudflare {
 		BETTER_AUTH_SECRET: string;
 		ENCRYPTION_SECRETS: string;
 		GOOGLE_CLIENT_SECRET: string;
+		GITHUB_CLIENT_ID?: string;
+		GITHUB_CLIENT_SECRET?: string;
 		OPENAI_API_KEY: string;
 		AUTUMN_SECRET_KEY: string;
 		GEMINI_API_KEY: string;

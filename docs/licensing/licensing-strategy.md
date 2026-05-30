@@ -39,22 +39,22 @@ Scenario 4 (a hosted competitor) is the one where the license is most load-beari
 
 ### Tier 1: MIT
 
-**Applies to:** the embeddable toolkit libraries: `packages/workspace`, `packages/ui`, `packages/filesystem`, `packages/cli`, plus the toolkit-internal utilities `packages/util` and `packages/encryption`.
+**Applies to:** the embeddable toolkit libraries: `packages/workspace`, `packages/ui`, `packages/filesystem`, plus the toolkit-internal utilities `packages/util` and `packages/encryption`.
 
 **Rationale:**
 - Libraries: we want developers to embed `@epicenter/workspace` in their own projects with zero friction. AGPL would forbid that for closed-source consumers, killing adoption. The library is not what we sell.
 - Toolkit-internal utilities (`util`, `encryption`): these are dependencies bundled into the MIT toolkit libraries, so they must be MIT-compatible for the toolkit to stay distributable as MIT. They are not separately marketed.
-- Closure caveat: `workspace`/`filesystem`/`cli` depend transitively on AGPL packages (`constants`, `sync`, and for the cli `auth`). Their MIT source is embeddable, but the full runtime closure pulls AGPL. See the cli/AGPL-dependency note in the per-package table; this is a known open item, not a settled MIT-embeddable guarantee for the whole closure.
+- Closure caveat: `workspace`/`filesystem` depend transitively on AGPL packages (`constants`, `sync`). Their MIT source is embeddable, but the full runtime closure pulls AGPL. The cli was the sharpest case (it also pulls AGPL `auth`) and is now AGPL. See the toolkit closure caveat in the per-package table.
 
 ### Tier 2: AGPL-3.0
 
-**Applies to:** all apps (`apps/api`, `apps/team-api`, `apps/whispering`, `apps/honeycrisp`, `apps/opensidian`, `apps/fuji`, `apps/zhongwen`, `apps/tab-manager`, `apps/skills`, `apps/reddit`, `apps/landing`, `apps/posthog-reverse-proxy`), `packages/sync`, and the internal packages `packages/auth`, `packages/svelte-utils`, `packages/skills`, `packages/ai`, `packages/constants`, `packages/server`, `packages/client`.
+**Applies to:** all apps (`apps/api`, `apps/team-api`, `apps/whispering`, `apps/honeycrisp`, `apps/opensidian`, `apps/fuji`, `apps/zhongwen`, `apps/tab-manager`, `apps/skills`, `apps/reddit`, `apps/landing`, `apps/posthog-reverse-proxy`), `packages/sync`, `packages/cli`, and the internal packages `packages/auth`, `packages/svelte-utils`, `packages/skills`, `packages/constants`, `packages/server`, `packages/client`.
 
 **Rationale:**
 - `apps/api` (hosted cloud: sync server, auth, AI inference; serves the same-origin dashboard SPA from its `ui/`): the infrastructure a competitor would need to clone Epicenter Cloud. AGPL §13 means any hosted fork must publish source, including improvements, which destroys the economics of forking-and-hosting. `apps/team-api` is the self-hosted team reference deployment.
 - Consumer apps: AGPL gives little extra protection on a locally-run app (§13 collapses to GPL semantics), but they are AGPL for a uniform "everything Epicenter ships is AGPL" story and brand consistency. The toolkit libraries are the only MIT surface.
 - `packages/sync` (Yjs sync protocol encoding): the wire format and framing logic of the server. We split it out so the encoding can be referenced by clients without dragging in server code, but the protocol implementation is part of what makes the hosted product work and stays AGPL.
-- Internal packages (`auth`, `svelte-utils`, `skills`, `ai`, `constants`, `server`, `client`): private glue that composes the apps and hosted server; never marketed as an embeddable library, so AGPL with no adoption cost.
+- Internal packages (`auth`, `svelte-utils`, `skills`, `constants`, `server`, `client`): private glue that composes the apps and hosted server; never marketed as an embeddable library, so AGPL with no adoption cost.
 
 ### Tier 3: Proprietary (deferred)
 
@@ -115,19 +115,18 @@ All apps are AGPL-3.0. MIT is reserved for the embeddable toolkit libraries.
 | `packages/workspace` | MIT | Core CRDT library (toolkit) |
 | `packages/ui` | MIT | shadcn-svelte components (toolkit) |
 | `packages/filesystem` | MIT | POSIX layer over Yjs (toolkit) |
-| `packages/cli` | MIT | `epicenter` CLI (toolkit; see the cli/AGPL-dependency note below) |
 | `packages/util` | MIT | Framework-agnostic runtime utilities (toolkit-internal) |
 | `packages/encryption` | MIT | HKDF + blob crypto primitives (toolkit-internal; a dependency of the MIT `workspace`) |
 | `packages/sync` | AGPL-3.0 | Yjs sync protocol |
 | `packages/auth` | AGPL-3.0 | Framework-agnostic auth core (private, internal) |
 | `packages/svelte-utils` (`@epicenter/svelte`) | AGPL-3.0 | Svelte 5 reactive helpers and auth wrapper |
 | `packages/skills` | AGPL-3.0 | Skill definitions |
-| `packages/ai` | AGPL-3.0 | LLM tool bridging |
 | `packages/constants` | AGPL-3.0 | Shared constants |
+| `packages/cli` | AGPL-3.0 | `epicenter` CLI (depends on AGPL auth + constants, so AGPL rather than MIT) |
 | `packages/server` | AGPL-3.0 | Shared Hono server library |
 | `packages/client` | AGPL-3.0 | API client |
 
-> **cli/AGPL-dependency note (open):** `@epicenter/cli` is labeled MIT but depends on the AGPL `@epicenter/auth` and `@epicenter/constants`. Its published closure is therefore not cleanly MIT-embeddable into closed source. Resolve before treating the cli as a distributable MIT artifact: relicense the cli to AGPL, carve MIT-clean subsets of its auth/constants usage, or document the AGPL runtime dependencies. The same closure caveat applies to `workspace`/`filesystem`, which depend on AGPL `constants` and `sync`: their MIT source is embeddable, but the full runtime closure pulls AGPL.
+> **Toolkit closure caveat:** the MIT toolkit libraries `workspace` and `filesystem` depend transitively on AGPL packages (`constants`, `sync`). Their own source is MIT and embeddable, but the full runtime closure pulls AGPL. The cli was the sharpest case (it also pulls AGPL `auth`) and has been relicensed AGPL accordingly. The remaining MIT libraries are honest about their own source license; a consumer embedding them into a closed-source product must still account for the AGPL packages in the runtime closure.
 
 ## Decision procedure for new packages
 

@@ -24,7 +24,6 @@ listed packages' own source.)
                                                          component library
     - packages/filesystem       (@epicenter/filesystem)  POSIX layer over
                                                          workspace tables
-    - packages/cli              (@epicenter/cli)         the epicenter CLI
     - packages/util             (@epicenter/util)        toolkit-internal
                                                          runtime utilities
     - packages/encryption       (@epicenter/encryption)  toolkit-internal
@@ -73,8 +72,10 @@ who forks and distributes a modified binary shares the changes back.
                                                          helpers + auth
                                                          wrapper (private)
     - packages/skills            (@epicenter/skills)     workspace skills
-    - packages/ai                (@epicenter/ai)         LLM tool bridging
     - packages/constants         (@epicenter/constants)  shared constants
+    - packages/cli               (@epicenter/cli)        the epicenter CLI
+                                                         (depends on AGPL
+                                                         auth + constants)
     - packages/server            (@epicenter/server)     shared Hono server
                                                          library (private)
     - packages/client            (@epicenter/client)     API client (private)

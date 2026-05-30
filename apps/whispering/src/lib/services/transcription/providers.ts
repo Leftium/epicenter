@@ -55,10 +55,7 @@ type SelfHostedProvider = {
 	modelIdKey: DeviceConfigKey;
 };
 
-export type TranscriptionProvider =
-	| CloudProvider
-	| LocalProvider
-	| SelfHostedProvider;
+type TranscriptionProvider = CloudProvider | LocalProvider | SelfHostedProvider;
 
 export const PROVIDERS = {
 	OpenAI: {
@@ -244,6 +241,17 @@ export const PROVIDERS = {
 } as const satisfies Record<string, TranscriptionProvider>;
 
 export type TranscriptionServiceId = keyof typeof PROVIDERS;
+
+/**
+ * The ids of cloud providers, derived from PROVIDERS. The dispatch table in
+ * `operations/transcribe.ts` is `satisfies Record<CloudProviderId, ...>`, so
+ * adding a cloud provider here without a transcriber there is a compile error.
+ */
+export type CloudProviderId = {
+	[K in TranscriptionServiceId]: (typeof PROVIDERS)[K]['location'] extends 'cloud'
+		? K
+		: never;
+}[TranscriptionServiceId];
 
 /** Every provider ID, e.g. for `column.enum(TRANSCRIPTION_SERVICE_IDS)`. */
 export const TRANSCRIPTION_SERVICE_IDS = Object.keys(

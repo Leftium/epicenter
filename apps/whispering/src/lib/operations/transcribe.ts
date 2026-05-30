@@ -21,6 +21,7 @@ import {
 } from '$lib/services/transcription/local-preflight';
 import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
 import {
+	type CloudProviderId,
 	PROVIDERS,
 	type TranscriptionServiceId,
 } from '$lib/services/transcription/providers';
@@ -41,12 +42,26 @@ const TranscriptionOperationError = defineErrors({
 	}),
 });
 
+type CloudTranscribe = (
+	audio: Blob,
+	options: {
+		prompt: string;
+		outputLanguage: string;
+		apiKey: string;
+		modelName: string;
+		baseURL?: string;
+	},
+) => Promise<Result<string, TranscriptionError>>;
+
 /**
  * The cloud (upload) transcribers, keyed by provider id. This is the dispatch
  * table that replaces the old per-provider switch: each impl stays bespoke
  * (different SDKs, different errors), the table just maps id -> call. Importing
  * the impls here keeps their SDKs out of `providers.ts`, so the workspace
  * schema can import the provider IDs without bundling them.
+ *
+ * `satisfies Record<CloudProviderId, ...>` ties the table to PROVIDERS: a cloud
+ * provider added there without a transcriber here is a compile error.
  */
 const CLOUD_TRANSCRIBERS = {
 	OpenAI: OpenaiTranscriptionServiceLive.transcribe,
@@ -54,9 +69,7 @@ const CLOUD_TRANSCRIBERS = {
 	ElevenLabs: ElevenLabsTranscriptionServiceLive.transcribe,
 	Deepgram: DeepgramTranscriptionServiceLive.transcribe,
 	Mistral: MistralTranscriptionServiceLive.transcribe,
-} as const;
-
-type CloudProviderId = keyof typeof CLOUD_TRANSCRIBERS;
+} satisfies Record<CloudProviderId, CloudTranscribe>;
 
 function isCloudProviderId(id: TranscriptionServiceId): id is CloudProviderId {
 	return id in CLOUD_TRANSCRIBERS;

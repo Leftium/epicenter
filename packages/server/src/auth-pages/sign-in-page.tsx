@@ -16,12 +16,13 @@ const GOOGLE_ICON =
 </svg>`);
 
 /**
- * Server-rendered sign-in/sign-up page for the OAuth flow.
+ * Server-rendered sign-in page for the OAuth flow.
  *
- * Better Auth redirects here when a user needs to authenticate. The page
- * renders a form with email/password fields and a Google OAuth button.
- * After successful auth, Better Auth returns a redirect URL to continue
- * the OAuth flow. For non-OAuth sign-ins, the page reloads.
+ * Better Auth redirects here when a user needs to authenticate. Google is the
+ * only sign-in method (local email/password is disabled, see
+ * {@link BASE_AUTH_CONFIG}). After successful auth, Better Auth returns a
+ * redirect URL to continue the OAuth flow; for non-OAuth sign-ins the page
+ * reloads.
  */
 export function SignInPage() {
 	return (
@@ -37,46 +38,6 @@ export function SignInPage() {
 				{GOOGLE_ICON}
 				Continue with Google
 			</button>
-
-			<div class="separator">or</div>
-
-			<form id="auth-form">
-				<div class="field" id="name-field" style="display:none">
-					<label for="name">Name</label>
-					<input id="name" type="text" placeholder="Name" autocomplete="name" />
-				</div>
-				<div class="field">
-					<label for="email">Email</label>
-					<input
-						id="email"
-						type="email"
-						placeholder="Email"
-						required
-						autocomplete="email"
-					/>
-				</div>
-				<div class="field">
-					<label for="password">Password</label>
-					<input
-						id="password"
-						type="password"
-						placeholder="Password"
-						required
-						autocomplete="current-password"
-					/>
-				</div>
-
-				<button type="submit" class="btn btn-primary" id="submit-btn">
-					<span id="submit-text">Sign in</span>
-				</button>
-			</form>
-
-			<p class="toggle">
-				<span id="toggle-prompt">Don't have an account? </span>
-				<button type="button" id="toggle-btn">
-					Sign up
-				</button>
-			</p>
 
 			{SIGN_IN_SCRIPT}
 		</>

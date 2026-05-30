@@ -10,7 +10,7 @@ import {
 } from '$lib/services/local-shortcut-manager';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
-import { tauri } from '$lib/tauri';
+import { tauri } from '#platform/tauri';
 import type { Accelerator } from '$lib/utils/accelerator';
 
 /** Default values for in-app (local) shortcuts. Keyed by command id string. */

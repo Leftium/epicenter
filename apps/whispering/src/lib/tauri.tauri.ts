@@ -5,25 +5,25 @@
  * error transformation, or invalidation is exposed in the same shape
  * (no sub-namespace), with each leaf picking one canonical call form.
  *
- * Two files, one import path:
+ * Two files, one import path (`#platform/tauri`, declared in package.json
+ * "imports"):
  *
- *     this file                                 -> Tauri build
- *     `./tauri.browser.ts` (exports `null`)     -> web build
+ *     this file                              -> Tauri build (`tauri` condition)
+ *     `./tauri.browser.ts` (exports `null`)  -> web build (`default`)
  *
- * Vite picks one at build time via `resolve.extensions` in
- * `vite.config.ts`. TypeScript picks this one for type-checking on both
- * builds via `moduleSuffixes` in `tsconfig.json`, so consumers always
- * see the full `Tauri | null` shape.
+ * Both files annotate the export `: Tauri | null` and export the `Tauri`
+ * type, so consumers always see the full shape regardless of which one
+ * resolves.
  *
  * Two patterns, one for each use case:
  *
- *     import { tauri } from '$lib/tauri';
+ *     import { tauri } from '#platform/tauri';
  *     if (tauri) await tauri.fs.pathsToFiles(paths);
  *     // or
  *     await tauri?.fs.pathsToFiles(paths);
  *
  *     // Inside *.tauri.ts files only (build guarantees Tauri runtime):
- *     import { tauriOnly } from '$lib/tauri';
+ *     import { tauriOnly } from '#platform/tauri';
  *     await tauriOnly.fs.pathsToFiles(paths);
  *
  * `tauri` doubles as the platform check: truthy means we're on Tauri

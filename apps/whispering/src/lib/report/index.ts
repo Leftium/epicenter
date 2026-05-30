@@ -4,7 +4,7 @@ import type { AnyTaggedError } from 'wellcrafted/error';
 import { consoleSink, type LogEvent } from 'wellcrafted/logger';
 import { moreDetailsDialog } from '$lib/components/MoreDetailsDialog.svelte';
 import { humanize } from './humanize';
-import { osNotify } from './os-notify';
+import { osNotify } from '#platform/os-notify';
 
 export type NoticeAction = {
 	label: string;

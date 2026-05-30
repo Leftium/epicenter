@@ -9,7 +9,7 @@
 	import { page } from '$app/state';
 	import { GithubIcon } from '$lib/components/icons';
 	import { NAV_ITEMS } from '$lib/constants/ui';
-	import { tauri } from '$lib/tauri';
+	import { tauri } from '#platform/tauri';
 	import MigrationDialog from '$lib/migration/MigrationDialog.svelte';
 	import { migrationDialog } from '$lib/migration/migration-dialog.svelte';
 

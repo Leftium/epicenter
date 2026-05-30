@@ -13,7 +13,7 @@
 	} from '$lib/constants/audio';
 	import { migrationDialog } from '$lib/migration/migration-dialog.svelte';
 	import { services } from '$lib/services';
-	import { tauri } from '$lib/tauri';
+	import { tauri } from '#platform/tauri';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
 	import { settings } from '$lib/state/settings.svelte';

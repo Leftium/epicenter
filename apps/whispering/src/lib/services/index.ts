@@ -1,11 +1,11 @@
-import { AnalyticsServiceLive } from './analytics';
-import { AudioBlobStoreLive } from './blob-store';
+import { AnalyticsServiceLive } from '#platform/analytics';
+import { AudioBlobStoreLive } from '#platform/blob-store';
 import * as completions from './completion';
-import { DownloadServiceLive } from './download';
+import { DownloadServiceLive } from '#platform/download';
 import { LocalShortcutManagerLive } from './local-shortcut-manager';
-import { OsServiceLive } from './os';
-import { PlaySoundServiceLive } from './sound';
-import { TextServiceLive } from './text';
+import { OsServiceLive } from '#platform/os';
+import { PlaySoundServiceLive } from '#platform/sound';
+import { TextServiceLive } from '#platform/text';
 import * as transcriptions from './transcription';
 
 /**

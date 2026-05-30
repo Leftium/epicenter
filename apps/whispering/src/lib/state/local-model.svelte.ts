@@ -1,5 +1,5 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { tauri } from '$lib/tauri';
+import { tauri } from '#platform/tauri';
 import {
 	commands,
 	type LocalModelState,

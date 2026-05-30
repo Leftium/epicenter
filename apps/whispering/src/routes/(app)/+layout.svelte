@@ -10,7 +10,7 @@
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { localModel } from '$lib/state/local-model.svelte';
 	import { settings } from '$lib/state/settings.svelte';
-	import { tauri } from '$lib/tauri';
+	import { tauri } from '#platform/tauri';
 	import { commands, type Engine } from '$lib/tauri/commands';
 	import AppLayout from './_components/AppLayout.svelte';
 	import BottomNav from './_components/BottomNav.svelte';

@@ -15,11 +15,11 @@
 	import { IS_LINUX, IS_MACOS } from '$lib/constants/platform';
 	import { asDeviceIdentifier } from '$lib/services/recorder/types';
 	import { report } from '$lib/report';
-	import { tauri } from '$lib/tauri';
+	import { tauri } from '#platform/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
-	import { manualRecorderConfig } from '$lib/state/manual-recorder-config';
+	import { manualRecorderConfig } from '#platform/manual-recorder-config';
 	import { settings } from '$lib/state/settings.svelte';
-	import { whispering } from '$lib/whispering/whispering';
+	import { whispering } from '#platform/whispering';
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
 

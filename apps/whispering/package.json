@@ -7,6 +7,56 @@
 		"./commands": "./src/lib/commands.ts",
 		"./workspace": "./src/lib/workspace/index.ts"
 	},
+	"imports": {
+		"#platform/analytics": {
+			"tauri": "./src/lib/services/analytics/index.tauri.ts",
+			"default": "./src/lib/services/analytics/index.browser.ts"
+		},
+		"#platform/blob-store": {
+			"tauri": "./src/lib/services/blob-store/index.tauri.ts",
+			"default": "./src/lib/services/blob-store/index.browser.ts"
+		},
+		"#platform/download": {
+			"tauri": "./src/lib/services/download/index.tauri.ts",
+			"default": "./src/lib/services/download/index.browser.ts"
+		},
+		"#platform/http": {
+			"tauri": "./src/lib/services/http/index.tauri.ts",
+			"default": "./src/lib/services/http/index.browser.ts"
+		},
+		"#platform/os": {
+			"tauri": "./src/lib/services/os/index.tauri.ts",
+			"default": "./src/lib/services/os/index.browser.ts"
+		},
+		"#platform/recorder": {
+			"tauri": "./src/lib/services/recorder/index.tauri.ts",
+			"default": "./src/lib/services/recorder/index.browser.ts"
+		},
+		"#platform/sound": {
+			"tauri": "./src/lib/services/sound/index.tauri.ts",
+			"default": "./src/lib/services/sound/index.browser.ts"
+		},
+		"#platform/text": {
+			"tauri": "./src/lib/services/text/index.tauri.ts",
+			"default": "./src/lib/services/text/index.browser.ts"
+		},
+		"#platform/manual-recorder-config": {
+			"tauri": "./src/lib/state/manual-recorder-config.tauri.ts",
+			"default": "./src/lib/state/manual-recorder-config.browser.ts"
+		},
+		"#platform/whispering": {
+			"tauri": "./src/lib/whispering/whispering.tauri.ts",
+			"default": "./src/lib/whispering/whispering.browser.ts"
+		},
+		"#platform/tauri": {
+			"tauri": "./src/lib/tauri.tauri.ts",
+			"default": "./src/lib/tauri.browser.ts"
+		},
+		"#platform/os-notify": {
+			"tauri": "./src/lib/report/os-notify.tauri.ts",
+			"default": "./src/lib/report/os-notify.browser.ts"
+		}
+	},
 	"scripts": {
 		"dev:web": "vite dev",
 		"dev": "bun run dev:local",

@@ -29,7 +29,7 @@
 		type LocalModelUnloadPolicy,
 		TRANSCRIPTION,
 	} from '$lib/constants/transcription';
-	import { tauri } from '$lib/tauri';
+	import { tauri } from '#platform/tauri';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { createCopyFn } from '$lib/utils/createCopyFn';

@@ -9,7 +9,7 @@
 		TRANSCRIPTION_SERVICES,
 		type TranscriptionService,
 	} from '$lib/services/transcription/registry';
-	import { tauri } from '$lib/tauri';
+	import { tauri } from '#platform/tauri';
 
 	let {
 		id = 'transcription-service',

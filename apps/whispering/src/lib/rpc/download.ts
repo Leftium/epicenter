@@ -2,8 +2,8 @@ import { defineKeys } from 'wellcrafted/query';
 import { Err, type Result } from 'wellcrafted/result';
 import { defineMutation } from '$lib/rpc/client';
 import { services } from '$lib/services';
-import type { BlobError } from '$lib/services/blob-store';
-import type { DownloadError } from '$lib/services/download';
+import type { BlobError } from '#platform/blob-store';
+import type { DownloadError } from '#platform/download';
 import type { Recording } from '$lib/state/recordings.svelte';
 
 export const downloadKeys = defineKeys({

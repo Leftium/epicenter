@@ -13,7 +13,7 @@
 	import { deliverTransformationResult } from '$lib/operations/delivery';
 	import { report } from '$lib/report';
 	import { sound } from '$lib/operations/sound';
-	import { tauri } from '$lib/tauri';
+	import { tauri } from '#platform/tauri';
 	import { rpc } from '$lib/rpc';
 	import { services } from '$lib/services';
 	import * as transformClipboardWindow from './transformClipboardWindow.tauri';

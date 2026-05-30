@@ -1,7 +1,7 @@
 import { type } from 'arktype';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
-import { HttpServiceLive } from '$lib/services/http';
+import { HttpServiceLive } from '#platform/http';
 import { getAudioExtension } from '$lib/services/transcription/utils';
 
 const WhisperApiResponse = type({ text: 'string' }, '|', {

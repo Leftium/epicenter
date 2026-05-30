@@ -7,7 +7,7 @@ import { log, type Notice, report } from '$lib/report';
 import type { DeviceAcquisitionOutcome } from '$lib/services/recorder/types';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { manualRecorder } from '$lib/state/manual-recorder.svelte';
-import { manualRecorderConfig } from '$lib/state/manual-recorder-config';
+import { manualRecorderConfig } from '#platform/manual-recorder-config';
 import { settings } from '$lib/state/settings.svelte';
 import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 

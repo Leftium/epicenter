@@ -14,7 +14,7 @@
  * ```
  */
 import { fromTable } from '@epicenter/svelte';
-import { whispering } from '$lib/whispering/whispering';
+import { whispering } from '#platform/whispering';
 import type { TransformationStepRun } from '$lib/workspace';
 
 function createTransformationStepRuns() {

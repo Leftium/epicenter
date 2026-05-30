@@ -11,7 +11,7 @@
 		type RecordingMode,
 	} from '$lib/constants/audio';
 	import { rpc } from '$lib/rpc';
-	import { tauri } from '$lib/tauri';
+	import { tauri } from '#platform/tauri';
 	import { settings } from '$lib/state/settings.svelte';
 
 	let { class: className }: { class?: string } = $props();

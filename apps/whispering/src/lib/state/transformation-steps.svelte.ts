@@ -20,7 +20,7 @@
 
 import { fromTable } from '@epicenter/svelte';
 import { nanoid } from 'nanoid/non-secure';
-import { whispering } from '$lib/whispering/whispering';
+import { whispering } from '#platform/whispering';
 import type { TransformationStep } from '$lib/workspace';
 
 function createTransformationSteps() {

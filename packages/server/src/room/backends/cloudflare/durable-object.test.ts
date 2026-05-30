@@ -168,10 +168,18 @@ function makeSqlStorage() {
 }
 
 function makeStorage() {
+	let alarm: number | null = null;
 	return {
 		sql: makeSqlStorage(),
-		async setAlarm(_when: number) {},
-		async deleteAlarm() {},
+		async setAlarm(when: number) {
+			alarm = when;
+		},
+		async getAlarm() {
+			return alarm;
+		},
+		async deleteAlarm() {
+			alarm = null;
+		},
 		async deleteAll() {},
 	};
 }
@@ -600,6 +608,24 @@ describe('Room connection lifetime', () => {
 		);
 
 		expect(ws.closeCalls).toEqual([]);
+	});
+
+	test('the alarm sweep closes an idle over-age socket with no inbound frame', async () => {
+		const { room } = await makeRoom();
+		const wsOld = await upgrade(room, 'A');
+		const wsFresh = await upgrade(room, 'B');
+		// Age wsOld past the lifetime; it never sends a frame (the idle case the
+		// per-message check cannot catch).
+		const attachment = wsOld.deserializeAttachment() as { connectedAt: number };
+		wsOld.serializeAttachment({
+			...attachment,
+			connectedAt: Date.now() - 31 * 60_000,
+		});
+
+		await room.alarm();
+
+		expect(wsOld.closeCalls.map((c) => c.code)).toEqual([4408]);
+		expect(wsFresh.closeCalls).toEqual([]);
 	});
 });
 

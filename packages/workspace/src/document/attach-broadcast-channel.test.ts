@@ -35,17 +35,17 @@ describe('attachBroadcastChannel', () => {
 	});
 
 	test('defaults to ydoc.guid as the local channel key', () => {
-		const ydoc = new Y.Doc({ guid: 'epicenter.fuji' });
+		const ydoc = new Y.Doc({ guid: 'epicenter-fuji' });
 
 		attachBroadcastChannel(ydoc);
 
-		expect(FakeBroadcastChannel.names).toEqual(['yjs.epicenter.fuji']);
+		expect(FakeBroadcastChannel.names).toEqual(['yjs.epicenter-fuji']);
 		ydoc.destroy();
 	});
 
 	test('does not rebroadcast sync-origin updates', async () => {
 		const { SYNC_ORIGIN } = await import('@epicenter/sync');
-		const ydoc = new Y.Doc({ guid: 'epicenter.fuji' });
+		const ydoc = new Y.Doc({ guid: 'epicenter-fuji' });
 
 		attachBroadcastChannel(ydoc);
 		ydoc.transact(() => {

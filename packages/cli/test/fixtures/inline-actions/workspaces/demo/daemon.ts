@@ -12,7 +12,7 @@ import { defineMount } from '@epicenter/workspace/daemon';
 import Type from 'typebox';
 import * as Y from 'yjs';
 
-const ydoc = new Y.Doc({ guid: 'epicenter.demo' });
+const ydoc = new Y.Doc({ guid: 'epicenter-demo' });
 const state = ydoc.getMap<number>('state');
 state.set('count', 0);
 

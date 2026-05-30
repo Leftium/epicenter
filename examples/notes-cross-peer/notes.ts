@@ -23,7 +23,7 @@ import {
 } from '@epicenter/workspace';
 import Type from 'typebox';
 
-const WORKSPACE_ID = 'epicenter.notes-repro';
+const WORKSPACE_ID = 'epicenter-notes-repro';
 
 const Note = defineTable({
 	id: column.string(),

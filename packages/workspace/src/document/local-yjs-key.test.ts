@@ -21,11 +21,11 @@ describe('getOwnedYjsPrefix', () => {
 
 describe('createOwnedYjsKey', () => {
 	test('appends the ydoc guid to the owner prefix', () => {
-		expect(createOwnedYjsKey(SERVER, ALICE, 'epicenter.fuji')).toBe(
-			'epicenter/api.epicenter.so/owners/user-a/epicenter.fuji',
+		expect(createOwnedYjsKey(SERVER, ALICE, 'epicenter-fuji')).toBe(
+			'epicenter/api.epicenter.so/owners/user-a/epicenter-fuji',
 		);
-		expect(createOwnedYjsKey(SERVER, TEAM, 'epicenter.fuji')).toBe(
-			'epicenter/api.epicenter.so/owners/team/epicenter.fuji',
+		expect(createOwnedYjsKey(SERVER, TEAM, 'epicenter-fuji')).toBe(
+			'epicenter/api.epicenter.so/owners/team/epicenter-fuji',
 		);
 	});
 });

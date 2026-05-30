@@ -43,18 +43,13 @@ const stripTrailing = (s: string) => s.replace(/\/+$/, '');
  */
 export const ASSET_ID_REGEX = '[a-z0-9]{21}';
 
-/**
- * 15-character alphanumeric room id.
- */
-export const ROOM_ID_REGEX = '[a-z0-9]{15}';
-
 export const API_ROUTES = {
 	session: {
 		pattern: '/api/session',
 		url: (baseURL: string) => `${stripTrailing(baseURL)}/api/session`,
 	},
 	room: {
-		pattern: `/api/owners/:ownerId/rooms/:roomId{${ROOM_ID_REGEX}}`,
+		pattern: '/api/owners/:ownerId/rooms/:roomId',
 		prefixPattern: '/api/owners/:ownerId/rooms/*',
 		url: (baseURL: string, ownerId: OwnerId, roomId: string) =>
 			`${stripTrailing(baseURL)}/api/owners/${encodeURIComponent(ownerId)}/rooms/${encodeURIComponent(roomId)}`,

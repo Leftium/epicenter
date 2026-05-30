@@ -25,7 +25,7 @@ examples/fuji/
 │   └── hello-fuji.md
 └── .epicenter/            created on first daemon run; gitignored
     ├── yjs/
-    │   └── epicenter.fuji.db
+    │   └── epicenter-fuji.db
     └── sqlite.db
 ```
 

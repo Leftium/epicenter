@@ -19,7 +19,7 @@ The app composes its browser workspace in `src/lib/skills/browser.ts`.
 components. `@epicenter/skills` provides the pure `openSkills()` factory,
 document builders, guid helpers, and action factory; the app owns IndexedDB,
 BroadcastChannel, and inline `createDisposableCache` sources for
-instructions and references. The workspace ID is `epicenter.skills`. No remote
+instructions and references. The workspace ID is `epicenter-skills`. No remote
 sync is wired in, so the editor works entirely offline.
 
 ### Collaborative editing
@@ -38,7 +38,7 @@ A single route renders a resizable split view: sidebar on the left, editor panel
 
 ## Workspace schema
 
-Workspace ID: `epicenter.skills`
+Workspace ID: `epicenter-skills`
 
 | Table | Columns | Attached doc |
 |---|---|---|

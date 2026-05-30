@@ -14,7 +14,7 @@ SvelteKit app (static adapter, SSR disabled) with three panels: a sidebar for fi
 
 ### Data model
 
-Workspace ID: `FUJI_ID` (`epicenter.fuji`). Rich-text content and entry metadata are separate CRDTs. The entries table stays lean: metadata rows live in the root Y.Doc, and each entry's body lives in its own child Y.Doc opened by a `createDisposableCache` keyed on the entry id. Loading a list of 500 entries doesn't mean loading 500 rich-text trees; the editor and the list never contend for the same document.
+Workspace ID: `FUJI_ID` (`epicenter-fuji`). Rich-text content and entry metadata are separate CRDTs. The entries table stays lean: metadata rows live in the root Y.Doc, and each entry's body lives in its own child Y.Doc opened by a `createDisposableCache` keyed on the entry id. Loading a list of 500 entries doesn't mean loading 500 rich-text trees; the editor and the list never contend for the same document.
 
 - `entries` table: `id` (EntryId), `title`, `subtitle`, `type` (string[]), `tags` (string[]), `pinned`, `deletedAt`, `date`, `dateZone`, `createdAt`, `updatedAt`, and `rating`.
 - `entryContentDocs`: shared child-doc cache. `createFuji()` defines the child Y.Doc identity and rich-text model; runtime openers attach storage and sync around those docs.
@@ -143,8 +143,7 @@ export default [fuji()];
 - [Yjs](https://yjs.dev): CRDT engine
 - [Tailwind CSS](https://tailwindcss.com): styling
 - `@epicenter/workspace`: CRDT-backed tables, versioning, documents
-- `@epicenter/auth-svelte`: Svelte 5 wrapper around `@epicenter/auth`
-- `@epicenter/svelte`: workspace gate and reactive table/KV bindings
+- `@epicenter/svelte`: workspace gate, reactive table/KV bindings, and the Svelte 5 auth wrapper around `@epicenter/auth` via the `@epicenter/svelte/auth` subpath
 - `@epicenter/ui`: shadcn-svelte component library
 
 ---

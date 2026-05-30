@@ -17,7 +17,7 @@ import { Type } from 'typebox';
 export function createRedditImport() {
 	// no persistence/sync/encryption: in-memory-only importer target
 	return createWorkspace({
-		id: 'epicenter.reddit',
+		id: 'epicenter-reddit',
 		tables: {
 			/** posts.csv */
 			posts: defineTable({

@@ -391,7 +391,7 @@ export function createWhispering() {
 	type SettingKey = keyof typeof kvDefinitions & string;
 
 	const workspace = createWorkspace({
-		id: 'whispering',
+		id: 'epicenter-whispering',
 		tables: {
 			recordings,
 			transformations,

@@ -86,7 +86,7 @@ Use `@epicenter/skills/node` when disk import/export actions are needed:
 ```typescript
 import { openSkillsNode } from '@epicenter/skills/node';
 
-using workspace = openSkillsNode({ workspaceId: 'epicenter.skills' });
+using workspace = openSkillsNode({ workspaceId: 'epicenter-skills' });
 await workspace.actions.import_from_disk({ dir: '.agents/skills' });
 await workspace.actions.export_to_disk({ dir: '.agents/skills' });
 ```

@@ -176,14 +176,13 @@ Also in the repo: [Fuji](apps/fuji) (personal CMS), [Zhongwen](apps/zhongwen) (M
 | [`@epicenter/workspace`](packages/workspace) | Core library. Typed schemas, Yjs CRDTs, extension builder, E2E encryption, materializers. Everything builds on this. | MIT |
 | [`@epicenter/sync`](packages/sync) | Yjs sync protocol encoding/decoding. Dumb server, smart client; protocol framing is separate from transport. | AGPL-3.0 |
 | [`@epicenter/ui`](packages/ui) | shadcn-svelte component library shared across all apps. | MIT |
-| [`@epicenter/svelte`](packages/svelte-utils) | Svelte 5 integration: persisted state, auth UI, and workspace gates. | MIT |
+| [`@epicenter/svelte`](packages/svelte-utils) | Svelte 5 integration: persisted state, auth UI, and workspace gates. | AGPL-3.0 |
 | [`@epicenter/filesystem`](packages/filesystem) | POSIX-style virtual filesystem over Yjs workspace tables. `mkdir`, `mv`, `rm`, `stat`. | MIT |
 | [`@epicenter/skills`](packages/skills) | Skill and reference tables for AI-enhanced workspace apps. | AGPL-3.0 |
 | [`@epicenter/ai`](packages/ai) | Bridges workspace actions with LLM tool calling. | AGPL-3.0 |
 | [`@epicenter/cli`](packages/cli) | The `epicenter` command. TypeBox schemas become CLI flags automatically. | MIT |
 | [`@epicenter/constants`](packages/constants) | Shared URLs, ports, and version info across the monorepo. | AGPL-3.0 |
 | [`@epicenter/auth`](packages/auth) | Framework-agnostic auth core. Imperative subscription API over better-auth. | AGPL-3.0 |
-| [`@epicenter/auth-svelte`](packages/auth-svelte) | Svelte 5 reactive wrapper around `@epicenter/auth`. | AGPL-3.0 |
 
 ## For Developers
 
@@ -225,7 +224,7 @@ function openBlog(id: string, ownerId, deviceId, auth) {
   return { ...workspace, idb, collaboration };
 }
 
-const workspace = openBlog('epicenter.blog', myOwnerId, 'browser-dev', auth);
+const workspace = openBlog('epicenter-blog', myOwnerId, 'browser-dev', auth);
 workspace.tables.posts.set({ id: '1', title: 'Hello', published: false });
 ```
 
@@ -334,7 +333,7 @@ All 112 implemented specs live in [`specs/`](specs/).
 
 Epicenter uses a sharp two-tier split:
 
-- **[MIT](licenses/LICENSE-MIT)** for the local-first-on-Yjs developer toolkit: `@epicenter/workspace`, `@epicenter/ui`, `@epicenter/svelte`, `@epicenter/filesystem`, `@epicenter/cli`. An external developer can `npm install` any of these and embed them in a closed-source product.
+- **[MIT](licenses/LICENSE-MIT)** for the local-first-on-Yjs developer toolkit: `@epicenter/workspace`, `@epicenter/ui`, `@epicenter/filesystem`, `@epicenter/cli`. An external developer can `npm install` any of these and embed them in a closed-source product.
 - **[AGPL-3.0](licenses/LICENSE-AGPL-3.0)** for everything else Epicenter ships: all 12 apps, the sync protocol (`@epicenter/sync`), and the Epicenter-internal packages. Anyone hosting or distributing a modified version must share their changes.
 - **Proprietary (deferred, empty)** as an escape hatch only. Revenue comes from hosting Epicenter Cloud, not from selling licenses, so this tier is intended to stay empty.
 

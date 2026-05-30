@@ -2,7 +2,7 @@
 
 Two-peer minimal repro for the `system.describe` cross-peer fetch.
 
-Both project configs default-export a `notes` mount from `workspaces/notes/daemon.ts`. `Mount.name` is the canonical CLI prefix. The two mount modules construct the same workspace (`epicenter.notes-repro`) with distinct peer ids, so each appears in the other's awareness.
+Both project configs default-export a `notes` mount from `workspaces/notes/daemon.ts`. `Mount.name` is the canonical CLI prefix. The two mount modules construct the same workspace (`epicenter-notes-repro`) with distinct peer ids, so each appears in the other's awareness.
 
 This example runs one daemon process per project directory. In a normal project, one daemon can host many mounts (default-export `Mount[]`). This repro keeps peer-a and peer-b in separate project directories so they behave like two different machines.
 

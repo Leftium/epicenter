@@ -32,12 +32,12 @@ Workspaces became a thin wrapper on top:
 ```ts
 // workspace.ts
 export const fuji = defineWorkspace({
-  id: 'epicenter.fuji',
+  id: 'epicenter-fuji',
   tables: { entries: entriesTable },
 });
 
 // client.ts
-const base = fuji.open('epicenter.fuji');
+const base = fuji.open('epicenter-fuji');
 const idb = attachIndexedDb(base.ydoc);
 attachBroadcastChannel(base.ydoc);
 const sync = attachSync(base.ydoc, { url, loadToken, waitFor: idb.whenLoaded });
@@ -110,7 +110,7 @@ const fuji = defineDocument((id: string) => {
   };
 }, { gcTime: Infinity });
 
-export const workspace = fuji.open('epicenter.fuji');
+export const workspace = fuji.open('epicenter-fuji');
 ```
 
 No `Object.assign`. No separate definition file. The return object is the workspace : whatever components consume as `workspace.sync` or `workspace.tables` lives right there in the closure.

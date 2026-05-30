@@ -42,7 +42,7 @@ import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import * as Y from 'yjs';
 
-export const FUJI_ID = 'epicenter.fuji';
+export const FUJI_ID = 'epicenter-fuji';
 
 export type EntryId = string & Brand<'EntryId'>;
 

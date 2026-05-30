@@ -60,7 +60,7 @@ const posts = defineTable({
 
 export function openBlog() {
 	const workspace = createWorkspace({
-		id: 'epicenter.blog',
+		id: 'epicenter-blog',
 		tables: { posts },
 		kv: {},
 	});
@@ -275,7 +275,7 @@ There is no builder chain. A user-owned builder function composes attachments in
 ```typescript
 function openBlog() {
 	const workspace = createWorkspace({
-		id: 'epicenter.blog',
+		id: 'epicenter-blog',
 		tables: { posts },
 		kv: {},
 	});
@@ -1014,7 +1014,7 @@ const posts = defineTable({
 
 function openBlog() {
 	const workspace = createWorkspace({
-		id: 'epicenter.blog',
+		id: 'epicenter-blog',
 		tables: { posts },
 		kv: {},
 	});

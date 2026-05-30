@@ -54,6 +54,7 @@
 
 import type { Keyring } from '@epicenter/encryption';
 import * as Y from 'yjs';
+import { assertSafeSegment } from '../shared/safe-segment.js';
 import { type ActionRegistry, defineActions } from '../shared/actions.js';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { deriveWorkspaceKeyring } from './derive-workspace-keyring.js';
@@ -152,6 +153,7 @@ export function createWorkspace<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
 >(options: CreateWorkspaceOptions<TTables, TKv>): Workspace<TTables, TKv, {}> {
+	assertSafeSegment(options.id, 'workspace id');
 	const ydoc = new Y.Doc({
 		guid: options.id,
 		gc: true,

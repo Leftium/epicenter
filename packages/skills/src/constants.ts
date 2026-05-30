@@ -1,1 +1,1 @@
-export const SKILLS_WORKSPACE_ID = 'epicenter.skills';
+export const SKILLS_WORKSPACE_ID = 'epicenter-skills';

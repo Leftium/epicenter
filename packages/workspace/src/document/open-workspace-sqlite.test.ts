@@ -24,7 +24,7 @@ afterEach(() => {
 
 describe('openWorkspaceSqlite', () => {
 	test('opens the mirror file read-only and rejects writes', () => {
-		const workspaceId = 'epicenter.test';
+		const workspaceId = 'epicenter-test';
 		const filePath = sqlitePath(workdir, workspaceId);
 		mkdirSync(dirname(filePath), { recursive: true });
 

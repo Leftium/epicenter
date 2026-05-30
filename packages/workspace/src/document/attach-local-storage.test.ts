@@ -240,7 +240,7 @@ describe('attachLocalStorage BroadcastChannel naming', () => {
 	});
 
 	test('uses an owner-scoped channel key without changing ydoc.guid', () => {
-		const ydoc = new Y.Doc({ guid: 'epicenter.fuji' });
+		const ydoc = new Y.Doc({ guid: 'epicenter-fuji' });
 
 		attachLocalStorage(ydoc, {
 			server: SERVER,
@@ -252,9 +252,9 @@ describe('attachLocalStorage BroadcastChannel naming', () => {
 		// channels coordinate with the same name y-indexeddb writes for the
 		// shared database. The owner-scoped portion is everything after.
 		expect(FakeBroadcastChannel.names).toEqual([
-			`yjs.epicenter/${SERVER}/owners/user-123/epicenter.fuji`,
+			`yjs.epicenter/${SERVER}/owners/user-123/epicenter-fuji`,
 		]);
-		expect(ydoc.guid).toBe('epicenter.fuji');
+		expect(ydoc.guid).toBe('epicenter-fuji');
 		ydoc.destroy();
 	});
 });

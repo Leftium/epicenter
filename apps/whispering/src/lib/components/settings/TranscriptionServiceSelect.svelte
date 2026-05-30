@@ -4,11 +4,11 @@
 	import * as Select from '@epicenter/ui/select';
 	import { cn } from '@epicenter/ui/utils';
 	import type { Snippet } from 'svelte';
-	import { type TranscriptionServiceId } from '$lib/constants/transcription';
 	import {
-		TRANSCRIPTION_SERVICES,
-		type TranscriptionService,
-	} from '$lib/services/transcription/registry';
+		TRANSCRIPTION_PROVIDERS,
+		type TranscriptionProviderEntry,
+	} from '$lib/services/transcription/provider-icons';
+	import { type TranscriptionServiceId } from '$lib/services/transcription/providers';
 	import { tauri } from '#platform/tauri';
 
 	let {
@@ -31,16 +31,16 @@
 
 	const localServices = $derived(
 		tauri
-			? TRANSCRIPTION_SERVICES.filter((service) => service.location === 'local')
+			? TRANSCRIPTION_PROVIDERS.filter((service) => service.location === 'local')
 			: [],
 	);
 
 	const cloudServices = $derived(
-		TRANSCRIPTION_SERVICES.filter((service) => service.location === 'cloud'),
+		TRANSCRIPTION_PROVIDERS.filter((service) => service.location === 'cloud'),
 	);
 
 	const selfHostedServices = $derived(
-		TRANSCRIPTION_SERVICES.filter(
+		TRANSCRIPTION_PROVIDERS.filter(
 			(service) => service.location === 'self-hosted',
 		),
 	);
@@ -53,7 +53,7 @@
 
 </script>
 
-{#snippet renderServiceIcon(service: TranscriptionService)}
+{#snippet renderServiceIcon(service: TranscriptionProviderEntry)}
 	<div
 		class={cn(
 			'size-4 shrink-0 flex items-center justify-center [&>svg]:size-full',
@@ -74,7 +74,7 @@
 			<div class="flex items-center gap-2">
 				{#if selectedService}
 					{@render renderServiceIcon(selectedService)}
-					<span>{selectedService.name}</span>
+					<span>{selectedService.label}</span>
 				{:else}
 					<span>Select a transcription service</span>
 				{/if}
@@ -85,12 +85,12 @@
 				<Select.Group>
 					<Select.GroupHeading>Local (Offline)</Select.GroupHeading>
 					{#each localServices as service}
-						<Select.Item value={service.id} label={service.name}>
+						<Select.Item value={service.id} label={service.label}>
 							<div class="flex items-start gap-3 py-1">
 								<div class="mt-0.5">{@render renderServiceIcon(service)}</div>
 								<div class="flex-1 min-w-0">
 									<div class="flex items-center gap-2">
-										<span class="font-medium">{service.name}</span>
+										<span class="font-medium">{service.label}</span>
 										<Badge variant="secondary" class="text-xs">Local</Badge>
 									</div>
 									{#if service.description}
@@ -112,12 +112,12 @@
 				<Select.Group>
 					<Select.GroupHeading>Cloud (API)</Select.GroupHeading>
 					{#each cloudServices as service}
-						<Select.Item value={service.id} label={service.name}>
+						<Select.Item value={service.id} label={service.label}>
 							<div class="flex items-start gap-3 py-1">
 								<div class="mt-0.5">{@render renderServiceIcon(service)}</div>
 								<div class="flex-1 min-w-0">
 									<div class="flex items-center gap-2">
-										<span class="font-medium">{service.name}</span>
+										<span class="font-medium">{service.label}</span>
 										<Badge variant="outline" class="text-xs">API</Badge>
 									</div>
 									{#if service.description}
@@ -148,12 +148,12 @@
 				<Select.Group>
 					<Select.GroupHeading>Self-Hosted</Select.GroupHeading>
 					{#each selfHostedServices as service}
-						<Select.Item value={service.id} label={service.name}>
+						<Select.Item value={service.id} label={service.label}>
 							<div class="flex items-start gap-3 py-1">
 								<div class="mt-0.5">{@render renderServiceIcon(service)}</div>
 								<div class="flex-1 min-w-0">
 									<div class="flex items-center gap-2">
-										<span class="font-medium">{service.name}</span>
+										<span class="font-medium">{service.label}</span>
 										<Badge variant="outline" class="text-xs">Self-Hosted</Badge>
 									</div>
 									{#if service.description}

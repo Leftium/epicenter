@@ -14,9 +14,9 @@ import { type Static, Type } from 'typebox';
 import { RECORDING_MODES } from '$lib/constants/audio/recording-modes';
 import { INFERENCE_PROVIDER_IDS } from '$lib/constants/inference';
 import {
-	TRANSCRIPTION,
+	PROVIDERS,
 	TRANSCRIPTION_SERVICE_IDS,
-} from '$lib/constants/transcription';
+} from '$lib/services/transcription/providers';
 import { TRANSFORMATION_STEP_TYPES } from '$lib/constants/transformations';
 import { ALWAYS_ON_TOP_MODES } from '$lib/constants/always-on-top';
 
@@ -296,23 +296,23 @@ const transcription = {
 	),
 	'transcription.openai.model': defineKv(
 		column.string(),
-		() => TRANSCRIPTION.OpenAI.defaultModel as string,
+		() => PROVIDERS.OpenAI.defaultModel as string,
 	),
 	'transcription.groq.model': defineKv(
 		column.string(),
-		() => TRANSCRIPTION.Groq.defaultModel as string,
+		() => PROVIDERS.Groq.defaultModel as string,
 	),
 	'transcription.elevenlabs.model': defineKv(
 		column.string(),
-		() => TRANSCRIPTION.ElevenLabs.defaultModel as string,
+		() => PROVIDERS.ElevenLabs.defaultModel as string,
 	),
 	'transcription.deepgram.model': defineKv(
 		column.string(),
-		() => TRANSCRIPTION.Deepgram.defaultModel as string,
+		() => PROVIDERS.Deepgram.defaultModel as string,
 	),
 	'transcription.mistral.model': defineKv(
 		column.string(),
-		() => TRANSCRIPTION.Mistral.defaultModel as string,
+		() => PROVIDERS.Mistral.defaultModel as string,
 	),
 	'transcription.language': defineKv(column.string(), () => 'auto'),
 	'transcription.prompt': defineKv(column.string(), () => ''),

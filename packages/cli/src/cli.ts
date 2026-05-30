@@ -1,9 +1,9 @@
 import yargs from 'yargs';
-import { authCommand } from './commands/auth';
-import { daemonCommand } from './commands/daemon';
-import { listCommand } from './commands/list';
-import { peersCommand } from './commands/peers';
-import { runCommand } from './commands/run';
+import { authCommand } from './commands/auth.js';
+import { daemonCommand } from './commands/daemon.js';
+import { listCommand } from './commands/list.js';
+import { peersCommand } from './commands/peers.js';
+import { runCommand } from './commands/run.js';
 
 const REMOVED_DAEMON_COMMANDS = new Set(['up', 'down', 'ps', 'logs']);
 

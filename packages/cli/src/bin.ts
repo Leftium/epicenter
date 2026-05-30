@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { hideBin } from 'yargs/helpers';
-import { createCLI } from './cli';
+import { createCLI } from './cli.js';
 
 try {
 	await createCLI().run(hideBin(process.argv));

@@ -8,7 +8,7 @@
 
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { DispatchError } from '@epicenter/workspace';
-import { emitRemoteCallError } from './run';
+import { emitRemoteCallError } from './run.js';
 
 function captureErrors() {
 	const lines: string[] = [];

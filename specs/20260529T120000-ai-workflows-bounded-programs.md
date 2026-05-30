@@ -9,6 +9,12 @@
 
 AI manipulates a workspace by emitting bounded data (a query plus a typed transform), the engine dry-runs it against a forked Y.Doc to produce a concrete, reviewable effect, and the user approves the effect; arbitrary code stays in a separate coding-agent lane.
 
+> **Reasoning record, not the current design.** This doc is the original design and the dead-ends it
+> killed. Several decisions here were later MOVED (there is no "Model 1.5"; the selection form is a
+> predicate AST, not `select: { sql }`; recipes were re-homed). Read the CANONICAL current design
+> first: `20260530T100000-ai-workflows-consolidated-design.md`. Keep this doc for WHY the trust model
+> is shaped the way it is.
+
 ## Why This Spec Exists
 
 The earlier spec (`20260528T221622-desktop-agent-action-plans.md`) modeled agent runs as a desktop daemon job: a phone dispatches `agent_runs_start`, the daemon spawns Claude Code, writes a proposal into a synced `agent_runs` table, and the user reviews and applies it. Grilling that design surfaced one fatal framing error and a much simpler target. This document records the full reasoning and the recommended shape.

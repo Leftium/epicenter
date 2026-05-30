@@ -4,8 +4,8 @@
  * Exercises the public `output` function: JSON for single values, JSONL for
  * arrays, pretty-on-TTY / compact-on-pipe. Captures stdout via console.log.
  */
-import { describe, expect, test } from 'bun:test';
-import { output } from './format-output.js';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { fail, output } from './format-output.js';
 
 function captureStdout(fn: () => void): string {
 	const original = console.log;
@@ -84,9 +84,43 @@ describe('output (jsonl)', () => {
 		expect(result).toBe('{"a":1}\n"string"\n42\nnull\n[1,2,3]');
 	});
 
-	test('throws when format is jsonl but value is not array', () => {
-		expect(() => output({ notAnArray: true }, { format: 'jsonl' })).toThrow(
-			'JSONL format requires an array value',
+	test('wraps a non-array value as a single jsonl line', () => {
+		const result = captureStdout(() =>
+			output({ notAnArray: true }, { format: 'jsonl' }),
 		);
+		expect(result).toBe('{"notAnArray":true}');
+	});
+});
+
+describe('fail', () => {
+	function captureStderr(fn: () => void): string[] {
+		const original = console.error;
+		const lines: string[] = [];
+		console.error = (...args: unknown[]) =>
+			lines.push(args.map(String).join(' '));
+		try {
+			fn();
+		} finally {
+			console.error = original;
+		}
+		return lines;
+	}
+
+	afterEach(() => {
+		process.exitCode = 0;
+	});
+
+	test('prefixes the message, prints details verbatim, and sets the exit code', () => {
+		const lines = captureStderr(() =>
+			fail('no peer matches "x"', { code: 3, details: ['  reason: offline'] }),
+		);
+		expect(lines).toEqual(['error: no peer matches "x"', '  reason: offline']);
+		expect(process.exitCode).toBe(3);
+	});
+
+	test('defaults to exit code 1 with no details', () => {
+		const lines = captureStderr(() => fail('boom'));
+		expect(lines).toEqual(['error: boom']);
+		expect(process.exitCode).toBe(1);
 	});
 });

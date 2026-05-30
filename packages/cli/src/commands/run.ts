@@ -32,6 +32,7 @@ import type { Result } from 'wellcrafted/result';
 import { cmd } from '../util/cmd.js';
 import { projectOption } from '../util/common-options.js';
 import {
+	fail,
 	formatOptions,
 	type OutputFormat,
 	output,
@@ -75,8 +76,7 @@ export const runCommand = cmd({
 
 		const { data: daemon, error: daemonErr } = await getDaemon(argv.C);
 		if (daemonErr) {
-			console.error(daemonErr.message);
-			process.exitCode = 1;
+			fail(daemonErr.message);
 			return;
 		}
 		if (peerTarget === undefined) {
@@ -110,18 +110,14 @@ function renderRunResult(
 	}
 	switch (result.error.name) {
 		case 'UsageError': {
-			console.error(result.error.message);
-			if (result.error.suggestions && result.error.suggestions.length > 0) {
-				console.error('');
-				console.error('Exposed actions at this key:');
-				for (const line of result.error.suggestions) console.error(line);
-			}
-			process.exitCode = 1;
+			const details = result.error.suggestions?.length
+				? ['', 'Exposed actions at this key:', ...result.error.suggestions]
+				: [];
+			fail(result.error.message, { details });
 			return;
 		}
 		case 'RuntimeError':
-			console.error(result.error.message);
-			process.exitCode = 2;
+			fail(result.error.message, { code: 2 });
 			return;
 		case 'PeerNotFound':
 			emitPeerNotFound(
@@ -129,19 +125,15 @@ function renderRunResult(
 				result.error.waitMs,
 				result.error.syncStatus,
 			);
-			process.exitCode = 3;
 			return;
-		case 'RemoteCallFailed': {
+		case 'RemoteCallFailed':
 			emitRemoteCallError(result.error.to, result.error.cause);
-			process.exitCode = 2;
 			return;
-		}
 		case 'Required':
 		case 'Timeout':
 		case 'Unreachable':
 		case 'HandlerCrashed':
-			console.error(`error: ${result.error.message}`);
-			process.exitCode = 1;
+			fail(result.error.message);
 			return;
 		default:
 			result.error satisfies never;
@@ -160,11 +152,14 @@ function emitPeerNotFound(
 	waitMs: number,
 	syncStatus: PeerDispatchSyncStatus,
 ): void {
-	console.error(`error: no peer matches peer id "${target}" after ${waitMs}ms`);
-	console.error(`  reason: ${describePeerMissReason(syncStatus)}`);
+	const details = [`  reason: ${describePeerMissReason(syncStatus)}`];
 	if (syncStatus.phase === 'connected') {
-		console.error('run `epicenter peers` to see connected peers');
+		details.push('run `epicenter peers` to see connected peers');
 	}
+	fail(`no peer matches peer id "${target}" after ${waitMs}ms`, {
+		code: 3,
+		details,
+	});
 }
 
 /**
@@ -184,19 +179,20 @@ export function emitRemoteCallError(
 			// CLI is always the `--wait` deadline. Its abort reason is a
 			// `DOMException`, which cannot survive the daemon's JSON response, so
 			// it is not inspected here.
-			console.error(`error: timeout calling ${peerTarget}`);
+			fail(`timeout calling ${peerTarget}`, { code: 2 });
 			return;
 		case 'ActionNotFound':
-			console.error(`error: ActionNotFound "${cause.action}" on ${peerTarget}`);
+			fail(`ActionNotFound "${cause.action}" on ${peerTarget}`, { code: 2 });
 			return;
 		case 'ActionFailed':
-			console.error(
-				`error: "${cause.action}" failed on ${peerTarget}: ${cause.cause}`,
-			);
+			fail(`"${cause.action}" failed on ${peerTarget}: ${cause.cause}`, {
+				code: 2,
+			});
 			return;
 		case 'NetworkFailed':
-			console.error(
-				`error: dispatch to ${peerTarget} failed: ${extractErrorMessage(cause.cause)}`,
+			fail(
+				`dispatch to ${peerTarget} failed: ${extractErrorMessage(cause.cause)}`,
+				{ code: 2 },
 			);
 			return;
 		default:

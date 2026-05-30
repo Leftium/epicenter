@@ -25,7 +25,11 @@ function captureErrors() {
 
 describe('emitRemoteCallError', () => {
 	let cap: ReturnType<typeof captureErrors>;
-	afterEach(() => cap?.restore());
+	afterEach(() => {
+		cap?.restore();
+		// emitRemoteCallError now routes through fail(), which sets the exit code.
+		process.exitCode = 0;
+	});
 
 	// The daemon owns the dispatch deadline (`AbortSignal.timeout(waitMs)`), so
 	// a `Cancelled` dispatch error always means the `--wait` timeout. The abort

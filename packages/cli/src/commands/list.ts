@@ -20,6 +20,7 @@ import type { Result } from 'wellcrafted/result';
 import { cmd } from '../util/cmd.js';
 import { projectOption } from '../util/common-options.js';
 import {
+	fail,
 	formatOptions,
 	type OutputFormat,
 	output,
@@ -41,8 +42,7 @@ export const listCommand = cmd({
 
 		const { data: daemon, error: daemonErr } = await getDaemon(argv.C);
 		if (daemonErr) {
-			console.error(daemonErr.message);
-			process.exitCode = 1;
+			fail(daemonErr.message);
 			return;
 		}
 		const result = await daemon.list();
@@ -61,8 +61,7 @@ function renderResult(
 			case 'Timeout':
 			case 'Unreachable':
 			case 'HandlerCrashed':
-				console.error(`error: ${result.error.message}`);
-				process.exitCode = 1;
+				fail(result.error.message);
 				return;
 			default:
 				result.error satisfies never;
@@ -108,7 +107,7 @@ function renderText(entries: ActionManifest, path: string): void {
 	}
 
 	if (matches === 0) {
-		console.log('(no actions exposed)');
+		console.error('(no actions exposed)');
 		return;
 	}
 
@@ -118,11 +117,6 @@ function renderText(entries: ActionManifest, path: string): void {
 		return;
 	}
 	printTree(subset, path);
-}
-
-function fail(message: string): void {
-	console.error(`error: ${message}`);
-	process.exitCode = 1;
 }
 
 function filterByPath(entries: ActionManifest, path: string): ActionManifest {

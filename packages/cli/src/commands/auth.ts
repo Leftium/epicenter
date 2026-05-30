@@ -13,11 +13,7 @@
 
 import * as machineAuth from '@epicenter/auth/node';
 import { cmd } from '../util/cmd.js';
-
-function failAuthCommand(error: { message: string }) {
-	console.error(error.message);
-	process.exitCode = 1;
-}
+import { fail } from '../util/format-output.js';
 
 /**
  * `auth` command group.
@@ -37,7 +33,7 @@ const loginCommand = cmd({
 			print: (line) => console.log(line),
 		});
 		if (result.error) {
-			failAuthCommand(result.error);
+			fail(result.error.message);
 			return;
 		}
 
@@ -52,7 +48,7 @@ const logoutCommand = cmd({
 	handler: async () => {
 		const result = await machineAuth.logout();
 		if (result.error) {
-			failAuthCommand(result.error);
+			fail(result.error.message);
 			return;
 		}
 
@@ -71,7 +67,7 @@ const statusCommand = cmd({
 	handler: async () => {
 		const result = await machineAuth.status();
 		if (result.error) {
-			failAuthCommand(result.error);
+			fail(result.error.message);
 			return;
 		}
 
@@ -87,7 +83,6 @@ const statusCommand = cmd({
 			console.log('Session:      verified');
 		} else {
 			console.log('Session:      stored, could not verify');
-			console.warn('Warning: Could not verify session with the Epicenter API.');
 		}
 	},
 });

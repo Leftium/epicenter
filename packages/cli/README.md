@@ -28,7 +28,7 @@ When you iterate on `apps/api`, you want CLI commands hitting your local server,
 | Use the published binary (end user) | `epicenter auth login` |
 | Override the target anywhere | `EPICENTER_API_URL=https://staging.example.com bun run cli auth login` |
 
-Tokens are stored per API target so prod and local sessions coexist. Each target writes one file at `<dataDir>/auth/<host>.json`, where `<dataDir>` is the platform user-data directory from `env-paths('epicenter')` and `<host>` is the API host with `:` replaced by `_`. A fresh `cli:local auth login` will not overwrite your prod session. When `EPICENTER_API_URL` is set, the CLI prints `Using API at <url>.` to stderr once per process. The daemon freezes its target at boot; to retarget, `daemon down` then `daemon up` again.
+Tokens are stored per API target so prod and local sessions coexist. Each target writes one file at `<dataDir>/auth/<host>.json`, where `<dataDir>` is the platform user-data directory from `env-paths('epicenter')` and `<host>` is the API host with `:` replaced by `_`. A fresh `cli:local auth login` will not overwrite your prod session. The daemon freezes its target at boot; to retarget, `daemon down` then `daemon up` again.
 
 `EPICENTER_DATA_DIR=<path>` overrides `<dataDir>` itself (the user-data directory above; today the only user-global state stored there is cached credentials). Escape hatch for Nix, snap, ephemeral homes, and the test suite.
 
@@ -56,6 +56,21 @@ epicenter peers -C ~/vault
 ```
 
 `-C` is a start directory for project discovery. Discovery walks upward until it finds `epicenter.config.ts`, then the daemon starts every mount in that config.
+
+## Exit codes
+
+`run` is the only command with granular codes, so a script can branch on the failure kind:
+
+| Code | `run` | `list`, `peers` |
+| --- | --- | --- |
+| `0` | success | success |
+| `1` | usage error (unknown mount or action, bad `--peer` input) or no daemon running | any failure (no daemon, bad arguments) |
+| `2` | runtime error: the local action returned `Err`, or the remote RPC failed | (not used) |
+| `3` | peer not found: `--peer <target>` did not resolve within `--wait` | (not used) |
+
+`daemon up` exits `1` on startup failure (already running, bad config, auth) and `0` on clean shutdown. `daemon down`, `ps`, and `logs` exit `0`: a missing daemon or an empty log is reported, not treated as an error.
+
+Error text goes to stderr; machine-readable output (`--format json|jsonl`, tables, and `run` results) goes to stdout.
 
 ## Project Mounts
 

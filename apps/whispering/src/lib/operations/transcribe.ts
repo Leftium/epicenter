@@ -1,12 +1,12 @@
 import { stat } from '@tauri-apps/plugin-fs';
 import { type AnyTaggedError, defineErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
+import { tauri } from '#platform/tauri';
 import {
 	SUPPORTED_LANGUAGES,
 	type SupportedLanguage,
 } from '$lib/constants/languages';
 import { WHISPER_MODELS } from '$lib/constants/local-models';
-import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
 import type { TranscriptionServiceId } from '$lib/constants/transcription';
 import { analytics } from '$lib/operations/analytics';
 import { report } from '$lib/report';
@@ -15,10 +15,10 @@ import {
 	LocalPreflightError,
 	requireExistingModelPath,
 } from '$lib/services/transcription/local-preflight';
+import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
 import { TRANSCRIPTION_SERVICES } from '$lib/services/transcription/registry';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
-import { tauri } from '#platform/tauri';
 import { commands } from '$lib/tauri/commands';
 
 export type TranscriptionError = AnyTaggedError;

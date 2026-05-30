@@ -54,8 +54,8 @@
 
 import type { Keyring } from '@epicenter/encryption';
 import * as Y from 'yjs';
-import { assertSafeSegment } from '../shared/safe-segment.js';
 import { type ActionRegistry, defineActions } from '../shared/actions.js';
+import { assertSafeSegment } from '../shared/safe-segment.js';
 import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { deriveWorkspaceKeyring } from './derive-workspace-keyring.js';
 import { KV_KEY, TableKey } from './keys.js';

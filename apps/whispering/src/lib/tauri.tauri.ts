@@ -62,10 +62,10 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
+import { IS_MACOS } from '#platform/os';
 import { goto } from '$app/navigation';
 import type { Command, ShortcutEventState } from '$lib/commands';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
-import { IS_MACOS } from '#platform/os';
 import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
 import { autostartKeys } from '$lib/tauri/autostart-keys';
 import { commands } from '$lib/tauri/commands';

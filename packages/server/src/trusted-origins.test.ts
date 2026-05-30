@@ -14,7 +14,9 @@ describe('buildTrustedOrigins', () => {
 
 	test('contains exactly one chrome-extension origin (the pinned tab-manager)', () => {
 		const exts = PROD.filter((o) => o.startsWith('chrome-extension://'));
-		expect(exts).toEqual(['chrome-extension://mkbnicfhpacdofmoocppnjjmdfmkkgda']);
+		expect(exts).toEqual([
+			'chrome-extension://mkbnicfhpacdofmoocppnjjmdfmkkgda',
+		]);
 	});
 
 	test('a production deployment does not trust localhost dev origins', () => {

@@ -14,11 +14,11 @@
  * file under `.epicenter/`.
  */
 
-import { fuji } from "@epicenter/fuji/project";
+import { fuji } from '@epicenter/fuji/project';
 
 export default [
-  fuji({
-    markdownDir: ".",
-    sqliteFile: ".epicenter/sqlite.db",
-  }),
+	fuji({
+		markdownDir: '.',
+		sqliteFile: '.epicenter/sqlite.db',
+	}),
 ];

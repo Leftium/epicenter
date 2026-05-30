@@ -1,10 +1,10 @@
+import { tauri } from '#platform/tauri';
 import {
 	TRANSCRIPTION_SERVICES,
 	type TranscriptionService,
 } from '$lib/services/transcription/registry';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
-import { tauri } from '#platform/tauri';
 
 /**
  * Gets the currently selected transcription service.

@@ -19,9 +19,9 @@
  * `owner_id` (see auth `before(delete)` hook).
  */
 
-import { ROOM_ROUTE } from '@epicenter/sync';
-import type { OwnerId } from '@epicenter/identity';
 import { RequestGuardError } from '@epicenter/constants/request-guard-errors';
+import type { OwnerId } from '@epicenter/identity';
+import { ROOM_ROUTE } from '@epicenter/sync';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Hono } from 'hono';
 import { describeRoute } from 'hono-openapi';

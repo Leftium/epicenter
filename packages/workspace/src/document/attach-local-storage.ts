@@ -22,8 +22,8 @@
  * @module
  */
 
-import type { OwnerId } from '@epicenter/identity';
 import type { Keyring } from '@epicenter/encryption';
+import type { OwnerId } from '@epicenter/identity';
 import type * as Y from 'yjs';
 import { attachBroadcastChannel } from './attach-broadcast-channel.js';
 import { attachEncryptedIndexedDb } from './attach-encrypted-indexed-db.js';

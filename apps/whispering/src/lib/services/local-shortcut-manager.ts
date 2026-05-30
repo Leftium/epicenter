@@ -6,13 +6,16 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
+import { IS_MACOS } from '#platform/os';
 import type { ShortcutEventState } from '$lib/commands';
 import {
 	type KeyboardEventPossibleKey,
 	type KeyboardEventSupportedKey,
 } from '$lib/constants/keyboard';
-import { isSupportedKey, normalizeOptionKeyCharacter } from '$lib/utils/keyboard';
-import { IS_MACOS } from '#platform/os';
+import {
+	isSupportedKey,
+	normalizeOptionKeyCharacter,
+} from '$lib/utils/keyboard';
 
 const LocalShortcutError = defineErrors({
 	RegisterFailed: ({ cause }: { cause: unknown }) => ({

@@ -14,6 +14,6 @@ export {
 	KEYBOARD_EVENT_SUPPORTED_KEYS,
 	type KeyboardEventSupportedKey,
 } from './browser/supported-keys';
-export { OPTION_DEAD_KEYS } from './option-dead-keys';
 export { CommandOrAlt, CommandOrControl } from './modifiers';
+export { OPTION_DEAD_KEYS } from './option-dead-keys';
 export { FUNCTION_KEY_PATTERN } from './patterns';

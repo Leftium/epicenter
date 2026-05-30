@@ -7,6 +7,13 @@ import type { Brand } from 'wellcrafted/brand';
  * 'team'. Every server path, every R2 key, every local IDB name, and the
  * HKDF derivation label all use this one value.
  *
+ * Deployment shape (personal vs team) is never carried as its own field: it is
+ * a property of the server, not of any cell or wire payload. This is the
+ * canonical site for the rare consumer that genuinely must distinguish them:
+ * derive it as `ownerId === TEAM_OWNER_ID` (team) versus `ownerId === userId`
+ * (personal). Most code should not branch at all and just use `ownerId` as the
+ * opaque partition key.
+ *
  * The validator is declared first; the type is derived from it via `.infer`
  * so schema and type stay in lockstep under one PascalCase name. Use
  * {@link OwnerId} directly inside schemas (`ownerId: OwnerId`); at trusted

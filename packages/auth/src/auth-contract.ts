@@ -13,7 +13,7 @@ import type { AuthError } from './auth-errors.js';
  *
  * Auth state carries capability material only. Profile data is fetched by
  * application surfaces that display it; deployment shape (personal vs team)
- * is derived from `ownerId === TEAM_OWNER_ID` at the rare site that asks.
+ * is a property of the server, not this state (see {@link OwnerId}).
  */
 export type AuthState =
 	| { status: 'signed-out' }

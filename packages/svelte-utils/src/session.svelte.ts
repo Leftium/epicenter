@@ -25,8 +25,8 @@ type Keyring = SignedInState['keyring'];
  * rebuild cycle. `keyring` is a callback because the same-owner keyring can
  * rotate (reauth-required to identity-bearing) without a rebuild.
  *
- * Deployment shape (personal vs team) is not on this payload. Apps that need
- * to branch derive it from `ownerId === TEAM_OWNER_ID`.
+ * Deployment shape (personal vs team) is not on this payload; it is a property
+ * of the server (see `OwnerId` in `@epicenter/constants/identity`).
  */
 export type SignedIn = {
 	/**

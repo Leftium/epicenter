@@ -654,6 +654,18 @@
         "yjs": "catalog:",
       },
     },
+    "packages/identity": {
+      "name": "@epicenter/identity",
+      "dependencies": {
+        "@epicenter/encryption": "workspace:*",
+        "arktype": "catalog:",
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/server": {
       "name": "@epicenter/server",
       "version": "0.1.0",
@@ -1106,6 +1118,8 @@
     "@epicenter/fuji": ["@epicenter/fuji@workspace:apps/fuji"],
 
     "@epicenter/honeycrisp": ["@epicenter/honeycrisp@workspace:apps/honeycrisp"],
+
+    "@epicenter/identity": ["@epicenter/identity@workspace:packages/identity"],
 
     "@epicenter/landing": ["@epicenter/landing@workspace:apps/landing"],
 

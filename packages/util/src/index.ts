@@ -7,4 +7,3 @@
  */
 
 export { debounce } from './debounce.js';
-export * from './identity.js';

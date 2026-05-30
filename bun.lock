@@ -802,10 +802,6 @@
     "packages/util": {
       "name": "@epicenter/util",
       "version": "0.0.1",
-      "dependencies": {
-        "arktype": "catalog:",
-        "wellcrafted": "catalog:",
-      },
       "devDependencies": {
         "@types/bun": "catalog:",
         "typescript": "catalog:",

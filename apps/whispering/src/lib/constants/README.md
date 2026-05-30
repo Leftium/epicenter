@@ -26,7 +26,6 @@ constants/
 ├── inference/              # AI model configurations
 ├── keyboard/               # Keyboard shortcuts and mappings
 ├── languages/              # Supported languages and i18n
-├── platform/               # Platform-specific constants
 ├── sounds/                 # Sound effect definitions
 ├── transcription/          # Speech-to-text services
 └── ui/                     # User interface constants
@@ -58,10 +57,6 @@ Comprehensive keyboard handling for shortcuts and hotkeys, supporting both Elect
 
 Language constants for internationalization and transcription language options.
 
-### `platform/` - System Dependencies
-
-Platform-specific constants including OS detection.
-
 ### `sounds/` - Sound Effects
 
 Sound effect name definitions used throughout the application.
@@ -74,16 +69,15 @@ Configuration for transcription services including model definitions and service
 
 UI-related constants including window behavior options and icon mappings.
 
-## Dependencies on Services
+## Platform Identity Lives Elsewhere
 
-Some constants have dependencies on services. For example, the `platform/is-macos.ts` constant depends on the `OsService`:
+OS identity (`IS_MACOS`, `IS_LINUX`, `IS_WINDOWS`) is not a constant in this folder. It is a process-constant fact that differs by build target, so it lives behind the `#platform/os` build seam instead:
 
 ```typescript
-import { OsServiceLive } from '$lib/services/os';
-export const IS_MACOS = OsServiceLive.type() === 'Darwin';
+import { IS_MACOS } from '#platform/os';
 ```
 
-Because `OsServiceLive.type()` returns a value that doesn't change for the life of the process, the constant caches it once at module load. The `os` service is dual-impl (web reads `navigator.userAgent`, Tauri reads `@tauri-apps/plugin-os`); Vite picks the right implementation via suffix files at build time.
+The seam resolves to a Tauri impl (`@tauri-apps/plugin-os`) or a browser impl (user-agent sniff) at build time via `package.json`'s `imports` field and the `tauri` Vite condition. Each impl detects the OS once at module load and exports plain booleans.
 
 ## Import and Export Patterns
 
@@ -122,7 +116,6 @@ Always import from the category barrel, not the individual files:
 // ✅ Good - Import from category barrels
 import { WHISPERING_URL } from '$lib/constants/app';
 import { DEFAULT_BITRATE_KBPS, RECORDING_MODES } from '$lib/constants/audio';
-import { IS_MACOS } from '$lib/constants/platform';
 ```
 
 Don't import from the actual source files:

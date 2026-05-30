@@ -4,15 +4,14 @@
 	import { Kbd } from '@epicenter/ui/kbd';
 	import LayersIcon from '@lucide/svelte/icons/layers';
 	import { onMount } from 'svelte';
-	import { PLATFORM_TYPE } from '$lib/constants/platform';
+	import { IS_MACOS } from '#platform/os';
 	import { rpc } from '$lib/rpc';
 	import { transformations } from '$lib/state/transformations.svelte';
 	import type { Transformation } from '$lib/workspace';
 
 	const sortedTransformations = $derived(transformations.sorted);
 
-	const isMac = PLATFORM_TYPE === 'macos';
-	const modifierKey = isMac ? '⌘' : 'Ctrl';
+	const modifierKey = IS_MACOS ? '⌘' : 'Ctrl';
 
 	let inputElement = $state<HTMLInputElement | null>(null);
 
@@ -50,7 +49,7 @@
 	// Keyboard shortcut handler for Cmd/Ctrl + 0-9
 	onMount(() => {
 		function handleKeyDown(e: KeyboardEvent) {
-			const isCmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+			const isCmdOrCtrl = IS_MACOS ? e.metaKey : e.ctrlKey;
 
 			if (isCmdOrCtrl && e.key >= '0' && e.key <= '9') {
 				e.preventDefault();

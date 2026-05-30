@@ -12,7 +12,7 @@
 		RECORDING_MODE_OPTIONS,
 		SAMPLE_RATE_OPTIONS,
 	} from '$lib/constants/audio';
-	import { IS_LINUX, IS_MACOS } from '$lib/constants/platform';
+	import { IS_LINUX, IS_MACOS } from '#platform/os';
 	import { asDeviceIdentifier } from '$lib/services/recorder/types';
 	import { report } from '$lib/report';
 	import { tauri } from '#platform/tauri';

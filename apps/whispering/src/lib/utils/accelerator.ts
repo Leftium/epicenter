@@ -28,7 +28,7 @@ import {
 	KEYBOARD_EVENT_SPECIAL_KEY_TO_ACCELERATOR_KEY_CODE_MAP,
 	type KeyboardEventSupportedKey,
 } from '$lib/constants/keyboard';
-import { IS_MACOS } from '$lib/constants/platform';
+import { IS_MACOS } from '#platform/os';
 
 /**
  * Brand for Electron accelerator strings.

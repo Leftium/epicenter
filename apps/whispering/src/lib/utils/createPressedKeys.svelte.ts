@@ -1,11 +1,10 @@
 import { on } from 'svelte/events';
 import {
-	isSupportedKey,
 	type KeyboardEventPossibleKey,
 	type KeyboardEventSupportedKey,
-	normalizeOptionKeyCharacter,
 } from '$lib/constants/keyboard';
-import { IS_MACOS } from '$lib/constants/platform';
+import { isSupportedKey, normalizeOptionKeyCharacter } from '$lib/utils/keyboard';
+import { IS_MACOS } from '#platform/os';
 
 /**
  * Creates a reactive state manager for tracking pressed keyboard keys.

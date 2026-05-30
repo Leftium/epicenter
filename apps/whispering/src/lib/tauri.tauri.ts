@@ -22,8 +22,10 @@
  *     // or
  *     await tauri?.fs.pathsToFiles(paths);
  *
- *     // Inside *.tauri.ts files only (build guarantees Tauri runtime):
- *     import { tauriOnly } from '#platform/tauri';
+ *     // Inside *.tauri.ts files only (build guarantees Tauri runtime).
+ *     // `tauriOnly` is imported directly, not through the `#platform/tauri`
+ *     // seam, which resolves to `null` on web and does not export it:
+ *     import { tauriOnly } from '$lib/tauri.tauri';
  *     await tauriOnly.fs.pathsToFiles(paths);
  *
  * `tauri` doubles as the platform check: truthy means we're on Tauri
@@ -63,7 +65,7 @@ import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { goto } from '$app/navigation';
 import type { Command, ShortcutEventState } from '$lib/commands';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
-import { IS_MACOS } from '$lib/constants/platform';
+import { IS_MACOS } from '#platform/os';
 import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
 import { autostartKeys } from '$lib/tauri/autostart-keys';
 import { commands } from '$lib/tauri/commands';

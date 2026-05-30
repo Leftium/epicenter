@@ -3,7 +3,6 @@ import { AudioBlobStoreLive } from '#platform/blob-store';
 import * as completions from './completion';
 import { DownloadServiceLive } from '#platform/download';
 import { LocalShortcutManagerLive } from './local-shortcut-manager';
-import { OsServiceLive } from '#platform/os';
 import { PlaySoundServiceLive } from '#platform/sound';
 import { TextServiceLive } from '#platform/text';
 import * as transcriptions from './transcription';
@@ -19,7 +18,6 @@ export const services = {
 	blobs: { audio: AudioBlobStoreLive },
 	download: DownloadServiceLive,
 	localShortcutManager: LocalShortcutManagerLive,
-	os: OsServiceLive,
 	sound: PlaySoundServiceLive,
 	transcriptions,
 } as const;

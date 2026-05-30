@@ -6,8 +6,8 @@ Tauri + Svelte 5 desktop/web app for voice transcription.
 
 - Three-layer architecture: Service → Query → UI
 - Services are pure functions returning `Result<T, E>`
-- Build-time platform DI via `.tauri.ts` / `.browser.ts` suffix files (see `vite.config.ts`'s `resolve.extensions`)
-- Tauri-only capabilities live in `$lib/tauri.tauri.ts` and consumers check `if (tauri)` (the variable doubles as the platform boolean)
+- Build-time platform DI via Node-standard `#platform/*` subpath imports: each seam maps to a `.tauri.ts` and a `.browser.ts` file in `package.json`'s `imports` field. Consumers import the bare specifier (`import { x } from '#platform/<name>'`) with no platform branch at the call site. The Tauri build activates the `tauri` condition in `vite.config.ts` (`resolve.conditions`); the web build falls through to `default` (browser), so the wrong-platform file is physically absent from each bundle
+- Tauri-only capabilities live in `$lib/tauri.tauri.ts`; shared consumers reach them through `import { tauri } from '#platform/tauri'` and check `if (tauri)` (the variable doubles as the platform boolean)
 - Query layer handles reactivity, caching, and error transformation
 - See `ARCHITECTURE.md` for detailed patterns
 

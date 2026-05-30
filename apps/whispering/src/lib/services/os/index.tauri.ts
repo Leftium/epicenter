@@ -1,8 +1,9 @@
-import * as os from '@tauri-apps/plugin-os';
-import type { OsService } from './types';
+import { type } from '@tauri-apps/plugin-os';
 
-export type { OsError, OsService } from './types';
+// Tauri exposes the real OS synchronously and it never changes during a
+// session, so we read it once at module load and expose plain booleans.
+const currentOs = type();
 
-export const OsServiceLive = {
-	type: () => os.type(),
-} satisfies OsService;
+export const IS_MACOS = currentOs === 'macos';
+export const IS_LINUX = currentOs === 'linux';
+export const IS_WINDOWS = currentOs === 'windows';

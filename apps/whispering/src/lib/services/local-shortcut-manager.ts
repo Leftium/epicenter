@@ -8,12 +8,11 @@ import {
 import { Ok, type Result } from 'wellcrafted/result';
 import type { ShortcutEventState } from '$lib/commands';
 import {
-	isSupportedKey,
 	type KeyboardEventPossibleKey,
 	type KeyboardEventSupportedKey,
-	normalizeOptionKeyCharacter,
 } from '$lib/constants/keyboard';
-import { IS_MACOS } from '$lib/constants/platform';
+import { isSupportedKey, normalizeOptionKeyCharacter } from '$lib/utils/keyboard';
+import { IS_MACOS } from '#platform/os';
 
 const LocalShortcutError = defineErrors({
 	RegisterFailed: ({ cause }: { cause: unknown }) => ({

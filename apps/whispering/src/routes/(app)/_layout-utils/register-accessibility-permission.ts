@@ -1,7 +1,7 @@
 import { toast } from '@epicenter/ui/sonner';
 import { nanoid } from 'nanoid/non-secure';
 import { goto } from '$app/navigation';
-import { IS_MACOS } from '$lib/constants/platform';
+import { IS_MACOS } from '#platform/os';
 import { tauri } from '#platform/tauri';
 
 export function registerAccessibilityPermission() {

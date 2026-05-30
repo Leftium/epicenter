@@ -16,7 +16,7 @@
  * `'team'`.
  */
 
-import type { OwnerId } from '@epicenter/constants/identity';
+import type { OwnerId } from '@epicenter/util';
 
 const APP = 'epicenter';
 

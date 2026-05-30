@@ -1,4 +1,4 @@
-import type { OwnerId } from './identity.js';
+import type { OwnerId } from '@epicenter/util';
 
 /**
  * Wire URL paths and Hono route patterns for the Epicenter API.
@@ -24,10 +24,10 @@ import type { OwnerId } from './identity.js';
  * // Server route declaration
  * import { API_ROUTES } from '@epicenter/constants/api-routes';
  * export const roomsApp = new Hono<Env>()
- *   .get(API_ROUTES.room.pattern, handler);
+ *   .get(API_ROUTES.session.pattern, handler);
  *
  * // Deployment middleware
- * app.use(API_ROUTES.room.prefixPattern, requireBearerUser, requireOwnership);
+ * app.use(API_ROUTES.ai.chat.prefixPattern, requireBearerUser, requireOwnership);
  *
  * // Client fetch
  * const res = await fetch(API_ROUTES.session.url(baseURL));
@@ -47,12 +47,6 @@ export const API_ROUTES = {
 	session: {
 		pattern: '/api/session',
 		url: (baseURL: string) => `${stripTrailing(baseURL)}/api/session`,
-	},
-	room: {
-		pattern: '/api/owners/:ownerId/rooms/:roomId',
-		prefixPattern: '/api/owners/:ownerId/rooms/*',
-		url: (baseURL: string, ownerId: OwnerId, roomId: string) =>
-			`${stripTrailing(baseURL)}/api/owners/${encodeURIComponent(ownerId)}/rooms/${encodeURIComponent(roomId)}`,
 	},
 	assets: {
 		list: {

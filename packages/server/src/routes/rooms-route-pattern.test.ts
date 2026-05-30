@@ -1,13 +1,13 @@
-import { API_ROUTES } from '@epicenter/constants/api-routes';
-import { asOwnerId } from '@epicenter/constants/identity';
+import { ROOM_ROUTE } from '@epicenter/sync';
+import { asOwnerId } from '@epicenter/util';
 import { describe, expect, test } from 'bun:test';
 import { Hono } from 'hono';
 
 /**
  * Regression: prove the real client/server URL contract.
  *
- * The client builds request URLs with `API_ROUTES.room.url(...)` and the
- * server registers `API_ROUTES.room.pattern`. This test wires both ends to the
+ * The client builds request URLs with `ROOM_ROUTE.url(...)` and the
+ * server registers `ROOM_ROUTE.pattern`. This test wires both ends to the
  * same source of truth so a future change to the pattern or builder can't let
  * them drift apart. It also pins that dotted, composed child-doc guids survive
  * Hono route matching (Hono treats `.` as a literal, so a single `:roomId`
@@ -15,7 +15,7 @@ import { Hono } from 'hono';
  */
 describe('rooms route pattern', () => {
 	test('room url() round-trips through the route pattern for workspace and child-doc guids', async () => {
-		const app = new Hono().get(API_ROUTES.room.pattern, (c) =>
+		const app = new Hono().get(ROOM_ROUTE.pattern, (c) =>
 			c.json({
 				ownerId: c.req.param('ownerId'),
 				roomId: c.req.param('roomId'),
@@ -31,7 +31,7 @@ describe('rooms route pattern', () => {
 		];
 
 		for (const guid of guids) {
-			const url = API_ROUTES.room.url('https://x', ownerId, guid);
+			const url = ROOM_ROUTE.url('https://x', ownerId, guid);
 			const res = await app.request(url);
 
 			expect(res.status).toBe(200);

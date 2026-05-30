@@ -31,7 +31,7 @@ import {
 import { join } from 'node:path';
 import type { SyncAuthClient } from '@epicenter/auth';
 import { MachineAuthStorageError } from '@epicenter/auth/node';
-import { asOwnerId } from '@epicenter/constants/identity';
+import { asOwnerId } from '@epicenter/util';
 import {
 	claimDaemonLease,
 	DEFAULT_PROJECT_CONFIG_SOURCE,
@@ -42,7 +42,7 @@ import {
 } from '@epicenter/workspace/node';
 import { Err, Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
-import { runUp } from './up';
+import { runUp } from './up.js';
 
 const STUB_AUTH = {
 	state: {

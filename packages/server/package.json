@@ -20,6 +20,7 @@
 		"@epicenter/encryption": "workspace:*",
 		"@epicenter/sync": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
+		"@epicenter/util": "workspace:*",
 		"@hono/standard-validator": "catalog:",
 		"@tanstack/ai": "catalog:",
 		"@tanstack/ai-openai": "catalog:",

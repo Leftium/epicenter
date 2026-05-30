@@ -25,7 +25,7 @@ import {
 	asOwnerId,
 	type OwnerId,
 	TEAM_OWNER_ID,
-} from '@epicenter/constants/identity';
+} from '@epicenter/util';
 import { RequestGuardError } from '@epicenter/constants/request-guard-errors';
 import type { Context } from 'hono';
 import { Ok, type Result } from 'wellcrafted/result';

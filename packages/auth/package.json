@@ -16,6 +16,8 @@
 	"dependencies": {
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/encryption": "workspace:*",
+		"@epicenter/sync": "workspace:*",
+		"@epicenter/util": "workspace:*",
 		"arktype": "catalog:",
 		"better-auth": "catalog:",
 		"env-paths": "^3.0.0",

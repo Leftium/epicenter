@@ -19,7 +19,7 @@
  * One shape, one helper per resource type, no ternary.
  */
 
-import type { OwnerId } from '@epicenter/constants/identity';
+import type { OwnerId } from '@epicenter/util';
 
 /** Durable Object name template, single form. */
 export type RoomDoName = `owners/${string}/rooms/${string}`;

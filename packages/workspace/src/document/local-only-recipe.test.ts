@@ -9,7 +9,7 @@
  * cloud adversary.
  *
  * If this file ever needs to import from `@epicenter/auth`,
- * `@epicenter/encryption`, or `@epicenter/constants/identity`, the
+ * `@epicenter/encryption`, or `@epicenter/util`, the
  * primitives have drifted away from the local-only ergonomic that
  * motivated the workspace split. Either rename the test, or fix the
  * primitive.

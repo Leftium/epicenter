@@ -1,6 +1,6 @@
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
+import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
 import { keyringsEqual } from '@epicenter/encryption';
 import {
 	defineErrors,

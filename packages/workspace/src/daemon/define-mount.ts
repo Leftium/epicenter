@@ -11,7 +11,7 @@
  * mount origin.
  */
 
-import type { OwnerId } from '@epicenter/constants/identity';
+import type { OwnerId } from '@epicenter/util';
 import type { Keyring } from '@epicenter/encryption';
 import type { DeviceId } from '../document/device-id.js';
 import type {

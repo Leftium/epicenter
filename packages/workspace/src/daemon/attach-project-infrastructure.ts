@@ -23,8 +23,7 @@
  * compose materializers around the same ydoc.
  */
 
-import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import type { OwnerId } from '@epicenter/constants/identity';
+import type { OwnerId } from '@epicenter/util';
 import type * as Y from 'yjs';
 
 import { attachYjsLog } from '../document/attach-yjs-log.js';
@@ -48,8 +47,8 @@ export type AttachProjectInfrastructureOptions<
 	openWebSocket: OpenWebSocketFn;
 	onReconnectSignal: OnReconnectSignal;
 	actions: TActions;
-	/** Defaults to `EPICENTER_API_URL`. Override for self-hosted hubs. */
-	baseURL?: string;
+	/** Base URL of the sync server (the Epicenter cloud, or a self-hosted hub). */
+	baseURL: string;
 };
 
 export function attachProjectInfrastructure<TActions extends ActionRegistry>(
@@ -61,7 +60,7 @@ export function attachProjectInfrastructure<TActions extends ActionRegistry>(
 		openWebSocket,
 		onReconnectSignal,
 		actions,
-		baseURL = EPICENTER_API_URL,
+		baseURL,
 	}: AttachProjectInfrastructureOptions<TActions>,
 ) {
 	const yjsLog = attachYjsLog(ydoc, {

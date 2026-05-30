@@ -15,8 +15,8 @@
  */
 
 import { expect, test } from 'bun:test';
-import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/constants/auth';
-import { asOwnerId } from '@epicenter/constants/identity';
+import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
+import { asOwnerId } from '@epicenter/util';
 import type { Keyring } from '@epicenter/encryption';
 import { Ok, type Result } from 'wellcrafted/result';
 // PersistedAuth and OAuthTokenGrant are intentionally not on the public root:

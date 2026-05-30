@@ -12,7 +12,8 @@
 	},
 	"dependencies": {
 		"@epicenter/auth": "workspace:*",
-		"@epicenter/constants": "workspace:*"
+		"@epicenter/constants": "workspace:*",
+		"@epicenter/util": "workspace:*"
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:",

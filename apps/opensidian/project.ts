@@ -10,6 +10,7 @@
  */
 
 import { defineWorkspace } from '@epicenter/workspace';
+import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { defineMount } from '@epicenter/workspace/daemon';
 import { attachProjectInfrastructure } from '@epicenter/workspace/node';
 import { createOpensidian } from './opensidian.js';
@@ -22,6 +23,7 @@ export function opensidian() {
 			workspace.ydoc.clientID = ctx.yDocClientId;
 
 			const infrastructure = attachProjectInfrastructure(workspace.ydoc, {
+				baseURL: EPICENTER_API_URL,
 				projectDir: ctx.projectDir,
 				ownerId: ctx.ownerId,
 				deviceId: ctx.deviceId,

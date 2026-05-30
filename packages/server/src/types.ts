@@ -8,7 +8,7 @@
  */
 
 import type { AuthUser, UserId } from '@epicenter/auth';
-import type { OwnerId } from '@epicenter/constants/identity';
+import type { OwnerId } from '@epicenter/util';
 import type { ActionManifest } from '@epicenter/workspace';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { createAuth } from './auth/create-auth.js';

@@ -1,9 +1,9 @@
 ---
 name: auth
-description: 'Epicenter auth packages: `@epicenter/auth`, `@epicenter/auth-svelte`, OAuth sessions, identity state, auth-owned fetch/WebSocket, and workspace lifecycle binding. Use when editing Epicenter auth clients, session state, hosted sign-in, or auth/workspace integration.'
+description: 'Epicenter auth packages: `@epicenter/auth` and the Svelte wrapper at `@epicenter/svelte/auth`, OAuth sessions, identity state, auth-owned fetch/WebSocket, and workspace lifecycle binding. Use when editing Epicenter auth clients, session state, hosted sign-in, or auth/workspace integration.'
 metadata:
   author: epicenter
-  version: '5.0'
+  version: '5.1'
 ---
 
 # Epicenter Auth
@@ -78,13 +78,15 @@ Do not add new code using those factories, `BearerSession`, or
 `auth.bearerToken`. When touching old app code that still uses those names,
 migrate it to `createOAuthAppAuth` and auth-owned transports.
 
-Two packages own the public surface:
+The public surface lives in one package plus a Svelte subpath:
 
 - `@epicenter/auth`: framework-agnostic core. Owns OAuth session storage,
   identity loading, refresh, refresh-token revocation, authenticated fetch, and
   WebSocket opening.
-- `@epicenter/auth-svelte`: Svelte 5 wrapper. Mirrors `auth.state` through
-  `createSubscriber` so templates and `$derived` reads are reactive.
+- `@epicenter/svelte/auth`: Svelte 5 wrapper (in the `@epicenter/svelte`
+  package, which also owns `createSession`). Mirrors `auth.state` through
+  `createSubscriber` so templates and `$derived` reads are reactive. There is
+  no longer a separate `@epicenter/auth-svelte` package.
 
 The API server composes Better Auth like this:
 
@@ -99,9 +101,12 @@ Hono app
   -> protected resources
 ```
 
-`createAuth()` configures Better Auth with Drizzle, Google sign-in,
-email/password, `bearer`, `jwt`, `deviceAuthorization`, `oauthProvider`, and
-`customSession`. The OAuth provider owns `/auth/oauth2/authorize`,
+`createAuth()` configures Better Auth with Drizzle, Google sign-in (plus
+GitHub when its credentials are present), the `jwt` and `oauthProvider`
+plugins. Local email/password is disabled: enabling unverified local
+credentials reopens an account-linking takeover on better-auth 1.5.6 (no
+`requireLocalEmailVerified` gate). The OAuth provider owns
+`/auth/oauth2/authorize`,
 `/auth/oauth2/token`, and `/auth/oauth2/revoke`. Epicenter owns `/auth/me`,
 which verifies an OAuth access token and returns the local-first identity.
 
@@ -240,6 +245,45 @@ Browsers cannot attach `Authorization` headers to `new WebSocket()`, so auth
 adds the bearer token as a WebSocket subprotocol. The API's `singleCredential`
 middleware normalizes that subprotocol into `Authorization` and rejects
 requests that carry multiple credentials.
+
+## Stateless access tokens and revocation windows
+
+The OAuth provider issues JWT access tokens that the resource server verifies
+statelessly against JWKS (no per-request introspection). That is fast, but it
+means a token cannot be revoked before it expires: signing out revokes the
+refresh token, not the already-issued access token. Three mitigations follow
+from that one invariant and only make sense together. Treat them as a unit.
+
+```txt
+stateless JWT access token  ->  cannot revoke before exp
+  1. short access-token TTL          (accessTokenExpiresIn: 600 / 10 min)
+  2. bound WebSocket connection lifetime + force re-auth on reconnect
+  3. classify verify failures: 401 (bad token) vs 503 (JWKS unreachable)
+```
+
+1. Keep `accessTokenExpiresIn` short (10 minutes). The client refreshes
+   transparently (refresh tokens rotate; the runtime refreshes on a skew window
+   and on any 401), so the UX cost is ~nil and the post-revocation window stays
+   small.
+
+2. A route that authenticates only at the WebSocket upgrade MUST bound the
+   connection lifetime, or a socket opened with a valid token outlives the
+   token. The rooms Durable Object closes an over-age socket and the client
+   reconnects through a fresh authenticated upgrade. Crucially, a per-frame
+   check misses idle sockets (their only traffic is the auto-responded `ping`),
+   so the bound also needs an alarm-driven sweep over `getWebSockets()`.
+
+3. Close codes and statuses carry meaning the client acts on:
+
+   ```txt
+   WS close 4401  -> permanent auth failure; client gives up
+   WS close 4408/4503 -> transient; client reconnects with backoff
+   HTTP 401 (InvalidToken)  -> discard and refresh the token
+   HTTP 503 (ServerError)   -> retry; the token is fine, JWKS was unreachable
+   ```
+
+   Never flatten a JWKS-fetch failure into a 401, or a transient server fault
+   makes clients discard and refresh a good token and pause network auth.
 
 ## Workspace Binding
 

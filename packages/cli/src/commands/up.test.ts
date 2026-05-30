@@ -31,7 +31,7 @@ import {
 import { join } from 'node:path';
 import type { SyncAuthClient } from '@epicenter/auth';
 import { MachineAuthStorageError } from '@epicenter/auth/node';
-import { asOwnerId } from '@epicenter/util';
+import { asOwnerId } from '@epicenter/identity';
 import {
 	claimDaemonLease,
 	DEFAULT_PROJECT_CONFIG_SOURCE,

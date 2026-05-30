@@ -42,7 +42,7 @@ import { AuthUser } from '@epicenter/auth';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { AssetError } from '@epicenter/constants/asset-errors';
 import { ASSET_STORAGE_USAGE_TOTAL_HEADER } from '@epicenter/constants/asset-headers';
-import { asOwnerId, type OwnerId } from '@epicenter/util';
+import { asOwnerId, type OwnerId } from '@epicenter/identity';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { and, desc, eq, sql } from 'drizzle-orm';

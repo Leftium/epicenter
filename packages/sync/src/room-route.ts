@@ -1,4 +1,4 @@
-import type { OwnerId } from '@epicenter/util';
+import type { OwnerId } from '@epicenter/identity';
 
 const stripTrailing = (s: string) => s.replace(/\/+$/, '');
 

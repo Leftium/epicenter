@@ -31,8 +31,8 @@
 		"vite": "catalog:"
 	},
 	"dependencies": {
+		"@epicenter/identity": "workspace:*",
 		"arktype": "catalog:",
-		"@epicenter/util": "workspace:*",
 		"wellcrafted": "catalog:"
 	},
 	"scripts": {

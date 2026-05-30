@@ -20,7 +20,7 @@
  */
 
 import { ROOM_ROUTE } from '@epicenter/sync';
-import type { OwnerId } from '@epicenter/util';
+import type { OwnerId } from '@epicenter/identity';
 import { RequestGuardError } from '@epicenter/constants/request-guard-errors';
 import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Hono } from 'hono';

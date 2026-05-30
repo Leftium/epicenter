@@ -1,4 +1,4 @@
-import type { OwnerId } from '@epicenter/util';
+import type { OwnerId } from '@epicenter/identity';
 
 /**
  * Wire URL paths and Hono route patterns for the Epicenter API.

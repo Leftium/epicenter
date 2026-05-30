@@ -26,11 +26,12 @@
 	},
 	"scripts": {
 		"cli": "bun src/bin.ts",
-		"cli:local": "EPICENTER_API_URL=http://localhost:8787 bun src/bin.ts"
+		"cli:local": "EPICENTER_API_URL=http://localhost:8787 bun src/bin.ts",
+		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
 		"@epicenter/auth": "workspace:*",
-		"@epicenter/util": "workspace:*",
+		"@epicenter/identity": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@hono/standard-validator": "catalog:",
 		"arktype": "catalog:",

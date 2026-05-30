@@ -3,8 +3,9 @@ import { createBrowserOAuthLauncher } from '@epicenter/auth/oauth-launchers';
 import { createOAuthAppAuth } from '@epicenter/svelte/auth';
 import { EPICENTER_FUJI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
 import { APP_URLS } from '@epicenter/constants/vite';
+import type { PlatformAuth } from './types';
 
-export const auth = createOAuthAppAuth({
+export const auth: PlatformAuth = createOAuthAppAuth({
 	baseURL: APP_URLS.API,
 	clientId: EPICENTER_FUJI_OAUTH_CLIENT_ID,
 	persistedAuthStorage: createWebStoragePersistedAuthStorage({

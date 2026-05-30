@@ -1,10 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { appDataDir, join } from '@tauri-apps/api/path';
-
-export type MarkdownFile = {
-	filename: string;
-	content: string;
-};
+import type { MarkdownFile, Tauri } from './types';
 
 const markdown = {
 	async directory() {
@@ -22,10 +18,4 @@ const markdown = {
 	},
 };
 
-export const tauriOnly = {
-	markdown,
-};
-
-export type Tauri = typeof tauriOnly;
-
-export const tauri: Tauri | null = tauriOnly;
+export const tauri: Tauri | null = { markdown };

@@ -1,4 +1,4 @@
-import type { OwnerId } from '@epicenter/constants/identity';
+import type { OwnerId } from '@epicenter/util';
 import type { Keyring } from '@epicenter/encryption';
 import type { Result } from 'wellcrafted/result';
 import type { AuthError } from './auth-errors.js';

@@ -23,6 +23,7 @@
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/api": "workspace:*",
 		"@epicenter/ui": "workspace:*",
+		"@epicenter/util": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@lucide/svelte": "catalog:",
 		"@tanstack/svelte-query": "catalog:",

@@ -1,4 +1,4 @@
-import { asOwnerId } from '@epicenter/constants/identity';
+import { asOwnerId } from '@epicenter/util';
 import type { Keyring } from '@epicenter/encryption';
 import { describe, expect, test } from 'bun:test';
 import type { AuthFetch } from './auth-contract.js';

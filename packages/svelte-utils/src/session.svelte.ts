@@ -1,5 +1,5 @@
 import type { AuthState, SyncAuthClient } from '@epicenter/auth';
-import type { OwnerId } from '@epicenter/constants/identity';
+import type { OwnerId } from '@epicenter/util';
 
 type SignedInState = Extract<AuthState, { status: 'signed-in' }>;
 type Keyring = SignedInState['keyring'];
@@ -26,7 +26,7 @@ type Keyring = SignedInState['keyring'];
  * rotate (reauth-required to identity-bearing) without a rebuild.
  *
  * Deployment shape (personal vs team) is not on this payload; it is a property
- * of the server (see `OwnerId` in `@epicenter/constants/identity`).
+ * of the server (see `OwnerId` in `@epicenter/util`).
  */
 export type SignedIn = {
 	/**

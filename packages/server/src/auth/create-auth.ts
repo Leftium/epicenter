@@ -43,23 +43,20 @@ export function createAuth({
 		database: drizzleAdapter(db, { provider: 'pg', schema }),
 		baseURL,
 		secret: env.BETTER_AUTH_SECRET,
-		account: {
-			...BASE_AUTH_CONFIG.account,
-			// Better Auth's database strategy validates OAuth callbacks two ways:
-			// 1. A verification record in Postgres (random token, single-use, 10min TTL)
-			// 2. A signed state cookie set during the sign-in POST
-			//
-			// Layer 2 fails in our architecture. The sign-in POST is a cross-origin
-			// fetch from a browser app origin to the API origin, and modern browsers
-			// block third-party Set-Cookie from fetch responses, even with
-			// SameSite=None.
-			// Chrome Privacy Sandbox, Safari ITP, and Firefox ETP all enforce this.
-			// The cookie is never stored, so the callback can't read it back.
-			//
-			// Layer 1 (DB verification) is the primary security mechanism and is
-			// unaffected. skipStateCookieCheck disables only layer 2.
-			skipStateCookieCheck: true,
-		},
+		// `account` (accountLinking) comes from BASE_AUTH_CONFIG via the spread.
+		//
+		// The Better Auth state-cookie check stays ENABLED (its default). The
+		// Google sign-in leg validates the callback two ways: a single-use
+		// Postgres verification record AND a signed state cookie set during the
+		// sign-in POST. An earlier note disabled the cookie check on the theory
+		// that the sign-in POST was a cross-origin fetch whose third-party
+		// Set-Cookie browsers would drop. That is not how this deploys: the only
+		// caller of `/auth/sign-in/social` is the API-hosted sign-in page
+		// (auth-pages/scripts/sign-in.ts), which fetches a same-origin relative
+		// URL, so the state cookie is first-party, stored, and sent on the
+		// Google callback navigation. The cookie binds the callback to the
+		// initiating browser (the DB record alone does not), so keeping the check
+		// on restores that login-CSRF / session-fixation defense.
 		socialProviders: {
 			google: {
 				clientId: env.GOOGLE_CLIENT_ID,

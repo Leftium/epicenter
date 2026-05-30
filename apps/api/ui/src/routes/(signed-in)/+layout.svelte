@@ -46,8 +46,6 @@
 					{#if startSignIn.isPending}
 						<LoaderCircle class="size-4 animate-spin" />
 						Signing in…
-					{:else if auth.state.status === 'reauth-required'}
-						Reconnect
 					{:else}
 						Sign in with Epicenter
 					{/if}

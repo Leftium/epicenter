@@ -1,7 +1,7 @@
 import type { DateTimeString, IanaTimeZone } from '@epicenter/workspace';
 import { dump, load } from 'js-yaml';
-import type { Entry, EntryId, FujiWorkspace } from '../../fuji';
-import { asEntryId } from '../../fuji';
+import type { Entry, EntryId, FujiWorkspace } from './index';
+import { asEntryId } from './index';
 import { tauri } from '#platform/tauri';
 
 type FujiMarkdownHost = Pick<FujiWorkspace, 'tables'> & {

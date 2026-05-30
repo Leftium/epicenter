@@ -77,7 +77,7 @@ describe('createSameOriginCookieAuth', () => {
 		expect(new Headers(billing?.init?.headers).has('authorization')).toBe(false);
 	});
 
-	test('a 401 on a resource call moves a signed-in client to reauth-required', async () => {
+	test('a 401 on a resource call moves a signed-in client to signed-out', async () => {
 		const fetch: AuthFetch = async (input) =>
 			String(input).endsWith('/api/session')
 				? json(sessionBody())
@@ -87,10 +87,7 @@ describe('createSameOriginCookieAuth', () => {
 		expect(auth.state.status).toBe('signed-in');
 
 		await auth.fetch('/api/billing/overview');
-		expect(auth.state.status).toBe('reauth-required');
-		if (auth.state.status === 'reauth-required') {
-			expect(auth.state.ownerId).toBe(asOwnerId('owner-1'));
-		}
+		expect(auth.state.status).toBe('signed-out');
 	});
 
 	test('startSignIn navigates to the hosted sign-in with the relative callbackURL', async () => {

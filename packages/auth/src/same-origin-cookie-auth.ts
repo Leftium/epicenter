@@ -175,12 +175,13 @@ export function createSameOriginCookieAuth({
 				...init,
 				credentials: 'include',
 			});
+			// A 401 means the cookie is gone or expired: go straight to signed-out.
+			// This client never emits `reauth-required`; that state exists to keep a
+			// workspace keyring mounted while an OAuth grant re-authenticates, and a
+			// cookie surface has no keyring to preserve and no separate "reconnect"
+			// path (re-auth is the same hosted sign-in as a fresh login).
 			if (response.status === 401 && state.status === 'signed-in') {
-				setState({
-					status: 'reauth-required',
-					ownerId: state.ownerId,
-					keyring: state.keyring,
-				});
+				setState({ status: 'signed-out' });
 			}
 			return response;
 		},

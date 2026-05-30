@@ -26,8 +26,8 @@ import {
 	roomWsUrl,
 	wipeLocalStorage,
 } from '@epicenter/workspace';
-import { createFuji, type EntryId } from './fuji';
-import { createFujiMarkdownActions } from './src/lib/markdown-materializer';
+import { createFuji, type EntryId } from './index';
+import { createFujiMarkdownActions } from './markdown';
 
 export function openFujiBrowser({
 	signedIn,

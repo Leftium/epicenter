@@ -5,8 +5,8 @@
 	"version": "0.0.1",
 	"type": "module",
 	"exports": {
-		".": "./fuji.ts",
-		"./project": "./project.ts"
+		".": "./src/lib/workspace/index.ts",
+		"./project": "./src/lib/workspace/project.ts"
 	},
 	"imports": {
 		"#platform/auth": {

@@ -101,7 +101,7 @@
 					<Alert.Root variant="warning" class="text-xs">
 						<AlertTriangle class="size-4" />
 						<Alert.Title class="text-xs font-medium"
-							>macOS Option Key Note</Alert.Title
+							>Apple Keyboard Note</Alert.Title
 						>
 						<Alert.Description class="text-xs">
 							Some Option+key combinations (E, I, N, U, `) may not record

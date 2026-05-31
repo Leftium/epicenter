@@ -134,11 +134,11 @@
 			{#if os.isApple}
 				<Alert.Root variant="warning">
 					<AlertTriangle class="size-4" />
-					<Alert.Title>macOS Option Key Limitations</Alert.Title>
+					<Alert.Title>Apple Keyboard Option Key Limitations</Alert.Title>
 					<Alert.Description class="space-y-2">
 						<p>
-							On macOS, certain Option (Alt) key combinations act as "dead keys"
-							that don't register properly when recording:
+							On Apple keyboards, certain Option (Alt) key combinations act as
+							"dead keys" that don't register properly when recording:
 						</p>
 						<div class="flex flex-wrap gap-1 my-2">
 							{#each OPTION_DEAD_KEYS as key}

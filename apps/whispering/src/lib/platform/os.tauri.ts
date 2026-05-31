@@ -1,13 +1,11 @@
 import { type as osType } from '@tauri-apps/plugin-os';
 import type { Os } from './types';
 
-// Tauri reads the real OS synchronously and it never changes during a session,
-// so identity is resolved once at module load. whispering's desktop targets are
-// macOS, Windows, and Linux; 'ios' is matched anyway so both seam impls compute
-// `isApple` identically.
+// Tauri reads the real OS synchronously and it never changes during a session.
+// Whispering's Tauri build is desktop-only, so Apple means macOS here.
 const current = osType();
 
 export const os: Os = {
-	isApple: current === 'macos' || current === 'ios',
+	isApple: current === 'macos',
 	isLinux: current === 'linux',
 };

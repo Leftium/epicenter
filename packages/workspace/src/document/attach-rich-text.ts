@@ -39,9 +39,7 @@ export function attachRichText(ydoc: Y.Doc, key = 'content') {
 		/** Replace the fragment with a single paragraph containing `text`. */
 		write(text: string) {
 			ydoc.transact(() => {
-				while (fragment.length > 0) {
-					fragment.delete(0, 1);
-				}
+				fragment.delete(0, fragment.length);
 				const paragraph = new Y.XmlElement('paragraph');
 				paragraph.insert(0, [new Y.XmlText(text)]);
 				fragment.insert(0, [paragraph]);
@@ -49,8 +47,6 @@ export function attachRichText(ydoc: Y.Doc, key = 'content') {
 		},
 	};
 }
-
-export type RichTextAttachment = ReturnType<typeof attachRichText>;
 
 /**
  * Block-level element names that produce line breaks in plaintext extraction.

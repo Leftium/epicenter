@@ -100,12 +100,6 @@ export type PushEvent =
 			error: MaterializerPushError | TableParseError;
 	  };
 
-type MaterializerWriteEvent = {
-	kind: 'wrote' | 'unlinked';
-	path: string;
-	tableName: string;
-};
-
 /** Aggregated result of one `push` invocation. */
 export type PushResult = {
 	imported: number;
@@ -136,6 +130,18 @@ export type MarkdownTableConfig<TRow extends BaseRow> = {
 	toMarkdown?: (row: TRow) => MaybePromise<MarkdownShape>;
 	/** Parse frontmatter + body back into a row. Default: `parsed.frontmatter as TRow`. */
 	fromMarkdown?: (parsed: MarkdownShape) => MaybePromise<TRow>;
+	/**
+	 * Opt-in skip-when-unchanged gate. Return a value that changes iff the row's
+	 * materialized output would change (metadata OR body). When set, the
+	 * materializer skips `toMarkdown` (and the write) for a row whose key equals
+	 * the one last written; on cold start the key is seeded from the existing
+	 * file's frontmatter, so an unchanged row is not re-read.
+	 *
+	 * MUST change on body edits, not just metadata (e.g. an `updatedAt` the
+	 * editor bumps on every content change). A stable key over a changing body
+	 * leaves a stale `.md` on disk.
+	 */
+	dirtyKey?: (row: TRow) => string | number;
 };
 
 /**
@@ -322,8 +328,8 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 	const gitAutosave = git
 		? createGitAutosave({ dir: resolveDir, config: git, log })
 		: undefined;
-	const emitWrite = (event: MaterializerWriteEvent): void => {
-		gitAutosave?.enqueue(event.path);
+	const markDirty = (path: string): void => {
+		gitAutosave?.enqueue(path);
 	};
 
 	// ── Per-table materialization ───────────────────────────────
@@ -334,18 +340,25 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 	): Promise<() => void> {
 		const directory = join(baseDir, config.dir ?? table.name);
 		const filenames = new Map<string, string>();
+		const dirtyKeys = new Map<string, string | number>();
 
 		await mkdir(directory, { recursive: true });
 
+		// Cold-start seed: with a dirtyKey configured, read the files already on
+		// disk so an unchanged row is not re-materialized (re-read) on restart.
+		if (config.dirtyKey) {
+			await seedDirtyKeys(directory, config, filenames, dirtyKeys);
+		}
+
 		for (const row of table.getAllValid()) {
+			if (config.dirtyKey && dirtyKeys.get(row.id) === config.dirtyKey(row)) {
+				continue;
+			}
 			const { filename, content } = await rowToMarkdownFile(row, config);
 			await writeMarkdownFile(directory, filename, content);
 			filenames.set(row.id, filename);
-			emitWrite({
-				kind: 'wrote',
-				path: join(directory, filename),
-				tableName: table.name,
-			});
+			if (config.dirtyKey) dirtyKeys.set(row.id, config.dirtyKey(row));
+			markDirty(join(directory, filename));
 		}
 
 		// Sequential writes inside the observer avoid rename races; a parallel
@@ -361,14 +374,16 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 						if (previous) {
 							const removed = await tryUnlink(directory, previous);
 							filenames.delete(id);
-							if (removed) {
-								emitWrite({
-									kind: 'unlinked',
-									path: join(directory, previous),
-									tableName: table.name,
-								});
-							}
+							dirtyKeys.delete(id);
+							if (removed) markDirty(join(directory, previous));
 						}
+						continue;
+					}
+
+					if (
+						config.dirtyKey &&
+						dirtyKeys.get(id) === config.dirtyKey(row)
+					) {
 						continue;
 					}
 
@@ -376,21 +391,12 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 					const previous = filenames.get(id);
 					if (previous && previous !== filename) {
 						const removed = await tryUnlink(directory, previous);
-						if (removed) {
-							emitWrite({
-								kind: 'unlinked',
-								path: join(directory, previous),
-								tableName: table.name,
-							});
-						}
+						if (removed) markDirty(join(directory, previous));
 					}
 					await writeMarkdownFile(directory, filename, content);
 					filenames.set(id, filename);
-					emitWrite({
-						kind: 'wrote',
-						path: join(directory, filename),
-						tableName: table.name,
-					});
+					if (config.dirtyKey) dirtyKeys.set(id, config.dirtyKey(row));
+					markDirty(join(directory, filename));
 				}
 			})().catch((cause) => {
 				log.warn(
@@ -401,6 +407,42 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 				);
 			});
 		});
+	}
+
+	/**
+	 * Seed `dirtyKeys`/`filenames` from the files already on disk so a restart
+	 * skips re-reading rows whose dirty key is unchanged. Best-effort: a file
+	 * that does not parse or carries no id is left unseeded and is simply
+	 * re-materialized.
+	 */
+	async function seedDirtyKeys(
+		directory: string,
+		config: MarkdownTableConfig<BaseRow>,
+		filenames: Map<string, string>,
+		dirtyKeys: Map<string, string | number>,
+	): Promise<void> {
+		const dirtyKey = config.dirtyKey;
+		if (!dirtyKey) return;
+		let files: string[];
+		try {
+			files = await readdir(directory);
+		} catch {
+			return; // no directory yet → nothing to seed
+		}
+		const fromMarkdown = config.fromMarkdown ?? defaultFromMarkdown;
+		for (const filename of files) {
+			if (!filename.endsWith('.md')) continue;
+			try {
+				const content = await readFile(join(directory, filename), 'utf-8');
+				const parsed = parseMarkdownFile(content);
+				if (!parsed) continue;
+				const row = await fromMarkdown(parsed);
+				dirtyKeys.set(row.id, dirtyKey(row));
+				filenames.set(row.id, filename);
+			} catch {
+				// unreadable / unparseable → leave unseeded
+			}
+		}
 	}
 
 	// ── Disposal ────────────────────────────────────────────────
@@ -564,11 +606,7 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 					await unlink(path).then(
 						() => {
 							deleted++;
-							emitWrite({
-								kind: 'unlinked',
-								path,
-								tableName: entry.table.name,
-							});
+							markDirty(path);
 						},
 						() => undefined,
 					);
@@ -584,11 +622,7 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 					entry.config,
 				);
 				await writeMarkdownFile(directory, filename, content);
-				emitWrite({
-					kind: 'wrote',
-					path: join(directory, filename),
-					tableName: entry.table.name,
-				});
+				markDirty(join(directory, filename));
 				written++;
 			}
 		}
@@ -623,11 +657,7 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 					entry.config,
 				);
 				await writeMarkdownFile(directory, filename, content);
-				emitWrite({
-					kind: 'wrote',
-					path: join(directory, filename),
-					tableName: entry.table.name,
-				});
+				markDirty(join(directory, filename));
 				written++;
 			}
 		}

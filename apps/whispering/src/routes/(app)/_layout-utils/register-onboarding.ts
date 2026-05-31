@@ -28,9 +28,9 @@ export function registerOnboarding() {
 	if (!isTranscriptionServiceConfigured(selectedService)) {
 		const missingConfig = (
 			{
-				cloud: `${selectedService.name} API key`,
-				'self-hosted': `${selectedService.name} server URL`,
-				local: `${selectedService.name} model file`,
+				cloud: `${selectedService.label} API key`,
+				'self-hosted': `${selectedService.label} server URL`,
+				local: `${selectedService.label} model file`,
 			} as const
 		)[selectedService.location];
 

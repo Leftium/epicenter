@@ -7,16 +7,25 @@ import {
 	type SupportedLanguage,
 } from '$lib/constants/languages';
 import { WHISPER_MODELS } from '$lib/constants/local-models';
-import type { TranscriptionServiceId } from '$lib/constants/transcription';
 import { analytics } from '$lib/operations/analytics';
 import { report } from '$lib/report';
 import { services } from '$lib/services';
+import { DeepgramTranscriptionServiceLive } from '$lib/services/transcription/cloud/deepgram';
+import { ElevenLabsTranscriptionServiceLive } from '$lib/services/transcription/cloud/elevenlabs';
+import { GroqTranscriptionServiceLive } from '$lib/services/transcription/cloud/groq';
+import { MistralTranscriptionServiceLive } from '$lib/services/transcription/cloud/mistral';
+import { OpenaiTranscriptionServiceLive } from '$lib/services/transcription/cloud/openai';
 import {
 	LocalPreflightError,
 	requireExistingModelPath,
 } from '$lib/services/transcription/local-preflight';
 import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
-import { TRANSCRIPTION_SERVICES } from '$lib/services/transcription/registry';
+import {
+	type CloudProviderId,
+	PROVIDERS,
+	type TranscriptionServiceId,
+} from '$lib/services/transcription/providers';
+import { SpeachesTranscriptionServiceLive } from '$lib/services/transcription/self-hosted/speaches';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { commands } from '$lib/tauri/commands';
@@ -33,16 +42,37 @@ const TranscriptionOperationError = defineErrors({
 	}),
 });
 
+type CloudTranscribe = (
+	audio: Blob,
+	options: {
+		prompt: string;
+		outputLanguage: string;
+		apiKey: string;
+		modelName: string;
+		baseURL?: string;
+	},
+) => Promise<Result<string, TranscriptionError>>;
+
 /**
- * Services that upload audio bytes to a remote endpoint. Local engines read
- * the recording artifact from disk via the Rust `transcribe_recording`
- * command.
+ * The cloud (upload) transcribers, keyed by provider id. This is the dispatch
+ * table that replaces the old per-provider switch: each impl stays bespoke
+ * (different SDKs, different errors), the table just maps id -> call. Importing
+ * the impls here keeps their SDKs out of `providers.ts`, so the workspace
+ * schema can import the provider IDs without bundling them.
+ *
+ * `satisfies Record<CloudProviderId, ...>` ties the table to PROVIDERS: a cloud
+ * provider added there without a transcriber here is a compile error.
  */
-function isUploadTranscriptionService(
-	serviceId: TranscriptionServiceId,
-): boolean {
-	const entry = TRANSCRIPTION_SERVICES.find((s) => s.id === serviceId);
-	return entry?.location === 'cloud' || entry?.location === 'self-hosted';
+const CLOUD_TRANSCRIBERS = {
+	OpenAI: OpenaiTranscriptionServiceLive.transcribe,
+	Groq: GroqTranscriptionServiceLive.transcribe,
+	ElevenLabs: ElevenLabsTranscriptionServiceLive.transcribe,
+	Deepgram: DeepgramTranscriptionServiceLive.transcribe,
+	Mistral: MistralTranscriptionServiceLive.transcribe,
+} satisfies Record<CloudProviderId, CloudTranscribe>;
+
+function isCloudProviderId(id: TranscriptionServiceId): id is CloudProviderId {
+	return id in CLOUD_TRANSCRIBERS;
 }
 
 function getOutputLanguage(): SupportedLanguage {
@@ -92,8 +122,8 @@ async function loadForCloudUpload(
  *   recordings blob store and pass the id here.
  *
  * Local transcription always goes through `transcribe_recording(id)`.
- * Cloud transcription uploads compressed bytes derived from the saved file
- * when possible, falling back to the raw blob.
+ * Cloud and self-hosted transcription upload compressed bytes derived from the
+ * saved file when possible, falling back to the raw blob.
  */
 export async function transcribeAudio(
 	recordingId: string,
@@ -106,9 +136,10 @@ export async function transcribeAudio(
 		provider: selectedService,
 	});
 
-	const transcriptionResult = isUploadTranscriptionService(selectedService)
-		? await dispatchCloudTranscription(recordingId, selectedService)
-		: await dispatchLocalTranscription(recordingId, selectedService);
+	const transcriptionResult =
+		PROVIDERS[selectedService].location === 'local'
+			? await dispatchLocalTranscription(recordingId, selectedService)
+			: await dispatchUploadTranscription(recordingId, selectedService);
 
 	const duration = Date.now() - startTime;
 	if (transcriptionResult.error) {
@@ -127,50 +158,6 @@ export async function transcribeAudio(
 	}
 
 	return transcriptionResult;
-}
-
-/**
- * Per-engine FE preflight metadata. Each local engine validates the same
- * way (path exists + is the expected `kind`); whispercpp adds a truncated-
- * download check because corrupted .bin files load successfully but produce
- * garbage transcripts. Putting it in a table makes the per-engine data
- * legible in one place; the dispatch loop stays linear.
- *
- * Moonshine directory-name validation lives in Rust
- * (`parse_moonshine_variant`) since the wire format is the loader's concern.
- */
-const LOCAL_ENGINE_PREFLIGHT = {
-	whispercpp: {
-		kind: 'file',
-		displayName: 'Whisper C++',
-		modelPathKey: 'transcription.whispercpp.modelPath',
-	},
-	parakeet: {
-		kind: 'directory',
-		displayName: 'Parakeet',
-		modelPathKey: 'transcription.parakeet.modelPath',
-	},
-	moonshine: {
-		kind: 'directory',
-		displayName: 'Moonshine',
-		modelPathKey: 'transcription.moonshine.modelPath',
-	},
-} as const satisfies Record<
-	'whispercpp' | 'parakeet' | 'moonshine',
-	{
-		kind: 'file' | 'directory';
-		displayName: string;
-		modelPathKey:
-			| 'transcription.whispercpp.modelPath'
-			| 'transcription.parakeet.modelPath'
-			| 'transcription.moonshine.modelPath';
-	}
->;
-
-type LocalEngineId = keyof typeof LOCAL_ENGINE_PREFLIGHT;
-
-function isLocalEngineId(id: TranscriptionServiceId): id is LocalEngineId {
-	return id in LOCAL_ENGINE_PREFLIGHT;
 }
 
 /**
@@ -210,21 +197,20 @@ async function dispatchLocalTranscription(
 		return TranscriptionOperationError.LocalTranscriptionUnavailableOnWeb();
 	}
 
-	if (!isLocalEngineId(selectedService)) {
+	const provider = PROVIDERS[selectedService];
+	if (provider.location !== 'local') {
 		return TranscriptionOperationError.NoTranscriptionServiceSelected();
 	}
 
-	// FE preflight: Rust would also fail via `ModelLoadError`, but the FE
-	// owns better UX strings (per-engine display name, file-vs-directory
-	// guidance) and can short-circuit before the IPC round-trip.
-	const { kind, displayName, modelPathKey } =
-		LOCAL_ENGINE_PREFLIGHT[selectedService];
-	const modelPath = deviceConfig.get(modelPathKey);
-
+	// FE preflight: Rust would also fail via `ModelLoadError`, but the FE owns
+	// better UX strings (per-engine display name, file-vs-directory guidance)
+	// and can short-circuit before the IPC round-trip. The path, kind, and name
+	// come straight from the provider's registry entry.
+	const modelPath = deviceConfig.get(provider.modelPathKey);
 	const validation = await requireExistingModelPath(
 		modelPath,
-		kind,
-		displayName,
+		provider.preflightKind,
+		provider.label,
 	);
 	if (validation.error) return validation;
 
@@ -239,7 +225,7 @@ async function dispatchLocalTranscription(
 	return commands.transcribeRecording(recordingId);
 }
 
-async function dispatchCloudTranscription(
+async function dispatchUploadTranscription(
 	recordingId: string,
 	selectedService: TranscriptionServiceId,
 ): Promise<Result<string, TranscriptionError>> {
@@ -249,59 +235,29 @@ async function dispatchCloudTranscription(
 
 	const outputLanguage = getOutputLanguage();
 	const prompt = settings.get('transcription.prompt');
+	const provider = PROVIDERS[selectedService];
 
-	switch (selectedService) {
-		case 'OpenAI': {
-			return services.transcriptions.openai.transcribe(audio, {
-				outputLanguage,
-				prompt,
-				apiKey: deviceConfig.get('apiKeys.openai'),
-				modelName: settings.get('transcription.openai.model'),
-				baseURL: deviceConfig.get('apiEndpoints.openai') || undefined,
-			});
-		}
-		case 'Groq': {
-			return services.transcriptions.groq.transcribe(audio, {
-				outputLanguage,
-				prompt,
-				apiKey: deviceConfig.get('apiKeys.groq'),
-				modelName: settings.get('transcription.groq.model'),
-				baseURL: deviceConfig.get('apiEndpoints.groq') || undefined,
-			});
-		}
-		case 'speaches': {
-			return services.transcriptions.speaches.transcribe(audio, {
-				outputLanguage,
-				prompt,
-				modelId: deviceConfig.get('transcription.speaches.modelId'),
-				baseUrl: deviceConfig.get('transcription.speaches.baseUrl'),
-			});
-		}
-		case 'ElevenLabs': {
-			return services.transcriptions.elevenlabs.transcribe(audio, {
-				outputLanguage,
-				prompt,
-				apiKey: deviceConfig.get('apiKeys.elevenlabs'),
-				modelName: settings.get('transcription.elevenlabs.model'),
-			});
-		}
-		case 'Deepgram': {
-			return services.transcriptions.deepgram.transcribe(audio, {
-				outputLanguage,
-				prompt,
-				apiKey: deviceConfig.get('apiKeys.deepgram'),
-				modelName: settings.get('transcription.deepgram.model'),
-			});
-		}
-		case 'Mistral': {
-			return services.transcriptions.mistral.transcribe(audio, {
-				outputLanguage,
-				prompt,
-				apiKey: deviceConfig.get('apiKeys.mistral'),
-				modelName: settings.get('transcription.mistral.model'),
-			});
-		}
-		default:
-			return TranscriptionOperationError.NoTranscriptionServiceSelected();
+	if (provider.location === 'self-hosted') {
+		return SpeachesTranscriptionServiceLive.transcribe(audio, {
+			outputLanguage,
+			prompt,
+			modelId: deviceConfig.get(provider.modelIdKey),
+			baseUrl: deviceConfig.get(provider.serverUrlKey),
+		});
 	}
+
+	if (provider.location === 'cloud' && isCloudProviderId(selectedService)) {
+		return CLOUD_TRANSCRIBERS[selectedService](audio, {
+			outputLanguage,
+			prompt,
+			apiKey: deviceConfig.get(provider.apiKeyKey),
+			modelName: settings.get(provider.modelKey),
+			baseURL:
+				'endpointKey' in provider && provider.endpointKey
+					? deviceConfig.get(provider.endpointKey) || undefined
+					: undefined,
+		});
+	}
+
+	return TranscriptionOperationError.NoTranscriptionServiceSelected();
 }

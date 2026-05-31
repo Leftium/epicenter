@@ -4,7 +4,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
-import type { TRANSCRIPTION_SERVICE_IDS } from '$lib/constants/transcription';
+import type { TRANSCRIPTION_SERVICE_IDS } from '$lib/services/transcription/providers';
 
 export const AnalyticsError = defineErrors({
 	LogEventFailed: ({ cause }: { cause: unknown }) => ({

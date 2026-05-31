@@ -5,7 +5,6 @@ import { PlaySoundServiceLive } from '#platform/sound';
 import { TextServiceLive } from '#platform/text';
 import * as completions from './completion';
 import { LocalShortcutManagerLive } from './local-shortcut-manager';
-import * as transcriptions from './transcription';
 
 /**
  * Cross-platform services.
@@ -19,5 +18,4 @@ export const services = {
 	download: DownloadServiceLive,
 	localShortcutManager: LocalShortcutManagerLive,
 	sound: PlaySoundServiceLive,
-	transcriptions,
 } as const;

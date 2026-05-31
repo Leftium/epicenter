@@ -12,9 +12,9 @@
 	import { SvelteSet } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
 	import {
-		TRANSCRIPTION_SERVICES,
-		type TranscriptionService,
-	} from '$lib/services/transcription/registry';
+		TRANSCRIPTION_PROVIDERS,
+		type TranscriptionProviderEntry,
+	} from '$lib/services/transcription/provider-ui';
 	import {
 		getSelectedTranscriptionService,
 		isTranscriptionServiceConfigured,
@@ -31,7 +31,7 @@
 		return settings.get('transcription.service');
 	}
 
-	function getSelectedModelNameOrUrl(service: TranscriptionService) {
+	function getSelectedModelNameOrUrl(service: TranscriptionProviderEntry) {
 		switch (service.location) {
 			case 'cloud': {
 				switch (service.id) {
@@ -67,7 +67,7 @@
 	}
 
 	function setSelectedCloudModel(
-		service: TranscriptionService,
+		service: TranscriptionProviderEntry,
 		modelName: string,
 	) {
 		switch (service.id) {
@@ -90,18 +90,18 @@
 	}
 
 	const cloudServices = $derived(
-		TRANSCRIPTION_SERVICES.filter((service) => service.location === 'cloud'),
+		TRANSCRIPTION_PROVIDERS.filter((service) => service.location === 'cloud'),
 	);
 
 	const selfHostedServices = $derived(
-		TRANSCRIPTION_SERVICES.filter(
+		TRANSCRIPTION_PROVIDERS.filter(
 			(service) => service.location === 'self-hosted',
 		),
 	);
 
 	const localServices = $derived(
 		tauri
-			? TRANSCRIPTION_SERVICES.filter((service) => service.location === 'local')
+			? TRANSCRIPTION_PROVIDERS.filter((service) => service.location === 'local')
 			: [],
 	);
 
@@ -113,7 +113,7 @@
 		selectedService ? [selectedService.id] : [],
 	);
 
-	function toggleServiceExpanded(serviceId: TranscriptionService['id']) {
+	function toggleServiceExpanded(serviceId: TranscriptionProviderEntry['id']) {
 		if (expandedServices.has(serviceId)) {
 			expandedServices.delete(serviceId);
 		} else {
@@ -124,7 +124,7 @@
 	}
 </script>
 
-{#snippet renderServiceIcon(service: TranscriptionService)}
+{#snippet renderServiceIcon(service: TranscriptionProviderEntry)}
 	<div
 		class={cn(
 			'size-4 shrink-0 flex items-center justify-center [&>svg]:size-full',
@@ -143,7 +143,7 @@
 				{...props}
 				class={cn('relative', className)}
 				tooltip={selectedService
-					? `${selectedService.name}${
+					? `${selectedService.label}${
 							selectedService.location === 'cloud'
 								? ` - ${getSelectedModelNameOrUrl(selectedService)}`
 								: ''
@@ -192,7 +192,7 @@
 							{@const modelPath = getSelectedModelNameOrUrl(service)}
 
 							<Command.Item
-								value={`${service.id} ${service.name} whisper cpp ggml local offline`}
+								value={`${service.id} ${service.label} whisper cpp ggml local offline`}
 								onSelect={() => {
 									settings.set('transcription.service', service.id);
 									combobox.closeAndFocusTrigger();
@@ -206,7 +206,7 @@
 								/>
 								{@render renderServiceIcon(service)}
 								<div class="flex-1 min-w-0">
-									<div class="font-medium text-sm">{service.name}</div>
+									<div class="font-medium text-sm">{service.label}</div>
 									{#if modelPath}
 										<div class="text-xs text-muted-foreground truncate">
 											{modelPath.split(sep()).pop() || modelPath}
@@ -234,7 +234,7 @@
 
 						<!-- Service Header (clickable to expand) -->
 						<Command.Item
-							value={`${service.id} ${service.name} ${service.models.map((m) => m.name).join(' ')}`}
+							value={`${service.id} ${service.label} ${service.models.map((m) => m.name).join(' ')}`}
 							onSelect={() => toggleServiceExpanded(service.id)}
 							class="flex items-center gap-2 px-2 py-2 cursor-pointer hover:bg-accent/50"
 						>
@@ -246,7 +246,7 @@
 							{@render renderServiceIcon(service)}
 							<div class="flex-1 min-w-0">
 								<div class="flex items-center gap-2">
-									<span class="font-medium text-sm">{service.name}</span>
+									<span class="font-medium text-sm">{service.label}</span>
 									{#if !isConfigured}
 										<span class="text-xs text-warning"> API key required </span>
 									{/if}
@@ -270,7 +270,7 @@
 								{@const isModelSelected =
 									isSelected && currentSelectedModelName === model.name}
 								<Command.Item
-									value={`${service.id} ${service.name} ${model.name}`}
+									value={`${service.id} ${service.label} ${model.name}`}
 									onSelect={() => {
 										settings.set(
 											'transcription.service',
@@ -309,7 +309,7 @@
 						{@const serverUrl = getSelectedModelNameOrUrl(service)}
 
 						<Command.Item
-							value={`${service.id} ${service.name} self-hosted server`}
+							value={`${service.id} ${service.label} self-hosted server`}
 							onSelect={() => {
 								settings.set('transcription.service', service.id);
 								combobox.closeAndFocusTrigger();
@@ -323,7 +323,7 @@
 							/>
 							{@render renderServiceIcon(service)}
 							<div class="flex-1 min-w-0">
-								<div class="font-medium text-sm">{service.name}</div>
+								<div class="font-medium text-sm">{service.label}</div>
 								{#if serverUrl}
 									<div class="text-xs text-muted-foreground truncate">
 										{serverUrl}

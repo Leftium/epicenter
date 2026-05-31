@@ -24,7 +24,7 @@
 		PARAKEET_MODELS,
 		WHISPER_MODELS,
 	} from '$lib/constants/local-models';
-	import { TRANSCRIPTION } from '$lib/constants/transcription';
+	import { PROVIDERS } from '$lib/services/transcription/providers';
 	import {
 		LOCAL_MODEL_UNLOAD_POLICY_OPTIONS,
 		type LocalModelUnloadPolicy,
@@ -39,35 +39,35 @@
 	 * Used to conditionally disable UI fields that aren't supported by the service.
 	 */
 	const currentServiceCapabilities = $derived(
-		TRANSCRIPTION[settings.get('transcription.service')].capabilities,
+		PROVIDERS[settings.get('transcription.service')].capabilities,
 	);
 
-	// Model options arrays — derived from the single TRANSCRIPTION record
-	const openaiModelItems = TRANSCRIPTION.OpenAI.models.map((model) => ({
+	// Model options arrays derived from the single PROVIDERS record
+	const openaiModelItems = PROVIDERS.OpenAI.models.map((model) => ({
 		value: model.name,
 		label: model.name,
 		...model,
 	}));
 
-	const groqModelItems = TRANSCRIPTION.Groq.models.map((model) => ({
+	const groqModelItems = PROVIDERS.Groq.models.map((model) => ({
 		value: model.name,
 		label: model.name,
 		...model,
 	}));
 
-	const deepgramModelItems = TRANSCRIPTION.Deepgram.models.map((model) => ({
+	const deepgramModelItems = PROVIDERS.Deepgram.models.map((model) => ({
 		value: model.name,
 		label: model.name,
 		...model,
 	}));
 
-	const mistralModelItems = TRANSCRIPTION.Mistral.models.map((model) => ({
+	const mistralModelItems = PROVIDERS.Mistral.models.map((model) => ({
 		value: model.name,
 		label: model.name,
 		...model,
 	}));
 
-	const elevenlabsModelItems = TRANSCRIPTION.ElevenLabs.models.map((model) => ({
+	const elevenlabsModelItems = PROVIDERS.ElevenLabs.models.map((model) => ({
 		value: model.name,
 		label: model.name,
 		...model,
@@ -111,7 +111,7 @@
 	);
 
 	const isLocalEngine = $derived(
-		TRANSCRIPTION[settings.get('transcription.service')].location === 'local',
+		PROVIDERS[settings.get('transcription.service')].location === 'local',
 	);
 
 	const unloadPolicyLabel = $derived(

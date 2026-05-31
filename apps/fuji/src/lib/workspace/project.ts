@@ -124,9 +124,12 @@ export function fuji(opts: FujiMountOptions = {}) {
 
 			const markdown = attachMarkdownMaterializer(workspace, {
 				dir: mdDir,
+				log: createLogger(`${mount}-markdown`),
 				perTable: {
 					entries: {
 						filename: slugFilename('title'),
+						// `{ ...entry }` is the materializer's default frontmatter; this
+						// callback exists only to attach the body read.
 						toMarkdown: async (entry) => ({
 							frontmatter: { ...entry },
 							body: await readEntryBody(entry),

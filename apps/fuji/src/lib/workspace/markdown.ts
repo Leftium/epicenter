@@ -1,3 +1,15 @@
+/**
+ * Fuji Tauri markdown push/pull (WIP, not yet wired to UI).
+ *
+ * Manual export/import of entries as `<id>.md` files with YAML frontmatter for
+ * the Tauri desktop app. Uses `js-yaml` (not bun's YAML) because this runs in
+ * the Tauri webview. Distinct from the daemon's live markdown materializer.
+ *
+ * The frontmatter serialization here is a hand-rolled parallel of the canonical
+ * `@epicenter/workspace/markdown` serializer; when this is wired up, unify them
+ * via a browser-safe YAML codec instead of maintaining both.
+ */
+
 import type { DateTimeString, IanaTimeZone } from '@epicenter/workspace';
 import { dump, load } from 'js-yaml';
 import type { Entry, EntryId, FujiWorkspace } from './index';
@@ -120,7 +132,6 @@ function parseEntryMarkdown({
 		entry: {
 			...metadata,
 			id: asEntryId(metadata.id),
-			dateZone: metadata.dateZone as IanaTimeZone,
 		},
 		body: content.slice(match[0].length),
 	};

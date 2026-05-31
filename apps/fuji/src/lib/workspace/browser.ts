@@ -43,9 +43,16 @@ export function openFujiBrowser({
 }) {
 	const workspace = createFuji({ keyring: signedIn.keyring });
 
+	/**
+	 * Attach the browser's local-first providers to a doc: encrypted IndexedDB
+	 * storage plus a cloud-sync session that waits for local replay before it
+	 * connects (so it never re-uploads a doc before local state has loaded).
+	 * Closes over the signed-in identity and device; the caller passes only the
+	 * per-doc action registry (`{}` for content docs). Returns `{ idb, collaboration }`.
+	 */
 	const wire = <TActions extends ActionRegistry>(
 		ydoc: Y.Doc,
-		actions: TActions,
+		{ actions }: { actions: TActions },
 	) => {
 		const idb = attachLocalStorage(ydoc, {
 			server: signedIn.server,
@@ -67,11 +74,15 @@ export function openFujiBrowser({
 		return { idb, collaboration };
 	};
 
-	const { idb, collaboration } = wire(workspace.ydoc, workspace.actions);
+	const { idb, collaboration } = wire(workspace.ydoc, {
+		actions: workspace.actions,
+	});
 
 	const entryBodies = createDisposableCache((id: EntryId) => {
 		const ydoc = new Y.Doc({ guid: entryContentDocGuid(id), gc: true });
-		const { idb: bodyIdb } = wire(ydoc, {});
+		// Sync is opened for its side effect; the collaboration handle is
+		// orphaned on purpose, teardown cascades from `ydoc.destroy()` below.
+		const { idb: bodyIdb } = wire(ydoc, { actions: {} });
 		const body = attachRichText(ydoc);
 		const offLocalUpdate = onLocalUpdate(ydoc, () => {
 			workspace.tables.entries.update(id, {
@@ -79,7 +90,6 @@ export function openFujiBrowser({
 			});
 		});
 		return {
-			ydoc,
 			binding: body.binding,
 			read: body.read,
 			write: body.write,
@@ -99,7 +109,6 @@ export function openFujiBrowser({
 
 	return defineWorkspace({
 		...workspace,
-		actions: workspace.actions,
 		markdown,
 		idb,
 		entryBodies,

@@ -51,8 +51,8 @@ export { authApp } from './routes/auth.js';
 export { mountRoomsApp } from './routes/rooms.js';
 export { mountSessionApp } from './routes/session.js';
 // Parent app. Wires per-request lifecycle (pg, after-response queue,
-// auth context, CORS, single-credential normalization, CSRF, rooms
-// registry). Mount every surface on this app via the `mount*` primitives.
+// auth context, CORS, CSRF, rooms registry). Mount every surface on this
+// app via the `mount*` primitives.
 export { createServerApp } from './server-app.js';
 
 // Public Hono context type the deployment composes around library

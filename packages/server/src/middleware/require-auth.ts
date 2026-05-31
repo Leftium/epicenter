@@ -10,9 +10,12 @@
  * For routes that are external-clients only (`/api/ai/*`, `/api/.../rooms/*`),
  * prefer {@link requireBearerUser}, which skips the cookie attempt.
  *
- * Ambiguous requests (both credentials present) never reach this
- * middleware; the global `singleCredential` middleware rejects them at
- * the edge.
+ * Cookie-vs-bearer is resolved deterministically here, cookie-first: a
+ * request carrying both uses the cookie session and never consults the
+ * bearer. The two credentials are read by disjoint paths and never merge,
+ * so there is nothing to police at the edge: `getSession` reads only the
+ * cookie (Better Auth's `bearer()` plugin is not enabled), while the OAuth
+ * bearer is a JWT verified against JWKS by {@link resolveRequestOAuthUser}.
  */
 
 import { oauthProviderResourceClient } from '@better-auth/oauth-provider/resource-client';

@@ -130,18 +130,6 @@ export type MarkdownTableConfig<TRow extends BaseRow> = {
 	toMarkdown?: (row: TRow) => MaybePromise<MarkdownShape>;
 	/** Parse frontmatter + body back into a row. Default: `parsed.frontmatter as TRow`. */
 	fromMarkdown?: (parsed: MarkdownShape) => MaybePromise<TRow>;
-	/**
-	 * Opt-in skip-when-unchanged gate. Return a value that changes iff the row's
-	 * materialized output would change (metadata OR body). When set, the
-	 * materializer skips `toMarkdown` (and the write) for a row whose key equals
-	 * the one last written; on cold start the key is seeded from the existing
-	 * file's frontmatter, so an unchanged row is not re-read.
-	 *
-	 * MUST change on body edits, not just metadata (e.g. an `updatedAt` the
-	 * editor bumps on every content change). A stable key over a changing body
-	 * leaves a stale `.md` on disk.
-	 */
-	dirtyKey?: (row: TRow) => string | number;
 };
 
 /**
@@ -340,25 +328,29 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 	): Promise<() => void> {
 		const directory = join(baseDir, config.dir ?? table.name);
 		const filenames = new Map<string, string>();
-		const dirtyKeys = new Map<string, string | number>();
 
 		await mkdir(directory, { recursive: true });
 
-		// Cold-start seed: with a dirtyKey configured, read the files already on
-		// disk so an unchanged row is not re-materialized (re-read) on restart.
-		if (config.dirtyKey) {
-			await seedDirtyKeys(directory, config, filenames, dirtyKeys);
-		}
-
 		for (const row of table.getAllValid()) {
-			if (config.dirtyKey && dirtyKeys.get(row.id) === config.dirtyKey(row)) {
-				continue;
+			// Per-row guard mirrors the observer below: a throwing `toMarkdown`
+			// (e.g. fuji's body read hitting its connect deadline) skips this one
+			// row and leaves its existing `.md` intact, instead of rejecting
+			// `whenFlushed` and aborting the flush for every later row. The
+			// throw-skip invariant then holds unconditionally, not only when the
+			// flush happens to run before the table is populated.
+			try {
+				const { filename, content } = await rowToMarkdownFile(row, config);
+				await writeMarkdownFile(directory, filename, content);
+				filenames.set(row.id, filename);
+				markDirty(join(directory, filename));
+			} catch (cause) {
+				log.warn(
+					MaterializerWriteError.TableWriteFailed({
+						tableName: table.name,
+						cause,
+					}),
+				);
 			}
-			const { filename, content } = await rowToMarkdownFile(row, config);
-			await writeMarkdownFile(directory, filename, content);
-			filenames.set(row.id, filename);
-			if (config.dirtyKey) dirtyKeys.set(row.id, config.dirtyKey(row));
-			markDirty(join(directory, filename));
 		}
 
 		// Sequential writes inside the observer avoid rename races; a parallel
@@ -374,16 +366,8 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 						if (previous) {
 							const removed = await tryUnlink(directory, previous);
 							filenames.delete(id);
-							dirtyKeys.delete(id);
 							if (removed) markDirty(join(directory, previous));
 						}
-						continue;
-					}
-
-					if (
-						config.dirtyKey &&
-						dirtyKeys.get(id) === config.dirtyKey(row)
-					) {
 						continue;
 					}
 
@@ -395,7 +379,6 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 					}
 					await writeMarkdownFile(directory, filename, content);
 					filenames.set(id, filename);
-					if (config.dirtyKey) dirtyKeys.set(id, config.dirtyKey(row));
 					markDirty(join(directory, filename));
 				}
 			})().catch((cause) => {
@@ -407,42 +390,6 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 				);
 			});
 		});
-	}
-
-	/**
-	 * Seed `dirtyKeys`/`filenames` from the files already on disk so a restart
-	 * skips re-reading rows whose dirty key is unchanged. Best-effort: a file
-	 * that does not parse or carries no id is left unseeded and is simply
-	 * re-materialized.
-	 */
-	async function seedDirtyKeys(
-		directory: string,
-		config: MarkdownTableConfig<BaseRow>,
-		filenames: Map<string, string>,
-		dirtyKeys: Map<string, string | number>,
-	): Promise<void> {
-		const dirtyKey = config.dirtyKey;
-		if (!dirtyKey) return;
-		let files: string[];
-		try {
-			files = await readdir(directory);
-		} catch {
-			return; // no directory yet → nothing to seed
-		}
-		const fromMarkdown = config.fromMarkdown ?? defaultFromMarkdown;
-		for (const filename of files) {
-			if (!filename.endsWith('.md')) continue;
-			try {
-				const content = await readFile(join(directory, filename), 'utf-8');
-				const parsed = parseMarkdownFile(content);
-				if (!parsed) continue;
-				const row = await fromMarkdown(parsed);
-				dirtyKeys.set(row.id, dirtyKey(row));
-				filenames.set(row.id, filename);
-			} catch {
-				// unreadable / unparseable → leave unseeded
-			}
-		}
 	}
 
 	// ── Disposal ────────────────────────────────────────────────

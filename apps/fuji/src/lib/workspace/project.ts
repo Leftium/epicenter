@@ -125,14 +125,11 @@ export function fuji(opts: FujiMountOptions = {}) {
 				perTable: {
 					entries: {
 						filename: slugFilename('title'),
-						// updatedAt is bumped on every body edit (the browser's
-						// onLocalUpdate touch), so it changes iff the rendered .md would
-						// change. The materializer skips re-reading a body whose updatedAt
-						// matches the on-disk frontmatter, so a cold restart re-syncs only
-						// the entries that actually changed.
-						dirtyKey: (entry) => entry.updatedAt,
 						// `{ ...entry }` is the materializer's default frontmatter; this
-						// callback exists only to attach the body read.
+						// callback exists only to attach the body read. The body is read
+						// fresh every time the row changes: a daemon restart re-reads all
+						// bodies, which self-heals any `.md` left stale by a cross-doc
+						// sync race (root `updatedAt` arriving before the body update).
 						toMarkdown: async (entry) => ({
 							frontmatter: { ...entry },
 							body: await readEntryBody(entry),

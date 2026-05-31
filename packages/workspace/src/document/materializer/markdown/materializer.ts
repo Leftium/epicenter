@@ -334,12 +334,32 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 
 		await mkdir(directory, { recursive: true });
 
-		// Write one valid row to disk: (re)serialize, unlink the previous file if
-		// the filename changed, write, and track the current filename. The rename
-		// branch is a no-op on first write (`filenames` starts empty), so the
-		// initial flush and the live observer share this exact path.
+		// Write one valid row to disk, shared by the initial flush and the live
+		// observer. The rename branch is a no-op on first write (`filenames`
+		// starts empty), so both paths run this exact code.
+		//
+		// Only CONTENT PRODUCTION is guarded: a throwing `toMarkdown` (e.g. fuji's
+		// body read hitting its connect deadline) skips this one row and leaves its
+		// existing `.md` intact, instead of aborting the rest of the flush or the
+		// observe batch. A real filesystem write failure (ENOSPC, EACCES) is NOT
+		// swallowed here: it propagates, so the initial flush rejects `whenFlushed`
+		// and the observer's outer catch surfaces it, rather than reporting success
+		// while writing nothing.
 		async function writeRow(id: string, row: BaseRow): Promise<void> {
-			const { filename, content } = await rowToMarkdownFile(row, config);
+			let rendered: { filename: string; content: string };
+			try {
+				rendered = await rowToMarkdownFile(row, config);
+			} catch (cause) {
+				log.warn(
+					MaterializerWriteError.TableWriteFailed({
+						tableName: table.name,
+						id,
+						cause,
+					}),
+				);
+				return;
+			}
+			const { filename, content } = rendered;
 			const previous = filenames.get(id);
 			if (previous && previous !== filename) {
 				const removed = await tryUnlink(directory, previous);
@@ -350,27 +370,8 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 			markDirty(join(directory, filename));
 		}
 
-		// Per-row guard: a throwing `toMarkdown` (e.g. fuji's body read hitting its
-		// connect deadline) skips this one row and leaves its existing `.md` intact,
-		// instead of aborting the rest of the flush or the observe batch. Background
-		// path only; the user-invoked `markdown_pull` / `markdown_rebuild` actions
-		// stay strict so a real callback bug surfaces there.
-		async function writeRowOrWarn(id: string, row: BaseRow): Promise<void> {
-			try {
-				await writeRow(id, row);
-			} catch (cause) {
-				log.warn(
-					MaterializerWriteError.TableWriteFailed({
-						tableName: table.name,
-						id,
-						cause,
-					}),
-				);
-			}
-		}
-
 		for (const row of table.getAllValid()) {
-			await writeRowOrWarn(row.id, row);
+			await writeRow(row.id, row);
 		}
 
 		// Sequential writes inside the observer avoid rename races; a parallel
@@ -391,9 +392,13 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 						continue;
 					}
 
-					await writeRowOrWarn(id, row);
+					await writeRow(id, row);
 				}
 			})().catch((cause) => {
+				// Reached only by a genuine failure `writeRow` does not swallow: a
+				// filesystem write error, or an unexpected throw in the loop
+				// scaffolding. A `toMarkdown` failure is already handled per-row and
+				// does not land here.
 				log.warn(
 					MaterializerWriteError.TableWriteFailed({
 						tableName: table.name,
@@ -556,6 +561,17 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 		async function rebuildOne(entry: RegisteredTable) {
 			const directory = join(baseDir, entry.config.dir ?? entry.table.name);
 
+			// Serialize EVERY row before touching disk. Rebuild is destructive (it
+			// sweeps the directory), and `toMarkdown` can throw for a real reason
+			// (e.g. fuji's body read hitting its connect deadline). Rendering first
+			// means a failed row aborts the rebuild with the existing `.md` files
+			// still on disk, rather than deleting everything and then failing to
+			// rewrite it.
+			const rendered: { filename: string; content: string }[] = [];
+			for (const row of entry.table.getAllValid()) {
+				rendered.push(await rowToMarkdownFile(row, entry.config));
+			}
+
 			// Sweep existing .md files
 			try {
 				const files = await readdir(directory);
@@ -575,11 +591,7 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 			}
 
 			await mkdir(directory, { recursive: true });
-			for (const row of entry.table.getAllValid()) {
-				const { filename, content } = await rowToMarkdownFile(
-					row,
-					entry.config,
-				);
+			for (const { filename, content } of rendered) {
 				await writeMarkdownFile(directory, filename, content);
 				markDirty(join(directory, filename));
 				written++;

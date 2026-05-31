@@ -551,6 +551,38 @@ describe('rebuild', () => {
 		workspace[Symbol.dispose]();
 	});
 
+	test('aborts WITHOUT deleting existing files when a row fails to serialize', async () => {
+		// toMarkdown throws (mimics fuji's body read hitting its connect deadline).
+		const { workspace } = await setup({
+			perTable: {
+				posts: {
+					toMarkdown: () => {
+						throw new Error('simulated body read failure');
+					},
+				},
+			},
+		});
+		workspace.tables.posts.set({ id: 'p1', title: 'Keep', published: true });
+
+		// A file already on disk that a failed rebuild must NOT wipe.
+		await writeTestFile(
+			'posts/p1.md',
+			'---\nid: p1\ntitle: Keep\npublished: true\n---\n',
+		);
+
+		// Rebuild renders every row BEFORE sweeping the directory, so the throwing
+		// row aborts the rebuild with the existing file still intact, instead of
+		// deleting everything and then failing to rewrite it.
+		await expect(
+			workspace.materializer.actions.markdown_rebuild({}),
+		).rejects.toThrow();
+
+		const after = await listTestDir('posts');
+		expect(after).toContain('p1.md');
+
+		workspace[Symbol.dispose]();
+	});
+
 	test('is idempotent: rebuild twice produces identical filesystem state', async () => {
 		const { workspace } = await setup({ perTable: { posts: {} } });
 		workspace.tables.posts.set({

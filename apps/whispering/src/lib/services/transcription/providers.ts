@@ -16,7 +16,15 @@ import type { DeviceConfigKey } from '$lib/state/device-config.svelte';
 type Capabilities = { supportsPrompt: boolean; supportsLanguage: boolean };
 type CloudModel = { name: string; description: string; cost: string };
 
-/** Settings keys holding the per-provider cloud model selection. */
+/**
+ * Settings keys holding the per-provider cloud model selection. Spelled out as
+ * a standalone literal union on purpose: it cannot be derived. Both a template
+ * literal over `CloudProviderId` and pulling the key type from the settings
+ * store are circular, because `PROVIDERS` below is checked with `satisfies
+ * Record<..., TranscriptionProvider>` and `TranscriptionProvider` already
+ * references this type, so any derivation that reads back from `PROVIDERS` or
+ * the KV schema closes the loop.
+ */
 type CloudModelKey =
 	| 'transcription.openai.model'
 	| 'transcription.groq.model'

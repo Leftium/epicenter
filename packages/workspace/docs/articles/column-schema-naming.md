@@ -1,5 +1,11 @@
 # Why We Named Epicenter's Column Schemas the Way We Did
 
+Historical note: this article describes an older schema-owned shared-type
+direction (`ytext()` / `yxmlfragment()` columns) that is not the current
+workspace API. Current app code keeps rows scalar and stores rich collaborative
+content in app-owned child Y.Docs built with `new Y.Doc({ guid })` plus
+`attachPlainText`, `attachRichText`, or `attachTimeline`.
+
 ## Primitives: Direct, Not Technical
 
 Epicenter uses database-oriented names that match what developers think about when modeling data, not TypeScript primitive names:

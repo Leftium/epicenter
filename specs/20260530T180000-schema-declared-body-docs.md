@@ -1,14 +1,12 @@
 # Schema-Declared Body Docs (derive the doc set from the schema)
 
 **Date**: 2026-05-30
-**Status**: DECISIONS RECORDED + COMPOSITION SYNTHESIZED (direction locked; not yet
-implemented). No code has been written. The open questions are resolved below in
-Decision / Why / Refused form; the concrete API lives in "The new API (composition
-surface)". Grounded against the repo, against Yjs behavior verified via DeepWiki
-(yjs/yjs), and against a 5-design composition panel (codec-by-value + daemon body-observer
-were grafted from it; they REFINE decisions A, C, D, G). The body identity question is
-resolved in decision K (keep the derived guid; refuse a stored id). Snippets remain
-illustrative; the decisions, refusals, and the new-API shape are binding for Phase 0.
+**Status**: Superseded by
+`specs/20260530T230000-bodies-as-generic-doc-opener.md` and PR #1868. Do not
+implement `column.body`, schema-declared body docs, `attachBodyCache`, or a generic
+schema-enumerating daemon from this spec. Its Yjs grounding remains useful history:
+rich collaborative content cannot live inside encrypted row values, and Fuji still
+uses deterministic per-entry body doc guids.
 **Owner**: Workspace platform
 
 ## Relationship to prior specs
@@ -29,6 +27,13 @@ BUILDS ON                    the deterministic docGuid scheme that already exist
 ```
 
 ## One Sentence
+
+Superseded model: Fuji entry bodies are app-owned Y.Docs, not schema-declared
+columns; `createFuji()` owns the root entries table and actions, browser runtime
+code owns the `entryBodies` cache, and the daemon opens one body doc at a time only
+to derive markdown.
+
+Historical rejected model:
 
 A body field is declared in the schema as a child Y.Doc whose content codec rides the
 column by value (rich text, timeline, or any handle exposing `read(): string`), so a

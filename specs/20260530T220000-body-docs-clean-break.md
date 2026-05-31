@@ -1,8 +1,12 @@
 # Body docs: the clean break + the encryption gradation
 
 **Date**: 2026-05-30
-**Status**: DECISIONS RECORDED (direction locked; refines the API surface of
-`20260530T180000-schema-declared-body-docs.md`, adds the encryption posture).
+**Status**: Superseded by
+`specs/20260530T230000-bodies-as-generic-doc-opener.md` and PR #1868 for the
+mechanism. Do not implement `column.body`, `BodyAttach`, `attachBodyCache`,
+`online()`, or any framework-owned body subsystem from this spec. The encryption
+posture remains relevant background: live collaborative body content is not an
+encrypted row scalar.
 **Owner**: Workspace platform
 
 ## Relationship to prior specs
@@ -19,6 +23,12 @@ GROUNDED  keyring trace (this branch), yjs/yjs + jazz + evolu + secsync via Deep
 ```
 
 ## One sentence
+
+Superseded model: the framework does not own body docs at all. Fuji owns its entry
+body Y.Doc construction in app code, keyed by `EntryId`; browser code caches them,
+and daemon code opens throwaway body docs per row for markdown projection.
+
+Historical rejected model:
 
 A "body" exists because a value you encrypt is a value you can no longer merge
 character by character, so the one field that needs live collaboration leaves the

@@ -1,13 +1,17 @@
 # Bodies as app-owned doc caches (delete the body subsystem, invert control)
 
 **Date**: 2026-05-30
-**Status**: IMPLEMENTED. The asymmetric
+**Status**: IMPLEMENTED and affirmed by PR #1868. The asymmetric
 move: delete the schema-derived body subsystem and replace it with a single app-owned
 `createDisposableCache` keyed by the app's own id, where the build closure derives the
 guid, attaches the shared type, and wires the updatedAt bump. No new library primitive.
 Grounded against the repo, the git history of every prior doc-opener shape, and the
 convergent prior art (automerge-repo `repo.find(url)`, Jazz `LocalNode.load(id)`) via
 DeepWiki.
+PR #1868 clarified the daemon and markdown edges: Fuji's daemon reads body docs one
+row at a time, destroys them, and writes markdown as a derived projection of root row
+frontmatter plus body doc text. Markdown import back into Fuji body Y.Docs is follow-up
+work, not current daemon behavior.
 **Owner**: Workspace platform
 
 ## Relationship to prior specs

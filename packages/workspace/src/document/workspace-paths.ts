@@ -1,14 +1,15 @@
 /**
  * Per-workspace data layout helpers.
  *
- * Three folders under `<projectDir>/.epicenter/`, each named by what's inside:
+ * Conventional folders under `<projectDir>/.epicenter/`, each named by what's
+ * inside:
  *
  *   yjs/<id>.db     Yjs CRDT update log (durability; replayed by Yjs)
  *   sqlite/<id>.db  Queryable SQL surface (open with `sqlite3`, FTS5)
  *   md/<id>/        Markdown surface (open with your editor)
  *
- * The daemon writes all three. The yjs file is the source of truth; sqlite and
- * md are projections the materializers keep in sync.
+ * Mounts may override materializer paths. These helpers return the default
+ * convention only; they do not inspect `epicenter.config.ts`.
  *
  * For daemon-process paths (sockets, log, metadata sidecar), see
  * `daemon/paths.ts`. Different audience, different rationale.
@@ -67,12 +68,11 @@ export function yjsPath(projectDir: string, workspaceId: string): string {
 }
 
 /**
- * Path to a workspace's SQLite mirror file (the queryable SQL surface).
+ * Convention path for a workspace's SQLite mirror file (the queryable SQL surface).
  *
- * Convention: `<projectDir>/.epicenter/sqlite/<workspaceId>.db`. The daemon's
- * `attachBunSqliteMaterializer` writes this file (in WAL journal mode);
- * script peers open the same path read-only via `openWorkspaceSqlite` for plain
- * SQL or `openSqliteReader` for FTS snippets.
+ * Convention: `<projectDir>/.epicenter/sqlite/<workspaceId>.db`. A mount can
+ * pass a custom `sqliteFile` to `attachBunSqliteMaterializer`; scripts must then
+ * open that explicit path with `openSqliteReader({ filePath })`.
  *
  * Distinct from `yjsPath`: the yjs file is the role (durability of the
  * Y.Doc update log; SQLite is implementation detail and you never open it
@@ -93,10 +93,10 @@ export function sqlitePath(projectDir: string, workspaceId: string): string {
 /**
  * Root directory for a workspace's markdown materializer tree.
  *
- * Convention: `<projectDir>/.epicenter/md/<workspaceId>/`. The daemon's
- * `attachMarkdownMaterializer` writes per-table subdirectories of `.md`
- * files under this root. Read it with your editor; there is no markdown
- * reader primitive (markdown is itself the user-facing surface).
+ * Convention: `<projectDir>/.epicenter/md/<workspaceId>/`. A mount can pass a
+ * custom markdown directory to `attachMarkdownMaterializer`. For Fuji today,
+ * markdown is a derived projection of root row frontmatter plus app-owned body
+ * doc text, not the canonical import source for entry bodies.
  *
  * @example
  * ```ts

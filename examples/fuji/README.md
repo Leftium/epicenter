@@ -4,9 +4,10 @@ The canonical Epicenter project layout demonstrated against `@epicenter/fuji`.
 
 ## What this shows
 
-One project, one Fuji mount, declared in `epicenter.config.ts`. Table data lives
-as markdown at the project root and is committed to git. Runtime state (Yjs
-persistence, SQLite materializer) lives under `.epicenter/` and is gitignored.
+One project, one Fuji mount, declared in `epicenter.config.ts`. Markdown
+projections live at the project root and are committed to git. Runtime state
+(Yjs persistence, SQLite materializer) lives under `.epicenter/` and is
+gitignored.
 
 This example is the reference implementation of the layout spec at
 `specs/20260522T220000-workspace-project-layout.md`. If the spec changes,
@@ -20,7 +21,7 @@ examples/fuji/
 ├── tsconfig.json          extends the repo base
 ├── epicenter.config.ts    REQUIRED. Marker + mount list.
 ├── .gitignore             Epicenter-managed (.epicenter/)
-├── entries/               table data as markdown (committed)
+├── entries/               markdown projection (committed)
 │   ├── welcome.md
 │   └── hello-fuji.md
 └── .epicenter/            created on first daemon run; gitignored
@@ -38,9 +39,9 @@ bun x epicenter daemon up -C examples/fuji
 
 On first run the daemon creates `.epicenter/` and writes `sqlite.db` plus the
 Yjs persistence file used by `attachProjectInfrastructure`. The current mount
-materializes the live Y.Doc out to markdown and SQLite. The project-layout
-spec's next step is markdown-to-Y.Doc hydration, where files in `entries/`
-become the human-editable source that can rebuild the runtime cache.
+materializes the live Y.Doc out to SQLite and writes markdown as a projection:
+root row frontmatter plus entry body text read from the app-owned body Y.Doc.
+Importing markdown back into Fuji body Y.Docs is follow-up work.
 
 ## Inspect the SQL mirror
 
@@ -50,16 +51,16 @@ sqlite> .tables
 sqlite> SELECT id, title FROM entries;
 ```
 
-The SQLite mirror is regenerable from the Yjs persistence file. Once markdown
-hydration lands, that Yjs runtime cache will be regenerable from `entries/`.
-Until then, deleting `.epicenter/` drops the daemon's runtime state.
+The SQLite mirror is regenerable from the Yjs persistence file. Markdown in
+`entries/` is not yet the canonical import source for Fuji bodies, so deleting
+`.epicenter/` drops the daemon's runtime state.
 
 ## Edit a note
 
 Today, edit through mount actions or a connected Fuji runtime and watch the
 markdown and SQLite projections update. The reverse direction, editing
-`entries/*.md` and having the daemon ingest it back into the Y.Doc, is the
-planned markdown hydration work described in the project-layout spec.
+`entries/*.md` and having the daemon ingest body text back into entry body
+Y.Docs, is planned follow-up work.
 
 You can also drive changes through the daemon's RPC actions. Use the CLI:
 
@@ -78,8 +79,8 @@ Current path:
    mount's create action.
 
 Planned path: create `entries/my-new-entry.md` with the same frontmatter shape
-as the existing examples, then let markdown hydration ingest it into Fuji's
-Y.Doc.
+as the existing examples, then let future markdown import ingest frontmatter into
+the root row and body text into the entry body Y.Doc.
 
 ## What this example deliberately omits
 

@@ -173,11 +173,11 @@ export type MigrateInput<
  * A table definition created by `defineTable(cols)` (single version) or
  * `defineTable(v1, v2, ...).migrate(fn)` (multi-version).
  *
- * For per-row content (rich text, long-form body), keep the row lean (ids,
- * metadata, a content-doc guid) and pair the table with a separate
- * `createDisposableCache(builder)` keyed on that content guid. Opening a row
- * then becomes `contentDocs.open(row.contentGuid)`: the list doesn't load
- * every content doc, and the editor doesn't contend with the table.
+ * For per-row content (rich text, long-form body), keep the row lean (ids and
+ * metadata) and derive the content-doc guid in app code. Browser runtimes can
+ * pair the table with a `createDisposableCache(builder)` keyed by row id; daemon
+ * projections can open one content doc for one row and destroy it after reading.
+ * The table schema does not declare or store body docs.
  */
 export type TableDefinition<
 	TVersions extends readonly VersionedColumns[] = readonly VersionedColumns[],

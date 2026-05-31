@@ -11,7 +11,7 @@ createWorkspace()
   low-level package primitive
 
 create<App>Workspace()
-  app's shared isomorphic model: id, tables, kv, actions, child docs
+  app's shared isomorphic model: id, tables, kv, actions, child-doc guid helpers
 
 open<App>Browser()
 open<App>Daemon()
@@ -110,11 +110,10 @@ The quick start is local-first: it persists to IndexedDB and works offline.
 Sync is one more line in the builder: add `openCollaboration`. See [Sync](#sync).
 
 Singleton apps (one workspace per app) call a builder like `openBlog()` once at
-module scope. Browser child documents use `createDisposableCache(...)`.
-One-shot Node scripts can open a child document directly for one operation;
-daemon and materializer workloads can opt into `createDisposableCache(...)` when
-same-process reuse matters. See [Per-row content documents](#per-row-content-documents)
-below.
+module scope. Browser child documents use `createDisposableCache(...)` when
+multiple surfaces may open the same doc. One-shot Node scripts and daemon
+projections can open a child document directly for one row, read it, and destroy
+it. See [Per-row content documents](#per-row-content-documents) below.
 
 ## Prefix vocabulary
 
@@ -139,7 +138,7 @@ data that never leaves the device, encrypted for data the server stores.
 
 One factory, both modes. `createWorkspace({ id, tables, kv, keyring? })` constructs the root Y.Doc, materializes the table and KV stores onto it, and registers cascade disposal. Pass a `keyring: () => Keyring` callback to encrypt every store under the owner keyring narrowed to `id` (one HKDF derivation, shared across stores); omit it for plaintext. Same-owner key rotation requires a fresh `createWorkspace` call (and therefore a fresh Y.Doc) to take effect.
 
-Apps usually wrap `createWorkspace` in a per-app factory next to their schema so the table set, id constant, actions, and shared child-doc model live in one place:
+Apps usually wrap `createWorkspace` in a per-app factory next to their schema so the table set, id constant, actions, and deterministic child-doc guid helpers live in one place:
 
 ```ts
 // apps/my-app/workspace.ts
@@ -249,7 +248,9 @@ export const session = createSession({
 
 The `id` you pass to `createWorkspace(...)` becomes `workspace.ydoc.guid`. Namespace it to your app (e.g. `epicenter.my-app`) to avoid collisions when multiple apps share the same IndexedDB origin. Cloud sync targets the single uniform shape `/api/owners/:ownerId/rooms/:roomId` in both modes: build the URL with `roomWsUrl({ baseURL, ownerId, guid: workspace.ydoc.guid, deviceId })`. A cloud doc is owned by the authenticated `OwnerId`, so the server resolves the Durable Object name `owners/${ownerId}/rooms/${room}` from the auth token (personal: `ownerId === userId`; team: `ownerId === 'team'`), with no workspace lookup.
 
-For production-shaped browser wiring, see `apps/fuji/src/lib/browser.ts`. For auth session transitions, see `apps/fuji/src/lib/session.ts`.
+For production-shaped browser wiring, see
+`apps/fuji/src/lib/workspace/browser.ts`. For auth session transitions, see
+`apps/fuji/src/lib/session.ts`.
 
 ## Core Philosophy
 
@@ -450,7 +451,7 @@ KV entries are for settings and scalar preferences. They are keyed by string and
 
 - Call the relevant `attach*` or `open*` function (e.g. `attachIndexedDb`, `attachYjsLog`, `attachLocalStorage`, `openCollaboration`) inside the builder against `workspace.ydoc` and include the handle in the returned bundle.
 - Order matters only through lexical scope: later `attach*` calls see earlier handles directly.
-- For browser per-row content docs, write a separate `createDisposableCache(...)` and `.open(rowId)` it from the main workspace's actions or components.
+- For browser per-row content docs, write a separate `createDisposableCache(...)` and `.open(rowId)` it from the main workspace's actions or components. Daemon projections can use the same app guid helper to open one doc, read it, and destroy it.
 
 ### Actions
 
@@ -490,7 +491,10 @@ cache primitive.
 
 The `$derived` swaps handles when `fileId` changes; the `$effect` cleanup releases the old handle. Refcount 0 arms the cache's `gcTime` timer; a fresh open during the grace window cancels the pending teardown, so rapid navigation doesn't flap persistence or sync.
 
-Reference implementations: `apps/opensidian/src/lib/opensidian/browser.ts`, `apps/skills/src/lib/skills/browser.ts`, `apps/fuji/src/lib/browser.ts`, `apps/honeycrisp/browser.ts`.
+Reference implementations: `apps/opensidian/src/lib/opensidian/browser.ts`,
+`apps/skills/src/lib/skills/browser.ts`,
+`apps/fuji/src/lib/workspace/browser.ts`,
+`apps/fuji/src/lib/workspace/project.ts`, `apps/honeycrisp/browser.ts`.
 
 ## Schema definition
 
@@ -702,7 +706,11 @@ async function documentExample() {
 void documentExample;
 ```
 
-Opens are refcounted: multiple callers (editor, filesystem actions, materializer) can `.open(fileId)` concurrently and share one Y.Doc. The cache tears the bundle down `gcTime` after the last handle disposes. The default is `5_000` ms.
+Opens are refcounted: multiple browser callers (editor, filesystem actions,
+previews) can `.open(fileId)` concurrently and share one Y.Doc. The cache tears
+the bundle down `gcTime` after the last handle disposes. The default is `5_000`
+ms. Daemon materializers do not need a cache when they read one content doc at a
+time.
 
 ## Table Operations
 
@@ -1469,9 +1477,9 @@ returned, so `ydoc`, `content`, `idb`, and any composed `whenReady` are all
 things you explicitly put in the bundle.
 
 For singleton apps, call your builder function once at module scope. For Node
-one-shot operations, call the child builder directly inside `using`. Use the
-cache when browser components, daemons, or materializers have a real
-same-process reuse invariant.
+one-shot operations and daemon row projections, call the child builder directly
+inside `using`. Use the cache when browser components have a real same-process
+reuse invariant.
 
 ### Typical bundle properties
 

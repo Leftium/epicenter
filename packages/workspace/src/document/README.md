@@ -161,7 +161,13 @@ For content documents (rich-text bodies, attachments) that only need bytes-on-th
 
 ### Per-row content documents
 
-Tables stay lean (ids, titles, metadata). Rich content lives in a separate per-row content cache keyed on the row's content guid. The row holds the guid; the cache opens a Y.Doc per row on demand. See `apps/fuji/src/lib/browser.ts` for the canonical pattern.
+Tables stay lean (ids, titles, metadata). Rich content lives in app-owned
+per-row content docs. The app derives each doc guid from the workspace id, row
+id, collection, and field; rows do not store those guids. Browser runtimes use
+`createDisposableCache(...)` when multiple surfaces may open the same content doc
+at once. Daemon projections can open one doc for one row, read it, and destroy it.
+See `apps/fuji/src/lib/workspace/browser.ts` and
+`apps/fuji/src/lib/workspace/project.ts` for the Fuji pattern.
 
 ## Design Decisions
 
@@ -182,6 +188,7 @@ Tests live in `*.test.ts` next to the implementation. Use `createWorkspace({ id:
 ## Canonical references
 
 - `apps/whispering/src/lib/whispering/client.tauri.ts`: IndexedDB + BroadcastChannel + recording markdown export
-- `apps/fuji/src/lib/browser.ts`: encryption + IndexedDB + sync + server-owned presence
+- `apps/fuji/src/lib/workspace/browser.ts`: encryption + IndexedDB + sync + server-owned presence
+- `apps/fuji/src/lib/workspace/project.ts`: daemon materializers and per-row body doc reads
 - `packages/workspace/README.md`: quick start
 - `packages/workspace/SYNC_ARCHITECTURE.md`: multi-device sync design

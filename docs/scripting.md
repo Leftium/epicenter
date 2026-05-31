@@ -43,11 +43,21 @@ That is the whole API. No machine auth in the script process, no encryption setu
 
 ## Reads: the SQLite materializer
 
-`openWorkspaceSqlite(projectDir, workspaceId)` returns a `bun:sqlite` `Database` opened against `.epicenter/sqlite/<workspaceId>.db`. Fuji's example project overrides that default to `.epicenter/sqlite.db`, so scripts for that example can use `openSqliteReader({ filePath })` directly. `.epicenter/` is generated project data, not a source layout or route registry. The daemon's `attachBunSqliteMaterializer` keeps that file fresh; the script opens it read-only with `PRAGMA query_only = 1`, so an errant `INSERT` fails at the driver instead of silently diverging.
+Use `openSqliteReader({ filePath })` when a mount overrides its SQLite path, as
+the Fuji example does with `.epicenter/sqlite.db`. `openWorkspaceSqlite(projectDir,
+workspaceId)` only opens the convention path
+`.epicenter/sqlite/<workspaceId>.db`; it does not inspect `epicenter.config.ts` and
+is not override-aware. `.epicenter/` is generated project data, not a source layout
+or route registry. The daemon's `attachBunSqliteMaterializer` keeps that file fresh;
+the script opens it read-only with `PRAGMA query_only = 1`, so an errant `INSERT`
+fails at the driver instead of silently diverging.
 
 The materializer is the same SQL surface the daemon serves to the SPA: column-typed rows, FTS5 indexes, normal joins. Query cost is `O(rows-returned)` rather than `O(history)`, so cron jobs do not pay the seconds-of-Y.Doc-replay tax that an in-process snapshot would cost.
 
-For ranked search with snippets, use `openSqliteReader({ filePath: sqlitePath(...) })`; it wraps the same database and exposes a `search()` helper. For typed Drizzle queries, pass the returned `db` to `drizzle(db, { schema })` (the per-app schema lives in the app's npm package).
+For ranked search with snippets, use `openSqliteReader({ filePath })`; it wraps the
+same database and exposes a `search()` helper. For typed Drizzle queries, pass the
+returned `db` to `drizzle(db, { schema })` (the per-app schema lives in the app's
+npm package).
 
 ## Writes: typed invoke through the daemon
 

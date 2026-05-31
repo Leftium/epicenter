@@ -1,8 +1,7 @@
 /**
  * Server app factory. Wires per-request lifecycle (pg connection,
- * after-response queue, auth instance, CORS, single-credential
- * normalization, CSRF) and returns a `Hono` instance the deployment
- * mounts every other sub-app on.
+ * after-response queue, auth instance, CORS, CSRF) and returns a `Hono`
+ * instance the deployment mounts every other sub-app on.
  *
  * The deployment supplies its own canonical API origin through
  * {@link CreateServerAppOptions.resolveOrigin}: the hosted cloud bakes a
@@ -21,24 +20,22 @@ import { createAuth } from './auth/create-auth.js';
 import * as schema from './db/schema/index.js';
 import { corsMiddleware } from './middleware/cors.js';
 import { requireOriginForCookieMutations } from './middleware/require-origin-for-cookie-mutations.js';
-import { singleCredential } from './middleware/single-credential.js';
 import { createDurableObjectRooms } from './room/backends/cloudflare/registry.js';
 import type { Env } from './types.js';
 
 /**
  * Construct the parent `Hono` app every deployment mounts sub-apps onto.
  *
- * Installs four ordered request-scoped middlewares:
+ * Installs three ordered request-scoped middlewares:
  *
  *   1. CORS (skips WS upgrades).
  *   2. Per-request pg connection + after-response queue.
  *   3. Better Auth context (baseURL, auth instance).
- *   4. {@link singleCredential}: reject ambiguous auth and lift WS bearer
- *      subprotocol into `Authorization`.
  *
  * Then mounts the global CSRF gate for cookie-auth mutations on `/api/*`
  * and the rooms registry. The deployment is responsible for exposing a
- * health endpoint on `/`.
+ * health endpoint on `/`. WebSocket auth-transport normalization is not
+ * global: it lives in {@link mountRoomsApp}, the only WebSocket surface.
  */
 type CreateServerAppOptions = {
 	/**
@@ -110,9 +107,6 @@ export function createServerApp({
 		);
 		await next();
 	});
-
-	// 4. Single credential normalization.
-	app.use('*', singleCredential);
 
 	// CSRF gate on every `/api/*` route. Bearer requests are CSRF-immune
 	// and skip this check inside the middleware.

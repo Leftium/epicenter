@@ -32,6 +32,7 @@ import * as schema from '../db/schema/index.js';
 import { isWebSocketUpgrade } from '../is-websocket-upgrade.js';
 import { requireBearerUser } from '../middleware/require-auth.js';
 import { createRequireOwnership } from '../middleware/require-ownership.js';
+import { normalizeWebSocketAuth } from '../middleware/websocket-auth.js';
 import { doName } from '../owner.js';
 import type { OwnershipRule } from '../ownership.js';
 import type { Env } from '../types.js';
@@ -214,9 +215,15 @@ const roomsApp = new Hono<Env>()
 /**
  * Mount the rooms surface on a deployment's server app.
  *
- * Bundles auth (bearer-only: rooms is for external clients, never
- * browsers), the ownership boundary, and the route mount into one call.
- * Deployments call this once; they do not assemble the chain manually.
+ * Bundles the full request pipeline for the only WebSocket surface:
+ * transport normalization, auth, ownership, and the route mount, in one
+ * call. Deployments call this once; they do not assemble the chain manually.
+ *
+ * Order matters. {@link normalizeWebSocketAuth} runs first so that on a
+ * browser upgrade the ambient session cookie is dropped and the
+ * `bearer.<token>` subprotocol is lifted into `Authorization` before
+ * {@link requireBearerUser} (bearer-only: rooms is for external clients,
+ * never cookie-bearing browsers) reads it.
  */
 export function mountRoomsApp(
 	app: Hono<Env>,
@@ -224,6 +231,7 @@ export function mountRoomsApp(
 ): void {
 	app.use(
 		ROOM_ROUTE.prefixPattern,
+		normalizeWebSocketAuth,
 		requireBearerUser,
 		createRequireOwnership(opts.ownership),
 	);

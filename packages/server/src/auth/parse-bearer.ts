@@ -3,8 +3,9 @@
  * Case-insensitive on the scheme; trims surrounding whitespace; returns null
  * for missing, empty, or non-bearer inputs.
  *
- * Shared between `single-credential` (well-formedness) and `require-auth`
- * (authorization) so both layers agree on what counts as a bearer.
+ * Shared between `websocket-auth` (subprotocol bearer lifting) and
+ * `require-auth` (authorization) so both layers agree on what counts as a
+ * bearer.
  */
 export function parseBearer(value: string | null): string | null {
 	if (!value) return null;

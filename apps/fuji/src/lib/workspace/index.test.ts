@@ -3,7 +3,8 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { asEntryId, entryContentDocGuid } from './index.js';
+import { docGuid } from '@epicenter/workspace';
+import { FUJI_ID, asEntryId, entryContentDocGuid } from './index.js';
 
 describe('Fuji schema helpers', () => {
 	test('entryContentDocGuid is deterministic per entry id', () => {
@@ -13,5 +14,17 @@ describe('Fuji schema helpers', () => {
 		expect(a).toBe(b);
 		expect(a).not.toBe(c);
 		expect(a.length).toBeGreaterThan(0);
+	});
+
+	test('entryContentDocGuid matches the generic docGuid shape', () => {
+		const id = asEntryId('entry-1');
+		expect(entryContentDocGuid(id)).toBe(
+			docGuid({
+				workspaceId: FUJI_ID,
+				collection: 'entries',
+				rowId: id,
+				field: 'content',
+			}),
+		);
 	});
 });

@@ -6,27 +6,32 @@
  *
  *  1. workspace root doc (encrypted tables + KV via createFuji)
  *  2. local storage + cloud sync for root (attachLocalStorage + openCollaboration)
- *  3. runtime storage + sync around the shared per-entry child docs
+ *  3. app-owned, typed body cache for per-entry child docs
  *
  * `openCollaboration` owns reconnect-on-auth-change internally, so this file
  * has no per-app onStateChange listener.
  *
  * The bundle's `wipe()` drops every encrypted IDB database for this owner;
- * `Symbol.dispose` tears down the root + cached child Y.Docs without
- * touching local storage.
+ * `Symbol.dispose` tears down the root + cached child Y.Docs without touching
+ * local storage.
  */
 
 import type { SignedIn } from '@epicenter/svelte';
 import {
 	attachLocalStorage,
+	attachRichText,
+	type ActionRegistry,
 	createDisposableCache,
+	DateTimeString,
 	type DeviceId,
 	defineWorkspace,
+	onLocalUpdate,
 	openCollaboration,
 	roomWsUrl,
 	wipeLocalStorage,
 } from '@epicenter/workspace';
-import { createFuji, type EntryId } from './index';
+import * as Y from 'yjs';
+import { createFuji, entryContentDocGuid, type EntryId } from './index';
 import { createFujiMarkdownActions } from './markdown';
 
 export function openFujiBrowser({
@@ -38,55 +43,50 @@ export function openFujiBrowser({
 }) {
 	const workspace = createFuji({ keyring: signedIn.keyring });
 
-	const idb = attachLocalStorage(workspace.ydoc, {
-		server: signedIn.server,
-		ownerId: signedIn.ownerId,
-		keyring: signedIn.keyring,
-	});
-	const collaboration = openCollaboration(workspace.ydoc, {
-		url: roomWsUrl({
-			baseURL: signedIn.baseURL,
-			ownerId: signedIn.ownerId,
-			guid: workspace.ydoc.guid,
-			deviceId,
-		}),
-		openWebSocket: signedIn.openWebSocket,
-		onReconnectSignal: signedIn.onReconnectSignal,
-		waitFor: idb.whenLoaded,
-		actions: workspace.actions,
-	});
-
-	const entryContentDocs = createDisposableCache((entryId: EntryId) => {
-		const contentDoc = workspace.entryContentDocs.open(entryId);
-		const childIdb = attachLocalStorage(contentDoc.ydoc, {
+	const wire = <TActions extends ActionRegistry>(
+		ydoc: Y.Doc,
+		actions: TActions,
+	) => {
+		const idb = attachLocalStorage(ydoc, {
 			server: signedIn.server,
 			ownerId: signedIn.ownerId,
 			keyring: signedIn.keyring,
 		});
-		const childSync = openCollaboration(contentDoc.ydoc, {
+		const collaboration = openCollaboration(ydoc, {
 			url: roomWsUrl({
 				baseURL: signedIn.baseURL,
 				ownerId: signedIn.ownerId,
-				guid: contentDoc.ydoc.guid,
+				guid: ydoc.guid,
 				deviceId,
 			}),
 			openWebSocket: signedIn.openWebSocket,
 			onReconnectSignal: signedIn.onReconnectSignal,
-			waitFor: childIdb.whenLoaded,
-			actions: {},
+			waitFor: idb.whenLoaded,
+			actions,
 		});
+		return { idb, collaboration };
+	};
 
+	const { idb, collaboration } = wire(workspace.ydoc, workspace.actions);
+
+	const entryBodies = createDisposableCache((id: EntryId) => {
+		const ydoc = new Y.Doc({ guid: entryContentDocGuid(id), gc: true });
+		const { idb: bodyIdb } = wire(ydoc, {});
+		const body = attachRichText(ydoc);
+		const offLocalUpdate = onLocalUpdate(ydoc, () => {
+			workspace.tables.entries.update(id, {
+				updatedAt: DateTimeString.now(),
+			});
+		});
 		return {
-			...contentDoc,
-			idb: childIdb,
-			sync: childSync,
-			/**
-			 * Child disposer rejections do not propagate; bundle.wipe() relies on
-			 * IDB's deleteDatabase native blocking as belt-and-suspenders for
-			 * storage deletion.
-			 */
+			ydoc,
+			binding: body.binding,
+			read: body.read,
+			write: body.write,
+			whenLoaded: bodyIdb.whenLoaded,
 			[Symbol.dispose]() {
-				contentDoc[Symbol.dispose]();
+				offLocalUpdate();
+				ydoc.destroy();
 			},
 		};
 	});
@@ -94,7 +94,7 @@ export function openFujiBrowser({
 	const markdown = createFujiMarkdownActions({
 		tables: workspace.tables,
 		idb,
-		entryContentDocs,
+		entryBodies,
 	});
 
 	return defineWorkspace({
@@ -102,10 +102,10 @@ export function openFujiBrowser({
 		actions: workspace.actions,
 		markdown,
 		idb,
-		entryContentDocs,
+		entryBodies,
 		collaboration,
 		async wipe() {
-			entryContentDocs[Symbol.dispose]();
+			entryBodies[Symbol.dispose]();
 			workspace[Symbol.dispose]();
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
 			await wipeLocalStorage({
@@ -114,7 +114,7 @@ export function openFujiBrowser({
 			});
 		},
 		[Symbol.dispose]() {
-			entryContentDocs[Symbol.dispose]();
+			entryBodies[Symbol.dispose]();
 			workspace[Symbol.dispose]();
 		},
 	});

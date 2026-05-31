@@ -8,15 +8,12 @@ type FujiMarkdownHost = Pick<FujiWorkspace, 'tables'> & {
 	idb: {
 		whenLoaded: Promise<unknown>;
 	};
-	entryContentDocs: {
+	entryBodies: {
 		open(entryId: EntryId): {
-			idb: {
-				whenLoaded: Promise<unknown>;
-			};
-			body: {
-				read(): string;
-				write(text: string): void;
-			};
+			whenLoaded: Promise<unknown>;
+			read(): string;
+			write(text: string): void;
+			[Symbol.dispose](): void;
 		};
 	};
 };
@@ -37,13 +34,13 @@ export function createFujiMarkdownActions(host: FujiMarkdownHost) {
 			const entries = host.tables.entries.getAllValid();
 			const files = await Promise.all(
 				entries.map(async (entry) => {
-					const contentDoc = host.entryContentDocs.open(entry.id);
-					await contentDoc.idb.whenLoaded;
+					using contentDoc = host.entryBodies.open(entry.id);
+					await contentDoc.whenLoaded;
 					return {
 						filename: entryFilename(entry.id),
 						content: serializeEntryMarkdown({
 							entry,
-							body: contentDoc.body.read(),
+							body: contentDoc.read(),
 						}),
 					};
 				}),
@@ -58,9 +55,9 @@ export function createFujiMarkdownActions(host: FujiMarkdownHost) {
 			const imported = files.map(parseEntryMarkdown);
 
 			for (const { entry, body } of imported) {
-				const contentDoc = host.entryContentDocs.open(entry.id);
-				await contentDoc.idb.whenLoaded;
-				contentDoc.body.write(body);
+				using contentDoc = host.entryBodies.open(entry.id);
+				await contentDoc.whenLoaded;
+				contentDoc.write(body);
 			}
 
 			await host.tables.entries.bulkSet(imported.map(({ entry }) => entry));

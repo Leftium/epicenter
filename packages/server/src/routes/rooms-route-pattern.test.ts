@@ -1,6 +1,6 @@
-import { ROOM_ROUTE } from '@epicenter/sync';
-import { asOwnerId } from '@epicenter/identity';
 import { describe, expect, test } from 'bun:test';
+import { asOwnerId } from '@epicenter/identity';
+import { ROOM_ROUTE } from '@epicenter/sync';
 import { Hono } from 'hono';
 
 /**

@@ -39,6 +39,7 @@ export type LocalModelUnloadPolicy =
 	(typeof LOCAL_MODEL_UNLOAD_POLICY_OPTIONS)[number]['value'];
 
 /** Convenience array for `type.enumerated(...LOCAL_MODEL_UNLOAD_POLICIES)`. */
-export const LOCAL_MODEL_UNLOAD_POLICIES = LOCAL_MODEL_UNLOAD_POLICY_OPTIONS.map(
-	(o) => o.value,
-) as LocalModelUnloadPolicy[];
+export const LOCAL_MODEL_UNLOAD_POLICIES =
+	LOCAL_MODEL_UNLOAD_POLICY_OPTIONS.map(
+		(o) => o.value,
+	) as LocalModelUnloadPolicy[];

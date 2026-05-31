@@ -1,5 +1,5 @@
-import { OwnerId } from '@epicenter/identity';
 import { Keyring } from '@epicenter/encryption';
+import { OwnerId } from '@epicenter/identity';
 import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 

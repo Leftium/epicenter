@@ -9,8 +9,8 @@
  * just-bash) and are added only by the browser runtime.
  */
 
-import { defineWorkspace } from '@epicenter/workspace';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
+import { defineWorkspace } from '@epicenter/workspace';
 import { defineMount } from '@epicenter/workspace/daemon';
 import { attachProjectInfrastructure } from '@epicenter/workspace/node';
 import { createOpensidian } from './opensidian.js';

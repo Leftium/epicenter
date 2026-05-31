@@ -12,9 +12,9 @@
 
 import type { DateTimeString, IanaTimeZone } from '@epicenter/workspace';
 import { dump, load } from 'js-yaml';
+import { tauri } from '#platform/tauri';
 import type { Entry, EntryId, FujiWorkspace } from './index';
 import { asEntryId } from './index';
-import { tauri } from '#platform/tauri';
 
 type FujiMarkdownHost = Pick<FujiWorkspace, 'tables'> & {
 	idb: {

@@ -10,7 +10,6 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { asOwnerId } from '@epicenter/identity';
 import {
 	base64ToBytes,
 	bytesToBase64,
@@ -19,6 +18,7 @@ import {
 	type EncryptedBlob,
 	type Keyring,
 } from '@epicenter/encryption';
+import { asOwnerId } from '@epicenter/identity';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { IDBKeyRange, indexedDB } from 'fake-indexeddb';
 import * as Y from 'yjs';

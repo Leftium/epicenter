@@ -16,11 +16,11 @@ export {
 	createOAuthAppAuth,
 } from './create-oauth-app-auth.js';
 export {
-	type CreateSameOriginCookieAuthConfig,
-	createSameOriginCookieAuth,
-} from './same-origin-cookie-auth.js';
-export {
 	createWebStoragePersistedAuthStorage,
 	loadPersistedAuthStorage,
 	type PersistedAuthStorage,
 } from './persisted-auth-storage.js';
+export {
+	type CreateSameOriginCookieAuthConfig,
+	createSameOriginCookieAuth,
+} from './same-origin-cookie-auth.js';

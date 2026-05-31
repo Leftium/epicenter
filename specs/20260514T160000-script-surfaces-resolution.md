@@ -49,11 +49,11 @@ Meanwhile the SQLite materializer already exists. The daemon writes it as a read
 
 "Script" conflates three personas:
 
-| Persona | Best transport |
-| --- | --- |
-| **Report** (cron, weekly digest, CI invariant) | Read-only SQLite |
+| Persona                                           | Best transport                            |
+| ------------------------------------------------- | ----------------------------------------- |
+| **Report** (cron, weekly digest, CI invariant)    | Read-only SQLite                          |
 | **Mutation** (AI agent, ad-hoc data manipulation) | `connectDaemonActions` (typed action RPC) |
-| **REPL / agent loop** | Both, composed |
+| **REPL / agent loop**                             | Both, composed                            |
 
 None of them benefits from holding a Y.Doc in the script process. Reports want SQL. Mutations want typed actions on the singular writer. REPLs compose the two.
 
@@ -62,19 +62,27 @@ None of them benefits from holding a Y.Doc in the script process. Reports want S
 There is no `script.ts` recipe. Each app's npm package exports two primitives, and a "script" is just a user-owned Bun file that imports them:
 
 ```ts
-import Database from 'bun:sqlite';
-import { findEpicenterDir, sqlitePath } from '@epicenter/workspace/node';
-import { connectDaemonActions } from '@epicenter/workspace';
-import { FUJI_WORKSPACE_ID, type FujiActions } from '@epicenter/fuji';
+import Database from "bun:sqlite";
+import { findEpicenterDir, sqlitePath } from "@epicenter/workspace/node";
+import { connectDaemonActions } from "@epicenter/workspace";
+import { FUJI_WORKSPACE_ID, type FujiActions } from "@epicenter/fuji";
 
 const projectDir = findEpicenterDir();
 
 // reads: open the materializer read-only
-const db = new Database(sqlitePath(projectDir, FUJI_WORKSPACE_ID), { readonly: true });
-const urgent = db.query('SELECT * FROM notes WHERE tag = ?').all('urgent');
+const db = new Database(sqlitePath(projectDir, FUJI_WORKSPACE_ID), {
+  readonly: true,
+});
+const urgent = db
+  .query(
+    "SELECT * FROM entries WHERE EXISTS (SELECT 1 FROM json_each(entries.tags) WHERE value = ?)",
+  )
+  .all("urgent");
 
 // writes: typed proxy over unix socket to the daemon
-const daemon = await connectDaemonActions<{ fuji: FujiActions }>({ projectDir });
+const daemon = await connectDaemonActions<{ fuji: FujiActions }>({
+  projectDir,
+});
 for (const note of urgent) {
   await daemon.fuji.entries_update({ id: note.id, body: rewrite(note.body) });
 }
@@ -105,7 +113,10 @@ The non-Fuji `script.ts` files are already gone (commit landed in the prior pass
 2. **Convenient read-only SQLite helper.**
    - Export from `@epicenter/workspace/node` something like:
      ```ts
-     export function openWorkspaceSqlite(projectDir: ProjectDir, workspaceId: string): Database
+     export function openWorkspaceSqlite(
+       projectDir: ProjectDir,
+       workspaceId: string,
+     ): Database;
      ```
      opens the file at `sqlitePath(projectDir, workspaceId)` read-only with the right pragmas (e.g., `journal_mode = WAL`, `query_only = 1`).
    - Alternative: ship a typed Drizzle handle per app (`@epicenter/fuji/sqlite`) so scripts get column-typed queries. Decide whether the typed handle is per-app or generic.

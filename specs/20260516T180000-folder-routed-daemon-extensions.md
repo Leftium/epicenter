@@ -4,12 +4,12 @@
 **Status**: Superseded
 **Author**: Braden + AI-assisted
 **Supersedes**: `20260516T130000-hosted-apps-with-optional-daemon-extensions.md`
-**Superseded by**: current config-owned route loading via `defineWorkspace` and `defineConfig({ daemon: { routes } })`
+**Superseded by**: Mount-list project config (`export default [fuji()]`)
 
 > Historical note: `workspaces/` is no longer scanned by the daemon loader.
 > Current projects are discovered by `epicenter.config.ts`. The default shape
-> is a single `defineWorkspace({ open })` export; multi-route projects use
-> `defineConfig({ daemon: { routes: { ... } } })`.
+> is a `Mount[]` default export from app package factories such as `fuji()`.
+> Add more mounts to the array for multi-mount projects.
 
 ## One Sentence
 
@@ -52,7 +52,7 @@ The folder name is the route. Renaming the folder renames the route. Nothing els
 
 ```ts
 // workspaces/fuji/daemon.ts
-import { defineDaemonWorkspace } from '@epicenter/workspace/daemon';
+import { defineDaemonWorkspace } from "@epicenter/workspace/daemon";
 
 export default defineDaemonWorkspace({
   async open({ auth, projectDir, route, clientId, replicaId }) {
@@ -145,7 +145,9 @@ export default defineDaemonExtension({
   createActions: createFujiActions,
   materialize: {
     sqlite: (tables) => [tables.entries],
-    markdown: (tables) => [{ table: tables.entries, filename: slugFilename('title') }],
+    markdown: (tables) => [
+      { table: tables.entries, filename: slugFilename("title") },
+    ],
   },
 });
 ```

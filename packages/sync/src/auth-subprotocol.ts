@@ -1,4 +1,3 @@
-
 /**
  * WebSocket subprotocol auth: shared client/server constants.
  *

@@ -69,7 +69,9 @@ type UpOptions = {
 	 * disk). Tests pass a stub or a deliberately-failing factory to exercise
 	 * the auth-construction seam without seeding files or mutating env vars.
 	 */
-	createAuthClient?: () => Promise<Result<SyncAuthClient, MachineAuthStorageError>>;
+	createAuthClient?: () => Promise<
+		Result<SyncAuthClient, MachineAuthStorageError>
+	>;
 };
 
 /**

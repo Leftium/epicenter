@@ -101,7 +101,7 @@ Greenfield rule applied three times:
 
 ```txt
 Would we add defineProject in a clean repo?
-  No. Mount or Mount[] already describes daemon input.
+  No. Mount[] already describes daemon input.
 
 Would we add a separate attachGitAutosave subscribing via onWrite?
   No. The materializer is the only source. The event API is plumbing for a fan-out that does not exist.
@@ -153,19 +153,19 @@ This proves the implementation works, but the ownership is wrong twice over: the
 
 ## Target Shape
 
-Project config returns the mount value directly.
+Project config returns a mount list.
 
 ```ts
-import { fuji } from '@epicenter/fuji/project';
+import { fuji } from "@epicenter/fuji/project";
 
-export default fuji();
+export default [fuji()];
 ```
 
 Multi-mount projects return an array.
 
 ```ts
-import { fuji } from '@epicenter/fuji/project';
-import { honeycrisp } from '@epicenter/honeycrisp/project';
+import { fuji } from "@epicenter/fuji/project";
+import { honeycrisp } from "@epicenter/honeycrisp/project";
 
 export default [fuji(), honeycrisp()];
 ```
@@ -173,12 +173,9 @@ export default [fuji(), honeycrisp()];
 Git autosave is configured per markdown materializer call. The mount factory threads `opts.git` straight into `attachMarkdownMaterializer`.
 
 ```ts
-const author = { name: 'me', email: 'me@example.com' };
+const author = { name: "me", email: "me@example.com" };
 
-export default [
-  fuji({ git: { author } }),
-  honeycrisp({ git: { author } }),
-];
+export default [fuji({ git: { author } }), honeycrisp({ git: { author } })];
 ```
 
 Inside the mount, Git is one option on the markdown materializer. No separate attach call.
@@ -192,18 +189,20 @@ export type FujiMountOptions = {
 
 export function fuji(opts: FujiMountOptions = {}) {
   return defineMount({
-    name: 'fuji',
+    name: "fuji",
     open(ctx) {
       const workspace = createFujiWorkspace({ keyring: ctx.keyring });
       workspace.ydoc.clientID = ctx.yDocClientId;
 
       const sqlite = attachBunSqliteMaterializer(workspace, {
-        filePath: opts.sqliteFile ?? sqlitePath(ctx.projectDir, ctx.mount),
+        filePath:
+          opts.sqliteFile ?? sqlitePath(ctx.projectDir, workspace.ydoc.guid),
       });
 
       const markdown = attachMarkdownMaterializer(workspace, {
-        dir: opts.markdownDir ?? markdownPath(ctx.projectDir, ctx.mount),
-        perTable: { entries: { filename: slugFilename('title') } },
+        dir:
+          opts.markdownDir ?? markdownPath(ctx.projectDir, workspace.ydoc.guid),
+        perTable: { entries: { filename: slugFilename("title") } },
         git: opts.git,
       });
 
@@ -244,17 +243,16 @@ No daemon-level git branch. No output registry. No project wrapper. No separate 
 
 ### Config Loader
 
-`loadProjectConfig(projectDir)` accepts exactly two default export shapes:
+`loadProjectConfig(projectDir)` accepts exactly one default export shape:
 
 ```ts
-export default fuji();
 export default [fuji(), honeycrisp()];
 ```
 
 It returns:
 
 ```ts
-Promise<Result<Mount[], ProjectConfigError>>
+Promise<Result<Mount[], ProjectConfigError>>;
 ```
 
 The default generated config returns an empty array. It does not import `defineProject`.
@@ -341,7 +339,11 @@ Defaults destructured on one line after the `if (opts.git)` guard:
 
 ```ts
 if (options.git) {
-  const { author: { name = 'Autosave', email = 'autosave@epicenter.local' } = {}, quietMs = 5_000, maxBatchMs = 60_000 } = options.git;
+  const {
+    author: { name = "Autosave", email = "autosave@epicenter.local" } = {},
+    quietMs = 5_000,
+    maxBatchMs = 60_000,
+  } = options.git;
   // ... wire timers, dirty Set, stageAndCommit
 }
 ```
@@ -353,7 +355,9 @@ Author defaults to `Autosave <autosave@epicenter.local>` deliberately. The synth
 `onWrite`, `MaterializerWriteEvent`, and `WriteListener` are removed from the public surface. They become private internals of the materializer.
 
 ```ts
-export type MarkdownMaterializer = ReturnType<typeof attachMarkdownMaterializer>;
+export type MarkdownMaterializer = ReturnType<
+  typeof attachMarkdownMaterializer
+>;
 // { whenFlushed, push, pull, rebuild }
 ```
 
@@ -394,19 +398,26 @@ Use Bun.$ for this implementation. It removes the `runGit` helper and shrinks ev
 
 ```ts
 const add = await $`git add -- ${paths}`.cwd(dir).nothrow().quiet();
-if (add.exitCode !== 0) { log.warn(`autosave add failed: ${add.stderr.toString()}`); return; }
+if (add.exitCode !== 0) {
+  log.warn(`autosave add failed: ${add.stderr.toString()}`);
+  return;
+}
 
-const commit = await $`git -c commit.gpgsign=false commit --no-gpg-sign -m ${message} -- ${paths}`
-  .cwd(dir)
-  .env({ ...process.env,
-    GIT_AUTHOR_NAME: name,  GIT_AUTHOR_EMAIL: email,
-    GIT_COMMITTER_NAME: name, GIT_COMMITTER_EMAIL: email,
-  })
-  .nothrow()
-  .quiet();
+const commit =
+  await $`git -c commit.gpgsign=false commit --no-gpg-sign -m ${message} -- ${paths}`
+    .cwd(dir)
+    .env({
+      ...process.env,
+      GIT_AUTHOR_NAME: name,
+      GIT_AUTHOR_EMAIL: email,
+      GIT_COMMITTER_NAME: name,
+      GIT_COMMITTER_EMAIL: email,
+    })
+    .nothrow()
+    .quiet();
 
 if (commit.exitCode === 0) return;
-if (commit.stderr.toString().includes('nothing to commit')) return;
+if (commit.stderr.toString().includes("nothing to commit")) return;
 log.warn(`autosave commit failed: ${commit.stderr.toString()}`);
 ```
 
@@ -426,8 +437,8 @@ Path-limited commit (`-- ${paths}`) is the canonical safe form (see "Staged-isol
 
 - [x] **1. Restore project config to mount-only shapes.**
   - Delete `packages/workspace/src/config/define-project.ts`.
-  - Revert `loadProjectConfig` to accept `Mount | Mount[]` and return `Mount[]`.
-  - Revert `DEFAULT_PROJECT_CONFIG_SOURCE` to `export default []` with a comment showing `fuji()` as the example.
+  - Keep `loadProjectConfig` accepting `Mount[]` only.
+  - Revert `DEFAULT_PROJECT_CONFIG_SOURCE` to `export default []` with a comment showing `[fuji()]` as the example.
   - Update `load-project-config.test.ts` to drop the `Project` shape.
 
 - [x] **2. Remove daemon output plumbing.**
@@ -443,14 +454,18 @@ Path-limited commit (`-- ${paths}`) is the canonical safe form (see "Staged-isol
 - [x] **4. Add the git option inside `attachMarkdownMaterializer`.**
   - Extend the options object with `git?: GitAutosaveConfig`.
   - On attach, if `opts.git` is present, one-line destructure with defaults:
-     ```ts
-     const { author: { name = 'Autosave', email = 'autosave@epicenter.local' } = {}, quietMs = 5_000, maxBatchMs = 60_000 } = options.git;
-     ```
+    ```ts
+    const {
+      author: { name = "Autosave", email = "autosave@epicenter.local" } = {},
+      quietMs = 5_000,
+      maxBatchMs = 60_000,
+    } = options.git;
+    ```
   - Run `git rev-parse --is-inside-work-tree` (cwd=baseDir, nothrow, quiet); if exit code is non-zero, log once and skip autosave wiring.
   - Maintain a `Set<string>` of dirty absolute paths, two timers (`quietTimer`, `maxBatchTimer`), and a private `enqueueWrite(absPath)` helper.
   - Inside the existing `emitWrite(event)` body, after the listener-fan-out (which becomes a no-op if we delete public `onWrite`), call `enqueueWrite(event.path)`.
   - Do NOT hook `ydoc.once('destroy', ...)` for autosave. The hook is sync fire-and-forget per DeepWiki on `yjs/yjs`; spawning a git commit from it almost always loses the in-flight batch. Recovery happens via next-startup re-materialization instead.
-  > Note: implementation also enqueues `pull()` and `rebuild()` writes, because they are materializer-owned file mutations too.
+    > Note: implementation also enqueues `pull()` and `rebuild()` writes, because they are materializer-owned file mutations too.
 
 - [x] **5. Use `Bun.$` for git.**
   - Import via `import { $ } from 'bun'`.
@@ -458,7 +473,7 @@ Path-limited commit (`-- ${paths}`) is the canonical safe form (see "Staged-isol
   - Inline `git add` and `git commit` calls inside `stageAndCommit`.
   - Single retry on stderr containing `index.lock` with 250ms delay.
   - Treat commit exit 1 with `nothing to commit` in stderr as a silent skip.
-  > Note: implementation checks stdout and stderr for no-diff text because Git prints this path to stdout in common cases.
+    > Note: implementation checks stdout and stderr for no-diff text because Git prints this path to stdout in common cases.
 
 - [x] **6. Remove public `onWrite` from the markdown materializer return.**
   - Delete the `onWrite(listener): () => void` method from the return object.
@@ -498,25 +513,25 @@ Y.Doc table change
 
 ## Design Decisions
 
-| Decision | Class | Rationale |
-| --- | --- | --- |
-| Git lives inside `attachMarkdownMaterializer` | Greenfield refusal | The materializer is the only source of files-to-commit. One owner, one closure, one option. No event boundary earns its keep. |
-| Delete `defineProject` | Greenfield refusal | A project wrapper only carried `git`. Without git at the project level, `Mount[]` is enough. |
-| Delete public `MaterializerWriteEvent` / `WriteListener` / `onWrite` | Greenfield refusal | Existed to ferry data to an external subscriber. No external subscriber exists. |
-| Use `Bun.$` instead of `Bun.spawn` | Implementation simplicity | Auto-escaped paths, chainable env/cwd/nothrow/quiet, inline call sites. Removes the `runGit` helper. Marginal overhead, negligible for git invocations. |
-| No destroy hook; rely on next-startup re-materialization | Evidence | Per DeepWiki on `yjs/yjs`, destroy listeners are sync fire-and-forget; Yjs never awaits returned promises. Spawning git from the hook is mostly cosmetic. Re-materialization on next attach naturally re-enqueues lost paths. |
-| Drop mid-rebase/merge/cherry-pick detection | Greenfield refusal | "Files must land" wins over "do not interfere with interactive git." Commit fails -> log -> files remain on disk -> user recovers. ~25 LOC saved. |
-| Drop `hasStagedChanges` precheck | Implementation simplicity | `git commit` exits 1 with "nothing to commit" on empty staging. Match that stderr and silent-skip. ~25 LOC saved. |
-| Drop `inFlight: Promise<void>` serialization | Implementation simplicity | `drainDirty()` is atomic. Concurrent flushes from the same materializer race the index lock; the retry handles it. ~10 LOC saved. |
-| Drop path-escapes-projectDir guard | Implementation simplicity | The materializer owns `dir`. It cannot emit paths outside its own tree. |
-| `Set<string>` instead of `Map<string, DirtyEntry>` | Implementation simplicity | No mount accounting, no write/unlink distinction in the commit message. |
-| Author default: `Autosave <autosave@epicenter.local>` | Privacy + UX | Synthetic email never matches a verified GitHub account: no contribution graph entries, no avatar leak. Users override if they want their identity. |
-| Run `git rev-parse --is-inside-work-tree` once at attach time | Defensive minimum | Avoids log-spam when the project is not in a repo. Three lines. |
-| Single retry on `.git/index.lock` (250ms) | Taste under constraints | Multi-materializer concurrency is rare but real. One retry covers it without hot-looping. |
-| Keep `quietMs` and `maxBatchMs` | Invariant | "Files must land" requires both debouncing (so we do not commit-spam) and a periodic force-flush (so an active writing session does eventually persist). |
-| Do not add a generic `onAfterWrite` hook to the materializer | Greenfield refusal | One sink, internal. Adding a public hook for a hypothetical second sink is the trap we just escaped. |
-| Do not add `.withGitAutosave()` builder | Greenfield refusal | Mount factories are plain calls; chaining hides lifecycle order. |
-| Do not put git on the SQLite materializer | Scope | SQLite output is binary and `.epicenter/`-gitignored. Not a git-tracked artifact. |
+| Decision                                                             | Class                     | Rationale                                                                                                                                                                                                                     |
+| -------------------------------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Git lives inside `attachMarkdownMaterializer`                        | Greenfield refusal        | The materializer is the only source of files-to-commit. One owner, one closure, one option. No event boundary earns its keep.                                                                                                 |
+| Delete `defineProject`                                               | Greenfield refusal        | A project wrapper only carried `git`. Without git at the project level, `Mount[]` is enough.                                                                                                                                  |
+| Delete public `MaterializerWriteEvent` / `WriteListener` / `onWrite` | Greenfield refusal        | Existed to ferry data to an external subscriber. No external subscriber exists.                                                                                                                                               |
+| Use `Bun.$` instead of `Bun.spawn`                                   | Implementation simplicity | Auto-escaped paths, chainable env/cwd/nothrow/quiet, inline call sites. Removes the `runGit` helper. Marginal overhead, negligible for git invocations.                                                                       |
+| No destroy hook; rely on next-startup re-materialization             | Evidence                  | Per DeepWiki on `yjs/yjs`, destroy listeners are sync fire-and-forget; Yjs never awaits returned promises. Spawning git from the hook is mostly cosmetic. Re-materialization on next attach naturally re-enqueues lost paths. |
+| Drop mid-rebase/merge/cherry-pick detection                          | Greenfield refusal        | "Files must land" wins over "do not interfere with interactive git." Commit fails -> log -> files remain on disk -> user recovers. ~25 LOC saved.                                                                             |
+| Drop `hasStagedChanges` precheck                                     | Implementation simplicity | `git commit` exits 1 with "nothing to commit" on empty staging. Match that stderr and silent-skip. ~25 LOC saved.                                                                                                             |
+| Drop `inFlight: Promise<void>` serialization                         | Implementation simplicity | `drainDirty()` is atomic. Concurrent flushes from the same materializer race the index lock; the retry handles it. ~10 LOC saved.                                                                                             |
+| Drop path-escapes-projectDir guard                                   | Implementation simplicity | The materializer owns `dir`. It cannot emit paths outside its own tree.                                                                                                                                                       |
+| `Set<string>` instead of `Map<string, DirtyEntry>`                   | Implementation simplicity | No mount accounting, no write/unlink distinction in the commit message.                                                                                                                                                       |
+| Author default: `Autosave <autosave@epicenter.local>`                | Privacy + UX              | Synthetic email never matches a verified GitHub account: no contribution graph entries, no avatar leak. Users override if they want their identity.                                                                           |
+| Run `git rev-parse --is-inside-work-tree` once at attach time        | Defensive minimum         | Avoids log-spam when the project is not in a repo. Three lines.                                                                                                                                                               |
+| Single retry on `.git/index.lock` (250ms)                            | Taste under constraints   | Multi-materializer concurrency is rare but real. One retry covers it without hot-looping.                                                                                                                                     |
+| Keep `quietMs` and `maxBatchMs`                                      | Invariant                 | "Files must land" requires both debouncing (so we do not commit-spam) and a periodic force-flush (so an active writing session does eventually persist).                                                                      |
+| Do not add a generic `onAfterWrite` hook to the materializer         | Greenfield refusal        | One sink, internal. Adding a public hook for a hypothetical second sink is the trap we just escaped.                                                                                                                          |
+| Do not add `.withGitAutosave()` builder                              | Greenfield refusal        | Mount factories are plain calls; chaining hides lifecycle order.                                                                                                                                                              |
+| Do not put git on the SQLite materializer                            | Scope                     | SQLite output is binary and `.epicenter/`-gitignored. Not a git-tracked artifact.                                                                                                                                             |
 
 ## Rejected Alternatives
 
@@ -820,7 +835,7 @@ hasStagedChanges precheck (replaced by commit-time stderr match)
 ## Done Criteria
 
 ```txt
-epicenter.config.ts accepts only Mount or Mount[]
+epicenter.config.ts accepts only Mount[]
 attachMarkdownMaterializer accepts opts.git
 git: {} enables autosave with all defaults
 git: undefined disables autosave entirely (zero overhead)

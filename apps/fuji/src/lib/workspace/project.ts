@@ -38,9 +38,9 @@ import {
 	resolveProjectPath,
 	sqlitePath,
 } from '@epicenter/workspace/node';
-import * as Y from 'yjs';
 import { createLogger } from 'wellcrafted/logger';
-import { createFuji, entryContentDocGuid, type Entry } from './index.js';
+import * as Y from 'yjs';
+import { createFuji, type Entry, entryContentDocGuid } from './index.js';
 
 const BODY_CONNECT_DEADLINE_MS = 10_000;
 

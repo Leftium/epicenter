@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { docGuid } from '@epicenter/workspace';
-import { FUJI_ID, asEntryId, entryContentDocGuid } from './index.js';
+import { asEntryId, entryContentDocGuid, FUJI_ID } from './index.js';
 
 describe('Fuji schema helpers', () => {
 	test('entryContentDocGuid is deterministic per entry id', () => {

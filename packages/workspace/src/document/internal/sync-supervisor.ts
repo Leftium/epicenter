@@ -514,7 +514,6 @@ function openDefaultWebSocket(
 	return new WebSocket(url, protocols);
 }
 
-
 /**
  * One-shot promise with idempotent `resolve`/`reject`. Pre-attaches a no-op
  * `.catch` so a rejection without a consumer does not surface as an

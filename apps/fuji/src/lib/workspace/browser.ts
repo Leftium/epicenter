@@ -18,9 +18,9 @@
 
 import type { SignedIn } from '@epicenter/svelte';
 import {
+	type ActionRegistry,
 	attachLocalStorage,
 	attachRichText,
-	type ActionRegistry,
 	createDisposableCache,
 	DateTimeString,
 	type DeviceId,
@@ -31,7 +31,7 @@ import {
 	wipeLocalStorage,
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
-import { createFuji, entryContentDocGuid, type EntryId } from './index';
+import { createFuji, type EntryId, entryContentDocGuid } from './index';
 import { createFujiMarkdownActions } from './markdown';
 
 export function openFujiBrowser({

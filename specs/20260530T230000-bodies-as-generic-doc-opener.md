@@ -294,6 +294,10 @@ observer for every entry, so every body is re-read once. The proper fix is a mat
 persistence. `withTimeout` bounds a single wedged room; its cleaner home is a
 connect-deadline option on `openCollaboration`.
 
+> SUPERSEDED by the 2026-05-31 addendum: the `dirtyKey` skip described here was built and
+> then reverted. The cold-restart re-read is now the accepted cost AND the heal mechanism.
+> Only the `connectDeadlineMs` half of this paragraph survived.
+
 ---
 
 ## Design decisions
@@ -589,3 +593,61 @@ destroy. No snapshot map, no startup loop, no per-body persistence.
 
 Root `bun run build` was also run and failed in unrelated `opensidian#build` code at
 `apps/opensidian/src/lib/state/skill-state.svelte.ts:145`.
+
+## Addendum (2026-05-31): dirtyKey reversed; restart-as-heal is the contract
+
+The first pass after this spec added a materializer `dirtyKey` to fix the cold-start
+re-read storm noted above ("The proper fix is a materializer skip-when... dirty-check").
+On a second look that was the wrong call, and it has been **reverted** (commit dropping
+the `dirtyKey` config field, `seedDirtyKeys`, the skip checks, fuji's
+`dirtyKey: (e) => e.updatedAt`, and the two tests).
+
+Why it was wrong:
+
+```txt
+dirtyKey bought ONE thing: skip the cold-start body re-read storm on daemon restart.
+  - Steady state already only fires the observer for changed rows.
+  - A metadata edit bumps updatedAt anyway, so dirtyKey did NOT save that re-read.
+  - Its sole value was "don't re-sync every body when the daemon restarts."
+
+It paid for that with:
+  1. A RACY cross-doc proxy. updatedAt lives in the ROOT doc; the body lives in
+     ANOTHER doc syncing over a SEPARATE socket. "edit body, close tab fast" can
+     flush the root updatedAt before the body update flushes. The daemon then reads
+     a STALE body, writes .md (stale body + new timestamp), and records the key.
+     onLocalUpdate fires only on tx.local, so the reconnect flush of the body update
+     never re-bumps updatedAt -> the .md stays stale until the next MANUAL edit.
+  2. A cross-file invariant (materialization depends on the browser's onLocalUpdate
+     touch firing on every body edit).
+  3. A YAML round-trip fragility (the cold-start seed parsed updatedAt back out of
+     on-disk frontmatter; a parser that coerced it to a Date would silently disable
+     the gate).
+  4. THE BIG ONE: it killed restart-as-heal. WITHOUT dirtyKey, every daemon restart
+     re-reads every body fresh, which self-HEALS any .md left stale by #1. WITH
+     dirtyKey, the staleness was permanent across restarts.
+```
+
+The reframe: `dirtyKey` is a workaround for `toMarkdown` having a HIDDEN SIDE-INPUT
+(the body doc) the materializer cannot see. The honest generic "skip when unchanged"
+is "hash the row-DERIVED output" (automatic, no user key), which is valid only when
+`toMarkdown` is PURE in the row. Fuji's body read is exactly what does NOT fit that
+contract, which is the tell.
+
+New contract (simpler, more correct at fuji's scale):
+
+```txt
+The daemon .md is a DERIVED PROJECTION, not the source of truth (the body Y.Doc is).
+The daemon re-reads every body on every restart. That is the cost we accept, and it
+is also the feature: a restart heals any stale projection left by a cross-doc race.
+At fuji's scale (tens to low-hundreds of entries) the restart re-read is trivial.
+```
+
+What still holds from the body of this spec: app-owned typed caches (D1), no new
+library primitive (D3), browser caches / daemon loops (D4), the derived guid (D2), the
+encryption gradation. `connectDeadlineMs` is KEPT: with inline sequential reads, one
+wedged room must not hang the loop, so the per-read deadline is genuinely needed.
+
+When scale arrives (a thousand-entry vault), the fix is NOT a better proxy key. It is a
+bounded-LRU daemon that holds body docs live and materializes each from the BODY doc's
+OWN observer (no proxy, no race, no dirtyKey). That needs LRU on `createDisposableCache`
+and a conscious revisit of D4's "never hold bodies live." Deliberately deferred.

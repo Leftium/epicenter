@@ -10,7 +10,9 @@
  * What this does:
  *   1. workspace root doc (encrypted tables + KV via createFuji)
  *   2. SQLite materializer at `opts.sqliteFile ?? sqlitePath(...)`
- *   3. Markdown materializer at `opts.markdownDir ?? markdownPath(...)`
+ *   3. Markdown materializer at `opts.markdownDir ?? markdownPath(...)`; each
+ *      entry's body is read on demand from its content doc, synced from the
+ *      cloud per row and never persisted on the daemon
  *   4. infrastructure: Yjs log persistence + cloud sync via
  *      `attachProjectInfrastructure`
  */
@@ -19,6 +21,8 @@ import {
 	attachRichText,
 	defineActions,
 	defineWorkspace,
+	openCollaboration,
+	roomWsUrl,
 } from '@epicenter/workspace';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { defineMount } from '@epicenter/workspace/daemon';
@@ -36,12 +40,7 @@ import {
 } from '@epicenter/workspace/node';
 import * as Y from 'yjs';
 import { createLogger } from 'wellcrafted/logger';
-import {
-	createFuji,
-	entryContentDocGuid,
-	type Entry,
-	type EntryId,
-} from './index.js';
+import { createFuji, entryContentDocGuid, type Entry } from './index.js';
 
 const BODY_CONNECT_TIMEOUT_MS = 10_000;
 
@@ -83,20 +82,54 @@ export function fuji(opts: FujiMountOptions = {}) {
 				filePath: sqliteFile,
 				log: createLogger(`${mount}-sqlite`),
 			});
-			const entryBodies = new Map<EntryId, string>();
-			let resolveInitialBodies!: () => void;
-			const whenInitialBodies = new Promise<void>((resolve) => {
-				resolveInitialBodies = resolve;
-			});
+			/**
+			 * Read one entry's body from its content doc. The body lives in a
+			 * separate cloud doc addressed by `entryContentDocGuid(id)`; the daemon
+			 * does not mirror it, so we open a throwaway doc, sync it, read the
+			 * text, and destroy it. No local persistence: a body read is a read,
+			 * not a second on-disk copy.
+			 *
+			 * Throws on connect timeout so the materializer skips the write and
+			 * leaves the existing `.md` intact rather than clobbering it with an
+			 * empty body.
+			 */
+			const readEntryBody = async (entry: Entry): Promise<string> => {
+				const ydoc = new Y.Doc({
+					guid: entryContentDocGuid(entry.id),
+					gc: true,
+				});
+				const collaboration = openCollaboration(ydoc, {
+					url: roomWsUrl({
+						baseURL: EPICENTER_API_URL,
+						ownerId,
+						guid: ydoc.guid,
+						deviceId,
+					}),
+					openWebSocket,
+					onReconnectSignal,
+					actions: {},
+				});
+				try {
+					await withTimeout(
+						collaboration.whenConnected,
+						BODY_CONNECT_TIMEOUT_MS,
+						`${ydoc.guid} body sync`,
+					);
+					return attachRichText(ydoc).read();
+				} finally {
+					ydoc.destroy();
+					await collaboration.whenDisposed;
+				}
+			};
+
 			const markdown = attachMarkdownMaterializer(workspace, {
 				dir: mdDir,
-				waitFor: whenInitialBodies,
 				perTable: {
 					entries: {
 						filename: slugFilename('title'),
-						toMarkdown: (entry) => ({
+						toMarkdown: async (entry) => ({
 							frontmatter: { ...entry },
-							body: entryBodies.get(entry.id) ?? '',
+							body: await readEntryBody(entry),
 						}),
 					},
 				},
@@ -119,42 +152,6 @@ export function fuji(opts: FujiMountOptions = {}) {
 				actions,
 			});
 
-			const bodyLog = createLogger(`${mount}-entry-bodies`);
-			void (async () => {
-				try {
-					await withTimeout(
-						infrastructure.collaboration.whenConnected,
-						BODY_CONNECT_TIMEOUT_MS,
-						`${workspace.ydoc.guid} root collaboration`,
-					);
-					for (const entry of workspace.tables.entries.getAllValid()) {
-						const text = await readEntryBody({
-							entry,
-							baseURL: EPICENTER_API_URL,
-							projectDir,
-							ownerId,
-							deviceId,
-							openWebSocket,
-							onReconnectSignal,
-						}).catch((cause) => {
-							bodyLog.warn(
-								new Error(`Failed to materialize entry body ${entry.id}`, {
-									cause,
-								}),
-							);
-							return undefined;
-						});
-						if (text !== undefined) entryBodies.set(entry.id, text);
-					}
-				} catch (cause) {
-					bodyLog.warn(
-						new Error('Failed to materialize Fuji entry bodies', { cause }),
-					);
-				} finally {
-					resolveInitialBodies();
-				}
-			})();
-
 			return defineWorkspace({
 				...workspace,
 				...infrastructure,
@@ -166,50 +163,6 @@ export function fuji(opts: FujiMountOptions = {}) {
 }
 
 export type FujiMount = ReturnType<typeof fuji>;
-
-async function readEntryBody({
-	entry,
-	baseURL,
-	projectDir,
-	ownerId,
-	deviceId,
-	openWebSocket,
-	onReconnectSignal,
-}: {
-	entry: Entry;
-	baseURL: string;
-	projectDir: Parameters<typeof attachProjectInfrastructure>[1]['projectDir'];
-	ownerId: Parameters<typeof attachProjectInfrastructure>[1]['ownerId'];
-	deviceId: Parameters<typeof attachProjectInfrastructure>[1]['deviceId'];
-	openWebSocket: Parameters<
-		typeof attachProjectInfrastructure
-	>[1]['openWebSocket'];
-	onReconnectSignal: Parameters<
-		typeof attachProjectInfrastructure
-	>[1]['onReconnectSignal'];
-}): Promise<string> {
-	const ydoc = new Y.Doc({ guid: entryContentDocGuid(entry.id), gc: true });
-	const infrastructure = attachProjectInfrastructure(ydoc, {
-		baseURL,
-		projectDir,
-		ownerId,
-		deviceId,
-		openWebSocket,
-		onReconnectSignal,
-		actions: {},
-	});
-
-	try {
-		await withTimeout(
-			infrastructure.collaboration.whenConnected,
-			BODY_CONNECT_TIMEOUT_MS,
-			`${ydoc.guid} body collaboration`,
-		);
-		return attachRichText(ydoc).read();
-	} finally {
-		await infrastructure[Symbol.asyncDispose]();
-	}
-}
 
 function withTimeout<T>(
 	promise: Promise<T>,

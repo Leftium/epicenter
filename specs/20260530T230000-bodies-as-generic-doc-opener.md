@@ -241,19 +241,58 @@ await body.whenLoaded;
 const text = body.read();
 ```
 
-### Daemon (apps/fuji/.../project.ts) — no cache, a plain loop
+### Daemon (apps/fuji/.../project.ts) — no cache, read bodies inline per row
+
+The daemon does not pre-load bodies into a map and does not run a startup loop. The
+markdown materializer's `toMarkdown(row)` hook reads the body inline, per row, every time
+the row materializes:
 
 ```ts
-for (const entry of tables.entries.getAllValid()) {
+const readEntryBody = async (entry) => {
   const ydoc = new Y.Doc({ guid: entryContentDocGuid(entry.id), gc: true });
-  const infra = attachProjectInfrastructure(ydoc, { /* yjs-log + sync, actions: {} */ });
-  await infra.collaboration.whenConnected;                       // NOT a non-existent firstSync
-  markdown.writeBody('entries', entry.id, attachRichText(ydoc).read());
-  ydoc.destroy();
-}
-// Steady-state body observer (re-materialize on the body's own update stream) is the SAME
-// Phase 3 work the 180000 spec scoped; unchanged, just app-owned, still no cache.
+  const collaboration = openCollaboration(ydoc, {
+    url: roomWsUrl({ baseURL, ownerId, guid: ydoc.guid, deviceId }),
+    openWebSocket, onReconnectSignal, actions: {},               // a content doc: no actions
+  });
+  try {
+    await withTimeout(collaboration.whenConnected, BODY_CONNECT_TIMEOUT_MS, label); // NOT firstSync
+    return attachRichText(ydoc).read();                          // STEP2 applied -> real content
+  } finally {
+    ydoc.destroy();                                              // cascade-disposes the socket
+    await collaboration.whenDisposed;
+  }
+};
+
+attachMarkdownMaterializer(workspace, {
+  perTable: { entries: {
+    filename: slugFilename('title'),
+    toMarkdown: async (entry) => ({ frontmatter: { ...entry }, body: await readEntryBody(entry) }),
+  } },
+});
 ```
+
+Two corrections to the earlier sketch, found when it met the real code:
+
+- `openCollaboration` (sync only), NOT `attachProjectInfrastructure` (sync + yjs-log). A
+  body read is a read. The daemon already writes the body to disk as the `.md` file, so a
+  per-body yjs-log is a redundant second on-disk copy. Persistence buys only delta sync
+  over full sync (marginal for KB notes) and does NOT remove the connect wait: the daemon
+  must still sync to fetch edits made since the last read.
+
+- Inline reactive, NOT a startup loop. Reading inside `toMarkdown` means the materializer
+  re-reads a body whenever its row changes; the browser's `updatedAt` touch fires on every
+  body edit, so a body edit propagates to the `.md` for free. This is the steady-state body
+  reactivity the 180000 spec scoped as Phase 3; it falls out of the materializer, so it is
+  no longer separate work. The first implementation's snapshot-map + deferred-promise
+  barrier shipped a real defect: a later body edit bumped `updatedAt`, the materializer
+  rewrote the `.md` with a fresh timestamp but the frozen startup body. Inline reads fix it
+  and delete the coordination glue.
+
+Known cost (tracked, not fixed here): on a cold restart, loading the root log fires the
+observer for every entry, so every body is re-read once. The proper fix is a materializer
+"skip when the row's `updatedAt` matches the on-disk frontmatter" dirty-check, not body
+persistence. `withTimeout` bounds a single wedged room; its cleaner home is a
+connect-deadline option on `openCollaboration`.
 
 ---
 
@@ -518,16 +557,22 @@ Fuji now owns entry body construction in `openFujiBrowser()`. The browser expose
 `entryContentDocGuid(id)`, attaches rich text, wires local storage and sync, and bumps
 `updatedAt` on local body edits.
 
-The daemon path no longer uses the deleted sweep helper. It opens one derived entry body
-doc at a time, attaches project infrastructure, waits on `collaboration.whenConnected`
-with a timeout, reads `attachRichText(ydoc).read()`, destroys the doc, and feeds the text
-into the markdown materializer's `toMarkdown` hook.
+The daemon path no longer uses the deleted sweep helper. The markdown materializer's
+`toMarkdown(row)` hook reads each entry body inline: open a throwaway doc at
+`entryContentDocGuid(id)`, `openCollaboration` (sync only, `actions: {}`), wait on
+`collaboration.whenConnected` with a `withTimeout` bound, read `attachRichText(ydoc).read()`,
+destroy. No snapshot map, no startup loop, no per-body persistence.
 
 ### Deviations and Discoveries
 
 - The spec's `markdown.writeBody(...)` pseudocode was not a real API. Fuji writes body
   text through the existing markdown materializer shape: `toMarkdown(row)` returns
   `{ frontmatter, body }`.
+- The first implementation pre-loaded bodies into a map gated by a deferred promise; it
+  rewrote stale bodies on any `updatedAt` change. Replaced with an inline reactive read in
+  `toMarkdown`, which self-heals on every edit and deletes the coordination glue.
+- `openCollaboration` replaced `attachProjectInfrastructure` for body reads: a read needs
+  sync, not a second on-disk yjs-log (the `.md` is already the daemon's body copy).
 - The deleted subsystem files were already untracked in the worktree when implementation
   started. They were removed from disk, but they do not appear as tracked deletions in
   `git diff --stat`.

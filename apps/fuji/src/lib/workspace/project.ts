@@ -42,7 +42,7 @@ import * as Y from 'yjs';
 import { createLogger } from 'wellcrafted/logger';
 import { createFuji, entryContentDocGuid, type Entry } from './index.js';
 
-const BODY_CONNECT_TIMEOUT_MS = 10_000;
+const BODY_CONNECT_DEADLINE_MS = 10_000;
 
 export type FujiMountOptions = {
 	/** Markdown directory; relative paths resolve against `projectDir`. */
@@ -89,7 +89,7 @@ export function fuji(opts: FujiMountOptions = {}) {
 			 * text, and destroy it. No local persistence: a body read is a read,
 			 * not a second on-disk copy.
 			 *
-			 * Throws on connect timeout so the materializer skips the write and
+			 * Throws when the connect deadline elapses so the materializer skips the write and
 			 * leaves the existing `.md` intact rather than clobbering it with an
 			 * empty body.
 			 */
@@ -107,14 +107,11 @@ export function fuji(opts: FujiMountOptions = {}) {
 					}),
 					openWebSocket,
 					onReconnectSignal,
+					connectDeadlineMs: BODY_CONNECT_DEADLINE_MS,
 					actions: {},
 				});
 				try {
-					await withTimeout(
-						collaboration.whenConnected,
-						BODY_CONNECT_TIMEOUT_MS,
-						`${ydoc.guid} body sync`,
-					);
+					await collaboration.whenConnected;
 					return attachRichText(ydoc).read();
 				} finally {
 					ydoc.destroy();
@@ -166,21 +163,3 @@ export function fuji(opts: FujiMountOptions = {}) {
 }
 
 export type FujiMount = ReturnType<typeof fuji>;
-
-function withTimeout<T>(
-	promise: Promise<T>,
-	timeoutMs: number,
-	label: string,
-): Promise<T> {
-	let timeout: ReturnType<typeof setTimeout> | undefined;
-	return Promise.race([
-		promise,
-		new Promise<never>((_, reject) => {
-			timeout = setTimeout(() => {
-				reject(new Error(`${label} timed out after ${timeoutMs}ms`));
-			}, timeoutMs);
-		}),
-	]).finally(() => {
-		if (timeout !== undefined) clearTimeout(timeout);
-	});
-}

@@ -98,6 +98,14 @@ export type OpenCollaborationConfig<TActions extends ActionRegistry> = {
 	 */
 	onReconnectSignal: OnReconnectSignal;
 	waitFor?: Promise<unknown>;
+	/**
+	 * Optional deadline for the FIRST sync handshake. When set, the returned
+	 * `whenConnected` rejects if STEP2/UPDATE does not land within this many ms.
+	 * The supervisor keeps retrying regardless; only this handle's `whenConnected`
+	 * view rejects. Omit for long-lived docs (the root doc) that should wait
+	 * indefinitely; set it for one-shot reads that must give up if a room stalls.
+	 */
+	connectDeadlineMs?: number;
 	log?: Logger;
 	/**
 	 * Local action registry. Pass `{}` for content docs and consume-only
@@ -110,6 +118,30 @@ export type OpenCollaborationConfig<TActions extends ActionRegistry> = {
 // ════════════════════════════════════════════════════════════════════════════
 // IMPLEMENTATION
 // ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Reject `whenConnected` if the first handshake has not landed within
+ * `deadlineMs`. Decorates the supervisor's one-shot promise without touching its
+ * retry loop; the timer clears as soon as the underlying promise settles, so a
+ * fast connect leaves no dangling handle. The caller tears the doc down on
+ * rejection (e.g. `ydoc.destroy()`).
+ */
+function withConnectDeadline(
+	whenConnected: Promise<void>,
+	deadlineMs: number,
+): Promise<void> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	return Promise.race([
+		whenConnected,
+		new Promise<never>((_, reject) => {
+			timer = setTimeout(() => {
+				reject(new Error(`sync handshake exceeded ${deadlineMs}ms`));
+			}, deadlineMs);
+		}),
+	]).finally(() => {
+		if (timer !== undefined) clearTimeout(timer);
+	});
+}
 
 export function openCollaboration<TActions extends ActionRegistry>(
 	ydoc: Y.Doc,
@@ -246,6 +278,13 @@ export function openCollaboration<TActions extends ActionRegistry>(
 		},
 	};
 
+	// A connect deadline is a one-shot, caller-scoped view: only this handle's
+	// `whenConnected` rejects after the deadline; the supervisor keeps retrying.
+	const whenConnected =
+		config.connectDeadlineMs === undefined
+			? supervisor.whenConnected
+			: withConnectDeadline(supervisor.whenConnected, config.connectDeadlineMs);
+
 	return {
 		/** Local action registry published through this collaboration handle. */
 		get actions() {
@@ -256,7 +295,7 @@ export function openCollaboration<TActions extends ActionRegistry>(
 			return supervisor.status;
 		},
 		/** Resolves after the first successful sync handshake. */
-		whenConnected: supervisor.whenConnected,
+		whenConnected,
 		/** Resolves after document destroy tears down collaboration. */
 		whenDisposed: supervisor.whenDisposed,
 		/** Subscribe to sync status changes. Returns an unsubscribe function. */

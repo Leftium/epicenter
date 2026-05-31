@@ -6,7 +6,7 @@
 	"type": "module",
 	"exports": {
 		".": "./src/lib/workspace/index.ts",
-		"./project": "./src/lib/workspace/project.ts"
+		"./project": "./project.ts"
 	},
 	"imports": {
 		"#platform/auth": {

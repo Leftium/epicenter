@@ -590,6 +590,52 @@ describe('rebuild', () => {
 });
 
 // ============================================================================
+// Observer per-row isolation
+// ============================================================================
+
+describe('observer per-row isolation', () => {
+	test('a throwing toMarkdown for one changed row does not block its batch siblings', async () => {
+		const workspace = createWorkspace({
+			id: 'obs-isolation',
+			tables: tableDefinitions,
+			kv: {},
+		});
+
+		const materializer = attachMarkdownMaterializer(workspace, {
+			dir: TEST_DIR,
+			perTable: {
+				posts: {
+					toMarkdown: (row) => {
+						if (row.id === 'bad') {
+							throw new Error('simulated body read failure');
+						}
+						return { frontmatter: { ...row }, body: undefined };
+					},
+				},
+			},
+		});
+		await materializer.whenFlushed;
+
+		// Both rows change in ONE transaction, so the observer receives them in a
+		// single `changedIds` batch with `bad` first. The throwing row must skip
+		// itself only and leave its sibling to materialize.
+		await workspace.tables.posts.bulkSet([
+			{ id: 'bad', title: 'Bad', published: true },
+			{ id: 'good', title: 'Good', published: true },
+		]);
+
+		// Wait for the detached observer writes to settle.
+		await Bun.sleep(20);
+
+		const files = await listTestDir('posts');
+		expect(files).toContain('good.md');
+		expect(files).not.toContain('bad.md');
+
+		workspace[Symbol.dispose]();
+	});
+});
+
+// ============================================================================
 // Round-Trip Tests
 // ============================================================================
 

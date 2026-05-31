@@ -30,7 +30,7 @@ import { createLogger, type Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
 
 // ════════════════════════════════════════════════════════════════════════════
-// Public types (re-exported via open-collaboration and attach-yjs-sync)
+// Public types (re-exported via open-collaboration)
 // ════════════════════════════════════════════════════════════════════════════
 
 export type SyncError = { type: 'connection' };
@@ -55,16 +55,16 @@ export type SyncStatus =
  * auth failure (close code 4401). The `code` carries the server's canonical
  * reason string so callers can switch on it without magic strings.
  */
-export const SyncFailedError = defineErrors({
+const SyncFailedError = defineErrors({
 	AuthRejected: ({ code }: { code: string }) => ({
 		message: `[sync] server rejected auth: ${code}`,
 		code,
 	}),
 });
-export type SyncFailedError = InferErrors<typeof SyncFailedError>;
+type SyncFailedError = InferErrors<typeof SyncFailedError>;
 
 /** Background lifecycle warnings logged by the supervisor. */
-export const SyncSupervisorError = defineErrors({
+const SyncSupervisorError = defineErrors({
 	WaitForRejected: ({ cause }: { cause: unknown }) => ({
 		message: `[sync] waitFor rejected; starting sync anyway: ${extractErrorMessage(cause)}`,
 		cause,
@@ -85,7 +85,7 @@ export const SyncSupervisorError = defineErrors({
 		reason,
 	}),
 });
-export type SyncSupervisorError = InferErrors<typeof SyncSupervisorError>;
+type SyncSupervisorError = InferErrors<typeof SyncSupervisorError>;
 
 /**
  * Function that opens a WebSocket to the relay. Matches the shape of
@@ -103,7 +103,7 @@ export type OpenWebSocketFn = (
 	protocols?: string[],
 ) => Promise<WebSocket> | WebSocket;
 
-export type SyncSupervisorConfig = {
+type SyncSupervisorConfig = {
 	url: string;
 	waitFor?: Promise<unknown>;
 	openWebSocket?: OpenWebSocketFn;
@@ -267,7 +267,7 @@ export function createSyncSupervisor(
 				config.url,
 				[MAIN_SUBPROTOCOL],
 			);
-			ws = isPromiseLike(opened) ? await opened : opened;
+			ws = await opened;
 		} catch {
 			return 'failed';
 		}
@@ -512,15 +512,6 @@ function openDefaultWebSocket(
 	protocols?: string[],
 ): WebSocket {
 	return new WebSocket(url, protocols);
-}
-
-function isPromiseLike<T>(value: T | Promise<T>): value is Promise<T> {
-	return (
-		typeof value === 'object' &&
-		value !== null &&
-		'then' in value &&
-		typeof value.then === 'function'
-	);
 }
 
 /**

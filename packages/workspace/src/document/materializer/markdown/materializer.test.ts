@@ -551,6 +551,38 @@ describe('rebuild', () => {
 		workspace[Symbol.dispose]();
 	});
 
+	test('aborts WITHOUT deleting existing files when a row fails to serialize', async () => {
+		// toMarkdown throws (mimics fuji's body read hitting its connect deadline).
+		const { workspace } = await setup({
+			perTable: {
+				posts: {
+					toMarkdown: () => {
+						throw new Error('simulated body read failure');
+					},
+				},
+			},
+		});
+		workspace.tables.posts.set({ id: 'p1', title: 'Keep', published: true });
+
+		// A file already on disk that a failed rebuild must NOT wipe.
+		await writeTestFile(
+			'posts/p1.md',
+			'---\nid: p1\ntitle: Keep\npublished: true\n---\n',
+		);
+
+		// Rebuild renders every row BEFORE sweeping the directory, so the throwing
+		// row aborts the rebuild with the existing file still intact, instead of
+		// deleting everything and then failing to rewrite it.
+		await expect(
+			workspace.materializer.actions.markdown_rebuild({}),
+		).rejects.toThrow();
+
+		const after = await listTestDir('posts');
+		expect(after).toContain('p1.md');
+
+		workspace[Symbol.dispose]();
+	});
+
 	test('is idempotent: rebuild twice produces identical filesystem state', async () => {
 		const { workspace } = await setup({ perTable: { posts: {} } });
 		workspace.tables.posts.set({
@@ -584,6 +616,52 @@ describe('rebuild', () => {
 
 		expect(stateAfterSecond).toEqual(stateAfterFirst);
 		expect(contentsAfterSecond).toEqual(contentsAfterFirst);
+
+		workspace[Symbol.dispose]();
+	});
+});
+
+// ============================================================================
+// Observer per-row isolation
+// ============================================================================
+
+describe('observer per-row isolation', () => {
+	test('a throwing toMarkdown for one changed row does not block its batch siblings', async () => {
+		const workspace = createWorkspace({
+			id: 'obs-isolation',
+			tables: tableDefinitions,
+			kv: {},
+		});
+
+		const materializer = attachMarkdownMaterializer(workspace, {
+			dir: TEST_DIR,
+			perTable: {
+				posts: {
+					toMarkdown: (row) => {
+						if (row.id === 'bad') {
+							throw new Error('simulated body read failure');
+						}
+						return { frontmatter: { ...row }, body: undefined };
+					},
+				},
+			},
+		});
+		await materializer.whenFlushed;
+
+		// Both rows change in ONE transaction, so the observer receives them in a
+		// single `changedIds` batch with `bad` first. The throwing row must skip
+		// itself only and leave its sibling to materialize.
+		await workspace.tables.posts.bulkSet([
+			{ id: 'bad', title: 'Bad', published: true },
+			{ id: 'good', title: 'Good', published: true },
+		]);
+
+		// Wait for the detached observer writes to settle.
+		await Bun.sleep(20);
+
+		const files = await listTestDir('posts');
+		expect(files).toContain('good.md');
+		expect(files).not.toContain('bad.md');
 
 		workspace[Symbol.dispose]();
 	});

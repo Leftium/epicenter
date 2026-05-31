@@ -1,3 +1,15 @@
+/**
+ * Fuji Tauri markdown push/pull (WIP, not yet wired to UI).
+ *
+ * Manual export/import of entries as `<id>.md` files with YAML frontmatter for
+ * the Tauri desktop app. Uses `js-yaml` (not bun's YAML) because this runs in
+ * the Tauri webview. Distinct from the daemon's live markdown materializer.
+ *
+ * The frontmatter serialization here is a hand-rolled parallel of the canonical
+ * `@epicenter/workspace/markdown` serializer; when this is wired up, unify them
+ * via a browser-safe YAML codec instead of maintaining both.
+ */
+
 import type { DateTimeString, IanaTimeZone } from '@epicenter/workspace';
 import { dump, load } from 'js-yaml';
 import { tauri } from '#platform/tauri';
@@ -8,15 +20,12 @@ type FujiMarkdownHost = Pick<FujiWorkspace, 'tables'> & {
 	idb: {
 		whenLoaded: Promise<unknown>;
 	};
-	entryContentDocs: {
+	entryBodies: {
 		open(entryId: EntryId): {
-			idb: {
-				whenLoaded: Promise<unknown>;
-			};
-			body: {
-				read(): string;
-				write(text: string): void;
-			};
+			whenLoaded: Promise<unknown>;
+			read(): string;
+			write(text: string): void;
+			[Symbol.dispose](): void;
 		};
 	};
 };
@@ -37,13 +46,13 @@ export function createFujiMarkdownActions(host: FujiMarkdownHost) {
 			const entries = host.tables.entries.getAllValid();
 			const files = await Promise.all(
 				entries.map(async (entry) => {
-					const contentDoc = host.entryContentDocs.open(entry.id);
-					await contentDoc.idb.whenLoaded;
+					using contentDoc = host.entryBodies.open(entry.id);
+					await contentDoc.whenLoaded;
 					return {
 						filename: entryFilename(entry.id),
 						content: serializeEntryMarkdown({
 							entry,
-							body: contentDoc.body.read(),
+							body: contentDoc.read(),
 						}),
 					};
 				}),
@@ -58,9 +67,9 @@ export function createFujiMarkdownActions(host: FujiMarkdownHost) {
 			const imported = files.map(parseEntryMarkdown);
 
 			for (const { entry, body } of imported) {
-				const contentDoc = host.entryContentDocs.open(entry.id);
-				await contentDoc.idb.whenLoaded;
-				contentDoc.body.write(body);
+				using contentDoc = host.entryBodies.open(entry.id);
+				await contentDoc.whenLoaded;
+				contentDoc.write(body);
 			}
 
 			await host.tables.entries.bulkSet(imported.map(({ entry }) => entry));
@@ -123,7 +132,6 @@ function parseEntryMarkdown({
 		entry: {
 			...metadata,
 			id: asEntryId(metadata.id),
-			dateZone: metadata.dateZone as IanaTimeZone,
 		},
 		body: content.slice(match[0].length),
 	};

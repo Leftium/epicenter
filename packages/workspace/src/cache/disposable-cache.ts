@@ -155,7 +155,7 @@ import {
 import { createLogger, type Logger } from 'wellcrafted/logger';
 
 /** Errors surfaced by the cache's background disposal machinery. */
-export const DisposableCacheError = defineErrors({
+const DisposableCacheError = defineErrors({
 	/**
 	 * The user-supplied value's `[Symbol.dispose]` raised. The entry is already
 	 * removed from the cache; the throw is informational.
@@ -165,7 +165,7 @@ export const DisposableCacheError = defineErrors({
 		cause,
 	}),
 });
-export type DisposableCacheError = InferErrors<typeof DisposableCacheError>;
+type DisposableCacheError = InferErrors<typeof DisposableCacheError>;
 
 /**
  * Refcounted cache returned by `createDisposableCache`. Itself `Disposable`:
@@ -294,19 +294,6 @@ export function createDisposableCache<
 		/** Whether an instance is currently held (refcounted or in grace window). */
 		has(id: TId) {
 			return entries.has(id);
-		},
-
-		/**
-		 * Iterate the live underlying values (refcounted or in the grace
-		 * window). Yields the instance `build` constructed, not a per-handle
-		 * spread wrapper, so callers must not dispose what they receive.
-		 * Intended for cross-cutting sweeps such as reconnecting every cached
-		 * child sync after an auth-state change.
-		 */
-		*values(): IterableIterator<TValue> {
-			for (const entry of entries.values()) {
-				yield entry.value;
-			}
 		},
 
 		[Symbol.dispose]() {

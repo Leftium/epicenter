@@ -32,13 +32,16 @@ import type { AnyTable, TablesRecord } from '../shared.js';
 const MaterializerWriteError = defineErrors({
 	TableWriteFailed: ({
 		tableName,
+		id,
 		cause,
 	}: {
 		tableName: string;
+		id?: string;
 		cause: unknown;
 	}) => ({
-		message: `[markdown-materializer] table write failed for "${tableName}": ${extractErrorMessage(cause)}`,
+		message: `[markdown-materializer] table write failed for "${tableName}"${id ? ` (row "${id}")` : ''}: ${extractErrorMessage(cause)}`,
 		tableName,
+		id,
 		cause,
 	}),
 });
@@ -99,12 +102,6 @@ export type PushEvent =
 			tableName: string;
 			error: MaterializerPushError | TableParseError;
 	  };
-
-type MaterializerWriteEvent = {
-	kind: 'wrote' | 'unlinked';
-	path: string;
-	tableName: string;
-};
 
 /** Aggregated result of one `push` invocation. */
 export type PushResult = {
@@ -322,8 +319,8 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 	const gitAutosave = git
 		? createGitAutosave({ dir: resolveDir, config: git, log })
 		: undefined;
-	const emitWrite = (event: MaterializerWriteEvent): void => {
-		gitAutosave?.enqueue(event.path);
+	const markDirty = (path: string): void => {
+		gitAutosave?.enqueue(path);
 	};
 
 	// ── Per-table materialization ───────────────────────────────
@@ -337,15 +334,44 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 
 		await mkdir(directory, { recursive: true });
 
-		for (const row of table.getAllValid()) {
-			const { filename, content } = await rowToMarkdownFile(row, config);
+		// Write one valid row to disk, shared by the initial flush and the live
+		// observer. The rename branch is a no-op on first write (`filenames`
+		// starts empty), so both paths run this exact code.
+		//
+		// Only CONTENT PRODUCTION is guarded: a throwing `toMarkdown` (e.g. fuji's
+		// body read hitting its connect deadline) skips this one row and leaves its
+		// existing `.md` intact, instead of aborting the rest of the flush or the
+		// observe batch. A real filesystem write failure (ENOSPC, EACCES) is NOT
+		// swallowed here: it propagates, so the initial flush rejects `whenFlushed`
+		// and the observer's outer catch surfaces it, rather than reporting success
+		// while writing nothing.
+		async function writeRow(id: string, row: BaseRow): Promise<void> {
+			let rendered: { filename: string; content: string };
+			try {
+				rendered = await rowToMarkdownFile(row, config);
+			} catch (cause) {
+				log.warn(
+					MaterializerWriteError.TableWriteFailed({
+						tableName: table.name,
+						id,
+						cause,
+					}),
+				);
+				return;
+			}
+			const { filename, content } = rendered;
+			const previous = filenames.get(id);
+			if (previous && previous !== filename) {
+				const removed = await tryUnlink(directory, previous);
+				if (removed) markDirty(join(directory, previous));
+			}
 			await writeMarkdownFile(directory, filename, content);
-			filenames.set(row.id, filename);
-			emitWrite({
-				kind: 'wrote',
-				path: join(directory, filename),
-				tableName: table.name,
-			});
+			filenames.set(id, filename);
+			markDirty(join(directory, filename));
+		}
+
+		for (const row of table.getAllValid()) {
+			await writeRow(row.id, row);
 		}
 
 		// Sequential writes inside the observer avoid rename races; a parallel
@@ -361,38 +387,18 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 						if (previous) {
 							const removed = await tryUnlink(directory, previous);
 							filenames.delete(id);
-							if (removed) {
-								emitWrite({
-									kind: 'unlinked',
-									path: join(directory, previous),
-									tableName: table.name,
-								});
-							}
+							if (removed) markDirty(join(directory, previous));
 						}
 						continue;
 					}
 
-					const { filename, content } = await rowToMarkdownFile(row, config);
-					const previous = filenames.get(id);
-					if (previous && previous !== filename) {
-						const removed = await tryUnlink(directory, previous);
-						if (removed) {
-							emitWrite({
-								kind: 'unlinked',
-								path: join(directory, previous),
-								tableName: table.name,
-							});
-						}
-					}
-					await writeMarkdownFile(directory, filename, content);
-					filenames.set(id, filename);
-					emitWrite({
-						kind: 'wrote',
-						path: join(directory, filename),
-						tableName: table.name,
-					});
+					await writeRow(id, row);
 				}
 			})().catch((cause) => {
+				// Reached only by a genuine failure `writeRow` does not swallow: a
+				// filesystem write error, or an unexpected throw in the loop
+				// scaffolding. A `toMarkdown` failure is already handled per-row and
+				// does not land here.
 				log.warn(
 					MaterializerWriteError.TableWriteFailed({
 						tableName: table.name,
@@ -555,6 +561,17 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 		async function rebuildOne(entry: RegisteredTable) {
 			const directory = join(baseDir, entry.config.dir ?? entry.table.name);
 
+			// Serialize EVERY row before touching disk. Rebuild is destructive (it
+			// sweeps the directory), and `toMarkdown` can throw for a real reason
+			// (e.g. fuji's body read hitting its connect deadline). Rendering first
+			// means a failed row aborts the rebuild with the existing `.md` files
+			// still on disk, rather than deleting everything and then failing to
+			// rewrite it.
+			const rendered: { filename: string; content: string }[] = [];
+			for (const row of entry.table.getAllValid()) {
+				rendered.push(await rowToMarkdownFile(row, entry.config));
+			}
+
 			// Sweep existing .md files
 			try {
 				const files = await readdir(directory);
@@ -564,11 +581,7 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 					await unlink(path).then(
 						() => {
 							deleted++;
-							emitWrite({
-								kind: 'unlinked',
-								path,
-								tableName: entry.table.name,
-							});
+							markDirty(path);
 						},
 						() => undefined,
 					);
@@ -578,17 +591,9 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 			}
 
 			await mkdir(directory, { recursive: true });
-			for (const row of entry.table.getAllValid()) {
-				const { filename, content } = await rowToMarkdownFile(
-					row,
-					entry.config,
-				);
+			for (const { filename, content } of rendered) {
 				await writeMarkdownFile(directory, filename, content);
-				emitWrite({
-					kind: 'wrote',
-					path: join(directory, filename),
-					tableName: entry.table.name,
-				});
+				markDirty(join(directory, filename));
 				written++;
 			}
 		}
@@ -623,11 +628,7 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 					entry.config,
 				);
 				await writeMarkdownFile(directory, filename, content);
-				emitWrite({
-					kind: 'wrote',
-					path: join(directory, filename),
-					tableName: entry.table.name,
-				});
+				markDirty(join(directory, filename));
 				written++;
 			}
 		}

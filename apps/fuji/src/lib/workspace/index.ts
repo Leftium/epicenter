@@ -29,9 +29,7 @@
  */
 
 import {
-	attachRichText,
 	column,
-	createDisposableCache,
 	createWorkspace,
 	DateTimeString,
 	defineActions,
@@ -44,11 +42,9 @@ import {
 	type IanaTimeZone,
 	type InferTableRow,
 	type Keyring,
-	onLocalUpdate,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
-import * as Y from 'yjs';
 
 export const FUJI_ID = 'epicenter-fuji';
 
@@ -121,10 +117,11 @@ const entriesTable = defineTable(
 export type Entry = InferTableRow<typeof entriesTable>;
 
 /**
- * Build a Fuji workspace bundle: `{ ydoc, tables, kv, actions, entryContentDocs }`.
+ * Build a Fuji workspace bundle: `{ ydoc, tables, kv, actions }`.
  *
  * Encrypted under the supplied keyring; the same factory is used in both
- * browser and daemon entrypoints.
+ * browser and daemon entrypoints. Entry bodies are separate Y.Docs addressed by
+ * `entryContentDocGuid(id)` and opened by runtime-specific code.
  */
 export function createFuji(opts: { keyring: () => Keyring }) {
 	const workspace = createWorkspace({
@@ -134,27 +131,6 @@ export function createFuji(opts: { keyring: () => Keyring }) {
 		kv: {},
 	});
 	const { tables } = workspace;
-	const entryContentDocs = createDisposableCache((entryId: EntryId) => {
-		const childYdoc = new Y.Doc({
-			guid: entryContentDocGuid(entryId),
-			gc: true,
-		});
-		const body = attachRichText(childYdoc);
-
-		onLocalUpdate(childYdoc, () => {
-			workspace.tables.entries.update(entryId, {
-				updatedAt: DateTimeString.now(),
-			});
-		});
-
-		return {
-			ydoc: childYdoc,
-			body,
-			[Symbol.dispose]() {
-				childYdoc.destroy();
-			},
-		};
-	});
 
 	return defineWorkspace({
 		...workspace,
@@ -396,9 +372,7 @@ export function createFuji(opts: { keyring: () => Keyring }) {
 				},
 			}),
 		}),
-		entryContentDocs,
 		[Symbol.dispose]() {
-			entryContentDocs[Symbol.dispose]();
 			workspace[Symbol.dispose]();
 		},
 	});

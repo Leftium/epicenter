@@ -75,6 +75,26 @@ describe('openCollaboration', () => {
 		collaboration[Symbol.dispose]();
 		expect(destroyed).toBe(1);
 	});
+
+	test('connectDeadlineMs rejects whenConnected when the handshake never lands', async () => {
+		// The fake socket parks in CONNECTING and never sends STEP2, so the only
+		// way whenConnected settles is the deadline.
+		const ydoc = new Y.Doc({ guid: 'open-collab-deadline' });
+		const collaboration = openCollaboration(ydoc, {
+			url,
+			openWebSocket: fakeWebSocket,
+			onReconnectSignal: () => () => {},
+			connectDeadlineMs: 20,
+			actions: {},
+		});
+		try {
+			await expect(collaboration.whenConnected).rejects.toThrow(
+				/sync handshake exceeded 20ms/,
+			);
+		} finally {
+			ydoc.destroy();
+		}
+	});
 });
 
 describe('action key validation', () => {

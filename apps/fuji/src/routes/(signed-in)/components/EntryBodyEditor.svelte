@@ -36,7 +36,7 @@
 
 	const fuji = requireFuji();
 	// svelte-ignore state_referenced_locally - EntryEditor remounts this component by entry id
-	const contentDoc = fuji.entryContentDocs.open(entryId);
+	const contentDoc = fuji.entryBodies.open(entryId);
 	$effect(() => () => contentDoc[Symbol.dispose]());
 
 	let element: HTMLDivElement | undefined = $state();
@@ -116,7 +116,7 @@
 			state: EditorState.create({
 				schema,
 				plugins: [
-					ySyncPlugin(contentDoc.body.binding),
+					ySyncPlugin(contentDoc.binding),
 					yUndoPlugin(),
 					placeholderPlugin,
 					keymap({
@@ -169,7 +169,7 @@
 	});
 </script>
 
-{#await contentDoc.idb.whenLoaded}
+{#await contentDoc.whenLoaded}
 	<Loading class="flex-1" />
 {:then _}
 	<div bind:this={element} class="flex-1 overflow-y-auto px-6 py-4"></div>

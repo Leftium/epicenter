@@ -14,7 +14,7 @@
 	import {
 		TRANSCRIPTION_PROVIDERS,
 		type TranscriptionProviderEntry,
-	} from '$lib/services/transcription/provider-icons';
+	} from '$lib/services/transcription/provider-ui';
 	import {
 		getSelectedTranscriptionService,
 		isTranscriptionServiceConfigured,

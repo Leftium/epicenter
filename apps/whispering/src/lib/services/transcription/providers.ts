@@ -7,8 +7,9 @@
  * Behavior is deliberately not here. The `id -> transcribe` wiring lives as a
  * static table in the dispatcher, where the provider SDKs already load. That
  * keeps this record free of SDK imports so the workspace schema can import
- * `TRANSCRIPTION_SERVICE_IDS` without bundling them. Icons live in
- * `./provider-icons.ts` (the one field heavy enough to pollute that import).
+ * `TRANSCRIPTION_SERVICE_IDS` without bundling them. Icons and the UI-facing
+ * join live in `./provider-ui.ts` (icons being the one field heavy enough to
+ * pollute that import).
  */
 import type { DeviceConfigKey } from '$lib/state/device-config.svelte';
 

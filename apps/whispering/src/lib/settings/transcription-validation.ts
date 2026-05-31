@@ -2,7 +2,7 @@ import { tauri } from '#platform/tauri';
 import {
 	TRANSCRIPTION_PROVIDERS,
 	type TranscriptionProviderEntry,
-} from '$lib/services/transcription/provider-icons';
+} from '$lib/services/transcription/provider-ui';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
 

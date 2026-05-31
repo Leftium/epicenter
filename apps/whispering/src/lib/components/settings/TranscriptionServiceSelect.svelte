@@ -7,7 +7,7 @@
 	import {
 		TRANSCRIPTION_PROVIDERS,
 		type TranscriptionProviderEntry,
-	} from '$lib/services/transcription/provider-icons';
+	} from '$lib/services/transcription/provider-ui';
 	import { type TranscriptionServiceId } from '$lib/services/transcription/providers';
 	import { tauri } from '#platform/tauri';
 

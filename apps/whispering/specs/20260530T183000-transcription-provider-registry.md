@@ -30,8 +30,8 @@ Not a `createProvider`/`BaseService` factory. `PROVIDERS` is a plain data table;
 
 ```
 PROPOSED
-services/transcription/providers.ts        PROVIDERS record + TRANSCRIPTION_SERVICE_IDS + TRANSCRIPTION_PROVIDERS (array). Pure data, schema-safe.
-services/transcription/provider-icons.ts   PROVIDER_ICONS: id -> { icon, invertInDarkMode }. UI only (the one SVG-importing file).
+services/transcription/providers.ts        PROVIDERS record + TRANSCRIPTION_SERVICE_IDS + CloudProviderId. Pure data, schema-safe.
+services/transcription/provider-ui.ts      PROVIDER_ICONS + TRANSCRIPTION_PROVIDERS (the UI-facing id+fields+icon join). The one SVG-importing file.
 operations/transcribe.ts                   static CLOUD_TRANSCRIBERS table + 3 location branches.
 services/transcription/cloud/*.ts          same impls, exported as plain transcribe fns.
 DELETED: constants/transcription.ts, services/transcription/registry.ts, services/transcription/index.ts
@@ -39,11 +39,11 @@ DELETED: constants/transcription.ts, services/transcription/registry.ts, service
 
 ### Why icons are a separate file
 
-The schema imports `PROVIDERS` for `TRANSCRIPTION_SERVICE_IDS`. SVG `?raw` imports are the one field heavy enough to ride into the schema's bundle, so they live in `provider-icons.ts` keyed by the same ID. Every other fact stays single-sourced in `PROVIDERS`. This is the one split that pays for itself.
+The schema imports `PROVIDERS` for `TRANSCRIPTION_SERVICE_IDS`. SVG `?raw` imports are the one field heavy enough to ride into the schema's bundle, so they live in `provider-ui.ts` keyed by the same ID. Every other fact stays single-sourced in `PROVIDERS`. This is the one split that pays for itself.
 
 ## Migration plan (3 waves, each `bun run typecheck` green)
 
-1. **Add** `providers.ts` + `provider-icons.ts` (and the derived `TRANSCRIPTION_PROVIDERS` array). No consumer changes. Additive, green.
+1. **Add** `providers.ts` + `provider-ui.ts` (and the derived `TRANSCRIPTION_PROVIDERS` array). No consumer changes. Additive, green.
 2. **Repoint data consumers**: workspace schema (`TRANSCRIPTION_SERVICE_IDS`, `defaultModel`), settings `+page.svelte` model lists, `transcription-validation.ts`, the two selectors -> `PROVIDERS` / `TRANSCRIPTION_PROVIDERS` / `PROVIDER_ICONS`. Delete `constants/transcription.ts`.
 3. **Rewrite dispatch**: static `CLOUD_TRANSCRIBERS` table + 3 location branches; export `cloud/*.ts` as plain `transcribe` fns; delete `registry.ts` and `index.ts`.
 
@@ -53,7 +53,7 @@ Inference is a deferred follow-up (separate spec), not in this PR.
 
 - **The workspace schema imports from `services/transcription/`** (for `TRANSCRIPTION_SERVICE_IDS`), a data-model -> service arrow. Not a cycle (services/transcription does not import workspace). The alternative (a third pure-data ID module) reintroduces the split we are removing.
 - **One record is denser** than the two files it replaces (~190 vs 211 + 166 lines), though it is fewer total lines and one fewer concept.
-- **`provider-icons.ts` is a deliberate second file** for one field, justified only because SVGs are the one schema-polluting import.
+- **`provider-ui.ts` is a deliberate second file** for the UI join and icons, justified only because SVGs are the one schema-polluting import.
 
 ## Non-goals
 

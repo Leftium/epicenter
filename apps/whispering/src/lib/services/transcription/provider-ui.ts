@@ -1,9 +1,10 @@
 /**
- * Provider icons, kept out of `providers.ts` so the workspace schema can
- * import `TRANSCRIPTION_SERVICE_IDS` without bundling these `?raw` SVGs.
- * `TRANSCRIPTION_PROVIDERS` is the UI-facing join of the provider data with
- * its icon: an array (id + every provider field + icon) that the settings
- * selectors iterate and filter by `location`.
+ * UI-facing provider data: the icons plus the `TRANSCRIPTION_PROVIDERS` join.
+ * Kept out of `providers.ts` so the workspace schema can import
+ * `TRANSCRIPTION_SERVICE_IDS` without bundling these `?raw` SVGs.
+ * `TRANSCRIPTION_PROVIDERS` is the join of each provider's data with its icon:
+ * an array (id + every provider field + icon) that the settings selectors
+ * iterate and filter by `location`.
  */
 import deepgramIcon from '$lib/constants/icons/deepgram.svg?raw';
 import elevenlabsIcon from '$lib/constants/icons/elevenlabs.svg?raw';

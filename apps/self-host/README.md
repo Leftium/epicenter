@@ -60,7 +60,7 @@ createServerApp()
   // mountSessionApp(app, { ownership })              // GET /api/session
   // mountRoomsApp(app, { ownership })                // /api/owners/:ownerId/rooms/*
   // mountAssetsApp(app, { ownership })               // /api/owners/:ownerId/assets/*
-  // mountAiApp(app, { auth: requireBearerUser });    // POST /api/ai/chat
+  // mountAiApp(app, { auth: requireBearerUser, ownership }) // POST /api/ai/chat
 ```
 
 Deliberately absent: `mountBillingApi`, `chargeAiCreditsWithAutumn`, `syncAssetStorageWithAutumn`, any `apps/api/ui` static-asset fallback. The composition shape is the contract.

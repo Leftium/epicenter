@@ -1,6 +1,6 @@
 # Personal and Shared Wiki: Greenfield Rename
 
-Status: proposed
+Status: executed (Phases 1-3) in PR #1874. Phase 4 (`apps/api` -> `apps/cloud`) deferred by design.
 Date: 2026-06-01
 Precondition: greenfield. No self-hosted deployment has written data under `owners/team/...`. This plan is only free to execute while that remains true.
 

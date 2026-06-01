@@ -117,6 +117,7 @@ That API is dormant after the cleanup, not deleted.
 | Keep hidden `_v` in stored rows | Yes | It preserves a self-describing storage format and future evolution without leaking versioning to app code. |
 | Reset data in separate step from code cleanup | Yes | Code cleanup is safe and reviewable. Remote deletion needs a final explicit confirmation. |
 | Use Drizzle migrations for Postgres rebuild | Yes | Remote schema should follow the migration journal, not `push`. |
+| Collapse API Drizzle history after reset decision | Yes | The production Postgres schema is being rebuilt from empty during the prelaunch reset, so historical transition migrations are no longer load-bearing. |
 
 ## Rejected Alternatives
 
@@ -141,6 +142,13 @@ The current package shape already refuses the visible tax for single-version tab
 ### Reset only Postgres
 
 Postgres-only reset leaves orphaned state in Durable Objects, R2, KV, Autumn, and local IndexedDB. If this is a real reset, those stores must be cleared or intentionally abandoned together.
+
+### Collapse Drizzle history on a live shared database
+
+Drizzle history should stay append-only for any database that has already
+recorded those migration tags and must keep its data. This cleanup is different:
+the reset explicitly drops the hosted Postgres schema and rebuilds from empty,
+so the API migration directory can become a fresh baseline.
 
 ## Execution Plan
 
@@ -234,6 +242,12 @@ apps/
 specs/
 |-- 20260528T222820-clean-reset-and-workspace-schema-collapse.md
 `-- 20260531T205543-prelaunch-reset-runbook.md
+
+apps/api/drizzle/
+|-- 0000_thin_the_captain.sql
+`-- meta/
+    |-- 0000_snapshot.json
+    `-- _journal.json
 ```
 
 What landed:
@@ -242,6 +256,7 @@ What landed:
 - Whispering `recordings` now declares only the current schema: `recordedAt`, `transcript`, `transcriptionStatus`, and nullable `duration`.
 - Honeycrisp `notes` was also collapsed after the required grep found an app workspace migration outside the original two-table list.
 - `@epicenter/workspace` migration support was not removed. The library still owns `_v`, still exposes `defineTable(v1, v2).migrate(...)`, and still has migration tests.
+- API Drizzle migrations were collapsed into one fresh baseline after the reset plan made all existing API Postgres data disposable.
 
 Verification output:
 
@@ -273,6 +288,27 @@ bun test (from apps/whispering)
 
 bun run --cwd apps/honeycrisp test
   pass: 1 pass, 0 fail
+
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/epicenter_baseline_test bun x drizzle-kit migrate (from apps/api)
+  pass: baseline migration applied successfully to a disposable empty local Postgres database
+
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/epicenter_baseline_test SEED_TARGET=prod bun scripts/seed-oauth-clients.ts (from apps/api)
+  pass: seeded 6 first-party OAuth clients
+
+psql postgres://postgres:postgres@localhost:5432/epicenter_baseline_test -c "\dt public.*"
+  pass: 11 public tables created
+
+psql postgres://postgres:postgres@localhost:5432/epicenter_baseline_test -c "SELECT count(*) FROM drizzle.__drizzle_migrations"
+  pass: 1 migration row
+
+bun x drizzle-kit check (from apps/api)
+  pass: Everything's fine
+
+bun run --cwd apps/api typecheck
+  pass
+
+bun run --cwd apps/api test
+  pass: 16 pass, 0 fail
 ```
 
 Post-implementation review:
@@ -288,6 +324,13 @@ packages/workspace/src/document/
 |-- define-table.ts
 |-- table.ts
 `-- create-table.test.ts
+
+apps/api/
+`-- drizzle/
+    |-- 0000_thin_the_captain.sql
+    `-- meta/
+        |-- 0000_snapshot.json
+        `-- _journal.json
 ```
 
 Review result:
@@ -296,6 +339,7 @@ Review result:
 - No stale imports were left behind.
 - Version-history comments near the collapsed app tables were removed or rewritten.
 - Workspace library migration behavior remains present and covered by tests.
+- The new API Drizzle baseline matches the current schema: no transitional `device_code` table, no `do_type` column, current `owner_id` columns, and asset `visibility` present from the start.
 
 Remaining reset steps:
 
@@ -323,7 +367,7 @@ Detailed runbook: `specs/20260531T205543-prelaunch-reset-runbook.md`.
 Postgres:
 
 - [ ] Drop or recreate the production database using the admin URL.
-- [ ] Run Drizzle migrations from zero.
+- [ ] Run the single baseline Drizzle migration from zero.
 - [ ] Reseed OAuth clients.
 - [ ] Verify tables and counts.
 

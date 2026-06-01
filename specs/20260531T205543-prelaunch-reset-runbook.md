@@ -8,8 +8,8 @@
 ## One Sentence
 
 Reset the prelaunch hosted Epicenter cloud and local app replicas after the
-workspace schema collapse, using Drizzle migrations for Postgres and explicit
-cleanup steps for every other store.
+workspace schema collapse, using the Drizzle baseline migration for Postgres
+and explicit cleanup steps for every other store.
 
 ## Approval Gate
 
@@ -37,7 +37,7 @@ Approval must cover:
 
 ## 1. Postgres Rebuild
 
-Use Drizzle migrations, not `drizzle-kit push`.
+Use the committed Drizzle baseline migration, not `drizzle-kit push`.
 
 Plan:
 
@@ -45,7 +45,7 @@ Plan:
 2. Connect with the production admin database URL.
 3. Drop and recreate the production database, or drop all app-owned schemas and
    recreate them from zero.
-4. Run committed Drizzle migrations from `apps/api/drizzle`.
+4. Run the committed baseline migration from `apps/api/drizzle`.
 5. Verify the migration journal and core table counts.
 
 Command shape:
@@ -54,16 +54,26 @@ Command shape:
 cd apps/api
 
 # Destructive: run only after approval with the admin database URL.
-# Drop/recreate database or schema using the chosen Postgres admin tool.
+export DATABASE_URL='postgresql://USER:PASSWORD@HOST:5432/DB_NAME?sslmode=require'
 
-bun run db:migrate:remote
+psql "$DATABASE_URL" <<'SQL'
+DROP SCHEMA IF EXISTS public CASCADE;
+CREATE SCHEMA public;
+GRANT ALL ON SCHEMA public TO public;
+SQL
+
+bun x drizzle-kit migrate
 ```
 
 Verification:
 
 ```bash
 cd apps/api
-bun run db:studio:remote
+psql "$DATABASE_URL" <<'SQL'
+\dt public.*
+SELECT count(*) AS migration_count FROM drizzle.__drizzle_migrations;
+SELECT count(*) AS oauth_client_count FROM public.oauth_client;
+SQL
 ```
 
 Expected result:
@@ -71,7 +81,8 @@ Expected result:
 - Better Auth tables exist.
 - OAuth client table exists but is empty until reseed.
 - App tables exist from migrations.
-- `drizzle.__drizzle_migrations` reflects the committed migration journal.
+- `drizzle.__drizzle_migrations` has one row for `0000_thin_the_captain`.
+- `oauth_client` is empty until the reseed step runs.
 
 ## 2. OAuth Client Reseed
 

@@ -75,6 +75,25 @@ export const MaterializerPushError = defineErrors({
 });
 export type MaterializerPushError = InferErrors<typeof MaterializerPushError>;
 
+export const MaterializerApplyError = defineErrors({
+	/** Two files on disk declare the same row `id`; the reconcile can't pick one. */
+	DuplicateId: ({ id, paths }: { id: string; paths: [string, string] }) => ({
+		message: `Two files declare id "${id}": ${paths.join(' and ')}. Remove one before applying.`,
+		id,
+		paths,
+	}),
+	/**
+	 * The table customizes `toMarkdown` but provides no `fromMarkdown`, so apply
+	 * cannot prove it round-trips (e.g. fuji writes a body its parser would drop).
+	 * Refusing is the safe move: a silently-discarded body is data loss.
+	 */
+	RoundTripUnproven: ({ tableName }: { tableName: string }) => ({
+		message: `Table "${tableName}" customizes toMarkdown but has no fromMarkdown; markdown_apply cannot round-trip it without silently dropping data. Add a fromMarkdown to enable apply for this table.`,
+		tableName,
+	}),
+});
+export type MaterializerApplyError = InferErrors<typeof MaterializerApplyError>;
+
 /**
  * A single event emitted during `push`. Three kinds:
  *
@@ -112,6 +131,44 @@ export type PushResult = {
 };
 
 /**
+ * Outcome of reading one `.md` file: a validated row, a non-note (skipped), or
+ * a failure. Shared by `push` (commit each row) and `apply` (diff the set).
+ */
+type ReadResult =
+	| { kind: 'row'; id: string; row: BaseRow; path: string }
+	| { kind: 'skipped'; path: string }
+	| {
+			kind: 'error';
+			path: string;
+			tableName: string;
+			error: MaterializerPushError | TableParseError;
+	  };
+
+/**
+ * The diff `markdown_apply` computes between the on-disk file set (desired) and
+ * the live valid rows (current), keyed by row `id`. When `refused` is true a
+ * guard tripped and NOTHING was applied; the plan still reports what would have
+ * happened. `creates`/`updates`/`deletes` carry ids only; `skipped`/`errors`
+ * carry the offending file path so a caller can surface them.
+ */
+export type ApplyPlan = {
+	refused: boolean;
+	reason?: string;
+	creates: { tableName: string; id: string }[];
+	updates: { tableName: string; id: string }[];
+	deletes: { tableName: string; id: string }[];
+	skipped: { path: string }[];
+	errors: { path: string; tableName: string; error: unknown }[];
+};
+
+/**
+ * Default ceiling on deletes in one `markdown_apply`. A run that would remove
+ * more rows than this refuses and reports the plan instead, so a stale or
+ * partial checkout cannot wipe a workspace. Raise per-call via `maxDeletes`.
+ */
+const DEFAULT_MAX_DELETES = 10;
+
+/**
  * Symmetric shape of a parsed markdown file. `toMarkdown` produces it,
  * `fromMarkdown` consumes it: `Parameters<fromMarkdown>[0]` ≡ `ReturnType<toMarkdown>`.
  */
@@ -131,8 +188,22 @@ export type MarkdownTableConfig<TRow extends BaseRow> = {
 	filename?: (row: TRow) => MaybePromise<string>;
 	/** Produce frontmatter + body for a row. Default: `{ frontmatter: row, body: undefined }`. */
 	toMarkdown?: (row: TRow) => MaybePromise<MarkdownShape>;
-	/** Parse frontmatter + body back into a row. Default: `parsed.frontmatter as TRow`. */
+	/**
+	 * Parse frontmatter + body back into a row. Default: `parsed.frontmatter as TRow`.
+	 *
+	 * For `markdown_apply` to be stable, this must be the exact inverse of
+	 * `toMarkdown`: a materialize-then-parse round trip has to reproduce the same
+	 * row, or apply reads every run as a spurious update. In particular keep
+	 * nullable columns symmetric (emit and parse `null`, do not drop the key),
+	 * since `Value.Equal` treats `null` and missing as different.
+	 */
 	fromMarkdown?: (parsed: MarkdownShape) => MaybePromise<TRow>;
+	/**
+	 * How `markdown_apply` removes a row whose `.md` file disappeared from disk.
+	 * Default: hard `table.delete(id)`. Pass a soft-delete (e.g. set `deletedAt`)
+	 * for tables that keep tombstones, so the removal still syncs to peers.
+	 */
+	onDelete?: (id: string) => MaybePromise<void>;
 };
 
 /**
@@ -196,6 +267,62 @@ async function rowToMarkdownFile<TRow extends BaseRow>(
 			: undefined;
 	const content = assembleMarkdown(shape.frontmatter, body);
 	return { filename, content };
+}
+
+/**
+ * Read one `.md` file into a validated row. The disk-to-row half shared by
+ * `push` (which then commits each row) and `apply` (which diffs the set):
+ * read, parse frontmatter, run `fromMarkdown`, validate against the latest
+ * schema. Never mutates the table. `path` is relative to the materializer base
+ * so two tables writing the same filename stay distinguishable.
+ */
+async function readTableFile(
+	entry: RegisteredTable,
+	directory: string,
+	subdir: string,
+	filename: string,
+): Promise<ReadResult> {
+	const tableName = entry.table.name;
+	const path = join(subdir, filename);
+
+	const { data: content, error: readError } = await tryAsync({
+		try: () => readFile(join(directory, filename), 'utf-8'),
+		catch: (cause) => MaterializerPushError.ReadFailed({ cause }),
+	});
+	if (readError) return { kind: 'error', path, tableName, error: readError };
+
+	const parsed = parseMarkdownFile(content);
+	if (!parsed) return { kind: 'skipped', path };
+
+	const fromMarkdown: (p: MarkdownShape) => MaybePromise<BaseRow> =
+		entry.config.fromMarkdown ?? defaultFromMarkdown;
+	const { data: row, error: callbackError } = await tryAsync({
+		try: async () => fromMarkdown(parsed),
+		catch: (cause) =>
+			MaterializerPushError.FromMarkdownCallbackFailed({ cause }),
+	});
+	if (callbackError)
+		return { kind: 'error', path, tableName, error: callbackError };
+	if (row == null) return { kind: 'skipped', path };
+
+	// Capture id before the type guard: a failed `Value.Check` narrows `row` to
+	// `never` in its false branch, so `row.id` is unreachable inside the block.
+	const rowId = row.id;
+	const latestSchema = entry.table.schema;
+	if (!Value.Check(latestSchema, row)) {
+		const errors = [...Value.Errors(latestSchema, row)].map((e) => ({
+			path: e.instancePath,
+			message: e.message,
+		}));
+		const { error: validationError } = TableParseError.ValidationFailed({
+			id: rowId,
+			errors,
+			row,
+		});
+		return { kind: 'error', path, tableName, error: validationError };
+	}
+
+	return { kind: 'row', id: rowId, row, path };
 }
 
 /**
@@ -440,90 +567,61 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 
 	const whenFlushed = initialize();
 
+	// ── Disk read (shared by push + apply) ──────────────────────
+
+	// Read every `.md` in one table's directory into validated rows. `present`
+	// distinguishes a MISSING directory (cannot be read, so it carries no
+	// desired-state signal) from an EMPTY one (read fine, genuinely zero files):
+	// `apply` must not treat "directory gone" as "delete every row".
+	async function readTableDir(
+		entry: RegisteredTable,
+	): Promise<{ present: boolean; results: ReadResult[] }> {
+		const baseDir = await resolveDir();
+		const subdir = entry.config.dir ?? entry.table.name;
+		const directory = join(baseDir, subdir);
+
+		let files: string[];
+		try {
+			files = await readdir(directory);
+		} catch {
+			return { present: false, results: [] };
+		}
+
+		const results: ReadResult[] = [];
+		for (const filename of files) {
+			if (!filename.endsWith('.md')) continue;
+			results.push(await readTableFile(entry, directory, subdir, filename));
+		}
+		return { present: true, results };
+	}
+
 	// ── Push (imports markdown files into workspace tables) ─────
 
 	async function pushMarkdownFiles(): Promise<PushResult> {
-		const baseDir = await resolveDir();
 		const events: PushEvent[] = [];
 
 		for (const entry of registered.values()) {
 			const tableName = entry.table.name;
-			const subdir = entry.config.dir ?? tableName;
-			const directory = join(baseDir, subdir);
-
-			let files: string[];
-			try {
-				files = await readdir(directory);
-			} catch {
-				continue; // whole directory missing → silently skip the table
-			}
-
-			for (const filename of files) {
-				if (!filename.endsWith('.md')) continue;
-
-				// Relative to the materializer's base dir; disambiguates two
-				// tables writing files with the same name.
-				const path = join(subdir, filename);
-
-				// 1. Read
-				const { data: content, error: readError } = await tryAsync({
-					try: () => readFile(join(directory, filename), 'utf-8'),
-					catch: (cause) => MaterializerPushError.ReadFailed({ cause }),
-				});
-				if (readError) {
-					events.push({ kind: 'error', path, tableName, error: readError });
-					continue;
-				}
-
-				// 2. Parse frontmatter
-				const parsed = parseMarkdownFile(content);
-				if (!parsed) {
-					events.push({ kind: 'skipped', path });
-					continue;
-				}
-
-				// 3. Run user's fromMarkdown (or default), capture throws as errors
-				const fromMarkdown: (p: MarkdownShape) => MaybePromise<BaseRow> =
-					entry.config.fromMarkdown ?? defaultFromMarkdown;
-				const { data: row, error: callbackError } = await tryAsync({
-					try: async () => fromMarkdown(parsed),
-					catch: (cause) =>
-						MaterializerPushError.FromMarkdownCallbackFailed({ cause }),
-				});
-				if (callbackError) {
-					events.push({ kind: 'error', path, tableName, error: callbackError });
-					continue;
-				}
-				// tryAsync invariant: row is non-null once error is null; satisfies TS.
-				if (row == null) continue;
-
-				// 4. Validate the returned row against the latest schema.
-				//    `fromMarkdown` returns a user-facing row (no `_v`); validate
-				//    directly against the latest version's TObject.
-				const rowId = row.id;
-				const latestSchema = entry.table.schema;
-				if (!Value.Check(latestSchema, row)) {
-					const errors = [...Value.Errors(latestSchema, row)].map((e) => ({
-						path: e.instancePath,
-						message: e.message,
-					}));
-					const { error: validationError } = TableParseError.ValidationFailed({
-						id: rowId,
-						errors,
-						row,
+			const { results } = await readTableDir(entry);
+			for (const result of results) {
+				if (result.kind === 'row') {
+					entry.table.set(result.row);
+					events.push({
+						kind: 'imported',
+						path: result.path,
+						tableName,
+						id: result.id,
 					});
+				} else if (result.kind === 'skipped') {
+					events.push({ kind: 'skipped', path: result.path });
+				} else {
 					events.push({
 						kind: 'error',
-						path,
+						path: result.path,
 						tableName,
-						error: validationError,
+						error: result.error,
 					});
-					continue;
 				}
-
-				// 5. Commit
-				entry.table.set(row);
-				events.push({ kind: 'imported', path, tableName, id: rowId });
 			}
 		}
 
@@ -547,6 +645,137 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 		}
 
 		return { imported, skipped, errored, events };
+	}
+
+	// ── Apply (declarative reconcile: disk is the desired state) ─
+
+	/**
+	 * Reconcile the on-disk file set INTO the tables, keyed by row `id`. The
+	 * inverse of materialize, and the safe form of "push everything up":
+	 *
+	 *   creates = ids on disk but not in the table
+	 *   updates = ids in both whose row fields differ
+	 *   deletes = ids in the table (valid rows) but not on disk
+	 *
+	 * Guards before any write: a parse/validation error or a duplicate id on ANY
+	 * file, or a delete count over `maxDeletes`, refuses the whole run and returns
+	 * the plan unapplied (so a stale checkout cannot silently wipe rows). A table
+	 * whose directory is MISSING contributes no deletes (a directory that cannot
+	 * be read is no signal, not "delete everything"). `dryRun` returns the same
+	 * plan without writing. Deletes route through the per-table `onDelete` hook
+	 * (default hard delete; pass soft-delete to keep tombstones).
+	 *
+	 * Single-writer assumption: apply snapshots `getAllValid()` then writes. It
+	 * does not guard against a remote sync update landing mid-run, so reconcile
+	 * from one place at a time (the daemon, or one device). Yjs still converges;
+	 * this is about not racing the plan, not about corruption.
+	 */
+	async function applyMarkdownFiles({
+		dryRun = false,
+		maxDeletes = DEFAULT_MAX_DELETES,
+	}: { dryRun?: boolean; maxDeletes?: number } = {}): Promise<ApplyPlan> {
+		const plan: ApplyPlan = {
+			refused: false,
+			creates: [],
+			updates: [],
+			deletes: [],
+			skipped: [],
+			errors: [],
+		};
+
+		// Compute every table's diff first; apply nothing until all guards pass.
+		const work: {
+			entry: RegisteredTable;
+			writes: BaseRow[];
+			deletes: string[];
+		}[] = [];
+
+		for (const entry of registered.values()) {
+			const tableName = entry.table.name;
+
+			// A custom toMarkdown with no inverse cannot be safely reconciled: apply
+			// would import only the frontmatter and silently drop whatever else
+			// toMarkdown emitted (e.g. a body in a separate doc). Refuse the table.
+			if (entry.config.toMarkdown && !entry.config.fromMarkdown) {
+				const { error } = MaterializerApplyError.RoundTripUnproven({ tableName });
+				plan.errors.push({ path: `${entry.config.dir ?? tableName}/`, tableName, error });
+				continue;
+			}
+
+			const { present, results } = await readTableDir(entry);
+			const desired = new Map<string, { row: BaseRow; path: string }>();
+			for (const result of results) {
+				if (result.kind === 'skipped') {
+					plan.skipped.push({ path: result.path });
+				} else if (result.kind === 'error') {
+					plan.errors.push({ path: result.path, tableName, error: result.error });
+				} else {
+					const prior = desired.get(result.id);
+					if (prior) {
+						const { error } = MaterializerApplyError.DuplicateId({
+							id: result.id,
+							paths: [prior.path, result.path],
+						});
+						plan.errors.push({ path: result.path, tableName, error });
+					} else {
+						desired.set(result.id, { row: result.row, path: result.path });
+					}
+				}
+			}
+
+			const current = new Map<string, BaseRow>();
+			for (const row of entry.table.getAllValid()) current.set(row.id, row);
+
+			const writes: BaseRow[] = [];
+			const deletes: string[] = [];
+
+			for (const [id, { row }] of desired) {
+				const existing = current.get(id);
+				if (existing === undefined) {
+					writes.push(row);
+					plan.creates.push({ tableName, id });
+				} else if (!Value.Equal(existing, row)) {
+					writes.push(row);
+					plan.updates.push({ tableName, id });
+				}
+			}
+			// Deletes only when the directory is genuinely present: a row whose
+			// file disappeared from an existing directory was removed on purpose;
+			// a missing directory tells us nothing about deletions.
+			if (present) {
+				for (const id of current.keys()) {
+					if (!desired.has(id)) {
+						deletes.push(id);
+						plan.deletes.push({ tableName, id });
+					}
+				}
+			}
+
+			work.push({ entry, writes, deletes });
+		}
+
+		// Guards: a broken file must never read as a delete, and a large deletion
+		// is refused rather than applied.
+		if (plan.errors.length > 0) {
+			plan.refused = true;
+			plan.reason = `${plan.errors.length} file(s) could not be applied (parse, validation, or duplicate id); refusing to apply.`;
+			return plan;
+		}
+		if (plan.deletes.length > maxDeletes) {
+			plan.refused = true;
+			plan.reason = `${plan.deletes.length} deletes exceed maxDeletes=${maxDeletes}; refusing to apply. Re-run with a higher limit to confirm.`;
+			return plan;
+		}
+		if (dryRun) return plan;
+
+		for (const { entry, writes, deletes } of work) {
+			for (const row of writes) entry.table.set(row);
+			const onDelete =
+				entry.config.onDelete ?? ((id: string) => entry.table.delete(id));
+			for (const id of deletes) await onDelete(id);
+		}
+
+		return plan;
 	}
 
 	// ── Rebuild (destructive: wipe output dir and re-materialize) ─
@@ -665,6 +894,26 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 					),
 				}),
 				handler: ({ tableName }) => rebuildMarkdownFiles(tableName),
+			}),
+			markdown_apply: defineMutation({
+				title: 'Apply Markdown',
+				description:
+					'Declaratively reconcile .md files into registered tables, keyed by row id: create new files, update changed rows, and delete rows whose file disappeared. Refuses if any file fails to parse/validate or if deletes exceed the limit. Use dryRun to preview the plan.',
+				input: Type.Object({
+					dryRun: Type.Optional(
+						Type.Boolean({
+							description: 'Compute and return the plan without writing.',
+						}),
+					),
+					maxDeletes: Type.Optional(
+						Type.Number({
+							description:
+								'Refuse the run if it would delete more rows than this. Default 10.',
+						}),
+					),
+				}),
+				handler: ({ dryRun, maxDeletes }) =>
+					applyMarkdownFiles({ dryRun, maxDeletes }),
 			}),
 		}),
 	};

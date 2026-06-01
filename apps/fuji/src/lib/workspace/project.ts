@@ -134,6 +134,10 @@ export function fuji(opts: FujiMountOptions = {}) {
 							frontmatter: { ...entry },
 							body: await readEntryBody(entry),
 						}),
+						// NOTE: no `fromMarkdown` yet, so `markdown_apply` refuses this
+						// table (it cannot round-trip the body, which lives in a separate
+						// content doc). Fuji's apply integration (body write + soft-delete
+						// onDelete) ships with the body import work.
 					},
 				},
 				git: opts.git,

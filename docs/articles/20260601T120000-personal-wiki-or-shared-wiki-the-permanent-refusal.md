@@ -26,8 +26,8 @@ Topology axis       how partitions are carved
 Once you name the axes separately, the factory functions write themselves. There is an ownership discriminant in `packages/server`, and call sites never type the discriminant directly:
 
 ```ts
-// Per-user: each identity owns their own partition
-perUser()
+// Personal: each identity owns their own partition
+personal()
 
 // Shared: one partition, members determined by admit()
 shared({ admit })

@@ -9,7 +9,7 @@
  *     `dispatch_result.result` payloads.
  *
  * The relay's `dispatch_request` / `dispatch_result` round trip is covered
- * in `apps/api/src/room.test.ts`. The caller-side transport in
+ * in `packages/server/src/room/backends/cloudflare/durable-object.test.ts`. The caller-side transport in
  * `openCollaboration.dispatch` (pending map, response ceiling, abort,
  * disconnect sweep) is not yet unit-tested.
  */

@@ -23,6 +23,27 @@ NOT yet built: fuji body import (fuji has `toMarkdown` but no `fromMarkdown`, so
 apply currently REFUSES the fuji entries table by design), the `epicenter apply`
 CLI, and the real two-vault runbook. See Phases 2 and 3 below.
 
+## Ordering decision (Codex-reviewed)
+
+Build the CLI (Phase 3) BEFORE fuji bodies (Phase 2). Rationale, agreed with a
+Codex consult: the CLI is a thin operator wrapper over the existing action
+contract and completes a live end-to-end slice on tab-manager (frontmatter-only)
+immediately, while body import is the riskier second seam (cross-doc content
+writes) and is testable in-process without a CLI. Do not debug first-time CLI UX
+and first-time body round-trip at the same time.
+
+Hardening folded in this round: writes are atomic (`ydoc.transact`), unknown
+frontmatter keys are stripped (`Value.Clean`), non-ENOENT read errors surface,
+duplicate ids and unproven round-trips refuse. Equality is `Value.Equal`.
+
+Phase 2 body refinements (from the consult):
+- Define `canonicalBodyString(rawBody): string` ONCE and call it from both
+  `toMarkdown` (export) and `fromMarkdown` (import) plus the hash, or the
+  `bodyHash` diverges after any normalization change and every apply churns.
+- NEVER trust a frontmatter-supplied `bodyHash` as source data; recompute it from
+  the parsed canonical body on import. `bodyHash` is a derived field and must be
+  stripped by `Value.Clean` before `table.set` unless it is a real schema column.
+
 ## Problem
 
 The daemon materializes Yjs to markdown (one-way: `Yjs -> disk`). Editing the

@@ -47,6 +47,16 @@ const ownership = shared({
 // constant, so it is read straight from `c.env`.
 const app = createServerApp({
 	resolveOrigin: (env) => env.API_PUBLIC_ORIGIN,
+	// A self-host trusts its OWN origin and the Tauri desktop client, never
+	// Epicenter cloud's. Add any browser app origins you serve (and the
+	// Epicenter browser-extension origin, if your users point it at this
+	// deployment) here.
+	resolveTrustedOrigins: (baseURL) => [
+		new URL(baseURL).origin,
+		'tauri://localhost',
+	],
+	// No cookieDomain: a single-origin deployment uses host-only cookies scoped
+	// to its own host.
 });
 
 app.get('/', (c) =>

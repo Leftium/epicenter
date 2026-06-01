@@ -32,6 +32,7 @@ import {
 	syncAssetStorageWithAutumn,
 } from './billing/policies.js';
 import { mountBillingApi } from './billing/routes.js';
+import { buildEpicenterTrustedOrigins } from './trusted-origins.js';
 
 const ownership = personal();
 
@@ -41,6 +42,11 @@ const ownership = personal();
 // scripts/dev.ts; production falls through to PRODUCTION_API_URL.
 const app = createServerApp({
 	resolveOrigin: (env) => env.API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL,
+	resolveTrustedOrigins: buildEpicenterTrustedOrigins,
+	// Epicenter cloud serves app.epicenter.so and api.epicenter.so, which share
+	// a session via a cookie scoped to the registrable domain. cookie-config
+	// falls back to host-only on localhost regardless.
+	cookieDomain: '.epicenter.so',
 });
 
 // Public health endpoint at root.

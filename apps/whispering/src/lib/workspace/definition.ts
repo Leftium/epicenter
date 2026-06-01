@@ -22,58 +22,25 @@ import {
 
 /**
  * Tables store normalized domain entities. Each row is replaced atomically via
- * `table.set()`, there's no field-level merging. Schemas validate on read, so old
- * data stays in storage until explicitly rewritten.
+ * `table.set()`, there's no field-level merging. Schemas validate rows on read.
  */
 /** Audio recordings captured by the user. One row per recording session. */
-const recordings = defineTable(
-	{
-		id: column.string(),
-		title: column.string(),
-		subtitle: column.string(),
-		timestamp: column.string(),
-		createdAt: column.string(),
-		updatedAt: column.string(),
-		transcribedText: column.string(),
-		transcriptionStatus: column.enum([
-			'UNPROCESSED',
-			'TRANSCRIBING',
-			'DONE',
-			'FAILED',
-		]),
-	},
-	{
-		id: column.string(),
-		title: column.string(),
-		recordedAt: column.string(),
-		updatedAt: column.string(),
-		transcript: column.string(),
-		transcriptionStatus: column.enum([
-			'UNPROCESSED',
-			'TRANSCRIBING',
-			'DONE',
-			'FAILED',
-		]),
-		duration: column.nullable(column.number()),
-	},
-).migrate(({ value, version }) => {
-	switch (version) {
-		case 1:
-			return {
-				id: value.id,
-				title: value.title,
-				recordedAt: value.timestamp,
-				updatedAt: value.updatedAt,
-				transcript: value.transcribedText,
-				transcriptionStatus: value.transcriptionStatus,
-				duration: null,
-			};
-		case 2:
-			return value;
-	}
+const recordings = defineTable({
+	id: column.string(),
+	title: column.string(),
+	recordedAt: column.string(),
+	updatedAt: column.string(),
+	transcript: column.string(),
+	transcriptionStatus: column.enum([
+		'UNPROCESSED',
+		'TRANSCRIBING',
+		'DONE',
+		'FAILED',
+	]),
+	duration: column.nullable(column.number()),
 });
 
-/** Recording row type inferred from the latest workspace table schema version. */
+/** Recording row type inferred from the workspace table schema. */
 export type Recording = InferTableRow<typeof recordings>;
 
 /** User-defined transformation pipelines. Each transformation has ordered steps. */
@@ -85,7 +52,7 @@ const transformations = defineTable({
 	updatedAt: column.string(),
 });
 
-/** Transformation row type inferred from the latest workspace table schema version. */
+/** Transformation row type inferred from the workspace table schema. */
 export type Transformation = InferTableRow<typeof transformations>;
 
 /**
@@ -129,7 +96,7 @@ const transformationSteps = defineTable({
 	useRegex: column.boolean(),
 });
 
-/** Transformation step row type inferred from the latest workspace table schema version. */
+/** Transformation step row type inferred from the workspace table schema. */
 export type TransformationStep = InferTableRow<typeof transformationSteps>;
 
 /**
@@ -183,7 +150,7 @@ const transformationRuns = defineTable({
 	result: column.json(TransformationRunResult),
 });
 
-/** Transformation run row type inferred from the latest workspace table schema version. */
+/** Transformation run row type inferred from the workspace table schema. */
 export type TransformationRun = InferTableRow<typeof transformationRuns>;
 
 /** Per-step execution records within a transformation run. */
@@ -197,7 +164,7 @@ const transformationStepRuns = defineTable({
 	result: column.json(TransformationRunResult),
 });
 
-/** Transformation step run row type inferred from the latest workspace table schema version. */
+/** Transformation step run row type inferred from the workspace table schema. */
 export type TransformationStepRun = InferTableRow<
 	typeof transformationStepRuns
 >;

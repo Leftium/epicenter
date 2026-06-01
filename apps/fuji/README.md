@@ -14,10 +14,10 @@ SvelteKit app (static adapter, SSR disabled) with three panels: a sidebar for fi
 
 ### Data model
 
-Workspace ID: `FUJI_ID` (`epicenter-fuji`). Rich-text content and entry metadata are separate CRDTs. The entries table stays lean: metadata rows live in the root Y.Doc, and each entry's body lives in its own child Y.Doc opened by a `createDisposableCache` keyed on the entry id. Loading a list of 500 entries doesn't mean loading 500 rich-text trees; the editor and the list never contend for the same document.
+Workspace ID: `FUJI_ID` (`epicenter-fuji`). Rich-text content and entry metadata are separate CRDTs. The entries table stays lean: metadata rows live in the root Y.Doc, and each entry's body lives in its own child Y.Doc addressed by `entryContentDocGuid(id)`. The browser opens bodies through a `createDisposableCache` keyed on the entry id; the project daemon opens a throwaway body doc per row when deriving markdown. Loading a list of 500 entries doesn't mean loading 500 rich-text trees; the editor and the list never contend for the same document.
 
 - `entries` table: `id` (EntryId), `title`, `subtitle`, `type` (string[]), `tags` (string[]), `pinned`, `deletedAt`, `date`, `dateZone`, `createdAt`, `updatedAt`, and `rating`.
-- `entryBodies`: browser-only child-doc cache. `entryContentDocGuid(id)` defines the Y.Doc identity; `openFujiBrowser()` attaches rich text, storage, sync, and the `updatedAt` bump.
+- `entryBodies`: browser child-doc cache. `entryContentDocGuid(id)` defines the Y.Doc identity; `openFujiBrowser()` attaches rich text, storage, sync, and the `updatedAt` bump.
 
 ### Client wiring
 
@@ -116,7 +116,7 @@ For a sibling example of the same pattern with Tauri runtime wiring, see `apps/w
 
 ### Editor
 
-ProseMirror with `y-prosemirror` binds directly to the entry's `Y.Text`. Edits are conflict-free by default; two sessions editing the same entry merge automatically.
+ProseMirror with `y-prosemirror` binds directly to the entry's `Y.XmlFragment`. Edits are conflict-free by default; two sessions editing the same entry merge automatically.
 
 ### Keyboard shortcuts
 

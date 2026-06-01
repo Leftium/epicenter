@@ -5,36 +5,8 @@
 		{
 			"idx": 0,
 			"version": "7",
-			"when": 1776083464858,
-			"tag": "0000_equal_thor_girl",
-			"breakpoints": true
-		},
-		{
-			"idx": 1,
-			"version": "7",
-			"when": 1778734800000,
-			"tag": "0001_delete_old_sync_rooms",
-			"breakpoints": true
-		},
-		{
-			"idx": 2,
-			"version": "7",
-			"when": 1778827600452,
-			"tag": "0002_salty_hex",
-			"breakpoints": true
-		},
-		{
-			"idx": 3,
-			"version": "7",
-			"when": 1779613911447,
-			"tag": "0003_glorious_the_hand",
-			"breakpoints": true
-		},
-		{
-			"idx": 4,
-			"version": "7",
-			"when": 1779614482626,
-			"tag": "0004_striped_dracula",
+			"when": 1780287863034,
+			"tag": "0000_thin_the_captain",
 			"breakpoints": true
 		}
 	]

@@ -1,16 +1,25 @@
 # Daemon Manifest + Mount Materializers
 
 **Date**: 2026-05-30
-**Status**: Draft
+**Status**: Superseded draft. Do not implement the daemon-published project
+manifest, `{ name, workspace, materializers }` mount shape, or generic mount
+materializer protocol from this spec.
 **Owner**: Workspace platform
 **Supersedes**: `specs/20260529T220000-project-mount-local-resource-api.md` (the
 `Mount.resources` declaration approach; this replaces its core mechanism)
 **Builds on**: `specs/20260528T121508-config-force-mount-array.md` (`Mount[]` settled, unchanged)
-**Depends on**: `specs/20260530T160000-uniform-per-doc-providers.md` (the per-doc
-provider mechanism is what lets the daemon persist + sync a whole workspace generically,
-which is what makes the `{ name, workspace, materializers }` mount shape honest)
+**Superseded by**: current app-owned mount code and PR #1868's Fuji body-doc
+direction. The path drift diagnosis remains useful, but project/mount resource
+manifests are not the accepted implementation direction.
 
 ## One Sentence
+
+Superseded model: the daemon does not own a generic manifest-backed materializer
+subsystem. Fuji's project mount stays app-owned: it opens the root workspace, wires
+SQLite and markdown materializers directly, and reads entry body docs per row as a
+Fuji-specific projection step.
+
+Historical rejected model:
 
 The daemon is the single source of truth for where local data lives: it owns the
 on-disk layout, publishes a `.epicenter/manifest.json` of what it materialized, and

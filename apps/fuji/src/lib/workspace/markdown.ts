@@ -2,8 +2,10 @@
  * Fuji Tauri markdown push/pull (WIP, not yet wired to UI).
  *
  * Manual export/import of entries as `<id>.md` files with YAML frontmatter for
- * the Tauri desktop app. Uses `js-yaml` (not bun's YAML) because this runs in
- * the Tauri webview. Distinct from the daemon's live markdown materializer.
+ * the Tauri desktop app. This WIP path is not the daemon's Fuji markdown import
+ * contract and is not wired as the canonical source for entry bodies. Uses
+ * `js-yaml` (not bun's YAML) because this runs in the Tauri webview. Distinct
+ * from the daemon's live markdown materializer.
  *
  * The frontmatter serialization here is a hand-rolled parallel of the canonical
  * `@epicenter/workspace/markdown` serializer; when this is wired up, unify them

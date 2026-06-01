@@ -1,8 +1,11 @@
 # Project / Mount Local Resource API
 
 **Date**: 2026-05-29
-**Status**: Superseded
-**Superseded by**: `specs/20260530T120000-daemon-manifest-and-mount-materializers.md` (the daemon-published manifest replaces the `Mount.resources` declaration; this spec's drift evidence and markdown-bidirectional analysis remain valid)
+**Status**: Superseded. Do not implement `Mount.resources`, project resource
+manifests, or mount resource declarations from this spec.
+**Superseded by**: current app-owned mount code and PR #1868's Fuji body-doc
+direction. The drift evidence remains valid: `openWorkspaceSqlite(projectDir,
+workspaceId)` only follows the convention path and is not override-aware.
 **Owner**: Workspace platform
 **Supersedes (resource/path layer only)**: the open path questions in
 `specs/20260527T120000-project-folders-and-control-plane-vision.md` (Q3, Q4) and
@@ -10,6 +13,11 @@ the per-resource override convention introduced around commit `2705d8882`.
 **Builds on**: `specs/20260528T121508-config-force-mount-array.md` (`Mount[]` is settled and unchanged here).
 
 ## One Sentence
+
+Superseded model: local resource paths are still app mount options plus explicit
+reader paths today. There is no accepted project or mount resource manifest API.
+
+Historical rejected model:
 
 A mount declares its local resources as inert data; one resolver turns that
 declaration into absolute paths (projections under `.epicenter/mounts/<name>/`,

@@ -57,61 +57,22 @@ export type EntryId = string & Brand<'EntryId'>;
  */
 export const asEntryId = (value: string): EntryId => value as EntryId;
 
-const entriesTable = defineTable(
-	// v1
-	{
-		id: column.string<EntryId>(),
-		title: column.string(),
-		subtitle: column.string(),
-		type: column.json(Type.Array(Type.String())),
-		tags: column.json(Type.Array(Type.String())),
-		pinned: column.boolean(),
-		deletedAt: column.nullable(column.dateTime()),
-		date: column.dateTime(),
-		createdAt: column.dateTime(),
-		updatedAt: column.dateTime(),
-	},
-	// v2: added rating
-	{
-		id: column.string<EntryId>(),
-		title: column.string(),
-		subtitle: column.string(),
-		type: column.json(Type.Array(Type.String())),
-		tags: column.json(Type.Array(Type.String())),
-		pinned: column.boolean(),
-		deletedAt: column.nullable(column.dateTime()),
-		date: column.dateTime(),
-		createdAt: column.dateTime(),
-		updatedAt: column.dateTime(),
-		rating: column.number(),
-	},
-	// v3: split user-meaningful `date` into UTC `date` + IANA `dateZone`.
+const entriesTable = defineTable({
+	id: column.string<EntryId>(),
+	title: column.string(),
+	subtitle: column.string(),
+	type: column.json(Type.Array(Type.String())),
+	tags: column.json(Type.Array(Type.String())),
+	pinned: column.boolean(),
+	deletedAt: column.nullable(column.dateTime()),
 	// `date` is the canonical UTC instant; `dateZone` carries the originating
 	// IANA zone so display code can render the user's local wall-clock time.
 	// Per the workspace `<field>` + `<field>Zone` convention.
-	{
-		id: column.string<EntryId>(),
-		title: column.string(),
-		subtitle: column.string(),
-		type: column.json(Type.Array(Type.String())),
-		tags: column.json(Type.Array(Type.String())),
-		pinned: column.boolean(),
-		deletedAt: column.nullable(column.dateTime()),
-		date: column.dateTime(),
-		dateZone: column.ianaTimeZone(),
-		createdAt: column.dateTime(),
-		updatedAt: column.dateTime(),
-		rating: column.number(),
-	},
-).migrate(({ value, version }) => {
-	switch (version) {
-		case 1:
-			return { ...value, rating: 0, dateZone: 'UTC' as IanaTimeZone };
-		case 2:
-			return { ...value, dateZone: 'UTC' as IanaTimeZone };
-		case 3:
-			return value;
-	}
+	date: column.dateTime(),
+	dateZone: column.ianaTimeZone(),
+	createdAt: column.dateTime(),
+	updatedAt: column.dateTime(),
+	rating: column.number(),
 });
 
 export type Entry = InferTableRow<typeof entriesTable>;

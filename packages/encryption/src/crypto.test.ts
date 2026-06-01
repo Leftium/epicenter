@@ -379,7 +379,7 @@ describe('deriveKeyring', () => {
 		expect(await deriveKeyring({ rootKeyring, label: 'shared' })).toEqual([
 			{
 				version: 1,
-				keyBytesBase64: 'QnKaAnleo9MGjOnlq+xlmkt90S+JRqPlhEbhtt1afDE=',
+				keyBytesBase64: '4ybZ11XJxgcWxBHJu6bg/sX5r8xquZKJKaSA4Tb1Jlk=',
 			},
 		]);
 	});

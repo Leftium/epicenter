@@ -56,12 +56,7 @@ function createNavigatorRecorder() {
 		const recordingSession = {
 			recordingId,
 
-			stop: async ({ sendStatus }) => {
-				sendStatus({
-					title: '⏸️ Finishing Recording',
-					description: 'Saving your audio...',
-				});
-
+			stop: async () => {
 				const { data: blob, error: stopError } = await tryAsync({
 					try: () =>
 						new Promise<Blob>((resolve) => {
@@ -82,26 +77,12 @@ function createNavigatorRecorder() {
 
 				if (stopError) return Err(stopError);
 
-				sendStatus({
-					title: '✅ Recording Saved',
-					description: 'Your recording is ready for transcription!',
-				});
 				return Ok({ kind: 'blob', blob, recordingId, durationMs });
 			},
 
-			cancel: async ({ sendStatus }) => {
-				sendStatus({
-					title: '🛑 Cancelling',
-					description: 'Discarding your recording...',
-				});
-
+			cancel: async () => {
 				mediaRecorder.stop();
 				teardown();
-
-				sendStatus({
-					title: '✨ Cancelled',
-					description: 'Recording discarded successfully!',
-				});
 
 				return Ok({ status: 'cancelled' });
 			},
@@ -137,17 +118,13 @@ function createNavigatorRecorder() {
 			return Ok(devices);
 		},
 
-		startRecording: async (
-			{ selectedDeviceId, recordingId, bitrateKbps }: NavigatorRecordingParams,
-			{ sendStatus },
-		) => {
-			sendStatus({
-				title: '🎙️ Starting Recording',
-				description: 'Setting up your microphone...',
-			});
-
+		startRecording: async ({
+			selectedDeviceId,
+			recordingId,
+			bitrateKbps,
+		}: NavigatorRecordingParams) => {
 			const { data: streamResult, error: acquireStreamError } =
-				await getRecordingStream({ selectedDeviceId, sendStatus });
+				await getRecordingStream({ selectedDeviceId });
 			if (acquireStreamError) {
 				return (
 					categorizeRecorderError(acquireStreamError) ??

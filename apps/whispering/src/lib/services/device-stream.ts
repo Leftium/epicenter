@@ -9,7 +9,6 @@ import type {
 	Device,
 	DeviceAcquisitionOutcome,
 	DeviceIdentifier,
-	UpdateStatusMessageFn,
 } from '$lib/services/recorder/types';
 import { asDeviceIdentifier } from '$lib/services/recorder/types';
 
@@ -131,10 +130,8 @@ async function getStreamForDeviceIdentifier(
 
 export async function getRecordingStream({
 	selectedDeviceId,
-	sendStatus,
 }: {
 	selectedDeviceId: DeviceIdentifier | null;
-	sendStatus: UpdateStatusMessageFn;
 }): Promise<
 	Result<
 		{ stream: MediaStream; deviceOutcome: DeviceAcquisitionOutcome },
@@ -142,20 +139,7 @@ export async function getRecordingStream({
 	>
 > {
 	// Try preferred device first if specified
-	if (!selectedDeviceId) {
-		// No device selected
-		sendStatus({
-			title: '🔍 No Device Selected',
-			description:
-				"No worries! We'll find the best microphone for you automatically...",
-		});
-	} else {
-		sendStatus({
-			title: '🎯 Connecting Device',
-			description:
-				'Almost there! Just need your permission to use the microphone...',
-		});
-
+	if (selectedDeviceId) {
 		const { data: preferredStream, error: getPreferredStreamError } =
 			await getStreamForDeviceIdentifier(selectedDeviceId);
 
@@ -166,12 +150,8 @@ export async function getRecordingStream({
 			});
 		}
 
-		// We reach here if the preferred device failed, so we'll fall back to the first available device
-		sendStatus({
-			title: '⚠️ Finding a New Microphone',
-			description:
-				"That microphone isn't working. Let's try finding another one...",
-		});
+		// We reach here if the preferred device failed, so we'll fall back to
+		// the first available device.
 	}
 
 	// Try to get any available device as fallback

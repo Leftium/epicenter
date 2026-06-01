@@ -6,10 +6,9 @@ import { manualRecorderConfig } from '#platform/manual-recorder-config';
 import { ManualRecorderLive } from '#platform/recorder';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { defineQuery } from '$lib/rpc/client';
-import {
-	type RecorderError,
-	type RecordingSession,
-	type UpdateStatusMessageFn,
+import type {
+	RecorderError,
+	RecordingSession,
 } from '$lib/services/recorder/types';
 
 const ManualRecorderError = defineErrors({
@@ -37,7 +36,7 @@ const manualRecorderKeys = defineKeys({
  * reactivity. Mirrors the shape of `vadRecorder` in `vad-recorder.svelte.ts`:
  *
  * - Reactive access: `manualRecorder.state` (triggers effects on change)
- * - Operations: `manualRecorder.startRecording({ sendStatus })` etc.
+ * - Operations: `manualRecorder.startRecording()` etc.
  * - Device enumeration as a TanStack Query for loading states in selectors
  *
  * Each recording is a `RecordingSession` object returned by the implementation
@@ -112,17 +111,13 @@ function createManualRecorder() {
 			},
 		}),
 
-		async startRecording({
-			sendStatus,
-		}: {
-			sendStatus: UpdateStatusMessageFn;
-		}) {
+		async startRecording() {
 			const { error: bootstrapError } = await ensureBootstrapped();
 			if (bootstrapError) return Err(bootstrapError);
 			if (_current) return ManualRecorderError.AlreadyRecording();
 			const params = manualRecorderConfig.resolveStartParams(nanoid());
 			const { data, error: startRecordingError } =
-				await ManualRecorderLive.startRecording(params, { sendStatus });
+				await ManualRecorderLive.startRecording(params);
 
 			if (startRecordingError) return Err(startRecordingError);
 
@@ -130,22 +125,18 @@ function createManualRecorder() {
 			return Ok(data.deviceAcquisition);
 		},
 
-		async stopRecording({ sendStatus }: { sendStatus: UpdateStatusMessageFn }) {
+		async stopRecording() {
 			const { error: bootstrapError } = await ensureBootstrapped();
 			if (bootstrapError) return Err(bootstrapError);
 			if (!_current) return ManualRecorderError.NoActiveRecording();
-			return _current.stop({ sendStatus });
+			return _current.stop();
 		},
 
-		async cancelRecording({
-			sendStatus,
-		}: {
-			sendStatus: UpdateStatusMessageFn;
-		}) {
+		async cancelRecording() {
 			const { error: bootstrapError } = await ensureBootstrapped();
 			if (bootstrapError) return Err(bootstrapError);
 			if (!_current) return Ok({ status: 'no-recording' as const });
-			return _current.cancel({ sendStatus });
+			return _current.cancel();
 		},
 	};
 }

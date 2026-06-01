@@ -85,7 +85,7 @@ The workspace bundle and the local-storage attachment cover the local-data surfa
 - `createWorkspace({ id, keyring, tables, kv })` allocates the `Y.Doc`, derives the per-workspace HKDF keyring, and constructs every encrypted table and KV store in one atomic call. The factory does not own local storage: it only allocates the doc, derives keys, and activates the encrypted CRDT wrappers.
 - `attachLocalStorage(ydoc, { server, ownerId, keyring })` opens `(server, ownerId)`-scoped encrypted IndexedDB persistence and pairs it with a matching `BroadcastChannel` under the same name. The `server` and `ownerId` are snapshotted at attach time (stable for the attachment lifetime), and `keyring` is a callback so the IDB layer picks up rotated keys on the next persisted update.
 
-The browser factory shape is (from `apps/fuji/src/lib/browser.ts`):
+The browser factory shape is (from `apps/fuji/src/lib/workspace/browser.ts`):
 ```ts
 export function openFujiBrowser({
 	signedIn,

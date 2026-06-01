@@ -399,7 +399,10 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	 * error side opaquely; the caller's own validator narrows it again to
 	 * `DispatchErrorWire` (which adds `RecipientOffline` to the union).
 	 */
-	function handleDispatchResponse(responderWs: RoomSocket, frame: unknown): void {
+	function handleDispatchResponse(
+		responderWs: RoomSocket,
+		frame: unknown,
+	): void {
 		if (!checkDispatchResponseFrame.Check(frame)) return;
 
 		const pending = pendingDispatches.get(frame.id);

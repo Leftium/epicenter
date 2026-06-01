@@ -55,7 +55,10 @@ test('a deployed origin without a cross-subdomain domain uses host-only secure c
 });
 
 test('a deployed origin given a cross-subdomain domain scopes cookies to it', () => {
-	const cookie = sessionTokenCookie('https://api.epicenter.so', '.epicenter.so');
+	const cookie = sessionTokenCookie(
+		'https://api.epicenter.so',
+		'.epicenter.so',
+	);
 
 	expect(cookie.name).toBe('__Secure-better-auth.session_token');
 	expect(cookie.attributes.secure).toBe(true);

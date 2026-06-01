@@ -20,7 +20,11 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdir, rm, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Type } from 'typebox';
-import { createWorkspace, DateTimeString, defineTable } from '../../../index.js';
+import {
+	createWorkspace,
+	DateTimeString,
+	defineTable,
+} from '../../../index.js';
 import { column } from '../../column/index.js';
 import { attachMarkdownMaterializer } from './materializer.js';
 
@@ -145,7 +149,11 @@ describe('markdown_apply', () => {
 	test('delete guard refuses a large deletion and applies nothing', async () => {
 		const { workspace, materializer } = await setup();
 		for (const id of ['a', 'b', 'c']) {
-			workspace.tables.posts.set({ id, title: id.toUpperCase(), published: true });
+			workspace.tables.posts.set({
+				id,
+				title: id.toUpperCase(),
+				published: true,
+			});
 		}
 		await materializer.actions.markdown_pull();
 
@@ -337,7 +345,9 @@ describe('markdown_apply', () => {
 		const materializer = attachMarkdownMaterializer(workspace, {
 			dir: TEST_DIR,
 			perTable: {
-				posts: { toMarkdown: (r) => ({ frontmatter: { ...r }, body: 'prose' }) },
+				posts: {
+					toMarkdown: (r) => ({ frontmatter: { ...r }, body: 'prose' }),
+				},
 			},
 		});
 		await materializer.whenFlushed;
@@ -366,7 +376,9 @@ describe('markdown_apply', () => {
 		await removePost('c');
 
 		// maxDeletes:0 is the escape hatch against an accidental empty dir.
-		const refused = await materializer.actions.markdown_apply({ maxDeletes: 0 });
+		const refused = await materializer.actions.markdown_apply({
+			maxDeletes: 0,
+		});
 		expect(refused.refused).toBe(true);
 		expect(workspace.tables.posts.count()).toBe(3);
 

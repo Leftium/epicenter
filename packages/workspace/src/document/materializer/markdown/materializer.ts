@@ -695,7 +695,10 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 	async function applyMarkdownFiles({
 		dryRun = false,
 		maxDeletes = DEFAULT_MAX_DELETES,
-	}: { dryRun?: boolean; maxDeletes?: number } = {}): Promise<ApplyPlan> {
+	}: {
+		dryRun?: boolean;
+		maxDeletes?: number;
+	} = {}): Promise<ApplyPlan> {
 		const plan: ApplyPlan = {
 			refused: false,
 			creates: [],
@@ -719,8 +722,14 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 			// would import only the frontmatter and silently drop whatever else
 			// toMarkdown emitted (e.g. a body in a separate doc). Refuse the table.
 			if (entry.config.toMarkdown && !entry.config.fromMarkdown) {
-				const { error } = MaterializerApplyError.RoundTripUnproven({ tableName });
-				plan.errors.push({ path: `${entry.config.dir ?? tableName}/`, tableName, error });
+				const { error } = MaterializerApplyError.RoundTripUnproven({
+					tableName,
+				});
+				plan.errors.push({
+					path: `${entry.config.dir ?? tableName}/`,
+					tableName,
+					error,
+				});
 				continue;
 			}
 
@@ -730,7 +739,11 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 				if (result.kind === 'skipped') {
 					plan.skipped.push({ path: result.path });
 				} else if (result.kind === 'error') {
-					plan.errors.push({ path: result.path, tableName, error: result.error });
+					plan.errors.push({
+						path: result.path,
+						tableName,
+						error: result.error,
+					});
 				} else {
 					const prior = desired.get(result.id);
 					if (prior) {

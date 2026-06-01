@@ -120,9 +120,19 @@ describe('two-peer reconcile convergence', () => {
 		const { a, b, matA } = await setupPeers();
 
 		// Seed shared state through A; it propagates to B.
-		a.tables.posts.set({ id: 'a', title: 'Alpha', tags: ['x'], published: true });
+		a.tables.posts.set({
+			id: 'a',
+			title: 'Alpha',
+			tags: ['x'],
+			published: true,
+		});
 		a.tables.posts.set({ id: 'b', title: 'Beta', tags: [], published: true });
-		a.tables.posts.set({ id: 'c', title: 'Gamma', tags: ['y'], published: true });
+		a.tables.posts.set({
+			id: 'c',
+			title: 'Gamma',
+			tags: ['y'],
+			published: true,
+		});
 
 		// Wait until BOTH peers are fully materialized before editing. We edit and
 		// apply against DIR_A, so DIR_A must have all three files first, or apply
@@ -135,7 +145,10 @@ describe('two-peer reconcile convergence', () => {
 		const beta = join(DIR_A, 'posts', 'b.md');
 		await writeFile(
 			beta,
-			(await readFile(beta, 'utf-8')).replace('title: Beta', 'title: Beta EDITED'),
+			(await readFile(beta, 'utf-8')).replace(
+				'title: Beta',
+				'title: Beta EDITED',
+			),
 			'utf-8',
 		);
 		await rm(join(DIR_A, 'posts', 'c.md'));
@@ -175,7 +188,10 @@ describe('two-peer reconcile convergence', () => {
 			);
 		});
 
-		const [treeA, treeB] = await Promise.all([readTree(DIR_A), readTree(DIR_B)]);
+		const [treeA, treeB] = await Promise.all([
+			readTree(DIR_A),
+			readTree(DIR_B),
+		]);
 		expect(Object.keys(treeB).sort()).toEqual(['a.md', 'b.md', 'd.md']);
 		expect(treeB).toEqual(treeA);
 		expect(treeB['b.md']).toContain('Beta EDITED');

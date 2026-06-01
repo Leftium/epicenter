@@ -40,7 +40,7 @@ Epicenter-internal packages.
 You're free to run, modify, and self-host any of these. If you distribute
 a modified version, you share the changes back with the community.
 
-For hosted infrastructure (apps/api, apps/team-api), AGPL
+For hosted infrastructure (apps/api, apps/self-host), AGPL
 §13 extends this to network use: running a modified version as a service
 counts as distribution.
 
@@ -52,7 +52,7 @@ who forks and distributes a modified binary shares the changes back.
     - apps/api                   (@epicenter/api)        hosted personal
                                                          cloud Worker
                                                          (worker + ui)
-    - apps/team-api              (@epicenter/team-api)   self-hosted team
+    - apps/self-host              (@epicenter/self-host)   self-hosted shared wiki
                                                          reference Worker
     - apps/whispering            (@epicenter/whispering) desktop transcription
     - apps/honeycrisp            (@epicenter/honeycrisp) notes app

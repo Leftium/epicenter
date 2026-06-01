@@ -1,5 +1,5 @@
 /**
- * Cloudflare bindings for apps/team-api.
+ * Cloudflare bindings for apps/self-host.
  *
  * Hand-written so this reference deployable typechecks without requiring a
  * Cloudflare account or a `wrangler types` run. Deployers should regenerate
@@ -8,7 +8,7 @@
  * Bindings mirror those declared in `wrangler.jsonc` and the cloudflare
  * bindings the `@epicenter/server` library reads from `c.env`. Hosted-only
  * bindings (Autumn, ASSETS, ADMIN_USER_IDS) are deliberately absent: the
- * team reference has no billing surface and no dashboard SPA.
+ * shared-wiki reference has no billing surface and no dashboard SPA.
  */
 
 /// <reference types="@cloudflare/workers-types" />

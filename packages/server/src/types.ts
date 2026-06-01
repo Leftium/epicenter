@@ -33,9 +33,9 @@ import type { Rooms } from './room/contracts.js';
  * Relay treats the value as opaque (it forwards JSON to peers, never inspects).
  *
  * In personal mode every connection to a given DO shares the same `userId`
- * (the DO name partitions by user). In team mode connections carry different
- * `userId` values because every member shares the DO. The DO never branches
- * on which mode it is in.
+ * (the DO name partitions by user). In shared mode connections can carry
+ * different `userId` values because admitted users share the DO. The DO never
+ * branches on which mode it is in.
  */
 export type Connection = {
 	userId: UserId;
@@ -68,8 +68,8 @@ export type Env = {
 		/**
 		 * Resolved owner partition for this request. Populated by the
 		 * `requireOwnership` middleware after auth runs. In personal mode
-		 * equals the authenticated user's id; in team mode equals
-		 * `TEAM_OWNER_ID`. Handlers read this instead of branching on
+		 * equals the authenticated user's id; in shared mode equals
+		 * `SHARED_OWNER_ID`. Handlers read this instead of branching on
 		 * mode or re-deriving from the URL `:ownerId` param.
 		 */
 		ownerId: OwnerId;

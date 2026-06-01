@@ -16,9 +16,8 @@
  *   - 'public'  : serve bytes; no auth required.
  *   - 'private' : require an authenticated session whose actor resolves
  *                 to the URL `:ownerId` partition via the deployment's
- *                 `OwnershipRule` (personal: user.id matches; team: user
- *                 passes the membership predicate and URL is the team
- *                 sentinel).
+ *                 `OwnershipRule` (personal: user.id matches; shared: user
+ *                 passes the admit predicate and URL is the shared sentinel).
  *
  * Because the conditional GET handles its own auth, deployments mount
  * auth ONLY on the authed patterns (list, usage, byId-PATCH/DELETE). The
@@ -334,7 +333,7 @@ function createAssetsApp(opts: { ownership: OwnershipRule }): Hono<Env> {
 			// design; private assets run the auth + ownership check inline.
 			// Private-asset auth goes through the same `resolveOwnerPartition`
 			// the `requireOwnership` middleware uses, so the partition decision
-			// and any team-membership check live in one place. We synthesize
+			// and any shared-wiki admission check live in one place. We synthesize
 			// `c.var.user` from the fetched session because no upstream auth
 			// runs on this path.
 			.get(

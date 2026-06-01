@@ -1,5 +1,5 @@
 /**
- * `@epicenter/client` — typed HTTP client for the Epicenter server.
+ * `@epicenter/client`: typed HTTP client for the Epicenter server.
  *
  * Wraps `assets`, `session`, and `ai` surfaces. Composes on
  * `AuthFetch` from `@epicenter/auth`, which handles OAuth bearer attach,
@@ -7,7 +7,7 @@
  * it consumes the authed fetch handle.
  *
  * Works against any Epicenter deployment (cloud at `epicenter.so` or a
- * self-hosted team server).
+ * self-hosted shared-wiki server).
  */
 
 import type { ApiSessionResponse, AuthFetch } from '@epicenter/auth';

@@ -3,7 +3,7 @@
  *
  * Library-side, billing-free. The deployment composes any plan or credit
  * gating in front of this app via `mountAiApp`'s `policies`. apps/api
- * passes `chargeAiCreditsWithAutumn`; a self-hosted team deployment
+ * passes `chargeAiCreditsWithAutumn`; a self-hosted shared-wiki deployment
  * passes no policies.
  *
  * BYOK: callers may pass `apiKey` in the request body, in which case the
@@ -29,6 +29,8 @@ import { createOpenaiChat, OPENAI_CHAT_MODELS } from '@tanstack/ai-openai';
 import { type } from 'arktype';
 import { Hono, type MiddlewareHandler } from 'hono';
 import { describeRoute } from 'hono-openapi';
+import { createRequireOwnership } from '../middleware/require-ownership.js';
+import type { OwnershipRule } from '../ownership.js';
 import type { Env } from '../types.js';
 
 const chatOptions = type({
@@ -113,13 +115,20 @@ const aiApp = new Hono<Env>().post(
  * Mount the AI surface on a deployment's server app.
  *
  * Bundles the deployment's chosen auth middleware (cloud uses
- * `requireBearerUser`; AI chat is for external clients only), any
- * deployment policies (cloud passes `[chargeAiCreditsWithAutumn]`), and
- * the route mount into one call.
+ * `requireBearerUser`; AI chat is for external clients only), the
+ * deployment's ownership rule, any deployment policies (cloud passes
+ * `[chargeAiCreditsWithAutumn]`), and the route mount into one call.
+ *
+ * The ownership rule gates ADMISSION, not partitioning: `/api/ai/chat`
+ * carries no `:ownerId`, so `requireOwnership` resolves the partition and,
+ * in shared mode, runs the deployment's `admit` predicate, rejecting a
+ * non-member with 403 NotAdmitted before any house AI key is spent. In
+ * personal mode it only stamps `c.var.ownerId`. This keeps AI behind the
+ * same membership check as the wiki data surfaces.
  *
  * The library remains billing-agnostic: policies are opaque middleware
- * that run after auth and may short-circuit the request (e.g. 402
- * insufficient credits) before the AI handler streams.
+ * that run after auth and ownership and may short-circuit the request
+ * (e.g. 402 insufficient credits) before the AI handler streams.
  *
  * Policies are typed loosely (`MiddlewareHandler`) so deployments that
  * extend the library `Env` with their own `Variables` can pass policies
@@ -130,10 +139,16 @@ export function mountAiApp(
 	app: Hono<Env>,
 	opts: {
 		auth: MiddlewareHandler;
+		ownership: OwnershipRule;
 		policies?: MiddlewareHandler[];
 	},
 ): void {
 	const policies = opts.policies ?? [];
-	app.use(API_ROUTES.ai.chat.prefixPattern, opts.auth, ...policies);
+	app.use(
+		API_ROUTES.ai.chat.prefixPattern,
+		opts.auth,
+		createRequireOwnership(opts.ownership),
+		...policies,
+	);
 	app.route('/', aiApp);
 }

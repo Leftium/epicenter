@@ -3,8 +3,8 @@
  *
  * Composes `@epicenter/server` with the `personal` ownership rule and
  * layers cloud-only billing, admin, and dashboard surfaces on top.
- * Self-hosted team deployments live in a sibling apps/* folder and
- * compose the same library with `team({ isMember })` and no Autumn
+ * Self-hosted shared-wiki deployments live in a sibling apps/* folder and
+ * compose the same library with `shared({ admit })` and no Autumn
  * policies.
  *
  * Read top to bottom for the full URL surface of cloud. Each `mount*`
@@ -63,6 +63,7 @@ mountAssetsApp(app, {
 });
 mountAiApp(app, {
 	auth: requireBearerUser,
+	ownership,
 	policies: [chargeAiCreditsWithAutumn],
 });
 

@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/identity';
+import { asOwnerId, SHARED_OWNER_ID } from '@epicenter/identity';
 import { createOwnedYjsKey, getOwnedYjsPrefix } from './local-yjs-key.js';
 
 const SERVER = 'api.epicenter.so';
 const ALICE = asOwnerId('user-a');
-const TEAM = TEAM_OWNER_ID;
+const SHARED = SHARED_OWNER_ID;
 
 describe('getOwnedYjsPrefix', () => {
 	test('personal mode owner id partitions the prefix under owners/', () => {
@@ -12,9 +12,9 @@ describe('getOwnedYjsPrefix', () => {
 			'epicenter/api.epicenter.so/owners/user-a/',
 		);
 	});
-	test("team mode uses the literal 'team' owner id under the same owners/ partition", () => {
-		expect(getOwnedYjsPrefix(SERVER, TEAM)).toBe(
-			'epicenter/api.epicenter.so/owners/team/',
+	test("shared mode uses the literal 'shared' owner id under the same owners/ partition", () => {
+		expect(getOwnedYjsPrefix(SERVER, SHARED)).toBe(
+			'epicenter/api.epicenter.so/owners/shared/',
 		);
 	});
 });
@@ -24,8 +24,8 @@ describe('createOwnedYjsKey', () => {
 		expect(createOwnedYjsKey(SERVER, ALICE, 'epicenter-fuji')).toBe(
 			'epicenter/api.epicenter.so/owners/user-a/epicenter-fuji',
 		);
-		expect(createOwnedYjsKey(SERVER, TEAM, 'epicenter-fuji')).toBe(
-			'epicenter/api.epicenter.so/owners/team/epicenter-fuji',
+		expect(createOwnedYjsKey(SERVER, SHARED, 'epicenter-fuji')).toBe(
+			'epicenter/api.epicenter.so/owners/shared/epicenter-fuji',
 		);
 	});
 });

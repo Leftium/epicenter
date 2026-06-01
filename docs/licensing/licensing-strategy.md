@@ -48,10 +48,10 @@ Scenario 4 (a hosted competitor) is the one where the license is most load-beari
 
 ### Tier 2: AGPL-3.0
 
-**Applies to:** all apps (`apps/api`, `apps/team-api`, `apps/whispering`, `apps/honeycrisp`, `apps/opensidian`, `apps/fuji`, `apps/zhongwen`, `apps/tab-manager`, `apps/skills`, `apps/reddit`, `apps/landing`, `apps/posthog-reverse-proxy`), `packages/cli`, and the internal packages `packages/auth`, `packages/svelte-utils`, `packages/skills`, `packages/constants`, `packages/server`, `packages/client`.
+**Applies to:** all apps (`apps/api`, `apps/self-host`, `apps/whispering`, `apps/honeycrisp`, `apps/opensidian`, `apps/fuji`, `apps/zhongwen`, `apps/tab-manager`, `apps/skills`, `apps/reddit`, `apps/landing`, `apps/posthog-reverse-proxy`), `packages/cli`, and the internal packages `packages/auth`, `packages/svelte-utils`, `packages/skills`, `packages/constants`, `packages/server`, `packages/client`.
 
 **Rationale:**
-- `apps/api` (hosted cloud: sync server, auth, AI inference; serves the same-origin dashboard SPA from its `ui/`): the infrastructure a competitor would need to clone Epicenter Cloud. AGPL §13 means any hosted fork must publish source, including improvements, which destroys the economics of forking-and-hosting. `apps/team-api` is the self-hosted team reference deployment.
+- `apps/api` (hosted cloud: sync server, auth, AI inference; serves the same-origin dashboard SPA from its `ui/`): the infrastructure a competitor would need to clone Epicenter Cloud. AGPL §13 means any hosted fork must publish source, including improvements, which destroys the economics of forking-and-hosting. `apps/self-host` is the self-hosted shared wiki reference deployment.
 - Consumer apps: AGPL gives little extra protection on a locally-run app (§13 collapses to GPL semantics), but they are AGPL for a uniform "everything Epicenter ships is AGPL" story and brand consistency. The toolkit libraries are the only MIT surface.
 - Internal packages (`auth`, `svelte-utils`, `skills`, `constants`, `server`, `client`): private glue that composes the apps and hosted server; never marketed as an embeddable library, so AGPL with no adoption cost.
 
@@ -100,7 +100,7 @@ All apps are AGPL-3.0. MIT is reserved for the embeddable toolkit libraries.
 | Path | License | Notes |
 |---|---|---|
 | `apps/api` | AGPL-3.0 | Hosted cloud: sync server, auth, AI inference (its `ui/` is the same-origin dashboard SPA) |
-| `apps/team-api` | AGPL-3.0 | Self-hosted team reference deployment |
+| `apps/self-host` | AGPL-3.0 | Self-hosted shared wiki reference deployment |
 | `apps/whispering` | AGPL-3.0 | Desktop transcription |
 | `apps/honeycrisp` | AGPL-3.0 | Notes app |
 | `apps/opensidian` | AGPL-3.0 | Note-taking with terminal |

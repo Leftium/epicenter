@@ -1,6 +1,6 @@
 {
 	"$schema": "./node_modules/wrangler/config-schema.json",
-	"name": "team-api",
+	"name": "self-host",
 	"main": "worker/index.ts",
 	"compatibility_date": "2026-03-06",
 	"compatibility_flags": ["nodejs_compat"],
@@ -8,12 +8,12 @@
 
 	// --- Deployment-owned vars ---
 	// ALLOWED_MEMBER_EMAILS: comma-separated list of emails admitted by the
-	// team() ownership rule. Anyone outside this set gets 403 NotTeamMember
+	// shared() ownership rule. Anyone outside this set gets 403 NotAdmitted
 	// at the boundary, regardless of whether they can sign in.
 	"vars": {
 		// API_PUBLIC_ORIGIN: this deployment's public origin. Self-hosters set
 		// their own domain here; it is the Better Auth issuer + token audience.
-		"API_PUBLIC_ORIGIN": "https://team-api.example.com",
+		"API_PUBLIC_ORIGIN": "https://self-host.example.com",
 		"ALLOWED_MEMBER_EMAILS": "",
 		"GOOGLE_CLIENT_ID": ""
 	},
@@ -64,7 +64,7 @@
 		{
 			"binding": "HYPERDRIVE",
 			"id": "<your-hyperdrive-id>",
-			"localConnectionString": "postgres://postgres:postgres@localhost:5432/team_api"
+			"localConnectionString": "postgres://postgres:postgres@localhost:5432/self_host"
 		}
 	],
 

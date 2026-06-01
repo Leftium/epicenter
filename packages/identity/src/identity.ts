@@ -3,16 +3,16 @@ import type { Brand } from 'wellcrafted/brand';
 
 /**
  * Workspace partition key. In personal mode equals the signed-in user's
- * id (bytes preserve pre-collapse HKDF labels). In team mode the literal
- * 'team'. Every server path, every R2 key, every local IDB name, and the
+ * id (bytes preserve pre-collapse HKDF labels). In shared mode the literal
+ * 'shared'. Every server path, every R2 key, every local IDB name, and the
  * HKDF derivation label all use this one value.
  *
- * Deployment shape (personal vs team) is never carried as its own field: it is
+ * Deployment shape (personal vs shared) is never carried as its own field: it is
  * a property of the server, not of any cell or wire payload. This is the
  * canonical site for the rare consumer that genuinely must distinguish them:
- * derive it as `ownerId === TEAM_OWNER_ID` (team) versus `ownerId === userId`
- * (personal). Most code should not branch at all and just use `ownerId` as the
- * opaque partition key.
+ * derive it as `ownerId === SHARED_OWNER_ID` (shared) versus
+ * `ownerId === userId` (personal). Most code should not branch at all and just
+ * use `ownerId` as the opaque partition key.
  *
  * The validator is declared first; the type is derived from it via `.infer`
  * so schema and type stay in lockstep under one PascalCase name. Use
@@ -30,14 +30,14 @@ export type OwnerId = typeof OwnerId.infer;
 export const asOwnerId = (value: string): OwnerId => value as OwnerId;
 
 /**
- * Owner partition for team deployments.
+ * Owner partition for shared-wiki deployments.
  *
  * Byte-pinned: this string IS the HKDF derivation label, the `:ownerId` path
  * segment, the R2 key prefix, the Durable Object name prefix, and the local
- * IndexedDB key prefix for every team server. Changing the bytes breaks every
- * existing team deployment's data. Do not edit.
+ * IndexedDB key prefix for every shared-wiki server. Changing the bytes breaks
+ * every existing shared-wiki deployment's data. Do not edit.
  *
  * Personal-mode deployments never read this; their owner partition is the
  * signed-in user's id.
  */
-export const TEAM_OWNER_ID = asOwnerId('team');
+export const SHARED_OWNER_ID = asOwnerId('shared');

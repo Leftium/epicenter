@@ -3,7 +3,7 @@
 	"version": "0.1.0",
 	"private": true,
 	"type": "module",
-	"description": "Shared Hono server for Epicenter cloud and self-hosted team deployments.",
+	"description": "Shared Hono server for Epicenter cloud and self-hosted shared-wiki deployments.",
 	"exports": {
 		".": "./src/index.ts",
 		"./schema": "./src/db/schema/index.ts"

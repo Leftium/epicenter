@@ -25,14 +25,14 @@ type Keyring = SignedInState['keyring'];
  * rebuild cycle. `keyring` is a callback because the same-owner keyring can
  * rotate (reauth-required to identity-bearing) without a rebuild.
  *
- * Deployment shape (personal vs team) is not on this payload; it is a property
+ * Deployment shape (personal vs shared) is not on this payload; it is a property
  * of the server (see `OwnerId` in `@epicenter/identity`).
  */
 export type SignedIn = {
 	/**
 	 * API origin host (e.g. `api.epicenter.so`). Threads into
-	 * `attachLocalStorage` and `wipeLocalStorage` so two team deployments on
-	 * the same machine partition local storage separately.
+	 * `attachLocalStorage` and `wipeLocalStorage` so two shared-wiki
+	 * deployments on the same machine partition local storage separately.
 	 */
 	server: string;
 	/**

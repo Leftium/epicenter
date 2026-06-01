@@ -4,7 +4,7 @@
  *
  * The Owner-partition collapse changed every durable identifier from
  *   personal: `users/<userId>/...`
- *   team:     `<resource>/<id>`           (e.g. `rooms/foo`, `assets/bar`)
+ *   shared:   `<resource>/<id>`           (e.g. `rooms/foo`, `assets/bar`)
  * to a single uniform form:
  *   `owners/<ownerId>/...`
  *

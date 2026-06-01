@@ -210,7 +210,7 @@ export {
 //
 // `roomWsUrl({ baseURL, ownerId, guid, deviceId })` builds the WebSocket
 // URL for the partitioned `/api/owners/:ownerId/rooms/:roomId` endpoint. The
-// same single URL form is used in both personal and team modes. Both browser
+// same single URL form is used in both personal and shared modes. Both browser
 // apps and the daemon use this one builder.
 export { type RoomWsUrlOptions, roomWsUrl } from './document/transport.js';
 export { wipeLocalStorage } from './document/wipe-local-storage.js';

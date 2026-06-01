@@ -11,7 +11,7 @@
  * storage and live updates.
  *
  * Names are derived via {@link createOwnedYjsKey}. Two signed-in owners on
- * the same browser profile, or one owner signed into two different team
+ * the same browser profile, or one owner signed into two different shared-wiki
  * servers on the same machine, never collide on local storage or
  * BroadcastChannel.
  *
@@ -37,7 +37,7 @@ import { createOwnedYjsKey } from './local-yjs-key.js';
  * `server` and `ownerId` are stable for the lifetime of the attachment: they
  * become the IDB database name and BroadcastChannel key prefix, so two
  * accounts on the same browser profile do not share local workspace data
- * and two team deployments on the same machine do not collide either.
+ * and two shared-wiki deployments on the same machine do not collide either.
  * Snapshotted at attach time; session lifecycles guarantee stability by
  * disposing the workspace on sign-out and re-mounting on the next sign-in.
  *

@@ -5,7 +5,7 @@
  *
  * The deployment supplies its own canonical API origin through
  * {@link CreateServerAppOptions.resolveOrigin}: the hosted cloud bakes a
- * constant (`apps/api`), a self-host reads operator config (`apps/team-api`).
+ * constant (`apps/api`), a self-host reads operator config (`apps/self-host`).
  * The library never reaches for a shared `c.env` var name, so the origin is
  * always explicit and never inferred from the request. This `resolveOrigin`
  * hook is the first slice of the future runtime port (db, sessionStore,
@@ -43,7 +43,7 @@ type CreateServerAppOptions = {
 	 * `c.env`. Becomes the Better Auth `baseURL`, OAuth issuer, and token
 	 * audience, so it must be stable per deployment and never inferred from
 	 * `c.req.url`. `apps/api` returns `env.API_PUBLIC_ORIGIN ?? PRODUCTION_API_URL`
-	 * (dev override, else the baked constant); `apps/team-api` returns the
+	 * (dev override, else the baked constant); `apps/self-host` returns the
 	 * operator-set `env.API_PUBLIC_ORIGIN`.
 	 */
 	resolveOrigin: (env: Cloudflare.Env) => string;

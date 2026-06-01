@@ -12,7 +12,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { asOwnerId, TEAM_OWNER_ID } from '@epicenter/identity';
+import { asOwnerId, SHARED_OWNER_ID } from '@epicenter/identity';
 import { asDeviceId } from './device-id.js';
 import { roomWsUrl } from './transport.js';
 
@@ -30,16 +30,16 @@ describe('roomWsUrl', () => {
 		);
 	});
 
-	test("team mode uses the literal 'team' owner id under the same /owners/ partition", () => {
+	test("shared mode uses the literal 'shared' owner id under the same /owners/ partition", () => {
 		expect(
 			roomWsUrl({
-				baseURL: 'https://team.example.com',
-				ownerId: TEAM_OWNER_ID,
+				baseURL: 'https://shared.example.com',
+				ownerId: SHARED_OWNER_ID,
 				guid: 'epicenter-fuji',
 				deviceId: asDeviceId('client-1'),
 			}),
 		).toBe(
-			'wss://team.example.com/api/owners/team/rooms/epicenter-fuji?deviceId=client-1',
+			'wss://shared.example.com/api/owners/shared/rooms/epicenter-fuji?deviceId=client-1',
 		);
 	});
 
@@ -47,12 +47,12 @@ describe('roomWsUrl', () => {
 		expect(
 			roomWsUrl({
 				baseURL: 'https://api.example.com/',
-				ownerId: TEAM_OWNER_ID,
+				ownerId: SHARED_OWNER_ID,
 				guid: 'a/b?c#d',
 				deviceId: asDeviceId('client-1'),
 			}),
 		).toBe(
-			'wss://api.example.com/api/owners/team/rooms/a%2Fb%3Fc%23d?deviceId=client-1',
+			'wss://api.example.com/api/owners/shared/rooms/a%2Fb%3Fc%23d?deviceId=client-1',
 		);
 	});
 
@@ -60,12 +60,12 @@ describe('roomWsUrl', () => {
 		expect(
 			roomWsUrl({
 				baseURL: 'http://localhost:8787',
-				ownerId: TEAM_OWNER_ID,
+				ownerId: SHARED_OWNER_ID,
 				guid: 'epicenter-fuji',
 				deviceId: asDeviceId('client-1'),
 			}),
 		).toBe(
-			'ws://localhost:8787/api/owners/team/rooms/epicenter-fuji?deviceId=client-1',
+			'ws://localhost:8787/api/owners/shared/rooms/epicenter-fuji?deviceId=client-1',
 		);
 	});
 });

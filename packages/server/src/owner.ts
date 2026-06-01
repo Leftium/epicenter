@@ -7,10 +7,10 @@
  * a server cares about: Durable Object names, R2 object keys, and the
  * partition path segment they all share.
  *
- * Personal mode and team mode share the exact same path shape. The
+ * Personal mode and shared mode share the exact same path shape. The
  * partition segment is always `owners/<ownerId>`. In personal mode
- * `ownerId` is the signed-in user's id; in team mode it is the literal
- * string `'team'`. The path is honest in both modes: every durable
+ * `ownerId` is the signed-in user's id; in shared mode it is the literal
+ * string `'shared'`. The path is honest in both modes: every durable
  * identifier the server writes is rooted at `owners/<ownerId>`.
  *
  * Every durable string follows the rule:

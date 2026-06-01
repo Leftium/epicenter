@@ -14,6 +14,7 @@ import {
 } from '@epicenter/constants/ai-chat-errors';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { Hono } from 'hono';
+import { shared } from '../ownership.js';
 import type { Env } from '../types.js';
 import { mountAiApp } from './ai.js';
 
@@ -80,12 +81,13 @@ describe('AiChatErrorStatus side-map', () => {
 });
 
 describe('AI chat route HTTP responses', () => {
-	function createTestApp() {
+	function createTestApp(ownership = shared({ admit: () => true })) {
 		const app = new Hono<Env>();
 		mountAiApp(app, {
 			// Permissive auth for the slice we're testing; the route reaches
 			// the ProviderNotConfigured branch before any policy runs.
 			auth: async (_c, next) => next(),
+			ownership,
 		});
 		return app;
 	}
@@ -116,5 +118,26 @@ describe('AI chat route HTTP responses', () => {
 		expect(body.error.name).toBe('ProviderNotConfigured');
 		expect(body.error.provider).toBe('openai');
 		expect(body.error).not.toHaveProperty('status');
+	});
+
+	test('shared mode rejects a non-admitted user with 403 NotAdmitted before any AI key is read', async () => {
+		const app = createTestApp(shared({ admit: () => false }));
+		const res = await app.request(
+			API_ROUTES.ai.chat.pattern,
+			{
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					messages: [{ role: 'user', content: 'hi' }],
+					data: { provider: 'openai', model: 'gpt-4o-mini' },
+				}),
+			},
+			// A house key IS configured; admission must fail first so it is never read.
+			{ OPENAI_API_KEY: 'sk-must-never-be-read' },
+		);
+
+		expect(res.status).toBe(403);
+		const body = (await res.json()) as { error: { name: string } };
+		expect(body.error.name).toBe('NotAdmitted');
 	});
 });

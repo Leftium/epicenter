@@ -1,6 +1,6 @@
 {
-	"name": "@epicenter/team-api",
-	"description": "Self-hosted team Cloudflare Worker (reference implementation, community-supported)",
+	"name": "@epicenter/self-host",
+	"description": "Self-hosted shared-wiki Cloudflare Worker (reference implementation, community-supported)",
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",

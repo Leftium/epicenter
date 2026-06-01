@@ -6,8 +6,8 @@
  * variants of `OwnershipRule`:
  *
  *   - personal: URL `:ownerId` MUST equal `c.var.user.id`.
- *   - team:     the membership predicate MUST admit the user, AND
- *               URL `:ownerId` MUST equal `TEAM_OWNER_ID`.
+ *   - shared:   the admit predicate MUST admit the user, AND
+ *               URL `:ownerId` MUST equal `SHARED_OWNER_ID`.
  *
  * Mount the middleware on patterns that include `:ownerId` (mirroring
  * `apps/api/src/index.ts`): Hono only populates route params for handlers
@@ -17,9 +17,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import { type AuthUser, asUserId } from '@epicenter/auth';
-import { TEAM_OWNER_ID } from '@epicenter/identity';
+import { SHARED_OWNER_ID } from '@epicenter/identity';
 import { Hono } from 'hono';
-import { type OwnershipRule, personal, team } from '../ownership.js';
+import { type OwnershipRule, personal, shared } from '../ownership.js';
 import type { Env } from '../types.js';
 import { createRequireOwnership } from './require-ownership.js';
 
@@ -59,9 +59,9 @@ describe('personal()', () => {
 		expect(body.error.name).toBe('OwnerMismatch');
 	});
 
-	test('rejects URL :ownerId set to the team sentinel', async () => {
+	test('rejects URL :ownerId set to the shared sentinel', async () => {
 		const res = await createTestApp(personal(), 'alice').request(
-			'/api/owners/team/rooms/r1',
+			'/api/owners/shared/rooms/r1',
 		);
 		expect(res.status).toBe(403);
 	});
@@ -75,19 +75,19 @@ describe('personal()', () => {
 	});
 });
 
-describe('team({ isMember })', () => {
-	const admitAll = team({ isMember: () => true });
-	const admitNone = team({ isMember: () => false });
-	const admitAcme = team({
-		isMember: (c) => c.var.user.email.endsWith('@acme.com'),
+describe('shared({ admit })', () => {
+	const admitAll = shared({ admit: () => true });
+	const admitNone = shared({ admit: () => false });
+	const admitAcme = shared({
+		admit: (c) => c.var.user.email.endsWith('@acme.com'),
 	});
 
-	test('attaches TEAM_OWNER_ID when member + URL is team sentinel', async () => {
+	test('attaches SHARED_OWNER_ID when admitted + URL is shared sentinel', async () => {
 		const res = await createTestApp(admitAll, 'alice').request(
-			'/api/owners/team/rooms/r1',
+			'/api/owners/shared/rooms/r1',
 		);
 		expect(res.status).toBe(200);
-		expect(await res.text()).toBe(TEAM_OWNER_ID);
+		expect(await res.text()).toBe(SHARED_OWNER_ID);
 	});
 
 	test('REJECTS URL :ownerId set to a user id (silent-bypass guard)', async () => {
@@ -106,26 +106,26 @@ describe('team({ isMember })', () => {
 		expect(res.status).toBe(403);
 	});
 
-	test('routes without :ownerId attach TEAM_OWNER_ID for members', async () => {
+	test('routes without :ownerId attach SHARED_OWNER_ID for admitted users', async () => {
 		const res = await createTestApp(admitAll, 'alice').request('/api/session');
 		expect(res.status).toBe(200);
-		expect(await res.text()).toBe(TEAM_OWNER_ID);
+		expect(await res.text()).toBe(SHARED_OWNER_ID);
 	});
 
-	test('non-member gets 403 NotTeamMember before any URL check', async () => {
+	test('rejected user gets 403 NotAdmitted before any URL check', async () => {
 		const res = await createTestApp(admitNone, 'alice').request(
-			'/api/owners/team/rooms/r1',
+			'/api/owners/shared/rooms/r1',
 		);
 		expect(res.status).toBe(403);
 		const body = (await res.json()) as { error: { name: string } };
-		expect(body.error.name).toBe('NotTeamMember');
+		expect(body.error.name).toBe('NotAdmitted');
 	});
 
-	test('non-member rejected on session route too (no :ownerId required)', async () => {
+	test('rejected user denied on session route too (no :ownerId required)', async () => {
 		const res = await createTestApp(admitNone, 'alice').request('/api/session');
 		expect(res.status).toBe(403);
 		const body = (await res.json()) as { error: { name: string } };
-		expect(body.error.name).toBe('NotTeamMember');
+		expect(body.error.name).toBe('NotAdmitted');
 	});
 
 	test('email-domain predicate admits matching user', async () => {
@@ -143,7 +143,7 @@ describe('team({ isMember })', () => {
 			a.get('/api/owners/:ownerId/rooms/:roomId', (c) => c.text(c.var.ownerId));
 			return a;
 		})();
-		const res = await app.request('/api/owners/team/rooms/r1');
+		const res = await app.request('/api/owners/shared/rooms/r1');
 		expect(res.status).toBe(200);
 	});
 
@@ -162,9 +162,9 @@ describe('team({ isMember })', () => {
 			a.get('/api/owners/:ownerId/rooms/:roomId', (c) => c.text(c.var.ownerId));
 			return a;
 		})();
-		const res = await app.request('/api/owners/team/rooms/r1');
+		const res = await app.request('/api/owners/shared/rooms/r1');
 		expect(res.status).toBe(403);
 		const body = (await res.json()) as { error: { name: string } };
-		expect(body.error.name).toBe('NotTeamMember');
+		expect(body.error.name).toBe('NotAdmitted');
 	});
 });

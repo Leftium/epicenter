@@ -10,65 +10,74 @@
  * Scope is deliberately narrow to stay false-positive free:
  *   - Only backtick-wrapped tokens ending in a real source/doc extension are
  *     treated as file claims (prose dir mentions and `@scope/pkg` names are not).
- *   - A trailing `:42` line suffix is allowed and ignored.
- *   - Tokens carrying a placeholder or glob (`<name>`, `*`, `{a,b}`, `...`) are
- *     skipped: they are patterns, not paths.
+ *   - An optional `:42` / `:42:7` / `:42-50` line suffix is allowed and ignored.
+ *   - A token containing a `...` path ellipsis is skipped: it is a pattern.
  *
- * Excluded doc classes (their paths are illustrative or frozen in time):
- *   - `specs/**` and `docs/articles/**`: dated records, kept stale on purpose.
- *   - Any doc whose header is marked Historical / "Preserved for history".
- *   - `.agents/**` and `.claude/**`: skill and agent prompts use example paths
+ * Excluded from the scan, because their paths are illustrative or frozen:
+ *   - `specs/` and `docs/articles/` at any depth: dated records, kept stale.
+ *   - `.agents/` and `.claude/`: skill and agent prompts cite example paths
  *     like `apps/whatever/src/lib/feature.ts` as teaching stand-ins.
+ *   - any `CHANGELOG.md`.
+ *   - any doc carrying `<!-- doc-path-check: ignore-file -->`. Mark a historical
+ *     doc this way: a living doc that merely *mentions* history stays scanned.
  *
- * Escape hatches for a deliberately non-existent path in an in-scope doc:
- *   - `<!-- doc-path-check: ignore-file -->`      anywhere in the file, or
- *   - `<!-- doc-path-check: ignore-next-line -->` on the line above the path.
+ * For a single deliberately illustrative path inside a scanned doc, put
+ * `<!-- doc-path-check: ignore-next-line -->` on the line above it.
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
-const EXCLUDED_GLOBS = [
-	':!:**/specs/**',
-	':!:specs/**',
-	':!:docs/articles/**',
-	':!:.agents/**',
-	':!:.claude/**',
-	':!:**/CHANGELOG.md',
-	':!:**/node_modules/**',
-];
+// Resolve the repo root so paths resolve regardless of the invoking cwd.
+const root = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+	encoding: 'utf8',
+}).trim();
 
-const FILE_TOKEN =
-	/`([A-Za-z0-9._/-]+\.(?:ts|tsx|svelte|md|json|jsonc|js|mjs|cjs|rs|toml|ya?ml))(?::\d+)?`/g;
-const REPO_ROOTED = /^(apps|packages|docs|specs|scripts|examples|playground)\//;
-const PLACEHOLDER = /[<>*{}]|\.\.\./;
-const HISTORICAL_HEADER = /preserved for history|>\s*\*\*historical\b/i;
-const IGNORE_FILE = /<!--\s*doc-path-check:\s*ignore-file\s*-->/;
-const IGNORE_NEXT_LINE = /<!--\s*doc-path-check:\s*ignore-next-line\s*-->/;
-
-const docs = execSync(`git ls-files '*.md' ${EXCLUDED_GLOBS.join(' ')}`, {
+// `git ls-files` is the load-bearing choice: it yields tracked files only, so
+// node_modules, dist, and every .gitignored output are skipped for free, which
+// `Bun.Glob` (no .gitignore awareness) cannot do. `-z` survives odd filenames.
+const tracked = execFileSync('git', ['ls-files', '-z', '*.md'], {
+	cwd: root,
 	encoding: 'utf8',
 })
-	.trim()
-	.split('\n')
+	.split('\0')
 	.filter(Boolean);
 
+const EXCLUDED_DIRS = ['specs', 'docs/articles', '.agents', '.claude'];
+const isExcludedDoc = (file: string) =>
+	file === 'CHANGELOG.md' ||
+	file.endsWith('/CHANGELOG.md') ||
+	EXCLUDED_DIRS.some(
+		(dir) => file.startsWith(`${dir}/`) || file.includes(`/${dir}/`),
+	);
+
+const FILE_TOKEN =
+	/`([A-Za-z0-9._/-]+\.(?:ts|tsx|svelte|md|json|jsonc|js|mjs|cjs|rs|toml|ya?ml))(?::\d+(?::\d+)?(?:-\d+)?)?`/g;
+const REPO_ROOTED = /^(apps|packages|docs|specs|scripts|examples|playground)\//;
+// `\b.*?-->` lets a marker carry a trailing reason, e.g.
+// `<!-- doc-path-check: ignore-file (frozen historical record) -->`.
+const IGNORE_FILE = /<!--\s*doc-path-check:\s*ignore-file\b.*?-->/;
+const IGNORE_NEXT_LINE = /<!--\s*doc-path-check:\s*ignore-next-line\b.*?-->/;
+
+const docs = tracked.filter((file) => !isExcludedDoc(file));
 const violations: { file: string; line: number; path: string }[] = [];
 
 for (const file of docs) {
-	const text = readFileSync(file, 'utf8');
-	const lines = text.split('\n');
-	const isHistorical = HISTORICAL_HEADER.test(lines.slice(0, 15).join('\n'));
-	if (isHistorical || IGNORE_FILE.test(text)) continue;
+	const text = readFileSync(join(root, file), 'utf8');
+	if (IGNORE_FILE.test(text)) continue;
 
+	const lines = text.split('\n');
 	lines.forEach((line, i) => {
 		const prev = lines[i - 1];
 		if (prev !== undefined && IGNORE_NEXT_LINE.test(prev)) return;
 		for (const match of line.matchAll(FILE_TOKEN)) {
 			const path = match[1];
 			if (path === undefined) continue;
-			if (!REPO_ROOTED.test(path) || PLACEHOLDER.test(path)) continue;
-			if (!existsSync(path)) violations.push({ file, line: i + 1, path });
+			if (!REPO_ROOTED.test(path) || path.includes('...')) continue;
+			if (!existsSync(join(root, path))) {
+				violations.push({ file, line: i + 1, path });
+			}
 		}
 	});
 }

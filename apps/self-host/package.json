@@ -1,5 +1,5 @@
 {
-	"name": "@epicenter/team-api",
+	"name": "@epicenter/self-host",
 	"description": "Self-hosted team Cloudflare Worker (reference implementation, community-supported)",
 	"private": true,
 	"version": "0.0.1",

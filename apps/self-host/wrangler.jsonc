@@ -1,6 +1,6 @@
 {
 	"$schema": "./node_modules/wrangler/config-schema.json",
-	"name": "team-api",
+	"name": "self-host",
 	"main": "worker/index.ts",
 	"compatibility_date": "2026-03-06",
 	"compatibility_flags": ["nodejs_compat"],
@@ -13,7 +13,7 @@
 	"vars": {
 		// API_PUBLIC_ORIGIN: this deployment's public origin. Self-hosters set
 		// their own domain here; it is the Better Auth issuer + token audience.
-		"API_PUBLIC_ORIGIN": "https://team-api.example.com",
+		"API_PUBLIC_ORIGIN": "https://self-host.example.com",
 		"ALLOWED_MEMBER_EMAILS": "",
 		"GOOGLE_CLIENT_ID": ""
 	},

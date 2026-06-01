@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -292,6 +291,20 @@
         "typescript": "catalog:",
       },
     },
+    "apps/self-host": {
+      "name": "@epicenter/self-host",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/server": "workspace:*",
+        "hono": "catalog:",
+      },
+      "devDependencies": {
+        "@cloudflare/workers-types": "^4.20260405.1",
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+        "wrangler": "catalog:",
+      },
+    },
     "apps/skills": {
       "name": "skills",
       "version": "0.0.1",
@@ -370,20 +383,6 @@
         "typescript": "catalog:",
         "vite": "catalog:",
         "wxt": "^0.20.8",
-      },
-    },
-    "apps/team-api": {
-      "name": "@epicenter/team-api",
-      "version": "0.0.1",
-      "dependencies": {
-        "@epicenter/server": "workspace:*",
-        "hono": "catalog:",
-      },
-      "devDependencies": {
-        "@cloudflare/workers-types": "^4.20260405.1",
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-        "wrangler": "catalog:",
       },
     },
     "apps/whispering": {
@@ -1125,6 +1124,8 @@
 
     "@epicenter/reddit": ["@epicenter/reddit@workspace:apps/reddit"],
 
+    "@epicenter/self-host": ["@epicenter/self-host@workspace:apps/self-host"],
+
     "@epicenter/server": ["@epicenter/server@workspace:packages/server"],
 
     "@epicenter/skills": ["@epicenter/skills@workspace:packages/skills"],
@@ -1134,8 +1135,6 @@
     "@epicenter/sync": ["@epicenter/sync@workspace:packages/sync"],
 
     "@epicenter/tab-manager": ["@epicenter/tab-manager@workspace:apps/tab-manager"],
-
-    "@epicenter/team-api": ["@epicenter/team-api@workspace:apps/team-api"],
 
     "@epicenter/ui": ["@epicenter/ui@workspace:packages/ui"],
 

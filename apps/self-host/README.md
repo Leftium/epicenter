@@ -1,10 +1,10 @@
-# Epicenter Self-Hosted Team (Reference)
+# Epicenter Self-Hosted Shared Wiki (Reference)
 
-Reference Cloudflare Worker for self-hosting Epicenter as a team. **Not operated by Epicenter.** Copy this folder, fill in the deployment-owned secrets and bindings, deploy, support yourself.
+Reference Cloudflare Worker for self-hosting Epicenter as a shared wiki. **Not operated by Epicenter.** Copy this folder, fill in the deployment-owned secrets and bindings, deploy, support yourself.
 
 ## What this is
 
-`apps/team-api` is a ~30-line composition of `@epicenter/server` with the `team({ isMember })` ownership rule. Every authenticated user in the allowed-email list shares one workspace partition (`TEAM_OWNER_ID = "team"`).
+`apps/self-host` is a ~30-line composition of `@epicenter/server` with the `shared({ admit })` ownership rule. Every authenticated user in the allowed-email list shares one workspace partition (`SHARED_OWNER_ID = "shared"`).
 
 ## What this isn't
 
@@ -41,9 +41,9 @@ wrangler secret put ...
 ## Deploy
 
 ```bash
-bun run --cwd apps/team-api typegen      # generate worker-configuration.d.ts
-bun run --cwd apps/team-api typecheck
-bun run --cwd apps/team-api deploy
+bun run --cwd apps/self-host typegen      # generate worker-configuration.d.ts
+bun run --cwd apps/self-host typecheck
+bun run --cwd apps/self-host deploy
 ```
 
 ## Composition
@@ -51,8 +51,8 @@ bun run --cwd apps/team-api deploy
 The entire app is in `worker/index.ts`. Top to bottom:
 
 ```ts
-const ownership = team({
-  isMember: (c) => allowed.has(c.var.user.email),
+const ownership = shared({
+  admit: (c) => allowed.has(c.var.user.email),
 });
 
 createServerApp()

@@ -1,9 +1,9 @@
 /**
- * Epicenter self-hosted team Worker (reference implementation).
+ * Epicenter self-hosted shared-wiki Worker (reference implementation).
  *
- * Composes `@epicenter/server` with the `team({ isMember })` ownership rule
+ * Composes `@epicenter/server` with the `shared({ admit })` ownership rule
  * and ships zero billing surface. Workspace data is partitioned under the
- * literal `TEAM_OWNER_ID` ("team"); the membership predicate runs per request
+ * literal `SHARED_OWNER_ID` ("shared"); the admit predicate runs per request
  * against a deployment-owned email allowlist.
  *
  * This is a reference, not an Epicenter-operated product. Copy this folder,
@@ -26,11 +26,11 @@ import {
 	mountSessionApp,
 	Room,
 	requireBearerUser,
-	team,
+	shared,
 } from '@epicenter/server';
 
-const ownership = team({
-	isMember: (c) => {
+const ownership = shared({
+	admit: (c) => {
 		const raw = (c.env.ALLOWED_MEMBER_EMAILS ?? '') as string;
 		const allowed = new Set(
 			raw
@@ -50,7 +50,7 @@ const app = createServerApp({
 });
 
 app.get('/', (c) =>
-	c.json({ mode: 'team', version: '0.1.0', runtime: 'cloudflare' }),
+	c.json({ mode: 'shared', version: '0.1.0', runtime: 'cloudflare' }),
 );
 
 app.route('/', authApp);

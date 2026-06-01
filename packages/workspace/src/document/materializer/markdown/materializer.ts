@@ -577,10 +577,14 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 
 	// ── Disk read (shared by push + apply) ──────────────────────
 
-	// Read every `.md` in one table's directory into validated rows. `present`
+	// Read every `.md` under one table's directory into validated rows. `present`
 	// distinguishes a MISSING directory (cannot be read, so it carries no
 	// desired-state signal) from an EMPTY one (read fine, genuinely zero files):
 	// `apply` must not treat "directory gone" as "delete every row".
+	//
+	// Recursive so it stays symmetric with the write side: `filename` callbacks
+	// (and `writeMarkdownFile`) may nest into subdirectories, so a one-level scan
+	// would miss those files and `apply` would then read them as deletes.
 	async function readTableDir(
 		entry: RegisteredTable,
 	): Promise<{ present: boolean; results: ReadResult[] }> {
@@ -588,9 +592,9 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 		const subdir = entry.config.dir ?? entry.table.name;
 		const directory = join(baseDir, subdir);
 
-		let files: string[];
+		let entries: string[];
 		try {
-			files = await readdir(directory);
+			entries = await readdir(directory, { recursive: true });
 		} catch (cause) {
 			// Only a genuinely absent directory is "no signal". A permission or IO
 			// error must surface, not be mistaken for "delete everything".
@@ -601,9 +605,10 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 		}
 
 		const results: ReadResult[] = [];
-		for (const filename of files) {
-			if (!filename.endsWith('.md')) continue;
-			results.push(await readTableFile(entry, directory, subdir, filename));
+		for (const relative of entries) {
+			// Recursive readdir yields directory entries too; only `.md` files parse.
+			if (!relative.endsWith('.md')) continue;
+			results.push(await readTableFile(entry, directory, subdir, relative));
 		}
 		return { present: true, results };
 	}
@@ -683,10 +688,9 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 	 * from one place at a time (the daemon, or one device). Yjs still converges;
 	 * this is about not racing the plan, not about corruption.
 	 *
-	 * Boundaries: scans are flat (one level per table directory), so a table
-	 * whose `filename` nests into subdirectories is not apply-supported. And the
-	 * frontmatter `id` is trusted to target a row, so apply assumes a
-	 * single-owner directory; do not point it at untrusted disk.
+	 * Boundary: the frontmatter `id` is trusted to target a row, so apply assumes
+	 * a single-owner directory; do not point it at untrusted disk. (Reads are
+	 * recursive, so nested `filename` layouts round-trip symmetrically.)
 	 */
 	async function applyMarkdownFiles({
 		dryRun = false,

@@ -304,6 +304,28 @@ describe('markdown_apply', () => {
 		expect(again.creates).toEqual([]);
 	});
 
+	test('reads nested filenames so apply does not delete them', async () => {
+		// A filename that nests into a subdirectory must round-trip: a flat scan
+		// would miss it and apply would wrongly plan a delete.
+		const workspace = createWorkspace({
+			id: 'test-nested',
+			tables: tableDefinitions,
+			kv: {},
+		});
+		const materializer = attachMarkdownMaterializer(workspace, {
+			dir: TEST_DIR,
+			perTable: { posts: { filename: (r) => `archive/${r.id}.md` } },
+		});
+		await materializer.whenFlushed;
+		workspace.tables.posts.set({ id: 'a', title: 'Alpha', published: true });
+		await materializer.actions.markdown_pull(); // writes posts/archive/a.md
+
+		const plan = await materializer.actions.markdown_apply({ dryRun: true });
+		expect(plan.refused).toBe(false);
+		expect(plan.deletes).toEqual([]);
+		expect(plan.updates).toEqual([]);
+	});
+
 	test('refuses a table whose toMarkdown has no fromMarkdown', async () => {
 		// toMarkdown emits a body, but with no fromMarkdown apply would silently
 		// drop it. The guard must refuse before touching anything.

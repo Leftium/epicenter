@@ -80,6 +80,14 @@ Every claim we make publicly should be provable by inspecting the repo:
 - **Win**: CRDT sync across devices, typed schemas, encryption, CLI automation—everything raw folders can't do.
 - **Lose**: Karpathy's system wins on simplicity. A folder of markdown files needs zero infrastructure.
 
+### vs Jazz
+> Jazz syncs slices of a shared database to everyone. Epicenter materializes one whole workspace into a folder that belongs to you.
+
+The two stacks converged from opposite premises: typed tables, query subscriptions, local-first writes, collaborative text. The difference is scope. Jazz is a multi-user relational database with partial replication and row-level permissions. Epicenter is hyper-focused on personal apps, so a workspace is a full local replica, the unit of sharing is the folder, and we refuse partial sync, row permissions, and snapshotting on purpose. That refusal is what lets us build on Yjs and open standards instead of a custom sync engine. See [the long form](articles/20260531T160000-i-kept-reinventing-jazz-the-win-is-what-we-refuse.md).
+
+- **Win**: One folder you own, plain text and SQLite you can grep without the app, built on standard Yjs rather than a private protocol. Less to learn because the scope is smaller.
+- **Lose**: Jazz scales to large shared datasets and multi-user row-level access that Epicenter deliberately won't. For a synced multi-user app database, Jazz is the better tool and further along.
+
 ## Headlines and Hooks
 
 ### Hacker News

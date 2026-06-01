@@ -4,7 +4,7 @@
  * diffs the `.md` files against the live rows (by id) and applies creates,
  * updates, and deletes via the mount's `markdown_apply` action.
  *
- * `--dry-run` prints the plan without writing. `--allow-deletes <n>` raises the
+ * `--dry-run` prints the plan without writing. `--max-deletes <n>` raises the
  * delete guard (default 10; the run refuses rather than delete more). The plan
  * is written to stdout as JSON (scripting-first); a refused plan prints its
  * reason to stderr and exits non-zero, so a guard trip is observable in scripts.
@@ -115,7 +115,13 @@ function renderApply(
 
 	const plan = result.data as ApplyPlan;
 	// Guard the wire shape: a version-mismatched daemon could return anything.
-	if (typeof plan?.refused !== 'boolean' || !Array.isArray(plan?.deletes)) {
+	// Validate every array the renderer touches, not just `refused`, so a
+	// malformed `errors` cannot throw inside the refusal path below.
+	if (
+		typeof plan?.refused !== 'boolean' ||
+		!Array.isArray(plan?.deletes) ||
+		!Array.isArray(plan?.errors)
+	) {
 		fail('unexpected markdown_apply response (daemon version mismatch?)', {
 			code: 2,
 		});

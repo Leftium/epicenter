@@ -260,6 +260,29 @@ describe('markdown_apply', () => {
 		expect(workspace.tables.posts.has('one')).toBe(false); // nothing applied
 	});
 
+	test('strips unknown frontmatter keys (no smuggled data, no churn)', async () => {
+		const { workspace, materializer } = await setup();
+		// Extra keys plus a literal __proto__ key: must not reach the stored row
+		// and must not pollute the global prototype.
+		await writePost(
+			'x',
+			'---\nid: x\ntitle: T\npublished: true\nsneaky: evil\n__proto__: pwned\n---\n',
+		);
+
+		const plan = await materializer.actions.markdown_apply({});
+		expect(plan.refused).toBe(false);
+		expect(plan.creates.map((c) => c.id)).toEqual(['x']);
+
+		const row = workspace.tables.posts.get('x').data;
+		expect(Object.hasOwn(row ?? {}, 'sneaky')).toBe(false);
+		expect((Object.prototype as Record<string, unknown>).pwned).toBeUndefined();
+
+		// Re-applying the same dirty file is a no-op: cleaned desired equals stored.
+		const again = await materializer.actions.markdown_apply({});
+		expect(again.updates).toEqual([]);
+		expect(again.creates).toEqual([]);
+	});
+
 	test('refuses a table whose toMarkdown has no fromMarkdown', async () => {
 		// toMarkdown emits a body, but with no fromMarkdown apply would silently
 		// drop it. The guard must refuse before touching anything.

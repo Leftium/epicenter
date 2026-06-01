@@ -305,24 +305,30 @@ async function readTableFile(
 		return { kind: 'error', path, tableName, error: callbackError };
 	if (row == null) return { kind: 'skipped', path };
 
-	// Capture id before the type guard: a failed `Value.Check` narrows `row` to
-	// `never` in its false branch, so `row.id` is unreachable inside the block.
-	const rowId = row.id;
+	// Strip any frontmatter key not in the schema BEFORE validating or storing.
+	// TypeBox objects allow additional properties, so without this a hand-edited
+	// file could smuggle arbitrary keys (including a literal `__proto__`) into the
+	// stored row, and unknown keys would also churn every apply as a false diff.
 	const latestSchema = entry.table.schema;
-	if (!Value.Check(latestSchema, row)) {
-		const errors = [...Value.Errors(latestSchema, row)].map((e) => ({
+	const cleaned = Value.Clean(latestSchema, row) as BaseRow;
+
+	// Capture id before the type guard: a failed `Value.Check` narrows the value
+	// to `never` in its false branch, so `.id` is unreachable inside the block.
+	const rowId = cleaned.id;
+	if (!Value.Check(latestSchema, cleaned)) {
+		const errors = [...Value.Errors(latestSchema, cleaned)].map((e) => ({
 			path: e.instancePath,
 			message: e.message,
 		}));
 		const { error: validationError } = TableParseError.ValidationFailed({
 			id: rowId,
 			errors,
-			row,
+			row: cleaned,
 		});
 		return { kind: 'error', path, tableName, error: validationError };
 	}
 
-	return { kind: 'row', id: rowId, row, path };
+	return { kind: 'row', id: rowId, row: cleaned, path };
 }
 
 /**

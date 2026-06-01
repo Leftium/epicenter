@@ -202,8 +202,10 @@ export type MarkdownTableConfig<TRow extends BaseRow> = {
 	 * How `markdown_apply` removes a row whose `.md` file disappeared from disk.
 	 * Default: hard `table.delete(id)`. Pass a soft-delete (e.g. set `deletedAt`)
 	 * for tables that keep tombstones, so the removal still syncs to peers.
+	 * Must be synchronous so apply can run every write inside one Yjs
+	 * transaction (atomic, single propagated update).
 	 */
-	onDelete?: (id: string) => MaybePromise<void>;
+	onDelete?: (id: string) => void;
 };
 
 /**
@@ -589,8 +591,13 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 		let files: string[];
 		try {
 			files = await readdir(directory);
-		} catch {
-			return { present: false, results: [] };
+		} catch (cause) {
+			// Only a genuinely absent directory is "no signal". A permission or IO
+			// error must surface, not be mistaken for "delete everything".
+			if ((cause as NodeJS.ErrnoException)?.code === 'ENOENT') {
+				return { present: false, results: [] };
+			}
+			throw cause;
 		}
 
 		const results: ReadResult[] = [];
@@ -675,6 +682,11 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 	 * does not guard against a remote sync update landing mid-run, so reconcile
 	 * from one place at a time (the daemon, or one device). Yjs still converges;
 	 * this is about not racing the plan, not about corruption.
+	 *
+	 * Boundaries: scans are flat (one level per table directory), so a table
+	 * whose `filename` nests into subdirectories is not apply-supported. And the
+	 * frontmatter `id` is trusted to target a row, so apply assumes a
+	 * single-owner directory; do not point it at untrusted disk.
 	 */
 	async function applyMarkdownFiles({
 		dryRun = false,
@@ -774,12 +786,16 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 		}
 		if (dryRun) return plan;
 
-		for (const { entry, writes, deletes } of work) {
-			for (const row of writes) entry.table.set(row);
-			const onDelete =
-				entry.config.onDelete ?? ((id: string) => entry.table.delete(id));
-			for (const id of deletes) await onDelete(id);
-		}
+		// One transaction over every write: peers and observers see the whole
+		// reconcile as a single atomic update, never a half-applied intermediate.
+		ydoc.transact(() => {
+			for (const { entry, writes, deletes } of work) {
+				for (const row of writes) entry.table.set(row);
+				const onDelete =
+					entry.config.onDelete ?? ((id: string) => entry.table.delete(id));
+				for (const id of deletes) onDelete(id);
+			}
+		});
 
 		return plan;
 	}

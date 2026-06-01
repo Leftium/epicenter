@@ -59,7 +59,14 @@ async function readTree(dir: string): Promise<Record<string, string>> {
 	}
 	const tree: Record<string, string> = {};
 	for (const name of names.sort()) {
-		tree[name] = await readFile(join(postsDir, name), 'utf-8');
+		// Tolerate a file vanishing between readdir and readFile: the daemon's
+		// observer may unlink mid-snapshot. The convergence waitUntil retries, so
+		// a transient skip just means this poll sees an in-between state.
+		try {
+			tree[name] = await readFile(join(postsDir, name), 'utf-8');
+		} catch {
+			// skip; next poll re-reads a consistent directory
+		}
 	}
 	return tree;
 }
@@ -117,13 +124,12 @@ describe('two-peer reconcile convergence', () => {
 		a.tables.posts.set({ id: 'b', title: 'Beta', tags: [], published: true });
 		a.tables.posts.set({ id: 'c', title: 'Gamma', tags: ['y'], published: true });
 
-		// Both peers materialize the same three files. Wait on B's Y.Doc, not the
-		// files, so we know the update actually crossed before we edit.
+		// Wait until BOTH peers are fully materialized before editing. We edit and
+		// apply against DIR_A, so DIR_A must have all three files first, or apply
+		// would read a half-written directory and plan a spurious delete.
 		await waitUntil(async () => b.tables.posts.count() === 3);
-		await waitUntil(async () => {
-			const keys = await treeKeys(DIR_B);
-			return keys.length === 3;
-		});
+		await waitUntil(async () => (await treeKeys(DIR_A)).length === 3);
+		await waitUntil(async () => (await treeKeys(DIR_B)).length === 3);
 
 		// "Agent" edits peer A's directory: edit one, remove one, add one.
 		const beta = join(DIR_A, 'posts', 'b.md');
@@ -158,10 +164,15 @@ describe('two-peer reconcile convergence', () => {
 				beta?.title === 'Beta EDITED'
 			);
 		});
-		// And peer B's materialized directory converges to match peer A's.
+		// Both directories converge to byte-identical canonical output. Peer A
+		// re-materializes its own dir from Yjs after apply (async, overwriting the
+		// hand-edited files), so wait for BOTH sides to settle and agree, not just B.
 		await waitUntil(async () => {
-			const keys = await treeKeys(DIR_B);
-			return keys.join() === 'a.md,b.md,d.md';
+			const [a, b] = await Promise.all([readTree(DIR_A), readTree(DIR_B)]);
+			return (
+				Object.keys(b).join() === 'a.md,b.md,d.md' &&
+				JSON.stringify(a) === JSON.stringify(b)
+			);
 		});
 
 		const [treeA, treeB] = await Promise.all([readTree(DIR_A), readTree(DIR_B)]);

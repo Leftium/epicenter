@@ -198,6 +198,27 @@ describe('markdown_apply', () => {
 		expect(workspace.tables.posts.has('a')).toBe(true);
 	});
 
+	test('applies all writes in a single atomic Yjs transaction', async () => {
+		const { workspace, materializer } = await setup();
+		workspace.tables.posts.set({ id: 'a', title: 'Alpha', published: true });
+		workspace.tables.posts.set({ id: 'b', title: 'Beta', published: true });
+		await materializer.actions.markdown_pull();
+
+		await writePost('b', post('b', 'Beta EDITED')); // update
+		await removePost('a'); // delete
+		await writePost('c', post('c', 'Gamma')); // create
+
+		let updates = 0;
+		const onUpdate = () => updates++;
+		workspace.ydoc.on('update', onUpdate);
+		await materializer.actions.markdown_apply({});
+		workspace.ydoc.off('update', onUpdate);
+
+		// Create + update + delete land as ONE update, not three: peers never see
+		// a half-applied reconcile.
+		expect(updates).toBe(1);
+	});
+
 	test('non-string columns round-trip without a spurious update', async () => {
 		const { workspace, materializer } = await setup();
 		// number, a real datetime, a null, and a json array: the types most

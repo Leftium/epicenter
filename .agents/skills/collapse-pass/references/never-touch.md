@@ -23,7 +23,7 @@ History: the first label was `"subject:{subject}"` before commit `af31c870b` (Ow
 "epicenter/{server}/owners/{ownerId}/{ydocGuid}"
 ```
 
-Used by the browser-side workspace runtime (`packages/workspace/src/document/local-yjs-key.ts`). Forward slashes, includes the API origin host as `{server}` so two team deployments on the same browser profile don't collide, and partition segment is `owners/{ownerId}/` to match the server's URL and R2 shape. Changing the format detaches every existing IndexedDB store from its consumer.
+Used by the browser-side workspace runtime (`packages/workspace/src/document/local-yjs-key.ts`). Forward slashes, includes the API origin host as `{server}` so two deployments on the same browser profile don't collide, and partition segment is `owners/{ownerId}/` to match the server's URL and R2 shape. Changing the format detaches every existing IndexedDB store from its consumer.
 
 ### Durable Object name format and URL shape
 
@@ -33,7 +33,7 @@ Used by the browser-side workspace runtime (`packages/workspace/src/document/loc
 
 Used by the sync hub to address rooms (`packages/server/src/owner.ts`, `doName()`). Same shape on the wire: `/api/owners/:ownerId/rooms/:roomId`. Changing the format breaks the routing contract between client and hub.
 
-In personal mode `ownerId` is the signed-in user's id; in team mode it is the literal `TEAM_OWNER_ID` (`'team'`). The path is uniform across modes.
+In personal mode `ownerId` is the signed-in user's id; in shared mode it is the literal `SHARED_OWNER_ID` (`'shared'`). The path is uniform across modes.
 
 ### EncryptedBlob format bytes
 
@@ -50,12 +50,13 @@ Other apps validate inputs against these by name and shape. Renaming a field or 
 - `ApiSessionResponse` (`packages/auth/src/auth-types.ts`)
 - `Keyring` (`packages/encryption/src/keys.ts`, formerly `SubjectKeyring` before `af31c870b`)
 - `RootKeyring` (`packages/encryption/src/secrets.ts`)
-- `OwnerId`, `UserId`, `TEAM_OWNER_ID` (`packages/auth/src/ids.ts`)
+- `OwnerId`, `SHARED_OWNER_ID` (`packages/identity/src/identity.ts`); `UserId` (`packages/auth`)
 
-`OwnershipMode` is intentionally NOT in this list: it was moved to
-`packages/server/src/types.ts` in `eb85a0d9b` and dropped its arktype
-validator (it's a plain `'personal' | 'team'` literal now). It is
-server-internal deployment config, not a wire-validated schema.
+The ownership rule (`OwnershipRule` in `packages/server/src/ownership.ts`, a
+`'personal' | 'shared'` discriminated union built via `personal()` /
+`shared()`) is intentionally NOT in this list: it carries no arktype validator
+and never crosses the wire. It is server-internal deployment config, so
+renaming a variant (as the `team` -> `shared` rename did) is safe.
 
 ### Identity strings inside documents
 

@@ -95,43 +95,23 @@ export type Folder = InferTableRow<typeof foldersTable>;
  * has a title auto-populated from the first line of content, a preview for the
  * list view, and can be pinned to appear at the top of the note list.
  *
- * v2 adds `deletedAt` for soft delete: notes move to "Recently Deleted"
- * instead of being permanently destroyed. The field is `null` for active
- * notes and a `DateTimeString` for deleted ones. Also adds optional `wordCount`
- * (computed on each editor update, `null` for legacy notes).
+ * `deletedAt` is `null` for active notes and a `DateTimeString` for deleted
+ * notes. `wordCount` is computed on each editor update.
  *
  * The Y.XmlFragment document (`body`) lives in a separate Y.Doc per note.
  * The workspace factory constructs the plain child-doc model and each runtime
  * opener attaches its own persistence and sync.
  */
-const notesTable = defineTable(
-	{
-		id: column.string<NoteId>(),
-		folderId: column.nullable(column.string<FolderId>()),
-		title: column.string(),
-		preview: column.string(),
-		pinned: column.boolean(),
-		createdAt: column.dateTime(),
-		updatedAt: column.dateTime(),
-	},
-	{
-		id: column.string<NoteId>(),
-		folderId: column.nullable(column.string<FolderId>()),
-		title: column.string(),
-		preview: column.string(),
-		pinned: column.boolean(),
-		createdAt: column.dateTime(),
-		updatedAt: column.dateTime(),
-		deletedAt: column.nullable(column.dateTime()),
-		wordCount: column.nullable(column.number()),
-	},
-).migrate(({ value, version }) => {
-	switch (version) {
-		case 1:
-			return { ...value, deletedAt: null, wordCount: null };
-		case 2:
-			return value;
-	}
+const notesTable = defineTable({
+	id: column.string<NoteId>(),
+	folderId: column.nullable(column.string<FolderId>()),
+	title: column.string(),
+	preview: column.string(),
+	pinned: column.boolean(),
+	createdAt: column.dateTime(),
+	updatedAt: column.dateTime(),
+	deletedAt: column.nullable(column.dateTime()),
+	wordCount: column.nullable(column.number()),
 });
 export type Note = InferTableRow<typeof notesTable>;
 

@@ -19,9 +19,15 @@ Shipped in `packages/workspace` markdown materializer:
 - Tests: 8 unit (`apply.test.ts`) + 1 two-peer convergence e2e
   (`reconcile-e2e.test.ts`).
 
+Also shipped: the `epicenter apply` CLI (Phase 3). Flags `--mount` (required),
+`--dry-run`, `--max-deletes`, `-C`, `--format`. Writes the ApplyPlan to stdout as
+JSON; a refused plan prints its reason + offending paths to stderr. Exit codes:
+1 usage / no daemon, 2 runtime error or bad response shape, 4 plan refused.
+
 NOT yet built: fuji body import (fuji has `toMarkdown` but no `fromMarkdown`, so
-apply currently REFUSES the fuji entries table by design), the `epicenter apply`
-CLI, and the real two-vault runbook. See Phases 2 and 3 below.
+apply REFUSES the fuji entries table as `RoundTripUnproven` by design), a CLI
+integration / exit-code test (needs a daemon harness; the action itself has 50
+passing tests), and the real two-vault runbook (needs `auth login`). See Phase 2.
 
 ## Ordering decision (Codex-reviewed)
 
@@ -316,17 +322,19 @@ cd ~/Code/epicenter
 bun test packages/workspace/src/document/materializer/markdown/apply.test.ts
 ```
 
-Single vault, live (needs `auth login` + daemon):
+Single vault, live (needs `auth login` + daemon). Use tab-manager: it is
+frontmatter-only so apply works today. fuji refuses until Phase 2 (bodies).
 
 ```bash
 cd ~/Code/vault
-bun run daemon                      # terminal 1, foreground
+bun ../epicenter/packages/cli/src/bin.ts auth login --server https://api.epicenter.so
+bun run daemon                          # terminal 1, foreground
 # terminal 2:
-$EP apply --mount fuji --dry-run    # print the plan, change nothing
-# edit a real file, e.g. change a title or body in fuji/entries/<file>.md
-$EP apply --mount fuji --dry-run    # plan now shows that one update
-$EP apply --mount fuji              # apply it
-bun run list-entries                # confirm the row changed
+$EP apply --mount tab-manager --dry-run # print the plan, change nothing
+# edit a real file, e.g. a title in tab-manager/savedTabs/<file>.md
+$EP apply --mount tab-manager --dry-run # plan now shows that one update
+$EP apply --mount tab-manager           # apply it
+$EP apply --mount fuji --dry-run        # demonstrates the RoundTripUnproven refusal (exit 4)
 # where: EP="bun ../epicenter/packages/cli/src/bin.ts"
 ```
 

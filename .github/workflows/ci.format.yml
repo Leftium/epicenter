@@ -32,6 +32,11 @@ jobs:
         run: bun run lint:check
       - name: Type check
         run: bun run typecheck
+      # Rejects backtick-wrapped apps/** and packages/** file paths in living
+      # docs that no longer resolve. Excludes specs, articles, skills, agent
+      # prompts, and Historical-marked docs. See scripts/check-doc-paths.ts.
+      - name: Check doc file references
+        run: bun run check:doc-paths
       # The Biome plugin at scripts/biome/c-json-errors.grit rejects ad-hoc
       # c.json({ ... }, 4xx/5xx) error literals as part of `bun run lint:check`
       # above; no separate step is needed. See

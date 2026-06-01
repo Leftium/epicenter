@@ -117,6 +117,7 @@
 		"bench": "turbo run bench",
 		"check:ui-boundary": "bun run scripts/check-ui-boundary.ts",
 		"check:licenses": "bun run scripts/check-license-graph.ts",
+		"check:doc-paths": "bun run scripts/check-doc-paths.ts",
 		"claude:consult": "bun run scripts/claude-consult.ts",
 		"bump-version": "bun run scripts/bump-version.ts",
 		"clean": "bun run scripts/clean.ts",

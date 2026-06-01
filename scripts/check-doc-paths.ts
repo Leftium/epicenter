@@ -74,11 +74,15 @@ for (const file of docs) {
 }
 
 if (violations.length === 0) {
-	console.log(`check:doc-paths: ${docs.length} docs scanned, all paths resolve.`);
+	console.log(
+		`check:doc-paths: ${docs.length} docs scanned, all paths resolve.`,
+	);
 	process.exit(0);
 }
 
-console.error(`check:doc-paths: ${violations.length} dead file reference(s):\n`);
+console.error(
+	`check:doc-paths: ${violations.length} dead file reference(s):\n`,
+);
 for (const { file, line, path } of violations) {
 	console.error(`  ${file}:${line}  ${path}`);
 }

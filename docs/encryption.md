@@ -8,10 +8,10 @@ This page only makes claims visible in the current code:
 - `packages/workspace/src/document/attach-local-storage.ts`
 - `packages/workspace/src/document/wipe-local-storage.ts`
 - `packages/workspace/src/document/attach-encrypted-indexed-db.ts`
-- `apps/api/src/auth/encryption.ts`
-- `apps/api/src/auth/create-auth.ts`
+- `packages/server/src/auth/encryption.ts`
+- `packages/server/src/auth/create-auth.ts`
 - `packages/svelte-utils/src/session.svelte.ts`
-- `apps/api/src/room.ts`
+- `packages/server/src/room/backends/cloudflare/durable-object.ts`
 If something is not visible there, it is not presented as fact here.
 
 ## What this system is
@@ -48,14 +48,14 @@ encrypted CRDT value
 ```
 The HKDF info string at the owner derivation step is the literal `owner:{ownerId}`. The label fed into the HKDF call is the `ownerId` directly: the user's id in personal mode, the literal string `shared` in shared mode.
 
-On the server, `apps/api/src/auth/encryption.ts` reads `ENCRYPTION_SECRETS` from the worker env and calls `@epicenter/encryption`'s `deriveKeyring` to parse the root keyring and derive a per-owner keyring.
+On the server, `packages/server/src/auth/encryption.ts` reads `ENCRYPTION_SECRETS` from the worker env and calls `@epicenter/encryption`'s `deriveKeyring` to parse the root keyring and derive a per-owner keyring.
 It returns one `{ version, keyBytesBase64 }` entry per configured root keyring version.
 On the client, `createWorkspace({ id, keyring, tables, kv })` reads `keyring()` once at construction, decodes each `keyBytesBase64`, runs `deriveWorkspaceKey(ownerKey, id)`, and gets a 32-byte workspace key with `info = workspace:{id}`. The derived keyring activates every encrypted store atomically before any handle is returned.
 The highest version becomes the current key for new writes.
 
 ## How keys reach the client
 Keys come through `/api/session`.
-`apps/api/src/app.ts` mounts `GET /api/session` behind cookie-or-bearer authentication. A valid Better Auth cookie session or a valid API-audience bearer token for the user can fetch `{ user: { id, email }, ownerId, keyring }`, where `ownerId` is a branded id: the user's id in personal mode, the literal `shared` in shared mode.
+`packages/server/src/routes/session.ts` mounts `GET /api/session` behind cookie-or-bearer authentication (composed by `apps/api/worker/index.ts`). A valid Better Auth cookie session or a valid API-audience bearer token for the user can fetch `{ user: { id, email }, ownerId, keyring }`, where `ownerId` is a branded id: the user's id in personal mode, the literal `shared` in shared mode.
 `@epicenter/auth` calls `/api/session` at sign-in and at cold-boot when online, persists `{ ownerId, keyring }` alongside the OAuth grant in the persisted auth cell, and exposes them through `auth.state.ownerId` / `auth.state.keyring` whenever the auth state is not `signed-out`.
 Cold-boot offline keeps the cached `{ ownerId, keyring }` so the workspace can decrypt local Yjs data without a network roundtrip; the bearer is not attached to outbound requests until `/api/session` re-confirms the cell in this runtime.
 The workspace does not hold an independently mutable copy of the keys. `createWorkspace` takes a `keyring` callback and calls it once at construction; `attachLocalStorage` takes the same callback and calls it on every persisted update. Each encrypted store keeps the keyring derived at its `createWorkspace` boundary. Browser app session modules receive a flat `SignedIn` payload from `createSession`; that payload carries the lazy keyring reader and the stable owner:
@@ -298,7 +298,7 @@ The useful parts are clear.
 Values are encrypted before sync, the blob format is self-describing, key rotation is versioned, and the CRDT logic is reused instead of forked.
 The trust model is also clear.
 This is not a zero-knowledge design.
-The auth server can derive per-user transport keys from `ENCRYPTION_SECRETS`, while the sync relay forwards ciphertext values rather than plaintext values.
+The auth server can derive per-owner keyrings from `ENCRYPTION_SECRETS`, while the sync relay forwards ciphertext values rather than plaintext values.
 The sharp edge is logout behavior.
 App auth-transition hooks reload the browser client on logout or user switch, but an explicit in-memory key deactivation path is not present in the reviewed code.
 If you are deciding whether this architecture fits your threat model, focus on that line: the sync relay handles ciphertext values, but the deployment that owns `ENCRYPTION_SECRETS` remains inside the trust boundary.

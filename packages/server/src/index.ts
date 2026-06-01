@@ -11,7 +11,7 @@
  * primitive owns its auth + ownership wiring; the deployment passes only
  * the rule and any deployment policies (e.g. cloud billing middleware).
  * Sub-apps declare full URLs (including the `/api` prefix where
- * applicable). See `apps/api/src/index.ts` for the cloud composition.
+ * applicable). See `apps/api/worker/index.ts` for the cloud composition.
  */
 
 // Deploy-time admin operations (OAuth client seeding) live in each

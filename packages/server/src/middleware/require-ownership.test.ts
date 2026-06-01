@@ -10,7 +10,7 @@
  *               URL `:ownerId` MUST equal `SHARED_OWNER_ID`.
  *
  * Mount the middleware on patterns that include `:ownerId` (mirroring
- * `apps/api/src/index.ts`): Hono only populates route params for handlers
+ * `apps/api/worker/index.ts`): Hono only populates route params for handlers
  * mounted at the matching pattern, so middleware mounted at `*` never
  * sees them.
  */

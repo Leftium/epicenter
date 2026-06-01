@@ -46,7 +46,7 @@ workspace key
         v
 encrypted CRDT value
 ```
-The HKDF info string at the owner derivation step is the literal `owner:{ownerId}`. The label fed into the HKDF call is the `ownerId` directly: the user's id in personal mode, the literal string `team` in team mode.
+The HKDF info string at the owner derivation step is the literal `owner:{ownerId}`. The label fed into the HKDF call is the `ownerId` directly: the user's id in personal mode, the literal string `shared` in shared mode.
 
 On the server, `apps/api/src/auth/encryption.ts` reads `ENCRYPTION_SECRETS` from the worker env and calls `@epicenter/encryption`'s `deriveKeyring` to parse the root keyring and derive a per-owner keyring.
 It returns one `{ version, keyBytesBase64 }` entry per configured root keyring version.
@@ -55,9 +55,9 @@ The highest version becomes the current key for new writes.
 
 ## How keys reach the client
 Keys come through `/api/session`.
-`apps/api/src/app.ts` mounts `GET /api/session` behind cookie-or-bearer authentication. A valid Better Auth cookie session or a valid API-audience bearer token for the user can fetch `{ user: { id, email }, ownerId, keyring, mode }`, where `ownerId` is a branded id (the user's id in personal mode, the literal `team` in team mode) and `mode` is the orthogonal `OwnershipMode` flag.
-`@epicenter/auth` calls `/api/session` at sign-in and at cold-boot when online, persists `{ ownerId, keyring, mode }` alongside the OAuth grant in the persisted auth cell, and exposes them through `auth.state.ownerId` / `auth.state.keyring` / `auth.state.mode` whenever the auth state is not `signed-out`.
-Cold-boot offline keeps the cached `{ ownerId, keyring, mode }` so the workspace can decrypt local Yjs data without a network roundtrip; the bearer is not attached to outbound requests until `/api/session` re-confirms the cell in this runtime.
+`apps/api/src/app.ts` mounts `GET /api/session` behind cookie-or-bearer authentication. A valid Better Auth cookie session or a valid API-audience bearer token for the user can fetch `{ user: { id, email }, ownerId, keyring }`, where `ownerId` is a branded id: the user's id in personal mode, the literal `shared` in shared mode.
+`@epicenter/auth` calls `/api/session` at sign-in and at cold-boot when online, persists `{ ownerId, keyring }` alongside the OAuth grant in the persisted auth cell, and exposes them through `auth.state.ownerId` / `auth.state.keyring` whenever the auth state is not `signed-out`.
+Cold-boot offline keeps the cached `{ ownerId, keyring }` so the workspace can decrypt local Yjs data without a network roundtrip; the bearer is not attached to outbound requests until `/api/session` re-confirms the cell in this runtime.
 The workspace does not hold an independently mutable copy of the keys. `createWorkspace` takes a `keyring` callback and calls it once at construction; `attachLocalStorage` takes the same callback and calls it on every persisted update. Each encrypted store keeps the keyring derived at its `createWorkspace` boundary. Browser app session modules receive a flat `SignedIn` payload from `createSession`; that payload carries the lazy keyring reader and the stable owner:
 ```ts
 import { createSession, type SignedIn } from '@epicenter/svelte';
@@ -126,7 +126,7 @@ The storage name is derived inside `@epicenter/workspace` as:
 epicenter/{server}/owners/{ownerId}/{ydocGuid}
 ```
 
-The same prefix is used in both modes; in personal mode `ownerId === user.id`, and in team mode `ownerId === 'team'`.
+The same prefix is used in both modes; in personal mode `ownerId === user.id`, and in shared mode `ownerId === 'shared'`.
 
 App code does not build that string. Device cleanup uses the free function `wipeLocalStorage({ server, ownerId })`, which enumerates `indexedDB.databases()` and deletes every entry whose name starts with the durable `(server, ownerId)` prefix `epicenter/<server>/owners/<ownerId>/`. It no-ops gracefully when `indexedDB.databases()` is unavailable. A typical sign-out or "delete my local data" path looks like:
 ```ts

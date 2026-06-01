@@ -72,8 +72,8 @@ apps/api          hosted personal cloud  (api.epicenter.so)
                   bundles billing routes, dashboard SPA, Autumn policies
                   worker/ + ui/ deploy as one Cloudflare Worker
 
-apps/team-api     self-hosted team reference  (community-supported)
-                  composes packages/server with team({ isMember })
+apps/self-host     self-hosted shared wiki reference  (community-supported)
+                  composes packages/server with shared({ admit })
                   no billing surface, no dashboard, deployment-owned secrets
                   trust boundary: deployer holds ENCRYPTION_SECRETS
                                    -> functionally zero-knowledge against Epicenter
@@ -81,10 +81,10 @@ apps/team-api     self-hosted team reference  (community-supported)
 
 Inside `packages/server`, route groups mount onto a shared Hono app via
 `mountSessionApp`, `mountRoomsApp`, `mountAssetsApp`, `mountAiApp`, and `authApp`.
-The `personal()` and `team({ isMember })` factories choose the partition rule;
+The `personal()` and `shared({ admit })` factories choose the partition rule;
 everything else is shared. The hosted-only billing code (`packages/billing`'s
 old contents, plus `/api/billing/*` routes and the dashboard SPA) lives inside
-`apps/api/worker/billing/` and `apps/api/ui/`. Self-hosted team deployments
+`apps/api/worker/billing/` and `apps/api/ui/`. Self-hosted shared-wiki deployments
 never see it.
 
 ```

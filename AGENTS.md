@@ -2,9 +2,9 @@
 
 Local-first workspace platform. Monorepo with Yjs CRDTs and Svelte UI.
 
-Structure: `apps/whispering/` (Tauri transcription app), `apps/tab-manager/` (Chrome extension), `apps/api/` (hosted personal Cloud Worker: `worker/` + `ui/`), `apps/team-api/` (self-hosted team reference Worker), `packages/server/` (shared Hono library that both deployables consume; `personal()` + `team({ isMember })` seam), `packages/workspace/` (core TypeScript/Yjs library), `packages/cli/` (published CLI package and `epicenter` binary), `packages/ui/` (shadcn-svelte components), `specs/` (planning docs), `docs/` (reference materials).
+Structure: `apps/whispering/` (Tauri transcription app), `apps/tab-manager/` (Chrome extension), `apps/api/` (hosted personal Cloud Worker: `worker/` + `ui/`), `apps/self-host/` (self-hosted shared wiki reference Worker), `packages/server/` (shared Hono library that both deployables consume; `personal()` + `shared({ admit })` seam), `packages/workspace/` (core TypeScript/Yjs library), `packages/cli/` (published CLI package and `epicenter` binary), `packages/ui/` (shadcn-svelte components), `specs/` (planning docs), `docs/` (reference materials).
 
-Deployment seam: One library (`packages/server`), two deployables (`apps/api` = hosted personal cloud, `apps/team-api` = self-hosted team reference). Billing (catalog, routes, Autumn) lives in `apps/api/worker/billing/` and is hosted-only; never extract it back to a shared package. The self-hosted team deployable is community-supported, not Epicenter-operated.
+Deployment seam: One library (`packages/server`), two deployables (`apps/api` = hosted personal cloud, `apps/self-host` = self-hosted shared wiki reference). Billing (catalog, routes, Autumn) lives in `apps/api/worker/billing/` and is hosted-only; never extract it back to a shared package. The self-hosted shared-wiki deployable is community-supported, not Epicenter-operated.
 
 Always use bun: Prefer `bun` over npm, yarn, pnpm, and node. Use `bun run`, `bun test`, `bun install`, and `bun x` (instead of npx).
 

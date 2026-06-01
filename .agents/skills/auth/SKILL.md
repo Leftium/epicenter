@@ -211,7 +211,7 @@ The grant is a nested object; identity is split out:
 ```txt
 PersistedAuth
   grant: { accessToken, refreshToken, accessTokenExpiresAt }  -> online-only server access
-  userId   -> stored explicitly so the team daemon can read it
+  userId   -> stored explicitly so the shared daemon can read it
   ownerId  -> local storage partition selection
   keyring  -> local decrypt (offline-useful)
 ```
@@ -219,9 +219,9 @@ PersistedAuth
 The grant lets the app call the server and is useless offline on its own.
 `userId` / `ownerId` / `keyring` remain useful offline: they select and decrypt
 this user's local workspace data. `userId` is stored explicitly rather than
-synthesised from `ownerId` so the team daemon can read it when
-`ownerId === TEAM_OWNER_ID` (in team mode `ownerId` is the literal team id and
-is structurally not a `UserId`). Profile data is intentionally absent;
+synthesised from `ownerId` so the shared daemon can read it when
+`ownerId === SHARED_OWNER_ID` (in shared mode `ownerId` is the literal shared id
+and is structurally not a `UserId`). Profile data is intentionally absent;
 application surfaces fetch it when they display it.
 
 The app can boot from a cached `PersistedAuth` without calling the network.
@@ -502,22 +502,22 @@ The deployment seam lives in `packages/server/src/ownership.ts`:
 ```ts
 export type OwnershipRule =
 	| { kind: 'personal' }
-	| { kind: 'team'; isMember: IsMember };
+	| { kind: 'shared'; admit: Admit };
 
 export const personal = (): OwnershipRule => ({ kind: 'personal' });
-export const team = (opts: { isMember: IsMember }): OwnershipRule => ({
-	kind: 'team',
-	isMember: opts.isMember,
+export const shared = (opts: { admit: Admit }): OwnershipRule => ({
+	kind: 'shared',
+	admit: opts.admit,
 });
 ```
 
 `resolveOwnerPartition(rule, c)` is the single switch on `rule.kind`. Personal
-mode returns the user's id branded as `OwnerId` (`ownerId === userId`). Team
-mode runs the membership predicate and returns the literal `TEAM_OWNER_ID`, or
-`RequestGuardError.NotTeamMember` (403) for non-members. `createRequireOwnership`
+mode returns the user's id branded as `OwnerId` (`ownerId === userId`). Shared
+mode runs the admission predicate and returns the literal `SHARED_OWNER_ID`, or
+`RequestGuardError.NotAdmitted` (403) for rejected users. `createRequireOwnership`
 sets `c.var.ownerId` and, on routes with a `:ownerId` segment, rejects a URL
 mismatch with `OwnerMismatch` (403). The keyring derivation's HKDF label IS the
-`ownerId`: personal owners get a per-user keyring, every member of a team
+`ownerId`: personal owners get a per-user keyring, every member of a shared
 deployment shares one keyring.
 
 Note: the same-origin dashboard SPA currently still uses PKCE against its own

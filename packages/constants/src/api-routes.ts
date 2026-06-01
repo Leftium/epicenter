@@ -74,4 +74,4 @@ export const API_ROUTES = {
 	},
 } as const;
 // The billing prefix (`/api/billing`) lives in apps/api/worker/billing/routes.ts:
-// it is hosted-only and self-hosted team deployments never mount it.
+// it is hosted-only and self-hosted shared-wiki deployments never mount it.

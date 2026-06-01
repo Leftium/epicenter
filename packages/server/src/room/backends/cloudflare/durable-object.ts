@@ -99,8 +99,8 @@ const CONNECTION_LIFETIME_CLOSE_CODE = 4408;
  * internal DO name before calling RPC methods or forwarding `fetch`. The
  * DO itself does not re-validate. DO names are host-owned opaque strings
  * built by `doName(ownerId, roomId)`, producing `owners/<ownerId>/rooms/<roomId>`
- * in both modes (in personal mode `ownerId === user.id`, in team mode
- * `ownerId === 'team'`).
+ * in both modes (in personal mode `ownerId === user.id`, in shared mode
+ * `ownerId === 'shared'`).
  */
 export class Room extends DurableObject {
 	/**

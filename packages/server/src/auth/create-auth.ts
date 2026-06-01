@@ -64,7 +64,7 @@ export function createAuth({
 				clientSecret: env.GOOGLE_CLIENT_SECRET,
 			},
 			// GitHub is registered only when a deployment has configured its
-			// credentials, so the team reference deployment (and any self-host)
+			// credentials, so the shared-wiki reference deployment (and any self-host)
 			// stays Google-only by default instead of offering a button that
 			// 500s. better-auth requests the `read:user` + `user:email` scopes by
 			// default, so it reads the primary email and GitHub's verification
@@ -116,8 +116,8 @@ export function createAuth({
 					before: async (user) => {
 						// Partition cleanup. In personal mode `owner_id === user.id`
 						// so this deletes the user's R2 blobs, asset rows, and
-						// DOI rows. In team mode `owner_id === 'team' !== user.id`
-						// so every query no-ops and team data survives member
+						// DOI rows. In shared mode `owner_id === 'shared' !== user.id`
+						// so every query no-ops and shared data survives admission
 						// churn. Without an FK + cascade, the row deletes are
 						// explicit here.
 						const ownerId = asOwnerId(user.id);

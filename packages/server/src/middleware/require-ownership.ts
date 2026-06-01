@@ -5,9 +5,9 @@
  * into a resolved owner partition on `c.var.ownerId`:
  *
  *   1. Resolve the owner partition from `(rule, c.var.user)` via
- *      {@link resolveOwnerPartition}. In team mode this also runs the
- *      deployment's membership predicate; non-members get 403
- *      NotTeamMember before any URL is read.
+ *      {@link resolveOwnerPartition}. In shared mode this also runs the
+ *      deployment's admit predicate; rejected users get 403
+ *      NotAdmitted before any URL is read.
  *   2. If the route declares `:ownerId`, assert the URL segment equals
  *      the resolved partition. Mismatch is 403 OwnerMismatch in both
  *      modes.

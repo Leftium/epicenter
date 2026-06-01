@@ -19,8 +19,8 @@ export type RoomWsUrlOptions = {
  *
  * Single URL form: `wss://<baseURL>/api/owners/<ownerId>/rooms/<guid>?deviceId=<id>`
  *
- * In personal mode `ownerId` equals the signed-in user's id; in team mode it
- * is the literal `'team'`. The URL shape is uniform across both modes.
+ * In personal mode `ownerId` equals the signed-in user's id; in shared mode it
+ * is the literal `'shared'`. The URL shape is uniform across both modes.
  *
  * The path itself comes from `ROOM_ROUTE.url(...)` so server route
  * declarations and client URL construction can never drift. This wrapper

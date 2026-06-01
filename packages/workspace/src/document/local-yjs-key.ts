@@ -4,16 +4,16 @@
  * Mirrors the server's `doName(ownerId, ...)` shape so the same
  * `(server, ownerId, doc)` tuple resolves to the same address on the wire
  * and on disk. Two signed-in accounts on the same browser profile, or
- * two team servers signed into the same machine, never collide on
+ * two shared-wiki servers signed into the same machine, never collide on
  * IndexedDB names or BroadcastChannel names.
  *
- * Key layout (uniform across personal and team modes):
+ * Key layout (uniform across personal and shared modes):
  *
  *   epicenter/<server>/owners/<ownerId>/<ydoc.guid>
  *
  * The server segment is the API origin host (e.g. `api.epicenter.so`). In
- * personal mode `ownerId` equals the user id; in team mode it is the literal
- * `'team'`.
+ * personal mode `ownerId` equals the user id; in shared mode it is the literal
+ * `'shared'`.
  */
 
 import type { OwnerId } from '@epicenter/identity';

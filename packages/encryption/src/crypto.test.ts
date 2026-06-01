@@ -361,7 +361,7 @@ describe('deriveKeyring', () => {
 	// Format: SHA-256(secret) -> HKDF-SHA256 with salt=[], info=`owner:${label}`,
 	// output 32 bytes, base64-encoded. The fixtures cover both shapes the
 	// label can take in production: an opaque per-user id (personal mode)
-	// and the literal `'team'` (team mode).
+	// and the literal `'shared'` (shared mode).
 	test('output bytes are pinned (regression guard for HKDF format)', async () => {
 		// Secret is base64('constant-test-secret-32-byte-seed'); a reader
 		// can reproduce the expected bytes manually with `openssl base64 -d`.
@@ -376,10 +376,10 @@ describe('deriveKeyring', () => {
 			},
 		]);
 
-		expect(await deriveKeyring({ rootKeyring, label: 'team' })).toEqual([
+		expect(await deriveKeyring({ rootKeyring, label: 'shared' })).toEqual([
 			{
 				version: 1,
-				keyBytesBase64: 'Y6iYwbC6x4lAUnuSQOHxInNiSmgzE1+xxaMW59pucak=',
+				keyBytesBase64: 'QnKaAnleo9MGjOnlq+xlmkt90S+JRqPlhEbhtt1afDE=',
 			},
 		]);
 	});

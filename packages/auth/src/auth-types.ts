@@ -5,7 +5,7 @@ import type { Brand } from 'wellcrafted/brand';
 
 /**
  * A signed-in account identifier. Issued by Better Auth, opaque to clients.
- * In personal mode, the bytes happen to equal the owner id; in team mode
+ * In personal mode, the bytes happen to equal the owner id; in shared mode
  * they do not. The brand prevents accidental cross-assignment.
  *
  * The validator is declared first; the type is derived from it via `.infer`
@@ -72,9 +72,9 @@ export type OAuthTokenGrant = typeof OAuthTokenGrant.infer;
  * workspace data.
  *
  * `userId` is stored explicitly (rather than synthesised from `ownerId`) so
- * the daemon can read it directly in team mode, where `ownerId` is the
- * literal `TEAM_OWNER_ID` and is structurally not a `UserId`. Deployment
- * shape (personal vs team) is not stored here; it is a property of the
+ * the daemon can read it directly in shared mode, where `ownerId` is the
+ * literal `SHARED_OWNER_ID` and is structurally not a `UserId`. Deployment
+ * shape (personal vs shared) is not stored here; it is a property of the
  * server. See {@link OwnerId} for the rare derivation a consumer might need.
  */
 export const PersistedAuth = type({
@@ -102,7 +102,7 @@ export type PersistedAuth = typeof PersistedAuth.infer;
  * future presentational owner facts (display name, avatar, quota) live in
  * dedicated endpoints rather than the session boot manifest.
  *
- * Deployment shape (personal vs team) is not carried on the wire; the server
+ * Deployment shape (personal vs shared) is not carried on the wire; the server
  * is configured with it at construction. Carrying it twice created a
  * consistency burden with no consumer. See {@link OwnerId} for the rare
  * derivation a consumer might need.

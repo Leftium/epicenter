@@ -3,7 +3,7 @@
  *
  * Library-side, billing-free. The deployment composes any plan or credit
  * gating in front of this app via `mountAiApp`'s `policies`. apps/api
- * passes `chargeAiCreditsWithAutumn`; a self-hosted team deployment
+ * passes `chargeAiCreditsWithAutumn`; a self-hosted shared-wiki deployment
  * passes no policies.
  *
  * BYOK: callers may pass `apiKey` in the request body, in which case the

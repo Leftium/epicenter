@@ -3,7 +3,7 @@
  *
  * URL shape (uniform across modes): `/api/owners/:ownerId/rooms/:roomId`.
  * The deployment mounts auth and `requireOwnership` upstream;
- * `requireOwnership` resolves the partition from `(mode, user.id)`,
+ * `requireOwnership` resolves the partition from `(rule, user.id)`,
  * rejects URL `:ownerId` mismatches at the boundary, and populates
  * `c.var.ownerId` before this handler runs.
  *

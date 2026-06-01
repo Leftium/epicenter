@@ -9,8 +9,8 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  *
  *   - `OwnerMismatch` (403): middleware-level auth refusal: URL owner
  *     does not match the authenticated user.
- *   - `NotTeamMember` (403): middleware-level membership refusal: the
- *     authenticated user is not on this team deployment's allow-list.
+ *   - `NotAdmitted` (403): middleware-level admission refusal: the
+ *     authenticated user is not admitted to this shared-wiki deployment.
  *   - `ForbiddenOrigin` (403): middleware-level CSRF refusal: origin
  *     missing or not in the trusted-origin allowlist.
  *   - `MissingDeviceId` (400): route-level input refusal: WebSocket
@@ -39,7 +39,7 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
  * function handle(error: RequestGuardError) {
  *   switch (error.name) {
  *     case 'OwnerMismatch':     // wrong URL for this signed-in user
- *     case 'NotTeamMember':     // signed in but not on the team allow-list
+ *     case 'NotAdmitted':       // signed in but not admitted
  *     case 'ForbiddenOrigin':   // CSRF: origin missing or not trusted
  *     case 'MissingDeviceId':   // WebSocket upgrade without ?deviceId=
  *   }
@@ -51,8 +51,9 @@ export const RequestGuardError = defineErrors({
 		message: 'The request URL owner does not match the authenticated user.',
 		status: 403 as const,
 	}),
-	NotTeamMember: () => ({
-		message: 'The authenticated user is not a member of this team deployment.',
+	NotAdmitted: () => ({
+		message:
+			'The authenticated user is not admitted to this shared-wiki deployment.',
 		status: 403 as const,
 	}),
 	ForbiddenOrigin: () => ({

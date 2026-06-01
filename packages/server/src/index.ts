@@ -1,8 +1,8 @@
 /**
  * @epicenter/server
  *
- * Shared Hono server for Epicenter cloud and self-hosted team
- * deployments. Personal mode partitions data by user; team mode uses
+ * Shared Hono server for Epicenter cloud and self-hosted shared wiki
+ * deployments. Personal mode partitions data by user; shared mode uses
  * one shared owner partition. The full design lives in
  * `specs/20260522T230000-server-package-split.md`.
  *
@@ -29,14 +29,14 @@ export {
 	requireCookieOrBearerUser,
 } from './middleware/require-auth.js';
 // Ownership composition: the deployment constructs the rule once via
-// `personal()` or `team({ isMember })` and threads it into every mount
+// `personal()` or `shared({ admit })` and threads it into every mount
 // primitive that needs the partition. See ./ownership.ts for the design
 // note.
 export {
-	type IsMember,
+	type Admit,
 	type OwnershipRule,
 	personal,
-	team,
+	shared,
 } from './ownership.js';
 // Re-export the Cloudflare Durable Object class so each deployment's
 // wrangler.jsonc can resolve `class_name: "Room"` against this entrypoint.

@@ -7,6 +7,6 @@
  * storage policy in `apps/api/worker/billing/policies.ts` reads it to sync
  * Autumn with the absolute total. The asset table stays the accounting source
  * of truth, so the value is a plain post-mutation total, never a billing delta.
- * Deployments without billing (self-hosted team) just ignore it.
+ * Deployments without billing (self-hosted shared wiki) just ignore it.
  */
 export const ASSET_STORAGE_USAGE_TOTAL_HEADER = 'x-storage-usage-total-bytes';

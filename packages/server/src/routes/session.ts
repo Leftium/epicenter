@@ -7,8 +7,9 @@
  *
  * The keyring is derived from a per-owner HKDF label via the deployment's
  * root keyring (`ENCRYPTION_SECRETS`). The label IS the `ownerId`: personal
- * owners get a per-user keyring (`ownerId === userId`); every member of a
- * team deployment shares one keyring (`ownerId === TEAM_OWNER_ID`).
+ * owners get a per-user keyring (`ownerId === userId`); every admitted user
+ * on a shared-wiki deployment shares one keyring
+ * (`ownerId === SHARED_OWNER_ID`).
  *
  * {@link mountSessionApp} wires cookie-or-bearer auth and the ownership
  * boundary so `c.var.user` and `c.var.ownerId` are populated before the
@@ -49,7 +50,7 @@ const sessionApp = new Hono<Env>().get(
  *
  * Bundles cookie-or-bearer auth (the session endpoint is reachable from
  * both browser apps and API clients), the ownership boundary (no URL
- * `:ownerId` to compare against, but team-mode membership is still
+ * `:ownerId` to compare against, but shared-mode admission is still
  * enforced and `c.var.ownerId` is populated), and the route mount into
  * one call.
  */

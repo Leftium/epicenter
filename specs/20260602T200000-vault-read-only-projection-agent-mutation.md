@@ -1,7 +1,7 @@
 # Vault as Read-Only Projection: Agent Mutation Through Actions
 
 **Date**: 2026-06-02
-**Status**: Draft (revised after layout + config grilling)
+**Status**: In Progress (monorepo Phases 1, 2, 5 implemented; vault Phases 3, 4 pending the monorepo code reaching the sibling `../epicenter` checkout the vault imports)
 **Owner**: Braden
 **Supersedes (in part)**: `20260602T120000-markdown-body-import-bidirectional.md`, `20260601T160000-markdown-sync-greenfield.md`, `20260601T120000-epicenter-apply-markdown-reconcile.md` (this spec refuses the disk to Yjs editing path those introduced, for app-owned data)
 
@@ -342,22 +342,26 @@ The dependency chain forces migrate-then-delete: the apps depend on `vault.ts` t
 
 ### Phase 1: Migrate apps to the one-way export (Build + Prove)
 
-- [ ] **1.1** `workspace-paths.ts`: ADD + export `appsMarkdownPath(projectDir, mountName)` -> `apps/<mountName>`. Leave `markdownPath`/`yjsPath`/`sqlitePath` untouched. Add a `workspace-paths.test.ts` case.
-- [ ] **1.2** `fuji/project.ts`: swap `attachMarkdownVault` -> `attachMarkdownExport`; move the body read into `toMarkdown`; drop `writeBody`/`onDelete`/`writeEntryBody`/`parseEntryBody` wiring; remove the `markdownDir`/`sqliteFile` options; materialize markdown via `appsMarkdownPath(projectDir, mount)` and let sqlite fall back to its guid-keyed default (do not re-key yjs/sqlite).
-- [ ] **1.3** `honeycrisp/project.ts` and `tab-manager/project.ts`: same swap + same option removal (simpler, no rich body).
-- [ ] **1.4** `fuji/entry-body-markdown.ts`: drop the parse half; keep `serializeEntryBody`.
-- [ ] **1.5** Gate: `bun run -F @epicenter/workspace typecheck` and the fuji app typecheck pass.
+- [x] **1.1** `workspace-paths.ts`: ADD + export `appsMarkdownPath(projectDir, mountName)` -> `apps/<mountName>`. Leave `markdownPath`/`yjsPath`/`sqlitePath` untouched. Add a `workspace-paths.test.ts` case.
+- [x] **1.2** `fuji/project.ts`: swap `attachMarkdownVault` -> `attachMarkdownExport`; move the body read into `toMarkdown`; drop `writeBody`/`onDelete`/`writeEntryBody`/`parseEntryBody` wiring; remove the `markdownDir`/`sqliteFile` options; materialize markdown via `appsMarkdownPath(projectDir, mount)` and let sqlite fall back to its guid-keyed default (do not re-key yjs/sqlite).
+  > **Note**: kept fuji's output byte-identical to the old vault (`{ ...entry }` frontmatter + default `${id}.md` filename + `entries/` subdir). No `slugFilename`/`entryFrontmatter` introduced (those were illustrative in the migration sketch and do not exist).
+- [x] **1.3** `honeycrisp/project.ts` and `tab-manager/project.ts`: same swap + same option removal (simpler, no rich body).
+- [x] **1.4** `fuji/entry-body-markdown.ts`: drop the parse half; keep `serializeEntryBody`.
+- [x] **1.5** Gate: `bun run -F @epicenter/workspace typecheck` and the fuji app typecheck pass (also honeycrisp + tab-manager: 0 errors).
 
 ### Phase 2: Delete the bidirectional subsystem (Remove)
 
-- [ ] **2.1** Delete `vault.ts`, `vault.test.ts`, `apply.test.ts`, `reconcile-e2e.test.ts`.
-- [ ] **2.2** Simplify `shared.ts`: remove `protectLocalEdits` + the dirty guard; keep `fileState` for rename cleanup.
-- [ ] **2.3** Simplify `index.ts`: drop the vault exports.
-- [ ] **2.4** Trim `entry-body-markdown.test.ts` to serialize-only.
-- [ ] **2.5** Rename `markdown_export_rebuild` -> `markdown_rebuild` in `export.ts` (vault's same-named action is gone, so the disambiguation is no longer needed); update the `cli.ts` comment and any doc references.
-- [ ] **2.6** Gate: `bun test` in `packages/workspace` (export/git/materialize green; vault/apply gone).
+- [x] **2.1** Delete `vault.ts`, `vault.test.ts`, `apply.test.ts`, `reconcile-e2e.test.ts`.
+- [x] **2.2** Simplify `shared.ts`: remove `protectLocalEdits` + the dirty guard; keep `fileState` for rename cleanup. Also removed the now-orphaned `readContentOrUndefined` helper and its `readFile` import.
+- [x] **2.3** Simplify `index.ts`: drop the vault exports.
+- [x] **2.4** Trim `entry-body-markdown.test.ts` to serialize-only.
+  > **Note**: pulled into Phase 1's parser-removal commit so the fuji typecheck gate (1.5) stayed green (the test imported the deleted `parseEntryBody`).
+- [x] **2.5** Rename `markdown_export_rebuild` -> `markdown_rebuild` in `export.ts` (vault's same-named action is gone, so the disambiguation is no longer needed); update the `cli.ts` comment and any doc references.
+- [x] **2.6** Gate: `bun test` in `packages/workspace` (494 pass, 0 fail; export/git/materialize green; vault/apply gone).
 
 ### Phase 3: Vault restructure (in `~/Code/vault`)
+
+> **Blocked**: the vault imports `fuji`/`tabManager` and the CLI from the sibling `../epicenter` checkout (= `/Users/braden/Code/epicenter`, main), not from this worktree. The `apps/` layout and the visible projection only appear once this PR's code is live there. Running 3.1b (deleting generated dirs) and the Phase 4 smoke test against the old code would mutate the real vault into an inconsistent state. Do after merge, or after pointing the vault at this worktree.
 
 - [ ] **3.1** Create `apps/`; move `fuji/` -> `apps/fuji/`, `tab-manager/` -> `apps/tab-manager/`.
 - [ ] **3.1b** Delete stale generated dirs so nothing looks authoritative after the re-key: any old `.epicenter/md/<guid>/` left by the hidden default, and the old `.epicenter/sqlite/fuji.db` / `tab-manager.db` (the new guid-keyed mirrors regenerate). These are all gitignored/regenerable; the daemon rebuilds `apps/` and `.epicenter/sqlite/` on next start. Do NOT touch `.epicenter/yjs/` (source of truth).
@@ -373,8 +377,9 @@ The dependency chain forces migrate-then-delete: the apps depend on `vault.ts` t
 
 ### Phase 5: Straggler sweep
 
-- [ ] **5.1** Update README / skills / cli.ts comment; mark superseded specs; check playground daemons.
-- [ ] **5.2** `rg` for dead references: `attachMarkdownVault`, `markdown_apply`, `protectLocalEdits`, `parseEntryBody`, `writeBody`, `ApplyPlan`. Each should be gone or intentional.
+- [x] **5.1** Update README / skills / cli.ts comment; mark superseded specs; check playground daemons.
+  > **Note**: skills carried no `vault`/`apply`/`protectLocalEdits` references (only pre-existing unrelated drift in the logging skill's `attachMarkdownMaterializer` example, out of scope). Playground daemons import `markdownPath` only (kept), not the vault.
+- [x] **5.2** `rg` for dead references: `attachMarkdownVault`, `markdown_apply`, `protectLocalEdits`, `parseEntryBody`, `writeBody`, `ApplyPlan`. Each gone or intentional. Also fixed the workspace README export table and the sqlite path JSDoc.
 
 ### Deferred (separate PRs, explicitly not in this one)
 
@@ -436,3 +441,25 @@ The dependency chain forces migrate-then-delete: the apps depend on `vault.ts` t
 - `apps/fuji/src/lib/workspace/{project,entry-body-markdown}.ts` - the app to migrate + the codec to halve
 - `~/Code/vault/epicenter.config.ts`, `~/Code/vault/AGENTS.md` - the vault to restructure
 - Superseded: `specs/20260602T120000-*` and the two markdown-sync specs it built on
+
+## Review
+
+**Completed (monorepo)**: 2026-06-02
+**Branch**: `worktree-bridge-cse_01APvuAW2SWJiDmYCNmGxEc2`
+
+### What Landed
+
+The monorepo half of the clean break: all three apps (`fuji`, `honeycrisp`, `tab-manager`) now project markdown one-way through `attachMarkdownExport`, materializing to a visible, hardcoded `apps/<mount>/` via the new `appsMarkdownPath` helper (sqlite stays at its guid-keyed `.epicenter/sqlite/` default). The entire bidirectional disk to Yjs subsystem is deleted: `vault.ts` and its `markdown_apply` reconcile, the `protectLocalEdits` dirty guard in `shared.ts`, and fuji's `parseEntryBody` import half. The freeform `markdownDir`/`sqliteFile` mount options are gone, so `markdown_rebuild` (renamed from `markdown_export_rebuild`) can never sweep a hand-authored zone. Five commits; `bun typecheck` clean across the workspace and all three apps; `bun test` 494 pass / 0 fail.
+
+### Deviations and Discoveries
+
+- fuji's projection is byte-identical to the old vault output; the `slugFilename`/`entryFrontmatter` in the migration sketch were illustrative and do not exist, so they were not introduced.
+- Trimming `entry-body-markdown.test.ts` moved into the Phase 1 parser-removal commit (the test imported the deleted `parseEntryBody`, so the Phase 1 typecheck gate needed it gone).
+- `resolveProjectPath` (in `@epicenter/workspace/node`) is now a dead export: its only callers were the removed mount path options. Left in place (a generic, still-tested pure helper, and a public-surface removal outside this spec's stated scope). Follow-up candidate.
+- The vault repo imports from the sibling `../epicenter` checkout, not this worktree, which blocks Phases 3 and 4 until the code merges there.
+
+### Follow-up Work
+
+- Vault restructure (Phase 3) + end-to-end smoke test (Phase 4), once this PR's code is live in the sibling `../epicenter` checkout.
+- Deferred per spec: `epicenter mcp` adapter (D.1) and the lossless frontmatter-apply action (D.2).
+- Consider removing the now-dead `resolveProjectPath` export in a follow-up clean-break pass.

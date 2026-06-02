@@ -62,7 +62,6 @@
 			"wellcrafted": "^0.42.0",
 			"date-fns": "^4.1.0",
 			"@biomejs/biome": "^2.4.10",
-			"turbo": "^2.6.1",
 			"wrangler": "^4.71.0",
 			"yargs": "^18.0.0",
 			"@standard-schema/spec": "^1.1.0",
@@ -132,7 +131,6 @@
 	"devDependencies": {
 		"@biomejs/biome": "catalog:",
 		"@types/bun": "catalog:",
-		"turbo": "^2.8.19",
 		"jsrepo": "^3.6.2"
 	},
 	"dependencies": {

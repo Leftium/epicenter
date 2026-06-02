@@ -24,7 +24,6 @@
 			"!apps/whispering/src-tauri",
 			"!**/.svelte-kit",
 			"!**/.astro",
-			"!**/.turbo",
 			"!**/.plasmo",
 			"!**/node_modules",
 			"!**/build",

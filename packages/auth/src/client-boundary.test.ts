@@ -9,7 +9,6 @@ const scannedRoots = ['apps', 'packages'];
 const skippedSegments = new Set([
 	'.git',
 	'.svelte-kit',
-	'.turbo',
 	'dist',
 	'node_modules',
 	'target',

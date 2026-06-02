@@ -32,6 +32,14 @@ stdout. A refused plan is a successful action result, so it exits 0; scripts rea
 `.refused` from the payload (`jq -e '.refused | not'`), consistent with every
 other action. See "Refusal" below for why the dedicated command was dropped.
 
+The typed CLI flags used to coerce `--max-deletes` to a number. With `run`
+passing raw JSON, that job moved to where it belongs: `invokeAction` now
+validates input against the action's declared `input` schema, so
+`'{"maxDeletes":"lots"}'` is rejected with a usage error instead of silently
+disabling the delete guard (`deletes.length > "lots"` is always false). The
+schema is finally load-bearing at the trust boundary, for every action, not just
+discovery metadata.
+
 NOT yet built: fuji body import (fuji has `toMarkdown` but no `fromMarkdown`, so
 apply REFUSES the fuji entries table as `RoundTripUnproven` by design), a CLI
 integration / exit-code test (needs a daemon harness; the action itself has 50

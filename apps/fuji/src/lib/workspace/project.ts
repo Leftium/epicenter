@@ -132,14 +132,11 @@ export function fuji(opts: FujiMountOptions = {}) {
 			};
 
 			/**
-			 * Reconcile an edited markdown body on disk back into its content doc:
-			 * the inverse of `readEntryBody`. Parse the markdown to a ProseMirror doc
-			 * and diff it into the entry's content fragment via `updateYFragment`
-			 * (preserving history and merging a concurrent edit rather than clobbering
-			 * it), then POST the diff to the relay over one-shot HTTP. The relay's
-			 * durable append before responding is the confirmation, so unlike a live
-			 * `openCollaboration` there is no send buffer to flush and no socket to
-			 * tear down. The daemon still never persists the body locally.
+			 * Reconcile an edited markdown body on disk back into its content doc, the
+			 * inverse of `readEntryBody`: parse the markdown and diff it into the
+			 * content fragment via `updateYFragment`, then write over one-shot HTTP
+			 * (see `writeRoomOverHttp` for why HTTP, not a socket). The daemon never
+			 * persists the body locally.
 			 */
 			const writeEntryBody = (id: EntryId, markdown: string): Promise<void> =>
 				writeRoomOverHttp({

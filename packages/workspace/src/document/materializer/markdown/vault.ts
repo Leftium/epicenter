@@ -55,10 +55,8 @@ export type MarkdownApplyError = InferErrors<typeof MarkdownApplyError>;
 
 /**
  * A `writeBody` hook threw while importing one entry's body. Logged, never
- * surfaced through `ApplyPlan`: body writes run after the frontmatter
- * transaction has committed, so a failure cannot refuse the (already applied)
- * run. The frontmatter reconcile is the atomic, guarded contract; body import is
- * best-effort per entry.
+ * surfaced through `ApplyPlan`: body writes run after the frontmatter transaction
+ * commits, so a failure cannot refuse the already-applied run.
  */
 const MarkdownBodyImportError = defineErrors({
 	BodyWriteFailed: ({
@@ -524,12 +522,10 @@ export function attachMarkdownVault<TTableHandles extends TablesRecord>(
 			}
 		});
 
-		// Frontmatter is now committed atomically. Import bodies AFTER, outside that
-		// transaction: each `writeBody` targets a separate (e.g. content) doc and is
-		// async, so it cannot join the one root-doc transaction. Best-effort per
-		// entry: a failure is logged, never rolled back (the frontmatter reconcile
-		// already landed). An idempotent `writeBody` (a diff into the target doc)
-		// makes a same-body write a no-op.
+		// Frontmatter is committed atomically above. Import bodies AFTER, outside
+		// that transaction: each `writeBody` targets a separate async doc, so it
+		// cannot join the root-doc transaction. Best-effort per entry: a failure is
+		// logged, never rolled back.
 		for (const { entry, bodyWrites } of work) {
 			const writeBody = entry.config.writeBody;
 			if (!writeBody) continue;

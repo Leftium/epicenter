@@ -48,8 +48,7 @@ import type { DaemonRuntime } from './types.js';
  * - `onReconnectSignal` subscribes to auth-state transitions that trigger
  *   sync reconnect.
  * - `fetch` is the auth-owned `fetch` (owner bearer attached, 401-refresh
- *   handled) for one-shot HTTP to the relay, e.g. a durable room sync POST
- *   whose response confirms the write, with no socket to open or tear down.
+ *   handled) for one-shot HTTP to the relay.
  */
 export type MountContext = {
 	projectDir: ProjectDir;

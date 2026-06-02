@@ -168,4 +168,13 @@ describe('parseEntryBody round trip', () => {
 	test('parses an empty string to an empty body', () => {
 		expect(serialize(parseEntryBody(''))).toBe('');
 	});
+
+	test('drops stray inline HTML instead of throwing on import', () => {
+		// A hand-edited body may contain a tag other than the serializer's own
+		// `<u>`. It must not crash the import: the stray tag is dropped, its text
+		// kept. (Underline `<u>` is still recovered; see the fixed-point cases.)
+		expect(serialize(parseEntryBody('before <b>x</b> after'))).toBe(
+			'before x after',
+		);
+	});
 });

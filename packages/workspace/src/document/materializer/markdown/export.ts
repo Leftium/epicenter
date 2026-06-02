@@ -185,7 +185,10 @@ export function attachMarkdownExport<TTables extends TablesRecord>(
 	return {
 		whenFlushed,
 		actions: defineActions({
-			markdown_rebuild: defineMutation({
+			// Distinct key from the vault's `markdown_rebuild`: a workspace can compose
+			// both seams, and spreading two `markdown_rebuild` actions into one set
+			// would silently clobber the vault's.
+			markdown_export_rebuild: defineMutation({
 				title: 'Rebuild Markdown Export',
 				description:
 					'Destructive: delete existing .md files in registered table directories and re-serialize all valid rows. Optionally limit to one table.',

@@ -84,6 +84,17 @@ function string<T extends string = string>(
 			: never;
 }
 
+/**
+ * URL string column. A `TString` carrying `format: 'uri'` as a hint, so the
+ * schema is self-describing and editor tooling can surface it. Static type is
+ * `string` (no brand): callers store and read plain strings. When the `uri`
+ * format is not registered with the runtime validator, `Value.Check` treats it
+ * as a pass, so this never rejects a value the rest of the system would accept.
+ */
+function url(opts?: TStringOptions): TString {
+	return Type.String({ format: 'uri', ...opts });
+}
+
 /** Pass-through to `Type.Number`, exposed as `column.number`. */
 const number = Type.Number;
 
@@ -209,6 +220,7 @@ function ianaTimeZone(opts?: TSchemaOptions): TUnsafe<IanaTimeZone> {
  */
 export const column = {
 	string,
+	url,
 	number,
 	integer,
 	boolean,

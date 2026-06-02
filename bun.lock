@@ -463,6 +463,20 @@
         "wrangler": "catalog:",
       },
     },
+    "apps/wiki": {
+      "name": "@epicenter/wiki",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/workspace": "workspace:*",
+        "typebox": "catalog:",
+        "wellcrafted": "catalog:",
+        "yjs": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "apps/zhongwen": {
       "name": "@epicenter/zhongwen",
       "version": "0.0.1",
@@ -1143,6 +1157,8 @@
     "@epicenter/util": ["@epicenter/util@workspace:packages/util"],
 
     "@epicenter/whispering": ["@epicenter/whispering@workspace:apps/whispering"],
+
+    "@epicenter/wiki": ["@epicenter/wiki@workspace:apps/wiki"],
 
     "@epicenter/workspace": ["@epicenter/workspace@workspace:packages/workspace"],
 

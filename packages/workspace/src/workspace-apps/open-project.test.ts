@@ -49,6 +49,7 @@ function stubAuthClient(): WorkspaceAuthClient {
 			keyring: [] as never,
 		},
 		openWebSocket: () => Promise.resolve({} as WebSocket),
+		fetch: () => Promise.resolve(new Response()),
 		onStateChange: () => () => {},
 	};
 }

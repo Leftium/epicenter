@@ -18,7 +18,7 @@ import type {
 	OnReconnectSignal,
 	OpenWebSocketFn,
 } from '../document/open-collaboration.js';
-import type { MaybePromise, ProjectDir } from '../shared/types.js';
+import type { AuthedFetch, MaybePromise, ProjectDir } from '../shared/types.js';
 import type { DaemonRuntime } from './types.js';
 
 /**
@@ -47,6 +47,9 @@ import type { DaemonRuntime } from './types.js';
  * - `openWebSocket` opens the relay socket for `openCollaboration`.
  * - `onReconnectSignal` subscribes to auth-state transitions that trigger
  *   sync reconnect.
+ * - `fetch` is the auth-owned `fetch` (owner bearer attached, 401-refresh
+ *   handled) for one-shot HTTP to the relay, e.g. a durable room sync POST
+ *   whose response confirms the write, with no socket to open or tear down.
  */
 export type MountContext = {
 	projectDir: ProjectDir;
@@ -57,6 +60,7 @@ export type MountContext = {
 	keyring: () => Keyring;
 	openWebSocket: OpenWebSocketFn;
 	onReconnectSignal: OnReconnectSignal;
+	fetch: AuthedFetch;
 };
 
 /**

@@ -12,7 +12,7 @@ import { asOwnerId } from '@epicenter/identity';
 import { decodeSyncRequest } from '@epicenter/sync';
 import * as Y from 'yjs';
 import type { AuthedFetch } from '../shared/types.js';
-import { writeRoomOverHttp } from './http-room-sync.js';
+import { readRoomOverHttp, writeRoomOverHttp } from './http-room-sync.js';
 
 const baseURL = 'https://api.test';
 const ownerId = asOwnerId('owner-1');
@@ -45,6 +45,36 @@ function fakeRelay({
 		},
 	};
 }
+
+describe('readRoomOverHttp', () => {
+	test('GETs the snapshot and hands the seeded doc to read', async () => {
+		const server = new Y.Doc();
+		server.getMap('m').set('k', 'v');
+		const snapshot = Y.encodeStateAsUpdateV2(server);
+		const relay = fakeRelay({ snapshot });
+
+		const value = await readRoomOverHttp({
+			fetch: relay.fetch,
+			baseURL,
+			ownerId,
+			guid,
+			read: (ydoc) => ydoc.getMap('m').get('k'),
+		});
+
+		expect(value).toBe('v');
+		expect(relay.getCount).toBe(1);
+		// A read never POSTs.
+		expect(relay.posts).toHaveLength(0);
+	});
+
+	test('throws on a non-2xx snapshot GET', async () => {
+		const fetch: AuthedFetch = async () =>
+			new Response('nope', { status: 500 });
+		await expect(
+			readRoomOverHttp({ fetch, baseURL, ownerId, guid, read: () => 0 }),
+		).rejects.toThrow(/snapshot GET failed/);
+	});
+});
 
 describe('writeRoomOverHttp', () => {
 	test('GETs state, applies the mutation, POSTs a diff that reconstructs it', async () => {

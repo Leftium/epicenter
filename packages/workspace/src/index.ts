@@ -183,10 +183,14 @@ export {
 	type TablesToDrizzleSchema,
 	tablesToDrizzleSchema,
 } from './document/drizzle-schema.js';
-// One-shot HTTP write to a hosted room: GET state, apply a mutation, POST the
-// diff. The relay's durable append before responding makes the 2xx the receipt,
-// so a relay-only doc can be written without a live `openCollaboration` session.
-export { writeRoomOverHttp } from './document/http-room-sync.js';
+// One-shot HTTP read/write of a hosted room: GET the snapshot (read), or GET then
+// POST the diff (write). The relay's durable append before responding makes the
+// 2xx the receipt, so a relay-only doc can be read or written without a live
+// `openCollaboration` session.
+export {
+	readRoomOverHttp,
+	writeRoomOverHttp,
+} from './document/http-room-sync.js';
 export type { SyncStatus } from './document/internal/sync-supervisor.js';
 export {
 	type InferKvValue,

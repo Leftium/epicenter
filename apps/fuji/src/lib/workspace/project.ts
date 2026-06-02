@@ -23,8 +23,7 @@ import {
 	DateTimeString,
 	defineActions,
 	defineWorkspace,
-	openCollaboration,
-	roomWsUrl,
+	readRoomOverHttp,
 	writeRoomOverHttp,
 } from '@epicenter/workspace';
 import { defineMount } from '@epicenter/workspace/daemon';
@@ -42,7 +41,6 @@ import {
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
 import { initProseMirrorDoc, updateYFragment } from 'y-prosemirror';
-import * as Y from 'yjs';
 import { parseEntryBody, serializeEntryBody } from './entry-body-markdown.js';
 import { entryBodySchema } from './entry-body-schema.js';
 import {
@@ -52,8 +50,6 @@ import {
 	type EntryId,
 	entryContentDocGuid,
 } from './index.js';
-
-const BODY_CONNECT_DEADLINE_MS = 10_000;
 
 export type FujiMountOptions = {
 	/** Markdown directory; relative paths resolve against `projectDir`. */
@@ -95,41 +91,25 @@ export function fuji(opts: FujiMountOptions = {}) {
 				log: createLogger(`${mount}-sqlite`),
 			});
 			/**
-			 * Read one entry's body from its content doc. The body lives in a
-			 * separate cloud doc addressed by `entryContentDocGuid(id)`; the daemon
-			 * does not mirror it, so we open a throwaway doc, sync it, read the
-			 * text, and destroy it. No local persistence: a body read is a read,
-			 * not a second on-disk copy.
+			 * Read one entry's body from its content doc, the inverse of
+			 * `writeEntryBody`. The body lives in a separate cloud doc addressed by
+			 * `entryContentDocGuid(id)`; the daemon does not mirror it, so we GET its
+			 * current snapshot over one-shot HTTP and serialize that (see
+			 * `readRoomOverHttp` for why HTTP, not a socket). No local persistence: a
+			 * body read is a read, not a second on-disk copy.
 			 *
-			 * Throws when the connect deadline elapses so the materializer skips the write and
-			 * leaves the existing `.md` intact rather than clobbering it with an
+			 * Throws on a failed or timed-out GET so the materializer skips the write
+			 * and leaves the existing `.md` intact rather than clobbering it with an
 			 * empty body.
 			 */
-			const readEntryBody = async (entry: Entry): Promise<string> => {
-				const ydoc = new Y.Doc({
+			const readEntryBody = (entry: Entry): Promise<string> =>
+				readRoomOverHttp({
+					fetch,
+					baseURL: EPICENTER_API_URL,
+					ownerId,
 					guid: entryContentDocGuid(entry.id),
-					gc: true,
+					read: (ydoc) => serializeEntryBody(ydoc.getXmlFragment('content')),
 				});
-				const collaboration = openCollaboration(ydoc, {
-					url: roomWsUrl({
-						baseURL: EPICENTER_API_URL,
-						ownerId,
-						guid: ydoc.guid,
-						deviceId,
-					}),
-					openWebSocket,
-					onReconnectSignal,
-					connectDeadlineMs: BODY_CONNECT_DEADLINE_MS,
-					actions: {},
-				});
-				try {
-					await collaboration.whenConnected;
-					return serializeEntryBody(ydoc.getXmlFragment('content'));
-				} finally {
-					ydoc.destroy();
-					await collaboration.whenDisposed;
-				}
-			};
 
 			/**
 			 * Reconcile an edited markdown body on disk back into its content doc, the

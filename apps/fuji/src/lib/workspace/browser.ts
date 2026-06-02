@@ -32,7 +32,6 @@ import {
 } from '@epicenter/workspace';
 import * as Y from 'yjs';
 import { createFuji, type EntryId, entryContentDocGuid } from './index';
-import { createFujiMarkdownActions } from './markdown';
 
 export function openFujiBrowser({
 	signedIn,
@@ -101,15 +100,8 @@ export function openFujiBrowser({
 		};
 	});
 
-	const markdown = createFujiMarkdownActions({
-		tables: workspace.tables,
-		idb,
-		entryBodies,
-	});
-
 	return defineWorkspace({
 		...workspace,
-		markdown,
 		idb,
 		entryBodies,
 		collaboration,

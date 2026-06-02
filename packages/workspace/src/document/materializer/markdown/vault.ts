@@ -414,7 +414,7 @@ export function attachMarkdownVault<TTableHandles extends TablesRecord>(
 			entry: RegisteredTable;
 			writes: BaseRow[];
 			deletes: string[];
-			bodyWrites: { id: string; body: string }[];
+			bodyWrites: { id: string; body: string; rawContent: string }[];
 		}[] = [];
 
 		for (const entry of registered.values()) {
@@ -487,11 +487,11 @@ export function attachMarkdownVault<TTableHandles extends TablesRecord>(
 			// file is skipped without opening its body doc; a body-only edit, which
 			// the frontmatter diff above cannot see, still qualifies). Skipped
 			// entirely when the table has no `writeBody`.
-			const bodyWrites: { id: string; body: string }[] = [];
+			const bodyWrites: { id: string; body: string; rawContent: string }[] = [];
 			if (entry.config.writeBody) {
 				for (const [id, { body, rawContent }] of desired) {
 					if (rawContent !== entry.fileState.get(id)?.content) {
-						bodyWrites.push({ id, body: body ?? '' });
+						bodyWrites.push({ id, body: body ?? '', rawContent });
 					}
 				}
 			}
@@ -529,7 +529,7 @@ export function attachMarkdownVault<TTableHandles extends TablesRecord>(
 		for (const { entry, bodyWrites } of work) {
 			const writeBody = entry.config.writeBody;
 			if (!writeBody) continue;
-			for (const { id, body } of bodyWrites) {
+			for (const { id, body, rawContent } of bodyWrites) {
 				const { error } = await tryAsync({
 					try: async () => writeBody(id, body),
 					catch: (cause) =>
@@ -539,7 +539,20 @@ export function attachMarkdownVault<TTableHandles extends TablesRecord>(
 							cause,
 						}),
 				});
-				if (error) log.warn(error);
+				if (error) {
+					log.warn(error);
+					continue;
+				}
+				// Re-baseline fileState to the content we just imported. A body-only
+				// edit never changes the row, so materialize does not re-fire to
+				// refresh fileState; without this the next apply would still see the
+				// file as changed and re-import the same body every run. Reuse the
+				// prior filename (materialize wrote `<id>.md`).
+				const previous = entry.fileState.get(id);
+				entry.fileState.set(id, {
+					filename: previous?.filename ?? `${id}.md`,
+					content: rawContent,
+				});
 			}
 		}
 

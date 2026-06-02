@@ -22,31 +22,10 @@
  * own `mkdir` (or rely on the attachments to do it).
  */
 
-import { isAbsolute, join } from 'node:path';
+import { join } from 'node:path';
 
 function epicenterProjectDir(projectDir: string): string {
 	return join(projectDir, '.epicenter');
-}
-
-/**
- * Resolve a user-supplied path override from `epicenter.config.ts` into an
- * absolute path: absolute overrides pass through, relative ones resolve
- * against the project root. Returns `undefined` when no override is given, so
- * a mount can fall back to the library convention with `?? sqlitePath(...)`.
- *
- * @example
- * ```ts
- * resolveProjectPath('/vault', 'notes')            // '/vault/notes'
- * resolveProjectPath('/vault', '/tmp/notes')       // '/tmp/notes'
- * resolveProjectPath('/vault', undefined)          // undefined
- * ```
- */
-export function resolveProjectPath(
-	projectDir: string,
-	override: string | undefined,
-): string | undefined {
-	if (override === undefined) return undefined;
-	return isAbsolute(override) ? override : join(projectDir, override);
 }
 
 /**

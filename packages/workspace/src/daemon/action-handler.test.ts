@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import Type from 'typebox';
 import type { Result } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
@@ -230,5 +231,27 @@ describe('executeInvoke mount-prefixed routing', () => {
 		}
 		expect(error.message).toBe('No mount "missing". Available: demo, tasks');
 		expect(error.suggestions).toEqual(['  demo', '  tasks']);
+	});
+
+	test('input failing the action schema surfaces as UsageError, not RuntimeError', async () => {
+		const entry = fakeEntry({
+			mount: 'fuji',
+			actions: {
+				markdown_apply: defineMutation({
+					input: Type.Object({ maxDeletes: Type.Optional(Type.Number()) }),
+					handler: (input) => ({ maxDeletes: input.maxDeletes ?? 10 }),
+				}),
+			},
+		});
+
+		const result = await executeInvoke([entry], {
+			actionPath: 'fuji.markdown_apply',
+			input: { maxDeletes: 'lots' },
+		});
+
+		const error = expectErr(result);
+		// A bad input is the caller's mistake (exit 1), not a handler crash (exit 2).
+		expect(error.name).toBe('UsageError');
+		expect(error.message).toContain('maxDeletes');
 	});
 });

@@ -12,8 +12,9 @@
  * `epicenter daemon up`.
  *
  * Exit codes:
- *   1: usage error (unknown mount, unknown action, invalid input for
- *      `--peer`), or no daemon (`Required`, transport error)
+ *   1: usage error (unknown mount, unknown action, action input that fails the
+ *      action's schema, invalid input for `--peer`), or no daemon (`Required`,
+ *      transport error)
  *   2: runtime error (local action returned Err, or remote RPC failed)
  *   3: peer not found (`--peer <target>` did not resolve within `--wait`)
  */

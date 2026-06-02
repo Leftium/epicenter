@@ -24,14 +24,16 @@
  *
  * Local callers use `invokeAction`, which Ok-wraps raw values, preserves
  * existing Results, and catches throws as `Err(cause)`. The dispatch wire
- * boundary (`runInboundDispatch` in `document/dispatch.ts`) has its own
- * inlined invoker that wraps thrown causes into `DispatchError.ActionFailed`
- * before the response crosses the wire.
+ * boundary (`runInboundDispatch` in `document/dispatch.ts`) calls `invokeAction`
+ * and wraps its error into `DispatchError.ActionFailed` before the response
+ * crosses the wire.
  *
  * @module
  */
 
 import Type, { type Static, type TSchema } from 'typebox';
+import { Value } from 'typebox/value';
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, isResult, Ok, type Result } from 'wellcrafted/result';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -349,12 +351,55 @@ export function toActionMeta({
 }
 
 /**
+ * Raised by {@link invokeAction} when the supplied input fails the action's
+ * declared `input` schema. This is the one place the schema is enforced at
+ * runtime: a value that reaches a handler has already matched the contract the
+ * action published. The daemon maps it to a usage error (bad input, not a
+ * handler crash); the dispatch boundary folds it into `ActionFailed`.
+ */
+export const ActionInputError = defineErrors({
+	InvalidInput: ({
+		errors,
+	}: {
+		errors: { path: string; message: string }[];
+	}) => ({
+		message: `Invalid action input: ${errors
+			.map((e) => `${e.path || '(root)'} ${e.message}`)
+			.join('; ')}`,
+		errors,
+	}),
+});
+export type ActionInputError = InferErrors<typeof ActionInputError>;
+
+/**
+ * Narrows an `invokeAction` error to a declared-schema validation failure.
+ *
+ * The error channel of `invokeAction` is `unknown` (a handler can throw
+ * anything), so a boundary that special-cases the validation failure needs a
+ * type guard to reach `.message` safely. This is the sanctioned single-variant
+ * guard, not a total fold: callers special-case `InvalidInput`, every other
+ * error flows through unchanged.
+ */
+export function isActionInputError(error: unknown): error is ActionInputError {
+	return (
+		typeof error === 'object' &&
+		error !== null &&
+		(error as { name?: unknown }).name === 'InvalidInput'
+	);
+}
+
+/**
  * Invoke an action when the caller does not statically know the handler
  * return shape.
  *
- * Raw values get `Ok`-wrapped, existing `Result`s pass through, and thrown
- * errors become `Err(cause)` with the raw thrown value under `.error`. The
- * dispatch wire boundary (`runInboundDispatch` in `document/dispatch.ts`)
+ * When the action declares an `input` schema, the supplied input is validated
+ * against it first; a mismatch returns `Err(ActionInputError.InvalidInput)`
+ * without ever calling the handler, so the published schema is load-bearing at
+ * the trust boundary rather than discovery-only metadata.
+ *
+ * Otherwise: raw values get `Ok`-wrapped, existing `Result`s pass through, and
+ * thrown errors become `Err(cause)` with the raw thrown value under `.error`.
+ * The dispatch wire boundary (`runInboundDispatch` in `document/dispatch.ts`)
  * is responsible for wrapping the cause into `DispatchError.ActionFailed`
  * before the response crosses the wire; callers in-process see whatever
  * the handler actually threw or returned.
@@ -373,6 +418,13 @@ export async function invokeAction<T = unknown>(
 	action: Action,
 	input: unknown | undefined,
 ): Promise<Result<T, unknown>> {
+	if (action.input !== undefined && !Value.Check(action.input, input)) {
+		const errors = [...Value.Errors(action.input, input)].map((e) => ({
+			path: e.instancePath.replace(/^\//, ''),
+			message: e.message,
+		}));
+		return ActionInputError.InvalidInput({ errors });
+	}
 	try {
 		const ret =
 			action.input !== undefined

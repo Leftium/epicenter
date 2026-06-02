@@ -64,7 +64,7 @@ epicenter peers -C ~/vault
 | Code | `run` | `list`, `peers` |
 | --- | --- | --- |
 | `0` | success | success |
-| `1` | usage error (unknown mount or action, bad `--peer` input) or no daemon running | any failure (no daemon, bad arguments) |
+| `1` | usage error (unknown mount or action, action input that fails the action's schema, bad `--peer` input) or no daemon running | any failure (no daemon, bad arguments) |
 | `2` | runtime error: the local action returned `Err`, or the remote RPC failed | (not used) |
 | `3` | peer not found: `--peer <target>` did not resolve within `--wait` | (not used) |
 

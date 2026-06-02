@@ -10,13 +10,13 @@ import {
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { tryAsync } from 'wellcrafted/result';
 import type * as Y from 'yjs';
+import { assembleMarkdown } from '../../../markdown/assemble-markdown.js';
 import { parseMarkdownFile } from '../../../markdown/parse-markdown-file.js';
 import { defineActions, defineMutation } from '../../../shared/actions.js';
 import type { MaybePromise } from '../../../shared/types.js';
 import { type BaseRow, type Table, TableParseError } from '../../table.js';
 import type { AnyTable, TablesRecord } from '../shared.js';
 import {
-	assembleMarkdown,
 	type FileState,
 	materializeTable,
 	type RenderRow,
@@ -44,7 +44,7 @@ export const MarkdownReadError = defineErrors({
 });
 export type MarkdownReadError = InferErrors<typeof MarkdownReadError>;
 
-export const MaterializerApplyError = defineErrors({
+export const MarkdownApplyError = defineErrors({
 	/** Two files on disk declare the same row `id`; the reconcile can't pick one. */
 	DuplicateId: ({ id, paths }: { id: string; paths: [string, string] }) => ({
 		message: `Two files declare id "${id}": ${paths.join(' and ')}. Remove one before applying.`,
@@ -52,7 +52,7 @@ export const MaterializerApplyError = defineErrors({
 		paths,
 	}),
 });
-export type MaterializerApplyError = InferErrors<typeof MaterializerApplyError>;
+export type MarkdownApplyError = InferErrors<typeof MarkdownApplyError>;
 
 /**
  * Outcome of reading one `.md` file: a validated row, a non-note (skipped), or a
@@ -381,7 +381,7 @@ export function attachMarkdownVault<TTables extends TablesRecord>(
 				} else {
 					const prior = desired.get(result.id);
 					if (prior) {
-						const { error } = MaterializerApplyError.DuplicateId({
+						const { error } = MarkdownApplyError.DuplicateId({
 							id: result.id,
 							paths: [prior.path, result.path],
 						});

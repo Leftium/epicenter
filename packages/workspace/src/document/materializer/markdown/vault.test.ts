@@ -97,9 +97,7 @@ type SetupOptions = {
 	tables?: VaultTablesConfig<Tables<typeof tableDefinitions>>;
 };
 
-async function setup({
-	tables = { posts: {}, notes: {} },
-}: SetupOptions = {}) {
+async function setup({ tables = { posts: {}, notes: {} } }: SetupOptions = {}) {
 	const cache = createDisposableCache(
 		(id: string) => {
 			const inner = createWorkspace({
@@ -325,7 +323,11 @@ describe('observer per-row isolation', () => {
 describe('dirty guard', () => {
 	test('a locally edited file survives a remote row change (left for apply)', async () => {
 		const { workspace } = await setup({ tables: { posts: {} } });
-		workspace.tables.posts.set({ id: 'p1', title: 'Original', published: true });
+		workspace.tables.posts.set({
+			id: 'p1',
+			title: 'Original',
+			published: true,
+		});
 		// Wait for the observer write to land (so fileState is populated and the
 		// dirty guard is armed) before editing on disk.
 		await waitForContent('posts/p1.md', (c) => c.includes('title: Original'));
@@ -355,7 +357,11 @@ describe('dirty guard', () => {
 
 	test('a clean (unedited) file is updated normally on a row change', async () => {
 		const { workspace } = await setup({ tables: { posts: {} } });
-		workspace.tables.posts.set({ id: 'p1', title: 'Original', published: true });
+		workspace.tables.posts.set({
+			id: 'p1',
+			title: 'Original',
+			published: true,
+		});
 		await waitForContent('posts/p1.md', (c) => c.includes('title: Original'));
 
 		// No local edit: a row change rewrites the file as usual.

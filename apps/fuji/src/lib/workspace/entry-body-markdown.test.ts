@@ -20,20 +20,16 @@ function serialize(doc: Node): string {
 	return serializeEntryBody(fragment);
 }
 
-const { nodes, marks } = schema;
-
-function paragraph(...content: Node[]): Node {
-	return nodes.paragraph!.create(null, content);
-}
-
-function doc(...content: Node[]): Node {
-	return nodes.doc!.create(null, content);
-}
+// `schema.node(name, ...)` / `schema.mark(name)` avoid indexing `schema.nodes`,
+// which is `NodeType | undefined` under noUncheckedIndexedAccess.
+const doc = (...content: Node[]): Node => schema.node('doc', null, content);
+const paragraph = (...content: Node[]): Node =>
+	schema.node('paragraph', null, content);
 
 describe('serializeEntryBody', () => {
 	test('renders a heading', () => {
 		const node = doc(
-			nodes.heading!.create({ level: 2 }, schema.text('Title')),
+			schema.node('heading', { level: 2 }, schema.text('Title')),
 		);
 		expect(serialize(node)).toBe('## Title');
 	});
@@ -41,9 +37,9 @@ describe('serializeEntryBody', () => {
 	test('renders strong and em marks', () => {
 		const node = doc(
 			paragraph(
-				schema.text('bold', [marks.strong!.create()]),
+				schema.text('bold', [schema.mark('strong')]),
 				schema.text(' and '),
-				schema.text('italic', [marks.em!.create()]),
+				schema.text('italic', [schema.mark('em')]),
 			),
 		);
 		expect(serialize(node)).toBe('**bold** and *italic*');
@@ -51,23 +47,23 @@ describe('serializeEntryBody', () => {
 
 	test('renders the underline mark as <u> html', () => {
 		const node = doc(
-			paragraph(schema.text('underlined', [marks.underline!.create()])),
+			paragraph(schema.text('underlined', [schema.mark('underline')])),
 		);
 		expect(serialize(node)).toBe('<u>underlined</u>');
 	});
 
 	test('renders the strikethrough mark as ~~', () => {
 		const node = doc(
-			paragraph(schema.text('gone', [marks.strikethrough!.create()])),
+			paragraph(schema.text('gone', [schema.mark('strikethrough')])),
 		);
 		expect(serialize(node)).toBe('~~gone~~');
 	});
 
 	test('renders a bullet list', () => {
 		const item = (text: string) =>
-			nodes.list_item!.create(null, paragraph(schema.text(text)));
+			schema.node('list_item', null, paragraph(schema.text(text)));
 		const node = doc(
-			nodes.bullet_list!.create(null, [item('first'), item('second')]),
+			schema.node('bullet_list', null, [item('first'), item('second')]),
 		);
 		const md = serialize(node);
 		expect(md).toContain('* first');
@@ -76,9 +72,9 @@ describe('serializeEntryBody', () => {
 
 	test('renders an ordered list', () => {
 		const item = (text: string) =>
-			nodes.list_item!.create(null, paragraph(schema.text(text)));
+			schema.node('list_item', null, paragraph(schema.text(text)));
 		const node = doc(
-			nodes.ordered_list!.create({ order: 1 }, [item('one'), item('two')]),
+			schema.node('ordered_list', { order: 1 }, [item('one'), item('two')]),
 		);
 		const md = serialize(node);
 		expect(md).toContain('1. one');
@@ -87,14 +83,14 @@ describe('serializeEntryBody', () => {
 
 	test('renders a blockquote', () => {
 		const node = doc(
-			nodes.blockquote!.create(null, paragraph(schema.text('quoted'))),
+			schema.node('blockquote', null, paragraph(schema.text('quoted'))),
 		);
 		expect(serialize(node)).toBe('> quoted');
 	});
 
 	test('renders a code block', () => {
 		const node = doc(
-			nodes.code_block!.create(null, schema.text('const x = 1;')),
+			schema.node('code_block', null, schema.text('const x = 1;')),
 		);
 		expect(serialize(node)).toBe('```\nconst x = 1;\n```');
 	});

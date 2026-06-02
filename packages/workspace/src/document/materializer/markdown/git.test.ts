@@ -286,10 +286,7 @@ describe('attachGitAutosave', () => {
 			]);
 			expect(project.logs.messages.warn).toEqual([]);
 			expect(
-				readFileSync(
-					join(project.markdownDir, 'outside-repo.md'),
-					'utf8',
-				),
+				readFileSync(join(project.markdownDir, 'outside-repo.md'), 'utf8'),
 			).toContain('# Outside');
 
 			handle.dispose();

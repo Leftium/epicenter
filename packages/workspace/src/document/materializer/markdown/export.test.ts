@@ -49,7 +49,7 @@ describe('attachMarkdownExport', () => {
 		});
 		const exporter = attachMarkdownExport(workspace, {
 			dir: TEST_DIR,
-			perTable: {
+			tables: {
 				posts: { filename: (row) => `${row.title}-${row.id}.md` },
 			},
 		});
@@ -72,7 +72,7 @@ describe('attachMarkdownExport', () => {
 		});
 		const exporter = attachMarkdownExport(workspace, {
 			dir: TEST_DIR,
-			perTable: {
+			tables: {
 				posts: {
 					toMarkdown: (row) => ({
 						frontmatter: { id: row.id, title: row.title },
@@ -105,7 +105,7 @@ describe('attachMarkdownExport', () => {
 		});
 		const exporter = attachMarkdownExport(workspace, {
 			dir: TEST_DIR,
-			perTable: { posts: { dir: 'published' } },
+			tables: { posts: { dir: 'published' } },
 		});
 		await exporter.whenFlushed;
 
@@ -128,7 +128,7 @@ describe('attachMarkdownExport', () => {
 		});
 		const exporter = attachMarkdownExport(workspace, {
 			dir: TEST_DIR,
-			perTable: { posts: {} },
+			tables: { posts: {} },
 		});
 		await exporter.whenFlushed;
 

@@ -3,12 +3,12 @@ import { join } from 'node:path';
 import { Type } from 'typebox';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import type * as Y from 'yjs';
+import { assembleMarkdown } from '../../../markdown/assemble-markdown.js';
 import { defineActions, defineMutation } from '../../../shared/actions.js';
 import type { MaybePromise } from '../../../shared/types.js';
 import type { BaseRow, Table } from '../../table.js';
 import type { AnyTable, TablesRecord } from '../shared.js';
 import {
-	assembleMarkdown,
 	type FileState,
 	type MarkdownShape,
 	materializeTable,
@@ -68,7 +68,7 @@ export function attachMarkdownExport<TTables extends TablesRecord>(
 	workspace: { ydoc: Y.Doc; tables: TTables },
 	{
 		dir,
-		perTable,
+		tables: tablesConfig,
 		waitFor,
 		log = createLogger('markdown-export'),
 	}: {
@@ -79,7 +79,7 @@ export function attachMarkdownExport<TTables extends TablesRecord>(
 		 * only tables named here are exported. Pass `{}` for an entry to export with
 		 * all defaults.
 		 */
-		perTable?: ExportTablesConfig<TTables>;
+		tables?: ExportTablesConfig<TTables>;
 		/** Gate: awaited before the initial filesystem flush. Omit for no gate. */
 		waitFor?: Promise<unknown>;
 		/** Logger for background write-observer failures. */
@@ -90,7 +90,7 @@ export function attachMarkdownExport<TTables extends TablesRecord>(
 	const registered = new Map<string, RegisteredTable>();
 	for (const [name, table] of Object.entries(tables)) {
 		const config = (
-			perTable as Record<string, ExportTableConfig<BaseRow>> | undefined
+			tablesConfig as Record<string, ExportTableConfig<BaseRow>> | undefined
 		)?.[name];
 		if (config === undefined) continue;
 		const anyTable = table as AnyTable;
@@ -101,7 +101,10 @@ export function attachMarkdownExport<TTables extends TablesRecord>(
 			const filename = config.filename
 				? await config.filename(row)
 				: `${row.id}.md`;
-			return { filename, content: assembleMarkdown(shape.frontmatter, shape.body) };
+			return {
+				filename,
+				content: assembleMarkdown(shape.frontmatter, shape.body),
+			};
 		};
 		registered.set(name, {
 			table: anyTable,

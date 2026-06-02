@@ -7,7 +7,10 @@
  * markdown parser or body import here.
  */
 
-import { defaultMarkdownSerializer, MarkdownSerializer } from 'prosemirror-markdown';
+import {
+	defaultMarkdownSerializer,
+	MarkdownSerializer,
+} from 'prosemirror-markdown';
 import { yXmlFragmentToProseMirrorRootNode } from 'y-prosemirror';
 import type * as Y from 'yjs';
 import { entryBodySchema } from './entry-body-schema';

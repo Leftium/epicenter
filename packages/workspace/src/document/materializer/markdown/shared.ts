@@ -2,7 +2,6 @@ import { mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import type { Logger } from 'wellcrafted/logger';
-import { assembleMarkdown } from '../../../markdown/assemble-markdown.js';
 import type { BaseRow } from '../../table.js';
 import type { AnyTable } from '../shared.js';
 
@@ -39,7 +38,7 @@ export type FileState = Map<string, { filename: string; content: string }>;
  * These run inside `.catch(...)` of a detached async task, so they ship to the
  * logger, not through a Result to the caller.
  */
-export const MaterializerWriteError = defineErrors({
+const MaterializerWriteError = defineErrors({
 	TableWriteFailed: ({
 		tableName,
 		id,
@@ -56,20 +55,12 @@ export const MaterializerWriteError = defineErrors({
 	}),
 });
 
-/**
- * Best-effort unlink. Returns `true` when the file actually went away (so the
- * caller can mark it dirty for git); `false` when it was already missing or the
- * remove failed.
- */
-export async function tryUnlink(
-	directory: string,
-	filename: string,
-): Promise<boolean> {
+/** Best-effort unlink; a missing file or a failed remove is ignored. */
+async function tryUnlink(directory: string, filename: string): Promise<void> {
 	try {
 		await unlink(join(directory, filename));
-		return true;
 	} catch {
-		return false;
+		// already gone, or the remove failed; nothing to do
 	}
 }
 
@@ -89,7 +80,7 @@ async function readContentOrUndefined(
  * Write a markdown file under `directory`, creating any intermediate
  * subdirectories implied by a filename like `"archive/old.md"`.
  */
-export async function writeMarkdownFile(
+async function writeMarkdownFile(
 	directory: string,
 	filename: string,
 	content: string,
@@ -101,9 +92,6 @@ export async function writeMarkdownFile(
 	}
 	await writeFile(fullPath, content);
 }
-
-/** Assemble frontmatter + body into the on-disk string. Re-exported for seams. */
-export { assembleMarkdown };
 
 /**
  * Continuously materialize one table to `directory`: an initial flush of every
@@ -201,7 +189,10 @@ export async function materializeTable(opts: {
 			// Reached only by a genuine failure `writeRow` does not swallow: a
 			// filesystem write error, or an unexpected throw in the loop scaffolding.
 			log.warn(
-				MaterializerWriteError.TableWriteFailed({ tableName: table.name, cause }),
+				MaterializerWriteError.TableWriteFailed({
+					tableName: table.name,
+					cause,
+				}),
 			);
 		});
 	});
@@ -256,4 +247,3 @@ export async function rebuildTable(opts: {
 
 	return { deleted, written };
 }
-

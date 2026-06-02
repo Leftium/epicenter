@@ -1,9 +1,3 @@
-export type { MarkdownShape } from './shared.js';
-export {
-	attachGitAutosave,
-	type GitAutosave,
-	type GitAutosaveConfig,
-} from './git-autosave.js';
 export {
 	attachMarkdownExport,
 	type ExportTableConfig,
@@ -11,11 +5,17 @@ export {
 	type MarkdownExport,
 } from './export.js';
 export {
+	attachGitAutosave,
+	type GitAutosave,
+	type GitAutosaveConfig,
+} from './git-autosave.js';
+export type { MarkdownShape } from './shared.js';
+export {
 	type ApplyPlan,
 	attachMarkdownVault,
+	MarkdownApplyError,
 	MarkdownReadError,
 	type MarkdownVault,
-	MaterializerApplyError,
 	type VaultTableConfig,
 	type VaultTablesConfig,
 } from './vault.js';

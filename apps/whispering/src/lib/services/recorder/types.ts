@@ -7,7 +7,11 @@ import {
 import type { Result } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 
-/** The outcome of cancelling a recording. */
+/**
+ * The outcome of asking the manual recorder to cancel. A live `RecordingSession`
+ * can only ever report `cancelled`; the `no-recording` arm exists solely because
+ * the manual-recorder state wrapper may be asked to cancel when nothing is live.
+ */
 export type CancelRecordingResult =
 	| { status: 'cancelled' }
 	| { status: 'no-recording' };
@@ -236,7 +240,7 @@ export type RecorderStopResult =
 export type RecordingSession = {
 	readonly recordingId: string;
 	stop(): Promise<Result<RecorderStopResult, RecorderError>>;
-	cancel(): Promise<Result<CancelRecordingResult, RecorderError>>;
+	cancel(): Promise<Result<{ status: 'cancelled' }, RecorderError>>;
 	subscribe(handler: (state: WhisperingRecordingState) => void): () => void;
 };
 

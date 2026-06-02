@@ -54,6 +54,30 @@ export const MarkdownApplyError = defineErrors({
 export type MarkdownApplyError = InferErrors<typeof MarkdownApplyError>;
 
 /**
+ * A `writeBody` hook threw while importing one entry's body. Logged, never
+ * surfaced through `ApplyPlan`: body writes run after the frontmatter
+ * transaction has committed, so a failure cannot refuse the (already applied)
+ * run. The frontmatter reconcile is the atomic, guarded contract; body import is
+ * best-effort per entry.
+ */
+const MarkdownBodyImportError = defineErrors({
+	BodyWriteFailed: ({
+		tableName,
+		id,
+		cause,
+	}: {
+		tableName: string;
+		id: string;
+		cause: unknown;
+	}) => ({
+		message: `[markdown] body import failed for "${tableName}" (row "${id}"): ${extractErrorMessage(cause)}`,
+		tableName,
+		id,
+		cause,
+	}),
+});
+
+/**
  * Outcome of reading one `.md` file: a validated row, a non-note (skipped), or a
  * failure. Consumed by `apply`, which diffs the set against the live rows.
  *
@@ -63,7 +87,16 @@ export type MarkdownApplyError = InferErrors<typeof MarkdownApplyError>;
  * `ValidationFailed` / `MigrationFailed`.
  */
 type ReadResult =
-	| { kind: 'row'; id: string; row: BaseRow; path: string }
+	| {
+			kind: 'row';
+			id: string;
+			row: BaseRow;
+			path: string;
+			/** Parsed body section (undefined when the file has none), for `writeBody`. */
+			body: string | undefined;
+			/** Raw file content, compared to `fileState` to skip unchanged body writes. */
+			rawContent: string;
+	  }
 	| { kind: 'skipped'; path: string }
 	| {
 			kind: 'error';
@@ -106,13 +139,22 @@ const DEFAULT_MAX_DELETES = 10;
  */
 export type VaultTableConfig<TRow extends BaseRow> = {
 	/**
-	 * Read this table's body for the read-only body section of its `.md` file. The
+	 * Materialize this table's body into the body section of its `.md` file. The
 	 * body lives outside the row (e.g. a separate rich-text content doc), so the
-	 * vault cannot derive it from the row; supply this to materialize it. v1 only
-	 * MATERIALIZES the body (read-only); `apply` reconciles frontmatter rows and
-	 * ignores the body. Omit for a frontmatter-only table.
+	 * vault cannot derive it from the row; supply this to write it to disk. Pairs
+	 * with `writeBody` for the import direction. Omit for a frontmatter-only table.
 	 */
 	readBody?: (row: TRow) => MaybePromise<string>;
+	/**
+	 * Reconcile an edited body on disk back into its out-of-row home (the inverse
+	 * of `readBody`). `apply` calls this for each entry whose `.md` changed since
+	 * the vault last materialized it, AFTER the atomic frontmatter transaction: the
+	 * body lives in a separate doc and the write is async, so it is per-entry and
+	 * best-effort, NOT part of the one-transaction frontmatter reconcile. Omit to
+	 * leave bodies read-only (materialize only). A frontmatter-only table needs
+	 * neither half.
+	 */
+	writeBody?: (id: string, markdown: string) => MaybePromise<void>;
 	/**
 	 * How `markdown_apply` removes a row whose `.md` file disappeared from disk.
 	 * Default: hard `table.delete(id)`. Pass a soft-delete (e.g. set `deletedAt`)
@@ -144,8 +186,8 @@ type RegisteredTable = {
 
 /**
  * Read one `.md` file into a validated row for `apply`. Parse the frontmatter,
- * strip unknown keys, validate against the latest schema. The body is ignored:
- * v1 reconciles frontmatter rows only. Never mutates the table.
+ * strip unknown keys, validate against the latest schema, and carry the parsed
+ * body plus the raw content for the body-import path. Never mutates the table.
  */
 async function readTableFile(
 	entry: RegisteredTable,
@@ -188,19 +230,27 @@ async function readTableFile(
 		return { kind: 'error', path, tableName, error: validationError };
 	}
 
-	return { kind: 'row', id: rowId, row: cleaned, path };
+	return {
+		kind: 'row',
+		id: rowId,
+		row: cleaned,
+		path,
+		body: parsed.body,
+		rawContent: content,
+	};
 }
 
 /**
  * Attach an editable markdown vault to a workspace.
  *
  * Continuously materializes the selected tables into `<dir>/<table>/<id>.md`
- * (frontmatter is the row; an optional `readBody` adds a read-only body section),
- * and exposes two mutations:
+ * (frontmatter is the row; an optional `readBody` adds a body section, and a
+ * paired `writeBody` makes that body two-way), and exposes two mutations:
  *
  * - `markdown_apply`: reconcile the on-disk `.md` edits back into Yjs, keyed by
  *   id (create/update/delete), guarded by `maxDeletes` and applied in one atomic
- *   transaction. The single import path.
+ *   transaction; bodies (where `writeBody` is set) are imported per-entry after,
+ *   best-effort. The single import path.
  * - `markdown_rebuild`: destructive Yjs → disk re-export (orphan cleanup, config
  *   change). The single explicit export.
  *
@@ -366,12 +416,16 @@ export function attachMarkdownVault<TTableHandles extends TablesRecord>(
 			entry: RegisteredTable;
 			writes: BaseRow[];
 			deletes: string[];
+			bodyWrites: { id: string; body: string }[];
 		}[] = [];
 
 		for (const entry of registered.values()) {
 			const tableName = entry.table.name;
 			const { present, results } = await readTableDir(entry);
-			const desired = new Map<string, { row: BaseRow; path: string }>();
+			const desired = new Map<
+				string,
+				{ row: BaseRow; path: string; body: string | undefined; rawContent: string }
+			>();
 			for (const result of results) {
 				if (result.kind === 'skipped') {
 					plan.skipped.push({ path: result.path });
@@ -390,7 +444,12 @@ export function attachMarkdownVault<TTableHandles extends TablesRecord>(
 						});
 						plan.errors.push({ path: result.path, tableName, error });
 					} else {
-						desired.set(result.id, { row: result.row, path: result.path });
+						desired.set(result.id, {
+							row: result.row,
+							path: result.path,
+							body: result.body,
+							rawContent: result.rawContent,
+						});
 					}
 				}
 			}
@@ -420,7 +479,21 @@ export function attachMarkdownVault<TTableHandles extends TablesRecord>(
 				}
 			}
 
-			work.push({ entry, writes, deletes });
+			// Body imports: only for entries whose `.md` changed since the vault last
+			// materialized it (a byte compare against `fileState`, so an untouched
+			// file is skipped without opening its body doc; a body-only edit, which
+			// the frontmatter diff above cannot see, still qualifies). Skipped
+			// entirely when the table has no `writeBody`.
+			const bodyWrites: { id: string; body: string }[] = [];
+			if (entry.config.writeBody) {
+				for (const [id, { body, rawContent }] of desired) {
+					if (rawContent !== entry.fileState.get(id)?.content) {
+						bodyWrites.push({ id, body: body ?? '' });
+					}
+				}
+			}
+
+			work.push({ entry, writes, deletes, bodyWrites });
 		}
 
 		if (plan.errors.length > 0) {
@@ -445,6 +518,29 @@ export function attachMarkdownVault<TTableHandles extends TablesRecord>(
 				for (const id of deletes) onDelete(id);
 			}
 		});
+
+		// Frontmatter is now committed atomically. Import bodies AFTER, outside that
+		// transaction: each `writeBody` targets a separate (e.g. content) doc and is
+		// async, so it cannot join the one root-doc transaction. Best-effort per
+		// entry: a failure is logged, never rolled back (the frontmatter reconcile
+		// already landed). An idempotent `writeBody` (a diff into the target doc)
+		// makes a same-body write a no-op.
+		for (const { entry, bodyWrites } of work) {
+			const writeBody = entry.config.writeBody;
+			if (!writeBody) continue;
+			for (const { id, body } of bodyWrites) {
+				const { error } = await tryAsync({
+					try: async () => writeBody(id, body),
+					catch: (cause) =>
+						MarkdownBodyImportError.BodyWriteFailed({
+							tableName: entry.table.name,
+							id,
+							cause,
+						}),
+				});
+				if (error) log.warn(error);
+			}
+		}
 
 		return plan;
 	}

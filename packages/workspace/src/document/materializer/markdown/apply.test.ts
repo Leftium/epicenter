@@ -17,7 +17,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdir, rm, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Type } from 'typebox';
 import {
@@ -67,11 +67,14 @@ async function removePost(id: string) {
 const post = (id: string, title: string, published = true) =>
 	`---\nid: ${id}\ntitle: ${title}\npublished: ${published}\n---\n`;
 
+type PostRow = { id: string; title: string; published: boolean };
 type SetupOptions = {
 	onDelete?: (id: string) => void;
+	readBody?: (row: PostRow) => string;
+	writeBody?: (id: string, markdown: string) => void;
 };
 
-async function setup({ onDelete }: SetupOptions = {}) {
+async function setup({ onDelete, readBody, writeBody }: SetupOptions = {}) {
 	const workspace = createWorkspace({
 		id: 'test-apply',
 		tables: tableDefinitions,
@@ -79,7 +82,7 @@ async function setup({ onDelete }: SetupOptions = {}) {
 	});
 	const materializer = attachMarkdownVault(workspace, {
 		dir: TEST_DIR,
-		tables: { posts: { onDelete }, typed: {} },
+		tables: { posts: { onDelete, readBody, writeBody }, typed: {} },
 	});
 	await materializer.whenFlushed;
 	return { workspace, materializer };
@@ -336,5 +339,64 @@ describe('markdown_apply', () => {
 		const applied = await materializer.actions.markdown_apply({});
 		expect(applied.deletes).toHaveLength(3);
 		expect(workspace.tables.posts.count()).toBe(0);
+	});
+});
+
+describe('markdown_apply body import (writeBody)', () => {
+	test('imports a changed body and skips files unchanged since materialize', async () => {
+		const bodies = new Map<string, string>([
+			['a', 'alpha body'],
+			['b', 'beta body'],
+		]);
+		const writeCalls: { id: string; markdown: string }[] = [];
+		const { workspace, materializer } = await setup({
+			readBody: (row) => bodies.get(row.id) ?? '',
+			writeBody: (id, markdown) => {
+				writeCalls.push({ id, markdown });
+			},
+		});
+		workspace.tables.posts.set({ id: 'a', title: 'Alpha', published: true });
+		workspace.tables.posts.set({ id: 'b', title: 'Beta', published: true });
+		// Rebuild writes a.md/b.md WITH their bodies and baselines fileState, so the
+		// dirty compare below has something to skip against.
+		await materializer.actions.markdown_rebuild({});
+
+		// Edit ONLY a's body on disk; its frontmatter is untouched, so the frontmatter
+		// diff sees no update, yet the body edit must still import. b is left alone.
+		const aPath = join(TEST_DIR, 'posts', 'a.md');
+		const aContent = await readFile(aPath, 'utf-8');
+		expect(aContent).toContain('alpha body');
+		await writeFile(
+			aPath,
+			aContent.replace('alpha body', 'alpha body EDITED'),
+			'utf-8',
+		);
+
+		const plan = await materializer.actions.markdown_apply({});
+
+		// No frontmatter update (only the body changed), but writeBody fired for a
+		// (changed file) and NOT for b (byte-identical to what we materialized).
+		expect(plan.updates).toEqual([]);
+		expect(writeCalls).toEqual([{ id: 'a', markdown: 'alpha body EDITED' }]);
+	});
+
+	test('a writeBody failure is best-effort: it does not refuse the applied plan', async () => {
+		const { workspace, materializer } = await setup({
+			readBody: () => 'body',
+			writeBody: () => {
+				throw new Error('content doc offline');
+			},
+		});
+		workspace.tables.posts.set({ id: 'a', title: 'Alpha', published: true });
+		await materializer.actions.markdown_rebuild({});
+		await writePost('a', post('a', 'Alpha EDITED'));
+
+		const plan = await materializer.actions.markdown_apply({});
+
+		// The frontmatter reconcile committed; the throwing body write is logged, not
+		// surfaced, and never rolls back the row.
+		expect(plan.refused).toBe(false);
+		expect(plan.updates.map((u) => u.id)).toEqual(['a']);
+		expect(workspace.tables.posts.get('a').data?.title).toBe('Alpha EDITED');
 	});
 });

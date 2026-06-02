@@ -1,6 +1,6 @@
 # epicenter apply: declarative markdown reconcile into Yjs
 
-Status: Phase 1 built (frontmatter reconcile); Phase 2 (bodies) and Phase 3 (CLI) pending
+Status: Phase 1 built (frontmatter reconcile); CLI via `epicenter run`; Phase 2 (bodies) pending
 Date: 2026-06-01
 Mounts touched: `apps/fuji`, `packages/workspace` (markdown materializer), `packages/cli`
 
@@ -19,10 +19,18 @@ Shipped in `packages/workspace` markdown materializer:
 - Tests: 8 unit (`apply.test.ts`) + 1 two-peer convergence e2e
   (`reconcile-e2e.test.ts`).
 
-Also shipped: the `epicenter apply` CLI (Phase 3). Flags `--mount` (required),
-`--dry-run`, `--max-deletes`, `-C`, `--format`. Writes the ApplyPlan to stdout as
-JSON; a refused plan prints its reason + offending paths to stderr. Exit codes:
-1 usage / no daemon, 2 runtime error or bad response shape, 4 plan refused.
+CLI: there is NO dedicated `epicenter apply` command. The reconcile is a
+registered mount action, so the existing generic invoker runs it:
+
+```
+epicenter run fuji.markdown_apply '{"dryRun":true,"maxDeletes":20}'
+```
+
+`list` discovers it (`fuji.markdown_apply`), `run` connects to the daemon and
+prints the `ApplyPlan` (including `refused` and the offending paths) as JSON on
+stdout. A refused plan is a successful action result, so it exits 0; scripts read
+`.refused` from the payload (`jq -e '.refused | not'`), consistent with every
+other action. See "Refusal" below for why the dedicated command was dropped.
 
 NOT yet built: fuji body import (fuji has `toMarkdown` but no `fromMarkdown`, so
 apply REFUSES the fuji entries table as `RoundTripUnproven` by design), a CLI
@@ -207,24 +215,52 @@ when the body is unchanged. If `attachRichText` has no diff-apply method, add on
 (compute a common prefix/suffix and splice the middle). This also makes "did the
 body change?" detectable: a diff-apply that produces zero ops means no change.
 
-### Phase 3: CLI command
+### Phase 3: CLI (no dedicated command)
+
+The reconcile is invoked through the generic `run` command, not a bespoke one:
 
 ```
-packages/cli: `epicenter apply`
-  --mount <name>        required; e.g. fuji
-  --dry-run             print the plan, change nothing
-  --allow-deletes <n>   raise the delete guard
-  --force               apply regardless of guard (still soft deletes)
+epicenter run fuji.markdown_apply '{"dryRun":true}'
+epicenter run fuji.markdown_apply '{"maxDeletes":20}'
 ```
 
-Implementation: `connectDaemonActions<FujiActions & MaterializerActions>({ mount })`
-then call `markdown_apply({ dryRun, maxDeletes })`. Print the plan as a table.
-The daemon owns the Y.Doc and content-doc sync; the CLI never opens its own doc
-(matches the vault AGENTS.md contract).
+`run` owns daemon connection, JSON input (inline / `@file` / stdin), the error
+switch, and `--peer` RPC. `list` surfaces `fuji.markdown_apply` for discovery.
+The daemon owns the Y.Doc and content-doc sync; the CLI never opens its own doc.
 
-Reconcile trigger is explicit (`epicenter apply`) for v1. No filesystem watcher.
-A later option: run apply on `git commit` via a hook, since the commit is a clean
-"the agent is done" boundary. Out of scope here.
+#### Refusal: the dedicated `epicenter apply` command was dropped
+
+```
+Candidate:
+  `epicenter apply --mount <m> --dry-run --max-deletes <n>` (a typed wrapper
+  over the markdown_apply action, with exit code 4 on a refused plan).
+
+Refusal:
+  markdown_apply is already a registered mount action, and `run` already invokes
+  any action by path. The wrapper duplicated run's daemon connect, error switch,
+  and the ApplyPlan type, to add (a) typed flags over JSON and (b) exit code 4
+  on refusal. (a) is marginal; (b) actively contradicts the CLI contract that
+  exit codes report whether the action RAN (usage/no-daemon/runtime), not what it
+  DECIDED. A refused plan is a successful Ok(plan) result, a domain outcome, so it
+  belongs in the JSON payload (`.refused`) and exits 0 like every other action.
+
+User loss:
+  Operators type `epicenter run fuji.markdown_apply '{"dryRun":true}'` instead of
+  `epicenter apply --mount fuji --dry-run`, and check refusal with `jq .refused`
+  rather than `$? == 4`. No capability is lost.
+
+Decision:
+  refuse. Deleted packages/cli/src/commands/apply.ts and its registration.
+
+Trigger to revisit:
+  if a future reconcile needs an interactive confirmation prompt, a non-JSON
+  human table view, or behavior that genuinely cannot be expressed as action
+  input, a dedicated command earns its keep then.
+```
+
+Reconcile trigger is explicit (`epicenter run ... markdown_apply`) for v1. No
+filesystem watcher. A later option: run it on `git commit` via a hook, since the
+commit is a clean "the agent is done" boundary. Out of scope here.
 
 ## Multi-vault: why it works end to end
 
@@ -234,7 +270,7 @@ two directories), both authed as the same user, both mounting fuji, resolve to t
 SAME relay room. They are already multi-device peers.
 
 ```
-vault-A/fuji/entries/x.md  --(edit)-->  epicenter apply --mount fuji
+vault-A/fuji/entries/x.md  --(edit)-->  epicenter run fuji.markdown_apply
         |                                        |
         |                                writes row + body into Y.Doc (A's daemon)
         |                                        |
@@ -257,7 +293,7 @@ output on a different machine. No git involved in the loop.
    `maxDeletes`, and shown in `--dry-run` before any write.
 2. Git never mutates the live dir: apply reads files and writes Yjs; it does not
    run git. Git autosave is a separate, already-existing materialize-side concern.
-3. Import is explicit: `epicenter apply` is a command, never a watcher.
+3. Import is explicit: `epicenter run <mount>.markdown_apply` is invoked, never a watcher.
 4. Deterministic materialize: `materialize(apply(files)) == files`. Frontmatter
    key order = schema order; filename = `slugFilename('title')` -> `<slug>-<id>.md`;
    id is the stable suffix so a rename is an update, not delete+create.
@@ -330,11 +366,11 @@ cd ~/Code/vault
 bun ../epicenter/packages/cli/src/bin.ts auth login --server https://api.epicenter.so
 bun run daemon                          # terminal 1, foreground
 # terminal 2:
-$EP apply --mount tab-manager --dry-run # print the plan, change nothing
+$EP run tab-manager.markdown_apply '{"dryRun":true}' # print the plan, change nothing
 # edit a real file, e.g. a title in tab-manager/savedTabs/<file>.md
-$EP apply --mount tab-manager --dry-run # plan now shows that one update
-$EP apply --mount tab-manager           # apply it
-$EP apply --mount fuji --dry-run        # demonstrates the RoundTripUnproven refusal (exit 4)
+$EP run tab-manager.markdown_apply '{"dryRun":true}' # plan now shows that one update
+$EP run tab-manager.markdown_apply '{}'              # apply it
+$EP run fuji.markdown_apply '{}'                     # shows RoundTripUnproven in plan.errors
 # where: EP="bun ../epicenter/packages/cli/src/bin.ts"
 ```
 
@@ -347,7 +383,7 @@ bun run daemon                      # terminal B: builds local state from cloud
 
 cd ~/Code/vault && bun run daemon   # terminal A
 # terminal A2: edit fuji/entries/x.md, then:
-$EP apply --mount fuji
+$EP run fuji.markdown_apply '{}'
 # wait for sync, then compare the two repos' rendering of the same entry:
 diff ~/Code/vault/fuji/entries/x.md ~/Code/vault-b/fuji/entries/x.md   # expect: no output
 ```

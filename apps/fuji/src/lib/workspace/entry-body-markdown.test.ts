@@ -169,6 +169,13 @@ describe('parseEntryBody round trip', () => {
 		expect(serialize(parseEntryBody(''))).toBe('');
 	});
 
+	test('reads hand-authored <u> as underline (the intended way to author it)', () => {
+		// Underline has no CommonMark syntax, so a human authoring a `.md` writes the
+		// `<u>` HTML the serializer also emits. That must round-trip to the underline
+		// mark, not survive as literal text. This is by design, not a leak.
+		expect(serialize(parseEntryBody('<u>by hand</u>'))).toBe('<u>by hand</u>');
+	});
+
 	test('drops stray inline HTML instead of throwing on import', () => {
 		// A hand-edited body may contain a tag other than the serializer's own
 		// `<u>`. It must not crash the import: the stray tag is dropped, its text

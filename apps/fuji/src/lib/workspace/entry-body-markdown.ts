@@ -54,15 +54,17 @@ export function serializeEntryBody(fragment: Y.XmlFragment): string {
 /**
  * A CommonMark tokenizer with the two extensions the serializer emits:
  * strikethrough (`~~...~~`) and inline HTML so `<u>...</u>` survives tokenizing.
- * markdown-it has no underline token, so a core rule rewrites the `<u>`/`</u>`
- * tokens (matched exactly, the only form the serializer emits) into paired
- * `underline_open`/`underline_close` tokens the parser maps to the mark. Any
- * OTHER inline HTML a hand-authored file might contain is dropped by the parser
- * (`html_inline: { ignore: true }` below), not errored on.
+ * markdown-it has no underline token, so a core rule rewrites the exact `<u>` /
+ * `</u>` tokens into paired `underline_open`/`underline_close` tokens the parser
+ * maps to the mark. Any OTHER inline HTML a hand-authored file might contain is
+ * dropped by the parser (`html_inline: { ignore: true }` below), not errored on.
  *
- * Known limitation: a literal `<u>` typed as prose text round-trips back to an
- * underline mark (the serializer does not escape it, unlike `~~`). Editor-
- * produced bodies never hit this; a hand-authored one can.
+ * `<u>` is the intended way to author underline by hand: CommonMark has no
+ * underline syntax, so HTML is its only expression, and a `.md` may legitimately
+ * contain raw HTML. So a literal `<u>...</u>` typed as prose is read back as an
+ * underline mark BY DESIGN, not corruption (contrast `~~`, which the serializer
+ * escapes in plain text; underline is left unescaped because round-tripping it
+ * is the goal). Editor-produced and hand-authored bodies agree.
  */
 function createEntryBodyTokenizer(): MarkdownIt {
 	const md = MarkdownIt('commonmark', { html: true }).enable('strikethrough');

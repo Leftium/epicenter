@@ -85,6 +85,15 @@ export function attachGitAutosave({
 		}
 	}
 
+	/**
+	 * Resolve once whether `baseDir` is inside a git work tree, then cache it
+	 * forever. The result is memoized in `isEnabled` after the first check, so
+	 * `git rev-parse` runs at most once for the life of the autosave. While that
+	 * first check is in flight, concurrent callers (the startup probe and the
+	 * per-event re-check) share the same `enablement` promise instead of each
+	 * spawning their own; it is cleared in `finally` so a check that THREW can be
+	 * retried, while a successful one stays cached via `isEnabled`.
+	 */
 	async function ensureEnabled(): Promise<boolean> {
 		if (isEnabled !== undefined) return isEnabled;
 		if (enablement !== undefined) return enablement;
@@ -103,6 +112,13 @@ export function attachGitAutosave({
 		return enablement;
 	}
 
+	/**
+	 * Debounce a commit with two timers. The quiet timer resets on every change,
+	 * so a burst of writes commits once, after activity settles for `quietMs`.
+	 * The max-batch timer is armed only on the FIRST change of a batch and never
+	 * reset, so a directory under continuous writes still commits every
+	 * `maxBatchMs` instead of starving forever behind the quiet timer.
+	 */
 	function schedule(): void {
 		if (isDisposed) return;
 		if (quietTimer !== undefined) clearTimeout(quietTimer);
@@ -128,6 +144,15 @@ export function attachGitAutosave({
 		await commitBatch(batch, false);
 	}
 
+	/**
+	 * Stage and commit one batch of paths. Best-effort: every git failure is
+	 * logged and swallowed, never thrown, so autosave can never block the writes
+	 * it is trailing. Two non-obvious paths: a `git add`/`git commit` that hits
+	 * another process's `index.lock` retries ONCE after 250ms (`retried` guards
+	 * against looping); and a commit reporting "nothing to commit" is treated as
+	 * success (a watcher event fired for a no-op change). Signing is forced off so
+	 * a developer's global gpg config cannot make autosave hang on a passphrase.
+	 */
 	async function commitBatch(
 		batch: readonly string[],
 		retried: boolean,
@@ -197,6 +222,9 @@ export function attachGitAutosave({
 			// `filename` is relative to the watched dir; enqueue the absolute path so
 			// `git add` resolves it regardless of cwd.
 			dirty.add(join(baseDir as string, filename.toString()));
+			// Re-checked per event (cached after the first): the startup probe may
+			// have run before the directory became a repo, so a later `git init`
+			// turns autosave on without restarting the daemon.
 			void ensureEnabled().then(
 				(enabled) => {
 					if (enabled && !isDisposed) schedule();

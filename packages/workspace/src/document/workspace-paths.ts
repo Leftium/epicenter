@@ -1,15 +1,19 @@
 /**
  * Per-workspace data layout helpers.
  *
- * Conventional folders under `<projectDir>/.epicenter/`, each named by what's
- * inside:
+ * Hidden machine state under `<projectDir>/.epicenter/`, each folder named by
+ * what's inside:
  *
  *   yjs/<id>.db     Yjs CRDT update log (durability; replayed by Yjs)
  *   sqlite/<id>.db  Queryable SQL surface (open with `sqlite3`, FTS5)
- *   md/<id>/        Markdown surface (open with your editor)
+ *   md/<id>/        Legacy hidden markdown tree (playground daemons only)
  *
- * Mounts may override materializer paths. These helpers return the default
- * convention only; they do not inspect `epicenter.config.ts`.
+ * Plus the one VISIBLE projection a human reads directly:
+ *
+ *   apps/<mount>/   Read-only markdown projection (`appsMarkdownPath`)
+ *
+ * These helpers return the hardcoded convention only; they do not inspect
+ * `epicenter.config.ts`.
  *
  * For daemon-process paths (sockets, log, metadata sidecar), see
  * `daemon/paths.ts`. Different audience, different rationale.
@@ -93,10 +97,9 @@ export function sqlitePath(projectDir: string, workspaceId: string): string {
 /**
  * Root directory for a workspace's markdown materializer tree.
  *
- * Convention: `<projectDir>/.epicenter/md/<workspaceId>/`. A mount can pass a
- * custom markdown directory to `attachMarkdownVault`. For Fuji today, the vault
- * materializes root row frontmatter plus app-owned body doc text (read-only),
- * and reconciles frontmatter rows on apply; entry bodies are not yet imported.
+ * Convention: `<projectDir>/.epicenter/md/<workspaceId>/` (hidden). Retained for
+ * the playground daemons that still import it; the vault mount factories now
+ * project to the visible `appsMarkdownPath` instead.
  *
  * @example
  * ```ts
@@ -106,4 +109,26 @@ export function sqlitePath(projectDir: string, workspaceId: string): string {
  */
 export function markdownPath(projectDir: string, workspaceId: string): string {
 	return join(epicenterProjectDir(projectDir), 'md', workspaceId);
+}
+
+/**
+ * Visible directory for a mount's read-only markdown projection.
+ *
+ * Convention: `<projectDir>/apps/<mountName>/`. Unlike `yjs/`, `sqlite/`, and the
+ * legacy `md/` tree, this lives OUTSIDE `.epicenter/` because a human reads these
+ * `.md` files directly (triage, curate, grep, diff); the dot-prefixed state under
+ * `.epicenter/` is for machines. Keyed by the mount NAME (so the folder reads
+ * `apps/fuji`, not `apps/epicenter-fuji`), not by `ydoc.guid` like the yjs/sqlite
+ * paths. This is a hardcoded constant, not a config knob: `apps/` is part of what
+ * an Epicenter vault is, and `markdown_rebuild` deletes every `.md` under its
+ * target, so a freeform override could wipe hand-authored markdown.
+ *
+ * @example
+ * ```ts
+ * appsMarkdownPath('/Users/braden/Code/vault', 'fuji')
+ * // '/Users/braden/Code/vault/apps/fuji'
+ * ```
+ */
+export function appsMarkdownPath(projectDir: string, mountName: string): string {
+	return join(projectDir, 'apps', mountName);
 }

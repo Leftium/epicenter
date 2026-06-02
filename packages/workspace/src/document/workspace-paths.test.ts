@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+	appsMarkdownPath,
 	markdownPath,
 	resolveProjectPath,
 	sqlitePath,
@@ -27,6 +28,11 @@ describe('document/workspace-paths', () => {
 		expect(markdownPath(dir, 'epicenter-fuji')).toBe(
 			'/Users/me/vault/.epicenter/md/epicenter-fuji',
 		);
+	});
+
+	test('appsMarkdownPath is visible, keyed by mount name, outside .epicenter/', () => {
+		const dir = '/Users/me/vault';
+		expect(appsMarkdownPath(dir, 'fuji')).toBe('/Users/me/vault/apps/fuji');
 	});
 
 	describe('resolveProjectPath', () => {

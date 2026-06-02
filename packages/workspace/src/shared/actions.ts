@@ -24,9 +24,9 @@
  *
  * Local callers use `invokeAction`, which Ok-wraps raw values, preserves
  * existing Results, and catches throws as `Err(cause)`. The dispatch wire
- * boundary (`runInboundDispatch` in `document/dispatch.ts`) has its own
- * inlined invoker that wraps thrown causes into `DispatchError.ActionFailed`
- * before the response crosses the wire.
+ * boundary (`runInboundDispatch` in `document/dispatch.ts`) calls `invokeAction`
+ * and wraps its error into `DispatchError.ActionFailed` before the response
+ * crosses the wire.
  *
  * @module
  */
@@ -371,8 +371,16 @@ export const ActionInputError = defineErrors({
 });
 export type ActionInputError = InferErrors<typeof ActionInputError>;
 
-/** True when an `invokeAction` error is a declared-schema validation failure. */
-export function isActionInputError(error: unknown): boolean {
+/**
+ * Narrows an `invokeAction` error to a declared-schema validation failure.
+ *
+ * The error channel of `invokeAction` is `unknown` (a handler can throw
+ * anything), so a boundary that special-cases the validation failure needs a
+ * type guard to reach `.message` safely. This is the sanctioned single-variant
+ * guard, not a total fold: callers special-case `InvalidInput`, every other
+ * error flows through unchanged.
+ */
+export function isActionInputError(error: unknown): error is ActionInputError {
 	return (
 		typeof error === 'object' &&
 		error !== null &&

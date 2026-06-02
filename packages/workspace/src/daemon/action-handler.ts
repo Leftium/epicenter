@@ -22,7 +22,6 @@
  * `HandlerCrashed` on the client side.
  */
 
-import { extractErrorMessage } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import type { SyncStatus } from '../document/internal/sync-supervisor.js';
 import { invokeAction, isActionInputError } from '../shared/actions.js';
@@ -70,9 +69,7 @@ export async function executeInvoke(
 		// a handler crash: surface it as a usage error (the same family as an
 		// unknown action) so the CLI exits 1, not 2.
 		if (isActionInputError(result.error)) {
-			return InvokeError.UsageError({
-				message: extractErrorMessage(result.error),
-			});
+			return InvokeError.UsageError({ message: result.error.message });
 		}
 		return InvokeError.RuntimeError({ cause: result.error });
 	}

@@ -156,9 +156,12 @@ describe('invokeAction', () => {
 			const error = expectErr(
 				await invokeAction(action, { maxDeletes: 'lots' }),
 			);
+			// isActionInputError narrows the unknown error to ActionInputError, so
+			// `.message` is reachable without a cast.
 			expect(isActionInputError(error)).toBe(true);
-			expect((error as { name: string }).name).toBe('InvalidInput');
-			expect((error as { message: string }).message).toContain('maxDeletes');
+			if (isActionInputError(error)) {
+				expect(error.message).toContain('maxDeletes');
+			}
 			expect(handlerRan).toBe(false);
 		});
 

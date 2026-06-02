@@ -28,9 +28,11 @@ import type { DaemonServedMount } from './types.js';
 /**
  * Wire body for `/invoke`. The schema serves two roles:
  *
- *   1. Runtime validation at the daemon boundary via
- *      `@hono/standard-validator`. A stale CLI gets a typed 400 instead of a
- *      downstream cast failure.
+ *   1. Envelope validation at the daemon boundary via
+ *      `@hono/standard-validator`: it checks the request shape (`actionPath`
+ *      present, `input` present) so a stale CLI gets a typed 400, NOT the
+ *      action's input shape. The input (`unknown` here) is validated against
+ *      the resolved action's own schema downstream in `invokeAction`.
  *   2. Compile-time inference for the hand-rolled client; both sides import
  *      the exact same shape.
  *

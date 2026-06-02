@@ -424,7 +424,12 @@ export function attachMarkdownVault<TTableHandles extends TablesRecord>(
 			const { present, results } = await readTableDir(entry);
 			const desired = new Map<
 				string,
-				{ row: BaseRow; path: string; body: string | undefined; rawContent: string }
+				{
+					row: BaseRow;
+					path: string;
+					body: string | undefined;
+					rawContent: string;
+				}
 			>();
 			for (const result of results) {
 				if (result.kind === 'skipped') {

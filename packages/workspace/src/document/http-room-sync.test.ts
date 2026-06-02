@@ -7,9 +7,9 @@
  * fetched state, and that a non-2xx response throws.
  */
 
-import { decodeSyncRequest } from '@epicenter/sync';
-import { asOwnerId } from '@epicenter/identity';
 import { describe, expect, test } from 'bun:test';
+import { asOwnerId } from '@epicenter/identity';
+import { decodeSyncRequest } from '@epicenter/sync';
 import * as Y from 'yjs';
 import type { AuthedFetch } from '../shared/types.js';
 import { writeRoomOverHttp } from './http-room-sync.js';
@@ -22,7 +22,10 @@ const guid = 'content-doc-1';
 function fakeRelay({
 	snapshot = new Uint8Array(0),
 	postStatus = 204,
-}: { snapshot?: Uint8Array; postStatus?: number } = {}) {
+}: {
+	snapshot?: Uint8Array;
+	postStatus?: number;
+} = {}) {
 	const posts: Uint8Array[] = [];
 	let getCount = 0;
 	const fetch: AuthedFetch = async (_input, init) => {

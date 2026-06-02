@@ -43,8 +43,8 @@ import {
 import { createLogger } from 'wellcrafted/logger';
 import { initProseMirrorDoc, updateYFragment } from 'y-prosemirror';
 import * as Y from 'yjs';
-import { entryBodySchema } from './entry-body-schema.js';
 import { parseEntryBody, serializeEntryBody } from './entry-body-markdown.js';
+import { entryBodySchema } from './entry-body-schema.js';
 import {
 	asEntryId,
 	createFuji,

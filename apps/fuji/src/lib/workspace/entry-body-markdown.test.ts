@@ -123,9 +123,7 @@ describe('parseEntryBody round trip', () => {
 				schema.text('site', [schema.mark('link', { href: 'https://x.com' })]),
 			),
 		),
-		underline: doc(
-			paragraph(schema.text('under', [schema.mark('underline')])),
-		),
+		underline: doc(paragraph(schema.text('under', [schema.mark('underline')]))),
 		strikethrough: doc(
 			paragraph(schema.text('gone', [schema.mark('strikethrough')])),
 		),

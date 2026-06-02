@@ -1,6 +1,6 @@
 # Bidirectional entry bodies (markdown body import, V2)
 
-**Status**: planned (PR 2 / follow-up to the vault/export split, PR #1890)
+**Status**: implemented on `feat/fuji-body-import` (follow-up to the vault/export split, PR #1890). Unit-tested (codec round-trip, vault apply, the HTTP write primitive); the live two-vault relay proof still needs cloud auth.
 **Supersedes**: the "Bodies (v2)" section of `specs/20260601T160000-markdown-sync-greenfield.md`. That section specifies body import on the OLD single-seam `codec` model (paired `toMarkdown`/`fromMarkdown`/`applyBody` + a derived `bodyHash` row column). That model was abandoned in PR #1890, which split the one seam into `attachMarkdownVault` (editable, `readBody`) and `attachMarkdownExport` (read-only, `toMarkdown`). This spec realigns body import to the shipped vault. There is no `codec` and no `bodyHash`.
 
 ## Intent (one paragraph)
@@ -97,41 +97,42 @@ export type VaultTableConfig<TRow extends BaseRow> = {
 
 NOT a merged `bodyCodec: { read, write }`. The signatures are honestly asymmetric (`readBody(row)` during materialize vs `writeBody(id, markdown)` during apply), a table may legitimately have one without the other (read-only projection = `readBody` only), and `onDelete` already sets the flat-optional-sibling precedent. This matches the prior decision: read-only `readBody` and an editable body must NOT hide behind one cute option.
 
-### fuji wiring
+### The write transport: one-shot HTTP, not an ephemeral websocket
+
+A one-shot body write is a request/response, NOT a live collaboration session. The content doc has no local persistence and no long-lived connection, so "the bytes left my buffer" is not durability. The original draft of this spec assumed `await collaboration.whenSynced` would flush before teardown; that API does not exist, and on Bun (`ws.close()` discards the send buffer) an ephemeral open-write-destroy can silently lose the update. The relay already exposes a durable HTTP route (`POST /api/owners/:ownerId/rooms/:roomId` applies the update with a synchronous durable append BEFORE responding), so the `2xx` IS the receipt and there is nothing to tear down.
+
+This is the generic `writeRoomOverHttp` primitive (`packages/workspace/src/document/http-room-sync.ts`): GET the room's current doc, apply a `mutate` to a local copy seeded with that state, POST the diff. The daemon mount gets an auth'd `fetch` via a new `MountContext.fetch` (sourced from the auth client's existing bearer-bearing `fetch`).
 
 ```ts
-// fuji project.ts: partner to readEntryBody. open ephemeral doc, diff-write, FLUSH, destroy.
-const writeEntryBody = async (id: EntryId, markdown: string): Promise<void> => {
-  const ydoc = new Y.Doc({ guid: entryContentDocGuid(id), gc: true });
-  const collaboration = openCollaboration(ydoc, { /* same as readEntryBody */ });
-  try {
-    await collaboration.whenConnected;
-    writeBodyIntoFragment(ydoc, ydoc.getXmlFragment('content'), markdown);
-    await collaboration.whenSynced;   // MUST flush the update to the relay before teardown
-  } finally {
-    ydoc.destroy();
-    await collaboration.whenDisposed;
-  }
-};
+// fuji project.ts: partner to readEntryBody. GET state -> diff -> POST, no socket.
+const writeEntryBody = (id: EntryId, markdown: string): Promise<void> =>
+  writeRoomOverHttp({
+    fetch, baseURL: EPICENTER_API_URL, ownerId, guid: entryContentDocGuid(id),
+    mutate: (ydoc) => {
+      const fragment = ydoc.getXmlFragment('content');
+      const { meta } = initProseMirrorDoc(fragment, entryBodySchema);
+      updateYFragment(ydoc, fragment, parseEntryBody(markdown), meta);
+    },
+  });
 // attachMarkdownVault({ tables: { entries: { readBody, writeBody: (id, md) => writeEntryBody(asEntryId(id), md), onDelete } } })
 ```
 
-The read path only needs `whenConnected`; the write path additionally needs the update to actually upload, so teardown ordering is more delicate (flush, then destroy).
+`mutate` runs against a throwaway `Y.Doc` already holding the server state, so `updateYFragment` computes a minimal diff that preserves history and merges concurrent edits. (`readEntryBody` still uses the websocket today; migrating it to an HTTP GET is an optional follow-up.)
 
 ## apply algorithm changes
 
 In `applyMarkdownFiles` / `readTableFile` (vault.ts):
 
-1. `readTableFile` already has `parsed.body` from `parseMarkdownFile`; stop discarding it. Carry it on the `ReadResult` row variant.
-2. For a create/update on a table with `writeBody`, after the frontmatter transaction commits, call `writeBody(id, body ?? '')` per entry.
-3. Body writes are per-content-doc and async; they are NOT inside the root-doc `ydoc.transact`. State this explicitly.
+1. `readTableFile` already has `parsed.body` from `parseMarkdownFile`; stop discarding it. Carry it (plus the raw file content) on the `ReadResult` row variant.
+2. After the frontmatter transaction commits, call `writeBody(id, body ?? '')` for each desired entry whose `.md` CHANGED since the vault last materialized it (a `fileState` byte compare). This is keyed on file change, NOT on a frontmatter create/update: a body-only edit leaves the frontmatter identical, so gating on the frontmatter diff would miss it. The `fileState` compare skips untouched files without opening their body doc; no `bodyHash` column is needed.
+3. Body writes are per-content-doc and async; they are NOT inside the root-doc `ydoc.transact`, and a failure is logged, never rolled back.
 
 ## Invariants (additions to the v1 set)
 
 1. Frontmatter apply stays atomic on the ROOT doc (one `ydoc.transact`). Body writes are per-entry, per-content-doc, separate transactions = best-effort per entry. "apply is atomic" applies to frontmatter only; do not claim otherwise.
 2. Faithful round trip: `serialize(parse(serialize(doc))) === serialize(doc)` for the full fuji schema including both custom marks. Gated by the round-trip test.
 3. Write is a diff (`updateYFragment`), never a fragment clobber. History and concurrent edits survive.
-4. The daemon flushes the body update to the relay before destroying the ephemeral doc.
+4. The body write is durable by the HTTP response: the relay appends the update synchronously before answering, so a `2xx`/`204` confirms it. No send-buffer flush, no socket teardown (the failure mode the original `whenSynced` plan papered over).
 
 ## What collapses
 

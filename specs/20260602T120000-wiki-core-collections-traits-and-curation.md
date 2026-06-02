@@ -153,6 +153,8 @@ const pages = defineTable({
 
 Membership IS key presence: a Page belongs to the `youtube_video` type iff `types` contains the `youtube_video` key. There is no separate membership flag.
 
+IMPLEMENTATION NOTE (slice): `apps/wiki` stores `body` as a plain `column.string()` on the page row, and the markdown codec routes it to the file's body section (never into frontmatter). It shares the row's whole-row LWW (the same trade the `types` cell already accepts) and round-trips through `<id>.md`. The per-row content `Y.Doc` (fuji's entry-body pattern, for independently-syncing/collaborative bodies) is the documented promotion path, deferred until collaborative body editing is real.
+
 ## ColumnSpec and column.* (verified against the codebase)
 
 Every `column.*` helper RETURNS a TypeBox `TSchema`. The [sugar.ts](../packages/workspace/src/document/column/sugar.ts) header states it precisely: "`column.X(opts)` returns a vanilla TypeBox `TSchema`; each schema IS the JSON Schema, the validator input, and the static-type carrier." [`defineTable`](../packages/workspace/src/document/define-table.ts) takes a `Record<name, TSchema>` with each column constrained by `FlatJsonTSchema`, which rejects any TypeBox kind that cannot map 1:1 to a SQLite column. So a user type schema is built out of the same vocabulary as a first-party table.
@@ -161,22 +163,35 @@ Every `column.*` helper RETURNS a TypeBox `TSchema`. The [sugar.ts](../packages/
 type ColumnSpec = {
   id: string;        // stable column id; rename touches `name`, never this -> rename is metadata-only
   name: string;      // display name
-  schema: TSchema;   // a column.* result: column.url() | column.nullable(column.number())
-                     //   | column.enum([...]) | ... constrained to FlatJsonTSchema (SQLite-safe).
-                     //   It IS JSON Schema, so it serializes.
+  schema: TSchema;   // the column.* result itself: column.url() | column.nullable(column.number())
+                     //   | column.enum([...]). A TSchema IS JSON Schema, so it is stored verbatim.
 };
 
-// a type's `columns` is ColumnSpec[]. Stored via column.json (a TSchema is a JSON
-// object, so it round-trips).
+// a type's `columns` is ColumnSpec[], stored as JSON. A TSchema's static type is
+// not seen as JsonValue, so the registry cell stores `schema` as a JSON object
+// and a single typed boundary (`typeColumns`) reads it back as a TSchema.
 //
 // runtime validation of a Page's `types.<id>` values uses TypeBox Value.Check
-// against the stored schema. NO eval, NO codegen.
+// against the STORED schema directly. NO eval, NO codegen, NO interpreter.
 //
 // schema versioning reuses defineTable's positional `_v` + `.migrate()`; user
 // edits emit declarative ops (rename / add / remove / widen).
 ```
 
-Make it explicit: there is no separate "ColumnSpec parser." `column.*` is the AUTHORING DSL, its output `TSchema` is the stored data, and `Value.Check` (already used in [table.ts](../packages/workspace/src/document/table.ts) for row validation) is the validator. Storing a user type schema is storing JSON (the `column.*` `TSchema` output), not storing or evaluating TypeScript.
+IMPLEMENTATION RESOLUTION (see Open Question 2). The slice in `apps/wiki` stores
+each column's schema as the `TSchema` the `column.*` call returns, NOT as a
+`column.*` string. The two principled choices are "store the call" or "store the
+output"; an intermediary `{ kind }` object is rejected as a third form. "Store the
+output" wins because (a) defining a type IN CODE uses the real `column.*` builder
+with full autocomplete and type-checking, (b) a `TSchema` is already JSON, so the
+`decode()` boundary collapses to identity (no parser, no injection surface, ~320
+fewer lines than the abandoned restricted reader), and (c) it was verified that
+this repo's TypeBox validates on PLAIN JSON Schema (no `[Kind]` symbols), so a
+schema that round-trips through the Yjs/JSON boundary still validates identically
+with `Value.Check`. The trade given up is pretty `types/<id>.md` files: a column
+schema renders as `{type: string, format: uri}`, not `column.url()`. Acceptable
+because type definitions are few and usually authored via the API, not hand-typed
+in the vault.
 
 ## Nullability Rulings
 
@@ -359,7 +374,7 @@ SQLite               wiki_pages + wiki_page_types + wiki_type_<id> side tables
 
 1. **Is a capture app a "workspace" for `epicenter://` addressing?** [links.ts](../packages/workspace/src/links.ts) uses `{workspace}/{table}/{id}`. The bridge needs the `{workspace}` segment to name a capture app like `whispering`; confirm a capture app registers as a resolvable workspace authority.
 
-2. **Store `columns` as raw `TSchema` JSON, or a compact `{ kind }` ColumnSpec?** Raw `TSchema` JSON round-trips with zero interpreter but is verbose to hand-edit in `types/<id>.md`; a compact `{ kind }` form is terser but needs an interpreter to rebuild the `TSchema`. Decide for VSCode-editability of `types/<id>.md`.
+2. **Store `columns` as raw `TSchema` JSON, or a compact `{ kind }` ColumnSpec?** RESOLVED (slice): raw `TSchema` (the output of calling `column.*`). The compact `{ kind }` middle form is rejected; the only principled choices were "store the call (string)" or "store the output (TSchema)", and the output wins on code-authoring ergonomics (real builder = autocomplete), zero interpreter/injection surface, and a verified-safe Yjs/JSON round-trip (this TypeBox validates on plain JSON Schema). See the ColumnSpec section above. The earlier author-string codec was built and then deleted. Remaining sub-question: a richer `types/<id>.md` editing experience (the stored form is JSON Schema, which is verbose to hand-edit) is a product-polish concern, not a storage decision.
 
 3. **Finer-grained per-property merge.** Build a nested-`Y.Map` column type (real per-property CRDT merge), or accept whole-row LWW plus git recovery indefinitely? The trigger is going collaborative; for a personal wiki, whole-row LWW stands.
 

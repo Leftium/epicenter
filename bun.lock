@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -460,6 +459,20 @@
         "vite": "catalog:",
         "vite-plugin-devtools-json": "^1.0.0",
         "wrangler": "catalog:",
+      },
+    },
+    "apps/wiki": {
+      "name": "@epicenter/wiki",
+      "version": "0.0.1",
+      "dependencies": {
+        "@epicenter/workspace": "workspace:*",
+        "typebox": "catalog:",
+        "wellcrafted": "catalog:",
+        "yjs": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "apps/zhongwen": {
@@ -1142,6 +1155,8 @@
     "@epicenter/util": ["@epicenter/util@workspace:packages/util"],
 
     "@epicenter/whispering": ["@epicenter/whispering@workspace:apps/whispering"],
+
+    "@epicenter/wiki": ["@epicenter/wiki@workspace:apps/wiki"],
 
     "@epicenter/workspace": ["@epicenter/workspace@workspace:packages/workspace"],
 

@@ -53,7 +53,6 @@ async function main() {
 	]);
 
 	const dirsToRemove = [
-		'.turbo',
 		'node_modules',
 		...packageRoots.flatMap((root) =>
 			subDirs.map((subDir) => join(root, subDir)),

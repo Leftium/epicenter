@@ -604,7 +604,7 @@ Whispering showcases the power of modern web development as a comprehensive exam
 - [IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API) & [Dexie.js](https://dexie.org): Local data storage
 - [shadcn-svelte](https://www.shadcn-svelte.com): Beautiful, accessible components
 - [TailwindCSS](https://tailwindcss.com): Utility-first CSS framework
-- [Turborepo](https://turborepo.org): Monorepo management
+- [Bun workspaces](https://bun.com/docs/install/workspaces): Monorepo management
 - [Rust](https://www.rust-lang.org): Native desktop features
 - [Vercel](https://vercel.com): Hosting platform
 - [Zapsplat.com](https://www.zapsplat.com): Royalty-free sound effects

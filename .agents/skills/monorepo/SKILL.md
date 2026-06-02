@@ -79,7 +79,7 @@ Run type checking to verify:
 bun typecheck
 ```
 
-This runs `turbo run typecheck` which executes the `typecheck` script in each package (e.g., `tsc --noEmit`, `svelte-check`).
+This runs `bun run --filter '*' typecheck` which executes the `typecheck` script in each package (e.g., `tsc --noEmit`, `svelte-check`).
 
 ## New Package Boilerplate
 

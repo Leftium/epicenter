@@ -390,7 +390,7 @@ export function createRoomCore({ updateLog }: { updateLog: RoomUpdateLog }) {
 	 * or the entry was lost to hibernation) and is dropped.
 	 *
 	 * Only the socket the dispatch was actually sent to may answer it. In a
-	 * team room a different member's socket cannot forge a result for a
+	 * shared room a different member's socket cannot forge a result for a
 	 * dispatch id it does not own, even if it learns the id. The id is unicast
 	 * to the recipient, so this is defense in depth, not the only barrier.
 	 *

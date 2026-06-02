@@ -28,8 +28,8 @@ export type RenderRow = (
 
 /**
  * What materialize last wrote for a row, keyed by id. Drives rename cleanup (the
- * filename changed) and, later, dirty detection (the on-disk content diverged
- * from what we wrote, so a local edit is pending and must not be stomped).
+ * filename changed) and the dirty guard (the on-disk content diverged from what
+ * we wrote, so a local edit is pending and must not be stomped).
  */
 export type FileState = Map<string, { filename: string; content: string }>;
 

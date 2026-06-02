@@ -9,10 +9,9 @@ import { YAML } from 'bun';
  * (missing key); null values are preserved (YAML `null`) so nullable
  * fields survive a future round-trip.
  *
- * The body is written verbatim; callers that need link rewriting (e.g.
- * epicenter:// to [[wikilinks]]) apply it before passing the body in. The
- * materializer does this in its row-composition path, so persisted notes
- * round-trip through both link styles.
+ * The body is written verbatim. Any transformation (link rewriting, layout,
+ * publish reshaping) is the caller's responsibility, applied before the body
+ * is passed in.
  */
 export function assembleMarkdown(
 	frontmatter: Record<string, unknown>,

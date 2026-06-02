@@ -10,16 +10,16 @@
  * What this does:
  *   1. workspace root doc (encrypted tables + KV via createFuji)
  *   2. SQLite materializer at `opts.sqliteFile ?? sqlitePath(...)`
- *   3. Markdown materializer at `opts.markdownDir ?? markdownPath(...)`; each
- *      entry's body is read on demand from its content doc, synced from the
- *      cloud per row and never persisted on the daemon
+ *   3. Markdown vault at `opts.markdownDir ?? markdownPath(...)`; each entry's
+ *      body is materialized read-only (a faithful prosemirror-markdown
+ *      serialization) on demand from its content doc, synced from the cloud per
+ *      row and never persisted on the daemon
  *   4. infrastructure: Yjs log persistence + cloud sync via
  *      `attachProjectInfrastructure`
  */
 
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
-	attachRichText,
 	DateTimeString,
 	defineActions,
 	defineWorkspace,
@@ -41,6 +41,7 @@ import {
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
 import * as Y from 'yjs';
+import { serializeEntryBody } from './entry-body-markdown.js';
 import {
 	asEntryId,
 	createFuji,
@@ -118,7 +119,7 @@ export function fuji(opts: FujiMountOptions = {}) {
 				});
 				try {
 					await collaboration.whenConnected;
-					return attachRichText(ydoc).read();
+					return serializeEntryBody(ydoc.getXmlFragment('content'));
 				} finally {
 					ydoc.destroy();
 					await collaboration.whenDisposed;

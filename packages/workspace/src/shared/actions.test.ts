@@ -17,6 +17,7 @@ import {
 	defineMutation,
 	defineQuery,
 	invokeAction,
+	isActionInputError,
 } from './actions.js';
 
 // ---------------------------------------------------------------------------
@@ -138,6 +139,41 @@ describe('invokeAction', () => {
 			const data = expectOk(await invokeAction<number>(action, { x: 21 }));
 			expect(seenInputs).toEqual([{ x: 21 }]);
 			expect(data).toBe(42);
+		});
+
+		test('rejects input that fails the declared schema, without calling the handler', async () => {
+			let handlerRan = false;
+			const action = defineMutation({
+				input: Type.Object({ maxDeletes: Type.Optional(Type.Number()) }),
+				handler: (input) => {
+					handlerRan = true;
+					return input.maxDeletes ?? 0;
+				},
+			});
+
+			// The classic foot-gun: a string where a number is declared. Before
+			// schema enforcement this flowed straight to the handler.
+			const error = expectErr(
+				await invokeAction(action, { maxDeletes: 'lots' }),
+			);
+			// isActionInputError narrows the unknown error to ActionInputError, so
+			// `.message` is reachable without a cast.
+			expect(isActionInputError(error)).toBe(true);
+			if (isActionInputError(error)) {
+				expect(error.message).toContain('maxDeletes');
+			}
+			expect(handlerRan).toBe(false);
+		});
+
+		test('admits a valid input and an omitted optional field', async () => {
+			const action = defineMutation({
+				input: Type.Object({ maxDeletes: Type.Optional(Type.Number()) }),
+				handler: (input) => input.maxDeletes ?? -1,
+			});
+			expect(
+				expectOk(await invokeAction<number>(action, { maxDeletes: 5 })),
+			).toBe(5);
+			expect(expectOk(await invokeAction<number>(action, {}))).toBe(-1);
 		});
 	});
 

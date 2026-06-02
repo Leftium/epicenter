@@ -84,7 +84,7 @@ function createNavigatorRecorder() {
 				mediaRecorder.stop();
 				teardown();
 
-				return Ok({ status: 'cancelled' });
+				return Ok(undefined);
 			},
 
 			subscribe(handler) {

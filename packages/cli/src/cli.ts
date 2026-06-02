@@ -1,5 +1,4 @@
 import yargs from 'yargs';
-import { applyCommand } from './commands/apply.js';
 import { authCommand } from './commands/auth.js';
 import { daemonCommand } from './commands/daemon.js';
 import { listCommand } from './commands/list.js';
@@ -20,7 +19,10 @@ const REMOVED_DAEMON_COMMANDS = new Set(['up', 'down', 'ps', 'logs']);
  *   - `list`:  tree view of runnable actions (local schema is authoritative)
  *   - `run`:   invoke one by mount-prefixed action path; `--peer` dispatches over RPC
  *   - `peers`: enumerate other clients currently online via the workspace presence row
- *   - `apply`: reconcile a mount's markdown files into its workspace (disk is desired state)
+ *
+ * Markdown reconcile (`markdown_apply`) and every other mount action are invoked
+ * through `run`, e.g. `epicenter run fuji.markdown_apply '{"dryRun":true}'`; the
+ * plan (including `refused`) comes back as JSON on stdout.
  *
  * Specs: `specs/20260421T155436-cli-scripting-first-redesign.md` (base
  * surface), `specs/20260423T174126-cli-remote-peer-rpc.md` (`peers` + `--peer`).
@@ -40,7 +42,6 @@ export function createCLI() {
 				.command(listCommand)
 				.command(peersCommand)
 				.command(runCommand)
-				.command(applyCommand)
 				.demandCommand(1)
 				.strict()
 				.exitProcess(false)

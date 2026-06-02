@@ -149,7 +149,9 @@ function createManualRecorder() {
 			const { error: bootstrapError } = await ensureBootstrapped();
 			if (bootstrapError) return Err(bootstrapError);
 			if (!_current) return Ok({ status: 'no-recording' as const });
-			return _current.cancel();
+			const { error } = await _current.cancel();
+			if (error) return Err(error);
+			return Ok({ status: 'cancelled' as const });
 		},
 	};
 }

@@ -67,34 +67,6 @@ export async function enumerateDevices(): Promise<
 	});
 }
 
-/**
- * Get a media stream for a specific device identifier
- * @param deviceIdentifier - The device identifier
- *   - On Web: This is the deviceId (unique identifier)
- *   - On Desktop: This is the device name
- */
-async function getStreamForDeviceIdentifier(
-	deviceIdentifier: DeviceIdentifier,
-) {
-	return tryAsync({
-		try: async () => {
-			// On Web: deviceIdentifier IS the deviceId, use it directly
-			const stream = await navigator.mediaDevices.getUserMedia({
-				audio: {
-					...WHISPER_RECOMMENDED_MEDIA_TRACK_CONSTRAINTS,
-					deviceId: { exact: deviceIdentifier },
-				},
-			});
-			return stream;
-		},
-		catch: (error) =>
-			DeviceStreamError.DeviceConnectionFailed({
-				deviceId: deviceIdentifier,
-				cause: error,
-			}),
-	});
-}
-
 export async function getRecordingStream({
 	selectedDeviceId,
 }: {
@@ -110,8 +82,20 @@ export async function getRecordingStream({
 	// (Chrome 130+ lets the permission-bubble choice win, Firefox <90 had
 	// quirks), so an exact attempt is what lets us report 'success' honestly.
 	if (selectedDeviceId) {
-		const { data: stream, error } =
-			await getStreamForDeviceIdentifier(selectedDeviceId);
+		const { data: stream, error } = await tryAsync({
+			try: () =>
+				navigator.mediaDevices.getUserMedia({
+					audio: {
+						...WHISPER_RECOMMENDED_MEDIA_TRACK_CONSTRAINTS,
+						deviceId: { exact: selectedDeviceId },
+					},
+				}),
+			catch: (error) =>
+				DeviceStreamError.DeviceConnectionFailed({
+					deviceId: selectedDeviceId,
+					cause: error,
+				}),
+		});
 		if (!error) {
 			return Ok({
 				stream,

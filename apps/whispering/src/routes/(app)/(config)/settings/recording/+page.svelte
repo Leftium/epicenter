@@ -134,8 +134,7 @@
 					</Alert.Title>
 					<Alert.Description>
 						VAD mode uses the browser's Web Audio API for real-time voice
-						detection and records via the browser's MediaRecorder API. Audio is
-						encoded to uncompressed WAV format.
+						detection. Captured speech is encoded to uncompressed WAV format.
 					</Alert.Description>
 				</Alert.Root>
 			{/if}

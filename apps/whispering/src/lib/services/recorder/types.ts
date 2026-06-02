@@ -13,43 +13,12 @@ export type CancelRecordingResult =
 	| { status: 'no-recording' };
 
 /**
- * Callback function for providing real-time status updates during multi-step recording operations.
- * These status messages become user-facing toast notifications that provide encouraging progress
- * feedback during recording workflows. The messages are displayed as loading toasts in the UI,
- * helping users understand what's happening during potentially long-running operations.
- *
- * @example
- * ```typescript
- * // Good: User-friendly with emoji and encouraging tone
- * sendStatus({
- *   title: '🎙️ Starting Recording',
- *   description: 'Setting up your microphone...'
- * });
- *
- * sendStatus({
- *   title: '✅ Recording Saved',
- *   description: 'Your recording is ready for transcription!'
- * });
- *
- * // Bad: Technical language, no emoji, not encouraging
- * sendStatus({
- *   title: 'Initializing MediaStream',
- *   description: 'getUserMedia() call in progress'
- * });
- * ```
- */
-export type UpdateStatusMessageFn = (args: {
-	title: string;
-	description: string;
-}) => void;
-
-/**
  * Device acquisition outcome after attempting to connect to a recording device.
  *
  * This type represents the result of device selection during recording startup.
- * All outcomes include the deviceId that was ultimately used for recording.
- * When the outcome is 'fallback', appropriate status messages are automatically
- * sent via UpdateStatusMessageFn to inform users about device switching.
+ * All outcomes include the deviceId that was ultimately used for recording. The
+ * outcome is returned to the caller as a structured fact; `operations/recording.ts`
+ * is the single owner of the user-facing copy that explains a fallback.
  *
  * @example
  * ```typescript
@@ -57,7 +26,6 @@ export type UpdateStatusMessageFn = (args: {
  * { outcome: 'success', deviceId: 'preferred-device-id' as DeviceIdentifier }
  *
  * // Fallback: No device selected, used default
- * // Status message: "🔍 No Device Selected" -> "Using your default microphone instead"
  * {
  *   outcome: 'fallback',
  *   reason: 'no-device-selected',
@@ -65,7 +33,6 @@ export type UpdateStatusMessageFn = (args: {
  * }
  *
  * // Fallback: Preferred device unavailable, used alternative
- * // Status message: "⚠️ Finding a New Microphone" -> "Using MacBook Pro Microphone instead"
  * {
  *   outcome: 'fallback',
  *   reason: 'preferred-device-unavailable',
@@ -179,6 +146,10 @@ export const RecorderError = defineErrors({
 		message: `Failed to stop recording: ${extractErrorMessage(cause)}`,
 		cause,
 	}),
+	CancelFailed: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to cancel recording: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
 	StreamAcquisition: ({ cause }: { cause: unknown }) => ({
 		message: `Failed to acquire recording stream: ${extractErrorMessage(cause)}`,
 		cause,
@@ -264,12 +235,8 @@ export type RecorderStopResult =
  */
 export type RecordingSession = {
 	readonly recordingId: string;
-	stop(callbacks: {
-		sendStatus: UpdateStatusMessageFn;
-	}): Promise<Result<RecorderStopResult, RecorderError>>;
-	cancel(callbacks: {
-		sendStatus: UpdateStatusMessageFn;
-	}): Promise<Result<CancelRecordingResult, RecorderError>>;
+	stop(): Promise<Result<RecorderStopResult, RecorderError>>;
+	cancel(): Promise<Result<CancelRecordingResult, RecorderError>>;
 	subscribe(handler: (state: WhisperingRecordingState) => void): () => void;
 };
 
@@ -301,12 +268,7 @@ export type RecorderService<RecordingParams extends BaseRecordingParams> = {
 	 * with the device acquisition outcome. The caller holds the RecordingSession
 	 * and uses its `stop`/`cancel`/`subscribe` for the rest of the session.
 	 */
-	startRecording(
-		params: RecordingParams,
-		callbacks: {
-			sendStatus: UpdateStatusMessageFn;
-		},
-	): Promise<
+	startRecording(params: RecordingParams): Promise<
 		Result<
 			{
 				session: RecordingSession;

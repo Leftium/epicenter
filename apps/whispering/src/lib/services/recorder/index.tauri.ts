@@ -154,11 +154,7 @@ function createCpalRecorder() {
 		const session = {
 			recordingId,
 
-			stop: async ({ sendStatus }) => {
-				sendStatus({
-					title: '⏸️ Saving recording',
-					description: 'Writing the WAV artifact to disk...',
-				});
+			stop: async () => {
 				const { data: artifact, error: stopRecordingError } =
 					await commands.stopRecording();
 				if (stopRecordingError !== null) {
@@ -173,10 +169,6 @@ function createCpalRecorder() {
 				// not close the worker; we still own the cpal stream and the
 				// worker thread. Send `close_recording_session` so Rust can
 				// join the worker and free the stream.
-				sendStatus({
-					title: '🔄 Closing Session',
-					description: 'Cleaning up recording resources...',
-				});
 				const { error: closeError } = await commands.closeRecordingSession();
 				if (closeError !== null)
 					log.error(RecorderError.StopFailed({ cause: closeError }));
@@ -185,25 +177,18 @@ function createCpalRecorder() {
 				return Ok({ kind: 'artifact', artifact });
 			},
 
-			cancel: async ({ sendStatus }) => {
-				sendStatus({
-					title: '🛑 Cancelling',
-					description:
-						'Safely stopping your recording and cleaning up resources...',
-				});
-
+			cancel: async () => {
 				// cancel_recording on the Rust side discards the in-flight
 				// samples and tears down the session worker. One round trip.
 				const { error: cancelError } = await commands.cancelRecording();
-				if (cancelError !== null) {
-					sendStatus({
-						title: '❌ Cancel Failed',
-						description:
-							'We hit a problem cancelling; continuing cleanup anyway...',
-					});
-				}
 
+				// Tear down unconditionally first so the JS-side state can never
+				// wedge in RECORDING, even when the Rust cancel failed.
 				teardown(session);
+
+				if (cancelError !== null) {
+					return RecorderError.CancelFailed({ cause: cancelError });
+				}
 				return Ok({ status: 'cancelled' });
 			},
 
@@ -244,14 +229,11 @@ function createCpalRecorder() {
 
 		enumerateDevices,
 
-		startRecording: async (
-			{ selectedDeviceId, recordingId, sampleRate }: CpalRecordingParams,
-			{ sendStatus },
-		) => {
-			sendStatus({
-				title: '🎙️ Checking microphone access',
-				description: 'Your system may ask you to allow microphone access.',
-			});
+		startRecording: async ({
+			selectedDeviceId,
+			recordingId,
+			sampleRate,
+		}: CpalRecordingParams) => {
 			const { error: permissionError } = await requestMicrophonePermission();
 			if (permissionError) return Err(permissionError);
 
@@ -270,11 +252,6 @@ function createCpalRecorder() {
 
 			const deviceOutcome: DeviceAcquisitionOutcome = (() => {
 				if (!selectedDeviceId) {
-					sendStatus({
-						title: '🔍 No Device Selected',
-						description:
-							"No worries! We'll find the best microphone for you automatically...",
-					});
 					return {
 						outcome: 'fallback',
 						reason: 'no-device-selected',
@@ -286,11 +263,6 @@ function createCpalRecorder() {
 					return { outcome: 'success', deviceId: selectedDeviceId };
 				}
 
-				sendStatus({
-					title: '⚠️ Finding a New Microphone',
-					description:
-						"That microphone isn't available. Let's try finding another one...",
-				});
 				return {
 					outcome: 'fallback',
 					reason: 'preferred-device-unavailable',
@@ -299,12 +271,6 @@ function createCpalRecorder() {
 			})();
 
 			const deviceIdentifier = deviceOutcome.deviceId;
-
-			sendStatus({
-				title: '🎤 Setting Up',
-				description:
-					'Initializing your recording session and checking microphone access...',
-			});
 
 			const sampleRateNum = sampleRate ? Number.parseInt(sampleRate, 10) : null;
 
@@ -322,11 +288,6 @@ function createCpalRecorder() {
 					})
 				);
 
-			sendStatus({
-				title: '🎙️ Starting Recording',
-				description:
-					'Recording session initialized, now starting to capture audio...',
-			});
 			const { error: startRecordingError } = await commands.startRecording();
 			if (startRecordingError !== null)
 				return (

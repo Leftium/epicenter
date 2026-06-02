@@ -51,8 +51,6 @@ export const report = {
 			resolve: (r: Notice) => emit('success', r, id),
 			/** Resolve the loading notice as an error notice. */
 			reject: (r: Problem) => emit('error', r, id),
-			/** Replace the displayed loading notice content. */
-			update: (r: Notice) => emit('loading', r, id),
 		};
 	},
 };

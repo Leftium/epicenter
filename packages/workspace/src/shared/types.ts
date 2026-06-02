@@ -6,6 +6,17 @@ import type { Brand } from 'wellcrafted/brand';
 export type MaybePromise<T> = T | Promise<T>;
 
 /**
+ * A `fetch` with the caller's auth credential attached (bearer or session
+ * cookie) and 401-refresh handled, supplied by the auth client. Same shape as
+ * the global `fetch`; pass absolute URLs. Use for one-shot authed HTTP to the
+ * API (e.g. a durable room sync POST) instead of attaching credentials by hand.
+ */
+export type AuthedFetch = (
+	input: Request | string | URL,
+	init?: RequestInit,
+) => Promise<Response>;
+
+/**
  * Flatten a mapped or conditional type for IDE hover output.
  */
 export type Simplify<T> = { [K in keyof T]: T[K] } & {};

@@ -11,9 +11,9 @@
  *   1. workspace root doc (encrypted tables + KV via createFuji)
  *   2. SQLite materializer at `opts.sqliteFile ?? sqlitePath(...)`
  *   3. Markdown vault at `opts.markdownDir ?? markdownPath(...)`; each entry's
- *      body is materialized read-only (a faithful prosemirror-markdown
- *      serialization) on demand from its content doc, synced from the cloud per
- *      row and never persisted on the daemon
+ *      body round-trips as faithful prosemirror-markdown against its content
+ *      doc: materialized on demand (read) and reconciled back on apply (write),
+ *      both over the cloud per row, never persisted on the daemon
  *   4. infrastructure: Yjs log persistence + cloud sync via
  *      `attachProjectInfrastructure`
  */
@@ -25,6 +25,7 @@ import {
 	defineWorkspace,
 	openCollaboration,
 	roomWsUrl,
+	writeRoomOverHttp,
 } from '@epicenter/workspace';
 import { defineMount } from '@epicenter/workspace/daemon';
 import {
@@ -40,12 +41,15 @@ import {
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
+import { initProseMirrorDoc, updateYFragment } from 'y-prosemirror';
 import * as Y from 'yjs';
-import { serializeEntryBody } from './entry-body-markdown.js';
+import { parseEntryBody, serializeEntryBody } from './entry-body-markdown.js';
+import { entryBodySchema } from './entry-body-schema.js';
 import {
 	asEntryId,
 	createFuji,
 	type Entry,
+	type EntryId,
 	entryContentDocGuid,
 } from './index.js';
 
@@ -73,6 +77,7 @@ export function fuji(opts: FujiMountOptions = {}) {
 				keyring,
 				openWebSocket,
 				onReconnectSignal,
+				fetch,
 			} = ctx;
 
 			const workspace = createFuji({ keyring });
@@ -126,18 +131,43 @@ export function fuji(opts: FujiMountOptions = {}) {
 				}
 			};
 
+			/**
+			 * Reconcile an edited markdown body on disk back into its content doc, the
+			 * inverse of `readEntryBody`: parse the markdown and diff it into the
+			 * content fragment via `updateYFragment`, then write over one-shot HTTP
+			 * (see `writeRoomOverHttp` for why HTTP, not a socket). The daemon never
+			 * persists the body locally.
+			 */
+			const writeEntryBody = (id: EntryId, markdown: string): Promise<void> =>
+				writeRoomOverHttp({
+					fetch,
+					baseURL: EPICENTER_API_URL,
+					ownerId,
+					guid: entryContentDocGuid(id),
+					mutate: (ydoc) => {
+						const fragment = ydoc.getXmlFragment('content');
+						const { meta } = initProseMirrorDoc(fragment, entryBodySchema);
+						updateYFragment(ydoc, fragment, parseEntryBody(markdown), meta);
+					},
+				});
+
 			const markdown = attachMarkdownVault(workspace, {
 				dir: mdDir,
 				log: createLogger(`${mount}-markdown`),
 				tables: {
 					entries: {
-						// Materialize the body (read-only) into the entry's `.md` so a
-						// human or agent can read the prose. Read fresh every time the row
-						// changes: a daemon restart re-reads all bodies, self-healing any
-						// `.md` left stale by a cross-doc sync race (root `updatedAt`
-						// arriving before the body update). v1 reconciles FRONTMATTER only;
-						// body import is gated on the faithful prosemirror-markdown codec.
+						// Materialize the body into the entry's `.md` so a human or agent
+						// can read the prose. Read fresh every time the row changes: a
+						// daemon restart re-reads all bodies, self-healing any `.md` left
+						// stale by a cross-doc sync race (root `updatedAt` arriving before
+						// the body update).
 						readBody: (entry) => readEntryBody(entry),
+						// Import an edited body back into the content doc, the inverse of
+						// readBody. Apply calls this per changed entry after the frontmatter
+						// transaction; best-effort, so a failed body write is logged and
+						// never rolls back the committed frontmatter reconcile.
+						writeBody: (id, markdown) =>
+							writeEntryBody(asEntryId(id), markdown),
 						// Removal mirrors `entries_delete`: a tombstone (set `deletedAt`)
 						// that still syncs to peers, not a hard delete. Synchronous so it
 						// runs inside apply's single row transaction.

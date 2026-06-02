@@ -126,10 +126,11 @@ async function openOneMount({
 		deviceId: asDeviceId(`${mount.name}-daemon`),
 		ownerId,
 		keyring: createMountKeyringReader({ auth, mount: mount.name }),
-		// `auth.openWebSocket` / `auth.onStateChange` are closure-based on the
-		// auth client and do not read `this`, so passing the method reference
-		// directly is safe (no `.bind(auth)` needed).
+		// `auth.openWebSocket` / `auth.fetch` / `auth.onStateChange` are
+		// closure-based on the auth client and do not read `this`, so passing the
+		// method reference directly is safe (no `.bind(auth)` needed).
 		openWebSocket: auth.openWebSocket,
+		fetch: auth.fetch,
 		onReconnectSignal: auth.onStateChange,
 	} satisfies MountContext;
 	try {

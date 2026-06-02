@@ -22,9 +22,9 @@ import {
 // custom filenames (slugs), custom `toMarkdown` (layouts, publish transforms),
 // per-table subdirectories. There is no `apply`: this projection is never read
 // back, so it carries no round-trip obligation and can shape the output however a
-// human-readable export or a published site wants. The editable, reconciled seam
-// is `attachMarkdownVault`; the sqlite materializer is the read-only sibling for
-// a relational projection.
+// human-readable export or a published site wants. Mutating app data goes through
+// validated actions instead, never by editing the materialized `.md`. The sqlite
+// materializer is the read-only sibling for a relational projection.
 // ════════════════════════════════════════════════════════════════════════════
 
 /** Per-table customization for the read-only export. Every field is optional. */
@@ -184,10 +184,7 @@ export function attachMarkdownExport<TTableHandles extends TablesRecord>(
 	return {
 		whenFlushed,
 		actions: defineActions({
-			// Distinct key from the vault's `markdown_rebuild`: a workspace can compose
-			// both seams, and spreading two `markdown_rebuild` actions into one set
-			// would silently clobber the vault's.
-			markdown_export_rebuild: defineMutation({
+			markdown_rebuild: defineMutation({
 				title: 'Rebuild Markdown Export',
 				description:
 					'Destructive: delete existing .md files in registered table directories and re-serialize all valid rows. Optionally limit to one table.',

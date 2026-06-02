@@ -32,22 +32,22 @@ async function getMicrophonePermissionStatus(): Promise<
 }
 
 async function requireMicrophonePermission(): Promise<
-	Result<true, RecorderError>
+	Result<void, RecorderError>
 > {
 	const { data: granted, error } = await getMicrophonePermissionStatus();
 	if (error) return Err(error);
-	if (granted) return Ok(true);
+	if (granted) return Ok(undefined);
 
 	return RecorderError.MicrophonePermissionDenied();
 }
 
 async function requestMicrophonePermission(): Promise<
-	Result<true, RecorderError>
+	Result<void, RecorderError>
 > {
 	const { data: alreadyGranted, error: checkError } =
 		await getMicrophonePermissionStatus();
 	if (checkError) return Err(checkError);
-	if (alreadyGranted) return Ok(true);
+	if (alreadyGranted) return Ok(undefined);
 
 	const { error: requestError } =
 		await tauriOnly.permissions.microphone.request();
@@ -60,7 +60,7 @@ async function requestMicrophonePermission(): Promise<
 	if (recheckError) return Err(recheckError);
 	if (!grantedAfterRequest) return RecorderError.MicrophonePermissionDenied();
 
-	return Ok(true);
+	return Ok(undefined);
 }
 
 /**
@@ -189,7 +189,7 @@ function createCpalRecorder() {
 				if (cancelError !== null) {
 					return RecorderError.CancelFailed({ cause: cancelError });
 				}
-				return Ok({ status: 'cancelled' });
+				return Ok(undefined);
 			},
 
 			subscribe(handler) {
@@ -289,11 +289,18 @@ function createCpalRecorder() {
 				);
 
 			const { error: startRecordingError } = await commands.startRecording();
-			if (startRecordingError !== null)
+			if (startRecordingError !== null) {
+				// The session was initialized but never started; close it so the
+				// Rust worker and cpal stream don't outlive this failed start
+				// (mirrors the stop-error cleanup above).
+				const { error: closeError } = await commands.closeRecordingSession();
+				if (closeError !== null)
+					log.error(RecorderError.StartFailed({ cause: closeError }));
 				return (
 					categorizeRecorderError(startRecordingError) ??
 					RecorderError.StartFailed({ cause: startRecordingError })
 				);
+			}
 
 			const session = buildSession(recordingId);
 			activeSession = session;

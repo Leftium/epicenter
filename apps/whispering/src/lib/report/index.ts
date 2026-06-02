@@ -78,7 +78,7 @@ export const log = {
  * Fan a notice out to the console, toast, and OS-notification surfaces.
  *
  * `id` is the sonner toast correlation id: pass it from the loading family so
- * resolve/reject/update can target the same toast. Omit it for one-shot
+ * resolve/reject can target the same toast. Omit it for one-shot
  * error/success/info reports.
  */
 function emit(level: Level, notice: Notice, id?: string): void {

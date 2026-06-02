@@ -304,6 +304,9 @@ export function attachMarkdownVault<TTables extends TablesRecord>(
 				fileState: entry.fileState,
 				log,
 				markDirty,
+				// The vault is editable: never stomp an in-progress edit a future
+				// apply will reconcile.
+				protectLocalEdits: true,
 			});
 		}
 	}

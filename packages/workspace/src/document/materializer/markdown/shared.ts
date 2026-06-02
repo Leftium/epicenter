@@ -1,4 +1,4 @@
-import { mkdir, readdir, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { $ } from 'bun';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
@@ -74,6 +74,18 @@ export async function tryUnlink(
 	}
 }
 
+/** Read a file's content, or `undefined` if it does not exist (or cannot be read). */
+async function readContentOrUndefined(
+	directory: string,
+	filename: string,
+): Promise<string | undefined> {
+	try {
+		return await readFile(join(directory, filename), 'utf-8');
+	} catch {
+		return undefined;
+	}
+}
+
 /**
  * Write a markdown file under `directory`, creating any intermediate
  * subdirectories implied by a filename like `"archive/old.md"`.
@@ -112,8 +124,19 @@ export async function materializeTable(opts: {
 	fileState: FileState;
 	log: Logger;
 	markDirty: (path: string) => void;
+	/**
+	 * Don't overwrite a file whose on-disk content has diverged from what we last
+	 * wrote: a local edit (or a deletion) is pending and apply has not reconciled
+	 * it yet. The editable vault sets this so continuous materialize never stomps
+	 * an in-progress edit; the read-only export leaves it off so the projection
+	 * always reflects Yjs. The base is in-memory per session, so a daemon restart
+	 * re-materializes (restart-as-heal); run apply before restarting if edits are
+	 * pending.
+	 */
+	protectLocalEdits?: boolean;
 }): Promise<() => void> {
 	const { table, directory, render, fileState, log, markDirty } = opts;
+	const protectLocalEdits = opts.protectLocalEdits ?? false;
 
 	await mkdir(directory, { recursive: true });
 
@@ -136,6 +159,16 @@ export async function materializeTable(opts: {
 		}
 		const { filename, content } = rendered;
 		const previous = fileState.get(id);
+		// Dirty guard (vault only): if a file we previously wrote now differs on
+		// disk from BOTH our last write AND the content we're about to write, a
+		// pending local edit (or deletion) exists that apply has not folded into
+		// the row. Leave it untouched. The `onDisk === content` case (the file
+		// already matches the new render, e.g. apply just reconciled this edit)
+		// falls through, re-baselining `fileState` so future updates resume.
+		if (protectLocalEdits && previous) {
+			const onDisk = await readContentOrUndefined(directory, previous.filename);
+			if (onDisk !== previous.content && onDisk !== content) return;
+		}
 		if (previous && previous.filename !== filename) {
 			const removed = await tryUnlink(directory, previous.filename);
 			if (removed) markDirty(join(directory, previous.filename));

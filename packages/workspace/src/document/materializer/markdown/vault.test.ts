@@ -293,3 +293,51 @@ describe('observer per-row isolation', () => {
 		workspace[Symbol.dispose]();
 	});
 });
+
+// ============================================================================
+// Dirty guard: continuous materialize must not stomp in-progress edits
+// ============================================================================
+
+describe('dirty guard', () => {
+	test('a locally edited file survives a remote row change (left for apply)', async () => {
+		const { workspace } = await setup({ tables: { posts: {} } });
+		workspace.tables.posts.set({ id: 'p1', title: 'Original', published: true });
+		await Bun.sleep(20); // let the observer write posts/p1.md
+		expect(await readTestFile('posts/p1.md')).toContain('title: Original');
+
+		// A human or agent edits the vault file on disk.
+		await writeTestFile(
+			'posts/p1.md',
+			'---\nid: p1\ntitle: LOCAL EDIT\npublished: true\n---\n',
+		);
+
+		// A change to the same row (e.g. a remote sync) fires the observer.
+		workspace.tables.posts.set({
+			id: 'p1',
+			title: 'Remote Change',
+			published: false,
+		});
+		await Bun.sleep(20);
+
+		// The observer must NOT overwrite the pending local edit.
+		const onDisk = await readTestFile('posts/p1.md');
+		expect(onDisk).toContain('LOCAL EDIT');
+		expect(onDisk).not.toContain('Remote Change');
+
+		workspace[Symbol.dispose]();
+	});
+
+	test('a clean (unedited) file is updated normally on a row change', async () => {
+		const { workspace } = await setup({ tables: { posts: {} } });
+		workspace.tables.posts.set({ id: 'p1', title: 'Original', published: true });
+		await Bun.sleep(20);
+
+		// No local edit: a row change rewrites the file as usual.
+		workspace.tables.posts.set({ id: 'p1', title: 'Updated', published: true });
+		await Bun.sleep(20);
+
+		expect(await readTestFile('posts/p1.md')).toContain('title: Updated');
+
+		workspace[Symbol.dispose]();
+	});
+});

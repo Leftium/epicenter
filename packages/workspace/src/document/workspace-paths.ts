@@ -130,6 +130,9 @@ export function markdownPath(projectDir: string, workspaceId: string): string {
  * // '/Users/braden/Code/vault/apps/fuji'
  * ```
  */
-export function appsMarkdownPath(projectDir: string, mountName: string): string {
+export function appsMarkdownPath(
+	projectDir: string,
+	mountName: string,
+): string {
 	return join(projectDir, 'apps', mountName);
 }

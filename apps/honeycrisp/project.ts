@@ -11,9 +11,9 @@ import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { defineActions, defineWorkspace } from '@epicenter/workspace';
 import { defineMount } from '@epicenter/workspace/daemon';
 import {
-	attachMarkdownMaterializer,
+	attachGitAutosave,
+	attachMarkdownVault,
 	type GitAutosaveConfig,
-	slugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import {
@@ -61,11 +61,17 @@ export function honeycrisp(opts: HoneycrispMountOptions = {}) {
 				log: createLogger(`${mount}-sqlite`),
 			});
 
-			const markdown = attachMarkdownMaterializer(workspace, {
+			const markdown = attachMarkdownVault(workspace, {
 				dir: mdDir,
-				perTable: { notes: { filename: slugFilename('title') } },
-				git: opts.git,
+				tables: { notes: {} },
 			});
+			if (opts.git) {
+				attachGitAutosave({
+					ydoc: workspace.ydoc,
+					dir: mdDir,
+					config: opts.git,
+				});
+			}
 
 			const actions = defineActions({
 				...workspace.actions,

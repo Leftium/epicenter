@@ -25,7 +25,7 @@ import { Type } from 'typebox';
 import * as Y from 'yjs';
 import { createWorkspace, defineTable } from '../../../index.js';
 import { column } from '../../column/index.js';
-import { attachMarkdownMaterializer } from './materializer.js';
+import { attachMarkdownVault } from './vault.js';
 
 const postsTable = defineTable({
 	id: column.string(),
@@ -102,13 +102,13 @@ async function setupPeers() {
 		if (origin !== SYNC) Y.applyUpdate(a.ydoc, update, SYNC);
 	});
 
-	const matA = attachMarkdownMaterializer(a, {
+	const matA = attachMarkdownVault(a, {
 		dir: DIR_A,
-		perTable: { posts: {} },
+		tables: { posts: {} },
 	});
-	const matB = attachMarkdownMaterializer(b, {
+	const matB = attachMarkdownVault(b, {
 		dir: DIR_B,
-		perTable: { posts: {} },
+		tables: { posts: {} },
 	});
 	await Promise.all([matA.whenFlushed, matB.whenFlushed]);
 

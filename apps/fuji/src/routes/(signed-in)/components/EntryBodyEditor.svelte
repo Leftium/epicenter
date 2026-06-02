@@ -11,10 +11,7 @@
 		wrappingInputRule,
 	} from 'prosemirror-inputrules';
 	import { keymap } from 'prosemirror-keymap';
-	import { type MarkSpec, Schema } from 'prosemirror-model';
-	import { schema as basicSchema } from 'prosemirror-schema-basic';
 	import {
-		addListNodes,
 		liftListItem,
 		sinkListItem,
 		splitListItem,
@@ -25,6 +22,7 @@
 	import { redo, undo, ySyncPlugin, yUndoPlugin } from 'y-prosemirror';
 	import { requireFuji } from '$lib/session';
 	import type { EntryId } from '$lib/workspace';
+	import { entryBodySchema as schema } from '$lib/workspace/entry-body-schema';
 
 	let {
 		entryId,
@@ -40,30 +38,6 @@
 	$effect(() => () => contentDoc[Symbol.dispose]());
 
 	let element: HTMLDivElement | undefined = $state();
-
-	const extraMarks = {
-		strikethrough: {
-			parseDOM: [
-				{ tag: 's' },
-				{ tag: 'del' },
-				{ style: 'text-decoration=line-through' },
-			],
-			toDOM() {
-				return ['s', 0];
-			},
-		},
-		underline: {
-			parseDOM: [{ tag: 'u' }, { style: 'text-decoration=underline' }],
-			toDOM() {
-				return ['u', 0];
-			},
-		},
-	} satisfies Record<string, MarkSpec>;
-
-	const schema = new Schema({
-		nodes: addListNodes(basicSchema.spec.nodes, 'paragraph block*', 'block'),
-		marks: basicSchema.spec.marks.append(extraMarks),
-	});
 
 	function createWordCountPlugin() {
 		let previousCount: number | undefined;

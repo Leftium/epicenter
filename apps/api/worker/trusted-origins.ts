@@ -4,7 +4,7 @@ import { APPS, localUrl, prodOrigins } from '@epicenter/constants/apps';
  * Epicenter cloud's trusted-origin set. This lives in `apps/api`, not in the
  * shared `@epicenter/server` library: it names Epicenter's own app origins and
  * browser extension, which only the hosted deployment should trust. A
- * self-host (`apps/team-api`) supplies its own origins instead, so it never
+ * self-host (`apps/self-host`) supplies its own origins instead, so it never
  * inherits trust in epicenter.so domains it has no relationship with.
  */
 

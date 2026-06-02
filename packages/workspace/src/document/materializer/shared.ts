@@ -6,6 +6,7 @@
  * internally.
  */
 
+import type * as Y from 'yjs';
 import type { Table } from '../table.js';
 
 /**
@@ -23,3 +24,16 @@ export type AnyTable = Table<any>;
  * like `{ posts: workspace.tables.posts }`.
  */
 export type TablesRecord = Record<string, AnyTable>;
+
+/**
+ * The minimal slice of a workspace a materializer needs: the root `Y.Doc` plus
+ * the live table handles to project. Deliberately NOT `Workspace<...>`, which is
+ * generic over table DEFINITIONS and also carries kv/actions/dispose; a
+ * materializer is generic over the already-instantiated `TablesRecord` so its
+ * per-table config can map over the table names. Satisfied by a full workspace
+ * (a superset) or a hand-rolled subset like `{ ydoc, tables: { posts } }`.
+ */
+export type MaterializerInput<TTableHandles extends TablesRecord> = {
+	ydoc: Y.Doc;
+	tables: TTableHandles;
+};

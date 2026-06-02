@@ -9,13 +9,12 @@ import {
 } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 import { tryAsync } from 'wellcrafted/result';
-import type * as Y from 'yjs';
 import { assembleMarkdown } from '../../../markdown/assemble-markdown.js';
 import { parseMarkdownFile } from '../../../markdown/parse-markdown-file.js';
 import { defineActions, defineMutation } from '../../../shared/actions.js';
 import type { MaybePromise } from '../../../shared/types.js';
 import { type BaseRow, type Table, TableParseError } from '../../table.js';
-import type { AnyTable, TablesRecord } from '../shared.js';
+import type { AnyTable, MaterializerInput, TablesRecord } from '../shared.js';
 import {
 	type FileState,
 	materializeTable,
@@ -128,8 +127,8 @@ export type VaultTableConfig<TRow extends BaseRow> = {
  * selection: only tables named here are mirrored into the vault. Keys outside
  * `workspace.tables` are rejected at the type level.
  */
-export type VaultTablesConfig<TTables extends TablesRecord> = {
-	[K in keyof TTables]?: TTables[K] extends Table<infer TRow>
+export type VaultTablesConfig<TTableHandles extends TablesRecord> = {
+	[K in keyof TTableHandles]?: TTableHandles[K] extends Table<infer TRow>
 		? VaultTableConfig<TRow>
 		: never;
 };
@@ -220,8 +219,8 @@ async function readTableFile(
  * });
  * ```
  */
-export function attachMarkdownVault<TTables extends TablesRecord>(
-	workspace: { ydoc: Y.Doc; tables: TTables },
+export function attachMarkdownVault<TTableHandles extends TablesRecord>(
+	workspace: MaterializerInput<TTableHandles>,
 	{
 		dir,
 		tables: tablesConfig,
@@ -234,7 +233,7 @@ export function attachMarkdownVault<TTables extends TablesRecord>(
 		 * Per-table config keyed by `workspace.tables` name. Presence selects: only
 		 * tables named here are mirrored. Pass `{}` for a frontmatter-only table.
 		 */
-		tables?: VaultTablesConfig<TTables>;
+		tables?: VaultTablesConfig<TTableHandles>;
 		/** Gate: awaited before the initial filesystem flush. Omit for no gate. */
 		waitFor?: Promise<unknown>;
 		/** Logger for background write-observer failures. */

@@ -96,30 +96,30 @@ never see it.
                                          │ y-websocket protocol
                     ┌────────────────────┼──────────────────────┐
                     │                    │                      │
-               ┌────▼──────┐      ┌─────▼───────┐      ┌──────▼──────┐
-               │ Whispering│      │  Opensidian  │      │ Tab Manager │
-               │  (Tauri)  │      │ (SvelteKit)  │      │  (WXT ext)  │
-               └────┬──────┘      └─────┬────────┘      └──────┬──────┘
+               ┌────▼──────┐       ┌─────▼────────┐      ┌──────▼──────┐
+               │ Whispering│       │  Opensidian  │      │ Tab Manager │
+               │  (Tauri)  │       │ (SvelteKit)  │      │  (WXT ext)  │
+               └────┬──────┘       └─────┬────────┘      └──────┬──────┘
                     │                    │                      │
           ┌─────────┴────────────────────┴──────────────────────┘
           │              All apps share these layers:
           │
     ┌─────▼───────────────────────────────────────────────────────────┐
-    │                     MIDDLEWARE / ADAPTERS                        │
+    │                     MIDDLEWARE / ADAPTERS                       │
     │  @epicenter/svelte    : Svelte integration, auth, persistence   │
     │  @epicenter/filesystem : POSIX file layer over Yjs              │
     │  @epicenter/skills    : skill/reference tables                  │
-    └─────────────────────────────┬───────────────────────────────────┘
-                                  │
+    └──────────────────────────────┬──────────────────────────────────┘
+                                   │
     ┌──────────────────────────────▼───────────────────────────────────┐
     │                           CORE                                   │
-    │  @epicenter/workspace : typed schemas, Yjs CRDTs, extensions,   │
+    │  @epicenter/workspace : typed schemas, Yjs CRDTs, extensions,    │
     │                         E2E encryption, lifecycle, materializers │
-    │  @epicenter/sync      : protocol encoding/decoding, V2 updates  │
-    │  @epicenter/constants : app URLs, versions, shared config       │
-    │  @epicenter/ui        : shadcn-svelte component library         │
-    │  @epicenter/cli       : TypeBox→yargs CLI, auth/session APIs    │
-    └─────────────────────────────────────────────────────────────────┘
+    │  @epicenter/sync      : protocol encoding/decoding, V2 updates   │
+    │  @epicenter/constants : app URLs, versions, shared config        │
+    │  @epicenter/ui        : shadcn-svelte component library          │
+    │  @epicenter/cli       : TypeBox→yargs CLI, auth/session APIs     │
+    └──────────────────────────────────────────────────────────────────┘
 ```
 
 The dependency flow is strict: core has zero upward dependencies, middleware only reaches into core, and apps compose both. [`@epicenter/workspace`](packages/workspace) is the gravitational center; every middleware package and most apps depend on it. The sync server is a relay, not an authority; it never sees your content because encryption happens client-side before anything leaves the device.

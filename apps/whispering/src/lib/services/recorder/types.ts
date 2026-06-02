@@ -103,8 +103,8 @@ export type Device = {
 };
 
 /**
- * Type guard to convert a string to DeviceIdentifier
- * Use this when receiving device identifiers from external sources
+ * Cast a string to the branded `DeviceIdentifier` type. Use this when adopting
+ * device identifiers from external sources (settings, the Navigator API, Rust).
  * @see DeviceIdentifier
  */
 export function asDeviceIdentifier(value: string): DeviceIdentifier {
@@ -178,15 +178,10 @@ export type NavigatorRecordingParams = BaseRecordingParams & {
 	bitrateKbps: string;
 };
 
-/**
- * Re-exported from the tauri-specta boundary so this module's
- * `RecorderStopResult` is structurally identical to what `commands.stopRecording`
- * returns. The Rust `RecordingArtifact` struct is the single source of truth;
- * the boundary file generates the TS shape for CPAL-written manual recording
- * artifacts.
- */
-export type { RecordingArtifact } from '$lib/tauri/commands';
-
+// Imported from the tauri-specta boundary so `RecorderStopResult` is
+// structurally identical to what `commands.stopRecording` returns. The Rust
+// `RecordingArtifact` struct is the single source of truth; consumers that need
+// the type import it from `$lib/tauri/commands` directly.
 import type { RecordingArtifact } from '$lib/tauri/commands';
 
 /**
@@ -231,7 +226,12 @@ export type RecorderStopResult =
 export type RecordingSession = {
 	readonly recordingId: string;
 	stop(): Promise<Result<RecorderStopResult, RecorderError>>;
-	cancel(): Promise<Result<{ status: 'cancelled' }, RecorderError>>;
+	/**
+	 * Cancel the in-flight recording and discard it. Success carries no payload
+	 * (a live session can only resolve to "cancelled"); the manual-recorder
+	 * wrapper is where the `cancelled` vs `no-recording` distinction is made.
+	 */
+	cancel(): Promise<Result<void, RecorderError>>;
 	subscribe(handler: (state: WhisperingRecordingState) => void): () => void;
 };
 

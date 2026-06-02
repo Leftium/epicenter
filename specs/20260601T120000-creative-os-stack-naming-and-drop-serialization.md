@@ -10,6 +10,8 @@
 - `docs/articles/20260525T120000-epicenter-local-first-creative-operating-system.md`
 
 > Revised 2026-06-01: extended with destinations taxonomy, Ship adapter architecture, slug-by-convention identity, storage index, and composing (round 2 design panel).
+>
+> Superseded in part 2026-06-02: the universal-core schema here (`stage`, `visibility`, and a singular `type` on every drop) is REVISED by [20260602T120000-wiki-core-collections-traits-and-curation.md](20260602T120000-wiki-core-collections-traits-and-curation.md), which shrinks the core to worldview-neutral fields plus loose `tags` and moves stage/visibility/type into opt-in `types` (Tana supertags).
 
 ## Overview
 

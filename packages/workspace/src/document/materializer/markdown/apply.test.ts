@@ -92,7 +92,7 @@ describe('markdown_apply', () => {
 		workspace.tables.posts.set({ id: 'b', title: 'Beta', published: true });
 
 		// Disk: a unchanged, b edited, c new, (b/c differ from table) -> a is a no-op.
-		await materializer.actions.markdown_pull();
+		await materializer.actions.markdown_rebuild({});
 		await writePost('b', post('b', 'Beta EDITED'));
 		await writePost('c', post('c', 'Gamma NEW'));
 
@@ -113,7 +113,7 @@ describe('markdown_apply', () => {
 		workspace.tables.posts.set({ id: 'a', title: 'Alpha', published: true });
 		workspace.tables.posts.set({ id: 'b', title: 'Beta', published: true });
 		workspace.tables.posts.set({ id: 'c', title: 'Gamma', published: true });
-		await materializer.actions.markdown_pull();
+		await materializer.actions.markdown_rebuild({});
 
 		await writePost('b', post('b', 'Beta EDITED')); // update
 		await removePost('c'); // delete
@@ -136,7 +136,7 @@ describe('markdown_apply', () => {
 		const { workspace, materializer } = await setup();
 		workspace.tables.posts.set({ id: 'a', title: 'Alpha', published: true });
 		workspace.tables.posts.set({ id: 'b', title: 'Beta', published: false });
-		await materializer.actions.markdown_pull();
+		await materializer.actions.markdown_rebuild({});
 
 		const plan = await materializer.actions.markdown_apply({});
 
@@ -155,7 +155,7 @@ describe('markdown_apply', () => {
 				published: true,
 			});
 		}
-		await materializer.actions.markdown_pull();
+		await materializer.actions.markdown_rebuild({});
 
 		// Remove every file: 3 deletes, but cap at 1.
 		await removePost('a');
@@ -175,7 +175,7 @@ describe('markdown_apply', () => {
 		const { workspace, materializer } = await setup();
 		workspace.tables.posts.set({ id: 'a', title: 'Alpha', published: true });
 		workspace.tables.posts.set({ id: 'b', title: 'Beta', published: true });
-		await materializer.actions.markdown_pull();
+		await materializer.actions.markdown_rebuild({});
 
 		// One file goes invalid (published is not a boolean) and another is removed.
 		await writePost('a', `---\nid: a\ntitle: Alpha\npublished: nope\n---\n`);
@@ -195,7 +195,7 @@ describe('markdown_apply', () => {
 			onDelete: (id) => softDeleted.push(id),
 		});
 		workspace.tables.posts.set({ id: 'a', title: 'Alpha', published: true });
-		await materializer.actions.markdown_pull();
+		await materializer.actions.markdown_rebuild({});
 
 		await removePost('a');
 		const plan = await materializer.actions.markdown_apply({});
@@ -210,7 +210,7 @@ describe('markdown_apply', () => {
 		const { workspace, materializer } = await setup();
 		workspace.tables.posts.set({ id: 'a', title: 'Alpha', published: true });
 		workspace.tables.posts.set({ id: 'b', title: 'Beta', published: true });
-		await materializer.actions.markdown_pull();
+		await materializer.actions.markdown_rebuild({});
 
 		await writePost('b', post('b', 'Beta EDITED')); // update
 		await removePost('a'); // delete
@@ -243,7 +243,7 @@ describe('markdown_apply', () => {
 			archivedAt: null,
 			tags: [],
 		});
-		await materializer.actions.markdown_pull();
+		await materializer.actions.markdown_rebuild({});
 
 		const plan = await materializer.actions.markdown_apply({ dryRun: true });
 
@@ -258,7 +258,7 @@ describe('markdown_apply', () => {
 		for (const id of ['a', 'b', 'c']) {
 			workspace.tables.posts.set({ id, title: id, published: true });
 		}
-		await materializer.actions.markdown_pull();
+		await materializer.actions.markdown_rebuild({});
 
 		// Remove the whole posts directory (e.g. wrong path, unpopulated mount).
 		// A missing directory carries no desired state, so it must not read as
@@ -326,7 +326,7 @@ describe('markdown_apply', () => {
 		});
 		await materializer.whenFlushed;
 		workspace.tables.posts.set({ id: 'a', title: 'Alpha', published: true });
-		await materializer.actions.markdown_pull(); // writes posts/archive/a.md
+		await materializer.actions.markdown_rebuild({}); // writes posts/archive/a.md
 
 		const plan = await materializer.actions.markdown_apply({ dryRun: true });
 		expect(plan.refused).toBe(false);
@@ -352,7 +352,7 @@ describe('markdown_apply', () => {
 		});
 		await materializer.whenFlushed;
 		workspace.tables.posts.set({ id: 'a', title: 'Alpha', published: true });
-		await materializer.actions.markdown_pull();
+		await materializer.actions.markdown_rebuild({});
 
 		const plan = await materializer.actions.markdown_apply({});
 
@@ -367,7 +367,7 @@ describe('markdown_apply', () => {
 		for (const id of ['a', 'b', 'c']) {
 			workspace.tables.posts.set({ id, title: id, published: true });
 		}
-		await materializer.actions.markdown_pull();
+		await materializer.actions.markdown_rebuild({});
 
 		// Remove the files but keep the (now empty) posts/ directory: this is a
 		// real "delete everything" intent, distinct from a missing directory.

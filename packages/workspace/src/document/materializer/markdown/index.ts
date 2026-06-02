@@ -3,9 +3,7 @@ export {
 	attachMarkdownMaterializer,
 	type GitAutosaveConfig,
 	type MarkdownMaterializer,
+	MarkdownReadError,
 	MaterializerApplyError,
-	MaterializerPushError,
-	type PushEvent,
-	type PushResult,
 } from './materializer.js';
 export { slugFilename } from './slug-filename.js';

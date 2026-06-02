@@ -20,7 +20,7 @@ import { type BaseRow, type Table, TableParseError } from '../../table.js';
 import type { AnyTable, TablesRecord } from '../shared.js';
 
 // ════════════════════════════════════════════════════════════════════════════
-// PUSH ERROR + EVENT TYPES
+// ERROR TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
@@ -61,7 +61,7 @@ const GitAutosaveError = defineErrors({
 	}),
 });
 
-export const MaterializerPushError = defineErrors({
+export const MarkdownReadError = defineErrors({
 	/** Reading the file from disk failed. */
 	ReadFailed: ({ cause }: { cause: unknown }) => ({
 		message: `Read failed: ${extractErrorMessage(cause)}`,
@@ -73,7 +73,7 @@ export const MaterializerPushError = defineErrors({
 		cause,
 	}),
 });
-export type MaterializerPushError = InferErrors<typeof MaterializerPushError>;
+export type MarkdownReadError = InferErrors<typeof MarkdownReadError>;
 
 export const MaterializerApplyError = defineErrors({
 	/** Two files on disk declare the same row `id`; the reconcile can't pick one. */
@@ -95,44 +95,14 @@ export const MaterializerApplyError = defineErrors({
 export type MaterializerApplyError = InferErrors<typeof MaterializerApplyError>;
 
 /**
- * A single event emitted during `push`. Three kinds:
- *
- * - **`imported`**: the file was read, parsed, validated, and its row set.
- * - **`skipped`**: the file couldn't be parsed as markdown-with-frontmatter
- *   (no `---` delimiters, empty delimiters, or frontmatter that doesn't
- *   decode to an object). The three cases collapse at the parser boundary
- *   into a single "not a note" decision; no discriminator needed.
- * - **`error`**: something failed. `error.name` discriminates between
- *   `ReadFailed` / `FromMarkdownCallbackFailed` (materializer errors) and
- *   `ValidationFailed` / `MigrationFailed` / `AsyncSchemaNotSupported`
- *   (table parse errors).
+ * Outcome of reading one `.md` file: a validated row, a non-note (skipped), or
+ * a failure. Consumed by `apply` (which diffs the set against the live rows).
  *
  * `path` is the relative path from the materializer's base `dir` (e.g.,
- * `"posts/hello.md"` for a file under `config.dir: 'posts'`). Not the
- * bare filename: two tables writing the same filename would be
- * indistinguishable otherwise.
- */
-export type PushEvent =
-	| { kind: 'imported'; path: string; tableName: string; id: string }
-	| { kind: 'skipped'; path: string }
-	| {
-			kind: 'error';
-			path: string;
-			tableName: string;
-			error: MaterializerPushError | TableParseError;
-	  };
-
-/** Aggregated result of one `push` invocation. */
-export type PushResult = {
-	imported: number;
-	skipped: number;
-	errored: number;
-	events: PushEvent[];
-};
-
-/**
- * Outcome of reading one `.md` file: a validated row, a non-note (skipped), or
- * a failure. Shared by `push` (commit each row) and `apply` (diff the set).
+ * `"posts/hello.md"` for a file under `config.dir: 'posts'`). Not the bare
+ * filename: two tables writing the same filename would be indistinguishable
+ * otherwise. `error.name` discriminates `ReadFailed` / `FromMarkdownCallbackFailed`
+ * (read errors) from `ValidationFailed` / `MigrationFailed` (table parse errors).
  */
 type ReadResult =
 	| { kind: 'row'; id: string; row: BaseRow; path: string }
@@ -141,7 +111,7 @@ type ReadResult =
 			kind: 'error';
 			path: string;
 			tableName: string;
-			error: MaterializerPushError | TableParseError;
+			error: MarkdownReadError | TableParseError;
 	  };
 
 /**
@@ -289,7 +259,7 @@ async function readTableFile(
 
 	const { data: content, error: readError } = await tryAsync({
 		try: () => readFile(join(directory, filename), 'utf-8'),
-		catch: (cause) => MaterializerPushError.ReadFailed({ cause }),
+		catch: (cause) => MarkdownReadError.ReadFailed({ cause }),
 	});
 	if (readError) return { kind: 'error', path, tableName, error: readError };
 
@@ -301,7 +271,7 @@ async function readTableFile(
 	const { data: row, error: callbackError } = await tryAsync({
 		try: async () => fromMarkdown(parsed),
 		catch: (cause) =>
-			MaterializerPushError.FromMarkdownCallbackFailed({ cause }),
+			MarkdownReadError.FromMarkdownCallbackFailed({ cause }),
 	});
 	if (callbackError)
 		return { kind: 'error', path, tableName, error: callbackError };
@@ -375,10 +345,10 @@ async function writeMarkdownFile(
  * `perTable` entry are skipped. To mirror with defaults, pass an empty
  * config (`perTable: { notes: {} }`).
  *
- * Exposes three mutations under `.actions`, each ready to spread into a
+ * Exposes two mutations under `.actions`, each ready to spread into a
  * workspace's action registry:
- * - `markdown_push`: disk to workspace. Import .md files as rows (additive).
- * - `markdown_pull`: workspace to disk. Write every row as .md file (additive).
+ * - `markdown_apply`: disk to workspace, declarative. Reconcile .md edits into
+ *   rows keyed by id (create/update/delete), guarded and atomic.
  * - `markdown_rebuild`: workspace to disk, destructive. Clear output dir then
  *   rewrite all rows. Use for orphan cleanup or after config changes.
  *   Mirrors the sqlite materializer's `rebuild` for cross-materializer parity.
@@ -575,7 +545,7 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 
 	const whenFlushed = initialize();
 
-	// ── Disk read (shared by push + apply) ──────────────────────
+	// ── Disk read (feeds apply) ─────────────────────────────────
 
 	// Read every `.md` under one table's directory into validated rows. `present`
 	// distinguishes a MISSING directory (cannot be read, so it carries no
@@ -611,58 +581,6 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 			results.push(await readTableFile(entry, directory, subdir, relative));
 		}
 		return { present: true, results };
-	}
-
-	// ── Push (imports markdown files into workspace tables) ─────
-
-	async function pushMarkdownFiles(): Promise<PushResult> {
-		const events: PushEvent[] = [];
-
-		for (const entry of registered.values()) {
-			const tableName = entry.table.name;
-			const { results } = await readTableDir(entry);
-			for (const result of results) {
-				if (result.kind === 'row') {
-					entry.table.set(result.row);
-					events.push({
-						kind: 'imported',
-						path: result.path,
-						tableName,
-						id: result.id,
-					});
-				} else if (result.kind === 'skipped') {
-					events.push({ kind: 'skipped', path: result.path });
-				} else {
-					events.push({
-						kind: 'error',
-						path: result.path,
-						tableName,
-						error: result.error,
-					});
-				}
-			}
-		}
-
-		let imported = 0;
-		let skipped = 0;
-		let errored = 0;
-		for (const event of events) {
-			switch (event.kind) {
-				case 'imported':
-					imported++;
-					break;
-				case 'skipped':
-					skipped++;
-					break;
-				case 'error':
-					errored++;
-					break;
-				default:
-					event satisfies never;
-			}
-		}
-
-		return { imported, skipped, errored, events };
 	}
 
 	// ── Apply (declarative reconcile: disk is the desired state) ─
@@ -882,44 +800,11 @@ export function attachMarkdownMaterializer<TTables extends TablesRecord>(
 		return { deleted, written };
 	}
 
-	// ── Pull (workspace → disk, additive) ────────────────────────
-
-	async function pullMarkdownFiles(): Promise<{ written: number }> {
-		const baseDir = await resolveDir();
-		let written = 0;
-		for (const entry of registered.values()) {
-			const directory = join(baseDir, entry.config.dir ?? entry.table.name);
-			await mkdir(directory, { recursive: true });
-			for (const row of entry.table.getAllValid()) {
-				const { filename, content } = await rowToMarkdownFile(
-					row,
-					entry.config,
-				);
-				await writeMarkdownFile(directory, filename, content);
-				markDirty(join(directory, filename));
-				written++;
-			}
-		}
-		return { written };
-	}
-
 	// ── Public API ───────────────────────────────────────────────
 
 	return {
 		whenFlushed,
 		actions: defineActions({
-			markdown_push: defineMutation({
-				title: 'Push Markdown',
-				description:
-					'Read .md files from disk and import rows into registered tables.',
-				handler: pushMarkdownFiles,
-			}),
-			markdown_pull: defineMutation({
-				title: 'Pull Markdown',
-				description:
-					'Write every valid row from registered tables to .md files on disk.',
-				handler: pullMarkdownFiles,
-			}),
 			markdown_rebuild: defineMutation({
 				title: 'Rebuild Markdown',
 				description:

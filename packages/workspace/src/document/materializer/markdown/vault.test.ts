@@ -1,10 +1,10 @@
 /**
- * Markdown Materializer Tests
+ * Markdown Vault Tests
  *
  * Covers the continuous materialize observer and the destructive `rebuild`
- * mutation on `attachMarkdownMaterializer`. The declarative `apply` reconcile
+ * mutation on `attachMarkdownVault`. The declarative `apply` reconcile
  * (disk -> Yjs) is tested separately in `apply.test.ts`. Uses real temp
- * directories and Yjs workspaces so the materializer exercises actual table
+ * directories and Yjs workspaces so the vault exercises actual table
  * set/get and filesystem paths.
  */
 
@@ -18,10 +18,7 @@ import {
 	type Tables,
 } from '../../../index.js';
 import { column } from '../../column/index.js';
-import {
-	attachMarkdownMaterializer,
-	type PerTableConfig,
-} from './materializer.js';
+import { attachMarkdownVault, type VaultTablesConfig } from './vault.js';
 
 // ============================================================================
 // Test Table Definitions
@@ -44,7 +41,7 @@ const tableDefinitions = { posts: postsTable, notes: notesTable };
 // Test Directory Setup
 // ============================================================================
 
-const TEST_DIR = join(import.meta.dir, '__test-materializer__');
+const TEST_DIR = join(import.meta.dir, '__test-vault__');
 
 beforeEach(async () => {
 	await mkdir(TEST_DIR, { recursive: true });
@@ -73,11 +70,11 @@ async function listTestDir(relativePath: string) {
 }
 
 type SetupOptions = {
-	perTable?: PerTableConfig<Tables<typeof tableDefinitions>>;
+	tables?: VaultTablesConfig<Tables<typeof tableDefinitions>>;
 };
 
 async function setup({
-	perTable = { posts: {}, notes: {} },
+	tables = { posts: {}, notes: {} },
 }: SetupOptions = {}) {
 	const cache = createDisposableCache(
 		(id: string) => {
@@ -87,9 +84,9 @@ async function setup({
 				kv: {},
 			});
 
-			const materializer = attachMarkdownMaterializer(inner, {
+			const materializer = attachMarkdownVault(inner, {
 				dir: TEST_DIR,
-				perTable,
+				tables,
 			});
 
 			return {
@@ -105,7 +102,7 @@ async function setup({
 		{ gcTime: 0 },
 	);
 
-	const workspace = cache.open('test-materializer');
+	const workspace = cache.open('test-vault');
 	await workspace.whenReady;
 	return { workspace, cache };
 }
@@ -116,7 +113,7 @@ async function setup({
 
 describe('rebuild', () => {
 	test('removes orphan files and rewrites existing valid rows', async () => {
-		const { workspace } = await setup({ perTable: { posts: {} } });
+		const { workspace } = await setup({ tables: { posts: {} } });
 		// Seed disk with rows + an orphan file
 		workspace.tables.posts.set({
 			id: 'p1',
@@ -171,22 +168,22 @@ describe('rebuild', () => {
 	});
 
 	test('throws on unknown table name', async () => {
-		const { workspace } = await setup({ perTable: { posts: {} } });
+		const { workspace } = await setup({ tables: { posts: {} } });
 		await expect(
 			workspace.materializer.actions.markdown_rebuild({
 				tableName: 'notAThing',
 			}),
-		).rejects.toThrow(/not in the materialized table set/);
+		).rejects.toThrow(/not in the vault's table set/);
 
 		workspace[Symbol.dispose]();
 	});
 
 	test('aborts WITHOUT deleting existing files when a row fails to serialize', async () => {
-		// toMarkdown throws (mimics fuji's body read hitting its connect deadline).
+		// readBody throws (mimics fuji's body read hitting its connect deadline).
 		const { workspace } = await setup({
-			perTable: {
+			tables: {
 				posts: {
-					toMarkdown: () => {
+					readBody: () => {
 						throw new Error('simulated body read failure');
 					},
 				},
@@ -214,7 +211,7 @@ describe('rebuild', () => {
 	});
 
 	test('is idempotent: rebuild twice produces identical filesystem state', async () => {
-		const { workspace } = await setup({ perTable: { posts: {} } });
+		const { workspace } = await setup({ tables: { posts: {} } });
 		workspace.tables.posts.set({
 			id: 'p1',
 			title: 'A',
@@ -256,22 +253,22 @@ describe('rebuild', () => {
 // ============================================================================
 
 describe('observer per-row isolation', () => {
-	test('a throwing toMarkdown for one changed row does not block its batch siblings', async () => {
+	test('a throwing readBody for one changed row does not block its batch siblings', async () => {
 		const workspace = createWorkspace({
 			id: 'obs-isolation',
 			tables: tableDefinitions,
 			kv: {},
 		});
 
-		const materializer = attachMarkdownMaterializer(workspace, {
+		const materializer = attachMarkdownVault(workspace, {
 			dir: TEST_DIR,
-			perTable: {
+			tables: {
 				posts: {
-					toMarkdown: (row) => {
+					readBody: (row) => {
 						if (row.id === 'bad') {
 							throw new Error('simulated body read failure');
 						}
-						return { frontmatter: { ...row }, body: undefined };
+						return '';
 					},
 				},
 			},
@@ -296,4 +293,3 @@ describe('observer per-row isolation', () => {
 		workspace[Symbol.dispose]();
 	});
 });
-

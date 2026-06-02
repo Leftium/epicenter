@@ -1,7 +1,7 @@
 /**
- * Markdown Materializer Git Autosave Tests
+ * Markdown Vault Git Autosave Tests
  *
- * Verifies the optional `git` integration on `attachMarkdownMaterializer`
+ * Verifies the optional `git` integration on `attachMarkdownVault`
  * against real Yjs workspaces, real markdown writes, and real temporary Git
  * repositories. These tests pin the materializer-owned contract: file writes
  * enqueue exact paths, timers batch those paths, and Git failures never block
@@ -30,7 +30,7 @@ import { join } from 'node:path';
 import type { Logger } from 'wellcrafted/logger';
 import { createWorkspace, defineTable } from '../../../index.js';
 import { column } from '../../column/index.js';
-import { attachMarkdownMaterializer, type GitAutosaveConfig } from './index.js';
+import { attachMarkdownVault, type GitAutosaveConfig } from './index.js';
 
 const postsTable = defineTable({
 	id: column.string(),
@@ -144,9 +144,9 @@ function createTestWorkspace({
 		workspace.ydoc.once = patchedOnce;
 	}
 
-	const materializer = attachMarkdownMaterializer(workspace, {
+	const materializer = attachMarkdownVault(workspace, {
 		dir: markdownDir,
-		perTable: { posts: {} },
+		tables: { posts: {} },
 		git,
 		log,
 	});
@@ -216,7 +216,7 @@ function setPost(
 	workspace.tables.posts.set({ id, title, published: true });
 }
 
-describe('attachMarkdownMaterializer git autosave', () => {
+describe('attachMarkdownVault git autosave', () => {
 	test('quiet timer commits one batch for many observer writes', async () => {
 		const project = setupProject();
 		try {

@@ -1,9 +1,16 @@
+export type { GitAutosaveConfig, MarkdownShape } from './shared.js';
+export {
+	attachMarkdownExport,
+	type ExportTableConfig,
+	type ExportTablesConfig,
+	type MarkdownExport,
+} from './export.js';
 export {
 	type ApplyPlan,
-	attachMarkdownMaterializer,
-	type GitAutosaveConfig,
-	type MarkdownMaterializer,
+	attachMarkdownVault,
 	MarkdownReadError,
+	type MarkdownVault,
 	MaterializerApplyError,
-} from './materializer.js';
-export { slugFilename } from './slug-filename.js';
+	type VaultTableConfig,
+	type VaultTablesConfig,
+} from './vault.js';

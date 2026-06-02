@@ -94,9 +94,9 @@ export function sqlitePath(projectDir: string, workspaceId: string): string {
  * Root directory for a workspace's markdown materializer tree.
  *
  * Convention: `<projectDir>/.epicenter/md/<workspaceId>/`. A mount can pass a
- * custom markdown directory to `attachMarkdownMaterializer`. For Fuji today,
- * markdown is a derived projection of root row frontmatter plus app-owned body
- * doc text, not the canonical import source for entry bodies.
+ * custom markdown directory to `attachMarkdownVault`. For Fuji today, the vault
+ * materializes root row frontmatter plus app-owned body doc text (read-only),
+ * and reconciles frontmatter rows on apply; entry bodies are not yet imported.
  *
  * @example
  * ```ts

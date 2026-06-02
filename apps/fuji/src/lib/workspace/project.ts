@@ -20,6 +20,7 @@
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import {
 	attachRichText,
+	DateTimeString,
 	defineActions,
 	defineWorkspace,
 	openCollaboration,
@@ -27,9 +28,8 @@ import {
 } from '@epicenter/workspace';
 import { defineMount } from '@epicenter/workspace/daemon';
 import {
-	attachMarkdownMaterializer,
+	attachMarkdownVault,
 	type GitAutosaveConfig,
-	slugFilename,
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import {
@@ -40,7 +40,12 @@ import {
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
 import * as Y from 'yjs';
-import { createFuji, type Entry, entryContentDocGuid } from './index.js';
+import {
+	asEntryId,
+	createFuji,
+	type Entry,
+	entryContentDocGuid,
+} from './index.js';
 
 const BODY_CONNECT_DEADLINE_MS = 10_000;
 
@@ -119,25 +124,28 @@ export function fuji(opts: FujiMountOptions = {}) {
 				}
 			};
 
-			const markdown = attachMarkdownMaterializer(workspace, {
+			const markdown = attachMarkdownVault(workspace, {
 				dir: mdDir,
 				log: createLogger(`${mount}-markdown`),
-				perTable: {
+				tables: {
 					entries: {
-						filename: slugFilename('title'),
-						// `{ ...entry }` is the materializer's default frontmatter; this
-						// callback exists only to attach the body read. The body is read
-						// fresh every time the row changes: a daemon restart re-reads all
-						// bodies, which self-heals any `.md` left stale by a cross-doc
-						// sync race (root `updatedAt` arriving before the body update).
-						toMarkdown: async (entry) => ({
-							frontmatter: { ...entry },
-							body: await readEntryBody(entry),
-						}),
-						// NOTE: no `fromMarkdown` yet, so `markdown_apply` refuses this
-						// table (it cannot round-trip the body, which lives in a separate
-						// content doc). Fuji's apply integration (body write + soft-delete
-						// onDelete) ships with the body import work.
+						// Materialize the body (read-only) into the entry's `.md` so a
+						// human or agent can read the prose. Read fresh every time the row
+						// changes: a daemon restart re-reads all bodies, self-healing any
+						// `.md` left stale by a cross-doc sync race (root `updatedAt`
+						// arriving before the body update). v1 reconciles FRONTMATTER only;
+						// body import is gated on the faithful prosemirror-markdown codec.
+						readBody: (entry) => readEntryBody(entry),
+						// Removal mirrors `entries_delete`: a tombstone (set `deletedAt`)
+						// that still syncs to peers, not a hard delete. Synchronous so it
+						// runs inside apply's single row transaction.
+						onDelete: (id) => {
+							const now = DateTimeString.now();
+							workspace.tables.entries.update(asEntryId(id), {
+								deletedAt: now,
+								updatedAt: now,
+							});
+						},
 					},
 				},
 				git: opts.git,

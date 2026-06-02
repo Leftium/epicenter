@@ -26,7 +26,7 @@ import {
 	defineTable,
 } from '../../../index.js';
 import { column } from '../../column/index.js';
-import { attachMarkdownMaterializer } from './materializer.js';
+import { attachMarkdownVault } from './vault.js';
 
 const postsTable = defineTable({
 	id: column.string(),
@@ -77,9 +77,9 @@ async function setup({ onDelete }: SetupOptions = {}) {
 		tables: tableDefinitions,
 		kv: {},
 	});
-	const materializer = attachMarkdownMaterializer(workspace, {
+	const materializer = attachMarkdownVault(workspace, {
 		dir: TEST_DIR,
-		perTable: { posts: { onDelete }, typed: {} },
+		tables: { posts: { onDelete }, typed: {} },
 	});
 	await materializer.whenFlushed;
 	return { workspace, materializer };
@@ -310,56 +310,6 @@ describe('markdown_apply', () => {
 		const again = await materializer.actions.markdown_apply({});
 		expect(again.updates).toEqual([]);
 		expect(again.creates).toEqual([]);
-	});
-
-	test('reads nested filenames so apply does not delete them', async () => {
-		// A filename that nests into a subdirectory must round-trip: a flat scan
-		// would miss it and apply would wrongly plan a delete.
-		const workspace = createWorkspace({
-			id: 'test-nested',
-			tables: tableDefinitions,
-			kv: {},
-		});
-		const materializer = attachMarkdownMaterializer(workspace, {
-			dir: TEST_DIR,
-			perTable: { posts: { filename: (r) => `archive/${r.id}.md` } },
-		});
-		await materializer.whenFlushed;
-		workspace.tables.posts.set({ id: 'a', title: 'Alpha', published: true });
-		await materializer.actions.markdown_rebuild({}); // writes posts/archive/a.md
-
-		const plan = await materializer.actions.markdown_apply({ dryRun: true });
-		expect(plan.refused).toBe(false);
-		expect(plan.deletes).toEqual([]);
-		expect(plan.updates).toEqual([]);
-	});
-
-	test('refuses a table whose toMarkdown has no fromMarkdown', async () => {
-		// toMarkdown emits a body, but with no fromMarkdown apply would silently
-		// drop it. The guard must refuse before touching anything.
-		const workspace = createWorkspace({
-			id: 'test-guard',
-			tables: tableDefinitions,
-			kv: {},
-		});
-		const materializer = attachMarkdownMaterializer(workspace, {
-			dir: TEST_DIR,
-			perTable: {
-				posts: {
-					toMarkdown: (r) => ({ frontmatter: { ...r }, body: 'prose' }),
-				},
-			},
-		});
-		await materializer.whenFlushed;
-		workspace.tables.posts.set({ id: 'a', title: 'Alpha', published: true });
-		await materializer.actions.markdown_rebuild({});
-
-		const plan = await materializer.actions.markdown_apply({});
-
-		expect(plan.refused).toBe(true);
-		expect((plan.errors[0]?.error as { name?: string })?.name).toBe(
-			'RoundTripUnproven',
-		);
 	});
 
 	test('an empty present directory deletes rows only under the guard', async () => {

@@ -55,6 +55,11 @@ function createManualRecorder() {
 	let _state = $state<WhisperingRecordingState>('IDLE');
 	let _current: RecordingSession | null = null;
 	let _unsubscribe: (() => void) | null = null;
+	// Synchronous in-flight guard for start. `_current` is not set until after
+	// two awaits (bootstrap + the service start), so without this a second
+	// start firing in that window (e.g. a global shortcut pressed twice) would
+	// pass the `_current` check and orphan a second recording.
+	let _starting = false;
 
 	function attach(session: RecordingSession) {
 		_unsubscribe?.();
@@ -112,17 +117,25 @@ function createManualRecorder() {
 		}),
 
 		async startRecording() {
-			const { error: bootstrapError } = await ensureBootstrapped();
-			if (bootstrapError) return Err(bootstrapError);
-			if (_current) return ManualRecorderError.AlreadyRecording();
-			const params = manualRecorderConfig.resolveStartParams(nanoid());
-			const { data, error: startRecordingError } =
-				await ManualRecorderLive.startRecording(params);
+			if (_starting) return ManualRecorderError.AlreadyRecording();
+			_starting = true;
+			try {
+				// Bootstrap may rehydrate a CPAL session that outlived a reload,
+				// so the `_current` check has to come after it.
+				const { error: bootstrapError } = await ensureBootstrapped();
+				if (bootstrapError) return Err(bootstrapError);
+				if (_current) return ManualRecorderError.AlreadyRecording();
+				const params = manualRecorderConfig.resolveStartParams(nanoid());
+				const { data, error: startRecordingError } =
+					await ManualRecorderLive.startRecording(params);
 
-			if (startRecordingError) return Err(startRecordingError);
+				if (startRecordingError) return Err(startRecordingError);
 
-			attach(data.session);
-			return Ok(data.deviceAcquisition);
+				attach(data.session);
+				return Ok(data.deviceAcquisition);
+			} finally {
+				_starting = false;
+			}
 		},
 
 		async stopRecording() {

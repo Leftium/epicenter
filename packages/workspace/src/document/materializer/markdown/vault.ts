@@ -87,7 +87,11 @@ export type ApplyPlan = {
 	updates: { tableName: string; id: string }[];
 	deletes: { tableName: string; id: string }[];
 	skipped: { path: string }[];
-	errors: { path: string; tableName: string; error: unknown }[];
+	errors: {
+		path: string;
+		tableName: string;
+		error: MarkdownReadError | TableParseError | MarkdownApplyError;
+	}[];
 };
 
 /**

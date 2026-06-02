@@ -74,8 +74,9 @@ export function yjsPath(projectDir: string, workspaceId: string): string {
 /**
  * Convention path for a workspace's SQLite mirror file (the queryable SQL surface).
  *
- * Convention: `<projectDir>/.epicenter/sqlite/<workspaceId>.db`. A mount can
- * pass a custom `sqliteFile` to `attachBunSqliteMaterializer`; scripts must then
+ * Convention: `<projectDir>/.epicenter/sqlite/<workspaceId>.db`. The vault mount
+ * factories always use this guid-keyed default; a non-vault caller can still pass
+ * a custom `filePath` to `attachBunSqliteMaterializer`, in which case scripts must
  * open that explicit path with `openSqliteReader({ filePath })`.
  *
  * Distinct from `yjsPath`: the yjs file is the role (durability of the

@@ -380,6 +380,31 @@ describe('markdown_apply body import (writeBody)', () => {
 		expect(writeCalls).toEqual([{ id: 'a', markdown: 'alpha body EDITED' }]);
 	});
 
+	test('a body-only edit imports once, not again on a second apply', async () => {
+		const writeCalls: { id: string; markdown: string }[] = [];
+		const { workspace, materializer } = await setup({
+			readBody: () => 'body',
+			writeBody: (id, markdown) => {
+				writeCalls.push({ id, markdown });
+			},
+		});
+		workspace.tables.posts.set({ id: 'a', title: 'Alpha', published: true });
+		await materializer.actions.markdown_rebuild({});
+
+		// Edit only the body; the frontmatter (and so the row) is untouched, so
+		// materialize never re-fires to refresh fileState after the import.
+		const aPath = join(TEST_DIR, 'posts', 'a.md');
+		const aContent = await readFile(aPath, 'utf-8');
+		await writeFile(aPath, aContent.replace('body', 'body EDITED'), 'utf-8');
+
+		await materializer.actions.markdown_apply({}); // imports the edit
+		await materializer.actions.markdown_apply({}); // must skip: file unchanged since
+
+		// Imported exactly once. Without the post-import fileState re-baseline, the
+		// second apply would re-import the same body (the file still reads as changed).
+		expect(writeCalls).toEqual([{ id: 'a', markdown: 'body EDITED' }]);
+	});
+
 	test('a writeBody failure is best-effort: it does not refuse the applied plan', async () => {
 		const { workspace, materializer } = await setup({
 			readBody: () => 'body',

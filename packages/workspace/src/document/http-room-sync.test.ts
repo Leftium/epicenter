@@ -17,7 +17,11 @@ const ownerId = asOwnerId('owner-1');
 const guid = 'content-doc-1';
 
 /** A fake relay: serves `snapshot` on GET, records POSTs. */
-function fakeRelay({ snapshot = new Uint8Array(0) }: { snapshot?: Uint8Array } = {}) {
+function fakeRelay({
+	snapshot = new Uint8Array(0),
+}: {
+	snapshot?: Uint8Array;
+} = {}) {
 	const posts: Uint8Array[] = [];
 	let getCount = 0;
 	const fetch: AuthedFetch = async (_input, init) => {

@@ -7,11 +7,6 @@ import {
 import type { Result } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 
-/** The outcome of cancelling a recording. */
-export type CancelRecordingResult =
-	| { status: 'cancelled' }
-	| { status: 'no-recording' };
-
 /**
  * Device acquisition outcome after attempting to connect to a recording device.
  *
@@ -236,7 +231,7 @@ export type RecorderStopResult =
 export type RecordingSession = {
 	readonly recordingId: string;
 	stop(): Promise<Result<RecorderStopResult, RecorderError>>;
-	cancel(): Promise<Result<CancelRecordingResult, RecorderError>>;
+	cancel(): Promise<Result<{ status: 'cancelled' }, RecorderError>>;
 	subscribe(handler: (state: WhisperingRecordingState) => void): () => void;
 };
 

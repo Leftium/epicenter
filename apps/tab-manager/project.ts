@@ -10,6 +10,7 @@ import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { defineActions, defineWorkspace } from '@epicenter/workspace';
 import { defineMount } from '@epicenter/workspace/daemon';
 import {
+	attachGitAutosave,
 	attachMarkdownVault,
 	type GitAutosaveConfig,
 } from '@epicenter/workspace/document/materializer/markdown';
@@ -72,8 +73,14 @@ export function tabManager(opts: TabManagerMountOptions = {}) {
 					devices: {},
 					savedTabs: {},
 				},
-				git: opts.git,
 			});
+			if (opts.git) {
+				attachGitAutosave({
+					ydoc: workspace.ydoc,
+					dir: mdDir,
+					config: opts.git,
+				});
+			}
 
 			const actions = defineActions({
 				...sqlite.actions,

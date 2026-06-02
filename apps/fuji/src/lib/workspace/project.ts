@@ -28,6 +28,7 @@ import {
 } from '@epicenter/workspace';
 import { defineMount } from '@epicenter/workspace/daemon';
 import {
+	attachGitAutosave,
 	attachMarkdownVault,
 	type GitAutosaveConfig,
 } from '@epicenter/workspace/document/materializer/markdown';
@@ -148,8 +149,14 @@ export function fuji(opts: FujiMountOptions = {}) {
 						},
 					},
 				},
-				git: opts.git,
 			});
+			if (opts.git) {
+				attachGitAutosave({
+					ydoc: workspace.ydoc,
+					dir: mdDir,
+					config: opts.git,
+				});
+			}
 
 			const actions = defineActions({
 				...workspace.actions,

@@ -9,9 +9,7 @@ import type { BaseRow, Table } from '../../table.js';
 import type { AnyTable, TablesRecord } from '../shared.js';
 import {
 	assembleMarkdown,
-	createGitAutosave,
 	type FileState,
-	type GitAutosaveConfig,
 	type MarkdownShape,
 	materializeTable,
 	type RenderRow,
@@ -73,7 +71,6 @@ export function attachMarkdownExport<TTables extends TablesRecord>(
 		perTable,
 		waitFor,
 		log = createLogger('markdown-export'),
-		git,
 	}: {
 		/** Base output directory. A string or async getter for lazy path resolution. */
 		dir: string | (() => MaybePromise<string>);
@@ -87,8 +84,6 @@ export function attachMarkdownExport<TTables extends TablesRecord>(
 		waitFor?: Promise<unknown>;
 		/** Logger for background write-observer failures. */
 		log?: Logger;
-		/** Enables Git autosave for files written by this export. */
-		git?: GitAutosaveConfig;
 	},
 ) {
 	const { ydoc, tables } = workspace;
@@ -121,17 +116,9 @@ export function attachMarkdownExport<TTables extends TablesRecord>(
 	const resolveDir = async () =>
 		typeof dir === 'function' ? await dir() : dir;
 
-	const gitAutosave = git
-		? createGitAutosave({ dir: resolveDir, config: git, log })
-		: undefined;
-	const markDirty = (path: string): void => {
-		gitAutosave?.enqueue(path);
-	};
-
 	function dispose() {
 		if (isDisposed) return;
 		isDisposed = true;
-		gitAutosave?.dispose();
 		for (const entry of registered.values()) entry.unsubscribe?.();
 	}
 
@@ -143,7 +130,6 @@ export function attachMarkdownExport<TTables extends TablesRecord>(
 
 		const baseDir = await resolveDir();
 		await mkdir(baseDir, { recursive: true });
-		await gitAutosave?.initialize();
 
 		for (const entry of registered.values()) {
 			if (isDisposed) return;
@@ -153,7 +139,6 @@ export function attachMarkdownExport<TTables extends TablesRecord>(
 				render: entry.render,
 				fileState: entry.fileState,
 				log,
-				markDirty,
 			});
 		}
 	}
@@ -171,7 +156,6 @@ export function attachMarkdownExport<TTables extends TablesRecord>(
 				directory: join(baseDir, entry.subdir),
 				render: entry.render,
 				fileState: entry.fileState,
-				markDirty,
 			});
 		}
 

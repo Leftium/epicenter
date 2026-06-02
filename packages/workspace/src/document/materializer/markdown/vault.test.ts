@@ -69,6 +69,30 @@ async function listTestDir(relativePath: string) {
 	return readdir(join(TEST_DIR, relativePath));
 }
 
+/**
+ * Poll until `relativePath` exists and its content satisfies `predicate`, or the
+ * deadline elapses. The materialize observer writes are detached, so a fixed
+ * sleep is flaky on a cold run; this waits for the write to actually land (which
+ * also means `fileState` is populated, so the dirty guard is armed).
+ */
+async function waitForContent(
+	relativePath: string,
+	predicate: (content: string) => boolean,
+	timeoutMs = 2_000,
+) {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		try {
+			const content = await readTestFile(relativePath);
+			if (predicate(content)) return content;
+		} catch {
+			// not written yet
+		}
+		await Bun.sleep(10);
+	}
+	throw new Error(`timed out waiting for ${relativePath}`);
+}
+
 type SetupOptions = {
 	tables?: VaultTablesConfig<Tables<typeof tableDefinitions>>;
 };
@@ -302,8 +326,9 @@ describe('dirty guard', () => {
 	test('a locally edited file survives a remote row change (left for apply)', async () => {
 		const { workspace } = await setup({ tables: { posts: {} } });
 		workspace.tables.posts.set({ id: 'p1', title: 'Original', published: true });
-		await Bun.sleep(20); // let the observer write posts/p1.md
-		expect(await readTestFile('posts/p1.md')).toContain('title: Original');
+		// Wait for the observer write to land (so fileState is populated and the
+		// dirty guard is armed) before editing on disk.
+		await waitForContent('posts/p1.md', (c) => c.includes('title: Original'));
 
 		// A human or agent edits the vault file on disk.
 		await writeTestFile(
@@ -311,15 +336,16 @@ describe('dirty guard', () => {
 			'---\nid: p1\ntitle: LOCAL EDIT\npublished: true\n---\n',
 		);
 
-		// A change to the same row (e.g. a remote sync) fires the observer.
+		// A change to the same row (e.g. a remote sync) fires the observer. The
+		// guard skips the overwrite whenever the observer runs, so the assertion
+		// holds regardless of timing.
 		workspace.tables.posts.set({
 			id: 'p1',
 			title: 'Remote Change',
 			published: false,
 		});
-		await Bun.sleep(20);
+		await Bun.sleep(40);
 
-		// The observer must NOT overwrite the pending local edit.
 		const onDisk = await readTestFile('posts/p1.md');
 		expect(onDisk).toContain('LOCAL EDIT');
 		expect(onDisk).not.toContain('Remote Change');
@@ -330,11 +356,11 @@ describe('dirty guard', () => {
 	test('a clean (unedited) file is updated normally on a row change', async () => {
 		const { workspace } = await setup({ tables: { posts: {} } });
 		workspace.tables.posts.set({ id: 'p1', title: 'Original', published: true });
-		await Bun.sleep(20);
+		await waitForContent('posts/p1.md', (c) => c.includes('title: Original'));
 
 		// No local edit: a row change rewrites the file as usual.
 		workspace.tables.posts.set({ id: 'p1', title: 'Updated', published: true });
-		await Bun.sleep(20);
+		await waitForContent('posts/p1.md', (c) => c.includes('title: Updated'));
 
 		expect(await readTestFile('posts/p1.md')).toContain('title: Updated');
 

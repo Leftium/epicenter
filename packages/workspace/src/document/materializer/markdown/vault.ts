@@ -17,9 +17,7 @@ import { type BaseRow, type Table, TableParseError } from '../../table.js';
 import type { AnyTable, TablesRecord } from '../shared.js';
 import {
 	assembleMarkdown,
-	createGitAutosave,
 	type FileState,
-	type GitAutosaveConfig,
 	materializeTable,
 	type RenderRow,
 	rebuildTable,
@@ -225,7 +223,6 @@ export function attachMarkdownVault<TTables extends TablesRecord>(
 		tables: tablesConfig,
 		waitFor,
 		log = createLogger('markdown-vault'),
-		git,
 	}: {
 		/** Base output directory. A string or async getter for lazy path resolution. */
 		dir: string | (() => MaybePromise<string>);
@@ -238,8 +235,6 @@ export function attachMarkdownVault<TTables extends TablesRecord>(
 		waitFor?: Promise<unknown>;
 		/** Logger for background write-observer failures. */
 		log?: Logger;
-		/** Enables Git autosave for files written by this vault. */
-		git?: GitAutosaveConfig;
 	},
 ) {
 	const { ydoc, tables } = workspace;
@@ -271,17 +266,9 @@ export function attachMarkdownVault<TTables extends TablesRecord>(
 	const resolveDir = async () =>
 		typeof dir === 'function' ? await dir() : dir;
 
-	const gitAutosave = git
-		? createGitAutosave({ dir: resolveDir, config: git, log })
-		: undefined;
-	const markDirty = (path: string): void => {
-		gitAutosave?.enqueue(path);
-	};
-
 	function dispose() {
 		if (isDisposed) return;
 		isDisposed = true;
-		gitAutosave?.dispose();
 		for (const entry of registered.values()) entry.unsubscribe?.();
 	}
 
@@ -293,7 +280,6 @@ export function attachMarkdownVault<TTables extends TablesRecord>(
 
 		const baseDir = await resolveDir();
 		await mkdir(baseDir, { recursive: true });
-		await gitAutosave?.initialize();
 
 		for (const entry of registered.values()) {
 			if (isDisposed) return;
@@ -303,7 +289,6 @@ export function attachMarkdownVault<TTables extends TablesRecord>(
 				render: entry.render,
 				fileState: entry.fileState,
 				log,
-				markDirty,
 				// The vault is editable: never stomp an in-progress edit a future
 				// apply will reconcile.
 				protectLocalEdits: true,
@@ -472,7 +457,6 @@ export function attachMarkdownVault<TTables extends TablesRecord>(
 				directory: join(baseDir, entry.table.name),
 				render: entry.render,
 				fileState: entry.fileState,
-				markDirty,
 			});
 		}
 

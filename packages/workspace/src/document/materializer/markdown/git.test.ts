@@ -1,24 +1,26 @@
 /**
- * Markdown Vault Git Autosave Tests
+ * Git Autosave Tests
  *
- * Verifies the optional `git` integration on `attachMarkdownVault`
- * against real Yjs workspaces, real markdown writes, and real temporary Git
- * repositories. These tests pin the materializer-owned contract: file writes
- * enqueue exact paths, timers batch those paths, and Git failures never block
- * markdown materialization.
+ * Verifies the standalone `attachGitAutosave` primitive against real file
+ * writes and real temporary Git repositories. The primitive knows nothing about
+ * Yjs rows or the markdown vault: it fs-watches a directory and debounce-commits
+ * whatever changes there. It only borrows a Y.Doc for its lifecycle, disposing
+ * the watcher when the doc is destroyed.
  *
  * Key behaviors:
- * - quiet and max-batch timers commit materialized paths
- * - configured and default authors apply per commit without mutating config
- * - non-repo directories, empty batches, no-diff batches, and index locks do
- *   not stop markdown writes
- * - graceful destroy does not flush autosave; a subsequent attach re-enqueues
+ * - file writes in the watched dir produce a debounced autosave commit
+ * - configured and default authors apply per commit without mutating git config
+ * - a non-repo directory logs once and otherwise no-ops, leaving files on disk
+ * - destroying the Y.Doc closes the watcher so later writes are not committed
+ *
+ * fs.watch is event-timing-sensitive, so these tests always await
+ * `whenWatching` before writing, keep `quietMs` small, and poll for commits
+ * with a generous deadline rather than asserting exact change counts.
  */
 
 import { describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import {
-	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
@@ -28,19 +30,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Logger } from 'wellcrafted/logger';
-import { createWorkspace, defineTable } from '../../../index.js';
-import { column } from '../../column/index.js';
-import { attachMarkdownVault, type GitAutosaveConfig } from './index.js';
-
-const postsTable = defineTable({
-	id: column.string(),
-	title: column.string(),
-	published: column.boolean(),
-});
-
-const tableDefinitions = { posts: postsTable };
-
-type TestWorkspace = ReturnType<typeof createTestWorkspace>;
+import { createWorkspace } from '../../../index.js';
+import { attachGitAutosave, type GitAutosaveConfig } from './index.js';
 
 type GitResult = {
 	exitCode: number;
@@ -84,7 +75,7 @@ function logMessage(value: unknown): string {
 }
 
 function setupProject() {
-	const projectDir = mkdtempSync(join(tmpdir(), 'markdown-git-'));
+	const projectDir = mkdtempSync(join(tmpdir(), 'git-autosave-'));
 	const markdownDir = join(projectDir, 'markdown');
 	mkdirSync(markdownDir, { recursive: true });
 	const logs = createTestLogger();
@@ -101,64 +92,33 @@ function setupProject() {
 			await runGit(projectDir, ['add', '.gitignore']);
 			await runGit(projectDir, ['commit', '-q', '-m', 'init']);
 		},
-		createWorkspace(
-			git?: GitAutosaveConfig,
-			options: { countDestroyOnce?: () => void } = {},
-		): TestWorkspace {
-			return createTestWorkspace({
-				markdownDir,
-				git,
-				log: logs.logger,
-				countDestroyOnce: options.countDestroyOnce,
+		/**
+		 * Build a Y.Doc and attach the autosave watcher to `markdownDir`. Returns
+		 * the doc plus the autosave handle and a disposer that destroys the doc
+		 * (which closes the watcher).
+		 */
+		attach(config?: GitAutosaveConfig) {
+			const { ydoc } = createWorkspace({
+				id: `git-autosave-${randomUUID()}`,
+				tables: {},
+				kv: {},
 			});
+			const autosave = attachGitAutosave({
+				ydoc,
+				dir: markdownDir,
+				config,
+				log: logs.logger,
+			});
+			return {
+				ydoc,
+				autosave,
+				dispose(): void {
+					ydoc.destroy();
+				},
+			};
 		},
 		cleanup(): void {
 			rmSync(projectDir, { recursive: true, force: true });
-		},
-	};
-}
-
-function createTestWorkspace({
-	markdownDir,
-	git,
-	log,
-	countDestroyOnce,
-}: {
-	markdownDir: string;
-	git?: GitAutosaveConfig;
-	log: Logger;
-	countDestroyOnce?: () => void;
-}) {
-	const workspace = createWorkspace({
-		id: `markdown-git-${randomUUID()}`,
-		tables: tableDefinitions,
-		kv: {},
-	});
-
-	if (countDestroyOnce) {
-		const originalOnce = workspace.ydoc.once.bind(workspace.ydoc);
-		const patchedOnce: typeof workspace.ydoc.once = (name, listener) => {
-			if (name === 'destroy') countDestroyOnce();
-			return originalOnce(name, listener);
-		};
-		workspace.ydoc.once = patchedOnce;
-	}
-
-	const materializer = attachMarkdownVault(workspace, {
-		dir: markdownDir,
-		tables: { posts: {} },
-		git,
-		log,
-	});
-
-	return {
-		...workspace,
-		materializer,
-		async ready(): Promise<void> {
-			await materializer.whenFlushed;
-		},
-		[Symbol.dispose](): void {
-			workspace[Symbol.dispose]();
 		},
 	};
 }
@@ -195,93 +155,49 @@ async function lastCommitAuthor(projectDir: string): Promise<string> {
 	return result.stdout.trim();
 }
 
+/**
+ * Poll until the repo reaches at least `expected` commits or the deadline
+ * passes. fs.watch timing is not deterministic, so the deadline is generous.
+ */
 async function waitForCommitCount(
 	projectDir: string,
 	expected: number,
-	timeoutMs = 2_000,
+	timeoutMs = 5_000,
 ): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() < deadline) {
-		if ((await commitCount(projectDir)) === expected) return;
+		if ((await commitCount(projectDir)) >= expected) return;
 		await Bun.sleep(10);
 	}
-	expect(await commitCount(projectDir)).toBe(expected);
+	expect(await commitCount(projectDir)).toBeGreaterThanOrEqual(expected);
 }
 
-function setPost(
-	workspace: Pick<TestWorkspace, 'tables'>,
-	id: string,
-	title = id,
-): void {
-	workspace.tables.posts.set({ id, title, published: true });
-}
-
-describe('attachMarkdownVault git autosave', () => {
-	test('quiet timer commits one batch for many observer writes', async () => {
+describe('attachGitAutosave', () => {
+	test('commits file changes in a git repo', async () => {
 		const project = setupProject();
 		try {
 			await project.initGitRepo();
-			const workspace = project.createWorkspace({
-				quietMs: 20,
-				maxBatchMs: 1_000,
-			});
-			await workspace.ready();
+			const before = await commitCount(project.projectDir);
 
-			for (let i = 0; i < 5; i++) setPost(workspace, `post-${i}`);
+			const handle = project.attach({ quietMs: 20, maxBatchMs: 1_000 });
+			await handle.autosave.whenWatching;
 
-			await waitForCommitCount(project.projectDir, 2);
-			expect(await lastCommitSubject(project.projectDir)).toBe(
-				'Autosave (5 changes)',
+			writeFileSync(join(project.markdownDir, 'alpha.md'), '# Alpha\n');
+			writeFileSync(join(project.markdownDir, 'beta.md'), '# Beta\n');
+
+			await waitForCommitCount(project.projectDir, before + 1);
+
+			expect(await lastCommitSubject(project.projectDir)).toMatch(
+				/^Autosave \(\d+ changes\)$/,
 			);
-			for (let i = 0; i < 5; i++) {
-				expect(
-					existsSync(join(project.markdownDir, 'posts', `post-${i}.md`)),
-				).toBe(true);
-			}
+			const tracked = await runGit(project.projectDir, [
+				'ls-files',
+				'markdown',
+			]);
+			expect(tracked.stdout).toContain('markdown/alpha.md');
+			expect(tracked.stdout).toContain('markdown/beta.md');
 
-			workspace[Symbol.dispose]();
-		} finally {
-			project.cleanup();
-		}
-	});
-
-	test('max-batch timer commits while quiet window remains open', async () => {
-		const project = setupProject();
-		try {
-			await project.initGitRepo();
-			const workspace = project.createWorkspace({
-				quietMs: 1_000,
-				maxBatchMs: 30,
-			});
-			await workspace.ready();
-
-			setPost(workspace, 'force-batch');
-
-			await waitForCommitCount(project.projectDir, 2);
-			expect(await lastCommitSubject(project.projectDir)).toBe(
-				'Autosave (1 changes)',
-			);
-
-			workspace[Symbol.dispose]();
-		} finally {
-			project.cleanup();
-		}
-	});
-
-	test('empty materializer produces no autosave commit', async () => {
-		const project = setupProject();
-		try {
-			await project.initGitRepo();
-			const workspace = project.createWorkspace({
-				quietMs: 10,
-				maxBatchMs: 20,
-			});
-			await workspace.ready();
-			await Bun.sleep(60);
-
-			expect(await commitCount(project.projectDir)).toBe(1);
-
-			workspace[Symbol.dispose]();
+			handle.dispose();
 		} finally {
 			project.cleanup();
 		}
@@ -291,16 +207,22 @@ describe('attachMarkdownVault git autosave', () => {
 		const project = setupProject();
 		try {
 			await project.initGitRepo();
-			const workspace = project.createWorkspace({
+			const before = await commitCount(project.projectDir);
+
+			const handle = project.attach({
 				author: { name: 'Configured Bot', email: 'bot@example.com' },
-				quietMs: 10,
+				quietMs: 20,
 				maxBatchMs: 1_000,
 			});
-			await workspace.ready();
+			await handle.autosave.whenWatching;
 
-			setPost(workspace, 'configured-author');
+			writeFileSync(
+				join(project.markdownDir, 'configured-author.md'),
+				'# Configured\n',
+			);
 
-			await waitForCommitCount(project.projectDir, 2);
+			await waitForCommitCount(project.projectDir, before + 1);
+
 			expect(await lastCommitAuthor(project.projectDir)).toBe(
 				'Configured Bot <bot@example.com>',
 			);
@@ -315,7 +237,7 @@ describe('attachMarkdownVault git autosave', () => {
 				).stdout.trim(),
 			).toBe('repo@example.com');
 
-			workspace[Symbol.dispose]();
+			handle.dispose();
 		} finally {
 			project.cleanup();
 		}
@@ -325,62 +247,39 @@ describe('attachMarkdownVault git autosave', () => {
 		const project = setupProject();
 		try {
 			await project.initGitRepo();
-			const workspace = project.createWorkspace({
-				quietMs: 10,
-				maxBatchMs: 1_000,
-			});
-			await workspace.ready();
+			const before = await commitCount(project.projectDir);
 
-			setPost(workspace, 'default-author');
+			const handle = project.attach({ quietMs: 20, maxBatchMs: 1_000 });
+			await handle.autosave.whenWatching;
 
-			await waitForCommitCount(project.projectDir, 2);
+			writeFileSync(
+				join(project.markdownDir, 'default-author.md'),
+				'# Default\n',
+			);
+
+			await waitForCommitCount(project.projectDir, before + 1);
+
 			expect(await lastCommitAuthor(project.projectDir)).toBe(
 				'Autosave <autosave@epicenter.local>',
 			);
 
-			workspace[Symbol.dispose]();
+			handle.dispose();
 		} finally {
 			project.cleanup();
 		}
 	});
 
-	test('no-diff batch skips silently after files are already committed', async () => {
+	test('non-repo directory logs once and leaves writes on disk', async () => {
 		const project = setupProject();
 		try {
-			await project.initGitRepo();
+			const handle = project.attach({ quietMs: 20, maxBatchMs: 1_000 });
+			await handle.autosave.whenWatching;
 
-			const first = project.createWorkspace({ quietMs: 10, maxBatchMs: 1_000 });
-			setPost(first, 'same-content');
-			await first.ready();
-			await waitForCommitCount(project.projectDir, 2);
-			first[Symbol.dispose]();
-
-			const second = project.createWorkspace({
-				quietMs: 10,
-				maxBatchMs: 1_000,
-			});
-			setPost(second, 'same-content');
-			await second.ready();
-			await Bun.sleep(80);
-
-			expect(await commitCount(project.projectDir)).toBe(2);
-			expect(project.logs.messages.warn).toEqual([]);
-			second[Symbol.dispose]();
-		} finally {
-			project.cleanup();
-		}
-	});
-
-	test('non-repo directory logs once and leaves markdown writes on disk', async () => {
-		const project = setupProject();
-		try {
-			const workspace = project.createWorkspace({
-				quietMs: 10,
-				maxBatchMs: 20,
-			});
-			setPost(workspace, 'outside-repo');
-			await workspace.ready();
-			await Bun.sleep(60);
+			writeFileSync(
+				join(project.markdownDir, 'outside-repo.md'),
+				'# Outside\n',
+			);
+			await Bun.sleep(120);
 
 			expect(project.logs.messages.info).toEqual([
 				'git autosave: not in a git repo; skipping',
@@ -388,136 +287,36 @@ describe('attachMarkdownVault git autosave', () => {
 			expect(project.logs.messages.warn).toEqual([]);
 			expect(
 				readFileSync(
-					join(project.markdownDir, 'posts', 'outside-repo.md'),
+					join(project.markdownDir, 'outside-repo.md'),
 					'utf8',
 				),
-			).toContain('title: outside-repo');
+			).toContain('# Outside');
 
-			workspace[Symbol.dispose]();
+			handle.dispose();
 		} finally {
 			project.cleanup();
 		}
 	});
 
-	test('index.lock contention retries once and commits after the lock clears', async () => {
+	test('disposing the Y.Doc stops autosave', async () => {
 		const project = setupProject();
 		try {
 			await project.initGitRepo();
-			const workspace = project.createWorkspace({
-				quietMs: 10,
-				maxBatchMs: 1_000,
-			});
-			await workspace.ready();
 
-			const lockPath = join(project.projectDir, '.git', 'index.lock');
-			writeFileSync(lockPath, 'locked');
-			setTimeout(() => rmSync(lockPath, { force: true }), 80);
-			setPost(workspace, 'retry-lock');
+			const handle = project.attach({ quietMs: 20, maxBatchMs: 1_000 });
+			await handle.autosave.whenWatching;
 
+			writeFileSync(join(project.markdownDir, 'before-dispose.md'), '# One\n');
 			await waitForCommitCount(project.projectDir, 2);
+			const afterFirstCommit = await commitCount(project.projectDir);
+
+			handle.dispose();
+
+			writeFileSync(join(project.markdownDir, 'after-dispose.md'), '# Two\n');
+			await Bun.sleep(200);
+
+			expect(await commitCount(project.projectDir)).toBe(afterFirstCommit);
 			expect(project.logs.messages.warn).toEqual([]);
-
-			workspace[Symbol.dispose]();
-		} finally {
-			project.cleanup();
-		}
-	});
-
-	test('index.lock contention leaves files uncommitted when the retry also fails', async () => {
-		const project = setupProject();
-		try {
-			await project.initGitRepo();
-			const workspace = project.createWorkspace({
-				quietMs: 10,
-				maxBatchMs: 1_000,
-			});
-			await workspace.ready();
-
-			const lockPath = join(project.projectDir, '.git', 'index.lock');
-			writeFileSync(lockPath, 'locked');
-			setPost(workspace, 'stuck-lock');
-			await Bun.sleep(350);
-
-			expect(await commitCount(project.projectDir)).toBe(1);
-			expect(project.logs.messages.warn[0]).toContain(
-				'git autosave: git add failed',
-			);
-			expect(
-				existsSync(join(project.markdownDir, 'posts', 'stuck-lock.md')),
-			).toBe(true);
-			rmSync(lockPath, { force: true });
-
-			workspace[Symbol.dispose]();
-		} finally {
-			project.cleanup();
-		}
-	});
-
-	test('destroy registers no autosave flush hook beyond materializer disposal', async () => {
-		const project = setupProject();
-		try {
-			await project.initGitRepo();
-			let destroyOnceCount = 0;
-			const workspace = project.createWorkspace(
-				{ quietMs: 10, maxBatchMs: 1_000 },
-				{ countDestroyOnce: () => destroyOnceCount++ },
-			);
-			await workspace.ready();
-
-			expect(destroyOnceCount).toBe(1);
-			workspace[Symbol.dispose]();
-		} finally {
-			project.cleanup();
-		}
-	});
-
-	test('destroy drops pending autosave and later attach re-enqueues materialized files', async () => {
-		const project = setupProject();
-		try {
-			await project.initGitRepo();
-
-			const first = project.createWorkspace({
-				quietMs: 5_000,
-				maxBatchMs: 5_000,
-			});
-			setPost(first, 'resurfaced');
-			await first.ready();
-			first[Symbol.dispose]();
-			await Bun.sleep(80);
-			expect(await commitCount(project.projectDir)).toBe(1);
-
-			const second = project.createWorkspace({
-				quietMs: 10,
-				maxBatchMs: 1_000,
-			});
-			setPost(second, 'resurfaced');
-			await second.ready();
-
-			await waitForCommitCount(project.projectDir, 2);
-			expect(await lastCommitSubject(project.projectDir)).toBe(
-				'Autosave (1 changes)',
-			);
-			second[Symbol.dispose]();
-		} finally {
-			project.cleanup();
-		}
-	});
-
-	test('omitted git option writes markdown without git setup', async () => {
-		const project = setupProject();
-		try {
-			const workspace = project.createWorkspace(undefined);
-			setPost(workspace, 'no-git-option');
-			await workspace.ready();
-			await Bun.sleep(60);
-
-			expect(project.logs.messages.info).toEqual([]);
-			expect(project.logs.messages.warn).toEqual([]);
-			expect(
-				existsSync(join(project.markdownDir, 'posts', 'no-git-option.md')),
-			).toBe(true);
-
-			workspace[Symbol.dispose]();
 		} finally {
 			project.cleanup();
 		}

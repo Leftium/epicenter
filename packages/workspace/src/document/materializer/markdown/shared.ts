@@ -1,6 +1,5 @@
 import { mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { $ } from 'bun';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import type { Logger } from 'wellcrafted/logger';
 import { assembleMarkdown } from '../../../markdown/assemble-markdown.js';
@@ -123,7 +122,6 @@ export async function materializeTable(opts: {
 	render: RenderRow;
 	fileState: FileState;
 	log: Logger;
-	markDirty: (path: string) => void;
 	/**
 	 * Don't overwrite a file whose on-disk content has diverged from what we last
 	 * wrote: a local edit (or a deletion) is pending and apply has not reconciled
@@ -135,7 +133,7 @@ export async function materializeTable(opts: {
 	 */
 	protectLocalEdits?: boolean;
 }): Promise<() => void> {
-	const { table, directory, render, fileState, log, markDirty } = opts;
+	const { table, directory, render, fileState, log } = opts;
 	const protectLocalEdits = opts.protectLocalEdits ?? false;
 
 	await mkdir(directory, { recursive: true });
@@ -170,12 +168,10 @@ export async function materializeTable(opts: {
 			if (onDisk !== previous.content && onDisk !== content) return;
 		}
 		if (previous && previous.filename !== filename) {
-			const removed = await tryUnlink(directory, previous.filename);
-			if (removed) markDirty(join(directory, previous.filename));
+			await tryUnlink(directory, previous.filename);
 		}
 		await writeMarkdownFile(directory, filename, content);
 		fileState.set(id, { filename, content });
-		markDirty(join(directory, filename));
 	}
 
 	for (const row of table.getAllValid()) {
@@ -193,9 +189,8 @@ export async function materializeTable(opts: {
 				if (error || row === null) {
 					const previous = fileState.get(id);
 					if (previous) {
-						const removed = await tryUnlink(directory, previous.filename);
+						await tryUnlink(directory, previous.filename);
 						fileState.delete(id);
-						if (removed) markDirty(join(directory, previous.filename));
 					}
 					continue;
 				}
@@ -224,9 +219,8 @@ export async function rebuildTable(opts: {
 	directory: string;
 	render: RenderRow;
 	fileState: FileState;
-	markDirty: (path: string) => void;
 }): Promise<{ deleted: number; written: number }> {
-	const { table, directory, render, fileState, markDirty } = opts;
+	const { table, directory, render, fileState } = opts;
 	let deleted = 0;
 	let written = 0;
 
@@ -244,7 +238,6 @@ export async function rebuildTable(opts: {
 			await unlink(path).then(
 				() => {
 					deleted++;
-					markDirty(path);
 				},
 				() => undefined,
 			);
@@ -258,181 +251,9 @@ export async function rebuildTable(opts: {
 	for (const { id, filename, content } of rendered) {
 		await writeMarkdownFile(directory, filename, content);
 		fileState.set(id, { filename, content });
-		markDirty(join(directory, filename));
 		written++;
 	}
 
 	return { deleted, written };
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// Git autosave (optional; debounced commit of materialized files)
-// ════════════════════════════════════════════════════════════════════════════
-
-const GitAutosaveError = defineErrors({
-	GitAddFailed: ({ stderr }: { stderr: string }) => ({
-		message: `git autosave: git add failed: ${stderr.trim()}`,
-		stderr,
-	}),
-	GitCommitFailed: ({ stderr }: { stderr: string }) => ({
-		message: `git autosave: git commit failed: ${stderr.trim()}`,
-		stderr,
-	}),
-	EnablementCheckFailed: ({ cause }: { cause: unknown }) => ({
-		message: `git autosave: enablement check failed: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-});
-
-export type GitAutosaveConfig = {
-	author?: { name: string; email: string };
-	quietMs?: number;
-	maxBatchMs?: number;
-};
-
-export function createGitAutosave({
-	dir,
-	config,
-	log,
-}: {
-	dir: () => Promise<string>;
-	config: GitAutosaveConfig;
-	log: Logger;
-}) {
-	const {
-		author: { name = 'Autosave', email = 'autosave@epicenter.local' } = {},
-		quietMs = 5_000,
-		maxBatchMs = 60_000,
-	} = config;
-
-	const dirty = new Set<string>();
-	let isEnabled: boolean | undefined;
-	let enablement: Promise<boolean> | undefined;
-	let isDisposed = false;
-	let quietTimer: ReturnType<typeof setTimeout> | undefined;
-	let maxBatchTimer: ReturnType<typeof setTimeout> | undefined;
-
-	function clearTimers(): void {
-		if (quietTimer !== undefined) {
-			clearTimeout(quietTimer);
-			quietTimer = undefined;
-		}
-		if (maxBatchTimer !== undefined) {
-			clearTimeout(maxBatchTimer);
-			maxBatchTimer = undefined;
-		}
-	}
-
-	async function ensureEnabled(): Promise<boolean> {
-		if (isEnabled !== undefined) return isEnabled;
-		if (enablement !== undefined) return enablement;
-		enablement = (async () => {
-			const baseDir = await dir();
-			const result = await $`git rev-parse --is-inside-work-tree`
-				.cwd(baseDir)
-				.nothrow()
-				.quiet();
-			isEnabled =
-				result.exitCode === 0 && result.stdout.toString().trim() === 'true';
-			if (!isEnabled) log.info('git autosave: not in a git repo; skipping');
-			return isEnabled;
-		})().finally(() => {
-			enablement = undefined;
-		});
-		return enablement;
-	}
-
-	function schedule(): void {
-		if (isDisposed) return;
-		if (quietTimer !== undefined) clearTimeout(quietTimer);
-		quietTimer = setTimeout(() => {
-			quietTimer = undefined;
-			void stageAndCommit();
-		}, quietMs);
-		if (maxBatchTimer === undefined) {
-			maxBatchTimer = setTimeout(() => {
-				maxBatchTimer = undefined;
-				void stageAndCommit();
-			}, maxBatchMs);
-		}
-	}
-
-	async function stageAndCommit(): Promise<void> {
-		if (isDisposed) return;
-		clearTimers();
-		const batch = [...dirty];
-		dirty.clear();
-		if (batch.length === 0) return;
-		if (!(await ensureEnabled())) return;
-		await commitBatch(batch, false);
-	}
-
-	async function commitBatch(
-		batch: readonly string[],
-		retried: boolean,
-	): Promise<void> {
-		const baseDir = await dir();
-		const add = await $`git add -- ${batch}`.cwd(baseDir).nothrow().quiet();
-		if (add.exitCode !== 0) {
-			const stderr = add.stderr.toString();
-			if (!retried && stderr.includes('index.lock')) {
-				await Bun.sleep(250);
-				await commitBatch(batch, true);
-				return;
-			}
-			log.warn(GitAutosaveError.GitAddFailed({ stderr }));
-			return;
-		}
-
-		const message = `Autosave (${batch.length} changes)`;
-		const commit =
-			await $`git -c commit.gpgsign=false commit --no-gpg-sign -m ${message} -- ${batch}`
-				.cwd(baseDir)
-				.env({
-					...process.env,
-					GIT_AUTHOR_NAME: name,
-					GIT_AUTHOR_EMAIL: email,
-					GIT_COMMITTER_NAME: name,
-					GIT_COMMITTER_EMAIL: email,
-				})
-				.nothrow()
-				.quiet();
-		if (commit.exitCode === 0) return;
-
-		const output = `${commit.stdout.toString()}\n${commit.stderr.toString()}`;
-		if (
-			output.includes('nothing to commit') ||
-			output.includes('nothing added to commit')
-		) {
-			return;
-		}
-		if (!retried && output.includes('index.lock')) {
-			await Bun.sleep(250);
-			await commitBatch(batch, true);
-			return;
-		}
-		log.warn(GitAutosaveError.GitCommitFailed({ stderr: output }));
-	}
-
-	return {
-		async initialize(): Promise<void> {
-			await ensureEnabled();
-		},
-		enqueue(path: string): void {
-			if (isDisposed) return;
-			void ensureEnabled().then(
-				(enabled) => {
-					if (!enabled || isDisposed) return;
-					dirty.add(path);
-					schedule();
-				},
-				(cause) => log.warn(GitAutosaveError.EnablementCheckFailed({ cause })),
-			);
-		},
-		dispose(): void {
-			isDisposed = true;
-			clearTimers();
-			dirty.clear();
-		},
-	};
-}

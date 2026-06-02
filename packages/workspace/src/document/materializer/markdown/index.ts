@@ -1,4 +1,9 @@
-export type { GitAutosaveConfig, MarkdownShape } from './shared.js';
+export type { MarkdownShape } from './shared.js';
+export {
+	attachGitAutosave,
+	type GitAutosave,
+	type GitAutosaveConfig,
+} from './git-autosave.js';
 export {
 	attachMarkdownExport,
 	type ExportTableConfig,

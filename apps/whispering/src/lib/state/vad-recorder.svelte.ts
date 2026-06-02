@@ -40,7 +40,7 @@ const VadRecorderError = defineErrors({
 });
 type VadRecorderError = InferErrors<typeof VadRecorderError>;
 
-export const vadKeys = defineKeys({
+const vadKeys = defineKeys({
 	devices: ['vad', 'devices'],
 });
 

@@ -8,15 +8,6 @@ import type { Result } from 'wellcrafted/result';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 
 /**
- * The outcome of asking the manual recorder to cancel. A live `RecordingSession`
- * can only ever report `cancelled`; the `no-recording` arm exists solely because
- * the manual-recorder state wrapper may be asked to cancel when nothing is live.
- */
-export type CancelRecordingResult =
-	| { status: 'cancelled' }
-	| { status: 'no-recording' };
-
-/**
  * Device acquisition outcome after attempting to connect to a recording device.
  *
  * This type represents the result of device selection during recording startup.

@@ -39,6 +39,7 @@ specta = "=2.0.0-rc.25"
 specta-typescript = "=0.0.12"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 tauri = { version = "2", features = ["protocol-asset", "macos-private-api", "image-png", "tray-icon"] }
+tauri-plugin-deep-link = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-dialog = "2"
@@ -132,7 +133,9 @@ zbus = { version = "5", default-features = false, features = ["tokio"] }
 # and modifier-only holds (which it cannot express) fall to the Tier-1 tap in
 # `src/keyboard/`.
 tauri-plugin-global-shortcut = "2"
-tauri-plugin-single-instance = "2"
+# `deep-link` feature lets the running instance receive OAuth callback URLs on
+# Linux/Windows, where the second launch forwards them through single-instance.
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 tauri-plugin-updater = "2"
 # Low-level global keyboard listener for the desktop trigger backend
 # (`src/keyboard/`). The rustdesk fork (not the unmaintained upstream) is what

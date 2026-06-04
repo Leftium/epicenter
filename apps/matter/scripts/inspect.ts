@@ -1,12 +1,12 @@
 /**
- * Dogfood the increment-1 pipeline against a real folder of markdown.
+ * Dogfood the read -> classify pipeline against a real folder of markdown.
  *
  *   bun scripts/inspect.ts [folder]   (default: ./sample-vault/drafts)
  *
- * Reads the folder from disk (node fs, the dev/server side of the future
- * #platform/fs seam), runs `readFolder`, and prints the inferred columns, the
- * rows, and the unreadable files. This is the CLI proof that read -> parse ->
- * infer works on real files before the Tauri/Svelte GUI exists.
+ * Reads the folder from disk with node fs (the headless counterpart to the Tauri
+ * vault), runs `readFolder`, and prints the model fields (or raw columns when
+ * unmodeled), the per-cell conformance, and the unreadable files. A filesystem
+ * proof of the same pure transform the GUI renders.
  */
 
 import { readdir, readFile } from 'node:fs/promises';

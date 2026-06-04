@@ -4,12 +4,6 @@
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",
-	"imports": {
-		"#platform/fs": {
-			"tauri": "./src/lib/platform/fs.tauri.ts",
-			"default": "./src/lib/platform/fs.browser.ts"
-		}
-	},
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",

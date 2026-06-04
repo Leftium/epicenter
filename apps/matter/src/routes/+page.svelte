@@ -1,29 +1,8 @@
 <script lang="ts">
-	import { fs } from '#platform/fs';
 	import FolderGrid from '$lib/components/FolderGrid.svelte';
-	import { type FolderEntry, type FolderRead, readFolder } from '$lib/model/folder';
+	import { openVault, type Vault } from '$lib/vault.svelte';
 
-	// The bundled sample vault is the zero-config first view; opening a real folder
-	// through the #platform/fs seam (Tauri command / browser File System Access)
-	// replaces it.
-	const sampleRaw = import.meta.glob('/sample-vault/drafts/*.md', {
-		query: '?raw',
-		import: 'default',
-		eager: true,
-	}) as Record<string, string>;
-	const sampleModel = import.meta.glob('/sample-vault/drafts/matter.json', {
-		query: '?raw',
-		import: 'default',
-		eager: true,
-	}) as Record<string, string>;
-	const sampleEntries: FolderEntry[] = Object.entries(sampleRaw).map(
-		([path, content]) => ({ path: path.split('/').pop() ?? path, content }),
-	);
-
-	let folder = $state('sample-vault/drafts');
-	let read = $state<FolderRead>(
-		readFolder(sampleEntries, Object.values(sampleModel)[0]),
-	);
+	let vault = $state<Vault>();
 	let opening = $state(false);
 	let openError = $state<string>();
 
@@ -31,10 +10,8 @@
 		opening = true;
 		openError = undefined;
 		try {
-			const opened = await fs.openFolder();
-			if (!opened) return; // cancelled
-			folder = opened.name;
-			read = readFolder(opened.entries, opened.modelText);
+			const opened = await openVault();
+			if (opened) vault = opened;
 		} catch (error) {
 			openError = error instanceof Error ? error.message : String(error);
 		} finally {
@@ -48,18 +25,26 @@
 		<button
 			type="button"
 			onclick={openFolder}
-			disabled={opening || !fs.available}
+			disabled={opening}
 			class="rounded border px-2 py-1 text-xs font-medium disabled:opacity-50"
 		>
-			{opening ? 'Opening...' : 'Open folder'}
+			{opening ? 'Opening...' : vault ? 'Open another folder' : 'Open folder'}
 		</button>
-		{#if !fs.available}
-			<span class="text-xs text-muted-foreground">
-				Folder opening needs the desktop app or a Chromium browser.
-			</span>
-		{:else if openError}
+		{#if vault}
+			<span class="text-xs text-muted-foreground">{vault.name}</span>
+		{/if}
+		{#if openError}
 			<span class="text-xs text-destructive">{openError}</span>
 		{/if}
 	</div>
-	<FolderGrid {read} {folder} />
+
+	{#if vault}
+		<FolderGrid read={vault.read} folder={vault.name} />
+	{:else}
+		<div class="flex flex-1 items-center justify-center">
+			<p class="text-sm text-muted-foreground">
+				Open a folder of markdown to begin.
+			</p>
+		</div>
+	{/if}
 </main>

@@ -54,3 +54,11 @@ pub fn read_folder(path: String) -> Result<FolderContents, String> {
         model_text,
     })
 }
+
+/// Read one file's text by absolute path. `None` when the file is gone or not
+/// valid UTF-8: the live vault treats that as "removed". Used to apply a single
+/// watch delta without re-reading the whole folder.
+#[tauri::command]
+pub fn read_file(path: String) -> Option<String> {
+    std::fs::read_to_string(path).ok()
+}

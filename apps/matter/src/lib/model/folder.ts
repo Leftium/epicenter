@@ -5,8 +5,9 @@
  * optional `matter.json` text), it produces the readable rows, the unreadable
  * files (kept separate, never dropped), and EITHER a modeled classification (a
  * valid `matter.json` was supplied) OR a raw untyped view (no model, or junk
- * model). The actual disk/Tauri listing lives behind the `#platform/fs` seam and
- * hands its results here, so the transform is testable without any filesystem.
+ * model). The actual disk/Tauri listing lives in `vault.svelte.ts` (and the
+ * `inspect` script) and hands its results here, so this transform is testable
+ * without any filesystem.
  *
  * The model is the foundation, never inference: a usable `matter.json` classifies
  * the folder against a contract; without one, the folder is shown as RAW text
@@ -102,7 +103,12 @@ export function readFolder(
 	return { rows, unreadable, view: buildView(rows, modelText) };
 }
 
-function buildView(
+/**
+ * Classify a set of in-memory rows against an optional model. Split out from
+ * {@link readFolder} so the live vault can reclassify after a single-file change
+ * without re-parsing the whole folder.
+ */
+export function buildView(
 	rows: readonly Row[],
 	modelText: string | undefined,
 ): ModeledView | UnmodeledView {

@@ -279,6 +279,8 @@ Reuse the `column.* -> SQLite` derivation (`packages/workspace/src/document/{col
 > Read a file, write it back with no user edit -> value-identical. The editor changes only the exact field the user changed; everything it does not understand or did not touch is preserved.
 
 ```
+write mechanism              edit via eemeli `yaml` Document (parseDocument, CST-preserving), NOT parse->object->stringify;
+                             comments / key order / quoting survive a single-field edit. CST tier later if byte-minimal diffs matter.
 unknown / unmodeled key      preserved on write (never dropped)
 nested / non-scalar value    json fallback render, never flattened
 empty / absent field         NEVER prefilled with `null` on save; absence stays absence (sparse stays sparse)
@@ -288,17 +290,54 @@ body vs frontmatter          strict separation; editing one never touches the ot
 unparseable file             the grid NEVER writes it
 ```
 
-## Architecture (v1)
+## Architecture: live vault, unidirectional flow
 
 A plain Tauri + SvelteKit app. **Not** a workspace app: no `createWorkspace`, no Yjs, no relay, no auth, no session.
 
+The folder on disk is the ONE source of truth, and other processes write it (your editor, agents, git). So the app is not a one-shot read: it holds a live projection driven entirely by a native watcher. The client `SvelteMap` is **pure derived state**, the only thing that mutates it is a delta from the watcher. Even the app's own edits come back through that path.
+
 ```
-Tauri fs ─ walk vault ─ sidebar tree ─ open a folder
-   ─ read matter.json (or infer a preview)
-   ─ read .md INTO MEMORY: Row = { path, frontmatter, body }
-   ─ classify each row against the model ─ compileColumns ─ table grouped by conformance
-   ─ edit cell / body ─ validated write fn ─ frontmatter write-back (preserve unmodeled keys) ─ file
+WRITE (a fire-and-forget command):
+  edit a cell/body -> serialize (eemeli `yaml` Document, in JS) -> write the file
+                      NEVER mutate the SvelteMap directly.
+
+READ (the only path that mutates the map):
+  disk change -> native watcher (notify) -> debounce + dedup -> ONE Channel, delta batch
+              -> applyDeltas -> SvelteMap.set / .delete -> $derived classify -> UI
 ```
+
+This is CQRS-shaped: writes are commands to disk; the map is a projection. There is exactly one way the UI state changes, so "what the UI shows" provably equals "what is on disk." No dual-write, no drift.
+
+### The native watcher protocol (Rust = a faithful byte-streamer)
+
+One Rust command owns the whole live-folder protocol; Rust never knows what a column or schema is.
+
+```
+watch_folder(path, channel) -> watchId
+   1. arm the notify debouncer BEFORE scanning      (closes the read-then-watch race)
+   2. emit current contents as the first delta batch (the seed; same path as updates)
+   3. stream a debounced batch per change            (~300ms; dedup by basename within the tick)
+unwatch_folder(watchId)                              (drop the handle = stop the OS watch)
+
+FileDelta (serde tagged union; maps 1:1 to a SvelteMap op):
+   { kind: content,    name, text }   -> map.set(name, parseEntry(text))   (content shipped WITH the change; no re-read)
+   { kind: removed,    name }         -> map.delete(name)
+   { kind: unreadable, name }         -> map.set(name, <Can't read>)        (a bad file is a DELTA, not a stream failure)
+```
+
+Parse + classify stay in JS, because the model (schema-as-truth, `deriveKind`, conformance) is one TS source of truth, shared with the write path. Rust ships bytes; JS interprets them.
+
+### Two refinements the live loop needs
+
+```
+echo policy   the app's own write returns through the watcher. on write, remember the content hash;
+              drop the matching echo so it can't stomp an in-progress edit. otherwise re-set is idempotent.
+batch seq     a monotonic number per batch lets the client detect a dropped batch and request a re-seed.
+```
+
+### Lifecycle
+
+Explicit and page-owned: `watch()` starts the watcher and returns a stop function; the page drives it with `$effect(() => vault.watch())`, so switching folders stops the old watcher. Reads (`read` / `status` / `error`) are pure getters and never start anything.
 
 ### Routes (SvelteKit)
 

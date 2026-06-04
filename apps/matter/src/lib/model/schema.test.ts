@@ -59,11 +59,12 @@ describe('deriveKind (schema -> UI kind, ordered shape match)', () => {
 		});
 	});
 
-	test('array carries its element kind', () => {
+	// The element kind is intentionally NOT derived: no renderer reads it yet, so
+	// it arrives with the typed-chip editor as a vertical slice, not a half-member.
+	test('a typed array derives to the array kind', () => {
 		expect(deriveKind({ type: 'array', items: { type: 'string' } })).toEqual({
 			kind: 'array',
 			nullable: false,
-			items: { kind: 'string', nullable: false },
 		});
 	});
 

@@ -62,17 +62,12 @@ export type Kind =
 	| 'array'
 	| 'json';
 
-/** What `deriveKind` returns: the renderer kind plus the two orthogonal axes. */
+/** What `deriveKind` returns: the renderer kind plus the nullable axis. */
 export type DerivedKind = {
 	/** The kind the UI renders. */
 	kind: Kind;
 	/** True when the schema admits `null` (the `anyOf`-with-null shape). */
 	nullable: boolean;
-	/**
-	 * For `kind: 'array'`, the element's derived kind (chips render per element).
-	 * Undefined for every scalar kind.
-	 */
-	items?: DerivedKind;
 };
 
 type SchemaShape = {
@@ -115,9 +110,11 @@ function unwrapNullable(schema: JsonSchema): {
 /**
  * Match a NON-nullable scalar/array shape to a kind. Ordered: the most specific
  * shape wins, `string` is the floor, `json` is the catch-all. Mirrors the
- * KINDS registry in the spec.
+ * KINDS registry in the spec. An array still requires a declared `items` schema
+ * to be recognized; its element kind is not derived until a typed-chip renderer
+ * needs it (it arrives with that renderer, not as a half-built field here).
  */
-function matchKind(inner: JsonSchema): Kind | { array: JsonSchema } {
+function matchKind(inner: JsonSchema): Kind {
 	const s = shape(inner);
 	if (s.enum !== undefined) return 'enum';
 	if (s.type === 'boolean') return 'boolean';
@@ -126,20 +123,16 @@ function matchKind(inner: JsonSchema): Kind | { array: JsonSchema } {
 	if (s.type === 'string' && s.format === 'uri') return 'url';
 	if (s.type === 'string' && s.format === 'date-time') return 'datetime';
 	if (s.type === 'string') return 'string';
-	if (s.type === 'array' && s.items) return { array: s.items };
+	if (s.type === 'array' && s.items) return 'array';
 	return 'json';
 }
 
 /**
  * Derive the UI kind from a schema's shape. Unwrap a nullable wrapper first
- * (carrying the nullable flag), then ordered shape-match, recursing into array
- * items, falling back to `json` for any unrecognized shape.
+ * (carrying the nullable flag), then ordered shape-match, falling back to `json`
+ * for any unrecognized shape.
  */
 export function deriveKind(schema: JsonSchema): DerivedKind {
 	const { inner, nullable } = unwrapNullable(schema);
-	const matched = matchKind(inner);
-	if (typeof matched === 'object') {
-		return { kind: 'array', nullable, items: deriveKind(matched.array) };
-	}
-	return { kind: matched, nullable };
+	return { kind: matchKind(inner), nullable };
 }

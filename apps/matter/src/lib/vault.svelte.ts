@@ -22,6 +22,7 @@ import {
 	buildView,
 	type FolderRead,
 	loadModel,
+	MatterReadError,
 	type UnreadableFile,
 } from './model/view';
 import { parseMarkdown } from './model/parse';
@@ -51,7 +52,7 @@ function createVault(path: string) {
 
 	// Keyed by filename: a single file's change touches only its entry.
 	const rows = new SvelteMap<string, Row>();
-	const unreadable = new SvelteMap<string, UnreadableFile['reason']>();
+	const unreadable = new SvelteMap<string, UnreadableFile['error']>();
 	let modelText = $state<string | undefined>(undefined);
 	// 'loading' until the first batch lands, so an empty grid is never confused
 	// with a real empty folder; `error` is set if the watch itself fails.
@@ -63,18 +64,14 @@ function createVault(path: string) {
 
 	/** Parse one file into the readable rows or the unreadable list. */
 	function ingest(fileName: string, content: string) {
-		const parsed = parseMarkdown(content);
-		if (parsed.ok) {
-			rows.set(fileName, {
-				name: fileName,
-				frontmatter: parsed.frontmatter,
-				body: parsed.body,
-			});
-			unreadable.delete(fileName);
-		} else {
-			unreadable.set(fileName, parsed.reason);
+		const { data, error } = parseMarkdown(content);
+		if (error) {
+			unreadable.set(fileName, error);
 			rows.delete(fileName);
+			return;
 		}
+		rows.set(fileName, { name: fileName, ...data });
+		unreadable.delete(fileName);
 	}
 
 	/** Apply one pushed batch to the in-memory maps (the seed and every update). */
@@ -95,7 +92,9 @@ function createVault(path: string) {
 					break;
 				case 'unreadable':
 					rows.delete(delta.name);
-					unreadable.set(delta.name, 'unreadable');
+					// `.error` is the bare tagged error (the factory returns an `Err`),
+					// matching what the parse path stores from its destructured Result.
+					unreadable.set(delta.name, MatterReadError.Undecodable().error);
 					break;
 			}
 		}
@@ -139,9 +138,9 @@ function createVault(path: string) {
 			const currentRows = [...rows.values()];
 			return {
 				rows: currentRows,
-				unreadable: [...unreadable].map(([file, reason]) => ({
-					name: file,
-					reason,
+				unreadable: [...unreadable].map(([name, error]) => ({
+					name,
+					error,
 				})),
 				view: buildView(currentRows, loaded),
 			};

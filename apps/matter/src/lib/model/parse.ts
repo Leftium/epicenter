@@ -10,16 +10,40 @@
  * the YAML 1.1 "Norway problem" coercions (`NO` -> false, `1.10` -> 1.1). That
  * is the deliberate guard against the one real looseness risk in this design.
  *
- * Files we cannot parse safely (git conflict markers, frontmatter that is not a
- * mapping, malformed YAML) return `ok: false` so the caller can route them to
- * the "Can't read" bucket instead of guessing. The grid never writes them.
+ * Files we cannot parse safely return an `Err`, split by failure mode (conflict
+ * markers, malformed YAML, frontmatter that is not a mapping), so the caller can
+ * route them to the "Can't read" bucket instead of guessing. The grid never
+ * writes them.
  */
 
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 import { parse as parseYaml } from 'yaml';
 
-export type ParsedFile =
-	| { ok: true; frontmatter: Record<string, unknown>; body: string }
-	| { ok: false; reason: 'conflict-markers' | 'invalid-yaml'; raw: string };
+/** Why a markdown file could not be parsed into a row. */
+export const MatterParseError = defineErrors({
+	ConflictMarkers: () => ({
+		message: 'Contains git conflict markers',
+	}),
+	InvalidYaml: ({ cause }: { cause: unknown }) => ({
+		message: `Frontmatter is not valid YAML: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+	FrontmatterNotMapping: () => ({
+		message: 'Frontmatter is not a key-value mapping',
+	}),
+});
+export type MatterParseError = InferErrors<typeof MatterParseError>;
+
+/** A markdown file split into its frontmatter mapping and verbatim body. */
+export type ParsedFile = {
+	frontmatter: Record<string, unknown>;
+	body: string;
+};
 
 /**
  * Leading `---\n...\n---` block. The newline before the closing `---` is
@@ -31,33 +55,29 @@ const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n?---\r?\n?/;
 /** A git conflict marker at the start of any line. */
 const CONFLICT_MARKER = /^(<<<<<<<|=======|>>>>>>>)/m;
 
-export function parseMarkdown(raw: string): ParsedFile {
-	if (CONFLICT_MARKER.test(raw)) {
-		return { ok: false, reason: 'conflict-markers', raw };
-	}
+export function parseMarkdown(
+	raw: string,
+): Result<ParsedFile, MatterParseError> {
+	if (CONFLICT_MARKER.test(raw)) return MatterParseError.ConflictMarkers();
 
 	const match = raw.match(FRONTMATTER);
-	if (!match) {
-		// No frontmatter is fine: an empty mapping, the whole file is body.
-		return { ok: true, frontmatter: {}, body: raw };
-	}
+	// No frontmatter is fine: an empty mapping, the whole file is body.
+	if (!match) return Ok({ frontmatter: {}, body: raw });
 
-	let parsed: unknown;
-	try {
-		parsed = parseYaml(match[1] ?? '') ?? {};
-	} catch {
-		return { ok: false, reason: 'invalid-yaml', raw };
-	}
+	const { data: parsed, error } = trySync({
+		try: () => parseYaml(match[1] ?? '') ?? {},
+		catch: (cause) => MatterParseError.InvalidYaml({ cause }),
+	});
+	if (error) return Err(error);
 
 	// Frontmatter must be a mapping to be usable as columns. A scalar or list at
 	// the top is well-formed YAML but not a row's fields, so treat it as unreadable.
 	if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-		return { ok: false, reason: 'invalid-yaml', raw };
+		return MatterParseError.FrontmatterNotMapping();
 	}
 
-	return {
-		ok: true,
+	return Ok({
 		frontmatter: parsed as Record<string, unknown>,
 		body: raw.slice(match[0].length),
-	};
+	});
 }

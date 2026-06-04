@@ -69,6 +69,6 @@ if (view.mode === 'unmodeled') {
 
 if (unreadable.length) {
 	console.log('\nUnreadable (would route to "Can\'t read"):');
-	for (const u of unreadable) console.log(`  ${u.name.padEnd(16)} ${u.reason}`);
+	for (const u of unreadable) console.log(`  ${u.name.padEnd(16)} ${u.error.message}`);
 }
 console.log('');

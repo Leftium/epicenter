@@ -16,6 +16,7 @@
  * ("Create model from folder") is a deferred, schema-emitting step.
  */
 
+import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import {
 	classifyRows,
 	type CompiledColumn,
@@ -23,20 +24,28 @@ import {
 	type RowConformance,
 } from './conformance';
 import { type MatterModel, parseModel } from './model';
-import { type ParsedFile, parseMarkdown } from './parse';
+import { type MatterParseError, parseMarkdown } from './parse';
 import type { Row } from './types';
 
 export type FolderEntry = { name: string; content: string };
 
+/**
+ * Why a file could not be read as text at all, before any parse is attempted:
+ * the read-level failure (non-UTF-8 / permission) the watcher reports for a file
+ * it cannot decode. Parse-level failures are {@link MatterParseError}; both land
+ * in the same "Can't read" bucket.
+ */
+export const MatterReadError = defineErrors({
+	Undecodable: () => ({
+		message: 'File is not readable as UTF-8 text',
+	}),
+});
+export type MatterReadError = InferErrors<typeof MatterReadError>;
+
+/** A file that could not become a row, with the failure that stopped it. */
 export type UnreadableFile = {
 	name: string;
-	/**
-	 * Why the file could not become a row. Parse-level reasons come from
-	 * {@link parseMarkdown} (bad YAML, conflict markers); `'unreadable'` is the
-	 * read-level reason (non-UTF-8 / permission) the watcher reports for a file
-	 * it cannot decode as text.
-	 */
-	reason: Extract<ParsedFile, { ok: false }>['reason'] | 'unreadable';
+	error: MatterParseError | MatterReadError;
 };
 
 /**
@@ -103,12 +112,12 @@ export function readFolder(
 	const unreadable: UnreadableFile[] = [];
 
 	for (const { name, content } of entries) {
-		const parsed = parseMarkdown(content);
-		if (parsed.ok) {
-			rows.push({ name, frontmatter: parsed.frontmatter, body: parsed.body });
-		} else {
-			unreadable.push({ name, reason: parsed.reason });
+		const { data, error } = parseMarkdown(content);
+		if (error) {
+			unreadable.push({ name, error });
+			continue;
 		}
+		rows.push({ name, ...data });
 	}
 
 	return { rows, unreadable, view: buildView(rows, loadModel(modelText)) };

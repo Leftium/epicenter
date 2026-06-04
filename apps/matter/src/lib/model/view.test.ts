@@ -12,9 +12,9 @@ describe('readFolder', () => {
 		]);
 
 		expect(result.rows.map((r) => r.name)).toEqual(['a.md', 'b.md', 'raw.md']);
-		expect(result.unreadable).toEqual([
-			{ name: 'broken.md', reason: 'invalid-yaml' },
-			{ name: 'conflict.md', reason: 'conflict-markers' },
+		expect(result.unreadable.map((u) => [u.name, u.error.name])).toEqual([
+			['broken.md', 'InvalidYaml'],
+			['conflict.md', 'ConflictMarkers'],
 		]);
 		// No model supplied: a raw untyped view, columns ordered by frequency then
 		// first-seen, no type inference.

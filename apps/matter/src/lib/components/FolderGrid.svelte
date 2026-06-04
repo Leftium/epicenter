@@ -182,7 +182,7 @@
 				{#each read.unreadable as file (file.name)}
 					<li class="text-xs">
 						<span class="font-mono">{file.name}</span>
-						<span class="text-muted-foreground"> · {file.reason}</span>
+						<span class="text-muted-foreground"> · {file.error.message}</span>
 					</li>
 				{/each}
 			</ul>

@@ -21,7 +21,9 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { SvelteMap } from 'svelte/reactivity';
-import type { Result } from 'wellcrafted/result';
+import { extractErrorMessage } from 'wellcrafted/error';
+import { Err, type Result, tryAsync } from 'wellcrafted/result';
+import { setBody, setField } from './model/serialize';
 import {
 	buildView,
 	type FolderRead,
@@ -69,6 +71,9 @@ function createVault(path: string) {
 	// which means an EMPTY folder still reaches 'ready' instead of hanging.
 	let status = $state<'loading' | 'ready'>('loading');
 	let error = $state<string | undefined>(undefined);
+	// Set when the LAST save could not reach disk. A save never mutates the store
+	// (that is the watcher's job); this is the only state a write touches.
+	let writeError = $state<string | undefined>(undefined);
 	// Memoized: Schema.Compile runs only when matter.json changes, not on every
 	// .md change. A single-file change reclassifies against these cached columns.
 	const loaded = $derived(loadModel(modelText));
@@ -95,6 +100,43 @@ function createVault(path: string) {
 					break;
 			}
 		}
+	}
+
+	/**
+	 * Apply one edit to a file on disk: read the freshest bytes, transform them in
+	 * JS, write atomically. A command in the CQRS sense, NOT a store mutation, the
+	 * written file fires the watcher and returns as a delta, and THAT is what
+	 * updates the map. So the map stays a pure projection and "what the UI shows"
+	 * still provably equals "what is on disk", even for the app's own writes.
+	 *
+	 * Reading at write time (rather than caching raw text in the store) keeps the
+	 * edit faithful to the current bytes and keeps the store a parsed read-model
+	 * with no second copy to drift.
+	 */
+	async function write(name: string, edit: (raw: string) => string) {
+		writeError = undefined;
+		const { error: failure } = await tryAsync({
+			try: async () => {
+				const raw = await invoke<string | null>('read_entry', { path, name });
+				await invoke('write_entry', { path, name, content: edit(raw ?? '') });
+			},
+			catch: (cause) => Err({ message: extractErrorMessage(cause) }),
+		});
+		if (failure) writeError = failure.message;
+	}
+
+	/**
+	 * Set or clear one frontmatter field (`value === undefined` clears it: removes
+	 * the key, never writes `null`). Every untouched key keeps its comments, order,
+	 * and quoting (eemeli `yaml` Document tier, in {@link setField}).
+	 */
+	function saveField(name: string, key: string, value: unknown): Promise<void> {
+		return write(name, (raw) => setField(raw, key, value));
+	}
+
+	/** Replace a file's body, keeping its frontmatter block byte-for-byte. */
+	function saveBody(name: string, body: string): Promise<void> {
+		return write(name, (raw) => setBody(raw, body));
 	}
 
 	/**
@@ -130,6 +172,8 @@ function createVault(path: string) {
 		name,
 		path,
 		watch,
+		saveField,
+		saveBody,
 		/** The current classified folder. A pure read with no side effects. */
 		get read(): FolderRead {
 			const rows: FolderRead['rows'] = [];
@@ -147,6 +191,10 @@ function createVault(path: string) {
 		/** Set if the watch could not be established. */
 		get error(): string | undefined {
 			return error;
+		},
+		/** Set if the most recent save could not reach disk. */
+		get writeError(): string | undefined {
+			return writeError;
 		},
 	};
 }

@@ -28,7 +28,7 @@
  */
 
 import type { MatterModel } from './model';
-import * as Schema from 'typebox/schema';
+import { compile } from './schema';
 import type { Row } from './types';
 
 /** The state of one cell against its field's schema. */
@@ -68,18 +68,14 @@ export type RowConformance = {
  * stored schema IS the validator's input; there is no rebuild step.
  */
 export function compileColumns(model: MatterModel): CompiledColumn[] {
-	return model.fields.map((field) => {
-		// `Validator.Check` reads `this`; keep the receiver by closing over the
-		// validator instead of tearing the method off. `nullable` is already
-		// derived from the schema's null branch at validate time; reuse it rather
-		// than re-detecting the `anyOf`-null shape here.
-		const validator = Schema.Compile(field.schema);
-		return {
-			name: field.name,
-			nullable: field.derived.nullable,
-			check: (value: unknown) => validator.Check(value),
-		};
-	});
+	// `compile` (schema.ts) owns the single `Schema.Compile` call and the format
+	// registration. `nullable` is already derived from the schema's null branch at
+	// validate time; reuse it rather than re-detecting the `anyOf`-null shape here.
+	return model.fields.map((field) => ({
+		name: field.name,
+		nullable: field.derived.nullable,
+		check: compile(field.schema),
+	}));
 }
 
 /**

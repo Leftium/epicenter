@@ -5,14 +5,16 @@
  * `matter.json` is a plain JSON Schema, the same artifact `column.*` emits, and
  * two pure readers run off it:
  *
- *   deriveKind(schema)         -> which UI cell/editor renders it, plus whether
- *                                 the value may be empty (the `nullable` flag)
- *   Schema.Compile(schema)     -> the validator (conformance)
+ *   deriveKind(schema)  -> which UI cell/editor renders it, plus whether the
+ *                          value may be empty (the `nullable` flag)
+ *   compile(schema)     -> the validator (conformance)
  *
  * `kind` and `nullable` are DERIVED from the schema's shape, never stored.
  * `deriveKind` (via `unwrapNullable`) is the SINGLE place the `anyOf`-null shape
  * is detected, so conformance has ONE definition of "what is a url / a datetime /
- * an empty-able field": the schema itself. No parallel predicate.
+ * an empty-able field": the schema itself. No parallel predicate. This module is
+ * also the ONLY place `typebox` is touched (formats + compile), so the at-rest
+ * JSON Schema is the one input the runtime reads.
  *
  * We keep the core dependency-light: plain JSON-Schema object literals rather
  * than the `column.*` builders (the at-rest shapes are identical, and these are
@@ -20,6 +22,7 @@
  */
 
 import { Format } from 'typebox/format';
+import * as Schema from 'typebox/schema';
 
 /**
  * A JSON Schema as it sits in `matter.json`: a plain object literal. We do not
@@ -36,15 +39,26 @@ export type JsonSchema = Record<string, unknown>;
  *
  * TypeBox 1.x ships `uri` and `date-time` registered by default, but Matter must
  * not depend on that: we register them explicitly (idempotent) so the contract
- * is owned here, on Matter's path, regardless of registry state. Call once, at
- * module load, before any `Schema.Compile`.
+ * is owned here, on Matter's path, regardless of registry state. `compile` calls
+ * this before the first `Schema.Compile`, so there is no import-time side effect;
+ * call it directly only when compiling a schema outside `compile` (e.g. a test).
  */
 export function registerFormats(): void {
 	Format.Set('uri', Format.IsUri);
 	Format.Set('date-time', Format.IsDateTime);
 }
 
-registerFormats();
+/**
+ * Compile a stored JSON Schema into a value check. The ONE place `Schema.Compile`
+ * is called: it registers the value-semantic formats first (idempotent, so the
+ * `uri` / `date-time` checks actually enforce), then preserves the validator's
+ * receiver by closing over it rather than tearing `Check` off (it reads `this`).
+ */
+export function compile(schema: JsonSchema): (value: unknown) => boolean {
+	registerFormats();
+	const validator = Schema.Compile(schema);
+	return (value) => validator.Check(value);
+}
 
 /**
  * The closed set of column kinds the UI knows how to render. Derived from a

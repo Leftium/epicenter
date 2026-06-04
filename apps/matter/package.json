@@ -4,12 +4,19 @@
 	"private": true,
 	"version": "0.0.1",
 	"type": "module",
+	"imports": {
+		"#platform/fs": {
+			"tauri": "./src/lib/platform/fs.tauri.ts",
+			"default": "./src/lib/platform/fs.browser.ts"
+		}
+	},
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"inspect": "bun scripts/inspect.ts",
+		"tauri": "tauri",
 		"test": "bun test",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
 	},
@@ -20,6 +27,7 @@
 		"@sveltejs/kit": "catalog:",
 		"@sveltejs/vite-plugin-svelte": "catalog:",
 		"@tailwindcss/vite": "catalog:",
+		"@tauri-apps/cli": "catalog:",
 		"@types/bun": "catalog:",
 		"mode-watcher": "catalog:",
 		"svelte": "catalog:",
@@ -29,7 +37,10 @@
 		"vite": "catalog:"
 	},
 	"dependencies": {
+		"@tauri-apps/api": "catalog:",
+		"@tauri-apps/plugin-dialog": "^2.3.2",
 		"typebox": "catalog:",
+		"wellcrafted": "catalog:",
 		"yaml": "^2.8.0"
 	},
 	"license": "AGPL-3.0-or-later"

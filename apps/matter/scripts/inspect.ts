@@ -20,7 +20,13 @@ const entries = await Promise.all(
 	names.map(async (name) => ({ path: name, content: await readFile(join(dir, name), 'utf8') })),
 );
 
-const { rows, columns, unreadable } = readFolder(entries);
+// Load the folder's model if it has one, so inspect shows conformance, not just
+// the inferred preview.
+const modelText = await readFile(join(dir, 'matter.json'), 'utf8').catch(
+	() => undefined,
+);
+
+const { rows, view, unreadable } = readFolder(entries, modelText);
 
 const cell = (value: unknown): string => {
 	if (value === null || value === undefined) return '';
@@ -30,19 +36,37 @@ const cell = (value: unknown): string => {
 };
 
 console.log(`\nFolder: ${dir}`);
-console.log(`Files: ${entries.length}   Readable rows: ${rows.length}   Unreadable: ${unreadable.length}\n`);
+console.log(`Files: ${entries.length}   Readable rows: ${rows.length}   Unreadable: ${unreadable.length}`);
+console.log(`Mode: ${view.mode}${view.mode === 'inferred' && view.modelError ? ` (model error: ${view.modelError})` : ''}\n`);
 
-console.log('Inferred columns:');
-for (const c of columns) {
-	console.log(`  ${c.key.padEnd(14)} ${c.kind}${c.array ? '[]' : ''}  (in ${c.count} files)`);
-}
+if (view.mode === 'inferred') {
+	console.log('Inferred columns:');
+	for (const c of view.columns) {
+		console.log(`  ${c.key.padEnd(14)} ${c.kind}${c.array ? '[]' : ''}  (in ${c.count} files)`);
+	}
 
-console.log('\nRows:');
-const keys = columns.map((c) => c.key);
-console.log('  ' + ['file', ...keys].map((k) => k.padEnd(16)).join(''));
-for (const row of rows) {
-	const cells = keys.map((k) => cell(row.frontmatter[k]).slice(0, 15).padEnd(16));
-	console.log('  ' + row.path.padEnd(16) + cells.join(''));
+	console.log('\nRows:');
+	const keys = view.columns.map((c) => c.key);
+	console.log('  ' + ['file', ...keys].map((k) => k.padEnd(16)).join(''));
+	for (const row of rows) {
+		const cells = keys.map((k) => cell(row.frontmatter[k]).slice(0, 15).padEnd(16));
+		console.log('  ' + row.path.padEnd(16) + cells.join(''));
+	}
+} else {
+	console.log('Model fields:');
+	for (const f of view.model.fields) {
+		console.log(`  ${f.name.padEnd(14)} ${f.derived.kind}${f.derived.kind === 'array' ? '[]' : ''}${f.derived.nullable ? '?' : ''}`);
+	}
+
+	console.log('\nConformance (state per cell; ! = needs attention):');
+	const keys = view.columns.map((c) => c.name);
+	console.log('  ' + ['file', ...keys].map((k) => k.padEnd(16)).join(''));
+	for (const conf of view.conformance) {
+		const flag = conf.rowValid ? ' ' : '!';
+		const cells = conf.cells.map((c) => c.state.padEnd(16));
+		const extras = conf.extras.length ? `  +${conf.extras.length} extra` : '';
+		console.log(`${flag} ` + conf.row.path.padEnd(16) + cells.join('') + extras);
+	}
 }
 
 if (unreadable.length) {

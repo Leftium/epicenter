@@ -3,9 +3,9 @@
  *
  * This is deliberately thin. The YAML parser already gives us the natural type
  * of a value (number / boolean / string / list); inference only refines
- * *strings* (is this string an ISO date? a URL?) and then takes a per-column
- * common type. It is the on-ramp to an explicit model, never the source of
- * truth.
+ * *strings* (is this string an ISO date-time? a URI?) and then takes a
+ * per-column common type. It is the on-ramp to an explicit model, never the
+ * source of truth.
  *
  * The kind lattice:
  *
@@ -17,17 +17,17 @@
  *
  * The on-ramp invariant (the one rule that keeps inference honest):
  *
- *   inferValueKind(v) === k  ⟹  Value.Check(buildColumnSchema(k), v) is true
+ *   inferValueKind(v) === k  ⟹  Schema.Compile(SCHEMA_FOR[k]).Check(v) is true
  *
- * Inference may UNDER-claim (fall to `string`); it must never OVER-claim a kind
- * whose schema would reject the value, or "Create model from folder" produces a
- * model that immediately marks its own rows invalid. So `isIsoDateTime` matches
- * only a full RFC 3339 instant (what `column.dateTime` accepts); a bare date or
- * any looser timestamp falls to `string`, the floor that accepts everything.
- * Increment 2 replaces these regexes with the schemas' own `Value.Check`, at
- * which point the implication holds by construction.
+ * Increment 2 made this hold BY CONSTRUCTION: `inferValueKind` (in `schema.ts`)
+ * asks the compiled `column.*` schema checks directly, so inference and
+ * conformance share one definition of "what is a datetime / a url" and cannot
+ * drift. Inference may UNDER-claim (fall to `string`); it can never over-claim a
+ * kind whose schema would reject the value. A bare date is not a full RFC 3339
+ * instant, so it falls to `string`, exactly as `column.dateTime` requires.
  */
 
+import { inferValueKind } from './schema';
 import type { ColumnKind, Row } from './types';
 
 /** A column Matter inferred from a folder's frontmatter. */
@@ -46,49 +46,7 @@ export type InferredColumn = {
 	count: number;
 };
 
-/**
- * A full RFC 3339 instant: date + `T` + `HH:MM:SS`, an optional fraction, and a
- * required `Z` or `±HH:MM` offset. This mirrors what `column.dateTime` (TypeBox's
- * built-in `date-time` format) accepts. Anything looser (a bare date, a space
- * separator, a missing offset, no seconds) is intentionally NOT matched:
- * inference falls to `string` rather than over-claim a `datetime` the schema
- * would reject.
- */
-const DATE_TIME =
-	/^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[Zz]|[+-]\d{2}:\d{2})$/;
-
-export function isUrl(value: unknown): boolean {
-	if (typeof value !== 'string') return false;
-	try {
-		const url = new URL(value);
-		return url.protocol === 'http:' || url.protocol === 'https:';
-	} catch {
-		return false;
-	}
-}
-
-/** A full RFC 3339 instant (date, time, and zone). */
-export function isIsoDateTime(value: unknown): boolean {
-	return (
-		typeof value === 'string' &&
-		DATE_TIME.test(value) &&
-		!Number.isNaN(Date.parse(value))
-	);
-}
-
-/**
- * The kind a single value most specifically satisfies. Order matters: the most
- * specific kind wins, and `string` is the catch-all floor.
- */
-export function inferValueKind(value: unknown): ColumnKind {
-	if (typeof value === 'boolean') return 'boolean';
-	if (typeof value === 'number') {
-		return Number.isInteger(value) ? 'integer' : 'number';
-	}
-	if (isIsoDateTime(value)) return 'datetime';
-	if (isUrl(value)) return 'url';
-	return 'string';
-}
+export { inferValueKind };
 
 /**
  * The narrowest kind every present value in a column satisfies. Null/undefined

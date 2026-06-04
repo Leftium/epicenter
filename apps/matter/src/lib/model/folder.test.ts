@@ -16,9 +16,44 @@ describe('readFolder', () => {
 			{ path: 'broken.md', reason: 'invalid-yaml' },
 			{ path: 'conflict.md', reason: 'conflict-markers' },
 		]);
-		expect(result.columns).toEqual([
+		// No model supplied: the view is an inferred preview.
+		expect(result.view.mode).toBe('inferred');
+		if (result.view.mode !== 'inferred') throw new Error('expected inferred');
+		expect(result.view.columns).toEqual([
 			{ key: 'title', kind: 'string', array: false, count: 2 },
 			{ key: 'rating', kind: 'integer', array: false, count: 1 },
 		]);
+	});
+
+	test('a valid matter.json produces a modeled view with per-cell conformance', () => {
+		const model = JSON.stringify({
+			fields: {
+				title: { type: 'string' },
+				rating: { type: 'integer' },
+			},
+		});
+		const result = readFolder(
+			[
+				{ path: 'a.md', content: '---\ntitle: A\nrating: 5\n---\nbody' },
+				{ path: 'b.md', content: '---\ntitle: B\n---\nbody' }, // rating absent -> NEEDS_VALUE
+				{ path: 'c.md', content: '---\ntitle: C\nrating: "high"\n---\nbody' }, // INVALID
+			],
+			model,
+		);
+
+		expect(result.view.mode).toBe('modeled');
+		if (result.view.mode !== 'modeled') throw new Error('expected modeled');
+		const valid = result.view.conformance.map((c) => c.rowValid);
+		expect(valid).toEqual([true, false, false]);
+	});
+
+	test('a junk matter.json degrades to the inferred preview with a diagnostic', () => {
+		const result = readFolder(
+			[{ path: 'a.md', content: '---\ntitle: A\n---\nbody' }],
+			'{ not json',
+		);
+		expect(result.view.mode).toBe('inferred');
+		if (result.view.mode !== 'inferred') throw new Error('expected inferred');
+		expect(result.view.modelError).toBeDefined();
 	});
 });

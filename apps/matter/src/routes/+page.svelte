@@ -10,12 +10,21 @@
 		eager: true,
 	}) as Record<string, string>;
 
+	// The folder's model, if it has one. Read separately from the .md files; a
+	// junk model degrades to the inferred preview inside readFolder.
+	const modelFiles = import.meta.glob('/sample-vault/drafts/matter.json', {
+		query: '?raw',
+		import: 'default',
+		eager: true,
+	}) as Record<string, string>;
+	const modelText = Object.values(modelFiles)[0];
+
 	const entries: FolderEntry[] = Object.entries(raw).map(([path, content]) => ({
 		path: path.split('/').pop() ?? path,
 		content,
 	}));
 
-	const read = readFolder(entries);
+	const read = readFolder(entries, modelText);
 </script>
 
 <main class="flex h-screen flex-col">

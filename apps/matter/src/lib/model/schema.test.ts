@@ -1,0 +1,92 @@
+import { describe, expect, test } from 'bun:test';
+import { Format } from 'typebox/format';
+import * as Schema from 'typebox/schema';
+import { deriveKind, isNullable, registerFormats } from './schema';
+
+describe('format registration (the enforcement gate)', () => {
+	// The whole point of registering `uri` / `date-time`: an UNREGISTERED format
+	// is treated by TypeBox as "always passes", so without registration
+	// `column.url` / `column.dateTime` would silently accept every string. This
+	// proves the mechanism on a throwaway format name we control.
+	test('an unregistered format accepts garbage; registering makes it enforce', () => {
+		const fmt = 'matter-test-format';
+		const schema = { type: 'string', format: fmt } as const;
+		expect(Format.Has(fmt)).toBe(false);
+
+		// Unregistered: garbage passes.
+		expect(Schema.Compile(schema).Check('garbage')).toBe(true);
+
+		// Register: only the allowed value passes.
+		Format.Set(fmt, (v) => v === 'ok');
+		expect(Schema.Compile(schema).Check('garbage')).toBe(false);
+		expect(Schema.Compile(schema).Check('ok')).toBe(true);
+
+		Format.Set(fmt, () => true); // leave it permissive; clear is not exported per-key
+	});
+
+	test('uri and date-time are registered and actually enforce', () => {
+		registerFormats(); // idempotent
+		const url = Schema.Compile({ type: 'string', format: 'uri' });
+		expect(url.Check('https://example.com')).toBe(true);
+		expect(url.Check('not a url with spaces')).toBe(false);
+
+		const dt = Schema.Compile({ type: 'string', format: 'date-time' });
+		expect(dt.Check('2026-06-04T10:30:00Z')).toBe(true);
+		expect(dt.Check('2026-06-04')).toBe(false); // bare date is not a full instant
+	});
+});
+
+describe('deriveKind (schema -> UI kind, ordered shape match)', () => {
+	test('scalar kinds', () => {
+		expect(deriveKind({ type: 'string' })).toEqual({ kind: 'string', nullable: false });
+		expect(deriveKind({ type: 'boolean' })).toEqual({ kind: 'boolean', nullable: false });
+		expect(deriveKind({ type: 'integer' })).toEqual({ kind: 'integer', nullable: false });
+		expect(deriveKind({ type: 'number' })).toEqual({ kind: 'number', nullable: false });
+	});
+
+	test('format-bearing strings', () => {
+		expect(deriveKind({ type: 'string', format: 'uri' })).toEqual({ kind: 'url', nullable: false });
+		expect(deriveKind({ type: 'string', format: 'date-time' })).toEqual({
+			kind: 'datetime',
+			nullable: false,
+		});
+	});
+
+	test('enum keyword wins over type', () => {
+		expect(deriveKind({ type: 'string', enum: ['a', 'b'] })).toEqual({
+			kind: 'enum',
+			nullable: false,
+		});
+	});
+
+	test('array carries its element kind', () => {
+		expect(deriveKind({ type: 'array', items: { type: 'string' } })).toEqual({
+			kind: 'array',
+			nullable: false,
+			items: { kind: 'string', nullable: false },
+		});
+	});
+
+	test('nullable wrapper unwraps and flags', () => {
+		const nullableUrl = {
+			anyOf: [{ type: 'string', format: 'uri' }, { type: 'null' }],
+		};
+		expect(deriveKind(nullableUrl)).toEqual({ kind: 'url', nullable: true });
+	});
+
+	test('an unrecognized shape falls back to json', () => {
+		expect(deriveKind({ type: 'object' }).kind).toBe('json');
+		// A true multi-branch union (not the nullable shape) is json.
+		expect(
+			deriveKind({ anyOf: [{ type: 'string' }, { type: 'integer' }] }).kind,
+		).toBe('json');
+	});
+});
+
+describe('isNullable', () => {
+	test('the anyOf-with-null shape is nullable; a bare schema is not', () => {
+		expect(isNullable({ type: 'string' })).toBe(false);
+		expect(isNullable({ anyOf: [{ type: 'string' }, { type: 'null' }] })).toBe(true);
+		expect(isNullable({ anyOf: [{ type: 'string' }, { type: 'integer' }] })).toBe(false);
+	});
+});

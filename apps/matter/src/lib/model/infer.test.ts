@@ -1,11 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-	inferColumnKind,
-	inferColumns,
-	inferValueKind,
-	isIsoDateTime,
-	isUrl,
-} from './infer';
+import { inferColumnKind, inferColumns, inferValueKind } from './infer';
 import type { Row } from './types';
 
 describe('inferValueKind', () => {
@@ -32,13 +26,19 @@ describe('inferValueKind', () => {
 		expect(inferValueKind('2026-06-04T10:30Z')).toBe('string'); // no seconds
 	});
 
-	test('a non-http URL-ish string is plain text', () => {
-		expect(inferValueKind('mailto:x@y.com')).toBe('string');
-		expect(isUrl('ftp://x')).toBe(false);
+	// Increment 2 unified inference with the stored `column.url` schema
+	// (`{ type:'string', format:'uri' }`). `format: uri` is full RFC 3986, so a
+	// `mailto:` URI now infers as `url`, not `string`. This is NOT over-claiming:
+	// the on-ramp invariant only forbids a kind whose schema would REJECT the
+	// value, and the uri schema accepts mailto. Inference and conformance now
+	// share one definition of "url".
+	test('any RFC 3986 URI (incl. mailto) infers url under the unified schema', () => {
+		expect(inferValueKind('mailto:x@y.com')).toBe('url');
+		expect(inferValueKind('https://example.com')).toBe('url');
 	});
 
 	test('a date-shaped but invalid string is not datetime', () => {
-		expect(isIsoDateTime('2026-13-99T00:00:00Z')).toBe(false);
+		expect(inferValueKind('2026-13-99T00:00:00Z')).toBe('string');
 	});
 });
 

@@ -21,6 +21,7 @@ import { createSubscriber, SvelteMap } from 'svelte/reactivity';
 import {
 	buildView,
 	type FolderRead,
+	loadModel,
 	type UnreadableFile,
 } from './model/folder';
 import { parseMarkdown } from './model/parse';
@@ -56,6 +57,9 @@ function createVault(path: string) {
 	// with a real empty folder; `error` is set if the watch itself fails.
 	let status = $state<'loading' | 'ready'>('loading');
 	let error = $state<string | undefined>(undefined);
+	// Memoized: Schema.Compile runs only when matter.json changes, not on every
+	// .md change. A single-file change reclassifies against these cached columns.
+	const loaded = $derived(loadModel(modelText));
 
 	/** Parse one file into the readable rows or the unreadable list. */
 	function ingest(fileName: string, content: string) {
@@ -139,7 +143,7 @@ function createVault(path: string) {
 					path: file,
 					reason,
 				})),
-				view: buildView(currentRows, modelText),
+				view: buildView(currentRows, loaded),
 			};
 		},
 		/** Whether the first batch has landed. Reading it activates the watch. */

@@ -114,14 +114,14 @@ export function classifyRow(
 }
 
 /**
- * Classify a whole folder of rows against a model. Compiles each column's
- * validator once, then classifies every row; the compiled columns are an
- * internal detail (the model's ordered `fields` are what the view renders from).
+ * Classify a batch of rows against ALREADY-compiled columns. Compilation is the
+ * expensive step (`Schema.Compile` is codegen), so it is done once via
+ * {@link compileColumns} when the model loads and the columns are threaded in
+ * here, never rebuilt per row or per file change.
  */
 export function classifyRows(
-	model: MatterModel,
+	columns: readonly CompiledColumn[],
 	rows: readonly Row[],
 ): RowConformance[] {
-	const columns = compileColumns(model);
 	return rows.map((row) => classifyRow(columns, row));
 }

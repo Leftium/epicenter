@@ -16,7 +16,12 @@
  * ("Create model from folder") is a deferred, schema-emitting step.
  */
 
-import { classifyRows, type RowConformance } from './conformance';
+import {
+	classifyRows,
+	type CompiledColumn,
+	compileColumns,
+	type RowConformance,
+} from './conformance';
 import { type MatterModel, parseModel } from './model';
 import { type ParsedFile, parseMarkdown } from './parse';
 import type { Row } from './types';
@@ -106,33 +111,59 @@ export function readFolder(
 		}
 	}
 
-	return { rows, unreadable, view: buildView(rows, modelText) };
+	return { rows, unreadable, view: buildView(rows, loadModel(modelText)) };
 }
 
 /**
- * Classify a set of in-memory rows against an optional model. Split out from
- * {@link readFolder} so the live vault can reclassify after a single-file change
- * without re-parsing the whole folder.
+ * A folder's model after the expensive load step: missing, junk (with a
+ * diagnostic), or parsed AND compiled. The `columns` are the precompiled
+ * validators, built once here so classification never recompiles.
+ */
+export type LoadedModel =
+	| { kind: 'none' }
+	| { kind: 'error'; reason: string }
+	| { kind: 'loaded'; model: MatterModel; columns: CompiledColumn[] };
+
+/**
+ * Parse AND compile a folder's `matter.json` ONCE. Compilation (`Schema.Compile`)
+ * is the costly step, so memoize this off the model text (a `$derived` in the
+ * live vault) and pass the result to {@link buildView}; a single-file change then
+ * reclassifies against the cached columns without recompiling.
+ */
+export function loadModel(modelText: string | undefined): LoadedModel {
+	if (modelText === undefined) return { kind: 'none' };
+	const parsed = parseModel(modelText);
+	// Junk model carries its diagnostic so the UI can surface it; deleting
+	// matter.json always recovers a working raw view.
+	if (!parsed.ok) return { kind: 'error', reason: parsed.reason };
+	return {
+		kind: 'loaded',
+		model: parsed.model,
+		columns: compileColumns(parsed.model),
+	};
+}
+
+/**
+ * Classify a set of in-memory rows against an already-loaded model. Split out
+ * from {@link readFolder} so the live vault can reclassify after a single-file
+ * change without re-parsing the folder or recompiling the model.
  */
 export function buildView(
 	rows: readonly Row[],
-	modelText: string | undefined,
+	loaded: LoadedModel,
 ): ModeledView | UnmodeledView {
-	if (modelText === undefined) {
-		return { mode: 'unmodeled', columns: frontmatterColumns(rows) };
-	}
-
-	const parsed = parseModel(modelText);
-	if (!parsed.ok) {
-		// Junk model: degrade to the raw view, but carry the diagnostic so the UI can
-		// surface it. Deleting matter.json always recovers a working raw view.
+	if (loaded.kind === 'loaded') {
 		return {
-			mode: 'unmodeled',
-			columns: frontmatterColumns(rows),
-			modelError: parsed.reason,
+			mode: 'modeled',
+			model: loaded.model,
+			conformance: classifyRows(loaded.columns, rows),
 		};
 	}
-
-	const conformance = classifyRows(parsed.model, rows);
-	return { mode: 'modeled', model: parsed.model, conformance };
+	// No usable model: the raw untyped view, carrying the diagnostic if a
+	// matter.json existed but was junk.
+	const columns = frontmatterColumns(rows);
+	if (loaded.kind === 'error') {
+		return { mode: 'unmodeled', columns, modelError: loaded.reason };
+	}
+	return { mode: 'unmodeled', columns };
 }

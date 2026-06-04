@@ -78,13 +78,13 @@ describe('classifyRow (per-cell conformance)', () => {
 });
 
 describe('classifyRows', () => {
-	test('compiles columns once and classifies every row', () => {
+	test('classifies every row against precompiled columns', () => {
 		const m = model({ title: { type: 'string' } });
 		const rows: Row[] = [
 			{ path: 'a.md', frontmatter: { title: 'A' }, body: '' },
 			{ path: 'b.md', frontmatter: {}, body: '' },
 		];
-		const conformance = classifyRows(m, rows);
+		const conformance = classifyRows(compileColumns(m), rows);
 		expect(conformance.map((c) => c.rowValid)).toEqual([true, false]);
 	});
 });

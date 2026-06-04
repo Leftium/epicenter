@@ -18,11 +18,18 @@
 
 import type { ColumnKind, Row } from './types';
 
-/** A value Matter inferred a kind for and the order it was first seen. */
+/** A column Matter inferred from a folder's frontmatter. */
 export type InferredColumn = {
 	/** The frontmatter key (also the column id and the default display label). */
 	key: string;
+	/** The scalar kind. For an array column this is the element kind. */
 	kind: ColumnKind;
+	/**
+	 * True when every present value is a list (the `array` modifier). The element
+	 * kind is in `kind`. A non-array object value has no scalar kind and falls back
+	 * to `string` here; the renderer detects the object and uses the JSON cell.
+	 */
+	array: boolean;
 	/** How many files carry a non-null value for this key (drives ordering). */
 	count: number;
 };
@@ -102,8 +109,14 @@ export function inferColumns(rows: readonly Row[]): InferredColumn[] {
 	return firstSeen
 		.map((key, index) => {
 			const values = valuesByKey.get(key) ?? [];
-			const count = values.filter((v) => v !== null && v !== undefined).length;
-			return { column: { key, kind: inferColumnKind(values), count }, index };
+			const present = values.filter((v) => v !== null && v !== undefined);
+			// An array column: every present value is a list. Infer the element kind
+			// from the flattened elements; everything else infers as a scalar column.
+			const array = present.length > 0 && present.every(Array.isArray);
+			const kind = array
+				? inferColumnKind((present as unknown[][]).flat())
+				: inferColumnKind(present);
+			return { column: { key, kind, array, count: present.length }, index };
 		})
 		.sort((a, b) => b.column.count - a.column.count || a.index - b.index)
 		.map(({ column }) => column);

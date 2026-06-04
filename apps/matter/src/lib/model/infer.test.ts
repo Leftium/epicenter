@@ -53,17 +53,28 @@ describe('inferColumnKind (the lattice)', () => {
 
 describe('inferColumns', () => {
 	const rows: Row[] = [
-		{ path: 'a.md', frontmatter: { title: 'A', status: 'draft', rating: 5 }, body: '' },
+		{ path: 'a.md', frontmatter: { title: 'A', status: 'draft', rating: 5, tags: ['x', 'y'] }, body: '' },
 		{ path: 'b.md', frontmatter: { title: 'B', status: 'published' }, body: '' },
-		{ path: 'c.md', frontmatter: { title: 'C', status: 'draft', rating: 3 }, body: '' },
+		{ path: 'c.md', frontmatter: { title: 'C', status: 'draft', rating: 3, tags: ['z'] }, body: '' },
 	];
 
-	test('orders by frequency then first-seen, and infers each kind', () => {
+	test('orders by frequency then first-seen, infers kind and array', () => {
 		expect(inferColumns(rows)).toEqual([
-			{ key: 'title', kind: 'string', count: 3 },
-			{ key: 'status', kind: 'string', count: 3 },
-			{ key: 'rating', kind: 'integer', count: 2 },
+			{ key: 'title', kind: 'string', array: false, count: 3 },
+			{ key: 'status', kind: 'string', array: false, count: 3 },
+			{ key: 'rating', kind: 'integer', array: false, count: 2 },
+			{ key: 'tags', kind: 'string', array: true, count: 2 },
 		]);
+	});
+
+	test('an array column infers its element kind', () => {
+		const r: Row[] = [{ path: 'a.md', frontmatter: { scores: [1, 2, 3] }, body: '' }];
+		expect(inferColumns(r)).toEqual([{ key: 'scores', kind: 'integer', array: true, count: 1 }]);
+	});
+
+	test('a nested object falls back to string (rendered via the JSON cell)', () => {
+		const r: Row[] = [{ path: 'a.md', frontmatter: { meta: { a: 1 } }, body: '' }];
+		expect(inferColumns(r)).toEqual([{ key: 'meta', kind: 'string', array: false, count: 1 }]);
 	});
 
 	test('is deterministic regardless of row order', () => {

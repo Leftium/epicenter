@@ -52,6 +52,6 @@ describe('readFolder', () => {
 		);
 		expect(result.view.mode).toBe('unmodeled');
 		if (result.view.mode !== 'unmodeled') throw new Error('expected unmodeled');
-		expect(result.view.modelError).toBeDefined();
+		expect(result.view.modelError?.name).toBe('InvalidJson');
 	});
 });

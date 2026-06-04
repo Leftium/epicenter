@@ -23,7 +23,7 @@ import {
 	compileColumns,
 	type RowConformance,
 } from './conformance';
-import { type MatterModel, parseModel } from './model';
+import { type MatterModel, type MatterModelError, parseModel } from './model';
 import { type MatterParseError, parseMarkdown } from './parse';
 import type { Row } from './types';
 
@@ -68,7 +68,7 @@ export type ModeledView = {
 export type UnmodeledView = {
 	mode: 'unmodeled';
 	columns: string[];
-	modelError?: string;
+	modelError?: MatterModelError;
 };
 
 export type FolderRead = {
@@ -130,7 +130,7 @@ export function readFolder(
  */
 export type LoadedModel =
 	| { kind: 'none' }
-	| { kind: 'error'; reason: string }
+	| { kind: 'error'; error: MatterModelError }
 	| { kind: 'loaded'; model: MatterModel; columns: CompiledColumn[] };
 
 /**
@@ -141,15 +141,11 @@ export type LoadedModel =
  */
 export function loadModel(modelText: string | undefined): LoadedModel {
 	if (modelText === undefined) return { kind: 'none' };
-	const parsed = parseModel(modelText);
+	const { data: model, error } = parseModel(modelText);
 	// Junk model carries its diagnostic so the UI can surface it; deleting
 	// matter.json always recovers a working raw view.
-	if (!parsed.ok) return { kind: 'error', reason: parsed.reason };
-	return {
-		kind: 'loaded',
-		model: parsed.model,
-		columns: compileColumns(parsed.model),
-	};
+	if (error) return { kind: 'error', error };
+	return { kind: 'loaded', model, columns: compileColumns(model) };
 }
 
 /**
@@ -172,7 +168,7 @@ export function buildView(
 	// matter.json existed but was junk.
 	const columns = frontmatterColumns(rows);
 	if (loaded.kind === 'error') {
-		return { mode: 'unmodeled', columns, modelError: loaded.reason };
+		return { mode: 'unmodeled', columns, modelError: loaded.error };
 	}
 	return { mode: 'unmodeled', columns };
 }

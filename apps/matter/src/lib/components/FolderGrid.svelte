@@ -58,7 +58,7 @@
 
 		<div class="border-b bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
 			{#if view.modelError}
-				Could not read matter.json ({view.modelError}). Showing the raw frontmatter; add a valid matter.json to classify files against a contract.
+				Could not read matter.json ({view.modelError.message}). Showing the raw frontmatter; add a valid matter.json to classify files against a contract.
 			{:else}
 				No model for this folder. Showing the raw frontmatter; add a matter.json to classify files against a contract.
 			{/if}

@@ -37,7 +37,7 @@ const cell = (value: unknown): string => {
 
 console.log(`\nFolder: ${dir}`);
 console.log(`Files: ${entries.length}   Readable rows: ${rows.length}   Unreadable: ${unreadable.length}`);
-console.log(`Mode: ${view.mode}${view.mode === 'unmodeled' && view.modelError ? ` (model error: ${view.modelError})` : ''}\n`);
+console.log(`Mode: ${view.mode}${view.mode === 'unmodeled' && view.modelError ? ` (model error: ${view.modelError.message})` : ''}\n`);
 
 if (view.mode === 'unmodeled') {
 	console.log('No model: raw columns (keys only, no inferred kinds):');

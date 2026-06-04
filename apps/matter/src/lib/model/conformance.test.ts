@@ -4,9 +4,9 @@ import { validateModel } from './model';
 import type { Row } from './types';
 
 function model(fields: Record<string, Record<string, unknown>>) {
-	const r = validateModel({ fields });
-	if (!r.ok) throw new Error(r.reason);
-	return r.model;
+	const { data, error } = validateModel({ fields });
+	if (error) throw new Error(error.message);
+	return data;
 }
 
 describe('classifyRow (per-cell conformance)', () => {

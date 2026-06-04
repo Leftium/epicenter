@@ -19,7 +19,7 @@
 	<code class="rounded bg-destructive/10 px-1 text-xs text-destructive">{String(cell.value)}</code>
 {:else if derivedKind.kind === 'array' && Array.isArray(cell.value)}
 	<div class="flex flex-wrap gap-1">
-		{#each cell.value as item (item)}
+		{#each cell.value as item, i (i)}
 			<span class="rounded bg-muted px-1.5 py-0.5 text-xs">{item}</span>
 		{/each}
 	</div>

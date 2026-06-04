@@ -37,6 +37,10 @@ import type { Row } from './model/types';
  * `content` carries the bytes so the JS never re-reads; `removed` drops the row;
  * `unreadable` (non-UTF-8 / permission) routes to "Can't read" instead of
  * vanishing.
+ *
+ * Hand-mirrored from the Rust `FileDelta` enum in `src-tauri/src/watch.rs`: keep
+ * the variants, field names, and `tag: 'kind'` in lockstep, or live updates break
+ * silently at runtime. (Swap for `tauri-specta` codegen once the IPC surface grows.)
  */
 type FileDelta =
 	| { kind: 'content'; name: string; text: string }

@@ -34,6 +34,10 @@ pub struct WatcherStore {
 
 /// One file's observable state. `name` is the basename (top level, non-recursive),
 /// the row identity the frontend keys on. Serialized as a `{ kind, ... }` union.
+///
+/// Hand-mirrored by the TS `FileDelta` type in `src/lib/vault.svelte.ts`: keep the
+/// variants, field names, and `tag = "kind"` in lockstep, or live updates break
+/// silently at runtime. (Swap for `tauri-specta` codegen once the IPC surface grows.)
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase", tag = "kind")]
 pub enum FileDelta {

@@ -165,10 +165,16 @@ export function buildView(
 		};
 	}
 	// No usable model: the raw untyped view, carrying the diagnostic if a
-	// matter.json existed but was junk.
+	// matter.json existed but was junk. Exhaustive over the remaining
+	// 'none' | 'error' so a new LoadedModel variant fails to compile here
+	// instead of silently rendering as an empty grid.
 	const columns = frontmatterColumns(rows);
-	if (loaded.kind === 'error') {
-		return { mode: 'unmodeled', columns, modelError: loaded.error };
+	switch (loaded.kind) {
+		case 'none':
+			return { mode: 'unmodeled', columns };
+		case 'error':
+			return { mode: 'unmodeled', columns, modelError: loaded.error };
+		default:
+			return loaded satisfies never;
 	}
-	return { mode: 'unmodeled', columns };
 }

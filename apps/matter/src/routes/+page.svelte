@@ -56,7 +56,17 @@
 				<p class="text-sm text-muted-foreground">Loading {vault.name}...</p>
 			</div>
 		{:else}
-			<FolderGrid read={vault.read} folder={vault.name} />
+			{#if vault.writeError}
+				<div class="border-b bg-destructive/10 px-4 py-1.5 text-xs text-destructive">
+					Couldn't save: {vault.writeError}
+				</div>
+			{/if}
+			<FolderGrid
+				read={vault.read}
+				folder={vault.name}
+				onSaveField={vault.saveField}
+				onSaveBody={vault.saveBody}
+			/>
 		{/if}
 	{:else}
 		<div class="flex flex-1 items-center justify-center">

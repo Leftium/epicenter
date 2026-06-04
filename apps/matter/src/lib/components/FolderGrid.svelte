@@ -1,9 +1,20 @@
 <script lang="ts">
 	import * as Table from '@epicenter/ui/table';
 	import type { FolderRead } from '$lib/model/view';
-	import ConformanceCell from './ConformanceCell.svelte';
+	import EditableCell from './EditableCell.svelte';
+	import RowDetail from './RowDetail.svelte';
 
-	let { read, folder }: { read: FolderRead; folder: string } = $props();
+	let {
+		read,
+		folder,
+		onSaveField,
+		onSaveBody,
+	}: {
+		read: FolderRead;
+		folder: string;
+		onSaveField: (name: string, key: string, value: unknown) => void;
+		onSaveBody: (name: string, body: string) => void;
+	} = $props();
 
 	const view = $derived(read.view);
 
@@ -126,17 +137,17 @@
 					{#each visibleRows as conf (conf.row.name)}
 						<Table.Row class={conf.rowValid ? '' : 'bg-amber-500/5'}>
 							<Table.Cell class="align-top">
-								{#if conf.extras.length}
-									<button
-										type="button"
-										class="text-muted-foreground hover:text-foreground"
-										title="{conf.extras.length} unmodeled keys"
-										onclick={() =>
-											(expanded[conf.row.name] = !expanded[conf.row.name])}
-									>
-										•••
-									</button>
-								{/if}
+								<button
+									type="button"
+									class="text-muted-foreground hover:text-foreground"
+									title="Edit body{conf.extras.length
+										? ` · ${conf.extras.length} unmodeled keys`
+										: ''}"
+									onclick={() =>
+										(expanded[conf.row.name] = !expanded[conf.row.name])}
+								>
+									•••
+								</button>
 							</Table.Cell>
 							{#each conf.cells as cell, i (cell.name)}
 								{@const derived = view.model.fields[i]?.derived}
@@ -146,26 +157,21 @@
 										: ''}
 								>
 									{#if derived}
-										<ConformanceCell {cell} derivedKind={derived} />
+										<EditableCell
+											{cell}
+											derivedKind={derived}
+											name={conf.row.name}
+											onSave={onSaveField}
+										/>
 									{/if}
 								</Table.Cell>
 							{/each}
 						</Table.Row>
-						{#if expanded[conf.row.name] && conf.extras.length}
+						{#if expanded[conf.row.name]}
 							<Table.Row>
 								<Table.Cell></Table.Cell>
 								<Table.Cell colspan={view.model.fields.length}>
-									<div class="flex flex-col gap-1 text-xs">
-										<span class="text-muted-foreground">Unmodeled keys (preserved, not validated):</span>
-										{#each conf.extras as extra (extra.key)}
-											<div class="font-mono">
-												<span class="text-muted-foreground">{extra.key}:</span>
-												{typeof extra.value === 'object'
-													? JSON.stringify(extra.value)
-													: String(extra.value)}
-											</div>
-										{/each}
-									</div>
+									<RowDetail row={conf.row} extras={conf.extras} {onSaveBody} />
 								</Table.Cell>
 							</Table.Row>
 						{/if}

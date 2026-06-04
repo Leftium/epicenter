@@ -29,8 +29,6 @@
 		"vite": "catalog:"
 	},
 	"dependencies": {
-		"@tanstack/svelte-table": "catalog:",
-		"@tanstack/table-core": "9.0.0-alpha.10",
 		"typebox": "catalog:",
 		"yaml": "^2.8.0"
 	},

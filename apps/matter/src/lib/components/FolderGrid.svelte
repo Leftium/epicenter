@@ -1,7 +1,6 @@
 <script lang="ts">
 	import * as Table from '@epicenter/ui/table';
 	import type { FolderRead } from '$lib/model/folder';
-	import InferredGrid from './InferredGrid.svelte';
 	import ConformanceCell from './ConformanceCell.svelte';
 
 	let { read, folder }: { read: FolderRead; folder: string } = $props();
@@ -26,8 +25,27 @@
 	let expanded = $state<Record<string, boolean>>({});
 </script>
 
+<!-- Raw value render for the unmodeled view: plain text, no type guessing. -->
+{#snippet rawValue(value: unknown)}
+	{#if value === null || value === undefined}
+		<span class="text-muted-foreground/50">—</span>
+	{:else if Array.isArray(value)}
+		<div class="flex flex-wrap gap-1">
+			{#each value as item, i (i)}
+				<span class="rounded bg-muted px-1.5 py-0.5 text-xs">
+					{typeof item === 'object' ? JSON.stringify(item) : String(item)}
+				</span>
+			{/each}
+		</div>
+	{:else if typeof value === 'object'}
+		<code class="text-xs text-muted-foreground">{JSON.stringify(value)}</code>
+	{:else}
+		<span class="truncate">{String(value)}</span>
+	{/if}
+{/snippet}
+
 <div class="flex min-h-0 flex-1 flex-col">
-	{#if view.mode === 'inferred'}
+	{#if view.mode === 'unmodeled'}
 		<header class="flex items-baseline justify-between border-b px-4 py-3">
 			<div>
 				<h1 class="text-sm font-semibold">{folder}</h1>
@@ -35,18 +53,37 @@
 					{read.rows.length} rows · {view.columns.length} columns · {read.unreadable.length} unreadable
 				</p>
 			</div>
-			<span class="rounded bg-muted px-2 py-1 text-xs text-muted-foreground">
-				no model · inferred
-			</span>
+			<span class="rounded bg-muted px-2 py-1 text-xs text-muted-foreground">no model</span>
 		</header>
 
-		{#if view.modelError}
-			<div class="border-b bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-400">
-				Could not read matter.json ({view.modelError}). Showing an inferred preview instead.
-			</div>
-		{/if}
+		<div class="border-b bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
+			{#if view.modelError}
+				Could not read matter.json ({view.modelError}). Showing the raw frontmatter; add a valid matter.json to classify files against a contract.
+			{:else}
+				No model for this folder. Showing the raw frontmatter; add a matter.json to classify files against a contract.
+			{/if}
+		</div>
 
-		<InferredGrid rows={read.rows} columns={view.columns} />
+		<div class="flex-1 overflow-auto">
+			<Table.Root>
+				<Table.Header>
+					<Table.Row>
+						{#each view.columns as key (key)}
+							<Table.Head><span class="font-medium">{key}</span></Table.Head>
+						{/each}
+					</Table.Row>
+				</Table.Header>
+				<Table.Body>
+					{#each read.rows as row (row.path)}
+						<Table.Row>
+							{#each view.columns as key (key)}
+								<Table.Cell>{@render rawValue(row.frontmatter[key])}</Table.Cell>
+							{/each}
+						</Table.Row>
+					{/each}
+				</Table.Body>
+			</Table.Root>
+		</div>
 	{:else}
 		<header class="flex items-baseline justify-between border-b px-4 py-3">
 			<div>

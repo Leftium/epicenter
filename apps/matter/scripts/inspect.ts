@@ -37,16 +37,14 @@ const cell = (value: unknown): string => {
 
 console.log(`\nFolder: ${dir}`);
 console.log(`Files: ${entries.length}   Readable rows: ${rows.length}   Unreadable: ${unreadable.length}`);
-console.log(`Mode: ${view.mode}${view.mode === 'inferred' && view.modelError ? ` (model error: ${view.modelError})` : ''}\n`);
+console.log(`Mode: ${view.mode}${view.mode === 'unmodeled' && view.modelError ? ` (model error: ${view.modelError})` : ''}\n`);
 
-if (view.mode === 'inferred') {
-	console.log('Inferred columns:');
-	for (const c of view.columns) {
-		console.log(`  ${c.key.padEnd(14)} ${c.kind}${c.array ? '[]' : ''}  (in ${c.count} files)`);
-	}
+if (view.mode === 'unmodeled') {
+	console.log('No model: raw columns (keys only, no inferred kinds):');
+	console.log('  ' + view.columns.join(', '));
 
 	console.log('\nRows:');
-	const keys = view.columns.map((c) => c.key);
+	const keys = view.columns;
 	console.log('  ' + ['file', ...keys].map((k) => k.padEnd(16)).join(''));
 	for (const row of rows) {
 		const cells = keys.map((k) => cell(row.frontmatter[k]).slice(0, 15).padEnd(16));

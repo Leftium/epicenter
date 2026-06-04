@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFolder } from './folder';
 
 describe('readFolder', () => {
-	test('splits readable rows from unreadable files and infers columns', () => {
+	test('splits readable rows from unreadable files and lists raw columns', () => {
 		const result = readFolder([
 			{ path: 'a.md', content: '---\ntitle: A\nrating: 5\n---\nbody' },
 			{ path: 'b.md', content: '---\ntitle: B\n---\nbody' },
@@ -16,13 +16,11 @@ describe('readFolder', () => {
 			{ path: 'broken.md', reason: 'invalid-yaml' },
 			{ path: 'conflict.md', reason: 'conflict-markers' },
 		]);
-		// No model supplied: the view is an inferred preview.
-		expect(result.view.mode).toBe('inferred');
-		if (result.view.mode !== 'inferred') throw new Error('expected inferred');
-		expect(result.view.columns).toEqual([
-			{ key: 'title', kind: 'string', array: false, count: 2 },
-			{ key: 'rating', kind: 'integer', array: false, count: 1 },
-		]);
+		// No model supplied: a raw untyped view, columns ordered by frequency then
+		// first-seen, no type inference.
+		expect(result.view.mode).toBe('unmodeled');
+		if (result.view.mode !== 'unmodeled') throw new Error('expected unmodeled');
+		expect(result.view.columns).toEqual(['title', 'rating']);
 	});
 
 	test('a valid matter.json produces a modeled view with per-cell conformance', () => {
@@ -47,13 +45,13 @@ describe('readFolder', () => {
 		expect(valid).toEqual([true, false, false]);
 	});
 
-	test('a junk matter.json degrades to the inferred preview with a diagnostic', () => {
+	test('a junk matter.json degrades to the raw view with a diagnostic', () => {
 		const result = readFolder(
 			[{ path: 'a.md', content: '---\ntitle: A\n---\nbody' }],
 			'{ not json',
 		);
-		expect(result.view.mode).toBe('inferred');
-		if (result.view.mode !== 'inferred') throw new Error('expected inferred');
+		expect(result.view.mode).toBe('unmodeled');
+		if (result.view.mode !== 'unmodeled') throw new Error('expected unmodeled');
 		expect(result.view.modelError).toBeDefined();
 	});
 });

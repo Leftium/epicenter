@@ -10,9 +10,9 @@
  *   isNullable(schema)         -> may the value be empty (and, later, SQLite NOT NULL)
  *
  * `kind` is DERIVED from the schema's shape, never stored. This module owns the
- * supported subset of shapes (the schema builders, the kind derivation, and the
- * format registration) so inference and conformance share ONE definition of
- * "what is a url / a datetime": the schema itself. No parallel predicate.
+ * supported subset of shapes (the kind derivation and the format registration)
+ * so conformance has ONE definition of "what is a url / a datetime": the schema
+ * itself. No parallel predicate.
  *
  * We keep the core dependency-light: a local `isNullable` rather than pulling
  * `@epicenter/workspace`, and plain JSON-Schema object literals rather than the
@@ -21,7 +21,6 @@
  */
 
 import { Format } from 'typebox/format';
-import * as Schema from 'typebox/schema';
 
 /**
  * A JSON Schema as it sits in `matter.json`: a plain object literal. We do not
@@ -152,62 +151,4 @@ export function deriveKind(schema: JsonSchema): DerivedKind {
 		return { kind: 'array', nullable, items: deriveKind(matched.array) };
 	}
 	return { kind: matched, nullable };
-}
-
-/**
- * The schema builders for the scalar kinds inference can claim. These are the
- * at-rest `column.*` shapes; inference compiles these and runs `.Check`, so the
- * inferred preview and conformance validate against the IDENTICAL definition and
- * cannot drift. `string` is the floor (always matches) and `enum` is opt-in, so
- * neither is an inference target; they live in `deriveKind`'s recognizer list
- * but not here.
- */
-const SCHEMA_FOR: Record<'boolean' | 'integer' | 'number' | 'datetime' | 'url', JsonSchema> = {
-	boolean: { type: 'boolean' },
-	integer: { type: 'integer' },
-	number: { type: 'number' },
-	datetime: { type: 'string', format: 'date-time' },
-	url: { type: 'string', format: 'uri' },
-};
-
-/**
- * The inference lattice as compiled checks, most-specific first. `boolean` and
- * the numeric kinds are gated on the JS type before the schema check (a JSON
- * `true`/number, not a string), so a string can only ever fall to `datetime`,
- * `url`, or the implicit `string` floor. This is the single source of truth the
- * on-ramp invariant rides on:
- *
- *   inferValueKind(v) = k  =>  Schema.Compile(SCHEMA_FOR[k]).Check(v)  is true
- *
- * because `inferValueKind` ASKS that check directly.
- */
-// `Validator.Check` reads `this`, so it must be CALLED on the validator, never
-// torn off as a bare reference. Wrap each in an arrow that keeps the receiver.
-const booleanValidator = Schema.Compile(SCHEMA_FOR.boolean);
-const integerValidator = Schema.Compile(SCHEMA_FOR.integer);
-const numberValidator = Schema.Compile(SCHEMA_FOR.number);
-const dateTimeValidator = Schema.Compile(SCHEMA_FOR.datetime);
-const urlValidator = Schema.Compile(SCHEMA_FOR.url);
-
-const checkBoolean = (v: unknown) => booleanValidator.Check(v);
-const checkInteger = (v: unknown) => integerValidator.Check(v);
-const checkNumber = (v: unknown) => numberValidator.Check(v);
-const checkDateTime = (v: unknown) => dateTimeValidator.Check(v);
-const checkUrl = (v: unknown) => urlValidator.Check(v);
-
-/**
- * The kind a single value most specifically satisfies, using the compiled
- * schemas (NOT a parallel regex). `string` is the floor that catches everything
- * else. Inference may under-claim to `string`; by construction it never claims a
- * kind whose schema would reject the value.
- */
-export function inferValueKind(
-	value: unknown,
-): 'string' | 'integer' | 'number' | 'boolean' | 'datetime' | 'url' {
-	if (checkBoolean(value)) return 'boolean';
-	if (checkInteger(value)) return 'integer';
-	if (checkNumber(value)) return 'number';
-	if (checkDateTime(value)) return 'datetime';
-	if (checkUrl(value)) return 'url';
-	return 'string';
 }

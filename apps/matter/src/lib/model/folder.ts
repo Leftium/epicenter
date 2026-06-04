@@ -4,13 +4,15 @@
  * This is the pure transform: given each file's path and raw content (and an
  * optional `matter.json` text), it produces the readable rows, the unreadable
  * files (kept separate, never dropped), and EITHER a modeled classification (a
- * valid `matter.json` was supplied) OR an inferred preview (no model, or junk
+ * valid `matter.json` was supplied) OR a raw untyped view (no model, or junk
  * model). The actual disk/Tauri listing lives behind the `#platform/fs` seam and
  * hands its results here, so the transform is testable without any filesystem.
  *
- * Inference is the on-ramp, never the foundation: a usable `matter.json` always
- * wins, and a junk one degrades to the preview with a diagnostic the UI can show
- * as a non-blocking banner.
+ * The model is the foundation, never inference: a usable `matter.json` classifies
+ * the folder against a contract; without one, the folder is shown as RAW text
+ * (no type guessing). A junk model degrades to the raw view with a diagnostic the
+ * UI can show as a non-blocking banner. Turning a raw folder into a model
+ * ("Create model from folder") is a deferred, schema-emitting step.
  */
 
 import {
@@ -18,7 +20,6 @@ import {
 	type CompiledColumn,
 	type RowConformance,
 } from './conformance';
-import { inferColumns, type InferredColumn } from './infer';
 import { type MatterModel, parseModel } from './model';
 import { type ParsedFile, parseMarkdown } from './parse';
 import type { Row } from './types';
@@ -42,21 +43,44 @@ export type ModeledView = {
 };
 
 /**
- * No usable model: an inferred PREVIEW. `modelError` is set when a `matter.json`
- * existed but was junk (so the UI can say "couldn't read your model"), and unset
- * when there simply is no model.
+ * No usable model: the folder is shown as a RAW untyped grid (every value as
+ * plain text, no type inference). `columns` is the deterministic union of
+ * frontmatter keys. `modelError` is set when a `matter.json` existed but was junk
+ * (so the UI can say "couldn't read your model"), and unset when there simply is
+ * no model.
  */
-export type InferredView = {
-	mode: 'inferred';
-	columns: InferredColumn[];
+export type UnmodeledView = {
+	mode: 'unmodeled';
+	columns: string[];
 	modelError?: string;
 };
 
 export type FolderRead = {
 	rows: Row[];
 	unreadable: UnreadableFile[];
-	view: ModeledView | InferredView;
+	view: ModeledView | UnmodeledView;
 };
+
+/**
+ * The ordered column keys of an unmodeled folder: the union of every row's
+ * frontmatter keys, most-frequent first then first-seen, so the raw grid is
+ * deterministic across opens. No type inference: a folder without a model is
+ * shown as raw text, never guessed into kinds.
+ */
+export function frontmatterColumns(rows: readonly Row[]): string[] {
+	const count = new Map<string, number>();
+	const firstSeen: string[] = [];
+	for (const row of rows) {
+		for (const key of Object.keys(row.frontmatter)) {
+			if (!count.has(key)) firstSeen.push(key);
+			count.set(key, (count.get(key) ?? 0) + 1);
+		}
+	}
+	return firstSeen
+		.map((key, index) => ({ key, index, count: count.get(key) ?? 0 }))
+		.sort((a, b) => b.count - a.count || a.index - b.index)
+		.map((c) => c.key);
+}
 
 /**
  * Read and classify a folder.
@@ -86,16 +110,20 @@ export function readFolder(
 function buildView(
 	rows: readonly Row[],
 	modelText: string | undefined,
-): ModeledView | InferredView {
+): ModeledView | UnmodeledView {
 	if (modelText === undefined) {
-		return { mode: 'inferred', columns: inferColumns(rows) };
+		return { mode: 'unmodeled', columns: frontmatterColumns(rows) };
 	}
 
 	const parsed = parseModel(modelText);
 	if (!parsed.ok) {
-		// Junk model: degrade to the preview, but carry the diagnostic so the UI can
-		// surface it. Deleting matter.json always recovers a working preview.
-		return { mode: 'inferred', columns: inferColumns(rows), modelError: parsed.reason };
+		// Junk model: degrade to the raw view, but carry the diagnostic so the UI can
+		// surface it. Deleting matter.json always recovers a working raw view.
+		return {
+			mode: 'unmodeled',
+			columns: frontmatterColumns(rows),
+			modelError: parsed.reason,
+		};
 	}
 
 	const { columns, conformance } = classifyRows(parsed.model, rows);

@@ -5,15 +5,33 @@
 	"version": "0.0.1",
 	"type": "module",
 	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build",
+		"preview": "vite preview",
+		"prepare": "svelte-kit sync || echo ''",
+		"inspect": "bun scripts/inspect.ts",
 		"test": "bun test",
-		"typecheck": "tsc --noEmit"
-	},
-	"dependencies": {
-		"yaml": "^2.8.0"
+		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
 	},
 	"devDependencies": {
+		"@epicenter/ui": "workspace:*",
+		"@lucide/svelte": "catalog:",
+		"@sveltejs/adapter-static": "catalog:",
+		"@sveltejs/kit": "catalog:",
+		"@sveltejs/vite-plugin-svelte": "catalog:",
+		"@tailwindcss/vite": "catalog:",
 		"@types/bun": "catalog:",
-		"typescript": "catalog:"
+		"mode-watcher": "catalog:",
+		"svelte": "catalog:",
+		"svelte-check": "catalog:",
+		"tailwindcss": "catalog:",
+		"typescript": "catalog:",
+		"vite": "catalog:"
+	},
+	"dependencies": {
+		"@tanstack/svelte-table": "catalog:",
+		"@tanstack/table-core": "9.0.0-alpha.10",
+		"yaml": "^2.8.0"
 	},
 	"license": "AGPL-3.0-or-later"
 }

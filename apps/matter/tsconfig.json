@@ -1,14 +1,7 @@
 {
+	"extends": ["../../tsconfig.base.json", "./.svelte-kit/tsconfig.json"],
 	"compilerOptions": {
-		"target": "ES2022",
-		"module": "Preserve",
-		"moduleResolution": "bundler",
-		"strict": true,
-		"skipLibCheck": true,
-		"verbatimModuleSyntax": true,
-		"noUncheckedIndexedAccess": true,
-		"types": ["bun"],
-		"noEmit": true
-	},
-	"include": ["src"]
+		"checkJs": true,
+		"types": ["bun"]
+	}
 }

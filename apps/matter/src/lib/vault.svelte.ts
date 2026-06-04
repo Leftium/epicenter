@@ -23,7 +23,8 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { SvelteMap } from 'svelte/reactivity';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, type Result, tryAsync } from 'wellcrafted/result';
-import { setBody, setField } from './model/serialize';
+import { parseMarkdown } from './model/parse';
+import { serializeEntry } from './model/serialize';
 import {
 	buildView,
 	type FolderRead,
@@ -127,16 +128,29 @@ function createVault(path: string) {
 
 	/**
 	 * Set or clear one frontmatter field (`value === undefined` clears it: removes
-	 * the key, never writes `null`). Every untouched key keeps its comments, order,
-	 * and quoting (eemeli `yaml` Document tier, in {@link setField}).
+	 * the key, never writes `null`), re-emitting the frontmatter canonically and
+	 * keeping the body verbatim. The edit is applied to a FRESH parse of disk, not
+	 * the (possibly debounce-stale) projection, so a concurrent external edit to
+	 * another field is read, not clobbered.
 	 */
 	function saveField(name: string, key: string, value: unknown): Promise<void> {
-		return write(name, (raw) => setField(raw, key, value));
+		return write(name, (raw) => {
+			const { data } = parseMarkdown(raw);
+			if (!data) return raw; // unparseable: the grid does not edit these.
+			const frontmatter = { ...data.frontmatter };
+			if (value === undefined) delete frontmatter[key];
+			else frontmatter[key] = value;
+			return serializeEntry(frontmatter, data.body);
+		});
 	}
 
-	/** Replace a file's body, keeping its frontmatter block byte-for-byte. */
+	/** Replace a file's body, keeping its frontmatter values intact. */
 	function saveBody(name: string, body: string): Promise<void> {
-		return write(name, (raw) => setBody(raw, body));
+		return write(name, (raw) => {
+			const { data } = parseMarkdown(raw);
+			if (!data) return raw;
+			return serializeEntry(data.frontmatter, body);
+		});
 	}
 
 	/**

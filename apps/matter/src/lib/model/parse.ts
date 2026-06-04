@@ -49,12 +49,8 @@ export type ParsedFile = {
  * Leading `---\n...\n---` block. The newline before the closing `---` is
  * optional so an empty block (`---\n---`) matches; tolerates CRLF and an
  * optional trailing newline.
- *
- * Exported so the write path (`serialize.ts`) splits the file at the SAME
- * boundary it was parsed at: read and write must agree on where the frontmatter
- * ends and the verbatim body begins, or a round-trip would shift bytes.
  */
-export const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n?---\r?\n?/;
+const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n?---\r?\n?/;
 
 /** A git conflict marker at the start of any line. */
 const CONFLICT_MARKER = /^(<<<<<<<|=======|>>>>>>>)/m;

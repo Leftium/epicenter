@@ -29,9 +29,12 @@
 	]);
 	const editable = $derived(INLINE.has(derivedKind.kind));
 
-	// Local draft: an in-progress edit lives HERE, not in the store, so an echo
-	// delta re-rendering the cell never stomps what you are typing. Seeded only
-	// when you enter edit mode.
+	// The one justified island of local state. Everything else in the app is
+	// one-directional derived from the file; an OPEN cell is the exception, because
+	// an editing session inherently holds a keystroke buffer that is not yet "the
+	// new value" and is not on disk. It detaches from the projection while open
+	// (seeded once on enter-edit), so an echo delta re-rendering the cell cannot
+	// stomp what you are typing; committing on change writes it back down.
 	let editing = $state(false);
 	let draft = $state('');
 

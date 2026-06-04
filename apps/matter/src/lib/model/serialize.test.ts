@@ -1,54 +1,84 @@
 import { describe, expect, test } from 'bun:test';
 import { parseMarkdown } from './parse';
-import { setBody, setField } from './serialize';
+import { serializeEntry } from './serialize';
 
-describe('setField', () => {
-	test('round-trip identity: a no-op edit preserves comments, order, and quoting', () => {
-		const raw = [
-			'---',
-			'# the post title',
-			'title: "001"', // quoted so it stays a string, not the int 1
-			'status: draft',
-			'count: 3',
-			'---',
+describe('serializeEntry', () => {
+	test('an empty mapping is body only (no fence)', () => {
+		expect(serializeEntry({}, '# Body\ntext')).toBe('# Body\ntext');
+	});
+
+	test('emits a fence that reparses to the same values', () => {
+		const out = serializeEntry(
+			{ title: 'Hello', status: 'draft', count: 3 },
 			'# Body',
-		].join('\n');
-		// Re-set a key to its current value: nothing the user did not touch may move.
-		const out = setField(raw, 'status', 'draft');
-		expect(out).toContain('# the post title');
-		expect(out).toContain('title: "001"');
-		// Order is preserved (title before status before count).
-		expect(out.indexOf('title')).toBeLessThan(out.indexOf('status'));
-		expect(out.indexOf('status')).toBeLessThan(out.indexOf('count'));
-		// And it still parses to the same values.
-		expect(parseMarkdown(out).data?.frontmatter).toEqual({
-			title: '001',
-			status: 'draft',
-			count: 3,
+		);
+		expect(out.startsWith('---\n')).toBe(true);
+		expect(parseMarkdown(out).data).toEqual({
+			frontmatter: { title: 'Hello', status: 'draft', count: 3 },
+			body: '# Body',
 		});
 	});
 
-	test('editing one field leaves another field\'s comment intact', () => {
-		const raw = '---\ntitle: Old # keep me\nstatus: draft\n---\nbody';
-		const out = setField(raw, 'status', 'published');
-		expect(out).toContain('# keep me');
+	test('preserves value types: a number stays a number, a numeric string stays a string', () => {
+		const out = serializeEntry({ count: 3, code: '007' }, 'body');
 		expect(parseMarkdown(out).data?.frontmatter).toEqual({
-			title: 'Old',
-			status: 'published',
-		});
-	});
-
-	test('the edited value\'s JS type becomes its YAML type', () => {
-		const raw = '---\ntitle: x\n---\nbody';
-		// A number stays bare; a numeric-looking string stays quoted (a string).
-		expect(parseMarkdown(setField(raw, 'count', 3)).data?.frontmatter).toEqual({
-			title: 'x',
 			count: 3,
-		});
-		expect(parseMarkdown(setField(raw, 'code', '007')).data?.frontmatter).toEqual({
-			title: 'x',
 			code: '007',
 		});
+	});
+
+	test('an existing null value round-trips (never invented, never dropped)', () => {
+		const out = serializeEntry({ title: null }, 'body');
+		expect(parseMarkdown(out).data?.frontmatter).toEqual({ title: null });
+	});
+
+	test('the body is written verbatim', () => {
+		const body = '# Heading\n\n- a\n- b\n\ntrailing text';
+		const out = serializeEntry({ title: 'x' }, body);
+		expect(parseMarkdown(out).data?.body).toBe(body);
+	});
+
+	test('key order follows the object', () => {
+		const out = serializeEntry({ b: 1, a: 2 }, 'body');
+		expect(out.indexOf('b:')).toBeLessThan(out.indexOf('a:'));
+	});
+});
+
+/**
+ * The full save cycle the vault runs: parse the freshest disk bytes, apply ONE
+ * edit to the frontmatter object, re-emit. Exercises the real write logic
+ * without Tauri, and is where round-trip identity (by value) is the contract.
+ */
+describe('edit cycle (parse -> edit -> serialize -> parse)', () => {
+	const setField = (raw: string, key: string, value: unknown) => {
+		const { data } = parseMarkdown(raw);
+		if (!data) return raw;
+		const frontmatter = { ...data.frontmatter };
+		if (value === undefined) delete frontmatter[key];
+		else frontmatter[key] = value;
+		return serializeEntry(frontmatter, data.body);
+	};
+	const setBody = (raw: string, body: string) => {
+		const { data } = parseMarkdown(raw);
+		if (!data) return raw;
+		return serializeEntry(data.frontmatter, body);
+	};
+
+	test('round-trip identity by VALUE: a no-op cycle preserves every value and the body', () => {
+		const raw = '---\ntitle: My Post\nstatus: draft\ntags:\n  - a\n  - b\n---\n# Body\n\ntext';
+		const before = parseMarkdown(raw).data;
+		const after = parseMarkdown(setField(raw, 'status', 'draft')).data;
+		expect(after).toEqual(before);
+	});
+
+	test('setting one field keeps the others and their order', () => {
+		const raw = '---\ntitle: Hello\nstatus: draft\n---\nbody';
+		const out = setField(raw, 'status', 'published');
+		expect(parseMarkdown(out).data?.frontmatter).toEqual({
+			title: 'Hello',
+			status: 'published',
+		});
+		expect(out.indexOf('title')).toBeLessThan(out.indexOf('status'));
 	});
 
 	test('clearing a field removes the key, never writes null', () => {
@@ -59,56 +89,36 @@ describe('setField', () => {
 		expect(parseMarkdown(out).data?.frontmatter).toEqual({ title: 'Hello' });
 	});
 
-	test('clearing the last field drops the frontmatter fence to body-only', () => {
-		const raw = '---\ntitle: Hello\n---\n# Body\ntext';
-		const out = setField(raw, 'title', undefined);
-		expect(out).toBe('# Body\ntext');
+	test('clearing the last field drops the fence to body-only', () => {
+		expect(setField('---\ntitle: Hello\n---\n# Body\ntext', 'title', undefined)).toBe(
+			'# Body\ntext',
+		);
+	});
+
+	test('an invalid-against-the-model value survives by value (stays editable)', () => {
+		// `duration` held as a string while the model wants an integer: still valid
+		// YAML, so it round-trips and the grid keeps showing it INVALID to fix.
+		const raw = '---\nduration: "1240s"\n---\nbody';
+		const out = setField(raw, 'title', 'New');
+		expect(parseMarkdown(out).data?.frontmatter).toEqual({
+			duration: '1240s',
+			title: 'New',
+		});
 	});
 
 	test('setting a field on a file with no frontmatter creates the block', () => {
-		const raw = '# Just a body\n\ntext';
-		const out = setField(raw, 'title', 'New');
+		const out = setField('# Just a body\n\ntext', 'title', 'New');
 		expect(parseMarkdown(out).data).toEqual({
 			frontmatter: { title: 'New' },
 			body: '# Just a body\n\ntext',
 		});
 	});
 
-	test('adding a key preserves the existing keys and their order', () => {
-		const raw = '---\ntitle: Hello\nstatus: draft\n---\nbody';
-		const out = setField(raw, 'tags', ['a', 'b']);
-		expect(parseMarkdown(out).data?.frontmatter).toEqual({
-			title: 'Hello',
-			status: 'draft',
-			tags: ['a', 'b'],
-		});
-		expect(out.indexOf('title')).toBeLessThan(out.indexOf('status'));
-	});
-});
-
-describe('setBody', () => {
-	test('replaces the body and keeps the frontmatter block byte-for-byte', () => {
-		const raw = '---\n# a comment\ntitle: "001"\n---\nold body';
-		const out = setBody(raw, '# New body\n\nmore');
-		expect(out).toBe('---\n# a comment\ntitle: "001"\n---\n# New body\n\nmore');
-	});
-
-	test('a no-op body write is byte-identical', () => {
-		const raw = '---\ntitle: x\n---\n# Body\ntext';
-		const { data } = parseMarkdown(raw);
-		expect(setBody(raw, data?.body ?? '')).toBe(raw);
-	});
-
-	test('with no frontmatter the body is the whole file', () => {
-		expect(setBody('all body, no fm', 'new body')).toBe('new body');
-	});
-
-	test('editing the body never touches the frontmatter', () => {
-		const raw = '---\ntitle: Keep\nstatus: draft\n---\nbody';
-		const out = setBody(raw, 'changed');
-		expect(parseMarkdown(out).data?.frontmatter).toEqual({
-			title: 'Keep',
-			status: 'draft',
+	test('editing the body keeps the frontmatter values', () => {
+		const raw = '---\ntitle: Keep\nstatus: draft\n---\nold';
+		expect(parseMarkdown(setBody(raw, 'new body')).data).toEqual({
+			frontmatter: { title: 'Keep', status: 'draft' },
+			body: 'new body',
 		});
 	});
 });

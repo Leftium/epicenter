@@ -8,6 +8,8 @@
 	import { GithubIcon } from '$lib/components/icons';
 	import studioMicrophone from '$lib/assets/studio-microphone.png';
 	import { NAV_ITEMS } from './nav-items';
+	import { auth } from '#platform/auth';
+	import { AccountPopover } from '@epicenter/app-shell/account-popover';
 
 	const sidebar = useSidebar();
 </script>
@@ -68,6 +70,13 @@
 
 	<Sidebar.Footer>
 		<Sidebar.Menu>
+			<!-- Account / sync (route-independent: visible on the bare home page) -->
+			<Sidebar.MenuItem>
+				<div class="flex items-center px-1.5 py-1">
+					<AccountPopover {auth} syncNoun="recordings" />
+				</div>
+			</Sidebar.MenuItem>
+
 			<!-- Toggle dark mode -->
 			<Sidebar.MenuItem>
 				<Sidebar.MenuButton>

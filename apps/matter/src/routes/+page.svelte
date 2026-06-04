@@ -18,6 +18,12 @@
 			opening = false;
 		}
 	}
+
+	// Drive the open vault's OS watcher: start when a vault is set, stop (and
+	// unwatch the old folder) when it is replaced or the page unmounts.
+	$effect(() => {
+		if (vault) return vault.watch();
+	});
 </script>
 
 <main class="flex h-screen flex-col">

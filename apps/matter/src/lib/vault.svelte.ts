@@ -7,9 +7,12 @@
  * contents as a first batch, then streams a batch per debounced change. Each
  * pushed delta is self-contained ({@link FileDelta}: a name plus the file's
  * observable state), so the JS never round-trips a separate read, and seed and
- * update flow through ONE path (`applyDeltas`). `createSubscriber` runs the watch
- * only while something observes the vault, and tears it down otherwise (closing
- * the page stops the OS watcher).
+ * update flow through ONE path (`applyDeltas`) into ONE `SvelteMap`.
+ *
+ * Lifecycle is explicit: `watch()` starts the OS watcher and returns a stop
+ * function, and the page drives it with `$effect(() => vault.watch())` so
+ * switching folders stops the old watcher. The getters (`read` / `status` /
+ * `error`) are pure, so reading them never starts anything.
  *
  * Desktop-only: it talks to Tauri directly (no platform seam). Develop with
  * `bun run tauri dev`.
@@ -17,16 +20,15 @@
 
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
-import { createSubscriber, SvelteMap } from 'svelte/reactivity';
+import { SvelteMap } from 'svelte/reactivity';
 import {
 	buildView,
 	type FolderRead,
 	loadModel,
 	MatterReadError,
-	type UnreadableFile,
+	type ParsedEntry,
+	parseEntry,
 } from './model/view';
-import { parseMarkdown } from './model/parse';
-import type { Row } from './model/types';
 
 /**
  * One file's observable state, pushed by `watch_folder` (serde `tag = "kind"`).
@@ -43,38 +45,28 @@ type FileDelta =
 const basename = (path: string) => path.split(/[/\\]/).pop() ?? path;
 
 /**
- * Open `path` as a live vault. Synchronous and IO-free: the maps start empty and
- * the first pushed batch seeds them on first observe, so there is no separate
- * initial read and no read-then-watch gap.
+ * Open `path` as a live vault. Synchronous and IO-free: the store starts empty
+ * and fills from the first pushed batch once `watch()` runs, so there is no
+ * separate initial read and no read-then-watch gap.
  */
 function createVault(path: string) {
 	const name = basename(path);
 
-	// Keyed by filename: a single file's change touches only its entry.
-	const rows = new SvelteMap<string, Row>();
-	const unreadable = new SvelteMap<string, UnreadableFile['error']>();
+	// ONE store, keyed by filename: each entry is either a parsed row or the error
+	// that stopped it. `set` replaces, so "a name is readable XOR unreadable" is
+	// structural, not an invariant maintained by hand across two maps.
+	const files = new SvelteMap<string, ParsedEntry>();
 	let modelText = $state<string | undefined>(undefined);
-	// 'loading' until the first batch lands, so an empty grid is never confused
-	// with a real empty folder; `error` is set if the watch itself fails.
+	// 'loading' until the watch is established. The seed scan finishes before
+	// `watch_folder` resolves, so its resolution (not the first batch) flips this,
+	// which means an EMPTY folder still reaches 'ready' instead of hanging.
 	let status = $state<'loading' | 'ready'>('loading');
 	let error = $state<string | undefined>(undefined);
 	// Memoized: Schema.Compile runs only when matter.json changes, not on every
 	// .md change. A single-file change reclassifies against these cached columns.
 	const loaded = $derived(loadModel(modelText));
 
-	/** Parse one file into the readable rows or the unreadable list. */
-	function ingest(fileName: string, content: string) {
-		const { data, error } = parseMarkdown(content);
-		if (error) {
-			unreadable.set(fileName, error);
-			rows.delete(fileName);
-			return;
-		}
-		rows.set(fileName, { name: fileName, ...data });
-		unreadable.delete(fileName);
-	}
-
-	/** Apply one pushed batch to the in-memory maps (the seed and every update). */
+	/** Apply one pushed batch to the store (the seed and every update). */
 	function applyDeltas(deltas: FileDelta[]) {
 		for (const delta of deltas) {
 			if (delta.name === 'matter.json') {
@@ -84,75 +76,72 @@ function createVault(path: string) {
 			}
 			switch (delta.kind) {
 				case 'content':
-					ingest(delta.name, delta.text);
+					files.set(delta.name, parseEntry(delta.name, delta.text));
 					break;
 				case 'removed':
-					rows.delete(delta.name);
-					unreadable.delete(delta.name);
+					files.delete(delta.name);
 					break;
 				case 'unreadable':
-					rows.delete(delta.name);
 					// `.error` is the bare tagged error (the factory returns an `Err`),
-					// matching what the parse path stores from its destructured Result.
-					unreadable.set(delta.name, MatterReadError.Undecodable().error);
+					// matching what `parseEntry` stores from its destructured Result.
+					files.set(delta.name, {
+						ok: false,
+						error: MatterReadError.Undecodable().error,
+					});
 					break;
 			}
 		}
 	}
 
-	// The watch is live only while the vault is observed (createSubscriber's
-	// start/stop lifecycle); reading any of `read` / `status` / `error` activates it.
-	const subscribe = createSubscriber((update) => {
+	/**
+	 * Start watching the folder; returns a stop function. The page owns the
+	 * lifecycle via `$effect(() => vault.watch())`, so switching folders unwatches
+	 * the old folder automatically.
+	 */
+	function watch(): () => void {
 		const channel = new Channel<FileDelta[]>();
 		let watchId: number | undefined;
-		let cancelled = false;
-		channel.onmessage = (deltas) => {
-			applyDeltas(deltas);
-			status = 'ready';
-			update();
-		};
+		let stopped = false;
+		channel.onmessage = applyDeltas;
 		invoke<number>('watch_folder', { path, channel })
 			.then((id) => {
-				// Torn down before the id arrived: drop the watcher that just
-				// resolved instead of leaking it.
-				if (cancelled) void invoke('unwatch_folder', { id });
+				// The seed scan ran before this resolved, so the watch is established
+				// (even for an empty folder): mark ready.
+				status = 'ready';
+				// Stopped before the id arrived: drop the watcher that just resolved.
+				if (stopped) void invoke('unwatch_folder', { id });
 				else watchId = id;
 			})
 			.catch((cause) => {
 				error = cause instanceof Error ? cause.message : String(cause);
 				status = 'ready';
-				update();
 			});
 		return () => {
-			cancelled = true;
+			stopped = true;
 			if (watchId !== undefined) void invoke('unwatch_folder', { id: watchId });
 		};
-	});
+	}
 
 	return {
 		name,
 		path,
-		/** The current classified folder. Reading it activates the watch. */
+		watch,
+		/** The current classified folder. A pure read with no side effects. */
 		get read(): FolderRead {
-			subscribe();
-			const currentRows = [...rows.values()];
-			return {
-				rows: currentRows,
-				unreadable: [...unreadable].map(([name, error]) => ({
-					name,
-					error,
-				})),
-				view: buildView(currentRows, loaded),
-			};
+			const rows: FolderRead['rows'] = [];
+			const unreadable: FolderRead['unreadable'] = [];
+			for (const [fileName, entry] of files) {
+				if (entry.ok) rows.push(entry.row);
+				else unreadable.push({ name: fileName, error: entry.error });
+			}
+			return { rows, unreadable, view: buildView(rows, loaded) };
 		},
-		/** Whether the first batch has landed. Reading it activates the watch. */
+		/** Whether the watch has been established (or failed). */
 		get status(): 'loading' | 'ready' {
-			subscribe();
 			return status;
 		},
-		/** Set if the watch could not be established. Reading it activates the watch. */
+		/** Set if the watch could not be established. */
 		get error(): string | undefined {
-			subscribe();
 			return error;
 		},
 	};

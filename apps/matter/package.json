@@ -1,0 +1,19 @@
+{
+	"name": "@epicenter/matter",
+	"description": "Typed markdown folder editor: open a folder, give it a model, see files grouped by conformance (valid / invalid / unparseable).",
+	"private": true,
+	"version": "0.0.1",
+	"type": "module",
+	"scripts": {
+		"test": "bun test",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"yaml": "^2.8.0"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:",
+		"typescript": "catalog:"
+	},
+	"license": "AGPL-3.0-or-later"
+}

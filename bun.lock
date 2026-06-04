@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -206,6 +205,17 @@
         "@lucide/astro": "^0.536.0",
         "@tailwindcss/typography": "catalog:",
         "svelte-check": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "apps/matter": {
+      "name": "@epicenter/matter",
+      "version": "0.0.1",
+      "dependencies": {
+        "yaml": "^2.8.0",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
         "typescript": "catalog:",
       },
     },
@@ -1133,6 +1143,8 @@
     "@epicenter/identity": ["@epicenter/identity@workspace:packages/identity"],
 
     "@epicenter/landing": ["@epicenter/landing@workspace:apps/landing"],
+
+    "@epicenter/matter": ["@epicenter/matter@workspace:apps/matter"],
 
     "@epicenter/posthog-reverse-proxy": ["@epicenter/posthog-reverse-proxy@workspace:apps/posthog-reverse-proxy"],
 

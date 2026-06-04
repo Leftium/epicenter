@@ -99,6 +99,23 @@ function frontmatterColumns(rows: readonly Row[]): string[] {
 }
 
 /**
+ * One file parsed: either a readable row, or the error that stopped it. The
+ * SINGLE definition of "parse one file into the row-or-unreadable split", shared
+ * by {@link readFolder} (batch) and the live vault (one delta at a time), so the
+ * two cannot drift. The read-level {@link MatterReadError} is produced by the
+ * caller (only Rust knows a file is undecodable); this covers the parse half.
+ */
+export type ParsedEntry =
+	| { ok: true; row: Row }
+	| { ok: false; error: MatterParseError | MatterReadError };
+
+/** Parse one file's content into a {@link ParsedEntry}. */
+export function parseEntry(name: string, content: string): ParsedEntry {
+	const { data, error } = parseMarkdown(content);
+	return error ? { ok: false, error } : { ok: true, row: { name, ...data } };
+}
+
+/**
  * Read and classify a folder.
  *
  * @param entries the folder's `.md` files (basename + raw content).
@@ -112,12 +129,9 @@ export function readFolder(
 	const unreadable: UnreadableFile[] = [];
 
 	for (const { name, content } of entries) {
-		const { data, error } = parseMarkdown(content);
-		if (error) {
-			unreadable.push({ name, error });
-			continue;
-		}
-		rows.push({ name, ...data });
+		const entry = parseEntry(name, content);
+		if (entry.ok) rows.push(entry.row);
+		else unreadable.push({ name, error: entry.error });
 	}
 
 	return { rows, unreadable, view: buildView(rows, loadModel(modelText)) };

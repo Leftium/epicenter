@@ -274,20 +274,26 @@ table per folder:  { path PK, ...typed columns..., _extra JSON of unmodeled keys
 
 Reuse the `column.* -> SQLite` derivation (`packages/workspace/src/document/{column/derive.ts, materializer/sqlite/ddl.ts}`); write a thin file-driven projector, skipping the Yjs log/room writer. **Derived + disposable** (delete -> rebuild from files), **read-only** (SELECT; mutations go through editors -> markdown). `getValid()` is `SELECT * FROM <folder>`. SQL write-back is a separate hard problem, deferred.
 
-## Round-trip identity (never mangle)
+## Round-trip identity (by value, never mangle)
 
-> Read a file, write it back with no user edit -> value-identical. The editor changes only the exact field the user changed; everything it does not understand or did not touch is preserved.
+> Read a file, write it back with no user edit -> VALUE-identical. The frontmatter is the typed-column layer the app normalizes; the body is the one rich field, preserved byte-for-byte.
+
+Frontmatter is columns, so the app OWNS its formatting and re-emits it canonically (eemeli `yaml` `stringify`, NOT a CST splice). This is the deliberate clean break from surgical byte-preservation: "frontmatter is columns" and "byte-identical frontmatter" are in tension, and the column reading wins. The write reads a FRESH parse of disk (not the projection), edits one field, and re-emits.
 
 ```
-write mechanism              edit via eemeli `yaml` Document (parseDocument, CST-preserving), NOT parse->object->stringify;
-                             comments / key order / quoting survive a single-field edit. CST tier later if byte-minimal diffs matter.
-unknown / unmodeled key      preserved on write (never dropped)
-nested / non-scalar value    json fallback render, never flattened
-empty / absent field         NEVER prefilled with `null` on save; absence stays absence (sparse stays sparse)
-required-empty / mismatch     INVALID classification, kept verbatim
-YAML coercion (Norway prob.)  use a YAML 1.2 parser; round-trip test is the backstop
+write mechanism              canonical re-serialize from a fresh parse: parseMarkdown(disk) -> edit the
+                             frontmatter object -> serializeEntry(frontmatter, body). Body verbatim.
+frontmatter formatting       NORMALIZED on save (key order = disk order; a set key appends). Comments,
+                             exact quoting, whitespace, trailing zeros are NOT preserved (they are prose;
+                             prose belongs in the body). Blast radius = only files you actually edit.
+value identity               a parseable file round-trips to the SAME values (YAML 1.2 core, no Norway
+                             coercion). That is all a typed table needs.
+invalid-against-the-model    a bad-vs-model value (`status: bananna`, `duration: "1240s"`) is still a valid
+                             YAML scalar -> survives by value, shown INVALID, editable in place. Only
+                             UNPARSEABLE files lose, and the grid NEVER writes those (so no regression).
+unknown / unmodeled key      preserved on write (it is just a key in the object; never dropped)
+empty / absent field         clearing DELETES the key (never `key: null`); an existing `key: null` round-trips
 body vs frontmatter          strict separation; editing one never touches the other
-unparseable file             the grid NEVER writes it
 ```
 
 ## Architecture: live vault, unidirectional flow
@@ -298,13 +304,17 @@ The folder on disk is the ONE source of truth, and other processes write it (you
 
 ```
 WRITE (a fire-and-forget command):
-  edit a cell/body -> serialize (eemeli `yaml` Document, in JS) -> write the file
-                      NEVER mutate the SvelteMap directly.
+  edit a cell/body -> read_entry (FRESH disk bytes) -> parse -> edit one field
+                   -> serializeEntry(frontmatter, body) (canonical, in JS) -> write_entry (atomic)
+                      NEVER mutate the SvelteMap directly. The map is the read-side projection,
+                      never a write-side source (so a stale projection can't clobber a fresh disk edit).
 
 READ (the only path that mutates the map):
   disk change -> native watcher (notify) -> debounce + dedup -> ONE Channel, delta batch
               -> applyDeltas -> SvelteMap.set / .delete -> $derived classify -> UI
 ```
+
+The one editing exception to "everything is one-directional derived from the file": an OPEN editor cell/body owns a local draft (a keystroke buffer for a stateful session, detached from the projection while open, committed on change). It is the single justified island of local state; everything closed is pure projection.
 
 This is CQRS-shaped: writes are commands to disk; the map is a projection. There is exactly one way the UI state changes, so "what the UI shows" provably equals "what is on disk." No dual-write, no drift.
 
@@ -327,12 +337,22 @@ FileDelta (serde tagged union; maps 1:1 to a SvelteMap op):
 
 Parse + classify stay in JS, because the model (schema-as-truth, `deriveKind`, conformance) is one TS source of truth, shared with the write path. Rust ships bytes; JS interprets them.
 
-### Two refinements the live loop needs
+### Two refinements considered and REFUSED
+
+Both were in earlier drafts; both fail the "earn its keep" test.
 
 ```
-echo policy   the app's own write returns through the watcher. on write, remember the content hash;
-              drop the matching echo so it can't stomp an in-progress edit. otherwise re-set is idempotent.
-batch seq     a monotonic number per batch lets the client detect a dropped batch and request a re-seed.
+echo policy   REFUSED. "Remember the hash, drop the matching echo" is incompatible with the invariant:
+              the map mutates ONLY from a delta, so for the UI to reflect your own write the echo MUST
+              apply. Dropping it leaves the projection STALE (it never learned the write landed), which is
+              the very desync it claims to prevent. The "stomp an in-progress edit" worry is an EDITOR
+              concern (the open cell owns its draft), not a watcher concern. So: no suppression, the echo
+              flows through (idempotent), drafts protect in-progress edits.
+batch seq     REFUSED. A JS-side batch counter only detects Channel MESSAGE LOSS, which Tauri's ordered IPC
+              does not do; it does NOT detect the failure that can happen (a silently missed FS event), and
+              it is redundant because every Content delta re-reads the file's CURRENT full state
+              (self-healing). The honest recovery primitive, if drift is ever observed, is a manual re-scan
+              (re-run the seed), trivial to add then.
 ```
 
 ### Lifecycle
@@ -433,7 +453,26 @@ The shared `deriveCheck` (`derive.ts:77`) only emits a CHECK for a top-level `an
 ## Open Questions
 
 1. **Frontmatter write-back fidelity** (sizes increment 3 + the round-trip invariant): byte-identical (preserve comments/order/quotes) or value-identical (canonical re-serialize)?
-   - **Recommendation (revised after grilling)**: SURGICAL per-field write-back, replace only the changed key's slice in the raw YAML text, leave every other byte untouched. NOT whole-frontmatter canonical re-serialize: canonical mangles raw scalars (`"001"`, quoted bools) and cannot preserve a bad value for raw-text editing of an INVALID cell. Surgical edit makes round-trip identity trivial and keeps invalid cells faithfully editable.
+   - **RESOLVED (greenfield clean break): value-identical, canonical re-serialize.** The earlier "surgical" recommendation is withdrawn.
+
+   ```
+   Candidate:        surgical per-field write-back (eemeli Document-tier splice; preserve every untouched byte)
+   Refusal:          "frontmatter is columns" and "byte-identical frontmatter" are in tension. A typed-column
+                     layer that preserves your exact quoting/whitespace/comments is acting like a prose store.
+                     The earlier refusal of canonical was based on a FALSE premise: it claimed canonical
+                     "cannot preserve a bad value for raw-text editing." Untrue. An invalid-AGAINST-THE-MODEL
+                     value is still a valid YAML scalar; parse->stringify keeps its value and the grid shows it
+                     INVALID to fix. Only UNPARSEABLE files lose, and the grid never writes those either way.
+                     The spec conflated "invalid against the model" with "invalid YAML".
+   Asymmetric win:   refuse ~15% (byte preservation) to delete ~85%: the eemeli Document tier, the regex-splice,
+                     two functions (setField/setBody) collapse to one serializeEntry(frontmatter, body).
+   User loss:        frontmatter comments + exact formatting on files you EDIT (body comments/prose preserved;
+                     untouched files never reformatted; values always identical).
+   Decision:         canonical serialize FROM A FRESH DISK PARSE (keep read_entry: the file is the value owner,
+                     so the write reads from the owner, not the projection; also closes the concurrent-edit race).
+   Trigger to revisit: a real user with frontmatter comments / hand-tuned YAML they need byte-stable -> reintroduce
+                     a CST splice behind the same serializeEntry seam (the caller does not change).
+   ```
 
 2. **Dogfood target** (grounds increment 1): point Matter at the capture-to-post drafts folder, so the first model is the post contract and `valid` = the publish queue.
    - **Recommendation**: yes; this is the weld that justifies the app.

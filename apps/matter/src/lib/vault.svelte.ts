@@ -2,12 +2,14 @@
  * A live view over a folder on disk.
  *
  * The folder is the truth and other processes write it (agents, your editor, git),
- * so the vault is not a one-shot read: it seeds from `read_folder`, then keeps a
- * `SvelteMap` of rows in sync via a native folder watcher (`watch_folder`, backed
- * by `notify`). `createSubscriber` runs the watch only while something observes
- * `read`, and tears it down otherwise. Each change re-reads ONLY the file that
- * changed (`read_file`); classification (`buildView`) is recomputed from the
- * current rows, and the keyed grid re-renders just the rows that actually moved.
+ * so the vault is not a one-shot read: a single `watch_folder` command arms a
+ * native folder watcher (backed by `notify`), pushes the folder's current
+ * contents as a first batch, then streams a batch per debounced change. Each
+ * pushed delta is self-contained ({@link FileDelta}: a name plus the file's
+ * observable state), so the JS never round-trips a separate read, and seed and
+ * update flow through ONE path ({@link Vault.#applyDeltas}). `createSubscriber`
+ * runs the watch only while something observes the vault, and tears it down
+ * otherwise (closing the page stops the OS watcher).
  *
  * Desktop-only: it talks to Tauri directly (no platform seam). Develop with
  * `bun run tauri dev`.
@@ -24,18 +26,19 @@ import {
 import { parseMarkdown } from './model/parse';
 import type { Row } from './model/types';
 
-/** Shape returned by the Rust `read_folder` command (serde camelCase). */
-type FolderSnapshot = {
-	name: string;
-	entries: { name: string; content: string }[];
-	modelText: string | null;
-};
+/**
+ * One file's observable state, pushed by `watch_folder` (serde `tag = "kind"`).
+ * `content` carries the bytes so the JS never re-reads; `removed` drops the row;
+ * `unreadable` (non-UTF-8 / permission) routes to "Can't read" instead of
+ * vanishing.
+ */
+type FileDelta =
+	| { kind: 'content'; name: string; text: string }
+	| { kind: 'removed'; name: string }
+	| { kind: 'unreadable'; name: string };
 
-/** One debounced batch of changed absolute paths from `watch_folder`. */
-type WatchPayload = { paths: string[] };
-
+/** The vault's own folder name (its basename). Per-file paths are Rust's. */
 const basename = (path: string) => path.split(/[/\\]/).pop() ?? path;
-const isMarkdown = (name: string) => name.endsWith('.md');
 
 export class Vault {
 	/** The folder's display name (its basename). */
@@ -47,26 +50,42 @@ export class Vault {
 	#rows = new SvelteMap<string, Row>();
 	#unreadable = new SvelteMap<string, UnreadableFile['reason']>();
 	#modelText = $state<string | undefined>(undefined);
+	// 'loading' until the first batch lands, so an empty grid is never confused
+	// with a real empty folder; `#error` is set if the watch itself fails.
+	#status = $state<'loading' | 'ready'>('loading');
+	#error = $state<string | undefined>(undefined);
 	#subscribe: () => void;
 
-	constructor(path: string, snapshot: FolderSnapshot) {
+	constructor(path: string) {
 		this.path = path;
-		this.name = snapshot.name;
-		this.#modelText = snapshot.modelText ?? undefined;
-		for (const entry of snapshot.entries) this.#ingest(entry.name, entry.content);
+		this.name = basename(path);
 
-		// The watch is live only while `read` is observed (createSubscriber's
-		// start/stop lifecycle), so closing the page stops the OS watcher.
+		// The watch is live only while the vault is observed (createSubscriber's
+		// start/stop lifecycle). The seed arrives as the first pushed batch, so
+		// there is no separate initial read and no read-then-watch gap.
 		this.#subscribe = createSubscriber((update) => {
-			const channel = new Channel<WatchPayload>();
+			const channel = new Channel<FileDelta[]>();
 			let watchId: number | undefined;
-			channel.onmessage = (payload) => {
-				void this.#applyChanges(payload.paths).then(update);
+			let cancelled = false;
+			channel.onmessage = (deltas) => {
+				this.#applyDeltas(deltas);
+				this.#status = 'ready';
+				update();
 			};
-			void invoke<number>('watch_folder', { path, channel }).then((id) => {
-				watchId = id;
-			});
+			invoke<number>('watch_folder', { path, channel })
+				.then((id) => {
+					// Torn down before the id arrived: drop the watcher that just
+					// resolved instead of leaking it.
+					if (cancelled) void invoke('unwatch_folder', { id });
+					else watchId = id;
+				})
+				.catch((error) => {
+					this.#error = error instanceof Error ? error.message : String(error);
+					this.#status = 'ready';
+					update();
+				});
 			return () => {
+				cancelled = true;
 				if (watchId !== undefined) void invoke('unwatch_folder', { id: watchId });
 			};
 		});
@@ -83,26 +102,40 @@ export class Vault {
 		};
 	}
 
-	/** Re-read each changed path and reconcile the in-memory maps. */
-	async #applyChanges(paths: string[]) {
-		await Promise.all(
-			[...new Set(paths)].map(async (path) => {
-				const name = basename(path);
-				if (name === 'matter.json') {
-					this.#modelText =
-						(await invoke<string | null>('read_file', { path })) ?? undefined;
-					return;
-				}
-				if (!isMarkdown(name)) return;
-				const content = await invoke<string | null>('read_file', { path });
-				if (content === null) {
-					this.#rows.delete(name);
-					this.#unreadable.delete(name);
-				} else {
-					this.#ingest(name, content);
-				}
-			}),
-		);
+	/** Whether the first batch has landed. Reading it activates the watch. */
+	get status(): 'loading' | 'ready' {
+		this.#subscribe();
+		return this.#status;
+	}
+
+	/** Set if the watch could not be established. Reading it activates the watch. */
+	get error(): string | undefined {
+		this.#subscribe();
+		return this.#error;
+	}
+
+	/** Apply one pushed batch to the in-memory maps (the seed and every update). */
+	#applyDeltas(deltas: FileDelta[]) {
+		for (const delta of deltas) {
+			if (delta.name === 'matter.json') {
+				// A removed or unreadable model is no model: degrade to the raw view.
+				this.#modelText = delta.kind === 'content' ? delta.text : undefined;
+				continue;
+			}
+			switch (delta.kind) {
+				case 'content':
+					this.#ingest(delta.name, delta.text);
+					break;
+				case 'removed':
+					this.#rows.delete(delta.name);
+					this.#unreadable.delete(delta.name);
+					break;
+				case 'unreadable':
+					this.#rows.delete(delta.name);
+					this.#unreadable.set(delta.name, 'unreadable');
+					break;
+			}
+		}
 	}
 
 	/** Parse one file into the readable rows or the unreadable list. */
@@ -130,6 +163,5 @@ export async function openVault(): Promise<Vault | null> {
 		title: 'Open vault folder',
 	});
 	if (path === null || Array.isArray(path)) return null;
-	const snapshot = await invoke<FolderSnapshot>('read_folder', { path });
-	return new Vault(path, snapshot);
+	return new Vault(path);
 }

@@ -25,7 +25,13 @@ export type FolderEntry = { path: string; content: string };
 
 export type UnreadableFile = {
 	path: string;
-	reason: Extract<ParsedFile, { ok: false }>['reason'];
+	/**
+	 * Why the file could not become a row. Parse-level reasons come from
+	 * {@link parseMarkdown} (bad YAML, conflict markers); `'unreadable'` is the
+	 * read-level reason (non-UTF-8 / permission) the watcher reports for a file
+	 * it cannot decode as text.
+	 */
+	reason: Extract<ParsedFile, { ok: false }>['reason'] | 'unreadable';
 };
 
 /**

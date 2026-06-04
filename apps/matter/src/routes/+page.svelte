@@ -39,7 +39,19 @@
 	</div>
 
 	{#if vault}
-		<FolderGrid read={vault.read} folder={vault.name} />
+		{#if vault.error}
+			<div class="flex flex-1 items-center justify-center px-4">
+				<p class="text-sm text-destructive">
+					Couldn't watch {vault.name}: {vault.error}
+				</p>
+			</div>
+		{:else if vault.status === 'loading'}
+			<div class="flex flex-1 items-center justify-center">
+				<p class="text-sm text-muted-foreground">Loading {vault.name}...</p>
+			</div>
+		{:else}
+			<FolderGrid read={vault.read} folder={vault.name} />
+		{/if}
 	{:else}
 		<div class="flex flex-1 items-center justify-center">
 			<p class="text-sm text-muted-foreground">

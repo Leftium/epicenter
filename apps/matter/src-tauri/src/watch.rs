@@ -1,20 +1,23 @@
-//! Folder watching: stream debounced top-level change events to the frontend.
+//! Watch a vault folder: stream its markdown + model as self-contained deltas.
 //!
-//! A custom `notify` watcher (not `tauri-plugin-fs`'s) so there is no fs scope to
-//! configure: it watches whatever absolute path the dialog returned, mirroring
-//! `read_folder`. Non-recursive, matching the flat one-folder-is-a-table model.
-//! Events are debounced (native OS events via `notify`) and pushed over a
-//! `tauri::ipc::Channel`; the JS side re-reads each changed path with `read_file`.
+//! One command owns the whole live-folder protocol. `watch_folder` arms a
+//! `notify` watcher (non-recursive, top level only), THEN scans the folder and
+//! pushes its current contents as the first delta batch, then streams a batch
+//! per debounced change. Arming before the scan closes the read-then-watch gap.
+//!
+//! Each delta is self contained: a basename plus the file's observable state
+//! (readable text / removed / unreadable), so the frontend never round-trips a
+//! separate read. There is no fs-scope to configure: it touches only the
+//! absolute path the dialog returned.
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
 use notify_debouncer_full::notify::{RecommendedWatcher, RecursiveMode};
-use notify_debouncer_full::{
-    new_debouncer, DebounceEventResult, Debouncer, RecommendedCache,
-};
+use notify_debouncer_full::{new_debouncer, DebounceEventResult, Debouncer, RecommendedCache};
 use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::State;
@@ -29,40 +32,105 @@ pub struct WatcherStore {
     watchers: Mutex<HashMap<u32, FolderWatcher>>,
 }
 
-/// One debounced batch of changed absolute paths.
+/// One file's observable state. `name` is the basename (top level, non-recursive),
+/// the row identity the frontend keys on. Serialized as a `{ kind, ... }` union.
 #[derive(Clone, Serialize)]
-pub struct WatchPayload {
-    pub paths: Vec<String>,
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum FileDelta {
+    /// Read as UTF-8 text: the frontend parses it into a row (or its own
+    /// "Can't read" bucket on bad YAML / conflict markers).
+    Content { name: String, text: String },
+    /// Gone from disk: the frontend drops it.
+    Removed { name: String },
+    /// Present but not UTF-8 text (binary, permission): the frontend routes it
+    /// to "Can't read" rather than silently dropping it.
+    Unreadable { name: String },
+}
+
+/// Only `.md` files and `matter.json` are part of the model; everything else in
+/// the folder is ignored (mirrors the non-recursive, flat one-folder-is-a-table
+/// shape). The frontend owns no path logic: this filter and the basename are Rust's.
+fn is_relevant(name: &str) -> bool {
+    name == "matter.json" || name.ends_with(".md")
+}
+
+/// Read one entry's current state. `path` is absolute; `name` is its basename.
+/// A vanished file is `Removed`; a present-but-undecodable file is `Unreadable`,
+/// never a hard failure of the surrounding scan.
+fn delta_for(name: String, path: &Path) -> FileDelta {
+    match std::fs::read_to_string(path) {
+        Ok(text) => FileDelta::Content { name, text },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => FileDelta::Removed { name },
+        Err(_) => FileDelta::Unreadable { name },
+    }
+}
+
+/// Scan the folder's current relevant files (the seed batch). Errors only if the
+/// directory itself can't be listed; an unreadable individual file becomes an
+/// `Unreadable` delta, not a failure.
+fn scan(dir: &Path) -> Result<Vec<FileDelta>, String> {
+    let mut deltas = Vec::new();
+    for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        if !entry.file_type().map_err(|e| e.to_string())?.is_file() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        if is_relevant(&name) {
+            deltas.push(delta_for(name, &entry.path()));
+        }
+    }
+    Ok(deltas)
 }
 
 #[tauri::command]
 pub fn watch_folder(
     path: String,
-    channel: Channel<WatchPayload>,
+    channel: Channel<Vec<FileDelta>>,
     store: State<WatcherStore>,
 ) -> Result<u32, String> {
+    let dir = std::path::PathBuf::from(&path);
     let tx = channel.clone();
     let mut debouncer = new_debouncer(
         Duration::from_millis(300),
         None,
         move |result: DebounceEventResult| {
             let Ok(events) = result else { return };
-            let mut paths = Vec::new();
+            // Dedup by basename within the tick; read each changed file once.
+            let mut changed: HashMap<String, std::path::PathBuf> = HashMap::new();
             for event in events {
                 for p in event.paths.iter() {
-                    paths.push(p.to_string_lossy().to_string());
+                    let Some(name) = p.file_name().map(|s| s.to_string_lossy().to_string()) else {
+                        continue;
+                    };
+                    if is_relevant(&name) {
+                        changed.insert(name, p.clone());
+                    }
                 }
             }
-            if !paths.is_empty() {
-                let _ = tx.send(WatchPayload { paths });
+            if changed.is_empty() {
+                return;
             }
+            let deltas: Vec<FileDelta> = changed
+                .into_iter()
+                .map(|(name, p)| delta_for(name, &p))
+                .collect();
+            let _ = tx.send(deltas);
         },
     )
     .map_err(|e| e.to_string())?;
 
+    // Arm the watcher BEFORE scanning so a change during the scan can't slip
+    // through the read-then-watch gap; then push the current contents as the
+    // first batch (the seed). Dropping the debouncer on any early return stops
+    // the OS watch, so a failed scan never leaks a watcher.
     debouncer
-        .watch(std::path::Path::new(&path), RecursiveMode::NonRecursive)
+        .watch(&dir, RecursiveMode::NonRecursive)
         .map_err(|e| e.to_string())?;
+    let seed = scan(&dir)?;
+    if !seed.is_empty() {
+        let _ = channel.send(seed);
+    }
 
     let id = store.next.fetch_add(1, Ordering::Relaxed);
     store.watchers.lock().unwrap().insert(id, debouncer);

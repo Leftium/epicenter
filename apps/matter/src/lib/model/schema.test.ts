@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { Format } from 'typebox/format';
 import * as Schema from 'typebox/schema';
-import { deriveKind, isNullable, registerFormats } from './schema';
+import { deriveKind, registerFormats } from './schema';
 
 describe('format registration (the enforcement gate)', () => {
 	// The whole point of registering `uri` / `date-time`: an UNREGISTERED format
@@ -81,12 +81,15 @@ describe('deriveKind (schema -> UI kind, ordered shape match)', () => {
 			deriveKind({ anyOf: [{ type: 'string' }, { type: 'integer' }] }).kind,
 		).toBe('json');
 	});
-});
 
-describe('isNullable', () => {
-	test('the anyOf-with-null shape is nullable; a bare schema is not', () => {
-		expect(isNullable({ type: 'string' })).toBe(false);
-		expect(isNullable({ anyOf: [{ type: 'string' }, { type: 'null' }] })).toBe(true);
-		expect(isNullable({ anyOf: [{ type: 'string' }, { type: 'integer' }] })).toBe(false);
+	test('nullable detection lives in deriveKind (the sole null-branch reader)', () => {
+		expect(deriveKind({ type: 'string' }).nullable).toBe(false);
+		expect(
+			deriveKind({ anyOf: [{ type: 'string' }, { type: 'null' }] }).nullable,
+		).toBe(true);
+		// A real multi-branch union is not the nullable shape.
+		expect(
+			deriveKind({ anyOf: [{ type: 'string' }, { type: 'integer' }] }).nullable,
+		).toBe(false);
 	});
 });

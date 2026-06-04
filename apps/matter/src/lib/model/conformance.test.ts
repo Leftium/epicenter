@@ -84,8 +84,7 @@ describe('classifyRows', () => {
 			{ path: 'a.md', frontmatter: { title: 'A' }, body: '' },
 			{ path: 'b.md', frontmatter: {}, body: '' },
 		];
-		const { columns, conformance } = classifyRows(m, rows);
-		expect(columns).toHaveLength(1);
+		const conformance = classifyRows(m, rows);
 		expect(conformance.map((c) => c.rowValid)).toEqual([true, false]);
 	});
 });

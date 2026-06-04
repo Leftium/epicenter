@@ -15,11 +15,7 @@
  * ("Create model from folder") is a deferred, schema-emitting step.
  */
 
-import {
-	classifyRows,
-	type CompiledColumn,
-	type RowConformance,
-} from './conformance';
+import { classifyRows, type RowConformance } from './conformance';
 import { type MatterModel, parseModel } from './model';
 import { type ParsedFile, parseMarkdown } from './parse';
 import type { Row } from './types';
@@ -38,7 +34,6 @@ export type UnreadableFile = {
 export type ModeledView = {
 	mode: 'modeled';
 	model: MatterModel;
-	columns: CompiledColumn[];
 	conformance: RowConformance[];
 };
 
@@ -67,7 +62,7 @@ export type FolderRead = {
  * deterministic across opens. No type inference: a folder without a model is
  * shown as raw text, never guessed into kinds.
  */
-export function frontmatterColumns(rows: readonly Row[]): string[] {
+function frontmatterColumns(rows: readonly Row[]): string[] {
 	const count = new Map<string, number>();
 	const firstSeen: string[] = [];
 	for (const row of rows) {
@@ -126,6 +121,6 @@ function buildView(
 		};
 	}
 
-	const { columns, conformance } = classifyRows(parsed.model, rows);
-	return { mode: 'modeled', model: parsed.model, columns, conformance };
+	const conformance = classifyRows(parsed.model, rows);
+	return { mode: 'modeled', model: parsed.model, conformance };
 }

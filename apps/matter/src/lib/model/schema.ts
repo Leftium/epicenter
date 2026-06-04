@@ -3,21 +3,20 @@
  *
  * Matter stores no `{kind}` descriptor and no `required` flag. Each field in
  * `matter.json` is a plain JSON Schema, the same artifact `column.*` emits, and
- * three pure readers run off it:
+ * two pure readers run off it:
  *
- *   deriveKind(schema)         -> which UI cell/editor renders it
+ *   deriveKind(schema)         -> which UI cell/editor renders it, plus whether
+ *                                 the value may be empty (the `nullable` flag)
  *   Schema.Compile(schema)     -> the validator (conformance)
- *   isNullable(schema)         -> may the value be empty (and, later, SQLite NOT NULL)
  *
- * `kind` is DERIVED from the schema's shape, never stored. This module owns the
- * supported subset of shapes (the kind derivation and the format registration)
- * so conformance has ONE definition of "what is a url / a datetime": the schema
- * itself. No parallel predicate.
+ * `kind` and `nullable` are DERIVED from the schema's shape, never stored.
+ * `deriveKind` (via `unwrapNullable`) is the SINGLE place the `anyOf`-null shape
+ * is detected, so conformance has ONE definition of "what is a url / a datetime /
+ * an empty-able field": the schema itself. No parallel predicate.
  *
- * We keep the core dependency-light: a local `isNullable` rather than pulling
- * `@epicenter/workspace`, and plain JSON-Schema object literals rather than the
- * `column.*` builders (the at-rest shapes are identical, and these are the only
- * shapes Matter recognizes).
+ * We keep the core dependency-light: plain JSON-Schema object literals rather
+ * than the `column.*` builders (the at-rest shapes are identical, and these are
+ * the only shapes Matter recognizes).
  */
 
 import { Format } from 'typebox/format';
@@ -89,22 +88,14 @@ function shape(schema: JsonSchema): SchemaShape {
 }
 
 /**
- * True when the schema admits `null` via the `anyOf`-with-a-null-branch shape
- * (what `column.nullable` emits). This is the ONE emptiness primitive: a field
- * is "required" iff its schema is NOT nullable. We deliberately do not honor a
- * bare `type: ['string','null']` array here because the supported authoring
- * subset only emits the `anyOf` shape; the matter.json validator rejects the
- * array form so this stays the single recognized representation.
- */
-export function isNullable(schema: JsonSchema): boolean {
-	const s = shape(schema);
-	return Array.isArray(s.anyOf) && s.anyOf.some((b) => shape(b).type === 'null');
-}
-
-/**
  * Peel a nullable wrapper down to its single non-null branch. Returns the inner
- * schema and whether a null branch was present. A non-nullable schema is
- * returned unchanged with `nullable: false`.
+ * schema and whether a null branch was present (the ONE place the `anyOf`-null
+ * shape, what `column.nullable` emits, is detected: a field is "required" iff its
+ * schema has no null branch). A non-nullable schema is returned unchanged with
+ * `nullable: false`. We deliberately do not honor a bare `type: ['string','null']`
+ * array because the supported authoring subset only emits the `anyOf` shape; the
+ * matter.json validator rejects the array form, so this stays the single
+ * recognized representation.
  */
 function unwrapNullable(schema: JsonSchema): {
 	inner: JsonSchema;

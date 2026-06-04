@@ -89,7 +89,7 @@
 			<div>
 				<h1 class="text-sm font-semibold">{folder}</h1>
 				<p class="text-xs text-muted-foreground">
-					{read.rows.length} rows · {view.columns.length} fields · {invalidCount} need attention · {read
+					{read.rows.length} rows · {view.model.fields.length} fields · {invalidCount} need attention · {read
 						.unreadable.length} unreadable
 				</p>
 			</div>
@@ -109,12 +109,14 @@
 				<Table.Header>
 					<Table.Row>
 						<Table.Head class="w-8"></Table.Head>
-						{#each view.columns as col (col.name)}
-							{@const derived = view.model.fields.find((f) => f.name === col.name)?.derived}
+						{#each view.model.fields as field (field.name)}
 							<Table.Head>
-								<span class="font-medium">{col.name}</span>
+								<span class="font-medium">{field.name}</span>
 								<span class="ml-1 text-xs font-normal text-muted-foreground">
-									{derived?.kind}{derived?.kind === 'array' ? '[]' : ''}{col.nullable ? '?' : ''}
+									{field.derived.kind}{field.derived.kind === 'array' ? '[]' : ''}{field.derived
+										.nullable
+										? '?'
+										: ''}
 								</span>
 							</Table.Head>
 						{/each}
@@ -152,7 +154,7 @@
 						{#if expanded[conf.row.path] && conf.extras.length}
 							<Table.Row>
 								<Table.Cell></Table.Cell>
-								<Table.Cell colspan={view.columns.length}>
+								<Table.Cell colspan={view.model.fields.length}>
 									<div class="flex flex-col gap-1 text-xs">
 										<span class="text-muted-foreground">Unmodeled keys (preserved, not validated):</span>
 										{#each conf.extras as extra (extra.key)}

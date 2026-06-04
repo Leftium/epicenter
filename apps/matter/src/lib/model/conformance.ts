@@ -28,8 +28,6 @@
  */
 
 import type { MatterModel } from './model';
-import type { JsonSchema } from './schema';
-import { isNullable } from './schema';
 import * as Schema from 'typebox/schema';
 import type { Row } from './types';
 
@@ -39,7 +37,6 @@ export type CellState = 'OK' | 'EMPTY' | 'NEEDS_VALUE' | 'INVALID';
 /** A column's precompiled validator, built once per model load. */
 export type CompiledColumn = {
 	name: string;
-	schema: JsonSchema;
 	nullable: boolean;
 	check: (value: unknown) => boolean;
 };
@@ -73,12 +70,13 @@ export type RowConformance = {
 export function compileColumns(model: MatterModel): CompiledColumn[] {
 	return model.fields.map((field) => {
 		// `Validator.Check` reads `this`; keep the receiver by closing over the
-		// validator instead of tearing the method off.
+		// validator instead of tearing the method off. `nullable` is already
+		// derived from the schema's null branch at validate time; reuse it rather
+		// than re-detecting the `anyOf`-null shape here.
 		const validator = Schema.Compile(field.schema);
 		return {
 			name: field.name,
-			schema: field.schema,
-			nullable: isNullable(field.schema),
+			nullable: field.derived.nullable,
 			check: (value: unknown) => validator.Check(value),
 		};
 	});
@@ -115,14 +113,15 @@ export function classifyRow(
 	return { row, cells, extras, rowValid };
 }
 
-/** Classify a whole folder of rows against a model. */
+/**
+ * Classify a whole folder of rows against a model. Compiles each column's
+ * validator once, then classifies every row; the compiled columns are an
+ * internal detail (the model's ordered `fields` are what the view renders from).
+ */
 export function classifyRows(
 	model: MatterModel,
 	rows: readonly Row[],
-): { columns: CompiledColumn[]; conformance: RowConformance[] } {
+): RowConformance[] {
 	const columns = compileColumns(model);
-	return {
-		columns,
-		conformance: rows.map((row) => classifyRow(columns, row)),
-	};
+	return rows.map((row) => classifyRow(columns, row));
 }

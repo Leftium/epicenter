@@ -57,7 +57,7 @@ if (view.mode === 'unmodeled') {
 	}
 
 	console.log('\nConformance (state per cell; ! = needs attention):');
-	const keys = view.columns.map((c) => c.name);
+	const keys = view.model.fields.map((f) => f.name);
 	console.log('  ' + ['file', ...keys].map((k) => k.padEnd(16)).join(''));
 	for (const conf of view.conformance) {
 		const flag = conf.rowValid ? ' ' : '!';

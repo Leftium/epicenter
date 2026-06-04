@@ -14,6 +14,18 @@
  *
  * A column's kind is the narrowest kind every present value satisfies; a mix
  * that has no common numeric ancestor falls to `string`, the permissive floor.
+ *
+ * The on-ramp invariant (the one rule that keeps inference honest):
+ *
+ *   inferValueKind(v) === k  ⟹  Value.Check(buildColumnSchema(k), v) is true
+ *
+ * Inference may UNDER-claim (fall to `string`); it must never OVER-claim a kind
+ * whose schema would reject the value, or "Create model from folder" produces a
+ * model that immediately marks its own rows invalid. So `isIsoDateTime` matches
+ * only a full RFC 3339 instant (what `column.dateTime` accepts); a bare date or
+ * any looser timestamp falls to `string`, the floor that accepts everything.
+ * Increment 2 replaces these regexes with the schemas' own `Value.Check`, at
+ * which point the implication holds by construction.
  */
 
 import type { ColumnKind, Row } from './types';
@@ -34,9 +46,16 @@ export type InferredColumn = {
 	count: number;
 };
 
-/** `YYYY-MM-DD` with an optional time/zone suffix. */
-const ISO_DATE =
-	/^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+/**
+ * A full RFC 3339 instant: date + `T` + `HH:MM:SS`, an optional fraction, and a
+ * required `Z` or `±HH:MM` offset. This mirrors what `column.dateTime` (TypeBox's
+ * built-in `date-time` format) accepts. Anything looser (a bare date, a space
+ * separator, a missing offset, no seconds) is intentionally NOT matched:
+ * inference falls to `string` rather than over-claim a `datetime` the schema
+ * would reject.
+ */
+const DATE_TIME =
+	/^\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[Zz]|[+-]\d{2}:\d{2})$/;
 
 export function isUrl(value: unknown): boolean {
 	if (typeof value !== 'string') return false;
@@ -48,10 +67,11 @@ export function isUrl(value: unknown): boolean {
 	}
 }
 
-export function isIsoDateString(value: unknown): boolean {
+/** A full RFC 3339 instant (date, time, and zone). */
+export function isIsoDateTime(value: unknown): boolean {
 	return (
 		typeof value === 'string' &&
-		ISO_DATE.test(value) &&
+		DATE_TIME.test(value) &&
 		!Number.isNaN(Date.parse(value))
 	);
 }
@@ -65,7 +85,7 @@ export function inferValueKind(value: unknown): ColumnKind {
 	if (typeof value === 'number') {
 		return Number.isInteger(value) ? 'integer' : 'number';
 	}
-	if (isIsoDateString(value)) return 'datetime';
+	if (isIsoDateTime(value)) return 'datetime';
 	if (isUrl(value)) return 'url';
 	return 'string';
 }

@@ -111,22 +111,40 @@ It must stay an EDITOR, not a linter: clicking an invalid cell fixes it in place
 
 ## The KINDS registry (the column.* bridge)
 
-One registry is the single source of truth, pairing a `column.*` helper with how each kind is inferred, rendered, and edited. `ColumnKind = keyof typeof KINDS`, so the mapping to `column.*` is 1-1 by construction.
+One registry pairs each kind's `column.*` builder with its cell and editor. `ColumnKind = keyof typeof KINDS`, so the mapping to `column.*` is 1-1 by construction.
 
 ```ts
 const KINDS = {
-  string:   { build: column.string,   infer: () => true,        cell: StringCell, editor: StringEditor },
-  integer:  { build: column.integer,  infer: Number.isInteger,  cell: NumberCell, editor: IntEditor },
-  number:   { build: column.number,   infer: isFiniteNumber,    cell: NumberCell, editor: NumberEditor },
-  boolean:  { build: column.boolean,  infer: isBoolean,         cell: BoolCell,   editor: BoolEditor },
-  datetime: { build: column.dateTime, infer: isIsoDateString,   cell: DateCell,   editor: DateEditor },
-  url:      { build: column.url,       infer: isUrl,             cell: UrlCell,    editor: UrlEditor },
-  enum:     { build: column.enum,      infer: () => false,       cell: EnumCell,   editor: EnumEditor },
+  string:   { build: column.string,   cell: StringCell, editor: StringEditor },
+  integer:  { build: column.integer,  cell: NumberCell, editor: IntEditor },
+  number:   { build: column.number,   cell: NumberCell, editor: NumberEditor },
+  boolean:  { build: column.boolean,  cell: BoolCell,   editor: BoolEditor },
+  datetime: { build: column.dateTime, cell: DateCell,   editor: DateEditor },
+  url:      { build: column.url,       cell: UrlCell,    editor: UrlEditor },
+  enum:     { build: column.enum,      cell: EnumCell,   editor: EnumEditor },
 } satisfies Record<string, KindEntry>;
 type ColumnKind = keyof typeof KINDS;
 ```
 
-`nullable` / `array` are composable modifiers (flags on a field), not kinds; `json` is the read-only fallback cell for a non-scalar value; `enum` is never inferred (a string set infers as `string`; you opt in, and it harvests the column's distinct values). Adding a type = one registry entry + one `column.*` helper.
+**Inference is NOT a separate predicate column.** A value's kind is the narrowest kind in the lattice whose `build` schema accepts it, `Value.Check(KINDS[k].build(), v)`. There is one definition of "what is a `datetime`" (the schema), used for both the inferred preview and conformance, so the two cannot drift. An earlier draft paired a hand-written `infer` predicate with each `build`; that is two sources of truth, and a `datetime` predicate looser than `column.dateTime` would make the inferred model invalidate its own rows. It was dropped.
+
+```
+infer(v)  = first k in lattice where Value.Check(KINDS[k].build(), v)     ── never a parallel predicate
+classify  = Value.Check(KINDS[field.kind].build(), v)                     ── same call, same answer
+```
+
+Two consequences this design owes (honored when the schemas are lifted in increment 2):
+
+```
+register the 'uri' format first, or column.url's validator is a no-op that accepts EVERY string
+  (so every string would infer 'url'). Until then, inference's url predicate stays stricter (http/https only).
+enum and string stay OUT of the lattice: string is the floor that always matches; enum is opt-in, never inferred
+  (a string set infers as 'string'; you opt in, and it harvests the column's distinct values).
+```
+
+Increment 1 ships a conservative regex stand-in (`isIsoDateTime`, `isUrl`) instead of `Value.Check`, because the pure core has no workspace dependency yet. It obeys the same invariant below: under-claim to `string`, never over-claim a kind the schema would reject.
+
+`nullable` / `array` are composable modifiers (flags on a field), not kinds; `json` is the read-only fallback cell for a non-scalar value. Adding a type = one registry entry + one `column.*` helper.
 
 ## Inference is the on-ramp, not the foundation
 
@@ -139,6 +157,16 @@ action: "Create model from folder"  -> writes matter.json from the discovered fr
 ```
 
 This keeps the zero-config first impression without making inference the source of truth. Inference is thin (the YAML parser already gives number/boolean/string/list; refinement only touches strings) and deterministic (same files -> same preview).
+
+### The on-ramp invariant (may under-claim, never over-claim)
+
+```
+inferValueKind(v) = k   ⟹   Value.Check(buildColumnSchema(k), v)
+```
+
+Inference is allowed to fall to `string`; it is never allowed to suggest a kind whose schema would reject the value. The trap this rules out is concrete: a bare `date: 2026-06-04`, the most common frontmatter shape, is **not** a `datetime`. `column.dateTime` is full RFC 3339 and rejects the bare date. If inference claimed `datetime`, "Create model from folder" would write a model that instantly marks every one of those rows invalid: the on-ramp invalidating its own folder. So a bare date, and any looser timestamp (space separator, missing offset, no seconds), infers as `string`. Only a full instant (`2026-06-04T10:30:00Z`) infers `datetime`.
+
+A dedicated `date` kind is deferred, not refused. It arrives as a full vertical slice (`column.date` in the shared library + cell + editor + classify) alongside the calendar view, rather than as a half-member that only inference can produce.
 
 ## Materialized SQLite (the query surface and the definition of valid)
 
@@ -215,7 +243,7 @@ Bases renders database-views over discovered frontmatter, non-enforcing. The typ
 
 ### Increment 2: model + conformance
 
-- [ ] **2.1** Read `matter.json`; compile `fields` via `buildColumnSchema`; lift the lens
+- [ ] **2.1** Read `matter.json`; compile `fields` via `buildColumnSchema`; lift the lens. Replace the increment-1 inference regexes with `Value.Check(KINDS[k].build(), v)` so infer and classify share one definition; register the `uri` format first (else `column.url` accepts every string)
 - [ ] **2.2** Classify rows: valid / invalid / unparseable; orthogonal extras (expander + `strict`)
 - [ ] **2.3** "No model" banner + "Create model from folder" (writes `matter.json` from discovered frontmatter)
 
@@ -233,6 +261,7 @@ Bases renders database-views over discovered frontmatter, non-enforcing. The typ
 ### Later (designed, not scheduled)
 
 - [ ] views: board (group-by status = a publishing pipeline), calendar (group-by date = a content calendar), gallery
+- [ ] a first-class `date` kind (bare calendar date): `column.date` + cell + editor + classify, landing with the calendar view; until then bare dates infer as `string`
 - [ ] the TS DSL (`defineMarkdownModel`) + computed/derived fields; cross-folder SQL; SQL write-back
 - [ ] read-only-region enforcement; Fuji adopts the `KINDS` registry; storage seam + wiki absorption
 

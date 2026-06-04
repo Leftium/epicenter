@@ -21,14 +21,16 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { SvelteMap } from 'svelte/reactivity';
+import type { Result } from 'wellcrafted/result';
 import {
 	buildView,
 	type FolderRead,
 	loadModel,
 	MatterReadError,
-	type ParsedEntry,
 	parseEntry,
+	type UnreadableFile,
 } from './model/view';
+import type { Row } from './model/types';
 
 /**
  * One file's observable state, pushed by `watch_folder` (serde `tag = "kind"`).
@@ -52,10 +54,11 @@ const basename = (path: string) => path.split(/[/\\]/).pop() ?? path;
 function createVault(path: string) {
 	const name = basename(path);
 
-	// ONE store, keyed by filename: each entry is either a parsed row or the error
-	// that stopped it. `set` replaces, so "a name is readable XOR unreadable" is
-	// structural, not an invariant maintained by hand across two maps.
-	const files = new SvelteMap<string, ParsedEntry>();
+	// ONE store, keyed by filename: each entry is a `Result` that is either a
+	// parsed row or the error that stopped it. `set` replaces, so "a name is
+	// readable XOR unreadable" is structural, not an invariant kept by hand across
+	// two maps.
+	const files = new SvelteMap<string, Result<Row, UnreadableFile['error']>>();
 	let modelText = $state<string | undefined>(undefined);
 	// 'loading' until the watch is established. The seed scan finishes before
 	// `watch_folder` resolves, so its resolution (not the first batch) flips this,
@@ -82,12 +85,9 @@ function createVault(path: string) {
 					files.delete(delta.name);
 					break;
 				case 'unreadable':
-					// `.error` is the bare tagged error (the factory returns an `Err`),
-					// matching what `parseEntry` stores from its destructured Result.
-					files.set(delta.name, {
-						ok: false,
-						error: MatterReadError.Undecodable().error,
-					});
+					// `Undecodable()` already returns an `Err`, so it stores directly as
+					// the file's failed `Result` (no row, the read-level error).
+					files.set(delta.name, MatterReadError.Undecodable());
 					break;
 			}
 		}
@@ -130,9 +130,9 @@ function createVault(path: string) {
 		get read(): FolderRead {
 			const rows: FolderRead['rows'] = [];
 			const unreadable: FolderRead['unreadable'] = [];
-			for (const [fileName, entry] of files) {
-				if (entry.ok) rows.push(entry.row);
-				else unreadable.push({ name: fileName, error: entry.error });
+			for (const [fileName, { data, error }] of files) {
+				if (error) unreadable.push({ name: fileName, error });
+				else rows.push(data);
 			}
 			return { rows, unreadable, view: buildView(rows, loaded) };
 		},

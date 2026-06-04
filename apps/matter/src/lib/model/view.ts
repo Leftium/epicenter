@@ -17,6 +17,7 @@
  */
 
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
 	classifyRows,
 	type CompiledColumn,
@@ -99,20 +100,19 @@ function frontmatterColumns(rows: readonly Row[]): string[] {
 }
 
 /**
- * One file parsed: either a readable row, or the error that stopped it. The
+ * Parse one file's content into a row, or the parse error that stopped it. The
  * SINGLE definition of "parse one file into the row-or-unreadable split", shared
  * by {@link readFolder} (batch) and the live vault (one delta at a time), so the
- * two cannot drift. The read-level {@link MatterReadError} is produced by the
- * caller (only Rust knows a file is undecodable); this covers the parse half.
+ * two cannot drift. The read-level {@link MatterReadError} is the caller's to add
+ * (only Rust knows a file is undecodable); this covers the parse half.
  */
-export type ParsedEntry =
-	| { ok: true; row: Row }
-	| { ok: false; error: MatterParseError | MatterReadError };
-
-/** Parse one file's content into a {@link ParsedEntry}. */
-export function parseEntry(name: string, content: string): ParsedEntry {
+export function parseEntry(
+	name: string,
+	content: string,
+): Result<Row, MatterParseError> {
 	const { data, error } = parseMarkdown(content);
-	return error ? { ok: false, error } : { ok: true, row: { name, ...data } };
+	if (error) return Err(error);
+	return Ok({ name, ...data });
 }
 
 /**
@@ -129,9 +129,12 @@ export function readFolder(
 	const unreadable: UnreadableFile[] = [];
 
 	for (const { name, content } of entries) {
-		const entry = parseEntry(name, content);
-		if (entry.ok) rows.push(entry.row);
-		else unreadable.push({ name, error: entry.error });
+		const { data, error } = parseEntry(name, content);
+		if (error) {
+			unreadable.push({ name, error });
+			continue;
+		}
+		rows.push(data);
 	}
 
 	return { rows, unreadable, view: buildView(rows, loadModel(modelText)) };

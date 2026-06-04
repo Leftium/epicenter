@@ -26,10 +26,10 @@ import { type MatterModel, parseModel } from './model';
 import { type ParsedFile, parseMarkdown } from './parse';
 import type { Row } from './types';
 
-export type FolderEntry = { path: string; content: string };
+export type FolderEntry = { name: string; content: string };
 
 export type UnreadableFile = {
-	path: string;
+	name: string;
 	/**
 	 * Why the file could not become a row. Parse-level reasons come from
 	 * {@link parseMarkdown} (bad YAML, conflict markers); `'unreadable'` is the
@@ -92,7 +92,7 @@ function frontmatterColumns(rows: readonly Row[]): string[] {
 /**
  * Read and classify a folder.
  *
- * @param entries the folder's `.md` files (path + raw content).
+ * @param entries the folder's `.md` files (basename + raw content).
  * @param modelText the raw text of the folder's `matter.json`, if present.
  */
 export function readFolder(
@@ -102,12 +102,12 @@ export function readFolder(
 	const rows: Row[] = [];
 	const unreadable: UnreadableFile[] = [];
 
-	for (const { path, content } of entries) {
+	for (const { name, content } of entries) {
 		const parsed = parseMarkdown(content);
 		if (parsed.ok) {
-			rows.push({ path, frontmatter: parsed.frontmatter, body: parsed.body });
+			rows.push({ name, frontmatter: parsed.frontmatter, body: parsed.body });
 		} else {
-			unreadable.push({ path, reason: parsed.reason });
+			unreadable.push({ name, reason: parsed.reason });
 		}
 	}
 

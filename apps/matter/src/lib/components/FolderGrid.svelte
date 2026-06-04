@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Table from '@epicenter/ui/table';
-	import type { FolderRead } from '$lib/model/folder';
+	import type { FolderRead } from '$lib/model/view';
 	import ConformanceCell from './ConformanceCell.svelte';
 
 	let { read, folder }: { read: FolderRead; folder: string } = $props();
@@ -74,7 +74,7 @@
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
-					{#each read.rows as row (row.path)}
+					{#each read.rows as row (row.name)}
 						<Table.Row>
 							{#each view.columns as key (key)}
 								<Table.Cell>{@render rawValue(row.frontmatter[key])}</Table.Cell>
@@ -123,7 +123,7 @@
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
-					{#each visibleRows as conf (conf.row.path)}
+					{#each visibleRows as conf (conf.row.name)}
 						<Table.Row class={conf.rowValid ? '' : 'bg-amber-500/5'}>
 							<Table.Cell class="align-top">
 								{#if conf.extras.length}
@@ -132,7 +132,7 @@
 										class="text-muted-foreground hover:text-foreground"
 										title="{conf.extras.length} unmodeled keys"
 										onclick={() =>
-											(expanded[conf.row.path] = !expanded[conf.row.path])}
+											(expanded[conf.row.name] = !expanded[conf.row.name])}
 									>
 										•••
 									</button>
@@ -151,7 +151,7 @@
 								</Table.Cell>
 							{/each}
 						</Table.Row>
-						{#if expanded[conf.row.path] && conf.extras.length}
+						{#if expanded[conf.row.name] && conf.extras.length}
 							<Table.Row>
 								<Table.Cell></Table.Cell>
 								<Table.Cell colspan={view.model.fields.length}>
@@ -179,9 +179,9 @@
 		<section class="border-t px-4 py-3">
 			<h2 class="text-xs font-semibold text-muted-foreground">Can't read</h2>
 			<ul class="mt-1 space-y-0.5">
-				{#each read.unreadable as file (file.path)}
+				{#each read.unreadable as file (file.name)}
 					<li class="text-xs">
-						<span class="font-mono">{file.path}</span>
+						<span class="font-mono">{file.name}</span>
 						<span class="text-muted-foreground"> · {file.reason}</span>
 					</li>
 				{/each}

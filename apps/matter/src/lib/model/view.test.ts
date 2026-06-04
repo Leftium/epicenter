@@ -1,20 +1,20 @@
 import { describe, expect, test } from 'bun:test';
-import { readFolder } from './folder';
+import { readFolder } from './view';
 
 describe('readFolder', () => {
 	test('splits readable rows from unreadable files and lists raw columns', () => {
 		const result = readFolder([
-			{ path: 'a.md', content: '---\ntitle: A\nrating: 5\n---\nbody' },
-			{ path: 'b.md', content: '---\ntitle: B\n---\nbody' },
-			{ path: 'broken.md', content: '---\ntitle: [unclosed\n---\nbody' },
-			{ path: 'conflict.md', content: '<<<<<<< HEAD\nx\n=======\ny\n>>>>>>> z\n' },
-			{ path: 'raw.md', content: '# no frontmatter' },
+			{ name: 'a.md', content: '---\ntitle: A\nrating: 5\n---\nbody' },
+			{ name: 'b.md', content: '---\ntitle: B\n---\nbody' },
+			{ name: 'broken.md', content: '---\ntitle: [unclosed\n---\nbody' },
+			{ name: 'conflict.md', content: '<<<<<<< HEAD\nx\n=======\ny\n>>>>>>> z\n' },
+			{ name: 'raw.md', content: '# no frontmatter' },
 		]);
 
-		expect(result.rows.map((r) => r.path)).toEqual(['a.md', 'b.md', 'raw.md']);
+		expect(result.rows.map((r) => r.name)).toEqual(['a.md', 'b.md', 'raw.md']);
 		expect(result.unreadable).toEqual([
-			{ path: 'broken.md', reason: 'invalid-yaml' },
-			{ path: 'conflict.md', reason: 'conflict-markers' },
+			{ name: 'broken.md', reason: 'invalid-yaml' },
+			{ name: 'conflict.md', reason: 'conflict-markers' },
 		]);
 		// No model supplied: a raw untyped view, columns ordered by frequency then
 		// first-seen, no type inference.
@@ -32,9 +32,9 @@ describe('readFolder', () => {
 		});
 		const result = readFolder(
 			[
-				{ path: 'a.md', content: '---\ntitle: A\nrating: 5\n---\nbody' },
-				{ path: 'b.md', content: '---\ntitle: B\n---\nbody' }, // rating absent -> NEEDS_VALUE
-				{ path: 'c.md', content: '---\ntitle: C\nrating: "high"\n---\nbody' }, // INVALID
+				{ name: 'a.md', content: '---\ntitle: A\nrating: 5\n---\nbody' },
+				{ name: 'b.md', content: '---\ntitle: B\n---\nbody' }, // rating absent -> NEEDS_VALUE
+				{ name: 'c.md', content: '---\ntitle: C\nrating: "high"\n---\nbody' }, // INVALID
 			],
 			model,
 		);
@@ -47,7 +47,7 @@ describe('readFolder', () => {
 
 	test('a junk matter.json degrades to the raw view with a diagnostic', () => {
 		const result = readFolder(
-			[{ path: 'a.md', content: '---\ntitle: A\n---\nbody' }],
+			[{ name: 'a.md', content: '---\ntitle: A\n---\nbody' }],
 			'{ not json',
 		);
 		expect(result.view.mode).toBe('unmodeled');

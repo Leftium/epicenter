@@ -19,7 +19,7 @@ describe('classifyRow (per-cell conformance)', () => {
 
 	test('a present valid value is OK; the row is valid when every cell is OK/EMPTY', () => {
 		const row: Row = {
-			path: 'a.md',
+			name: 'a.md',
 			frontmatter: { title: 'Hello', url: 'https://x.com', rating: 5 },
 			body: '',
 		};
@@ -29,7 +29,7 @@ describe('classifyRow (per-cell conformance)', () => {
 	});
 
 	test('a nullable field absent is EMPTY (valid); a required field absent is NEEDS_VALUE (invalid)', () => {
-		const row: Row = { path: 'b.md', frontmatter: { title: 'Hi' }, body: '' };
+		const row: Row = { name: 'b.md', frontmatter: { title: 'Hi' }, body: '' };
 		const c = classifyRow(columns, row);
 		expect(c.cells.map((x) => x.state)).toEqual(['OK', 'EMPTY', 'NEEDS_VALUE']);
 		expect(c.rowValid).toBe(false);
@@ -37,7 +37,7 @@ describe('classifyRow (per-cell conformance)', () => {
 
 	test('a present value failing its schema is INVALID', () => {
 		const row: Row = {
-			path: 'c.md',
+			name: 'c.md',
 			frontmatter: { title: 'Hi', url: 'not a url', rating: 'high' },
 			body: '',
 		};
@@ -49,22 +49,22 @@ describe('classifyRow (per-cell conformance)', () => {
 	// The tested nullish contract: a bare `title:` parses to null, an omitted
 	// `title` is absent; both must classify identically.
 	test('absent key and explicit null are the SAME empty', () => {
-		const absent: Row = { path: 'd.md', frontmatter: {}, body: '' };
-		const nul: Row = { path: 'e.md', frontmatter: { title: null }, body: '' };
+		const absent: Row = { name: 'd.md', frontmatter: {}, body: '' };
+		const nul: Row = { name: 'e.md', frontmatter: { title: null }, body: '' };
 		expect(classifyRow(columns, absent).cells[0]?.state).toBe('NEEDS_VALUE');
 		expect(classifyRow(columns, nul).cells[0]?.state).toBe('NEEDS_VALUE');
 
 		const m2 = model({ note: { anyOf: [{ type: 'string' }, { type: 'null' }] } });
 		const cols2 = compileColumns(m2);
-		const absent2: Row = { path: 'f.md', frontmatter: {}, body: '' };
-		const nul2: Row = { path: 'g.md', frontmatter: { note: null }, body: '' };
+		const absent2: Row = { name: 'f.md', frontmatter: {}, body: '' };
+		const nul2: Row = { name: 'g.md', frontmatter: { note: null }, body: '' };
 		expect(classifyRow(cols2, absent2).cells[0]?.state).toBe('EMPTY');
 		expect(classifyRow(cols2, nul2).cells[0]?.state).toBe('EMPTY');
 	});
 
 	test('extras are collected and never affect validity', () => {
 		const row: Row = {
-			path: 'h.md',
+			name: 'h.md',
 			frontmatter: { title: 'Hi', url: null, rating: 1, wild: 'extra', n: 9 },
 			body: '',
 		};
@@ -81,8 +81,8 @@ describe('classifyRows', () => {
 	test('classifies every row against precompiled columns', () => {
 		const m = model({ title: { type: 'string' } });
 		const rows: Row[] = [
-			{ path: 'a.md', frontmatter: { title: 'A' }, body: '' },
-			{ path: 'b.md', frontmatter: {}, body: '' },
+			{ name: 'a.md', frontmatter: { title: 'A' }, body: '' },
+			{ name: 'b.md', frontmatter: {}, body: '' },
 		];
 		const conformance = classifyRows(compileColumns(m), rows);
 		expect(conformance.map((c) => c.rowValid)).toEqual([true, false]);

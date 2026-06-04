@@ -11,13 +11,13 @@
 
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { readFolder } from '../src/lib/model/folder';
+import { readFolder } from '../src/lib/model/view';
 
 const dir = process.argv[2] ?? './sample-vault/drafts';
 
 const names = (await readdir(dir)).filter((name) => name.endsWith('.md')).sort();
 const entries = await Promise.all(
-	names.map(async (name) => ({ path: name, content: await readFile(join(dir, name), 'utf8') })),
+	names.map(async (name) => ({ name, content: await readFile(join(dir, name), 'utf8') })),
 );
 
 // Load the folder's model if it has one, so inspect shows conformance, not just
@@ -48,7 +48,7 @@ if (view.mode === 'unmodeled') {
 	console.log('  ' + ['file', ...keys].map((k) => k.padEnd(16)).join(''));
 	for (const row of rows) {
 		const cells = keys.map((k) => cell(row.frontmatter[k]).slice(0, 15).padEnd(16));
-		console.log('  ' + row.path.padEnd(16) + cells.join(''));
+		console.log('  ' + row.name.padEnd(16) + cells.join(''));
 	}
 } else {
 	console.log('Model fields:');
@@ -63,12 +63,12 @@ if (view.mode === 'unmodeled') {
 		const flag = conf.rowValid ? ' ' : '!';
 		const cells = conf.cells.map((c) => c.state.padEnd(16));
 		const extras = conf.extras.length ? `  +${conf.extras.length} extra` : '';
-		console.log(`${flag} ` + conf.row.path.padEnd(16) + cells.join('') + extras);
+		console.log(`${flag} ` + conf.row.name.padEnd(16) + cells.join('') + extras);
 	}
 }
 
 if (unreadable.length) {
 	console.log('\nUnreadable (would route to "Can\'t read"):');
-	for (const u of unreadable) console.log(`  ${u.path.padEnd(16)} ${u.reason}`);
+	for (const u of unreadable) console.log(`  ${u.name.padEnd(16)} ${u.reason}`);
 }
 console.log('');

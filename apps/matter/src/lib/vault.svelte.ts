@@ -23,7 +23,7 @@ import {
 	type FolderRead,
 	loadModel,
 	type UnreadableFile,
-} from './model/folder';
+} from './model/view';
 import { parseMarkdown } from './model/parse';
 import type { Row } from './model/types';
 
@@ -66,7 +66,7 @@ function createVault(path: string) {
 		const parsed = parseMarkdown(content);
 		if (parsed.ok) {
 			rows.set(fileName, {
-				path: fileName,
+				name: fileName,
 				frontmatter: parsed.frontmatter,
 				body: parsed.body,
 			});
@@ -140,7 +140,7 @@ function createVault(path: string) {
 			return {
 				rows: currentRows,
 				unreadable: [...unreadable].map(([file, reason]) => ({
-					path: file,
+					name: file,
 					reason,
 				})),
 				view: buildView(currentRows, loaded),

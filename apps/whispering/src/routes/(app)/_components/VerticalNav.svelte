@@ -9,6 +9,7 @@
 	import studioMicrophone from '$lib/assets/studio-microphone.png';
 	import { NAV_ITEMS } from './nav-items';
 	import { auth } from '#platform/auth';
+	import { whispering } from '#platform/whispering';
 	import { AccountPopover } from '@epicenter/app-shell/account-popover';
 
 	const sidebar = useSidebar();
@@ -73,7 +74,11 @@
 			<!-- Account / sync (route-independent: visible on the bare home page) -->
 			<Sidebar.MenuItem>
 				<div class="flex items-center px-1.5 py-1">
-					<AccountPopover {auth} syncNoun="recordings" />
+					<AccountPopover
+						{auth}
+						collaboration={whispering.collaboration}
+						syncNoun="recordings"
+					/>
 				</div>
 			</Sidebar.MenuItem>
 

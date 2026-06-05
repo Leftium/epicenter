@@ -7,10 +7,10 @@
  * value-semantic formats, and the single `Schema.Compile` call that turns a stored
  * schema into a per-cell validator.
  *
- * `JsonSchema` is the at-rest shape the cells read (`schema.enum` / `schema.items`)
- * and `compile`'s input. We do not import TypeBox's `TSchema` because the truth is
- * plain JSON, not a TypeBox value, and `Schema.Compile` validates a plain JSON Schema
- * directly.
+ * `JsonSchema` is the at-rest shape `palette.ts` reads (the recognizers and
+ * `optionsOf` inspect `schema.enum` / `schema.items`) and `compile`'s input. We do
+ * not import TypeBox's `TSchema` because the truth is plain JSON, not a TypeBox
+ * value, and `Schema.Compile` validates a plain JSON Schema directly.
  */
 
 import { Format } from 'typebox/format';

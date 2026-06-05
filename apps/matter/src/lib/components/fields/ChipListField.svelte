@@ -7,7 +7,7 @@
 	// display is identical; inline EDITING is deferred (the spec), and an INVALID
 	// value routes to the JSON repair editor via the wrapper, never here. The
 	// editors will fork later (free chip entry for tags, a bounded picker for
-	// multiSelect, whose options live in `field.schema.items.enum`), at which point
+	// multiSelect, whose options come from `optionsOf(field)`), at which point
 	// this splits, the same way NumericField will if number and integer diverge.
 	let { cell }: FieldProps = $props();
 </script>

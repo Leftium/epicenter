@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { CellResult } from '$lib/model/conformance';
-	import type { Column } from '$lib/model/model';
+	import type { Field } from '$lib/model/model';
 	import { FIELD_COMPONENTS } from './fields/registry';
 	import type { ClearField, SaveField } from './fields/types';
 	import JsonRepairEditor from './JsonRepairEditor.svelte';
@@ -12,20 +12,20 @@
 		clear,
 	}: {
 		cell: CellResult;
-		field: Column;
+		field: Field;
 		save: SaveField;
 		clear: ClearField;
 	} = $props();
 
 	// Kind dispatch is gated behind VALIDITY: an INVALID value is out of every
 	// widget's domain, so it goes to the universal JSON repair editor; an OK or
-	// empty value goes to the typed Field for its kind. The Field never sees an
-	// INVALID value, which is why no Field handles that state.
-	const Field = $derived(FIELD_COMPONENTS[field.kind]);
+	// empty value goes to the typed field widget for its kind. The widget never sees
+	// an INVALID value, which is why no widget handles that state.
+	const FieldComponent = $derived(FIELD_COMPONENTS[field.kind]);
 </script>
 
 {#if cell.state === 'INVALID'}
 	<JsonRepairEditor {cell} {save} {clear} />
 {:else}
-	<Field {cell} {field} {save} {clear} />
+	<FieldComponent {cell} {field} {save} {clear} />
 {/if}

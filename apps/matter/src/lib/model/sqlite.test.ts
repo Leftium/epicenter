@@ -85,7 +85,7 @@ describe('drop and insert SQL (all SQL text built here, not in Rust)', () => {
 });
 
 describe('projectToSqlite (valid rows only, serialized per storage class)', () => {
-	const conformance = classifyRows(m.columns, [valid, incomplete]);
+	const conformance = classifyRows(m.fields, [valid, incomplete]);
 	const proj = projectToSqlite('drafts', m, conformance);
 
 	test('columns are path, the modeled fields, then _extra', () => {
@@ -124,12 +124,12 @@ describe('projectToSqlite (valid rows only, serialized per storage class)', () =
 	test('a numeric enum select serializes to its TEXT form', () => {
 		const nm = model({ rank: { type: 'integer', enum: [1, 2, 3] } });
 		const row: Row = { name: 'r.md', frontmatter: { rank: 2 }, body: '' };
-		const p = projectToSqlite('ranks', nm, classifyRows(nm.columns, [row]));
+		const p = projectToSqlite('ranks', nm, classifyRows(nm.fields, [row]));
 		expect(p.rows[0]).toEqual(['r.md', '2', '{}']); // select stored as TEXT, empty _extra
 	});
 
 	test('an all-invalid folder yields a table with no rows', () => {
-		const p = projectToSqlite('drafts', m, classifyRows(m.columns, [incomplete]));
+		const p = projectToSqlite('drafts', m, classifyRows(m.fields, [incomplete]));
 		expect(p.rows).toEqual([]);
 		expect(p.ddl).toContain('CREATE TABLE "drafts"');
 	});

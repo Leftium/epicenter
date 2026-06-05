@@ -14,7 +14,7 @@
  */
 
 import type { CellResult } from '$lib/model/conformance';
-import type { Column } from '$lib/model/model';
+import type { Field } from '$lib/model/model';
 
 /**
  * Commit a new value for this cell's field. The {@link ModeledCell} wrapper binds
@@ -35,8 +35,8 @@ export type ClearField = () => void;
 export type FieldProps = {
 	/** The classified cell: its value and state (`OK` / `NEEDS_VALUE`). */
 	cell: CellResult;
-	/** The model column: its stored schema (select options, list items) and kind. */
-	field: Column;
+	/** The model field: its stored schema (select options, list items) and kind. */
+	field: Field;
 	/** Commit a new value for the field. */
 	save: SaveField;
 	/** Delete the field's key (the explicit clear, not `save(undefined)`). */

@@ -100,7 +100,7 @@
 			<div>
 				<h1 class="text-sm font-semibold">{folder}</h1>
 				<p class="text-xs text-muted-foreground">
-					{read.rows.length} rows · {view.model.columns.length} fields · {invalidCount} need attention · {read
+					{read.rows.length} rows · {view.model.fields.length} fields · {invalidCount} need attention · {read
 						.unreadable.length} unreadable
 				</p>
 			</div>
@@ -128,7 +128,7 @@
 				<Table.Header>
 					<Table.Row>
 						<Table.Head class="w-8"></Table.Head>
-						{#each view.model.columns as field (field.name)}
+						{#each view.model.fields as field (field.name)}
 							<Table.Head>
 								<span class="font-medium">{field.name}</span>
 								<span class="ml-1 text-xs font-normal text-muted-foreground">
@@ -155,7 +155,7 @@
 								</button>
 							</Table.Cell>
 							{#each conf.cells as cell, i (cell.name)}
-								{@const field = view.model.columns[i]}
+								{@const field = view.model.fields[i]}
 								<Table.Cell
 									class={cell.state === 'INVALID' || cell.state === 'NEEDS_VALUE'
 										? 'ring-1 ring-inset ring-destructive/20'
@@ -175,7 +175,7 @@
 						{#if expanded[conf.row.name]}
 							<Table.Row>
 								<Table.Cell></Table.Cell>
-								<Table.Cell colspan={view.model.columns.length}>
+								<Table.Cell colspan={view.model.fields.length}>
 									<RowDetail row={conf.row} extras={conf.extras} {onSaveBody} />
 								</Table.Cell>
 							</Table.Row>

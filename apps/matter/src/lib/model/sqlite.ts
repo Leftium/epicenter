@@ -22,7 +22,7 @@
  */
 
 import type { RowConformance } from './conformance';
-import type { Column, MatterModel } from './model';
+import type { Field, MatterModel } from './model';
 import { storageOf } from './palette';
 
 /** A SQLite-bindable scalar. Valid rows never carry null, so this is string | number. */
@@ -55,11 +55,11 @@ function quoteIdent(name: string): string {
 
 /**
  * Serialize one validated cell value to its storage class. The value already passed
- * the column's schema (valid rows only), so the kind determines the encoding:
+ * the field's schema (valid rows only), so the kind determines the encoding:
  * booleans to 0/1, lists to JSON text, everything else to its TEXT/INTEGER/REAL form.
  */
-function serializeCell(column: Column, value: unknown): SqlValue {
-	switch (column.kind) {
+function serializeCell(field: Field, value: unknown): SqlValue {
+	switch (field.kind) {
 		case 'integer':
 		case 'number':
 			return value as number;
@@ -83,10 +83,10 @@ function serializeCell(column: Column, value: unknown): SqlValue {
  * modeled field (typed by its storage class), and an `_extra` JSON column for the
  * unmodeled keys, so an agent can see extras too.
  */
-function buildDdl(table: string, columns: readonly Column[]): string {
+function buildDdl(table: string, fields: readonly Field[]): string {
 	const defs = [
 		`${quoteIdent('path')} TEXT PRIMARY KEY`,
-		...columns.map(
+		...fields.map(
 			(c) => `${quoteIdent(c.name)} ${storageOf(c.kind)} NOT NULL`,
 		),
 		`${quoteIdent('_extra')} TEXT NOT NULL`,
@@ -104,12 +104,12 @@ export function projectToSqlite(
 	model: MatterModel,
 	conformance: readonly RowConformance[],
 ): SqliteProjection {
-	const columns = ['path', ...model.columns.map((c) => c.name), '_extra'];
+	const columns = ['path', ...model.fields.map((c) => c.name), '_extra'];
 	const rows = conformance
 		.filter((c) => c.rowValid)
 		.map((c) => {
-			const cells = model.columns.map((col) =>
-				serializeCell(col, c.row.frontmatter[col.name]),
+			const cells = model.fields.map((field) =>
+				serializeCell(field, c.row.frontmatter[field.name]),
 			);
 			const extra = JSON.stringify(
 				Object.fromEntries(c.extras.map((e) => [e.key, e.value])),
@@ -125,7 +125,7 @@ export function projectToSqlite(
 	return {
 		table,
 		drop: `DROP TABLE IF EXISTS ${quoteIdent(table)}`,
-		ddl: buildDdl(table, model.columns),
+		ddl: buildDdl(table, model.fields),
 		insert,
 		columns,
 		rows,

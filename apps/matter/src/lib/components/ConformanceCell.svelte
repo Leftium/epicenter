@@ -24,9 +24,11 @@
 		required
 	</span>
 {:else if cell.state === 'INVALID'}
-	<!-- Widget floor: an out-of-domain value drops to raw text + a badge so it
-	     stays editable until it validates, then snaps back to the typed widget. -->
-	<code class="rounded bg-destructive/10 px-1 text-xs text-destructive">{String(cell.value)}</code>
+	<!-- Widget floor: an out-of-domain value drops to its JSON form + a badge so it
+	     stays editable until it validates, then snaps back to the typed widget.
+	     JSON (not String()) so the display matches the repair editor's seed and
+	     keeps fidelity for arrays/objects (String(["a"]) = "a" is lossy). -->
+	<code class="rounded bg-destructive/10 px-1 text-xs text-destructive">{JSON.stringify(cell.value)}</code>
 {:else if derivedKind.kind === 'array'}
 	{#if Array.isArray(cell.value)}
 		<div class="flex flex-wrap gap-1">

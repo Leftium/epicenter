@@ -51,13 +51,14 @@
  *
  * This module also owns the VALUE side of a field schema: `JsonSchema` (its at-rest
  * shape) and `compile` (the single `Schema.Compile` that turns a stored schema into a
- * per-cell validator, registering the value-semantic formats first). So one place
- * answers both readings of a stored schema: "which kind is it" (`recognize`) and "does
- * this value satisfy it" (`compile`).
+ * per-cell validator). The value-semantic formats it leans on (`uri` for `url`,
+ * `date-time` for `datetime`) are TypeBox standard formats, registered for us when
+ * `typebox/schema` loads, so `compile` is just the call. So one place answers both
+ * readings of a stored schema: "which kind is it" (`recognize`) and "does this value
+ * satisfy it" (`compile`).
  */
 
 import { type Static, Type } from 'typebox';
-import { Format } from 'typebox/format';
 import * as Schema from 'typebox/schema';
 import { Value } from 'typebox/value';
 
@@ -297,13 +298,13 @@ export const META_BY_KIND = Object.fromEntries(
  * `this`). `recognize` decides WHICH kind a schema is; `compile` decides whether a
  * VALUE satisfies it.
  *
- * The `Format.Set` calls register the value-semantic formats and run on every compile
- * (idempotent, no import-time side effect): TypeBox treats an UNREGISTERED format as
- * "always passes", so without them every string would satisfy `url` / `datetime`.
+ * No format registration here. TypeBox treats an UNREGISTERED format as "always passes",
+ * so a CUSTOM format would have to be registered or `url` / `datetime` would accept any
+ * string. But `uri` and `date-time` are TypeBox STANDARD formats, registered as a load
+ * side effect of `typebox/format` (which `Schema.Compile` imports), so the bare compile
+ * already enforces them.
  */
 export function compile(schema: JsonSchema): (value: unknown) => boolean {
-	Format.Set('uri', Format.IsUri);
-	Format.Set('date-time', Format.IsDateTime);
 	const validator = Schema.Compile(schema);
 	return (value) => validator.Check(value);
 }

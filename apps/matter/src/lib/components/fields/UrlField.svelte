@@ -3,11 +3,12 @@
 	import FieldEmpty from './FieldEmpty.svelte';
 	import type { FieldProps } from './types';
 
-	let { cell, save }: FieldProps = $props();
+	let { cell, save, clear }: FieldProps = $props();
 
 	const edit = createCellEdit({
 		cell: () => cell,
 		save: (value) => save(value),
+		clear: () => clear(),
 		display: (value) => (value == null ? '' : String(value)),
 		parse: (text) =>
 			text.trim() === '' ? { type: 'clear' } : { type: 'value', value: text },

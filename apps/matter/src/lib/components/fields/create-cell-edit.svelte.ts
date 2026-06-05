@@ -8,10 +8,10 @@
  * across them; only the display and the parse differ. This rune helper owns the
  * lifecycle; each Field supplies `display(value) -> text` and `parse(text)`.
  *
- * `parse` returns a DISCRIMINATED result, not a bare value: `undefined` is the
- * save protocol for "clear", so a parser cannot use it to also mean "this value
- * happens to be undefined". `error` holds the draft open with a message (the JSON
- * repair editor's bad-syntax case); `value` commits, `clear` deletes the key.
+ * `parse` returns a DISCRIMINATED result, not a bare value, so a parser never has
+ * to overload `undefined` to mean "clear": `clear` calls {@link ClearField}
+ * (delete the key), `value` commits through {@link SaveField}, and `error` holds
+ * the draft open with a message (the JSON repair editor's bad-syntax case).
  *
  * The returned object is GETTER-BACKED reactive state (plus a `draft` setter for
  * `bind:value`): dot-access it, never destructure, or you snapshot the value and
@@ -19,7 +19,7 @@
  */
 
 import type { CellResult } from '$lib/model/conformance';
-import type { SaveField } from './types';
+import type { ClearField, SaveField } from './types';
 
 export type CellEditParse =
 	| { type: 'value'; value: unknown }
@@ -30,6 +30,7 @@ export type CreateCellEditOptions = {
 	/** A getter (not a snapshot): props can change between `start` and `commit`. */
 	cell: () => CellResult;
 	save: SaveField;
+	clear: ClearField;
 	/** Serialize the committed value into the input's initial text. */
 	display: (value: unknown) => string;
 	/** Interpret the draft text on commit. */
@@ -37,7 +38,7 @@ export type CreateCellEditOptions = {
 };
 
 export function createCellEdit(options: CreateCellEditOptions) {
-	const { cell, save, display, parse } = options;
+	const { cell, save, clear, display, parse } = options;
 	let editing = $state(false);
 	let draft = $state('');
 	let parseError = $state<string | undefined>(undefined);
@@ -62,12 +63,14 @@ export function createCellEdit(options: CreateCellEditOptions) {
 		}
 		editing = false;
 		const current = cell();
-		const next = result.type === 'clear' ? undefined : result.value;
 		// No-op guard: clearing an already-empty cell, or re-committing the same
-		// scalar, must not write (and trigger a pointless watcher echo).
-		const unchanged =
-			next === undefined ? current.value == null : next === current.value;
-		if (!unchanged) save(next);
+		// scalar, must not write (and trigger a pointless watcher echo). The two
+		// operations are split, so each guards itself.
+		if (result.type === 'clear') {
+			if (current.value != null) clear();
+		} else if (result.value !== current.value) {
+			save(result.value);
+		}
 	}
 
 	function onKeydown(event: KeyboardEvent) {

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { CellResult } from '$lib/model/conformance';
 	import { createCellEdit } from './fields/create-cell-edit.svelte';
-	import type { SaveField } from './fields/types';
+	import type { ClearField, SaveField } from './fields/types';
 
 	// The universal repair editor for an INVALID cell, chosen by ModeledCell before
 	// any per-kind Field. Edit the JSON-serialized value and re-parse on commit:
@@ -11,11 +11,16 @@
 	// model never gates a write, so a still-invalid-but-parseable value saves and
 	// stays INVALID. The row reclassifies through the watcher, so a now-valid value
 	// snaps back to its typed Field on its own.
-	let { cell, save }: { cell: CellResult; save: SaveField } = $props();
+	let { cell, save, clear }: {
+		cell: CellResult;
+		save: SaveField;
+		clear: ClearField;
+	} = $props();
 
 	const edit = createCellEdit({
 		cell: () => cell,
 		save: (value) => save(value),
+		clear: () => clear(),
 		display: (value) => JSON.stringify(value) ?? '',
 		parse: (text) => {
 			if (text.trim() === '') return { type: 'clear' };

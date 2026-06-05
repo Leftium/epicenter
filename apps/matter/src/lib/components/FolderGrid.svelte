@@ -158,6 +158,7 @@
 											{cell}
 											{field}
 											save={(value) => onSaveField(conf.row.name, cell.name, value)}
+											clear={() => onSaveField(conf.row.name, cell.name, undefined)}
 										/>
 									{/if}
 								</Table.Cell>

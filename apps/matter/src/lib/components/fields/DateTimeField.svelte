@@ -7,12 +7,13 @@
 	// RFC 3339 classifies INVALID and routes to the JSON repair editor, so this only
 	// ever sees a parseable instant. Same verbatim-text parse as `string`; the
 	// distinct kind is the seam where the picker replaces this one prop.
-	let { cell, save }: FieldProps = $props();
+	let { cell, save, clear }: FieldProps = $props();
 </script>
 
 <TextCell
 	{cell}
 	{save}
+	{clear}
 	displayClass="tabular-nums"
 	parse={(text) =>
 		text.trim() === '' ? { type: 'clear' } : { type: 'value', value: text }}

@@ -3,7 +3,7 @@
 	import FieldEmpty from './FieldEmpty.svelte';
 	import type { FieldProps } from './types';
 
-	let { cell, field, save }: FieldProps = $props();
+	let { cell, field, save, clear }: FieldProps = $props();
 
 	// The raw enum literals, NOT stringified: a numeric or boolean enum must save
 	// its ORIGINAL typed value. Saving "2" for a `{ enum: [1, 2, 3] }` field would
@@ -20,12 +20,14 @@
 		return i >= 0 ? String(i) : '';
 	});
 
-	function onValueChange(value: string) {
-		save(value === CLEAR ? undefined : values[Number(value)]);
-	}
 </script>
 
-<Select.Root type="single" value={selected} {onValueChange}>
+<Select.Root
+	type="single"
+	value={selected}
+	onValueChange={(value) =>
+		value === CLEAR ? clear() : save(values[Number(value)])}
+>
 	<Select.Trigger size="sm" class="w-full">
 		{#if cell.value == null}
 			<FieldEmpty state={cell.state} />

@@ -17,11 +17,19 @@ import type { CellResult } from '$lib/model/conformance';
 import type { ModelField } from '$lib/model/model';
 
 /**
- * Save (or clear) this cell's field. The {@link ModeledCell} wrapper binds the
- * row name and field key; a Field supplies only the new value. `undefined` CLEARS
- * the field: it deletes the key, never writes `null` (the nullish contract).
+ * Commit a new value for this cell's field. The {@link ModeledCell} wrapper binds
+ * the row name and field key; a Field supplies only the value. Clearing the field
+ * is a SEPARATE call ({@link ClearField}), not `save(undefined)`: committing a
+ * value and removing the key are two unlike operations, so they are two call
+ * shapes, not one channel with a sentinel.
  */
 export type SaveField = (value: unknown) => void;
+
+/**
+ * Clear this cell's field: delete the key (never write `null`, the nullish
+ * contract). The honest counterpart to {@link SaveField}.
+ */
+export type ClearField = () => void;
 
 /** Props every per-kind Field component receives. */
 export type FieldProps = {
@@ -29,6 +37,8 @@ export type FieldProps = {
 	cell: CellResult;
 	/** The model field: its stored schema (select options, list items) and derived kind. */
 	field: ModelField;
-	/** Commit a new value, or `undefined` to clear the field. */
+	/** Commit a new value for the field. */
 	save: SaveField;
+	/** Delete the field's key (the explicit clear, not `save(undefined)`). */
+	clear: ClearField;
 };

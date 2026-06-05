@@ -6,18 +6,17 @@
 	// A Select rather than a checkbox: a checkbox cannot represent the empty state a
 	// nullable boolean needs, and the Select reuses the same choice pattern as enum.
 	// Real booleans are mapped to/from the Select's string values.
-	let { cell, field, save }: FieldProps = $props();
+	let { cell, field, save, clear }: FieldProps = $props();
 
 	const CLEAR = ' '; // a sentinel no boolean string can collide with
 	const selected = $derived(cell.value == null ? '' : String(cell.value));
-
-	function onValueChange(value: string) {
-		if (value === CLEAR) save(undefined);
-		else save(value === 'true');
-	}
 </script>
 
-<Select.Root type="single" value={selected} {onValueChange}>
+<Select.Root
+	type="single"
+	value={selected}
+	onValueChange={(value) => (value === CLEAR ? clear() : save(value === 'true'))}
+>
 	<Select.Trigger size="sm" class="w-full">
 		{#if cell.value == null}
 			<FieldEmpty state={cell.state} />

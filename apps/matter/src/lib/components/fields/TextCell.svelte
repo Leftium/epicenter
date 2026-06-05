@@ -2,7 +2,7 @@
 	import type { CellResult } from '$lib/model/conformance';
 	import { createCellEdit, type CellEditParse } from './create-cell-edit.svelte';
 	import FieldEmpty from './FieldEmpty.svelte';
-	import type { SaveField } from './types';
+	import type { ClearField, SaveField } from './types';
 
 	// The shared shell for the plain-text cell kinds (string, numeric, datetime):
 	// click to open one text input, commit on blur/Enter, revert on Escape, with the
@@ -15,6 +15,7 @@
 	let {
 		cell,
 		save,
+		clear,
 		parse,
 		inputClass = '',
 		displayClass = 'truncate',
@@ -22,6 +23,7 @@
 	}: {
 		cell: CellResult;
 		save: SaveField;
+		clear: ClearField;
 		/** Interpret the draft on commit (the one thing the text kinds differ on). */
 		parse: (draft: string) => CellEditParse;
 		/** Extra class for the open input (e.g. tabular digits). */
@@ -31,12 +33,13 @@
 		inputmode?: 'decimal';
 	} = $props();
 
-	// `cell`/`save`/`parse` are read through closures so the edit captures the
-	// current prop, not its initial value (the same getter contract createCellEdit
-	// already requires for `cell`).
+	// `cell`/`save`/`clear`/`parse` are read through closures so the edit captures
+	// the current prop, not its initial value (the same getter contract
+	// createCellEdit already requires for `cell`).
 	const edit = createCellEdit({
 		cell: () => cell,
 		save: (value) => save(value),
+		clear: () => clear(),
 		display: (value) => (value == null ? '' : String(value)),
 		parse: (draft) => parse(draft),
 	});

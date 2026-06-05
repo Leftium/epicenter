@@ -110,6 +110,21 @@ function createVault(path: string) {
 	}
 
 	/**
+	 * The current classified folder, derived from the files map + the loaded model.
+	 * The ONE place "files map -> FolderRead" lives, shared by the `read` getter (the
+	 * UI surface) and `rebuildIndex` (the SQLite mirror), so the two cannot drift.
+	 */
+	function currentRead(): FolderRead {
+		const rows: FolderRead['rows'] = [];
+		const unreadable: FolderRead['unreadable'] = [];
+		for (const [fileName, { data, error }] of files) {
+			if (error) unreadable.push({ name: fileName, error });
+			else rows.push(data);
+		}
+		return { rows, unreadable, view: buildView(rows, loaded) };
+	}
+
+	/**
 	 * Rebuild `<path>/matter.sqlite` from the current VALID rows: a derived,
 	 * disposable, read-only mirror so a coding agent (or an in-app SQL console) can
 	 * run arbitrary SQL over the typed folder. The SvelteMap stays the live in-app
@@ -119,11 +134,7 @@ function createVault(path: string) {
 	 * command only executes it and binds the rows.
 	 */
 	function rebuildIndex(): void {
-		const rows: Row[] = [];
-		for (const result of files.values()) {
-			if (!result.error) rows.push(result.data);
-		}
-		const view = buildView(rows, loaded);
+		const { view } = currentRead();
 		if (view.mode !== 'modeled') return;
 		const { schema, insert, rows: tuples } = projectToSqlite(
 			name,
@@ -212,13 +223,7 @@ function createVault(path: string) {
 		saveBody,
 		/** The current classified folder. A pure read with no side effects. */
 		get read(): FolderRead {
-			const rows: FolderRead['rows'] = [];
-			const unreadable: FolderRead['unreadable'] = [];
-			for (const [fileName, { data, error }] of files) {
-				if (error) unreadable.push({ name: fileName, error });
-				else rows.push(data);
-			}
-			return { rows, unreadable, view: buildView(rows, loaded) };
+			return currentRead();
 		},
 		/** Whether the watch has been established (or failed). */
 		get status(): 'loading' | 'ready' {

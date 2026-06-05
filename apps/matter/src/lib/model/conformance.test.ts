@@ -101,7 +101,7 @@ describe('classifyRow (per-cell conformance, everything required)', () => {
 			body: '',
 		};
 		const c = classifyRow(withUnmodeled, row);
-		expect(c.cells.map((x) => x.name)).toEqual(['title']);
+		expect(c.cells.map((x) => x.field.name)).toEqual(['title']);
 		expect(c.extras).toEqual([{ key: 'note', value: 'hello' }]);
 	});
 });

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { CellResult } from '$lib/model/conformance';
+	import type { Cell } from '$lib/model/conformance';
 	import { createCellEdit, type CellEditParse } from './create-cell-edit.svelte';
 	import FieldEmpty from './FieldEmpty.svelte';
 	import type { ClearField, SaveField } from './types';
@@ -21,7 +21,7 @@
 		displayClass = 'truncate',
 		inputmode,
 	}: {
-		cell: CellResult;
+		cell: Cell;
 		save: SaveField;
 		clear: ClearField;
 		/** Interpret the draft on commit (the one thing the text kinds differ on). */

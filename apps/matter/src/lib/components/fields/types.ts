@@ -13,8 +13,7 @@
  * the kind's domain reappears as INVALID (handled by the wrapper, not the Field).
  */
 
-import type { CellResult } from '$lib/model/conformance';
-import type { Field } from '$lib/model/model';
+import type { Cell } from '$lib/model/conformance';
 
 /**
  * Commit a new value for this cell's field. The {@link ModeledCell} wrapper binds
@@ -33,10 +32,8 @@ export type ClearField = () => void;
 
 /** Props every per-kind Field component receives. */
 export type FieldProps = {
-	/** The classified cell: its value and state (`OK` / `NEEDS_VALUE`). */
-	cell: CellResult;
-	/** The model field: its stored schema (select options, list items) and kind. */
-	field: Field;
+	/** The classified cell: its value, state, and the field it belongs to (`cell.field`). */
+	cell: Cell;
 	/** Commit a new value for the field. */
 	save: SaveField;
 	/** Delete the field's key (the explicit clear, not `save(undefined)`). */

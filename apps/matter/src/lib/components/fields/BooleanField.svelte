@@ -13,7 +13,7 @@
 	// flip the cell to INVALID (and route to the repair editor). bits-ui hands
 	// onCheckedChange a boolean, so the save is direct. No clear: every modeled field
 	// is required, so "unset" is not a settable target, only an unfilled one.
-	let { cell, field, save }: FieldProps = $props();
+	let { cell, save }: FieldProps = $props();
 
 	// Read the classifier's verdict, not a re-derived nullish check: conformance
 	// already collapsed "absent key OR bare YAML null" into NEEDS_VALUE (the one
@@ -27,6 +27,6 @@
 <Checkbox
 	{checked}
 	{indeterminate}
-	aria-label={field.name}
+	aria-label={cell.field.name}
 	onCheckedChange={(value) => save(value)}
 />

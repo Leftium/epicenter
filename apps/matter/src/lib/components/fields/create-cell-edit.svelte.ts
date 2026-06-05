@@ -18,7 +18,7 @@
  * lose reactivity.
  */
 
-import type { CellResult } from '$lib/model/conformance';
+import type { Cell } from '$lib/model/conformance';
 import type { ClearField, SaveField } from './types';
 
 export type CellEditParse =
@@ -28,7 +28,7 @@ export type CellEditParse =
 
 export type CreateCellEditOptions = {
 	/** A getter (not a snapshot): props can change between `start` and `commit`. */
-	cell: () => CellResult;
+	cell: () => Cell;
 	save: SaveField;
 	clear: ClearField;
 	/** Serialize the committed value into the input's initial text. */

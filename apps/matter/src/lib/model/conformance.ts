@@ -25,9 +25,14 @@ import type { Row } from './types';
 /** The state of one cell against its field's schema. */
 export type CellState = 'OK' | 'NEEDS_VALUE' | 'INVALID';
 
-/** One classified cell. */
-export type CellResult = {
-	name: string;
+/**
+ * One classified cell: a field applied to a row's value. The cell carries its
+ * {@link Field} (not just the field name), so a consumer reads `cell.field` directly
+ * instead of zipping a parallel field array by index. `value` is the raw frontmatter
+ * value; `state` is the verdict.
+ */
+export type Cell = {
+	field: Field;
 	value: unknown;
 	state: CellState;
 };
@@ -41,7 +46,7 @@ export type Extra = {
 /** A row classified against the model. */
 export type RowConformance = {
 	row: Row;
-	cells: CellResult[];
+	cells: Cell[];
 	extras: Extra[];
 	/** True iff every cell is OK (the row projects into the typed table). */
 	rowValid: boolean;
@@ -63,7 +68,7 @@ export function classifyRow(
 ): RowConformance {
 	const cells = fields.map((field) => {
 		const value = row.frontmatter[field.name];
-		return { name: field.name, value, state: classifyCell(field, value) };
+		return { field, value, state: classifyCell(field, value) };
 	});
 
 	const modeled = new Set(fields.map((f) => f.name));

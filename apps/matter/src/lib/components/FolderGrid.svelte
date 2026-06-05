@@ -154,21 +154,17 @@
 									•••
 								</button>
 							</Table.Cell>
-							{#each conf.cells as cell, i (cell.name)}
-								{@const field = view.model.fields[i]}
+							{#each conf.cells as cell (cell.field.name)}
 								<Table.Cell
 									class={cell.state === 'INVALID' || cell.state === 'NEEDS_VALUE'
 										? 'ring-1 ring-inset ring-destructive/20'
 										: ''}
 								>
-									{#if field}
-										<ModeledCell
-											{cell}
-											{field}
-											save={(value) => onSaveField(conf.row.name, cell.name, value)}
-											clear={() => onSaveField(conf.row.name, cell.name, undefined)}
-										/>
-									{/if}
+									<ModeledCell
+										{cell}
+										save={(value) => onSaveField(conf.row.name, cell.field.name, value)}
+										clear={() => onSaveField(conf.row.name, cell.field.name, undefined)}
+									/>
 								</Table.Cell>
 							{/each}
 						</Table.Row>

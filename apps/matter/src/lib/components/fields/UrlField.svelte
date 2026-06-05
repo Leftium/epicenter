@@ -6,7 +6,7 @@
 	let { cell, save, clear }: FieldProps = $props();
 
 	const edit = createCellEdit({
-		cell: () => cell,
+		current: () => (cell.state === 'OK' ? cell.value : undefined),
 		save: (value) => save(value),
 		clear: () => clear(),
 		display: (value) => (value == null ? '' : String(value)),
@@ -24,7 +24,7 @@
 		onkeydown={edit.onKeydown}
 		class="w-full rounded border bg-background px-1 py-0.5 text-sm"
 	/>
-{:else if cell.value == null}
+{:else if cell.state === 'NEEDS_VALUE'}
 	<button
 		type="button"
 		onclick={edit.start}

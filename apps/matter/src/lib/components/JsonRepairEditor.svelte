@@ -12,13 +12,13 @@
 	// stays INVALID. The row reclassifies through the watcher, so a now-valid value
 	// snaps back to its typed Field on its own.
 	let { cell, save, clear }: {
-		cell: Cell;
+		cell: Extract<Cell, { state: 'INVALID' }>;
 		save: SaveField;
 		clear: ClearField;
 	} = $props();
 
 	const edit = createCellEdit({
-		cell: () => cell,
+		current: () => cell.raw,
 		save: (value) => save(value),
 		clear: () => clear(),
 		display: (value) => JSON.stringify(value) ?? '',
@@ -53,7 +53,7 @@
 		class="block w-full cursor-text text-left"
 	>
 		<code class="rounded bg-destructive/10 px-1 text-xs text-destructive"
-			>{JSON.stringify(cell.value)}</code
+			>{JSON.stringify(cell.raw)}</code
 		>
 	</button>
 {/if}

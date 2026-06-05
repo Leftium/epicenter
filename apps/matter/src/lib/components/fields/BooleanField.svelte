@@ -20,7 +20,7 @@
 	// place the empty contract lives), so the widget asks `state`, not `value == null`.
 	// `checked` is the only thing that needs the value itself, and only an exact
 	// boolean true checks the box (an OK boolean cell is true or false).
-	const checked = $derived(cell.value === true);
+	const checked = $derived(cell.state === 'OK' && cell.value === true);
 	const indeterminate = $derived(cell.state === 'NEEDS_VALUE');
 </script>
 

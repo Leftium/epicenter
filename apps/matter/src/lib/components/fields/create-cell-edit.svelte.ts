@@ -18,7 +18,6 @@
  * lose reactivity.
  */
 
-import type { Cell } from '$lib/model/conformance';
 import type { ClearField, SaveField } from './types';
 
 export type CellEditParse =
@@ -27,8 +26,12 @@ export type CellEditParse =
 	| { type: 'error'; message: string };
 
 export type CreateCellEditOptions = {
-	/** A getter (not a snapshot): props can change between `start` and `commit`. */
-	cell: () => Cell;
+	/**
+	 * The cell's current committed value, as a getter (not a snapshot): props can
+	 * change between `start` and `commit`, and `undefined` means empty. The island
+	 * edits a scalar, so it takes the value directly, never the cell's state or field.
+	 */
+	current: () => unknown;
 	save: SaveField;
 	clear: ClearField;
 	/** Serialize the committed value into the input's initial text. */
@@ -38,13 +41,13 @@ export type CreateCellEditOptions = {
 };
 
 export function createCellEdit(options: CreateCellEditOptions) {
-	const { cell, save, clear, display, parse } = options;
+	const { current, save, clear, display, parse } = options;
 	let editing = $state(false);
 	let draft = $state('');
 	let parseError = $state<string | undefined>(undefined);
 
 	function start() {
-		draft = display(cell().value);
+		draft = display(current());
 		parseError = undefined;
 		editing = true;
 	}
@@ -62,13 +65,13 @@ export function createCellEdit(options: CreateCellEditOptions) {
 			return;
 		}
 		editing = false;
-		const current = cell();
+		const value = current();
 		// No-op guard: clearing an already-empty cell, or re-committing the same
 		// scalar, must not write (and trigger a pointless watcher echo). The two
 		// operations are split, so each guards itself.
 		if (result.type === 'clear') {
-			if (current.value != null) clear();
-		} else if (result.value !== current.value) {
+			if (value != null) clear();
+		} else if (result.value !== value) {
 			save(result.value);
 		}
 	}

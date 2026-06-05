@@ -22,20 +22,18 @@
 import type { Field } from './model';
 import type { Row } from './types';
 
-/** The state of one cell against its field's schema. */
-export type CellState = 'OK' | 'NEEDS_VALUE' | 'INVALID';
-
 /**
- * One classified cell: a field applied to a row's value. The cell carries its
- * {@link Field} (not just the field name), so a consumer reads `cell.field` directly
- * instead of zipping a parallel field array by index. `value` is the raw frontmatter
- * value; `state` is the verdict.
+ * One classified cell: a field applied to a row's value. The variant IS the verdict,
+ * so value-presence cannot disagree with state. `OK` carries the conformant `value`;
+ * `NEEDS_VALUE` carries nothing (the field is empty); `INVALID` carries the
+ * out-of-domain `raw`, which only the repair editor reads. Every variant carries its
+ * {@link Field}, so a consumer reads `cell.field` instead of zipping a parallel field
+ * array by index.
  */
-export type Cell = {
-	field: Field;
-	value: unknown;
-	state: CellState;
-};
+export type Cell =
+	| { field: Field; state: 'OK'; value: unknown }
+	| { field: Field; state: 'NEEDS_VALUE' }
+	| { field: Field; state: 'INVALID'; raw: unknown };
 
 /** A frontmatter key the model does not declare. Never affects validity. */
 export type Extra = {
@@ -56,9 +54,10 @@ export type RowConformance = {
  * Classify one cell. `value == null` is the nullish branch: an absent key and an
  * explicit `null` both arrive here, and (everything required) both need a value.
  */
-function classifyCell(field: Field, value: unknown): CellState {
-	if (value == null) return 'NEEDS_VALUE';
-	return field.check(value) ? 'OK' : 'INVALID';
+function classifyCell(field: Field, value: unknown): Cell {
+	if (value == null) return { field, state: 'NEEDS_VALUE' };
+	if (field.check(value)) return { field, state: 'OK', value };
+	return { field, state: 'INVALID', raw: value };
 }
 
 /** Classify one row against the precompiled fields. */
@@ -66,10 +65,9 @@ export function classifyRow(
 	fields: readonly Field[],
 	row: Row,
 ): RowConformance {
-	const cells = fields.map((field) => {
-		const value = row.frontmatter[field.name];
-		return { field, value, state: classifyCell(field, value) };
-	});
+	const cells = fields.map((field) =>
+		classifyCell(field, row.frontmatter[field.name]),
+	);
 
 	const modeled = new Set(fields.map((f) => f.name));
 	const extras: Extra[] = Object.entries(row.frontmatter)

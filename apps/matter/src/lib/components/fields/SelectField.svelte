@@ -18,6 +18,7 @@
 	// field is required, so there is no "(clear)" option: you change a selection by
 	// picking another value, never by emptying it.
 	const selected = $derived.by(() => {
+		if (cell.state !== 'OK') return '';
 		const i = values.findIndex((value) => Object.is(value, cell.value));
 		return i >= 0 ? String(i) : '';
 	});
@@ -29,7 +30,7 @@
 	onValueChange={(value) => save(values[Number(value)])}
 >
 	<Select.Trigger size="sm" class="w-full">
-		{#if cell.value == null}
+		{#if cell.state === 'NEEDS_VALUE'}
 			<FieldEmpty />
 		{:else}
 			{String(cell.value)}

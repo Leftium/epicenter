@@ -12,7 +12,7 @@
 	let { cell }: FieldProps = $props();
 </script>
 
-{#if cell.value == null}
+{#if cell.state === 'NEEDS_VALUE'}
 	<FieldEmpty />
 {:else if Array.isArray(cell.value)}
 	<div class="flex flex-wrap gap-1">

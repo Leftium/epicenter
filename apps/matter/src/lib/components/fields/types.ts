@@ -30,10 +30,18 @@ export type SaveField = (value: unknown) => void;
  */
 export type ClearField = () => void;
 
+/**
+ * The cell a per-kind Field renders: `OK` (carries a conformant value) or
+ * `NEEDS_VALUE` (empty). The `INVALID` variant is routed to the JSON repair editor by
+ * {@link ModeledCell} before a Field is chosen, so a Field never receives it: this
+ * type is the compile-time statement of that invariant.
+ */
+export type RenderableCell = Exclude<Cell, { state: 'INVALID' }>;
+
 /** Props every per-kind Field component receives. */
 export type FieldProps = {
-	/** The classified cell: its value, state, and the field it belongs to (`cell.field`). */
-	cell: Cell;
+	/** The classified cell to render: `OK` (carries a value) or `NEEDS_VALUE` (empty). */
+	cell: RenderableCell;
 	/** Commit a new value for the field. */
 	save: SaveField;
 	/** Delete the field's key (the explicit clear, not `save(undefined)`). */

@@ -1,11 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { Value } from 'typebox/value';
-import {
-	type Kind,
-	KINDS,
-	META_BY_KIND,
-	recognize,
-} from './palette';
+import { type Kind, KINDS, META_BY_KIND, recognize } from './palette';
 
 /**
  * The discrimination invariant is the whole bet: every legal field schema must match
@@ -18,6 +13,9 @@ function countMatches(schema: unknown): number {
 		Value.Check(META_BY_KIND[kind], schema),
 	).length;
 }
+
+/** The kind `recognize` assigns, or null when the schema is outside the palette. */
+const kindOf = (schema: unknown): Kind | null => recognize(schema)?.kind ?? null;
 
 /** Canonical at-rest shape per kind: the minimal schema that should recognize as it. */
 const CANONICAL: Record<Kind, unknown> = {
@@ -55,58 +53,58 @@ describe('recognize: every canonical schema matches exactly one meta', () => {
 		test(`${kind} canonical matches exactly one meta and recognizes as ${kind}`, () => {
 			const schema = CANONICAL[kind];
 			expect(countMatches(schema)).toBe(1);
-			expect(recognize(schema)).toBe(kind);
+			expect(kindOf(schema)).toBe(kind);
 		});
 	}
 });
 
 describe('the cross-discrimination pairs (the shapes that could collide)', () => {
 	test('bare string is string, not url/datetime/select', () => {
-		expect(recognize({ type: 'string' })).toBe('string');
+		expect(kindOf({ type: 'string' })).toBe('string');
 		expect(countMatches({ type: 'string' })).toBe(1);
 	});
 
 	test('a uri-format string is url, not string', () => {
 		const s = { type: 'string', format: 'uri' };
-		expect(recognize(s)).toBe('url');
+		expect(kindOf(s)).toBe('url');
 		expect(Value.Check(META_BY_KIND.string, s)).toBe(false); // string forbids `format`
 	});
 
 	test('a date-time string is datetime, not string', () => {
-		expect(recognize({ type: 'string', format: 'date-time' })).toBe('datetime');
+		expect(kindOf({ type: 'string', format: 'date-time' })).toBe('datetime');
 	});
 
 	test('a string with enum is select, not string', () => {
 		const s = { type: 'string', enum: ['a', 'b'] };
-		expect(recognize(s)).toBe('select');
+		expect(kindOf(s)).toBe('select');
 		expect(Value.Check(META_BY_KIND.string, s)).toBe(false); // string forbids `enum`
 	});
 
 	test('select is base-agnostic: an integer enum is select, not integer', () => {
 		const s = { type: 'integer', enum: [1, 2, 3] };
-		expect(recognize(s)).toBe('select');
+		expect(kindOf(s)).toBe('select');
 		expect(Value.Check(META_BY_KIND.integer, s)).toBe(false); // integer forbids `enum`
 		expect(countMatches(s)).toBe(1);
 	});
 
 	test('an enum with no type is select', () => {
-		expect(recognize({ enum: ['a', 'b'] })).toBe('select');
+		expect(kindOf({ enum: ['a', 'b'] })).toBe('select');
 	});
 
 	test('a string array is tags, not multiSelect', () => {
 		const s = { type: 'array', items: { type: 'string' } };
-		expect(recognize(s)).toBe('tags');
+		expect(kindOf(s)).toBe('tags');
 		expect(Value.Check(META_BY_KIND.multiSelect, s)).toBe(false); // items lack `enum`
 	});
 
 	test('an enum-item array is multiSelect, not tags', () => {
 		const s = { type: 'array', items: { type: 'string', enum: ['a', 'b'] } };
-		expect(recognize(s)).toBe('multiSelect');
+		expect(kindOf(s)).toBe('multiSelect');
 		expect(Value.Check(META_BY_KIND.tags, s)).toBe(false); // string item forbids `enum`
 	});
 
 	test('an enum-item array with no item type is multiSelect', () => {
-		expect(recognize({ type: 'array', items: { enum: ['a', 'b'] } })).toBe(
+		expect(kindOf({ type: 'array', items: { enum: ['a', 'b'] } })).toBe(
 			'multiSelect',
 		);
 	});
@@ -115,13 +113,13 @@ describe('the cross-discrimination pairs (the shapes that could collide)', () =>
 describe('refinements and annotations ride along without changing the kind', () => {
 	test('string with minLength/pattern is still string', () => {
 		const s = { type: 'string', minLength: 1, pattern: '^[a-z-]+$' };
-		expect(recognize(s)).toBe('string');
+		expect(kindOf(s)).toBe('string');
 		expect(countMatches(s)).toBe(1);
 	});
 
 	test('a rating (integer with min/max) is still integer', () => {
 		const s = { type: 'integer', minimum: 1, maximum: 5 };
-		expect(recognize(s)).toBe('integer');
+		expect(kindOf(s)).toBe('integer');
 		expect(countMatches(s)).toBe(1);
 	});
 
@@ -132,19 +130,19 @@ describe('refinements and annotations ride along without changing the kind', () 
 			description: 'the H1',
 			default: 'untitled',
 		};
-		expect(recognize(s)).toBe('string');
+		expect(kindOf(s)).toBe('string');
 		expect(countMatches(s)).toBe(1);
 	});
 
 	test('a default rides along on a select without tipping the kind', () => {
 		const s = { type: 'string', enum: ['draft', 'published'], default: 'draft' };
-		expect(recognize(s)).toBe('select');
+		expect(kindOf(s)).toBe('select');
 		expect(countMatches(s)).toBe(1);
 	});
 
 	test('tags with uniqueItems is still tags', () => {
 		const s = { type: 'array', items: { type: 'string' }, uniqueItems: true };
-		expect(recognize(s)).toBe('tags');
+		expect(kindOf(s)).toBe('tags');
 		expect(countMatches(s)).toBe(1);
 	});
 });

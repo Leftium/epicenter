@@ -25,7 +25,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
-import { compile, type JsonSchema, type Kind, recognize } from './palette';
+import { compile, type Kind, recognize, type SchemaOf } from './palette';
 
 /** Why a stored `matter.json` could not be read into a usable model at all. */
 export const MatterModelError = defineErrors({
@@ -41,26 +41,29 @@ export const MatterModelError = defineErrors({
 export type MatterModelError = InferErrors<typeof MatterModelError>;
 
 /**
- * One validated, compiled field: the frontmatter key it models, its stored schema
- * (the source of truth; `kind` and `check` are projections of it, and the select
- * cells read its options via `optionsOf`), the UI / storage kind, and the precompiled
- * validator. Computed once per model load, then flows unchanged to conformance, the
- * grid, and (later) the SQLite projector.
+ * One validated, compiled field of kind `K`: the frontmatter key it models, its
+ * precisely-typed stored schema, the kind, and the precompiled validator. `FieldOf<K>`
+ * is the per-kind variant, so `FieldOf<'select'>['schema']['enum']` is typed; {@link
+ * Field} is the discriminated union over every kind, so a `switch (field.kind)` narrows
+ * `schema` to the matching shape with no cast.
  *
- * `name` is identity (the map key, not in the schema); `schema` is the source; `kind`
- * (= `deriveKind(schema)`) and `check` (= `compile(schema)`) are derived ONCE at the
- * parse boundary so downstream readers never re-gate or recompile.
+ * `name` is identity (the map key, not in the schema); `schema`, `kind`, and `check`
+ * are derived ONCE at the parse boundary (`recognize` + `compile`) so downstream readers
+ * never re-gate or recompile.
  */
-export type Field = {
+export type FieldOf<K extends Kind> = {
 	/** The frontmatter key this field models. */
 	name: string;
-	/** The raw JSON Schema as stored in `matter.json`: the source of `kind` and `check`. */
-	schema: JsonSchema;
-	/** The kind the UI renders and SQLite stores, derived from `schema`. */
-	kind: Kind;
+	/** This field's kind: the discriminant. */
+	kind: K;
+	/** The precisely-typed JSON Schema as stored in `matter.json`. */
+	schema: SchemaOf<K>;
 	/** The precompiled value validator (`Schema.Compile`), built once. */
 	check: (value: unknown) => boolean;
 };
+
+/** A validated, compiled field: the discriminated union over every kind. */
+export type Field = { [K in Kind]: FieldOf<K> }[Kind];
 
 /** A folder's validated model: the typed fields plus any fields outside the palette. */
 export type MatterModel = {
@@ -93,24 +96,19 @@ export function validateModel(
 	const fields: Field[] = [];
 	const unmodeled: string[] = [];
 	for (const [name, schema] of Object.entries(fieldsRaw)) {
-		// The closed palette is the acceptance rule: `recognize` returns the kind whose
-		// meta matches, or null for a shape outside it (a typo, an object, a nullable
-		// `anyOf` wrapper). An unrecognized field is not a typed field: record it so the
-		// UI can nudge, let its value surface as an unmodeled extra, and keep going.
-		const kind = recognize(schema);
-		if (kind === null) {
+		// The closed palette is the acceptance rule: `recognize` returns the kind paired
+		// with its typed schema, or null for a shape outside it (a typo, an object, a
+		// nullable `anyOf` wrapper). An unrecognized field is not a typed field: record it
+		// so the UI can nudge, let its value surface as an unmodeled extra, and keep going.
+		const recognized = recognize(schema);
+		if (recognized === null) {
 			unmodeled.push(name);
 			continue;
 		}
-		// `recognize` proved the shape is a palette member and handed back its kind in
-		// one pass, so this cast is honest. `compile` runs once per field.
-		const fieldSchema = schema as JsonSchema;
-		fields.push({
-			name,
-			schema: fieldSchema,
-			kind,
-			check: compile(fieldSchema),
-		});
+		// `recognized` carries the kind and its precisely-typed schema in one pass, so the
+		// Field is built with no cast. `compile` runs once per field; its validator rides
+		// on the Field for conformance to reuse.
+		fields.push({ name, ...recognized, check: compile(recognized.schema) });
 	}
 
 	return Ok({ fields, unmodeled });

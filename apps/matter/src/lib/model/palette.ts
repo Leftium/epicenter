@@ -231,16 +231,31 @@ export type Kind = keyof typeof FIELDS;
 /** The SQLite storage classes a kind can map to. */
 type Storage = (typeof FIELDS)[Kind]['storage'];
 
+/** The precise at-rest schema type for one kind, derived from its meta via TypeBox. */
+export type SchemaOf<K extends Kind> = Static<(typeof FIELDS)[K]['meta']>;
+
 /**
- * The one classifier: the kind whose closed meta matches `schema`, or `null` when
- * `schema` is outside the palette (the rejection lane that degrades a field to raw).
- * One pass over the metas, no gate to forget and no throw-contract to violate, so the
- * boundary in `model.ts` reads `null` directly. Because the metas are mutually
- * exclusive, exactly one matches any legal schema, so there is no priority order.
+ * A recognized field: a kind paired with its precisely-typed schema. The union is
+ * DISCRIMINATED by `kind`, so a downstream `switch (field.kind)` narrows `schema` to
+ * the matching shape with no cast. The one cast that establishes the kind/schema
+ * pairing lives in `recognize`, right after the `Value.Check` that proves it.
  */
-export function recognize(schema: unknown): Kind | null {
+export type Recognized = { [K in Kind]: { kind: K; schema: SchemaOf<K> } }[Kind];
+
+/**
+ * The one classifier: the recognized field (kind + typed schema) whose closed meta
+ * matches `schema`, or `null` when `schema` is outside the palette (the rejection lane
+ * that degrades a field to raw). One pass over the metas, no gate to forget and no
+ * throw-contract to violate, so the boundary in `model.ts` reads `null` directly.
+ * Because the metas are mutually exclusive, exactly one matches any legal schema, so
+ * there is no priority order.
+ */
+export function recognize(schema: unknown): Recognized | null {
 	for (const kind of Object.keys(FIELDS) as Kind[]) {
-		if (Value.Check(FIELDS[kind].meta, schema)) return kind;
+		// The Value.Check just proved `schema` matches this kind's meta, so pairing the
+		// two as `Recognized` is honest; this is the single boundary cast everything
+		// downstream relies on to stay cast-free.
+		if (Value.Check(FIELDS[kind].meta, schema)) return { kind, schema } as Recognized;
 	}
 	return null;
 }

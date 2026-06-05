@@ -1,8 +1,9 @@
 //! Atomic byte IO for one vault entry: the write half of the live-folder loop.
 //!
-//! The JS serializes the markdown (frontmatter through eemeli `yaml`'s Document
-//! tier, body verbatim); Rust only moves bytes and never learns what a column or
-//! schema is, the same faithful-byte-streamer role `watch.rs` plays for reads.
+//! The JS serializes the markdown (frontmatter re-emitted canonically through
+//! eemeli `yaml`'s `stringify`, body verbatim); Rust only moves bytes and never
+//! learns what a column or schema is, the same faithful-byte-streamer role
+//! `watch.rs` plays for reads.
 //!
 //! `read_entry` hands the JS the freshest on-disk text so an edit is applied to
 //! the current bytes (not a stale parse). `write_entry` writes ATOMICALLY (a

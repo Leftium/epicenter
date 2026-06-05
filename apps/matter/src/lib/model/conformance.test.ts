@@ -1,37 +1,40 @@
 import { describe, expect, test } from 'bun:test';
-import { classifyRow, classifyRows, compileColumns } from './conformance';
+import { classifyRow, classifyRows } from './conformance';
 import { validateModel } from './model';
 import type { Row } from './types';
 
-function model(fields: Record<string, Record<string, unknown>>) {
+function columns(fields: Record<string, Record<string, unknown>>) {
 	const { data, error } = validateModel({ fields });
 	if (error) throw new Error(error.message);
-	return data;
+	return data.columns;
 }
 
-describe('classifyRow (per-cell conformance)', () => {
-	const m = model({
+describe('classifyRow (per-cell conformance, everything required)', () => {
+	const cols = columns({
 		title: { type: 'string' },
-		url: { anyOf: [{ type: 'string', format: 'uri' }, { type: 'null' }] },
+		url: { type: 'string', format: 'uri' },
 		rating: { type: 'integer' },
 	});
-	const columns = compileColumns(m);
 
-	test('a present valid value is OK; the row is valid when every cell is OK/EMPTY', () => {
+	test('a present valid value is OK; the row is valid when every cell is OK', () => {
 		const row: Row = {
 			name: 'a.md',
 			frontmatter: { title: 'Hello', url: 'https://x.com', rating: 5 },
 			body: '',
 		};
-		const c = classifyRow(columns, row);
+		const c = classifyRow(cols, row);
 		expect(c.cells.map((x) => x.state)).toEqual(['OK', 'OK', 'OK']);
 		expect(c.rowValid).toBe(true);
 	});
 
-	test('a nullable field absent is EMPTY (valid); a required field absent is NEEDS_VALUE (invalid)', () => {
+	test('an absent required field is NEEDS_VALUE (invalid)', () => {
 		const row: Row = { name: 'b.md', frontmatter: { title: 'Hi' }, body: '' };
-		const c = classifyRow(columns, row);
-		expect(c.cells.map((x) => x.state)).toEqual(['OK', 'EMPTY', 'NEEDS_VALUE']);
+		const c = classifyRow(cols, row);
+		expect(c.cells.map((x) => x.state)).toEqual([
+			'OK',
+			'NEEDS_VALUE',
+			'NEEDS_VALUE',
+		]);
 		expect(c.rowValid).toBe(false);
 	});
 
@@ -41,50 +44,76 @@ describe('classifyRow (per-cell conformance)', () => {
 			frontmatter: { title: 'Hi', url: 'not a url', rating: 'high' },
 			body: '',
 		};
-		const c = classifyRow(columns, row);
+		const c = classifyRow(cols, row);
 		expect(c.cells.map((x) => x.state)).toEqual(['OK', 'INVALID', 'INVALID']);
 		expect(c.rowValid).toBe(false);
 	});
 
 	// The tested nullish contract: a bare `title:` parses to null, an omitted
-	// `title` is absent; both must classify identically.
+	// `title` is absent; both classify identically (NEEDS_VALUE, since required).
 	test('absent key and explicit null are the SAME empty', () => {
 		const absent: Row = { name: 'd.md', frontmatter: {}, body: '' };
 		const nul: Row = { name: 'e.md', frontmatter: { title: null }, body: '' };
-		expect(classifyRow(columns, absent).cells[0]?.state).toBe('NEEDS_VALUE');
-		expect(classifyRow(columns, nul).cells[0]?.state).toBe('NEEDS_VALUE');
+		expect(classifyRow(cols, absent).cells[0]?.state).toBe('NEEDS_VALUE');
+		expect(classifyRow(cols, nul).cells[0]?.state).toBe('NEEDS_VALUE');
+	});
 
-		const m2 = model({ note: { anyOf: [{ type: 'string' }, { type: 'null' }] } });
-		const cols2 = compileColumns(m2);
-		const absent2: Row = { name: 'f.md', frontmatter: {}, body: '' };
-		const nul2: Row = { name: 'g.md', frontmatter: { note: null }, body: '' };
-		expect(classifyRow(cols2, absent2).cells[0]?.state).toBe('EMPTY');
-		expect(classifyRow(cols2, nul2).cells[0]?.state).toBe('EMPTY');
+	// "Must have content" is a value constraint, not a model flag: minLength rejects
+	// the empty string, so a blank string fails as INVALID rather than passing OK.
+	test('an empty string is OK for a plain string, INVALID under minLength', () => {
+		const plain = columns({ title: { type: 'string' } });
+		const must = columns({ title: { type: 'string', minLength: 1 } });
+		const row: Row = { name: 'f.md', frontmatter: { title: '' }, body: '' };
+		expect(classifyRow(plain, row).cells[0]?.state).toBe('OK');
+		expect(classifyRow(must, row).cells[0]?.state).toBe('INVALID');
 	});
 
 	test('extras are collected and never affect validity', () => {
 		const row: Row = {
 			name: 'h.md',
-			frontmatter: { title: 'Hi', url: null, rating: 1, wild: 'extra', n: 9 },
+			frontmatter: {
+				title: 'Hi',
+				url: 'https://x.com',
+				rating: 1,
+				wild: 'extra',
+				n: 9,
+			},
 			body: '',
 		};
-		const c = classifyRow(columns, row);
+		const c = classifyRow(cols, row);
 		expect(c.extras).toEqual([
 			{ key: 'wild', value: 'extra' },
 			{ key: 'n', value: 9 },
 		]);
 		expect(c.rowValid).toBe(true); // extras present, row still valid
 	});
+
+	test('an unmodeled field surfaces as an extra, not a column', () => {
+		// `note` is a nullable wrapper, outside the palette, so it is not a column.
+		const withUnmodeled = columns({
+			title: { type: 'string' },
+			note: { anyOf: [{ type: 'string' }, { type: 'null' }] },
+		});
+		expect(withUnmodeled.map((c) => c.name)).toEqual(['title']);
+		const row: Row = {
+			name: 'i.md',
+			frontmatter: { title: 'Hi', note: 'hello' },
+			body: '',
+		};
+		const c = classifyRow(withUnmodeled, row);
+		expect(c.cells.map((x) => x.name)).toEqual(['title']);
+		expect(c.extras).toEqual([{ key: 'note', value: 'hello' }]);
+	});
 });
 
 describe('classifyRows', () => {
-	test('classifies every row against precompiled columns', () => {
-		const m = model({ title: { type: 'string' } });
+	test('classifies every row against the precompiled columns', () => {
+		const cols = columns({ title: { type: 'string' } });
 		const rows: Row[] = [
 			{ name: 'a.md', frontmatter: { title: 'A' }, body: '' },
 			{ name: 'b.md', frontmatter: {}, body: '' },
 		];
-		const conformance = classifyRows(compileColumns(m), rows);
+		const conformance = classifyRows(cols, rows);
 		expect(conformance.map((c) => c.rowValid)).toEqual([true, false]);
 	});
 });

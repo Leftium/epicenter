@@ -8,7 +8,7 @@
  *
  * There is no `kind` vocabulary here: the model stores a plain JSON Schema per
  * field, and the UI kind is DERIVED from a schema's shape by `deriveKind` in
- * `schema.ts` (the one place "what is a url / a datetime" is defined). A folder
+ * `palette.ts` (the one place "what is a url / a datetime" is defined). A folder
  * without a model is shown as raw text, never guessed into types.
  */
 

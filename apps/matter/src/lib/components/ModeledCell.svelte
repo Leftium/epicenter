@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { CellResult } from '$lib/model/conformance';
-	import type { ModelField } from '$lib/model/model';
+	import type { Column } from '$lib/model/model';
 	import { FIELD_COMPONENTS } from './fields/registry';
 	import type { ClearField, SaveField } from './fields/types';
 	import JsonRepairEditor from './JsonRepairEditor.svelte';
@@ -12,7 +12,7 @@
 		clear,
 	}: {
 		cell: CellResult;
-		field: ModelField;
+		field: Column;
 		save: SaveField;
 		clear: ClearField;
 	} = $props();
@@ -21,7 +21,7 @@
 	// widget's domain, so it goes to the universal JSON repair editor; an OK or
 	// empty value goes to the typed Field for its kind. The Field never sees an
 	// INVALID value, which is why no Field handles that state.
-	const Field = $derived(FIELD_COMPONENTS[field.derived.kind]);
+	const Field = $derived(FIELD_COMPONENTS[field.kind]);
 </script>
 
 {#if cell.state === 'INVALID'}

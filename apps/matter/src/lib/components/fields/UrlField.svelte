@@ -30,7 +30,7 @@
 		onclick={edit.start}
 		class="block w-full cursor-text text-left"
 	>
-		<FieldEmpty state={cell.state} />
+		<FieldEmpty />
 	</button>
 {:else}
 	<!-- The value is a live link; a SEPARATE affordance opens the editor (siblings,

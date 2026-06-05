@@ -18,12 +18,7 @@
 
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import {
-	classifyRows,
-	type CompiledColumn,
-	compileColumns,
-	type RowConformance,
-} from './conformance';
+import { classifyRows, type RowConformance } from './conformance';
 import { type MatterModel, type MatterModelError, parseModel } from './model';
 import { type MatterParseError, parseMarkdown } from './parse';
 import type { Row } from './types';
@@ -142,19 +137,21 @@ export function readFolder(
 
 /**
  * A folder's model after the expensive load step: missing, junk (with a
- * diagnostic), or parsed AND compiled. The `columns` are the precompiled
- * validators, built once here so classification never recompiles.
+ * diagnostic), or parsed AND compiled. `validateModel` compiles each column's
+ * validator once, so the loaded model's `columns` are already the precompiled
+ * validators; there is no separate compile step here.
  */
 export type LoadedModel =
 	| { kind: 'none' }
 	| { kind: 'error'; error: MatterModelError }
-	| { kind: 'loaded'; model: MatterModel; columns: CompiledColumn[] };
+	| { kind: 'loaded'; model: MatterModel };
 
 /**
- * Parse AND compile a folder's `matter.json` ONCE. Compilation (`Schema.Compile`)
- * is the costly step, so memoize this off the model text (a `$derived` in the
- * live vault) and pass the result to {@link buildView}; a single-file change then
- * reclassifies against the cached columns without recompiling.
+ * Parse AND compile a folder's `matter.json` ONCE. `validateModel` is where
+ * compilation (`Schema.Compile`) happens, so memoize this off the model text (a
+ * `$derived` in the live vault) and pass the result to {@link buildView}; a
+ * single-file change then reclassifies against the cached columns without
+ * recompiling.
  */
 export function loadModel(modelText: string | undefined): LoadedModel {
 	if (modelText === undefined) return { kind: 'none' };
@@ -162,7 +159,7 @@ export function loadModel(modelText: string | undefined): LoadedModel {
 	// Junk model carries its diagnostic so the UI can surface it; deleting
 	// matter.json always recovers a working raw view.
 	if (error) return { kind: 'error', error };
-	return { kind: 'loaded', model, columns: compileColumns(model) };
+	return { kind: 'loaded', model };
 }
 
 /**
@@ -178,7 +175,7 @@ export function buildView(
 		return {
 			mode: 'modeled',
 			model: loaded.model,
-			conformance: classifyRows(loaded.columns, rows),
+			conformance: classifyRows(loaded.model.columns, rows),
 		};
 	}
 	// No usable model: the raw untyped view, carrying the diagnostic if a

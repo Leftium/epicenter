@@ -100,7 +100,7 @@
 			<div>
 				<h1 class="text-sm font-semibold">{folder}</h1>
 				<p class="text-xs text-muted-foreground">
-					{read.rows.length} rows · {view.model.fields.length} fields · {invalidCount} need attention · {read
+					{read.rows.length} rows · {view.model.columns.length} fields · {invalidCount} need attention · {read
 						.unreadable.length} unreadable
 				</p>
 			</div>
@@ -115,16 +115,24 @@
 			</button>
 		</header>
 
+		{#if view.model.unmodeled.length}
+			<div class="border-b bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
+				{view.model.unmodeled.length}
+				{view.model.unmodeled.length === 1 ? 'field has' : 'fields have'} an unrecognized
+				shape ({view.model.unmodeled.join(', ')}); their values show raw in the ••• expander, not as typed columns.
+			</div>
+		{/if}
+
 		<div class="flex-1 overflow-auto">
 			<Table.Root>
 				<Table.Header>
 					<Table.Row>
 						<Table.Head class="w-8"></Table.Head>
-						{#each view.model.fields as field (field.name)}
+						{#each view.model.columns as field (field.name)}
 							<Table.Head>
 								<span class="font-medium">{field.name}</span>
 								<span class="ml-1 text-xs font-normal text-muted-foreground">
-									{field.derived.kind}{field.derived.nullable ? '?' : ''}
+									{field.kind}
 								</span>
 							</Table.Head>
 						{/each}
@@ -147,7 +155,7 @@
 								</button>
 							</Table.Cell>
 							{#each conf.cells as cell, i (cell.name)}
-								{@const field = view.model.fields[i]}
+								{@const field = view.model.columns[i]}
 								<Table.Cell
 									class={cell.state === 'INVALID' || cell.state === 'NEEDS_VALUE'
 										? 'ring-1 ring-inset ring-destructive/20'
@@ -167,7 +175,7 @@
 						{#if expanded[conf.row.name]}
 							<Table.Row>
 								<Table.Cell></Table.Cell>
-								<Table.Cell colspan={view.model.fields.length}>
+								<Table.Cell colspan={view.model.columns.length}>
 									<RowDetail row={conf.row} extras={conf.extras} {onSaveBody} />
 								</Table.Cell>
 							</Table.Row>

@@ -13,7 +13,7 @@
 </script>
 
 {#if cell.value == null}
-	<FieldEmpty state={cell.state} />
+	<FieldEmpty />
 {:else if Array.isArray(cell.value)}
 	<div class="flex flex-wrap gap-1">
 		{#each cell.value as item, i (i)}

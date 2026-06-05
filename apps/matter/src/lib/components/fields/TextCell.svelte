@@ -61,7 +61,7 @@
 		class="block w-full cursor-text text-left"
 	>
 		{#if cell.value == null}
-			<FieldEmpty state={cell.state} />
+			<FieldEmpty />
 		{:else}
 			<span class={displayClass}>{String(cell.value)}</span>
 		{/if}

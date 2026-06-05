@@ -1,17 +1,12 @@
 <script lang="ts">
-	import type { CellState } from '$lib/model/conformance';
-
-	// The shared empty-cell indicator, used by every Field's non-editing empty
-	// branch: a "required" badge when a non-nullable field is blank (NEEDS_VALUE),
-	// or a muted placeholder when a nullable field is legitimately empty (EMPTY).
-	let { state }: { state: CellState } = $props();
+	// The shared empty-cell indicator, rendered by every Field's empty branch. With
+	// everything-required, an empty modeled cell is always NEEDS_VALUE (an absent key
+	// or explicit null on a required field), so this is unconditionally the "required"
+	// badge. No state prop: the dispatch gates INVALID elsewhere and OK shows a value,
+	// so the only state a Field's empty branch ever has is NEEDS_VALUE.
 </script>
 
-{#if state === 'NEEDS_VALUE'}
-	<span
-		class="rounded bg-amber-500/10 px-1.5 py-0.5 text-xs text-amber-700 dark:text-amber-400"
-		>required</span
-	>
-{:else}
-	<span class="text-muted-foreground/40">·</span>
-{/if}
+<span
+	class="rounded bg-amber-500/10 px-1.5 py-0.5 text-xs text-amber-700 dark:text-amber-400"
+	>required</span
+>

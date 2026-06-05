@@ -3,11 +3,9 @@
 		"title": { "type": "string" },
 		"status": { "type": "string", "enum": ["draft", "ready", "published", "archived"] },
 		"format": { "type": "string", "enum": ["article", "carousel", "video"] },
-		"destinations": {
-			"anyOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "null" }]
-		},
-		"publishDate": { "anyOf": [{ "type": "string" }, { "type": "null" }] },
-		"duration": { "anyOf": [{ "type": "integer" }, { "type": "null" }] },
-		"url": { "anyOf": [{ "type": "string", "format": "uri" }, { "type": "null" }] }
+		"destinations": { "type": "array", "items": { "type": "string" } },
+		"publishDate": { "type": "string" },
+		"duration": { "type": "integer" },
+		"url": { "type": "string", "format": "uri" }
 	}
 }

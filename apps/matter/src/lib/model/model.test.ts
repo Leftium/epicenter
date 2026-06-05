@@ -2,25 +2,26 @@ import { describe, expect, test } from 'bun:test';
 import { parseModel, validateModel } from './model';
 
 describe('validateModel (the matter.json gate)', () => {
-	test('accepts the supported subset and derives kinds in declared order', () => {
+	test('accepts the palette subset and derives kinds in declared order', () => {
 		const { data, error } = validateModel({
 			fields: {
 				title: { type: 'string' },
 				status: { type: 'string', enum: ['draft', 'published'] },
 				labels: { type: 'array', items: { enum: ['red', 'green'] } },
 				tags: { type: 'array', items: { type: 'string' } },
-				url: { anyOf: [{ type: 'string', format: 'uri' }, { type: 'null' }] },
+				url: { type: 'string', format: 'uri' },
 			},
 		});
 		expect(error).toBeNull();
 		if (error) throw new Error(error.message);
-		expect(data.fields.map((f) => [f.name, f.derived.kind, f.derived.nullable])).toEqual([
-			['title', 'string', false],
-			['status', 'select', false],
-			['labels', 'multiSelect', false],
-			['tags', 'tags', false],
-			['url', 'url', true],
+		expect(data.columns.map((c) => [c.name, c.kind])).toEqual([
+			['title', 'string'],
+			['status', 'select'],
+			['labels', 'multiSelect'],
+			['tags', 'tags'],
+			['url', 'url'],
 		]);
+		expect(data.unmodeled).toEqual([]);
 	});
 
 	test('rejects a non-object top level', () => {
@@ -35,17 +36,30 @@ describe('validateModel (the matter.json gate)', () => {
 		expect(error?.message).toMatch(/fields/);
 	});
 
-	test('rejects a field that is not a schema object', () => {
-		const { error } = validateModel({ fields: { title: 'string' } });
-		expect(error?.name).toBe('FieldNotObject');
-		expect(error?.message).toMatch(/title/);
+	// Per-field degrade: a field outside the palette does not error the model. It is
+	// recorded in `unmodeled` (shown raw), and the rest of the folder stays typed.
+	test('a non-object field is unmodeled, not a model error', () => {
+		const { data, error } = validateModel({
+			fields: { title: { type: 'string' }, bad: 'string' },
+		});
+		expect(error).toBeNull();
+		if (error) throw new Error(error.message);
+		expect(data.columns.map((c) => c.name)).toEqual(['title']);
+		expect(data.unmodeled).toEqual(['bad']);
 	});
 
-	test('rejects a field outside the supported subset with a diagnostic', () => {
-		const { error } = validateModel({ fields: { meta: { type: 'object' } } });
-		expect(error?.name).toBe('UnsupportedShape');
-		expect(error?.message).toMatch(/meta/);
-		expect(error?.message).toMatch(/unsupported/);
+	test('a shape outside the palette is unmodeled; the rest stays typed', () => {
+		const { data, error } = validateModel({
+			fields: {
+				title: { type: 'string' },
+				meta: { type: 'object' }, // not a palette shape
+				note: { anyOf: [{ type: 'string' }, { type: 'null' }] }, // nullable: deleted axis
+			},
+		});
+		expect(error).toBeNull();
+		if (error) throw new Error(error.message);
+		expect(data.columns.map((c) => c.name)).toEqual(['title']);
+		expect(data.unmodeled).toEqual(['meta', 'note']);
 	});
 });
 
@@ -59,6 +73,6 @@ describe('parseModel (raw text)', () => {
 	test('parses a valid file', () => {
 		const { data, error } = parseModel('{"fields":{"title":{"type":"string"}}}');
 		expect(error).toBeNull();
-		expect(data?.fields).toHaveLength(1);
+		expect(data?.columns).toHaveLength(1);
 	});
 });

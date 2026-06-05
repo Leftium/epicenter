@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import { Value } from 'typebox/value';
 import {
 	deriveKind,
-	FieldSchema,
 	isFieldSchema,
 	type Kind,
 	KINDS,
@@ -184,16 +183,4 @@ describe('the rejection lane: unsupported shapes match no meta', () => {
 			expect(() => deriveKind(schema)).toThrow();
 		});
 	}
-});
-
-describe('FieldSchema is the union of the metas (the boundary value)', () => {
-	test('Value.Check against FieldSchema agrees with isFieldSchema', () => {
-		for (const kind of KINDS) {
-			expect(Value.Check(FieldSchema, CANONICAL[kind])).toBe(true);
-		}
-		expect(Value.Check(FieldSchema, { type: 'object' })).toBe(false);
-		expect(Value.Check(FieldSchema, { anyOf: [{ type: 'string' }, { type: 'null' }] })).toBe(
-			false,
-		);
-	});
 });

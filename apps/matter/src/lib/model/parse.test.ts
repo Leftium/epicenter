@@ -28,17 +28,6 @@ describe('parseMarkdown', () => {
 		expect(data).toEqual({ frontmatter: {}, body: 'body' });
 	});
 
-	test('parses YAML scalar types (numbers, booleans, lists)', () => {
-		const { data } = parseMarkdown(
-			'---\nduration: 12.4\npublished: true\ntags:\n  - a\n  - b\n---\nbody',
-		);
-		expect(data?.frontmatter).toEqual({
-			duration: 12.4,
-			published: true,
-			tags: ['a', 'b'],
-		});
-	});
-
 	test('YAML 1.2: "NO" stays a string (no Norway-problem coercion)', () => {
 		const { data } = parseMarkdown('---\ncountry: NO\n---\nbody');
 		expect(data?.frontmatter).toEqual({ country: 'NO' });

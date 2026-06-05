@@ -45,8 +45,8 @@
  * meta. `json` is the rejection lane, not a member of `Kind`: `recognize` returns
  * null.
  *
- * Everything public is DERIVED from the one `PALETTE` array below: `Kind`,
- * `recognize`, `storageOf`, `KINDS`, `META_BY_KIND`. Adding a kind is one row here,
+ * Everything public is DERIVED from the one `FIELDS` object below: `Kind`,
+ * `recognize`, `storageOf`, `KINDS`, `META_BY_KIND`. Adding a kind is one entry here,
  * plus its widget in the component registry, which the compiler forces.
  *
  * This module also owns the VALUE side of a field schema: `JsonSchema` (its at-rest
@@ -145,29 +145,25 @@ const LIST_REFINE = {
 };
 
 /**
- * The single source of the palette: each row pairs a kind name with its closed
- * meta-schema (recognition + boundary validation) and its SQLite storage class.
- * `Kind`, `Storage`, `recognize`, `storageOf`, `KINDS`, and `META_BY_KIND` all derive
- * from this array, so adding a kind is one row. Order is NOT a contract: the metas are
- * mutually exclusive, so `recognize` returns the same answer regardless of iteration
- * order. Each `meta` reads `{ ...discriminators, ...refinements, ...annotations }`.
+ * The single source of the palette, keyed by kind: each entry pairs a kind's closed
+ * meta-schema (recognition + boundary validation) with its SQLite storage class.
+ * `Kind`, `Storage`, `SchemaOf`, `recognize`, `storageOf`, `KINDS`, and `META_BY_KIND`
+ * all derive from this object, so adding a kind is one entry. Key order is NOT a
+ * contract: the metas are mutually exclusive, so `recognize` returns the same answer
+ * regardless of iteration order. The keyed shape (not an array) is what lets `Kind` be
+ * `keyof`, `storageOf` an O(1) lookup, and `SchemaOf<K>` index a single meta without
+ * an `Extract`. Each `meta` reads `{ ...discriminators, ...refinements, ...annotations }`.
  */
-const PALETTE = [
-	{
-		kind: 'select',
-		storage: 'TEXT',
-		meta: Type.Object({ ...enumProps, ...ANNOT }, CLOSED),
-	},
-	{
-		kind: 'url',
+const FIELDS = {
+	select: { storage: 'TEXT', meta: Type.Object({ ...enumProps, ...ANNOT }, CLOSED) },
+	url: {
 		storage: 'TEXT',
 		meta: Type.Object(
 			{ type: Type.Literal('string'), format: Type.Literal('uri'), ...ANNOT },
 			CLOSED,
 		),
 	},
-	{
-		kind: 'datetime',
+	datetime: {
 		storage: 'TEXT',
 		meta: Type.Object(
 			{
@@ -178,37 +174,32 @@ const PALETTE = [
 			CLOSED,
 		),
 	},
-	{
-		kind: 'integer',
+	integer: {
 		storage: 'INTEGER',
 		meta: Type.Object(
 			{ type: Type.Literal('integer'), ...NUMBER_REFINE, ...ANNOT },
 			CLOSED,
 		),
 	},
-	{
-		kind: 'number',
+	number: {
 		storage: 'REAL',
 		meta: Type.Object(
 			{ type: Type.Literal('number'), ...NUMBER_REFINE, ...ANNOT },
 			CLOSED,
 		),
 	},
-	{
-		kind: 'boolean',
+	boolean: {
 		storage: 'INTEGER',
 		meta: Type.Object({ type: Type.Literal('boolean'), ...ANNOT }, CLOSED),
 	},
-	{
-		kind: 'string',
+	string: {
 		storage: 'TEXT',
 		meta: Type.Object(
 			{ type: Type.Literal('string'), ...STRING_REFINE, ...ANNOT },
 			CLOSED,
 		),
 	},
-	{
-		kind: 'multiSelect',
+	multiSelect: {
 		storage: 'TEXT',
 		meta: Type.Object(
 			{
@@ -220,8 +211,7 @@ const PALETTE = [
 			CLOSED,
 		),
 	},
-	{
-		kind: 'tags',
+	tags: {
 		storage: 'TEXT',
 		meta: Type.Object(
 			{
@@ -233,13 +223,13 @@ const PALETTE = [
 			CLOSED,
 		),
 	},
-] as const;
+} as const;
 
-/** The closed set of field kinds, DERIVED from the palette. `json` is not a member. */
-export type Kind = (typeof PALETTE)[number]['kind'];
+/** The closed set of field kinds, DERIVED from the palette keys. `json` is not a member. */
+export type Kind = keyof typeof FIELDS;
 
 /** The SQLite storage classes a kind can map to. */
-type Storage = (typeof PALETTE)[number]['storage'];
+type Storage = (typeof FIELDS)[Kind]['storage'];
 
 /**
  * The one classifier: the kind whose closed meta matches `schema`, or `null` when
@@ -249,15 +239,15 @@ type Storage = (typeof PALETTE)[number]['storage'];
  * exclusive, exactly one matches any legal schema, so there is no priority order.
  */
 export function recognize(schema: unknown): Kind | null {
-	return PALETTE.find((entry) => Value.Check(entry.meta, schema))?.kind ?? null;
+	for (const kind of Object.keys(FIELDS) as Kind[]) {
+		if (Value.Check(FIELDS[kind].meta, schema)) return kind;
+	}
+	return null;
 }
 
-/** The SQLite storage class for a kind. Total: `kind` is one of the palette kinds. */
+/** The SQLite storage class for a kind. Total: every `Kind` is a key of `FIELDS`. */
 export function storageOf(kind: Kind): Storage {
-	const entry = PALETTE.find((p) => p.kind === kind);
-	if (!entry)
-		throw new Error(`storageOf called with a non-palette kind: ${kind}`);
-	return entry.storage;
+	return FIELDS[kind].storage;
 }
 
 /**
@@ -281,15 +271,15 @@ export function optionsOf(field: { kind: Kind; schema: JsonSchema }): JsonPrimit
 }
 
 /** Every kind in the palette, in declaration order. The catalog, for tests and tooling. */
-export const KINDS = PALETTE.map((p) => p.kind) as readonly Kind[];
+export const KINDS = Object.keys(FIELDS) as readonly Kind[];
 
 /**
  * The per-kind metas, exposed so a test can prove the discrimination invariant
  * (every legal schema matches EXACTLY ONE meta). Keyed by kind for readable failures.
  */
 export const META_BY_KIND = Object.fromEntries(
-	PALETTE.map((p) => [p.kind, p.meta]),
-) as Record<Kind, (typeof PALETTE)[number]['meta']>;
+	Object.entries(FIELDS).map(([kind, def]) => [kind, def.meta]),
+) as Record<Kind, (typeof FIELDS)[Kind]['meta']>;
 
 /**
  * Compile a stored JSON Schema into a value check: the ONE place `Schema.Compile` is

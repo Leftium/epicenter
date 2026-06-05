@@ -71,20 +71,6 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Is this schema in the supported subset? It is iff `deriveKind` resolves it to
- * a kind the renderer actually has a recognizer for. The `json` fallback is the
- * tell that NO recognizer matched, so a `json` result means the shape is outside
- * the subset and is rejected with a diagnostic. (A future `column.json()` would
- * arrive as its own recognized shape; until then `json` is only the catch-all.)
- *
- * Nullable wrappers are handled inside `deriveKind`, so this also accepts the
- * `anyOf`-with-null shape around any supported inner schema.
- */
-function isSupported(schema: JsonSchema): boolean {
-	return deriveKind(schema).kind !== 'json';
-}
-
-/**
  * Validate a parsed `matter.json` object into a {@link MatterModel}. Takes the
  * already-JSON-parsed value ({@link parseModel} reads the file text and handles
  * the syntax-error case).
@@ -102,10 +88,16 @@ export function validateModel(
 		if (!isPlainObject(schema)) {
 			return MatterModelError.FieldNotObject({ field: name });
 		}
-		if (!isSupported(schema)) {
+		// `json` is the catch-all kind: it is the tell that NO recognizer matched,
+		// i.e. the shape is outside the supported subset (one definition of
+		// "supported", shared with the renderer). Reject it with a diagnostic so the
+		// caller can fall back to the raw view. Nullable wrappers are unwrapped
+		// inside `deriveKind`, so the `anyOf`-with-null shape is accepted too.
+		const derived = deriveKind(schema);
+		if (derived.kind === 'json') {
 			return MatterModelError.UnsupportedShape({ field: name });
 		}
-		fields.push({ name, schema, derived: deriveKind(schema) });
+		fields.push({ name, schema, derived });
 	}
 
 	return Ok({ fields });

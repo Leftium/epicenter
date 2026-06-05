@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { Value } from 'typebox/value';
-import { type Kind, KINDS, META_BY_KIND, recognize } from './palette';
+import { type Kind, KINDS, META_BY_KIND, recognize } from './field';
 
 /**
  * The discrimination invariant is the whole bet: every legal field schema must match

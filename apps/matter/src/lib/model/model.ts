@@ -25,7 +25,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
-import { compile, type Kind, recognize, type SchemaOf } from './palette';
+import { compile, type Kind, recognize, type SchemaOf } from './field';
 
 /** Why a stored `matter.json` could not be read into a usable model at all. */
 export const MatterModelError = defineErrors({

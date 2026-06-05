@@ -84,9 +84,6 @@ const ANNOT = {
 /** The value space a closed set (`select` / `multiSelect`) may hold. `Number` covers integers. */
 const JsonPrimitive = Type.Union([Type.String(), Type.Number(), Type.Boolean()]);
 
-/** The TS value space of a closed set, mirrored from the {@link JsonPrimitive} schema. */
-export type JsonPrimitive = Static<typeof JsonPrimitive>;
-
 /**
  * The closed-set discriminant: a non-empty `enum` of primitives, optionally pinned
  * to a base `type`. Shared by the `select` meta and the `multiSelect` item meta, so

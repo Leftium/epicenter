@@ -15,7 +15,7 @@
 
 import type { Component } from 'svelte';
 import type { FieldOf } from '$lib/model/model';
-import type { Kind } from '$lib/model/palette';
+import type { Kind } from '$lib/model/field';
 import BooleanField from './BooleanField.svelte';
 import ChipListField from './ChipListField.svelte';
 import DateTimeField from './DateTimeField.svelte';

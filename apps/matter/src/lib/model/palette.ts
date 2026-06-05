@@ -49,9 +49,9 @@
  * `recognize`, `storageOf`, `KINDS`, `META_BY_KIND`. Adding a kind is one entry here,
  * plus its widget in the component registry, which the compiler forces.
  *
- * This module also owns the VALUE side of a field schema: `JsonSchema` (its at-rest
- * shape) and `compile` (the single `Schema.Compile` that turns a stored schema into a
- * per-cell validator). The value-semantic formats it leans on (`uri` for `url`,
+ * This module also owns the VALUE side of a field schema through `compile` (the single
+ * `Schema.Compile` that turns a stored schema into a per-cell validator). The
+ * value-semantic formats it leans on (`uri` for `url`,
  * `date-time` for `datetime`) are TypeBox standard formats, registered for us when
  * `typebox/schema` loads, so `compile` is just the call. So one place answers both
  * readings of a stored schema: "which kind is it" (`recognize`) and "does this value
@@ -61,20 +61,6 @@
 import { type Static, Type } from 'typebox';
 import * as Schema from 'typebox/schema';
 import { Value } from 'typebox/value';
-
-/**
- * A field's at-rest JSON Schema in `matter.json`: a plain object literal. The named
- * keys are the ones recognition and the cells READ (`schema.enum` / `schema.items`),
- * typed so they flow without a per-reader cast. The closed shape (no index signature)
- * catches typos; the ONE assertion that a parsed disk object IS this shape lives at the
- * parse boundary in `model.ts`, after `recognize` has accepted it.
- */
-export type JsonSchema = {
-	type?: string;
-	format?: string;
-	enum?: unknown[];
-	items?: JsonSchema;
-};
 
 /** Reject any property the meta does not explicitly name. The source of mutual exclusivity. */
 const CLOSED = { additionalProperties: false } as const;
@@ -265,26 +251,6 @@ export function storageOf(kind: Kind): Storage {
 	return FIELDS[kind].storage;
 }
 
-/**
- * The closed-set options a `select` or `multiSelect` field offers, read off its stored
- * schema (`enum` for `select`, `items.enum` for `multiSelect`). The palette meta proved
- * at the boundary that these are a non-empty array of primitives, so the cast is honest;
- * the typed array is what the select cells render instead of reaching into `schema.enum`
- * (an `unknown[]`). Every other kind carries no options and returns `[]`. Takes the
- * structural slice it needs (`kind` + `schema`), not `Field`, so `palette` stays free of
- * a `model` import (`model` already imports `palette`).
- */
-export function optionsOf(field: { kind: Kind; schema: JsonSchema }): JsonPrimitive[] {
-	switch (field.kind) {
-		case 'select':
-			return (field.schema.enum ?? []) as JsonPrimitive[];
-		case 'multiSelect':
-			return (field.schema.items?.enum ?? []) as JsonPrimitive[];
-		default:
-			return [];
-	}
-}
-
 /** Every kind in the palette, in declaration order. The catalog, for tests and tooling. */
 export const KINDS = Object.keys(FIELDS) as readonly Kind[];
 
@@ -308,7 +274,7 @@ export const META_BY_KIND = Object.fromEntries(
  * side effect of `typebox/format` (which `Schema.Compile` imports), so the bare compile
  * already enforces them.
  */
-export function compile(schema: JsonSchema): (value: unknown) => boolean {
+export function compile(schema: Recognized['schema']): (value: unknown) => boolean {
 	const validator = Schema.Compile(schema);
 	return (value) => validator.Check(value);
 }

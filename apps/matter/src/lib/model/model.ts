@@ -1,8 +1,8 @@
 /**
  * The runtime `matter.json` parser/validator.
  *
- * `matter.json` at rest is `{ "fields": Record<fieldName, JsonSchema> }`, where each
- * field value is a plain JSON Schema in the closed palette. This module turns that
+ * `matter.json` at rest is `{ "fields": { [fieldName]: <a plain JSON Schema> } }`, where
+ * each field value is a plain JSON Schema in the closed palette. This module turns that
  * raw JSON into a {@link MatterModel}: a flat list of {@link Field}s, each carrying
  * its kind (the widget / storage classifier) and its precompiled validator, computed
  * ONCE here when the model loads. "Field" is the source noun (the user defines a

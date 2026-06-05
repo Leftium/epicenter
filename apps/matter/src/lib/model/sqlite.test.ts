@@ -66,6 +66,24 @@ describe('buildDdl', () => {
 	});
 });
 
+describe('drop and insert SQL (all SQL text built here, not in Rust)', () => {
+	test('drop targets the quoted table', () => {
+		const { drop } = projectToSqlite('drafts', m, []);
+		expect(drop).toBe('DROP TABLE IF EXISTS "drafts"');
+	});
+
+	test('insert lists every column and one ? placeholder each', () => {
+		const { insert, columns } = projectToSqlite('drafts', m, []);
+		expect(insert).toBe(
+			'INSERT INTO "drafts" (' +
+				'"path", "title", "status", "count", "score", "live", "tags", "url", "_extra"' +
+				') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+		);
+		// one placeholder per column, so binding is positional against `columns`
+		expect((insert.match(/\?/g) ?? []).length).toBe(columns.length);
+	});
+});
+
 describe('projectToSqlite (valid rows only, serialized per storage class)', () => {
 	const conformance = classifyRows(m.columns, [valid, incomplete]);
 	const proj = projectToSqlite('drafts', m, conformance);

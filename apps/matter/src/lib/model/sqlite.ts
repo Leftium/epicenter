@@ -28,12 +28,20 @@ import { storageOf } from './palette';
 /** A SQLite-bindable scalar. Valid rows never carry null, so this is string | number. */
 export type SqlValue = string | number;
 
-/** The pure artifacts a Tauri command needs to materialize the table. */
+/**
+ * The pure artifacts a Tauri command needs to materialize the table. All SQL TEXT
+ * is built here (one quoting implementation); the command only executes the three
+ * statements and parameter-binds each row, so it never constructs SQL.
+ */
 export type SqliteProjection = {
 	/** The table name (the folder basename). */
 	table: string;
+	/** `DROP TABLE IF EXISTS ...` (the rebuild is full drop-and-recreate). */
+	drop: string;
 	/** `CREATE TABLE ...`: `path` PK, one NOT NULL column per field, `_extra` JSON. */
 	ddl: string;
+	/** `INSERT INTO ... VALUES (?, ?, ...)`: one `?` placeholder per column. */
+	insert: string;
 	/** Column names in insert order: `path`, the modeled fields, then `_extra`. */
 	columns: string[];
 	/** One tuple per VALID row, positional against {@link columns}. */
@@ -108,5 +116,18 @@ export function projectToSqlite(
 			);
 			return [c.row.name, ...cells, extra];
 		});
-	return { table, ddl: buildDdl(table, model.columns), columns, rows };
+
+	const placeholders = columns.map(() => '?').join(', ');
+	const insert = `INSERT INTO ${quoteIdent(table)} (${columns
+		.map(quoteIdent)
+		.join(', ')}) VALUES (${placeholders})`;
+
+	return {
+		table,
+		drop: `DROP TABLE IF EXISTS ${quoteIdent(table)}`,
+		ddl: buildDdl(table, model.columns),
+		insert,
+		columns,
+		rows,
+	};
 }

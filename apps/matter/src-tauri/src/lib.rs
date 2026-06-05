@@ -1,7 +1,9 @@
 mod entry;
+mod index;
 mod watch;
 
 use entry::{read_entry, write_entry};
+use index::write_index;
 use watch::{unwatch_folder, watch_folder, WatcherStore};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -13,7 +15,8 @@ pub fn run() {
             watch_folder,
             unwatch_folder,
             read_entry,
-            write_entry
+            write_entry,
+            write_index
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

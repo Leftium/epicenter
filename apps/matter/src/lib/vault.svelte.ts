@@ -24,6 +24,7 @@ import { SvelteMap } from 'svelte/reactivity';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, type Result, tryAsync } from 'wellcrafted/result';
 import { editBody, editField } from './model/serialize';
+import { projectToSqlite } from './model/sqlite';
 import {
 	buildView,
 	type FolderRead,
@@ -74,6 +75,9 @@ function createVault(path: string) {
 	// Set when the LAST save could not reach disk. A save never mutates the store
 	// (that is the watcher's job); this is the only state a write touches.
 	let writeError = $state<string | undefined>(undefined);
+	// Set when the LAST matter.sqlite rebuild failed. The index is a derived read
+	// surface, so a failure never blocks the grid; it is surfaced for diagnostics.
+	let indexError = $state<string | undefined>(undefined);
 	// Memoized: Schema.Compile runs only when matter.json changes, not on every
 	// .md change. A single-file change reclassifies against these cached columns.
 	const loaded = $derived(loadModel(modelText));
@@ -100,6 +104,37 @@ function createVault(path: string) {
 					break;
 			}
 		}
+		// Refresh the read-only SQLite mirror after the batch settles. Naturally
+		// debounced (one rebuild per watcher batch), fire-and-forget like a save.
+		rebuildIndex();
+	}
+
+	/**
+	 * Rebuild `<path>/matter.sqlite` from the current VALID rows: a derived,
+	 * disposable, read-only mirror so a coding agent (or an in-app SQL console) can
+	 * run arbitrary SQL over the typed folder. The SvelteMap stays the live in-app
+	 * surface; this file is the EXTERNAL one. An unmodeled folder has no typed table,
+	 * so it is skipped. Fire-and-forget: a failure surfaces in `indexError` and never
+	 * blocks the grid. The JS projector builds all the SQL; the Rust `write_index`
+	 * command only executes it and binds the rows.
+	 */
+	function rebuildIndex(): void {
+		const rows: Row[] = [];
+		for (const result of files.values()) {
+			if (!result.error) rows.push(result.data);
+		}
+		const view = buildView(rows, loaded);
+		if (view.mode !== 'modeled') return;
+		const { drop, ddl, insert, rows: tuples } = projectToSqlite(
+			name,
+			view.model,
+			view.conformance,
+		);
+		void invoke('write_index', { path, drop, ddl, insert, rows: tuples }).catch(
+			(cause) => {
+				indexError = extractErrorMessage(cause);
+			},
+		);
 	}
 
 	/**
@@ -196,6 +231,10 @@ function createVault(path: string) {
 		/** Set if the most recent save could not reach disk. */
 		get writeError(): string | undefined {
 			return writeError;
+		},
+		/** Set if the most recent matter.sqlite rebuild failed (diagnostic only). */
+		get indexError(): string | undefined {
+			return indexError;
 		},
 	};
 }

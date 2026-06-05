@@ -7,21 +7,22 @@
  * `satisfies Record<Kind, FieldComponent>` IS the exhaustiveness guarantee: add a
  * kind to the palette and this object fails to compile until its Field exists. A
  * missing kind is caught at the map literal, not at a render fallthrough. `number`
- * and `integer` share `NumericField`; `tags` and `multiSelect` share `ChipListField`
- * (both are string lists; their editors fork later). There is no `json` entry: a
- * shape outside the palette is not a kind (it is the rejection lane), so `Kind` is
- * exactly the renderable set.
+ * and `integer` share `NumericField`; `multiSelect` and `tags` are both string lists
+ * but FORK their editors (a closed-enum combobox vs free chip entry), so each has its
+ * own widget. There is no `json` entry: a shape outside the palette is not a kind (it
+ * is the rejection lane), so `Kind` is exactly the renderable set.
  */
 
 import type { Component } from 'svelte';
 import type { FieldOf } from '$lib/core/model';
 import type { Kind } from '$lib/core/field';
 import BooleanField from './BooleanField.svelte';
-import ChipListField from './ChipListField.svelte';
 import DateTimeField from './DateTimeField.svelte';
+import MultiSelectField from './MultiSelectField.svelte';
 import NumericField from './NumericField.svelte';
 import SelectField from './SelectField.svelte';
 import StringField from './StringField.svelte';
+import TagsField from './TagsField.svelte';
 import type { FieldProps } from './field-props';
 import UrlField from './UrlField.svelte';
 
@@ -33,9 +34,9 @@ export type FieldComponent = Component<FieldProps>;
  * `satisfies { [K in Kind]: Component<FieldProps<FieldOf<K>>> }` checks that correlation:
  * a kind's widget must accept that kind's narrowed cell (so `SelectField` provably reads
  * a `select` schema), and adding a kind without its widget fails to compile. `number`
- * and `integer` share `NumericField`; `tags` and `multiSelect` share `ChipListField`
- * (each accepts the union of its kinds). There is no `json` entry: a shape outside the
- * palette is the rejection lane, not a kind.
+ * and `integer` share `NumericField`; `multiSelect` and `tags` fork (a closed-enum
+ * combobox vs free chip entry), so each has its own widget. There is no `json` entry: a
+ * shape outside the palette is the rejection lane, not a kind.
  */
 const WIDGETS = {
 	string: StringField,
@@ -45,8 +46,8 @@ const WIDGETS = {
 	datetime: DateTimeField,
 	url: UrlField,
 	select: SelectField,
-	multiSelect: ChipListField,
-	tags: ChipListField,
+	multiSelect: MultiSelectField,
+	tags: TagsField,
 } satisfies { [K in Kind]: Component<FieldProps<FieldOf<K>>> };
 
 /**

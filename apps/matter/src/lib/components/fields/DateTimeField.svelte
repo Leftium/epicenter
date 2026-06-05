@@ -3,11 +3,12 @@
 	import FieldEmpty from './FieldEmpty.svelte';
 	import type { FieldProps } from './types';
 
+	// A text input over the RFC 3339 string for now; a NaturalLanguageDateInput
+	// picker lands with the calendar view (spec "Later"). This Field is the seam
+	// for that picker. A value that is not valid RFC 3339 classifies INVALID and
+	// routes to the JSON repair editor, so this only ever sees a parseable instant.
 	let { cell, save }: FieldProps = $props();
 
-	// The widget floor: a plain text input over the raw string. Empty clears the
-	// field (delete the key); any non-empty text saves verbatim. `string` is the
-	// always-valid base kind, so the draft never fails to parse.
 	const edit = createCellEdit({
 		cell: () => cell,
 		save: (value) => save(value),
@@ -36,7 +37,7 @@
 		{#if cell.value == null}
 			<FieldEmpty state={cell.state} />
 		{:else}
-			<span class="truncate">{String(cell.value)}</span>
+			<span class="tabular-nums">{String(cell.value)}</span>
 		{/if}
 	</button>
 {/if}

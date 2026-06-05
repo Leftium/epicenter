@@ -11,6 +11,7 @@
 	import { auth } from '#platform/auth';
 	import { whispering } from '#platform/whispering';
 	import { AccountPopover } from '@epicenter/app-shell/account-popover';
+	import { recordingActive } from '$lib/state/recording-active.svelte';
 
 	const sidebar = useSidebar();
 </script>
@@ -78,6 +79,9 @@
 						{auth}
 						collaboration={whispering.collaboration}
 						syncNoun="recordings"
+						disabledReason={recordingActive.current
+							? 'Stop recording to change your account'
+							: undefined}
 					/>
 				</div>
 			</Sidebar.MenuItem>

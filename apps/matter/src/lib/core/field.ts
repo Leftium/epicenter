@@ -226,6 +226,33 @@ export type SchemaOf<K extends Kind> = Static<(typeof FIELDS)[K]['meta']>;
 export type Recognized = { [K in Kind]: { kind: K; schema: SchemaOf<K> } }[Kind];
 
 /**
+ * One validated, compiled field of kind `K`: the frontmatter key it models, its
+ * precisely-typed stored schema, the kind, and the precompiled validator. `FieldOf<K>`
+ * is the per-kind variant, so `FieldOf<'select'>['schema']['enum']` is typed; {@link
+ * Field} is the discriminated union over every kind, so a `switch (field.kind)` narrows
+ * `schema` to the matching shape with no cast.
+ *
+ * `name` is identity (the map key, not in the schema); `schema`, `kind`, and `check` are
+ * derived ONCE at the parse boundary (`recognize` + `compile`, both here) so downstream
+ * readers never re-gate or recompile. The loaded field lives HERE, beside the catalog and
+ * the `compile` that build it, so `field.ts` owns the whole field: the kind set AND the
+ * loaded instance. `model.ts` consumes these to assemble a `matter.json` into a model.
+ */
+export type FieldOf<K extends Kind> = {
+	/** The frontmatter key this field models. */
+	name: string;
+	/** This field's kind: the discriminant. */
+	kind: K;
+	/** The precisely-typed JSON Schema as stored in `matter.json`. */
+	schema: SchemaOf<K>;
+	/** The precompiled value validator (`Schema.Compile`), built once. */
+	check: (value: unknown) => boolean;
+};
+
+/** A validated, compiled field: the discriminated union over every kind. */
+export type Field = { [K in Kind]: FieldOf<K> }[Kind];
+
+/**
  * The one classifier: the recognized field (kind + typed schema) whose closed meta
  * matches `schema`, or `null` when `schema` is outside the palette (the rejection lane
  * that degrades a field to raw). One pass over the metas, no gate to forget and no

@@ -7,7 +7,7 @@
 	import { cn } from '@epicenter/ui/utils';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
-	import type { FieldOf } from '$lib/core/model';
+	import type { FieldOf } from '$lib/core/field';
 	import FieldEmpty from './FieldEmpty.svelte';
 	import type { FieldProps } from './field-props';
 

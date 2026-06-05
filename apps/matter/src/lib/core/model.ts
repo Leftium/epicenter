@@ -25,7 +25,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
-import { compile, type Kind, recognize, type SchemaOf } from './field';
+import { compile, type Field, recognize } from './field';
 
 /** Why a stored `matter.json` could not be read into a usable model at all. */
 export const MatterModelError = defineErrors({
@@ -39,31 +39,6 @@ export const MatterModelError = defineErrors({
 	}),
 });
 export type MatterModelError = InferErrors<typeof MatterModelError>;
-
-/**
- * One validated, compiled field of kind `K`: the frontmatter key it models, its
- * precisely-typed stored schema, the kind, and the precompiled validator. `FieldOf<K>`
- * is the per-kind variant, so `FieldOf<'select'>['schema']['enum']` is typed; {@link
- * Field} is the discriminated union over every kind, so a `switch (field.kind)` narrows
- * `schema` to the matching shape with no cast.
- *
- * `name` is identity (the map key, not in the schema); `schema`, `kind`, and `check`
- * are derived ONCE at the parse boundary (`recognize` + `compile`) so downstream readers
- * never re-gate or recompile.
- */
-export type FieldOf<K extends Kind> = {
-	/** The frontmatter key this field models. */
-	name: string;
-	/** This field's kind: the discriminant. */
-	kind: K;
-	/** The precisely-typed JSON Schema as stored in `matter.json`. */
-	schema: SchemaOf<K>;
-	/** The precompiled value validator (`Schema.Compile`), built once. */
-	check: (value: unknown) => boolean;
-};
-
-/** A validated, compiled field: the discriminated union over every kind. */
-export type Field = { [K in Kind]: FieldOf<K> }[Kind];
 
 /** A folder's validated model: the typed fields plus any fields outside the palette. */
 export type MatterModel = {

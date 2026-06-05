@@ -22,8 +22,8 @@
  */
 
 import type { RowConformance } from './conformance';
-import type { Field, MatterModel } from './model';
-import { storageOf } from './field';
+import type { MatterModel } from './model';
+import { storageOf, type Field } from './field';
 
 /** A SQLite-bindable scalar. Valid rows never carry null, so this is string | number. */
 export type SqlValue = string | number;

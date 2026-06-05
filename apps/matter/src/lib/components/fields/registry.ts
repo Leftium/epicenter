@@ -14,8 +14,7 @@
  */
 
 import type { Component } from 'svelte';
-import type { FieldOf } from '$lib/core/model';
-import type { Kind } from '$lib/core/field';
+import type { FieldOf, Kind } from '$lib/core/field';
 import BooleanField from './BooleanField.svelte';
 import DateTimeField from './DateTimeField.svelte';
 import MultiSelectField from './MultiSelectField.svelte';

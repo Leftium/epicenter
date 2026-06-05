@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Table from '@epicenter/ui/table';
 	import type { FolderRead } from '$lib/model/view';
-	import EditableCell from './EditableCell.svelte';
+	import ModeledCell from './ModeledCell.svelte';
 	import RowDetail from './RowDetail.svelte';
 
 	let {
@@ -39,7 +39,7 @@
 <!-- Raw value render for the unmodeled view: plain text, no type guessing. -->
 {#snippet rawValue(value: unknown)}
 	{#if value === null || value === undefined}
-		<span class="text-muted-foreground/50">—</span>
+		<span class="text-muted-foreground/50">·</span>
 	{:else if Array.isArray(value)}
 		<div class="flex flex-wrap gap-1">
 			{#each value as item, i (i)}
@@ -150,18 +150,17 @@
 								</button>
 							</Table.Cell>
 							{#each conf.cells as cell, i (cell.name)}
-								{@const derived = view.model.fields[i]?.derived}
+								{@const field = view.model.fields[i]}
 								<Table.Cell
 									class={cell.state === 'INVALID' || cell.state === 'NEEDS_VALUE'
 										? 'ring-1 ring-inset ring-destructive/20'
 										: ''}
 								>
-									{#if derived}
-										<EditableCell
+									{#if field}
+										<ModeledCell
 											{cell}
-											derivedKind={derived}
-											name={conf.row.name}
-											onSave={onSaveField}
+											{field}
+											save={(value) => onSaveField(conf.row.name, cell.name, value)}
 										/>
 									{/if}
 								</Table.Cell>

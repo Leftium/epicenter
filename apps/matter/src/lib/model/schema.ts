@@ -60,30 +60,6 @@ export function compile(schema: JsonSchema): (value: unknown) => boolean {
 	return (value) => validator.Check(value);
 }
 
-/**
- * The closed set of column kinds the UI knows how to render. Derived from a
- * schema's shape, never stored. `json` is the read-only fallback for any shape
- * outside the recognized subset (a nested object, a mixed union).
- */
-export type Kind =
-	| 'string'
-	| 'integer'
-	| 'number'
-	| 'boolean'
-	| 'datetime'
-	| 'url'
-	| 'enum'
-	| 'array'
-	| 'json';
-
-/** What `deriveKind` returns: the renderer kind plus the nullable axis. */
-export type DerivedKind = {
-	/** The kind the UI renders. */
-	kind: Kind;
-	/** True when the schema admits `null` (the `anyOf`-with-null shape). */
-	nullable: boolean;
-};
-
 type SchemaShape = {
 	type?: string | string[];
 	format?: string;
@@ -95,6 +71,60 @@ type SchemaShape = {
 function shape(schema: JsonSchema): SchemaShape {
 	return schema as SchemaShape;
 }
+
+/**
+ * The recognizers, in PRIORITY order: the first whose `match` passes wins, so the
+ * most specific shapes come before the floor. This ordered array is the SINGLE
+ * SOURCE of both the matcher (`matchKind` walks it) and the `Kind` union (derived
+ * from its entries), so adding a kind is ONE row here, and the type, the
+ * recognizer, and the renderer's exhaustiveness guard (which keys off `Kind`) all
+ * follow from it.
+ *
+ * Why an ordered array and not `keyof` an object: matching is order-sensitive
+ * (`uri` before bare `string`; every scalar before the `json` floor), and object
+ * key order is not a contract. Why matter-local and not `keyof typeof column`: the
+ * workspace `column.*` namespace is a DIFFERENT set (it has `literal`/`nullable`
+ * and no `array`), and `schema.ts` stays free of the workspace dependency.
+ *
+ * `json` is the catch-all floor (matches any shape), so `matchKind` always
+ * resolves and the union always carries the fallback kind.
+ */
+const KINDS = [
+	{ kind: 'enum', match: (s: SchemaShape) => s.enum !== undefined },
+	{ kind: 'boolean', match: (s: SchemaShape) => s.type === 'boolean' },
+	{ kind: 'integer', match: (s: SchemaShape) => s.type === 'integer' },
+	{ kind: 'number', match: (s: SchemaShape) => s.type === 'number' },
+	{
+		kind: 'url',
+		match: (s: SchemaShape) => s.type === 'string' && s.format === 'uri',
+	},
+	{
+		kind: 'datetime',
+		match: (s: SchemaShape) => s.type === 'string' && s.format === 'date-time',
+	},
+	{ kind: 'string', match: (s: SchemaShape) => s.type === 'string' },
+	{
+		kind: 'array',
+		match: (s: SchemaShape) => s.type === 'array' && s.items !== undefined,
+	},
+	{ kind: 'json', match: (_s: SchemaShape) => true },
+] as const;
+
+/**
+ * The closed set of UI kinds, DERIVED from the `KINDS` recognizers (their `kind`
+ * keys are the only source). Never stored; computed from a schema's shape. `json`
+ * is the floor for any shape outside the recognized subset (a nested object, a
+ * mixed union).
+ */
+export type Kind = (typeof KINDS)[number]['kind'];
+
+/** What `deriveKind` returns: the renderer kind plus the nullable axis. */
+export type DerivedKind = {
+	/** The kind the UI renders. */
+	kind: Kind;
+	/** True when the schema admits `null` (the `anyOf`-with-null shape). */
+	nullable: boolean;
+};
 
 /**
  * Peel a nullable wrapper down to its single non-null branch. Returns the inner
@@ -122,23 +152,15 @@ function unwrapNullable(schema: JsonSchema): {
 }
 
 /**
- * Match a NON-nullable scalar/array shape to a kind. Ordered: the most specific
- * shape wins, `string` is the floor, `json` is the catch-all. Mirrors the
- * KINDS registry in the spec. An array still requires a declared `items` schema
- * to be recognized; its element kind is not derived until a typed-chip renderer
- * needs it (it arrives with that renderer, not as a half-built field here).
+ * Match a NON-nullable scalar/array shape to a kind by walking `KINDS` in
+ * priority order; the first recognizer wins. The `json` floor matches any shape,
+ * so this always resolves. (An `array` requires a declared `items` schema; its
+ * element kind is not derived until a typed-chip renderer needs it.)
  */
 function matchKind(inner: JsonSchema): Kind {
 	const s = shape(inner);
-	if (s.enum !== undefined) return 'enum';
-	if (s.type === 'boolean') return 'boolean';
-	if (s.type === 'integer') return 'integer';
-	if (s.type === 'number') return 'number';
-	if (s.type === 'string' && s.format === 'uri') return 'url';
-	if (s.type === 'string' && s.format === 'date-time') return 'datetime';
-	if (s.type === 'string') return 'string';
-	if (s.type === 'array' && s.items) return 'array';
-	return 'json';
+	const matched = KINDS.find((k) => k.match(s));
+	return matched ? matched.kind : 'json';
 }
 
 /**

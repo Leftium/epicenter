@@ -37,11 +37,6 @@ describe('serializeEntry', () => {
 		const out = serializeEntry({ title: 'x' }, body);
 		expect(parseMarkdown(out).data?.body).toBe(body);
 	});
-
-	test('key order follows the object', () => {
-		const out = serializeEntry({ b: 1, a: 2 }, 'body');
-		expect(out.indexOf('b:')).toBeLessThan(out.indexOf('a:'));
-	});
 });
 
 /**

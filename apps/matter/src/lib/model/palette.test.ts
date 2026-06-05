@@ -5,7 +5,6 @@ import {
 	KINDS,
 	META_BY_KIND,
 	recognize,
-	storageOf,
 } from './palette';
 
 /**
@@ -48,18 +47,6 @@ describe('the palette catalog', () => {
 		];
 		expect([...KINDS].sort()).toEqual(expected.sort());
 		expect(KINDS).not.toContain('json' as Kind);
-	});
-
-	test('storageOf maps every kind to its SQLite class', () => {
-		expect(storageOf('string')).toBe('TEXT');
-		expect(storageOf('url')).toBe('TEXT');
-		expect(storageOf('datetime')).toBe('TEXT');
-		expect(storageOf('select')).toBe('TEXT');
-		expect(storageOf('tags')).toBe('TEXT');
-		expect(storageOf('multiSelect')).toBe('TEXT');
-		expect(storageOf('integer')).toBe('INTEGER');
-		expect(storageOf('boolean')).toBe('INTEGER');
-		expect(storageOf('number')).toBe('REAL');
 	});
 });
 

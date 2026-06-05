@@ -2,12 +2,19 @@
 	import { Toaster } from '@epicenter/ui/sonner';
 	import { QueryClientProvider } from '@tanstack/svelte-query';
 	import { ModeWatcher } from 'mode-watcher';
+	import { onMount } from 'svelte';
+	import { auth } from '#platform/auth';
 	import { onNavigate } from '$app/navigation';
 	import { queryClient } from '$lib/rpc/client';
+	import { bindAuthReload } from '$lib/whispering/bind-auth-reload';
 	import '@epicenter/ui/app.css';
 	import * as Tooltip from '@epicenter/ui/tooltip';
 
 	let { children } = $props();
+
+	// Option A: the active doc is picked once at boot (openActiveWhispering); an
+	// owner-identity change reloads so the next boot rebuilds the right doc.
+	onMount(() => bindAuthReload(auth));
 
 	onNavigate((navigation) => {
 		if (!document.startViewTransition) return;

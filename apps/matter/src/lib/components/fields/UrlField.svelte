@@ -12,13 +12,11 @@
 		parse: (text) =>
 			text.trim() === '' ? { type: 'clear' } : { type: 'value', value: text },
 	});
-
-	const autofocus = (node: HTMLInputElement) => node.select();
 </script>
 
 {#if edit.editing}
 	<input
-		use:autofocus
+		{@attach (node) => node.select()}
 		type="url"
 		bind:value={edit.draft}
 		onblur={edit.commit}

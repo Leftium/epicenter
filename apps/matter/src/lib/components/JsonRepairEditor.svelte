@@ -26,13 +26,11 @@
 			}
 		},
 	});
-
-	const autofocus = (node: HTMLInputElement) => node.select();
 </script>
 
 {#if edit.editing}
 	<input
-		use:autofocus
+		{@attach (node) => node.select()}
 		bind:value={edit.draft}
 		onblur={edit.commit}
 		onkeydown={edit.onKeydown}

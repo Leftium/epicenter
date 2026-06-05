@@ -21,7 +21,7 @@ import * as Schema from 'typebox/schema';
  * are exactly the ones recognizers and cells READ, typed so they flow without a
  * per-reader cast. The closed shape (no index signature) catches typos; the ONE
  * assertion that a parsed disk object IS this shape lives at the parse boundary in
- * `model.ts`, after `isFieldSchema` has proven it is a palette member.
+ * `model.ts`, after `recognize` has accepted it as a palette member.
  */
 export type JsonSchema = {
 	type?: string | string[];

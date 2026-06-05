@@ -1,6 +1,6 @@
 /**
  * The Kind -> Field component map: the UI layer's half of the contract whose
- * model half is `deriveKind` (schema -> Kind) in `palette.ts`. Keeping them separate
+ * model half is `recognize` (schema -> Kind) in `palette.ts`. Keeping them separate
  * is the point: the model layer derives the kind and stays free of component imports;
  * this layer maps the kind to a widget.
  *

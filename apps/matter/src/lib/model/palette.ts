@@ -1,11 +1,11 @@
 /**
  * The closed field palette, expressed as a META-SCHEMA (a schema OF schemas).
  *
- * Matter's at-rest truth is a plain JSON Schema per field. This module is the ONE
- * place that answers two questions about such a schema:
+ * Matter's at-rest truth is a plain JSON Schema per field. This module answers the
+ * one question about such a schema, through a single total entry point:
  *
- *   isFieldSchema(s)  -> is this a legal member of the closed palette?   (the boundary)
- *   deriveKind(s)     -> which of the nine kinds is it?                   (total, post-boundary)
+ *   recognize(s) -> the kind whose closed meta matches, or null if `s` is outside
+ *                   the palette (the rejection lane that degrades a field to raw).
  *
  * Each kind carries a CLOSED TypeBox object meta-schema (`additionalProperties:
  * false`). Two properties fall out of that closure and they are the whole point:
@@ -14,27 +14,40 @@
  *      which the bare-`string` meta forbids; a `select` schema carries `enum`, which
  *      every scalar meta forbids; a `multiSelect`'s items carry `enum`, which the
  *      `tags` item meta forbids. So at most one meta matches any legal schema, which
- *      means `deriveKind` needs no priority order and cannot be ambiguous.
+ *      means `recognize` needs no priority order and cannot be ambiguous.
  *   2. TYPOS DIE AT THE BOUNDARY. `{type:'strng'}` or `{type:'string', minLgth:1}`
- *      matches no meta, so `isFieldSchema` returns false and the field degrades to a
- *      raw column instead of silently rendering as `string`.
+ *      matches no meta, so `recognize` returns null and the field degrades to a raw
+ *      column instead of silently rendering as `string`.
  *
- * `FieldSchema` is the union of the nine metas: "every supported combination", one
- * declared value you can `Value.Check` against, instead of nine hand-written `match`
- * predicates plus an order contract.
+ * Every meta reads `{ ...discriminators, ...refinements, ...annotations }`: three
+ * buckets with one rule, only the DISCRIMINATORS differ across kinds.
  *
- * Refinement keywords are whitelisted per kind (`string` allows `minLength`/
- * `maxLength`/`pattern`; the numeric kinds allow `minimum`/`maximum`; the list kinds
- * allow `minItems`/`maxItems`/`uniqueItems`), so the "free validation" win survives:
- * a rating is `{type:'integer', minimum:1, maximum:5}`, still kind `integer`, still
- * the numeric widget, validated for free, with no new kind. The shared `ANNOT` keys
- * (`title`, `description`) are allowed on every kind.
+ *   discriminators  type / format / enum / items   the keys recognition reads.
+ *   refinements     minLength.. / minimum.. / minItems..   closed per value-domain,
+ *                   so a typo'd refinement key still dies, and the value constraint
+ *                   rides along for free: a rating is `{type:'integer', minimum:1,
+ *                   maximum:5}`, still kind `integer`, still validated, no new kind.
+ *   annotations     title / description / default   inert metadata, IDENTICAL on
+ *                   every meta. That identity is load-bearing: because the same
+ *                   bucket is spread into all nine metas, an annotation can never tip
+ *                   which kind matches, which is exactly why the bucket is safe to
+ *                   widen. Held to the standard keywords with a real authoring path
+ *                   into a `matter.json` field (`title`/`description` from the field
+ *                   builders, `default` for a new-row default). `examples`, `$comment`,
+ *                   `deprecated`, `readOnly`, `writeOnly`, `$id`, `$schema` are NOT
+ *                   admitted: no path today, so a schema carrying one degrades to raw.
+ *                   The day a real schema carries one and degrades is the signal to
+ *                   add it here, not before.
  *
  * There is NO `nullable` / optional axis and NO `json` kind. Optionality is deleted
  * (every modeled field is required; "must have content" is a value constraint like
  * `minLength`, not a model flag), so a nullable `anyOf`-with-null shape matches no
- * meta and is unsupported. `json` is the rejection lane, not a member of `Kind`: a
- * shape outside the palette is simply not a field schema.
+ * meta. `json` is the rejection lane, not a member of `Kind`: `recognize` returns
+ * null.
+ *
+ * Everything public is DERIVED from the one `PALETTE` array below: `Kind`,
+ * `Storage`, `recognize`, `storageOf`, `KINDS`, `META_BY_KIND`. Adding a kind is one
+ * row here, plus its widget in the component registry, which the compiler forces.
  */
 
 import { Type } from 'typebox';
@@ -44,12 +57,19 @@ import { Value } from 'typebox/value';
 const CLOSED = { additionalProperties: false } as const;
 
 /**
- * Optional human annotations every field schema may carry. Whitelisted into each
- * closed meta so a `title` override or a `description` does not open the shape.
+ * Bucket 3: ANNOTATIONS. Inert standard metadata, whitelisted into EVERY closed meta
+ * (identically, so it can never affect discrimination) so carrying one does not open
+ * the shape. Held to the keys with a real authoring path into a field: `title` /
+ * `description` from the field builders, `default` for a new-row default. `default` is
+ * `Unknown` (any JSON value, not constrained to the field's own type; conformance
+ * validates cell values, not defaults). Other standard annotations (`examples`,
+ * `$comment`, `deprecated`, `readOnly`, `writeOnly`, `$id`, `$schema`) are deliberately
+ * NOT admitted, so a schema carrying one degrades to raw until a real case argues it in.
  */
 const ANNOT = {
 	title: Type.Optional(Type.String()),
 	description: Type.Optional(Type.String()),
+	default: Type.Optional(Type.Unknown()),
 };
 
 /** The value space a closed set (`select` / `multiSelect`) may hold. `Number` covers integers. */
@@ -78,12 +98,33 @@ const StringItem = Type.Object({ type: Type.Literal('string') }, CLOSED);
 /** Item shape for `multiSelect`: the closed-set discriminant. Requires `enum` (that is not `tags`). */
 const SelectItem = Type.Object(enumProps, CLOSED);
 
+/** Bucket 2: string refinements. Closed set, so a typo'd key (`minLgth`) still dies. */
+const STRING_REFINE = {
+	minLength: Type.Optional(Type.Integer()),
+	maxLength: Type.Optional(Type.Integer()),
+	pattern: Type.Optional(Type.String()),
+};
+
+/** Bucket 2: numeric refinements, shared by `integer` and `number`. */
+const NUMBER_REFINE = {
+	minimum: Type.Optional(Type.Number()),
+	maximum: Type.Optional(Type.Number()),
+};
+
+/** Bucket 2: list refinements, shared by `tags` and `multiSelect`. */
+const LIST_REFINE = {
+	minItems: Type.Optional(Type.Integer()),
+	maxItems: Type.Optional(Type.Integer()),
+	uniqueItems: Type.Optional(Type.Boolean()),
+};
+
 /**
  * The single source of the palette: each row pairs a kind name with its closed
  * meta-schema (recognition + boundary validation) and its SQLite storage class.
- * `Kind`, `FieldSchema`, `deriveKind`, and `storageOf` all derive from this array,
- * so adding a kind is one row. Order is NOT a contract: the metas are mutually
- * exclusive, so `deriveKind` returns the same answer regardless of iteration order.
+ * `Kind`, `Storage`, `recognize`, `storageOf`, `KINDS`, and `META_BY_KIND` all derive
+ * from this array, so adding a kind is one row. Order is NOT a contract: the metas are
+ * mutually exclusive, so `recognize` returns the same answer regardless of iteration
+ * order. Each `meta` reads `{ ...discriminators, ...refinements, ...annotations }`.
  */
 const PALETTE = [
 	{
@@ -115,12 +156,7 @@ const PALETTE = [
 		kind: 'integer',
 		storage: 'INTEGER',
 		meta: Type.Object(
-			{
-				type: Type.Literal('integer'),
-				minimum: Type.Optional(Type.Number()),
-				maximum: Type.Optional(Type.Number()),
-				...ANNOT,
-			},
+			{ type: Type.Literal('integer'), ...NUMBER_REFINE, ...ANNOT },
 			CLOSED,
 		),
 	},
@@ -128,12 +164,7 @@ const PALETTE = [
 		kind: 'number',
 		storage: 'REAL',
 		meta: Type.Object(
-			{
-				type: Type.Literal('number'),
-				minimum: Type.Optional(Type.Number()),
-				maximum: Type.Optional(Type.Number()),
-				...ANNOT,
-			},
+			{ type: Type.Literal('number'), ...NUMBER_REFINE, ...ANNOT },
 			CLOSED,
 		),
 	},
@@ -146,13 +177,7 @@ const PALETTE = [
 		kind: 'string',
 		storage: 'TEXT',
 		meta: Type.Object(
-			{
-				type: Type.Literal('string'),
-				minLength: Type.Optional(Type.Integer()),
-				maxLength: Type.Optional(Type.Integer()),
-				pattern: Type.Optional(Type.String()),
-				...ANNOT,
-			},
+			{ type: Type.Literal('string'), ...STRING_REFINE, ...ANNOT },
 			CLOSED,
 		),
 	},
@@ -163,9 +188,7 @@ const PALETTE = [
 			{
 				type: Type.Literal('array'),
 				items: SelectItem,
-				minItems: Type.Optional(Type.Integer()),
-				maxItems: Type.Optional(Type.Integer()),
-				uniqueItems: Type.Optional(Type.Boolean()),
+				...LIST_REFINE,
 				...ANNOT,
 			},
 			CLOSED,
@@ -178,9 +201,7 @@ const PALETTE = [
 			{
 				type: Type.Literal('array'),
 				items: StringItem,
-				minItems: Type.Optional(Type.Integer()),
-				maxItems: Type.Optional(Type.Integer()),
-				uniqueItems: Type.Optional(Type.Boolean()),
+				...LIST_REFINE,
 				...ANNOT,
 			},
 			CLOSED,
@@ -195,37 +216,21 @@ export type Kind = (typeof PALETTE)[number]['kind'];
 export type Storage = (typeof PALETTE)[number]['storage'];
 
 /**
- * The schema-of-schemas: a legal field schema is exactly a member of this union.
- * `validateModel` checks each `matter.json` field against it at the boundary; a
- * field that fails is unsupported and degrades to a raw column.
+ * The one classifier: the kind whose closed meta matches `schema`, or `null` when
+ * `schema` is outside the palette (the rejection lane that degrades a field to raw).
+ * One pass over the metas, no gate to forget and no throw-contract to violate, so the
+ * boundary in `model.ts` reads `null` directly. Because the metas are mutually
+ * exclusive, exactly one matches any legal schema, so there is no priority order.
  */
-export const FieldSchema = Type.Union(PALETTE.map((entry) => entry.meta));
-
-/** Boundary guard: is `schema` a legal member of the closed palette? */
-export function isFieldSchema(schema: unknown): boolean {
-	return Value.Check(FieldSchema, schema);
-}
-
-/**
- * Total over a validated schema: the kind whose meta matches. Because the metas are
- * mutually exclusive, exactly one matches any `isFieldSchema` value, so there is no
- * priority order and no `json` fallback. Throws only on a contract violation (called
- * on a schema that did not pass `isFieldSchema`); gate with `isFieldSchema` first.
- */
-export function deriveKind(schema: unknown): Kind {
-	const entry = PALETTE.find((p) => Value.Check(p.meta, schema));
-	if (!entry) {
-		throw new Error(
-			'deriveKind called on a non-palette schema; gate with isFieldSchema first',
-		);
-	}
-	return entry.kind;
+export function recognize(schema: unknown): Kind | null {
+	return PALETTE.find((entry) => Value.Check(entry.meta, schema))?.kind ?? null;
 }
 
 /** The SQLite storage class for a kind. Total: `kind` is one of the palette kinds. */
 export function storageOf(kind: Kind): Storage {
 	const entry = PALETTE.find((p) => p.kind === kind);
-	if (!entry) throw new Error(`storageOf called with a non-palette kind: ${kind}`);
+	if (!entry)
+		throw new Error(`storageOf called with a non-palette kind: ${kind}`);
 	return entry.storage;
 }
 

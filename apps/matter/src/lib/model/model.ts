@@ -1,7 +1,7 @@
 /**
  * The runtime `matter.json` parser/validator.
  *
- * `matter.json` at rest is `{ "fields": Record<fieldName, FieldSchema> }`, where each
+ * `matter.json` at rest is `{ "fields": Record<fieldName, JsonSchema> }`, where each
  * field value is a plain JSON Schema in the closed palette. This module turns that
  * raw JSON into a {@link MatterModel}: a flat list of {@link Column}s, each carrying
  * its kind (the widget / storage classifier) and its precompiled validator, computed
@@ -14,8 +14,8 @@
  * object) rejects the model to the raw view.
  *
  * There is no optional / nullable axis: every modeled field is required. "Must have
- * content" is a value constraint (e.g. `minLength`), not a model flag, so `deriveKind`
- * is total and a Column has no `nullable`.
+ * content" is a value constraint (e.g. `minLength`), not a model flag, so a Column
+ * carries a bare `kind` and has no `nullable`.
  */
 
 import {
@@ -24,7 +24,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
-import { deriveKind, isFieldSchema, type Kind } from './palette';
+import { type Kind, recognize } from './palette';
 import { compile, type JsonSchema } from './schema';
 
 /** Why a stored `matter.json` could not be read into a usable model at all. */
@@ -88,21 +88,22 @@ export function validateModel(
 	const columns: Column[] = [];
 	const unmodeled: string[] = [];
 	for (const [name, schema] of Object.entries(fieldsRaw)) {
-		// The closed palette is the acceptance rule (`isFieldSchema` checks the
-		// meta-schema union). A shape outside it (a typo, an object, a nullable
-		// `anyOf` wrapper) is not a typed column: record it so the UI can nudge, let
-		// its value surface as an unmodeled extra, and keep classifying the rest.
-		if (!isFieldSchema(schema)) {
+		// The closed palette is the acceptance rule: `recognize` returns the kind whose
+		// meta matches, or null for a shape outside it (a typo, an object, a nullable
+		// `anyOf` wrapper). An unrecognized field is not a typed column: record it so the
+		// UI can nudge, let its value surface as an unmodeled extra, and keep going.
+		const kind = recognize(schema);
+		if (kind === null) {
 			unmodeled.push(name);
 			continue;
 		}
-		// `isFieldSchema` proved the shape is a palette member, so this cast is honest
-		// and `deriveKind` is total (no json fallback). `compile` runs once per column.
+		// `recognize` proved the shape is a palette member and handed back its kind in
+		// one pass, so this cast is honest. `compile` runs once per column.
 		const fieldSchema = schema as JsonSchema;
 		columns.push({
 			name,
 			schema: fieldSchema,
-			kind: deriveKind(fieldSchema),
+			kind,
 			check: compile(fieldSchema),
 		});
 	}

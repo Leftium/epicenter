@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Cell } from '$lib/model/conformance';
+	import type { InvalidCell } from '$lib/model/conformance';
 	import { createCellEdit } from './fields/create-cell-edit.svelte';
 	import type { ClearField, SaveField } from './fields/types';
 
@@ -12,7 +12,7 @@
 	// stays INVALID. The row reclassifies through the watcher, so a now-valid value
 	// snaps back to its typed Field on its own.
 	let { cell, save, clear }: {
-		cell: Extract<Cell, { state: 'INVALID' }>;
+		cell: InvalidCell;
 		save: SaveField;
 		clear: ClearField;
 	} = $props();

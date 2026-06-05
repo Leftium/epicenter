@@ -23,17 +23,26 @@ import type { Field } from './model';
 import type { Row } from './types';
 
 /**
- * One classified cell: a field applied to a row's value. The variant IS the verdict,
- * so value-presence cannot disagree with state. `OK` carries the conformant `value`;
- * `NEEDS_VALUE` carries nothing (the field is empty); `INVALID` carries the
- * out-of-domain `raw`, which only the repair editor reads. Every variant carries its
- * {@link Field}, so a consumer reads `cell.field` instead of zipping a parallel field
- * array by index.
+ * A classified cell is one of three states, each a field applied to a row's value. The
+ * state IS the verdict, so value-presence cannot disagree with it, and every member
+ * carries its {@link Field} (a consumer reads `cell.field`, never an index into a
+ * parallel array). {@link Cell} unions the three; a consumer composes the subset it
+ * handles from these named members (the typed widgets take `OkCell | NeedsValueCell`;
+ * the repair editor takes {@link InvalidCell}) rather than subtracting from the union
+ * with `Exclude`.
  */
-export type Cell =
-	| { field: Field; state: 'OK'; value: unknown }
-	| { field: Field; state: 'NEEDS_VALUE' }
-	| { field: Field; state: 'INVALID'; raw: unknown };
+
+/** A conformant cell: the value passed its field's schema. */
+export type OkCell = { field: Field; state: 'OK'; value: unknown };
+
+/** An empty required cell: the key is absent or null, so there is no value to carry. */
+export type NeedsValueCell = { field: Field; state: 'NEEDS_VALUE' };
+
+/** A present value out of its field's domain: carries the `raw` value for the repair editor. */
+export type InvalidCell = { field: Field; state: 'INVALID'; raw: unknown };
+
+/** One classified cell: exactly one of the three states. */
+export type Cell = OkCell | NeedsValueCell | InvalidCell;
 
 /** A frontmatter key the model does not declare. Never affects validity. */
 export type Extra = {

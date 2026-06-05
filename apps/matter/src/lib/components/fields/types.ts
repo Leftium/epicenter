@@ -13,7 +13,7 @@
  * the kind's domain reappears as INVALID (handled by the wrapper, not the Field).
  */
 
-import type { Cell } from '$lib/model/conformance';
+import type { NeedsValueCell, OkCell } from '$lib/model/conformance';
 
 /**
  * Commit a new value for this cell's field. The {@link ModeledCell} wrapper binds
@@ -31,12 +31,13 @@ export type SaveField = (value: unknown) => void;
 export type ClearField = () => void;
 
 /**
- * The cell a per-kind Field renders: `OK` (carries a conformant value) or
- * `NEEDS_VALUE` (empty). The `INVALID` variant is routed to the JSON repair editor by
- * {@link ModeledCell} before a Field is chosen, so a Field never receives it: this
- * type is the compile-time statement of that invariant.
+ * The cells a per-kind Field renders: a conformant {@link OkCell} or an empty
+ * {@link NeedsValueCell}. The invalid state is routed to the JSON repair editor by
+ * {@link ModeledCell} before a Field is chosen, so a Field never receives it. Composed
+ * UP from the two renderable members, not subtracted from the full `Cell` union, so the
+ * set the widgets handle is stated directly.
  */
-export type RenderableCell = Exclude<Cell, { state: 'INVALID' }>;
+export type RenderableCell = OkCell | NeedsValueCell;
 
 /** Props every per-kind Field component receives. */
 export type FieldProps = {

@@ -45,13 +45,36 @@
  * meta. `json` is the rejection lane, not a member of `Kind`: `recognize` returns
  * null.
  *
- * Everything public is DERIVED from the one `PALETTE` array below: `Kind`,
- * `Storage`, `recognize`, `storageOf`, `KINDS`, `META_BY_KIND`. Adding a kind is one
- * row here, plus its widget in the component registry, which the compiler forces.
+ * Everything public is DERIVED from the one `PALETTE` array below: `Kind`, `Storage`,
+ * `recognize`, `storageOf`, `KINDS`, `META_BY_KIND`. Adding a kind is one row here,
+ * plus its widget in the component registry, which the compiler forces.
+ *
+ * This module also owns the VALUE side of a field schema: `JsonSchema` (its at-rest
+ * shape), `registerFormats` (the value-semantic formats), and `compile` (the single
+ * `Schema.Compile` that turns a stored schema into a per-cell validator). So one place
+ * answers both readings of a stored schema: "which kind is it" (`recognize`) and "does
+ * this value satisfy it" (`compile`).
  */
 
 import { Type } from 'typebox';
+import { Format } from 'typebox/format';
+import * as Schema from 'typebox/schema';
 import { Value } from 'typebox/value';
+
+/**
+ * A field's at-rest JSON Schema in `matter.json`: a plain object literal. The named
+ * keys are the ones recognition and the cells READ (`schema.enum` / `schema.items`),
+ * typed so they flow without a per-reader cast. The closed shape (no index signature)
+ * catches typos; the ONE assertion that a parsed disk object IS this shape lives at the
+ * parse boundary in `model.ts`, after `recognize` has accepted it.
+ */
+export type JsonSchema = {
+	type?: string | string[];
+	format?: string;
+	enum?: unknown[];
+	anyOf?: JsonSchema[];
+	items?: JsonSchema;
+};
 
 /** Reject any property the meta does not explicitly name. The source of mutual exclusivity. */
 const CLOSED = { additionalProperties: false } as const;
@@ -244,3 +267,26 @@ export const KINDS = PALETTE.map((p) => p.kind) as readonly Kind[];
 export const META_BY_KIND = Object.fromEntries(
 	PALETTE.map((p) => [p.kind, p.meta]),
 ) as Record<Kind, (typeof PALETTE)[number]['meta']>;
+
+/**
+ * Register the value-semantic formats so `format: 'uri'` / `format: 'date-time'`
+ * actually enforce. TypeBox treats an UNREGISTERED format as "always passes", so
+ * without this every string would satisfy `url` / `datetime`. Idempotent; `compile`
+ * calls it before the first `Schema.Compile`, so there is no import-time side effect.
+ */
+export function registerFormats(): void {
+	Format.Set('uri', Format.IsUri);
+	Format.Set('date-time', Format.IsDateTime);
+}
+
+/**
+ * Compile a stored JSON Schema into a value check: the ONE place `Schema.Compile` is
+ * called. It registers the value-semantic formats first (idempotent), then closes over
+ * the validator rather than tearing `Check` off (it reads `this`). `recognize` decides
+ * WHICH kind a schema is; `compile` decides whether a VALUE satisfies it.
+ */
+export function compile(schema: JsonSchema): (value: unknown) => boolean {
+	registerFormats();
+	const validator = Schema.Compile(schema);
+	return (value) => validator.Check(value);
+}

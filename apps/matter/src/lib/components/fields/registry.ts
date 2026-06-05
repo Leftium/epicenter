@@ -55,7 +55,8 @@ const WIDGETS = {
  * widget only ever receives a cell of its own kind, but TypeScript can't express that
  * runtime correlation (`WIDGETS[someKind]` is the union of all widgets, none of which
  * provably accepts an arbitrary cell). Widening the `satisfies`-checked map to the base
- * {@link FieldComponent} is the SINGLE cast in the whole field pipeline; it is sound by
+ * {@link FieldComponent} is the cast at the UI-DISPATCH boundary; the field pipeline has
+ * exactly one other, `recognize`'s at the model boundary in `field.ts`. It is sound by
  * the indexing invariant above, and every widget body stays narrow and cast-free.
  */
 export const FIELD_COMPONENTS = WIDGETS as unknown as Record<Kind, FieldComponent>;

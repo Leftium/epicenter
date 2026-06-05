@@ -236,8 +236,9 @@ export type Recognized = { [K in Kind]: { kind: K; schema: SchemaOf<K> } }[Kind]
 export function recognize(schema: unknown): Recognized | null {
 	for (const kind of Object.keys(FIELDS) as Kind[]) {
 		// The Value.Check just proved `schema` matches this kind's meta, so pairing the
-		// two as `Recognized` is honest; this is the single boundary cast everything
-		// downstream relies on to stay cast-free.
+		// two as `Recognized` is honest. This is the cast at the MODEL boundary; the field
+		// pipeline has exactly one more, at the UI-dispatch boundary in the widget registry.
+		// Everything between the two stays cast-free.
 		if (Value.Check(FIELDS[kind].meta, schema)) return { kind, schema } as Recognized;
 	}
 	return null;

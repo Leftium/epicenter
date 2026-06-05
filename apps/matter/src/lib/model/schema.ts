@@ -1,9 +1,9 @@
 /**
- * The one truth: a field IS a JSON Schema (the `column.*` subset).
+ * The one truth: a field IS a plain JSON Schema, in Matter's CLOSED palette.
  *
  * Matter stores no `{kind}` descriptor and no `required` flag. Each field in
- * `matter.json` is a plain JSON Schema, the same artifact `column.*` emits, and
- * two pure readers run off it:
+ * `matter.json` is a plain JSON-Schema object literal, and two pure readers run
+ * off it:
  *
  *   deriveKind(schema)  -> which UI cell/editor renders it, plus whether the
  *                          value may be empty (the `nullable` flag)
@@ -16,9 +16,12 @@
  * also the ONLY place `typebox` is touched (formats + compile), so the at-rest
  * JSON Schema is the one input the runtime reads.
  *
- * We keep the core dependency-light: plain JSON-Schema object literals rather
- * than the `column.*` builders (the at-rest shapes are identical, and these are
- * the only shapes Matter recognizes).
+ * The recognized shapes are Matter's OWN dialect, not whatever `column.*` (the
+ * workspace authoring sugar) emits: Matter's `select` reads the native `enum`
+ * keyword, and `tags` / `multiSelect` have no `column.*` counterpart. The dialects
+ * overlap on scalars but are not the same artifact, and Matter consumes neither
+ * `column.*` nor `typebox`'s `TSchema` type. Any shape outside the recognized
+ * palette derives to `json` and is rejected to the raw view.
  */
 
 import { Format } from 'typebox/format';
@@ -28,8 +31,25 @@ import * as Schema from 'typebox/schema';
  * A JSON Schema as it sits in `matter.json`: a plain object literal. We do not
  * import TypeBox's `TSchema` here because the at-rest truth is JSON, not a
  * TypeBox value, and `Schema.Compile` validates a plain JSON Schema directly.
+ *
+ * The keys are exactly the ones the recognizers and the cells READ, typed so they
+ * flow without a per-reader cast: `deriveKind` walks `type`/`format`/`enum`/
+ * `anyOf`/`items` directly, and a cell reads `schema.enum` / `schema.items` with
+ * no `as`. The shape is CLOSED (no index signature): a stored schema may carry
+ * other JSON-Schema keys on disk (a `title`, a future `x:widget` hint), but
+ * nothing here reads them, so leaving them off the type catches a typo instead of
+ * widening it to `unknown`. `Schema.Compile` still accepts the whole object (it
+ * takes the value, not these keys). The ONE assertion that a parsed disk object IS
+ * this shape lives at the parse boundary in `model.ts`; everything downstream is
+ * cast-free.
  */
-export type JsonSchema = Record<string, unknown>;
+export type JsonSchema = {
+	type?: string | string[];
+	format?: string;
+	enum?: unknown[];
+	anyOf?: JsonSchema[];
+	items?: JsonSchema;
+};
 
 /**
  * Register the value-semantic formats so `format: 'uri'` / `format: 'date-time'`
@@ -60,54 +80,53 @@ export function compile(schema: JsonSchema): (value: unknown) => boolean {
 	return (value) => validator.Check(value);
 }
 
-type SchemaShape = {
-	type?: string | string[];
-	format?: string;
-	enum?: unknown[];
-	anyOf?: JsonSchema[];
-	items?: JsonSchema;
-};
-
-function shape(schema: JsonSchema): SchemaShape {
-	return schema as SchemaShape;
-}
-
 /**
  * The recognizers, in PRIORITY order: the first whose `match` passes wins, so the
  * most specific shapes come before the floor. This ordered array is the SINGLE
- * SOURCE of both the matcher (`matchKind` walks it) and the `Kind` union (derived
+ * SOURCE of both the matcher (`deriveKind` walks it) and the `Kind` union (derived
  * from its entries), so adding a kind is ONE row here, and the type, the
  * recognizer, and the renderer's exhaustiveness guard (which keys off `Kind`) all
  * follow from it.
  *
- * Why an ordered array and not `keyof` an object: matching is order-sensitive
- * (`uri` before bare `string`; every scalar before the `json` floor), and object
- * key order is not a contract. Why matter-local and not `keyof typeof column`: the
- * workspace `column.*` namespace is a DIFFERENT set (it has `literal`/`nullable`
- * and no `array`), and `schema.ts` stays free of the workspace dependency.
+ * The palette is a CLOSED set of field kinds (a Notion-style menu), not an open
+ * TypeBox composition. There is no general `array` kind: the only recognized
+ * multi-value shapes are `multiSelect` (an array of a closed `enum` set) and
+ * `tags` (an array of free strings). An array of anything else (objects, mixed
+ * items, nested arrays) matches no recognizer and falls to the `json` floor, which
+ * `model.ts` rejects to the raw view. That refusal is what keeps every kind flat:
+ * no kind contains another kind, so `deriveKind` never recurses.
  *
- * `json` is the catch-all floor (matches any shape), so `matchKind` always
+ * Why an ordered array and not `keyof` an object: matching is order-sensitive
+ * (`uri` before bare `string`; `multiSelect` before `tags` so an enum array isn't
+ * read as free tags; every recognizer before the `json` floor), and object key
+ * order is not a contract.
+ *
+ * `json` is the catch-all floor (matches any shape), so `deriveKind` always
  * resolves and the union always carries the fallback kind.
  */
 const KINDS = [
-	{ kind: 'enum', match: (s: SchemaShape) => s.enum !== undefined },
-	{ kind: 'boolean', match: (s: SchemaShape) => s.type === 'boolean' },
-	{ kind: 'integer', match: (s: SchemaShape) => s.type === 'integer' },
-	{ kind: 'number', match: (s: SchemaShape) => s.type === 'number' },
+	{ kind: 'select', match: (s: JsonSchema) => s.enum !== undefined },
+	{ kind: 'boolean', match: (s: JsonSchema) => s.type === 'boolean' },
+	{ kind: 'integer', match: (s: JsonSchema) => s.type === 'integer' },
+	{ kind: 'number', match: (s: JsonSchema) => s.type === 'number' },
 	{
 		kind: 'url',
-		match: (s: SchemaShape) => s.type === 'string' && s.format === 'uri',
+		match: (s: JsonSchema) => s.type === 'string' && s.format === 'uri',
 	},
 	{
 		kind: 'datetime',
-		match: (s: SchemaShape) => s.type === 'string' && s.format === 'date-time',
+		match: (s: JsonSchema) => s.type === 'string' && s.format === 'date-time',
 	},
-	{ kind: 'string', match: (s: SchemaShape) => s.type === 'string' },
+	{ kind: 'string', match: (s: JsonSchema) => s.type === 'string' },
 	{
-		kind: 'array',
-		match: (s: SchemaShape) => s.type === 'array' && s.items !== undefined,
+		kind: 'multiSelect',
+		match: (s: JsonSchema) => s.type === 'array' && s.items?.enum !== undefined,
 	},
-	{ kind: 'json', match: (_s: SchemaShape) => true },
+	{
+		kind: 'tags',
+		match: (s: JsonSchema) => s.type === 'array' && s.items?.type === 'string',
+	},
+	{ kind: 'json', match: (_s: JsonSchema) => true },
 ] as const;
 
 /**
@@ -140,10 +159,10 @@ function unwrapNullable(schema: JsonSchema): {
 	inner: JsonSchema;
 	nullable: boolean;
 } {
-	const s = shape(schema);
-	if (!Array.isArray(s.anyOf)) return { inner: schema, nullable: false };
-	const nonNull = s.anyOf.filter((b) => shape(b).type !== 'null');
-	const nullable = nonNull.length !== s.anyOf.length;
+	if (!Array.isArray(schema.anyOf)) return { inner: schema, nullable: false };
+	const branches = schema.anyOf;
+	const nonNull = branches.filter((b) => b.type !== 'null');
+	const nullable = nonNull.length !== branches.length;
 	// Exactly one non-null branch is the recognized nullable shape; anything else
 	// (a real union) is not a kind we render, so leave it for the json fallback.
 	if (nonNull.length === 1 && nonNull[0])
@@ -152,23 +171,14 @@ function unwrapNullable(schema: JsonSchema): {
 }
 
 /**
- * Match a NON-nullable scalar/array shape to a kind by walking `KINDS` in
- * priority order; the first recognizer wins. The `json` floor matches any shape,
- * so this always resolves. (An `array` requires a declared `items` schema; its
- * element kind is not derived until a typed-chip renderer needs it.)
- */
-function matchKind(inner: JsonSchema): Kind {
-	const s = shape(inner);
-	const matched = KINDS.find((k) => k.match(s));
-	return matched ? matched.kind : 'json';
-}
-
-/**
  * Derive the UI kind from a schema's shape. Unwrap a nullable wrapper first
- * (carrying the nullable flag), then ordered shape-match, falling back to `json`
- * for any unrecognized shape.
+ * (carrying the nullable flag), then walk `KINDS` in priority order; the first
+ * recognizer wins. The `json` floor matches any shape, so this always resolves.
+ * The list kinds (`multiSelect`, `tags`) match on their `items` shape alone, so
+ * no element kind is ever recursively derived.
  */
 export function deriveKind(schema: JsonSchema): DerivedKind {
 	const { inner, nullable } = unwrapNullable(schema);
-	return { kind: matchKind(inner), nullable };
+	const kind = KINDS.find((k) => k.match(inner))?.kind ?? 'json';
+	return { kind, nullable };
 }

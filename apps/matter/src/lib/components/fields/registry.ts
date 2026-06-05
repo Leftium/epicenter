@@ -8,18 +8,19 @@
  * Kind to the `KINDS` registry in schema.ts and this object fails to compile until
  * its Field exists. That subsumes the old `kind satisfies never` render-ladder
  * guard (and is strictly stronger: a missing kind is caught at the map literal, not
- * at a fallthrough branch). `number` and `integer` share `NumericField`; `json` is
- * the unreachable read-only fallback (model.ts rejects json fields).
+ * at a fallthrough branch). `number` and `integer` share `NumericField`; `tags` and
+ * `multiSelect` share `ChipListField` (both are string lists; their editors fork
+ * later); `json` is the unreachable read-only fallback (model.ts rejects json fields).
  */
 
 import type { Component } from 'svelte';
 import type { Kind } from '$lib/model/schema';
-import ArrayField from './ArrayField.svelte';
 import BooleanField from './BooleanField.svelte';
+import ChipListField from './ChipListField.svelte';
 import DateTimeField from './DateTimeField.svelte';
-import EnumField from './EnumField.svelte';
 import JsonField from './JsonField.svelte';
 import NumericField from './NumericField.svelte';
+import SelectField from './SelectField.svelte';
 import StringField from './StringField.svelte';
 import type { FieldProps } from './types';
 import UrlField from './UrlField.svelte';
@@ -33,7 +34,8 @@ export const FIELD_COMPONENTS = {
 	boolean: BooleanField,
 	datetime: DateTimeField,
 	url: UrlField,
-	enum: EnumField,
-	array: ArrayField,
+	select: SelectField,
+	multiSelect: ChipListField,
+	tags: ChipListField,
 	json: JsonField,
 } satisfies Record<Kind, FieldComponent>;

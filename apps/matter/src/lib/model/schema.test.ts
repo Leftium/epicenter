@@ -52,20 +52,36 @@ describe('deriveKind (schema -> UI kind, ordered shape match)', () => {
 		});
 	});
 
-	test('enum keyword wins over type', () => {
+	test('enum keyword wins over type (single select)', () => {
 		expect(deriveKind({ type: 'string', enum: ['a', 'b'] })).toEqual({
-			kind: 'enum',
+			kind: 'select',
 			nullable: false,
 		});
 	});
 
-	// The element kind is intentionally NOT derived: no renderer reads it yet, so
-	// it arrives with the typed-chip editor as a vertical slice, not a half-member.
-	test('a typed array derives to the array kind', () => {
+	// The two recognized list shapes. A string array is `tags`; an array whose
+	// items carry an `enum` set is `multiSelect`, and that more specific shape is
+	// matched first. Neither derives an element kind: the item shape alone decides.
+	test('a string array derives to tags', () => {
 		expect(deriveKind({ type: 'array', items: { type: 'string' } })).toEqual({
-			kind: 'array',
+			kind: 'tags',
 			nullable: false,
 		});
+	});
+
+	test('an enum-item array derives to multiSelect', () => {
+		expect(
+			deriveKind({ type: 'array', items: { enum: ['a', 'b'] } }),
+		).toEqual({ kind: 'multiSelect', nullable: false });
+	});
+
+	// The refusal: an array of anything other than strings/enums is not in the
+	// closed palette. It falls to the json floor, which model.ts rejects to the
+	// raw view rather than rendering a recursive widget.
+	test('an array of objects is not a list kind; it falls to json', () => {
+		expect(
+			deriveKind({ type: 'array', items: { type: 'object' } }).kind,
+		).toBe('json');
 	});
 
 	test('nullable wrapper unwraps and flags', () => {

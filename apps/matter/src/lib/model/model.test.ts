@@ -7,6 +7,7 @@ describe('validateModel (the matter.json gate)', () => {
 			fields: {
 				title: { type: 'string' },
 				status: { type: 'string', enum: ['draft', 'published'] },
+				labels: { type: 'array', items: { enum: ['red', 'green'] } },
 				tags: { type: 'array', items: { type: 'string' } },
 				url: { anyOf: [{ type: 'string', format: 'uri' }, { type: 'null' }] },
 			},
@@ -15,8 +16,9 @@ describe('validateModel (the matter.json gate)', () => {
 		if (error) throw new Error(error.message);
 		expect(data.fields.map((f) => [f.name, f.derived.kind, f.derived.nullable])).toEqual([
 			['title', 'string', false],
-			['status', 'enum', false],
-			['tags', 'array', false],
+			['status', 'select', false],
+			['labels', 'multiSelect', false],
+			['tags', 'tags', false],
 			['url', 'url', true],
 		]);
 	});

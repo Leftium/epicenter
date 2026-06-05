@@ -27,7 +27,7 @@ export type SaveField = (value: unknown) => void;
 export type FieldProps = {
 	/** The classified cell: its value and state (`OK` / `EMPTY` / `NEEDS_VALUE`). */
 	cell: CellResult;
-	/** The model field: its stored schema (enum values, array items) and derived kind. */
+	/** The model field: its stored schema (select options, list items) and derived kind. */
 	field: ModelField;
 	/** Commit a new value, or `undefined` to clear the field. */
 	save: SaveField;

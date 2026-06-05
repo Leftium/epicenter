@@ -88,16 +88,21 @@ export function validateModel(
 		if (!isPlainObject(schema)) {
 			return MatterModelError.FieldNotObject({ field: name });
 		}
+		// The single boundary assertion: `isPlainObject` proved object-ness; this
+		// adopts the JSON-Schema shape so `deriveKind` and the cells read its keys
+		// without re-casting. It is honest because `deriveKind` (json floor) and
+		// `compile` reject anything that is not actually a recognized schema.
+		const fieldSchema = schema as JsonSchema;
 		// `json` is the catch-all kind: it is the tell that NO recognizer matched,
 		// i.e. the shape is outside the supported subset (one definition of
 		// "supported", shared with the renderer). Reject it with a diagnostic so the
 		// caller can fall back to the raw view. Nullable wrappers are unwrapped
 		// inside `deriveKind`, so the `anyOf`-with-null shape is accepted too.
-		const derived = deriveKind(schema);
+		const derived = deriveKind(fieldSchema);
 		if (derived.kind === 'json') {
 			return MatterModelError.UnsupportedShape({ field: name });
 		}
-		fields.push({ name, schema, derived });
+		fields.push({ name, schema: fieldSchema, derived });
 	}
 
 	return Ok({ fields });

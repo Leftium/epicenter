@@ -124,10 +124,7 @@
 							<Table.Head>
 								<span class="font-medium">{field.name}</span>
 								<span class="ml-1 text-xs font-normal text-muted-foreground">
-									{field.derived.kind}{field.derived.kind === 'array' ? '[]' : ''}{field.derived
-										.nullable
-										? '?'
-										: ''}
+									{field.derived.kind}{field.derived.nullable ? '?' : ''}
 								</span>
 							</Table.Head>
 						{/each}

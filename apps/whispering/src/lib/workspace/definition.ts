@@ -6,7 +6,6 @@ import {
 	type IanaTimeZone,
 	type InferKvValue,
 	type InferTableRow,
-	type Keyring,
 	nullable,
 	satisfiesWorkspace,
 } from '@epicenter/workspace';
@@ -392,19 +391,11 @@ const shortcuts = {
 
 type CreateWhisperingOptions = {
 	defaultTranscriptionService: TranscriptionServiceId;
-	/**
-	 * Pass `keyring` to encrypt the doc at rest (the signed-in, owner-partitioned
-	 * path); omit it for the signed-out local doc, which stays plaintext exactly as
-	 * before. Encryption is fixed at construction, so the local and synced docs are
-	 * different `Y.Doc`s chosen once at boot (see `openActiveWhispering`).
-	 */
-	keyring?: () => Keyring;
 };
 
 /** Build the Whispering workspace bundle: `{ ydoc, tables, kv, actions, settings }`. */
 export function createWhispering({
 	defaultTranscriptionService,
-	keyring,
 }: CreateWhisperingOptions) {
 	/**
 	 * Whispering KV schemas: ~40 entries for synced preferences. Defined locally
@@ -428,7 +419,6 @@ export function createWhispering({
 		// Workspace/Y.Doc identity, not an OAuth client id or Tauri bundle id.
 		// This keys local storage and cloud rooms; change only with a data migration.
 		id: 'epicenter-whispering',
-		keyring,
 		tables: {
 			recordings,
 			transformations,

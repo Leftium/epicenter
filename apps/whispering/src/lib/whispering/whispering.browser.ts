@@ -1,27 +1,20 @@
 /**
  * Browser runtime client for Whispering.
  *
- * Keeps the local-first workspace usable on the web with the same action set as
- * the Tauri client. The recordings export is shared: the `#platform/download`
- * seam turns it into a browser download here and a Save dialog on desktop.
+ * Picks the active doc (local or synced) at boot via `openActiveWhispering`,
+ * then layers the one browser-specific action: the recordings export is
+ * shared (the `#platform/download` seam turns it into a browser download
+ * here and a Save dialog on desktop). The `whispering` singleton it exports
+ * is consumed everywhere through the `#platform/whispering` seam.
  */
 
-import {
-	attachBroadcastChannel,
-	attachIndexedDb,
-	defineActions,
-	satisfiesWorkspace,
-} from '@epicenter/workspace';
-import { createWhispering } from '$lib/workspace';
+import { defineActions, satisfiesWorkspace } from '@epicenter/workspace';
 import { defineRecordingsMarkdownExport } from './recordings-markdown-export';
+import { openActiveWhispering } from './whispering.active';
 
 export function openWhispering() {
-	const workspace = createWhispering({
-		defaultTranscriptionService: 'OpenAI',
-	});
-
-	const idb = attachIndexedDb(workspace.ydoc);
-	attachBroadcastChannel(workspace.ydoc);
+	const { workspace, whenReady, collaboration } =
+		openActiveWhispering('OpenAI');
 
 	return satisfiesWorkspace({
 		...workspace,
@@ -31,7 +24,8 @@ export function openWhispering() {
 				workspace.tables.recordings,
 			),
 		}),
-		whenReady: idb.whenLoaded,
+		whenReady,
+		collaboration,
 	});
 }
 

@@ -12,7 +12,7 @@
 
 import type { Command } from '$lib/commands';
 import type { KeyBinding } from '$lib/tauri/commands';
-import type { createOAuthAppAuth } from '@epicenter/svelte/auth';
+import type { createAppAuthClient } from '@epicenter/svelte/auth';
 
 /**
  * Why a binding cannot be assigned, as structured data rather than prose. The
@@ -77,7 +77,7 @@ export type Shortcuts = {
  * same Epicenter OAuth client, differing only in the launcher (a redirect on
  * web, a deep-link round-trip on Tauri).
  */
-export type PlatformAuth = ReturnType<typeof createOAuthAppAuth>;
+export type PlatformAuth = ReturnType<typeof createAppAuthClient>;
 
 /**
  * Contract for `#platform/os`: host-OS identity, resolved once per build target.

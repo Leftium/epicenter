@@ -137,8 +137,8 @@ export function readFolder(
 
 /**
  * A folder's model after the expensive load step: missing, junk (with a
- * diagnostic), or parsed AND compiled. `validateModel` compiles each column's
- * validator once, so the loaded model's `columns` are already the precompiled
+ * diagnostic), or parsed AND compiled. `validateModel` compiles each field's
+ * validator once, so the loaded model's `fields` are already the precompiled
  * validators; there is no separate compile step here.
  */
 export type LoadedModel =
@@ -150,7 +150,7 @@ export type LoadedModel =
  * Parse AND compile a folder's `matter.json` ONCE. `validateModel` is where
  * compilation (`Schema.Compile`) happens, so memoize this off the model text (a
  * `$derived` in the live vault) and pass the result to {@link buildView}; a
- * single-file change then reclassifies against the cached columns without
+ * single-file change then reclassifies against the cached fields without
  * recompiling.
  */
 export function loadModel(modelText: string | undefined): LoadedModel {
@@ -175,7 +175,7 @@ export function buildView(
 		return {
 			mode: 'modeled',
 			model: loaded.model,
-			conformance: classifyRows(loaded.model.columns, rows),
+			conformance: classifyRows(loaded.model.fields, rows),
 		};
 	}
 	// No usable model: the raw untyped view, carrying the diagnostic if a

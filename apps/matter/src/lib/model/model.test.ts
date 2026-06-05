@@ -14,7 +14,7 @@ describe('validateModel (the matter.json gate)', () => {
 		});
 		expect(error).toBeNull();
 		if (error) throw new Error(error.message);
-		expect(data.columns.map((c) => [c.name, c.kind])).toEqual([
+		expect(data.fields.map((c) => [c.name, c.kind])).toEqual([
 			['title', 'string'],
 			['status', 'select'],
 			['labels', 'multiSelect'],
@@ -44,7 +44,7 @@ describe('validateModel (the matter.json gate)', () => {
 		});
 		expect(error).toBeNull();
 		if (error) throw new Error(error.message);
-		expect(data.columns.map((c) => c.name)).toEqual(['title']);
+		expect(data.fields.map((c) => c.name)).toEqual(['title']);
 		expect(data.unmodeled).toEqual(['bad']);
 	});
 
@@ -58,7 +58,7 @@ describe('validateModel (the matter.json gate)', () => {
 		});
 		expect(error).toBeNull();
 		if (error) throw new Error(error.message);
-		expect(data.columns.map((c) => c.name)).toEqual(['title']);
+		expect(data.fields.map((c) => c.name)).toEqual(['title']);
 		expect(data.unmodeled).toEqual(['meta', 'note']);
 	});
 });
@@ -73,6 +73,6 @@ describe('parseModel (raw text)', () => {
 	test('parses a valid file', () => {
 		const { data, error } = parseModel('{"fields":{"title":{"type":"string"}}}');
 		expect(error).toBeNull();
-		expect(data?.columns).toHaveLength(1);
+		expect(data?.fields).toHaveLength(1);
 	});
 });

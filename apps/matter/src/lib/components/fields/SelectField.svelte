@@ -1,5 +1,6 @@
 <script lang="ts">
 	import * as Select from '@epicenter/ui/select';
+	import { optionsOf } from '$lib/model/palette';
 	import FieldEmpty from './FieldEmpty.svelte';
 	import type { FieldProps } from './types';
 
@@ -9,8 +10,9 @@
 	// its ORIGINAL typed value. Saving "2" for a `{ enum: [1, 2, 3] }` field would
 	// fail the schema and flip the cell to INVALID, so options are keyed by INDEX
 	// and mapped back to the literal on change. Indexing also sidesteps a [1, "1"]
-	// key collision that stringified values would produce.
-	const values = $derived(field.schema.enum ?? []);
+	// key collision that stringified values would produce. `optionsOf` returns the
+	// typed primitives, so this never reaches into the raw schema's `unknown[]` enum.
+	const values = $derived(optionsOf(field));
 
 	// The Select's value is the option index ('' = no selection). Every modeled
 	// field is required, so there is no "(clear)" option: you change a selection by

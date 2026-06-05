@@ -56,7 +56,7 @@
  * this value satisfy it" (`compile`).
  */
 
-import { Type } from 'typebox';
+import { type Static, Type } from 'typebox';
 import { Format } from 'typebox/format';
 import * as Schema from 'typebox/schema';
 import { Value } from 'typebox/value';
@@ -97,6 +97,9 @@ const ANNOT = {
 
 /** The value space a closed set (`select` / `multiSelect`) may hold. `Number` covers integers. */
 const JsonPrimitive = Type.Union([Type.String(), Type.Number(), Type.Boolean()]);
+
+/** The TS value space of a closed set, mirrored from the {@link JsonPrimitive} schema. */
+export type JsonPrimitive = Static<typeof JsonPrimitive>;
 
 /**
  * The closed-set discriminant: a non-empty `enum` of primitives, optionally pinned
@@ -255,6 +258,26 @@ export function storageOf(kind: Kind): Storage {
 	if (!entry)
 		throw new Error(`storageOf called with a non-palette kind: ${kind}`);
 	return entry.storage;
+}
+
+/**
+ * The closed-set options a `select` or `multiSelect` field offers, read off its stored
+ * schema (`enum` for `select`, `items.enum` for `multiSelect`). The palette meta proved
+ * at the boundary that these are a non-empty array of primitives, so the cast is honest;
+ * the typed array is what the select cells render instead of reaching into `schema.enum`
+ * (an `unknown[]`). Every other kind carries no options and returns `[]`. Takes the
+ * structural slice it needs (`kind` + `schema`), not `Field`, so `palette` stays free of
+ * a `model` import (`model` already imports `palette`).
+ */
+export function optionsOf(field: { kind: Kind; schema: JsonSchema }): JsonPrimitive[] {
+	switch (field.kind) {
+		case 'select':
+			return (field.schema.enum ?? []) as JsonPrimitive[];
+		case 'multiSelect':
+			return (field.schema.items?.enum ?? []) as JsonPrimitive[];
+		default:
+			return [];
+	}
 }
 
 /** Every kind in the palette, in declaration order. The catalog, for tests and tooling. */

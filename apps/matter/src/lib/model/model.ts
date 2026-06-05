@@ -3,18 +3,19 @@
  *
  * `matter.json` at rest is `{ "fields": Record<fieldName, JsonSchema> }`, where each
  * field value is a plain JSON Schema in the closed palette. This module turns that
- * raw JSON into a {@link MatterModel}: a flat list of {@link Column}s, each carrying
+ * raw JSON into a {@link MatterModel}: a flat list of {@link Field}s, each carrying
  * its kind (the widget / storage classifier) and its precompiled validator, computed
- * ONCE here when the model loads.
+ * ONCE here when the model loads. "Field" is the source noun (the user defines a
+ * folder's fields); SQLite is the one consumer that turns fields into table columns.
  *
  * The acceptance rule is the meta-schema in `palette.ts`: a field whose stored shape
- * is a legal palette member becomes a typed Column; a field OUTSIDE the palette (a
+ * is a legal palette member becomes a typed Field; a field OUTSIDE the palette (a
  * typo, an object, a nullable wrapper) is recorded in `unmodeled` and shown raw,
  * rather than erroring the whole model. Only WHOLE-FILE junk (bad JSON, no `fields`
  * object) rejects the model to the raw view.
  *
  * There is no optional / nullable axis: every modeled field is required. "Must have
- * content" is a value constraint (e.g. `minLength`), not a model flag, so a Column
+ * content" is a value constraint (e.g. `minLength`), not a model flag, so a Field
  * carries a bare `kind` and has no `nullable`.
  */
 
@@ -40,15 +41,20 @@ export const MatterModelError = defineErrors({
 export type MatterModelError = InferErrors<typeof MatterModelError>;
 
 /**
- * One validated, compiled column: the frontmatter key it models, its stored schema
- * (cells read `schema.enum` / `schema.items` off it), the UI / storage kind, and the
- * precompiled validator. Computed once per model load, then flows unchanged to
- * conformance, the grid, and (later) the SQLite projector.
+ * One validated, compiled field: the frontmatter key it models, its stored schema
+ * (the source of truth; `kind` and `check` are projections of it, and the select
+ * cells read its options via `optionsOf`), the UI / storage kind, and the precompiled
+ * validator. Computed once per model load, then flows unchanged to conformance, the
+ * grid, and (later) the SQLite projector.
+ *
+ * `name` is identity (the map key, not in the schema); `schema` is the source; `kind`
+ * (= `deriveKind(schema)`) and `check` (= `compile(schema)`) are derived ONCE at the
+ * parse boundary so downstream readers never re-gate or recompile.
  */
-export type Column = {
-	/** The frontmatter key this column models. */
+export type Field = {
+	/** The frontmatter key this field models. */
 	name: string;
-	/** The raw JSON Schema as stored in `matter.json`. */
+	/** The raw JSON Schema as stored in `matter.json`: the source of `kind` and `check`. */
 	schema: JsonSchema;
 	/** The kind the UI renders and SQLite stores, derived from `schema`. */
 	kind: Kind;
@@ -56,10 +62,10 @@ export type Column = {
 	check: (value: unknown) => boolean;
 };
 
-/** A folder's validated model: the typed columns plus any fields outside the palette. */
+/** A folder's validated model: the typed fields plus any fields outside the palette. */
 export type MatterModel = {
-	/** The typed columns, in declared (insertion) order. */
-	columns: Column[];
+	/** The typed fields, in declared (insertion) order. */
+	fields: Field[];
 	/** Field names whose stored shape is outside the palette; shown raw, never typed. */
 	unmodeled: string[];
 };
@@ -84,12 +90,12 @@ export function validateModel(
 	const fieldsRaw = raw.fields;
 	if (!isPlainObject(fieldsRaw)) return MatterModelError.MissingFields();
 
-	const columns: Column[] = [];
+	const fields: Field[] = [];
 	const unmodeled: string[] = [];
 	for (const [name, schema] of Object.entries(fieldsRaw)) {
 		// The closed palette is the acceptance rule: `recognize` returns the kind whose
 		// meta matches, or null for a shape outside it (a typo, an object, a nullable
-		// `anyOf` wrapper). An unrecognized field is not a typed column: record it so the
+		// `anyOf` wrapper). An unrecognized field is not a typed field: record it so the
 		// UI can nudge, let its value surface as an unmodeled extra, and keep going.
 		const kind = recognize(schema);
 		if (kind === null) {
@@ -97,9 +103,9 @@ export function validateModel(
 			continue;
 		}
 		// `recognize` proved the shape is a palette member and handed back its kind in
-		// one pass, so this cast is honest. `compile` runs once per column.
+		// one pass, so this cast is honest. `compile` runs once per field.
 		const fieldSchema = schema as JsonSchema;
-		columns.push({
+		fields.push({
 			name,
 			schema: fieldSchema,
 			kind,
@@ -107,7 +113,7 @@ export function validateModel(
 		});
 	}
 
-	return Ok({ columns, unmodeled });
+	return Ok({ fields, unmodeled });
 }
 
 /**

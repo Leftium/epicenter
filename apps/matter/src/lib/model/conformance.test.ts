@@ -3,14 +3,14 @@ import { classifyRow, classifyRows } from './conformance';
 import { validateModel } from './model';
 import type { Row } from './types';
 
-function columns(fields: Record<string, Record<string, unknown>>) {
-	const { data, error } = validateModel({ fields });
+function fields(defs: Record<string, Record<string, unknown>>) {
+	const { data, error } = validateModel({ fields: defs });
 	if (error) throw new Error(error.message);
-	return data.columns;
+	return data.fields;
 }
 
 describe('classifyRow (per-cell conformance, everything required)', () => {
-	const cols = columns({
+	const cols = fields({
 		title: { type: 'string' },
 		url: { type: 'string', format: 'uri' },
 		rating: { type: 'integer' },
@@ -61,8 +61,8 @@ describe('classifyRow (per-cell conformance, everything required)', () => {
 	// "Must have content" is a value constraint, not a model flag: minLength rejects
 	// the empty string, so a blank string fails as INVALID rather than passing OK.
 	test('an empty string is OK for a plain string, INVALID under minLength', () => {
-		const plain = columns({ title: { type: 'string' } });
-		const must = columns({ title: { type: 'string', minLength: 1 } });
+		const plain = fields({ title: { type: 'string' } });
+		const must = fields({ title: { type: 'string', minLength: 1 } });
 		const row: Row = { name: 'f.md', frontmatter: { title: '' }, body: '' };
 		expect(classifyRow(plain, row).cells[0]?.state).toBe('OK');
 		expect(classifyRow(must, row).cells[0]?.state).toBe('INVALID');
@@ -88,9 +88,9 @@ describe('classifyRow (per-cell conformance, everything required)', () => {
 		expect(c.rowValid).toBe(true); // extras present, row still valid
 	});
 
-	test('an unmodeled field surfaces as an extra, not a column', () => {
-		// `note` is a nullable wrapper, outside the palette, so it is not a column.
-		const withUnmodeled = columns({
+	test('an unmodeled field surfaces as an extra, not a field', () => {
+		// `note` is a nullable wrapper, outside the palette, so it is not a field.
+		const withUnmodeled = fields({
 			title: { type: 'string' },
 			note: { anyOf: [{ type: 'string' }, { type: 'null' }] },
 		});
@@ -107,8 +107,8 @@ describe('classifyRow (per-cell conformance, everything required)', () => {
 });
 
 describe('classifyRows', () => {
-	test('classifies every row against the precompiled columns', () => {
-		const cols = columns({ title: { type: 'string' } });
+	test('classifies every row against the precompiled fields', () => {
+		const cols = fields({ title: { type: 'string' } });
 		const rows: Row[] = [
 			{ name: 'a.md', frontmatter: { title: 'A' }, body: '' },
 			{ name: 'b.md', frontmatter: {}, body: '' },

@@ -1,32 +1,27 @@
 <script lang="ts">
-	import * as Select from '@epicenter/ui/select';
-	import FieldEmpty from './FieldEmpty.svelte';
+	import { Checkbox } from '@epicenter/ui/checkbox';
 	import type { FieldProps } from './types';
 
-	// A Select rather than a checkbox: a checkbox cannot show the empty NEEDS_VALUE
-	// state a required-but-absent boolean has (checked / unchecked cannot also mean
-	// "unset"). The Select shows the empty placeholder when the value is absent, and
-	// reuses the same choice pattern as select. Real booleans map to/from the string
-	// values. There is no "(clear)" option: every modeled field is required.
-	let { cell, save }: FieldProps = $props();
+	// A checkbox, not a Select: with everything-required a boolean is exactly true or
+	// false, plus the "not filled in yet" state, and a checkbox shows all three
+	// without a popover. checked = true, empty box = false, the minus (indeterminate)
+	// = NEEDS_VALUE. Clicking an indeterminate box sets it true (bits-ui), which fills
+	// the cell; the grid rings NEEDS_VALUE until then.
+	//
+	// The committed value is a real boolean primitive, never a string or 0/1: the
+	// `{type:'boolean'}` schema validates only JS booleans, so anything else would
+	// flip the cell to INVALID (and route to the repair editor). bits-ui hands
+	// onCheckedChange a boolean, so the save is direct. No clear: every modeled field
+	// is required, so "unset" is not a settable target, only an unfilled one.
+	let { cell, field, save }: FieldProps = $props();
 
-	const selected = $derived(cell.value == null ? '' : String(cell.value));
+	const checked = $derived(cell.value === true);
+	const indeterminate = $derived(cell.value == null);
 </script>
 
-<Select.Root
-	type="single"
-	value={selected}
-	onValueChange={(value) => save(value === 'true')}
->
-	<Select.Trigger size="sm" class="w-full">
-		{#if cell.value == null}
-			<FieldEmpty />
-		{:else}
-			{cell.value ? '✓ true' : '✗ false'}
-		{/if}
-	</Select.Trigger>
-	<Select.Content>
-		<Select.Item value="true" label="true" />
-		<Select.Item value="false" label="false" />
-	</Select.Content>
-</Select.Root>
+<Checkbox
+	{checked}
+	{indeterminate}
+	aria-label={field.name}
+	onCheckedChange={(value) => save(value)}
+/>

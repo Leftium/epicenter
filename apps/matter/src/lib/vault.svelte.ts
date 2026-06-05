@@ -111,10 +111,13 @@ function createVault(path: string) {
 
 	/**
 	 * The current classified folder, derived from the files map + the loaded model.
-	 * The ONE place "files map -> FolderRead" lives, shared by the `read` getter (the
-	 * UI surface) and `rebuildIndex` (the SQLite mirror), so the two cannot drift.
+	 * The ONE place "files map -> FolderRead" lives, MEMOIZED so the `read` getter (the
+	 * UI surface) and `rebuildIndex` (the SQLite mirror) share a single classification
+	 * per change instead of each recomputing it. Recomputes only when `files` or the
+	 * loaded model changes; `rebuildIndex` reads it right after a batch mutates `files`,
+	 * so it still sees the freshest pass.
 	 */
-	function currentRead(): FolderRead {
+	const read = $derived.by((): FolderRead => {
 		const rows: FolderRead['rows'] = [];
 		const unreadable: FolderRead['unreadable'] = [];
 		for (const [fileName, { data, error }] of files) {
@@ -122,7 +125,7 @@ function createVault(path: string) {
 			else rows.push(data);
 		}
 		return { rows, unreadable, view: buildView(rows, loaded) };
-	}
+	});
 
 	/**
 	 * Rebuild `<path>/matter.sqlite` from the current VALID rows: a derived,
@@ -134,7 +137,7 @@ function createVault(path: string) {
 	 * command only executes it and binds the rows.
 	 */
 	function rebuildIndex(): void {
-		const { view } = currentRead();
+		const { view } = read;
 		if (view.mode !== 'modeled') return;
 		const { schema, insert, rows: tuples } = projectToSqlite(
 			name,
@@ -223,7 +226,7 @@ function createVault(path: string) {
 		saveBody,
 		/** The current classified folder. A pure read with no side effects. */
 		get read(): FolderRead {
-			return currentRead();
+			return read;
 		},
 		/** Whether the watch has been established (or failed). */
 		get status(): 'loading' | 'ready' {

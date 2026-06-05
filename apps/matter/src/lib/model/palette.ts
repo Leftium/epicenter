@@ -45,13 +45,13 @@
  * meta. `json` is the rejection lane, not a member of `Kind`: `recognize` returns
  * null.
  *
- * Everything public is DERIVED from the one `PALETTE` array below: `Kind`, `Storage`,
+ * Everything public is DERIVED from the one `PALETTE` array below: `Kind`,
  * `recognize`, `storageOf`, `KINDS`, `META_BY_KIND`. Adding a kind is one row here,
  * plus its widget in the component registry, which the compiler forces.
  *
  * This module also owns the VALUE side of a field schema: `JsonSchema` (its at-rest
- * shape), `registerFormats` (the value-semantic formats), and `compile` (the single
- * `Schema.Compile` that turns a stored schema into a per-cell validator). So one place
+ * shape) and `compile` (the single `Schema.Compile` that turns a stored schema into a
+ * per-cell validator, registering the value-semantic formats first). So one place
  * answers both readings of a stored schema: "which kind is it" (`recognize`) and "does
  * this value satisfy it" (`compile`).
  */
@@ -239,7 +239,7 @@ const PALETTE = [
 export type Kind = (typeof PALETTE)[number]['kind'];
 
 /** The SQLite storage classes a kind can map to. */
-export type Storage = (typeof PALETTE)[number]['storage'];
+type Storage = (typeof PALETTE)[number]['storage'];
 
 /**
  * The one classifier: the kind whose closed meta matches `schema`, or `null` when
@@ -292,24 +292,18 @@ export const META_BY_KIND = Object.fromEntries(
 ) as Record<Kind, (typeof PALETTE)[number]['meta']>;
 
 /**
- * Register the value-semantic formats so `format: 'uri'` / `format: 'date-time'`
- * actually enforce. TypeBox treats an UNREGISTERED format as "always passes", so
- * without this every string would satisfy `url` / `datetime`. Idempotent; `compile`
- * calls it before the first `Schema.Compile`, so there is no import-time side effect.
- */
-export function registerFormats(): void {
-	Format.Set('uri', Format.IsUri);
-	Format.Set('date-time', Format.IsDateTime);
-}
-
-/**
  * Compile a stored JSON Schema into a value check: the ONE place `Schema.Compile` is
- * called. It registers the value-semantic formats first (idempotent), then closes over
- * the validator rather than tearing `Check` off (it reads `this`). `recognize` decides
- * WHICH kind a schema is; `compile` decides whether a VALUE satisfies it.
+ * called. It closes over the validator rather than tearing `Check` off (it reads
+ * `this`). `recognize` decides WHICH kind a schema is; `compile` decides whether a
+ * VALUE satisfies it.
+ *
+ * The `Format.Set` calls register the value-semantic formats and run on every compile
+ * (idempotent, no import-time side effect): TypeBox treats an UNREGISTERED format as
+ * "always passes", so without them every string would satisfy `url` / `datetime`.
  */
 export function compile(schema: JsonSchema): (value: unknown) => boolean {
-	registerFormats();
+	Format.Set('uri', Format.IsUri);
+	Format.Set('date-time', Format.IsDateTime);
 	const validator = Schema.Compile(schema);
 	return (value) => validator.Check(value);
 }

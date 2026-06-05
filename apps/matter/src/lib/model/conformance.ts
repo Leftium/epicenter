@@ -32,11 +32,24 @@ import type { Row } from './types';
  * with `Exclude`.
  */
 
-/** A conformant cell: the value passed its field's schema. */
-export type OkCell = { field: Field; state: 'OK'; value: unknown };
+// The field generic `F` is defaulted to the full {@link Field} union but left
+// unconstrained: a per-kind widget pins it to one variant (`FieldOf<'select'>`), and
+// TypeScript can't prove a generic `FieldOf<K>` is a subtype of the mapped-union `Field`,
+// so an `extends Field` bound here would reject the registry's correlated map. `field: F`
+// needs no bound; any non-field `F` is caught where the consumer reads `field.kind`.
 
-/** An empty required cell: the key is absent or null, so there is no value to carry. */
-export type NeedsValueCell = { field: Field; state: 'NEEDS_VALUE' };
+/** A conformant cell of field `F`: the value passed its field's schema. */
+export type OkCell<F = Field> = {
+	field: F;
+	state: 'OK';
+	value: unknown;
+};
+
+/** An empty required cell of field `F`: the key is absent or null, so no value to carry. */
+export type NeedsValueCell<F = Field> = {
+	field: F;
+	state: 'NEEDS_VALUE';
+};
 
 /** A present value out of its field's domain: carries the `raw` value for the repair editor. */
 export type InvalidCell = { field: Field; state: 'INVALID'; raw: unknown };

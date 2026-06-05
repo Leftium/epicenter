@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { FieldOf } from '$lib/model/model';
 	import FieldEmpty from './FieldEmpty.svelte';
 	import type { FieldProps } from './types';
 
@@ -9,7 +10,7 @@
 	// editors will fork later (free chip entry for tags, a bounded picker for
 	// multiSelect, whose options come from `optionsOf(field)`), at which point
 	// this splits, the same way NumericField will if number and integer diverge.
-	let { cell }: FieldProps = $props();
+	let { cell }: FieldProps<FieldOf<'multiSelect'> | FieldOf<'tags'>> = $props();
 </script>
 
 {#if cell.state === 'NEEDS_VALUE'}

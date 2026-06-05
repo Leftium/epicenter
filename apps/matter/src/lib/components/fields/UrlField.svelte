@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createCellEdit } from './create-cell-edit.svelte';
 	import FieldEmpty from './FieldEmpty.svelte';
-	import type { FieldProps } from './types';
+	import type { FieldProps } from './field-props';
 
 	let { cell, save, clear }: FieldProps = $props();
 

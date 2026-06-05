@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { classifyRows } from './conformance';
 import { validateModel } from './model';
 import { projectToSqlite } from './sqlite';
-import type { Row } from './types';
+import type { Row } from './parse';
 
 function model(fields: Record<string, Record<string, unknown>>) {
 	const { data, error } = validateModel({ fields });

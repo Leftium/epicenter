@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createCellEdit, type CellEditParse } from './create-cell-edit.svelte';
 	import FieldEmpty from './FieldEmpty.svelte';
-	import type { ClearField, RenderableCell, SaveField } from './types';
+	import type { ClearField, RenderableCell, SaveField } from './field-props';
 
 	// The shared shell for the plain-text cell kinds (string, numeric, datetime):
 	// click to open one text input, commit on blur/Enter, revert on Escape, with the

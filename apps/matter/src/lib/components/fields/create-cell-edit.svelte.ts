@@ -18,7 +18,7 @@
  * lose reactivity.
  */
 
-import type { ClearField, SaveField } from './types';
+import type { ClearField, SaveField } from './field-props';
 
 export type CellEditParse =
 	| { type: 'value'; value: unknown }

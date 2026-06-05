@@ -1,6 +1,6 @@
 <script lang="ts">
 	import TextCell from './TextCell.svelte';
-	import type { FieldProps } from './types';
+	import type { FieldProps } from './field-props';
 
 	// Serves BOTH `number` and `integer`: parsing is identical (Number()), and the
 	// integer-vs-float distinction is the SCHEMA's to enforce. A non-finite draft is

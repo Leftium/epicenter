@@ -17,11 +17,9 @@
  */
 
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
-import { Err, Ok, type Result } from 'wellcrafted/result';
 import { classifyRows, type RowConformance } from './conformance';
 import { type MatterModel, type MatterModelError, parseModel } from './model';
-import { type MatterParseError, parseMarkdown } from './parse';
-import type { Row } from './types';
+import { type MatterParseError, parseEntry, type Row } from './parse';
 
 export type FolderEntry = { name: string; content: string };
 
@@ -92,22 +90,6 @@ function frontmatterColumns(rows: readonly Row[]): string[] {
 		.map((key, index) => ({ key, index, count: count.get(key) ?? 0 }))
 		.sort((a, b) => b.count - a.count || a.index - b.index)
 		.map((c) => c.key);
-}
-
-/**
- * Parse one file's content into a row, or the parse error that stopped it. The
- * SINGLE definition of "parse one file into the row-or-unreadable split", shared
- * by {@link readFolder} (batch) and the live vault (one delta at a time), so the
- * two cannot drift. The read-level {@link MatterReadError} is the caller's to add
- * (only Rust knows a file is undecodable); this covers the parse half.
- */
-export function parseEntry(
-	name: string,
-	content: string,
-): Result<Row, MatterParseError> {
-	const { data, error } = parseMarkdown(content);
-	if (error) return Err(error);
-	return Ok({ name, ...data });
 }
 
 /**

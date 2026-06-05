@@ -1,5 +1,11 @@
 /**
- * Parse a markdown file into frontmatter + body.
+ * Parse a markdown file into a row: its frontmatter mapping and verbatim body.
+ *
+ * Two granularities live here, both born from one parse: {@link ParsedFile} (the
+ * nameless split {@link parseMarkdown} returns) and {@link Row} (that split plus the
+ * file's basename identity, produced by {@link parseEntry}). The basename IS the row
+ * id: no id is minted, the name is the key (flat, non-recursive folder, so a basename
+ * is unique).
  *
  * Only the frontmatter is structurally parsed (a fenced YAML block at the top);
  * the body is returned verbatim and never AST-parsed. This is what sidesteps
@@ -80,4 +86,30 @@ export function parseMarkdown(
 		frontmatter: parsed as Record<string, unknown>,
 		body: raw.slice(match[0].length),
 	});
+}
+
+/**
+ * A markdown file read into memory: a {@link ParsedFile} plus the file's basename,
+ * which is the row identity. The body is the one rich field, kept verbatim and never
+ * AST-parsed; the frontmatter is the typed-column layer.
+ */
+export type Row = ParsedFile & {
+	/** The file's basename, used as the row id (no id is minted). */
+	name: string;
+};
+
+/**
+ * Parse one file's content into a row, or the parse error that stopped it. The SINGLE
+ * definition of "parse one file into the row-or-unreadable split", shared by
+ * {@link readFolder} (batch) and the live vault (one delta at a time), so the two
+ * cannot drift. The read-level error (only Rust knows a file is undecodable) is the
+ * caller's to add; this covers the parse half.
+ */
+export function parseEntry(
+	name: string,
+	content: string,
+): Result<Row, MatterParseError> {
+	const { data, error } = parseMarkdown(content);
+	if (error) return Err(error);
+	return Ok({ name, ...data });
 }

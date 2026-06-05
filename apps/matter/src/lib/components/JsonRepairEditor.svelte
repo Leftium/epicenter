@@ -1,7 +1,7 @@
 <script lang="ts">
-	import type { InvalidCell } from '$lib/model/conformance';
+	import type { InvalidCell } from '$lib/core/conformance';
 	import { createCellEdit } from './fields/create-cell-edit.svelte';
-	import type { ClearField, SaveField } from './fields/types';
+	import type { ClearField, SaveField } from './fields/field-props';
 
 	// The universal repair editor for an INVALID cell, chosen by ModeledCell before
 	// any per-kind Field. Edit the JSON-serialized value and re-parse on commit:

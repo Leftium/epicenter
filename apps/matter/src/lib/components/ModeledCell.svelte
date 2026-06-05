@@ -1,7 +1,7 @@
 <script lang="ts">
-	import type { Cell } from '$lib/model/conformance';
+	import type { Cell } from '$lib/core/conformance';
 	import { FIELD_COMPONENTS } from './fields/registry';
-	import type { ClearField, SaveField } from './fields/types';
+	import type { ClearField, SaveField } from './fields/field-props';
 	import JsonRepairEditor from './JsonRepairEditor.svelte';
 
 	let {

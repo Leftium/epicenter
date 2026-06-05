@@ -8,7 +8,7 @@
  * ONCE here when the model loads. "Field" is the source noun (the user defines a
  * folder's fields); SQLite is the one consumer that turns fields into table columns.
  *
- * The acceptance rule is the meta-schema in `palette.ts`: a field whose stored shape
+ * The acceptance rule is the meta-schema in `field.ts`: a field whose stored shape
  * is a legal palette member becomes a typed Field; a field OUTSIDE the palette (a
  * typo, an object, a nullable wrapper) is recorded in `unmodeled` and shown raw,
  * rather than erroring the whole model. Only WHOLE-FILE junk (bad JSON, no `fields`

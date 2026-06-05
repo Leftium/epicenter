@@ -20,7 +20,7 @@
  */
 
 import type { Field } from './model';
-import type { Row } from './types';
+import type { Row } from './parse';
 
 /**
  * A classified cell is one of three states, each a field applied to a row's value. The

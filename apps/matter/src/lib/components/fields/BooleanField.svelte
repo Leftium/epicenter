@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Checkbox } from '@epicenter/ui/checkbox';
-	import type { FieldProps } from './types';
+	import type { FieldProps } from './field-props';
 
 	// A checkbox, not a Select: with everything-required a boolean is exactly true or
 	// false, plus the "not filled in yet" state, and a checkbox shows all three

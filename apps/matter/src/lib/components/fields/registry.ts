@@ -1,6 +1,6 @@
 /**
  * The Kind -> Field component map: the UI layer's half of the contract whose
- * model half is `recognize` (schema -> Kind) in `palette.ts`. Keeping them separate
+ * model half is `recognize` (schema -> Kind) in `field.ts`. Keeping them separate
  * is the point: the model layer derives the kind and stays free of component imports;
  * this layer maps the kind to a widget.
  *
@@ -14,15 +14,15 @@
  */
 
 import type { Component } from 'svelte';
-import type { FieldOf } from '$lib/model/model';
-import type { Kind } from '$lib/model/field';
+import type { FieldOf } from '$lib/core/model';
+import type { Kind } from '$lib/core/field';
 import BooleanField from './BooleanField.svelte';
 import ChipListField from './ChipListField.svelte';
 import DateTimeField from './DateTimeField.svelte';
 import NumericField from './NumericField.svelte';
 import SelectField from './SelectField.svelte';
 import StringField from './StringField.svelte';
-import type { FieldProps } from './types';
+import type { FieldProps } from './field-props';
 import UrlField from './UrlField.svelte';
 
 /** A per-kind Field widget over the base (full-union) props, the dispatch surface type. */

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import TextCell from './TextCell.svelte';
-	import type { FieldProps } from './types';
+	import type { FieldProps } from './field-props';
 
 	// A text input over the RFC 3339 string for now; a NaturalLanguageDateInput
 	// picker lands with the calendar view (spec "Later"). A value that is not valid

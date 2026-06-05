@@ -13,8 +13,8 @@
  * the kind's domain reappears as INVALID (handled by the wrapper, not the Field).
  */
 
-import type { NeedsValueCell, OkCell } from '$lib/model/conformance';
-import type { Field } from '$lib/model/model';
+import type { NeedsValueCell, OkCell } from '$lib/core/conformance';
+import type { Field } from '$lib/core/model';
 
 /**
  * Commit a new value for this cell's field. The {@link ModeledCell} wrapper binds
@@ -48,9 +48,9 @@ export type RenderableCell<F = Field> = OkCell<F> | NeedsValueCell<F>;
  * `save` / `clear` (and `cell.field.name`), none of which depend on the kind. A widget
  * pins `F` to its own kind (`FieldProps<FieldOf<'select'>>`) ONLY when its body reads
  * that kind's SCHEMA, so `cell.field.schema` is the precise shape with no `optionsOf`
- * and no cast (today just SelectField, reading `schema.enum`). So a pinned `F` is a
- * signal: this widget reads its schema. `save`/`clear` are identical for every kind, so
- * only `cell` varies.
+ * and no cast (the schema readers are SelectField on `schema.enum` and MultiSelectField
+ * on `schema.items.enum`). So a pinned `F` is a signal: this widget reads its schema.
+ * `save`/`clear` are identical for every kind, so only `cell` varies.
  */
 export type FieldProps<F = Field> = {
 	/** The classified cell to render: `OK` (carries a value) or `NEEDS_VALUE` (empty). */

@@ -23,17 +23,16 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { SvelteMap } from 'svelte/reactivity';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, type Result, tryAsync } from 'wellcrafted/result';
-import { editBody, editField } from './model/serialize';
-import { projectToSqlite } from './model/sqlite';
+import { editBody, editField } from './core/serialize';
+import { projectToSqlite } from './core/sqlite';
 import {
 	buildView,
 	type FolderRead,
 	loadModel,
 	MatterReadError,
-	parseEntry,
 	type UnreadableFile,
-} from './model/view';
-import type { Row } from './model/types';
+} from './core/folder';
+import { parseEntry, type Row } from './core/parse';
 
 /**
  * One file's observable state, pushed by `watch_folder` (serde `tag = "kind"`).

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFolder } from './view';
+import { readFolder } from './folder';
 
 describe('readFolder', () => {
 	test('splits readable rows from unreadable files and lists raw columns', () => {

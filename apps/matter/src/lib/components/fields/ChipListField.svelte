@@ -1,7 +1,7 @@
 <script lang="ts">
-	import type { FieldOf } from '$lib/model/model';
+	import type { FieldOf } from '$lib/core/model';
 	import FieldEmpty from './FieldEmpty.svelte';
-	import type { FieldProps } from './types';
+	import type { FieldProps } from './field-props';
 
 	// Read-only string chips, shared by `tags` (free strings) and `multiSelect`
 	// (a closed enum set). Both at-rest shapes are an array of strings, so the

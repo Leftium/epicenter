@@ -1,8 +1,8 @@
 <script lang="ts">
 	import * as Select from '@epicenter/ui/select';
-	import type { FieldOf } from '$lib/model/model';
+	import type { FieldOf } from '$lib/core/model';
 	import FieldEmpty from './FieldEmpty.svelte';
-	import type { FieldProps } from './types';
+	import type { FieldProps } from './field-props';
 
 	let { cell, save }: FieldProps<FieldOf<'select'>> = $props();
 

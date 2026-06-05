@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { Extra } from '$lib/model/conformance';
-	import type { Row } from '$lib/model/types';
+	import type { Extra } from '$lib/core/conformance';
+	import type { Row } from '$lib/core/parse';
 
 	let {
 		row,

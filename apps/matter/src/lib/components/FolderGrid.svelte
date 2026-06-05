@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Table from '@epicenter/ui/table';
-	import type { FolderRead } from '$lib/model/view';
+	import type { FolderRead } from '$lib/core/folder';
 	import ModeledCell from './ModeledCell.svelte';
 	import RowDetail from './RowDetail.svelte';
 

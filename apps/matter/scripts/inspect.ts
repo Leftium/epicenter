@@ -11,7 +11,7 @@
 
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { readFolder } from '../src/lib/model/view';
+import { readFolder } from '../src/lib/core/folder';
 
 const dir = process.argv[2] ?? './sample-vault/drafts';
 

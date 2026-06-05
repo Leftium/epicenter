@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { classifyRow, classifyRows } from './conformance';
 import { validateModel } from './model';
-import type { Row } from './types';
+import type { Row } from './parse';
 
 function fields(defs: Record<string, Record<string, unknown>>) {
 	const { data, error } = validateModel({ fields: defs });

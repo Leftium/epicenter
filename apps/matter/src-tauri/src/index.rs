@@ -3,8 +3,8 @@
 //! `matter.sqlite` sits NEXT TO `matter.json` as a derived, disposable mirror of the
 //! folder's VALID rows, so a coding agent (or an in-app SQL console) can run arbitrary
 //! SQL over the typed folder. The JS projector (`model/sqlite.ts`) builds all the SQL
-//! TEXT (drop / create / insert, quoting and placeholders included) and the row
-//! tuples; Rust only opens the db, executes the three statements, and parameter-binds
+//! TEXT (the schema script + the insert, quoting and placeholders included) and the
+//! row tuples; Rust only opens the db, runs the schema script, and parameter-binds
 //! each row. It never learns what a column or a kind is, the same faithful role
 //! `entry.rs` and `watch.rs` play for writes and reads.
 //!
@@ -33,14 +33,14 @@ fn to_sql(value: &serde_json::Value) -> Value {
     }
 }
 
-/// Rebuild `<path>/matter.sqlite` from the projected rows. `drop` / `ddl` / `insert`
-/// are the SQL the JS projector built; `rows` is one tuple per valid row, positional
-/// against the insert's columns. Full drop-and-recreate inside one transaction.
+/// Rebuild `<path>/matter.sqlite` from the projected rows. `schema` (a `DROP` + `CREATE`
+/// script) and `insert` are the SQL the JS projector built; `rows` is one tuple per
+/// valid row, positional against the insert's columns. Full drop-and-recreate in one
+/// transaction, so the file is disposable.
 #[tauri::command]
 pub fn write_index(
     path: String,
-    drop: String,
-    ddl: String,
+    schema: String,
     insert: String,
     rows: Vec<Vec<serde_json::Value>>,
 ) -> Result<(), String> {
@@ -48,8 +48,8 @@ pub fn write_index(
     let mut conn = Connection::open(&db).map_err(|e| e.to_string())?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
-    tx.execute(&drop, []).map_err(|e| e.to_string())?;
-    tx.execute(&ddl, []).map_err(|e| e.to_string())?;
+    // execute_batch runs the multi-statement DROP + CREATE script (no params).
+    tx.execute_batch(&schema).map_err(|e| e.to_string())?;
     {
         let mut stmt = tx.prepare(&insert).map_err(|e| e.to_string())?;
         for row in &rows {
@@ -79,8 +79,8 @@ mod tests {
         dir
     }
 
-    const DROP: &str = r#"DROP TABLE IF EXISTS "drafts""#;
-    const DDL: &str = r#"CREATE TABLE "drafts" ("path" TEXT PRIMARY KEY, "title" TEXT NOT NULL, "count" INTEGER NOT NULL, "_extra" TEXT NOT NULL)"#;
+    const SCHEMA: &str = r#"DROP TABLE IF EXISTS "drafts";
+CREATE TABLE "drafts" ("path" TEXT PRIMARY KEY, "title" TEXT NOT NULL, "count" INTEGER NOT NULL, "_extra" TEXT NOT NULL)"#;
     const INSERT: &str =
         r#"INSERT INTO "drafts" ("path", "title", "count", "_extra") VALUES (?, ?, ?, ?)"#;
 
@@ -100,7 +100,7 @@ mod tests {
             vec![json!("b.md"), json!("World"), json!(5), json!(r#"{"k":1}"#)],
         ];
 
-        write_index(path, DROP.into(), DDL.into(), INSERT.into(), rows).unwrap();
+        write_index(path, SCHEMA.into(), INSERT.into(), rows).unwrap();
 
         // The file lands in the given folder (where matter.json lives), not elsewhere.
         assert!(dir.join("matter.sqlite").exists());
@@ -125,8 +125,7 @@ mod tests {
 
         write_index(
             path.clone(),
-            DROP.into(),
-            DDL.into(),
+            SCHEMA.into(),
             INSERT.into(),
             vec![
                 vec![json!("a.md"), json!("A"), json!(1), json!("{}")],
@@ -139,8 +138,7 @@ mod tests {
         // A second write with one row replaces the table wholesale (disposable).
         write_index(
             path,
-            DROP.into(),
-            DDL.into(),
+            SCHEMA.into(),
             INSERT.into(),
             vec![vec![json!("only.md"), json!("Solo"), json!(9), json!("{}")]],
         )

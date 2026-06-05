@@ -7,9 +7,9 @@
  * the external read surface, not the app's query engine.
  *
  * This module is the PURE half: given the model and the classified rows, it produces
- * the `CREATE TABLE` DDL and the row tuples to insert. The impure half (writing the
- * file) is a thin Tauri command that executes the DDL and parameter-binds the rows;
- * keeping serialization here makes it unit-testable with no filesystem.
+ * the schema script (`DROP` + `CREATE`) and the row tuples to insert. The impure half
+ * (writing the file) is a thin Tauri command that runs the script and parameter-binds
+ * the rows; keeping serialization here makes it unit-testable with no filesystem.
  *
  * Three properties define the table:
  *   - VALID rows only. "valid" means "projects into the typed table" (every modeled
@@ -29,22 +29,17 @@ import { storageOf } from './palette';
 export type SqlValue = string | number;
 
 /**
- * The pure artifacts a Tauri command needs to materialize the table. All SQL TEXT
- * is built here (one quoting implementation); the command only executes the three
- * statements and parameter-binds each row, so it never constructs SQL.
+ * The pure artifacts a Tauri command needs to materialize the table: exactly its
+ * arguments, nothing exposed that the command does not consume. All SQL TEXT is built
+ * here (one quoting implementation); the command runs the script and binds the rows,
+ * so it never constructs SQL.
  */
 export type SqliteProjection = {
-	/** The table name (the folder basename). */
-	table: string;
-	/** `DROP TABLE IF EXISTS ...` (the rebuild is full drop-and-recreate). */
-	drop: string;
-	/** `CREATE TABLE ...`: `path` PK, one NOT NULL column per field, `_extra` JSON. */
-	ddl: string;
-	/** `INSERT INTO ... VALUES (?, ?, ...)`: one `?` placeholder per column. */
+	/** `DROP TABLE IF EXISTS ...; CREATE TABLE ...`: one param-less script for `execute_batch`. */
+	schema: string;
+	/** `INSERT INTO ... VALUES (?, ?, ...)`: one `?` placeholder per column, bound positionally. */
 	insert: string;
-	/** Column names in insert order: `path`, the modeled fields, then `_extra`. */
-	columns: string[];
-	/** One tuple per VALID row, positional against {@link columns}. */
+	/** One tuple per VALID row, positional against the insert's columns. */
 	rows: SqlValue[][];
 };
 
@@ -68,12 +63,10 @@ function serializeCell(column: Column, value: unknown): SqlValue {
 		case 'tags':
 		case 'multiSelect':
 			return JSON.stringify(value); // an array -> JSON TEXT
-		case 'select':
-			// A select value may be a string, number, or boolean (its enum's type).
-			// The column is TEXT; store the string form (SQLite TEXT affinity coerces).
-			return typeof value === 'string' ? value : String(value);
 		default:
-			// string / url / datetime: a plain string in a TEXT column.
+			// string / url / datetime / select, all TEXT columns. String(v) is identity
+			// for a string and the TEXT form for a numeric/boolean enum value (what a
+			// select holds), which SQLite's TEXT affinity stores and coerces on read.
 			return String(value);
 	}
 }
@@ -122,12 +115,10 @@ export function projectToSqlite(
 		.map(quoteIdent)
 		.join(', ')}) VALUES (${placeholders})`;
 
-	return {
-		table,
-		drop: `DROP TABLE IF EXISTS ${quoteIdent(table)}`,
-		ddl: buildDdl(table, model.columns),
-		insert,
-		columns,
-		rows,
-	};
+	// DROP + CREATE as one param-less script; the command runs it via execute_batch,
+	// rusqlite's idiom for a multi-statement setup script.
+	const drop = `DROP TABLE IF EXISTS ${quoteIdent(table)}`;
+	const schema = `${drop};\n${buildDdl(table, model.columns)}`;
+
+	return { schema, insert, rows };
 }

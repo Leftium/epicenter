@@ -41,11 +41,12 @@ const incomplete: Row = {
 	body: '',
 };
 
-describe('buildDdl', () => {
-	test('path PK, one NOT NULL column per field with its storage class, _extra JSON', () => {
-		const { ddl } = projectToSqlite('drafts', m, []);
-		expect(ddl).toBe(
-			'CREATE TABLE "drafts" (' +
+describe('schema script (DROP + CREATE, one execute_batch)', () => {
+	test('drops then recreates: path PK, one NOT NULL column per field by storage class, _extra JSON', () => {
+		const { schema } = projectToSqlite('drafts', m, []);
+		expect(schema).toBe(
+			'DROP TABLE IF EXISTS "drafts";\n' +
+				'CREATE TABLE "drafts" (' +
 				'"path" TEXT PRIMARY KEY, ' +
 				'"title" TEXT NOT NULL, ' +
 				'"status" TEXT NOT NULL, ' +
@@ -60,47 +61,29 @@ describe('buildDdl', () => {
 
 	test('identifiers with quotes/spaces are escaped', () => {
 		const weird = model({ 'a "b"': { type: 'string' } });
-		const { ddl } = projectToSqlite('my folder', weird, []);
-		expect(ddl).toContain('CREATE TABLE "my folder"');
-		expect(ddl).toContain('"a ""b""" TEXT NOT NULL');
+		const { schema } = projectToSqlite('my folder', weird, []);
+		expect(schema).toContain('DROP TABLE IF EXISTS "my folder"');
+		expect(schema).toContain('CREATE TABLE "my folder"');
+		expect(schema).toContain('"a ""b""" TEXT NOT NULL');
 	});
 });
 
-describe('drop and insert SQL (all SQL text built here, not in Rust)', () => {
-	test('drop targets the quoted table', () => {
-		const { drop } = projectToSqlite('drafts', m, []);
-		expect(drop).toBe('DROP TABLE IF EXISTS "drafts"');
-	});
-
-	test('insert lists every column and one ? placeholder each', () => {
-		const { insert, columns } = projectToSqlite('drafts', m, []);
+describe('insert template (one ? per column, bound positionally)', () => {
+	test('lists every column in order with one placeholder each', () => {
+		const { insert } = projectToSqlite('drafts', m, []);
 		expect(insert).toBe(
 			'INSERT INTO "drafts" (' +
 				'"path", "title", "status", "count", "score", "live", "tags", "url", "_extra"' +
 				') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
 		);
-		// one placeholder per column, so binding is positional against `columns`
-		expect((insert.match(/\?/g) ?? []).length).toBe(columns.length);
+		// path + 7 modeled fields + _extra = 9 placeholders.
+		expect((insert.match(/\?/g) ?? []).length).toBe(9);
 	});
 });
 
-describe('projectToSqlite (valid rows only, serialized per storage class)', () => {
+describe('rows (valid only, serialized per storage class)', () => {
 	const conformance = classifyRows(m.columns, [valid, incomplete]);
 	const proj = projectToSqlite('drafts', m, conformance);
-
-	test('columns are path, the modeled fields, then _extra', () => {
-		expect(proj.columns).toEqual([
-			'path',
-			'title',
-			'status',
-			'count',
-			'score',
-			'live',
-			'tags',
-			'url',
-			'_extra',
-		]);
-	});
 
 	test('only the valid row projects; the incomplete one is absent', () => {
 		expect(proj.rows).toHaveLength(1);
@@ -128,9 +111,9 @@ describe('projectToSqlite (valid rows only, serialized per storage class)', () =
 		expect(p.rows[0]).toEqual(['r.md', '2', '{}']); // select stored as TEXT, empty _extra
 	});
 
-	test('an all-invalid folder yields a table with no rows', () => {
+	test('an all-invalid folder yields a schema but no rows', () => {
 		const p = projectToSqlite('drafts', m, classifyRows(m.columns, [incomplete]));
 		expect(p.rows).toEqual([]);
-		expect(p.ddl).toContain('CREATE TABLE "drafts"');
+		expect(p.schema).toContain('CREATE TABLE "drafts"');
 	});
 });

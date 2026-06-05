@@ -125,12 +125,12 @@ function createVault(path: string) {
 		}
 		const view = buildView(rows, loaded);
 		if (view.mode !== 'modeled') return;
-		const { drop, ddl, insert, rows: tuples } = projectToSqlite(
+		const { schema, insert, rows: tuples } = projectToSqlite(
 			name,
 			view.model,
 			view.conformance,
 		);
-		void invoke('write_index', { path, drop, ddl, insert, rows: tuples }).catch(
+		void invoke('write_index', { path, schema, insert, rows: tuples }).catch(
 			(cause) => {
 				indexError = extractErrorMessage(cause);
 			},

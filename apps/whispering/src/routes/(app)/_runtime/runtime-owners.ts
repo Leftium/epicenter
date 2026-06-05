@@ -10,6 +10,7 @@ import { attachPushToTalkReconcile } from './attach-push-to-talk-reconcile.svelt
 import { attachRecordingOverlay } from './attach-recording-overlay.svelte';
 import { attachRecordingRetention } from './attach-recording-retention.svelte';
 import { attachShortcutSync } from './attach-shortcut-sync';
+import { attachSignInMigration } from './attach-sign-in-migration';
 import { attachTrayIcon } from './attach-tray-icon.svelte';
 import { attachUnloadPolicy } from './attach-unload-policy.svelte';
 import { attachUpdateCheck } from './attach-update-check';
@@ -31,4 +32,5 @@ export const runtimeOwners = [
 	{ attach: attachAutoPasteIntent },
 	{ attach: dictationCapability.attach },
 	{ attach: attachPushToTalkReconcile },
+	{ attach: attachSignInMigration },
 ] satisfies RuntimeOwner[];

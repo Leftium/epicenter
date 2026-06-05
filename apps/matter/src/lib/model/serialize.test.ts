@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { parseMarkdown } from './parse';
-import { serializeEntry } from './serialize';
+import { editBody, editField, serializeEntry } from './serialize';
 
 describe('serializeEntry', () => {
 	test('an empty mapping is body only (no fence)', () => {
@@ -50,30 +50,16 @@ describe('serializeEntry', () => {
  * without Tauri, and is where round-trip identity (by value) is the contract.
  */
 describe('edit cycle (parse -> edit -> serialize -> parse)', () => {
-	const setField = (raw: string, key: string, value: unknown) => {
-		const { data } = parseMarkdown(raw);
-		if (!data) return raw;
-		const frontmatter = { ...data.frontmatter };
-		if (value === undefined) delete frontmatter[key];
-		else frontmatter[key] = value;
-		return serializeEntry(frontmatter, data.body);
-	};
-	const setBody = (raw: string, body: string) => {
-		const { data } = parseMarkdown(raw);
-		if (!data) return raw;
-		return serializeEntry(data.frontmatter, body);
-	};
-
 	test('round-trip identity by VALUE: a no-op cycle preserves every value and the body', () => {
 		const raw = '---\ntitle: My Post\nstatus: draft\ntags:\n  - a\n  - b\n---\n# Body\n\ntext';
 		const before = parseMarkdown(raw).data;
-		const after = parseMarkdown(setField(raw, 'status', 'draft')).data;
+		const after = parseMarkdown(editField(raw, 'status', 'draft')).data;
 		expect(after).toEqual(before);
 	});
 
 	test('setting one field keeps the others and their order', () => {
 		const raw = '---\ntitle: Hello\nstatus: draft\n---\nbody';
-		const out = setField(raw, 'status', 'published');
+		const out = editField(raw, 'status', 'published');
 		expect(parseMarkdown(out).data?.frontmatter).toEqual({
 			title: 'Hello',
 			status: 'published',
@@ -83,14 +69,14 @@ describe('edit cycle (parse -> edit -> serialize -> parse)', () => {
 
 	test('clearing a field removes the key, never writes null', () => {
 		const raw = '---\ntitle: Hello\nstatus: draft\n---\nbody';
-		const out = setField(raw, 'status', undefined);
+		const out = editField(raw, 'status', undefined);
 		expect(out).not.toContain('status');
 		expect(out).not.toContain('null');
 		expect(parseMarkdown(out).data?.frontmatter).toEqual({ title: 'Hello' });
 	});
 
 	test('clearing the last field drops the fence to body-only', () => {
-		expect(setField('---\ntitle: Hello\n---\n# Body\ntext', 'title', undefined)).toBe(
+		expect(editField('---\ntitle: Hello\n---\n# Body\ntext', 'title', undefined)).toBe(
 			'# Body\ntext',
 		);
 	});
@@ -99,7 +85,7 @@ describe('edit cycle (parse -> edit -> serialize -> parse)', () => {
 		// `duration` held as a string while the model wants an integer: still valid
 		// YAML, so it round-trips and the grid keeps showing it INVALID to fix.
 		const raw = '---\nduration: "1240s"\n---\nbody';
-		const out = setField(raw, 'title', 'New');
+		const out = editField(raw, 'title', 'New');
 		expect(parseMarkdown(out).data?.frontmatter).toEqual({
 			duration: '1240s',
 			title: 'New',
@@ -107,7 +93,7 @@ describe('edit cycle (parse -> edit -> serialize -> parse)', () => {
 	});
 
 	test('setting a field on a file with no frontmatter creates the block', () => {
-		const out = setField('# Just a body\n\ntext', 'title', 'New');
+		const out = editField('# Just a body\n\ntext', 'title', 'New');
 		expect(parseMarkdown(out).data).toEqual({
 			frontmatter: { title: 'New' },
 			body: '# Just a body\n\ntext',
@@ -116,7 +102,7 @@ describe('edit cycle (parse -> edit -> serialize -> parse)', () => {
 
 	test('editing the body keeps the frontmatter values', () => {
 		const raw = '---\ntitle: Keep\nstatus: draft\n---\nold';
-		expect(parseMarkdown(setBody(raw, 'new body')).data).toEqual({
+		expect(parseMarkdown(editBody(raw, 'new body')).data).toEqual({
 			frontmatter: { title: 'Keep', status: 'draft' },
 			body: 'new body',
 		});

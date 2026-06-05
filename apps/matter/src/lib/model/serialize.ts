@@ -23,6 +23,7 @@
  */
 
 import { stringify } from 'yaml';
+import { parseMarkdown } from './parse';
 
 export function serializeEntry(
 	frontmatter: Record<string, unknown>,
@@ -30,4 +31,34 @@ export function serializeEntry(
 ): string {
 	if (Object.keys(frontmatter).length === 0) return body;
 	return `---\n${stringify(frontmatter)}---\n${body}`;
+}
+
+/**
+ * Apply one field edit to raw markdown: parse the freshest bytes, set or clear
+ * one frontmatter key, re-emit canonically with the body verbatim.
+ * `value === undefined` CLEARS the field (deletes the key, never writes `null`:
+ * the nullish contract). An UNPARSEABLE file is returned unchanged, since the
+ * grid never edits those.
+ *
+ * This IS the vault's field-write transform, exported so the round-trip contract
+ * is exercised directly instead of re-implemented in the test.
+ */
+export function editField(raw: string, key: string, value: unknown): string {
+	const { data } = parseMarkdown(raw);
+	if (!data) return raw;
+	const frontmatter = { ...data.frontmatter };
+	if (value === undefined) delete frontmatter[key];
+	else frontmatter[key] = value;
+	return serializeEntry(frontmatter, data.body);
+}
+
+/**
+ * Replace a file's body, keeping its frontmatter values intact (the body-write
+ * half of the same parse-edit-serialize transform). Unparseable files are
+ * returned unchanged.
+ */
+export function editBody(raw: string, body: string): string {
+	const { data } = parseMarkdown(raw);
+	if (!data) return raw;
+	return serializeEntry(data.frontmatter, body);
 }

@@ -15,8 +15,13 @@
 	// is required, so "unset" is not a settable target, only an unfilled one.
 	let { cell, field, save }: FieldProps = $props();
 
+	// Read the classifier's verdict, not a re-derived nullish check: conformance
+	// already collapsed "absent key OR bare YAML null" into NEEDS_VALUE (the one
+	// place the empty contract lives), so the widget asks `state`, not `value == null`.
+	// `checked` is the only thing that needs the value itself, and only an exact
+	// boolean true checks the box (an OK boolean cell is true or false).
 	const checked = $derived(cell.value === true);
-	const indeterminate = $derived(cell.value == null);
+	const indeterminate = $derived(cell.state === 'NEEDS_VALUE');
 </script>
 
 <Checkbox

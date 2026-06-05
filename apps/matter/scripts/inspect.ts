@@ -53,7 +53,7 @@ if (view.mode === 'unmodeled') {
 } else {
 	console.log('Model fields:');
 	for (const f of view.model.fields) {
-		console.log(`  ${f.name.padEnd(14)} ${f.derived.kind}${f.derived.kind === 'array' ? '[]' : ''}${f.derived.nullable ? '?' : ''}`);
+		console.log(`  ${f.name.padEnd(14)} ${f.kind}`);
 	}
 
 	console.log('\nConformance (state per cell; ! = needs attention):');

@@ -70,10 +70,9 @@ import { Value } from 'typebox/value';
  * parse boundary in `model.ts`, after `recognize` has accepted it.
  */
 export type JsonSchema = {
-	type?: string | string[];
+	type?: string;
 	format?: string;
 	enum?: unknown[];
-	anyOf?: JsonSchema[];
 	items?: JsonSchema;
 };
 

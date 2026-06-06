@@ -342,6 +342,7 @@
 									>
 										<ModeledCell
 											{cell}
+											mode="grid"
 											save={(value) => onSaveField(conf.row.name, cell.field.name, value)}
 											clear={() => onSaveField(conf.row.name, cell.field.name, undefined)}
 										/>

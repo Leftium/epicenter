@@ -94,6 +94,7 @@
 								<div class="min-w-0">
 									<ModeledCell
 										{cell}
+										mode="detail"
 										save={(value) => onSaveField(row.name, cell.field.name, value)}
 										clear={() => onSaveField(row.name, cell.field.name, undefined)}
 									/>

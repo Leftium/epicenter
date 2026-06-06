@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { Button } from '@epicenter/ui/button';
+	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import { createCellEdit } from './create-cell-edit.svelte';
 	import FieldEmpty from './FieldEmpty.svelte';
 	import type { FieldProps } from './field-props';
@@ -33,22 +35,26 @@
 		<FieldEmpty />
 	</button>
 {:else}
-	<!-- The value is a live link; a SEPARATE affordance opens the editor (siblings,
+	<!-- The value is a live link; a SEPARATE pencil opens the editor (siblings,
 	     not a button wrapping an anchor), so clicking the URL navigates and never
 	     traps you in edit mode. -->
-	<span class="flex items-center gap-1">
+	<span class="flex min-w-0 items-center gap-1">
 		<a
 			href={String(cell.value)}
 			target="_blank"
 			rel="noreferrer"
-			class="truncate rounded-sm text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+			class="min-w-0 flex-1 truncate rounded-sm text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
 			>{String(cell.value)}</a
 		>
-		<button
-			type="button"
+		<Button
+			variant="ghost"
+			size="icon-xs"
 			onclick={edit.start}
-			class="shrink-0 rounded-sm text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-			title="Edit">edit</button
+			aria-label="Edit URL"
+			tooltip="Edit URL"
+			class="shrink-0 text-muted-foreground hover:text-foreground"
 		>
+			<PencilIcon />
+		</Button>
 	</span>
 {/if}

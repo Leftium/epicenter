@@ -1,11 +1,40 @@
 # Shared SQLite projection primitives (not a shared projection engine)
 
 **Date**: 2026-06-05
-**Status**: Draft (design question, not yet executed)
+**Status**: DEFERRED (2026-06-06), gated on the wiki ECS rebuild. See "Deferral" below.
 **Owner**: Braden
 **Branch**: `matter-typed-markdown-editor`
-**Relates to**: `20260605T145734-matter-live-projection-lifecycle.md` (matter's seed/sync/reconcile lifecycle), the field-vocabulary convergence (`20260605T071500`)
+**Relates to**: `20260605T145734-matter-live-projection-lifecycle.md` (matter's seed/sync/reconcile lifecycle), the field-vocabulary convergence (`20260605T071500`), `20260602T120000-wiki-core-collections-traits-and-curation.md` (the wiki ECS rebuild that owns the wiki side of this)
 **Prompted by**: the collapse pass that deleted the unused typed Drizzle mirror layer and inlined `deriveStorage` into `ddl.ts`, which exposed that three apps hand-roll the same projection primitives.
+
+## Deferral (2026-06-06)
+
+This extraction was re-examined after the `column.* -> field.*` collapse and is now **DEFERRED** until the wiki ECS rebuild (`20260602T120000`), because its premise no longer holds:
+
+```
+The spec's motivation was "wiki hand-copied deriveStorage; extract so it stops drifting."
+But apps/wiki is the original VERTICAL SLICE, and today it is:
+  - BROKEN      markdown.ts imports the deleted attachMarkdownMaterializer (4 TS errors, 1 file)
+  - TEST-ONLY   projection.ts is consumed only by wiki.test.ts; zero live app code calls projectWiki
+  - SUPERSEDED  the ECS redesign (pages + table-per-tag) will REWRITE projection.ts
+
+Pull the wiki consumer out and count who is left for deriveStorage / serializeValue:
+  workspace ddl.ts/core.ts   the definition + only LIVE consumer
+  matter sqlite.ts           does NOT use them (closed palette: storageOf + serializeCell)
+  wiki projection.ts         test-only, broken, about to be rewritten
+
+With no live second consumer, extracting deriveStorage/serializeValue to a "shared" module is
+RELOCATION, not collapse. A shared leaf earns itself when two real consumers pull on it; the
+second (the rebuilt ECS wiki) does not exist yet in its final shape. Designing the module's
+surface around the soon-deleted vertical-slice projection.ts would bake in its assumptions.
+```
+
+**Revised direction:** let the wiki ECS rebuild be the forcing function. When wiki is rebuilt
+(pages + table-per-tag), that code is the real second consumer and should drive the extraction,
+shaping the shared module to fit workspace + ECS-wiki. The `quoteIdentifier` triplication (3
+identical one-liners) is the only substrate-agnostic leaf, ~6 lines, not worth a cross-package
+export on its own; fold it into whatever the rebuild needs. Do NOT pre-extract, do NOT polish or
+write a removal spec for the paused vertical slice (git preserves it; `20260602T120000` is its plan).
 
 ## One Sentence
 

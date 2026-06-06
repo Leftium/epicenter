@@ -6,8 +6,9 @@
  * native folder watcher (backed by `notify`), pushes the folder's current
  * contents as a first batch, then streams a batch per debounced change. Each
  * pushed delta is self-contained ({@link FileDelta}: a name plus the file's
- * observable state), so the JS never round-trips a separate read, and seed and
- * update flow through ONE path (`applyDeltas`) into ONE `SvelteMap`.
+ * observable state), so the JS never round-trips a separate read. External
+ * updates, the seed scan, AND the app's own successful writes all flow through
+ * ONE path (`applyDeltas`) into ONE `SvelteMap`.
  *
  * Lifecycle is explicit: `watch()` starts the OS watcher and returns a stop
  * function, and the page drives it with `$effect(() => vault.watch())` so
@@ -162,33 +163,63 @@ function createVault(path: string) {
 	}
 
 	/**
+	 * Serialize writes to one file. A folder edit is read-modify-write (read the
+	 * freshest bytes, transform, atomic-write), so two writes to the SAME name must
+	 * run in order or the second reads stale bytes and drops the first's change.
+	 * Different files still write in parallel; the per-name chain is pruned when it
+	 * drains, so the map does not grow with the folder.
+	 */
+	const writeTails = new Map<string, Promise<void>>();
+	function serializeWrite(name: string, run: () => Promise<void>): Promise<void> {
+		const tail = (writeTails.get(name) ?? Promise.resolve()).then(run);
+		const settled = tail.catch(() => {});
+		writeTails.set(name, settled);
+		void settled.then(() => {
+			if (writeTails.get(name) === settled) writeTails.delete(name);
+		});
+		return tail;
+	}
+
+	/**
 	 * Apply one edit to a file on disk: read the freshest bytes, transform them in
-	 * JS, write atomically. A command in the CQRS sense, NOT a store mutation, the
-	 * written file fires the watcher and returns as a delta, and THAT is what
-	 * updates the map. So the map stays a pure projection and "what the UI shows"
-	 * still provably equals "what is on disk", even for the app's own writes.
+	 * JS, write atomically, then feed the result straight back through `applyDeltas`.
+	 * A command in the CQRS sense: it writes the file (the truth) and applies ITS OWN
+	 * result on success, rather than waiting ~300ms for the change to echo back
+	 * through the watcher. The watcher's later echo re-applies identical bytes
+	 * (harmless), and EXTERNAL edits still arrive only through it, so the map equals
+	 * disk after every settled write without sitting on a round-trip.
 	 *
 	 * Reading at write time (rather than caching raw text in the store) keeps the
-	 * edit faithful to the current bytes and keeps the store a parsed read-model
-	 * with no second copy to drift.
+	 * edit faithful to the current bytes and keeps the store a parsed read-model with
+	 * no second copy to drift. A failed write leaves the map untouched (we apply only
+	 * on success) and surfaces in `writeError`.
 	 */
-	async function write(name: string, edit: (raw: string) => string) {
-		writeError = undefined;
-		const { error: failure } = await tryAsync({
-			try: async () => {
-				const raw = await invoke<string | null>('read_entry', { path, name });
-				await invoke('write_entry', { path, name, content: edit(raw ?? '') });
-			},
-			catch: (cause) => Err({ message: extractErrorMessage(cause) }),
+	function write(name: string, edit: (raw: string) => string): Promise<void> {
+		return serializeWrite(name, async () => {
+			const { data: next, error: failure } = await tryAsync({
+				try: async () => {
+					const raw = await invoke<string | null>('read_entry', { path, name });
+					const text = edit(raw ?? '');
+					await invoke('write_entry', { path, name, content: text });
+					return text;
+				},
+				catch: (cause) => Err({ message: extractErrorMessage(cause) }),
+			});
+			if (failure) {
+				writeError = failure.message;
+				return;
+			}
+			writeError = undefined;
+			applyDeltas([{ kind: 'content', name, text: next }]);
 		});
-		if (failure) writeError = failure.message;
 	}
 
 	/**
 	 * Set or clear one frontmatter field (`value === undefined` clears it). The
-	 * transform ({@link editField}) is applied to a FRESH parse of disk, not the
-	 * (possibly debounce-stale) projection, so a concurrent external edit to another
-	 * field is read, not clobbered.
+	 * transform ({@link editField}) is applied to the FRESH bytes on disk, not the
+	 * in-memory projection, so a concurrent external edit to another field is read,
+	 * not clobbered. Writes to one file are serialized, so two quick edits cannot
+	 * interleave their read-modify-write and drop one of the changes.
 	 */
 	function saveField(name: string, key: string, value: unknown): Promise<void> {
 		return write(name, (raw) => editField(raw, key, value));

@@ -14,9 +14,10 @@
  * how to expose a clear affordance.
  *
  * A Field owns its own open/editing local state (the keystroke-buffer island) and
- * writes through {@link SaveField}; it never mutates the projection. The write
- * comes back through the watcher and reclassifies the row, so a value that leaves
- * the kind's domain reappears as INVALID (handled by the wrapper, not the Field).
+ * writes through {@link SaveField}; it never mutates the projection. The vault
+ * reclassifies the row from the written bytes (and the watcher re-confirms it), so
+ * a value that leaves the kind's domain reappears as INVALID (handled by the
+ * wrapper, not the Field).
  */
 
 import type { NeedsValueCell, OkCell } from '$lib/core/conformance';

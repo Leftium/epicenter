@@ -2,6 +2,7 @@
 title: Imported Note
 status: draft
 format: article
+featured: false
 legacyId: ABC-123
 mood: optimistic
 metadata:

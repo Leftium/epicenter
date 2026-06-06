@@ -7,6 +7,7 @@ destinations:
   - x
 publishDate: 2026-06-10
 duration: 12.5
+featured: true
 url: https://example.com/source-clip
 ---
 # How I Edit Videos Fast

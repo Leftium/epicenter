@@ -7,5 +7,6 @@ destinations:
   - linkedin
 publishDate: 2026-06-12
 duration: 3
+featured: false
 ---
 Carousel outline.

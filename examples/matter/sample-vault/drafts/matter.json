@@ -6,6 +6,7 @@
 		"destinations": { "type": "array", "items": { "type": "string" } },
 		"publishDate": { "type": "string" },
 		"duration": { "type": "integer" },
+		"featured": { "type": "boolean" },
 		"url": { "type": "string", "format": "uri" }
 	}
 }

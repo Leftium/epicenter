@@ -73,6 +73,17 @@
 		@apply overflow-y-auto max-h-[calc(100vh-2rem)];
 	}
 
+	/* Item media: icon container background/size/border (Vega's
+	   cn-item-media-variant-icon only sets the svg glyph size). */
+	.cn-item-media-variant-icon {
+		@apply bg-muted size-8 rounded-sm border;
+	}
+
+	/* Sidebar inset: allow flex children to shrink. */
+	.cn-sidebar-inset {
+		@apply min-w-0;
+	}
+
 	/* Item: truncation inside flex containers + balanced description wrapping. */
 	.cn-item-content {
 		@apply min-w-0;

@@ -8,10 +8,7 @@
 		variants: {
 			variant: {
 				default: 'cn-item-media-variant-default',
-				// Carried overrides: the vendored cn-item-media-variant-icon only
-				// provides the svg-size rule, so the icon container styling
-				// (background, size, border) rides along to preserve the look.
-				icon: 'cn-item-media-variant-icon bg-muted size-8 rounded-sm border',
+				icon: 'cn-item-media-variant-icon',
 				image: 'cn-item-media-variant-image',
 			},
 		},

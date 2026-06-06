@@ -896,8 +896,6 @@
         "@noble/hashes": "^2.0.1",
         "@types/diff": "^8.0.0",
         "@types/node": "catalog:",
-        "better-sqlite3": "^12.4.1",
-        "drizzle-kit": "catalog:",
         "fake-indexeddb": "^6.2.5",
         "filenamify": "^7.0.1",
         "typescript": "catalog:",

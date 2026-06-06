@@ -298,7 +298,11 @@ export function storageOf(kind: Kind): Storage {
 	return FIELDS[kind].storage;
 }
 
-/** Every kind in the palette, in declaration order. The catalog, for tests and tooling. */
+/**
+ * Every kind in the palette, in declaration order. Package-internal: the discrimination
+ * test reads it. Not re-exported from the package barrel (no external consumer); re-export
+ * it there the day real tooling needs the catalog.
+ */
 export const KINDS = Object.keys(FIELDS) as readonly Kind[];
 
 /**

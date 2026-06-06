@@ -17,10 +17,8 @@
  *   fts: { entries: ['title', 'body'] },
  * });
  *
- * // Daemon-local typed reads:
- * const schema = tablesToDrizzleSchema(definitions);
- * const db = drizzle(materializer.client, { schema });
- * const rows = await db.select().from(schema.entries);
+ * // Daemon-local reads against the same file (raw SQL):
+ * const rows = materializer.client.query('SELECT * FROM entries').all();
  * ```
  *
  * @module
@@ -85,8 +83,8 @@ export type AttachBunSqliteMaterializerOptions<
  * closes the handle on `ydoc.destroy()`.
  *
  * The returned object exposes the underlying `Database` as `.client`, so
- * callers can wrap it in Drizzle (`drizzle(materializer.client, { schema })`)
- * for typed reads against the same file.
+ * callers can run raw SQL (`materializer.client.query(...)`) against the same
+ * file.
  */
 export function attachBunSqliteMaterializer<
 	TTables extends TablesRecord,

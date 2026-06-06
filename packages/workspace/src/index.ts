@@ -178,10 +178,6 @@ export {
 	typedDispatch,
 } from './document/dispatch.js';
 export { docGuid } from './document/doc-guid.js';
-export {
-	type TablesToDrizzleSchema,
-	tablesToDrizzleSchema,
-} from './document/drizzle-schema.js';
 // One-shot HTTP read of a hosted room: GET the snapshot into a throwaway doc.
 // The atomic snapshot lets a relay-only doc be read without a live
 // `openCollaboration` session.

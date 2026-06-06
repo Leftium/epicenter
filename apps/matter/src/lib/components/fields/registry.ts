@@ -1,6 +1,6 @@
 /**
  * The Kind -> Field component map: the UI layer's half of the contract whose
- * model half is `recognize` (schema -> Kind) in `field.ts`. Keeping them separate
+ * model half is `recognize` (schema -> Kind) in `@epicenter/field`. Keeping them separate
  * is the point: the model layer derives the kind and stays free of component imports;
  * this layer maps the kind to a widget.
  *
@@ -14,7 +14,7 @@
  */
 
 import type { Component } from 'svelte';
-import type { FieldOf, Kind } from '$lib/core/field';
+import type { FieldOf, Kind } from '@epicenter/field';
 import BooleanField from './BooleanField.svelte';
 import DateTimeField from './DateTimeField.svelte';
 import MultiSelectField from './MultiSelectField.svelte';
@@ -55,7 +55,7 @@ const WIDGETS = {
  * runtime correlation (`WIDGETS[someKind]` is the union of all widgets, none of which
  * provably accepts an arbitrary cell). Widening the `satisfies`-checked map to the base
  * {@link FieldComponent} is the cast at the UI-DISPATCH boundary; the field pipeline has
- * exactly one other, `recognize`'s at the model boundary in `field.ts`. It is sound by
+ * exactly one other, `recognize`'s at the model boundary in `@epicenter/field`. It is sound by
  * the indexing invariant above, and every widget body stays narrow and cast-free.
  */
 export const FIELD_COMPONENTS = WIDGETS as unknown as Record<Kind, FieldComponent>;

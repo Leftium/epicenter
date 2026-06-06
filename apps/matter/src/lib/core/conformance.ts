@@ -19,7 +19,7 @@
  * palette is not a modeled field, so its value also surfaces here as an extra.
  */
 
-import type { Field } from './field';
+import type { Field } from '@epicenter/field';
 import type { Row } from './parse';
 
 /**

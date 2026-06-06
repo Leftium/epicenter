@@ -23,7 +23,7 @@
 
 import type { RowConformance } from './conformance';
 import type { MatterModel } from './model';
-import { storageOf, type Field } from './field';
+import { storageOf, type Field } from '@epicenter/field';
 
 /** A SQLite-bindable scalar. Valid rows never carry null, so this is string | number. */
 export type SqlValue = string | number;

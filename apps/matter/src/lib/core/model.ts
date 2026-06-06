@@ -8,8 +8,15 @@
  * ONCE here when the model loads. "Field" is the source noun (the user defines a
  * folder's fields); SQLite is the one consumer that turns fields into table columns.
  *
- * The acceptance rule is the meta-schema in `field.ts`: a field whose stored shape
- * is a legal palette member becomes a typed Field; a field OUTSIDE the palette (a
+ * The closed palette is the shared `@epicenter/field` vocabulary: the SAME nine kinds
+ * the workspace authors through `column.*`, so `recognize` and `compile` round-trip
+ * matter's `matter.json` over one wire-form. Matter's substrate policy is the deliberate
+ * ABSENCE of the workspace's wrappers (no `column.nullable`, no `column.json`): an
+ * emptiness or arbitrary-JSON shape is outside the palette and degrades to raw, and the
+ * per-kind widgets in `components/fields/` map each `Kind` to its editor.
+ *
+ * The acceptance rule is the meta-schema in `@epicenter/field`: a field whose stored
+ * shape is a legal palette member becomes a typed Field; a field OUTSIDE the palette (a
  * typo, an object, a nullable wrapper) is recorded in `unmodeled` and shown raw,
  * rather than erroring the whole model. Only WHOLE-FILE junk (bad JSON, no `fields`
  * object) rejects the model to the raw view.
@@ -25,7 +32,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
-import { compile, type Field, recognize } from './field';
+import { compile, type Field, recognize } from '@epicenter/field';
 
 /** Why a stored `matter.json` could not be read into a usable model at all. */
 export const MatterModelError = defineErrors({

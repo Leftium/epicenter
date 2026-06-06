@@ -14,7 +14,7 @@
  */
 
 import type { NeedsValueCell, OkCell } from '$lib/core/conformance';
-import type { Field } from '$lib/core/field';
+import type { Field } from '@epicenter/field';
 
 /**
  * Commit a new value for this cell's field. The {@link ModeledCell} wrapper binds

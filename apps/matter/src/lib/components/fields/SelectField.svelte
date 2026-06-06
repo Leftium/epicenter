@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Select from '@epicenter/ui/select';
-	import type { FieldOf } from '$lib/core/field';
+	import type { FieldOf } from '@epicenter/field';
 	import FieldEmpty from './FieldEmpty.svelte';
 	import type { FieldProps } from './field-props';
 

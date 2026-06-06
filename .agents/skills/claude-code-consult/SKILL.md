@@ -79,6 +79,30 @@ git diff -- packages/foo/src/bar.ts \
     --question "Find only behavioral bugs in this diff. If none, say none and name the highest residual risk."
 ```
 
+For consults that may run long enough to time out, start a background job and
+poll it instead of blocking Codex:
+
+```bash
+git diff -- packages/foo/src/bar.ts \
+  | bun run claude:consult -- start \
+    --mode review \
+    --question "Find only behavioral bugs in this diff. If none, say none and name the highest residual risk."
+
+bun run claude:consult -- status <job-id>
+bun run claude:consult -- result <job-id>
+```
+
+Use `cancel` when the job is no longer useful:
+
+```bash
+bun run claude:consult -- cancel <job-id>
+```
+
+The background runner stores state under `.tmp/claude-consult`, captures
+Claude's `stream-json` result, and records the Claude child PID so cancellation
+targets the active Claude process. Treat `/result` output as Claude's consult
+answer, not as a patch to apply blindly.
+
 Use `--context` for small, stable context files:
 
 ```bash

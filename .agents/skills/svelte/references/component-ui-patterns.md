@@ -14,7 +14,6 @@ For general CSS and Tailwind guidelines, see the `styling` skill.
 - Each component in its own folder under `$lib/components/ui/` with an `index.ts` export
 - Follow kebab-case for folder names (e.g., `dialog/`, `toggle-group/`)
 - Group related sub-components in the same folder
-- When using $state, $derived, or functions only referenced once in markup, inline them directly
 
 ## Import Patterns
 
@@ -427,6 +426,96 @@ For more complex repeated patterns (e.g., toolbar buttons with tooltips), use `{
 
 - **2 or fewer** repetitions: extraction adds indirection without meaningful savings.
 - **Structurally similar but semantically different**: if the elements serve different purposes and might diverge, keep them separate.
+
+# Single-Use Functions And Aliases: Inline Or Document
+
+If a `function`, `$derived`, or `const` (including a one-off class string) is defined in the script tag and used **only once** in the template, inline it at the call site. This covers event handlers, callbacks, derived aliases, and one-off class strings.
+
+## Why Inline?
+
+Single-use extracted bindings add indirection: the reader jumps between the script definition and the template to understand what happens on click/keydown/render. Inlining keeps cause and effect together at the point where the action happens.
+
+```svelte
+<!-- BAD: Extracted single-use function with no JSDoc or semantic value -->
+<script>
+	function handleShare() {
+		share.mutate({ id });
+	}
+
+	function handleSelectItem(itemId: string) {
+		goto(`/items/${itemId}`);
+	}
+</script>
+
+<Button onclick={handleShare}>Share</Button>
+<Item onclick={() => handleSelectItem(item.id)} />
+
+<!-- GOOD: Inlined at the call site -->
+<Button onclick={() => share.mutate({ id })}>Share</Button>
+<Item onclick={() => goto(`/items/${item.id}`)} />
+```
+
+A single-use `const` class string is the same smell: scanning it inline beats chasing a name to a definition for no reuse.
+
+```svelte
+<!-- BAD: a class string referenced once, behind a name -->
+<script lang="ts">
+	const rowClass = 'grid gap-3 rounded-md border bg-background px-3 py-3';
+</script>
+<div class={rowClass}>...</div>
+
+<!-- GOOD: the class lives where it is applied -->
+<div class="grid gap-3 rounded-md border bg-background px-3 py-3">...</div>
+```
+
+This also applies to longer handlers. If the logic is linear (guard clauses + branches, not deeply nested), inline it even if it's 10 to 15 lines:
+
+```svelte
+<!-- GOOD: Inlined keyboard shortcut handler -->
+<svelte:window onkeydown={(e) => {
+	const meta = e.metaKey || e.ctrlKey;
+	if (!meta) return;
+	if (e.key === 'k') {
+		e.preventDefault();
+		commandPaletteOpen = !commandPaletteOpen;
+		return;
+	}
+	if (e.key === 'n') {
+		e.preventDefault();
+		notesState.createNote();
+	}
+}} />
+```
+
+## The Exception: A Justifying Comment Plus A Semantic Name
+
+Keep a single-use binding extracted **only** when both conditions are met:
+
+1. It has **JSDoc or a comment** explaining why it exists as a named unit.
+2. The name provides a **clear semantic meaning** that makes the template more readable than the inlined version would be.
+
+```svelte
+<script lang="ts">
+	/**
+	 * Navigate the note list with arrow keys, wrapping at boundaries.
+	 * Operates on the flattened display-order ID list to respect date grouping.
+	 */
+	function navigateWithArrowKeys(e: KeyboardEvent) {
+		// 15 lines of keyboard navigation logic...
+	}
+</script>
+
+<!-- The semantic name communicates intent better than inlined logic would -->
+<div onkeydown={navigateWithArrowKeys} tabindex="-1">
+```
+
+A documented state-to-class map earns the same exception: when the name parks a non-obvious decision (why a cell rings amber, why digits right-align), keeping it beats burying that rationale inside a `class={[...]}` array.
+
+Without a justifying comment and a meaningful name, inline it: the indirection is not earning its keep.
+
+## Multi-Use Bindings
+
+Bindings used **2 or more times** should always stay extracted: this rule only applies to single-use bindings.
 
 # Referential Stability for Reactive Data Sources
 

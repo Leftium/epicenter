@@ -61,7 +61,7 @@ Use this skill when you need to:
 
 - If a disposable resource identity depends on a prop, let the parent own mount and unmount with `{#key}` or `{#if}`; open the resource synchronously in the child. Read [lifecycle and reactivity](references/lifecycle-and-reactivity.md).
 - If readiness is a stable promise, use `{#await}` in the template instead of a `$state(false)` flag and a cancellation effect.
-- Inline shallow property aliases. Keep `$derived` and `{@const}` only when they compute, narrow, or stabilize something useful.
+- Inline shallow property aliases and single-use script helpers (a `function`, `$derived`, or one-off `const` used once in the template). Keep one extracted only when it computes, narrows, or stabilizes something useful, or when a justifying comment plus a semantic name makes the template read better. Read [component and UI patterns](references/component-ui-patterns.md).
 - Map finite unions with a `satisfies Record` lookup, not nested ternaries or `$derived.by()` switches.
 - Use `SvelteMap` for ID-keyed collections where `get`, `has`, `size`, or iteration should update reactively. Values inside a `SvelteMap` are not deep-proxied, so store reactive row objects or replace values when nested data changes. Convert maps to stable arrays with `$derived` before passing them to table-like consumers.
 - For new reusable DOM behavior on elements, prefer `{@attach}` attachments over new `use:` actions. Keep `use:` for existing code or libraries that only expose actions.
@@ -74,4 +74,4 @@ Use this skill when you need to:
 
 - Read [Lifecycle and reactivity](references/lifecycle-and-reactivity.md) when a change touches keyed resources, readiness promises, `$effect` cleanup, shallow aliases, value maps, `SvelteMap`, table state, or `.svelte.ts` state modules.
 - Read [Mutations and workspace inputs](references/mutations-and-workspace-inputs.md) when a change touches TanStack Query mutation placement, inline handlers, async button states, direct `await`, or workspace-backed text inputs.
-- Read [Component and UI patterns](references/component-ui-patterns.md) when a change touches shadcn-svelte imports, `$props` typing, `$bindable`, snippets, DOM attachments, self-contained dialogs, view branching, repetitive markup, loading or empty states, prop-first derivation, or template text gotchas.
+- Read [Component and UI patterns](references/component-ui-patterns.md) when a change touches shadcn-svelte imports, `$props` typing, `$bindable`, snippets, DOM attachments, self-contained dialogs, view branching, repetitive markup, single-use helper inlining, loading or empty states, prop-first derivation, or template text gotchas.

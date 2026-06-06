@@ -56,7 +56,7 @@ export function quoteIdent(name: string): string {
  * The one table in every matter.sqlite. A matter folder is one db file with one table, so
  * the name is a CONSTANT, not the folder's basename: the agent read surface (and the WHERE
  * filter) stays stable no matter what the folder is called or renamed to. The read
- * (`matchingNames` in the vault) and the write (`buildDdl`) both name it through this one
+ * (`matchingFileNames` in the vault) and the write (`buildDdl`) both name it through this one
  * value, still guarded by `quoteIdent`.
  */
 export const MIRROR_TABLE = 'entries';

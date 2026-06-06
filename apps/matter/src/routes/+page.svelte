@@ -118,7 +118,7 @@
 					</Alert.Description>
 				</Alert.Root>
 			{/if}
-			<FolderGrid {vault} matchedNames={filter.matchedNames} />
+			<FolderGrid {vault} matchedFileNames={filter.matchedFileNames} />
 		{/if}
 	{:else}
 		<Empty.Root class="flex-1 border-0">

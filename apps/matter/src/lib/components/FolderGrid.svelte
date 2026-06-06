@@ -20,9 +20,9 @@
 	// in-memory demo vault, injected by the route. The narrow getters are bound once
 	// here so the template reads `read` / `folder` / `onSave*` exactly as before, and a
 	// vault swap (open another folder) flows through these derivations.
-	// `matchedNames` is the names of the rows a WHERE clause matched, computed by the page
-	// (the live-vault owner) and handed down as data. `undefined` means no active filter.
-	let { vault, matchedNames }: { vault: FolderGridVault; matchedNames?: Set<string> } =
+	// `matchedFileNames` is the file names of the rows a WHERE clause matched, computed by
+	// the page (the live-vault owner) and handed down as data. `undefined` means no filter.
+	let { vault, matchedFileNames }: { vault: FolderGridVault; matchedFileNames?: Set<string> } =
 		$props();
 
 	const read = $derived(vault.read);
@@ -42,23 +42,23 @@
 			rowFilter === 'attention'
 				? view.conformance.filter((c) => !c.rowValid)
 				: view.conformance;
-		// The WHERE filter (matched row names from the mirror, computed by the page) narrows
-		// the visible set; no active filter leaves `names` undefined, nothing to do. The
+		// The WHERE filter (matched row file names from the mirror, computed by the page)
+		// narrows the visible set; no active filter leaves it undefined, nothing to do. The
 		// local alias is load-bearing: it narrows `Set | undefined` to `Set` in the closure.
-		const names = matchedNames;
-		if (names) rows = rows.filter((c) => names.has(c.row.name));
+		const fileNames = matchedFileNames;
+		if (fileNames) rows = rows.filter((c) => fileNames.has(c.row.name));
 		return rows;
 	});
 
 	// "X of Y rows" whenever a lens is narrowing the table (attention OR a WHERE clause).
-	const isFiltered = $derived(rowFilter === 'attention' || matchedNames !== undefined);
+	const isFiltered = $derived(rowFilter === 'attention' || matchedFileNames !== undefined);
 
 	// The modeled empty-state copy as ONE mutually exclusive decision, so the title and the
 	// description always describe the same case. Reads top-down like the question a person
 	// asks ("is a filter on? is attention on? otherwise it is just empty") instead of two
 	// nested ternaries in the markup that have to be kept in sync by hand.
 	const emptyState = $derived.by(() => {
-		if (matchedNames)
+		if (matchedFileNames)
 			return {
 				title: 'No rows match the filter',
 				description: 'No valid rows match this WHERE clause.',

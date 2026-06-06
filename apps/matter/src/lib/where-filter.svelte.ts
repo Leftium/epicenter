@@ -2,8 +2,8 @@
  * The page-owned SQL WHERE filter over a vault's mirror.
  *
  * Bundles the three things a filter is, the input (`text`), the result
- * (`matchedNames`), and a bad-clause `error`, plus the debounced query into ONE unit, so
- * the page binds `filter.text` and reads `filter.matchedNames` instead of carrying three
+ * (`matchedFileNames`), and a bad-clause `error`, plus the debounced query into ONE unit, so
+ * the page binds `filter.text` and reads `filter.matchedFileNames` instead of carrying three
  * loose `$state`s and an inline effect that a reader has to mentally group. The states
  * still exist (reactive state is always `let $state`); this just gives them an owner and
  * a name.
@@ -25,7 +25,7 @@ const DEBOUNCE_MS = 200;
 
 export function createWhereFilter() {
 	let text = $state('');
-	let matchedNames = $state<Set<string>>();
+	let matchedFileNames = $state<Set<string>>();
 	let error = $state<string>();
 
 	/**
@@ -40,17 +40,17 @@ export function createWhereFilter() {
 		if (vault) void vault.read; // re-run when rows change so an edit updates membership
 		// No vault or empty clause: there is no filter, so show every row.
 		if (!vault || !clause) {
-			matchedNames = undefined;
+			matchedFileNames = undefined;
 			error = undefined;
 			return;
 		}
 		let cancelled = false;
 		const handle = setTimeout(async () => {
-			const { data, error: failure } = await vault.matchingNames(clause);
+			const { data, error: failure } = await vault.matchingFileNames(clause);
 			if (cancelled) return; // a newer clause, a data change, or a folder swap won
 			if (failure) error = failure.message;
 			else {
-				matchedNames = data;
+				matchedFileNames = data;
 				error = undefined;
 			}
 		}, DEBOUNCE_MS);
@@ -70,10 +70,10 @@ export function createWhereFilter() {
 			text = value;
 		},
 		/** The names the clause matched, or `undefined` when no clause is active. */
-		get matchedNames() {
-			return matchedNames;
+		get matchedFileNames() {
+			return matchedFileNames;
 		},
-		/** A bad clause's message; the last good `matchedNames` is kept until it parses. */
+		/** A bad clause's message; the last good `matchedFileNames` is kept until it parses. */
 		get error() {
 			return error;
 		},

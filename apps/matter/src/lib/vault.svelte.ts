@@ -211,7 +211,7 @@ function createVault(path: string) {
 
 	/**
 	 * Filter the folder with a SQL WHERE clause: run it against the mirror
-	 * (`matter.sqlite`, read-only) and return the NAMES of the matching VALID rows, so the
+	 * (`matter.sqlite`, read-only) and return the FILE NAMES of the matching VALID rows, so the
 	 * grid can narrow its live rows by a SQL predicate while still rendering them with the
 	 * rich, editable widgets. Only valid rows are in the mirror, so the clause filters
 	 * those; invalid / unparseable files (the "needs attention" axis) are not matchable
@@ -219,7 +219,7 @@ function createVault(path: string) {
 	 * file and the connection is read-only, so the worst a bad clause does is return an
 	 * error.
 	 */
-	function matchingNames(
+	function matchingFileNames(
 		where: string,
 	): Promise<Result<Set<string>, { message: string }>> {
 		const sql = `SELECT "name" FROM ${quoteIdent(MIRROR_TABLE)} WHERE ${where}`;
@@ -271,7 +271,7 @@ function createVault(path: string) {
 		watch,
 		saveField,
 		saveBody,
-		matchingNames,
+		matchingFileNames,
 		/** The current classified folder. A pure read with no side effects. */
 		get read(): FolderRead {
 			return read;

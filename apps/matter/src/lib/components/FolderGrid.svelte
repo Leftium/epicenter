@@ -11,22 +11,20 @@
 	import ListFilterIcon from '@lucide/svelte/icons/list-filter';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import type { Kind } from '@epicenter/field';
-	import type { FolderRead } from '$lib/core/folder';
+	import type { FolderGridVault } from '$lib/vault.svelte';
 	import ModeledCell from './ModeledCell.svelte';
 	import RowDetailDialog from './RowDetailDialog.svelte';
 
-	let {
-		read,
-		folder,
-		onSaveField,
-		onSaveBody,
-	}: {
-		read: FolderRead;
-		folder: string;
-		onSaveField: (name: string, key: string, value: unknown) => void;
-		onSaveBody: (name: string, body: string) => void;
-	} = $props();
+	// The grid renders from any {@link FolderGridVault}: the live disk vault or the
+	// in-memory demo vault, injected by the route. The narrow getters are bound once
+	// here so the template reads `read` / `folder` / `onSave*` exactly as before, and a
+	// vault swap (open another folder) flows through these derivations.
+	let { vault }: { vault: FolderGridVault } = $props();
 
+	const read = $derived(vault.read);
+	const folder = $derived(vault.name);
+	const onSaveField = $derived(vault.saveField);
+	const onSaveBody = $derived(vault.saveBody);
 	const view = $derived(read.view);
 
 	type RowFilter = 'all' | 'attention';
@@ -174,7 +172,7 @@
 		</Alert.Root>
 
 		<div class="flex-1 overflow-auto">
-			<Table.Root class="min-w-full text-sm">
+			<Table.Root class="min-w-full">
 				<Table.Header>
 					<Table.Row>
 						{#each view.columns as key (key)}
@@ -258,7 +256,7 @@
 		{/if}
 
 		<div class="flex-1 overflow-auto">
-			<Table.Root class="min-w-full table-fixed text-sm">
+			<Table.Root class="min-w-full table-fixed">
 				<!-- table-fixed honours these <col> widths, so cells truncate instead of
 				     stretching the column to the widest value. -->
 				<colgroup>
@@ -275,7 +273,7 @@
 						{#each view.model.fields as field (field.name)}
 							<Table.Head class="sticky top-0 z-20 bg-background align-bottom">
 								<div
-									class="flex flex-col gap-0.5 {headItems(field.kind)}"
+									class={['flex flex-col gap-0.5', headItems(field.kind)]}
 									title="{field.name} ({field.kind})"
 								>
 									<span class="max-w-full truncate font-medium leading-tight">
@@ -313,7 +311,7 @@
 								<!-- Frozen identity cell: the file name is the row's id on disk, kept
 								     visible while the typed columns scroll. !bg-background keeps it
 								     opaque so scrolled cells never bleed through. -->
-								<Table.Cell class="sticky left-0 z-10 border-r !bg-background align-middle">
+								<Table.Cell class="sticky left-0 z-10 border-r !bg-background">
 									<div class="flex items-center gap-1.5">
 										<Button
 											variant="ghost"
@@ -337,7 +335,10 @@
 								{#each conf.cells as cell (cell.field.name)}
 									<Table.Cell
 										aria-invalid={cell.state === 'INVALID' || cell.state === 'NEEDS_VALUE'}
-										class="{alignClass(cell.field.kind)} {cellStateClass(cell.state)}"
+										class={[
+											alignClass(cell.field.kind),
+											cellStateClass(cell.state),
+										]}
 									>
 										<ModeledCell
 											{cell}

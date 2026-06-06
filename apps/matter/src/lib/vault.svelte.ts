@@ -291,6 +291,17 @@ function createVault(path: string) {
 
 export type Vault = ReturnType<typeof createVault>;
 
+/**
+ * The slice of a {@link Vault} the grid renders from: the folder name, the
+ * classified read, and the two save commands. This is the dependency boundary
+ * `FolderGrid` depends on, NOT the full vault, so anything that can produce a
+ * classified folder and accept edits can drive the grid. The live vault satisfies
+ * it for free (it is a `Pick` of it); the demo vault satisfies it WITHOUT faking
+ * the disk lifecycle (`watch` / `status` / `refresh` / `path`), so the demo is an
+ * honest drop-in rather than a vault pretending to watch a folder.
+ */
+export type FolderGridVault = Pick<Vault, 'name' | 'read' | 'saveField' | 'saveBody'>;
+
 /** Prompt for a folder and open it as a live {@link Vault}. `null` if cancelled. */
 export async function openVault(): Promise<Vault | null> {
 	const path = await open({

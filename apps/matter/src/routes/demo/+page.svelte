@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Badge } from '@epicenter/ui/badge';
 	import FolderGrid from '$lib/components/FolderGrid.svelte';
-	import { createDemoVault } from '$lib/demo/demo-vault.svelte';
+	import { createDemoVault } from './demo-vault.svelte';
 
 	// A browser-only harness for the grid: no Tauri, no folder watcher. Edits run the
 	// real serialize transforms and re-classify, so this is a faithful preview of the
@@ -20,10 +20,5 @@
 		</span>
 	</div>
 
-	<FolderGrid
-		read={vault.read}
-		folder={vault.name}
-		onSaveField={vault.saveField}
-		onSaveBody={vault.saveBody}
-	/>
+	<FolderGrid {vault} />
 </main>

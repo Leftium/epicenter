@@ -76,12 +76,7 @@
 					</Alert.Description>
 				</Alert.Root>
 			{/if}
-			<FolderGrid
-				read={vault.read}
-				folder={vault.name}
-				onSaveField={vault.saveField}
-				onSaveBody={vault.saveBody}
-			/>
+			<FolderGrid {vault} />
 		{/if}
 	{:else}
 		<Empty.Root class="flex-1 border-0">

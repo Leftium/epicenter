@@ -223,21 +223,15 @@ Migrated all 42 remaining shadcn-core components (migrate + adversarial review p
 Consolidation pass (commit `1ac35f433`) moved utility overrides into the overlay; the rest stay inline by necessity.
 
 - [x] **Consolidated into overlay** (components now byte-identical to upstream): table-row hover (also FIXED the double-hover regression), select `max-w-min`, resizable `gap-2`, item `min-w-0` (content + title), item-description `text-balance`, item-separator `my-0`.
-- [x] **z-40 layering** (dialog/drawer content+overlay): **stays inline, resolved not deferred.** Vega keeps z-index inline (not in the cn-* class), so a base-layer `@apply` in the overlay cannot beat a utilities-layer inline `z-50`. Inline override is the correct place.
+- [x] **z-40 layering** (dialog/drawer): **REMOVED** (commit `6924abbde`). It was a no-op: Tailwind emits `z-50` after `z-40` (same property, ascending), so with both classes present `z-50` always won. Dialogs were effectively `z-50` already; alert-dialogs sit above via portal/DOM order, not z-index. If a hard z-order guarantee is ever needed, add `@apply z-40!` in the overlay (behavior change, test it).
 - [x] **Structural overrides stay in components** (markup, not CSS): drawer scroll wrapper (`drawer-content:39`), item actions overlay, badge `<svelte:element>`, item-media icon, item base `relative` + `[a]:hover:bg-accent/50` (kept inline; ambiguous arbitrary-variant selector, working).
-- [ ] **Solid destructive**: still open. Decide whether to keep Vega's tinted destructive or restore Epicenter's solid red (override `.cn-button-variant-destructive` in overlay).
-- [ ] **Dialog tall-content scroll** (`dialog-content:31`): `overflow-y-auto max-h-[calc(100vh-2rem)]` kept inline alongside its z-40 (additive; left with the z-40 it is grouped with).
+- [x] **Solid vs tinted destructive**: RESOLVED, keep Vega's tinted destructive. No overlay override. Confirmed after building.
+- [x] **Dialog tall-content scroll**: moved to the overlay (`.cn-dialog-content { @apply overflow-y-auto max-h-[calc(100vh-2rem)] }`); dialog-content is now byte-identical to upstream.
 - [ ] **drawer `onOpenAutoFocus` workaround** (`drawer-content:24`): remove once vaul-svelte ships bits-ui 2.x compat (verify).
 
-### No-op forward-compat hooks (resolve on next style-vega.css pull)
+### No-op forward-compat hooks (REMOVED, commit `6924abbde`)
 
-These cn-* classes are emitted by migrated components but not yet defined in the vendored Vega sheet, so they are inert today (component still styled by its sibling cn-* classes + inline). Re-vendor a newer `style-vega.css` to activate, or drop them:
-
-- [ ] `cn-font-heading` (on alert-dialog/drawer/empty titles; dialog-title currently omits it, inconsistent with siblings: restore for family consistency).
-- [ ] `cn-alert-dialog-footer` / `-action` / `-cancel` (footer keeps inline flex; actions keep buttonVariants).
-- [ ] `cn-menu-target` (select + dropdown-menu content; menu-family forward-compat placeholder).
-- [ ] `cn-tabs-list-variant-default` / `-line` (variant visuals delivered by paired inline utils + data-variant CSS).
-- [ ] `cn-scroll-area-viewport` (scroll-area viewport left inline until defined).
+Dead `cn-*` hooks the fan-out emitted but the vendored Vega did not define were removed, establishing the **invariant**: every `cn-*` class a component emits is defined in `style-vega.css` or `epicenter-overlay.css` (verified: 247 emitted, 0 undefined). Removed: `cn-font-heading` (3 titles, all consistent now), `cn-menu-target` (select + 2 dropdown), `cn-alert-dialog-footer`/`-action`/`-cancel`, `cn-tabs-list-variant-*`, the `cn-resizable-handle` prefix (handle stays inline; Vega defines only `cn-resizable-handle-icon`), and the undefined input-group-button `sm` size (unused by any app). `cn-scroll-area-viewport` was never emitted (viewport stays inline). If a newer `style-vega.css` later defines any of these, re-add the hooks then.
 
 ## QA Checklist (where to look after each wave)
 
@@ -269,7 +263,7 @@ An app without `.style-vega` on its root renders all migrated components unstyle
 
 ## Open Questions
 
-1. **Solid vs tinted destructive** (Class 3): Vega ships tinted; Epicenter had solid red + white. Options: (a) accept Vega tinted, (b) restore solid in overlay. **Recommendation**: live with tinted through the migration, decide in polish once seen in context.
+1. **Solid vs tinted destructive** (Class 3): RESOLVED, keep Vega's tinted destructive (no overlay override). Confirmed after building.
 2. **Vendor full Vega vs per-wave slices**: full file (chosen, 0.2) is simpler but generates inert CSS during transition and risks one unknown-utility error blocking everything. **Recommendation**: full file + build-verify; fall back to slicing only if 0.6 errors.
 3. **Later preset swap to Rhea/Mira**: deferred; one-class experiment once Vega is stable.
 

@@ -47,10 +47,10 @@
  * `json` IS a kind: an arbitrary-JSON payload cell. It is the one OPEN meta, discriminated
  * by an `x-json-schema` MARKER rather than by a `type` (see {@link JSON_SCHEMA_KEYWORD}).
  * `field.json(inner)` spreads the payload's own JSON Schema keywords (so a value still
- * validates) and adds the marker (so `recognize` classifies it as `json`); `field.json()`
- * carries only the marker and accepts any JSON. The rejection lane is now `null`: a typo,
- * a bare object, or a nullable wrapper carries no marker and matches no meta, so it degrades
- * to raw.
+ * validates) and adds the marker (so `recognize` classifies it as `json`); for an opaque
+ * cell, `field.json(jsonValue)` carries the marker over a `Type.Any` payload and accepts
+ * any JSON. The rejection lane is now `null`: a typo, a bare object, or a nullable wrapper
+ * carries no marker and matches no meta, so it degrades to raw.
  *
  * Everything public is DERIVED from the one `FIELDS` object below: `Kind`,
  * `recognize`, `storageOf`, `KINDS`, `META_BY_KIND`. Adding a kind is one entry here,

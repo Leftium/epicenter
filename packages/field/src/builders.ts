@@ -148,8 +148,8 @@ const tags = (opts?: TSchemaOptions) => Type.Array(Type.String(), opts);
 /**
  * The canonical "any JSON value" schema: `Static<> = JsonValue`, runtime accepts any
  * value. Reach for it when a payload is genuinely shapeless: pass it straight
- * (`field.json(jsonValue)`, identical to the no-arg `field.json()`) or as an element
- * type (`field.json(Type.Array(jsonValue))` for a list of arbitrary JSON). It replaces
+ * (`field.json(jsonValue)` for an opaque cell) or as an element type
+ * (`field.json(Type.Array(jsonValue))` for a list of arbitrary JSON). It replaces
  * the hand-rolled `Type.Unsafe<JsonValue>(Type.Any())` that several apps had each spelled
  * a slightly different way.
  *
@@ -166,26 +166,24 @@ export const jsonValue: TUnsafe<JsonValue> = Type.Unsafe<JsonValue>(Type.Any());
 /**
  * Arbitrary JSON payload, stored as TEXT, recognized as kind `json`.
  *
- * - `field.json()` -> `Static<> = JsonValue` (defaults the inner to {@link jsonValue}).
- * - `field.json(inner)` -> `Static<> = Static<inner>`, validates the payload against
- *   `inner` on read.
+ * `field.json(inner)` -> `Static<> = Static<inner>`, validates the payload against
+ * `inner` on read. For a genuinely shapeless cell, pass {@link jsonValue}
+ * (`field.json(jsonValue)`): "any JSON" is not a special case, just the `inner = jsonValue`
+ * instance of the general form, so it takes the same one signature with no overload.
  *
  * The wire-form SPREADS the payload's own JSON Schema keywords (so `Value.Check` and
  * `Schema.Compile` enforce them) and adds the {@link JSON_SCHEMA_KEYWORD} marker, so
  * `recognize` classifies it as `json` instead of the bare object/array it would otherwise
- * look like (which would degrade to raw). `Type.Unsafe` decouples the inferred `Static<>`
- * from that marker-bearing wire-form. The no-arg form defaults `inner` to {@link jsonValue},
- * so bare and explicit share ONE return path; `Type.Any`'s empty wire-form (`{}`) means the
- * bare call still serializes to just the marker.
+ * look like (which would degrade to raw). `Type.Unsafe<Static<S>>` decouples the inferred
+ * `Static<>` from that marker-bearing wire-form while letting the payload generic flow
+ * straight through to the return type.
  *
  * No JSON-safety gate lives here (that would pull the workspace's `ColumnError` into the
  * leaf): a non-JSON inner (e.g. `Type.Date`) flows through as `TUnsafe<Date>` and is caught
  * by `FlatJsonTSchema` at the `defineTable` boundary, where column safety belongs.
  */
-function json(): TUnsafe<JsonValue>;
-function json<S extends TSchema>(inner: S): TUnsafe<Static<S>>;
-function json(inner: TSchema = jsonValue): TUnsafe<unknown> {
-	return Type.Unsafe({ ...inner, [JSON_SCHEMA_KEYWORD]: true });
+function json<S extends TSchema>(inner: S): TUnsafe<Static<S>> {
+	return Type.Unsafe<Static<S>>({ ...inner, [JSON_SCHEMA_KEYWORD]: true });
 }
 
 /**

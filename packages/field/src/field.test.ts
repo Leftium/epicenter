@@ -61,7 +61,7 @@ const BUILT: Record<Kind, TSchema> = {
 	boolean: field.boolean(),
 	tags: field.tags(),
 	multiSelect: field.multiSelect(['a', 'b']),
-	json: field.json(),
+	json: field.json(jsonValue),
 };
 
 describe('round-trip: recognize(field.X(...)) is kind X', () => {
@@ -206,8 +206,8 @@ describe('the cross-discrimination pairs (the shapes that could collide)', () =>
 });
 
 describe('json: the marker-discriminated escape kind', () => {
-	test('field.json() recognizes as json and accepts any JSON value', () => {
-		const schema = field.json();
+	test('field.json(jsonValue) recognizes as json and accepts any JSON value', () => {
+		const schema = field.json(jsonValue);
 		expect(kindOf(atRest(schema))).toBe('json');
 		for (const v of [1, 'x', true, null, { a: 1 }, [1, 2]]) {
 			expect(Value.Check(schema, v)).toBe(true);
@@ -225,7 +225,7 @@ describe('json: the marker-discriminated escape kind', () => {
 	});
 
 	test('a json wire-form matches exactly one meta (the open json meta)', () => {
-		expect(countMatches(atRest(field.json()))).toBe(1);
+		expect(countMatches(atRest(field.json(jsonValue)))).toBe(1);
 		expect(
 			countMatches(atRest(field.json(Type.Object({ author: Type.String() })))),
 		).toBe(1);
@@ -245,10 +245,6 @@ describe('json: the marker-discriminated escape kind', () => {
 		expect(countMatches(atRest(schema))).toBe(1);
 		expect(Value.Check(schema, [1, 'x', null, { a: 1 }])).toBe(true);
 		expect(Value.Check(schema, 'not-an-array')).toBe(false);
-	});
-
-	test('bare field.json() defaults its inner to jsonValue (byte-identical wire-form)', () => {
-		expect(atRest(field.json())).toEqual(atRest(field.json(jsonValue)));
 	});
 });
 

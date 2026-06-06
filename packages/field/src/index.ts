@@ -10,7 +10,7 @@
  * policy each consumer layers on at its own edge.
  */
 
-export { field, type Infer } from './builders';
+export { field } from './builders';
 export { DateTimeString } from './datetime-string';
 export {
 	compile,

@@ -1,11 +1,10 @@
 /**
- * Storage-class, nullability, and CHECK-constraint derivation over a TypeBox
- * column schema.
+ * Storage-class and nullability derivation over a TypeBox column schema.
  *
  * The materializer reads schemas directly: it does not consult any column
- * wrapper or extension keyword. Storage class, nullability, primary-key
- * designation, and CHECK constraints fall out of the schema structure plus
- * the established `id` PK convention.
+ * wrapper or extension keyword. Storage class and nullability fall out of the
+ * schema structure (the `id` PK convention and CHECK constraints live in the
+ * DDL emitter, not here).
  *
  * `FlatJsonTSchema` already restricts every column to a `~kind` that has a
  * single SQLite storage class, so these helpers only have to read what's

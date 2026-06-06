@@ -37,10 +37,8 @@
  */
 
 import {
-	type Static,
 	type TArray,
 	type TEnum,
-	type TSchema,
 	type TSchemaOptions,
 	type TString,
 	type TStringOptions,
@@ -158,10 +156,3 @@ export const field = {
 	multiSelect,
 	tags,
 };
-
-/**
- * `Static<>` shorthand that mirrors TypeBox's `Static<S>` for ergonomics, so
- * consumers can read a value type out of a `field.*` schema without a separate
- * TypeBox import.
- */
-export type Infer<S extends TSchema> = Static<S>;

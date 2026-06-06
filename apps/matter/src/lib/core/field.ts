@@ -26,10 +26,6 @@ export {
 	type Field,
 	type FieldOf,
 	type Kind,
-	KINDS,
-	META_BY_KIND,
 	recognize,
-	type Recognized,
-	type SchemaOf,
 	storageOf,
 } from '@epicenter/field';

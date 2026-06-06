@@ -2,6 +2,7 @@
 	import { Badge } from '@epicenter/ui/badge';
 	import * as Dialog from '@epicenter/ui/dialog';
 	import * as Separator from '@epicenter/ui/separator';
+	import { cn } from '@epicenter/ui/utils';
 	import type { RowConformance } from '$lib/core/conformance';
 	import MarkdownBodyEditor from './MarkdownBodyEditor.svelte';
 	import ModeledCell from './ModeledCell.svelte';
@@ -12,7 +13,7 @@
 		onSaveField,
 		onSaveBody,
 	}: {
-		open: boolean;
+		open?: boolean;
 		conformance: RowConformance;
 		onSaveField: (name: string, key: string, value: unknown) => void;
 		onSaveBody: (name: string, body: string) => void;
@@ -80,7 +81,7 @@
 					<div class="grid gap-2">
 						{#each conformance.cells as cell (cell.field.name)}
 							<div
-								class="{detailRowClass} bg-background sm:items-center"
+								class={cn(detailRowClass, 'bg-background sm:items-center')}
 								aria-invalid={cell.state === 'INVALID' || cell.state === 'NEEDS_VALUE'}
 							>
 								<div class="min-w-0">
@@ -108,7 +109,7 @@
 						</div>
 						<div class="grid gap-2">
 							{#each conformance.extras as extra (extra.key)}
-								<div class="{detailRowClass} bg-muted/20 py-2">
+								<div class={cn(detailRowClass, 'bg-muted/20 py-2')}>
 									<span class="truncate font-mono text-xs text-muted-foreground">
 										{extra.key}
 									</span>

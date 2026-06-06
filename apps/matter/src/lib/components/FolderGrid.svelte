@@ -5,14 +5,15 @@
 	import * as Empty from '@epicenter/ui/empty';
 	import * as Table from '@epicenter/ui/table';
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
+	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 	import FileWarningIcon from '@lucide/svelte/icons/file-warning';
 	import ListIcon from '@lucide/svelte/icons/list';
 	import ListFilterIcon from '@lucide/svelte/icons/list-filter';
-	import MoreHorizontalIcon from '@lucide/svelte/icons/more-horizontal';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
+	import type { Kind } from '@epicenter/field';
 	import type { FolderRead } from '$lib/core/folder';
 	import ModeledCell from './ModeledCell.svelte';
-	import RowDetail from './RowDetail.svelte';
+	import RowDetailDialog from './RowDetailDialog.svelte';
 
 	let {
 		read,
@@ -44,20 +45,82 @@
 		view.mode === 'modeled' ? view.conformance.filter((c) => !c.rowValid).length : 0,
 	);
 
-	// Per-row extras expander state, keyed by file path.
-	let expanded = $state<Record<string, boolean>>({});
+	let detailOpen = $state(false);
+	let detailRowName = $state<string>();
+	const detailConformance = $derived.by(() => {
+		if (view.mode !== 'modeled' || !detailRowName) return undefined;
+		return view.conformance.find((conf) => conf.row.name === detailRowName);
+	});
 
+	// Per-kind column width: the `<col>` basis under `table-fixed`, so the grid reads
+	// like a spreadsheet (a number column a third the width of a tags column) instead
+	// of ten equal slabs. Keyed on `field.kind`, the stable discriminant, so sizing is
+	// semantic, not positional: no "the first column is the title" guess. `satisfies
+	// Record<Kind, string>` makes a new palette kind fail to compile until it has a
+	// width here, the same exhaustiveness gate the widget registry carries.
+	const COLUMN_WIDTH = {
+		string: 'w-56',
+		url: 'w-56',
+		datetime: 'w-44',
+		select: 'w-40',
+		integer: 'w-24',
+		number: 'w-24',
+		boolean: 'w-20',
+		tags: 'w-64',
+		multiSelect: 'w-64',
+	} satisfies Record<Kind, string>;
+
+	// Numerics right-align so digits line up down the column edge; booleans center
+	// their checkbox; everything else reads left. Applied to BOTH the header and the
+	// cell so the column aligns as one piece.
+	function alignClass(kind: Kind): string {
+		if (kind === 'integer' || kind === 'number') return 'text-right';
+		if (kind === 'boolean') return 'text-center';
+		return '';
+	}
+
+	// The header stacks the field name over its kind, cross-aligned to match the
+	// column (a number column right-aligns its header too). Stacking keeps a narrow
+	// numeric column's name readable instead of truncating "duration" to "dur..." to
+	// fit the kind beside it.
+	function headItems(kind: Kind): string {
+		if (kind === 'integer' || kind === 'number') return 'items-end';
+		if (kind === 'boolean') return 'items-center';
+		return 'items-start';
+	}
+
+	// A cell out of conformance carries its state as an inset ring: amber for an empty
+	// required cell, destructive for an out-of-domain value. The ring lives on the
+	// CELL, not the row, so one signal owns "this needs attention" instead of stacking
+	// a row tint under a cell tint under the hover tint.
 	function cellStateClass(state: string): string {
 		if (state === 'NEEDS_VALUE') {
-			return 'bg-amber-500/5 ring-1 ring-inset ring-amber-500/25';
+			return 'bg-amber-500/5 ring-1 ring-inset ring-amber-500/30';
 		}
 
 		if (state === 'INVALID') {
-			return 'bg-destructive/5 ring-1 ring-inset ring-destructive/25';
+			return 'bg-destructive/5 ring-1 ring-inset ring-destructive/30';
 		}
 
 		return '';
 	}
+
+	function openDetail(rowName: string) {
+		detailRowName = rowName;
+		detailOpen = true;
+	}
+
+	$effect(() => {
+		if (!detailOpen) {
+			detailRowName = undefined;
+			return;
+		}
+
+		if (detailRowName && !detailConformance) {
+			detailOpen = false;
+			detailRowName = undefined;
+		}
+	});
 </script>
 
 <!-- Raw value render for the unmodeled view: plain text, no type guessing. -->
@@ -195,15 +258,32 @@
 		{/if}
 
 		<div class="flex-1 overflow-auto">
-			<Table.Root class="min-w-full text-sm">
+			<Table.Root class="min-w-full table-fixed text-sm">
+				<!-- table-fixed honours these <col> widths, so cells truncate instead of
+				     stretching the column to the widest value. -->
+				<colgroup>
+					<col class="w-60" />
+					{#each view.model.fields as field (field.name)}
+						<col class={COLUMN_WIDTH[field.kind]} />
+					{/each}
+				</colgroup>
 				<Table.Header>
 					<Table.Row>
-						<Table.Head class="sticky top-0 z-10 w-10 bg-background"></Table.Head>
+						<Table.Head class="sticky left-0 top-0 z-30 border-r bg-background align-bottom">
+							<span class="text-xs font-medium text-muted-foreground">file</span>
+						</Table.Head>
 						{#each view.model.fields as field (field.name)}
-							<Table.Head class="sticky top-0 z-10 min-w-44 bg-background">
-								<div class="flex items-baseline gap-2">
-									<span class="truncate font-medium">{field.name}</span>
-									<span class="text-xs font-normal text-muted-foreground">
+							<Table.Head class="sticky top-0 z-20 bg-background align-bottom">
+								<div
+									class="flex flex-col gap-0.5 {headItems(field.kind)}"
+									title="{field.name} ({field.kind})"
+								>
+									<span class="max-w-full truncate font-medium leading-tight">
+										{field.name}
+									</span>
+									<span
+										class="text-[11px] font-normal uppercase leading-none tracking-wide text-muted-foreground/80"
+									>
 										{field.kind}
 									</span>
 								</div>
@@ -229,24 +309,35 @@
 						</Table.Row>
 					{:else}
 						{#each visibleRows as conf (conf.row.name)}
-							<Table.Row class={conf.rowValid ? '' : 'bg-amber-500/5'}>
-								<Table.Cell class="align-top">
-									<Button
-										variant="ghost"
-										size="icon-xs"
-										tooltip={conf.extras.length
-											? `Edit body, ${conf.extras.length} unmodeled keys`
-											: 'Edit body'}
-										onclick={() =>
-											(expanded[conf.row.name] = !expanded[conf.row.name])}
-									>
-										<MoreHorizontalIcon />
-									</Button>
+							<Table.Row>
+								<!-- Frozen identity cell: the file name is the row's id on disk, kept
+								     visible while the typed columns scroll. !bg-background keeps it
+								     opaque so scrolled cells never bleed through. -->
+								<Table.Cell class="sticky left-0 z-10 border-r !bg-background align-middle">
+									<div class="flex items-center gap-1.5">
+										<Button
+											variant="ghost"
+											size="icon-xs"
+											aria-label="Open row detail"
+											tooltip={conf.extras.length
+												? `Open row, ${conf.extras.length} extra keys`
+												: 'Open row'}
+											onclick={() => openDetail(conf.row.name)}
+										>
+											<ExternalLinkIcon />
+										</Button>
+										<span
+											class="truncate font-mono text-xs text-muted-foreground"
+											title={conf.row.name}
+										>
+											{conf.row.name}
+										</span>
+									</div>
 								</Table.Cell>
 								{#each conf.cells as cell (cell.field.name)}
 									<Table.Cell
 										aria-invalid={cell.state === 'INVALID' || cell.state === 'NEEDS_VALUE'}
-										class={cellStateClass(cell.state)}
+										class="{alignClass(cell.field.kind)} {cellStateClass(cell.state)}"
 									>
 										<ModeledCell
 											{cell}
@@ -256,14 +347,6 @@
 									</Table.Cell>
 								{/each}
 							</Table.Row>
-							{#if expanded[conf.row.name]}
-								<Table.Row>
-									<Table.Cell></Table.Cell>
-									<Table.Cell colspan={view.model.fields.length} class="p-0">
-										<RowDetail row={conf.row} extras={conf.extras} {onSaveBody} />
-									</Table.Cell>
-								</Table.Row>
-							{/if}
 						{/each}
 					{/if}
 				</Table.Body>
@@ -288,3 +371,12 @@
 		</section>
 	{/if}
 </div>
+
+{#if detailConformance}
+	<RowDetailDialog
+		bind:open={detailOpen}
+		conformance={detailConformance}
+		{onSaveField}
+		{onSaveBody}
+	/>
+{/if}

@@ -7,5 +7,4 @@
  */
 
 export type { ColumnError, FlatJsonTSchema } from './constraint';
-export { deriveStorage, isNullable, type SqliteStorage } from './derive';
 export { column } from './sugar';

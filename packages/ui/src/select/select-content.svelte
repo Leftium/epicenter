@@ -25,8 +25,6 @@
 		data-slot="select-content"
 		class={cn(
 			'cn-select-content cn-select-content-logical cn-menu-target cn-menu-translucent relative isolate z-50 overflow-x-hidden overflow-y-auto',
-			// Custom: Prevent dropdown from expanding wider than trigger when content overflows
-			'max-w-min',
 			className,
 		)}
 		{...restProps}

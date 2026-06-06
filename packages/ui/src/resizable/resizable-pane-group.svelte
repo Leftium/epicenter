@@ -17,8 +17,6 @@
 	data-slot="resizable-pane-group"
 	class={cn(
 		'cn-resizable-panel-group flex h-full w-full data-[direction=vertical]:flex-col',
-		// Custom: Add spacing between resizable panes for visual separation
-		'gap-2',
 		className,
 	)}
 	{...restProps}

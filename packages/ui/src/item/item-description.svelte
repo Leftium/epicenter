@@ -15,8 +15,6 @@
 	data-slot="item-description"
 	class={cn(
 		'cn-item-description line-clamp-2 font-normal [&>a:hover]:text-primary [&>a]:underline [&>a]:underline-offset-4',
-		// Custom override: balanced wrapping is Epicenter-specific (not upstream).
-		'text-balance',
 		className,
 	)}
 	{...restProps}

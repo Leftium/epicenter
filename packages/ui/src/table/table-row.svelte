@@ -13,11 +13,7 @@
 <tr
 	bind:this={ref}
 	data-slot="table-row"
-	class={cn(
-		'cn-table-row',
-		'hover:[&,&>svelte-css-wrapper]:[&>th,td]:bg-muted/50',
-		className,
-	)}
+	class={cn('cn-table-row', className)}
 	{...restProps}
 >
 	{@render children?.()}

@@ -16,7 +16,7 @@
  *  - `apps/zhongwen/project.ts` → `zhongwen()` mount factory
  */
 
-import { field } from '@epicenter/field';
+import { field, jsonValue } from '@epicenter/field';
 import {
 	createWorkspace,
 	defineActions,
@@ -30,7 +30,6 @@ import {
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
-import type { JsonValue } from 'wellcrafted/json';
 
 export const ZHONGWEN_ID = 'epicenter-zhongwen';
 
@@ -78,7 +77,7 @@ const chatMessagesTable = defineTable({
 	id: field.string<ChatMessageId>(),
 	conversationId: field.string<ConversationId>(),
 	role: field.select(['user', 'assistant']),
-	parts: field.json(Type.Array(Type.Unsafe<JsonValue>(Type.Any()))),
+	parts: field.json(Type.Array(jsonValue)),
 	createdAt: field.number(),
 });
 export type ChatMessage = InferTableRow<typeof chatMessagesTable>;

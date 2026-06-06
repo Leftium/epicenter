@@ -9,7 +9,7 @@
  * factory.
  */
 
-import { field } from '@epicenter/field';
+import { field, jsonValue } from '@epicenter/field';
 import {
 	asDeviceId,
 	createWorkspace,
@@ -23,7 +23,6 @@ import {
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
-import type { JsonValue } from 'wellcrafted/json';
 
 export type { DeviceId };
 // `DeviceId` and `asDeviceId` are the canonical brand from `@epicenter/workspace`.
@@ -252,7 +251,7 @@ const chatMessagesTable = defineTable({
 	id: field.string<ChatMessageId>(),
 	conversationId: field.string<ConversationId>(),
 	role: field.select(['user', 'assistant', 'system']),
-	parts: field.json(Type.Unsafe<JsonValue[]>(Type.Array(Type.Any()))),
+	parts: field.json(Type.Array(jsonValue)),
 	createdAt: field.number(),
 });
 export type ChatMessage = InferTableRow<typeof chatMessagesTable>;

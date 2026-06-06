@@ -146,9 +146,27 @@ const multiSelect = <const T extends readonly string[]>(
 const tags = (opts?: TSchemaOptions) => Type.Array(Type.String(), opts);
 
 /**
+ * The canonical "any JSON value" schema: `Static<> = JsonValue`, runtime accepts any
+ * value. Reach for it when a payload is genuinely shapeless: pass it straight
+ * (`field.json(jsonValue)`, identical to the no-arg `field.json()`) or as an element
+ * type (`field.json(Type.Array(jsonValue))` for a list of arbitrary JSON). It replaces
+ * the hand-rolled `Type.Unsafe<JsonValue>(Type.Any())` that several apps had each spelled
+ * a slightly different way.
+ *
+ * `Type.Unsafe` pins `Static<>` to wellcrafted's canonical `JsonValue` while the runtime
+ * schema stays `Type.Any()` (wire-form `{}`). JSON-ness is enforced at the TYPE level by
+ * `FlatJsonTSchema` at the `defineTable` boundary, NOT by a runtime check here, and that
+ * is deliberate: TypeBox's `Value.Check` is structural, so even a recursive JSON schema
+ * (`Type.Cyclic`) cannot reject a `Date` (it reads as an empty object). A recursive runtime
+ * schema would add wire-form weight without adding safety, and the `x-json-schema` marker
+ * already declares the cell as arbitrary JSON, so `Type.Any()` is the honest floor.
+ */
+export const jsonValue: TUnsafe<JsonValue> = Type.Unsafe<JsonValue>(Type.Any());
+
+/**
  * Arbitrary JSON payload, stored as TEXT, recognized as kind `json`.
  *
- * - `field.json()` -> `Static<> = JsonValue`, accepts any JSON value.
+ * - `field.json()` -> `Static<> = JsonValue` (defaults the inner to {@link jsonValue}).
  * - `field.json(inner)` -> `Static<> = Static<inner>`, validates the payload against
  *   `inner` on read.
  *
@@ -156,7 +174,9 @@ const tags = (opts?: TSchemaOptions) => Type.Array(Type.String(), opts);
  * `Schema.Compile` enforce them) and adds the {@link JSON_SCHEMA_KEYWORD} marker, so
  * `recognize` classifies it as `json` instead of the bare object/array it would otherwise
  * look like (which would degrade to raw). `Type.Unsafe` decouples the inferred `Static<>`
- * from that marker-bearing wire-form.
+ * from that marker-bearing wire-form. The no-arg form defaults `inner` to {@link jsonValue},
+ * so bare and explicit share ONE return path; `Type.Any`'s empty wire-form (`{}`) means the
+ * bare call still serializes to just the marker.
  *
  * No JSON-safety gate lives here (that would pull the workspace's `ColumnError` into the
  * leaf): a non-JSON inner (e.g. `Type.Date`) flows through as `TUnsafe<Date>` and is caught
@@ -164,12 +184,8 @@ const tags = (opts?: TSchemaOptions) => Type.Array(Type.String(), opts);
  */
 function json(): TUnsafe<JsonValue>;
 function json<S extends TSchema>(inner: S): TUnsafe<Static<S>>;
-function json(inner?: TSchema): TUnsafe<unknown> {
-	return Type.Unsafe(
-		inner
-			? { ...inner, [JSON_SCHEMA_KEYWORD]: true }
-			: { [JSON_SCHEMA_KEYWORD]: true },
-	);
+function json(inner: TSchema = jsonValue): TUnsafe<unknown> {
+	return Type.Unsafe({ ...inner, [JSON_SCHEMA_KEYWORD]: true });
 }
 
 /**

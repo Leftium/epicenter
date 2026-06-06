@@ -20,7 +20,7 @@
 import { describe, expect, test } from 'bun:test';
 import { type TSchema, Type } from 'typebox';
 import { Value } from 'typebox/value';
-import { field } from './builders';
+import { field, jsonValue } from './builders';
 import { type Kind, KINDS, META_BY_KIND, recognize } from './field';
 
 /**
@@ -237,6 +237,18 @@ describe('json: the marker-discriminated escape kind', () => {
 		expect(kindOf({ type: 'object', properties: {}, 'x-json-schema': true })).toBe(
 			'json',
 		);
+	});
+
+	test('jsonValue: field.json(Type.Array(jsonValue)) is the any-JSON-list pattern, kind json', () => {
+		const schema = field.json(Type.Array(jsonValue));
+		expect(kindOf(atRest(schema))).toBe('json');
+		expect(countMatches(atRest(schema))).toBe(1);
+		expect(Value.Check(schema, [1, 'x', null, { a: 1 }])).toBe(true);
+		expect(Value.Check(schema, 'not-an-array')).toBe(false);
+	});
+
+	test('bare field.json() defaults its inner to jsonValue (byte-identical wire-form)', () => {
+		expect(atRest(field.json())).toEqual(atRest(field.json(jsonValue)));
 	});
 });
 

@@ -6,19 +6,18 @@
  * - `recognize` (recognition) classifies a stored schema back to its kind.
  *
  * They are inverses: `recognize` of a serialized `field.X(...)` is kind `X`.
- * Emptiness (`nullable`) and arbitrary `json` are NOT here; they are substrate
- * policy each consumer layers on at its own edge.
+ * `json` (the open escape kind) and {@link jsonValue} (its any-JSON inner) live here;
+ * emptiness (`nullable`) does NOT, it is substrate policy each consumer layers on at
+ * its own edge.
  */
 
-export { field } from './builders';
+export { field, jsonValue } from './builders';
 export { DateTimeString } from './datetime-string';
 export {
 	compile,
 	type Field,
 	type FieldOf,
 	type Kind,
-	KINDS,
-	META_BY_KIND,
 	recognize,
 	storageOf,
 } from './field';

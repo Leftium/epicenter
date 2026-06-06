@@ -13,7 +13,8 @@
 
 import type { Static, Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
-import type { field } from './builders';
+import type { JsonValue } from 'wellcrafted/json';
+import type { field, jsonValue } from './builders';
 import type { DateTimeString } from './datetime-string';
 
 type Equal<X, Y> =
@@ -98,5 +99,19 @@ export type _JsonTypedStatic = Expect<
 			>
 		>,
 		{ author: string }
+	>
+>;
+
+// jsonValue: the canonical any-JSON inner, Static = JsonValue (pinned via Type.Unsafe).
+export type _JsonValueStatic = Expect<Equal<Static<typeof jsonValue>, JsonValue>>;
+
+// field.json(Type.Array(jsonValue)): Static = JsonValue[]. The list-of-arbitrary-JSON
+// pattern the apps share; the inner static flows through Array and field.json unchanged.
+export type _JsonArrayStatic = Expect<
+	Equal<
+		Static<
+			ReturnType<typeof field.json<ReturnType<typeof Type.Array<typeof jsonValue>>>>
+		>,
+		JsonValue[]
 	>
 >;

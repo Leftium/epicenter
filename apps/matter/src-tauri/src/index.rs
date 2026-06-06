@@ -13,7 +13,7 @@
 //! driven per settled watcher batch from `vault.svelte.ts`.
 
 use rusqlite::types::Value;
-use rusqlite::Connection;
+use rusqlite::{Connection, OpenFlags};
 use std::path::Path;
 
 /// Turn one JSON arg into a SQLite-bindable value. The projector only emits strings
@@ -67,6 +67,67 @@ pub fn write_index(
 
     tx.commit().map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// One result set from `query_index`: the column names and the rows (each a positional
+/// list of JSON-encoded cell values). Generic and schema-blind, like the rest of this
+/// module: Rust runs the SQL and hands back values, it never interprets them.
+#[derive(Debug, serde::Serialize)]
+pub struct QueryResult {
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<serde_json::Value>>,
+}
+
+/// Turn one SQLite cell into JSON for the frontend (the inverse of `to_sql`). matter
+/// never projects blobs, so a blob maps to null defensively rather than dragging in a
+/// base64 dependency.
+fn from_sql(value: rusqlite::types::ValueRef) -> serde_json::Value {
+    use rusqlite::types::ValueRef as V;
+    use serde_json::Value as J;
+    match value {
+        V::Null => J::Null,
+        V::Integer(i) => J::Number(i.into()),
+        V::Real(f) => serde_json::Number::from_f64(f).map(J::Number).unwrap_or(J::Null),
+        V::Text(s) => J::String(String::from_utf8_lossy(s).into_owned()),
+        V::Blob(_) => J::Null,
+    }
+}
+
+/// Run a READ-ONLY query against `<path>/matter.sqlite` and return up to `limit` rows.
+/// The connection is opened read-only, so a query can never mutate the disposable mirror
+/// (a write would be lost on the next reconcile anyway); `busy_timeout` lets a query wait
+/// out an in-flight rebuild instead of failing with SQLITE_BUSY. The SQL is the caller's
+/// (the user's own query against their own local file), so Rust stays schema-blind: it
+/// runs the statement and hands back column names and JSON values, nothing interpreted.
+#[tauri::command]
+pub fn query_index(path: String, sql: String, limit: usize) -> Result<QueryResult, String> {
+    let db = Path::new(&path).join("matter.sqlite");
+    let conn = Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|e| e.to_string())?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))
+        .map_err(|e| e.to_string())?;
+
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let columns: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
+    let col_count = columns.len();
+
+    let mut out: Vec<Vec<serde_json::Value>> = Vec::new();
+    let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
+    while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+        if out.len() >= limit {
+            break;
+        }
+        let mut record = Vec::with_capacity(col_count);
+        for i in 0..col_count {
+            record.push(from_sql(row.get_ref(i).map_err(|e| e.to_string())?));
+        }
+        out.push(record);
+    }
+
+    Ok(QueryResult {
+        columns,
+        rows: out,
+    })
 }
 
 #[cfg(test)]
@@ -150,5 +211,41 @@ CREATE TABLE "drafts" ("path" TEXT PRIMARY KEY, "title" TEXT NOT NULL, "count" I
         )
         .unwrap();
         assert_eq!(count(&dir), 1);
+    }
+
+    #[test]
+    fn query_index_reads_rows_limits_and_rejects_writes() {
+        let dir = scratch();
+        let path: String = dir.to_string_lossy().into();
+        write_index(
+            path.clone(),
+            SCHEMA.into(),
+            INSERT.into(),
+            vec![
+                vec![json!("a.md"), json!("Hello"), json!(3), json!("{}")],
+                vec![json!("b.md"), json!("World"), json!(5), json!("{}")],
+            ],
+        )
+        .unwrap();
+
+        let result = query_index(
+            path.clone(),
+            r#"SELECT "path", "count" FROM "drafts" WHERE "count" > 3"#.into(),
+            100,
+        )
+        .unwrap();
+        assert_eq!(result.columns, vec!["path".to_string(), "count".to_string()]);
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0][0], json!("b.md"));
+        assert_eq!(result.rows[0][1], json!(5));
+
+        // `limit` caps the row count.
+        let limited =
+            query_index(path.clone(), r#"SELECT "path" FROM "drafts""#.into(), 1).unwrap();
+        assert_eq!(limited.rows.len(), 1);
+
+        // The connection is read-only, so a write is rejected, never a silent mutation.
+        let err = query_index(path, r#"DELETE FROM "drafts""#.into(), 100).unwrap_err();
+        assert!(err.to_lowercase().contains("readonly"));
     }
 }

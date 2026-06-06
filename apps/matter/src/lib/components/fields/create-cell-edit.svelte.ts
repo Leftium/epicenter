@@ -27,7 +27,7 @@ export type CellEditParse =
 	| { type: 'cancel' }
 	| { type: 'error'; message: string };
 
-export type CreateCellEditOptions = {
+type CreateCellEditOptions = {
 	/**
 	 * The cell's current committed value, as a getter (not a snapshot): props can
 	 * change between `start` and `commit`, and `undefined` means empty. The island

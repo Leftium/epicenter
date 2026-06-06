@@ -2,7 +2,7 @@
 //!
 //! `matter.sqlite` sits NEXT TO `matter.json` as a derived, disposable mirror of the
 //! folder's VALID rows, so a coding agent (or an in-app SQL console) can run arbitrary
-//! SQL over the typed folder. The JS projector (`model/sqlite.ts`) builds all the SQL
+//! SQL over the typed folder. The JS projector (`core/sqlite.ts`) builds all the SQL
 //! TEXT (the schema script + the insert, quoting and placeholders included) and the
 //! row tuples; Rust only opens the db, runs the schema script, and parameter-binds
 //! each row. It never learns what a column or a kind is, the same faithful role

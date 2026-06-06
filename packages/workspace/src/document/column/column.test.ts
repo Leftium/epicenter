@@ -27,14 +27,6 @@ describe('column.string', () => {
 	});
 });
 
-describe('column.literal', () => {
-	test('matches the literal value', () => {
-		const v1 = column.literal(1);
-		expect(Value.Check(v1, 1)).toBe(true);
-		expect(Value.Check(v1, 2)).toBe(false);
-	});
-});
-
 describe('column.nullable', () => {
 	test('accepts inner schema value or null', () => {
 		const schema = column.nullable(column.string());

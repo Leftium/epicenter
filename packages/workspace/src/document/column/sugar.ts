@@ -20,17 +20,15 @@
  *   workspace escape hatch (matter rejects this shape into its raw lane).
  * - `ianaTimeZone()` — a brand builder with no matter kind (`iana-time-zone`
  *   format, brand `IanaTimeZone`; registered once at module load).
- * - `literal` — `Type.Literal` pass-through for literal-valued columns.
  *
  * `column.enum` is the workspace name for the shared `field.select` (native
  * `Type.Enum`, `{enum:[...]}` wire-form), so a `column.enum` column `recognize`s
  * as `select` and round-trips across substrates.
  *
- * `column` is the only builder export (the `Infer` type aside): the builders are
- * reachable solely as `column.X`, so there is one blessed way to construct a
- * column. Users may freely mix `column.X()` and raw `Type.X()`; the
- * `FlatJsonTSchema` constraint enforces safety regardless of which call site
- * produced the schema.
+ * `column` is the only export: the builders are reachable solely as `column.X`,
+ * so there is one blessed way to construct a column. Users may freely mix
+ * `column.X()` and raw `Type.X()`; the `FlatJsonTSchema` constraint enforces
+ * safety regardless of which call site produced the schema.
  */
 
 import {
@@ -57,13 +55,6 @@ import type { ColumnError } from './constraint';
 if (!Format.Has(IANA_TIME_ZONE_FORMAT)) {
 	Format.Set(IANA_TIME_ZONE_FORMAT, (value) => IanaTimeZone.is(value));
 }
-
-/**
- * Pass-through to `Type.Literal`. Use for literal-valued column shapes.
- * (Version discriminators are now library-managed via `defineTable`'s tuple
- * position; do not declare `_v` as a column.)
- */
-const literal = Type.Literal;
 
 /**
  * JSON-encoded TEXT column. The TypeScript type derives from `Static<S>`, so
@@ -133,16 +124,8 @@ export const column = {
 	integer: field.integer,
 	boolean: field.boolean,
 	dateTime: field.datetime,
-	literal,
 	enum: field.select,
 	json,
 	nullable,
 	ianaTimeZone,
 };
-
-/**
- * `Static<>` shorthand that mirrors TypeBox's `Static<S>` for ergonomics.
- * Exported alongside the `column` namespace so consumers can read row types
- * out of column maps without a separate TypeBox import.
- */
-export type Infer<S extends TSchema> = Static<S>;

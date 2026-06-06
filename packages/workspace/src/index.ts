@@ -152,7 +152,6 @@ export {
 	type ColumnError,
 	column,
 	type FlatJsonTSchema,
-	type Infer,
 } from './document/column/index';
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -58,6 +58,10 @@ export type _SelectStatic = Expect<
 	>
 >;
 
+// field.select is string-only: a numeric member list is a compile error.
+// @ts-expect-error select holds strings; a numeric range is integer + min/max
+field.select([1, 2, 3]);
+
 // field.multiSelect([...]): Static = array of the literal union
 export type _MultiSelectStatic = Expect<
 	Equal<

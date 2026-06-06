@@ -104,13 +104,6 @@ describe('rows (valid only, serialized per storage class)', () => {
 		expect(extra).toBe('{"extraKey":"kept"}'); // unmodeled keys -> _extra JSON
 	});
 
-	test('a numeric enum select serializes to its TEXT form', () => {
-		const nm = model({ rank: { type: 'integer', enum: [1, 2, 3] } });
-		const row: Row = { name: 'r.md', frontmatter: { rank: 2 }, body: '' };
-		const p = projectToSqlite('ranks', nm, classifyRows(nm.fields, [row]));
-		expect(p.rows[0]).toEqual(['r.md', '2', '{}']); // select stored as TEXT, empty _extra
-	});
-
 	test('an all-invalid folder yields a schema but no rows', () => {
 		const p = projectToSqlite('drafts', m, classifyRows(m.fields, [incomplete]));
 		expect(p.rows).toEqual([]);

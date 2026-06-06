@@ -5,16 +5,23 @@
  * JSON and `recognize` classifies it back to kind `X`. `field.test.ts` proves
  * the round-trip for every kind.
  *
- * Branding rides on `Type.Unsafe`, which decouples the emitted JSON Schema
- * (wire-form) from the inferred `Static<>`:
+ * Every builder is a thin composition of native TypeBox constructors that emit
+ * the recognized wire-form directly:
  *
- *   field.datetime()            wire {type:'string', format:'date-time'}   Static = DateTimeString
- *   field.select(['a','b'])     wire {type:'string', enum:['a','b']}       Static = 'a' | 'b'
- *   field.string<NoteId>()      wire {type:'string'}                       Static = NoteId
+ *   field.select(['a','b'])      Type.Enum            -> {enum:['a','b']}        Static = 'a' | 'b'
+ *   field.multiSelect(['a','b']) Type.Array(Type.Enum)-> {type:'array',items:{enum:[...]}}
+ *   field.tags()                 Type.Array(Type.String) -> {type:'array',items:{type:'string'}}
+ *   field.number/integer/boolean Type.Number/Integer/Boolean (full TypeBox JSDoc preserved)
  *
- * The plain scalars (`number`, `integer`, `boolean`) alias `Type.X` directly, so
- * they keep TypeBox's full JSDoc / signature / overloads (single source of truth)
- * and emit the exact wire-form their meta recognizes.
+ * `Type.Enum` is the load-bearing choice: in TypeBox v1 it emits the native JSON
+ * Schema `enum` keyword, infers `Static` as the literal union, and carries `enum`
+ * at the type level, so authoring, recognition, and the Drizzle mirror all read
+ * one shape with no `Type.Unsafe` and no value-to-tuple gymnastics.
+ *
+ * Branding still rides on `Type.Unsafe` for the two cases that need a brand the
+ * wire-form cannot express: `field.string<Brand>()` and `field.datetime()`
+ * (`Static = DateTimeString`). `Type.Unsafe` decouples the emitted JSON Schema
+ * from the inferred `Static<>`.
  *
  * NOTE on at-rest vs in-memory: a live TypeBox schema carries a non-enumerable
  * `~kind` tag that the CLOSED metas reject on a direct `recognize`. That tag is
@@ -22,13 +29,17 @@
  * Yjs and what `recognize` actually reads) classifies correctly. The round-trip
  * test serializes through JSON to mirror this.
  *
- * No emptiness (`nullable`) or arbitrary-`json` builder lives here: those are
- * SUBSTRATE POLICY the workspace layers on in `column.*`, and matter forbids. The
- * vocabulary itself is policy-free.
+ * Closed sets are STRING-ONLY: `select` / `multiSelect` hold strings, not numbers
+ * or booleans. A numeric range is an `integer` with `minimum` / `maximum`, not a
+ * select. No emptiness (`nullable`) or arbitrary-`json` builder lives here either:
+ * those are SUBSTRATE POLICY the workspace layers on in `column.*`, and matter
+ * forbids. The vocabulary itself is policy-free.
  */
 
 import {
 	type Static,
+	type TArray,
+	type TEnum,
 	type TSchema,
 	type TSchemaOptions,
 	type TString,
@@ -40,26 +51,6 @@ import type { Brand } from 'wellcrafted/brand';
 import type { DateTimeString } from './datetime-string';
 
 type BrandedString = string & Brand<string>;
-
-/** The primitive members a closed set (`select` / `multiSelect`) may hold. */
-type EnumValue = string | number | boolean;
-
-/**
- * The optional base `type` pin for a closed set, derived from its members so the
- * emitted wire-form matches what `recognize` reads: all-string -> `'string'`,
- * all-integer -> `'integer'`, all-number -> `'number'`. Mixed or boolean members
- * omit the pin (the `select`/`multiSelect` metas leave `type` optional, so the
- * shape still recognizes).
- */
-function enumBaseType(
-	values: readonly EnumValue[],
-): 'string' | 'number' | 'integer' | undefined {
-	if (values.every((v) => typeof v === 'string')) return 'string';
-	if (values.every((v) => typeof v === 'number')) {
-		return values.every((v) => Number.isInteger(v)) ? 'integer' : 'number';
-	}
-	return undefined;
-}
 
 /**
  * String field with optional brand sugar.
@@ -114,57 +105,41 @@ function datetime(opts?: TSchemaOptions): TUnsafe<DateTimeString> {
 }
 
 /**
- * Closed-set field over a fixed list of primitive members. Emits the NATIVE
- * `enum` wire-form (`{type, enum:[...]}`), the shape `recognize` classifies as
- * `select`. `Type.Unsafe` carries the literal union on `Static<>` (`'a' | 'b'`)
- * while the wire stays a plain JSON Schema enum.
+ * Closed-set field over a fixed list of string members. A typed narrowing of
+ * `Type.Enum`: it emits the native `{enum:[...]}` wire-form `recognize`
+ * classifies as `select`, infers `Static` as the literal union (`'a' | 'b'`),
+ * and keeps the members on the type so the Drizzle mirror reads them
+ * structurally. String-only by design: a numeric range is an `integer` with
+ * `minimum` / `maximum`, not a select.
+ *
+ * The `readonly [...T]` variadic mirrors `Type.Enum`'s own parameter, so the
+ * literal tuple flows through with NO cast; the narrower `readonly string[]`
+ * bound assigns cleanly because `Type.Enum` accepts a superset. An empty list
+ * yields `{enum:[]}`, which `recognize` rejects (the field degrades to raw),
+ * matching the uniform "unrecognized schema degrades" contract.
  */
-function select<const T extends readonly EnumValue[]>(
-	values: T,
+const select: <const T extends readonly string[]>(
+	values: readonly [...T],
 	opts?: TSchemaOptions,
-): TUnsafe<T[number]> {
-	if (values.length === 0) {
-		throw new Error('field.select requires at least one value');
-	}
-	const base = enumBaseType(values);
-	return Type.Unsafe<T[number]>({
-		...opts,
-		...(base ? { type: base } : {}),
-		enum: [...values],
-	});
-}
+) => TEnum<[...T]> = Type.Enum;
 
 /**
- * List of closed-set members: an array whose items are the same native `enum`
- * shape `select` emits. Recognizes as `multiSelect`. `Static<>` is the array of
- * the literal union (`('a' | 'b')[]`).
+ * List of closed-set members: an array of the same native `enum` shape `select`
+ * emits. Recognizes as `multiSelect`. `Static<>` is the array of the literal
+ * union (`('a' | 'b')[]`). Composing the typed `select` (whose declared return
+ * threads `T`) keeps this cast-free; the list refinements (`minItems` /
+ * `maxItems` / `uniqueItems`) ride on the array via `opts`.
  */
-function multiSelect<const T extends readonly EnumValue[]>(
-	values: T,
+const multiSelect = <const T extends readonly string[]>(
+	values: readonly [...T],
 	opts?: TSchemaOptions,
-): TUnsafe<T[number][]> {
-	if (values.length === 0) {
-		throw new Error('field.multiSelect requires at least one value');
-	}
-	const base = enumBaseType(values);
-	return Type.Unsafe<T[number][]>({
-		...opts,
-		type: 'array',
-		items: { ...(base ? { type: base } : {}), enum: [...values] },
-	});
-}
+): TArray<TEnum<[...T]>> => Type.Array(select(values), opts);
 
 /**
  * List of free-form strings: `{type:'array', items:{type:'string'}}`. Recognizes
  * as `tags`. `Static<>` is `string[]`.
  */
-function tags(opts?: TSchemaOptions): TUnsafe<string[]> {
-	return Type.Unsafe<string[]>({
-		...opts,
-		type: 'array',
-		items: { type: 'string' },
-	});
-}
+const tags = (opts?: TSchemaOptions) => Type.Array(Type.String(), opts);
 
 /**
  * The `field.*` namespace: the one blessed way to construct a schema in the

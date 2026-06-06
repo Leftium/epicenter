@@ -74,30 +74,29 @@ describe('round-trip: recognize(field.X(...)) is kind X', () => {
 });
 
 describe('round-trip: the native enum wire-form', () => {
-	test('field.select emits {type:"string", enum:[...]} at rest', () => {
+	test('field.select emits the native {enum:[...]} keyword at rest', () => {
 		expect(atRest(field.select(['draft', 'published']))).toEqual({
-			type: 'string',
 			enum: ['draft', 'published'],
 		});
-	});
-
-	test('field.select of integers pins type:"integer" and recognizes as select', () => {
-		const rest = atRest(field.select([1, 2, 3]));
-		expect(rest).toEqual({ type: 'integer', enum: [1, 2, 3] });
-		expect(kindOf(rest)).toBe('select');
 	});
 
 	test('field.multiSelect items carry enum (so it is multiSelect, not tags)', () => {
 		const rest = atRest(field.multiSelect(['a', 'b']));
 		expect(rest).toEqual({
 			type: 'array',
-			items: { type: 'string', enum: ['a', 'b'] },
+			items: { enum: ['a', 'b'] },
 		});
 		expect(kindOf(rest)).toBe('multiSelect');
 	});
 
-	test('field.select rejects an empty member list', () => {
-		expect(() => field.select([])).toThrow();
+	test('a type:"string"-pinned enum still recognizes as select', () => {
+		expect(kindOf({ type: 'string', enum: ['draft', 'published'] })).toBe(
+			'select',
+		);
+	});
+
+	test('an empty member list degrades to raw (recognize returns null)', () => {
+		expect(recognize(atRest(field.select([])))).toBeNull();
 	});
 });
 
@@ -172,11 +171,12 @@ describe('the cross-discrimination pairs (the shapes that could collide)', () =>
 		expect(Value.Check(META_BY_KIND.string, s)).toBe(false); // string forbids `enum`
 	});
 
-	test('select is base-agnostic: an integer enum is select, not integer', () => {
+	test('select is string-only: an integer enum is NOT select (degrades to raw)', () => {
 		const s = { type: 'integer', enum: [1, 2, 3] };
-		expect(kindOf(s)).toBe('select');
+		expect(kindOf(s)).toBeNull(); // a numeric range is integer + min/max, not a select
+		expect(Value.Check(META_BY_KIND.select, s)).toBe(false); // select holds strings
 		expect(Value.Check(META_BY_KIND.integer, s)).toBe(false); // integer forbids `enum`
-		expect(countMatches(s)).toBe(1);
+		expect(countMatches(s)).toBe(0);
 	});
 
 	test('an enum with no type is select', () => {

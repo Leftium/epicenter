@@ -82,24 +82,21 @@ const ANNOT = {
 	default: Type.Optional(Type.Unknown()),
 };
 
-/** The value space a closed set (`select` / `multiSelect`) may hold. `Number` covers integers. */
-const JsonPrimitive = Type.Union([Type.String(), Type.Number(), Type.Boolean()]);
-
 /**
- * The closed-set discriminant: a non-empty `enum` of primitives, optionally pinned
- * to a base `type`. Shared by the `select` meta and the `multiSelect` item meta, so
- * the two recognize the same closed-set shape. `enum` is REQUIRED here, which is what
- * keeps `select` mutually exclusive from the scalar kinds (they forbid `enum`).
+ * The closed-set discriminant: a non-empty `enum` of STRINGS, optionally pinned to
+ * `type:'string'`. Shared by the `select` meta and the `multiSelect` item meta, so
+ * the two recognize the same closed-set shape. `enum` is REQUIRED here, which is
+ * what keeps `select` mutually exclusive from the scalar kinds (they forbid `enum`).
+ *
+ * The optional `type` accepts both the blessed `field.select` wire-form
+ * (`{enum:[...]}`, no `type`, what `Type.Enum` emits) and a `type:'string'`-pinned
+ * form authored by hand or another tool. Closed sets are STRING-ONLY: a numeric
+ * range is an `integer` with `minimum` / `maximum`, not a select, so a numeric
+ * `enum` matches no meta and degrades to raw.
  */
 const enumProps = {
-	enum: Type.Array(JsonPrimitive, { minItems: 1 }),
-	type: Type.Optional(
-		Type.Union([
-			Type.Literal('string'),
-			Type.Literal('number'),
-			Type.Literal('integer'),
-		]),
-	),
+	enum: Type.Array(Type.String(), { minItems: 1 }),
+	type: Type.Optional(Type.Literal('string')),
 };
 
 /** Item shape for `tags`: a plain string, no annotations. Forbids `enum` (that is `multiSelect`). */

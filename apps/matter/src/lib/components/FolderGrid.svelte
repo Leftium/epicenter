@@ -26,7 +26,7 @@
 		$props();
 
 	const read = $derived(vault.read);
-	const folder = $derived(vault.name);
+	const folder = $derived(vault.folderName);
 	const onSaveField = $derived(vault.saveField);
 	const onSaveBody = $derived(vault.saveBody);
 	const view = $derived(read.view);

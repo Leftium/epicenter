@@ -48,7 +48,7 @@ const basename = (path: string) => path.split(/[/\\]/).pop() ?? path;
  * separate initial read and no read-then-watch gap.
  */
 function createVault(path: string) {
-	const name = basename(path);
+	const folderName = basename(path);
 
 	// ONE store, keyed by filename: each entry is a `Result` that is either a
 	// parsed row or the error that stopped it. `set` replaces, so "a name is
@@ -266,7 +266,7 @@ function createVault(path: string) {
 	}
 
 	return {
-		name,
+		folderName,
 		path,
 		watch,
 		saveField,
@@ -302,7 +302,7 @@ export type Vault = ReturnType<typeof createVault>;
  * the disk lifecycle (`watch` / `status` / `path`), so the demo is an honest
  * drop-in rather than a vault pretending to watch a folder.
  */
-export type FolderGridVault = Pick<Vault, 'name' | 'read' | 'saveField' | 'saveBody'>;
+export type FolderGridVault = Pick<Vault, 'folderName' | 'read' | 'saveField' | 'saveBody'>;
 
 /** Prompt for a folder and open it as a live {@link Vault}. `null` if cancelled. */
 export async function openVault(): Promise<Vault | null> {

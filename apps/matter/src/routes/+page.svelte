@@ -65,7 +65,7 @@
 			{/if}
 		</Button>
 		{#if vault}
-			<Badge variant="id" class="max-w-[60vw] truncate">{vault.name}</Badge>
+			<Badge variant="id" class="max-w-[60vw] truncate">{vault.folderName}</Badge>
 		{/if}
 		{#if openError}
 			<span class="text-xs text-destructive">{openError}</span>
@@ -102,13 +102,13 @@
 		{#if vault.error}
 			<Empty.Root class="flex-1 border-0">
 				<Empty.Media variant="icon"><FolderOpenIcon /></Empty.Media>
-				<Empty.Title>Couldn't watch {vault.name}</Empty.Title>
+				<Empty.Title>Couldn't watch {vault.folderName}</Empty.Title>
 				<Empty.Description>{vault.error}</Empty.Description>
 			</Empty.Root>
 		{:else if vault.status === 'loading'}
 			<Empty.Root class="flex-1 border-0" aria-live="polite">
 				<Empty.Media><Spinner class="size-5 text-muted-foreground" /></Empty.Media>
-				<Empty.Title>Loading {vault.name}</Empty.Title>
+				<Empty.Title>Loading {vault.folderName}</Empty.Title>
 			</Empty.Root>
 		{:else}
 			{#if vault.writeError}

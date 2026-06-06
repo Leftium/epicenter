@@ -20,7 +20,7 @@ import type { FolderGridVault } from '$lib/vault.svelte';
 import { DEMO_MODEL_TEXT, DEMO_ROWS } from './fixtures';
 
 /** Open the inlined fixtures as a live, editable in-memory {@link FolderGridVault}. */
-export function createDemoVault(name = 'sample-vault/drafts') {
+export function createDemoVault(folderName = 'sample-vault/drafts') {
 	// filename -> raw markdown text, the same shape the disk holds. A save replaces
 	// an entry's text, mirroring the watcher echoing a written file back.
 	const entries = new SvelteMap<string, string>(
@@ -42,7 +42,7 @@ export function createDemoVault(name = 'sample-vault/drafts') {
 	}
 
 	return {
-		name,
+		folderName,
 		/**
 		 * Set or clear one frontmatter field (`undefined` clears the key). The edit is
 		 * synchronous in memory; the signature stays `async` to match the live vault's

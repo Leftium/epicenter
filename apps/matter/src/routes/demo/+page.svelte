@@ -14,7 +14,7 @@
 <main class="flex h-screen flex-col">
 	<div class="flex min-h-12 items-center gap-3 border-b px-4 py-2">
 		<Badge variant="outline">demo</Badge>
-		<Badge variant="id" class="max-w-[60vw] truncate">{vault.name}</Badge>
+		<Badge variant="id" class="max-w-[60vw] truncate">{vault.folderName}</Badge>
 		<span class="text-xs text-muted-foreground">
 			In-memory fixtures. Edits run the real transforms, nothing touches disk.
 		</span>

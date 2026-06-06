@@ -6,7 +6,6 @@
 		variants: {
 			size: {
 				xs: 'cn-input-group-button-size-xs',
-				sm: 'cn-input-group-button-size-sm',
 				'icon-xs': 'cn-input-group-button-size-icon-xs',
 				'icon-sm': 'cn-input-group-button-size-icon-sm',
 			},

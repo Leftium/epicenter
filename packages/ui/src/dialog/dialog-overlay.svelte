@@ -12,11 +12,6 @@
 <DialogPrimitive.Overlay
 	bind:ref
 	data-slot="dialog-overlay"
-	class={cn(
-		'cn-dialog-overlay fixed inset-0 isolate z-50',
-		// Override to z-40 to ensure that alert-dialogs (which are at z-50) are always on top of dialogs
-		'z-40',
-		className,
-	)}
+	class={cn('cn-dialog-overlay fixed inset-0 isolate z-50', className)}
 	{...restProps}
 />

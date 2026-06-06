@@ -68,6 +68,11 @@
 		@apply gap-2;
 	}
 
+	/* Dialog: scroll tall content; max-h leaves viewport breathing room. */
+	.cn-dialog-content {
+		@apply overflow-y-auto max-h-[calc(100vh-2rem)];
+	}
+
 	/* Item: truncation inside flex containers + balanced description wrapping. */
 	.cn-item-content {
 		@apply min-w-0;

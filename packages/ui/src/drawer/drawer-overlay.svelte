@@ -12,11 +12,6 @@
 <DrawerPrimitive.Overlay
 	bind:ref
 	data-slot="drawer-overlay"
-	class={cn(
-		'cn-drawer-overlay fixed inset-0 z-50',
-		// Override to z-40 to ensure that alert-dialogs (which are at z-50) are always on top of drawers
-		'z-40',
-		className,
-	)}
+	class={cn('cn-drawer-overlay fixed inset-0 z-50', className)}
 	{...restProps}
 />

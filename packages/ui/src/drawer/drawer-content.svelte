@@ -23,12 +23,7 @@
 		bind:ref
 		onOpenAutoFocus={(e) => e.preventDefault()}
 		data-slot="drawer-content"
-		class={cn(
-			'cn-drawer-content group/drawer-content fixed z-50',
-			// Override to z-40 to ensure that alert-dialogs (which are at z-50) are always on top of drawers
-			'z-40',
-			className,
-		)}
+		class={cn('cn-drawer-content group/drawer-content fixed z-50', className)}
 		{...restProps}
 	>
 		<div

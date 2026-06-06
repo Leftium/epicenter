@@ -32,19 +32,19 @@ import { Button } from '$lib/components/ui/button';
 import { Input } from '$lib/components/ui/input';
 ```
 
-**Lucide icons** (always use individual imports from `@lucide/svelte`):
+**Lucide icons** (prefer individual icon paths in this repo):
 
 ```typescript
-// Good: Individual icon imports
+// Good: individual icon paths keep dev imports narrow
 import Database from '@lucide/svelte/icons/database';
 import MinusIcon from '@lucide/svelte/icons/minus';
 import MoreVerticalIcon from '@lucide/svelte/icons/more-vertical';
 
-// Bad: Don't import multiple icons from lucide-svelte
-import { Database, MinusIcon, MoreVerticalIcon } from 'lucide-svelte';
+// Avoid adding new barrel imports in changed files
+import { Database, MinusIcon, MoreVerticalIcon } from '@lucide/svelte';
 ```
 
-The path uses kebab-case (e.g., `more-vertical`, `minimize-2`), and you can name the import whatever you want (typically PascalCase with optional Icon suffix).
+The path uses kebab-case (e.g., `more-vertical`, `minimize-2`), and you can name the import whatever you want (typically PascalCase with optional Icon suffix). If you are already editing a file with `@lucide/svelte` barrel imports, convert the touched icons to per-icon paths when it stays local to the change.
 
 ## Styling and Customization
 
@@ -78,14 +78,89 @@ Use proper component composition following shadcn-svelte patterns:
 - Ensure custom components follow the same organizational patterns
 - Consider semantic appropriateness (e.g., use section headers instead of cards for page sections)
 
-# Props Pattern
+# DOM Attachments
 
-## Always Inline Props Types
-
-Never create a separate `type Props = {...}` declaration. Always inline the type directly in `$props()`:
+For new reusable DOM behavior on elements, prefer Svelte 5 attachments:
 
 ```svelte
-<!-- BAD: Separate Props type -->
+<input
+	{@attach (node) => node.select()}
+/>
+```
+
+Use `use:` actions when you are preserving existing code or consuming a library
+that only exposes an action. If you need to pass an action through a component
+or compose it with other DOM behavior, check `fromAction` in `svelte/attachments`
+before writing adapter code yourself.
+
+This repo already uses `{@attach (node) => node.select()}` for focused edit
+fields in Matter. Follow that shape for small one-off element behavior; extract
+an attachment factory only when several call sites share the behavior or the
+setup owns cleanup.
+
+# Props Pattern
+
+## Bindable Props And Ownership
+
+Treat props as parent-owned unless the component deliberately exposes a
+two-way binding API. Svelte allows temporary prop reassignment, but mutating a
+parent-owned state proxy from a child produces an ownership warning. Do not add
+`$bindable` just to quiet that warning; decide whether the child is a controlled
+component or whether it should ask the parent to act.
+
+Use callback props for commands and one-shot events:
+
+```svelte
+<!-- BAD: child mutates parent-owned row state -->
+<script lang="ts">
+	let { row }: { row: { archived: boolean } } = $props();
+</script>
+
+<Button onclick={() => (row.archived = true)}>Archive</Button>
+
+<!-- GOOD: parent keeps ownership of the command -->
+<script lang="ts">
+	let { row, onArchive }: {
+		row: { id: string; archived: boolean };
+		onArchive: (id: string) => void;
+	} = $props();
+</script>
+
+<Button onclick={() => onArchive(row.id)}>Archive</Button>
+```
+
+Use `$bindable` for controlled component values that callers naturally bind:
+
+```svelte
+<!-- GOOD: wrapper exposes the same bindable surface as the input it wraps -->
+<script lang="ts">
+	import type { HTMLInputAttributes } from 'svelte/elements';
+	import { type WithElementRef } from '$lib/utils';
+
+	type Props = WithElementRef<HTMLInputAttributes>;
+
+	let { ref = $bindable(null), value = $bindable(), ...restProps }: Props =
+		$props();
+</script>
+
+<input bind:this={ref} bind:value {...restProps} />
+```
+
+Good bindable candidates are controlled UI values and DOM handles: `value`,
+`checked`, `open`, `ref`, `viewportRef`, and primitive state passed through from
+Bits UI or local `@epicenter/ui` components. Avoid making rich domain objects
+bindable just so a child can edit their fields. Domain actions such as archive,
+delete, select, save, or rename should usually be callback props or mutations,
+not two-way bound booleans.
+
+## Inline Simple Props Types
+
+Inline small, component-local prop shapes directly in `$props()`. A separate
+`type Props = {...}` for a one-screen component usually adds a jump without
+owning an invariant.
+
+```svelte
+<!-- NOISY: separate Props type for a simple local contract -->
 <script lang="ts">
 	type Props = {
 		selectedWorkspaceId: string | undefined;
@@ -104,29 +179,69 @@ Never create a separate `type Props = {...}` declaration. Always inline the type
 </script>
 ```
 
-## Children Prop Never Needs Type Annotation
+Keep or introduce a named `Props` type when it earns its name:
 
-The `children` prop is implicitly typed in Svelte. Never annotate it:
+- The component wraps native elements and composes `svelte/elements` types, such
+  as `HTMLInputAttributes` or `HTMLButtonAttributes`.
+- The props encode a generic relationship that would be harder to read inline.
+- The type is exported, reused, or documented as a public contract.
+- The prop shape is large enough that the destructuring becomes unreadable.
 
 ```svelte
-<!-- BAD: Annotating children -->
+<!-- GOOD: wrapper component with a real type contract -->
 <script lang="ts">
-	let { children }: { children: Snippet } = $props();
+	import type { HTMLInputAttributes } from 'svelte/elements';
+	import { type WithElementRef } from '$lib/utils';
+
+	type Props = WithElementRef<HTMLInputAttributes>;
+
+	let { ref = $bindable(null), class: className, ...restProps }: Props =
+		$props();
+</script>
+```
+
+## Type Snippet Props When The Component Has A Typed Contract
+
+Svelte turns content inside component tags into an implicit `children`
+snippet, but that does not make the component's TypeScript contract
+self-documenting. When you annotate `$props()`, type snippet props with
+`Snippet` from `svelte`; use a tuple for snippet parameters.
+
+```svelte
+<!-- BAD: typed props, untyped snippet contract -->
+<script lang="ts">
+	let { children, title, row }: {
+		children: unknown;
+		title: string;
+		row: unknown;
+	} = $props();
 </script>
 
-<!-- GOOD: children is implicitly typed -->
+<!-- GOOD: children and row are explicit snippet props -->
+<script lang="ts" generics="Row">
+	import type { Snippet } from 'svelte';
+
+	let { children, title, row }: {
+		children: Snippet;
+		title: string;
+		row: Snippet<[Row]>;
+	} = $props();
+</script>
+```
+
+If `children` is the only prop and no TypeScript contract is needed, the
+short form is fine:
+
+```svelte
 <script lang="ts">
 	let { children } = $props();
 </script>
 
-<!-- GOOD: Other props need types, but children does not -->
-<script lang="ts">
-	let { children, title, onClose }: {
-		title: string;
-		onClose: () => void;
-	} = $props();
-</script>
+{@render children()}
 ```
+
+Do not define a normal prop named `children` on a component that also accepts
+child content. Svelte reserves that name for the implicit snippet.
 
 # Self-Contained Component Pattern
 
@@ -509,7 +624,7 @@ In Svelte, `\uXXXX` escape sequences work in JavaScript strings (inside `<script
 <Tooltip.Content>Toggle terminal (\u2318`)</Tooltip.Content>
 <p>Close the tab, reopen\u2014your notes are there.</p>
 
-<!-- GOOD: Use actual unicode characters -->
+<!-- GOOD: write the visible text directly, using repo-approved punctuation -->
 <input placeholder="Search..." />
 <Tooltip.Content>Toggle terminal (Cmd+`)</Tooltip.Content>
 <p>Close the tab, reopen: your notes are there.</p>
@@ -530,4 +645,4 @@ JavaScript contexts are fine: these are standard JS string escapes:
 
 Common characters affected: `\u2014` (:), `\u2026` (...), `\u2318` (Cmd), `\u21e7` (Shift), `\u2192` (->).
 
-**Rule**: In HTML attributes and text content, always use the actual character. Reserve `\uXXXX` for JavaScript strings only.
+**Rule**: In HTML attributes and text content, do not use JavaScript escape sequences. Write the visible text directly, using ASCII substitutions where this repo's writing rules require them. Reserve `\uXXXX` for JavaScript strings only.

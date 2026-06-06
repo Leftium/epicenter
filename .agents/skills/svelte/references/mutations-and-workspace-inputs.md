@@ -104,6 +104,57 @@ For component-local operation lifecycle, wrap the function locally:
 
 Do not create an RPC adapter only to get `isPending` for one component. Local `createMutation` gives the component a standard pending/error/success surface without pretending the operation is shared query-layer state.
 
+## Whispering RPC Pattern
+
+Read this section when editing Whispering components that use shared RPC
+adapters or component-local operation lifecycles.
+
+Whispering components consume shared RPC adapters through `.options` inside an
+accessor:
+
+```svelte
+<script lang="ts">
+	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { rpc } from '$lib/rpc';
+
+	const playbackUrl = createQuery(() =>
+		rpc.audio.getPlaybackUrl(() => recordingId).options,
+	);
+
+	const transformRecording = createMutation(
+		() => rpc.transformer.transformRecording.options,
+	);
+</script>
+```
+
+For a component-local operation lifecycle, do not add a new RPC adapter only to
+observe `isPending`. Wrap the operation locally:
+
+```svelte
+<script lang="ts">
+	import { createMutation } from '@tanstack/svelte-query';
+	import { mutationOptions } from 'wellcrafted/query';
+	import { startManualRecording } from '$lib/operations/recording';
+
+	const startRecording = createMutation(() =>
+		mutationOptions({
+			mutationKey: ['recording', 'startManual'],
+			mutationFn: startManualRecording,
+		}),
+	);
+</script>
+```
+
+Whispering error presentation goes through `$lib/report` at the UI or operation
+boundary:
+
+```typescript
+if (error) {
+	report.error({ cause: error });
+	return;
+}
+```
+
 ## Direct Await Pattern
 
 In `.ts` files, use direct `await` because `createMutation` requires component context. For shared Wellcrafted mutations, call the mutation definition directly:
@@ -205,7 +256,7 @@ Keep a single-use function extracted **only** when both conditions are met:
 <div onkeydown={navigateWithArrowKeys} tabindex="-1">
 ```
 
-Without JSDoc and a meaningful name, extract it anyway: the indirection isn't earning its keep.
+Without JSDoc and a meaningful name, inline it: the indirection is not earning its keep.
 
 ### Multi-Use Functions
 

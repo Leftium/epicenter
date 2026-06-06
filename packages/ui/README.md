@@ -149,6 +149,34 @@ Two kinds of delta stay inline, by necessity:
 - **Structural divergences** (extra wrapper elements, `<svelte:element>`, an
   injected actions overlay) are markup, not CSS, and live in the component.
 
+### Current Epicenter deltas
+
+`epicenter-overlay.css` is the self-documenting source of truth for **custom
+variants** (button `ghost-destructive`, alert `warning`, badge
+`id`/`success`/`status.*`) and **per-component overrides** (`cn-table-row`,
+`cn-select-content`, `cn-dialog-content`, `cn-resizable-panel-group`,
+`cn-sidebar-inset`, `cn-item-*`, `cn-item-media-variant-icon`). Each block is
+commented there.
+
+The deltas that must stay **inline** (structural markup, or a property Vega sets
+inline that a base-layer rule cannot beat) are listed here so they are not lost
+on a re-vendor:
+
+| Inline delta | File | Why it stays inline | Still needed? |
+|---|---|---|---|
+| `relative` + `[a]:hover:bg-accent/50` on the item base | `item/item.svelte` | positioning context for the actions overlay; accent hover uses an arbitrary `[a&]`-style selector | yes |
+| Scroll wrapper `<div class="flex-1 overflow-y-auto">` | `drawer/drawer-content.svelte` | structural (extra element) | yes |
+| `onOpenAutoFocus` preventDefault | `drawer/drawer-content.svelte` | workaround for vaul-svelte vs bits-ui 2.x focus recursion | remove when vaul-svelte supports bits-ui 2.x |
+| Viewport ring/outline styling | `scroll-area/scroll-area.svelte` | Vega has no `cn-scroll-area-viewport` | until Vega defines it |
+| Handle base styling | `resizable/resizable-handle.svelte` | Vega has no `cn-resizable-handle` (only `-icon`) | until Vega defines it |
+| `<svelte:element>` span-or-anchor | `badge/badge.svelte` | structural (element choice) | yes |
+| `showOnHover` actions overlay | `item/item-actions.svelte` | structural (absolute overlay + gradient) | yes |
+| `tooltip` prop (wraps in `Tooltip`) | `button/button.svelte` | Epicenter feature; upstream Button has none | yes |
+
+Correctness wiring (making Vega work, not Epicenter style): `switch` and
+`alert-dialog` carry a `size` prop that emits `data-size`; sidebar menu and
+sub-menu buttons emit `data-active` only when active. Keep these.
+
 ## Component Management Workflow
 
 Components are (mostly) byte-identical to upstream shadcn-svelte Vega markup, so

@@ -8,17 +8,16 @@
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
 	import FolderGrid from '$lib/components/FolderGrid.svelte';
 	import { openVault, type Vault } from '$lib/vault.svelte';
+	import { createWhereFilter } from '$lib/where-filter.svelte';
 
 	let vault = $state<Vault>();
 	let opening = $state(false);
 	let openError = $state<string>();
 
-	// The WHERE filter lives here, where the live vault is: the page calls its
-	// `matchingNames` directly (no capability handed into the grid) and gives the grid the
-	// matched row names as data. `matchedNames === undefined` means no active filter.
-	let whereText = $state('');
-	let matchedNames = $state<Set<string>>();
-	let filterError = $state<string>();
+	// The WHERE filter lives here, where the vault is: a page-owned unit bundling the clause
+	// text, the matched row names, and a bad-clause error, plus the debounced query against
+	// the vault's mirror. The grid gets the matched names as data, never the query capability.
+	const filter = createWhereFilter();
 	const view = $derived(vault?.read.view);
 
 	async function openFolder() {
@@ -28,7 +27,7 @@
 			const opened = await openVault();
 			if (opened) {
 				vault = opened;
-				whereText = ''; // a new folder starts unfiltered
+				filter.text = ''; // a new folder starts unfiltered
 			}
 		} catch (error) {
 			openError = error instanceof Error ? error.message : String(error);
@@ -43,34 +42,10 @@
 		if (vault) return vault.watch();
 	});
 
-	// Resolve the WHERE clause to matched row names against the mirror. Debounced, and
-	// re-run when the folder's data changes (so an edit updates membership), which also lets
-	// the reconcile fired by that edit land first. A bad clause surfaces in `filterError`
-	// and keeps the last good names.
-	$effect(() => {
-		const v = vault;
-		const clause = whereText.trim();
-		if (v) void v.read; // re-run when rows change so an edit updates filter membership
-		if (!v || !clause) {
-			matchedNames = undefined;
-			filterError = undefined;
-			return;
-		}
-		let cancelled = false;
-		const handle = setTimeout(async () => {
-			const { data, error } = await v.matchingNames(clause);
-			if (cancelled) return; // a newer clause, a data change, or a folder swap won
-			if (error) filterError = error.message;
-			else {
-				matchedNames = data;
-				filterError = undefined;
-			}
-		}, 200);
-		return () => {
-			cancelled = true;
-			clearTimeout(handle);
-		};
-	});
+	// Resolve the clause against the current vault. The effect reads `vault` (and, inside
+	// `resolve`, the vault's `read`), so it re-runs on a folder swap or a data change; the
+	// returned cleanup cancels an in-flight query so a stale result never lands.
+	$effect(() => filter.resolve(vault));
 </script>
 
 <main class="flex h-screen flex-col">
@@ -105,18 +80,18 @@
 					where
 				</span>
 				<Input
-					bind:value={whereText}
+					bind:value={filter.text}
 					placeholder="status = 'ready'"
 					spellcheck={false}
 					autocapitalize="off"
 					autocomplete="off"
 					autocorrect="off"
-					aria-invalid={Boolean(filterError)}
+					aria-invalid={Boolean(filter.error)}
 					aria-label="Filter rows with a SQL WHERE clause"
-					title={filterError}
+					title={filter.error}
 					class={[
 						'h-8 w-72 font-mono text-xs',
-						filterError && 'border-destructive focus-visible:ring-destructive/30',
+						filter.error && 'border-destructive focus-visible:ring-destructive/30',
 					]}
 				/>
 			</div>
@@ -143,7 +118,7 @@
 					</Alert.Description>
 				</Alert.Root>
 			{/if}
-			<FolderGrid {vault} {matchedNames} />
+			<FolderGrid {vault} matchedNames={filter.matchedNames} />
 		{/if}
 	{:else}
 		<Empty.Root class="flex-1 border-0">

@@ -46,6 +46,12 @@ pub fn write_index(
 ) -> Result<(), String> {
     let db = Path::new(&path).join("matter.sqlite");
     let mut conn = Connection::open(&db).map_err(|e| e.to_string())?;
+    // Reconciles fire per watcher batch and each opens its own connection, so two can
+    // overlap on a large folder (or with an agent reading). Wait for the lock instead of
+    // failing fast with SQLITE_BUSY; the rebuild is a full drop-and-recreate, so a brief
+    // wait is cheaper than a lost rebuild.
+    conn.busy_timeout(std::time::Duration::from_secs(5))
+        .map_err(|e| e.to_string())?;
     let tx = conn.transaction().map_err(|e| e.to_string())?;
 
     // execute_batch runs the multi-statement DROP + CREATE script (no params).

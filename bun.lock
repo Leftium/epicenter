@@ -672,6 +672,18 @@
         "typescript": "catalog:",
       },
     },
+    "packages/field": {
+      "name": "@epicenter/field",
+      "version": "0.0.1",
+      "dependencies": {
+        "typebox": "catalog:",
+        "wellcrafted": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
     "packages/filesystem": {
       "name": "@epicenter/filesystem",
       "version": "0.1.0",
@@ -1149,6 +1161,8 @@
     "@epicenter/constants": ["@epicenter/constants@workspace:packages/constants"],
 
     "@epicenter/encryption": ["@epicenter/encryption@workspace:packages/encryption"],
+
+    "@epicenter/field": ["@epicenter/field@workspace:packages/field"],
 
     "@epicenter/filesystem": ["@epicenter/filesystem@workspace:packages/filesystem"],
 

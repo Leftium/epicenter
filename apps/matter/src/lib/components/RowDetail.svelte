@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { Badge } from '@epicenter/ui/badge';
+	import { Textarea } from '@epicenter/ui/textarea';
 	import type { Extra } from '$lib/core/conformance';
 	import type { Row } from '$lib/core/parse';
 
@@ -24,29 +26,38 @@
 	}
 </script>
 
-<div class="flex flex-col gap-3 px-2 py-2">
-	<label class="flex flex-col gap-1 text-xs">
-		<span class="text-muted-foreground">Body</span>
-		<textarea
+<div class="grid gap-4 bg-muted/20 px-3 py-3">
+	<label class="grid gap-1.5 text-xs">
+		<span class="font-medium text-muted-foreground">Body</span>
+		<Textarea
 			bind:value={draft}
 			onblur={commit}
 			rows={Math.min(12, Math.max(3, draft.split('\n').length))}
-			class="w-full resize-y rounded border bg-background px-2 py-1 font-mono text-xs"
+			class="min-h-20 resize-y bg-background font-mono text-xs"
 			placeholder="(empty)"
-		></textarea>
+		/>
 	</label>
 
 	{#if extras.length}
-		<div class="flex flex-col gap-1 text-xs">
-			<span class="text-muted-foreground">Unmodeled keys (preserved, not validated):</span>
-			{#each extras as extra (extra.key)}
-				<div class="font-mono">
-					<span class="text-muted-foreground">{extra.key}:</span>
-					{typeof extra.value === 'object'
-						? JSON.stringify(extra.value)
-						: String(extra.value)}
-				</div>
-			{/each}
+		<div class="grid gap-2 text-xs">
+			<div class="flex items-center gap-2">
+				<span class="font-medium text-muted-foreground">Unmodeled keys</span>
+				<Badge variant="secondary">{extras.length}</Badge>
+			</div>
+			<div class="grid gap-1.5">
+				{#each extras as extra (extra.key)}
+					<div
+						class="grid grid-cols-[minmax(7rem,12rem)_1fr] gap-2 rounded-md border bg-background px-2 py-1.5"
+					>
+						<span class="truncate font-mono text-muted-foreground">{extra.key}</span>
+						<code class="truncate text-xs">
+							{typeof extra.value === 'object'
+								? JSON.stringify(extra.value)
+								: String(extra.value)}
+						</code>
+					</div>
+				{/each}
+			</div>
 		</div>
 	{/if}
 </div>

@@ -37,8 +37,10 @@
 		{/if}
 	</Select.Trigger>
 	<Select.Content>
-		{#each values as option, i (i)}
-			<Select.Item value={String(i)} label={String(option)} />
-		{/each}
+		<Select.Group>
+			{#each values as option, i (i)}
+				<Select.Item value={String(i)} label={String(option)} />
+			{/each}
+		</Select.Group>
 	</Select.Content>
 </Select.Root>

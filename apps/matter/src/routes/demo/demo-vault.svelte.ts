@@ -4,7 +4,7 @@
  *
  * It satisfies the same narrow contract the grid depends on, NOT the full vault: there
  * is no disk to watch, reconcile, or path to, so it does not pretend to (`watch` /
- * `status` / `refresh` / `path` are absent rather than faked no-ops). What it DOES share
+ * `status` / `path` are absent rather than faked no-ops). What it DOES share
  * is faithful, not a mock: it holds the same raw `.md` text the disk would, and a save
  * runs the REAL transforms ({@link editField} / {@link editBody}) then re-parses and
  * re-classifies through {@link readFolder}, exactly as the live vault does after the

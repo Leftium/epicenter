@@ -53,15 +53,6 @@ type FileDelta =
 const basename = (path: string) => path.split(/[/\\]/).pop() ?? path;
 
 /**
- * Trailing-debounce window for the SQLite mirror. The grid must update on every batch;
- * the external `matter.sqlite` does not. A burst of edits (and continuous typing, which
- * keeps resetting this timer) collapses to ONE reconcile a beat after the last change,
- * so the read surface is decoupled from the UI tick. An agent tolerates this much
- * staleness; `refresh()` forces an immediate reconcile when it cannot.
- */
-const INDEX_DEBOUNCE_MS = 1000;
-
-/**
  * Open `path` as a live vault. Synchronous and IO-free: the store starts empty
  * and fills from the first pushed batch once `watch()` runs, so there is no
  * separate initial read and no read-then-watch gap.
@@ -86,9 +77,6 @@ function createVault(path: string) {
 	// Set when the LAST matter.sqlite reconcile failed. The index is a derived read
 	// surface, so a failure never blocks the grid; it is surfaced for diagnostics.
 	let indexError = $state<string | undefined>(undefined);
-	// The pending debounced reconcile, if any. A plain timer handle (not reactive): the
-	// index is a side effect of the projection, not part of the rendered state.
-	let indexTimer: ReturnType<typeof setTimeout> | undefined;
 	// Memoized: Schema.Compile runs only when matter.json changes, not on every
 	// .md change. A single-file change reclassifies against these cached columns.
 	const loaded = $derived(loadModel(modelText));
@@ -115,10 +103,12 @@ function createVault(path: string) {
 					break;
 			}
 		}
-		// Schedule the read-only SQLite mirror to reconcile, debounced and decoupled from
-		// the UI tick: the grid is already up to date from the map mutations above; the
-		// external file can settle a beat later.
-		scheduleIndex();
+		// Rebuild the read-only SQLite mirror once per batch, off the UI task: the grid is
+		// already current from the map mutations above, so defer the (potentially large)
+		// projection with setTimeout so it never delays paint. Per-batch, not debounced:
+		// the native watcher already coalesces a burst into one batch, and a rebuild that
+		// lands after teardown just writes that folder's own final truth.
+		setTimeout(reconcileIndex, 0);
 	}
 
 	/**
@@ -126,8 +116,8 @@ function createVault(path: string) {
 	 * The ONE place "files map -> FolderRead" lives, MEMOIZED so the `read` getter (the
 	 * UI surface) and `reconcileIndex` (the SQLite mirror) share a single classification
 	 * instead of each recomputing it. Recomputes only when `files` or the loaded model
-	 * changes; `reconcileIndex` reads it when its debounce fires, so it sees the latest
-	 * classification rather than a stale snapshot.
+	 * changes; `reconcileIndex` reads it when its deferred rebuild runs, so it sees the
+	 * latest classification rather than a stale snapshot.
 	 */
 	const read = $derived.by((): FolderRead => {
 		const rows: FolderRead['rows'] = [];
@@ -145,12 +135,14 @@ function createVault(path: string) {
 	 * no incremental drift to debug, no stale row an agent could read). The SvelteMap
 	 * stays the live in-app surface; this file is the EXTERNAL one. An unmodeled folder
 	 * has no typed table, so it is skipped. Fire-and-forget: a failure surfaces in
-	 * `indexError` and never blocks the grid. The JS projector builds all the SQL; the
-	 * Rust `write_index` command only executes it and binds the rows.
+	 * `indexError` (cleared only on success, so it reflects the last completed rebuild)
+	 * and never blocks the grid. The JS projector builds all the SQL; the Rust
+	 * `write_index` command only executes it and binds the rows.
 	 *
 	 * A full rebuild (not an incremental sync) is deliberate: benchmarks keep it well
-	 * under a frame to ~50k rows, it is off the UI path, and for an agent read surface
-	 * "pure function of truth" is a safety property, not just simplicity.
+	 * under a frame to ~50k rows, it runs off the UI task (scheduled with setTimeout from
+	 * `applyDeltas`), and for an agent read surface "pure function of truth" is a safety
+	 * property, not just simplicity.
 	 */
 	function reconcileIndex(): void {
 		const { view } = read;
@@ -160,33 +152,13 @@ function createVault(path: string) {
 			view.model,
 			view.conformance,
 		);
-		indexError = undefined;
-		void invoke('write_index', { path, schema, insert, rows: tuples }).catch(
-			(cause) => {
+		void invoke('write_index', { path, schema, insert, rows: tuples })
+			.then(() => {
+				indexError = undefined;
+			})
+			.catch((cause) => {
 				indexError = extractErrorMessage(cause);
-			},
-		);
-	}
-
-	/**
-	 * Schedule a trailing-debounced reconcile: each batch resets the timer, so a burst
-	 * of edits (or continuous typing) produces ONE reconcile after things settle, not one
-	 * per batch. This is the whole decouple from the UI tick; no dirty flag is needed,
-	 * because a debounce already suppresses the reconcile while you are still editing.
-	 */
-	function scheduleIndex(): void {
-		clearTimeout(indexTimer);
-		indexTimer = setTimeout(reconcileIndex, INDEX_DEBOUNCE_MS);
-	}
-
-	/**
-	 * Force an immediate reconcile, cancelling any pending debounce: the on-demand
-	 * "make matter.sqlite fresh now" entry point (e.g. just before an agent reads it).
-	 * The automatic path is the debounced `scheduleIndex`.
-	 */
-	function refresh(): void {
-		clearTimeout(indexTimer);
-		reconcileIndex();
+			});
 	}
 
 	/**
@@ -252,9 +224,6 @@ function createVault(path: string) {
 			});
 		return () => {
 			stopped = true;
-			// Cancel a pending reconcile for the folder we are leaving; an already in-flight
-			// write is harmless (it writes that folder's own truth).
-			clearTimeout(indexTimer);
 			if (watchId !== undefined) void invoke('unwatch_folder', { id: watchId });
 		};
 	}
@@ -265,7 +234,6 @@ function createVault(path: string) {
 		watch,
 		saveField,
 		saveBody,
-		refresh,
 		/** The current classified folder. A pure read with no side effects. */
 		get read(): FolderRead {
 			return read;
@@ -297,8 +265,8 @@ export type Vault = ReturnType<typeof createVault>;
  * `FolderGrid` depends on, NOT the full vault, so anything that can produce a
  * classified folder and accept edits can drive the grid. The live vault satisfies
  * it for free (it is a `Pick` of it); the demo vault satisfies it WITHOUT faking
- * the disk lifecycle (`watch` / `status` / `refresh` / `path`), so the demo is an
- * honest drop-in rather than a vault pretending to watch a folder.
+ * the disk lifecycle (`watch` / `status` / `path`), so the demo is an honest
+ * drop-in rather than a vault pretending to watch a folder.
  */
 export type FolderGridVault = Pick<Vault, 'name' | 'read' | 'saveField' | 'saveBody'>;
 

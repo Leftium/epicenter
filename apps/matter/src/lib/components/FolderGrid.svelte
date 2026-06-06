@@ -70,22 +70,16 @@
 	} satisfies Record<Kind, string>;
 
 	// Numerics right-align so digits line up down the column edge; booleans center
-	// their checkbox; everything else reads left. Applied to BOTH the header and the
-	// cell so the column aligns as one piece.
-	function alignClass(kind: Kind): string {
-		if (kind === 'integer' || kind === 'number') return 'text-right';
-		if (kind === 'boolean') return 'text-center';
-		return '';
-	}
-
-	// The header stacks the field name over its kind, cross-aligned to match the
-	// column (a number column right-aligns its header too). Stacking keeps a narrow
-	// numeric column's name readable instead of truncating "duration" to "dur..." to
-	// fit the kind beside it.
-	function headItems(kind: Kind): string {
-		if (kind === 'integer' || kind === 'number') return 'items-end';
-		if (kind === 'boolean') return 'items-center';
-		return 'items-start';
+	// their checkbox; everything else reads left. The SAME numeric/boolean decision
+	// drives the cell's text-align AND the header's cross-axis (the header stacks the
+	// field name over its kind and matches the column, so a narrow numeric column's
+	// name stays readable), so it lives in one place read out as `.cell` / `.head`
+	// rather than duplicated across two functions that must move together.
+	function columnAlign(kind: Kind): { cell: string; head: string } {
+		if (kind === 'integer' || kind === 'number')
+			return { cell: 'text-right', head: 'items-end' };
+		if (kind === 'boolean') return { cell: 'text-center', head: 'items-center' };
+		return { cell: '', head: 'items-start' };
 	}
 
 	// A cell out of conformance carries its state as an inset ring: amber for an empty
@@ -276,7 +270,7 @@
 						{#each view.model.fields as field (field.name)}
 							<Table.Head class="sticky top-0 z-20 bg-background align-bottom">
 								<div
-									class={['flex flex-col gap-0.5', headItems(field.kind)]}
+									class={['flex flex-col gap-0.5', columnAlign(field.kind).head]}
 									title="{field.name} ({field.kind})"
 								>
 									<span class="max-w-full truncate font-medium leading-tight">
@@ -341,7 +335,7 @@
 									<Table.Cell
 										aria-invalid={cell.state === 'INVALID' || cell.state === 'NEEDS_VALUE'}
 										class={[
-											alignClass(cell.field.kind),
+											columnAlign(cell.field.kind).cell,
 											cellStateClass(cell.state),
 										]}
 									>

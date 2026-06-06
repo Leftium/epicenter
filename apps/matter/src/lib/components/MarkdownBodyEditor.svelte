@@ -56,6 +56,9 @@
 							color: 'hsl(var(--foreground))',
 							fontSize: '14px',
 						},
+						'&.cm-focused': {
+							outline: 'none',
+						},
 						'.cm-scroller': {
 							fontFamily:
 								'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
@@ -67,7 +70,9 @@
 							padding: '1rem',
 							caretColor: 'hsl(var(--foreground))',
 						},
-						'&.cm-focused': { outline: 'none' },
+						'.cm-cursor': {
+							borderLeftColor: 'hsl(var(--foreground))',
+						},
 						'.cm-gutters': { display: 'none' },
 						'.cm-activeLine': { backgroundColor: 'transparent' },
 						'.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
@@ -89,6 +94,6 @@
 </script>
 
 <div
-	class="overflow-hidden rounded-md border bg-background shadow-xs"
+	class="overflow-hidden rounded-md border bg-background shadow-xs focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20"
 	bind:this={container}
 ></div>

@@ -13,7 +13,6 @@
  * import {
  *   attachIndexedDb,
  *   attachRichText,
- *   column,
  *   createDeviceId,
  *   createDisposableCache,
  *   createWorkspace,
@@ -22,13 +21,14 @@
  *   openCollaboration,
  *   roomWsUrl,
  * } from '@epicenter/workspace';
+ * import { field } from '@epicenter/field';
  * import type { AuthClient } from '@epicenter/auth';
  * import type { OwnerId } from '@epicenter/identity';
  * import * as Y from 'yjs';
  *
  * const posts = defineTable({
- *   id: column.string(),
- *   title: column.string(),
+ *   id: field.string(),
+ *   title: field.string(),
  * });
  * declare const auth: AuthClient;
  * declare const ownerId: OwnerId;
@@ -150,8 +150,9 @@ export { generateGuid, generateId } from './shared/id';
 
 export {
 	type ColumnError,
-	column,
 	type FlatJsonTSchema,
+	ianaTimeZone,
+	nullable,
 } from './document/column/index';
 
 // ════════════════════════════════════════════════════════════════════════════

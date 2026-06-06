@@ -19,9 +19,9 @@ import {
 	fileContentDocGuid,
 	filesTable,
 } from '@epicenter/filesystem';
+import { field } from '@epicenter/field';
 import {
 	attachTimeline,
-	column,
 	createDisposableCache,
 	createWorkspace,
 	defineActions,
@@ -31,6 +31,7 @@ import {
 	type Id,
 	type InferTableRow,
 	type Keyring,
+	nullable,
 	onLocalUpdate,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
@@ -99,15 +100,15 @@ export const generateChatMessageId = (): ChatMessageId =>
  * the conversation later.
  */
 const conversationsTable = defineTable({
-	id: column.string<ConversationId>(),
-	title: column.string(),
-	parentId: column.nullable(column.string<ConversationId>()),
-	sourceMessageId: column.nullable(column.string<ChatMessageId>()),
-	systemPrompt: column.nullable(column.string()),
-	provider: column.string(),
-	model: column.string(),
-	createdAt: column.number(),
-	updatedAt: column.number(),
+	id: field.string<ConversationId>(),
+	title: field.string(),
+	parentId: nullable(field.string<ConversationId>()),
+	sourceMessageId: nullable(field.string<ChatMessageId>()),
+	systemPrompt: nullable(field.string()),
+	provider: field.string(),
+	model: field.string(),
+	createdAt: field.number(),
+	updatedAt: field.number(),
 });
 export type Conversation = InferTableRow<typeof conversationsTable>;
 
@@ -118,11 +119,11 @@ export type Conversation = InferTableRow<typeof conversationsTable>;
  * can replay the exact chat history without depending on live model state.
  */
 const chatMessagesTable = defineTable({
-	id: column.string<ChatMessageId>(),
-	conversationId: column.string<ConversationId>(),
-	role: column.enum(['user', 'assistant', 'system']),
-	parts: column.json(Type.Array(Type.Unsafe<JsonValue>(Type.Any()))),
-	createdAt: column.number(),
+	id: field.string<ChatMessageId>(),
+	conversationId: field.string<ConversationId>(),
+	role: field.select(['user', 'assistant', 'system']),
+	parts: field.json(Type.Array(Type.Unsafe<JsonValue>(Type.Any()))),
+	createdAt: field.number(),
 });
 export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 
@@ -133,8 +134,8 @@ export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
  * which lets Opensidian remember the user's trust decisions across sessions.
  */
 const toolTrustTable = defineTable({
-	id: column.string(),
-	trust: column.enum(['ask', 'always']),
+	id: field.string(),
+	trust: field.select(['ask', 'always']),
 });
 export type ToolTrust = InferTableRow<typeof toolTrustTable>;
 

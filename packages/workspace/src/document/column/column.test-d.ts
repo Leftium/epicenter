@@ -1,5 +1,5 @@
 /**
- * Compile-time type tests for `FlatJsonTSchema` and the `column.*` sugar
+ * Compile-time type tests for `FlatJsonTSchema` and the workspace authoring
  * layer. Compiled by `tsc --noEmit` alongside the rest of the workspace
  * package; the file does not run anything at test time.
  *
@@ -11,7 +11,8 @@
 import type { Static, TUnsafe, Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
-import type { ColumnError, column, FlatJsonTSchema } from './index';
+import type { field } from '@epicenter/field';
+import type { ColumnError, FlatJsonTSchema, nullable } from './index';
 
 // --------------------------------------------------------------------------
 // Helpers
@@ -70,7 +71,7 @@ export type _AcceptLiteral = Expect<
 
 // Nullable composition (Union of [String, Null]) is accepted.
 type NullableString = ReturnType<
-	typeof column.nullable<ReturnType<typeof Type.String>>
+	typeof nullable<ReturnType<typeof Type.String>>
 >;
 export type _AcceptNullable = Expect<
 	Equal<FlatJsonTSchema<NullableString>, NullableString>
@@ -88,11 +89,20 @@ export type _RejectObject = Expect<
 		true
 	>
 >;
-export type _RejectArray = Expect<
+// A list of scalars is a flat JSON-TEXT column (field.tags / field.multiSelect), so
+// Type.Array(scalar) is ACCEPTED. Only a list of non-JSON elements is rejected, by the
+// final Static<S> extends JsonValue clause.
+export type _AcceptArrayOfScalar = Expect<
+	Equal<
+		FlatJsonTSchema<ReturnType<typeof Type.Array<ReturnType<typeof Type.Number>>>>,
+		ReturnType<typeof Type.Array<ReturnType<typeof Type.Number>>>
+	>
+>;
+export type _RejectArrayOfNonJson = Expect<
 	Equal<
 		IsError<
 			FlatJsonTSchema<
-				ReturnType<typeof Type.Array<ReturnType<typeof Type.Number>>>
+				ReturnType<typeof Type.Array<ReturnType<typeof Type.Unsafe<Date>>>>
 			>
 		>,
 		true
@@ -150,40 +160,40 @@ export type _RejectPromise = Expect<
 >;
 
 // --------------------------------------------------------------------------
-// column.string brand sugar
+// field.string brand sugar
 // --------------------------------------------------------------------------
 
 type NoteId = string & Brand<'NoteId'>;
 
-// column.string<'draft'>() returns never (literal subtypes not allowed).
+// field.string<'draft'>() returns never (literal subtypes not allowed).
 export type _StringLiteralRejected = Expect<
-	Equal<ReturnType<typeof column.string<'draft'>>, never>
+	Equal<ReturnType<typeof field.string<'draft'>>, never>
 >;
 
-// column.string<NoteId>() returns a branded Unsafe schema.
+// field.string<NoteId>() returns a branded Unsafe schema.
 export type _StringBrandedReturnsUnsafe = ReturnType<
-	typeof column.string<NoteId>
+	typeof field.string<NoteId>
 >;
 
 // --------------------------------------------------------------------------
-// column.enum static inference
+// field.select static inference
 // --------------------------------------------------------------------------
 
 const statusIds = ['draft', 'published'] as Array<'draft' | 'published'>;
-type StatusSchema = ReturnType<typeof column.enum<typeof statusIds>>;
+type StatusSchema = ReturnType<typeof field.select<typeof statusIds>>;
 export type _EnumArrayPreservesElementUnion = Expect<
 	Equal<Static<StatusSchema>, 'draft' | 'published'>
 >;
 
 // --------------------------------------------------------------------------
-// column.json gate (Static<S> derived from schema; JsonValue-checked)
+// field.json gate (Static<S> derived from schema; JsonValue-checked)
 // --------------------------------------------------------------------------
 
 // Schema with a JSON-safe Static passes through untouched.
 export type _JsonAcceptsObject = Expect<
 	Equal<
 		ReturnType<
-			typeof column.json<
+			typeof field.json<
 				ReturnType<
 					typeof Type.Object<{
 						tags: ReturnType<typeof Type.Array<ReturnType<typeof Type.String>>>;
@@ -195,21 +205,22 @@ export type _JsonAcceptsObject = Expect<
 	>
 >;
 
-// Schema whose Static contains Date (via Unsafe<Date>) collapses the return
-// type to a ColumnError template-literal, surfaced in the IDE tooltip.
+// field.json (= field.json) no longer gates Static itself: the JsonValue gate moved to
+// FlatJsonTSchema, where column safety belongs. A non-JSON inner flows through as
+// TUnsafe<Date> and is rejected by the constraint at the defineTable boundary.
 type _JsonDate = ReturnType<
-	typeof column.json<ReturnType<typeof Type.Unsafe<Date>>>
+	typeof field.json<ReturnType<typeof Type.Unsafe<Date>>>
 >;
-export type _JsonRejectsDate = Expect<
-	Equal<Static<_JsonDate> extends string ? true : false, true>
+export type _JsonDateRejectedByConstraint = Expect<
+	Equal<IsError<FlatJsonTSchema<_JsonDate>>, true>
 >;
 
 // Same for bigint.
 type _JsonBigInt = ReturnType<
-	typeof column.json<ReturnType<typeof Type.Unsafe<bigint>>>
+	typeof field.json<ReturnType<typeof Type.Unsafe<bigint>>>
 >;
-export type _JsonRejectsBigInt = Expect<
-	Equal<Static<_JsonBigInt> extends string ? true : false, true>
+export type _JsonBigIntRejectedByConstraint = Expect<
+	Equal<IsError<FlatJsonTSchema<_JsonBigInt>>, true>
 >;
 
 // --------------------------------------------------------------------------

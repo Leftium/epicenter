@@ -1,117 +1,36 @@
 /**
- * Runtime tests for the `column.*` sugar layer. The compile-time tests live
- * in `column.test-d.ts`; this file verifies that the schemas the sugar
- * produces validate values correctly via `Value.Check`.
+ * Runtime tests for the workspace's column primitives: the substrate-policy
+ * builders the shared `field.*` vocabulary deliberately omits (`nullable`, the
+ * emptiness axis; `ianaTimeZone`, a branded format) plus the cross-substrate
+ * recognition contract. The portable kinds (`field.string`, `field.select`, ...)
+ * are proven in `@epicenter/field`'s own `field.test.ts`; the compile-time
+ * `FlatJsonTSchema` tests live in `column.test-d.ts`.
  */
 
-import { recognize } from '@epicenter/field';
+import { field, recognize } from '@epicenter/field';
 import { describe, expect, test } from 'bun:test';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
-import { column } from './index';
+import { ianaTimeZone, nullable } from './index';
 
 /** The at-rest form `recognize` reads: a stored schema, with the live `~kind` tag dropped. */
 const atRest = (schema: object): unknown => JSON.parse(JSON.stringify(schema));
 
-describe('column.string', () => {
-	test('plain string validates strings', () => {
-		const schema = column.string();
-		expect(Value.Check(schema, 'hi')).toBe(true);
-		expect(Value.Check(schema, 42)).toBe(false);
-	});
-
-	test('options propagate as JSON Schema keywords', () => {
-		const schema = column.string({ minLength: 2 });
-		expect(Value.Check(schema, 'hi')).toBe(true);
-		expect(Value.Check(schema, 'x')).toBe(false);
-	});
-});
-
-describe('column.nullable', () => {
-	test('accepts inner schema value or null', () => {
-		const schema = column.nullable(column.string());
+describe('nullable (the emptiness axis)', () => {
+	test('accepts the inner schema value or null', () => {
+		const schema = nullable(field.string());
 		expect(Value.Check(schema, 'hi')).toBe(true);
 		expect(Value.Check(schema, null)).toBe(true);
 		expect(Value.Check(schema, 42)).toBe(false);
 	});
-});
 
-describe('column.enum', () => {
-	test('accepts members, rejects others', () => {
-		const status = column.enum(['draft', 'published']);
-		expect(Value.Check(status, 'draft')).toBe(true);
-		expect(Value.Check(status, 'published')).toBe(true);
-		expect(Value.Check(status, 'archived')).toBe(false);
-	});
-
-	test('emits the native enum wire-form (column.enum is field.select)', () => {
-		expect(atRest(column.enum(['draft', 'published']))).toEqual({
-			enum: ['draft', 'published'],
-		});
-	});
-
-	test('an empty value list degrades to raw (recognize returns null)', () => {
-		expect(recognize(atRest(column.enum([])))).toBeNull();
+	test('is outside the palette (degrades to raw): nullability is substrate policy, not a kind', () => {
+		expect(recognize(atRest(nullable(field.string())))).toBeNull();
 	});
 });
 
-describe('cross-substrate convergence: column.* authoring recognizes in matter', () => {
-	test('a column.enum column recognizes as a select field', () => {
-		const recognized = recognize(atRest(column.enum(['draft', 'published'])));
-		expect(recognized?.kind).toBe('select');
-	});
-
-	test('the portable column kinds recognize as their matter kinds', () => {
-		const cases = [
-			[column.string(), 'string'],
-			[column.url(), 'url'],
-			[column.dateTime(), 'datetime'],
-			[column.integer(), 'integer'],
-			[column.number(), 'number'],
-			[column.boolean(), 'boolean'],
-		] as const;
-		for (const [schema, kind] of cases) {
-			expect(recognize(atRest(schema))?.kind).toBe(kind);
-		}
-	});
-
-	test('substrate-only column kinds are outside the palette (degrade to raw)', () => {
-		expect(recognize(atRest(column.nullable(column.string())))).toBeNull();
-		expect(
-			recognize(atRest(column.json(Type.Object({ author: Type.String() })))),
-		).toBeNull();
-	});
-});
-
-describe('column.json', () => {
-	test('validates against the provided schema (type derives from schema)', () => {
-		const tagsSchema = column.json(column.string());
-		// Runtime validation delegates to the inner schema; the static type
-		// is `Static<typeof inner>` so type and runtime cannot drift.
-		expect(Value.Check(tagsSchema, 'hello')).toBe(true);
-		expect(Value.Check(tagsSchema, 42)).toBe(false);
-	});
-});
-
-describe('column.dateTime', () => {
-	const schema = column.dateTime();
-
-	test('accepts RFC 3339 Z form', () => {
-		expect(Value.Check(schema, '2024-01-01T20:00:00.000Z')).toBe(true);
-	});
-
-	test('accepts RFC 3339 with offset', () => {
-		expect(Value.Check(schema, '2024-01-01T15:00:00.000-05:00')).toBe(true);
-	});
-
-	test('rejects malformed strings', () => {
-		expect(Value.Check(schema, 'not a date')).toBe(false);
-		expect(Value.Check(schema, '2024-01-01')).toBe(false);
-	});
-});
-
-describe('column.ianaTimeZone', () => {
-	const schema = column.ianaTimeZone();
+describe('ianaTimeZone', () => {
+	const schema = ianaTimeZone();
 
 	test('accepts valid IANA zones', () => {
 		expect(Value.Check(schema, 'America/New_York')).toBe(true);
@@ -121,5 +40,14 @@ describe('column.ianaTimeZone', () => {
 	test('rejects invalid zones', () => {
 		expect(Value.Check(schema, 'Not/A_Zone')).toBe(false);
 		expect(Value.Check(schema, '')).toBe(false);
+	});
+});
+
+describe('cross-substrate: a workspace column recognizes in matter', () => {
+	test('field.json recognizes as the json kind and validates its payload', () => {
+		const schema = field.json(Type.Object({ author: Type.String() }));
+		expect(recognize(atRest(schema))?.kind).toBe('json');
+		expect(Value.Check(schema, { author: 'Braden' })).toBe(true);
+		expect(Value.Check(schema, { author: 42 })).toBe(false);
 	});
 });

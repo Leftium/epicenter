@@ -4,7 +4,7 @@
  * Callers pass `definition.schema` (a TypeBox `TObject` which is itself a
  * JSON Schema). Column storage class and nullability are read from the schema
  * structure (the lenient `deriveStorage` / `isNullable` helpers below), so
- * `column.nullable(column.X())` rows map cleanly to nullable SQLite columns.
+ * `nullable(column.X())` rows map cleanly to nullable SQLite columns.
  *
  * Since `_v` is library-managed and stripped from the user-facing row schema,
  * the generated DDL never contains a `_v` column. SQLite projects only what

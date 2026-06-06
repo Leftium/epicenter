@@ -1,10 +1,11 @@
 /**
- * Public surface of the `column.*` sugar layer and the `FlatJsonTSchema`
- * constraint.
+ * Public surface of the `defineTable` column primitives: the `FlatJsonTSchema`
+ * constraint plus the workspace's substrate-only builders (`nullable`, `ianaTimeZone`).
+ * The portable kinds are authored via `field.*` from `@epicenter/field` directly.
  *
- * Users may freely mix `column.X()` and raw `Type.X()`; `FlatJsonTSchema`
+ * Columns may be authored with `field.*`, `nullable`, or raw `Type.X()`; `FlatJsonTSchema`
  * enforces safety regardless of which call site produced the schema.
  */
 
 export type { ColumnError, FlatJsonTSchema } from './constraint';
-export { column } from './sugar';
+export { ianaTimeZone, nullable } from './sugar';

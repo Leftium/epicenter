@@ -92,6 +92,7 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
+        "@epicenter/field": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@tanstack/svelte-table": "catalog:",
@@ -146,6 +147,7 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
+        "@epicenter/field": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@tanstack/svelte-query": "catalog:",
@@ -247,6 +249,7 @@
         "@codemirror/autocomplete": "^6.20.1",
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/field": "workspace:*",
         "@epicenter/skills": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@tanstack/ai": "catalog:",
@@ -311,6 +314,7 @@
       "name": "@epicenter/reddit",
       "version": "0.0.1",
       "dependencies": {
+        "@epicenter/field": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@sindresorhus/slugify": "catalog:",
         "arktype": "catalog:",
@@ -377,6 +381,7 @@
       "dependencies": {
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/field": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@epicenter/workspace": "workspace:*",
@@ -425,6 +430,7 @@
         "@aptabase/tauri": "^0.4.1",
         "@aptabase/web": "^0.4.3",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/field": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/util": "workspace:*",
         "@epicenter/workspace": "workspace:*",
@@ -497,6 +503,7 @@
       "name": "@epicenter/wiki",
       "version": "0.0.1",
       "dependencies": {
+        "@epicenter/field": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
@@ -513,6 +520,7 @@
       "dependencies": {
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/field": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/ui": "workspace:*",
         "@epicenter/workspace": "workspace:*",
@@ -693,6 +701,7 @@
       "name": "@epicenter/filesystem",
       "version": "0.1.0",
       "dependencies": {
+        "@epicenter/field": "workspace:*",
         "@epicenter/util": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "@libsql/client": "^0.14.0",
@@ -763,6 +772,7 @@
       "name": "@epicenter/skills",
       "version": "0.1.0",
       "dependencies": {
+        "@epicenter/field": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",

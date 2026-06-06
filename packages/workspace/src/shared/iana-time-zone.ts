@@ -9,14 +9,14 @@
  * keeps the predicate in sync with whatever the host runtime supports.
  *
  * Paired with `DateTimeString` for zoned-datetime composition: see
- * `column.dateTime()` + `column.ianaTimeZone()` for the two-field pattern.
+ * `field.datetime()` + `ianaTimeZone()` for the two-field pattern.
  */
 
 import type { Brand } from 'wellcrafted/brand';
 
 /**
  * The TypeBox format-registry key for IANA timezone strings. Registered once
- * by `column.ianaTimeZone()` at module load using `Intl.DateTimeFormat` as
+ * by `ianaTimeZone()` at module load using `Intl.DateTimeFormat` as
  * the validator.
  */
 export const IANA_TIME_ZONE_FORMAT = 'iana-time-zone';

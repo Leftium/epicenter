@@ -8,4 +8,4 @@
  */
 
 export type { ColumnError, FlatJsonTSchema } from './constraint';
-export { ianaTimeZone, nullable } from './sugar';
+export { ianaTimeZone, nullable } from './builders';

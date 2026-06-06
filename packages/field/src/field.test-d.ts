@@ -11,7 +11,7 @@
  * literal union, not widen to `string`.
  */
 
-import type { Static } from 'typebox';
+import type { Static, Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { field } from './builders';
 import type { DateTimeString } from './datetime-string';
@@ -84,4 +84,19 @@ export type _IntegerStatic = Expect<
 >;
 export type _BooleanStatic = Expect<
 	Equal<Static<ReturnType<typeof field.boolean>>, boolean>
+>;
+
+// field.json(inner): Static = Static<inner>. The authoring type tracks the payload schema;
+// the at-rest wire-form carries the x-json-schema marker, decoupled from Static<> via Unsafe.
+export type _JsonTypedStatic = Expect<
+	Equal<
+		Static<
+			ReturnType<
+				typeof field.json<
+					ReturnType<typeof Type.Object<{ author: ReturnType<typeof Type.String> }>>
+				>
+			>
+		>,
+		{ author: string }
+	>
 >;

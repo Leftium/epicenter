@@ -1,14 +1,16 @@
 /**
- * Compile-time type tests for `FlatJsonTSchema` and the workspace authoring
- * layer. Compiled by `tsc --noEmit` alongside the rest of the workspace
- * package; the file does not run anything at test time.
+ * Compile-time tests for `FlatJsonTSchema`, the `defineTable` column constraint. Compiled
+ * by `tsc --noEmit` alongside the rest of the workspace package; nothing runs at test time.
  *
- * Pattern: each assertion is exported so that `noUnusedLocals` does not
- * flag them. If an assertion fails, the type error appears at the
- * offending line during typecheck.
+ * Scope: the CONSTRAINT only (which schemas it accepts and rejects). The `field.*` builder
+ * typing (Static<>, brand preservation, select inference, field.json authoring) is proven in
+ * `@epicenter/field`'s `field.test-d.ts`; this file does not duplicate it.
+ *
+ * Pattern: each assertion is exported so that `noUnusedLocals` does not flag it. If an
+ * assertion fails, the type error appears at the offending line during typecheck.
  */
 
-import type { Static, TUnsafe, Type } from 'typebox';
+import type { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
 import type { field } from '@epicenter/field';
@@ -160,54 +162,18 @@ export type _RejectPromise = Expect<
 >;
 
 // --------------------------------------------------------------------------
-// field.string brand sugar
+// field.json inners are gated by the constraint, not by field.json itself
 // --------------------------------------------------------------------------
+//
+// The field.* builder TYPING (Static<>, brand preservation, select inference, field.json
+// authoring shape) is proven in @epicenter/field's field.test-d.ts. Here we assert only
+// the workspace's concern: FlatJsonTSchema GATES a field.json whose inner Static is not
+// JSON-safe. field.json itself carries no gate (that would pull ColumnError into the leaf),
+// so a non-JSON inner flows through as TUnsafe<Date> and is rejected at the defineTable
+// boundary.
 
 type NoteId = string & Brand<'NoteId'>;
 
-// field.string<'draft'>() returns never (literal subtypes not allowed).
-export type _StringLiteralRejected = Expect<
-	Equal<ReturnType<typeof field.string<'draft'>>, never>
->;
-
-// field.string<NoteId>() returns a branded Unsafe schema.
-export type _StringBrandedReturnsUnsafe = ReturnType<
-	typeof field.string<NoteId>
->;
-
-// --------------------------------------------------------------------------
-// field.select static inference
-// --------------------------------------------------------------------------
-
-const statusIds = ['draft', 'published'] as Array<'draft' | 'published'>;
-type StatusSchema = ReturnType<typeof field.select<typeof statusIds>>;
-export type _EnumArrayPreservesElementUnion = Expect<
-	Equal<Static<StatusSchema>, 'draft' | 'published'>
->;
-
-// --------------------------------------------------------------------------
-// field.json gate (Static<S> derived from schema; JsonValue-checked)
-// --------------------------------------------------------------------------
-
-// Schema with a JSON-safe Static passes through untouched.
-export type _JsonAcceptsObject = Expect<
-	Equal<
-		ReturnType<
-			typeof field.json<
-				ReturnType<
-					typeof Type.Object<{
-						tags: ReturnType<typeof Type.Array<ReturnType<typeof Type.String>>>;
-					}>
-				>
-			>
-		>,
-		TUnsafe<{ tags: string[] }>
-	>
->;
-
-// field.json (= field.json) no longer gates Static itself: the JsonValue gate moved to
-// FlatJsonTSchema, where column safety belongs. A non-JSON inner flows through as
-// TUnsafe<Date> and is rejected by the constraint at the defineTable boundary.
 type _JsonDate = ReturnType<
 	typeof field.json<ReturnType<typeof Type.Unsafe<Date>>>
 >;

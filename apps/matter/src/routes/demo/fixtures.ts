@@ -43,7 +43,7 @@ export const DEMO_MODEL_TEXT = JSON.stringify(
 );
 
 /** One demo file: its basename (row id) and raw markdown text (frontmatter + body). */
-export type DemoRow = { name: string; content: string };
+type DemoRow = { name: string; content: string };
 
 export const DEMO_ROWS: DemoRow[] = [
 	{

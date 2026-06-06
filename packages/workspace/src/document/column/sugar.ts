@@ -1,36 +1,36 @@
 /**
- * The `column.*` sugar layer.
+ * The `column.*` sugar layer: the SQLite-safe authoring menu for `defineTable`.
  *
- * Three helpers add real behavior:
- * - `string<T>` for brand sugar (rejects literal-string subtypes at compile time)
- * - `json<T extends JsonValue>(schema)` for the `JsonValue` gate plus required runtime schema
- * - `nullable(inner)` for `Type.Union([inner, Type.Null()])` composition
+ * `column` is a THIN extension of the shared `field.*` vocabulary
+ * (`@epicenter/field`). The portable field kinds are re-exported straight from
+ * the leaf, so authoring (`column.*`) and recognition (`recognize`) derive from
+ * one vocabulary and round-trip by construction:
  *
- * Two helpers wrap branded-string datetime patterns:
- * - `dateTime` (TypeBox's built-in `date-time` format, brand `DateTimeString`)
- * - `ianaTimeZone` (custom format validated against `Intl.DateTimeFormat`,
- *   brand `IanaTimeZone`; registered once at module load)
+ *   column.string  = field.string    column.number  = field.number
+ *   column.url     = field.url        column.integer = field.integer
+ *   column.dateTime= field.datetime   column.boolean = field.boolean
  *
- * The rest alias `Type.X` directly and are assembled onto the `column` object
- * below, so autocomplete on `column.` lists the entire SQLite-safe constructor
- * menu. They keep TypeBox's full JSDoc / signature / overloads intact (single
- * source of truth):
+ * On top of the leaf, the workspace adds its SUBSTRATE POLICY: builders the
+ * shared vocabulary deliberately omits because emptiness and arbitrary JSON are
+ * per-substrate decisions, not part of the closed field set.
  *
- *   column.number   = Type.Number
- *   column.integer  = Type.Integer
- *   column.boolean  = Type.Boolean
- *   column.literal  = Type.Literal
+ * - `nullable(inner)` — `Type.Union([inner, Type.Null()])`, the emptiness policy
+ *   (matter forbids it; the workspace allows it).
+ * - `json<T extends JsonValue>(schema)` — arbitrary JSON TEXT cell, the
+ *   workspace escape hatch (matter rejects this shape into its raw lane).
+ * - `ianaTimeZone()` — a brand builder with no matter kind (`iana-time-zone`
+ *   format, brand `IanaTimeZone`; registered once at module load).
+ * - `literal` — `Type.Literal` pass-through for literal-valued columns.
+ * - `enum([...])` — enum-of-literals as a `Type.Union<TLiteral[]>`
+ *   (`anyOf`-of-`const`). This is the ONE builder whose wire-form has not yet
+ *   converged onto the shared `field.select` native `enum`; that switch is the
+ *   enum migration phase.
  *
- * `column` is the only builder export (the `Infer` type aside): the builders
- * are module-private and reachable solely as `column.X`, so there is one
- * blessed way to construct a column.
- *
- * `column.enum` is a small function (it builds a Union from a values array)
- * so it isn't a plain alias, but it still defers all option-typing to TypeBox.
- *
- * Users may freely mix `column.X()` and raw `Type.X()`; the `FlatJsonTSchema`
- * constraint enforces safety regardless of which call site produced the
- * schema.
+ * `column` is the only builder export (the `Infer` type aside): the builders are
+ * reachable solely as `column.X`, so there is one blessed way to construct a
+ * column. Users may freely mix `column.X()` and raw `Type.X()`; the
+ * `FlatJsonTSchema` constraint enforces safety regardless of which call site
+ * produced the schema.
  */
 
 import {
@@ -40,23 +40,18 @@ import {
 	type TNull,
 	type TSchema,
 	type TSchemaOptions,
-	type TString,
-	type TStringOptions,
 	type TUnion,
 	type TUnsafe,
 	Type,
 } from 'typebox';
 import { Format } from 'typebox/format';
-import type { Brand } from 'wellcrafted/brand';
+import { field } from '@epicenter/field';
 import type { JsonValue } from 'wellcrafted/json';
-import type { DateTimeString } from '../../shared/datetime-string';
 import {
 	IANA_TIME_ZONE_FORMAT,
 	IanaTimeZone,
 } from '../../shared/iana-time-zone';
 import type { ColumnError } from './constraint';
-
-type BrandedString = string & Brand<string>;
 
 // Register the IANA timezone format once at module load. Skip if another
 // caller already registered it (idempotent under hot-reload / repeated
@@ -66,49 +61,9 @@ if (!Format.Has(IANA_TIME_ZONE_FORMAT)) {
 }
 
 /**
- * String column with optional brand sugar.
- *
- * - `column.string()` → `TString`, `Static<>` = `string`.
- * - `column.string<NoteId>()` → `TUnsafe<NoteId>`, `Static<>` = `NoteId`.
- * - `column.string<'draft'>()` → `never` (compile-time): pretending a literal
- *   subtype is enforced at runtime is dishonest; use `column.literal('draft')`
- *   instead.
- */
-function string<T extends string = string>(
-	opts?: TStringOptions,
-): string extends T ? TString : T extends BrandedString ? TUnsafe<T> : never {
-	return Type.String(opts) as string extends T
-		? TString
-		: T extends BrandedString
-			? TUnsafe<T>
-			: never;
-}
-
-/**
- * URL string column. A `TString` carrying `format: 'uri'` as a hint, so the
- * schema is self-describing and editor tooling can surface it. Static type is
- * `string` (no brand): callers store and read plain strings. When the `uri`
- * format is not registered with the runtime validator, `Value.Check` treats it
- * as a pass, so this never rejects a value the rest of the system would accept.
- */
-function url(opts?: TStringOptions): TString {
-	return Type.String({ format: 'uri', ...opts });
-}
-
-/** Pass-through to `Type.Number`, exposed as `column.number`. */
-const number = Type.Number;
-
-/** Pass-through to `Type.Integer`. */
-const integer = Type.Integer;
-
-/** Pass-through to `Type.Boolean`. */
-const boolean = Type.Boolean;
-
-/**
- * Pass-through to `Type.Literal`. Use for status enums and other
- * literal-valued column shapes. (Version discriminators are now
- * library-managed via `defineTable`'s tuple position; do not declare
- * `_v` as a column.)
+ * Pass-through to `Type.Literal`. Use for literal-valued column shapes.
+ * (Version discriminators are now library-managed via `defineTable`'s tuple
+ * position; do not declare `_v` as a column.)
  */
 const literal = Type.Literal;
 
@@ -124,6 +79,11 @@ type EnumMembers<T extends readonly TLiteralValue[]> = [
  *
  * `Type.Enum` (`~kind: 'Enum'`) is rejected by `FlatJsonTSchema` in favor of
  * this shape so the CHECK generator has one shape to walk.
+ *
+ * This is the lone builder still on the legacy `anyOf`-of-`const` wire-form; the
+ * shared `field.select` emits native `enum`. The convergence onto native `enum`
+ * (and the matching `deriveCheck`/stored-schema migration) is the enum
+ * migration phase; until then `column.enum` stays source-compatible.
  */
 function enum_<const T extends readonly TLiteralValue[]>(
 	values: T,
@@ -177,28 +137,6 @@ function nullable<S extends TSchema>(schema: S): TUnion<[S, TNull]> {
 }
 
 /**
- * RFC 3339 / ISO 8601 datetime string, branded as `DateTimeString`.
- *
- * Uses TypeBox v1's built-in `date-time` format validator (auto-registered;
- * no `Format.Set` required from us). Accepts both Z (`...Z`) and offset
- * (`...±HH:MM`) forms.
- *
- * **Writing convention.** Lex-sort across rows is chronological iff every
- * writer emits the Z form. `new Date().toISOString()` and
- * `Temporal.Now.instant().toString()` both do this. The convention is
- * documented on the brand, not enforced at the schema layer.
- *
- * Pair with `column.ianaTimeZone()` as a separate field when the originating
- * zone matters (calendar events, reminders); see the `<field>` + `<field>Zone`
- * naming convention in the workspace spec.
- */
-function dateTime(opts?: TSchemaOptions): TUnsafe<DateTimeString> {
-	return Type.Unsafe<DateTimeString>(
-		Type.String({ format: 'date-time', ...opts }),
-	);
-}
-
-/**
  * IANA timezone identifier, branded as `IanaTimeZone`.
  *
  * The `iana-time-zone` format is registered once at module load via
@@ -213,22 +151,23 @@ function ianaTimeZone(opts?: TSchemaOptions): TUnsafe<IanaTimeZone> {
 }
 
 /**
- * The `column.*` namespace. `column.X(opts)` returns a vanilla TypeBox
- * `TSchema` (identical to what `Type.X(opts)` returns; the helpers don't wrap
- * or annotate). Each schema *is* the JSON Schema, the validator input, and
- * the static-type carrier.
+ * The `column.*` namespace: the shared `field.*` vocabulary plus the workspace's
+ * substrate-only wrappers. `column.X(opts)` returns a vanilla TypeBox `TSchema`;
+ * each schema *is* the JSON Schema, the validator input, and the static-type
+ * carrier. Autocomplete on `column.` lists the entire SQLite-safe constructor
+ * menu.
  */
 export const column = {
-	string,
-	url,
-	number,
-	integer,
-	boolean,
+	string: field.string,
+	url: field.url,
+	number: field.number,
+	integer: field.integer,
+	boolean: field.boolean,
+	dateTime: field.datetime,
 	literal,
 	enum: enum_,
 	json,
 	nullable,
-	dateTime,
 	ianaTimeZone,
 };
 

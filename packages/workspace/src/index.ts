@@ -139,7 +139,7 @@ export type { ProjectDir } from './shared/types';
 // ID + DATE PRIMITIVES
 // ════════════════════════════════════════════════════════════════════════════
 
-export { DateTimeString } from './shared/datetime-string';
+export { DateTimeString } from '@epicenter/field';
 export { IANA_TIME_ZONE_FORMAT, IanaTimeZone } from './shared/iana-time-zone';
 export type { Guid, Id } from './shared/id';
 export { generateGuid, generateId } from './shared/id';

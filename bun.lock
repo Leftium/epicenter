@@ -865,6 +865,7 @@
       "version": "0.2.0",
       "dependencies": {
         "@epicenter/encryption": "workspace:*",
+        "@epicenter/field": "workspace:*",
         "@epicenter/identity": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@epicenter/util": "workspace:*",

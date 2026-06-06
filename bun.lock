@@ -212,6 +212,7 @@
       "name": "@epicenter/matter",
       "version": "0.0.1",
       "dependencies": {
+        "@epicenter/field": "workspace:*",
         "@tauri-apps/api": "catalog:",
         "@tauri-apps/plugin-dialog": "^2.3.2",
         "typebox": "catalog:",

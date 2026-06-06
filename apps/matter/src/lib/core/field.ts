@@ -1,305 +1,35 @@
 /**
- * The closed field palette, expressed as a META-SCHEMA (a schema OF schemas).
+ * Matter's view of the closed field vocabulary, re-exported from the shared leaf
+ * `@epicenter/field`. The nine kinds, `recognize`, and `compile` are no longer
+ * matter-specific: the workspace authors the SAME schemas through `column.*`, and
+ * both directions round-trip over one wire-form. `$lib/core/field` stays matter's
+ * stable import seam, so the grid, conformance, sqlite projector, and the per-kind
+ * widgets keep importing from here.
  *
- * Matter's at-rest truth is a plain JSON Schema per field. This module answers the
- * one question about such a schema, through a single total entry point:
+ * Matter's SUBSTRATE POLICY stays in matter, expressed by how it USES this
+ * vocabulary rather than by extending it:
  *
- *   recognize(s) -> the kind whose closed meta matches, or null if `s` is outside
- *                   the palette (the rejection lane that degrades a field to raw).
+ *   everything-required  matter adds NO `nullable` wrapper (the workspace's
+ *                        `column.nullable` is the opposite policy); "must have
+ *                        content" is a value constraint (`minLength`), not a flag.
+ *   no json              an arbitrary-JSON shape is outside the palette, so
+ *                        `recognize` returns null and the field degrades to raw.
+ *   per-kind widgets     the Svelte components in `components/fields/` map each
+ *                        `Kind` to its editor; the compiler forces one per kind.
  *
- * Each kind carries a CLOSED TypeBox object meta-schema (`additionalProperties:
- * false`). Two properties fall out of that closure and they are the whole point:
- *
- *   1. The nine metas are MUTUALLY EXCLUSIVE. A `url` schema carries `format:'uri'`,
- *      which the bare-`string` meta forbids; a `select` schema carries `enum`, which
- *      every scalar meta forbids; a `multiSelect`'s items carry `enum`, which the
- *      `tags` item meta forbids. So at most one meta matches any legal schema, which
- *      means `recognize` needs no priority order and cannot be ambiguous.
- *   2. TYPOS DIE AT THE BOUNDARY. `{type:'strng'}` or `{type:'string', minLgth:1}`
- *      matches no meta, so `recognize` returns null and the field degrades to a raw
- *      column instead of silently rendering as `string`.
- *
- * Every meta reads `{ ...discriminators, ...refinements, ...annotations }`: three
- * buckets with one rule, only the DISCRIMINATORS differ across kinds.
- *
- *   discriminators  type / format / enum / items   the keys recognition reads.
- *   refinements     minLength.. / minimum.. / minItems..   closed per value-domain,
- *                   so a typo'd refinement key still dies, and the value constraint
- *                   rides along for free: a rating is `{type:'integer', minimum:1,
- *                   maximum:5}`, still kind `integer`, still validated, no new kind.
- *   annotations     title / description / default   inert metadata, IDENTICAL on
- *                   every meta. That identity is load-bearing: because the same
- *                   bucket is spread into all nine metas, an annotation can never tip
- *                   which kind matches, which is exactly why the bucket is safe to
- *                   widen. Held to the standard keywords with a real authoring path
- *                   into a `matter.json` field (`title`/`description` from the field
- *                   builders, `default` for a new-row default). `examples`, `$comment`,
- *                   `deprecated`, `readOnly`, `writeOnly`, `$id`, `$schema` are NOT
- *                   admitted: no path today, so a schema carrying one degrades to raw.
- *                   The day a real schema carries one and degrades is the signal to
- *                   add it here, not before.
- *
- * There is NO `nullable` / optional axis and NO `json` kind. Optionality is deleted
- * (every modeled field is required; "must have content" is a value constraint like
- * `minLength`, not a model flag), so a nullable `anyOf`-with-null shape matches no
- * meta. `json` is the rejection lane, not a member of `Kind`: `recognize` returns
- * null.
- *
- * Everything public is DERIVED from the one `FIELDS` object below: `Kind`,
- * `recognize`, `storageOf`, `KINDS`, `META_BY_KIND`. Adding a kind is one entry here,
- * plus its widget in the component registry, which the compiler forces.
- *
- * This module also owns the VALUE side of a field schema through `compile` (the single
- * `Schema.Compile` that turns a stored schema into a per-cell validator). The
- * value-semantic formats it leans on (`uri` for `url`,
- * `date-time` for `datetime`) are TypeBox standard formats, registered for us when
- * `typebox/schema` loads, so `compile` is just the call. So one place answers both
- * readings of a stored schema: "which kind is it" (`recognize`) and "does this value
- * satisfy it" (`compile`).
+ * The leaf stays policy-free; matter's policy is the absence of the workspace's
+ * wrappers, plus the widget registry that lives beside this seam.
  */
 
-import { type Static, Type } from 'typebox';
-import * as Schema from 'typebox/schema';
-import { Value } from 'typebox/value';
-
-/** Reject any property the meta does not explicitly name. The source of mutual exclusivity. */
-const CLOSED = { additionalProperties: false } as const;
-
-/**
- * Bucket 3: ANNOTATIONS. Inert standard metadata, whitelisted into EVERY closed meta
- * (identically, so it can never affect discrimination) so carrying one does not open
- * the shape. Held to the keys with a real authoring path into a field: `title` /
- * `description` from the field builders, `default` for a new-row default. `default` is
- * `Unknown` (any JSON value, not constrained to the field's own type; conformance
- * validates cell values, not defaults). Other standard annotations (`examples`,
- * `$comment`, `deprecated`, `readOnly`, `writeOnly`, `$id`, `$schema`) are deliberately
- * NOT admitted, so a schema carrying one degrades to raw until a real case argues it in.
- */
-const ANNOT = {
-	title: Type.Optional(Type.String()),
-	description: Type.Optional(Type.String()),
-	default: Type.Optional(Type.Unknown()),
-};
-
-/** The value space a closed set (`select` / `multiSelect`) may hold. `Number` covers integers. */
-const JsonPrimitive = Type.Union([Type.String(), Type.Number(), Type.Boolean()]);
-
-/**
- * The closed-set discriminant: a non-empty `enum` of primitives, optionally pinned
- * to a base `type`. Shared by the `select` meta and the `multiSelect` item meta, so
- * the two recognize the same closed-set shape. `enum` is REQUIRED here, which is what
- * keeps `select` mutually exclusive from the scalar kinds (they forbid `enum`).
- */
-const enumProps = {
-	enum: Type.Array(JsonPrimitive, { minItems: 1 }),
-	type: Type.Optional(
-		Type.Union([
-			Type.Literal('string'),
-			Type.Literal('number'),
-			Type.Literal('integer'),
-		]),
-	),
-};
-
-/** Item shape for `tags`: a plain string, no annotations. Forbids `enum` (that is `multiSelect`). */
-const StringItem = Type.Object({ type: Type.Literal('string') }, CLOSED);
-
-/** Item shape for `multiSelect`: the closed-set discriminant. Requires `enum` (that is not `tags`). */
-const SelectItem = Type.Object(enumProps, CLOSED);
-
-/** Bucket 2: string refinements. Closed set, so a typo'd key (`minLgth`) still dies. */
-const STRING_REFINE = {
-	minLength: Type.Optional(Type.Integer()),
-	maxLength: Type.Optional(Type.Integer()),
-	pattern: Type.Optional(Type.String()),
-};
-
-/** Bucket 2: numeric refinements, shared by `integer` and `number`. */
-const NUMBER_REFINE = {
-	minimum: Type.Optional(Type.Number()),
-	maximum: Type.Optional(Type.Number()),
-};
-
-/** Bucket 2: list refinements, shared by `tags` and `multiSelect`. */
-const LIST_REFINE = {
-	minItems: Type.Optional(Type.Integer()),
-	maxItems: Type.Optional(Type.Integer()),
-	uniqueItems: Type.Optional(Type.Boolean()),
-};
-
-/**
- * The single source of the palette, keyed by kind: each entry pairs a kind's closed
- * meta-schema (recognition + boundary validation) with its SQLite storage class.
- * `Kind`, `Storage`, `SchemaOf`, `recognize`, `storageOf`, `KINDS`, and `META_BY_KIND`
- * all derive from this object, so adding a kind is one entry. Key order is NOT a
- * contract: the metas are mutually exclusive, so `recognize` returns the same answer
- * regardless of iteration order. The keyed shape (not an array) is what lets `Kind` be
- * `keyof`, `storageOf` an O(1) lookup, and `SchemaOf<K>` index a single meta without
- * an `Extract`. Each `meta` reads `{ ...discriminators, ...refinements, ...annotations }`.
- */
-const FIELDS = {
-	select: { storage: 'TEXT', meta: Type.Object({ ...enumProps, ...ANNOT }, CLOSED) },
-	url: {
-		storage: 'TEXT',
-		meta: Type.Object(
-			{ type: Type.Literal('string'), format: Type.Literal('uri'), ...ANNOT },
-			CLOSED,
-		),
-	},
-	datetime: {
-		storage: 'TEXT',
-		meta: Type.Object(
-			{
-				type: Type.Literal('string'),
-				format: Type.Literal('date-time'),
-				...ANNOT,
-			},
-			CLOSED,
-		),
-	},
-	integer: {
-		storage: 'INTEGER',
-		meta: Type.Object(
-			{ type: Type.Literal('integer'), ...NUMBER_REFINE, ...ANNOT },
-			CLOSED,
-		),
-	},
-	number: {
-		storage: 'REAL',
-		meta: Type.Object(
-			{ type: Type.Literal('number'), ...NUMBER_REFINE, ...ANNOT },
-			CLOSED,
-		),
-	},
-	boolean: {
-		storage: 'INTEGER',
-		meta: Type.Object({ type: Type.Literal('boolean'), ...ANNOT }, CLOSED),
-	},
-	string: {
-		storage: 'TEXT',
-		meta: Type.Object(
-			{ type: Type.Literal('string'), ...STRING_REFINE, ...ANNOT },
-			CLOSED,
-		),
-	},
-	multiSelect: {
-		storage: 'TEXT',
-		meta: Type.Object(
-			{
-				type: Type.Literal('array'),
-				items: SelectItem,
-				...LIST_REFINE,
-				...ANNOT,
-			},
-			CLOSED,
-		),
-	},
-	tags: {
-		storage: 'TEXT',
-		meta: Type.Object(
-			{
-				type: Type.Literal('array'),
-				items: StringItem,
-				...LIST_REFINE,
-				...ANNOT,
-			},
-			CLOSED,
-		),
-	},
-} as const;
-
-/** The closed set of field kinds, DERIVED from the palette keys. `json` is not a member. */
-export type Kind = keyof typeof FIELDS;
-
-/** The SQLite storage classes a kind can map to. */
-type Storage = (typeof FIELDS)[Kind]['storage'];
-
-/** The precise at-rest schema type for one kind, derived from its meta via TypeBox. */
-export type SchemaOf<K extends Kind> = Static<(typeof FIELDS)[K]['meta']>;
-
-/**
- * A recognized field: a kind paired with its precisely-typed schema. The union is
- * DISCRIMINATED by `kind`, so a downstream `switch (field.kind)` narrows `schema` to
- * the matching shape with no cast. The one cast that establishes the kind/schema
- * pairing lives in `recognize`, right after the `Value.Check` that proves it.
- */
-export type Recognized = { [K in Kind]: { kind: K; schema: SchemaOf<K> } }[Kind];
-
-/**
- * One validated, compiled field of kind `K`: the frontmatter key it models, its
- * precisely-typed stored schema, the kind, and the precompiled validator. `FieldOf<K>`
- * is the per-kind variant, so `FieldOf<'select'>['schema']['enum']` is typed; {@link
- * Field} is the discriminated union over every kind, so a `switch (field.kind)` narrows
- * `schema` to the matching shape with no cast.
- *
- * `name` is identity (the map key, not in the schema); `schema`, `kind`, and `check` are
- * derived ONCE at the parse boundary (`recognize` + `compile`, both here) so downstream
- * readers never re-gate or recompile. The loaded field lives HERE, beside the catalog and
- * the `compile` that build it, so `field.ts` owns the whole field: the kind set AND the
- * loaded instance. `model.ts` consumes these to assemble a `matter.json` into a model.
- */
-export type FieldOf<K extends Kind> = {
-	/** The frontmatter key this field models. */
-	name: string;
-	/** This field's kind: the discriminant. */
-	kind: K;
-	/** The precisely-typed JSON Schema as stored in `matter.json`. */
-	schema: SchemaOf<K>;
-	/** The precompiled value validator (`Schema.Compile`), built once. */
-	check: (value: unknown) => boolean;
-};
-
-/** A validated, compiled field: the discriminated union over every kind. */
-export type Field = { [K in Kind]: FieldOf<K> }[Kind];
-
-/**
- * The one classifier: the recognized field (kind + typed schema) whose closed meta
- * matches `schema`, or `null` when `schema` is outside the palette (the rejection lane
- * that degrades a field to raw). One pass over the metas, no gate to forget and no
- * throw-contract to violate, so the boundary in `model.ts` reads `null` directly.
- * Because the metas are mutually exclusive, exactly one matches any legal schema, so
- * there is no priority order.
- */
-export function recognize(schema: unknown): Recognized | null {
-	for (const kind of Object.keys(FIELDS) as Kind[]) {
-		// The Value.Check just proved `schema` matches this kind's meta, so pairing the
-		// two as `Recognized` is honest. This is the cast at the MODEL boundary; the field
-		// pipeline has exactly one more, at the UI-dispatch boundary in the widget registry.
-		// Everything between the two stays cast-free.
-		if (Value.Check(FIELDS[kind].meta, schema)) return { kind, schema } as Recognized;
-	}
-	return null;
-}
-
-/** The SQLite storage class for a kind. Total: every `Kind` is a key of `FIELDS`. */
-export function storageOf(kind: Kind): Storage {
-	return FIELDS[kind].storage;
-}
-
-/** Every kind in the palette, in declaration order. The catalog, for tests and tooling. */
-export const KINDS = Object.keys(FIELDS) as readonly Kind[];
-
-/**
- * The per-kind metas, exposed so a test can prove the discrimination invariant
- * (every legal schema matches EXACTLY ONE meta). Keyed by kind for readable failures.
- */
-export const META_BY_KIND = Object.fromEntries(
-	Object.entries(FIELDS).map(([kind, def]) => [kind, def.meta]),
-) as Record<Kind, (typeof FIELDS)[Kind]['meta']>;
-
-/**
- * Compile a stored JSON Schema into a value check: the ONE place `Schema.Compile` is
- * called. It closes over the validator rather than tearing `Check` off (it reads
- * `this`). `recognize` decides WHICH kind a schema is; `compile` decides whether a
- * VALUE satisfies it.
- *
- * No format registration here. TypeBox treats an UNREGISTERED format as "always passes",
- * so a CUSTOM format would have to be registered or `url` / `datetime` would accept any
- * string. But `uri` and `date-time` are TypeBox STANDARD formats, registered as a load
- * side effect of `typebox/format` (which `Schema.Compile` imports), so the bare compile
- * already enforces them.
- */
-export function compile(schema: Recognized['schema']): (value: unknown) => boolean {
-	const validator = Schema.Compile(schema);
-	return (value) => validator.Check(value);
-}
+export {
+	compile,
+	type Field,
+	type FieldOf,
+	type Kind,
+	KINDS,
+	META_BY_KIND,
+	recognize,
+	type Recognized,
+	type SchemaOf,
+	storageOf,
+} from '@epicenter/field';

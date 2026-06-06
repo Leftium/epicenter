@@ -20,7 +20,10 @@
 	// in-memory demo vault, injected by the route. The narrow getters are bound once
 	// here so the template reads `read` / `folder` / `onSave*` exactly as before, and a
 	// vault swap (open another folder) flows through these derivations.
-	let { vault }: { vault: FolderGridVault } = $props();
+	// `filterKeys` is the names of the rows a WHERE clause matched, computed by the page
+	// (the live-vault owner) and handed down as data. `undefined` means no active filter.
+	let { vault, filterKeys }: { vault: FolderGridVault; filterKeys?: Set<string> } =
+		$props();
 
 	const read = $derived(vault.read);
 	const folder = $derived(vault.name);
@@ -35,10 +38,19 @@
 
 	const visibleRows = $derived.by(() => {
 		if (view.mode !== 'modeled') return [];
-		return rowFilter === 'attention'
-			? view.conformance.filter((c) => !c.rowValid)
-			: view.conformance;
+		let rows =
+			rowFilter === 'attention'
+				? view.conformance.filter((c) => !c.rowValid)
+				: view.conformance;
+		// The WHERE filter (matching row names from matter.sqlite, computed by the page)
+		// narrows the visible set; no active filter leaves `keys` undefined, nothing to do.
+		const keys = filterKeys;
+		if (keys) rows = rows.filter((c) => keys.has(c.row.name));
+		return rows;
 	});
+
+	// "X of Y rows" whenever a lens is narrowing the table (attention OR a WHERE clause).
+	const isFiltered = $derived(rowFilter === 'attention' || filterKeys !== undefined);
 
 	const needsAttentionCount = $derived(
 		view.mode === 'modeled' ? view.conformance.filter((c) => !c.rowValid).length : 0,
@@ -206,7 +218,7 @@
 				<h1 class="max-w-[70vw] truncate text-sm font-semibold">{folder}</h1>
 				<div class="mt-1 flex flex-wrap gap-1.5">
 					<Badge variant="secondary">
-						{rowFilter === 'attention'
+						{isFiltered
 							? `${visibleRows.length} of ${read.rows.length} rows`
 							: `${read.rows.length} rows`}
 					</Badge>
@@ -288,12 +300,18 @@
 								<Empty.Root class="min-h-64 border-0">
 									<Empty.Header>
 										<Empty.Title>
-											{rowFilter === 'attention' ? 'No rows need attention' : 'No rows yet'}
+											{filterKeys
+												? 'No rows match the filter'
+												: rowFilter === 'attention'
+													? 'No rows need attention'
+													: 'No rows yet'}
 										</Empty.Title>
 										<Empty.Description>
-											{rowFilter === 'attention'
-												? 'Every readable row matches this model.'
-												: 'Add markdown files with frontmatter to see them here.'}
+											{filterKeys
+												? 'No valid rows match this WHERE clause.'
+												: rowFilter === 'attention'
+													? 'Every readable row matches this model.'
+													: 'Add markdown files with frontmatter to see them here.'}
 										</Empty.Description>
 									</Empty.Header>
 								</Empty.Root>

@@ -211,6 +211,32 @@ function createVault(path: string) {
 	}
 
 	/**
+	 * Filter the folder with a SQL WHERE clause: run it against `matter.sqlite`
+	 * (read-only) and return the NAMES of the matching VALID rows, so the grid can narrow
+	 * its live rows by a SQL predicate while still rendering them with the rich, editable
+	 * widgets. Only valid rows are in the mirror, so the clause filters those; invalid /
+	 * unparseable files (the "needs attention" axis) are not matchable here. The clause is
+	 * interpolated raw, it is the user's own query on their own local file and the
+	 * connection is read-only, so the worst a bad clause does is return an error.
+	 */
+	function queryKeys(
+		where: string,
+	): Promise<Result<Set<string>, { message: string }>> {
+		const table = name.replace(/"/g, '""');
+		const sql = `SELECT "name" FROM "${table}" WHERE ${where}`;
+		return tryAsync({
+			try: async () => {
+				const { rows } = await invoke<{ columns: string[]; rows: unknown[][] }>(
+					'query_index',
+					{ path, sql, limit: 100_000 },
+				);
+				return new Set(rows.map((row) => String(row[0])));
+			},
+			catch: (cause) => Err({ message: extractErrorMessage(cause) }),
+		});
+	}
+
+	/**
 	 * Start watching the folder; returns a stop function. The page owns the
 	 * lifecycle via `$effect(() => vault.watch())`, so switching folders unwatches
 	 * the old folder automatically.
@@ -245,6 +271,7 @@ function createVault(path: string) {
 		watch,
 		saveField,
 		saveBody,
+		queryKeys,
 		/** The current classified folder. A pure read with no side effects. */
 		get read(): FolderRead {
 			return read;

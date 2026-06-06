@@ -69,16 +69,17 @@ function:
 ```
 channel batch ─▶ applyDeltas(deltas)
                    ├─ mutate the `files` SvelteMap   → grid repaints instantly
-                   └─ setTimeout(reconcileIndex, 0)  → rebuild matter.sqlite after paint
+                   └─ setTimeout(reconcileMirror, 0) → rebuild matter.sqlite after paint
 ```
 
-One funnel, one store. The grid is a pure `$derived` projection of that map
-(`read`: classify each row against the loaded model). `matter.sqlite` is a
-second, disposable projection you can run raw SQL against, from an
-**out-of-process** reader (a coding agent) or in-app (see [Querying](#querying-the-index)).
-It is rebuilt as a full `DROP + CREATE + INSERT` so it is always a pure function
-of the folder, never a drifting incremental cache, and deferred off the paint
-task because a large projection should never delay the grid.
+One funnel, one store, two projections of it. The **view** is the in-memory,
+reactive, editable one (`read`: a pure `$derived` that classifies each row against
+the loaded model); it drives the grid. The **mirror** (`matter.sqlite`) is the
+on-disk, disposable, queryable one you can run raw SQL against, from an
+**out-of-process** reader (a coding agent) or in-app (see [Querying](#querying-the-mirror)).
+The mirror is rebuilt as a full `DROP + CREATE + INSERT` so it is always a pure
+function of the folder, never a drifting incremental cache, and deferred off the
+paint task because a large projection should never delay the grid.
 
 ## The twist: the app's own edits
 
@@ -103,20 +104,21 @@ atomically) so a concurrent external edit to a _different_ field is preserved, n
 clobbered. Writes to one file are **serialized** (`serializeWrite`) so two quick
 edits to the same file cannot interleave their read-modify-write and drop one.
 
-## Querying the index
+## Querying the mirror
 
-`matter.sqlite` is read-only from the app's side: one Rust command, `query_index`,
-opens it `SQLITE_OPEN_READ_ONLY`, runs a caller-supplied `SELECT`, and returns
-generic `{ columns, rows }`. Read-only means a query can never mutate the disposable
-mirror; `busy_timeout` lets it wait out an in-flight rebuild. Rust stays schema-blind:
-it runs the statement and hands back values it never interprets.
+The mirror is read-only from the app's side: one Rust command, `query_mirror`, opens
+`matter.sqlite` `SQLITE_OPEN_READ_ONLY`, runs a caller-supplied `SELECT`, and returns
+generic `{ columns, rows }` (capped by an optional `limit`, or every row when omitted).
+Read-only means a query can never mutate the disposable mirror; `busy_timeout` lets it
+wait out an in-flight rebuild. Rust stays schema-blind: it runs the statement and hands
+back values it never interprets.
 
 Two surfaces ride that one command:
 
 - **The WHERE filter** (folder header): you type a predicate like
-  `status = 'ready' and word_count > 500`; the page runs
-  `SELECT "name" FROM "<folder>" WHERE <your clause>` and hands the grid the matching
-  row names, which the grid intersects to narrow its live rows, still typed, still
+  `status = 'ready' and word_count > 500`; the page calls `vault.matchingNames(clause)`
+  (which runs `SELECT "name" FROM "<folder>" WHERE <your clause>`) and hands the grid the
+  matched row names, which the grid intersects to narrow its live rows, still typed, still
   editable. The filter is owned by the page (where the live vault is), not the grid,
   so the grid never holds a query engine, it just renders the rows it is told to. It
   matches only valid rows (the only ones in the mirror); invalid rows are the separate
@@ -144,7 +146,7 @@ updates instantly, only set membership waits for the reconcile plus the re-query
 | Live vault: funnel, store, writes, queries, watch lifecycle | `src/lib/vault.svelte.ts` |
 | Folder watcher + race-free seed (Rust) | `src-tauri/src/watch.rs` |
 | Atomic read/write of one entry (Rust) | `src-tauri/src/entry.rs` |
-| `matter.sqlite` write + read-query executor (Rust) | `src-tauri/src/index.rs` |
+| `matter.sqlite` mirror: write + read-query executor (Rust) | `src-tauri/src/mirror.rs` |
 | Wire contract, generated from Rust | `src/lib/bindings/FileDelta.ts` |
 | Classify rows against the model | `src/lib/core/folder.ts` |
 | Project valid rows to SQL | `src/lib/core/sqlite.ts` |

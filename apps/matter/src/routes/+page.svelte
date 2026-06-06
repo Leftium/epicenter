@@ -13,11 +13,11 @@
 	let opening = $state(false);
 	let openError = $state<string>();
 
-	// The WHERE filter lives here, where the live vault is: the page calls its `queryKeys`
-	// directly (no capability handed into the grid) and gives the grid the matching row
-	// names as data. `filterKeys === undefined` means no active filter.
+	// The WHERE filter lives here, where the live vault is: the page calls its
+	// `matchingNames` directly (no capability handed into the grid) and gives the grid the
+	// matched row names as data. `matchedNames === undefined` means no active filter.
 	let whereText = $state('');
-	let filterKeys = $state<Set<string>>();
+	let matchedNames = $state<Set<string>>();
 	let filterError = $state<string>();
 	const view = $derived(vault?.read.view);
 
@@ -43,28 +43,33 @@
 		if (vault) return vault.watch();
 	});
 
-	// Resolve the WHERE clause to matching row names against matter.sqlite. Debounced, and
+	// Resolve the WHERE clause to matched row names against the mirror. Debounced, and
 	// re-run when the folder's data changes (so an edit updates membership), which also lets
 	// the reconcile fired by that edit land first. A bad clause surfaces in `filterError`
-	// and keeps the last good keys.
+	// and keeps the last good names.
 	$effect(() => {
 		const v = vault;
 		const clause = whereText.trim();
-		if (v) void v.read;
+		if (v) void v.read; // re-run when rows change so an edit updates filter membership
 		if (!v || !clause) {
-			filterKeys = undefined;
+			matchedNames = undefined;
 			filterError = undefined;
 			return;
 		}
+		let cancelled = false;
 		const handle = setTimeout(async () => {
-			const { data, error } = await v.queryKeys(clause);
+			const { data, error } = await v.matchingNames(clause);
+			if (cancelled) return; // a newer clause, a data change, or a folder swap won
 			if (error) filterError = error.message;
 			else {
-				filterKeys = data;
+				matchedNames = data;
 				filterError = undefined;
 			}
 		}, 200);
-		return () => clearTimeout(handle);
+		return () => {
+			cancelled = true;
+			clearTimeout(handle);
+		};
 	});
 </script>
 
@@ -138,7 +143,7 @@
 					</Alert.Description>
 				</Alert.Root>
 			{/if}
-			<FolderGrid {vault} {filterKeys} />
+			<FolderGrid {vault} {matchedNames} />
 		{/if}
 	{:else}
 		<Empty.Root class="flex-1 border-0">

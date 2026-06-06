@@ -25,7 +25,7 @@ import { SvelteMap } from 'svelte/reactivity';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, type Result, tryAsync } from 'wellcrafted/result';
 import { editBody, editField } from './core/serialize';
-import { projectToSqlite } from './core/sqlite';
+import { projectToSqlite, quoteIdent } from './core/sqlite';
 import {
 	buildView,
 	type FolderRead,
@@ -95,15 +95,15 @@ function createVault(path: string) {
 		// projection with setTimeout so it never delays paint. Per-batch, not debounced:
 		// the native watcher already coalesces a burst into one batch, and a rebuild that
 		// lands after teardown just writes that folder's own final truth.
-		setTimeout(reconcileIndex, 0);
+		setTimeout(reconcileMirror, 0);
 	}
 
 	/**
 	 * The current classified folder, derived from the files map + the loaded model.
 	 * The ONE place "files map -> FolderRead" lives, MEMOIZED so the `read` getter (the
-	 * UI surface) and `reconcileIndex` (the SQLite mirror) share a single classification
+	 * UI surface) and `reconcileMirror` (the SQLite mirror) share a single classification
 	 * instead of each recomputing it. Recomputes only when `files` or the loaded model
-	 * changes; `reconcileIndex` reads it when its deferred rebuild runs, so it sees the
+	 * changes; `reconcileMirror` reads it when its deferred rebuild runs, so it sees the
 	 * latest classification rather than a stale snapshot.
 	 */
 	const read = $derived.by((): FolderRead => {
@@ -124,14 +124,14 @@ function createVault(path: string) {
 	 * has no typed table, so it is skipped. Fire-and-forget: a failure never blocks the
 	 * grid and self-heals on the next batch (the rebuild is a full DROP + CREATE + INSERT),
 	 * so a transient error needs no surfacing. The JS projector builds all the SQL; the
-	 * Rust `write_index` command only executes it and binds the rows.
+	 * Rust `write_mirror` command only executes it and binds the rows.
 	 *
 	 * A full rebuild (not an incremental sync) is deliberate: benchmarks keep it well
 	 * under a frame to ~50k rows, it runs off the UI task (scheduled with setTimeout from
 	 * `applyDeltas`), and for an agent read surface "pure function of truth" is a safety
 	 * property, not just simplicity.
 	 */
-	function reconcileIndex(): void {
+	function reconcileMirror(): void {
 		const { view } = read;
 		if (view.mode !== 'modeled') return;
 		const { schema, insert, rows: tuples } = projectToSqlite(
@@ -139,7 +139,7 @@ function createVault(path: string) {
 			view.model,
 			view.conformance,
 		);
-		void invoke('write_index', { path, schema, insert, rows: tuples }).catch(() => {});
+		void invoke('write_mirror', { path, schema, insert, rows: tuples }).catch(() => {});
 	}
 
 	/**
@@ -211,24 +211,25 @@ function createVault(path: string) {
 	}
 
 	/**
-	 * Filter the folder with a SQL WHERE clause: run it against `matter.sqlite`
-	 * (read-only) and return the NAMES of the matching VALID rows, so the grid can narrow
-	 * its live rows by a SQL predicate while still rendering them with the rich, editable
-	 * widgets. Only valid rows are in the mirror, so the clause filters those; invalid /
-	 * unparseable files (the "needs attention" axis) are not matchable here. The clause is
-	 * interpolated raw, it is the user's own query on their own local file and the
-	 * connection is read-only, so the worst a bad clause does is return an error.
+	 * Filter the folder with a SQL WHERE clause: run it against the mirror
+	 * (`matter.sqlite`, read-only) and return the NAMES of the matching VALID rows, so the
+	 * grid can narrow its live rows by a SQL predicate while still rendering them with the
+	 * rich, editable widgets. Only valid rows are in the mirror, so the clause filters
+	 * those; invalid / unparseable files (the "needs attention" axis) are not matchable
+	 * here. The clause is interpolated raw, it is the user's own query on their own local
+	 * file and the connection is read-only, so the worst a bad clause does is return an
+	 * error.
 	 */
-	function queryKeys(
+	function matchingNames(
 		where: string,
 	): Promise<Result<Set<string>, { message: string }>> {
-		const table = name.replace(/"/g, '""');
-		const sql = `SELECT "name" FROM "${table}" WHERE ${where}`;
+		const sql = `SELECT "name" FROM ${quoteIdent(name)} WHERE ${where}`;
 		return tryAsync({
 			try: async () => {
+				// No limit: a name-only filter returns every matching row, never a silent cap.
 				const { rows } = await invoke<{ columns: string[]; rows: unknown[][] }>(
-					'query_index',
-					{ path, sql, limit: 100_000 },
+					'query_mirror',
+					{ path, sql, limit: null },
 				);
 				return new Set(rows.map((row) => String(row[0])));
 			},
@@ -271,7 +272,7 @@ function createVault(path: string) {
 		watch,
 		saveField,
 		saveBody,
-		queryKeys,
+		matchingNames,
 		/** The current classified folder. A pure read with no side effects. */
 		get read(): FolderRead {
 			return read;

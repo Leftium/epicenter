@@ -20,9 +20,9 @@
 	// in-memory demo vault, injected by the route. The narrow getters are bound once
 	// here so the template reads `read` / `folder` / `onSave*` exactly as before, and a
 	// vault swap (open another folder) flows through these derivations.
-	// `filterKeys` is the names of the rows a WHERE clause matched, computed by the page
+	// `matchedNames` is the names of the rows a WHERE clause matched, computed by the page
 	// (the live-vault owner) and handed down as data. `undefined` means no active filter.
-	let { vault, filterKeys }: { vault: FolderGridVault; filterKeys?: Set<string> } =
+	let { vault, matchedNames }: { vault: FolderGridVault; matchedNames?: Set<string> } =
 		$props();
 
 	const read = $derived(vault.read);
@@ -42,15 +42,37 @@
 			rowFilter === 'attention'
 				? view.conformance.filter((c) => !c.rowValid)
 				: view.conformance;
-		// The WHERE filter (matching row names from matter.sqlite, computed by the page)
-		// narrows the visible set; no active filter leaves `keys` undefined, nothing to do.
-		const keys = filterKeys;
-		if (keys) rows = rows.filter((c) => keys.has(c.row.name));
+		// The WHERE filter (matched row names from the mirror, computed by the page) narrows
+		// the visible set; no active filter leaves `names` undefined, nothing to do. The
+		// local alias is load-bearing: it narrows `Set | undefined` to `Set` in the closure.
+		const names = matchedNames;
+		if (names) rows = rows.filter((c) => names.has(c.row.name));
 		return rows;
 	});
 
 	// "X of Y rows" whenever a lens is narrowing the table (attention OR a WHERE clause).
-	const isFiltered = $derived(rowFilter === 'attention' || filterKeys !== undefined);
+	const isFiltered = $derived(rowFilter === 'attention' || matchedNames !== undefined);
+
+	// The modeled empty-state copy as ONE mutually exclusive decision, so the title and the
+	// description always describe the same case. Reads top-down like the question a person
+	// asks ("is a filter on? is attention on? otherwise it is just empty") instead of two
+	// nested ternaries in the markup that have to be kept in sync by hand.
+	const emptyState = $derived.by(() => {
+		if (matchedNames)
+			return {
+				title: 'No rows match the filter',
+				description: 'No valid rows match this WHERE clause.',
+			};
+		if (rowFilter === 'attention')
+			return {
+				title: 'No rows need attention',
+				description: 'Every readable row matches this model.',
+			};
+		return {
+			title: 'No rows yet',
+			description: 'Add markdown files with frontmatter to see them here.',
+		};
+	});
 
 	const needsAttentionCount = $derived(
 		view.mode === 'modeled' ? view.conformance.filter((c) => !c.rowValid).length : 0,
@@ -300,20 +322,8 @@
 							<Table.Cell colspan={view.model.fields.length + 1}>
 								<Empty.Root class="min-h-64 border-0">
 									<Empty.Header>
-										<Empty.Title>
-											{filterKeys
-												? 'No rows match the filter'
-												: rowFilter === 'attention'
-													? 'No rows need attention'
-													: 'No rows yet'}
-										</Empty.Title>
-										<Empty.Description>
-											{filterKeys
-												? 'No valid rows match this WHERE clause.'
-												: rowFilter === 'attention'
-													? 'Every readable row matches this model.'
-													: 'Add markdown files with frontmatter to see them here.'}
-										</Empty.Description>
+										<Empty.Title>{emptyState.title}</Empty.Title>
+										<Empty.Description>{emptyState.description}</Empty.Description>
 									</Empty.Header>
 								</Empty.Root>
 							</Table.Cell>

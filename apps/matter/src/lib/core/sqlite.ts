@@ -43,8 +43,12 @@ export type SqliteProjection = {
 	rows: SqlValue[][];
 };
 
-/** Quote a SQL identifier, doubling embedded quotes, so any field name is safe. */
-function quoteIdent(name: string): string {
+/**
+ * Quote a SQL identifier, doubling embedded quotes, so any field name is safe. The ONE
+ * identifier-quoting implementation: the vault reuses it to build the WHERE filter's
+ * `SELECT` so the table name is never quoted by hand in a second place.
+ */
+export function quoteIdent(name: string): string {
 	return `"${name.replace(/"/g, '""')}"`;
 }
 

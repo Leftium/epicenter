@@ -31,9 +31,11 @@
  *
  * Closed sets are STRING-ONLY: `select` / `multiSelect` hold strings, not numbers
  * or booleans. A numeric range is an `integer` with `minimum` / `maximum`, not a
- * select. No emptiness (`nullable`) or arbitrary-`json` builder lives here either:
- * those are SUBSTRATE POLICY the workspace layers on in `column.*`, and matter
- * forbids. The vocabulary itself is policy-free.
+ * select. `json` is the one OPEN escape kind in the vocabulary: an arbitrary JSON
+ * payload discriminated by the marker, not a `type`. Emptiness (`nullable`) is the
+ * one axis NOT in the vocabulary: it is SUBSTRATE POLICY the workspace layers on with
+ * its own standalone `nullable` wrapper, and matter forbids it. The vocabulary carries
+ * kinds, never an emptiness policy.
  */
 
 import {

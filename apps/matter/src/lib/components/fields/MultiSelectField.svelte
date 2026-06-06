@@ -71,7 +71,9 @@
 				{:else}
 					<span class="flex flex-wrap gap-1">
 						{#each selected as item (String(item))}
-							<Badge variant="secondary" class="text-xs">{String(item)}</Badge>
+							<Badge variant="secondary" class="max-w-[12rem] truncate">
+								{String(item)}
+							</Badge>
 						{/each}
 					</span>
 				{/if}

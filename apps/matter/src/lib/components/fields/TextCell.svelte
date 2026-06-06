@@ -17,7 +17,7 @@
 		clear,
 		parse,
 		inputClass = '',
-		displayClass = 'truncate',
+		displayClass = '',
 		inputmode,
 	}: {
 		cell: RenderableCell;
@@ -51,18 +51,20 @@
 		bind:value={edit.draft}
 		onblur={edit.commit}
 		onkeydown={edit.onKeydown}
-		class="w-full rounded border bg-background px-1 py-0.5 text-sm {inputClass}"
+		class="w-full rounded border bg-background px-1 py-0.5 text-sm [text-align:inherit] focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring {inputClass}"
 	/>
 {:else}
+	<!-- The display reads its alignment from the cell (numerics right-align there),
+	     so the open input and the closed value line up without a per-kind class. -->
 	<button
 		type="button"
 		onclick={edit.start}
-		class="block w-full cursor-text text-left"
+		class="block w-full cursor-text rounded-sm px-1 py-0.5 [text-align:inherit] hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring {displayClass}"
 	>
 		{#if cell.state === 'NEEDS_VALUE'}
 			<FieldEmpty />
 		{:else}
-			<span class={displayClass}>{String(cell.value)}</span>
+			<span class="block truncate">{String(cell.value)}</span>
 		{/if}
 	</button>
 {/if}

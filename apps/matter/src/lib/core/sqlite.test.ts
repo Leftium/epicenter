@@ -42,12 +42,12 @@ const incomplete: Row = {
 };
 
 describe('schema script (DROP + CREATE, one execute_batch)', () => {
-	test('drops then recreates: path PK, one NOT NULL column per field by storage class, _extra JSON', () => {
+	test('drops then recreates: name PK, one NOT NULL column per field by storage class, _extra JSON', () => {
 		const { schema } = projectToSqlite('drafts', m, []);
 		expect(schema).toBe(
 			'DROP TABLE IF EXISTS "drafts";\n' +
 				'CREATE TABLE "drafts" (' +
-				'"path" TEXT PRIMARY KEY, ' +
+				'"name" TEXT PRIMARY KEY, ' +
 				'"title" TEXT NOT NULL, ' +
 				'"status" TEXT NOT NULL, ' +
 				'"count" INTEGER NOT NULL, ' +
@@ -73,10 +73,10 @@ describe('insert template (one ? per column, bound positionally)', () => {
 		const { insert } = projectToSqlite('drafts', m, []);
 		expect(insert).toBe(
 			'INSERT INTO "drafts" (' +
-				'"path", "title", "status", "count", "score", "live", "tags", "url", "_extra"' +
+				'"name", "title", "status", "count", "score", "live", "tags", "url", "_extra"' +
 				') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
 		);
-		// path + 7 modeled fields + _extra = 9 placeholders.
+		// name + 7 modeled fields + _extra = 9 placeholders.
 		expect((insert.match(/\?/g) ?? []).length).toBe(9);
 	});
 });
@@ -91,9 +91,9 @@ describe('rows (valid only, serialized per storage class)', () => {
 	});
 
 	test('each value is serialized to its storage class', () => {
-		const [path, title, status, count, score, live, tags, url, extra] =
+		const [name, title, status, count, score, live, tags, url, extra] =
 			proj.rows[0]!;
-		expect(path).toBe('post-1.md');
+		expect(name).toBe('post-1.md');
 		expect(title).toBe('Hello');
 		expect(status).toBe('draft');
 		expect(count).toBe(3); // INTEGER stays a number

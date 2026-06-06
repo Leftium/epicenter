@@ -22,13 +22,13 @@
 		bind:value={edit.draft}
 		onblur={edit.commit}
 		onkeydown={edit.onKeydown}
-		class="w-full rounded border bg-background px-1 py-0.5 text-sm"
+		class="w-full rounded border bg-background px-1 py-0.5 text-sm focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
 	/>
 {:else if cell.state === 'NEEDS_VALUE'}
 	<button
 		type="button"
 		onclick={edit.start}
-		class="block w-full cursor-text text-left"
+		class="block w-full cursor-text rounded-sm px-1 py-0.5 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
 	>
 		<FieldEmpty />
 	</button>
@@ -41,13 +41,13 @@
 			href={String(cell.value)}
 			target="_blank"
 			rel="noreferrer"
-			class="truncate text-primary underline underline-offset-2"
+			class="truncate rounded-sm text-primary underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
 			>{String(cell.value)}</a
 		>
 		<button
 			type="button"
 			onclick={edit.start}
-			class="shrink-0 text-xs text-muted-foreground hover:text-foreground"
+			class="shrink-0 rounded-sm text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
 			title="Edit">edit</button
 		>
 	</span>

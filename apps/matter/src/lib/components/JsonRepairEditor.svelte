@@ -39,9 +39,9 @@
 		bind:value={edit.draft}
 		onblur={edit.commit}
 		onkeydown={edit.onKeydown}
-		class="w-full rounded border bg-background px-1 py-0.5 text-sm {edit.parseError
-			? 'border-destructive'
-			: ''}"
+		class="w-full rounded border bg-background px-1 py-0.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset {edit.parseError
+			? 'border-destructive focus-visible:ring-destructive'
+			: 'focus-visible:border-ring focus-visible:ring-ring'}"
 	/>
 	{#if edit.parseError}
 		<span class="mt-0.5 block text-xs text-destructive">{edit.parseError}</span>
@@ -50,9 +50,9 @@
 	<button
 		type="button"
 		onclick={edit.start}
-		class="block w-full cursor-text text-left"
+		class="block w-full cursor-text rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
 	>
-		<code class="rounded bg-destructive/10 px-1 text-xs text-destructive"
+		<code class="block truncate rounded bg-destructive/10 px-1 text-xs text-destructive"
 			>{JSON.stringify(cell.raw)}</code
 		>
 	</button>

@@ -52,11 +52,11 @@
 		<FieldEmpty />
 	{/if}
 	{#each values as tag (tag)}
-		<Badge variant="secondary" class="gap-1 pr-1">
-			{tag}
+		<Badge variant="secondary" class="max-w-[12rem] gap-1 pr-1">
+			<span class="truncate">{tag}</span>
 			<button
 				type="button"
-				class="rounded-full p-0.5 hover:bg-muted"
+				class="-mr-0.5 shrink-0 rounded-full p-0.5 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
 				aria-label={`Remove ${tag}`}
 				onclick={() => remove(tag)}
 			>
@@ -66,7 +66,7 @@
 	{/each}
 	<input
 		type="text"
-		class="flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
+		class="min-w-16 flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
 		placeholder={cell.state === 'OK' && values.length === 0 ? 'Add tags...' : ''}
 		bind:value={draft}
 		onkeydown={onKeydown}

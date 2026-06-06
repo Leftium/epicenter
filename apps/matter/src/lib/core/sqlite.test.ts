@@ -43,10 +43,10 @@ const incomplete: Row = {
 
 describe('schema script (DROP + CREATE, one execute_batch)', () => {
 	test('drops then recreates: name PK, one NOT NULL column per field by storage class, _extra JSON', () => {
-		const { schema } = projectToSqlite('drafts', m, []);
+		const { schema } = projectToSqlite(m, []);
 		expect(schema).toBe(
-			'DROP TABLE IF EXISTS "drafts";\n' +
-				'CREATE TABLE "drafts" (' +
+			'DROP TABLE IF EXISTS "entries";\n' +
+				'CREATE TABLE "entries" (' +
 				'"name" TEXT PRIMARY KEY, ' +
 				'"title" TEXT NOT NULL, ' +
 				'"status" TEXT NOT NULL, ' +
@@ -59,20 +59,18 @@ describe('schema script (DROP + CREATE, one execute_batch)', () => {
 		);
 	});
 
-	test('identifiers with quotes/spaces are escaped', () => {
+	test('field identifiers with quotes/spaces are escaped', () => {
 		const weird = model({ 'a "b"': { type: 'string' } });
-		const { schema } = projectToSqlite('my folder', weird, []);
-		expect(schema).toContain('DROP TABLE IF EXISTS "my folder"');
-		expect(schema).toContain('CREATE TABLE "my folder"');
+		const { schema } = projectToSqlite(weird, []);
 		expect(schema).toContain('"a ""b""" TEXT NOT NULL');
 	});
 });
 
 describe('insert template (one ? per column, bound positionally)', () => {
 	test('lists every column in order with one placeholder each', () => {
-		const { insert } = projectToSqlite('drafts', m, []);
+		const { insert } = projectToSqlite(m, []);
 		expect(insert).toBe(
-			'INSERT INTO "drafts" (' +
+			'INSERT INTO "entries" (' +
 				'"name", "title", "status", "count", "score", "live", "tags", "url", "_extra"' +
 				') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
 		);
@@ -83,7 +81,7 @@ describe('insert template (one ? per column, bound positionally)', () => {
 
 describe('rows (valid only, serialized per storage class)', () => {
 	const conformance = classifyRows(m.fields, [valid, incomplete]);
-	const proj = projectToSqlite('drafts', m, conformance);
+	const proj = projectToSqlite(m, conformance);
 
 	test('only the valid row projects; the incomplete one is absent', () => {
 		expect(proj.rows).toHaveLength(1);
@@ -105,8 +103,8 @@ describe('rows (valid only, serialized per storage class)', () => {
 	});
 
 	test('an all-invalid folder yields a schema but no rows', () => {
-		const p = projectToSqlite('drafts', m, classifyRows(m.fields, [incomplete]));
+		const p = projectToSqlite(m, classifyRows(m.fields, [incomplete]));
 		expect(p.rows).toEqual([]);
-		expect(p.schema).toContain('CREATE TABLE "drafts"');
+		expect(p.schema).toContain('CREATE TABLE "entries"');
 	});
 });

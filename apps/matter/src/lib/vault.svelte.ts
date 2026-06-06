@@ -25,7 +25,7 @@ import { SvelteMap } from 'svelte/reactivity';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, type Result, tryAsync } from 'wellcrafted/result';
 import { editBody, editField } from './core/serialize';
-import { projectToSqlite, quoteIdent } from './core/sqlite';
+import { MIRROR_TABLE, projectToSqlite, quoteIdent } from './core/sqlite';
 import {
 	buildView,
 	type FolderRead,
@@ -135,7 +135,6 @@ function createVault(path: string) {
 		const { view } = read;
 		if (view.mode !== 'modeled') return;
 		const { schema, insert, rows: tuples } = projectToSqlite(
-			name,
 			view.model,
 			view.conformance,
 		);
@@ -223,7 +222,7 @@ function createVault(path: string) {
 	function matchingNames(
 		where: string,
 	): Promise<Result<Set<string>, { message: string }>> {
-		const sql = `SELECT "name" FROM ${quoteIdent(name)} WHERE ${where}`;
+		const sql = `SELECT "name" FROM ${quoteIdent(MIRROR_TABLE)} WHERE ${where}`;
 		return tryAsync({
 			try: async () => {
 				// No limit: a name-only filter returns every matching row, never a silent cap.

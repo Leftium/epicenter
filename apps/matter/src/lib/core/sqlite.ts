@@ -53,6 +53,15 @@ export function quoteIdent(name: string): string {
 }
 
 /**
+ * The one table in every matter.sqlite. A matter folder is one db file with one table, so
+ * the name is a CONSTANT, not the folder's basename: the agent read surface (and the WHERE
+ * filter) stays stable no matter what the folder is called or renamed to. The read
+ * (`matchingNames` in the vault) and the write (`buildDdl`) both name it through this one
+ * value, still guarded by `quoteIdent`.
+ */
+export const MIRROR_TABLE = 'entries';
+
+/**
  * Serialize one validated cell value to its storage class. The value already passed
  * the field's schema (valid rows only), so the kind determines the encoding:
  * booleans to 0/1, lists to JSON text, everything else to its TEXT/INTEGER/REAL form.
@@ -81,7 +90,7 @@ function serializeCell(field: Field, value: unknown): SqlValue {
  * identity), one NOT NULL column per modeled field (typed by its storage class), and an
  * `_extra` JSON column for the unmodeled keys, so an agent can see extras too.
  */
-function buildDdl(table: string, fields: readonly Field[]): string {
+function buildDdl(fields: readonly Field[]): string {
 	const defs = [
 		`${quoteIdent('name')} TEXT PRIMARY KEY`,
 		...fields.map(
@@ -89,7 +98,7 @@ function buildDdl(table: string, fields: readonly Field[]): string {
 		),
 		`${quoteIdent('_extra')} TEXT NOT NULL`,
 	];
-	return `CREATE TABLE ${quoteIdent(table)} (${defs.join(', ')})`;
+	return `CREATE TABLE ${quoteIdent(MIRROR_TABLE)} (${defs.join(', ')})`;
 }
 
 /**
@@ -98,7 +107,6 @@ function buildDdl(table: string, fields: readonly Field[]): string {
  * unmodeled keys are folded into the `_extra` JSON object.
  */
 export function projectToSqlite(
-	table: string,
 	model: MatterModel,
 	conformance: readonly RowConformance[],
 ): SqliteProjection {
@@ -116,14 +124,14 @@ export function projectToSqlite(
 		});
 
 	const placeholders = columns.map(() => '?').join(', ');
-	const insert = `INSERT INTO ${quoteIdent(table)} (${columns
+	const insert = `INSERT INTO ${quoteIdent(MIRROR_TABLE)} (${columns
 		.map(quoteIdent)
 		.join(', ')}) VALUES (${placeholders})`;
 
 	// DROP + CREATE as one param-less script; the command runs it via execute_batch,
 	// rusqlite's idiom for a multi-statement setup script.
-	const drop = `DROP TABLE IF EXISTS ${quoteIdent(table)}`;
-	const schema = `${drop};\n${buildDdl(table, model.fields)}`;
+	const drop = `DROP TABLE IF EXISTS ${quoteIdent(MIRROR_TABLE)}`;
+	const schema = `${drop};\n${buildDdl(model.fields)}`;
 
 	return { schema, insert, rows };
 }

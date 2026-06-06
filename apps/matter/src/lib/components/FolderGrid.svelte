@@ -4,7 +4,9 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Empty from '@epicenter/ui/empty';
 	import * as Table from '@epicenter/ui/table';
+	import * as ToggleGroup from '@epicenter/ui/toggle-group';
 	import FileWarningIcon from '@lucide/svelte/icons/file-warning';
+	import ListIcon from '@lucide/svelte/icons/list';
 	import ListFilterIcon from '@lucide/svelte/icons/list-filter';
 	import MoreHorizontalIcon from '@lucide/svelte/icons/more-horizontal';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
@@ -26,22 +28,36 @@
 
 	const view = $derived(read.view);
 
-	// "Needs attention" filter: a lens over the same table, not a relayout.
-	let onlyNeedsAttention = $state(false);
+	type RowFilter = 'all' | 'attention';
+
+	// The attention filter is a view mode over the same table, not a relayout.
+	let rowFilter = $state<RowFilter>('all');
 
 	const visibleRows = $derived.by(() => {
 		if (view.mode !== 'modeled') return [];
-		return onlyNeedsAttention
+		return rowFilter === 'attention'
 			? view.conformance.filter((c) => !c.rowValid)
 			: view.conformance;
 	});
 
-	const invalidCount = $derived(
+	const needsAttentionCount = $derived(
 		view.mode === 'modeled' ? view.conformance.filter((c) => !c.rowValid).length : 0,
 	);
 
 	// Per-row extras expander state, keyed by file path.
 	let expanded = $state<Record<string, boolean>>({});
+
+	function cellStateClass(state: string): string {
+		if (state === 'NEEDS_VALUE') {
+			return 'bg-amber-500/5 ring-1 ring-inset ring-amber-500/25';
+		}
+
+		if (state === 'INVALID') {
+			return 'bg-destructive/5 ring-1 ring-inset ring-destructive/25';
+		}
+
+		return '';
+	}
 </script>
 
 <!-- Raw value render for the unmodeled view: plain text, no type guessing. -->
@@ -136,29 +152,35 @@
 			<div>
 				<h1 class="max-w-[70vw] truncate text-sm font-semibold">{folder}</h1>
 				<div class="mt-1 flex flex-wrap gap-1.5">
-					<Badge variant="secondary">{read.rows.length} rows</Badge>
-					<Badge variant="secondary">{view.model.fields.length} fields</Badge>
-					<Badge
-						variant={invalidCount ? 'outline' : 'secondary'}
-						class={invalidCount
-							? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400'
-							: ''}
-					>
-						{invalidCount} need attention
+					<Badge variant="secondary">
+						{rowFilter === 'attention'
+							? `${visibleRows.length} of ${read.rows.length} rows`
+							: `${read.rows.length} rows`}
 					</Badge>
+					<Badge variant="secondary">{view.model.fields.length} fields</Badge>
 					{#if read.unreadable.length}
 						<Badge variant="destructive">{read.unreadable.length} unreadable</Badge>
 					{/if}
 				</div>
 			</div>
-			<Button
-				variant={onlyNeedsAttention ? 'secondary' : 'outline'}
+			<ToggleGroup.Root
+				type="single"
+				variant="outline"
 				size="sm"
-				onclick={() => (onlyNeedsAttention = !onlyNeedsAttention)}
+				value={rowFilter}
+				onValueChange={(value) => {
+					if (value === 'all' || value === 'attention') rowFilter = value;
+				}}
 			>
-				<ListFilterIcon />
-				Needs attention{invalidCount ? ` (${invalidCount})` : ''}
-			</Button>
+				<ToggleGroup.Item value="all" aria-label="Show all rows">
+					<ListIcon />
+					All rows ({read.rows.length})
+				</ToggleGroup.Item>
+				<ToggleGroup.Item value="attention" aria-label="Show rows that need attention">
+					<ListFilterIcon />
+					Needs attention ({needsAttentionCount})
+				</ToggleGroup.Item>
+			</ToggleGroup.Root>
 		</header>
 
 		{#if view.model.unmodeled.length}
@@ -195,10 +217,10 @@
 							<Table.Cell colspan={view.model.fields.length + 1}>
 								<Empty.Root class="min-h-64 border-0">
 									<Empty.Title>
-										{onlyNeedsAttention ? 'No rows need attention' : 'No rows yet'}
+										{rowFilter === 'attention' ? 'No rows need attention' : 'No rows yet'}
 									</Empty.Title>
 									<Empty.Description>
-										{onlyNeedsAttention
+										{rowFilter === 'attention'
 											? 'Every readable row matches this model.'
 											: 'Add markdown files with frontmatter to see them here.'}
 									</Empty.Description>
@@ -224,9 +246,7 @@
 								{#each conf.cells as cell (cell.field.name)}
 									<Table.Cell
 										aria-invalid={cell.state === 'INVALID' || cell.state === 'NEEDS_VALUE'}
-										class={cell.state === 'INVALID' || cell.state === 'NEEDS_VALUE'
-											? 'bg-destructive/5 ring-1 ring-inset ring-destructive/20'
-											: ''}
+										class={cellStateClass(cell.state)}
 									>
 										<ModeledCell
 											{cell}

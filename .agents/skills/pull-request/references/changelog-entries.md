@@ -1,10 +1,8 @@
 # Changelog Entries in PRs
 
-## When to Read This
+## When To Read This
 
 Read when preparing PR descriptions for `feat:` or `fix:` changes that require end-user changelog entries.
-
-### Changelog Entries in PRs
 
 PRs with `feat:` or `fix:` prefix MUST include a `## Changelog` section in the PR description body. These entries are automatically aggregated into GitHub Releases by `auto.release.yml`.
 

@@ -1,17 +1,17 @@
 /**
  * Runtime tests for the workspace's column primitives: the substrate-policy
- * builders the shared `field.*` vocabulary deliberately omits (`nullable`, the
- * emptiness axis; `ianaTimeZone`, a branded format) plus the cross-substrate
- * recognition contract. The portable kinds (`field.string`, `field.select`, ...)
- * are proven in `@epicenter/field`'s own `field.test.ts`; the compile-time
- * `FlatJsonTSchema` tests live in `column.test-d.ts`.
+ * builder the shared `field.*` vocabulary deliberately omits (`nullable`, the
+ * emptiness axis) plus the cross-substrate recognition contract. The portable
+ * kinds (`field.string`, `field.select`, ...) are proven in `@epicenter/field`'s
+ * own `field.test.ts`; the compile-time `FlatJsonTSchema` tests live in
+ * `column.test-d.ts`.
  */
 
 import { field, recognize } from '@epicenter/field';
 import { describe, expect, test } from 'bun:test';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
-import { ianaTimeZone, nullable } from './index';
+import { nullable } from './index';
 
 /** The at-rest form `recognize` reads: a stored schema, with the live `~kind` tag dropped. */
 const atRest = (schema: object): unknown => JSON.parse(JSON.stringify(schema));
@@ -26,20 +26,6 @@ describe('nullable (the emptiness axis)', () => {
 
 	test('is outside the palette (degrades to raw): nullability is substrate policy, not a kind', () => {
 		expect(recognize(atRest(nullable(field.string())))).toBeNull();
-	});
-});
-
-describe('ianaTimeZone', () => {
-	const schema = ianaTimeZone();
-
-	test('accepts valid IANA zones', () => {
-		expect(Value.Check(schema, 'America/New_York')).toBe(true);
-		expect(Value.Check(schema, 'UTC')).toBe(true);
-	});
-
-	test('rejects invalid zones', () => {
-		expect(Value.Check(schema, 'Not/A_Zone')).toBe(false);
-		expect(Value.Check(schema, '')).toBe(false);
 	});
 });
 

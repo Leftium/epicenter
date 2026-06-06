@@ -140,7 +140,7 @@ export type { ProjectDir } from './shared/types';
 // ════════════════════════════════════════════════════════════════════════════
 
 export { DateTimeString } from '@epicenter/field';
-export { IANA_TIME_ZONE_FORMAT, IanaTimeZone } from './shared/iana-time-zone';
+export { IanaTimeZone } from './shared/iana-time-zone';
 export type { Guid, Id } from './shared/id';
 export { generateGuid, generateId } from './shared/id';
 
@@ -151,7 +151,6 @@ export { generateGuid, generateId } from './shared/id';
 export {
 	type ColumnError,
 	type FlatJsonTSchema,
-	ianaTimeZone,
 	nullable,
 } from './document/column/index';
 

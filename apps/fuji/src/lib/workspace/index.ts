@@ -39,7 +39,6 @@ import {
 	defineWorkspace,
 	docGuid,
 	generateId,
-	ianaTimeZone,
 	type IanaTimeZone,
 	type InferTableRow,
 	type Keyring,
@@ -71,7 +70,7 @@ const entriesTable = defineTable({
 	// IANA zone so display code can render the user's local wall-clock time.
 	// Per the workspace `<field>` + `<field>Zone` convention.
 	date: field.datetime(),
-	dateZone: ianaTimeZone(),
+	dateZone: field.string<IanaTimeZone>(),
 	createdAt: field.datetime(),
 	updatedAt: field.datetime(),
 	rating: field.number(),

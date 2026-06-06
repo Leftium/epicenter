@@ -20,3 +20,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
+# Generates the TS `FileDelta` type from the Rust enum (run `cargo test`), so the
+# IPC payload has one source of truth instead of a hand-mirrored copy in the frontend.
+ts-rs = "10"

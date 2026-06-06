@@ -35,11 +35,15 @@ pub struct WatcherStore {
 /// One file's observable state. `name` is the basename (top level, non-recursive),
 /// the row identity the frontend keys on. Serialized as a `{ kind, ... }` union.
 ///
-/// Hand-mirrored by the TS `FileDelta` type in `src/lib/vault.svelte.ts`: keep the
-/// variants, field names, and `tag = "kind"` in lockstep, or live updates break
-/// silently at runtime. (Swap for `tauri-specta` codegen once the IPC surface grows.)
-#[derive(Clone, Serialize)]
+/// This enum is the SINGLE SOURCE OF TRUTH for the IPC payload: `ts-rs` derives the
+/// matching TS `FileDelta` into `src/lib/bindings/FileDelta.ts` (run `cargo test`
+/// after changing the variants), so the frontend imports it instead of hand-mirroring
+/// it. `notify_debouncer_full` and `Channel` carry it; `serde` and `ts-rs` read the
+/// same `tag`/`rename_all`, so the wire shape and the generated type stay in lockstep
+/// by construction.
+#[derive(Clone, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase", tag = "kind")]
+#[ts(export, export_to = "../../src/lib/bindings/")]
 pub enum FileDelta {
     /// Read as UTF-8 text: the frontend parses it into a row (or its own
     /// "Can't read" bucket on bad YAML / conflict markers).

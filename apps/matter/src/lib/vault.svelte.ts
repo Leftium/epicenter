@@ -34,21 +34,10 @@ import {
 	type UnreadableFile,
 } from './core/folder';
 import { parseEntry, type Row } from './core/parse';
-
-/**
- * One file's observable state, pushed by `watch_folder` (serde `tag = "kind"`).
- * `content` carries the bytes so the JS never re-reads; `removed` drops the row;
- * `unreadable` (non-UTF-8 / permission) routes to "Can't read" instead of
- * vanishing.
- *
- * Hand-mirrored from the Rust `FileDelta` enum in `src-tauri/src/watch.rs`: keep
- * the variants, field names, and `tag: 'kind'` in lockstep, or live updates break
- * silently at runtime. (Swap for `tauri-specta` codegen once the IPC surface grows.)
- */
-type FileDelta =
-	| { kind: 'content'; name: string; text: string }
-	| { kind: 'removed'; name: string }
-	| { kind: 'unreadable'; name: string };
+// One file's observable state, pushed by `watch_folder` (content / removed /
+// unreadable). Generated from the Rust `FileDelta` enum by ts-rs, so the IPC payload
+// has one source of truth; regenerate with `cargo test` in `src-tauri`.
+import type { FileDelta } from './bindings/FileDelta';
 
 /** The vault's own folder name (its basename). Per-file paths are Rust's. */
 const basename = (path: string) => path.split(/[/\\]/).pop() ?? path;

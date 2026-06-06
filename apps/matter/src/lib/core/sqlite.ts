@@ -86,13 +86,13 @@ function serializeCell(field: Field, value: unknown): SqlValue {
 }
 
 /**
- * Build the `CREATE TABLE` for a folder: `name` primary key (the row's basename
+ * Build the `CREATE TABLE` for a folder: `file` primary key (the row's basename
  * identity), one NOT NULL column per modeled field (typed by its storage class), and an
  * `_extra` JSON column for the unmodeled keys, so an agent can see extras too.
  */
 function buildDdl(fields: readonly Field[]): string {
 	const defs = [
-		`${quoteIdent('name')} TEXT PRIMARY KEY`,
+		`${quoteIdent('file')} TEXT PRIMARY KEY`,
 		...fields.map(
 			(c) => `${quoteIdent(c.name)} ${storageOf(c.kind)} NOT NULL`,
 		),
@@ -110,7 +110,7 @@ export function projectToSqlite(
 	model: MatterModel,
 	conformance: readonly RowConformance[],
 ): SqliteProjection {
-	const columns = ['name', ...model.fields.map((c) => c.name), '_extra'];
+	const columns = ['file', ...model.fields.map((c) => c.name), '_extra'];
 	const rows = conformance
 		.filter((c) => c.rowValid)
 		.map((c) => {
@@ -120,7 +120,7 @@ export function projectToSqlite(
 			const extra = JSON.stringify(
 				Object.fromEntries(c.extras.map((e) => [e.key, e.value])),
 			);
-			return [c.row.name, ...cells, extra];
+			return [c.row.fileName, ...cells, extra];
 		});
 
 	const placeholders = columns.map(() => '?').join(', ');

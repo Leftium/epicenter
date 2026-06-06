@@ -95,7 +95,7 @@ export function parseMarkdown(
  */
 export type Row = ParsedFile & {
 	/** The file's basename, used as the row id (no id is minted). */
-	name: string;
+	fileName: string;
 };
 
 /**
@@ -106,10 +106,10 @@ export type Row = ParsedFile & {
  * caller's to add; this covers the parse half.
  */
 export function parseEntry(
-	name: string,
+	fileName: string,
 	content: string,
 ): Result<Row, MatterParseError> {
 	const { data, error } = parseMarkdown(content);
 	if (error) return Err(error);
-	return Ok({ name, ...data });
+	return Ok({ fileName, ...data });
 }

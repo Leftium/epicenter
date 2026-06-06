@@ -4,15 +4,15 @@ import { readFolder } from './folder';
 describe('readFolder', () => {
 	test('splits readable rows from unreadable files and lists raw columns', () => {
 		const result = readFolder([
-			{ name: 'a.md', content: '---\ntitle: A\nrating: 5\n---\nbody' },
-			{ name: 'b.md', content: '---\ntitle: B\n---\nbody' },
-			{ name: 'broken.md', content: '---\ntitle: [unclosed\n---\nbody' },
-			{ name: 'conflict.md', content: '<<<<<<< HEAD\nx\n=======\ny\n>>>>>>> z\n' },
-			{ name: 'raw.md', content: '# no frontmatter' },
+			{ fileName: 'a.md', content: '---\ntitle: A\nrating: 5\n---\nbody' },
+			{ fileName: 'b.md', content: '---\ntitle: B\n---\nbody' },
+			{ fileName: 'broken.md', content: '---\ntitle: [unclosed\n---\nbody' },
+			{ fileName: 'conflict.md', content: '<<<<<<< HEAD\nx\n=======\ny\n>>>>>>> z\n' },
+			{ fileName: 'raw.md', content: '# no frontmatter' },
 		]);
 
-		expect(result.rows.map((r) => r.name)).toEqual(['a.md', 'b.md', 'raw.md']);
-		expect(result.unreadable.map((u) => [u.name, u.error.name])).toEqual([
+		expect(result.rows.map((r) => r.fileName)).toEqual(['a.md', 'b.md', 'raw.md']);
+		expect(result.unreadable.map((u) => [u.fileName, u.error.name])).toEqual([
 			['broken.md', 'InvalidYaml'],
 			['conflict.md', 'ConflictMarkers'],
 		]);
@@ -32,9 +32,9 @@ describe('readFolder', () => {
 		});
 		const result = readFolder(
 			[
-				{ name: 'a.md', content: '---\ntitle: A\nrating: 5\n---\nbody' },
-				{ name: 'b.md', content: '---\ntitle: B\n---\nbody' }, // rating absent -> NEEDS_VALUE
-				{ name: 'c.md', content: '---\ntitle: C\nrating: "high"\n---\nbody' }, // INVALID
+				{ fileName: 'a.md', content: '---\ntitle: A\nrating: 5\n---\nbody' },
+				{ fileName: 'b.md', content: '---\ntitle: B\n---\nbody' }, // rating absent -> NEEDS_VALUE
+				{ fileName: 'c.md', content: '---\ntitle: C\nrating: "high"\n---\nbody' }, // INVALID
 			],
 			model,
 		);
@@ -47,7 +47,7 @@ describe('readFolder', () => {
 
 	test('a junk matter.json degrades to the raw view with a diagnostic', () => {
 		const result = readFolder(
-			[{ name: 'a.md', content: '---\ntitle: A\n---\nbody' }],
+			[{ fileName: 'a.md', content: '---\ntitle: A\n---\nbody' }],
 			'{ not json',
 		);
 		expect(result.view.mode).toBe('unmodeled');

@@ -43,11 +43,11 @@ export const DEMO_MODEL_TEXT = JSON.stringify(
 );
 
 /** One demo file: its basename (row id) and raw markdown text (frontmatter + body). */
-type DemoRow = { name: string; content: string };
+type DemoRow = { fileName: string; content: string };
 
 export const DEMO_ROWS: DemoRow[] = [
 	{
-		name: 'best-mic-setup.md',
+		fileName: 'best-mic-setup.md',
 		content: `---
 title: My Best Mic Setup
 status: published
@@ -69,7 +69,7 @@ to show in the row detail panel when you expand it.
 `,
 	},
 	{
-		name: 'carousel-2026-trends.md',
+		fileName: 'carousel-2026-trends.md',
 		content: `---
 title: 2026 Content Trends
 status: ready
@@ -89,7 +89,7 @@ Carousel outline.
 `,
 	},
 	{
-		name: 'how-i-edit-videos.md',
+		fileName: 'how-i-edit-videos.md',
 		content: `---
 title: How I Edit My Videos Fast Without Losing the Plot or My Mind
 status: ready
@@ -112,7 +112,7 @@ The body is loose prose. It is never parsed for structure.
 `,
 	},
 	{
-		name: 'quick-thought.md',
+		fileName: 'quick-thought.md',
 		content: `---
 title: A Quick Thought
 status: draft
@@ -121,7 +121,7 @@ A stub with sparse frontmatter, so most fields still need a value.
 `,
 	},
 	{
-		name: 'norway-trip.md',
+		fileName: 'norway-trip.md',
 		content: `---
 title: Trip to Norway
 status: draft
@@ -138,7 +138,7 @@ RFC 3339) and duration ("soon") are INVALID against the model and route to repai
 `,
 	},
 	{
-		name: 'legacy-import.md',
+		fileName: 'legacy-import.md',
 		content: `---
 title: Imported Note
 status: draft
@@ -153,7 +153,7 @@ Has overflow keys (legacyId, mood) and a nested object (metadata) shown in the r
 `,
 	},
 	{
-		name: 'broken.md',
+		fileName: 'broken.md',
 		content: `---
 title: Broken Frontmatter
 status: [unclosed
@@ -163,7 +163,7 @@ Unparseable: malformed YAML.
 `,
 	},
 	{
-		name: 'half-merged.md',
+		fileName: 'half-merged.md',
 		content: `---
 title: Half Merged Draft
 <<<<<<< HEAD
@@ -176,7 +176,7 @@ Unparseable: git conflict markers. The grid must never write this.
 `,
 	},
 	{
-		name: 'raw-note.md',
+		fileName: 'raw-note.md',
 		content: `# Raw Note
 
 No frontmatter at all, just markdown. Every modeled field needs a value.

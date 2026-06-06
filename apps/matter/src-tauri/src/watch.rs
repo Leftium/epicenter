@@ -32,8 +32,8 @@ pub struct WatcherStore {
     watchers: Mutex<HashMap<u32, FolderWatcher>>,
 }
 
-/// One file's observable state. `name` is the basename (top level, non-recursive),
-/// the row identity the frontend keys on. Serialized as a `{ kind, ... }` union.
+/// One file's observable state. The file's basename (top level, non-recursive) is the
+/// row identity the frontend keys on, sent as `fileName`. Serialized as a `{ kind, ... }` union.
 ///
 /// This enum is the SINGLE SOURCE OF TRUTH for the IPC payload: `ts-rs` derives the
 /// matching TS `FileDelta` into `src/lib/bindings/FileDelta.ts` (run `cargo test`
@@ -42,17 +42,17 @@ pub struct WatcherStore {
 /// same `tag`/`rename_all`, so the wire shape and the generated type stay in lockstep
 /// by construction.
 #[derive(Clone, Serialize, ts_rs::TS)]
-#[serde(rename_all = "camelCase", tag = "kind")]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "kind")]
 #[ts(export, export_to = "../../src/lib/bindings/")]
 pub enum FileDelta {
     /// Read as UTF-8 text: the frontend parses it into a row (or its own
     /// "Can't read" bucket on bad YAML / conflict markers).
-    Content { name: String, text: String },
+    Content { file_name: String, text: String },
     /// Gone from disk: the frontend drops it.
-    Removed { name: String },
+    Removed { file_name: String },
     /// Present but not UTF-8 text (binary, permission): the frontend routes it
     /// to "Can't read" rather than silently dropping it.
-    Unreadable { name: String },
+    Unreadable { file_name: String },
 }
 
 /// Only `.md` files and `matter.json` are part of the model; everything else in
@@ -62,14 +62,14 @@ fn is_relevant(name: &str) -> bool {
     name == "matter.json" || name.ends_with(".md")
 }
 
-/// Read one entry's current state. `path` is absolute; `name` is its basename.
+/// Read one entry's current state. `path` is absolute; `file_name` is its basename.
 /// A vanished file is `Removed`; a present-but-undecodable file is `Unreadable`,
 /// never a hard failure of the surrounding scan.
-fn delta_for(name: String, path: &Path) -> FileDelta {
+fn delta_for(file_name: String, path: &Path) -> FileDelta {
     match std::fs::read_to_string(path) {
-        Ok(text) => FileDelta::Content { name, text },
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => FileDelta::Removed { name },
-        Err(_) => FileDelta::Unreadable { name },
+        Ok(text) => FileDelta::Content { file_name, text },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => FileDelta::Removed { file_name },
+        Err(_) => FileDelta::Unreadable { file_name },
     }
 }
 

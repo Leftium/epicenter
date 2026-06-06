@@ -21,7 +21,7 @@ import { classifyRows, type RowConformance } from './conformance';
 import { type MatterModel, type MatterModelError, parseModel } from './model';
 import { type MatterParseError, parseEntry, type Row } from './parse';
 
-export type FolderEntry = { name: string; content: string };
+export type FolderEntry = { fileName: string; content: string };
 
 /**
  * Why a file could not be read as text at all, before any parse is attempted:
@@ -38,7 +38,7 @@ export type MatterReadError = InferErrors<typeof MatterReadError>;
 
 /** A file that could not become a row, with the failure that stopped it. */
 export type UnreadableFile = {
-	name: string;
+	fileName: string;
 	error: MatterParseError | MatterReadError;
 };
 
@@ -105,10 +105,10 @@ export function readFolder(
 	const rows: Row[] = [];
 	const unreadable: UnreadableFile[] = [];
 
-	for (const { name, content } of entries) {
-		const { data, error } = parseEntry(name, content);
+	for (const { fileName, content } of entries) {
+		const { data, error } = parseEntry(fileName, content);
 		if (error) {
-			unreadable.push({ name, error });
+			unreadable.push({ fileName, error });
 			continue;
 		}
 		rows.push(data);

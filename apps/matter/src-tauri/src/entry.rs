@@ -17,11 +17,11 @@
 use std::path::{Path, PathBuf};
 
 /// Read one entry's current text. `None` when it does not exist yet (so a write
-/// to a new name starts from an empty document); an `Err` only for a real IO or
+/// to a new file starts from an empty document); an `Err` only for a real IO or
 /// decoding failure.
 #[tauri::command]
-pub fn read_entry(path: String, name: String) -> Result<Option<String>, String> {
-    let file = Path::new(&path).join(&name);
+pub fn read_entry(path: String, file_name: String) -> Result<Option<String>, String> {
+    let file = Path::new(&path).join(&file_name);
     match std::fs::read_to_string(&file) {
         Ok(text) => Ok(Some(text)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -34,10 +34,10 @@ pub fn read_entry(path: String, name: String) -> Result<Option<String>, String> 
 /// the watcher's relevance filter ignores its create event; only the rename onto
 /// the `.md` destination surfaces as a delta. A failed rename cleans up the temp.
 #[tauri::command]
-pub fn write_entry(path: String, name: String, content: String) -> Result<(), String> {
+pub fn write_entry(path: String, file_name: String, content: String) -> Result<(), String> {
     let dir = PathBuf::from(&path);
-    let dest = dir.join(&name);
-    let tmp = dir.join(format!(".{name}.tmp"));
+    let dest = dir.join(&file_name);
+    let tmp = dir.join(format!(".{file_name}.tmp"));
     std::fs::write(&tmp, content.as_bytes()).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, &dest).map_err(|e| {
         let _ = std::fs::remove_file(&tmp);

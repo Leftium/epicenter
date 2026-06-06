@@ -71,22 +71,22 @@ function createVault(path: string) {
 	/** Apply one pushed batch to the store (the seed and every update). */
 	function applyDeltas(deltas: FileDelta[]) {
 		for (const delta of deltas) {
-			if (delta.name === 'matter.json') {
+			if (delta.fileName === 'matter.json') {
 				// A removed or unreadable model is no model: degrade to the raw view.
 				modelText = delta.kind === 'content' ? delta.text : undefined;
 				continue;
 			}
 			switch (delta.kind) {
 				case 'content':
-					files.set(delta.name, parseEntry(delta.name, delta.text));
+					files.set(delta.fileName, parseEntry(delta.fileName, delta.text));
 					break;
 				case 'removed':
-					files.delete(delta.name);
+					files.delete(delta.fileName);
 					break;
 				case 'unreadable':
 					// `Undecodable()` already returns an `Err`, so it stores directly as
 					// the file's failed `Result` (no row, the read-level error).
-					files.set(delta.name, MatterReadError.Undecodable());
+					files.set(delta.fileName, MatterReadError.Undecodable());
 					break;
 			}
 		}
@@ -110,7 +110,7 @@ function createVault(path: string) {
 		const rows: FolderRead['rows'] = [];
 		const unreadable: FolderRead['unreadable'] = [];
 		for (const [fileName, { data, error }] of files) {
-			if (error) unreadable.push({ name: fileName, error });
+			if (error) unreadable.push({ fileName, error });
 			else rows.push(data);
 		}
 		return { rows, unreadable, view: buildView(rows, loaded) };
@@ -143,18 +143,18 @@ function createVault(path: string) {
 
 	/**
 	 * Serialize writes to one file. A folder edit is read-modify-write (read the
-	 * freshest bytes, transform, atomic-write), so two writes to the SAME name must
+	 * freshest bytes, transform, atomic-write), so two writes to the SAME file must
 	 * run in order or the second reads stale bytes and drops the first's change.
-	 * Different files still write in parallel; the per-name chain is pruned when it
+	 * Different files still write in parallel; the per-file chain is pruned when it
 	 * drains, so the map does not grow with the folder.
 	 */
 	const writeTails = new Map<string, Promise<void>>();
-	function serializeWrite(name: string, run: () => Promise<void>): Promise<void> {
-		const tail = (writeTails.get(name) ?? Promise.resolve()).then(run);
+	function serializeWrite(fileName: string, run: () => Promise<void>): Promise<void> {
+		const tail = (writeTails.get(fileName) ?? Promise.resolve()).then(run);
 		const settled = tail.catch(() => {});
-		writeTails.set(name, settled);
+		writeTails.set(fileName, settled);
 		void settled.then(() => {
-			if (writeTails.get(name) === settled) writeTails.delete(name);
+			if (writeTails.get(fileName) === settled) writeTails.delete(fileName);
 		});
 		return tail;
 	}
@@ -173,13 +173,13 @@ function createVault(path: string) {
 	 * no second copy to drift. A failed write leaves the map untouched (we apply only
 	 * on success) and surfaces in `writeError`.
 	 */
-	function write(name: string, edit: (raw: string) => string): Promise<void> {
-		return serializeWrite(name, async () => {
+	function write(fileName: string, edit: (raw: string) => string): Promise<void> {
+		return serializeWrite(fileName, async () => {
 			const { data: next, error: failure } = await tryAsync({
 				try: async () => {
-					const raw = await invoke<string | null>('read_entry', { path, name });
+					const raw = await invoke<string | null>('read_entry', { path, fileName });
 					const text = edit(raw ?? '');
-					await invoke('write_entry', { path, name, content: text });
+					await invoke('write_entry', { path, fileName, content: text });
 					return text;
 				},
 				catch: (cause) => Err({ message: extractErrorMessage(cause) }),
@@ -189,7 +189,7 @@ function createVault(path: string) {
 				return;
 			}
 			writeError = undefined;
-			applyDeltas([{ kind: 'content', name, text: next }]);
+			applyDeltas([{ kind: 'content', fileName, text: next }]);
 		});
 	}
 
@@ -200,13 +200,13 @@ function createVault(path: string) {
 	 * not clobbered. Writes to one file are serialized, so two quick edits cannot
 	 * interleave their read-modify-write and drop one of the changes.
 	 */
-	function saveField(name: string, key: string, value: unknown): Promise<void> {
-		return write(name, (raw) => editField(raw, key, value));
+	function saveField(fileName: string, key: string, value: unknown): Promise<void> {
+		return write(fileName, (raw) => editField(raw, key, value));
 	}
 
 	/** Replace a file's body, keeping its frontmatter values intact. */
-	function saveBody(name: string, body: string): Promise<void> {
-		return write(name, (raw) => editBody(raw, body));
+	function saveBody(fileName: string, body: string): Promise<void> {
+		return write(fileName, (raw) => editBody(raw, body));
 	}
 
 	/**
@@ -222,7 +222,7 @@ function createVault(path: string) {
 	function matchingFileNames(
 		where: string,
 	): Promise<Result<Set<string>, { message: string }>> {
-		const sql = `SELECT "name" FROM ${quoteIdent(MIRROR_TABLE)} WHERE ${where}`;
+		const sql = `SELECT "file" FROM ${quoteIdent(MIRROR_TABLE)} WHERE ${where}`;
 		return tryAsync({
 			try: async () => {
 				// No limit: a name-only filter returns every matching row, never a silent cap.

@@ -21,7 +21,7 @@ const m = model({
 });
 
 const valid: Row = {
-	name: 'post-1.md',
+	fileName: 'post-1.md',
 	frontmatter: {
 		title: 'Hello',
 		status: 'draft',
@@ -36,18 +36,18 @@ const valid: Row = {
 };
 
 const incomplete: Row = {
-	name: 'post-2.md',
+	fileName: 'post-2.md',
 	frontmatter: { title: 'Partial' }, // missing required fields -> NEEDS_VALUE
 	body: '',
 };
 
 describe('schema script (DROP + CREATE, one execute_batch)', () => {
-	test('drops then recreates: name PK, one NOT NULL column per field by storage class, _extra JSON', () => {
+	test('drops then recreates: file PK, one NOT NULL column per field by storage class, _extra JSON', () => {
 		const { schema } = projectToSqlite(m, []);
 		expect(schema).toBe(
 			'DROP TABLE IF EXISTS "entries";\n' +
 				'CREATE TABLE "entries" (' +
-				'"name" TEXT PRIMARY KEY, ' +
+				'"file" TEXT PRIMARY KEY, ' +
 				'"title" TEXT NOT NULL, ' +
 				'"status" TEXT NOT NULL, ' +
 				'"count" INTEGER NOT NULL, ' +
@@ -71,7 +71,7 @@ describe('insert template (one ? per column, bound positionally)', () => {
 		const { insert } = projectToSqlite(m, []);
 		expect(insert).toBe(
 			'INSERT INTO "entries" (' +
-				'"name", "title", "status", "count", "score", "live", "tags", "url", "_extra"' +
+				'"file", "title", "status", "count", "score", "live", "tags", "url", "_extra"' +
 				') VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
 		);
 		// name + 7 modeled fields + _extra = 9 placeholders.
@@ -89,9 +89,9 @@ describe('rows (valid only, serialized per storage class)', () => {
 	});
 
 	test('each value is serialized to its storage class', () => {
-		const [name, title, status, count, score, live, tags, url, extra] =
+		const [file, title, status, count, score, live, tags, url, extra] =
 			proj.rows[0]!;
-		expect(name).toBe('post-1.md');
+		expect(file).toBe('post-1.md');
 		expect(title).toBe('Hello');
 		expect(status).toBe('draft');
 		expect(count).toBe(3); // INTEGER stays a number

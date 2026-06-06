@@ -18,7 +18,7 @@ describe('classifyRow (per-cell conformance, everything required)', () => {
 
 	test('a present valid value is OK; the row is valid when every cell is OK', () => {
 		const row: Row = {
-			name: 'a.md',
+			fileName: 'a.md',
 			frontmatter: { title: 'Hello', url: 'https://x.com', rating: 5 },
 			body: '',
 		};
@@ -28,7 +28,7 @@ describe('classifyRow (per-cell conformance, everything required)', () => {
 	});
 
 	test('an absent required field is NEEDS_VALUE (invalid)', () => {
-		const row: Row = { name: 'b.md', frontmatter: { title: 'Hi' }, body: '' };
+		const row: Row = { fileName: 'b.md', frontmatter: { title: 'Hi' }, body: '' };
 		const c = classifyRow(cols, row);
 		expect(c.cells.map((x) => x.state)).toEqual([
 			'OK',
@@ -40,7 +40,7 @@ describe('classifyRow (per-cell conformance, everything required)', () => {
 
 	test('a present value failing its schema is INVALID', () => {
 		const row: Row = {
-			name: 'c.md',
+			fileName: 'c.md',
 			frontmatter: { title: 'Hi', url: 'not a url', rating: 'high' },
 			body: '',
 		};
@@ -52,8 +52,8 @@ describe('classifyRow (per-cell conformance, everything required)', () => {
 	// The tested nullish contract: a bare `title:` parses to null, an omitted
 	// `title` is absent; both classify identically (NEEDS_VALUE, since required).
 	test('absent key and explicit null are the SAME empty', () => {
-		const absent: Row = { name: 'd.md', frontmatter: {}, body: '' };
-		const nul: Row = { name: 'e.md', frontmatter: { title: null }, body: '' };
+		const absent: Row = { fileName: 'd.md', frontmatter: {}, body: '' };
+		const nul: Row = { fileName: 'e.md', frontmatter: { title: null }, body: '' };
 		expect(classifyRow(cols, absent).cells[0]?.state).toBe('NEEDS_VALUE');
 		expect(classifyRow(cols, nul).cells[0]?.state).toBe('NEEDS_VALUE');
 	});
@@ -63,14 +63,14 @@ describe('classifyRow (per-cell conformance, everything required)', () => {
 	test('an empty string is OK for a plain string, INVALID under minLength', () => {
 		const plain = fields({ title: { type: 'string' } });
 		const must = fields({ title: { type: 'string', minLength: 1 } });
-		const row: Row = { name: 'f.md', frontmatter: { title: '' }, body: '' };
+		const row: Row = { fileName: 'f.md', frontmatter: { title: '' }, body: '' };
 		expect(classifyRow(plain, row).cells[0]?.state).toBe('OK');
 		expect(classifyRow(must, row).cells[0]?.state).toBe('INVALID');
 	});
 
 	test('extras are collected and never affect validity', () => {
 		const row: Row = {
-			name: 'h.md',
+			fileName: 'h.md',
 			frontmatter: {
 				title: 'Hi',
 				url: 'https://x.com',
@@ -96,7 +96,7 @@ describe('classifyRow (per-cell conformance, everything required)', () => {
 		});
 		expect(withUnmodeled.map((c) => c.name)).toEqual(['title']);
 		const row: Row = {
-			name: 'i.md',
+			fileName: 'i.md',
 			frontmatter: { title: 'Hi', note: 'hello' },
 			body: '',
 		};
@@ -110,8 +110,8 @@ describe('classifyRows', () => {
 	test('classifies every row against the precompiled fields', () => {
 		const cols = fields({ title: { type: 'string' } });
 		const rows: Row[] = [
-			{ name: 'a.md', frontmatter: { title: 'A' }, body: '' },
-			{ name: 'b.md', frontmatter: {}, body: '' },
+			{ fileName: 'a.md', frontmatter: { title: 'A' }, body: '' },
+			{ fileName: 'b.md', frontmatter: {}, body: '' },
 		];
 		const conformance = classifyRows(cols, rows);
 		expect(conformance.map((c) => c.rowValid)).toEqual([true, false]);

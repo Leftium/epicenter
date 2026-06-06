@@ -46,7 +46,7 @@
 		// narrows the visible set; no active filter leaves it undefined, nothing to do. The
 		// local alias is load-bearing: it narrows `Set | undefined` to `Set` in the closure.
 		const fileNames = matchedFileNames;
-		if (fileNames) rows = rows.filter((c) => fileNames.has(c.row.name));
+		if (fileNames) rows = rows.filter((c) => fileNames.has(c.row.fileName));
 		return rows;
 	});
 
@@ -79,10 +79,10 @@
 	);
 
 	let detailOpen = $state(false);
-	let detailRowName = $state<string>();
+	let detailFileName = $state<string>();
 	const detailConformance = $derived.by(() => {
-		if (view.mode !== 'modeled' || !detailRowName) return undefined;
-		return view.conformance.find((conf) => conf.row.name === detailRowName);
+		if (view.mode !== 'modeled' || !detailFileName) return undefined;
+		return view.conformance.find((conf) => conf.row.fileName === detailFileName);
 	});
 
 	// Per-kind column width: the `<col>` basis under `table-fixed`, so the grid reads
@@ -135,13 +135,13 @@
 
 	$effect(() => {
 		if (!detailOpen) {
-			detailRowName = undefined;
+			detailFileName = undefined;
 			return;
 		}
 
-		if (detailRowName && !detailConformance) {
+		if (detailFileName && !detailConformance) {
 			detailOpen = false;
-			detailRowName = undefined;
+			detailFileName = undefined;
 		}
 	});
 </script>
@@ -222,7 +222,7 @@
 							</Table.Cell>
 						</Table.Row>
 					{:else}
-						{#each read.rows as row (row.name)}
+						{#each read.rows as row (row.fileName)}
 							<Table.Row>
 								{#each view.columns as key (key)}
 									<Table.Cell>{@render rawValue(row.frontmatter[key])}</Table.Cell>
@@ -329,7 +329,7 @@
 							</Table.Cell>
 						</Table.Row>
 					{:else}
-						{#each visibleRows as conf (conf.row.name)}
+						{#each visibleRows as conf (conf.row.fileName)}
 							<Table.Row>
 								<!-- Frozen identity cell: the file name is the row's id on disk, kept
 								     visible while the typed columns scroll. !bg-background keeps it
@@ -344,7 +344,7 @@
 												? `Open row, ${conf.extras.length} extra keys`
 												: 'Open row'}
 											onclick={() => {
-												detailRowName = conf.row.name;
+												detailFileName = conf.row.fileName;
 												detailOpen = true;
 											}}
 										>
@@ -352,9 +352,9 @@
 										</Button>
 										<span
 											class="truncate font-mono text-xs text-muted-foreground"
-											title={conf.row.name}
+											title={conf.row.fileName}
 										>
-											{conf.row.name}
+											{conf.row.fileName}
 										</span>
 									</div>
 								</Table.Cell>
@@ -369,8 +369,8 @@
 										<ModeledCell
 											{cell}
 											mode="grid"
-											save={(value) => onSaveField(conf.row.name, cell.field.name, value)}
-											clear={() => onSaveField(conf.row.name, cell.field.name, undefined)}
+											save={(value) => onSaveField(conf.row.fileName, cell.field.name, value)}
+											clear={() => onSaveField(conf.row.fileName, cell.field.name, undefined)}
 										/>
 									</Table.Cell>
 								{/each}
@@ -389,9 +389,9 @@
 				<h2 class="text-xs font-semibold text-muted-foreground">Can't read</h2>
 			</div>
 			<ul class="mt-1 space-y-0.5">
-				{#each read.unreadable as file (file.name)}
+				{#each read.unreadable as file (file.fileName)}
 					<li class="text-xs">
-						<span class="font-mono">{file.name}</span>
+						<span class="font-mono">{file.fileName}</span>
 						<span class="text-muted-foreground"> / {file.error.message}</span>
 					</li>
 				{/each}

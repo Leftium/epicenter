@@ -14,8 +14,8 @@
 	}: {
 		open?: boolean;
 		conformance: RowConformance;
-		onSaveField: (name: string, key: string, value: unknown) => void;
-		onSaveBody: (name: string, body: string) => void;
+		onSaveField: (fileName: string, key: string, value: unknown) => void;
+		onSaveBody: (fileName: string, body: string) => void;
 	} = $props();
 
 	const row = $derived(conformance.row);
@@ -39,7 +39,7 @@
 				<div class="flex flex-wrap items-start justify-between gap-4 pr-8">
 					<div class="min-w-0 space-y-2">
 						<Dialog.Title class="truncate font-mono text-xl leading-tight">
-							{row.name}
+							{row.fileName}
 						</Dialog.Title>
 						<div class="flex flex-wrap gap-1.5">
 							<Badge variant={conformance.rowValid ? 'secondary' : 'outline'}>
@@ -90,8 +90,8 @@
 									<ModeledCell
 										{cell}
 										mode="detail"
-										save={(value) => onSaveField(row.name, cell.field.name, value)}
-										clear={() => onSaveField(row.name, cell.field.name, undefined)}
+										save={(value) => onSaveField(row.fileName, cell.field.name, value)}
+										clear={() => onSaveField(row.fileName, cell.field.name, undefined)}
 									/>
 								</div>
 							</div>
@@ -129,10 +129,10 @@
 					<div>
 						<h2 class="text-sm font-semibold">Body</h2>
 					</div>
-					{#key row.name}
+					{#key row.fileName}
 						<MarkdownBodyEditor
 							body={row.body}
-							onCommit={(body) => onSaveBody(row.name, body)}
+							onCommit={(body) => onSaveBody(row.fileName, body)}
 						/>
 					{/key}
 				</section>

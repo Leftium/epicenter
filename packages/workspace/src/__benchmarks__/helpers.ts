@@ -49,7 +49,7 @@ export const eventDefinition = defineTable({
 
 export const settingsDefinition = defineKv(
 	Type.Object({
-		theme: Type.Union([Type.Literal('light'), Type.Literal('dark')]),
+		theme: Type.Enum(['light', 'dark']),
 		fontSize: Type.Number(),
 	}),
 	() => ({ theme: 'light' as const, fontSize: 14 }),

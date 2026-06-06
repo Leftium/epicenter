@@ -24,7 +24,7 @@ const notesDefinition = defineTable({
 });
 
 const sortOrderDefinition = defineKv(
-	Type.Union([Type.Literal('asc'), Type.Literal('desc')]),
+	Type.Enum(['asc', 'desc']),
 	() => 'asc' as const,
 );
 

@@ -11,6 +11,7 @@
 	import ListFilterIcon from '@lucide/svelte/icons/list-filter';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import type { Kind } from '@epicenter/field';
+	import type { Cell } from '$lib/core/conformance';
 	import type { FolderGridVault } from '$lib/vault.svelte';
 	import ModeledCell from './ModeledCell.svelte';
 	import RowDetailDialog from './RowDetailDialog.svelte';
@@ -91,7 +92,7 @@
 	// required cell, destructive for an out-of-domain value. The ring lives on the
 	// CELL, not the row, so one signal owns "this needs attention" instead of stacking
 	// a row tint under a cell tint under the hover tint.
-	function cellStateClass(state: string): string {
+	function cellStateClass(state: Cell['state']): string {
 		if (state === 'NEEDS_VALUE') {
 			return 'bg-amber-500/5 ring-1 ring-inset ring-amber-500/30';
 		}
@@ -187,10 +188,12 @@
 						<Table.Row>
 							<Table.Cell colspan={Math.max(1, view.columns.length)}>
 								<Empty.Root class="min-h-64 border-0">
-									<Empty.Title>No readable rows</Empty.Title>
-									<Empty.Description>
-										Add markdown files with frontmatter to see them here.
-									</Empty.Description>
+									<Empty.Header>
+										<Empty.Title>No readable rows</Empty.Title>
+										<Empty.Description>
+											Add markdown files with frontmatter to see them here.
+										</Empty.Description>
+									</Empty.Header>
 								</Empty.Root>
 							</Table.Cell>
 						</Table.Row>
@@ -294,14 +297,16 @@
 						<Table.Row>
 							<Table.Cell colspan={view.model.fields.length + 1}>
 								<Empty.Root class="min-h-64 border-0">
-									<Empty.Title>
-										{rowFilter === 'attention' ? 'No rows need attention' : 'No rows yet'}
-									</Empty.Title>
-									<Empty.Description>
-										{rowFilter === 'attention'
-											? 'Every readable row matches this model.'
-											: 'Add markdown files with frontmatter to see them here.'}
-									</Empty.Description>
+									<Empty.Header>
+										<Empty.Title>
+											{rowFilter === 'attention' ? 'No rows need attention' : 'No rows yet'}
+										</Empty.Title>
+										<Empty.Description>
+											{rowFilter === 'attention'
+												? 'Every readable row matches this model.'
+												: 'Add markdown files with frontmatter to see them here.'}
+										</Empty.Description>
+									</Empty.Header>
 								</Empty.Root>
 							</Table.Cell>
 						</Table.Row>

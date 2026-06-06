@@ -14,7 +14,8 @@ import type { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
 import type { field } from '@epicenter/field';
-import type { ColumnError, FlatJsonTSchema, nullable } from './index';
+import type { ColumnError, FlatJsonTSchema } from './constraint';
+import type { nullable } from '../nullable';
 
 // --------------------------------------------------------------------------
 // Helpers

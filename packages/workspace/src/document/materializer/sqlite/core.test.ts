@@ -25,7 +25,7 @@ import {
 } from '../../../index.js';
 import { isAction, isMutation, isQuery } from '../../../shared/actions.js';
 import { field } from '@epicenter/field';
-import { nullable } from '../../column/index.js';
+import { nullable } from '../../nullable.js';
 import { attachSqliteMaterializerCore } from './core.js';
 
 const postsTable = defineTable({

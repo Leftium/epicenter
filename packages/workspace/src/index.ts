@@ -145,10 +145,10 @@ export type { Guid, Id } from './shared/id';
 export { generateGuid, generateId } from './shared/id';
 
 // ════════════════════════════════════════════════════════════════════════════
-// COLUMN PRIMITIVES (TypeBox-native)
+// EMPTINESS AXIS (nullable: substrate value policy)
 // ════════════════════════════════════════════════════════════════════════════
 
-export { nullable } from './document/column/index';
+export { nullable } from './document/nullable';
 
 // ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT PRIMITIVES

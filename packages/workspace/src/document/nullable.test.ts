@@ -1,17 +1,16 @@
 /**
- * Runtime tests for the workspace's column primitives: the substrate-policy
- * builder the shared `field.*` vocabulary deliberately omits (`nullable`, the
- * emptiness axis) plus the cross-substrate recognition contract. The portable
- * kinds (`field.string`, `field.select`, ...) are proven in `@epicenter/field`'s
- * own `field.test.ts`; the compile-time `FlatJsonTSchema` tests live in
- * `column.test-d.ts`.
+ * Runtime tests for the workspace's substrate-policy value builder (`nullable`, the
+ * emptiness axis the shared `field.*` vocabulary deliberately omits) plus the
+ * cross-substrate recognition contract. The portable kinds (`field.string`,
+ * `field.select`, ...) are proven in `@epicenter/field`'s own `field.test.ts`; the
+ * compile-time `FlatJsonTSchema` tests live in `column/constraint.test-d.ts`.
  */
 
 import { field, recognize } from '@epicenter/field';
 import { describe, expect, test } from 'bun:test';
 import { Type } from 'typebox';
 import { Value } from 'typebox/value';
-import { nullable } from './index';
+import { nullable } from './nullable';
 
 /** The at-rest form `recognize` reads: a stored schema, with the live `~kind` tag dropped. */
 const atRest = (schema: object): unknown => JSON.parse(JSON.stringify(schema));

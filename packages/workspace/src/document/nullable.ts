@@ -16,7 +16,7 @@
  * for the kinds and `nullable` for the substrate policy, with no `column` namespace.
  * `nullable` wraps any workspace VALUE schema, a `defineTable` column OR a `defineKv` value
  * (both are fixed-shape CRDT entries that encode emptiness as `null`); the `FlatJsonTSchema`
- * constraint (in `./constraint`) is narrower, gating only `defineTable` columns, whether
+ * constraint (in `./column/constraint`) is narrower, gating only `defineTable` columns, whether
  * authored via `field.*`, `nullable`, or raw `Type.*`. A branded format like an IANA
  * timezone is just `field.string<IanaTimeZone>()`: the brand carries the type, no bespoke
  * builder required.

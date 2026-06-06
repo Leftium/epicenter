@@ -1,6 +1,6 @@
 ---
 name: pull-request
-description: Draft and review durable GitHub pull request titles and bodies for Epicenter. Use when creating a PR, running gh pr create, drafting or editing a PR body, writing changelog entries, linking issues, choosing merge strategy, or reviewing PR text. Never include Testing, Test Plan, or Verification sections in PR bodies unless explicitly requested.
+description: Draft and review durable GitHub pull request titles and bodies for Epicenter. Use when creating a PR, running gh pr create, drafting or editing a PR body, writing changelog entries, linking issues, choosing merge strategy, or reviewing PR text. For local commits and branches use the git skill; for issue replies use github-issues. Never include Testing, Test Plan, or Verification sections in PR bodies unless explicitly requested.
 ---
 
 # Pull Request Guidelines
@@ -43,6 +43,6 @@ Load these on demand:
 
 - Body shapes, openers, headings, framing patterns, and what to avoid: [references/body-patterns.md](references/body-patterns.md).
 - Diagram catalog (composition trees, before/after, journeys, flow, comparison tables) with when to use each: [references/visual-patterns.md](references/visual-patterns.md).
-- Full annotated PR bodies to imitate: [references/examples.md](references/examples.md).
+- A full worked body to copy a structure from before drafting your own: [references/examples.md](references/examples.md).
 - Changelog entries for `feat:` or `fix:` PRs: [references/changelog-entries.md](references/changelog-entries.md).
 - Issue linking, username verification, CODEOWNERS, and merge strategy: [references/github-pr-operations.md](references/github-pr-operations.md).

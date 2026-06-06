@@ -1,0 +1,37 @@
+/*
+  Epicenter overlay: customizations layered on top of the Vega preset.
+
+  Scoped under .style-vega to match the preset's own scoping. This is the single
+  place Epicenter-specific styling lives, so upstream pulls touch component markup
+  and style-vega.css only. One block per Epicenter-only variant.
+
+  See specs/20260606T160000-ui-shadcn-cn-style-migration-vega.md
+*/
+.style-vega {
+	/* Button: ghost-destructive variant (Epicenter-specific, no upstream equivalent). */
+	.cn-button-variant-ghost-destructive {
+		@apply text-destructive hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20;
+	}
+
+	/* Alert: warning variant (Epicenter-specific; uses the --warning token). */
+	.cn-alert-variant-warning {
+		@apply text-warning bg-card *:data-[slot=alert-description]:text-warning/90 [&>svg]:text-current;
+	}
+
+	/* Badge: Epicenter-specific variants (no upstream equivalent). */
+	.cn-badge-variant-id {
+		@apply px-1.5 bg-muted text-muted-foreground [a&]:hover:bg-muted/90 border-transparent font-mono text-xs rounded-md font-normal;
+	}
+	.cn-badge-variant-status-completed {
+		@apply bg-green-500/10 text-green-500;
+	}
+	.cn-badge-variant-status-failed {
+		@apply bg-red-500/10 text-red-500;
+	}
+	.cn-badge-variant-status-running {
+		@apply bg-blue-500/10 text-blue-500;
+	}
+	.cn-badge-variant-success {
+		@apply bg-success [a&]:hover:bg-success/90 focus-visible:ring-success/20 dark:focus-visible:ring-success/40 dark:bg-success/80 border-transparent text-white;
+	}
+}

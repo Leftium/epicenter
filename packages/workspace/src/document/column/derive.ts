@@ -67,30 +67,3 @@ export function isNullable(schema: TSchema): boolean {
 	const s = asShape(schema);
 	return Boolean(s.anyOf?.some((branch) => asShape(branch).type === 'null'));
 }
-
-/**
- * Derive a SQLite CHECK clause for an enum-shaped column. For
- * `column.enum(['a', 'b'])` the schema is `anyOf` of const, producing
- * `column IN ('a', 'b')`. Returns `undefined` for shapes that don't fit
- * the union-of-const pattern.
- */
-export function deriveCheck(
-	schema: TSchema,
-	columnName: string,
-): string | undefined {
-	const s = asShape(schema);
-	if (!s.anyOf) return undefined;
-	const consts: (string | number)[] = [];
-	for (const branch of s.anyOf) {
-		const b = asShape(branch);
-		if (b.const === undefined) return undefined;
-		if (typeof b.const !== 'string' && typeof b.const !== 'number')
-			return undefined;
-		consts.push(b.const);
-	}
-	if (consts.length === 0) return undefined;
-	const values = consts
-		.map((v) => (typeof v === 'number' ? String(v) : `'${v}'`))
-		.join(', ');
-	return `${columnName} IN (${values})`;
-}

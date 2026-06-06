@@ -213,7 +213,7 @@ export type Kind = keyof typeof FIELDS;
 type Storage = (typeof FIELDS)[Kind]['storage'];
 
 /** The precise at-rest schema type for one kind, derived from its meta via TypeBox. */
-export type SchemaOf<K extends Kind> = Static<(typeof FIELDS)[K]['meta']>;
+type SchemaOf<K extends Kind> = Static<(typeof FIELDS)[K]['meta']>;
 
 /**
  * A recognized field: a kind paired with its precisely-typed schema. The union is
@@ -221,7 +221,7 @@ export type SchemaOf<K extends Kind> = Static<(typeof FIELDS)[K]['meta']>;
  * the matching shape with no cast. The one cast that establishes the kind/schema
  * pairing lives in `recognize`, right after the `Value.Check` that proves it.
  */
-export type Recognized = { [K in Kind]: { kind: K; schema: SchemaOf<K> } }[Kind];
+type Recognized = { [K in Kind]: { kind: K; schema: SchemaOf<K> } }[Kind];
 
 /**
  * One validated, compiled field of kind `K`: the frontmatter key it models, its

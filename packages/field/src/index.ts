@@ -20,7 +20,5 @@ export {
 	KINDS,
 	META_BY_KIND,
 	recognize,
-	type Recognized,
-	type SchemaOf,
 	storageOf,
 } from './field';

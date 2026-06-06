@@ -64,9 +64,6 @@ function createVault(path: string) {
 	// Set when the LAST save could not reach disk. A save never mutates the store
 	// (that is the watcher's job); this is the only state a write touches.
 	let writeError = $state<string | undefined>(undefined);
-	// Set when the LAST matter.sqlite reconcile failed. The index is a derived read
-	// surface, so a failure never blocks the grid; it is surfaced for diagnostics.
-	let indexError = $state<string | undefined>(undefined);
 	// Memoized: Schema.Compile runs only when matter.json changes, not on every
 	// .md change. A single-file change reclassifies against these cached columns.
 	const loaded = $derived(loadModel(modelText));
@@ -124,10 +121,10 @@ function createVault(path: string) {
 	 * DROP + CREATE + INSERT, so the file is a pure function of the folder (self-healing,
 	 * no incremental drift to debug, no stale row an agent could read). The SvelteMap
 	 * stays the live in-app surface; this file is the EXTERNAL one. An unmodeled folder
-	 * has no typed table, so it is skipped. Fire-and-forget: a failure surfaces in
-	 * `indexError` (cleared only on success, so it reflects the last completed rebuild)
-	 * and never blocks the grid. The JS projector builds all the SQL; the Rust
-	 * `write_index` command only executes it and binds the rows.
+	 * has no typed table, so it is skipped. Fire-and-forget: a failure never blocks the
+	 * grid and self-heals on the next batch (the rebuild is a full DROP + CREATE + INSERT),
+	 * so a transient error needs no surfacing. The JS projector builds all the SQL; the
+	 * Rust `write_index` command only executes it and binds the rows.
 	 *
 	 * A full rebuild (not an incremental sync) is deliberate: benchmarks keep it well
 	 * under a frame to ~50k rows, it runs off the UI task (scheduled with setTimeout from
@@ -142,13 +139,7 @@ function createVault(path: string) {
 			view.model,
 			view.conformance,
 		);
-		void invoke('write_index', { path, schema, insert, rows: tuples })
-			.then(() => {
-				indexError = undefined;
-			})
-			.catch((cause) => {
-				indexError = extractErrorMessage(cause);
-			});
+		void invoke('write_index', { path, schema, insert, rows: tuples }).catch(() => {});
 	}
 
 	/**
@@ -269,10 +260,6 @@ function createVault(path: string) {
 		/** Set if the most recent save could not reach disk. */
 		get writeError(): string | undefined {
 			return writeError;
-		},
-		/** Set if the most recent matter.sqlite reconcile failed (diagnostic only). */
-		get indexError(): string | undefined {
-			return indexError;
 		},
 	};
 }

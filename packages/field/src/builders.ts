@@ -37,8 +37,10 @@
  */
 
 import {
+	type Static,
 	type TArray,
 	type TEnum,
+	type TSchema,
 	type TSchemaOptions,
 	type TString,
 	type TStringOptions,
@@ -46,6 +48,8 @@ import {
 	Type,
 } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
+import type { JsonValue } from 'wellcrafted/json';
+import { JSON_SCHEMA_KEYWORD } from './field';
 import type { DateTimeString } from './datetime-string';
 
 type BrandedString = string & Brand<string>;
@@ -140,10 +144,37 @@ const multiSelect = <const T extends readonly string[]>(
 const tags = (opts?: TSchemaOptions) => Type.Array(Type.String(), opts);
 
 /**
- * The `field.*` namespace: the one blessed way to construct a schema in the
- * recognized vocabulary. Each builder emits the wire-form its kind's meta reads,
- * so `recognize` is its inverse. Substrate-only wrappers (`nullable`, `json`,
- * `ianaTimeZone`) are NOT here; the workspace adds them in `column.*`.
+ * Arbitrary JSON payload, stored as TEXT, recognized as kind `json`.
+ *
+ * - `field.json()` -> `Static<> = JsonValue`, accepts any JSON value.
+ * - `field.json(inner)` -> `Static<> = Static<inner>`, validates the payload against
+ *   `inner` on read.
+ *
+ * The wire-form SPREADS the payload's own JSON Schema keywords (so `Value.Check` and
+ * `Schema.Compile` enforce them) and adds the {@link JSON_SCHEMA_KEYWORD} marker, so
+ * `recognize` classifies it as `json` instead of the bare object/array it would otherwise
+ * look like (which would degrade to raw). `Type.Unsafe` decouples the inferred `Static<>`
+ * from that marker-bearing wire-form.
+ *
+ * No JSON-safety gate lives here (that would pull the workspace's `ColumnError` into the
+ * leaf): a non-JSON inner (e.g. `Type.Date`) flows through as `TUnsafe<Date>` and is caught
+ * by `FlatJsonTSchema` at the `defineTable` boundary, where column safety belongs.
+ */
+function json(): TUnsafe<JsonValue>;
+function json<S extends TSchema>(inner: S): TUnsafe<Static<S>>;
+function json(inner?: TSchema): TUnsafe<unknown> {
+	return Type.Unsafe(
+		inner
+			? { ...inner, [JSON_SCHEMA_KEYWORD]: true }
+			: { [JSON_SCHEMA_KEYWORD]: true },
+	);
+}
+
+/**
+ * The `field.*` namespace: the one blessed way to construct a schema in the recognized
+ * vocabulary. Each builder emits the wire-form its kind's meta reads, so `recognize` is
+ * its inverse. `json` is the arbitrary-JSON escape kind (marker-discriminated). The
+ * emptiness AXIS (`nullable`) is NOT a kind and lives in the workspace, not here.
  */
 export const field = {
 	string,
@@ -155,4 +186,5 @@ export const field = {
 	select,
 	multiSelect,
 	tags,
+	json,
 };

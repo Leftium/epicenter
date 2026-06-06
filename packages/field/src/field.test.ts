@@ -18,7 +18,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import type { TSchema } from 'typebox';
+import { type TSchema, Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { field } from './builders';
 import { type Kind, KINDS, META_BY_KIND, recognize } from './field';
@@ -61,6 +61,7 @@ const BUILT: Record<Kind, TSchema> = {
 	boolean: field.boolean(),
 	tags: field.tags(),
 	multiSelect: field.multiSelect(['a', 'b']),
+	json: field.json(),
 };
 
 describe('round-trip: recognize(field.X(...)) is kind X', () => {
@@ -105,11 +106,12 @@ describe('round-trip: the native enum wire-form', () => {
 // ============================================================================
 
 describe('the palette catalog', () => {
-	test('exactly the nine kinds, no json', () => {
+	test('exactly the ten kinds, including json', () => {
 		const expected: Kind[] = [
 			'boolean',
 			'datetime',
 			'integer',
+			'json',
 			'multiSelect',
 			'number',
 			'select',
@@ -118,7 +120,7 @@ describe('the palette catalog', () => {
 			'url',
 		];
 		expect([...KINDS].sort()).toEqual(expected.sort());
-		expect(KINDS).not.toContain('json' as Kind);
+		expect(KINDS).toContain('json');
 	});
 });
 
@@ -137,6 +139,7 @@ const CANONICAL: Record<Kind, unknown> = {
 	boolean: { type: 'boolean' },
 	tags: { type: 'array', items: { type: 'string' } },
 	multiSelect: { type: 'array', items: { type: 'string', enum: ['a', 'b'] } },
+	json: { 'x-json-schema': true },
 };
 
 describe('recognize: every canonical schema matches exactly one meta', () => {
@@ -198,6 +201,41 @@ describe('the cross-discrimination pairs (the shapes that could collide)', () =>
 	test('an enum-item array with no item type is multiSelect', () => {
 		expect(kindOf({ type: 'array', items: { enum: ['a', 'b'] } })).toBe(
 			'multiSelect',
+		);
+	});
+});
+
+describe('json: the marker-discriminated escape kind', () => {
+	test('field.json() recognizes as json and accepts any JSON value', () => {
+		const schema = field.json();
+		expect(kindOf(atRest(schema))).toBe('json');
+		for (const v of [1, 'x', true, null, { a: 1 }, [1, 2]]) {
+			expect(Value.Check(schema, v)).toBe(true);
+		}
+	});
+
+	test('field.json(inner) recognizes as json and validates the payload on read', () => {
+		const schema = field.json(
+			Type.Object({ author: Type.String() }, { additionalProperties: false }),
+		);
+		expect(kindOf(atRest(schema))).toBe('json');
+		expect(Value.Check(schema, { author: 'Braden' })).toBe(true);
+		expect(Value.Check(schema, { author: 42 })).toBe(false); // payload validation preserved
+		expect(Value.Check(schema, 'garbage')).toBe(false);
+	});
+
+	test('a json wire-form matches exactly one meta (the open json meta)', () => {
+		expect(countMatches(atRest(field.json()))).toBe(1);
+		expect(
+			countMatches(atRest(field.json(Type.Object({ author: Type.String() })))),
+		).toBe(1);
+	});
+
+	test('the marker is what flips a bare object from raw to json', () => {
+		// same shape, no marker -> raw; with marker -> json
+		expect(kindOf({ type: 'object', properties: {} })).toBeNull();
+		expect(kindOf({ type: 'object', properties: {}, 'x-json-schema': true })).toBe(
+			'json',
 		);
 	});
 });

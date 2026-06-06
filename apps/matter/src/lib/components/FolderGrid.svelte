@@ -79,6 +79,7 @@
 		boolean: 'w-20',
 		tags: 'w-64',
 		multiSelect: 'w-64',
+		json: 'w-64',
 	} satisfies Record<Kind, string>;
 
 	// Numerics right-align so digits line up down the column edge; booleans center

@@ -39,12 +39,18 @@
  *                   The day a real schema carries one and degrades is the signal to
  *                   add it here, not before.
  *
- * There is NO `nullable` / optional axis and NO `json` kind. Optionality is not part
- * of the vocabulary: a substrate that wants emptiness layers a nullable wrapper on
- * top (the workspace's `column.nullable`), so a nullable `anyOf`-with-null shape
- * matches no meta here. `json` is the rejection lane, not a member of `Kind`:
- * `recognize` returns null. Both are SUBSTRATE POLICY, applied at each substrate's
- * own edge, not baked into the closed vocabulary.
+ * There is NO `nullable` / optional axis: optionality is not part of the vocabulary, so
+ * a substrate that wants emptiness layers a nullable wrapper on top (the workspace's
+ * `nullable`), and a nullable `anyOf`-with-null shape matches no meta here. Emptiness
+ * stays SUBSTRATE POLICY, applied at each substrate's own edge.
+ *
+ * `json` IS a kind: an arbitrary-JSON payload cell. It is the one OPEN meta, discriminated
+ * by an `x-json-schema` MARKER rather than by a `type` (see {@link JSON_SCHEMA_KEYWORD}).
+ * `field.json(inner)` spreads the payload's own JSON Schema keywords (so a value still
+ * validates) and adds the marker (so `recognize` classifies it as `json`); `field.json()`
+ * carries only the marker and accepts any JSON. The rejection lane is now `null`: a typo,
+ * a bare object, or a nullable wrapper carries no marker and matches no meta, so it degrades
+ * to raw.
  *
  * Everything public is DERIVED from the one `FIELDS` object below: `Kind`,
  * `recognize`, `storageOf`, `KINDS`, `META_BY_KIND`. Adding a kind is one entry here,
@@ -65,6 +71,16 @@ import { Value } from 'typebox/value';
 
 /** Reject any property the meta does not explicitly name. The source of mutual exclusivity. */
 const CLOSED = { additionalProperties: false } as const;
+
+/**
+ * The `json` kind's discriminator: a marker keyword whose PRESENCE (not value) signals an
+ * arbitrary-JSON payload cell. It is a non-standard keyword, so `Value.Check` and
+ * `Schema.Compile` ignore it, which is the whole trick: `field.json(inner)` spreads the
+ * payload's OWN keywords (which DO validate) alongside this marker (which is invisible to
+ * validation but visible to `recognize`). The closed scalar metas forbid it via
+ * `additionalProperties:false`, so a marker can only ever land on the `json` kind.
+ */
+export const JSON_SCHEMA_KEYWORD = 'x-json-schema';
 
 /**
  * Bucket 3: ANNOTATIONS. Inert standard metadata, whitelisted into EVERY closed meta
@@ -204,9 +220,17 @@ const FIELDS = {
 			CLOSED,
 		),
 	},
+	// The one OPEN meta: a json schema carries the payload's OWN keywords (spread by
+	// field.json), so it cannot be closed. Recognition keys off the marker's PRESENCE
+	// (see JSON_SCHEMA_KEYWORD); the closed scalar metas forbid the marker, so json stays
+	// mutually exclusive with every other kind regardless of what the payload looks like.
+	json: {
+		storage: 'TEXT',
+		meta: Type.Object({ [JSON_SCHEMA_KEYWORD]: Type.Unknown() }),
+	},
 } as const;
 
-/** The closed set of field kinds, DERIVED from the palette keys. `json` is not a member. */
+/** The set of field kinds, DERIVED from the palette keys. Includes `json` (the open meta). */
 export type Kind = keyof typeof FIELDS;
 
 /** The SQLite storage classes a kind can map to. */

@@ -9,14 +9,16 @@
  * missing kind is caught at the map literal, not at a render fallthrough. `number`
  * and `integer` share `NumericField`; `multiSelect` and `tags` are both string lists
  * but FORK their editors (a closed-enum combobox vs free chip entry), so each has its
- * own widget. There is no `json` entry: a shape outside the palette is not a kind (it
- * is the rejection lane), so `Kind` is exactly the renderable set.
+ * own widget. `json` is the arbitrary-JSON kind (a JSON-text editor); the rejection
+ * lane is now a recognize `null` (an unmarked shape outside the palette), not a missing
+ * widget, so `Kind` is exactly the renderable set.
  */
 
 import type { Component } from 'svelte';
 import type { FieldOf, Kind } from '@epicenter/field';
 import BooleanField from './BooleanField.svelte';
 import DateTimeField from './DateTimeField.svelte';
+import JsonField from './JsonField.svelte';
 import MultiSelectField from './MultiSelectField.svelte';
 import NumericField from './NumericField.svelte';
 import SelectField from './SelectField.svelte';
@@ -34,8 +36,8 @@ export type FieldComponent = Component<FieldProps>;
  * a kind's widget must accept that kind's narrowed cell (so `SelectField` provably reads
  * a `select` schema), and adding a kind without its widget fails to compile. `number`
  * and `integer` share `NumericField`; `multiSelect` and `tags` fork (a closed-enum
- * combobox vs free chip entry), so each has its own widget. There is no `json` entry: a
- * shape outside the palette is the rejection lane, not a kind.
+ * combobox vs free chip entry), so each has its own widget. `json` is the arbitrary-JSON
+ * kind; an unmarked shape outside the palette degrades to raw (recognize `null`), not here.
  */
 const WIDGETS = {
 	string: StringField,
@@ -47,6 +49,7 @@ const WIDGETS = {
 	select: SelectField,
 	multiSelect: MultiSelectField,
 	tags: TagsField,
+	json: JsonField,
 } satisfies { [K in Kind]: Component<FieldProps<FieldOf<K>>> };
 
 /**

@@ -220,15 +220,13 @@ Migrated all 42 remaining shadcn-core components (migrate + adversarial review p
 
 ## Deferred Cosmetic Ledger
 
-Each item degrades gracefully (slightly different look, not broken). Restore in the polish pass.
+Consolidation pass (commit `1ac35f433`) moved utility overrides into the overlay; the rest stay inline by necessity.
 
-- [ ] **z-40 layering** (`dialog-content:33`, `dialog-overlay:18`, `drawer-content:33`, `drawer-overlay:17`): regular dialogs/drawers at z-40 so alert-dialogs (z-50) win. Project-wide policy; restore as a coordinated overlay block.
-- [ ] **Solid destructive**: decide whether to keep Vega's tinted destructive or restore Epicenter's solid red. If restore: override `.cn-button-variant-destructive` in overlay.
-- [ ] **Select `max-w-min`** (`select-content:29`): prevent dropdown widening past trigger.
-- [ ] **Resizable `gap-2`** (`resizable-pane-group:20`): visual separation between panes.
-- [ ] **Drawer scrollable wrapper** (`drawer-content:41`): structural, re-apply when migrating drawer.
-- [ ] **Dialog tall-content scroll** (`dialog-content:31`): `overflow-y-auto max-h-[calc(100vh-2rem)]`.
-- [ ] **Item truncation** (`item-content:19`, `item-title:20`, `item:5`): `min-w-0` / `relative` overrides.
+- [x] **Consolidated into overlay** (components now byte-identical to upstream): table-row hover (also FIXED the double-hover regression), select `max-w-min`, resizable `gap-2`, item `min-w-0` (content + title), item-description `text-balance`, item-separator `my-0`.
+- [x] **z-40 layering** (dialog/drawer content+overlay): **stays inline, resolved not deferred.** Vega keeps z-index inline (not in the cn-* class), so a base-layer `@apply` in the overlay cannot beat a utilities-layer inline `z-50`. Inline override is the correct place.
+- [x] **Structural overrides stay in components** (markup, not CSS): drawer scroll wrapper (`drawer-content:39`), item actions overlay, badge `<svelte:element>`, item-media icon, item base `relative` + `[a]:hover:bg-accent/50` (kept inline; ambiguous arbitrary-variant selector, working).
+- [ ] **Solid destructive**: still open. Decide whether to keep Vega's tinted destructive or restore Epicenter's solid red (override `.cn-button-variant-destructive` in overlay).
+- [ ] **Dialog tall-content scroll** (`dialog-content:31`): `overflow-y-auto max-h-[calc(100vh-2rem)]` kept inline alongside its z-40 (additive; left with the z-40 it is grouped with).
 - [ ] **drawer `onOpenAutoFocus` workaround** (`drawer-content:24`): remove once vaul-svelte ships bits-ui 2.x compat (verify).
 
 ### No-op forward-compat hooks (resolve on next style-vega.css pull)

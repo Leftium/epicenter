@@ -5,22 +5,24 @@
  * so the vault is not a one-shot read: a single `watch_folder` command arms a
  * native folder watcher (backed by `notify`), pushes the folder's current
  * contents as a first batch, then streams a batch per debounced change. Each
- * pushed delta is self-contained ({@link FileDelta}: a name plus the file's
+ * pushed delta is self-contained ({@link FileDelta}: a file name plus the file's
  * observable state), so the JS never round-trips a separate read. External
  * updates, the seed scan, AND the app's own successful writes all flow through
  * ONE path (`applyDeltas`) into ONE `SvelteMap`.
  *
- * Lifecycle is explicit: `watch()` starts the OS watcher and returns a stop
- * function, and the page drives it with `$effect(() => vault.watch())` so
- * switching folders stops the old watcher. The getters (`read` / `status` /
- * `error`) are pure, so reading them never starts anything.
+ * Lifecycle: opening a vault IS observing it, so the watcher starts at
+ * construction. `whenReady` resolves once it is armed (the seed scan has run, so
+ * the store holds the folder's current contents) and rejects if it cannot be, which
+ * the UI gates on with `{#await}`. `dispose()` stops the OS watch. The `vaultSession`
+ * singleton owns the one open vault and disposes the previous when you switch
+ * folders, so no component drives the watcher with an effect.
  *
  * Desktop-only: it talks to Tauri directly (no platform seam). Develop with
  * `bun run tauri dev`.
  */
 
 import { invoke, Channel } from '@tauri-apps/api/core';
-import { open } from '@tauri-apps/plugin-dialog';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { SvelteMap } from 'svelte/reactivity';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, type Result, tryAsync } from 'wellcrafted/result';
@@ -56,11 +58,6 @@ function createVault(path: string) {
 	// two maps.
 	const files = new SvelteMap<string, Result<Row, UnreadableFile['error']>>();
 	let modelText = $state<string | undefined>(undefined);
-	// 'loading' until the watch is established. The seed scan finishes before
-	// `watch_folder` resolves, so its resolution (not the first batch) flips this,
-	// which means an EMPTY folder still reaches 'ready' instead of hanging.
-	let status = $state<'loading' | 'ready'>('loading');
-	let error = $state<string | undefined>(undefined);
 	// Set when the LAST save could not reach disk. A save never mutates the store
 	// (that is the watcher's job); this is the only state a write touches.
 	let writeError = $state<string | undefined>(undefined);
@@ -236,53 +233,39 @@ function createVault(path: string) {
 		});
 	}
 
-	/**
-	 * Start watching the folder; returns a stop function. The page owns the
-	 * lifecycle via `$effect(() => vault.watch())`, so switching folders unwatches
-	 * the old folder automatically.
-	 */
-	function watch(): () => void {
-		const channel = new Channel<FileDelta[]>();
-		let watchId: number | undefined;
-		let stopped = false;
-		channel.onmessage = applyDeltas;
-		invoke<number>('watch_folder', { path, channel })
-			.then((id) => {
-				// The seed scan ran before this resolved, so the watch is established
-				// (even for an empty folder): mark ready.
-				status = 'ready';
-				// Stopped before the id arrived: drop the watcher that just resolved.
-				if (stopped) void invoke('unwatch_folder', { id });
-				else watchId = id;
-			})
-			.catch((cause) => {
-				error = cause instanceof Error ? cause.message : String(cause);
-				status = 'ready';
-			});
-		return () => {
-			stopped = true;
-			if (watchId !== undefined) void invoke('unwatch_folder', { id: watchId });
-		};
+	// Opening a vault IS observing it: arm the OS watcher now. `watch_folder` seeds the store
+	// with the folder's current contents, then streams a batch per change, all through
+	// `applyDeltas`. `whenReady` resolves once the watch is armed (the seed scan finishes
+	// before `watch_folder` resolves, so even an empty folder resolves rather than hanging)
+	// and rejects if it cannot be armed; the UI gates on it with `{#await}`.
+	const channel = new Channel<FileDelta[]>();
+	channel.onmessage = applyDeltas;
+	let watchId: number | undefined;
+	let disposed = false;
+	const whenReady = invoke<number>('watch_folder', { path, channel }).then((id) => {
+		// Disposed before the id arrived: drop the watcher that just resolved.
+		if (disposed) void invoke('unwatch_folder', { id });
+		else watchId = id;
+	});
+	/** Stop the OS watch. The session calls this when it swaps to another folder. */
+	function dispose(): void {
+		disposed = true;
+		if (watchId !== undefined) void invoke('unwatch_folder', { id: watchId });
 	}
 
 	return {
 		folderName,
 		path,
-		watch,
 		saveField,
 		saveBody,
 		matchingFileNames,
+		dispose,
+		/** Resolves once the OS watcher is armed (the folder is being observed), with the
+		 *  seed contents already applied; rejects if it could not be armed. */
+		whenReady,
 		/** The current classified folder. A pure read with no side effects. */
 		get read(): FolderRead {
 			return read;
-		},
-		/** Whether the watch has been established (or failed). */
-		get status(): 'loading' | 'ready' {
-			return status;
-		},
-		/** Set if the watch could not be established. */
-		get error(): string | undefined {
-			return error;
 		},
 		/** Set if the most recent save could not reach disk. */
 		get writeError(): string | undefined {
@@ -299,18 +282,69 @@ export type Vault = ReturnType<typeof createVault>;
  * `FolderGrid` depends on, NOT the full vault, so anything that can produce a
  * classified folder and accept edits can drive the grid. The live vault satisfies
  * it for free (it is a `Pick` of it); the demo vault satisfies it WITHOUT faking
- * the disk lifecycle (`watch` / `status` / `path`), so the demo is an honest
+ * the disk lifecycle (`whenReady` / `dispose` / `path`), so the demo is an honest
  * drop-in rather than a vault pretending to watch a folder.
  */
 export type FolderGridVault = Pick<Vault, 'folderName' | 'read' | 'saveField' | 'saveBody'>;
 
-/** Prompt for a folder and open it as a live {@link Vault}. `null` if cancelled. */
-export async function openVault(): Promise<Vault | null> {
-	const path = await open({
+/** Prompt for a folder; `null` if the dialog was cancelled. */
+async function openFolderDialog(): Promise<string | null> {
+	const path = await openDialog({
 		directory: true,
 		multiple: false,
 		title: 'Open vault folder',
 	});
 	if (path === null || Array.isArray(path)) return null;
-	return createVault(path);
+	return path;
 }
+
+/**
+ * The one open folder. A module singleton because the desktop app shows a single vault at a
+ * time, swapped by "Open folder". It owns the open flow (dialog then {@link createVault}) and
+ * the open vault's lifetime, disposing the previous watcher when you switch, so the page just
+ * reads `current` and renders. The `/demo` route does NOT use this (it builds its own
+ * in-memory vault), which is why {@link FolderGridVault} consumers stay vault-agnostic.
+ */
+function createVaultSession() {
+	let current = $state<Vault>();
+	let opening = $state(false);
+	let openError = $state<string | undefined>(undefined);
+
+	/**
+	 * Prompt for a folder and open it, disposing the previously open one. A cancelled dialog
+	 * is a no-op; a failure surfaces in `openError`.
+	 */
+	async function open(): Promise<void> {
+		opening = true;
+		openError = undefined;
+		try {
+			const path = await openFolderDialog();
+			if (path !== null) {
+				current?.dispose();
+				current = createVault(path);
+			}
+		} catch (cause) {
+			openError = extractErrorMessage(cause);
+		} finally {
+			opening = false;
+		}
+	}
+
+	return {
+		/** The open vault, or `undefined` before the first folder is opened. */
+		get current(): Vault | undefined {
+			return current;
+		},
+		/** True while the folder dialog and open are in flight. */
+		get opening(): boolean {
+			return opening;
+		},
+		/** Set if opening the folder failed (a cancel is not a failure). */
+		get openError(): string | undefined {
+			return openError;
+		},
+		open,
+	};
+}
+
+export const vaultSession = createVaultSession();

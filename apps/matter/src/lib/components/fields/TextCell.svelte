@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createCellEdit, type CellEditParse } from './create-cell-edit.svelte';
 	import FieldEmpty from './FieldEmpty.svelte';
-	import type { ClearField, RenderableCell, SaveField } from './field-props';
+	import type { RenderableCell, SaveField } from './field-props';
 
 	// The shared shell for the plain-text cell kinds (string, numeric, datetime):
 	// click to open one text input, commit on blur/Enter, revert on Escape, with the
@@ -14,7 +14,6 @@
 	let {
 		cell,
 		save,
-		clear,
 		parse,
 		inputClass = '',
 		displayClass = '',
@@ -22,7 +21,6 @@
 	}: {
 		cell: RenderableCell;
 		save: SaveField;
-		clear: ClearField;
 		/** Interpret the draft on commit (the one thing the text kinds differ on). */
 		parse: (draft: string) => CellEditParse;
 		/** Extra class for the open input (e.g. tabular digits). */
@@ -32,14 +30,12 @@
 		inputmode?: 'decimal';
 	} = $props();
 
-	// `cell`/`save`/`clear`/`parse` are read through closures so the edit captures
-	// the current prop, not its initial value (the same getter contract
-	// createCellEdit already requires for `cell`).
+	// `cell`/`save`/`parse` are read through closures so the edit captures the
+	// current prop, not its initial value (the same getter contract createCellEdit
+	// already requires for `cell`).
 	const edit = createCellEdit({
 		current: () => (cell.state === 'OK' ? cell.value : undefined),
 		save: (value) => save(value),
-		clear: () => clear(),
-		display: (value) => (value == null ? '' : String(value)),
 		parse: (draft) => parse(draft),
 	});
 </script>
@@ -51,7 +47,10 @@
 		bind:value={edit.draft}
 		onblur={edit.commit}
 		onkeydown={edit.onKeydown}
-		class="w-full rounded border bg-background px-1 py-0.5 text-sm [text-align:inherit] focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring {inputClass}"
+		class={[
+			'w-full rounded border bg-background px-1 py-0.5 text-sm [text-align:inherit] focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+			inputClass,
+		]}
 	/>
 {:else}
 	<!-- The display reads its alignment from the cell (numerics right-align there),
@@ -59,7 +58,10 @@
 	<button
 		type="button"
 		onclick={edit.start}
-		class="block w-full cursor-text rounded-sm px-1 py-0.5 [text-align:inherit] hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring {displayClass}"
+		class={[
+			'block w-full cursor-text rounded-sm px-1 py-0.5 [text-align:inherit] hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+			displayClass,
+		]}
 	>
 		{#if cell.state === 'NEEDS_VALUE'}
 			<FieldEmpty />

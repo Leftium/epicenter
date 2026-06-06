@@ -11,8 +11,9 @@
 	// The committed value is a real boolean primitive, never a string or 0/1: the
 	// `{type:'boolean'}` schema validates only JS booleans, so anything else would
 	// flip the cell to INVALID (and route to the repair editor). bits-ui hands
-	// onCheckedChange a boolean, so the save is direct. No clear: every modeled field
-	// is required, so "unset" is not a settable target, only an unfilled one.
+	// onCheckedChange a boolean, so the save is direct. Toggling only ever moves
+	// between true and false; emptying the cell back to NEEDS_VALUE is the shared
+	// cell chrome (the same control every kind gets), not a gesture on the checkbox.
 	let { cell, save }: FieldProps = $props();
 
 	// Read the classifier's verdict, not a re-derived nullish check: conformance

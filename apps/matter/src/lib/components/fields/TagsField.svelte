@@ -7,9 +7,10 @@
 	// Free string chips: `tags` has NO option set (that is `multiSelect`), so this is
 	// direct entry, not a combobox. Type + Enter appends; the X on a chip or Backspace on
 	// an empty input removes. No schema read (there is nothing to enumerate), so it takes
-	// the base `FieldProps`. Emptying the list CLEARS the key (NEEDS_VALUE is the palette's
-	// only empty state, the same contract StringField follows for empty text), never `[]`.
-	let { cell, save, clear }: FieldProps = $props();
+	// the base `FieldProps`. Removing the last chip commits `[]`, a present but empty
+	// value (the same way an empty string is a present value), not a clear: deleting the
+	// key is the cell's chrome.
+	let { cell, save }: FieldProps = $props();
 
 	let draft = $state('');
 
@@ -29,9 +30,7 @@
 	}
 
 	function remove(tag: string) {
-		const next = values.filter((value) => value !== tag);
-		if (next.length === 0) clear();
-		else save(next);
+		save(values.filter((value) => value !== tag));
 	}
 
 	function onKeydown(event: KeyboardEvent) {

@@ -3,15 +3,15 @@
 	import FieldEmpty from './FieldEmpty.svelte';
 	import type { FieldProps } from './field-props';
 
-	let { cell, save, clear }: FieldProps = $props();
+	// An empty draft reverts: an empty string is not a valid uri, and clearing the
+	// key is the cell's chrome, not an emptied input here.
+	let { cell, save }: FieldProps = $props();
 
 	const edit = createCellEdit({
 		current: () => (cell.state === 'OK' ? cell.value : undefined),
 		save: (value) => save(value),
-		clear: () => clear(),
-		display: (value) => (value == null ? '' : String(value)),
 		parse: (text) =>
-			text.trim() === '' ? { type: 'clear' } : { type: 'value', value: text },
+			text.trim() === '' ? { type: 'cancel' } : { type: 'value', value: text },
 	});
 </script>
 

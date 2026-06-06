@@ -4,7 +4,6 @@
 	import * as Command from '@epicenter/ui/command';
 	import { useCombobox } from '@epicenter/ui/hooks';
 	import * as Popover from '@epicenter/ui/popover';
-	import { cn } from '@epicenter/ui/utils';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
 	import type { FieldOf } from '@epicenter/field';
@@ -22,7 +21,7 @@
 	// "reads its schema" signal SelectField carries. The picker stays open across toggles
 	// (no `closeAndFocusTrigger`), which is the one behavioral difference from the
 	// single-value combobox.
-	let { cell, save, clear }: FieldProps<FieldOf<'multiSelect'>> = $props();
+	let { cell, save }: FieldProps<FieldOf<'multiSelect'>> = $props();
 
 	const combobox = useCombobox();
 
@@ -42,14 +41,14 @@
 
 	// Toggle by recomputing from option order: keep an option if it is the toggled one and
 	// was NOT selected (add it), or another option that WAS selected. So the committed
-	// array stays in the field's declared option order and is deduped. Emptying the set
-	// CLEARS the key (NEEDS_VALUE is the palette's only empty state) rather than writing
-	// `[]`, which also sidesteps a `minItems:1` schema flipping the cell to INVALID.
+	// array stays in the field's declared option order and is deduped. Deselecting the
+	// last option commits `[]`, a present but empty value (the same way an empty string
+	// is a present value), not a clear: deleting the key is the cell's chrome. A
+	// `minItems:1` schema rejects `[]` as INVALID, the same as any other failing value.
 	function toggle(option: Option) {
 		const added = !has(option);
 		const next = options.filter((o) => (Object.is(o, option) ? added : has(o)));
-		if (next.length === 0) clear();
-		else save(next);
+		save(next);
 	}
 </script>
 
@@ -93,10 +92,10 @@
 				{#each options as option (String(option))}
 					<Command.Item value={String(option)} onSelect={() => toggle(option)}>
 						<CheckIcon
-							class={cn(
+							class={[
 								'size-4 shrink-0',
 								has(option) ? 'opacity-100' : 'opacity-0',
-							)}
+							]}
 						/>
 						<span class="truncate">{String(option)}</span>
 					</Command.Item>

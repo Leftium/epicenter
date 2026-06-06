@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { InvalidCell } from '$lib/core/conformance';
 	import { createCellEdit } from './fields/create-cell-edit.svelte';
-	import type { ClearField, SaveField } from './fields/field-props';
+	import type { SaveField } from './fields/field-props';
 
 	// The universal repair editor for an INVALID cell, chosen by ModeledCell before
 	// any per-kind Field. Edit the JSON-serialized value and re-parse on commit:
@@ -10,20 +10,19 @@
 	// shape. Parsing GATES the save (a syntax error is held, never written); the
 	// model never gates a write, so a still-invalid-but-parseable value saves and
 	// stays INVALID. The row reclassifies through the watcher, so a now-valid value
-	// snaps back to its typed Field on its own.
-	let { cell, save, clear }: {
+	// snaps back to its typed Field on its own. An empty draft reverts; deleting the
+	// key is the cell's chrome, the same control every kind gets.
+	let { cell, save }: {
 		cell: InvalidCell;
 		save: SaveField;
-		clear: ClearField;
 	} = $props();
 
 	const edit = createCellEdit({
 		current: () => cell.raw,
 		save: (value) => save(value),
-		clear: () => clear(),
 		display: (value) => JSON.stringify(value) ?? '',
 		parse: (text) => {
-			if (text.trim() === '') return { type: 'clear' };
+			if (text.trim() === '') return { type: 'cancel' };
 			try {
 				return { type: 'value', value: JSON.parse(text) };
 			} catch {
@@ -39,9 +38,12 @@
 		bind:value={edit.draft}
 		onblur={edit.commit}
 		onkeydown={edit.onKeydown}
-		class="w-full rounded border bg-background px-1 py-0.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset {edit.parseError
-			? 'border-destructive focus-visible:ring-destructive'
-			: 'focus-visible:border-ring focus-visible:ring-ring'}"
+		class={[
+			'w-full rounded border bg-background px-1 py-0.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset',
+			edit.parseError
+				? 'border-destructive focus-visible:ring-destructive'
+				: 'focus-visible:border-ring focus-visible:ring-ring',
+		]}
 	/>
 	{#if edit.parseError}
 		<span class="mt-0.5 block text-xs text-destructive">{edit.parseError}</span>

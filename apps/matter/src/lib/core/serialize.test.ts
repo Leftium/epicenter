@@ -70,6 +70,14 @@ describe('edit cycle (parse -> edit -> serialize -> parse)', () => {
 		expect(parseMarkdown(out).data?.frontmatter).toEqual({ title: 'Hello' });
 	});
 
+	// The string widget commits `""` (a present, valid value) and clears via separate
+	// chrome: only `undefined` deletes the key, so `""` must survive as a real value.
+	test('the empty string is a saved value, NOT a clear', () => {
+		const raw = '---\ntitle: Hello\n---\nbody';
+		const out = editField(raw, 'title', '');
+		expect(parseMarkdown(out).data?.frontmatter).toEqual({ title: '' });
+	});
+
 	test('clearing the last field drops the fence to body-only', () => {
 		expect(editField('---\ntitle: Hello\n---\n# Body\ntext', 'title', undefined)).toBe(
 			'# Body\ntext',

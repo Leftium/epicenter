@@ -65,8 +65,8 @@ import type { TableDefinition, TableDefinitions } from './table';
  * | `integer` / literal-int      | `integer(name)`                                  |
  * | `number`                     | `real(name)`                                     |
  * | `boolean`                    | `integer(name, { mode: 'boolean' })`             |
- * | native enum / string literals| `text(name, { enum: [...] }).$type<Static<S>>()` |
- * | `object` / `array` / json    | `text(name, { mode: 'json' }).$type<Static<S>>()`|
+ * | native enum (`column.enum`)  | `text(name, { enum: [...] }).$type<Static<S>>()` |
+ * | `object` / `array` / union   | `text(name, { mode: 'json' }).$type<Static<S>>()`|
  * | `column.nullable(inner)`     | inner column, `.notNull()` dropped               |
  *
  * Required columns chain `.notNull()`. The runtime walker hands back wide
@@ -220,33 +220,23 @@ type ApplyNotNull<
  * {@link DrizzleColumnFor}; the `id` primary-key short-circuit also happens
  * outside this lookup.
  *
- * A native `enum` (`column.enum` = `field.select` = `Type.Enum`) is handled
- * first: `{ enum: [...] }` carries the member tuple on the type, so it maps to
- * `text({ enum })` with `Static<S>` (the literal union) brand and no
- * value-to-tuple conversion.
+ * A closed scalar choice is one shape only: the native `enum`
+ * (`column.enum` = `field.select` = `Type.Enum`). `{ enum: [...] }` carries the
+ * member tuple on the type, so it maps to `text({ enum })` with `Static<S>` (the
+ * literal union) brand and no value-to-tuple conversion.
  *
- * `anyOf` is then handled in two flavors:
- * - all string-literal branches → `text({ enum })` with `Static<S>` brand
- * - mixed branches → `text({ mode: 'json' })` with `Static<S>` as the JSON type
- *
- * Scalars dispatch through {@link ScalarKind} → {@link ScalarKindMap}: a
- * lookup table keeps each branch one line and makes adding new shapes a
- * single-entry change.
+ * Everything else dispatches through {@link ScalarKind} → {@link ScalarKindMap}.
+ * A non-null `anyOf` (a generic JSON union) falls through to `ScalarKind`'s
+ * `'json'` default, so it stores as JSON text; `anyOf` here only ever means a
+ * generic union (the nullable `[inner, null]` wrapper is peeled earlier, in
+ * {@link DrizzleColumnFor}). A hand-rolled `Type.Union([Literal, Literal])` is
+ * NOT a Drizzle enum: closed scalar sets are authored as `column.enum`.
  */
 type BaseColumnFor<Name extends string, S extends TSchema> = S extends {
 	enum: infer V extends [string, ...string[]];
 }
 	? $Type<SQLiteTextBuilderInitial<Name, V, undefined>, Static<S>>
-	: S extends { anyOf: infer A }
-		? A extends readonly TSchema[]
-			? AllStringConstBranches<A> extends true
-				? $Type<
-						SQLiteTextBuilderInitial<Name, AnyOfStringConsts<A>, undefined>,
-						Static<S>
-					>
-				: $Type<SQLiteTextJsonBuilderInitial<Name>, Static<S>>
-			: never
-		: ScalarKindMap<Name, S>[ScalarKind<S>];
+	: ScalarKindMap<Name, S>[ScalarKind<S>];
 
 /**
  * String-tag of a scalar TypeBox schema, used to drive {@link ScalarKindMap}.
@@ -283,7 +273,7 @@ type ScalarKindMap<Name extends string, S extends TSchema> = {
 	json: $Type<SQLiteTextJsonBuilderInitial<Name>, Static<S>>;
 };
 
-// ─── anyOf helpers ──────────────────────────────────────────────────────────
+// ─── nullable-union helpers ──────────────────────────────────────────────────
 
 /**
  * True when `S`'s `anyOf` array contains a `Type.Null()` branch. Used to
@@ -309,30 +299,6 @@ type NonNullBranch<S extends TSchema> = S extends { anyOf: infer A }
 			: never
 		: never
 	: never;
-
-/**
- * True when every branch of an `anyOf` is `{ const: string }` (the shape
- * `column.enum(['a', 'b'])` produces). Drives the `text({ enum })` choice
- * in {@link BaseColumnFor}.
- */
-type AllStringConstBranches<A extends readonly TSchema[]> = A[number] extends {
-	const: string;
-}
-	? true
-	: false;
-
-/**
- * Pull the literal string values out of an `anyOf` array, preserving order
- * as a `[string, ...string[]]` tuple. Feeds Drizzle's `enum` option so the
- * column's TS type narrows to the literal union (e.g. `'low' | 'high'`).
- */
-type AnyOfStringConsts<A extends readonly TSchema[]> = {
-	[I in keyof A]: A[I] extends { const: infer C extends string } ? C : never;
-} extends infer R
-	? R extends [string, ...string[]]
-		? R
-		: [string, ...string[]]
-	: [string, ...string[]];
 
 // ════════════════════════════════════════════════════════════════════════════
 // RUNTIME WALKER
@@ -389,14 +355,16 @@ function buildColumn(
 }
 
 /**
- * Resolve a `Type.Union(...)` shape:
+ * Resolve a `Type.Union(...)` shape, which here is either a nullable wrapper or
+ * a generic JSON union:
  *
- * - `[..., Null]` (one non-null branch + null): recurse on the inner branch
- *   with `required = false`. The column admits null, so we never chain
- *   `.notNull()`.
- * - all string-literal branches (no null): `text({ enum })` so `enumValues`
- *   carries through to query inference.
- * - anything else: `text({ mode: 'json' })` fallback; Drizzle parses on read.
+ * - `[inner, Null]` (one non-null branch + null): recurse on the inner branch
+ *   with `required = false` (this is `column.nullable(inner)`). The column
+ *   admits null, so we never chain `.notNull()`.
+ * - anything else: `text({ mode: 'json' })`; Drizzle parses on read.
+ *
+ * A closed scalar set is NOT a union here: it is `column.enum` = native
+ * `Type.Enum`, recognized as `{ enum: [...] }` in {@link buildBaseColumn}.
  */
 function buildAnyOfColumn(
 	name: string,
@@ -410,19 +378,6 @@ function buildAnyOfColumn(
 	if (hasNullBranch && nonNullBranches.length === 1) {
 		const inner = nonNullBranches[0] as TSchema;
 		return buildColumn(name, inner, false);
-	}
-
-	if (
-		!hasNullBranch &&
-		nonNullBranches.length > 0 &&
-		nonNullBranches.every((branch) => typeof branch.const === 'string')
-	) {
-		const values = nonNullBranches.map((branch) => branch.const as string) as [
-			string,
-			...string[],
-		];
-		const column = text(name, { enum: values });
-		return required ? column.notNull() : column;
 	}
 
 	const column = text(name, { mode: 'json' });

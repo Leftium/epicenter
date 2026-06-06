@@ -148,11 +148,7 @@ export { generateGuid, generateId } from './shared/id';
 // COLUMN PRIMITIVES (TypeBox-native)
 // ════════════════════════════════════════════════════════════════════════════
 
-export {
-	type ColumnError,
-	type FlatJsonTSchema,
-	nullable,
-} from './document/column/index';
+export { nullable } from './document/column/index';
 
 // ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT PRIMITIVES

@@ -4,9 +4,14 @@
  * produces validate values correctly via `Value.Check`.
  */
 
+import { recognize } from '@epicenter/field';
 import { describe, expect, test } from 'bun:test';
+import { Type } from 'typebox';
 import { Value } from 'typebox/value';
 import { column } from './index';
+
+/** The at-rest form `recognize` reads: a stored schema, with the live `~kind` tag dropped. */
+const atRest = (schema: object): unknown => JSON.parse(JSON.stringify(schema));
 
 describe('column.string', () => {
 	test('plain string validates strings', () => {
@@ -47,10 +52,42 @@ describe('column.enum', () => {
 		expect(Value.Check(status, 'archived')).toBe(false);
 	});
 
-	test('rejects empty value lists', () => {
-		expect(() => column.enum([])).toThrow(
-			'column.enum requires at least one value',
-		);
+	test('emits the native enum wire-form (column.enum is field.select)', () => {
+		expect(atRest(column.enum(['draft', 'published']))).toEqual({
+			enum: ['draft', 'published'],
+		});
+	});
+
+	test('an empty value list degrades to raw (recognize returns null)', () => {
+		expect(recognize(atRest(column.enum([])))).toBeNull();
+	});
+});
+
+describe('cross-substrate convergence: column.* authoring recognizes in matter', () => {
+	test('a column.enum column recognizes as a select field', () => {
+		const recognized = recognize(atRest(column.enum(['draft', 'published'])));
+		expect(recognized?.kind).toBe('select');
+	});
+
+	test('the portable column kinds recognize as their matter kinds', () => {
+		const cases = [
+			[column.string(), 'string'],
+			[column.url(), 'url'],
+			[column.dateTime(), 'datetime'],
+			[column.integer(), 'integer'],
+			[column.number(), 'number'],
+			[column.boolean(), 'boolean'],
+		] as const;
+		for (const [schema, kind] of cases) {
+			expect(recognize(atRest(schema))?.kind).toBe(kind);
+		}
+	});
+
+	test('substrate-only column kinds are outside the palette (degrade to raw)', () => {
+		expect(recognize(atRest(column.nullable(column.string())))).toBeNull();
+		expect(
+			recognize(atRest(column.json(Type.Object({ author: Type.String() })))),
+		).toBeNull();
 	});
 });
 

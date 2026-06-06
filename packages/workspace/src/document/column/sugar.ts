@@ -21,10 +21,10 @@
  * - `ianaTimeZone()` — a brand builder with no matter kind (`iana-time-zone`
  *   format, brand `IanaTimeZone`; registered once at module load).
  * - `literal` — `Type.Literal` pass-through for literal-valued columns.
- * - `enum([...])` — enum-of-literals as a `Type.Union<TLiteral[]>`
- *   (`anyOf`-of-`const`). This is the ONE builder whose wire-form has not yet
- *   converged onto the shared `field.select` native `enum`; that switch is the
- *   enum migration phase.
+ *
+ * `column.enum` is the workspace name for the shared `field.select` (native
+ * `Type.Enum`, `{enum:[...]}` wire-form), so a `column.enum` column `recognize`s
+ * as `select` and round-trips across substrates.
  *
  * `column` is the only builder export (the `Infer` type aside): the builders are
  * reachable solely as `column.X`, so there is one blessed way to construct a
@@ -35,8 +35,6 @@
 
 import {
 	type Static,
-	type TLiteral,
-	type TLiteralValue,
 	type TNull,
 	type TSchema,
 	type TSchemaOptions,
@@ -66,35 +64,6 @@ if (!Format.Has(IANA_TIME_ZONE_FORMAT)) {
  * position; do not declare `_v` as a column.)
  */
 const literal = Type.Literal;
-
-type EnumMembers<T extends readonly TLiteralValue[]> = [
-	TLiteral<T[number] & TLiteralValue>,
-	...TLiteral<T[number] & TLiteralValue>[],
-];
-
-/**
- * Enum-of-literals column. Produces `Type.Union<TLiteral[]>` (anyOf-of-const).
- * The SQLite materializer's `deriveCheck` emits this shape as
- * `col IN ('a', 'b')`.
- *
- * `Type.Enum` (`~kind: 'Enum'`) is rejected by `FlatJsonTSchema` in favor of
- * this shape so the CHECK generator has one shape to walk.
- *
- * This is the lone builder still on the legacy `anyOf`-of-`const` wire-form; the
- * shared `field.select` emits native `enum`. The convergence onto native `enum`
- * (and the matching `deriveCheck`/stored-schema migration) is the enum
- * migration phase; until then `column.enum` stays source-compatible.
- */
-function enum_<const T extends readonly TLiteralValue[]>(
-	values: T,
-	opts?: TSchemaOptions,
-): TUnion<EnumMembers<T>> {
-	if (values.length === 0) {
-		throw new Error('column.enum requires at least one value');
-	}
-	const members = values.map((v) => Type.Literal(v));
-	return Type.Union(members, opts) as TUnion<EnumMembers<T>>;
-}
 
 /**
  * JSON-encoded TEXT column. The TypeScript type derives from `Static<S>`, so
@@ -165,7 +134,7 @@ export const column = {
 	boolean: field.boolean,
 	dateTime: field.datetime,
 	literal,
-	enum: enum_,
+	enum: field.select,
 	json,
 	nullable,
 	ianaTimeZone,

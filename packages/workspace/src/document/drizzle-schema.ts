@@ -65,7 +65,7 @@ import type { TableDefinition, TableDefinitions } from './table';
  * | `integer` / literal-int      | `integer(name)`                                  |
  * | `number`                     | `real(name)`                                     |
  * | `boolean`                    | `integer(name, { mode: 'boolean' })`             |
- * | union of string literals     | `text(name, { enum: [...] }).$type<Static<S>>()` |
+ * | native enum / string literals| `text(name, { enum: [...] }).$type<Static<S>>()` |
  * | `object` / `array` / json    | `text(name, { mode: 'json' }).$type<Static<S>>()`|
  * | `column.nullable(inner)`     | inner column, `.notNull()` dropped               |
  *
@@ -220,7 +220,12 @@ type ApplyNotNull<
  * {@link DrizzleColumnFor}; the `id` primary-key short-circuit also happens
  * outside this lookup.
  *
- * `anyOf` is handled here in two flavors:
+ * A native `enum` (`column.enum` = `field.select` = `Type.Enum`) is handled
+ * first: `{ enum: [...] }` carries the member tuple on the type, so it maps to
+ * `text({ enum })` with `Static<S>` (the literal union) brand and no
+ * value-to-tuple conversion.
+ *
+ * `anyOf` is then handled in two flavors:
  * - all string-literal branches → `text({ enum })` with `Static<S>` brand
  * - mixed branches → `text({ mode: 'json' })` with `Static<S>` as the JSON type
  *
@@ -229,17 +234,19 @@ type ApplyNotNull<
  * single-entry change.
  */
 type BaseColumnFor<Name extends string, S extends TSchema> = S extends {
-	anyOf: infer A;
+	enum: infer V extends [string, ...string[]];
 }
-	? A extends readonly TSchema[]
-		? AllStringConstBranches<A> extends true
-			? $Type<
-					SQLiteTextBuilderInitial<Name, AnyOfStringConsts<A>, undefined>,
-					Static<S>
-				>
-			: $Type<SQLiteTextJsonBuilderInitial<Name>, Static<S>>
-		: never
-	: ScalarKindMap<Name, S>[ScalarKind<S>];
+	? $Type<SQLiteTextBuilderInitial<Name, V, undefined>, Static<S>>
+	: S extends { anyOf: infer A }
+		? A extends readonly TSchema[]
+			? AllStringConstBranches<A> extends true
+				? $Type<
+						SQLiteTextBuilderInitial<Name, AnyOfStringConsts<A>, undefined>,
+						Static<S>
+					>
+				: $Type<SQLiteTextJsonBuilderInitial<Name>, Static<S>>
+			: never
+		: ScalarKindMap<Name, S>[ScalarKind<S>];
 
 /**
  * String-tag of a scalar TypeBox schema, used to drive {@link ScalarKindMap}.
@@ -443,6 +450,11 @@ type ScalarBaseColumn =
 	| SQLiteTextJsonBuilderInitial<string>;
 
 function buildBaseColumn(name: string, shape: ColumnShape): ScalarBaseColumn {
+	if (Array.isArray(shape.enum)) {
+		// Native enum (`column.enum` = `Type.Enum`): `{ enum: [...] }`, no `type`.
+		// Map to `text({ enum })` so the members carry through to query inference.
+		return text(name, { enum: shape.enum as [string, ...string[]] });
+	}
 	if (shape.type === 'integer') return integer(name);
 	if (shape.type === 'number') return real(name);
 	if (shape.type === 'boolean') return integer(name, { mode: 'boolean' });
@@ -471,5 +483,6 @@ type TObjectShape = {
 type ColumnShape = {
 	type?: string;
 	const?: unknown;
+	enum?: unknown[];
 	anyOf?: unknown[];
 };

@@ -63,8 +63,6 @@ type RejectedRefKind = 'Ref' | 'This' | 'Cyclic';
 
 type RejectedModifierKind = 'Optional' | 'Readonly';
 
-type RejectedEnumKind = 'Enum';
-
 /**
  * Two-stage flat-JSON column constraint.
  *
@@ -89,9 +87,7 @@ export type FlatJsonTSchema<S extends TSchema> = S extends {
 							? ColumnError<`Reference type '${K & string}' requires resolution and cannot live in a CRDT row. Use a branded string id (column.string<OtherRowId>()).`>
 							: K extends RejectedModifierKind
 								? ColumnError<`Modifier '${K & string}' is not allowed at the column level. Use column.nullable(inner) for intentionally-empty values; optional keys aren't safe in CRDT rows.`>
-								: K extends RejectedEnumKind
-									? ColumnError<'Type.Enum is rejected at the column level. Use column.enum([...values]) which produces a Type.Union<TLiteral[]>; deriveCheck emits a CHECK constraint from union-of-const members.'>
-									: Static<S> extends JsonValue
-										? S
-										: ColumnError<'Column Static<> is not assignable to JsonValue. Common cause: Type.Unsafe<NonJsonValue>(...) (e.g. Type.Unsafe<Date>) or a Type.Base<Value> extension whose value type is Date / bigint / Uint8Array / undefined.'>
+								: Static<S> extends JsonValue
+									? S
+									: ColumnError<'Column Static<> is not assignable to JsonValue. Common cause: Type.Unsafe<NonJsonValue>(...) (e.g. Type.Unsafe<Date>) or a Type.Base<Value> extension whose value type is Date / bigint / Uint8Array / undefined.'>
 		: S;

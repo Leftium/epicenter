@@ -1,7 +1,7 @@
 /**
  * Dogfood the read -> classify pipeline against a real folder of markdown.
  *
- *   bun scripts/inspect.ts [folder]   (default: ./sample-vault/drafts)
+ *   bun scripts/inspect.ts [folder]   (default: ../../examples/matter/sample-vault/drafts)
  *
  * Reads the folder from disk with node fs (the headless counterpart to the Tauri
  * vault), runs `readFolder`, and prints the model fields (or raw columns when
@@ -13,7 +13,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { readFolder } from '../src/lib/core/folder';
 
-const dir = process.argv[2] ?? './sample-vault/drafts';
+const dir = process.argv[2] ?? '../../examples/matter/sample-vault/drafts';
 
 const names = (await readdir(dir)).filter((name) => name.endsWith('.md')).sort();
 const entries = await Promise.all(

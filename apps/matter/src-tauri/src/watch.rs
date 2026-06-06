@@ -95,8 +95,13 @@ pub fn watch_folder(
 ) -> Result<u32, String> {
     let dir = std::path::PathBuf::from(&path);
     let tx = channel.clone();
+    // Coalesce an external write burst (agent / git / editor) into one batch. Writes
+    // land atomically (entry.rs renames over the file), so no debounce value risks a
+    // torn read; this is purely how fast EXTERNAL edits surface. The app's own edits do
+    // not wait on this path (the write applies its own result), so 100ms favors latency
+    // over deeper coalescing without the app ever feeling it.
     let mut debouncer = new_debouncer(
-        Duration::from_millis(300),
+        Duration::from_millis(100),
         None,
         move |result: DebounceEventResult| {
             let Ok(events) = result else { return };

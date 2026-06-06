@@ -18,9 +18,10 @@
 		clear: () => void;
 		/**
 		 * Presentation mode. `grid` is the dense spreadsheet cell: scanning comes
-		 * first, so the clear affordance stays quiet and reveals on hover or keyboard
-		 * focus. `detail` is the editing row in the row dialog: editing comes first, so
-		 * the clear affordance is always shown. Defaults to the quieter `grid`.
+		 * first, so the clear affordance stays quiet (dimmed) at rest and brightens on
+		 * hover or keyboard focus. `detail` is the editing row in the row dialog:
+		 * editing comes first, so the clear affordance is shown at full strength.
+		 * Defaults to the quieter `grid`.
 		 */
 		mode?: 'grid' | 'detail';
 	} = $props();
@@ -38,14 +39,15 @@
 	// now only ever COMMIT a value in their kind's domain; clearing lives here.
 	const clearable = $derived(cell.state !== 'NEEDS_VALUE');
 
-	// Whether the eraser is always shown or hover/focus revealed. The detail dialog is
-	// an editing surface, so it always shows it. In the grid an INVALID cell shows it
-	// persistently too, because clearing is the repair path out of an out-of-domain
-	// value; an OK grid cell keeps it quiet so the table reads as a validation
-	// spreadsheet, not a wall of controls, and reveals it on hover or keyboard focus.
-	const clearAlwaysVisible = $derived(
-		mode === 'detail' || cell.state === 'INVALID',
-	);
+	// In the grid an OK cell keeps the eraser QUIET (dimmed) at rest so the table
+	// reads as a validation spreadsheet, then brightens it on hover or keyboard
+	// focus. It stays PRESENT, never opacity-hidden: an invisible button is still in
+	// the tab order and the a11y tree, so hiding it visually buys assistive tech
+	// nothing and only costs sighted discoverability and touch. An INVALID grid cell
+	// shows it at full strength because clearing is the repair path out of an
+	// out-of-domain value, and the detail dialog shows it full because that surface
+	// optimizes for editing, not scanning.
+	const quietAtRest = $derived(mode === 'grid' && cell.state === 'OK');
 </script>
 
 {#snippet eraser()}
@@ -59,9 +61,9 @@
 		aria-label="Clear {cell.field.name}"
 		tooltip="Clear {cell.field.name}"
 		class={[
-			'shrink-0 text-muted-foreground hover:text-foreground',
-			!clearAlwaysVisible &&
-				'opacity-0 transition-opacity focus-visible:opacity-100 group-hover/cell:opacity-100 group-focus-within/cell:opacity-100',
+			'shrink-0 text-muted-foreground transition-opacity hover:text-foreground',
+			quietAtRest &&
+				'opacity-40 focus-visible:opacity-100 group-hover/cell:opacity-100 group-focus-within/cell:opacity-100',
 		]}
 	>
 		<EraserIcon />

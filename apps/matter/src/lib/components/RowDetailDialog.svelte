@@ -28,11 +28,6 @@
 	const missingCount = $derived(
 		conformance.cells.filter((cell) => cell.state === 'NEEDS_VALUE').length,
 	);
-
-	const fieldDetailRowClass =
-		'grid gap-3 rounded-md border bg-background px-3 py-3 sm:grid-cols-[11rem_1fr] sm:items-center';
-	const extraDetailRowClass =
-		'grid gap-3 rounded-md border bg-muted/20 px-3 py-2 sm:grid-cols-[11rem_1fr]';
 </script>
 
 <Dialog.Root bind:open>
@@ -82,7 +77,7 @@
 					<div class="grid gap-2">
 						{#each conformance.cells as cell (cell.field.name)}
 							<div
-								class={fieldDetailRowClass}
+								class="grid gap-3 rounded-md border bg-background px-3 py-3 sm:grid-cols-[11rem_1fr] sm:items-center"
 								aria-invalid={cell.state === 'INVALID' || cell.state === 'NEEDS_VALUE'}
 							>
 								<div class="min-w-0">
@@ -111,7 +106,9 @@
 						</div>
 						<div class="grid gap-2">
 							{#each conformance.extras as extra (extra.key)}
-								<div class={extraDetailRowClass}>
+								<div
+								class="grid gap-3 rounded-md border bg-muted/20 px-3 py-2 sm:grid-cols-[11rem_1fr]"
+							>
 									<span class="truncate font-mono text-xs text-muted-foreground">
 										{extra.key}
 									</span>

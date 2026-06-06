@@ -98,11 +98,6 @@
 		return '';
 	}
 
-	function openDetail(rowName: string) {
-		detailRowName = rowName;
-		detailOpen = true;
-	}
-
 	$effect(() => {
 		if (!detailOpen) {
 			detailRowName = undefined;
@@ -319,7 +314,10 @@
 											tooltip={conf.extras.length
 												? `Open row, ${conf.extras.length} extra keys`
 												: 'Open row'}
-											onclick={() => openDetail(conf.row.name)}
+											onclick={() => {
+												detailRowName = conf.row.name;
+												detailOpen = true;
+											}}
 										>
 											<ExternalLinkIcon />
 										</Button>

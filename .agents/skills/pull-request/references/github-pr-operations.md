@@ -22,9 +22,9 @@ gh issue view <NUMBER> --json title,body,labels,comments
 - Bug reports where your changes improve error messages or diagnostics without fully fixing the bug
 
 **How to reference in the PR description:**
-- `Closes #123` — only if the PR fully resolves the issue
-- `Partially addresses #123` — if the PR improves the situation but doesn't fully fix it
-- `Lays groundwork for #123` — if the PR creates infrastructure that a future PR will use to fix the issue
+- `Closes #123`: only if the PR fully resolves the issue
+- `Partially addresses #123`: if the PR improves the situation but doesn't fully fix it
+- `Lays groundwork for #123`: if the PR creates infrastructure that a future PR will use to fix the issue
 
 **Be honest:** Don't claim a fix unless the changes directly address the root cause. Improved error messages or internal refactors that happen to touch related code do not count as fixes.
 

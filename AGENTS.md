@@ -14,6 +14,8 @@ Destructive actions need approval: Force pushes, hard resets (`--hard`), branch 
 
 Token-efficient execution: When the runtime permits sub-agents, use them for scoped work: parallel exploration, disjoint file edits, verification, or command-only checks. Keep prompts bounded, avoid overlapping write sets, and instruct command-only agents to execute without re-analyzing.
 
+Claude consultation: Consider `claude-code-consult` for substantial implementations, architecture or API decisions, hard debugging, broad reviews, or explicit requests for another model's take. Use it only for bounded, verifiable work; treat Claude as advisory and verify locally. Skip it for simple edits, command-only checks, unbounded exploration, overlapping writes, commits, pushes, destructive commands, or production admin work. If unavailable, continue locally or provide the prompt.
+
 External grounding: When external library behavior affects correctness, verify against DeepWiki, official docs, or local installed types before changing code. Skip this for stable basics and repo-local patterns already documented in skills.
 
 Git hygiene: Stage specific files only. Never use `git add .` or `git add -A`. Do not include AI or tool attribution in commits.

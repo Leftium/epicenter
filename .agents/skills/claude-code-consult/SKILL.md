@@ -90,11 +90,32 @@ bun run claude:consult -- status <job-id>
 bun run claude:consult -- result <job-id>
 ```
 
+Read `status` before deciding whether a running job is stuck. Treat the
+`Recommendation:` line as the action contract and the `Reason:` line as the
+explanation. Startup metadata is progress, not failure. In particular,
+`system:init` followed by `rate_limit_event` means Claude started,
+auth/rate-limit checks ran, and the model may still be waiting before its first
+answer text. For high-effort Opus or 1m-context consults, first answer text can
+take several minutes.
+
+Use the status recommendation as the source of truth:
+
+```txt
+keep-polling       Do not cancel. Poll again later.
+idle-investigate   Check stderr/process state; cancel only if no longer useful.
+finished           Read the stored result.
+failed             Read the error/result file and continue locally if needed.
+```
+
 Use `cancel` when the job is no longer useful:
 
 ```bash
 bun run claude:consult -- cancel <job-id>
 ```
+
+If `status` recommends `keep-polling`, plain `cancel` refuses to stop the job.
+Use `cancel <job-id> --force` only when you intentionally want to override the
+wrapper's liveness guard.
 
 The background runner stores state under `.tmp/claude-consult`, captures
 Claude's `stream-json` result, and records the Claude child PID so cancellation
@@ -221,6 +242,19 @@ Never use `bypassPermissions`, `--dangerously-skip-permissions`, or `--allow-dan
 Repo-wrapper consults must use `start`, then `status`, `result`, or `cancel`. Do not run a foreground wrapper consult and wait for it. They should still be focused and budgeted.
 
 Scouts, workers, and large fan-out runs must not block Codex indefinitely. Use a wall-clock timeout when practical. If Claude hangs, runs out of budget, lacks auth, hits a turn limit, or returns generic output, record that and continue with the best local path.
+
+Do not call a background consult hung just because it has emitted only startup
+metadata. First run `status <job-id>` and inspect the rendered stream summary.
+The wrapper classifies stale streams the same way whether the last event was
+startup, rate-limit, thinking, answer text, or a result frame. Cancel early only
+when one of these is true:
+
+```txt
+explicit auth/error output
+the job is no longer useful
+status recommends idle-investigate
+the wrapper reports timeout, budget exhaustion, or turn-limit failure
+```
 
 Only stop the overall task for Claude when the user explicitly made Claude's answer the deliverable.
 

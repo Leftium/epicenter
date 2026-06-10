@@ -38,8 +38,8 @@ type CreateCellEditOptions = {
 	save: SaveField;
 	/**
 	 * Serialize the committed value into the input's initial text. Defaults to
-	 * `String` (empty for nullish), the plain-text case; only the JSON repair editor
-	 * overrides it (`JSON.stringify`, so a type-confused value shows its quotes).
+	 * `String` (empty for nullish), the plain-text case; the JSON editor overrides it
+	 * (`JSON.stringify`, so a type-confused value shows its quotes).
 	 */
 	display?: (value: unknown) => string;
 	/** Interpret the draft text on commit. */

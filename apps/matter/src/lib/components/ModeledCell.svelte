@@ -3,8 +3,8 @@
 	import EraserIcon from '@lucide/svelte/icons/eraser';
 	import type { Cell } from '$lib/core/conformance';
 	import { FIELD_COMPONENTS } from './fields/registry';
+	import JsonEditor from './fields/JsonEditor.svelte';
 	import type { SaveField } from './fields/field-props';
-	import JsonRepairEditor from './JsonRepairEditor.svelte';
 
 	let {
 		cell,
@@ -27,9 +27,9 @@
 	} = $props();
 
 	// Kind dispatch is gated behind VALIDITY: an INVALID value is out of every
-	// widget's domain, so it goes to the universal JSON repair editor; an OK or
-	// empty value goes to the typed field widget for its kind. The widget never sees
-	// an INVALID value, which is why no widget handles that state.
+	// typed field widget's domain, so it goes to JsonEditor's repair lane; an OK or
+	// empty value goes to the typed field widget for its kind. FIELD_COMPONENTS never
+	// receives an INVALID value, which keeps the registry's kind correlation narrow.
 	const FieldComponent = $derived(FIELD_COMPONENTS[cell.field.kind]);
 
 	// One clear control for every kind, owned here instead of reinvented per widget
@@ -73,7 +73,7 @@
 <div class={['group/cell flex items-center', mode === 'detail' ? 'gap-2' : 'gap-1']}>
 	<div class="min-w-0 flex-1">
 		{#if cell.state === 'INVALID'}
-			<JsonRepairEditor {cell} {save} />
+			<JsonEditor {cell} {save} />
 		{:else}
 			<FieldComponent {cell} {save} />
 		{/if}

@@ -52,6 +52,10 @@ Design the prompt so Claude can answer without taking a tool turn. A max-turn ca
 
 For architecture or API-shape questions, ask Claude to start with one concrete sentence describing the current surface, then look for radical options, asymmetric wins, and clean breaks before suggesting local patches.
 
+When the user explicitly asks to consult Claude, the consult result is part of the deliverable. Do not cancel a live consult merely because first answer text is slow, thinking tokens are high, or the local answer is already good enough. Follow [Blocking Behavior](#blocking-behavior) for polling and cancellation.
+
+If the requested consult is broad, split it before launching rather than sending one omnibus prompt. Prefer two small consults with separate questions over one prompt asking for package placement, API design, commands, tests, naming, migration, and alternatives at once.
+
 Do not paste a template mechanically. Write the prompt a sharp senior engineer would send to another senior engineer.
 
 ## Running The Consult
@@ -246,8 +250,9 @@ Scouts, workers, and large fan-out runs must not block Codex indefinitely. Use a
 Do not call a background consult hung just because it has emitted only startup
 metadata. First run `status <job-id>` and inspect the rendered stream summary.
 The wrapper classifies stale streams the same way whether the last event was
-startup, rate-limit, thinking, answer text, or a result frame. Cancel early only
-when one of these is true:
+startup, rate-limit, thinking, answer text, or a result frame. For advisory
+consults that the user did not explicitly request, cancel early only when one
+of these is true:
 
 ```txt
 explicit auth/error output
@@ -255,6 +260,20 @@ the job is no longer useful
 status recommends idle-investigate
 the wrapper reports timeout, budget exhaustion, or turn-limit failure
 ```
+
+When the user explicitly asked for Claude's judgment, slow reasoning is not a hang by itself. Keep waiting while `status` says `keep-polling`, even if no answer text has arrived yet.
+
+For explicit user-requested consults, cancel only when one of these is true:
+
+```txt
+the wrapper reports failure
+status recommends idle-investigate and inspection shows no useful progress
+the user changes direction
+a newer request supersedes the consult
+an auth, permission, network, or process-state blocker appears
+```
+
+If a user-requested consult was too broad and does not produce a result, prefer launching a narrower replacement consult before finishing without Claude.
 
 Only stop the overall task for Claude when the user explicitly made Claude's answer the deliverable.
 

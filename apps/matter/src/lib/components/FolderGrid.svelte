@@ -103,13 +103,15 @@
 
 	// Per-kind column width: the `<col>` basis under `table-fixed`, so the grid reads
 	// like a spreadsheet (a number column a third the width of a tags column) instead
-	// of ten equal slabs. Keyed on `field.kind`, the stable discriminant, so sizing is
+	// of equal slabs. Keyed on `field.kind`, the stable discriminant, so sizing is
 	// semantic, not positional: no "the first column is the title" guess. `satisfies
 	// Record<Kind, string>` makes a new palette kind fail to compile until it has a
 	// width here, the same exhaustiveness gate the widget registry carries.
 	const COLUMN_WIDTH = {
 		string: 'w-56',
 		url: 'w-56',
+		date: 'w-32',
+		instant: 'w-44',
 		datetime: 'w-44',
 		select: 'w-40',
 		integer: 'w-24',

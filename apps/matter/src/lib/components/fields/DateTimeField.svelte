@@ -15,6 +15,8 @@
 	{cell}
 	{save}
 	displayClass="tabular-nums"
-	parse={(text) =>
-		text.trim() === '' ? { type: 'cancel' } : { type: 'value', value: text }}
+	parse={(text) => {
+		const value = text.trim();
+		return value === '' ? { type: 'cancel' } : { type: 'value', value };
+	}}
 />

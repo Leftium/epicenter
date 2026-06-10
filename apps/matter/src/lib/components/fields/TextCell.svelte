@@ -3,7 +3,7 @@
 	import FieldEmpty from './FieldEmpty.svelte';
 	import type { RenderableCell, SaveField } from './field-props';
 
-	// The shared shell for the plain-text cell kinds (string, numeric, datetime):
+	// The shared shell for the plain-text cell kinds (string, numeric, temporal):
 	// click to open one text input, commit on blur/Enter, revert on Escape, with the
 	// value always shown through String(). Those kinds differ ONLY in how a draft
 	// PARSES (a number coerces; a string is verbatim) and in formatting CLASSES

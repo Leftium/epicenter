@@ -17,7 +17,9 @@
 import type { Component } from 'svelte';
 import type { FieldOf, Kind } from '@epicenter/field';
 import BooleanField from './BooleanField.svelte';
+import DateField from './DateField.svelte';
 import DateTimeField from './DateTimeField.svelte';
+import InstantField from './InstantField.svelte';
 import JsonField from './JsonField.svelte';
 import MultiSelectField from './MultiSelectField.svelte';
 import NumericField from './NumericField.svelte';
@@ -44,6 +46,8 @@ const WIDGETS = {
 	integer: NumericField,
 	number: NumericField,
 	boolean: BooleanField,
+	date: DateField,
+	instant: InstantField,
 	datetime: DateTimeField,
 	url: UrlField,
 	select: SelectField,

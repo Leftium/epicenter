@@ -15,7 +15,9 @@ import type { Static, Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 import type { JsonValue } from 'wellcrafted/json';
 import type { field, jsonValue } from './builders';
+import type { CalendarDateString } from './calendar-date-string';
 import type { DateTimeString } from './datetime-string';
+import type { InstantString } from './instant-string';
 
 type Equal<X, Y> =
 	(<T>() => T extends X ? 1 : 2) extends <T>() => T extends Y ? 1 : 2
@@ -43,6 +45,16 @@ export type _StringLiteralRejected = Expect<
 // field.url(): Static = string
 export type _UrlStatic = Expect<
 	Equal<Static<ReturnType<typeof field.url>>, string>
+>;
+
+// field.date(): Static = CalendarDateString (brand preserved)
+export type _DateStatic = Expect<
+	Equal<Static<ReturnType<typeof field.date>>, CalendarDateString>
+>;
+
+// field.instant(): Static = InstantString (brand preserved)
+export type _InstantStatic = Expect<
+	Equal<Static<ReturnType<typeof field.instant>>, InstantString>
 >;
 
 // field.datetime(): Static = DateTimeString (brand preserved)

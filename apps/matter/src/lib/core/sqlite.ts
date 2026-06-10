@@ -83,9 +83,10 @@ function serializeCell(field: Field, value: unknown): SqlValue {
 		case 'json':
 			return JSON.stringify(value); // an array or arbitrary JSON payload -> JSON TEXT
 		default:
-			// string / url / datetime / select, all TEXT columns. String(v) is identity
-			// for a string and the TEXT form for a numeric/boolean enum value (what a
-			// select holds), which SQLite's TEXT affinity stores and coerces on read.
+			// string / url / date / instant / datetime / select, all TEXT columns.
+			// String(v) is identity for a string and the TEXT form for a numeric/boolean
+			// enum value (what a select holds), which SQLite's TEXT affinity stores and
+			// coerces on read.
 			return String(value);
 	}
 }

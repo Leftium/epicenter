@@ -11,6 +11,7 @@
 <TextCell
 	{cell}
 	{save}
+	inputClass="tabular-nums"
 	displayClass="tabular-nums"
 	parse={(text) => {
 		const value = text.trim();

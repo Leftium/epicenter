@@ -28,13 +28,13 @@
  * content" is still a value constraint (e.g. `minLength`), not a requiredness flag.
  */
 
+import { compile, type Field, recognize } from '@epicenter/field';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
-import { compile, type Field, recognize } from '@epicenter/field';
 
 /** Why a stored `matter.json` could not be read into a usable model at all. */
 export const MatterModelError = defineErrors({

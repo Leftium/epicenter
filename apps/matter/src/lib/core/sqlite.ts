@@ -27,9 +27,9 @@
  *     surface.
  */
 
+import { type Field, storageOf } from '@epicenter/field';
 import type { RowConformance } from './conformance';
 import type { MatterModel } from './model';
-import { storageOf, type Field } from '@epicenter/field';
 
 /** A SQLite-bindable scalar. Missing cells bind NULL, so values are nullable. */
 export type SqlValue = string | number | null;

@@ -1,6 +1,6 @@
 ---
 name: to-issues
-description: Break a plan, spec, or PRD into independently-grabbable issues on the project issue tracker using tracer-bullet vertical slices. Use when user wants to convert a plan into issues, create implementation tickets, or break down work into issues.
+description: Break a plan or spec into independently-grabbable issues on the project issue tracker using tracer-bullet vertical slices. Use when user wants to convert a plan into issues, create implementation tickets, or break down work into issues.
 metadata:
   upstream: mattpocock/skills
   forked: 2026-05-17
@@ -10,7 +10,7 @@ metadata:
 
 Break a plan into independently-grabbable issues using vertical slices (tracer bullets).
 
-The issue tracker and triage label vocabulary should have been provided to you. If either is missing, ask for the missing mapping before publishing. Otherwise keep the issue breakdown as a local draft.
+The issue tracker and label vocabulary should have been provided to you. If either is missing, ask for the missing mapping before publishing. Otherwise keep the issue breakdown as a local draft.
 
 ## Process
 
@@ -54,7 +54,7 @@ Iterate until the user approves the breakdown.
 
 ### 5. Publish the issues to the issue tracker
 
-For each approved slice, publish a new issue to the issue tracker. Use the issue body template below. These issues are considered ready for AFK agents, so publish them with the correct triage label unless instructed otherwise.
+For each approved slice, publish a new issue to the issue tracker. Use the issue body template below. These issues are considered ready for AFK agents, so publish them with the correct label unless instructed otherwise.
 
 Publish issues in dependency order (blockers first) so you can reference real issue identifiers in the "Blocked by" field.
 
@@ -67,7 +67,7 @@ A reference to the parent issue on the issue tracker (if the source was an exist
 
 A concise description of this vertical slice. Describe the end-to-end behavior, not layer-by-layer implementation.
 
-Avoid specific file paths or code snippets - they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it here and note briefly that it came from a prototype. Trim to the decision-rich parts - not a working demo, just the important bits.
+Avoid specific file paths or code snippets because they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it here and note briefly that it came from a prototype. Trim to the decision-rich parts, not a working demo, just the important bits.
 
 ## Acceptance criteria
 
@@ -79,7 +79,7 @@ Avoid specific file paths or code snippets - they go stale fast. Exception: if a
 
 - A reference to the blocking ticket (if any)
 
-Or "None - can start immediately" if no blockers.
+Or "None: can start immediately" if no blockers.
 
 </issue-template>
 

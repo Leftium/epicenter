@@ -27,8 +27,8 @@ import type { Row } from './parse';
  * A classified cell is one of four states, each a field applied to a row's value. The
  * state IS the verdict, so value-presence cannot disagree with it, and every member
  * carries its {@link Field} (a consumer reads `cell.field`, never an index into a
- * parallel array). {@link Cell} unions the four; a consumer composes the subset it
- * handles from these named members rather than subtracting from the union with
+ * parallel array). {@link Cell} unions the four; consumers use focused exported
+ * subsets like {@link MissingCell} rather than subtracting from the union with
  * `Exclude`.
  */
 
@@ -46,13 +46,13 @@ export type OkCell<F = Field> = {
 };
 
 /** A missing required cell of field `F`: absent or null, so no value to carry. */
-export type MissingRequiredCell<F = Field> = {
+type MissingRequiredCell<F = Field> = {
 	field: F;
 	state: 'MISSING_REQUIRED';
 };
 
 /** A missing optional cell of field `F`: absent or null, and valid by model policy. */
-export type MissingOptionalCell<F = Field> = {
+type MissingOptionalCell<F = Field> = {
 	field: F;
 	state: 'MISSING_OPTIONAL';
 };
@@ -81,13 +81,6 @@ export function isMissing<F>(
 	cell: OkCell<F> | MissingCell<F> | InvalidCell<F>,
 ): cell is MissingCell<F> {
 	return cell.state === 'MISSING_REQUIRED' || cell.state === 'MISSING_OPTIONAL';
-}
-
-/** True for cells carrying a present value, even if that value is out of domain. */
-export function hasValue<F>(
-	cell: OkCell<F> | MissingCell<F> | InvalidCell<F>,
-): cell is OkCell<F> | InvalidCell<F> {
-	return !isMissing(cell);
 }
 
 /** A frontmatter key the model does not declare. Never affects validity. */

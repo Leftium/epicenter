@@ -1,6 +1,6 @@
 {
-  "fields": {
-    "title": { "type": "string" }
-  },
-  "optional": ["missing"]
+	"fields": {
+		"title": { "type": "string" }
+	},
+	"optional": ["missing"]
 }

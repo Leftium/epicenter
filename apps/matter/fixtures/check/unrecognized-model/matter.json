@@ -1,6 +1,6 @@
 {
-  "fields": {
-    "title": { "type": "string" },
-    "status": { "type": "object" }
-  }
+	"fields": {
+		"title": { "type": "string" },
+		"status": { "type": "object" }
+	}
 }

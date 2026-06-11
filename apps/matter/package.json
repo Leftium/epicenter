@@ -9,7 +9,7 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
-		"inspect": "bun scripts/inspect.ts",
+		"check": "bun scripts/check.ts",
 		"tauri": "tauri",
 		"test": "bun test",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"

@@ -8,7 +8,7 @@ metadata:
 
 This skill takes the current conversation context and codebase understanding and produces a PRD. Synthesize first. Ask the user only when a product decision blocks a truthful PRD.
 
-Publish to the issue tracker only when the user asks for that or the project workflow clearly expects it. If publishing, the issue tracker and triage label vocabulary should have been provided to you. Run `/setup-matt-pocock-skills` if not.
+Publish to the issue tracker only when the user asks for that or the project workflow clearly expects it. If publishing and the issue tracker or triage label vocabulary is missing, ask for the missing mapping before posting. Otherwise keep the PRD as a local draft.
 
 ## Process
 

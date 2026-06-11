@@ -10,7 +10,7 @@ metadata:
 
 Break a plan into independently-grabbable issues using vertical slices (tracer bullets).
 
-The issue tracker and triage label vocabulary should have been provided to you - run `/setup-matt-pocock-skills` if not.
+The issue tracker and triage label vocabulary should have been provided to you. If either is missing, ask for the missing mapping before publishing. Otherwise keep the issue breakdown as a local draft.
 
 ## Process
 

@@ -1,5 +1,9 @@
-import type { CheckReport, CheckResult, FatalCheckReport } from './check-report';
-import { isFatalCheckReport } from './check-report';
+import type {
+	CheckReport,
+	CheckResult,
+	ExpectedValue,
+	FatalCheckReport,
+} from './report';
 
 type FileLine =
 	| { kind: 'finding'; finding: CheckReport['findings'][number] }
@@ -22,8 +26,43 @@ function previewActual(value: unknown): string {
 	const text =
 		typeof value === 'string'
 			? JSON.stringify(value)
-			: JSON.stringify(value) ?? String(value);
+			: (JSON.stringify(value) ?? String(value));
 	return text.length > 80 ? `${text.slice(0, 77)}...` : text;
+}
+
+function valuesText(values: readonly unknown[]): string {
+	return values.map((value) => String(value)).join(', ');
+}
+
+function formatExpected(expected: ExpectedValue): string {
+	switch (expected.kind) {
+		case 'string':
+			return 'string';
+		case 'url':
+			return 'url';
+		case 'date':
+			return 'date';
+		case 'instant':
+			return 'UTC instant';
+		case 'datetime':
+			return 'date-time string';
+		case 'integer':
+			return 'integer';
+		case 'number':
+			return 'number';
+		case 'boolean':
+			return 'boolean';
+		case 'select':
+			return `one of ${valuesText(expected.values)}`;
+		case 'tags':
+			return 'array of strings';
+		case 'multiSelect':
+			return `array containing one of ${valuesText(expected.values)}`;
+		case 'json':
+			return 'JSON matching the field schema';
+		default:
+			return expected satisfies never;
+	}
 }
 
 function fileGroups(report: CheckReport): Array<[string, FileLine[]]> {
@@ -53,7 +92,7 @@ function formatFinding(
 ): string {
 	const field = finding.field.padEnd(fieldWidth);
 	if (finding.state === 'NEEDS_VALUE') return `  ${field}  needs value`;
-	return `  ${field}  invalid: got ${previewActual(finding.actual)}, expected ${finding.expected}`;
+	return `  ${field}  invalid: got ${previewActual(finding.actual)}, expected ${formatExpected(finding.expected)}`;
 }
 
 function formatFileLine(line: FileLine, fieldWidth: number): string {
@@ -73,10 +112,8 @@ function formatByField(report: CheckReport, fieldWidth: number): string[] {
 	const lines = report.byField
 		.map((field) => {
 			const parts = [
-				field.needsValue > 0
-					? `${field.needsValue} needs value`
-					: undefined,
-				field.invalid > 0 ? plural(field.invalid, 'invalid', 'invalid') : undefined,
+				field.needsValue > 0 ? `${field.needsValue} needs value` : undefined,
+				field.invalid > 0 ? `${field.invalid} invalid` : undefined,
 			].filter((part): part is string => part !== undefined);
 			if (parts.length === 0) return undefined;
 			return `  ${field.field.padEnd(fieldWidth)}  ${parts.join(', ')}`;
@@ -123,6 +160,6 @@ function formatCheckReport(report: CheckReport): string {
 }
 
 export function formatCheckResult(report: CheckResult): string {
-	if (isFatalCheckReport(report)) return formatFatalCheckReport(report);
+	if (report.status === 'fatal') return formatFatalCheckReport(report);
 	return formatCheckReport(report);
 }

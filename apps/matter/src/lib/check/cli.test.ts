@@ -12,10 +12,13 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { resolve } from 'node:path';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 const appRoot = resolve(import.meta.dir, '../../..');
-const mixedFixture = 'apps/matter/fixtures/matter-check';
+const fixtureRoot = 'fixtures/check';
+const mixedFixture = `${fixtureRoot}/mixed`;
 
 type CommandResult = {
 	exitCode: number;
@@ -41,7 +44,7 @@ async function runCheck(args: string[]): Promise<CommandResult> {
 
 describe('matter check command', () => {
 	test('exit 0 prints the ready summary for a passing folder', async () => {
-		const result = await runCheck([`${mixedFixture}/pass`]);
+		const result = await runCheck([`${fixtureRoot}/pass`]);
 
 		expect(result.exitCode).toBe(0);
 		expect(result.stderr).toBe('');
@@ -87,6 +90,7 @@ By field:
 		expect(result.stderr).toBe('');
 		expect(report).toEqual({
 			version: 1,
+			status: 'checked',
 			folder: mixedFixture,
 			model: {
 				fields: [
@@ -110,14 +114,17 @@ By field:
 					field: 'duration',
 					state: 'INVALID',
 					actual: 'five',
-					expected: 'integer',
+					expected: { kind: 'integer' },
 				},
 				{
 					file: 'invalid-status.md',
 					field: 'status',
 					state: 'INVALID',
 					actual: 'idea',
-					expected: 'one of draft, ready, published',
+					expected: {
+						kind: 'select',
+						values: ['draft', 'ready', 'published'],
+					},
 				},
 				{
 					file: 'missing-required.md',
@@ -157,28 +164,68 @@ By field:
 				},
 			],
 		});
-		expect(result.stdout).not.toContain('This body must not appear in JSON output.');
+		expect(result.stdout).not.toContain(
+			'This body must not appear in JSON output.',
+		);
 	});
 
 	test('exit 2 reports missing matter.json as fatal', async () => {
-		const result = await runCheck([`${mixedFixture}/missing-model`]);
+		const result = await runCheck([`${fixtureRoot}/missing-model`]);
 
 		expect(result.exitCode).toBe(2);
 		expect(result.stdout).toBe('');
 		expect(result.stderr).toBe(
-			`cannot check ${mixedFixture}/missing-model: matter.json is missing\n`,
+			`cannot check ${fixtureRoot}/missing-model: matter.json is missing\n`,
 		);
 	});
 
+	test('exit 1 reports conflict markers as unreadable Markdown', async () => {
+		const folder = await mkdtemp(join(tmpdir(), 'matter-check-'));
+		try {
+			await writeFile(
+				join(folder, 'matter.json'),
+				JSON.stringify({
+					fields: {
+						title: { type: 'string' },
+					},
+				}),
+			);
+			await writeFile(
+				join(folder, 'conflict.md'),
+				[
+					'<<<<<<< HEAD',
+					'---',
+					'title: Local',
+					'---',
+					'=======',
+					'---',
+					'title: Incoming',
+					'---',
+					'>>>>>>> branch',
+				].join('\n'),
+			);
+
+			const result = await runCheck([folder]);
+
+			expect(result.exitCode).toBe(1);
+			expect(result.stderr).toBe('');
+			expect(result.stdout).toContain(`conflict.md
+  can't read: contains git conflict markers`);
+		} finally {
+			await rm(folder, { recursive: true, force: true });
+		}
+	});
+
 	test('exit 2 reports junk matter.json as JSON fatal output', async () => {
-		const result = await runCheck(['--json', `${mixedFixture}/junk-model`]);
+		const result = await runCheck(['--json', `${fixtureRoot}/junk-model`]);
 		const report = JSON.parse(result.stdout);
 
 		expect(result.exitCode).toBe(2);
 		expect(result.stderr).toBe('');
 		expect(report).toMatchObject({
 			version: 1,
-			folder: `${mixedFixture}/junk-model`,
+			status: 'fatal',
+			folder: `${fixtureRoot}/junk-model`,
 			fatal: {
 				code: 'MODEL_INVALID',
 				message: expect.stringContaining('matter.json is not valid JSON'),
@@ -187,22 +234,22 @@ By field:
 	});
 
 	test('exit 2 reports unrecognized model fields as fatal', async () => {
-		const result = await runCheck([`${mixedFixture}/unrecognized-model`]);
+		const result = await runCheck([`${fixtureRoot}/unrecognized-model`]);
 
 		expect(result.exitCode).toBe(2);
 		expect(result.stdout).toBe('');
 		expect(result.stderr).toBe(
-			`cannot check ${mixedFixture}/unrecognized-model: field "status" is not a recognized Matter field\n`,
+			`cannot check ${fixtureRoot}/unrecognized-model: field "status" is not a recognized Matter field\n`,
 		);
 	});
 
 	test('exit 2 reports optional entries that do not match typed fields as fatal', async () => {
-		const result = await runCheck([`${mixedFixture}/unmatched-optional`]);
+		const result = await runCheck([`${fixtureRoot}/unmatched-optional`]);
 
 		expect(result.exitCode).toBe(2);
 		expect(result.stdout).toBe('');
 		expect(result.stderr).toBe(
-			`cannot check ${mixedFixture}/unmatched-optional: optional entry "missing" does not name a typed field\n`,
+			`cannot check ${fixtureRoot}/unmatched-optional: optional entry "missing" does not name a typed field\n`,
 		);
 	});
 

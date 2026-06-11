@@ -6,7 +6,7 @@
  * files (kept separate, never dropped), and EITHER a modeled classification (a
  * valid `matter.json` was supplied) OR a raw untyped view (no model, or junk
  * model). The actual disk listing lives at the boundary (`vault.svelte.ts` in
- * the app, `scripts/check.ts` in the headless command), so this transform is
+ * the app, `src/cli/check.ts` in the headless command), so this transform is
  * testable without any filesystem.
  *
  * The model is the foundation, never inference: a usable `matter.json` classifies

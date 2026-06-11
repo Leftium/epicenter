@@ -1,112 +1,47 @@
-import type { Field, Kind } from '@epicenter/field';
-import type { Cell } from './conformance';
-import type { FolderRead } from './folder';
+import type { Field } from '@epicenter/field';
+import type { Cell } from '../core/conformance';
+import { type FolderEntry, type FolderRead, readFolder } from '../core/folder';
+import {
+	buildFatalCheckReport,
+	type CheckReport,
+	type CheckResult,
+	type ExpectedValue,
+} from './report';
 
-export type CheckReport = {
-	version: 1;
-	folder: string;
-	model: {
-		fields: Array<{ name: string; kind: Kind; required: boolean }>;
-	};
-	summary: {
-		files: number;
-		ready: number;
-		needsAttention: number;
-		unreadable: number;
-	};
-	findings: Array<
-		| {
-				file: string;
-				field: string;
-				state: 'NEEDS_VALUE';
-		  }
-		| {
-				file: string;
-				field: string;
-				state: 'INVALID';
-				actual: unknown;
-				expected: string;
-		  }
-	>;
-	byField: Array<{
-		field: string;
-		ok: number;
-		empty: number;
-		needsValue: number;
-		invalid: number;
-	}>;
-	unreadable: Array<{
-		file: string;
-		error: string;
-	}>;
-	extras: Array<{
-		file: string;
-		keys: string[];
-	}>;
-};
+type ModelInput =
+	| { kind: 'loaded'; text: string }
+	| { kind: 'missing' }
+	| { kind: 'unreadable'; reason: string };
 
-export type FatalCheckReport = {
-	version: 1;
-	folder: string;
-	fatal: {
-		code:
-			| 'FOLDER_UNREADABLE'
-			| 'MODEL_MISSING'
-			| 'MODEL_INVALID'
-			| 'MODEL_UNRECOGNIZED_FIELD';
-		message: string;
-		fields?: string[];
-	};
-};
+export type CheckInput =
+	| { kind: 'folder-unreadable'; folder: string; reason: string }
+	| {
+			kind: 'folder';
+			folder: string;
+			entries: readonly FolderEntry[];
+			model: ModelInput;
+	  };
 
-export type CheckResult = CheckReport | FatalCheckReport;
-
-function valuesText(values: readonly unknown[]): string {
-	return values.map((value) => String(value)).join(', ');
-}
-
-function describeExpected(field: Field): string {
+function describeExpected(field: Field): ExpectedValue {
 	switch (field.kind) {
-		case 'string':
-			return 'string';
-		case 'url':
-			return 'url';
-		case 'date':
-			return 'date';
-		case 'instant':
-			return 'UTC instant';
-		case 'datetime':
-			return 'date-time string';
-		case 'integer':
-			return 'integer';
-		case 'number':
-			return 'number';
-		case 'boolean':
-			return 'boolean';
 		case 'select':
-			return `one of ${valuesText(field.schema.enum)}`;
-		case 'tags':
-			return 'array of strings';
+			return { kind: 'select', values: [...field.schema.enum] };
 		case 'multiSelect':
-			return `array containing one of ${valuesText(field.schema.items.enum)}`;
+			return { kind: 'multiSelect', values: [...field.schema.items.enum] };
+		case 'string':
+		case 'url':
+		case 'date':
+		case 'instant':
+		case 'datetime':
+		case 'integer':
+		case 'number':
+		case 'boolean':
+		case 'tags':
 		case 'json':
-			return 'JSON matching the field schema';
+			return { kind: field.kind };
 		default:
 			return field satisfies never;
 	}
-}
-
-export function buildFatalCheckReport(
-	folder: string,
-	code: FatalCheckReport['fatal']['code'],
-	message: string,
-	fields?: string[],
-): FatalCheckReport {
-	return {
-		version: 1,
-		folder,
-		fatal: fields ? { code, message, fields } : { code, message },
-	};
 }
 
 function quotedList(values: readonly string[]): string {
@@ -129,11 +64,15 @@ function unmatchedOptionalText(fields: readonly string[]): string {
 	return `optional entries ${quotedList(fields)} do not name typed fields`;
 }
 
+function unique(values: readonly string[]): string[] {
+	return [...new Set(values)];
+}
+
 function unrecognizedModelReport(
 	folder: string,
 	unmodeled: readonly string[],
 	unmatchedOptional: readonly string[],
-): FatalCheckReport {
+): CheckResult {
 	const fields = unique([...unmodeled, ...unmatchedOptional]);
 	const parts = [
 		unmodeled.length > 0 ? unrecognizedFieldText(unmodeled) : undefined,
@@ -148,10 +87,6 @@ function unrecognizedModelReport(
 		parts.join('; '),
 		fields,
 	);
-}
-
-function unique(values: readonly string[]): string[] {
-	return [...new Set(values)];
 }
 
 function increment(
@@ -176,7 +111,7 @@ function increment(
 	}
 }
 
-export function buildCheckResult(folder: string, read: FolderRead): CheckResult {
+function reportFromRead(folder: string, read: FolderRead): CheckResult {
 	if (read.view.mode === 'unmodeled') {
 		if (read.view.modelError) {
 			return buildFatalCheckReport(
@@ -253,6 +188,7 @@ export function buildCheckResult(folder: string, read: FolderRead): CheckResult 
 
 	return {
 		version: 1,
+		status: 'checked',
 		folder,
 		model: {
 			fields: read.view.model.fields.map((field) => ({
@@ -274,8 +210,34 @@ export function buildCheckResult(folder: string, read: FolderRead): CheckResult 
 	};
 }
 
-export function isFatalCheckReport(
-	report: CheckResult,
-): report is FatalCheckReport {
-	return 'fatal' in report;
+export function check(input: CheckInput): CheckResult {
+	if (input.kind === 'folder-unreadable') {
+		return buildFatalCheckReport(
+			input.folder,
+			'FOLDER_UNREADABLE',
+			`folder could not be read: ${input.reason}`,
+		);
+	}
+
+	switch (input.model.kind) {
+		case 'missing':
+			return buildFatalCheckReport(
+				input.folder,
+				'MODEL_MISSING',
+				'matter.json is missing',
+			);
+		case 'unreadable':
+			return buildFatalCheckReport(
+				input.folder,
+				'MODEL_INVALID',
+				`matter.json could not be read: ${input.model.reason}`,
+			);
+		case 'loaded':
+			return reportFromRead(
+				input.folder,
+				readFolder(input.entries, input.model.text),
+			);
+		default:
+			return input.model satisfies never;
+	}
 }

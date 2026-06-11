@@ -45,6 +45,31 @@ describe('readFolder', () => {
 		expect(valid).toEqual([true, false, false]);
 	});
 
+	test('optional modeled fields can be absent or null without invalidating a row', () => {
+		const model = JSON.stringify({
+			fields: {
+				title: { type: 'string' },
+				reviewBy: { type: 'string', format: 'date' },
+			},
+			optional: ['reviewBy'],
+		});
+		const result = readFolder(
+			[
+				{ fileName: 'a.md', content: '---\ntitle: A\n---\nbody' },
+				{ fileName: 'b.md', content: '---\ntitle: B\nreviewBy:\n---\nbody' },
+			],
+			model,
+		);
+
+		expect(result.view.mode).toBe('modeled');
+		if (result.view.mode !== 'modeled') throw new Error('expected modeled');
+		expect(result.view.conformance.map((c) => c.rowValid)).toEqual([true, true]);
+		expect(result.view.conformance.map((c) => c.cells.map((cell) => cell.state))).toEqual([
+			['OK', 'EMPTY'],
+			['OK', 'EMPTY'],
+		]);
+	});
+
 	test('a junk matter.json degrades to the raw view with a diagnostic', () => {
 		const result = readFolder(
 			[{ fileName: 'a.md', content: '---\ntitle: A\n---\nbody' }],

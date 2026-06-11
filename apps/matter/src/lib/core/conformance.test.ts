@@ -3,13 +3,16 @@ import { classifyRow, classifyRows } from './conformance';
 import { validateModel } from './model';
 import type { Row } from './parse';
 
-function fields(defs: Record<string, Record<string, unknown>>) {
-	const { data, error } = validateModel({ fields: defs });
+function fields(
+	defs: Record<string, Record<string, unknown>>,
+	optional?: string[],
+) {
+	const { data, error } = validateModel({ fields: defs, optional });
 	if (error) throw new Error(error.message);
 	return data.fields;
 }
 
-describe('classifyRow (per-cell conformance, everything required)', () => {
+describe('classifyRow (per-cell conformance)', () => {
 	const cols = fields({
 		title: { type: 'string' },
 		url: { type: 'string', format: 'uri' },
@@ -56,6 +59,32 @@ describe('classifyRow (per-cell conformance, everything required)', () => {
 		const nul: Row = { fileName: 'e.md', frontmatter: { title: null }, body: '' };
 		expect(classifyRow(cols, absent).cells[0]?.state).toBe('NEEDS_VALUE');
 		expect(classifyRow(cols, nul).cells[0]?.state).toBe('NEEDS_VALUE');
+	});
+
+	test('absent and explicit null optional fields are EMPTY and row-valid', () => {
+		const cols = fields(
+			{
+				title: { type: 'string' },
+				reviewBy: { type: 'string', format: 'date' },
+			},
+			['reviewBy'],
+		);
+		const absent: Row = {
+			fileName: 'optional-absent.md',
+			frontmatter: { title: 'Alice' },
+			body: '',
+		};
+		const nul: Row = {
+			fileName: 'optional-null.md',
+			frontmatter: { title: 'Bob', reviewBy: null },
+			body: '',
+		};
+		const absentConformance = classifyRow(cols, absent);
+		const nullConformance = classifyRow(cols, nul);
+		expect(absentConformance.cells.map((x) => x.state)).toEqual(['OK', 'EMPTY']);
+		expect(nullConformance.cells.map((x) => x.state)).toEqual(['OK', 'EMPTY']);
+		expect(absentConformance.rowValid).toBe(true);
+		expect(nullConformance.rowValid).toBe(true);
 	});
 
 	// "Must have content" is a value constraint, not a model flag: minLength rejects

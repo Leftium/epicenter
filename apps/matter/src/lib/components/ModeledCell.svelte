@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import EraserIcon from '@lucide/svelte/icons/eraser';
-	import type { Cell } from '$lib/core/conformance';
+	import { hasNoValue, type Cell } from '$lib/core/conformance';
 	import { FIELD_COMPONENTS } from './fields/registry';
 	import JsonEditor from './fields/JsonEditor.svelte';
 	import type { SaveField } from './fields/field-props';
@@ -14,7 +14,7 @@
 	}: {
 		cell: Cell;
 		save: SaveField;
-		/** Delete the field's key (back to NEEDS_VALUE), never write `null`. */
+		/** Delete the field's key (back to the model's empty state), never write `null`. */
 		clear: () => void;
 		/**
 		 * Presentation mode. `grid` is the dense spreadsheet cell: scanning comes
@@ -35,9 +35,9 @@
 	// One clear control for every kind, owned here instead of reinvented per widget
 	// (a blank text input, a Select item, removing the last chip, nothing at all).
 	// It deletes the field's key, so it only makes sense when a value exists: shown
-	// for OK and INVALID, never for an already-empty NEEDS_VALUE cell. The widgets
+	// for OK and INVALID, never for an already-empty cell. The widgets
 	// now only ever COMMIT a value in their kind's domain; clearing lives here.
-	const clearable = $derived(cell.state !== 'NEEDS_VALUE');
+	const clearable = $derived(!hasNoValue(cell));
 
 	// In the grid an OK cell keeps the eraser QUIET (dimmed) at rest so the table
 	// reads as a validation spreadsheet, then brightens it on hover or keyboard
@@ -53,7 +53,7 @@
 {#snippet eraser()}
 	<!-- Clearing a field is its own verb, distinct from the dialog-close X and the
 	     tag-chip-removal X: an eraser wipes one field's value. It deletes the key
-	     (back to NEEDS_VALUE) and never writes null. -->
+	     (back to the model's empty state) and never writes null. -->
 	<Button
 		variant="ghost"
 		size={mode === 'detail' ? 'icon-sm' : 'icon-xs'}
@@ -79,7 +79,7 @@
 		{/if}
 	</div>
 	{#if mode === 'grid'}
-		<!-- A fixed trailing slot, reserved for every cell (even an empty NEEDS_VALUE
+		<!-- A fixed trailing slot, reserved for every cell (even an empty
 		     one with no eraser) so the content column never reflows between states or
 		     when the eraser fades in. Opacity, not conditional layout, hides it. -->
 		<div class="flex size-6 shrink-0 items-center justify-center">

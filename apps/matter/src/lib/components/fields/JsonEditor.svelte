@@ -1,7 +1,7 @@
 <script lang="ts">
-	import type { InvalidCell } from '$lib/core/conformance';
+	import { hasNoValue, type InvalidCell } from '$lib/core/conformance';
 	import { createCellEdit } from './create-cell-edit.svelte';
-	import FieldEmpty from './FieldEmpty.svelte';
+	import FieldNoValue from './FieldNoValue.svelte';
 	import type { RenderableCell, SaveField } from './field-props';
 
 	// JSON is the one text editor that can represent both a valid arbitrary-JSON
@@ -54,13 +54,13 @@
 	{#if edit.parseError}
 		<span class="mt-0.5 block text-xs text-destructive">{edit.parseError}</span>
 	{/if}
-{:else if cell.state === 'NEEDS_VALUE'}
+{:else if hasNoValue(cell)}
 	<button
 		type="button"
 		onclick={edit.start}
 		class="block w-full cursor-text rounded-sm px-1 py-0.5 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
 	>
-		<FieldEmpty />
+		<FieldNoValue {cell} />
 	</button>
 {:else}
 	<button

@@ -4,8 +4,8 @@ import { validateModel } from './model';
 import { projectToSqlite } from './sqlite';
 import type { Row } from './parse';
 
-function model(fields: Record<string, Record<string, unknown>>) {
-	const { data, error } = validateModel({ fields });
+function model(fields: Record<string, Record<string, unknown>>, optional?: string[]) {
+	const { data, error } = validateModel({ fields, optional });
 	if (error) throw new Error(error.message);
 	return data;
 }
@@ -126,6 +126,26 @@ describe('rows (every readable row, serialized by conformance state)', () => {
 		expect(tags).toBeNull();
 		expect(url).toBeNull();
 		expect(extra).toBe('{}'); // no unmodeled keys
+	});
+
+	test('an EMPTY optional cell binds NULL while the row stays valid', () => {
+		const optionalModel = model(
+			{
+				title: { type: 'string' },
+				reviewBy: { type: 'string', format: 'date' },
+			},
+			['reviewBy'],
+		);
+		const row: Row = {
+			fileName: 'person.md',
+			frontmatter: { title: 'Alice', reviewBy: null },
+			body: '',
+		};
+		const conformance = classifyRows(optionalModel.fields, [row]);
+		expect(conformance[0]?.rowValid).toBe(true);
+		expect(conformance[0]?.cells.map((cell) => cell.state)).toEqual(['OK', 'EMPTY']);
+		const p = projectToSqlite(optionalModel, conformance);
+		expect(p.rows[0]).toEqual(['person.md', 'Alice', null, '{}']);
 	});
 
 	test('an out-of-domain cell keeps its raw value so the draft stays filterable', () => {

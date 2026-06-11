@@ -359,6 +359,15 @@
 			</Alert.Root>
 		{/if}
 
+		{#if view.model.ignoredOptional.length}
+			<Alert.Root class="rounded-none border-x-0 border-t-0 bg-muted/30" role="status">
+				<TriangleAlertIcon />
+				<Alert.Description class="text-xs">
+					Optional entries do not match typed fields ({view.model.ignoredOptional.join(', ')}).
+				</Alert.Description>
+			</Alert.Root>
+		{/if}
+
 		<!-- Table.Root includes a horizontal scroll wrapper. This grid pane owns both
 		     axes so sticky headers and the frozen file column use the same scrollport. -->
 		<div class="flex-1 overflow-auto [&>[data-slot=table-container]]:overflow-visible">

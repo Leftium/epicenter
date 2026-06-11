@@ -1,6 +1,6 @@
 # CLI/daemon collapse waves
 
-Status: wave 1 implemented; wave 2 owed; wave 3 deferred with triggers.
+Status: waves 1-2 implemented; wave 3 deferred with triggers.
 
 Source: greenfield clean-break consult on the CLI/daemon shape, plus a
 latency experiment for daemonless one-shot `run`.
@@ -64,22 +64,35 @@ Wire compatibility was explicitly refused: no `/invoke` or `/dispatch`
 aliases remain. CLI and daemon ship together from this repo; there is no
 published contract that earns an alias.
 
-## Wave 2: materializer drain on teardown (owed, not yet done)
+## Wave 2: materializer drain on teardown (implemented)
 
-`attachMarkdownExport` starts its initial flush as a fire-and-forget promise
-(`whenFlushed`, `export.ts`), and row renders triggered by observers are
-also unawaited. Nothing in the mount dispose chain drains them.
+The bug: `attachMarkdownExport` started its initial flush as a
+fire-and-forget promise (`whenFlushed`, `export.ts`) and aborted it at the
+first dispose check; row renders triggered by observers were also unawaited.
+The SQLite materializer had the same shape: dispose cancelled the debounced
+flush (dropping `pendingSync`) and the initial DDL + full-load aborted on a
+dispose-immediately. Nothing in the mount dispose chain drained any of it,
+so `epicenter daemon down` shortly after a mutation could drop projection
+writes mid-flight.
 
-This is a live bug in the current daemon: `epicenter daemon down` (SIGTERM)
-shortly after a mutation can drop markdown projection writes mid-flight. It
-is also a hard precondition for any daemonless one-shot mode.
+The fix, in three layers:
 
-Fix shape: mount/runtime dispose awaits pending materializer work (or the
-teardown drains explicitly before `ydoc.destroy()`), with a bounded timeout
-so a hung HTTP body read cannot wedge shutdown.
-
-Trigger to do it: next time anyone touches the markdown materializer or
-daemon teardown, or before wave 3 starts; it should not wait for wave 3.
+- Both materializers now drain on dispose and expose a `whenDisposed`
+  barrier (per the attach-primitive invariant): the markdown export awaits
+  the initial flush plus in-flight observer render batches; the SQLite core
+  flushes the pending row set through its db queue before closing. Each
+  drain is bounded by a per-materializer `disposeTimeoutMs` (default 10 s)
+  so a hung HTTP body read or statement cannot wedge shutdown.
+- A `waitFor` gate that never opened owes nothing: disposing before the
+  gate resolves abandons the flush instead of sitting out the timeout, and
+  the flush bails if the gate opens after dispose. Draining after
+  `ydoc.destroy()` is safe because YKV reads come from in-memory maps that
+  survive doc destruction.
+- `attachProjectInfrastructure` takes a `materializers` list and its
+  `[Symbol.asyncDispose]` awaits their `whenDisposed` barriers alongside
+  collaboration and log teardown; the fuji, honeycrisp, and tab-manager
+  mounts register their sqlite + markdown attachments there, and the
+  daemon's teardown stack already awaits each runtime's async dispose.
 
 ## Wave 3: daemonless `run` (deferred)
 

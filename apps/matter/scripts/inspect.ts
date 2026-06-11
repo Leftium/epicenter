@@ -64,7 +64,14 @@ if (view.mode === 'unmodeled') {
 } else {
 	console.log('Model fields:');
 	for (const f of view.model.fields) {
-		console.log(`  ${f.name.padEnd(14)} ${f.kind}`);
+		console.log(
+			`  ${f.name.padEnd(14)} ${f.kind}${f.required ? '' : ' optional'}`,
+		);
+	}
+	if (view.model.unmatchedOptional.length) {
+		console.log(
+			`\nUnmatched optional entries: ${view.model.unmatchedOptional.join(', ')}`,
+		);
 	}
 
 	console.log('\nConformance (state per cell; ! = needs attention):');

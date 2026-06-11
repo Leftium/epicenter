@@ -4,7 +4,7 @@
  * browser without a real folder.
  *
  * The model covers every palette kind, and the rows deliberately spread across
- * OK / NEEDS_VALUE / INVALID, plus unmodeled extras, a nested object, and two
+ * OK / MISSING_OPTIONAL / MISSING_REQUIRED / INVALID, plus unmodeled extras, a nested object, and two
  * unparseable files (malformed YAML, git conflict markers) so the "Can't read"
  * bucket renders too.
  *
@@ -40,6 +40,7 @@ export const DEMO_MODEL_TEXT = JSON.stringify(
 			featured: { type: 'boolean' },
 			url: { type: 'string', format: 'uri' },
 		},
+		optional: ['publishDate', 'publishedAt'],
 	},
 	null,
 	'\t',
@@ -155,6 +156,7 @@ the model and route to repair.
 title: Imported Note
 status: draft
 format: article
+publishDate:
 legacyId: ABC-123
 mood: optimistic
 metadata:
@@ -191,7 +193,7 @@ Unparseable: git conflict markers. The grid must never write this.
 		fileName: 'raw-note.md',
 		content: `# Raw Note
 
-No frontmatter at all, just markdown. Every modeled field needs a value.
+No frontmatter at all, just markdown. Required modeled fields need values.
 `,
 	},
 ];

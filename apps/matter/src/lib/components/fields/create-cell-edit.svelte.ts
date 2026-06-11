@@ -83,9 +83,9 @@ export function createCellEdit(options: CreateCellEditOptions) {
 		}
 		editing = false;
 		const value = current();
-		// Opening an empty cell and committing a blank value is not a real edit: don't
+		// Opening a missing cell and committing a blank value is not a real edit: don't
 		// phantom-create an empty-string key on a stray focus/blur. You reach the empty
-		// string by ERASING an existing value; an already-empty cell stays empty. (Only
+		// string by ERASING an existing value; an already-missing cell stays missing. (Only
 		// `string` can produce a `''` value; the other text kinds cancel a blank draft.)
 		if (value == null && result.value === '') return;
 		// No-op guard: re-committing the same scalar must not write (and trigger a

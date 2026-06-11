@@ -4,7 +4,7 @@
  * browser without a real folder.
  *
  * The model covers every palette kind, and the rows deliberately spread across
- * OK / EMPTY / NEEDS_VALUE / INVALID, plus unmodeled extras, a nested object, and two
+ * OK / MISSING_OPTIONAL / MISSING_REQUIRED / INVALID, plus unmodeled extras, a nested object, and two
  * unparseable files (malformed YAML, git conflict markers) so the "Can't read"
  * bucket renders too.
  *

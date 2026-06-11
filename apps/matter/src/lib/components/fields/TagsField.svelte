@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { Badge } from '@epicenter/ui/badge';
 	import XIcon from '@lucide/svelte/icons/x';
-	import { hasNoValue } from '$lib/core/conformance';
-	import FieldNoValue from './FieldNoValue.svelte';
+	import { isMissing } from '$lib/core/conformance';
+	import FieldMissing from './FieldMissing.svelte';
 	import type { FieldProps } from './field-props';
 
 	// Free string chips: `tags` has NO option set (that is `multiSelect`), so this is
@@ -48,8 +48,8 @@
 <div
 	class="flex min-h-8 flex-wrap items-center gap-1 rounded-md border bg-background px-2 py-1 text-sm focus-within:ring-1 focus-within:ring-ring"
 >
-	{#if hasNoValue(cell)}
-		<FieldNoValue {cell} />
+	{#if isMissing(cell)}
+		<FieldMissing {cell} />
 	{/if}
 	{#each values as tag (tag)}
 		<Badge variant="secondary" class="max-w-[12rem] gap-1 pr-1">

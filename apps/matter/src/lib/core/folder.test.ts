@@ -7,11 +7,18 @@ describe('readFolder', () => {
 			{ fileName: 'a.md', content: '---\ntitle: A\nrating: 5\n---\nbody' },
 			{ fileName: 'b.md', content: '---\ntitle: B\n---\nbody' },
 			{ fileName: 'broken.md', content: '---\ntitle: [unclosed\n---\nbody' },
-			{ fileName: 'conflict.md', content: '<<<<<<< HEAD\nx\n=======\ny\n>>>>>>> z\n' },
+			{
+				fileName: 'conflict.md',
+				content: '<<<<<<< HEAD\nx\n=======\ny\n>>>>>>> z\n',
+			},
 			{ fileName: 'raw.md', content: '# no frontmatter' },
 		]);
 
-		expect(result.rows.map((r) => r.fileName)).toEqual(['a.md', 'b.md', 'raw.md']);
+		expect(result.rows.map((r) => r.fileName)).toEqual([
+			'a.md',
+			'b.md',
+			'raw.md',
+		]);
 		expect(result.unreadable.map((u) => [u.fileName, u.error.name])).toEqual([
 			['broken.md', 'InvalidYaml'],
 			['conflict.md', 'ConflictMarkers'],
@@ -33,8 +40,11 @@ describe('readFolder', () => {
 		const result = readFolder(
 			[
 				{ fileName: 'a.md', content: '---\ntitle: A\nrating: 5\n---\nbody' },
-				{ fileName: 'b.md', content: '---\ntitle: B\n---\nbody' }, // rating absent -> NEEDS_VALUE
-				{ fileName: 'c.md', content: '---\ntitle: C\nrating: "high"\n---\nbody' }, // INVALID
+				{ fileName: 'b.md', content: '---\ntitle: B\n---\nbody' }, // rating absent -> MISSING_REQUIRED
+				{
+					fileName: 'c.md',
+					content: '---\ntitle: C\nrating: "high"\n---\nbody',
+				}, // INVALID
 			],
 			model,
 		);
@@ -63,10 +73,15 @@ describe('readFolder', () => {
 
 		expect(result.view.mode).toBe('modeled');
 		if (result.view.mode !== 'modeled') throw new Error('expected modeled');
-		expect(result.view.conformance.map((c) => c.rowValid)).toEqual([true, true]);
-		expect(result.view.conformance.map((c) => c.cells.map((cell) => cell.state))).toEqual([
-			['OK', 'EMPTY'],
-			['OK', 'EMPTY'],
+		expect(result.view.conformance.map((c) => c.rowValid)).toEqual([
+			true,
+			true,
+		]);
+		expect(
+			result.view.conformance.map((c) => c.cells.map((cell) => cell.state)),
+		).toEqual([
+			['OK', 'MISSING_OPTIONAL'],
+			['OK', 'MISSING_OPTIONAL'],
 		]);
 	});
 

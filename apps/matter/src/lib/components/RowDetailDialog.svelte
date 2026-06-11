@@ -26,7 +26,7 @@
 		conformance.cells.filter((cell) => cell.state === 'INVALID').length,
 	);
 	const missingCount = $derived(
-		conformance.cells.filter((cell) => cell.state === 'NEEDS_VALUE').length,
+		conformance.cells.filter((cell) => cell.state === 'MISSING_REQUIRED').length,
 	);
 </script>
 
@@ -78,7 +78,7 @@
 						{#each conformance.cells as cell (cell.field.name)}
 							<div
 								class="grid gap-3 rounded-md border bg-background px-3 py-3 sm:grid-cols-[11rem_1fr] sm:items-center"
-								aria-invalid={cell.state === 'INVALID' || cell.state === 'NEEDS_VALUE'}
+								aria-invalid={cell.state === 'INVALID' || cell.state === 'MISSING_REQUIRED'}
 							>
 								<div class="min-w-0">
 									<div class="truncate text-sm font-medium">{cell.field.name}</div>

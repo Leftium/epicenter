@@ -7,8 +7,8 @@
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronsUpDownIcon from '@lucide/svelte/icons/chevrons-up-down';
 	import type { FieldOf } from '@epicenter/field';
-	import { hasNoValue } from '$lib/core/conformance';
-	import FieldNoValue from './FieldNoValue.svelte';
+	import { isMissing } from '$lib/core/conformance';
+	import FieldMissing from './FieldMissing.svelte';
 	import type { FieldProps } from './field-props';
 
 	// One option literal, derived from the field's OWN schema (an element of the enum
@@ -33,7 +33,7 @@
 	const options = $derived(cell.field.schema.items.enum);
 
 	// An OK list cell is always an array; default empty so the picker stays usable when
-	// the cell is empty or every option has been deselected.
+	// the cell is missing or every option has been deselected.
 	const selected = $derived(
 		cell.state === 'OK' && Array.isArray(cell.value) ? cell.value : [],
 	);
@@ -64,8 +64,8 @@
 				aria-expanded={combobox.open}
 				class="h-auto min-h-8 w-full justify-between gap-2 font-normal"
 			>
-				{#if hasNoValue(cell)}
-					<FieldNoValue {cell} />
+				{#if isMissing(cell)}
+					<FieldMissing {cell} />
 				{:else if selected.length === 0}
 					<span class="text-muted-foreground">Select...</span>
 				{:else}

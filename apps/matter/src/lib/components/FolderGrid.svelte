@@ -140,7 +140,7 @@
 	// CELL, not the row, so one signal owns "this needs attention" instead of stacking
 	// a row tint under a cell tint under the hover tint.
 	function cellStateClass(state: Cell['state']): string {
-		if (state === 'NEEDS_VALUE') {
+		if (state === 'MISSING_REQUIRED') {
 			return 'bg-amber-500/5 ring-1 ring-inset ring-amber-500/30';
 		}
 
@@ -359,11 +359,11 @@
 			</Alert.Root>
 		{/if}
 
-		{#if view.model.ignoredOptional.length}
+		{#if view.model.unmatchedOptional.length}
 			<Alert.Root class="rounded-none border-x-0 border-t-0 bg-muted/30" role="status">
 				<TriangleAlertIcon />
 				<Alert.Description class="text-xs">
-					Optional entries do not match typed fields ({view.model.ignoredOptional.join(', ')}).
+					Optional entries do not match typed fields ({view.model.unmatchedOptional.join(', ')}).
 				</Alert.Description>
 			</Alert.Root>
 		{/if}
@@ -448,7 +448,7 @@
 								</Table.Cell>
 								{#each conf.cells as cell (cell.field.name)}
 									<Table.Cell
-										aria-invalid={cell.state === 'INVALID' || cell.state === 'NEEDS_VALUE'}
+										aria-invalid={cell.state === 'INVALID' || cell.state === 'MISSING_REQUIRED'}
 										class={[
 											columnAlign(cell.field.kind).cell,
 											cellStateClass(cell.state),

@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { hasNoValue } from '$lib/core/conformance';
+	import { isMissing } from '$lib/core/conformance';
 	import { createCellEdit, type CellEditParse } from './create-cell-edit.svelte';
-	import FieldNoValue from './FieldNoValue.svelte';
+	import FieldMissing from './FieldMissing.svelte';
 	import type { RenderableCell, SaveField } from './field-props';
 
 	// The shared shell for the plain-text cell kinds (string, numeric, temporal):
@@ -64,8 +64,8 @@
 			displayClass,
 		]}
 	>
-		{#if hasNoValue(cell)}
-			<FieldNoValue {cell} />
+		{#if isMissing(cell)}
+			<FieldMissing {cell} />
 		{:else}
 			<span class="block truncate">{String(cell.value)}</span>
 		{/if}

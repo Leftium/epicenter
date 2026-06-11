@@ -29,7 +29,7 @@ describe('validateModel (the matter.json gate)', () => {
 			['url', true],
 		]);
 		expect(data.unmodeled).toEqual([]);
-		expect(data.ignoredOptional).toEqual([]);
+		expect(data.unmatchedOptional).toEqual([]);
 	});
 
 	test('top-level optional marks typed fields as not required', () => {
@@ -46,7 +46,7 @@ describe('validateModel (the matter.json gate)', () => {
 			['title', true],
 			['publishDate', false],
 		]);
-		expect(data.ignoredOptional).toEqual([]);
+		expect(data.unmatchedOptional).toEqual([]);
 	});
 
 	test('rejects optional when it is not an array of field names', () => {
@@ -72,7 +72,7 @@ describe('validateModel (the matter.json gate)', () => {
 			['title', false],
 		]);
 		expect(data.unmodeled).toEqual(['meta']);
-		expect(data.ignoredOptional).toEqual(['meta', 'missing']);
+		expect(data.unmatchedOptional).toEqual(['meta', 'missing']);
 	});
 
 	test('rejects a non-object top level', () => {
@@ -97,7 +97,7 @@ describe('validateModel (the matter.json gate)', () => {
 		if (error) throw new Error(error.message);
 		expect(data.fields.map((c) => c.name)).toEqual(['title']);
 		expect(data.unmodeled).toEqual(['bad']);
-		expect(data.ignoredOptional).toEqual([]);
+		expect(data.unmatchedOptional).toEqual([]);
 	});
 
 	test('a shape outside the palette is unmodeled; the rest stays typed', () => {
@@ -112,7 +112,7 @@ describe('validateModel (the matter.json gate)', () => {
 		if (error) throw new Error(error.message);
 		expect(data.fields.map((c) => c.name)).toEqual(['title']);
 		expect(data.unmodeled).toEqual(['meta', 'note']);
-		expect(data.ignoredOptional).toEqual([]);
+		expect(data.unmatchedOptional).toEqual([]);
 	});
 });
 
@@ -124,7 +124,9 @@ describe('parseModel (raw text)', () => {
 	});
 
 	test('parses a valid file', () => {
-		const { data, error } = parseModel('{"fields":{"title":{"type":"string"}}}');
+		const { data, error } = parseModel(
+			'{"fields":{"title":{"type":"string"}}}',
+		);
 		expect(error).toBeNull();
 		expect(data?.fields).toHaveLength(1);
 	});

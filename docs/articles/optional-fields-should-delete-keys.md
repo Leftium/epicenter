@@ -116,13 +116,13 @@ The canonical file format is omission. Clearing the cell removes the key.
 
 ## The reader should still tolerate null
 
-Strict writing does not require strict reading. YAML makes `reviewBy:` parse as `null`, and hand-edited markdown folders will contain that shape sooner or later. A local file tool should not turn a mechanical empty spelling into a repair chore.
+Strict writing does not require strict reading. YAML makes `reviewBy:` parse as `null`, and hand-edited markdown folders will contain that shape sooner or later. A local file tool should not turn a mechanical missing spelling into a repair chore.
 
 Matter already has this read contract for required fields:
 
 ```typescript
 function classifyCell(field: Field, value: unknown): Cell {
-  if (value == null) return { field, state: 'NEEDS_VALUE' };
+  if (value == null) return { field, state: 'MISSING_REQUIRED' };
   if (field.check(value)) return { field, state: 'OK', value };
   return { field, state: 'INVALID', raw: value };
 }
@@ -131,10 +131,10 @@ function classifyCell(field: Field, value: unknown): Cell {
 Absent and explicit YAML null both hit the same branch. Optional fields should keep that branch and change only the verdict:
 
 ```txt
-missing required field       NEEDS_VALUE
-null required field          NEEDS_VALUE
-missing optional field       EMPTY
-null optional field          EMPTY
+missing required field       MISSING_REQUIRED
+null required field          MISSING_REQUIRED
+missing optional field       MISSING_OPTIONAL
+null optional field          MISSING_OPTIONAL
 present valid field          OK
 present invalid field        INVALID
 ```
@@ -149,7 +149,7 @@ Claude's review sharpened the formal sentence:
 Matter validates dropNullKeys(frontmatter) against the derived object schema.
 ```
 
-That sentence reconciles tolerant reading with pure JSON Schema fields. Raw `reviewBy: null` would fail the derived JSON Schema object, because `reviewBy` is a date string when present. Matter's folder reader first treats nullish frontmatter values as empty cells. Then it applies row completeness:
+That sentence reconciles tolerant reading with pure JSON Schema fields. Raw `reviewBy: null` would fail the derived JSON Schema object, because `reviewBy` is a date string when present. Matter's folder reader first treats nullish frontmatter values as missing cells. Then it applies row completeness:
 
 ```txt
 dropNullKeys({ name: "Alice", reviewBy: null })
@@ -158,7 +158,7 @@ dropNullKeys({ name: "Alice", reviewBy: null })
 
 For an optional field, that is valid. For a required field, that needs a value.
 
-This is the same shape as a database projection. Optional empty fields project to SQL `NULL`, but the markdown source does not need to carry `null` as authored data. The typed table can have nullable columns while the file format stays clean.
+This is the same shape as a database projection. Missing optional fields project to SQL `NULL`, but the markdown source does not need to carry `null` as authored data. The typed table can have nullable columns while the file format stays clean.
 
 ## Do not use JSON unions for optionality
 
@@ -173,7 +173,7 @@ A union makes optionality look like part of the value:
 }
 ```
 
-That is the wrong layer for Matter. It makes `null` a valid value instead of an empty cell state, and it stops the field from being a simple date column. The app would need to unwrap nullable schemas, the grid would need to remember which nulls mean empty, and SQL queries would lose the clean shape that made the field useful.
+That is the wrong layer for Matter. It makes `null` a valid value instead of a missing cell state, and it stops the field from being a simple date column. The app would need to unwrap nullable schemas, the grid would need to remember which nulls mean missing, and SQL queries would lose the clean shape that made the field useful.
 
 The useful queries are plain:
 
@@ -191,10 +191,10 @@ The implementation rule should be boring:
 ```txt
 Matter never writes null for a cleared field.
 Matter clears by deleting the frontmatter key.
-Matter reads a missing key as empty.
-Matter reads explicit null as empty.
-Required empty fields classify as NEEDS_VALUE.
-Optional empty fields classify as EMPTY.
+Matter reads a missing key as missing.
+Matter reads explicit null as missing.
+Missing required fields classify as MISSING_REQUIRED.
+Missing optional fields classify as MISSING_OPTIONAL.
 Present values are validated by the field's JSON Schema.
 ```
 
@@ -203,11 +203,11 @@ There is one sharp edge worth validating: every name in `optional` should land o
 One implementation boundary matters: widgets should not inspect requiredness. The loaded model may carry `required` so conformance can classify a missing value, but the UI should consume the classified state:
 
 ```txt
-NEEDS_VALUE  missing required value
-EMPTY        missing optional value
+MISSING_REQUIRED  missing required value
+MISSING_OPTIONAL  missing optional value
 ```
 
-That keeps row policy in the model layer and keeps field widgets focused on rendering present values or a shared no-value indicator.
+That keeps row policy in the model layer and keeps field widgets focused on rendering present values or a shared missing-value indicator.
 
 The product sentence stays small:
 

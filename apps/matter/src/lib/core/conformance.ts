@@ -3,13 +3,13 @@
  *
  * Modeled fields have row-completeness policy, so the per-cell split is FOUR states:
  *
- *   v == null ? (required ? NEEDS_VALUE : EMPTY) : check(v) ? OK : INVALID
+ *   v == null ? (required ? MISSING_REQUIRED : MISSING_OPTIONAL) : check(v) ? OK : INVALID
  *
- * NEEDS_VALUE and EMPTY are the two empty states. Both cover an absent key OR an
- * explicit null; the nullish contract says a bare `title:` in YAML parses to null and
- * must mean the same as an omitted `title`. Required empty cells need attention.
- * Optional empty cells are valid. "Ready to publish" is "every cell is OK or EMPTY",
- * which is also "the row projects into the typed table".
+ * MISSING_REQUIRED and MISSING_OPTIONAL are the two missing states. Both cover an
+ * absent key OR an explicit null; the nullish contract says a bare `title:` in YAML
+ * parses to null and must mean the same as an omitted `title`. Missing required cells
+ * need attention. Missing optional cells are valid. "Ready to publish" is "every cell
+ * is OK or MISSING_OPTIONAL", which is also "the row projects into the typed table".
  *
  * The validator is precompiled on the {@link Field} (built once at model load in
  * `validateModel`), so classification never recompiles; it reads `field.check`.
@@ -45,20 +45,22 @@ export type OkCell<F = Field> = {
 	value: unknown;
 };
 
-/** An empty required cell of field `F`: the key is absent or null, so no value to carry. */
-export type NeedsValueCell<F = Field> = {
+/** A missing required cell of field `F`: absent or null, so no value to carry. */
+export type MissingRequiredCell<F = Field> = {
 	field: F;
-	state: 'NEEDS_VALUE';
+	state: 'MISSING_REQUIRED';
 };
 
-/** An empty optional cell of field `F`: absent or null, and valid by model policy. */
-export type EmptyCell<F = Field> = {
+/** A missing optional cell of field `F`: absent or null, and valid by model policy. */
+export type MissingOptionalCell<F = Field> = {
 	field: F;
-	state: 'EMPTY';
+	state: 'MISSING_OPTIONAL';
 };
 
-/** A no-value cell: absent or explicit null, with policy deciding attention. */
-export type NoValueCell<F = Field> = NeedsValueCell<F> | EmptyCell<F>;
+/** A missing cell: absent or explicit null, with policy deciding attention. */
+export type MissingCell<F = Field> =
+	| MissingRequiredCell<F>
+	| MissingOptionalCell<F>;
 
 /** A present value out of its field's domain: carries the `raw` value for the repair editor. */
 export type InvalidCell<F = Field> = {
@@ -68,13 +70,24 @@ export type InvalidCell<F = Field> = {
 };
 
 /** One classified cell: exactly one of the four states. */
-export type Cell = OkCell | NeedsValueCell | EmptyCell | InvalidCell;
+export type Cell =
+	| OkCell
+	| MissingRequiredCell
+	| MissingOptionalCell
+	| InvalidCell;
 
 /** True for cells with no present value, whether required or optional. */
-export function hasNoValue<F>(
-	cell: OkCell<F> | NoValueCell<F> | InvalidCell<F>,
-): cell is NoValueCell<F> {
-	return cell.state === 'NEEDS_VALUE' || cell.state === 'EMPTY';
+export function isMissing<F>(
+	cell: OkCell<F> | MissingCell<F> | InvalidCell<F>,
+): cell is MissingCell<F> {
+	return cell.state === 'MISSING_REQUIRED' || cell.state === 'MISSING_OPTIONAL';
+}
+
+/** True for cells carrying a present value, even if that value is out of domain. */
+export function hasValue<F>(
+	cell: OkCell<F> | MissingCell<F> | InvalidCell<F>,
+): cell is OkCell<F> | InvalidCell<F> {
+	return !isMissing(cell);
 }
 
 /** A frontmatter key the model does not declare. Never affects validity. */
@@ -88,7 +101,7 @@ export type RowConformance = {
 	row: Row;
 	cells: Cell[];
 	extras: Extra[];
-	/** True iff every cell is OK or EMPTY (the row projects into the typed table). */
+	/** True iff every cell is OK or MISSING_OPTIONAL (the row projects into the typed table). */
 	rowValid: boolean;
 };
 
@@ -99,8 +112,8 @@ export type RowConformance = {
 function classifyCell(field: MatterField, value: unknown): Cell {
 	if (value == null) {
 		return field.required
-			? { field, state: 'NEEDS_VALUE' }
-			: { field, state: 'EMPTY' };
+			? { field, state: 'MISSING_REQUIRED' }
+			: { field, state: 'MISSING_OPTIONAL' };
 	}
 	if (field.check(value)) return { field, state: 'OK', value };
 	return { field, state: 'INVALID', raw: value };
@@ -121,7 +134,7 @@ export function classifyRow(
 		.map(([key, value]) => ({ key, value }));
 
 	const rowValid = cells.every(
-		(cell) => cell.state === 'OK' || cell.state === 'EMPTY',
+		(cell) => cell.state === 'OK' || cell.state === 'MISSING_OPTIONAL',
 	);
 
 	return { row, cells, extras, rowValid };

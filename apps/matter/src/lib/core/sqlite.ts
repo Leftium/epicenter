@@ -17,12 +17,12 @@
  *     find those drafts ("my carousel posts that still need a publishDate"), so a row
  *     is included whether or not every field is filled. Only unparseable FILES are
  *     absent, they never became a row; their broken text stays in the markdown.
- *   - Field columns are nullable. An empty cell (NEEDS_VALUE or EMPTY) binds NULL; an
+ *   - Field columns are nullable. A missing cell (MISSING_REQUIRED or MISSING_OPTIONAL) binds NULL; an
  *     out-of-domain value (INVALID) binds its raw value, which SQLite's flexible typing
  *     stores regardless of the column's declared affinity. So a draft is still
  *     filterable on the fields it does have.
  *   - No CHECK. Validation lives once, at classify time (the grid shows conformance per
- *     cell, amber for empty, red for out-of-domain); the mirror just mirrors, so a SQL
+ *     cell, amber for missing required, red for out-of-domain); the mirror just mirrors, so a SQL
  *     CHECK would only reject the very drafts the filter exists to surface.
  */
 
@@ -124,7 +124,7 @@ function buildDdl(fields: readonly Field[]): string {
 /**
  * Project a classified folder into the SQLite artifacts. EVERY readable row is included;
  * each cell is serialized by its conformance state (OK by storage class, INVALID by its
- * raw value, NEEDS_VALUE/EMPTY as NULL) and its unmodeled keys are folded into the `_extra`
+ * raw value, MISSING_REQUIRED/MISSING_OPTIONAL as NULL) and its unmodeled keys are folded into the `_extra`
  * JSON object. The cells are read off `RowConformance.cells`, which classifyRow built in
  * `model.fields` order, so they line up positionally with the columns below.
  */
@@ -136,8 +136,8 @@ export function projectToSqlite(
 	const rows = conformance.map((c) => {
 		const cells = c.cells.map((cell): SqlValue => {
 			switch (cell.state) {
-				case 'NEEDS_VALUE':
-				case 'EMPTY':
+				case 'MISSING_REQUIRED':
+				case 'MISSING_OPTIONAL':
 					return null;
 				case 'OK':
 					return serializeCell(cell.field, cell.value);

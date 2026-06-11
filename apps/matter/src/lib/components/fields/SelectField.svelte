@@ -1,8 +1,8 @@
 <script lang="ts">
 	import * as Select from '@epicenter/ui/select';
 	import type { FieldOf } from '@epicenter/field';
-	import { hasNoValue } from '$lib/core/conformance';
-	import FieldNoValue from './FieldNoValue.svelte';
+	import { isMissing } from '$lib/core/conformance';
+	import FieldMissing from './FieldMissing.svelte';
 	import type { FieldProps } from './field-props';
 
 	let { cell, save }: FieldProps<FieldOf<'select'>> = $props();
@@ -16,10 +16,10 @@
 	const values = $derived(cell.field.schema.enum);
 
 	// The Select's value is the option index ('' = no selection). Picking always
-	// commits a value; emptying the field back to its model empty state is the cell's chrome,
+	// commits a value; clearing the field back to its model missing state is the cell's chrome,
 	// not an in-menu item, so this widget only ever saves.
 	const selected = $derived.by(() => {
-		if (hasNoValue(cell)) return '';
+		if (isMissing(cell)) return '';
 		const i = values.findIndex((value) => Object.is(value, cell.value));
 		return i >= 0 ? String(i) : '';
 	});
@@ -31,8 +31,8 @@
 	onValueChange={(value) => save(values[Number(value)])}
 >
 	<Select.Trigger size="sm" class="w-full">
-		{#if hasNoValue(cell)}
-			<FieldNoValue {cell} />
+		{#if isMissing(cell)}
+			<FieldMissing {cell} />
 		{:else}
 			<span class="truncate">{String(cell.value)}</span>
 		{/if}

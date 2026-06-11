@@ -15,8 +15,8 @@ Matter fields describe valid present values, while a top-level `optional` list s
 Matter currently treats every modeled field as required.
 
 ```txt
-absent key       NEEDS_VALUE
-key: null        NEEDS_VALUE
+absent key       MISSING_REQUIRED
+key: null        MISSING_REQUIRED
 valid value      OK
 invalid value    INVALID
 ```
@@ -48,15 +48,15 @@ Keep `fields.*` fully JSON Schema-compatible. Put Matter row-completeness policy
 The conformance states become:
 
 ```txt
-missing required field       NEEDS_VALUE
-null required field          NEEDS_VALUE
-missing optional field       EMPTY
-null optional field          EMPTY
+missing required field       MISSING_REQUIRED
+null required field          MISSING_REQUIRED
+missing optional field       MISSING_OPTIONAL
+null optional field          MISSING_OPTIONAL
 present valid field          OK
 present invalid field        INVALID
 ```
 
-`EMPTY` is valid. It should not count as attention and should project to SQL `NULL`.
+`MISSING_OPTIONAL` is valid. It should not count as attention and should project to SQL `NULL`.
 
 ## Decisions
 
@@ -66,7 +66,7 @@ present invalid field        INVALID
 
 ### Clear deletes keys
 
-The canonical authored shape for an empty optional field is absence:
+The canonical authored shape for a missing optional field is absence:
 
 ```yaml
 ---
@@ -89,7 +89,7 @@ reviewBy: null
 
 ### Parsing is tolerant
 
-Matter should still accept explicit YAML null as empty. A hand-edited `reviewBy:` is mechanically equivalent to omitting the key. Treating it as `INVALID` would create a repair task whose only answer is "delete the key."
+Matter should still accept explicit YAML null as missing. A hand-edited `reviewBy:` is mechanically equivalent to omitting the key. Treating it as `INVALID` would create a repair task whose only answer is "delete the key."
 
 The formal rule:
 
@@ -99,30 +99,30 @@ Matter validates dropNullKeys(frontmatter) against the derived object schema.
 
 ### Unknown optional entries must be visible
 
-An `optional` entry that does not land on a typed modeled field should not silently do nothing. The model should report it as an ignored optional entry so the UI and inspect script can surface the typo or unmodeled field.
+An `optional` entry that does not land on a typed modeled field should not silently do nothing. The model should report it as an unmatched optional entry so the UI and inspect script can surface the typo or unmodeled field.
 
 ### Classification owns requiredness
 
 `MatterField.required` is a loaded-model fact used by conformance. It should not leak into field widgets. The classifier reads the policy once and emits a cell verdict:
 
 ```txt
-NEEDS_VALUE  missing required value
-EMPTY        missing optional value
+MISSING_REQUIRED  missing required value
+MISSING_OPTIONAL  missing optional value
 ```
 
-After classification, UI code reads `cell.state`. No-value rendering is grouped through `NoValueCell` and `FieldNoValue`, so widgets do not re-derive `needsValue` booleans from the state.
+After classification, UI code reads `cell.state`. Missing-value rendering is grouped through `MissingCell` and `FieldMissing`, so widgets do not re-derive requiredness booleans from the state.
 
 ## Implementation Plan
 
 - [x] Add a `MatterField` type that wraps a recognized field with `required: boolean`.
 - [x] Parse top-level `optional` as an array of field names, defaulting to all fields required.
 - [x] Report optional entries that do not match typed modeled fields.
-- [x] Add an `EMPTY` conformance state for missing or null optional values.
-- [x] Treat `OK` and `EMPTY` cells as row-valid.
-- [x] Project `EMPTY` cells to SQL `NULL`.
-- [x] Update the grid and detail dialog so `EMPTY` is neutral, not attention.
-- [x] Update field widgets so empty optional cells render as empty, not `required`.
-- [x] Update the demo fixture to exercise `EMPTY`.
+- [x] Add a `MISSING_OPTIONAL` conformance state for missing or null optional values.
+- [x] Treat `OK` and `MISSING_OPTIONAL` cells as row-valid.
+- [x] Project `MISSING_OPTIONAL` cells to SQL `NULL`.
+- [x] Update the grid and detail dialog so `MISSING_OPTIONAL` is neutral, not attention.
+- [x] Update field widgets so missing optional cells render as quiet absence, not `required`.
+- [x] Update the demo fixture to exercise `MISSING_OPTIONAL`.
 - [x] Add tests for optional parsing, conformance, folder reading, SQLite projection, and existing clear behavior.
 - [x] Update documentation comments and the rationale article.
 - [x] Run Matter core tests and typecheck.

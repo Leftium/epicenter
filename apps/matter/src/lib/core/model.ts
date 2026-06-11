@@ -52,9 +52,9 @@ export const MatterModelError = defineErrors({
 });
 export type MatterModelError = InferErrors<typeof MatterModelError>;
 
-/** A loaded Matter field: present-value schema plus empty-cell policy. */
+/** A loaded Matter field: present-value schema plus missing-cell policy. */
 export type MatterField = Field & {
-	/** True when an empty cell should need attention; false when it is valid EMPTY. */
+	/** True when a missing cell should need attention; false when it is allowed. */
 	required: boolean;
 };
 
@@ -65,13 +65,11 @@ export type MatterModel = {
 	/** Field names whose stored shape is outside the palette; shown raw, never typed. */
 	unmodeled: string[];
 	/** Optional entries that did not match a typed field, surfaced as model diagnostics. */
-	ignoredOptional: string[];
+	unmatchedOptional: string[];
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-	return (
-		typeof value === 'object' && value !== null && !Array.isArray(value)
-	);
+	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -123,9 +121,9 @@ export function validateModel(
 	}
 
 	const modeled = new Set(fields.map((field) => field.name));
-	const ignoredOptional = optional.filter((name) => !modeled.has(name));
+	const unmatchedOptional = optional.filter((name) => !modeled.has(name));
 
-	return Ok({ fields, unmodeled, ignoredOptional });
+	return Ok({ fields, unmodeled, unmatchedOptional });
 }
 
 /**
@@ -133,7 +131,9 @@ export function validateModel(
  * (carrying the parser error as `cause`) rather than throwing, so a junk file degrades
  * to the raw view with a diagnostic.
  */
-export function parseModel(text: string): Result<MatterModel, MatterModelError> {
+export function parseModel(
+	text: string,
+): Result<MatterModel, MatterModelError> {
 	const { data: raw, error } = trySync({
 		try: () => JSON.parse(text) as unknown,
 		catch: (cause) => MatterModelError.InvalidJson({ cause }),

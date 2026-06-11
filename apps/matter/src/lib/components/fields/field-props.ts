@@ -2,14 +2,15 @@
  * The contract every per-kind Field component implements.
  *
  * A Field renders AND edits one cell whose value is in its kind's domain (`OK`)
- * or empty (`NEEDS_VALUE` / `EMPTY`). It NEVER handles `INVALID`: an out-of-domain
- * value cannot fit a typed widget, so the {@link ModeledCell} wrapper routes those
- * to the universal JSON repair editor before a Field is ever chosen. Kind dispatch
- * is gated behind validity, so a Field only ever sees a value it can represent.
+ * or missing (`MISSING_REQUIRED` / `MISSING_OPTIONAL`). It NEVER handles `INVALID`:
+ * an out-of-domain value cannot fit a typed widget, so the {@link ModeledCell} wrapper
+ * routes those to the universal JSON repair editor before a Field is ever chosen.
+ * Kind dispatch is gated behind validity, so a Field only ever sees a value it can
+ * represent.
  *
  * A Field's one job is to COMMIT a value in its kind's domain (including the empty
  * but present values `""` and `[]`); it never deletes the key. Deleting the key
- * (clearing the cell back to the model's empty state) is shared cell chrome owned by
+ * (clearing the cell back to the model's missing state) is shared cell chrome owned by
  * {@link ModeledCell}, the same control for every kind, so no Field decides if or
  * how to expose a clear affordance.
  *
@@ -20,7 +21,7 @@
  * wrapper, not the Field).
  */
 
-import type { EmptyCell, NeedsValueCell, OkCell } from '$lib/core/conformance';
+import type { MissingCell, OkCell } from '$lib/core/conformance';
 import type { Field } from '@epicenter/field';
 
 /**
@@ -32,16 +33,15 @@ import type { Field } from '@epicenter/field';
 export type SaveField = (value: unknown) => void;
 
 /**
- * The cells a per-kind Field renders: a conformant {@link OkCell} or an empty
- * {@link NeedsValueCell} / {@link EmptyCell}, both for field variant `F`. The invalid
- * state is routed to the JSON repair editor by {@link ModeledCell} before a Field is
- * chosen, so a Field never receives it. Composed UP from the renderable members, not
- * subtracted from the full `Cell` union, so the set the widgets handle is stated
- * directly. `F` defaults to the full {@link Field} union; a per-kind widget pins
- * it (e.g. `FieldOf<'select'>`) so its `cell.field.schema` is the precise shape,
- * not the union.
+ * The cells a per-kind Field renders: a conformant {@link OkCell} or a
+ * {@link MissingCell}, both for field variant `F`. The invalid state is routed to the
+ * JSON repair editor by {@link ModeledCell} before a Field is chosen, so a Field never
+ * receives it. Composed UP from the renderable members, not subtracted from the full
+ * `Cell` union, so the set the widgets handle is stated directly. `F` defaults to the
+ * full {@link Field} union; a per-kind widget pins it (e.g. `FieldOf<'select'>`) so its
+ * `cell.field.schema` is the precise shape, not the union.
  */
-export type RenderableCell<F = Field> = OkCell<F> | NeedsValueCell<F> | EmptyCell<F>;
+export type RenderableCell<F = Field> = OkCell<F> | MissingCell<F>;
 
 /**
  * Props a per-kind Field component receives. `F` defaults to the full {@link Field}
@@ -54,7 +54,7 @@ export type RenderableCell<F = Field> = OkCell<F> | NeedsValueCell<F> | EmptyCel
  * `save` is identical for every kind, so only `cell` varies.
  */
 export type FieldProps<F = Field> = {
-	/** The classified cell to render: `OK` (value) or an empty state. */
+	/** The classified cell to render: `OK` (value) or a missing state. */
 	cell: RenderableCell<F>;
 	/** Commit a new value for the field. */
 	save: SaveField;

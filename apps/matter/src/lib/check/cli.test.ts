@@ -217,20 +217,33 @@ By field:
 	});
 
 	test('exit 2 reports junk matter.json as JSON fatal output', async () => {
-		const result = await runCheck(['--json', `${fixtureRoot}/junk-model`]);
-		const report = JSON.parse(result.stdout);
+		const folder = await mkdtemp(join(tmpdir(), 'matter-check-'));
+		try {
+			await writeFile(join(folder, 'matter.json'), '{ not json\n');
+			await writeFile(
+				join(folder, 'ready.md'),
+				['---', 'title: Junk model', '---', 'The model cannot be parsed.'].join(
+					'\n',
+				),
+			);
 
-		expect(result.exitCode).toBe(2);
-		expect(result.stderr).toBe('');
-		expect(report).toMatchObject({
-			version: 1,
-			status: 'fatal',
-			folder: `${fixtureRoot}/junk-model`,
-			fatal: {
-				code: 'MODEL_INVALID',
-				message: expect.stringContaining('matter.json is not valid JSON'),
-			},
-		});
+			const result = await runCheck(['--json', folder]);
+			const report = JSON.parse(result.stdout);
+
+			expect(result.exitCode).toBe(2);
+			expect(result.stderr).toBe('');
+			expect(report).toMatchObject({
+				version: 1,
+				status: 'fatal',
+				folder,
+				fatal: {
+					code: 'MODEL_INVALID',
+					message: expect.stringContaining('matter.json is not valid JSON'),
+				},
+			});
+		} finally {
+			await rm(folder, { recursive: true, force: true });
+		}
 	});
 
 	test('exit 2 reports unrecognized model fields as fatal', async () => {

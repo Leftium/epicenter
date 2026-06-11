@@ -50,7 +50,10 @@ function quotedList(values: readonly string[]): string {
 
 function unrecognizedFieldText(fields: readonly string[]): string {
 	if (fields.length === 1) {
-		return `field "${fields[0]!}" is not a recognized Matter field`;
+		const [field] = fields;
+		if (field !== undefined) {
+			return `field "${field}" is not a recognized Matter field`;
+		}
 	}
 
 	return `fields ${quotedList(fields)} are not recognized Matter fields`;
@@ -58,7 +61,10 @@ function unrecognizedFieldText(fields: readonly string[]): string {
 
 function unmatchedOptionalText(fields: readonly string[]): string {
 	if (fields.length === 1) {
-		return `optional entry "${fields[0]!}" does not name a typed field`;
+		const [field] = fields;
+		if (field !== undefined) {
+			return `optional entry "${field}" does not name a typed field`;
+		}
 	}
 
 	return `optional entries ${quotedList(fields)} do not name typed fields`;

@@ -15,7 +15,8 @@ function plural(count: number, word: string, pluralWord = `${word}s`): string {
 }
 
 function lowerFirst(text: string): string {
-	return text.length === 0 ? text : text[0]!.toLowerCase() + text.slice(1);
+	const first = text.at(0);
+	return first === undefined ? text : first.toLowerCase() + text.slice(1);
 }
 
 function firstLine(text: string): string {

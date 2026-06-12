@@ -4,7 +4,6 @@ import { APP_URLS } from '@epicenter/constants/vite';
 import { createAiChatFetch, fromTable } from '@epicenter/svelte';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
-import { SvelteMap } from 'svelte/reactivity';
 import {
 	asChatMessageId,
 	asConversationId,
@@ -14,6 +13,7 @@ import {
 	generateConversationId,
 } from 'opensidian';
 import type { OpensidianBrowser } from 'opensidian/browser';
+import { SvelteMap } from 'svelte/reactivity';
 import {
 	DEFAULT_MODEL,
 	DEFAULT_PROVIDER,

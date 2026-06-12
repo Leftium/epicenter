@@ -26,8 +26,8 @@ import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { SvelteMap } from 'svelte/reactivity';
 import {
 	asConversationId,
-	chatPersistence,
 	type ConversationId,
+	chatPersistence,
 	deleteModelChoice,
 	generateConversationId,
 	getAllModelChoices,

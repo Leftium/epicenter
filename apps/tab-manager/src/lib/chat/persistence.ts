@@ -25,8 +25,8 @@
  * to an empty history.
  */
 
-import type { ChatClientPersistence, UIMessage } from '@tanstack/ai-client';
 import { generateId, type Id } from '@epicenter/workspace';
+import type { ChatClientPersistence, UIMessage } from '@tanstack/ai-client';
 import type { Brand } from 'wellcrafted/brand';
 
 // ── Conversation identity ──────────────────────────────────────────────
@@ -79,9 +79,7 @@ function store(
 		};
 		return requestToPromise(request);
 	})();
-	return dbPromise.then((db) =>
-		db.transaction(name, mode).objectStore(name),
-	);
+	return dbPromise.then((db) => db.transaction(name, mode).objectStore(name));
 }
 
 // ── Message bodies: the ChatClientPersistence adapter ──────────────────

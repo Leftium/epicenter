@@ -9,9 +9,8 @@
  */
 
 import type { UIMessage } from '@tanstack/ai-svelte';
-import type { JsonValue } from 'wellcrafted/json';
-
 import type { ChatMessage, ChatMessageId } from 'opensidian';
+import type { JsonValue } from 'wellcrafted/json';
 
 type Expect<T extends true> = T;
 type Equal<TLeft, TRight> =

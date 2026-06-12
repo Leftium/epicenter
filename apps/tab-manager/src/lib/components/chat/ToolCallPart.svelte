@@ -6,7 +6,7 @@
 	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
 	import WrenchIcon from '@lucide/svelte/icons/wrench';
 	import type { ToolCallPart as TanStackToolCallPart } from '@tanstack/ai-client';
-	import { requireTabManager, type SessionTools } from '$lib/session.svelte';
+	import { requireTabManager } from '$lib/session.svelte';
 	import CollapsibleSection from '../CollapsibleSection.svelte';
 
 	const tabManager = requireTabManager();
@@ -15,7 +15,7 @@
 		onApproveToolCall,
 		onDenyToolCall,
 	}: {
-		part: TanStackToolCallPart<SessionTools>;
+		part: TanStackToolCallPart;
 		onApproveToolCall: (approvalId: string) => void;
 		onDenyToolCall: (approvalId: string) => void;
 	} = $props();
@@ -32,38 +32,38 @@
 			part.name.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase()),
 	);
 	const isApprovalRequested = $derived(part.state === 'approval-requested');
-	const approval = $derived(part.approval);
-
-	$effect(() => {
-		if (
-			isApprovalRequested &&
-			approval?.id &&
-			tabManager.state.toolTrust.shouldAutoApprove(part.name)
-		) {
-			onApproveToolCall(approval.id);
-		}
-	});
-
-	function handleAllow() {
-		if (!approval?.id) return;
-		onApproveToolCall(approval.id);
-	}
-
-	function handleAlwaysAllow() {
-		if (!approval?.id) return;
-		tabManager.state.toolTrust.set(part.name, 'always');
-		onApproveToolCall(approval.id);
-	}
-
-	function handleDeny() {
-		if (!approval?.id) return;
-		onDenyToolCall(approval.id);
-	}
+	const isAutoApproved = $derived(
+		isApprovalRequested &&
+			tabManager.state.toolTrust.shouldAutoApprove(part.name),
+	);
 	const badgeVariant = $derived.by(() => {
+		if (isApprovalRequested) return 'secondary';
 		if (isFailed) return 'status.failed';
 		if (isRunning) return 'status.running';
 		return 'status.completed';
 	});
+
+	$effect(() => {
+		if (isAutoApproved && part.approval?.id) {
+			onApproveToolCall(part.approval.id);
+		}
+	});
+
+	function handleAllow() {
+		if (!part.approval?.id) return;
+		onApproveToolCall(part.approval.id);
+	}
+
+	function handleAlwaysAllow() {
+		if (!part.approval?.id) return;
+		tabManager.state.toolTrust.set(part.name, 'always');
+		onApproveToolCall(part.approval.id);
+	}
+
+	function handleDeny() {
+		if (!part.approval?.id) return;
+		onDenyToolCall(part.approval.id);
+	}
 </script>
 
 {#snippet codeBlock(text: string)}
@@ -74,21 +74,23 @@
 
 <div class="flex flex-col gap-1 py-1">
 	<div class="flex items-center gap-1.5">
-		{#if isApprovalRequested && !tabManager.state.toolTrust.shouldAutoApprove(part.name)}
-			<ShieldAlertIcon class="size-3 text-amber-500" />
-		{:else if isApprovalRequested && tabManager.state.toolTrust.shouldAutoApprove(part.name)}
+		{#if isAutoApproved}
 			<ShieldCheckIcon class="size-3 text-green-500" />
+		{:else if isApprovalRequested}
+			<ShieldAlertIcon class="size-3 text-amber-500" />
 		{:else if isRunning}
 			<Spinner class="size-3 text-blue-500" />
 		{:else}
 			<WrenchIcon class="size-3 text-muted-foreground" />
 		{/if}
-		<Badge variant={isApprovalRequested ? 'secondary': badgeVariant}>
+		<Badge variant={badgeVariant}>
 			{displayName}{isRunning && !isApprovalRequested ? '…': ''}
 		</Badge>
 	</div>
 
-	{#if isApprovalRequested && !tabManager.state.toolTrust.shouldAutoApprove(part.name)}
+	{#if isAutoApproved}
+		<div class="pl-[1.125rem] text-xs text-muted-foreground">Auto-approved</div>
+	{:else if isApprovalRequested}
 		<div class="flex items-center gap-1.5 pl-[1.125rem]">
 			<Button variant="outline" size="sm" onclick={handleAllow}> Allow </Button>
 			<Button variant="outline" size="sm" onclick={handleAlwaysAllow}>
@@ -103,8 +105,6 @@
 				Deny
 			</Button>
 		</div>
-	{:else if isApprovalRequested && tabManager.state.toolTrust.shouldAutoApprove(part.name)}
-		<div class="pl-[1.125rem] text-xs text-muted-foreground">Auto-approved</div>
 	{/if}
 
 	<CollapsibleSection label="Details" contentClass="bg-muted/50">

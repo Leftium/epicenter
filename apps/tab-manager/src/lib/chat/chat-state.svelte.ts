@@ -132,12 +132,14 @@ export function createAiChatState({
 
 		// Persistence stays explicit (user rows in sendMessage, assistant rows
 		// in onFinish) instead of using the client's `persistence` adapter.
-		// The adapter writes the full message list on every stream change,
-		// which amplifies into Yjs update history for CRDT-backed storage, and
-		// it has no change-subscription hook, so the table observer plus
-		// refreshFromDoc path would survive anyway. Revisit if
-		// ChatClientPersistence gains a write policy (debounce or on-settle)
-		// or change notifications.
+		// The adapter writes the full message list on every stream change
+		// (setItem is wired to the StreamProcessor's per-chunk change events
+		// with no debounce), which amplifies into Yjs update history for
+		// CRDT-backed storage; its write queue swallows adapter errors by
+		// design, while direct table writes are synchronous; and it has no
+		// change-subscription hook, so the table observer plus refreshFromDoc
+		// path would survive anyway. Revisit if ChatClientPersistence gains a
+		// write policy (debounce or on-settle) or change notifications.
 		const chat = createChat({
 			initialMessages: loadMessages(conversationId),
 			tools: sessionAiTools.tools,
@@ -368,6 +370,12 @@ export function createAiChatState({
 			 * is written to Y.Doc immediately after `chat.sendMessage`, and if
 			 * this fired during the stream it would feed Svelte two copies of
 			 * the same id and crash.
+			 *
+			 * Skipping by transaction origin instead (the table observer does
+			 * expose it) was considered and refused: origin only separates
+			 * local echo from remote writes, and a remote write landing
+			 * mid-stream must also be deferred or it clobbers the streaming
+			 * message, so the timing guard covers both with one mechanism.
 			 */
 			refreshFromDoc() {
 				if (chat.isLoading) return;

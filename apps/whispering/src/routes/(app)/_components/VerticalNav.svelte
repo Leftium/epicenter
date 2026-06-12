@@ -1,7 +1,6 @@
 <script lang="ts">
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { useSidebar } from '@epicenter/ui/sidebar';
-	import Database from '@lucide/svelte/icons/database';
 	import Minimize2Icon from '@lucide/svelte/icons/minimize-2';
 	import MoonIcon from '@lucide/svelte/icons/moon';
 	import SunIcon from '@lucide/svelte/icons/sun';
@@ -10,12 +9,6 @@
 	import { GithubIcon } from '$lib/components/icons';
 	import { NAV_ITEMS } from './nav-items';
 	import { tauri } from '#platform/tauri';
-	import MigrationDialog from '$lib/migration/MigrationDialog.svelte';
-	import { migrationDialog } from '$lib/migration/migration-dialog.svelte';
-
-	const shouldShowMigrationButton = $derived(
-		import.meta.env.DEV || migrationDialog.isPending,
-	);
 
 	const sidebar = useSidebar();
 </script>
@@ -109,27 +102,6 @@
 					{/snippet}
 				</Sidebar.MenuButton>
 			</Sidebar.MenuItem>
-
-			<!-- Database Migration (desktop only, when data exists) -->
-			{#if shouldShowMigrationButton}
-				<Sidebar.MenuItem>
-					<Sidebar.MenuButton class="relative">
-						{#snippet child({ props })}
-							<MigrationDialog>
-								{#snippet trigger({ props: dialogProps })}
-									<button {...props} {...dialogProps}>
-										<Database />
-										<span>Database Migration</span>
-										<span
-											class="absolute right-2 top-2 size-2 rounded-full bg-warning before:absolute before:left-0 before:top-0 before:h-full before:w-full before:rounded-full before:bg-warning/50 before:animate-ping"
-										></span>
-									</button>
-								{/snippet}
-							</MigrationDialog>
-						{/snippet}
-					</Sidebar.MenuButton>
-				</Sidebar.MenuItem>
-			{/if}
 
 			<!-- Minimize (desktop only) -->
 			{#if tauri}

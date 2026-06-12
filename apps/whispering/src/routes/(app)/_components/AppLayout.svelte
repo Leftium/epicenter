@@ -11,7 +11,6 @@
 		RECORDER_STATE_TO_ICON,
 		VAD_STATE_TO_ICON,
 	} from '$lib/constants/audio';
-	import { migrationDialog } from '$lib/migration/migration-dialog.svelte';
 	import { services } from '$lib/services';
 	import { tauri } from '#platform/tauri';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
@@ -40,9 +39,6 @@
 		resetLocalShortcutsToDefaultIfDuplicates();
 		registerOnboarding();
 		cleanupAccessibilityPermission = registerAccessibilityPermission();
-
-		// Platform-agnostic async checks
-		migrationDialog.check();
 
 		if (tauri) {
 			syncGlobalShortcutsWithSettings();

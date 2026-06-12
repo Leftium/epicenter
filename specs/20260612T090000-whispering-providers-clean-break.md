@@ -93,11 +93,16 @@ Standalone commits per phase. Each phase typechecks alone.
 
 ### Phase 1: delete the migration apparatus
 
-- [ ] **1.1** Delete `lib/migration/` (all five files).
-- [ ] **1.2** Remove call sites: `(app)/+layout.svelte` (import + `migrateOldSettings()`
+- [x] **1.1** Delete `lib/migration/` (all five files).
+- [x] **1.2** Remove call sites: `(app)/+layout.svelte` (import + `migrateOldSettings()`
       call), `AppLayout.svelte` (`migrationDialog.check()` + import),
       `VerticalNav.svelte` (button block, `shouldShowMigrationButton`, imports,
       `Database` icon import if unused).
+  > **Note**: Remaining `migrat` grep hits are comments about the audio
+  > blob-store's dual-read fallback and Yjs observer behavior, both separate
+  > systems. The blob-store "unmigrated legacy data" fallback in
+  > `services/blob-store/index.tauri.ts` is a candidate for its own future
+  > refusal pass; out of scope here.
 
 ### Phase 2: re-key device config to providers.*
 

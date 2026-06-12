@@ -9,13 +9,7 @@
 	import * as Select from '@epicenter/ui/select';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import CopyablePre from '$lib/components/copyable/CopyablePre.svelte';
-	import {
-		DeepgramApiKeyInput,
-		ElevenLabsApiKeyInput,
-		GroqApiKeyInput,
-		MistralApiKeyInput,
-		OpenAiApiKeyInput,
-	} from '$lib/components/settings';
+	import { ApiKeyInput } from '$lib/components/settings';
 	import LocalModelSelector from '$lib/components/settings/LocalModelSelector.svelte';
 	import TranscriptionServiceSelect from '$lib/components/settings/TranscriptionServiceSelect.svelte';
 	import { SUPPORTED_LANGUAGES_OPTIONS } from '$lib/constants/languages';
@@ -169,7 +163,7 @@
 					.
 				</Field.Description>
 			</Field.Field>
-			<OpenAiApiKeyInput />
+			<ApiKeyInput provider="OpenAI" />
 		{:else if settings.get('transcription.service') === 'Groq'}
 			<Field.Field>
 				<Field.Label for="groq-model">Groq Model</Field.Label>
@@ -200,7 +194,7 @@
 					.
 				</Field.Description>
 			</Field.Field>
-			<GroqApiKeyInput />
+			<ApiKeyInput provider="Groq" />
 		{:else if settings.get('transcription.service') === 'Deepgram'}
 			<Field.Field>
 				<Field.Label for="deepgram-model">Deepgram Model</Field.Label>
@@ -221,7 +215,7 @@
 					</Select.Content>
 				</Select.Root>
 			</Field.Field>
-			<DeepgramApiKeyInput />
+			<ApiKeyInput provider="Deepgram" />
 		{:else if settings.get('transcription.service') === 'Mistral'}
 			<Field.Field>
 				<Field.Label for="mistral-model">Mistral Model</Field.Label>
@@ -252,7 +246,7 @@
 					.
 				</Field.Description>
 			</Field.Field>
-			<MistralApiKeyInput />
+			<ApiKeyInput provider="Mistral" />
 		{:else if settings.get('transcription.service') === 'ElevenLabs'}
 			<Field.Field>
 				<Field.Label for="elevenlabs-model">ElevenLabs Model</Field.Label>
@@ -283,7 +277,7 @@
 					.
 				</Field.Description>
 			</Field.Field>
-			<ElevenLabsApiKeyInput />
+			<ApiKeyInput provider="ElevenLabs" />
 		{:else if settings.get('transcription.service') === 'speaches'}
 			<div class="space-y-4">
 				<Card.Root>

@@ -29,16 +29,7 @@ Components in this directory:
 
 ```
 settings/
-├── api-key-inputs/         # API key input components (deviceConfig)
-│   ├── OpenAiApiKeyInput.svelte
-│   ├── GroqApiKeyInput.svelte
-│   ├── AnthropicApiKeyInput.svelte
-│   ├── ElevenLabsApiKeyInput.svelte
-│   ├── GoogleApiKeyInput.svelte
-│   ├── DeepgramApiKeyInput.svelte
-│   ├── MistralApiKeyInput.svelte
-│   ├── OpenRouterApiKeyInput.svelte
-│   └── CustomEndpointInput.svelte
+├── ApiKeyInput.svelte      # Data-driven API key fields per provider (deviceConfig)
 ├── selectors/              # Various selector components
 │   ├── ManualDeviceSelector.svelte
 │   ├── VadDeviceSelector.svelte
@@ -51,14 +42,14 @@ settings/
 
 ## Usage Examples
 
-### Basic Usage (No Props)
+### Basic Usage (Minimal Props)
 
 ```svelte
 <script>
-	import OpenAiApiKeyInput from '$lib/components/settings/api-key-inputs/OpenAiApiKeyInput.svelte';
+	import { ApiKeyInput } from '$lib/components/settings';
 </script>
 
-<OpenAiApiKeyInput />
+<ApiKeyInput provider="OpenAI" />
 ```
 
 ### With Settings Key Prop

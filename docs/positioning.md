@@ -27,13 +27,13 @@ What we refuse to build is the strategy. No partial sync: a workspace is one ful
 
 ## The Spine
 
-One message at four lengths. Longer cuts add detail. No cut contradicts a shorter one, and every claim from a shorter cut survives in the longer cuts.
+One message, cut to length and audience. Longer cuts add detail. No cut contradicts a shorter one, and every claim from a shorter cut survives in the longer cuts.
 
 One line, for one-line surfaces (GitHub About, social preview, link cards):
 
 > Local-first apps that write to files you own.
 
-The hero cut, for heroes (root README, epicenter.so):
+The hero cut, for the root README hero:
 
 > **Local-first apps that write to files you own.** Your data lives on your machine as plain Markdown and SQLite: grep it, version it, open it in Obsidian. When an app stops mattering, your files don't.
 
@@ -45,7 +45,11 @@ The developer cut, for `@epicenter/workspace` and other toolkit surfaces (npm, p
 
 > A local-first workspace engine for TypeScript apps: Yjs as the source of truth, Markdown and SQLite as the outputs.
 
-The developer cut is the only cut with its own framing. It exists because npm readers evaluate an API, not a product. Everything else derives from the user-facing cuts above.
+The public cut, for epicenter.so and other general-audience surfaces:
+
+> Apps come and go. Your files shouldn't. Epicenter apps save everything you make as ordinary files in a folder on your computer, so what matters to you outlives every app that made it.
+
+The developer and public cuts are the only cuts with their own framing. The developer cut exists because npm readers evaluate an API, not a product. The public cut exists because epicenter.so readers are not evaluating an architecture: it restates the one-line cut with the vocabulary translated. Markdown, SQLite, local-first, CRDT, and Yjs stay out of public heroes; on a public surface the mechanism appears below the fold, after the benefit it guarantees, never as the headline. Everything else derives from the user-facing cuts above.
 
 Headlines, tweets, launch posts, and package copy derive from these cuts but live in the surface that publishes them. If a derived surface needs a claim the spine does not make, fix the spine first.
 

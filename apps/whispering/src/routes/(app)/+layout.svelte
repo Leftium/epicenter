@@ -7,6 +7,7 @@
 	import { migrateOldSettings } from '$lib/migration/migrate-settings';
 	import { analytics } from '$lib/operations/analytics';
 	import { services } from '$lib/services';
+	import { PROVIDERS } from '$lib/services/transcription/providers';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { localModel } from '$lib/state/local-model.svelte';
 	import { settings } from '$lib/state/settings.svelte';
@@ -28,10 +29,6 @@
 	const LOCAL_ENGINES = new Set<Engine>(['whispercpp', 'parakeet', 'moonshine']);
 	function isLocalEngine(serviceId: string): serviceId is Engine {
 		return LOCAL_ENGINES.has(serviceId as Engine);
-	}
-
-	function modelPathKey(engine: Engine) {
-		return `transcription.${engine}.modelPath` as const;
 	}
 
 	// Sidebar when wide, bottom bar on narrow viewports (phone, small window).
@@ -59,7 +56,7 @@
 		const service = settings.get('transcription.service');
 		if (!isLocalEngine(service)) return;
 
-		const modelPath = deviceConfig.get(modelPathKey(service));
+		const modelPath = deviceConfig.get(PROVIDERS[service].modelPathKey);
 		if (!modelPath) return;
 
 		const language = settings.get('transcription.language');

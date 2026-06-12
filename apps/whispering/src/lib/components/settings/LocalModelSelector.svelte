@@ -7,14 +7,15 @@
 	import FolderOpen from '@lucide/svelte/icons/folder-open';
 	import Paperclip from '@lucide/svelte/icons/paperclip';
 	import X from '@lucide/svelte/icons/x';
-	import { basename, join } from '@tauri-apps/api/path';
+	import { basename } from '@tauri-apps/api/path';
 	import { open } from '@tauri-apps/plugin-dialog';
-	import { copyFile, mkdir, readDir } from '@tauri-apps/plugin-fs';
 	import type { Snippet } from 'svelte';
-	import { extractErrorMessage } from 'wellcrafted/error';
-	import { Ok, tryAsync } from 'wellcrafted/result';
 	import type { LocalModelConfig } from '$lib/constants/local-models';
-	import { PATHS } from '$lib/services/fs-paths';
+	import {
+		importModelDirectory,
+		importModelFile,
+	} from '$lib/services/transcription/local-model-storage';
+	import { PROVIDERS } from '$lib/services/transcription/providers';
 	import { tauri } from '#platform/tauri';
 	import LocalModelDownloadCard from './LocalModelDownloadCard.svelte';
 
@@ -22,17 +23,18 @@
 	 * Props for the LocalModelSelector component
 	 */
 	type LocalModelSelectorProps = {
-		/** Array of pre-built models available for download */
-		models: readonly LocalModelConfig[];
+		/**
+		 * Pre-built models available for download. All entries share one
+		 * engine; at least one is required because the engine decides where
+		 * manual imports land.
+		 */
+		models: readonly [LocalModelConfig, ...LocalModelConfig[]];
 
 		/** Component title displayed in the card header */
 		title: string;
 
 		/** Component description displayed below the title */
 		description: string;
-
-		/** Whether to select files or directories */
-		fileSelectionMode: 'file' | 'directory';
 
 		/** File extensions to filter (for file mode only) */
 		fileExtensions?: string[];
@@ -51,12 +53,18 @@
 		models,
 		title,
 		description,
-		fileSelectionMode,
 		fileExtensions = [],
 		value = $bindable(),
 		prebuiltFooter,
 		manualInstructions,
 	}: LocalModelSelectorProps = $props();
+
+	const engine = $derived(models[0].engine);
+
+	// Not a free choice: an imported path must match what the engine's
+	// preflight accepts (a file for Whisper, a directory for Parakeet and
+	// Moonshine), so the mode comes from the provider registry.
+	const fileSelectionMode = $derived(PROVIDERS[engine].preflightKind);
 
 	// Extract the model name from the current path
 	const modelName = $derived.by(async () => {
@@ -80,100 +88,63 @@
 	);
 	const isPrebuiltModel = $derived(!!prebuiltModelInfo);
 
-	async function getModelRoot() {
-		const engine = models[0]?.engine;
-		switch (engine) {
-			case 'whispercpp':
-				return PATHS.MODELS.WHISPER();
-			case 'parakeet':
-				return PATHS.MODELS.PARAKEET();
-			case 'moonshine':
-				return PATHS.MODELS.MOONSHINE();
-			default:
-				throw new Error('No local model engine configured');
-		}
-	}
-
-	async function copyDirectory(sourceDir: string, destinationDir: string) {
-		await mkdir(destinationDir, { recursive: true });
-		const entries = await readDir(sourceDir);
-
-		for (const entry of entries) {
-			const sourcePath = await join(sourceDir, entry.name);
-			const destinationPath = await join(destinationDir, entry.name);
-
-			if (entry.isDirectory) {
-				await copyDirectory(sourcePath, destinationPath);
-			} else if (entry.isFile) {
-				await copyFile(sourcePath, destinationPath);
-			} else {
-				throw new Error('Selected model directory cannot include symlinks');
-			}
-		}
-	}
-
 	/**
 	 * Open file/folder browser for manual model selection
 	 */
 	async function selectModel() {
 		if (!tauri) return;
 
-		await tryAsync({
-			try: async () => {
-				const modelRoot = await getModelRoot();
-				await mkdir(modelRoot, { recursive: true });
+		if (fileSelectionMode === 'directory') {
+			const selected = await open({
+				directory: true,
+				multiple: false,
+				title: `Select ${title} Directory`,
+			});
+			if (!selected) return;
 
-				if (fileSelectionMode === 'directory') {
-					const selected = await open({
-						directory: true,
-						multiple: false,
-						title: `Select ${title} Directory`,
-					});
-
-					if (selected) {
-						const entries = await readDir(selected);
-						if (entries.length === 0) {
-							throw new Error('Selected directory appears to be empty');
-						}
-						const directoryName = await basename(selected);
-						const importedPath = await join(modelRoot, directoryName);
-						await copyDirectory(selected, importedPath);
-						value = importedPath;
-						toast.success('Model directory imported');
-					}
-				} else {
-					const filters =
-						fileExtensions.length > 0
-							? [
-									{
-										name: `${title} Files`,
-										extensions: fileExtensions,
-									},
-								]
-							: [];
-
-					const selected = await open({
-						multiple: false,
-						filters,
-						title: `Select ${title} File`,
-					});
-
-					if (selected) {
-						const fileName = await basename(selected);
-						const importedPath = await join(modelRoot, fileName);
-						await copyFile(selected, importedPath);
-						value = importedPath;
-						toast.success('Model file imported');
-					}
-				}
-			},
-			catch: (error) => {
+			const { data, error } = await importModelDirectory({
+				engine,
+				sourceDir: selected,
+			});
+			if (error) {
 				toast.error('Failed to select model', {
-					description: extractErrorMessage(error),
+					description: error.message,
 				});
-				return Ok(undefined);
-			},
-		});
+				return;
+			}
+			value = data.path;
+			toast.success('Model directory imported');
+		} else {
+			const filters =
+				fileExtensions.length > 0
+					? [
+							{
+								name: `${title} Files`,
+								extensions: fileExtensions,
+							},
+						]
+					: [];
+
+			const selected = await open({
+				multiple: false,
+				filters,
+				title: `Select ${title} File`,
+			});
+			if (!selected) return;
+
+			const { data, error } = await importModelFile({
+				engine,
+				sourcePath: selected,
+			});
+			if (error) {
+				toast.error('Failed to select model', {
+					description: error.message,
+				});
+				return;
+			}
+			value = data.path;
+			toast.success('Model file imported');
+		}
 	}
 
 	/**

@@ -41,10 +41,15 @@ wrangler secret put ...
 ## Deploy
 
 ```bash
-bun run --cwd apps/self-host typegen      # generate worker-configuration.d.ts
 bun run --cwd apps/self-host typecheck
 bun run --cwd apps/self-host deploy
 ```
+
+`worker-configuration.d.ts` is hand-written: it inherits the library's
+binding contract (`ServerBindings`) and declares only deployment-owned
+vars, so there is no typegen step. If you add bindings of your own, declare
+them there (or regenerate with `bun run typegen` and re-add the `extends`
+clause).
 
 ## Composition
 

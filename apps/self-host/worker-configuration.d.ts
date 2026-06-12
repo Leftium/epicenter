@@ -2,48 +2,30 @@
  * Cloudflare bindings for apps/self-host.
  *
  * Hand-written so this reference deployable typechecks without requiring a
- * Cloudflare account or a `wrangler types` run. Deployers should regenerate
- * via `bun run typegen` after customizing `wrangler.jsonc`.
+ * Cloudflare account or a `wrangler types` run. The library's binding
+ * contract is inherited from `ServerBindings`, so this file declares only
+ * what the deployment itself owns. If you replace it with `wrangler types`
+ * output, re-add the `extends` clause so the inherited bindings (GitHub
+ * OAuth, AI provider house keys) survive the regeneration.
  *
- * Bindings mirror those declared in `wrangler.jsonc` and the cloudflare
- * bindings the `@epicenter/server` library reads from `c.env`. Hosted-only
- * bindings (Autumn, ASSETS, ADMIN_USER_IDS) are deliberately absent: the
- * shared-wiki reference has no billing surface and no dashboard SPA.
+ * Hosted-only bindings (Autumn, ASSETS, ADMIN_USER_IDS) are deliberately
+ * absent: the shared-wiki reference has no billing surface and no
+ * dashboard SPA.
  */
 
 /// <reference types="@cloudflare/workers-types" />
 
 declare namespace Cloudflare {
-	interface Env {
-		// KV: Better Auth secondary storage
-		SESSION_KV: KVNamespace;
-		// R2: Asset storage
-		ASSETS_BUCKET: R2Bucket;
-		// Hyperdrive: Postgres connection pool
-		HYPERDRIVE: Hyperdrive;
-		// Durable Object: Yjs sync rooms
-		ROOM: DurableObjectNamespace<import('./worker/index').Room>;
-		// vars (wrangler.jsonc)
+	// Heritage clauses cannot contain import() type expressions (TS2499),
+	// so the library contract is aliased before the extends.
+	type ServerBindings = import('@epicenter/server').ServerBindings;
+
+	interface Env extends ServerBindings {
+		// Deployment-owned vars (wrangler.jsonc): this deployment's public
+		// origin and the shared() admission allowlist. The library never
+		// reads these by name; they flow through deployment callbacks.
 		API_PUBLIC_ORIGIN: string;
 		ALLOWED_MEMBER_EMAILS: string;
-		GOOGLE_CLIENT_ID: string;
-		// GitHub OAuth is optional: a deployment that has not registered a
-		// GitHub app simply does not offer GitHub sign-in. The provider and its
-		// sign-in button are both gated on these being present (see the server's
-		// create-auth.ts and the /sign-in route). Mirrors the optional binding
-		// in @epicenter/server's cloudflare-bindings.d.ts.
-		GITHUB_CLIENT_ID?: string;
-		// secrets (wrangler secret put)
-		BETTER_AUTH_SECRET: string;
-		ENCRYPTION_SECRETS: string;
-		GOOGLE_CLIENT_SECRET: string;
-		GITHUB_CLIENT_SECRET?: string;
-		// AI provider house keys are optional: omit one and members must bring
-		// their own key (BYOK) for that provider; a house-key request gets 503
-		// ProviderNotConfigured. Mirrors the optional bindings in
-		// @epicenter/server's cloudflare-bindings.d.ts.
-		OPENAI_API_KEY?: string;
-		GEMINI_API_KEY?: string;
 	}
 }
 

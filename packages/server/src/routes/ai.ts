@@ -12,9 +12,8 @@
  *
  * House keys (`OPENAI_API_KEY`, `GEMINI_API_KEY`) are optional bindings: a
  * deployment that omits one serves only BYOK requests for that provider,
- * and a house-key request gets 503 ProviderNotConfigured. The hosted cloud
- * requires both in its wrangler config because credits are billed against
- * house-key usage.
+ * and a house-key request gets 503 ProviderNotConfigured. Hosted requires
+ * both at deploy time; see apps/api/wrangler.jsonc for why.
  */
 
 import {

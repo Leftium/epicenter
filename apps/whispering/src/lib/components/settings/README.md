@@ -45,7 +45,9 @@ settings/
 │   ├── TransformationSelector.svelte
 │   ├── TranscriptionSelector.svelte
 │   └── RecordingModeSelector.svelte
+├── LocalModelSelector.svelte
 ├── LocalModelDownloadCard.svelte
+├── TranscriptionServiceSelect.svelte
 └── README.md               # This file
 ```
 

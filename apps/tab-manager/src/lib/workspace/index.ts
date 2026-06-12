@@ -16,5 +16,4 @@ export {
 	type SavedTabId,
 	TAB_MANAGER_ID,
 	type TabManagerWorkspace,
-	type ToolTrust,
 } from './definition';

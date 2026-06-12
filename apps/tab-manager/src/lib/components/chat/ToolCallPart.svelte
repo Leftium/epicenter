@@ -64,7 +64,7 @@
 
 	function handleAlwaysAllow() {
 		if (!part.approval?.id) return;
-		tabManager.state.toolTrust.set(part.name, 'always');
+		tabManager.state.toolTrust.allow(part.name);
 		onApproveToolCall(part.approval.id);
 	}
 

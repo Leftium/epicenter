@@ -6,11 +6,7 @@
 	import { requireTabManager } from '$lib/session.svelte';
 
 	const tabManager = requireTabManager();
-	const trustedTools = $derived(
-		tabManager.state.toolTrust.entries.filter(
-			([, level]) => level === 'always',
-		),
-	);
+	const trustedTools = $derived(tabManager.state.toolTrust.trustedToolNames);
 </script>
 
 {#if trustedTools.length > 0}
@@ -25,7 +21,7 @@
 			<div class="space-y-3">
 				<p class="text-sm font-medium">Tool Permissions</p>
 				<div class="space-y-2">
-					{#each trustedTools as [ name ] (name)}
+					{#each trustedTools as name (name)}
 						<div class="flex items-center justify-between gap-2">
 							<span class="text-sm">
 								{tabManager.sessionAiTools.definitions.find(d => d.name === name)?.title ??
@@ -36,7 +32,7 @@
 							<Switch
 								checked={true}
 								onCheckedChange={() =>
-									tabManager.state.toolTrust.set(name, 'ask')}
+									tabManager.state.toolTrust.revoke(name)}
 							/>
 						</div>
 					{/each}
@@ -46,8 +42,8 @@
 						<button
 							class="text-xs text-muted-foreground hover:text-foreground transition-colors"
 							onclick={() => {
-								for (const [toolName] of trustedTools) {
-									tabManager.state.toolTrust.set(toolName, 'ask');
+								for (const toolName of trustedTools) {
+									tabManager.state.toolTrust.revoke(toolName);
 								}
 							}}
 						>

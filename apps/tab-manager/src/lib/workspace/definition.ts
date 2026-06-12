@@ -198,20 +198,16 @@ const conversationsTable = defineTable({
 export type Conversation = InferTableRow<typeof conversationsTable>;
 
 /**
- * Tool trust: per-tool approval preferences for AI chat.
+ * Tool trust: the set of auto-approved AI chat tools.
  *
- * Each row represents a user's trust decision for a specific destructive tool.
- * Tools not in this table default to 'ask' (show approval UI). Users can
- * escalate to 'always' (auto-approve) via the inline approval buttons.
- *
- * The `id` is the flat action name used by CLI and RPC surfaces
+ * A presence set: a row means the user chose "Always Allow" for that tool;
+ * absence means ask every time (the safe default), so revoking deletes the
+ * row. The `id` is the flat action name used by CLI and RPC surfaces
  * (e.g. `tabs_close`).
  */
 const toolTrustTable = defineTable({
 	id: field.string(),
-	trust: field.select(['ask', 'always']),
 });
-export type ToolTrust = InferTableRow<typeof toolTrustTable>;
 
 /**
  * Build the Tab Manager workspace bundle. Encrypted under the supplied

@@ -89,7 +89,7 @@ export function createAiChatState({
 		let dismissedError = $state<string | null>(null);
 
 		/** Recency fallback for drafts: no messages exist until first send. */
-		const createdAtFallback = Date.now();
+		const lastActivityFallback = Date.now();
 
 		const modelChoice = $derived(modelChoices.get(conversationId));
 
@@ -154,12 +154,10 @@ export function createAiChatState({
 				return text ? text.slice(0, 50) : 'New Chat';
 			},
 
-			get createdAt() {
-				return chat.messages[0]?.createdAt?.getTime() ?? createdAtFallback;
-			},
-
 			get updatedAt() {
-				return chat.messages.at(-1)?.createdAt?.getTime() ?? createdAtFallback;
+				return (
+					chat.messages.at(-1)?.createdAt?.getTime() ?? lastActivityFallback
+				);
 			},
 
 			// ── Model choice ──
@@ -344,11 +342,16 @@ export function createAiChatState({
 			}
 		}
 
-		const mostRecent = byRecency[0];
-		if (mostRecent) {
-			activeConversationId = mostRecent.id;
-		} else {
-			createConversation();
+		// Only pick the active conversation if the user hasn't already
+		// created a draft while this read was in flight; reassigning here
+		// would yank the UI away from it.
+		if (!handles.has(activeConversationId)) {
+			const mostRecent = byRecency[0];
+			if (mostRecent) {
+				activeConversationId = mostRecent.id;
+			} else {
+				createConversation();
+			}
 		}
 	})();
 
@@ -409,10 +412,6 @@ export function createAiChatState({
 			return conversationList;
 		},
 
-		get(id: ConversationId) {
-			return handles.get(id);
-		},
-
 		get activeConversationId() {
 			return activeConversationId;
 		},
@@ -428,12 +427,9 @@ export function createAiChatState({
 		modelsForProvider(providerName: string): readonly string[] {
 			return PROVIDER_MODELS[providerName as Provider] ?? [];
 		},
-
-		/** URL to the billing page for credit upgrades. */
-		billingUrl: `${APP_URLS.API}/billing`,
 	};
 }
 
 /** A reactive handle for a single conversation backed by `createChat`. */
 type AiChatState = ReturnType<typeof createAiChatState>;
-export type ConversationHandle = NonNullable<ReturnType<AiChatState['get']>>;
+export type ConversationHandle = NonNullable<AiChatState['active']>;

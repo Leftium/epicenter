@@ -55,7 +55,6 @@ export type ModelChoice = { provider: string; model: string };
 // ── IndexedDB plumbing ─────────────────────────────────────────────────
 
 const DB_NAME = 'tab-manager-chat';
-const DB_VERSION = 2;
 const MESSAGES_STORE = 'messages';
 const SETTINGS_STORE = 'settings';
 
@@ -73,16 +72,10 @@ function store(
 	mode: IDBTransactionMode,
 ): Promise<IDBObjectStore> {
 	dbPromise ??= (() => {
-		const request = indexedDB.open(DB_NAME, DB_VERSION);
+		const request = indexedDB.open(DB_NAME, 1);
 		request.onupgradeneeded = () => {
-			const db = request.result;
-			// Clean break from the v1 single-store layout: recreate from
-			// scratch rather than migrate (no data contract on this store).
-			for (const existing of [...db.objectStoreNames]) {
-				db.deleteObjectStore(existing);
-			}
-			db.createObjectStore(MESSAGES_STORE);
-			db.createObjectStore(SETTINGS_STORE);
+			request.result.createObjectStore(MESSAGES_STORE);
+			request.result.createObjectStore(SETTINGS_STORE);
 		};
 		return requestToPromise(request);
 	})();
@@ -127,6 +120,22 @@ export const chatPersistence = {
 
 // ── Startup enumeration and model-choice rows ──────────────────────────
 
+async function readAllRows<T>(
+	name: typeof MESSAGES_STORE | typeof SETTINGS_STORE,
+): Promise<Array<[ConversationId, T]>> {
+	const rows = await store(name, 'readonly');
+	const [keys, values] = await Promise.all([
+		requestToPromise(rows.getAllKeys()),
+		requestToPromise<T[]>(rows.getAll()),
+	]);
+	return keys.flatMap((key, i) => {
+		const value = values[i];
+		return value === undefined
+			? []
+			: [[asConversationId(String(key)), value] as [ConversationId, T]];
+	});
+}
+
 /**
  * Read every stored conversation's messages in one pass. Used once at
  * startup to discover which conversations exist and pick the most recent;
@@ -137,15 +146,8 @@ export async function loadAllConversations(): Promise<
 	Array<{ id: ConversationId; messages: UIMessage[] }>
 > {
 	try {
-		const messagesStore = await store(MESSAGES_STORE, 'readonly');
-		const [keys, values] = await Promise.all([
-			requestToPromise(messagesStore.getAllKeys()),
-			requestToPromise<UIMessage[][]>(messagesStore.getAll()),
-		]);
-		return keys.map((key, i) => ({
-			id: asConversationId(String(key)),
-			messages: values[i] ?? [],
-		}));
+		const rows = await readAllRows<UIMessage[]>(MESSAGES_STORE);
+		return rows.map(([id, messages]) => ({ id, messages }));
 	} catch (error) {
 		console.error('[ai-chat] failed to list conversations:', error);
 		return [];
@@ -157,17 +159,7 @@ export async function getAllModelChoices(): Promise<
 	Map<ConversationId, ModelChoice>
 > {
 	try {
-		const settingsStore = await store(SETTINGS_STORE, 'readonly');
-		const [keys, values] = await Promise.all([
-			requestToPromise(settingsStore.getAllKeys()),
-			requestToPromise<ModelChoice[]>(settingsStore.getAll()),
-		]);
-		return new Map(
-			keys.flatMap((key, i) => {
-				const choice = values[i];
-				return choice ? [[asConversationId(String(key)), choice] as const] : [];
-			}),
-		);
+		return new Map(await readAllRows<ModelChoice>(SETTINGS_STORE));
 	} catch (error) {
 		console.error('[ai-chat] failed to load model choices:', error);
 		return new Map();

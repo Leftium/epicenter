@@ -15,19 +15,14 @@
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { nanoid } from 'nanoid/non-secure';
 	import { slide } from 'svelte/transition';
-	import {
-		AnthropicApiKeyInput,
-		CustomEndpointInput,
-		GoogleApiKeyInput,
-		GroqApiKeyInput,
-		OpenAiApiKeyInput,
-		OpenRouterApiKeyInput,
-	} from '$lib/components/settings';
+	import { ApiKeyInput } from '$lib/components/settings';
 	import { TRANSFORMATION_STEP_TYPE_OPTIONS } from '$lib/constants/transformations';
 	import {
+		hasModelSelect,
 		INFERENCE,
 		INFERENCE_PROVIDER_OPTIONS,
 		type InferenceProviderId,
+		type ModelSelectProviderId,
 	} from '$lib/constants/inference';
 	import { generateDefaultStep } from '$lib/state/transformation-steps.svelte';
 	import type { Transformation, TransformationStep } from '$lib/workspace';
@@ -37,6 +32,8 @@
 		TRANSFORMATION_STEP_TYPE_OPTIONS.find((o) => o.value === type)?.label;
 	const providerLabel = (provider: string) =>
 		INFERENCE[provider as InferenceProviderId]?.label;
+
+	type ModelStepField = (typeof INFERENCE)[ModelSelectProviderId]['stepModelField'];
 
 	let {
 		transformation = $bindable(),
@@ -49,6 +46,17 @@
 	/** Update a single field on a step by index. */
 	function updateStep(index: number, patch: Partial<TransformationStep>) {
 		steps = steps.map((s, i) => (i === index ? { ...s, ...patch } : s));
+	}
+
+	/** Write a model selection into the provider's dedicated step field. */
+	function updateStepModel(
+		index: number,
+		field: ModelStepField,
+		model: string,
+	) {
+		const patch: { [K in ModelStepField]?: string } = {};
+		patch[field] = model;
+		updateStep(index, patch);
 	}
 
 	function addStep() {
@@ -275,89 +283,25 @@
 										</Select.Root>
 									</Field.Field>
 
-									{#if step.inferenceProvider === 'OpenAI'}
+									{#if hasModelSelect(step.inferenceProvider)}
+										{@const modelField =
+											INFERENCE[step.inferenceProvider].stepModelField}
 										<Field.Field>
-											<Field.Label for="openaiModel">Model</Field.Label>
+											<Field.Label for={modelField}>Model</Field.Label>
 											<Select.Root
 												type="single"
-												bind:value={() => step.openaiModel,
+												bind:value={() => step[modelField],
 													(value) => {
 														if (value) {
-															updateStep(index, { openaiModel: value });
+															updateStepModel(index, modelField, value);
 														}
 													}}
 											>
-												<Select.Trigger id="openaiModel" class="w-full">
-													{step.openaiModel || 'Select a model'}
+												<Select.Trigger id={modelField} class="w-full">
+													{step[modelField] || 'Select a model'}
 												</Select.Trigger>
 												<Select.Content>
-													{#each INFERENCE.OpenAI.models as model}
-														<Select.Item value={model} label={model} />
-													{/each}
-												</Select.Content>
-											</Select.Root>
-										</Field.Field>
-									{:else if step.inferenceProvider === 'Groq'}
-										<Field.Field>
-											<Field.Label for="groqModel">Model</Field.Label>
-											<Select.Root
-												type="single"
-												bind:value={() => step.groqModel,
-													(value) => {
-														if (value) {
-															updateStep(index, { groqModel: value });
-														}
-													}}
-											>
-												<Select.Trigger id="groqModel" class="w-full">
-													{step.groqModel || 'Select a model'}
-												</Select.Trigger>
-												<Select.Content>
-													{#each INFERENCE.Groq.models as model}
-														<Select.Item value={model} label={model} />
-													{/each}
-												</Select.Content>
-											</Select.Root>
-										</Field.Field>
-									{:else if step.inferenceProvider === 'Anthropic'}
-										<Field.Field>
-											<Field.Label for="anthropicModel">Model</Field.Label>
-											<Select.Root
-												type="single"
-												bind:value={() => step.anthropicModel,
-													(value) => {
-														if (value) {
-															updateStep(index, { anthropicModel: value });
-														}
-													}}
-											>
-												<Select.Trigger id="anthropicModel" class="w-full">
-													{step.anthropicModel || 'Select a model'}
-												</Select.Trigger>
-												<Select.Content>
-													{#each INFERENCE.Anthropic.models as model}
-														<Select.Item value={model} label={model} />
-													{/each}
-												</Select.Content>
-											</Select.Root>
-										</Field.Field>
-									{:else if step.inferenceProvider === 'Google'}
-										<Field.Field>
-											<Field.Label for="googleModel">Model</Field.Label>
-											<Select.Root
-												type="single"
-												bind:value={() => step.googleModel,
-													(value) => {
-														if (value) {
-															updateStep(index, { googleModel: value });
-														}
-													}}
-											>
-												<Select.Trigger id="googleModel" class="w-full">
-													{step.googleModel || 'Select a model'}
-												</Select.Trigger>
-												<Select.Content>
-													{#each INFERENCE.Google.models as model}
+													{#each INFERENCE[step.inferenceProvider].models as model}
 														<Select.Item value={model} label={model} />
 													{/each}
 												</Select.Content>
@@ -456,19 +400,12 @@
 											Advanced Options
 										</Accordion.Trigger>
 										<Accordion.Content>
-											{#if step.inferenceProvider === 'OpenAI'}
-												<OpenAiApiKeyInput />
-											{:else if step.inferenceProvider === 'Groq'}
-												<GroqApiKeyInput />
-											{:else if step.inferenceProvider === 'Anthropic'}
-												<AnthropicApiKeyInput />
-											{:else if step.inferenceProvider === 'Google'}
-												<GoogleApiKeyInput />
-											{:else if step.inferenceProvider === 'OpenRouter'}
-												<OpenRouterApiKeyInput />
-											{:else if step.inferenceProvider === 'Custom'}
-												<CustomEndpointInput showBaseUrl={false} />
-											{/if}
+											<!-- Custom steps already expose a per-step base URL
+											     override above, so hide the global one here. -->
+											<ApiKeyInput
+												provider={step.inferenceProvider}
+												showBaseUrl={step.inferenceProvider !== 'Custom'}
+											/>
 										</Accordion.Content>
 									</Accordion.Item>
 								</Accordion.Root>

@@ -232,7 +232,8 @@ type LoginWithOobConfig = CommonConfig & {
 	 */
 	redirectUri?: string;
 	/**
-	 * Output sink for the URL and success messages printed by the CLI.
+	 * Output sink for the authorize URL and paste prompt. Defaults to stdout;
+	 * tests pass a collector.
 	 */
 	print?: (line: string) => void;
 	/**
@@ -272,15 +273,16 @@ export async function loginWithOob({
 	Result<LoginWithOobResult, MachineAuthRequestError | MachineAuthStorageError>
 > {
 	const authFilePath = filePath ?? machineAuthFilePath({ baseURL });
+	// Passing `undefined` engages the launcher's own destructuring defaults.
 	const launcher = createOobOAuthLauncher({
 		baseURL,
 		clientId,
 		fetch,
 		now,
-		...(redirectUri ? { redirectUri } : {}),
-		...(print ? { print } : {}),
-		...(openBrowser ? { openBrowser } : {}),
-		...(readCode ? { readCode } : {}),
+		redirectUri,
+		print,
+		openBrowser,
+		readCode,
 	});
 
 	const grantResult = await launcher.startSignIn();
@@ -290,12 +292,12 @@ export async function loginWithOob({
 		);
 	}
 	const launchResult = grantResult.data;
-	if (launchResult?.status !== 'completed') {
+	if (launchResult.status !== 'completed') {
 		return Err(
 			MachineAuthRequestError.RequestFailed({
 				cause: {
 					message: 'OOB launcher returned no grant.',
-					launchStatus: launchResult?.status,
+					launchStatus: launchResult.status,
 				},
 			}).error,
 		);
@@ -352,6 +354,17 @@ export async function status({
 	if (!loaded.data) return Ok({ status: 'signedOut' as const });
 	const cachedCell = loaded.data;
 
+	// Cell may still be valid for local decrypt when the server is unreachable;
+	// the underlying auth client wipes it on same-owner mismatch or
+	// reauth-required. Email is unknown without /api/session.
+	const unverifiedFromCache = {
+		status: 'unverified' as const,
+		identity: {
+			user: { id: cachedCell.userId, email: '' },
+			keyring: cachedCell.keyring,
+		},
+	};
+
 	const clientResult = await createMachineAuthClient({
 		baseURL,
 		clientId,
@@ -367,13 +380,7 @@ export async function status({
 	try {
 		response = await client.fetch(API_ROUTES.session.pattern);
 	} catch {
-		return Ok({
-			status: 'unverified' as const,
-			identity: {
-				user: { id: cachedCell.userId, email: '' },
-				keyring: cachedCell.keyring,
-			},
-		});
+		return Ok(unverifiedFromCache);
 	}
 
 	if (response.status === 200) {
@@ -398,16 +405,7 @@ export async function status({
 		});
 	}
 
-	// Network or auth failure. Cell may still be valid for local decrypt; the
-	// underlying auth client will have wiped it on same-owner mismatch or
-	// reauth-required already. Email is unknown without /api/session.
-	return Ok({
-		status: 'unverified' as const,
-		identity: {
-			user: { id: cachedCell.userId, email: '' },
-			keyring: cachedCell.keyring,
-		},
-	});
+	return Ok(unverifiedFromCache);
 }
 
 /**

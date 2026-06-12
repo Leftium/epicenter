@@ -14,7 +14,7 @@ export function findProjectRoot(start: string = process.cwd()): ProjectDir {
 		if (parent === current) {
 			throw new Error(
 				`findProjectRoot: no ${PROJECT_CONFIG_FILENAME} found walking up from ${start}. ` +
-					`Run \`epicenter daemon up\` to create one.`,
+					`Run \`epicenter init\` to create one.`,
 			);
 		}
 		current = parent;

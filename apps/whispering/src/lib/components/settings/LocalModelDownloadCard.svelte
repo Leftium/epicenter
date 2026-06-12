@@ -34,9 +34,11 @@
 	});
 
 	async function refreshStatus() {
-		// While downloading, the download handler owns the state machine.
+		const status = await prebuiltModel.getStatus();
+		// While downloading, the download handler owns the state machine; a
+		// download may also have started while we were checking the disk.
 		if (modelState.type === 'downloading') return;
-		modelState = { type: await prebuiltModel.getStatus() };
+		modelState = { type: status };
 	}
 
 	async function downloadModel() {

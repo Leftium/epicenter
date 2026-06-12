@@ -354,6 +354,17 @@ export async function status({
 	if (!loaded.data) return Ok({ status: 'signedOut' as const });
 	const cachedCell = loaded.data;
 
+	// Cell may still be valid for local decrypt when the server is unreachable;
+	// the underlying auth client wipes it on same-owner mismatch or
+	// reauth-required. Email is unknown without /api/session.
+	const unverifiedFromCache = {
+		status: 'unverified' as const,
+		identity: {
+			user: { id: cachedCell.userId, email: '' },
+			keyring: cachedCell.keyring,
+		},
+	};
+
 	const clientResult = await createMachineAuthClient({
 		baseURL,
 		clientId,
@@ -369,13 +380,7 @@ export async function status({
 	try {
 		response = await client.fetch(API_ROUTES.session.pattern);
 	} catch {
-		return Ok({
-			status: 'unverified' as const,
-			identity: {
-				user: { id: cachedCell.userId, email: '' },
-				keyring: cachedCell.keyring,
-			},
-		});
+		return Ok(unverifiedFromCache);
 	}
 
 	if (response.status === 200) {
@@ -400,16 +405,7 @@ export async function status({
 		});
 	}
 
-	// Network or auth failure. Cell may still be valid for local decrypt; the
-	// underlying auth client will have wiped it on same-owner mismatch or
-	// reauth-required already. Email is unknown without /api/session.
-	return Ok({
-		status: 'unverified' as const,
-		identity: {
-			user: { id: cachedCell.userId, email: '' },
-			keyring: cachedCell.keyring,
-		},
-	});
+	return Ok(unverifiedFromCache);
 }
 
 /**

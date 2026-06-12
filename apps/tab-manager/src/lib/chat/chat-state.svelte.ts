@@ -352,6 +352,16 @@ export function createAiChatState({
 			},
 
 			/**
+			 * Tear down the chat client: abort any in-flight stream, then
+			 * release the devtools bridge, which holds the client in a
+			 * globalThis registry that would otherwise outlive the handle.
+			 */
+			dispose() {
+				chat.stop();
+				chat.dispose();
+			},
+
+			/**
 			 * Reload messages from the Y.Doc into the chat instance.
 			 * Skips while a stream is in flight (`isLoading`) to avoid the
 			 * observer racing the chat's own message append: the user message
@@ -384,9 +394,9 @@ export function createAiChatState({
 
 	// ── Lifecycle ────────────────────────────────────────────────────
 
-	/** Stop client and remove the handle for a conversation. */
+	/** Dispose the chat client and remove the handle for a conversation. */
 	function destroyConversation(id: ConversationId) {
-		handles.get(id)?.stop();
+		handles.get(id)?.dispose();
 		handles.delete(id);
 	}
 

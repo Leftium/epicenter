@@ -214,13 +214,23 @@ export function createChatState() {
 			stop() {
 				chat.stop();
 			},
+
+			/**
+			 * Tear down the chat client: abort any in-flight stream, then
+			 * release the devtools bridge, which holds the client in a
+			 * globalThis registry that would otherwise outlive the handle.
+			 */
+			dispose() {
+				chat.stop();
+				chat.dispose();
+			},
 		};
 	}
 
 	// ── Lifecycle ──
 
 	function destroyConversation(id: ConversationId) {
-		handles.get(id)?.stop();
+		handles.get(id)?.dispose();
 		handles.delete(id);
 	}
 

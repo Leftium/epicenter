@@ -165,8 +165,12 @@ export function createAiChatState({
 		});
 
 		return {
+			// Abort any in-flight stream, then release the devtools bridge,
+			// which holds the client in a globalThis registry that would
+			// otherwise outlive the handle.
 			[Symbol.dispose]() {
 				chat.stop();
+				chat.dispose();
 			},
 
 			get id() {

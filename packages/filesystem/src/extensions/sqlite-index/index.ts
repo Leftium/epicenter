@@ -9,6 +9,11 @@
  * rebuildable cache. On every page load the index is rebuilt from Yjs.
  * Ongoing mutations are picked up via a debounced table observer.
  *
+ * The `path` column mirrors the runtime {@link FileSystemIndex}, which is
+ * the single owner of path and parent-graph validity (cycle and orphan
+ * repair, name disambiguation, trash exclusion). This extension never
+ * computes paths itself; it converges to whatever the index says.
+ *
  * Uses `@libsql/client-wasm` for browser WASM SQLite. To upgrade to
  * remote Turso, swap `url: ':memory:'` for `url: 'libsql://your-db.turso.io'`.
  *
@@ -19,8 +24,10 @@
  *   tables: { files: filesTable },
  *   kv: {},
  * });
+ * const fs = attachYjsFileSystem(workspace.ydoc, workspace.tables.files, fileContent);
  * const sqliteIndex = createSqliteIndex({
  *   readContent: fileContent.read,
+ *   index: fs.index,
  * })({ tables: workspace.tables });
  * await sqliteIndex.exports.whenReady;
  * const results = await sqliteIndex.exports.search('meeting notes');
@@ -34,10 +41,9 @@ import type { Table } from '@epicenter/workspace';
 import type { InStatement } from '@libsql/client-wasm';
 import { createClient } from '@libsql/client-wasm';
 
-import type { FileId } from '../../ids.js';
+import { asFileId, type FileId } from '../../ids.js';
 import type { FileRow } from '../../table.js';
-
-const MAX_PATH_DEPTH = 50;
+import type { FileSystemIndex } from '../../tree/path-index.js';
 
 const FILES_DDL = `CREATE TABLE IF NOT EXISTS files (
   id TEXT PRIMARY KEY,
@@ -67,7 +73,7 @@ const FILES_FTS = `CREATE VIRTUAL TABLE IF NOT EXISTS files_fts
 // ════════════════════════════════════════════════════════════════════════════
 
 export type SqliteIndexOptions = {
-	/** Debounce interval (ms) between table mutation and rebuild. @default 100 */
+	/** Debounce interval (ms) between a table mutation and the next mirror sync. @default 100 */
 	debounceMs?: number;
 };
 
@@ -82,7 +88,10 @@ export type SearchResult = {
 	id: string;
 	/** File name. */
 	name: string;
-	/** Materialized POSIX path, or null if the file is orphaned. */
+	/**
+	 * Resolved absolute path from the runtime {@link FileSystemIndex},
+	 * or null if the file is trashed or unreachable.
+	 */
 	path: string | null;
 	/** FTS5 snippet with `<mark>` highlights around matched terms. */
 	snippet: string;
@@ -112,6 +121,11 @@ type SqliteIndexContext = {
  * Create a SQLite index. Returns a curried factory: call with options, then
  * invoke the inner function with `{ tables }` to wire it into the workspace.
  *
+ * `index` must be the runtime index attached to the same files table
+ * (e.g. `fs.index` from `attachYjsFileSystem`). The index updates
+ * synchronously on table mutations while this extension's sync is
+ * debounced, so by the time a sync runs the index is already current.
+ *
  * @example
  * ```typescript
  * const workspace = createWorkspace({
@@ -120,7 +134,8 @@ type SqliteIndexContext = {
  *   kv: {},
  * });
  * attachIndexedDb(workspace.ydoc);
- * const sqliteIndex = createSqliteIndex({ readContent })({
+ * const fs = attachYjsFileSystem(workspace.ydoc, workspace.tables.files, fileContent);
+ * const sqliteIndex = createSqliteIndex({ readContent, index: fs.index })({
  *   tables: workspace.tables,
  * });
  * ```
@@ -128,8 +143,11 @@ type SqliteIndexContext = {
 export function createSqliteIndex(
 	{
 		readContent,
+		index,
 	}: {
 		readContent(fileId: FileId): Promise<string>;
+		/** Runtime path owner; the mirror's `path` column converges to it. */
+		index: FileSystemIndex;
 	},
 	{ debounceMs = 100 }: SqliteIndexOptions = {},
 ) {
@@ -175,7 +193,6 @@ export function createSqliteIndex(
 		// ── Full rebuild ──────────────────────────────────────────
 		async function rebuild(): Promise<void> {
 			const rows = filesTable.getAllValid();
-			const paths = computePaths(rows);
 
 			// Read content for files (skip folders)
 			const contentMap = new Map<string, string | null>();
@@ -199,7 +216,7 @@ export function createSqliteIndex(
 			];
 
 			for (const row of rows) {
-				const path = paths.get(row.id) ?? null;
+				const path = index.getPathById(row.id) ?? null;
 				const content = contentMap.get(row.id) ?? null;
 
 				statements.push({
@@ -237,140 +254,69 @@ export function createSqliteIndex(
 		async function syncRows(changedIds: Set<string>): Promise<void> {
 			const statements: InStatement[] = [];
 
-			// Classify changed rows
-			const folderIds: string[] = [];
-			const fileIds: string[] = [];
-			const deletedIds: string[] = [];
-
 			for (const id of changedIds) {
 				const { data: row, error } = filesTable.get(id);
 				if (error || row === null) {
-					deletedIds.push(id);
-				} else if (row.type === 'folder') {
-					folderIds.push(id);
-				} else {
-					fileIds.push(id);
+					statements.push(
+						{ sql: 'DELETE FROM files_fts WHERE file_id = ?', args: [id] },
+						{ sql: 'DELETE FROM files WHERE id = ?', args: [id] },
+					);
+					continue;
 				}
-			}
 
-			// Process deletes
-			for (const id of deletedIds) {
-				statements.push({
-					sql: 'DELETE FROM files_fts WHERE file_id = ?',
-					args: [id],
-				});
-				statements.push({
-					sql: 'DELETE FROM files WHERE id = ?',
-					args: [id],
-				});
-			}
-
-			// Process folders first (path cascading must precede file processing)
-			for (const id of folderIds) {
-				const { data: row, error } = filesTable.get(id);
-				if (error || row === null) continue;
-				const path = computePathForRow(id, filesTable);
-
-				// Query current path from SQLite before mutation
-				const oldResult = await client.execute({
-					sql: 'SELECT path FROM files WHERE id = ?',
-					args: [id],
-				});
-				const oldPath = oldResult.rows[0]?.path as string | null | undefined;
-
-				// DELETE + INSERT the folder
-				statements.push({
-					sql: 'DELETE FROM files_fts WHERE file_id = ?',
-					args: [id],
-				});
-				statements.push({
-					sql: 'DELETE FROM files WHERE id = ?',
-					args: [id],
-				});
-				statements.push({
-					sql: `INSERT INTO files
-						(id, name, parent_id, type, path, size, created_at, updated_at, trashed_at, content)
-						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-					args: [
-						row.id,
-						row.name,
-						row.parentId,
-						row.type,
-						path,
-						row.size,
-						row.createdAt,
-						row.updatedAt,
-						row.trashedAt,
-						null,
-					],
-				});
-				statements.push({
-					sql: 'INSERT INTO files_fts (file_id, name, content) VALUES (?, ?, ?)',
-					args: [row.id, row.name, ''],
-				});
-
-				// Cascade: if folder path changed, update all descendant paths
-				if (oldPath != null && path != null && oldPath !== path) {
-					const descendants = await client.execute({
-						sql: "SELECT id, path FROM files WHERE path LIKE ? || '/%'",
-						args: [oldPath],
-					});
-
-					for (const desc of descendants.rows) {
-						const descId = desc.id as string;
-						const descOldPath = desc.path as string;
-						const descNewPath = path + descOldPath.slice(oldPath.length);
-						statements.push({
-							sql: 'UPDATE files SET path = ? WHERE id = ?',
-							args: [descNewPath, descId],
-						});
+				let content: string | null = null;
+				if (row.type !== 'folder') {
+					try {
+						content = (await readContent(row.id)) || null;
+					} catch {
+						content = null;
 					}
 				}
+
+				statements.push(
+					{ sql: 'DELETE FROM files_fts WHERE file_id = ?', args: [id] },
+					{ sql: 'DELETE FROM files WHERE id = ?', args: [id] },
+					{
+						sql: `INSERT INTO files
+							(id, name, parent_id, type, path, size, created_at, updated_at, trashed_at, content)
+							VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+						args: [
+							row.id,
+							row.name,
+							row.parentId,
+							row.type,
+							index.getPathById(row.id) ?? null,
+							row.size,
+							row.createdAt,
+							row.updatedAt,
+							row.trashedAt,
+							content,
+						],
+					},
+					{
+						sql: 'INSERT INTO files_fts (file_id, name, content) VALUES (?, ?, ?)',
+						args: [row.id, row.name, content ?? ''],
+					},
+				);
 			}
 
-			// Process files
-			for (const id of fileIds) {
-				const { data: row, error } = filesTable.get(id);
-				if (error || row === null) continue;
-				const path = computePathForRow(id, filesTable);
-
-				let fileContent: string | null = null;
-				try {
-					const text = await readContent(row.id);
-					fileContent = text || null;
-				} catch {
-					fileContent = null;
+			// Converge every other row's path to the index. Changed-row IDs
+			// alone miss path ripples: renaming a folder rewrites every
+			// descendant path, and creating/trashing/moving a row can
+			// re-disambiguate a sibling's display name, all without those
+			// rows themselves changing.
+			const mirror = await client.execute('SELECT id, path FROM files');
+			for (const mirrorRow of mirror.rows) {
+				const rowId = mirrorRow.id as string;
+				if (changedIds.has(rowId)) continue; // reinserted above with a fresh path
+				const mirrorPath = (mirrorRow.path as string | null) ?? null;
+				const indexPath = index.getPathById(asFileId(rowId)) ?? null;
+				if (mirrorPath !== indexPath) {
+					statements.push({
+						sql: 'UPDATE files SET path = ? WHERE id = ?',
+						args: [indexPath, rowId],
+					});
 				}
-
-				statements.push({
-					sql: 'DELETE FROM files_fts WHERE file_id = ?',
-					args: [id],
-				});
-				statements.push({
-					sql: 'DELETE FROM files WHERE id = ?',
-					args: [id],
-				});
-				statements.push({
-					sql: `INSERT INTO files
-						(id, name, parent_id, type, path, size, created_at, updated_at, trashed_at, content)
-						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-					args: [
-						row.id,
-						row.name,
-						row.parentId,
-						row.type,
-						path,
-						row.size,
-						row.createdAt,
-						row.updatedAt,
-						row.trashedAt,
-						fileContent,
-					],
-				});
-				statements.push({
-					sql: 'INSERT INTO files_fts (file_id, name, content) VALUES (?, ?, ?)',
-					args: [row.id, row.name, fileContent ?? ''],
-				});
 			}
 
 			if (statements.length > 0) {
@@ -409,7 +355,7 @@ export function createSqliteIndex(
 				return result.rows.map((row) => ({
 					id: row.file_id as string,
 					name: row.name as string,
-					path: (row.path as string) ?? null,
+					path: (row.path as string | null) ?? null,
 					snippet: row.snippet as string,
 				}));
 			} catch {
@@ -450,96 +396,3 @@ export type SqliteIndex = ReturnType<ReturnType<typeof createSqliteIndex>>;
 
 /** Public exports surfaced on the document bundle's `sqliteIndex.exports`. */
 export type SqliteIndexExports = SqliteIndex['exports'];
-
-// ════════════════════════════════════════════════════════════════════════════
-// PATH COMPUTATION
-// ════════════════════════════════════════════════════════════════════════════
-
-/**
- * Compute materialized POSIX paths for all rows by walking parentId chains.
- *
- * Memoized per-call: each path is computed once and cached. Handles
- * cycles (via visited-set) and orphans (fallback to root `/name`).
- */
-function computePaths(rows: FileRow[]): Map<string, string> {
-	const rowById = new Map<string, FileRow>();
-	for (const row of rows) rowById.set(row.id, row);
-
-	const paths = new Map<string, string>();
-
-	function getPath(id: string, visited: Set<string>): string | null {
-		const cachedPath = paths.get(id);
-		if (cachedPath !== undefined) return cachedPath;
-		if (visited.has(id)) return null; // Cycle
-		visited.add(id);
-
-		const row = rowById.get(id);
-		if (!row) return null;
-
-		if (row.parentId === null) {
-			const path = `/${row.name}`;
-			paths.set(id, path);
-			return path;
-		}
-
-		// Guard against unreasonably deep trees
-		if (visited.size > MAX_PATH_DEPTH) return null;
-
-		const parentPath = getPath(row.parentId, visited);
-		if (parentPath === null) {
-			// Orphan or cycle: treat as root-level
-			const path = `/${row.name}`;
-			paths.set(id, path);
-			return path;
-		}
-
-		const path = `${parentPath}/${row.name}`;
-		paths.set(id, path);
-		return path;
-	}
-
-	for (const row of rows) {
-		getPath(row.id, new Set());
-	}
-
-	return paths;
-}
-
-/**
- * Compute a materialized POSIX path for a single row by walking its parentId chain.
- *
- * Uses `filesTable.get()` for each hop instead of bulk reads. Returns `null`
- * only when the target row itself doesn't exist. Cycles and orphans fall back
- * to root-level `/{name}`, matching the behavior of {@link computePaths}.
- */
-function computePathForRow(
-	id: string,
-	filesTable: Table<FileRow>,
-): string | null {
-	const visited = new Set<string>();
-
-	function walk(currentId: string): string | null {
-		if (visited.has(currentId)) return null;
-		visited.add(currentId);
-
-		const { data: row, error } = filesTable.get(currentId);
-		if (error || row === null) return null;
-
-		if (row.parentId === null) {
-			return `/${row.name}`;
-		}
-
-		// Guard against unreasonably deep trees
-		if (visited.size > MAX_PATH_DEPTH) return null;
-
-		const parentPath = walk(row.parentId);
-		if (parentPath === null) {
-			// Orphan or cycle: treat as root-level
-			return `/${row.name}`;
-		}
-
-		return `${parentPath}/${row.name}`;
-	}
-
-	return walk(id);
-}

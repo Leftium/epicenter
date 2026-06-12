@@ -21,7 +21,7 @@ import { APP_URLS } from '@epicenter/constants/vite';
 import { createAiChatFetch, fromTable } from '@epicenter/svelte';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { SvelteMap } from 'svelte/reactivity';
-import { createChatPersistence } from '$lib/chat/persistence';
+import { chatPersistence } from '$lib/chat/persistence';
 import {
 	AVAILABLE_PROVIDERS,
 	DEFAULT_MODEL,
@@ -37,10 +37,8 @@ import type { SessionAiTools } from '$lib/session.svelte';
 import type { TabManagerBrowser } from '$lib/tab-manager/extension';
 import {
 	asConversationId,
-	type ChatMessageId,
 	type Conversation,
 	type ConversationId,
-	generateChatMessageId,
 	generateConversationId,
 } from '$lib/workspace';
 
@@ -53,10 +51,6 @@ export function createAiChatState({
 	tabManager: TabManagerBrowser;
 	sessionAiTools: SessionAiTools;
 }) {
-	// ── Chat history (extension-local IndexedDB) ──────────────────────
-
-	const chatPersistence = createChatPersistence({ tabManager });
-
 	// ── Conversation List (Y.Doc-backed) ──────────────────────────────
 
 	const conversationsMap = fromTable(tabManager.tables.conversations);
@@ -77,9 +71,6 @@ export function createAiChatState({
 		tabManager.tables.conversations.set({
 			id,
 			title: 'New Chat',
-			parentId: null,
-			sourceMessageId: null,
-			systemPrompt: null,
 			provider: DEFAULT_PROVIDER,
 			model: DEFAULT_MODEL,
 			createdAt: now,
@@ -147,7 +138,7 @@ export function createAiChatState({
 							conversationId,
 							systemPrompts: [
 								buildDeviceConstraints(deviceId),
-								metadata?.systemPrompt ?? TAB_MANAGER_SYSTEM_PROMPT,
+								TAB_MANAGER_SYSTEM_PROMPT,
 							],
 							tools: sessionAiTools.definitions,
 						},
@@ -200,24 +191,12 @@ export function createAiChatState({
 				updateConversation(conversationId, { model: value });
 			},
 
-			get systemPrompt() {
-				return metadata?.systemPrompt;
-			},
-
 			get createdAt() {
 				return metadata?.createdAt ?? 0;
 			},
 
 			get updatedAt() {
 				return metadata?.updatedAt ?? 0;
-			},
-
-			get parentId() {
-				return metadata?.parentId;
-			},
-
-			get sourceMessageId() {
-				return metadata?.sourceMessageId;
 			},
 
 			// ── Chat state (from createChat) ──
@@ -299,10 +278,7 @@ export function createAiChatState({
 
 			sendMessage(content: string) {
 				if (!content.trim()) return;
-				void chat.sendMessage({
-					content,
-					id: generateChatMessageId(),
-				});
+				void chat.sendMessage(content);
 
 				updateConversation(conversationId, {
 					title:
@@ -417,39 +393,22 @@ export function createAiChatState({
 
 	// ── Conversation CRUD ────────────────────────────────────────────
 
-	function createConversation({
-		title = 'New Chat',
-		parentId,
-		sourceMessageId,
-		systemPrompt,
-	}: {
-		title?: string;
-		parentId?: ConversationId;
-		sourceMessageId?: ChatMessageId;
-		systemPrompt?: string;
-	} = {}): ConversationId {
+	function createConversation(): ConversationId {
 		const id = generateConversationId();
 		const now = Date.now();
 		const current = handles.get(activeConversationId);
 
 		tabManager.tables.conversations.set({
 			id,
-			title,
-			parentId: parentId ?? null,
-			sourceMessageId: sourceMessageId ?? null,
-			systemPrompt: systemPrompt ?? null,
+			title: 'New Chat',
 			provider: current?.provider ?? DEFAULT_PROVIDER,
 			model: current?.model ?? DEFAULT_MODEL,
 			createdAt: now,
 			updatedAt: now,
 		});
 
-		switchConversation(id);
+		activeConversationId = id;
 		return id;
-	}
-
-	function switchConversation(conversationId: ConversationId) {
-		activeConversationId = conversationId;
 	}
 
 	function deleteConversation(conversationId: ConversationId) {
@@ -464,7 +423,7 @@ export function createAiChatState({
 				.sort((a, b) => b.updatedAt - a.updatedAt);
 			const first = remaining[0];
 			if (first) {
-				switchConversation(first.id);
+				activeConversationId = first.id;
 			} else {
 				createConversation();
 			}
@@ -510,7 +469,7 @@ export function createAiChatState({
 		createConversation,
 
 		switchTo(conversationId: ConversationId) {
-			switchConversation(conversationId);
+			activeConversationId = conversationId;
 		},
 
 		availableProviders: AVAILABLE_PROVIDERS,

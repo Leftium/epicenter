@@ -9,7 +9,7 @@
  * factory.
  */
 
-import { field, jsonValue } from '@epicenter/field';
+import { field } from '@epicenter/field';
 import {
 	asDeviceId,
 	createWorkspace,
@@ -21,7 +21,6 @@ import {
 	type Keyring,
 	nullable,
 } from '@epicenter/workspace';
-import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 
 export type { DeviceId };
@@ -122,41 +121,6 @@ export const generateConversationId = (): ConversationId =>
 export const asConversationId = (value: string): ConversationId =>
 	value as ConversationId;
 
-/**
- * Branded chat message ID: nanoid generated when a message is created.
- *
- * Prevents accidental mixing with conversation IDs or other string IDs.
- */
-export type ChatMessageId = Id & Brand<'ChatMessageId'>;
-/**
- * Generate a unique {@link ChatMessageId} for a new chat message.
- *
- * Wraps `generateId()` with the branded cast so call sites never
- * need a manual cast.
- *
- * @example
- * ```typescript
- * const userMessageId = generateChatMessageId();
- * workspace.tables.chatMessages.set({
- *   id: userMessageId,
- *   conversationId,
- *   role: 'user',
- *   parts: [{ type: 'text', content }],
- *   createdAt: Date.now(),
- *   // …remaining fields
- * });
- * ```
- */
-export const generateChatMessageId = (): ChatMessageId =>
-	generateId() as ChatMessageId;
-/**
- * Syntactic sugar for `value as ChatMessageId`. The constrained `string` parameter
- * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
- * The only place in the codebase where `as ChatMessageId` should appear.
- */
-export const asChatMessageId = (value: string): ChatMessageId =>
-	value as ChatMessageId;
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Table Definitions
 // ─────────────────────────────────────────────────────────────────────────────
@@ -217,43 +181,21 @@ const bookmarksTable = defineTable({
 export type Bookmark = InferTableRow<typeof bookmarksTable>;
 
 /**
- * AI conversations: metadata for each chat thread.
+ * AI conversations: synced metadata for each chat thread.
  *
- * Each conversation has its own message history (linked via
- * chatMessages.conversationId). Subpages use `parentId` to form
- * a tree, e.g. a deep research thread spawned from a specific
- * message in a parent conversation.
+ * Message bodies are deliberately not in the workspace; they live in
+ * extension-local IndexedDB keyed by conversation id (see
+ * `chat/persistence.ts` for the ownership rationale).
  */
 const conversationsTable = defineTable({
 	id: field.string<ConversationId>(),
 	title: field.string(),
-	parentId: nullable(field.string<ConversationId>()),
-	sourceMessageId: nullable(field.string<ChatMessageId>()),
-	systemPrompt: nullable(field.string()),
 	provider: field.string(),
 	model: field.string(),
 	createdAt: field.number(),
 	updatedAt: field.number(),
 });
 export type Conversation = InferTableRow<typeof conversationsTable>;
-
-/**
- * Legacy chat message rows, kept only as a migration source.
- *
- * Message bodies moved to extension-local IndexedDB; see
- * `chat/persistence.ts` for the ownership rationale. Its migration reader
- * imports a conversation's rows on first load and deletes them so their
- * content is garbage collected out of the doc. Nothing writes this table
- * anymore. Remove it once migrated docs are the only ones in the wild.
- */
-const chatMessagesTable = defineTable({
-	id: field.string<ChatMessageId>(),
-	conversationId: field.string<ConversationId>(),
-	role: field.select(['user', 'assistant', 'system']),
-	parts: field.json(Type.Array(jsonValue)),
-	createdAt: field.number(),
-});
-export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
 
 /**
  * Tool trust: per-tool approval preferences for AI chat.
@@ -284,7 +226,6 @@ export function createTabManager(opts: { keyring: () => Keyring }) {
 			savedTabs: savedTabsTable,
 			bookmarks: bookmarksTable,
 			conversations: conversationsTable,
-			chatMessages: chatMessagesTable,
 			toolTrust: toolTrustTable,
 		},
 		kv: {},

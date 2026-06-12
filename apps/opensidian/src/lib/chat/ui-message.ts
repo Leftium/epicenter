@@ -8,7 +8,6 @@
  * leak through the app.
  */
 
-import type { MessagePart } from '@tanstack/ai';
 import type { UIMessage } from '@tanstack/ai-svelte';
 
 import type { ChatMessage, ChatMessageId } from 'opensidian';
@@ -18,6 +17,11 @@ type Equal<TLeft, TRight> =
 	(<T>() => T extends TLeft ? 1 : 2) extends <T>() => T extends TRight ? 1 : 2
 		? true
 		: false;
+
+// Derive the part type from UIMessage so the drift check and the cast guard
+// the union the UI actually consumes (@tanstack/ai-client's MessagePart), not
+// the structurally similar server union in @tanstack/ai.
+type UiMessagePart = UIMessage['parts'][number];
 
 type ExpectedPartTypes =
 	| 'text'
@@ -32,7 +36,7 @@ type ExpectedPartTypes =
 
 type _ChatMessageIdDriftCheck = Expect<Equal<ChatMessage['id'], ChatMessageId>>;
 type _PartTypeDriftCheck = Expect<
-	Equal<MessagePart['type'], ExpectedPartTypes>
+	Equal<UiMessagePart['type'], ExpectedPartTypes>
 >;
 
 /**
@@ -45,7 +49,7 @@ export function toUiMessage(msg: ChatMessage): UIMessage {
 	return {
 		id: msg.id,
 		role: msg.role,
-		parts: msg.parts as unknown as MessagePart[],
+		parts: msg.parts as unknown as UiMessagePart[],
 		createdAt: new Date(msg.createdAt),
 	};
 }

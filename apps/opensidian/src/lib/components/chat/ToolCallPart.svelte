@@ -5,14 +5,13 @@
 	import ShieldAlertIcon from '@lucide/svelte/icons/shield-alert';
 	import WrenchIcon from '@lucide/svelte/icons/wrench';
 	import type { ToolCallPart as TanStackToolCallPart } from '@tanstack/ai-client';
-	import type { SessionTools } from '$lib/chat/chat-state.svelte';
 
 	let {
 		part,
 		onApproveToolCall,
 		onDenyToolCall,
 	}: {
-		part: TanStackToolCallPart<SessionTools>;
+		part: TanStackToolCallPart;
 		onApproveToolCall: (approvalId: string) => void;
 		onDenyToolCall: (approvalId: string) => void;
 	} = $props();

@@ -1,13 +1,15 @@
 /**
  * Cloudflare bindings the `@epicenter/server` library reads from `c.env`.
  *
- * Each consuming deployment (apps/api for hosted personal cloud,
- * apps/self-host for self-hosted shared wiki) merges its own `Cloudflare.Env`
- * via `wrangler types`. This
- * declaration teaches the library compiler that the names it reads are
- * required to exist on `Cloudflare.Env`. Optional cloud-only bindings
- * (Autumn, admin IDs, dashboard ASSETS fetcher) live in apps/api's
- * generated worker-configuration.d.ts and never appear here.
+ * This file is only in the library's own TS program. Each consuming
+ * deployment declares `Cloudflare.Env` from exactly one source of its own:
+ * apps/api via `wrangler types`, apps/self-host via its hand-written
+ * worker-configuration.d.ts. The declarations are never merged across
+ * packages, and must not be: `wrangler types` emits literal-typed vars and
+ * required secrets that would conflict with the `string`/optional members
+ * here. Keep this file and the deployments' Env declarations in agreement
+ * by hand. Cloud-only bindings (Autumn, admin IDs, dashboard ASSETS
+ * fetcher) live in apps/api's generated file and never appear here.
  */
 declare global {
 	namespace Cloudflare {
@@ -33,8 +35,14 @@ declare global {
 			// create-auth.ts and the `/sign-in` route).
 			GITHUB_CLIENT_ID?: string;
 			GITHUB_CLIENT_SECRET?: string;
-			OPENAI_API_KEY: string;
-			GEMINI_API_KEY: string;
+			// AI provider house keys are optional: a deployment that omits one
+			// serves only BYOK requests for that provider, and /api/ai/chat
+			// returns 503 ProviderNotConfigured when neither a caller key nor a
+			// house key exists (see routes/ai.ts). The hosted cloud requires
+			// both in apps/api/wrangler.jsonc because credits are billed
+			// against house-key usage.
+			OPENAI_API_KEY?: string;
+			GEMINI_API_KEY?: string;
 		}
 	}
 }

@@ -265,5 +265,5 @@ See the root [LICENSE](LICENSE), [FINANCIAL_SUSTAINABILITY.md](FINANCIAL_SUSTAIN
 </p>
 
 <p align="center">
-  <sub>Local-first | Own your data | Markdown | SQLite | Yjs | Open source</sub>
+  <sub>When an app stops mattering, your files don't. Local-first, open source, built on Yjs.</sub>
 </p>

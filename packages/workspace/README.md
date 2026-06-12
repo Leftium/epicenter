@@ -318,11 +318,11 @@ Ordering is obvious (later `attach*` and `open*` calls see earlier ones through 
 
 Tables validate and migrate on read, not on write. `set(...)` writes the row shape TypeScript already approved. `get(...)` returns a wellcrafted `Result<TRow | null, TableParseError>`: parse failures surface as `error`, missing rows as `data: null`, and old versions are migrated to the latest schema before being returned.
 
-That trade-off is deliberate. It keeps the write path cheap and pushes schema evolution into one place:the table definition.
+That trade-off is deliberate. It keeps the write path cheap and pushes schema evolution into one place: the table definition.
 
 ### Storage scales with active data, not edit history
 
-With Yjs garbage collection enabled, storage tracks the live document much more closely than the number of operations that happened over time. Deleted rows, overwritten values, and old content states collapse down to compact metadata. The workspace grows because you keep more data:not because you clicked save a thousand times.
+With Yjs garbage collection enabled, storage tracks the live document much more closely than the number of operations that happened over time. Deleted rows, overwritten values, and old content states collapse down to compact metadata. The workspace grows because you keep more data, not because you clicked save a thousand times.
 
 ## Architecture Overview
 

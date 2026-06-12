@@ -131,7 +131,14 @@ function createLocalModelDownloads() {
 	const handles = new Map<string, ReturnType<typeof createModelDownload>>();
 
 	return {
-		/** The shared download handle for a catalog model, created on first use. */
+		/**
+		 * The shared download handle for a catalog model, created on first
+		 * use. Acquire the handle and read its `state` in separate deriveds
+		 * (`$derived(localModelDownloads.get(model))`, then
+		 * `$derived(handle.state)`): a derived does not depend on state it
+		 * created itself, so a single derived that creates the handle and
+		 * reads its state in one expression would never update.
+		 */
 		get(model: LocalModelConfig) {
 			const existing = handles.get(model.id);
 			if (existing) return existing;

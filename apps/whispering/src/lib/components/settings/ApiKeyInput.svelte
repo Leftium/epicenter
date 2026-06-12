@@ -16,8 +16,6 @@
 			`apiKeys.${string}` | `apiEndpoints.${string}`
 		>;
 		description: DescriptionPart[];
-		/** Base URL override fields can be hidden via `showBaseUrl={false}`. */
-		isBaseUrl?: boolean;
 	};
 
 	/**
@@ -59,7 +57,6 @@
 				description: [
 					'Override the default OpenAI API endpoint. Useful for reverse proxies or OpenAI-compatible services. Leave empty to use the official OpenAI API.',
 				],
-				isBaseUrl: true,
 			},
 		],
 		Groq: [
@@ -84,7 +81,6 @@
 				description: [
 					'Override the default Groq API endpoint. Useful for reverse proxies or Groq-compatible services. Leave empty to use the official Groq API.',
 				],
-				isBaseUrl: true,
 			},
 		],
 		Anthropic: [
@@ -202,7 +198,6 @@
 				description: [
 					'URL for OpenAI-compatible endpoints (Ollama, LM Studio, llama.cpp, etc.). All Custom transformation steps call this endpoint.',
 				],
-				isBaseUrl: true,
 			},
 			{
 				id: 'custom-endpoint-api-key',
@@ -224,21 +219,9 @@
 	import { Link } from '@epicenter/ui/link';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 
-	let {
-		provider,
-		showBaseUrl = true,
-	}: {
-		provider: ApiKeyProvider;
-		/**
-		 * Hide base URL override fields, e.g. when the surrounding UI already
-		 * exposes a per-step base URL override.
-		 */
-		showBaseUrl?: boolean;
-	} = $props();
+	let { provider }: { provider: ApiKeyProvider } = $props();
 
-	const fields = $derived(
-		PROVIDER_FIELDS[provider].filter((field) => showBaseUrl || !field.isBaseUrl),
-	);
+	const fields = $derived(PROVIDER_FIELDS[provider]);
 </script>
 
 {#snippet apiKeyField(field: ApiKeyField)}

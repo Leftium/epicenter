@@ -174,14 +174,23 @@ Standalone commits, Build -> Prove -> Remove ordering. Each phase typechecks alo
 
 ### Phase 4: collapse ApiKeyInput
 
-- [ ] **4.1** Delete `showBaseUrl` prop, `isBaseUrl` flag, the `$derived` filter, and the
+- [x] **4.1** Delete `showBaseUrl` prop, `isBaseUrl` flag, the `$derived` filter, and the
       Configuration.svelte call-site condition (`showBaseUrl={... !== 'Custom'}`).
-- [ ] **4.2** Optional (3 taste): tighten `configKey` to
+  > **Note**: The call-site condition was already dropped in Phase 3 so that
+  > commit kept base URL access for Custom steps.
+- [x] **4.2** Optional (3 taste): tighten `configKey` to
       `Extract<DeviceConfigKey, 'apiKeys.${string}' | 'apiEndpoints.${string}'>`; consider
       the `{ key, baseUrl? }` slot reshape only if Custom's field order resolves cleanly.
-- [ ] **4.3** Update the OpenAI/Groq base URL descriptions if Phase 1 changed semantics
+  > **Note**: `configKey` was tightened in Phase 2 alongside the key rename.
+  > Slot reshape declined (Open Question 2 resolved: no). The flag-free array
+  > holds only copy + configKey; the `{ key, baseUrl? }` shape would fight
+  > Custom's baseUrl-first field order for no deletion.
+- [x] **4.3** Update the OpenAI/Groq base URL descriptions if Phase 1 changed semantics
       (they become truthful as-is once completions honor the override). Load
       `writing-voice` for any copy edits.
+  > **Note**: Left as-is; "Override the default OpenAI API endpoint" is now
+  > unconditionally true. The Custom field copy was already updated in Phase 3
+  > when the per-step override died.
 
 ### Phase 5: verify and review
 

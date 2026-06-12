@@ -1,7 +1,7 @@
 # Whispering Providers Clean Break
 
 **Date**: 2026-06-12
-**Status**: Draft
+**Status**: Implemented
 **Owner**: Braden
 **Branch**: `codex/whispering-endpoint-config-consolidation` (stacks on the endpoint
 consolidation spec; builds directly on its commits)
@@ -147,14 +147,18 @@ Standalone commits per phase. Each phase typechecks alone.
 
 ### Phase 5: verify and review
 
-- [ ] **5.1** `bun run typecheck` in apps/whispering (baseline: 0 errors, 11
+- [x] **5.1** `bun run typecheck` in apps/whispering (baseline: 0 errors, 11
       warnings).
-- [ ] **5.2** Greps: `grep -rn "apiKeys\.\|apiEndpoints\." apps/whispering/src`
+  > **Note**: Ran after every phase; 0 errors, same 11 warnings each time.
+- [x] **5.2** Greps: `grep -rn "apiKeys\.\|apiEndpoints\." apps/whispering/src`
       and `grep -rn "ApiKeyInput\|serverUrlKey\|apiKeyPath\|endpointPath"
       apps/whispering/src` return nothing; `grep -rln "migrat"
       apps/whispering/src` returns nothing (case-insensitive spot check for stray
       Migration references).
-- [ ] **5.3** Run `post-implementation-review`.
+  > **Note**: All pass. The `migrat` check's surviving hits are comments about
+  > the audio blob-store dual-read and Yjs observer semantics, both separate
+  > systems (see Phase 1 note).
+- [x] **5.3** Run `post-implementation-review`.
 
 ## Edge Cases
 
@@ -192,6 +196,48 @@ harmlessly. No cleanup.
 - [ ] One vocabulary: `apiKeyKey` / `endpointKey` / `modelIdKey`.
 - [ ] `ProviderConfigFields` exists; `ApiKeyInput` does not.
 - [ ] Phase 5 greps pass; typecheck clean.
+
+## Review
+
+**Completed**: 2026-06-12
+**Branch**: `codex/whispering-endpoint-config-consolidation`
+
+### What Landed
+
+Four commits: the migration apparatus is gone (1018 lines deleted, 7 added),
+provider config lives in `providers.<id>.*` records, the config-key vocabulary
+is `apiKeyKey`/`endpointKey` everywhere with explicit null for non-configurable
+endpoints, and `ProviderConfigFields` replaces `ApiKeyInput`.
+
+### Deviations and Discoveries
+
+- `transcribe.ts` and `transcription-validation.ts` needed no re-key edits;
+  they read keys through registry fields, never as literals. README examples
+  in three folders did carry literals and were updated.
+- The uniform-null endpoint decision was extended to `CloudProvider` in the
+  transcription registry, which deleted the `'endpointKey' in provider`
+  narrowing in `transcribe.ts` too.
+- `COMPLETION_PROVIDERS` became exhaustive over `InferenceProviderId`, turning
+  the runtime "Unsupported provider" guard into a compile error.
+- Rebasing onto main picked up the local-models-folder rework (PR #1923),
+  which had just added a second ungated migration (`migrateModelPathsToNames`,
+  absolute model paths to folder entry names). The refusal covers it: it only
+  served unreleased dev builds, and it died with the folder. Dev machines
+  re-pick their local model once.
+
+### Follow-up Work
+
+- Runtime smoke before release: fresh-profile boot, api-keys page, a Custom
+  transformation, a speaches transcription, and an upgrade-from-March profile
+  (confirm settings reset cleanly and recordings survive).
+- Release note: settings (including API keys) are not carried forward from
+  pre-providers builds; recordings and transformations are unaffected.
+- The audio blob-store's dual-read fallback for unmigrated legacy data
+  (`services/blob-store/index.tauri.ts`) is the next refusal candidate.
+- The api-keys settings route is still named "API Keys" while it now manages
+  endpoints too; rename is a UX call, not taken here.
+- `specs/20260612T091000-whispering-custom-backend-profiles.md` holds the
+  multi-backend product follow-up.
 
 ## References
 

@@ -25,8 +25,8 @@ export function getSelectedTranscriptionService():
 
 /**
  * Checks if a transcription service has all required configuration. The
- * required key is the provider's own config key (apiKey / server URL /
- * model), read straight from its registry entry.
+ * required key is the provider's own config key (apiKey / endpoint / model),
+ * read straight from its registry entry.
  *
  * @param service - The transcription service to check
  * @returns true if the service is properly configured, false otherwise

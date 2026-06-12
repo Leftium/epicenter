@@ -84,43 +84,6 @@ export type BookmarkId = Id & Brand<'BookmarkId'>;
  */
 export const generateBookmarkId = (): BookmarkId => generateId() as BookmarkId;
 
-/**
- * Branded conversation ID: nanoid generated when a chat conversation is created.
- *
- * Used as the primary key for conversations and as a foreign key in chat messages.
- * Prevents accidental mixing with message IDs or other string IDs.
- */
-export type ConversationId = Id & Brand<'ConversationId'>;
-/**
- * Generate a unique {@link ConversationId} for a new chat conversation.
- *
- * Wraps `generateId()` with the branded cast so call sites never
- * need a manual cast.
- *
- * @example
- * ```typescript
- * const id = generateConversationId();
- * workspace.tables.conversations.set({
- *   id,
- *   title: 'New Chat',
- *   provider: DEFAULT_PROVIDER,
- *   model: DEFAULT_MODEL,
- *   createdAt: Date.now(),
- *   updatedAt: Date.now(),
- *   // …remaining fields
- * });
- * ```
- */
-export const generateConversationId = (): ConversationId =>
-	generateId() as ConversationId;
-/**
- * Syntactic sugar for `value as ConversationId`. The constrained `string` parameter
- * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
- * The only place in the codebase where `as ConversationId` should appear.
- */
-export const asConversationId = (value: string): ConversationId =>
-	value as ConversationId;
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Table Definitions
 // ─────────────────────────────────────────────────────────────────────────────
@@ -181,23 +144,6 @@ const bookmarksTable = defineTable({
 export type Bookmark = InferTableRow<typeof bookmarksTable>;
 
 /**
- * AI conversations: synced metadata for each chat thread.
- *
- * Message bodies are deliberately not in the workspace; they live in
- * extension-local IndexedDB keyed by conversation id (see
- * `chat/persistence.ts` for the ownership rationale).
- */
-const conversationsTable = defineTable({
-	id: field.string<ConversationId>(),
-	title: field.string(),
-	provider: field.string(),
-	model: field.string(),
-	createdAt: field.number(),
-	updatedAt: field.number(),
-});
-export type Conversation = InferTableRow<typeof conversationsTable>;
-
-/**
  * Tool trust: the set of auto-approved AI chat tools.
  *
  * A presence set: a row means the user chose "Always Allow" for that tool;
@@ -221,7 +167,6 @@ export function createTabManager(opts: { keyring: () => Keyring }) {
 			devices: devicesTable,
 			savedTabs: savedTabsTable,
 			bookmarks: bookmarksTable,
-			conversations: conversationsTable,
 			toolTrust: toolTrustTable,
 		},
 		kv: {},

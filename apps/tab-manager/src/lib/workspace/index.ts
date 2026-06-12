@@ -1,16 +1,12 @@
 export type { TabManagerActions } from '../tab-manager/extension';
 export {
-	asConversationId,
 	asDeviceId,
 	type Bookmark,
 	type BookmarkId,
-	type Conversation,
-	type ConversationId,
 	createTabManager,
 	type Device,
 	type DeviceId,
 	generateBookmarkId,
-	generateConversationId,
 	generateSavedTabId,
 	type SavedTab,
 	type SavedTabId,

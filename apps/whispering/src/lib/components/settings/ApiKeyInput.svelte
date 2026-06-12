@@ -200,7 +200,7 @@
 				placeholder: 'e.g. http://localhost:11434/v1',
 				configKey: 'apiEndpoints.custom',
 				description: [
-					'Global default URL for OpenAI-compatible endpoints (Ollama, LM Studio, llama.cpp, etc.). Can be overridden per-step in transformations.',
+					'URL for OpenAI-compatible endpoints (Ollama, LM Studio, llama.cpp, etc.). All Custom transformation steps call this endpoint.',
 				],
 				isBaseUrl: true,
 			},

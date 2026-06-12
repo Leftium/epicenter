@@ -144,7 +144,6 @@ export function generateDefaultStep({
 		googleModel: 'gemini-2.5-flash',
 		openrouterModel: 'mistralai/mixtral-8x7b',
 		customModel: '',
-		customBaseUrl: '',
 		systemPromptTemplate: '',
 		userPromptTemplate: '',
 		findText: '',

@@ -320,43 +320,23 @@
 											/>
 										</Field.Field>
 									{:else if step.inferenceProvider === 'Custom'}
-										<div class="space-y-4">
-											<Field.Field>
-												<Field.Label for="customBaseUrl"
-													>API Base URL</Field.Label
-												>
-												<Input
-													id="customBaseUrl"
-													value={step.customBaseUrl}
-													oninput={(e) => {
-														updateStep(index, { customBaseUrl: e.currentTarget.value });
-													}}
-													placeholder="http://localhost:11434/v1"
-												/>
-												<Field.Description>
-													Overrides the default URL from Settings. Useful when
-													this step needs a different local model server.
-												</Field.Description>
-											</Field.Field>
-											<Field.Field>
-												<Field.Label for="customModel">Model</Field.Label>
-												<Input
-													id="customModel"
-													value={step.customModel}
-													oninput={(e) => {
-														updateStep(index, { customModel: e.currentTarget.value });
-													}}
-													placeholder="llama3.2"
-												/>
-												<Field.Description>
-													Enter the exact model name as it appears in your local
-													service (e.g., run
-													<code class="bg-muted px-1 rounded"
-														>ollama list</code
-													>).
-												</Field.Description>
-											</Field.Field>
-										</div>
+										<Field.Field>
+											<Field.Label for="customModel">Model</Field.Label>
+											<Input
+												id="customModel"
+												value={step.customModel}
+												oninput={(e) => {
+													updateStep(index, { customModel: e.currentTarget.value });
+												}}
+												placeholder="llama3.2"
+											/>
+											<Field.Description>
+												Enter the exact model name as it appears in your local
+												service (e.g., run
+												<code class="bg-muted px-1 rounded">ollama list</code
+												>).
+											</Field.Description>
+										</Field.Field>
 									{/if}
 								</div>
 
@@ -400,12 +380,7 @@
 											Advanced Options
 										</Accordion.Trigger>
 										<Accordion.Content>
-											<!-- Custom steps already expose a per-step base URL
-											     override above, so hide the global one here. -->
-											<ApiKeyInput
-												provider={step.inferenceProvider}
-												showBaseUrl={step.inferenceProvider !== 'Custom'}
-											/>
+											<ApiKeyInput provider={step.inferenceProvider} />
 										</Accordion.Content>
 									</Accordion.Item>
 								</Accordion.Root>

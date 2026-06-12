@@ -153,13 +153,24 @@ Standalone commits, Build -> Prove -> Remove ordering. Each phase typechecks alo
 
 ### Phase 3: drop per-step customBaseUrl
 
-- [ ] **3.1** Remove the per-step "API Base URL" field from the editor's Custom branch
+- [x] **3.1** Remove the per-step "API Base URL" field from the editor's Custom branch
       in `transformations-editor/Configuration.svelte` (keep `customModel`).
-- [ ] **3.2** `operations/transform.ts`: Custom branch reads only
+  > **Note**: Also flipped the ApiKeyInput call site to render the global field
+  > for Custom steps in this commit (dropped `showBaseUrl={... !== 'Custom'}`),
+  > so the editor never loses base URL access mid-history. Phase 4 deletes the
+  > now-unused prop machinery. Updated the Custom field copy in ApiKeyInput
+  > since "Can be overridden per-step" is no longer true.
+- [x] **3.2** `operations/transform.ts`: Custom branch reads only
       `deviceConfig.get('apiEndpoints.custom')`.
-- [ ] **3.3** Remove `customBaseUrl: field.string()` from `workspace/definition.ts`.
+- [x] **3.3** Remove `customBaseUrl: field.string()` from `workspace/definition.ts`.
       Verify with the `workspace-api` skill how `defineTable` treats rows persisting an
       extra field (expected: ignored on read; confirm no migration machinery required).
+  > **Note**: Confirmed in `packages/workspace/src/document/table.ts`: rows are
+  > validated with `Value.Check` against a `Type.Object` without
+  > `additionalProperties: false`, so extra stored fields pass validation and
+  > simply ride along untyped. No migration machinery required. Also removed
+  > `customBaseUrl: ''` from `generateDefaultStep` in
+  > `state/transformation-steps.svelte.ts`, a consumer the spec missed.
 
 ### Phase 4: collapse ApiKeyInput
 

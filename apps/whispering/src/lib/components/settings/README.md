@@ -78,8 +78,8 @@ settings/
 
    ```svelte
    <Input
-	bind:value={() => deviceConfig.get('apiKeys.openai'),
-		(value) => deviceConfig.set('apiKeys.openai', value)}
+	bind:value={() => deviceConfig.get('providers.openai.apiKey'),
+		(value) => deviceConfig.set('providers.openai.apiKey', value)}
    />
    ```
 

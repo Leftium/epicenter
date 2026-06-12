@@ -106,15 +106,19 @@ Standalone commits per phase. Each phase typechecks alone.
 
 ### Phase 2: re-key device config to providers.*
 
-- [ ] **2.1** `state/device-config.svelte.ts`: replace the `apiKeys.*`,
+- [x] **2.1** `state/device-config.svelte.ts`: replace the `apiKeys.*`,
       `apiEndpoints.*`, and `transcription.speaches.*` entries with the
       `providers.*` records above, under one section comment.
-- [ ] **2.2** Update readers: `ApiKeyInput.svelte` (configKeys + the `Extract`
+- [x] **2.2** Update readers: `ApiKeyInput.svelte` (configKeys + the `Extract`
       narrows to `` `providers.${string}` ``), `services/transcription/providers.ts`
       (registry values), `operations/transform.ts`, `operations/transcribe.ts`,
       `settings/transcription-validation.ts`,
       `components/settings/selectors/TranscriptionSelector.svelte`,
       `settings/transcription/+page.svelte` (speaches binds).
+  > **Note**: `transcribe.ts` and `transcription-validation.ts` needed no edits;
+  > they read keys through the registry fields, never as literals. README
+  > examples in `state/`, `services/`, and `components/settings/` carried the
+  > old key names and were re-keyed too.
 
 ### Phase 3: vocabulary unification and Custom fold
 

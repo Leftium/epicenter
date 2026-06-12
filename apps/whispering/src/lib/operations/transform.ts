@@ -29,25 +29,25 @@ import type {
 const STANDARD_PROVIDER_CONFIG = {
 	OpenAI: {
 		service: services.completions.openai,
-		apiKeyPath: 'apiKeys.openai',
-		endpointPath: 'apiEndpoints.openai',
+		apiKeyPath: 'providers.openai.apiKey',
+		endpointPath: 'providers.openai.endpoint',
 	},
 	Groq: {
 		service: services.completions.groq,
-		apiKeyPath: 'apiKeys.groq',
-		endpointPath: 'apiEndpoints.groq',
+		apiKeyPath: 'providers.groq.apiKey',
+		endpointPath: 'providers.groq.endpoint',
 	},
 	Anthropic: {
 		service: services.completions.anthropic,
-		apiKeyPath: 'apiKeys.anthropic',
+		apiKeyPath: 'providers.anthropic.apiKey',
 	},
 	Google: {
 		service: services.completions.google,
-		apiKeyPath: 'apiKeys.google',
+		apiKeyPath: 'providers.google.apiKey',
 	},
 	OpenRouter: {
 		service: services.completions.openrouter,
-		apiKeyPath: 'apiKeys.openrouter',
+		apiKeyPath: 'providers.openrouter.apiKey',
 	},
 } as const satisfies Record<
 	string,
@@ -113,10 +113,10 @@ async function handleStep({
 
 			if (inferenceProvider === 'Custom') {
 				const model = step.customModel?.trim();
-				const baseUrl = deviceConfig.get('apiEndpoints.custom').trim();
+				const baseUrl = deviceConfig.get('providers.custom.endpoint').trim();
 
 				return services.completions.custom.complete({
-					apiKey: deviceConfig.get('apiKeys.custom'),
+					apiKey: deviceConfig.get('providers.custom.apiKey'),
 					model,
 					baseUrl,
 					systemPrompt,

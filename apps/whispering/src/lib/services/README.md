@@ -13,9 +13,9 @@ case 'OpenAI': {
 		{
 			outputLanguage,
 			prompt,
-			apiKey: deviceConfig.get('apiKeys.openai'),
+			apiKey: deviceConfig.get('providers.openai.apiKey'),
 			modelName: settings.get('transcription.openai.model'),
-			baseURL: deviceConfig.get('apiEndpoints.openai') || undefined,
+			baseURL: deviceConfig.get('providers.openai.endpoint') || undefined,
 		},
 	);
 	if (error) return Err(error);
@@ -398,7 +398,7 @@ export function createCompletionService() {
 
 // Consuming edge injects settings
 const result = await services.completion.openai.complete({
-	apiKey: deviceConfig.get('apiKeys.openai'),
+	apiKey: deviceConfig.get('providers.openai.apiKey'),
 	prompt,
 });
 ```

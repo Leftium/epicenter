@@ -390,9 +390,9 @@
 					id="speaches-base-url"
 					placeholder="http://localhost:8000"
 					autocomplete="off"
-					bind:value={() => deviceConfig.get('transcription.speaches.baseUrl'),
+					bind:value={() => deviceConfig.get('providers.speaches.endpoint'),
 						(value) =>
-							deviceConfig.set('transcription.speaches.baseUrl', value)}
+							deviceConfig.set('providers.speaches.endpoint', value)}
 				/>
 				<Field.Description>
 					The URL where your Speaches server is running (<code>
@@ -416,9 +416,9 @@
 					id="speaches-model-id"
 					placeholder="Systran/faster-distil-whisper-small.en"
 					autocomplete="off"
-					bind:value={() => deviceConfig.get('transcription.speaches.modelId'),
+					bind:value={() => deviceConfig.get('providers.speaches.modelId'),
 						(value) =>
-							deviceConfig.set('transcription.speaches.modelId', value)}
+							deviceConfig.set('providers.speaches.modelId', value)}
 				/>
 				<Field.Description>
 					The model you downloaded in step 3 (<code>MODEL_ID</code>), e.g.

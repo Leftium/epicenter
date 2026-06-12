@@ -11,10 +11,7 @@
 		label: string;
 		type?: 'password' | 'url';
 		placeholder: string;
-		configKey: Extract<
-			DeviceConfigKey,
-			`apiKeys.${string}` | `apiEndpoints.${string}`
-		>;
+		configKey: Extract<DeviceConfigKey, `providers.${string}`>;
 		description: DescriptionPart[];
 	};
 
@@ -33,7 +30,7 @@
 				label: 'OpenAI API Key',
 				type: 'password',
 				placeholder: 'Your OpenAI API Key',
-				configKey: 'apiKeys.openai',
+				configKey: 'providers.openai.apiKey',
 				description: [
 					'You can find your API key in your ',
 					{
@@ -53,7 +50,7 @@
 				label: 'OpenAI Base URL',
 				type: 'url',
 				placeholder: 'https://api.openai.com/v1 (default)',
-				configKey: 'apiEndpoints.openai',
+				configKey: 'providers.openai.endpoint',
 				description: [
 					'Override the default OpenAI API endpoint. Useful for reverse proxies or OpenAI-compatible services. Leave empty to use the official OpenAI API.',
 				],
@@ -65,7 +62,7 @@
 				label: 'Groq API Key',
 				type: 'password',
 				placeholder: 'Your Groq API Key',
-				configKey: 'apiKeys.groq',
+				configKey: 'providers.groq.apiKey',
 				description: [
 					'You can find your Groq API key in your ',
 					{ label: 'Groq console', href: 'https://console.groq.com/keys' },
@@ -77,7 +74,7 @@
 				label: 'Groq Base URL',
 				type: 'url',
 				placeholder: 'https://api.groq.com/openai/v1 (default)',
-				configKey: 'apiEndpoints.groq',
+				configKey: 'providers.groq.endpoint',
 				description: [
 					'Override the default Groq API endpoint. Useful for reverse proxies or Groq-compatible services. Leave empty to use the official Groq API.',
 				],
@@ -89,7 +86,7 @@
 				label: 'Anthropic API Key',
 				type: 'password',
 				placeholder: 'Your Anthropic API Key',
-				configKey: 'apiKeys.anthropic',
+				configKey: 'providers.anthropic.apiKey',
 				description: [
 					'You can find your Anthropic API key in your ',
 					{
@@ -106,7 +103,7 @@
 				label: 'Google API Key',
 				type: 'password',
 				placeholder: 'Your Google API Key',
-				configKey: 'apiKeys.google',
+				configKey: 'providers.google.apiKey',
 				description: [
 					'You can find your Google API key in your ',
 					{
@@ -123,7 +120,7 @@
 				label: 'Deepgram API Key',
 				type: 'password',
 				placeholder: 'Your Deepgram API Key',
-				configKey: 'apiKeys.deepgram',
+				configKey: 'providers.deepgram.apiKey',
 				description: [
 					'You can find your API key in your ',
 					{
@@ -142,7 +139,7 @@
 				label: 'ElevenLabs API Key',
 				type: 'password',
 				placeholder: 'Your ElevenLabs API Key',
-				configKey: 'apiKeys.elevenlabs',
+				configKey: 'providers.elevenlabs.apiKey',
 				description: [
 					'You can find your ElevenLabs API key in your ',
 					{
@@ -159,7 +156,7 @@
 				label: 'Mistral AI API Key',
 				type: 'password',
 				placeholder: 'Your Mistral AI API Key',
-				configKey: 'apiKeys.mistral',
+				configKey: 'providers.mistral.apiKey',
 				description: [
 					'You can find your API key in your ',
 					{
@@ -181,7 +178,7 @@
 				label: 'OpenRouter API Key',
 				type: 'password',
 				placeholder: 'Your OpenRouter API Key',
-				configKey: 'apiKeys.openrouter',
+				configKey: 'providers.openrouter.apiKey',
 				description: [
 					'You can find your OpenRouter API key in your ',
 					{ label: 'OpenRouter dashboard', href: 'https://openrouter.ai/keys' },
@@ -194,7 +191,7 @@
 				id: 'custom-endpoint-base-url',
 				label: 'Custom API Base URL',
 				placeholder: 'e.g. http://localhost:11434/v1',
-				configKey: 'apiEndpoints.custom',
+				configKey: 'providers.custom.endpoint',
 				description: [
 					'URL for OpenAI-compatible endpoints (Ollama, LM Studio, llama.cpp, etc.). All Custom transformation steps call this endpoint.',
 				],
@@ -204,7 +201,7 @@
 				label: 'Custom API Key',
 				type: 'password',
 				placeholder: 'Leave empty if not required',
-				configKey: 'apiKeys.custom',
+				configKey: 'providers.custom.apiKey',
 				description: [
 					"Most local endpoints don't require authentication. Only enter a key if your endpoint requires it.",
 				],

@@ -16,28 +16,37 @@ import { log, report } from '$lib/report';
  * localStorage under the `whispering.device.{key}` prefix.
  */
 const DEVICE_DEFINITIONS = {
-	// ── API keys (secrets, never synced) ──────────────────────────────
-	'apiKeys.openai': defineEntry(type('string'), ''),
-	'apiKeys.anthropic': defineEntry(type('string'), ''),
-	'apiKeys.groq': defineEntry(type('string'), ''),
-	'apiKeys.google': defineEntry(type('string'), ''),
-	'apiKeys.deepgram': defineEntry(type('string'), ''),
-	'apiKeys.elevenlabs': defineEntry(type('string'), ''),
-	'apiKeys.mistral': defineEntry(type('string'), ''),
-	'apiKeys.openrouter': defineEntry(type('string'), ''),
-	'apiKeys.custom': defineEntry(type('string'), ''),
-
-	// ── API endpoint overrides ────────────────────────────────────────
-	'apiEndpoints.openai': defineEntry(type('string'), ''),
-	'apiEndpoints.groq': defineEntry(type('string'), ''),
-	/**
-	 * Endpoint for the Custom provider (OpenAI-compatible local servers
-	 * like Ollama, LM Studio, llama.cpp). Unlike the other overrides,
-	 * this has a real default: Custom has no official API to fall back to.
-	 */
-	'apiEndpoints.custom': defineEntry(
+	// ── Provider backends ─────────────────────────────────────────────
+	// One record per network backend: how this device reaches it.
+	// API keys are secrets and never sync. Empty `endpoint` means the
+	// provider's official API; Custom and Speaches have no official API,
+	// so their endpoints carry real defaults.
+	'providers.openai.apiKey': defineEntry(type('string'), ''),
+	'providers.anthropic.apiKey': defineEntry(type('string'), ''),
+	'providers.groq.apiKey': defineEntry(type('string'), ''),
+	'providers.google.apiKey': defineEntry(type('string'), ''),
+	'providers.deepgram.apiKey': defineEntry(type('string'), ''),
+	'providers.elevenlabs.apiKey': defineEntry(type('string'), ''),
+	'providers.mistral.apiKey': defineEntry(type('string'), ''),
+	'providers.openrouter.apiKey': defineEntry(type('string'), ''),
+	'providers.custom.apiKey': defineEntry(type('string'), ''),
+	'providers.openai.endpoint': defineEntry(type('string'), ''),
+	'providers.groq.endpoint': defineEntry(type('string'), ''),
+	'providers.custom.endpoint': defineEntry(
 		type('string'),
 		'http://localhost:11434/v1',
+	),
+	'providers.speaches.endpoint': defineEntry(
+		type('string'),
+		'http://localhost:8000',
+	),
+	/**
+	 * Model installed on the Speaches server. Device-local like the rest
+	 * of the record: which models are pulled depends on the machine.
+	 */
+	'providers.speaches.modelId': defineEntry(
+		type('string'),
+		'Systran/faster-distil-whisper-small.en',
 	),
 
 	// ── Recording hardware ────────────────────────────────────────────
@@ -53,14 +62,6 @@ const DEVICE_DEFINITIONS = {
 	),
 
 	// ── Local model paths ─────────────────────────────────────────────
-	'transcription.speaches.baseUrl': defineEntry(
-		type('string'),
-		'http://localhost:8000',
-	),
-	'transcription.speaches.modelId': defineEntry(
-		type('string'),
-		'Systran/faster-distil-whisper-small.en',
-	),
 	/**
 	 * The engine's selected model as an entry name inside its models folder
 	 * (e.g. "ggml-tiny.bin", "parakeet-tdt-0.6b-v3-int8"), never a path. The

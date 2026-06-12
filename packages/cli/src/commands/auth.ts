@@ -29,9 +29,7 @@ const loginCommand = cmd({
 	command: 'login',
 	describe: 'Log in to Epicenter',
 	handler: async () => {
-		const result = await machineAuth.loginWithOob({
-			print: (line) => console.log(line),
-		});
+		const result = await machineAuth.loginWithOob();
 		if (result.error) {
 			fail(result.error.message);
 			return;

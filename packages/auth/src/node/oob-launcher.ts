@@ -12,6 +12,7 @@
  * `ownerId`, and `keyring` fields of `PersistedAuth`.
  */
 
+import { spawn } from 'node:child_process';
 import * as readline from 'node:readline';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { EPICENTER_OAUTH_SCOPES } from '@epicenter/constants/oauth';
@@ -125,11 +126,11 @@ export function createOobOAuthLauncher({
 	scopes = EPICENTER_OAUTH_SCOPES,
 	openBrowser = defaultOpenBrowser,
 	readCode = defaultReadCode,
-	print = (line) => console.log(line),
+	print = (line) => process.stdout.write(`${line}\n`),
 	fetch = globalThis.fetch.bind(globalThis),
 	crypto = globalThis.crypto,
 	now = Date.now,
-}: CreateOobOAuthLauncherConfig): OAuthLauncher {
+}: CreateOobOAuthLauncherConfig) {
 	return {
 		async startSignIn(): Promise<Result<OAuthLaunchResult, OobLauncherError>> {
 			const verifierBytes = new Uint8Array(32);
@@ -224,38 +225,33 @@ export function createOobOAuthLauncher({
 			}
 			return Ok({ status: 'completed', grant } satisfies OAuthLaunchResult);
 		},
-	};
+	} satisfies OAuthLauncher;
 }
 
 function base64UrlEncode(bytes: Uint8Array): string {
-	let binary = '';
-	for (let i = 0; i < bytes.byteLength; i += 1) {
-		binary += String.fromCharCode(bytes[i] as number);
-	}
-	const base64 =
-		typeof btoa === 'function'
-			? btoa(binary)
-			: Buffer.from(bytes).toString('base64');
-	return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/u, '');
+	return Buffer.from(bytes).toString('base64url');
 }
 
 async function defaultOpenBrowser(url: string): Promise<void> {
 	const command = pickOpenCommand();
 	if (!command) return;
+	const [file, ...args] = command;
 	try {
-		// Bun.spawn is available in the CLI runtime. Failure is best-effort.
-		const proc = (
-			globalThis as unknown as {
-				Bun?: { spawn: (cmd: string[]) => unknown };
-			}
-		).Bun?.spawn([...command, url]);
-		void proc;
+		const child = spawn(file, [...args, url], {
+			stdio: 'ignore',
+			detached: true,
+		});
+		// Spawn failures (e.g. missing xdg-open) arrive as async 'error' events;
+		// an unhandled one would crash the process. Best-effort: the printed URL
+		// is the source of truth.
+		child.on('error', () => {});
+		child.unref();
 	} catch {
 		// swallow; the printed URL is the source of truth
 	}
 }
 
-function pickOpenCommand(): string[] | null {
+function pickOpenCommand(): [string, ...string[]] | null {
 	switch (process.platform) {
 		case 'darwin':
 			return ['open'];

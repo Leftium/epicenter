@@ -46,6 +46,8 @@ const upProjectOption = {
 		'Project root, directory under a project, or directory where daemon up should create epicenter.config.ts.',
 	default: () => process.cwd(),
 	defaultDescription: 'current working directory',
+	// Identity coerce pins the inferred argv type to `string`; without it
+	// yargs infers `string | (() => string)` from the function default.
 	coerce: (projectDir: string) => projectDir,
 };
 
@@ -145,13 +147,11 @@ export async function runUp(
 	const startResult = await openProject({ projectDir, auth });
 	if (startResult.error) return startResult;
 	const mounts = startResult.data;
-	stack.defer(() =>
-		Promise.allSettled(
-			mounts.map((entry) =>
-				Promise.resolve(entry.runtime[Symbol.asyncDispose]()),
-			),
-		).then(() => undefined),
-	);
+	stack.defer(async () => {
+		await Promise.allSettled(
+			mounts.map((entry) => entry.runtime[Symbol.asyncDispose]()),
+		);
+	});
 
 	const serverResult = await startDaemonServer({ lease, mounts });
 	if (serverResult.error) return serverResult;

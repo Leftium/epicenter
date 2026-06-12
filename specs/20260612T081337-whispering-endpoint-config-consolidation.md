@@ -1,9 +1,9 @@
 # Whispering Endpoint Config Consolidation
 
 **Date**: 2026-06-12
-**Status**: Draft
+**Status**: Implemented
 **Owner**: Braden
-**Branch**: (start a fresh worktree off `main`; commit this spec as the first commit)
+**Branch**: `codex/whispering-endpoint-config-consolidation`
 
 ## One Sentence
 
@@ -194,12 +194,25 @@ Standalone commits, Build -> Prove -> Remove ordering. Each phase typechecks alo
 
 ### Phase 5: verify and review
 
-- [ ] **5.1** `bun run typecheck` in apps/whispering (baseline: 0 errors, 11 pre-existing
+- [x] **5.1** `bun run typecheck` in apps/whispering (baseline: 0 errors, 11 pre-existing
       warnings).
+  > **Note**: Ran after every phase; 0 errors and the same 11 warnings each time.
 - [ ] **5.2** Manual smoke: api-keys tabs (badges 9/5/6), transcription settings per
       service, editor Advanced Options per provider, Custom transformation runs against a
       local server using the global endpoint.
-- [ ] **5.3** Run `post-implementation-review`.
+  > **Note**: Statically verified: tab provider lists are untouched (badges stay
+  > 9/5/6), transcription settings pages call `<ApiKeyInput provider={...} />`
+  > with no other props, and the success-criteria grep passes. Runtime smoke
+  > (clicking through the app, running a Custom transformation against a local
+  > server, confirming the localStorage rename on an upgraded profile) still
+  > needs a human pass.
+- [x] **5.3** Run `post-implementation-review`.
+  > **Note**: One grounded fix: the STANDARD_PROVIDER_CONFIG JSDoc still said
+  > Custom has "per-step baseUrl logic". One follow-up reported, not taken:
+  > `INFERENCE.Custom.stepModelField` exists, so the Custom branch could merge
+  > into STANDARD_PROVIDER_CONFIG with `endpointPath: 'apiEndpoints.custom'`;
+  > left alone because Custom's endpoint is required rather than an optional
+  > override, and the spec's Desired State keeps the branch explicit.
 
 ## Edge Cases
 
@@ -232,13 +245,61 @@ Standalone commits, Build -> Prove -> Remove ordering. Each phase typechecks alo
 
 ## Success Criteria
 
-- [ ] Setting a base URL for OpenAI/Groq affects BOTH transcription and transformations.
-- [ ] `completion.custom.baseUrl` no longer exists in code; existing stored values
+- [x] Setting a base URL for OpenAI/Groq affects BOTH transcription and transformations.
+- [x] `completion.custom.baseUrl` no longer exists in code; existing stored values
       survive into `apiEndpoints.custom`.
-- [ ] `ApiKeyInput` takes only `provider`.
-- [ ] `grep -rn "customBaseUrl\|completion.custom\|showBaseUrl\|isBaseUrl" apps/whispering/src`
+- [x] `ApiKeyInput` takes only `provider`.
+- [x] `grep -rn "customBaseUrl\|completion.custom\|showBaseUrl\|isBaseUrl" apps/whispering/src`
       returns nothing (outside this spec and migration oldKey strings).
 - [ ] Typecheck clean; manual smoke per 5.2.
+  > **Note**: Typecheck clean (0 errors, 11 baseline warnings). Runtime smoke
+  > still pending; see the 5.2 note.
+
+## Review
+
+**Completed**: 2026-06-12
+**Branch**: `codex/whispering-endpoint-config-consolidation`
+
+### What Landed
+
+Four standalone commits, one per phase, exactly as planned: completions now
+honor `apiEndpoints.openai` / `apiEndpoints.groq`, the one-key `completion.*`
+namespace is renamed to `apiEndpoints.custom` with an ungated idempotent
+localStorage rename, the per-step `customBaseUrl` is deleted (editor field,
+transform logic, schema column, default-step seed), and `ApiKeyInput` is down
+to a single `provider` prop with no flags.
+
+### Deviations and Discoveries
+
+- `generateDefaultStep` in `state/transformation-steps.svelte.ts` also seeded
+  `customBaseUrl: ''`; the spec's file list missed it. Removed in Phase 3.
+- The localStorage rename writes through `deviceConfig.set`, not raw
+  `localStorage.setItem`: `createPersistedMap` caches all values into its
+  SvelteMap at construction, so a raw write would be invisible until the next
+  focus event.
+- `'completion.custom.baseUrl'` was dropped from ApiKeyInput's `configKey`
+  Extract in Phase 2 (with the rename) instead of Phase 4; once the key left
+  `DeviceConfigKey` the literal was dead.
+- Phase 3 also flipped the editor call site to plain
+  `<ApiKeyInput provider={...} />` so Custom steps never lost base URL access
+  between commits; Phase 4 then deleted the unused prop machinery.
+- Open Question 2 resolved: no slot reshape. The flag-free array (copy +
+  configKey) is already the floor.
+- Confirmed in `packages/workspace/src/document/table.ts` that dropping a
+  column needs no migration: row validation uses `Value.Check` against a
+  `Type.Object` without `additionalProperties: false`, so old rows with the
+  stray field still validate.
+
+### Follow-up Work
+
+- Runtime smoke per 5.2 (badges, per-service settings, Custom transformation
+  against a local server, rename on an upgraded profile).
+- Optional taste collapse: `INFERENCE.Custom.stepModelField` exists, so the
+  Custom branch in `transform.ts` could fold into `STANDARD_PROVIDER_CONFIG`.
+  Left alone: Custom's endpoint is required (no fallback-to-default), and the
+  spec's Desired State keeps the branch explicit.
+- Release note line: per-step Custom base URLs are ignored after upgrade;
+  steps fall back to the global `apiEndpoints.custom`.
 
 ## References
 

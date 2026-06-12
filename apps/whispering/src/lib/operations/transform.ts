@@ -23,7 +23,8 @@ import type {
 /**
  * Config map for standard completion providers that share the same
  * `{ apiKey, model, baseUrl?, systemPrompt, userPrompt }` call signature.
- * Custom is handled separately because it has per-step baseUrl logic.
+ * Custom is handled separately: its endpoint is required rather than an
+ * optional override, so it gets no fallback-to-default semantics.
  */
 const STANDARD_PROVIDER_CONFIG = {
 	OpenAI: {

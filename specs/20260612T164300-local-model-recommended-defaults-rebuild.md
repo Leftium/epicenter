@@ -66,14 +66,15 @@ Then collapse `LocalModelDownloadCard` onto the shared handle and delete its `$e
 
 1. Branch off main. Cherry-pick `d9d7ea9fc` (recommended flags), resolve the constants conflict.
 2. Port the state module per the notes above.
-3. Rebuild the hero inside main's `LocalModelSelector.svelte`: empty state when `!value` (Empty block, recommended download with size, progress bar, Activate when ready), active summary row, and the existing list (catalog cards, custom entries, folder help box) behind "All models (N)". Keep the missing-model notice always visible, not inside the collapsible; it is an error state.
+3. Rebuild the hero inside main's `LocalModelSelector.svelte`. The hero renders when nothing is active and the folder holds no custom entries (`!value && customEntries.length === 0`): an Empty block whose button derives from the recommended model's handle state (Download with size, progress bar while downloading, Activate when on disk). When custom entries exist but nothing is active, skip the hero and default "All models" open; that user already brought their own model, and a "Download Small (488 MB)" pitch would ignore it. When a model is active, show the summary row (catalog name and size, or entry name with "Your model") with the Change button. Everything else (catalog cards, custom entry rows, folder help box) collapses behind "All models (N)" where N counts catalog plus custom entries. Keep the missing-model notice always visible, not inside the collapsible; it is an error state.
 4. Typecheck: `bun run --cwd apps/whispering typecheck` (0 errors; 5 warnings were pre-existing at time of writing).
 5. Visual pass in a running Tauri build: empty, downloading, ready, and active on all three engines, plus a custom dropped-in entry and the missing-model notice. Neither #1922 nor #1923 was runtime-verified; this is the first change that should be.
 
-## Open questions (owner: Braden)
+## Scoping decisions (resolved 2026-06-12, do not reopen)
 
-- Deactivate without delete: before #1923 the path input's clear button was the only way to deactivate a model without deleting it. #1923 removed that input, so today the only ways out are deleting the model or activating a different one. Does the rebuilt card need an explicit deactivate, or is that a non-goal?
-- Scope check: #1923 already removed the tabs and the picker, so the surface is smaller than the one #1922 redesigned. The empty-state hero is clearly still worth it (one obvious action instead of N peer download buttons). Confirm the active-summary-plus-collapse half still pays for itself with the now-shorter list, or whether collapsing only the catalog (leaving custom entries visible) reads better.
+- No deactivate affordance. Deactivating leaves the engine selected with no model, a broken configuration that fails preflight until something is picked. Not wanting this model means activating another; not wanting local transcription means switching provider above the card. The old X-to-clear was an artifact of the path input, and #1923 deleted the input.
+- The active-summary-plus-collapse half stays. The summary row is what answers "what is running" at a glance, which was the reason the flat-list alternative was rejected, and that reason did not shrink with the surface. Custom entries collapse along with the catalog; the hero-skip rule above covers the one case where hiding them would mislead.
+- This work stacks on the `whispering/local-model-defaults-handoff` branch (PR #1926) rather than waiting for a docs merge. Retitle and rewrite the PR description when the implementation lands. The two docs commits are standalone; if the rebuild stalls, split them out and merge them alone.
 
 ## Constraints
 

@@ -139,9 +139,11 @@ Standalone commits per phase. Each phase typechecks alone.
 
 ### Phase 4: rename the component
 
-- [ ] **4.1** `ApiKeyInput.svelte` becomes `ProviderConfigFields.svelte`;
+- [x] **4.1** `ApiKeyInput.svelte` becomes `ProviderConfigFields.svelte`;
       `ApiKeyProvider` becomes `ProviderConfigId`; update the settings barrel, the
       four call sites, and the settings README.
+  > **Note**: Internal identifiers followed: `ApiKeyField` is `ProviderField`,
+  > the `apiKeyField` snippet is `providerField`.
 
 ### Phase 5: verify and review
 

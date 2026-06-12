@@ -15,7 +15,7 @@
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { nanoid } from 'nanoid/non-secure';
 	import { slide } from 'svelte/transition';
-	import { ApiKeyInput } from '$lib/components/settings';
+	import { ProviderConfigFields } from '$lib/components/settings';
 	import { TRANSFORMATION_STEP_TYPE_OPTIONS } from '$lib/constants/transformations';
 	import {
 		hasModelSelect,
@@ -380,7 +380,7 @@
 											Advanced Options
 										</Accordion.Trigger>
 										<Accordion.Content>
-											<ApiKeyInput provider={step.inferenceProvider} />
+											<ProviderConfigFields provider={step.inferenceProvider} />
 										</Accordion.Content>
 									</Accordion.Item>
 								</Accordion.Root>

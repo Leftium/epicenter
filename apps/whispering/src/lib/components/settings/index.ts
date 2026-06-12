@@ -1,9 +1,9 @@
-// API Key components
+// Provider config components
 
 export {
-	type ApiKeyProvider,
-	default as ApiKeyInput,
-} from './ApiKeyInput.svelte';
+	type ProviderConfigId,
+	default as ProviderConfigFields,
+} from './ProviderConfigFields.svelte';
 // Shared components
 export { default as ManualDeviceSelector } from './selectors/ManualDeviceSelector.svelte';
 // Selector components

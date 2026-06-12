@@ -6,7 +6,7 @@
 	/** Inline description content: plain text or an external link. */
 	type DescriptionPart = string | { label: string; href: string };
 
-	type ApiKeyField = {
+	type ProviderField = {
 		id: string;
 		label: string;
 		type?: 'password' | 'url';
@@ -16,14 +16,14 @@
 	};
 
 	/**
-	 * Every provider whose credentials live in deviceConfig: inference
-	 * providers plus cloud transcription providers. Deriving the union keeps
-	 * PROVIDER_FIELDS exhaustive: adding a provider to either registry is a
-	 * compile error here until its key fields exist.
+	 * Every provider whose config (API key, endpoint) lives in deviceConfig:
+	 * inference providers plus cloud transcription providers. Deriving the
+	 * union keeps PROVIDER_FIELDS exhaustive: adding a provider to either
+	 * registry is a compile error here until its fields exist.
 	 */
-	export type ApiKeyProvider = InferenceProviderId | CloudProviderId;
+	export type ProviderConfigId = InferenceProviderId | CloudProviderId;
 
-	const PROVIDER_FIELDS: Record<ApiKeyProvider, ApiKeyField[]> = {
+	const PROVIDER_FIELDS: Record<ProviderConfigId, ProviderField[]> = {
 		OpenAI: [
 			{
 				id: 'openai-api-key',
@@ -216,12 +216,12 @@
 	import { Link } from '@epicenter/ui/link';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 
-	let { provider }: { provider: ApiKeyProvider } = $props();
+	let { provider }: { provider: ProviderConfigId } = $props();
 
 	const fields = $derived(PROVIDER_FIELDS[provider]);
 </script>
 
-{#snippet apiKeyField(field: ApiKeyField)}
+{#snippet providerField(field: ProviderField)}
 	<Field.Field>
 		<Field.Label for={field.id}>{field.label}</Field.Label>
 		<Input
@@ -245,11 +245,11 @@
 {#if fields.length > 1}
 	<Field.Group>
 		{#each fields as field (field.id)}
-			{@render apiKeyField(field)}
+			{@render providerField(field)}
 		{/each}
 	</Field.Group>
 {:else}
 	{#each fields as field (field.id)}
-		{@render apiKeyField(field)}
+		{@render providerField(field)}
 	{/each}
 {/if}

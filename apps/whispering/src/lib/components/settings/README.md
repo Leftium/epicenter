@@ -29,7 +29,7 @@ Components in this directory:
 
 ```
 settings/
-├── ApiKeyInput.svelte      # Data-driven API key fields per provider (deviceConfig)
+├── ProviderConfigFields.svelte # Per-provider API key and endpoint fields (deviceConfig)
 ├── selectors/              # Various selector components
 │   ├── ManualDeviceSelector.svelte
 │   ├── VadDeviceSelector.svelte
@@ -48,10 +48,10 @@ settings/
 
 ```svelte
 <script>
-	import { ApiKeyInput } from '$lib/components/settings';
+	import { ProviderConfigFields } from '$lib/components/settings';
 </script>
 
-<ApiKeyInput provider="OpenAI" />
+<ProviderConfigFields provider="OpenAI" />
 ```
 
 ### With Settings Key Prop

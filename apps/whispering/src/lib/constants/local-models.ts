@@ -282,3 +282,18 @@ export const MOONSHINE_MODELS = [
 		],
 	},
 ] as const satisfies readonly MoonshineModelConfig[];
+
+/**
+ * The model's entry name inside its engine's models folder: the filename
+ * for Whisper, the directory name for Parakeet and Moonshine. This is the
+ * value settings store to mark a model active.
+ */
+export function modelEntryName(model: LocalModelConfig): string {
+	switch (model.engine) {
+		case 'whispercpp':
+			return model.file.filename;
+		case 'parakeet':
+		case 'moonshine':
+			return model.directoryName;
+	}
+}

@@ -1,9 +1,14 @@
 /**
- * On-disk storage for pre-built local transcription models: resolve where a
- * model lives, verify an install, stream downloads from the catalog URLs,
- * import user-selected files or directories, and delete installs.
+ * The engine's models folder, as a module. The folder is the single source
+ * of truth for local transcription models: catalog downloads land in it,
+ * and users add their own models by dropping (or symlinking) them into it.
+ * Settings store a folder entry name, never a path; Rust resolves and
+ * validates the name against the folder at load time (`model_path_for` in
+ * `src-tauri/src/transcription/model_manager.rs`). This module owns the
+ * JS view of the folder: listing entries, streaming catalog downloads into
+ * it, and deleting entries, never anything outside the folder.
  *
- * UI-free and settings-free. Activation (writing the model path into
+ * UI-free and settings-free. Activation (writing the model name into
  * `deviceConfig`) lives in `$lib/operations/local-models.ts`.
  *
  * Layout under the appdata root (see `$lib/services/fs-paths`):
@@ -11,9 +16,8 @@
  * - Parakeet:  `models/parakeet/{directoryName}/` (multiple ONNX files)
  * - Moonshine: `models/moonshine/{directoryName}/` (multiple ONNX files)
  */
-import { basename, join } from '@tauri-apps/api/path';
+import { join } from '@tauri-apps/api/path';
 import {
-	copyFile,
 	exists,
 	mkdir,
 	readDir,
@@ -32,7 +36,7 @@ import type { LocalModelConfig } from '$lib/constants/local-models';
 import { PATHS } from '$lib/services/fs-paths';
 import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
 
-export const LocalModelStorageError = defineErrors({
+export const LocalModelFolderError = defineErrors({
 	DownloadRequestFailed: ({
 		url,
 		status,
@@ -63,17 +67,109 @@ export const LocalModelStorageError = defineErrors({
 		message: extractErrorMessage(cause),
 		cause,
 	}),
-	ImportFailed: ({ cause }: { cause: unknown }) => ({
-		message: extractErrorMessage(cause),
-		cause,
-	}),
-	EmptyModelDirectory: () => ({
-		message: 'Selected directory appears to be empty',
-	}),
 });
-export type LocalModelStorageError = InferErrors<typeof LocalModelStorageError>;
+export type LocalModelFolderError = InferErrors<typeof LocalModelFolderError>;
 
 type Engine = LocalModelConfig['engine'];
+
+/** Extensions a Whisper model file may carry (catalog or user-provided). */
+const WHISPER_MODEL_EXTENSIONS = ['.bin', '.gguf', '.ggml'];
+
+/**
+ * Resolve a folder entry name to the absolute path Rust loads. Pure path
+ * math; does not touch disk. The JS mirror of Rust's `model_path_for`,
+ * for JS-side checks that need to stat a known catalog file (e.g. the
+ * Whisper truncation check).
+ */
+export async function resolveModelPath(
+	engine: Engine,
+	name: string,
+): Promise<string> {
+	return join(await PATHS.MODELS[engine](), name);
+}
+
+export type LocalModelEntry = {
+	/** File or directory name inside the engine's models folder. */
+	name: string;
+	/**
+	 * Symlinked entries are listed by link name alone. The webview's fs scope
+	 * canonicalizes link targets, so a link pointing outside appdata cannot
+	 * be stat'd or read from here; Rust resolves links natively when loading.
+	 */
+	isSymlink: boolean;
+};
+
+/**
+ * List every selectable entry in the engine's models folder: model files
+ * (.bin, .gguf, .ggml) for Whisper, directories for Parakeet and Moonshine,
+ * plus symlinks to either. Hidden entries are skipped. Returns an empty list
+ * when the folder does not exist yet. Never rejects.
+ */
+export async function listModelEntries(
+	engine: Engine,
+): Promise<LocalModelEntry[]> {
+	const { data: entries } = await tryAsync({
+		try: async () => {
+			const modelsDir = await PATHS.MODELS[engine]();
+			if (!(await exists(modelsDir))) return [];
+			const dirEntries = await readDir(modelsDir);
+			return dirEntries
+				.filter((entry) => {
+					if (entry.name.startsWith('.')) return false;
+					if (engine === 'whispercpp') {
+						const hasModelExtension = WHISPER_MODEL_EXTENSIONS.some((ext) =>
+							entry.name.endsWith(ext),
+						);
+						return hasModelExtension && (entry.isFile || entry.isSymlink);
+					}
+					return entry.isDirectory || entry.isSymlink;
+				})
+				.map((entry) => ({ name: entry.name, isSymlink: entry.isSymlink }));
+		},
+		catch: () => Ok([]),
+	});
+	return (entries ?? []).toSorted((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Remove one entry from the engine's models folder. The target is always
+ * `join(modelsDir, name)` for a name that `readDir` reported, so this can
+ * never delete anything outside the folder, and a symlinked entry removes
+ * only the link, never its target. Succeeds when the entry is already gone.
+ */
+export async function deleteModelEntry({
+	engine,
+	name,
+}: {
+	engine: Engine;
+	name: string;
+}): Promise<Result<void, LocalModelFolderError>> {
+	const { data: found, error: readError } = await tryAsync({
+		try: async () => {
+			const modelsDir = await PATHS.MODELS[engine]();
+			const entry = (await readDir(modelsDir)).find((e) => e.name === name);
+			if (!entry) return null;
+			return { entry, path: await join(modelsDir, name) };
+		},
+		catch: (error) => LocalModelFolderError.DeleteFailed({ cause: error }),
+	});
+	if (readError) return Err(readError);
+	if (!found) return Ok(undefined);
+
+	return tryAsync({
+		try: async () => {
+			await remove(found.path, { recursive: found.entry.isDirectory });
+		},
+		catch: (error) =>
+			LocalModelFolderError.DeleteFailed({
+				// A link pointing outside appdata is scope-rejected even for
+				// removal; the user manages that link themselves.
+				cause: found.entry.isSymlink
+					? 'Whispering cannot remove this link. Delete it from the models folder yourself.'
+					: error,
+			}),
+	});
+}
 
 /**
  * Stream one file to disk, appending chunk by chunk so large models never
@@ -90,14 +186,14 @@ async function downloadFileTo({
 	sizeBytes: number;
 	filePath: string;
 	onProgress: (progress: number) => void;
-}): Promise<Result<void, LocalModelStorageError>> {
+}): Promise<Result<void, LocalModelFolderError>> {
 	const { data: response, error: fetchError } = await tryAsync({
 		try: () => fetch(url),
-		catch: (error) => LocalModelStorageError.DownloadFailed({ cause: error }),
+		catch: (error) => LocalModelFolderError.DownloadFailed({ cause: error }),
 	});
 	if (fetchError) return Err(fetchError);
 	if (!response.ok) {
-		return LocalModelStorageError.DownloadRequestFailed({
+		return LocalModelFolderError.DownloadRequestFailed({
 			url,
 			status: response.status,
 		});
@@ -131,7 +227,7 @@ async function downloadFileTo({
 			}
 			return bytes;
 		},
-		catch: (error) => LocalModelStorageError.DownloadFailed({ cause: error }),
+		catch: (error) => LocalModelFolderError.DownloadFailed({ cause: error }),
 	});
 	if (streamError) return Err(streamError);
 
@@ -140,7 +236,7 @@ async function downloadFileTo({
 			try: () => remove(filePath),
 			catch: () => Ok(undefined),
 		});
-		return LocalModelStorageError.DownloadIncomplete({
+		return LocalModelFolderError.DownloadIncomplete({
 			downloadedMb: Math.round(downloadedBytes / 1_000_000),
 			expectedMb: Math.round(totalBytes / 1_000_000),
 		});
@@ -149,8 +245,8 @@ async function downloadFileTo({
 }
 
 /**
- * Per-model handle over the model's on-disk install. Stateless; safe to
- * recreate freely.
+ * Per-model handle over a catalog model's install in the folder. Stateless;
+ * safe to recreate freely.
  */
 export function createModelStorage(model: LocalModelConfig) {
 	async function getPath(): Promise<string> {
@@ -220,7 +316,7 @@ export function createModelStorage(model: LocalModelConfig) {
 			onProgress,
 		}: {
 			onProgress: (progress: number) => void;
-		}): Promise<Result<{ path: string }, LocalModelStorageError>> {
+		}): Promise<Result<{ path: string }, LocalModelFolderError>> {
 			const { data: path, error: prepareError } = await tryAsync({
 				try: async () => {
 					await mkdir(await PATHS.MODELS[model.engine](), { recursive: true });
@@ -231,7 +327,7 @@ export function createModelStorage(model: LocalModelConfig) {
 					return destination;
 				},
 				catch: (error) =>
-					LocalModelStorageError.DownloadFailed({ cause: error }),
+					LocalModelFolderError.DownloadFailed({ cause: error }),
 			});
 			if (prepareError) return Err(prepareError);
 
@@ -254,7 +350,7 @@ export function createModelStorage(model: LocalModelConfig) {
 						const { data: filePath, error: joinError } = await tryAsync({
 							try: () => join(path, file.filename),
 							catch: (error) =>
-								LocalModelStorageError.DownloadFailed({ cause: error }),
+								LocalModelFolderError.DownloadFailed({ cause: error }),
 						});
 						if (joinError) return Err(joinError);
 						const { error } = await downloadFileTo({
@@ -281,11 +377,13 @@ export function createModelStorage(model: LocalModelConfig) {
 		},
 
 		/**
-		 * Remove the model's files from disk. Succeeds (and returns the
-		 * canonical path) even when nothing is installed, so callers can
-		 * always reconcile settings against the returned path.
+		 * Remove the model's files from disk. Succeeds even when nothing is
+		 * installed, so callers can always reconcile settings afterwards.
+		 *
+		 * Only ever removes the model's canonical catalog path inside the
+		 * folder (`getPath`); nothing outside the folder is reachable.
 		 */
-		async delete(): Promise<Result<{ path: string }, LocalModelStorageError>> {
+		async delete(): Promise<Result<void, LocalModelFolderError>> {
 			return tryAsync({
 				try: async () => {
 					const path = await getPath();
@@ -293,84 +391,9 @@ export function createModelStorage(model: LocalModelConfig) {
 						const isDirectory = model.engine !== 'whispercpp';
 						await remove(path, { recursive: isDirectory });
 					}
-					return { path };
 				},
-				catch: (error) => LocalModelStorageError.DeleteFailed({ cause: error }),
+				catch: (error) => LocalModelFolderError.DeleteFailed({ cause: error }),
 			});
 		},
 	};
-}
-
-/** Copy a user-selected model file into the engine's models directory. */
-export async function importModelFile({
-	engine,
-	sourcePath,
-}: {
-	engine: Engine;
-	sourcePath: string;
-}): Promise<Result<{ path: string }, LocalModelStorageError>> {
-	return tryAsync({
-		try: async () => {
-			const modelsDir = await PATHS.MODELS[engine]();
-			await mkdir(modelsDir, { recursive: true });
-			const destination = await join(modelsDir, await basename(sourcePath));
-			await copyFile(sourcePath, destination);
-			return { path: destination };
-		},
-		catch: (error) => LocalModelStorageError.ImportFailed({ cause: error }),
-	});
-}
-
-async function copyDirectoryRecursive(
-	sourceDir: string,
-	destinationDir: string,
-): Promise<void> {
-	await mkdir(destinationDir, { recursive: true });
-	const entries = await readDir(sourceDir);
-
-	for (const entry of entries) {
-		const sourcePath = await join(sourceDir, entry.name);
-		const destinationPath = await join(destinationDir, entry.name);
-
-		if (entry.isDirectory) {
-			await copyDirectoryRecursive(sourcePath, destinationPath);
-		} else if (entry.isFile) {
-			await copyFile(sourcePath, destinationPath);
-		} else {
-			throw new Error('Selected model directory cannot include symlinks');
-		}
-	}
-}
-
-/**
- * Copy a user-selected model directory into the engine's models directory,
- * keeping the source directory's name. Rejects empty directories and
- * directories containing symlinks.
- */
-export async function importModelDirectory({
-	engine,
-	sourceDir,
-}: {
-	engine: Engine;
-	sourceDir: string;
-}): Promise<Result<{ path: string }, LocalModelStorageError>> {
-	const { data: entries, error: readError } = await tryAsync({
-		try: () => readDir(sourceDir),
-		catch: (error) => LocalModelStorageError.ImportFailed({ cause: error }),
-	});
-	if (readError) return Err(readError);
-	if (entries.length === 0) {
-		return LocalModelStorageError.EmptyModelDirectory();
-	}
-
-	return tryAsync({
-		try: async () => {
-			const modelsDir = await PATHS.MODELS[engine]();
-			await mkdir(modelsDir, { recursive: true });
-			const destination = await join(modelsDir, await basename(sourceDir));
-			await copyDirectoryRecursive(sourceDir, destination);
-			return { path: destination };
-		},
-		catch: (error) => LocalModelStorageError.ImportFailed({ cause: error }),
-	});
 }

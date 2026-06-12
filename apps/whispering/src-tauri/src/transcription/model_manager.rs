@@ -43,7 +43,7 @@ pub struct ModelManager {
 
     /// Ambient configuration pushed by the FE via `set_transcription_config`.
     /// Read by `transcribe()` to dispatch and by `snapshot()` to report
-    /// `(engine, model_path)` without touching the cache mutex.
+    /// `(engine, model_name)` without touching the cache mutex.
     config: Arc<RwLock<Option<TranscriptionConfig>>>,
 
     /// Cache-independent status field for `snapshot()`. Mutated by load,
@@ -52,7 +52,7 @@ pub struct ModelManager {
     /// so snapshot never blocks behind a transcription.
     status: Arc<RwLock<ModelStatus>>,
 
-    /// Logical identity token for the selected `(engine, model_path)`. Older
+    /// Logical identity token for the selected `(engine, model_name)`. Older
     /// operations may finish, but they must not publish state after a newer
     /// model selection.
     model_generation: Arc<AtomicU64>,
@@ -77,15 +77,17 @@ impl ModelManager {
 
     // ── Ambient config ────────────────────────────────────────────────
 
-    /// Push the FE-side configuration. If `(engine, model_path)` changed
+    /// Push the FE-side configuration. If `(engine, model_name)` changed
     /// since the last push, the previous resident model is dropped (with a
     /// `ConfigChanged` unload event) and a background preload kicks off so
     /// the next transcription does not pay cold-start latency. Other field
     /// changes (language, prompt, policy) take effect on next transcription
     /// without a reload.
     pub fn set_transcription_config(&self, config: TranscriptionConfig) {
-        let config = match self.constrain_config(config) {
-            Ok(config) => config,
+        // Validate eagerly so a bad selection surfaces as a LoadingFailed
+        // event at push time instead of an error mid-transcription.
+        match self.model_path_for(&config) {
+            Ok(_) => {}
             Err(message) => {
                 warn!("[Transcription] rejected local model config: {}", message);
                 {
@@ -102,7 +104,7 @@ impl ModelManager {
                 });
                 return;
             }
-        };
+        }
 
         let (preload_generation, selection_state) = {
             let mut guard = self.write_config();
@@ -152,34 +154,40 @@ impl ModelManager {
         });
     }
 
-    fn constrain_config(
-        &self,
-        mut config: TranscriptionConfig,
-    ) -> Result<TranscriptionConfig, String> {
-        config.model_path = self.app_model_path(&config.model_path)?;
-        Ok(config)
-    }
-
-    fn app_model_path(&self, model_path: &str) -> Result<String, String> {
+    /// Resolve the configured model name to the absolute path inside the
+    /// engine's models directory. The name must be a single folder entry
+    /// (no separators, no traversal), which makes containment structural:
+    /// the result is always `{app_data}/models/{engine}/{name}` with no
+    /// canonicalize-and-contain check. Symlinked entries are deliberately
+    /// honored; the link lives in the folder even when its target does not,
+    /// and the engine loaders follow links natively.
+    fn model_path_for(&self, config: &TranscriptionConfig) -> Result<PathBuf, String> {
+        let name = config.model_name.as_str();
+        if name.is_empty() {
+            return Err("No local model selected. Choose a model in settings.".to_string());
+        }
+        if name.contains('/') || name.contains('\\') || name == "." || name == ".." {
+            return Err(format!(
+                "Model name must be a single models-folder entry, got: {}",
+                name
+            ));
+        }
         let app_data_dir = self
             .app
             .path()
             .app_data_dir()
-            .map_err(|e| format!("resolve app data directory: {}", e))?
-            .canonicalize()
             .map_err(|e| format!("resolve app data directory: {}", e))?;
-        let models_dir = app_data_dir.join("models");
-        let path = PathBuf::from(model_path)
-            .canonicalize()
-            .map_err(|e| format!("resolve model path {}: {}", model_path, e))?;
-
-        if !path.starts_with(&models_dir) {
-            return Err(
-                "Local model path must be inside the app data models directory".to_string(),
-            );
+        let path = app_data_dir
+            .join("models")
+            .join(engine_models_dir(config.engine))
+            .join(name);
+        if !path.exists() {
+            return Err(format!(
+                "The model \"{}\" is no longer in the models folder. Download it again or add it back, then select it in settings.",
+                name
+            ));
         }
-
-        Ok(path.to_string_lossy().to_string())
+        Ok(path)
     }
 
     fn write_config(&self) -> std::sync::RwLockWriteGuard<'_, Option<TranscriptionConfig>> {
@@ -223,7 +231,7 @@ impl ModelManager {
 
     // ── Snapshot ──────────────────────────────────────────────────────
 
-    /// Read-only view of `(engine, model_path, status)`. Does not touch the
+    /// Read-only view of `(engine, model_name, status)`. Does not touch the
     /// cache mutex, so it returns immediately even mid-inference. This is
     /// what new windows call on mount to catch up to current state without
     /// waiting for the next event.
@@ -232,7 +240,7 @@ impl ModelManager {
         let status = self.read_status();
         LocalModelState {
             engine: config.as_ref().map(|c| c.engine),
-            model_path: config.map(|c| c.model_path),
+            model_name: config.map(|c| c.model_name),
             status,
         }
     }
@@ -271,7 +279,9 @@ impl ModelManager {
             samples.len(),
         );
 
-        let model_path = PathBuf::from(&config.model_path);
+        let model_path = self
+            .model_path_for(&config)
+            .map_err(|message| TranscriptionError::ConfigError { message })?;
         let transcript = match config.engine {
             EngineKind::Whispercpp => {
                 let mut params = WhisperInferenceParams::default();
@@ -305,7 +315,7 @@ impl ModelManager {
                 })?
             }
             EngineKind::Moonshine => {
-                let variant = parse_moonshine_variant(&config.model_path)?;
+                let variant = parse_moonshine_variant(&config.model_name)?;
                 self.with_moonshine(&config, generation, model_path, variant, |engine| {
                     let result = engine
                         .transcribe(&samples, &TranscribeOptions::default())
@@ -337,7 +347,23 @@ impl ModelManager {
         if !self.is_current_model_generation(generation) {
             return Ok(());
         }
-        let model_path = PathBuf::from(&config.model_path);
+        let model_path = match self.model_path_for(&config) {
+            Ok(path) => path,
+            Err(message) => {
+                let _ = self.publish_if_current(
+                    generation,
+                    &config,
+                    ModelStatus::Error {
+                        message: message.clone(),
+                    },
+                    |state| ModelStateEvent::LoadingFailed {
+                        state,
+                        error: message.clone(),
+                    },
+                );
+                return Err(TranscriptionError::ModelLoadError { message });
+            }
+        };
         match config.engine {
             EngineKind::Whispercpp => {
                 self.ensure_loaded(
@@ -366,7 +392,7 @@ impl ModelManager {
                 )?;
             }
             EngineKind::Moonshine => {
-                let variant = parse_moonshine_variant(&config.model_path)?;
+                let variant = parse_moonshine_variant(&config.model_name)?;
                 self.ensure_loaded(
                     &config,
                     model_path,
@@ -782,7 +808,7 @@ fn state_for_config_option(
 ) -> LocalModelState {
     LocalModelState {
         engine: config.map(|config| config.engine),
-        model_path: config.map(|config| config.model_path.clone()),
+        model_name: config.map(|config| config.model_name.clone()),
         status,
     }
 }
@@ -808,27 +834,29 @@ fn sanitize_samples(mut samples: Vec<f32>) -> Vec<f32> {
     samples
 }
 
-fn parse_moonshine_variant(model_path: &str) -> Result<MoonshineVariant, TranscriptionError> {
-    let stem = Path::new(model_path)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .ok_or_else(|| TranscriptionError::ConfigError {
-            message: format!(
-                "Moonshine model path has no terminal directory name: {}",
-                model_path
-            ),
-        })?;
+/// Directory under `models/` for each engine. A durable on-disk contract
+/// shared with the frontend's `PATHS.MODELS` (which is why `whispercpp`
+/// maps to `whisper`).
+fn engine_models_dir(engine: EngineKind) -> &'static str {
+    match engine {
+        EngineKind::Whispercpp => "whisper",
+        EngineKind::Parakeet => "parakeet",
+        EngineKind::Moonshine => "moonshine",
+    }
+}
+
+fn parse_moonshine_variant(model_name: &str) -> Result<MoonshineVariant, TranscriptionError> {
     // Naming convention: moonshine-{variant}-{lang}. Match on the variant
     // segment between the first and last hyphen-bounded fields.
-    if stem.starts_with("moonshine-tiny-") || stem == "moonshine-tiny" {
+    if model_name.starts_with("moonshine-tiny-") || model_name == "moonshine-tiny" {
         Ok(MoonshineVariant::Tiny)
-    } else if stem.starts_with("moonshine-base-") || stem == "moonshine-base" {
+    } else if model_name.starts_with("moonshine-base-") || model_name == "moonshine-base" {
         Ok(MoonshineVariant::Base)
     } else {
         Err(TranscriptionError::ConfigError {
             message: format!(
-                "Moonshine model path must end with moonshine-{{tiny|base}}-{{lang}}: got {}",
-                stem
+                "Moonshine model directories must be named moonshine-{{tiny|base}}-{{lang}}: got {}",
+                model_name
             ),
         })
     }
@@ -900,26 +928,26 @@ mod tests {
     #[test]
     fn parse_moonshine_variant_handles_known_names() {
         assert!(matches!(
-            parse_moonshine_variant("/models/moonshine-tiny-en").unwrap(),
+            parse_moonshine_variant("moonshine-tiny-en").unwrap(),
             MoonshineVariant::Tiny
         ));
         assert!(matches!(
-            parse_moonshine_variant("/models/moonshine-base-en").unwrap(),
+            parse_moonshine_variant("moonshine-base-en").unwrap(),
             MoonshineVariant::Base
         ));
     }
 
     #[test]
     fn parse_moonshine_variant_rejects_unknown_names() {
-        assert!(parse_moonshine_variant("/models/moonshine-large-en").is_err());
-        assert!(parse_moonshine_variant("/models/whisper-tiny").is_err());
+        assert!(parse_moonshine_variant("moonshine-large-en").is_err());
+        assert!(parse_moonshine_variant("whisper-tiny").is_err());
     }
 
     #[test]
     fn state_for_config_uses_captured_model_identity() {
         let config = TranscriptionConfig {
             engine: EngineKind::Parakeet,
-            model_path: "/models/parakeet".to_string(),
+            model_name: "parakeet-tdt-0.6b-v3-int8".to_string(),
             language: Some("en".to_string()),
             initial_prompt: None,
             unload_policy: UnloadPolicy::AfterFiveMinutes,
@@ -928,7 +956,10 @@ mod tests {
         let state = state_for_config(&config, ModelStatus::Inferring);
 
         assert_eq!(state.engine, Some(EngineKind::Parakeet));
-        assert_eq!(state.model_path, Some("/models/parakeet".to_string()));
+        assert_eq!(
+            state.model_name,
+            Some("parakeet-tdt-0.6b-v3-int8".to_string())
+        );
         assert_eq!(state.status, ModelStatus::Inferring);
     }
 }

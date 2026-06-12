@@ -160,7 +160,11 @@ export type Engine = 'whispercpp' | 'parakeet' | 'moonshine';
  */
 export type LocalModelState = {
 	engine: Engine | null;
-	modelPath: string | null;
+	/**
+	 *  Entry name inside the engine's models directory, mirroring
+	 *  `TranscriptionConfig::model_name`.
+	 */
+	modelName: string | null;
 	status: ModelStatus;
 };
 
@@ -221,14 +225,12 @@ export type ModelStatus =
 /**
  *  Serializable handle returned to the JS side. The id is the lookup key
  *  for every later operation; the rest is metadata the UI needs without
- *  having to read the file (duration for analytics, byteLength for upload
- *  size, mimeType for the player).
+ *  having to read the file (duration for analytics, byteLength for artifact
+ *  diagnostics, mimeType for the player).
  *
  *  `mime_type` is `String` rather than `&'static str` so specta's TS
- *  generator sees a stable serializable shape (and so future producers,
- *  e.g. navigator-saved webm artifacts after the next collapse, can set
- *  it to a non-static value). The runtime cost is one short allocation
- *  per artifact write.
+ *  generator sees a stable serializable shape. The runtime cost is one short
+ *  allocation per artifact write.
  *
  *  `duration_ms` and `byte_length` use `#[specta(type = Number<u64>)]`
  *  to opt out of specta's bigint guard: both stay well under
@@ -246,13 +248,19 @@ export type RecordingArtifact = {
 /**
  *  Ambient configuration the frontend pushes once per change. The Rust side
  *  reads this on every `transcribe_recording` call instead of receiving
- *  a per-call payload. Drift in `(engine, model_path)` triggers a preload;
+ *  a per-call payload. Drift in `(engine, model_name)` triggers a preload;
  *  drift in other fields takes effect on the next transcription with no
  *  reload.
  */
 export type TranscriptionConfig = {
 	engine: Engine;
-	modelPath: string;
+	/**
+	 *  Entry name inside the engine's models directory (a single file or
+	 *  directory name, never a path). `ModelManager` resolves it under
+	 *  `{app_data}/models/{engine}/` at load time, so a path never exists
+	 *  as data anywhere in the system.
+	 */
+	modelName: string;
 	language?: string | null;
 	initialPrompt?: string | null;
 	unloadPolicy: UnloadPolicy;

@@ -14,7 +14,9 @@ pub const EVENT_CHANNEL: &str = "transcription://model-state";
 #[serde(rename_all = "camelCase")]
 pub struct LocalModelState {
     pub engine: Option<Engine>,
-    pub model_path: Option<String>,
+    /// Entry name inside the engine's models directory, mirroring
+    /// `TranscriptionConfig::model_name`.
+    pub model_name: Option<String>,
     pub status: ModelStatus,
 }
 
@@ -122,7 +124,7 @@ mod tests {
         let event = ModelStateEvent::InferenceCompleted {
             state: LocalModelState {
                 engine: Some(Engine::Whispercpp),
-                model_path: Some("/models/whisper".to_string()),
+                model_name: Some("ggml-tiny.bin".to_string()),
                 status: ModelStatus::Ready,
             },
             elapsed_ms: 123,
@@ -134,7 +136,7 @@ mod tests {
                 "kind": "inference_completed",
                 "state": {
                     "engine": "whispercpp",
-                    "modelPath": "/models/whisper",
+                    "modelName": "ggml-tiny.bin",
                     "status": { "kind": "ready" }
                 },
                 "elapsedMs": 123

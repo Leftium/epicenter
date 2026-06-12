@@ -2,14 +2,18 @@ use serde::{Deserialize, Serialize};
 
 /// Ambient configuration the frontend pushes once per change. The Rust side
 /// reads this on every `transcribe_recording` call instead of receiving
-/// a per-call payload. Drift in `(engine, model_path)` triggers a preload;
+/// a per-call payload. Drift in `(engine, model_name)` triggers a preload;
 /// drift in other fields takes effect on the next transcription with no
 /// reload.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptionConfig {
     pub engine: Engine,
-    pub model_path: String,
+    /// Entry name inside the engine's models directory (a single file or
+    /// directory name, never a path). `ModelManager` resolves it under
+    /// `{app_data}/models/{engine}/` at load time, so a path never exists
+    /// as data anywhere in the system.
+    pub model_name: String,
     #[serde(default)]
     pub language: Option<String>,
     #[serde(default)]
@@ -51,11 +55,11 @@ impl UnloadPolicy {
 }
 
 /// True when the new config asks for a different resident model than the old
-/// one. Identity is `(engine, model_path)` only: language/prompt/policy
+/// one. Identity is `(engine, model_name)` only: language/prompt/policy
 /// changes never trigger a reload because they take effect on next inference.
 pub fn should_preload(old: Option<&TranscriptionConfig>, new: &TranscriptionConfig) -> bool {
     match old {
         None => true,
-        Some(prev) => prev.engine != new.engine || prev.model_path != new.model_path,
+        Some(prev) => prev.engine != new.engine || prev.model_name != new.model_name,
     }
 }

@@ -15,13 +15,11 @@ import { ElevenLabsTranscriptionServiceLive } from '$lib/services/transcription/
 import { GroqTranscriptionServiceLive } from '$lib/services/transcription/cloud/groq';
 import { MistralTranscriptionServiceLive } from '$lib/services/transcription/cloud/mistral';
 import { OpenaiTranscriptionServiceLive } from '$lib/services/transcription/cloud/openai';
-import {
-	LocalPreflightError,
-	requireExistingModelPath,
-} from '$lib/services/transcription/local-preflight';
+import { resolveModelPath } from '$lib/services/transcription/local-model-folder';
 import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
 import {
 	type CloudProviderId,
+	isLocalProviderId,
 	PROVIDERS,
 	type TranscriptionServiceId,
 } from '$lib/services/transcription/providers';
@@ -39,6 +37,28 @@ const TranscriptionOperationError = defineErrors({
 	LocalTranscriptionUnavailableOnWeb: () => ({
 		message:
 			'Local transcription is only available in the desktop app. Choose a cloud or self-hosted provider on web.',
+	}),
+	LocalModelNotSelected: ({
+		engineDisplayName,
+		kind,
+	}: {
+		engineDisplayName: string;
+		kind: 'file' | 'directory';
+	}) => ({
+		message: `Please select a ${engineDisplayName} model ${kind} in settings.`,
+		engineDisplayName,
+		kind,
+	}),
+	CorruptedModelFile: ({
+		actualSizeMb,
+		expectedSizeMb,
+	}: {
+		actualSizeMb: number;
+		expectedSizeMb: number;
+	}) => ({
+		message: `The model file is ${actualSizeMb}MB but should be ~${expectedSizeMb}MB. This usually happens when a download was interrupted. Please delete and re-download the model.`,
+		actualSizeMb,
+		expectedSizeMb,
 	}),
 });
 
@@ -164,24 +184,23 @@ export async function transcribeAudio(
  * Whisper .bin downloads can finish at a smaller-than-expected size when the
  * connection drops mid-stream. The file still loads via whisper.cpp but
  * produces nonsense transcripts. Catalog match is best-effort: only models
- * we recognize from `WHISPER_MODELS` have an expected size to compare.
+ * we recognize from `WHISPER_MODELS` have an expected size to compare, and
+ * any filesystem failure passes through (Rust reports load errors itself).
  */
 async function checkWhisperTruncation(
-	modelPath: string,
-): Promise<Result<void, LocalPreflightError>> {
-	const modelConfig = WHISPER_MODELS.find((m) =>
-		modelPath.endsWith(m.file.filename),
-	);
+	modelName: string,
+): Promise<Result<void, TranscriptionError>> {
+	const modelConfig = WHISPER_MODELS.find((m) => m.file.filename === modelName);
 	if (!modelConfig) return Ok(undefined);
 
 	const { data: fileStats } = await tryAsync({
-		try: () => stat(modelPath),
+		try: async () => stat(await resolveModelPath('whispercpp', modelName)),
 		catch: () => Ok(null),
 	});
 	if (!fileStats) return Ok(undefined);
 
 	if (!isModelFileSizeValid(fileStats.size, modelConfig.sizeBytes)) {
-		return LocalPreflightError.CorruptedModelFile({
+		return TranscriptionOperationError.CorruptedModelFile({
 			actualSizeMb: Math.round(fileStats.size / 1000000),
 			expectedSizeMb: Math.round(modelConfig.sizeBytes / 1000000),
 		});
@@ -197,29 +216,30 @@ async function dispatchLocalTranscription(
 		return TranscriptionOperationError.LocalTranscriptionUnavailableOnWeb();
 	}
 
-	const provider = PROVIDERS[selectedService];
-	if (provider.location !== 'local') {
+	if (!isLocalProviderId(selectedService)) {
 		return TranscriptionOperationError.NoTranscriptionServiceSelected();
 	}
+	const provider = PROVIDERS[selectedService];
 
-	// FE preflight: Rust would also fail via `ModelLoadError`, but the FE owns
-	// better UX strings (per-engine display name, file-vs-directory guidance)
-	// and can short-circuit before the IPC round-trip. The path, kind, and name
-	// come straight from the provider's registry entry.
-	const modelPath = deviceConfig.get(provider.modelPathKey);
-	const validation = await requireExistingModelPath(
-		modelPath,
-		provider.preflightKind,
-		provider.label,
-	);
-	if (validation.error) return validation;
+	// Rust owns model resolution and validation: it joins the configured name
+	// under its models directory and reports missing or invalid models with
+	// user-facing messages. The FE keeps two checks Rust cannot make as well:
+	// "nothing selected yet" (instant, no IPC) and the catalog-size truncation
+	// check (the expected sizes live in the JS catalog).
+	const modelName = deviceConfig.get(provider.modelKey);
+	if (!modelName) {
+		return TranscriptionOperationError.LocalModelNotSelected({
+			engineDisplayName: provider.label,
+			kind: provider.modelKind,
+		});
+	}
 
 	if (selectedService === 'whispercpp') {
-		const truncated = await checkWhisperTruncation(modelPath);
+		const truncated = await checkWhisperTruncation(modelName);
 		if (truncated.error) return truncated;
 	}
 
-	// Rust reads engine, modelPath, language, prompt, and unloadPolicy from
+	// Rust reads engine, modelName, language, prompt, and unloadPolicy from
 	// the ambient config pushed via `setTranscriptionConfig` in the layout
 	// effect. Anything that affects inference output is already there.
 	return commands.transcribeRecording(recordingId);

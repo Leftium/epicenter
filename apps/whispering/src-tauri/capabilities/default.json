@@ -80,6 +80,12 @@
         },
         {
           "path": "$APPDATA/transformations/**"
+        },
+        {
+          "path": "$APPDATA/models"
+        },
+        {
+          "path": "$APPDATA/models/**"
         }
       ]
     },

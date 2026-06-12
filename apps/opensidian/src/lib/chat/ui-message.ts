@@ -9,6 +9,7 @@
  */
 
 import type { UIMessage } from '@tanstack/ai-svelte';
+import type { JsonValue } from 'wellcrafted/json';
 
 import type { ChatMessage, ChatMessageId } from 'opensidian';
 
@@ -55,10 +56,13 @@ export function toUiMessage(msg: ChatMessage): UIMessage {
 }
 
 /**
- * Convert persisted chat messages into TanStack AI messages for rendering.
+ * Serialize live TanStack AI parts for the chatMessages table.
  *
- * Useful when the UI needs a full conversation transcript, not a single row.
+ * The inverse of {@link toUiMessage}'s cast: parts are plain
+ * structuredClone-compatible objects, so they store as-is. Routing writes
+ * through here also checks the parts against the TanStack AI union at
+ * compile time before they become untyped JSON.
  */
-export function toUiMessages(msgs: ChatMessage[]): UIMessage[] {
-	return msgs.map(toUiMessage);
+export function toPersistedParts(parts: UiMessagePart[]): JsonValue[] {
+	return parts as unknown as JsonValue[];
 }

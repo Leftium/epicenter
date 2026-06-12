@@ -26,7 +26,7 @@ type Equal<X, Y> =
 // check pointed at the union the UI actually consumes (@tanstack/ai-client's
 // MessagePart), not the structurally similar server union in @tanstack/ai.
 
-export type UiMessagePart = UIMessage['parts'][number];
+type UiMessagePart = UIMessage['parts'][number];
 
 // ── Compile-time drift detection ──────────────────────────────────────
 // If TanStack AI adds, removes, or renames a part type, TypeScript

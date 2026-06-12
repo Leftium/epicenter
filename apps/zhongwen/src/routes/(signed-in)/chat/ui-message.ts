@@ -8,6 +8,7 @@
 
 import type { ChatMessage } from '@epicenter/zhongwen';
 import type { UIMessage } from '@tanstack/ai-client';
+import type { JsonValue } from 'wellcrafted/json';
 
 type Expect<T extends true> = T;
 type Equal<TLeft, TRight> =
@@ -42,4 +43,16 @@ export function toUiMessage(message: ChatMessage): UIMessage {
 		parts: message.parts as unknown as UiMessagePart[],
 		createdAt: new Date(message.createdAt),
 	};
+}
+
+/**
+ * Serialize live TanStack AI parts for the chatMessages table.
+ *
+ * The inverse of {@link toUiMessage}'s cast: parts are plain
+ * structuredClone-compatible objects, so they store as-is. Routing writes
+ * through here also checks the parts against the TanStack AI union at
+ * compile time before they become untyped JSON.
+ */
+export function toPersistedParts(parts: UiMessagePart[]): JsonValue[] {
+	return parts as unknown as JsonValue[];
 }

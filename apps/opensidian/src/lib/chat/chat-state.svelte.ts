@@ -25,7 +25,7 @@ import {
 	buildVaultSkillsPrompt,
 	OPENSIDIAN_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
-import { toUiMessage } from '$lib/chat/ui-message';
+import { toPersistedParts, toUiMessage } from '$lib/chat/ui-message';
 import { searchParams } from '$lib/search-params.svelte';
 import type { SkillState } from '$lib/state/skill-state.svelte';
 
@@ -148,7 +148,7 @@ export function createAiChatState({
 					id: asChatMessageId(message.id),
 					conversationId,
 					role: 'assistant',
-					parts: message.parts as JsonValue[],
+					parts: toPersistedParts(message.parts),
 					createdAt: message.createdAt?.getTime() ?? Date.now(),
 				});
 
@@ -251,7 +251,7 @@ export function createAiChatState({
 					id: userMessageId,
 					conversationId,
 					role: 'user',
-					parts: [{ type: 'text', content }],
+					parts: toPersistedParts([{ type: 'text', content }]),
 					createdAt: Date.now(),
 				});
 

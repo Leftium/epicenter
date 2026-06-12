@@ -3,16 +3,39 @@
 	import * as Field from '@epicenter/ui/field';
 	import * as Tabs from '@epicenter/ui/tabs';
 	import {
-		AnthropicApiKeyInput,
-		CustomEndpointInput,
-		DeepgramApiKeyInput,
-		ElevenLabsApiKeyInput,
-		GoogleApiKeyInput,
-		GroqApiKeyInput,
-		MistralApiKeyInput,
-		OpenAiApiKeyInput,
-		OpenRouterApiKeyInput,
+		ApiKeyInput,
+		type ApiKeyProvider,
 	} from '$lib/components/settings';
+
+	const TRANSCRIPTION: ApiKeyProvider[] = [
+		'Groq',
+		'OpenAI',
+		'ElevenLabs',
+		'Deepgram',
+		'Mistral',
+	];
+	const TRANSFORMATION: ApiKeyProvider[] = [
+		'Google',
+		'Anthropic',
+		'OpenAI',
+		'Groq',
+		'OpenRouter',
+		'Custom',
+	];
+
+	const TABS = [
+		{
+			value: 'all',
+			label: 'All',
+			providers: [...new Set([...TRANSCRIPTION, ...TRANSFORMATION])],
+		},
+		{ value: 'transcription', label: 'Transcription', providers: TRANSCRIPTION },
+		{
+			value: 'transformation',
+			label: 'Transformation',
+			providers: TRANSFORMATION,
+		},
+	];
 </script>
 
 <svelte:head> <title>API Keys - Whispering</title> </svelte:head>
@@ -24,75 +47,25 @@
 
 	<Tabs.Root value="all" class="w-full">
 		<Tabs.List class="grid w-full grid-cols-3">
-			<Tabs.Trigger value="all">
-				All
-				<Badge variant="secondary">9</Badge>
-			</Tabs.Trigger>
-			<Tabs.Trigger value="transcription">
-				Transcription
-				<Badge variant="secondary">5</Badge>
-			</Tabs.Trigger>
-			<Tabs.Trigger value="transformation">
-				Transformation
-				<Badge variant="secondary">7</Badge>
-			</Tabs.Trigger>
+			{#each TABS as tab (tab.value)}
+				<Tabs.Trigger value={tab.value}>
+					{tab.label}
+					<Badge variant="secondary">{tab.providers.length}</Badge>
+				</Tabs.Trigger>
+			{/each}
 		</Tabs.List>
 
-		<!-- All Tab -->
-		<Tabs.Content value="all" class="mt-4">
-			<Field.Group>
-				<GroqApiKeyInput />
-				<Field.Separator />
-				<OpenAiApiKeyInput />
-				<Field.Separator />
-				<ElevenLabsApiKeyInput />
-				<Field.Separator />
-				<DeepgramApiKeyInput />
-				<Field.Separator />
-				<MistralApiKeyInput />
-				<Field.Separator />
-				<GoogleApiKeyInput />
-				<Field.Separator />
-				<AnthropicApiKeyInput />
-				<Field.Separator />
-				<OpenRouterApiKeyInput />
-				<Field.Separator />
-				<CustomEndpointInput />
-			</Field.Group>
-		</Tabs.Content>
-
-		<!-- Transcription Tab -->
-		<Tabs.Content value="transcription" class="mt-4">
-			<Field.Group>
-				<GroqApiKeyInput />
-				<Field.Separator />
-				<OpenAiApiKeyInput />
-				<Field.Separator />
-				<ElevenLabsApiKeyInput />
-				<Field.Separator />
-				<DeepgramApiKeyInput />
-				<Field.Separator />
-				<MistralApiKeyInput />
-			</Field.Group>
-		</Tabs.Content>
-
-		<!-- Transformation Tab -->
-		<Tabs.Content value="transformation" class="mt-4">
-			<Field.Group>
-				<GoogleApiKeyInput />
-				<Field.Separator />
-				<AnthropicApiKeyInput />
-				<Field.Separator />
-				<OpenAiApiKeyInput />
-				<Field.Separator />
-				<GroqApiKeyInput />
-				<Field.Separator />
-				<MistralApiKeyInput />
-				<Field.Separator />
-				<OpenRouterApiKeyInput />
-				<Field.Separator />
-				<CustomEndpointInput />
-			</Field.Group>
-		</Tabs.Content>
+		{#each TABS as tab (tab.value)}
+			<Tabs.Content value={tab.value} class="mt-4">
+				<Field.Group>
+					{#each tab.providers as provider, i (provider)}
+						{#if i > 0}
+							<Field.Separator />
+						{/if}
+						<ApiKeyInput {provider} />
+					{/each}
+				</Field.Group>
+			</Tabs.Content>
+		{/each}
 	</Tabs.Root>
 </Field.Set>

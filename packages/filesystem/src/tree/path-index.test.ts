@@ -130,6 +130,50 @@ describe('attachFileSystemIndex', () => {
 	});
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// REVERSE LOOKUP
+	// ═══════════════════════════════════════════════════════════════════════
+
+	test('getPathById returns the resolved path for nested files', () => {
+		const { files, ydoc } = setup();
+		files.set(makeRow('d1', 'docs', null, 'folder'));
+		files.set(makeRow('f1', 'api.md', 'd1'));
+		const index = attachFileSystemIndex(ydoc, files);
+
+		expect(index.getPathById(fid('d1'))).toBe('/docs');
+		expect(index.getPathById(fid('f1'))).toBe('/docs/api.md');
+
+		ydoc.destroy();
+	});
+
+	test('getPathById returns the disambiguated display path', () => {
+		const { files, ydoc } = setup();
+		files.set({ ...makeRow('a', 'foo.txt'), createdAt: 1000 });
+		files.set({ ...makeRow('b', 'foo.txt'), createdAt: 2000 });
+		const index = attachFileSystemIndex(ydoc, files);
+
+		expect(index.getPathById(fid('a'))).toBe('/foo.txt');
+		expect(index.getPathById(fid('b'))).toBe('/foo (1).txt');
+
+		ydoc.destroy();
+	});
+
+	test('getPathById returns undefined for trashed and unknown rows', () => {
+		const { files, ydoc } = setup();
+		files.set(makeRow('f1', 'alive.txt'));
+		files.set({ ...makeRow('f2', 'gone.txt'), trashedAt: Date.now() });
+		const index = attachFileSystemIndex(ydoc, files);
+
+		expect(index.getPathById(fid('f1'))).toBe('/alive.txt');
+		expect(index.getPathById(fid('f2'))).toBeUndefined();
+		expect(index.getPathById(fid('missing'))).toBeUndefined();
+
+		files.update('f1', { trashedAt: Date.now() });
+		expect(index.getPathById(fid('f1'))).toBeUndefined();
+
+		ydoc.destroy();
+	});
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// TRASHED FILES
 	// ═══════════════════════════════════════════════════════════════════════
 

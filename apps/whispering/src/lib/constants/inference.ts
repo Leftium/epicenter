@@ -5,12 +5,14 @@
  * - Provider IDs:  `keyof typeof INFERENCE` → 'OpenAI' | 'Groq' | ...
  * - Models:        `INFERENCE.OpenAI.models` → readonly ['gpt-5', ...]
  * - Labels:        `INFERENCE.OpenAI.label` → 'OpenAI'
+ * - Step field:    `INFERENCE.OpenAI.stepModelField` → 'openaiModel'
  * - Enumerate:     `Object.keys(INFERENCE)` / `Object.entries(INFERENCE)`
  * - Schema:        `type.enumerated(...INFERENCE.OpenAI.models)`
  */
 export const INFERENCE = {
 	OpenAI: {
 		label: 'OpenAI',
+		stepModelField: 'openaiModel',
 		models: [
 			'gpt-5',
 			'gpt-5-mini',
@@ -27,6 +29,7 @@ export const INFERENCE = {
 	},
 	Groq: {
 		label: 'Groq',
+		stepModelField: 'groqModel',
 		models: [
 			// Production models
 			'gemma2-9b-it',
@@ -46,6 +49,7 @@ export const INFERENCE = {
 	},
 	Anthropic: {
 		label: 'Anthropic',
+		stepModelField: 'anthropicModel',
 		models: [
 			// Claude 4.5 models (latest generation - recommended)
 			'claude-sonnet-4-5-20250929',
@@ -71,6 +75,7 @@ export const INFERENCE = {
 	},
 	Google: {
 		label: 'Google',
+		stepModelField: 'googleModel',
 		models: [
 			'gemini-2.5-pro',
 			'gemini-2.5-flash',
@@ -82,15 +87,32 @@ export const INFERENCE = {
 	},
 	OpenRouter: {
 		label: 'OpenRouter',
+		stepModelField: 'openrouterModel',
 		models: null,
 	},
 	Custom: {
 		label: 'Custom (OpenAI-compatible)',
+		stepModelField: 'customModel',
 		models: null,
 	},
 } as const;
 
 export type InferenceProviderId = keyof typeof INFERENCE;
+
+/**
+ * Inference providers with a fixed model list (`models` is non-null), i.e.
+ * the ones whose model is picked from a select instead of typed free-form.
+ */
+export type ModelSelectProviderId = {
+	[K in InferenceProviderId]: (typeof INFERENCE)[K]['models'] extends null
+		? never
+		: K;
+}[InferenceProviderId];
+
+/** Narrow a provider to one whose model comes from a fixed list. */
+export const hasModelSelect = (
+	provider: InferenceProviderId,
+): provider is ModelSelectProviderId => INFERENCE[provider].models !== null;
 
 /** Every inference provider ID, e.g. for `field.select(INFERENCE_PROVIDER_IDS)`. */
 export const INFERENCE_PROVIDER_IDS = Object.keys(

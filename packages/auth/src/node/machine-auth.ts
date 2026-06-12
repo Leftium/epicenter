@@ -232,7 +232,8 @@ type LoginWithOobConfig = CommonConfig & {
 	 */
 	redirectUri?: string;
 	/**
-	 * Output sink for the URL and success messages printed by the CLI.
+	 * Output sink for the authorize URL and paste prompt. Defaults to stdout;
+	 * tests pass a collector.
 	 */
 	print?: (line: string) => void;
 	/**
@@ -272,15 +273,16 @@ export async function loginWithOob({
 	Result<LoginWithOobResult, MachineAuthRequestError | MachineAuthStorageError>
 > {
 	const authFilePath = filePath ?? machineAuthFilePath({ baseURL });
+	// Passing `undefined` engages the launcher's own destructuring defaults.
 	const launcher = createOobOAuthLauncher({
 		baseURL,
 		clientId,
 		fetch,
 		now,
-		...(redirectUri ? { redirectUri } : {}),
-		...(print ? { print } : {}),
-		...(openBrowser ? { openBrowser } : {}),
-		...(readCode ? { readCode } : {}),
+		redirectUri,
+		print,
+		openBrowser,
+		readCode,
 	});
 
 	const grantResult = await launcher.startSignIn();
@@ -290,12 +292,12 @@ export async function loginWithOob({
 		);
 	}
 	const launchResult = grantResult.data;
-	if (launchResult?.status !== 'completed') {
+	if (launchResult.status !== 'completed') {
 		return Err(
 			MachineAuthRequestError.RequestFailed({
 				cause: {
 					message: 'OOB launcher returned no grant.',
-					launchStatus: launchResult?.status,
+					launchStatus: launchResult.status,
 				},
 			}).error,
 		);

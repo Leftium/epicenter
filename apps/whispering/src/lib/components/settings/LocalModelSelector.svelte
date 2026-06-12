@@ -15,6 +15,7 @@
 		importModelDirectory,
 		importModelFile,
 	} from '$lib/services/transcription/local-model-storage';
+	import { PROVIDERS } from '$lib/services/transcription/providers';
 	import { tauri } from '#platform/tauri';
 	import LocalModelDownloadCard from './LocalModelDownloadCard.svelte';
 
@@ -35,9 +36,6 @@
 		/** Component description displayed below the title */
 		description: string;
 
-		/** Whether to select files or directories */
-		fileSelectionMode: 'file' | 'directory';
-
 		/** File extensions to filter (for file mode only) */
 		fileExtensions?: string[];
 
@@ -55,12 +53,18 @@
 		models,
 		title,
 		description,
-		fileSelectionMode,
 		fileExtensions = [],
 		value = $bindable(),
 		prebuiltFooter,
 		manualInstructions,
 	}: LocalModelSelectorProps = $props();
+
+	const engine = $derived(models[0].engine);
+
+	// Not a free choice: an imported path must match what the engine's
+	// preflight accepts (a file for Whisper, a directory for Parakeet and
+	// Moonshine), so the mode comes from the provider registry.
+	const fileSelectionMode = $derived(PROVIDERS[engine].preflightKind);
 
 	// Extract the model name from the current path
 	const modelName = $derived.by(async () => {
@@ -89,8 +93,6 @@
 	 */
 	async function selectModel() {
 		if (!tauri) return;
-
-		const engine = models[0].engine;
 
 		if (fileSelectionMode === 'directory') {
 			const selected = await open({

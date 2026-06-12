@@ -238,14 +238,13 @@ const conversationsTable = defineTable({
 export type Conversation = InferTableRow<typeof conversationsTable>;
 
 /**
- * Chat messages: TanStack AI UIMessage data persisted per conversation.
+ * Legacy chat message rows, kept only as a migration source.
  *
- * The `parts` field stores MessagePart[] as a JSON-encoded array. Runtime
- * validation of the inner shape is skipped (typed as `JsonValue[]`) because
- * parts are always produced by TanStack AI: compile-time drift detection in
- * `ui-message.ts` catches type mismatches on TanStack AI upgrades instead.
- *
- * @see {@link file://../chat/ui-message.ts}: drift detection + toUiMessage boundary
+ * Message bodies moved to extension-local IndexedDB; see
+ * `chat/persistence.ts` for the ownership rationale. Its migration reader
+ * imports a conversation's rows on first load and deletes them so their
+ * content is garbage collected out of the doc. Nothing writes this table
+ * anymore. Remove it once migrated docs are the only ones in the wild.
  */
 const chatMessagesTable = defineTable({
 	id: field.string<ChatMessageId>(),

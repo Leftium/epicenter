@@ -4,8 +4,10 @@
  * Architecture: self-contained ConversationHandles backed by `createChat`.
  *
  * Each ConversationHandle owns a `createChat` instance from `@tanstack/ai-svelte`
- * which manages reactive state internally via Svelte 5 runes. Domain logic
- * (workspace persistence, title updates, tool approval) is layered on top.
+ * which manages reactive state internally via Svelte 5 runes and persists
+ * message bodies to extension-local IndexedDB (see ./persistence.ts). Domain
+ * logic (conversation metadata, title updates, tool approval) is layered on
+ * top.
  *
  * Background streaming is free: each conversation has its own chat instance.
  * Switching away from a streaming conversation doesn't stop it.
@@ -19,6 +21,7 @@ import { APP_URLS } from '@epicenter/constants/vite';
 import { createAiChatFetch, fromTable } from '@epicenter/svelte';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { SvelteMap } from 'svelte/reactivity';
+import { createChatPersistence } from '$lib/chat/persistence';
 import {
 	AVAILABLE_PROVIDERS,
 	DEFAULT_MODEL,
@@ -30,11 +33,9 @@ import {
 	buildDeviceConstraints,
 	TAB_MANAGER_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
-import { toPersistedParts, toUiMessage } from '$lib/chat/ui-message';
 import type { SessionAiTools } from '$lib/session.svelte';
 import type { TabManagerBrowser } from '$lib/tab-manager/extension';
 import {
-	asChatMessageId,
 	asConversationId,
 	type ChatMessageId,
 	type Conversation,
@@ -52,6 +53,10 @@ export function createAiChatState({
 	tabManager: TabManagerBrowser;
 	sessionAiTools: SessionAiTools;
 }) {
+	// ── Chat history (extension-local IndexedDB) ──────────────────────
+
+	const chatPersistence = createChatPersistence({ tabManager });
+
 	// ── Conversation List (Y.Doc-backed) ──────────────────────────────
 
 	const conversationsMap = fromTable(tabManager.tables.conversations);
@@ -96,14 +101,6 @@ export function createAiChatState({
 		});
 	}
 
-	/** Load persisted messages for a conversation from Y.Doc. */
-	function loadMessages(conversationId: ConversationId) {
-		return tabManager.tables.chatMessages
-			.filter((m) => m.conversationId === conversationId)
-			.sort((a, b) => a.createdAt - b.createdAt)
-			.map(toUiMessage);
-	}
-
 	// ── Handle Registry ──────────────────────────────────────────────
 
 	/** Per-conversation handle projections used reactively in templates. */
@@ -118,7 +115,7 @@ export function createAiChatState({
 	 * Create a self-contained reactive handle for a single conversation.
 	 *
 	 * Uses `createChat` from `@tanstack/ai-svelte` for reactive state
-	 * management. Domain logic (workspace persistence, tool approval,
+	 * management. Domain logic (conversation metadata, tool approval,
 	 * title updates) is layered on top.
 	 *
 	 * The baked-in `conversationId` means getters and actions always target
@@ -130,18 +127,14 @@ export function createAiChatState({
 
 		const metadata = $derived(conversationsMap.get(conversationId));
 
-		// Persistence stays explicit (user rows in sendMessage, assistant rows
-		// in onFinish) instead of using the client's `persistence` adapter.
-		// The adapter writes the full message list on every stream change
-		// (setItem is wired to the StreamProcessor's per-chunk change events
-		// with no debounce), which amplifies into Yjs update history for
-		// CRDT-backed storage; its write queue swallows adapter errors by
-		// design, while direct table writes are synchronous; and it has no
-		// change-subscription hook, so the table observer plus refreshFromDoc
-		// path would survive anyway. Revisit if ChatClientPersistence gains a
-		// write policy (debounce or on-settle) or change notifications.
+		// Message bodies live in extension-local IndexedDB through the
+		// persistence adapter, hydrated by conversation id; see
+		// ./persistence.ts for why they left the Y.Doc. The client owns the
+		// whole write path: sends, streamed chunks, and reload truncation all
+		// land in storage through its ordered setItem queue.
 		const chat = createChat({
-			initialMessages: loadMessages(conversationId),
+			id: conversationId,
+			persistence: chatPersistence,
 			tools: sessionAiTools.tools,
 			connection: fetchServerSentEvents(`${APP_URLS.API}/ai/chat`, async () => {
 				const deviceId = tabManager.deviceId;
@@ -169,14 +162,9 @@ export function createAiChatState({
 					conversationId,
 				);
 			},
-			onFinish: (message) => {
-				tabManager.tables.chatMessages.set({
-					id: asChatMessageId(message.id),
-					conversationId,
-					role: 'assistant',
-					parts: toPersistedParts(message.parts),
-					createdAt: message.createdAt?.getTime() ?? Date.now(),
-				});
+			onFinish: () => {
+				// Touch updatedAt so the sidebar ordering tracks activity; the
+				// persistence adapter already stored the assistant message.
 				updateConversation(conversationId, {});
 			},
 		});
@@ -294,13 +282,13 @@ export function createAiChatState({
 			// ── Derived convenience ──
 
 			get lastMessagePreview() {
-				const msgs = tabManager.tables.chatMessages
-					.filter((m) => m.conversationId === conversationId)
-					.sort((a, b) => b.createdAt - a.createdAt);
-				const last = msgs[0];
+				// Every handle's chat hydrates from IndexedDB at creation, so
+				// the live message list is the preview source for all
+				// conversations, not just the active one.
+				const last = chat.messages.at(-1);
 				if (!last) return '';
-				const text = toUiMessage(last)
-					.parts.filter((p) => p.type === 'text')
+				const text = last.parts
+					.filter((p) => p.type === 'text')
 					.map((p) => p.content)
 					.join('')
 					.trim();
@@ -311,24 +299,9 @@ export function createAiChatState({
 
 			sendMessage(content: string) {
 				if (!content.trim()) return;
-				const userMessageId = generateChatMessageId();
-
-				// Send to chat FIRST so isLoading=true before the
-				// Y.Doc observer fires refreshFromDoc (which skips
-				// when loading). Without this, the observer loads the
-				// user message from Y.Doc AND the chat appends its
-				// own copy → duplicate key → Svelte crash.
 				void chat.sendMessage({
 					content,
-					id: userMessageId,
-				});
-
-				tabManager.tables.chatMessages.set({
-					id: userMessageId,
-					conversationId,
-					role: 'user',
-					parts: toPersistedParts([{ type: 'text', content }]),
-					createdAt: Date.now(),
+					id: generateChatMessageId(),
 				});
 
 				updateConversation(conversationId, {
@@ -340,12 +313,8 @@ export function createAiChatState({
 			},
 
 			reload() {
-				const lastMessage = chat.messages.at(-1);
-				if (lastMessage?.role === 'assistant') {
-					tabManager.tables.chatMessages.delete(
-						asChatMessageId(lastMessage.id),
-					);
-				}
+				// The client truncates past the last user message and the
+				// persistence adapter stores the truncated list.
 				void chat.reload();
 			},
 
@@ -364,22 +333,14 @@ export function createAiChatState({
 			},
 
 			/**
-			 * Reload messages from the Y.Doc into the chat instance.
-			 * Skips while a stream is in flight (`isLoading`) to avoid the
-			 * observer racing the chat's own message append: the user message
-			 * is written to Y.Doc immediately after `chat.sendMessage`, and if
-			 * this fired during the stream it would feed Svelte two copies of
-			 * the same id and crash.
-			 *
-			 * Skipping by transaction origin instead (the table observer does
-			 * expose it) was considered and refused: origin only separates
-			 * local echo from remote writes, and a remote write landing
-			 * mid-stream must also be deferred or it clobbers the streaming
-			 * message, so the timing guard covers both with one mechanism.
+			 * Delete this conversation's stored history through the client's
+			 * ordered persistence queue (`clear` invalidates queued writes),
+			 * so a mid-stream setItem can't land after the delete and
+			 * resurrect history the user asked to remove. Calling the
+			 * adapter's removeItem directly would race that queue.
 			 */
-			refreshFromDoc() {
-				if (chat.isLoading) return;
-				chat.setMessages(loadMessages(conversationId));
+			clearHistory() {
+				chat.clear();
 			},
 
 			approveToolCall(approvalId: string) {
@@ -441,9 +402,6 @@ export function createAiChatState({
 			reconcileHandles();
 		},
 	);
-	const _unobserveChatMessages = tabManager.tables.chatMessages.observe(() => {
-		handles.get(activeConversationId)?.refreshFromDoc();
-	});
 
 	// Initialize after persistence loads
 	void tabManager.idb.whenLoaded.then(() => {
@@ -492,21 +450,13 @@ export function createAiChatState({
 
 	function switchConversation(conversationId: ConversationId) {
 		activeConversationId = conversationId;
-		handles.get(conversationId)?.refreshFromDoc();
 	}
 
 	function deleteConversation(conversationId: ConversationId) {
+		handles.get(conversationId)?.clearHistory();
 		destroyConversation(conversationId);
 
-		const msgs = tabManager.tables.chatMessages
-			.getAllValid()
-			.filter((m) => m.conversationId === conversationId);
-		tabManager.ydoc.transact(() => {
-			for (const m of msgs) {
-				tabManager.tables.chatMessages.delete(m.id);
-			}
-			tabManager.tables.conversations.delete(conversationId);
-		});
+		tabManager.tables.conversations.delete(conversationId);
 
 		if (activeConversationId === conversationId) {
 			const remaining = tabManager.tables.conversations
@@ -535,7 +485,6 @@ export function createAiChatState({
 	return {
 		[Symbol.dispose]() {
 			_unobserveConversations();
-			_unobserveChatMessages();
 			conversationsMap[Symbol.dispose]();
 			for (const id of handles.keys()) {
 				destroyConversation(id);

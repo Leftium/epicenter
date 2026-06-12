@@ -5,6 +5,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, isErr, Ok, type Result } from 'wellcrafted/result';
+import { INFERENCE } from '$lib/constants/inference';
 import { services } from '$lib/services';
 import type { DeviceConfigKey } from '$lib/state/device-config.svelte';
 import { deviceConfig } from '$lib/state/device-config.svelte';
@@ -28,27 +29,22 @@ const STANDARD_PROVIDER_CONFIG = {
 	OpenAI: {
 		service: services.completions.openai,
 		apiKeyPath: 'apiKeys.openai',
-		modelKey: 'openaiModel',
 	},
 	Groq: {
 		service: services.completions.groq,
 		apiKeyPath: 'apiKeys.groq',
-		modelKey: 'groqModel',
 	},
 	Anthropic: {
 		service: services.completions.anthropic,
 		apiKeyPath: 'apiKeys.anthropic',
-		modelKey: 'anthropicModel',
 	},
 	Google: {
 		service: services.completions.google,
 		apiKeyPath: 'apiKeys.google',
-		modelKey: 'googleModel',
 	},
 	OpenRouter: {
 		service: services.completions.openrouter,
 		apiKeyPath: 'apiKeys.openrouter',
-		modelKey: 'openrouterModel',
 	},
 } as const satisfies Record<
 	string,
@@ -62,7 +58,6 @@ const STANDARD_PROVIDER_CONFIG = {
 			}) => Promise<Result<string, { message: string }>>;
 		};
 		apiKeyPath: DeviceConfigKey;
-		modelKey: keyof TransformationStep;
 	}
 >;
 
@@ -132,7 +127,7 @@ async function handleStep({
 
 			return config.service.complete({
 				apiKey: deviceConfig.get(config.apiKeyPath),
-				model: step[config.modelKey] as string,
+				model: step[INFERENCE[inferenceProvider].stepModelField],
 				systemPrompt,
 				userPrompt,
 			});

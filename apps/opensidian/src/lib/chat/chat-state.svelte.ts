@@ -14,7 +14,6 @@ import {
 	generateConversationId,
 } from 'opensidian';
 import type { OpensidianBrowser } from 'opensidian/browser';
-import type { JsonValue } from 'wellcrafted/json';
 import {
 	DEFAULT_MODEL,
 	DEFAULT_PROVIDER,
@@ -30,16 +29,13 @@ import { toPersistedParts, toUiMessage } from '$lib/chat/ui-message';
 import { searchParams } from '$lib/search-params.svelte';
 import type { SkillState } from '$lib/state/skill-state.svelte';
 
-function getStringValue(value: JsonValue | undefined, fallback: string) {
-	return typeof value === 'string' ? value : fallback;
-}
-
-function getNumberValue(value: JsonValue | undefined, fallback = 0) {
-	return typeof value === 'number' ? value : fallback;
-}
-
-function getProviderValue(value: JsonValue | undefined): Provider {
-	return typeof value === 'string' && value in PROVIDER_MODELS
+/**
+ * Narrow a persisted provider string to the Provider union. The column is a
+ * plain string in the durable schema, so rows written by builds with a
+ * different provider list fall back to the default.
+ */
+function getProviderValue(value: string | undefined): Provider {
+	return value !== undefined && value in PROVIDER_MODELS
 		? (value as Provider)
 		: DEFAULT_PROVIDER;
 }
@@ -61,9 +57,7 @@ export function createAiChatState({
 	const sessionAiTools = actionsToAiTools(workspace.collaboration.actions);
 	const conversationsMap = fromTable(workspace.tables.conversations);
 	const conversations = $derived(
-		[...conversationsMap.values()].sort(
-			(a, b) => getNumberValue(b.updatedAt) - getNumberValue(a.updatedAt),
-		),
+		[...conversationsMap.values()].sort((a, b) => b.updatedAt - a.updatedAt),
 	);
 
 	function ensureDefaultConversation(): ConversationId | undefined {
@@ -179,7 +173,7 @@ export function createAiChatState({
 			},
 
 			get title() {
-				return getStringValue(metadata?.title, 'New Chat');
+				return metadata?.title ?? 'New Chat';
 			},
 
 			get provider() {
@@ -194,18 +188,18 @@ export function createAiChatState({
 			},
 
 			get model() {
-				return getStringValue(metadata?.model, DEFAULT_MODEL);
+				return metadata?.model ?? DEFAULT_MODEL;
 			},
 			set model(value: string) {
 				updateConversation(conversationId, { model: value });
 			},
 
 			get createdAt() {
-				return getNumberValue(metadata?.createdAt);
+				return metadata?.createdAt ?? 0;
 			},
 
 			get updatedAt() {
-				return getNumberValue(metadata?.updatedAt);
+				return metadata?.updatedAt ?? 0;
 			},
 
 			get messages() {
@@ -256,7 +250,7 @@ export function createAiChatState({
 					createdAt: Date.now(),
 				});
 
-				const currentTitle = getStringValue(metadata?.title, 'New Chat');
+				const currentTitle = metadata?.title ?? 'New Chat';
 
 				updateConversation(conversationId, {
 					title:

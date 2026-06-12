@@ -4,6 +4,7 @@ import { APP_URLS } from '@epicenter/constants/vite';
 import { createAiChatFetch, fromTable } from '@epicenter/svelte';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
+import { SvelteMap } from 'svelte/reactivity';
 import {
 	asChatMessageId,
 	asConversationId,
@@ -103,7 +104,7 @@ export function createAiChatState({
 			.map(toUiMessage);
 	}
 
-	const handles = new Map<
+	const handles = new SvelteMap<
 		ConversationId,
 		ReturnType<typeof createConversationHandle>
 	>();

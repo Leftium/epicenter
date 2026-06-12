@@ -1,8 +1,8 @@
 // Provider config components
 
 export {
-	type ProviderConfigId,
 	default as ProviderConfigFields,
+	type ProviderConfigId,
 } from './ProviderConfigFields.svelte';
 // Shared components
 export { default as ManualDeviceSelector } from './selectors/ManualDeviceSelector.svelte';

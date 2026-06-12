@@ -5,10 +5,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, isErr, Ok, type Result } from 'wellcrafted/result';
-import {
-	INFERENCE,
-	type InferenceProviderId,
-} from '$lib/constants/inference';
+import { INFERENCE, type InferenceProviderId } from '$lib/constants/inference';
 import { services } from '$lib/services';
 import type { DeviceConfigKey } from '$lib/state/device-config.svelte';
 import { deviceConfig } from '$lib/state/device-config.svelte';

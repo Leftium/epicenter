@@ -26,6 +26,9 @@
 
 <Chat.Bubble variant={isUser ? 'sent' : 'received'}>
 	<Chat.BubbleMessage>
+		<!-- Text-only by design: zhongwen configures no tools, and non-text
+			parts a model may stream (thinking, media) are deliberately not
+			rendered. Widen this dispatch before adding tools or media. -->
 		{#each message.parts as part}
 			{#if part.type === 'text'}
 				{#if isUser}

@@ -85,20 +85,11 @@ describe('collectMarkdownLivePreviewRanges', () => {
 		]);
 	});
 
-	test('splits hidden link titles at line boundaries', () => {
+	test('leaves multi-line link syntax raw', () => {
 		const doc = '[label](https://example.com "two\nline title")\nplain';
 		const hiddenText = collectHiddenText(doc, doc.indexOf('plain'));
 
-		expect(hiddenText).toEqual([
-			'[',
-			']',
-			'(',
-			'https://example.com',
-			'"two',
-			'line title"',
-			')',
-		]);
-		expect(hiddenText.every((text) => !text.includes('\n'))).toBe(true);
+		expect(hiddenText).toEqual([]);
 	});
 
 	test('leaves nested image syntax raw inside a link label', () => {

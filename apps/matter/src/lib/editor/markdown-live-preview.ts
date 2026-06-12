@@ -27,13 +27,77 @@ type MarkdownLivePreviewRange =
 			className: string;
 	  };
 
-const headingPattern = /^ATXHeading([1-6])$/;
+/**
+ * Node name to mark class. The whole node is styled, markers included;
+ * hiding markers on inactive lines is handled separately, so on active lines
+ * the markers render in their construct's look. List and quote markers are
+ * styled here but never hidden. Node names absent from this table
+ * (SetextHeading, FencedCode, Image, Autolink, tables, HTML) render plain.
+ */
+const markClassByNode: Record<string, string> = {
+	ATXHeading1: 'cm-matter-md-heading cm-matter-md-heading-1',
+	ATXHeading2: 'cm-matter-md-heading cm-matter-md-heading-2',
+	ATXHeading3: 'cm-matter-md-heading cm-matter-md-heading-3',
+	ATXHeading4: 'cm-matter-md-heading cm-matter-md-heading-4',
+	ATXHeading5: 'cm-matter-md-heading cm-matter-md-heading-5',
+	ATXHeading6: 'cm-matter-md-heading cm-matter-md-heading-6',
+	StrongEmphasis: 'cm-matter-md-strong',
+	Emphasis: 'cm-matter-md-emphasis',
+	InlineCode: 'cm-matter-md-inline-code',
+	ListMark: 'cm-matter-md-structural-marker',
+	QuoteMark: 'cm-matter-md-structural-marker',
+};
 
+/**
+ * Marker node name to the construct parents that own its reveal. A marker is
+ * hidden only when its direct parent is listed here and no selection range
+ * touches the parent's lines. Markers with unlisted parents always stay raw,
+ * which keeps setext underlines (HeaderMark under SetextHeading), fenced-code
+ * backticks (CodeMark under FencedCode), and image, reference-link, and
+ * autolink punctuation visible.
+ *
+ * Hidden ranges must never span a line break: CodeMirror rejects replace
+ * decorations that cross lines when they come from a view plugin. Every
+ * marker here is single-line by the CommonMark grammar except LinkTitle,
+ * which getRevealScope covers by leaving multi-line links raw.
+ */
+const revealParentsByMarker: Record<string, readonly string[]> = {
+	HeaderMark: [
+		'ATXHeading1',
+		'ATXHeading2',
+		'ATXHeading3',
+		'ATXHeading4',
+		'ATXHeading5',
+		'ATXHeading6',
+	],
+	EmphasisMark: ['Emphasis', 'StrongEmphasis'],
+	CodeMark: ['InlineCode'],
+	LinkMark: ['Link'],
+	URL: ['Link'],
+	LinkTitle: ['Link'],
+};
+
+/**
+ * Compute the live-preview spans for the visible ranges. Pure with respect to
+ * the editor state: it reads the syntax tree and the selection and returns
+ * plain spans, which is the surface the tests assert on.
+ *
+ * A line is active when any selection range overlaps it. Markers whose
+ * construct touches an active line stay raw; style marks apply everywhere.
+ */
 export function collectMarkdownLivePreviewRanges(
 	state: EditorState,
 	visibleRanges: readonly Span[],
 ): MarkdownLivePreviewRange[] {
-	const activeLines = collectActiveLines(state);
+	const activeSpans = state.selection.ranges.map((range) => ({
+		from: state.doc.lineAt(range.from).from,
+		to: state.doc.lineAt(range.to).to,
+	}));
+	const isRevealed = (span: Span) =>
+		activeSpans.some(
+			(active) => active.from <= span.to && span.from <= active.to,
+		);
+
 	const ranges: MarkdownLivePreviewRange[] = [];
 
 	for (const visibleRange of visibleRanges) {
@@ -42,46 +106,32 @@ export function collectMarkdownLivePreviewRanges(
 			to: visibleRange.to,
 			enter(node) {
 				const name = node.type.name;
-				const headingMatch = headingPattern.exec(name);
 
-				if (headingMatch) {
-					addMark(
-						ranges,
-						node.from,
-						node.to,
-						`cm-matter-md-heading cm-matter-md-heading-${headingMatch[1]}`,
-					);
-				}
-
-				if (name === 'Emphasis' || name === 'StrongEmphasis') {
-					addMark(
-						ranges,
-						node.from,
-						node.to,
-						name === 'StrongEmphasis'
-							? 'cm-matter-md-strong'
-							: 'cm-matter-md-emphasis',
-					);
-				}
-
-				if (name === 'InlineCode') {
-					addMark(ranges, node.from, node.to, 'cm-matter-md-inline-code');
+				const className = markClassByNode[name];
+				if (className) {
+					ranges.push({
+						type: 'mark',
+						from: node.from,
+						to: node.to,
+						className,
+					});
 				}
 
 				if (name === 'Link') {
 					const label = getInlineLinkLabel(node.node);
 					if (label) {
-						addMark(ranges, label.from, label.to, 'cm-matter-md-link');
+						ranges.push({
+							type: 'mark',
+							from: label.from,
+							to: label.to,
+							className: 'cm-matter-md-link',
+						});
 					}
 				}
 
-				if (name === 'ListMark' || name === 'QuoteMark') {
-					addMark(ranges, node.from, node.to, 'cm-matter-md-structural-marker');
-				}
-
-				const revealScope = getRevealScope(node);
-				if (revealScope && !isActiveRange(state, activeLines, revealScope)) {
-					addHide(ranges, state, node.from, node.to);
+				const revealScope = getRevealScope(node, state);
+				if (revealScope && !isRevealed(revealScope)) {
+					ranges.push({ type: 'hide', from: node.from, to: node.to });
 				}
 			},
 		});
@@ -90,6 +140,11 @@ export function collectMarkdownLivePreviewRanges(
 	return ranges;
 }
 
+/**
+ * Live Markdown preview as pure view behavior: inactive lines hide marker
+ * punctuation and style constructs, and lines touched by any selection show
+ * raw Markdown. The extension never dispatches document changes.
+ */
 export function markdownLivePreview(): Extension {
 	return [markdownLivePreviewPlugin, markdownLivePreviewTheme];
 }
@@ -102,6 +157,8 @@ const markdownLivePreviewPlugin = ViewPlugin.define(
 				update.docChanged ||
 				update.selectionSet ||
 				update.viewportChanged ||
+				// Background parsing dispatches updates as the tree grows; a
+				// changed tree identity means new nodes may need decorating.
 				syntaxTree(update.state) !== syntaxTree(update.startState)
 			) {
 				this.decorations = buildDecorations(update.view);
@@ -159,127 +216,53 @@ const hideDecoration = Decoration.replace({});
 function buildDecorations(view: EditorView): DecorationSet {
 	return Decoration.set(
 		collectMarkdownLivePreviewRanges(view.state, view.visibleRanges).map(
-			(range) => {
-				if (range.type === 'hide') {
-					return hideDecoration.range(range.from, range.to);
-				}
-
-				return Decoration.mark({ class: range.className }).range(
-					range.from,
-					range.to,
-				);
-			},
+			(range) =>
+				range.type === 'hide'
+					? hideDecoration.range(range.from, range.to)
+					: Decoration.mark({ class: range.className }).range(
+							range.from,
+							range.to,
+						),
 		),
 		true,
 	);
 }
 
-function collectActiveLines(state: EditorState): Set<number> {
-	const activeLines = new Set<number>();
-
-	for (const range of state.selection.ranges) {
-		const fromLine = state.doc.lineAt(range.from).number;
-		const toLine = state.doc.lineAt(range.to).number;
-
-		for (let lineNumber = fromLine; lineNumber <= toLine; lineNumber += 1) {
-			activeLines.add(lineNumber);
-		}
-	}
-
-	return activeLines;
-}
-
-function isActiveRange(
-	state: EditorState,
-	activeLines: Set<number>,
-	range: Span,
-): boolean {
-	const fromLine = state.doc.lineAt(range.from).number;
-	const toLine = state.doc.lineAt(range.to).number;
-
-	for (let lineNumber = fromLine; lineNumber <= toLine; lineNumber += 1) {
-		if (activeLines.has(lineNumber)) return true;
-	}
-
-	return false;
-}
-
-function getRevealScope(node: SyntaxNodeRef): Span | null {
-	const name = node.type.name;
-	if (
-		name !== 'HeaderMark' &&
-		name !== 'EmphasisMark' &&
-		name !== 'CodeMark' &&
-		name !== 'LinkMark' &&
-		name !== 'URL' &&
-		name !== 'LinkTitle'
-	) {
-		return null;
-	}
+/**
+ * The construct whose lines decide whether this marker is revealed, or null
+ * when the marker always stays raw. Markers are direct children of their
+ * construct in the lezer Markdown tree, so one parent check suffices.
+ */
+function getRevealScope(node: SyntaxNodeRef, state: EditorState): Span | null {
+	const parents = revealParentsByMarker[node.type.name];
+	if (!parents) return null;
 
 	const parent = node.node.parent;
-	if (!parent) return null;
+	if (!parent || !parents.includes(parent.name)) return null;
 
-	if (name === 'HeaderMark') {
-		return headingPattern.test(parent.name) ? parent : null;
+	if (parent.name === 'Link') {
+		// Links are previewed only when their syntax sits on one line; a
+		// multi-line LinkTitle could otherwise produce a hidden range that
+		// spans a line break, and half-hiding a wrapped link reads worse
+		// than showing it raw.
+		if (state.doc.lineAt(parent.from).to < parent.to) return null;
+		if (!getInlineLinkLabel(parent)) return null;
 	}
 
-	if (name === 'EmphasisMark') {
-		return parent.name === 'Emphasis' || parent.name === 'StrongEmphasis'
-			? parent
-			: null;
-	}
-
-	if (name === 'CodeMark') {
-		return parent.name === 'InlineCode' ? parent : null;
-	}
-
-	return parent.name === 'Link' && getInlineLinkLabel(parent) ? parent : null;
+	return parent;
 }
 
+/**
+ * The label span of an inline link, or null for anything that should stay
+ * raw: reference and shortcut links (they carry a LinkLabel instead of a URL
+ * child) and empty labels like [](url), which would otherwise preview as
+ * nothing at all.
+ */
 function getInlineLinkLabel(link: SyntaxNode): Span | null {
-	// Only inline links carry a URL child; reference and shortcut links
-	// carry a LinkLabel instead.
 	if (!link.getChild('URL')) return null;
 
 	const [labelOpen, labelClose] = link.getChildren('LinkMark');
 	return labelOpen && labelClose && labelOpen.to < labelClose.from
 		? { from: labelOpen.to, to: labelClose.from }
 		: null;
-}
-
-function addHide(
-	ranges: MarkdownLivePreviewRange[],
-	state: EditorState,
-	from: number,
-	to: number,
-) {
-	// CodeMirror rejects plugin-provided replace decorations that span line
-	// breaks, so hidden ranges are emitted per line.
-	let cursor = from;
-
-	while (cursor < to) {
-		const line = state.doc.lineAt(cursor);
-		const lineTo = Math.min(to, line.to);
-
-		if (cursor < lineTo) {
-			ranges.push({ type: 'hide', from: cursor, to: lineTo });
-		}
-
-		if (lineTo >= to) return;
-
-		const nextLineNumber = line.number + 1;
-		if (nextLineNumber > state.doc.lines) return;
-		cursor = state.doc.line(nextLineNumber).from;
-	}
-}
-
-function addMark(
-	ranges: MarkdownLivePreviewRange[],
-	from: number,
-	to: number,
-	className: string,
-) {
-	if (from >= to) return;
-	ranges.push({ type: 'mark', from, to, className });
 }

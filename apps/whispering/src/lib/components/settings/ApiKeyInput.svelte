@@ -13,7 +13,7 @@
 		placeholder: string;
 		configKey: Extract<
 			DeviceConfigKey,
-			`apiKeys.${string}` | `apiEndpoints.${string}` | 'completion.custom.baseUrl'
+			`apiKeys.${string}` | `apiEndpoints.${string}`
 		>;
 		description: DescriptionPart[];
 		/** Base URL override fields can be hidden via `showBaseUrl={false}`. */
@@ -198,7 +198,7 @@
 				id: 'custom-endpoint-base-url',
 				label: 'Custom API Base URL',
 				placeholder: 'e.g. http://localhost:11434/v1',
-				configKey: 'completion.custom.baseUrl',
+				configKey: 'apiEndpoints.custom',
 				description: [
 					'Global default URL for OpenAI-compatible endpoints (Ollama, LM Studio, llama.cpp, etc.). Can be overridden per-step in transformations.',
 				],

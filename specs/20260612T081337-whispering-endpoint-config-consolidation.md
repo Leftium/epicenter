@@ -135,14 +135,21 @@ Standalone commits, Build -> Prove -> Remove ordering. Each phase typechecks alo
 
 ### Phase 2: rename the fossil key
 
-- [ ] **2.1** `state/device-config.svelte.ts`: rename entry to `apiEndpoints.custom`,
+- [x] **2.1** `state/device-config.svelte.ts`: rename entry to `apiEndpoints.custom`,
       move under the endpoint section comment, keep the default.
-- [ ] **2.2** `migration/migrate-settings.ts`: update `DEVICE_KEY_MAP` newKey; add an
+- [x] **2.2** `migration/migrate-settings.ts`: update `DEVICE_KEY_MAP` newKey; add an
       idempotent per-key rename (copy `whispering.device.completion.custom.baseUrl` to
       the new key when the new key is absent, then remove the old). Note the existing
       migration is one-time and gated by `MIGRATION_STATE_KEY`; already-migrated users
       need this new step to run regardless. Runs from `(app)/+layout.svelte:21`.
-- [ ] **2.3** Update readers: `operations/transform.ts`, `ApiKeyInput.svelte`.
+  > **Note**: The rename writes through `deviceConfig.set`, not raw
+  > `localStorage.setItem`: `createPersistedMap` caches every value into its
+  > SvelteMap at construction, so a raw write would leave the in-memory value
+  > stale until the next focus event.
+- [x] **2.3** Update readers: `operations/transform.ts`, `ApiKeyInput.svelte`.
+  > **Note**: Also dropped `'completion.custom.baseUrl'` from ApiKeyInput's
+  > `configKey` Extract here rather than in 4.2; the key no longer exists in
+  > `DeviceConfigKey`, so keeping the dead literal would be misleading.
 
 ### Phase 3: drop per-step customBaseUrl
 

@@ -30,6 +30,15 @@ const DEVICE_DEFINITIONS = {
 	// ── API endpoint overrides ────────────────────────────────────────
 	'apiEndpoints.openai': defineEntry(type('string'), ''),
 	'apiEndpoints.groq': defineEntry(type('string'), ''),
+	/**
+	 * Endpoint for the Custom provider (OpenAI-compatible local servers
+	 * like Ollama, LM Studio, llama.cpp). Unlike the other overrides,
+	 * this has a real default: Custom has no official API to fall back to.
+	 */
+	'apiEndpoints.custom': defineEntry(
+		type('string'),
+		'http://localhost:11434/v1',
+	),
 
 	// ── Recording hardware ────────────────────────────────────────────
 	'recording.cpal.deviceId': defineEntry(type('string | null'), null),
@@ -75,12 +84,6 @@ const DEVICE_DEFINITIONS = {
 	'transcription.localModelUnloadPolicy': defineEntry(
 		type.enumerated(...LOCAL_MODEL_UNLOAD_POLICIES),
 		'after_5_minutes',
-	),
-
-	// ── Self-hosted server URLs ───────────────────────────────────────
-	'completion.custom.baseUrl': defineEntry(
-		type('string'),
-		'http://localhost:11434/v1',
 	),
 
 	// ── Global OS shortcuts (device-specific, never synced) ───────────

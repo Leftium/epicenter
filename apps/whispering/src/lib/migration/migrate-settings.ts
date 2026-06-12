@@ -1,9 +1,14 @@
 /**
- * One-time migration from the old monolithic `whispering-settings` localStorage
- * blob to the new per-key stores (workspace KV + device config localStorage).
+ * Settings migrations that run automatically on boot. Two kinds:
  *
- * Runs automatically on boot. Safe to run multiple times (idempotent).
- * Per-key failure doesn't abort the whole migration.
+ * 1. One-time migration from the old monolithic `whispering-settings`
+ *    localStorage blob to the new per-key stores (workspace KV + device
+ *    config localStorage), gated by `MIGRATION_STATE_KEY`.
+ * 2. Ungated per-key renames within the new per-key store, for keys that
+ *    changed names after the blob migration shipped.
+ *
+ * Safe to run multiple times (idempotent). Per-key failure doesn't abort
+ * the whole migration.
  *
  * @see specs/20260313T163000-settings-data-migration.md
  */
@@ -71,6 +76,11 @@ const getKvDefault = whispering.settings.getDefault as (key: string) => unknown;
  * Silent, automatic, idempotent. One bad key doesn't abort the migration.
  */
 export async function migrateOldSettings(): Promise<void> {
+	// Per-key renames run on every boot, BEFORE the migration-state gate:
+	// users who completed the blob migration under the old key names still
+	// carry the old per-key entries.
+	migrateRenamedDeviceKeys();
+
 	const state = getMigrationState();
 	if (state !== null) return;
 
@@ -208,6 +218,47 @@ export function migrateModelPathsToNames(): void {
 		const entryName = legacyPath.split(/[/\\]/).at(-1);
 		if (entryName) deviceConfig.set(modelKey, entryName);
 	}
+}
+
+/**
+ * Rename `whispering.device.completion.custom.baseUrl` to
+ * `whispering.device.apiEndpoints.custom` (the endpoint-override
+ * consolidation collapsed the one-key `completion.*` namespace).
+ *
+ * Idempotent and check-new-first: copies only when the new key is absent,
+ * never clobbers a user-set value, and removes the old entry either way.
+ * Writes through `deviceConfig.set` because the persisted map caches all
+ * values at construction; a raw `localStorage.setItem` would leave the
+ * in-memory value stale until the next focus event.
+ */
+function migrateRenamedDeviceKeys(): void {
+	const oldStorageKey = 'whispering.device.completion.custom.baseUrl';
+	trySync({
+		try: () => {
+			const oldRaw = window.localStorage.getItem(oldStorageKey);
+			if (oldRaw === null) return;
+
+			const hasNewValue =
+				window.localStorage.getItem('whispering.device.apiEndpoints.custom') !==
+				null;
+			if (!hasNewValue) {
+				const oldValue = JSON.parse(oldRaw) as unknown;
+				if (typeof oldValue === 'string') {
+					deviceConfig.set('apiEndpoints.custom', oldValue);
+				}
+			}
+			window.localStorage.removeItem(oldStorageKey);
+		},
+		catch: (err) => {
+			log.warn(
+				SettingsMigrationError.DeviceKeyFailed({
+					oldKey: oldStorageKey,
+					cause: err,
+				}),
+			);
+			return Ok(undefined);
+		},
+	});
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -410,8 +461,9 @@ const DEVICE_KEY_MAP = [
 	// `transcription.{engine}.model` (see migrateModelPathsToNames), and
 	// blob-era installs re-select their model once from the folder list.
 
-	// Self-hosted server URLs
-	{ oldKey: 'completion.custom.baseUrl', newKey: 'completion.custom.baseUrl' },
+	// Self-hosted server URLs (renamed: endpoint overrides were consolidated
+	// under apiEndpoints.*)
+	{ oldKey: 'completion.custom.baseUrl', newKey: 'apiEndpoints.custom' },
 
 	// Global shortcuts (same key names in old and new)
 	{

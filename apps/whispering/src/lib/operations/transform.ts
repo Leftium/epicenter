@@ -113,9 +113,7 @@ async function handleStep({
 			if (inferenceProvider === 'Custom') {
 				const model = step.customModel?.trim();
 				const stepBaseUrl = step.customBaseUrl?.trim();
-				const defaultBaseUrl = deviceConfig
-					.get('completion.custom.baseUrl')
-					?.trim();
+				const defaultBaseUrl = deviceConfig.get('apiEndpoints.custom')?.trim();
 				const baseUrl = stepBaseUrl || defaultBaseUrl || '';
 
 				return services.completions.custom.complete({

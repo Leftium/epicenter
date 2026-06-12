@@ -1,5 +1,10 @@
 # Whispering Endpoint Config Consolidation
 
+> **Partially superseded** by
+> `specs/20260612T090000-whispering-providers-clean-break.md`: the ungated rename
+> migration added in Phase 2 is deleted there, and the `apiKeys.*` /
+> `apiEndpoints.*` namespaces are re-keyed to `providers.<id>.*`.
+
 **Date**: 2026-06-12
 **Status**: Implemented
 **Owner**: Braden

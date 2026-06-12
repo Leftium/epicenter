@@ -1,8 +1,28 @@
-# Epicenter: Yjs-First Collaborative Workspace System
+# @epicenter/workspace
 
-The hard problem with local-first apps is synchronization. If each device has its own SQLite file, how do you keep them in sync? If each device has its own markdown folder, same question.
+A local-first workspace engine for TypeScript apps: Yjs is the source of truth; SQLite and Markdown are read-only materialized projections.
 
-`@epicenter/workspace` solves that by making Yjs the source of truth. Tables, KV entries, and document content all live in a `Y.Doc`; persistence, sync, and materializers hang off that core as attachment primitives. Write to the workspace, and everything else reacts.
+The hard problem with local-first apps is synchronization. If each device has its own SQLite file, how do you keep them in sync? If each device has its own Markdown folder, same question.
+
+`@epicenter/workspace` solves that by making Yjs the source of truth for app-owned state. Tables, KV entries, and document content all live in a `Y.Doc`; persistence, sync, validated actions, and materializers hang off that core as attachment primitives. Write to the workspace, and everything else reacts.
+
+Materializers are for reading. SQLite gives scripts, apps, and agents a fast SQL view. Markdown gives people a file-shaped export for review, git, publishing, or static output. Neither one is the app's mutation API.
+
+```txt
+Read path:
+  person / script / agent
+    -> SQL against the read-only SQLite mirror
+    -> Markdown files generated from the workspace
+
+Write path:
+  app UI / TanStack AI tool / Bun script / epicenter CLI
+    -> workspace action
+    -> live Y.Doc tables, KV, or child content docs
+    -> sync peers
+    -> SQLite mirror and Markdown export refresh
+```
+
+Agents can still edit ordinary project files. They should not patch generated `.md` files to mutate app data. Give them actions instead: browser chat uses `actionsToAiTools`, scripts use `connectDaemonActions`, and humans or automation can call `epicenter run <mount>.<action>`. The action writes the Yjs datastore; the materializers write the files back out.
 
 The current center is small:
 
@@ -329,27 +349,32 @@ Note: Schema definitions are stored in static TypeScript modules, not in the Y.D
 The Y.Doc carries data. Your definition files carry meaning.
 ```
 
-### Three-Layer Data Flow
+### Read and write flow
 
-```
-┌────────────────────────────────────────────────────────────────────┐
-│  WRITE FLOW                                                         │
-│                                                                     │
-│  App code / action → Y.Doc updated → Extensions react              │
-│                       │                                             │
-│              ┌────────┼────────┐                                    │
-│              ▼        ▼        ▼                                    │
-│         IndexedDB  WebSocket  Markdown                              │
-│         or SQLite   sync      materializer                          │
-└────────────────────────────────────────────────────────────────────┘
+The main split is source of truth versus projection. Anything that changes app data enters through the workspace. Anything that only needs a fast or human-readable view can read a materialized output.
 
-┌────────────────────────────────────────────────────────────────────┐
-│  READ FLOW                                                          │
-│                                                                     │
-│  Simple reads → table / kv helpers over Y.Doc                       │
-│  Rich text  → document handles over timeline Y.Docs                 │
-│  Derived reads → extension exports built on the same core           │
-└────────────────────────────────────────────────────────────────────┘
+```txt
+Writes:
+  UI component
+  TanStack AI tool
+  Bun script
+  epicenter run <mount>.<action>
+    -> defineMutation action
+      -> Y.Doc tables, KV, or child content docs
+        -> sync peers
+        -> persistence
+        -> SQLite materializer
+        -> Markdown materializer
+
+Reads:
+  table / KV helpers
+    -> Y.Doc
+
+  openSqliteReader
+    -> read-only SQLite mirror
+
+  editor, reviewer, publisher, agent
+    -> generated Markdown files
 ```
 
 ### Multi-Device Sync Topology
@@ -867,7 +892,7 @@ Browser apps use `attachIndexedDb(ydoc)` for unauthenticated docs, or `attachLoc
 
 For authenticated apps, call `await wipeLocalStorage({ server, ownerId })` after disposing the bundle to delete every owner-scoped encrypted IDB database on the current browser profile (sign-out, "delete my local data", account switch).
 
-`attachBunSqliteMaterializer` and `attachMarkdownExport` are not persistence: they project workspace rows into queryable SQLite tables or `.md` files. See the materializer subsections below.
+`attachBunSqliteMaterializer` and `attachMarkdownExport` are not persistence: they project workspace rows into queryable SQLite tables or `.md` files. They are read surfaces, not write surfaces. Projection actions such as `sqlite_rebuild`, `sqlite_search`, and `markdown_rebuild` maintain or query the projection; app data mutations stay in app-defined actions. See the materializer subsections below.
 
 ```typescript
 import {
@@ -961,9 +986,9 @@ Ordering is just lexical: `collaboration` reads `idb.whenLoaded` as `waitFor` be
 
 ### Markdown seam: read-only export
 
-Markdown comes from one seam, `attachMarkdownExport` (in `@epicenter/workspace/document/materializer/markdown`): a continuous, ONE-WAY Yjs to disk projection with free serialization (custom `filename`, `toMarkdown`, per-table `dir`). It exposes a single `markdown_rebuild` mutation for a destructive full re-export (orphan cleanup after a filename or layout change); there is no import path.
+Markdown comes from one seam, `attachMarkdownExport` (in `@epicenter/workspace/document/materializer/markdown`): a continuous, one-way Yjs to disk projection with free serialization (custom `filename`, `toMarkdown`, per-table `dir`). It exposes a single `markdown_rebuild` mutation for a destructive full re-export (orphan cleanup after a filename or layout change); there is no import path.
 
-The projection is read-only on purpose. The materialized `.md` is never read back into Yjs, so it carries no round-trip obligation and can shape the output however a human-readable export or a published site wants. App data mutates only through validated actions (`epicenter run <mount>.<action>`), never by editing the materialized files. The sqlite materializer is the read-only sibling for a relational projection.
+The projection is read-only on purpose. The materialized `.md` is never read back into Yjs, so it carries no round-trip obligation and can shape the output however a human-readable export or a published site wants. App data mutates through validated actions (`epicenter run <mount>.<action>`, `connectDaemonActions`, or TanStack AI tools created by `actionsToAiTools`), never by editing the materialized files. If an app needs Markdown as the authoring format, that parser/editor belongs in an app action or UI surface that writes Yjs. This export is not that path. The SQLite materializer is the read-only sibling for a relational projection.
 
 ```typescript
 import {
@@ -1003,6 +1028,8 @@ void openNotes;
 ### SQLite materializer
 
 The SQLite materializer is exported from `@epicenter/workspace/document/materializer/sqlite`. It mirrors every table in the workspace bundle into queryable SQLite tables with optional FTS5 full-text search. Pass the workspace directly; use the keyed `fts` slot to opt specific columns into FTS5.
+
+Treat the mirror as a read-only SQL projection. Scripts open it with `openSqliteReader`, which sets `PRAGMA query_only = ON`; app writes go through the daemon action path (`connectDaemonActions` or `epicenter run`) so the live Y.Doc stays authoritative and the mirror catches up from the same source as every other projection.
 
 ```typescript
 import {
@@ -1642,9 +1669,9 @@ import {
 
 These matter when you are writing low-level tooling against raw Yjs structures.
 
-## MCP Integration
+## AI, CLI, and MCP Integration
 
-The core package does not export an MCP server. What it does export is the metadata you need to build one:
+The core package does not export an MCP server or own every adapter. What it does export is the action surface those adapters need:
 
 - actions with `type`, `title`, `description`, and `input`
 - `Object.entries(actions)` to iterate the flat registry
@@ -1652,7 +1679,9 @@ The core package does not export an MCP server. What it does export is the metad
 - `toActionMeta(action)` to project an action to its wire-safe shape
 - `@epicenter/workspace/ai`: `actionsToAiTools(...)` for TanStack AI tool bindings
 
-That is enough to build adapters that expose workspace actions over HTTP, CLI, or MCP without coupling the core package to one transport.
+That is enough to expose workspace actions over HTTP, CLI, TanStack AI, or MCP without coupling the core package to one transport.
+
+For AI editing, expose workspace mutations as tools. `actionsToAiTools(...)` does not teach the model to patch the materialized Markdown folder. It wires tool calls to the same action handlers the UI and CLI use. Query tools can read data; mutation tools write Yjs and are marked `needsApproval: true` by default.
 
 ### Setup
 

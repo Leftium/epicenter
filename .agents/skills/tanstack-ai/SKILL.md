@@ -47,6 +47,7 @@ Use this pattern when you need to:
 
 ## Local Anchors
 
-- `apps/tab-manager/src/lib/chat/chat-state.svelte.ts` shows Svelte chat state, persistence, streaming, and tool approval handling.
-- `apps/tab-manager/src/lib/chat/ui-message.ts` owns the persisted-message to TanStack-message boundary.
+- `apps/tab-manager/src/lib/chat/chat-state.svelte.ts` shows Svelte chat state, streaming, and tool approval handling, with the conversation list derived from the handle registry.
+- `apps/tab-manager/src/lib/chat/persistence.ts` owns the device-local IndexedDB chat store behind `ChatClientPersistence`.
+- `apps/opensidian/src/lib/chat/ui-message.ts` shows the persisted-message to TanStack-message boundary for workspace-backed chat history.
 - `packages/workspace/src/ai/tool-bridge.ts` converts workspace actions into client tools and serializable server tool definitions.

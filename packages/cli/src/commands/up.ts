@@ -14,7 +14,7 @@
  */
 
 import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import type { SyncAuthClient } from '@epicenter/auth';
 import {
 	createMachineAuthClient,
@@ -24,7 +24,6 @@ import type { StartedMount } from '@epicenter/workspace/daemon';
 import {
 	claimDaemonLease,
 	type DaemonMetadata,
-	findProjectRoot,
 	openProject,
 	type ProjectConfigError,
 	StartupError,
@@ -36,19 +35,9 @@ import {
 import { Ok, type Result, trySync } from 'wellcrafted/result';
 import packageJson from '../../package.json' with { type: 'json' };
 import { cmd } from '../util/cmd.js';
+import { projectOption } from '../util/common-options.js';
 
 const CLI_VERSION = packageJson.version;
-
-const upProjectOption = {
-	type: 'string' as const,
-	description:
-		'Project root, or any directory under it (discovery walks up to the nearest epicenter.config.ts).',
-	default: () => process.cwd(),
-	defaultDescription: 'current working directory',
-	// Identity coerce pins the inferred argv type to `string`; without it
-	// yargs infers `string | (() => string)` from the function default.
-	coerce: (projectDir: string) => projectDir,
-};
 
 /**
  * Sync-status / presence lines write directly to stderr so they reach the
@@ -61,6 +50,11 @@ function logSyncStatus(message: string): void {
 }
 
 type UpOptions = {
+	/**
+	 * The project root. The yargs `-C` option resolves discovery (walking up
+	 * to the nearest `epicenter.config.ts`) before the handler runs; direct
+	 * callers pass the root they already know.
+	 */
 	projectDir: string;
 	quiet: boolean;
 	cliVersion?: string;
@@ -116,7 +110,7 @@ export async function runUp(
 		| MachineAuthStorageError
 	>
 > {
-	const projectDir = realpathSync(resolveProjectForUp(options.projectDir));
+	const projectDir = realpathSync(options.projectDir);
 
 	const leaseResult = claimDaemonLease(projectDir);
 	if (leaseResult.error !== null) return leaseResult;
@@ -185,7 +179,7 @@ export const upCommand = cmd({
 	describe:
 		'Open every mount in epicenter.config.ts and serve them on the daemon socket (foreground).',
 	builder: {
-		C: upProjectOption,
+		C: projectOption,
 		quiet: {
 			type: 'boolean',
 			default: false,
@@ -202,11 +196,6 @@ export const upCommand = cmd({
 		const { data: handle, error } = await runUp(options);
 		if (error) {
 			process.stderr.write(`${error.message}\n`);
-			if (error.name === 'ProjectConfigNotFound') {
-				process.stderr.write(
-					'run `epicenter init` to scaffold a project here\n',
-				);
-			}
 			process.exit(1);
 		}
 
@@ -236,14 +225,6 @@ export const upCommand = cmd({
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function resolveProjectForUp(start: string): string {
-	try {
-		return findProjectRoot(start);
-	} catch {
-		return resolve(start);
-	}
-}
 
 /**
  * Ensure `.epicenter/` exists (0o700) and is fully gitignored. The attach

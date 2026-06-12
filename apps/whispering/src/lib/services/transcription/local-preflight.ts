@@ -1,10 +1,15 @@
-import { stat } from '@tauri-apps/plugin-fs';
+import { readDir, stat } from '@tauri-apps/plugin-fs';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 /**
- * Errors raised by the FE before we hand off to the Rust `transcribe_recording`
- * command. After the call returns, Rust's own `TranscriptionError` variants
+ * FE-side validation that a model path satisfies an engine's contract. Two
+ * gates share it: the settings selector when the user picks a model, and the
+ * dispatcher in `$lib/operations/transcribe.ts` before every local
+ * transcription (so a model moved or deleted after selection degrades into a
+ * clear error instead of a Rust failure).
+ *
+ * After the Rust call, Rust's own `TranscriptionError` variants
  * (ModelLoadError, GpuError, AudioReadError, TranscriptionError) flow through
  * to the caller unchanged: see `$lib/tauri/commands`. They satisfy
  * `AnyTaggedError`, so the caller's `Result<string, TranscriptionError>`
@@ -47,6 +52,9 @@ export const LocalPreflightError = defineErrors({
 		engineDisplayName,
 		kind,
 	}),
+	EmptyModelDirectory: () => ({
+		message: 'Selected directory appears to be empty',
+	}),
 	CorruptedModelFile: ({
 		actualSizeMb,
 		expectedSizeMb,
@@ -62,10 +70,11 @@ export const LocalPreflightError = defineErrors({
 export type LocalPreflightError = InferErrors<typeof LocalPreflightError>;
 
 /**
- * Validate that `modelPath` exists and is the expected `kind`. All local
- * engines share this exact preflight.
+ * Validate that `modelPath` exists, is the expected `kind`, and (for
+ * directories) is not empty. All local engines share this exact check, both
+ * at selection time and before transcription.
  */
-export async function requireExistingModelPath(
+export async function requireValidModelPath(
 	modelPath: string,
 	kind: 'file' | 'directory',
 	engineDisplayName: string,
@@ -86,6 +95,19 @@ export async function requireExistingModelPath(
 	const isCorrectKind = kind === 'directory' ? stats.isDirectory : stats.isFile;
 	if (!isCorrectKind) {
 		return LocalPreflightError.InvalidModelPath({ engineDisplayName, kind });
+	}
+
+	if (kind === 'directory') {
+		const { data: entries } = await tryAsync({
+			try: () => readDir(modelPath),
+			catch: () => Ok(null),
+		});
+		if (!entries) {
+			return LocalPreflightError.InvalidModelPath({ engineDisplayName, kind });
+		}
+		if (entries.length === 0) {
+			return LocalPreflightError.EmptyModelDirectory();
+		}
 	}
 
 	return Ok(undefined);

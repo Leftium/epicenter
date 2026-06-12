@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';
+	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
 	import { toast } from '@epicenter/ui/sonner';
 	import * as Tabs from '@epicenter/ui/tabs';
@@ -11,7 +12,7 @@
 	import { open } from '@tauri-apps/plugin-dialog';
 	import type { Snippet } from 'svelte';
 	import type { LocalModelConfig } from '$lib/constants/local-models';
-	import { validateModelSelection } from '$lib/services/transcription/local-model-storage';
+	import { requireValidModelPath } from '$lib/services/transcription/local-preflight';
 	import { PROVIDERS } from '$lib/services/transcription/providers';
 	import { tauri } from '#platform/tauri';
 	import LocalModelDownloadCard from './LocalModelDownloadCard.svelte';
@@ -92,57 +93,40 @@
 	async function selectModel() {
 		if (!tauri) return;
 
-		if (fileSelectionMode === 'directory') {
-			const selected = await open({
-				directory: true,
-				multiple: false,
-				title: `Select ${title} Directory`,
-			});
-			if (!selected) return;
+		const selected =
+			fileSelectionMode === 'directory'
+				? await open({
+						directory: true,
+						multiple: false,
+						title: `Select ${title} Directory`,
+					})
+				: await open({
+						multiple: false,
+						filters:
+							fileExtensions.length > 0
+								? [{ name: `${title} Files`, extensions: fileExtensions }]
+								: [],
+						title: `Select ${title} File`,
+					});
+		if (!selected) return;
 
-			const { error } = await validateModelSelection({
-				engine,
-				path: selected,
+		const { error } = await requireValidModelPath(
+			selected,
+			fileSelectionMode,
+			PROVIDERS[engine].label,
+		);
+		if (error) {
+			toast.error('Failed to select model', {
+				description: error.message,
 			});
-			if (error) {
-				toast.error('Failed to select model', {
-					description: error.message,
-				});
-				return;
-			}
-			value = selected;
-			toast.success('Model directory selected');
-		} else {
-			const filters =
-				fileExtensions.length > 0
-					? [
-							{
-								name: `${title} Files`,
-								extensions: fileExtensions,
-							},
-						]
-					: [];
-
-			const selected = await open({
-				multiple: false,
-				filters,
-				title: `Select ${title} File`,
-			});
-			if (!selected) return;
-
-			const { error } = await validateModelSelection({
-				engine,
-				path: selected,
-			});
-			if (error) {
-				toast.error('Failed to select model', {
-					description: error.message,
-				});
-				return;
-			}
-			value = selected;
-			toast.success('Model file selected');
+			return;
 		}
+		value = selected;
+		toast.success(
+			fileSelectionMode === 'directory'
+				? 'Model directory selected'
+				: 'Model file selected',
+		);
 	}
 
 	/**
@@ -231,12 +215,12 @@
 						</Button>
 					</div>
 
-					<p class="mt-2 text-sm text-muted-foreground">
+					<Field.Description class="mt-2">
 						Whispering uses the {fileSelectionMode === 'directory'
 							? 'directory'
 							: 'file'} where it is on disk; nothing is copied. If you move or
 						delete it, select it again here.
-					</p>
+					</Field.Description>
 
 					<!-- Display selected model info -->
 					{#if value}

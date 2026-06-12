@@ -1,9 +1,9 @@
 /**
  * On-disk storage for pre-built local transcription models: resolve where a
  * model lives, verify an install, stream downloads from the catalog URLs,
- * and delete installs. Also validates user-selected model paths
- * (`validateModelSelection`); manual selections are referenced in place and
- * never copied into appdata.
+ * and delete installs. Manually selected models are not a storage concern:
+ * they are validated by `requireValidModelPath` in `./local-preflight.ts`
+ * and referenced in place, never copied into appdata.
  *
  * UI-free and settings-free. Activation (writing the model path into
  * `deviceConfig`) lives in `$lib/operations/local-models.ts`.
@@ -14,14 +14,7 @@
  * - Moonshine: `models/moonshine/{directoryName}/` (multiple ONNX files)
  */
 import { join } from '@tauri-apps/api/path';
-import {
-	exists,
-	mkdir,
-	readDir,
-	remove,
-	stat,
-	writeFile,
-} from '@tauri-apps/plugin-fs';
+import { exists, mkdir, remove, stat, writeFile } from '@tauri-apps/plugin-fs';
 import { fetch } from '@tauri-apps/plugin-http';
 import {
 	defineErrors,
@@ -32,7 +25,6 @@ import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { LocalModelConfig } from '$lib/constants/local-models';
 import { PATHS } from '$lib/services/fs-paths';
 import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
-import { PROVIDERS } from '$lib/services/transcription/providers';
 
 export const LocalModelStorageError = defineErrors({
 	DownloadRequestFailed: ({
@@ -65,27 +57,8 @@ export const LocalModelStorageError = defineErrors({
 		message: extractErrorMessage(cause),
 		cause,
 	}),
-	InvalidModelSelection: ({
-		engineDisplayName,
-		kind,
-	}: {
-		engineDisplayName: string;
-		kind: 'file' | 'directory';
-	}) => ({
-		message:
-			kind === 'directory'
-				? `${engineDisplayName} models must be directories containing model files.`
-				: `${engineDisplayName} models must be a single file.`,
-		engineDisplayName,
-		kind,
-	}),
-	EmptyModelDirectory: () => ({
-		message: 'Selected directory appears to be empty',
-	}),
 });
 export type LocalModelStorageError = InferErrors<typeof LocalModelStorageError>;
-
-type Engine = LocalModelConfig['engine'];
 
 /**
  * Stream one file to disk, appending chunk by chunk so large models never
@@ -315,59 +288,4 @@ export function createModelStorage(model: LocalModelConfig) {
 			});
 		},
 	};
-}
-
-/**
- * Check that a user-selected path can serve as `engine`'s model: it must
- * exist as the kind the engine's preflight expects (a file for Whisper, a
- * directory for Parakeet and Moonshine), and directories must not be empty.
- *
- * Validation only. The selected path is stored in settings as-is and used
- * where it is on disk; nothing is copied, moved, or symlinked into appdata.
- */
-export async function validateModelSelection({
-	engine,
-	path,
-}: {
-	engine: Engine;
-	path: string;
-}): Promise<Result<void, LocalModelStorageError>> {
-	const { preflightKind: kind, label: engineDisplayName } = PROVIDERS[engine];
-
-	const { data: stats } = await tryAsync({
-		try: () => stat(path),
-		catch: () => Ok(null),
-	});
-	if (!stats) {
-		return LocalModelStorageError.InvalidModelSelection({
-			engineDisplayName,
-			kind,
-		});
-	}
-
-	const isCorrectKind = kind === 'directory' ? stats.isDirectory : stats.isFile;
-	if (!isCorrectKind) {
-		return LocalModelStorageError.InvalidModelSelection({
-			engineDisplayName,
-			kind,
-		});
-	}
-
-	if (kind === 'directory') {
-		const { data: entries } = await tryAsync({
-			try: () => readDir(path),
-			catch: () => Ok(null),
-		});
-		if (!entries) {
-			return LocalModelStorageError.InvalidModelSelection({
-				engineDisplayName,
-				kind,
-			});
-		}
-		if (entries.length === 0) {
-			return LocalModelStorageError.EmptyModelDirectory();
-		}
-	}
-
-	return Ok(undefined);
 }

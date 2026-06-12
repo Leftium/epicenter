@@ -17,7 +17,7 @@ import { MistralTranscriptionServiceLive } from '$lib/services/transcription/clo
 import { OpenaiTranscriptionServiceLive } from '$lib/services/transcription/cloud/openai';
 import {
 	LocalPreflightError,
-	requireExistingModelPath,
+	requireValidModelPath,
 } from '$lib/services/transcription/local-preflight';
 import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
 import {
@@ -207,7 +207,7 @@ async function dispatchLocalTranscription(
 	// and can short-circuit before the IPC round-trip. The path, kind, and name
 	// come straight from the provider's registry entry.
 	const modelPath = deviceConfig.get(provider.modelPathKey);
-	const validation = await requireExistingModelPath(
+	const validation = await requireValidModelPath(
 		modelPath,
 		provider.preflightKind,
 		provider.label,

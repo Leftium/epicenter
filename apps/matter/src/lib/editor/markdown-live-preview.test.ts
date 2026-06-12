@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { markdown } from '@codemirror/lang-markdown';
 import { EditorSelection, EditorState } from '@codemirror/state';
-import { collectMarkdownLivePreviewRanges } from './markdown-live-preview.js';
+import { collectHiddenMarkerRanges } from './markdown-live-preview.js';
 
-describe('collectMarkdownLivePreviewRanges', () => {
+describe('collectHiddenMarkerRanges', () => {
 	test('hides a heading marker on an inactive line', () => {
 		const doc = '# Heading\nplain';
 		const hiddenText = collectHiddenText(doc, doc.indexOf('plain'));
@@ -46,17 +46,6 @@ describe('collectMarkdownLivePreviewRanges', () => {
 		expect(hiddenText).toEqual(['##', '##']);
 	});
 
-	test('marks the whole heading construct including its markers', () => {
-		const doc = '# Heading\nplain';
-		const headingText = collectMarkedText(
-			doc,
-			doc.indexOf('plain'),
-			'cm-matter-md-heading',
-		);
-
-		expect(headingText).toEqual(['# Heading']);
-	});
-
 	test('does not hide setext heading markers', () => {
 		const doc = 'Title\n=====\nplain';
 		const hiddenText = collectHiddenText(doc, doc.indexOf('plain'));
@@ -95,14 +84,8 @@ describe('collectMarkdownLivePreviewRanges', () => {
 	test('leaves nested image syntax raw inside a link label', () => {
 		const doc = '[![alt](img.png)](https://example.com)\nplain';
 		const hiddenText = collectHiddenText(doc, doc.indexOf('plain'));
-		const linkText = collectMarkedText(
-			doc,
-			doc.indexOf('plain'),
-			'cm-matter-md-link',
-		);
 
 		expect(hiddenText).toEqual(['[', ']', '(', 'https://example.com', ')']);
-		expect(linkText).toEqual(['![alt](img.png)']);
 	});
 
 	test('leaves nested autolink syntax raw inside a link label', () => {
@@ -132,16 +115,10 @@ describe('collectMarkdownLivePreviewRanges', () => {
 		expect(hiddenText).toEqual(['#']);
 	});
 
-	test('marks only the label when a link title contains "]("', () => {
+	test('hides link syntax when a title contains "]("', () => {
 		const doc = '[x](u "a](b")\nplain';
 		const hiddenText = collectHiddenText(doc, doc.indexOf('plain'));
-		const linkText = collectMarkedText(
-			doc,
-			doc.indexOf('plain'),
-			'cm-matter-md-link',
-		);
 
-		expect(linkText).toEqual(['x']);
 		expect(hiddenText).toEqual(['[', ']', '(', 'u', '"a](b"', ')']);
 	});
 
@@ -157,29 +134,6 @@ function collectHiddenText(
 	doc: string,
 	selection: number | EditorSelection,
 ): string[] {
-	return collectRangeText(doc, selection, (range) => range.type === 'hide');
-}
-
-function collectMarkedText(
-	doc: string,
-	selection: number | EditorSelection,
-	className: string,
-): string[] {
-	return collectRangeText(
-		doc,
-		selection,
-		(range) =>
-			range.type === 'mark' && range.className.split(' ').includes(className),
-	);
-}
-
-function collectRangeText(
-	doc: string,
-	selection: number | EditorSelection,
-	matches: (
-		range: ReturnType<typeof collectMarkdownLivePreviewRanges>[number],
-	) => boolean,
-): string[] {
 	const state = EditorState.create({
 		doc,
 		extensions: [EditorState.allowMultipleSelections.of(true), markdown()],
@@ -189,10 +143,7 @@ function collectRangeText(
 				: selection,
 	});
 
-	return collectMarkdownLivePreviewRanges(state, [
-		{ from: 0, to: state.doc.length },
-	])
-		.filter(matches)
+	return collectHiddenMarkerRanges(state, [{ from: 0, to: state.doc.length }])
 		.toSorted((left, right) => left.from - right.from || left.to - right.to)
 		.map((range) => state.doc.sliceString(range.from, range.to));
 }

@@ -1,4 +1,8 @@
-import { syntaxTree } from '@codemirror/language';
+import {
+	HighlightStyle,
+	syntaxHighlighting,
+	syntaxTree,
+} from '@codemirror/language';
 import type { EditorState, Extension } from '@codemirror/state';
 import {
 	Decoration,
@@ -7,88 +11,51 @@ import {
 	ViewPlugin,
 	type ViewUpdate,
 } from '@codemirror/view';
-import type { SyntaxNode, SyntaxNodeRef } from '@lezer/common';
+import type { SyntaxNode } from '@lezer/common';
+import { tags } from '@lezer/highlight';
 
 type Span = {
 	from: number;
 	to: number;
 };
 
-type MarkdownLivePreviewRange =
-	| {
-			type: 'hide';
-			from: number;
-			to: number;
-	  }
-	| {
-			type: 'mark';
-			from: number;
-			to: number;
-			className: string;
-	  };
-
 /**
- * Node name to mark class. The whole node is styled, markers included;
- * hiding markers on inactive lines is handled separately, so on active lines
- * the markers render in their construct's look. List and quote markers are
- * styled here but never hidden. Node names absent from this table
- * (SetextHeading, FencedCode, Image, Autolink, tables, HTML) render plain.
- */
-const markClassByNode: Record<string, string> = {
-	ATXHeading1: 'cm-matter-md-heading cm-matter-md-heading-1',
-	ATXHeading2: 'cm-matter-md-heading cm-matter-md-heading-2',
-	ATXHeading3: 'cm-matter-md-heading cm-matter-md-heading-3',
-	ATXHeading4: 'cm-matter-md-heading cm-matter-md-heading-4',
-	ATXHeading5: 'cm-matter-md-heading cm-matter-md-heading-5',
-	ATXHeading6: 'cm-matter-md-heading cm-matter-md-heading-6',
-	StrongEmphasis: 'cm-matter-md-strong',
-	Emphasis: 'cm-matter-md-emphasis',
-	InlineCode: 'cm-matter-md-inline-code',
-	ListMark: 'cm-matter-md-structural-marker',
-	QuoteMark: 'cm-matter-md-structural-marker',
-};
-
-/**
- * Marker node name to the construct parents that own its reveal. A marker is
- * hidden only when its direct parent is listed here and no selection range
- * touches the parent's lines. Markers with unlisted parents always stay raw,
- * which keeps setext underlines (HeaderMark under SetextHeading), fenced-code
- * backticks (CodeMark under FencedCode), and image, reference-link, and
- * autolink punctuation visible.
+ * Construct node name to the marker children it hides on inactive lines.
+ * Constructs absent from this table never hide anything, which keeps setext
+ * underlines, fenced-code backticks, and image, reference-link, and autolink
+ * punctuation visible.
  *
  * Hidden ranges must never span a line break: CodeMirror rejects replace
  * decorations that cross lines when they come from a view plugin. Every
  * marker here is single-line by the CommonMark grammar except LinkTitle,
- * which getRevealScope covers by leaving multi-line links raw.
+ * which isPreviewableLink covers by leaving multi-line links raw.
  */
-const revealParentsByMarker: Record<string, readonly string[]> = {
-	HeaderMark: [
-		'ATXHeading1',
-		'ATXHeading2',
-		'ATXHeading3',
-		'ATXHeading4',
-		'ATXHeading5',
-		'ATXHeading6',
-	],
-	EmphasisMark: ['Emphasis', 'StrongEmphasis'],
-	CodeMark: ['InlineCode'],
-	LinkMark: ['Link'],
-	URL: ['Link'],
-	LinkTitle: ['Link'],
+const hiddenMarkersByConstruct: Record<string, readonly string[]> = {
+	ATXHeading1: ['HeaderMark'],
+	ATXHeading2: ['HeaderMark'],
+	ATXHeading3: ['HeaderMark'],
+	ATXHeading4: ['HeaderMark'],
+	ATXHeading5: ['HeaderMark'],
+	ATXHeading6: ['HeaderMark'],
+	Emphasis: ['EmphasisMark'],
+	StrongEmphasis: ['EmphasisMark'],
+	InlineCode: ['CodeMark'],
+	Link: ['LinkMark', 'URL', 'LinkTitle'],
 };
 
 /**
- * Compute the live-preview spans for the visible ranges. Pure with respect to
- * the editor state: it reads the syntax tree and the selection and returns
+ * Compute the marker spans to hide for the visible ranges. Pure with respect
+ * to the editor state: it reads the syntax tree and the selection and returns
  * plain spans, which is the surface the tests assert on.
  *
- * A line is active when any selection range overlaps it. Markers whose
- * construct touches an active line stay raw; style marks apply everywhere.
+ * A line is active when any selection range overlaps it. A construct that
+ * touches an active line keeps all its markers raw; styling is not handled
+ * here at all, it belongs to the syntax highlighter.
  */
-export function collectMarkdownLivePreviewRanges(
+export function collectHiddenMarkerRanges(
 	state: EditorState,
 	visibleRanges: readonly Span[],
-): MarkdownLivePreviewRange[] {
+): Span[] {
 	const activeSpans = state.selection.ranges.map((range) => ({
 		from: state.doc.lineAt(range.from).from,
 		to: state.doc.lineAt(range.to).to,
@@ -98,40 +65,29 @@ export function collectMarkdownLivePreviewRanges(
 			(active) => active.from <= span.to && span.from <= active.to,
 		);
 
-	const ranges: MarkdownLivePreviewRange[] = [];
+	const tree = syntaxTree(state);
+	const ranges: Span[] = [];
 
 	for (const visibleRange of visibleRanges) {
-		syntaxTree(state).iterate({
+		tree.iterate({
 			from: visibleRange.from,
 			to: visibleRange.to,
 			enter(node) {
-				const name = node.type.name;
+				const markers = hiddenMarkersByConstruct[node.type.name];
+				if (!markers || isRevealed(node)) return;
 
-				const className = markClassByNode[name];
-				if (className) {
-					ranges.push({
-						type: 'mark',
-						from: node.from,
-						to: node.to,
-						className,
-					});
+				const construct = node.node;
+				if (
+					node.type.name === 'Link' &&
+					!isPreviewableLink(construct, state)
+				) {
+					return;
 				}
 
-				if (name === 'Link') {
-					const label = getInlineLinkLabel(node.node);
-					if (label) {
-						ranges.push({
-							type: 'mark',
-							from: label.from,
-							to: label.to,
-							className: 'cm-matter-md-link',
-						});
+				for (const markerName of markers) {
+					for (const marker of construct.getChildren(markerName)) {
+						ranges.push({ from: marker.from, to: marker.to });
 					}
-				}
-
-				const revealScope = getRevealScope(node, state);
-				if (revealScope && !isRevealed(revealScope)) {
-					ranges.push({ type: 'hide', from: node.from, to: node.to });
 				}
 			},
 		});
@@ -142,11 +98,15 @@ export function collectMarkdownLivePreviewRanges(
 
 /**
  * Live Markdown preview as pure view behavior: inactive lines hide marker
- * punctuation and style constructs, and lines touched by any selection show
- * raw Markdown. The extension never dispatches document changes.
+ * punctuation, lines touched by any selection show raw Markdown, and the
+ * syntax highlighter styles constructs independently of the selection. The
+ * extension never dispatches document changes.
  */
 export function markdownLivePreview(): Extension {
-	return [markdownLivePreviewPlugin, markdownLivePreviewTheme];
+	return [
+		markdownLivePreviewPlugin,
+		syntaxHighlighting(markdownPreviewHighlightStyle),
+	];
 }
 
 const markdownLivePreviewPlugin = ViewPlugin.define(
@@ -170,99 +130,64 @@ const markdownLivePreviewPlugin = ViewPlugin.define(
 	},
 );
 
-const markdownLivePreviewTheme = EditorView.baseTheme({
-	'.cm-matter-md-heading': {
-		fontWeight: '700',
-		color: 'hsl(var(--foreground))',
-	},
-	'.cm-matter-md-heading-1': {
-		fontSize: '1.25em',
-	},
-	'.cm-matter-md-heading-2': {
-		fontSize: '1.15em',
-	},
-	'.cm-matter-md-heading-3': {
-		fontSize: '1.08em',
-	},
-	'.cm-matter-md-heading-4, .cm-matter-md-heading-5, .cm-matter-md-heading-6': {
-		fontSize: '1em',
-	},
-	'.cm-matter-md-strong': {
-		fontWeight: '700',
-	},
-	'.cm-matter-md-emphasis': {
-		fontStyle: 'italic',
-	},
-	'.cm-matter-md-inline-code': {
+/**
+ * Styling rides the highlight tags @lezer/markdown already emits: heading
+ * tags apply through children, marker punctuation is processingInstruction,
+ * and Link applies link styling through its children, so the visible label
+ * is styled while the hidden syntax around it does not matter.
+ */
+const markdownPreviewHighlightStyle = HighlightStyle.define([
+	{ tag: tags.heading1, fontSize: '1.25em', fontWeight: '700' },
+	{ tag: tags.heading2, fontSize: '1.15em', fontWeight: '700' },
+	{ tag: tags.heading3, fontSize: '1.08em', fontWeight: '700' },
+	{ tag: tags.heading4, fontWeight: '700' },
+	{ tag: tags.heading5, fontWeight: '700' },
+	{ tag: tags.heading6, fontWeight: '700' },
+	{ tag: tags.strong, fontWeight: '700' },
+	{ tag: tags.emphasis, fontStyle: 'italic' },
+	{
+		tag: tags.monospace,
 		borderRadius: '0.25rem',
 		backgroundColor: 'hsl(var(--muted))',
-		color: 'hsl(var(--foreground))',
 		padding: '0.05rem 0.25rem',
 	},
-	'.cm-matter-md-link': {
+	{
+		tag: tags.link,
 		color: 'hsl(var(--primary))',
 		textDecoration: 'underline',
 		textDecorationColor: 'hsl(var(--primary) / 0.45)',
 		textUnderlineOffset: '0.18em',
 	},
-	'.cm-matter-md-structural-marker': {
+	{
+		tag: tags.processingInstruction,
 		color: 'hsl(var(--muted-foreground))',
-		fontWeight: '500',
 	},
-});
+]);
 
 const hideDecoration = Decoration.replace({});
 
 function buildDecorations(view: EditorView): DecorationSet {
 	return Decoration.set(
-		collectMarkdownLivePreviewRanges(view.state, view.visibleRanges).map(
-			(range) =>
-				range.type === 'hide'
-					? hideDecoration.range(range.from, range.to)
-					: Decoration.mark({ class: range.className }).range(
-							range.from,
-							range.to,
-						),
+		collectHiddenMarkerRanges(view.state, view.visibleRanges).map((range) =>
+			hideDecoration.range(range.from, range.to),
 		),
 		true,
 	);
 }
 
 /**
- * The construct whose lines decide whether this marker is revealed, or null
- * when the marker always stays raw. Markers are direct children of their
- * construct in the lezer Markdown tree, so one parent check suffices.
+ * Whether a Link's syntax should hide on inactive lines. Reference and
+ * shortcut links stay raw (they carry a LinkLabel instead of a URL child),
+ * empty labels like [](url) stay raw because they would preview as nothing,
+ * and multi-line links stay raw so no hidden range can span a line break.
  */
-function getRevealScope(node: SyntaxNodeRef, state: EditorState): Span | null {
-	const parents = revealParentsByMarker[node.type.name];
-	if (!parents) return null;
-
-	const parent = node.node.parent;
-	if (!parent || !parents.includes(parent.name)) return null;
-
-	if (parent.name === 'Link') {
-		// Links are previewed only when their syntax sits on one line; a
-		// multi-line LinkTitle could otherwise produce a hidden range that
-		// spans a line break, and half-hiding a wrapped link reads worse
-		// than showing it raw.
-		if (state.doc.lineAt(parent.from).to < parent.to) return null;
-		if (!getInlineLinkLabel(parent)) return null;
-	}
-
-	return parent;
-}
-
-/**
- * The label span of an inline link, or null for anything that should stay
- * raw: reference and shortcut links (they carry a LinkLabel instead of a URL
- * child) and empty labels like [](url), which would otherwise preview as
- * nothing at all.
- */
-function getInlineLinkLabel(link: SyntaxNode): Span | null {
-	if (!link.getChild('URL')) return null;
+function isPreviewableLink(link: SyntaxNode, state: EditorState): boolean {
+	if (!link.getChild('URL')) return false;
 
 	const [labelOpen, labelClose] = link.getChildren('LinkMark');
-	return labelOpen && labelClose && labelOpen.to < labelClose.from
-		? { from: labelOpen.to, to: labelClose.from }
-		: null;
+	if (!labelOpen || !labelClose || labelOpen.to >= labelClose.from) {
+		return false;
+	}
+
+	return state.doc.lineAt(link.from).to >= link.to;
 }

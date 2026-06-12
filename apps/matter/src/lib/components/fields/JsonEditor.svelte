@@ -1,19 +1,27 @@
 <script lang="ts">
+	import { isMissing, type InvalidCell } from '$lib/core/conformance';
 	import { createCellEdit } from './create-cell-edit.svelte';
-	import FieldEmpty from './FieldEmpty.svelte';
-	import type { FieldProps } from './field-props';
+	import FieldMissing from './FieldMissing.svelte';
+	import type { RenderableCell, SaveField } from './field-props';
 
-	// The widget for the `json` kind: an arbitrary-JSON payload cell. Edit the
-	// JSON-serialized value in one input and re-parse on commit, exactly like the
-	// universal repair editor, because a json cell IS "any value, shown as JSON".
-	// Parsing GATES the save (a syntax error is held open, never written); a parsed
-	// value that still fails the field's payload schema reclassifies to INVALID and
-	// routes to the repair editor on its own. An empty draft reverts; deleting the
-	// key is the cell's shared chrome, not an emptied input here.
-	let { cell, save }: FieldProps = $props();
+	// JSON is the one text editor that can represent both a valid arbitrary-JSON
+	// field and an INVALID raw value. ModeledCell still owns which lane reached this
+	// component; this owns only the JSON text draft, parser, and display tone.
+	// Parsing gates syntax only: a parseable value that still fails its field schema
+	// saves, stays INVALID, and reclassifies through the row watcher.
+	let { cell, save }: {
+		cell: RenderableCell | InvalidCell;
+		save: SaveField;
+	} = $props();
+
+	const value = $derived.by(() => {
+		if (cell.state === 'INVALID') return cell.raw;
+		if (cell.state === 'OK') return cell.value;
+		return undefined;
+	});
 
 	const edit = createCellEdit({
-		current: () => (cell.state === 'OK' ? cell.value : undefined),
+		current: () => value,
 		save: (value) => save(value),
 		display: (value) => (value === undefined ? '' : JSON.stringify(value)),
 		parse: (text) => {
@@ -25,6 +33,8 @@
 			}
 		},
 	});
+
+	const invalid = $derived(cell.state === 'INVALID');
 </script>
 
 {#if edit.editing}
@@ -44,13 +54,13 @@
 	{#if edit.parseError}
 		<span class="mt-0.5 block text-xs text-destructive">{edit.parseError}</span>
 	{/if}
-{:else if cell.state === 'NEEDS_VALUE'}
+{:else if isMissing(cell)}
 	<button
 		type="button"
 		onclick={edit.start}
 		class="block w-full cursor-text rounded-sm px-1 py-0.5 text-left hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
 	>
-		<FieldEmpty />
+		<FieldMissing {cell} />
 	</button>
 {:else}
 	<button
@@ -58,8 +68,13 @@
 		onclick={edit.start}
 		class="block w-full cursor-text rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
 	>
-		<code class="block max-w-80 truncate rounded bg-muted/50 px-1 text-xs text-muted-foreground"
-			>{JSON.stringify(cell.value)}</code
+		<code
+			class={[
+				'block truncate rounded px-1 text-xs',
+				invalid
+					? 'bg-destructive/10 text-destructive'
+					: 'max-w-80 bg-muted/50 text-muted-foreground',
+			]}>{JSON.stringify(value)}</code
 		>
 	</button>
 {/if}

@@ -27,7 +27,8 @@ type ExpectedPartTypes =
 	| 'document'
 	| 'tool-call'
 	| 'tool-result'
-	| 'thinking';
+	| 'thinking'
+	| 'structured-output';
 
 type _ChatMessageIdDriftCheck = Expect<Equal<ChatMessage['id'], ChatMessageId>>;
 type _PartTypeDriftCheck = Expect<

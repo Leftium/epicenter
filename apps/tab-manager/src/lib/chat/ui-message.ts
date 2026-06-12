@@ -39,7 +39,8 @@ type ExpectedPartTypes =
 	| 'document'
 	| 'tool-call'
 	| 'tool-result'
-	| 'thinking';
+	| 'thinking'
+	| 'structured-output';
 
 type _DriftCheck = Expect<Equal<UiMessagePart['type'], ExpectedPartTypes>>;
 

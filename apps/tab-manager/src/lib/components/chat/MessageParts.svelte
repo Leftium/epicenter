@@ -53,6 +53,10 @@
 		{@render mediaPart('[Video content]')}
 	{:else if part.type === 'document'}
 		{@render mediaPart('[Document content]')}
+	{:else if part.type === 'structured-output'}
+		<!-- Only produced when createChat is given an outputSchema, which this
+			app never sets. Persisted parts from a future build could carry it. -->
+		{@render mediaPart('[Structured output]')}
 	{:else}
 		{@render mediaPart(`[Unsupported part: ${unknownPartType(part)}]`)}
 	{/if}

@@ -4,6 +4,7 @@
 	import { Spinner } from '@epicenter/ui/spinner';
 	import ShieldAlertIcon from '@lucide/svelte/icons/shield-alert';
 	import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
+	import ShieldXIcon from '@lucide/svelte/icons/shield-x';
 	import WrenchIcon from '@lucide/svelte/icons/wrench';
 	import type { ToolCallPart as TanStackToolCallPart } from '@tanstack/ai-client';
 	import { requireTabManager } from '$lib/session.svelte';
@@ -20,7 +21,15 @@
 		onDenyToolCall: (approvalId: string) => void;
 	} = $props();
 
-	const isRunning = $derived(part.output == null);
+	const isApprovalRequested = $derived(part.state === 'approval-requested');
+	const isDenied = $derived(part.approval?.approved === false);
+	// A settled call is one whose output landed; `state` alone cannot say
+	// this because the runtime settles successes at 'complete' but errors at
+	// 'input-complete' (and rows persisted by older builds settle there too).
+	// Denied calls never receive an output, so they settle by approval.
+	const isRunning = $derived(
+		part.output == null && !isApprovalRequested && !isDenied,
+	);
 	const isFailed = $derived(
 		typeof part.output === 'object' &&
 			part.output !== null &&
@@ -31,13 +40,12 @@
 			?.title ??
 			part.name.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase()),
 	);
-	const isApprovalRequested = $derived(part.state === 'approval-requested');
 	const isAutoApproved = $derived(
 		isApprovalRequested &&
 			tabManager.state.toolTrust.shouldAutoApprove(part.name),
 	);
 	const badgeVariant = $derived.by(() => {
-		if (isApprovalRequested) return 'secondary';
+		if (isApprovalRequested || isDenied) return 'secondary';
 		if (isFailed) return 'status.failed';
 		if (isRunning) return 'status.running';
 		return 'status.completed';
@@ -78,18 +86,22 @@
 			<ShieldCheckIcon class="size-3 text-green-500" />
 		{:else if isApprovalRequested}
 			<ShieldAlertIcon class="size-3 text-amber-500" />
+		{:else if isDenied}
+			<ShieldXIcon class="size-3 text-muted-foreground" />
 		{:else if isRunning}
 			<Spinner class="size-3 text-blue-500" />
 		{:else}
 			<WrenchIcon class="size-3 text-muted-foreground" />
 		{/if}
 		<Badge variant={badgeVariant}>
-			{displayName}{isRunning && !isApprovalRequested ? '…': ''}
+			{displayName}{isRunning ? '…': ''}
 		</Badge>
 	</div>
 
 	{#if isAutoApproved}
 		<div class="pl-[1.125rem] text-xs text-muted-foreground">Auto-approved</div>
+	{:else if isDenied}
+		<div class="pl-[1.125rem] text-xs text-muted-foreground">Denied</div>
 	{:else if isApprovalRequested}
 		<div class="flex items-center gap-1.5 pl-[1.125rem]">
 			<Button variant="outline" size="sm" onclick={handleAllow}> Allow </Button>

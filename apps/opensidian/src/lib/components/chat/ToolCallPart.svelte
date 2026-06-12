@@ -3,6 +3,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import ShieldAlertIcon from '@lucide/svelte/icons/shield-alert';
+	import ShieldXIcon from '@lucide/svelte/icons/shield-x';
 	import WrenchIcon from '@lucide/svelte/icons/wrench';
 	import type { ToolCallPart as TanStackToolCallPart } from '@tanstack/ai-client';
 
@@ -16,13 +17,20 @@
 		onDenyToolCall: (approvalId: string) => void;
 	} = $props();
 
-	const isRunning = $derived(part.output == null);
+	const isApprovalRequested = $derived(part.state === 'approval-requested');
+	const isDenied = $derived(part.approval?.approved === false);
+	// A settled call is one whose output landed; `state` alone cannot say
+	// this because the runtime settles successes at 'complete' but errors at
+	// 'input-complete' (and rows persisted by older builds settle there too).
+	// Denied calls never receive an output, so they settle by approval.
+	const isRunning = $derived(
+		part.output == null && !isApprovalRequested && !isDenied,
+	);
 	const isFailed = $derived(
 		typeof part.output === 'object' &&
 			part.output !== null &&
 			'error' in part.output,
 	);
-	const isApprovalRequested = $derived(part.state === 'approval-requested');
 
 	const displayName = $derived(
 		part.name
@@ -32,6 +40,7 @@
 	);
 
 	const badgeVariant = $derived.by(() => {
+		if (isApprovalRequested || isDenied) return 'secondary' as const;
 		if (isFailed) return 'status.failed' as const;
 		if (isRunning) return 'status.running' as const;
 		return 'status.completed' as const;
@@ -48,17 +57,21 @@
 	<div class="flex items-center gap-1.5">
 		{#if isApprovalRequested}
 			<ShieldAlertIcon class="size-3 text-amber-500" />
+		{:else if isDenied}
+			<ShieldXIcon class="size-3 text-muted-foreground" />
 		{:else if isRunning}
 			<Spinner class="size-3 text-blue-500" />
 		{:else}
 			<WrenchIcon class="size-3 text-muted-foreground" />
 		{/if}
-		<Badge variant={isApprovalRequested ? 'secondary': badgeVariant}>
-			{displayName}{isRunning && !isApprovalRequested ? '…': ''}
+		<Badge variant={badgeVariant}>
+			{displayName}{isRunning ? '…': ''}
 		</Badge>
 	</div>
 
-	{#if isApprovalRequested}
+	{#if isDenied}
+		<div class="pl-[1.125rem] text-xs text-muted-foreground">Denied</div>
+	{:else if isApprovalRequested}
 		<div class="flex items-center gap-1.5 pl-[1.125rem]">
 			<Button
 				variant="outline"

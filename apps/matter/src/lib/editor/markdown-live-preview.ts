@@ -77,10 +77,7 @@ export function collectHiddenMarkerRanges(
 				if (!markers || isRevealed(node)) return;
 
 				const construct = node.node;
-				if (
-					node.type.name === 'Link' &&
-					!isPreviewableLink(construct, state)
-				) {
+				if (node.type.name === 'Link' && !isPreviewableLink(construct, state)) {
 					return;
 				}
 

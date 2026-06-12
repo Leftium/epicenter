@@ -38,7 +38,7 @@ export function isTranscriptionServiceConfigured(
 		case 'cloud':
 			return deviceConfig.get(service.apiKeyKey) !== '';
 		case 'self-hosted':
-			return deviceConfig.get(service.serverUrlKey) !== '';
+			return deviceConfig.get(service.endpointKey) !== '';
 		case 'local':
 			return deviceConfig.get(service.modelKey) !== '';
 	}

@@ -122,13 +122,20 @@ Standalone commits per phase. Each phase typechecks alone.
 
 ### Phase 3: vocabulary unification and Custom fold
 
-- [ ] **3.1** `transform.ts`: rename `apiKeyPath`/`endpointPath` to
+- [x] **3.1** `transform.ts`: rename `apiKeyPath`/`endpointPath` to
       `apiKeyKey`/`endpointKey`; make `endpointKey` explicit `null` where absent;
       add the Custom entry; delete the Custom branch; trim `apiKey`, `model`, and
       endpoint once at the call site.
-- [ ] **3.2** `providers.ts`: rename `serverUrlKey` to `endpointKey` on
+  > **Note**: The map is now `satisfies Record<InferenceProviderId, ...>` and
+  > renamed to `COMPLETION_PROVIDERS` ("standard" stopped meaning anything once
+  > Custom joined). Exhaustiveness deleted the `Unsupported provider` guard:
+  > adding a provider to INFERENCE without an entry is now a compile error.
+- [x] **3.2** `providers.ts`: rename `serverUrlKey` to `endpointKey` on
       `SelfHostedProvider`; update `transcribe.ts` and
       `transcription-validation.ts`.
+  > **Note**: Extended the uniform-null decision to `CloudProvider.endpointKey`
+  > as well (ElevenLabs/Deepgram/Mistral carry explicit `null`), which let
+  > transcribe.ts drop its `'endpointKey' in provider` narrowing trick.
 
 ### Phase 4: rename the component
 

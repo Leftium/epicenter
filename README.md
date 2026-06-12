@@ -4,8 +4,8 @@
   </a>
   <h1 align="center">Epicenter</h1>
   <p align="center"><strong>Local-first apps. One workspace you own.</strong></p>
-  <p align="center">Capture in purpose-built apps. Read the generated Markdown. Query the SQLite mirror.<br>Curate what matters into Markdown folders you can grep, version, and keep forever. Sync between devices when you want.</p>
-  <p align="center">Whispering is downloadable today. A workspace-native refresh of Whispering is in progress, and the shared workspace for tabs, notes, drafts, and publishing is being built in public on <code>@epicenter/workspace</code>.</p>
+  <p align="center">Your data lives on your machine as plain Markdown and SQLite: files you can grep, version, open in Obsidian, and keep forever.</p>
+  <p align="center">Whispering, our desktop speech-to-text app for macOS, Windows, and Linux, is installable today.</p>
 </p>
 
 <p align="center">
@@ -47,7 +47,7 @@
 
 ## Install Whispering
 
-[Whispering](apps/whispering) is the first shipped app in the Epicenter repo: a desktop speech-to-text tool for macOS, Windows, and Linux.
+[Whispering](apps/whispering) is Epicenter's desktop speech-to-text app for macOS, Windows, and Linux.
 
 ```bash
 brew install --cask whispering
@@ -63,7 +63,7 @@ Press a shortcut, speak, optionally transform the transcript, and paste the resu
 
 The hard problem with local-first apps is synchronization. If each device has its own SQLite file or Markdown folder, how do you keep them in sync? [`@epicenter/workspace`](packages/workspace) answers by making Yjs the source of truth, then projecting app state to SQLite for queries and Markdown for reading.
 
-The package gives apps typed tables, local persistence, materializers, collaboration hooks, and validated actions.
+Alongside typed tables, local persistence, collaboration hooks, and validated actions, the package gives apps materializers, the writers that project state to disk.
 
 ```typescript
 import { column, createWorkspace, defineTable } from '@epicenter/workspace';
@@ -93,18 +93,18 @@ workspace.tables.notes.set({
 
 ## How It Works
 
-Epicenter separates app-owned data from user-owned Markdown. The model is being built in public; [Matter](apps/matter) is the current WIP front for the folders-you-own side: a typed grid that edits ordinary Markdown folders directly. It does not write into `apps/<name>/`.
+Epicenter separates app-owned data from user-owned Markdown. App output belongs under `apps/<name>/`; folders you own stay ordinary Markdown.
 
 ```txt
 workspace/
-|-- apps/<name>/        generated app projections; read, grep, quote, copy
+|-- apps/<name>/        generated app output; read, grep, quote, copy
 |-- .epicenter/         machine state; ignore
 |-- journal/            your Markdown; edit, commit, curate, publish
 |-- ideas/              your Markdown
 `-- publish/            your publishable artifacts
 ```
 
-The rule is simple: `apps/<name>/` is for reading app output, not hand-editing it. To change app data, use the app or a validated CLI action. To keep something forever, copy it into a folder you own.
+The rule is simple: `apps/<name>/` is for reading app output, not hand-editing it. To change app data, use the app or a CLI action validated against the app's schema. To keep something forever, copy it into a folder you own.
 
 Your folders are ordinary Markdown: grep them, open them in Obsidian, version them with Git, publish them with whatever static site stack you like.
 
@@ -130,7 +130,7 @@ updatedAt: "2026-06-10T16:49:59.180Z"
 Follow up on the README framing.
 ```
 
-Matter already implements this pattern for the folders you own: it keeps a disposable `matter.sqlite` mirror of each managed folder, so agents and scripts can query your Markdown as SQL:
+Matter applies the same SQLite-mirror idea to the folders you own: it keeps a disposable `matter.sqlite` mirror of each managed folder, so agents and scripts can query your Markdown as SQL:
 
 ```bash
 sqlite3 matter.sqlite 'select "name" from "journal" limit 5;'
@@ -138,9 +138,9 @@ sqlite3 matter.sqlite 'select "name" from "journal" limit 5;'
 
 ## Status
 
-Whispering is the first shipped app: install it today on macOS, Windows, or Linux. A larger workspace-native refresh of Whispering is in progress, and current installs will receive it through the normal release path.
+A refresh of Whispering built on the workspace is in progress, and current installs will receive it through the normal release path.
 
-The shared workspace for tabs, notes, drafts, and publishing is being built in public around `@epicenter/workspace`. [Matter](apps/matter) is the current WIP front for the folders-you-own side: it edits ordinary Markdown folders and keeps `matter.sqlite` as a query mirror. Other app folders are public research and prototypes.
+The shared workspace for tabs, notes, drafts, and publishing is being built in public around `@epicenter/workspace`. [Matter](apps/matter) is an early app for user-owned Markdown folders: it edits ordinary Markdown directly and keeps `matter.sqlite` as a query mirror. Other app folders are public research and prototypes.
 
 ## Trust Boundaries
 
@@ -148,13 +148,13 @@ Pick the trust model you want.
 
 | Path | What leaves your device |
 | --- | --- |
-| Whispering with local Whisper C++ | Audio can stay on your device. Transcripts and settings are stored locally by the desktop app. |
+| Whispering with local Whisper C++ | Audio stays on your device when you use local Whisper C++. Transcripts and settings are stored locally by the desktop app. |
 | Whispering with a cloud transcription provider | Audio goes from your device to the provider you choose. Epicenter servers are not in that transcription path. |
 | Whispering transformations | Transcript text goes to the LLM provider you choose when you enable that step. |
 | Hosted Epicenter API or sync | Encrypted workspace updates, account/session data, and enabled hosted feature requests go to Epicenter servers. |
 | Self-hosted deployable | You control the server, secrets, deployment, and infrastructure boundary. |
 
-Signed-in workspace sync sends encrypted CRDT values over Yjs. On hosted Epicenter, encryption keys are server-managed; self-hosting moves the key boundary to infrastructure you control. See the [encryption design](docs/encryption.md) for the full trust model.
+Signed-in workspace sync sends encrypted CRDT values over Yjs. Hosted Epicenter manages keys for you; self-hosting keeps key management in infrastructure you control. See the [encryption design](docs/encryption.md) for the full trust model.
 
 The detailed privacy notes for Whispering live in [apps/whispering](apps/whispering).
 
@@ -236,7 +236,7 @@ bun run check
 
 ## Design Notes
 
-Implementation specs and design notes live in [specs/](specs). Start with [docs/README.md](docs/README.md), [specs/README.md](specs/README.md), and the current front-door plan in [specs/20260610T173324-root-readme-public-front-door.md](specs/20260610T173324-root-readme-public-front-door.md).
+Implementation specs and design notes live in [specs/](specs). Start with [docs/README.md](docs/README.md) and [specs/README.md](specs/README.md).
 
 ## Contributing
 
@@ -252,9 +252,9 @@ Epicenter uses a two-tier split:
 
 - [MIT](licenses/LICENSE-MIT) for the local-first-on-Yjs developer toolkit: `@epicenter/workspace`, `@epicenter/ui`, `@epicenter/filesystem`, and `@epicenter/sync`.
 - [AGPL-3.0](licenses/LICENSE-AGPL-3.0) or later for non-toolkit app surfaces, hosted server code, and internal packages.
-- Proprietary is a deferred, empty tier. Revenue is intended to come from hosting and services, not from selling closed licenses.
+- There is no proprietary tier today. Revenue is intended to come from hosting and services, not from selling closed licenses.
 
-The toolkit dependency closure is MIT, enforced by `bun run check:licenses`. The license split follows the same broad pattern as Plausible and PostHog for hosted open-source services, and Yjs for MIT core libraries with copyleft server pieces.
+Every dependency of the toolkit packages is MIT-compatible, enforced by `bun run check:licenses`. The license split follows the same broad pattern as Plausible and PostHog for hosted open-source services, and Yjs for MIT core libraries with copyleft server pieces.
 
 See the root [LICENSE](LICENSE), [FINANCIAL_SUSTAINABILITY.md](FINANCIAL_SUSTAINABILITY.md), and [licensing strategy spec](specs/20260428T120000-licensing-strategy.md) for the full model.
 

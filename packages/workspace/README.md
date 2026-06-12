@@ -389,8 +389,8 @@ Epicenter supports distributed sync where Y.Doc instances replicate across devic
    └────┬─────┘           └────┬─────┘              └────┬─────┘
         │                      │                         │
    (no server)            ┌────▼─────┐              ┌────▼─────┐
-        │                 │ Elysia   │◄────────────►│ Elysia   │
-        │                 │ :3913    │  server-to-  │ :3913    │
+        │                 │ Hono     │◄────────────►│ Hono     │
+        │                 │ relay    │  server-to-  │ relay    │
         │                 └────┬─────┘    server    └────┬─────┘
         │                      │                         │
         └──────────────────────┴─────────────────────────┘

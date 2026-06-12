@@ -1,6 +1,6 @@
 # @epicenter/cli
 
-> Introspect and invoke `defineQuery` / `defineMutation` actions exposed by configured project mounts, locally or on a peer that's online right now.
+> Introspect and invoke `defineQuery` / `defineMutation` actions exposed by configured project mounts, locally or on a currently online peer.
 
 Each verb is a one-line shell shortcut for one workspace primitive:
 
@@ -41,18 +41,18 @@ The same env var and scripts apply to every command that talks to the API, inclu
 ```bash
 epicenter auth login
 
-epicenter daemon up -C ~/vault
+epicenter daemon up -C ~/workspace
 epicenter daemon ps
-epicenter daemon logs -C ~/vault
-epicenter daemon down -C ~/vault
+epicenter daemon logs -C ~/workspace
+epicenter daemon down -C ~/workspace
 
-epicenter list -C ~/vault
-epicenter list fuji.entries_update -C ~/vault
+epicenter list -C ~/workspace
+epicenter list fuji.entries_update -C ~/workspace
 
-epicenter run fuji.entries_update '{"id":"entry_1","tags":["triaged"]}' -C ~/vault
-epicenter run fuji.entries_update '{"id":"entry_1","tags":["triaged"]}' --peer user-1 -C ~/vault
+epicenter run fuji.entries_update '{"id":"entry_1","tags":["triaged"]}' -C ~/workspace
+epicenter run fuji.entries_update '{"id":"entry_1","tags":["triaged"]}' --peer user-1 -C ~/workspace
 
-epicenter peers -C ~/vault
+epicenter peers -C ~/workspace
 ```
 
 `-C` is a start directory for project discovery. Discovery walks upward until it finds `epicenter.config.ts`, then the daemon starts every mount in that config.

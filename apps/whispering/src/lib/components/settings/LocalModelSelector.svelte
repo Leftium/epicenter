@@ -11,10 +11,7 @@
 	import { open } from '@tauri-apps/plugin-dialog';
 	import type { Snippet } from 'svelte';
 	import type { LocalModelConfig } from '$lib/constants/local-models';
-	import {
-		importModelDirectory,
-		importModelFile,
-	} from '$lib/services/transcription/local-model-storage';
+	import { validateModelSelection } from '$lib/services/transcription/local-model-storage';
 	import { PROVIDERS } from '$lib/services/transcription/providers';
 	import { tauri } from '#platform/tauri';
 	import LocalModelDownloadCard from './LocalModelDownloadCard.svelte';
@@ -25,8 +22,8 @@
 	type LocalModelSelectorProps = {
 		/**
 		 * Pre-built models available for download. All entries share one
-		 * engine; at least one is required because the engine decides where
-		 * manual imports land.
+		 * engine; at least one is required because the engine decides what
+		 * kind of path manual selection picks and validates.
 		 */
 		models: readonly [LocalModelConfig, ...LocalModelConfig[]];
 
@@ -61,7 +58,7 @@
 
 	const engine = $derived(models[0].engine);
 
-	// Not a free choice: an imported path must match what the engine's
+	// Not a free choice: a selected path must match what the engine's
 	// preflight accepts (a file for Whisper, a directory for Parakeet and
 	// Moonshine), so the mode comes from the provider registry.
 	const fileSelectionMode = $derived(PROVIDERS[engine].preflightKind);
@@ -89,7 +86,8 @@
 	const isPrebuiltModel = $derived(!!prebuiltModelInfo);
 
 	/**
-	 * Open file/folder browser for manual model selection
+	 * Open file/folder browser for manual model selection. The chosen path is
+	 * validated and stored as-is; the model stays where the user keeps it.
 	 */
 	async function selectModel() {
 		if (!tauri) return;
@@ -102,9 +100,9 @@
 			});
 			if (!selected) return;
 
-			const { data, error } = await importModelDirectory({
+			const { error } = await validateModelSelection({
 				engine,
-				sourceDir: selected,
+				path: selected,
 			});
 			if (error) {
 				toast.error('Failed to select model', {
@@ -112,8 +110,8 @@
 				});
 				return;
 			}
-			value = data.path;
-			toast.success('Model directory imported');
+			value = selected;
+			toast.success('Model directory selected');
 		} else {
 			const filters =
 				fileExtensions.length > 0
@@ -132,9 +130,9 @@
 			});
 			if (!selected) return;
 
-			const { data, error } = await importModelFile({
+			const { error } = await validateModelSelection({
 				engine,
-				sourcePath: selected,
+				path: selected,
 			});
 			if (error) {
 				toast.error('Failed to select model', {
@@ -142,8 +140,8 @@
 				});
 				return;
 			}
-			value = data.path;
-			toast.success('Model file imported');
+			value = selected;
+			toast.success('Model file selected');
 		}
 	}
 
@@ -232,6 +230,13 @@
 							{/if}
 						</Button>
 					</div>
+
+					<p class="mt-2 text-sm text-muted-foreground">
+						Whispering uses the {fileSelectionMode === 'directory'
+							? 'directory'
+							: 'file'} where it is on disk; nothing is copied. If you move or
+						delete it, select it again here.
+					</p>
 
 					<!-- Display selected model info -->
 					{#if value}

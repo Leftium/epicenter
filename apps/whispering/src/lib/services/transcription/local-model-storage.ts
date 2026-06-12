@@ -1,7 +1,9 @@
 /**
  * On-disk storage for pre-built local transcription models: resolve where a
  * model lives, verify an install, stream downloads from the catalog URLs,
- * import user-selected files or directories, and delete installs.
+ * and delete installs. Also validates user-selected model paths
+ * (`validateModelSelection`); manual selections are referenced in place and
+ * never copied into appdata.
  *
  * UI-free and settings-free. Activation (writing the model path into
  * `deviceConfig`) lives in `$lib/operations/local-models.ts`.
@@ -11,9 +13,8 @@
  * - Parakeet:  `models/parakeet/{directoryName}/` (multiple ONNX files)
  * - Moonshine: `models/moonshine/{directoryName}/` (multiple ONNX files)
  */
-import { basename, join } from '@tauri-apps/api/path';
+import { join } from '@tauri-apps/api/path';
 import {
-	copyFile,
 	exists,
 	mkdir,
 	readDir,
@@ -31,6 +32,7 @@ import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { LocalModelConfig } from '$lib/constants/local-models';
 import { PATHS } from '$lib/services/fs-paths';
 import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
+import { PROVIDERS } from '$lib/services/transcription/providers';
 
 export const LocalModelStorageError = defineErrors({
 	DownloadRequestFailed: ({
@@ -63,9 +65,19 @@ export const LocalModelStorageError = defineErrors({
 		message: extractErrorMessage(cause),
 		cause,
 	}),
-	ImportFailed: ({ cause }: { cause: unknown }) => ({
-		message: extractErrorMessage(cause),
-		cause,
+	InvalidModelSelection: ({
+		engineDisplayName,
+		kind,
+	}: {
+		engineDisplayName: string;
+		kind: 'file' | 'directory';
+	}) => ({
+		message:
+			kind === 'directory'
+				? `${engineDisplayName} models must be directories containing model files.`
+				: `${engineDisplayName} models must be a single file.`,
+		engineDisplayName,
+		kind,
 	}),
 	EmptyModelDirectory: () => ({
 		message: 'Selected directory appears to be empty',
@@ -284,6 +296,10 @@ export function createModelStorage(model: LocalModelConfig) {
 		 * Remove the model's files from disk. Succeeds (and returns the
 		 * canonical path) even when nothing is installed, so callers can
 		 * always reconcile settings against the returned path.
+		 *
+		 * Only ever removes the model's canonical catalog path under appdata
+		 * (`getPath`). A manually selected model outside appdata is referenced
+		 * in place by settings and can never be deleted through here.
 		 */
 		async delete(): Promise<Result<{ path: string }, LocalModelStorageError>> {
 			return tryAsync({
@@ -301,76 +317,57 @@ export function createModelStorage(model: LocalModelConfig) {
 	};
 }
 
-/** Copy a user-selected model file into the engine's models directory. */
-export async function importModelFile({
+/**
+ * Check that a user-selected path can serve as `engine`'s model: it must
+ * exist as the kind the engine's preflight expects (a file for Whisper, a
+ * directory for Parakeet and Moonshine), and directories must not be empty.
+ *
+ * Validation only. The selected path is stored in settings as-is and used
+ * where it is on disk; nothing is copied, moved, or symlinked into appdata.
+ */
+export async function validateModelSelection({
 	engine,
-	sourcePath,
+	path,
 }: {
 	engine: Engine;
-	sourcePath: string;
-}): Promise<Result<{ path: string }, LocalModelStorageError>> {
-	return tryAsync({
-		try: async () => {
-			const modelsDir = await PATHS.MODELS[engine]();
-			await mkdir(modelsDir, { recursive: true });
-			const destination = await join(modelsDir, await basename(sourcePath));
-			await copyFile(sourcePath, destination);
-			return { path: destination };
-		},
-		catch: (error) => LocalModelStorageError.ImportFailed({ cause: error }),
+	path: string;
+}): Promise<Result<void, LocalModelStorageError>> {
+	const { preflightKind: kind, label: engineDisplayName } = PROVIDERS[engine];
+
+	const { data: stats } = await tryAsync({
+		try: () => stat(path),
+		catch: () => Ok(null),
 	});
-}
+	if (!stats) {
+		return LocalModelStorageError.InvalidModelSelection({
+			engineDisplayName,
+			kind,
+		});
+	}
 
-async function copyDirectoryRecursive(
-	sourceDir: string,
-	destinationDir: string,
-): Promise<void> {
-	await mkdir(destinationDir, { recursive: true });
-	const entries = await readDir(sourceDir);
+	const isCorrectKind = kind === 'directory' ? stats.isDirectory : stats.isFile;
+	if (!isCorrectKind) {
+		return LocalModelStorageError.InvalidModelSelection({
+			engineDisplayName,
+			kind,
+		});
+	}
 
-	for (const entry of entries) {
-		const sourcePath = await join(sourceDir, entry.name);
-		const destinationPath = await join(destinationDir, entry.name);
-
-		if (entry.isDirectory) {
-			await copyDirectoryRecursive(sourcePath, destinationPath);
-		} else if (entry.isFile) {
-			await copyFile(sourcePath, destinationPath);
-		} else {
-			throw new Error('Selected model directory cannot include symlinks');
+	if (kind === 'directory') {
+		const { data: entries } = await tryAsync({
+			try: () => readDir(path),
+			catch: () => Ok(null),
+		});
+		if (!entries) {
+			return LocalModelStorageError.InvalidModelSelection({
+				engineDisplayName,
+				kind,
+			});
+		}
+		if (entries.length === 0) {
+			return LocalModelStorageError.EmptyModelDirectory();
 		}
 	}
-}
 
-/**
- * Copy a user-selected model directory into the engine's models directory,
- * keeping the source directory's name. Rejects empty directories and
- * directories containing symlinks.
- */
-export async function importModelDirectory({
-	engine,
-	sourceDir,
-}: {
-	engine: Engine;
-	sourceDir: string;
-}): Promise<Result<{ path: string }, LocalModelStorageError>> {
-	const { data: entries, error: readError } = await tryAsync({
-		try: () => readDir(sourceDir),
-		catch: (error) => LocalModelStorageError.ImportFailed({ cause: error }),
-	});
-	if (readError) return Err(readError);
-	if (entries.length === 0) {
-		return LocalModelStorageError.EmptyModelDirectory();
-	}
-
-	return tryAsync({
-		try: async () => {
-			const modelsDir = await PATHS.MODELS[engine]();
-			await mkdir(modelsDir, { recursive: true });
-			const destination = await join(modelsDir, await basename(sourceDir));
-			await copyDirectoryRecursive(sourceDir, destination);
-			return { path: destination };
-		},
-		catch: (error) => LocalModelStorageError.ImportFailed({ cause: error }),
-	});
+	return Ok(undefined);
 }

@@ -8,7 +8,6 @@
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import MicIcon from '@lucide/svelte/icons/mic';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import { sep } from '@tauri-apps/api/path';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
 	import {
@@ -180,7 +179,7 @@
 							{@const isSelected =
 								getSelectedServiceId() === service.id}
 							{@const isConfigured = isTranscriptionServiceConfigured(service)}
-							{@const modelPath = getSelectedModelNameOrUrl(service)}
+							{@const modelName = getSelectedModelNameOrUrl(service)}
 
 							<Command.Item
 								value={`${service.id} ${service.label} whisper cpp ggml local offline`}
@@ -198,14 +197,12 @@
 								{@render renderServiceIcon(service)}
 								<div class="flex-1 min-w-0">
 									<div class="font-medium text-sm">{service.label}</div>
-									{#if modelPath}
+									{#if modelName}
 										<div class="text-xs text-muted-foreground truncate">
-											{modelPath.split(sep()).pop() || modelPath}
+											{modelName}
 										</div>
 									{:else if !isConfigured}
-										<span class="text-xs text-warning">
-											Model file required
-										</span>
+										<span class="text-xs text-warning">Model required</span>
 									{/if}
 								</div>
 							</Command.Item>

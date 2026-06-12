@@ -8,7 +8,7 @@ import {
 
 const INITIAL_STATE: LocalModelState = {
 	engine: null,
-	modelPath: null,
+	modelName: null,
 	status: { kind: 'idle' },
 };
 

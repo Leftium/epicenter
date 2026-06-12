@@ -129,7 +129,7 @@ type _TranscriptionConfigShape = Expect<
 		TranscriptionConfig,
 		{
 			engine: 'whispercpp' | 'parakeet' | 'moonshine';
-			modelPath: string;
+			modelName: string;
 			language?: string | null;
 			initialPrompt?: string | null;
 			unloadPolicy:

@@ -10,7 +10,6 @@
 	} from '$lib/migration/migrate-settings';
 	import { analytics } from '$lib/operations/analytics';
 	import { services } from '$lib/services';
-	import { resolveModelPath } from '$lib/services/transcription/local-model-folder';
 	import {
 		isLocalProviderId,
 		PROVIDERS,
@@ -49,9 +48,10 @@
 	});
 
 	// Push the ambient transcription config to Rust whenever it changes. Rust
-	// owns the resident model lifecycle (cache, preload, eviction); the FE
-	// just mirrors the current settings on a single channel.
-	// - Drift in (engine, modelPath) triggers a background preload.
+	// owns the resident model lifecycle (cache, preload, eviction) and
+	// resolves the model name against its models directory; the FE just
+	// mirrors the current settings on a single channel.
+	// - Drift in (engine, modelName) triggers a background preload.
 	// - Other field changes (language, prompt, unloadPolicy) take effect on
 	//   the next transcription with no reload.
 	// Fires once on mount (per local engine) and on every subsequent change.
@@ -65,21 +65,14 @@
 
 		const language = settings.get('transcription.language');
 		const prompt = settings.get('transcription.prompt');
-		const unloadPolicy = deviceConfig.get(
-			'transcription.localModelUnloadPolicy',
-		);
-		// Every reactive dependency is read above; the async tail resolves the
-		// folder entry name to the absolute path Rust expects.
-		void resolveModelPath(service, modelName)
-			.then((modelPath) =>
-				commands.setTranscriptionConfig({
-					engine: service,
-					modelPath,
-					language: language === 'auto' ? null : language,
-					initialPrompt: prompt || null,
-					unloadPolicy,
-				}),
-			)
+		void commands
+			.setTranscriptionConfig({
+				engine: service,
+				modelName,
+				language: language === 'auto' ? null : language,
+				initialPrompt: prompt || null,
+				unloadPolicy: deviceConfig.get('transcription.localModelUnloadPolicy'),
+			})
 			.catch((err) => {
 				console.error('Failed to push transcription config to Rust:', err);
 			});

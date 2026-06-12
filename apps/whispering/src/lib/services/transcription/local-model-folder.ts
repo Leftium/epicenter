@@ -2,10 +2,11 @@
  * The engine's models folder, as a module. The folder is the single source
  * of truth for local transcription models: catalog downloads land in it,
  * and users add their own models by dropping (or symlinking) them into it.
- * Settings store a folder entry name, never a path; this module owns
- * resolving and validating names against the folder, listing its entries,
- * streaming catalog downloads into it, and deleting entries, never anything
- * outside the folder.
+ * Settings store a folder entry name, never a path; Rust resolves and
+ * validates the name against the folder at load time (`model_path_for` in
+ * `src-tauri/src/transcription/model_manager.rs`). This module owns the
+ * JS view of the folder: listing entries, streaming catalog downloads into
+ * it, and deleting entries, never anything outside the folder.
  *
  * UI-free and settings-free. Activation (writing the model name into
  * `deviceConfig`) lives in `$lib/operations/local-models.ts`.
@@ -34,7 +35,6 @@ import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import type { LocalModelConfig } from '$lib/constants/local-models';
 import { PATHS } from '$lib/services/fs-paths';
 import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
-import { PROVIDERS } from '$lib/services/transcription/providers';
 
 export const LocalModelFolderError = defineErrors({
 	DownloadRequestFailed: ({
@@ -67,56 +67,6 @@ export const LocalModelFolderError = defineErrors({
 		message: extractErrorMessage(cause),
 		cause,
 	}),
-	ModelNotSelected: ({
-		engineDisplayName,
-		kind,
-	}: {
-		engineDisplayName: string;
-		kind: 'file' | 'directory';
-	}) => ({
-		message: `Please select a ${engineDisplayName} model ${kind} in settings.`,
-		engineDisplayName,
-		kind,
-	}),
-	ModelNotFound: ({
-		modelName,
-		kind,
-	}: {
-		modelName: string;
-		kind: 'file' | 'directory';
-	}) => ({
-		message: `The model ${kind} "${modelName}" is no longer in the models folder.`,
-		modelName,
-		kind,
-	}),
-	InvalidModel: ({
-		engineDisplayName,
-		kind,
-	}: {
-		engineDisplayName: string;
-		kind: 'file' | 'directory';
-	}) => ({
-		message:
-			kind === 'directory'
-				? `${engineDisplayName} models must be directories containing model files.`
-				: `${engineDisplayName} models must be a single file.`,
-		engineDisplayName,
-		kind,
-	}),
-	EmptyModelDirectory: () => ({
-		message: 'Selected directory appears to be empty',
-	}),
-	CorruptedModelFile: ({
-		actualSizeMb,
-		expectedSizeMb,
-	}: {
-		actualSizeMb: number;
-		expectedSizeMb: number;
-	}) => ({
-		message: `The model file is ${actualSizeMb}MB but should be ~${expectedSizeMb}MB. This usually happens when a download was interrupted. Please delete and re-download the model.`,
-		actualSizeMb,
-		expectedSizeMb,
-	}),
 });
 export type LocalModelFolderError = InferErrors<typeof LocalModelFolderError>;
 
@@ -127,84 +77,15 @@ const WHISPER_MODEL_EXTENSIONS = ['.bin', '.gguf', '.ggml'];
 
 /**
  * Resolve a folder entry name to the absolute path Rust loads. Pure path
- * math; does not touch disk or check that the entry exists.
+ * math; does not touch disk. The JS mirror of Rust's `model_path_for`,
+ * for JS-side checks that need to stat a known catalog file (e.g. the
+ * Whisper truncation check).
  */
 export async function resolveModelPath(
 	engine: Engine,
 	name: string,
 ): Promise<string> {
 	return join(await PATHS.MODELS[engine](), name);
-}
-
-/**
- * Validate the engine's selected model name and resolve it to the absolute
- * path Rust loads. Runs before every local transcription, so a model that
- * was removed from the folder degrades into a clear error instead of a Rust
- * load failure. A symlinked entry passes with its target unverified: the
- * webview's fs scope cannot follow a link out of appdata, so Rust (which
- * loads natively) is the arbiter for link targets. Never rejects.
- */
-export async function validateActiveModel({
-	engine,
-	name,
-}: {
-	engine: Engine;
-	name: string;
-}): Promise<Result<{ path: string }, LocalModelFolderError>> {
-	const { modelKind: kind, label: engineDisplayName } = PROVIDERS[engine];
-
-	if (!name) {
-		return LocalModelFolderError.ModelNotSelected({ engineDisplayName, kind });
-	}
-	// Names are folder entries, never paths. A separator means a stale
-	// pre-folder setting (absolute path) or hand-edited storage.
-	if (name.includes('/') || name.includes('\\')) {
-		return LocalModelFolderError.ModelNotFound({ modelName: name, kind });
-	}
-
-	const { data: path } = await tryAsync({
-		try: () => resolveModelPath(engine, name),
-		catch: () => Ok(null),
-	});
-	if (!path) {
-		return LocalModelFolderError.ModelNotFound({ modelName: name, kind });
-	}
-
-	const { data: stats } = await tryAsync({
-		try: () => stat(path),
-		catch: () => Ok(null),
-	});
-	if (!stats) {
-		const { data: isSymlinkEntry } = await tryAsync({
-			try: async () => {
-				const entries = await readDir(await PATHS.MODELS[engine]());
-				return entries.some((entry) => entry.name === name && entry.isSymlink);
-			},
-			catch: () => Ok(false),
-		});
-		if (isSymlinkEntry) return Ok({ path });
-		return LocalModelFolderError.ModelNotFound({ modelName: name, kind });
-	}
-
-	const isCorrectKind = kind === 'directory' ? stats.isDirectory : stats.isFile;
-	if (!isCorrectKind) {
-		return LocalModelFolderError.InvalidModel({ engineDisplayName, kind });
-	}
-
-	if (kind === 'directory') {
-		const { data: entries } = await tryAsync({
-			try: () => readDir(path),
-			catch: () => Ok(null),
-		});
-		if (!entries) {
-			return LocalModelFolderError.InvalidModel({ engineDisplayName, kind });
-		}
-		if (entries.length === 0) {
-			return LocalModelFolderError.EmptyModelDirectory();
-		}
-	}
-
-	return Ok({ path });
 }
 
 export type LocalModelEntry = {

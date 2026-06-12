@@ -135,7 +135,6 @@ export function createAiChatState({
 						data: {
 							provider: metadata?.provider ?? DEFAULT_PROVIDER,
 							model: metadata?.model ?? DEFAULT_MODEL,
-							conversationId,
 							systemPrompts: [
 								buildDeviceConstraints(deviceId),
 								TAB_MANAGER_SYSTEM_PROMPT,

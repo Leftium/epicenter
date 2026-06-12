@@ -117,7 +117,6 @@ export function createAiChatState({
 						data: {
 							provider: metadata?.provider ?? DEFAULT_PROVIDER,
 							model: metadata?.model ?? DEFAULT_MODEL,
-							conversationId,
 							systemPrompts: [
 								OPENSIDIAN_SYSTEM_PROMPT,
 								buildGlobalSkillsPrompt(

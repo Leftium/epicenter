@@ -39,7 +39,6 @@ const chatOptions = type({
 	'maxTokens?': 'number | undefined',
 	'topP?': 'number | undefined',
 	'metadata?': 'Record<string, unknown> | undefined',
-	'conversationId?': 'string | undefined',
 	'tools?': 'object[] | undefined',
 });
 

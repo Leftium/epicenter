@@ -9,6 +9,11 @@
  * BYOK: callers may pass `apiKey` in the request body, in which case the
  * deployment's provider key is ignored. No billing implications; the
  * library treats BYOK and house-key the same.
+ *
+ * House keys (`OPENAI_API_KEY`, `GEMINI_API_KEY`) are optional bindings: a
+ * deployment that omits one serves only BYOK requests for that provider,
+ * and a house-key request gets 503 ProviderNotConfigured. Hosted requires
+ * both at deploy time; see apps/api/wrangler.jsonc for why.
  */
 
 import {

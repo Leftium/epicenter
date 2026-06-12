@@ -69,6 +69,9 @@
 			// "2:newBase64,1:oldBase64"). Generate each secret with: openssl rand -base64 32
 			"ENCRYPTION_SECRETS",
 			"GOOGLE_CLIENT_SECRET",
+			// House AI keys are required here even though the library types them
+			// as optional bindings: hosted credits are billed against house-key
+			// usage, so a deploy without them would 503 paying users.
 			"OPENAI_API_KEY",
 			"AUTUMN_SECRET_KEY",
 			"GEMINI_API_KEY"

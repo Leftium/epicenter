@@ -34,17 +34,22 @@ wrangler secret put ...
   BETTER_AUTH_SECRET       openssl rand -base64 32
   ENCRYPTION_SECRETS       "1:$(openssl rand -base64 32)"  (versioned)
   GOOGLE_CLIENT_SECRET     your Google OAuth client secret
-  OPENAI_API_KEY           your provider key (or omit and BYOK)
-  GEMINI_API_KEY           your provider key (or omit and BYOK)
+  OPENAI_API_KEY           optional house key; omit and members BYOK
+  GEMINI_API_KEY           optional house key; omit and members BYOK
 ```
 
 ## Deploy
 
 ```bash
-bun run --cwd apps/self-host typegen      # generate worker-configuration.d.ts
 bun run --cwd apps/self-host typecheck
 bun run --cwd apps/self-host deploy
 ```
+
+`worker-configuration.d.ts` is hand-written: it inherits the library's
+binding contract (`ServerBindings`) and declares only deployment-owned
+vars, so there is no typegen step. If you add bindings of your own, declare
+them there (or regenerate with `bun run typegen` and re-add the `extends`
+clause).
 
 ## Composition
 

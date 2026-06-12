@@ -47,11 +47,11 @@ export type Connection = {
 /**
  * Hono context type for every library sub-app.
  *
- * `Bindings` is `Cloudflare.Env`, augmented by each deployment with the
+ * `Bindings` is `Cloudflare.Env`, declared by each deployment with the
  * exact set of bindings it provides. The library declares the bindings it
- * reads via {@link cloudflare-bindings.d.ts}; cloud-only bindings such as
- * `AUTUMN_SECRET_KEY` are declared in apps/api's generated types and never
- * appear in the library's required set.
+ * reads in the exported `ServerBindings` interface (see
+ * server-bindings.ts); cloud-only bindings such as `AUTUMN_SECRET_KEY` are
+ * declared in apps/api's generated types and never appear there.
  *
  * `Variables` are populated by request-scoped middleware: database client,
  * auth instance, resolved user, after-response queue, and the runtime-

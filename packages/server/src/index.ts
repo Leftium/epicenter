@@ -55,6 +55,10 @@ export { mountSessionApp } from './routes/session.js';
 // app via the `mount*` primitives.
 export { createServerApp } from './server-app.js';
 
+// Binding contract: the Cloudflare bindings the library reads from
+// `c.env`. Each deployment proves its own Env declaration against it
+// (extends in apps/self-host, satisfies in apps/api).
+export type { ServerBindings } from './server-bindings.js';
 // Public Hono context type the deployment composes around library
 // middleware.
 export type { Env } from './types.js';

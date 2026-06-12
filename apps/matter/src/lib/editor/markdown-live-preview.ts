@@ -4,12 +4,11 @@ import {
 	Decoration,
 	type DecorationSet,
 	EditorView,
-	type PluginValue,
 	ViewPlugin,
 	type ViewUpdate,
 } from '@codemirror/view';
 
-type VisibleRange = {
+type Span = {
 	from: number;
 	to: number;
 };
@@ -38,7 +37,7 @@ const headingPattern = /^ATXHeading([1-6])$/;
 
 export function collectMarkdownLivePreviewRanges(
 	state: EditorState,
-	visibleRanges: readonly VisibleRange[],
+	visibleRanges: readonly Span[],
 ): MarkdownLivePreviewRange[] {
 	const activeLines = collectActiveLines(state);
 	const ranges: MarkdownLivePreviewRange[] = [];
@@ -52,13 +51,18 @@ export function collectMarkdownLivePreviewRanges(
 			enter(node) {
 				const name = node.type.name;
 				const headingMatch = headingPattern.exec(name);
-				const linkInfo =
-					name === 'Link'
-						? getInlineLinkInfo(
-								state.doc.sliceString(node.from, node.to),
-								node.from,
-							)
-						: null;
+				let linkLabel: Span | null = null;
+				if (name === 'Link') {
+					const link = node.node;
+					// Only inline links carry a URL child; reference and
+					// shortcut links carry a LinkLabel instead.
+					if (link.getChild('URL')) {
+						const [labelOpen, labelClose] = link.getChildren('LinkMark');
+						if (labelOpen && labelClose && labelOpen.to < labelClose.from) {
+							linkLabel = { from: labelOpen.to, to: labelClose.from };
+						}
+					}
+				}
 
 				if (headingMatch) {
 					const level = headingMatch[1];
@@ -107,21 +111,16 @@ export function collectMarkdownLivePreviewRanges(
 					}
 				}
 
-				if (linkInfo) {
-					addMark(
-						ranges,
-						linkInfo.labelFrom,
-						linkInfo.labelTo,
-						'cm-matter-md-link',
-					);
+				if (linkLabel) {
+					addMark(ranges, linkLabel.from, linkLabel.to, 'cm-matter-md-link');
 				}
 
 				if (name === 'ListMark' || name === 'QuoteMark') {
 					addMark(ranges, node.from, node.to, 'cm-matter-md-structural-marker');
 				}
 
-				const activeRange = getHideActiveRange(name, contexts);
-				if (activeRange && !isActiveRange(state, activeLines, activeRange)) {
+				const revealScope = getRevealScope(name, contexts);
+				if (revealScope && !isActiveRange(state, activeLines, revealScope)) {
 					addHide(ranges, state, node.from, node.to);
 				}
 
@@ -129,7 +128,7 @@ export function collectMarkdownLivePreviewRanges(
 					name,
 					from: node.from,
 					to: node.to,
-					isInlineLink: linkInfo !== null,
+					isInlineLink: linkLabel !== null,
 				});
 			},
 			leave() {
@@ -138,7 +137,7 @@ export function collectMarkdownLivePreviewRanges(
 		});
 	}
 
-	return uniqueSortedRanges(ranges);
+	return ranges;
 }
 
 export function markdownLivePreview(): Extension {
@@ -146,7 +145,7 @@ export function markdownLivePreview(): Extension {
 }
 
 const markdownLivePreviewPlugin = ViewPlugin.define(
-	(view): PluginValue & { decorations: DecorationSet } => ({
+	(view) => ({
 		decorations: buildDecorations(view),
 		update(update: ViewUpdate) {
 			if (
@@ -205,12 +204,14 @@ const markdownLivePreviewTheme = EditorView.baseTheme({
 	},
 });
 
+const hideDecoration = Decoration.replace({});
+
 function buildDecorations(view: EditorView): DecorationSet {
 	return Decoration.set(
 		collectMarkdownLivePreviewRanges(view.state, view.visibleRanges).map(
 			(range) => {
 				if (range.type === 'hide') {
-					return Decoration.replace({}).range(range.from, range.to);
+					return hideDecoration.range(range.from, range.to);
 				}
 
 				return Decoration.mark({ class: range.className }).range(
@@ -241,7 +242,7 @@ function collectActiveLines(state: EditorState): Set<number> {
 function isActiveRange(
 	state: EditorState,
 	activeLines: Set<number>,
-	range: VisibleRange,
+	range: Span,
 ): boolean {
 	const fromLine = state.doc.lineAt(range.from).number;
 	const toLine = state.doc.lineAt(range.to).number;
@@ -253,10 +254,10 @@ function isActiveRange(
 	return false;
 }
 
-function getHideActiveRange(
+function getRevealScope(
 	name: string,
 	contexts: readonly SyntaxContext[],
-): VisibleRange | null {
+): Span | null {
 	if (name === 'HeaderMark') {
 		return getClosestContext(contexts, (context) =>
 			headingPattern.test(context.name),
@@ -282,7 +283,13 @@ function getHideActiveRange(
 		return null;
 	}
 
-	const context = getCurrentLinkContext(contexts);
+	const context = getClosestContext(
+		contexts,
+		(candidate) =>
+			candidate.name === 'Link' ||
+			candidate.name === 'Image' ||
+			candidate.name === 'Autolink',
+	);
 	return context?.name === 'Link' && context.isInlineLink === true
 		? context
 		: null;
@@ -300,42 +307,11 @@ function getClosestContext(
 	return null;
 }
 
-function getCurrentLinkContext(
-	contexts: readonly SyntaxContext[],
-): SyntaxContext | undefined {
-	for (let index = contexts.length - 1; index >= 0; index -= 1) {
-		const context = contexts[index];
-		if (
-			context?.name === 'Link' ||
-			context?.name === 'Image' ||
-			context?.name === 'Autolink'
-		) {
-			return context;
-		}
-	}
-}
-
-function getInlineLinkInfo(
-	text: string,
-	nodeFrom: number,
-): {
-	labelFrom: number;
-	labelTo: number;
-} | null {
-	const labelEnd = text.lastIndexOf('](');
-	if (labelEnd <= 1 || !text.endsWith(')')) return null;
-
-	return {
-		labelFrom: nodeFrom + 1,
-		labelTo: nodeFrom + labelEnd,
-	};
-}
-
 function getHeadingContentRange(
 	text: string,
 	nodeFrom: number,
 	nodeTo: number,
-): VisibleRange | null {
+): Span | null {
 	const opening = /^(#{1,6})[ \t]*/.exec(text);
 	if (!opening) return null;
 
@@ -350,7 +326,7 @@ function getInlineCodeContentRange(
 	text: string,
 	nodeFrom: number,
 	nodeTo: number,
-): VisibleRange | null {
+): Span | null {
 	const opening = /^`+/.exec(text);
 	const closing = /`+$/.exec(text);
 	if (!opening || !closing) return null;
@@ -367,6 +343,8 @@ function addHide(
 	from: number,
 	to: number,
 ) {
+	// CodeMirror rejects plugin-provided replace decorations that span line
+	// breaks, so hidden ranges are emitted per line.
 	let cursor = from;
 
 	while (cursor < to) {
@@ -393,41 +371,4 @@ function addMark(
 ) {
 	if (from >= to) return;
 	ranges.push({ type: 'mark', from, to, className });
-}
-
-function uniqueSortedRanges(
-	ranges: MarkdownLivePreviewRange[],
-): MarkdownLivePreviewRange[] {
-	const sortedRanges = ranges.toSorted(compareRanges);
-	const uniqueRanges: MarkdownLivePreviewRange[] = [];
-	const seen = new Set<string>();
-
-	for (const range of sortedRanges) {
-		const key =
-			range.type === 'hide'
-				? `${range.type}:${range.from}:${range.to}`
-				: `${range.type}:${range.from}:${range.to}:${range.className}`;
-
-		if (seen.has(key)) continue;
-		seen.add(key);
-		uniqueRanges.push(range);
-	}
-
-	return uniqueRanges;
-}
-
-function compareRanges(
-	left: MarkdownLivePreviewRange,
-	right: MarkdownLivePreviewRange,
-): number {
-	return (
-		left.from - right.from ||
-		left.to - right.to ||
-		left.type.localeCompare(right.type) ||
-		getRangeClassName(left).localeCompare(getRangeClassName(right))
-	);
-}
-
-function getRangeClassName(range: MarkdownLivePreviewRange): string {
-	return range.type === 'mark' ? range.className : '';
 }

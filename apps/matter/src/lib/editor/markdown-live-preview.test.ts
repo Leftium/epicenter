@@ -123,6 +123,19 @@ describe('collectMarkdownLivePreviewRanges', () => {
 		expect(hiddenText).toEqual(['#']);
 	});
 
+	test('marks only the label when a link title contains "]("', () => {
+		const doc = '[x](u "a](b")\nplain';
+		const hiddenText = collectHiddenText(doc, doc.indexOf('plain'));
+		const linkText = collectMarkedText(
+			doc,
+			doc.indexOf('plain'),
+			'cm-matter-md-link',
+		);
+
+		expect(linkText).toEqual(['x']);
+		expect(hiddenText).toEqual(['[', ']', '(', 'u', '"a](b"', ')']);
+	});
+
 	test('leaves images, reference links, and autolinks raw', () => {
 		const doc = '![alt](image.png)\n[label][ref]\n<https://example.com>\nplain';
 		const hiddenText = collectHiddenText(doc, doc.indexOf('plain'));
@@ -171,5 +184,6 @@ function collectRangeText(
 		{ from: 0, to: state.doc.length },
 	])
 		.filter(matches)
+		.toSorted((left, right) => left.from - right.from || left.to - right.to)
 		.map((range) => state.doc.sliceString(range.from, range.to));
 }

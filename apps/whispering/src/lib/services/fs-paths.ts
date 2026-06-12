@@ -25,15 +25,20 @@ async function appDataPath(...segments: string[]) {
 }
 
 export const PATHS = {
-	/** Local transcription model directories under `models/`. */
+	/**
+	 * Local transcription model directories under `models/`, keyed by engine
+	 * id so consumers can index with `PATHS.MODELS[engine]()`. The directory
+	 * names are durable on-disk contracts (existing installs and saved model
+	 * paths point at them), which is why `whispercpp` maps to `whisper`.
+	 */
 	MODELS: {
-		async WHISPER() {
+		async whispercpp() {
 			return appDataPath('models', 'whisper');
 		},
-		async PARAKEET() {
+		async parakeet() {
 			return appDataPath('models', 'parakeet');
 		},
-		async MOONSHINE() {
+		async moonshine() {
 			return appDataPath('models', 'moonshine');
 		},
 	},

@@ -447,7 +447,6 @@
 						models={WHISPER_MODELS}
 						title="Whisper Model"
 						description="Select a pre-built model or browse for your own. Models run locally for private, offline transcription."
-						fileSelectionMode="file"
 						fileExtensions={['bin', 'gguf', 'ggml']}
 						bind:value={() => deviceConfig.get('transcription.whispercpp.modelPath'),
 							(v) => deviceConfig.set('transcription.whispercpp.modelPath', v)}
@@ -506,7 +505,6 @@
 						models={PARAKEET_MODELS}
 						title="Parakeet Model"
 						description="Parakeet is an NVIDIA NeMo model optimized for fast local transcription. It automatically detects the language and doesn't support manual language selection."
-						fileSelectionMode="directory"
 						bind:value={() => deviceConfig.get('transcription.parakeet.modelPath'),
 						(v) => deviceConfig.set('transcription.parakeet.modelPath', v)}
 					>
@@ -580,7 +578,6 @@
 						models={MOONSHINE_MODELS}
 						title="Moonshine Model"
 						description="Moonshine is an efficient ONNX model by UsefulSensors. English-only with fast inference and small model sizes (~30 MB)."
-						fileSelectionMode="directory"
 						bind:value={() => deviceConfig.get('transcription.moonshine.modelPath'),
 						(v) => deviceConfig.set('transcription.moonshine.modelPath', v)}
 					>

@@ -19,7 +19,6 @@
 		'Anthropic',
 		'OpenAI',
 		'Groq',
-		'Mistral',
 		'OpenRouter',
 		'Custom',
 	];

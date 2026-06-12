@@ -35,7 +35,7 @@ One line, for one-line surfaces (GitHub About, social preview, link cards):
 
 The hero cut, for heroes (root README, epicenter.so):
 
-> **Local-first apps. One workspace you own.** Your data lives on your machine as plain Markdown and SQLite: files you can grep, version, open in Obsidian, and keep forever.
+> **Local-first apps that write to files you own.** Your data lives on your machine as plain Markdown and SQLite: grep it, version it, open it in Obsidian. When an app stops mattering, your files don't.
 
 One paragraph, for anyone giving us thirty seconds (website about page, CONTRIBUTING, talk bios):
 
@@ -59,9 +59,12 @@ Under the hood, app-owned state lives in Yjs, materializes to SQLite for fast qu
 
 ## The Proof Line
 
-Every shipped surface longer than one line carries exactly one proof line, stated without caveats:
+Every shipped surface longer than one line carries exactly one proof line, stated without caveats. The proof line is a claim, not finished copy: each surface writes its own sentence, in keeping with the rule that finished copy belongs to the surface that ships it. The sentence must carry:
 
-> Whispering, our desktop speech-to-text app for macOS, Windows, and Linux, is installable today.
+- Whispering, by name
+- desktop speech-to-text
+- you can install it today
+- macOS, Windows, and Linux, somewhere on the surface (platform badges or adjacent copy count)
 
 Roadmap language stays out of heroes. "A refresh built on the workspace is in progress" and "being built in public" are Status-section sentences; in a hero they hedge the only shipped product and tell a first-time reader to wait.
 

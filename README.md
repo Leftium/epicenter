@@ -3,9 +3,9 @@
     <img width="200" src="https://github.com/user-attachments/assets/9e210c52-2740-43b6-af3f-e6eaf4b5c397" alt="Epicenter">
   </a>
   <h1 align="center">Epicenter</h1>
-  <p align="center"><strong>Local-first apps. One workspace you own.</strong></p>
-  <p align="center">Your data lives on your machine as plain Markdown and SQLite: files you can grep, version, open in Obsidian, and keep forever.</p>
-  <p align="center">Whispering, our desktop speech-to-text app for macOS, Windows, and Linux, is installable today.</p>
+  <p align="center"><strong>Local-first apps that write to files you own.</strong></p>
+  <p align="center">Your data lives on your machine as plain Markdown and SQLite: grep it, version it, open it in Obsidian. When an app stops mattering, your files don't.</p>
+  <p align="center">Start with <a href="apps/whispering">Whispering</a>, our desktop speech-to-text app. You can install it today.</p>
 </p>
 
 <p align="center">

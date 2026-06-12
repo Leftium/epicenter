@@ -34,8 +34,8 @@ wrangler secret put ...
   BETTER_AUTH_SECRET       openssl rand -base64 32
   ENCRYPTION_SECRETS       "1:$(openssl rand -base64 32)"  (versioned)
   GOOGLE_CLIENT_SECRET     your Google OAuth client secret
-  OPENAI_API_KEY           your provider key (or omit and BYOK)
-  GEMINI_API_KEY           your provider key (or omit and BYOK)
+  OPENAI_API_KEY           optional house key; omit and members BYOK
+  GEMINI_API_KEY           optional house key; omit and members BYOK
 ```
 
 ## Deploy

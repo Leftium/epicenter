@@ -38,8 +38,12 @@ declare namespace Cloudflare {
 		ENCRYPTION_SECRETS: string;
 		GOOGLE_CLIENT_SECRET: string;
 		GITHUB_CLIENT_SECRET?: string;
-		OPENAI_API_KEY: string;
-		GEMINI_API_KEY: string;
+		// AI provider house keys are optional: omit one and members must bring
+		// their own key (BYOK) for that provider; a house-key request gets 503
+		// ProviderNotConfigured. Mirrors the optional bindings in
+		// @epicenter/server's cloudflare-bindings.d.ts.
+		OPENAI_API_KEY?: string;
+		GEMINI_API_KEY?: string;
 	}
 }
 

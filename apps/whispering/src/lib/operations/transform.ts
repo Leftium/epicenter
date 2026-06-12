@@ -22,17 +22,19 @@ import type {
 
 /**
  * Config map for standard completion providers that share the same
- * `{ apiKey, model, systemPrompt, userPrompt }` call signature.
+ * `{ apiKey, model, baseUrl?, systemPrompt, userPrompt }` call signature.
  * Custom is handled separately because it has per-step baseUrl logic.
  */
 const STANDARD_PROVIDER_CONFIG = {
 	OpenAI: {
 		service: services.completions.openai,
 		apiKeyPath: 'apiKeys.openai',
+		endpointPath: 'apiEndpoints.openai',
 	},
 	Groq: {
 		service: services.completions.groq,
 		apiKeyPath: 'apiKeys.groq',
+		endpointPath: 'apiEndpoints.groq',
 	},
 	Anthropic: {
 		service: services.completions.anthropic,
@@ -55,9 +57,12 @@ const STANDARD_PROVIDER_CONFIG = {
 				model: string;
 				systemPrompt: string;
 				userPrompt: string;
+				baseUrl?: string;
 			}) => Promise<Result<string, { message: string }>>;
 		};
 		apiKeyPath: DeviceConfigKey;
+		/** Device config key holding the provider's endpoint override, if it has one. */
+		endpointPath?: DeviceConfigKey;
 	}
 >;
 
@@ -128,6 +133,10 @@ async function handleStep({
 			return config.service.complete({
 				apiKey: deviceConfig.get(config.apiKeyPath),
 				model: step[INFERENCE[inferenceProvider].stepModelField],
+				baseUrl:
+					'endpointPath' in config
+						? deviceConfig.get(config.endpointPath) || undefined
+						: undefined,
 				systemPrompt,
 				userPrompt,
 			});

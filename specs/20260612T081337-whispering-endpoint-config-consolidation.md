@@ -121,11 +121,17 @@ Standalone commits, Build -> Prove -> Remove ordering. Each phase typechecks alo
 
 ### Phase 1: completions honor endpoint overrides (behavior fix, ships alone)
 
-- [ ] **1.1** Thread `baseUrl` through `complete()` for OpenAI/Groq: either pass
+- [x] **1.1** Thread `baseUrl` through `complete()` for OpenAI/Groq: either pass
       `deviceConfig.get('apiEndpoints.openai') || undefined` from transform.ts, or give
       the services a `getBaseUrl: (params) => params.baseUrl || <default>` shape.
       Preserve Groq's default `https://api.groq.com/openai/v1` when the override is empty.
-- [ ] **1.2** Verify transcription behavior unchanged (transcribe.ts untouched).
+  > **Note**: Did both halves of the seam: services got
+  > `getBaseUrl: (params) => params.baseUrl || <default>` (services stay
+  > settings-free per app architecture), and transform.ts's
+  > `STANDARD_PROVIDER_CONFIG` gained an optional `endpointPath` on
+  > OpenAI/Groq, read at the call site with `|| undefined` semantics
+  > mirroring transcribe.ts.
+- [x] **1.2** Verify transcription behavior unchanged (transcribe.ts untouched).
 
 ### Phase 2: rename the fossil key
 

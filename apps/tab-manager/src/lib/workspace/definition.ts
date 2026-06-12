@@ -245,7 +245,7 @@ export type Conversation = InferTableRow<typeof conversationsTable>;
  * parts are always produced by TanStack AI: compile-time drift detection in
  * `ui-message.ts` catches type mismatches on TanStack AI upgrades instead.
  *
- * @see {@link file://./ai/ui-message.ts}: drift detection + toUiMessage boundary
+ * @see {@link file://../chat/ui-message.ts}: drift detection + toUiMessage boundary
  */
 const chatMessagesTable = defineTable({
 	id: field.string<ChatMessageId>(),

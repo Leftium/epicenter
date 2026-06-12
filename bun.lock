@@ -1,5 +1,6 @@
 {
   "lockfileVersion": 1,
+  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "epicenter",
@@ -220,6 +221,7 @@
         "@codemirror/state": "^6.6.0",
         "@codemirror/view": "^6.41.0",
         "@epicenter/field": "workspace:*",
+        "@lezer/common": "^1.5.1",
         "@tauri-apps/api": "catalog:",
         "@tauri-apps/plugin-dialog": "^2.3.2",
         "typebox": "catalog:",

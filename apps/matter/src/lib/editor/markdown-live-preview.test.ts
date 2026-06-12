@@ -39,6 +39,24 @@ describe('collectMarkdownLivePreviewRanges', () => {
 		expect(hiddenText).toEqual([]);
 	});
 
+	test('hides closing heading marks on inactive lines', () => {
+		const doc = '## Closing ##\nplain';
+		const hiddenText = collectHiddenText(doc, doc.indexOf('plain'));
+
+		expect(hiddenText).toEqual(['##', '##']);
+	});
+
+	test('marks the whole heading construct including its markers', () => {
+		const doc = '# Heading\nplain';
+		const headingText = collectMarkedText(
+			doc,
+			doc.indexOf('plain'),
+			'cm-matter-md-heading',
+		);
+
+		expect(headingText).toEqual(['# Heading']);
+	});
+
 	test('does not hide setext heading markers', () => {
 		const doc = 'Title\n=====\nplain';
 		const hiddenText = collectHiddenText(doc, doc.indexOf('plain'));

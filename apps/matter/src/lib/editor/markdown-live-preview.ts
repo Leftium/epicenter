@@ -7,17 +7,11 @@ import {
 	ViewPlugin,
 	type ViewUpdate,
 } from '@codemirror/view';
+import type { SyntaxNode, SyntaxNodeRef } from '@lezer/common';
 
 type Span = {
 	from: number;
 	to: number;
-};
-
-type SyntaxContext = {
-	name: string;
-	from: number;
-	to: number;
-	isInlineLink?: boolean;
 };
 
 type MarkdownLivePreviewRange =
@@ -43,51 +37,27 @@ export function collectMarkdownLivePreviewRanges(
 	const ranges: MarkdownLivePreviewRange[] = [];
 
 	for (const visibleRange of visibleRanges) {
-		const contexts: SyntaxContext[] = [];
-
 		syntaxTree(state).iterate({
 			from: visibleRange.from,
 			to: visibleRange.to,
 			enter(node) {
 				const name = node.type.name;
 				const headingMatch = headingPattern.exec(name);
-				let linkLabel: Span | null = null;
-				if (name === 'Link') {
-					const link = node.node;
-					// Only inline links carry a URL child; reference and
-					// shortcut links carry a LinkLabel instead.
-					if (link.getChild('URL')) {
-						const [labelOpen, labelClose] = link.getChildren('LinkMark');
-						if (labelOpen && labelClose && labelOpen.to < labelClose.from) {
-							linkLabel = { from: labelOpen.to, to: labelClose.from };
-						}
-					}
-				}
 
 				if (headingMatch) {
-					const level = headingMatch[1];
-					const contentRange = getHeadingContentRange(
-						state.doc.sliceString(node.from, node.to),
+					addMark(
+						ranges,
 						node.from,
 						node.to,
+						`cm-matter-md-heading cm-matter-md-heading-${headingMatch[1]}`,
 					);
-
-					if (contentRange) {
-						addMark(
-							ranges,
-							contentRange.from,
-							contentRange.to,
-							`cm-matter-md-heading cm-matter-md-heading-${level}`,
-						);
-					}
 				}
 
 				if (name === 'Emphasis' || name === 'StrongEmphasis') {
-					const markerLength = name === 'StrongEmphasis' ? 2 : 1;
 					addMark(
 						ranges,
-						node.from + markerLength,
-						node.to - markerLength,
+						node.from,
+						node.to,
 						name === 'StrongEmphasis'
 							? 'cm-matter-md-strong'
 							: 'cm-matter-md-emphasis',
@@ -95,44 +65,24 @@ export function collectMarkdownLivePreviewRanges(
 				}
 
 				if (name === 'InlineCode') {
-					const contentRange = getInlineCodeContentRange(
-						state.doc.sliceString(node.from, node.to),
-						node.from,
-						node.to,
-					);
-
-					if (contentRange) {
-						addMark(
-							ranges,
-							contentRange.from,
-							contentRange.to,
-							'cm-matter-md-inline-code',
-						);
-					}
+					addMark(ranges, node.from, node.to, 'cm-matter-md-inline-code');
 				}
 
-				if (linkLabel) {
-					addMark(ranges, linkLabel.from, linkLabel.to, 'cm-matter-md-link');
+				if (name === 'Link') {
+					const label = getInlineLinkLabel(node.node);
+					if (label) {
+						addMark(ranges, label.from, label.to, 'cm-matter-md-link');
+					}
 				}
 
 				if (name === 'ListMark' || name === 'QuoteMark') {
 					addMark(ranges, node.from, node.to, 'cm-matter-md-structural-marker');
 				}
 
-				const revealScope = getRevealScope(name, contexts);
+				const revealScope = getRevealScope(node);
 				if (revealScope && !isActiveRange(state, activeLines, revealScope)) {
 					addHide(ranges, state, node.from, node.to);
 				}
-
-				contexts.push({
-					name,
-					from: node.from,
-					to: node.to,
-					isInlineLink: linkLabel !== null,
-				});
-			},
-			leave() {
-				contexts.pop();
 			},
 		});
 	}
@@ -254,87 +204,48 @@ function isActiveRange(
 	return false;
 }
 
-function getRevealScope(
-	name: string,
-	contexts: readonly SyntaxContext[],
-): Span | null {
-	if (name === 'HeaderMark') {
-		return getClosestContext(contexts, (context) =>
-			headingPattern.test(context.name),
-		);
-	}
-
-	if (name === 'EmphasisMark') {
-		return getClosestContext(
-			contexts,
-			(context) =>
-				context.name === 'Emphasis' || context.name === 'StrongEmphasis',
-		);
-	}
-
-	if (name === 'CodeMark') {
-		return getClosestContext(
-			contexts,
-			(context) => context.name === 'InlineCode',
-		);
-	}
-
-	if (name !== 'LinkMark' && name !== 'URL' && name !== 'LinkTitle') {
+function getRevealScope(node: SyntaxNodeRef): Span | null {
+	const name = node.type.name;
+	if (
+		name !== 'HeaderMark' &&
+		name !== 'EmphasisMark' &&
+		name !== 'CodeMark' &&
+		name !== 'LinkMark' &&
+		name !== 'URL' &&
+		name !== 'LinkTitle'
+	) {
 		return null;
 	}
 
-	const context = getClosestContext(
-		contexts,
-		(candidate) =>
-			candidate.name === 'Link' ||
-			candidate.name === 'Image' ||
-			candidate.name === 'Autolink',
-	);
-	return context?.name === 'Link' && context.isInlineLink === true
-		? context
-		: null;
-}
+	const parent = node.node.parent;
+	if (!parent) return null;
 
-function getClosestContext(
-	contexts: readonly SyntaxContext[],
-	matches: (context: SyntaxContext) => boolean,
-): SyntaxContext | null {
-	for (let index = contexts.length - 1; index >= 0; index -= 1) {
-		const context = contexts[index];
-		if (context && matches(context)) return context;
+	if (name === 'HeaderMark') {
+		return headingPattern.test(parent.name) ? parent : null;
 	}
 
-	return null;
+	if (name === 'EmphasisMark') {
+		return parent.name === 'Emphasis' || parent.name === 'StrongEmphasis'
+			? parent
+			: null;
+	}
+
+	if (name === 'CodeMark') {
+		return parent.name === 'InlineCode' ? parent : null;
+	}
+
+	return parent.name === 'Link' && getInlineLinkLabel(parent) ? parent : null;
 }
 
-function getHeadingContentRange(
-	text: string,
-	nodeFrom: number,
-	nodeTo: number,
-): Span | null {
-	const opening = /^(#{1,6})[ \t]*/.exec(text);
-	if (!opening) return null;
+function getInlineLinkLabel(link: SyntaxNode): Span | null {
+	// Only inline links carry a URL child; reference and shortcut links
+	// carry a LinkLabel instead.
+	if (!link.getChild('URL')) return null;
 
-	const closing = /[ \t]+#{1,6}[ \t]*$/.exec(text);
-	const from = nodeFrom + opening[0].length;
-	const to = closing?.index === undefined ? nodeTo : nodeFrom + closing.index;
-
-	return from < to ? { from, to } : null;
-}
-
-function getInlineCodeContentRange(
-	text: string,
-	nodeFrom: number,
-	nodeTo: number,
-): Span | null {
-	const opening = /^`+/.exec(text);
-	const closing = /`+$/.exec(text);
-	if (!opening || !closing) return null;
-
-	const from = nodeFrom + opening[0].length;
-	const to = nodeTo - closing[0].length;
-
-	return from < to ? { from, to } : null;
+	const [labelOpen, labelClose] = link.getChildren('LinkMark');
+	return labelOpen && labelClose && labelOpen.to < labelClose.from
+		? { from: labelOpen.to, to: labelClose.from }
+		: null;
 }
 
 function addHide(

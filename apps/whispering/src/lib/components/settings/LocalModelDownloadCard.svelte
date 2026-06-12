@@ -7,27 +7,16 @@
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import Download from '@lucide/svelte/icons/download';
 	import X from '@lucide/svelte/icons/x';
-	import { join } from '@tauri-apps/api/path';
-	import {
-		exists,
-		mkdir,
-		remove,
-		stat,
-		writeFile,
-	} from '@tauri-apps/plugin-fs';
-	import { fetch } from '@tauri-apps/plugin-http';
-	import { extractErrorMessage } from 'wellcrafted/error';
-	import { Ok, tryAsync } from 'wellcrafted/result';
 	import { type LocalModelConfig } from '$lib/constants/local-models';
-	import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
-	import { PATHS } from '$lib/services/fs-paths';
-	import { deviceConfig } from '$lib/state/device-config.svelte';
+	import { createPrebuiltModel } from '$lib/operations/local-models';
 
 	let {
 		model,
 	}: {
 		model: LocalModelConfig;
 	} = $props();
+
+	const prebuiltModel = $derived(createPrebuiltModel(model));
 
 	type ModelState =
 		| { type: 'not-downloaded' }
@@ -37,131 +26,17 @@
 
 	let modelState = $state<ModelState>({ type: 'not-downloaded' });
 
-	/**
-	 * Calculates the destination path where this model will be downloaded and stored,
-	 * and ensures that the parent directory structure exists.
-	 *
-	 * @returns The full path where the model should be stored:
-	 * - For Whisper models: `{appDataDir}/models/whisper/{filename}` (a single file)
-	 * - For Parakeet models: `{appDataDir}/models/parakeet/{directoryName}/` (a directory containing multiple files)
-	 * - For Moonshine models: `{appDataDir}/models/moonshine/{directoryName}/` (a directory containing multiple files)
-	 */
-	async function ensureModelDestinationPath(): Promise<string> {
-		switch (model.engine) {
-			case 'whispercpp': {
-				const modelsDir = await PATHS.MODELS.WHISPER();
-				// Ensure directory exists
-				if (!(await exists(modelsDir))) {
-					await mkdir(modelsDir, { recursive: true });
-				}
-				return join(modelsDir, model.file.filename);
-			}
-			case 'parakeet': {
-				// Parakeet models are stored in a directory
-				const parakeetModelsDir = await PATHS.MODELS.PARAKEET();
-				// Ensure directory exists
-				if (!(await exists(parakeetModelsDir))) {
-					await mkdir(parakeetModelsDir, { recursive: true });
-				}
-				return join(parakeetModelsDir, model.directoryName);
-			}
-			case 'moonshine': {
-				// Moonshine models are stored in a directory
-				const moonshineModelsDir = await PATHS.MODELS.MOONSHINE();
-				// Ensure directory exists
-				if (!(await exists(moonshineModelsDir))) {
-					await mkdir(moonshineModelsDir, { recursive: true });
-				}
-				return join(moonshineModelsDir, model.directoryName);
-			}
-		}
-	}
-
-	/**
-	 * Validates if a model is properly installed at the given path.
-	 */
-	async function isModelValid(path: string): Promise<boolean> {
-		switch (model.engine) {
-			case 'whispercpp': {
-				if (!(await exists(path))) return false;
-				// Check file size to detect corrupted/incomplete downloads
-				const { data: stats } = await tryAsync({
-					try: () => stat(path),
-					catch: () => Ok(null),
-				});
-				if (!stats) return false;
-				if (!isModelFileSizeValid(stats.size, model.sizeBytes)) {
-					console.warn(
-						`Model file appears corrupted: ${Math.round(stats.size / 1_000_000)}MB, expected ~${Math.round(model.sizeBytes / 1_000_000)}MB`,
-					);
-					return false;
-				}
-				return true;
-			}
-			case 'parakeet':
-			case 'moonshine': {
-				if (!(await exists(path))) return false;
-				// For multi-file models, path must be a directory containing all files
-				const { data: dirStats } = await tryAsync({
-					try: () => stat(path),
-					catch: () => Ok(null),
-				});
-				if (!dirStats?.isDirectory) return false;
-
-				// Check that all required files exist and have valid sizes
-				for (const file of model.files) {
-					const filePath = await join(path, file.filename);
-					if (!(await exists(filePath))) return false;
-					// Check file size to detect corrupted/incomplete downloads
-					const { data: fileStats } = await tryAsync({
-						try: () => stat(filePath),
-						catch: () => Ok(null),
-					});
-					if (!fileStats) return false;
-					if (!isModelFileSizeValid(fileStats.size, file.sizeBytes)) {
-						console.warn(
-							`${model.engine} file "${file.filename}" appears corrupted: ${Math.round(fileStats.size / 1_000_000)}MB, expected ~${Math.round(file.sizeBytes / 1_000_000)}MB`,
-						);
-						return false;
-					}
-				}
-				return true;
-			}
-		}
-	}
-
-	// Check model status on mount and when settings change
+	// Check model status on mount and whenever the engine's active model
+	// path changes (the getter reads deviceConfig, so this effect tracks it).
 	$effect(() => {
-		// React to settings changes for this engine
-		const settingsKey = `transcription.${model.engine}.modelPath` as const;
-		const currentPath = deviceConfig.get(settingsKey);
-		// Trigger refresh when settings change (currentPath is a dependency)
+		void prebuiltModel.activeModelPath;
 		refreshStatus();
 	});
 
 	async function refreshStatus() {
-		await tryAsync({
-			try: async () => {
-				const path = await ensureModelDestinationPath();
-				const isValid = await isModelValid(path);
-
-				if (!isValid) {
-					modelState = { type: 'not-downloaded' };
-					return;
-				}
-
-				// Check if this model is active in settings
-				const settingsKey = `transcription.${model.engine}.modelPath` as const;
-				const currentPath = deviceConfig.get(settingsKey);
-				const isActive = currentPath === path;
-
-				modelState = isActive ? { type: 'active' } : { type: 'ready' };
-			},
-			catch: () => {
-				modelState = { type: 'not-downloaded' };
-				return Ok(undefined);
-			},
-		});
+		// While downloading, the download handler owns the state machine.
+		if (modelState.type === 'downloading') return;
+		modelState = { type: await prebuiltModel.getStatus() };
 	}
 
 	async function downloadModel() {
@@ -169,167 +44,43 @@
 
 		modelState = { type: 'downloading', progress: 0 };
 
-		await tryAsync({
-			try: async () => {
-				const downloadFileContent = async (
-					url: string,
-					sizeBytes: number,
-					filePath: string,
-					onProgress: (progress: number) => void,
-				): Promise<void> => {
-					const response = await fetch(url);
-					if (!response.ok) {
-						throw new Error(`Failed to download: ${response.status}`);
-					}
-
-					const contentLength = response.headers.get('content-length');
-					const totalBytes = contentLength
-						? Number.parseInt(contentLength, 10)
-						: sizeBytes;
-
-					const reader = response.body?.getReader();
-					if (!reader) {
-						throw new Error('Failed to read response body');
-					}
-
-					// Create or truncate the file first
-					await writeFile(filePath, new Uint8Array());
-
-					let downloadedBytes = 0;
-
-					while (true) {
-						const { done, value } = await reader.read();
-						if (done) break;
-
-						// Write each chunk directly to disk using append mode
-						await writeFile(filePath, value, { append: true });
-
-						downloadedBytes += value.length;
-						const progress = Math.round((downloadedBytes / totalBytes) * 100);
-						onProgress(progress);
-					}
-
-					// Validate download completeness
-					if (downloadedBytes < totalBytes) {
-						await remove(filePath);
-						const downloadedMB = Math.round(downloadedBytes / 1_000_000);
-						const expectedMB = Math.round(totalBytes / 1_000_000);
-						throw new Error(
-							`Download incomplete: received ${downloadedMB}MB but expected ${expectedMB}MB. Please check your network connection and try again.`,
-						);
-					}
-				};
-
-				const path = await ensureModelDestinationPath();
-
-				// Check if already exists
-				await refreshStatus();
-				if (modelState.type === 'ready' || modelState.type === 'active') {
-					if (modelState.type === 'ready') {
-						await activateModel();
-					}
-					toast.success('Model already downloaded and activated');
-					return;
-				}
-
-				switch (model.engine) {
-					case 'whispercpp': {
-						// Single file download for Whisper
-						await downloadFileContent(
-							model.file.url,
-							model.sizeBytes,
-							path,
-							(progress) => {
-								modelState = { type: 'downloading', progress };
-							},
-						);
-						break;
-					}
-					case 'parakeet':
-					case 'moonshine': {
-						// Multiple file downloads for multi-file models
-						const totalBytes = model.sizeBytes;
-						let downloadedBytes = 0;
-
-						// Create directory for model files
-						await mkdir(path, { recursive: true });
-
-						for (const file of model.files) {
-							const filePath = await join(path, file.filename);
-							await downloadFileContent(
-								file.url,
-								file.sizeBytes,
-								filePath,
-								(fileProgress) => {
-									const overallProgress = Math.round(
-										((downloadedBytes + (file.sizeBytes * fileProgress) / 100) /
-											totalBytes) *
-											100,
-									);
-									modelState = {
-										type: 'downloading',
-										progress: overallProgress,
-									};
-								},
-							);
-							downloadedBytes += file.sizeBytes;
-						}
-						break;
-					}
-				}
-
-				// After download, activate the model
-				await activateModel();
-				modelState = { type: 'active' };
-				toast.success('Model downloaded and activated successfully');
-			},
-			catch: (error) => {
-				console.error('Download failed:', error);
-				toast.error('Failed to download model', {
-					description: extractErrorMessage(error),
-				});
-				modelState = { type: 'not-downloaded' };
-				return Ok(undefined);
+		const { data, error } = await prebuiltModel.downloadAndActivate({
+			onProgress: (progress) => {
+				modelState = { type: 'downloading', progress };
 			},
 		});
+		if (error) {
+			toast.error('Failed to download model', {
+				description: error.message,
+			});
+			modelState = { type: 'not-downloaded' };
+			return;
+		}
+
+		modelState = { type: 'active' };
+		toast.success(
+			data.outcome === 'already-installed'
+				? 'Model already downloaded and activated'
+				: 'Model downloaded and activated successfully',
+		);
 	}
 
 	async function activateModel() {
-		const path = await ensureModelDestinationPath();
-		const settingsKey = `transcription.${model.engine}.modelPath` as const;
-
-		deviceConfig.set(settingsKey, path);
+		await prebuiltModel.activate();
 		// The settings watcher will update modelState to 'active'
 		toast.success('Model activated');
 	}
 
 	async function deleteModel() {
-		await tryAsync({
-			try: async () => {
-				const path = await ensureModelDestinationPath();
-				if (await exists(path)) {
-					const isDirectory =
-						model.engine === 'parakeet' || model.engine === 'moonshine';
-					await remove(path, { recursive: isDirectory });
-				}
-
-				// Clear settings if this was the active model
-				const settingsKey = `transcription.${model.engine}.modelPath` as const;
-
-				if (deviceConfig.get(settingsKey) === path) {
-					deviceConfig.set(settingsKey, '');
-				}
-
-				modelState = { type: 'not-downloaded' };
-				toast.success('Model deleted');
-			},
-			catch: (error) => {
-				toast.error('Failed to delete model', {
-					description: extractErrorMessage(error),
-				});
-				return Ok(undefined);
-			},
-		});
+		const { error } = await prebuiltModel.delete();
+		if (error) {
+			toast.error('Failed to delete model', {
+				description: error.message,
+			});
+			return;
+		}
+		modelState = { type: 'not-downloaded' };
+		toast.success('Model deleted');
 	}
 </script>
 

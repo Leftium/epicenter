@@ -3,18 +3,18 @@
 	import * as Field from '@epicenter/ui/field';
 	import * as Tabs from '@epicenter/ui/tabs';
 	import {
-		ApiKeyInput,
-		type ApiKeyProvider,
+		ProviderConfigFields,
+		type ProviderConfigId,
 	} from '$lib/components/settings';
 
-	const TRANSCRIPTION: ApiKeyProvider[] = [
+	const TRANSCRIPTION: ProviderConfigId[] = [
 		'Groq',
 		'OpenAI',
 		'ElevenLabs',
 		'Deepgram',
 		'Mistral',
 	];
-	const TRANSFORMATION: ApiKeyProvider[] = [
+	const TRANSFORMATION: ProviderConfigId[] = [
 		'Google',
 		'Anthropic',
 		'OpenAI',
@@ -62,7 +62,7 @@
 						{#if i > 0}
 							<Field.Separator />
 						{/if}
-						<ApiKeyInput {provider} />
+						<ProviderConfigFields {provider} />
 					{/each}
 				</Field.Group>
 			</Tabs.Content>

@@ -5,7 +5,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, isErr, Ok, type Result } from 'wellcrafted/result';
-import { INFERENCE } from '$lib/constants/inference';
+import { INFERENCE, type InferenceProviderId } from '$lib/constants/inference';
 import { services } from '$lib/services';
 import type { DeviceConfigKey } from '$lib/state/device-config.svelte';
 import { deviceConfig } from '$lib/state/device-config.svelte';
@@ -21,33 +21,45 @@ import type {
 } from '$lib/workspace';
 
 /**
- * Config map for standard completion providers that share the same
- * `{ apiKey, model, systemPrompt, userPrompt }` call signature.
- * Custom is handled separately because it has per-step baseUrl logic.
+ * Config map for completion providers, all sharing the
+ * `{ apiKey, model, baseUrl?, systemPrompt, userPrompt }` call signature.
+ * Exhaustive over InferenceProviderId: adding a provider to INFERENCE is a
+ * compile error here until its entry exists. The custom service owns the
+ * "endpoint is required" invariant via its validateParams.
  */
-const STANDARD_PROVIDER_CONFIG = {
+const COMPLETION_PROVIDERS = {
 	OpenAI: {
 		service: services.completions.openai,
-		apiKeyPath: 'apiKeys.openai',
+		apiKeyKey: 'providers.openai.apiKey',
+		endpointKey: 'providers.openai.endpoint',
 	},
 	Groq: {
 		service: services.completions.groq,
-		apiKeyPath: 'apiKeys.groq',
+		apiKeyKey: 'providers.groq.apiKey',
+		endpointKey: 'providers.groq.endpoint',
 	},
 	Anthropic: {
 		service: services.completions.anthropic,
-		apiKeyPath: 'apiKeys.anthropic',
+		apiKeyKey: 'providers.anthropic.apiKey',
+		endpointKey: null,
 	},
 	Google: {
 		service: services.completions.google,
-		apiKeyPath: 'apiKeys.google',
+		apiKeyKey: 'providers.google.apiKey',
+		endpointKey: null,
 	},
 	OpenRouter: {
 		service: services.completions.openrouter,
-		apiKeyPath: 'apiKeys.openrouter',
+		apiKeyKey: 'providers.openrouter.apiKey',
+		endpointKey: null,
+	},
+	Custom: {
+		service: services.completions.custom,
+		apiKeyKey: 'providers.custom.apiKey',
+		endpointKey: 'providers.custom.endpoint',
 	},
 } as const satisfies Record<
-	string,
+	InferenceProviderId,
 	{
 		service: {
 			complete: (opts: {
@@ -55,9 +67,12 @@ const STANDARD_PROVIDER_CONFIG = {
 				model: string;
 				systemPrompt: string;
 				userPrompt: string;
+				baseUrl?: string;
 			}) => Promise<Result<string, { message: string }>>;
 		};
-		apiKeyPath: DeviceConfigKey;
+		apiKeyKey: DeviceConfigKey;
+		/** Device config key for the endpoint; null when not configurable. */
+		endpointKey: DeviceConfigKey | null;
 	}
 >;
 
@@ -105,29 +120,16 @@ async function handleStep({
 				{ input },
 			);
 
-			if (inferenceProvider === 'Custom') {
-				const model = step.customModel?.trim();
-				const stepBaseUrl = step.customBaseUrl?.trim();
-				const defaultBaseUrl = deviceConfig
-					.get('completion.custom.baseUrl')
-					?.trim();
-				const baseUrl = stepBaseUrl || defaultBaseUrl || '';
+			const config = COMPLETION_PROVIDERS[inferenceProvider];
 
-				return services.completions.custom.complete({
-					apiKey: deviceConfig.get('apiKeys.custom'),
-					model,
-					baseUrl,
-					systemPrompt,
-					userPrompt,
-				});
-			}
-
-			const config = STANDARD_PROVIDER_CONFIG[inferenceProvider];
-			if (!config) return Err(`Unsupported provider: ${inferenceProvider}`);
-
+			// Trim everything once here: keys, model names, and URLs are
+			// pasted strings, and a trailing space fails the request opaquely.
 			return config.service.complete({
-				apiKey: deviceConfig.get(config.apiKeyPath),
-				model: step[INFERENCE[inferenceProvider].stepModelField],
+				apiKey: deviceConfig.get(config.apiKeyKey).trim(),
+				model: step[INFERENCE[inferenceProvider].stepModelField].trim(),
+				baseUrl: config.endpointKey
+					? deviceConfig.get(config.endpointKey).trim() || undefined
+					: undefined,
 				systemPrompt,
 				userPrompt,
 			});

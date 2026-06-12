@@ -262,7 +262,7 @@ async function dispatchUploadTranscription(
 			outputLanguage,
 			prompt,
 			modelId: deviceConfig.get(provider.modelIdKey),
-			baseUrl: deviceConfig.get(provider.serverUrlKey),
+			baseUrl: deviceConfig.get(provider.endpointKey),
 		});
 	}
 
@@ -272,10 +272,9 @@ async function dispatchUploadTranscription(
 			prompt,
 			apiKey: deviceConfig.get(provider.apiKeyKey),
 			modelName: settings.get(provider.modelKey),
-			baseURL:
-				'endpointKey' in provider && provider.endpointKey
-					? deviceConfig.get(provider.endpointKey) || undefined
-					: undefined,
+			baseURL: provider.endpointKey
+				? deviceConfig.get(provider.endpointKey) || undefined
+				: undefined,
 		});
 	}
 

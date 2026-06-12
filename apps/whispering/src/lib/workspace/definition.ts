@@ -85,7 +85,6 @@ const transformationSteps = defineTable({
 	googleModel: field.string(),
 	openrouterModel: field.string(),
 	customModel: field.string(),
-	customBaseUrl: field.string(),
 
 	// Prompt transform: prompt templates
 	systemPromptTemplate: field.string(),

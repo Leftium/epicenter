@@ -9,7 +9,7 @@
 	import * as Select from '@epicenter/ui/select';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import CopyablePre from '$lib/components/copyable/CopyablePre.svelte';
-	import { ApiKeyInput } from '$lib/components/settings';
+	import { ProviderConfigFields } from '$lib/components/settings';
 	import LocalModelSelector from '$lib/components/settings/LocalModelSelector.svelte';
 	import TranscriptionServiceSelect from '$lib/components/settings/TranscriptionServiceSelect.svelte';
 	import { SUPPORTED_LANGUAGES_OPTIONS } from '$lib/constants/languages';
@@ -163,7 +163,7 @@
 					.
 				</Field.Description>
 			</Field.Field>
-			<ApiKeyInput provider="OpenAI" />
+			<ProviderConfigFields provider="OpenAI" />
 		{:else if settings.get('transcription.service') === 'Groq'}
 			<Field.Field>
 				<Field.Label for="groq-model">Groq Model</Field.Label>
@@ -194,7 +194,7 @@
 					.
 				</Field.Description>
 			</Field.Field>
-			<ApiKeyInput provider="Groq" />
+			<ProviderConfigFields provider="Groq" />
 		{:else if settings.get('transcription.service') === 'Deepgram'}
 			<Field.Field>
 				<Field.Label for="deepgram-model">Deepgram Model</Field.Label>
@@ -215,7 +215,7 @@
 					</Select.Content>
 				</Select.Root>
 			</Field.Field>
-			<ApiKeyInput provider="Deepgram" />
+			<ProviderConfigFields provider="Deepgram" />
 		{:else if settings.get('transcription.service') === 'Mistral'}
 			<Field.Field>
 				<Field.Label for="mistral-model">Mistral Model</Field.Label>
@@ -246,7 +246,7 @@
 					.
 				</Field.Description>
 			</Field.Field>
-			<ApiKeyInput provider="Mistral" />
+			<ProviderConfigFields provider="Mistral" />
 		{:else if settings.get('transcription.service') === 'ElevenLabs'}
 			<Field.Field>
 				<Field.Label for="elevenlabs-model">ElevenLabs Model</Field.Label>
@@ -277,7 +277,7 @@
 					.
 				</Field.Description>
 			</Field.Field>
-			<ApiKeyInput provider="ElevenLabs" />
+			<ProviderConfigFields provider="ElevenLabs" />
 		{:else if settings.get('transcription.service') === 'speaches'}
 			<div class="space-y-4">
 				<Card.Root>
@@ -390,9 +390,9 @@
 					id="speaches-base-url"
 					placeholder="http://localhost:8000"
 					autocomplete="off"
-					bind:value={() => deviceConfig.get('transcription.speaches.baseUrl'),
+					bind:value={() => deviceConfig.get('providers.speaches.endpoint'),
 						(value) =>
-							deviceConfig.set('transcription.speaches.baseUrl', value)}
+							deviceConfig.set('providers.speaches.endpoint', value)}
 				/>
 				<Field.Description>
 					The URL where your Speaches server is running (<code>
@@ -416,9 +416,9 @@
 					id="speaches-model-id"
 					placeholder="Systran/faster-distil-whisper-small.en"
 					autocomplete="off"
-					bind:value={() => deviceConfig.get('transcription.speaches.modelId'),
+					bind:value={() => deviceConfig.get('providers.speaches.modelId'),
 						(value) =>
-							deviceConfig.set('transcription.speaches.modelId', value)}
+							deviceConfig.set('providers.speaches.modelId', value)}
 				/>
 				<Field.Description>
 					The model you downloaded in step 3 (<code>MODEL_ID</code>), e.g.

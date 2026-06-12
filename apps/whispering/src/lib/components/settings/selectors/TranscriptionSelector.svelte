@@ -48,7 +48,7 @@
 				break;
 			}
 			case 'self-hosted':
-				return deviceConfig.get('transcription.speaches.baseUrl');
+				return deviceConfig.get('providers.speaches.endpoint');
 			case 'local':
 				return deviceConfig.get(service.modelKey);
 		}

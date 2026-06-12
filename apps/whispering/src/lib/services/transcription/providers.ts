@@ -34,8 +34,8 @@ type CloudProvider = {
 	 * settings schema.
 	 */
 	modelKey: `transcription.${string}.model`;
-	/** Optional custom base URL override (OpenAI-compatible reverse proxies). */
-	endpointKey?: DeviceConfigKey;
+	/** Device config key for the endpoint override; null when not configurable. */
+	endpointKey: DeviceConfigKey | null;
 };
 
 type LocalProvider = {
@@ -57,7 +57,7 @@ type SelfHostedProvider = {
 	label: string;
 	description: string;
 	capabilities: Capabilities;
-	serverUrlKey: DeviceConfigKey;
+	endpointKey: DeviceConfigKey;
 	modelIdKey: DeviceConfigKey;
 };
 
@@ -69,9 +69,9 @@ export const PROVIDERS = {
 		label: 'OpenAI',
 		description: 'Industry-standard Whisper API',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
-		apiKeyKey: 'apiKeys.openai',
+		apiKeyKey: 'providers.openai.apiKey',
 		modelKey: 'transcription.openai.model',
-		endpointKey: 'apiEndpoints.openai',
+		endpointKey: 'providers.openai.endpoint',
 		defaultModel: 'whisper-1',
 		models: [
 			{
@@ -99,9 +99,9 @@ export const PROVIDERS = {
 		label: 'Groq',
 		description: 'Lightning-fast cloud transcription',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
-		apiKeyKey: 'apiKeys.groq',
+		apiKeyKey: 'providers.groq.apiKey',
 		modelKey: 'transcription.groq.model',
-		endpointKey: 'apiEndpoints.groq',
+		endpointKey: 'providers.groq.endpoint',
 		defaultModel: 'whisper-large-v3-turbo',
 		models: [
 			{
@@ -123,7 +123,8 @@ export const PROVIDERS = {
 		label: 'ElevenLabs',
 		description: 'Voice AI platform with transcription',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
-		apiKeyKey: 'apiKeys.elevenlabs',
+		apiKeyKey: 'providers.elevenlabs.apiKey',
+		endpointKey: null,
 		modelKey: 'transcription.elevenlabs.model',
 		defaultModel: 'scribe_v2',
 		models: [
@@ -152,7 +153,8 @@ export const PROVIDERS = {
 		label: 'Deepgram',
 		description: 'Real-time speech recognition API',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
-		apiKeyKey: 'apiKeys.deepgram',
+		apiKeyKey: 'providers.deepgram.apiKey',
+		endpointKey: null,
 		modelKey: 'transcription.deepgram.model',
 		defaultModel: 'nova-3',
 		models: [
@@ -192,7 +194,8 @@ export const PROVIDERS = {
 		label: 'Mistral AI',
 		description: 'Advanced Voxtral speech understanding',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
-		apiKeyKey: 'apiKeys.mistral',
+		apiKeyKey: 'providers.mistral.apiKey',
+		endpointKey: null,
 		modelKey: 'transcription.mistral.model',
 		defaultModel: 'voxtral-mini-latest',
 		models: [
@@ -241,8 +244,8 @@ export const PROVIDERS = {
 		label: 'Speaches',
 		description: 'Self-hosted transcription server',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
-		serverUrlKey: 'transcription.speaches.baseUrl',
-		modelIdKey: 'transcription.speaches.modelId',
+		endpointKey: 'providers.speaches.endpoint',
+		modelIdKey: 'providers.speaches.modelId',
 	},
 } as const satisfies Record<string, TranscriptionProvider>;
 

@@ -86,10 +86,10 @@ Device-bound configuration backed by per-key localStorage. Secrets, hardware IDs
 import { deviceConfig } from '$lib/state/device-config.svelte';
 
 // Read config reactively
-const apiKey = deviceConfig.get('apiKeys.openai');
+const apiKey = deviceConfig.get('providers.openai.apiKey');
 
 // Update config (writes to localStorage per-key)
-deviceConfig.set('apiKeys.openai', 'sk-...');
+deviceConfig.set('providers.openai.apiKey', 'sk-...');
 
 // Get definition default (for "Default: X" placeholders)
 const defaultShortcut = deviceConfig.getDefault('shortcuts.global.toggleManualRecording');

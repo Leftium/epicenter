@@ -4,10 +4,6 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { MediaQuery } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
-	import {
-		migrateModelPathsToNames,
-		migrateOldSettings,
-	} from '$lib/migration/migrate-settings';
 	import { analytics } from '$lib/operations/analytics';
 	import { services } from '$lib/services';
 	import {
@@ -22,11 +18,6 @@
 	import AppLayout from './_components/AppLayout.svelte';
 	import BottomNav from './_components/BottomNav.svelte';
 	import VerticalNav from './_components/VerticalNav.svelte';
-
-	// Migrate old monolithic settings blob to per-key stores (one-time, idempotent)
-	migrateOldSettings();
-	// Migrate local model selections from absolute paths to folder entry names
-	migrateModelPathsToNames();
 
 	let { children } = $props();
 

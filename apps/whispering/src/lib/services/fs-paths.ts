@@ -28,8 +28,9 @@ export const PATHS = {
 	/**
 	 * Local transcription model directories under `models/`, keyed by engine
 	 * id so consumers can index with `PATHS.MODELS[engine]()`. The directory
-	 * names are durable on-disk contracts (existing installs and saved model
-	 * paths point at them), which is why `whispercpp` maps to `whisper`.
+	 * names are durable on-disk contracts (existing installs live in them and
+	 * saved model names resolve under them), which is why `whispercpp` maps
+	 * to `whisper`.
 	 */
 	MODELS: {
 		async whispercpp() {

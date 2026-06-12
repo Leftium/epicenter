@@ -52,9 +52,16 @@ const DEVICE_DEFINITIONS = {
 		type('string'),
 		'Systran/faster-distil-whisper-small.en',
 	),
-	'transcription.whispercpp.modelPath': defineEntry(type('string'), ''),
-	'transcription.parakeet.modelPath': defineEntry(type('string'), ''),
-	'transcription.moonshine.modelPath': defineEntry(type('string'), ''),
+	/**
+	 * The engine's selected model as an entry name inside its models folder
+	 * (e.g. "ggml-tiny.bin", "parakeet-tdt-0.6b-v3-int8"), never a path. The
+	 * folder under appdata is the single source of truth for where models
+	 * live; `$lib/services/transcription/local-model-folder.ts` resolves
+	 * names back to paths.
+	 */
+	'transcription.whispercpp.model': defineEntry(type('string'), ''),
+	'transcription.parakeet.model': defineEntry(type('string'), ''),
+	'transcription.moonshine.model': defineEntry(type('string'), ''),
 
 	// ── Local model lifecycle (per device: memory pressure is physical) ─
 	/**

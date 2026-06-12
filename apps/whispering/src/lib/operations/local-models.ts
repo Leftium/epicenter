@@ -1,15 +1,18 @@
 /**
  * Lifecycle orchestration for one pre-built local transcription model:
- * combines its on-disk storage handle with the engine's model path setting
- * in `deviceConfig` (the key comes from the provider registry). A model is
- * "active" when that setting points at its canonical install path.
+ * combines its catalog storage handle with the engine's model setting in
+ * `deviceConfig` (the key comes from the provider registry). A model is
+ * "active" when that setting holds its folder entry name.
  */
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import type { LocalModelConfig } from '$lib/constants/local-models';
+import {
+	type LocalModelConfig,
+	modelEntryName,
+} from '$lib/constants/local-models';
 import {
 	createModelStorage,
-	type LocalModelStorageError,
-} from '$lib/services/transcription/local-model-storage';
+	type LocalModelFolderError,
+} from '$lib/services/transcription/local-model-folder';
 import { PROVIDERS } from '$lib/services/transcription/providers';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 
@@ -19,35 +22,32 @@ import { deviceConfig } from '$lib/state/device-config.svelte';
  */
 export function createPrebuiltModel(model: LocalModelConfig) {
 	const storage = createModelStorage(model);
-	const settingsKey = PROVIDERS[model.engine].modelPathKey;
+	const settingsKey = PROVIDERS[model.engine].modelKey;
+	const entryName = modelEntryName(model);
 
 	return {
 		/**
-		 * The engine's currently selected model path. Reads `deviceConfig`,
+		 * The engine's currently selected model name. Reads `deviceConfig`,
 		 * so reading it inside `$effect` or `$derived` tracks changes.
 		 */
-		get activeModelPath() {
+		get activeModelName() {
 			return deviceConfig.get(settingsKey);
 		},
 
 		/**
 		 * Where the model stands on this device: missing or corrupted
 		 * (`not-downloaded`), installed (`ready`), or installed and selected
-		 * as the engine's model path (`active`). Never rejects.
+		 * as the engine's model (`active`). Never rejects.
 		 */
 		async getStatus(): Promise<'not-downloaded' | 'ready' | 'active'> {
 			const installedPath = await storage.getInstalledPath();
 			if (!installedPath) return 'not-downloaded';
-			const isActive = deviceConfig.get(settingsKey) === installedPath;
-			return isActive ? 'active' : 'ready';
+			return deviceConfig.get(settingsKey) === entryName ? 'active' : 'ready';
 		},
 
-		/**
-		 * Point the engine's model path setting at this model's canonical
-		 * install path.
-		 */
-		async activate(): Promise<void> {
-			deviceConfig.set(settingsKey, await storage.getPath());
+		/** Point the engine's model setting at this model's entry name. */
+		activate(): void {
+			deviceConfig.set(settingsKey, entryName);
 		},
 
 		/**
@@ -62,33 +62,31 @@ export function createPrebuiltModel(model: LocalModelConfig) {
 		}): Promise<
 			Result<
 				{ outcome: 'downloaded' | 'already-installed' },
-				LocalModelStorageError
+				LocalModelFolderError
 			>
 		> {
 			const installedPath = await storage.getInstalledPath();
 			if (installedPath) {
-				deviceConfig.set(settingsKey, installedPath);
+				deviceConfig.set(settingsKey, entryName);
 				return Ok({ outcome: 'already-installed' });
 			}
 
-			const { data, error: downloadError } = await storage.download({
-				onProgress,
-			});
+			const { error: downloadError } = await storage.download({ onProgress });
 			if (downloadError) return Err(downloadError);
 
-			deviceConfig.set(settingsKey, data.path);
+			deviceConfig.set(settingsKey, entryName);
 			return Ok({ outcome: 'downloaded' });
 		},
 
 		/**
 		 * Remove the model from disk and, when it was the engine's active
-		 * model, clear the engine's model path setting.
+		 * model, clear the engine's model setting.
 		 */
-		async delete(): Promise<Result<void, LocalModelStorageError>> {
-			const { data, error: deleteError } = await storage.delete();
+		async delete(): Promise<Result<void, LocalModelFolderError>> {
+			const { error: deleteError } = await storage.delete();
 			if (deleteError) return Err(deleteError);
 
-			if (deviceConfig.get(settingsKey) === data.path) {
+			if (deviceConfig.get(settingsKey) === entryName) {
 				deviceConfig.set(settingsKey, '');
 			}
 			return Ok(undefined);

@@ -4,32 +4,36 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { MediaQuery } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
-	import { migrateOldSettings } from '$lib/migration/migrate-settings';
+	import {
+		migrateModelPathsToNames,
+		migrateOldSettings,
+	} from '$lib/migration/migrate-settings';
 	import { analytics } from '$lib/operations/analytics';
 	import { services } from '$lib/services';
-	import { PROVIDERS } from '$lib/services/transcription/providers';
+	import { resolveModelPath } from '$lib/services/transcription/local-model-folder';
+	import {
+		isLocalProviderId,
+		PROVIDERS,
+	} from '$lib/services/transcription/providers';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { localModel } from '$lib/state/local-model.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { tauri } from '#platform/tauri';
-	import { commands, type Engine } from '$lib/tauri/commands';
+	import { commands } from '$lib/tauri/commands';
 	import AppLayout from './_components/AppLayout.svelte';
 	import BottomNav from './_components/BottomNav.svelte';
 	import VerticalNav from './_components/VerticalNav.svelte';
 
 	// Migrate old monolithic settings blob to per-key stores (one-time, idempotent)
 	migrateOldSettings();
+	// Migrate local model selections from absolute paths to folder entry names
+	migrateModelPathsToNames();
 
 	let { children } = $props();
 
 	let sidebarOpen = $state(false);
 	let unlistenNavigate: UnlistenFn | null = null;
 	let unlistenLocalModel: UnlistenFn | null = null;
-
-	const LOCAL_ENGINES = new Set<Engine>(['whispercpp', 'parakeet', 'moonshine']);
-	function isLocalEngine(serviceId: string): serviceId is Engine {
-		return LOCAL_ENGINES.has(serviceId as Engine);
-	}
 
 	// Sidebar when wide, bottom bar on narrow viewports (phone, small window).
 	const isNarrow = new MediaQuery('(max-width: 767px)');
@@ -54,21 +58,28 @@
 	$effect(() => {
 		if (!tauri) return;
 		const service = settings.get('transcription.service');
-		if (!isLocalEngine(service)) return;
+		if (!isLocalProviderId(service)) return;
 
-		const modelPath = deviceConfig.get(PROVIDERS[service].modelPathKey);
-		if (!modelPath) return;
+		const modelName = deviceConfig.get(PROVIDERS[service].modelKey);
+		if (!modelName) return;
 
 		const language = settings.get('transcription.language');
 		const prompt = settings.get('transcription.prompt');
-		void commands
-			.setTranscriptionConfig({
-				engine: service,
-				modelPath,
-				language: language === 'auto' ? null : language,
-				initialPrompt: prompt || null,
-				unloadPolicy: deviceConfig.get('transcription.localModelUnloadPolicy'),
-			})
+		const unloadPolicy = deviceConfig.get(
+			'transcription.localModelUnloadPolicy',
+		);
+		// Every reactive dependency is read above; the async tail resolves the
+		// folder entry name to the absolute path Rust expects.
+		void resolveModelPath(service, modelName)
+			.then((modelPath) =>
+				commands.setTranscriptionConfig({
+					engine: service,
+					modelPath,
+					language: language === 'auto' ? null : language,
+					initialPrompt: prompt || null,
+					unloadPolicy,
+				}),
+			)
 			.catch((err) => {
 				console.error('Failed to push transcription config to Rust:', err);
 			});

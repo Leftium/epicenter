@@ -446,14 +446,13 @@
 					<LocalModelSelector
 						models={WHISPER_MODELS}
 						title="Whisper Model"
-						description="Select a pre-built model or browse for your own. Models run locally for private, offline transcription."
-						fileExtensions={['bin', 'gguf', 'ggml']}
-						bind:value={() => deviceConfig.get('transcription.whispercpp.modelPath'),
-							(v) => deviceConfig.set('transcription.whispercpp.modelPath', v)}
+						description="Download a pre-built model or add your own to the models folder. Models run locally for private, offline transcription."
+						bind:value={() => deviceConfig.get('transcription.whispercpp.model'),
+							(v) => deviceConfig.set('transcription.whispercpp.model', v)}
 					>
-						{#snippet prebuiltFooter()}
+						{#snippet footer()}
 							<Field.Description>
-								Models are downloaded from{' '}
+								Pre-built models are downloaded from{' '}
 								<Link
 									href="https://huggingface.co/ggerganov/whisper.cpp"
 									target="_blank"
@@ -461,38 +460,9 @@
 								>
 									Hugging Face
 								</Link>
-								{' '}and stored locally in your app data directory. Quantized
-								models offer smaller sizes with minimal quality loss.
+								{' '}into the models folder. Quantized models (q5_0, q8_0)
+								offer smaller sizes with minimal quality loss.
 							</Field.Description>
-						{/snippet}
-
-						{#snippet manualInstructions()}
-							<div>
-								<p class="text-sm font-medium mb-2">
-									<span class="text-muted-foreground">Step 1:</span>
-									Download a Whisper model
-								</p>
-								<ul class="ml-6 mt-2 space-y-2 text-sm text-muted-foreground">
-									<li class="list-disc">
-										Visit the{' '}
-										<Link
-											href="https://huggingface.co/ggerganov/whisper.cpp/tree/main"
-											target="_blank"
-											rel="noopener noreferrer"
-										>
-											model repository
-										</Link>
-									</li>
-									<li class="list-disc">
-										Download any model file (e.g., ggml-base.en.bin for
-										English-only)
-									</li>
-									<li class="list-disc">
-										Quantized models (q5_0, q8_0) offer smaller sizes with
-										minimal quality loss
-									</li>
-								</ul>
-							</div>
 						{/snippet}
 					</LocalModelSelector>
 				{/if}
@@ -505,12 +475,12 @@
 						models={PARAKEET_MODELS}
 						title="Parakeet Model"
 						description="Parakeet is an NVIDIA NeMo model optimized for fast local transcription. It automatically detects the language and doesn't support manual language selection."
-						bind:value={() => deviceConfig.get('transcription.parakeet.modelPath'),
-						(v) => deviceConfig.set('transcription.parakeet.modelPath', v)}
+						bind:value={() => deviceConfig.get('transcription.parakeet.model'),
+						(v) => deviceConfig.set('transcription.parakeet.model', v)}
 					>
-						{#snippet prebuiltFooter()}
+						{#snippet footer()}
 							<Field.Description>
-								Models are downloaded from{' '}
+								Pre-built models are downloaded from{' '}
 								<Link
 									href="https://github.com/EpicenterHQ/epicenter/releases/tag/models/parakeet-tdt-0.6b-v3-int8"
 									target="_blank"
@@ -518,54 +488,16 @@
 								>
 									GitHub releases
 								</Link>
-								{' '}and stored in your app data directory. The pre-packaged
-								archive contains the NVIDIA Parakeet model with INT8
-								quantization and is extracted after download.
+								{' '}into the models folder. Parakeet models from{' '}
+								<Link
+									href="https://github.com/NVIDIA/NeMo"
+									target="_blank"
+									rel="noopener noreferrer"
+								>
+									NVIDIA NeMo
+								</Link>
+								{' '}are directories containing ONNX files.
 							</Field.Description>
-						{/snippet}
-
-						{#snippet manualInstructions()}
-							<Card.Root class="bg-muted/50">
-								<Card.Content class="p-4">
-									<Field.Legend variant="label">
-										Getting Parakeet Models
-									</Field.Legend>
-									<ul class="space-y-2 text-sm text-muted-foreground">
-										<li class="flex items-start gap-2">
-											<span
-												class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
-											/>
-											<span>
-												Download pre-built models from the "Pre-built Models"
-												tab
-											</span>
-										</li>
-										<li class="flex items-start gap-2">
-											<span
-												class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
-											/>
-											<span>
-												Or download from{' '}
-												<Link
-													href="https://github.com/NVIDIA/NeMo"
-													target="_blank"
-													rel="noopener noreferrer"
-												>
-													NVIDIA NeMo
-												</Link>
-											</span>
-										</li>
-										<li class="flex items-start gap-2">
-											<span
-												class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
-											/>
-											<span>
-												Parakeet models are directories containing ONNX files
-											</span>
-										</li>
-									</ul>
-								</Card.Content>
-							</Card.Root>
 						{/snippet}
 					</LocalModelSelector>
 				{/if}
@@ -578,12 +510,12 @@
 						models={MOONSHINE_MODELS}
 						title="Moonshine Model"
 						description="Moonshine is an efficient ONNX model by UsefulSensors. English-only with fast inference and small model sizes (~30 MB)."
-						bind:value={() => deviceConfig.get('transcription.moonshine.modelPath'),
-						(v) => deviceConfig.set('transcription.moonshine.modelPath', v)}
+						bind:value={() => deviceConfig.get('transcription.moonshine.model'),
+						(v) => deviceConfig.set('transcription.moonshine.model', v)}
 					>
-						{#snippet prebuiltFooter()}
+						{#snippet footer()}
 							<Field.Description>
-								Models are downloaded from{' '}
+								Pre-built models are downloaded from{' '}
 								<Link
 									href="https://huggingface.co/UsefulSensors/moonshine"
 									target="_blank"
@@ -591,77 +523,17 @@
 								>
 									Hugging Face
 								</Link>
-								{' '}and stored in your app data directory. Moonshine uses
-								quantized ONNX models for efficient local inference.
+								{' '}into the models folder. Your own Moonshine directory must
+								be named{' '}
+								<code class="rounded bg-muted px-1 py-0.5 font-mono"
+									>moonshine-&#123;variant&#125;-&#123;lang&#125;</code
+								>
+								{' '}(e.g.{' '}
+								<code class="rounded bg-muted px-1 py-0.5 font-mono"
+									>moonshine-tiny-en</code
+								>); the variant (tiny/base) tells Whispering the model
+								architecture.
 							</Field.Description>
-						{/snippet}
-
-						{#snippet manualInstructions()}
-							<Card.Root class="bg-muted/50">
-								<Card.Content class="p-4">
-									<Field.Legend variant="label">
-										Getting Moonshine Models
-									</Field.Legend>
-									<ul class="space-y-2 text-sm text-muted-foreground">
-										<li class="flex items-start gap-2">
-											<span
-												class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
-											/>
-											<span>
-												Download pre-built models from the "Pre-built Models"
-												tab
-											</span>
-										</li>
-										<li class="flex items-start gap-2">
-											<span
-												class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
-											/>
-											<span>
-												Or download from{' '}
-												<Link
-													href="https://huggingface.co/UsefulSensors/moonshine"
-													target="_blank"
-													rel="noopener noreferrer"
-												>
-													UsefulSensors on Hugging Face
-												</Link>
-											</span>
-										</li>
-										<li class="flex items-start gap-2">
-											<span
-												class="mt-0.5 block size-1.5 rounded-full bg-muted-foreground/50"
-											/>
-											<span>
-												Moonshine models are directories containing ONNX files
-												and tokenizer
-											</span>
-										</li>
-									</ul>
-									<div
-										class="mt-3 rounded border border-amber-500/20 bg-amber-500/5 p-3"
-									>
-										<p
-											class="text-xs font-medium text-amber-600 dark:text-amber-400"
-										>
-											Directory Naming Requirement
-										</p>
-										<p class="mt-1 text-xs text-muted-foreground">
-											The model directory must be named{' '}
-											<code class="rounded bg-muted px-1 py-0.5 font-mono"
-												>moonshine-&#123;variant&#125;-&#123;lang&#125;</code
-											>
-											{' '}(e.g.,
-											<code class="rounded bg-muted px-1 py-0.5 font-mono"
-												>moonshine-tiny-en</code
-											>,
-											{' '}
-											<code class="rounded bg-muted px-1 py-0.5 font-mono"
-												>moonshine-base-en</code
-											>). The variant (tiny/base) determines model architecture.
-										</p>
-									</div>
-								</Card.Content>
-							</Card.Root>
 						{/snippet}
 					</LocalModelSelector>
 				{/if}

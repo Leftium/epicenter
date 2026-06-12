@@ -27,9 +27,9 @@
 	let modelState = $state<ModelState>({ type: 'not-downloaded' });
 
 	// Check model status on mount and whenever the engine's active model
-	// path changes (the getter reads deviceConfig, so this effect tracks it).
+	// changes (the getter reads deviceConfig, so this effect tracks it).
 	$effect(() => {
-		void prebuiltModel.activeModelPath;
+		void prebuiltModel.activeModelName;
 		refreshStatus();
 	});
 
@@ -67,8 +67,8 @@
 		);
 	}
 
-	async function activateModel() {
-		await prebuiltModel.activate();
+	function activateModel() {
+		prebuiltModel.activate();
 		// The settings watcher will update modelState to 'active'
 		toast.success('Model activated');
 	}

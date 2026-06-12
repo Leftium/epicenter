@@ -16,12 +16,13 @@ import { GroqTranscriptionServiceLive } from '$lib/services/transcription/cloud/
 import { MistralTranscriptionServiceLive } from '$lib/services/transcription/cloud/mistral';
 import { OpenaiTranscriptionServiceLive } from '$lib/services/transcription/cloud/openai';
 import {
-	LocalPreflightError,
-	requireValidModelPath,
-} from '$lib/services/transcription/local-preflight';
+	LocalModelFolderError,
+	validateActiveModel,
+} from '$lib/services/transcription/local-model-folder';
 import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
 import {
 	type CloudProviderId,
+	isLocalProviderId,
 	PROVIDERS,
 	type TranscriptionServiceId,
 } from '$lib/services/transcription/providers';
@@ -168,7 +169,7 @@ export async function transcribeAudio(
  */
 async function checkWhisperTruncation(
 	modelPath: string,
-): Promise<Result<void, LocalPreflightError>> {
+): Promise<Result<void, LocalModelFolderError>> {
 	const modelConfig = WHISPER_MODELS.find((m) =>
 		modelPath.endsWith(m.file.filename),
 	);
@@ -181,7 +182,7 @@ async function checkWhisperTruncation(
 	if (!fileStats) return Ok(undefined);
 
 	if (!isModelFileSizeValid(fileStats.size, modelConfig.sizeBytes)) {
-		return LocalPreflightError.CorruptedModelFile({
+		return LocalModelFolderError.CorruptedModelFile({
 			actualSizeMb: Math.round(fileStats.size / 1000000),
 			expectedSizeMb: Math.round(modelConfig.sizeBytes / 1000000),
 		});
@@ -197,25 +198,23 @@ async function dispatchLocalTranscription(
 		return TranscriptionOperationError.LocalTranscriptionUnavailableOnWeb();
 	}
 
-	const provider = PROVIDERS[selectedService];
-	if (provider.location !== 'local') {
+	if (!isLocalProviderId(selectedService)) {
 		return TranscriptionOperationError.NoTranscriptionServiceSelected();
 	}
+	const provider = PROVIDERS[selectedService];
 
 	// FE preflight: Rust would also fail via `ModelLoadError`, but the FE owns
 	// better UX strings (per-engine display name, file-vs-directory guidance)
-	// and can short-circuit before the IPC round-trip. The path, kind, and name
-	// come straight from the provider's registry entry.
-	const modelPath = deviceConfig.get(provider.modelPathKey);
-	const validation = await requireValidModelPath(
-		modelPath,
-		provider.preflightKind,
-		provider.label,
-	);
+	// and can short-circuit before the IPC round-trip. Settings hold a folder
+	// entry name; validation resolves it against the models folder.
+	const validation = await validateActiveModel({
+		engine: selectedService,
+		name: deviceConfig.get(provider.modelKey),
+	});
 	if (validation.error) return validation;
 
 	if (selectedService === 'whispercpp') {
-		const truncated = await checkWhisperTruncation(modelPath);
+		const truncated = await checkWhisperTruncation(validation.data.path);
 		if (truncated.error) return truncated;
 	}
 

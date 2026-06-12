@@ -181,6 +181,35 @@ export async function migrateOldSettings(): Promise<void> {
 	setMigrationState('completed');
 }
 
+/**
+ * One-time migration (2026-06): local model selection moved from an absolute
+ * path under `transcription.{engine}.modelPath` to a models-folder entry
+ * name under `transcription.{engine}.model`. Old values always pointed
+ * inside the engine's models folder (imports copied into it), so the
+ * basename is the entry name. Idempotent: consumes the legacy key. Safe to
+ * delete once pre-folder installs have aged out.
+ */
+export function migrateModelPathsToNames(): void {
+	for (const engine of ['whispercpp', 'parakeet', 'moonshine'] as const) {
+		const legacyStorageKey = `whispering.device.transcription.${engine}.modelPath`;
+		const raw = window.localStorage.getItem(legacyStorageKey);
+		if (raw === null) continue;
+		window.localStorage.removeItem(legacyStorageKey);
+
+		const modelKey = `transcription.${engine}.model` as const;
+		if (deviceConfig.get(modelKey)) continue;
+
+		// Unparseable legacy values fall through; the user re-selects once.
+		const { data: legacyPath } = trySync({
+			try: () => JSON.parse(raw) as unknown,
+			catch: () => Ok(null),
+		});
+		if (typeof legacyPath !== 'string' || !legacyPath) continue;
+		const entryName = legacyPath.split(/[/\\]/).at(-1);
+		if (entryName) deviceConfig.set(modelKey, entryName);
+	}
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function tryParseJson(raw: string | null): Record<string, unknown> | null {
@@ -376,18 +405,10 @@ const DEVICE_KEY_MAP = [
 		oldKey: 'transcription.speaches.modelId',
 		newKey: 'transcription.speaches.modelId',
 	},
-	{
-		oldKey: 'transcription.whispercpp.modelPath',
-		newKey: 'transcription.whispercpp.modelPath',
-	},
-	{
-		oldKey: 'transcription.parakeet.modelPath',
-		newKey: 'transcription.parakeet.modelPath',
-	},
-	{
-		oldKey: 'transcription.moonshine.modelPath',
-		newKey: 'transcription.moonshine.modelPath',
-	},
+	// The blob-era `transcription.{engine}.modelPath` keys are deliberately
+	// not mapped: model selection is now a models-folder entry name under
+	// `transcription.{engine}.model` (see migrateModelPathsToNames), and
+	// blob-era installs re-select their model once from the folder list.
 
 	// Self-hosted server URLs
 	{ oldKey: 'completion.custom.baseUrl', newKey: 'completion.custom.baseUrl' },

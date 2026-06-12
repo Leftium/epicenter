@@ -43,9 +43,13 @@ type LocalProvider = {
 	label: string;
 	description: string;
 	capabilities: Capabilities;
-	modelPathKey: DeviceConfigKey;
-	/** Whether the model path points at a single file or a directory. */
-	preflightKind: 'file' | 'directory';
+	/**
+	 * The settings key holding the engine's selected model: a folder entry
+	 * name inside the engine's models folder, never a path.
+	 */
+	modelKey: DeviceConfigKey;
+	/** Whether the engine's model is a single file or a directory. */
+	modelKind: 'file' | 'directory';
 };
 
 type SelfHostedProvider = {
@@ -212,24 +216,24 @@ export const PROVIDERS = {
 		label: 'Whisper C++',
 		description: 'Fast local transcription with no internet required',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
-		modelPathKey: 'transcription.whispercpp.modelPath',
-		preflightKind: 'file',
+		modelKey: 'transcription.whispercpp.model',
+		modelKind: 'file',
 	},
 	parakeet: {
 		location: 'local',
 		label: 'Parakeet',
 		description: 'NVIDIA NeMo model for fast local transcription',
 		capabilities: { supportsPrompt: false, supportsLanguage: false },
-		modelPathKey: 'transcription.parakeet.modelPath',
-		preflightKind: 'directory',
+		modelKey: 'transcription.parakeet.model',
+		modelKind: 'directory',
 	},
 	moonshine: {
 		location: 'local',
 		label: 'Moonshine',
 		description: 'Efficient ONNX model by UsefulSensors',
 		capabilities: { supportsPrompt: false, supportsLanguage: false },
-		modelPathKey: 'transcription.moonshine.modelPath',
-		preflightKind: 'directory',
+		modelKey: 'transcription.moonshine.model',
+		modelKind: 'directory',
 	},
 
 	speaches: {
@@ -254,6 +258,23 @@ export type CloudProviderId = {
 		? K
 		: never;
 }[TranscriptionServiceId];
+
+/**
+ * The ids of local engines, derived the same way. `isLocalProviderId` is the
+ * one narrowing boundary callers use before reading local-only fields or
+ * touching the engine's models folder.
+ */
+export type LocalProviderId = {
+	[K in TranscriptionServiceId]: (typeof PROVIDERS)[K]['location'] extends 'local'
+		? K
+		: never;
+}[TranscriptionServiceId];
+
+export function isLocalProviderId(
+	id: TranscriptionServiceId,
+): id is LocalProviderId {
+	return PROVIDERS[id].location === 'local';
+}
 
 /** Every provider ID, e.g. for `field.select(TRANSCRIPTION_SERVICE_IDS)`. */
 export const TRANSCRIPTION_SERVICE_IDS = Object.keys(

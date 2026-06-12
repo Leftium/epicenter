@@ -22,30 +22,23 @@
 	} = $props();
 
 	/**
-	 * Show loading dots when waiting for assistant content.
-	 *
-	 * Covers three gaps:
-	 * 1. 'submitted' → first assistant token (initial request)
-	 * 2. 'streaming' before any assistant message appears
-	 * 3. Tool completed → continuation stream starts (last part is tool-result
-	 *    and status is 'ready', meaning the continuation hasn't fired yet)
+	 * Show loading dots when waiting for assistant content: 'submitted'
+	 * before the first token, or 'streaming' before any assistant message
+	 * appears. The tool-result-to-continuation handoff needs no case here:
+	 * the client starts the continuation in the same microtask chain that
+	 * settles the tool, so 'ready' with a trailing tool-result never paints
+	 * mid-flow. It does occur durably (conversation hydrated from a build
+	 * that closed mid-flow, or a run that stopped after a tool), and then
+	 * the honest UI is the Regenerate affordance, not typing dots.
 	 */
-	const isAwaitingContinuation = $derived(
-		status === 'ready' &&
-			messages.at(-1)?.role === 'assistant' &&
-			messages.at(-1)?.parts.at(-1)?.type === 'tool-result',
-	);
 	const showLoadingDots = $derived(
 		status === 'submitted' ||
-			(status === 'streaming' && messages.at(-1)?.role !== 'assistant') ||
-			isAwaitingContinuation,
+			(status === 'streaming' && messages.at(-1)?.role !== 'assistant'),
 	);
 
 	/** Show regenerate button when idle and last message is from assistant. */
 	const showRegenerate = $derived(
-		status === 'ready' &&
-			messages.at(-1)?.role === 'assistant' &&
-			!isAwaitingContinuation,
+		status === 'ready' && messages.at(-1)?.role === 'assistant',
 	);
 </script>
 

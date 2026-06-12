@@ -19,7 +19,6 @@ import { APP_URLS } from '@epicenter/constants/vite';
 import { createAiChatFetch, fromTable } from '@epicenter/svelte';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { SvelteMap } from 'svelte/reactivity';
-import type { JsonValue } from 'wellcrafted/json';
 import {
 	AVAILABLE_PROVIDERS,
 	DEFAULT_MODEL,
@@ -31,7 +30,7 @@ import {
 	buildDeviceConstraints,
 	TAB_MANAGER_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
-import { toUiMessage } from '$lib/chat/ui-message';
+import { toPersistedParts, toUiMessage } from '$lib/chat/ui-message';
 import type { SessionAiTools } from '$lib/session.svelte';
 import type { TabManagerBrowser } from '$lib/tab-manager/extension';
 import {
@@ -131,6 +130,14 @@ export function createAiChatState({
 
 		const metadata = $derived(conversationsMap.get(conversationId));
 
+		// Persistence stays explicit (user rows in sendMessage, assistant rows
+		// in onFinish) instead of using the client's `persistence` adapter.
+		// The adapter writes the full message list on every stream change,
+		// which amplifies into Yjs update history for CRDT-backed storage, and
+		// it has no change-subscription hook, so the table observer plus
+		// refreshFromDoc path would survive anyway. Revisit if
+		// ChatClientPersistence gains a write policy (debounce or on-settle)
+		// or change notifications.
 		const chat = createChat({
 			initialMessages: loadMessages(conversationId),
 			tools: sessionAiTools.tools,
@@ -165,7 +172,7 @@ export function createAiChatState({
 					id: asChatMessageId(message.id),
 					conversationId,
 					role: 'assistant',
-					parts: message.parts as JsonValue[],
+					parts: toPersistedParts(message.parts),
 					createdAt: message.createdAt?.getTime() ?? Date.now(),
 				});
 				updateConversation(conversationId, {});
@@ -290,13 +297,9 @@ export function createAiChatState({
 					.sort((a, b) => b.createdAt - a.createdAt);
 				const last = msgs[0];
 				if (!last) return '';
-				const parts = last.parts as Array<{
-					type: string;
-					content?: string;
-				}>;
-				const text = parts
-					.filter((p) => p.type === 'text')
-					.map((p) => p.content ?? '')
+				const text = toUiMessage(last)
+					.parts.filter((p) => p.type === 'text')
+					.map((p) => p.content)
 					.join('')
 					.trim();
 				return text.length > 60 ? `${text.slice(0, 60)}…` : text;
@@ -322,7 +325,7 @@ export function createAiChatState({
 					id: userMessageId,
 					conversationId,
 					role: 'user',
-					parts: [{ type: 'text', content }],
+					parts: toPersistedParts([{ type: 'text', content }]),
 					createdAt: Date.now(),
 				});
 

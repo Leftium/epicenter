@@ -7,6 +7,7 @@
  */
 
 import type { UIMessage } from '@tanstack/ai-svelte';
+import type { JsonValue } from 'wellcrafted/json';
 import type { ChatMessage } from '$lib/workspace';
 
 // ── Type test utilities ───────────────────────────────────────────────
@@ -25,7 +26,7 @@ type Equal<X, Y> =
 // check pointed at the union the UI actually consumes (@tanstack/ai-client's
 // MessagePart), not the structurally similar server union in @tanstack/ai.
 
-type UiMessagePart = UIMessage['parts'][number];
+export type UiMessagePart = UIMessage['parts'][number];
 
 // ── Compile-time drift detection ──────────────────────────────────────
 // If TanStack AI adds, removes, or renames a part type, TypeScript
@@ -61,4 +62,16 @@ export function toUiMessage(message: ChatMessage): UIMessage {
 		parts: message.parts as unknown as UiMessagePart[],
 		createdAt: new Date(message.createdAt),
 	};
+}
+
+/**
+ * Serialize live TanStack AI parts for the chatMessages table.
+ *
+ * The inverse of {@link toUiMessage}'s cast: parts are plain
+ * structuredClone-compatible objects, so they store as-is. Routing writes
+ * through here also checks the parts against the TanStack AI union at
+ * compile time before they become untyped JSON.
+ */
+export function toPersistedParts(parts: UiMessagePart[]): JsonValue[] {
+	return parts as unknown as JsonValue[];
 }

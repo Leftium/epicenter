@@ -25,20 +25,89 @@ import {
  * Tables store normalized domain entities. Each row is replaced atomically via
  * `table.set()`, there's no field-level merging. Schemas validate rows on read.
  */
-/** Audio recordings captured by the user. One row per recording session. */
-const recordings = defineTable({
+/**
+ * Terminal outcome of transcribing a recording. Only finished states are
+ * stored. A recording that is currently transcribing has no `transcription`
+ * (the column is null); liveness comes from the in-flight transcription
+ * mutation, never from durable state. A stored 'TRANSCRIBING' status would
+ * wedge on crash: the process that died can no longer write the terminal
+ * state. See
+ * docs/articles/20260612T190745-liveness-belongs-to-the-process-not-the-row.md.
+ *
+ * The transcript text lives in its own `transcript` column, so a completed
+ * outcome only records when it finished.
+ */
+const TranscriptionOutcome = Type.Union([
+	Type.Object({
+		status: Type.Literal('completed'),
+		completedAt: Type.String(),
+	}),
+	Type.Object({
+		status: Type.Literal('failed'),
+		completedAt: Type.String(),
+		error: Type.String(),
+	}),
+]);
+export type TranscriptionOutcome = Static<typeof TranscriptionOutcome>;
+
+/** Columns shared across recording schema versions (everything but the outcome). */
+const recordingColumns = {
 	id: field.string(),
 	title: field.string(),
 	recordedAt: field.string(),
 	updatedAt: field.string(),
 	transcript: field.string(),
-	transcriptionStatus: field.select([
-		'UNPROCESSED',
-		'TRANSCRIBING',
-		'DONE',
-		'FAILED',
-	]),
 	duration: nullable(field.number()),
+};
+
+/**
+ * Audio recordings captured by the user. One row per recording session.
+ *
+ * v1 -> v2 replaces the flat `transcriptionStatus` select with a nullable
+ * `transcription` outcome. The wedge-prone 'UNPROCESSED'/'TRANSCRIBING' states
+ * collapse to a null outcome (liveness is derived from the transcription
+ * mutation), and 'FAILED' now carries its error instead of dropping it.
+ */
+const recordings = defineTable(
+	{
+		...recordingColumns,
+		transcriptionStatus: field.select([
+			'UNPROCESSED',
+			'TRANSCRIBING',
+			'DONE',
+			'FAILED',
+		]),
+	},
+	{
+		...recordingColumns,
+		transcription: nullable(field.json(TranscriptionOutcome)),
+	},
+).migrate(({ value, version }) => {
+	if (version === 1) {
+		const { transcriptionStatus, ...rest } = value;
+		if (transcriptionStatus === 'DONE') {
+			return {
+				...rest,
+				transcription: {
+					status: 'completed' as const,
+					completedAt: value.updatedAt,
+				},
+			};
+		}
+		if (transcriptionStatus === 'FAILED') {
+			return {
+				...rest,
+				transcription: {
+					status: 'failed' as const,
+					completedAt: value.updatedAt,
+					error: 'Transcription failed',
+				},
+			};
+		}
+		// UNPROCESSED or TRANSCRIBING never reached a terminal outcome.
+		return { ...rest, transcription: null };
+	}
+	return value;
 });
 
 /** Recording row type inferred from the workspace table schema. */

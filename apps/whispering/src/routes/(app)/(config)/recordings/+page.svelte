@@ -21,7 +21,6 @@
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
-	import LoadingTranscriptionIcon from '@lucide/svelte/icons/ellipsis';
 	import MicIcon from '@lucide/svelte/icons/mic';
 	import StartTranscriptionIcon from '@lucide/svelte/icons/play';
 	import RetryTranscriptionIcon from '@lucide/svelte/icons/repeat';
@@ -452,15 +451,10 @@
 					>
 						{#if transcribeRecordings.isPending}
 							<EllipsisIcon class="size-4" />
-						{:else if selectedRecordingRows.some(({ id }) => {
-							const currentRow = recordings.get(id);
-							return currentRow?.transcriptionStatus === 'TRANSCRIBING';
-						})}
-							<LoadingTranscriptionIcon class="size-4" />
-						{:else if selectedRecordingRows.some(({ id }) => {
-							const currentRow = recordings.get(id);
-							return currentRow?.transcriptionStatus === 'DONE';
-						})}
+						{:else if selectedRecordingRows.some(
+							({ id }) =>
+								recordings.get(id)?.transcription?.status === 'completed',
+						)}
 							<RetryTranscriptionIcon class="size-4" />
 						{:else}
 							<StartTranscriptionIcon class="size-4" />

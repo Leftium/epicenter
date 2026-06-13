@@ -1,4 +1,4 @@
-import type { AnyTaggedError } from 'wellcrafted/error';
+import { type AnyTaggedError, extractErrorMessage } from 'wellcrafted/error';
 import { defineKeys } from 'wellcrafted/query';
 import { Err, Ok, partitionResults, type Result } from 'wellcrafted/result';
 import { transcribeAudio } from '$lib/operations/transcribe';
@@ -23,17 +23,25 @@ export const transcription = {
 		mutationFn: async (
 			recording: Recording,
 		): Promise<Result<string, AnyTaggedError>> => {
-			recordings.update(recording.id, { transcriptionStatus: 'TRANSCRIBING' });
 			const { data: transcribedText, error: transcribeError } =
 				await transcribeAudio(recording.id);
 			if (transcribeError) {
-				recordings.update(recording.id, { transcriptionStatus: 'FAILED' });
+				recordings.update(recording.id, {
+					transcription: {
+						status: 'failed',
+						completedAt: new Date().toISOString(),
+						error: extractErrorMessage(transcribeError),
+					},
+				});
 				return Err(transcribeError);
 			}
 
 			recordings.update(recording.id, {
 				transcript: transcribedText,
-				transcriptionStatus: 'DONE',
+				transcription: {
+					status: 'completed',
+					completedAt: new Date().toISOString(),
+				},
 			});
 			return Ok(transcribedText);
 		},

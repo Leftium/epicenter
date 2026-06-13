@@ -41,6 +41,14 @@
 	);
 
 	const recording = $derived(recordings.get(recordingId));
+
+	// Liveness is the in-flight mutation, not a stored field: while this row's
+	// transcription is pending it reads as transcribing, otherwise the stored
+	// outcome (or its absence) decides the state.
+	const transcriptionStatus = $derived.by(() => {
+		if (transcribeRecording.isPending) return 'transcribing' as const;
+		return recording?.transcription?.status ?? 'unprocessed';
+	});
 </script>
 
 <div class="flex items-center gap-1">
@@ -52,13 +60,15 @@
 		<Skeleton class="size-8" />
 	{:else}
 		<Button
-			tooltip={recording.transcriptionStatus === 'UNPROCESSED'
+			tooltip={transcriptionStatus === 'unprocessed'
 				? 'Start transcribing this recording'
-				: recording.transcriptionStatus === 'TRANSCRIBING'
+				: transcriptionStatus === 'transcribing'
 					? 'Currently transcribing...'
-					: recording.transcriptionStatus === 'DONE'
+					: transcriptionStatus === 'completed'
 						? 'Retry transcription'
-						: 'Transcription failed - click to try again'}
+						: recording.transcription?.status === 'failed'
+							? `Transcription failed: ${recording.transcription.error}. Click to retry`
+							: 'Transcription failed. Click to retry'}
 			onclick={() => {
 				const loading = report.loading({
 					title: 'Transcribing...',
@@ -85,13 +95,13 @@
 			variant="ghost"
 			size="icon"
 		>
-			{#if recording.transcriptionStatus === 'UNPROCESSED'}
+			{#if transcriptionStatus === 'unprocessed'}
 				<PlayIcon class="size-4" />
-			{:else if recording.transcriptionStatus === 'TRANSCRIBING'}
+			{:else if transcriptionStatus === 'transcribing'}
 				<EllipsisIcon class="size-4" />
-			{:else if recording.transcriptionStatus === 'DONE'}
+			{:else if transcriptionStatus === 'completed'}
 				<RepeatIcon class="size-4 text-green-500" />
-			{:else if recording.transcriptionStatus === 'FAILED'}
+			{:else if transcriptionStatus === 'failed'}
 				<RotateCcwIcon class="size-4 text-red-500" />
 			{/if}
 		</Button>

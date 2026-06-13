@@ -28,21 +28,26 @@ let workDir: string;
 
 function makeRuntime({
 	actions = {},
+	collaboration = true,
 	dispatch = async () => ({ data: null, error: null }) as never,
 }: {
 	actions?: ActionRegistry;
-	dispatch?: DaemonServedMount['runtime']['collaboration']['dispatch'];
+	collaboration?: boolean;
+	dispatch?: NonNullable<
+		DaemonServedMount['runtime']['collaboration']
+	>['dispatch'];
 } = {}): DaemonServedMount['runtime'] {
-	return {
-		collaboration: {
-			actions,
+	const runtime: DaemonServedMount['runtime'] = { actions };
+	if (collaboration) {
+		runtime.collaboration = {
 			devices: {
 				list: () => [],
 			},
 			status: { phase: 'connected' },
 			dispatch,
-		},
-	};
+		};
+	}
+	return runtime;
 }
 
 function claimTestLease(): DaemonLease {
@@ -177,6 +182,34 @@ describe('startDaemonServer', () => {
 		}
 	});
 
+	test('run executes a local-only mount action over the socket', async () => {
+		const lease = claimTestLease();
+		const runtime = makeRuntime({
+			collaboration: false,
+			actions: {
+				sync: defineQuery({ handler: () => ({ imported: 1 }) }),
+			},
+		});
+		const serverResult = await startDaemonServer({
+			lease,
+			mounts: [{ mount: 'mirror', runtime }],
+		});
+
+		try {
+			const server = expectOk(serverResult);
+			const data = expectOk(
+				await daemonClient(server.socketPath).run({
+					actionPath: 'mirror.sync',
+					input: null,
+				}),
+			);
+			expect(data).toEqual({ imported: 1 });
+		} finally {
+			if (serverResult.error === null) await serverResult.data.close();
+			lease.release();
+		}
+	});
+
 	test('run with to forwards mount-local action keys over the socket', async () => {
 		const lease = claimTestLease();
 		let invokedAction = '';
@@ -225,6 +258,31 @@ describe('startDaemonServer', () => {
 					actionPath: 'demo.peer_only_action',
 					input: null,
 					peer: { to: 'mac', waitMs: -1 },
+				}),
+			);
+			expect(error.name).toBe('UsageError');
+		} finally {
+			if (serverResult.error === null) await serverResult.data.close();
+			lease.release();
+		}
+	});
+
+	test('run with to rejects local-only mounts as a usage error', async () => {
+		const lease = claimTestLease();
+		const serverResult = await startDaemonServer({
+			lease,
+			mounts: [
+				{ mount: 'mirror', runtime: makeRuntime({ collaboration: false }) },
+			],
+		});
+
+		try {
+			const server = expectOk(serverResult);
+			const error = expectErr(
+				await daemonClient(server.socketPath).run({
+					actionPath: 'mirror.sync',
+					input: null,
+					peer: { to: 'mac', waitMs: 25 },
 				}),
 			);
 			expect(error.name).toBe('UsageError');

@@ -18,10 +18,10 @@
  * browser-only actions pass `{}` to refuse them on the daemon side, while
  * workspaces with daemon-safe actions pass `workspace.actions`.
  *
- * Returns the parts the host reads (`collaboration`) plus the side-effectful
- * `yjsLog` handle and an `[Symbol.asyncDispose]` that encodes the destroy
- * order. Callers usually spread the result into their `DaemonRuntime` and
- * compose materializers around the same ydoc.
+ * Returns the daemon-served `actions`, the optional-peer `collaboration`, the
+ * side-effectful `yjsLog` handle, and an `[Symbol.asyncDispose]` that encodes
+ * the destroy order. Callers usually spread the result into their
+ * `DaemonRuntime` and compose materializers around the same ydoc.
  */
 
 import type { OwnerId } from '@epicenter/identity';
@@ -89,6 +89,8 @@ export function attachProjectInfrastructure<TActions extends ActionRegistry>(
 	});
 
 	return {
+		/** Local action registry served by this daemon runtime. */
+		actions,
 		/** Durable Y.Doc update log handle. */
 		yjsLog,
 		/** Cloud sync, presence, and dispatch handle for this mount. */

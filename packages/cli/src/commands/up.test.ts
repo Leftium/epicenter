@@ -34,6 +34,7 @@ import { MachineAuthStorageError } from '@epicenter/auth/node';
 import { asOwnerId } from '@epicenter/identity';
 import {
 	claimDaemonLease,
+	daemonClient,
 	metadataPathFor,
 	pingDaemon,
 	socketPathFor,
@@ -151,6 +152,7 @@ function writeRuntimeMount({
 			name: 'demo',
 			async open() {
 				return {
+					actions,
 					collaboration,
 					async [Symbol.asyncDispose]() {
 						${onDisposeMarker ? `writeFileSync(${JSON.stringify(onDisposeMarker)}, 'disposed');` : ''}
@@ -192,6 +194,53 @@ describe('runUp: happy path', () => {
 		}
 		expect(existsSync(metadataPathFor(workDir))).toBe(false);
 		expect(existsSync(socketPathFor(workDir))).toBe(false);
+	});
+
+	test('serves a local-only mount without collaboration', async () => {
+		writeDemoMount(`
+			const sync = () => ({ imported: 2 });
+			sync.type = 'query';
+			sync.description = 'Sync local mirror';
+			const actions = {
+				sync,
+			};
+
+			export default {
+				name: 'mirror',
+				async open() {
+					return {
+						actions,
+						async [Symbol.asyncDispose]() {},
+					};
+				},
+			};
+		`);
+		writeDemoConfig();
+
+		const handle = expectOk(
+			await runUp({
+				projectDir: workDir,
+				quiet: true,
+				createAuthClient: stubAuthFactory,
+			}),
+		);
+		try {
+			const client = daemonClient(socketPathFor(workDir));
+			const manifest = expectOk(await client.list());
+			expect(Object.keys(manifest)).toEqual(['mirror.sync']);
+			expect(manifest['mirror.sync']?.description).toBe('Sync local mirror');
+			expect(expectOk(await client.peers())).toEqual([]);
+			expect(
+				expectOk(
+					await client.run({
+						actionPath: 'mirror.sync',
+						input: null,
+					}),
+				),
+			).toEqual({ imported: 2 });
+		} finally {
+			await handle.teardown();
+		}
 	});
 });
 
@@ -330,6 +379,7 @@ describe('runUp: failure cleanup', () => {
 					name: 'good',
 					async open() {
 						return {
+							actions: {},
 							collaboration,
 							async [Symbol.asyncDispose]() {
 								writeFileSync(${JSON.stringify(disposeMarker)}, 'disposed');

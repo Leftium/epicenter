@@ -7,8 +7,8 @@
  * `MountContext` so handlers can use it for logging.
  *
  * The host calls `open(ctx)` once on `epicenter daemon up`. The returned
- * runtime shape matches `DaemonRuntime` so the socket app does not branch on
- * mount origin.
+ * runtime always exposes local `actions`, and may expose `collaboration` when
+ * the mount participates in Yjs sync, presence, and peer dispatch.
  */
 
 import type { Keyring } from '@epicenter/encryption';

@@ -55,7 +55,7 @@ function stubAuthClient(): WorkspaceAuthClient {
 }
 
 /** A mount literal whose runtime disposes cleanly, written into a config. */
-const RUNTIME = '{ collaboration: {}, async [Symbol.asyncDispose]() {} }';
+const RUNTIME = '{ actions: {}, async [Symbol.asyncDispose]() {} }';
 
 describe('openProject', () => {
 	test('returns a structured not-found error instead of throwing', async () => {
@@ -101,7 +101,7 @@ describe('openProject', () => {
 				{
 					name: 'good',
 					open: () => ({
-						collaboration: {},
+						actions: {},
 						async [Symbol.asyncDispose]() { writeFileSync(marker, 'disposed'); },
 					}),
 				},

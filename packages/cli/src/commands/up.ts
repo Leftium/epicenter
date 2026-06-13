@@ -246,7 +246,9 @@ function ensureProjectGitignore(projectDir: string): void {
 }
 
 function printPeersSnapshot(entry: StartedMount): void {
-	const devices = entry.runtime.collaboration.devices.list();
+	const collaboration = entry.runtime.collaboration;
+	if (!collaboration) return;
+	const devices = collaboration.devices.list();
 	if (devices.length === 0) {
 		process.stderr.write(`${entry.mount}: no peers connected\n`);
 		return;
@@ -257,14 +259,12 @@ function printPeersSnapshot(entry: StartedMount): void {
 }
 
 function subscribePeers(entry: StartedMount, quiet: boolean): void {
+	const collaboration = entry.runtime.collaboration;
+	if (!collaboration) return;
 	const snapshot = () =>
-		new Set(
-			entry.runtime.collaboration.devices
-				.list()
-				.map((device) => device.deviceId),
-		);
+		new Set(collaboration.devices.list().map((device) => device.deviceId));
 	let prev = snapshot();
-	entry.runtime.collaboration.devices.subscribe(() => {
+	collaboration.devices.subscribe(() => {
 		const next = snapshot();
 		for (const deviceId of next) {
 			if (!prev.has(deviceId)) {
@@ -285,7 +285,9 @@ function subscribePeers(entry: StartedMount, quiet: boolean): void {
 }
 
 function subscribeSyncStatus(entry: StartedMount): void {
-	entry.runtime.collaboration.onStatusChange((status) => {
+	const collaboration = entry.runtime.collaboration;
+	if (!collaboration) return;
+	collaboration.onStatusChange((status) => {
 		if (status.phase === 'connecting') {
 			logSyncStatus(`${entry.mount}: connecting (retry ${status.retries})`);
 		} else if (status.phase === 'connected') {

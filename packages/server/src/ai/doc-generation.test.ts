@@ -201,6 +201,31 @@ describe('runDocGeneration', () => {
 		expect(harness.messages()).toEqual(before);
 	});
 
+	test('recent unfinished assistant still blocks after a later user message', async () => {
+		const harness = createHarness();
+		harness.seed((doc) => {
+			appendUserMessage(doc, { id: 'u1', content: 'hi', createdAt: 1000 });
+			appendAssistantMessage(doc, { id: 'gen-live', createdAt: Date.now() });
+			appendUserMessage(doc, {
+				id: 'u2',
+				content: 'second prompt',
+				createdAt: 2000,
+			});
+		});
+		const before = harness.messages();
+
+		const result = await runDocGeneration({
+			room: harness.room,
+			generationId: 'gen-2',
+			signal: new AbortController().signal,
+			waitUntil: harness.waitUntil,
+			startStream: () => streamOf('should never run'),
+		});
+
+		expect(result.error?.name).toBe('GenerationInProgress');
+		expect(harness.messages()).toEqual(before);
+	});
+
 	test('stale unfinished trailing assistant is an interrupted artifact and does not block', async () => {
 		const harness = createHarness();
 		const staleCreatedAt = Date.now() - 3 * 60 * 1000;

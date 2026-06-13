@@ -73,9 +73,9 @@ export const AiChatError = defineErrors({
 		generationId,
 	}),
 	/**
-	 * Doc-as-wire concurrency guard: the conversation's trailing assistant
-	 * message has no finish yet and is recent enough to still be live. One
-	 * active generation per conversation; retry after it finishes.
+	 * Doc-as-wire concurrency guard: the conversation has an assistant message
+	 * with no finish yet that is recent enough to still be live. One active
+	 * generation per conversation; retry after it finishes.
 	 */
 	GenerationInProgress: () => ({
 		message: 'A generation is already in progress for this conversation',

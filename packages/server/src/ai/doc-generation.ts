@@ -33,6 +33,7 @@ import { encodeSyncRequest } from '@epicenter/sync';
 import {
 	appendAssistantMessage,
 	type ChatDocFinish,
+	findActiveChatDocGeneration,
 	readChatDocMessages,
 } from '@epicenter/workspace/ai';
 import { EventType, type ModelMessage, type StreamChunk } from '@tanstack/ai';
@@ -81,14 +82,6 @@ const DocGenerationError = defineErrors({
 	}),
 });
 
-/**
- * A trailing assistant message without `finish` younger than this blocks a
- * new generation (it is presumed live). Older ones are interrupted
- * artifacts (worker eviction mid-generation) and do not block. A snapshot
- * cannot know "still live", so staleness stands in for it.
- */
-const ACTIVE_GENERATION_WINDOW_MS = 2 * 60 * 1000;
-
 /** Flush cadence: at most one transaction per interval... */
 const FLUSH_INTERVAL_MS = 75;
 /** ...unless the buffered text passes this size first. */
@@ -133,12 +126,8 @@ export async function runDocGeneration({
 		replica.destroy();
 		return AiChatError.GenerationAlreadyExists({ generationId });
 	}
-	const trailing = messages.at(-1);
-	if (
-		trailing?.role === 'assistant' &&
-		trailing.finish === undefined &&
-		Date.now() - trailing.createdAt < ACTIVE_GENERATION_WINDOW_MS
-	) {
+	const startedAt = Date.now();
+	if (findActiveChatDocGeneration(messages, startedAt)) {
 		replica.destroy();
 		return AiChatError.GenerationInProgress();
 	}
@@ -216,7 +205,7 @@ export async function runDocGeneration({
 	// assistant map with a recent createdAt.
 	const writer = appendAssistantMessage(replica, {
 		id: generationId,
-		createdAt: Date.now(),
+		createdAt: startedAt,
 	});
 
 	let buffer = '';

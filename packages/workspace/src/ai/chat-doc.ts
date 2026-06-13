@@ -43,6 +43,13 @@ export type ChatDocMessage = {
 	finish?: ChatDocFinish;
 };
 
+/**
+ * Unfinished assistant messages younger than this are presumed live. Older
+ * ones are interrupted artifacts (worker eviction mid-generation) and should
+ * not block or render as active.
+ */
+export const CHAT_DOC_ACTIVE_GENERATION_WINDOW_MS = 2 * 60 * 1000;
+
 const MESSAGES_KEY = 'messages';
 
 function messagesArray(doc: Y.Doc): Y.Array<Y.Map<unknown>> {
@@ -101,12 +108,14 @@ export function appendAssistantMessage(
 	});
 
 	return {
+		/** Append streamed text to the assistant message content. */
 		appendText(text: string): void {
 			if (!text) return;
 			doc.transact(() => {
 				content.insert(content.length, text);
 			});
 		},
+		/** Append any final text and write the terminal outcome once. */
 		finish(finish: ChatDocFinish, { text = '' }: { text?: string } = {}): void {
 			if (map.get('finish') !== undefined) return;
 			doc.transact(() => {
@@ -145,6 +154,28 @@ export function readChatDocMessages(doc: Y.Doc): ChatDocMessage[] {
 		});
 	}
 	return messages;
+}
+
+/**
+ * Find the latest recent unfinished assistant message that should still block
+ * another generation. Server and client both use this predicate so they agree
+ * on the difference between "still live" and "interrupted artifact".
+ */
+export function findActiveChatDocGeneration(
+	messages: readonly ChatDocMessage[],
+	now: number,
+): ChatDocMessage | undefined {
+	for (let index = messages.length - 1; index >= 0; index--) {
+		const message = messages[index];
+		if (
+			message?.role === 'assistant' &&
+			message.finish === undefined &&
+			now - message.createdAt < CHAT_DOC_ACTIVE_GENERATION_WINDOW_MS
+		) {
+			return message;
+		}
+	}
+	return undefined;
 }
 
 /**

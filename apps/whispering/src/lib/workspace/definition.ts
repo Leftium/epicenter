@@ -4,6 +4,7 @@ import {
 	defineKv,
 	defineTable,
 	defineWorkspace,
+	type IanaTimeZone,
 	type InferKvValue,
 	type InferTableRow,
 	nullable,
@@ -40,11 +41,11 @@ import {
 const TranscriptionOutcome = Type.Union([
 	Type.Object({
 		status: Type.Literal('completed'),
-		completedAt: Type.String(),
+		completedAt: field.instant(),
 	}),
 	Type.Object({
 		status: Type.Literal('failed'),
-		completedAt: Type.String(),
+		completedAt: field.instant(),
 		error: Type.String(),
 	}),
 ]);
@@ -59,8 +60,9 @@ const TranscriptionOutcome = Type.Union([
 const recordings = defineTable({
 	id: field.string(),
 	title: field.string(),
-	recordedAt: field.string(),
-	updatedAt: field.string(),
+	recordedAt: field.instant(),
+	recordedAtZone: field.string<IanaTimeZone>(),
+	updatedAt: field.instant(),
 	transcript: field.string(),
 	duration: nullable(field.number()),
 	transcription: nullable(field.json(TranscriptionOutcome)),
@@ -74,8 +76,8 @@ const transformations = defineTable({
 	id: field.string(),
 	title: field.string(),
 	description: field.string(),
-	createdAt: field.string(),
-	updatedAt: field.string(),
+	createdAt: field.instant(),
+	updatedAt: field.instant(),
 });
 
 /** Transformation row type inferred from the workspace table schema. */
@@ -139,13 +141,13 @@ export type TransformationStep = InferTableRow<typeof transformationSteps>;
  */
 const CompletedResult = Type.Object({
 	status: Type.Literal('completed'),
-	completedAt: Type.String(),
+	completedAt: field.instant(),
 	output: Type.String(),
 });
 
 const FailedResult = Type.Object({
 	status: Type.Literal('failed'),
-	completedAt: Type.String(),
+	completedAt: field.instant(),
 	error: Type.String(),
 });
 
@@ -163,7 +165,7 @@ const transformationRuns = defineTable({
 	transformationId: field.string(),
 	recordingId: nullable(field.string()),
 	input: field.string(),
-	startedAt: field.string(),
+	startedAt: field.instant(),
 	result: nullable(field.json(TransformationRunResult)),
 });
 
@@ -177,7 +179,7 @@ const transformationStepRuns = defineTable({
 	stepId: field.string(),
 	order: field.number(),
 	input: field.string(),
-	startedAt: field.string(),
+	startedAt: field.instant(),
 	result: nullable(field.json(TransformationRunResult)),
 });
 

@@ -33,6 +33,8 @@ settings.set('recording.mode', 'vad');
 Recording metadata backed by Yjs workspace table. SvelteMap provides per-key reactivity: updating one recording doesn't re-render the entire list. Audio blobs are not stored here because they are too large for CRDTs; use `$lib/rpc/audio` for playback URLs and `services.blobs.audio` for raw blob access.
 
 ```typescript
+import { InstantString } from '@epicenter/field';
+
 import { recordings } from '$lib/state/recordings.svelte';
 
 // Read recordings reactively
@@ -43,7 +45,7 @@ const sorted = recordings.sorted; // newest first
 recordings.set(recording);
 recordings.update(id, {
 	transcript,
-	transcription: { status: 'completed', completedAt: new Date().toISOString() },
+	transcription: { status: 'completed', completedAt: InstantString.now() },
 });
 recordings.delete(id);
 ```

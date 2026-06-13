@@ -44,7 +44,6 @@
 		getSortedRowModel,
 	} from '@tanstack/table-core';
 	import { type } from 'arktype';
-	import { format } from 'date-fns';
 	import { createRawSnippet } from 'svelte';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import { PATHS } from '$lib/services/fs-paths';
@@ -60,18 +59,27 @@
 	import { RecordingRowActions } from './row-actions';
 
 	/**
-	 * Returns a cell renderer for a date/time column using date-fns format.
-	 *
-	 * @param formatString - date-fns format string
+	 * Returns a cell renderer for an instant, optionally using a row-owned
+	 * display timezone.
 	 */
-	function formattedCell(formatString: string) {
-		return ({ getValue }: { getValue: () => unknown }) => {
+	function formattedCell(getTimeZone?: (recording: Recording) => string) {
+		return ({
+			getValue,
+			row,
+		}: {
+			getValue: () => unknown;
+			row: { original: Recording };
+		}) => {
 			const value = getValue();
 			if (typeof value !== 'string' || !value) return '';
 			const date = new Date(value);
 			if (Number.isNaN(date.getTime())) return value;
 			try {
-				return format(date, formatString);
+				return new Intl.DateTimeFormat(undefined, {
+					dateStyle: 'medium',
+					timeStyle: 'short',
+					timeZone: getTimeZone?.(row.original),
+				}).format(date);
 			} catch {
 				return value;
 			}
@@ -81,7 +89,6 @@
 	const transcribeRecordings = createMutation(
 		() => rpc.transcription.transcribeRecordings.options,
 	);
-	const DATE_FORMAT = 'PP p'; // e.g., Aug 13, 2025, 10:00 AM
 
 	const columns = [
 		{
@@ -137,7 +144,7 @@
 					column,
 					headerText: 'Recorded',
 				}),
-			cell: formattedCell(DATE_FORMAT),
+			cell: formattedCell((recording) => recording.recordedAtZone),
 		},
 		{
 			accessorKey: 'updatedAt',
@@ -147,7 +154,7 @@
 					column,
 					headerText: 'Updated At',
 				}),
-			cell: formattedCell(DATE_FORMAT),
+			cell: formattedCell(),
 		},
 		{
 			accessorKey: 'transcript',

@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { Textarea } from '@epicenter/ui/textarea';
-	import type { ConversationHandle } from '../chat/chat-state.svelte';
+	import type { ConversationSession } from '../chat/chat-state.svelte';
 
 	type Props = {
-		handle: ConversationHandle;
+		handle: ConversationSession;
 	};
 
 	let { handle }: Props = $props();
@@ -34,9 +34,9 @@
 		aria-label="Message input"
 		bind:value={handle.inputValue}
 		onkeydown={handleKeydown}
-		disabled={handle.isLoading}
+		disabled={handle.isGenerating}
 	/>
-	{#if handle.isLoading}
+	{#if handle.isGenerating}
 		<Button type="button" variant="outline" onclick={() => handle.stop()}
 			>Stop</Button
 		>

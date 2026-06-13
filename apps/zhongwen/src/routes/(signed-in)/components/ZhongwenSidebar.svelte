@@ -32,7 +32,7 @@
 			<Sidebar.GroupLabel>Conversations</Sidebar.GroupLabel>
 			<Sidebar.GroupContent>
 				<Sidebar.Menu>
-					{#each chatState.conversationHandles as conv (conv.id)}
+					{#each chatState.conversations as conv (conv.id)}
 						<Sidebar.MenuItem>
 							<Sidebar.MenuButton
 								isActive={conv.id === chatState.activeConversationId}

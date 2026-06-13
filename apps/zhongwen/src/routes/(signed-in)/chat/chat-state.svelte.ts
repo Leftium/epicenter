@@ -1,23 +1,40 @@
 /**
- * Reactive AI chat state for Zhongwen with workspace persistence.
+ * Reactive AI chat state for Zhongwen over doc-as-wire.
  *
- * Conversations and messages persist to IndexedDB via the workspace API.
- * Modeled after tab-manager's chat-state, but simplified with no tool calls,
- * no encryption, no WebSocket sync.
+ * The transcript of each conversation lives in its own synced Yjs child doc
+ * (`zhongwen.conversationDocs`); the server generation actor streams
+ * assistant tokens into that doc as a sync peer. This module renders the
+ * doc and drives the control plane:
+ *
+ *   messages    observer on the conversation doc -> reactive snapshots
+ *   send        append the user message map, bump the conversations row,
+ *               POST the kickoff (no message history in the body)
+ *   stop        abort the kickoff fetch; the server writes finish: cancelled
+ *   liveness    derived from update recency, never stored: a trailing
+ *               assistant message without `finish` is streaming while
+ *               updates are recent, interrupted once they go quiet
+ *
+ * Only the ACTIVE conversation holds its doc open (IDB + websocket); the
+ * sidebar list reads the cheap conversations table.
  */
 
+import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createAiChatFetch, fromTable } from '@epicenter/svelte';
+import { generateId } from '@epicenter/workspace';
 import {
-	asChatMessageId,
-	asConversationId,
+	appendUserMessage,
+	type ChatDocMessage,
+	observeChatDocMessages,
+	readChatDocMessages,
+} from '@epicenter/workspace/ai';
+import {
 	type Conversation,
 	type ConversationId,
-	generateChatMessageId,
 	generateConversationId,
 } from '@epicenter/zhongwen';
-import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { SvelteMap } from 'svelte/reactivity';
+import { extractErrorMessage } from 'wellcrafted/error';
 import { requireZhongwen } from '$lib/session';
 import { auth } from '$platform/auth';
 import {
@@ -27,19 +44,35 @@ import {
 	type Provider,
 } from './providers';
 import { ZHONGWEN_SYSTEM_PROMPT } from './system-prompt';
-import { toPersistedParts, toUiMessage } from './ui-message';
+
+/**
+ * How long after the last doc update a finish-less trailing assistant
+ * message still counts as live. Past this, it derives as interrupted.
+ */
+const STREAM_GRACE_MS = 3000;
+
+const aiChatFetch = createAiChatFetch(auth.fetch);
 
 // ─── State Factory ───────────────────────────────────────────────────────────
 
 export function createChatState() {
 	const zhongwen = requireZhongwen();
 
-	// ── Conversation List (Y.Doc-backed) ──
+	// ── Conversation List (root-doc table; cheap, no child docs) ──
 
 	const conversationsMap = fromTable(zhongwen.tables.conversations);
 	const conversations = $derived(
 		[...conversationsMap.values()].sort((a, b) => b.updatedAt - a.updatedAt),
 	);
+
+	/** Per-conversation input drafts, preserved across switches. */
+	const drafts = new SvelteMap<ConversationId, string>();
+
+	/** 1s ticker feeding the recency-derived liveness states. */
+	let now = $state(Date.now());
+	const ticker = setInterval(() => {
+		now = Date.now();
+	}, 1000);
 
 	/** Returns the ID to activate, either the first existing conversation or a newly created default. */
 	function ensureDefaultConversation(): ConversationId {
@@ -47,19 +80,17 @@ export function createChatState() {
 		if (first) return first.id;
 
 		const id = generateConversationId();
-		const now = Date.now();
+		const timestamp = Date.now();
 		zhongwen.tables.conversations.set({
 			id,
 			title: 'New Chat',
 			provider: DEFAULT_PROVIDER,
 			model: DEFAULT_MODEL,
-			createdAt: now,
-			updatedAt: now,
+			createdAt: timestamp,
+			updatedAt: timestamp,
 		});
 		return id;
 	}
-
-	// ── Helpers ──
 
 	function updateConversation(
 		conversationId: ConversationId,
@@ -71,68 +102,82 @@ export function createChatState() {
 		});
 	}
 
-	function loadMessages(conversationId: ConversationId) {
-		return zhongwen.tables.chatMessages
-			.filter((m) => m.conversationId === conversationId)
-			.sort((a, b) => a.createdAt - b.createdAt)
-			.map(toUiMessage);
-	}
+	// ── Active Conversation Session ──
+	// One open transcript doc at a time. Switching disposes the previous
+	// session's doc handle (the cache's grace window absorbs quick
+	// back-and-forth) but does NOT abort an in-flight generation: the server
+	// keeps streaming into the room and the transcript catches up on resync.
 
-	// ── Handle Registry ──
+	function openSession(conversationId: ConversationId) {
+		const docHandle = zhongwen.conversationDocs.open(conversationId);
 
-	let activeConversationId = $state<ConversationId>(asConversationId(''));
-
-	const handles = new SvelteMap<
-		ConversationId,
-		ReturnType<typeof createConversationHandle>
-	>();
-
-	// ── Conversation Handle Factory ──
-
-	function createConversationHandle(conversationId: ConversationId) {
-		let inputValue = $state('');
-
-		const metadata = $derived(conversationsMap.get(conversationId));
-
-		const chat = createChat({
-			initialMessages: loadMessages(conversationId),
-			connection: fetchServerSentEvents(`${APP_URLS.API}/ai/chat`, () => ({
-				fetchClient: createAiChatFetch(auth.fetch),
-				body: {
-					data: {
-						provider: metadata?.provider ?? DEFAULT_PROVIDER,
-						model: metadata?.model ?? DEFAULT_MODEL,
-						systemPrompts: [ZHONGWEN_SYSTEM_PROMPT],
-					},
-				},
-			})),
-			onError: (err) => {
-				console.error(
-					'[zhongwen] stream error:',
-					err.message,
-					'conversation:',
-					conversationId,
-				);
-			},
-			onFinish: (message) => {
-				zhongwen.tables.chatMessages.set({
-					id: asChatMessageId(message.id),
-					conversationId,
-					role: 'assistant',
-					parts: toPersistedParts(message.parts),
-					createdAt: message.createdAt?.getTime() ?? Date.now(),
-				});
-				zhongwen.tables.conversations.update(conversationId, {
-					updatedAt: Date.now(),
-				});
-			},
+		let messages = $state.raw<ChatDocMessage[]>(
+			readChatDocMessages(docHandle.ydoc),
+		);
+		let lastDocChangeAt = $state(0);
+		const unobserve = observeChatDocMessages(docHandle.ydoc, () => {
+			messages = readChatDocMessages(docHandle.ydoc);
+			lastDocChangeAt = Date.now();
 		});
 
+		let kickoffController = $state.raw<AbortController | null>(null);
+		/** Kickoff failures never reach the doc; they surface here. */
+		let sendError = $state<string | null>(null);
+
+		const metadata = $derived(conversationsMap.get(conversationId));
+		const trailing = $derived(messages.at(-1));
+		/** A finish-less trailing assistant message with recent updates is live. */
+		const isRemoteLive = $derived(
+			trailing?.role === 'assistant' &&
+				trailing.finish === undefined &&
+				now - lastDocChangeAt < STREAM_GRACE_MS,
+		);
+		const isGenerating = $derived(kickoffController !== null || isRemoteLive);
+		const isInterrupted = $derived(
+			trailing?.role === 'assistant' &&
+				trailing.finish === undefined &&
+				!isGenerating,
+		);
+		const failure = $derived(
+			trailing?.finish?.kind === 'failed' ? trailing.finish : undefined,
+		);
+
+		async function kickoffGeneration() {
+			if (kickoffController) return;
+			const controller = new AbortController();
+			kickoffController = controller;
+			sendError = null;
+			try {
+				await aiChatFetch(API_ROUTES.ai.chatDoc.url(APP_URLS.API), {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({
+						guid: docHandle.ydoc.guid,
+						generationId: generateId(),
+						data: {
+							provider: metadata?.provider ?? DEFAULT_PROVIDER,
+							model: metadata?.model ?? DEFAULT_MODEL,
+							systemPrompts: [ZHONGWEN_SYSTEM_PROMPT],
+						},
+					}),
+					signal: controller.signal,
+				});
+				// The kickoff resolving (200) IS the finish signal for the
+				// requester. The server cannot write the per-value-encrypted
+				// conversations table, and a completed reply can only land while
+				// this requester is alive, so bumping list recency here is the
+				// reliable owner of conversations.updatedAt on completion.
+				updateConversation(conversationId, {});
+			} catch (error) {
+				if (!controller.signal.aborted) {
+					sendError = extractErrorMessage(error);
+				}
+			} finally {
+				if (kickoffController === controller) kickoffController = null;
+			}
+		}
+
 		return {
-			syncMessages() {
-				if (chat.isLoading) return;
-				chat.setMessages(loadMessages(conversationId));
-			},
 			get id() {
 				return conversationId;
 			},
@@ -159,177 +204,145 @@ export function createChatState() {
 				updateConversation(conversationId, { model: value });
 			},
 
-			get messages() {
-				return chat.messages;
+			get inputValue() {
+				return drafts.get(conversationId) ?? '';
+			},
+			set inputValue(value: string) {
+				drafts.set(conversationId, value);
 			},
 
-			get isLoading() {
-				return chat.isLoading;
+			get messages() {
+				return messages;
+			},
+
+			get isGenerating() {
+				return isGenerating;
+			},
+
+			/** Generating, but no assistant text has landed yet. */
+			get isThinking() {
+				return (
+					isGenerating &&
+					(trailing?.role !== 'assistant' || trailing.text.length === 0)
+				);
+			},
+
+			get isInterrupted() {
+				return isInterrupted;
 			},
 
 			get error() {
-				return chat.error;
-			},
-
-			get inputValue() {
-				return inputValue;
-			},
-			set inputValue(value: string) {
-				inputValue = value;
+				return sendError ?? failure?.message ?? null;
 			},
 
 			sendMessage(content: string) {
-				if (!content.trim()) return;
-				const userMessageId = generateChatMessageId();
-
-				// Send to client FIRST so isLoading=true before the
-				// observer fires refreshFromDoc (which skips when loading).
-				void chat.sendMessage({ content, id: userMessageId });
-
-				zhongwen.tables.chatMessages.set({
-					id: userMessageId,
-					conversationId,
-					role: 'user',
-					parts: toPersistedParts([{ type: 'text', content }]),
+				const text = content.trim();
+				if (!text || isGenerating) return;
+				appendUserMessage(docHandle.ydoc, {
+					id: generateId(),
+					content: text,
 					createdAt: Date.now(),
 				});
-
 				updateConversation(conversationId, {
 					title:
 						metadata?.title === 'New Chat'
-							? content.trim().slice(0, 50)
+							? text.slice(0, 50)
 							: metadata?.title,
 				});
+				void kickoffGeneration();
 			},
 
-			reload() {
-				const lastMessage = chat.messages.at(-1);
-				if (lastMessage?.role === 'assistant') {
-					zhongwen.tables.chatMessages.delete(asChatMessageId(lastMessage.id));
-				}
-				void chat.reload();
+			/** Re-kick after a failed or interrupted turn; the prompt is the doc as it stands. */
+			retry() {
+				sendError = null;
+				void kickoffGeneration();
 			},
 
 			stop() {
-				chat.stop();
+				kickoffController?.abort();
 			},
 
 			/**
-			 * Tear down the chat client: abort any in-flight stream, then
-			 * release the devtools bridge, which holds the client in a
-			 * globalThis registry that would otherwise outlive the handle.
+			 * Release the transcript doc. Deliberately does NOT abort an
+			 * in-flight kickoff: the generation belongs to the conversation,
+			 * not to this view of it.
 			 */
-			dispose() {
-				chat.stop();
-				chat.dispose();
+			close() {
+				unobserve();
+				docHandle[Symbol.dispose]();
 			},
 		};
 	}
 
+	let activeSession = $state.raw<ReturnType<typeof openSession> | null>(null);
+
+	function switchConversation(conversationId: ConversationId) {
+		if (activeSession?.id === conversationId) return;
+		activeSession?.close();
+		activeSession = openSession(conversationId);
+	}
+
 	// ── Lifecycle ──
 
-	function destroyConversation(id: ConversationId) {
-		handles.get(id)?.dispose();
-		handles.delete(id);
-	}
-
-	function reconcileHandles() {
-		for (const id of handles.keys()) {
-			if (!conversationsMap.has(id)) {
-				destroyConversation(id);
-			}
-		}
-
-		for (const id of conversationsMap.keys()) {
-			const convId = asConversationId(id);
-			if (!handles.has(convId)) {
-				handles.set(convId, createConversationHandle(convId));
-			}
-		}
-	}
-
-	// ── Observers ──
-
-	// fromTable owns the reactive data; this observer only handles
-	// imperative handle lifecycle (creating/destroying chat instances).
+	// If the active conversation's row disappears (deleted on another
+	// device), fall back to the default conversation.
 	const unobserveConversations = zhongwen.tables.conversations.observe(() => {
-		reconcileHandles();
-	});
-	const unobserveChatMessages = zhongwen.tables.chatMessages.observe(() => {
-		handles.get(activeConversationId)?.syncMessages();
+		if (activeSession && !conversationsMap.has(activeSession.id)) {
+			activeSession.close();
+			activeSession = null;
+			switchConversation(ensureDefaultConversation());
+		}
 	});
 
-	// Initialize after persistence loads
+	// Initialize after persistence loads.
 	void zhongwen.idb.whenLoaded.then(() => {
-		reconcileHandles();
-		activeConversationId = ensureDefaultConversation();
+		if (!activeSession) switchConversation(ensureDefaultConversation());
 	});
-
-	reconcileHandles();
 
 	// ── Conversation CRUD ──
 
 	function createConversation(): ConversationId {
 		const id = generateConversationId();
-		const now = Date.now();
-		const current = handles.get(activeConversationId);
+		const timestamp = Date.now();
 
 		zhongwen.tables.conversations.set({
 			id,
 			title: 'New Chat',
-			provider: current?.provider ?? DEFAULT_PROVIDER,
-			model: current?.model ?? DEFAULT_MODEL,
-			createdAt: now,
-			updatedAt: now,
+			provider: activeSession?.provider ?? DEFAULT_PROVIDER,
+			model: activeSession?.model ?? DEFAULT_MODEL,
+			createdAt: timestamp,
+			updatedAt: timestamp,
 		});
 
 		switchConversation(id);
 		return id;
 	}
 
-	function switchConversation(conversationId: ConversationId) {
-		activeConversationId = conversationId;
-		handles.get(conversationId)?.syncMessages();
-	}
-
 	function deleteConversation(conversationId: ConversationId) {
-		destroyConversation(conversationId);
-
-		const msgs = zhongwen.tables.chatMessages
-			.getAllValid()
-			.filter((m) => m.conversationId === conversationId);
-		zhongwen.ydoc.transact(() => {
-			for (const m of msgs) {
-				zhongwen.tables.chatMessages.delete(m.id);
-			}
-			zhongwen.tables.conversations.delete(conversationId);
-		});
-
-		if (activeConversationId === conversationId) {
+		if (activeSession?.id === conversationId) {
+			activeSession.close();
+			activeSession = null;
+		}
+		drafts.delete(conversationId);
+		zhongwen.tables.conversations.delete(conversationId);
+		if (!activeSession) {
 			switchConversation(ensureDefaultConversation());
 		}
 	}
 
 	// ── Public API ──
 
-	// Safe to assert: reconcileHandles() runs synchronously in the
-	// conversations observer, so every conversation ID has a handle
-	// before any $derived re-evaluates.
-	const conversationList = $derived(
-		conversations.map((c) => handles.get(c.id)!),
-	);
-
 	return {
 		get active() {
-			return handles.get(activeConversationId);
+			return activeSession ?? undefined;
 		},
 
-		get conversationHandles() {
-			return conversationList;
+		get conversations() {
+			return conversations;
 		},
 
 		get activeConversationId() {
-			return activeConversationId;
+			return activeSession?.id;
 		},
 
 		createConversation,
@@ -339,15 +352,14 @@ export function createChatState() {
 		deleteConversation,
 
 		[Symbol.dispose]() {
+			clearInterval(ticker);
 			unobserveConversations();
-			unobserveChatMessages();
 			conversationsMap[Symbol.dispose]();
-			for (const id of handles.keys()) {
-				destroyConversation(id);
-			}
+			activeSession?.close();
+			activeSession = null;
 		},
 	};
 }
 
 export type ChatState = ReturnType<typeof createChatState>;
-export type ConversationHandle = NonNullable<ChatState['active']>;
+export type ConversationSession = NonNullable<ChatState['active']>;

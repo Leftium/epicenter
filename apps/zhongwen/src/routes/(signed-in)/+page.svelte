@@ -75,8 +75,9 @@
 		</header>
 
 		{#if chatState.active}
+			{@const active = chatState.active}
 			<Chat.List class="flex-1 overflow-y-auto p-4" aria-live="polite">
-				{#if chatState.active.messages.length === 0}
+				{#if active.messages.length === 0}
 					<div
 						class="flex flex-1 items-center justify-center text-muted-foreground"
 					>
@@ -86,45 +87,50 @@
 						</p>
 					</div>
 				{:else}
-					{#each chatState.active.messages as message, i (message.id)}
-						<ChatMessage
-							{message}
-							showPinyin={showPinyin.current}
-							isStreaming={chatState.active.isLoading}
-							isLast={i === chatState.active.messages.length - 1}
-							onRegenerate={() => chatState.active?.reload()}
-						/>
+					{#each active.messages as message (message.id)}
+						<!-- An empty assistant message is the in-progress turn before
+							its first token; the typing bubble below stands in for it. -->
+						{#if message.role === 'user' || message.text.length > 0}
+							<ChatMessage {message} showPinyin={showPinyin.current} />
+						{/if}
 					{/each}
 				{/if}
 
-				{#if chatState.active.isLoading}
+				{#if active.isThinking}
 					<Chat.Bubble variant="received">
 						<Chat.BubbleMessage typing />
 					</Chat.Bubble>
 				{/if}
 
-				{#if chatState.active.error && !dismissedError}
+				{#if active.error && !dismissedError}
 					<div
 						class="flex items-center gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive"
 					>
-						<span class="flex-1">{chatState.active.error.message}</span>
-						<Button
-							size="sm"
-							variant="outline"
-							onclick={() => chatState.active?.reload()}
-							>Retry</Button
-						>
+						<span class="flex-1">{active.error}</span>
+						<Button size="sm" variant="outline" onclick={() => active.retry()}>
+							Retry
+						</Button>
 						<Button
 							size="sm"
 							variant="ghost"
 							onclick={() => (dismissedError = true)}
-							>✕</Button
 						>
+							✕
+						</Button>
+					</div>
+				{:else if active.isInterrupted}
+					<div
+						class="flex items-center gap-2 rounded-md bg-muted p-3 text-sm text-muted-foreground"
+					>
+						<span class="flex-1">This reply was interrupted.</span>
+						<Button size="sm" variant="outline" onclick={() => active.retry()}>
+							Retry
+						</Button>
 					</div>
 				{/if}
 			</Chat.List>
 
-			<ChatInput handle={chatState.active} />
+			<ChatInput handle={active} />
 		{/if}
 	</main>
 </Sidebar.Provider>

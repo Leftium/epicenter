@@ -23,6 +23,7 @@ import {
 	defineKv,
 	defineTable,
 	defineWorkspace,
+	docGuid,
 	generateId,
 	type Id,
 	type InferTableRow,
@@ -108,3 +109,19 @@ export function createZhongwen(opts: { keyring: () => Keyring }) {
 	});
 }
 export type ZhongwenWorkspace = ReturnType<typeof createZhongwen>;
+
+/**
+ * Deterministic guid of a conversation's transcript sub-doc.
+ *
+ * Browser chat UIs (which open and sync the doc) and the server generation
+ * actor (which receives this guid in the kickoff body) both name the same
+ * Y.Doc through this composition. The transcript layout inside the doc is
+ * owned by `@epicenter/workspace/ai` (`chat-doc.ts`).
+ */
+export const zhongwenConversationDocGuid = (conversationId: ConversationId) =>
+	docGuid({
+		workspaceId: ZHONGWEN_ID,
+		collection: 'conversations',
+		rowId: conversationId,
+		field: 'messages',
+	});

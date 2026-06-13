@@ -1,9 +1,9 @@
 <script lang="ts">
 	import * as Select from '@epicenter/ui/select';
-	import type { ConversationHandle } from '../chat/chat-state.svelte';
+	import type { ConversationSession } from '../chat/chat-state.svelte';
 	import { PROVIDER_MODELS, type Provider } from '../chat/providers';
 
-	let { handle }: { handle: ConversationHandle } = $props();
+	let { handle }: { handle: ConversationSession } = $props();
 
 	const providers = Object.keys(PROVIDER_MODELS) as Provider[];
 	const models = $derived(PROVIDER_MODELS[handle.provider as Provider]);
@@ -16,7 +16,7 @@
 		onValueChange={(provider) => {
 			if (provider) handle.provider = provider;
 		}}
-		disabled={handle.isLoading}
+		disabled={handle.isGenerating}
 	>
 		<Select.Trigger size="sm"> {handle.provider} </Select.Trigger>
 		<Select.Content>
@@ -34,7 +34,7 @@
 		onValueChange={(model) => {
 			if (model) handle.model = model;
 		}}
-		disabled={handle.isLoading}
+		disabled={handle.isGenerating}
 	>
 		<Select.Trigger size="sm"> {handle.model} </Select.Trigger>
 		<Select.Content>

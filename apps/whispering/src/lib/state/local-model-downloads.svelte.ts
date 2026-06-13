@@ -23,7 +23,7 @@ import {
 import { createPrebuiltModel } from '$lib/operations/local-models';
 import { createModelStorage } from '$lib/services/transcription/local-model-folder';
 
-export type ModelDownloadState =
+type ModelDownloadState =
 	| { type: 'not-downloaded' }
 	| { type: 'downloading'; progress: number }
 	| { type: 'ready' }

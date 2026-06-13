@@ -478,6 +478,14 @@ Rejected for v1. A repo may contain several namespace roots. Upward-only discove
 
 Rejected. `.epicenter/` is namespace state, not projection content. Putting it inside each mount makes every mount look like a separate project root and blurs the boundary.
 
+### Round-trip editing of the projection (markdown as source)
+
+Rejected. The markdown folder is a read-only projection of the Yjs log, not a source. Making file edits flow back means reconstructing CRDT structure from a lossy, flattened view, and that reverse map is not generally invertible (fuji reads the body from a separate content-doc, so the `.md` on disk does not even hold everything needed to rebuild the row).
+
+A continuous watcher fights editor atomic-save patterns, partial writes, multiple events per save, and the feedback loop where a re-projection write looks like a user edit. An explicit "re-upload the folder" action avoids the watcher but clobbers concurrent edits from other devices, throwing away the merge guarantee that is the entire reason for a CRDT.
+
+The single write path is the app or the CLI. If editor ergonomics matter later, an `epicenter edit` checkout that commits through a workspace action gives "edit in my editor" without a watcher and without clobbering, because the save is a normal merging write. The on-disk projection stays read-only output.
+
 ## Open Questions
 
 1. **Should the default namespace folder be `apps/` or `epicenter/` in new docs?**
@@ -490,7 +498,11 @@ Rejected. `.epicenter/` is namespace state, not projection content. Putting it i
    - Recommendation: avoid implicit repo-root creation. Prefer an explicit init flow that writes `apps/epicenter.config.ts` or accepts the target namespace path.
 
 4. **Should rebuild always trash before deleting?**
-   - Recommendation: yes for first-party mount projections once the mount context can supply the namespace root and mount name. Keep the generic primitive simpler only if passing that context would pollute its API.
+   - Refused. With directory-level ownership (a mount folder is generated output) and the bootstrap guard refusing a pre-populated mount folder before `.epicenter/` exists, the only files a rebuild sweeps are ones Epicenter generated, and those re-project from the Yjs log. So the delete is not data loss and a trash protects nothing. Trash was a proxy for "the user edited a projected file"; that case is refused outright (see Rejected Alternatives: round-trip editing), so the proxy is unnecessary and would add an unbounded trash plus per-mount plumbing.
+   - Revisit when: rebuild starts sweeping files Epicenter did not generate, or the projection becomes editable source (which this spec refuses).
+
+5. **Should projected files be written read-only (mode `0444`)?**
+   - Recommendation: lean yes, as honest enforcement of the read-only contract. An accidental editor save then fails loudly instead of being silently discarded on the next rebuild, which is the real UX trap. Cost: some tools and some users hit "why can't I edit this," so it needs a clear message and the `epicenter edit` escape hatch. Defer until the edit path exists if that friction outweighs the safety.
 
 ## Success Criteria
 
@@ -524,3 +536,9 @@ Rejected. `.epicenter/` is namespace state, not projection content. Putting it i
 
 - Keep upward-only discovery for command execution: it is predictable and avoids choosing between several child namespace roots.
   Revisit when: users routinely run commands from repo roots that contain exactly one Epicenter namespace.
+
+- The markdown projection is read-only; round-trip editing is refused. Writes enter through the app or the CLI, and the projection regenerates from Yjs. The bootstrap guard (refuse a pre-populated mount folder before `.epicenter/` exists) is the directory-level ownership check; no per-mount marker is added.
+  Revisit when: there is a concrete product need to treat on-disk markdown as editable source, with a defined merge story against concurrent CRDT edits.
+
+- Rebuild hard-deletes generated projection files; no trash. Directory-level ownership plus the bootstrap guard mean a sweep only ever removes Epicenter-generated, regenerable output.
+  Revisit when: rebuild's sweep scope widens beyond Epicenter-generated files.

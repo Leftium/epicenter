@@ -725,7 +725,7 @@ type PublishableArtifact = {
 3. **Should `IntegrationTarget` become a shared type immediately?**
    - Recommendation: yes, if at least two integrations need to remember app ID, kind, and row ID. No, if the first integration can stay local to Polish.
 
-4. **Should deep links use `epicenter://epicenter.whispering/...` or app-specific schemes like `epicenter-whispering://...`?**
+4. **Should deep links use `epicenter://epicenter.whispering/...` or app-specific reverse-domain schemes like `so.epicenter.whispering://...`?**
    - Recommendation: one `epicenter://` scheme with app ID in the path authority. One OS-level scheme is simpler to register and makes links visually consistent.
 
 5. **What is the first publish destination?**

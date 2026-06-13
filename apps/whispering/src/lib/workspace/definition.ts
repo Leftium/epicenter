@@ -376,6 +376,8 @@ export function createWhispering() {
 	type SettingKey = keyof typeof kvDefinitions & string;
 
 	const workspace = createWorkspace({
+		// Workspace/Y.Doc identity, not an OAuth client id or Tauri bundle id.
+		// This keys local storage and cloud rooms; change only with a data migration.
 		id: 'epicenter-whispering',
 		tables: {
 			recordings,

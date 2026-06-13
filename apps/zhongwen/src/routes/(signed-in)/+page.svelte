@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { fromKv } from '@epicenter/svelte';
 	import { Button } from '@epicenter/ui/button';
-	import * as Chat from '@epicenter/ui/chat';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Sidebar from '@epicenter/ui/sidebar';
 	import { toast } from '@epicenter/ui/sonner';
@@ -10,22 +9,13 @@
 	import { requireZhongwen } from '$lib/session';
 	import { auth } from '$platform/auth';
 	import { createChatState } from './chat/chat-state.svelte';
-	import ChatInput from './components/ChatInput.svelte';
-	import ChatMessage from './components/ChatMessage.svelte';
+	import ConversationView from './components/ConversationView.svelte';
 	import ModelPicker from './components/ModelPicker.svelte';
 	import ZhongwenSidebar from './components/ZhongwenSidebar.svelte';
 
 	const zhongwen = requireZhongwen();
 	const showPinyin = fromKv(zhongwen.kv, 'showPinyin');
 	const chatState = createChatState();
-
-	// Error dismissal is per-conversation: switching conversations un-dismisses
-	// so a stale ✕ never hides a different conversation's error.
-	let dismissedError = $state(false);
-	$effect(() => {
-		chatState.activeConversationId;
-		dismissedError = false;
-	});
 
 	onDestroy(() => {
 		chatState[Symbol.dispose]();
@@ -60,7 +50,12 @@
 				<Sidebar.Trigger />
 				<h1 class="text-lg font-semibold">中文 Zhongwen</h1>
 				{#if chatState.active}
-					<ModelPicker handle={chatState.active} />
+					<ModelPicker
+						provider={chatState.active.provider}
+						model={chatState.active.model}
+						onProviderChange={(provider) => chatState.setProvider(provider)}
+						onModelChange={(model) => chatState.setModel(model)}
+					/>
 				{/if}
 			</div>
 
@@ -81,63 +76,13 @@
 			</div>
 		</header>
 
-		{#if chatState.active}
-			{@const active = chatState.active}
-			<Chat.List class="flex-1 overflow-y-auto p-4" aria-live="polite">
-				{#if active.messages.length === 0}
-					<div
-						class="flex flex-1 items-center justify-center text-muted-foreground"
-					>
-						<p>
-							Ask a question in English and get a response in Chinese and
-							English.
-						</p>
-					</div>
-				{:else}
-					{#each active.messages as message (message.id)}
-						<!-- An empty assistant message is the in-progress turn before
-							its first token; the typing bubble below stands in for it. -->
-						{#if message.role === 'user' || message.text.length > 0}
-							<ChatMessage {message} showPinyin={showPinyin.current} />
-						{/if}
-					{/each}
-				{/if}
-
-				{#if active.isThinking}
-					<Chat.Bubble variant="received">
-						<Chat.BubbleMessage typing />
-					</Chat.Bubble>
-				{/if}
-
-				{#if active.error && !dismissedError}
-					<div
-						class="flex items-center gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive"
-					>
-						<span class="flex-1">{active.error}</span>
-						<Button size="sm" variant="outline" onclick={() => active.retry()}>
-							Retry
-						</Button>
-						<Button
-							size="sm"
-							variant="ghost"
-							onclick={() => (dismissedError = true)}
-						>
-							✕
-						</Button>
-					</div>
-				{:else if active.isInterrupted}
-					<div
-						class="flex items-center gap-2 rounded-md bg-muted p-3 text-sm text-muted-foreground"
-					>
-						<span class="flex-1">This reply was interrupted.</span>
-						<Button size="sm" variant="outline" onclick={() => active.retry()}>
-							Retry
-						</Button>
-					</div>
-				{/if}
-			</Chat.List>
-
-			<ChatInput handle={active} />
+		{#if chatState.activeConversationId}
+			{#key chatState.activeConversationId}
+				<ConversationView
+					conversationId={chatState.activeConversationId}
+					showPinyin={showPinyin.current}
+				/>
+			{/key}
 		{/if}
 	</main>
 </Sidebar.Provider>

@@ -183,7 +183,7 @@
 			{#each transformations.sorted as transformation (transformation.id)}
 				<ToggleGroup.Item
 					value={transformation.id}
-					class="rounded-md border-0 bg-muted px-3 text-muted-foreground hover:bg-muted/70 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+					class="rounded-md border-0 bg-muted px-4 text-muted-foreground hover:bg-muted/70 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
 				>
 					{transformation.title || 'Untitled transformation'}
 				</ToggleGroup.Item>

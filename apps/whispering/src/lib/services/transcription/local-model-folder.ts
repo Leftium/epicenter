@@ -303,7 +303,9 @@ export function createModelStorage(model: LocalModelConfig) {
 							if (!stats) {
 								return (await hasListedSymlinkEntry()) ? path : null;
 							}
-							return isModelFileSizeValid(stats.size, model.sizeBytes) ? path : null;
+							return isModelFileSizeValid(stats.size, model.sizeBytes)
+								? path
+								: null;
 						}
 						case 'parakeet':
 						case 'moonshine': {

@@ -91,7 +91,9 @@
 				}}
 				class={cn(
 					'cursor-pointer gap-2 border py-3 transition-colors outline-none',
-					selected ? 'bg-accent shadow-sm' : 'bg-card hover:bg-accent/40',
+					selected
+						? 'border-l-2 border-l-foreground/40 bg-accent shadow-sm'
+						: 'bg-card hover:bg-accent/40',
 				)}
 			>
 				<Card.Header class="flex-row items-center justify-between gap-2 px-4">

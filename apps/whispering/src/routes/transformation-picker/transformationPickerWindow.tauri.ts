@@ -18,6 +18,13 @@ const WINDOW_LABEL = 'transformation-picker';
 export const PICKER_INPUT_EVENT = 'transformation-picker:input';
 export const PICKER_READY_EVENT = 'transformation-picker:ready';
 
+/**
+ * Feedback the picker can only deliver after it hides (clipboard copy, paste
+ * failure): the main window shows it as a toast, since the picker's own toasts
+ * would render in the now-hidden webview.
+ */
+export const PICKER_NOTICE_EVENT = 'transformation-picker:notice';
+
 /** The most recent captured selection, replayed when the window asks for it. */
 let pendingInput = '';
 

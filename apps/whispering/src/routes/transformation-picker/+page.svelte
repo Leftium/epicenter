@@ -56,16 +56,28 @@
 			if (kept) return [kept];
 			const transformation = transformations.get(id);
 			if (!transformation) return [];
-			return fanOutCandidates({
-				input,
-				transformations: [transformation],
-				samples: 1,
-			});
+			return fanOutCandidates({ input, transformations: [transformation] });
 		});
 		selectedIndex = Math.min(selectedIndex, Math.max(0, candidates.length - 1));
 	}
 
-	async function accept() {
+	// Toggle a transformation by id (the number-key path); the chip row reflects
+	// `activeIds` via its binding, and reconcile fans out / drops its candidate.
+	function toggleTransformation(id: string) {
+		activeIds = activeIds.includes(id)
+			? activeIds.filter((x) => x !== id)
+			: [...activeIds, id];
+		reconcile(activeIds);
+	}
+
+	/**
+	 * Accept the highlighted candidate. `paste` replaces the selection in the
+	 * source app (the default) and leaves the clipboard untouched; `copy` puts the
+	 * result on the clipboard instead. Either way exactly one run is committed.
+	 * Feedback for the post-hide path is emitted to the main window, since this
+	 * window hides before the clipboard/paste step.
+	 */
+	async function accept(mode: 'paste' | 'copy') {
 		const candidate = candidates[selectedIndex];
 		if (!candidate) return;
 
@@ -76,9 +88,6 @@
 		}
 		const output = result.data;
 
-		// Commit the one run before touching focus, then hand the text back to the
-		// source app: hide first so focus returns to it, then paste. The other
-		// candidates were in memory and are discarded.
 		persistCompletedRun({
 			transformationId: candidate.transformation.id,
 			input: candidate.input,
@@ -87,15 +96,34 @@
 		});
 		void sound.playSoundIfEnabled('transformationComplete');
 
+		if (mode === 'copy') {
+			await services.text.copyToClipboard(output);
+			await pickerWindow.hide();
+			await notifyMainWindow({
+				title: 'Copied to clipboard',
+				description: 'Press Cmd+V to paste it where you want.',
+			});
+			return;
+		}
+
+		// Paste: hide first so focus returns to the source app, then paste.
 		await pickerWindow.hide();
 		await new Promise((resolve) => setTimeout(resolve, 120));
 
 		const { error: writeError } = await services.text.writeToCursor(output);
 		if (writeError) {
-			// Can't paste (web, or no accessibility permission): leave it on the
-			// clipboard so the user can paste it themselves.
+			// Couldn't paste (no Accessibility permission, or web): fall back to the
+			// clipboard so the result is never lost, and say so.
 			await services.text.copyToClipboard(output);
+			await notifyMainWindow({
+				title: "Couldn't paste into the app",
+				description: 'Your result is on the clipboard. Press Cmd+V to paste it.',
+			});
 		}
+	}
+
+	function notifyMainWindow(notice: { title: string; description: string }) {
+		return emit(pickerWindow.PICKER_NOTICE_EVENT, notice);
 	}
 
 	async function dismiss() {
@@ -107,30 +135,55 @@
 		await emit('navigate-main-window', { path: '/transformations' });
 	}
 
+	// Capture phase so the picker owns these keys before the chips' bits-ui roving
+	// focus can grab the arrows. Numbers address the chips (inputs); arrows and
+	// Enter address the candidate cards (outputs); the two never overlap.
 	function onKeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape') {
 			event.preventDefault();
+			event.stopPropagation();
 			void dismiss();
 			return;
 		}
+
+		// 1-9 toggle the Nth transformation. `event.code` (Digit1..Digit9) ignores
+		// Shift/layout (so Shift+1 isn't "!"). Bare digits only; let Cmd+digit etc.
+		// fall through to the OS.
+		const digit = digitFromCode(event.code);
+		if (digit !== null && !event.metaKey && !event.ctrlKey && !event.altKey) {
+			const transformation = transformations.sorted[digit - 1];
+			if (transformation) {
+				event.preventDefault();
+				event.stopPropagation();
+				toggleTransformation(transformation.id);
+			}
+			return;
+		}
+
 		if (!candidates.length) return;
+
 		if (event.key === 'ArrowDown') {
 			event.preventDefault();
+			event.stopPropagation();
 			selectedIndex = Math.min(selectedIndex + 1, candidates.length - 1);
 		} else if (event.key === 'ArrowUp') {
 			event.preventDefault();
+			event.stopPropagation();
 			selectedIndex = Math.max(selectedIndex - 1, 0);
 		} else if (event.key === 'Enter') {
-			// When a chip is focused, let Enter toggle it instead of accepting.
-			const active = document.activeElement;
-			if (active?.closest('[data-slot="toggle-group-item"]')) return;
 			event.preventDefault();
-			void accept();
+			event.stopPropagation();
+			void accept(event.metaKey ? 'copy' : 'paste');
 		}
+	}
+
+	function digitFromCode(code: string): number | null {
+		const match = /^Digit([1-9])$/.exec(code);
+		return match ? Number(match[1]) : null;
 	}
 </script>
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window onkeydowncapture={onKeydown} />
 
 <div class="flex h-screen flex-col gap-4 p-6">
 	<header class="flex flex-none items-start justify-between gap-2">
@@ -180,11 +233,14 @@
 			onValueChange={reconcile}
 			class="flex flex-none flex-wrap justify-start gap-2"
 		>
-			{#each transformations.sorted as transformation (transformation.id)}
+			{#each transformations.sorted as transformation, index (transformation.id)}
 				<ToggleGroup.Item
 					value={transformation.id}
-					class="rounded-md border-0 bg-muted px-4 text-muted-foreground hover:bg-muted/70 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+					class="gap-1.5 rounded-md border-0 bg-muted px-4 text-muted-foreground hover:bg-muted/70 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
 				>
+					{#if index < 9}
+						<span class="text-xs tabular-nums opacity-50">{index + 1}</span>
+					{/if}
 					{transformation.title || 'Untitled transformation'}
 				</ToggleGroup.Item>
 			{/each}
@@ -197,15 +253,23 @@
 				</p>
 			</div>
 		{:else}
-			<CandidateCards {candidates} original={input} bind:selectedIndex onaccept={accept} />
+			<CandidateCards
+				{candidates}
+				original={input}
+				bind:selectedIndex
+				onaccept={() => accept('paste')}
+			/>
 			<footer
-				class="flex flex-none items-center gap-4 border-t pt-3 text-xs text-muted-foreground"
+				class="flex flex-none flex-wrap items-center gap-x-4 gap-y-1 border-t pt-3 text-xs text-muted-foreground"
 			>
 				<span class="flex items-center gap-1">
-					<Kbd>&uarr;</Kbd><Kbd>&darr;</Kbd>
-					navigate
+					<Kbd>1</Kbd>-<Kbd>9</Kbd> run
 				</span>
-				<span class="flex items-center gap-1"><Kbd>Enter</Kbd> accept</span>
+				<span class="flex items-center gap-1">
+					<Kbd>&uarr;</Kbd><Kbd>&darr;</Kbd> pick
+				</span>
+				<span class="flex items-center gap-1"><Kbd>&crarr;</Kbd> paste</span>
+				<span class="flex items-center gap-1"><Kbd>&#8984;&crarr;</Kbd> copy</span>
 				<span class="flex items-center gap-1"><Kbd>Esc</Kbd> dismiss</span>
 			</footer>
 		{/if}

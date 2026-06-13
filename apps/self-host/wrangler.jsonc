@@ -14,8 +14,7 @@
 		// API_PUBLIC_ORIGIN: this deployment's public origin. Self-hosters set
 		// their own domain here; it is the Better Auth issuer + token audience.
 		"API_PUBLIC_ORIGIN": "https://self-host.example.com",
-		"ALLOWED_MEMBER_EMAILS": "",
-		"GOOGLE_CLIENT_ID": ""
+		"ALLOWED_MEMBER_EMAILS": ""
 	},
 
 	// --- Deployment-owned secrets ---
@@ -32,6 +31,11 @@
 		"required": [
 			"BETTER_AUTH_SECRET",
 			"ENCRYPTION_SECRETS",
+			// GOOGLE_CLIENT_ID + GOOGLE_CLIENT_SECRET are an environment-specific
+			// OAuth pair: set both via `wrangler secret put` for your own Google
+			// client. Filed as secrets (not vars) so dev reads them from the
+			// environment like every other credential.
+			"GOOGLE_CLIENT_ID",
 			"GOOGLE_CLIENT_SECRET"
 		]
 	},

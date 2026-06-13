@@ -1,9 +1,9 @@
 # Zhongwen chat over Yjs: the conversation doc is the wire protocol
 
 **Date**: 2026-06-12
-**Status**: Draft
+**Status**: Implemented (automated gates green; manual two-device smoke pending)
 **Owner**: Braden
-**Branch**: not started (designed on codex/tab-manager-ai-parts-collapse)
+**Branch**: feat/zhongwen-chat-doc-as-wire (off codex/tab-manager-ai-parts-collapse)
 
 ## One Sentence
 
@@ -264,36 +264,41 @@ verified end to end.
 
 ### Phase 1: server generation actor
 
-- [ ] **1.1** `packages/server/src/ai/doc-generation.ts`: local-replica
+- [x] **1.1** `packages/server/src/ai/doc-generation.ts`: local-replica
       actor (getDoc, validate, append, flush loop, finish key) with the flush
       policy above; unit-tested against `createRoomCore` directly with a fake
       adapter (the room core is runtime-agnostic and already test-covered)
-- [ ] **1.2** New route `POST` beside the SSE route, same mount chain
+- [x] **1.2** New route `POST` beside the SSE route, same mount chain
       (auth, ownership, billing policies); body schema with arktype matching
       the existing `aiChatBody` minus `messages`, plus `guid` + `generationId`
-- [ ] **1.3** Idempotency and single-generation 409 paths, tested
+- [x] **1.3** Idempotency and single-generation 409 paths, tested
 
 ### Phase 2: zhongwen client
 
-- [ ] **2.1** Child-doc cache in `zhongwen.browser.ts` (copy the opensidian
-      fileContentDocs composition)
-- [ ] **2.2** Rebuild `chat-state.svelte.ts`: doc-observing message list,
+- [x] **2.1** Child-doc cache in `zhongwen.browser.ts` (single cache that
+      creates the transcript doc + attachLocalStorage + openCollaboration;
+      see divergence 1)
+- [x] **2.2** Rebuild `chat-state.svelte.ts`: doc-observing message list,
       send/stop as above, derived liveness, finish rendering
-- [ ] **2.3** Delete `ui-message.ts`; drop `@tanstack/ai-svelte` from
-      zhongwen's package.json
+- [x] **2.3** Delete `ui-message.ts`; drop `@tanstack/ai-svelte` (and the
+      now-dead `@tanstack/ai-client`, `@tanstack/ai`, `@tanstack/ai-anthropic`)
+      from zhongwen's package.json
 
 ### Phase 3: prove
 
-- [ ] **3.1** `bun run --cwd packages/server test`,
-      `bun run --cwd apps/zhongwen typecheck`, all other suite commands green
+- [x] **3.1** `bun run --cwd packages/server test` (109 pass),
+      `bun run --cwd packages/workspace test` (476 pass), and the four app
+      typechecks (zhongwen, tab-manager, opensidian, api) all green
 - [ ] **3.2** Manual smoke: two browser profiles, same account; send from one,
       watch tokens land on both; refresh mid-generation; abort mid-generation
+      (requires a running worker + live OAuth/provider keys; not runnable
+      headless)
 
 ### Phase 4: remove
 
-- [ ] **4.1** Delete the `chatMessages` table, `ChatMessageId`, and any
-      remaining SSE chat usage in zhongwen (tab-manager and opensidian keep
-      the SSE route; do not touch it)
+- [x] **4.1** Deleted the `chatMessages` table, `ChatMessageId` and its
+      generator/caster, and `ui-message.ts`. No remaining SSE chat usage in
+      zhongwen (tab-manager and opensidian keep the SSE route; untouched)
 
 ## Edge Cases
 
@@ -313,6 +318,17 @@ verified end to end.
 - **Out of credits**: billing policy rejects the kickoff before any doc write
   (pre-generation), or the actor writes `finish: failed` with code
   `insufficient-credits` (mid-generation), driving the upgrade CTA.
+- **Deleting a conversation orphans its transcript doc** (deferred). Deleting
+  the conversations row drops the list entry and disposes the in-memory doc
+  handle, but the child doc's local IDB database and its relay room are left
+  in place: there is no per-row local-IDB cleanup primitive
+  (`createOwnedYjsKey` is package-private, the disposable cache has no
+  per-entry evict) and no relay room-deletion endpoint for any app. Same
+  property the superseded message-docs design had; no inert data exists today
+  because no doc was created with either shape. Revisit when a privacy
+  requirement or storage pressure makes orphaned ciphertext unacceptable; a
+  prefix-enumeration sweep is the likely shape (the guid grammar is
+  right-recoverable, `doc-guid.ts`).
 
 ## Open Questions
 
@@ -331,14 +347,46 @@ verified end to end.
 ## Success Criteria
 
 - [ ] Two signed-in devices see assistant tokens stream live from one send
+      (manual; pending)
 - [ ] Refresh mid-generation: partial text is present and keeps growing
-- [ ] Abort mid-generation: `finish: cancelled` lands; UI settles
+      (manual; pending)
+- [ ] Abort mid-generation: `finish: cancelled` lands; UI settles (manual;
+      pending)
 - [ ] Kill the worker mid-generation (dev): UI derives interrupted after the
-      grace window; retry works
-- [ ] No `chatMessages` references anywhere; zhongwen has no
+      grace window; retry works (manual; pending)
+- [x] No `chatMessages` references anywhere; zhongwen has no
       `@tanstack/ai-svelte` import
-- [ ] Full verification suite green (four app typechecks, packages/server and
+- [x] Full verification suite green (four app typechecks, packages/server and
       packages/workspace tests)
+
+## Divergences from the spec
+
+1. **One child-doc cache, not two layers.** The spec said copy the opensidian
+   `fileContentDocs` composition verbatim, which is a two-layer cache (an
+   inner cache in `createOpensidian` that other runtimes also consume, wrapped
+   by an outer sync cache in the browser). Zhongwen has only one consumer (the
+   browser sync wrapper), so the inner isomorphic cache would be unearned
+   indirection. Collapsed to a single `conversationDocs` cache in
+   `zhongwen.browser.ts` that mints the doc directly; `zhongwen.ts` keeps only
+   `zhongwenConversationDocGuid` (isomorphic, names the doc for both the client
+   and the kickoff body). Revisit if a daemon materializer ever needs to read
+   transcripts.
+2. **Generation lifetime carries `updatedAt` on completion.** The spec's
+   "sending client bumps `updatedAt`" is realized as: the requester bumps on
+   send (title + recency) AND again when the kickoff fetch resolves 200 (the
+   finish signal). The server cannot write the per-value-encrypted
+   conversations table, and a completed reply can only land while the
+   requester is alive (its `waitUntil` cancels otherwise), so the requester is
+   the reliable owner of completion recency.
+3. **Three 409 error variants, not a generic one.** `GenerationAlreadyExists`
+   (idempotency), `GenerationInProgress` (single active generation), and
+   `NoUserMessage` (kickoff beat the user message into the room) are distinct
+   `AiChatError` variants so the client can branch without parsing prose.
+4. **Dropped four dead TanStack AI deps, not one.** `@tanstack/ai-svelte`,
+   `@tanstack/ai-client`, `@tanstack/ai`, and `@tanstack/ai-anthropic` were all
+   unused after the rebuild (`@tanstack/ai`/`-anthropic` were already dead
+   before this work). The provider model-list packages (`-openai`, `-gemini`,
+   `-grok`) stay.
 
 ## References
 

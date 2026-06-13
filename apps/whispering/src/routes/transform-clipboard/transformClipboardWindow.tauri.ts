@@ -21,11 +21,23 @@ export const POLISH_READY_EVENT = 'polish:ready';
 /** The most recent captured selection, replayed when the window asks for it. */
 let pendingInput = '';
 
-// Answer the window's first-mount request. Registered once at module load in the
-// main window; emit/listen are global, so this reaches the Polish webview.
-void listen(POLISH_READY_EVENT, () => {
-	void emit(POLISH_INPUT_EVENT, { input: pendingInput });
-});
+let responderRegistered = false;
+
+/**
+ * Answer the Polish window's first-mount request with the pending selection.
+ * Registered lazily from `openWithSelection`, which only the main window calls,
+ * so the responder never runs inside the Polish webview itself (this module is
+ * imported there too, for the event-name constants and `hide`). Registering it
+ * at module load would make the Polish window answer its own request with an
+ * empty `pendingInput` and clobber the real selection.
+ */
+function registerInputResponder(): void {
+	if (responderRegistered) return;
+	responderRegistered = true;
+	void listen(POLISH_READY_EVENT, () => {
+		void emit(POLISH_INPUT_EVENT, { input: pendingInput });
+	});
+}
 
 /**
  * Open the Polish window on a freshly captured selection. Creates the window on
@@ -34,6 +46,7 @@ void listen(POLISH_READY_EVENT, () => {
  * instant.
  */
 export async function openWithSelection(input: string): Promise<void> {
+	registerInputResponder();
 	pendingInput = input;
 
 	const existingWindow = await WebviewWindow.getByLabel(WINDOW_LABEL);

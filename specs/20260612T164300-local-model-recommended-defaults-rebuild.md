@@ -42,7 +42,7 @@ Alternatives already rejected in #1922's design pass, do not reopen: a select-li
 Read these before writing anything:
 
 - `apps/whispering/src/lib/components/settings/LocalModelSelector.svelte`: one flat list backed by the engine's models folder. Catalog models render as `LocalModelDownloadCard`; every other folder entry renders as a selectable "Your model" row with activate and delete. A missing-selection notice appears when the active name is no longer in the folder. A help box explains drop-or-symlink and an Open Models Folder button opens it. `svelte:window onfocus` rescans the folder. The bindable `value` is an entry name, never a path.
-- `apps/whispering/src/lib/operations/local-models.ts`: `createPrebuiltModel` exposes `activeModelName` (reactive via `deviceConfig`), `getStatus()`, `activate()`, `downloadAndActivate()`, `delete()`. Activeness is `deviceConfig.get(settingsKey) === modelEntryName(model)`.
+- `apps/whispering/src/lib/operations/local-models.ts`: `createPrebuiltModel` exposes `activeModelName` (reactive via `deviceConfig`), `activate()`, `downloadAndActivate()`, and `delete()`. Activeness is `deviceConfig.get(settingsKey) === modelEntryName(model)`.
 - `apps/whispering/src/lib/services/transcription/local-model-folder.ts`: renamed from `local-model-storage.ts`; `createModelStorage` still exists, plus `listModelEntries` and `deleteModelEntry`.
 - `apps/whispering/src/lib/components/settings/LocalModelDownloadCard.svelte`: still owns a private per-component state machine with an `$effect`. Only one surface per model exists today, so the duplicate-state bug has no trigger until the hero returns.
 

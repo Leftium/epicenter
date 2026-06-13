@@ -1,8 +1,8 @@
 /**
  * Shared download state for pre-built local transcription models, keyed by
- * model id. Every surface that renders a model (recommended-model hero,
- * catalog row) reads the same handle, so a download started in one place
- * shows its progress everywhere.
+ * engine and model id. Every surface that renders a model (recommended-model
+ * hero, catalog row) reads the same handle, so a download started in one
+ * place shows its progress everywhere.
  *
  * The state machine is computed, not stored: `downloading` while a download
  * owns the handle, otherwise disk truth (`isInstalled`) plus the engine's
@@ -127,6 +127,10 @@ function createModelDownload(model: LocalModelConfig) {
 	};
 }
 
+function modelDownloadKey(model: LocalModelConfig) {
+	return `${model.engine}:${model.id}`;
+}
+
 function createLocalModelDownloads() {
 	const handles = new Map<string, ReturnType<typeof createModelDownload>>();
 
@@ -140,10 +144,11 @@ function createLocalModelDownloads() {
 		 * reads its state in one expression would never update.
 		 */
 		get(model: LocalModelConfig) {
-			const existing = handles.get(model.id);
+			const key = modelDownloadKey(model);
+			const existing = handles.get(key);
 			if (existing) return existing;
 			const handle = createModelDownload(model);
-			handles.set(model.id, handle);
+			handles.set(key, handle);
 			return handle;
 		},
 	};

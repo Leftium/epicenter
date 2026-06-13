@@ -203,7 +203,7 @@
 					<Button
 						variant="outline"
 						size="sm"
-						onclick={() => (allModelsOpen = !allModelsOpen)}
+						onclick={() => (allModelsOpen = true)}
 					>
 						Change
 					</Button>

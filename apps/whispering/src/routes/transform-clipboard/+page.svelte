@@ -144,6 +144,7 @@
 
 					const notice = await deliverTransformationResult({
 						text: output,
+						recordingId: null,
 					});
 					loading.resolve(notice);
 

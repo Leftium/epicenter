@@ -83,6 +83,7 @@ export async function runTransformationOnClipboard() {
 
 	const successNotice = await deliverTransformationResult({
 		text: transformedText,
+		recordingId: null,
 	});
 	loading.resolve(successNotice);
 }

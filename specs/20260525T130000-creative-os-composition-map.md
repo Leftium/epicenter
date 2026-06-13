@@ -6,7 +6,7 @@
 
 ## Overview
 
-This spec maps Epicenter onto the `Capture -> Refine -> Compose -> Publish` vision. The current direction is integration-first: apps own their native tables and workflows, code integrations pass typed IDs and payloads, and `epicenter://` links open or refer to app records.
+This spec maps Epicenter onto the `Capture -> Refine -> Compose -> Publish` vision. The current direction is integration-first: apps own their native tables and workflows, code integrations pass typed IDs and payloads, and `epicenter://` links refer to app records.
 
 One sentence:
 
@@ -129,7 +129,7 @@ This diagram is a working model, not a final package layout.
 | EPICENTER CREATIVE OS                                                                |
 |                                                                                      |
 | Rule: apps own workflows. Integrations pass IDs and small payloads.                  |
-| Rule: epicenter:// links open things and can be embedded in notes, docs, and logs.   |
+| Rule: epicenter:// links refer to records in notes, docs, and logs.                  |
 | Rule: do not start with one universal cross-app graph.                               |
 +======================================================================================+
 
@@ -403,7 +403,7 @@ There are several ways the apps could compose. The current recommendation is Dir
 | Direction | Shape | Pros | Cons | When to choose |
 | --- | --- | --- | --- | --- |
 | 1. Manual only | Each app imports another app's actions directly and passes IDs or payloads. | Fastest to build. Very clear product ownership. No abstract model before workflows exist. | Can duplicate handoff shapes. Harder to inspect all cross-app relationships. Can become tangled if imports are not disciplined. | Good for the first one or two integrations, especially Whispering to Polish. |
-| 2. Typed integrations plus deep links | Apps expose explicit integration functions. Data flows through IDs and small payloads. `epicenter://` links open records. | Keeps product workflows clear. Links are human-readable. IDs are practical for code. Shared schemas emerge from repeated contracts. | Requires careful naming and route conventions. Relationship state is distributed across app tables. Needs an integration registry later if many apps participate. | Best current default. |
+| 2. Typed integrations plus entity links | Apps expose explicit integration functions. Data flows through IDs and small payloads. `epicenter://` links refer to records. | Keeps product workflows clear. Links are human-readable. IDs are practical for code. Shared schemas emerge from repeated contracts. | Requires careful naming and route conventions. Relationship state is distributed across app tables. Needs an integration registry later if many apps participate. | Best current default. |
 | 3. Shared handoff tables | Add shared tables such as `RefineRun`, `Import`, `Export`, or `PublicationSource` that store app ID, kind, and entity ID. | Easier to query cross-app history. Useful when multiple apps need the same timeline or audit trail. | Can become a half-built universal graph. Requires migration and ownership rules. Risks making simple integrations heavy. | Choose after the same handoff appears in at least three places. |
 | 4. Universal source graph | Every app entity can point to every other entity through a generic reference table. | Powerful provenance. Strong search and traceability. Could support backlinks, history, and graph UI. | High abstraction cost. Easy to overbuild. Users may feel like they are managing links instead of doing work. Hard ownership questions. | Defer until real product workflows demand graph-level provenance. |
 | 5. Event bus | Apps emit events such as `recording.transcribed`, `recipe.completed`, `entry.created`, and other apps subscribe. | Decouples producers and consumers. Good for automation and background workflows. | Debugging is harder. Ordering and retry semantics matter. Easy to hide product behavior in invisible automation. | Good later for automations, not the first app-to-app workflow. |
@@ -653,7 +653,7 @@ type PublishableArtifact = {
 | Honeycrisp stage | 2 coherence | Treat Honeycrisp as Compose, not Capture | Honeycrisp can receive captured material, but its product job is notes, thinking, and loose drafting. |
 | Refine app count | 3 taste | Start with one Polish app and multiple recipe types | Multiple top-level refine apps would fatigue users before the workflows diverge. |
 | Whispering migration | 2 coherence | Extract transformations into a refine core, keep Whispering as a capture-heavy app | Whispering should embed transcript cleanup, but not own the general refine domain. |
-| Integration strategy | 2 coherence | Start with typed integrations plus deep links | App-owned workflows stay clear, while links give users and Markdown a common way to open records. |
+| Integration strategy | 2 coherence | Start with typed integrations plus entity links | App-owned workflows stay clear, while links give users and Markdown a common way to refer to records. |
 | Generic reference graph | Deferred | Do not build a universal graph yet | The first product workflows need tailored integrations more than global provenance. |
 | Publish integrations | 2 coherence | Build The Ark as one publish app with connector destinations | Destination connectors share account, preview, status, retry, and external URL lifecycle. |
 | Publish interface | 2 coherence | Map compose-native data into a lower-fidelity `PublishableArtifact` | Publish needs a stable contract without importing every app's internal shape. |
@@ -668,7 +668,7 @@ type PublishableArtifact = {
 - [ ] **1.3** Inventory Tab Manager saved tab, bookmark, and conversation IDs.
 - [ ] **1.4** Inventory Honeycrisp note IDs and body document GUIDs.
 - [ ] **1.5** Inventory Fuji entry IDs and content document GUIDs.
-- [ ] **1.6** Document current routes that could map to future `epicenter://` deep links.
+- [ ] **1.6** Document current routes that could map to future `epicenter://` entity links.
 
 ### Phase 2: Extract Refine Runtime Without Product Split
 
@@ -686,7 +686,7 @@ type PublishableArtifact = {
 - [ ] **3.4** Whispering should keep its current user flow working.
 - [ ] **3.5** Do not add a generic import/export registry in this phase.
 
-### Phase 4: Define Deep Link Convention
+### Phase 4: Define Entity Link Convention
 
 - [ ] **4.1** Define the canonical `epicenter://{appId}/{appRoute}` grammar.
 - [ ] **4.2** Add parser and formatter helpers.
@@ -727,7 +727,7 @@ type PublishableArtifact = {
 3. **Should `IntegrationTarget` become a shared type immediately?**
    - Recommendation: yes, if at least two integrations need to remember app ID, kind, and row ID. No, if the first integration can stay local to Polish.
 
-4. **Should deep links use `epicenter://epicenter.whispering/...` or app-specific reverse-domain schemes like `so.epicenter.whispering://...`?**
+4. **Should entity links use `epicenter://epicenter.whispering/...` or app-specific reverse-domain schemes like `so.epicenter.whispering://...`?**
    - Recommendation: keep `epicenter://{appOrWorkspace}/{route}` for Epicenter entity references only. Use app-specific reverse-domain schemes for app-owned OS callback surfaces such as desktop OAuth, for example `so.epicenter.whispering://auth/callback`. `so.epicenter.whispering` is a valid URI scheme; `epicenter.whispering` as an `epicenter://` authority is not an OS routing boundary.
 
 5. **What is the first publish destination?**
@@ -771,7 +771,7 @@ Important direction:
   Do not start with a universal SourceRef graph.
   Start with explicit app-to-app integrations.
   Code integrations pass typed IDs and small payloads.
-  epicenter:// links are for opening, referring, Markdown, logs, and history.
+  epicenter:// links are for referring, Markdown, logs, and history.
   Shared schemas should be extracted after repeated integrations prove the shape.
 
 Relevant files:
@@ -793,7 +793,7 @@ Task:
   Explore multiple directions for how integrations and composition could work:
 
     1. Manual direct integrations only.
-    2. Typed app integrations plus epicenter:// deep links.
+    2. Typed app integrations plus epicenter:// entity links.
     3. Shared handoff tables for repeated integration shapes.
     4. Universal source/provenance graph.
     5. Event bus or automation-driven composition.
@@ -804,7 +804,7 @@ Task:
     - What tables or schemas would exist.
     - Where relationship state would live.
     - How one-to-one, one-to-many, and many-to-many relationships would be represented.
-    - How deep links would be formatted.
+    - How entity links would be formatted.
     - How the user would experience the flow.
     - What app owns each workflow.
     - What gets simpler.

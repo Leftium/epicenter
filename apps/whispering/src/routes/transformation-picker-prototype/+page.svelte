@@ -75,7 +75,7 @@
 	let toggleValue = $state<string[]>(['grammar']);
 	let candidates = $state<Candidate[]>([]);
 	let selectedIndex = $state(0);
-	let cardRefs = $state<(HTMLElement | null)[]>([]);
+	let listEl = $state<HTMLElement | null>(null);
 
 	function runFor(ids: string[]) {
 		candidates = ids.map((id) => ({
@@ -92,7 +92,9 @@
 	});
 
 	$effect(() => {
-		cardRefs[selectedIndex]?.scrollIntoView({ block: 'nearest' });
+		listEl
+			?.querySelector(`[data-candidate-index="${selectedIndex}"]`)
+			?.scrollIntoView({ block: 'nearest' });
 	});
 
 	function toggleChecklist(id: string, checked: boolean) {
@@ -186,11 +188,14 @@
 		</div>
 	{/if}
 
-	<div class="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto pr-1">
+	<div
+		bind:this={listEl}
+		class="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto pr-1"
+	>
 		{#each candidates as candidate, index (candidate.id)}
 			{@const isSelected = index === selectedIndex}
 			<Card.Root
-				bind:ref={cardRefs[index]}
+				data-candidate-index={index}
 				role="button"
 				tabindex={0}
 				aria-selected={isSelected}

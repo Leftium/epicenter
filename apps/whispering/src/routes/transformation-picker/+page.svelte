@@ -33,8 +33,8 @@
 	let selectedIndex = $state(0);
 	// When the fan-out kicked off; persisted as the accepted run's startedAt.
 	let startedAt = $state('');
-	// DOM nodes per candidate card, so arrow-key selection can scroll into view.
-	let cardRefs = $state<(HTMLElement | null)[]>([]);
+	// The scrollable candidate list, so arrow-key selection can scroll into view.
+	let listEl = $state<HTMLElement | null>(null);
 
 	let unlistenInput: UnlistenFn | null = null;
 
@@ -52,7 +52,9 @@
 
 	// Keep the highlighted card visible as the user arrows through a long list.
 	$effect(() => {
-		cardRefs[selectedIndex]?.scrollIntoView({ block: 'nearest' });
+		listEl
+			?.querySelector(`[data-candidate-index="${selectedIndex}"]`)
+			?.scrollIntoView({ block: 'nearest' });
 	});
 
 	// Each open starts fresh at the picker over the newly captured selection.
@@ -185,11 +187,14 @@
 			placeholder="Search transformations..."
 		/>
 	{:else}
-		<div class="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto pr-1">
+		<div
+			bind:this={listEl}
+			class="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto pr-1"
+		>
 			{#each candidates as candidate, index (candidate.id)}
 				{@const selected = index === selectedIndex}
 				<Card.Root
-					bind:ref={cardRefs[index]}
+					data-candidate-index={index}
 					role="button"
 					tabindex={0}
 					aria-selected={selected}

@@ -127,7 +127,7 @@
 		{#each TRANSFORMATIONS as t (t.id)}
 			<ToggleGroup.Item
 				value={t.id}
-				class="rounded-full border-0 bg-muted px-3 text-muted-foreground hover:bg-muted/70 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
+				class="rounded-md border-0 bg-muted px-3 text-muted-foreground hover:bg-muted/70 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
 			>
 				{t.title}
 			</ToggleGroup.Item>

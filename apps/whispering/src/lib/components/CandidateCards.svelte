@@ -2,6 +2,7 @@
 	import * as Card from '@epicenter/ui/card';
 	import { Kbd } from '@epicenter/ui/kbd';
 	import { Spinner } from '@epicenter/ui/spinner';
+	import { Toggle } from '@epicenter/ui/toggle';
 	import type { Result } from 'wellcrafted/result';
 	import { cn } from '@epicenter/ui/utils';
 	import { type DiffSegment, wordDiff } from '$lib/utils/word-diff';
@@ -22,12 +23,15 @@
 		candidates,
 		original,
 		selectedIndex = $bindable(0),
+		showDiff = $bindable(true),
 		onaccept,
 	}: {
 		candidates: CardCandidate[];
 		/** The text each candidate is diffed against. */
 		original: string;
 		selectedIndex?: number;
+		/** Show the word diff against the original, or the clean result text. */
+		showDiff?: boolean;
 		/** Accept the currently selected candidate (read it via `selectedIndex`). */
 		onaccept: () => void;
 	} = $props();
@@ -57,51 +61,68 @@
 	</p>
 {/snippet}
 
-<div
-	bind:this={listEl}
-	class="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto pr-1"
->
-	{#each candidates as candidate, index (candidate.id)}
-		{@const selected = index === selectedIndex}
-		<Card.Root
-			data-candidate-index={index}
-			role="button"
-			tabindex={0}
-			aria-selected={selected}
-			onclick={() => (selectedIndex = index)}
-			ondblclick={() => {
-				selectedIndex = index;
-				onaccept();
-			}}
-			class={cn(
-				'cursor-pointer gap-2 border py-3 transition-colors outline-none',
-				selected ? 'bg-accent shadow-sm' : 'bg-card hover:bg-accent/40',
-			)}
+<div class="flex min-h-0 flex-1 flex-col gap-2">
+	<div class="flex flex-none items-center justify-end">
+		<Toggle
+			bind:pressed={showDiff}
+			size="sm"
+			aria-label="Toggle diff view"
+			class="h-7 px-2 text-xs text-muted-foreground"
 		>
-			<Card.Header class="flex-row items-center justify-between gap-2 px-4">
-				<span class="text-sm font-medium">
-					{candidate.transformation.title || 'Untitled transformation'}
-				</span>
-				{#if selected}
-					<span class="flex items-center gap-1 text-xs text-muted-foreground">
-						<Kbd>Enter</Kbd> to accept
+			Diff
+		</Toggle>
+	</div>
+
+	<div
+		bind:this={listEl}
+		class="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto pr-1"
+	>
+		{#each candidates as candidate, index (candidate.id)}
+			{@const selected = index === selectedIndex}
+			<Card.Root
+				data-candidate-index={index}
+				role="button"
+				tabindex={0}
+				aria-selected={selected}
+				onclick={() => (selectedIndex = index)}
+				ondblclick={() => {
+					selectedIndex = index;
+					onaccept();
+				}}
+				class={cn(
+					'cursor-pointer gap-2 border py-3 transition-colors outline-none',
+					selected ? 'bg-accent shadow-sm' : 'bg-card hover:bg-accent/40',
+				)}
+			>
+				<Card.Header class="flex-row items-center justify-between gap-2 px-4">
+					<span class="text-sm font-medium">
+						{candidate.transformation.title || 'Untitled transformation'}
 					</span>
-				{/if}
-			</Card.Header>
-			<Card.Content class="px-4">
-				{#await candidate.result}
-					<div class="flex items-center gap-2 text-sm text-muted-foreground">
-						<Spinner class="size-3.5" />
-						<span>Generating</span>
-					</div>
-				{:then result}
-					{#if result.error}
-						<p class="text-sm text-destructive">{result.error.message}</p>
-					{:else}
-						{@render diffInline(wordDiff(original, result.data))}
+					{#if selected}
+						<span class="flex items-center gap-1 text-xs text-muted-foreground">
+							<Kbd>Enter</Kbd> to accept
+						</span>
 					{/if}
-				{/await}
-			</Card.Content>
-		</Card.Root>
-	{/each}
+				</Card.Header>
+				<Card.Content class="px-4">
+					{#await candidate.result}
+						<div class="flex items-center gap-2 text-sm text-muted-foreground">
+							<Spinner class="size-3.5" />
+							<span>Generating</span>
+						</div>
+					{:then result}
+						{#if result.error}
+							<p class="text-sm text-destructive">{result.error.message}</p>
+						{:else if showDiff}
+							{@render diffInline(wordDiff(original, result.data))}
+						{:else}
+							<p class="text-sm leading-relaxed whitespace-pre-wrap">
+								{result.data}
+							</p>
+						{/if}
+					{/await}
+				</Card.Content>
+			</Card.Root>
+		{/each}
+	</div>
 </div>

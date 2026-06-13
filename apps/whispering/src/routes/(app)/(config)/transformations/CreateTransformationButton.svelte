@@ -8,13 +8,11 @@
 	import { report } from '$lib/report';
 	import {
 		generateDefaultTransformation,
-		saveTransformationWithSteps,
+		saveTransformation,
 	} from '$lib/state/transformations.svelte';
-	import type { TransformationStep } from '$lib/workspace';
 
 	let isModalOpen = $state(false);
 	let transformation = $state(generateDefaultTransformation());
-	let steps = $state<TransformationStep[]>([]);
 
 	function promptUserConfirmLeave() {
 		confirmationDialog.open({
@@ -28,14 +26,10 @@
 	}
 
 	function createTransformation() {
-		saveTransformationWithSteps(
-			$state.snapshot(transformation),
-			$state.snapshot(steps),
-		);
+		saveTransformation($state.snapshot(transformation));
 
 		isModalOpen = false;
 		transformation = generateDefaultTransformation();
-		steps = [];
 		report.success({
 			title: 'Created transformation!',
 			description: 'Your transformation has been created successfully.',
@@ -73,7 +67,7 @@
 			<Separator />
 		</Modal.Header>
 
-		<Editor bind:transformation bind:steps />
+		<Editor bind:transformation />
 
 		<Modal.Footer>
 			<Button variant="outline" onclick={() => (isModalOpen = false)}>

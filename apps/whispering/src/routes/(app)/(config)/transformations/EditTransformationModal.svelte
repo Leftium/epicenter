@@ -9,9 +9,8 @@
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { Editor } from '$lib/components/transformations-editor';
 	import { report } from '$lib/report';
-	import { transformationSteps } from '$lib/state/transformation-steps.svelte';
 	import {
-		saveTransformationWithSteps,
+		saveTransformation,
 		transformations,
 	} from '$lib/state/transformations.svelte';
 	import type { Transformation } from '$lib/workspace';
@@ -25,20 +24,13 @@
 	let isDialogOpen = $state(false);
 
 	/**
-	 * Working copy of the transformation metadata. Resets when upstream data changes.
+	 * Working copy of the transformation. Resets when upstream data changes.
 	 * User edits the copy freely; only persisted to workspace on Save.
 	 */
 	let workingCopy = $derived(transformation);
 
 	/**
-	 * Working copy of the transformation steps. Resets when upstream data changes.
-	 */
-	let workingSteps = $derived(
-		transformationSteps.getByTransformationId(transformation.id),
-	);
-
-	/**
-	 * Tracks whether the user has made changes to either working copy.
+	 * Tracks whether the user has made changes to the working copy.
 	 * Resets to false when upstream transformation data changes.
 	 */
 	let isWorkingCopyDirty = $derived.by(() => {
@@ -58,20 +50,14 @@
 			confirm: { text: 'Leave' },
 			onConfirm: () => {
 				workingCopy = transformation;
-				workingSteps = transformationSteps.getByTransformationId(
-					transformation.id,
-				);
 				isWorkingCopyDirty = false;
 				isDialogOpen = false;
 			},
 		});
 	}
 
-	function saveTransformation() {
-		saveTransformationWithSteps(
-			$state.snapshot(workingCopy),
-			$state.snapshot(workingSteps),
-		);
+	function saveAndClose() {
+		saveTransformation($state.snapshot(workingCopy));
 
 		report.success({
 			title: 'Updated transformation!',
@@ -123,11 +109,6 @@
 					workingCopy = v;
 					isWorkingCopyDirty = true;
 				}}
-			bind:steps={() => workingSteps,
-				(v) => {
-					workingSteps = v;
-					isWorkingCopyDirty = true;
-				}}
 		/>
 
 		<Modal.Footer>
@@ -138,9 +119,6 @@
 						description: 'Are you sure? This action cannot be undone.',
 						confirm: { text: 'Delete', variant: 'destructive' },
 						onConfirm: () => {
-							transformationSteps.deleteByTransformationId(
-								transformation.id,
-							);
 							transformations.delete(transformation.id);
 							isDialogOpen = false;
 							report.success({
@@ -162,7 +140,7 @@
 					Close
 				</Button>
 				<Button
-					onclick={() => saveTransformation()}
+					onclick={() => saveAndClose()}
 					disabled={!isWorkingCopyDirty}
 				>
 					Save

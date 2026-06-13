@@ -1,8 +1,6 @@
 <script lang="ts">
 	import * as Accordion from '@epicenter/ui/accordion';
-	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
-	import * as Card from '@epicenter/ui/card';
 	import * as Field from '@epicenter/ui/field';
 	import { Input } from '@epicenter/ui/input';
 	import * as SectionHeader from '@epicenter/ui/section-header';
@@ -10,86 +8,177 @@
 	import { Separator } from '@epicenter/ui/separator';
 	import { Switch } from '@epicenter/ui/switch';
 	import { Textarea } from '@epicenter/ui/textarea';
-	import CopyIcon from '@lucide/svelte/icons/copy';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
-	import { nanoid } from 'nanoid/non-secure';
 	import { slide } from 'svelte/transition';
 	import { ProviderConfigFields } from '$lib/components/settings';
-	import { TRANSFORMATION_STEP_TYPE_OPTIONS } from '$lib/constants/transformations';
 	import {
 		hasModelSelect,
 		INFERENCE,
 		INFERENCE_PROVIDER_OPTIONS,
 		type InferenceProviderId,
-		type ModelSelectProviderId,
 	} from '$lib/constants/inference';
-	import { generateDefaultStep } from '$lib/state/transformation-steps.svelte';
-	import type { Transformation, TransformationStep } from '$lib/workspace';
-
-	// Derived labels for select triggers
-	const stepTypeLabel = (type: string) =>
-		TRANSFORMATION_STEP_TYPE_OPTIONS.find((o) => o.value === type)?.label;
-	const providerLabel = (provider: string) =>
-		INFERENCE[provider as InferenceProviderId]?.label;
-
-	type ModelStepField = (typeof INFERENCE)[ModelSelectProviderId]['stepModelField'];
+	import type {
+		Replacement,
+		Transformation,
+		TransformationPrompt,
+	} from '$lib/workspace';
 
 	let {
 		transformation = $bindable(),
-		steps = $bindable(),
 	}: {
 		transformation: Transformation;
-		steps: TransformationStep[];
 	} = $props();
 
-	/** Update a single field on a step by index. */
-	function updateStep(index: number, patch: Partial<TransformationStep>) {
-		steps = steps.map((s, i) => (i === index ? { ...s, ...patch } : s));
+	/** A new prompt phase defaults to Google's fast model, no templates yet. */
+	const DEFAULT_PROMPT: TransformationPrompt = {
+		inferenceProvider: 'Google',
+		model: 'gemini-2.5-flash',
+		systemPromptTemplate: '',
+		userPromptTemplate: '',
+	};
+
+	type ReplacementPhase = 'preReplacements' | 'postReplacements';
+
+	const providerLabel = (provider: string) =>
+		INFERENCE[provider as InferenceProviderId]?.label;
+
+	function updatePrompt(patch: Partial<TransformationPrompt>) {
+		if (!transformation.prompt) return;
+		transformation = {
+			...transformation,
+			prompt: { ...transformation.prompt, ...patch },
+		};
 	}
 
-	/** Write a model selection into the provider's dedicated step field. */
-	function updateStepModel(
+	/** Switching provider clears the model: there is no per-provider memory. */
+	function updateProvider(provider: InferenceProviderId) {
+		updatePrompt({ inferenceProvider: provider, model: '' });
+	}
+
+	function setPromptEnabled(enabled: boolean) {
+		transformation = {
+			...transformation,
+			prompt: enabled ? (transformation.prompt ?? DEFAULT_PROMPT) : null,
+		};
+	}
+
+	function updateReplacement(
+		phase: ReplacementPhase,
 		index: number,
-		field: ModelStepField,
-		model: string,
+		patch: Partial<Replacement>,
 	) {
-		const patch: { [K in ModelStepField]?: string } = {};
-		patch[field] = model;
-		updateStep(index, patch);
+		transformation = {
+			...transformation,
+			[phase]: transformation[phase].map((r, i) =>
+				i === index ? { ...r, ...patch } : r,
+			),
+		};
 	}
 
-	function addStep() {
-		steps = [
-			...steps,
-			generateDefaultStep({
-				transformationId: transformation.id,
-				order: steps.length,
-			}),
-		];
+	function addReplacement(phase: ReplacementPhase) {
+		transformation = {
+			...transformation,
+			[phase]: [
+				...transformation[phase],
+				{ find: '', replace: '', useRegex: false },
+			],
+		};
 	}
 
-	function removeStep(index: number) {
-		steps = steps.filter((_, i) => i !== index);
-	}
-
-	function duplicateStep(index: number) {
-		const stepToDuplicate = steps[index];
-		if (!stepToDuplicate) return;
-		steps = [
-			...steps.slice(0, index + 1),
-			{ ...stepToDuplicate, id: nanoid() },
-			...steps.slice(index + 1),
-		];
+	function removeReplacement(phase: ReplacementPhase, index: number) {
+		transformation = {
+			...transformation,
+			[phase]: transformation[phase].filter((_, i) => i !== index),
+		};
 	}
 </script>
 
-<div class="flex flex-col gap-6 overflow-y-auto h-full px-2">
+{#snippet replacementSection(
+	phase: ReplacementPhase,
+	heading: string,
+	help: string,
+)}
+	<section class="space-y-4">
+		<div class="space-y-1">
+			<h3 class="font-medium">{heading}</h3>
+			<p class="text-muted-foreground text-sm">{help}</p>
+		</div>
+
+		<div class="space-y-3">
+			{#each transformation[phase] as replacement, index (index)}
+				<div
+					class="bg-card flex flex-col gap-3 rounded-lg border p-4"
+					transition:slide
+				>
+					<div class="flex items-start gap-3">
+						<div class="grid flex-1 grid-cols-1 gap-3 md:grid-cols-2">
+							<Field.Field>
+								<Field.Label for="{phase}-find-{index}">Find</Field.Label>
+								<Input
+									id="{phase}-find-{index}"
+									value={replacement.find}
+									oninput={(e) =>
+										updateReplacement(phase, index, {
+											find: e.currentTarget.value,
+										})}
+									placeholder="Text or pattern to search for"
+								/>
+							</Field.Field>
+							<Field.Field>
+								<Field.Label for="{phase}-replace-{index}">Replace</Field.Label>
+								<Input
+									id="{phase}-replace-{index}"
+									value={replacement.replace}
+									oninput={(e) =>
+										updateReplacement(phase, index, {
+											replace: e.currentTarget.value,
+										})}
+									placeholder="Text to use as the replacement"
+								/>
+							</Field.Field>
+						</div>
+						<Button
+							tooltip="Remove replacement"
+							variant="ghost"
+							size="icon"
+							class="mt-6 size-8 shrink-0"
+							onclick={() => removeReplacement(phase, index)}
+						>
+							<TrashIcon class="size-4" />
+						</Button>
+					</div>
+					<Field.Field orientation="horizontal">
+						<Switch
+							id="{phase}-regex-{index}"
+							checked={replacement.useRegex}
+							onCheckedChange={(v) =>
+								updateReplacement(phase, index, { useRegex: v })}
+						/>
+						<Field.Content>
+							<Field.Label for="{phase}-regex-{index}">Use regex</Field.Label>
+							<Field.Description>
+								Match with a regular expression instead of plain text.
+							</Field.Description>
+						</Field.Content>
+					</Field.Field>
+				</div>
+			{/each}
+		</div>
+
+		<Button variant="outline" class="w-full" onclick={() => addReplacement(phase)}>
+			<PlusIcon class="size-4" />
+			Add replacement
+		</Button>
+	</section>
+{/snippet}
+
+<div class="flex h-full flex-col gap-6 overflow-y-auto px-2">
 	<SectionHeader.Root>
 		<SectionHeader.Title>Configuration</SectionHeader.Title>
 		<SectionHeader.Description>
-			Configure the title, description, and steps for how your transformation
-			will process your text
+			A transformation runs in three phases: deterministic replacements, one
+			optional AI prompt, then deterministic replacements again.
 		</SectionHeader.Description>
 	</SectionHeader.Root>
 
@@ -110,7 +199,7 @@
 				placeholder="e.g., Format Meeting Notes"
 			/>
 			<Field.Description>
-				A clear, concise name that describes what this transformation does
+				A clear, concise name that describes what this transformation does.
 			</Field.Description>
 		</Field.Field>
 		<Field.Field>
@@ -128,278 +217,159 @@
 			/>
 			<Field.Description>
 				Describe what this transformation does, its purpose, and how it will be
-				used
+				used.
 			</Field.Description>
 		</Field.Field>
 	</section>
 
 	<Separator />
 
-	<section class="space-y-6">
-		<h3 class="font-medium">Processing Steps</h3>
-		{#if steps.length === 0}
-			<Alert.Root variant="warning">
-				<Alert.Title>Add your first processing step</Alert.Title>
-				<Alert.Description>
-					Each step will process your transcribed text in sequence. Start by
-					adding a step below to define how your text should be transformed.
-				</Alert.Description>
-			</Alert.Root>
-		{/if}
+	{@render replacementSection(
+		'preReplacements',
+		'Pre-replacements',
+		'Run before the prompt, offline and with no API key. Useful for stripping filler or expanding spoken cues like "new paragraph".',
+	)}
 
-		<div class="space-y-4">
-			{#each steps as step, index (index)}
-				<div
-					class="bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm"
-					transition:slide
-				>
-					<Card.Header class="space-y-4">
-						<div class="flex items-center justify-between">
-							<div class="flex items-center gap-3">
-								<Card.Title class="text-xl"> Step {index + 1}: </Card.Title>
-								<Select.Root
-									type="single"
-									bind:value={() => step.type,
-										(value) => {
-											if (value) {
-												updateStep(index, { type: value });
-											}
-										}}
-								>
-									<Select.Trigger id="step-type" class="h-8">
-										{stepTypeLabel(step.type) ?? 'Select a step type'}
-									</Select.Trigger>
-									<Select.Content>
-										{#each TRANSFORMATION_STEP_TYPE_OPTIONS as item}
-											<Select.Item value={item.value} label={item.label} />
-										{/each}
-									</Select.Content>
-								</Select.Root>
-							</div>
-							<div class="flex items-center gap-2">
-								<Button
-									tooltip="Duplicate step"
-									variant="ghost"
-									size="icon"
-									class="size-8"
-									onclick={() => duplicateStep(index)}
-								>
-									<CopyIcon class="size-4" />
-								</Button>
-								<Button
-									tooltip="Delete step"
-									variant="ghost"
-									size="icon"
-									class="size-8"
-									onclick={() => removeStep(index)}
-								>
-									<TrashIcon class="size-4" />
-								</Button>
-							</div>
-						</div>
-						{#if step.type === 'prompt_transform'}
-							<Card.Description>
-								{index === 0
-									? `Use '{{input}}' to refer to the original text`
-									: `Use '{{input}}' to refer to the text from step ${index}`}
-							</Card.Description>
-						{/if}
-					</Card.Header>
-					<Card.Content>
-						{#if step.type === 'find_replace'}
-							<div class="space-y-6">
-								<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-									<Field.Field>
-										<Field.Label for="findText">Find Text</Field.Label>
-										<Input
-											id="findText"
-											value={step.findText}
-											oninput={(e) => {
-												updateStep(index, { findText: e.currentTarget.value });
-											}}
-											placeholder="Text or pattern to search for in the transcript"
-										/>
-									</Field.Field>
-									<Field.Field>
-										<Field.Label for="replaceText">Replace Text</Field.Label>
-										<Input
-											id="replaceText"
-											value={step.replaceText}
-											oninput={(e) => {
-												updateStep(index, { replaceText: e.currentTarget.value });
-											}}
-											placeholder="Text to use as the replacement"
-										/>
-									</Field.Field>
-								</div>
-								<Accordion.Root type="single" class="w-full">
-									<Accordion.Item class="border-none" value="advanced">
-										<Accordion.Trigger class="text-sm">
-											Advanced Options
-										</Accordion.Trigger>
-										<Accordion.Content>
-											<Field.Field orientation="horizontal">
-												<Switch
-													id="useRegex"
-													checked={step.useRegex}
-													onCheckedChange={(v) => {
-														updateStep(index, { useRegex: v });
-													}}
-												/>
-												<Field.Content>
-													<Field.Label for="useRegex">Use Regex</Field.Label>
-													<Field.Description>
-														Enable advanced pattern matching using regular
-														expressions (for power users)
-													</Field.Description>
-												</Field.Content>
-											</Field.Field>
-										</Accordion.Content>
-									</Accordion.Item>
-								</Accordion.Root>
-							</div>
-						{:else if step.type === 'prompt_transform'}
-							<div class="space-y-6">
-								<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-									<Field.Field>
-										<Field.Label for="inferenceProvider">Provider</Field.Label>
-										<Select.Root
-											type="single"
-											bind:value={() => step.inferenceProvider,
-												(value) => {
-													if (value) {
-														updateStep(index, { inferenceProvider: value });
-													}
-												}}
-										>
-											<Select.Trigger id="inferenceProvider" class="w-full">
-												{providerLabel(step.inferenceProvider) ?? 'Select a provider'}
-											</Select.Trigger>
-											<Select.Content>
-												{#each INFERENCE_PROVIDER_OPTIONS as item}
-													<Select.Item value={item.value} label={item.label} />
-												{/each}
-											</Select.Content>
-										</Select.Root>
-									</Field.Field>
+	<Separator />
 
-									{#if hasModelSelect(step.inferenceProvider)}
-										{@const modelField =
-											INFERENCE[step.inferenceProvider].stepModelField}
-										<Field.Field>
-											<Field.Label for={modelField}>Model</Field.Label>
-											<Select.Root
-												type="single"
-												bind:value={() => step[modelField],
-													(value) => {
-														if (value) {
-															updateStepModel(index, modelField, value);
-														}
-													}}
-											>
-												<Select.Trigger id={modelField} class="w-full">
-													{step[modelField] || 'Select a model'}
-												</Select.Trigger>
-												<Select.Content>
-													{#each INFERENCE[step.inferenceProvider].models as model}
-														<Select.Item value={model} label={model} />
-													{/each}
-												</Select.Content>
-											</Select.Root>
-										</Field.Field>
-									{:else if step.inferenceProvider === 'OpenRouter'}
-										<Field.Field>
-											<Field.Label for="openrouterModel">Model</Field.Label>
-											<Input
-												id="openrouterModel"
-												value={step.openrouterModel}
-												oninput={(e) => {
-													updateStep(index, { openrouterModel: e.currentTarget.value });
-												}}
-												placeholder="Enter model name"
-											/>
-										</Field.Field>
-									{:else if step.inferenceProvider === 'Custom'}
-										<Field.Field>
-											<Field.Label for="customModel">Model</Field.Label>
-											<Input
-												id="customModel"
-												value={step.customModel}
-												oninput={(e) => {
-													updateStep(index, { customModel: e.currentTarget.value });
-												}}
-												placeholder="llama3.2"
-											/>
-											<Field.Description>
-												Enter the exact model name as it appears in your local
-												service (e.g., run
-												<code class="bg-muted px-1 rounded">ollama list</code
-												>).
-											</Field.Description>
-										</Field.Field>
-									{/if}
-								</div>
+	<section class="space-y-4">
+		<Field.Field orientation="horizontal">
+			<Switch
+				id="prompt-enabled"
+				checked={transformation.prompt !== null}
+				onCheckedChange={setPromptEnabled}
+			/>
+			<Field.Content>
+				<Field.Label for="prompt-enabled">AI prompt</Field.Label>
+				<Field.Description>
+					Send the text through one model. Turn off for a replacements-only
+					transformation.
+				</Field.Description>
+			</Field.Content>
+		</Field.Field>
 
-								<Field.Field>
-									<Field.Label for="systemPromptTemplate"
-										>System Prompt Template</Field.Label
-									>
-									<Textarea
-										id="systemPromptTemplate"
-										value={step.systemPromptTemplate}
-										oninput={(e) => {
-											updateStep(index, { systemPromptTemplate: e.currentTarget.value });
-										}}
-										placeholder="Define the AI's role and expertise, e.g., 'You are an expert at formatting meeting notes. Structure the text into clear sections with bullet points.'"
-									/>
-								</Field.Field>
-								<Field.Field>
-									<Field.Label for="userPromptTemplate"
-										>User Prompt Template</Field.Label
-									>
-									<Textarea
-										id="userPromptTemplate"
-										value={step.userPromptTemplate}
-										oninput={(e) => {
-											updateStep(index, { userPromptTemplate: e.currentTarget.value });
-										}}
-										placeholder="Tell the AI what to do with your text. Use {'{{input}}'} where you want your text to appear, e.g., 'Format this transcript into clear sections: {'{{input}}'}'"
-									/>
-									{#if step.userPromptTemplate && !step.userPromptTemplate.includes('{{input}}')}
-										<Field.Description>
-											<span class="text-warning font-semibold">
-												Remember to include {'{{input}}'} in your prompt - this
-												is where your text will be inserted!
-											</span>
-										</Field.Description>
-									{/if}
-								</Field.Field>
-								<Accordion.Root type="single" class="w-full">
-									<Accordion.Item class="border-none" value="advanced">
-										<Accordion.Trigger class="text-sm">
-											Advanced Options
-										</Accordion.Trigger>
-										<Accordion.Content>
-											<ProviderConfigFields provider={step.inferenceProvider} />
-										</Accordion.Content>
-									</Accordion.Item>
-								</Accordion.Root>
-							</div>
-						{/if}
-					</Card.Content>
+		{#if transformation.prompt}
+			{@const prompt = transformation.prompt}
+			{@const provider = prompt.inferenceProvider}
+			<div class="space-y-6" transition:slide>
+				<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+					<Field.Field>
+						<Field.Label for="inferenceProvider">Provider</Field.Label>
+						<Select.Root
+							type="single"
+							bind:value={() => prompt.inferenceProvider,
+							(value) => {
+								if (value) updateProvider(value);
+							}}
+						>
+							<Select.Trigger id="inferenceProvider" class="w-full">
+								{providerLabel(prompt.inferenceProvider) ?? 'Select a provider'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each INFERENCE_PROVIDER_OPTIONS as item}
+									<Select.Item value={item.value} label={item.label} />
+								{/each}
+							</Select.Content>
+						</Select.Root>
+					</Field.Field>
+
+					{#if hasModelSelect(provider)}
+						<Field.Field>
+							<Field.Label for="model">Model</Field.Label>
+							<Select.Root
+								type="single"
+								bind:value={() => prompt.model,
+								(value) => {
+									if (value) updatePrompt({ model: value });
+								}}
+							>
+								<Select.Trigger id="model" class="w-full">
+									{prompt.model || 'Select a model'}
+								</Select.Trigger>
+								<Select.Content>
+									{#each INFERENCE[provider].models as model}
+										<Select.Item value={model} label={model} />
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</Field.Field>
+					{:else if provider === 'OpenRouter'}
+						<Field.Field>
+							<Field.Label for="model">Model</Field.Label>
+							<Input
+								id="model"
+								value={prompt.model}
+								oninput={(e) => updatePrompt({ model: e.currentTarget.value })}
+								placeholder="Enter model name"
+							/>
+						</Field.Field>
+					{:else if provider === 'Custom'}
+						<Field.Field>
+							<Field.Label for="model">Model</Field.Label>
+							<Input
+								id="model"
+								value={prompt.model}
+								oninput={(e) => updatePrompt({ model: e.currentTarget.value })}
+								placeholder="llama3.2"
+							/>
+							<Field.Description>
+								Enter the exact model name as it appears in your local service
+								(e.g., run
+								<code class="bg-muted rounded px-1">ollama list</code>).
+							</Field.Description>
+						</Field.Field>
+					{/if}
 				</div>
-			{/each}
-		</div>
 
-		<Button
-			onclick={addStep}
-			variant={steps.length === 0 ? 'default' : 'outline'}
-			class="w-full"
-		>
-			<PlusIcon class="size-4" />
-			{steps.length === 0
-				? 'Add Your First Step'
-				: 'Add Another Step'}
-		</Button>
+				<Field.Field>
+					<Field.Label for="systemPromptTemplate">
+						System prompt template
+					</Field.Label>
+					<Textarea
+						id="systemPromptTemplate"
+						value={prompt.systemPromptTemplate}
+						oninput={(e) =>
+							updatePrompt({ systemPromptTemplate: e.currentTarget.value })}
+						placeholder="Define the AI's role and expertise, e.g., 'You are an expert at formatting meeting notes. Structure the text into clear sections with bullet points.'"
+					/>
+				</Field.Field>
+				<Field.Field>
+					<Field.Label for="userPromptTemplate">User prompt template</Field.Label>
+					<Textarea
+						id="userPromptTemplate"
+						value={prompt.userPromptTemplate}
+						oninput={(e) =>
+							updatePrompt({ userPromptTemplate: e.currentTarget.value })}
+						placeholder="Tell the AI what to do with your text. Use {'{{input}}'} where you want your text to appear, e.g., 'Format this transcript into clear sections: {'{{input}}'}'"
+					/>
+					{#if prompt.userPromptTemplate && !prompt.userPromptTemplate.includes('{{input}}')}
+						<Field.Description>
+							<span class="text-warning font-semibold">
+								Remember to include {'{{input}}'} in your prompt: this is where
+								your text will be inserted.
+							</span>
+						</Field.Description>
+					{/if}
+				</Field.Field>
+				<Accordion.Root type="single" class="w-full">
+					<Accordion.Item class="border-none" value="advanced">
+						<Accordion.Trigger class="text-sm">
+							Advanced Options
+						</Accordion.Trigger>
+						<Accordion.Content>
+							<ProviderConfigFields provider={prompt.inferenceProvider} />
+						</Accordion.Content>
+					</Accordion.Item>
+				</Accordion.Root>
+			</div>
+		{/if}
 	</section>
+
+	<Separator />
+
+	{@render replacementSection(
+		'postReplacements',
+		'Post-replacements',
+		'Run after the prompt, offline and with no API key. Useful for enforcing formatting the prompt cannot guarantee.',
+	)}
 </div>

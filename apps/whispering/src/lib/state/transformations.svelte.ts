@@ -1,9 +1,9 @@
 /**
  * Reactive transformation state backed by Yjs workspace tables.
  *
- * Replaces TanStack Query + BlobStore for transformation CRUD. The workspace
- * model stores transformations as metadata rows (title, description, timestamps)
- * without embedded steps. Steps live in a separate `transformationSteps` table.
+ * A transformation is a single self-contained row: title, description,
+ * timestamps, and the fixed three-phase shape (`preReplacements`, `prompt`,
+ * `postReplacements`). There is no separate steps table.
  *
  * @example
  * ```typescript
@@ -22,8 +22,7 @@
 import { fromTable } from '@epicenter/svelte';
 import { nanoid } from 'nanoid/non-secure';
 import { whispering } from '#platform/whispering';
-import type { Transformation, TransformationStep } from '$lib/workspace';
-import { transformationSteps } from './transformation-steps.svelte';
+import type { Transformation } from '$lib/workspace';
 
 function createTransformations() {
 	const map = fromTable(whispering.tables.transformations);
@@ -116,42 +115,22 @@ export function generateDefaultTransformation(): Transformation {
 		description: '',
 		createdAt: now,
 		updatedAt: now,
+		preReplacements: [],
+		prompt: null,
+		postReplacements: [],
 	};
 }
 
 /**
- * Atomically save a transformation and its steps in a single workspace batch.
+ * Save a transformation, stamping `updatedAt`. Works for both create and update
+ * since the whole fixed-phase shape lives on the row itself, there is no child
+ * steps table to reconcile.
  *
- * Works for both create and update:
- * - Sets `updatedAt` to now (harmless on create since it was already "now").
- * - Deletes existing steps first (no-op on create since none exist yet),
- *   then re-inserts with correct ordering.
- *
- * Callers should pass `$state.snapshot()` values. This function takes plain data.
- *
- * @example
- * ```typescript
- * const snap = $state.snapshot(transformation);
- * const stepsSnap = $state.snapshot(steps);
- * saveTransformationWithSteps(snap, stepsSnap);
- * ```
+ * Callers should pass a `$state.snapshot()` value. This function takes plain data.
  */
-export function saveTransformationWithSteps(
-	transformation: Transformation,
-	steps: TransformationStep[],
-) {
-	whispering.ydoc.transact(() => {
-		transformations.set({
-			...transformation,
-			updatedAt: new Date().toISOString(),
-		});
-		transformationSteps.deleteByTransformationId(transformation.id);
-		for (const [order, step] of steps.entries()) {
-			transformationSteps.set({
-				...step,
-				transformationId: transformation.id,
-				order,
-			});
-		}
+export function saveTransformation(transformation: Transformation) {
+	transformations.set({
+		...transformation,
+		updatedAt: new Date().toISOString(),
 	});
 }

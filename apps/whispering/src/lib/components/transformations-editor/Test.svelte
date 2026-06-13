@@ -8,7 +8,7 @@
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { rpc } from '$lib/rpc';
-	import type { Transformation, TransformationStep } from '$lib/workspace';
+	import type { Transformation } from '$lib/workspace';
 
 	const transformInput = createMutation(
 		() => rpc.transformer.transformInput.options,
@@ -16,14 +16,19 @@
 
 	let {
 		transformation,
-		steps,
 	}: {
 		transformation: Transformation;
-		steps: TransformationStep[];
 	} = $props();
 
 	let input = $state('');
 	let output = $state('');
+
+	/** A transformation can run once it has at least one phase configured. */
+	const hasWork = $derived(
+		transformation.preReplacements.length > 0 ||
+			transformation.prompt !== null ||
+			transformation.postReplacements.length > 0,
+	);
 </script>
 
 <div class="flex flex-col gap-6 overflow-y-auto h-full px-2">
@@ -65,7 +70,7 @@
 				{ input, transformation },
 				{ onSuccess: (o) => (output = o) },
 			)}
-		disabled={!input.trim() || steps.length === 0}
+		disabled={!input.trim() || !hasWork}
 		class="w-full"
 	>
 		{#if transformInput.isPending}

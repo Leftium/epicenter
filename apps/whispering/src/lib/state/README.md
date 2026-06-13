@@ -50,24 +50,13 @@ recordings.delete(id);
 
 ### `transformations.svelte.ts`
 
-Transformation metadata backed by Yjs workspace table. Steps are stored in a separate table (`transformation-steps.svelte.ts`), not embedded in the transformation.
+Transformations backed by a Yjs workspace table. Each transformation is a single self-contained row: the fixed three-phase shape (`preReplacements`, `prompt`, `postReplacements`) lives on the row, there is no separate steps table.
 
 ```typescript
 import { transformations } from '$lib/state/transformations.svelte';
 
 const transformation = transformations.get(id);
 const sorted = transformations.sorted; // alphabetical
-```
-
-### `transformation-steps.svelte.ts`
-
-Transformation steps backed by Yjs workspace table. Steps have a `transformationId` FK and `order` field.
-
-```typescript
-import { transformationSteps } from '$lib/state/transformation-steps.svelte';
-
-// Get steps for a transformation, sorted by order
-const steps = transformationSteps.getByTransformationId(transformationId);
 ```
 
 ### `transformation-runs.svelte.ts`

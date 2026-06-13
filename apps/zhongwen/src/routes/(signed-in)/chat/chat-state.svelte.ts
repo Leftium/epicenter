@@ -18,7 +18,6 @@ import {
 } from '@epicenter/zhongwen';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { SvelteMap } from 'svelte/reactivity';
-import type { JsonValue } from 'wellcrafted/json';
 import { requireZhongwen } from '$lib/session';
 import { auth } from '$platform/auth';
 import {
@@ -28,7 +27,7 @@ import {
 	type Provider,
 } from './providers';
 import { ZHONGWEN_SYSTEM_PROMPT } from './system-prompt';
-import { toUiMessage } from './ui-message';
+import { toPersistedParts, toUiMessage } from './ui-message';
 
 // ─── State Factory ───────────────────────────────────────────────────────────
 
@@ -120,7 +119,7 @@ export function createChatState() {
 					id: asChatMessageId(message.id),
 					conversationId,
 					role: 'assistant',
-					parts: message.parts as JsonValue[],
+					parts: toPersistedParts(message.parts),
 					createdAt: message.createdAt?.getTime() ?? Date.now(),
 				});
 				zhongwen.tables.conversations.update(conversationId, {
@@ -191,7 +190,7 @@ export function createChatState() {
 					id: userMessageId,
 					conversationId,
 					role: 'user',
-					parts: [{ type: 'text', content }],
+					parts: toPersistedParts([{ type: 'text', content }]),
 					createdAt: Date.now(),
 				});
 
@@ -214,13 +213,23 @@ export function createChatState() {
 			stop() {
 				chat.stop();
 			},
+
+			/**
+			 * Tear down the chat client: abort any in-flight stream, then
+			 * release the devtools bridge, which holds the client in a
+			 * globalThis registry that would otherwise outlive the handle.
+			 */
+			dispose() {
+				chat.stop();
+				chat.dispose();
+			},
 		};
 	}
 
 	// ── Lifecycle ──
 
 	function destroyConversation(id: ConversationId) {
-		handles.get(id)?.stop();
+		handles.get(id)?.dispose();
 		handles.delete(id);
 	}
 

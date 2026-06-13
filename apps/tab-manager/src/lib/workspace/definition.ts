@@ -9,7 +9,7 @@
  * factory.
  */
 
-import { field, jsonValue } from '@epicenter/field';
+import { field } from '@epicenter/field';
 import {
 	asDeviceId,
 	createWorkspace,
@@ -21,7 +21,6 @@ import {
 	type Keyring,
 	nullable,
 } from '@epicenter/workspace';
-import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 
 export type { DeviceId };
@@ -85,78 +84,6 @@ export type BookmarkId = Id & Brand<'BookmarkId'>;
  */
 export const generateBookmarkId = (): BookmarkId => generateId() as BookmarkId;
 
-/**
- * Branded conversation ID: nanoid generated when a chat conversation is created.
- *
- * Used as the primary key for conversations and as a foreign key in chat messages.
- * Prevents accidental mixing with message IDs or other string IDs.
- */
-export type ConversationId = Id & Brand<'ConversationId'>;
-/**
- * Generate a unique {@link ConversationId} for a new chat conversation.
- *
- * Wraps `generateId()` with the branded cast so call sites never
- * need a manual cast.
- *
- * @example
- * ```typescript
- * const id = generateConversationId();
- * workspace.tables.conversations.set({
- *   id,
- *   title: 'New Chat',
- *   provider: DEFAULT_PROVIDER,
- *   model: DEFAULT_MODEL,
- *   createdAt: Date.now(),
- *   updatedAt: Date.now(),
- *   // …remaining fields
- * });
- * ```
- */
-export const generateConversationId = (): ConversationId =>
-	generateId() as ConversationId;
-/**
- * Syntactic sugar for `value as ConversationId`. The constrained `string` parameter
- * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
- * The only place in the codebase where `as ConversationId` should appear.
- */
-export const asConversationId = (value: string): ConversationId =>
-	value as ConversationId;
-
-/**
- * Branded chat message ID: nanoid generated when a message is created.
- *
- * Prevents accidental mixing with conversation IDs or other string IDs.
- */
-export type ChatMessageId = Id & Brand<'ChatMessageId'>;
-/**
- * Generate a unique {@link ChatMessageId} for a new chat message.
- *
- * Wraps `generateId()` with the branded cast so call sites never
- * need a manual cast.
- *
- * @example
- * ```typescript
- * const userMessageId = generateChatMessageId();
- * workspace.tables.chatMessages.set({
- *   id: userMessageId,
- *   conversationId,
- *   role: 'user',
- *   parts: [{ type: 'text', content }],
- *   createdAt: Date.now(),
- *   // …remaining fields
- * });
- * ```
- */
-export const generateChatMessageId = (): ChatMessageId =>
-	generateId() as ChatMessageId;
-/**
- * Syntactic sugar for `value as ChatMessageId`. The constrained `string` parameter
- * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
- * The only place in the codebase where `as ChatMessageId` should appear.
- */
-export const asChatMessageId = (value: string): ChatMessageId =>
-	value as ChatMessageId;
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Table Definitions
 // ─────────────────────────────────────────────────────────────────────────────
@@ -217,60 +144,16 @@ const bookmarksTable = defineTable({
 export type Bookmark = InferTableRow<typeof bookmarksTable>;
 
 /**
- * AI conversations: metadata for each chat thread.
+ * Tool trust: the set of auto-approved AI chat tools.
  *
- * Each conversation has its own message history (linked via
- * chatMessages.conversationId). Subpages use `parentId` to form
- * a tree, e.g. a deep research thread spawned from a specific
- * message in a parent conversation.
- */
-const conversationsTable = defineTable({
-	id: field.string<ConversationId>(),
-	title: field.string(),
-	parentId: nullable(field.string<ConversationId>()),
-	sourceMessageId: nullable(field.string<ChatMessageId>()),
-	systemPrompt: nullable(field.string()),
-	provider: field.string(),
-	model: field.string(),
-	createdAt: field.number(),
-	updatedAt: field.number(),
-});
-export type Conversation = InferTableRow<typeof conversationsTable>;
-
-/**
- * Chat messages: TanStack AI UIMessage data persisted per conversation.
- *
- * The `parts` field stores MessagePart[] as a JSON-encoded array. Runtime
- * validation of the inner shape is skipped (typed as `JsonValue[]`) because
- * parts are always produced by TanStack AI: compile-time drift detection in
- * `ui-message.ts` catches type mismatches on TanStack AI upgrades instead.
- *
- * @see {@link file://./ai/ui-message.ts}: drift detection + toUiMessage boundary
- */
-const chatMessagesTable = defineTable({
-	id: field.string<ChatMessageId>(),
-	conversationId: field.string<ConversationId>(),
-	role: field.select(['user', 'assistant', 'system']),
-	parts: field.json(Type.Array(jsonValue)),
-	createdAt: field.number(),
-});
-export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
-
-/**
- * Tool trust: per-tool approval preferences for AI chat.
- *
- * Each row represents a user's trust decision for a specific destructive tool.
- * Tools not in this table default to 'ask' (show approval UI). Users can
- * escalate to 'always' (auto-approve) via the inline approval buttons.
- *
- * The `id` is the flat action name used by CLI and RPC surfaces
+ * A presence set: a row means the user chose "Always Allow" for that tool;
+ * absence means ask every time (the safe default), so revoking deletes the
+ * row. The `id` is the flat action name used by CLI and RPC surfaces
  * (e.g. `tabs_close`).
  */
 const toolTrustTable = defineTable({
 	id: field.string(),
-	trust: field.select(['ask', 'always']),
 });
-export type ToolTrust = InferTableRow<typeof toolTrustTable>;
 
 /**
  * Build the Tab Manager workspace bundle. Encrypted under the supplied
@@ -284,8 +167,6 @@ export function createTabManager(opts: { keyring: () => Keyring }) {
 			devices: devicesTable,
 			savedTabs: savedTabsTable,
 			bookmarks: bookmarksTable,
-			conversations: conversationsTable,
-			chatMessages: chatMessagesTable,
 			toolTrust: toolTrustTable,
 		},
 		kv: {},

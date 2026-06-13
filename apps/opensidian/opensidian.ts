@@ -131,6 +131,11 @@ export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
  *
  * Tracks whether a tool should keep asking for approval or be auto-approved,
  * which lets Opensidian remember the user's trust decisions across sessions.
+ *
+ * Schema only today: no Opensidian surface reads or writes this table, and
+ * the chat UI asks for approval on every call. Tab-manager's toolTrust state
+ * (shouldAutoApprove plus an Always Allow action) is the reference shape if
+ * Opensidian adopts auto-approval; until then the divergence is deliberate.
  */
 const toolTrustTable = defineTable({
 	id: field.string(),

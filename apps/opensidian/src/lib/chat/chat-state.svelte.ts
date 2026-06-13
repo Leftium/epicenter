@@ -13,7 +13,7 @@ import {
 	generateConversationId,
 } from 'opensidian';
 import type { OpensidianBrowser } from 'opensidian/browser';
-import type { JsonValue } from 'wellcrafted/json';
+import { SvelteMap } from 'svelte/reactivity';
 import {
 	DEFAULT_MODEL,
 	DEFAULT_PROVIDER,
@@ -25,20 +25,17 @@ import {
 	buildVaultSkillsPrompt,
 	OPENSIDIAN_SYSTEM_PROMPT,
 } from '$lib/chat/system-prompt';
-import { toUiMessage } from '$lib/chat/ui-message';
+import { toPersistedParts, toUiMessage } from '$lib/chat/ui-message';
 import { searchParams } from '$lib/search-params.svelte';
 import type { SkillState } from '$lib/state/skill-state.svelte';
 
-function getStringValue(value: JsonValue | undefined, fallback: string) {
-	return typeof value === 'string' ? value : fallback;
-}
-
-function getNumberValue(value: JsonValue | undefined, fallback = 0) {
-	return typeof value === 'number' ? value : fallback;
-}
-
-function getProviderValue(value: JsonValue | undefined): Provider {
-	return typeof value === 'string' && value in PROVIDER_MODELS
+/**
+ * Narrow a persisted provider string to the Provider union. The column is a
+ * plain string in the durable schema, so rows written by builds with a
+ * different provider list fall back to the default.
+ */
+function getProviderValue(value: string | undefined): Provider {
+	return value !== undefined && value in PROVIDER_MODELS
 		? (value as Provider)
 		: DEFAULT_PROVIDER;
 }
@@ -60,9 +57,7 @@ export function createAiChatState({
 	const sessionAiTools = actionsToAiTools(workspace.collaboration.actions);
 	const conversationsMap = fromTable(workspace.tables.conversations);
 	const conversations = $derived(
-		[...conversationsMap.values()].sort(
-			(a, b) => getNumberValue(b.updatedAt) - getNumberValue(a.updatedAt),
-		),
+		[...conversationsMap.values()].sort((a, b) => b.updatedAt - a.updatedAt),
 	);
 
 	function ensureDefaultConversation(): ConversationId | undefined {
@@ -103,7 +98,7 @@ export function createAiChatState({
 			.map(toUiMessage);
 	}
 
-	const handles = new Map<
+	const handles = new SvelteMap<
 		ConversationId,
 		ReturnType<typeof createConversationHandle>
 	>();
@@ -122,7 +117,6 @@ export function createAiChatState({
 						data: {
 							provider: metadata?.provider ?? DEFAULT_PROVIDER,
 							model: metadata?.model ?? DEFAULT_MODEL,
-							conversationId,
 							systemPrompts: [
 								OPENSIDIAN_SYSTEM_PROMPT,
 								buildGlobalSkillsPrompt(
@@ -148,7 +142,7 @@ export function createAiChatState({
 					id: asChatMessageId(message.id),
 					conversationId,
 					role: 'assistant',
-					parts: message.parts as JsonValue[],
+					parts: toPersistedParts(message.parts),
 					createdAt: message.createdAt?.getTime() ?? Date.now(),
 				});
 
@@ -165,8 +159,12 @@ export function createAiChatState({
 		});
 
 		return {
+			// Abort any in-flight stream, then release the devtools bridge,
+			// which holds the client in a globalThis registry that would
+			// otherwise outlive the handle.
 			[Symbol.dispose]() {
 				chat.stop();
+				chat.dispose();
 			},
 
 			get id() {
@@ -174,7 +172,7 @@ export function createAiChatState({
 			},
 
 			get title() {
-				return getStringValue(metadata?.title, 'New Chat');
+				return metadata?.title ?? 'New Chat';
 			},
 
 			get provider() {
@@ -189,18 +187,18 @@ export function createAiChatState({
 			},
 
 			get model() {
-				return getStringValue(metadata?.model, DEFAULT_MODEL);
+				return metadata?.model ?? DEFAULT_MODEL;
 			},
 			set model(value: string) {
 				updateConversation(conversationId, { model: value });
 			},
 
 			get createdAt() {
-				return getNumberValue(metadata?.createdAt);
+				return metadata?.createdAt ?? 0;
 			},
 
 			get updatedAt() {
-				return getNumberValue(metadata?.updatedAt);
+				return metadata?.updatedAt ?? 0;
 			},
 
 			get messages() {
@@ -247,11 +245,11 @@ export function createAiChatState({
 					id: userMessageId,
 					conversationId,
 					role: 'user',
-					parts: [{ type: 'text', content }],
+					parts: toPersistedParts([{ type: 'text', content }]),
 					createdAt: Date.now(),
 				});
 
-				const currentTitle = getStringValue(metadata?.title, 'New Chat');
+				const currentTitle = metadata?.title ?? 'New Chat';
 
 				updateConversation(conversationId, {
 					title:

@@ -11,7 +11,7 @@
 	import MessageSquarePlusIcon from '@lucide/svelte/icons/message-square-plus';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import type { ConversationHandle } from '$lib/chat/chat-state.svelte';
-	import type { ConversationId } from '$lib/workspace';
+	import type { ConversationId } from '$lib/chat/persistence';
 
 	let {
 		conversations,

@@ -1,12 +1,7 @@
 <script lang="ts">
 	import BrainIcon from '@lucide/svelte/icons/brain';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
-	import type {
-		MessagePart,
-		ToolCallPart as TanStackToolCallPart,
-		ToolResultPart as ToolResultPartType,
-	} from '@tanstack/ai-client';
-	import type { SessionTools } from '$lib/chat/chat-state.svelte';
+	import type { MessagePart } from '@tanstack/ai-client';
 	import ToolCallPart from './ToolCallPart.svelte';
 	import ToolResultPart from './ToolResultPart.svelte';
 
@@ -21,6 +16,19 @@
 	} = $props();
 
 	let thinkingExpanded = $state(false);
+
+	/**
+	 * Exhaustiveness guard for the template's part dispatch: `part` is `never`
+	 * only while every member of `MessagePart` has a branch above the
+	 * `{:else}`, so a new part type in TanStack AI becomes a type error here.
+	 *
+	 * The branch is still reachable at runtime: parts round-trip through the
+	 * workspace CRDT, so a newer build can persist part types this build does
+	 * not know about.
+	 */
+	function unknownPartType(part: never): string {
+		return (part as { type: string }).type;
+	}
 </script>
 
 {#snippet mediaPart(label: string)}
@@ -31,13 +39,9 @@
 	{#if part.type === 'text'}
 		<p class="whitespace-pre-wrap text-sm">{part.content}</p>
 	{:else if part.type === 'tool-call'}
-		<ToolCallPart
-			part={part as TanStackToolCallPart<SessionTools>}
-			{onApproveToolCall}
-			{onDenyToolCall}
-		/>
+		<ToolCallPart {part} {onApproveToolCall} {onDenyToolCall} />
 	{:else if part.type === 'tool-result'}
-		<ToolResultPart part={part as ToolResultPartType} />
+		<ToolResultPart {part} />
 	{:else if part.type === 'thinking'}
 		<div class="my-1">
 			<button
@@ -54,7 +58,7 @@
 				<div
 					class="mt-1 rounded bg-muted/30 p-2 text-xs text-muted-foreground whitespace-pre-wrap"
 				>
-					{(part as { type: 'thinking'; content: string }).content}
+					{part.content}
 				</div>
 			{/if}
 		</div>
@@ -66,5 +70,11 @@
 		{@render mediaPart('[Video content]')}
 	{:else if part.type === 'document'}
 		{@render mediaPart('[Document content]')}
+	{:else if part.type === 'structured-output'}
+		<!-- Only produced when createChat is given an outputSchema, which this
+			app never sets. Persisted parts from a future build could carry it. -->
+		{@render mediaPart('[Structured output]')}
+	{:else}
+		{@render mediaPart(`[Unsupported part: ${unknownPartType(part)}]`)}
 	{/if}
 {/each}

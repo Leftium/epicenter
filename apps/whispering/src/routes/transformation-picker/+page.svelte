@@ -1,40 +1,29 @@
 <script lang="ts">
-	import { Badge } from '@epicenter/ui/badge';
+	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';
+	import * as Empty from '@epicenter/ui/empty';
 	import { Kbd } from '@epicenter/ui/kbd';
-	import { Spinner } from '@epicenter/ui/spinner';
+	import * as ToggleGroup from '@epicenter/ui/toggle-group';
 	import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { onDestroy, onMount } from 'svelte';
-	import { cn } from '@epicenter/ui/utils';
-	import TransformationPickerBody from '$lib/components/TransformationPickerBody.svelte';
 	import { type Candidate, fanOutCandidates } from '$lib/operations/candidates';
 	import { persistCompletedRun } from '$lib/operations/transform';
 	import { sound } from '$lib/operations/sound';
 	import { report } from '$lib/report';
 	import { services } from '$lib/services';
-	import type { Transformation } from '$lib/workspace';
-	import { type DiffSegment, wordDiff } from '$lib/utils/word-diff';
+	import { transformations } from '$lib/state/transformations.svelte';
+	import CandidateCards from '$lib/components/CandidateCards.svelte';
 	import * as pickerWindow from './transformationPickerWindow.tauri';
-
-	/**
-	 * Candidates generated for a prompt-based transformation. Each is an
-	 * independent completion, so they vary; deterministic (replacements-only)
-	 * transformations collapse to a single candidate since repeating them yields
-	 * identical text. The sample count is an invocation parameter, never stored on
-	 * the transformation.
-	 */
-	const SAMPLE_COUNT = 3;
 
 	// The captured selection, handed over by the main window after the shortcut
 	// simulates a copy. Empty until the first input event arrives.
 	let input = $state('');
-	let stage = $state<'picker' | 'candidates'>('picker');
+	// Which transformations are toggled on; bound to the chip row.
+	let activeIds = $state<string[]>([]);
+	// One candidate per active transformation, kept in memory; never persisted
+	// until accept. Toggling a chip adds or removes its candidate.
 	let candidates = $state<Candidate[]>([]);
 	let selectedIndex = $state(0);
-	// When the fan-out kicked off; persisted as the accepted run's startedAt.
-	let startedAt = $state('');
-	// The scrollable candidate list, so arrow-key selection can scroll into view.
-	let listEl = $state<HTMLElement | null>(null);
 
 	let unlistenInput: UnlistenFn | null = null;
 
@@ -50,34 +39,36 @@
 
 	onDestroy(() => unlistenInput?.());
 
-	// Keep the highlighted card visible as the user arrows through a long list.
-	$effect(() => {
-		listEl
-			?.querySelector(`[data-candidate-index="${selectedIndex}"]`)
-			?.scrollIntoView({ block: 'nearest' });
-	});
-
-	// Each open starts fresh at the picker over the newly captured selection.
+	// Each open starts fresh over the newly captured selection.
 	function receiveInput(text: string) {
 		input = text;
-		stage = 'picker';
+		activeIds = [];
 		candidates = [];
 		selectedIndex = 0;
 	}
 
-	function runFanOut(transformation: Transformation) {
-		const samples = transformation.prompt ? SAMPLE_COUNT : 1;
-		startedAt = new Date().toISOString();
-		candidates = fanOutCandidates({
-			input,
-			transformations: [transformation],
-			samples,
+	// Reconcile candidates to the toggled set, preserving the promises of chips
+	// that stayed on so they don't re-run; new chips fan out one candidate each.
+	function reconcile(ids: string[]) {
+		const existing = new Map(candidates.map((c) => [c.transformation.id, c]));
+		candidates = ids.flatMap((id) => {
+			const kept = existing.get(id);
+			if (kept) return [kept];
+			const transformation = transformations.get(id);
+			if (!transformation) return [];
+			return fanOutCandidates({
+				input,
+				transformations: [transformation],
+				samples: 1,
+			});
 		});
-		selectedIndex = 0;
-		stage = 'candidates';
+		selectedIndex = Math.min(selectedIndex, Math.max(0, candidates.length - 1));
 	}
 
-	async function accept(candidate: Candidate) {
+	async function accept() {
+		const candidate = candidates[selectedIndex];
+		if (!candidate) return;
+
 		const result = await candidate.result;
 		if (result.error) {
 			report.error({ title: 'That result failed', cause: result.error });
@@ -92,7 +83,7 @@
 			transformationId: candidate.transformation.id,
 			input: candidate.input,
 			output,
-			startedAt,
+			startedAt: new Date().toISOString(),
 		});
 		void sound.playSoundIfEnabled('transformationComplete');
 
@@ -111,12 +102,18 @@
 		await pickerWindow.hide();
 	}
 
-	// The candidate stage is keyboard-driven; the picker stage owns its own keys.
+	async function manageTransformations() {
+		await dismiss();
+		await emit('navigate-main-window', { path: '/transformations' });
+	}
+
 	function onKeydown(event: KeyboardEvent) {
-		if (stage !== 'candidates') {
-			if (event.key === 'Escape') void dismiss();
+		if (event.key === 'Escape') {
+			event.preventDefault();
+			void dismiss();
 			return;
 		}
+		if (!candidates.length) return;
 		if (event.key === 'ArrowDown') {
 			event.preventDefault();
 			selectedIndex = Math.min(selectedIndex + 1, candidates.length - 1);
@@ -124,41 +121,28 @@
 			event.preventDefault();
 			selectedIndex = Math.max(selectedIndex - 1, 0);
 		} else if (event.key === 'Enter') {
+			// When a chip is focused, let Enter toggle it instead of accepting.
+			const active = document.activeElement;
+			if (active?.closest('[data-slot="toggle-group-item"]')) return;
 			event.preventDefault();
-			const candidate = candidates[selectedIndex];
-			if (candidate) void accept(candidate);
-		} else if (event.key === 'Escape') {
-			event.preventDefault();
-			void dismiss();
+			void accept();
 		}
 	}
 </script>
 
 <svelte:window onkeydown={onKeydown} />
 
-{#snippet diffInline(segments: DiffSegment[])}
-	<p class="text-sm leading-relaxed whitespace-pre-wrap">
-		{#each segments as seg, i (i)}
-			{#if seg.type === 'equal'}<span>{seg.text}</span
-				>{:else if seg.type === 'insert'}<span
-					class="rounded-sm bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-					>{seg.text}</span
-				>{:else}<span
-					class="rounded-sm bg-red-500/10 text-red-700/70 line-through dark:text-red-300/60"
-					>{seg.text}</span
-				>{/if}
-		{/each}
-	</p>
-{/snippet}
-
 <div class="flex h-screen flex-col gap-4 p-6">
-	<header class="flex-none space-y-1">
-		<h2 class="text-2xl font-semibold tracking-tight">Transformations</h2>
-		<p class="text-sm text-muted-foreground">
-			{stage === 'picker'
-				? 'Pick a transformation to run on your selected text'
-				: 'Choose a result, then accept it to replace your selection'}
-		</p>
+	<header class="flex flex-none items-start justify-between gap-2">
+		<div class="space-y-1">
+			<h2 class="text-2xl font-semibold tracking-tight">Transformations</h2>
+			<p class="text-sm text-muted-foreground">
+				Toggle transformations to run on your selection, then accept a result
+			</p>
+		</div>
+		<Button variant="ghost" size="sm" onclick={manageTransformations}>
+			Manage
+		</Button>
 	</header>
 
 	<!-- The captured selection, the anchor every result is diffed against. -->
@@ -177,81 +161,53 @@
 		</Card.Content>
 	</Card.Root>
 
-	{#if stage === 'picker'}
-		<TransformationPickerBody
-			onSelect={runFanOut}
-			onSelectManageTransformations={async () => {
-				await dismiss();
-				await emit('navigate-main-window', { path: '/transformations' });
-			}}
-			placeholder="Search transformations..."
-		/>
+	{#if transformations.sorted.length === 0}
+		<Empty.Root class="flex-1 border-0">
+			<Empty.Title>No transformations yet</Empty.Title>
+			<Empty.Description>
+				Create one to run it on your selection.
+			</Empty.Description>
+			<Empty.Content>
+				<Button size="sm" onclick={manageTransformations}>
+					Create a transformation
+				</Button>
+			</Empty.Content>
+		</Empty.Root>
 	{:else}
-		<div
-			bind:this={listEl}
-			class="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto pr-1"
+		<ToggleGroup.Root
+			type="multiple"
+			bind:value={activeIds}
+			onValueChange={reconcile}
+			class="flex flex-none flex-wrap justify-start gap-2"
 		>
-			{#each candidates as candidate, index (candidate.id)}
-				{@const selected = index === selectedIndex}
-				<Card.Root
-					data-candidate-index={index}
-					role="button"
-					tabindex={0}
-					aria-selected={selected}
-					onclick={() => (selectedIndex = index)}
-					ondblclick={() => accept(candidate)}
-					class={cn(
-						'cursor-pointer gap-2 py-3 transition-colors outline-none',
-						selected
-							? 'border-primary bg-primary/5 ring-1 ring-primary'
-							: 'hover:border-muted-foreground/30',
-					)}
+			{#each transformations.sorted as transformation (transformation.id)}
+				<ToggleGroup.Item
+					value={transformation.id}
+					class="rounded-full border-0 bg-muted px-3 text-muted-foreground hover:bg-muted/70 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
 				>
-					<Card.Header class="flex-row items-center justify-between gap-2 px-4">
-						<div class="flex items-center gap-2">
-							<span class="text-sm font-medium">
-								{candidate.transformation.title || 'Untitled transformation'}
-							</span>
-							{#if candidates.length > 1}
-								<Badge variant="secondary" class="px-1.5 text-xs tabular-nums">
-									{candidate.sampleIndex + 1}
-								</Badge>
-							{/if}
-						</div>
-						{#if selected}
-							<span class="flex items-center gap-1 text-xs text-muted-foreground">
-								<Kbd>Enter</Kbd>
-								to accept
-							</span>
-						{/if}
-					</Card.Header>
-					<Card.Content class="px-4">
-						{#await candidate.result}
-							<div class="flex items-center gap-2 text-sm text-muted-foreground">
-								<Spinner class="size-3.5" />
-								<span>Generating</span>
-							</div>
-						{:then result}
-							{#if result.error}
-								<p class="text-sm text-destructive">{result.error.message}</p>
-							{:else}
-								{@render diffInline(wordDiff(input, result.data))}
-							{/if}
-						{/await}
-					</Card.Content>
-				</Card.Root>
+					{transformation.title || 'Untitled transformation'}
+				</ToggleGroup.Item>
 			{/each}
-		</div>
+		</ToggleGroup.Root>
 
-		<footer
-			class="flex flex-none items-center gap-4 border-t pt-3 text-xs text-muted-foreground"
-		>
-			<span class="flex items-center gap-1">
-				<Kbd>&uarr;</Kbd><Kbd>&darr;</Kbd>
-				navigate
-			</span>
-			<span class="flex items-center gap-1"><Kbd>Enter</Kbd> accept</span>
-			<span class="flex items-center gap-1"><Kbd>Esc</Kbd> dismiss</span>
-		</footer>
+		{#if candidates.length === 0}
+			<div class="flex flex-1 items-center justify-center">
+				<p class="text-sm text-muted-foreground">
+					Toggle a transformation above to see results.
+				</p>
+			</div>
+		{:else}
+			<CandidateCards {candidates} original={input} bind:selectedIndex onaccept={accept} />
+			<footer
+				class="flex flex-none items-center gap-4 border-t pt-3 text-xs text-muted-foreground"
+			>
+				<span class="flex items-center gap-1">
+					<Kbd>&uarr;</Kbd><Kbd>&darr;</Kbd>
+					navigate
+				</span>
+				<span class="flex items-center gap-1"><Kbd>Enter</Kbd> accept</span>
+				<span class="flex items-center gap-1"><Kbd>Esc</Kbd> dismiss</span>
+			</footer>
+		{/if}
 	{/if}
 </div>

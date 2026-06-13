@@ -45,16 +45,16 @@ The verbs are the architecture. If you remember nothing else, remember that Epic
 `defineTable` and `defineKv` are pure declarations. They do not create a `Y.Doc`, open IndexedDB, start a WebSocket, or touch the network.
 
 ```ts
+import { field } from '@epicenter/field';
 import {
-	column,
 	defineKv,
 	defineTable,
 } from '@epicenter/workspace';
 import Type from 'typebox';
 
 const files = defineTable({
-	id: column.string(),
-	name: column.string(),
+	id: field.string(),
+	name: field.string(),
 });
 
 const themeMode = defineKv(

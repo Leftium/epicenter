@@ -152,8 +152,8 @@ You don't have to choose one approach for everything.
 // `_v` is library-managed, so it never appears in column declarations or
 // in the rows you write.
 const posts = defineTable(
-  { id: column.string(), title: column.string() },
-  { id: column.string(), title: column.string(), authorId: column.string() },
+  { id: field.string(), title: field.string() },
+  { id: field.string(), title: field.string(), authorId: field.string() },
 ).migrate(({ value, version }) => {
   switch (version) {
     case 1: return { ...value, authorId: 'unknown' };

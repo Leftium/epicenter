@@ -273,19 +273,19 @@ When the spec introduces a coherent set of new primitives (column types, action 
 Catalogs let a reader scan the entire surface in one glance before diving into any single primitive.
 
 ````markdown
-## The column.* catalog
+## The field.* catalog
 
 ```ts
-column.string<TBrand?>(s?)              // TEXT (TBrand for branded strings)
-column.number(s?)                       // REAL
-column.integer(s?)                      // INTEGER
-column.boolean()                        // INTEGER 0/1
-column.literal(value)                   // TEXT (single literal)
-column.enum([...])                      // TEXT + CHECK constraint
-column.json<S extends TSchema>(schema)  // TEXT JSON-encoded, schema required
-column.nullable(inner)                  // Type.Union([inner, Type.Null()])
-column.dateTime(s?)                     // RFC 3339 string, branded DateTimeString
-column.ianaTimeZone(s?)                 // IANA zone string, branded IanaTimeZone
+field.string<TBrand?>(s?)               // TEXT (TBrand for branded strings)
+field.number(s?)                        // REAL
+field.integer(s?)                       // INTEGER
+field.boolean()                         // INTEGER 0/1
+field.select([value])                   // TEXT (single-element set)
+field.select([...])                     // TEXT + CHECK constraint
+field.json<S extends TSchema>(schema)   // TEXT JSON-encoded, schema required
+nullable(inner)                         // Type.Union([inner, Type.Null()]) (standalone)
+field.datetime(s?)                      // RFC 3339 string, branded DateTimeString
+field.string<IanaTimeZone>()            // IANA zone string, branded IanaTimeZone
 ```
 
 Every primitive justified by N+ existing call sites in the audit.
@@ -294,8 +294,8 @@ Every primitive justified by N+ existing call sites in the audit.
 
 | Candidate | Why rejected |
 |---|---|
-| `column.id()` | Subsumed by `column.string<IdBrand>()` + a co-located `generate*` factory |
-| `column.array(of)` | Subsumed by `column.json(Type.Array(of))` |
+| `field.id()` | Subsumed by `field.string<IdBrand>()` + a co-located `generate*` factory |
+| `field.array(of)` | Subsumed by `field.json(Type.Array(of))` |
 | Declaring `_v` as a column | Library-managed; positional in `defineTable(v1, v2, ...)` |
 ````
 
@@ -325,11 +325,11 @@ const notesTable = defineTable(
 
 ```ts
 const notesTable = defineTable(
-  { id: column.string<NoteId>(), title: column.string() },
+  { id: field.string<NoteId>(), title: field.string() },
   {
-    id: column.string<NoteId>(),
-    title: column.string(),
-    wordCount: column.nullable(column.number()),
+    id: field.string<NoteId>(),
+    title: field.string(),
+    wordCount: nullable(field.number()),
   },
 ).migrate(({ value, version }) => {
   switch (version) {

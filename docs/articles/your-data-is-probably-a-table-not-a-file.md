@@ -10,24 +10,24 @@ Honeycrisp is an Apple Notes clone. Its data model is two tables and some KV set
 
 ```typescript
 const foldersTable = defineTable({
-  id: column.string<FolderId>(),
-  name: column.string(),
-  sortOrder: column.number(),
+  id: field.string<FolderId>(),
+  name: field.string(),
+  sortOrder: field.number(),
 });
 
 const notesTable = defineTable(
   {
-    id: column.string<NoteId>(),
-    folderId: column.string<FolderId>(),
-    title: column.string(),
-    preview: column.string(),
+    id: field.string<NoteId>(),
+    folderId: field.string<FolderId>(),
+    title: field.string(),
+    preview: field.string(),
   },
   {
-    id: column.string<NoteId>(),
-    folderId: column.string<FolderId>(),
-    title: column.string(),
-    preview: column.string(),
-    deletedAt: column.dateTime(),
+    id: field.string<NoteId>(),
+    folderId: field.string<FolderId>(),
+    title: field.string(),
+    preview: field.string(),
+    deletedAt: field.datetime(),
   },
 ).migrate(({ value, version }) => {
   switch (version) {

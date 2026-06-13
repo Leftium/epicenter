@@ -34,7 +34,7 @@ test('exports a typed page to markdown and answers a typed SQLite query', async 
 	const dir = await mkdtemp(join(tmpdir(), 'wiki-vault-'));
 	const wiki = createWiki();
 	try {
-		// 1 + 3. Define the youtube_video type at runtime (real column.* calls).
+		// 1 + 3. Define the youtube_video type at runtime (real field.* calls).
 		const defined = wiki.actions.types_define({
 			id: 'youtube_video',
 			name: 'YouTube Video',

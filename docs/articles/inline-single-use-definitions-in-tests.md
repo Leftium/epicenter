@@ -9,12 +9,12 @@ AI coding assistants and many developers default to extracting every definition:
 ```typescript
 test('binds tables to a Y.Doc', () => {
   const posts = defineTable({
-    id: column.string(),
-    title: column.string(),
+    id: field.string(),
+    title: field.string(),
   });
 
   const theme = defineKv(
-    column.enum(['light', 'dark']),
+    field.select(['light', 'dark']),
     () => 'light' as const,
   );
 
@@ -44,13 +44,13 @@ test('binds tables to a Y.Doc', () => {
   const ydoc = new Y.Doc();
   const tables = attachTables(ydoc, {
     posts: defineTable({
-      id: column.string(),
-      title: column.string(),
+      id: field.string(),
+      title: field.string(),
     }),
   });
   const kv = attachKv(ydoc, {
     theme: defineKv(
-      column.enum(['light', 'dark']),
+      field.select(['light', 'dark']),
       () => 'light' as const,
     ),
   });

@@ -40,7 +40,7 @@ export const asPageId = (value: string): PageId => value as PageId;
 /** A type id is a stable slug; it also becomes a SQL table-name segment. */
 export const TYPE_ID_PATTERN = /^[a-z0-9_]+$/;
 
-/** A column.* result is a non-null JSON object; a string/array/primitive is not. */
+/** A field.* result is a non-null JSON object; a string/array/primitive is not. */
 export function isTSchemaObject(value: unknown): boolean {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -51,7 +51,7 @@ export function isTSchemaObject(value: unknown): boolean {
  * - `id` is the stable physical id. A rename never touches it, which is what
  *   makes a display rename metadata-only (no SQL DDL).
  * - `name` is the display name; free to change.
- * - `schema` is the column's TypeBox schema, authored with the real `column.*`
+ * - `schema` is the column's TypeBox schema, authored with the real `field.*`
  *   builders (`field.url()`, `nullable(field.number())`) so call sites
  *   get autocomplete and type-checking. A `TSchema` IS JSON Schema, so it is
  *   stored verbatim and re-validated with `Value.Check` after the Yjs/JSON

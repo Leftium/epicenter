@@ -530,7 +530,6 @@
         "@epicenter/workspace": "workspace:*",
         "@lucide/svelte": "catalog:",
         "@tanstack/ai-gemini": "catalog:",
-        "@tanstack/ai-grok": "catalog:",
         "@tanstack/ai-openai": "catalog:",
         "arktype": "catalog:",
         "dompurify": "^3.3.3",

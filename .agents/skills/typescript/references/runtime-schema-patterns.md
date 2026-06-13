@@ -46,16 +46,17 @@ Both behave similarly in TypeScript, but only the `?` syntax converts correctly 
 
 Two shapes coexist in the codebase, picked by what owns the brand at runtime:
 
-- **Workspace table IDs**: pure type alias + `generate*` factory. The brand lives only in the type system; `column.string<Id>()` carries it through the TypeBox schema. No runtime validator object.
+- **Workspace table IDs**: pure type alias + `generate*` factory. The brand lives only in the type system; `field.string<Id>()` carries it through the TypeBox schema. No runtime validator object.
 - **Arktype-validated IDs** (auth user IDs, persisted-state schemas, HTTP route inputs): validator-first + `as*` helper. The arktype `Type` and the inferred type share one PascalCase name.
 
 ## Workspace Table IDs: Pure Type Alias + Generator
 
-For any ID that lives in a `defineTable` schema, declare the brand as a **type alias** and pair it with a `generate*` factory that wraps `generateId<T>()`. The brand is never a runtime value; `column.string<T>()` propagates it through the TypeBox schema.
+For any ID that lives in a `defineTable` schema, declare the brand as a **type alias** and pair it with a `generate*` factory that wraps `generateId<T>()`. The brand is never a runtime value; `field.string<T>()` propagates it through the TypeBox schema.
 
 ```typescript
 import type { Brand } from 'wellcrafted/brand';
-import { column, defineTable, generateId } from '@epicenter/workspace';
+import { field } from '@epicenter/field';
+import { defineTable, generateId, nullable } from '@epicenter/workspace';
 
 // 1. Type alias: brand-only, no runtime symbol
 export type SavedTabId = string & Brand<'SavedTabId'>;
@@ -63,11 +64,11 @@ export type SavedTabId = string & Brand<'SavedTabId'>;
 // 2. Generator: wraps generateId<T>() so the cast lives in one place
 export const generateSavedTabId = (): SavedTabId => generateId<SavedTabId>();
 
-// 3. Use in defineTable via column.string<>()
+// 3. Use in defineTable via field.string<>()
 const savedTabsTable = defineTable({
-	id: column.string<SavedTabId>(),
-	url: column.string(),
-	parentId: column.nullable(column.string<SavedTabId>()),
+	id: field.string<SavedTabId>(),
+	url: field.string(),
+	parentId: nullable(field.string<SavedTabId>()),
 });
 ```
 

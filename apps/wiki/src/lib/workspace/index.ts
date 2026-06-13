@@ -51,7 +51,7 @@ export const WikiActionError = defineErrors({
 		typeId: string;
 		columnId: string;
 	}) => ({
-		message: `Type "${typeId}" column "${columnId}" schema must be a TSchema object (a column.* result)`,
+		message: `Type "${typeId}" column "${columnId}" schema must be a TSchema object (a field.* result)`,
 		typeId,
 		columnId,
 	}),
@@ -62,7 +62,7 @@ const columnSpecInput = Type.Object({
 	id: Type.String(),
 	name: Type.String(),
 	schema: Type.Unknown({
-		description: 'A column.* result (a TypeBox TSchema)',
+		description: 'A field.* result (a TypeBox TSchema)',
 	}),
 });
 
@@ -172,13 +172,13 @@ export function createWiki(opts?: { keyring?: () => Keyring }) {
 		pages_get_all: defineQuery({
 			title: 'List Pages',
 			description: 'Read every valid page.',
-			handler: () => tables.pages.getAllValid(),
+			handler: () => tables.pages.scan().rows,
 		}),
 
 		types_get_all: defineQuery({
 			title: 'List Types',
 			description: 'Read every user-defined type.',
-			handler: () => tables.types.getAllValid(),
+			handler: () => tables.types.scan().rows,
 		}),
 	});
 

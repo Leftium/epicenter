@@ -16,7 +16,7 @@
 // `Manager` is needed in scope because the `tauri_panel!` macro expands to code
 // that calls `.app_handle()` on the window.
 use tauri::{AppHandle, Manager, WebviewUrl};
-use tauri_nspanel::{tauri_panel, CollectionBehavior, PanelBuilder, PanelLevel};
+use tauri_nspanel::{tauri_panel, CollectionBehavior, PanelBuilder, PanelLevel, StyleMask};
 
 // Must stay in sync with the JS window manager's `WINDOW_LABEL` and the pill's
 // size in `src/lib/recording-overlay/`.
@@ -48,11 +48,21 @@ pub fn create_recording_overlay(app: &AppHandle) {
             height: OVERLAY_HEIGHT,
         }))
         .level(PanelLevel::Status)
+        // Borderless + non-activating: clicking the panel (e.g. the stop button)
+        // must never activate Whispering or raise its main window while the
+        // user is dictating into another app. `no_activate` only covers window
+        // creation; this style bit is what makes clicks non-activating.
+        .style_mask(StyleMask::empty().nonactivating_panel())
         .has_shadow(false)
         .transparent(true)
         .no_activate(true)
-        .corner_radius(0.0)
-        .with_window(|w| w.decorations(false).transparent(true))
+        // Round the panel itself to the pill shape (radius = half the height) so
+        // there is no square window backing peeking past the CSS pill's rounded
+        // corners.
+        .corner_radius(OVERLAY_HEIGHT / 2.0)
+        // accept_first_mouse so a click lands on the stop/cancel button even
+        // when the panel is not the active window (it never activates).
+        .with_window(|w| w.decorations(false).transparent(true).accept_first_mouse(true))
         .collection_behavior(
             CollectionBehavior::new()
                 .can_join_all_spaces()

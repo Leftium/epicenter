@@ -143,6 +143,10 @@
 		background: transparent !important;
 		margin: 0;
 		overflow: hidden;
+		/* The app shell forces a dark theme (ModeWatcher sets color-scheme:dark),
+		   which makes the browser paint a dark canvas behind the pill in this
+		   transparent webview. Reset it so only the pill is visible. */
+		color-scheme: normal !important;
 	}
 
 	/* The Svelte inspector toggle (svelte.config.js `showToggleButton: always`)

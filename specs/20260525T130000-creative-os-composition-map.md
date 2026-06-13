@@ -356,11 +356,11 @@ The rule:
 Integration state belongs to the app that owns the workflow.
 ```
 
-### Deep Links
+### Entity Links And App Schemes
 
-Deep links are for opening, referring, and embedding pointers in text. They are not the primary data integration mechanism.
+Entity links are for referring to records and embedding pointers in text. They are not the primary data integration mechanism, and they are separate from app-owned OS callback schemes.
 
-Use one Epicenter scheme with the app ID as the first path segment:
+Use one Epicenter entity-link scheme with the app or workspace ID as the URI authority:
 
 ```txt
 epicenter://epicenter.whispering/recordings/rec_123
@@ -383,16 +383,18 @@ Why this shape:
 
 ```txt
 epicenter://
-  one OS-level scheme to register
+  one shared entity-reference scheme for Epicenter records and Markdown links
 
 epicenter.whispering
-  app ID and route owner
+  app/workspace authority and route owner
 
 /recordings/rec_123/transcript
   app-specific route
 ```
 
-Before implementation, verify Tauri deep-link behavior on macOS, Windows, and Linux. The expected shape is compatible with Tauri's custom URL scheme model, but platform registration details should not be guessed from memory.
+Before implementation, verify Tauri deep-link behavior on macOS, Windows, and Linux. Tauri and the OS register handlers by scheme, not by URI authority, so `epicenter.whispering` in `epicenter://epicenter.whispering/...` does not make the OS route directly to Whispering. Treat `epicenter://` as a shared entity-reference grammar unless Epicenter ships a suite-level launcher/router that owns the `epicenter` scheme and dispatches internally.
+
+If a desktop app needs a private OAuth callback or app-owned launch scheme, use that app's reverse-domain scheme, for example `so.epicenter.whispering://auth/callback`, instead of making marketing domains or the shared `epicenter://` entity-link scheme own OAuth callback identity.
 
 ## Integration Spectrum
 
@@ -726,7 +728,7 @@ type PublishableArtifact = {
    - Recommendation: yes, if at least two integrations need to remember app ID, kind, and row ID. No, if the first integration can stay local to Polish.
 
 4. **Should deep links use `epicenter://epicenter.whispering/...` or app-specific reverse-domain schemes like `so.epicenter.whispering://...`?**
-   - Recommendation: one `epicenter://` scheme with app ID in the path authority. One OS-level scheme is simpler to register and makes links visually consistent.
+   - Recommendation: keep `epicenter://{appOrWorkspace}/{route}` for Epicenter entity references only. Use app-specific reverse-domain schemes for app-owned OS callback surfaces such as desktop OAuth, for example `so.epicenter.whispering://auth/callback`. `so.epicenter.whispering` is a valid URI scheme; `epicenter.whispering` as an `epicenter://` authority is not an OS routing boundary.
 
 5. **What is the first publish destination?**
    - Recommendation: Markdown export first. It proves publication lifecycle without account auth or API fragility.

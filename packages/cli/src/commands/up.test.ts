@@ -304,6 +304,28 @@ describe('runUp: failure cleanup', () => {
 		}
 	});
 
+	test('does not scaffold a root .gitignore once the namespace exists', async () => {
+		// `.epicenter/` present means a prior run already established the folder;
+		// a plain `up` must not retroactively write a `/*` rule into a folder the
+		// user may have turned into a git repo since.
+		writeFileSync(join(workDir, 'epicenter.config.ts'), 'export default [];\n');
+		mkdirSync(join(workDir, '.epicenter'), { recursive: true });
+
+		const handle = expectOk(
+			await runUp({
+				epicenterRoot: workDir,
+				quiet: true,
+				createAuthClient: stubAuthFactory,
+			}),
+		);
+
+		try {
+			expect(existsSync(join(workDir, '.gitignore'))).toBe(false);
+		} finally {
+			await handle.teardown();
+		}
+	});
+
 	test('releases the daemon lease when config loading fails', async () => {
 		writeFileSync(join(workDir, 'epicenter.config.ts'), 'export default {;\n');
 

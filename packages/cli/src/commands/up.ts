@@ -139,10 +139,19 @@ export async function runUp(
 	const auth = authResult.data;
 	stack.defer(() => auth[Symbol.dispose]());
 
+	// Captured before openProject, which (via the attach primitives) creates
+	// `.epicenter/`. A missing `.epicenter/` here means this run is the one
+	// establishing the namespace, the same signal openProject's bootstrap guard
+	// keys on. The root `.gitignore` is scaffolded only then, so a plain `up`
+	// against an existing folder never silently rewrites its git boundary.
+	const isFreshNamespace = !existsSync(join(epicenterRoot, '.epicenter'));
+
 	const startResult = await openProject({ epicenterRoot, auth });
 	if (startResult.error) return startResult;
 	const mounts = startResult.data;
-	ensureProjectGitignore(epicenterRoot);
+	ensureProjectGitignore(epicenterRoot, {
+		writeRootGitignore: isFreshNamespace,
+	});
 	stack.defer(async () => {
 		await Promise.allSettled(
 			mounts.map((entry) => entry.runtime[Symbol.asyncDispose]()),
@@ -241,11 +250,17 @@ export const upCommand = cmd({
  *                                 are derived from the Yjs log and rebuilt on
  *                                 demand, so git leaves them out. `/*` needs no
  *                                 mount-name list to keep in sync: it catches
- *                                 whatever the runtime writes.
+ *                                 whatever the runtime writes. Written only when
+ *                                 `writeRootGitignore` is set, which the caller
+ *                                 ties to first establishing the namespace, so a
+ *                                 plain `up` against a folder that is already a
+ *                                 git repo never silently hides its untracked
+ *                                 files behind a `/*` rule.
  *   <root>/.epicenter/.gitignore  `*` keeps machine state out of git even if a
  *                                 user later edits the root ignore to track a
  *                                 projection. Defense in depth for the one
  *                                 directory that must never be committed.
+ *                                 Written every run (cheap, idempotent).
  *
  * `.epicenter/` is created at mode 0o700 (machine state, not world-readable).
  * Both files are written only when absent, so a user's own rules survive.
@@ -263,10 +278,15 @@ const ROOT_GITIGNORE = `# Epicenter folder. Only epicenter.config.ts is tracked;
 !/epicenter.config.ts
 `;
 
-function ensureProjectGitignore(epicenterRoot: string): void {
-	const rootGitignorePath = join(epicenterRoot, '.gitignore');
-	if (!existsSync(rootGitignorePath)) {
-		writeFileSync(rootGitignorePath, ROOT_GITIGNORE);
+function ensureProjectGitignore(
+	epicenterRoot: string,
+	{ writeRootGitignore }: { writeRootGitignore: boolean },
+): void {
+	if (writeRootGitignore) {
+		const rootGitignorePath = join(epicenterRoot, '.gitignore');
+		if (!existsSync(rootGitignorePath)) {
+			writeFileSync(rootGitignorePath, ROOT_GITIGNORE);
+		}
 	}
 
 	const projectDataDir = join(epicenterRoot, '.epicenter');

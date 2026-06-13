@@ -204,4 +204,17 @@ describe('openProject', () => {
 		const result = await openProject({ epicenterRoot, auth: stubAuthClient() });
 		expect(expectOk(result)).toHaveLength(1);
 	});
+
+	test('ignores OS bookkeeping files when deciding if a folder is populated', async () => {
+		// A folder the user only browsed in Finder holds a .DS_Store and nothing
+		// else; that must not block startup.
+		mkdirSync(join(epicenterRoot, 'fuji'));
+		writeFileSync(join(epicenterRoot, 'fuji', '.DS_Store'), 'finder junk');
+		writeConfig(
+			`export default [{ name: 'fuji', open: () => (${RUNTIME}) }];\n`,
+		);
+
+		const result = await openProject({ epicenterRoot, auth: stubAuthClient() });
+		expect(expectOk(result)).toHaveLength(1);
+	});
 });

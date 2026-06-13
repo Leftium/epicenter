@@ -128,8 +128,14 @@ export async function openProject(
  * those files. Once `.epicenter/` exists, the declared mount folders are
  * Epicenter's to generate and rebuild, so this guard stands down.
  *
+ * OS bookkeeping files (`.DS_Store`, `Thumbs.db`) do not count as content: a
+ * folder a user merely browsed in Finder is not "populated by hand," and
+ * refusing to start over a `.DS_Store` would be a baffling macOS footgun.
+ *
  * Returns the first offending mount, or null when bootstrap is safe.
  */
+const IGNORED_BOOTSTRAP_ENTRIES = new Set(['.DS_Store', 'Thumbs.db']);
+
 function findPopulatedMountFolder(
 	epicenterRoot: EpicenterRoot,
 	mounts: readonly Mount[],
@@ -141,7 +147,8 @@ function findPopulatedMountFolder(
 		const path = mountMarkdownPath(epicenterRoot, mount.name);
 		if (!existsSync(path)) continue;
 		const isPopulated =
-			!statSync(path).isDirectory() || readdirSync(path).length > 0;
+			!statSync(path).isDirectory() ||
+			readdirSync(path).some((entry) => !IGNORED_BOOTSTRAP_ENTRIES.has(entry));
 		if (isPopulated) return { mount: mount.name, path };
 	}
 	return null;

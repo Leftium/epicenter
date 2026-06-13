@@ -18,6 +18,8 @@
 		INFERENCE_PROVIDER_OPTIONS,
 		type InferenceProviderId,
 	} from '$lib/constants/inference';
+	import { getProviderConfigKeys } from '$lib/operations/transform';
+	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { DEFAULT_PROMPT } from '$lib/state/transformations.svelte';
 	import type {
 		Replacement,
@@ -50,9 +52,23 @@
 	}
 
 	function setPromptEnabled(enabled: boolean) {
+		if (enabled) {
+			transformation = {
+				...transformation,
+				prompt: transformation.prompt ?? DEFAULT_PROMPT,
+			};
+			return;
+		}
+		// Without a prompt, pre and post are just one sequential pass: collapse them
+		// into a single replacements list so nothing is hidden or orphaned.
 		transformation = {
 			...transformation,
-			prompt: enabled ? (transformation.prompt ?? DEFAULT_PROMPT) : null,
+			prompt: null,
+			preReplacements: [
+				...transformation.preReplacements,
+				...transformation.postReplacements,
+			],
+			postReplacements: [],
 		};
 	}
 
@@ -168,8 +184,9 @@
 	<SectionHeader.Root>
 		<SectionHeader.Title>Configuration</SectionHeader.Title>
 		<SectionHeader.Description>
-			A transformation runs in three phases: deterministic replacements, one
-			optional AI prompt, then deterministic replacements again.
+			A transformation applies deterministic find/replace and, optionally, sends
+			the text through one AI model. With the prompt on, replacements run both
+			before and after it.
 		</SectionHeader.Description>
 	</SectionHeader.Root>
 
@@ -217,8 +234,10 @@
 
 	{@render replacementSection(
 		'preReplacements',
-		'Pre-replacements',
-		'Run before the prompt, offline and with no API key. Useful for stripping filler or expanding spoken cues like "new paragraph".',
+		transformation.prompt ? 'Pre-replacements' : 'Replacements',
+		transformation.prompt
+			? 'Run before the prompt, offline and with no API key. Useful for stripping filler or expanding spoken cues like "new paragraph".'
+			: 'Deterministic find/replace, offline and with no API key. Strip filler, expand spoken cues like "new paragraph", or fix proper nouns.',
 	)}
 
 	<Separator />
@@ -242,6 +261,11 @@
 		{#if transformation.prompt}
 			{@const prompt = transformation.prompt}
 			{@const provider = prompt.inferenceProvider}
+			{@const keys = getProviderConfigKeys(provider)}
+			{@const isCustom = provider === 'Custom'}
+			{@const requiredKey = isCustom ? keys.endpointConfigKey : keys.apiKeyConfigKey}
+			{@const hasCredential =
+				!requiredKey || (deviceConfig.get(requiredKey) ?? '').trim().length > 0}
 			<div class="space-y-6" transition:slide>
 				<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 					<Field.Field>
@@ -312,6 +336,15 @@
 					{/if}
 				</div>
 
+				{#if !hasCredential}
+					<Field.Error>
+						No {providerLabel(provider)}
+						{isCustom ? 'endpoint' : 'API key'} set yet. Add it in Advanced Options
+						below to run this transformation. Your key stays on this device, no
+						sign-in needed.
+					</Field.Error>
+				{/if}
+
 				<Field.Field>
 					<Field.Label for="systemPromptTemplate">
 						System prompt template
@@ -354,11 +387,13 @@
 		{/if}
 	</section>
 
-	<Separator />
+	{#if transformation.prompt}
+		<Separator />
 
-	{@render replacementSection(
-		'postReplacements',
-		'Post-replacements',
-		'Run after the prompt, offline and with no API key. Useful for enforcing formatting the prompt cannot guarantee.',
-	)}
+		{@render replacementSection(
+			'postReplacements',
+			'Post-replacements',
+			'Run after the prompt, offline and with no API key. Useful for enforcing formatting the prompt cannot guarantee.',
+		)}
+	{/if}
 </div>

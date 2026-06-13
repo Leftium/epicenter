@@ -77,6 +77,20 @@ const COMPLETION_PROVIDERS = {
 	}
 >;
 
+/**
+ * The deviceConfig keys a provider reads. Exposed so the editor can warn when the
+ * credential a transformation needs is missing, instead of failing only at run
+ * time. These live in deviceConfig (local, never synced); no sign-in required to
+ * use your own key.
+ */
+export function getProviderConfigKeys(provider: InferenceProviderId): {
+	apiKeyConfigKey: DeviceConfigKey;
+	endpointConfigKey: DeviceConfigKey | null;
+} {
+	const { apiKeyConfigKey, endpointConfigKey } = COMPLETION_PROVIDERS[provider];
+	return { apiKeyConfigKey, endpointConfigKey };
+}
+
 export const TransformError = defineErrors({
 	InvalidInput: ({ message }: { message: string }) => ({ message }),
 	Empty: ({ message }: { message: string }) => ({ message }),

@@ -17,7 +17,7 @@ createWorkspace()
     -> zhongwen() (project mount)
 ```
 
-**UI state**: `createChatState()` in `src/routes/(signed-in)/chat/chat-state.svelte.ts` is a Svelte 5 factory for the live chat UI. The sidebar list reads the `conversations` table; only the active conversation opens its transcript doc (IDB + websocket). Messages render from a doc observer. Liveness is derived from update recency, never stored: a trailing assistant message with no `finish` and recent updates is streaming, the same message gone quiet past a ~3s grace window is interrupted (offer retry), and the terminal outcome is the message's write-once `finish` key.
+**UI state**: split by lifetime. `createChatState()` in `src/routes/(signed-in)/chat/chat-state.svelte.ts` owns only the durable, root-doc concerns: the conversation list (the `conversations` table), which conversation is active, CRUD, and the active row's provider/model selection. The per-conversation runtime lives in `ConversationView.svelte`, mounted via `{#key activeConversationId}`, so the transcript doc gets a real component lifecycle (opened in setup, disposed in `onDestroy`) instead of reactive state created in a callback. `ConversationView` opens the active conversation's doc (IDB + websocket), renders messages from a doc observer, and derives liveness from update recency, never stored: a trailing assistant message with no `finish` and recent updates is streaming, the same message gone quiet past a ~3s grace window is interrupted (offer retry), and the terminal outcome is the message's write-once `finish` key. `ModelPicker` reads/writes provider/model on the conversation row directly (durable fields, not runtime state).
 
 **Auth**: Google OAuth through the shared Epicenter auth/session path. The browser runtime is built through `createSession`, so storage and sync only mount after a signed-in identity provides `ownerId`, `keyring`, and WebSocket transport functions.
 
@@ -38,13 +38,15 @@ src/
       annotate.ts          # annotateHtml(): CJK detection and ruby annotation
   routes/(signed-in)/
     chat/
-      chat-state.svelte.ts # Reactive multi-conversation state
+      chat-state.svelte.ts # Conversation list + active-id + CRUD + model selection
       providers.ts         # Provider/model config from TanStack AI packages
       system-prompt.ts     # AI instructions (mix languages, no pinyin, simplified only)
     components/
+      ConversationView.svelte  # Keyed per-conversation runtime: doc, observer, liveness, send/stop
       ChatMessage.svelte       # Renders one ChatDocMessage; delegates assistant text to AssistantMessagePart
       AssistantMessagePart.svelte # Markdown parse + pinyin annotate + DOMPurify, memoized via $derived
       ChatInput.svelte         # Textarea + send button, Enter to submit
+      ModelPicker.svelte       # Provider/model selects bound to the conversation row
       ZhongwenSidebar.svelte   # Sidebar conversation list with create/switch
 zhongwen.ts                    # Shared isomorphic model (tables, KV, conversation child docs)
 zhongwen.browser.ts            # openZhongwenBrowser runtime wiring

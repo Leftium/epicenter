@@ -388,6 +388,35 @@ verified end to end.
    before this work). The provider model-list packages (`-openai`, `-gemini`,
    `-grok`) stay.
 
+## Post-implementation hardening
+
+Found and fixed during the review/dev-run pass, after the gates first went
+green:
+
+1. **`room.sync` rejection was unhandled.** The flush loop only handled the
+   returned `Err` (a malformed-body decode that the actor never triggers), but
+   `room.sync` is a Durable Object RPC that *rejects* on isolate eviction or
+   transport failure. An unhandled rejection would reject the send chain, throw
+   out of `drain`, 500 the route, leak the replica, and skip the `finish`
+   write. Now the rejection re-queues the batch exactly like the `Err` path, so
+   the send chain never rejects and the retry actually fires. Regression-tested.
+2. **Dev server could not serve the app-root package modules.** `zhongwen.ts`
+   and `zhongwen.browser.ts` live at the app root (the `.` / `./browser`
+   exports), and SvelteKit's default `fs.allow` reaches only `src/` and
+   node_modules, so dev requests 404'd. Fixed with
+   `server.fs.allow: [searchForWorkspaceRoot(process.cwd())]` plus a `./browser`
+   export and a package-self-reference import in `session.ts` (matching
+   opensidian). This dev gap is monorepo-wide: opensidian reproduces it
+   identically and still needs the same one-line fix.
+3. **Client runtime moved into a keyed component.** The per-conversation
+   transcript doc, observer, liveness, and send/stop moved from an imperative
+   `openSession` factory (which created `$state`/`$derived` inside a callback
+   with no reactive owner) into `ConversationView.svelte`, mounted via
+   `{#key activeConversationId}`. The doc handle now opens in component setup
+   and disposes in `onDestroy`. `createChatState` slimmed to the conversation
+   list, active id, CRUD, and model selection. `ModelPicker` reads/writes the
+   durable conversation row directly instead of the runtime session.
+
 ## References
 
 - `packages/server/src/room/core.ts` - room sync/getDoc surface the actor uses

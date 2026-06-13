@@ -5,7 +5,7 @@ import {
 	deliverTransformationResult,
 } from '$lib/operations/delivery';
 import { sound } from '$lib/operations/sound';
-import { transcribeAudio } from '$lib/operations/transcribe';
+import { transcribeAndPersist } from '$lib/operations/transcribe';
 import { runTransformation } from '$lib/operations/transform';
 import { report } from '$lib/report';
 import { services } from '$lib/services';
@@ -89,16 +89,9 @@ export async function processRecordingPipeline({
 	});
 
 	const { data: transcribedText, error: transcribeError } =
-		await transcribeAudio(recordingId);
+		await transcribeAndPersist(recordingId);
 
 	if (transcribeError) {
-		recordings.update(recordingId, {
-			transcription: {
-				status: 'failed',
-				completedAt: new Date().toISOString(),
-				error: extractErrorMessage(transcribeError),
-			},
-		});
 		transcribeLoading.reject({ cause: transcribeError });
 		return;
 	}
@@ -109,14 +102,6 @@ export async function processRecordingPipeline({
 		source: deliverySource,
 	});
 	transcribeLoading.resolve(transcribeNotice);
-
-	recordings.update(recordingId, {
-		transcript: transcribedText,
-		transcription: {
-			status: 'completed',
-			completedAt: new Date().toISOString(),
-		},
-	});
 
 	const transformationId = settings.get('transformation.selectedId');
 	if (!transformationId) return;

@@ -1,5 +1,9 @@
 import { stat } from '@tauri-apps/plugin-fs';
-import { type AnyTaggedError, defineErrors } from 'wellcrafted/error';
+import {
+	type AnyTaggedError,
+	defineErrors,
+	extractErrorMessage,
+} from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { tauri } from '#platform/tauri';
 import {
@@ -25,6 +29,7 @@ import {
 } from '$lib/services/transcription/providers';
 import { SpeachesTranscriptionServiceLive } from '$lib/services/transcription/self-hosted/speaches';
 import { deviceConfig } from '$lib/state/device-config.svelte';
+import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { commands } from '$lib/tauri/commands';
 
@@ -178,6 +183,37 @@ export async function transcribeAudio(
 	}
 
 	return transcriptionResult;
+}
+
+/**
+ * Transcribe a saved recording by id and persist the outcome to the recordings
+ * table: on success the transcript plus a completed outcome, on failure a
+ * failed outcome carrying the error. Every path that transcribes (the record
+ * pipeline, manual retry, bulk) goes through here, so the stored outcome can
+ * never drift between callers.
+ */
+export async function transcribeAndPersist(
+	recordingId: string,
+): Promise<Result<string, TranscriptionError>> {
+	const { data: transcribedText, error } = await transcribeAudio(recordingId);
+	if (error) {
+		recordings.update(recordingId, {
+			transcription: {
+				status: 'failed',
+				completedAt: new Date().toISOString(),
+				error: extractErrorMessage(error),
+			},
+		});
+		return Err(error);
+	}
+	recordings.update(recordingId, {
+		transcript: transcribedText,
+		transcription: {
+			status: 'completed',
+			completedAt: new Date().toISOString(),
+		},
+	});
+	return Ok(transcribedText);
 }
 
 /**

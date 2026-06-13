@@ -44,10 +44,24 @@
 
 	// Liveness is the in-flight mutation, not a stored field: while this row's
 	// transcription is pending it reads as transcribing, otherwise the stored
-	// outcome (or its absence) decides the state.
-	const transcriptionStatus = $derived.by(() => {
-		if (transcribeRecording.isPending) return 'transcribing' as const;
-		return recording?.transcription?.status ?? 'unprocessed';
+	// outcome (completed/failed) or its absence (unprocessed) decides the state.
+	// A discriminated union, so the failed case carries its error directly.
+	const transcriptionState = $derived.by(() => {
+		if (transcribeRecording.isPending) return { status: 'transcribing' } as const;
+		return recording?.transcription ?? ({ status: 'unprocessed' } as const);
+	});
+
+	const transcriptionTooltip = $derived.by(() => {
+		switch (transcriptionState.status) {
+			case 'unprocessed':
+				return 'Start transcribing this recording';
+			case 'transcribing':
+				return 'Currently transcribing...';
+			case 'completed':
+				return 'Retry transcription';
+			case 'failed':
+				return `Transcription failed: ${transcriptionState.error}. Click to retry`;
+		}
 	});
 </script>
 
@@ -60,15 +74,7 @@
 		<Skeleton class="size-8" />
 	{:else}
 		<Button
-			tooltip={transcriptionStatus === 'unprocessed'
-				? 'Start transcribing this recording'
-				: transcriptionStatus === 'transcribing'
-					? 'Currently transcribing...'
-					: transcriptionStatus === 'completed'
-						? 'Retry transcription'
-						: recording.transcription?.status === 'failed'
-							? `Transcription failed: ${recording.transcription.error}. Click to retry`
-							: 'Transcription failed. Click to retry'}
+			tooltip={transcriptionTooltip}
 			onclick={() => {
 				const loading = report.loading({
 					title: 'Transcribing...',
@@ -95,13 +101,13 @@
 			variant="ghost"
 			size="icon"
 		>
-			{#if transcriptionStatus === 'unprocessed'}
+			{#if transcriptionState.status === 'unprocessed'}
 				<PlayIcon class="size-4" />
-			{:else if transcriptionStatus === 'transcribing'}
+			{:else if transcriptionState.status === 'transcribing'}
 				<EllipsisIcon class="size-4" />
-			{:else if transcriptionStatus === 'completed'}
+			{:else if transcriptionState.status === 'completed'}
 				<RepeatIcon class="size-4 text-green-500" />
-			{:else if transcriptionStatus === 'failed'}
+			{:else if transcriptionState.status === 'failed'}
 				<RotateCcwIcon class="size-4 text-red-500" />
 			{/if}
 		</Button>

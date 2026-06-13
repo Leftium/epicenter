@@ -25,16 +25,19 @@ import { whispering } from '#platform/whispering';
 import type { Transformation, TransformationPrompt } from '$lib/workspace';
 
 /**
- * The shape a fresh prompt phase starts from when the user enables the AI prompt
- * on a transformation: Google's fast model, no templates yet. Co-located with the
- * other default factories so the default shape has one home.
+ * A fresh prompt phase for when the user enables the AI prompt on a
+ * transformation: Google's fast model, no templates yet. A factory, not a shared
+ * constant, so each transformation owns its own prompt object and two can never
+ * alias the same one.
  */
-export const DEFAULT_PROMPT: TransformationPrompt = {
-	inferenceProvider: 'Google',
-	model: 'gemini-2.5-flash',
-	systemPromptTemplate: '',
-	userPromptTemplate: '',
-};
+export function createDefaultPrompt(): TransformationPrompt {
+	return {
+		inferenceProvider: 'Google',
+		model: 'gemini-2.5-flash',
+		systemPromptTemplate: '',
+		userPromptTemplate: '',
+	};
+}
 
 function createTransformations() {
 	const map = fromTable(whispering.tables.transformations);
@@ -108,10 +111,9 @@ if (import.meta.hot) {
 }
 
 /**
- * Generate a default transformation with sensible defaults.
- *
- * Includes `_v` so the returned value is a full `Transformation` ready
- * for workspace writes without any Omit gymnastics.
+ * Generate a default transformation: empty title and description, both
+ * replacement lists empty, and no prompt phase. Returns a full `Transformation`
+ * row ready to pass straight to `transformations.set()`.
  *
  * @example
  * ```typescript

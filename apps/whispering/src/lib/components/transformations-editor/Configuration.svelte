@@ -20,7 +20,7 @@
 	} from '$lib/constants/inference';
 	import { getProviderConfigKeys } from '$lib/operations/transform';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
-	import { DEFAULT_PROMPT } from '$lib/state/transformations.svelte';
+	import { createDefaultPrompt } from '$lib/state/transformations.svelte';
 	import type {
 		Replacement,
 		Transformation,
@@ -55,7 +55,7 @@
 		if (enabled) {
 			transformation = {
 				...transformation,
-				prompt: transformation.prompt ?? DEFAULT_PROMPT,
+				prompt: transformation.prompt ?? createDefaultPrompt(),
 			};
 			return;
 		}
@@ -114,10 +114,10 @@
 
 		<div class="space-y-3">
 			{#each transformation[phase] as replacement, index (index)}
-				<div
-					class="bg-card flex flex-col gap-3 rounded-lg border p-4"
-					transition:slide
-				>
+				<!-- No transition:slide: replacements are values with no stable
+				identity, so the index key would animate the wrong row out on
+				mid-list removal. -->
+				<div class="bg-card flex flex-col gap-3 rounded-lg border p-4">
 					<div class="flex items-start gap-3">
 						<div class="grid flex-1 grid-cols-1 gap-3 md:grid-cols-2">
 							<Field.Field>

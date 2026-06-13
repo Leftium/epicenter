@@ -26,6 +26,11 @@ use command::open_accessibility_settings;
 pub mod markdown;
 use markdown::write_markdown_files;
 
+// The recording overlay is a non-activating NSPanel on macOS only; other
+// platforms create the overlay window from the frontend.
+#[cfg(target_os = "macos")]
+pub mod overlay;
+
 /// Specta-known commands: every app command except the one that returns a
 /// raw `tauri::ipc::Response` (which is not `specta::Type`). The builder
 /// owns BOTH the runtime handler for these commands (see `run`) and the
@@ -185,8 +190,20 @@ pub async fn run() {
             let manager = ModelManager::new(app.handle().clone());
             manager.start_idle_watcher();
             app.manage(manager);
+
+            // Create the recording overlay as a non-activating NSPanel up front
+            // (hidden); the frontend shows it when recording starts.
+            #[cfg(target_os = "macos")]
+            overlay::create_recording_overlay(app.handle());
+
             Ok(())
         });
+
+    // tauri-nspanel backs the macOS recording overlay panel.
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.plugin(tauri_nspanel::init());
+    }
 
     #[cfg(desktop)]
     {

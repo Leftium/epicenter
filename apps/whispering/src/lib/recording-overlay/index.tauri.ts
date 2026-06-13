@@ -37,11 +37,14 @@ const OVERLAY_BOTTOM_MARGIN = 72;
  * cancel) settles on the last status, and a stale show that loses the race to
  * a later hide is collapsed rather than left visible.
  *
- * macOS note: `focusable: false` + `alwaysOnTop` keeps the overlay from
- * stealing keyboard focus in practice, but it is not a hard guarantee across
- * Spaces and fullscreen apps. A native `NSPanel` (via tauri-nspanel) is the
- * escalation path if that behavior proves insufficient; see
- * docs/recording-overlay.md.
+ * Platform note: on macOS the overlay window is created in Rust as a
+ * non-activating `NSPanel` (see `src-tauri/src/overlay.rs`), so clicking it
+ * never activates the app or raises the main window. This module then finds it
+ * by label and drives show/hide/position just like any window. On Windows and
+ * Linux the window is created here with `focusable: false` + `alwaysOnTop`,
+ * which is sufficient there. `getOrCreateOverlayWindow` handles both: it
+ * reuses the pre-created macOS panel and only creates a window when none
+ * exists.
  */
 
 let generation = 0;

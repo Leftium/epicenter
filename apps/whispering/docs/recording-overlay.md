@@ -12,10 +12,15 @@ state modules). This is the key difference from Handy, which drives its overlay
 from Rust because Handy's recording lifecycle lives in Rust. Pushing our overlay
 into Rust would split the source of truth, so we keep it in the main window.
 
-- **Window**: a separate, transparent, undecorated, always-on-top, non-focusable
-  `WebviewWindow` labelled `recording-overlay`, created lazily and then reused
-  (shown/hidden), mirroring the existing transform-clipboard window pattern. It
-  is positioned centered near the bottom of the active monitor.
+- **Window**: a separate, transparent, undecorated, always-on-top
+  `recording-overlay` window, reused (shown/hidden) and positioned centered near
+  the bottom of the active monitor. On macOS it is a non-activating `NSPanel`
+  created in Rust (`src-tauri/src/overlay.rs`, via tauri-nspanel) so clicking it
+  never activates the app or raises the main window; `focusable: false` alone
+  does not prevent app activation on click. On Windows and Linux it is a
+  `focusable: false` + `alwaysOnTop` `WebviewWindow` created from the frontend.
+  The window manager finds the macOS panel by label and only creates a window
+  when none exists, so both paths share one show/hide/position code path.
 - **Route**: `/recording-overlay` renders the pill. It lives in its own webview,
   so it cannot read the recorder state directly.
 - **Seam**: `#platform/recording-overlay` resolves to the Tauri window manager
@@ -58,13 +63,7 @@ the inspector would otherwise sit on the pill. All of this is dev-only.
 
 These are tracked here as follow-ups.
 
-1. **macOS NSPanel.** `focusable: false` + `alwaysOnTop` keeps the overlay from
-   stealing keyboard focus in practice, but is not a hard guarantee across
-   Spaces and fullscreen apps. If that proves insufficient, escalate to a native
-   non-activating panel via `tauri-nspanel` (Handy's approach). Treat the current
-   `WebviewWindow` as the first slice, not a guarantee, until verified at runtime
-   on macOS.
-2. **Settings.** There is no `show recording overlay` toggle or top/bottom
+1. **Settings.** There is no `show recording overlay` toggle or top/bottom
    position setting yet. Whispering settings are workspace KV entries with their
    own schema evolution rules, which is heavier than this slice warranted, so the
    overlay is on by default in the Tauri build. Add the toggle when touching the

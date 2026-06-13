@@ -68,6 +68,17 @@ const DocGenerationError = defineErrors({
 		generationId,
 		count,
 	}),
+	SyncFailed: ({
+		generationId,
+		cause,
+	}: {
+		generationId: string;
+		cause: unknown;
+	}) => ({
+		message: `doc generation ${generationId} room.sync failed: ${extractErrorMessage(cause)}`,
+		generationId,
+		cause,
+	}),
 });
 
 /**
@@ -161,10 +172,22 @@ export async function runDocGeneration({
 			unsent = [];
 			const update = batch.length === 1 ? batch[0]! : Y.mergeUpdatesV2(batch);
 			const body = encodeSyncRequest(Y.encodeStateVector(replica), update);
-			const { error } = await room.sync(body);
-			if (error) {
+			// room.sync is a Durable Object RPC: it REJECTS on isolate
+			// eviction or transport failure (it only returns Err for a
+			// malformed body, which we never send). Both the rejection and the
+			// Err re-queue the batch so a later flush or the final drain retries
+			// it; sendChain itself must never reject, or drain's await would
+			// throw out of the actor. Yjs updates are idempotent, so resending
+			// is safe.
+			try {
+				const { error } = await room.sync(body);
+				if (error) {
+					unsent = [...batch, ...unsent];
+					log.warn(error);
+				}
+			} catch (cause) {
 				unsent = [...batch, ...unsent];
-				log.warn(error);
+				log.warn(DocGenerationError.SyncFailed({ generationId, cause }));
 			}
 		});
 	}

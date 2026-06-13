@@ -333,6 +333,36 @@ describe('runDocGeneration', () => {
 		});
 	});
 
+	test('a rejecting room.sync degrades gracefully: the actor resolves, never throws', async () => {
+		const harness = createHarness();
+		harness.seed((doc) =>
+			appendUserMessage(doc, { id: 'u1', content: 'hi', createdAt: 1000 }),
+		);
+
+		// A Durable Object RPC rejects (it does not return Err) on isolate
+		// eviction or transport failure. The actor must swallow it, keep the
+		// held-open request alive, and resolve rather than 500 the route.
+		const rejectingRoom = {
+			getDoc: harness.room.getDoc,
+			sync: async () => {
+				throw new Error('durable object unreachable');
+			},
+		};
+
+		const result = await runDocGeneration({
+			room: rejectingRoom,
+			generationId: 'gen-1',
+			signal: new AbortController().signal,
+			waitUntil: harness.waitUntil,
+			startStream: () => streamOf('你好'),
+		});
+
+		// Resolves (no throw); the generation completed locally even though no
+		// update reached the room.
+		expect(result.error).toBeNull();
+		expect(result.data?.finish).toEqual({ kind: 'completed' });
+	});
+
 	test('a throwing stream (not aborted) writes finish failed with stream-error', async () => {
 		const harness = createHarness();
 		harness.seed((doc) =>

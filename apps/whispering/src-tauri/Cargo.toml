@@ -78,8 +78,10 @@ transcribe-rs = { version = "=0.3.8", features = ["whisper-cpp", "whisper-metal"
 accessibility-sys =  "0.1.3"
 core-foundation-sys =  "0.8.7"
 # Non-activating NSPanel for the recording overlay so clicking it never
-# activates the app. Pinned to the v2.1 branch (Tauri v2 compatible).
-tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.1" }
+# activates the app. Pinned to a specific rev on the v2.1 branch (Tauri v2
+# compatible) so the build is reproducible and an accidental `cargo update`
+# cannot drift it to a moving branch tip.
+tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", rev = "a3122e894383aa068ec5365a42994e3ac94ba1b6" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 transcribe-rs = { version = "=0.3.8", features = ["whisper-cpp", "whisper-vulkan", "onnx"] }

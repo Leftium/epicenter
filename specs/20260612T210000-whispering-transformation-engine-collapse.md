@@ -1,9 +1,9 @@
 # Whispering Transformation Engine: Fixed-Phase Transformations and Minimal Candidate Runs
 
 **Date**: 2026-06-12
-**Status**: Draft (greenfield vision; sequences alongside custom backends and the Polish window)
+**Status**: In Progress (shape collapse and delivery fix landed; the Polish window is a separate session)
 **Owner**: Braden
-**Branch**: none yet
+**Branch**: refactor/whispering-transformation-engine-collapse
 
 ## One Sentence
 
@@ -204,18 +204,68 @@ Trigger:    never; this is a category error
 
 ## Success Criteria
 
-- [ ] No `transformationSteps` or `transformationStepRuns` tables; a transformation is
+- [x] No `transformationSteps` or `transformationStepRuns` tables; a transformation is
       `preReplacements[] + prompt? + postReplacements[]`.
-- [ ] The run row has no `source` and no candidate fields; `recordingId` is the only
+- [x] The run row has no `source` and no candidate fields; `recordingId` is the only
       link, and `result` is nullable with no stored `running`.
-- [ ] A recording-anchored run that crashes mid-flight renders as interrupted in the
+- [~] A recording-anchored run that crashes mid-flight renders as interrupted in the
       recording's history; an ad-hoc run leaves nothing until accept; a test preview
       never persists.
+  > **Note**: The recording-anchored interrupted/derived-liveness half is done.
+  > The "ad-hoc leaves nothing until accept" and "test preview never persists"
+  > halves are deferred: this session keeps run-writing exactly as `main` does
+  > (persist at kickoff for every run). The persist-on-accept fan-out belongs to
+  > the Polish window session, which owns the candidate UI.
 - [ ] Polish: select text in a third-party app, fan out k transformations x n samples in
       memory, pick one, exactly one run persists, and delivery offers no "go to
       recordings" for the non-recording result.
-- [ ] grep confirms no stored `'running'`/liveness status in any run or recording write
+  > **Deferred**: the Polish window is a separate session (needs a candidate-cards
+  > UI prototype and Tauri synthetic-key/clipboard work). The delivery half is
+  > done: `deliverTransformationResult` now offers no "go to recordings" for a
+  > non-recording result.
+- [x] grep confirms no stored `'running'`/liveness status in any run or recording write
       path.
+
+## Review
+
+**Completed**: 2026-06-12
+**Branch**: refactor/whispering-transformation-engine-collapse
+
+### What Landed
+
+A transformation is now a fixed three-phase row (`preReplacements[]`, optional
+`prompt`, `postReplacements[]`) instead of an arbitrary ordered step pipeline.
+The `transformationSteps` and `transformationStepRuns` tables, the step editor
+(add/remove/duplicate, per-step type and provider/model config), the step
+execution loop and step-run records, `generateDefaultStep`, per-provider model
+memory (`stepModelField`), the step-type constants, and the nested step-run
+history UI are all deleted. The run path persists exactly as before (kickoff with
+`result: null`, then the terminal outcome; liveness derived). Delivery now branches
+the "go to recordings" action on a linked `recordingId`.
+
+### Deviations and Discoveries
+
+- No migration code ships. The schema-collapse commit (aba472984) established that
+  the Whispering workspace is pre-launch with no production data and a reset
+  convention. The proposed flatten (leading/trailing `find_replace` become
+  pre/post, first prompt becomes the prompt, extra prompts drop with a note) was
+  validated as a design-expressiveness check against multi-step, replacements-only,
+  and single-prompt fixtures, not shipped as a runtime path. Existing local dev
+  data resets per the prelaunch runbook.
+- Scoped to one PR: the shape collapse plus the delivery fix. The persist-on-accept
+  candidate fan-out and the Polish window are a separate session.
+- Post-review cleanup centralized the "runnable transformation" invariant into
+  `transformationHasWork()` (one owner for both the runtime guard and the editor
+  run button) and corrected stale run-model comments.
+
+### Follow-up Work
+
+- The Polish window: candidate-cards UI, k-transformations x n-samples in-memory
+  fan-out, persist-on-accept, and Tauri synthetic-key/clipboard capture. This is
+  where the deferred Success Criteria (ad-hoc persist-on-accept, test-preview
+  never persists) get satisfied.
+- Custom backends v1 (`20260612T091000`): the backend reference and model now live
+  on the transformation's `prompt`, ready for `customBackendId` to land there.
 
 ## References
 

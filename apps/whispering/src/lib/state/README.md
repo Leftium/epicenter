@@ -41,7 +41,10 @@ const sorted = recordings.sorted; // newest first
 
 // Write (Yjs observer auto-updates SvelteMap)
 recordings.set(recording);
-recordings.update(id, { transcriptionStatus: 'DONE' });
+recordings.update(id, {
+	transcript,
+	transcription: { status: 'completed', completedAt: new Date().toISOString() },
+});
 recordings.delete(id);
 ```
 

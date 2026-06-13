@@ -68,7 +68,7 @@ export type ReactiveTableMap<TRow extends BaseRow> = SvelteMap<string, TRow> &
 export function fromTable<TRow extends BaseRow>(
 	table: ReadonlyTable<TRow>,
 ): ReactiveTableMap<TRow> {
-	const map = new SvelteMap<string, TRow>();
+	const rows = new SvelteMap<string, TRow>();
 	const nonconforming = new SvelteMap<string, TableParseError>();
 	const newerWriter = new SvelteMap<string, TableNewerWriterError>();
 	const unreadable = new SvelteMap<string, TableUnreadableError>();
@@ -76,7 +76,7 @@ export function fromTable<TRow extends BaseRow>(
 	// Seed every surface from one classified scan: conforming rows into the map,
 	// the rest into their issue bucket. After this each id lives in exactly one.
 	const initial = table.scan();
-	for (const row of initial.rows) map.set(row.id, row);
+	for (const row of initial.rows) rows.set(row.id, row);
 	for (const e of initial.nonconforming) nonconforming.set(e.id, e);
 	for (const e of initial.newerWriter) newerWriter.set(e.id, e);
 	for (const e of initial.unreadable) unreadable.set(e.id, e);
@@ -92,14 +92,29 @@ export function fromTable<TRow extends BaseRow>(
 			unreadable.delete(id);
 			const { data: row, error } = table.get(id);
 			if (!error) {
-				if (row === null) map.delete(id);
-				else map.set(id, row);
+				if (row === null) rows.delete(id);
+				else rows.set(id, row);
 				continue;
 			}
-			map.delete(id);
-			if (error.name === 'NewerWriter') newerWriter.set(id, error);
-			else if (error.name === 'UnreadableRow') unreadable.set(id, error);
-			else nonconforming.set(id, error);
+			rows.delete(id);
+			// Route by variant the same way `scan()` does, so adding a new
+			// TableReadError variant fails the build here instead of silently
+			// falling through into `nonconforming`.
+			switch (error.name) {
+				case 'NewerWriter':
+					newerWriter.set(id, error);
+					break;
+				case 'UnreadableRow':
+					unreadable.set(id, error);
+					break;
+				case 'UnknownVersion':
+				case 'ValidationFailed':
+				case 'MigrationFailed':
+					nonconforming.set(id, error);
+					break;
+				default:
+					error satisfies never;
+			}
 		}
 	});
 
@@ -109,20 +124,17 @@ export function fromTable<TRow extends BaseRow>(
 	const newerWriterList = $derived([...newerWriter.values()]);
 	const unreadableList = $derived([...unreadable.values()]);
 
-	let disposed = false;
-	Object.defineProperties(map, {
+	Object.defineProperties(rows, {
 		nonconforming: { get: () => nonconformingList, enumerable: false },
 		newerWriter: { get: () => newerWriterList, enumerable: false },
 		unreadable: { get: () => unreadableList, enumerable: false },
 		[Symbol.dispose]: {
-			value() {
-				if (disposed) return;
-				disposed = true;
-				unobserve();
-			},
+			// `unobserve` is idempotent (it deletes a handler from a Set), so a
+			// double dispose is a harmless no-op; no guard needed.
+			value: unobserve,
 			enumerable: false,
 		},
 	});
 
-	return map as ReactiveTableMap<TRow>;
+	return rows as ReactiveTableMap<TRow>;
 }

@@ -20,7 +20,8 @@
  * one `Result` union.
  */
 
-import { resolve } from 'node:path';
+import { existsSync, readdirSync, statSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import type { Keyring } from '@epicenter/encryption';
 import type { OwnerId } from '@epicenter/identity';
 import { Err, Ok, type Result } from 'wellcrafted/result';
@@ -33,6 +34,7 @@ import type { Mount, MountContext } from '../daemon/define-mount.js';
 import { validateMountNames } from '../daemon/mount-validation.js';
 import type { StartedMount } from '../daemon/types.js';
 import { asDeviceId } from '../document/device-id.js';
+import { mountMarkdownPath } from '../document/workspace-paths.js';
 import { hashYDocClientId } from '../shared/client-id.js';
 import type { EpicenterRoot } from '../shared/types.js';
 import type { WorkspaceAuthClient } from './auth-client.js';
@@ -68,6 +70,11 @@ export async function openProject(
 	const issue = validateMountNames(mounts.map((mount) => mount.name));
 	if (issue !== null) {
 		return WorkspaceAppError.MountRejected(issue);
+	}
+
+	const populated = findPopulatedMountFolder(epicenterRoot, mounts);
+	if (populated !== null) {
+		return WorkspaceAppError.MountFolderNotEmpty(populated);
 	}
 
 	// Sign-out is guarded above, so `auth.state.ownerId` is stable here. Pin it
@@ -108,6 +115,36 @@ export async function openProject(
 	}
 
 	return Ok(opened);
+}
+
+/**
+ * Bootstrap guard: refuse to claim a mount folder a user populated before the
+ * namespace exists.
+ *
+ * `.epicenter/` is Epicenter's "this folder is mine" marker. Until it exists,
+ * the namespace has not been established, so a non-empty `<root>/<mount>/` (a
+ * direct child named after a declared mount) is the user's own data, not a
+ * generated projection. Adopting it would let `markdown_rebuild` later sweep
+ * those files. Once `.epicenter/` exists, the declared mount folders are
+ * Epicenter's to generate and rebuild, so this guard stands down.
+ *
+ * Returns the first offending mount, or null when bootstrap is safe.
+ */
+function findPopulatedMountFolder(
+	epicenterRoot: EpicenterRoot,
+	mounts: readonly Mount[],
+): { mount: string; path: string } | null {
+	const namespaceEstablished = existsSync(join(epicenterRoot, '.epicenter'));
+	if (namespaceEstablished) return null;
+
+	for (const mount of mounts) {
+		const path = mountMarkdownPath(epicenterRoot, mount.name);
+		if (!existsSync(path)) continue;
+		const isPopulated =
+			!statSync(path).isDirectory() || readdirSync(path).length > 0;
+		if (isPopulated) return { mount: mount.name, path };
+	}
+	return null;
 }
 
 async function openOneMount({

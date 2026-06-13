@@ -95,7 +95,7 @@ export const MODEL_CREDITS = {
  *  rather than guessed at, so a misclassification never quietly ships. */
 export function providerOf(
 	model: string,
-): 'OpenAI' | 'Google' | 'xAI' | 'Unknown' {
+): 'OpenAI' | 'Google' | 'Unknown' {
 	if (
 		model.startsWith('gpt') ||
 		model.startsWith('o1') ||
@@ -108,6 +108,5 @@ export function providerOf(
 		return 'OpenAI';
 	}
 	if (model.startsWith('gemini')) return 'Google';
-	if (model.startsWith('grok')) return 'xAI';
 	return 'Unknown';
 }

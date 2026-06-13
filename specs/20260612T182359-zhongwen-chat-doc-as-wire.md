@@ -55,9 +55,9 @@ const chatMessagesTable = defineTable({
 });
 ```
 
-The client streams over SSE through `@tanstack/ai-svelte` (`createChat` +
-`fetchServerSentEvents`) and writes rows at turn boundaries
-(`apps/zhongwen/src/routes/(signed-in)/chat/chat-state.svelte.ts`, 354 lines).
+Before this change, the client streamed over SSE through `@tanstack/ai-svelte`
+(`createChat` + `fetchServerSentEvents`) and wrote rows at turn boundaries in
+`apps/zhongwen/src/routes/(signed-in)/chat/chat-state.svelte.ts` (354 lines).
 The server route (`packages/server/src/routes/ai.ts`) receives the full message
 history in the POST body and answers with `toServerSentEventsResponse`.
 
@@ -103,7 +103,7 @@ rely on them without re-deriving, or re-check the cited source.
 | The Epicenter sync stack has no y-protocols awareness support | zero matches for `y-protocols/awareness` repo-wide |
 | `ctx.waitUntil` is capped (~30s post-response); long out-of-band work needs a held-open request, Queue, Workflow, or DO | Cloudflare Workers limits; flagged independently by Codex consult |
 | Many small DO websocket messages can overwhelm a room even at low total bytes; batch | Cloudflare DO guidance via Codex consult |
-| Zhongwen chat is text-only: no tools, no approvals, no `actionsToAiTools` | apps/zhongwen/src/routes/(signed-in)/chat/chat-state.svelte.ts has none |
+| Zhongwen chat is text-only: no tools, no approvals, no `actionsToAiTools` | `ConversationView.svelte` posts provider/model/system prompt only; transcript content lives in the doc |
 | Child-doc guid convention exists: `docGuid({workspaceId, collection, rowId, field})` | packages/workspace/src/document/doc-guid.ts:27-43 |
 
 ## Design Decisions
@@ -184,8 +184,8 @@ POST /api/.../ai/chat/doc   body: { guid, generationId, provider, model,
 2. getDoc() -> Y.applyUpdateV2 into a local replica
 3. validate: guid parses as a zhongwen conversation messages doc;
    no assistant message with id === generationId (else 409);
-   no trailing assistant message without finish whose createdAt is inside a
-   staleness window of ~2 minutes (else 409). A snapshot cannot know "still
+   no assistant message without finish whose createdAt is inside a staleness
+   window of ~2 minutes (else 409). A snapshot cannot know "still
    live", so staleness stands in for it: an unfinished turn older than the
    window is an interrupted artifact and does not block a new generation
 4. snapshot the prompt: messages array -> ModelMessage[] (text content,
@@ -226,7 +226,7 @@ deleted              createChat, fetchServerSentEvents, ui-message.ts,
 
 ## Call Sites: before and after
 
-**Send** (`chat-state.svelte.ts`, current shape mirrors opensidian's old one):
+**Send** (the deleted pre-change `chat-state.svelte.ts` mirrored opensidian's old one):
 
 ```ts
 // Before: dual write
@@ -278,8 +278,10 @@ verified end to end.
 - [x] **2.1** Child-doc cache in `zhongwen.browser.ts` (single cache that
       creates the transcript doc + attachLocalStorage + openCollaboration;
       see divergence 1)
-- [x] **2.2** Rebuild `chat-state.svelte.ts`: doc-observing message list,
-      send/stop as above, derived liveness, finish rendering
+- [x] **2.2** Rebuild the client split: `+page.svelte` owns the root-doc
+      conversation list and active row; `ConversationView.svelte` owns the
+      doc-observing message list, send/stop, derived liveness, and finish
+      rendering
 - [x] **2.3** Delete `ui-message.ts`; drop `@tanstack/ai-svelte` (and the
       now-dead `@tanstack/ai-client`, `@tanstack/ai`, `@tanstack/ai-anthropic`)
       from zhongwen's package.json
@@ -378,11 +380,15 @@ verified end to end.
    conversations table, and a completed reply can only land while the
    requester is alive (its `waitUntil` cancels otherwise), so the requester is
    the reliable owner of completion recency.
-3. **Three 409 error variants, not a generic one.** `GenerationAlreadyExists`
+3. **Provider/model are closed table fields.** Greenfield cleanup moved the
+   provider/model closed sets into the `conversations` table via
+   `field.select(...)`; `packages/constants/src/ai-providers.ts` owns the
+   servable registry, and `zhongwen.ts` owns Zhongwen's default provider/model.
+4. **Three 409 error variants, not a generic one.** `GenerationAlreadyExists`
    (idempotency), `GenerationInProgress` (single active generation), and
    `NoUserMessage` (kickoff beat the user message into the room) are distinct
    `AiChatError` variants so the client can branch without parsing prose.
-4. **Dropped four dead TanStack AI deps, not one.** `@tanstack/ai-svelte`,
+5. **Dropped four dead TanStack AI deps, not one.** `@tanstack/ai-svelte`,
    `@tanstack/ai-client`, `@tanstack/ai`, and `@tanstack/ai-anthropic` were all
    unused after the rebuild (`@tanstack/ai`/`-anthropic` were already dead
    before this work). The provider model-list packages (`-openai`, `-gemini`,
@@ -413,9 +419,9 @@ green:
    `openSession` factory (which created `$state`/`$derived` inside a callback
    with no reactive owner) into `ConversationView.svelte`, mounted via
    `{#key activeConversationId}`. The doc handle now opens in component setup
-   and disposes in `onDestroy`. `createChatState` slimmed to the conversation
-   list, active id, CRUD, and model selection. `ModelPicker` reads/writes the
-   durable conversation row directly instead of the runtime session.
+   and disposes in `onDestroy`. The route owns the conversation list, active id,
+   CRUD, and model selection directly. `ModelPicker` reads/writes the durable
+   conversation row directly instead of the runtime session.
 
 ## References
 
@@ -426,5 +432,6 @@ green:
 - `packages/workspace/src/document/doc-guid.ts` - child doc guid convention
 - `apps/opensidian/opensidian.browser.ts:60-94` - child-doc cache composition to copy
 - `apps/zhongwen/zhongwen.ts`, `apps/zhongwen/zhongwen.browser.ts` - schema and composition to change
-- `apps/zhongwen/src/routes/(signed-in)/chat/` - client chat code to rebuild
+- `apps/zhongwen/src/routes/(signed-in)/+page.svelte` - conversation list and active row
+- `apps/zhongwen/src/routes/(signed-in)/components/ConversationView.svelte` - transcript doc runtime
 - `specs/20260612T121815-opensidian-chat-as-note.md` - the sibling decision for opensidian; divergence is deliberate

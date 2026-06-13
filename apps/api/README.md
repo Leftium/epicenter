@@ -64,7 +64,7 @@ For the full argument:
 
 ```
 Cloudflare Workers
-├── Hono app (src/app.ts)
+├── Hono app (worker/index.ts)
 │   ├── /auth/*          Better Auth (email/password, Google OAuth, OAuth provider)
 │   ├── /ai/chat         AI streaming (OpenAI and Gemini via @tanstack/ai)
 │   ├── /api/owners/:ownerId/rooms/:room

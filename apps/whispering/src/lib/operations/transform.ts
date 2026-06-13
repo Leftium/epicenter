@@ -259,3 +259,37 @@ export async function runTransformation({
 	} satisfies TransformationRun);
 	return result;
 }
+
+/**
+ * Persist a single completed ad-hoc run (`recordingId: null`). The commit-time
+ * counterpart to `runTransformation`: instead of a kickoff row plus a terminal
+ * write, an ad-hoc run owns nothing until it succeeds, so this writes exactly one
+ * completed row, never a kickoff, failed, or interrupted one. Used by the Polish
+ * accept and the clipboard quick-run, both of which run via `executeTransformation`
+ * (no writes) and commit only the chosen result. `startedAt` is when execution
+ * began; the result is terminal, so no liveness is ever derived from it.
+ */
+export function persistCompletedRun({
+	transformationId,
+	input,
+	output,
+	startedAt,
+}: {
+	transformationId: string;
+	input: string;
+	output: string;
+	startedAt: string;
+}): void {
+	transformationRuns.set({
+		id: nanoid(),
+		transformationId,
+		recordingId: null,
+		input,
+		startedAt,
+		result: {
+			status: 'completed',
+			completedAt: new Date().toISOString(),
+			output,
+		},
+	} satisfies TransformationRun);
+}

@@ -16,10 +16,6 @@
 	import { report } from '$lib/report';
 	import { transformationRuns } from '$lib/state/transformation-runs.svelte';
 	import { transformationStepRuns } from '$lib/state/transformation-step-runs.svelte';
-	import {
-		type DerivedRunStatus,
-		deriveRunStatus,
-	} from '$lib/utils/transformation-run-status';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import type { TransformationRun } from '$lib/workspace';
 
@@ -33,6 +29,26 @@
 
 	function formatDate(dateStr: string) {
 		return format(new Date(dateStr), 'MMM d, yyyy h:mm a');
+	}
+
+	/**
+	 * Liveness is derived, never stored. A run with no result reads as running
+	 * while its start is recent and interrupted once it goes quiet, so a crash
+	 * mid-run self-heals instead of wedging at "running" forever. Generous
+	 * window: a transformation is a chain of LLM calls. See
+	 * docs/articles/20260612T190745-liveness-belongs-to-the-process-not-the-row.md
+	 */
+	const RUNNING_GRACE_MS = 5 * 60 * 1000;
+
+	type DerivedRunStatus = 'running' | 'interrupted' | 'completed' | 'failed';
+
+	function deriveRunStatus(run: {
+		startedAt: string;
+		result: TransformationRun['result'];
+	}): DerivedRunStatus {
+		if (run.result) return run.result.status;
+		const ageMs = Date.now() - new Date(run.startedAt).getTime();
+		return ageMs < RUNNING_GRACE_MS ? 'running' : 'interrupted';
 	}
 
 	function statusBadgeVariant(status: DerivedRunStatus) {

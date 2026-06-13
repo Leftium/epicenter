@@ -347,7 +347,6 @@
 				transcript={latestRecording.transcript}
 				rows={1}
 				disabled={!latestRecording.transcript.trim()}
-				loading={false}
 				onDelete={() => {
 					confirmationDialog.open({
 						title: 'Delete recording',

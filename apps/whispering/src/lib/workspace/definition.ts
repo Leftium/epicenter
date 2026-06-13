@@ -8,7 +8,7 @@ import {
 	type InferTableRow,
 	nullable,
 } from '@epicenter/workspace';
-import { type Static, Type } from 'typebox';
+import { Type } from 'typebox';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
 
@@ -48,7 +48,6 @@ const TranscriptionOutcome = Type.Union([
 		error: Type.String(),
 	}),
 ]);
-export type TranscriptionOutcome = Static<typeof TranscriptionOutcome>;
 
 /** Columns shared across recording schema versions (everything but the outcome). */
 const recordingColumns = {
@@ -186,18 +185,15 @@ const CompletedResult = Type.Object({
 	completedAt: Type.String(),
 	output: Type.String(),
 });
-export type CompletedResult = Static<typeof CompletedResult>;
 
 const FailedResult = Type.Object({
 	status: Type.Literal('failed'),
 	completedAt: Type.String(),
 	error: Type.String(),
 });
-export type FailedResult = Static<typeof FailedResult>;
 
 /** A terminal outcome. Absence (null) means the run never reached one. */
 const TransformationRunResult = Type.Union([CompletedResult, FailedResult]);
-export type TransformationRunResult = Static<typeof TransformationRunResult>;
 
 /**
  * v1 stored a third `{ status: 'running' }` variant as durable state. Retained

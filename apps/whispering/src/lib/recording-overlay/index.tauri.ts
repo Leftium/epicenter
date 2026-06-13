@@ -31,11 +31,13 @@ const OVERLAY_BOTTOM_MARGIN = 72;
  * taskbar so it reads as a system HUD rather than an app window.
  *
  * `sync` is the only entry point: pass the status to show, or `null` to hide.
- * Calls are coalesced. Each call bumps a generation counter and runs on a
- * serial queue, and every async step re-checks the generation. The final
- * intent always wins: a burst of rapid state changes (start then immediately
- * cancel) settles on the last status, and a stale show that loses the race to
- * a later hide is collapsed rather than left visible.
+ * Calls are coalesced. Each call overwrites `latestStatus` and runs on a serial
+ * queue; every async step re-checks whether the status it captured is still
+ * `latestStatus`. The final intent always wins: a burst of rapid state changes
+ * (start then immediately cancel) settles on the last status, and a stale show
+ * that loses the race to a later hide is collapsed rather than left visible.
+ * `latestStatus` is the single source of truth for "what should be showing", so
+ * the supersede check reads it directly rather than tracking a parallel counter.
  *
  * Platform note: on macOS the overlay window is created in Rust as a
  * non-activating `NSPanel` (see `src-tauri/src/overlay.rs`), so clicking it
@@ -47,7 +49,6 @@ const OVERLAY_BOTTOM_MARGIN = 72;
  * exists.
  */
 
-let generation = 0;
 let latestStatus: RecordingOverlayStatus | null = null;
 let queue: Promise<void> = Promise.resolve();
 let readyListenerRegistered: Promise<void> | null = null;
@@ -85,15 +86,15 @@ function ensureReadyListener(): Promise<void> {
 
 async function createOverlayWindow(): Promise<WebviewWindow | null> {
 	await ensureReadyListener();
-	const position = await computeOverlayPosition();
 
+	// Created hidden and positioned by `applyStatus` before its first `show()`,
+	// so the window is never painted at this initial position. No need to
+	// compute a real one here.
 	const overlay = new WebviewWindow(WINDOW_LABEL, {
 		url: '/recording-overlay',
 		title: 'Recording',
 		width: OVERLAY_WIDTH,
 		height: OVERLAY_HEIGHT,
-		x: position?.x,
-		y: position?.y,
 		transparent: true,
 		decorations: false,
 		shadow: false,
@@ -133,12 +134,13 @@ async function getOrCreateOverlayWindow(): Promise<WebviewWindow | null> {
 	return createOverlayWindow();
 }
 
-async function applyStatus(
-	status: RecordingOverlayStatus | null,
-	myGeneration: number,
-) {
-	const isStale = () => myGeneration !== generation;
-	if (isStale()) return;
+async function applyStatus(status: RecordingOverlayStatus | null) {
+	// A newer sync() has already overwritten latestStatus, so the status we
+	// captured is stale and a later queued task owns the final state. Reading
+	// the shared latestStatus is the whole cancellation mechanism: the queue
+	// gives ordering, this gives last-write-wins.
+	const isSuperseded = () => status !== latestStatus;
+	if (isSuperseded()) return;
 
 	if (!status) {
 		const overlay = await WebviewWindow.getByLabel(WINDOW_LABEL);
@@ -147,15 +149,15 @@ async function applyStatus(
 	}
 
 	const overlay = await getOrCreateOverlayWindow();
-	if (!overlay || isStale()) return;
+	if (!overlay || isSuperseded()) return;
 
 	const position = await computeOverlayPosition();
-	if (isStale()) return;
+	if (isSuperseded()) return;
 	if (position) await overlay.setPosition(position);
-	if (isStale()) return;
+	if (isSuperseded()) return;
 
 	await overlay.show();
-	if (isStale()) {
+	if (isSuperseded()) {
 		// A newer sync superseded us mid-show. The queued task will run next,
 		// but if the latest intent is "hidden" we hide now to collapse the
 		// brief show-then-hide flicker rather than wait for it.
@@ -173,9 +175,8 @@ async function applyStatus(
  */
 function sync(status: RecordingOverlayStatus | null): void {
 	latestStatus = status;
-	const myGeneration = ++generation;
 	queue = queue
-		.then(() => applyStatus(status, myGeneration))
+		.then(() => applyStatus(status))
 		.catch((error) => {
 			log.warn(error instanceof Error ? error : new Error(String(error)));
 		});

@@ -309,10 +309,13 @@ and the clipboard quick-run; the test pane's `transformInput` now runs
   events (a module variable can't cross processes). The request/response
   responder is registered lazily so it only runs in the main window, never in the
   Polish webview that imports the same module for its event-name constants.
-- Internal names still say `transform-clipboard` (route path, window label,
-  `transformClipboardWindow.tauri.ts`) while the product is "Polish." User-facing
-  text is all "Polish." Renaming the route/label to `polish` is a clean follow-up
-  left out here to keep this PR's diff focused.
+- The working name "Polish" was dropped for "Transformations," which matches the
+  vocabulary already in the app (the "Open transformation picker" shortcut, the
+  `/transformations` editor). User-facing text, the window title, event constants,
+  and comments all use the transformation/picker vocabulary. Internal route and
+  window-label identifiers still read `transform-clipboard`; renaming them (the
+  route path, window label, and `transformClipboardWindow.tauri.ts`) is a clean
+  follow-up left out here to keep the diff focused.
 - The two flagged risks (synthetic Cmd+C reliability + macOS Accessibility
   permissions; clipboard-restore timing) are handled by ordering (capture before
   focus steal; hide before paste) and a settle delay, but need real-device

@@ -47,23 +47,51 @@ no result + no live process     -> did not finish. Offer retry.
 
 The version with a stored `running` could not express that bottom row at all. "Completed" and "crashed mid-run" were durably indistinguishable, so the UI showed a spinner forever and called it running. With absence, a crash leaves a row with a start time and no outcome, which the UI reads as interrupted, with zero repair code anywhere.
 
-## The process already owns liveness
+## Two write paths can't disagree about a field neither one writes
 
-The reason you can delete the stored state is that something else already holds it: the process running the work. In a local-first app that process is usually the same one rendering the UI, so "is this run live" is already in memory as the mutation's pending state. You are not adding a source of truth. You are deleting a stale copy of one that already exists.
-
-This is the same move as finding the owner of a type that feels wrong. Liveness has an owner, and it is not the row. The row owns durable facts; the process owns "what is happening right now." Storing liveness in the row puts a fast-decaying value in a medium built for permanence, and the mismatch surfaces as exactly one bug: the value that outlives the thing it described.
-
-## When the reader is not the writer, store a heartbeat, not a status
-
-The honest caveat: if the process that reads the state is not the process that writes it, in-memory liveness is not visible across the boundary. A second browser tab, or another device syncing the same document, cannot see the writer's pending mutation. There you do need a liveness signal in shared state.
-
-But the fix is still not a `status: 'running'` flag. You store a heartbeat timestamp, which is a fact ("last alive at T"), and derive liveness from its age:
+Crash-wedging is the loud symptom. The quiet one shows up the moment more than one code path can start the work. Whispering stored a recording's transcription state in a single select that did two jobs at once: the durable outcome and the live progress.
 
 ```ts
-type Liveness = { heartbeatAt: number };
-const isLive = (l: Liveness, graceMs = 3000) => now() - l.heartbeatAt < graceMs;
+// Before: one column, two concerns (outcome + liveness), four flat states
+transcriptionStatus: 'UNPROCESSED' | 'TRANSCRIBING' | 'DONE' | 'FAILED'
 ```
 
-A `running` boolean has no honest reading once the writer dies; it stays true forever. A timestamp has one: it stops advancing, the age crosses the grace window, and every reader independently concludes the run went quiet. Same shape as before. Store the fact, derive the claim, and let the claim decay on its own instead of writing code to retract it.
+Three paths could transcribe a recording, and they did not agree on the progress half. The record-and-transcribe pipeline went straight from `UNPROCESSED` to `DONE` and never wrote `TRANSCRIBING`. Bulk transcription wrote nothing per row. Only the manual retry button set it. So the field already lied before any crash: a recording could be transcribing with its column still reading `UNPROCESSED`. And `FAILED` carried no reason; the error went to a toast and vanished.
 
-The rule that survives all of this: a value that is only true while a specific process is alive does not belong in storage that outlives the process. Keep the terminal facts in the row. Keep liveness where it actually lives.
+Splitting the two concerns by owner fixes both at once:
+
+```ts
+// After: the outcome is stored; liveness is not a column at all
+transcript: string                          // the output, in its own column
+transcription:
+  | { status: 'completed'; completedAt: string }
+  | { status: 'failed';    completedAt: string; error: string }
+  | null                                     // not yet, or interrupted
+```
+
+`failed` keeps its error now. Absence covers both "never transcribed" and "interrupted," which is exactly right because they share one affordance: a transcribe button. And nothing can disagree about whether a recording is transcribing, because no path writes that down anymore. There is one source, and it is the in-flight transcription request.
+
+## The live process owns liveness; its shape depends on who is asking
+
+In both cases the thing that holds "is this happening right now" is the process doing the work, never the row. What you read it from depends on whether the reader is that same process.
+
+When the reader is the writer, read it straight off the in-flight operation. Whispering runs transcription as a mutation, so a recording is transcribing exactly while its mutation is pending. No stored field, no extra state, and it cannot wedge, because a dead process has no pending mutation.
+
+```ts
+const status = mutation.isPending
+  ? 'transcribing'
+  : recording.transcription?.status ?? 'unprocessed';
+```
+
+When the reader is a different process (a second tab, another device), it cannot see your in-flight operation, so it needs a signal in shared state. The cheapest honest one is recency over a timestamp the row already carries. A transformation run stores `startedAt` at kickoff, so any reader treats a run with no result as live while `startedAt` is recent and interrupted once it is stale.
+
+```ts
+const isLive = (run) =>
+  !run.result && Date.now() - Date.parse(run.startedAt) < GRACE_MS;
+```
+
+That is a heartbeat collapsed to a single tick, and it works because a transformation is short and bounded. For work that runs long enough that one timestamp cannot bound it, advance the timestamp as you go and read its age instead. The shape changes with the distance to the reader; the move does not. Store a fact (last alive at T), derive the claim (alive while T is recent), and let the claim decay on its own instead of writing code to retract it.
+
+A `running` boolean has no honest reading once the writer dies; it stays true forever. A timestamp has one: it stops advancing, its age crosses the window, and every reader independently concludes the work went quiet.
+
+The rule under all of it: a value that is only true while a specific process is alive does not belong in storage that outlives the process. Keep the terminal facts in the row. Keep liveness where it actually lives.

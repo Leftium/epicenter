@@ -1,19 +1,14 @@
 /**
  * Provider and model configuration for Zhongwen chat.
  *
- * Reuses TanStack AI provider packages for model lists.
+ * The provider and model set is the shared servable registry
+ * (`@epicenter/constants/ai-providers`), so the picker can only offer what the
+ * `/api/ai/chat/doc` validator accepts.
  */
 
-import { GeminiTextModels } from '@tanstack/ai-gemini';
-import { OPENAI_CHAT_MODELS } from '@tanstack/ai-openai';
+import { SERVABLE_PROVIDER_MODELS } from '@epicenter/constants/ai-providers';
 
-// Only providers the `/api/ai/chat/doc` route can actually serve belong here:
-// its `providerModel` validator accepts openai and gemini, so offering a third
-// provider in the picker would persist a row the server rejects with a 400.
-export const PROVIDER_MODELS = {
-	openai: OPENAI_CHAT_MODELS,
-	gemini: GeminiTextModels,
-} as const;
+export const PROVIDER_MODELS = SERVABLE_PROVIDER_MODELS;
 
 export type Provider = keyof typeof PROVIDER_MODELS;
 

@@ -55,18 +55,26 @@
 		analytics.logEvent({ type: 'app_started' });
 	});
 
-	// Drive the floating recording overlay from recorder state. Manual takes
-	// precedence over VAD so the two can never fight over the single overlay
-	// window if both are briefly non-idle. On web the seam is a no-op.
+	// Single source of truth for what the overlay should show: the active
+	// recorder, with manual taking precedence over VAD so the two can never
+	// fight over the one overlay window if both are briefly non-idle. Both the
+	// sync effect below and the action handler in onMount read this, so the
+	// precedence rule lives in exactly one place. `null` when idle.
+	const overlayStatus = $derived.by((): RecordingOverlayStatus | null => {
+		if (manualRecorder.state === 'RECORDING')
+			return { mode: 'manual', state: 'RECORDING' };
+		if (
+			vadRecorder.state === 'LISTENING' ||
+			vadRecorder.state === 'SPEECH_DETECTED'
+		)
+			return { mode: 'vad', state: vadRecorder.state };
+		return null;
+	});
+
+	// Mirror the active recorder into the overlay window. On web the seam is a
+	// no-op.
 	$effect(() => {
-		const status: RecordingOverlayStatus | null =
-			manualRecorder.state === 'RECORDING'
-				? { mode: 'manual', state: 'RECORDING' }
-				: vadRecorder.state === 'LISTENING' ||
-						vadRecorder.state === 'SPEECH_DETECTED'
-					? { mode: 'vad', state: vadRecorder.state }
-					: null;
-		recordingOverlay.sync(status);
+		recordingOverlay.sync(overlayStatus);
 	});
 
 	// Push the ambient transcription config to Rust whenever it changes. Rust
@@ -112,24 +120,21 @@
 			},
 		);
 		// Route overlay button clicks against the live recorder state rather
-		// than the overlay's payload: a click can race a state change, so we
-		// re-derive what to do from the recorder that is actually active.
+		// than the overlay's payload: a click can race a state change, so we act
+		// on `overlayStatus` (derived from the recorder that is actually active),
+		// not on what the overlay thought it was showing.
 		unlistenOverlayAction = await listen<RecordingOverlayAction>(
 			RECORDING_OVERLAY_ACTION,
 			(event) => {
-				if (manualRecorder.state === 'RECORDING') {
+				if (!overlayStatus) return;
+				if (overlayStatus.mode === 'manual') {
 					if (event.payload === 'cancel') void cancelManualRecording();
 					else void stopManualRecording();
 					return;
 				}
-				if (
-					vadRecorder.state === 'LISTENING' ||
-					vadRecorder.state === 'SPEECH_DETECTED'
-				) {
-					// VAD only supports stopping, never cancelling. Ignore a stale
-					// cancel (e.g. a manual cancel that lands just as VAD starts).
-					if (event.payload === 'stop') void stopVadRecording();
-				}
+				// VAD only supports stopping, never cancelling. Ignore a stale
+				// cancel (e.g. a manual cancel that lands just as VAD starts).
+				if (event.payload === 'stop') void stopVadRecording();
 			},
 		);
 		// Clicking the overlay pill body asks the main window to come forward.

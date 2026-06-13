@@ -49,64 +49,21 @@ const TranscriptionOutcome = Type.Union([
 	}),
 ]);
 
-/** Columns shared across recording schema versions (everything but the outcome). */
-const recordingColumns = {
+/**
+ * Audio recordings captured by the user. One row per recording session.
+ *
+ * `transcription` holds only the terminal outcome (completed or failed). A
+ * recording that is currently transcribing has no `transcription`; liveness is
+ * derived from the in-flight mutation, never stored.
+ */
+const recordings = defineTable({
 	id: field.string(),
 	title: field.string(),
 	recordedAt: field.string(),
 	updatedAt: field.string(),
 	transcript: field.string(),
 	duration: nullable(field.number()),
-};
-
-/**
- * Audio recordings captured by the user. One row per recording session.
- *
- * v1 -> v2 replaces the flat `transcriptionStatus` select with a nullable
- * `transcription` outcome. The wedge-prone 'UNPROCESSED'/'TRANSCRIBING' states
- * collapse to a null outcome (liveness is derived from the transcription
- * mutation), and 'FAILED' now carries its error instead of dropping it.
- */
-const recordings = defineTable(
-	{
-		...recordingColumns,
-		transcriptionStatus: field.select([
-			'UNPROCESSED',
-			'TRANSCRIBING',
-			'DONE',
-			'FAILED',
-		]),
-	},
-	{
-		...recordingColumns,
-		transcription: nullable(field.json(TranscriptionOutcome)),
-	},
-).migrate(({ value, version }) => {
-	if (version === 1) {
-		const { transcriptionStatus, ...rest } = value;
-		if (transcriptionStatus === 'DONE') {
-			return {
-				...rest,
-				transcription: {
-					status: 'completed' as const,
-					completedAt: value.updatedAt,
-				},
-			};
-		}
-		if (transcriptionStatus === 'FAILED') {
-			return {
-				...rest,
-				transcription: {
-					status: 'failed' as const,
-					completedAt: value.updatedAt,
-					error: 'Transcription failed',
-				},
-			};
-		}
-		// UNPROCESSED or TRANSCRIBING never reached a terminal outcome.
-		return { ...rest, transcription: null };
-	}
-	return value;
+	transcription: nullable(field.json(TranscriptionOutcome)),
 });
 
 /** Recording row type inferred from the workspace table schema. */
@@ -196,70 +153,32 @@ const FailedResult = Type.Object({
 const TransformationRunResult = Type.Union([CompletedResult, FailedResult]);
 
 /**
- * v1 stored a third `{ status: 'running' }` variant as durable state. Retained
- * only so existing `_v: 1` rows still validate and migrate forward; the running
- * variant is never written again.
- */
-const TransformationRunResultV1 = Type.Union([
-	Type.Object({ status: Type.Literal('running') }),
-	CompletedResult,
-	FailedResult,
-]);
-
-/**
  * Execution records for transformation pipelines. One run per invocation.
  * State queries filter by top-level `recordingId` / `transformationId` and
  * sort by `startedAt`; the terminal outcome lives inside `result`, which is
  * null while the run is executing or if it was interrupted.
- *
- * v1 -> v2 drops the stored `running` result: a run with no terminal outcome
- * now carries a null result instead of a liveness claim.
  */
-const runColumns = {
+const transformationRuns = defineTable({
 	id: field.string(),
 	transformationId: field.string(),
 	recordingId: nullable(field.string()),
 	input: field.string(),
 	startedAt: field.string(),
-};
-
-const transformationRuns = defineTable(
-	{ ...runColumns, result: field.json(TransformationRunResultV1) },
-	{ ...runColumns, result: nullable(field.json(TransformationRunResult)) },
-).migrate(({ value, version }) => {
-	if (version === 1) {
-		return {
-			...value,
-			result: value.result.status === 'running' ? null : value.result,
-		};
-	}
-	return value;
+	result: nullable(field.json(TransformationRunResult)),
 });
 
 /** Transformation run row type inferred from the workspace table schema. */
 export type TransformationRun = InferTableRow<typeof transformationRuns>;
 
-const stepRunColumns = {
+/** Per-step execution records within a transformation run. */
+const transformationStepRuns = defineTable({
 	id: field.string(),
 	transformationRunId: field.string(),
 	stepId: field.string(),
 	order: field.number(),
 	input: field.string(),
 	startedAt: field.string(),
-};
-
-/** Per-step execution records within a transformation run. */
-const transformationStepRuns = defineTable(
-	{ ...stepRunColumns, result: field.json(TransformationRunResultV1) },
-	{ ...stepRunColumns, result: nullable(field.json(TransformationRunResult)) },
-).migrate(({ value, version }) => {
-	if (version === 1) {
-		return {
-			...value,
-			result: value.result.status === 'running' ? null : value.result,
-		};
-	}
-	return value;
+	result: nullable(field.json(TransformationRunResult)),
 });
 
 /** Transformation step run row type inferred from the workspace table schema. */

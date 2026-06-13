@@ -5,7 +5,6 @@
 	import { MediaQuery } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
 	import { analytics } from '$lib/operations/analytics';
-	import { report } from '$lib/report';
 	import { services } from '$lib/services';
 	import {
 		isLocalProviderId,
@@ -16,7 +15,6 @@
 	import { settings } from '$lib/state/settings.svelte';
 	import { tauri } from '#platform/tauri';
 	import { commands } from '$lib/tauri/commands';
-	import { PICKER_NOTICE_EVENT } from '$routes/transformation-picker/transformationPickerWindow.tauri';
 	import AppLayout from './_components/AppLayout.svelte';
 	import BottomNav from './_components/BottomNav.svelte';
 	import VerticalNav from './_components/VerticalNav.svelte';
@@ -26,7 +24,6 @@
 	let sidebarOpen = $state(false);
 	let unlistenNavigate: UnlistenFn | null = null;
 	let unlistenLocalModel: UnlistenFn | null = null;
-	let unlistenPickerNotice: UnlistenFn | null = null;
 
 	// Sidebar when wide, bottom bar on narrow viewports (phone, small window).
 	const isNarrow = new MediaQuery('(max-width: 767px)');
@@ -83,20 +80,11 @@
 				goto(event.payload.path);
 			},
 		);
-		// The picker window hides before it copies/pastes, so it relays its
-		// post-hide feedback here for a visible toast.
-		unlistenPickerNotice = await listen<{ title: string; description: string }>(
-			PICKER_NOTICE_EVENT,
-			(event) => {
-				report.info(event.payload);
-			},
-		);
 		unlistenLocalModel = await localModel.attach();
 	});
 
 	onDestroy(() => {
 		unlistenNavigate?.();
-		unlistenPickerNotice?.();
 		unlistenLocalModel?.();
 	});
 </script>

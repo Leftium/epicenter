@@ -10,6 +10,7 @@
 	import { persistCompletedRun } from '$lib/operations/transform';
 	import { sound } from '$lib/operations/sound';
 	import { report } from '$lib/report';
+	import { osNotify } from '#platform/os-notify';
 	import { services } from '$lib/services';
 	import { transformations } from '$lib/state/transformations.svelte';
 	import CandidateCards from '$lib/components/CandidateCards.svelte';
@@ -74,8 +75,9 @@
 	 * Accept the highlighted candidate. `paste` replaces the selection in the
 	 * source app (the default) and leaves the clipboard untouched; `copy` puts the
 	 * result on the clipboard instead. Either way exactly one run is committed.
-	 * Feedback for the post-hide path is emitted to the main window, since this
-	 * window hides before the clipboard/paste step.
+	 * Post-hide feedback goes through an OS notification, not a toast: this window
+	 * hides before the clipboard/paste step, and the main window may be hidden too,
+	 * so a notification is the only surface guaranteed to reach the user.
 	 */
 	async function accept(mode: 'paste' | 'copy') {
 		const candidate = candidates[selectedIndex];
@@ -99,10 +101,7 @@
 		if (mode === 'copy') {
 			await services.text.copyToClipboard(output);
 			await pickerWindow.hide();
-			await notifyMainWindow({
-				title: 'Copied to clipboard',
-				description: 'Press Cmd+V to paste it where you want.',
-			});
+			osNotify('Copied to clipboard', 'Press Cmd+V to paste it where you want.');
 			return;
 		}
 
@@ -115,15 +114,11 @@
 			// Couldn't paste (no Accessibility permission, or web): fall back to the
 			// clipboard so the result is never lost, and say so.
 			await services.text.copyToClipboard(output);
-			await notifyMainWindow({
-				title: "Couldn't paste into the app",
-				description: 'Your result is on the clipboard. Press Cmd+V to paste it.',
-			});
+			osNotify(
+				"Couldn't paste into the app",
+				'Your result is on the clipboard. Press Cmd+V to paste it.',
+			);
 		}
-	}
-
-	function notifyMainWindow(notice: { title: string; description: string }) {
-		return emit(pickerWindow.PICKER_NOTICE_EVENT, notice);
 	}
 
 	async function dismiss() {
@@ -139,6 +134,11 @@
 	// focus can grab the arrows. Numbers address the chips (inputs); arrows and
 	// Enter address the candidate cards (outputs); the two never overlap.
 	function onKeydown(event: KeyboardEvent) {
+		// If the user is typing in a real input (none today, but a filter box is the
+		// obvious next addition), let it own every key. Without this, a digit would
+		// toggle a chip and Enter would accept mid-type.
+		if (isEditableTarget(event.target)) return;
+
 		if (event.key === 'Escape') {
 			event.preventDefault();
 			event.stopPropagation();
@@ -180,6 +180,14 @@
 	function digitFromCode(code: string): number | null {
 		const match = /^Digit([1-9])$/.exec(code);
 		return match ? Number(match[1]) : null;
+	}
+
+	function isEditableTarget(target: EventTarget | null): boolean {
+		return (
+			target instanceof HTMLInputElement ||
+			target instanceof HTMLTextAreaElement ||
+			(target instanceof HTMLElement && target.isContentEditable)
+		);
 	}
 </script>
 

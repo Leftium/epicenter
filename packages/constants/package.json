@@ -15,6 +15,7 @@
 		"./auth": "./src/auth.ts",
 		"./oauth": "./src/oauth.ts",
 		"./vite": "./src/vite.ts",
+		"./vite-config": "./src/vite-config.ts",
 		"./versions": "./src/versions.ts",
 		"./ai-chat-errors": "./src/ai-chat-errors.ts",
 		"./api-routes": "./src/api-routes.ts",

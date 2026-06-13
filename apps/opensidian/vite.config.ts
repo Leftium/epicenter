@@ -1,4 +1,5 @@
 import { APPS } from '@epicenter/constants/apps';
+import { workspaceAppFsAllow } from '@epicenter/constants/vite-config';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
@@ -26,6 +27,7 @@ export default defineConfig({
 	server: {
 		port: APPS.OPENSIDIAN.port,
 		strictPort: true,
+		fs: { allow: workspaceAppFsAllow() },
 		headers: {
 			// Required for SharedArrayBuffer (used by @libsql WASM worker)
 			'Cross-Origin-Opener-Policy': 'same-origin',

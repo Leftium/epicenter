@@ -767,6 +767,10 @@ Local engines (whisper.cpp, Parakeet, Moonshine) are implemented in Rust behind 
 	apiKeyConfigKey: 'providers.yourservice.apiKey',
 	modelSettingKey: 'transcription.yourservice.model',
 	endpointConfigKey: null, // or a 'providers.yourservice.endpoint' override key
+	modelsDoc: {
+		label: 'Your Service docs',
+		href: 'https://yourservice.com/docs/speech-to-text',
+	},
 	defaultModel: 'model-v1',
 	models: [
 		{
@@ -786,9 +790,7 @@ Local engines (whisper.cpp, Parakeet, Moonshine) are implemented in Rust behind 
    - `PROVIDER_ICONS` in `src/lib/services/transcription/provider-ui.ts`: add your SVG icon.
    - `PROVIDER_FIELDS` in `src/lib/components/settings/ProviderConfigFields.svelte`: declare the API key (and optional endpoint) fields with their labels, placeholders, and docs links. This is where provider-specific copy lives, like where to find the API key.
 
-5. **Add the model picker** to `src/routes/(app)/(config)/settings/transcription/+page.svelte`: a branch for your service with a model `Select` bound to `transcription.yourservice.model`, followed by `<ProviderConfigFields provider="YourService" />`.
-
-That's the whole integration. The quick-pick selector, the configuration warning badge, and the dispatcher need no edits; they resolve `apiKeyConfigKey`, `modelSettingKey`, and `endpointConfigKey` through the registry.
+That's the whole integration. The transcription settings page, the quick-pick selector, the configuration warning badge, and the dispatcher need no edits; they all render and resolve through the registry entry. Only self-hosted and local providers get bespoke sections in `src/routes/(app)/(config)/settings/transcription/+page.svelte`, because their setup instructions are the product copy.
 
 ##### Adding an AI Transformation Adapter
 

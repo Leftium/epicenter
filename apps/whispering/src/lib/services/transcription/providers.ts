@@ -41,6 +41,12 @@ type CloudProvider = {
 	modelSettingKey: `transcription.${string}.model`;
 	/** Device config key for the endpoint override; null when not configurable. */
 	endpointConfigKey: DeviceConfigKey | null;
+	/**
+	 * Where this provider documents its transcription models; null when the
+	 * provider has no good page to link. The settings page renders this under
+	 * the model picker.
+	 */
+	modelsDoc: { label: string; href: string } | null;
 };
 
 type LocalProvider = {
@@ -77,6 +83,10 @@ export const PROVIDERS = {
 		apiKeyConfigKey: 'providers.openai.apiKey',
 		modelSettingKey: 'transcription.openai.model',
 		endpointConfigKey: 'providers.openai.endpoint',
+		modelsDoc: {
+			label: 'OpenAI docs',
+			href: 'https://platform.openai.com/docs/guides/speech-to-text',
+		},
 		defaultModel: 'whisper-1',
 		models: [
 			{
@@ -107,6 +117,10 @@ export const PROVIDERS = {
 		apiKeyConfigKey: 'providers.groq.apiKey',
 		modelSettingKey: 'transcription.groq.model',
 		endpointConfigKey: 'providers.groq.endpoint',
+		modelsDoc: {
+			label: 'Groq docs',
+			href: 'https://console.groq.com/docs/speech-to-text',
+		},
 		defaultModel: 'whisper-large-v3-turbo',
 		models: [
 			{
@@ -131,6 +145,10 @@ export const PROVIDERS = {
 		apiKeyConfigKey: 'providers.elevenlabs.apiKey',
 		endpointConfigKey: null,
 		modelSettingKey: 'transcription.elevenlabs.model',
+		modelsDoc: {
+			label: 'ElevenLabs docs',
+			href: 'https://elevenlabs.io/docs/capabilities/speech-to-text',
+		},
 		defaultModel: 'scribe_v2',
 		models: [
 			{
@@ -161,6 +179,7 @@ export const PROVIDERS = {
 		apiKeyConfigKey: 'providers.deepgram.apiKey',
 		endpointConfigKey: null,
 		modelSettingKey: 'transcription.deepgram.model',
+		modelsDoc: null,
 		defaultModel: 'nova-3',
 		models: [
 			{
@@ -202,6 +221,10 @@ export const PROVIDERS = {
 		apiKeyConfigKey: 'providers.mistral.apiKey',
 		endpointConfigKey: null,
 		modelSettingKey: 'transcription.mistral.model',
+		modelsDoc: {
+			label: 'Mistral docs',
+			href: 'https://mistral.ai/news/voxtral/',
+		},
 		defaultModel: 'voxtral-mini-latest',
 		models: [
 			{

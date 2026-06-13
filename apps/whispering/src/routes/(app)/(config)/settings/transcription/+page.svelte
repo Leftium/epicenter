@@ -18,6 +18,7 @@
 		PARAKEET_MODELS,
 		WHISPER_MODELS,
 	} from '$lib/constants/local-models';
+	import { TRANSCRIPTION_PROVIDERS } from '$lib/services/transcription/provider-ui';
 	import { PROVIDERS } from '$lib/services/transcription/providers';
 	import {
 		LOCAL_MODEL_UNLOAD_POLICY_OPTIONS,
@@ -36,67 +37,17 @@
 		PROVIDERS[settings.get('transcription.service')].capabilities,
 	);
 
-	// Model options arrays derived from the single PROVIDERS record
-	const openaiModelItems = PROVIDERS.OpenAI.models.map((model) => ({
-		value: model.name,
-		label: model.name,
-		...model,
-	}));
-
-	const groqModelItems = PROVIDERS.Groq.models.map((model) => ({
-		value: model.name,
-		label: model.name,
-		...model,
-	}));
-
-	const deepgramModelItems = PROVIDERS.Deepgram.models.map((model) => ({
-		value: model.name,
-		label: model.name,
-		...model,
-	}));
-
-	const mistralModelItems = PROVIDERS.Mistral.models.map((model) => ({
-		value: model.name,
-		label: model.name,
-		...model,
-	}));
-
-	const elevenlabsModelItems = PROVIDERS.ElevenLabs.models.map((model) => ({
-		value: model.name,
-		label: model.name,
-		...model,
-	}));
-
-	// Selected labels for select triggers
-	const openaiModelLabel = $derived(
-		openaiModelItems.find(
-			(i) => i.value === settings.get('transcription.openai.model'),
-		)?.label,
-	);
-
-	const groqModelLabel = $derived(
-		groqModelItems.find(
-			(i) => i.value === settings.get('transcription.groq.model'),
-		)?.label,
-	);
-
-	const deepgramModelLabel = $derived(
-		deepgramModelItems.find(
-			(i) => i.value === settings.get('transcription.deepgram.model'),
-		)?.label,
-	);
-
-	const mistralModelLabel = $derived(
-		mistralModelItems.find(
-			(i) => i.value === settings.get('transcription.mistral.model'),
-		)?.label,
-	);
-
-	const elevenlabsModelLabel = $derived(
-		elevenlabsModelItems.find(
-			(i) => i.value === settings.get('transcription.elevenlabs.model'),
-		)?.label,
-	);
+	/**
+	 * The selected service's registry entry when it is a cloud provider. The
+	 * cloud section below renders entirely from this entry (models, docs
+	 * link, config fields), so cloud providers need no per-provider branch.
+	 */
+	const cloudProvider = $derived.by(() => {
+		const entry = TRANSCRIPTION_PROVIDERS.find(
+			(provider) => provider.id === settings.get('transcription.service'),
+		);
+		return entry?.location === 'cloud' ? entry : null;
+	});
 
 	const outputLanguageLabel = $derived(
 		SUPPORTED_LANGUAGES_OPTIONS.find(
@@ -133,151 +84,47 @@
 					settings.set('transcription.service', selected)}
 		/>
 
-		{#if settings.get('transcription.service') === 'OpenAI'}
+		{#if cloudProvider}
+			{@const cloud = cloudProvider}
+			{@const modelItems = cloud.models.map((model) => ({
+				value: model.name,
+				label: model.name,
+				...model,
+			}))}
 			<Field.Field>
-				<Field.Label for="openai-model">OpenAI Model</Field.Label>
+				<Field.Label for="cloud-model">{cloud.label} Model</Field.Label>
 				<Select.Root
 					type="single"
-					bind:value={() => settings.get('transcription.openai.model'),
-						(v) => settings.set('transcription.openai.model', v)}
+					bind:value={() => settings.get(cloud.modelSettingKey),
+						(v) => settings.set(cloud.modelSettingKey, v)}
 				>
-					<Select.Trigger id="openai-model" class="w-full">
-						{openaiModelLabel ?? 'Select a model'}
+					<Select.Trigger id="cloud-model" class="w-full">
+						{modelItems.find(
+							(item) => item.value === settings.get(cloud.modelSettingKey),
+						)?.label ?? 'Select a model'}
 					</Select.Trigger>
 					<Select.Content>
-						{#each openaiModelItems as item}
+						{#each modelItems as item}
 							<Select.Item value={item.value} label={item.label}>
 								{@render renderModelOption({ item })}
 							</Select.Item>
 						{/each}
 					</Select.Content>
 				</Select.Root>
-				<Field.Description>
-					You can find more details about the models in the <Link
-						href="https://platform.openai.com/docs/guides/speech-to-text"
-						target="_blank"
-						rel="noopener noreferrer"
-					>
-						OpenAI docs
-					</Link>
-					.
-				</Field.Description>
+				{#if cloud.modelsDoc}
+					<Field.Description>
+						You can find more details about the models in the <Link
+							href={cloud.modelsDoc.href}
+							target="_blank"
+							rel="noopener noreferrer"
+						>
+							{cloud.modelsDoc.label}
+						</Link>
+						.
+					</Field.Description>
+				{/if}
 			</Field.Field>
-			<ProviderConfigFields provider="OpenAI" />
-		{:else if settings.get('transcription.service') === 'Groq'}
-			<Field.Field>
-				<Field.Label for="groq-model">Groq Model</Field.Label>
-				<Select.Root
-					type="single"
-					bind:value={() => settings.get('transcription.groq.model'),
-						(v) => settings.set('transcription.groq.model', v)}
-				>
-					<Select.Trigger id="groq-model" class="w-full">
-						{groqModelLabel ?? 'Select a model'}
-					</Select.Trigger>
-					<Select.Content>
-						{#each groqModelItems as item}
-							<Select.Item value={item.value} label={item.label}>
-								{@render renderModelOption({ item })}
-							</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-				<Field.Description>
-					You can find more details about the models in the <Link
-						href="https://console.groq.com/docs/speech-to-text"
-						target="_blank"
-						rel="noopener noreferrer"
-					>
-						Groq docs
-					</Link>
-					.
-				</Field.Description>
-			</Field.Field>
-			<ProviderConfigFields provider="Groq" />
-		{:else if settings.get('transcription.service') === 'Deepgram'}
-			<Field.Field>
-				<Field.Label for="deepgram-model">Deepgram Model</Field.Label>
-				<Select.Root
-					type="single"
-					bind:value={() => settings.get('transcription.deepgram.model'),
-						(v) => settings.set('transcription.deepgram.model', v)}
-				>
-					<Select.Trigger id="deepgram-model" class="w-full">
-						{deepgramModelLabel ?? 'Select a model'}
-					</Select.Trigger>
-					<Select.Content>
-						{#each deepgramModelItems as item}
-							<Select.Item value={item.value} label={item.label}>
-								{@render renderModelOption({ item })}
-							</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</Field.Field>
-			<ProviderConfigFields provider="Deepgram" />
-		{:else if settings.get('transcription.service') === 'Mistral'}
-			<Field.Field>
-				<Field.Label for="mistral-model">Mistral Model</Field.Label>
-				<Select.Root
-					type="single"
-					bind:value={() => settings.get('transcription.mistral.model'),
-						(v) => settings.set('transcription.mistral.model', v)}
-				>
-					<Select.Trigger id="mistral-model" class="w-full">
-						{mistralModelLabel ?? 'Select a model'}
-					</Select.Trigger>
-					<Select.Content>
-						{#each mistralModelItems as item}
-							<Select.Item value={item.value} label={item.label}>
-								{@render renderModelOption({ item })}
-							</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-				<Field.Description>
-					You can find more details about Voxtral speech understanding in the <Link
-						href="https://mistral.ai/news/voxtral/"
-						target="_blank"
-						rel="noopener noreferrer"
-					>
-						Mistral docs
-					</Link>
-					.
-				</Field.Description>
-			</Field.Field>
-			<ProviderConfigFields provider="Mistral" />
-		{:else if settings.get('transcription.service') === 'ElevenLabs'}
-			<Field.Field>
-				<Field.Label for="elevenlabs-model">ElevenLabs Model</Field.Label>
-				<Select.Root
-					type="single"
-					bind:value={() => settings.get('transcription.elevenlabs.model'),
-						(v) => settings.set('transcription.elevenlabs.model', v)}
-				>
-					<Select.Trigger id="elevenlabs-model" class="w-full">
-						{elevenlabsModelLabel ?? 'Select a model'}
-					</Select.Trigger>
-					<Select.Content>
-						{#each elevenlabsModelItems as item}
-							<Select.Item value={item.value} label={item.label}>
-								{@render renderModelOption({ item })}
-							</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-				<Field.Description>
-					You can find more details about the models in the <Link
-						href="https://elevenlabs.io/docs/capabilities/speech-to-text"
-						target="_blank"
-						rel="noopener noreferrer"
-					>
-						ElevenLabs docs
-					</Link>
-					.
-				</Field.Description>
-			</Field.Field>
-			<ProviderConfigFields provider="ElevenLabs" />
+			<ProviderConfigFields provider={cloud.id} />
 		{:else if settings.get('transcription.service') === 'speaches'}
 			<div class="space-y-4">
 				<Card.Root>

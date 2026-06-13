@@ -63,7 +63,6 @@ const recordings = defineTable({
 	title: field.string(),
 	recordedAt: field.instant(),
 	recordedAtZone: field.string<IanaTimeZone>(),
-	updatedAt: field.instant(),
 	transcript: field.string(),
 	duration: nullable(field.number()),
 	transcription: nullable(field.json(TranscriptionOutcome)),
@@ -77,8 +76,6 @@ const transformations = defineTable({
 	id: field.string(),
 	title: field.string(),
 	description: field.string(),
-	createdAt: field.instant(),
-	updatedAt: field.instant(),
 });
 
 /** Transformation row type inferred from the workspace table schema. */

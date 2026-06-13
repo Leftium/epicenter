@@ -9,7 +9,7 @@ import {
 	type InferTableRow,
 	nullable,
 } from '@epicenter/workspace';
-import { Type, type TProperties } from 'typebox';
+import { type TProperties, Type } from 'typebox';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
 

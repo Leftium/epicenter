@@ -9,13 +9,12 @@ import { SvelteMap } from 'svelte/reactivity';
 
 /**
  * A reactive `SvelteMap` of a table's conforming rows, with the table's three
- * issue buckets attached as debounced properties.
+ * issue buckets attached as properties.
  *
- * The map itself is the hot surface: `get`, `has`, `size`, and iteration all
- * update granularly per changed row. The issue buckets (`nonconforming`,
- * `newerWriter`, `unreadable`) recompute on a debounce, because they change
- * rarely (a schema edit, a sync from a newer build, a key change) while rows
- * change on every keystroke.
+ * Every surface updates granularly from one `observe()` subscription. A changed
+ * id lands in the map when it parses and in exactly one issue bucket
+ * (`nonconforming`, `newerWriter`, `unreadable`) when it does not. No surface
+ * ever re-reads the whole table on change.
  */
 export type ReactiveTableMap<TRow extends BaseRow> = SvelteMap<string, TRow> &
 	Disposable & {
@@ -33,11 +32,19 @@ export type ReactiveTableMap<TRow extends BaseRow> = SvelteMap<string, TRow> &
  *
  * The returned value is a `SvelteMap<id, Row>` of the conforming rows that
  * stays in sync via granular per-row updates: only changed rows trigger
- * re-renders, not the entire collection. The same subscription also exposes the
- * three issue buckets (`nonconforming`, `newerWriter`, `unreadable`) as
- * debounced properties, so a view can surface what the rows hide without a
- * second subscription. Buckets are recomputed via a full `scan()` on a debounce
- * because they change rarely; rows stay granular because they change often.
+ * re-renders, not the entire collection. The same subscription classifies each
+ * changed id with `get(id)` and routes the ones that do not parse into the
+ * three issue buckets (`nonconforming`, `newerWriter`, `unreadable`), so a view
+ * can surface what the rows hide without a second subscription and without an
+ * O(n) re-scan: the classification rides the per-id delta the row map already
+ * walks.
+ *
+ * The buckets reclassify on table changes only, not on keyring changes: the
+ * binding observes the table, not the keys. When a missing key syncs in, the
+ * encrypted rows' stored bytes are unchanged, so no observe fires and
+ * `unreadable` stays stale until the next write to that row reclassifies it (or
+ * the view reloads). Adding a keyring dependency to live-update that rare case
+ * is not worth the coupling.
  *
  * Read-only: mutations go through `table.set()`, `table.update()`, etc. The
  * observer picks up changes from both local writes and remote CRDT sync.
@@ -56,7 +63,7 @@ export type ReactiveTableMap<TRow extends BaseRow> = SvelteMap<string, TRow> &
  * // Iterate the conforming rows (reactive):
  * for (const [id, entry] of entries) { ... }
  *
- * // Issue buckets (reactive, debounced):
+ * // Issue buckets (reactive):
  * entries.nonconforming.length;
  * entries.newerWriter.length;
  * entries.unreadable.length;
@@ -67,57 +74,74 @@ export type ReactiveTableMap<TRow extends BaseRow> = SvelteMap<string, TRow> &
  */
 export function fromTable<TRow extends BaseRow>(
 	table: ReadonlyTable<TRow>,
-	{ debounceMs = 100 }: { debounceMs?: number } = {},
 ): ReactiveTableMap<TRow> {
-	const map = new SvelteMap<string, TRow>();
+	const rows = new SvelteMap<string, TRow>();
+	const nonconforming = new SvelteMap<string, TableParseError>();
+	const newerWriter = new SvelteMap<string, TableNewerWriterError>();
+	const unreadable = new SvelteMap<string, TableUnreadableError>();
 
-	// Seed both surfaces from one scan: the conforming rows into the map, the
-	// issue buckets into the debounced state.
+	// Seed every surface from one classified scan: conforming rows into the map,
+	// the rest into their issue bucket. After this each id lives in exactly one.
 	const initial = table.scan();
-	for (const row of initial.rows) map.set(row.id, row);
-
-	let nonconforming = $state.raw<TableParseError[]>(initial.nonconforming);
-	let newerWriter = $state.raw<TableNewerWriterError[]>(initial.newerWriter);
-	let unreadable = $state.raw<TableUnreadableError[]>(initial.unreadable);
-	let timer: ReturnType<typeof setTimeout> | undefined;
+	for (const row of initial.rows) rows.set(row.id, row);
+	for (const e of initial.nonconforming) nonconforming.set(e.id, e);
+	for (const e of initial.newerWriter) newerWriter.set(e.id, e);
+	for (const e of initial.unreadable) unreadable.set(e.id, e);
 
 	const unobserve = table.observe((changedIds) => {
-		// Granular per-row updates: only touch changed rows. A row that goes
-		// unreadable, nonconforming, newer-stamped, or deleted leaves the map.
 		for (const id of changedIds) {
+			// A changed id belongs to exactly one surface. Clear it from the issue
+			// buckets, then place it by re-reading its classified state. `get(id)`
+			// returns the conforming row or the same error variant `scan()` would
+			// have bucketed it under, so the map and the buckets can never disagree.
+			nonconforming.delete(id);
+			newerWriter.delete(id);
+			unreadable.delete(id);
 			const { data: row, error } = table.get(id);
-			if (error || row === null) {
-				map.delete(id);
+			if (!error) {
+				if (row === null) rows.delete(id);
+				else rows.set(id, row);
 				continue;
 			}
-			map.set(id, row);
+			rows.delete(id);
+			// Route by variant the same way `scan()` does, so adding a new
+			// TableReadError variant fails the build here instead of silently
+			// falling through into `nonconforming`.
+			switch (error.name) {
+				case 'NewerWriter':
+					newerWriter.set(id, error);
+					break;
+				case 'UnreadableRow':
+					unreadable.set(id, error);
+					break;
+				case 'UnknownVersion':
+				case 'ValidationFailed':
+				case 'MigrationFailed':
+					nonconforming.set(id, error);
+					break;
+				default:
+					error satisfies never;
+			}
 		}
-		// Debounced full re-scan for the issue buckets. They change rarely, so a
-		// debounced rebuild is the right cost trade against a per-change rescan.
-		clearTimeout(timer);
-		timer = setTimeout(() => {
-			const scan = table.scan();
-			nonconforming = scan.nonconforming;
-			newerWriter = scan.newerWriter;
-			unreadable = scan.unreadable;
-		}, debounceMs);
 	});
 
-	let disposed = false;
-	Object.defineProperties(map, {
-		nonconforming: { get: () => nonconforming, enumerable: false },
-		newerWriter: { get: () => newerWriter, enumerable: false },
-		unreadable: { get: () => unreadable, enumerable: false },
+	// Memoized array views: each recomputes only when its bucket map mutates,
+	// not on every property read, and hands out a stable reference in between.
+	const nonconformingList = $derived([...nonconforming.values()]);
+	const newerWriterList = $derived([...newerWriter.values()]);
+	const unreadableList = $derived([...unreadable.values()]);
+
+	Object.defineProperties(rows, {
+		nonconforming: { get: () => nonconformingList, enumerable: false },
+		newerWriter: { get: () => newerWriterList, enumerable: false },
+		unreadable: { get: () => unreadableList, enumerable: false },
 		[Symbol.dispose]: {
-			value() {
-				if (disposed) return;
-				disposed = true;
-				clearTimeout(timer);
-				unobserve();
-			},
+			// `unobserve` is idempotent (it deletes a handler from a Set), so a
+			// double dispose is a harmless no-op; no guard needed.
+			value: unobserve,
 			enumerable: false,
 		},
 	});
 
-	return map as ReactiveTableMap<TRow>;
+	return rows as ReactiveTableMap<TRow>;
 }

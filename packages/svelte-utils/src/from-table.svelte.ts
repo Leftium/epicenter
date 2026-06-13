@@ -39,6 +39,13 @@ export type ReactiveTableMap<TRow extends BaseRow> = SvelteMap<string, TRow> &
  * O(n) re-scan: the classification rides the per-id delta the row map already
  * walks.
  *
+ * The buckets reclassify on table changes only, not on keyring changes: the
+ * binding observes the table, not the keys. When a missing key syncs in, the
+ * encrypted rows' stored bytes are unchanged, so no observe fires and
+ * `unreadable` stays stale until the next write to that row reclassifies it (or
+ * the view reloads). Adding a keyring dependency to live-update that rare case
+ * is not worth the coupling.
+ *
  * Read-only: mutations go through `table.set()`, `table.update()`, etc. The
  * observer picks up changes from both local writes and remote CRDT sync.
  *

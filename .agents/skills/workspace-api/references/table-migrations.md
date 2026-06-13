@@ -43,7 +43,7 @@ Value.Check(schema, { id: 'r1' });             // false: absent key is invalid
 Value.Check(schema, { id: 'r1', note: null }); // true: null is a value
 ```
 
-So adding a nullable column **in place** to a single-version table makes every pre-existing row fail validation: those rows silently drop out of `getAllValid()` and surface in `getAllInvalid()`. They do NOT read as `null`. To add any column to a table that may already hold rows, keep the prior shape as an earlier version and write a `.migrate()` that fills the new column for every older version, including setting nullable columns to `null` explicitly:
+So adding a nullable column **in place** to a single-version table makes every pre-existing row fail validation: those rows drop out of `scan().rows` and surface in `scan().nonconforming`. They do NOT read as `null`. To add any column to a table that may already hold rows, keep the prior shape as an earlier version and write a `.migrate()` that fills the new column for every older version, including setting nullable columns to `null` explicitly:
 
 ```typescript
 const notes = defineTable(

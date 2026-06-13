@@ -1,3 +1,4 @@
+import { InstantString } from '@epicenter/field';
 import { nanoid } from 'nanoid/non-secure';
 import {
 	defineErrors,
@@ -172,7 +173,7 @@ export async function runTransformation({
 		});
 	}
 
-	const now = new Date().toISOString();
+	const now = InstantString.now();
 	const runId = nanoid();
 
 	const transformationRun = {
@@ -196,7 +197,7 @@ export async function runTransformation({
 			stepId: step.id,
 			order: stepIndex,
 			input: currentInput,
-			startedAt: new Date().toISOString(),
+			startedAt: InstantString.now(),
 			result: null,
 		} satisfies TransformationStepRun;
 		transformationStepRuns.set(stepRun);
@@ -208,7 +209,7 @@ export async function runTransformation({
 
 		if (isErr(handleStepResult)) {
 			const stepError = extractErrorMessage(handleStepResult.error);
-			const failedNow = new Date().toISOString();
+			const failedNow = InstantString.now();
 			transformationStepRuns.set({
 				...stepRun,
 				result: {
@@ -234,7 +235,7 @@ export async function runTransformation({
 			...stepRun,
 			result: {
 				status: 'completed',
-				completedAt: new Date().toISOString(),
+				completedAt: InstantString.now(),
 				output: handleStepOutput,
 			},
 		});
@@ -246,7 +247,7 @@ export async function runTransformation({
 		...transformationRun,
 		result: {
 			status: 'completed',
-			completedAt: new Date().toISOString(),
+			completedAt: InstantString.now(),
 			output: currentInput,
 		},
 	} satisfies TransformationRun);

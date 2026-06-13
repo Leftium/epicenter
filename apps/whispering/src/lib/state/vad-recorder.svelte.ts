@@ -69,6 +69,19 @@ type VadSession = {
 	stream: MediaStream;
 };
 
+/**
+ * Root-mean-square amplitude of one audio frame (samples in -1..1), a cheap
+ * proxy for "how loud is the mic right now". Fed to the recording overlay's
+ * level meter. Computed from the frame the VAD already hands us, so there is
+ * no second audio graph.
+ */
+function computeFrameRms(frame: Float32Array): number {
+	if (frame.length === 0) return 0;
+	let sumOfSquares = 0;
+	for (const sample of frame) sumOfSquares += sample * sample;
+	return Math.sqrt(sumOfSquares / frame.length);
+}
+
 function createVadRecorder() {
 	let _session = $state<VadSession | null>(null);
 
@@ -105,10 +118,16 @@ function createVadRecorder() {
 			onSpeechStart,
 			onSpeechEnd,
 			onVADMisfire,
+			onLevel,
 		}: {
 			onSpeechStart: () => void;
 			onSpeechEnd: (blob: Blob) => void;
 			onVADMisfire?: () => void;
+			/**
+			 * Called after each processed frame with the frame's RMS amplitude.
+			 * Drives the recording overlay's live level meter.
+			 */
+			onLevel?: (level: number) => void;
 		}) {
 			// Prevent starting if already active
 			if (_session) return VadRecorderError.AlreadyActive();
@@ -150,6 +169,9 @@ function createVadRecorder() {
 						onVADMisfire: () => {
 							if (_session) _session.state = 'LISTENING';
 							onVADMisfire?.();
+						},
+						onFrameProcessed: (_probabilities, frame) => {
+							if (onLevel) onLevel(computeFrameRms(frame));
 						},
 						model: 'v5',
 					}),

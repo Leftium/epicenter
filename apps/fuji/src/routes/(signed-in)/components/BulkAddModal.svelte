@@ -6,18 +6,12 @@
 	import { Textarea } from '@epicenter/ui/textarea';
 	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
 	import * as Tooltip from '@epicenter/ui/tooltip';
-	import { IanaTimeZone, type TableWriteError } from '@epicenter/workspace';
+	import { IanaTimeZone } from '@epicenter/workspace';
 	import ClipboardPasteIcon from '@lucide/svelte/icons/clipboard-paste';
 	import { requireFuji } from '$lib/session';
 
 	const LINE_REGEX = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\s(.+)$/;
 	const fuji = requireFuji();
-
-	/** One-line reason per refusal, matching the Needs Attention page's wording. */
-	const REFUSAL_REASON = {
-		NewerWriterRefusal: 'written by a newer version of Fuji',
-		UnreadableRefusal: 'encrypted with a key this device does not have',
-	} satisfies Record<TableWriteError['name'], string>;
 
 	let isOpen = $state(false);
 	let rawText = $state('');
@@ -36,39 +30,24 @@
 	});
 
 	/**
-	 * Send the parsed lines to the workspace and report the outcome. bulkSet
-	 * refuses any row whose id already holds a newer or undecryptable entry; with
-	 * fresh ids that cannot happen on this path, but if it ever does, say how many
-	 * were held back and why instead of reporting a clean import. Clear and close
+	 * Send the parsed lines to the workspace and report how many were added.
+	 * Every row gets a fresh id, so bulkSet cannot collide with a stored entry
+	 * and cannot refuse; the result is always a clean count. Clear and close
 	 * only on success so a failure leaves the pasted text recoverable.
 	 */
 	async function importEntries() {
 		importing = true;
 		try {
-			const { written, refused } =
-				await fuji.collaboration.actions.entries_bulk_create({
-					dateZone: timezone,
-					entries: parsed.entries.map(({ iso, text }) => ({
-						title: text,
-						date: iso,
-					})),
-				});
+			const { count } = await fuji.collaboration.actions.entries_bulk_create({
+				dateZone: timezone,
+				entries: parsed.entries.map(({ iso, text }) => ({
+					title: text,
+					date: iso,
+				})),
+			});
 			rawText = '';
 			isOpen = false;
-
-			if (refused.length === 0) {
-				toast.success(`Added ${written} ${written === 1 ? 'entry' : 'entries'}`);
-				return;
-			}
-			const byReason = new Map<TableWriteError['name'], number>();
-			for (const { name } of refused) {
-				byReason.set(name, (byReason.get(name) ?? 0) + 1);
-			}
-			toast.warning(`Added ${written}, skipped ${refused.length}`, {
-				description: [...byReason]
-					.map(([name, n]) => `${n} ${REFUSAL_REASON[name]}`)
-					.join(', '),
-			});
+			toast.success(`Added ${count} ${count === 1 ? 'entry' : 'entries'}`);
 		} catch (error) {
 			toast.error("Couldn't add entries", {
 				description: error instanceof Error ? error.message : String(error),

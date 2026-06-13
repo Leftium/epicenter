@@ -54,7 +54,12 @@ pub async fn init_recording_session(
         let mut recorder = recorder
             .lock()
             .map_err(|e| format!("Failed to lock recorder: {e}"))?;
-        recorder.init_session(device_identifier, recording_id, sample_rate)?;
+        recorder.init_session(
+            device_identifier,
+            recording_id,
+            sample_rate,
+            app_handle.clone(),
+        )?;
     }
     // init_session calls close_session internally as cleanup. If the previous
     // session was actively recording, that transition is silent at the domain

@@ -329,8 +329,10 @@ export function createFuji(opts: { keyring: () => Keyring }) {
 						createdAt: now,
 						updatedAt: now,
 					}));
-					const { refused } = await tables.entries.bulkSet(rows);
-					return { written: rows.length - refused.length, refused };
+					// Fresh generateId() ids cannot collide with a stored row, so
+					// bulkSet never refuses on this path; report a clean count.
+					await tables.entries.bulkSet(rows);
+					return { count: rows.length };
 				},
 			}),
 		}),

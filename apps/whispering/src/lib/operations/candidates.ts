@@ -18,6 +18,12 @@ export type Candidate = {
 	id: string;
 	transformation: Transformation;
 	input: string;
+	/**
+	 * When this candidate's execution began (kickoff). The accepted candidate
+	 * passes it straight to the persisted run's `startedAt`, so the run records
+	 * when the work actually started, not when the user pressed accept.
+	 */
+	startedAt: string;
 	result: Promise<Result<string, TransformError>>;
 };
 
@@ -38,6 +44,7 @@ export function createCandidate({
 		id: nanoid(),
 		transformation,
 		input,
+		startedAt: new Date().toISOString(),
 		result: executeTransformation({ input, transformation }),
 	};
 }

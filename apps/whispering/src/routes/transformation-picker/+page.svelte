@@ -24,6 +24,11 @@
 	// row's value is derived from it, so the two can never drift apart.
 	let candidates = $state<Candidate[]>([]);
 	let selectedIndex = $state(0);
+	// One-shot guard for accept: it commits exactly one run, so block re-entry
+	// while a prior accept is still awaiting its result or hiding the window.
+	// Rapid Enter (or Enter + double-click) would otherwise double-persist the
+	// run and double-paste into the source app.
+	let accepting = $state(false);
 
 	// Which transformations are toggled on, projected from the candidate set. Feeds
 	// the chip row as a controlled value; toggling routes back through reconcile.
@@ -49,6 +54,9 @@
 		input = text;
 		candidates = [];
 		selectedIndex = 0;
+		// The window is hidden and reused, not destroyed, so clear the accept
+		// guard on each fresh open or the next accept would stay blocked.
+		accepting = false;
 	}
 
 	// Rebuild the candidate set to match the toggled id set, the sole writer of
@@ -96,12 +104,15 @@
 	 * so a notification is the only surface guaranteed to reach the user.
 	 */
 	async function accept(mode: 'paste' | 'copy') {
+		if (accepting) return;
 		const candidate = candidates[selectedIndex];
 		if (!candidate) return;
 
+		accepting = true;
 		const result = await candidate.result;
 		if (result.error) {
 			report.error({ title: 'That result failed', cause: result.error });
+			accepting = false;
 			return;
 		}
 		const output = result.data;
@@ -110,7 +121,7 @@
 			transformationId: candidate.transformation.id,
 			input: candidate.input,
 			output,
-			startedAt: new Date().toISOString(),
+			startedAt: candidate.startedAt,
 		});
 		void sound.playSoundIfEnabled('transformationComplete');
 

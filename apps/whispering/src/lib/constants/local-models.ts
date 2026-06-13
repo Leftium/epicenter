@@ -59,11 +59,6 @@ type BaseModelConfig = {
 	size: string;
 	/** Exact size in bytes for progress tracking */
 	sizeBytes: number;
-	/**
-	 * The engine's default download. Exactly one model per engine carries
-	 * this; the settings UI builds its primary action around it.
-	 */
-	recommended?: true;
 };
 
 /** Whisper models are a single .bin file. */
@@ -119,6 +114,19 @@ export type LocalModelConfig =
 	| ParakeetModelConfig
 	| MoonshineModelConfig;
 
+const WHISPER_SMALL = {
+	id: 'small',
+	name: 'Small',
+	description: 'Fast, good accuracy',
+	size: '488 MB',
+	sizeBytes: 487_601_967,
+	engine: 'whispercpp',
+	file: {
+		url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin',
+		filename: 'ggml-small.bin',
+	},
+} as const satisfies WhisperModelConfig;
+
 /**
  * Pre-built Whisper models available for download from Hugging Face.
  * These are ggml-format models compatible with whisper.cpp.
@@ -136,19 +144,7 @@ export const WHISPER_MODELS = [
 			filename: 'ggml-tiny.bin',
 		},
 	},
-	{
-		id: 'small',
-		name: 'Small',
-		description: 'Fast, good accuracy',
-		size: '488 MB',
-		sizeBytes: 487_601_967,
-		recommended: true,
-		engine: 'whispercpp',
-		file: {
-			url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin',
-			filename: 'ggml-small.bin',
-		},
-	},
+	WHISPER_SMALL,
 	{
 		id: 'medium',
 		name: 'Medium',
@@ -175,48 +171,49 @@ export const WHISPER_MODELS = [
 	},
 ] as const satisfies readonly WhisperModelConfig[];
 
+const PARAKEET_TDT_06B_V3_INT8 = {
+	id: 'parakeet-tdt-0.6b-v3-int8',
+	name: 'Parakeet TDT 0.6B v3 (INT8)',
+	description: 'Fast and accurate NVIDIA NeMo model',
+	size: '~670 MB',
+	sizeBytes: 670_619_803,
+	engine: 'parakeet',
+	directoryName: 'parakeet-tdt-0.6b-v3-int8',
+	files: [
+		{
+			url: 'https://github.com/EpicenterHQ/epicenter/releases/download/models/parakeet-tdt-0.6b-v3-int8/config.json',
+			filename: 'config.json',
+			sizeBytes: 97,
+		},
+		{
+			url: 'https://github.com/EpicenterHQ/epicenter/releases/download/models/parakeet-tdt-0.6b-v3-int8/decoder_joint-model.int8.onnx',
+			filename: 'decoder_joint-model.int8.onnx',
+			sizeBytes: 18_202_004,
+		},
+		{
+			url: 'https://github.com/EpicenterHQ/epicenter/releases/download/models/parakeet-tdt-0.6b-v3-int8/encoder-model.int8.onnx',
+			filename: 'encoder-model.int8.onnx',
+			sizeBytes: 652_183_999,
+		},
+		{
+			url: 'https://github.com/EpicenterHQ/epicenter/releases/download/models/parakeet-tdt-0.6b-v3-int8/nemo128.onnx',
+			filename: 'nemo128.onnx',
+			sizeBytes: 139_764,
+		},
+		{
+			url: 'https://github.com/EpicenterHQ/epicenter/releases/download/models/parakeet-tdt-0.6b-v3-int8/vocab.txt',
+			filename: 'vocab.txt',
+			sizeBytes: 93_939,
+		},
+	],
+} as const satisfies ParakeetModelConfig;
+
 /**
  * Pre-built Parakeet models available for download from GitHub releases.
  * These are NVIDIA NeMo models consisting of multiple ONNX files.
  */
 export const PARAKEET_MODELS = [
-	{
-		id: 'parakeet-tdt-0.6b-v3-int8',
-		name: 'Parakeet TDT 0.6B v3 (INT8)',
-		description: 'Fast and accurate NVIDIA NeMo model',
-		size: '~670 MB',
-		sizeBytes: 670_619_803,
-		recommended: true,
-		engine: 'parakeet',
-		directoryName: 'parakeet-tdt-0.6b-v3-int8',
-		files: [
-			{
-				url: 'https://github.com/EpicenterHQ/epicenter/releases/download/models/parakeet-tdt-0.6b-v3-int8/config.json',
-				filename: 'config.json',
-				sizeBytes: 97,
-			},
-			{
-				url: 'https://github.com/EpicenterHQ/epicenter/releases/download/models/parakeet-tdt-0.6b-v3-int8/decoder_joint-model.int8.onnx',
-				filename: 'decoder_joint-model.int8.onnx',
-				sizeBytes: 18_202_004,
-			},
-			{
-				url: 'https://github.com/EpicenterHQ/epicenter/releases/download/models/parakeet-tdt-0.6b-v3-int8/encoder-model.int8.onnx',
-				filename: 'encoder-model.int8.onnx',
-				sizeBytes: 652_183_999,
-			},
-			{
-				url: 'https://github.com/EpicenterHQ/epicenter/releases/download/models/parakeet-tdt-0.6b-v3-int8/nemo128.onnx',
-				filename: 'nemo128.onnx',
-				sizeBytes: 139_764,
-			},
-			{
-				url: 'https://github.com/EpicenterHQ/epicenter/releases/download/models/parakeet-tdt-0.6b-v3-int8/vocab.txt',
-				filename: 'vocab.txt',
-				sizeBytes: 93_939,
-			},
-		],
-	},
+	PARAKEET_TDT_06B_V3_INT8,
 ] as const satisfies readonly ParakeetModelConfig[];
 
 /**
@@ -232,6 +229,34 @@ export const PARAKEET_MODELS = [
  * since they offer the best size/performance tradeoff.
  */
 const HF_BASE = 'https://huggingface.co/UsefulSensors/moonshine/resolve/main';
+
+const MOONSHINE_BASE_EN = {
+	id: 'moonshine-base-en',
+	name: 'Moonshine Base (English)',
+	description: 'Higher accuracy English transcription',
+	size: '~65 MB',
+	sizeBytes: 64_997_467,
+	engine: 'moonshine',
+	language: 'en',
+	directoryName: 'moonshine-base-en',
+	files: [
+		{
+			url: `${HF_BASE}/onnx/merged/base/quantized/encoder_model.onnx`,
+			filename: 'encoder_model.onnx',
+			sizeBytes: 20_513_063,
+		},
+		{
+			url: `${HF_BASE}/onnx/merged/base/quantized/decoder_model_merged.onnx`,
+			filename: 'decoder_model_merged.onnx',
+			sizeBytes: 42_498_870,
+		},
+		{
+			url: `${HF_BASE}/ctranslate2/tiny/tokenizer.json`,
+			filename: 'tokenizer.json',
+			sizeBytes: 1_985_534,
+		},
+	],
+} as const satisfies MoonshineModelConfig;
 
 export const MOONSHINE_MODELS = [
 	{
@@ -261,35 +286,21 @@ export const MOONSHINE_MODELS = [
 			},
 		],
 	},
-	{
-		id: 'moonshine-base-en',
-		name: 'Moonshine Base (English)',
-		description: 'Higher accuracy English transcription',
-		size: '~65 MB',
-		sizeBytes: 64_997_467,
-		recommended: true,
-		engine: 'moonshine',
-		language: 'en',
-		directoryName: 'moonshine-base-en',
-		files: [
-			{
-				url: `${HF_BASE}/onnx/merged/base/quantized/encoder_model.onnx`,
-				filename: 'encoder_model.onnx',
-				sizeBytes: 20_513_063,
-			},
-			{
-				url: `${HF_BASE}/onnx/merged/base/quantized/decoder_model_merged.onnx`,
-				filename: 'decoder_model_merged.onnx',
-				sizeBytes: 42_498_870,
-			},
-			{
-				url: `${HF_BASE}/ctranslate2/tiny/tokenizer.json`,
-				filename: 'tokenizer.json',
-				sizeBytes: 1_985_534,
-			},
-		],
-	},
+	MOONSHINE_BASE_EN,
 ] as const satisfies readonly MoonshineModelConfig[];
+
+/**
+ * Each engine's default download: the model the settings UI builds its
+ * primary action around. The mapped type guarantees every engine names
+ * exactly one recommendation and that it belongs to that engine.
+ */
+export const RECOMMENDED_MODELS = {
+	whispercpp: WHISPER_SMALL,
+	parakeet: PARAKEET_TDT_06B_V3_INT8,
+	moonshine: MOONSHINE_BASE_EN,
+} satisfies {
+	[E in LocalModelConfig['engine']]: Extract<LocalModelConfig, { engine: E }>;
+};
 
 /**
  * The model's entry name inside its engine's models folder: the filename

@@ -21,6 +21,7 @@
 	import {
 		type LocalModelConfig,
 		modelEntryName,
+		RECOMMENDED_MODELS,
 	} from '$lib/constants/local-models';
 	import { PATHS } from '$lib/services/fs-paths';
 	import {
@@ -95,10 +96,8 @@
 		customEntries.find((entry) => entry.name === value) ?? null,
 	);
 
-	// The engine's default download. The catalog marks exactly one model as
-	// recommended; falling back to the first entry keeps the primary action
-	// rendering even if the catalog ever loses the flag.
-	const recommended = $derived(models.find((m) => m.recommended) ?? models[0]);
+	/** The engine's default download; the hero builds its action around it. */
+	const recommended = $derived(RECOMMENDED_MODELS[engine]);
 	const recommendedDownload = $derived(localModelDownloads.get(recommended));
 
 	// Aliased so the template narrows the union per branch. Shared with the
@@ -264,7 +263,10 @@
 			</Collapsible.Trigger>
 			<Collapsible.Content class="space-y-3 pt-3">
 				{#each models as model (model.id)}
-					<LocalModelDownloadCard {model} />
+					<LocalModelDownloadCard
+						{model}
+						recommended={models.length > 1 && model.id === recommended.id}
+					/>
 				{/each}
 
 				{#each customEntries as entry (entry.name)}

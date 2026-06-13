@@ -11,8 +11,11 @@
 
 	let {
 		model,
+		recommended = false,
 	}: {
 		model: LocalModelConfig;
+		/** Show the Recommended badge; the selector decides when it guides a choice. */
+		recommended?: boolean;
 	} = $props();
 
 	// Shared per-model handle: the selector hero reads the same one, so a
@@ -32,7 +35,7 @@
 	<div class="flex-1">
 		<div class="flex items-center gap-2">
 			<span class="font-medium">{model.name}</span>
-			{#if model.recommended}
+			{#if recommended}
 				<Badge variant="outline" class="text-xs">Recommended</Badge>
 			{/if}
 			{#if modelState.type === 'active'}

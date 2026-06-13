@@ -2,88 +2,28 @@
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import { Progress } from '@epicenter/ui/progress';
-	import { toast } from '@epicenter/ui/sonner';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import Download from '@lucide/svelte/icons/download';
 	import X from '@lucide/svelte/icons/x';
 	import { type LocalModelConfig } from '$lib/constants/local-models';
-	import { createPrebuiltModel } from '$lib/operations/local-models';
+	import { localModelDownloads } from '$lib/state/local-model-downloads.svelte';
 
 	let {
 		model,
+		recommended = false,
 	}: {
 		model: LocalModelConfig;
+		/** Show the Recommended badge; the selector decides when it guides a choice. */
+		recommended?: boolean;
 	} = $props();
 
-	const prebuiltModel = $derived(createPrebuiltModel(model));
+	// Shared per-model handle: the selector hero reads the same one, so a
+	// download started in either place shows its progress in both.
+	const download = $derived(localModelDownloads.get(model));
 
-	type ModelState =
-		| { type: 'not-downloaded' }
-		| { type: 'downloading'; progress: number }
-		| { type: 'ready' }
-		| { type: 'active' };
-
-	let modelState = $state<ModelState>({ type: 'not-downloaded' });
-
-	// Check model status on mount and whenever the engine's active model
-	// changes (the getter reads deviceConfig, so this effect tracks it).
-	$effect(() => {
-		void prebuiltModel.activeModelName;
-		refreshStatus();
-	});
-
-	async function refreshStatus() {
-		const status = await prebuiltModel.getStatus();
-		// While downloading, the download handler owns the state machine; a
-		// download may also have started while we were checking the disk.
-		if (modelState.type === 'downloading') return;
-		modelState = { type: status };
-	}
-
-	async function downloadModel() {
-		if (modelState.type === 'downloading') return;
-
-		modelState = { type: 'downloading', progress: 0 };
-
-		const { data, error } = await prebuiltModel.downloadAndActivate({
-			onProgress: (progress) => {
-				modelState = { type: 'downloading', progress };
-			},
-		});
-		if (error) {
-			toast.error('Failed to download model', {
-				description: error.message,
-			});
-			modelState = { type: 'not-downloaded' };
-			return;
-		}
-
-		modelState = { type: 'active' };
-		toast.success(
-			data.outcome === 'already-installed'
-				? 'Model already downloaded and activated'
-				: 'Model downloaded and activated successfully',
-		);
-	}
-
-	function activateModel() {
-		prebuiltModel.activate();
-		// The settings watcher will update modelState to 'active'
-		toast.success('Model activated');
-	}
-
-	async function deleteModel() {
-		const { error } = await prebuiltModel.delete();
-		if (error) {
-			toast.error('Failed to delete model', {
-				description: error.message,
-			});
-			return;
-		}
-		modelState = { type: 'not-downloaded' };
-		toast.success('Model deleted');
-	}
+	// Aliased so the template narrows the union per branch.
+	const modelState = $derived(download.state);
 </script>
 
 <div
@@ -95,6 +35,9 @@
 	<div class="flex-1">
 		<div class="flex items-center gap-2">
 			<span class="font-medium">{model.name}</span>
+			{#if recommended}
+				<Badge variant="outline" class="text-xs">Recommended</Badge>
+			{/if}
 			{#if modelState.type === 'active'}
 				<Badge variant="default" class="text-xs">Active</Badge>
 			{:else if modelState.type === 'ready'}
@@ -112,10 +55,10 @@
 				<span class="text-sm font-medium">{modelState.progress}%</span>
 			</div>
 		{:else if modelState.type === 'ready'}
-			<Button size="sm" variant="outline" onclick={activateModel}>
+			<Button size="sm" variant="outline" onclick={() => download.activate()}>
 				Activate
 			</Button>
-			<Button size="sm" variant="ghost" onclick={deleteModel}>
+			<Button size="sm" variant="ghost" onclick={() => download.delete()}>
 				<X class="size-4" />
 			</Button>
 		{:else if modelState.type === 'active'}
@@ -123,11 +66,11 @@
 				<CheckIcon class="size-4 mr-1" />
 				Activated
 			</Button>
-			<Button size="sm" variant="ghost" onclick={deleteModel}>
+			<Button size="sm" variant="ghost" onclick={() => download.delete()}>
 				<X class="size-4" />
 			</Button>
 		{:else}
-			<Button size="sm" variant="outline" onclick={downloadModel}>
+			<Button size="sm" variant="outline" onclick={() => download.download()}>
 				<Download class="size-4" />
 				Download
 			</Button>

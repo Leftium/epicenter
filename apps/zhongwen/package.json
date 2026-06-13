@@ -6,6 +6,7 @@
 	"type": "module",
 	"exports": {
 		".": "./zhongwen.ts",
+		"./browser": "./zhongwen.browser.ts",
 		"./project": "./project.ts"
 	},
 	"scripts": {

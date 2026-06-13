@@ -1,5 +1,5 @@
 import { mkdir, readdir, unlink, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { Type } from 'typebox';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
@@ -196,7 +196,7 @@ export function attachMarkdownExport<TTableHandles extends TablesRecord>(
 		for (const entry of registered.values()) {
 			const unsubscribe = await materializeTable({
 				table: entry.table,
-				directory: join(baseDir, entry.subdir),
+				directory: confineToDir(baseDir, entry.subdir),
 				render: entry.render,
 				fileState: entry.fileState,
 				track: trackPendingWrite,
@@ -219,7 +219,7 @@ export function attachMarkdownExport<TTableHandles extends TablesRecord>(
 		async function rebuildOne(entry: RegisteredTable) {
 			return rebuildTable({
 				table: entry.table,
-				directory: join(baseDir, entry.subdir),
+				directory: confineToDir(baseDir, entry.subdir),
 				render: entry.render,
 				fileState: entry.fileState,
 			});
@@ -320,10 +320,60 @@ const MaterializerWriteError = defineErrors({
 	}),
 });
 
-/** Best-effort unlink; a missing file or a failed remove is ignored. */
+/**
+ * Resolve an untrusted path `segment` (a table `dir`, or a row's rendered
+ * filename, which may include subdirectories like `archive/old.md`) against a
+ * trusted `root`, and return the absolute target only if it stays strictly
+ * inside `root`. Throws otherwise.
+ *
+ * This is the confinement boundary the export relies on now that the namespace
+ * root, not a hardcoded `apps/` segment, is the ownership claim. Every write and
+ * every delete (initial flush, rename cleanup, and the `markdown_rebuild` sweep)
+ * goes through here, so a `render` that returns `../../notes/x.md`, an absolute
+ * path, or a table `dir` of `..` is rejected before it can touch disk outside the
+ * mount projection (spec invariants 7 and 9).
+ *
+ * Throws a plain `Error` (not a `defineErrors` variant): these propagate through
+ * the same throw/catch path as the rest of the write code, and a `defineErrors`
+ * value is an `Err` Result meant for logging or returning, never for `throw`.
+ *
+ * An absolute `segment` is rejected outright: a relative join would drop the
+ * leading slash, but an absolute filename is never legitimate output and signals
+ * a broken renderer.
+ */
+function confineToDir(root: string, segment: string): string {
+	const resolvedRoot = resolve(root);
+	const reject = () => {
+		throw new Error(
+			`[markdown] refusing path "${segment}": it resolves outside the export root "${resolvedRoot}"`,
+		);
+	};
+	if (isAbsolute(segment)) reject();
+	const target = resolve(resolvedRoot, segment);
+	const rel = relative(resolvedRoot, target);
+	// Inside the root iff the relative path neither climbs out (`..`) nor jumps
+	// to another absolute root (Windows drive change). An empty `rel` means the
+	// segment resolved to the root itself, which is also not a valid file target.
+	const escapes =
+		rel === '' ||
+		rel === '..' ||
+		rel.startsWith(`..${sep}`) ||
+		isAbsolute(rel);
+	if (escapes) reject();
+	return target;
+}
+
+/**
+ * Best-effort unlink of a file under `directory`; a missing file or a failed
+ * remove is ignored. The target is confined to `directory` first, so a rename
+ * whose previous filename somehow escaped can never delete outside the mount
+ * projection (`confineToDir` throws, which propagates past the best-effort
+ * catch deliberately: an escaping delete is a bug, not a routine miss).
+ */
 async function tryUnlink(directory: string, filename: string): Promise<void> {
+	const fullPath = confineToDir(directory, filename);
 	try {
-		await unlink(join(directory, filename));
+		await unlink(fullPath);
 	} catch {
 		// already gone, or the remove failed; nothing to do
 	}
@@ -331,16 +381,19 @@ async function tryUnlink(directory: string, filename: string): Promise<void> {
 
 /**
  * Write a markdown file under `directory`, creating any intermediate
- * subdirectories implied by a filename like `"archive/old.md"`.
+ * subdirectories implied by a filename like `"archive/old.md"`. The resolved
+ * target is confined to `directory`; a filename that escapes (`../x.md`, an
+ * absolute path) is rejected before any directory is created or any byte is
+ * written.
  */
 async function writeMarkdownFile(
 	directory: string,
 	filename: string,
 	content: string,
 ): Promise<void> {
-	const fullPath = join(directory, filename);
+	const fullPath = confineToDir(directory, filename);
 	const parent = dirname(fullPath);
-	if (parent !== directory) {
+	if (parent !== resolve(directory)) {
 		await mkdir(parent, { recursive: true });
 	}
 	await writeFile(fullPath, content);
@@ -460,7 +513,16 @@ async function rebuildTable(opts: {
 		const files = await readdir(directory, { recursive: true });
 		for (const filename of files) {
 			if (!filename.endsWith('.md')) continue;
-			const path = join(directory, filename);
+			// Confine every swept path to `directory`. readdir entries are relative
+			// to it and so resolve inside under normal conditions; confinement is the
+			// guard for a symlink or other entry that resolves out of the projection.
+			// An escaping entry is skipped, not unlinked (spec invariant 9).
+			let path: string;
+			try {
+				path = confineToDir(directory, filename);
+			} catch {
+				continue;
+			}
 			await unlink(path).then(
 				() => {
 					deleted++;

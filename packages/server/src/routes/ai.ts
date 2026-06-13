@@ -8,6 +8,16 @@
  *                         `../ai/doc-generation.ts`). The request stays open
  *                         for the whole generation; aborting it cancels.
  *
+ * The two transports are not interchangeable, and SSE is not legacy. SSE
+ * carries interactive tool-calling chat: tools run in the client against its
+ * local workspace and mutations wait on human approval mid-turn. A doc-as-wire
+ * sync peer cannot express that, because the actor snapshots the prompt once,
+ * writes as the single owner of the assistant message, and never reads the doc
+ * back mid-generation. Doc-as-wire is for server-authored text streamed into a
+ * synced doc (cross-device continuity, background completion). Folding SSE onto
+ * doc-as-wire would mean rebuilding client tool execution and approval as a
+ * two-writer doc protocol, a different and harder primitive.
+ *
  * Library-side, billing-free. The deployment composes any plan or credit
  * gating in front of this app via `mountAiApp`'s `policies`. apps/api
  * passes `chargeAiCreditsWithAutumn`; a self-hosted shared-wiki deployment

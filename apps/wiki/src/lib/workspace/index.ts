@@ -51,7 +51,7 @@ export const WikiActionError = defineErrors({
 		typeId: string;
 		columnId: string;
 	}) => ({
-		message: `Type "${typeId}" column "${columnId}" schema must be a TSchema object (a column.* result)`,
+		message: `Type "${typeId}" column "${columnId}" schema must be a TSchema object (a field.* result)`,
 		typeId,
 		columnId,
 	}),
@@ -62,7 +62,7 @@ const columnSpecInput = Type.Object({
 	id: Type.String(),
 	name: Type.String(),
 	schema: Type.Unknown({
-		description: 'A column.* result (a TypeBox TSchema)',
+		description: 'A field.* result (a TypeBox TSchema)',
 	}),
 });
 

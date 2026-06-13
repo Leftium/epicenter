@@ -321,12 +321,30 @@ and the clipboard quick-run; the test pane's `transformInput` now runs
   focus steal; hide before paste) and a settle delay, but need real-device
   testing. The diff-on-long-text risk drove the prototype, which settled the
   presentation before wiring.
+- Capture fires on the shortcut's `Released` state, not `Pressed`. Firing on
+  press synthesized Cmd/Ctrl+C while the trigger chord (Cmd/Ctrl+Shift) was still
+  physically held, so the foreground app saw Cmd+Shift+C and the copy silently
+  failed. Releasing first lets the chord clear before the synthetic copy. This
+  reuses the existing `on: ['Released']` shortcut idiom (push-to-talk), not a
+  timing hack.
 
 ### Follow-up Work
 
 - Rename the route/window/file from `transform-clipboard` to `polish`.
 - Multi-transformation fan-out (k > 1) with a multi-select picker.
 - Real-device testing of synthetic copy + paste-back across apps and OSes.
+- Read the selection directly via the OS accessibility API (macOS `AXSelectedText`,
+  Windows UIA, Linux AT-SPI) instead of synthesizing Cmd/Ctrl+C through the
+  clipboard. The ideal greenfield shape: it deletes `simulate_copy_keystroke`,
+  the clipboard save/restore in `captureSelection`, and `COPY_SETTLE_MS`, and
+  removes the chord-collision class entirely (no synthetic keystroke at all).
+  Refused for now: it is macOS-first native work with Windows/Linux backends
+  owed, too large for this PR, and `on: ['Released']` already makes the current
+  path correct. User loss while deferred: none (capture works; the AX path is
+  purely a robustness/cleanliness gain). Trigger to revisit: capture proves
+  flaky on release across real apps, or we need an explicitly-earned fallback
+  because some apps do not expose a11y selection. Keep synthetic-copy as that
+  fallback when the AX path lands, not as the primary.
 
 ## References
 

@@ -72,8 +72,16 @@ export const commands = [
 	{
 		id: 'openTransformationPicker',
 		title: 'Open transformation picker',
-		on: ['Pressed'],
-		callback: () => openTransformationPicker(),
+		// Fire on release, not press: the global accelerator carries a Cmd/Ctrl+Shift
+		// chord, and capturing on press synthesizes Cmd/Ctrl+C while that chord is
+		// still held, so the foreground app sees Cmd+Shift+C instead of a clean copy.
+		// Register both states (not Released-only) because the local shortcut manager
+		// only arms a command on keydown when `on` includes 'Pressed'; without it the
+		// in-app shortcut would never fire. The callback guard runs once, on release.
+		on: ['Pressed', 'Released'],
+		callback: (state?: ShortcutEventState) => {
+			if (state === 'Released' || state === undefined) openTransformationPicker();
+		},
 	},
 	{
 		id: 'runTransformationOnClipboard',

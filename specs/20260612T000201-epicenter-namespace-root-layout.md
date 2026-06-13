@@ -1,4 +1,4 @@
-# Epicenter Namespace Root Layout
+# Epicenter Folder Layout
 
 **Date**: 2026-06-12
 **Status**: Accepted
@@ -7,7 +7,7 @@
 
 ## One Sentence
 
-`epicenter.config.ts` marks a dedicated Epicenter namespace root whose direct child folders are mount projections and whose `.epicenter/` sibling holds namespace-local machine state.
+`epicenter.config.ts` marks your Epicenter folder (the Epicenter root) whose direct child folders are mount projections and whose `.epicenter/` sibling holds machine state for that root.
 
 ## How to read this spec
 
@@ -45,32 +45,35 @@ without per-mount sentinel files. The config file marks the namespace boundary, 
 
 ## Target Shape
 
-The recommended layout for a repo that wants a visible `apps/` surface is:
+The folder that holds `epicenter.config.ts` is your Epicenter folder (the
+Epicenter root). Its name is the user's choice; nothing reserves the name
+`apps`. A typical layout uses a neutral container name:
 
 ```txt
 repo/                         unreserved repo root
 +-- docs/
 +-- packages/
 +-- notes/
-`-- apps/                     Epicenter namespace root
+`-- epicenter/                Epicenter root (folder name is the user's choice)
     +-- epicenter.config.ts   tracked, declares mounts
-    +-- .epicenter/           ignored, namespace-local machine state
+    +-- .epicenter/           ignored, machine state for this root
     +-- fuji/                 ignored, generated Fuji projection
     `-- honeycrisp/           ignored, generated Honeycrisp projection
 ```
 
-The same model can use a different container name when `apps/` is already meaningful in the host repo:
+The same model works under any other container name, including `apps/` when a
+user wants a visible `apps/` surface:
 
 ```txt
 repo/
-`-- epicenter/
+`-- apps/
     +-- epicenter.config.ts
     +-- .epicenter/
     +-- fuji/
     `-- honeycrisp/
 ```
 
-The folder name is not the marker. `epicenter.config.ts` is the marker. The folder name is only the user's chosen namespace home.
+The folder name is not the marker. `epicenter.config.ts` is the marker. The folder name is only the user's chosen Epicenter root.
 
 ## Vocabulary
 
@@ -78,19 +81,20 @@ The folder name is not the marker. `epicenter.config.ts` is the marker. The fold
 repo root
   A normal repository or folder. Epicenter does not reserve its direct children.
 
-namespace root
-  The folder containing epicenter.config.ts. Current code calls this projectDir.
-  Epicenter owns the direct child folders for declared mounts.
+Epicenter root (your Epicenter folder)
+  The folder that holds epicenter.config.ts. Code calls this epicenterRoot.
+  Epicenter owns the direct child folders for declared mounts. The folder name
+  is the user's choice; nothing reserves the name apps.
 
 mount folder
-  namespaceRoot/<mountName>. Generated markdown projection for one mount.
+  epicenterRoot/<mountName>. Generated markdown projection for one mount.
 
 machine state
-  namespaceRoot/.epicenter. Hidden local state such as yjs logs, sqlite mirrors,
+  epicenterRoot/.epicenter. Hidden local state such as yjs logs, sqlite mirrors,
   logs, metadata, and trash.
 ```
 
-The existing `projectDir` parameter can stay in code during the first wave, but docs and comments must define it as the Epicenter namespace root.
+In code, the value is the `epicenterRoot` parameter, and docs and comments define it as the Epicenter root (the folder that holds `epicenter.config.ts`).
 
 ## Motivation
 

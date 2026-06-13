@@ -39,12 +39,13 @@ Three prefixes, each with a consistent meaning:
 See `.agents/skills/attach-primitive/SKILL.md` for the full contract (shape, invariants, barrier naming).
 
 ```typescript
-import { column, createWorkspace, defineTable } from '@epicenter/workspace';
+import { field } from '@epicenter/field';
+import { createWorkspace, defineTable } from '@epicenter/workspace';
 
 // Pure schema. `_v` is library-managed: never declare it as a column.
 const postsTable = defineTable({
-  id: column.string(),
-  title: column.string(),
+  id: field.string(),
+  title: field.string(),
 });
 
 // Vanilla factory: createWorkspace owns Y.Doc creation; the factory composes

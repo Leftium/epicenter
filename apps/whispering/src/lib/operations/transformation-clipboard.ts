@@ -13,10 +13,10 @@ import { transformations } from '$lib/state/transformations.svelte';
 import * as transformClipboardWindow from '$routes/transform-clipboard/transformClipboardWindow.tauri';
 
 /**
- * Open the Polish window on the user's current selection. Capture happens here,
- * while the source app is still frontmost (the global shortcut fired without
- * stealing focus), so the simulated copy reads from the right app. The window is
- * shown only after a non-empty selection is captured.
+ * Open the transformation picker on the user's current selection. Capture happens
+ * here, while the source app is still frontmost (the global shortcut fired
+ * without stealing focus), so the simulated copy reads from the right app. The
+ * window is shown only after a non-empty selection is captured.
  */
 export async function openTransformationPicker() {
 	const { data: selection, error: captureError } = await captureSelection();
@@ -31,7 +31,7 @@ export async function openTransformationPicker() {
 
 	if (!selection?.trim()) {
 		report.info({
-			title: 'Nothing to polish',
+			title: 'Nothing selected',
 			description: 'Select some text in any app, then try again.',
 		});
 		return;

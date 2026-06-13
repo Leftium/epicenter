@@ -6,17 +6,17 @@ const WINDOW_LABEL = 'transform-clipboard';
 
 /**
  * Event names for handing the captured selection from the main window (where the
- * shortcut fires and the copy is simulated) to the Polish window (a separate
+ * shortcut fires and the copy is simulated) to the picker window (a separate
  * webview, so a module variable can't cross the boundary; Tauri events can).
  *
- * - `polish:input` carries the captured text TO the Polish window.
- * - `polish:ready` is the Polish window asking for the input on first mount,
- *   before the main window knows it exists. The main window answers with
- *   `polish:input`. Re-opens skip this: the page is already mounted, so the
- *   proactive `polish:input` from `openWithSelection` reaches it directly.
+ * - `:input` carries the captured text TO the picker window.
+ * - `:ready` is the picker window asking for the input on first mount, before
+ *   the main window knows it exists. The main window answers with `:input`.
+ *   Re-opens skip this: the page is already mounted, so the proactive `:input`
+ *   from `openWithSelection` reaches it directly.
  */
-export const POLISH_INPUT_EVENT = 'polish:input';
-export const POLISH_READY_EVENT = 'polish:ready';
+export const PICKER_INPUT_EVENT = 'transformation-picker:input';
+export const PICKER_READY_EVENT = 'transformation-picker:ready';
 
 /** The most recent captured selection, replayed when the window asks for it. */
 let pendingInput = '';
@@ -24,26 +24,26 @@ let pendingInput = '';
 let responderRegistered = false;
 
 /**
- * Answer the Polish window's first-mount request with the pending selection.
+ * Answer the picker window's first-mount request with the pending selection.
  * Registered lazily from `openWithSelection`, which only the main window calls,
- * so the responder never runs inside the Polish webview itself (this module is
+ * so the responder never runs inside the picker webview itself (this module is
  * imported there too, for the event-name constants and `hide`). Registering it
- * at module load would make the Polish window answer its own request with an
+ * at module load would make the picker window answer its own request with an
  * empty `pendingInput` and clobber the real selection.
  */
 function registerInputResponder(): void {
 	if (responderRegistered) return;
 	responderRegistered = true;
-	void listen(POLISH_READY_EVENT, () => {
-		void emit(POLISH_INPUT_EVENT, { input: pendingInput });
+	void listen(PICKER_READY_EVENT, () => {
+		void emit(PICKER_INPUT_EVENT, { input: pendingInput });
 	});
 }
 
 /**
- * Open the Polish window on a freshly captured selection. Creates the window on
- * first call (the page requests the input on mount), then shows and re-delivers
- * on subsequent calls. The window is hidden, not disposed, so re-opening is
- * instant.
+ * Open the transformation picker on a freshly captured selection. Creates the
+ * window on first call (the page requests the input on mount), then shows and
+ * re-delivers on subsequent calls. The window is hidden, not disposed, so
+ * re-opening is instant.
  */
 export async function openWithSelection(input: string): Promise<void> {
 	registerInputResponder();
@@ -54,13 +54,13 @@ export async function openWithSelection(input: string): Promise<void> {
 		await existingWindow.show();
 		// setFocus often fails on macOS; ignore.
 		await existingWindow.setFocus().catch(() => {});
-		await emit(POLISH_INPUT_EVENT, { input });
+		await emit(PICKER_INPUT_EVENT, { input });
 		return;
 	}
 
 	const windowInstance = new WebviewWindow(WINDOW_LABEL, {
 		url: '/transform-clipboard',
-		title: 'Polish',
+		title: 'Transformations',
 		width: 700,
 		height: 600,
 		center: true,
@@ -72,12 +72,13 @@ export async function openWithSelection(input: string): Promise<void> {
 	});
 
 	windowInstance.once('tauri://error', (error) => {
-		console.error('Failed to create Polish window:', error);
+		console.error('Failed to create transformation picker window:', error);
 	});
 }
 
 /**
- * Hides the Polish window (doesn't dispose it for fast re-opening).
+ * Hides the transformation picker window (doesn't dispose it for fast
+ * re-opening).
  */
 export async function hide(): Promise<void> {
 	const existingWindow = await WebviewWindow.getByLabel(WINDOW_LABEL);
@@ -85,7 +86,7 @@ export async function hide(): Promise<void> {
 		await tryAsync({
 			try: () => existingWindow.hide(),
 			catch: (error) => {
-				console.error('Error hiding Polish window:', error);
+				console.error('Error hiding transformation picker window:', error);
 				return Ok(undefined);
 			},
 		});

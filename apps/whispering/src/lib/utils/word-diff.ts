@@ -1,5 +1,6 @@
 /**
- * Word-level diff used to show a Polish candidate against the original selection.
+ * Word-level diff used to show a transformation candidate against the original
+ * selection.
  *
  * Splits both strings on whitespace (keeping the whitespace as its own tokens so
  * spacing round-trips), then walks a longest-common-subsequence table to tag each

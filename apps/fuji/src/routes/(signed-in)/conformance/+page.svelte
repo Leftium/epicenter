@@ -116,9 +116,9 @@
 						not match the current schema
 					</Alert.Title>
 					<Alert.Description>
-						The data is intact but kept out of your lists because it does not
-						match the current schema. It stays stored and untouched; discard
-						removes the entry permanently.
+						The data is intact but hidden from your lists. To bring these back,
+						ship a schema migration: Fuji owns the version stamp and the step
+						that upgrades old rows. Discard removes the entry permanently.
 					</Alert.Description>
 				</Alert.Root>
 

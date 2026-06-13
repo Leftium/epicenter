@@ -147,6 +147,7 @@ export async function deleteModelEntry({
 	const { data: found, error: readError } = await tryAsync({
 		try: async () => {
 			const modelsDir = await PATHS.MODELS[engine]();
+			if (!(await exists(modelsDir))) return null;
 			const entry = (await readDir(modelsDir)).find((e) => e.name === name);
 			if (!entry) return null;
 			return { entry, path: await join(modelsDir, name) };

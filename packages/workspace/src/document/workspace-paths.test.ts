@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-	appsMarkdownPath,
 	markdownPath,
+	mountMarkdownPath,
 	sqlitePath,
 	yjsPath,
 } from './workspace-paths.js';
@@ -29,8 +29,8 @@ describe('document/workspace-paths', () => {
 		);
 	});
 
-	test('appsMarkdownPath is visible, keyed by mount name, outside .epicenter/', () => {
-		const dir = '/Users/me/vault';
-		expect(appsMarkdownPath(dir, 'fuji')).toBe('/Users/me/vault/apps/fuji');
+	test('mountMarkdownPath is visible, keyed by mount name, a direct child of the namespace root', () => {
+		const dir = '/Users/me/vault/apps';
+		expect(mountMarkdownPath(dir, 'fuji')).toBe('/Users/me/vault/apps/fuji');
 	});
 });

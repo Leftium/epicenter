@@ -16,8 +16,8 @@ import {
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import {
-	appsMarkdownPath,
 	attachProjectInfrastructure,
+	mountMarkdownPath,
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
@@ -47,7 +47,7 @@ export function tabManager(opts: TabManagerMountOptions = {}) {
 			workspace.ydoc.clientID = yDocClientId;
 
 			const sqliteFile = sqlitePath(projectDir, workspace.ydoc.guid);
-			const mdDir = appsMarkdownPath(projectDir, mount);
+			const mdDir = mountMarkdownPath(projectDir, mount);
 
 			const sqlite = attachBunSqliteMaterializer(workspace, {
 				filePath: sqliteFile,

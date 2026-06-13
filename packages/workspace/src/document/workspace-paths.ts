@@ -1,6 +1,10 @@
 /**
  * Per-workspace data layout helpers.
  *
+ * `projectDir` is the Epicenter namespace root: the folder whose local
+ * namespace Epicenter owns (it contains `epicenter.config.ts`), and whose
+ * direct children are mount projections. It is NOT necessarily the repo root.
+ *
  * Hidden machine state under `<projectDir>/.epicenter/`, each folder named by
  * what's inside:
  *
@@ -8,9 +12,10 @@
  *   sqlite/<id>.db  Queryable SQL surface (open with `sqlite3`, FTS5)
  *   md/<id>/        Legacy hidden markdown tree (playground daemons only)
  *
- * Plus the one VISIBLE projection a human reads directly:
+ * Plus the VISIBLE projections a human reads directly, one per mount, as
+ * direct children of the namespace root:
  *
- *   apps/<mount>/   Read-only markdown projection (`appsMarkdownPath`)
+ *   <mount>/        Read-only markdown projection (`mountMarkdownPath`)
  *
  * These helpers return the hardcoded convention only; they do not inspect
  * `epicenter.config.ts`.
@@ -37,8 +42,8 @@ function epicenterProjectDir(projectDir: string): string {
  * implementation detail; you never query this file with `sqlite3`. For
  * the queryable surface, see `sqlitePath`.
  *
- * `projectDir` is the project root (where `epicenter.config.ts` lives);
- * `workspaceId` is `ws.ydoc.guid`.
+ * `projectDir` is the Epicenter namespace root (where `epicenter.config.ts`
+ * lives); `workspaceId` is `ws.ydoc.guid`.
  *
  * @example
  * ```ts
@@ -78,8 +83,8 @@ export function sqlitePath(projectDir: string, workspaceId: string): string {
  * Root directory for a workspace's markdown materializer tree.
  *
  * Convention: `<projectDir>/.epicenter/md/<workspaceId>/` (hidden). Retained for
- * the playground daemons that still import it; the vault mount factories now
- * project to the visible `appsMarkdownPath` instead.
+ * the playground daemons that still import it; the first-party mount factories
+ * now project to the visible `mountMarkdownPath` instead.
  *
  * @example
  * ```ts
@@ -94,24 +99,30 @@ export function markdownPath(projectDir: string, workspaceId: string): string {
 /**
  * Visible directory for a mount's read-only markdown projection.
  *
- * Convention: `<projectDir>/apps/<mountName>/`. Unlike `yjs/`, `sqlite/`, and the
- * legacy `md/` tree, this lives OUTSIDE `.epicenter/` because a human reads these
- * `.md` files directly (triage, curate, grep, diff); the dot-prefixed state under
- * `.epicenter/` is for machines. Keyed by the mount NAME (so the folder reads
- * `apps/fuji`, not `apps/epicenter-fuji`), not by `ydoc.guid` like the yjs/sqlite
- * paths. This is a hardcoded constant, not a config knob: `apps/` is part of what
- * an Epicenter vault is, and `markdown_rebuild` deletes every `.md` under its
- * target, so a freeform override could wipe hand-authored markdown.
+ * Convention: `<projectDir>/<mountName>/`, a direct child of the Epicenter
+ * namespace root. Unlike `yjs/`, `sqlite/`, and the legacy `md/` tree, this
+ * lives OUTSIDE `.epicenter/` because a human reads these `.md` files directly
+ * (triage, curate, grep, diff); the dot-prefixed state under `.epicenter/` is
+ * for machines. Keyed by the mount NAME (so the folder reads `fuji`, not
+ * `epicenter-fuji`), not by `ydoc.guid` like the yjs/sqlite paths.
+ *
+ * The namespace root is the ownership claim: `markdown_rebuild` deletes every
+ * `.md` under this directory, which is safe only because Epicenter owns the
+ * direct children of the namespace root. The previous `apps/` segment was a
+ * crude fence for that sweep; confinement is now enforced explicitly in the
+ * exporter (see `export.ts`). A user who wants the visible folders to appear
+ * under `repo/apps` puts `epicenter.config.ts` at `repo/apps/`, making that
+ * the namespace root.
  *
  * @example
  * ```ts
- * appsMarkdownPath('/Users/braden/Code/vault', 'fuji')
+ * mountMarkdownPath('/Users/braden/Code/vault/apps', 'fuji')
  * // '/Users/braden/Code/vault/apps/fuji'
  * ```
  */
-export function appsMarkdownPath(
+export function mountMarkdownPath(
 	projectDir: string,
 	mountName: string,
 ): string {
-	return join(projectDir, 'apps', mountName);
+	return join(projectDir, mountName);
 }

@@ -2,9 +2,10 @@
  * Honeycrisp project mount.
  *
  * `honeycrisp(opts?)` returns the `Mount` that a project's
- * `epicenter.config.ts` default-exports. Disk paths are hardcoded to the vault
- * layout: the SQLite mirror at `.epicenter/sqlite/<id>.db` (hidden) and the
- * read-only markdown projection at `apps/honeycrisp/` (visible).
+ * `epicenter.config.ts` default-exports. Disk paths are hardcoded to the
+ * namespace-root layout: the SQLite mirror at `.epicenter/sqlite/<id>.db`
+ * (hidden) and the read-only markdown projection at `<namespaceRoot>/honeycrisp/`
+ * (visible), a direct child of the namespace root.
  */
 
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
@@ -17,8 +18,8 @@ import {
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import {
-	appsMarkdownPath,
 	attachProjectInfrastructure,
+	mountMarkdownPath,
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
@@ -47,7 +48,7 @@ export function honeycrisp(opts: HoneycrispMountOptions = {}) {
 			workspace.ydoc.clientID = yDocClientId;
 
 			const sqliteFile = sqlitePath(projectDir, workspace.ydoc.guid);
-			const mdDir = appsMarkdownPath(projectDir, mount);
+			const mdDir = mountMarkdownPath(projectDir, mount);
 
 			const sqlite = attachBunSqliteMaterializer(workspace, {
 				filePath: sqliteFile,

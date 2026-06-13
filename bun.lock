@@ -437,7 +437,6 @@
         "@ricky0123/vad-web": "^0.0.24",
         "@standard-schema/spec": "catalog:",
         "@tanstack/svelte-query": "catalog:",
-        "@tanstack/svelte-query-devtools": "catalog:",
         "@tanstack/svelte-table": "catalog:",
         "@tanstack/table-core": "9.0.0-alpha.10",
         "@tauri-apps/api": "catalog:",

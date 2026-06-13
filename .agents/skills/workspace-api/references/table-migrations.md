@@ -2,7 +2,7 @@
 
 ## When to Read This
 
-Read when adding table versions, writing `.migrate()` functions, or validating migration style and anti-patterns.
+Read when adding table versions, writing `.migrate()` functions, deciding whether a schema change needs a new version at all, or validating migration style and anti-patterns.
 
 ## Migrate Function Contract
 
@@ -28,6 +28,49 @@ Rules:
 5. Always migrate directly to latest. Don't chain v1 → v2 → v3 incrementally.
 
 `_v` is never present on `value`, never returned from the function, and never appears in user-facing row types. The library stamps it on storage and routes by it before calling migrate.
+
+## When a Change Needs a New Version
+
+A stored row is a fixed-shape JSON blob, validated on every read against the schema of its own stored `_v` (see `parseRow` in `packages/workspace/src/document/table.ts`). There is no field-level merge and no read-time default-fill: every column the matched version declares must be **present** on the row. So any change that makes existing stored rows stop matching their version's schema needs a new version plus a `.migrate()` that produces the new shape. Adding a column is such a change, even a nullable one.
+
+### Adding a nullable column is not free
+
+`nullable(x)` is `Type.Union([x, Type.Null()])`: the key must be **present** with value `x | null`. A missing key fails validation, because `null` is a VALUE, not absence (a CRDT row has a fixed shape and cannot omit a key, see `packages/workspace/src/document/nullable.ts`):
+
+```typescript
+const schema = Type.Object({ id: field.string(), note: nullable(field.string()) });
+Value.Check(schema, { id: 'r1' });             // false: absent key is invalid
+Value.Check(schema, { id: 'r1', note: null }); // true: null is a value
+```
+
+So adding a nullable column **in place** to a single-version table makes every pre-existing row fail validation: those rows silently drop out of `getAllValid()` and surface in `getAllInvalid()`. They do NOT read as `null`. To add any column to a table that may already hold rows, keep the prior shape as an earlier version and write a `.migrate()` that fills the new column for every older version, including setting nullable columns to `null` explicitly:
+
+```typescript
+const notes = defineTable(
+  { id: field.string<NoteId>(), title: field.string() },                     // v1
+  {
+    id: field.string<NoteId>(),
+    title: field.string(),
+    archivedAt: nullable(field.string()),
+  },                                                                          // v2
+).migrate(({ value, version }) => {
+  switch (version) {
+    case 1: return { ...value, archivedAt: null }; // must set it: absence != null
+    case 2: return value;
+  }
+});
+```
+
+### Migrate output is not re-validated, so fill every column
+
+`parseRow` validates the stored row against its own version, then returns the migrate result as-is, with no second check against the latest schema. A migrate that forgets a column returns a row whose field is `undefined` at runtime while the type claims `x | null`. It often "works" because `undefined` is falsy, but it is a type lie waiting to break a `=== null` check or a materializer that expects the column. Always return the complete latest-version row.
+
+### When you genuinely do not need a migrate
+
+- A single-version table with no stored data to read: a pre-launch app that resets dev data per the schema-collapse convention. Redefine the one version at its terminal shape; there is nothing to migrate.
+- A brand-new table that has never been written.
+
+If stored rows exist and you cannot reset them, you need a version plus a migrate. Nothing in the read path coerces an absent column into `null`.
 
 ## Anti-Patterns
 
@@ -57,15 +100,15 @@ Rules:
 ```typescript
 // BAD: `_v` is library-managed. The defineTable parameter type refuses it.
 defineTable({
-  id: column.string<NoteId>(),
-  title: column.string(),
-  _v: column.literal(1),   // compile error: "_v is library-managed; remove it from the column record"
+  id: field.string<NoteId>(),
+  title: field.string(),
+  _v: field.number(),   // compile error: "_v is library-managed; remove it from the column record"
 });
 
 // GOOD: just declare your columns.
 defineTable({
-  id: column.string<NoteId>(),
-  title: column.string(),
+  id: field.string<NoteId>(),
+  title: field.string(),
 });
 ```
 
@@ -84,8 +127,8 @@ tables.notes.update(id, { title });
 ## Branded ID Rules
 
 1. **Every table gets its own ID type**: `DeviceId`, `SavedTabId`, `ConversationId`, `ChatMessageId`, etc.
-2. **Foreign keys use the referenced table's ID type**: `chatMessages.conversationId` uses `column.string<ConversationId>()`, not `column.string()`.
-3. **Optional FKs use `column.nullable(...)`**: `parentId: column.nullable(column.string<ConversationId>())`.
+2. **Foreign keys use the referenced table's ID type**: `chatMessages.conversationId` uses `field.string<ConversationId>()`, not `field.string()`.
+3. **Optional FKs use `nullable(...)`**: `parentId: nullable(field.string<ConversationId>())`.
 4. **Composite IDs are also branded**: `TabCompositeId`, `WindowCompositeId`, `GroupCompositeId`.
 5. **Use generator functions**: When IDs are generated at runtime, use a `generate*` factory that calls `generateId<X>()`. Never scatter casts across call sites.
 6. **Functions accept branded types**: `function switchConversation(id: ConversationId)` not `(id: string)`.
@@ -105,14 +148,14 @@ deleteConversation(message.id);  // Error: ChatMessageId is not ConversationId
 ### Reference Implementations
 
 See `apps/honeycrisp/workspace.ts` and `apps/fuji/src/lib/workspace.ts` for the canonical co-located pattern (brand type + `generate*` / `as*` + table + `InferTableRow` export).
-See `apps/whispering/src/lib/workspace/definition.ts` for a multi-table example including a multi-version migration and `column.json(Type.Union([...]))` for discriminated JSON results.
+See `apps/whispering/src/lib/workspace/definition.ts` for a multi-table example including a multi-version migration and `field.json(Type.Union([...]))` for discriminated JSON results.
 
 ### Pattern
 
 ```typescript
 import type { Brand } from 'wellcrafted/brand';
+import { field } from '@epicenter/field';
 import {
-  column,
   createWorkspace,
   defineTable,
   generateId,
@@ -130,15 +173,15 @@ export const generatePostId = (): PostId => generateId<PostId>();
 // ─── Tables (each followed by its type export) ──────────────────────────
 
 const usersTable = defineTable({
-  id: column.string<UserId>(),
-  email: column.string(),
+  id: field.string<UserId>(),
+  email: field.string(),
 });
 export type User = InferTableRow<typeof usersTable>;
 
 const postsTable = defineTable({
-  id: column.string<PostId>(),
-  authorId: column.string<UserId>(),
-  title: column.string(),
+  id: field.string<PostId>(),
+  authorId: field.string<UserId>(),
+  title: field.string(),
 });
 export type Post = InferTableRow<typeof postsTable>;
 
@@ -172,7 +215,7 @@ export function createMyAppWorkspace() {
   return createWorkspace({
     id: 'my-workspace',
     tables: {
-      users: defineTable({ id: column.string<UserId>(), email: column.string() }),
+      users: defineTable({ id: field.string<UserId>(), email: field.string() }),
     },
     kv: {},
   });
@@ -182,8 +225,8 @@ export type User = InferTableRow<Tables['users']>;
 
 // GOOD: Extract table, co-locate type, reference it in createWorkspace
 const usersTable = defineTable({
-  id: column.string<UserId>(),
-  email: column.string(),
+  id: field.string<UserId>(),
+  email: field.string(),
 });
 export type User = InferTableRow<typeof usersTable>;
 

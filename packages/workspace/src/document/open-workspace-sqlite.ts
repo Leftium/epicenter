@@ -1,10 +1,12 @@
 /**
  * Convenience reader for the daemon's SQLite materializer.
  *
- * The daemon's `attachBunSqliteMaterializer` can write a queryable mirror at
- * `sqlitePath(epicenterRoot, workspaceId)`. This helper only opens that convention
- * path. A caller that passed a custom `filePath` to the materializer needs
- * `openSqliteReader({ filePath })` with the same explicit path.
+ * The daemon's `attachBunSqliteMaterializer` writes a guid-keyed queryable
+ * mirror at `sqlitePath(epicenterRoot, workspaceId)`
+ * (`.epicenter/sqlite/<workspaceId>.db`). This helper only opens that
+ * convention path. A caller that passed a custom `filePath` to the
+ * materializer needs `openSqliteReader({ filePath })` with the same explicit
+ * path.
  *
  * For ranked FTS5 search plus snippet helpers, use `openSqliteReader`
  * instead; this function intentionally returns a bare `bun:sqlite`
@@ -37,9 +39,9 @@ import { sqlitePath } from './workspace-paths.js';
  * db.close();
  * ```
  *
- * For the Fuji example project, use `openSqliteReader({ filePath:
- * join(epicenterRoot, ".epicenter/sqlite.db") })` because its mount overrides the
- * convention path.
+ * The Fuji mount uses this guid-keyed convention path, so
+ * `openWorkspaceSqlite(findEpicenterRoot(), 'epicenter-fuji')` opens its mirror
+ * directly.
  */
 export function openWorkspaceSqlite(
 	epicenterRoot: EpicenterRoot,

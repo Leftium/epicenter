@@ -176,8 +176,12 @@ const aiApp = new Hono<Env>()
 		}),
 		sValidator('json', aiChatDocBody),
 		async (c) => {
-			const { guid, generationId, data, apiKey: userApiKey } =
-				c.req.valid('json');
+			const {
+				guid,
+				generationId,
+				data,
+				apiKey: userApiKey,
+			} = c.req.valid('json');
 			const { provider, model, ...options } = data;
 
 			const { data: adapter, error: adapterError } = resolveAdapter({
@@ -200,7 +204,8 @@ const aiApp = new Hono<Env>()
 			const abortController = new AbortController();
 			const requestSignal = c.req.raw.signal;
 			if (requestSignal.aborted) abortController.abort();
-			else requestSignal.addEventListener('abort', () => abortController.abort());
+			else
+				requestSignal.addEventListener('abort', () => abortController.abort());
 
 			const { data: generation, error } = await runDocGeneration({
 				room,

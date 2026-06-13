@@ -55,7 +55,11 @@ function messagesArray(doc: Y.Doc): Y.Array<Y.Map<unknown>> {
  */
 export function appendUserMessage(
 	doc: Y.Doc,
-	{ id, content, createdAt }: { id: string; content: string; createdAt: number },
+	{
+		id,
+		content,
+		createdAt,
+	}: { id: string; content: string; createdAt: number },
 ): void {
 	doc.transact(() => {
 		const map = new Y.Map<unknown>();

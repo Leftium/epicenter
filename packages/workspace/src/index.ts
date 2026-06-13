@@ -125,7 +125,7 @@ export {
 // PROJECT CONFIG (browser-safe surface)
 // ════════════════════════════════════════════════════════════════════════════
 
-// Node-only helpers that resolve real paths (`findProjectRoot`,
+// Node-only helpers that resolve real paths (`findEpicenterRoot`,
 // `openProject`, etc.) import `node:fs`, `node:path`, or `node:os`
 // at module top level. They are exported from `@epicenter/workspace/node`;
 // keeping them out of this root barrel stops browser bundles (fuji,
@@ -133,7 +133,7 @@ export {
 // log paths live in `@epicenter/workspace/daemon/paths.ts`.
 export { DEFAULT_PROJECT_CONFIG_SOURCE } from './config/project-config-source.js';
 export { defineMount } from './daemon/define-mount.js';
-export type { ProjectDir } from './shared/types';
+export type { EpicenterRoot } from './shared/types';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ID + DATE PRIMITIVES

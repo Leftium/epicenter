@@ -1,11 +1,11 @@
 /**
  * Per-workspace data layout helpers.
  *
- * `projectDir` is the Epicenter namespace root: the folder whose local
- * namespace Epicenter owns (it contains `epicenter.config.ts`), and whose
- * direct children are mount projections. It is NOT necessarily the repo root.
+ * `epicenterRoot` is the Epicenter root: the folder that holds
+ * `epicenter.config.ts`, the folder Epicenter manages, and whose direct
+ * children are mount projections. It is NOT necessarily the repo root.
  *
- * Hidden machine state under `<projectDir>/.epicenter/`, each folder named by
+ * Hidden machine state under `<epicenterRoot>/.epicenter/`, each folder named by
  * what's inside:
  *
  *   yjs/<id>.db     Yjs CRDT update log (durability; replayed by Yjs)
@@ -13,7 +13,7 @@
  *   md/<id>/        Legacy hidden markdown tree (playground daemons only)
  *
  * Plus the VISIBLE projections a human reads directly, one per mount, as
- * direct children of the namespace root:
+ * direct children of the Epicenter root:
  *
  *   <mount>/        Read-only markdown projection (`mountMarkdownPath`)
  *
@@ -29,21 +29,21 @@
 
 import { join } from 'node:path';
 
-function epicenterProjectDir(projectDir: string): string {
-	return join(projectDir, '.epicenter');
+function epicenterStateDir(epicenterRoot: string): string {
+	return join(epicenterRoot, '.epicenter');
 }
 
 /**
  * Path to a workspace's Yjs CRDT update log.
  *
- * Convention: `<projectDir>/.epicenter/yjs/<workspaceId>.db`. This file is the
+ * Convention: `<epicenterRoot>/.epicenter/yjs/<workspaceId>.db`. This file is the
  * source of truth: every `updateV2` event lands here as a row, and the
  * file is replayed at startup to reconstruct the Y.Doc. SQLite is the
  * implementation detail; you never query this file with `sqlite3`. For
  * the queryable surface, see `sqlitePath`.
  *
- * `projectDir` is the Epicenter namespace root (where `epicenter.config.ts`
- * lives); `workspaceId` is `ws.ydoc.guid`.
+ * `epicenterRoot` is the Epicenter root (the folder that holds
+ * `epicenter.config.ts`); `workspaceId` is `ws.ydoc.guid`.
  *
  * @example
  * ```ts
@@ -51,14 +51,14 @@ function epicenterProjectDir(projectDir: string): string {
  * // '/Users/braden/Code/vault/.epicenter/yjs/epicenter-fuji.db'
  * ```
  */
-export function yjsPath(projectDir: string, workspaceId: string): string {
-	return join(epicenterProjectDir(projectDir), 'yjs', `${workspaceId}.db`);
+export function yjsPath(epicenterRoot: string, workspaceId: string): string {
+	return join(epicenterStateDir(epicenterRoot), 'yjs', `${workspaceId}.db`);
 }
 
 /**
  * Convention path for a workspace's SQLite mirror file (the queryable SQL surface).
  *
- * Convention: `<projectDir>/.epicenter/sqlite/<workspaceId>.db`. The vault mount
+ * Convention: `<epicenterRoot>/.epicenter/sqlite/<workspaceId>.db`. The vault mount
  * factories always use this guid-keyed default; a non-vault caller can still pass
  * a custom `filePath` to `attachBunSqliteMaterializer`, in which case scripts must
  * open that explicit path with `openSqliteReader({ filePath })`.
@@ -75,14 +75,14 @@ export function yjsPath(projectDir: string, workspaceId: string): string {
  * // '/Users/braden/Code/vault/.epicenter/sqlite/epicenter-fuji.db'
  * ```
  */
-export function sqlitePath(projectDir: string, workspaceId: string): string {
-	return join(epicenterProjectDir(projectDir), 'sqlite', `${workspaceId}.db`);
+export function sqlitePath(epicenterRoot: string, workspaceId: string): string {
+	return join(epicenterStateDir(epicenterRoot), 'sqlite', `${workspaceId}.db`);
 }
 
 /**
  * Root directory for a workspace's markdown materializer tree.
  *
- * Convention: `<projectDir>/.epicenter/md/<workspaceId>/` (hidden). Retained for
+ * Convention: `<epicenterRoot>/.epicenter/md/<workspaceId>/` (hidden). Retained for
  * the playground daemons that still import it; the first-party mount factories
  * now project to the visible `mountMarkdownPath` instead.
  *
@@ -92,37 +92,37 @@ export function sqlitePath(projectDir: string, workspaceId: string): string {
  * // '/Users/braden/Code/vault/.epicenter/md/epicenter-fuji'
  * ```
  */
-export function markdownPath(projectDir: string, workspaceId: string): string {
-	return join(epicenterProjectDir(projectDir), 'md', workspaceId);
+export function markdownPath(epicenterRoot: string, workspaceId: string): string {
+	return join(epicenterStateDir(epicenterRoot), 'md', workspaceId);
 }
 
 /**
  * Visible directory for a mount's read-only markdown projection.
  *
- * Convention: `<projectDir>/<mountName>/`, a direct child of the Epicenter
- * namespace root. Unlike `yjs/`, `sqlite/`, and the legacy `md/` tree, this
+ * Convention: `<epicenterRoot>/<mountName>/`, a direct child of the Epicenter
+ * root. Unlike `yjs/`, `sqlite/`, and the legacy `md/` tree, this
  * lives OUTSIDE `.epicenter/` because a human reads these `.md` files directly
  * (triage, curate, grep, diff); the dot-prefixed state under `.epicenter/` is
  * for machines. Keyed by the mount NAME (so the folder reads `fuji`, not
  * `epicenter-fuji`), not by `ydoc.guid` like the yjs/sqlite paths.
  *
- * The namespace root is the ownership claim: `markdown_rebuild` deletes every
+ * The Epicenter root is the ownership claim: `markdown_rebuild` deletes every
  * `.md` under this directory, which is safe only because Epicenter owns the
- * direct children of the namespace root. The previous `apps/` segment was a
+ * direct children of the Epicenter root. The previous `apps/` segment was a
  * crude fence for that sweep; confinement is now enforced explicitly in the
- * exporter (see `export.ts`). A user who wants the visible folders to appear
- * under `repo/apps` puts `epicenter.config.ts` at `repo/apps/`, making that
- * the namespace root.
+ * exporter (see `export.ts`). The Epicenter root is wherever the user drops
+ * `epicenter.config.ts`; its folder name is the user's choice and nothing
+ * reserves the name `apps`.
  *
  * @example
  * ```ts
- * mountMarkdownPath('/Users/braden/Code/vault/apps', 'fuji')
- * // '/Users/braden/Code/vault/apps/fuji'
+ * mountMarkdownPath('/Users/braden/Code/my-epicenter', 'fuji')
+ * // '/Users/braden/Code/my-epicenter/fuji'
  * ```
  */
 export function mountMarkdownPath(
-	projectDir: string,
+	epicenterRoot: string,
 	mountName: string,
 ): string {
-	return join(projectDir, mountName);
+	return join(epicenterRoot, mountName);
 }

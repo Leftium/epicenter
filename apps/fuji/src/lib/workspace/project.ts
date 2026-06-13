@@ -10,7 +10,7 @@
  * What this does:
  *   1. workspace root doc (encrypted tables + KV via createFuji)
  *   2. SQLite materializer at `sqlitePath(...)`
- *   3. Markdown export (read-only, one-way) at `mountMarkdownPath(projectDir,
+ *   3. Markdown export (read-only, one-way) at `mountMarkdownPath(epicenterRoot,
  *      mount)`; each entry's body is rendered from its content doc via
  *      `serializeEntryBody`, read fresh over the cloud per row and never
  *      persisted on the daemon. There is no import path: the only way to mutate
@@ -51,7 +51,7 @@ export function fuji(opts: FujiMountOptions = {}) {
 		name: 'fuji',
 		open(ctx) {
 			const {
-				projectDir,
+				epicenterRoot,
 				mount,
 				yDocClientId,
 				deviceId,
@@ -65,8 +65,8 @@ export function fuji(opts: FujiMountOptions = {}) {
 			const workspace = createFuji({ keyring });
 			workspace.ydoc.clientID = yDocClientId;
 
-			const sqliteFile = sqlitePath(projectDir, workspace.ydoc.guid);
-			const mdDir = mountMarkdownPath(projectDir, mount);
+			const sqliteFile = sqlitePath(epicenterRoot, workspace.ydoc.guid);
+			const mdDir = mountMarkdownPath(epicenterRoot, mount);
 
 			const sqlite = attachBunSqliteMaterializer(workspace, {
 				filePath: sqliteFile,
@@ -126,7 +126,7 @@ export function fuji(opts: FujiMountOptions = {}) {
 
 			const infrastructure = attachProjectInfrastructure(workspace.ydoc, {
 				baseURL: EPICENTER_API_URL,
-				projectDir,
+				epicenterRoot,
 				ownerId,
 				deviceId,
 				openWebSocket,

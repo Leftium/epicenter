@@ -56,7 +56,7 @@ type UpOptions = {
 	 * resolves discovery (walking up to the nearest `epicenter.config.ts`) before
 	 * the handler runs; direct callers pass the root they already know.
 	 */
-	projectDir: string;
+	epicenterRoot: string;
 	quiet: boolean;
 	cliVersion?: string;
 	/**
@@ -111,15 +111,15 @@ export async function runUp(
 		| MachineAuthStorageError
 	>
 > {
-	const projectDir = realpathSync(options.projectDir);
+	const epicenterRoot = realpathSync(options.epicenterRoot);
 
-	const leaseResult = claimDaemonLease(projectDir);
+	const leaseResult = claimDaemonLease(epicenterRoot);
 	if (leaseResult.error !== null) return leaseResult;
 	const lease = leaseResult.data;
 
 	const metadata: DaemonMetadata = {
 		pid: process.pid,
-		dir: projectDir,
+		dir: epicenterRoot,
 		startedAt: new Date().toISOString(),
 		cliVersion: options.cliVersion ?? CLI_VERSION,
 		discoveredAt: new Date().toISOString(),
@@ -139,10 +139,10 @@ export async function runUp(
 	const auth = authResult.data;
 	stack.defer(() => auth[Symbol.dispose]());
 
-	const startResult = await openProject({ projectDir, auth });
+	const startResult = await openProject({ epicenterRoot, auth });
 	if (startResult.error) return startResult;
 	const mounts = startResult.data;
-	ensureProjectGitignore(projectDir);
+	ensureProjectGitignore(epicenterRoot);
 	stack.defer(async () => {
 		await Promise.allSettled(
 			mounts.map((entry) => entry.runtime[Symbol.asyncDispose]()),
@@ -155,11 +155,11 @@ export async function runUp(
 	stack.defer(() => daemonServer.close());
 
 	const metadataResult = trySync({
-		try: () => writeMetadata(projectDir, metadata),
+		try: () => writeMetadata(epicenterRoot, metadata),
 		catch: (cause) => StartupError.MetadataWriteFailed({ cause }),
 	});
 	if (metadataResult.error) return metadataResult;
-	stack.defer(() => unlinkMetadata(projectDir));
+	stack.defer(() => unlinkMetadata(epicenterRoot));
 
 	const teardownStack = stack.move();
 	return Ok({
@@ -190,7 +190,7 @@ export const upCommand = cmd({
 	},
 	handler: async (argv) => {
 		const options: UpOptions = {
-			projectDir: argv.C,
+			epicenterRoot: argv.C,
 			quiet: argv.quiet,
 		};
 
@@ -242,8 +242,8 @@ export const upCommand = cmd({
  * repo root. On a directory without a config, discovery fails first with a hint,
  * and this function never runs.
  */
-function ensureProjectGitignore(projectDir: string): void {
-	const projectDataDir = join(projectDir, '.epicenter');
+function ensureProjectGitignore(epicenterRoot: string): void {
+	const projectDataDir = join(epicenterRoot, '.epicenter');
 	mkdirSync(projectDataDir, { recursive: true, mode: 0o700 });
 	const gitignorePath = join(projectDataDir, '.gitignore');
 	if (!existsSync(gitignorePath)) {

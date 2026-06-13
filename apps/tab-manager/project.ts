@@ -33,7 +33,7 @@ export function tabManager(opts: TabManagerMountOptions = {}) {
 		name: 'tab-manager',
 		open(ctx) {
 			const {
-				projectDir,
+				epicenterRoot,
 				mount,
 				yDocClientId,
 				deviceId,
@@ -46,8 +46,8 @@ export function tabManager(opts: TabManagerMountOptions = {}) {
 			const workspace = createTabManager({ keyring });
 			workspace.ydoc.clientID = yDocClientId;
 
-			const sqliteFile = sqlitePath(projectDir, workspace.ydoc.guid);
-			const mdDir = mountMarkdownPath(projectDir, mount);
+			const sqliteFile = sqlitePath(epicenterRoot, workspace.ydoc.guid);
+			const mdDir = mountMarkdownPath(epicenterRoot, mount);
 
 			const sqlite = attachBunSqliteMaterializer(workspace, {
 				filePath: sqliteFile,
@@ -80,7 +80,7 @@ export function tabManager(opts: TabManagerMountOptions = {}) {
 
 			const infrastructure = attachProjectInfrastructure(workspace.ydoc, {
 				baseURL: EPICENTER_API_URL,
-				projectDir,
+				epicenterRoot,
 				ownerId,
 				deviceId,
 				openWebSocket,

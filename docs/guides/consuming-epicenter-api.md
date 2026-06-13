@@ -28,6 +28,7 @@ This snippet shows a signed-in cloud workspace. The client builds the sync URL w
 The per-app browser opener is the single source of truth for "how this app mounts in a browser." `createWorkspace` builds the typed bundle in one call; every other `attach*` step is visible top-to-bottom against `workspace.ydoc`.
 
 ```typescript
+import { field } from '@epicenter/field';
 import {
 	attachLocalStorage,
 	createDeviceId,
@@ -35,7 +36,6 @@ import {
 	defineActions,
 	defineMutation,
 	defineWorkspace,
-	column,
 	defineTable,
 	openCollaboration,
 	roomWsUrl,
@@ -49,8 +49,8 @@ const MY_APP_ID = 'epicenter.my-app';
 
 const myAppTables = {
 	notes: defineTable({
-		id: column.string(),
-		title: column.string(),
+		id: field.string(),
+		title: field.string(),
 	}),
 };
 

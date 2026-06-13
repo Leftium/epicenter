@@ -51,9 +51,10 @@ function logSyncStatus(message: string): void {
 
 type UpOptions = {
 	/**
-	 * The project root. The yargs `-C` option resolves discovery (walking up
-	 * to the nearest `epicenter.config.ts`) before the handler runs; direct
-	 * callers pass the root they already know.
+	 * The Epicenter namespace root (the folder containing `epicenter.config.ts`,
+	 * whose direct children are the mount projections). The yargs `-C` option
+	 * resolves discovery (walking up to the nearest `epicenter.config.ts`) before
+	 * the handler runs; direct callers pass the root they already know.
 	 */
 	projectDir: string;
 	quiet: boolean;
@@ -227,14 +228,19 @@ export const upCommand = cmd({
 // ---------------------------------------------------------------------------
 
 /**
- * Ensure `.epicenter/` exists (0o700) and is fully gitignored. The attach
- * primitives (Yjs log, SQLite and markdown materializers) create their own
- * data dirs on demand, so the daemon's only filesystem provisioning is the
- * cache-dir ignore rule. `*` ignores everything the runtime ever writes,
- * including this file, so there is no directory list to keep in sync.
- * Project creation itself (writing `epicenter.config.ts`) is `epicenter
- * init`; `daemon up` on a directory without a config fails with a hint
- * instead of silently scaffolding a project.
+ * Ensure the namespace root's `.epicenter/` exists (0o700) and is fully
+ * gitignored. `.epicenter/` is a direct child of the namespace root (a sibling
+ * of `epicenter.config.ts` and of the generated mount folders), holding the
+ * namespace-local machine state. The attach primitives (Yjs log, SQLite and
+ * markdown materializers) create their own data dirs on demand, so the daemon's
+ * only filesystem provisioning is the cache-dir ignore rule. `*` ignores
+ * everything the runtime ever writes, including this file, so there is no
+ * directory list to keep in sync.
+ *
+ * Namespace creation itself (writing `epicenter.config.ts`) is `epicenter init`;
+ * `daemon up` never scaffolds a config, so it cannot accidentally claim a normal
+ * repo root. On a directory without a config, discovery fails first with a hint,
+ * and this function never runs.
  */
 function ensureProjectGitignore(projectDir: string): void {
 	const projectDataDir = join(projectDir, '.epicenter');

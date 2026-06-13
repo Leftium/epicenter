@@ -14,7 +14,9 @@ export function findProjectRoot(start: string = process.cwd()): ProjectDir {
 		if (parent === current) {
 			throw new Error(
 				`findProjectRoot: no ${PROJECT_CONFIG_FILENAME} found walking up from ${start}. ` +
-					`Run \`epicenter init\` to create one.`,
+					`Discovery is upward-only and never scans down, so run from inside an ` +
+					`Epicenter namespace root (the folder containing ${PROJECT_CONFIG_FILENAME}), ` +
+					`pass \`-C <namespace-root>\`, or run \`epicenter init\` to create one.`,
 			);
 		}
 		current = parent;

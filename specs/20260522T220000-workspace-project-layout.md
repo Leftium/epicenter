@@ -1,8 +1,10 @@
 # Workspace project layout: `epicenter.config.ts`, markdown as canon, `~/.epicenter/`
 
-Status: draft
+Status: Superseded by 20260612T000201-epicenter-namespace-root-layout.md
 Owner: braden
 Date: 2026-05-22
+
+> Superseded: the repo-root `epicenter.config.ts` and `projectDir/apps/<mount>` layout this spec teaches is replaced by the namespace-root model where `projectDir` is the Epicenter namespace root and mounts project to `projectDir/<mount>`. See `20260612T000201-epicenter-namespace-root-layout.md`.
 
 Current code note (2026-05-29): current project config default-exports a
 `Mount[]`. One Fuji project still exports a list of one: `export default

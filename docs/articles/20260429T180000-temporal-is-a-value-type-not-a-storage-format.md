@@ -1,6 +1,6 @@
 # Temporal Is a Value Type, Not a Storage Format
 
-Temporal is the right answer for date math. It's the wrong answer for what sits in your SQLite column. Epicenter stores `DateTimeString` (a branded text format) and only constructs a `Temporal.ZonedDateTime` when something actually needs to compute with it. Two layers, two jobs.
+Temporal is the right answer for date math. It's the wrong answer for what sits in your SQLite column. Epicenter stores `DateTimeString` as a branded RFC 3339 string, with a separate zone field when the originating IANA zone matters. It only constructs a `Temporal.ZonedDateTime` when something actually needs to compute with it. Two layers, two jobs.
 
 ## The two questions are not the same
 
@@ -49,66 +49,68 @@ SQLite sorts TEXT lexicographically. The canonical `Temporal.ZonedDateTime` stri
 
 The leading bytes are *local time*. Two rows from different zones sort by local wall clock, not by the actual instant. `ORDER BY createdAt` is silently wrong.
 
-`DateTimeString` puts the UTC instant first:
+`DateTimeString` stores the instant in RFC 3339 form:
 
 ```
-2024-01-01T20:00:00.000Z|America/New_York
-└──── UTC instant ─────┘└──── IANA ─────┘
+2024-01-01T20:00:00.000Z
+└──── UTC instant ─────┘
 ```
 
-UTC instant is the prefix, so lex order equals chronological order, for free, across every zone.
+When zone semantics matter, store the IANA zone in a sidecar field such as `createdAtZone`. UTC instant remains the sortable prefix, so lex order equals chronological order, for free, across every zone.
 
 ### 2. Per-row `fromDriver` overhead
 
 If your column type is "Temporal," every row read invokes a `fromDriver` hook to parse text into a `Temporal.ZonedDateTime`. On a 10k-row query that's 10k synchronous parses, possibly through a polyfill, before you've done any work. The cost lands on every read whether or not you needed date math.
 
-`DateTimeString` is a branded plain string. The driver hands you the bytes; you parse to Temporal *only* at the call site that needs `.add({ months: 1 })`. The "last responsible moment" pattern.
+`DateTimeString` is a branded plain string. The driver hands you the bytes; you build a Temporal value *only* at the call site that needs `.add({ months: 1 })`. The "last responsible moment" pattern.
 
 ```ts
 // Read path: zero conversion
 const rows = tables.notes.getAll()         // each createdAt is a DateTimeString
 
 // Math path: convert exactly once, where the math happens
-const due = DateTimeString.parse(row.createdAt).add({ days: 7 })
+const due = Temporal.Instant
+  .from(row.createdAt)
+  .toZonedDateTimeISO(row.createdAtZone)
+  .add({ days: 7 })
 ```
 
 ### 3. Wire and portability friction
 
-`DateTimeString` is already a JSON string. It serializes for free, parses for free in any language with `split('|')`, and survives logs, BI tools, and other services without a Temporal polyfill.
+`DateTimeString` is already a JSON string. It serializes for free, parses with stock date-time tooling, and survives logs, BI tools, and other services without a Temporal polyfill.
 
 The bracketed-IANA suffix that Temporal uses (`...[America/New_York]`) is a Temporal-era extension. Lots of parsers reject it. You either ship a polyfill everywhere or you stringify on every wire boundary.
 
 ## The split: text in storage, Temporal in hand
 
 ```
-┌──────────────┐   read    ┌────────────────┐   parse    ┌──────────────────────┐
-│   SQLite     │ ────────▶ │ DateTimeString │ ─────────▶ │ Temporal.ZonedDateTime│
-│ TEXT column  │           │ (branded str)  │            │  (only when needed)   │
-└──────────────┘           └────────────────┘            └──────────────────────┘
-        ▲                          │                              │
-        │                          │ stringify back when storing  │
-        └──────────────────────────┴──────────────────────────────┘
+┌──────────────┐   read    ┌──────────────────────┐   construct ┌──────────────────────┐
+│   SQLite     │ ────────▶ │ DateTimeString + zone│ ──────────▶ │ Temporal.ZonedDateTime│
+│ TEXT columns │           │ (branded strings)    │             │  (only when needed)   │
+└──────────────┘           └──────────────────────┘             └──────────────────────┘
+        ▲                              │                                  │
+        │                              │ stringify back when storing      │
+        └──────────────────────────────┴──────────────────────────────────┘
 ```
 
 In code:
 
 ```ts
 // Storage: DateTimeString round-trips with zero conversion
-type DateTimeString = `${DateIsoString}|${TimezoneId}` & Brand<'DateTimeString'>
+type DateTimeString = string & Brand<'DateTimeString'>
+type TimezoneId = string & Brand<'TimezoneId'>
 
-// Companion object: parse lazily
+// Companion object: validate and create storage values
 const DateTimeString = {
-  parse(s: DateTimeString): Temporal.ZonedDateTime,
-  stringify(zdt: Temporal.ZonedDateTime): DateTimeString,
-  now(tz?: string): DateTimeString,
+  now(): DateTimeString,
   is(v: unknown): v is DateTimeString,
 }
 
-// Schema: column.zonedDateTime() stores DateTimeString as TEXT
+// Schema: field.datetime() stores the instant; the zone rides beside it
 const notes = defineTable({
-  _v: column.literal(1),
-  id: column.id<'NoteId'>(),
-  createdAt: column.zonedDateTime(),   // DateTimeString in storage
+  id: field.string(),
+  createdAt: field.datetime(),         // DateTimeString
+  createdAtZone: field.string(),       // TimezoneId
 })
 
 // Read: no conversion
@@ -116,12 +118,15 @@ const note = tables.notes.get(id)
 note.createdAt                         // DateTimeString, branded
 
 // Math: convert at the point of use
-const dueAt = DateTimeString.parse(note.createdAt).add({ days: 7 })
+const dueAt = Temporal.Instant
+  .from(note.createdAt)
+  .toZonedDateTimeISO(note.createdAtZone)
+  .add({ days: 7 })
 
 // Write back: stringify back to storage shape
 tables.notes.update(id, {
-  remindAt: DateTimeString.stringify(dueAt),
-  _v: 1 as const,
+  remindAt: dueAt.toInstant().toString() as DateTimeString,
+  remindAtZone: dueAt.timeZoneId as TimezoneId,
 })
 ```
 
@@ -131,7 +136,7 @@ The storage format never changes. The math format never touches storage. Each la
 
 `Temporal.Instant` would actually sort fine: its serialization is `2024-01-01T20:00:00Z`, which is lex-sortable. The problem is it has no zone. "Created at 9am in Tokyo" loses the Tokyo. DST transitions, "remind me at 9am wherever you are next week," and locale rendering all need the origination zone preserved.
 
-`DateTimeString` keeps both: UTC instant for sortability and wire compactness, IANA name for zone semantics. `Instant` keeps neither side of that.
+`DateTimeString` keeps the instant sortable and compact. The sidecar zone keeps the IANA semantics. `Instant` by itself only keeps the first half.
 
 `PlainDateTime` is for wall-clock values with no zone (birthdays, "9am alarm"). Use it when there is genuinely no zone, not as a `createdAt`.
 
@@ -142,13 +147,13 @@ This is a specific instance of a more general pattern: **the type you compute wi
 - Encryption: store ciphertext bytes, decrypt to a plaintext value object only when you need to read.
 - Markdown: store the source string, parse to an AST only when rendering.
 - Money: store integer cents, construct a `Money` object at the boundary that does math.
-- Dates: store `DateTimeString`, construct `Temporal.ZonedDateTime` at the boundary that does math.
+- Dates: store `DateTimeString` plus a zone when needed, construct `Temporal.ZonedDateTime` at the boundary that does math.
 
 The mistake is letting the value-type API leak into your storage layer because it has nice methods. Nice methods are for working with values, not for sitting in a column. Keep the storage representation cheap, sortable, and JSON-native; pay the construction cost only where the methods actually get called.
 
 ## References
 
-- `packages/workspace/src/shared/datetime-string.ts` (`DateTimeString` type and companion functions)
+- `packages/field/src/datetime-string.ts` (`DateTimeString` type and companion functions)
 - `docs/articles/datetime-string-intermediate-representation.md` (the original migration from `DateWithTimezone`)
 - `docs/articles/iso-8601-is-lossy-without-a-timezone.md` (why ISO alone isn't enough)
-- `packages/workspace/specs/20260429T000000-column-dsl-and-define-table.md` (column DSL spec; note the spec since dropped `column.zonedDateTime()` for `column.string<T>()` plus `DateTimeString.schema()`)
+- `packages/workspace/specs/20260429T000000-column-dsl-and-define-table.md` (historical column DSL spec; current schemas use `field.datetime()`)

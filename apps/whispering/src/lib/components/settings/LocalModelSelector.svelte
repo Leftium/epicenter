@@ -130,6 +130,16 @@
 		}
 	}
 
+	async function downloadRecommendedModel() {
+		await recommendedDownload.download();
+		await refreshEntries();
+	}
+
+	async function activateRecommendedModel() {
+		recommendedDownload.activate();
+		await refreshEntries();
+	}
+
 	// Rescan on mount, when the engine changes, and whenever the active model
 	// changes (e.g. a catalog download just landed in the folder).
 	$effect(() => {
@@ -227,11 +237,11 @@
 							</span>
 						</div>
 					{:else if recommendedState.type === 'ready'}
-						<Button onclick={() => recommendedDownload.activate()}>
+						<Button onclick={activateRecommendedModel}>
 							Activate {recommended.name}
 						</Button>
 					{:else}
-						<Button onclick={() => recommendedDownload.download()}>
+						<Button onclick={downloadRecommendedModel}>
 							<Download class="size-4" />
 							Download {recommended.name} ({recommended.size})
 						</Button>
@@ -266,6 +276,7 @@
 					<LocalModelDownloadCard
 						{model}
 						recommended={models.length > 1 && model.id === recommended.id}
+						onDiskChange={refreshEntries}
 					/>
 				{/each}
 

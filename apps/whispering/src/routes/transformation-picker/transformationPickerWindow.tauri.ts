@@ -2,7 +2,7 @@ import { emit, listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { Ok, tryAsync } from 'wellcrafted/result';
 
-const WINDOW_LABEL = 'transform-clipboard';
+const WINDOW_LABEL = 'transformation-picker';
 
 /**
  * Event names for handing the captured selection from the main window (where the
@@ -59,7 +59,7 @@ export async function openWithSelection(input: string): Promise<void> {
 	}
 
 	const windowInstance = new WebviewWindow(WINDOW_LABEL, {
-		url: '/transform-clipboard',
+		url: '/transformation-picker',
 		title: 'Transformations',
 		width: 700,
 		height: 600,

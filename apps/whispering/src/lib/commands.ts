@@ -6,10 +6,8 @@ import {
 	toggleManualRecording,
 	toggleVadRecording,
 } from '$lib/operations/recording';
-import {
-	openTransformationPicker,
-	runTransformationOnClipboard,
-} from '$lib/operations/transformation-clipboard';
+import { runTransformationOnClipboard } from '$lib/operations/transformation-clipboard';
+import { openTransformationPicker } from '$lib/operations/transformation-picker';
 
 /**
  * Registry of available commands in the application.

@@ -14,7 +14,7 @@
 	import { services } from '$lib/services';
 	import type { Transformation } from '$lib/workspace';
 	import { type DiffSegment, wordDiff } from '$lib/utils/word-diff';
-	import * as pickerWindow from './transformClipboardWindow.tauri';
+	import * as pickerWindow from './transformationPickerWindow.tauri';
 
 	/**
 	 * Candidates generated for a prompt-based transformation. Each is an

@@ -1,9 +1,9 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "transform-clipboard-capability",
-  "description": "Capability for transform clipboard window",
+  "identifier": "transformation-picker-capability",
+  "description": "Capability for the transformation picker window",
   "windows": [
-    "transform-clipboard"
+    "transformation-picker"
   ],
   "permissions": [
     "core:default",

@@ -1,6 +1,5 @@
 import { goto } from '$app/navigation';
 import { deliverTransformationResult } from '$lib/operations/delivery';
-import { captureSelection } from '$lib/operations/selection';
 import { sound } from '$lib/operations/sound';
 import {
 	executeTransformation,
@@ -10,36 +9,13 @@ import { report } from '$lib/report';
 import { services } from '$lib/services';
 import { settings } from '$lib/state/settings.svelte';
 import { transformations } from '$lib/state/transformations.svelte';
-import * as transformClipboardWindow from '$routes/transform-clipboard/transformClipboardWindow.tauri';
 
 /**
- * Open the transformation picker on the user's current selection. Capture happens
- * here, while the source app is still frontmost (the global shortcut fired
- * without stealing focus), so the simulated copy reads from the right app. The
- * window is shown only after a non-empty selection is captured.
+ * Run the user's default transformation on the clipboard, no UI. The quick-run
+ * sibling of the transformation picker: copy text, hit the shortcut, get the
+ * result delivered. An ad-hoc run, so it commits one completed row only on
+ * success (see `persistCompletedRun`).
  */
-export async function openTransformationPicker() {
-	const { data: selection, error: captureError } = await captureSelection();
-
-	if (captureError) {
-		report.error({
-			title: 'Could not capture your selection',
-			cause: captureError,
-		});
-		return;
-	}
-
-	if (!selection?.trim()) {
-		report.info({
-			title: 'Nothing selected',
-			description: 'Select some text in any app, then try again.',
-		});
-		return;
-	}
-
-	await transformClipboardWindow.openWithSelection(selection);
-}
-
 export async function runTransformationOnClipboard() {
 	const transformationId = settings.get('transformation.selectedId');
 

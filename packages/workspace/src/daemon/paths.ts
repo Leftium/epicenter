@@ -4,11 +4,11 @@
  * Per-project runtime files (socket, metadata sidecar, SQLite lease) live
  * under `runtimeDir()` (a per-user directory at `<dataDir>/run/`).
  * Persistent logs live under the env-paths log directory. Every file is
- * keyed by a hash of the daemon's project directory so two daemons on the
+ * keyed by a hash of the daemon's Epicenter root so two daemons on the
  * same machine never collide.
  *
- * For per-workspace data layout (yjs/sqlite/markdown under the project
- * directory's reserved subdir), see `document/workspace-paths.ts`. Different
+ * For per-workspace data layout (yjs/sqlite/markdown under the Epicenter
+ * root's `.epicenter/` subdir), see `document/workspace-paths.ts`. Different
  * audience, different rationale.
  *
  * Pure helpers: no side effects, no directory creation. The `daemon up`
@@ -53,7 +53,7 @@ export function runtimeDir(): string {
 }
 
 /**
- * Stable hash of an absolute, fs-resolved project directory path.
+ * Stable hash of an absolute, fs-resolved Epicenter root path.
  *
  * Truncated to 16 hex chars (64 bits) so the resulting socket path stays
  * comfortably under the 104-char Unix-socket limit on macOS. Symlinks are
@@ -74,7 +74,7 @@ export function socketPathFor(dir: string): string {
 	if (Buffer.byteLength(socketPath) > SAFE_UNIX_SOCKET_PATH_BYTES) {
 		throw new Error(
 			`socketPathFor: resolved path is ${Buffer.byteLength(socketPath)} bytes, ` +
-				`exceeds safe Unix socket limit (${SAFE_UNIX_SOCKET_PATH_BYTES}). projectDir=${dir}`,
+				`exceeds safe Unix socket limit (${SAFE_UNIX_SOCKET_PATH_BYTES}). epicenterRoot=${dir}`,
 		);
 	}
 	return socketPath;

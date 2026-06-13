@@ -37,19 +37,44 @@ import {
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * Errors produced when parsing stored rows against a table's schema.
+ * Errors produced when this binary should understand a stored row but cannot
+ * parse it against the table's schema: a corrupt or unknown `_v` stamp at or
+ * below the latest known version, failed validation, or a failed migration.
  *
- * Surfaced by `get()`, `getAll()`, `getAllValid()`, `getAllInvalid()`,
- * `filter()`, `find()`, and `update()`. "Not found" on `get()` / `update()`
- * is *not* an error: it's a legitimate absence and is returned as
+ * Surfaced (alongside {@link TableNewerWriterError}) in `scan().nonconforming`
+ * and by the point reads `get()` and `update()`. "Not found" on `get()` /
+ * `update()` is *not* an error: it's a legitimate absence and is returned as
  * `data: null` instead.
+ *
+ * Every variant carries `row`: the raw stored value as it sits in the CRDT,
+ * including the library-managed `_v` stamp. The conformance repair flow reads
+ * it to rebuild a conforming row (coerce the fields that still fit, default
+ * the rest) and write it back with `set()`.
+ *
+ * A row stamped *above* this binary's latest known version is not a parse
+ * error: it is a {@link TableNewerWriterError}, a staleness signal that needs
+ * an app update rather than a repair, and `set()` refuses it.
  */
 export const TableParseError = defineErrors({
-	/** The row's `_v` did not match any registered schema version. */
-	UnknownVersion: ({ id, version }: { id: string; version: unknown }) => ({
+	/**
+	 * The row's `_v` is no schema this binary has: a non-numeric, fractional,
+	 * zero, or negative stamp, or a whole number at or below the latest known
+	 * version that matches no registered schema. A whole number strictly above
+	 * the latest known version is a {@link TableNewerWriterError} instead.
+	 */
+	UnknownVersion: ({
+		id,
+		version,
+		row,
+	}: {
+		id: string;
+		version: unknown;
+		row: unknown;
+	}) => ({
 		message: `Row '${id}' has unknown _v value: ${String(version)}`,
 		id,
 		version,
+		row,
 	}),
 	/** TypeBox `Value.Check` rejected the row against the matched version. */
 	ValidationFailed: ({
@@ -69,13 +94,186 @@ export const TableParseError = defineErrors({
 		row,
 	}),
 	/** The migration function threw while upgrading a valid-at-parse-time row. */
-	MigrationFailed: ({ id, cause }: { id: string; cause: unknown }) => ({
+	MigrationFailed: ({
+		id,
+		cause,
+		row,
+	}: {
+		id: string;
+		cause: unknown;
+		row: unknown;
+	}) => ({
 		message: `Row '${id}' could not be migrated: ${extractErrorMessage(cause)}`,
 		id,
 		cause,
+		row,
 	}),
 });
 export type TableParseError = InferErrors<typeof TableParseError>;
+
+// ════════════════════════════════════════════════════════════════════════════
+// TABLE NEWER-WRITER ERROR
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * A row a newer binary owns: its `_v` is a whole number strictly above this
+ * binary's latest known schema version.
+ *
+ * This is not a data-integrity failure; the row is presumably fine, this binary
+ * is just too old to read it. It is not repairable here (the user needs an app
+ * update), and `set()` refuses to clobber it for the same reason. Kept distinct
+ * from {@link TableParseError} so the "this binary is stale" case is a type fact
+ * every consumer can switch on, not a runtime comparison each caller re-derives.
+ *
+ * Carries `version` (the stored stamp), `latestVersion` (what this binary
+ * knows), and the raw `row` so a UI can report exactly how far ahead it is.
+ */
+export const TableNewerWriterError = defineErrors({
+	/** The row's `_v` is a whole number strictly above this binary's latest. */
+	NewerWriter: ({
+		id,
+		version,
+		latestVersion,
+		row,
+	}: {
+		id: string;
+		version: number;
+		latestVersion: number;
+		row: unknown;
+	}) => ({
+		message: `Row '${id}' was written by a newer version of this app (schema version ${version}, this app knows ${latestVersion}). Update the app to read it.`,
+		id,
+		version,
+		latestVersion,
+		row,
+	}),
+});
+export type TableNewerWriterError = InferErrors<typeof TableNewerWriterError>;
+
+// ════════════════════════════════════════════════════════════════════════════
+// TABLE UNREADABLE ERROR
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * An encrypted entry present in storage that this binary holds no usable key
+ * for: a key rotation that left this device behind, a missing key version, or
+ * a corrupt ciphertext.
+ *
+ * Unlike the other read errors there is no row to parse and no raw value to
+ * carry: the bytes never decrypted. It carries `id` and a human-readable
+ * `reason` (for example `keyVersion=3 not in keyring [1, 2]`). Not repairable
+ * here (the user needs the key), and `set()` refuses to clobber it for the
+ * same reason it refuses a {@link TableNewerWriterError}.
+ *
+ * Surfaced in `scan().unreadable`, built from the `unreadable` reads in the
+ * store's `reads()` enumeration.
+ */
+export const TableUnreadableError = defineErrors({
+	/** A stored encrypted entry that did not decrypt under the active keyring. */
+	UnreadableRow: ({ id, reason }: { id: string; reason: string }) => ({
+		message: `Row '${id}' is encrypted with a key this device does not have: ${reason}`,
+		id,
+		reason,
+	}),
+});
+export type TableUnreadableError = InferErrors<typeof TableUnreadableError>;
+
+// ════════════════════════════════════════════════════════════════════════════
+// TABLE READ ERROR
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Every reason a read cannot resolve a stored entry to a conforming row: a
+ * parse failure this binary should understand ({@link TableParseError}), a row
+ * a newer binary owns ({@link TableNewerWriterError}), or an encrypted entry
+ * this binary holds no usable key for ({@link TableUnreadableError}).
+ *
+ * Surfaced by `get()` and `update()`. These are exactly the three non-row
+ * states `scan()` buckets; a point read fails with whichever one applies to
+ * the requested id, while "absent" stays a non-error `Ok(null)`.
+ */
+export type TableReadError =
+	| TableParseError
+	| TableNewerWriterError
+	| TableUnreadableError;
+
+// ════════════════════════════════════════════════════════════════════════════
+// TABLE WRITE ERROR
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Errors produced when a write is refused before touching storage.
+ *
+ * Surfaced by `set()`. Whole-row writes stamp this binary's latest `_v` and
+ * always win local LWW (the monotonic clock guarantees a fresh timestamp), so
+ * a stale or keyless binary writing over a row it cannot read would silently
+ * destroy data on every synced device. The guard refuses instead, for the two
+ * states where the stored row exists but this binary cannot understand it:
+ * a newer schema version ({@link TableNewerWriterError}) or an encrypted blob
+ * with no usable key ({@link TableUnreadableError}).
+ *
+ * `bulkSet()` and `clear()` report the same refusals as
+ * `{ refused: TableWriteError[] }` rather than an error: partial success is
+ * their expected outcome, not a failure of the operation. Carrying the full
+ * error (version or reason) lets an import banner say what it skipped and why.
+ */
+export const TableWriteError = defineErrors({
+	/** The stored row's `_v` exceeds this binary's latest known version. */
+	NewerWriterRefusal: ({
+		id,
+		storedVersion,
+		latestVersion,
+	}: {
+		id: string;
+		storedVersion: number;
+		latestVersion: number;
+	}) => ({
+		message: `Row '${id}' was written by a newer version of this app (schema version ${storedVersion}, this app knows ${latestVersion}). Update the app to edit it.`,
+		id,
+		storedVersion,
+		latestVersion,
+	}),
+	/** The stored row is an encrypted blob this binary holds no usable key for. */
+	UnreadableRefusal: ({ id, reason }: { id: string; reason: string }) => ({
+		message: `Row '${id}' is encrypted with a key this device does not have, so it cannot be overwritten: ${reason}`,
+		id,
+		reason,
+	}),
+});
+export type TableWriteError = InferErrors<typeof TableWriteError>;
+
+// ════════════════════════════════════════════════════════════════════════════
+// TABLE SCAN
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * The result of a single classified table read: every stored entry resolved
+ * into exactly one of four mutually exclusive, collectively exhaustive states.
+ * The bucket lengths sum to `storedCount()`, so no read can silently drop data.
+ *
+ * - `rows`: entries that parse and validate to the latest schema. The payload
+ *   almost every caller wants, with the three issue buckets riding along in the
+ *   same return value instead of being silently skipped.
+ * - `nonconforming`: entries this binary should understand but cannot parse
+ *   (failed validation, failed migration, or a corrupt `_v` stamp at or below
+ *   the latest known version), classified as {@link TableParseError}. Each
+ *   carries the raw stored value so a repair flow can rebuild it via `set()`.
+ * - `newerWriter`: entries stamped by a schema version above this binary's
+ *   latest, classified as {@link TableNewerWriterError}. Not repairable here;
+ *   the user needs an app update, and `set()` refuses them.
+ * - `unreadable`: encrypted entries this binary holds no usable key for,
+ *   classified as {@link TableUnreadableError}. No row exists to parse.
+ */
+export type TableScan<TRow> = {
+	/** Entries that parse and validate to the latest schema. */
+	rows: TRow[];
+	/** Entries this binary should understand but cannot parse. */
+	nonconforming: TableParseError[];
+	/** Entries stamped by a newer schema version than this binary knows. */
+	newerWriter: TableNewerWriterError[];
+	/** Encrypted entries this binary holds no usable key for. */
+	unreadable: TableUnreadableError[];
+};
 
 // ════════════════════════════════════════════════════════════════════════════
 // ROW TYPE
@@ -281,16 +479,40 @@ export type ReadonlyTable<
 	 */
 	schema: TObject<LastVersion<TVersions>>;
 
-	get(id: string): Result<TRow | null, TableParseError>;
-	getAll(): Array<Result<TRow, TableParseError>>;
-	getAllValid(): TRow[];
-	getAllInvalid(): TableParseError[];
-	filter(predicate: (row: TRow) => boolean): TRow[];
-	find(predicate: (row: TRow) => boolean): TRow | undefined;
+	/**
+	 * Point read by id. O(1). Returns `Ok(null)` for a row that is absent, and
+	 * `Err(TableReadError)` for a stored entry this binary cannot resolve to a
+	 * row (a parse failure or a newer-writer row).
+	 */
+	get(id: string): Result<TRow | null, TableReadError>;
+	/**
+	 * The one O(n) classified read: walk every stored entry, resolve each into
+	 * one of four buckets, and return them grouped. `scan().rows` is the conforming
+	 * payload; the three issue buckets ride along so no read silently drops data.
+	 * Pull-based; recompute on the `observe()` signal. See {@link TableScan}.
+	 */
+	scan(): TableScan<TRow>;
+	/**
+	 * Find the first conforming row matching the predicate, short-circuiting at
+	 * the first match. Unlike `scan().rows.find(...)` this stops scanning once it
+	 * hits a match and never builds the issue buckets. The `Valid` in the name is
+	 * honest: it can only match rows it can parse.
+	 */
+	findValid(predicate: (row: TRow) => boolean): TRow | undefined;
 	observe(
 		callback: (changedIds: ReadonlySet<TRow['id']>, origin?: unknown) => void,
 	): () => void;
-	count(): number;
+	/**
+	 * Number of observer-confirmed stored entries. O(1). Counts every stored
+	 * entry across all four read states: conforming rows, nonconforming rows
+	 * that `scan().rows` excludes, newer-writer rows, and (on encrypted stores)
+	 * undecryptable entries. May lag writes made inside an open transaction.
+	 * Because it counts all four states, it reconciles exactly:
+	 * `storedCount() === scan.rows.length + scan.nonconforming.length +
+	 * scan.newerWriter.length + scan.unreadable.length`. For an "N items" badge
+	 * next to a list, use `scan().rows.length` instead.
+	 */
+	storedCount(): number;
 	has(id: string): boolean;
 };
 
@@ -298,18 +520,37 @@ export type Table<
 	TRow extends BaseRow,
 	TVersions extends readonly VersionedColumns[] = readonly VersionedColumns[],
 > = ReadonlyTable<TRow, TVersions> & {
-	set(row: TRow): void;
+	/**
+	 * Whole-row write. Stamps this binary's latest `_v` and replaces the
+	 * stored row. Refuses with `NewerWriterRefusal` when the stored row was
+	 * stamped by a newer schema version than this binary knows, and with
+	 * `UnreadableRefusal` when the stored row is an encrypted blob this binary
+	 * holds no key for; in both cases the stored row is left untouched (the
+	 * write would clobber a row this binary cannot read).
+	 */
+	set(row: TRow): Result<void, TableWriteError>;
+	/**
+	 * Chunked whole-row import. Rows whose stored slot this binary cannot read
+	 * (a newer schema version or an undecryptable blob) are skipped per chunk at
+	 * write time and reported in `refused` as `TableWriteError`; everything else
+	 * is written. `onProgress` percent runs over the input length, including
+	 * refused rows.
+	 */
 	bulkSet(
 		rows: TRow[],
 		options?: {
 			chunkSize?: number;
 			onProgress?: (percent: number) => void;
 		},
-	): Promise<void>;
+	): Promise<{ refused: TableWriteError[] }>;
 	update(
 		id: string,
 		partial: Partial<Omit<TRow, 'id'>>,
-	): Result<TRow | null, TableParseError>;
+	): Result<TRow | null, TableReadError>;
+	/**
+	 * Delete one row by id. Deliberately unguarded: deletion intent is
+	 * shape-independent, so newer-stamped rows are deletable too.
+	 */
 	delete(id: string): void;
 	bulkDelete(
 		ids: string[],
@@ -318,7 +559,14 @@ export type Table<
 			onProgress?: (percent: number) => void;
 		},
 	): Promise<void>;
-	clear(): void;
+	/**
+	 * Delete every row this binary can claim to understand. Rows it cannot read,
+	 * a newer schema version or an undecryptable blob, are skipped and reported
+	 * in `refused`: `clear()` is bulk-blind, and a stale or keyless binary must
+	 * not mass-destroy rows it cannot read. Use `delete(id)` to remove a
+	 * specific such row.
+	 */
+	clear(): { refused: TableWriteError[] };
 };
 
 /** Map keyed by table name to Table for that table's row type. */
@@ -355,6 +603,33 @@ export function attachTable<
 // createTable / createReadonlyTable
 // ════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Whether a stored `_v` is a newer-writer stamp: a row a future binary owns.
+ *
+ * A legitimate stamp is a whole number; `stamp()` writes `latestVersion` and
+ * every schema pins `_v: Literal(N)` with an integer `N`, so no binary, present
+ * or future, ever writes a fractional `_v`. A newer writer is therefore an
+ * integer strictly above this binary's latest. Everything else (fractional,
+ * zero, negative, non-number) is corruption: a repairable nonconforming row,
+ * not a "your binary is stale" signal.
+ *
+ * This is the single owner of the newer-writer rule. The read path
+ * ({@link createReadonlyTable}'s `parseRow`) and the write guard
+ * (`newerStoredVersion`, feeding `set`/`bulkSet`/`clear`) both route through it,
+ * so `scan()` and the write refusals can never disagree about what is repairable
+ * versus newer-owned.
+ */
+function isNewerWriterStamp(
+	version: unknown,
+	latestVersion: number,
+): version is number {
+	return (
+		typeof version === 'number' &&
+		Number.isInteger(version) &&
+		version > latestVersion
+	);
+}
+
 export function createReadonlyTable<
 	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly
 	TTableDefinition extends TableDefinition<any>,
@@ -386,17 +661,36 @@ export function createReadonlyTable<
 	 * Parse a stored row value. Injects `id` into the input, routes by stored
 	 * `_v` to the matching schema, validates, runs migrate, returns the
 	 * user-facing row (no `_v`).
+	 *
+	 * Classifies the failure where the version set is in scope: a whole-number
+	 * `_v` strictly above the latest known version is a
+	 * {@link TableNewerWriterError} (this binary is stale); everything else this
+	 * binary should understand but cannot is a {@link TableParseError}. It never produces a
+	 * {@link TableUnreadableError}: that state comes from the store (a row that
+	 * never decrypted), not from parsing a decrypted value, so the parse walk's
+	 * error is the narrower union that `scan()` switches over exhaustively.
 	 */
-	function parseRow(id: string, input: unknown): Result<TRow, TableParseError> {
+	function parseRow(
+		id: string,
+		input: unknown,
+	): Result<TRow, TableParseError | TableNewerWriterError> {
 		const stored: Record<string, unknown> = {
 			...(input as Record<string, unknown>),
 			id,
 		};
 		const version = stored._v;
+		if (isNewerWriterStamp(version, versions.length)) {
+			return TableNewerWriterError.NewerWriter({
+				id,
+				version,
+				latestVersion: versions.length,
+				row: stored,
+			});
+		}
 		const schema =
 			typeof version === 'number' ? versionSchemas.get(version) : undefined;
 		if (!schema) {
-			return TableParseError.UnknownVersion({ id, version });
+			return TableParseError.UnknownVersion({ id, version, row: stored });
 		}
 		if (!Value.Check(schema, stored)) {
 			const errors = [...Value.Errors(schema, stored)].map((e) => ({
@@ -415,7 +709,7 @@ export function createReadonlyTable<
 			} as Parameters<typeof definition.migrate>[0]) as TRow;
 			return Ok(migrated);
 		} catch (cause) {
-			return TableParseError.MigrationFailed({ id, cause });
+			return TableParseError.MigrationFailed({ id, cause, row: stored });
 		}
 	}
 
@@ -424,50 +718,69 @@ export function createReadonlyTable<
 		definition,
 		schema: definition.schema,
 
-		get(id: string): Result<TRow | null, TableParseError> {
-			const raw = ykv.get(id);
-			if (raw === undefined) return Ok(null);
-			return parseRow(id, raw);
-		},
-
-		getAll(): Array<Result<TRow, TableParseError>> {
-			const results: Array<Result<TRow, TableParseError>> = [];
-			for (const [key, entry] of ykv.entries()) {
-				results.push(parseRow(key, entry.val));
+		get(id: string): Result<TRow | null, TableReadError> {
+			// One classified read resolves all three outcomes: a present value to
+			// parse, a truly-absent slot (Ok(null)), or an entry this binary could
+			// not decrypt (UnreadableRow). No probe-then-read: a readable get pays a
+			// single decrypt, and "absent" never masquerades as "unreadable."
+			const read = ykv.read(id);
+			switch (read.state) {
+				case 'present':
+					return parseRow(id, read.val);
+				case 'absent':
+					return Ok(null);
+				case 'unreadable':
+					return TableUnreadableError.UnreadableRow({
+						id,
+						reason: read.reason,
+					});
 			}
-			return results;
 		},
 
-		getAllValid(): TRow[] {
+		scan(): TableScan<TRow> {
 			const rows: TRow[] = [];
-			for (const [key, entry] of ykv.entries()) {
-				const { data, error } = parseRow(key, entry.val);
-				if (!error) rows.push(data);
+			const nonconforming: TableParseError[] = [];
+			const newerWriter: TableNewerWriterError[] = [];
+			const unreadable: TableUnreadableError[] = [];
+			// One pass over the store's classified reads. Each stored entry lands in
+			// exactly one of the four buckets, so the four-bucket sum equals
+			// storedCount() by construction: an `unreadable` read never decrypted
+			// and goes straight to that bucket; a `present` read is parsed and its
+			// outcome routes the other three. No second pass, no second decrypt.
+			for (const [key, read] of ykv.reads()) {
+				if (read.state === 'unreadable') {
+					unreadable.push(
+						TableUnreadableError.UnreadableRow({ id: key, reason: read.reason })
+							.error,
+					);
+					continue;
+				}
+				const { data, error } = parseRow(key, read.val);
+				if (!error) {
+					rows.push(data);
+					continue;
+				}
+				// parseRow already classified the failure; group by name.
+				switch (error.name) {
+					case 'NewerWriter':
+						newerWriter.push(error);
+						break;
+					case 'UnknownVersion':
+					case 'ValidationFailed':
+					case 'MigrationFailed':
+						nonconforming.push(error);
+						break;
+					default:
+						error satisfies never;
+				}
 			}
-			return rows;
+			return { rows, nonconforming, newerWriter, unreadable };
 		},
 
-		getAllInvalid(): TableParseError[] {
-			const invalid: TableParseError[] = [];
-			for (const [key, entry] of ykv.entries()) {
-				const { error } = parseRow(key, entry.val);
-				if (error) invalid.push(error);
-			}
-			return invalid;
-		},
-
-		filter(predicate: (row: TRow) => boolean): TRow[] {
-			const rows: TRow[] = [];
-			for (const [key, entry] of ykv.entries()) {
-				const { data, error } = parseRow(key, entry.val);
-				if (!error && predicate(data)) rows.push(data);
-			}
-			return rows;
-		},
-
-		find(predicate: (row: TRow) => boolean): TRow | undefined {
-			for (const [key, entry] of ykv.entries()) {
-				const { data, error } = parseRow(key, entry.val);
+		findValid(predicate: (row: TRow) => boolean): TRow | undefined {
+			for (const [key, read] of ykv.reads()) {
+				if (read.state !== 'present') continue;
+				const { data, error } = parseRow(key, read.val);
 				if (!error && predicate(data)) return data;
 			}
 			return undefined;
@@ -479,11 +792,10 @@ export function createReadonlyTable<
 			const handler: KvStoreChangeHandler<unknown> = (changes, origin) => {
 				callback(new Set(changes.keys()) as ReadonlySet<TRow['id']>, origin);
 			};
-			ykv.observe(handler);
-			return () => ykv.unobserve(handler);
+			return ykv.observe(handler);
 		},
 
-		count(): number {
+		storedCount(): number {
 			return ykv.size;
 		},
 
@@ -511,11 +823,65 @@ export function createTable<
 		_v: latestVersion,
 	});
 
+	/**
+	 * The stored value's `_v` when it was stamped by a newer schema version
+	 * than this binary knows, else undefined. Reads the raw stored value
+	 * without parsing: corrupt values (non-object, missing, or any `_v` that is
+	 * not a whole number above the latest, including a fractional stamp) return
+	 * undefined so the write proceeds and repairs them. Shares the newer-writer
+	 * rule with the read path via {@link isNewerWriterStamp}, so the write guard
+	 * and `scan()` agree on what is repairable.
+	 *
+	 * This covers only the newer-writer half of the guard. The undecryptable
+	 * half is the `unreadable` state of the store's `read()`, handled directly
+	 * in {@link writeRefusal}; this helper only ever sees a present value.
+	 */
+	const newerStoredVersion = (val: unknown): number | undefined => {
+		if (typeof val !== 'object' || val === null) return undefined;
+		const version = (val as Record<string, unknown>)._v;
+		return isNewerWriterStamp(version, latestVersion) ? version : undefined;
+	};
+
+	/**
+	 * The reason a whole-row write over `id` must be refused, or `undefined`
+	 * when the slot is safe to overwrite (absent, conforming, or a repairable
+	 * nonconforming row). Refuses the two states whose stored row exists but
+	 * this binary cannot read: a newer-stamped row (`NewerWriterRefusal`) and an
+	 * undecryptable blob (`UnreadableRefusal`).
+	 *
+	 * One classified read decides it: `absent` is safe, `unreadable` refuses with
+	 * the decrypt reason, and a `present` value is checked for a newer `_v`. No
+	 * probe-then-read reorder; a write over a readable slot pays a single decrypt.
+	 */
+	const writeRefusal = (id: string): TableWriteError | undefined => {
+		const read = ykv.read(id);
+		switch (read.state) {
+			case 'absent':
+				return undefined;
+			case 'unreadable':
+				return TableWriteError.UnreadableRefusal({ id, reason: read.reason })
+					.error;
+			case 'present': {
+				const storedVersion = newerStoredVersion(read.val);
+				return storedVersion !== undefined
+					? TableWriteError.NewerWriterRefusal({
+							id,
+							storedVersion,
+							latestVersion,
+						}).error
+					: undefined;
+			}
+		}
+	};
+
 	return {
 		...readonly,
 
-		set(row: TRow): void {
+		set(row: TRow): Result<void, TableWriteError> {
+			const refusal = writeRefusal(row.id);
+			if (refusal !== undefined) return Err(refusal);
 			ykv.set(row.id, stamp(row));
+			return Ok(undefined);
 		},
 
 		async bulkSet(
@@ -527,20 +893,38 @@ export function createTable<
 				chunkSize?: number;
 				onProgress?: (percent: number) => void;
 			} = {},
-		): Promise<void> {
+		): Promise<{ refused: TableWriteError[] }> {
+			const refused: TableWriteError[] = [];
 			const total = rows.length;
 			for (let i = 0; i < total; i += chunkSize) {
 				const chunk = rows.slice(i, i + chunkSize);
-				ykv.bulkSet(chunk.map((row) => ({ key: row.id, val: stamp(row) })));
+				// Guard per chunk at write time, not once up front: the awaited
+				// yield below lets a remote sync land a newer-stamped or newly
+				// unreadable row for a later chunk's id mid-import.
+				const writable: TRow[] = [];
+				for (const row of chunk) {
+					const refusal = writeRefusal(row.id);
+					if (refusal !== undefined) {
+						refused.push(refusal);
+					} else {
+						writable.push(row);
+					}
+				}
+				if (writable.length > 0) {
+					ykv.bulkSet(
+						writable.map((row) => ({ key: row.id, val: stamp(row) })),
+					);
+				}
 				onProgress?.(Math.min((i + chunkSize) / total, 1));
 				await new Promise((resolve) => setTimeout(resolve, 0));
 			}
+			return { refused };
 		},
 
 		update(
 			id: string,
 			partial: Partial<Omit<TRow, 'id'>>,
-		): Result<TRow | null, TableParseError> {
+		): Result<TRow | null, TableReadError> {
 			const { data: current, error } = readonly.get(id);
 			if (error) return Err(error);
 			if (current === null) return Ok(null);
@@ -586,9 +970,36 @@ export function createTable<
 			}
 		},
 
-		clear(): void {
-			const keys = Array.from(ykv.entries()).map(([k]) => k);
-			ykv.bulkDelete(keys);
+		clear(): { refused: TableWriteError[] } {
+			const refused: TableWriteError[] = [];
+			const toDelete: string[] = [];
+			// One pass over every stored entry: an undecryptable read is refused
+			// (a keyless binary must not mass-destroy rows it cannot read), a
+			// newer-stamped present read is refused, everything else is deletable.
+			// Walking reads() means no stored entry is silently left behind.
+			for (const [key, read] of ykv.reads()) {
+				if (read.state === 'unreadable') {
+					refused.push(
+						TableWriteError.UnreadableRefusal({ id: key, reason: read.reason })
+							.error,
+					);
+					continue;
+				}
+				const storedVersion = newerStoredVersion(read.val);
+				if (storedVersion !== undefined) {
+					refused.push(
+						TableWriteError.NewerWriterRefusal({
+							id: key,
+							storedVersion,
+							latestVersion,
+						}).error,
+					);
+				} else {
+					toDelete.push(key);
+				}
+			}
+			ykv.bulkDelete(toDelete);
+			return { refused };
 		},
 	};
 }

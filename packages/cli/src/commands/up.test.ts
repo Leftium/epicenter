@@ -168,7 +168,7 @@ describe('runUp: happy path', () => {
 
 		const handle = expectOk(
 			await runUp({
-				projectDir: workDir,
+				epicenterRoot: workDir,
 				quiet: true,
 				createAuthClient: stubAuthFactory,
 			}),
@@ -199,7 +199,7 @@ describe('runUp: failure cleanup', () => {
 	test('surfaces the auth error and releases the lease when createAuthClient returns Err', async () => {
 		const error = expectErr(
 			await runUp({
-				projectDir: workDir,
+				epicenterRoot: workDir,
 				quiet: true,
 				createAuthClient: async () =>
 					Err(
@@ -220,7 +220,7 @@ describe('runUp: failure cleanup', () => {
 	test('errors and scaffolds nothing when config is missing', async () => {
 		const error = expectErr(
 			await runUp({
-				projectDir: workDir,
+				epicenterRoot: workDir,
 				quiet: true,
 				createAuthClient: stubAuthFactory,
 			}),
@@ -243,7 +243,7 @@ describe('runUp: failure cleanup', () => {
 
 		const handle = expectOk(
 			await runUp({
-				projectDir: workDir,
+				epicenterRoot: workDir,
 				quiet: true,
 				createAuthClient: stubAuthFactory,
 			}),
@@ -266,7 +266,7 @@ describe('runUp: failure cleanup', () => {
 
 		const error = expectErr(
 			await runUp({
-				projectDir: workDir,
+				epicenterRoot: workDir,
 				quiet: true,
 				createAuthClient: stubAuthFactory,
 			}),
@@ -290,7 +290,7 @@ describe('runUp: failure cleanup', () => {
 
 		const error = expectErr(
 			await runUp({
-				projectDir: workDir,
+				epicenterRoot: workDir,
 				quiet: true,
 				createAuthClient: stubAuthFactory,
 			}),
@@ -362,7 +362,7 @@ describe('runUp: failure cleanup', () => {
 
 		const error = expectErr(
 			await runUp({
-				projectDir: workDir,
+				epicenterRoot: workDir,
 				quiet: true,
 				createAuthClient: stubAuthFactory,
 			}),
@@ -385,7 +385,7 @@ describe('runUp: failure cleanup', () => {
 
 		const error = expectErr(
 			await runUp({
-				projectDir: workDir,
+				epicenterRoot: workDir,
 				quiet: true,
 				createAuthClient: stubAuthFactory,
 			}),
@@ -407,7 +407,7 @@ describe('runUp: already running', () => {
 		try {
 			const error = expectErr(
 				await runUp({
-					projectDir: workDir,
+					epicenterRoot: workDir,
 					quiet: true,
 					createAuthClient: stubAuthFactory,
 				}),
@@ -438,7 +438,7 @@ describe('runUp: orphan path', () => {
 
 		const handle = expectOk(
 			await runUp({
-				projectDir: workDir,
+				epicenterRoot: workDir,
 				quiet: true,
 				createAuthClient: stubAuthFactory,
 			}),

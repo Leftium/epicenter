@@ -12,7 +12,7 @@
  * @example
  * ```ts
  * const materializer = attachBunSqliteMaterializer(workspace, {
- *   filePath: sqlitePath(projectDir, workspace.ydoc.guid),
+ *   filePath: sqlitePath(epicenterRoot, workspace.ydoc.guid),
  *   waitFor: idb.whenLoaded,
  *   fts: { entries: ['title', 'body'] },
  * });

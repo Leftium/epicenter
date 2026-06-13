@@ -24,7 +24,7 @@ export function opensidian() {
 
 			const infrastructure = attachProjectInfrastructure(workspace.ydoc, {
 				baseURL: EPICENTER_API_URL,
-				projectDir: ctx.projectDir,
+				epicenterRoot: ctx.epicenterRoot,
 				ownerId: ctx.ownerId,
 				deviceId: ctx.deviceId,
 				openWebSocket: ctx.openWebSocket,

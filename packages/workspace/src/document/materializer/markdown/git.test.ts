@@ -75,22 +75,22 @@ function logMessage(value: unknown): string {
 }
 
 function setupProject() {
-	const projectDir = mkdtempSync(join(tmpdir(), 'git-autosave-'));
-	const markdownDir = join(projectDir, 'markdown');
+	const epicenterRoot = mkdtempSync(join(tmpdir(), 'git-autosave-'));
+	const markdownDir = join(epicenterRoot, 'markdown');
 	mkdirSync(markdownDir, { recursive: true });
 	const logs = createTestLogger();
 
 	return {
-		projectDir,
+		epicenterRoot,
 		markdownDir,
 		logs,
 		async initGitRepo(): Promise<void> {
-			await runGit(projectDir, ['init', '-q', '-b', 'main']);
-			await runGit(projectDir, ['config', 'user.name', 'Repo User']);
-			await runGit(projectDir, ['config', 'user.email', 'repo@example.com']);
-			writeFileSync(join(projectDir, '.gitignore'), '.epicenter/\n');
-			await runGit(projectDir, ['add', '.gitignore']);
-			await runGit(projectDir, ['commit', '-q', '-m', 'init']);
+			await runGit(epicenterRoot, ['init', '-q', '-b', 'main']);
+			await runGit(epicenterRoot, ['config', 'user.name', 'Repo User']);
+			await runGit(epicenterRoot, ['config', 'user.email', 'repo@example.com']);
+			writeFileSync(join(epicenterRoot, '.gitignore'), '.epicenter/\n');
+			await runGit(epicenterRoot, ['add', '.gitignore']);
+			await runGit(epicenterRoot, ['commit', '-q', '-m', 'init']);
 		},
 		/**
 		 * Build a Y.Doc and attach the autosave watcher to `markdownDir`. Returns
@@ -118,7 +118,7 @@ function setupProject() {
 			};
 		},
 		cleanup(): void {
-			rmSync(projectDir, { recursive: true, force: true });
+			rmSync(epicenterRoot, { recursive: true, force: true });
 		},
 	};
 }
@@ -140,18 +140,22 @@ async function runGit(
 	return { exitCode, stdout, stderr };
 }
 
-async function commitCount(projectDir: string): Promise<number> {
-	const result = await runGit(projectDir, ['rev-list', '--count', 'HEAD']);
+async function commitCount(epicenterRoot: string): Promise<number> {
+	const result = await runGit(epicenterRoot, ['rev-list', '--count', 'HEAD']);
 	return Number(result.stdout.trim());
 }
 
-async function lastCommitSubject(projectDir: string): Promise<string> {
-	const result = await runGit(projectDir, ['log', '-1', '--format=%s']);
+async function lastCommitSubject(epicenterRoot: string): Promise<string> {
+	const result = await runGit(epicenterRoot, ['log', '-1', '--format=%s']);
 	return result.stdout.trim();
 }
 
-async function lastCommitAuthor(projectDir: string): Promise<string> {
-	const result = await runGit(projectDir, ['log', '-1', '--format=%an <%ae>']);
+async function lastCommitAuthor(epicenterRoot: string): Promise<string> {
+	const result = await runGit(epicenterRoot, [
+		'log',
+		'-1',
+		'--format=%an <%ae>',
+	]);
 	return result.stdout.trim();
 }
 
@@ -160,16 +164,16 @@ async function lastCommitAuthor(projectDir: string): Promise<string> {
  * passes. fs.watch timing is not deterministic, so the deadline is generous.
  */
 async function waitForCommitCount(
-	projectDir: string,
+	epicenterRoot: string,
 	expected: number,
 	timeoutMs = 5_000,
 ): Promise<void> {
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() < deadline) {
-		if ((await commitCount(projectDir)) >= expected) return;
+		if ((await commitCount(epicenterRoot)) >= expected) return;
 		await Bun.sleep(10);
 	}
-	expect(await commitCount(projectDir)).toBeGreaterThanOrEqual(expected);
+	expect(await commitCount(epicenterRoot)).toBeGreaterThanOrEqual(expected);
 }
 
 describe('attachGitAutosave', () => {
@@ -177,7 +181,7 @@ describe('attachGitAutosave', () => {
 		const project = setupProject();
 		try {
 			await project.initGitRepo();
-			const before = await commitCount(project.projectDir);
+			const before = await commitCount(project.epicenterRoot);
 
 			const handle = project.attach({ quietMs: 20, maxBatchMs: 1_000 });
 			await handle.autosave.whenWatching;
@@ -185,12 +189,12 @@ describe('attachGitAutosave', () => {
 			writeFileSync(join(project.markdownDir, 'alpha.md'), '# Alpha\n');
 			writeFileSync(join(project.markdownDir, 'beta.md'), '# Beta\n');
 
-			await waitForCommitCount(project.projectDir, before + 1);
+			await waitForCommitCount(project.epicenterRoot, before + 1);
 
-			expect(await lastCommitSubject(project.projectDir)).toMatch(
+			expect(await lastCommitSubject(project.epicenterRoot)).toMatch(
 				/^Autosave \(\d+ changes\)$/,
 			);
-			const tracked = await runGit(project.projectDir, [
+			const tracked = await runGit(project.epicenterRoot, [
 				'ls-files',
 				'markdown',
 			]);
@@ -207,7 +211,7 @@ describe('attachGitAutosave', () => {
 		const project = setupProject();
 		try {
 			await project.initGitRepo();
-			const before = await commitCount(project.projectDir);
+			const before = await commitCount(project.epicenterRoot);
 
 			const handle = project.attach({
 				author: { name: 'Configured Bot', email: 'bot@example.com' },
@@ -221,19 +225,19 @@ describe('attachGitAutosave', () => {
 				'# Configured\n',
 			);
 
-			await waitForCommitCount(project.projectDir, before + 1);
+			await waitForCommitCount(project.epicenterRoot, before + 1);
 
-			expect(await lastCommitAuthor(project.projectDir)).toBe(
+			expect(await lastCommitAuthor(project.epicenterRoot)).toBe(
 				'Configured Bot <bot@example.com>',
 			);
 			expect(
 				(
-					await runGit(project.projectDir, ['config', 'user.name'])
+					await runGit(project.epicenterRoot, ['config', 'user.name'])
 				).stdout.trim(),
 			).toBe('Repo User');
 			expect(
 				(
-					await runGit(project.projectDir, ['config', 'user.email'])
+					await runGit(project.epicenterRoot, ['config', 'user.email'])
 				).stdout.trim(),
 			).toBe('repo@example.com');
 
@@ -247,7 +251,7 @@ describe('attachGitAutosave', () => {
 		const project = setupProject();
 		try {
 			await project.initGitRepo();
-			const before = await commitCount(project.projectDir);
+			const before = await commitCount(project.epicenterRoot);
 
 			const handle = project.attach({ quietMs: 20, maxBatchMs: 1_000 });
 			await handle.autosave.whenWatching;
@@ -257,9 +261,9 @@ describe('attachGitAutosave', () => {
 				'# Default\n',
 			);
 
-			await waitForCommitCount(project.projectDir, before + 1);
+			await waitForCommitCount(project.epicenterRoot, before + 1);
 
-			expect(await lastCommitAuthor(project.projectDir)).toBe(
+			expect(await lastCommitAuthor(project.epicenterRoot)).toBe(
 				'Autosave <autosave@epicenter.local>',
 			);
 
@@ -304,15 +308,15 @@ describe('attachGitAutosave', () => {
 			await handle.autosave.whenWatching;
 
 			writeFileSync(join(project.markdownDir, 'before-dispose.md'), '# One\n');
-			await waitForCommitCount(project.projectDir, 2);
-			const afterFirstCommit = await commitCount(project.projectDir);
+			await waitForCommitCount(project.epicenterRoot, 2);
+			const afterFirstCommit = await commitCount(project.epicenterRoot);
 
 			handle.dispose();
 
 			writeFileSync(join(project.markdownDir, 'after-dispose.md'), '# Two\n');
 			await Bun.sleep(200);
 
-			expect(await commitCount(project.projectDir)).toBe(afterFirstCommit);
+			expect(await commitCount(project.epicenterRoot)).toBe(afterFirstCommit);
 			expect(project.logs.messages.warn).toEqual([]);
 		} finally {
 			project.cleanup();

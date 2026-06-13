@@ -43,7 +43,7 @@ Value.Check(schema, { id: 'r1' });             // false: absent key is invalid
 Value.Check(schema, { id: 'r1', note: null }); // true: null is a value
 ```
 
-So adding a nullable column **in place** to a single-version table makes every pre-existing row fail validation: those rows silently drop out of `getAllValid()` and surface in `getAllInvalid()`. They do NOT read as `null`. To add any column to a table that may already hold rows, keep the prior shape as an earlier version and write a `.migrate()` that fills the new column for every older version, including setting nullable columns to `null` explicitly:
+So adding a nullable column **in place** to a single-version table makes every pre-existing row fail validation: those rows drop out of `scan().rows` and surface in `scan().nonconforming`. They do NOT read as `null`. To add any column to a table that may already hold rows, keep the prior shape as an earlier version and write a `.migrate()` that fills the new column for every older version, including setting nullable columns to `null` explicitly:
 
 ```typescript
 const notes = defineTable(
@@ -147,8 +147,8 @@ deleteConversation(message.id);  // Error: ChatMessageId is not ConversationId
 
 ### Reference Implementations
 
-See `apps/honeycrisp/workspace.ts` and `apps/fuji/src/lib/workspace.ts` for the canonical co-located pattern (brand type + `generate*` / `as*` + table + `InferTableRow` export).
-See `apps/whispering/src/lib/workspace/definition.ts` for a multi-table example including a multi-version migration and `field.json(Type.Union([...]))` for discriminated JSON results.
+See `apps/honeycrisp/honeycrisp.ts` and `apps/fuji/src/lib/workspace/index.ts` for the canonical co-located pattern (brand type + `generate*` / `as*` + table + `InferTableRow` export).
+See `apps/whispering/src/lib/workspace/definition.ts` for a multi-table example including `field.json(Type.Union([...]))` for discriminated JSON results. No first-party app has a multi-version migration yet; for `.migrate()` examples, see the test suites at `packages/workspace/src/document/create-table.test.ts` and `packages/workspace/src/document/define-table.test.ts`.
 
 ### Pattern
 

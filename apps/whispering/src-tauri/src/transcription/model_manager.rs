@@ -282,6 +282,7 @@ impl ModelManager {
         let model_path = self
             .model_path_for(&config)
             .map_err(|message| TranscriptionError::ConfigError { message })?;
+        let inference_started = std::time::Instant::now();
         let transcript = match config.engine {
             EngineKind::Whispercpp => {
                 let mut params = WhisperInferenceParams::default();
@@ -326,9 +327,10 @@ impl ModelManager {
         };
 
         info!(
-            "[Transcription] {:?} transcription complete: characters={}",
+            "[Transcription] {:?} transcription complete: characters={} elapsed_ms={}",
             config.engine,
-            transcript.len()
+            transcript.len(),
+            inference_started.elapsed().as_millis(),
         );
         self.evict_if_immediate(config.unload_policy, generation);
         Ok(transcript)

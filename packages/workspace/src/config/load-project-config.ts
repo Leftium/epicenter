@@ -29,7 +29,7 @@ import {
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 import type { Mount } from '../daemon/define-mount.js';
-import type { ProjectDir } from '../shared/types.js';
+import type { EpicenterRoot } from '../shared/types.js';
 import { PROJECT_CONFIG_FILENAME } from './project-config-source.js';
 
 export const ProjectConfigError = defineErrors({
@@ -67,9 +67,12 @@ export const ProjectConfigError = defineErrors({
 export type ProjectConfigError = InferErrors<typeof ProjectConfigError>;
 
 export async function loadProjectConfig(
-	projectDir: ProjectDir | string,
+	epicenterRoot: EpicenterRoot | string,
 ): Promise<Result<Mount[], ProjectConfigError>> {
-	const projectConfigPath = join(resolve(projectDir), PROJECT_CONFIG_FILENAME);
+	const projectConfigPath = join(
+		resolve(epicenterRoot),
+		PROJECT_CONFIG_FILENAME,
+	);
 	if (!existsSync(projectConfigPath)) {
 		return ProjectConfigError.ProjectConfigNotFound({ projectConfigPath });
 	}

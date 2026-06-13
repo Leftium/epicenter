@@ -1,6 +1,10 @@
-# Epicenter: all durable runtime state and materializer caches.
-# Regenerable from committed markdown in entries/.
+# Epicenter: machine state and generated mount projections.
+# Everything here is regenerable from the Yjs persistence under .epicenter/.
 .epicenter/
+
+# Generated mount projections are direct children of the Epicenter root,
+# keyed by mount name. Ignore them while keeping epicenter.config.ts tracked.
+/fuji/
 
 # Bun / Node
 node_modules/

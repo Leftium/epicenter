@@ -157,7 +157,29 @@ updates instantly, only set membership waits for the reconcile plus the re-query
 ## Developing
 
 ```sh
-bun run tauri dev      # desktop app (talks to Tauri directly, no platform seam)
+bun run tauri dev      # desktop app, empty (open a folder via the picker)
 cargo test             # in src-tauri: runs Rust tests AND regenerates FileDelta.ts
 bun run typecheck
 ```
+
+Matter writes your edits back to disk, so the dev loop runs against a **disposable
+sandbox**, never your real files. `dev:fixture` copies the sample fixture into a
+gitignored sandbox (`apps/matter/.dev-vault`) and launches the app, so every edit
+and the `matter.sqlite` mirror it drops land on throwaway files:
+
+```sh
+bun run dev:fixture          # copy the sample fresh, then open Matter
+bun run dev:fixture --keep   # reuse the existing sandbox (keep what you typed)
+```
+
+Open the printed sandbox path in the folder picker. The app persists open folders
+by path, so you only pick it once: the stable sandbox path keeps working across
+resets and reloads. By default the script re-copies on every launch, so you always
+start from known state. The sample (`examples/matter/sample-vault/drafts`) covers
+every conformance category (valid, invalid, unparseable, no-frontmatter), so one
+fixture is enough.
+
+A **real** folder opens the exact same way: pick it in the picker (it watches one
+flat folder with its own `matter.json`, edits write to those actual files, and it
+persists across reloads, so you only pick it once). The app needs no dev-only mode
+to tell the two apart, the sandbox is just a folder you opened.

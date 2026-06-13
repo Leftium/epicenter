@@ -30,6 +30,39 @@
 	function formatDate(dateStr: string) {
 		return format(new Date(dateStr), 'MMM d, yyyy h:mm a');
 	}
+
+	/**
+	 * Liveness is derived, never stored. A run with no result reads as running
+	 * while its start is recent and interrupted once it goes quiet, so a crash
+	 * mid-run self-heals instead of wedging at "running" forever. Generous
+	 * window: a transformation is a chain of LLM calls. See
+	 * docs/articles/20260612T190745-liveness-belongs-to-the-process-not-the-row.md
+	 */
+	const RUNNING_GRACE_MS = 5 * 60 * 1000;
+
+	type DerivedRunStatus = 'running' | 'interrupted' | 'completed' | 'failed';
+
+	function deriveRunStatus(run: {
+		startedAt: string;
+		result: TransformationRun['result'];
+	}): DerivedRunStatus {
+		if (run.result) return run.result.status;
+		const ageMs = Date.now() - new Date(run.startedAt).getTime();
+		return ageMs < RUNNING_GRACE_MS ? 'running' : 'interrupted';
+	}
+
+	function statusBadgeVariant(status: DerivedRunStatus) {
+		switch (status) {
+			case 'completed':
+				return 'status.completed' as const;
+			case 'failed':
+				return 'status.failed' as const;
+			case 'running':
+				return 'status.running' as const;
+			case 'interrupted':
+				return 'secondary' as const;
+		}
+	}
 </script>
 
 {#if runs.length === 0}
@@ -82,6 +115,7 @@
 				</Table.Header>
 				<Table.Body>
 					{#each runs as run}
+						{@const runStatus = deriveRunStatus(run)}
 						<Table.Row>
 							<Table.Cell>
 								<Button
@@ -98,15 +132,13 @@
 								</Button>
 							</Table.Cell>
 							<Table.Cell>
-								<Badge variant={`status.${run.result.status}`}>
-									{run.result.status}
+								<Badge variant={statusBadgeVariant(runStatus)}>
+									{runStatus}
 								</Badge>
 							</Table.Cell>
 							<Table.Cell> {formatDate(run.startedAt)} </Table.Cell>
 							<Table.Cell>
-								{run.result.status === 'running'
-									? '-'
-									: formatDate(run.result.completedAt)}
+								{run.result ? formatDate(run.result.completedAt) : '-'}
 							</Table.Cell>
 							<Table.Cell class="text-right">
 								<Button
@@ -143,10 +175,10 @@
 									<Label class="text-sm font-medium">Input</Label>
 									<CopyablePre variant="text" copyableText={run.input} />
 
-									{#if run.result.status === 'completed'}
+									{#if run.result?.status === 'completed'}
 										<Label class="text-sm font-medium">Output</Label>
 										<CopyablePre variant="text" copyableText={run.result.output} />
-									{:else if run.result.status === 'failed'}
+									{:else if run.result?.status === 'failed'}
 										<Label class="text-sm font-medium">Error</Label>
 										<CopyablePre variant="error" copyableText={run.result.error} />
 									{/if}
@@ -166,19 +198,20 @@
 													</Table.Header>
 													<Table.Body>
 														{#each stepRuns as stepRun}
+															{@const stepStatus = deriveRunStatus(stepRun)}
 															<Table.Row>
 																<Table.Cell>
-																	<Badge variant={`status.${stepRun.result.status}`}>
-																		{stepRun.result.status}
+																	<Badge variant={statusBadgeVariant(stepStatus)}>
+																		{stepStatus}
 																	</Badge>
 																</Table.Cell>
 																<Table.Cell>
 																	{formatDate(stepRun.startedAt)}
 																</Table.Cell>
 																<Table.Cell>
-																	{stepRun.result.status === 'running'
-																		? '-'
-																		: formatDate(stepRun.result.completedAt)}
+																	{stepRun.result
+																		? formatDate(stepRun.result.completedAt)
+																		: '-'}
 																</Table.Cell>
 																<Table.Cell>
 																	<TextPreviewDialog
@@ -190,7 +223,7 @@
 																	/>
 																</Table.Cell>
 																<Table.Cell>
-																	{#if stepRun.result.status === 'completed'}
+																	{#if stepRun.result?.status === 'completed'}
 																		<TextPreviewDialog
 																			id={viewTransition.stepRun(stepRun.id)
 																				.output}
@@ -198,7 +231,7 @@
 																			label="step output"
 																			text={stepRun.result.output}
 																		/>
-																	{:else if stepRun.result.status === 'failed'}
+																	{:else if stepRun.result?.status === 'failed'}
 																		<TextPreviewDialog
 																			id={viewTransition.stepRun(stepRun.id)
 																				.error}

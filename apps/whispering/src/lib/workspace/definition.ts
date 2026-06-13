@@ -8,7 +8,7 @@ import {
 	type InferTableRow,
 	nullable,
 } from '@epicenter/workspace';
-import { type Static, Type } from 'typebox';
+import { Type } from 'typebox';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
 
@@ -25,20 +25,45 @@ import {
  * Tables store normalized domain entities. Each row is replaced atomically via
  * `table.set()`, there's no field-level merging. Schemas validate rows on read.
  */
-/** Audio recordings captured by the user. One row per recording session. */
+/**
+ * Terminal outcome of transcribing a recording. Only finished states are
+ * stored. A recording that is currently transcribing has no `transcription`
+ * (the column is null); liveness comes from the in-flight transcription
+ * mutation, never from durable state. A stored 'TRANSCRIBING' status would
+ * wedge on crash: the process that died can no longer write the terminal
+ * state. See
+ * docs/articles/20260612T190745-liveness-belongs-to-the-process-not-the-row.md.
+ *
+ * The transcript text lives in its own `transcript` column, so a completed
+ * outcome only records when it finished.
+ */
+const TranscriptionOutcome = Type.Union([
+	Type.Object({
+		status: Type.Literal('completed'),
+		completedAt: Type.String(),
+	}),
+	Type.Object({
+		status: Type.Literal('failed'),
+		completedAt: Type.String(),
+		error: Type.String(),
+	}),
+]);
+
+/**
+ * Audio recordings captured by the user. One row per recording session.
+ *
+ * `transcription` holds only the terminal outcome (completed or failed). A
+ * recording that is currently transcribing has no `transcription`; liveness is
+ * derived from the in-flight mutation, never stored.
+ */
 const recordings = defineTable({
 	id: field.string(),
 	title: field.string(),
 	recordedAt: field.string(),
 	updatedAt: field.string(),
 	transcript: field.string(),
-	transcriptionStatus: field.select([
-		'UNPROCESSED',
-		'TRANSCRIBING',
-		'DONE',
-		'FAILED',
-	]),
 	duration: nullable(field.number()),
+	transcription: nullable(field.json(TranscriptionOutcome)),
 });
 
 /** Recording row type inferred from the workspace table schema. */
@@ -100,46 +125,38 @@ const transformationSteps = defineTable({
 export type TransformationStep = InferTableRow<typeof transformationSteps>;
 
 /**
- * Per-variant result shapes for a transformation run or step run. Each
- * variant has a single source of truth (one schema, one shadowed type) and
- * higher-level unions compose them.
+ * Per-variant result shapes for a finished transformation run or step run.
  *
- * Storage is one JSON-encoded TEXT column (`result`) on the row; nothing in
- * the read path filters or sorts on these fields, so the JSON envelope is
- * cheaper than the loss of per-status invariants a flat nullable layout
- * would cause.
+ * Only terminal outcomes are stored. A run that is currently executing has no
+ * `result` (the column is null); liveness is derived from `startedAt` recency,
+ * never written. A stored `running` status would wedge on crash: the process
+ * that died can no longer write the terminal state, so the row would claim
+ * `running` forever. See
+ * docs/articles/20260612T190745-liveness-belongs-to-the-process-not-the-row.md.
  *
- * Run and step run share the same result schema.
+ * Storage is one nullable JSON-encoded TEXT column (`result`); nothing in the
+ * read path filters or sorts on these fields. Run and step run share it.
  */
-const RunningResult = Type.Object({ status: Type.Literal('running') });
-export type RunningResult = Static<typeof RunningResult>;
-
 const CompletedResult = Type.Object({
 	status: Type.Literal('completed'),
 	completedAt: Type.String(),
 	output: Type.String(),
 });
-export type CompletedResult = Static<typeof CompletedResult>;
 
 const FailedResult = Type.Object({
 	status: Type.Literal('failed'),
 	completedAt: Type.String(),
 	error: Type.String(),
 });
-export type FailedResult = Static<typeof FailedResult>;
 
-/** Every possible result a run or step run can carry. */
-const TransformationRunResult = Type.Union([
-	RunningResult,
-	CompletedResult,
-	FailedResult,
-]);
-export type TransformationRunResult = Static<typeof TransformationRunResult>;
+/** A terminal outcome. Absence (null) means the run never reached one. */
+const TransformationRunResult = Type.Union([CompletedResult, FailedResult]);
 
 /**
  * Execution records for transformation pipelines. One run per invocation.
  * State queries filter by top-level `recordingId` / `transformationId` and
- * sort by `startedAt`; status-dependent fields live inside `result`.
+ * sort by `startedAt`; the terminal outcome lives inside `result`, which is
+ * null while the run is executing or if it was interrupted.
  */
 const transformationRuns = defineTable({
 	id: field.string(),
@@ -147,7 +164,7 @@ const transformationRuns = defineTable({
 	recordingId: nullable(field.string()),
 	input: field.string(),
 	startedAt: field.string(),
-	result: field.json(TransformationRunResult),
+	result: nullable(field.json(TransformationRunResult)),
 });
 
 /** Transformation run row type inferred from the workspace table schema. */
@@ -161,7 +178,7 @@ const transformationStepRuns = defineTable({
 	order: field.number(),
 	input: field.string(),
 	startedAt: field.string(),
-	result: field.json(TransformationRunResult),
+	result: nullable(field.json(TransformationRunResult)),
 });
 
 /** Transformation step run row type inferred from the workspace table schema. */

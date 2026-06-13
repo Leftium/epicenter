@@ -1,10 +1,11 @@
+import { extractErrorMessage } from 'wellcrafted/error';
 import { goto } from '$app/navigation';
 import {
 	deliverTranscriptionResult,
 	deliverTransformationResult,
 } from '$lib/operations/delivery';
 import { sound } from '$lib/operations/sound';
-import { transcribeAudio } from '$lib/operations/transcribe';
+import { transcribeAndPersist } from '$lib/operations/transcribe';
 import { runTransformation } from '$lib/operations/transform';
 import { report } from '$lib/report';
 import { services } from '$lib/services';
@@ -45,17 +46,15 @@ export async function processRecordingPipeline({
 	const recordingId =
 		source.kind === 'artifact' ? source.artifact.id : source.recordingId;
 
-	const recording = {
+	recordings.set({
 		id: recordingId,
 		title: '',
 		recordedAt: now,
 		updatedAt: now,
 		transcript: '',
 		duration: durationMs,
-		transcriptionStatus: 'UNPROCESSED',
-	} as const;
-
-	recordings.set(recording);
+		transcription: null,
+	});
 
 	if (source.kind === 'blob') {
 		const { error: saveError } = await services.blobs.audio.save(
@@ -67,7 +66,13 @@ export async function processRecordingPipeline({
 			// is nothing to transcribe. Bailing here surfaces the real
 			// failure instead of the misleading "no recording artifact
 			// found" the transcribe path would emit on the empty directory.
-			recordings.update(recordingId, { transcriptionStatus: 'FAILED' });
+			recordings.update(recordingId, {
+				transcription: {
+					status: 'failed',
+					completedAt: new Date().toISOString(),
+					error: extractErrorMessage(saveError),
+				},
+			});
 			report.error({
 				title: 'Failed to save recording',
 				description:
@@ -84,10 +89,9 @@ export async function processRecordingPipeline({
 	});
 
 	const { data: transcribedText, error: transcribeError } =
-		await transcribeAudio(recordingId);
+		await transcribeAndPersist(recordingId);
 
 	if (transcribeError) {
-		recordings.update(recordingId, { transcriptionStatus: 'FAILED' });
 		transcribeLoading.reject({ cause: transcribeError });
 		return;
 	}
@@ -98,11 +102,6 @@ export async function processRecordingPipeline({
 		source: deliverySource,
 	});
 	transcribeLoading.resolve(transcribeNotice);
-
-	recordings.update(recordingId, {
-		transcript: transcribedText,
-		transcriptionStatus: 'DONE',
-	});
 
 	const transformationId = settings.get('transformation.selectedId');
 	if (!transformationId) return;

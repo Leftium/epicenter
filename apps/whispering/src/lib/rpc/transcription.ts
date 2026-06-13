@@ -1,10 +1,8 @@
-import type { AnyTaggedError } from 'wellcrafted/error';
 import { defineKeys } from 'wellcrafted/query';
-import { Err, Ok, partitionResults, type Result } from 'wellcrafted/result';
-import { transcribeAudio } from '$lib/operations/transcribe';
+import { Ok, partitionResults } from 'wellcrafted/result';
+import { transcribeAndPersist } from '$lib/operations/transcribe';
 import { defineMutation, queryClient } from '$lib/rpc/client';
 import type { Recording } from '$lib/state/recordings.svelte';
-import { recordings } from '$lib/state/recordings.svelte';
 
 export const transcriptionKeys = defineKeys({
 	isTranscribing: ['transcription', 'isTranscribing'],
@@ -20,33 +18,16 @@ export const transcription = {
 	},
 	transcribeRecording: defineMutation({
 		mutationKey: transcriptionKeys.isTranscribing,
-		mutationFn: async (
-			recording: Recording,
-		): Promise<Result<string, AnyTaggedError>> => {
-			recordings.update(recording.id, { transcriptionStatus: 'TRANSCRIBING' });
-			const { data: transcribedText, error: transcribeError } =
-				await transcribeAudio(recording.id);
-			if (transcribeError) {
-				recordings.update(recording.id, { transcriptionStatus: 'FAILED' });
-				return Err(transcribeError);
-			}
-
-			recordings.update(recording.id, {
-				transcript: transcribedText,
-				transcriptionStatus: 'DONE',
-			});
-			return Ok(transcribedText);
-		},
+		mutationFn: (recording: Recording) => transcribeAndPersist(recording.id),
 	}),
 
 	transcribeRecordings: defineMutation({
 		mutationKey: transcriptionKeys.isTranscribing,
 		mutationFn: async (recordings: Recording[]) => {
 			const results = await Promise.all(
-				recordings.map((recording) => transcribeAudio(recording.id)),
+				recordings.map((recording) => transcribeAndPersist(recording.id)),
 			);
-			const partitionedResults = partitionResults(results);
-			return Ok(partitionedResults);
+			return Ok(partitionResults(results));
 		},
 	}),
 };

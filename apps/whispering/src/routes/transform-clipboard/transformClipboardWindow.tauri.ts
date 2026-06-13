@@ -1,60 +1,70 @@
-import { emit } from '@tauri-apps/api/event';
+import { emit, listen } from '@tauri-apps/api/event';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { Ok, tryAsync } from 'wellcrafted/result';
 
 const WINDOW_LABEL = 'transform-clipboard';
 
-let windowInstance: WebviewWindow | null = null;
+/**
+ * Event names for handing the captured selection from the main window (where the
+ * shortcut fires and the copy is simulated) to the Polish window (a separate
+ * webview, so a module variable can't cross the boundary; Tauri events can).
+ *
+ * - `polish:input` carries the captured text TO the Polish window.
+ * - `polish:ready` is the Polish window asking for the input on first mount,
+ *   before the main window knows it exists. The main window answers with
+ *   `polish:input`. Re-opens skip this: the page is already mounted, so the
+ *   proactive `polish:input` from `openWithSelection` reaches it directly.
+ */
+export const POLISH_INPUT_EVENT = 'polish:input';
+export const POLISH_READY_EVENT = 'polish:ready';
+
+/** The most recent captured selection, replayed when the window asks for it. */
+let pendingInput = '';
+
+// Answer the window's first-mount request. Registered once at module load in the
+// main window; emit/listen are global, so this reaches the Polish webview.
+void listen(POLISH_READY_EVENT, () => {
+	void emit(POLISH_INPUT_EVENT, { input: pendingInput });
+});
 
 /**
- * Toggles the transform clipboard window (show if hidden, hide if shown).
- * Creates window on first call, then toggles visibility for instant toggling.
- * Window reads clipboard directly when shown.
+ * Open the Polish window on a freshly captured selection. Creates the window on
+ * first call (the page requests the input on mount), then shows and re-delivers
+ * on subsequent calls. The window is hidden, not disposed, so re-opening is
+ * instant.
  */
-export async function toggle(): Promise<void> {
-	// Check if window already exists
+export async function openWithSelection(input: string): Promise<void> {
+	pendingInput = input;
+
 	const existingWindow = await WebviewWindow.getByLabel(WINDOW_LABEL);
-
 	if (existingWindow) {
-		// Window exists, check if it's visible
-		const isVisible = await existingWindow.isVisible();
-
-		if (isVisible) {
-			// Hide it
-			await existingWindow.hide();
-		} else {
-			// Show the window
-			await existingWindow.show();
-
-			// Emit event to tell the page to open the combobox
-			await emit('transform-clipboard-open-combobox');
-		}
-		windowInstance = existingWindow;
-	} else {
-		// Create new window (only happens once)
-		windowInstance = new WebviewWindow(WINDOW_LABEL, {
-			url: '/transform-clipboard',
-			title: 'Transform Clipboard',
-			width: 700,
-			height: 600,
-			center: true,
-			alwaysOnTop: true,
-			decorations: true,
-			resizable: true,
-			focus: true,
-			visible: true,
-		});
-
-		// Handle window creation events
-		windowInstance.once('tauri://error', (error) => {
-			console.error('Failed to create transform clipboard window:', error);
-			windowInstance = null;
-		});
+		await existingWindow.show();
+		// setFocus often fails on macOS; ignore.
+		await existingWindow.setFocus().catch(() => {});
+		await emit(POLISH_INPUT_EVENT, { input });
+		return;
 	}
+
+	const windowInstance = new WebviewWindow(WINDOW_LABEL, {
+		url: '/transform-clipboard',
+		title: 'Polish',
+		width: 700,
+		height: 600,
+		center: true,
+		alwaysOnTop: true,
+		decorations: true,
+		resizable: true,
+		focus: true,
+		visible: true,
+	});
+
+	windowInstance.once('tauri://error', (error) => {
+		console.error('Failed to create Polish window:', error);
+	});
 }
 
 /**
- * Hides the transform clipboard window (doesn't dispose it for fast re-opening)
+ * Hides the Polish window (doesn't dispose it for fast re-opening).
  */
 export async function hide(): Promise<void> {
 	const existingWindow = await WebviewWindow.getByLabel(WINDOW_LABEL);
@@ -62,7 +72,7 @@ export async function hide(): Promise<void> {
 		await tryAsync({
 			try: () => existingWindow.hide(),
 			catch: (error) => {
-				console.error('Error hiding transform clipboard window:', error);
+				console.error('Error hiding Polish window:', error);
 				return Ok(undefined);
 			},
 		});

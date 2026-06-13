@@ -1,162 +1,229 @@
 <script lang="ts">
+	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
-	import { useCombobox } from '@epicenter/ui/hooks';
-	import * as Popover from '@epicenter/ui/popover';
-	import { Textarea } from '@epicenter/ui/textarea';
-	import LayersIcon from '@lucide/svelte/icons/layers';
-	import { createQuery } from '@tanstack/svelte-query';
+	import * as Card from '@epicenter/ui/card';
+	import { Spinner } from '@epicenter/ui/spinner';
 	import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
-	import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 	import { onDestroy, onMount } from 'svelte';
-	import { queryOptions } from 'wellcrafted/query';
+	import { cn } from '@epicenter/ui/utils';
 	import TransformationPickerBody from '$lib/components/TransformationPickerBody.svelte';
-	import { deliverTransformationResult } from '$lib/operations/delivery';
-	import { report } from '$lib/report';
+	import { type Candidate, fanOutCandidates } from '$lib/operations/candidates';
+	import { persistCompletedRun } from '$lib/operations/transform';
 	import { sound } from '$lib/operations/sound';
-	import { tauri } from '#platform/tauri';
-	import { rpc } from '$lib/rpc';
+	import { report } from '$lib/report';
 	import { services } from '$lib/services';
+	import type { Transformation } from '$lib/workspace';
+	import { type DiffSegment, wordDiff } from '$lib/utils/word-diff';
 	import * as transformClipboardWindow from './transformClipboardWindow.tauri';
 
-	const combobox = useCombobox();
+	/**
+	 * Samples generated for a prompt-based transformation. Each is an independent
+	 * completion, so they vary; deterministic (replacements-only) transformations
+	 * collapse to a single candidate since repeating them yields identical text.
+	 * Samples is an invocation parameter, never stored on the transformation.
+	 */
+	const POLISH_SAMPLES = 3;
 
-	const clipboardQuery = createQuery(() =>
-		queryOptions({
-			queryKey: ['text', 'readFromClipboard'],
-			queryFn: () => services.text.readFromClipboard(),
-			refetchInterval: 1000,
-		}),
-	);
+	// The captured selection, handed over by the main window after the shortcut
+	// simulates a copy. Empty until the first `polish:input` arrives.
+	let input = $state('');
+	let stage = $state<'picker' | 'candidates'>('picker');
+	let candidates = $state<Candidate[]>([]);
+	let selectedIndex = $state(0);
+	// When the fan-out kicked off; persisted as the accepted run's startedAt.
+	let startedAt = $state('');
 
-	const clipboardText = $derived(clipboardQuery.data ?? '');
+	let unlistenInput: UnlistenFn | null = null;
 
-	let unlistenOpenCombobox: UnlistenFn | null = null;
-
-	// Listen for event to open combobox
 	onMount(async () => {
-		unlistenOpenCombobox = await listen(
-			'transform-clipboard-open-combobox',
-			() => {
-				// Try to focus the window
-				const currentWindow = WebviewWindow.getCurrent();
-				currentWindow.setFocus().catch(() => {
-					// setFocus often fails on macOS, ignore the error
-				});
-
-				// Open the combobox
-				combobox.open = true;
-			},
+		unlistenInput = await listen<{ input: string }>(
+			transformClipboardWindow.POLISH_INPUT_EVENT,
+			(event) => receiveInput(event.payload.input),
 		);
+		// Tell the main window we're mounted so it replays the pending selection;
+		// covers the first open, before the main window knows this webview exists.
+		await emit(transformClipboardWindow.POLISH_READY_EVENT);
 	});
 
-	onDestroy(() => {
-		unlistenOpenCombobox?.();
-	});
+	onDestroy(() => unlistenInput?.());
 
-	// Auto-open popover when clipboard has text
-	$effect(() => {
-		if (clipboardQuery.isSuccess && clipboardText.trim()) {
-			combobox.open = true;
-		}
-	});
+	// Each open starts fresh at the picker over the newly captured selection.
+	function receiveInput(text: string) {
+		input = text;
+		stage = 'picker';
+		candidates = [];
+		selectedIndex = 0;
+	}
 
-	$effect(() => {
-		if (!tauri) return;
+	function runFanOut(transformation: Transformation) {
+		const samples = transformation.prompt ? POLISH_SAMPLES : 1;
+		startedAt = new Date().toISOString();
+		candidates = fanOutCandidates({
+			input,
+			transformations: [transformation],
+			samples,
+		});
+		selectedIndex = 0;
+		stage = 'candidates';
+	}
 
-		if (clipboardQuery.error) {
+	async function accept(candidate: Candidate) {
+		const result = await candidate.result;
+		if (result.error) {
 			report.error({
-				title: 'Failed to read clipboard',
-				cause: clipboardQuery.error,
+				title: 'That candidate failed',
+				cause: result.error,
 			});
-			void transformClipboardWindow.hide();
+			return;
 		}
+		const output = result.data;
 
-		if (clipboardQuery.isSuccess && !clipboardQuery.data?.trim()) {
-			report.info({
-				title: 'Empty clipboard',
-				description: 'Please copy some text before running a transformation.',
-			});
-			void transformClipboardWindow.hide();
+		// Commit the one run before touching focus, then hand the polished text
+		// back to the source app: hide first so focus returns to it, then paste.
+		// The other candidates were in memory and are discarded.
+		persistCompletedRun({
+			transformationId: candidate.transformation.id,
+			input: candidate.input,
+			output,
+			startedAt,
+		});
+		void sound.playSoundIfEnabled('transformationComplete');
+
+		await transformClipboardWindow.hide();
+		await new Promise((resolve) => setTimeout(resolve, 120));
+
+		const { error: writeError } = await services.text.writeToCursor(output);
+		if (writeError) {
+			// Can't paste (web, or no accessibility permission): leave it on the
+			// clipboard so the user can paste it themselves.
+			await services.text.copyToClipboard(output);
 		}
-	});
+	}
+
+	async function dismiss() {
+		await transformClipboardWindow.hide();
+	}
+
+	// The candidate stage is keyboard-driven; the picker stage owns its own keys.
+	function onKeydown(event: KeyboardEvent) {
+		if (stage !== 'candidates') {
+			if (event.key === 'Escape') void dismiss();
+			return;
+		}
+		if (event.key === 'ArrowDown') {
+			event.preventDefault();
+			selectedIndex = Math.min(selectedIndex + 1, candidates.length - 1);
+		} else if (event.key === 'ArrowUp') {
+			event.preventDefault();
+			selectedIndex = Math.max(selectedIndex - 1, 0);
+		} else if (event.key === 'Enter') {
+			event.preventDefault();
+			const candidate = candidates[selectedIndex];
+			if (candidate) void accept(candidate);
+		} else if (event.key === 'Escape') {
+			event.preventDefault();
+			void dismiss();
+		}
+	}
 </script>
 
-<div class="flex h-screen flex-col p-6 gap-4">
-	<div class="space-y-2">
-		<h2 class="text-2xl font-semibold">Transform Clipboard</h2>
+<svelte:window onkeydown={onKeydown} />
+
+{#snippet diffInline(segments: DiffSegment[])}
+	<p class="text-sm leading-relaxed whitespace-pre-wrap">
+		{#each segments as seg, i (i)}
+			{#if seg.type === 'equal'}<span>{seg.text}</span
+				>{:else if seg.type === 'insert'}<span
+					class="rounded-sm bg-green-500/15 text-green-700 dark:text-green-300"
+					>{seg.text}</span
+				>{:else}<span
+					class="rounded-sm bg-red-500/10 text-red-700/70 line-through dark:text-red-300/60"
+					>{seg.text}</span
+				>{/if}
+		{/each}
+	</p>
+{/snippet}
+
+<div class="flex h-screen flex-col gap-4 p-6">
+	<header class="space-y-1">
+		<h2 class="text-2xl font-semibold">Polish</h2>
 		<p class="text-sm text-muted-foreground">
-			Select a transformation to apply to your clipboard text
+			{stage === 'picker'
+				? 'Pick a transformation to run on your selection'
+				: 'Pick a candidate. Arrow keys to move, Enter to accept, Esc to dismiss.'}
 		</p>
-	</div>
+	</header>
 
-	{#if clipboardQuery.isPending}
-		<div class="flex min-h-32 items-center justify-center">
-			<p class="text-sm text-muted-foreground">Reading clipboard...</p>
-		</div>
-	{:else}
-		<Textarea
-			value={clipboardText}
-			readonly
-			class="min-h-32 resize-none font-mono text-sm"
+	<!-- The captured selection, the anchor every candidate is diffed against. -->
+	<Card.Root class="flex-none border-dashed">
+		<Card.Header class="pb-2">
+			<Card.Title
+				class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
+			>
+				Selection
+			</Card.Title>
+		</Card.Header>
+		<Card.Content>
+			<p class="max-h-32 overflow-y-auto text-sm leading-relaxed whitespace-pre-wrap">
+				{input}
+			</p>
+		</Card.Content>
+	</Card.Root>
+
+	{#if stage === 'picker'}
+		<TransformationPickerBody
+			onSelect={runFanOut}
+			onSelectManageTransformations={async () => {
+				await dismiss();
+				await emit('navigate-main-window', { path: '/transformations' });
+			}}
+			placeholder="Search transformations..."
 		/>
-	{/if}
-
-	<Popover.Root bind:open={combobox.open}>
-		<Popover.Trigger bind:ref={combobox.triggerRef}>
-			{#snippet child({ props })}
-				<Button
-					{...props}
-					role="combobox"
-					aria-expanded={combobox.open}
-					variant="outline"
-					class="w-full justify-start gap-2"
+	{:else}
+		<div class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
+			{#each candidates as candidate, index (candidate.id)}
+				{@const selected = index === selectedIndex}
+				<Card.Root
+					role="button"
+					tabindex={0}
+					onclick={() => (selectedIndex = index)}
+					ondblclick={() => accept(candidate)}
+					class={cn(
+						'cursor-pointer transition-colors',
+						selected && 'border-primary ring-1 ring-primary',
+					)}
 				>
-					<LayersIcon class="size-4" />
-					Select Transformation
-				</Button>
-			{/snippet}
-		</Popover.Trigger>
-		<Popover.Content class="w-[var(--bits-popover-anchor-width)] p-0">
-			<TransformationPickerBody
-				onSelect={async (transformation) => {
-					if (!clipboardText) return;
-
-					combobox.closeAndFocusTrigger();
-
-					const loading = report.loading({
-						title: '🔄 Running transformation...',
-						description: 'Transforming your clipboard text...',
-					});
-
-					const { data: output, error: transformError } =
-						await rpc.transformer.transformInput({
-							input: clipboardText,
-							transformation,
-						});
-
-					if (transformError) {
-						loading.reject({ cause: transformError });
-						await transformClipboardWindow.hide();
-						return;
-					}
-
-					sound.playSoundIfEnabled('transformationComplete');
-
-					const notice = await deliverTransformationResult({
-						text: output,
-						recordingId: null,
-					});
-					loading.resolve(notice);
-
-					await transformClipboardWindow.hide();
-				}}
-				onSelectManageTransformations={async () => {
-					combobox.closeAndFocusTrigger();
-					await transformClipboardWindow.hide();
-					await emit('navigate-main-window', { path: '/transformations' });
-				}}
-				placeholder="Search transformations..."
-			/>
-		</Popover.Content>
-	</Popover.Root>
+					<Card.Header class="flex-row items-center justify-between gap-2 pb-2">
+						<div class="flex items-center gap-2">
+							<span class="font-medium">
+								{candidate.transformation.title || 'Untitled transformation'}
+							</span>
+							{#if candidates.length > 1}
+								<Badge variant="secondary" class="text-xs">
+									{candidate.sampleIndex + 1}
+								</Badge>
+							{/if}
+						</div>
+						{#if selected}
+							<Badge class="text-xs">Enter to accept</Badge>
+						{/if}
+					</Card.Header>
+					<Card.Content>
+						{#await candidate.result}
+							<div class="flex items-center gap-2 text-sm text-muted-foreground">
+								<Spinner class="size-3.5" />
+								<span>Generating</span>
+							</div>
+						{:then result}
+							{#if result.error}
+								<p class="text-sm text-destructive">{result.error.message}</p>
+							{:else}
+								{@render diffInline(wordDiff(input, result.data))}
+							{/if}
+						{/await}
+					</Card.Content>
+				</Card.Root>
+			{/each}
+		</div>
+	{/if}
 </div>

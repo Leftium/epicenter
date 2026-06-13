@@ -93,9 +93,7 @@ export const MODEL_CREDITS = {
 /** Coarse provider classification used by the dashboard model-cost
  *  table. Models that do not match any prefix are labeled "Unknown"
  *  rather than guessed at, so a misclassification never quietly ships. */
-export function providerOf(
-	model: string,
-): 'OpenAI' | 'Google' | 'xAI' | 'Unknown' {
+export function providerOf(model: string): 'OpenAI' | 'Google' | 'Unknown' {
 	if (
 		model.startsWith('gpt') ||
 		model.startsWith('o1') ||
@@ -108,6 +106,5 @@ export function providerOf(
 		return 'OpenAI';
 	}
 	if (model.startsWith('gemini')) return 'Google';
-	if (model.startsWith('grok')) return 'xAI';
 	return 'Unknown';
 }

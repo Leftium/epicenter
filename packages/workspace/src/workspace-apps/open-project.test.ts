@@ -1,8 +1,9 @@
 /**
  * Tests for `openProject`, the single daemon entry point.
  *
- * `openProject` imports `epicenter.config.ts` and opens every mount it
- * declares, so these tests drive it through real config files on disk:
+ * `openProject` imports `epicenter.config.ts`, claims the Epicenter folder, and
+ * opens every mount it declares, so these tests drive it through real config
+ * files on disk:
  * - a missing config returns a structured `ProjectConfigNotFound` Result
  *   (not a throw), so the host surfaces it like any other startup error
  * - a valid config opens every declared mount in parallel
@@ -83,6 +84,12 @@ describe('openProject', () => {
 				.slice()
 				.sort(),
 		).toEqual(['alpha', 'beta']);
+		expect(await Bun.file(join(epicenterRoot, '.gitignore')).exists()).toBe(
+			true,
+		);
+		expect(
+			await Bun.file(join(epicenterRoot, '.epicenter', '.gitignore')).exists(),
+		).toBe(true);
 	});
 
 	test('opens nothing for an empty config', async () => {
@@ -139,6 +146,9 @@ describe('openProject', () => {
 			reason: 'invalid',
 		});
 		expect(await Bun.file(join(epicenterRoot, 'opened')).exists()).toBe(false);
+		expect(await Bun.file(join(epicenterRoot, '.epicenter')).exists()).toBe(
+			false,
+		);
 	});
 
 	test('refuses startup when machine auth is signed out', async () => {
@@ -151,6 +161,9 @@ describe('openProject', () => {
 			auth: { state: { status: 'signed-out' } } as WorkspaceAuthClient,
 		});
 		expect(expectErr(result).name).toBe('WorkspaceAuthSignedOut');
+		expect(await Bun.file(join(epicenterRoot, '.epicenter')).exists()).toBe(
+			false,
+		);
 	});
 
 	test('refuses bootstrap when a mount folder already has files', async () => {
@@ -179,6 +192,39 @@ describe('openProject', () => {
 		});
 		// The guard runs before any mount opens.
 		expect(await Bun.file(join(epicenterRoot, 'opened')).exists()).toBe(false);
+		expect(await Bun.file(join(epicenterRoot, '.gitignore')).exists()).toBe(
+			false,
+		);
+		expect(await Bun.file(join(epicenterRoot, '.epicenter')).exists()).toBe(
+			false,
+		);
+	});
+
+	test('returns a structured claim error before opening mounts', async () => {
+		writeFileSync(join(epicenterRoot, '.epicenter'), 'not a directory');
+		writeConfig(
+			`import { writeFileSync } from 'node:fs';
+			import { join } from 'node:path';
+			export default [
+				{
+					name: 'fuji',
+					open: () => {
+						writeFileSync(join(import.meta.dirname, 'opened'), 'opened');
+						return ${RUNTIME};
+					},
+				},
+			];\n`,
+		);
+
+		const result = await openProject({ epicenterRoot, auth: stubAuthClient() });
+		expect(expectErr(result)).toMatchObject({
+			name: 'EpicenterFolderClaimFailed',
+			epicenterRoot,
+		});
+		expect(await Bun.file(join(epicenterRoot, 'opened')).exists()).toBe(false);
+		expect(
+			await Bun.file(join(epicenterRoot, '.epicenter', '.gitignore')).exists(),
+		).toBe(false);
 	});
 
 	test('adopts a populated mount folder once `.epicenter/` exists', async () => {

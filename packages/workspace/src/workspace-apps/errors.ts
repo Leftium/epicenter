@@ -3,9 +3,10 @@
  *
  * Mount-name validation surfaces `MountRejected` before any mount opens.
  * A bootstrap guard surfaces `MountFolderNotEmpty` when a not-yet-established
- * Epicenter folder already has a populated mount folder. Startup wraps any
- * throw from a mount's `open(ctx)` in `MountOpenFailed` so callers can dispose
- * siblings on failure.
+ * Epicenter folder already has a populated mount folder. The namespace claim
+ * surfaces `EpicenterFolderClaimFailed` before any mount opens. Startup wraps
+ * any throw from a mount's `open(ctx)` in `MountOpenFailed` so callers can
+ * dispose siblings on failure.
  */
 
 import {
@@ -35,6 +36,17 @@ export const WorkspaceAppError = defineErrors({
 			`Move them elsewhere (or rename the "${mount}" mount), then run \`epicenter daemon up\` again.`,
 		mount,
 		path,
+	}),
+	EpicenterFolderClaimFailed: ({
+		epicenterRoot,
+		cause,
+	}: {
+		epicenterRoot: string;
+		cause: unknown;
+	}) => ({
+		message: `Failed to claim Epicenter folder "${epicenterRoot}": ${extractErrorMessage(cause)}`,
+		epicenterRoot,
+		cause,
 	}),
 	MountOpenFailed: ({ mount, cause }: { mount: string; cause: unknown }) => ({
 		message: `Mount "${mount}" failed to open: ${extractErrorMessage(cause)}`,

@@ -366,6 +366,85 @@ describe('runUp: failure cleanup', () => {
 		lease.release();
 	});
 
+	test('keeps root .gitignore when mount startup fails after namespace claim', async () => {
+		const goodDir = join(workDir, 'workspaces', 'good');
+		const badDir = join(workDir, 'workspaces', 'bad');
+		mkdirSync(goodDir, { recursive: true });
+		mkdirSync(badDir, { recursive: true });
+		writeFileSync(
+			join(goodDir, 'daemon.ts'),
+			`
+				import { mkdirSync } from 'node:fs';
+				import { join } from 'node:path';
+
+				const collaboration = {
+					actions: {},
+					whenConnected: new Promise(() => {}),
+					status: { phase: 'connected' },
+					onStatusChange: () => () => {},
+					devices: {
+						list: () => [],
+						subscribe: () => () => {},
+					},
+					dispatch: async () => {
+						throw new Error('fixture does not dispatch');
+					},
+				};
+
+				export default {
+					name: 'good',
+					async open(ctx) {
+						mkdirSync(join(ctx.epicenterRoot, '.epicenter', 'sqlite'), {
+							recursive: true,
+						});
+						return {
+							collaboration,
+							async [Symbol.asyncDispose]() {},
+						};
+					},
+				};
+			`,
+		);
+		writeFileSync(
+			join(badDir, 'daemon.ts'),
+			`
+				export default {
+					name: 'bad',
+					async open() {
+						throw new Error('bad mount failed');
+					},
+				};
+			`,
+		);
+		writeConfig(
+			[
+				"import good from './workspaces/good/daemon.ts';",
+				"import bad from './workspaces/bad/daemon.ts';",
+				'',
+				'export default [good, bad];',
+				'',
+			].join('\n'),
+		);
+
+		const error = expectErr(
+			await runUp({
+				epicenterRoot: workDir,
+				quiet: true,
+				createAuthClient: stubAuthFactory,
+			}),
+		);
+
+		expect(error).toMatchObject({
+			name: 'MountOpenFailed',
+			mount: 'bad',
+		});
+		const rootGitignore = readFileSync(join(workDir, '.gitignore'), 'utf8');
+		expect(rootGitignore).toContain('/*');
+		expect(rootGitignore).toContain('!/epicenter.config.ts');
+		const lease = expectOk(claimDaemonLease(workDir));
+		lease.release();
+	});
+
 	test('disposes opened sibling mounts and leaves no socket or metadata when one mount fails', async () => {
 		const goodDir = join(workDir, 'workspaces', 'good');
 		const badDir = join(workDir, 'workspaces', 'bad');

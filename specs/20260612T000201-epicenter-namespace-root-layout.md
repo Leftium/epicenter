@@ -388,22 +388,30 @@ Running inside `vault/apps/fuji` still works because `findProjectRoot()` walks u
 
 ## Gitignore Model
 
-For a repo using `apps/` as the namespace root:
+The Epicenter namespace root owns its own `.gitignore`. For a namespace at
+`repo/apps/`, the file lives at `repo/apps/.gitignore`:
 
 ```gitignore
-/apps/.epicenter/
-/apps/*/
-!/apps/epicenter.config.ts
+# Epicenter folder. Only epicenter.config.ts is tracked; the generated mount
+# projections and the machine state under .epicenter/ are derived from the Yjs
+# log and rebuilt on demand, so git ignores them.
+/*
+!/.gitignore
+!/epicenter.config.ts
 ```
 
 If the namespace needs a tracked `AGENTS.md` or README:
 
 ```gitignore
-!/apps/AGENTS.md
-!/apps/README.md
+!/AGENTS.md
+!/README.md
 ```
 
-Do not ignore all of `/apps/` without unignoring the config. The config is the tracked boundary marker.
+Do not ignore the namespace without unignoring the config. The config is the
+tracked boundary marker. `openProject()` claims the namespace after config,
+auth, mount-name, and populated-folder validation, but before any mount opens.
+Fresh claims write the root ignore before creating `.epicenter/`, so
+`.epicenter/` remains the "already claimed" marker.
 
 ## Edge Cases
 
@@ -431,6 +439,18 @@ The marker is `epicenter.config.ts`, not the literal folder name `apps`.
 3. Under the namespace model, direct child folders are generated mount folders.
 
 Recommendation: first implementation should refuse this on bootstrap if `.epicenter/` does not exist yet, because the namespace has not been established. Once `.epicenter/` exists, rebuild may treat declared mount folders as generated projection folders.
+
+### Mount startup partially fails
+
+1. User creates `repo/apps/epicenter.config.ts` with multiple mounts.
+2. The populated-folder guard passes.
+3. `openProject()` writes `repo/apps/.gitignore`, then creates `repo/apps/.epicenter/`.
+4. One mount later fails while opening.
+
+Recommendation: keep the namespace claim. The folder has already passed the
+ownership guard, so startup failure should release runtime resources but should
+not roll back the git boundary. This preserves the invariant that `.epicenter/`
+exists only after the root ignore has been handled.
 
 ### Mount removed from config
 

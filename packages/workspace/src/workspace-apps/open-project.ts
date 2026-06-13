@@ -9,7 +9,8 @@
  *      validates that its default export is a `Mount[]`.
  *   2. Refuse to start when machine auth is signed out, then validate the
  *      configured mount names.
- *   3. Build a per-mount `MountContext` and run every `open(ctx)` in parallel.
+ *   3. Claim the Epicenter folder's generated-state boundary.
+ *   4. Build a per-mount `MountContext` and run every `open(ctx)` in parallel.
  *      If any open fails, dispose the successfully opened runtimes before
  *      returning the first failure as a structured error.
  *
@@ -20,11 +21,17 @@
  * one `Result` union.
  */
 
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	statSync,
+	writeFileSync,
+} from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Keyring } from '@epicenter/encryption';
 import type { OwnerId } from '@epicenter/identity';
-import { Err, Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 
 import {
 	loadProjectConfig,
@@ -76,6 +83,16 @@ export async function openProject(
 	if (populated !== null) {
 		return WorkspaceAppError.MountFolderNotEmpty(populated);
 	}
+
+	const claimResult = trySync({
+		try: () => claimEpicenterFolder(epicenterRoot),
+		catch: (cause) =>
+			WorkspaceAppError.EpicenterFolderClaimFailed({
+				epicenterRoot,
+				cause,
+			}),
+	});
+	if (claimResult.error !== null) return Err(claimResult.error);
 
 	// Sign-out is guarded above, so `auth.state.ownerId` is stable here. Pin it
 	// to each mount's context so mounts build URLs without re-reading auth
@@ -136,6 +153,14 @@ export async function openProject(
  */
 const IGNORED_BOOTSTRAP_ENTRIES = new Set(['.DS_Store', 'Thumbs.db']);
 
+const ROOT_GITIGNORE = `# Epicenter folder. Only epicenter.config.ts is tracked; the generated mount
+# projections and the machine state under .epicenter/ are derived from the Yjs
+# log and rebuilt on demand, so git ignores them.
+/*
+!/.gitignore
+!/epicenter.config.ts
+`;
+
 function findPopulatedMountFolder(
 	epicenterRoot: EpicenterRoot,
 	mounts: readonly Mount[],
@@ -152,6 +177,31 @@ function findPopulatedMountFolder(
 		if (isPopulated) return { mount: mount.name, path };
 	}
 	return null;
+}
+
+/**
+ * Claim the folder before any mount can create generated state.
+ *
+ * Fresh namespaces get the root ignore first, then `.epicenter/`. That ordering
+ * keeps `.epicenter/` a trustworthy "already claimed" marker: once it exists,
+ * either the root ignore already exists or the user had their own ignore file
+ * that Epicenter must not overwrite.
+ */
+function claimEpicenterFolder(epicenterRoot: EpicenterRoot): void {
+	const namespaceEstablished = existsSync(join(epicenterRoot, '.epicenter'));
+	if (!namespaceEstablished) {
+		const rootGitignorePath = join(epicenterRoot, '.gitignore');
+		if (!existsSync(rootGitignorePath)) {
+			writeFileSync(rootGitignorePath, ROOT_GITIGNORE);
+		}
+	}
+
+	const projectDataDir = join(epicenterRoot, '.epicenter');
+	mkdirSync(projectDataDir, { recursive: true, mode: 0o700 });
+	const cacheGitignorePath = join(projectDataDir, '.gitignore');
+	if (!existsSync(cacheGitignorePath)) {
+		writeFileSync(cacheGitignorePath, '*\n', { mode: 0o600 });
+	}
 }
 
 async function openOneMount({

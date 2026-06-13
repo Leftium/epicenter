@@ -13,8 +13,7 @@
  * Foreground by design; backgrounding is the user's job.
  */
 
-import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { realpathSync } from 'node:fs';
 import type { SyncAuthClient } from '@epicenter/auth';
 import {
 	createMachineAuthClient,
@@ -90,15 +89,14 @@ type UpHandle = {
 
 /**
  * Daemon body. Opens every configured mount (the project must already have an
- * `epicenter.config.ts`; see `epicenter init`), ensures the `.epicenter`
- * cache gitignore, binds the IPC socket, and returns a handle. The yargs
- * `handler` calls this,
+ * `epicenter.config.ts`; see `epicenter init`), binds the IPC socket, and
+ * returns a handle. The yargs `handler` calls this,
  * prints the operator-facing banner, installs SIGINT/SIGTERM, and parks the
  * process; tests call it directly and assert on the returned handle.
  *
- * A SQLite daemon lease claims ownership before any mount opens. After that,
- * `openProject` imports `epicenter.config.ts` and opens every configured
- * mount, and `startDaemonServer` binds the socket.
+ * A SQLite daemon lease serializes startup before any mount opens. After that,
+ * `openProject` imports `epicenter.config.ts`, claims the Epicenter folder,
+ * opens every configured mount, and `startDaemonServer` binds the socket.
  */
 export async function runUp(
 	options: UpOptions,
@@ -139,19 +137,9 @@ export async function runUp(
 	const auth = authResult.data;
 	stack.defer(() => auth[Symbol.dispose]());
 
-	// Captured before openProject, which (via the attach primitives) creates
-	// `.epicenter/`. A missing `.epicenter/` here means this run is the one
-	// establishing the namespace, the same signal openProject's bootstrap guard
-	// keys on. The root `.gitignore` is scaffolded only then, so a plain `up`
-	// against an existing folder never silently rewrites its git boundary.
-	const isFreshNamespace = !existsSync(join(epicenterRoot, '.epicenter'));
-
 	const startResult = await openProject({ epicenterRoot, auth });
 	if (startResult.error) return startResult;
 	const mounts = startResult.data;
-	ensureProjectGitignore(epicenterRoot, {
-		writeRootGitignore: isFreshNamespace,
-	});
 	stack.defer(async () => {
 		await Promise.allSettled(
 			mounts.map((entry) => entry.runtime[Symbol.asyncDispose]()),
@@ -231,71 +219,6 @@ export const upCommand = cmd({
 		process.stdin.resume();
 	},
 });
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Scaffold the Epicenter folder's git boundary so a tracked folder commits only
- * the config, never generated state.
- *
- * Two ignore files, each with one job:
- *
- *   <root>/.gitignore             `/*` ignores every direct child, then
- *                                 unignores `epicenter.config.ts` (and the
- *                                 ignore file itself). The config is the tracked
- *                                 boundary marker; the generated mount
- *                                 projections (`fuji/`, ...) and `.epicenter/`
- *                                 are derived from the Yjs log and rebuilt on
- *                                 demand, so git leaves them out. `/*` needs no
- *                                 mount-name list to keep in sync: it catches
- *                                 whatever the runtime writes. Written only when
- *                                 `writeRootGitignore` is set, which the caller
- *                                 ties to first establishing the namespace, so a
- *                                 plain `up` against a folder that is already a
- *                                 git repo never silently hides its untracked
- *                                 files behind a `/*` rule.
- *   <root>/.epicenter/.gitignore  `*` keeps machine state out of git even if a
- *                                 user later edits the root ignore to track a
- *                                 projection. Defense in depth for the one
- *                                 directory that must never be committed.
- *                                 Written every run (cheap, idempotent).
- *
- * `.epicenter/` is created at mode 0o700 (machine state, not world-readable).
- * Both files are written only when absent, so a user's own rules survive.
- *
- * Creating the Epicenter folder itself (writing `epicenter.config.ts`) is
- * `epicenter init`; `daemon up` never scaffolds a config, so it cannot
- * accidentally claim a normal repo root. On a directory without a config,
- * discovery fails first with a hint, and this function never runs.
- */
-const ROOT_GITIGNORE = `# Epicenter folder. Only epicenter.config.ts is tracked; the generated mount
-# projections and the machine state under .epicenter/ are derived from the Yjs
-# log and rebuilt on demand, so git ignores them.
-/*
-!/.gitignore
-!/epicenter.config.ts
-`;
-
-function ensureProjectGitignore(
-	epicenterRoot: string,
-	{ writeRootGitignore }: { writeRootGitignore: boolean },
-): void {
-	if (writeRootGitignore) {
-		const rootGitignorePath = join(epicenterRoot, '.gitignore');
-		if (!existsSync(rootGitignorePath)) {
-			writeFileSync(rootGitignorePath, ROOT_GITIGNORE);
-		}
-	}
-
-	const projectDataDir = join(epicenterRoot, '.epicenter');
-	mkdirSync(projectDataDir, { recursive: true, mode: 0o700 });
-	const cacheGitignorePath = join(projectDataDir, '.gitignore');
-	if (!existsSync(cacheGitignorePath)) {
-		writeFileSync(cacheGitignorePath, '*\n', { mode: 0o600 });
-	}
-}
 
 function printPeersSnapshot(entry: StartedMount): void {
 	const devices = entry.runtime.collaboration.devices.list();

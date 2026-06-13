@@ -18,6 +18,7 @@
 		"./vite-config": "./src/vite-config.ts",
 		"./versions": "./src/versions.ts",
 		"./ai-chat-errors": "./src/ai-chat-errors.ts",
+		"./ai-providers": "./src/ai-providers.ts",
 		"./api-routes": "./src/api-routes.ts",
 		"./asset-headers": "./src/asset-headers.ts",
 		"./asset-errors": "./src/asset-errors.ts",
@@ -33,6 +34,8 @@
 	},
 	"dependencies": {
 		"@epicenter/identity": "workspace:*",
+		"@tanstack/ai-gemini": "catalog:",
+		"@tanstack/ai-openai": "catalog:",
 		"arktype": "catalog:",
 		"wellcrafted": "catalog:"
 	},

@@ -22,7 +22,19 @@
 import { fromTable } from '@epicenter/svelte';
 import { nanoid } from 'nanoid/non-secure';
 import { whispering } from '#platform/whispering';
-import type { Transformation } from '$lib/workspace';
+import type { Transformation, TransformationPrompt } from '$lib/workspace';
+
+/**
+ * The shape a fresh prompt phase starts from when the user enables the AI prompt
+ * on a transformation: Google's fast model, no templates yet. Co-located with the
+ * other default factories so the default shape has one home.
+ */
+export const DEFAULT_PROMPT: TransformationPrompt = {
+	inferenceProvider: 'Google',
+	model: 'gemini-2.5-flash',
+	systemPromptTemplate: '',
+	userPromptTemplate: '',
+};
 
 function createTransformations() {
 	const map = fromTable(whispering.tables.transformations);

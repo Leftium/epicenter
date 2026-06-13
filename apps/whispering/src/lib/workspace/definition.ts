@@ -148,7 +148,7 @@ const FailedResult = Type.Object({
 const TransformationRunResult = Type.Union([CompletedResult, FailedResult]);
 
 /**
- * Execution records for transformation pipelines. One run per invocation.
+ * Execution records for transformations. One run per invocation.
  * State queries filter by top-level `recordingId` / `transformationId` and
  * sort by `startedAt`; the terminal outcome lives inside `result`, which is
  * null while the run is executing or if it was interrupted.

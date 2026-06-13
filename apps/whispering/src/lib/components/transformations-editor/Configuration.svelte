@@ -18,6 +18,7 @@
 		INFERENCE_PROVIDER_OPTIONS,
 		type InferenceProviderId,
 	} from '$lib/constants/inference';
+	import { DEFAULT_PROMPT } from '$lib/state/transformations.svelte';
 	import type {
 		Replacement,
 		Transformation,
@@ -29,14 +30,6 @@
 	}: {
 		transformation: Transformation;
 	} = $props();
-
-	/** A new prompt phase defaults to Google's fast model, no templates yet. */
-	const DEFAULT_PROMPT: TransformationPrompt = {
-		inferenceProvider: 'Google',
-		model: 'gemini-2.5-flash',
-		systemPromptTemplate: '',
-		userPromptTemplate: '',
-	};
 
 	type ReplacementPhase = 'preReplacements' | 'postReplacements';
 
@@ -99,11 +92,9 @@
 	heading: string,
 	help: string,
 )}
-	<section class="space-y-4">
-		<div class="space-y-1">
-			<h3 class="font-medium">{heading}</h3>
-			<p class="text-muted-foreground text-sm">{help}</p>
-		</div>
+	<Field.Set class="gap-4">
+		<Field.Legend>{heading}</Field.Legend>
+		<Field.Description>{help}</Field.Description>
 
 		<div class="space-y-3">
 			{#each transformation[phase] as replacement, index (index)}
@@ -170,7 +161,7 @@
 			<PlusIcon class="size-4" />
 			Add replacement
 		</Button>
-	</section>
+	</Field.Set>
 {/snippet}
 
 <div class="flex h-full flex-col gap-6 overflow-y-auto px-2">
@@ -266,7 +257,7 @@
 								{providerLabel(prompt.inferenceProvider) ?? 'Select a provider'}
 							</Select.Trigger>
 							<Select.Content>
-								{#each INFERENCE_PROVIDER_OPTIONS as item}
+								{#each INFERENCE_PROVIDER_OPTIONS as item (item.value)}
 									<Select.Item value={item.value} label={item.label} />
 								{/each}
 							</Select.Content>
@@ -287,7 +278,7 @@
 									{prompt.model || 'Select a model'}
 								</Select.Trigger>
 								<Select.Content>
-									{#each INFERENCE[provider].models as model}
+									{#each INFERENCE[provider].models as model (model)}
 										<Select.Item value={model} label={model} />
 									{/each}
 								</Select.Content>
@@ -343,12 +334,10 @@
 						placeholder="Tell the AI what to do with your text. Use {'{{input}}'} where you want your text to appear, e.g., 'Format this transcript into clear sections: {'{{input}}'}'"
 					/>
 					{#if prompt.userPromptTemplate && !prompt.userPromptTemplate.includes('{{input}}')}
-						<Field.Description>
-							<span class="text-warning font-semibold">
-								Remember to include {'{{input}}'} in your prompt: this is where
-								your text will be inserted.
-							</span>
-						</Field.Description>
+						<Field.Error>
+							Remember to include {'{{input}}'} in your prompt: this is where
+							your text will be inserted.
+						</Field.Error>
 					{/if}
 				</Field.Field>
 				<Accordion.Root type="single" class="w-full">

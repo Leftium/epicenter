@@ -183,7 +183,6 @@ export {
 	type InferKvValue,
 	type Kv,
 	type KvDefinitions,
-	KvError,
 } from './document/kv.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 export {
@@ -197,9 +196,15 @@ export type { PresenceDevice } from './document/presence-protocol.js';
 export {
 	type BaseRow,
 	type InferTableRow,
+	type ReadonlyTable,
 	type Table,
+	TableNewerWriterError,
 	TableParseError,
+	type TableReadError,
+	type TableScan,
 	type Tables,
+	TableUnreadableError,
+	TableWriteError,
 } from './document/table.js';
 // Transport URL builder.
 //

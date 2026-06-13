@@ -92,7 +92,10 @@ export function sqlitePath(epicenterRoot: string, workspaceId: string): string {
  * // '/Users/braden/Code/vault/.epicenter/md/epicenter-fuji'
  * ```
  */
-export function markdownPath(epicenterRoot: string, workspaceId: string): string {
+export function markdownPath(
+	epicenterRoot: string,
+	workspaceId: string,
+): string {
 	return join(epicenterStateDir(epicenterRoot), 'md', workspaceId);
 }
 

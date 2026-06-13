@@ -18,7 +18,11 @@ import type {
 	OnReconnectSignal,
 	OpenWebSocketFn,
 } from '../document/open-collaboration.js';
-import type { AuthedFetch, MaybePromise, EpicenterRoot } from '../shared/types.js';
+import type {
+	AuthedFetch,
+	EpicenterRoot,
+	MaybePromise,
+} from '../shared/types.js';
 import type { DaemonRuntime } from './types.js';
 
 /**

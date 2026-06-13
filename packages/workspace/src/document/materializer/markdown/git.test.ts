@@ -151,7 +151,11 @@ async function lastCommitSubject(epicenterRoot: string): Promise<string> {
 }
 
 async function lastCommitAuthor(epicenterRoot: string): Promise<string> {
-	const result = await runGit(epicenterRoot, ['log', '-1', '--format=%an <%ae>']);
+	const result = await runGit(epicenterRoot, [
+		'log',
+		'-1',
+		'--format=%an <%ae>',
+	]);
 	return result.stdout.trim();
 }
 

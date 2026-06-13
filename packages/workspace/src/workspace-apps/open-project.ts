@@ -76,7 +76,9 @@ export async function openProject(
 	const ownerId = auth.state.ownerId;
 
 	const settled = await Promise.allSettled(
-		mounts.map((mount) => openOneMount({ mount, epicenterRoot, auth, ownerId })),
+		mounts.map((mount) =>
+			openOneMount({ mount, epicenterRoot, auth, ownerId }),
+		),
 	);
 
 	const opened: StartedMount[] = [];

@@ -69,7 +69,10 @@ export type ProjectConfigError = InferErrors<typeof ProjectConfigError>;
 export async function loadProjectConfig(
 	epicenterRoot: EpicenterRoot | string,
 ): Promise<Result<Mount[], ProjectConfigError>> {
-	const projectConfigPath = join(resolve(epicenterRoot), PROJECT_CONFIG_FILENAME);
+	const projectConfigPath = join(
+		resolve(epicenterRoot),
+		PROJECT_CONFIG_FILENAME,
+	);
 	if (!existsSync(projectConfigPath)) {
 		return ProjectConfigError.ProjectConfigNotFound({ projectConfigPath });
 	}

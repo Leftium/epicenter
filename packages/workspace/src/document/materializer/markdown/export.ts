@@ -379,10 +379,7 @@ function confineToDir(root: string, segment: string): string {
 	// to another absolute root (Windows drive change). An empty `rel` means the
 	// segment resolved to the root itself, which is also not a valid file target.
 	const escapes =
-		rel === '' ||
-		rel === '..' ||
-		rel.startsWith(`..${sep}`) ||
-		isAbsolute(rel);
+		rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel);
 	if (escapes) reject();
 	return target;
 }

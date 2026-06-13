@@ -3,7 +3,9 @@ import { dirname, join, resolve } from 'node:path';
 import { PROJECT_CONFIG_FILENAME } from '../config/project-config-source.js';
 import type { EpicenterRoot } from '../shared/types.js';
 
-export function findEpicenterRoot(start: string = process.cwd()): EpicenterRoot {
+export function findEpicenterRoot(
+	start: string = process.cwd(),
+): EpicenterRoot {
 	let current = resolve(start);
 	while (true) {
 		if (existsSync(join(current, PROJECT_CONFIG_FILENAME))) {

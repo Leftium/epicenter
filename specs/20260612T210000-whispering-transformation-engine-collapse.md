@@ -1,7 +1,7 @@
 # Whispering Transformation Engine: Fixed-Phase Transformations and Minimal Candidate Runs
 
 **Date**: 2026-06-12
-**Status**: In Progress (shape collapse and delivery fix landed; the Polish window is a separate session)
+**Status**: Implemented (shape collapse, delivery fix, and the Polish window all landed)
 **Owner**: Braden
 **Branch**: refactor/whispering-transformation-engine-collapse
 
@@ -208,21 +208,26 @@ Trigger:    never; this is a category error
       `preReplacements[] + prompt? + postReplacements[]`.
 - [x] The run row has no `source` and no candidate fields; `recordingId` is the only
       link, and `result` is nullable with no stored `running`.
-- [~] A recording-anchored run that crashes mid-flight renders as interrupted in the
+- [x] A recording-anchored run that crashes mid-flight renders as interrupted in the
       recording's history; an ad-hoc run leaves nothing until accept; a test preview
       never persists.
-  > **Note**: The recording-anchored interrupted/derived-liveness half is done.
-  > The "ad-hoc leaves nothing until accept" and "test preview never persists"
-  > halves are deferred: this session keeps run-writing exactly as `main` does
-  > (persist at kickoff for every run). The persist-on-accept fan-out belongs to
-  > the Polish window session, which owns the candidate UI.
-- [ ] Polish: select text in a third-party app, fan out k transformations x n samples in
+  > **Note**: All three halves are now done. Recording-anchored runs keep
+  > `runTransformation` (kickoff row + terminal write, derived liveness). Ad-hoc
+  > runs (Polish accept, clipboard quick-run) execute via `executeTransformation`
+  > (no writes) and commit exactly one completed row via `persistCompletedRun`,
+  > so a dismissed picker or failed quick-run leaves nothing. The test pane's
+  > `transformInput` mutation also runs `executeTransformation`, so previews never
+  > persist.
+- [x] Polish: select text in a third-party app, fan out k transformations x n samples in
       memory, pick one, exactly one run persists, and delivery offers no "go to
       recordings" for the non-recording result.
-  > **Deferred**: the Polish window is a separate session (needs a candidate-cards
-  > UI prototype and Tauri synthetic-key/clipboard work). The delivery half is
-  > done: `deliverTransformationResult` now offers no "go to recordings" for a
-  > non-recording result.
+  > **Note**: The Polish window captures the selection (synthetic copy, clipboard
+  > preserved), fans candidates out in memory via `fanOutCandidates`, renders
+  > diffed candidate cards, and on accept pastes to the cursor and commits exactly
+  > one run (`recordingId: null`). v1 wires single-transformation x n samples
+  > (k = 1); multi-transformation (k > 1) is a trivial follow-up since
+  > `fanOutCandidates` already takes a transformation list. Delivery offered no
+  > "go to recordings" for non-recording results as of the prior session.
 - [x] grep confirms no stored `'running'`/liveness status in any run or recording write
       path.
 
@@ -260,12 +265,65 @@ the "go to recordings" action on a linked `recordingId`.
 
 ### Follow-up Work
 
-- The Polish window: candidate-cards UI, k-transformations x n-samples in-memory
-  fan-out, persist-on-accept, and Tauri synthetic-key/clipboard capture. This is
-  where the deferred Success Criteria (ad-hoc persist-on-accept, test-preview
-  never persists) get satisfied.
 - Custom backends v1 (`20260612T091000`): the backend reference and model now live
   on the transformation's `prompt`, ready for `customBackendId` to land there.
+
+## Review: Polish Window
+
+**Completed**: 2026-06-12
+**Branch**: refactor/whispering-transformation-engine-collapse
+
+### What Landed
+
+The Polish window: a select-text-anywhere candidate picker built on the engine,
+evolved from the existing clipboard window (no second window). The work split
+into five commits:
+
+1. `transform.ts` split into a pure `executeTransformation` (no writes) and a
+   thin `runTransformation` persistence wrapper, sharing a `checkRunnable` guard.
+2. A `simulate_copy_keystroke` Tauri command plus a `captureSelection` helper
+   (save clipboard, synthetic copy, read, restore).
+3. `fanOutCandidates`: an in-memory k-transformations x n-samples bag, each
+   candidate an already-running `executeTransformation` promise.
+4. The candidate-cards UI, prototyped first on a throwaway route across three
+   variations; the chosen one (manual roving cards + inline word diff) was
+   absorbed into the window and `$lib/utils/word-diff.ts`, and the prototype
+   deleted.
+5. The window wiring: capture on the shortcut, hand the selection to the webview
+   over Tauri events, fan out on transformation pick, accept to paste + commit
+   one run, dismiss to write nothing.
+
+`persistCompletedRun` is the ad-hoc commit primitive shared by the Polish accept
+and the clipboard quick-run; the test pane's `transformInput` now runs
+`executeTransformation`, so previews never persist.
+
+### Deviations and Discoveries
+
+- v1 fan-out is single-transformation x n samples (k = 1): the user picks one
+  transformation in the existing picker, then sees samples. `fanOutCandidates`
+  already takes a transformation list, so multi-transformation (k > 1) is a
+  follow-up needing only a multi-select picker. Prompt-based transformations get
+  a few samples; deterministic ones collapse to one (repeating them is identical).
+- Selection capture happens in the main window's shortcut handler, before the
+  Polish window steals focus; the input crosses to the Polish webview over Tauri
+  events (a module variable can't cross processes). The request/response
+  responder is registered lazily so it only runs in the main window, never in the
+  Polish webview that imports the same module for its event-name constants.
+- Internal names still say `transform-clipboard` (route path, window label,
+  `transformClipboardWindow.tauri.ts`) while the product is "Polish." User-facing
+  text is all "Polish." Renaming the route/label to `polish` is a clean follow-up
+  left out here to keep this PR's diff focused.
+- The two flagged risks (synthetic Cmd+C reliability + macOS Accessibility
+  permissions; clipboard-restore timing) are handled by ordering (capture before
+  focus steal; hide before paste) and a settle delay, but need real-device
+  testing. The diff-on-long-text risk drove the prototype, which settled the
+  presentation before wiring.
+
+### Follow-up Work
+
+- Rename the route/window/file from `transform-clipboard` to `polish`.
+- Multi-transformation fan-out (k > 1) with a multi-select picker.
+- Real-device testing of synthetic copy + paste-back across apps and OSes.
 
 ## References
 

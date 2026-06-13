@@ -8,7 +8,7 @@
 export { connectDaemonActions } from './client/connect-daemon-actions.js';
 export type { DaemonActions } from './client/daemon-actions.js';
 export { buildDaemonActions } from './client/daemon-actions.js';
-export { findProjectRoot } from './client/find-project-root.js';
+export { findEpicenterRoot } from './client/find-project-root.js';
 export { ProjectConfigError } from './config/load-project-config.js';
 export { DEFAULT_PROJECT_CONFIG_SOURCE } from './config/project-config-source.js';
 export {
@@ -78,8 +78,8 @@ export {
 } from './document/open-sqlite-reader.js';
 export { openWorkspaceSqlite } from './document/open-workspace-sqlite.js';
 export {
-	appsMarkdownPath,
 	markdownPath,
+	mountMarkdownPath,
 	sqlitePath,
 	yjsPath,
 } from './document/workspace-paths.js';

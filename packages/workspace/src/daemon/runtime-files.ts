@@ -13,7 +13,7 @@ export function unlinkSocketFile(socketPath: string): void {
 }
 
 /** Sweep runtime-dir files that identify a daemon for one project. */
-export function sweepDaemonRuntimeFiles(projectDir: string): void {
-	unlinkSocketFile(socketPathFor(projectDir));
-	unlinkMetadata(projectDir);
+export function sweepDaemonRuntimeFiles(epicenterRoot: string): void {
+	unlinkSocketFile(socketPathFor(epicenterRoot));
+	unlinkMetadata(epicenterRoot);
 }

@@ -27,18 +27,18 @@ import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { WorkspaceAuthClient } from './auth-client.js';
 import { openProject } from './open-project.js';
 
-let projectDir: string;
+let epicenterRoot: string;
 
 beforeEach(() => {
-	projectDir = mkdtempSync(join(tmpdir(), 'open-project-'));
+	epicenterRoot = mkdtempSync(join(tmpdir(), 'open-project-'));
 });
 
 afterEach(() => {
-	rmSync(projectDir, { recursive: true, force: true });
+	rmSync(epicenterRoot, { recursive: true, force: true });
 });
 
 function writeConfig(source: string): void {
-	writeFileSync(join(projectDir, 'epicenter.config.ts'), source);
+	writeFileSync(join(epicenterRoot, 'epicenter.config.ts'), source);
 }
 
 function stubAuthClient(): WorkspaceAuthClient {
@@ -59,11 +59,11 @@ const RUNTIME = '{ collaboration: {}, async [Symbol.asyncDispose]() {} }';
 
 describe('openProject', () => {
 	test('returns a structured not-found error instead of throwing', async () => {
-		const result = await openProject({ projectDir, auth: stubAuthClient() });
+		const result = await openProject({ epicenterRoot, auth: stubAuthClient() });
 		const error = expectErr(result);
 		expect(error).toMatchObject({
 			name: 'ProjectConfigNotFound',
-			projectConfigPath: join(projectDir, 'epicenter.config.ts'),
+			projectConfigPath: join(epicenterRoot, 'epicenter.config.ts'),
 		});
 	});
 
@@ -75,7 +75,7 @@ describe('openProject', () => {
 			];\n`,
 		);
 
-		const result = await openProject({ projectDir, auth: stubAuthClient() });
+		const result = await openProject({ epicenterRoot, auth: stubAuthClient() });
 		const mounts = expectOk(result);
 		expect(
 			mounts
@@ -88,7 +88,7 @@ describe('openProject', () => {
 	test('opens nothing for an empty config', async () => {
 		writeConfig('export default [];\n');
 
-		const result = await openProject({ projectDir, auth: stubAuthClient() });
+		const result = await openProject({ epicenterRoot, auth: stubAuthClient() });
 		expect(expectOk(result)).toEqual([]);
 	});
 
@@ -109,10 +109,10 @@ describe('openProject', () => {
 			];\n`,
 		);
 
-		const result = await openProject({ projectDir, auth: stubAuthClient() });
+		const result = await openProject({ epicenterRoot, auth: stubAuthClient() });
 		const error = expectErr(result);
 		expect(error).toMatchObject({ name: 'MountOpenFailed', mount: 'bad' });
-		expect(await Bun.file(join(projectDir, 'good.disposed')).exists()).toBe(
+		expect(await Bun.file(join(epicenterRoot, 'good.disposed')).exists()).toBe(
 			true,
 		);
 	});
@@ -132,13 +132,13 @@ describe('openProject', () => {
 			];\n`,
 		);
 
-		const result = await openProject({ projectDir, auth: stubAuthClient() });
+		const result = await openProject({ epicenterRoot, auth: stubAuthClient() });
 		expect(expectErr(result)).toMatchObject({
 			name: 'MountRejected',
 			mount: '__proto__',
 			reason: 'invalid',
 		});
-		expect(await Bun.file(join(projectDir, 'opened')).exists()).toBe(false);
+		expect(await Bun.file(join(epicenterRoot, 'opened')).exists()).toBe(false);
 	});
 
 	test('refuses startup when machine auth is signed out', async () => {
@@ -147,7 +147,7 @@ describe('openProject', () => {
 		);
 
 		const result = await openProject({
-			projectDir,
+			epicenterRoot,
 			auth: { state: { status: 'signed-out' } } as WorkspaceAuthClient,
 		});
 		expect(expectErr(result).name).toBe('WorkspaceAuthSignedOut');

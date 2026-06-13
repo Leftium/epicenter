@@ -139,7 +139,7 @@ bun dev
 
 This starts the app dev server on port 5174. Auth and sync expect the local API on `localhost:8787`; start it from the repo root with `bun run dev:api`.
 
-Fuji's mount is registered from the project root. It is not discovered from `.epicenter/` or any source folder. A project that wants the Fuji mount needs an `epicenter.config.ts` like this:
+Fuji's mount is registered from the Epicenter root (the folder that holds `epicenter.config.ts`). It is not discovered from `.epicenter/` or any source folder. A folder that wants the Fuji mount needs an `epicenter.config.ts` like this:
 
 ```ts
 import { fuji } from "@epicenter/fuji/project";
@@ -147,7 +147,7 @@ import { fuji } from "@epicenter/fuji/project";
 export default [fuji()];
 ```
 
-`fuji()` returns a `Mount` whose `name` is `fuji`; `Mount.name` is the CLI prefix. `epicenter.config.ts` default-exports a mount list, so a one-mount project still wraps it in an array. Disk paths are hardcoded to the vault layout: the read-only markdown projection lands in `apps/fuji/` (visible) and the SQLite mirror under `.epicenter/sqlite/` (hidden). The materialized `.md` is read-only; mutate entries through actions (`epicenter run fuji.<action>`), never by editing the files.
+`fuji()` returns a `Mount` whose `name` is `fuji`; `Mount.name` is the CLI prefix. `epicenter.config.ts` default-exports a mount list, so a one-mount project still wraps it in an array. Disk paths follow the mount layout: the read-only markdown projection lands at `<epicenterRoot>/fuji/` (visible, a direct child of the Epicenter root keyed by the mount name) and the guid-keyed SQLite mirror under `.epicenter/sqlite/<id>.db` (hidden). The materialized `.md` is read-only; mutate entries through actions (`epicenter run fuji.<action>`), never by editing the files.
 
 `epicenter daemon up -C <project>` starts every mount declared in `epicenter.config.ts` inside one daemon process. It creates `.epicenter/` for generated project data when it is missing, but sockets and daemon logs live in platform user paths instead of inside the project.
 

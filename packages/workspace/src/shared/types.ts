@@ -30,17 +30,17 @@ export type Simplify<T> = { [K in keyof T]: T[K] } & {};
 export type AbsolutePath = string & Brand<'AbsolutePath'>;
 
 /**
- * Project root directory path.
+ * The Epicenter root: the folder that holds `epicenter.config.ts`.
  *
- * This is where user-facing content lives: markdown vaults, config files,
- * and any content that should be version-controlled. Typically the directory
- * where the user runs their app from (`process.cwd()`).
+ * This is where user-facing content lives: markdown projections, the config
+ * file, and any content that should be version-controlled. Typically the
+ * directory where the user runs their app from (`process.cwd()`). The folder
+ * name is the user's choice; nothing reserves the name `apps`.
  *
  * @example
  * ```typescript
- * // Markdown extension stores user content relative to project root
- * const vaultDir = path.join(projectDir, 'vault');
- * const postsDir = path.join(projectDir, 'content/posts');
+ * // The markdown projection for a mount is a direct child of the Epicenter root
+ * const fujiDir = path.join(epicenterRoot, 'fuji');
  * ```
  */
-export type ProjectDir = AbsolutePath & Brand<'ProjectDir'>;
+export type EpicenterRoot = AbsolutePath & Brand<'EpicenterRoot'>;

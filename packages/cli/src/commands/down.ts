@@ -90,10 +90,10 @@ export const downCommand = cmd({
 			return;
 		}
 
-		const projectDir = resolve(argv.C);
-		const meta = readMetadata(projectDir);
+		const epicenterRoot = resolve(argv.C);
+		const meta = readMetadata(epicenterRoot);
 		if (!meta) {
-			process.stderr.write(`no daemon running for ${projectDir}\n`);
+			process.stderr.write(`no daemon running for ${epicenterRoot}\n`);
 			return;
 		}
 

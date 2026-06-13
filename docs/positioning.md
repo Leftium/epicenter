@@ -6,18 +6,28 @@ Canonical positioning for Epicenter. This doc owns the public claims and the rul
 
 The product picture all messaging derives from. This section describes the end state, not public copy. Public copy quotes the Spine. The Destination is the compass, never quoted directly.
 
-One folder on your disk is the whole product:
+One folder on your disk is the whole product. Drop an `epicenter.config.ts` into
+any folder and that folder becomes your Epicenter folder; its name is your
+choice. Each app's read-only Markdown projection is a direct child sitting right
+next to the config and `.epicenter/`:
 
 ```txt
 ~/workspace/
-|-- apps/         read-only Markdown projections of live app state
-|-- .epicenter/   machine state; ignore it
-|-- journal/      yours forever
-|-- ideas/        yours forever
-`-- publish/      yours forever
+|-- epicenter.config.ts   marks this folder as your Epicenter folder
+|-- whispering/           read-only Markdown projection of live app state
+|-- tabs/                 read-only Markdown projection of live app state
+|-- .epicenter/           machine state; ignore it
+|-- journal/              yours forever
+|-- ideas/                yours forever
+`-- publish/              yours forever
 ```
 
-You speak a thought into Whispering and it lands in `apps/whispering/` as Markdown. You save tabs, draft entries, capture whatever, each through a purpose-built app, and every capture becomes a file you can grep. An agent reads the same files, queries the SQLite mirrors with plain SQL, and when it needs to change app state it goes through the same gate you do: `epicenter run <mount>.<action>`, validated against the app's schema. Nothing mutates by editing generated files; the projection is one-way on purpose.
+The mount projections do not have to sit at the top level. If you prefer to
+group them, put `epicenter.config.ts` inside an arbitrarily named container
+folder (for example `apps/`) and the projections become children of that folder
+instead. Nothing reserves the name `apps`.
+
+You speak a thought into Whispering and it lands in `whispering/` as Markdown. You save tabs, draft entries, capture whatever, each through a purpose-built app, and every capture becomes a file you can grep. An agent reads the same files, queries the SQLite mirrors with plain SQL, and when it needs to change app state it goes through the same gate you do: `epicenter run <mount>.<action>`, validated against the app's schema. Nothing mutates by editing generated files; the projection is one-way on purpose.
 
 The loop is capture, curate, keep. App output is a disposable inbox, regenerable from the CRDT at any time. What matters graduates into folders you own: ordinary Markdown, tracked in git, still yours after every app in this repo is gone.
 

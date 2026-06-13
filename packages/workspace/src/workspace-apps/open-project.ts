@@ -5,7 +5,7 @@
  * `openProject()` is what `epicenter daemon up` calls. It owns the whole
  * startup path:
  *
- *   1. `loadProjectConfig(projectDir)` imports `epicenter.config.ts` and
+ *   1. `loadProjectConfig(epicenterRoot)` imports `epicenter.config.ts` and
  *      validates that its default export is a `Mount[]`.
  *   2. Refuse to start when machine auth is signed out, then validate the
  *      configured mount names.
@@ -34,12 +34,12 @@ import { validateMountNames } from '../daemon/mount-validation.js';
 import type { StartedMount } from '../daemon/types.js';
 import { asDeviceId } from '../document/device-id.js';
 import { hashYDocClientId } from '../shared/client-id.js';
-import type { ProjectDir } from '../shared/types.js';
+import type { EpicenterRoot } from '../shared/types.js';
 import type { WorkspaceAuthClient } from './auth-client.js';
 import { WorkspaceAppError } from './errors.js';
 
 export type OpenProjectOptions = {
-	projectDir: ProjectDir | string;
+	epicenterRoot: EpicenterRoot | string;
 	auth: WorkspaceAuthClient;
 };
 
@@ -55,10 +55,10 @@ export async function openProject(
 	options: OpenProjectOptions,
 ): Promise<Result<StartedMount[], ProjectConfigError | WorkspaceAppError>> {
 	const { auth } = options;
-	const projectDir = resolve(options.projectDir) as ProjectDir;
+	const epicenterRoot = resolve(options.epicenterRoot) as EpicenterRoot;
 
 	const { data: mounts, error: configError } =
-		await loadProjectConfig(projectDir);
+		await loadProjectConfig(epicenterRoot);
 	if (configError !== null) return Err(configError);
 
 	if (auth.state.status === 'signed-out') {
@@ -76,7 +76,9 @@ export async function openProject(
 	const ownerId = auth.state.ownerId;
 
 	const settled = await Promise.allSettled(
-		mounts.map((mount) => openOneMount({ mount, projectDir, auth, ownerId })),
+		mounts.map((mount) =>
+			openOneMount({ mount, epicenterRoot, auth, ownerId }),
+		),
 	);
 
 	const opened: StartedMount[] = [];
@@ -110,19 +112,19 @@ export async function openProject(
 
 async function openOneMount({
 	mount,
-	projectDir,
+	epicenterRoot,
 	auth,
 	ownerId,
 }: {
 	mount: Mount;
-	projectDir: ProjectDir;
+	epicenterRoot: EpicenterRoot;
 	auth: WorkspaceAuthClient;
 	ownerId: OwnerId;
 }): Promise<Result<StartedMount, WorkspaceAppError>> {
 	const ctx = {
-		projectDir,
+		epicenterRoot,
 		mount: mount.name,
-		yDocClientId: hashYDocClientId(projectDir),
+		yDocClientId: hashYDocClientId(epicenterRoot),
 		deviceId: asDeviceId(`${mount.name}-daemon`),
 		ownerId,
 		keyring: createMountKeyringReader({ auth, mount: mount.name }),

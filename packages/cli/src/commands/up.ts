@@ -228,27 +228,52 @@ export const upCommand = cmd({
 // ---------------------------------------------------------------------------
 
 /**
- * Ensure the Epicenter root's `.epicenter/` exists (0o700) and is fully
- * gitignored. `.epicenter/` is a direct child of the Epicenter root (a sibling
- * of `epicenter.config.ts` and of the generated mount folders), holding the
- * machine state for that root. The attach primitives (Yjs log, SQLite and
- * markdown materializers) create their own data dirs on demand, so the daemon's
- * only filesystem provisioning is the cache-dir ignore rule. `*` ignores
- * everything the runtime ever writes, including this file, so there is no
- * directory list to keep in sync.
+ * Scaffold the Epicenter folder's git boundary so a tracked folder commits only
+ * the config, never generated state.
+ *
+ * Two ignore files, each with one job:
+ *
+ *   <root>/.gitignore             `/*` ignores every direct child, then
+ *                                 unignores `epicenter.config.ts` (and the
+ *                                 ignore file itself). The config is the tracked
+ *                                 boundary marker; the generated mount
+ *                                 projections (`fuji/`, ...) and `.epicenter/`
+ *                                 are derived from the Yjs log and rebuilt on
+ *                                 demand, so git leaves them out. `/*` needs no
+ *                                 mount-name list to keep in sync: it catches
+ *                                 whatever the runtime writes.
+ *   <root>/.epicenter/.gitignore  `*` keeps machine state out of git even if a
+ *                                 user later edits the root ignore to track a
+ *                                 projection. Defense in depth for the one
+ *                                 directory that must never be committed.
+ *
+ * `.epicenter/` is created at mode 0o700 (machine state, not world-readable).
+ * Both files are written only when absent, so a user's own rules survive.
  *
  * Creating the Epicenter folder itself (writing `epicenter.config.ts`) is
  * `epicenter init`; `daemon up` never scaffolds a config, so it cannot
- * accidentally claim a normal
- * repo root. On a directory without a config, discovery fails first with a hint,
- * and this function never runs.
+ * accidentally claim a normal repo root. On a directory without a config,
+ * discovery fails first with a hint, and this function never runs.
  */
+const ROOT_GITIGNORE = `# Epicenter folder. Only epicenter.config.ts is tracked; the generated mount
+# projections and the machine state under .epicenter/ are derived from the Yjs
+# log and rebuilt on demand, so git ignores them.
+/*
+!/.gitignore
+!/epicenter.config.ts
+`;
+
 function ensureProjectGitignore(epicenterRoot: string): void {
+	const rootGitignorePath = join(epicenterRoot, '.gitignore');
+	if (!existsSync(rootGitignorePath)) {
+		writeFileSync(rootGitignorePath, ROOT_GITIGNORE);
+	}
+
 	const projectDataDir = join(epicenterRoot, '.epicenter');
 	mkdirSync(projectDataDir, { recursive: true, mode: 0o700 });
-	const gitignorePath = join(projectDataDir, '.gitignore');
-	if (!existsSync(gitignorePath)) {
-		writeFileSync(gitignorePath, '*\n', { mode: 0o600 });
+	const cacheGitignorePath = join(projectDataDir, '.gitignore');
+	if (!existsSync(cacheGitignorePath)) {
+		writeFileSync(cacheGitignorePath, '*\n', { mode: 0o600 });
 	}
 }
 

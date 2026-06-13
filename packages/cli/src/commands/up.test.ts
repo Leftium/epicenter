@@ -261,6 +261,49 @@ describe('runUp: failure cleanup', () => {
 		}
 	});
 
+	test('scaffolds a root .gitignore that tracks only the config', async () => {
+		writeFileSync(join(workDir, 'epicenter.config.ts'), 'export default [];\n');
+
+		const handle = expectOk(
+			await runUp({
+				epicenterRoot: workDir,
+				quiet: true,
+				createAuthClient: stubAuthFactory,
+			}),
+		);
+
+		try {
+			const rootGitignore = readFileSync(join(workDir, '.gitignore'), 'utf8');
+			// Ignore-all + allowlist: the config (and the ignore file) are tracked,
+			// every generated child folder is not.
+			expect(rootGitignore).toContain('/*');
+			expect(rootGitignore).toContain('!/.gitignore');
+			expect(rootGitignore).toContain('!/epicenter.config.ts');
+		} finally {
+			await handle.teardown();
+		}
+	});
+
+	test('does not overwrite an existing root .gitignore', async () => {
+		writeFileSync(join(workDir, 'epicenter.config.ts'), 'export default [];\n');
+		const custom = '# mine\n/build\n';
+		writeFileSync(join(workDir, '.gitignore'), custom);
+
+		const handle = expectOk(
+			await runUp({
+				epicenterRoot: workDir,
+				quiet: true,
+				createAuthClient: stubAuthFactory,
+			}),
+		);
+
+		try {
+			expect(readFileSync(join(workDir, '.gitignore'), 'utf8')).toBe(custom);
+		} finally {
+			await handle.teardown();
+		}
+	});
+
 	test('releases the daemon lease when config loading fails', async () => {
 		writeFileSync(join(workDir, 'epicenter.config.ts'), 'export default {;\n');
 

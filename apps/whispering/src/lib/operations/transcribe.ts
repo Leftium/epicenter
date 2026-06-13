@@ -226,7 +226,7 @@ async function dispatchLocalTranscription(
 	// user-facing messages. The FE keeps two checks Rust cannot make as well:
 	// "nothing selected yet" (instant, no IPC) and the catalog-size truncation
 	// check (the expected sizes live in the JS catalog).
-	const modelName = deviceConfig.get(provider.modelKey);
+	const modelName = deviceConfig.get(provider.modelConfigKey);
 	if (!modelName) {
 		return TranscriptionOperationError.LocalModelNotSelected({
 			engineDisplayName: provider.label,
@@ -261,8 +261,8 @@ async function dispatchUploadTranscription(
 		return SpeachesTranscriptionServiceLive.transcribe(audio, {
 			outputLanguage,
 			prompt,
-			modelId: deviceConfig.get(provider.modelIdKey),
-			baseUrl: deviceConfig.get(provider.endpointKey),
+			modelId: deviceConfig.get(provider.modelIdConfigKey),
+			baseUrl: deviceConfig.get(provider.endpointConfigKey),
 		});
 	}
 
@@ -270,10 +270,10 @@ async function dispatchUploadTranscription(
 		return CLOUD_TRANSCRIBERS[selectedService](audio, {
 			outputLanguage,
 			prompt,
-			apiKey: deviceConfig.get(provider.apiKeyKey),
-			modelName: settings.get(provider.modelKey),
-			baseURL: provider.endpointKey
-				? deviceConfig.get(provider.endpointKey) || undefined
+			apiKey: deviceConfig.get(provider.apiKeyConfigKey),
+			modelName: settings.get(provider.modelSettingKey),
+			baseURL: provider.endpointConfigKey
+				? deviceConfig.get(provider.endpointConfigKey) || undefined
 				: undefined,
 		});
 	}

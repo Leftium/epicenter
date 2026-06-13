@@ -68,7 +68,10 @@ deviceConfig (one provider namespace, 14 keys)
 
 lib/migration/               does not exist
 transform.ts                 Custom is a map entry; no special branch
-registries                   apiKeyKey / endpointKey / modelIdKey everywhere
+registries                   apiKeyConfigKey / endpointConfigKey / modelIdConfigKey
+                             for deviceConfig pointers; modelSettingKey for the
+                             synced model selection; modelConfigKey for local
+                             model selection
 ProviderConfigFields         renders one provider's fields; ApiKeyInput is gone
 ```
 
@@ -83,7 +86,7 @@ ProviderConfigFields         renders one provider's fields; ApiKeyInput is gone
 | No endpoint keys for Anthropic/Google/OpenRouter | Product | Keep refusing | Unchanged from prior spec Open Question 1; add on demand. |
 | Uniform `endpointKey: null` in `STANDARD_PROVIDER_CONFIG` | 3 taste | Explicit null over optional | Kills the `'endpointPath' in config` narrowing trick; every entry has the same shape. |
 | Fold Custom into `STANDARD_PROVIDER_CONFIG` | 2 coherence | Map entry + delete branch | `stepModelField` covers Custom. Trim once at the call site for all providers (keys and models are pasted strings). The required-endpoint invariant stays owned by the custom service's `validateParams`. |
-| Suffix unification: `*Key` | 2 coherence | `apiKeyKey`, `endpointKey` | The values are `DeviceConfigKey`s; `Path` implies filesystem. `serverUrlKey` dies with the speaches re-key. |
+| Suffix unification: pointer fields name their store | 2 coherence | `apiKeyConfigKey`, `endpointConfigKey`, `modelIdConfigKey` (deviceConfig); `modelSettingKey` (synced settings); `modelConfigKey` (local model in deviceConfig) | The values are store key names; the suffix says which store resolves them. `Path` implies filesystem. `serverUrlKey` dies with the speaches re-key. Landed in two passes: `*Key` first, then the post-merge store-suffix pass (see Review). |
 | Rename `ApiKeyInput` to `ProviderConfigFields` | 2 coherence | Rename component + `ApiKeyProvider` type to `ProviderConfigId` | The component renders key and endpoint fields per provider; the name should say so. |
 | Leave orphaned localStorage in place | Product | No cleanup sweep | The old blob, migration state keys, and dev-machine per-key entries linger harmlessly. Cleanup code is migration code; refusal means refusal. |
 
@@ -193,7 +196,9 @@ harmlessly. No cleanup.
 - [ ] `lib/migration/` does not exist; no boot migration call; no nav dialog.
 - [ ] Every provider credential and endpoint reads from `providers.<id>.*`.
 - [ ] `transform.ts` has no Custom special case; one config map, uniform shape.
-- [ ] One vocabulary: `apiKeyKey` / `endpointKey` / `modelIdKey`.
+- [ ] One vocabulary: `apiKeyConfigKey` / `endpointConfigKey` / `modelIdConfigKey`
+      for deviceConfig pointers, `modelSettingKey` for synced settings,
+      `modelConfigKey` for local model selection.
 - [ ] `ProviderConfigFields` exists; `ApiKeyInput` does not.
 - [ ] Phase 5 greps pass; typecheck clean.
 
@@ -206,8 +211,10 @@ harmlessly. No cleanup.
 
 Four commits: the migration apparatus is gone (1018 lines deleted, 7 added),
 provider config lives in `providers.<id>.*` records, the config-key vocabulary
-is `apiKeyKey`/`endpointKey` everywhere with explicit null for non-configurable
-endpoints, and `ProviderConfigFields` replaces `ApiKeyInput`.
+is unified with explicit null for non-configurable endpoints (the suffixes
+landed as `*Key` in these commits and were refined to store-naming suffixes in
+the post-merge pass noted below), and `ProviderConfigFields` replaces
+`ApiKeyInput`.
 
 ### Deviations and Discoveries
 
@@ -238,6 +245,13 @@ endpoints, and `ProviderConfigFields` replaces `ApiKeyInput`.
   endpoints too; rename is a UX call, not taken here.
 - `specs/20260612T091000-whispering-custom-backend-profiles.md` holds the
   multi-backend product follow-up.
+- Done (post-merge naming pass, 2026-06-12): pointer fields now name their
+  store. `apiKeyKey`/`endpointKey`/`modelIdKey` became `apiKeyConfigKey`/
+  `endpointConfigKey`/`modelIdConfigKey` (deviceConfig pointers), and the
+  cloud vs local `modelKey` collision split into `modelSettingKey` (synced
+  settings) and `modelConfigKey` (deviceConfig). Persisted localStorage key
+  strings are unchanged; the convention is documented at the top of
+  `services/transcription/providers.ts`.
 
 ## References
 

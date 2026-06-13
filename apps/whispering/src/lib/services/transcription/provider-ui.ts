@@ -32,13 +32,26 @@ export const PROVIDER_ICONS = {
 	{ icon: string; invertInDarkMode: boolean }
 >;
 
+/**
+ * One provider's registry data joined with its icon, discriminated by id:
+ * narrowing on `location` (or `id`) narrows every field together, `id`
+ * included. A plain `Object.entries(...).map(...)` type would cross the full
+ * id union with the full provider union, so narrowing `location` would leave
+ * `id` broad; the mapped type keeps each id paired with its own shape.
+ */
+export type TranscriptionProviderEntry = {
+	[K in TranscriptionServiceId]: { id: K } & (typeof PROVIDERS)[K] &
+		(typeof PROVIDER_ICONS)[K];
+}[TranscriptionServiceId];
+
 /** UI-facing list: each provider's data joined with its icon, in declaration order. */
 export const TRANSCRIPTION_PROVIDERS = (
 	Object.entries(PROVIDERS) as [
 		TranscriptionServiceId,
 		(typeof PROVIDERS)[TranscriptionServiceId],
 	][]
-).map(([id, provider]) => ({ id, ...provider, ...PROVIDER_ICONS[id] }));
-
-export type TranscriptionProviderEntry =
-	(typeof TRANSCRIPTION_PROVIDERS)[number];
+).map(([id, provider]) => ({
+	id,
+	...provider,
+	...PROVIDER_ICONS[id],
+})) as TranscriptionProviderEntry[];

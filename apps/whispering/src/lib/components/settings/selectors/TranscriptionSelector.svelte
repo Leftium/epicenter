@@ -32,50 +32,12 @@
 
 	function getSelectedModelNameOrUrl(service: TranscriptionProviderEntry) {
 		switch (service.location) {
-			case 'cloud': {
-				switch (service.id) {
-					case 'Groq':
-						return settings.get('transcription.groq.model');
-					case 'OpenAI':
-						return settings.get('transcription.openai.model');
-					case 'ElevenLabs':
-						return settings.get('transcription.elevenlabs.model');
-					case 'Deepgram':
-						return settings.get('transcription.deepgram.model');
-					case 'Mistral':
-						return settings.get('transcription.mistral.model');
-				}
-				break;
-			}
+			case 'cloud':
+				return settings.get(service.modelSettingKey);
 			case 'self-hosted':
-				return deviceConfig.get('providers.speaches.endpoint');
+				return deviceConfig.get(service.endpointConfigKey);
 			case 'local':
-				return deviceConfig.get(service.modelKey);
-		}
-
-		return '';
-	}
-
-	function setSelectedCloudModel(
-		service: TranscriptionProviderEntry,
-		modelName: string,
-	) {
-		switch (service.id) {
-			case 'Groq':
-				settings.set('transcription.groq.model', modelName);
-				return;
-			case 'OpenAI':
-				settings.set('transcription.openai.model', modelName);
-				return;
-			case 'ElevenLabs':
-				settings.set('transcription.elevenlabs.model', modelName);
-				return;
-			case 'Deepgram':
-				settings.set('transcription.deepgram.model', modelName);
-				return;
-			case 'Mistral':
-				settings.set('transcription.mistral.model', modelName);
-				return;
+				return deviceConfig.get(service.modelConfigKey);
 		}
 	}
 
@@ -264,7 +226,7 @@
 											'transcription.service',
 											service.id,
 										);
-										setSelectedCloudModel(service, model.name);
+										settings.set(service.modelSettingKey, model.name);
 										combobox.closeAndFocusTrigger();
 									}}
 									class="flex items-center gap-2 px-2 py-1.5 pl-11"

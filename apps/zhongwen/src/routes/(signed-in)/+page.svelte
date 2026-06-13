@@ -18,7 +18,14 @@
 	const zhongwen = requireZhongwen();
 	const showPinyin = fromKv(zhongwen.kv, 'showPinyin');
 	const chatState = createChatState();
+
+	// Error dismissal is per-conversation: switching conversations un-dismisses
+	// so a stale ✕ never hides a different conversation's error.
 	let dismissedError = $state(false);
+	$effect(() => {
+		chatState.activeConversationId;
+		dismissedError = false;
+	});
 
 	onDestroy(() => {
 		chatState[Symbol.dispose]();

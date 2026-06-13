@@ -32,7 +32,10 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
-import type { LocalModelConfig } from '$lib/constants/local-models';
+import {
+	type LocalModelConfig,
+	modelEntryName,
+} from '$lib/constants/local-models';
 import { PATHS } from '$lib/services/fs-paths';
 import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
 
@@ -261,6 +264,13 @@ export function createModelStorage(model: LocalModelConfig) {
 		}
 	}
 
+	async function hasListedSymlinkEntry(): Promise<boolean> {
+		const entries = await listModelEntries(model.engine);
+		return entries.some(
+			(entry) => entry.name === modelEntryName(model) && entry.isSymlink,
+		);
+	}
+
 	return {
 		/**
 		 * The canonical install path: a file for Whisper, a directory for
@@ -278,17 +288,32 @@ export function createModelStorage(model: LocalModelConfig) {
 			const { data: installedPath } = await tryAsync({
 				try: async (): Promise<string | null> => {
 					const path = await getPath();
-					if (!(await exists(path))) return null;
+					const { data: pathExists } = await tryAsync({
+						try: () => exists(path),
+						catch: () => Ok(false),
+					});
+					if (!pathExists) return (await hasListedSymlinkEntry()) ? path : null;
+
 					switch (model.engine) {
 						case 'whispercpp': {
-							const stats = await stat(path);
-							return isModelFileSizeValid(stats.size, model.sizeBytes)
-								? path
-								: null;
+							const { data: stats } = await tryAsync({
+								try: () => stat(path),
+								catch: () => Ok(null),
+							});
+							if (!stats) {
+								return (await hasListedSymlinkEntry()) ? path : null;
+							}
+							return isModelFileSizeValid(stats.size, model.sizeBytes) ? path : null;
 						}
 						case 'parakeet':
 						case 'moonshine': {
-							const dirStats = await stat(path);
+							const { data: dirStats } = await tryAsync({
+								try: () => stat(path),
+								catch: () => Ok(null),
+							});
+							if (!dirStats) {
+								return (await hasListedSymlinkEntry()) ? path : null;
+							}
 							if (!dirStats.isDirectory) return null;
 							for (const file of model.files) {
 								const filePath = await join(path, file.filename);

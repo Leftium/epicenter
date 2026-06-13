@@ -119,10 +119,47 @@ const DEVICE_DEFINITIONS = {
 type DeviceConfigDefs = typeof DEVICE_DEFINITIONS;
 export type DeviceConfigKey = keyof DeviceConfigDefs & string;
 
+// ── Legacy migration ─────────────────────────────────────────────────────────
+
+const DEVICE_CONFIG_PREFIX = 'whispering.device.';
+
+const LEGACY_LOCAL_MODEL_SELECTIONS = [
+	{
+		from: 'transcription.whispercpp.modelPath',
+		to: 'transcription.whispercpp.model',
+	},
+	{
+		from: 'transcription.parakeet.modelPath',
+		to: 'transcription.parakeet.model',
+	},
+	{
+		from: 'transcription.moonshine.modelPath',
+		to: 'transcription.moonshine.model',
+	},
+] as const satisfies readonly {
+	from: string;
+	to: DeviceConfigKey;
+}[];
+
+function modelEntryNameFromLegacyPath(path: string) {
+	return path.replace(/\\/g, '/').replace(/\/+$/, '').split('/').at(-1) ?? '';
+}
+
+function readLegacyString(key: string) {
+	const raw = window.localStorage.getItem(`${DEVICE_CONFIG_PREFIX}${key}`);
+	if (raw === null) return null;
+	try {
+		const value = JSON.parse(raw) as unknown;
+		return typeof value === 'string' ? value : null;
+	} catch {
+		return null;
+	}
+}
+
 // ── Singleton ────────────────────────────────────────────────────────────────
 
 export const deviceConfig = createPersistedMap({
-	prefix: 'whispering.device.',
+	prefix: DEVICE_CONFIG_PREFIX,
 	definitions: DEVICE_DEFINITIONS,
 	onError: (key) => {
 		log.info(`Invalid device config for "${key}", using default`);
@@ -137,3 +174,11 @@ export const deviceConfig = createPersistedMap({
 		});
 	},
 });
+
+for (const migration of LEGACY_LOCAL_MODEL_SELECTIONS) {
+	if (deviceConfig.get(migration.to)) continue;
+	const legacyPath = readLegacyString(migration.from);
+	if (!legacyPath) continue;
+	const entryName = modelEntryNameFromLegacyPath(legacyPath);
+	if (entryName) deviceConfig.set(migration.to, entryName);
+}

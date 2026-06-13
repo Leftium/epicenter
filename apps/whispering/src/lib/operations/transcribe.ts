@@ -1,3 +1,4 @@
+import { InstantString } from '@epicenter/field';
 import { stat } from '@tauri-apps/plugin-fs';
 import {
 	type AnyTaggedError,
@@ -200,7 +201,7 @@ export async function transcribeAndPersist(
 		recordings.update(recordingId, {
 			transcription: {
 				status: 'failed',
-				completedAt: new Date().toISOString(),
+				completedAt: InstantString.now(),
 				error: extractErrorMessage(error),
 			},
 		});
@@ -210,7 +211,7 @@ export async function transcribeAndPersist(
 		transcript: transcribedText,
 		transcription: {
 			status: 'completed',
-			completedAt: new Date().toISOString(),
+			completedAt: InstantString.now(),
 		},
 	});
 	return Ok(transcribedText);

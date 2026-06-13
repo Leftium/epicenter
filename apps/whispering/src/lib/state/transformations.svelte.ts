@@ -19,6 +19,7 @@
  * ```
  */
 
+import { InstantString } from '@epicenter/field';
 import { fromTable } from '@epicenter/svelte';
 import { nanoid } from 'nanoid/non-secure';
 import { whispering } from '#platform/whispering';
@@ -109,7 +110,7 @@ if (import.meta.hot) {
  * ```
  */
 export function generateDefaultTransformation(): Transformation {
-	const now = new Date().toISOString();
+	const now = InstantString.now();
 	return {
 		id: nanoid(),
 		title: '',
@@ -143,7 +144,7 @@ export function saveTransformationWithSteps(
 	whispering.ydoc.transact(() => {
 		transformations.set({
 			...transformation,
-			updatedAt: new Date().toISOString(),
+			updatedAt: InstantString.now(),
 		});
 		transformationSteps.deleteByTransformationId(transformation.id);
 		for (const [order, step] of steps.entries()) {

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { InstantString } from '@epicenter/field';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import { Input } from '@epicenter/ui/input';
@@ -6,6 +7,7 @@
 	import * as Modal from '@epicenter/ui/modal';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { Textarea } from '@epicenter/ui/textarea';
+	import { TimezoneCombobox } from '@epicenter/ui/timezone-combobox';
 	import EditIcon from '@lucide/svelte/icons/pencil';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { onDestroy } from 'svelte';
@@ -153,11 +155,29 @@
 					id="recordedAt"
 					value={workingCopy.recordedAt}
 					oninput={(e) => {
-						workingCopy = { ...workingCopy, recordedAt: e.currentTarget.value };
+						workingCopy = {
+							...workingCopy,
+							recordedAt: e.currentTarget.value as Recording['recordedAt'],
+						};
 						isWorkingCopyDirty = true;
 					}}
 					class="col-span-3"
 				/>
+			</div>
+			<div class="grid grid-cols-4 items-center gap-4">
+				<Label class="text-right">Recorded Timezone</Label>
+				<div class="col-span-3">
+					<TimezoneCombobox
+						bind:value={() => workingCopy.recordedAtZone,
+							(recordedAtZone) => {
+								workingCopy = {
+									...workingCopy,
+									recordedAtZone: recordedAtZone as Recording['recordedAtZone'],
+								};
+								isWorkingCopyDirty = true;
+							}}
+					/>
+				</div>
 			</div>
 			<div class="grid grid-cols-4 items-center gap-4">
 				<Label for="transcript" class="text-right">Transcript</Label>
@@ -201,13 +221,37 @@
 			</Button>
 			<Button
 				onclick={() => {
-				recordings.set($state.snapshot(workingCopy));
-				report.success({
-					title: 'Updated recording!',
-					description: 'Your recording has been updated successfully.',
-				});
-				isDialogOpen = false;
-			}}
+					const snapshot = $state.snapshot(workingCopy);
+					if (!InstantString.is(snapshot.recordedAt)) {
+						report.info({
+							title: 'Recorded At is not a valid instant',
+							description:
+								'Use a UTC ISO timestamp like 2026-06-13T16:20:00.000Z.',
+						});
+						return;
+					}
+
+					const { error } = recordings.update(recording.id, {
+						title: snapshot.title,
+						recordedAt: snapshot.recordedAt,
+						recordedAtZone: snapshot.recordedAtZone,
+						transcript: snapshot.transcript,
+					});
+
+					if (error) {
+						report.error({
+							title: 'Could not update recording',
+							cause: error,
+						});
+						return;
+					}
+
+					report.success({
+						title: 'Updated recording!',
+						description: 'Your recording has been updated successfully.',
+					});
+					isDialogOpen = false;
+				}}
 				disabled={!isWorkingCopyDirty}
 			>
 				Save

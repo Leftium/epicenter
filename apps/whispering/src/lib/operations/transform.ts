@@ -10,6 +10,7 @@ import { services } from '$lib/services';
 import type { DeviceConfigKey } from '$lib/state/device-config.svelte';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { transformationRuns } from '$lib/state/transformation-runs.svelte';
+import { transformationHasWork } from '$lib/state/transformations.svelte';
 import { asTemplateString, interpolateTemplate } from '$lib/utils/template';
 import type {
 	Replacement,
@@ -161,16 +162,14 @@ export async function runTransformation({
 		});
 	}
 
-	const { preReplacements, prompt, postReplacements } = transformation;
-
-	const hasWork =
-		preReplacements.length > 0 || prompt !== null || postReplacements.length > 0;
-	if (!hasWork) {
+	if (!transformationHasWork(transformation)) {
 		return TransformError.Empty({
 			message:
 				'This transformation has nothing to run. Add a replacement or a prompt',
 		});
 	}
+
+	const { preReplacements, prompt, postReplacements } = transformation;
 
 	const now = new Date().toISOString();
 	const runId = nanoid();

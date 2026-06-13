@@ -31,7 +31,7 @@
 	 * Liveness is derived, never stored. A run with no result reads as running
 	 * while its start is recent and interrupted once it goes quiet, so a crash
 	 * mid-run self-heals instead of wedging at "running" forever. Generous
-	 * window: a transformation is a chain of LLM calls. See
+	 * window: a transformation may make an LLM call. See
 	 * docs/articles/20260612T190745-liveness-belongs-to-the-process-not-the-row.md
 	 */
 	const RUNNING_GRACE_MS = 5 * 60 * 1000;

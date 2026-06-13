@@ -122,6 +122,19 @@ export function generateDefaultTransformation(): Transformation {
 }
 
 /**
+ * Whether a transformation has at least one phase to run: a pre-replacement, the
+ * prompt, or a post-replacement. This is the "runnable" invariant, shared by the
+ * runtime guard in `runTransformation` and the editor's run-button state.
+ */
+export function transformationHasWork(transformation: Transformation): boolean {
+	return (
+		transformation.preReplacements.length > 0 ||
+		transformation.prompt !== null ||
+		transformation.postReplacements.length > 0
+	);
+}
+
+/**
  * Save a transformation, stamping `updatedAt`. Works for both create and update
  * since the whole fixed-phase shape lives on the row itself, there is no child
  * steps table to reconcile.

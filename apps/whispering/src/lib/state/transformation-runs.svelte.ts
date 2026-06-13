@@ -1,12 +1,11 @@
 /**
  * Reactive transformation run state backed by Yjs workspace tables.
  *
- * Transformation runs track execution records for transformation pipelines.
- * Each run has a status lifecycle: running → completed | failed.
- *
- * During the transition period, new runs are written to workspace tables AND
- * BlobStore (for backward compatibility). Historical runs that weren't migrated
- * are still available via BlobStore queries.
+ * Transformation runs track execution records. A run stores only its terminal
+ * outcome in `result` (completed or failed); while it is executing or if it was
+ * interrupted, `result` is null and liveness is derived from `startedAt`, never
+ * stored. See
+ * docs/articles/20260612T190745-liveness-belongs-to-the-process-not-the-row.md.
  *
  * @example
  * ```typescript

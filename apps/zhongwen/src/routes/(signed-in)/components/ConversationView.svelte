@@ -14,6 +14,10 @@
 </script>
 
 <script lang="ts">
+	import {
+		AiChatHttpError,
+		type AiChatError,
+	} from '@epicenter/constants/ai-chat-errors';
 	import { API_ROUTES } from '@epicenter/constants/api-routes';
 	import { APP_URLS } from '@epicenter/constants/vite';
 	import { Button } from '@epicenter/ui/button';
@@ -21,16 +25,20 @@
 	import { generateId } from '@epicenter/workspace';
 	import {
 		appendUserMessage,
+		findActiveChatDocGeneration,
 		type ChatDocMessage,
 		observeChatDocMessages,
 		readChatDocMessages,
 	} from '@epicenter/workspace/ai';
-	import { DEFAULT_MODEL, DEFAULT_PROVIDER } from '../chat/providers';
-	import { ZHONGWEN_SYSTEM_PROMPT } from '../chat/system-prompt';
-	import type { ConversationId } from '@epicenter/zhongwen';
+	import {
+		type ConversationId,
+		ZHONGWEN_DEFAULT_MODEL,
+		ZHONGWEN_DEFAULT_PROVIDER,
+	} from '@epicenter/zhongwen';
 	import { onDestroy } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { requireZhongwen } from '$lib/session';
+	import { ZHONGWEN_SYSTEM_PROMPT } from '../chat/system-prompt';
 	import ChatInput from './ChatInput.svelte';
 	import ChatMessage from './ChatMessage.svelte';
 
@@ -40,6 +48,11 @@
 	}: { conversationId: ConversationId; showPinyin: boolean } = $props();
 
 	const zhongwen = requireZhongwen();
+
+	type SendError = {
+		message: string;
+		name?: AiChatError['name'];
+	};
 
 	// The durable conversation row (provider/model/title) is read at action
 	// time inside the send/kickoff handlers, never in the template (the header
@@ -56,10 +69,14 @@
 	// svelte-ignore state_referenced_locally
 	const docHandle = zhongwen.conversationDocs.open(conversationId);
 
-	let messages = $state.raw<ChatDocMessage[]>(
-		readChatDocMessages(docHandle.ydoc),
+	const initialMessages = readChatDocMessages(docHandle.ydoc);
+	const mountedAt = Date.now();
+	const initialActiveGeneration = findActiveChatDocGeneration(
+		initialMessages,
+		mountedAt,
 	);
-	let lastDocChangeAt = $state(0);
+	let messages = $state.raw<ChatDocMessage[]>(initialMessages);
+	let lastDocChangeAt = $state(initialActiveGeneration ? mountedAt : 0);
 	const unobserve = observeChatDocMessages(docHandle.ydoc, () => {
 		messages = readChatDocMessages(docHandle.ydoc);
 		lastDocChangeAt = Date.now();
@@ -79,20 +96,22 @@
 	});
 
 	let kickoffController = $state.raw<AbortController | null>(null);
-	let sendError = $state<string | null>(null);
+	let sendError = $state<SendError | null>(null);
 	let dismissedError = $state(false);
 	let inputValue = $state('');
 
 	const trailing = $derived(messages.at(-1));
+	const activeGeneration = $derived(
+		findActiveChatDocGeneration(messages, now),
+	);
 	const isRemoteLive = $derived(
-		trailing?.role === 'assistant' &&
-			trailing.finish === undefined &&
-			now - lastDocChangeAt < STREAM_GRACE_MS,
+		activeGeneration !== undefined && now - lastDocChangeAt < STREAM_GRACE_MS,
 	);
 	const isGenerating = $derived(kickoffController !== null || isRemoteLive);
 	const isThinking = $derived(
 		isGenerating &&
-			(trailing?.role !== 'assistant' || trailing.text.length === 0),
+			(activeGeneration?.text.length === 0 ||
+				(activeGeneration === undefined && trailing?.role !== 'assistant')),
 	);
 	const isInterrupted = $derived(
 		trailing?.role === 'assistant' &&
@@ -102,8 +121,35 @@
 	const failure = $derived(
 		trailing?.finish?.kind === 'failed' ? trailing.finish : undefined,
 	);
-	const error = $derived(sendError ?? failure?.message ?? null);
+	const error = $derived(sendError?.message ?? failure?.message ?? null);
+	const canRetry = $derived(
+		sendError?.name === 'GenerationInProgress'
+			? activeGeneration === undefined
+			: true,
+	);
 
+	/**
+	 * Preserve the structured server-blocking error. A generic Retry button is a
+	 * trap while the server still sees a recent unfinished assistant message.
+	 */
+	function toSendError(error: unknown): SendError {
+		if (
+			error instanceof AiChatHttpError &&
+			error.detail.name === 'GenerationInProgress'
+		) {
+			return {
+				name: error.detail.name,
+				message: 'Previous response is still settling. Try again shortly.',
+			};
+		}
+
+		return { message: extractErrorMessage(error) };
+	}
+
+	/**
+	 * Start one server actor for this transcript doc. The AbortController is local
+	 * UI state; durable progress and terminal outcome stay in the Yjs doc.
+	 */
 	async function kickoffGeneration() {
 		if (kickoffController) return;
 		const controller = new AbortController();
@@ -119,8 +165,8 @@
 					guid: docHandle.ydoc.guid,
 					generationId: generateId(),
 					data: {
-						provider: row?.provider ?? DEFAULT_PROVIDER,
-						model: row?.model ?? DEFAULT_MODEL,
+						provider: row?.provider ?? ZHONGWEN_DEFAULT_PROVIDER,
+						model: row?.model ?? ZHONGWEN_DEFAULT_MODEL,
 						systemPrompts: [ZHONGWEN_SYSTEM_PROMPT],
 					},
 				}),
@@ -135,13 +181,17 @@
 			});
 		} catch (err) {
 			if (!controller.signal.aborted) {
-				sendError = extractErrorMessage(err);
+				sendError = toSendError(err);
 			}
 		} finally {
 			if (kickoffController === controller) kickoffController = null;
 		}
 	}
 
+	/**
+	 * A send is one durable transcript write plus one control-plane kickoff. There
+	 * is no second message table to reconcile.
+	 */
 	function sendMessage(content: string) {
 		const text = content.trim();
 		if (!text || isGenerating) return;
@@ -191,7 +241,9 @@
 			class="flex items-center gap-2 rounded-md bg-destructive/10 p-3 text-sm text-destructive"
 		>
 			<span class="flex-1">{error}</span>
-			<Button size="sm" variant="outline" onclick={retry}>Retry</Button>
+			{#if canRetry}
+				<Button size="sm" variant="outline" onclick={retry}>Retry</Button>
+			{/if}
 			<Button size="sm" variant="ghost" onclick={() => (dismissedError = true)}>
 				✕
 			</Button>

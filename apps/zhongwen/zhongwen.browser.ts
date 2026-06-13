@@ -31,6 +31,10 @@ import {
 	zhongwenConversationDocGuid,
 } from './zhongwen';
 
+/**
+ * Open Zhongwen in the browser with encrypted local storage, cloud sync, and
+ * the per-conversation transcript doc cache.
+ */
 export function openZhongwenBrowser({
 	signedIn,
 	deviceId,
@@ -127,5 +131,3 @@ export function openZhongwenBrowser({
 		},
 	});
 }
-
-export type ZhongwenBrowser = ReturnType<typeof openZhongwenBrowser>;

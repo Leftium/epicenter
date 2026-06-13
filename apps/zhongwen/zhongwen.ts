@@ -16,6 +16,12 @@
  *  - `apps/zhongwen/project.ts` → `zhongwen()` mount factory
  */
 
+import {
+	SERVABLE_MODELS,
+	SERVABLE_PROVIDER_MODELS,
+	SERVABLE_PROVIDERS,
+	type ServableProvider,
+} from '@epicenter/constants/ai-providers';
 import { field } from '@epicenter/field';
 import {
 	createWorkspace,
@@ -41,13 +47,10 @@ export const ZHONGWEN_ID = 'epicenter-zhongwen';
 export type ConversationId = Id & Brand<'ConversationId'>;
 export const generateConversationId = (): ConversationId =>
 	generateId<ConversationId>();
-/**
- * Syntactic sugar for `value as ConversationId`. The constrained `string` parameter
- * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
- * The only place in the codebase where `as ConversationId` should appear.
- */
-export const asConversationId = (value: string): ConversationId =>
-	value as ConversationId;
+
+export const ZHONGWEN_DEFAULT_PROVIDER = 'gemini' satisfies ServableProvider;
+export const ZHONGWEN_DEFAULT_MODEL =
+	'gemini-3.1-flash-lite-preview' satisfies (typeof SERVABLE_PROVIDER_MODELS)[typeof ZHONGWEN_DEFAULT_PROVIDER][number];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Table Definitions
@@ -56,8 +59,8 @@ export const asConversationId = (value: string): ConversationId =>
 const conversationsTable = defineTable({
 	id: field.string<ConversationId>(),
 	title: field.string(),
-	provider: field.string(),
-	model: field.string(),
+	provider: field.select(SERVABLE_PROVIDERS),
+	model: field.select(SERVABLE_MODELS),
 	createdAt: field.number(),
 	updatedAt: field.number(),
 });
@@ -71,10 +74,16 @@ export type Conversation = InferTableRow<typeof conversationsTable>;
 // child doc (see `zhongwenConversationDocGuid` and `@epicenter/workspace/ai`),
 // streamed into by the server generation actor. The conversations table is
 // only the cheap list.
-export function createZhongwen(opts: { keyring: () => Keyring }) {
+/**
+ * Build the isomorphic Zhongwen workspace definition.
+ *
+ * Browser and daemon wrappers attach storage, sync, and process lifecycle
+ * around this root; this factory owns only the durable schema.
+ */
+export function createZhongwen({ keyring }: { keyring: () => Keyring }) {
 	const workspace = createWorkspace({
 		id: ZHONGWEN_ID,
-		keyring: opts.keyring,
+		keyring,
 		tables: {
 			conversations: conversationsTable,
 		},
@@ -91,7 +100,6 @@ export function createZhongwen(opts: { keyring: () => Keyring }) {
 		},
 	});
 }
-export type ZhongwenWorkspace = ReturnType<typeof createZhongwen>;
 
 /**
  * Deterministic guid of a conversation's transcript sub-doc.

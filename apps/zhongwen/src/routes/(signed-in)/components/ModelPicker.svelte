@@ -1,6 +1,11 @@
 <script lang="ts">
+	import {
+		SERVABLE_PROVIDER_MODELS,
+		SERVABLE_PROVIDERS,
+		type ServableModel,
+		type ServableProvider,
+	} from '@epicenter/constants/ai-providers';
 	import * as Select from '@epicenter/ui/select';
-	import { PROVIDER_MODELS, type Provider } from '../chat/providers';
 
 	// Provider/model are durable conversation-row fields, not runtime state, so
 	// this picker reads/writes them directly and stays mountable in the header
@@ -13,14 +18,13 @@
 		onProviderChange,
 		onModelChange,
 	}: {
-		provider: string;
-		model: string;
-		onProviderChange: (provider: string) => void;
-		onModelChange: (model: string) => void;
+		provider: ServableProvider;
+		model: ServableModel;
+		onProviderChange: (provider: ServableProvider) => void;
+		onModelChange: (model: ServableModel) => void;
 	} = $props();
 
-	const providers = Object.keys(PROVIDER_MODELS) as Provider[];
-	const models = $derived(PROVIDER_MODELS[provider as Provider]);
+	const models = $derived(SERVABLE_PROVIDER_MODELS[provider]);
 </script>
 
 <div class="flex items-center gap-1.5">
@@ -28,13 +32,15 @@
 		type="single"
 		value={provider}
 		onValueChange={(value) => {
-			if (value) onProviderChange(value);
+			if (value && value in SERVABLE_PROVIDER_MODELS) {
+				onProviderChange(value as ServableProvider);
+			}
 		}}
 	>
 		<Select.Trigger size="sm">{provider}</Select.Trigger>
 		<Select.Content>
-			{#each providers as p (p)}
-				<Select.Item value={p} label={p} />
+			{#each SERVABLE_PROVIDERS as providerOption (providerOption)}
+				<Select.Item value={providerOption} label={providerOption} />
 			{/each}
 		</Select.Content>
 	</Select.Root>
@@ -45,7 +51,9 @@
 		type="single"
 		value={model}
 		onValueChange={(value) => {
-			if (value) onModelChange(value);
+			if (value && models.some((model) => model === value)) {
+				onModelChange(value as ServableModel);
+			}
 		}}
 	>
 		<Select.Trigger size="sm">{model}</Select.Trigger>

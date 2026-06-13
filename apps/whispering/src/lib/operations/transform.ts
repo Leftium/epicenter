@@ -25,38 +25,40 @@ import type {
  * `{ apiKey, model, baseUrl?, systemPrompt, userPrompt }` call signature.
  * Exhaustive over InferenceProviderId: adding a provider to INFERENCE is a
  * compile error here until its entry exists. The custom service owns the
- * "endpoint is required" invariant via its validateParams.
+ * "endpoint is required" invariant via its validateParams. `*ConfigKey`
+ * fields hold deviceConfig key names, same convention as the transcription
+ * registry in `services/transcription/providers.ts`.
  */
 const COMPLETION_PROVIDERS = {
 	OpenAI: {
 		service: services.completions.openai,
-		apiKeyKey: 'providers.openai.apiKey',
-		endpointKey: 'providers.openai.endpoint',
+		apiKeyConfigKey: 'providers.openai.apiKey',
+		endpointConfigKey: 'providers.openai.endpoint',
 	},
 	Groq: {
 		service: services.completions.groq,
-		apiKeyKey: 'providers.groq.apiKey',
-		endpointKey: 'providers.groq.endpoint',
+		apiKeyConfigKey: 'providers.groq.apiKey',
+		endpointConfigKey: 'providers.groq.endpoint',
 	},
 	Anthropic: {
 		service: services.completions.anthropic,
-		apiKeyKey: 'providers.anthropic.apiKey',
-		endpointKey: null,
+		apiKeyConfigKey: 'providers.anthropic.apiKey',
+		endpointConfigKey: null,
 	},
 	Google: {
 		service: services.completions.google,
-		apiKeyKey: 'providers.google.apiKey',
-		endpointKey: null,
+		apiKeyConfigKey: 'providers.google.apiKey',
+		endpointConfigKey: null,
 	},
 	OpenRouter: {
 		service: services.completions.openrouter,
-		apiKeyKey: 'providers.openrouter.apiKey',
-		endpointKey: null,
+		apiKeyConfigKey: 'providers.openrouter.apiKey',
+		endpointConfigKey: null,
 	},
 	Custom: {
 		service: services.completions.custom,
-		apiKeyKey: 'providers.custom.apiKey',
-		endpointKey: 'providers.custom.endpoint',
+		apiKeyConfigKey: 'providers.custom.apiKey',
+		endpointConfigKey: 'providers.custom.endpoint',
 	},
 } as const satisfies Record<
 	InferenceProviderId,
@@ -70,9 +72,9 @@ const COMPLETION_PROVIDERS = {
 				baseUrl?: string;
 			}) => Promise<Result<string, { message: string }>>;
 		};
-		apiKeyKey: DeviceConfigKey;
+		apiKeyConfigKey: DeviceConfigKey;
 		/** Device config key for the endpoint; null when not configurable. */
-		endpointKey: DeviceConfigKey | null;
+		endpointConfigKey: DeviceConfigKey | null;
 	}
 >;
 
@@ -125,10 +127,10 @@ async function handleStep({
 			// Trim everything once here: keys, model names, and URLs are
 			// pasted strings, and a trailing space fails the request opaquely.
 			return config.service.complete({
-				apiKey: deviceConfig.get(config.apiKeyKey).trim(),
+				apiKey: deviceConfig.get(config.apiKeyConfigKey).trim(),
 				model: step[INFERENCE[inferenceProvider].stepModelField].trim(),
-				baseUrl: config.endpointKey
-					? deviceConfig.get(config.endpointKey).trim() || undefined
+				baseUrl: config.endpointConfigKey
+					? deviceConfig.get(config.endpointConfigKey).trim() || undefined
 					: undefined,
 				systemPrompt,
 				userPrompt,

@@ -51,7 +51,7 @@
 		const service = settings.get('transcription.service');
 		if (!isLocalProviderId(service)) return;
 
-		const modelName = deviceConfig.get(PROVIDERS[service].modelKey);
+		const modelName = deviceConfig.get(PROVIDERS[service].modelConfigKey);
 		if (!modelName) return;
 
 		const language = settings.get('transcription.language');

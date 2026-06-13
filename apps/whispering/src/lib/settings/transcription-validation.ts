@@ -36,10 +36,10 @@ export function isTranscriptionServiceConfigured(
 ): boolean {
 	switch (service.location) {
 		case 'cloud':
-			return deviceConfig.get(service.apiKeyKey) !== '';
+			return deviceConfig.get(service.apiKeyConfigKey) !== '';
 		case 'self-hosted':
-			return deviceConfig.get(service.endpointKey) !== '';
+			return deviceConfig.get(service.endpointConfigKey) !== '';
 		case 'local':
-			return deviceConfig.get(service.modelKey) !== '';
+			return deviceConfig.get(service.modelConfigKey) !== '';
 	}
 }

@@ -1,8 +1,8 @@
 /**
  * Lifecycle orchestration for one pre-built local transcription model:
- * combines its catalog storage handle with the engine's model setting in
+ * combines its catalog storage handle with the engine's model config in
  * `deviceConfig` (the key comes from the provider registry). A model is
- * "active" when that setting holds its folder entry name.
+ * "active" when that config holds its folder entry name.
  */
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
@@ -23,7 +23,7 @@ import { deviceConfig } from '$lib/state/device-config.svelte';
  */
 export function createPrebuiltModel(model: LocalModelConfig) {
 	const storage = createModelStorage(model);
-	const settingsKey = PROVIDERS[model.engine].modelKey;
+	const modelConfigKey = PROVIDERS[model.engine].modelConfigKey;
 	const entryName = modelEntryName(model);
 
 	return {
@@ -32,12 +32,12 @@ export function createPrebuiltModel(model: LocalModelConfig) {
 		 * so reading it inside `$effect` or `$derived` tracks changes.
 		 */
 		get activeModelName() {
-			return deviceConfig.get(settingsKey);
+			return deviceConfig.get(modelConfigKey);
 		},
 
-		/** Point the engine's model setting at this model's entry name. */
+		/** Point the engine's model config at this model's entry name. */
 		activate(): void {
-			deviceConfig.set(settingsKey, entryName);
+			deviceConfig.set(modelConfigKey, entryName);
 		},
 
 		/**
@@ -57,27 +57,27 @@ export function createPrebuiltModel(model: LocalModelConfig) {
 		> {
 			const installedPath = await storage.getInstalledPath();
 			if (installedPath) {
-				deviceConfig.set(settingsKey, entryName);
+				deviceConfig.set(modelConfigKey, entryName);
 				return Ok({ outcome: 'already-installed' });
 			}
 
 			const { error: downloadError } = await storage.download({ onProgress });
 			if (downloadError) return Err(downloadError);
 
-			deviceConfig.set(settingsKey, entryName);
+			deviceConfig.set(modelConfigKey, entryName);
 			return Ok({ outcome: 'downloaded' });
 		},
 
 		/**
 		 * Remove the model from disk and, when it was the engine's active
-		 * model, clear the engine's model setting.
+		 * model, clear the engine's model config.
 		 */
 		async delete(): Promise<Result<void, LocalModelFolderError>> {
 			const { error: deleteError } = await storage.delete();
 			if (deleteError) return Err(deleteError);
 
-			if (deviceConfig.get(settingsKey) === entryName) {
-				deviceConfig.set(settingsKey, '');
+			if (deviceConfig.get(modelConfigKey) === entryName) {
+				deviceConfig.set(modelConfigKey, '');
 			}
 			return Ok(undefined);
 		},

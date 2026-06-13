@@ -22,21 +22,22 @@ export type Candidate = {
 };
 
 /**
- * Fan one input out across the given transformations, one candidate each, as
- * independent parallel completions. Each candidate's `result` promise is already
- * running on return; nothing here touches the workspace.
+ * Start one transformation over `input` and return its candidate. The `result`
+ * promise is already running on return; nothing here touches the workspace. The
+ * picker creates these one id at a time as chips toggle on, so the unit is a
+ * single candidate, not a batch.
  */
-export function fanOutCandidates({
+export function createCandidate({
 	input,
-	transformations,
+	transformation,
 }: {
 	input: string;
-	transformations: Transformation[];
-}): Candidate[] {
-	return transformations.map((transformation) => ({
+	transformation: Transformation;
+}): Candidate {
+	return {
 		id: nanoid(),
 		transformation,
 		input,
 		result: executeTransformation({ input, transformation }),
-	}));
+	};
 }

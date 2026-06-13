@@ -6,7 +6,7 @@
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
 	import { emit, listen, type UnlistenFn } from '@tauri-apps/api/event';
 	import { onDestroy, onMount } from 'svelte';
-	import { type Candidate, fanOutCandidates } from '$lib/operations/candidates';
+	import { type Candidate, createCandidate } from '$lib/operations/candidates';
 	import { persistCompletedRun } from '$lib/operations/transform';
 	import { sound } from '$lib/operations/sound';
 	import { report } from '$lib/report';
@@ -19,12 +19,15 @@
 	// The captured selection, handed over by the main window after the shortcut
 	// simulates a copy. Empty until the first input event arrives.
 	let input = $state('');
-	// Which transformations are toggled on; bound to the chip row.
-	let activeIds = $state<string[]>([]);
-	// One candidate per active transformation, kept in memory; never persisted
-	// until accept. Toggling a chip adds or removes its candidate.
+	// One candidate per toggled transformation, kept in memory; never persisted
+	// until accept. This is the single source of truth for the picker: the chip
+	// row's value is derived from it, so the two can never drift apart.
 	let candidates = $state<Candidate[]>([]);
 	let selectedIndex = $state(0);
+
+	// Which transformations are toggled on, projected from the candidate set. Feeds
+	// the chip row as a controlled value; toggling routes back through reconcile.
+	const activeIds = $derived(candidates.map((c) => c.transformation.id));
 
 	let unlistenInput: UnlistenFn | null = null;
 
@@ -40,35 +43,48 @@
 
 	onDestroy(() => unlistenInput?.());
 
-	// Each open starts fresh over the newly captured selection.
+	// Each open starts fresh over the newly captured selection. Clearing the
+	// candidate set also empties the derived chip selection.
 	function receiveInput(text: string) {
 		input = text;
-		activeIds = [];
 		candidates = [];
 		selectedIndex = 0;
 	}
 
-	// Reconcile candidates to the toggled set, preserving the promises of chips
-	// that stayed on so they don't re-run; new chips fan out one candidate each.
+	// Rebuild the candidate set to match the toggled id set, the sole writer of
+	// `candidates`. Promises of chips that stayed on are kept so they don't re-run;
+	// newly toggled chips start one candidate each.
 	function reconcile(ids: string[]) {
 		const existing = new Map(candidates.map((c) => [c.transformation.id, c]));
+		const selectedId = candidates[selectedIndex]?.transformation.id;
 		candidates = ids.flatMap((id) => {
 			const kept = existing.get(id);
 			if (kept) return [kept];
 			const transformation = transformations.get(id);
 			if (!transformation) return [];
-			return fanOutCandidates({ input, transformations: [transformation] });
+			return [createCandidate({ input, transformation })];
 		});
-		selectedIndex = Math.min(selectedIndex, Math.max(0, candidates.length - 1));
+		// Follow the highlighted candidate by identity if it survived the toggle;
+		// otherwise clamp into range. Index-only tracking would slide the highlight
+		// onto a different result when an earlier chip is removed.
+		const survivedAt = candidates.findIndex(
+			(c) => c.transformation.id === selectedId,
+		);
+		selectedIndex =
+			survivedAt >= 0
+				? survivedAt
+				: Math.min(selectedIndex, Math.max(0, candidates.length - 1));
 	}
 
-	// Toggle a transformation by id (the number-key path); the chip row reflects
-	// `activeIds` via its binding, and reconcile fans out / drops its candidate.
+	// Toggle a transformation by id (the number-key path). Mirrors a chip click:
+	// compute the next id set and reconcile. `activeIds` is derived from the
+	// candidate set, so there is no separate toggle state to keep in sync.
 	function toggleTransformation(id: string) {
-		activeIds = activeIds.includes(id)
-			? activeIds.filter((x) => x !== id)
-			: [...activeIds, id];
-		reconcile(activeIds);
+		reconcile(
+			activeIds.includes(id)
+				? activeIds.filter((x) => x !== id)
+				: [...activeIds, id],
+		);
 	}
 
 	/**
@@ -237,7 +253,7 @@
 	{:else}
 		<ToggleGroup.Root
 			type="multiple"
-			bind:value={activeIds}
+			value={activeIds}
 			onValueChange={reconcile}
 			class="flex flex-none flex-wrap justify-start gap-2"
 		>

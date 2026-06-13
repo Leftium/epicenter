@@ -1,11 +1,11 @@
 /**
  * Honeycrisp project mount.
  *
- * `honeycrisp(opts?)` returns the `Mount` that a project's
- * `epicenter.config.ts` default-exports. Disk paths are hardcoded to the
- * namespace-root layout: the SQLite mirror at `.epicenter/sqlite/<id>.db`
- * (hidden) and the read-only markdown projection at `<namespaceRoot>/honeycrisp/`
- * (visible), a direct child of the namespace root.
+ * `honeycrisp(opts?)` returns the `Mount` that an
+ * `epicenter.config.ts` default-exports. Disk paths follow the
+ * Epicenter-root layout: the SQLite mirror at `.epicenter/sqlite/<id>.db`
+ * (hidden) and the read-only markdown projection at `<epicenterRoot>/honeycrisp/`
+ * (visible), a direct child of the Epicenter root.
  */
 
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';

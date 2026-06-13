@@ -29,8 +29,8 @@ describe('document/workspace-paths', () => {
 		);
 	});
 
-	test('mountMarkdownPath is visible, keyed by mount name, a direct child of the namespace root', () => {
-		const dir = '/Users/me/vault/apps';
-		expect(mountMarkdownPath(dir, 'fuji')).toBe('/Users/me/vault/apps/fuji');
+	test('mountMarkdownPath is visible, keyed by mount name, a direct child of the Epicenter root', () => {
+		const dir = '/Users/me/my-epicenter';
+		expect(mountMarkdownPath(dir, 'fuji')).toBe('/Users/me/my-epicenter/fuji');
 	});
 });

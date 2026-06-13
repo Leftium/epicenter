@@ -1,11 +1,11 @@
 /**
  * Fuji project mount.
  *
- * `fuji(opts?)` returns the `Mount` that any project's `epicenter.config.ts`
- * default-exports. Disk paths are hardcoded to the namespace-root layout: the
+ * `fuji(opts?)` returns the `Mount` that an `epicenter.config.ts`
+ * default-exports. Disk paths follow the Epicenter-root layout: the
  * SQLite mirror lives at `.epicenter/sqlite/<id>.db` (hidden, machine-queried)
- * and the markdown projection at `<namespaceRoot>/fuji/` (visible, human-read),
- * a direct child of the namespace root.
+ * and the markdown projection at `<epicenterRoot>/fuji/` (visible, human-read),
+ * a direct child of the Epicenter root.
  *
  * What this does:
  *   1. workspace root doc (encrypted tables + KV via createFuji)

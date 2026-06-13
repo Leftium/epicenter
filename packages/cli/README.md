@@ -55,7 +55,7 @@ epicenter run fuji.entries_update '{"id":"entry_1","tags":["triaged"]}' --peer u
 epicenter peers -C ~/workspace
 ```
 
-`-C` is a start directory for namespace discovery. Discovery walks upward until it finds `epicenter.config.ts`, then the daemon starts every mount in that config. Discovery is upward-only and never scans down, so run from inside the namespace root (or any directory under it) or pass `-C <namespace-root>`. From a repo whose namespace lives at `repo/apps`, that is `epicenter daemon up -C apps`.
+`-C` is a start directory for Epicenter-root discovery. Discovery walks upward until it finds `epicenter.config.ts`, then the daemon starts every mount in that config. Discovery is upward-only and never scans down, so run from inside your Epicenter folder (or any directory under it) or pass `-C <epicenter-root>`. From a repo whose Epicenter folder lives at `repo/apps`, that is `epicenter daemon up -C apps`.
 
 ## Exit codes
 
@@ -74,7 +74,7 @@ Error text goes to stderr; machine-readable output (`--format json|jsonl`, table
 
 ## Project Mounts
 
-`epicenter.config.ts` marks the Epicenter namespace root and owns mount discovery. The default export is a `Mount[]`. App packages ship mount factories that return `Mount` values; each `Mount.name` owns the CLI prefix. The folder containing `epicenter.config.ts` is the namespace root: Epicenter owns its direct children, so each mount's visible markdown projection is a direct child folder named after the mount.
+`epicenter.config.ts` marks the Epicenter root and owns mount discovery. The default export is a `Mount[]`. App packages ship mount factories that return `Mount` values; each `Mount.name` owns the CLI prefix. The folder that holds `epicenter.config.ts` is your Epicenter folder: Epicenter owns its direct children, so each mount's visible markdown projection is a direct child folder named after the mount.
 
 ```ts
 import { fuji } from "@epicenter/fuji/project";
@@ -82,7 +82,7 @@ import { fuji } from "@epicenter/fuji/project";
 export default [fuji()];
 ```
 
-The returned `Mount.name` is `fuji`, so the CLI addresses actions as `fuji.<action_key>` regardless of the namespace folder name.
+The returned `Mount.name` is `fuji`, so the CLI addresses actions as `fuji.<action_key>` regardless of the Epicenter folder name.
 
 For projects that host more than one mount, add more entries to the array:
 
@@ -93,18 +93,18 @@ import { honeycrisp } from "@epicenter/honeycrisp/project";
 export default [fuji(), honeycrisp()];
 ```
 
-The folder holding `epicenter.config.ts` is the namespace root. `.epicenter/` and each mount's generated projection are direct children:
+The folder that holds `epicenter.config.ts` is your Epicenter folder. `.epicenter/` and each mount's generated projection are direct children:
 
 ```
 repo/                      unreserved repo root
-└── apps/                  Epicenter namespace root
-    ├── epicenter.config.ts   tracked, marks the namespace
-    ├── .epicenter/           ignored, namespace-local machine state
+└── epicenter/             Epicenter root (folder name is your choice)
+    ├── epicenter.config.ts   tracked, marks the Epicenter root
+    ├── .epicenter/           ignored, machine state for this root
     ├── fuji/                 ignored, generated Fuji projection
     └── honeycrisp/           ignored, generated Honeycrisp projection
 ```
 
-Put `epicenter.config.ts` in a folder dedicated to Epicenter, such as `apps/` or `epicenter/`, not at a repo root that already holds source. The marker is the config file, not the folder name.
+Put `epicenter.config.ts` in a folder dedicated to Epicenter, such as `epicenter/` or `apps/`, not at a repo root that already holds source. The marker is the config file, not the folder name; nothing reserves the name `apps`.
 
 Writing a custom mount inline uses `defineMount` from `@epicenter/workspace/daemon`:
 
@@ -117,7 +117,7 @@ export default [
     async open({
       keyring,
       openWebSocket,
-      projectDir,
+      epicenterRoot,
       mount,
       ownerId,
       deviceId,
@@ -133,7 +133,7 @@ export default [
 
 `Mount.name` is the CLI prefix. Two mounts in one project must have distinct names; duplicates fail before any mount opens.
 
-`.epicenter/` holds the namespace's generated machine state such as SQLite materializers, Yjs update logs, markdown materializers, and its generated `.gitignore`. It is not a registry. Runtime files live outside the namespace: sockets and daemon metadata use the OS runtime directory, while daemon logs use the platform log directory from `env-paths`.
+`.epicenter/` holds the Epicenter root's generated machine state such as SQLite materializers, Yjs update logs, markdown materializers, and its generated `.gitignore`. It is not a registry. Runtime files live outside the Epicenter root: sockets and daemon metadata use the OS runtime directory, while daemon logs use the platform log directory from `env-paths`.
 
 ## Scripting
 

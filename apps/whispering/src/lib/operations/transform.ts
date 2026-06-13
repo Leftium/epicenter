@@ -181,7 +181,7 @@ export async function runTransformation({
 		recordingId,
 		input,
 		startedAt: now,
-		result: { status: 'running' },
+		result: null,
 	} satisfies TransformationRun;
 
 	transformationRuns.set(transformationRun);
@@ -197,7 +197,7 @@ export async function runTransformation({
 			order: stepIndex,
 			input: currentInput,
 			startedAt: new Date().toISOString(),
-			result: { status: 'running' },
+			result: null,
 		} satisfies TransformationStepRun;
 		transformationStepRuns.set(stepRun);
 

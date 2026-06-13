@@ -107,7 +107,7 @@
 				.transcript}"
 		/>
 
-		{#if latestRun?.result.status === 'completed'}
+		{#if latestRun?.result?.status === 'completed'}
 			<CopyButton
 				text={latestRun.result.output}
 				copyFn={createCopyFn('latest transformation run output')}

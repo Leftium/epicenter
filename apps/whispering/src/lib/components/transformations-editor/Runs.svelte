@@ -16,6 +16,10 @@
 	import { report } from '$lib/report';
 	import { transformationRuns } from '$lib/state/transformation-runs.svelte';
 	import { transformationStepRuns } from '$lib/state/transformation-step-runs.svelte';
+	import {
+		type DerivedRunStatus,
+		deriveRunStatus,
+	} from '$lib/utils/transformation-run-status';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import type { TransformationRun } from '$lib/workspace';
 
@@ -29,6 +33,19 @@
 
 	function formatDate(dateStr: string) {
 		return format(new Date(dateStr), 'MMM d, yyyy h:mm a');
+	}
+
+	function statusBadgeVariant(status: DerivedRunStatus) {
+		switch (status) {
+			case 'completed':
+				return 'status.completed' as const;
+			case 'failed':
+				return 'status.failed' as const;
+			case 'running':
+				return 'status.running' as const;
+			case 'interrupted':
+				return 'secondary' as const;
+		}
 	}
 </script>
 
@@ -82,6 +99,7 @@
 				</Table.Header>
 				<Table.Body>
 					{#each runs as run}
+						{@const runStatus = deriveRunStatus(run)}
 						<Table.Row>
 							<Table.Cell>
 								<Button
@@ -98,15 +116,13 @@
 								</Button>
 							</Table.Cell>
 							<Table.Cell>
-								<Badge variant={`status.${run.result.status}`}>
-									{run.result.status}
+								<Badge variant={statusBadgeVariant(runStatus)}>
+									{runStatus}
 								</Badge>
 							</Table.Cell>
 							<Table.Cell> {formatDate(run.startedAt)} </Table.Cell>
 							<Table.Cell>
-								{run.result.status === 'running'
-									? '-'
-									: formatDate(run.result.completedAt)}
+								{run.result ? formatDate(run.result.completedAt) : '-'}
 							</Table.Cell>
 							<Table.Cell class="text-right">
 								<Button
@@ -143,10 +159,10 @@
 									<Label class="text-sm font-medium">Input</Label>
 									<CopyablePre variant="text" copyableText={run.input} />
 
-									{#if run.result.status === 'completed'}
+									{#if run.result?.status === 'completed'}
 										<Label class="text-sm font-medium">Output</Label>
 										<CopyablePre variant="text" copyableText={run.result.output} />
-									{:else if run.result.status === 'failed'}
+									{:else if run.result?.status === 'failed'}
 										<Label class="text-sm font-medium">Error</Label>
 										<CopyablePre variant="error" copyableText={run.result.error} />
 									{/if}
@@ -166,19 +182,20 @@
 													</Table.Header>
 													<Table.Body>
 														{#each stepRuns as stepRun}
+															{@const stepStatus = deriveRunStatus(stepRun)}
 															<Table.Row>
 																<Table.Cell>
-																	<Badge variant={`status.${stepRun.result.status}`}>
-																		{stepRun.result.status}
+																	<Badge variant={statusBadgeVariant(stepStatus)}>
+																		{stepStatus}
 																	</Badge>
 																</Table.Cell>
 																<Table.Cell>
 																	{formatDate(stepRun.startedAt)}
 																</Table.Cell>
 																<Table.Cell>
-																	{stepRun.result.status === 'running'
-																		? '-'
-																		: formatDate(stepRun.result.completedAt)}
+																	{stepRun.result
+																		? formatDate(stepRun.result.completedAt)
+																		: '-'}
 																</Table.Cell>
 																<Table.Cell>
 																	<TextPreviewDialog
@@ -190,7 +207,7 @@
 																	/>
 																</Table.Cell>
 																<Table.Cell>
-																	{#if stepRun.result.status === 'completed'}
+																	{#if stepRun.result?.status === 'completed'}
 																		<TextPreviewDialog
 																			id={viewTransition.stepRun(stepRun.id)
 																				.output}
@@ -198,7 +215,7 @@
 																			label="step output"
 																			text={stepRun.result.output}
 																		/>
-																	{:else if stepRun.result.status === 'failed'}
+																	{:else if stepRun.result?.status === 'failed'}
 																		<TextPreviewDialog
 																			id={viewTransition.stepRun(stepRun.id)
 																				.error}

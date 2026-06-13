@@ -3,7 +3,6 @@ export {
 	createWhispering,
 	type FailedResult,
 	type Recording,
-	type RunningResult,
 	type Transformation,
 	type TransformationRun,
 	type TransformationRunResult,

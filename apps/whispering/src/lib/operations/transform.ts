@@ -140,12 +140,77 @@ function runPrompt(
 }
 
 /**
- * Run a transformation: deterministic `preReplacements`, then the optional
- * `prompt`, then deterministic `postReplacements`. Persists the run record to
- * workspace state at kickoff (with `result: null`) and again on the terminal
- * outcome (including failure); liveness is derived from `startedAt`, never
- * stored. The returned Result is purely for caller control flow. Pure
- * orchestration; no toasts, no notifications.
+ * The guard both entry points share: a run needs non-empty input and a
+ * transformation with at least one phase (the runnable invariant). Returns the
+ * matching error, or null when the run may proceed. `runTransformation` calls it
+ * before any write so a run that can't legitimately start leaves no record.
+ */
+function checkRunnable(
+	input: string,
+	transformation: Transformation,
+): Result<never, TransformError> | null {
+	if (!input.trim()) {
+		return TransformError.InvalidInput({
+			message: 'Empty input. Please enter some text to transform',
+		});
+	}
+	if (!transformationHasWork(transformation)) {
+		return TransformError.Empty({
+			message:
+				'This transformation has nothing to run. Add a replacement or a prompt',
+		});
+	}
+	return null;
+}
+
+/**
+ * Execute a transformation's three phases against `input` and return the output:
+ * deterministic `preReplacements`, then the optional `prompt`, then deterministic
+ * `postReplacements`. Pure execution: no workspace writes, no persistence, no
+ * toasts. Validates the runnable invariant up front so direct callers (the
+ * candidate fan-out) get the same guards as a persisted run.
+ */
+export async function executeTransformation({
+	input,
+	transformation,
+}: {
+	input: string;
+	transformation: Transformation;
+}): Promise<Result<string, TransformError>> {
+	const guard = checkRunnable(input, transformation);
+	if (guard) return guard;
+
+	const { preReplacements, prompt, postReplacements } = transformation;
+
+	const preResult = applyReplacements(input, preReplacements);
+	if (isErr(preResult)) {
+		return TransformError.ReplacementFailed({ message: preResult.error });
+	}
+	let current = preResult.data;
+
+	if (prompt) {
+		const promptResult = await runPrompt(current, prompt);
+		if (isErr(promptResult)) {
+			return TransformError.PromptFailed({
+				message: extractErrorMessage(promptResult.error),
+			});
+		}
+		current = promptResult.data;
+	}
+
+	const postResult = applyReplacements(current, postReplacements);
+	if (isErr(postResult)) {
+		return TransformError.ReplacementFailed({ message: postResult.error });
+	}
+	return Ok(postResult.data);
+}
+
+/**
+ * Run a transformation and persist its run record. Persists at kickoff (with
+ * `result: null`) and again on the terminal outcome (including failure); liveness
+ * is derived from `startedAt`, never stored. Execution is delegated to
+ * `executeTransformation`; this wrapper owns only the persistence. The returned
+ * Result is purely for caller control flow. No toasts, no notifications.
  */
 export async function runTransformation({
 	input,
@@ -156,77 +221,41 @@ export async function runTransformation({
 	transformation: Transformation;
 	recordingId: string | null;
 }): Promise<Result<string, TransformError>> {
-	if (!input.trim()) {
-		return TransformError.InvalidInput({
-			message: 'Empty input. Please enter some text to transform',
-		});
-	}
-
-	if (!transformationHasWork(transformation)) {
-		return TransformError.Empty({
-			message:
-				'This transformation has nothing to run. Add a replacement or a prompt',
-		});
-	}
-
-	const { preReplacements, prompt, postReplacements } = transformation;
-
-	const now = new Date().toISOString();
-	const runId = nanoid();
+	// Don't leave a run record for a run that can't legitimately start.
+	const guard = checkRunnable(input, transformation);
+	if (guard) return guard;
 
 	const transformationRun = {
-		id: runId,
+		id: nanoid(),
 		transformationId: transformation.id,
 		recordingId,
 		input,
-		startedAt: now,
+		startedAt: new Date().toISOString(),
 		result: null,
 	} satisfies TransformationRun;
-
 	transformationRuns.set(transformationRun);
 
-	const fail = (message: string) => {
+	const result = await executeTransformation({ input, transformation });
+
+	if (isErr(result)) {
 		transformationRuns.set({
 			...transformationRun,
 			result: {
 				status: 'failed',
 				completedAt: new Date().toISOString(),
-				error: message,
+				error: result.error.message,
 			},
 		} satisfies TransformationRun);
-	};
-
-	const preResult = applyReplacements(input, preReplacements);
-	if (isErr(preResult)) {
-		fail(preResult.error);
-		return TransformError.ReplacementFailed({ message: preResult.error });
+		return result;
 	}
-	let current = preResult.data;
-
-	if (prompt) {
-		const promptResult = await runPrompt(current, prompt);
-		if (isErr(promptResult)) {
-			const message = extractErrorMessage(promptResult.error);
-			fail(message);
-			return TransformError.PromptFailed({ message });
-		}
-		current = promptResult.data;
-	}
-
-	const postResult = applyReplacements(current, postReplacements);
-	if (isErr(postResult)) {
-		fail(postResult.error);
-		return TransformError.ReplacementFailed({ message: postResult.error });
-	}
-	current = postResult.data;
 
 	transformationRuns.set({
 		...transformationRun,
 		result: {
 			status: 'completed',
 			completedAt: new Date().toISOString(),
-			output: current,
+			output: result.data,
 		},
 	} satisfies TransformationRun);
-	return Ok(current);
+	return result;
 }

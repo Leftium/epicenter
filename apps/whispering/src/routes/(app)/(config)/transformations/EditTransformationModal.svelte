@@ -3,6 +3,7 @@
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Modal from '@epicenter/ui/modal';
 	import { Separator } from '@epicenter/ui/separator';
+	import { untrack } from 'svelte';
 	import HistoryIcon from '@lucide/svelte/icons/history';
 	import EditIcon from '@lucide/svelte/icons/pencil';
 	import PlayIcon from '@lucide/svelte/icons/play';
@@ -24,19 +25,34 @@
 	let isDialogOpen = $state(false);
 
 	/**
-	 * Working copy of the transformation. Resets when upstream data changes.
-	 * User edits the copy freely; only persisted to workspace on Save.
+	 * Independent edit buffer. Must be `$state`, not `$derived`: the user mutates
+	 * it freely (provider, model, replacements) and it has to survive arbitrary
+	 * reactivity until an explicit Save. A `$derived` would re-run and discard
+	 * those edits. Re-snapshotted from the saved row each time the modal opens, so
+	 * an abandoned edit never leaks into the next open.
 	 */
-	let workingCopy = $derived(transformation);
+	// svelte-ignore state_referenced_locally -- intentional initial seed; the
+	// effect below re-syncs from `transformation` each time the modal opens.
+	let workingCopy = $state($state.snapshot(transformation));
+
+	$effect(() => {
+		if (isDialogOpen) {
+			// untrack `transformation`: re-init only on open, never mid-edit (a
+			// background row update must not clobber unsaved changes).
+			untrack(() => {
+				workingCopy = $state.snapshot(transformation);
+			});
+		}
+	});
 
 	/**
-	 * Tracks whether the user has made changes to the working copy.
-	 * Resets to false when upstream transformation data changes.
+	 * Dirty is a true derivation: the buffer differs from the saved row. No
+	 * imperative flag to keep in sync. `updatedAt` only diverges at save time, by
+	 * which point the modal is closing, so it never reads as a spurious edit.
 	 */
-	let isWorkingCopyDirty = $derived.by(() => {
-		transformation;
-		return false;
-	});
+	let isWorkingCopyDirty = $derived(
+		JSON.stringify($state.snapshot(workingCopy)) !== JSON.stringify(transformation),
+	);
 
 	function promptUserConfirmLeave() {
 		if (!isWorkingCopyDirty) {
@@ -49,8 +65,7 @@
 			description: 'You have unsaved changes. Are you sure you want to leave?',
 			confirm: { text: 'Leave' },
 			onConfirm: () => {
-				workingCopy = transformation;
-				isWorkingCopyDirty = false;
+				workingCopy = $state.snapshot(transformation);
 				isDialogOpen = false;
 			},
 		});
@@ -103,13 +118,7 @@
 			<Separator />
 		</Modal.Header>
 
-		<Editor
-			bind:transformation={() => workingCopy,
-				(v) => {
-					workingCopy = v;
-					isWorkingCopyDirty = true;
-				}}
-		/>
+		<Editor bind:transformation={() => workingCopy, (v) => (workingCopy = v)} />
 
 		<Modal.Footer>
 			<Button

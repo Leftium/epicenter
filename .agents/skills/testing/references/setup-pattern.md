@@ -144,9 +144,9 @@ Table definitions used across multiple tests should be defined at module level, 
 
 ```typescript
 const filesTable = defineTable({
-	id: column.string<FileId>(),
-	name: column.string(),
-	updatedAt: column.integer(),
+	id: field.string<FileId>(),
+	name: field.string(),
+	updatedAt: field.integer(),
 });
 
 function setup() {

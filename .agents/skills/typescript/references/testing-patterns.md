@@ -13,7 +13,7 @@ When a schema, builder, or configuration is only used once in a test, inline it 
 
 ```typescript
 test('builds a workspace bundle', () => {
-	const posts = defineTable({ id: column.string<PostId>(), title: column.string() });
+	const posts = defineTable({ id: field.string<PostId>(), title: field.string() });
 
 	const theme = defineKv(Type.Union([Type.Literal('light'), Type.Literal('dark')]), () => 'light');
 
@@ -34,7 +34,7 @@ test('builds a workspace bundle', () => {
 	const workspace = createWorkspace({
 		id: 'test-app',
 		tables: {
-			posts: defineTable({ id: column.string<PostId>(), title: column.string() }),
+			posts: defineTable({ id: field.string<PostId>(), title: field.string() }),
 		},
 		kv: {
 			theme: defineKv(
@@ -68,7 +68,7 @@ Extract to a variable when:
 
 - `defineTable()`, `defineKv()`, `createDisposableCache()` builders
 - `createWorkspace()` factory calls
-- Schema definitions (TypeBox `column.*` / `Type.*`, arktype, zod, etc.)
+- Schema definitions (TypeBox `field.*` / `Type.*`, arktype, zod, etc.)
 - Configuration objects passed to factories
 - Mock functions used only once
 

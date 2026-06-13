@@ -74,14 +74,24 @@
 			if (typeof value !== 'string' || !value) return '';
 			const date = new Date(value);
 			if (Number.isNaN(date.getTime())) return value;
+			const timeZone = getTimeZone?.(row.original);
+			const options: Intl.DateTimeFormatOptions = {
+				year: 'numeric',
+				month: 'short',
+				day: 'numeric',
+				hour: 'numeric',
+				minute: '2-digit',
+				timeZone,
+				...(timeZone ? { timeZoneName: 'short' } : {}),
+			};
 			try {
-				return new Intl.DateTimeFormat(undefined, {
-					dateStyle: 'medium',
-					timeStyle: 'short',
-					timeZone: getTimeZone?.(row.original),
-				}).format(date);
+				return new Intl.DateTimeFormat(undefined, options).format(date);
 			} catch {
-				return value;
+				return new Intl.DateTimeFormat(undefined, {
+					...options,
+					timeZone: undefined,
+					timeZoneName: undefined,
+				}).format(date);
 			}
 		};
 	}

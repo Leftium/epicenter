@@ -14,6 +14,7 @@
 	import InboxIcon from '@lucide/svelte/icons/inbox';
 	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import PlusIcon from '@lucide/svelte/icons/plus';
+	import TagIcon from '@lucide/svelte/icons/tag';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { todosState } from '$lib/todos/client';
@@ -23,9 +24,24 @@
 	let body = $state('');
 	let dueDate = $state<CalendarDateString | null>(null);
 	let dueOpen = $state(false);
+	let pickedContexts = $state<ContextSlug[]>([]);
+	let contextOpen = $state(false);
 	let contextName = $state('');
 	let editingSlug = $state<ContextSlug | null>(null);
 	let editingName = $state('');
+
+	// Default a new todo's contexts to whichever context is being viewed, so
+	// adding a task from inside a context tags it; "All" starts with none.
+	$effect(() => {
+		const viewing = todosState.selectedContextId;
+		pickedContexts = viewing ? [viewing] : [];
+	});
+
+	function togglePicked(slug: ContextSlug) {
+		pickedContexts = pickedContexts.includes(slug)
+			? pickedContexts.filter((existing) => existing !== slug)
+			: [...pickedContexts, slug];
+	}
 
 	const COLOR_DOT: Record<string, string> = {
 		sky: 'bg-sky-500',
@@ -61,10 +77,13 @@
 	function createTodo(event: SubmitEvent) {
 		event.preventDefault();
 		if (!title.trim()) return;
-		todosState.createTodo({ title, body, dueDate });
+		todosState.createTodo({ title, body, dueDate, contexts: pickedContexts });
 		title = '';
 		body = '';
 		dueDate = null;
+		pickedContexts = todosState.selectedContextId
+			? [todosState.selectedContextId]
+			: [];
 	}
 
 	function createContext(event: SubmitEvent) {
@@ -223,26 +242,28 @@
 									{todosState.contextCount(context.id)}
 								</span>
 							</Button>
-							<div
-								class="absolute inset-y-0 right-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/ctx:opacity-100 focus-within:opacity-100"
-							>
-								<Button
-									size="icon-sm"
-									variant="ghost"
-									tooltip="Rename"
-									onclick={() => startEditContext(context)}
+							{#if !todosState.isBuiltInContext(context.id)}
+								<div
+									class="absolute inset-y-0 right-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/ctx:opacity-100 focus-within:opacity-100"
 								>
-									<PencilIcon class="size-3.5" />
-								</Button>
-								<Button
-									size="icon-sm"
-									variant="ghost"
-									tooltip="Delete"
-									onclick={() => confirmDeleteContext(context)}
-								>
-									<Trash2Icon class="size-3.5" />
-								</Button>
-							</div>
+									<Button
+										size="icon-sm"
+										variant="ghost"
+										tooltip="Rename"
+										onclick={() => startEditContext(context)}
+									>
+										<PencilIcon class="size-3.5" />
+									</Button>
+									<Button
+										size="icon-sm"
+										variant="ghost"
+										tooltip="Delete"
+										onclick={() => confirmDeleteContext(context)}
+									>
+										<Trash2Icon class="size-3.5" />
+									</Button>
+								</div>
+							{/if}
 						</div>
 					{/if}
 				{/each}
@@ -295,7 +316,9 @@
 					aria-label="Notes"
 					class="min-h-9 resize-none border-0 bg-transparent px-3 py-0 text-sm shadow-none focus-visible:ring-0 dark:bg-transparent"
 				/>
-				<div class="flex items-center justify-between gap-2 p-2">
+				<div
+					class="border-border/60 flex items-center justify-between gap-2 border-t p-2"
+				>
 					<div class="flex items-center gap-1">
 						<Popover.Root bind:open={dueOpen}>
 							<Popover.Trigger
@@ -327,6 +350,42 @@
 								<XIcon class="size-4" />
 							</Button>
 						{/if}
+						<Popover.Root bind:open={contextOpen}>
+							<Popover.Trigger
+								class="{buttonVariants({
+									variant: 'ghost',
+									size: 'sm',
+								})} text-muted-foreground gap-2"
+							>
+								<TagIcon class="size-4" />
+								{#if pickedContexts.length === 0}
+									Context
+								{:else if pickedContexts.length === 1}
+									{todosState.contextLabel(pickedContexts[0]!)}
+								{:else}
+									{pickedContexts.length} contexts
+								{/if}
+							</Popover.Trigger>
+							<Popover.Content align="start" class="w-56 p-1">
+								<div class="grid gap-0.5">
+									{#each todosState.contexts as context (context.id)}
+										<button
+											type="button"
+											class="hover:bg-accent flex items-center gap-2 rounded-md px-2 py-1.5 text-sm"
+											onclick={() => togglePicked(context.id)}
+										>
+											<span
+												class="size-2 shrink-0 rounded-full {dotClass(context.color)}"
+											></span>
+											<span class="flex-1 truncate text-left">{context.name}</span>
+											{#if pickedContexts.includes(context.id)}
+												<CheckIcon class="size-4 shrink-0" />
+											{/if}
+										</button>
+									{/each}
+								</div>
+							</Popover.Content>
+						</Popover.Root>
 					</div>
 					<Button type="submit" size="sm" disabled={!title.trim()}>
 						<PlusIcon class="size-4" />

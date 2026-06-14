@@ -1,20 +1,31 @@
 import type { CalendarDateString } from '@epicenter/field';
 import { fromTable } from '@epicenter/svelte';
-import type { ContextSlug, Todo, TodoId } from '../../../todos';
+import {
+	BUILT_IN_CONTEXT_IDS,
+	BUILT_IN_CONTEXTS,
+	type ContextSlug,
+	type Todo,
+	type TodoId,
+} from '../../../todos';
 import type { TodosBrowser } from '../../../todos.browser';
 
-const defaultContexts = ['Phone', 'Desktop', 'Home'];
+const builtInById = new Map(
+	BUILT_IN_CONTEXTS.map((context) => [context.id, context]),
+);
 
 export function createTodosState(todos: TodosBrowser) {
 	const todosMap = fromTable(todos.tables.todos);
 	const contextsMap = fromTable(todos.tables.contexts);
 	let selectedContextId = $state<ContextSlug | null>(null);
 
-	const contexts = $derived(
+	// Built-in contexts are always present and sort first; user-created rows
+	// follow in their own sort order.
+	const userContexts = $derived(
 		[...contextsMap.values()].sort(
 			(a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),
 		),
 	);
+	const contexts = $derived([...BUILT_IN_CONTEXTS, ...userContexts]);
 
 	const notDeletedTodos = $derived(
 		[...todosMap.values()]
@@ -62,30 +73,28 @@ export function createTodosState(todos: TodosBrowser) {
 			selectedContextId = id;
 		},
 		contextFor(slug: ContextSlug) {
-			return contextsMap.get(slug) ?? null;
+			return builtInById.get(slug) ?? contextsMap.get(slug) ?? null;
 		},
 		contextLabel(slug: ContextSlug) {
-			return contextsMap.get(slug)?.name ?? slug;
+			return (builtInById.get(slug) ?? contextsMap.get(slug))?.name ?? slug;
 		},
 		contextCount(slug: ContextSlug) {
 			return openTodos.filter((todo) => todo.contexts.includes(slug)).length;
 		},
-		ensureDefaultContexts() {
-			if (contextsMap.size > 0) return;
-			for (const name of defaultContexts) {
-				todos.actions.contexts_create({ name });
-			}
+		isBuiltInContext(slug: ContextSlug) {
+			return BUILT_IN_CONTEXT_IDS.has(slug);
 		},
 		createTodo(input: {
 			title: string;
 			body: string;
 			dueDate: CalendarDateString | null;
+			contexts: ContextSlug[];
 		}) {
 			return todos.actions.todos_create({
 				title: input.title,
 				body: input.body,
 				dueDate: input.dueDate,
-				contexts: selectedContextId ? [selectedContextId] : [],
+				contexts: input.contexts,
 			});
 		},
 		toggleTodo(id: TodoId, completed: boolean) {

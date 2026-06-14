@@ -128,6 +128,28 @@ const contextsTable = defineTable({
 });
 export type TodoContext = InferTableRow<typeof contextsTable>;
 
+/**
+ * Built-in contexts ship with every todos workspace as code constants, not
+ * rows. They are always present, undeletable, and never written to the
+ * contexts table; user-created contexts are rows layered on top. Their slugs
+ * are reserved (see `contexts_create`) so a user context can never shadow a
+ * built-in, and a todo may carry a built-in slug exactly like a row slug.
+ */
+export const BUILT_IN_CONTEXTS: readonly TodoContext[] = [
+	{ id: 'phone' as ContextSlug, name: 'Phone', color: 'sky', sortOrder: 0 },
+	{
+		id: 'desktop' as ContextSlug,
+		name: 'Desktop',
+		color: 'violet',
+		sortOrder: 1,
+	},
+	{ id: 'home' as ContextSlug, name: 'Home', color: 'emerald', sortOrder: 2 },
+];
+
+export const BUILT_IN_CONTEXT_IDS: ReadonlySet<ContextSlug> = new Set(
+	BUILT_IN_CONTEXTS.map((context) => context.id),
+);
+
 function normalizeContextSlugs(slugs: readonly string[]): ContextSlug[] {
 	const unique = new Set<ContextSlug>();
 	for (const slug of slugs) unique.add(assertContextSlug(slug));
@@ -180,6 +202,9 @@ function renameContextSlug({
 	const fromSlug = assertContextSlug(from);
 	const toSlug = assertContextSlug(to);
 	if (fromSlug === toSlug) return { contextRenamed: false, todosUpdated: 0 };
+	if (BUILT_IN_CONTEXT_IDS.has(toSlug)) {
+		throw new Error(`Context slug is reserved: ${toSlug}`);
+	}
 
 	const sourceRead = tables.contexts.get(fromSlug);
 	if (sourceRead.error) throw sourceRead.error;
@@ -293,14 +318,16 @@ export function createTodos() {
 					const name = input.name.trim();
 					if (name === '') throw new Error('Context name is required');
 					const existing = tables.contexts.scan().rows;
-					const id = generateContextSlug(
-						name,
-						existing.map((row) => row.id),
-					);
+					const id = generateContextSlug(name, [
+						...BUILT_IN_CONTEXT_IDS,
+						...existing.map((row) => row.id),
+					]);
 					tables.contexts.set({
 						id,
 						name,
-						color: input.color ?? pickContextColor(existing.length),
+						color:
+							input.color ??
+							pickContextColor(BUILT_IN_CONTEXTS.length + existing.length),
 						sortOrder: existing.length,
 					});
 					return id;

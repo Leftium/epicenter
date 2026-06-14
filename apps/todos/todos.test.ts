@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import type { CalendarDateString } from '@epicenter/field';
-import { assertContextSlug, createTodos, generateContextSlug } from './todos';
+import {
+	assertContextSlug,
+	BUILT_IN_CONTEXTS,
+	createTodos,
+	generateContextSlug,
+} from './todos';
 
 function seededTodo(name = 'Phone') {
 	const todos = createTodos();
@@ -52,7 +57,15 @@ describe('due dates', () => {
 describe('todo write path', () => {
 	test('creates a context with a generated stable slug', () => {
 		const todos = createTodos();
-		expect(todos.actions.contexts_create({ name: 'Phone' })).toBe('phone');
+		expect(todos.actions.contexts_create({ name: 'Errands' })).toBe('errands');
+		expect(todos.actions.contexts_create({ name: 'Errands' })).toBe(
+			'errands-2',
+		);
+	});
+
+	test('a user context cannot shadow a built-in slug', () => {
+		const todos = createTodos();
+		// "Phone" is a built-in, so the row gets a disambiguated slug instead.
 		expect(todos.actions.contexts_create({ name: 'Phone' })).toBe('phone-2');
 	});
 
@@ -84,6 +97,36 @@ describe('todo write path', () => {
 
 		todos.actions.todos_delete({ id });
 		expect(todos.tables.todos.get(id).data?.deletedAt).not.toBeNull();
+	});
+});
+
+describe('built-in contexts', () => {
+	test('ship as constants, not seeded rows', () => {
+		const todos = createTodos();
+		expect(BUILT_IN_CONTEXTS.map((context) => context.id)).toEqual([
+			'phone',
+			'desktop',
+			'home',
+		]);
+		// They are code constants: the contexts table starts empty.
+		expect(todos.tables.contexts.scan().rows).toEqual([]);
+	});
+
+	test('a todo can carry a built-in slug', () => {
+		const todos = createTodos();
+		const id = todos.actions.todos_create({
+			title: 'Text back',
+			contexts: ['phone'],
+		});
+		expect(todos.tables.todos.get(id).data?.contexts).toEqual(['phone']);
+	});
+
+	test('a built-in slug cannot be the target of a slug rename', () => {
+		const todos = createTodos();
+		const slug = todos.actions.contexts_create({ name: 'Errands' });
+		expect(() =>
+			todos.actions.contexts_rename_slug({ from: slug, to: 'phone' }),
+		).toThrow();
 	});
 });
 

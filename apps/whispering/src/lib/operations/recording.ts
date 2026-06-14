@@ -124,37 +124,42 @@ export function toggleManualRecording() {
 	return startManualRecording();
 }
 
-export async function cancelManualRecording() {
-	const loading = report.loading({
-		title: '⏸️ Canceling recording...',
-		description: 'Cleaning up recording session...',
-	});
+export async function cancelRecording() {
+	// Note: distinct from the low-level Tauri `commands.cancelRecording()` (CPAL
+	// stream teardown). This is the user-facing command: it decides what "cancel"
+	// means across the manual and VAD recorders.
+	//
+	// Cancel aborts whichever capture is live, without touching `recording.mode`:
+	// the chosen input mode (manual vs VAD) is a deliberate preference, not
+	// something a cancel keystroke should flip, so cancelling in VAD mode leaves
+	// you in VAD mode, idle and ready to listen again. This is also the global
+	// cancel chord (Cmd + . on macOS), which the rdev hook observes on every
+	// system press without swallowing it, so when nothing is live it stays silent
+	// rather than toasting on an unrelated press.
 
+	// A manual recording is the live capture: discard it.
 	const { data, error } = await manualRecorder.cancelRecording();
-
 	if (error) {
-		loading.reject({ cause: error });
+		report.error({ title: 'Failed to cancel recording', cause: error });
+		return;
+	}
+	if (data.status === 'cancelled') {
+		sound.playSoundIfEnabled('manual-cancel');
+		report.success({ title: '✅ Recording cancelled' });
+		log.info('Recording cancelled');
 		return;
 	}
 
-	switch (data.status) {
-		case 'no-recording': {
-			loading.resolve({
-				title: 'No active recording',
-				description: 'There is no recording in progress to cancel.',
-			});
-			break;
-		}
-		case 'cancelled': {
-			loading.resolve({
-				title: '✅ All Done!',
-				description: 'Recording cancelled successfully',
-			});
-			sound.playSoundIfEnabled('manual-cancel');
-			log.info('Recording cancelled');
-			break;
-		}
-	}
+	// No manual recording, but a VAD session may be live. VAD has no
+	// discard-vs-finalize split: tearing the session down is the only way to
+	// abort it, which is exactly what stopVadRecording already does (same
+	// stopActiveListening call, same end state, mode left on `vad`). So cancel a
+	// live VAD session by stopping it, rather than cloning the teardown with a
+	// second toast and a manual-recording sound. Nothing live: silent no-op.
+	const isVadActive =
+		vadRecorder.state === 'LISTENING' ||
+		vadRecorder.state === 'SPEECH_DETECTED';
+	if (isVadActive) await stopVadRecording();
 }
 
 export async function startVadRecording() {

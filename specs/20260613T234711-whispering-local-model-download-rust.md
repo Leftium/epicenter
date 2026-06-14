@@ -239,8 +239,8 @@ Build, Prove, Remove. Do not delete the JS path before the Rust path is proven.
 
 ### Phase 4: Bundled cleanups (carried per owner decision)
 
-- [ ] **4.1** Dead path: `getInstalledPath(): Promise<string|null>` -> `isInstalled(): Promise<boolean>`. Both callers (`local-model-downloads.svelte.ts:47,85`) only test null-ness; the path is never used. Rename and return a boolean.
-- [ ] **4.2** Staleness regression test: assert the "Selected model is missing" warning renders when `value` names an entry absent from `entries` (see Edge Cases).
+- [x] **4.1** Dead path: `getInstalledPath(): Promise<string|null>` -> `isInstalled(): Promise<boolean>`. Both callers only tested null-ness; the path return surface is deleted. Done.
+- [~] **4.2** Staleness regression test: **deferred**. Whispering has no frontend test infra (no vitest/testing-library), and extracting the one-line `isSelectionMissing` predicate solely to unit-test it is the cohesion-over-testability anti-pattern. Behavior is verified by trace and backstopped by Rust `model_path_for`. Revisit as a component test when frontend test infra exists.
 
 ### Deferred (own follow-up)
 
@@ -259,7 +259,7 @@ Build, Prove, Remove. Do not delete the JS path before the Rust path is proven.
 
 1. `value` = active entry name; the file is removed in Finder while the app is open.
 2. Next refresh signal (window focus, engine change, post-op) reruns `refreshEntries`; `entries` no longer contains `value`.
-3. `isSelectionMissing` (`LocalModelSelector.svelte`) flips true and the amber warning renders. Verified by trace; **4.2 locks it with a test.** Rust `model_path_for` re-validates at load time, so even a momentarily stale UI cannot transcribe with a missing model.
+3. `isSelectionMissing` (`LocalModelSelector.svelte`) flips true and the amber warning renders. Verified by trace (test deferred, see 4.2). Rust `model_path_for` re-validates at load time, so even a momentarily stale UI cannot transcribe with a missing model.
 
 ### Multi-file partial directory
 

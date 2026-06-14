@@ -11,10 +11,10 @@ declare namespace Cloudflare {
 		ASSETS_BUCKET: R2Bucket;
 		HYPERDRIVE: Hyperdrive;
 		ASSETS: Fetcher;
+		GOOGLE_CLIENT_ID: '702083743841-820rm0nhf9kslmvqcikecgkmku5agbbi.apps.googleusercontent.com';
 		ADMIN_USER_IDS: '';
 		BETTER_AUTH_SECRET: string;
 		ENCRYPTION_SECRETS: string;
-		GOOGLE_CLIENT_ID: string;
 		GOOGLE_CLIENT_SECRET: string;
 		GITHUB_CLIENT_ID?: string;
 		GITHUB_CLIENT_SECRET?: string;

@@ -64,7 +64,7 @@ For the full argument:
 
 ```
 Cloudflare Workers
-├── Hono app (worker/index.ts)
+├── Hono app (src/app.ts)
 │   ├── /auth/*          Better Auth (email/password, Google OAuth, OAuth provider)
 │   ├── /ai/chat         AI streaming (OpenAI and Gemini via @tanstack/ai)
 │   ├── /api/owners/:ownerId/rooms/:room
@@ -110,7 +110,7 @@ There are three layers, each with a different URL source:
 | Local dev (drizzle-kit) | `LOCAL_DATABASE_URL` parsed from `wrangler.jsonc` | `db:push:local`, `db:studio:local` |
 | Remote admin | `DATABASE_URL` injected by `infisical run` | `db:migrate:remote`, `db:studio:remote` |
 
-`bun run dev` runs `infisical run -- wrangler dev --var API_PUBLIC_ORIGIN:http://localhost:8787`. Wrangler reads required secrets from the spawned process via the `secrets.required` config, while the `--var` flag narrowly overrides the hosted origin for local auth. `GOOGLE_CLIENT_ID` is a required secret alongside `GOOGLE_CLIENT_SECRET` (an environment-specific OAuth pair: dev signs in against a localhost Google client from Infisical, prod against the hosted one set via `wrangler secret put`), not a baked var. No `.dev.vars` file is produced. Remote database commands use `infisical run` against the prod environment and should be treated as admin operations, not dev mode.
+`bun run dev` runs `infisical run -- wrangler dev --var API_PUBLIC_ORIGIN:http://localhost:8787`. Wrangler reads required secrets from the spawned process via the `secrets.required` config, while the `--var` flag narrowly overrides the hosted origin for local auth. No `.dev.vars` file is produced. Remote database commands use `infisical run` against the prod environment and should be treated as admin operations, not dev mode.
 
 ### Running the server
 

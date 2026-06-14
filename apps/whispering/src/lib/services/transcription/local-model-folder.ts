@@ -167,7 +167,10 @@ export async function deleteModelEntry({
 
 /** Remove a leftover partial file, ignoring any error. */
 async function removePartial(partialPath: string): Promise<void> {
-	await tryAsync({ try: () => remove(partialPath), catch: () => Ok(undefined) });
+	await tryAsync({
+		try: () => remove(partialPath),
+		catch: () => Ok(undefined),
+	});
 }
 
 /**

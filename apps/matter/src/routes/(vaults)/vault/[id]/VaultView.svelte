@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Alert from '@epicenter/ui/alert';
 	import * as Empty from '@epicenter/ui/empty';
-	import { Spinner } from '@epicenter/ui/spinner';
+	import { Loading } from '@epicenter/ui/loading';
 	import FolderOpenIcon from '@lucide/svelte/icons/folder-open';
 	import FolderGrid from '$lib/components/FolderGrid.svelte';
 	import { createVault } from '$lib/vault.svelte';
@@ -25,10 +25,7 @@
 
 <div class="flex min-h-0 flex-1 flex-col">
 	{#await vault.whenReady}
-		<Empty.Root class="flex-1 border-0" aria-live="polite">
-			<Empty.Media><Spinner class="size-5 text-muted-foreground" /></Empty.Media>
-			<Empty.Title>Loading {vault.folderName}</Empty.Title>
-		</Empty.Root>
+		<Loading class="flex-1" label={`Loading ${vault.folderName}`} />
 	{:then _}
 		{#if vault.writeError}
 			<Alert.Root variant="destructive" class="rounded-none border-x-0 border-t-0 py-2">

@@ -8,14 +8,14 @@ All workflows live flat in `.github/workflows/` (GitHub Actions requirement). We
 |---|---|---|
 | `release.{app}` | Tag-triggered desktop builds + GitHub Release | Per Tauri app (expensive 3-platform matrix) |
 | `pr-preview.{app}` | PR preview desktop builds | Per Tauri app (expensive 3-platform matrix) |
-| `deploy.{target}` | Web app deployment | All web apps together (cheap, fast) |
+| `deploy.{target}` | Web app deployment | Deployed web targets |
 | `ci.{name}` | Code quality checks | Whole repo |
 | `auto.{name}` | Automated repo maintenance | Whole repo |
 | `meta.{name}` | Repo housekeeping | Whole repo |
 
 Tauri desktop apps get **separate per-app workflows** because builds run a 3-platform matrix (macOS Apple Silicon, Ubuntu, Windows) taking 20+ minutes. A PR touching only Whispering shouldn't trigger an Epicenter build.
 
-Web apps (Cloudflare Workers) deploy **together in one workflow** because deploys are fast (~2 min on a single runner) and share the same build step.
+Web apps (Cloudflare Workers) deploy **together in one workflow** because deploys are fast (~2 min on a single runner) and share the same runtime setup. The deploy workflow builds only the targets it publishes; repo-wide lint, typecheck, and unrelated package builds belong to CI.
 
 ## Workflows
 
@@ -30,7 +30,7 @@ Web apps (Cloudflare Workers) deploy **together in one workflow** because deploy
 
 | File | Trigger | What it does |
 |---|---|---|
-| `deploy.cloudflare.yml` | Push to `main`, manual | Validates (typecheck, lint, build), then deploys Whispering + Landing to Cloudflare Workers in parallel. Posts Discord notification. |
+| `deploy.cloudflare.yml` | Push to `main`, manual | Builds Whispering, Landing, and the API dashboard, then deploys Whispering + Landing + API to Cloudflare Workers. Posts Discord notification. |
 | `deploy.cloudflare-preview.yml` | Pull requests touching `apps/whispering/**`, `apps/landing/**`, `packages/**` | Uploads preview versions via `wrangler versions upload --preview-alias`. Posts PR comment with preview URLs. No cleanup needed (aliases auto-expire at 1000). |
 
 ### CI

@@ -138,12 +138,12 @@ export type TodoContext = InferTableRow<typeof contextsTable>;
 export const BUILT_IN_CONTEXTS: readonly TodoContext[] = [
 	{ id: 'phone' as ContextSlug, name: 'Phone', color: 'sky', sortOrder: 0 },
 	{
-		id: 'desktop' as ContextSlug,
-		name: 'Desktop',
+		id: 'computer' as ContextSlug,
+		name: 'Computer',
 		color: 'violet',
 		sortOrder: 1,
 	},
-	{ id: 'home' as ContextSlug, name: 'Home', color: 'emerald', sortOrder: 2 },
+	{ id: 'desk' as ContextSlug, name: 'Desk', color: 'emerald', sortOrder: 2 },
 ];
 
 export const BUILT_IN_CONTEXT_IDS: ReadonlySet<ContextSlug> = new Set(

@@ -57,6 +57,10 @@ describe('context slugs', () => {
 		const todos = createTodos();
 
 		expect(todos.actions.contexts_create({ name: 'Phone' })).toBe('phone-2');
+		expect(todos.actions.contexts_create({ name: 'Computer' })).toBe(
+			'computer-2',
+		);
+		expect(todos.actions.contexts_create({ name: 'Desk' })).toBe('desk-2');
 		expect(todos.actions.contexts_create({ name: 'Errands' })).toBe('errands');
 		expect(todos.actions.contexts_create({ name: 'Errands' })).toBe(
 			'errands-2',
@@ -122,8 +126,8 @@ describe('built-in contexts', () => {
 		const todos = createTodos();
 		expect(BUILT_IN_CONTEXTS.map((context) => context.id)).toEqual([
 			'phone',
-			'desktop',
-			'home',
+			'computer',
+			'desk',
 		]);
 		// They are code constants: the contexts table starts empty.
 		expect(todos.tables.contexts.scan().rows).toEqual([]);

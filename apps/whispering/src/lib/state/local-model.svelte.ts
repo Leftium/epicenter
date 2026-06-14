@@ -1,13 +1,6 @@
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { type UnlistenFn } from '@tauri-apps/api/event';
 import { tauri } from '#platform/tauri';
-import {
-	commands,
-	type LocalModelState,
-	type ModelStateEvent,
-} from '$lib/tauri/commands';
-
-/** Mirrors `transcription::MODEL_STATE_EVENT` in the Rust backend. */
-const MODEL_STATE_EVENT = 'transcription://model-state';
+import { commands, events, type LocalModelState } from '$lib/tauri/commands';
 
 const INITIAL_STATE: LocalModelState = {
 	engine: null,
@@ -17,7 +10,7 @@ const INITIAL_STATE: LocalModelState = {
 
 /**
  * Reactive mirror of the Rust `ModelManager`'s public state, kept in sync via
- * the `transcription://model-state` event. Single instance per app;
+ * the `events.modelStateEvent` topic. Single instance per app;
  * mount once via `attach()` in the root layout.
  *
  * Race note: `attach()` registers the listener BEFORE snapshotting so the
@@ -58,12 +51,9 @@ function createLocalModel() {
 		 */
 		async attach(): Promise<UnlistenFn> {
 			if (!tauri) return () => {};
-			const unlisten = await listen<ModelStateEvent>(
-				MODEL_STATE_EVENT,
-				(event) => {
-					state = event.payload.state;
-				},
-			);
+			const unlisten = await events.modelStateEvent.listen((event) => {
+				state = event.payload.state;
+			});
 			state = await commands.getTranscriptionState();
 			return unlisten;
 		},

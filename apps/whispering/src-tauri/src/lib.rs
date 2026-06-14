@@ -64,12 +64,17 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             keyboard::commands::set_keyboard_shortcuts,
             keyboard::commands::set_keyboard_capturing,
         ])
-        // The FE listens on these channels manually; only the payload types
-        // need to be exported for `listen<...>(...)`. `ShortcutTriggerEvent`
-        // also pulls in `TriggerState`; `set_keyboard_shortcuts` pulls in
-        // `CommandBinding` / `KeyBinding` / `Modifier` / `Key`.
-        .typ::<ModelStateEvent>()
-        .typ::<keyboard::ShortcutTriggerEvent>()
+        // The FE listens through the generated `events` object. `collect_events!`
+        // owns each topic name and pulls in the payload types
+        // (`ShortcutTriggerEvent` -> `TriggerState`; `ShortcutCaptureEvent` ->
+        // `KeyBinding`); `set_keyboard_shortcuts` separately pulls in
+        // `CommandBinding` / `Modifier` / `Key`. `run` must call
+        // `mount_events` so `Event::emit` and the generated listeners resolve.
+        .events(tauri_specta::collect_events![
+            ModelStateEvent,
+            keyboard::ShortcutTriggerEvent,
+            keyboard::ShortcutCaptureEvent,
+        ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
 }
 
@@ -192,6 +197,18 @@ pub async fn run() {
         warn!("APTABASE_KEY not found, analytics disabled");
     }
 
+    // Compose two command handlers by name. The specta builder owns every
+    // command in its `collect_commands!` list and is the source of truth for
+    // TS bindings. `encode_recording_for_upload` (raw `tauri::ipc::Response`
+    // return) is outside specta's reach, so it gets its own `generate_handler!`.
+    // We route by name because `Invoke` is not Clone: each invocation can only
+    // be consumed by one handler. The builder also owns the typed events; it is
+    // moved into `setup` so `mount_events` can register their topics.
+    let specta_builder = make_specta_builder();
+    let specta_handler = tauri_specta::Builder::invoke_handler(&specta_builder);
+    let raw_handler = tauri::generate_handler![encode_recording_for_upload]
+        as fn(tauri::ipc::Invoke<tauri::Wry>) -> bool;
+
     builder = builder
         .plugin(tauri_plugin_macos_permissions::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -204,12 +221,15 @@ pub async fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .manage(Mutex::new(Recorder::new()))
-        .setup(|app| {
-            // ModelManager owns an `AppHandle` for emitting lifecycle events
-            // on the `transcription://model-state` channel, so it cannot be
-            // constructed at builder-time (no app handle exists yet). Move
-            // construction into setup; everything that needs it reads via
-            // `app.state::<ModelManager>()`.
+        .setup(move |app| {
+            // Register the tauri-specta event topics so `Event::emit` (Rust) and
+            // the generated `events` listeners (FE) resolve the same names.
+            specta_builder.mount_events(app);
+
+            // ModelManager owns an `AppHandle` for emitting model lifecycle
+            // events, so it cannot be constructed at builder-time (no app handle
+            // exists yet). Move construction into setup; everything that needs it
+            // reads via `app.state::<ModelManager>()`.
             let manager = ModelManager::new(app.handle().clone());
             manager.start_idle_watcher();
             app.manage(manager);
@@ -255,16 +275,6 @@ pub async fn run() {
             }));
     }
 
-    // Compose two handlers by command name. The specta builder owns every
-    // command in its `collect_commands!` list and is the source of truth for
-    // TS bindings. `encode_recording_for_upload` (raw `tauri::ipc::Response`
-    // return) is outside specta's reach, so it gets its own
-    // `generate_handler!`. We route by name because `Invoke` is not Clone:
-    // each invocation can only be consumed by one handler.
-    let specta_builder = make_specta_builder();
-    let specta_handler = tauri_specta::Builder::invoke_handler(&specta_builder);
-    let raw_handler = tauri::generate_handler![encode_recording_for_upload]
-        as fn(tauri::ipc::Invoke<tauri::Wry>) -> bool;
     let builder = builder.invoke_handler(move |invoke| {
         if invoke.message.command() == "encode_recording_for_upload" {
             raw_handler(invoke)

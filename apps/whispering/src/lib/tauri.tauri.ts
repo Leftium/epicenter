@@ -38,7 +38,6 @@
  * See `specs/20260526T000140-collapse-tauri-only-services-into-namespace.md`.
  */
 
-import { listen } from '@tauri-apps/api/event';
 import { Menu, MenuItem } from '@tauri-apps/api/menu';
 import { basename, resolveResource } from '@tauri-apps/api/path';
 import { TrayIcon } from '@tauri-apps/api/tray';
@@ -59,12 +58,8 @@ import type { ShortcutEventState } from '$lib/commands';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
 import { autostartKeys } from '$lib/tauri/autostart-keys';
-import type {
-	CommandBinding,
-	KeyBinding,
-	ShortcutTriggerEvent,
-} from '$lib/tauri/commands';
-import { commands } from '$lib/tauri/commands';
+import type { CommandBinding, KeyBinding } from '$lib/tauri/commands';
+import { commands, events } from '$lib/tauri/commands';
 
 // fs ----------------------------------------------------------------
 const FsError = defineErrors({
@@ -272,13 +267,9 @@ async function initTray() {
 // the user's bindings down with `set_keyboard_shortcuts` and dispatch the
 // events back into the command layer (the single convergence point). No
 // accelerator strings cross this boundary: the registrar parses them to
-// `KeyBinding` before pushing (see `register-commands.ts`).
-
-/** Mirrors `keyboard::TRIGGER_EVENT` in the Rust backend. */
-const KEYBOARD_TRIGGER_EVENT = 'keyboard://shortcut-trigger';
-
-/** Mirrors `keyboard::CAPTURE_EVENT` in the Rust backend. */
-const KEYBOARD_CAPTURE_EVENT = 'keyboard://shortcut-capture';
+// `KeyBinding` before pushing (see `register-commands.ts`). The trigger and
+// capture topics are the generated `events.shortcutTriggerEvent` /
+// `events.shortcutCaptureEvent`, so no topic string is mirrored here.
 
 // autostart ---------------------------------------------------------
 const AutostartError = defineErrors({
@@ -370,8 +361,7 @@ const globalShortcuts = {
 		const onById = new Map<string, ShortcutEventState[]>(
 			commandList.map((command) => [command.id, command.on]),
 		);
-		return listen<ShortcutTriggerEvent>(
-			KEYBOARD_TRIGGER_EVENT,
+		return events.shortcutTriggerEvent.listen(
 			({ payload: { commandId, state } }) => {
 				const on = onById.get(commandId);
 				const callback =
@@ -383,7 +373,7 @@ const globalShortcuts = {
 
 	/**
 	 * Enter or leave binding-capture mode. While capturing, the listener streams
-	 * the held combo on the capture channel (see `listenForCapture`) instead of
+	 * the held combo on the capture event (see `listenForCapture`) instead of
 	 * firing command triggers, so the settings recorder can record Fn and
 	 * physical-key bindings the webview cannot see.
 	 */
@@ -391,13 +381,13 @@ const globalShortcuts = {
 		commands.setKeyboardCapturing(capturing),
 
 	/**
-	 * Subscribe to the capture channel. The listener emits the currently-held
+	 * Subscribe to the capture event. The listener emits the currently-held
 	 * combo as a `KeyBinding` on every change while capturing; the recorder
 	 * accumulates them and commits on release. Returns the unlisten fn.
 	 */
 	listenForCapture: (onCombo: (binding: KeyBinding) => void) =>
-		listen<KeyBinding>(KEYBOARD_CAPTURE_EVENT, ({ payload }) =>
-			onCombo(payload),
+		events.shortcutCaptureEvent.listen(({ payload }) =>
+			onCombo(payload.binding),
 		),
 };
 

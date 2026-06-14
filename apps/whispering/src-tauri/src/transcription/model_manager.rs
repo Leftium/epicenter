@@ -1,14 +1,13 @@
 use super::config::{should_preload, Engine as EngineKind, TranscriptionConfig, UnloadPolicy};
 use super::error::TranscriptionError;
-use super::events::{
-    LocalModelState, ModelStateEvent, ModelStatus, UnloadReason, MODEL_STATE_EVENT,
-};
+use super::events::{LocalModelState, ModelStateEvent, ModelStatus, UnloadReason};
 use log::{debug, info, warn};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
+use tauri_specta::Event;
 use transcribe_rs::onnx::moonshine::{MoonshineModel, MoonshineVariant};
 use transcribe_rs::onnx::parakeet::{ParakeetModel, ParakeetParams, TimestampGranularity};
 use transcribe_rs::onnx::Quantization;
@@ -739,7 +738,7 @@ impl ModelManager {
     // ── Event emission ────────────────────────────────────────────────
 
     fn emit(&self, event: ModelStateEvent) {
-        if let Err(err) = self.app.emit(MODEL_STATE_EVENT, &event) {
+        if let Err(err) = event.emit(&self.app) {
             warn!("[Transcription] failed to emit model-state event: {}", err);
         }
     }

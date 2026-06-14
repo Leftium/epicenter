@@ -1,11 +1,6 @@
 use super::config::Engine;
 use serde::{Deserialize, Serialize};
 
-/// The event every model lifecycle change is emitted on (an `app.emit` topic,
-/// not a `tauri::ipc::Channel`). The Rust emitter and the FE
-/// `listen<ModelStateEvent>(...)` call both key off this symbol.
-pub const MODEL_STATE_EVENT: &str = "transcription://model-state";
-
 /// Snapshot of everything observable about the resident model. Every event
 /// carries a full snapshot rather than a delta because `AppHandle::emit`
 /// does not replay to future windows: a window opened mid-load reads the
@@ -73,9 +68,10 @@ pub enum UnloadReason {
 /// `tag = "kind"` matches `ModelStatus` and `UnloadReason` so the FE pattern
 /// is uniform: `switch (event.kind)`.
 ///
-/// `lib.rs` exports this payload type directly because the FE listens on
-/// `MODEL_STATE_EVENT` manually.
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+/// Registered as a `tauri_specta::Event`, so the Rust emitter
+/// (`event.emit(&app)`) and the generated FE binding (`events.modelStateEvent`)
+/// share one generated topic name instead of a hand-mirrored string.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
 #[serde(
     tag = "kind",
     rename_all = "snake_case",

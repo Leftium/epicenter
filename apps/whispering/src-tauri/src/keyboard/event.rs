@@ -1,18 +1,5 @@
+use super::keys::KeyBinding;
 use serde::{Deserialize, Serialize};
-
-/// The event every desktop keyboard trigger is emitted on (an `app.emit` topic,
-/// not a `tauri::ipc::Channel`). The Rust listener emits here; the FE registrar
-/// (`listen<ShortcutTriggerEvent>(...)`, Wave 3) maps each event to
-/// `command.callback(state)`. Mirrors the `transcription://model-state`
-/// convention.
-pub const TRIGGER_EVENT: &str = "keyboard://shortcut-trigger";
-
-/// The event the listener emits the currently-held combo on while the settings
-/// recorder is capturing a new binding. Recording goes through rdev (not the
-/// webview) because only rdev sees the Fn key and physical-key positions, so
-/// the captured binding is exactly what the matcher will later match. The FE
-/// accumulates these `KeyBinding` snapshots and commits when all keys release.
-pub const CAPTURE_EVENT: &str = "keyboard://shortcut-capture";
 
 /// Whether a binding just became fully held (`Pressed`) or stopped being fully
 /// held (`Released`). The variant names serialize verbatim to `"Pressed"` /
@@ -29,11 +16,31 @@ pub enum TriggerState {
 /// registered under; the FE filters by that command's `on` array and dispatches
 /// the callback. Rust stays command-agnostic: it knows the id and the edge, not
 /// which states a given command cares about.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
+///
+/// A `tauri_specta::Event`, so the listener emits it with `trigger.emit(app)`
+/// and the FE listens through the generated `events.shortcutTriggerEvent`.
+#[derive(
+    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type, tauri_specta::Event,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ShortcutTriggerEvent {
     pub command_id: String,
     pub state: TriggerState,
+}
+
+/// Streamed on every change of the currently-held combo while the settings
+/// recorder is capturing a new binding. A dedicated event type (rather than
+/// emitting a bare `KeyBinding`) so capture is a `tauri_specta::Event` like the
+/// trigger, with a generated topic and FE binding. Recording goes through rdev,
+/// not the webview, because only rdev sees the Fn key and physical-key
+/// positions, so the captured binding is exactly what the matcher will later
+/// match. The FE accumulates these snapshots and commits when all keys release.
+#[derive(
+    Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type, tauri_specta::Event,
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ShortcutCaptureEvent {
+    pub binding: KeyBinding,
 }
 
 #[cfg(test)]

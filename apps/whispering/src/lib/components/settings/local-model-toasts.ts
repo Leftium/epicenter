@@ -1,4 +1,6 @@
 import { toast } from '@epicenter/ui/sonner';
+import type { Result } from 'wellcrafted/result';
+import type { LocalModelFolderError } from '$lib/services/transcription/local-model-folder';
 import type { ModelDownloadResult } from '$lib/state/local-model-downloads.svelte';
 
 /**
@@ -24,4 +26,23 @@ export function announceModelDownload(
 			: 'Model downloaded and activated successfully',
 	);
 	return result.data.entryName;
+}
+
+/**
+ * Toast the outcome of removing a folder entry and report whether it
+ * succeeded, so the caller can reconcile its selection. Catalog cards and
+ * custom entries delete through the same primitive, so both announce it here.
+ */
+export function announceModelDelete(
+	result: Result<void, LocalModelFolderError>,
+): boolean {
+	if (result.error) {
+		toast.error('Failed to delete model', {
+			description: result.error.message,
+		});
+		return false;
+	}
+
+	toast.success('Model deleted');
+	return true;
 }

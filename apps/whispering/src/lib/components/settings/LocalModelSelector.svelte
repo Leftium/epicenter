@@ -32,7 +32,10 @@
 	import { PROVIDERS } from '$lib/services/transcription/providers';
 	import { localModelDownloads } from '$lib/state/local-model-downloads.svelte';
 	import { tauri } from '#platform/tauri';
-	import { announceModelDownload } from './announce-model-download';
+	import {
+		announceModelDelete,
+		announceModelDownload,
+	} from './local-model-toasts';
 	import LocalModelDownloadCard from './LocalModelDownloadCard.svelte';
 
 	/**
@@ -169,16 +172,10 @@
 	}
 
 	async function removeEntry(entry: LocalModelEntry) {
-		const { error } = await deleteModelEntry({ engine, name: entry.name });
-		if (error) {
-			toast.error('Failed to delete model', {
-				description: error.message,
-			});
+		if (!announceModelDelete(await deleteModelEntry({ engine, name: entry.name })))
 			return;
-		}
 		if (value === entry.name) value = '';
 		await refreshEntries();
-		toast.success('Model deleted');
 	}
 </script>
 

@@ -12,7 +12,10 @@
 		modelEntryName,
 	} from '$lib/constants/local-models';
 	import { localModelDownloads } from '$lib/state/local-model-downloads.svelte';
-	import { announceModelDownload } from './announce-model-download';
+	import {
+		announceModelDelete,
+		announceModelDownload,
+	} from './local-model-toasts';
 
 	let {
 		model,
@@ -46,16 +49,9 @@
 	}
 
 	async function deleteModel() {
-		const { error } = await download.delete();
-		if (error) {
-			toast.error('Failed to delete model', {
-				description: error.message,
-			});
-			return;
-		}
+		if (!announceModelDelete(await download.delete())) return;
 		if (value === entryName) value = '';
 		await onDiskChange();
-		toast.success('Model deleted');
 	}
 
 	async function activateModel() {

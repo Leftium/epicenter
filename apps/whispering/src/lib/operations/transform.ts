@@ -250,7 +250,18 @@ export async function runTransformation({
 	} satisfies TransformationRun;
 	transformationRuns.set(transformationRun);
 
-	const result = await executeTransformation({ input, transformation });
+	// A thrown provider or execution error must still land as a failed terminal
+	// result. Without this, a throw escapes past the persistence below and the
+	// kickoff row stays stuck at `result: null`, so the run reads as forever
+	// running. Normalize any throw into an Err the failure branch records.
+	let result: Result<string, TransformError>;
+	try {
+		result = await executeTransformation({ input, transformation });
+	} catch (error) {
+		result = TransformError.PromptFailed({
+			message: extractErrorMessage(error),
+		});
+	}
 
 	if (isErr(result)) {
 		transformationRuns.set({

@@ -23,10 +23,10 @@ import {
 	mkdir,
 	readDir,
 	remove,
+	rename,
 	stat,
-	writeFile,
 } from '@tauri-apps/plugin-fs';
-import { fetch } from '@tauri-apps/plugin-http';
+import { download } from '@tauri-apps/plugin-upload';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -41,17 +41,6 @@ import { PATHS } from '$lib/services/fs-paths';
 import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
 
 export const LocalModelFolderError = defineErrors({
-	DownloadRequestFailed: ({
-		url,
-		status,
-	}: {
-		url: string;
-		status: number;
-	}) => ({
-		message: `Failed to download: ${status}`,
-		url,
-		status,
-	}),
 	DownloadIncomplete: ({
 		downloadedMb,
 		expectedMb,
@@ -176,9 +165,17 @@ export async function deleteModelEntry({
 	});
 }
 
+/** Remove a leftover partial file, ignoring any error. */
+async function removePartial(partialPath: string): Promise<void> {
+	await tryAsync({ try: () => remove(partialPath), catch: () => Ok(undefined) });
+}
+
 /**
- * Stream one file to disk, appending chunk by chunk so large models never
- * buffer fully in memory. Reports whole-file progress as 0-100.
+ * Download one file to disk through the upload plugin's native streaming
+ * download (`reqwest` -> `tokio::fs` in Rust; no per-chunk IPC, follows
+ * redirects, validates content-length). Writes to a sibling `.partial` first
+ * so a crash mid-download never leaves a truncated file at the canonical path,
+ * verifies the size, then promotes it. Reports whole-file progress as 0-100.
  */
 async function downloadFileTo({
 	url,
@@ -187,66 +184,46 @@ async function downloadFileTo({
 	onProgress,
 }: {
 	url: string;
-	/** Catalog size, used when the response has no content-length header. */
+	/** Catalog size, used for progress when the response omits content-length. */
 	sizeBytes: number;
 	filePath: string;
 	onProgress: (progress: number) => void;
 }): Promise<Result<void, LocalModelFolderError>> {
-	const { data: response, error: fetchError } = await tryAsync({
-		try: () => fetch(url),
+	const partialPath = `${filePath}.partial`;
+
+	const { error: downloadError } = await tryAsync({
+		try: () =>
+			download(url, partialPath, ({ progressTotal, total }) => {
+				const expected = total > 0 ? total : sizeBytes;
+				onProgress(Math.round((progressTotal / expected) * 100));
+			}),
 		catch: (error) => LocalModelFolderError.DownloadFailed({ cause: error }),
 	});
-	if (fetchError) return Err(fetchError);
-	if (!response.ok) {
-		return LocalModelFolderError.DownloadRequestFailed({
-			url,
-			status: response.status,
-		});
+	if (downloadError) {
+		await removePartial(partialPath);
+		return Err(downloadError);
 	}
 
-	const contentLength = response.headers.get('content-length');
-	const totalBytes = contentLength
-		? Number.parseInt(contentLength, 10)
-		: sizeBytes;
-
-	const { data: downloadedBytes, error: streamError } = await tryAsync({
-		try: async () => {
-			const reader = response.body?.getReader();
-			if (!reader) {
-				throw new Error('Failed to read response body');
-			}
-
-			// Create or truncate the file first
-			await writeFile(filePath, new Uint8Array());
-
-			let bytes = 0;
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
-
-				// Write each chunk directly to disk using append mode
-				await writeFile(filePath, value, { append: true });
-
-				bytes += value.length;
-				onProgress(Math.round((bytes / totalBytes) * 100));
-			}
-			return bytes;
-		},
+	// The plugin rejects on a content-length mismatch, but a response without
+	// that header could still be short; re-check against the catalog size
+	// before promoting the partial to its canonical path.
+	const { data: stats, error: statError } = await tryAsync({
+		try: () => stat(partialPath),
 		catch: (error) => LocalModelFolderError.DownloadFailed({ cause: error }),
 	});
-	if (streamError) return Err(streamError);
-
-	if (downloadedBytes < totalBytes) {
-		await tryAsync({
-			try: () => remove(filePath),
-			catch: () => Ok(undefined),
-		});
+	if (statError) return Err(statError);
+	if (!isModelFileSizeValid(stats.size, sizeBytes)) {
+		await removePartial(partialPath);
 		return LocalModelFolderError.DownloadIncomplete({
-			downloadedMb: Math.round(downloadedBytes / 1_000_000),
-			expectedMb: Math.round(totalBytes / 1_000_000),
+			downloadedMb: Math.round(stats.size / 1_000_000),
+			expectedMb: Math.round(sizeBytes / 1_000_000),
 		});
 	}
-	return Ok(undefined);
+
+	return tryAsync({
+		try: () => rename(partialPath, filePath),
+		catch: (error) => LocalModelFolderError.DownloadFailed({ cause: error }),
+	});
 }
 
 /**

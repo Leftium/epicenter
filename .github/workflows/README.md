@@ -46,7 +46,7 @@ Web apps (Cloudflare Workers) deploy **together in one workflow** because deploy
 |---|---|---|
 | `auto.label-issues.yml` | Issues opened/edited | Uses Claude to auto-label issues by type, priority, platform, and area. |
 | `auto.release.yml` | PR merged to `main` | Bumps version, collects `## Changelog` entries from merged PRs, commits release, tags, creates GitHub Release with grouped changelog. |
-| changesets (manual) | Manual | `bunx changeset version` + `bunx changeset publish`. `@changesets/action` will automate this later. |
+| npm release (manual) | Manual | `bun run release` (`changeset version` + `scripts/publish-packages.ts`). See "Package Releases (npm)" below. `@changesets/action` will automate this later. |
 
 ## Package Releases (npm)
 
@@ -62,14 +62,19 @@ We use [changesets](https://github.com/changesets/changesets) to version and pub
 | `packages/filesystem` | `@epicenter/filesystem` | yes |
 | `packages/skills` | `@epicenter/skills` | yes |
 | `packages/ui` | `@epicenter/ui` | yes |
-| `packages/svelte-utils` | `@epicenter/svelte` | yes |
+| `packages/encryption` | `@epicenter/encryption` | yes |
+| `packages/field` | `@epicenter/field` | yes |
+| `packages/identity` | `@epicenter/identity` | yes |
+| `packages/svelte-utils` | `@epicenter/svelte` | yes (see note) |
 | `packages/ai` | `@epicenter/ai` | no (private) |
 | `packages/constants` | `@epicenter/constants` | no (private) |
 | `packages/vault` | `@epicenter/vault` | no (private) |
 
 ### Fixed version group
 
-All seven public packages share one version number, configured via the `fixed` array in `.changeset/config.json`. When any one of them changes, all seven bump together. This keeps the ecosystem coherent: if you install `@epicenter/workspace@0.3.0`, you know `@epicenter/cli@0.3.0` is the matching release.
+The framework closure shares one version number, configured via the `fixed` array in `.changeset/config.json`: `workspace`, `cli`, `sync`, `filesystem`, `skills`, `ui`, `svelte`, `encryption`, `field`, and `identity`. When any one of them changes, all of them bump together. This keeps the ecosystem coherent: if you install `@epicenter/workspace@0.3.0`, you know `@epicenter/cli@0.3.0` is the matching release.
+
+Note: `@epicenter/svelte` is in the `fixed` array but currently marked `private` in its `package.json`, so changesets versions it in lockstep without publishing it. Un-private it to publish, or drop it from the array if it should stay internal.
 
 ### Day-to-day: adding a changeset
 
@@ -87,30 +92,43 @@ Don't skip this step. Without a changeset, the change won't appear in the CHANGE
 
 When you're ready to publish accumulated changesets:
 
-1. Bump versions and write CHANGELOGs:
+1. Verify the packed manifests first (no upload):
    ```bash
-   bunx changeset version
+   bun run release:dry-run
    ```
+   This packs every public package and fails if any tarball still carries an
+   unresolved `catalog:` or `workspace:` string.
 
-2. Commit the result:
+2. Cut the release (bump versions and changelogs, then pack, upload, and tag):
+   ```bash
+   bun run release
+   ```
+   `release` runs `changeset version` followed by `scripts/publish-packages.ts`,
+   which publishes each not-yet-published version with `bun publish --access
+   public` and creates a local `name@version` tag per package.
+
+3. Commit the version bump and push everything:
    ```bash
    git add . && git commit -m "chore: release vX.Y.Z"
-   ```
-
-3. Publish to npm and create git tags:
-   ```bash
-   bunx changeset publish
-   ```
-
-4. Push commits and tags:
-   ```bash
    git push && git push --tags
    ```
+
+### Why bun publish, not changeset publish
+
+`bun publish` resolves bun-only dependency protocols (`catalog:`,
+`workspace:*`) to concrete versions at pack time. The npm-based `changeset
+publish` does not, so it shipped `@epicenter/*@0.1.0` tarballs whose published
+deps still read `catalog:` / `workspace:*`, which 404 on a clean install. We
+keep `changeset version` (it owns version math and changelogs) but replaced
+`changeset publish` with `scripts/publish-packages.ts`.
 
 ### What not to do
 
 - Don't manually edit `version` fields in `package.json`. Changesets owns those.
-- Don't run `npm publish` or `bun publish` directly. `bunx changeset publish` handles the registry upload and git tagging together.
+- Don't run `changeset publish` (it reintroduces the unresolved-protocol bug).
+  Use `bun run release`, which publishes through `bun publish`.
+- Don't run `bun publish` by hand in a package dir without running the dry-run
+  gate first.
 
 ### Meta
 

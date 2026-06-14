@@ -18,6 +18,7 @@
 
 use std::collections::HashMap;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -107,18 +108,32 @@ async fn stream_to_file(
     );
 
     let mut progress_total: u64 = 0;
+    let mut last_emit = Instant::now();
+    // A download fires thousands of small chunks, but each `send` crosses IPC
+    // and repaints the progress bar, and no one reads progress faster than this.
+    // Throttle to ~10/sec; the true final count is force-sent after the loop.
+    let throttle = Duration::from_millis(100);
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| e.to_string())?;
         file.write_all(&chunk).await.map_err(|e| e.to_string())?;
         progress_total += chunk.len() as u64;
-        // The receiver may already be gone (e.g. window closed); ignore.
-        let _ = channel.send(DownloadProgress {
-            progress_total: progress_total as f64,
-            total,
-        });
+        if last_emit.elapsed() >= throttle {
+            // The receiver may already be gone (e.g. window closed); ignore.
+            let _ = channel.send(DownloadProgress {
+                progress_total: progress_total as f64,
+                total,
+            });
+            last_emit = Instant::now();
+        }
     }
     file.flush().await.map_err(|e| e.to_string())?;
+    // Land on the true final byte count (typically 100%); the throttle may have
+    // skipped the last chunk's update.
+    let _ = channel.send(DownloadProgress {
+        progress_total: progress_total as f64,
+        total,
+    });
     Ok(())
 }
 

@@ -7,7 +7,15 @@
 		dateZone: IanaTimeZone;
 	};
 
-	export type ZonedNaturalLanguageDateTimeInputProps = {
+	/**
+	 * Natural-language picker for a zoned datetime. Parses phrases like
+	 * "tomorrow at 5pm" and commits a wall time plus its originating zone
+	 * (`{ date: DateTimeString, dateZone }`) — the durable fact is *when, where*.
+	 *
+	 * This is the zoned sibling of {@link NaturalLanguageCalendarDateInput}. Use
+	 * that one when only the calendar day matters and no time or zone is stored.
+	 */
+	export type NaturalLanguageZonedDateTimeInputProps = {
 		/**
 		 * Seed zone. The component owns the draft internally; later changes to
 		 * this prop do not update the displayed zone.
@@ -35,7 +43,7 @@
 		initialDateZone,
 		placeholder = 'E.g. "tomorrow at 5pm" or "in 2 hours"',
 		onChoice,
-	}: ZonedNaturalLanguageDateTimeInputProps = $props();
+	}: NaturalLanguageZonedDateTimeInputProps = $props();
 
 	let dateZone = $state<IanaTimeZone>(
 		untrack(() => initialDateZone) ?? IanaTimeZone.current(),

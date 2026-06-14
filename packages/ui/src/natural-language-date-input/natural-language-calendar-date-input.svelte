@@ -13,7 +13,7 @@
 	 * timezone UI and shows date-only suggestions; the `timeZone` prop only
 	 * decides which day a relative phrase lands on for the viewer.
 	 *
-	 * This is the date-only sibling of {@link ZonedNaturalLanguageDateTimeInput}.
+	 * This is the date-only sibling of {@link NaturalLanguageZonedDateTimeInput}.
 	 * Use that one when the wall time and originating zone are the durable fact.
 	 */
 	export type NaturalLanguageCalendarDateInputProps = {

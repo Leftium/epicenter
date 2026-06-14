@@ -1,12 +1,3 @@
-export {
-	ACCELERATOR_KEY_CODES,
-	ACCELERATOR_MODIFIER_KEYS,
-	ACCELERATOR_PUNCTUATION_KEYS,
-	ACCELERATOR_SECTIONS,
-	type AcceleratorKeyCode,
-	type AcceleratorModifier,
-} from './accelerator/supported-keys';
-
 export type { KeyboardEventPossibleKey } from './browser/possible-keys';
 
 export {

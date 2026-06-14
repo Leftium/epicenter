@@ -9,7 +9,10 @@
 		type DeviceConfigKey,
 		deviceConfig,
 	} from '$lib/state/device-config.svelte';
+	import type { KeyBinding } from '$lib/tauri/commands';
+	import { os } from '#platform/os';
 	import { createPressedKeys } from '$lib/utils/createPressedKeys.svelte';
+	import { keyBindingToLabel } from '$lib/utils/key-binding';
 	import { whispering } from '#platform/whispering';
 	import GlobalKeyboardShortcutRecorder from './GlobalKeyboardShortcutRecorder.svelte';
 	import LocalKeyboardShortcutRecorder from './LocalKeyboardShortcutRecorder.svelte';
@@ -20,7 +23,7 @@
 
 	let searchQuery = $state('');
 
-	/** Look up the definition default for a shortcut key from the correct store. */
+	/** Look up the definition default for a shortcut key, formatted for display. */
 	function getDefaultShortcut(commandId: string): string | null {
 		if (type === 'local') {
 			const getDefault = whispering.settings.getDefault as (
@@ -28,9 +31,10 @@
 			) => unknown;
 			return (getDefault(`shortcut.${commandId}`) as string | null) ?? null;
 		}
-		return deviceConfig.getDefault(
+		const binding = deviceConfig.getDefault(
 			`shortcuts.global.${commandId}` as DeviceConfigKey,
-		);
+		) as KeyBinding | null;
+		return binding ? keyBindingToLabel(binding, os.isApple) : null;
 	}
 
 	const filteredCommands = $derived(
@@ -94,7 +98,6 @@
 									placeholder={defaultShortcut
 										? `Default: ${defaultShortcut}`
 										: 'Set shortcut'}
-									{pressedKeys}
 									{tauri}
 								/>
 							{/if}

@@ -47,7 +47,7 @@
 					</Button>
 				{:else}
 					<ManualDeviceSelector />
-					<TranscriptionSelector />
+					<TranscriptionSelector triggerVariant="standalone" />
 					<TransformationSelector />
 				{/if}
 				{#if manualRecorder.state === 'RECORDING'}
@@ -78,7 +78,7 @@
 			{:else if settings.get('recording.mode') === 'vad'}
 				{#if vadRecorder.state === 'IDLE'}
 					<VadDeviceSelector />
-					<TranscriptionSelector />
+					<TranscriptionSelector triggerVariant="standalone" />
 					<TransformationSelector />
 				{/if}
 				{#if vadRecorder.state === 'IDLE'}
@@ -107,7 +107,7 @@
 					</Button>
 				{/if}
 			{:else if settings.get('recording.mode') === 'upload'}
-				<TranscriptionSelector />
+				<TranscriptionSelector triggerVariant="standalone" />
 				<TransformationSelector />
 				<RecordingModeSelector />
 			{/if}

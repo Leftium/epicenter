@@ -44,7 +44,7 @@ bun x epicenter daemon up -C examples/fuji
 ```
 
 On first run the daemon creates `.epicenter/` and writes the guid-keyed SQLite
-mirror plus the Yjs persistence file used by `attachProjectInfrastructure`. The
+mirror plus the Yjs persistence file used by `attachMountInfrastructure`. The
 mount materializes the live Y.Doc out to SQLite and writes markdown as a
 projection under `fuji/`: root row frontmatter plus entry body text read from
 the app-owned body Y.Doc. Importing markdown back into Fuji body Y.Docs is

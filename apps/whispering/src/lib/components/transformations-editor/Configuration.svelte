@@ -265,7 +265,8 @@
 			{@const isCustom = provider === 'Custom'}
 			{@const requiredKey = isCustom ? keys.endpointConfigKey : keys.apiKeyConfigKey}
 			{@const hasCredential =
-				!requiredKey || (deviceConfig.get(requiredKey) ?? '').trim().length > 0}
+				!requiredKey ||
+				String(deviceConfig.get(requiredKey) ?? '').trim().length > 0}
 			<div class="space-y-6" transition:slide>
 				<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 					<Field.Field>

@@ -5,10 +5,10 @@
  * They never spawn a child or call `process.exit`; each test owns a temp
  * Epicenter root and temp runtime root.
  *
- * Auth is injected: every test passes a `createAuthClient` factory to
- * `runUp`. Happy paths return `STUB_AUTH`; the AuthFailed test returns a
- * factory that throws. The real `createMachineAuthClient` is not exercised
- * here, by design - it has its own unit tests in
+ * Auth is injected lazily: collaborative fixtures pass a `createAuthClient`
+ * factory to `runUp`, and local-only or config-failure paths use a factory
+ * that throws if startup reaches for auth. The real `createMachineAuthClient`
+ * is not exercised here. It has its own unit tests in
  * `@epicenter/auth/src/node/machine-auth.test.ts`.
  *
  * Key behaviors:
@@ -34,6 +34,7 @@ import { MachineAuthStorageError } from '@epicenter/auth/node';
 import { asOwnerId } from '@epicenter/identity';
 import {
 	claimDaemonLease,
+	daemonClient,
 	metadataPathFor,
 	pingDaemon,
 	socketPathFor,
@@ -66,6 +67,18 @@ const STUB_AUTH = {
 } satisfies SyncAuthClient;
 
 const stubAuthFactory = async () => Ok(STUB_AUTH);
+/** A machine with no saved session: the daemon runs with a `null` session. */
+const signedOutFactory = async () =>
+	Err(
+		MachineAuthStorageError.NoSavedSession({
+			filePath: '/tmp/fake-auth.json',
+			baseURL: 'https://example.com',
+		}).error,
+	);
+/** Used only where startup short-circuits before auth is ever loaded. */
+const failIfAuthCreated = async () => {
+	throw new Error('must not create auth');
+};
 
 let originalRuntimeDir: string | undefined;
 let runtimeRoot: string;
@@ -149,8 +162,12 @@ function writeRuntimeMount({
 
 		export default {
 			name: 'demo',
-			async open() {
+			async open(ctx) {
+				if (!ctx.session) {
+					return { inactive: true, reason: 'sign in to enable demo' };
+				}
 				return {
+					actions,
 					collaboration,
 					async [Symbol.asyncDispose]() {
 						${onDisposeMarker ? `writeFileSync(${JSON.stringify(onDisposeMarker)}, 'disposed');` : ''}
@@ -193,26 +210,99 @@ describe('runUp: happy path', () => {
 		expect(existsSync(metadataPathFor(workDir))).toBe(false);
 		expect(existsSync(socketPathFor(workDir))).toBe(false);
 	});
+
+	test('serves a local-only mount without collaboration', async () => {
+		writeDemoMount(`
+			const sync = () => ({ imported: 2 });
+			sync.type = 'query';
+			sync.description = 'Sync local mirror';
+			const actions = {
+				sync,
+			};
+
+			export default {
+				name: 'mirror',
+				async open() {
+					return {
+						actions,
+						async [Symbol.asyncDispose]() {},
+					};
+				},
+			};
+		`);
+		writeDemoConfig();
+
+		const handle = expectOk(
+			await runUp({
+				epicenterRoot: workDir,
+				quiet: true,
+				createAuthClient: signedOutFactory,
+			}),
+		);
+		try {
+			const client = daemonClient(socketPathFor(workDir));
+			const manifest = expectOk(await client.list());
+			expect(Object.keys(manifest)).toEqual(['mirror.sync']);
+			expect(manifest['mirror.sync']?.description).toBe('Sync local mirror');
+			expect(expectOk(await client.peers())).toEqual([]);
+			expect(
+				expectOk(
+					await client.run({
+						actionPath: 'mirror.sync',
+						input: null,
+					}),
+				),
+			).toEqual({ imported: 2 });
+		} finally {
+			await handle.teardown();
+		}
+	});
 });
 
 describe('runUp: failure cleanup', () => {
-	test('surfaces the auth error and releases the lease when createAuthClient returns Err', async () => {
+	test('reports a session mount as inactive when signed out, without serving it', async () => {
+		writeRuntimeMount();
+
+		const handle = expectOk(
+			await runUp({
+				epicenterRoot: workDir,
+				quiet: true,
+				createAuthClient: signedOutFactory,
+			}),
+		);
+
+		try {
+			expect(handle.mounts).toEqual([]);
+			expect(handle.inactive).toEqual([
+				{ mount: 'demo', reason: 'sign in to enable demo' },
+			]);
+			// The daemon still binds its socket: a signed-out daemon is running,
+			// it just has nothing to serve yet.
+			expect(await pingDaemon(socketPathFor(workDir), 1000)).toBe(true);
+		} finally {
+			await handle.teardown();
+		}
+	});
+
+	test('surfaces non-session auth errors and releases the lease', async () => {
+		writeRuntimeMount();
+
 		const error = expectErr(
 			await runUp({
 				epicenterRoot: workDir,
 				quiet: true,
 				createAuthClient: async () =>
 					Err(
-						MachineAuthStorageError.NoSavedSession({
+						MachineAuthStorageError.PermissionsTooOpen({
 							filePath: '/tmp/fake-auth.json',
-							baseURL: 'https://example.com',
+							mode: 0o644,
 						}).error,
 					),
 			}),
 		);
 
-		expect(error.name).toBe('NoSavedSession');
-		expect(error.message).toContain('no saved session');
+		expect(error.name).toBe('PermissionsTooOpen');
+		expect(error.message).toContain('too permissive');
 		const lease = expectOk(claimDaemonLease(workDir));
 		lease.release();
 	});
@@ -222,7 +312,7 @@ describe('runUp: failure cleanup', () => {
 			await runUp({
 				epicenterRoot: workDir,
 				quiet: true,
-				createAuthClient: stubAuthFactory,
+				createAuthClient: signedOutFactory,
 			}),
 		);
 
@@ -245,7 +335,7 @@ describe('runUp: failure cleanup', () => {
 			await runUp({
 				epicenterRoot: workDir,
 				quiet: true,
-				createAuthClient: stubAuthFactory,
+				createAuthClient: signedOutFactory,
 			}),
 		);
 
@@ -333,7 +423,7 @@ describe('runUp: failure cleanup', () => {
 			await runUp({
 				epicenterRoot: workDir,
 				quiet: true,
-				createAuthClient: stubAuthFactory,
+				createAuthClient: signedOutFactory,
 			}),
 		);
 		expect(error.name).toBe('EpicenterConfigImportFailed');
@@ -357,7 +447,7 @@ describe('runUp: failure cleanup', () => {
 			await runUp({
 				epicenterRoot: workDir,
 				quiet: true,
-				createAuthClient: stubAuthFactory,
+				createAuthClient: signedOutFactory,
 			}),
 		);
 
@@ -456,25 +546,11 @@ describe('runUp: failure cleanup', () => {
 			`
 				import { writeFileSync } from 'node:fs';
 
-				const collaboration = {
-					actions: {},
-					whenConnected: new Promise(() => {}),
-					status: { phase: 'connected' },
-					onStatusChange: () => () => {},
-					devices: {
-						list: () => [],
-						subscribe: () => () => {},
-					},
-					dispatch: async () => {
-						throw new Error('fixture does not dispatch');
-					},
-				};
-
 				export default {
 					name: 'good',
 					async open() {
 						return {
-							collaboration,
+							actions: {},
 							async [Symbol.asyncDispose]() {
 								writeFileSync(${JSON.stringify(disposeMarker)}, 'disposed');
 							},
@@ -508,7 +584,7 @@ describe('runUp: failure cleanup', () => {
 			await runUp({
 				epicenterRoot: workDir,
 				quiet: true,
-				createAuthClient: stubAuthFactory,
+				createAuthClient: signedOutFactory,
 			}),
 		);
 
@@ -553,7 +629,9 @@ describe('runUp: already running', () => {
 				await runUp({
 					epicenterRoot: workDir,
 					quiet: true,
-					createAuthClient: stubAuthFactory,
+					// A held lease short-circuits before auth is ever loaded; this
+					// factory throws if startup reaches for it.
+					createAuthClient: failIfAuthCreated,
 				}),
 			);
 

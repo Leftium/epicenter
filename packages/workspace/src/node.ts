@@ -17,10 +17,9 @@ export {
 } from './daemon/action-errors.js';
 export { PeerSnapshot, RunRequest } from './daemon/app.js';
 export {
-	type AttachProjectInfrastructureOptions,
-	attachProjectInfrastructure,
-	type ProjectInfrastructure,
-} from './daemon/attach-project-infrastructure.js';
+	type AttachMountInfrastructureOptions,
+	attachMountInfrastructure,
+} from './daemon/attach-mount-infrastructure.js';
 export {
 	type DaemonClient,
 	DaemonError,
@@ -30,8 +29,14 @@ export {
 } from './daemon/client.js';
 export {
 	defineMount,
+	defineSessionMount,
+	inactive,
+	isInactive,
 	type Mount,
 	type MountContext,
+	type MountInactive,
+	type MountSession,
+	type SessionMountContext,
 } from './daemon/define-mount.js';
 export {
 	claimDaemonLease,
@@ -87,6 +92,8 @@ export { hashYDocClientId } from './shared/client-id.js';
 export type { WorkspaceAuthClient } from './workspace-apps/auth-client.js';
 export { WorkspaceAppError } from './workspace-apps/errors.js';
 export {
+	type InactiveMount,
 	type OpenEpicenterRootOptions,
+	type OpenedEpicenterRoot,
 	openEpicenterRoot,
 } from './workspace-apps/open-epicenter-root.js';

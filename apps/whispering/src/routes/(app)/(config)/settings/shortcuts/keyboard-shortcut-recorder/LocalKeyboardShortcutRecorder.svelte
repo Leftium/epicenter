@@ -1,4 +1,6 @@
 <script lang="ts">
+	import * as Alert from '@epicenter/ui/alert';
+	import AlertTriangle from '@lucide/svelte/icons/alert-triangle';
 	import type { Command } from '$lib/commands';
 	import type { KeyboardEventSupportedKey } from '$lib/constants/keyboard';
 	import { report } from '$lib/report';
@@ -8,30 +10,32 @@
 		type CommandId,
 	} from '$lib/services/local-shortcut-manager';
 	import { settings } from '$lib/state/settings.svelte';
+	import { os } from '#platform/os';
+	import { getShortcutDisplayLabel } from '$lib/utils/keyboard';
 	import { type PressedKeys } from '$lib/utils/createPressedKeys.svelte';
 	import { createKeyRecorder } from './create-key-recorder.svelte';
-	import KeyboardShortcutRecorder from './KeyboardShortcutRecorder.svelte';
+	import RecorderShell from './RecorderShell.svelte';
 
 	const {
 		command,
 		placeholder,
-		autoFocus = true,
 		pressedKeys,
 	}: {
 		command: Command;
 		placeholder?: string;
-		autoFocus?: boolean;
 		pressedKeys: PressedKeys;
 	} = $props();
 
 	const shortcutValue = $derived(settings.get(`shortcut.${command.id}`));
+	const label = $derived(
+		shortcutValue ? getShortcutDisplayLabel(shortcutValue) : null,
+	);
 
 	const keyRecorder = createKeyRecorder({
 		pressedKeys,
 		onRegister: async (keyCombination: KeyboardEventSupportedKey[]) => {
-			const { error: unregisterError } =
-				await localShortcuts.unregisterCommand({
-					commandId: command.id as CommandId,
+			const { error: unregisterError } = await localShortcuts.unregisterCommand({
+				commandId: command.id as CommandId,
 			});
 			if (unregisterError) {
 				report.error({
@@ -39,12 +43,10 @@
 					cause: unregisterError,
 				});
 			}
-			const { error: registerError } = await localShortcuts.registerCommand(
-				{
-					command,
-					keyCombination,
-				},
-			);
+			const { error: registerError } = await localShortcuts.registerCommand({
+				command,
+				keyCombination,
+			});
 
 			if (registerError) {
 				report.error({
@@ -65,9 +67,8 @@
 			});
 		},
 		onClear: async () => {
-			const { error: unregisterError } =
-				await localShortcuts.unregisterCommand({
-					commandId: command.id as CommandId,
+			const { error: unregisterError } = await localShortcuts.unregisterCommand({
+				commandId: command.id as CommandId,
 			});
 			if (unregisterError) {
 				report.error({
@@ -83,12 +84,47 @@
 			});
 		},
 	});
+
+	const recorder = {
+		get isListening() {
+			return keyRecorder.isListening;
+		},
+		get label() {
+			return label;
+		},
+		get manualInitial() {
+			return shortcutValue ?? '';
+		},
+		start: () => keyRecorder.start(),
+		stop: () => keyRecorder.stop(),
+		clear: () => keyRecorder.clear(),
+		submitManual: (raw: string) =>
+			keyRecorder.register(raw.split('+') as KeyboardEventSupportedKey[]),
+	};
 </script>
 
-<KeyboardShortcutRecorder
+<RecorderShell
 	title={command.title}
-	{placeholder}
-	{autoFocus}
-	rawKeyCombination={shortcutValue}
-	{keyRecorder}
-/>
+	{recorder}
+	copy={{
+		placeholder,
+		recordHelp: 'Click to record or edit manually',
+		manualHelp: 'Enter shortcut manually (e.g., ctrl+shift+a)',
+		manualPlaceholder: 'e.g., ctrl+shift+a',
+		manualButtonLabel: 'Edit manually',
+	}}
+>
+	{#snippet warning()}
+		{#if os.isApple}
+			<Alert.Root variant="warning" class="text-xs">
+				<AlertTriangle class="size-4" />
+				<Alert.Title class="text-xs font-medium">Apple Keyboard Note</Alert.Title>
+				<Alert.Description class="text-xs">
+					Some Option+key combinations (E, I, N, U, `) may not record properly.
+					Try recording in reverse (press letter first, then Option) or edit
+					manually.
+				</Alert.Description>
+			</Alert.Root>
+		{/if}
+	{/snippet}
+</RecorderShell>

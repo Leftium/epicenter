@@ -5,7 +5,7 @@
  * The relay carries only `deviceId` on the wire; product-level
  * display names live in app-owned state and are out of scope here.
  *
- * `epicenter peers` requires a running daemon for the discovered project.
+ * `epicenter peers` requires a running daemon for the discovered Epicenter root.
  * Without `daemon up`, the handler errors with a hint pointing at
  * `epicenter daemon up`.
  *
@@ -15,7 +15,7 @@
 
 import { getDaemon, type PeerSnapshot } from '@epicenter/workspace/node';
 import { cmd } from '../util/cmd.js';
-import { projectOption } from '../util/common-options.js';
+import { epicenterRootOption } from '../util/common-options.js';
 import {
 	fail,
 	formatOptions,
@@ -27,7 +27,7 @@ export const peersCommand = cmd({
 	command: 'peers',
 	describe: 'List connected peers (presence)',
 	builder: {
-		C: projectOption,
+		C: epicenterRootOption,
 		...formatOptions,
 	},
 	handler: async (argv) => {

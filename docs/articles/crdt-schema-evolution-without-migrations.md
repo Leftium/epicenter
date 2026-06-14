@@ -42,14 +42,10 @@ Notice what's _not_ there: no error when the row doesn't match the schema. The r
 KV stores (settings, preferences) use a flat Y.Map with string keys:
 
 ```typescript
-const settings = createKv(ydoc, {
-  theme: kv({
-    field: select({ options: ['light', 'dark'], default: 'light' }),
-  }),
-  fontSize: kv({
-    field: integer({ default: 14 }),
-  }),
-});
+const settings = {
+  theme: defineKv(field.select(['light', 'dark']), () => 'light' as const),
+  fontSize: defineKv(field.integer(), () => 14),
+};
 ```
 
 The schema exists in your code, not in the data. The Y.Map just stores whatever you write to it.
@@ -57,18 +53,12 @@ The schema exists in your code, not in the data. The Y.Map just stores whatever 
 **Add a new setting?**
 
 ```typescript
-const settings = createKv(ydoc, {
-  theme: kv({
-    field: select({ options: ['light', 'dark'], default: 'light' }),
-  }),
-  fontSize: kv({
-    field: integer({ default: 14 }),
-  }),
-  // New field - just add it
-  language: kv({
-    field: select({ options: ['en', 'es', 'fr'], default: 'en' }),
-  }),
-});
+const settings = {
+  theme: defineKv(field.select(['light', 'dark']), () => 'light' as const),
+  fontSize: defineKv(field.integer(), () => 14),
+  // New field: just add it
+  language: defineKv(field.select(['en', 'es', 'fr']), () => 'en' as const),
+};
 
 // Old clients: ignore language (they don't know about it)
 // New clients: read language, get default 'en' if never set
@@ -80,12 +70,10 @@ No migration needed. Old clients just don't read that key. New clients get the d
 
 ```typescript
 // Just remove it from the code
-const settings = createKv(ydoc, {
-  theme: kv({
-    field: select({ options: ['light', 'dark'], default: 'light' }),
-  }),
+const settings = {
+  theme: defineKv(field.select(['light', 'dark']), () => 'light' as const),
   // fontSize: removed from code
-});
+};
 
 // The data stays in Y.Map forever
 // But nobody reads it anymore
@@ -99,15 +87,10 @@ Tables work similarly, but with a twist: each field has its own validator and de
 
 ```typescript
 const tables = {
-  posts: table({
-    fields: {
-      id: id(),
-      title: text(),
-      status: select({
-        options: ['draft', 'published'],
-        default: 'draft'
-      }),
-    },
+  posts: defineTable({
+    id: field.string(),
+    title: field.string(),
+    status: field.select(['draft', 'published'], { default: 'draft' }),
   }),
 };
 ```
@@ -116,17 +99,12 @@ const tables = {
 
 ```typescript
 const tables = {
-  posts: table({
-    fields: {
-      id: id(),
-      title: text(),
-      status: select({
-        options: ['draft', 'published'],
-        default: 'draft'
-      }),
-      // New field
-      priority: integer({ default: 0 }),
-    },
+  posts: defineTable({
+    id: field.string(),
+    title: field.string(),
+    status: field.select(['draft', 'published'], { default: 'draft' }),
+    // New field
+    priority: field.integer({ default: 0 }),
   }),
 };
 ```

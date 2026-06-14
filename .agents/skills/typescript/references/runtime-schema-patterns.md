@@ -94,13 +94,13 @@ For IDs that flow through an **arktype** schema at a runtime boundary (auth user
 import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
 
-// 1. VALIDATOR — declared first; brand lives inside `.as<>()`.
+// 1. VALIDATOR: declared first; brand lives inside `.as<>()`.
 export const UserId = type('string').as<string & Brand<'UserId'>>();
 
-// 2. TYPE — derived from the validator. One source of truth.
+// 2. TYPE: derived from the validator. One source of truth.
 export type UserId = typeof UserId.infer;
 
-// 3. AS HELPER — shorthand for `value as UserId` at trusted call sites.
+// 3. AS HELPER: shorthand for `value as UserId` at trusted call sites.
 export const asUserId = (value: string): UserId => value as UserId;
 ```
 
@@ -115,11 +115,11 @@ Declaring the validator first and deriving the type via `typeof UserId.infer` ma
 At trusted call sites that receive a `string` from another typed source (Better Auth user id, URL params, Hono context vars), use the `as*` helper:
 
 ```typescript
-// Good — uses the shorthand helper
+// Good: uses the shorthand helper
 const userId = asUserId(c.var.user.id);
 const ownerId = asOwnerId(c.req.param('ownerId')!);
 
-// Bad — scattered raw casts
+// Bad: scattered raw casts
 const userId = c.var.user.id as UserId;
 ```
 
@@ -141,7 +141,7 @@ For genuinely untyped boundaries (parsing `unknown` JSON, network input) use the
 Because the validator shares the type name, arktype schemas read with no `Schema` suffix anywhere:
 
 ```typescript
-// Good — one PascalCase name covers both namespaces
+// Good: one PascalCase name covers both namespaces
 export const PersistedAuth = type({
 	'+': 'delete',
 	grant: OAuthTokenGrant,
@@ -151,7 +151,7 @@ export const PersistedAuth = type({
 	mode: OwnershipMode,
 });
 
-// Bad — artificial `Schema` alias next to the type import
+// Bad: artificial `Schema` alias next to the type import
 import { UserIdSchema, type UserId } from './ids.js';
 ```
 
@@ -162,7 +162,7 @@ Reach for an alias only when two imported values genuinely collide in the same n
 An older pattern declared a PascalCase function that doubled as the brand constructor:
 
 ```typescript
-// Old pattern — DO NOT use for new code
+// Old pattern: DO NOT use for new code
 export type UserId = string & Brand<'UserId'>;
 export const UserId = (value: string): UserId => value as UserId;
 export const UserIdSchema = type('string').as<UserId>();

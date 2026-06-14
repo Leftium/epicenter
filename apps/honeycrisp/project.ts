@@ -1,10 +1,11 @@
 /**
  * Honeycrisp project mount.
  *
- * `honeycrisp(opts?)` returns the `Mount` that a project's
- * `epicenter.config.ts` default-exports. Disk paths are hardcoded to the vault
- * layout: the SQLite mirror at `.epicenter/sqlite/<id>.db` (hidden) and the
- * read-only markdown projection at `apps/honeycrisp/` (visible).
+ * `honeycrisp(opts?)` returns the `Mount` that an
+ * `epicenter.config.ts` default-exports. Disk paths follow the
+ * Epicenter-root layout: the SQLite mirror at `.epicenter/sqlite/<id>.db`
+ * (hidden) and the read-only markdown projection at `<epicenterRoot>/honeycrisp/`
+ * (visible), a direct child of the Epicenter root.
  */
 
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
@@ -17,8 +18,8 @@ import {
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import {
-	appsMarkdownPath,
 	attachProjectInfrastructure,
+	mountMarkdownPath,
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
@@ -33,7 +34,7 @@ export function honeycrisp(opts: HoneycrispMountOptions = {}) {
 		name: 'honeycrisp',
 		open(ctx) {
 			const {
-				projectDir,
+				epicenterRoot,
 				mount,
 				yDocClientId,
 				deviceId,
@@ -46,8 +47,8 @@ export function honeycrisp(opts: HoneycrispMountOptions = {}) {
 			const workspace = createHoneycrisp({ keyring });
 			workspace.ydoc.clientID = yDocClientId;
 
-			const sqliteFile = sqlitePath(projectDir, workspace.ydoc.guid);
-			const mdDir = appsMarkdownPath(projectDir, mount);
+			const sqliteFile = sqlitePath(epicenterRoot, workspace.ydoc.guid);
+			const mdDir = mountMarkdownPath(epicenterRoot, mount);
 
 			const sqlite = attachBunSqliteMaterializer(workspace, {
 				filePath: sqliteFile,
@@ -74,7 +75,7 @@ export function honeycrisp(opts: HoneycrispMountOptions = {}) {
 
 			const infrastructure = attachProjectInfrastructure(workspace.ydoc, {
 				baseURL: EPICENTER_API_URL,
-				projectDir,
+				epicenterRoot,
 				ownerId,
 				deviceId,
 				openWebSocket,

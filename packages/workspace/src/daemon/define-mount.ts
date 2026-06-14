@@ -1,5 +1,5 @@
 /**
- * `defineMount`: typed entry contract for an app mount inside a project daemon.
+ * `defineMount`: typed entry contract for an app mount inside the daemon.
  *
  * `epicenter.config.ts` default-exports a `Mount[]`. Each mount carries its own
  * canonical `name`, which
@@ -18,7 +18,11 @@ import type {
 	OnReconnectSignal,
 	OpenWebSocketFn,
 } from '../document/open-collaboration.js';
-import type { AuthedFetch, MaybePromise, ProjectDir } from '../shared/types.js';
+import type {
+	AuthedFetch,
+	EpicenterRoot,
+	MaybePromise,
+} from '../shared/types.js';
 import type { DaemonRuntime } from './types.js';
 
 /**
@@ -29,13 +33,14 @@ import type { DaemonRuntime } from './types.js';
  * into the closure), and passes the auth-derived function refs through for
  * cloud sync.
  *
- * - `projectDir` is the resolved project root. Disk-writing helpers like
- *   `yjsPath` derive every absolute path from it.
+ * - `epicenterRoot` is the resolved Epicenter root (the folder that holds
+ *   `epicenter.config.ts`). Disk-writing helpers like `yjsPath` derive every
+ *   absolute path from it.
  * - `mount` is the canonical mount name (`Mount.name`). Pinned here so
  *   handlers can share the same identifier with logs, materializers, and
  *   client ids.
  * - `yDocClientId` is the deterministic Y.Doc CRDT `clientID` for this
- *   daemon (derived from `projectDir`). Pin it on the Y.Doc with
+ *   daemon (derived from `epicenterRoot`). Pin it on the Y.Doc with
  *   `ydoc.clientID = ctx.yDocClientId` right after construction.
  * - `deviceId` is the conventional collaboration WebSocket device id for
  *   the daemon side of this mount (`<mount>-daemon`).
@@ -51,7 +56,7 @@ import type { DaemonRuntime } from './types.js';
  *   handled) for one-shot HTTP to the relay.
  */
 export type MountContext = {
-	projectDir: ProjectDir;
+	epicenterRoot: EpicenterRoot;
 	mount: string;
 	yDocClientId: number;
 	deviceId: DeviceId;
@@ -66,7 +71,7 @@ export type MountContext = {
  * One app mount: a name plus an `open(ctx)` that returns a `DaemonRuntime`.
  *
  * Factories like `fuji()` return a `Mount`. The canonical mount name lives on
- * the value itself (`Mount.name`), so renaming a project folder never changes
+ * the value itself (`Mount.name`), so renaming an Epicenter folder never changes
  * the action namespace.
  */
 export type Mount<TRuntime extends DaemonRuntime = DaemonRuntime> = {

@@ -122,18 +122,18 @@ export {
 } from './document/device-id.js';
 
 // ════════════════════════════════════════════════════════════════════════════
-// PROJECT CONFIG (browser-safe surface)
+// EPICENTER CONFIG (browser-safe surface)
 // ════════════════════════════════════════════════════════════════════════════
 
-// Node-only helpers that resolve real paths (`findProjectRoot`,
-// `openProject`, etc.) import `node:fs`, `node:path`, or `node:os`
+// Node-only helpers that resolve real paths (`findEpicenterRoot`,
+// `openEpicenterRoot`, etc.) import `node:fs`, `node:path`, or `node:os`
 // at module top level. They are exported from `@epicenter/workspace/node`;
 // keeping them out of this root barrel stops browser bundles (fuji,
 // whispering, etc.) from traversing `node:*` modules. Daemon runtime and
 // log paths live in `@epicenter/workspace/daemon/paths.ts`.
-export { DEFAULT_PROJECT_CONFIG_SOURCE } from './config/project-config-source.js';
+export { DEFAULT_EPICENTER_CONFIG_SOURCE } from './config/epicenter-config-source.js';
 export { defineMount } from './daemon/define-mount.js';
-export type { ProjectDir } from './shared/types';
+export type { EpicenterRoot } from './shared/types';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ID + DATE PRIMITIVES
@@ -183,7 +183,6 @@ export {
 	type InferKvValue,
 	type Kv,
 	type KvDefinitions,
-	KvError,
 } from './document/kv.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 export {
@@ -197,9 +196,15 @@ export type { PresenceDevice } from './document/presence-protocol.js';
 export {
 	type BaseRow,
 	type InferTableRow,
+	type ReadonlyTable,
 	type Table,
+	TableNewerWriterError,
 	TableParseError,
+	type TableReadError,
+	type TableScan,
 	type Tables,
+	TableUnreadableError,
+	TableWriteError,
 } from './document/table.js';
 // Transport URL builder.
 //

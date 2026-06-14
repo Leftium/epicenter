@@ -1,10 +1,12 @@
 /**
  * Tauri path helpers for Whispering's appdata directories.
  *
- * Absolute paths under the platform appdata root:
- *   macOS:   ~/Library/Application Support/com.bradenwong.whispering/
- *   Windows: %APPDATA%/com.bradenwong.whispering/
- *   Linux:   ~/.config/com.bradenwong.whispering/
+ * Tauri derives this root from `appDataDir()`, i.e.
+ * `${dataDir}/${bundleIdentifier}`. With identifier
+ * `so.epicenter.whispering`, that means:
+ *   macOS:   ~/Library/Application Support/so.epicenter.whispering/
+ *   Windows: %APPDATA%/so.epicenter.whispering/
+ *   Linux:   ~/.local/share/so.epicenter.whispering/
  *
  * This module must stay importable from browser builds because Svelte routes
  * and components statically import it while guarding calls with `tauri`. Keep
@@ -28,9 +30,8 @@ export const PATHS = {
 	/**
 	 * Local transcription model directories under `models/`, keyed by engine
 	 * id so consumers can index with `PATHS.MODELS[engine]()`. The directory
-	 * names are durable on-disk contracts (existing installs live in them and
-	 * saved model names resolve under them), which is why `whispercpp` maps
-	 * to `whisper`.
+	 * names are durable contracts within the active appdata root, which is why
+	 * `whispercpp` maps to `whisper`.
 	 */
 	MODELS: {
 		async whispercpp() {

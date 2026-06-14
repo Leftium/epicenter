@@ -124,7 +124,7 @@ export const commands = {
 	 *  invokes this once at startup and on every subsequent change to
 	 *  settings, model selection, language, prompt, or unload policy.
 	 *
-	 *  Drift in `(engine, modelPath)` triggers a background preload so the
+	 *  Drift in `(engine, model_name)` triggers a background preload so the
 	 *  next `transcribe_recording` call does not pay cold-start latency.
 	 *  Other field changes take effect on the next transcription with no
 	 *  reload.

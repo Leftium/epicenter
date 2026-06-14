@@ -260,7 +260,7 @@ reintroduce `resolve.extensions` suffixes or tsconfig `moduleSuffixes`.
 
 Daemon and script bindings are NOT in the app package. They live per-project
 under `workspaces/<app>/` (e.g. `playground/opensidian-e2e/workspaces/opensidian/daemon.ts`)
-and are registered through `epicenter.config.ts` at the project root:
+and are registered through `epicenter.config.ts` at the Epicenter root:
 
 ```ts
 import { defineConfig } from '@epicenter/workspace';
@@ -272,8 +272,8 @@ export default defineConfig({
 ```
 
 The daemon imports the app's mount factory (the `./project` export) to construct
-its `Mount`. `epicenter.config.ts` is the project marker and route registry;
-`.epicenter/` is project-local data, not a discovery marker. The public
+its `Mount`. `epicenter.config.ts` marks the Epicenter root and is the route
+registry; `.epicenter/` is machine state under that root, not a discovery marker. The public
 lifecycle command is `epicenter daemon up`, not `epicenter serve`.
 
 ## Anti-Patterns

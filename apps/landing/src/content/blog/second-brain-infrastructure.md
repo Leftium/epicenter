@@ -39,17 +39,20 @@ That's the `epicenter` CLI. Karpathy's monthly health check becomes a script you
 Schemas are typed and enforced at runtime, not just documented:
 
 ```typescript
-const workspace = defineWorkspace({
+import { field } from "@epicenter/field";
+import { createWorkspace, defineTable } from "@epicenter/workspace";
+
+const notes = defineTable({
+  id: field.string(),
+  title: field.string(),
+  content: field.string(),
+  tags: field.tags(),
+  folder: field.select(["raw", "wiki", "outputs"]),
+});
+
+const workspace = createWorkspace({
   id: "second-brain",
-  tables: {
-    notes: {
-      id: id(),
-      title: text(),
-      content: text(),
-      tags: text(),
-      folder: select({ options: ["raw", "wiki", "outputs"] }),
-    },
-  },
+  tables: { notes },
   kv: {},
 });
 ```

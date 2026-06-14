@@ -23,21 +23,21 @@ import { StartupError } from './startup-errors.js';
 
 function createDaemonLease({
 	db,
-	projectDir,
+	epicenterRoot,
 	leasePath,
 }: {
 	db: Database;
-	projectDir: string;
+	epicenterRoot: string;
 	leasePath: string;
 }) {
 	let released = false;
 	return {
 		/** Filesystem-resolved absolute path that scopes this daemon. */
-		projectDir,
+		epicenterRoot,
 		/** SQLite file whose open write transaction owns the daemon lease. */
 		leasePath,
 		/** Filesystem path of the unix socket this daemon binds. */
-		socketPath: socketPathFor(projectDir),
+		socketPath: socketPathFor(epicenterRoot),
 		/** Release the daemon lease. Idempotent. */
 		release(): void {
 			if (released) return;
@@ -53,9 +53,9 @@ function createDaemonLease({
 export type DaemonLease = ReturnType<typeof createDaemonLease>;
 
 export function claimDaemonLease(
-	projectDir: string,
+	epicenterRoot: string,
 ): Result<DaemonLease, StartupError> {
-	const leasePath = leasePathFor(projectDir);
+	const leasePath = leasePathFor(epicenterRoot);
 
 	let db: Database | undefined;
 	try {
@@ -67,13 +67,13 @@ export function claimDaemonLease(
 		bestEffortSync(() => db?.close());
 		if (isSqliteBusy(cause)) {
 			return StartupError.AlreadyRunning({
-				pid: readMetadata(projectDir)?.pid,
+				pid: readMetadata(epicenterRoot)?.pid,
 			});
 		}
 		return StartupError.LeaseFailed({ cause });
 	}
 
-	return Ok(createDaemonLease({ db, projectDir, leasePath }));
+	return Ok(createDaemonLease({ db, epicenterRoot, leasePath }));
 }
 
 function isSqliteBusy(cause: unknown): boolean {

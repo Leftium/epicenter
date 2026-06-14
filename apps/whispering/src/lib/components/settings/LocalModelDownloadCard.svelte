@@ -12,10 +12,13 @@
 	let {
 		model,
 		recommended = false,
+		onDiskChange,
 	}: {
 		model: LocalModelConfig;
 		/** Show the Recommended badge; the selector decides when it guides a choice. */
 		recommended?: boolean;
+		/** Re-scan the parent selector after this card changes the models folder. */
+		onDiskChange?: () => void | Promise<void>;
 	} = $props();
 
 	// Shared per-model handle: the selector hero reads the same one, so a
@@ -24,6 +27,21 @@
 
 	// Aliased so the template narrows the union per branch.
 	const modelState = $derived(download.state);
+
+	async function downloadModel() {
+		await download.download();
+		await onDiskChange?.();
+	}
+
+	async function deleteModel() {
+		await download.delete();
+		await onDiskChange?.();
+	}
+
+	async function activateModel() {
+		download.activate();
+		await onDiskChange?.();
+	}
 </script>
 
 <div
@@ -55,10 +73,10 @@
 				<span class="text-sm font-medium">{modelState.progress}%</span>
 			</div>
 		{:else if modelState.type === 'ready'}
-			<Button size="sm" variant="outline" onclick={() => download.activate()}>
+			<Button size="sm" variant="outline" onclick={activateModel}>
 				Activate
 			</Button>
-			<Button size="sm" variant="ghost" onclick={() => download.delete()}>
+			<Button size="sm" variant="ghost" onclick={deleteModel}>
 				<X class="size-4" />
 			</Button>
 		{:else if modelState.type === 'active'}
@@ -66,11 +84,11 @@
 				<CheckIcon class="size-4 mr-1" />
 				Activated
 			</Button>
-			<Button size="sm" variant="ghost" onclick={() => download.delete()}>
+			<Button size="sm" variant="ghost" onclick={deleteModel}>
 				<X class="size-4" />
 			</Button>
 		{:else}
-			<Button size="sm" variant="outline" onclick={() => download.download()}>
+			<Button size="sm" variant="outline" onclick={downloadModel}>
 				<Download class="size-4" />
 				Download
 			</Button>

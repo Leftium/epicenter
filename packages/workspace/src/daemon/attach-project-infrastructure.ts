@@ -2,7 +2,7 @@
  * Project-daemon persistence + sync infrastructure for a single workspace doc.
  *
  * `attachProjectInfrastructure(ydoc, opts)` is the recipe every mount needs:
- * persist the Y.Doc update log to disk under `yjsPath(projectDir, guid)`, join
+ * persist the Y.Doc update log to disk under `yjsPath(epicenterRoot, guid)`, join
  * the cloud room at the partitioned `roomWsUrl({ baseURL, ownerId, guid,
  * deviceId })`, and own the ordered async dispose (destroy first so writes
  * flush before sockets close, then await every `whenDisposed` barrier:
@@ -37,12 +37,12 @@ import {
 import { roomWsUrl } from '../document/transport.js';
 import { yjsPath } from '../document/workspace-paths.js';
 import type { ActionRegistry } from '../shared/actions.js';
-import type { ProjectDir } from '../shared/types.js';
+import type { EpicenterRoot } from '../shared/types.js';
 
 export type AttachProjectInfrastructureOptions<
 	TActions extends ActionRegistry,
 > = {
-	projectDir: ProjectDir;
+	epicenterRoot: EpicenterRoot;
 	ownerId: OwnerId;
 	deviceId: DeviceId;
 	openWebSocket: OpenWebSocketFn;
@@ -62,7 +62,7 @@ export type AttachProjectInfrastructureOptions<
 export function attachProjectInfrastructure<TActions extends ActionRegistry>(
 	ydoc: Y.Doc,
 	{
-		projectDir,
+		epicenterRoot,
 		ownerId,
 		deviceId,
 		openWebSocket,
@@ -73,7 +73,7 @@ export function attachProjectInfrastructure<TActions extends ActionRegistry>(
 	}: AttachProjectInfrastructureOptions<TActions>,
 ) {
 	const yjsLog = attachYjsLog(ydoc, {
-		filePath: yjsPath(projectDir, ydoc.guid),
+		filePath: yjsPath(epicenterRoot, ydoc.guid),
 	});
 
 	const collaboration = openCollaboration(ydoc, {

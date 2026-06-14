@@ -27,11 +27,11 @@ const log = createLogger('workspace/daemon/metadata');
  * On-disk shape of `<dirHash>.meta.json`.
  *
  * `dir` is stored as the absolute, fs-resolved path so different cwd-relative
- * project discovery starts resolving to the same project match.
+ * Epicenter-root discovery starts resolving to the same root match.
  */
 export type DaemonMetadata = {
 	pid: number;
-	/** Absolute, fs-resolved project directory path. */
+	/** Absolute, fs-resolved Epicenter root path. */
 	dir: string;
 	/** ISO 8601 timestamp. */
 	startedAt: string;

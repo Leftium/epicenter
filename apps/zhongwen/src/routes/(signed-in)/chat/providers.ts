@@ -5,13 +5,14 @@
  */
 
 import { GeminiTextModels } from '@tanstack/ai-gemini';
-import { GROK_CHAT_MODELS } from '@tanstack/ai-grok';
 import { OPENAI_CHAT_MODELS } from '@tanstack/ai-openai';
 
+// Only providers the `/api/ai/chat/doc` route can actually serve belong here:
+// its `providerModel` validator accepts openai and gemini, so offering a third
+// provider in the picker would persist a row the server rejects with a 400.
 export const PROVIDER_MODELS = {
 	openai: OPENAI_CHAT_MODELS,
 	gemini: GeminiTextModels,
-	grok: GROK_CHAT_MODELS,
 } as const;
 
 export type Provider = keyof typeof PROVIDER_MODELS;

@@ -24,7 +24,8 @@ use log::{debug, error, info};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use tauri::{AppHandle, Emitter};
 
 use crate::audio::resample_mono;
 
@@ -37,6 +38,19 @@ pub type Result<T> = std::result::Result<T, String>;
 /// services accept opus encoded from 48 kHz which we get to via a
 /// second resample step inside `audio::encode_pcm_to_opus_ogg`.
 const TARGET_RATE: u32 = 16_000;
+
+/// Overlay window label and event name for live mic levels. The recording
+/// overlay (a separate webview) renders these into its meter bars. Kept in
+/// sync with the JS window manager's `WINDOW_LABEL` and the `mic-level`
+/// channel in `src/lib/recording-overlay/`.
+const OVERLAY_WINDOW_LABEL: &str = "recording-overlay";
+const MIC_LEVEL_EVENT: &str = "mic-level";
+
+/// Minimum gap between mic-level emits. ~20 Hz is smooth for a meter and keeps
+/// the targeted Tauri event off the IPC hot path (per Tauri's guidance to
+/// throttle high-frequency events). Levels between emits are averaged, not
+/// dropped, so a brief loud transient still registers.
+const MIC_LEVEL_EMIT_INTERVAL: Duration = Duration::from_millis(50);
 
 /// Sub-1s recordings are padded to this many samples (at 16 kHz, so
 /// 1.25 s). Suppresses Whisper hallucination on near-silent short
@@ -96,6 +110,7 @@ impl Recorder {
         device_name: String,
         recording_id: String,
         preferred_sample_rate: Option<u32>,
+        app_handle: AppHandle,
     ) -> Result<()> {
         // Clean up any existing session before standing up a new one.
         self.close_session()?;
@@ -145,7 +160,7 @@ impl Recorder {
             }
 
             info!("Audio stream started successfully");
-            run_consumer(sample_rx, cmd_rx, device_rate, is_recording);
+            run_consumer(sample_rx, cmd_rx, device_rate, is_recording, app_handle);
             drop(stream);
         });
 
@@ -240,17 +255,25 @@ impl Drop for Recorder {
 }
 
 /// Consumer worker entrypoint. Accumulates mono samples, resamples to
-/// 16 kHz at finalize, pads short clips, emits the artifact.
+/// 16 kHz at finalize, pads short clips, emits the artifact. While recording,
+/// also emits a throttled RMS level to the overlay window so its meter can
+/// reflect live mic activity (the JS side never sees the PCM, so the level has
+/// to originate here).
 fn run_consumer(
     sample_rx: mpsc::Receiver<Vec<f32>>,
     cmd_rx: mpsc::Receiver<RecorderCmd>,
     device_rate: u32,
     is_recording: Arc<AtomicBool>,
+    app_handle: AppHandle,
 ) {
     use std::sync::mpsc::RecvTimeoutError;
 
     let mut recording = false;
     let mut buffer: Vec<f32> = Vec::new();
+    // Mic-level metering accumulators, averaged and flushed on an interval.
+    let mut level_sumsq = 0f64;
+    let mut level_count = 0usize;
+    let mut last_level_emit = Instant::now();
 
     loop {
         // Command channel has priority. Stop should respond fast even
@@ -261,6 +284,9 @@ fn run_consumer(
                     recording = true;
                     is_recording.store(true, Ordering::Release);
                     buffer.clear();
+                    level_sumsq = 0.0;
+                    level_count = 0;
+                    last_level_emit = Instant::now();
                     let _ = reply.send(());
                     continue;
                 }
@@ -285,7 +311,21 @@ fn run_consumer(
         match sample_rx.recv_timeout(Duration::from_millis(20)) {
             Ok(samples) => {
                 if recording {
+                    for &sample in &samples {
+                        level_sumsq += (sample as f64) * (sample as f64);
+                    }
+                    level_count += samples.len();
                     buffer.extend_from_slice(&samples);
+
+                    if last_level_emit.elapsed() >= MIC_LEVEL_EMIT_INTERVAL && level_count > 0 {
+                        let rms = (level_sumsq / level_count as f64).sqrt() as f32;
+                        // Targeted emit to the overlay only; no error if it is
+                        // not open (e.g. overlay disabled), and never fatal.
+                        let _ = app_handle.emit_to(OVERLAY_WINDOW_LABEL, MIC_LEVEL_EVENT, rms);
+                        level_sumsq = 0.0;
+                        level_count = 0;
+                        last_level_emit = Instant::now();
+                    }
                 }
             }
             Err(RecvTimeoutError::Timeout) => continue,

@@ -23,6 +23,9 @@ use transcription::{
 pub mod command;
 use command::open_accessibility_settings;
 
+pub mod download;
+use download::{cancel_download, download_file, DownloadManager};
+
 pub mod markdown;
 use markdown::write_markdown_files;
 
@@ -61,6 +64,8 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             write_markdown_files,
             set_transcription_config,
             get_transcription_state,
+            download_file,
+            cancel_download,
             keyboard::commands::set_keyboard_shortcuts,
             keyboard::commands::set_keyboard_capturing,
         ])
@@ -220,8 +225,9 @@ pub async fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_upload::init())
         .manage(Mutex::new(Recorder::new()))
+        // Registry of in-flight model downloads; `cancel_download` aborts them.
+        .manage(DownloadManager::default())
         .setup(move |app| {
             // Register the tauri-specta event topics so `Event::emit` (Rust) and
             // the generated `events` listeners (FE) resolve the same names.

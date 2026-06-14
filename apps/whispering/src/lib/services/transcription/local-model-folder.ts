@@ -17,6 +17,7 @@
  * - Parakeet:  `models/parakeet/{directoryName}/` (multiple ONNX files)
  * - Moonshine: `models/moonshine/{directoryName}/` (multiple ONNX files)
  */
+import { Channel } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
 import {
 	exists,
@@ -26,7 +27,6 @@ import {
 	rename,
 	stat,
 } from '@tauri-apps/plugin-fs';
-import { download } from '@tauri-apps/plugin-upload';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -39,6 +39,7 @@ import {
 } from '$lib/constants/local-models';
 import { PATHS } from '$lib/services/fs-paths';
 import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
+import { commands, type DownloadProgress } from '$lib/tauri/commands';
 
 export const LocalModelFolderError = defineErrors({
 	DownloadIncomplete: ({
@@ -174,18 +175,22 @@ async function removePartial(partialPath: string): Promise<void> {
 }
 
 /**
- * Download one file to disk through the upload plugin's native streaming
- * download (`reqwest` -> `tokio::fs` in Rust; no per-chunk IPC, follows
- * redirects). Writes to a sibling `.partial` first so a crash mid-download
+ * Download one file to disk through the native `download_file` command
+ * (`reqwest` -> `tokio::fs` in Rust; no per-chunk IPC, follows redirects).
+ * The transfer runs under `downloadId` so `cancel_download` can abort it
+ * mid-flight. Writes to a sibling `.partial` first so a crash mid-download
  * never leaves a truncated file at the canonical path, then size-checks and
  * promotes it. Reports whole-file progress as 0-100.
  */
 async function downloadFileTo({
+	downloadId,
 	url,
 	sizeBytes,
 	filePath,
 	onProgress,
 }: {
+	/** Cancellation key; `cancelDownload(downloadId)` aborts this transfer. */
+	downloadId: string;
 	url: string;
 	/** Catalog size, used for progress when the response omits content-length. */
 	sizeBytes: number;
@@ -194,20 +199,30 @@ async function downloadFileTo({
 }): Promise<Result<void, LocalModelFolderError>> {
 	const partialPath = `${filePath}.partial`;
 
-	const { error: downloadError } = await tryAsync({
-		try: () =>
-			download(url, partialPath, ({ progressTotal, total }) => {
-				const expected = total > 0 ? total : sizeBytes;
-				onProgress(Math.round((progressTotal / expected) * 100));
-			}),
-		catch: (error) => LocalModelFolderError.DownloadFailed({ cause: error }),
-	});
+	const onProgressChannel = new Channel<DownloadProgress>();
+	onProgressChannel.onmessage = ({ progressTotal, total }) => {
+		// f64 fields arrive as `number | null` (specta guards non-finite floats);
+		// missing content-length is 0, so fall back to the catalog size.
+		const received = progressTotal ?? 0;
+		const expected = total && total > 0 ? total : sizeBytes;
+		onProgress(Math.round((received / expected) * 100));
+	};
+
+	const { error: downloadError } = await commands.downloadFile(
+		downloadId,
+		url,
+		partialPath,
+		onProgressChannel,
+	);
 	if (downloadError) {
+		// Covers both a real failure and a cancel (an aborted transfer surfaces
+		// as an error). Either way the partial is incomplete, so drop it; the
+		// state layer decides whether the error reaches the user.
 		await removePartial(partialPath);
-		return Err(downloadError);
+		return LocalModelFolderError.DownloadFailed({ cause: downloadError });
 	}
 
-	// The plugin streams to EOF without validating content-length, so a
+	// download_file streams to EOF without validating content-length, so a
 	// truncated-but-cleanly-closed response still resolves. This size re-check
 	// against the catalog size is the integrity gate before promoting the
 	// partial to its canonical path.
@@ -243,6 +258,13 @@ async function downloadFileTo({
  * safe to recreate freely.
  */
 export function createModelStorage(model: LocalModelConfig) {
+	/**
+	 * Cancellation key shared by `download` and `cancel`. The Rust registry is
+	 * single-flight per id, which holds because the UI never starts a second
+	 * download for the same model while one is running.
+	 */
+	const downloadId = `${model.engine}:${model.id}`;
+
 	async function getPath(): Promise<string> {
 		const dir = await PATHS.MODELS[model.engine]();
 		switch (model.engine) {
@@ -323,11 +345,21 @@ export function createModelStorage(model: LocalModelConfig) {
 		 * overall progress as 0-100, aggregated across files for multi-file
 		 * models. Does not check for an existing install; callers decide
 		 * whether to skip.
+		 *
+		 * Cancellation has two seams: `cancel()` aborts the in-flight transfer
+		 * in Rust (the active file's download then errors out), and the
+		 * `isCancelled` predicate is checked between files so a cancel that
+		 * lands in the gap between a multi-file engine's downloads still stops
+		 * the run. Either way the error reads as a plain failure here; the
+		 * caller that requested the cancel is what knows to treat it as a clean
+		 * stop. Defaults to never-cancelled for callers that do not wire it.
 		 */
 		async download({
 			onProgress,
+			isCancelled = () => false,
 		}: {
 			onProgress: (progress: number) => void;
+			isCancelled?: () => boolean;
 		}): Promise<Result<void, LocalModelFolderError>> {
 			const { data: path, error: prepareError } = await tryAsync({
 				try: async () => {
@@ -346,6 +378,7 @@ export function createModelStorage(model: LocalModelConfig) {
 			switch (model.engine) {
 				case 'whispercpp': {
 					const { error } = await downloadFileTo({
+						downloadId,
 						url: model.file.url,
 						sizeBytes: model.sizeBytes,
 						filePath: path,
@@ -359,6 +392,15 @@ export function createModelStorage(model: LocalModelConfig) {
 					const totalBytes = model.sizeBytes;
 					let completedBytes = 0;
 					for (const file of model.files) {
+						// A cancel that arrived between files (no transfer in flight
+						// for Rust to abort) still stops the run here, before the
+						// next file would otherwise complete the install. The state
+						// layer maps this to a no-op (it knows it cancelled).
+						if (isCancelled()) {
+							return LocalModelFolderError.DownloadFailed({
+								cause: 'Download cancelled',
+							});
+						}
 						const { data: filePath, error: joinError } = await tryAsync({
 							try: () => join(path, file.filename),
 							catch: (error) =>
@@ -366,6 +408,7 @@ export function createModelStorage(model: LocalModelConfig) {
 						});
 						if (joinError) return Err(joinError);
 						const { error } = await downloadFileTo({
+							downloadId,
 							url: file.url,
 							sizeBytes: file.sizeBytes,
 							filePath,
@@ -386,6 +429,15 @@ export function createModelStorage(model: LocalModelConfig) {
 				}
 			}
 			return Ok(undefined);
+		},
+
+		/**
+		 * Abort an in-flight download of this model: the active `download()`
+		 * call's current file aborts in Rust and errors out, and `download`
+		 * then removes the partial. A no-op when nothing is downloading.
+		 */
+		async cancel(): Promise<void> {
+			await commands.cancelDownload(downloadId);
 		},
 	};
 }

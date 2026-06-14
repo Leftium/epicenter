@@ -141,6 +141,10 @@
 		await refreshEntries();
 	}
 
+	async function cancelRecommendedDownload() {
+		await recommendedDownload.cancel();
+	}
+
 	/** Point the engine's selection at an on-disk entry by name. */
 	function activate(name: string) {
 		value = name;
@@ -231,6 +235,14 @@
 							<span class="text-sm text-muted-foreground">
 								Downloading {recommended.name}: {recommendedState.progress}%
 							</span>
+							<Button
+								variant="ghost"
+								size="sm"
+								onclick={cancelRecommendedDownload}
+							>
+								<X class="size-4" />
+								Cancel
+							</Button>
 						</div>
 					{:else if recommendedState.type === 'ready'}
 						<Button onclick={() => activate(modelEntryName(recommended))}>

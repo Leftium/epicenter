@@ -43,6 +43,15 @@ function createModelDownload(model: LocalModelConfig) {
 	/** Progress 0-100 while this handle owns a download, else null. */
 	let progress = $state<number | null>(null);
 
+	/**
+	 * Set by `cancel()` for the lifetime of one download attempt. Gates late
+	 * progress callbacks (so a flushed update cannot repaint progress after we
+	 * drop to not-downloaded) and is the between-files cancel signal passed to
+	 * the storage layer. Plain variable, not `$state`: only the closure reads
+	 * it, never the template.
+	 */
+	let cancelRequested = false;
+
 	async function refresh() {
 		isInstalled = await storage.isInstalled();
 	}
@@ -80,6 +89,7 @@ function createModelDownload(model: LocalModelConfig) {
 			LocalModelFolderError
 		> | null> {
 			if (progress !== null) return null;
+			cancelRequested = false;
 			progress = 0;
 
 			if (await storage.isInstalled()) {
@@ -93,11 +103,16 @@ function createModelDownload(model: LocalModelConfig) {
 
 			const { error } = await storage.download({
 				onProgress: (value) => {
-					progress = value;
+					if (!cancelRequested) progress = value;
 				},
+				isCancelled: () => cancelRequested,
 			});
 			if (error) {
 				progress = null;
+				// If we asked to cancel, the abort is what produced this error: a
+				// clean stop, not a failure. Report it as a no-op (like an
+				// already-in-flight call) so callers raise no error toast.
+				if (cancelRequested) return null;
 				return Err(error);
 			}
 
@@ -106,6 +121,19 @@ function createModelDownload(model: LocalModelConfig) {
 			await refresh();
 			progress = null;
 			return Ok({ entryName: modelEntryName(model), outcome: 'downloaded' });
+		},
+
+		/**
+		 * Stop an in-flight download, transitioning `downloading` ->
+		 * `not-downloaded`. Drops progress immediately so the UI reacts at once;
+		 * the still-running `download()` resolves to a no-op once Rust reports
+		 * the abort. A no-op when nothing is downloading.
+		 */
+		async cancel(): Promise<void> {
+			if (progress === null) return;
+			cancelRequested = true;
+			progress = null;
+			await storage.cancel();
 		},
 
 		/** Remove the catalog model from disk. Selection is cleared by callers. */

@@ -126,7 +126,6 @@
 		"@tauri-apps/plugin-os": "^2.3.0",
 		"@tauri-apps/plugin-process": "^2.3.0",
 		"@tauri-apps/plugin-updater": "^2.9.0",
-		"@tauri-apps/plugin-upload": "~2",
 		"arkregex": "catalog:",
 		"arktype": "catalog:",
 		"audio-recorder-polyfill": "^0.4.1",

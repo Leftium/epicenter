@@ -58,6 +58,10 @@
 		value = entryName;
 		toast.success('Model activated');
 	}
+
+	async function cancelDownload() {
+		await download.cancel();
+	}
 </script>
 
 <div
@@ -83,10 +87,16 @@
 
 	<div class="flex items-center gap-2">
 		{#if modelState.type === 'downloading'}
-			<div class="flex items-center gap-2 min-w-[120px]">
+			<div class="flex items-center gap-2">
 				<Spinner />
-				<span class="text-sm font-medium">{modelState.progress}%</span>
+				<span class="text-sm font-medium tabular-nums">
+					{modelState.progress}%
+				</span>
 			</div>
+			<Button size="sm" variant="ghost" onclick={cancelDownload}>
+				<X class="size-4 mr-1" />
+				Cancel
+			</Button>
 		{:else if modelState.type === 'ready'}
 			{#if isActive}
 				<Button size="sm" variant="default" disabled>

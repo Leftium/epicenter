@@ -36,7 +36,6 @@
     "fs:allow-stat",
     "fs:allow-write-file",
     "dialog:allow-open",
-    "upload:allow-download",
     {
       "identifier": "fs:scope",
       "allow": [

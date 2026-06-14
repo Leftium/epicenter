@@ -104,7 +104,9 @@ worth a permanent second code path.
 ### What does not change
 
 - `src/lib/commands.ts` command definitions and callbacks.
-- `src/lib/services/local-shortcut-manager.ts` and the entire browser path.
+- `src/lib/services/local-shortcut-manager.ts` **source** and the **browser**
+  runtime behavior. The manager keeps running unchanged in the browser. The only
+  change is that desktop stops *binding* it (see "One system per platform" below).
 - `#platform/recorder` and the recording operations.
 - Global shortcuts remain **desktop-only**; the Fn-key binding is therefore a
   desktop-only capability. The browser cannot do global shortcuts at all, and that
@@ -173,6 +175,35 @@ KeyBinding {
 - Left/right modifiers collapse (ControlLeft/Right -> Ctrl, etc.). Wayland gap is
   documented, not closed.
 
+### One system per platform (signed off 2026-06-13)
+
+The original spec refused a dual backend on desktop (plugin + rdev) as "two ways
+to do the same thing", then kept `local-shortcut-manager` (browser keydown)
+**also running on desktop** beside rdev. That is the same dual-backend smell. We
+collapse it: **exactly one trigger backend is bound per platform.**
+
+- **Browser**: only `local-shortcut-manager` (window keydown/keyup). Unchanged.
+- **Desktop**: only the rdev global backend. Desktop stops calling
+  `syncLocalShortcutsWithSettings()` (a platform gate in `register-commands.ts`);
+  it binds rdev exclusively.
+- `local-shortcut-manager.ts` source stays byte-for-byte; it is simply no longer
+  bound on desktop. The browser path is untouched.
+- The Settings "Local vs Global" duality collapses: the shortcuts page shows a
+  single "Keyboard Shortcuts" table whose backend is the platform's one system
+  (rdev recorder on desktop, local recorder in the browser).
+
+Refused (the asymmetric cost): bare-key, focus-gated in-app triggers on desktop
+(for example "hold space while the Whispering window is focused, but not while
+typing in a text field"). User loss is small and the gesture is a footgun (space
+is a common key). rdev **modifier-only** bindings (hold Right-Cmd / Right-Option,
+no character, no typing collision) plus Fn are a strictly better answer to the
+comfortable-hold-to-talk need that bare-key-local served. Trigger to revisit: a
+concrete desktop case that genuinely needs a focus-gated bare key.
+
+This expands **Wave 3** (the registrar swap also adds the desktop platform gate
+that stops binding local shortcuts) and **Wave 5** (the settings page collapses
+to one table per platform). It does **not** change the Wave 2 Rust module.
+
 ## Cross-cutting notes
 
 - macOS Option-key normalization currently lives in `local-shortcut-manager`
@@ -193,14 +224,16 @@ KeyBinding {
    model. No code.
 2. **Rust trigger module**: rdev `listen` background thread, binding model with Fn,
    emit `{commandId, state}` events. Unit-test the matcher with synthetic events.
-3. **TS registrar swap**: behind `#platform/tauri`, map events to
-   `command.callback(state)`; delete the plugin registration. Verify every existing
-   command still fires (push-to-talk press/release, toggles, the picker on
-   release).
+3. **TS registrar swap + platform collapse**: behind `#platform/tauri`, map events
+   to `command.callback(state)`; delete the plugin registration; gate
+   `register-commands.ts` so desktop binds only rdev and stops binding local
+   shortcuts (see "One system per platform"). Verify every existing command still
+   fires (push-to-talk press/release, toggles, the picker on release).
 4. **Config migration**: new binding shape + one-time migration/reset of stored
    global shortcuts.
-5. **Settings UI**: capture Fn and single/modifier-only bindings in the global
-   recorder; validation and help text.
+5. **Settings UI**: collapse the Local/Global duality into one "Keyboard
+   Shortcuts" table per platform; capture Fn and single/modifier-only bindings in
+   the desktop recorder; validation and help text.
 6. **Permissions + cross-platform**: macOS Accessibility prompt wiring for the
    listener, Windows hook, Linux X11 (document Wayland gap). Real-device test on
    each.

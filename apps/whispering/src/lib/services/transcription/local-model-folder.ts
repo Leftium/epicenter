@@ -398,19 +398,5 @@ export function createModelStorage(model: LocalModelConfig) {
 			}
 			return Ok(undefined);
 		},
-
-		/**
-		 * Remove the model's files from disk. Succeeds even when nothing is
-		 * installed, so callers can always reconcile settings afterwards.
-		 *
-		 * Only ever removes the model's catalog entry name inside its engine's
-		 * models folder; nothing outside the folder is reachable.
-		 */
-		async delete(): Promise<Result<void, LocalModelFolderError>> {
-			return deleteModelEntry({
-				engine: model.engine,
-				name: modelEntryName(model),
-			});
-		},
 	};
 }

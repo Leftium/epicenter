@@ -25,6 +25,7 @@ import {
 } from '$lib/constants/local-models';
 import {
 	createModelStorage,
+	deleteModelEntry,
 	type LocalModelFolderError,
 } from '$lib/services/transcription/local-model-folder';
 
@@ -110,7 +111,10 @@ function createModelDownload(model: LocalModelConfig) {
 
 		/** Remove the catalog model from disk. Selection is cleared by callers. */
 		async delete(): Promise<Result<void, LocalModelFolderError>> {
-			const { error } = await storage.delete();
+			const { error } = await deleteModelEntry({
+				engine: model.engine,
+				name: modelEntryName(model),
+			});
 			if (error) return Err(error);
 			isInstalled = false;
 			return Ok(undefined);

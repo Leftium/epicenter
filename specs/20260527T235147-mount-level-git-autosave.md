@@ -8,7 +8,7 @@
 
 ## One Sentence
 
-Git autosave lives inside `attachMarkdownMaterializer` as an optional `git` option, so the materializer that owns the disk writes also owns committing them, and every layer above (mount, daemon, project config) loses a concept.
+Git autosave lives inside `attachMarkdownMaterializer` as an optional `git` option, so the materializer that owns the disk writes also owns committing them, and every layer above (mount, daemon, Epicenter config) loses a concept.
 
 ## How To Read This Spec
 
@@ -52,7 +52,7 @@ delete ProjectGitConfig
 delete MountOutput
 delete DaemonRuntime.outputs
 delete outputs: [markdown] in every mount
-delete the third loadProjectConfig shape
+delete the third loadEpicenterConfig shape
 delete the runUp autosave branch
 delete daemon/autosave/ entirely
 delete a separate attachGitAutosave file
@@ -64,7 +64,7 @@ Accepted costs:
 
 ```txt
 cost: git child processes spawn from inside the materializer file (Bun.$)
-cost: per-materializer commits instead of one project-wide commit
+cost: per-materializer commits instead of one root-wide commit
 cost: per-mount git config duplication when users want shared settings
 cost: best-effort shutdown (SIGTERM may drop last batch if git is slow)
 benefit: one option on one existing attach call replaces an entire feature stack
@@ -118,7 +118,7 @@ The worktree currently adds a project-level autosave path:
 epicenter.config.ts
   -> default export Project | Mount | Mount[]
 
-loadProjectConfig()
+loadEpicenterConfig()
   -> Project { mounts, git? }
 
 runUp()
@@ -131,15 +131,15 @@ mount runtime
 startAutosaveService()
   -> subscribe to every runtime.output.onWrite()
   -> stage all observed paths
-  -> commit at the project root
+  -> commit at the Epicenter root
 ```
 
 Files in the current experiment:
 
 ```txt
 packages/workspace/src/config/define-project.ts
-packages/workspace/src/config/load-project-config.ts
-packages/workspace/src/config/project-config-source.ts
+packages/workspace/src/config/load-epicenter-config.ts
+packages/workspace/src/config/epicenter-config-source.ts
 packages/workspace/src/daemon/types.ts
 packages/workspace/src/daemon/autosave/autosave-service.ts
 packages/workspace/src/daemon/autosave/autosave-service.test.ts
@@ -153,7 +153,7 @@ This proves the implementation works, but the ownership is wrong twice over: the
 
 ## Target Shape
 
-Project config returns a mount list.
+Epicenter config returns a mount list.
 
 ```ts
 import { fuji } from "@epicenter/fuji/project";
@@ -161,7 +161,7 @@ import { fuji } from "@epicenter/fuji/project";
 export default [fuji()];
 ```
 
-Multi-mount projects return an array.
+Multi-mount Epicenter roots return an array.
 
 ```ts
 import { fuji } from "@epicenter/fuji/project";
@@ -196,19 +196,19 @@ export function fuji(opts: FujiMountOptions = {}) {
 
       const sqlite = attachBunSqliteMaterializer(workspace, {
         filePath:
-          opts.sqliteFile ?? sqlitePath(ctx.projectDir, workspace.ydoc.guid),
+          opts.sqliteFile ?? sqlitePath(ctx.epicenterRoot, workspace.ydoc.guid),
       });
 
       const markdown = attachMarkdownMaterializer(workspace, {
         dir:
-          opts.markdownDir ?? markdownPath(ctx.projectDir, workspace.ydoc.guid),
+          opts.markdownDir ?? markdownPath(ctx.epicenterRoot, workspace.ydoc.guid),
         perTable: { entries: { filename: slugFilename("title") } },
         git: opts.git,
       });
 
       const infrastructure = attachProjectInfrastructure(workspace.ydoc, {
         mount: ctx.mount,
-        projectDir: ctx.projectDir,
+        epicenterRoot: ctx.epicenterRoot,
         ownerId: ctx.ownerId,
         openWebSocket: ctx.openWebSocket,
         onReconnectSignal: ctx.onReconnectSignal,
@@ -229,7 +229,7 @@ export function fuji(opts: FujiMountOptions = {}) {
 The daemon host stays boring:
 
 ```txt
-loadProjectConfig(projectDir)
+loadEpicenterConfig(epicenterRoot)
   -> Mount[]
 
 runUp()
@@ -243,7 +243,7 @@ No daemon-level git branch. No output registry. No project wrapper. No separate 
 
 ### Config Loader
 
-`loadProjectConfig(projectDir)` accepts exactly one default export shape:
+`loadEpicenterConfig(epicenterRoot)` accepts exactly one default export shape:
 
 ```ts
 export default [fuji(), honeycrisp()];
@@ -252,7 +252,7 @@ export default [fuji(), honeycrisp()];
 It returns:
 
 ```ts
-Promise<Result<Mount[], ProjectConfigError>>;
+Promise<Result<Mount[], EpicenterConfigError>>;
 ```
 
 The default generated config returns an empty array. It does not import `defineProject`.
@@ -372,7 +372,7 @@ type Project, ProjectGitConfig, MountOutput                      delete
 DaemonRuntime.outputs                                            delete
 MaterializerWriteEvent, WriteListener (exported types)           delete
 attachMarkdownMaterializer(...).onWrite                          delete (becomes internal emit only)
-DEFAULT_PROJECT_CONFIG_SOURCE: `defineProject` reference          replace with `export default []`
+DEFAULT_EPICENTER_CONFIG_SOURCE: `defineProject` reference        replace with `export default []`
 runUp autosave branch                                            delete
 startAutosaveService, AutosaveService, attach-git-autosave.ts    do not create
 @epicenter/workspace/git subpath                                 do not create
@@ -435,11 +435,11 @@ Path-limited commit (`-- ${paths}`) is the canonical safe form (see "Staged-isol
 
 ## Implementation Plan
 
-- [x] **1. Restore project config to mount-only shapes.**
+- [x] **1. Restore Epicenter config to mount-only shapes.**
   - Delete `packages/workspace/src/config/define-project.ts`.
-  - Keep `loadProjectConfig` accepting `Mount[]` only.
-  - Revert `DEFAULT_PROJECT_CONFIG_SOURCE` to `export default []` with a comment showing `[fuji()]` as the example.
-  - Update `load-project-config.test.ts` to drop the `Project` shape.
+  - Keep `loadEpicenterConfig` accepting `Mount[]` only.
+  - Revert `DEFAULT_EPICENTER_CONFIG_SOURCE` to `export default []` with a comment showing `[fuji()]` as the example.
+  - Update `load-epicenter-config.test.ts` to drop the `Project` shape.
 
 - [x] **2. Remove daemon output plumbing.**
   - Delete `type MountOutput` from `packages/workspace/src/daemon/types.ts`.
@@ -653,7 +653,7 @@ Net deletion across the stack:
   - separate attach-git-autosave.ts
   - public MaterializerWriteEvent / WriteListener / onWrite
   - runUp autosave branch
-  - third loadProjectConfig shape
+  - third loadEpicenterConfig shape
 ```
 
 ### `git: true` instead of `git: {}`
@@ -702,7 +702,7 @@ Then add `whenAutosaved: Promise<void>` and have the daemon await it during tear
 
 ## Edge Cases
 
-Two materializers in one project (e.g. fuji + honeycrisp both with `git: {}`):
+Two materializers in one Epicenter root (e.g. fuji + honeycrisp both with `git: {}`):
 
 ```txt
 Each has its own dirty Set, its own timers, its own stageAndCommit.
@@ -787,7 +787,7 @@ Targeted tests:
 
 ```txt
 bun test packages/workspace/src/document/materializer/markdown/
-bun test packages/workspace/src/config/load-project-config.test.ts
+bun test packages/workspace/src/config/load-epicenter-config.test.ts
 ```
 
 Type and package checks:
@@ -827,7 +827,7 @@ Tests dropped from the previous draft:
 
 ```txt
 project-level multi-mount one-commit coalescing (no longer the behavior)
-path-escapes-projectDir guard (no longer applicable)
+path-escapes-epicenterRoot guard (no longer applicable)
 mid-rebase/merge/cherry-pick skip (no longer a behavior)
 hasStagedChanges precheck (replaced by commit-time stderr match)
 ```
@@ -916,7 +916,7 @@ The public markdown materializer surface is now `{ whenFlushed, push, pull, rebu
 ### Verification
 
 ```txt
-PASS  bun test packages/workspace/src/document/materializer/markdown/ packages/workspace/src/config/load-project-config.test.ts
+PASS  bun test packages/workspace/src/document/materializer/markdown/ packages/workspace/src/config/load-epicenter-config.test.ts
 PASS  bun test packages/cli/src/commands/up.test.ts  (rerun outside sandbox because Unix socket listen returned EPERM)
 PASS  bun test packages/workspace/src/document/open-collaboration.test.ts
 PASS  bun x tsc --noEmit -p packages/workspace/tsconfig.json

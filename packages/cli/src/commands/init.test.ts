@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEFAULT_PROJECT_CONFIG_SOURCE } from '@epicenter/workspace/node';
+import { DEFAULT_EPICENTER_CONFIG_SOURCE } from '@epicenter/workspace/node';
 import { createCLI } from '../cli.js';
 
 let workDir: string;
@@ -23,7 +23,7 @@ test('init scaffolds the default config', async () => {
 	await createCLI().run(['init', workDir]);
 
 	expect(readFileSync(join(workDir, 'epicenter.config.ts'), 'utf8')).toBe(
-		DEFAULT_PROJECT_CONFIG_SOURCE,
+		DEFAULT_EPICENTER_CONFIG_SOURCE,
 	);
 });
 

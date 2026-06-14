@@ -9,7 +9,7 @@
 import { findEpicenterRoot } from '@epicenter/workspace/node';
 import type { Options } from 'yargs';
 
-export const projectOption = {
+export const epicenterRootOption = {
 	type: 'string',
 	description:
 		'Epicenter root (or any directory under it; discovery walks up to the nearest `epicenter.config.ts`).',

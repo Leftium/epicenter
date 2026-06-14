@@ -1,9 +1,9 @@
 /**
  * Unit-level tests for `epicenter daemon up`.
  *
- * These tests run `runUp` in-process against tiny project-mount fixtures.
+ * These tests run `runUp` in-process against tiny root-and-mount fixtures.
  * They never spawn a child or call `process.exit`; each test owns a temp
- * project and temp runtime root.
+ * Epicenter root and temp runtime root.
  *
  * Auth is injected: every test passes a `createAuthClient` factory to
  * `runUp`. Happy paths return `STUB_AUTH`; the AuthFailed test returns a
@@ -226,7 +226,7 @@ describe('runUp: failure cleanup', () => {
 			}),
 		);
 
-		expect(error.name).toBe('ProjectConfigNotFound');
+		expect(error.name).toBe('EpicenterConfigNotFound');
 		expect(existsSync(join(workDir, 'epicenter.config.ts'))).toBe(false);
 		expect(existsSync(join(workDir, '.epicenter'))).toBe(false);
 
@@ -234,7 +234,7 @@ describe('runUp: failure cleanup', () => {
 		lease.release();
 	});
 
-	test('does not overwrite an existing config when provisioning project data', async () => {
+	test('does not overwrite an existing config when provisioning root data', async () => {
 		const original = ['export default [];', '', '// keep me', ''].join('\n');
 		writeFileSync(join(workDir, 'epicenter.config.ts'), original);
 		const gitignore = 'custom-rule\n';
@@ -336,7 +336,7 @@ describe('runUp: failure cleanup', () => {
 				createAuthClient: stubAuthFactory,
 			}),
 		);
-		expect(error.name).toBe('ProjectConfigImportFailed');
+		expect(error.name).toBe('EpicenterConfigImportFailed');
 
 		const lease = expectOk(claimDaemonLease(workDir));
 		lease.release();

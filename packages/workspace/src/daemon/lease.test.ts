@@ -2,7 +2,7 @@
  * Daemon Lease Tests
  *
  * Verifies that the SQLite-backed daemon lease is the single ownership
- * primitive for project daemon startup.
+ * primitive for daemon startup.
  *
  * Key behaviors:
  * - first claimant owns the lease while its transaction stays open

@@ -30,7 +30,7 @@ import { getDaemon } from '../daemon/client.js';
 import type { ActionRegistry } from '../shared/actions.js';
 import type { EpicenterRoot } from '../shared/types.js';
 import { buildDaemonActions, type DaemonActions } from './daemon-actions.js';
-import { findEpicenterRoot } from './find-project-root.js';
+import { findEpicenterRoot } from './find-epicenter-root.js';
 
 /**
  * Connect to a workspace's public actions hosted by a running daemon.
@@ -42,7 +42,7 @@ import { findEpicenterRoot } from './find-project-root.js';
  * `epicenterRoot` defaults to walking up from `process.cwd()` for an
  * `epicenter.config.ts` file.
  *
- * Throws via `findEpicenterRoot` when no project config is found, or
+ * Throws via `findEpicenterRoot` when no Epicenter config is found, or
  * `DaemonError.Required` when no daemon is listening on the resolved socket.
  * Start one with `epicenter daemon up`. There is no auto-spawn: explicit
  * lifecycle is the contract.

@@ -1,13 +1,19 @@
 # Whispering Local Model Download: move streaming into Rust
 
 **Date**: 2026-06-13
-**Status**: Draft
+**Status**: In Progress
 **Owner**: Whispering (Braden)
 **Branch**: `spec/whispering-local-model-download`
 
 ## One Sentence
 
-Replace the webview's per-chunk `writeFile` download path with a single Rust command that streams each catalog file straight to disk with resume, size/checksum verification, and throttled progress, and delete the JS streaming code it makes redundant.
+Replace the webview's per-chunk `writeFile` download path with native Rust streaming, and delete the JS streaming code it makes redundant.
+
+## Implementation status (v1 = `tauri-plugin-upload`)
+
+After grounding both options (see Research Findings), **v1 ships the official `tauri-plugin-upload` `download()`**, not a hand-written command. It already does the streaming core natively (`reqwest` -> `tokio::fs` + `BufWriter`, content-length validation, redirects, progress), captures the entire performance win (no per-chunk IPC), and costs near-zero code we own. We keep atomicity by downloading to `{file}.partial` and `rename`-ing on success.
+
+The custom Rust command (resume via `Range`, inline SHA256, concurrent multi-file) is **deferred to a Phase 2 upgrade**, justified only if real restart pain shows up on the 1.6GB models. Today's code has no resume either, so deferring it regresses nothing. The rest of this spec keeps the custom-command design as the Phase 2 reference; read the decision row "Plugin vs custom command" for the v1 choice.
 
 ## How to read this spec
 
@@ -110,7 +116,8 @@ There is an official plugin with a `download(url, filePath, onProgress, headers,
 
 | Decision | Class | Choice | Rationale |
 | --- | --- | --- | --- |
-| Plugin vs custom command | 3 taste | **Custom command**, internals borrowed from `plugin-upload` | `plugin-upload` cannot resume and has no partial file; resume is the point for 1.6GB models. Constraint: more Rust to own. Revisit if resume proves unneeded |
+| Plugin vs custom command | 3 taste | **v1: `tauri-plugin-upload`**; custom command deferred | The plugin captures the whole perf win for ~zero owned code. Custom command's only extra is resume, and today has none either, so deferring regresses nothing. Revisit when restart pain appears on 1.6GB models |
+| Atomicity without resume | 2 coherence | Download to `{file}.partial`, `rename` on success | A crash mid-download leaves `.partial` (ignored by listing), never a truncated file at the canonical path |
 | Write path | 1 evidence | `tokio::fs::File` + `BufWriter` | `plugin-upload` source; fewer write syscalls than handy's unbuffered `std::fs` loop |
 | Catalog source of truth | 2 coherence | Stays in TS (`local-models.ts`); command receives a manifest | One catalog. Do not mirror it in Rust (handy does, and pays a dual-catalog cost) |
 | Progress transport | 1 evidence | `tauri::ipc::Channel<DownloadProgress>` arg, throttled ~10/sec, carries `transfer_speed` | `plugin-upload` proves the shape; scoped per-invocation. Verify Channel exists in our Tauri version |

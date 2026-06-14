@@ -220,6 +220,7 @@ pub async fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_upload::init())
         .manage(Mutex::new(Recorder::new()))
         .setup(move |app| {
             // Register the tauri-specta event topics so `Event::emit` (Rust) and

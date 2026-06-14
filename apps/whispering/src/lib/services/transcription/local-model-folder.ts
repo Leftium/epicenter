@@ -176,9 +176,9 @@ async function removePartial(partialPath: string): Promise<void> {
 /**
  * Download one file to disk through the upload plugin's native streaming
  * download (`reqwest` -> `tokio::fs` in Rust; no per-chunk IPC, follows
- * redirects, validates content-length). Writes to a sibling `.partial` first
- * so a crash mid-download never leaves a truncated file at the canonical path,
- * verifies the size, then promotes it. Reports whole-file progress as 0-100.
+ * redirects). Writes to a sibling `.partial` first so a crash mid-download
+ * never leaves a truncated file at the canonical path, then size-checks and
+ * promotes it. Reports whole-file progress as 0-100.
  */
 async function downloadFileTo({
 	url,
@@ -207,14 +207,18 @@ async function downloadFileTo({
 		return Err(downloadError);
 	}
 
-	// The plugin rejects on a content-length mismatch, but a response without
-	// that header could still be short; re-check against the catalog size
-	// before promoting the partial to its canonical path.
+	// The plugin streams to EOF without validating content-length, so a
+	// truncated-but-cleanly-closed response still resolves. This size re-check
+	// against the catalog size is the integrity gate before promoting the
+	// partial to its canonical path.
 	const { data: stats, error: statError } = await tryAsync({
 		try: () => stat(partialPath),
 		catch: (error) => LocalModelFolderError.DownloadFailed({ cause: error }),
 	});
-	if (statError) return Err(statError);
+	if (statError) {
+		await removePartial(partialPath);
+		return Err(statError);
+	}
 	if (!isModelFileSizeValid(stats.size, sizeBytes)) {
 		await removePartial(partialPath);
 		return LocalModelFolderError.DownloadIncomplete({
@@ -223,10 +227,15 @@ async function downloadFileTo({
 		});
 	}
 
-	return tryAsync({
+	const { error: renameError } = await tryAsync({
 		try: () => rename(partialPath, filePath),
 		catch: (error) => LocalModelFolderError.DownloadFailed({ cause: error }),
 	});
+	if (renameError) {
+		await removePartial(partialPath);
+		return Err(renameError);
+	}
+	return Ok(undefined);
 }
 
 /**

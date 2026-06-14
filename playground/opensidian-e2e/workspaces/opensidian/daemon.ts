@@ -19,8 +19,8 @@ import {
 	roomWsUrl,
 } from '@epicenter/workspace';
 import {
-	defineMount,
 	type CollaborativeMountContext,
+	defineMount,
 } from '@epicenter/workspace/daemon';
 import { attachMarkdownMaterializer } from '@epicenter/workspace/document/materializer/markdown';
 import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';

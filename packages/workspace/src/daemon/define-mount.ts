@@ -15,9 +15,9 @@ import type { Keyring } from '@epicenter/encryption';
 import type { OwnerId } from '@epicenter/identity';
 import type { DeviceId } from '../document/device-id.js';
 import type {
+	Collaboration,
 	OnReconnectSignal,
 	OpenWebSocketFn,
-	Collaboration,
 } from '../document/open-collaboration.js';
 import type { ActionRegistry } from '../shared/actions.js';
 import type { AuthedFetch, MaybePromise, ProjectDir } from '../shared/types.js';

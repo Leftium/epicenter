@@ -10,13 +10,13 @@
  * during typecheck.
  */
 
-import {
-	defineMount,
-	type CollaborativeDaemonRuntime,
-	type LocalDaemonRuntime,
-} from './define-mount.js';
 import type { Collaboration } from '../document/open-collaboration.js';
 import type { ActionRegistry } from '../shared/actions.js';
+import {
+	type CollaborativeDaemonRuntime,
+	defineMount,
+	type LocalDaemonRuntime,
+} from './define-mount.js';
 
 declare const collaborativeRuntime: CollaborativeDaemonRuntime;
 declare const collaboration: Collaboration<ActionRegistry>;

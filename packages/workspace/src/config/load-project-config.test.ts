@@ -49,10 +49,7 @@ describe('loadProjectConfig', () => {
 		const { data, error } = await loadProjectConfig(projectDir);
 		if (error !== null) throw new Error(error.message);
 		expect(data.map((mount) => mount.name)).toEqual(['a', 'b']);
-		expect(data.map((mount) => mount.kind)).toEqual([
-			'local',
-			'collaborative',
-		]);
+		expect(data.map((mount) => mount.kind)).toEqual(['local', 'collaborative']);
 	});
 
 	test('passes through an empty Mount[] default export', async () => {

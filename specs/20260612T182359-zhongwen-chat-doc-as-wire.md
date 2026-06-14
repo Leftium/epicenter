@@ -288,9 +288,10 @@ verified end to end.
 
 ### Phase 3: prove
 
-- [x] **3.1** `bun run --cwd packages/server test` (109 pass),
-      `bun run --cwd packages/workspace test` (476 pass), and the four app
-      typechecks (zhongwen, tab-manager, opensidian, api) all green
+- [x] **3.1** `bun run --cwd packages/server test` (111 pass),
+      `bun run --cwd packages/workspace test` (550 pass), and the app
+      typechecks (zhongwen, api, self-host) all green (counts re-verified
+      2026-06-14 after merging main)
 - [ ] **3.2** Manual smoke: two browser profiles, same account; send from one,
       watch tokens land on both; refresh mid-generation; abort mid-generation
       (requires a running worker + live OAuth/provider keys; not runnable
@@ -355,11 +356,22 @@ verified end to end.
 - [ ] Abort mid-generation: `finish: cancelled` lands; UI settles (manual;
       pending)
 - [ ] Kill the worker mid-generation (dev): UI derives interrupted after the
-      grace window; retry works (manual; pending)
+      grace window; retry works (manual; pending). Note the two-window
+      asymmetry to verify here: the client surfaces "interrupted" after the
+      ~3s update-recency grace, but the server's single-generation gate keeps
+      rejecting a retry with `GenerationInProgress` until the dead turn's
+      `createdAt` clears the ~2min staleness window
+      (`CHAT_DOC_ACTIVE_GENERATION_WINDOW_MS`). That window is load-bearing: it
+      is what stops a transient client-side quiet from kicking a second actor
+      while the original is still streaming. So an immediate retry shows
+      "Previous response is still settling" and only succeeds once the window
+      passes (or `findActiveChatDocGeneration` otherwise clears it). Smoke
+      should confirm this lockout is acceptable; a true instant-retry needs the
+      deferred regenerate/supersede work, not a smaller window.
 - [x] No `chatMessages` references anywhere; zhongwen has no
       `@tanstack/ai-svelte` import
-- [x] Full verification suite green (four app typechecks, packages/server and
-      packages/workspace tests)
+- [x] Full verification suite green (zhongwen + api + self-host typechecks,
+      packages/server and packages/workspace tests; re-verified 2026-06-14)
 
 ## Divergences from the spec
 

@@ -21,24 +21,30 @@ const globalBinding = type({
 	keys: 'string[]',
 }).or('null');
 
-// Default bindings, platform-resolved (Command on macOS, Control/Alt elsewhere),
-// matching the spirit of the old accelerator defaults. Exported so the reset
-// path in register-commands shares this one source of truth.
-const PRIMARY: KeyBinding['modifiers'][number] = os.isApple ? 'meta' : 'ctrl';
-const PUSH_TO_TALK: KeyBinding['modifiers'][number] = os.isApple
-	? 'meta'
-	: 'alt';
+// Default bindings as global gestures, not mnemonic app hotkeys. The push-to-talk
+// gesture and the toggle gesture share a prefix on purpose: the rdev gesture
+// resolver fires the shorter one (hold) unless the longer one (hold + Space)
+// completes inside a short window.
+//
+//   macOS:   Fn = push-to-talk,        Fn + Space        = toggle
+//   Windows: Ctrl+Win = push-to-talk,  Ctrl+Win + Space  = toggle
+//
+// Fn is a single physical key on Apple keyboards; elsewhere we reach for
+// Ctrl+Win, a held chord that no common OS shortcut claims. Cancel is a bare
+// Escape, registered only while a session is live (see the cancel-gating in
+// register-commands). Transformation gestures ship unbound: opt-in only.
+// Exported so the reset path in register-commands shares this one source of truth.
+const PUSH_TO_TALK_MODIFIERS: KeyBinding['modifiers'] = os.isApple
+	? ['fn']
+	: ['ctrl', 'meta'];
 
 export const DEFAULT_GLOBAL_BINDINGS = {
-	pushToTalk: { modifiers: [PUSH_TO_TALK, 'shift'], keys: ['keyD'] },
-	toggleManualRecording: { modifiers: [PRIMARY, 'shift'], keys: ['semiColon'] },
-	cancelManualRecording: { modifiers: [PRIMARY, 'shift'], keys: ['quote'] },
+	pushToTalk: { modifiers: PUSH_TO_TALK_MODIFIERS, keys: [] },
+	toggleManualRecording: { modifiers: PUSH_TO_TALK_MODIFIERS, keys: ['space'] },
+	cancelManualRecording: { modifiers: [], keys: ['escape'] },
 	toggleVadRecording: null,
-	openTransformationPicker: { modifiers: [PRIMARY, 'shift'], keys: ['keyX'] },
-	runTransformationOnClipboard: {
-		modifiers: [PRIMARY, 'shift'],
-		keys: ['keyR'],
-	},
+	openTransformationPicker: null,
+	runTransformationOnClipboard: null,
 } satisfies Record<string, KeyBinding | null>;
 
 // ── Per-key definitions ──────────────────────────────────────────────────────

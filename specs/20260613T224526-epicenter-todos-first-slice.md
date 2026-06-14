@@ -28,10 +28,7 @@ Build `apps/todos` as a local-first SvelteKit app backed by Epicenter workspace 
 
 A todo's due date is `none` (`dueDate` is null) or `all-day` (`dueDate` is a calendar date). Timed and timezone-aware due dates are out of this slice; because due is a single self-validating field there is no cross-field parsing layer.
 
-Contexts use stable slugs as row ids because the slug is the durable file-facing and URL-facing identifier. There are two distinct renames:
-
-- Rename the **label** (`name`): free, edits the context row only, never touches todos. This is the common case (typo fix, relabel) and is always available.
-- Rename the **slug** (`id`): the rare, deliberate O(todos) migration. It rewrites matching todo context arrays in one transaction.
+Contexts use stable slugs as row ids because the slug is the durable file-facing and URL-facing identifier. Rename edits the display **label** (`name`) only: it updates the context row and never touches todos. This is the common case for typo fixes and relabeling.
 
 Deleting a context cascades: the slug is removed from every todo in one transaction. A todo that still carries a slug with no matching context row (hand-edited file, mid-sync) stays legal and renders as a neutral chip. Neutral rendering is a resilience fallback, not a managed workflow: in-app, contexts are added by picking a known one and removed/renamed via the explicit actions above, so orphans should not arise in normal use.
 
@@ -46,8 +43,8 @@ The slug is a human-readable natural key, deliberately chosen over the two alter
 
 1. Add `apps/todos` with the same app-root workspace contract pattern used by the other apps: an isomorphic model file, a browser opener, SvelteKit app shell, and package exports.
 2. Implement branded ids and validators for `TodoId` and `ContextSlug`.
-3. Implement the context actions: create with generated slug and auto-color (`contexts_create`), label/color edit (`contexts_update`), slug rename migration (`contexts_rename_slug`), and cascade delete (`contexts_delete`). The rename/delete migrations are internal helpers (no external consumer earns an export).
-4. Add focused unit tests for slug validation, due-date round-trip, auto-color, label rename, slug rename, and cascade delete.
+3. Implement the context actions: create with generated slug and auto-color (`contexts_create`), label/color edit (`contexts_update`), and cascade delete (`contexts_delete`). The delete migration is an internal helper (no external consumer earns an export).
+4. Add focused unit tests for slug validation, due-date round-trip, auto-color, label rename, and cascade delete.
 5. Add a UI using `packages/ui` that can create todos (with an all-day due date), complete and reopen, soft-delete, create/rename/delete contexts, and view todos by context. Use native primitives (`Empty`, `Popover`, `NaturalLanguageDateInput`, `confirmationDialog`).
 
 ## Non-goals
@@ -61,6 +58,7 @@ The slug is a human-readable natural key, deliberately chosen over the two alter
 ## Deferred
 
 - Frontmatter serialization/parsing and a markdown materializer. The model is ready for it, but no materializer is wired (`todos.browser.ts` uses IndexedDB plus BroadcastChannel only), so serialize/parse helpers would be dead code today. Add them together with the materializer. When they land, frontmatter must quote context slugs, including slugs with no current context row.
+- Slug rename migration, if frequent slug edits become a concrete need. Until then, label rename is the only in-app rename path.
 - A stable opaque id alongside the slug, if frequent slug renames or slug-surviving cross-references become a concrete need.
 
 ## Verification

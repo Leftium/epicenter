@@ -46,14 +46,14 @@ function isContextSlug(value: unknown): value is ContextSlug {
 	);
 }
 
-export function assertContextSlug(value: string): ContextSlug {
+function assertContextSlug(value: string): ContextSlug {
 	if (!isContextSlug(value)) {
 		throw new Error(`Invalid context slug: ${value}`);
 	}
 	return value;
 }
 
-export function generateContextSlug(
+function generateContextSlug(
 	name: string,
 	existing: Iterable<string> = [],
 ): ContextSlug {
@@ -89,7 +89,7 @@ function trimSlug(value: string, max = 48): string {
  * creation order so every context (seeded or user-created) is visually
  * distinct without a color picker. The UI maps each token to a Tailwind class.
  */
-export const CONTEXT_COLORS = [
+const CONTEXT_COLORS = [
 	'sky',
 	'violet',
 	'emerald',
@@ -179,60 +179,6 @@ function createTodoRow(input: CreateTodoInput): Todo {
 	};
 }
 
-type TodosTables = {
-	contexts: Pick<Table<TodoContext>, 'get' | 'set' | 'delete'>;
-	todos: Pick<Table<Todo>, 'scan' | 'update'>;
-};
-
-/**
- * Rename a context slug and migrate every todo that references it. The slug is
- * the durable file/URL token, so changing it is the rare, explicit O(todos)
- * migration. Editing the display `name` (see `contexts_update`) is free and
- * never touches todos.
- */
-function renameContextSlug({
-	tables,
-	from,
-	to,
-}: {
-	tables: TodosTables;
-	from: string;
-	to: string;
-}): { contextRenamed: boolean; todosUpdated: number } {
-	const fromSlug = assertContextSlug(from);
-	const toSlug = assertContextSlug(to);
-	if (fromSlug === toSlug) return { contextRenamed: false, todosUpdated: 0 };
-	if (BUILT_IN_CONTEXT_IDS.has(toSlug)) {
-		throw new Error(`Context slug is reserved: ${toSlug}`);
-	}
-
-	const sourceRead = tables.contexts.get(fromSlug);
-	if (sourceRead.error) throw sourceRead.error;
-	const source = sourceRead.data;
-	if (source === null) throw new Error(`Context not found: ${fromSlug}`);
-
-	const targetRead = tables.contexts.get(toSlug);
-	if (targetRead.error) throw targetRead.error;
-	if (targetRead.data !== null) {
-		throw new Error(`Context already exists: ${toSlug}`);
-	}
-
-	tables.contexts.set({ ...source, id: toSlug });
-	tables.contexts.delete(fromSlug);
-
-	let todosUpdated = 0;
-	for (const todo of tables.todos.scan().rows) {
-		if (!todo.contexts.includes(fromSlug)) continue;
-		const contexts = todo.contexts.map((slug) =>
-			slug === fromSlug ? toSlug : slug,
-		);
-		tables.todos.update(todo.id, { contexts: [...new Set(contexts)] });
-		todosUpdated += 1;
-	}
-
-	return { contextRenamed: true, todosUpdated };
-}
-
 /**
  * Delete a context and cascade-remove its slug from every todo. A todo that
  * still carries an unknown slug afterward (hand-edited file, mid-sync) renders
@@ -242,7 +188,10 @@ function deleteContext({
 	tables,
 	slug,
 }: {
-	tables: TodosTables;
+	tables: {
+		contexts: Pick<Table<TodoContext>, 'get' | 'delete'>;
+		todos: Pick<Table<Todo>, 'scan' | 'update'>;
+	};
 	slug: string;
 }): { contextDeleted: boolean; todosUpdated: number } {
 	const targetSlug = assertContextSlug(slug);
@@ -357,14 +306,6 @@ export function createTodos() {
 					});
 				},
 			}),
-			contexts_rename_slug: defineMutation({
-				description: 'Rename a context slug and migrate todo references',
-				input: Type.Object({ from: Type.String(), to: Type.String() }),
-				handler: (input) =>
-					workspace.ydoc.transact(() =>
-						renameContextSlug({ tables, from: input.from, to: input.to }),
-					),
-			}),
 			contexts_delete: defineMutation({
 				description: 'Delete a context and remove it from all todos',
 				input: Type.Object({ slug: Type.String() }),
@@ -376,6 +317,3 @@ export function createTodos() {
 		}),
 	});
 }
-
-export type TodosWorkspace = ReturnType<typeof createTodos>;
-export type TodosActions = TodosWorkspace['actions'];

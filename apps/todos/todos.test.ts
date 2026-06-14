@@ -2,30 +2,16 @@
  * Todos Workspace Tests
  *
  * Verifies todo and context domain behavior across the workspace actions and
- * the Svelte state view used by the app shell.
+ * the app shell's persisted model.
  *
  * Key behaviors:
  * - Context slugs are stable, valid, and collision-resistant
  * - Built-in contexts are code constants layered over user rows
- * - Context rename and delete operations migrate todo references
+ * - Context label edits preserve slugs, while deletes remove todo references
  */
 import { describe, expect, test } from 'bun:test';
 import type { CalendarDateString } from '@epicenter/field';
-import { createTodosState } from './src/lib/todos/state.svelte';
-import {
-	assertContextSlug,
-	BUILT_IN_CONTEXTS,
-	type ContextSlug,
-	createTodos,
-	generateContextSlug,
-} from './todos';
-
-// `bun test` runs `.svelte.ts` modules without the Svelte compiler. The state
-// test constructs the view after seeding data, so identity runes are enough.
-(globalThis as unknown as { $derived: <T>(value: T) => T }).$derived = (value) =>
-	value;
-(globalThis as unknown as { $state: <T>(value: T) => T }).$state = (value) =>
-	value;
+import { BUILT_IN_CONTEXTS, createTodos } from './todos';
 
 function seededTodo(name = 'Phone') {
 	const todos = createTodos();
@@ -39,21 +25,46 @@ function seededTodo(name = 'Phone') {
 
 describe('context slugs', () => {
 	test('accepts stable file-facing slugs', () => {
-		expect(assertContextSlug('phone')).toBe('phone');
-		expect(assertContextSlug('on-the-go')).toBe('on-the-go');
+		const todos = createTodos();
+		const id = todos.actions.todos_create({
+			title: 'Grouped',
+			contexts: ['phone', 'on-the-go'],
+		});
+
+		expect(todos.tables.todos.get(id).data?.contexts).toEqual([
+			'phone',
+			'on-the-go',
+		]);
 	});
 
 	test('rejects YAML-sensitive and unstable slugs', () => {
-		expect(() => assertContextSlug('no')).toThrow();
-		expect(() => assertContextSlug('Phone')).toThrow();
-		expect(() => assertContextSlug('phone-')).toThrow();
-		expect(() => assertContextSlug('phone--home')).toThrow();
+		const todos = createTodos();
+		expect(() =>
+			todos.actions.todos_create({ title: 'Nope', contexts: ['no'] }),
+		).toThrow();
+		expect(() =>
+			todos.actions.todos_create({ title: 'Nope', contexts: ['Phone'] }),
+		).toThrow();
+		expect(() =>
+			todos.actions.todos_create({ title: 'Nope', contexts: ['phone-'] }),
+		).toThrow();
+		expect(() =>
+			todos.actions.todos_create({ title: 'Nope', contexts: ['phone--home'] }),
+		).toThrow();
 	});
 
 	test('generates deterministic non-colliding slugs', () => {
-		expect(generateContextSlug('Phone', ['phone'])).toBe('phone-2');
-		expect(generateContextSlug('2026 Planning')).toBe('c-2026-planning');
-		expect(generateContextSlug('No')).toBe('context-no');
+		const todos = createTodos();
+
+		expect(todos.actions.contexts_create({ name: 'Phone' })).toBe('phone-2');
+		expect(todos.actions.contexts_create({ name: 'Errands' })).toBe('errands');
+		expect(todos.actions.contexts_create({ name: 'Errands' })).toBe(
+			'errands-2',
+		);
+		expect(todos.actions.contexts_create({ name: '2026 Planning' })).toBe(
+			'c-2026-planning',
+		);
+		expect(todos.actions.contexts_create({ name: 'No' })).toBe('context-no');
 	});
 });
 
@@ -75,20 +86,6 @@ describe('due dates', () => {
 });
 
 describe('todo write path', () => {
-	test('creates a context with a generated stable slug', () => {
-		const todos = createTodos();
-		expect(todos.actions.contexts_create({ name: 'Errands' })).toBe('errands');
-		expect(todos.actions.contexts_create({ name: 'Errands' })).toBe(
-			'errands-2',
-		);
-	});
-
-	test('a user context cannot shadow a built-in slug', () => {
-		const todos = createTodos();
-		// "Phone" is a built-in, so the row gets a disambiguated slug instead.
-		expect(todos.actions.contexts_create({ name: 'Phone' })).toBe('phone-2');
-	});
-
 	test('auto-assigns a distinct color per context', () => {
 		const todos = createTodos();
 		const a = todos.actions.contexts_create({ name: 'Phone' });
@@ -140,42 +137,6 @@ describe('built-in contexts', () => {
 		});
 		expect(todos.tables.todos.get(id).data?.contexts).toEqual(['phone']);
 	});
-
-	test('a built-in slug cannot be the target of a slug rename', () => {
-		const todos = createTodos();
-		const slug = todos.actions.contexts_create({ name: 'Errands' });
-		expect(() =>
-			todos.actions.contexts_rename_slug({ from: slug, to: 'phone' }),
-		).toThrow();
-	});
-
-	test('state context list hides legacy rows that shadow built-in contexts', () => {
-		const todos = createTodos();
-		todos.tables.contexts.set({
-			id: 'errands' as ContextSlug,
-			name: 'Errands',
-			color: 'amber',
-			sortOrder: 0,
-		});
-		todos.tables.contexts.set({
-			id: 'phone' as ContextSlug,
-			name: 'Legacy Phone',
-			color: 'rose',
-			sortOrder: 99,
-		});
-		const state = createTodosState(todos);
-
-		try {
-			expect(state.contexts.map((context) => context.id)).toEqual([
-				'phone',
-				'desktop',
-				'home',
-				'errands',
-			]);
-		} finally {
-			state[Symbol.dispose]();
-		}
-	});
 });
 
 describe('context management', () => {
@@ -186,20 +147,6 @@ describe('context management', () => {
 
 		expect(todos.tables.contexts.get(slug).data?.name).toBe('Mobile');
 		expect(todos.tables.todos.get(id).data?.contexts).toEqual([slug]);
-	});
-
-	test('renaming the slug migrates todo references', () => {
-		const { todos, slug, id } = seededTodo();
-
-		const result = todos.actions.contexts_rename_slug({
-			from: slug,
-			to: 'mobile',
-		});
-
-		expect(result).toEqual({ contextRenamed: true, todosUpdated: 1 });
-		expect(todos.tables.contexts.get('mobile').data?.name).toBe('Phone');
-		expect(todos.tables.contexts.get(slug).data).toBeNull();
-		expect(todos.tables.todos.get(id).data?.contexts).toEqual(['mobile']);
 	});
 
 	test('deleting a context cascades removal from todos', () => {

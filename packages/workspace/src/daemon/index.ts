@@ -4,9 +4,11 @@ export {
 	type ProjectInfrastructure,
 } from './attach-project-infrastructure.js';
 export {
+	type CollaborativeDaemonRuntime,
 	type CollaborativeMount,
 	type CollaborativeMountContext,
 	defineMount,
+	type LocalDaemonRuntime,
 	type LocalMount,
 	type LocalMountContext,
 	type Mount,

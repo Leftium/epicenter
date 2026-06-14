@@ -133,6 +133,17 @@ async function openOneMount({
 	try {
 		if (mount.kind === 'local') {
 			const runtime = await mount.open(baseContext);
+			if (runtime.collaboration !== undefined) {
+				await Promise.resolve(runtime[Symbol.asyncDispose]()).catch(
+					() => undefined,
+				);
+				return WorkspaceAppError.MountOpenFailed({
+					mount: mount.name,
+					cause: new Error(
+						`Local mount "${mount.name}" returned collaboration. Declare kind: "collaborative" to serve peer sync.`,
+					),
+				});
+			}
 			return Ok({ mount: mount.name, runtime });
 		}
 

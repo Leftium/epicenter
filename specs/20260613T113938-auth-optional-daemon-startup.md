@@ -804,10 +804,12 @@ preserves other machine-auth storage errors.
 - `CollaborativeDaemonRuntime` requires the full `Collaboration<TActions>` a
   workspace mount already returns. The daemon server still consumes the
   narrowed served shape through `DaemonServedMount`.
-- Claude's review found no hard behavioral bug. It called out two worthwhile
-  test gaps, so the implementation added coverage for invalid collaborative
-  mount names before auth loading and for collaborative mounts with no auth
-  loader.
+- Review found that typed local mounts were protected, but raw config files could
+  still return `runtime.collaboration` from a local mount. The implementation now
+  rejects that runtime shape and disposes it before startup succeeds.
+- Review also called out two worthwhile test gaps, so the implementation added
+  coverage for invalid collaborative mount names before auth loading and for
+  collaborative mounts with no auth loader.
 - The inline-actions CLI e2e fixture stays collaborative because it exposes peer
   fields and the e2e harness seeds machine auth.
 

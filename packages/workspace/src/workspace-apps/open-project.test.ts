@@ -127,6 +127,41 @@ describe('openProject', () => {
 		expect(didLoadAuth).toBe(false);
 	});
 
+	test('rejects a local mount that returns collaboration at runtime', async () => {
+		writeConfig(
+			`import { writeFileSync } from 'node:fs';
+			import { join } from 'node:path';
+			const marker = join(import.meta.dirname, 'invalid.disposed');
+			export default [
+				{
+					name: 'mirror',
+					kind: 'local',
+					open: () => ({
+						actions: {},
+						collaboration: {},
+						async [Symbol.asyncDispose]() { writeFileSync(marker, 'disposed'); },
+					}),
+				},
+			];\n`,
+		);
+
+		const result = await openProject({
+			projectDir,
+			loadAuth: () => {
+				throw new Error('must not load auth');
+			},
+		});
+
+		const error = expectErr(result);
+		expect(error).toMatchObject({ name: 'MountOpenFailed', mount: 'mirror' });
+		expect(error.message).toContain(
+			'Local mount "mirror" returned collaboration',
+		);
+		expect(await Bun.file(join(projectDir, 'invalid.disposed')).exists()).toBe(
+			true,
+		);
+	});
+
 	test('disposes opened runtimes when a sibling open throws', async () => {
 		writeConfig(
 			`import { writeFileSync } from 'node:fs';

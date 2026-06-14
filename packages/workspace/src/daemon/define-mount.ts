@@ -70,9 +70,7 @@ export type CollaborativeMountContext = LocalMountContext & {
 
 export type LocalDaemonRuntime<
 	TActions extends ActionRegistry = ActionRegistry,
-> = {
-	[Symbol.asyncDispose](): MaybePromise<void>;
-	readonly actions: TActions;
+> = DaemonRuntime<TActions> & {
 	readonly collaboration?: never;
 };
 

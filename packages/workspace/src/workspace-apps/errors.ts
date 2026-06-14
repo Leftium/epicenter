@@ -1,10 +1,9 @@
 /**
  * Structured errors for mount startup.
  *
- * A bootstrap guard surfaces `MountFolderNotEmpty` when a not-yet-established
- * Epicenter folder already has a populated mount folder. The namespace claim
- * surfaces `EpicenterFolderClaimFailed` before the mount opens. Startup wraps
- * any throw from the mount's `open(ctx)` in `MountOpenFailed`.
+ * The namespace claim surfaces `EpicenterFolderClaimFailed` before the mount
+ * opens. Startup wraps any throw from the mount's `open(ctx)` in
+ * `MountOpenFailed`.
  *
  * Mount-name format is validated upstream by `loadEpicenterConfig`, which
  * surfaces a bad name as an `EpicenterConfigInvalid` pointed at the file.
@@ -20,14 +19,6 @@ import {
 } from 'wellcrafted/error';
 
 export const WorkspaceAppError = defineErrors({
-	MountFolderNotEmpty: ({ mount, path }: { mount: string; path: string }) => ({
-		message:
-			`Refusing to start: "${path}" already has files, but this Epicenter folder has no .epicenter/ state yet. ` +
-			`Epicenter generates and rebuilds the "${mount}" folder from synced data, so it will not adopt files you put there by hand. ` +
-			`Move them elsewhere (or rename the "${mount}" mount), then run \`epicenter daemon up\` again.`,
-		mount,
-		path,
-	}),
 	EpicenterFolderClaimFailed: ({
 		epicenterRoot,
 		cause,

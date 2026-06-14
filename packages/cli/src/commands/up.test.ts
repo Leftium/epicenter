@@ -132,8 +132,7 @@ function writeDemoConfig(): void {
 
 /**
  * A minimal valid singular config: a local mount that opens with no session and
- * serves nothing. Used by tests that only exercise namespace/gitignore
- * scaffolding, where the empty `export default []` used to stand in.
+ * serves nothing. Used by tests that only exercise namespace scaffolding.
  */
 const TRIVIAL_MOUNT_CONFIG = [
 	'export default {',
@@ -360,7 +359,7 @@ describe('runUp: failure cleanup', () => {
 		}
 	});
 
-	test('scaffolds a root .gitignore that tracks only the config', async () => {
+	test('does not scaffold a root .gitignore', async () => {
 		writeFileSync(join(workDir, 'epicenter.config.ts'), TRIVIAL_MOUNT_CONFIG);
 
 		const handle = expectOk(
@@ -372,12 +371,10 @@ describe('runUp: failure cleanup', () => {
 		);
 
 		try {
-			const rootGitignore = readFileSync(join(workDir, '.gitignore'), 'utf8');
-			// Ignore-all + allowlist: the config (and the ignore file) are tracked,
-			// every generated child folder is not.
-			expect(rootGitignore).toContain('/*');
-			expect(rootGitignore).toContain('!/.gitignore');
-			expect(rootGitignore).toContain('!/epicenter.config.ts');
+			expect(existsSync(join(workDir, '.gitignore'))).toBe(false);
+			expect(
+				readFileSync(join(workDir, '.epicenter', '.gitignore'), 'utf8'),
+			).toBe('*\n');
 		} finally {
 			await handle.teardown();
 		}
@@ -404,9 +401,6 @@ describe('runUp: failure cleanup', () => {
 	});
 
 	test('does not scaffold a root .gitignore once the namespace exists', async () => {
-		// `.epicenter/` present means a prior run already established the folder;
-		// a plain `up` must not retroactively write a `/*` rule into a folder the
-		// user may have turned into a git repo since.
 		writeFileSync(join(workDir, 'epicenter.config.ts'), TRIVIAL_MOUNT_CONFIG);
 		mkdirSync(join(workDir, '.epicenter'), { recursive: true });
 
@@ -465,9 +459,7 @@ describe('runUp: failure cleanup', () => {
 		lease.release();
 	});
 
-	test('keeps root .gitignore when mount startup fails after namespace claim', async () => {
-		// The folder is claimed (and its .gitignore written) before the mount
-		// opens, so a thrown open leaves the gitignore in place.
+	test('keeps .epicenter/.gitignore when mount startup fails after namespace claim', async () => {
 		writeDemoMount(`
 			export default {
 				name: 'demo',
@@ -490,9 +482,10 @@ describe('runUp: failure cleanup', () => {
 			name: 'MountOpenFailed',
 			mount: 'demo',
 		});
-		const rootGitignore = readFileSync(join(workDir, '.gitignore'), 'utf8');
-		expect(rootGitignore).toContain('/*');
-		expect(rootGitignore).toContain('!/epicenter.config.ts');
+		expect(existsSync(join(workDir, '.gitignore'))).toBe(false);
+		expect(
+			readFileSync(join(workDir, '.epicenter', '.gitignore'), 'utf8'),
+		).toBe('*\n');
 		const lease = expectOk(claimDaemonLease(workDir));
 		lease.release();
 	});

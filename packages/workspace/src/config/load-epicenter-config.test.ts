@@ -2,7 +2,7 @@
  * Epicenter config loading tests.
  *
  * Verifies that `epicenter.config.ts` is discovered, imported, and runtime
- * validated before daemon startup consumes the mount list.
+ * validated before daemon startup consumes the mount.
  *
  * Invariant under test: `loadEpicenterConfig` is total. Every failure mode
  * (missing file, import/syntax error, wrong-shaped export, bad mount name)
@@ -84,15 +84,33 @@ describe('loadEpicenterConfig', () => {
 		});
 	});
 
-	test('rejects a mount with a bad name', async () => {
-		writeConfig("export default { name: '__proto__', open() {} };\n");
+	const invalidMountNames = [
+		'.epicenter',
+		'epicenter.config.ts',
+		'..',
+		'.',
+		'a/b',
+		'a\\b',
+		'__proto__',
+		'-leading',
+		'_leading',
+		'foo.bar',
+		'has space',
+		'',
+	];
+	for (const name of invalidMountNames) {
+		test(`rejects ${JSON.stringify(name)} as an invalid mount name`, async () => {
+			writeConfig(
+				`export default { name: ${JSON.stringify(name)}, open() {} };\n`,
+			);
 
-		const { error } = await loadEpicenterConfig(epicenterRoot);
-		expect(error).toMatchObject({
-			name: 'EpicenterConfigInvalid',
-			detail: expect.stringContaining('the mount name "__proto__" is invalid'),
+			const { error } = await loadEpicenterConfig(epicenterRoot);
+			expect(error).toMatchObject({
+				name: 'EpicenterConfigInvalid',
+				detail: expect.stringContaining(`the mount name "${name}" is invalid`),
+			});
 		});
-	});
+	}
 
 	test('accepts a mount with just name and open (no kind needed)', async () => {
 		writeConfig("export default { name: 'demo', open() {} };\n");

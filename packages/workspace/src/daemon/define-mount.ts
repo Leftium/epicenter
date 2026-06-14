@@ -1,7 +1,7 @@
 /**
  * `defineMount`: the entry contract for an app mount inside the daemon.
  *
- * `epicenter.config.ts` default-exports a `Mount[]`. Each mount carries its own
+ * `epicenter.config.ts` default-exports one `Mount`. The mount carries its own
  * canonical `name`, which becomes the CLI action prefix (`<name>.<action_key>`)
  * and is propagated into the mount context so handlers can use it for logging.
  *
@@ -84,8 +84,7 @@ export type SessionMountContext = MountContext & {
 /**
  * "I cannot run right now." A mount returns this from `open()` instead of a
  * runtime when a precondition (usually a signed-in `session`) is missing. The
- * daemon starts every sibling that did open and reports the inactive ones; it
- * is not a crash and does not abort startup.
+ * daemon reports this as inactive; it is not a crash and does not abort startup.
  */
 export type MountInactive = {
 	readonly inactive: true;

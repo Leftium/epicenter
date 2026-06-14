@@ -21,13 +21,7 @@
  * `open` aborts startup.
  */
 
-import {
-	existsSync,
-	mkdirSync,
-	readdirSync,
-	statSync,
-	writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
@@ -35,13 +29,8 @@ import {
 	type EpicenterConfigError,
 	loadEpicenterConfig,
 } from '../config/load-epicenter-config.js';
-import {
-	isInactive,
-	type Mount,
-	type MountSession,
-} from '../daemon/define-mount.js';
+import { isInactive, type MountSession } from '../daemon/define-mount.js';
 import type { StartedMount } from '../daemon/types.js';
-import { mountMarkdownPath } from '../document/workspace-paths.js';
 import type { EpicenterRoot } from '../shared/types.js';
 import type { WorkspaceAuthClient } from './auth-client.js';
 import { WorkspaceAppError } from './errors.js';
@@ -80,11 +69,6 @@ export async function openEpicenterRoot(
 	const { data: mount, error: configError } =
 		await loadEpicenterConfig(epicenterRoot);
 	if (configError !== null) return Err(configError);
-
-	const populated = findPopulatedMountFolder(epicenterRoot, mount);
-	if (populated !== null) {
-		return WorkspaceAppError.MountFolderNotEmpty(populated);
-	}
 
 	const claimResult = trySync({
 		try: () => claimEpicenterFolder(epicenterRoot),
@@ -146,61 +130,13 @@ function buildMountSession(
 }
 
 /**
- * Bootstrap guard: refuse to claim a mount folder a user populated before the
- * namespace exists.
- *
- * `.epicenter/` is Epicenter's "this folder is mine" marker. Until it exists,
- * the namespace has not been established, so a non-empty `<root>/<mount>/` (a
- * direct child named after a declared mount) is the user's own data, not a
- * generated projection. Adopting it would let `markdown_rebuild` later sweep
- * those files. Once `.epicenter/` exists, the claim is about ownership, not
- * proof that a projection has already been generated: declared mount folders
- * are reserved for Epicenter to generate and rebuild, so this guard stands down.
- *
- * OS bookkeeping files (`.DS_Store`, `Thumbs.db`) do not count as content.
- *
- * Returns the first offending mount, or null when bootstrap is safe.
- */
-const IGNORED_BOOTSTRAP_ENTRIES = new Set(['.DS_Store', 'Thumbs.db']);
-
-const ROOT_GITIGNORE = `# Epicenter folder. Only epicenter.config.ts is tracked; the generated mount
-# projections and the machine state under .epicenter/ are derived from the Yjs
-# log and rebuilt on demand, so git ignores them.
-/*
-!/.gitignore
-!/epicenter.config.ts
-`;
-
-function findPopulatedMountFolder(
-	epicenterRoot: EpicenterRoot,
-	mount: Mount,
-): { mount: string; path: string } | null {
-	const namespaceEstablished = existsSync(join(epicenterRoot, '.epicenter'));
-	if (namespaceEstablished) return null;
-
-	const path = mountMarkdownPath(epicenterRoot, mount.name);
-	if (!existsSync(path)) return null;
-	const isPopulated =
-		!statSync(path).isDirectory() ||
-		readdirSync(path).some((entry) => !IGNORED_BOOTSTRAP_ENTRIES.has(entry));
-	return isPopulated ? { mount: mount.name, path } : null;
-}
-
-/**
  * Claim the folder before any mount can create generated state.
  *
- * Fresh namespaces get the root ignore first, then `.epicenter/`. That ordering
- * keeps `.epicenter/` a trustworthy "already claimed" marker.
+ * `.epicenter/` is the machine-state marker for an app folder. Generated
+ * markdown directories claim themselves with their own `.gitignore` files, so
+ * this startup step only owns hidden machine state.
  */
 function claimEpicenterFolder(epicenterRoot: EpicenterRoot): void {
-	const namespaceEstablished = existsSync(join(epicenterRoot, '.epicenter'));
-	if (!namespaceEstablished) {
-		const rootGitignorePath = join(epicenterRoot, '.gitignore');
-		if (!existsSync(rootGitignorePath)) {
-			writeFileSync(rootGitignorePath, ROOT_GITIGNORE);
-		}
-	}
-
 	const epicenterDataDir = join(epicenterRoot, '.epicenter');
 	mkdirSync(epicenterDataDir, { recursive: true, mode: 0o700 });
 	const cacheGitignorePath = join(epicenterDataDir, '.gitignore');

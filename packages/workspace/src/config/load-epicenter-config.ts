@@ -33,9 +33,10 @@ import {
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 import type { Mount } from '../daemon/define-mount.js';
-import { isValidMountName } from '../daemon/mount-validation.js';
 import type { EpicenterRoot } from '../shared/types.js';
 import { EPICENTER_CONFIG_FILENAME } from './epicenter-config-source.js';
+
+const MOUNT_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
 export const EpicenterConfigError = defineErrors({
 	EpicenterConfigNotFound: ({
@@ -137,4 +138,8 @@ function isMount(value: unknown): value is Mount {
 		'open' in value &&
 		typeof (value as { open: unknown }).open === 'function'
 	);
+}
+
+function isValidMountName(name: string): boolean {
+	return MOUNT_NAME_PATTERN.test(name);
 }

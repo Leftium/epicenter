@@ -50,8 +50,8 @@ function logSyncStatus(message: string): void {
 
 type UpOptions = {
 	/**
-	 * The Epicenter root (the folder that holds `epicenter.config.ts`,
-	 * whose direct children are the mount projections). The yargs `-C` option
+	 * The Epicenter root (the app folder that holds `epicenter.config.ts`). The
+	 * yargs `-C` option
 	 * resolves discovery (walking up to the nearest `epicenter.config.ts`) before
 	 * the handler runs; direct callers pass the root they already know.
 	 */

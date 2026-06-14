@@ -207,6 +207,32 @@ describe('attachGitAutosave', () => {
 		}
 	});
 
+	test('commits files in ignored generated directories', async () => {
+		const project = setupProject();
+		try {
+			await project.initGitRepo();
+			writeFileSync(join(project.markdownDir, '.gitignore'), '*\n');
+			const before = await commitCount(project.epicenterRoot);
+
+			const handle = project.attach({ quietMs: 20, maxBatchMs: 1_000 });
+			await handle.autosave.whenWatching;
+
+			writeFileSync(join(project.markdownDir, 'ignored.md'), '# Ignored\n');
+
+			await waitForCommitCount(project.epicenterRoot, before + 1);
+
+			const tracked = await runGit(project.epicenterRoot, [
+				'ls-files',
+				'markdown',
+			]);
+			expect(tracked.stdout).toContain('markdown/ignored.md');
+
+			handle.dispose();
+		} finally {
+			project.cleanup();
+		}
+	});
+
 	test('configured author applies per commit without mutating git config', async () => {
 		const project = setupProject();
 		try {

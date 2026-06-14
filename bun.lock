@@ -792,8 +792,6 @@
         "@lucide/svelte": "catalog:",
         "@tanstack/svelte-query": "catalog:",
         "arktype": "catalog:",
-        "better-auth": "catalog:",
-        "idb": "^8.0.3",
         "wellcrafted": "catalog:",
       },
       "devDependencies": {

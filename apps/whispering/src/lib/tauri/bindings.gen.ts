@@ -183,6 +183,14 @@ export const commands = {
 	 */
 	cancelDownload: (downloadId: string) =>
 		__TAURI_INVOKE<void>('cancel_download', { downloadId }),
+	pauseActiveMedia: () =>
+		typedError<PauseActiveMediaOutcome, string>(
+			__TAURI_INVOKE('pause_active_media'),
+		),
+	resumeMedia: (players: MediaPlayer[]) =>
+		typedError<MediaControlFailure[], string>(
+			__TAURI_INVOKE('resume_media', { players }),
+		),
 	/**
 	 *  Replace the full set of registered global shortcuts. The FE computes the
 	 *  complete list from device-config and pushes it on startup and on every
@@ -400,6 +408,14 @@ export type MarkdownFile = {
 	content: string;
 };
 
+export type MediaControlFailure = {
+	player: MediaPlayer;
+	message: string;
+	permissionDenied: boolean;
+};
+
+export type MediaPlayer = 'music' | 'spotify';
+
 /**
  *  Single event type for everything observable about the model lifecycle.
  *  `tag = "kind"` matches `ModelStatus` and `UnloadReason` so the FE pattern
@@ -452,6 +468,11 @@ export type ModelStatus =
  *  global-shortcut plugin could never express.
  */
 export type Modifier = 'ctrl' | 'alt' | 'shift' | 'meta' | 'fn';
+
+export type PauseActiveMediaOutcome = {
+	paused: MediaPlayer[];
+	failures: MediaControlFailure[];
+};
 
 /**
  *  Serializable handle returned to the JS side. The id is the lookup key

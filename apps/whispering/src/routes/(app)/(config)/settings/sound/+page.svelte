@@ -1,6 +1,8 @@
 <script lang="ts">
 	import * as Field from '@epicenter/ui/field';
 	import { Switch } from '@epicenter/ui/switch';
+	import { os } from '#platform/os';
+	import { tauri } from '#platform/tauri';
 	import { settings } from '$lib/state/settings.svelte';
 </script>
 
@@ -13,6 +15,29 @@
 	</Field.Description>
 	<Field.Separator />
 	<Field.Group>
+		{#if tauri && os.isApple}
+			<Field.Set>
+				<Field.Legend variant="label">Media</Field.Legend>
+				<Field.Description>
+					Pause Music or Spotify while Whispering records.
+				</Field.Description>
+				<Field.Group>
+					<Field.Field orientation="horizontal">
+						<Switch
+							id="sound.pause-media-during-recording"
+							bind:checked={() => settings.get('sound.pauseMediaDuringRecording'),
+								(v) => settings.set('sound.pauseMediaDuringRecording', v)}
+						/>
+						<Field.Label for="sound.pause-media-during-recording">
+							Pause media while recording
+						</Field.Label>
+					</Field.Field>
+				</Field.Group>
+			</Field.Set>
+
+			<Field.Separator />
+		{/if}
+
 		<Field.Set>
 			<Field.Legend variant="label">Manual Recording Sounds</Field.Legend>
 			<Field.Description>

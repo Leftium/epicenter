@@ -1,5 +1,6 @@
 import { nanoid } from 'nanoid/non-secure';
 import { manualRecorderConfig } from '#platform/manual-recorder-config';
+import { recordingOverlay } from '#platform/recording-overlay';
 import { goto } from '$app/navigation';
 import { analytics } from '$lib/operations/analytics';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
@@ -166,6 +167,7 @@ export async function startVadRecording() {
 	});
 
 	const { data: outcome, error } = await vadRecorder.startActiveListening({
+		onLevel: (level) => recordingOverlay.reportLevel(level),
 		onSpeechStart: () => {
 			report.success({
 				title: '🎙️ Speech started',

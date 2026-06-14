@@ -1,5 +1,5 @@
 /**
- * `defineMount`: typed entry contract for an app mount inside a project daemon.
+ * `defineMount`: typed entry contract for an app mount inside the daemon.
  *
  * `epicenter.config.ts` default-exports a `Mount[]`. Each mount carries its own
  * canonical `name`, which
@@ -20,19 +20,24 @@ import type {
 	OpenWebSocketFn,
 } from '../document/open-collaboration.js';
 import type { ActionRegistry } from '../shared/actions.js';
-import type { AuthedFetch, MaybePromise, ProjectDir } from '../shared/types.js';
+import type {
+	AuthedFetch,
+	EpicenterRoot,
+	MaybePromise,
+} from '../shared/types.js';
 import type { DaemonRuntime } from './types.js';
 
 /**
  * Context handed to `open()` for a local-only mount.
  *
- * - `projectDir` is the resolved project root. Source mirrors derive every
- *   absolute local cache path from it.
+ * - `epicenterRoot` is the resolved Epicenter root (the folder that holds
+ *   `epicenter.config.ts`). Source mirrors derive every absolute local cache
+ *   path from it.
  * - `mount` is the canonical mount name (`Mount.name`). Pinned here so
  *   handlers can share the same identifier with logs and local cache keys.
  */
 export type LocalMountContext = {
-	projectDir: ProjectDir;
+	epicenterRoot: EpicenterRoot;
 	mount: string;
 };
 
@@ -47,7 +52,7 @@ export type LocalMountContext = {
 export type CollaborativeMountContext = LocalMountContext & {
 	/**
 	 * Deterministic Y.Doc CRDT `clientID` for this daemon, derived from
-	 * `projectDir`. Pin it on the Y.Doc with `ydoc.clientID =
+	 * `epicenterRoot`. Pin it on the Y.Doc with `ydoc.clientID =
 	 * ctx.yDocClientId` right after construction.
 	 */
 	yDocClientId: number;
@@ -109,7 +114,7 @@ export type CollaborativeMount<
  * daemon runtime.
  *
  * Factories like `fuji()` return a `Mount`. The canonical mount name lives on
- * the value itself (`Mount.name`), so renaming a project folder never changes
+ * the value itself (`Mount.name`), so renaming an Epicenter folder never changes
  * the action namespace.
  */
 export type Mount = LocalMount | CollaborativeMount;

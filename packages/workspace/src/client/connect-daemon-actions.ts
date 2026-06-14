@@ -21,16 +21,16 @@
  * ```
  *
  * Daemon-scope calls (peers, list across mounts) live on `DaemonClient`
- * directly: construct one with `daemonClient(socketPathFor(projectDir))` and
+ * directly: construct one with `daemonClient(socketPathFor(epicenterRoot))` and
  * call `.peers()` / `.list()` against the same socket. They are not
  * reachable through this workspace handle.
  */
 
 import { getDaemon } from '../daemon/client.js';
 import type { ActionRegistry } from '../shared/actions.js';
-import type { ProjectDir } from '../shared/types.js';
+import type { EpicenterRoot } from '../shared/types.js';
 import { buildDaemonActions, type DaemonActions } from './daemon-actions.js';
-import { findProjectRoot } from './find-project-root.js';
+import { findEpicenterRoot } from './find-epicenter-root.js';
 
 /**
  * Connect to a workspace's public actions hosted by a running daemon.
@@ -39,27 +39,28 @@ import { findProjectRoot } from './find-project-root.js';
  * prefixes each snake_case action key with `${mount}.`, then dispatches the
  * remaining key against that workspace.
  *
- * `projectDir` defaults to walking up from `process.cwd()` for an
+ * `epicenterRoot` defaults to walking up from `process.cwd()` for an
  * `epicenter.config.ts` file.
  *
- * Throws via `findProjectRoot` when no project config is found, or
+ * Throws via `findEpicenterRoot` when no Epicenter config is found, or
  * `DaemonError.Required` when no daemon is listening on the resolved socket.
  * Start one with `epicenter daemon up`. There is no auto-spawn: explicit
  * lifecycle is the contract.
  */
 export async function connectDaemonActions<TActions extends ActionRegistry>({
 	mount,
-	projectDir = findProjectRoot(),
+	epicenterRoot = findEpicenterRoot(),
 }: {
 	mount: string;
 	/**
-	 * Project root. Defaults to the nearest ancestor of `process.cwd()`
-	 * containing `epicenter.config.ts`. Throws via `findProjectRoot` if no such
-	 * ancestor exists; pass an explicit `projectDir` to opt out.
+	 * The Epicenter root (the folder that holds `epicenter.config.ts`).
+	 * Defaults to the nearest ancestor of `process.cwd()`
+	 * containing `epicenter.config.ts`. Throws via `findEpicenterRoot` if no such
+	 * ancestor exists; pass an explicit `epicenterRoot` to opt out.
 	 */
-	projectDir?: ProjectDir;
+	epicenterRoot?: EpicenterRoot;
 }): Promise<DaemonActions<TActions>> {
-	const { data: client, error } = await getDaemon(projectDir);
+	const { data: client, error } = await getDaemon(epicenterRoot);
 	if (error) throw error;
 	return buildDaemonActions<TActions>(client, mount);
 }

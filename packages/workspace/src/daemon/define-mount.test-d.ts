@@ -25,7 +25,7 @@ export const localMount = defineMount({
 	name: 'mirror',
 	kind: 'local',
 	open(ctx) {
-		ctx.projectDir;
+		ctx.epicenterRoot;
 		ctx.mount;
 
 		// @ts-expect-error: local mounts do not receive workspace keys
@@ -54,7 +54,7 @@ export const collaborativeMount = defineMount({
 	name: 'fuji',
 	kind: 'collaborative',
 	open(ctx) {
-		ctx.projectDir;
+		ctx.epicenterRoot;
 		ctx.mount;
 		ctx.keyring;
 		ctx.ownerId;

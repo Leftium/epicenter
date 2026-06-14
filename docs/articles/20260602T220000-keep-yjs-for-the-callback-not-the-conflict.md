@@ -5,7 +5,7 @@ I almost kept Yjs for the wrong reason. The pitch for CRDTs is always conflict r
 The real reason is quieter. Yjs is an in-memory observable document. A write fires a callback, and the callback materializes a markdown file to disk. SQLite has no native way to call you back.
 
 ```txt
-yjs write  ->  observer fires  ->  materialize apps/fuji/entry.md
+yjs write  ->  observer fires  ->  materialize <root>/fuji/entry.md
                      ^
               this is the whole product
 ```
@@ -73,7 +73,7 @@ That is the real lever. Not "Yjs merges my conflicts." It's "Yjs is in memory, s
 And that callback was never really about markdown. It fires once, and I can hang anything off it.
 
 ```txt
-                      ┌─> apps/fuji/*.md      (read + grep)
+                      ┌─> <root>/fuji/*.md    (read + grep)
 yjs update -> observe ┼─> SQLite mirror       (SQL queries)
                       ├─> FTS5 index          (full-text search)
                       └─> vector embeddings   (semantic search)

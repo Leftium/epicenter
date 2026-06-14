@@ -111,14 +111,14 @@ export function createFuji(opts: { keyring: () => Keyring }) {
 				title: 'List Valid Entries',
 				description: 'Read all valid entries from the Fuji workspace.',
 				handler: () => {
-					return tables.entries.getAllValid();
+					return tables.entries.scan().rows;
 				},
 			}),
 			entries_count: defineQuery({
 				title: 'Count Entries',
 				description: 'Count entries in the Fuji workspace.',
 				handler: () => {
-					return tables.entries.count();
+					return tables.entries.storedCount();
 				},
 			}),
 			entries_has: defineQuery({
@@ -329,6 +329,8 @@ export function createFuji(opts: { keyring: () => Keyring }) {
 						createdAt: now,
 						updatedAt: now,
 					}));
+					// Fresh generateId() ids cannot collide with a stored row, so
+					// bulkSet never refuses on this path; report a clean count.
 					await tables.entries.bulkSet(rows);
 					return { count: rows.length };
 				},

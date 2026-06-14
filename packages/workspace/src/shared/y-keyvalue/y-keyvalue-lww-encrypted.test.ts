@@ -117,7 +117,7 @@ describe('createEncryptedYkvLww', () => {
 			expect(kv.has('k')).toBe(false);
 		});
 
-		test('entries returns decrypted values', () => {
+		test('reads returns decrypted values', () => {
 			const key = randomBytes(32);
 			const { kv } = setup(new Map([[1, key]]));
 
@@ -126,8 +126,8 @@ describe('createEncryptedYkvLww', () => {
 			kv.set('c', '3');
 
 			const values = new Map<string, string>();
-			for (const [entryKey, entry] of kv.entries())
-				values.set(entryKey, entry.val);
+			for (const [entryKey, read] of kv.reads())
+				if (read.state === 'present') values.set(entryKey, read.val);
 
 			expect(values.get('a')).toBe('1');
 			expect(values.get('b')).toBe('2');
@@ -215,7 +215,7 @@ describe('createEncryptedYkvLww', () => {
 			expect(events).toEqual([{ key: 'foo', change: { action: 'delete' } }]);
 		});
 
-		test('unobserve stops notifications', () => {
+		test('the disposer returned by observe stops notifications', () => {
 			const key = randomBytes(32);
 			const { kv } = setup(new Map([[1, key]]));
 
@@ -224,9 +224,9 @@ describe('createEncryptedYkvLww', () => {
 				count++;
 			};
 
-			kv.observe(handler);
+			const unobserve = kv.observe(handler);
 			kv.set('a', '1');
-			kv.unobserve(handler);
+			unobserve();
 			kv.set('b', '2');
 
 			expect(count).toBe(1);
@@ -395,7 +395,7 @@ describe('createEncryptedYkvLww', () => {
 				kv.set('b', '2');
 				kv.set('c', '3');
 
-				for (const [entryKey] of kv.entries()) keysInBatch.push(entryKey);
+				for (const [entryKey] of kv.reads()) keysInBatch.push(entryKey);
 			});
 
 			expect(keysInBatch.sort()).toEqual(['a', 'b', 'c']);
@@ -426,7 +426,10 @@ describe('createEncryptedYkvLww', () => {
 			expect(kv.get('corrupt')).toBeUndefined();
 			expect(kv.get('good-1')).toBe('value-1');
 			expect(kv.get('good-2')).toBe('value-2');
-			expect(kv.unreadableEntryCount).toBe(1);
+			expect(
+				[...kv.reads()].filter(([, read]) => read.state === 'unreadable')
+					.length,
+			).toBe(1);
 		});
 
 		test('observation continues after decrypt failure', () => {
@@ -452,7 +455,69 @@ describe('createEncryptedYkvLww', () => {
 			expect(kv.get('good')).toBe('still-works');
 			expect(kv.get('new-good')).toBe('appears-after-failure');
 			expect(kv.get('corrupt')).toBeUndefined();
-			expect(kv.unreadableEntryCount).toBe(1);
+			expect(
+				[...kv.reads()].filter(([, read]) => read.state === 'unreadable')
+					.length,
+			).toBe(1);
+		});
+	});
+
+	describe('read() tri-state point read', () => {
+		test('present: a readable entry reports state present with its value', () => {
+			const key = randomBytes(32);
+			const { kv } = setup(new Map([[1, key]]));
+
+			kv.set('k', 'v');
+
+			expect(kv.read('k')).toEqual({ state: 'present', val: 'v' });
+		});
+
+		test('absent: a missing key reports state absent', () => {
+			const key = randomBytes(32);
+			const { kv } = setup(new Map([[1, key]]));
+
+			expect(kv.read('missing')).toEqual({ state: 'absent' });
+		});
+
+		test('unreadable: a blob whose key version is absent reports state unreadable with the reason', () => {
+			const ydoc = new Y.Doc();
+			const key1 = randomBytes(32);
+			const key2 = randomBytes(32);
+			const kv = createEncryptedYkvLww<string>(ydoc, 'data');
+			// The store can only decrypt key version 2; a version-1 blob is locked out.
+			kv.activateEncryption(new Map([[2, key2]]));
+
+			const lockedBlob = createEncryptedBlob('secret', key1, 'locked');
+			kv.yarray.push([{ key: 'locked', val: lockedBlob, ts: 100 }]);
+
+			expect(kv.read('locked')).toEqual({
+				state: 'unreadable',
+				reason: 'keyVersion=1 not in keyring [2]',
+			});
+		});
+
+		test('has() means raw existence and agrees with size across present and unreadable rows', () => {
+			const ydoc = new Y.Doc();
+			const key1 = randomBytes(32);
+			const key2 = randomBytes(32);
+			const kv = createEncryptedYkvLww<string>(ydoc, 'data');
+			kv.activateEncryption(new Map([[2, key2]]));
+
+			kv.set('readable', 'ok');
+			const lockedBlob = createEncryptedBlob('secret', key1, 'locked');
+			kv.yarray.push([{ key: 'locked', val: lockedBlob, ts: 100 }]);
+
+			// has() is now raw existence: true for the readable row AND the
+			// undecryptable one, so it agrees with size (which counts both).
+			expect(kv.has('readable')).toBe(true);
+			expect(kv.has('locked')).toBe(true);
+			expect(kv.has('missing')).toBe(false);
+
+			const existing = ['readable', 'locked', 'missing'].filter((k) =>
+				kv.has(k),
+			).length;
+			expect(kv.size).toBe(2);
+			expect(existing).toBe(kv.size);
 		});
 	});
 
@@ -479,7 +544,10 @@ describe('createEncryptedYkvLww', () => {
 					[1, key1],
 				]),
 			);
-			expect(kv.unreadableEntryCount).toBe(0);
+			expect(
+				[...kv.reads()].filter(([, read]) => read.state === 'unreadable')
+					.length,
+			).toBe(0);
 			expect(kv.get('a')).toBe('alpha');
 			expect(kv.get('b')).toBe('beta');
 
@@ -544,7 +612,10 @@ describe('createEncryptedYkvLww', () => {
 
 			expect(kv.get('a')).toBe('alpha');
 			expect(kv.get('b')).toBe('beta');
-			expect(kv.unreadableEntryCount).toBe(0);
+			expect(
+				[...kv.reads()].filter(([, read]) => read.state === 'unreadable')
+					.length,
+			).toBe(0);
 
 			// Every blob is now v2.
 			for (const entry of yarray.toArray()) {

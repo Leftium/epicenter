@@ -48,10 +48,14 @@ if (result.status === 'valid') {
 
 ```typescript
 // Before
-const postFields = { id: id(), title: text() };
+const postFields = { id: field.string(), title: field.string() };
 
 // After: existing posts get status: 'draft' automatically
-const postFields = { id: id(), title: text(), status: select({ options: ['draft', 'published'], default: 'draft' }) };
+const postFields = {
+  id: field.string(),
+  title: field.string(),
+  status: field.select(['draft', 'published'], { default: 'draft' }),
+};
 ```
 
 **Removing a field**: Remove it from the schema. The data stays in the Y.Doc, but your code stops reading it. No data loss, no migration, the field is just ignored.

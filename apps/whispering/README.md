@@ -2,7 +2,7 @@
   <a href="https://whispering.epicenter.so">
     <img width="180" src="./src-tauri/recorder-state-icons/studio_microphone.png" alt="Whispering">
   </a>
-  <h1 align="center">Epicenter Whispering</h1>
+  <h1 align="center">Whispering</h1>
   <p align="center">Press shortcut → speak → get text. Free and open source ❤️</p>
 </p>
 
@@ -38,18 +38,12 @@ Whispering is an open-source speech-to-text application. Press a keyboard shortc
 
 I really like hands-free voice dictation. For years, I relied on transcription tools that were _almost_ good, but they were all closed-source. Even those claiming to be "local" or "on-device" were still black boxes that left me wondering where my audio really went.
 
-So I built Whispering. It's open-source, local-first, and most importantly, transparent with your data. ​​Your data is stored locally on your device, and your audio goes directly from your machine to a local provider (Whisper C++, Speaches, etc.) or your chosen cloud provider (Groq, OpenAI, ElevenLabs, etc.) without any middleman or vendor lock-in. For me, the features were good enough that I left my paid tools behind (I used Superwhisper and Wispr Flow before).
+So I built Whispering. It's open-source, local-first, and most importantly, transparent with your data. ​​Your data is stored locally on your device, and your audio goes directly from your machine to a local provider (Whisper C++, Speaches, etc.) or your chosen cloud provider (Groq, OpenAI, ElevenLabs, etc.) without any middleman or vendor lock-in. For me, the features were good enough that I left my paid tools behind.
 
 Productivity apps should be open-source and transparent with your data, but they also need to match the UX of paid, closed-software alternatives. I hope Whispering is near that point. I use it for several hours a day, from coding to thinking out loud while carrying pizza boxes back from the office.
 
 > [!TIP]
 > Whispering is designed for quick transcriptions, not long recordings. For extended recording sessions, use a dedicated recording app.
-
-> [!NOTE]
-> The terms **Epicenter Whispering** and **Whispering** are interchangeable and refer to the same app.
->
-> - _Epicenter Whispering_ emphasizes the app's place in the larger ecosystem.
-> - _Whispering_ may be used for brevity and/or to focus on the standalone app.
 
 Here's an overview:
 
@@ -321,7 +315,7 @@ If you accidentally blocked microphone permissions, use the Registry solution:
 <details>
 <summary>Alternative solutions</summary>
 
-**Delete App Data:** Navigate to `%APPDATA%\..\Local\com.bradenwong.whispering` and delete this folder, then reinstall.
+**Delete App Data:** Navigate to `%APPDATA%\so.epicenter.whispering` and delete this folder, then reinstall.
 
 **Windows Settings:** Settings → Privacy & security → Microphone → Enable "Let desktop apps access your microphone"
 

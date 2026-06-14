@@ -76,7 +76,7 @@ export const session = createSession({
 
 Same-owner identity updates do not remount the workspace. Auth callbacks read `auth.state` at the boundary that asks for them: sync can see refreshed bearer tokens on connection attempts. Local persistence is snapshot-by-design: `attachLocalStorage` reads the keyring once at attach, and already-attached encrypted tables and KVs keep the keyring they derived when `createWorkspace` was called. A fresh `createWorkspace` plus `attachLocalStorage` cycle (and therefore a fresh Y.Doc) is what picks up rotated keys; see the `attachEncryptedIndexedDb` module doc for the full rotation contract.
 
-Daemon-side project mounts declare whether they are local or collaborative. Local mounts receive only `{ projectDir, mount }`. Collaborative mounts receive the auth-derived `CollaborativeMountContext`: `{ projectDir, mount, yDocClientId, deviceId, ownerId, keyring: () => Keyring, openWebSocket, onReconnectSignal, fetch }`. The host's `keyring` closure throws when auth is signed-out, so a late sign-out becomes a thrown error at the next encrypted write or registration site rather than silent ciphertext loss. The `openWebSocket` and `onReconnectSignal` refs flow through to `attachProjectInfrastructure({ openWebSocket, onReconnectSignal })` for cloud sync.
+Daemon-side mounts declare whether they are local or collaborative. Local mounts receive only `{ epicenterRoot, mount }`. Collaborative mounts receive the auth-derived `CollaborativeMountContext`: `{ epicenterRoot, mount, yDocClientId, deviceId, ownerId, keyring: () => Keyring, openWebSocket, onReconnectSignal, fetch }`. The host's `keyring` closure throws when auth is signed-out, so a late sign-out becomes a thrown error at the next encrypted write or registration site rather than silent ciphertext loss. The `openWebSocket` and `onReconnectSignal` refs flow through to `attachProjectInfrastructure({ openWebSocket, onReconnectSignal })` for cloud sync.
 
 ## Browser local persistence
 Authenticated browser workspaces open local IndexedDB only after auth has settled into an identity-bearing state. The session module guarantees that boundary: it builds the workspace lazily once auth produces a `SignedIn` payload and disposes it on sign-out.
@@ -290,7 +290,7 @@ What it does not get is plaintext application values.
 ## Error handling and unreadable data
 Decryption failures do not take down the whole observer stream.
 The wrapper catches failures, logs a warning, skips the unreadable entry, and keeps going.
-It also exposes `unreadableEntryCount` alongside `size` (the count of decryptable entries).
+It also exposes `reads()`, which walks every stored entry classified as `present` or `unreadable` (each unreadable one carrying a reason), and counts the unreadable ones in `size` alongside the readable ones.
 That makes corruption or missing key versions visible without forcing a hard crash on every read.
 
 ## What this means for a security review

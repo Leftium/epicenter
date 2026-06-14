@@ -6,7 +6,7 @@ I was designing a blob storage layer for audio files. Desktop stores them on the
 
 We have recordings. Each recording has metadata (title, transcription, timestamps) and an audio blob. The metadata goes into Yjs tables for sync. The audio blob stays local: too large for CRDT sync. So we need a separate blob storage layer, and it needs to work on two platforms:
 
-- **Desktop**: Filesystem. Audio lives at `~/Library/Application Support/com.bradenwong.whispering/recordings/{id}.webm`
+- **Desktop**: Filesystem. Audio lives at `~/Library/Application Support/so.epicenter.whispering/recordings/{id}.webm`
 - **Web**: IndexedDB. Audio lives as a serialized `ArrayBuffer` + `blobType` string in a Dexie table row.
 
 The shared operations are obvious:

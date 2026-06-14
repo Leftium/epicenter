@@ -130,6 +130,16 @@
 		}
 	}
 
+	async function downloadRecommendedModel() {
+		await recommendedDownload.download();
+		await refreshEntries();
+	}
+
+	async function activateRecommendedModel() {
+		recommendedDownload.activate();
+		await refreshEntries();
+	}
+
 	// Rescan on mount, when the engine changes, and whenever the active model
 	// changes (e.g. a catalog download just landed in the folder).
 	$effect(() => {
@@ -214,9 +224,10 @@
 				<Empty.Media variant="icon">
 					<HardDriveDownload class="size-5" />
 				</Empty.Media>
-				<Empty.Title>No model installed</Empty.Title>
+				<Empty.Title>No local model installed</Empty.Title>
 				<Empty.Description>
-					Download the recommended model to start transcribing on this device.
+					Download the recommended model to start local transcription on this
+					device.
 				</Empty.Description>
 				<Empty.Content>
 					{#if recommendedState.type === 'downloading'}
@@ -227,11 +238,11 @@
 							</span>
 						</div>
 					{:else if recommendedState.type === 'ready'}
-						<Button onclick={() => recommendedDownload.activate()}>
+						<Button onclick={activateRecommendedModel}>
 							Activate {recommended.name}
 						</Button>
 					{:else}
-						<Button onclick={() => recommendedDownload.download()}>
+						<Button onclick={downloadRecommendedModel}>
 							<Download class="size-4" />
 							Download {recommended.name} ({recommended.size})
 						</Button>
@@ -266,6 +277,7 @@
 					<LocalModelDownloadCard
 						{model}
 						recommended={models.length > 1 && model.id === recommended.id}
+						onDiskChange={refreshEntries}
 					/>
 				{/each}
 

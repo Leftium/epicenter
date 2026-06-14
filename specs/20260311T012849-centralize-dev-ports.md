@@ -32,7 +32,7 @@ ports.ts (define once) → apps.ts (derive URLs) → vite configs (consume ports
 - [ ] **Create `packages/constants/src/ports.ts`**: single source of truth for dev ports
 - [ ] **Add `./ports` subpath export** to `packages/constants/package.json`
 - [ ] **Update `packages/constants/src/apps.ts`**: import PORTS, derive localhost URLs, add `as const satisfies` with derived `AppId`
-- [ ] **Update `apps/whispering/vite.config.ts`**: import `PORTS.AUDIO` for server port
+- [ ] **Update `apps/whispering/vite.config.ts`**: import `PORTS.WHISPERING` for server port
 - [ ] **Update `packages/constants/README.md`**: document the ports export
 - [ ] **Typecheck**: verify everything compiles
 

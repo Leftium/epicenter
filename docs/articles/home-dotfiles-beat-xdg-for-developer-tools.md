@@ -12,7 +12,7 @@ Here's what the tools developers actually use every day chose:
 | Ollama             | `~/.ollama/`                                               | Home dotfile               |
 | Cursor             | `~/.cursor/`                                               | Home dotfile               |
 | OpenCode           | `~/.config/opencode/`                                      | XDG                        |
-| Whispering (Tauri) | `~/Library/Application Support/com.bradenwong.whispering/` | Platform-specific app data |
+| Whispering (Tauri) | `~/Library/Application Support/so.epicenter.whispering/`    | Platform-specific app data |
 
 Four out of five chose home dotfiles. The one that chose XDG is the one you have to remember the path for.
 

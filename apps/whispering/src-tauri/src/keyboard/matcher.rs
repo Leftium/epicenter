@@ -111,6 +111,16 @@ impl Matcher {
     /// so it cannot survive the swap anyway). The FE only re-pushes between
     /// sessions, on launch, on a settings edit, or on reset, never while a global
     /// gesture is physically held, so there is no resolved gesture to carry across.
+    ///
+    /// Precondition: the bindings must be pairwise non-overlapping (no key set a
+    /// subset of another's). This matcher assumes it but does not enforce it; the
+    /// invariant is owned by the FE recorder (`bindingsOverlap` in
+    /// `key-binding.ts`), which refuses to save an overlapping gesture, and by the
+    /// disjoint shipped defaults. If a binding ever overlaps anyway (a hand-edited
+    /// settings file, a future migration), the consequence is benign and
+    /// deterministic, not a panic: the shorter binding fires first and shadows the
+    /// longer, which can never be reached. See the
+    /// `an_overlapping_longer_binding_is_unreachable` test for that behavior.
     pub fn set_bindings(&mut self, bindings: impl IntoIterator<Item = (String, KeyBinding)>) {
         self.bindings = bindings
             .into_iter()

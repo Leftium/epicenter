@@ -1,10 +1,46 @@
 import { createPersistedMap, defineEntry } from '@epicenter/svelte';
 import { type } from 'arktype';
 import { extractErrorMessage } from 'wellcrafted/error';
+import { os } from '#platform/os';
 import { BITRATES_KBPS, DEFAULT_BITRATE_KBPS } from '$lib/constants/audio';
-import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
 import { LOCAL_MODEL_UNLOAD_POLICIES } from '$lib/constants/local-model-unload-policy';
 import { log, report } from '$lib/report';
+import type { KeyBinding } from '$lib/tauri/commands';
+import { acceleratorToKeyBinding } from '$lib/utils/accelerator';
+
+// ── Global shortcut binding shape ────────────────────────────────────────────
+
+/**
+ * Runtime shape of a stored global shortcut: the structured `KeyBinding` the
+ * desktop rdev backend matches on (physical-key space). `modifiers` is strictly
+ * enumerated; `keys` is validated as strings here and against the real `Key`
+ * vocabulary by Rust at the IPC boundary (so a bad key is rejected on register,
+ * not silently stored as garbage).
+ */
+const globalBinding = type({
+	modifiers: "('ctrl' | 'alt' | 'shift' | 'meta' | 'fn')[]",
+	keys: 'string[]',
+}).or('null');
+
+// Default bindings, platform-resolved (Command on macOS, Control/Alt elsewhere),
+// matching the spirit of the old accelerator defaults. Exported so the reset
+// path in register-commands shares this one source of truth.
+const PRIMARY: KeyBinding['modifiers'][number] = os.isApple ? 'meta' : 'ctrl';
+const PUSH_TO_TALK: KeyBinding['modifiers'][number] = os.isApple
+	? 'meta'
+	: 'alt';
+
+export const DEFAULT_GLOBAL_BINDINGS = {
+	pushToTalk: { modifiers: [PUSH_TO_TALK, 'shift'], keys: ['keyD'] },
+	toggleManualRecording: { modifiers: [PRIMARY, 'shift'], keys: ['semiColon'] },
+	cancelManualRecording: { modifiers: [PRIMARY, 'shift'], keys: ['quote'] },
+	toggleVadRecording: null,
+	openTransformationPicker: { modifiers: [PRIMARY, 'shift'], keys: ['keyX'] },
+	runTransformationOnClipboard: {
+		modifiers: [PRIMARY, 'shift'],
+		keys: ['keyR'],
+	},
+} satisfies Record<string, KeyBinding | null>;
 
 // ── Per-key definitions ──────────────────────────────────────────────────────
 
@@ -88,29 +124,31 @@ const DEVICE_DEFINITIONS = {
 	),
 
 	// ── Global OS shortcuts (device-specific, never synced) ───────────
+	// Structured KeyBinding (physical-key space) for the rdev backend. Legacy
+	// accelerator strings are migrated below.
 	'shortcuts.global.toggleManualRecording': defineEntry(
-		type('string | null'),
-		`${CommandOrControl}+Shift+;` as string | null,
+		globalBinding,
+		DEFAULT_GLOBAL_BINDINGS.toggleManualRecording,
 	),
 	'shortcuts.global.cancelManualRecording': defineEntry(
-		type('string | null'),
-		`${CommandOrControl}+Shift+'` as string | null,
+		globalBinding,
+		DEFAULT_GLOBAL_BINDINGS.cancelManualRecording,
 	),
 	'shortcuts.global.toggleVadRecording': defineEntry(
-		type('string | null'),
-		null,
+		globalBinding,
+		DEFAULT_GLOBAL_BINDINGS.toggleVadRecording,
 	),
 	'shortcuts.global.pushToTalk': defineEntry(
-		type('string | null'),
-		`${CommandOrAlt}+Shift+D` as string | null,
+		globalBinding,
+		DEFAULT_GLOBAL_BINDINGS.pushToTalk,
 	),
 	'shortcuts.global.openTransformationPicker': defineEntry(
-		type('string | null'),
-		`${CommandOrControl}+Shift+X` as string | null,
+		globalBinding,
+		DEFAULT_GLOBAL_BINDINGS.openTransformationPicker,
 	),
 	'shortcuts.global.runTransformationOnClipboard': defineEntry(
-		type('string | null'),
-		`${CommandOrControl}+Shift+R` as string | null,
+		globalBinding,
+		DEFAULT_GLOBAL_BINDINGS.runTransformationOnClipboard,
 	),
 };
 
@@ -156,6 +194,26 @@ function readLegacyString(key: string) {
 	}
 }
 
+const GLOBAL_SHORTCUT_IDS = [
+	'pushToTalk',
+	'toggleManualRecording',
+	'cancelManualRecording',
+	'toggleVadRecording',
+	'openTransformationPicker',
+	'runTransformationOnClipboard',
+] as const;
+
+// Capture legacy accelerator strings BEFORE createPersistedMap, which replaces
+// an unparseable stored value (the old "Command+Shift+D" shape) with the default
+// during construction. readLegacyString returns the value only while it is still
+// a string, so new-format (object) and unset entries read as null and skip.
+const LEGACY_GLOBAL_ACCELERATORS = new Map(
+	GLOBAL_SHORTCUT_IDS.map((id) => [
+		id,
+		readLegacyString(`shortcuts.global.${id}`),
+	]),
+);
+
 // ── Singleton ────────────────────────────────────────────────────────────────
 
 export const deviceConfig = createPersistedMap({
@@ -181,4 +239,15 @@ for (const migration of LEGACY_LOCAL_MODEL_SELECTIONS) {
 	if (!legacyPath) continue;
 	const entryName = modelEntryNameFromLegacyPath(legacyPath);
 	if (entryName) deviceConfig.set(migration.to, entryName);
+}
+
+// One-time migration of global shortcuts from Electron accelerator strings to
+// the structured KeyBinding shape. Parse where expressible; reset to the default
+// where a token is not (device-local convenience state, safe to reset). The set
+// rewrites localStorage to the object shape, so the migration is idempotent.
+for (const [id, accelerator] of LEGACY_GLOBAL_ACCELERATORS) {
+	if (!accelerator) continue;
+	const binding =
+		acceleratorToKeyBinding(accelerator) ?? DEFAULT_GLOBAL_BINDINGS[id];
+	deviceConfig.set(`shortcuts.global.${id}`, binding);
 }

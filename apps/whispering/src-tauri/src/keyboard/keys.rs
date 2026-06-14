@@ -21,8 +21,8 @@ pub enum Modifier {
 /// in physical-key space, not produced-character space). Variant names mirror
 /// rdev's `Key` for the keys we support so the rdev mapping is near 1:1, but
 /// this is our own stable enum: the persisted binding format must not depend on
-/// rdev's enum names. `Unknown(u32)` carries rdev's platform scancode for keys
-/// outside this set so a binding round-trips even when we have no name for it.
+/// rdev's enum names. Keys outside this set are not bindable (`rdev_map` returns
+/// `None`), which keeps this a pure string union on the TypeScript side.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, specta::Type,
 )]
@@ -114,7 +114,6 @@ pub enum Key {
     Comma,
     Dot,
     Slash,
-    Unknown(u32),
 }
 
 /// A desktop global binding. It fires when its modifiers and keys are held

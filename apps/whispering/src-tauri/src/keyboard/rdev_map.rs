@@ -112,7 +112,6 @@ pub fn classify(key: rdev::Key) -> Option<Input> {
         R::Comma => Key::Comma,
         R::Dot => Key::Dot,
         R::Slash => Key::Slash,
-        R::Unknown(code) => Key::Unknown(code),
         _ => return None,
     };
     Some(Input::Key(mapped))

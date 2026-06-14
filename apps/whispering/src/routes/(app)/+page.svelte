@@ -30,6 +30,8 @@
 		VAD_STATE_TO_ICON,
 	} from '$lib/constants/audio';
 	import { getShortcutDisplayLabel } from '$lib/utils/keyboard';
+	import { keyBindingToLabel } from '$lib/utils/key-binding';
+	import { os } from '#platform/os';
 	import {
 		stopManualRecording,
 		stopVadRecording,
@@ -48,6 +50,15 @@
 	import ManualRecordingButton from './_components/ManualRecordingButton.svelte';
 
 	const latestRecording = $derived(recordings.sorted[0]);
+
+	// The global toggle-recording shortcut, formatted for the hint text. Stored
+	// as a structured KeyBinding (desktop rdev backend), so format it directly.
+	const globalToggleBinding = $derived(
+		deviceConfig.get('shortcuts.global.toggleManualRecording'),
+	);
+	const globalToggleLabel = $derived(
+		globalToggleBinding ? keyBindingToLabel(globalToggleBinding, os.isApple) : '',
+	);
 	const PageError = defineErrors({
 		SetupDragDropFailed: ({ cause }: { cause: unknown }) => ({
 			message: `Failed to set up drag drop listener: ${extractErrorMessage(cause)}`,
@@ -403,11 +414,7 @@
 						tooltip="Go to global shortcut in settings"
 						href="/settings/shortcuts/global"
 					>
-						<Kbd.Root
-							>{getShortcutDisplayLabel(
-						deviceConfig.get('shortcuts.global.toggleManualRecording'),
-							)}</Kbd.Root
-						>
+						<Kbd.Root>{globalToggleLabel}</Kbd.Root>
 					</Link>
 					{' '}
 					to start recording anywhere.
@@ -442,11 +449,7 @@
 						tooltip="Go to global shortcut in settings"
 						href="/settings/shortcuts/global"
 					>
-						<Kbd.Root
-							>{getShortcutDisplayLabel(
-						deviceConfig.get('shortcuts.global.toggleManualRecording'),
-							)}</Kbd.Root
-						>
+						<Kbd.Root>{globalToggleLabel}</Kbd.Root>
 					</Link>
 					{' '}
 					to start recording instead.

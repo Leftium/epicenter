@@ -60,7 +60,11 @@ import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
 import { autostartKeys } from '$lib/tauri/autostart-keys';
 import { commands } from '$lib/tauri/commands';
-import type { CommandBinding, ShortcutTriggerEvent } from '$lib/tauri/commands';
+import type {
+	CommandBinding,
+	KeyBinding,
+	ShortcutTriggerEvent,
+} from '$lib/tauri/commands';
 
 // fs ----------------------------------------------------------------
 const FsError = defineErrors({
@@ -273,6 +277,9 @@ async function initTray() {
 /** Mirrors `keyboard::EVENT_CHANNEL` in the Rust backend. */
 const KEYBOARD_TRIGGER_EVENT = 'keyboard://shortcut-trigger';
 
+/** Mirrors `keyboard::CAPTURE_CHANNEL` in the Rust backend. */
+const KEYBOARD_CAPTURE_EVENT = 'keyboard://shortcut-capture';
+
 // autostart ---------------------------------------------------------
 const AutostartError = defineErrors({
 	CheckFailed: ({ cause }: { cause: unknown }) => ({
@@ -373,6 +380,25 @@ const globalShortcuts = {
 			},
 		);
 	},
+
+	/**
+	 * Enter or leave binding-capture mode. While capturing, the listener streams
+	 * the held combo on the capture channel (see `listenForCapture`) instead of
+	 * firing command triggers, so the settings recorder can record Fn and
+	 * physical-key bindings the webview cannot see.
+	 */
+	setCapturing: (capturing: boolean) =>
+		commands.setKeyboardCapturing(capturing),
+
+	/**
+	 * Subscribe to the capture channel. The listener emits the currently-held
+	 * combo as a `KeyBinding` on every change while capturing; the recorder
+	 * accumulates them and commits on release. Returns the unlisten fn.
+	 */
+	listenForCapture: (onCombo: (binding: KeyBinding) => void) =>
+		listen<KeyBinding>(KEYBOARD_CAPTURE_EVENT, ({ payload }) =>
+			onCombo(payload),
+		),
 };
 
 // barrel ------------------------------------------------------------

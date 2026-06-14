@@ -40,4 +40,4 @@ export const RECORDING_MODE_ICONS = {
 	manual: MicIcon,
 	vad: RadioIcon,
 	upload: FileUpIcon,
-} as const satisfies Record<RecordingMode, Component>;
+} as const satisfies Record<RecordingMode, Component<{ class?: string }>>;

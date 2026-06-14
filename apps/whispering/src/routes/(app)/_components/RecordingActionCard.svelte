@@ -23,7 +23,7 @@
 		active?: boolean;
 		description: string;
 		footer?: Snippet;
-		icon: Component;
+		icon: Component<{ class?: string }>;
 		label: string;
 		onclick: () => void;
 		pending?: boolean;

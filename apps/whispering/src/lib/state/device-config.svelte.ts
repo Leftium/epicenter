@@ -1,10 +1,45 @@
 import { createPersistedMap, defineEntry } from '@epicenter/svelte';
 import { type } from 'arktype';
 import { extractErrorMessage } from 'wellcrafted/error';
+import { os } from '#platform/os';
 import { BITRATES_KBPS, DEFAULT_BITRATE_KBPS } from '$lib/constants/audio';
-import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
 import { LOCAL_MODEL_UNLOAD_POLICIES } from '$lib/constants/local-model-unload-policy';
 import { log, report } from '$lib/report';
+import type { KeyBinding } from '$lib/tauri/commands';
+
+// ── Global shortcut binding shape ────────────────────────────────────────────
+
+/**
+ * Runtime shape of a stored global shortcut: the structured `KeyBinding` the
+ * desktop rdev backend matches on (physical-key space). `modifiers` is strictly
+ * enumerated; `keys` is validated as strings here and against the real `Key`
+ * vocabulary by Rust at the IPC boundary (so a bad key is rejected on register,
+ * not silently stored as garbage).
+ */
+const globalBinding = type({
+	modifiers: "('ctrl' | 'alt' | 'shift' | 'meta' | 'fn')[]",
+	keys: 'string[]',
+}).or('null');
+
+// Default bindings, platform-resolved (Command on macOS, Control/Alt elsewhere),
+// matching the spirit of the old accelerator defaults. Exported so the reset
+// path in register-commands shares this one source of truth.
+const PRIMARY: KeyBinding['modifiers'][number] = os.isApple ? 'meta' : 'ctrl';
+const PUSH_TO_TALK: KeyBinding['modifiers'][number] = os.isApple
+	? 'meta'
+	: 'alt';
+
+export const DEFAULT_GLOBAL_BINDINGS = {
+	pushToTalk: { modifiers: [PUSH_TO_TALK, 'shift'], keys: ['keyD'] },
+	toggleManualRecording: { modifiers: [PRIMARY, 'shift'], keys: ['semiColon'] },
+	cancelManualRecording: { modifiers: [PRIMARY, 'shift'], keys: ['quote'] },
+	toggleVadRecording: null,
+	openTransformationPicker: { modifiers: [PRIMARY, 'shift'], keys: ['keyX'] },
+	runTransformationOnClipboard: {
+		modifiers: [PRIMARY, 'shift'],
+		keys: ['keyR'],
+	},
+} satisfies Record<string, KeyBinding | null>;
 
 // ── Per-key definitions ──────────────────────────────────────────────────────
 
@@ -88,29 +123,32 @@ const DEVICE_DEFINITIONS = {
 	),
 
 	// ── Global OS shortcuts (device-specific, never synced) ───────────
+	// Structured KeyBinding (physical-key space) for the rdev backend. Old
+	// accelerator-string values are not migrated: they fail this schema and reset
+	// to the defaults (clean break, see the note below the singleton).
 	'shortcuts.global.toggleManualRecording': defineEntry(
-		type('string | null'),
-		`${CommandOrControl}+Shift+;` as string | null,
+		globalBinding,
+		DEFAULT_GLOBAL_BINDINGS.toggleManualRecording,
 	),
 	'shortcuts.global.cancelManualRecording': defineEntry(
-		type('string | null'),
-		`${CommandOrControl}+Shift+'` as string | null,
+		globalBinding,
+		DEFAULT_GLOBAL_BINDINGS.cancelManualRecording,
 	),
 	'shortcuts.global.toggleVadRecording': defineEntry(
-		type('string | null'),
-		null,
+		globalBinding,
+		DEFAULT_GLOBAL_BINDINGS.toggleVadRecording,
 	),
 	'shortcuts.global.pushToTalk': defineEntry(
-		type('string | null'),
-		`${CommandOrAlt}+Shift+D` as string | null,
+		globalBinding,
+		DEFAULT_GLOBAL_BINDINGS.pushToTalk,
 	),
 	'shortcuts.global.openTransformationPicker': defineEntry(
-		type('string | null'),
-		`${CommandOrControl}+Shift+X` as string | null,
+		globalBinding,
+		DEFAULT_GLOBAL_BINDINGS.openTransformationPicker,
 	),
 	'shortcuts.global.runTransformationOnClipboard': defineEntry(
-		type('string | null'),
-		`${CommandOrControl}+Shift+R` as string | null,
+		globalBinding,
+		DEFAULT_GLOBAL_BINDINGS.runTransformationOnClipboard,
 	),
 };
 
@@ -182,3 +220,8 @@ for (const migration of LEGACY_LOCAL_MODEL_SELECTIONS) {
 	const entryName = modelEntryNameFromLegacyPath(legacyPath);
 	if (entryName) deviceConfig.set(migration.to, entryName);
 }
+
+// Global shortcuts are NOT migrated from the old accelerator-string format. A
+// clean break: a legacy value fails the `globalBinding` schema on read and falls
+// back to the default (see `createPersistedMap`), so upgrading users get the new
+// defaults. We refuse to carry a parser for a format nothing writes anymore.

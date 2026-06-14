@@ -31,6 +31,8 @@
 		type RecordingMode,
 	} from '$lib/constants/audio';
 	import { getShortcutDisplayLabel } from '$lib/utils/keyboard';
+	import { keyBindingToLabel } from '$lib/utils/key-binding';
+	import { os } from '#platform/os';
 	import {
 		stopManualRecording,
 		stopVadRecording,
@@ -51,6 +53,15 @@
 	import VadRecordingAction from './_components/VadRecordingAction.svelte';
 
 	const latestRecording = $derived(recordings.sorted[0]);
+
+	// The global toggle-recording shortcut, formatted for the hint text. Stored
+	// as a structured KeyBinding (desktop rdev backend), so format it directly.
+	const globalToggleBinding = $derived(
+		deviceConfig.get('shortcuts.global.toggleManualRecording'),
+	);
+	const globalToggleLabel = $derived(
+		globalToggleBinding ? keyBindingToLabel(globalToggleBinding, os.isApple) : '',
+	);
 	const PageError = defineErrors({
 		SetupDragDropFailed: ({ cause }: { cause: unknown }) => ({
 			message: `Failed to set up drag drop listener: ${extractErrorMessage(cause)}`,
@@ -372,24 +383,53 @@
 
 	<div class="xs:flex hidden flex-col items-center gap-3">
 		{#if settings.get('recording.mode') === 'manual'}
+			<p class="text-foreground/75 text-center text-sm">
+				Click the microphone or press
+				{' '}
+				<Link
+					tooltip="Go to local shortcut in settings"
+					href="/settings/shortcuts"
+				>
+					<Kbd.Root
+						>{getShortcutDisplayLabel(
+							settings.get('shortcut.toggleManualRecording'),
+						)}</Kbd.Root
+					>
+				</Link>
+				{' '}
+				to start recording here.
+			</p>
 			{#if tauri}
 				<p class="text-foreground/75 text-sm">
 					Press
 					{' '}
 					<Link
 						tooltip="Go to global shortcut in settings"
-						href="/settings/shortcuts/global"
+						href="/settings/shortcuts"
 					>
-						<Kbd.Root
-							>{getShortcutDisplayLabel(
-						deviceConfig.get('shortcuts.global.toggleManualRecording'),
-							)}</Kbd.Root
-						>
+						<Kbd.Root>{globalToggleLabel}</Kbd.Root>
 					</Link>
 					{' '}
 					to start recording anywhere.
 				</p>
 			{/if}
+		{:else if settings.get('recording.mode') === 'vad'}
+			<p class="text-foreground/75 text-center text-sm">
+				Click the microphone or press
+				{' '}
+				<Link
+					tooltip="Go to local shortcut in settings"
+					href="/settings/shortcuts"
+				>
+					<Kbd.Root
+						>{getShortcutDisplayLabel(
+							settings.get('shortcut.toggleVadRecording'),
+						)}</Kbd.Root
+					>
+				</Link>
+				{' '}
+				to start a voice activated session.
+			</p>
 		{:else if settings.get('recording.mode') === 'upload'}
 			{#if tauri}
 				<p class="text-foreground/75 text-sm">
@@ -397,13 +437,9 @@
 					{' '}
 					<Link
 						tooltip="Go to global shortcut in settings"
-						href="/settings/shortcuts/global"
+						href="/settings/shortcuts"
 					>
-						<Kbd.Root
-							>{getShortcutDisplayLabel(
-						deviceConfig.get('shortcuts.global.toggleManualRecording'),
-							)}</Kbd.Root
-						>
+						<Kbd.Root>{globalToggleLabel}</Kbd.Root>
 					</Link>
 					{' '}
 					to start recording instead.

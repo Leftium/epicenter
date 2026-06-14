@@ -26,6 +26,12 @@ use command::open_accessibility_settings;
 pub mod markdown;
 use markdown::write_markdown_files;
 
+// Desktop global keyboard trigger backend (rdev listener + binding matcher).
+// Built in isolation in Wave 2; the FE registrar swap and listener start-up
+// land in Wave 3. Desktop-only because rdev is a desktop-only dependency.
+#[cfg(desktop)]
+pub mod keyboard;
+
 // The recording overlay is a non-activating NSPanel on macOS only; other
 // platforms create the overlay window from the frontend.
 #[cfg(target_os = "macos")]
@@ -55,10 +61,20 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             write_markdown_files,
             set_transcription_config,
             get_transcription_state,
+            keyboard::commands::set_keyboard_shortcuts,
+            keyboard::commands::set_keyboard_capturing,
         ])
-        // The FE listens on this channel manually; only the payload type
-        // needs to be exported for `listen<ModelStateEvent>(...)`.
-        .typ::<ModelStateEvent>()
+        // The FE listens through the generated `events` object. `collect_events!`
+        // owns each topic name and pulls in the payload types
+        // (`ShortcutTriggerEvent` -> `TriggerState`; `ShortcutCaptureEvent` ->
+        // `KeyBinding`); `set_keyboard_shortcuts` separately pulls in
+        // `CommandBinding` / `Modifier` / `Key`. `run` must call
+        // `mount_events` so `Event::emit` and the generated listeners resolve.
+        .events(tauri_specta::collect_events![
+            ModelStateEvent,
+            keyboard::ShortcutTriggerEvent,
+            keyboard::ShortcutCaptureEvent,
+        ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
 }
 
@@ -181,12 +197,23 @@ pub async fn run() {
         warn!("APTABASE_KEY not found, analytics disabled");
     }
 
+    // Compose two command handlers by name. The specta builder owns every
+    // command in its `collect_commands!` list and is the source of truth for
+    // TS bindings. `encode_recording_for_upload` (raw `tauri::ipc::Response`
+    // return) is outside specta's reach, so it gets its own `generate_handler!`.
+    // We route by name because `Invoke` is not Clone: each invocation can only
+    // be consumed by one handler. The builder also owns the typed events; it is
+    // moved into `setup` so `mount_events` can register their topics.
+    let specta_builder = make_specta_builder();
+    let specta_handler = tauri_specta::Builder::invoke_handler(&specta_builder);
+    let raw_handler = tauri::generate_handler![encode_recording_for_upload]
+        as fn(tauri::ipc::Invoke<tauri::Wry>) -> bool;
+
     builder = builder
         .plugin(tauri_plugin_macos_permissions::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_os::init())
@@ -194,15 +221,30 @@ pub async fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .manage(Mutex::new(Recorder::new()))
-        .setup(|app| {
-            // ModelManager owns an `AppHandle` for emitting lifecycle events
-            // on the `transcription://model-state` channel, so it cannot be
-            // constructed at builder-time (no app handle exists yet). Move
-            // construction into setup; everything that needs it reads via
-            // `app.state::<ModelManager>()`.
+        .setup(move |app| {
+            // Register the tauri-specta event topics so `Event::emit` (Rust) and
+            // the generated `events` listeners (FE) resolve the same names.
+            specta_builder.mount_events(app);
+
+            // ModelManager owns an `AppHandle` for emitting model lifecycle
+            // events, so it cannot be constructed at builder-time (no app handle
+            // exists yet). Move construction into setup; everything that needs it
+            // reads via `app.state::<ModelManager>()`.
             let manager = ModelManager::new(app.handle().clone());
             manager.start_idle_watcher();
             app.manage(manager);
+
+            // Desktop global keyboard trigger backend. The listener thread owns
+            // the rdev hook; `set_keyboard_shortcuts` (called by the FE on
+            // startup and on every change) pushes the user's bindings. On macOS
+            // the hook needs Accessibility; that prompt is wired in Wave 6, and
+            // until granted `rdev::listen` just logs and yields no events.
+            #[cfg(desktop)]
+            {
+                let listener = keyboard::KeyboardListener::new(app.handle().clone());
+                listener.start();
+                app.manage(listener);
+            }
 
             // Create the recording overlay as a non-activating NSPanel up front
             // (hidden); the frontend shows it when recording starts.
@@ -233,16 +275,6 @@ pub async fn run() {
             }));
     }
 
-    // Compose two handlers by command name. The specta builder owns every
-    // command in its `collect_commands!` list and is the source of truth for
-    // TS bindings. `encode_recording_for_upload` (raw `tauri::ipc::Response`
-    // return) is outside specta's reach, so it gets its own
-    // `generate_handler!`. We route by name because `Invoke` is not Clone:
-    // each invocation can only be consumed by one handler.
-    let specta_builder = make_specta_builder();
-    let specta_handler = tauri_specta::Builder::invoke_handler(&specta_builder);
-    let raw_handler = tauri::generate_handler![encode_recording_for_upload]
-        as fn(tauri::ipc::Invoke<tauri::Wry>) -> bool;
     let builder = builder.invoke_handler(move |invoke| {
         if invoke.message.command() == "encode_recording_for_upload" {
             raw_handler(invoke)

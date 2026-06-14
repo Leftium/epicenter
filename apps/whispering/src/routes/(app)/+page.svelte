@@ -267,7 +267,7 @@
 			{@const ModeIcon = RECORDING_MODE_ICONS[option.value]}
 			<ToggleGroup.Item
 				value={option.value}
-				aria-label={`Switch to ${option.label.toLowerCase()} mode`}
+				aria-label="Switch to {option.label.toLowerCase()} mode"
 			>
 				<ModeIcon class="size-4" />
 				<span class="hidden truncate sm:inline">{option.label}</span>

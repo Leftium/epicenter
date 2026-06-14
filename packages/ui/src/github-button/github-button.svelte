@@ -55,7 +55,7 @@
 </script>
 
 <Button
-	href={`https://github.com/${repo.owner}/${repo.repo}${path ?? ''}`}
+	href="https://github.com/{repo.owner}/{repo.repo}{path ?? ''}"
 	class={cn('[&_span]:text-muted-foreground gap-2 font-mono text-xs', className)}
 	{variant}
 	size={size ?? (stars === undefined ? 'icon' : 'default')}

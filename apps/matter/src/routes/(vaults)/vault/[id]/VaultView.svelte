@@ -25,7 +25,7 @@
 
 <div class="flex min-h-0 flex-1 flex-col">
 	{#await vault.whenReady}
-		<Loading class="flex-1" label={`Loading ${vault.folderName}`} />
+		<Loading class="flex-1" label="Loading {vault.folderName}" />
 	{:then _}
 		{#if vault.writeError}
 			<Alert.Root variant="destructive" class="rounded-none border-x-0 border-t-0 py-2">

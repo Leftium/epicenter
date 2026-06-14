@@ -187,7 +187,7 @@
 			{#if confirmationDialog.options?.input}
 				<Input
 					bind:value={confirmationDialog.inputText}
-					placeholder={`Type "${confirmationDialog.options.input.confirmationText}" to confirm`}
+					placeholder='Type "{confirmationDialog.options.input.confirmationText}" to confirm'
 				/>
 			{/if}
 

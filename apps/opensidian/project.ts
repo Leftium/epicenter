@@ -11,25 +11,18 @@
 
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { defineWorkspace } from '@epicenter/workspace';
-import { defineMount } from '@epicenter/workspace/daemon';
-import { attachProjectInfrastructure } from '@epicenter/workspace/node';
+import { defineSessionMount } from '@epicenter/workspace/daemon';
+import { attachMountInfrastructure } from '@epicenter/workspace/node';
 import { createOpensidian } from './opensidian.js';
 
 export function opensidian() {
-	return defineMount({
+	return defineSessionMount({
 		name: 'opensidian',
-		kind: 'collaborative',
 		open(ctx) {
-			const workspace = createOpensidian({ keyring: ctx.keyring });
-			workspace.ydoc.clientID = ctx.yDocClientId;
+			const workspace = createOpensidian({ keyring: ctx.session.keyring });
 
-			const infrastructure = attachProjectInfrastructure(workspace.ydoc, {
+			const infrastructure = attachMountInfrastructure(workspace.ydoc, ctx, {
 				baseURL: EPICENTER_API_URL,
-				epicenterRoot: ctx.epicenterRoot,
-				ownerId: ctx.ownerId,
-				deviceId: ctx.deviceId,
-				openWebSocket: ctx.openWebSocket,
-				onReconnectSignal: ctx.onReconnectSignal,
 				actions: workspace.actions,
 			});
 

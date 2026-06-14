@@ -17,10 +17,10 @@ export {
 } from './daemon/action-errors.js';
 export { PeerSnapshot, RunRequest } from './daemon/app.js';
 export {
-	type AttachProjectInfrastructureOptions,
-	attachProjectInfrastructure,
-	type ProjectInfrastructure,
-} from './daemon/attach-project-infrastructure.js';
+	type AttachMountInfrastructureOptions,
+	attachMountInfrastructure,
+	type MountInfrastructure,
+} from './daemon/attach-mount-infrastructure.js';
 export {
 	type DaemonClient,
 	DaemonError,

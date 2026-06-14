@@ -10,7 +10,7 @@
 
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { defineActions, defineWorkspace } from '@epicenter/workspace';
-import { defineMount } from '@epicenter/workspace/daemon';
+import { defineSessionMount } from '@epicenter/workspace/daemon';
 import {
 	attachGitAutosave,
 	attachMarkdownExport,
@@ -18,7 +18,7 @@ import {
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import {
-	attachProjectInfrastructure,
+	attachMountInfrastructure,
 	mountMarkdownPath,
 	sqlitePath,
 } from '@epicenter/workspace/node';
@@ -30,29 +30,17 @@ export type HoneycrispMountOptions = {
 };
 
 export function honeycrisp(opts: HoneycrispMountOptions = {}) {
-	return defineMount({
+	return defineSessionMount({
 		name: 'honeycrisp',
-		kind: 'collaborative',
 		open(ctx) {
-			const {
-				epicenterRoot,
-				mount,
-				yDocClientId,
-				deviceId,
-				ownerId,
-				keyring,
-				openWebSocket,
-				onReconnectSignal,
-			} = ctx;
+			const { epicenterRoot, mount } = ctx;
 
-			const workspace = createHoneycrisp({ keyring });
-			workspace.ydoc.clientID = yDocClientId;
+			const workspace = createHoneycrisp({ keyring: ctx.session.keyring });
 
-			const sqliteFile = sqlitePath(epicenterRoot, workspace.ydoc.guid);
 			const mdDir = mountMarkdownPath(epicenterRoot, mount);
 
 			const sqlite = attachBunSqliteMaterializer(workspace, {
-				filePath: sqliteFile,
+				filePath: sqlitePath(epicenterRoot, workspace.ydoc.guid),
 				log: createLogger(`${mount}-sqlite`),
 			});
 
@@ -74,13 +62,8 @@ export function honeycrisp(opts: HoneycrispMountOptions = {}) {
 				...markdown.actions,
 			});
 
-			const infrastructure = attachProjectInfrastructure(workspace.ydoc, {
+			const infrastructure = attachMountInfrastructure(workspace.ydoc, ctx, {
 				baseURL: EPICENTER_API_URL,
-				epicenterRoot,
-				ownerId,
-				deviceId,
-				openWebSocket,
-				onReconnectSignal,
 				actions,
 				materializers: [sqlite, markdown],
 			});

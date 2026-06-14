@@ -4,17 +4,16 @@
  * workspace.
  */
 
-import { defineMount } from '@epicenter/workspace/daemon';
+import { defineSessionMount } from '@epicenter/workspace/daemon';
 import { openNotes } from '../../../notes';
 
-export default defineMount({
+export default defineSessionMount({
 	name: 'notes',
-	kind: 'collaborative',
-	open: ({ ownerId, openWebSocket, onReconnectSignal }) =>
+	open: ({ session }) =>
 		openNotes({
 			deviceId: 'notes-repro-peer-b',
-			ownerId,
-			openWebSocket,
-			onReconnectSignal,
+			ownerId: session.ownerId,
+			openWebSocket: session.openWebSocket,
+			onReconnectSignal: session.onReconnectSignal,
 		}),
 });

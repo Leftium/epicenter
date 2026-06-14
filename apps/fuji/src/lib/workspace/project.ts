@@ -16,7 +16,7 @@
  *      persisted on the daemon. There is no import path: the only way to mutate
  *      an entry is through a validated action, never by editing the `.md`.
  *   4. infrastructure: Yjs log persistence + cloud sync via
- *      `attachProjectInfrastructure`
+ *      `attachMountInfrastructure`
  */
 
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
@@ -25,7 +25,7 @@ import {
 	defineWorkspace,
 	readRoomOverHttp,
 } from '@epicenter/workspace';
-import { defineMount } from '@epicenter/workspace/daemon';
+import { defineSessionMount } from '@epicenter/workspace/daemon';
 import {
 	attachGitAutosave,
 	attachMarkdownExport,
@@ -33,7 +33,7 @@ import {
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import {
-	attachProjectInfrastructure,
+	attachMountInfrastructure,
 	mountMarkdownPath,
 	sqlitePath,
 } from '@epicenter/workspace/node';
@@ -47,30 +47,17 @@ export type FujiMountOptions = {
 };
 
 export function fuji(opts: FujiMountOptions = {}) {
-	return defineMount({
+	return defineSessionMount({
 		name: 'fuji',
-		kind: 'collaborative',
 		open(ctx) {
-			const {
-				epicenterRoot,
-				mount,
-				yDocClientId,
-				deviceId,
-				ownerId,
-				keyring,
-				openWebSocket,
-				onReconnectSignal,
-				fetch,
-			} = ctx;
+			const { epicenterRoot, mount, session } = ctx;
 
-			const workspace = createFuji({ keyring });
-			workspace.ydoc.clientID = yDocClientId;
+			const workspace = createFuji({ keyring: session.keyring });
 
-			const sqliteFile = sqlitePath(epicenterRoot, workspace.ydoc.guid);
 			const mdDir = mountMarkdownPath(epicenterRoot, mount);
 
 			const sqlite = attachBunSqliteMaterializer(workspace, {
-				filePath: sqliteFile,
+				filePath: sqlitePath(epicenterRoot, workspace.ydoc.guid),
 				log: createLogger(`${mount}-sqlite`),
 			});
 			/**
@@ -87,9 +74,9 @@ export function fuji(opts: FujiMountOptions = {}) {
 			 */
 			const readEntryBody = (entry: Entry): Promise<string> =>
 				readRoomOverHttp({
-					fetch,
+					fetch: session.fetch,
 					baseURL: EPICENTER_API_URL,
-					ownerId,
+					ownerId: session.ownerId,
 					guid: entryContentDocGuid(entry.id),
 					read: (ydoc) => serializeEntryBody(ydoc.getXmlFragment('content')),
 				});
@@ -125,13 +112,8 @@ export function fuji(opts: FujiMountOptions = {}) {
 				...markdown.actions,
 			});
 
-			const infrastructure = attachProjectInfrastructure(workspace.ydoc, {
+			const infrastructure = attachMountInfrastructure(workspace.ydoc, ctx, {
 				baseURL: EPICENTER_API_URL,
-				epicenterRoot,
-				ownerId,
-				deviceId,
-				openWebSocket,
-				onReconnectSignal,
 				actions,
 				materializers: [sqlite, markdown],
 			});

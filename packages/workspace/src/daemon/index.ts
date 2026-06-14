@@ -1,8 +1,8 @@
 export {
-	type AttachProjectInfrastructureOptions,
-	attachProjectInfrastructure,
-	type ProjectInfrastructure,
-} from './attach-project-infrastructure.js';
+	type AttachMountInfrastructureOptions,
+	attachMountInfrastructure,
+	type MountInfrastructure,
+} from './attach-mount-infrastructure.js';
 export {
 	defineMount,
 	defineSessionMount,

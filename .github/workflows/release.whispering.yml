@@ -139,7 +139,10 @@ jobs:
         if: ${{ matrix.os == 'windows' }}
         shell: pwsh
         run: |
-          "CARGO_TARGET_DIR=$env:GITHUB_WORKSPACE\target" >> $env:GITHUB_ENV
+          $drive = Split-Path -Qualifier $env:GITHUB_WORKSPACE
+          $targetDir = Join-Path $drive "t"
+          New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+          "CARGO_TARGET_DIR=$targetDir" >> $env:GITHUB_ENV
 
       # Setup Bun package manager
       - name: setup bun
@@ -167,6 +170,7 @@ jobs:
         with:
           # Point to the Rust project directory
           workspaces: ${{ matrix.rustCacheWorkspaces }}
+          cache-targets: ${{ matrix.os != 'windows' }}
 
       # Install all JavaScript dependencies
       - name: install frontend dependencies

@@ -114,7 +114,10 @@ jobs:
         if: ${{ matrix.os == 'windows' }}
         shell: pwsh
         run: |
-          "CARGO_TARGET_DIR=$env:GITHUB_WORKSPACE\target" >> $env:GITHUB_ENV
+          $drive = Split-Path -Qualifier $env:GITHUB_WORKSPACE
+          $targetDir = Join-Path $drive "t"
+          New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+          "CARGO_TARGET_DIR=$targetDir" >> $env:GITHUB_ENV
 
       - name: setup bun
         uses: oven-sh/setup-bun@v2
@@ -135,6 +138,7 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: ${{ matrix.rustCacheWorkspaces }}
+          cache-targets: ${{ matrix.os != 'windows' }}
 
       - name: install frontend dependencies
         run: bun install
@@ -155,6 +159,15 @@ jobs:
           projectPath: 'apps/whispering'
           tagName: ''
           args: '${{ matrix.tauriArgs }} --no-sign'
+
+      - name: Copy Windows artifacts into workspace
+        if: ${{ matrix.os == 'windows' }}
+        shell: pwsh
+        run: |
+          $bundleDir = Join-Path $env:CARGO_TARGET_DIR "release\bundle"
+          $workspaceBundleDir = Join-Path $env:GITHUB_WORKSPACE "target\release\bundle"
+          New-Item -ItemType Directory -Force -Path $workspaceBundleDir | Out-Null
+          Copy-Item -Path (Join-Path $bundleDir "*") -Destination $workspaceBundleDir -Recurse -Force
 
       - name: Install FUSE for AppImage processing
         if: ${{ matrix.os == 'linux' }}

@@ -163,26 +163,11 @@ impl Matcher {
     /// (they can never be "held"). The held sets are left untouched: the physical
     /// keys really are still down.
     ///
-    /// A resolved (`Active`) gesture is carried across only if its exact binding
-    /// (same command, modifiers, and keys) survives the swap. This matters because
-    /// the FE re-pushes the full set mid-session (for example to register the
-    /// cancel gesture once recording starts); a held push-to-talk must keep owning
-    /// the gesture so its `Released` still pairs on key-up. Anything else resets to
-    /// `Idle`: a `Pending` window is dropped (the swap lands between sessions, never
-    /// mid-window, so the prefix just needs a fresh press), and a gesture whose
-    /// binding vanished cannot fire.
+    /// Any in-flight gesture resets to `Idle` (its index points into the old vec,
+    /// so it cannot survive the swap anyway). The FE only re-pushes between
+    /// sessions, on launch, on a settings edit, or on reset, never while a global
+    /// gesture is physically held, so there is no resolved gesture to carry across.
     pub fn set_bindings(&mut self, bindings: impl IntoIterator<Item = (String, KeyBinding)>) {
-        // Capture the active binding's match key before the swap; only a resolved
-        // gesture is carried across (see the doc comment), cloned so it can
-        // outlive the binding vec being replaced.
-        let active = match self.gesture {
-            Gesture::Active { index } => {
-                let b = &self.bindings[index];
-                Some((b.command_id.clone(), b.modifiers.clone(), b.keys.clone()))
-            }
-            Gesture::Pending { .. } | Gesture::Idle => None,
-        };
-
         self.bindings = bindings
             .into_iter()
             .filter(|(_, binding)| !binding.is_empty())
@@ -195,17 +180,7 @@ impl Matcher {
                 }
             })
             .collect();
-
-        self.gesture = match active {
-            None => Gesture::Idle,
-            Some((command_id, modifiers, keys)) => self
-                .bindings
-                .iter()
-                .position(|b| {
-                    b.command_id == command_id && b.modifiers == modifiers && b.keys == keys
-                })
-                .map_or(Gesture::Idle, |index| Gesture::Active { index }),
-        };
+        self.gesture = Gesture::Idle;
     }
 
     /// Feed one key event. Updates the held sets, then resolves the gesture.
@@ -660,35 +635,18 @@ mod tests {
     }
 
     #[test]
-    fn re_pushing_the_same_binding_keeps_a_held_gesture_so_release_still_pairs() {
-        // The FE re-pushes the full binding set mid-session (the cancel gesture is
-        // registered once recording starts). A held push-to-talk must survive that
-        // swap, or its Released would never fire and recording would never stop.
+    fn re_pushing_bindings_resets_any_in_flight_gesture() {
+        // The FE re-pushes the full set only between sessions, never while a
+        // gesture is physically held, so a swap always restarts resolution from
+        // Idle. A key still down when the swap lands does not emit on release:
+        // the gesture that owned it is gone (even when the binding itself stays).
         let mut matcher = Matcher::new();
         matcher.set_bindings([("a".to_string(), binding(&[], &[Key::Space]))]);
         let mut clock = fast();
         let first = run(&mut matcher, &mut clock, &[(Press, K(Key::Space))]);
         assert_eq!(first, vec![("a".to_string(), Pressed)]);
 
-        // Re-push the identical set while Space is still held. The active gesture
-        // is preserved, so releasing Space still emits exactly one Released.
         matcher.set_bindings([("a".to_string(), binding(&[], &[Key::Space]))]);
-        let after = run(&mut matcher, &mut clock, &[(Release, K(Key::Space))]);
-        assert_eq!(after, vec![("a".to_string(), Released)]);
-    }
-
-    #[test]
-    fn re_pushing_without_the_active_binding_resets_it() {
-        // If the held binding is gone from the new set, the gesture resets: a
-        // later release must not emit for a binding that no longer exists.
-        let mut matcher = Matcher::new();
-        matcher.set_bindings([("a".to_string(), binding(&[], &[Key::Space]))]);
-        let mut clock = fast();
-        let first = run(&mut matcher, &mut clock, &[(Press, K(Key::Space))]);
-        assert_eq!(first, vec![("a".to_string(), Pressed)]);
-
-        // Swap to a different binding while Space is held; "a" is gone.
-        matcher.set_bindings([("b".to_string(), binding(&[Meta], &[Key::KeyD]))]);
         let after = run(&mut matcher, &mut clock, &[(Release, K(Key::Space))]);
         assert!(after.is_empty());
     }

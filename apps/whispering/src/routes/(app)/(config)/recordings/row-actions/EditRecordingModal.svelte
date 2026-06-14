@@ -11,11 +11,11 @@
 	import EditIcon from '@lucide/svelte/icons/pencil';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { onDestroy } from 'svelte';
+	import { deleteRecordingsWithConfirmation } from '$lib/operations/recordings';
 	import { report } from '$lib/report';
 	import { rpc } from '$lib/rpc';
 	import { services } from '$lib/services';
 	import { type Recording, recordings } from '$lib/state/recordings.svelte';
-	import { recordingActions } from '$lib/utils/recording-actions';
 
 	let { recording }: { recording: Recording } = $props();
 
@@ -208,9 +208,13 @@
 		<Modal.Footer>
 			<Button
 				onclick={() =>
-					recordingActions.deleteWithConfirmation(
+					deleteRecordingsWithConfirmation(
 						$state.snapshot(recording),
-						{ onSuccess: () => { isDialogOpen = false; } },
+						{
+							onSuccess: () => {
+								isDialogOpen = false;
+							},
+						},
 					)}
 				variant="destructive"
 			>

@@ -75,10 +75,10 @@ export function openOpensidianBrowser() {
     write: (fileId, text) => writeFileContent(fileId, text),
     append: (fileId, text) => appendFileContent(fileId, text),
   };
-  const sqliteIndex = createSqliteIndex({ readContent: fileContent.read })({
+  const fs = attachYjsFileSystem(workspace.ydoc, workspace.tables.files, fileContent);
+  const sqliteIndex = createSqliteIndex({ readContent: fileContent.read, index: fs.index })({
     tables: workspace.tables,
   });
-  const fs = attachYjsFileSystem(workspace.ydoc, workspace.tables.files, fileContent);
 
   return { ...workspace, idb, sqliteIndex, fs };
 }`;
@@ -103,16 +103,16 @@ export function openOpensidianBrowser() {
 				"Attaches IndexedDB to the workspace's Y.Doc. Every update is written to the browser's local storage automatically.",
 		},
 		{
-			id: 'sqlite-index',
-			line: 'createSqliteIndex({ readContent: fileContent.read })({ tables: workspace.tables })',
-			explanation:
-				'Spins up a WASM SQLite database that mirrors the Yjs files table into SQL rows for fast tree queries.',
-		},
-		{
 			id: 'filesystem',
 			line: 'attachYjsFileSystem(workspace.ydoc, workspace.tables.files, fileContent)',
 			explanation:
 				'Wraps the raw table and content operations into a familiar filesystem interface: writeFile, mkdir, rm, mv.',
+		},
+		{
+			id: 'sqlite-index',
+			line: 'createSqliteIndex({ readContent: fileContent.read, index: fs.index })({ tables: workspace.tables })',
+			explanation:
+				'Spins up a WASM SQLite database that mirrors the Yjs files table into SQL rows for fast tree queries. Paths come from the filesystem index, the single owner of path validity.',
 		},
 	] as const;
 

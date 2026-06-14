@@ -217,10 +217,14 @@ import { createOpensidian } from 'opensidian';
 export function openOpensidianBrowser() {
 	const workspace = createOpensidian({ keyring: signedIn.keyring });
 	const idb = attachIndexedDb(workspace.ydoc);
-	const sqliteIndex = createSqliteIndex({ ydoc: workspace.ydoc, tables: workspace.tables });
+	const fs = attachYjsFileSystem(workspace.ydoc, workspace.tables.files, fileContent);
+	const sqliteIndex = createSqliteIndex({
+		readContent: fileContent.read,
+		index: fs.index,
+	})({ tables: workspace.tables });
 	const actions = defineActions({
 		files_search: defineQuery({
-			handler: async ({ query }) => sqliteIndex.search(query),
+			handler: async ({ query }) => sqliteIndex.exports.search(query),
 		}),
 	});
 	const collaboration = openCollaboration(workspace.ydoc, {
@@ -235,21 +239,21 @@ export function openOpensidianBrowser() {
 		waitFor: idb.whenLoaded,
 		actions,
 	});
-	return defineWorkspace({ ...workspace, idb, collaboration, sqliteIndex, actions });
+	return defineWorkspace({ ...workspace, idb, collaboration, fs, sqliteIndex, actions });
 }
 ```
 
-That bundle then feeds other middleware packages. `attachYjsFileSystem(workspace.tables.files, workspace.filesContent)` turns the files table plus content docs into a real virtual filesystem; `actionsToAiTools(workspace)` from `@epicenter/workspace/ai` turns workspace actions into chat tools; per-row content docs use sub-doc primitives like `attachRichText`; `createCookieAuth()` or `createBearerAuth()` from `@epicenter/svelte/auth` coordinates identity, fetch, and WebSocket auth while `@epicenter/auth` provides the signed-in identity used by lazy encryption key callbacks.
+That bundle then feeds other middleware packages. `attachYjsFileSystem(workspace.ydoc, workspace.tables.files, fileContent)` turns the files table plus content docs into a real virtual filesystem, and its `fs.index` is the single owner of path validity that the sqlite mirror converges to; `actionsToAiTools(workspace)` from `@epicenter/workspace/ai` turns workspace actions into chat tools; per-row content docs use sub-doc primitives like `attachRichText`; `createCookieAuth()` or `createBearerAuth()` from `@epicenter/svelte/auth` coordinates identity, fetch, and WebSocket auth while `@epicenter/auth` provides the signed-in identity used by lazy encryption key callbacks.
 
 ```text
 createOpensidian({ keyring })
     |
     +-- workspace.ydoc, workspace.tables, workspace.kv
     +-- attachIndexedDb(workspace.ydoc)
-    +-- createSqliteIndex(...)
     +-- openCollaboration(workspace.ydoc, { url, openWebSocket, onReconnectSignal, waitFor: idb.whenLoaded, actions })
     |
     +-- attachYjsFileSystem(...)              -> editor + terminal + file tree
+    +-- createSqliteIndex({ index: fs.index })-> SQL mirror, paths owned by fs.index
     +-- actionsToAiTools(...).tools           -> local AI tool execution
     +-- actionsToAiTools(...).definitions     -> wire payload for chat requests
     +-- attachRichText(childYdoc) per file    -> per-row content docs

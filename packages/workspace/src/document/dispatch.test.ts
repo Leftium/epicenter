@@ -25,7 +25,6 @@ import {
 	DispatchError,
 	interpretDispatchResult,
 	runInboundDispatch,
-	typedDispatch,
 } from './dispatch.js';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -209,10 +208,6 @@ describe('DispatchError variant factory', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-// typedDispatch (typed overlay)
-// ════════════════════════════════════════════════════════════════════════════
-
-// ════════════════════════════════════════════════════════════════════════════
 // Type-level tests for ActionInput / ActionOutput
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -255,22 +250,6 @@ const _typeTests = () => {
 	const _o3: Equals<ActionOutput<typeof asyncRaw>, number> = true;
 	const _o4: Equals<ActionOutput<typeof syncResult>, 'done'> = true;
 	const _o5: Equals<ActionOutput<typeof asyncResult>, { a: number }> = true;
-
-	// Call-site shape via the typed overlay.
-	const dx = typedDispatch<{
-		ping: typeof noInput;
-		tabs_close: typeof withInput;
-	}>(async () => Ok(undefined));
-
-	// No-input action: `input` field is forbidden.
-	void dx({ to: 'x', action: 'ping' });
-	// @ts-expect-error -- `input` not allowed on no-input action.
-	void dx({ to: 'x', action: 'ping', input: 'nope' });
-
-	// With-input action: `input` field is required and typed.
-	void dx({ to: 'x', action: 'tabs_close', input: { tabIds: [1, 2] } });
-	// @ts-expect-error -- missing required input.
-	void dx({ to: 'x', action: 'tabs_close' });
 
 	// Discourage `_typeTests` from being flagged as unused; the function is
 	// only evaluated by the TypeScript compiler.

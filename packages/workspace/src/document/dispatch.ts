@@ -148,50 +148,6 @@ export type ActionOutput<A extends (...args: any[]) => unknown> =
 		? T
 		: Awaited<ReturnType<A>>;
 
-/**
- * Typed overlay on `dispatch` for a known target registry. Same runtime
- * function, narrower types: action keys are constrained to `keyof
- * TTargetActions`, the `input` field is required/forbidden by the action's
- * schema, and the success branch carries the unwrapped handler return
- * (Result peeled to `T`).
- *
- * Caller-asserted: the relay routes by `deviceId` only; it does not
- * prove a given device implements `TTargetActions`.
- */
-export type TypedDispatch<TTargetActions extends ActionRegistry> = <
-	TAction extends keyof TTargetActions & string,
->(
-	req: {
-		to: string;
-		action: TAction;
-		signal?: AbortSignal;
-	} & ActionInput<TTargetActions[TAction]>,
-) => Promise<Result<ActionOutput<TTargetActions[TAction]>, DispatchError>>;
-
-/**
- * Lift the untyped `dispatch` function into a typed overlay for a known
- * target registry. The runtime call is unchanged; the helper exists to
- * make the caller-side assertion explicit and named instead of buried in
- * a variable annotation.
- *
- * ```ts
- * import { typedDispatch } from '@epicenter/workspace';
- * import type { TabManagerActions } from '@epicenter/tab-manager';
- *
- * const tabManager = typedDispatch<TabManagerActions>(collab.dispatch);
- * await tabManager({
- *   to: tabManagerDeviceId,
- *   action: 'tabs_close',
- *   input: { tabIds: [1, 2] },
- * });
- * ```
- */
-export function typedDispatch<TTargetActions extends ActionRegistry>(
-	dispatch: (req: DispatchRequest) => Promise<Result<unknown, DispatchError>>,
-): TypedDispatch<TTargetActions> {
-	return dispatch as TypedDispatch<TTargetActions>;
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // CALLER-SIDE DISPATCH
 // ════════════════════════════════════════════════════════════════════════════

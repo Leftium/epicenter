@@ -136,6 +136,16 @@ jobs:
           New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
           "CARGO_TARGET_DIR=$targetDir" >> $env:GITHUB_ENV
 
+      # whisper-rs-sys runs bindgen, which needs libclang. GitHub-hosted
+      # windows-latest preinstalls LLVM; the Blacksmith Windows image does not,
+      # so install it and point bindgen at it via LIBCLANG_PATH.
+      - name: Install LLVM (Windows, libclang for bindgen)
+        if: ${{ matrix.os == 'windows' }}
+        shell: pwsh
+        run: |
+          choco install llvm --no-progress -y
+          "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
+
       - name: setup bun
         uses: oven-sh/setup-bun@v2
         with:

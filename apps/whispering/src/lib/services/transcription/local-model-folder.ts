@@ -8,8 +8,9 @@
  * JS view of the folder: listing entries, streaming catalog downloads into
  * it, and deleting entries, never anything outside the folder.
  *
- * UI-free and settings-free. Activation (writing the model name into
- * `deviceConfig`) lives in `$lib/operations/local-models.ts`.
+ * UI-free and settings-free. Selection is parent-owned component state:
+ * settings bind to a folder entry name, and catalog/custom entries activate
+ * through that same `bind:value` path.
  *
  * Layout under the appdata root (see `$lib/services/fs-paths`):
  * - Whisper:   `models/whisper/{filename}` (a single .bin file)
@@ -273,12 +274,6 @@ export function createModelStorage(model: LocalModelConfig) {
 
 	return {
 		/**
-		 * The canonical install path: a file for Whisper, a directory for
-		 * Parakeet and Moonshine. Pure path math; does not touch disk.
-		 */
-		getPath,
-
-		/**
 		 * The canonical path when a valid install exists there, else null.
 		 * Every expected file must exist with a plausible size (at least 90%
 		 * of the catalog size), so interrupted downloads read as missing.
@@ -344,7 +339,7 @@ export function createModelStorage(model: LocalModelConfig) {
 			onProgress,
 		}: {
 			onProgress: (progress: number) => void;
-		}): Promise<Result<{ path: string }, LocalModelFolderError>> {
+		}): Promise<Result<void, LocalModelFolderError>> {
 			const { data: path, error: prepareError } = await tryAsync({
 				try: async () => {
 					await mkdir(await PATHS.MODELS[model.engine](), { recursive: true });
@@ -401,27 +396,7 @@ export function createModelStorage(model: LocalModelConfig) {
 					break;
 				}
 			}
-			return Ok({ path });
-		},
-
-		/**
-		 * Remove the model's files from disk. Succeeds even when nothing is
-		 * installed, so callers can always reconcile settings afterwards.
-		 *
-		 * Only ever removes the model's canonical catalog path inside the
-		 * folder (`getPath`); nothing outside the folder is reachable.
-		 */
-		async delete(): Promise<Result<void, LocalModelFolderError>> {
-			return tryAsync({
-				try: async () => {
-					const path = await getPath();
-					if (await exists(path)) {
-						const isDirectory = model.engine !== 'whispercpp';
-						await remove(path, { recursive: isDirectory });
-					}
-				},
-				catch: (error) => LocalModelFolderError.DeleteFailed({ cause: error }),
-			});
+			return Ok(undefined);
 		},
 	};
 }

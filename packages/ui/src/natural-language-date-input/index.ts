@@ -4,7 +4,7 @@
 //   - NaturalLanguageZonedDateTimeInput -> { date: DateTimeString, dateZone }
 // Both call the internal `parseInZone` engine (./parse.ts) directly. A
 // bare-instant picker (NaturalLanguageInstantInput -> InstantString, no zone
-// UI) is the unbuilt third cell — author it against parseInZone when a real
+// UI) is the unbuilt third cell. Author it against parseInZone when a real
 // caller needs to pick a zoneless moment.
 export type {
 	CalendarDateChoice,

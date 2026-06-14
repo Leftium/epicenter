@@ -10,7 +10,7 @@
 	/**
 	 * Natural-language picker for a zoned datetime. Parses phrases like
 	 * "tomorrow at 5pm" and commits a wall time plus its originating zone
-	 * (`{ date: DateTimeString, dateZone }`) — the durable fact is *when, where*.
+	 * (`{ date: DateTimeString, dateZone }`). The durable fact is *when, where*.
 	 *
 	 * This is the zoned sibling of {@link NaturalLanguageCalendarDateInput}. Use
 	 * that one when only the calendar day matters and no time or zone is stored.

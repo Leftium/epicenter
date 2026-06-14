@@ -45,7 +45,7 @@ function isContextSlug(value: unknown): value is ContextSlug {
 /**
  * The stored `contexts` field tolerates any string, so a hand-edited file or a
  * mid-sync row carrying an unknown slug stays legal (the UI renders it as a
- * neutral chip). The create path is stricter — it only accepts built-in slugs.
+ * neutral chip). The create path is stricter: it only accepts built-in slugs.
  */
 const contextSlugSchema = Type.Unsafe<ContextSlug>(Type.String());
 

@@ -8,7 +8,7 @@
 
 	/**
 	 * Natural-language picker for a calendar day. Parses phrases like "tomorrow"
-	 * or "next friday" and commits a `CalendarDateString` — no time, no offset,
+	 * or "next friday" and commits a `CalendarDateString`: no time, no offset,
 	 * no zone. A calendar day is zoneless by nature, so the component renders no
 	 * timezone UI and shows date-only suggestions; the `timeZone` prop only
 	 * decides which day a relative phrase lands on for the viewer.

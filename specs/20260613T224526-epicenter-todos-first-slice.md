@@ -17,13 +17,13 @@ Build `apps/todos` as a local-first SvelteKit app backed by Epicenter workspace 
 - `deletedAt`: nullable UTC instant.
 - `createdAt`: UTC instant.
 
-`contexts` are a fixed built-in set in this slice: code constants (`phone`, `computer`, `desk`), each with a display `name` and a distinct `color`, ordered by array position. They are not table rows — there is no contexts table, no CRUD, and no slug generation. User-created contexts are deferred (see below).
+`contexts` are a fixed built-in set in this slice: code constants (`phone`, `computer`, `desk`), each with a display `name` and a distinct `color`, ordered by array position. They are not table rows. There is no contexts table, no CRUD, and no slug generation. User-created contexts are deferred (see below).
 
 ## Invariants
 
 A todo's due date is `none` (`dueDate` is null) or `all-day` (`dueDate` is a calendar date). Timed and timezone-aware due dates are out of this slice; because due is a single self-validating field there is no cross-field parsing layer.
 
-A todo's `contexts` is a subset of the built-in slugs. The create path rejects any other slug. The *stored* field, however, tolerates any string: a todo carrying a slug with no built-in (hand-edited file, mid-sync) stays legal and renders as a neutral chip. Neutral rendering is a resilience fallback, not a managed workflow — in-app, contexts are only ever picked from the built-in set, so orphans should not arise in normal use.
+A todo's `contexts` is a subset of the built-in slugs. The create path rejects any other slug. The *stored* field, however, tolerates any string: a todo carrying a slug with no built-in (hand-edited file, mid-sync) stays legal and renders as a neutral chip. Neutral rendering is a resilience fallback, not a managed workflow. In-app, contexts are only ever picked from the built-in set, so orphans should not arise in normal use.
 
 The contexts-as-constants shape (and the tolerant stored schema) is deliberate: it leaves room to layer user-created context rows back in later without changing the todo file format.
 

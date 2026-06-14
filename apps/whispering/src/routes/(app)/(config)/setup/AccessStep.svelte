@@ -5,25 +5,25 @@
 	import AlertCircleIcon from '@lucide/svelte/icons/alert-circle';
 	import CheckCircle2Icon from '@lucide/svelte/icons/check-circle-2';
 	import MicIcon from '@lucide/svelte/icons/mic';
-	import { os } from '#platform/os';
-	import { tauri } from '#platform/tauri';
 	import { manualRecorderConfig } from '#platform/manual-recorder-config';
 	import { asDeviceIdentifier } from '$lib/services/recorder/types';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import ManualSelectRecordingDevice from '../settings/recording/ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from '../settings/recording/VadSelectRecordingDevice.svelte';
-	import type { SetupPermissionState } from '$lib/setup/setup-readiness';
+	import {
+		isAppleDesktop,
+		type SetupPermissionState,
+	} from '$lib/setup/setup-readiness';
 	import type { SetupPermissions } from './setup-permissions.svelte';
 
 	let { permissions }: { permissions: SetupPermissions } = $props();
 
-	const needsDesktopPermissions = Boolean(tauri && os.isApple);
 	const selectedRecordingMode = $derived(settings.get('recording.mode'));
 </script>
 
 <div class="space-y-4">
-	{#if needsDesktopPermissions}
+	{#if isAppleDesktop}
 		<div class="grid gap-3 sm:grid-cols-2">
 			{@render permissionPanel({
 				title: 'Microphone',

@@ -12,6 +12,7 @@ export {
 	RECORDING_MODE_OPTIONS,
 	RECORDING_MODES,
 	type RecordingMode,
+	toggleCommandIdForMode,
 } from './recording-modes';
 export {
 	RECORDER_STATE_TO_ICON,

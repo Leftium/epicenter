@@ -27,18 +27,6 @@ struct Registered {
     keys: BTreeSet<Key>,
 }
 
-/// The single in-flight gesture. The desktop backend resolves **one** gesture at
-/// a time: a global push-to-talk hold owns the keyboard until it releases, so we
-/// never track two bindings as simultaneously held (that is what lets a resolved
-/// push-to-talk ignore extra keys instead of converting into a chord).
-enum Gesture {
-    /// Nothing held that matches a binding.
-    Idle,
-    /// `index`'s binding is held and owns the gesture. It stays active (extra
-    /// keys ignored) until one of its own keys releases.
-    Active { index: usize },
-}
-
 /// Turns the rdev event stream into `{ command_id, state }` transitions.
 ///
 /// Matching is exact set equality: a binding fires the instant the held
@@ -63,7 +51,13 @@ pub struct Matcher {
     bindings: Vec<Registered>,
     held_modifiers: BTreeSet<Modifier>,
     held_keys: BTreeSet<Key>,
-    gesture: Gesture,
+    /// Index of the binding that currently owns the gesture, or `None` when idle.
+    /// The desktop backend resolves **one** gesture at a time: a global
+    /// push-to-talk hold owns the keyboard until it releases, so we never track
+    /// two bindings as simultaneously held (that is what lets a resolved
+    /// push-to-talk ignore extra keys instead of converting into a chord). It
+    /// stays active (extra keys ignored) until one of its own keys releases.
+    active: Option<usize>,
     capturing: bool,
 }
 
@@ -73,7 +67,7 @@ impl Matcher {
             bindings: Vec::new(),
             held_modifiers: BTreeSet::new(),
             held_keys: BTreeSet::new(),
-            gesture: Gesture::Idle,
+            active: None,
             capturing: false,
         }
     }
@@ -84,7 +78,7 @@ impl Matcher {
     /// nothing is left half-fired across the mode switch.
     pub fn set_capturing(&mut self, capturing: bool) {
         self.capturing = capturing;
-        self.gesture = Gesture::Idle;
+        self.active = None;
     }
 
     pub fn is_capturing(&self) -> bool {
@@ -106,14 +100,14 @@ impl Matcher {
     pub fn clear_held(&mut self) {
         self.held_modifiers.clear();
         self.held_keys.clear();
-        self.gesture = Gesture::Idle;
+        self.active = None;
     }
 
     /// Replace the full set of registered bindings. Empty bindings are dropped
     /// (they can never be "held"). The held sets are left untouched: the physical
     /// keys really are still down.
     ///
-    /// Any in-flight gesture resets to `Idle` (its index points into the old vec,
+    /// Any in-flight gesture resets to idle (its index points into the old vec,
     /// so it cannot survive the swap anyway). The FE only re-pushes between
     /// sessions, on launch, on a settings edit, or on reset, never while a global
     /// gesture is physically held, so there is no resolved gesture to carry across.
@@ -130,7 +124,7 @@ impl Matcher {
                 }
             })
             .collect();
-        self.gesture = Gesture::Idle;
+        self.active = None;
     }
 
     /// Feed one key event. Updates the held sets, then resolves the gesture and
@@ -155,24 +149,24 @@ impl Matcher {
             return Vec::new();
         }
 
-        match self.gesture {
+        match self.active {
             // An active binding owns the gesture. Extra presses are ignored; it
             // releases only when one of its own keys/modifiers goes up (so the
             // held set is no longer a superset of the binding).
-            Gesture::Active { index } => {
+            Some(index) => {
                 if self.held_is_superset_of(index) {
                     Vec::new()
                 } else {
-                    self.gesture = Gesture::Idle;
+                    self.active = None;
                     vec![self.release(index)]
                 }
             }
             // Nothing in flight. A press that exactly matches a binding fires it;
             // a partial chord (or any release) waits silently.
-            Gesture::Idle => {
+            None => {
                 if edge == Edge::Press {
                     if let Some(index) = self.find_exact() {
-                        self.gesture = Gesture::Active { index };
+                        self.active = Some(index);
                         return vec![self.press(index)];
                     }
                 }

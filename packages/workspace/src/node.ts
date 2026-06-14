@@ -29,14 +29,13 @@ export {
 	pingDaemon,
 } from './daemon/client.js';
 export {
-	type CollaborativeDaemonRuntime,
-	type CollaborativeMount,
-	type CollaborativeMountContext,
 	defineMount,
-	type LocalDaemonRuntime,
-	type LocalMount,
-	type LocalMountContext,
+	inactive,
+	isInactive,
 	type Mount,
+	type MountContext,
+	type MountInactive,
+	type MountSession,
 } from './daemon/define-mount.js';
 export {
 	claimDaemonLease,
@@ -92,6 +91,8 @@ export { hashYDocClientId } from './shared/client-id.js';
 export type { WorkspaceAuthClient } from './workspace-apps/auth-client.js';
 export { WorkspaceAppError } from './workspace-apps/errors.js';
 export {
+	type InactiveMount,
+	type OpenedEpicenterRoot,
 	type OpenEpicenterRootOptions,
 	openEpicenterRoot,
 } from './workspace-apps/open-epicenter-root.js';

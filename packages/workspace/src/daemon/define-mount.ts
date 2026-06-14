@@ -1,135 +1,116 @@
 /**
- * `defineMount`: typed entry contract for an app mount inside the daemon.
+ * `defineMount`: the entry contract for an app mount inside the daemon.
  *
  * `epicenter.config.ts` default-exports a `Mount[]`. Each mount carries its own
- * canonical `name`, which
- * becomes the CLI action prefix (`<name>.<action_key>`) and is propagated into
- * the mount context so handlers can use it for logging.
+ * canonical `name`, which becomes the CLI action prefix (`<name>.<action_key>`)
+ * and is propagated into the mount context so handlers can use it for logging.
  *
- * The host calls `open(ctx)` once on `epicenter daemon up`. The returned
- * runtime always exposes local `actions`, and may expose `collaboration` when
- * the mount participates in Yjs sync, presence, and peer dispatch.
+ * The host calls `open(ctx)` once on `epicenter daemon up`. A mount can do one
+ * of two things:
+ *
+ *   - return a `DaemonRuntime` (`actions`, optionally `collaboration`), or
+ *   - return `inactive(reason)` to say "I cannot run right now," typically
+ *     because it needs a signed-in `session` and there is none.
+ *
+ * There is no `local` vs `collaborative` kind. A mount asks `ctx.session` for
+ * what it needs: a purely local mirror ignores it, a mount that wants the peer
+ * plane (presence + remote dispatch) uses its socket, and a mount that stores
+ * encrypted workspace data uses its keyring. The session is `null` when machine
+ * auth is signed out, so the logged-out case is always in front of the author.
  */
 
 import type { Keyring } from '@epicenter/encryption';
 import type { OwnerId } from '@epicenter/identity';
 import type { DeviceId } from '../document/device-id.js';
 import type {
-	Collaboration,
 	OnReconnectSignal,
 	OpenWebSocketFn,
 } from '../document/open-collaboration.js';
-import type { ActionRegistry } from '../shared/actions.js';
-import type {
-	AuthedFetch,
-	EpicenterRoot,
-	MaybePromise,
-} from '../shared/types.js';
+import type { AuthedFetch, EpicenterRoot, MaybePromise } from '../shared/types.js';
 import type { DaemonRuntime } from './types.js';
 
 /**
- * Context handed to `open()` for a local-only mount.
+ * The signed-in capability kit a mount needs to join the peer plane or read its
+ * encrypted workspace. Present on the context only while machine auth is
+ * signed in.
+ *
+ * - `keyring` is the lazy reader for the current owner keyring. The host's
+ *   closure throws on late sign-out so writes fail loud instead of silently
+ *   losing ciphertext. Needed only by mounts that store encrypted data.
+ * - `openWebSocket` / `onReconnectSignal` / `fetch` are the auth-owned transport
+ *   refs forwarded into `openCollaboration` for sync, presence, and dispatch.
+ * - `ownerId`, `deviceId`, and `yDocClientId` pin this mount's identity on the
+ *   Y.Doc (`ydoc.clientID = session.yDocClientId`).
+ */
+export type MountSession = {
+	readonly ownerId: OwnerId;
+	/** Conventional collaboration WebSocket device id: `<mount>-daemon`. */
+	readonly deviceId: DeviceId;
+	/** Deterministic Y.Doc CRDT `clientID` for this daemon, from `epicenterRoot`. */
+	readonly yDocClientId: number;
+	keyring(): Keyring;
+	readonly openWebSocket: OpenWebSocketFn;
+	readonly onReconnectSignal: OnReconnectSignal;
+	readonly fetch: AuthedFetch;
+};
+
+/**
+ * Context handed to every `open()`.
  *
  * - `epicenterRoot` is the resolved Epicenter root (the folder that holds
- *   `epicenter.config.ts`). Source mirrors derive every absolute local cache
- *   path from it.
- * - `mount` is the canonical mount name (`Mount.name`). Pinned here so
- *   handlers can share the same identifier with logs and local cache keys.
+ *   `epicenter.config.ts`). Disk-writing helpers derive every absolute path
+ *   from it.
+ * - `mount` is the canonical mount name (`Mount.name`), pinned so handlers
+ *   share one identifier with logs and local cache keys.
+ * - `session` is the signed-in capability kit, or `null` when signed out.
  */
-export type LocalMountContext = {
-	epicenterRoot: EpicenterRoot;
-	mount: string;
+export type MountContext = {
+	readonly epicenterRoot: EpicenterRoot;
+	readonly mount: string;
+	readonly session: MountSession | null;
 };
 
 /**
- * Context handed to `open()` for a collaborative mount.
- *
- * The host owns auth: it refuses collaborative startup when machine auth is
- * signed out, exposes the keyring lookup (with a late-sign-out guard baked
- * into the closure), and passes the auth-derived function refs through for
- * cloud sync.
+ * "I cannot run right now." A mount returns this from `open()` instead of a
+ * runtime when a precondition (usually a signed-in `session`) is missing. The
+ * daemon starts every sibling that did open and reports the inactive ones; it
+ * is not a crash and does not abort startup.
  */
-export type CollaborativeMountContext = LocalMountContext & {
-	/**
-	 * Deterministic Y.Doc CRDT `clientID` for this daemon, derived from
-	 * `epicenterRoot`. Pin it on the Y.Doc with `ydoc.clientID =
-	 * ctx.yDocClientId` right after construction.
-	 */
-	yDocClientId: number;
-	/** Conventional collaboration WebSocket device id: `<mount>-daemon`. */
-	deviceId: DeviceId;
-	/** Workspace owner id snapshotted at startup. */
-	ownerId: OwnerId;
-	/**
-	 * Lazy reader for the current owner keyring. The host's closure throws on
-	 * late sign-out so writes fail loud instead of silently losing ciphertext.
-	 */
-	keyring: () => Keyring;
-	/** Opens the relay socket for `openCollaboration`. */
-	openWebSocket: OpenWebSocketFn;
-	/** Subscribes to auth-state transitions that trigger sync reconnect. */
-	onReconnectSignal: OnReconnectSignal;
-	/** Auth-owned `fetch` for one-shot HTTP to the relay. */
-	fetch: AuthedFetch;
+export type MountInactive = {
+	readonly inactive: true;
+	readonly reason: string;
 };
 
-export type LocalDaemonRuntime<
-	TActions extends ActionRegistry = ActionRegistry,
-> = DaemonRuntime<TActions> & {
-	readonly collaboration?: never;
-};
+/** Build the `MountInactive` signal an `open()` returns when it cannot run. */
+export function inactive(reason: string): MountInactive {
+	return { inactive: true, reason };
+}
 
-export type CollaborativeDaemonRuntime<
-	TActions extends ActionRegistry = ActionRegistry,
-> = DaemonRuntime<TActions> & {
-	readonly collaboration: Collaboration<TActions>;
-};
+/** Narrow an `open()` result to the inactive branch. */
+export function isInactive(
+	result: DaemonRuntime | MountInactive,
+): result is MountInactive {
+	return 'inactive' in result;
+}
 
 /**
- * Local-only app mount. It can serve local daemon actions without Epicenter
- * auth, workspace keys, sync, peers, or a Y.Doc client id.
- */
-export type LocalMount<
-	TRuntime extends LocalDaemonRuntime = LocalDaemonRuntime,
-> = {
-	name: string;
-	kind: 'local';
-	open(ctx: LocalMountContext): MaybePromise<TRuntime>;
-};
-
-/**
- * Collaborative app mount. It needs Epicenter auth and receives the full
- * collaborative context before returning a runtime with hosted collaboration.
- */
-export type CollaborativeMount<
-	TRuntime extends CollaborativeDaemonRuntime = CollaborativeDaemonRuntime,
-> = {
-	name: string;
-	kind: 'collaborative';
-	open(ctx: CollaborativeMountContext): MaybePromise<TRuntime>;
-};
-
-/**
- * One app mount: a name, a static kind, and an `open(ctx)` that returns a
- * daemon runtime.
+ * One app mount: a name and an `open(ctx)` that returns a daemon runtime or
+ * `inactive(reason)`.
  *
  * Factories like `fuji()` return a `Mount`. The canonical mount name lives on
- * the value itself (`Mount.name`), so renaming an Epicenter folder never changes
- * the action namespace.
+ * the value itself (`Mount.name`), so renaming an Epicenter folder never
+ * changes the action namespace.
  */
-export type Mount = LocalMount | CollaborativeMount;
+export type Mount = {
+	name: string;
+	open(ctx: MountContext): MaybePromise<DaemonRuntime | MountInactive>;
+};
 
 /**
- * Identity helper that pins a mount so factories preserve their
- * runtime shape and `epicenter.config.ts` gets IntelliSense on the context
- * fields. Pure at the value level.
+ * Identity helper that pins a mount so factories preserve their shape and
+ * `epicenter.config.ts` gets IntelliSense on the context fields. Pure at the
+ * value level.
  */
-export function defineMount<TRuntime extends LocalDaemonRuntime>(
-	mount: LocalMount<TRuntime>,
-): LocalMount<TRuntime>;
-export function defineMount<TRuntime extends CollaborativeDaemonRuntime>(
-	mount: CollaborativeMount<TRuntime>,
-): CollaborativeMount<TRuntime>;
 export function defineMount(mount: Mount): Mount {
 	return mount;
 }

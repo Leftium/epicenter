@@ -4,13 +4,12 @@ export {
 	type ProjectInfrastructure,
 } from './attach-project-infrastructure.js';
 export {
-	type CollaborativeDaemonRuntime,
-	type CollaborativeMount,
-	type CollaborativeMountContext,
 	defineMount,
-	type LocalDaemonRuntime,
-	type LocalMount,
-	type LocalMountContext,
+	inactive,
+	isInactive,
 	type Mount,
+	type MountContext,
+	type MountInactive,
+	type MountSession,
 } from './define-mount.js';
 export type { DaemonRuntime, StartedMount } from './types.js';

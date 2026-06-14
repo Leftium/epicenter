@@ -1,47 +1,29 @@
 /**
  * Compile-time tests for `defineMount`.
  *
- * The mount `kind` is the daemon startup contract. Local mounts must not see
- * auth-derived collaboration capabilities, and collaborative mounts must
- * return a runtime with hosted collaboration.
+ * Every mount receives one context: `epicenterRoot`, `mount`, and a nullable
+ * `session`. The signed-in capabilities (keyring, socket, identity) live under
+ * `session`, so the logged-out case is in front of the author at the type level
+ * and cannot be reached without a null check.
  *
  * Pattern: each assertion is exported so that `noUnusedLocals` does not flag
  * it. If an assertion fails, the type error appears at the offending line
  * during typecheck.
  */
 
-import type { Collaboration } from '../document/open-collaboration.js';
-import type { ActionRegistry } from '../shared/actions.js';
-import {
-	type CollaborativeDaemonRuntime,
-	defineMount,
-	type LocalDaemonRuntime,
-} from './define-mount.js';
-
-declare const collaborativeRuntime: CollaborativeDaemonRuntime;
-declare const collaboration: Collaboration<ActionRegistry>;
+import { defineMount, inactive } from './define-mount.js';
 
 export const localMount = defineMount({
 	name: 'mirror',
-	kind: 'local',
 	open(ctx) {
 		ctx.epicenterRoot;
 		ctx.mount;
+		ctx.session;
 
-		// @ts-expect-error: local mounts do not receive workspace keys
+		// @ts-expect-error: signed-in capabilities live under `session`, not on ctx
 		ctx.keyring;
-		// @ts-expect-error: local mounts do not receive owner identity
-		ctx.ownerId;
-		// @ts-expect-error: local mounts do not receive WebSocket access
+		// @ts-expect-error: signed-in capabilities live under `session`, not on ctx
 		ctx.openWebSocket;
-		// @ts-expect-error: local mounts do not receive authed fetch
-		ctx.fetch;
-		// @ts-expect-error: local mounts do not receive reconnect signals
-		ctx.onReconnectSignal;
-		// @ts-expect-error: local mounts do not receive Y.Doc client ids
-		ctx.yDocClientId;
-		// @ts-expect-error: local mounts do not receive device ids
-		ctx.deviceId;
 
 		return {
 			actions: {},
@@ -50,27 +32,34 @@ export const localMount = defineMount({
 	},
 });
 
-export const collaborativeMount = defineMount({
+export const sessionAwareMount = defineMount({
 	name: 'fuji',
-	kind: 'collaborative',
 	open(ctx) {
-		ctx.epicenterRoot;
-		ctx.mount;
-		ctx.keyring;
-		ctx.ownerId;
-		ctx.openWebSocket;
-		ctx.fetch;
-		ctx.onReconnectSignal;
-		ctx.yDocClientId;
-		ctx.deviceId;
+		// @ts-expect-error: session may be null, so it must be narrowed first
+		ctx.session.keyring();
 
-		return collaborativeRuntime;
+		if (ctx.session === null) {
+			return inactive('sign in to enable fuji');
+		}
+
+		// Narrowed: the full capability kit is available.
+		ctx.session.keyring();
+		ctx.session.openWebSocket;
+		ctx.session.onReconnectSignal;
+		ctx.session.fetch;
+		ctx.session.ownerId;
+		ctx.session.deviceId;
+		ctx.session.yDocClientId;
+
+		return {
+			actions: {},
+			async [Symbol.asyncDispose]() {},
+		};
 	},
 });
 
-// @ts-expect-error: mount definitions must declare a static kind
-export const missingKind = defineMount({
-	name: 'missing',
+export const mountWithoutKind = defineMount({
+	name: 'no-kind-needed',
 	open() {
 		return {
 			actions: {},
@@ -78,22 +67,3 @@ export const missingKind = defineMount({
 		};
 	},
 });
-
-export const localRuntimeWithCollaboration = {
-	actions: {},
-	collaboration,
-	async [Symbol.asyncDispose]() {},
-};
-
-// @ts-expect-error: local runtimes cannot expose collaboration
-export const localRuntimeRejectsCollaboration: LocalDaemonRuntime =
-	localRuntimeWithCollaboration;
-
-export const actionsOnlyRuntime = {
-	actions: {},
-	async [Symbol.asyncDispose]() {},
-};
-
-// @ts-expect-error: collaborative runtimes must expose collaboration
-export const collaborativeRuntimeRequiresCollaboration: CollaborativeDaemonRuntime =
-	actionsOnlyRuntime;

@@ -24,6 +24,7 @@ import {
 	claimDaemonLease,
 	type DaemonMetadata,
 	type EpicenterConfigError,
+	type InactiveMount,
 	openEpicenterRoot,
 	StartupError,
 	startDaemonServer,
@@ -77,12 +78,15 @@ type UpOptions = {
  *
  * - `mounts` is every started mount runtime the root declares; the daemon
  *   serves them all and routes IPC requests by mount name.
+ * - `inactive` is every mount that returned `inactive(reason)` instead of a
+ *   runtime (typically signed-out, keyring-backed mounts). They are not served.
  * - `metadata` is what was written to disk.
  * - `teardown()` closes the server, asyncDisposes the runtimes, releases the
  *   lease, and unlinks metadata + socket. Idempotent.
  */
 type UpHandle = {
 	mounts: StartedMount[];
+	inactive: InactiveMount[];
 	metadata: DaemonMetadata;
 	teardown: () => Promise<void>;
 };
@@ -135,7 +139,7 @@ export async function runUp(
 	const createAuthClient = options.createAuthClient ?? createMachineAuthClient;
 	const startResult = await openEpicenterRoot({
 		epicenterRoot,
-		loadAuth: async () => {
+		loadSession: async () => {
 			const authResult = await createAuthClient();
 			if (authResult.error) {
 				if (authResult.error.name === 'NoSavedSession') return Ok(null);
@@ -147,7 +151,7 @@ export async function runUp(
 		},
 	});
 	if (startResult.error) return startResult;
-	const mounts = startResult.data;
+	const { started: mounts, inactive } = startResult.data;
 	stack.defer(async () => {
 		await Promise.allSettled(
 			mounts.map((entry) => entry.runtime[Symbol.asyncDispose]()),
@@ -169,6 +173,7 @@ export async function runUp(
 	const teardownStack = stack.move();
 	return Ok({
 		mounts,
+		inactive,
 		metadata,
 		teardown: () => teardownStack.disposeAsync(),
 	});

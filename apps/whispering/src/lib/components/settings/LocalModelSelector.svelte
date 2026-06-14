@@ -221,8 +221,8 @@
 				</Empty.Media>
 				<Empty.Title>No local model installed</Empty.Title>
 				<Empty.Description>
-					Download the recommended model to start local transcription on this
-					device.
+					Runs on this device — private, offline, and free. Download the
+					recommended model to start transcribing.
 				</Empty.Description>
 				<Empty.Content>
 					{#if recommendedState.type === 'downloading'}

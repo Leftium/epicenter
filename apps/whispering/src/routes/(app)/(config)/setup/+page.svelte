@@ -1,65 +1,229 @@
+<!--
+	Setup wizard. One route owns the whole flow: the step lives in the URL as
+	`?step=<id>` (so back/forward, deep links, and refresh all work), while the
+	shared state — permission probing, practice success — lives on this single
+	component instance. SvelteKit preserves the instance across query-only
+	navigation, so that state survives every step change without a module
+	singleton. Each step body is a child component under this folder.
+-->
 <script lang="ts">
-	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
+	import * as SectionHeader from '@epicenter/ui/section-header';
+	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
+	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
 	import CheckCircle2Icon from '@lucide/svelte/icons/check-circle-2';
-	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert';
-	import TranscriptionRuntimeSetup from '$lib/components/settings/TranscriptionRuntimeSetup.svelte';
-	import { getTranscriptionSetupReadiness } from '$lib/settings/transcription-validation';
-	import SetupSection from './SetupSection.svelte';
+	import CircleIcon from '@lucide/svelte/icons/circle';
+	import { onMount } from 'svelte';
+	import { MediaQuery } from 'svelte/reactivity';
+	import { cubicOut } from 'svelte/easing';
+	import { fly } from 'svelte/transition';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
+	import { getSetupReadiness } from '$lib/setup/setup-readiness';
+	import AccessStep from './AccessStep.svelte';
+	import ActivationStep from './ActivationStep.svelte';
+	import EngineStep from './EngineStep.svelte';
+	import PracticeStep from './PracticeStep.svelte';
+	import { createSetupPermissions } from './setup-permissions.svelte';
 
-	const readiness = $derived(getTranscriptionSetupReadiness());
+	const STEP_IDS = ['engine', 'access', 'activation', 'practice'] as const;
+	type StepId = (typeof STEP_IDS)[number];
+
+	// Wizard state, owned by this instance instead of a module singleton.
+	const permissions = createSetupPermissions();
+	let practiceSucceeded = $state(false);
+
+	const readiness = $derived(
+		getSetupReadiness({
+			microphonePermission: permissions.microphone,
+			accessibilityPermission: permissions.accessibility,
+		}),
+	);
+
+	const steps = $derived([
+		{
+			id: 'engine',
+			label: 'Engine',
+			title: 'Transcription engine',
+			helper:
+				'Parakeet runs locally on this device — no account or API key needed. Prefer a cloud provider? Pick it below.',
+			status: readiness.runtimeReady ? 'ready' : 'blocked',
+		},
+		{
+			id: 'access',
+			label: 'Access',
+			title: 'Recording access',
+			helper: readiness.needsDesktopPermissions
+				? 'Grant microphone and accessibility access so Whispering can hear you and type for you.'
+				: 'Confirm Whispering can reach your microphone.',
+			status: readiness.accessReady ? 'ready' : 'blocked',
+		},
+		{
+			id: 'activation',
+			label: 'Activation',
+			title: 'Activation',
+			helper:
+				'Choose how you start a recording — a shortcut, push to talk, or file upload.',
+			status: readiness.activationReady ? 'ready' : 'blocked',
+		},
+		{
+			id: 'practice',
+			label: 'Practice',
+			title: 'First dictation',
+			helper: 'Record one short phrase to confirm everything works end to end.',
+			status: practiceSucceeded ? 'ready' : 'blocked',
+		},
+	] as const);
+
+	/** Step from the URL; defaults to the first step when absent or unknown. */
+	function parseStep(value: string | null): StepId {
+		return STEP_IDS.find((id) => id === value) ?? 'engine';
+	}
+	const activeStep = $derived(parseStep(page.url.searchParams.get('step')));
+	const activeIndex = $derived(STEP_IDS.indexOf(activeStep));
+	const currentStep = $derived(steps[activeIndex]!);
+
+	const isFirstStep = $derived(activeIndex === 0);
+	const isLastStep = $derived(activeIndex === STEP_IDS.length - 1);
+
+	const primaryLabel = $derived(
+		isLastStep
+			? practiceSucceeded
+				? 'Start using Whispering'
+				: 'Finish without practice'
+			: 'Continue',
+	);
+	const primaryDisabled = $derived(
+		isLastStep ? !readiness.canFinish : currentStep.status !== 'ready',
+	);
+
+	// Slide direction for the step transition: forward (+1) or back (-1).
+	let direction = $state(1);
+
+	// Honor the OS "reduce motion" setting: no slide, no duration.
+	const reducedMotion = new MediaQuery('(prefers-reduced-motion: reduce)');
+
+	function navigate(id: StepId) {
+		direction = STEP_IDS.indexOf(id) < activeIndex ? -1 : 1;
+		void goto(`?step=${id}`, { keepFocus: true, noScroll: true });
+	}
+
+	/** Reachable if already passed, or individually ready. */
+	function isReachable(index: number) {
+		return index <= activeIndex || steps[index]?.status === 'ready';
+	}
+
+	function handlePrimary() {
+		if (isLastStep) {
+			void goto('/');
+			return;
+		}
+		navigate(STEP_IDS[activeIndex + 1]!);
+	}
+
+	function handleBack() {
+		if (!isFirstStep) navigate(STEP_IDS[activeIndex - 1]!);
+	}
+
+	onMount(() => {
+		void permissions.refresh();
+	});
 </script>
 
 <svelte:head> <title>Setup - Whispering</title> </svelte:head>
+<svelte:window
+	onfocus={() => {
+		void permissions.refresh();
+	}}
+/>
 
-<div class="mx-auto flex w-full max-w-5xl flex-col px-4 py-6 sm:px-8">
-	<div class="max-w-2xl space-y-2 pb-4">
-		<h1 class="text-2xl font-semibold tracking-tight">Setup</h1>
-		<p class="text-sm text-muted-foreground">
-			Choose a transcription service and finish the runtime settings this
-			device needs before recording.
-		</p>
-	</div>
+<main class="mx-auto flex w-full max-w-xl flex-1 flex-col gap-6 px-4 py-8 sm:px-8">
+	<SectionHeader.Root class="space-y-1">
+		<SectionHeader.Title level={1} class="text-3xl tracking-tight">
+			Set up Whispering
+		</SectionHeader.Title>
+		<SectionHeader.Description>
+			Get to one successful dictation on this device.
+		</SectionHeader.Description>
+	</SectionHeader.Root>
 
-	<SetupSection
-		number="1"
-		title="Transcription runtime"
-		description="Pick where transcription runs and set the model or provider details."
-		complete={readiness.isReady}
-	>
-		{#if readiness.isReady}
-			<Alert.Root>
-				<CheckCircle2Icon class="size-4" />
-				<Alert.Title>Whispering is ready to record</Alert.Title>
-				<Alert.Description>
-					Your selected transcription service has the required runtime setup
-					for this device.
-				</Alert.Description>
-			</Alert.Root>
-		{:else}
-			<Alert.Root variant="warning">
-				<CircleAlertIcon class="size-4" />
-				<Alert.Title>Finish setup before recording</Alert.Title>
-				<Alert.Description>
-					{readiness.primaryIssue ?? 'Complete the required transcription setup.'}
-				</Alert.Description>
-			</Alert.Root>
-		{/if}
+	<!-- Progress stepper: the only progress indicator on the page. -->
+	<nav class="flex items-stretch gap-2" aria-label="Setup progress">
+		{#each steps as step, index (step.id)}
+			{@const done = step.status === 'ready'}
+			{@const current = index === activeIndex}
+			<button
+				type="button"
+				disabled={!isReachable(index)}
+				aria-current={current ? 'step' : undefined}
+				onclick={() => navigate(step.id)}
+				class="flex flex-1 flex-col gap-1.5 rounded-md text-left transition disabled:cursor-default"
+				class:opacity-50={!current && !done}
+			>
+				<span
+					class="h-1 w-full rounded-full transition-colors"
+					class:bg-green-500={done}
+					class:bg-foreground={current && !done}
+					class:bg-border={!current && !done}
+				></span>
+				<span class="flex items-center gap-1.5 text-xs font-medium">
+					{#if done}
+						<CheckCircle2Icon class="size-3.5 text-green-500" />
+					{:else}
+						<CircleIcon
+							class="size-3.5 {current
+								? 'text-foreground'
+								: 'text-muted-foreground'}"
+						/>
+					{/if}
+					<span class={current || done ? 'text-foreground' : 'text-muted-foreground'}>
+						{index + 1}. {step.label}
+					</span>
+				</span>
+			</button>
+		{/each}
+	</nav>
 
-		<TranscriptionRuntimeSetup />
-	</SetupSection>
+	{#key activeStep}
+		<div
+			class="flex flex-col gap-5"
+			in:fly={{
+				x: reducedMotion.current ? 0 : 12 * direction,
+				duration: reducedMotion.current ? 0 : 150,
+				easing: cubicOut,
+			}}
+		>
+			<div class="space-y-1">
+				<h2 class="text-base font-medium">{currentStep.title}</h2>
+				<p class="text-sm text-muted-foreground">{currentStep.helper}</p>
+			</div>
 
-	<SetupSection
-		number="2"
-		title="Start recording"
-		description="Use the home screen once the runtime is ready."
-		complete={readiness.isReady}
-	>
-		<div class="flex flex-col gap-2 sm:flex-row">
-			<Button href="/" disabled={!readiness.isReady}>Start recording</Button>
-			<Button href="/settings/transcription" variant="outline">
-				Open transcription settings
-			</Button>
+			{#if activeStep === 'engine'}
+				<EngineStep />
+			{:else if activeStep === 'access'}
+				<AccessStep {permissions} />
+			{:else if activeStep === 'activation'}
+				<ActivationStep />
+			{:else if activeStep === 'practice'}
+				<PracticeStep
+					{readiness}
+					{practiceSucceeded}
+					onSuccess={() => (practiceSucceeded = true)}
+				/>
+			{/if}
 		</div>
-	</SetupSection>
-</div>
+	{/key}
+
+	<div class="flex items-center justify-between">
+		<Button variant="outline" disabled={isFirstStep} onclick={handleBack}>
+			<ArrowLeftIcon class="size-4" />
+			Back
+		</Button>
+		<Button disabled={primaryDisabled} onclick={handlePrimary}>
+			{primaryLabel}
+			{#if !isLastStep}
+				<ArrowRightIcon class="size-4" />
+			{/if}
+		</Button>
+	</div>
+</main>

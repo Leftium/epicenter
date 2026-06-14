@@ -7,26 +7,23 @@
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import Download from '@lucide/svelte/icons/download';
 	import X from '@lucide/svelte/icons/x';
-	import { type LocalModelConfig } from '$lib/constants/local-models';
+	import {
+		type LocalModelConfig,
+		modelEntryName,
+	} from '$lib/constants/local-models';
 	import { localModelDownloads } from '$lib/state/local-model-downloads.svelte';
 
 	let {
 		model,
-		active = false,
+		value = $bindable(),
 		recommended = false,
-		onActivate,
-		onClearSelection,
 		onDiskChange,
 	}: {
 		model: LocalModelConfig;
-		/** Whether this catalog model is the selected folder entry. */
-		active?: boolean;
+		/** Bindable selected folder entry name for this engine. */
+		value: string;
 		/** Show the Recommended badge; the selector decides when it guides a choice. */
 		recommended?: boolean;
-		/** Select this model's folder entry through the parent bind:value. */
-		onActivate: () => void | Promise<void>;
-		/** Clear the parent selection after deleting the active entry. */
-		onClearSelection: () => void | Promise<void>;
 		/** Re-scan the parent selector after this card changes the models folder. */
 		onDiskChange: () => void | Promise<void>;
 	} = $props();
@@ -37,7 +34,8 @@
 
 	// Aliased so the template narrows the union per branch.
 	const modelState = $derived(download.state);
-	const isActive = $derived(active && modelState.type === 'ready');
+	const entryName = $derived(modelEntryName(model));
+	const isActive = $derived(value === entryName && modelState.type === 'ready');
 
 	async function downloadModel() {
 		const result = await download.download();
@@ -49,7 +47,7 @@
 			return;
 		}
 
-		await onActivate();
+		value = result.data.entryName;
 		await onDiskChange();
 		toast.success(
 			result.data.outcome === 'already-installed'
@@ -66,15 +64,13 @@
 			});
 			return;
 		}
-		if (active) {
-			await onClearSelection();
-		}
+		if (value === entryName) value = '';
 		await onDiskChange();
 		toast.success('Model deleted');
 	}
 
 	async function activateModel() {
-		await onActivate();
+		value = entryName;
 		toast.success('Model activated');
 	}
 </script>

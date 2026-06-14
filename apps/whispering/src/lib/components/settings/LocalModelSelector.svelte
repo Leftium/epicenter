@@ -287,17 +287,10 @@
 			</Collapsible.Trigger>
 			<Collapsible.Content class="space-y-3 pt-3">
 				{#each models as model (model.id)}
-					{@const entryName = modelEntryName(model)}
 					<LocalModelDownloadCard
 						{model}
-						active={value === entryName}
+						bind:value
 						recommended={models.length > 1 && model.id === recommended.id}
-						onActivate={() => {
-							value = entryName;
-						}}
-						onClearSelection={() => {
-							if (value === entryName) value = '';
-						}}
 						onDiskChange={refreshEntries}
 					/>
 				{/each}

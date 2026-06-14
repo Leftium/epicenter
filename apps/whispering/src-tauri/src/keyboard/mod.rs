@@ -12,9 +12,14 @@
 //! - `rdev_map` the only rdev-coupled code: `rdev::Key` -> matcher `Input`
 //! - `event`    the wire payload emitted to the FE
 //!
-//! Wave 2 built this module in isolation. Wave 3 wires it in: the
-//! `set_keyboard_shortcuts` command pushes the user's bindings, the listener
-//! starts at launch, and the FE registrar dispatches the emitted events.
+//! Wave 2 built this module in isolation. Wave 3 wired it in: the
+//! `set_keyboard_shortcuts` command pushes the user's bindings and the FE
+//! registrar dispatches the emitted events. Wave 6 added the start lifecycle:
+//! the FE calls `start_keyboard_listener` once it knows global shortcuts are
+//! allowed (macOS Accessibility granted, or any non-macOS desktop), so the
+//! listener is never spawned before `rdev::listen` can actually tap the
+//! keyboard. This mirrors `cjpais/Handy`, which gates the listener on the
+//! frontend's permission check rather than polling `listen` from Rust.
 
 pub mod commands;
 pub mod event;
@@ -25,12 +30,41 @@ mod rdev_map;
 pub use event::{ShortcutCaptureEvent, ShortcutTriggerEvent, TriggerState};
 pub use keys::{Key, KeyBinding, Modifier};
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use tauri_specta::Event;
 
 use matcher::{Edge, Matcher};
+
+/// The window the trigger/capture events are delivered to. We target it
+/// explicitly instead of broadcasting so the overlay and picker webviews never
+/// see shortcut events, which keeps the dispatch single even if they subscribe.
+const MAIN_WINDOW: &str = "main";
+
+/// Outcome of a `start` request, so the FE can tell the user when global
+/// shortcuts are unavailable instead of relying on a Rust log nobody sees.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, specta::Type)]
+#[serde(rename_all = "camelCase")]
+pub enum ListenerStart {
+    /// A listener thread was spawned.
+    Started,
+    /// A listener thread is already running; this call was a no-op.
+    AlreadyRunning,
+    /// Linux Wayland: rdev's tap never receives events, so nothing was spawned.
+    WaylandUnsupported,
+}
+
+/// rdev's listener is X11-only; on Wayland the tap never receives events.
+#[cfg(target_os = "linux")]
+fn is_wayland() -> bool {
+    std::env::var("XDG_SESSION_TYPE")
+        .map(|value| value.eq_ignore_ascii_case("wayland"))
+        .unwrap_or(false)
+        || std::env::var("WAYLAND_DISPLAY").is_ok()
+}
 
 /// Owns the registered bindings and the rdev listener thread. Constructed in
 /// `setup` with an `AppHandle` (mirrors `ModelManager`) and managed via
@@ -38,6 +72,10 @@ use matcher::{Edge, Matcher};
 pub struct KeyboardListener {
     app: AppHandle,
     matcher: Arc<Mutex<Matcher>>,
+    /// Whether a listener thread is live. Guards against spawning a second
+    /// `rdev::listen` (which would double-fire every trigger). Reset to false
+    /// when the thread exits so a later `start` can retry.
+    running: Arc<AtomicBool>,
 }
 
 impl KeyboardListener {
@@ -45,6 +83,7 @@ impl KeyboardListener {
         Self {
             app,
             matcher: Arc::new(Mutex::new(Matcher::new())),
+            running: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -66,19 +105,40 @@ impl KeyboardListener {
         }
     }
 
-    /// Spawn the rdev listener on its own thread. `rdev::listen` blocks for the
-    /// process lifetime, so it cannot run on the main thread. It is a passive
-    /// **listen** (not `grab`), so keystrokes still reach the foreground app.
+    /// Spawn the rdev listener once, if it is not already running. The FE calls
+    /// this through `start_keyboard_listener` when it knows global shortcuts are
+    /// allowed (macOS Accessibility granted, or any non-macOS desktop), so
+    /// `rdev::listen` can actually create the tap. `listen` is a passive listen
+    /// (not `grab`, so keystrokes still reach the foreground app) and blocks
+    /// until it errors; if it does exit (focus loss, permission revoked) the
+    /// thread resets `running` so a later `start` can retry.
     ///
-    /// macOS requires Accessibility / Input Monitoring for the tap to receive
-    /// events; that permission is wired in Wave 6. Until then `listen` returns
-    /// an error here, which we log rather than panic on.
-    pub fn start(&self) {
+    /// Idempotent: the `running` guard means a second call while a thread is
+    /// live is a no-op, so the FE can call this freely (on launch and on every
+    /// Accessibility re-check) without ever spawning two listeners.
+    pub fn start(&self) -> ListenerStart {
+        #[cfg(target_os = "linux")]
+        if is_wayland() {
+            return ListenerStart::WaylandUnsupported;
+        }
+
+        if self.running.swap(true, Ordering::SeqCst) {
+            return ListenerStart::AlreadyRunning;
+        }
+
         let app = self.app.clone();
         let matcher = self.matcher.clone();
+        let running = self.running.clone();
         std::thread::Builder::new()
             .name("rdev-keyboard-listener".into())
             .spawn(move || {
+                // A previous attempt that exited may have left a key in the held
+                // set with no matching release; start clean so a stale modifier
+                // cannot wedge a binding "down" under exact-set matching.
+                if let Ok(mut matcher) = matcher.lock() {
+                    matcher.clear_held();
+                }
+
                 let result = rdev::listen(move |event| {
                     let (edge, key) = match event.event_type {
                         rdev::EventType::KeyPress(key) => (Edge::Press, key),
@@ -97,18 +157,23 @@ impl KeyboardListener {
                     if matcher.is_capturing() {
                         let binding = matcher.held_binding();
                         drop(matcher);
-                        let _ = ShortcutCaptureEvent { binding }.emit(&app);
+                        let _ = ShortcutCaptureEvent { binding }.emit_to(&app, MAIN_WINDOW);
                     } else {
                         drop(matcher);
                         for trigger in triggers {
-                            let _ = trigger.emit(&app);
+                            let _ = trigger.emit_to(&app, MAIN_WINDOW);
                         }
                     }
                 });
                 if let Err(error) = result {
                     log::error!("rdev keyboard listener stopped: {error:?}");
                 }
+                // Allow a later `start` (e.g. the FE re-checking on focus) to
+                // respawn after a transient exit.
+                running.store(false, Ordering::SeqCst);
             })
             .expect("failed to spawn rdev keyboard listener thread");
+
+        ListenerStart::Started
     }
 }

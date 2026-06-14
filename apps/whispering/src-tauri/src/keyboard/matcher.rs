@@ -79,6 +79,18 @@ impl Matcher {
         }
     }
 
+    /// Drop all held state and mark every binding inactive. Called when the
+    /// listener (re)enters `rdev::listen`: a prior attempt that exited may have
+    /// missed a key-up, and a stale held modifier would otherwise wedge a
+    /// binding "down" or suppress the next press under exact-set matching.
+    pub fn clear_held(&mut self) {
+        self.held_modifiers.clear();
+        self.held_keys.clear();
+        for binding in &mut self.bindings {
+            binding.active = false;
+        }
+    }
+
     /// Replace the full set of registered bindings. Empty bindings are dropped
     /// (they can never be "held"). All `active` flags reset to false, so a
     /// freshly registered binding requires a new press even if its keys happen
@@ -202,6 +214,25 @@ mod tests {
                 ("pushToTalk".to_string(), Released),
             ]
         );
+    }
+
+    #[test]
+    fn clear_held_drops_stale_state_so_a_missed_release_cannot_wedge_a_binding() {
+        let mut matcher = Matcher::new();
+        matcher.set_bindings([("ptt".to_string(), binding(&[], &[Key::Space]))]);
+
+        // Space goes down (binding fires), then the key-up is "missed" (the
+        // listener exited mid-hold). clear_held models the listener restart.
+        let pressed = run(&mut matcher, &[(Press, K(Key::Space))]);
+        assert_eq!(pressed, vec![("ptt".to_string(), Pressed)]);
+        matcher.clear_held();
+
+        // A later stray release must not emit, and a fresh press still works.
+        let after = run(
+            &mut matcher,
+            &[(Release, K(Key::Space)), (Press, K(Key::Space))],
+        );
+        assert_eq!(after, vec![("ptt".to_string(), Pressed)]);
     }
 
     #[test]

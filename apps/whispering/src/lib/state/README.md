@@ -33,6 +33,8 @@ settings.set('recording.mode', 'vad');
 Recording metadata backed by Yjs workspace table. SvelteMap provides per-key reactivity: updating one recording doesn't re-render the entire list. Audio blobs are not stored here because they are too large for CRDTs; use `$lib/rpc/audio` for playback URLs and `services.blobs.audio` for raw blob access.
 
 ```typescript
+import { InstantString } from '@epicenter/field';
+
 import { recordings } from '$lib/state/recordings.svelte';
 
 // Read recordings reactively
@@ -41,30 +43,22 @@ const sorted = recordings.sorted; // newest first
 
 // Write (Yjs observer auto-updates SvelteMap)
 recordings.set(recording);
-recordings.update(id, { transcriptionStatus: 'DONE' });
+recordings.update(id, {
+	transcript,
+	transcription: { status: 'completed', completedAt: InstantString.now() },
+});
 recordings.delete(id);
 ```
 
 ### `transformations.svelte.ts`
 
-Transformation metadata backed by Yjs workspace table. Steps are stored in a separate table (`transformation-steps.svelte.ts`), not embedded in the transformation.
+Transformations backed by a Yjs workspace table. Each transformation is a single self-contained row: the fixed three-phase shape (`preReplacements`, `prompt`, `postReplacements`) lives on the row, there is no separate steps table.
 
 ```typescript
 import { transformations } from '$lib/state/transformations.svelte';
 
 const transformation = transformations.get(id);
 const sorted = transformations.sorted; // alphabetical
-```
-
-### `transformation-steps.svelte.ts`
-
-Transformation steps backed by Yjs workspace table. Steps have a `transformationId` FK and `order` field.
-
-```typescript
-import { transformationSteps } from '$lib/state/transformation-steps.svelte';
-
-// Get steps for a transformation, sorted by order
-const steps = transformationSteps.getByTransformationId(transformationId);
 ```
 
 ### `transformation-runs.svelte.ts`
@@ -86,10 +80,10 @@ Device-bound configuration backed by per-key localStorage. Secrets, hardware IDs
 import { deviceConfig } from '$lib/state/device-config.svelte';
 
 // Read config reactively
-const apiKey = deviceConfig.get('apiKeys.openai');
+const apiKey = deviceConfig.get('providers.openai.apiKey');
 
 // Update config (writes to localStorage per-key)
-deviceConfig.set('apiKeys.openai', 'sk-...');
+deviceConfig.set('providers.openai.apiKey', 'sk-...');
 
 // Get definition default (for "Default: X" placeholders)
 const defaultShortcut = deviceConfig.getDefault('shortcuts.global.toggleManualRecording');

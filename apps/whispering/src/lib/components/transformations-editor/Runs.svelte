@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
-	import * as Card from '@epicenter/ui/card';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Empty from '@epicenter/ui/empty';
 	import { Label } from '@epicenter/ui/label';
@@ -12,11 +11,8 @@
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import { format } from 'date-fns';
 	import CopyablePre from '$lib/components/copyable/CopyablePre.svelte';
-	import TextPreviewDialog from '$lib/components/copyable/TextPreviewDialog.svelte';
 	import { report } from '$lib/report';
 	import { transformationRuns } from '$lib/state/transformation-runs.svelte';
-	import { transformationStepRuns } from '$lib/state/transformation-step-runs.svelte';
-	import { viewTransition } from '$lib/utils/viewTransitions';
 	import type { TransformationRun } from '$lib/workspace';
 
 	let { runs }: { runs: TransformationRun[] } = $props();
@@ -29,6 +25,39 @@
 
 	function formatDate(dateStr: string) {
 		return format(new Date(dateStr), 'MMM d, yyyy h:mm a');
+	}
+
+	/**
+	 * Liveness is derived, never stored. A run with no result reads as running
+	 * while its start is recent and interrupted once it goes quiet, so a crash
+	 * mid-run self-heals instead of wedging at "running" forever. Generous
+	 * window: a transformation may make an LLM call. See
+	 * docs/articles/20260612T190745-liveness-belongs-to-the-process-not-the-row.md
+	 */
+	const RUNNING_GRACE_MS = 5 * 60 * 1000;
+
+	type DerivedRunStatus = 'running' | 'interrupted' | 'completed' | 'failed';
+
+	function deriveRunStatus(run: {
+		startedAt: string;
+		result: TransformationRun['result'];
+	}): DerivedRunStatus {
+		if (run.result) return run.result.status;
+		const ageMs = Date.now() - new Date(run.startedAt).getTime();
+		return ageMs < RUNNING_GRACE_MS ? 'running' : 'interrupted';
+	}
+
+	function statusBadgeVariant(status: DerivedRunStatus) {
+		switch (status) {
+			case 'completed':
+				return 'status.completed' as const;
+			case 'failed':
+				return 'status.failed' as const;
+			case 'running':
+				return 'status.running' as const;
+			case 'interrupted':
+				return 'secondary' as const;
+		}
 	}
 </script>
 
@@ -82,6 +111,7 @@
 				</Table.Header>
 				<Table.Body>
 					{#each runs as run}
+						{@const runStatus = deriveRunStatus(run)}
 						<Table.Row>
 							<Table.Cell>
 								<Button
@@ -98,15 +128,13 @@
 								</Button>
 							</Table.Cell>
 							<Table.Cell>
-								<Badge variant={`status.${run.result.status}`}>
-									{run.result.status}
+								<Badge variant={statusBadgeVariant(runStatus)}>
+									{runStatus}
 								</Badge>
 							</Table.Cell>
 							<Table.Cell> {formatDate(run.startedAt)} </Table.Cell>
 							<Table.Cell>
-								{run.result.status === 'running'
-									? '-'
-									: formatDate(run.result.completedAt)}
+								{run.result ? formatDate(run.result.completedAt) : '-'}
 							</Table.Cell>
 							<Table.Cell class="text-right">
 								<Button
@@ -135,85 +163,17 @@
 						</Table.Row>
 
 						{#if expandedRunId === run.id}
-							{@const stepRuns = transformationStepRuns.getByTransformationRunId(
-								run.id,
-							)}
 							<Table.Row>
 								<Table.Cell class="space-y-4 p-4" colspan={5}>
 									<Label class="text-sm font-medium">Input</Label>
 									<CopyablePre variant="text" copyableText={run.input} />
 
-									{#if run.result.status === 'completed'}
+									{#if run.result?.status === 'completed'}
 										<Label class="text-sm font-medium">Output</Label>
 										<CopyablePre variant="text" copyableText={run.result.output} />
-									{:else if run.result.status === 'failed'}
+									{:else if run.result?.status === 'failed'}
 										<Label class="text-sm font-medium">Error</Label>
 										<CopyablePre variant="error" copyableText={run.result.error} />
-									{/if}
-									{#if stepRuns.length > 0}
-										<div class="flex flex-col gap-2">
-											<Label class="text-sm font-medium">Steps</Label>
-											<Card.Root>
-												<Table.Root>
-													<Table.Header>
-														<Table.Row>
-															<Table.Head>Status</Table.Head>
-															<Table.Head>Started</Table.Head>
-															<Table.Head>Completed</Table.Head>
-															<Table.Head>Input</Table.Head>
-															<Table.Head>Output</Table.Head>
-														</Table.Row>
-													</Table.Header>
-													<Table.Body>
-														{#each stepRuns as stepRun}
-															<Table.Row>
-																<Table.Cell>
-																	<Badge variant={`status.${stepRun.result.status}`}>
-																		{stepRun.result.status}
-																	</Badge>
-																</Table.Cell>
-																<Table.Cell>
-																	{formatDate(stepRun.startedAt)}
-																</Table.Cell>
-																<Table.Cell>
-																	{stepRun.result.status === 'running'
-																		? '-'
-																		: formatDate(stepRun.result.completedAt)}
-																</Table.Cell>
-																<Table.Cell>
-																	<TextPreviewDialog
-																		id={viewTransition.stepRun(stepRun.id)
-																			.input}
-																		title="Step Input"
-																		label="step input"
-																		text={stepRun.input}
-																	/>
-																</Table.Cell>
-																<Table.Cell>
-																	{#if stepRun.result.status === 'completed'}
-																		<TextPreviewDialog
-																			id={viewTransition.stepRun(stepRun.id)
-																				.output}
-																			title="Step Output"
-																			label="step output"
-																			text={stepRun.result.output}
-																		/>
-																	{:else if stepRun.result.status === 'failed'}
-																		<TextPreviewDialog
-																			id={viewTransition.stepRun(stepRun.id)
-																				.error}
-																			title="Step Error"
-																			label="step error"
-																			text={stepRun.result.error}
-																		/>
-																	{/if}
-																</Table.Cell>
-															</Table.Row>
-														{/each}
-													</Table.Body>
-												</Table.Root>
-											</Card.Root>
-										</div>
 									{/if}
 								</Table.Cell>
 							</Table.Row>

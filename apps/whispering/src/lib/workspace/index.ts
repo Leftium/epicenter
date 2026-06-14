@@ -1,12 +1,8 @@
 export {
-	type CompletedResult,
 	createWhispering,
-	type FailedResult,
 	type Recording,
-	type RunningResult,
+	type Replacement,
 	type Transformation,
+	type TransformationPrompt,
 	type TransformationRun,
-	type TransformationRunResult,
-	type TransformationStep,
-	type TransformationStepRun,
 } from './definition';

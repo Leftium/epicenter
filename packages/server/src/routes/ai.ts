@@ -9,12 +9,21 @@
  * BYOK: callers may pass `apiKey` in the request body, in which case the
  * deployment's provider key is ignored. No billing implications; the
  * library treats BYOK and house-key the same.
+ *
+ * House keys (`OPENAI_API_KEY`, `GEMINI_API_KEY`) are optional bindings: a
+ * deployment that omits one serves only BYOK requests for that provider,
+ * and a house-key request gets 503 ProviderNotConfigured. Hosted requires
+ * both at deploy time; see apps/api/wrangler.jsonc for why.
  */
 
 import {
 	AiChatError,
 	AiChatErrorStatus,
 } from '@epicenter/constants/ai-chat-errors';
+import {
+	SERVABLE_PROVIDER_MODELS,
+	type ServableProvider,
+} from '@epicenter/constants/ai-providers';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { sValidator } from '@hono/standard-validator';
 import {
@@ -24,8 +33,8 @@ import {
 	type Tool,
 	toServerSentEventsResponse,
 } from '@tanstack/ai';
-import { createGeminiChat, GeminiTextModels } from '@tanstack/ai-gemini';
-import { createOpenaiChat, OPENAI_CHAT_MODELS } from '@tanstack/ai-openai';
+import { createGeminiChat } from '@tanstack/ai-gemini';
+import { createOpenaiChat } from '@tanstack/ai-openai';
 import { type } from 'arktype';
 import { Hono, type MiddlewareHandler } from 'hono';
 import { describeRoute } from 'hono-openapi';
@@ -39,18 +48,35 @@ const chatOptions = type({
 	'maxTokens?': 'number | undefined',
 	'topP?': 'number | undefined',
 	'metadata?': 'Record<string, unknown> | undefined',
-	'conversationId?': 'string | undefined',
 	'tools?': 'object[] | undefined',
 });
 
+const providerModel = type.or(
+	{
+		provider: "'openai'",
+		model: type.enumerated(...SERVABLE_PROVIDER_MODELS.openai),
+	},
+	{
+		provider: "'gemini'",
+		model: type.enumerated(...SERVABLE_PROVIDER_MODELS.gemini),
+	},
+);
+
+/**
+ * Every provider in the shared registry (`@epicenter/constants/ai-providers`)
+ * must be one this validator accepts, so a client picker that re-exports the
+ * registry can never offer a provider this route answers with a 400. Adding a
+ * provider to the registry without a branch above is a compile error here.
+ */
+const _serverAcceptsEveryServableProvider: [ServableProvider] extends [
+	(typeof providerModel.infer)['provider'],
+]
+	? true
+	: never = true;
+
 const aiChatBody = type({
 	messages: 'object[] >= 1',
-	data: chatOptions.merge(
-		type.or(
-			{ provider: "'openai'", model: type.enumerated(...OPENAI_CHAT_MODELS) },
-			{ provider: "'gemini'", model: type.enumerated(...GeminiTextModels) },
-		),
-	),
+	data: chatOptions.merge(providerModel),
 	/** Caller-provided API key for BYOK. When present, the deployment's house key is bypassed. */
 	'apiKey?': 'string | undefined',
 });

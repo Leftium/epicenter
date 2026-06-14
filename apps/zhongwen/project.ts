@@ -9,24 +9,18 @@
 
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { defineWorkspace } from '@epicenter/workspace';
-import { defineMount } from '@epicenter/workspace/daemon';
-import { attachProjectInfrastructure } from '@epicenter/workspace/node';
+import { defineSessionMount } from '@epicenter/workspace/daemon';
+import { attachMountInfrastructure } from '@epicenter/workspace/node';
 import { createZhongwen } from './zhongwen.js';
 
 export function zhongwen() {
-	return defineMount({
+	return defineSessionMount({
 		name: 'zhongwen',
 		open(ctx) {
-			const workspace = createZhongwen({ keyring: ctx.keyring });
-			workspace.ydoc.clientID = ctx.yDocClientId;
+			const workspace = createZhongwen({ keyring: ctx.session.keyring });
 
-			const infrastructure = attachProjectInfrastructure(workspace.ydoc, {
+			const infrastructure = attachMountInfrastructure(workspace.ydoc, ctx, {
 				baseURL: EPICENTER_API_URL,
-				projectDir: ctx.projectDir,
-				ownerId: ctx.ownerId,
-				deviceId: ctx.deviceId,
-				openWebSocket: ctx.openWebSocket,
-				onReconnectSignal: ctx.onReconnectSignal,
 				actions: workspace.actions,
 			});
 

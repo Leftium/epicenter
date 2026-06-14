@@ -8,16 +8,20 @@
  * leak through the app.
  */
 
-import type { MessagePart } from '@tanstack/ai';
 import type { UIMessage } from '@tanstack/ai-svelte';
-
 import type { ChatMessage, ChatMessageId } from 'opensidian';
+import type { JsonValue } from 'wellcrafted/json';
 
 type Expect<T extends true> = T;
 type Equal<TLeft, TRight> =
 	(<T>() => T extends TLeft ? 1 : 2) extends <T>() => T extends TRight ? 1 : 2
 		? true
 		: false;
+
+// Derive the part type from UIMessage so the drift check and the cast guard
+// the union the UI actually consumes (@tanstack/ai-client's MessagePart), not
+// the structurally similar server union in @tanstack/ai.
+type UiMessagePart = UIMessage['parts'][number];
 
 type ExpectedPartTypes =
 	| 'text'
@@ -27,11 +31,12 @@ type ExpectedPartTypes =
 	| 'document'
 	| 'tool-call'
 	| 'tool-result'
-	| 'thinking';
+	| 'thinking'
+	| 'structured-output';
 
 type _ChatMessageIdDriftCheck = Expect<Equal<ChatMessage['id'], ChatMessageId>>;
 type _PartTypeDriftCheck = Expect<
-	Equal<MessagePart['type'], ExpectedPartTypes>
+	Equal<UiMessagePart['type'], ExpectedPartTypes>
 >;
 
 /**
@@ -44,16 +49,19 @@ export function toUiMessage(msg: ChatMessage): UIMessage {
 	return {
 		id: msg.id,
 		role: msg.role,
-		parts: msg.parts as unknown as MessagePart[],
+		parts: msg.parts as unknown as UiMessagePart[],
 		createdAt: new Date(msg.createdAt),
 	};
 }
 
 /**
- * Convert persisted chat messages into TanStack AI messages for rendering.
+ * Serialize live TanStack AI parts for the chatMessages table.
  *
- * Useful when the UI needs a full conversation transcript, not a single row.
+ * The inverse of {@link toUiMessage}'s cast: parts are plain
+ * structuredClone-compatible objects, so they store as-is. Routing writes
+ * through here also checks the parts against the TanStack AI union at
+ * compile time before they become untyped JSON.
  */
-export function toUiMessages(msgs: ChatMessage[]): UIMessage[] {
-	return msgs.map(toUiMessage);
+export function toPersistedParts(parts: UiMessagePart[]): JsonValue[] {
+	return parts as unknown as JsonValue[];
 }

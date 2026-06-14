@@ -41,6 +41,28 @@
 	);
 
 	const recording = $derived(recordings.get(recordingId));
+
+	// Liveness is the in-flight mutation, not a stored field: while this row's
+	// transcription is pending it reads as transcribing, otherwise the stored
+	// outcome (completed/failed) or its absence (unprocessed) decides the state.
+	// A discriminated union, so the failed case carries its error directly.
+	const transcriptionState = $derived.by(() => {
+		if (transcribeRecording.isPending) return { status: 'transcribing' } as const;
+		return recording?.transcription ?? ({ status: 'unprocessed' } as const);
+	});
+
+	const transcriptionTooltip = $derived.by(() => {
+		switch (transcriptionState.status) {
+			case 'unprocessed':
+				return 'Start transcribing this recording';
+			case 'transcribing':
+				return 'Currently transcribing...';
+			case 'completed':
+				return 'Retry transcription';
+			case 'failed':
+				return `Transcription failed: ${transcriptionState.error}. Click to retry`;
+		}
+	});
 </script>
 
 <div class="flex items-center gap-1">
@@ -52,13 +74,7 @@
 		<Skeleton class="size-8" />
 	{:else}
 		<Button
-			tooltip={recording.transcriptionStatus === 'UNPROCESSED'
-				? 'Start transcribing this recording'
-				: recording.transcriptionStatus === 'TRANSCRIBING'
-					? 'Currently transcribing...'
-					: recording.transcriptionStatus === 'DONE'
-						? 'Retry transcription'
-						: 'Transcription failed - click to try again'}
+			tooltip={transcriptionTooltip}
 			onclick={() => {
 				const loading = report.loading({
 					title: 'Transcribing...',
@@ -85,13 +101,13 @@
 			variant="ghost"
 			size="icon"
 		>
-			{#if recording.transcriptionStatus === 'UNPROCESSED'}
+			{#if transcriptionState.status === 'unprocessed'}
 				<PlayIcon class="size-4" />
-			{:else if recording.transcriptionStatus === 'TRANSCRIBING'}
+			{:else if transcriptionState.status === 'transcribing'}
 				<EllipsisIcon class="size-4" />
-			{:else if recording.transcriptionStatus === 'DONE'}
+			{:else if transcriptionState.status === 'completed'}
 				<RepeatIcon class="size-4 text-green-500" />
-			{:else if recording.transcriptionStatus === 'FAILED'}
+			{:else if transcriptionState.status === 'failed'}
 				<RotateCcwIcon class="size-4 text-red-500" />
 			{/if}
 		</Button>
@@ -107,7 +123,7 @@
 				.transcript}"
 		/>
 
-		{#if latestRun?.result.status === 'completed'}
+		{#if latestRun?.result?.status === 'completed'}
 			<CopyButton
 				text={latestRun.result.output}
 				copyFn={createCopyFn('latest transformation run output')}

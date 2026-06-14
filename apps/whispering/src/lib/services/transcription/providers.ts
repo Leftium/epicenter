@@ -4,6 +4,11 @@
  * deviceConfig/settings key NAMES used to read its config (never the values,
  * which the dispatcher in `operations/transcribe.ts` reads).
  *
+ * Pointer-field naming: the suffix names the store. A `*ConfigKey` field
+ * holds the name of a `deviceConfig` entry (device-local, never synced); a
+ * `*SettingKey` field holds the name of a `settings` entry (synced workspace
+ * KV). Dispatchers resolve the pointer against the matching store.
+ *
  * Behavior is deliberately not here. The `id -> transcribe` wiring lives as a
  * static table in the dispatcher, where the provider SDKs already load. That
  * keeps this record free of SDK imports so the workspace schema can import
@@ -23,19 +28,25 @@ type CloudProvider = {
 	capabilities: Capabilities;
 	models: readonly CloudModel[];
 	defaultModel: string;
-	apiKeyKey: DeviceConfigKey;
+	apiKeyConfigKey: DeviceConfigKey;
 	/**
 	 * The settings key holding this provider's model selection. Constrained to
 	 * the leaf shape `transcription.${string}.model`, not a precise union of the
 	 * cloud keys: a precise union here would make `typeof PROVIDERS` reference a
 	 * type derived from itself (`satisfies Record<..., TranscriptionProvider>`
 	 * closes the loop). The real guard is the call site
-	 * `settings.get(provider.modelKey)`, which rejects keys absent from the
-	 * settings schema.
+	 * `settings.get(provider.modelSettingKey)`, which rejects keys absent from
+	 * the settings schema.
 	 */
-	modelKey: `transcription.${string}.model`;
-	/** Optional custom base URL override (OpenAI-compatible reverse proxies). */
-	endpointKey?: DeviceConfigKey;
+	modelSettingKey: `transcription.${string}.model`;
+	/** Device config key for the endpoint override; null when not configurable. */
+	endpointConfigKey: DeviceConfigKey | null;
+	/**
+	 * Where this provider documents its transcription models; null when the
+	 * provider has no good page to link. The settings page renders this under
+	 * the model picker.
+	 */
+	modelsDoc: { label: string; href: string } | null;
 };
 
 type LocalProvider = {
@@ -43,9 +54,13 @@ type LocalProvider = {
 	label: string;
 	description: string;
 	capabilities: Capabilities;
-	modelPathKey: DeviceConfigKey;
-	/** Whether the model path points at a single file or a directory. */
-	preflightKind: 'file' | 'directory';
+	/**
+	 * The device config key holding the engine's selected model: a folder
+	 * entry name inside the engine's models folder, never a path.
+	 */
+	modelConfigKey: DeviceConfigKey;
+	/** Whether the engine's model is a single file or a directory. */
+	modelKind: 'file' | 'directory';
 };
 
 type SelfHostedProvider = {
@@ -53,8 +68,8 @@ type SelfHostedProvider = {
 	label: string;
 	description: string;
 	capabilities: Capabilities;
-	serverUrlKey: DeviceConfigKey;
-	modelIdKey: DeviceConfigKey;
+	endpointConfigKey: DeviceConfigKey;
+	modelIdConfigKey: DeviceConfigKey;
 };
 
 type TranscriptionProvider = CloudProvider | LocalProvider | SelfHostedProvider;
@@ -65,9 +80,13 @@ export const PROVIDERS = {
 		label: 'OpenAI',
 		description: 'Industry-standard Whisper API',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
-		apiKeyKey: 'apiKeys.openai',
-		modelKey: 'transcription.openai.model',
-		endpointKey: 'apiEndpoints.openai',
+		apiKeyConfigKey: 'providers.openai.apiKey',
+		modelSettingKey: 'transcription.openai.model',
+		endpointConfigKey: 'providers.openai.endpoint',
+		modelsDoc: {
+			label: 'OpenAI docs',
+			href: 'https://platform.openai.com/docs/guides/speech-to-text',
+		},
 		defaultModel: 'whisper-1',
 		models: [
 			{
@@ -95,9 +114,13 @@ export const PROVIDERS = {
 		label: 'Groq',
 		description: 'Lightning-fast cloud transcription',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
-		apiKeyKey: 'apiKeys.groq',
-		modelKey: 'transcription.groq.model',
-		endpointKey: 'apiEndpoints.groq',
+		apiKeyConfigKey: 'providers.groq.apiKey',
+		modelSettingKey: 'transcription.groq.model',
+		endpointConfigKey: 'providers.groq.endpoint',
+		modelsDoc: {
+			label: 'Groq docs',
+			href: 'https://console.groq.com/docs/speech-to-text',
+		},
 		defaultModel: 'whisper-large-v3-turbo',
 		models: [
 			{
@@ -119,8 +142,13 @@ export const PROVIDERS = {
 		label: 'ElevenLabs',
 		description: 'Voice AI platform with transcription',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
-		apiKeyKey: 'apiKeys.elevenlabs',
-		modelKey: 'transcription.elevenlabs.model',
+		apiKeyConfigKey: 'providers.elevenlabs.apiKey',
+		endpointConfigKey: null,
+		modelSettingKey: 'transcription.elevenlabs.model',
+		modelsDoc: {
+			label: 'ElevenLabs docs',
+			href: 'https://elevenlabs.io/docs/capabilities/speech-to-text',
+		},
 		defaultModel: 'scribe_v2',
 		models: [
 			{
@@ -148,8 +176,10 @@ export const PROVIDERS = {
 		label: 'Deepgram',
 		description: 'Real-time speech recognition API',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
-		apiKeyKey: 'apiKeys.deepgram',
-		modelKey: 'transcription.deepgram.model',
+		apiKeyConfigKey: 'providers.deepgram.apiKey',
+		endpointConfigKey: null,
+		modelSettingKey: 'transcription.deepgram.model',
+		modelsDoc: null,
 		defaultModel: 'nova-3',
 		models: [
 			{
@@ -188,8 +218,13 @@ export const PROVIDERS = {
 		label: 'Mistral AI',
 		description: 'Advanced Voxtral speech understanding',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
-		apiKeyKey: 'apiKeys.mistral',
-		modelKey: 'transcription.mistral.model',
+		apiKeyConfigKey: 'providers.mistral.apiKey',
+		endpointConfigKey: null,
+		modelSettingKey: 'transcription.mistral.model',
+		modelsDoc: {
+			label: 'Mistral docs',
+			href: 'https://mistral.ai/news/voxtral/',
+		},
 		defaultModel: 'voxtral-mini-latest',
 		models: [
 			{
@@ -212,24 +247,25 @@ export const PROVIDERS = {
 		label: 'Whisper C++',
 		description: 'Fast local transcription with no internet required',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
-		modelPathKey: 'transcription.whispercpp.modelPath',
-		preflightKind: 'file',
+		modelConfigKey: 'transcription.whispercpp.model',
+		modelKind: 'file',
 	},
 	parakeet: {
 		location: 'local',
 		label: 'Parakeet',
-		description: 'NVIDIA NeMo model for fast local transcription',
+		description:
+			'Recommended fast local transcription with automatic language detection',
 		capabilities: { supportsPrompt: false, supportsLanguage: false },
-		modelPathKey: 'transcription.parakeet.modelPath',
-		preflightKind: 'directory',
+		modelConfigKey: 'transcription.parakeet.model',
+		modelKind: 'directory',
 	},
 	moonshine: {
 		location: 'local',
 		label: 'Moonshine',
-		description: 'Efficient ONNX model by UsefulSensors',
+		description: 'Small English-only local transcription',
 		capabilities: { supportsPrompt: false, supportsLanguage: false },
-		modelPathKey: 'transcription.moonshine.modelPath',
-		preflightKind: 'directory',
+		modelConfigKey: 'transcription.moonshine.model',
+		modelKind: 'directory',
 	},
 
 	speaches: {
@@ -237,8 +273,8 @@ export const PROVIDERS = {
 		label: 'Speaches',
 		description: 'Self-hosted transcription server',
 		capabilities: { supportsPrompt: true, supportsLanguage: true },
-		serverUrlKey: 'transcription.speaches.baseUrl',
-		modelIdKey: 'transcription.speaches.modelId',
+		endpointConfigKey: 'providers.speaches.endpoint',
+		modelIdConfigKey: 'providers.speaches.modelId',
 	},
 } as const satisfies Record<string, TranscriptionProvider>;
 
@@ -254,6 +290,23 @@ export type CloudProviderId = {
 		? K
 		: never;
 }[TranscriptionServiceId];
+
+/**
+ * The ids of local engines, derived the same way. `isLocalProviderId` is the
+ * one narrowing boundary callers use before reading local-only fields or
+ * touching the engine's models folder.
+ */
+export type LocalProviderId = {
+	[K in TranscriptionServiceId]: (typeof PROVIDERS)[K]['location'] extends 'local'
+		? K
+		: never;
+}[TranscriptionServiceId];
+
+export function isLocalProviderId(
+	id: TranscriptionServiceId,
+): id is LocalProviderId {
+	return PROVIDERS[id].location === 'local';
+}
 
 /** Every provider ID, e.g. for `field.select(TRANSCRIPTION_SERVICE_IDS)`. */
 export const TRANSCRIPTION_SERVICE_IDS = Object.keys(

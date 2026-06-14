@@ -4,11 +4,11 @@
 	import { useCombobox } from '@epicenter/ui/hooks';
 	import * as Popover from '@epicenter/ui/popover';
 	import { cn } from '@epicenter/ui/utils';
+	import CaptionsIcon from '@lucide/svelte/icons/captions';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import MicIcon from '@lucide/svelte/icons/mic';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
-	import { sep } from '@tauri-apps/api/path';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
 	import {
@@ -23,9 +23,32 @@
 	import { settings } from '$lib/state/settings.svelte';
 	import { tauri } from '#platform/tauri';
 
-	let { class: className }: { class?: string } = $props();
+	let {
+		class: className,
+		triggerVariant,
+	}: {
+		class?: string;
+		/**
+		 * Where this selector is rendered, which determines how a missing or
+		 * unusable transcription service is treated:
+		 * - `pipeline`: a required capture stage. Shows a generic captions icon
+		 *   and warns whenever no usable service is configured (including a
+		 *   web user whose saved service is desktop-only).
+		 * - `standalone`: a quick provider switcher. Shows the selected service's
+		 *   brand icon and warns only when a selected service is misconfigured.
+		 */
+		triggerVariant: 'standalone' | 'pipeline';
+	} = $props();
 
 	const selectedService = $derived(getSelectedTranscriptionService());
+	const isSelectedServiceReady = $derived(
+		!!selectedService && isTranscriptionServiceConfigured(selectedService),
+	);
+	const showConfigurationWarning = $derived(
+		triggerVariant === 'pipeline'
+			? !isSelectedServiceReady
+			: !!selectedService && !isSelectedServiceReady,
+	);
 
 	function getSelectedServiceId() {
 		return settings.get('transcription.service');
@@ -33,59 +56,12 @@
 
 	function getSelectedModelNameOrUrl(service: TranscriptionProviderEntry) {
 		switch (service.location) {
-			case 'cloud': {
-				switch (service.id) {
-					case 'Groq':
-						return settings.get('transcription.groq.model');
-					case 'OpenAI':
-						return settings.get('transcription.openai.model');
-					case 'ElevenLabs':
-						return settings.get('transcription.elevenlabs.model');
-					case 'Deepgram':
-						return settings.get('transcription.deepgram.model');
-					case 'Mistral':
-						return settings.get('transcription.mistral.model');
-				}
-				break;
-			}
+			case 'cloud':
+				return settings.get(service.modelSettingKey);
 			case 'self-hosted':
-				return deviceConfig.get('transcription.speaches.baseUrl');
-			case 'local': {
-				switch (service.id) {
-					case 'whispercpp':
-						return deviceConfig.get('transcription.whispercpp.modelPath');
-					case 'parakeet':
-						return deviceConfig.get('transcription.parakeet.modelPath');
-					case 'moonshine':
-						return deviceConfig.get('transcription.moonshine.modelPath');
-				}
-				break;
-			}
-		}
-
-		return '';
-	}
-
-	function setSelectedCloudModel(
-		service: TranscriptionProviderEntry,
-		modelName: string,
-	) {
-		switch (service.id) {
-			case 'Groq':
-				settings.set('transcription.groq.model', modelName);
-				return;
-			case 'OpenAI':
-				settings.set('transcription.openai.model', modelName);
-				return;
-			case 'ElevenLabs':
-				settings.set('transcription.elevenlabs.model', modelName);
-				return;
-			case 'Deepgram':
-				settings.set('transcription.deepgram.model', modelName);
-				return;
-			case 'Mistral':
-				settings.set('transcription.mistral.model', modelName);
-				return;
+				return deviceConfig.get(service.endpointConfigKey);
+			case 'local':
+				return deviceConfig.get(service.modelConfigKey);
 		}
 	}
 
@@ -104,6 +80,15 @@
 			? TRANSCRIPTION_PROVIDERS.filter((service) => service.location === 'local')
 			: [],
 	);
+
+	const localServiceSearchKeywords = {
+		whispercpp: 'whisper cpp ggml gguf local offline',
+		parakeet: 'nvidia nemo onnx parakeet local offline',
+		moonshine: 'usefulsensors onnx moonshine local offline',
+	} satisfies Record<
+		Extract<TranscriptionProviderEntry, { location: 'local' }>['id'],
+		string
+	>;
 
 	const combobox = useCombobox();
 
@@ -154,14 +139,20 @@
 				variant="ghost"
 				size="icon"
 			>
-				{#if selectedService}
+				{#if triggerVariant === 'pipeline'}
+					<CaptionsIcon
+						class={cn(
+							'size-5',
+							isSelectedServiceReady ? 'text-green-500' : 'text-warning',
+						)}
+					/>
+				{:else if selectedService}
 					<div
 						class={cn(
 							'size-4 flex items-center justify-center [&>svg]:size-full',
 							selectedService.invertInDarkMode &&
 								'dark:[&>svg]:invert dark:[&>svg]:brightness-90',
-							!isTranscriptionServiceConfigured(selectedService) &&
-								'opacity-60',
+							!isSelectedServiceReady && 'opacity-60',
 						)}
 					>
 						{@html selectedService.icon}
@@ -169,7 +160,7 @@
 				{:else}
 					<MicIcon class="size-4 text-muted-foreground" />
 				{/if}
-				{#if selectedService && !isTranscriptionServiceConfigured(selectedService)}
+				{#if showConfigurationWarning}
 					<span
 						class="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-warning before:absolute before:left-0 before:top-0 before:h-full before:w-full before:rounded-full before:bg-warning/50 before:animate-ping"
 					></span>
@@ -189,10 +180,12 @@
 							{@const isSelected =
 								getSelectedServiceId() === service.id}
 							{@const isConfigured = isTranscriptionServiceConfigured(service)}
-							{@const modelPath = getSelectedModelNameOrUrl(service)}
+							{@const modelName = getSelectedModelNameOrUrl(service)}
 
 							<Command.Item
-								value={`${service.id} ${service.label} whisper cpp ggml local offline`}
+								value={`${service.id} ${service.label} ${service.description} ${
+									localServiceSearchKeywords[service.id]
+								}`}
 								onSelect={() => {
 									settings.set('transcription.service', service.id);
 									combobox.closeAndFocusTrigger();
@@ -207,14 +200,12 @@
 								{@render renderServiceIcon(service)}
 								<div class="flex-1 min-w-0">
 									<div class="font-medium text-sm">{service.label}</div>
-									{#if modelPath}
+									{#if modelName}
 										<div class="text-xs text-muted-foreground truncate">
-											{modelPath.split(sep()).pop() || modelPath}
+											{modelName}
 										</div>
 									{:else if !isConfigured}
-										<span class="text-xs text-warning">
-											Model file required
-										</span>
+										<span class="text-xs text-warning">Model needed</span>
 									{/if}
 								</div>
 							</Command.Item>
@@ -276,7 +267,7 @@
 											'transcription.service',
 											service.id,
 										);
-										setSelectedCloudModel(service, model.name);
+										settings.set(service.modelSettingKey, model.name);
 										combobox.closeAndFocusTrigger();
 									}}
 									class="flex items-center gap-2 px-2 py-1.5 pl-11"

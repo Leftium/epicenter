@@ -11,11 +11,11 @@ case 'OpenAI': {
 	const { data, error } = await services.transcriptions.openai.transcribe(
 		audio,
 		{
-			outputLanguage,
+			spokenLanguage,
 			prompt,
-			apiKey: deviceConfig.get('apiKeys.openai'),
+			apiKey: deviceConfig.get('providers.openai.apiKey'),
 			modelName: settings.get('transcription.openai.model'),
-			baseURL: deviceConfig.get('apiEndpoints.openai') || undefined,
+			baseURL: deviceConfig.get('providers.openai.endpoint') || undefined,
 		},
 	);
 	if (error) return Err(error);
@@ -398,7 +398,7 @@ export function createCompletionService() {
 
 // Consuming edge injects settings
 const result = await services.completion.openai.complete({
-	apiKey: deviceConfig.get('apiKeys.openai'),
+	apiKey: deviceConfig.get('providers.openai.apiKey'),
 	prompt,
 });
 ```
@@ -434,8 +434,6 @@ Tauri-only namespace capabilities live inline in one file at `$lib/tauri.tauri.t
 App-owned Rust commands that are not general reusable capabilities live in `$lib/tauri/commands`. Accessibility settings and upload encoding are examples: `commands.openAccessibilitySettings` opens System Settings, and `commands.encodeRecordingForUpload` is called by the transcription operation before cloud upload.
 
 Each leaf picks one canonical call form: TanStack-backed (via `defineQuery`/`defineMutation`) where caching, reactivity, or post-mutation invalidation matter; plain Result functions where they don't. There is no separate `tauri.rpc` sub-namespace.
-
-Pure accelerator parsing (validate-format, pressed-keys-to-accelerator, the `Accelerator` brand) doesn't need the Tauri runtime and lives in `$lib/utils/accelerator.ts`. The Tauri-side registration code consumes the same types.
 
 The manual recorder lives under `services/recorder/index.*.ts` because the recorder folder exposes one platform-owned manual recorder through suffix files.
 

@@ -2,7 +2,7 @@
   <a href="https://whispering.epicenter.so">
     <img width="180" src="./src-tauri/recorder-state-icons/studio_microphone.png" alt="Whispering">
   </a>
-  <h1 align="center">Epicenter Whispering</h1>
+  <h1 align="center">Whispering</h1>
   <p align="center">Press shortcut → speak → get text. Free and open source ❤️</p>
 </p>
 
@@ -38,18 +38,12 @@ Whispering is an open-source speech-to-text application. Press a keyboard shortc
 
 I really like hands-free voice dictation. For years, I relied on transcription tools that were _almost_ good, but they were all closed-source. Even those claiming to be "local" or "on-device" were still black boxes that left me wondering where my audio really went.
 
-So I built Whispering. It's open-source, local-first, and most importantly, transparent with your data. ​​Your data is stored locally on your device, and your audio goes directly from your machine to a local provider (Whisper C++, Speaches, etc.) or your chosen cloud provider (Groq, OpenAI, ElevenLabs, etc.) without any middleman or vendor lock-in. For me, the features were good enough that I left my paid tools behind (I used Superwhisper and Wispr Flow before).
+So I built Whispering. It's open-source, local-first, and most importantly, transparent with your data. ​​Your data is stored locally on your device, and your audio goes directly from your machine to a local provider (Whisper C++, Speaches, etc.) or your chosen cloud provider (Groq, OpenAI, ElevenLabs, etc.) without any middleman or vendor lock-in. For me, the features were good enough that I left my paid tools behind.
 
 Productivity apps should be open-source and transparent with your data, but they also need to match the UX of paid, closed-software alternatives. I hope Whispering is near that point. I use it for several hours a day, from coding to thinking out loud while carrying pizza boxes back from the office.
 
 > [!TIP]
 > Whispering is designed for quick transcriptions, not long recordings. For extended recording sessions, use a dedicated recording app.
-
-> [!NOTE]
-> The terms **Epicenter Whispering** and **Whispering** are interchangeable and refer to the same app.
->
-> - _Epicenter Whispering_ emphasizes the app's place in the larger ecosystem.
-> - _Whispering_ may be used for brevity and/or to focus on the standalone app.
 
 Here's an overview:
 
@@ -100,16 +94,12 @@ This automatically handles installation and updates.
 | Architecture      | Download                                                                                                                          | Requirements     |
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
 | **Apple Silicon** | [Whispering_7.11.0_aarch64.dmg](https://github.com/EpicenterHQ/epicenter/releases/download/v7.11.0/Whispering_7.11.0_aarch64.dmg) | M1/M2/M3/M4 Macs |
-| **Intel**         | [Whispering_7.11.0_x64.dmg](https://github.com/EpicenterHQ/epicenter/releases/download/v7.11.0/Whispering_7.11.0_x64.dmg)         | Intel-based Macs |
 
-> **💡 Tip:** Not sure which Mac you have? Click the Apple menu → About This Mac. Look for "Chip" or "Processor":
->
-> - Apple M1/M2/M3/M4 → Use Apple Silicon version
-> - Intel Core → Use Intel version
+> **💡 Tip:** The direct macOS download is for Apple Silicon (M1/M2/M3/M4) Macs. Intel Mac builds are not currently published.
 
 **Installation steps:**
 
-1. Download the `.dmg` file for your architecture
+1. Download the `.dmg` file
 2. Open the downloaded file
 3. Drag Whispering to your Applications folder
 4. Open Whispering from Applications
@@ -321,7 +311,7 @@ If you accidentally blocked microphone permissions, use the Registry solution:
 <details>
 <summary>Alternative solutions</summary>
 
-**Delete App Data:** Navigate to `%APPDATA%\..\Local\com.bradenwong.whispering` and delete this folder, then reinstall.
+**Delete App Data:** Navigate to `%APPDATA%\so.epicenter.whispering` and delete this folder, then reinstall.
 
 **Windows Settings:** Settings → Privacy & security → Microphone → Enable "Let desktop apps access your microphone"
 
@@ -580,7 +570,7 @@ Yes - set up AI transformations to fix grammar, translate languages, or reformat
 
 ### What platforms work?
 
-Desktop: Mac (Intel & Apple Silicon), Windows, Linux. Web: Any modern browser at [whispering.epicenter.so](https://whispering.epicenter.so).
+Desktop: Apple Silicon Mac, Windows, Linux. Web: Any modern browser at [whispering.epicenter.so](https://whispering.epicenter.so).
 
 ### Found a bug?
 
@@ -680,18 +670,20 @@ We'd love to expand Whispering's capabilities with more transcription and AI ser
 
 **Overview of the adapter system:**
 
-1. **Transcription services** (`services/transcription/`): Convert audio to text
-2. **Completion services** (`services/completion/`): Power AI transformations in the transformation pipeline
-3. **Query layer** (`query/`): Provides reactive state management and runtime dependency injection
-4. **Settings layer**: Stores API keys and user preferences
+1. **Transcription services** (`src/lib/services/transcription/`): Convert audio to text
+2. **Completion services** (`src/lib/services/completion/`): Power AI transformations in the transformation pipeline
+3. **Provider registries** (`src/lib/services/transcription/providers.ts`, `src/lib/constants/inference.ts`): Own every provider fact, including the names of the config keys that hold its credentials and selections
+4. **Stores**: Own the values behind those keys. `src/lib/state/device-config.svelte.ts` holds device-local values like API keys; `src/lib/workspace/definition.ts` holds synced settings like model selections
+5. **Operations** (`src/lib/operations/transcribe.ts`, `src/lib/operations/transform.ts`): Dispatch tables that resolve registry pointers against the stores and call your service
 
 ##### Adding a Transcription Service Adapter
 
-Adding a new transcription service involves four main steps:
+The provider registry owns every provider fact, including the names of the config keys that hold its credentials and model selection. The stores own the values. The dispatcher and the settings UI resolve those pointers through the registry, so most of the integration is compile-error driven: once your provider is in the registry, the type checker points at every table that still needs an entry.
 
-1. **Create the service implementation** in the appropriate transcription subdirectory:
-   - **Cloud services**: `src/lib/services/transcription/cloud/` (OpenAI, Groq, Deepgram, ElevenLabs)
-   - **Local services**: `src/lib/services/transcription/local/` (WhisperCpp, Parakeet)
+Local engines (whisper.cpp, Parakeet, Moonshine) are implemented in Rust behind Tauri commands, so this guide covers cloud and self-hosted services, which live in TypeScript.
+
+1. **Create the service implementation**:
+   - **Cloud services**: `src/lib/services/transcription/cloud/` (OpenAI, Groq, Deepgram, ElevenLabs, Mistral)
    - **Self-hosted services**: `src/lib/services/transcription/self-hosted/` (Speaches)
 
    ```typescript
@@ -713,17 +705,6 @@ Adding a new transcription service involves four main steps:
    });
    export type YourServiceError = InferErrors<typeof YourServiceError>;
 
-   // Define your models directly in the service file
-   export const YOUR_SERVICE_MODELS = [
-	{
-		name: 'model-v1',
-		description: 'Description of what makes this model special',
-		cost: '$0.XX/hour',
-	},
-   ] as const;
-
-   export type YourServiceModel = (typeof YOUR_SERVICE_MODELS)[number];
-
    export const YourServiceTranscriptionServiceLive = {
 	async transcribe(
 		audioBlob: Blob,
@@ -731,7 +712,8 @@ Adding a new transcription service involves four main steps:
 			prompt: string;
 			outputLanguage: string;
 			apiKey: string;
-			modelName: (string & {}) | YourServiceModel['name'];
+			modelName: string;
+			baseURL?: string;
 		},
 	): Promise<Result<string, YourServiceError>> {
 		if (!options.apiKey) return YourServiceError.MissingApiKey();
@@ -749,153 +731,60 @@ Adding a new transcription service involves four main steps:
 
    The call site in `src/lib/operations/transcribe.ts` decides how to present any error from the service: by default `report.error({ cause: error })` auto-derives a title from the variant name and a description from the message. Override inline only when context-specific copy or an action helps.
 
-   Don't forget to export your service in `src/lib/services/transcription/index.ts`:
+2. **Add the config keys the registry will point at.** API keys and endpoints are device-local and never sync. Add them to `src/lib/state/device-config.svelte.ts`:
 
    ```typescript
-   import { YourServiceTranscriptionServiceLive } from './cloud/your-service';
-
-   export {
-	// ... existing exports
-	YourServiceTranscriptionServiceLive as yourservice,
-   };
+   'providers.yourservice.apiKey': defineEntry(type('string'), ''),
    ```
 
-   And add the API key field to the settings schema in `src/lib/settings/settings.ts`:
+   The model selection syncs across devices. Add it to the transcription section of `src/lib/workspace/definition.ts`:
 
    ```typescript
-   'apiKeys.yourservice': z.string().default(''),
+   'transcription.yourservice.model': defineKv(
+	field.string(),
+	() => PROVIDERS.YourService.defaultModel as string,
+   ),
    ```
 
-2. **Update the service registry** in `src/lib/services/transcription/registry.ts`:
+3. **Register the provider facts** in `PROVIDERS` in `src/lib/services/transcription/providers.ts`:
 
    ```typescript
-   // Add import for your service icon (as SVG)
-   import yourServiceIcon from '$lib/constants/icons/your-service.svg?raw';
-
-   // Add import for your models
-   import {
-	YOUR_SERVICE_MODELS,
-	type YourServiceModel,
-   } from './cloud/your-service';
-
-   // Add to the TranscriptionModel union type
-   type TranscriptionModel =
-	| OpenAIModel
-	| GroqModel
-	| ElevenLabsModel
-	| DeepgramModel
-	| YourServiceModel;
-
-   // Add to TRANSCRIPTION_SERVICE_IDS array
-   export const TRANSCRIPTION_SERVICE_IDS = [
-	'whispercpp',
-	'parakeet',
-	'Groq',
-	'OpenAI',
-	'ElevenLabs',
-	'Deepgram',
-	'speaches',
-	'YourService', // Add your service here
-   ] as const;
-
-   // Add to TRANSCRIPTION_SERVICES array (in the appropriate section)
-   export const TRANSCRIPTION_SERVICES = [
-	// ... existing services
-	// Add in the cloud services section:
-	{
-		id: 'YourService',
-		name: 'Your Service Name',
-		icon: yourServiceIcon,
-		invertInDarkMode: true, // or false, depending on your icon
-		description: 'Description of what makes your service special',
-		models: YOUR_SERVICE_MODELS,
-		defaultModel: YOUR_SERVICE_MODELS[0],
-		modelSettingKey: 'transcription.yourservice.model',
-		apiKeyField: 'apiKeys.yourservice',
-		location: 'cloud', // or 'local' or 'self-hosted'
+   YourService: {
+	location: 'cloud',
+	label: 'Your Service',
+	description: 'What makes this service worth picking',
+	capabilities: { supportsPrompt: true, supportsLanguage: true },
+	apiKeyConfigKey: 'providers.yourservice.apiKey',
+	modelSettingKey: 'transcription.yourservice.model',
+	endpointConfigKey: null, // or a 'providers.yourservice.endpoint' override key
+	modelsDoc: {
+		label: 'Your Service docs',
+		href: 'https://yourservice.com/docs/speech-to-text',
 	},
-	// ... rest of services
-   ] as const satisfies SatisfiedTranscriptionService[];
+	defaultModel: 'model-v1',
+	models: [
+		{
+			name: 'model-v1',
+			description: 'What makes this model special',
+			cost: '$0.XX/hour',
+		},
+	],
+   },
    ```
 
-3. **Wire up the rpc layer** in `src/lib/rpc/transcription.ts`:
+   The suffix names the store: `*ConfigKey` fields hold `deviceConfig` key names, `*SettingKey` fields hold synced `settings` key names. Everything downstream resolves these pointers instead of hardcoding keys.
 
-   ```typescript
-   // Add to the switch statement in transcribeBlob function
-   case 'YourService':
-     return services.transcriptions.yourservice.transcribe(blob, {
-       outputLanguage: settings.value['transcription.outputLanguage'],
-       prompt: settings.value['transcription.prompt'],
-       apiKey: settings.value['apiKeys.yourservice'],
-       modelName: settings.value['transcription.yourservice.model'],
-     });
-   ```
+4. **Fix the compile errors the registry entry creates.** Each of these tables is exhaustive over the provider ids, so the type checker walks you to them:
 
-4. **Update the settings UI** in `src/routes/(config)/settings/transcription/+page.svelte`:
+   - `CLOUD_TRANSCRIBERS` in `src/lib/operations/transcribe.ts`: map your id to `YourServiceTranscriptionServiceLive.transcribe`.
+   - `PROVIDER_ICONS` in `src/lib/services/transcription/provider-ui.ts`: add your SVG icon.
+   - `PROVIDER_FIELDS` in `src/lib/components/settings/ProviderConfigFields.svelte`: declare the API key (and optional endpoint) fields with their labels, placeholders, and docs links. This is where provider-specific copy lives, like where to find the API key.
 
-   ```svelte
-   <!-- Add after other service conditionals -->
-   {:else if settings.value['transcription.selectedTranscriptionService'] === 'YourService'}
-     <LabeledSelect
-       id="yourservice-model"
-       label="YourService Model"
-       items={YOUR_SERVICE_MODELS.map((model) => ({
-         value: model.name,
-         label: model.name,
-         ...model,
-       }))}
-       bind:selected={
-         () => settings.value['transcription.yourservice.model'],
-         (selected) => settings.updateKey('transcription.yourservice.model', selected)
-       }
-       renderOption={renderModelOption}
-     />
-     <YourServiceApiKeyInput />
-   {/if}
-   ```
-
-   Create the API key input component in `src/lib/components/settings/api-key-inputs/YourServiceApiKeyInput.svelte`:
-
-   ```svelte
-   <script lang="ts">
-	import { LabeledInput } from '$lib/components/labeled/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
-	import { settings } from '$lib/state/settings.svelte';
-   </script>
-
-   <LabeledInput
-	id="yourservice-api-key"
-	label="YourService API Key"
-	type="password"
-	placeholder="Your YourService API Key"
-	value={settings.value['apiKeys.yourservice']}
-	oninput={({ currentTarget: { value } }) => {
-		settings.updateKey('apiKeys.yourservice', value);
-	}}
-   >
-	{#snippet description()}
-		<p class="text-muted-foreground text-sm">
-			You can find your YourService API key in your <Link
-				href="https://yourservice.com/api-keys"
-				target="_blank"
-				rel="noopener noreferrer"
-			>
-				YourService dashboard
-			</Link>.
-		</p>
-	{/snippet}
-   </LabeledInput>
-   ```
-
-   And export it from `src/lib/components/settings/index.ts`:
-
-   ```typescript
-   export { default as YourServiceApiKeyInput } from './api-key-inputs/YourServiceApiKeyInput.svelte';
-   ```
+That's the whole integration. The transcription settings page, the quick-pick selector, the configuration warning badge, and the dispatcher need no edits; they all render and resolve through the registry entry. Only self-hosted and local providers get bespoke sections in `src/routes/(app)/(config)/settings/transcription/+page.svelte`, because their setup instructions are the product copy.
 
 ##### Adding an AI Transformation Adapter
 
-AI transformations in Whispering use completion services that can be integrated into transformation workflows. Here's how to add a new AI provider:
+AI transformations use completion services. The same registry scheme applies: `INFERENCE` in `src/lib/constants/inference.ts` owns the provider facts, `COMPLETION_PROVIDERS` in `src/lib/operations/transform.ts` owns the service wiring and config-key pointers, and `deviceConfig` owns the credential values.
 
 1. **Create the completion service** in `src/lib/services/completion/`:
 
@@ -919,7 +808,7 @@ AI transformations in Whispering use completion services that can be integrated 
 		model: string;
 		systemPrompt: string;
 		userPrompt: string;
-		temperature?: number;
+		baseUrl?: string;
 	}): Promise<Result<string, YourProviderError>> {
 		if (!options.apiKey) return YourProviderError.MissingApiKey();
 
@@ -945,34 +834,20 @@ AI transformations in Whispering use completion services that can be integrated 
    };
    ```
 
-3. **Wire up the transformation handler** in `src/lib/rpc/transformer.ts`:
+3. **Add the API key** to `src/lib/state/device-config.svelte.ts`:
 
    ```typescript
-   // Add a new case in the handleStep function's prompt_transform switch statement
-   case 'YourProvider': {
-     const { data: completionResponse, error: completionError } =
-       await services.completions.yourprovider.complete({
-         apiKey: settings.value['apiKeys.yourprovider'],
-         model: step['prompt_transform.inference.provider.YourProvider.model'],
-         systemPrompt,
-         userPrompt,
-       });
-
-     if (completionError) {
-       return Err(completionError.message);
-     }
-
-     return Ok(completionResponse);
-   }
+   'providers.yourprovider.apiKey': defineEntry(type('string'), ''),
    ```
 
-4. **Add API key to settings** in `src/lib/settings/settings.ts`:
+4. **Register the provider** in `INFERENCE` in `src/lib/constants/inference.ts` (label, `stepModelField`, models), and add the matching step model field (for example `yourproviderModel: field.string()`) to the transformation step schema in `src/lib/workspace/definition.ts`.
 
-   ```typescript
-   'apiKeys.yourprovider': z.string().default(''),
-   ```
+5. **Fix the compile errors the `INFERENCE` entry creates**:
 
-5. **Update transformation types** to include your provider models and configuration
+   - `COMPLETION_PROVIDERS` in `src/lib/operations/transform.ts`: your service plus its `apiKeyConfigKey` and `endpointConfigKey` pointers.
+   - `PROVIDER_FIELDS` in `src/lib/components/settings/ProviderConfigFields.svelte`: the API key field with its label and docs link.
+
+   The transformation step editor reads providers and models from `INFERENCE`; no UI switch statements to extend.
 
 ##### Error Handling Best Practices
 
@@ -1013,7 +888,7 @@ Create a test file alongside your service:
 ```typescript
 // Example: src/lib/services/transcription/cloud/your-service.test.ts
 import { describe, it, expect } from 'vitest';
-import { createYourServiceTranscriptionService } from './your-service';
+import { YourServiceTranscriptionServiceLive } from './your-service';
 
 describe('YourService Transcription', () => {
 	it('should handle missing API key', async () => {
@@ -1035,9 +910,8 @@ describe('YourService Transcription', () => {
 When submitting a PR for a new adapter, include:
 
 - The service implementation with comprehensive error handling
-- All type definitions and constants
-- Query layer integration
-- Settings UI components
+- The registry entry plus the dispatcher, icon, and `PROVIDER_FIELDS` entries it demands
+- The config keys in `deviceConfig` and, for transcription, the synced model key
 - Tests covering success and error cases
 - Documentation of any special requirements or limitations
 - Example `.env` entries if needed

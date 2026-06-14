@@ -1,5 +1,5 @@
 /**
- * `epicenter list [mount.action_key]`: render actions exposed by this project.
+ * `epicenter list [mount.action_key]`: render actions exposed by this root.
  *
  * The daemon returns mount-prefixed action paths for every opened
  * mount. The CLI only filters and renders that manifest.
@@ -7,7 +7,7 @@
  * Per-peer schema introspection is a script concern. The CLI lists the local
  * daemon's mount-prefixed action surface only.
  *
- * `epicenter list` requires a running daemon for the discovered project.
+ * `epicenter list` requires a running daemon for the discovered Epicenter root.
  * Without `daemon up`, the handler errors with a hint pointing at
  * `epicenter daemon up`.
  */
@@ -18,7 +18,7 @@ import Type, { type TSchema } from 'typebox';
 import type { Result } from 'wellcrafted/result';
 
 import { cmd } from '../util/cmd.js';
-import { projectOption } from '../util/common-options.js';
+import { epicenterRootOption } from '../util/common-options.js';
 import {
 	fail,
 	formatOptions,
@@ -35,7 +35,7 @@ export const listCommand = cmd({
 				type: 'string',
 				describe: 'Optional mount-prefixed path to narrow the view',
 			})
-			.option('C', projectOption)
+			.option('C', epicenterRootOption)
 			.options(formatOptions),
 	handler: async (argv) => {
 		const path = argv.path ?? '';

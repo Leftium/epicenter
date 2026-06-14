@@ -99,7 +99,6 @@ type _ModelStatusShape = Expect<
 	Equal<
 		ModelStatus,
 		| { kind: 'idle' }
-		| { kind: 'switching' }
 		| { kind: 'loading' }
 		| { kind: 'ready' }
 		| { kind: 'inferring' }
@@ -129,7 +128,7 @@ type _TranscriptionConfigShape = Expect<
 		TranscriptionConfig,
 		{
 			engine: 'whispercpp' | 'parakeet' | 'moonshine';
-			modelPath: string;
+			modelName: string;
 			language?: string | null;
 			initialPrompt?: string | null;
 			unloadPolicy:

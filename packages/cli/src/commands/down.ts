@@ -21,7 +21,7 @@ import {
 	unlinkMetadata,
 } from '@epicenter/workspace/node';
 import { cmd } from '../util/cmd.js';
-import { projectOption } from '../util/common-options.js';
+import { epicenterRootOption } from '../util/common-options.js';
 import { isProcessAlive } from '../util/process-alive.js';
 
 const SHUTDOWN_TIMEOUT_MS = 1000;
@@ -72,7 +72,7 @@ export const downCommand = cmd({
 	command: 'down',
 	describe: 'Stop a running `epicenter daemon up` daemon.',
 	builder: {
-		C: projectOption,
+		C: epicenterRootOption,
 		all: {
 			type: 'boolean',
 			default: false,
@@ -90,10 +90,10 @@ export const downCommand = cmd({
 			return;
 		}
 
-		const projectDir = resolve(argv.C);
-		const meta = readMetadata(projectDir);
+		const epicenterRoot = resolve(argv.C);
+		const meta = readMetadata(epicenterRoot);
 		if (!meta) {
-			process.stderr.write(`no daemon running for ${projectDir}\n`);
+			process.stderr.write(`no daemon running for ${epicenterRoot}\n`);
 			return;
 		}
 

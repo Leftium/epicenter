@@ -29,36 +29,29 @@ Components in this directory:
 
 ```
 settings/
-├── api-key-inputs/         # API key input components (deviceConfig)
-│   ├── OpenAiApiKeyInput.svelte
-│   ├── GroqApiKeyInput.svelte
-│   ├── AnthropicApiKeyInput.svelte
-│   ├── ElevenLabsApiKeyInput.svelte
-│   ├── GoogleApiKeyInput.svelte
-│   ├── DeepgramApiKeyInput.svelte
-│   ├── MistralApiKeyInput.svelte
-│   ├── OpenRouterApiKeyInput.svelte
-│   └── CustomEndpointInput.svelte
+├── ProviderConfigFields.svelte # Per-provider API key and endpoint fields (deviceConfig)
 ├── selectors/              # Various selector components
 │   ├── ManualDeviceSelector.svelte
 │   ├── VadDeviceSelector.svelte
 │   ├── TransformationSelector.svelte
 │   ├── TranscriptionSelector.svelte
 │   └── RecordingModeSelector.svelte
+├── LocalModelSelector.svelte
 ├── LocalModelDownloadCard.svelte
+├── TranscriptionServiceSelect.svelte
 └── README.md               # This file
 ```
 
 ## Usage Examples
 
-### Basic Usage (No Props)
+### Basic Usage (Minimal Props)
 
 ```svelte
 <script>
-	import OpenAiApiKeyInput from '$lib/components/settings/api-key-inputs/OpenAiApiKeyInput.svelte';
+	import { ProviderConfigFields } from '$lib/components/settings';
 </script>
 
-<OpenAiApiKeyInput />
+<ProviderConfigFields provider="OpenAI" />
 ```
 
 ### With Settings Key Prop
@@ -85,9 +78,8 @@ settings/
 
    ```svelte
    <Input
-	bind:value={() => settings.get('apiKeys.openai'),
-		(value) => settings.set('apiKeys.openai', value)}
-		(value) => deviceConfig.set('apiKeys.openai', value)}
+	bind:value={() => deviceConfig.get('providers.openai.apiKey'),
+		(value) => deviceConfig.set('providers.openai.apiKey', value)}
    />
    ```
 

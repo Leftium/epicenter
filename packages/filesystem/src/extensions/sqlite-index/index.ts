@@ -192,7 +192,7 @@ export function createSqliteIndex(
 
 		// ── Full rebuild ──────────────────────────────────────────
 		async function rebuild(): Promise<void> {
-			const rows = filesTable.getAllValid();
+			const rows = filesTable.scan().rows;
 
 			// Read content for files (skip folders)
 			const contentMap = new Map<string, string | null>();

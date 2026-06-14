@@ -1,29 +1,57 @@
 <script lang="ts">
+	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import * as Card from '@epicenter/ui/card';
-	import { Input } from '@epicenter/ui/input';
+	import * as Collapsible from '@epicenter/ui/collapsible';
+	import * as Empty from '@epicenter/ui/empty';
+	import * as Field from '@epicenter/ui/field';
+	import * as Item from '@epicenter/ui/item';
+	import { Progress } from '@epicenter/ui/progress';
 	import { toast } from '@epicenter/ui/sonner';
-	import * as Tabs from '@epicenter/ui/tabs';
+	import CheckIcon from '@lucide/svelte/icons/check';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import Download from '@lucide/svelte/icons/download';
 	import FolderOpen from '@lucide/svelte/icons/folder-open';
-	import Paperclip from '@lucide/svelte/icons/paperclip';
+	import HardDriveDownload from '@lucide/svelte/icons/hard-drive-download';
 	import X from '@lucide/svelte/icons/x';
-	import { basename, join } from '@tauri-apps/api/path';
-	import { open } from '@tauri-apps/plugin-dialog';
-	import { copyFile, mkdir, readDir } from '@tauri-apps/plugin-fs';
+	import { mkdir } from '@tauri-apps/plugin-fs';
 	import type { Snippet } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { Ok, tryAsync } from 'wellcrafted/result';
-	import type { LocalModelConfig } from '$lib/constants/local-models';
+	import {
+		type LocalModelConfig,
+		modelEntryName,
+		RECOMMENDED_MODELS,
+	} from '$lib/constants/local-models';
 	import { PATHS } from '$lib/services/fs-paths';
+	import {
+		deleteModelEntry,
+		listModelEntries,
+		type LocalModelEntry,
+	} from '$lib/services/transcription/local-model-folder';
+	import { PROVIDERS } from '$lib/services/transcription/providers';
+	import { localModelDownloads } from '$lib/state/local-model-downloads.svelte';
 	import { tauri } from '#platform/tauri';
+	import {
+		announceModelDelete,
+		announceModelDownload,
+	} from './local-model-toasts';
 	import LocalModelDownloadCard from './LocalModelDownloadCard.svelte';
 
 	/**
-	 * Props for the LocalModelSelector component
+	 * One happy path per engine: an empty-state hero that downloads the
+	 * recommended model, or a summary row showing the active one. The full
+	 * list (catalog download cards, custom folder entries, the folder help
+	 * box) collapses behind "All models". The list is backed by the engine's
+	 * models folder; the bindable value is the active entry's name.
 	 */
 	type LocalModelSelectorProps = {
-		/** Array of pre-built models available for download */
-		models: readonly LocalModelConfig[];
+		/**
+		 * Pre-built models available for download. All entries share one
+		 * engine; at least one is required because the engine decides which
+		 * models folder backs this list.
+		 */
+		models: readonly [LocalModelConfig, ...LocalModelConfig[]];
 
 		/** Component title displayed in the card header */
 		title: string;
@@ -31,144 +59,111 @@
 		/** Component description displayed below the title */
 		description: string;
 
-		/** Whether to select files or directories */
-		fileSelectionMode: 'file' | 'directory';
-
-		/** File extensions to filter (for file mode only) */
-		fileExtensions?: string[];
-
-		/** Bindable value with getter/setter for the model path */
+		/** Bindable name of the active entry in the engine's models folder */
 		value: string;
 
-		/** Optional footer content for pre-built models tab */
-		prebuiltFooter?: Snippet;
-
-		/** Custom instructions for manual selection tab */
-		manualInstructions?: Snippet;
+		/** Optional footer content (download sources, naming notes) */
+		footer?: Snippet;
 	};
 
 	let {
 		models,
 		title,
 		description,
-		fileSelectionMode,
-		fileExtensions = [],
 		value = $bindable(),
-		prebuiltFooter,
-		manualInstructions,
+		footer,
 	}: LocalModelSelectorProps = $props();
 
-	// Extract the model name from the current path
-	const modelName = $derived.by(async () => {
-		const path = value;
-		if (!path) return '';
-		return basename(path);
+	const engine = $derived(models[0].engine);
+	const modelKind = $derived(PROVIDERS[engine].modelKind);
+
+	/** Folder entry names the catalog cards already represent. */
+	const catalogNames = $derived(new Set(models.map(modelEntryName)));
+
+	let entries = $state<LocalModelEntry[] | null>(null);
+
+	const customEntries = $derived(
+		(entries ?? []).filter((entry) => !catalogNames.has(entry.name)),
+	);
+
+	// The active selection vanished from the folder (deleted or renamed).
+	const isSelectionMissing = $derived(
+		!!value && entries !== null && !entries.some((e) => e.name === value),
+	);
+
+	/** The catalog model behind the active entry, when it is a catalog one. */
+	const activeCatalogModel = $derived(
+		models.find((model) => modelEntryName(model) === value) ?? null,
+	);
+
+	const activeCustomEntry = $derived(
+		customEntries.find((entry) => entry.name === value) ?? null,
+	);
+
+	/** The engine's default download; the hero builds its action around it. */
+	const recommended = $derived(RECOMMENDED_MODELS[engine]);
+	const recommendedDownload = $derived(localModelDownloads.get(recommended));
+
+	// Aliased so the template narrows the union per branch. Shared with the
+	// catalog row for the same model, so a download started here shows its
+	// progress there too.
+	const recommendedState = $derived(recommendedDownload.state);
+
+	/** Whether the full list behind "All models" is expanded. */
+	let allModelsOpen = $state(false);
+
+	// Plain variable, not $state: refreshEntries runs inside the rescan
+	// effect, and a reactive read here would make the effect track entries
+	// and re-run on its own assignment.
+	let hasDecidedInitialOpen = false;
+
+	async function refreshEntries() {
+		if (!tauri) return;
+		entries = await listModelEntries(engine);
+		// The folder is user-editable truth, so the catalog handles re-check
+		// disk on the same signal that rescans the folder. Await the disk-stat
+		// so `isInstalled` (and the "Downloaded" badge it drives) is settled
+		// before the listing renders, instead of racing the next render.
+		await Promise.all(models.map((model) => localModelDownloads.get(model).refresh()));
+		// A user who already brought their own model gets the list, not a
+		// download pitch: when nothing is active and the first scan finds
+		// custom entries, start with the list open instead of the hero.
+		if (!hasDecidedInitialOpen) {
+			hasDecidedInitialOpen = true;
+			if (!value && customEntries.length > 0) allModelsOpen = true;
+		}
+	}
+
+	async function downloadRecommendedModel() {
+		const entryName = announceModelDownload(await recommendedDownload.download());
+		if (!entryName) return;
+		value = entryName;
+		await refreshEntries();
+	}
+
+	/** Point the engine's selection at an on-disk entry by name. */
+	function activate(name: string) {
+		value = name;
+		toast.success('Model activated');
+	}
+
+	// Rescan on mount and when the engine changes. Selection changes do not
+	// change disk; download/delete handlers refresh after they change the folder.
+	$effect(() => {
+		void engine;
+		refreshEntries();
 	});
 
-	// Check if current model is pre-built
-	const prebuiltModelInfo = $derived(
-		models.find((m) => {
-			if (!value) return false;
-			switch (m.engine) {
-				case 'whispercpp':
-					return value.endsWith(m.file.filename);
-				case 'parakeet':
-				case 'moonshine':
-					return value.endsWith(m.directoryName);
-			}
-		}) ?? null,
-	);
-	const isPrebuiltModel = $derived(!!prebuiltModelInfo);
-
-	async function getModelRoot() {
-		const engine = models[0]?.engine;
-		switch (engine) {
-			case 'whispercpp':
-				return PATHS.MODELS.WHISPER();
-			case 'parakeet':
-				return PATHS.MODELS.PARAKEET();
-			case 'moonshine':
-				return PATHS.MODELS.MOONSHINE();
-			default:
-				throw new Error('No local model engine configured');
-		}
-	}
-
-	async function copyDirectory(sourceDir: string, destinationDir: string) {
-		await mkdir(destinationDir, { recursive: true });
-		const entries = await readDir(sourceDir);
-
-		for (const entry of entries) {
-			const sourcePath = await join(sourceDir, entry.name);
-			const destinationPath = await join(destinationDir, entry.name);
-
-			if (entry.isDirectory) {
-				await copyDirectory(sourcePath, destinationPath);
-			} else if (entry.isFile) {
-				await copyFile(sourcePath, destinationPath);
-			} else {
-				throw new Error('Selected model directory cannot include symlinks');
-			}
-		}
-	}
-
-	/**
-	 * Open file/folder browser for manual model selection
-	 */
-	async function selectModel() {
-		if (!tauri) return;
-
+	async function openModelsFolder() {
 		await tryAsync({
 			try: async () => {
-				const modelRoot = await getModelRoot();
-				await mkdir(modelRoot, { recursive: true });
-
-				if (fileSelectionMode === 'directory') {
-					const selected = await open({
-						directory: true,
-						multiple: false,
-						title: `Select ${title} Directory`,
-					});
-
-					if (selected) {
-						const entries = await readDir(selected);
-						if (entries.length === 0) {
-							throw new Error('Selected directory appears to be empty');
-						}
-						const directoryName = await basename(selected);
-						const importedPath = await join(modelRoot, directoryName);
-						await copyDirectory(selected, importedPath);
-						value = importedPath;
-						toast.success('Model directory imported');
-					}
-				} else {
-					const filters =
-						fileExtensions.length > 0
-							? [
-									{
-										name: `${title} Files`,
-										extensions: fileExtensions,
-									},
-								]
-							: [];
-
-					const selected = await open({
-						multiple: false,
-						filters,
-						title: `Select ${title} File`,
-					});
-
-					if (selected) {
-						const fileName = await basename(selected);
-						const importedPath = await join(modelRoot, fileName);
-						await copyFile(selected, importedPath);
-						value = importedPath;
-						toast.success('Model file imported');
-					}
-				}
+				const modelsDir = await PATHS.MODELS[engine]();
+				await mkdir(modelsDir, { recursive: true });
+				const { openPath } = await import('@tauri-apps/plugin-opener');
+				await openPath(modelsDir);
 			},
 			catch: (error) => {
-				toast.error('Failed to select model', {
+				toast.error('Failed to open models folder', {
 					description: extractErrorMessage(error),
 				});
 				return Ok(undefined);
@@ -176,117 +171,174 @@
 		});
 	}
 
-	/**
-	 * Clear the currently selected model
-	 */
-	function clearModel() {
-		value = '';
-		toast.success('Model path cleared');
+	async function removeEntry(entry: LocalModelEntry) {
+		if (!announceModelDelete(await deleteModelEntry({ engine, name: entry.name })))
+			return;
+		if (value === entry.name) value = '';
+		await refreshEntries();
 	}
 </script>
+
+<svelte:window onfocus={refreshEntries} />
 
 <Card.Root>
 	<Card.Header>
 		<Card.Title class="text-lg">{title}</Card.Title>
 		<Card.Description>{description}</Card.Description>
 	</Card.Header>
-	<Card.Content class="space-y-6">
-		<Tabs.Root value="prebuilt" class="w-full">
-			<Tabs.List class="grid w-full grid-cols-2">
-				<Tabs.Trigger value="prebuilt">Pre-built Models</Tabs.Trigger>
-				<Tabs.Trigger value="manual">Manual Selection</Tabs.Trigger>
-			</Tabs.List>
+	<Card.Content class="space-y-3">
+		{#if value && !isSelectionMissing}
+			<Item.Root variant="outline">
+				<Item.Content>
+					<Item.Title>
+						{activeCatalogModel ? activeCatalogModel.name : value}
+					</Item.Title>
+					<Item.Description>
+						{#if activeCatalogModel}
+							{activeCatalogModel.size}
+						{:else if activeCustomEntry?.isSymlink}
+							Your model (linked)
+						{:else}
+							Your model
+						{/if}
+					</Item.Description>
+				</Item.Content>
+				<Item.Actions>
+					<Badge class="text-xs">Active</Badge>
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={() => (allModelsOpen = true)}
+					>
+						Change
+					</Button>
+				</Item.Actions>
+			</Item.Root>
+		{:else if !value && customEntries.length === 0}
+			<Empty.Root class="py-8">
+				<Empty.Media variant="icon">
+					<HardDriveDownload class="size-5" />
+				</Empty.Media>
+				<Empty.Title>No local model installed</Empty.Title>
+				<Empty.Description>
+					Download the recommended model to start local transcription on this
+					device.
+				</Empty.Description>
+				<Empty.Content>
+					{#if recommendedState.type === 'downloading'}
+						<div class="flex w-full max-w-xs flex-col items-center gap-2">
+							<Progress value={recommendedState.progress} class="h-2" />
+							<span class="text-sm text-muted-foreground">
+								Downloading {recommended.name}: {recommendedState.progress}%
+							</span>
+						</div>
+					{:else if recommendedState.type === 'ready'}
+						<Button onclick={() => activate(modelEntryName(recommended))}>
+							Activate {recommended.name}
+						</Button>
+					{:else}
+						<Button onclick={downloadRecommendedModel}>
+							<Download class="size-4" />
+							Download {recommended.name} ({recommended.size})
+						</Button>
+					{/if}
+				</Empty.Content>
+			</Empty.Root>
+		{/if}
 
-			<!-- Pre-built Models Tab -->
-			<Tabs.Content value="prebuilt" class="mt-4 space-y-3">
-				{#each models as model}
-					<LocalModelDownloadCard {model} />
+		{#if isSelectionMissing}
+			<div class="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+				<p class="text-sm font-medium text-amber-600 dark:text-amber-400">
+					Selected model is missing
+				</p>
+				<p class="mt-1 text-sm text-muted-foreground">
+					"{value}" is no longer in the models folder. Pick another model under
+					All models, or add yours back and activate it.
+				</p>
+			</div>
+		{/if}
+
+		<Collapsible.Root bind:open={allModelsOpen}>
+			<Collapsible.Trigger
+				class="flex w-full items-center justify-between rounded-lg border px-4 py-3 text-sm font-medium transition-colors hover:bg-muted/50 [&[data-state=open]>svg]:rotate-180"
+			>
+				All models ({models.length + customEntries.length})
+				<ChevronDown
+					class="size-4 shrink-0 text-muted-foreground transition-transform"
+				/>
+			</Collapsible.Trigger>
+			<Collapsible.Content class="space-y-3 pt-3">
+				{#each models as model (model.id)}
+					<LocalModelDownloadCard
+						{model}
+						bind:value
+						recommended={models.length > 1 && model.id === recommended.id}
+						onDiskChange={refreshEntries}
+					/>
 				{/each}
 
-				{#if prebuiltFooter}
-					<div class="rounded-lg border bg-muted/50 p-4">
-						{@render prebuiltFooter()}
-					</div>
-				{/if}
-			</Tabs.Content>
+				{#each customEntries as entry (entry.name)}
+					{@const isActive = value === entry.name}
+					<div
+						class="flex items-center gap-3 p-3 rounded-lg border {isActive
+							? 'border-primary bg-primary/5'
+							: ''}"
+					>
+						<div class="flex-1">
+							<div class="flex items-center gap-2">
+								<span class="font-medium">{entry.name}</span>
+								{#if isActive}
+									<Badge variant="default" class="text-xs">Active</Badge>
+								{/if}
+							</div>
+							<div class="text-sm text-muted-foreground">
+								{entry.isSymlink ? 'Your model (linked)' : 'Your model'}
+							</div>
+						</div>
 
-			<!-- Manual Selection Tab -->
-			<Tabs.Content value="manual" class="mt-4 space-y-4">
-				{#if manualInstructions}
-					{@render manualInstructions()}
-				{/if}
-
-				<!-- Model Selection Input -->
-				<div>
-					<p class="text-sm font-medium mb-2">
-						{#if manualInstructions}
-							<span class="text-muted-foreground">Step 2:</span>
-							Select the model
-							{fileSelectionMode === 'directory' ? 'directory' : 'file'}
-						{:else}
-							Select the model
-							{fileSelectionMode === 'directory' ? 'directory' : 'file'}
-						{/if}
-					</p>
-					<div class="flex items-center gap-2">
-						<Input
-							type="text"
-							{value}
-							readonly
-							placeholder="No model selected"
-							class="flex-1"
-						/>
-						{#if value}
+						<div class="flex items-center gap-2">
+							{#if isActive}
+								<Button size="sm" variant="default" disabled>
+									<CheckIcon class="size-4 mr-1" />
+									Activated
+								</Button>
+							{:else}
+								<Button
+									size="sm"
+									variant="outline"
+									onclick={() => activate(entry.name)}
+								>
+									Activate
+								</Button>
+							{/if}
 							<Button
-								variant="outline"
-								size="icon"
-								onclick={clearModel}
-								title="Clear model path"
+								size="sm"
+								variant="ghost"
+								onclick={() => removeEntry(entry)}
 							>
 								<X class="size-4" />
 							</Button>
-						{/if}
-						<Button
-							variant="outline"
-							size="icon"
-							onclick={selectModel}
-							title={fileSelectionMode === 'directory'
-								? 'Browse for model directory'
-								: 'Browse for model file'}
-						>
-							{#if fileSelectionMode === 'directory'}
-								<FolderOpen class="size-4" />
-							{:else}
-								<Paperclip class="size-4" />
-							{/if}
-						</Button>
-					</div>
-
-					<!-- Display selected model info -->
-					{#if value}
-						<div class="mt-2 space-y-1">
-							{#await modelName then name}
-								{#if name}
-									<p class="text-sm text-muted-foreground">
-										<span class="font-medium">Selected:</span>
-										{name}
-									</p>
-								{/if}
-							{/await}
-
-							{#if isPrebuiltModel && prebuiltModelInfo}
-								<p class="text-sm text-muted-foreground">
-									<span class="font-medium">Size:</span>
-									{prebuiltModelInfo.size}
-									{#if fileSelectionMode === 'directory'}
-										(directory with model files)
-									{/if}
-								</p>
-							{/if}
 						</div>
+					</div>
+				{/each}
+
+				<div class="rounded-lg border bg-muted/50 p-4 space-y-3">
+					<Field.Description>
+						Have your own model? Put a model {modelKind === 'directory'
+							? 'directory'
+							: 'file (.bin, .gguf, or .ggml)'} in the models folder and it appears
+						in this list. A symlink works too if you'd rather not keep a second
+						copy.
+					</Field.Description>
+					<Button variant="outline" size="sm" onclick={openModelsFolder}>
+						<FolderOpen class="size-4 mr-2" />
+						Open Models Folder
+					</Button>
+					{#if footer}
+						{@render footer()}
 					{/if}
 				</div>
-			</Tabs.Content>
-		</Tabs.Root>
+			</Collapsible.Content>
+		</Collapsible.Root>
 	</Card.Content>
 </Card.Root>

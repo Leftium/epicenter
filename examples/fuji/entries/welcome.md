@@ -1,7 +1,7 @@
 ---
 id: 01HM0000000000000000000000
 title: Welcome to Fuji
-subtitle: A canonical Epicenter project layout
+subtitle: A canonical Epicenter root layout
 type: []
 tags: ["welcome"]
 pinned: true
@@ -24,9 +24,9 @@ SQLite projections update.
 
 ## Layout
 
-The project's data layout is documented in `specs/20260522T220000-workspace-project-layout.md`:
+This fixture is a committed markdown projection for a Fuji mount:
 
-- `epicenter.config.ts` is the project marker and default-exports the mount list.
+- `epicenter.config.ts` is the Epicenter root marker and default-exports the mount list.
 - `entries/` (this directory) holds the markdown projection.
 - `.epicenter/` is the runtime cache (gitignored).
 

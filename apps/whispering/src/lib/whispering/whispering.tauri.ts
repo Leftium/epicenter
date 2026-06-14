@@ -44,7 +44,9 @@ type RecordingMarkdownExportResult =
 	  };
 
 export function openWhispering() {
-	const workspace = createWhispering();
+	const workspace = createWhispering({
+		defaultTranscriptionService: 'parakeet',
+	});
 
 	const idb = attachIndexedDb(workspace.ydoc);
 	attachBroadcastChannel(workspace.ydoc);
@@ -76,8 +78,8 @@ export function openWhispering() {
 							if (typeof selected !== 'string') return { status: 'cancelled' };
 
 							const files = workspace.tables.recordings
-								.getAllValid()
-								.map((row: Recording) => {
+								.scan()
+								.rows.map((row: Recording) => {
 									const { transcript, ...frontmatter } = row;
 									const yamlStr = yaml.dump(frontmatter, { lineWidth: -1 });
 									return {

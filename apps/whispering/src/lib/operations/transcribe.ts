@@ -1,5 +1,10 @@
+import { InstantString } from '@epicenter/field';
 import { stat } from '@tauri-apps/plugin-fs';
-import { type AnyTaggedError, defineErrors } from 'wellcrafted/error';
+import {
+	type AnyTaggedError,
+	defineErrors,
+	extractErrorMessage,
+} from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { tauri } from '#platform/tauri';
 import {
@@ -15,18 +20,17 @@ import { ElevenLabsTranscriptionServiceLive } from '$lib/services/transcription/
 import { GroqTranscriptionServiceLive } from '$lib/services/transcription/cloud/groq';
 import { MistralTranscriptionServiceLive } from '$lib/services/transcription/cloud/mistral';
 import { OpenaiTranscriptionServiceLive } from '$lib/services/transcription/cloud/openai';
-import {
-	LocalPreflightError,
-	requireExistingModelPath,
-} from '$lib/services/transcription/local-preflight';
+import { resolveModelPath } from '$lib/services/transcription/local-model-folder';
 import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
 import {
 	type CloudProviderId,
+	isLocalProviderId,
 	PROVIDERS,
 	type TranscriptionServiceId,
 } from '$lib/services/transcription/providers';
 import { SpeachesTranscriptionServiceLive } from '$lib/services/transcription/self-hosted/speaches';
 import { deviceConfig } from '$lib/state/device-config.svelte';
+import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { commands } from '$lib/tauri/commands';
 
@@ -40,13 +44,35 @@ const TranscriptionOperationError = defineErrors({
 		message:
 			'Local transcription is only available in the desktop app. Choose a cloud or self-hosted provider on web.',
 	}),
+	LocalModelNotSelected: ({
+		engineDisplayName,
+		kind,
+	}: {
+		engineDisplayName: string;
+		kind: 'file' | 'directory';
+	}) => ({
+		message: `Please select a ${engineDisplayName} model ${kind} in settings.`,
+		engineDisplayName,
+		kind,
+	}),
+	CorruptedModelFile: ({
+		actualSizeMb,
+		expectedSizeMb,
+	}: {
+		actualSizeMb: number;
+		expectedSizeMb: number;
+	}) => ({
+		message: `The model file is ${actualSizeMb}MB but should be ~${expectedSizeMb}MB. This usually happens when a download was interrupted. Please delete and re-download the model.`,
+		actualSizeMb,
+		expectedSizeMb,
+	}),
 });
 
 type CloudTranscribe = (
 	audio: Blob,
 	options: {
 		prompt: string;
-		outputLanguage: string;
+		spokenLanguage: SupportedLanguage;
 		apiKey: string;
 		modelName: string;
 		baseURL?: string;
@@ -75,7 +101,7 @@ function isCloudProviderId(id: TranscriptionServiceId): id is CloudProviderId {
 	return id in CLOUD_TRANSCRIBERS;
 }
 
-function getOutputLanguage(): SupportedLanguage {
+function getSpokenLanguage(): SupportedLanguage {
 	const language = settings.get('transcription.language');
 	for (const supportedLanguage of SUPPORTED_LANGUAGES) {
 		if (supportedLanguage === language) {
@@ -161,27 +187,57 @@ export async function transcribeAudio(
 }
 
 /**
+ * Transcribe a saved recording by id and persist the outcome to the recordings
+ * table: on success the transcript plus a completed outcome, on failure a
+ * failed outcome carrying the error. Every path that transcribes (the record
+ * pipeline, manual retry, bulk) goes through here, so the stored outcome can
+ * never drift between callers.
+ */
+export async function transcribeAndPersist(
+	recordingId: string,
+): Promise<Result<string, TranscriptionError>> {
+	const { data: transcribedText, error } = await transcribeAudio(recordingId);
+	if (error) {
+		recordings.update(recordingId, {
+			transcription: {
+				status: 'failed',
+				completedAt: InstantString.now(),
+				error: extractErrorMessage(error),
+			},
+		});
+		return Err(error);
+	}
+	recordings.update(recordingId, {
+		transcript: transcribedText,
+		transcription: {
+			status: 'completed',
+			completedAt: InstantString.now(),
+		},
+	});
+	return Ok(transcribedText);
+}
+
+/**
  * Whisper .bin downloads can finish at a smaller-than-expected size when the
  * connection drops mid-stream. The file still loads via whisper.cpp but
  * produces nonsense transcripts. Catalog match is best-effort: only models
- * we recognize from `WHISPER_MODELS` have an expected size to compare.
+ * we recognize from `WHISPER_MODELS` have an expected size to compare, and
+ * any filesystem failure passes through (Rust reports load errors itself).
  */
 async function checkWhisperTruncation(
-	modelPath: string,
-): Promise<Result<void, LocalPreflightError>> {
-	const modelConfig = WHISPER_MODELS.find((m) =>
-		modelPath.endsWith(m.file.filename),
-	);
+	modelName: string,
+): Promise<Result<void, TranscriptionError>> {
+	const modelConfig = WHISPER_MODELS.find((m) => m.file.filename === modelName);
 	if (!modelConfig) return Ok(undefined);
 
 	const { data: fileStats } = await tryAsync({
-		try: () => stat(modelPath),
+		try: async () => stat(await resolveModelPath('whispercpp', modelName)),
 		catch: () => Ok(null),
 	});
 	if (!fileStats) return Ok(undefined);
 
 	if (!isModelFileSizeValid(fileStats.size, modelConfig.sizeBytes)) {
-		return LocalPreflightError.CorruptedModelFile({
+		return TranscriptionOperationError.CorruptedModelFile({
 			actualSizeMb: Math.round(fileStats.size / 1000000),
 			expectedSizeMb: Math.round(modelConfig.sizeBytes / 1000000),
 		});
@@ -197,29 +253,30 @@ async function dispatchLocalTranscription(
 		return TranscriptionOperationError.LocalTranscriptionUnavailableOnWeb();
 	}
 
-	const provider = PROVIDERS[selectedService];
-	if (provider.location !== 'local') {
+	if (!isLocalProviderId(selectedService)) {
 		return TranscriptionOperationError.NoTranscriptionServiceSelected();
 	}
+	const provider = PROVIDERS[selectedService];
 
-	// FE preflight: Rust would also fail via `ModelLoadError`, but the FE owns
-	// better UX strings (per-engine display name, file-vs-directory guidance)
-	// and can short-circuit before the IPC round-trip. The path, kind, and name
-	// come straight from the provider's registry entry.
-	const modelPath = deviceConfig.get(provider.modelPathKey);
-	const validation = await requireExistingModelPath(
-		modelPath,
-		provider.preflightKind,
-		provider.label,
-	);
-	if (validation.error) return validation;
+	// Rust owns model resolution and validation: it joins the configured name
+	// under its models directory and reports missing or invalid models with
+	// user-facing messages. The FE keeps two checks Rust cannot make as well:
+	// "nothing selected yet" (instant, no IPC) and the catalog-size truncation
+	// check (the expected sizes live in the JS catalog).
+	const modelName = deviceConfig.get(provider.modelConfigKey);
+	if (!modelName) {
+		return TranscriptionOperationError.LocalModelNotSelected({
+			engineDisplayName: provider.label,
+			kind: provider.modelKind,
+		});
+	}
 
 	if (selectedService === 'whispercpp') {
-		const truncated = await checkWhisperTruncation(modelPath);
+		const truncated = await checkWhisperTruncation(modelName);
 		if (truncated.error) return truncated;
 	}
 
-	// Rust reads engine, modelPath, language, prompt, and unloadPolicy from
+	// Rust reads engine, modelName, language, prompt, and unloadPolicy from
 	// the ambient config pushed via `setTranscriptionConfig` in the layout
 	// effect. Anything that affects inference output is already there.
 	return commands.transcribeRecording(recordingId);
@@ -233,29 +290,28 @@ async function dispatchUploadTranscription(
 		await loadForCloudUpload(recordingId);
 	if (loadError) return Err(loadError);
 
-	const outputLanguage = getOutputLanguage();
+	const spokenLanguage = getSpokenLanguage();
 	const prompt = settings.get('transcription.prompt');
 	const provider = PROVIDERS[selectedService];
 
 	if (provider.location === 'self-hosted') {
 		return SpeachesTranscriptionServiceLive.transcribe(audio, {
-			outputLanguage,
+			spokenLanguage,
 			prompt,
-			modelId: deviceConfig.get(provider.modelIdKey),
-			baseUrl: deviceConfig.get(provider.serverUrlKey),
+			modelId: deviceConfig.get(provider.modelIdConfigKey),
+			baseUrl: deviceConfig.get(provider.endpointConfigKey),
 		});
 	}
 
 	if (provider.location === 'cloud' && isCloudProviderId(selectedService)) {
 		return CLOUD_TRANSCRIBERS[selectedService](audio, {
-			outputLanguage,
+			spokenLanguage,
 			prompt,
-			apiKey: deviceConfig.get(provider.apiKeyKey),
-			modelName: settings.get(provider.modelKey),
-			baseURL:
-				'endpointKey' in provider && provider.endpointKey
-					? deviceConfig.get(provider.endpointKey) || undefined
-					: undefined,
+			apiKey: deviceConfig.get(provider.apiKeyConfigKey),
+			modelName: settings.get(provider.modelSettingKey),
+			baseURL: provider.endpointConfigKey
+				? deviceConfig.get(provider.endpointConfigKey) || undefined
+				: undefined,
 		});
 	}
 

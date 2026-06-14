@@ -12,19 +12,19 @@ Every test file that needs shared infrastructure MUST have a `setup()` function.
 
 1. `setup()` ALWAYS returns a destructured object, even for single values
 2. Tests ALWAYS destructure the return: `const { thing } = setup()`
-3. `setup()` is a plain function, not a hook — each test calls it independently
-4. No mutable `let` variables at describe scope — setup returns fresh state per test
+3. `setup()` is a plain function, not a hook; each test calls it independently
+4. No mutable `let` variables at describe scope. Setup returns fresh state per test
 
 ### Why Always an Object (Even for One Value)
 
 - **Extensibility**: Adding a second value later doesn't require changing any existing callsites
 - **Self-documenting**: `const { files } = setup()` tells you what you're getting by name
-- **Consistency**: Every test file follows the same pattern — no guessing
+- **Consistency**: Every test file follows the same pattern. No guessing
 
 ### Single Value
 
 ```typescript
-// Good — always an object, even for one thing
+// Good: always an object, even for one thing
 function setup() {
 	const workspace = createWorkspace({
 		id: 'test',
@@ -42,7 +42,7 @@ test('creates a file', () => {
 ```
 
 ```typescript
-// Bad — returns value directly
+// Bad: returns value directly
 function setup() {
 	const workspace = createWorkspace({
 		id: 'test',
@@ -116,7 +116,7 @@ function setupWithBinding(
 Use `beforeEach`/`afterEach` ONLY for cleanup that must run even if a test fails (server shutdown, spy restoration). Never use them for data setup.
 
 ```typescript
-// Bad — mutable state, hidden setup
+// Bad: mutable state, hidden setup
 let files: TableHelper;
 beforeEach(() => {
 	const workspace = createWorkspace({
@@ -127,7 +127,7 @@ beforeEach(() => {
 	files = workspace.tables.files;
 });
 
-// Good — setup function, immutable per-test
+// Good: setup function, immutable per-test
 function setup() {
 	const workspace = createWorkspace({
 		id: 'test',
@@ -144,9 +144,9 @@ Table definitions used across multiple tests should be defined at module level, 
 
 ```typescript
 const filesTable = defineTable({
-	id: column.string<FileId>(),
-	name: column.string(),
-	updatedAt: column.integer(),
+	id: field.string<FileId>(),
+	name: field.string(),
+	updatedAt: field.integer(),
 });
 
 function setup() {
@@ -166,13 +166,13 @@ These are stateless definitions, safe to share. Stateful objects (Y.Doc, workspa
 Every property in the setup return should be used by at least one test. If no test uses `ydoc`, don't return it:
 
 ```typescript
-// Bad — ydoc is never destructured by any test
+// Bad: ydoc is never destructured by any test
 function setup() {
 	const ydoc = new Y.Doc();
 	return { ydoc, tl: createTimeline(ydoc) };
 }
 
-// Good — only return what tests actually use
+// Good: only return what tests actually use
 function setup() {
 	return { tl: createTimeline(new Y.Doc()) };
 }

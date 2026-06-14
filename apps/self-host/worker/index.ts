@@ -31,11 +31,9 @@ import {
 
 const ownership = shared({
 	admit: (c) => {
-		const raw = (c.env.ALLOWED_MEMBER_EMAILS ?? '') as string;
 		const allowed = new Set(
-			raw
-				.split(',')
-				.map((s: string) => s.trim())
+			c.env.ALLOWED_MEMBER_EMAILS.split(',')
+				.map((s) => s.trim())
 				.filter(Boolean),
 		);
 		return allowed.has(c.var.user.email);

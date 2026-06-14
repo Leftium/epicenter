@@ -110,19 +110,18 @@ This approach eliminates the need for archive extraction and provides better dow
 
 ## TypeScript Bridge
 
-The Rust transcription happens through the generated Tauri command bindings. Our TypeScript layer sends a recording artifact id and the selected local model path:
+The Rust transcription happens through the generated Tauri command bindings. The TypeScript layer pushes an ambient config naming the selected model, then sends only a recording id per transcription:
 
 ```typescript
-const result = await commands.transcribeRecording(
-    recordingId,
-    {
-        engine: 'parakeet',
-        modelPath: options.modelPath,
-    },
-);
+await commands.setTranscriptionConfig({
+    engine: 'parakeet',
+    modelName: 'parakeet-tdt-0.6b-v3-int8',
+    // language, initialPrompt, unloadPolicy...
+});
+const result = await commands.transcribeRecording(recordingId);
 ```
 
-The `modelPath` is the app-data directory containing the model files. Manual model selections are imported into app data before they are saved, so the native command never needs arbitrary filesystem access to load persisted local models.
+The `modelName` is a folder entry name, never a path. Rust resolves it under `{appDataDir}/models/parakeet/` at load time, so the native command never needs arbitrary filesystem access and a path never exists as data anywhere in the system. Users add their own models by dropping (or symlinking) a directory into that folder; it shows up in the settings list automatically.
 
 ## Why This Works
 

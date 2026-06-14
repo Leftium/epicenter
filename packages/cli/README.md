@@ -1,6 +1,6 @@
 # @epicenter/cli
 
-> Introspect and invoke `defineQuery` / `defineMutation` actions exposed by configured project mounts, locally or on a peer that's online right now.
+> Introspect and invoke `defineQuery` / `defineMutation` actions exposed by configured mounts, locally or on a currently online peer.
 
 Each verb is a one-line shell shortcut for one workspace primitive:
 
@@ -8,7 +8,7 @@ Each verb is a one-line shell shortcut for one workspace primitive:
                  +------------+---------------------------------------------+
                  | Verb       | Workspace primitive                         |
                  +------------+---------------------------------------------+
-   Enumerate     | list       | Object.entries(collaboration.actions)       |
+   Enumerate     | list       | Object.entries(runtime.actions)             |
    Invoke        | run        | local daemon invoke                         |
    Dispatch      | run --peer | relay dispatch to a live peer               |
    Presence      | peers      | collaboration.devices.list()                |
@@ -36,26 +36,26 @@ The same env var and scripts apply to every command that talks to the API, inclu
 
 ## Commands
 
-`epicenter daemon up` opens every mount listed in the project's `epicenter.config.ts`. `list`, `run`, and `peers` dispatch to that local daemon over its Unix socket.
+`epicenter daemon up` opens every mount listed in the Epicenter root's `epicenter.config.ts`. `list`, `run`, and `peers` dispatch to that local daemon over its Unix socket.
 
 ```bash
 epicenter auth login
 
-epicenter daemon up -C ~/vault
+epicenter daemon up -C ~/workspace
 epicenter daemon ps
-epicenter daemon logs -C ~/vault
-epicenter daemon down -C ~/vault
+epicenter daemon logs -C ~/workspace
+epicenter daemon down -C ~/workspace
 
-epicenter list -C ~/vault
-epicenter list fuji.entries_update -C ~/vault
+epicenter list -C ~/workspace
+epicenter list fuji.entries_update -C ~/workspace
 
-epicenter run fuji.entries_update '{"id":"entry_1","tags":["triaged"]}' -C ~/vault
-epicenter run fuji.entries_update '{"id":"entry_1","tags":["triaged"]}' --peer user-1 -C ~/vault
+epicenter run fuji.entries_update '{"id":"entry_1","tags":["triaged"]}' -C ~/workspace
+epicenter run fuji.entries_update '{"id":"entry_1","tags":["triaged"]}' --peer user-1 -C ~/workspace
 
-epicenter peers -C ~/vault
+epicenter peers -C ~/workspace
 ```
 
-`-C` is a start directory for project discovery. Discovery walks upward until it finds `epicenter.config.ts`, then the daemon starts every mount in that config.
+`-C` is a start directory for Epicenter-root discovery. Discovery walks upward until it finds `epicenter.config.ts`, then the daemon starts every mount in that config. Discovery is upward-only and never scans down, so run from inside your Epicenter folder (or any directory under it) or pass `-C <epicenter-root>`. From a repo whose Epicenter folder lives at `repo/apps`, that is `epicenter daemon up -C apps`.
 
 ## Exit codes
 
@@ -72,9 +72,9 @@ epicenter peers -C ~/vault
 
 Error text goes to stderr; machine-readable output (`--format json|jsonl`, tables, and `run` results) goes to stdout.
 
-## Project Mounts
+## Epicenter Roots And Mounts
 
-`epicenter.config.ts` owns project discovery. The default export is a `Mount[]`. App packages ship mount factories that return `Mount` values; each `Mount.name` owns the CLI prefix.
+`epicenter.config.ts` marks the Epicenter root and owns mount discovery. The default export is a `Mount[]`. App packages ship mount factories that return `Mount` values; each `Mount.name` owns the CLI prefix. The folder that holds `epicenter.config.ts` is your Epicenter folder: Epicenter owns its direct children, so each mount's visible markdown projection is a direct child folder named after the mount.
 
 ```ts
 import { fuji } from "@epicenter/fuji/project";
@@ -82,9 +82,9 @@ import { fuji } from "@epicenter/fuji/project";
 export default [fuji()];
 ```
 
-The returned `Mount.name` is `fuji`, so the CLI addresses actions as `fuji.<action_key>` regardless of the project folder name.
+The returned `Mount.name` is `fuji`, so the CLI addresses actions as `fuji.<action_key>` regardless of the Epicenter folder name.
 
-For projects that host more than one mount, add more entries to the array:
+For Epicenter roots that host more than one mount, add more entries to the array:
 
 ```ts
 import { fuji } from "@epicenter/fuji/project";
@@ -93,11 +93,18 @@ import { honeycrisp } from "@epicenter/honeycrisp/project";
 export default [fuji(), honeycrisp()];
 ```
 
+The folder that holds `epicenter.config.ts` is your Epicenter folder. `.epicenter/` and each mount's generated projection are direct children:
+
 ```
-my-project/
-├── epicenter.config.ts
-└── .epicenter/
+repo/                      unreserved repo root
+└── epicenter/             Epicenter root (folder name is your choice)
+    ├── epicenter.config.ts   tracked, marks the Epicenter root
+    ├── .epicenter/           ignored, machine state for this root
+    ├── fuji/                 ignored, generated Fuji projection
+    └── honeycrisp/           ignored, generated Honeycrisp projection
 ```
+
+Put `epicenter.config.ts` in a folder dedicated to Epicenter, such as `epicenter/` or `apps/`, not at a repo root that already holds source. The marker is the config file, not the folder name; nothing reserves the name `apps`.
 
 Writing a custom mount inline uses `defineMount` from `@epicenter/workspace/daemon`:
 
@@ -107,26 +114,22 @@ import { defineMount } from "@epicenter/workspace/daemon";
 export default [
   defineMount({
     name: "notes",
+    kind: "local",
     async open({
-      keyring,
-      openWebSocket,
-      projectDir,
+      epicenterRoot,
       mount,
-      ownerId,
-      deviceId,
-      yDocClientId,
     }) {
       // Open the long-lived local runtime.
       // `mount` is the canonical mount name carried on the Mount object.
-      // Return { collaboration, [Symbol.asyncDispose] }.
+      // Return { actions, [Symbol.asyncDispose] }.
     },
   }),
 ];
 ```
 
-`Mount.name` is the CLI prefix. Two mounts in one project must have distinct names; duplicates fail before any mount opens.
+`Mount.name` is the CLI prefix. Two mounts in one Epicenter root must have distinct names; duplicates fail before any mount opens.
 
-`.epicenter/` holds generated project data such as SQLite materializers, Yjs update logs, markdown materializers, and its generated `.gitignore`. It is not a registry. Runtime files live outside the project: sockets and daemon metadata use the OS runtime directory, while daemon logs use the platform log directory from `env-paths`.
+`.epicenter/` holds the Epicenter root's generated machine state such as SQLite materializers, Yjs update logs, markdown materializers, and its generated `.gitignore`. It is not a registry. Runtime files live outside the Epicenter root: sockets and daemon metadata use the OS runtime directory, while daemon logs use the platform log directory from `env-paths`.
 
 ## Scripting
 

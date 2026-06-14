@@ -5,7 +5,7 @@
  * live daemon's log, run `tail -F` against the printed path: the OS already
  * does follow-through-rotation correctly, so the CLI does not reimplement it.
  *
- * Uses the discovered project by default. `-C <dir>` changes the discovery
+ * Uses the discovered Epicenter root by default. `-C <dir>` changes the discovery
  * start point.
  *
  * See spec: `20260426T235000-cli-up-long-lived-peer.md` § "Logging".
@@ -14,7 +14,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { logPathFor } from '@epicenter/workspace/node';
 import { cmd } from '../util/cmd.js';
-import { projectOption } from '../util/common-options.js';
+import { epicenterRootOption } from '../util/common-options.js';
 
 const DEFAULT_TAIL_LINES = 50;
 
@@ -41,7 +41,7 @@ export const logsCommand = cmd({
 	command: 'logs',
 	describe: 'Print recent log lines for a running daemon.',
 	builder: {
-		C: projectOption,
+		C: epicenterRootOption,
 	},
 	handler: (argv) => {
 		const logPath = logPathFor(argv.C);

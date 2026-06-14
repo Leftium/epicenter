@@ -1,8 +1,28 @@
-# Epicenter: Yjs-First Collaborative Workspace System
+# @epicenter/workspace
 
-The hard problem with local-first apps is synchronization. If each device has its own SQLite file, how do you keep them in sync? If each device has its own markdown folder, same question.
+A local-first workspace engine for TypeScript apps: Yjs is the source of truth; SQLite and Markdown are read-only materialized projections.
 
-`@epicenter/workspace` solves that by making Yjs the source of truth. Tables, KV entries, and document content all live in a `Y.Doc`; persistence, sync, and materializers hang off that core as attachment primitives. Write to the workspace, and everything else reacts.
+The hard problem with local-first apps is synchronization. If each device has its own SQLite file, how do you keep them in sync? If each device has its own Markdown folder, same question.
+
+`@epicenter/workspace` solves that by making Yjs the source of truth for app-owned state. Tables, KV entries, and document content all live in a `Y.Doc`; persistence, sync, validated actions, and materializers hang off that core as attachment primitives. Write to the workspace, and everything else reacts.
+
+Materializers are for reading. SQLite gives scripts, apps, and agents a fast SQL view. Markdown gives people a file-shaped export for review, git, publishing, or static output. Neither one is the app's mutation API.
+
+```txt
+Read path:
+  person / script / agent
+    -> SQL against the read-only SQLite mirror
+    -> Markdown files generated from the workspace
+
+Write path:
+  app UI / TanStack AI tool / Bun script / epicenter CLI
+    -> workspace action
+    -> live Y.Doc tables, KV, or child content docs
+    -> sync peers
+    -> SQLite mirror and Markdown export refresh
+```
+
+Agents can still edit ordinary project files. They should not patch generated `.md` files to mutate app data. Give them actions instead: browser chat uses `actionsToAiTools`, scripts use `connectDaemonActions`, and humans or automation can call `epicenter run <mount>.<action>`. The action writes the Yjs datastore; the materializers write the files back out.
 
 The current center is small:
 
@@ -39,23 +59,23 @@ swap `attachIndexedDb` + `attachBroadcastChannel` for the owner-scoped
 `attachLocalStorage` composite; see [Plaintext vs encrypted](#plaintext-vs-encrypted).
 
 ```bash
-bun add @epicenter/workspace
+bun add @epicenter/workspace @epicenter/field
 ```
 
 ```typescript
+import { field } from '@epicenter/field';
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
-	column,
 	createWorkspace,
 	defineTable,
 } from '@epicenter/workspace';
 
 const posts = defineTable({
-	id: column.string(),
-	title: column.string(),
-	body: column.string(),
-	published: column.boolean(),
+	id: field.string(),
+	title: field.string(),
+	body: field.string(),
+	published: field.boolean(),
 });
 
 export function openBlog() {
@@ -104,7 +124,7 @@ That example uses the current public API end to end:
 - a direct `openBlog()` builder function that calls `createWorkspace(...)` and returns the bundle
 - `createWorkspace` + `attachIndexedDb` composed inline
 - direct property access via `blog.tables.posts`
-- `set`, `get`, `update`, `delete`, `getAllValid`, and `observe`
+- `set`, `get`, `update`, `delete`, `scan`, and `observe`
 
 The quick start is local-first: it persists to IndexedDB and works offline.
 Sync is one more line in the builder: add `openCollaboration`. See [Sync](#sync).
@@ -298,11 +318,11 @@ Ordering is obvious (later `attach*` and `open*` calls see earlier ones through 
 
 Tables validate and migrate on read, not on write. `set(...)` writes the row shape TypeScript already approved. `get(...)` returns a wellcrafted `Result<TRow | null, TableParseError>`: parse failures surface as `error`, missing rows as `data: null`, and old versions are migrated to the latest schema before being returned.
 
-That trade-off is deliberate. It keeps the write path cheap and pushes schema evolution into one place:the table definition.
+That trade-off is deliberate. It keeps the write path cheap and pushes schema evolution into one place: the table definition.
 
 ### Storage scales with active data, not edit history
 
-With Yjs garbage collection enabled, storage tracks the live document much more closely than the number of operations that happened over time. Deleted rows, overwritten values, and old content states collapse down to compact metadata. The workspace grows because you keep more data:not because you clicked save a thousand times.
+With Yjs garbage collection enabled, storage tracks the live document much more closely than the number of operations that happened over time. Deleted rows, overwritten values, and old content states collapse down to compact metadata. The workspace grows because you keep more data, not because you clicked save a thousand times.
 
 ## Architecture Overview
 
@@ -329,27 +349,32 @@ Note: Schema definitions are stored in static TypeScript modules, not in the Y.D
 The Y.Doc carries data. Your definition files carry meaning.
 ```
 
-### Three-Layer Data Flow
+### Read and write flow
 
-```
-┌────────────────────────────────────────────────────────────────────┐
-│  WRITE FLOW                                                         │
-│                                                                     │
-│  App code / action → Y.Doc updated → Extensions react              │
-│                       │                                             │
-│              ┌────────┼────────┐                                    │
-│              ▼        ▼        ▼                                    │
-│         IndexedDB  WebSocket  Markdown                              │
-│         or SQLite   sync      materializer                          │
-└────────────────────────────────────────────────────────────────────┘
+The main split is source of truth versus projection. Anything that changes app data enters through the workspace. Anything that only needs a fast or human-readable view can read a materialized output.
 
-┌────────────────────────────────────────────────────────────────────┐
-│  READ FLOW                                                          │
-│                                                                     │
-│  Simple reads → table / kv helpers over Y.Doc                       │
-│  Rich text  → document handles over timeline Y.Docs                 │
-│  Derived reads → extension exports built on the same core           │
-└────────────────────────────────────────────────────────────────────┘
+```txt
+Writes:
+  UI component
+  TanStack AI tool
+  Bun script
+  epicenter run <mount>.<action>
+    -> defineMutation action
+      -> Y.Doc tables, KV, or child content docs
+        -> sync peers
+        -> persistence
+        -> SQLite materializer
+        -> Markdown materializer
+
+Reads:
+  table / KV helpers
+    -> Y.Doc
+
+  openSqliteReader
+    -> read-only SQLite mirror
+
+  editor, reviewer, publisher, agent
+    -> generated Markdown files
 ```
 
 ### Multi-Device Sync Topology
@@ -364,8 +389,8 @@ Epicenter supports distributed sync where Y.Doc instances replicate across devic
    └────┬─────┘           └────┬─────┘              └────┬─────┘
         │                      │                         │
    (no server)            ┌────▼─────┐              ┌────▼─────┐
-        │                 │ Elysia   │◄────────────►│ Elysia   │
-        │                 │ :3913    │  server-to-  │ :3913    │
+        │                 │ Hono     │◄────────────►│ Hono     │
+        │                 │ relay    │  server-to-  │ relay    │
         │                 └────┬─────┘    server    └────┬─────┘
         │                      │                         │
         └──────────────────────┴─────────────────────────┘
@@ -506,21 +531,23 @@ is library-managed: never declare it as a column, never pass it to `set` or
 version on write, routes by it on read, and strips it before handing the row
 back.
 
-Columns are TypeBox-native. Use the `column.*` factory helpers (`column.string`,
-`column.number`, `column.boolean`, `column.dateTime`, `column.enum`,
-`column.nullable`, `column.json`, ...) for the SQLite-flat default set, or pass
-raw `Type.*` schemas if you need a shape the helpers don't cover. The library
-enforces 1:1 SQLite-column mapping at the type level either way.
+Columns are TypeBox-native. Use the `field.*` builders from
+`@epicenter/field` (`field.string`, `field.number`, `field.boolean`,
+`field.datetime`, `field.select`, `field.json`, ...) plus the standalone
+`nullable(...)` wrapper from `@epicenter/workspace` for intentional emptiness,
+or pass raw `Type.*` schemas if you need a shape the helpers don't cover. The
+library enforces 1:1 SQLite-column mapping at the type level either way.
 
 ### Single-version tables
 
 ```typescript
-import { column, defineTable } from '@epicenter/workspace';
+import { field } from '@epicenter/field';
+import { defineTable } from '@epicenter/workspace';
 
 const users = defineTable({
-	id: column.string(),
-	email: column.string(),
-	name: column.string(),
+	id: field.string(),
+	email: field.string(),
+	name: field.string(),
 });
 
 void users;
@@ -531,17 +558,18 @@ Use the single-schema form when the table has only one version today.
 ### Versioned tables
 
 ```typescript
-import { column, defineTable } from '@epicenter/workspace';
+import { field } from '@epicenter/field';
+import { defineTable } from '@epicenter/workspace';
 
 const posts = defineTable(
 	{
-		id: column.string(),
-		title: column.string(),
+		id: field.string(),
+		title: field.string(),
 	},
 	{
-		id: column.string(),
-		title: column.string(),
-		slug: column.string(),
+		id: field.string(),
+		title: field.string(),
+		slug: field.string(),
 	},
 ).migrate(({ value, version }) => {
 	switch (version) {
@@ -566,14 +594,15 @@ in storage until you rewrite them.
 ### KV entries
 
 ```typescript
-import { column, defineKv } from '@epicenter/workspace';
+import { field } from '@epicenter/field';
+import { defineKv } from '@epicenter/workspace';
 
 const themeMode = defineKv(
-	column.enum(['light', 'dark', 'system']),
+	field.select(['light', 'dark', 'system']),
 	() => 'light' as const,
 );
-const sidebarWidth = defineKv(column.number(), () => 280);
-const sidebarCollapsed = defineKv(column.boolean(), () => false);
+const sidebarWidth = defineKv(field.number(), () => 280);
+const sidebarCollapsed = defineKv(field.boolean(), () => false);
 
 void themeMode;
 void sidebarWidth;
@@ -618,11 +647,11 @@ the cache owns live content Y.Docs. App-local helpers own browser cleanup.
 Node one-shot code can open the content document directly for one operation.
 
 ```typescript
+import { field } from '@epicenter/field';
 import * as Y from 'yjs';
 import {
 	attachIndexedDb,
 	attachPlainText,
-	column,
 	createDisposableCache,
 	createWorkspace,
 	defineTable,
@@ -632,9 +661,9 @@ import {
 import { clearDocument } from 'y-indexeddb';
 
 const files = defineTable({
-	id: column.string(),
-	name: column.string(),
-	updatedAt: column.number(),
+	id: field.string(),
+	name: field.string(),
+	updatedAt: field.number(),
 });
 
 function openFilesWorkspace() {
@@ -682,7 +711,7 @@ export const fileContentDocs = createDisposableCache((fileId: string) => {
 
 export async function clearFileContentLocalData() {
 	await Promise.all(
-		workspace.tables.files.getAllValid().map((file) =>
+		workspace.tables.files.scan().rows.map((file) =>
 			clearDocument(fileContentDocGuid(file.id)),
 		),
 	);
@@ -761,14 +790,11 @@ if (error) {
 
 | Method | Return type | Notes |
 | --- | --- | --- |
-| `get(id)` | `Result<TRow \| null, TableParseError>` | `data: null` for "not found"; `error` for parse/validation failures |
-| `getAll()` | `Array<Result<TRow, TableParseError>>` | One Result per stored row |
-| `getAllValid()` | `TRow[]` | Skips invalid rows |
-| `getAllInvalid()` | `TableParseError[]` | Debug schema drift or corrupt data |
-| `filter(predicate)` | `TRow[]` | Runs only on valid rows |
-| `find(predicate)` | `TRow \| undefined` | First valid match |
+| `get(id)` | `Result<TRow \| null, TableReadError>` | `data: null` for "not found"; `error` for a parse failure, a newer-writer row, or an unreadable (undecryptable) row |
+| `scan()` | `TableScan<TRow>` | Classified read: `{ rows, nonconforming, newerWriter, unreadable }`; the four buckets sum to `storedCount()` |
+| `findValid(predicate)` | `TRow \| undefined` | First valid match |
 | `has(id)` | `boolean` | Existence only |
-| `count()` | `number` | Counts every stored row |
+| `storedCount()` | `number` | Counts every stored row |
 
 ```typescript
 const { data: row, error } = workspace.tables.posts.get('1');
@@ -778,12 +804,12 @@ if (error) {
 	console.log(row.title);
 }
 
-const all = workspace.tables.posts.getAll();
-const valid = workspace.tables.posts.getAllValid();
-const published = workspace.tables.posts.filter((row) => row.published);
-const firstPublished = workspace.tables.posts.find((row) => row.published);
+const { rows, nonconforming, newerWriter, unreadable } =
+	workspace.tables.posts.scan();
+const published = rows.filter((row) => row.published);
+const firstPublished = workspace.tables.posts.findValid((row) => row.published);
 const hasPostTwo = workspace.tables.posts.has('2');
-const count = workspace.tables.posts.count();
+const count = workspace.tables.posts.storedCount();
 ```
 
 ### Delete operations
@@ -867,19 +893,19 @@ Browser apps use `attachIndexedDb(ydoc)` for unauthenticated docs, or `attachLoc
 
 For authenticated apps, call `await wipeLocalStorage({ server, ownerId })` after disposing the bundle to delete every owner-scoped encrypted IDB database on the current browser profile (sign-out, "delete my local data", account switch).
 
-`attachBunSqliteMaterializer` and `attachMarkdownExport` are not persistence: they project workspace rows into queryable SQLite tables or `.md` files. See the materializer subsections below.
+`attachBunSqliteMaterializer` and `attachMarkdownExport` are not persistence: they project workspace rows into queryable SQLite tables or `.md` files. They are read surfaces, not write surfaces. Projection actions such as `sqlite_rebuild`, `sqlite_search`, and `markdown_rebuild` maintain or query the projection; app data mutations stay in app-defined actions. See the materializer subsections below.
 
 ```typescript
+import { field } from '@epicenter/field';
 import {
-	column,
 	createWorkspace,
 	defineTable,
 } from '@epicenter/workspace';
 import { attachYjsLog } from '@epicenter/workspace/node';
 
 const notes = defineTable({
-	id: column.string(),
-	title: column.string(),
+	id: field.string(),
+	title: field.string(),
 });
 
 function openNotes() {
@@ -903,10 +929,10 @@ void openNotes;
 One primitive wraps the WebSocket transport: `openCollaboration`. The workspace document passes a real `actions` registry; content documents that only need bytes-on-the-wire pass `actions: {}`. Compose it with `attachBroadcastChannel(ydoc)` for unauthenticated local-only documents. Authenticated browser workspaces use `attachLocalStorage(ydoc, { server, ownerId, keyring })`, which pairs encrypted IDB with an owner-scoped BroadcastChannel in one call.
 
 ```typescript
+import { field } from '@epicenter/field';
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
-	column,
 	createDeviceId,
 	createWorkspace,
 	defineTable,
@@ -917,8 +943,8 @@ import type { AuthClient } from '@epicenter/auth';
 import type { OwnerId } from '@epicenter/identity';
 
 const tabs = defineTable({
-	id: column.string(),
-	url: column.string(),
+	id: field.string(),
+	url: field.string(),
 });
 
 function openTabs({
@@ -961,13 +987,13 @@ Ordering is just lexical: `collaboration` reads `idb.whenLoaded` as `waitFor` be
 
 ### Markdown seam: read-only export
 
-Markdown comes from one seam, `attachMarkdownExport` (in `@epicenter/workspace/document/materializer/markdown`): a continuous, ONE-WAY Yjs to disk projection with free serialization (custom `filename`, `toMarkdown`, per-table `dir`). It exposes a single `markdown_rebuild` mutation for a destructive full re-export (orphan cleanup after a filename or layout change); there is no import path.
+Markdown comes from one seam, `attachMarkdownExport` (in `@epicenter/workspace/document/materializer/markdown`): a continuous, one-way Yjs to disk projection with free serialization (custom `filename`, `toMarkdown`, per-table `dir`). It exposes a single `markdown_rebuild` mutation for a destructive full re-export (orphan cleanup after a filename or layout change); there is no import path.
 
-The projection is read-only on purpose. The materialized `.md` is never read back into Yjs, so it carries no round-trip obligation and can shape the output however a human-readable export or a published site wants. App data mutates only through validated actions (`epicenter run <mount>.<action>`), never by editing the materialized files. The sqlite materializer is the read-only sibling for a relational projection.
+The projection is read-only on purpose. The materialized `.md` is never read back into Yjs, so it carries no round-trip obligation and can shape the output however a human-readable export or a published site wants. App data mutates through validated actions (`epicenter run <mount>.<action>`, `connectDaemonActions`, or TanStack AI tools created by `actionsToAiTools`), never by editing the materialized files. If an app needs Markdown as the authoring format, that parser/editor belongs in an app action or UI surface that writes Yjs. This export is not that path. The SQLite materializer is the read-only sibling for a relational projection.
 
 ```typescript
+import { field } from '@epicenter/field';
 import {
-	column,
 	createWorkspace,
 	defineTable,
 } from '@epicenter/workspace';
@@ -975,9 +1001,9 @@ import { attachYjsLog } from '@epicenter/workspace/node';
 import { attachMarkdownExport } from '@epicenter/workspace/document/materializer/markdown';
 
 const notes = defineTable({
-	id: column.string(),
-	title: column.string(),
-	body: column.string(),
+	id: field.string(),
+	title: field.string(),
+	body: field.string(),
 });
 
 function openNotes() {
@@ -1004,19 +1030,21 @@ void openNotes;
 
 The SQLite materializer is exported from `@epicenter/workspace/document/materializer/sqlite`. It mirrors every table in the workspace bundle into queryable SQLite tables with optional FTS5 full-text search. Pass the workspace directly; use the keyed `fts` slot to opt specific columns into FTS5.
 
+Treat the mirror as a read-only SQL projection. Scripts open it with `openSqliteReader`, which sets `PRAGMA query_only = ON`; app writes go through the daemon action path (`connectDaemonActions` or `epicenter run`) so the live Y.Doc stays authoritative and the mirror catches up from the same source as every other projection.
+
 ```typescript
+import { field } from '@epicenter/field';
 import {
-	column,
 	createWorkspace,
 	defineTable,
 } from '@epicenter/workspace';
 import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 
 const posts = defineTable({
-	id: column.string(),
-	title: column.string(),
-	body: column.string(),
-	published: column.boolean(),
+	id: field.string(),
+	title: field.string(),
+	body: field.string(),
+	published: field.boolean(),
 });
 
 function openBlog() {
@@ -1112,9 +1140,9 @@ They have four important properties:
 Use `defineQuery(...)` for reads.
 
 ```typescript
+import { field } from '@epicenter/field';
 import Type from 'typebox';
 import {
-	column,
 	createWorkspace,
 	defineActions,
 	defineQuery,
@@ -1123,9 +1151,9 @@ import {
 } from '@epicenter/workspace';
 
 const posts = defineTable({
-	id: column.string(),
-	title: column.string(),
-	published: column.boolean(),
+	id: field.string(),
+	title: field.string(),
+	published: field.boolean(),
 });
 
 function openPosts() {
@@ -1141,7 +1169,7 @@ function openPosts() {
 			posts_list: defineQuery({
 				title: 'List Posts',
 				description: 'List all posts.',
-				handler: () => workspace.tables.posts.getAllValid(),
+				handler: () => workspace.tables.posts.scan().rows,
 			}),
 			posts_get_by_id: defineQuery({
 				title: 'Get Post',
@@ -1166,9 +1194,9 @@ void actionType;
 Use `defineMutation(...)` for writes or side effects.
 
 ```typescript
+import { field } from '@epicenter/field';
 import Type from 'typebox';
 import {
-	column,
 	createWorkspace,
 	defineActions,
 	defineMutation,
@@ -1178,9 +1206,9 @@ import {
 } from '@epicenter/workspace';
 
 const posts = defineTable({
-	id: column.string(),
-	title: column.string(),
-	published: column.boolean(),
+	id: field.string(),
+	title: field.string(),
+	published: field.boolean(),
 });
 
 function openPosts() {
@@ -1313,7 +1341,7 @@ browser-safe entry point.
 | Import path | What it exports | Public today |
 | --- | --- | --- |
 | `@epicenter/workspace` | `createDisposableCache`, `defineTable`, `defineKv`, browser-safe `attach*` (tables, kv, indexeddb, broadcast-channel, encryption, rich-text, plain-text, timeline), `openCollaboration`, `roomWsUrl`, action helpers, `onLocalUpdate`, `docGuid`, ids, dates, types | Yes |
-| `@epicenter/workspace/node` | Bun/Node `attach*` and `open*` (`attachYjsLog`, `attachYjsLogReader`, `openSqliteReader`, `openWorkspaceSqlite`), daemon clients (`connectDaemonActions`, `findProjectRoot`), workspace paths | Yes |
+| `@epicenter/workspace/node` | Bun/Node `attach*` and `open*` (`attachYjsLog`, `attachYjsLogReader`, `openSqliteReader`, `openWorkspaceSqlite`), daemon clients (`connectDaemonActions`, `findEpicenterRoot`), workspace paths | Yes |
 | `@epicenter/workspace/document/materializer/markdown` | `attachMarkdownExport`, `attachGitAutosave`, `MarkdownShape` | Yes |
 | `@epicenter/workspace/document/materializer/sqlite` | `attachBunSqliteMaterializer`, `generateDdl`, types | Yes |
 | `@epicenter/workspace/ai` | `actionsToAiTools` (TanStack AI bindings) | Yes |
@@ -1364,7 +1392,7 @@ export const fileContentDocs = createDisposableCache((fileId: string) => {
 
 export async function clearFileContentLocalData() {
 	await Promise.all(
-		workspace.tables.files.getAllValid().map((file) =>
+		workspace.tables.files.scan().rows.map((file) =>
 			clearDocument(fileContentDocGuid(file.id)),
 		),
 	);
@@ -1542,6 +1570,7 @@ import {
 	type Table,
 	type TableDefinition,
 	TableParseError,
+	type TableScan,
 	type Tables,
 } from '@epicenter/workspace';
 ```
@@ -1552,15 +1581,12 @@ Public table methods:
 - `set(row)`
 - `update(id, partial)`
 - `get(id)`
-- `getAll()`
-- `getAllValid()`
-- `getAllInvalid()`
-- `filter(predicate)`
-- `find(predicate)`
+- `scan()` (returns the four classified buckets)
+- `findValid(predicate)`
 - `delete(id)`
 - `clear()`
 - `observe(callback)`
-- `count()`
+- `storedCount()`
 - `has(id)`
 
 ### KV operations
@@ -1642,9 +1668,9 @@ import {
 
 These matter when you are writing low-level tooling against raw Yjs structures.
 
-## MCP Integration
+## AI, CLI, and MCP Integration
 
-The core package does not export an MCP server. What it does export is the metadata you need to build one:
+The core package does not export an MCP server or own every adapter. What it does export is the action surface those adapters need:
 
 - actions with `type`, `title`, `description`, and `input`
 - `Object.entries(actions)` to iterate the flat registry
@@ -1652,7 +1678,9 @@ The core package does not export an MCP server. What it does export is the metad
 - `toActionMeta(action)` to project an action to its wire-safe shape
 - `@epicenter/workspace/ai`: `actionsToAiTools(...)` for TanStack AI tool bindings
 
-That is enough to build adapters that expose workspace actions over HTTP, CLI, or MCP without coupling the core package to one transport.
+That is enough to expose workspace actions over HTTP, CLI, TanStack AI, or MCP without coupling the core package to one transport.
+
+For AI editing, expose workspace mutations as tools. `actionsToAiTools(...)` does not teach the model to patch the materialized Markdown folder. It wires tool calls to the same action handlers the UI and CLI use. Query tools can read data; mutation tools write Yjs and are marked `needsApproval: true` by default.
 
 ### Setup
 

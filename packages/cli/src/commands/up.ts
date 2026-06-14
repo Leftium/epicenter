@@ -1,20 +1,19 @@
 /**
- * `epicenter daemon up`: start the long-lived foreground daemon for one project.
+ * `epicenter daemon up`: start the long-lived foreground daemon for one Epicenter root.
  *
  * Loads every mount declared in `epicenter.config.ts`, opens each one in
- * parallel, and exposes a Unix-socket IPC channel for that project. `peers`,
+ * parallel, and exposes a Unix-socket IPC channel for that root. `peers`,
  * `list`, and `run` dispatch to this daemon over IPC; without `daemon up`
  * they error with a hint pointing back here.
  *
- * One daemon per project; that daemon serves every configured mount.
+ * One daemon per Epicenter root; that daemon serves every configured mount.
  * Resource isolation between mounts is expressed by splitting them into
- * different projects, not by a flag.
+ * different roots, not by a flag.
  *
  * Foreground by design; backgrounding is the user's job.
  */
 
-import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { realpathSync } from 'node:fs';
 import type { SyncAuthClient } from '@epicenter/auth';
 import {
 	createMachineAuthClient,
@@ -24,29 +23,21 @@ import type { StartedMount } from '@epicenter/workspace/daemon';
 import {
 	claimDaemonLease,
 	type DaemonMetadata,
-	findProjectRoot,
-	openProject,
-	type ProjectConfigError,
+	type EpicenterConfigError,
+	type InactiveMount,
+	openEpicenterRoot,
 	StartupError,
 	startDaemonServer,
 	unlinkMetadata,
 	type WorkspaceAppError,
 	writeMetadata,
 } from '@epicenter/workspace/node';
-import { Ok, type Result, trySync } from 'wellcrafted/result';
+import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 import packageJson from '../../package.json' with { type: 'json' };
 import { cmd } from '../util/cmd.js';
+import { epicenterRootOption } from '../util/common-options.js';
 
 const CLI_VERSION = packageJson.version;
-
-const upProjectOption = {
-	type: 'string' as const,
-	description:
-		'Project root, or any directory under it (discovery walks up to the nearest epicenter.config.ts).',
-	default: () => process.cwd(),
-	defaultDescription: 'current working directory',
-	coerce: (projectDir: string) => projectDir,
-};
 
 /**
  * Sync-status / presence lines write directly to stderr so they reach the
@@ -59,7 +50,13 @@ function logSyncStatus(message: string): void {
 }
 
 type UpOptions = {
-	projectDir: string;
+	/**
+	 * The Epicenter root (the folder that holds `epicenter.config.ts`,
+	 * whose direct children are the mount projections). The yargs `-C` option
+	 * resolves discovery (walking up to the nearest `epicenter.config.ts`) before
+	 * the handler runs; direct callers pass the root they already know.
+	 */
+	epicenterRoot: string;
 	quiet: boolean;
 	cliVersion?: string;
 	/**
@@ -79,50 +76,53 @@ type UpOptions = {
  * startup, exercise the IPC handler in-process, and call `teardown()` to
  * release resources without spawning a child.
  *
- * - `mounts` is every started mount runtime the project declares; the daemon
+ * - `mounts` is every started mount runtime the root declares; the daemon
  *   serves them all and routes IPC requests by mount name.
+ * - `inactive` is every mount that returned `inactive(reason)` instead of a
+ *   runtime (typically signed-out, keyring-backed mounts). They are not served.
  * - `metadata` is what was written to disk.
  * - `teardown()` closes the server, asyncDisposes the runtimes, releases the
  *   lease, and unlinks metadata + socket. Idempotent.
  */
 type UpHandle = {
 	mounts: StartedMount[];
+	inactive: InactiveMount[];
 	metadata: DaemonMetadata;
 	teardown: () => Promise<void>;
 };
 
 /**
- * Daemon body. Opens every configured mount (the project must already have an
- * `epicenter.config.ts`; see `epicenter init`), ensures the `.epicenter`
- * cache gitignore, binds the IPC socket, and returns a handle. The yargs
- * `handler` calls this,
+ * Daemon body. Opens every configured mount (the root must already have an
+ * `epicenter.config.ts`; see `epicenter init`), binds the IPC socket, and
+ * returns a handle. The yargs `handler` calls this,
  * prints the operator-facing banner, installs SIGINT/SIGTERM, and parks the
  * process; tests call it directly and assert on the returned handle.
  *
- * A SQLite daemon lease claims ownership before any mount opens. After that,
- * `openProject` imports `epicenter.config.ts` and opens every configured
- * mount, and `startDaemonServer` binds the socket.
+ * A SQLite daemon lease serializes startup before any mount opens. After that,
+ * `openEpicenterRoot` imports `epicenter.config.ts`, claims the Epicenter
+ * folder, opens every configured mount, and `startDaemonServer` binds the
+ * socket.
  */
 export async function runUp(
 	options: UpOptions,
 ): Promise<
 	Result<
 		UpHandle,
-		| ProjectConfigError
+		| EpicenterConfigError
 		| WorkspaceAppError
 		| StartupError
 		| MachineAuthStorageError
 	>
 > {
-	const projectDir = realpathSync(resolveProjectForUp(options.projectDir));
+	const epicenterRoot = realpathSync(options.epicenterRoot);
 
-	const leaseResult = claimDaemonLease(projectDir);
+	const leaseResult = claimDaemonLease(epicenterRoot);
 	if (leaseResult.error !== null) return leaseResult;
 	const lease = leaseResult.data;
 
 	const metadata: DaemonMetadata = {
 		pid: process.pid,
-		dir: projectDir,
+		dir: epicenterRoot,
 		startedAt: new Date().toISOString(),
 		cliVersion: options.cliVersion ?? CLI_VERSION,
 		discoveredAt: new Date().toISOString(),
@@ -136,23 +136,30 @@ export async function runUp(
 	await using stack = new AsyncDisposableStack();
 	stack.defer(() => lease.release());
 
+	// Load the machine auth client up front. A signed-out machine ("no saved
+	// session") is a valid state: the daemon still serves local mounts and
+	// reports session-only mounts as inactive, so it maps to a `null` session.
+	// Any other storage error is fatal.
 	const createAuthClient = options.createAuthClient ?? createMachineAuthClient;
 	const authResult = await createAuthClient();
-	if (authResult.error) return authResult;
-	const auth = authResult.data;
-	stack.defer(() => auth[Symbol.dispose]());
+	let auth: SyncAuthClient | null = null;
+	if (authResult.error) {
+		if (authResult.error.name !== 'NoSavedSession')
+			return Err(authResult.error);
+	} else {
+		const client = authResult.data;
+		auth = client;
+		stack.defer(() => client[Symbol.dispose]());
+	}
 
-	const startResult = await openProject({ projectDir, auth });
+	const startResult = await openEpicenterRoot({ epicenterRoot, auth });
 	if (startResult.error) return startResult;
-	const mounts = startResult.data;
-	ensureProjectGitignore(projectDir);
-	stack.defer(() =>
-		Promise.allSettled(
-			mounts.map((entry) =>
-				Promise.resolve(entry.runtime[Symbol.asyncDispose]()),
-			),
-		).then(() => undefined),
-	);
+	const { started: mounts, inactive } = startResult.data;
+	stack.defer(async () => {
+		await Promise.allSettled(
+			mounts.map((entry) => entry.runtime[Symbol.asyncDispose]()),
+		);
+	});
 
 	const serverResult = await startDaemonServer({ lease, mounts });
 	if (serverResult.error) return serverResult;
@@ -160,15 +167,16 @@ export async function runUp(
 	stack.defer(() => daemonServer.close());
 
 	const metadataResult = trySync({
-		try: () => writeMetadata(projectDir, metadata),
+		try: () => writeMetadata(epicenterRoot, metadata),
 		catch: (cause) => StartupError.MetadataWriteFailed({ cause }),
 	});
 	if (metadataResult.error) return metadataResult;
-	stack.defer(() => unlinkMetadata(projectDir));
+	stack.defer(() => unlinkMetadata(epicenterRoot));
 
 	const teardownStack = stack.move();
 	return Ok({
 		mounts,
+		inactive,
 		metadata,
 		teardown: () => teardownStack.disposeAsync(),
 	});
@@ -185,7 +193,7 @@ export const upCommand = cmd({
 	describe:
 		'Open every mount in epicenter.config.ts and serve them on the daemon socket (foreground).',
 	builder: {
-		C: upProjectOption,
+		C: epicenterRootOption,
 		quiet: {
 			type: 'boolean',
 			default: false,
@@ -195,23 +203,21 @@ export const upCommand = cmd({
 	},
 	handler: async (argv) => {
 		const options: UpOptions = {
-			projectDir: argv.C,
+			epicenterRoot: argv.C,
 			quiet: argv.quiet,
 		};
 
 		const { data: handle, error } = await runUp(options);
 		if (error) {
 			process.stderr.write(`${error.message}\n`);
-			if (error.name === 'ProjectConfigNotFound') {
-				process.stderr.write(
-					'run `epicenter init` to scaffold a project here\n',
-				);
-			}
 			process.exit(1);
 		}
 
 		const mountNames = handle.mounts.map((entry) => entry.mount).join(', ');
 		logSyncStatus(`online (mounts=[${mountNames}])`);
+		for (const declined of handle.inactive) {
+			logSyncStatus(`${declined.mount}: inactive (${declined.reason})`);
+		}
 
 		for (const entry of handle.mounts) {
 			printPeersSnapshot(entry);
@@ -233,39 +239,10 @@ export const upCommand = cmd({
 	},
 });
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function resolveProjectForUp(start: string): string {
-	try {
-		return findProjectRoot(start);
-	} catch {
-		return resolve(start);
-	}
-}
-
-/**
- * Ensure `.epicenter/` exists (0o700) and is fully gitignored. The attach
- * primitives (Yjs log, SQLite and markdown materializers) create their own
- * data dirs on demand, so the daemon's only filesystem provisioning is the
- * cache-dir ignore rule. `*` ignores everything the runtime ever writes,
- * including this file, so there is no directory list to keep in sync.
- * Project creation itself (writing `epicenter.config.ts`) is `epicenter
- * init`; `daemon up` on a directory without a config fails with a hint
- * instead of silently scaffolding a project.
- */
-function ensureProjectGitignore(projectDir: string): void {
-	const projectDataDir = join(projectDir, '.epicenter');
-	mkdirSync(projectDataDir, { recursive: true, mode: 0o700 });
-	const gitignorePath = join(projectDataDir, '.gitignore');
-	if (!existsSync(gitignorePath)) {
-		writeFileSync(gitignorePath, '*\n', { mode: 0o600 });
-	}
-}
-
 function printPeersSnapshot(entry: StartedMount): void {
-	const devices = entry.runtime.collaboration.devices.list();
+	const collaboration = entry.runtime.collaboration;
+	if (!collaboration) return;
+	const devices = collaboration.devices.list();
 	if (devices.length === 0) {
 		process.stderr.write(`${entry.mount}: no peers connected\n`);
 		return;
@@ -276,14 +253,12 @@ function printPeersSnapshot(entry: StartedMount): void {
 }
 
 function subscribePeers(entry: StartedMount, quiet: boolean): void {
+	const collaboration = entry.runtime.collaboration;
+	if (!collaboration) return;
 	const snapshot = () =>
-		new Set(
-			entry.runtime.collaboration.devices
-				.list()
-				.map((device) => device.deviceId),
-		);
+		new Set(collaboration.devices.list().map((device) => device.deviceId));
 	let prev = snapshot();
-	entry.runtime.collaboration.devices.subscribe(() => {
+	collaboration.devices.subscribe(() => {
 		const next = snapshot();
 		for (const deviceId of next) {
 			if (!prev.has(deviceId)) {
@@ -304,7 +279,9 @@ function subscribePeers(entry: StartedMount, quiet: boolean): void {
 }
 
 function subscribeSyncStatus(entry: StartedMount): void {
-	entry.runtime.collaboration.onStatusChange((status) => {
+	const collaboration = entry.runtime.collaboration;
+	if (!collaboration) return;
+	collaboration.onStatusChange((status) => {
 		if (status.phase === 'connecting') {
 			logSyncStatus(`${entry.mount}: connecting (retry ${status.retries})`);
 		} else if (status.phase === 'connected') {

@@ -29,7 +29,7 @@ The recipient has no thread context. Include only what they need to continue cor
 
 Paste real code or command output when it is shorter than explaining it. Use real file paths instead of vague references.
 
-Do not duplicate full specs, plans, ADRs, commits, or diffs. Link to stable paths and summarize the decision they contain.
+Do not duplicate full specs, plans, decision docs, commits, or diffs. Link to stable paths and summarize the decision they contain.
 
 Close decisions the recipient should not spend time reopening. If a choice is still genuinely open, name the owner and the exact question.
 

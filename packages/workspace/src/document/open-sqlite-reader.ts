@@ -40,7 +40,7 @@ import {
 export type OpenSqliteReaderOptions = {
 	/**
 	 * Absolute path to the daemon's mirror SQLite file. Typically
-	 * `sqlitePath(projectDir, ydoc.guid)`.
+	 * `sqlitePath(epicenterRoot, ydoc.guid)`.
 	 */
 	filePath: string;
 };
@@ -59,7 +59,7 @@ export type OpenSqliteReaderOptions = {
  * @example
  * ```ts
  * using reader = openSqliteReader({
- *   filePath: sqlitePath(projectDir, fuji.ydoc.guid),
+ *   filePath: sqlitePath(epicenterRoot, fuji.ydoc.guid),
  * });
  * const hits = reader.search('entries', 'hello world', { limit: 25 });
  * const rows = reader.db.query('SELECT * FROM entries').all();

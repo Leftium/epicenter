@@ -18,14 +18,14 @@
 	);
 </script>
 
-{#if latestRun?.result.status === 'failed'}
+{#if latestRun?.result?.status === 'failed'}
 	<TextPreviewDialog
 		{id}
 		title="Transformation Error"
 		label="transformation error"
 		text={latestRun.result.error}
 	/>
-{:else if latestRun?.result.status === 'completed'}
+{:else if latestRun?.result?.status === 'completed'}
 	<TextPreviewDialog
 		{id}
 		title="Transformation Output"

@@ -21,7 +21,6 @@
 	import CopyIcon from '@lucide/svelte/icons/copy';
 	import EllipsisIcon from '@lucide/svelte/icons/ellipsis';
 	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
-	import LoadingTranscriptionIcon from '@lucide/svelte/icons/ellipsis';
 	import MicIcon from '@lucide/svelte/icons/mic';
 	import StartTranscriptionIcon from '@lucide/svelte/icons/play';
 	import RetryTranscriptionIcon from '@lucide/svelte/icons/repeat';
@@ -45,7 +44,6 @@
 		getSortedRowModel,
 	} from '@tanstack/table-core';
 	import { type } from 'arktype';
-	import { format } from 'date-fns';
 	import { createRawSnippet } from 'svelte';
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import { PATHS } from '$lib/services/fs-paths';
@@ -61,20 +59,39 @@
 	import { RecordingRowActions } from './row-actions';
 
 	/**
-	 * Returns a cell renderer for a date/time column using date-fns format.
-	 *
-	 * @param formatString - date-fns format string
+	 * Returns a cell renderer for an instant, optionally using a row-owned
+	 * display timezone.
 	 */
-	function formattedCell(formatString: string) {
-		return ({ getValue }: { getValue: () => unknown }) => {
+	function formattedCell(getTimeZone?: (recording: Recording) => string) {
+		return ({
+			getValue,
+			row,
+		}: {
+			getValue: () => unknown;
+			row: { original: Recording };
+		}) => {
 			const value = getValue();
 			if (typeof value !== 'string' || !value) return '';
 			const date = new Date(value);
 			if (Number.isNaN(date.getTime())) return value;
+			const timeZone = getTimeZone?.(row.original);
+			const options: Intl.DateTimeFormatOptions = {
+				year: 'numeric',
+				month: 'short',
+				day: 'numeric',
+				hour: 'numeric',
+				minute: '2-digit',
+				timeZone,
+				...(timeZone ? { timeZoneName: 'short' } : {}),
+			};
 			try {
-				return format(date, formatString);
+				return new Intl.DateTimeFormat(undefined, options).format(date);
 			} catch {
-				return value;
+				return new Intl.DateTimeFormat(undefined, {
+					...options,
+					timeZone: undefined,
+					timeZoneName: undefined,
+				}).format(date);
 			}
 		};
 	}
@@ -82,7 +99,6 @@
 	const transcribeRecordings = createMutation(
 		() => rpc.transcription.transcribeRecordings.options,
 	);
-	const DATE_FORMAT = 'PP p'; // e.g., Aug 13, 2025, 10:00 AM
 
 	const columns = [
 		{
@@ -138,17 +154,7 @@
 					column,
 					headerText: 'Recorded',
 				}),
-			cell: formattedCell(DATE_FORMAT),
-		},
-		{
-			accessorKey: 'updatedAt',
-			meta: { label: 'Updated At' },
-			header: ({ column }) =>
-				renderComponent(SortableTableHeader, {
-					column,
-					headerText: 'Updated At',
-				}),
-			cell: formattedCell(DATE_FORMAT),
+			cell: formattedCell((recording) => recording.recordedAtZone),
 		},
 		{
 			accessorKey: 'transcript',
@@ -241,7 +247,6 @@
 		schema: type('Record<string, boolean>'),
 		defaultValue: {
 			id: false,
-			updatedAt: false,
 		},
 	});
 	let rowSelection = createPersistedState({
@@ -452,15 +457,10 @@
 					>
 						{#if transcribeRecordings.isPending}
 							<EllipsisIcon class="size-4" />
-						{:else if selectedRecordingRows.some(({ id }) => {
-							const currentRow = recordings.get(id);
-							return currentRow?.transcriptionStatus === 'TRANSCRIBING';
-						})}
-							<LoadingTranscriptionIcon class="size-4" />
-						{:else if selectedRecordingRows.some(({ id }) => {
-							const currentRow = recordings.get(id);
-							return currentRow?.transcriptionStatus === 'DONE';
-						})}
+						{:else if selectedRecordingRows.some(
+							({ id }) =>
+								recordings.get(id)?.transcription?.status === 'completed',
+						)}
 							<RetryTranscriptionIcon class="size-4" />
 						{:else}
 							<StartTranscriptionIcon class="size-4" />

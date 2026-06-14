@@ -54,6 +54,7 @@
 							sound.playSoundIfEnabled('transformationComplete');
 							const notice = await deliverTransformationResult({
 								text: transformedText,
+								recordingId,
 							});
 							loading.resolve(notice);
 						},

@@ -92,6 +92,21 @@ export const INFERENCE = {
 
 export type InferenceProviderId = keyof typeof INFERENCE;
 
+/**
+ * Inference providers with a fixed model list (`models` is non-null), i.e.
+ * the ones whose model is picked from a select instead of typed free-form.
+ */
+export type ModelSelectProviderId = {
+	[K in InferenceProviderId]: (typeof INFERENCE)[K]['models'] extends null
+		? never
+		: K;
+}[InferenceProviderId];
+
+/** Narrow a provider to one whose model comes from a fixed list. */
+export const hasModelSelect = (
+	provider: InferenceProviderId,
+): provider is ModelSelectProviderId => INFERENCE[provider].models !== null;
+
 /** Every inference provider ID, e.g. for `field.select(INFERENCE_PROVIDER_IDS)`. */
 export const INFERENCE_PROVIDER_IDS = Object.keys(
 	INFERENCE,

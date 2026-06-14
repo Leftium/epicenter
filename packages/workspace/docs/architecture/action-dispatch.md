@@ -226,8 +226,7 @@ function purgeRequests(requestsTable) {
 	const RETENTION = 5 * 60 * 1000; // 5 minutes
 	const now = Date.now();
 
-	for (const result of requestsTable.getAllValid()) {
-		const req = result.row;
+	for (const req of requestsTable.scan().rows) {
 		if (req.respondedAt !== null && now - req.respondedAt > RETENTION) {
 			requestsTable.delete({ id: req.id });
 		}
@@ -247,7 +246,7 @@ Not every workspace needs dispatch. A notes workspace has no runtime-specific ac
 > Historical note: the example below uses an older workspace definition shape.
 > Current apps put actions in the bundle returned by `create<App>()`
 > and pass that registry to `openCollaboration()` or
-> `attachProjectInfrastructure()`. Treat the request-table idea as architectural
+> `attachMountInfrastructure()`. Treat the request-table idea as architectural
 > background, not current setup code.
 
 ```typescript

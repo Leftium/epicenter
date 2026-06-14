@@ -4,171 +4,166 @@ import {
 	defineKv,
 	defineTable,
 	defineWorkspace,
+	type IanaTimeZone,
 	type InferKvValue,
 	type InferTableRow,
 	nullable,
 } from '@epicenter/workspace';
-import { type Static, Type } from 'typebox';
+import { type Static, type TProperties, Type } from 'typebox';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
 
 import { ALWAYS_ON_TOP_MODES } from '$lib/constants/always-on-top';
 import { RECORDING_MODES } from '$lib/constants/audio/recording-modes';
 import { INFERENCE_PROVIDER_IDS } from '$lib/constants/inference';
-import { TRANSFORMATION_STEP_TYPES } from '$lib/constants/transformations';
 import {
 	PROVIDERS,
 	TRANSCRIPTION_SERVICE_IDS,
+	type TranscriptionServiceId,
 } from '$lib/services/transcription/providers';
 
 /**
  * Tables store normalized domain entities. Each row is replaced atomically via
  * `table.set()`, there's no field-level merging. Schemas validate rows on read.
  */
-/** Audio recordings captured by the user. One row per recording session. */
+/**
+ * A terminal job outcome: `completed` or `failed`. Both variants carry the
+ * finish instant; `failed` adds the error message; `completed` carries whatever
+ * job-specific payload the caller declares through `completedExtra`.
+ *
+ * Only terminal states are ever stored. A job still in flight has no outcome
+ * (the storing column is null); liveness comes from the in-flight mutation,
+ * never from durable state. A stored 'running'/'transcribing' status would
+ * wedge on crash: the process that died can no longer write the terminal
+ * state. See
+ * docs/articles/20260612T190745-liveness-belongs-to-the-process-not-the-row.md.
+ */
+function terminalOutcome<CompletedExtra extends TProperties>(
+	completedExtra: CompletedExtra,
+) {
+	return Type.Union([
+		Type.Object({
+			status: Type.Literal('completed'),
+			completedAt: field.instant(),
+			...completedExtra,
+		}),
+		Type.Object({
+			status: Type.Literal('failed'),
+			completedAt: field.instant(),
+			error: Type.String(),
+		}),
+	]);
+}
+
+/**
+ * Terminal outcome of transcribing a recording. The transcript text lives in
+ * its own `transcript` column, so the `completed` variant only records when it
+ * finished.
+ */
+const TranscriptionOutcome = terminalOutcome({});
+
+/**
+ * Audio recordings captured by the user. One row per recording session.
+ *
+ * `transcription` holds only the terminal outcome (completed or failed). A
+ * recording that is currently transcribing has no `transcription`; liveness is
+ * derived from the in-flight mutation, never stored.
+ */
 const recordings = defineTable({
 	id: field.string(),
 	title: field.string(),
-	recordedAt: field.string(),
-	updatedAt: field.string(),
+	recordedAt: field.instant(),
+	recordedAtZone: field.string<IanaTimeZone>(),
 	transcript: field.string(),
-	transcriptionStatus: field.select([
-		'UNPROCESSED',
-		'TRANSCRIBING',
-		'DONE',
-		'FAILED',
-	]),
 	duration: nullable(field.number()),
+	transcription: nullable(field.json(TranscriptionOutcome)),
 });
 
 /** Recording row type inferred from the workspace table schema. */
 export type Recording = InferTableRow<typeof recordings>;
 
-/** User-defined transformation pipelines. Each transformation has ordered steps. */
+/**
+ * A single deterministic find/replace pair. A list of these runs offline (no API
+ * key) before the prompt (`preReplacements`) and after it (`postReplacements`):
+ * a small dictionary ("new paragraph" to a newline, filler stripping, proper-noun
+ * fixes) covers far more real-world cleanup than a single replacement each.
+ */
+const Replacement = Type.Object({
+	find: Type.String(),
+	replace: Type.String(),
+	useRegex: Type.Boolean(),
+});
+
+/** One find/replace pair within a transformation's pre/post phase. */
+export type Replacement = Static<typeof Replacement>;
+
+/**
+ * The one optional AI phase of a transformation: a single prompt template run
+ * against a single model on a single backend (inference provider). The backend
+ * and model live here, on the prompt, not on a separate step row.
+ */
+const TransformationPrompt = Type.Object({
+	inferenceProvider: field.select(INFERENCE_PROVIDER_IDS),
+	model: Type.String(),
+	systemPromptTemplate: Type.String(),
+	userPromptTemplate: Type.String(),
+});
+
+/** The single prompt phase of a transformation. */
+export type TransformationPrompt = Static<typeof TransformationPrompt>;
+
+/**
+ * User-defined transformations. A transformation is a fixed three-phase shape:
+ * deterministic `preReplacements`, one optional AI `prompt`, then deterministic
+ * `postReplacements`. At least one phase is present (enforced at write time, not
+ * by the schema). This replaces the old arbitrary N-step pipeline: there is no
+ * ordered `transformationSteps` table, no per-step model memory, no step editor.
+ */
 const transformations = defineTable({
 	id: field.string(),
 	title: field.string(),
 	description: field.string(),
-	createdAt: field.string(),
-	updatedAt: field.string(),
+	preReplacements: field.json(Type.Array(Replacement)),
+	prompt: nullable(field.json(TransformationPrompt)),
+	postReplacements: field.json(Type.Array(Replacement)),
 });
 
 /** Transformation row type inferred from the workspace table schema. */
 export type Transformation = InferTableRow<typeof transformations>;
 
 /**
- * Individual steps within a transformation pipeline.
+ * Terminal outcome of a finished transformation run, carrying the produced
+ * `output` on success. Built from the shared `terminalOutcome` helper.
  *
- * Uses a flat row schema: all `prompt_transform` and `find_replace` fields are
- * present on every row, discriminated by the `type` field. This is intentional:
+ * Only terminal outcomes are stored. A run that is currently executing has no
+ * `result` (the column is null); liveness is derived from `startedAt` recency,
+ * never written. A stored `running` status would wedge on crash: the process
+ * that died can no longer write the terminal state, so the row would claim
+ * `running` forever. See
+ * docs/articles/20260612T190745-liveness-belongs-to-the-process-not-the-row.md.
  *
- * - `table.set()` replaces the entire row. A discriminated union would lose the
- *   inactive variant's data on every write. Flat rows preserve everything.
- * - Per-provider model memory: each inference provider's model selection is stored
- *   independently. Switching providers and switching back retains your choices.
- *
- * @see {@link https://github.com/EpicenterHQ/epicenter/blob/main/specs/20260312T170000-whispering-workspace-polish-and-migration.md | Spec Decision 1}
+ * Storage is one nullable JSON-encoded TEXT column (`result`); nothing in the
+ * read path filters or sorts on these fields.
  */
-const transformationSteps = defineTable({
-	id: field.string(),
-	transformationId: field.string(),
-	order: field.number(),
-	type: field.select(TRANSFORMATION_STEP_TYPES),
-
-	// Prompt transform: active provider
-	inferenceProvider: field.select(INFERENCE_PROVIDER_IDS),
-
-	// Prompt transform: per-provider model memory
-	openaiModel: field.string(),
-	groqModel: field.string(),
-	anthropicModel: field.string(),
-	googleModel: field.string(),
-	openrouterModel: field.string(),
-	customModel: field.string(),
-	customBaseUrl: field.string(),
-
-	// Prompt transform: prompt templates
-	systemPromptTemplate: field.string(),
-	userPromptTemplate: field.string(),
-
-	// Find & replace
-	findText: field.string(),
-	replaceText: field.string(),
-	useRegex: field.boolean(),
-});
-
-/** Transformation step row type inferred from the workspace table schema. */
-export type TransformationStep = InferTableRow<typeof transformationSteps>;
+const TransformationRunResult = terminalOutcome({ output: Type.String() });
 
 /**
- * Per-variant result shapes for a transformation run or step run. Each
- * variant has a single source of truth (one schema, one shadowed type) and
- * higher-level unions compose them.
- *
- * Storage is one JSON-encoded TEXT column (`result`) on the row; nothing in
- * the read path filters or sorts on these fields, so the JSON envelope is
- * cheaper than the loss of per-status invariants a flat nullable layout
- * would cause.
- *
- * Run and step run share the same result schema.
- */
-const RunningResult = Type.Object({ status: Type.Literal('running') });
-export type RunningResult = Static<typeof RunningResult>;
-
-const CompletedResult = Type.Object({
-	status: Type.Literal('completed'),
-	completedAt: Type.String(),
-	output: Type.String(),
-});
-export type CompletedResult = Static<typeof CompletedResult>;
-
-const FailedResult = Type.Object({
-	status: Type.Literal('failed'),
-	completedAt: Type.String(),
-	error: Type.String(),
-});
-export type FailedResult = Static<typeof FailedResult>;
-
-/** Every possible result a run or step run can carry. */
-const TransformationRunResult = Type.Union([
-	RunningResult,
-	CompletedResult,
-	FailedResult,
-]);
-export type TransformationRunResult = Static<typeof TransformationRunResult>;
-
-/**
- * Execution records for transformation pipelines. One run per invocation.
+ * Execution records for transformations. One run per invocation.
  * State queries filter by top-level `recordingId` / `transformationId` and
- * sort by `startedAt`; status-dependent fields live inside `result`.
+ * sort by `startedAt`; the terminal outcome lives inside `result`, which is
+ * null while the run is executing or if it was interrupted.
  */
 const transformationRuns = defineTable({
 	id: field.string(),
 	transformationId: field.string(),
 	recordingId: nullable(field.string()),
 	input: field.string(),
-	startedAt: field.string(),
-	result: field.json(TransformationRunResult),
+	startedAt: field.instant(),
+	result: nullable(field.json(TransformationRunResult)),
 });
 
 /** Transformation run row type inferred from the workspace table schema. */
 export type TransformationRun = InferTableRow<typeof transformationRuns>;
-
-/** Per-step execution records within a transformation run. */
-const transformationStepRuns = defineTable({
-	id: field.string(),
-	transformationRunId: field.string(),
-	stepId: field.string(),
-	order: field.number(),
-	input: field.string(),
-	startedAt: field.string(),
-	result: field.json(TransformationRunResult),
-});
-
-/** Transformation step run row type inferred from the workspace table schema. */
-export type TransformationStepRun = InferTableRow<
-	typeof transformationStepRuns
->;
 
 /**
  * Synced settings stored as individual KV entries with last-write-wins resolution.
@@ -257,43 +252,43 @@ const recording = {
  *
  * @see {@link https://github.com/EpicenterHQ/epicenter/blob/main/specs/20260312T170000-whispering-workspace-polish-and-migration.md | Spec Decision 2}
  */
-const transcription = {
-	'transcription.service': defineKv(
-		field.select(TRANSCRIPTION_SERVICE_IDS),
-		() => 'moonshine' as const,
-	),
-	'transcription.openai.model': defineKv(
-		field.string(),
-		() => PROVIDERS.OpenAI.defaultModel as string,
-	),
-	'transcription.groq.model': defineKv(
-		field.string(),
-		() => PROVIDERS.Groq.defaultModel as string,
-	),
-	'transcription.elevenlabs.model': defineKv(
-		field.string(),
-		() => PROVIDERS.ElevenLabs.defaultModel as string,
-	),
-	'transcription.deepgram.model': defineKv(
-		field.string(),
-		() => PROVIDERS.Deepgram.defaultModel as string,
-	),
-	'transcription.mistral.model': defineKv(
-		field.string(),
-		() => PROVIDERS.Mistral.defaultModel as string,
-	),
-	'transcription.language': defineKv(field.string(), () => 'auto'),
-	'transcription.prompt': defineKv(field.string(), () => ''),
-} as const;
+function defineTranscriptionSettings(
+	defaultTranscriptionService: TranscriptionServiceId,
+) {
+	return {
+		'transcription.service': defineKv(
+			field.select(TRANSCRIPTION_SERVICE_IDS),
+			() => defaultTranscriptionService,
+		),
+		'transcription.openai.model': defineKv(
+			field.string(),
+			() => PROVIDERS.OpenAI.defaultModel as string,
+		),
+		'transcription.groq.model': defineKv(
+			field.string(),
+			() => PROVIDERS.Groq.defaultModel as string,
+		),
+		'transcription.elevenlabs.model': defineKv(
+			field.string(),
+			() => PROVIDERS.ElevenLabs.defaultModel as string,
+		),
+		'transcription.deepgram.model': defineKv(
+			field.string(),
+			() => PROVIDERS.Deepgram.defaultModel as string,
+		),
+		'transcription.mistral.model': defineKv(
+			field.string(),
+			() => PROVIDERS.Mistral.defaultModel as string,
+		),
+		'transcription.language': defineKv(field.string(), () => 'auto'),
+		'transcription.prompt': defineKv(field.string(), () => ''),
+	} as const;
+}
 
 /**
- * Currently active transformation pipeline.
+ * Currently active transformation, used as the dictation default.
  *
  * `selectedId`: FK to `transformations` table. `null` = no transformation selected.
- *
- * Per-provider model defaults for new steps live in `generateDefaultStep`
- * (transformation-steps.svelte.ts), not as KV entries. Each step row carries
- * its own per-provider model memory, so a global default KV would be redundant.
  */
 const transformation = {
 	'transformation.selectedId': defineKv(
@@ -339,7 +334,13 @@ const shortcuts = {
 	),
 } as const;
 
-export function createWhispering() {
+type CreateWhisperingOptions = {
+	defaultTranscriptionService?: TranscriptionServiceId;
+};
+
+export function createWhispering({
+	defaultTranscriptionService = 'parakeet',
+}: CreateWhisperingOptions = {}) {
 	/**
 	 * Whispering KV schemas: ~40 entries for synced preferences. Defined locally
 	 * so the raw schema map is not a module-level export. Callers reach the
@@ -352,7 +353,7 @@ export function createWhispering() {
 		...ui,
 		...dataRetention,
 		...recording,
-		...transcription,
+		...defineTranscriptionSettings(defaultTranscriptionService),
 		...transformation,
 		...analytics,
 		...shortcuts,
@@ -360,13 +361,13 @@ export function createWhispering() {
 	type SettingKey = keyof typeof kvDefinitions & string;
 
 	const workspace = createWorkspace({
+		// Workspace/Y.Doc identity, not an OAuth client id or Tauri bundle id.
+		// This keys local storage and cloud rooms; change only with a data migration.
 		id: 'epicenter-whispering',
 		tables: {
 			recordings,
 			transformations,
-			transformationSteps,
 			transformationRuns,
-			transformationStepRuns,
 		},
 		kv: kvDefinitions,
 	});

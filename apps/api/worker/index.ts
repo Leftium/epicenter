@@ -25,6 +25,7 @@ import {
 	Room,
 	requireBearerUser,
 	requireCookieOrBearerUser,
+	type ServerBindings,
 } from '@epicenter/server';
 import { describeRoute } from 'hono-openapi';
 import {
@@ -33,6 +34,11 @@ import {
 } from './billing/policies.js';
 import { mountBillingApi } from './billing/routes.js';
 import { buildEpicenterTrustedOrigins } from './trusted-origins.js';
+
+// Compile-time proof that this worker's generated Env provides every
+// binding the library reads. A missing or mistyped binding fails here,
+// not deep inside library files compiled in this program.
+({}) as Cloudflare.Env satisfies ServerBindings;
 
 const ownership = personal();
 

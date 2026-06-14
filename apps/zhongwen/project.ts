@@ -13,6 +13,12 @@ import { defineSessionMount } from '@epicenter/workspace/daemon';
 import { attachMountInfrastructure } from '@epicenter/workspace/node';
 import { createZhongwen } from './zhongwen.js';
 
+/**
+ * Mount Zhongwen in an Epicenter project daemon.
+ *
+ * The daemon hosts the encrypted root Y.Doc and sync bridge. Browser-only
+ * transcript docs stay in `openZhongwenBrowser()`.
+ */
 export function zhongwen() {
 	return defineSessionMount({
 		name: 'zhongwen',
@@ -31,5 +37,3 @@ export function zhongwen() {
 		},
 	});
 }
-
-export type ZhongwenMount = ReturnType<typeof zhongwen>;

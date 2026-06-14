@@ -1,7 +1,7 @@
 import { createSession } from '@epicenter/svelte';
 import { createDeviceId } from '@epicenter/workspace';
+import { openZhongwenBrowser } from '@epicenter/zhongwen/browser';
 import { auth } from '$platform/auth';
-import { openZhongwenBrowser } from '../../zhongwen.browser';
 
 export const session = createSession({
 	auth,

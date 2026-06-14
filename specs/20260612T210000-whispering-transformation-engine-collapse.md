@@ -346,6 +346,34 @@ and the clipboard quick-run; the test pane's `transformInput` now runs
   because some apps do not expose a11y selection. Keep synthetic-copy as that
   fallback when the AX path lands, not as the primary.
 
+### Update (2026-06-13): the picker arc
+
+The session above ("What Landed", 2026-06-12) is preserved as the record for that
+date. The following supersedes its samples, `fanOutCandidates`, k=1, and
+"accept to paste" descriptions:
+
+- **Samples axis dropped.** Nothing consumed `sampleIndex` and the picker only ever
+  passed `samples: 1`, so the axis served a feature that did not exist.
+  `fanOutCandidates` collapsed to `createCandidate` (one candidate per
+  transformation). Re-add a sample/regenerate axis when it earns its keep.
+- **Multi-transformation (k > 1) landed**, retiring that follow-up: the picker is a
+  multi-select chip row, one candidate per toggled transformation.
+- **Keyboard model**: capture-phase `1`-`9` toggle chips, arrows pick, `Enter`
+  accepts, `Esc` dismisses. Picker state collapsed to a single source (the
+  candidate list); the chip selection is derived from it and the ToggleGroup is
+  controlled, so the two cannot drift.
+- **The picker is copy-only; in-place paste was removed.** Accept now commits one
+  run, copies the result to the clipboard, and confirms with an OS notification.
+  The "accept to paste" path is gone: a picker window must steal keyboard focus to
+  be driven, and on hide macOS does not reliably hand focus back to the source app
+  (the main window intercepts it), so the synthetic paste landed in the wrong
+  place. The universal cross-app, cross-device path therefore delivers to the
+  clipboard; in-place insertion is a native-integration concern owned by the apps
+  Epicenter controls, not by this window. The headless quick-run keeps its
+  settings-driven auto-paste because it shows no window and never steals focus, so
+  `writeToCursor` stays live in `delivery.ts`. This retires the "paste-back across
+  apps and OSes" testing item for the picker.
+
 ## References
 
 - `specs/20260612T110000-whispering-pipelines-workspace-boundary.md` - the picker and

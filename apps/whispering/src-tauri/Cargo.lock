@@ -4740,17 +4740,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "read-progress-stream"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6435842fc2fea44b528719eb8c32203bbc1bb2f5b619fbe0c0a3d8350fd8d2a8"
-dependencies = [
- "bytes",
- "futures",
- "pin-project-lite",
-]
-
-[[package]]
 name = "realfft"
 version = "3.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6499,25 +6488,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tauri-plugin-upload"
-version = "2.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e2844560c33b360506cea7289626267f43be253a01018b53bd556e86163b9fd"
-dependencies = [
- "futures-util",
- "log",
- "read-progress-stream",
- "reqwest 0.12.24",
- "serde",
- "serde_json",
- "tauri",
- "tauri-plugin",
- "thiserror 2.0.17",
- "tokio",
- "tokio-util",
-]
-
-[[package]]
 name = "tauri-runtime"
 version = "2.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7695,12 +7665,14 @@ dependencies = [
  "cpal",
  "dotenvy_macro",
  "enigo",
+ "futures-util",
  "hound",
  "lazy_static",
  "log",
  "ogg",
  "rayon",
  "rdev",
+ "reqwest 0.12.24",
  "rubato",
  "serde",
  "serde_json",
@@ -7724,7 +7696,6 @@ dependencies = [
  "tauri-plugin-process",
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
- "tauri-plugin-upload",
  "tauri-specta",
  "tempfile",
  "thiserror 2.0.17",

@@ -3,10 +3,12 @@
 // so the probe state lives on that component instance and resets when the
 // wizard is re-entered, instead of persisting for the app's lifetime.
 
-import { os } from '#platform/os';
 import { tauri } from '#platform/tauri';
 import { report } from '$lib/report';
-import type { SetupPermissionState } from '$lib/setup/setup-readiness';
+import {
+	isAppleDesktop,
+	type SetupPermissionState,
+} from '$lib/setup/setup-readiness';
 
 export function createSetupPermissions() {
 	let microphone = $state<SetupPermissionState>('checking');
@@ -20,7 +22,9 @@ export function createSetupPermissions() {
 			return accessibility;
 		},
 		async refresh() {
-			if (!tauri || !os.isApple) {
+			// `!tauri` is redundant with `isAppleDesktop` at runtime, but it narrows
+			// `tauri` to non-null for the permission probes below.
+			if (!tauri || !isAppleDesktop) {
 				microphone = 'granted';
 				accessibility = 'granted';
 				return;

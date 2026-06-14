@@ -14,6 +14,7 @@
 	import {
 		RECORDING_MODE_OPTIONS,
 		type RecordingMode,
+		toggleCommandIdForMode,
 	} from '$lib/constants/audio';
 	import { report } from '$lib/report';
 	import { settings } from '$lib/state/settings.svelte';
@@ -49,11 +50,7 @@
 	);
 	// The toggle that starts a recording depends on the selected mode.
 	const activeToggleCommand = $derived(
-		commandById(
-			selectedRecordingMode === 'vad'
-				? 'toggleVadRecording'
-				: 'toggleManualRecording',
-		),
+		commandById(toggleCommandIdForMode(selectedRecordingMode)),
 	);
 </script>
 
@@ -146,8 +143,7 @@
 		</div>
 		<div class="shrink-0">
 			{#if tauri}
-				{@const t = tauri}
-				<GlobalKeyboardShortcutRecorder {command} tauri={t} />
+				<GlobalKeyboardShortcutRecorder {command} {tauri} />
 			{:else}
 				<LocalKeyboardShortcutRecorder {command} {pressedKeys} />
 			{/if}

@@ -41,3 +41,16 @@ export const RECORDING_MODE_ICONS = {
 	vad: RadioIcon,
 	upload: FileUpIcon,
 } as const satisfies Record<RecordingMode, Component<{ class?: string }>>;
+
+/**
+ * The command whose shortcut starts/stops a recording in this mode. The single
+ * source for this mapping, shared by the activation UI (which renders the
+ * recorder) and the setup-readiness check (which asks whether it's bound).
+ * Upload mode has no live recording, so callers gate it out before reaching
+ * here; it maps to the manual toggle as an inert default.
+ */
+export function toggleCommandIdForMode(
+	mode: RecordingMode,
+): 'toggleManualRecording' | 'toggleVadRecording' {
+	return mode === 'vad' ? 'toggleVadRecording' : 'toggleManualRecording';
+}

@@ -33,12 +33,7 @@
 	const permissions = createSetupPermissions();
 	let practiceSucceeded = $state(false);
 
-	const readiness = $derived(
-		getSetupReadiness({
-			microphonePermission: permissions.microphone,
-			accessibilityPermission: permissions.accessibility,
-		}),
-	);
+	const readiness = $derived(getSetupReadiness(permissions));
 
 	const steps = $derived([
 		{

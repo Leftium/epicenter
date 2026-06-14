@@ -62,8 +62,10 @@ jobs:
             tauriArgs: '--target aarch64-apple-darwin'
             rustTargets: 'aarch64-apple-darwin'
 
-          # Linux (Ubuntu)
-          - platform: 'ubuntu-24.04'
+          # Linux (Ubuntu) on Blacksmith: GA drop-in runner, same base image as
+          # GitHub-hosted ubuntu-24.04. The `os: 'linux'` field below still drives
+          # every apt/Vulkan/FUSE conditional step, so only the runner changes.
+          - platform: 'blacksmith-8vcpu-ubuntu-2404'
             os: 'linux'
             tauriArgs: ''  # No specific target needed for Linux
             rustTargets: ''

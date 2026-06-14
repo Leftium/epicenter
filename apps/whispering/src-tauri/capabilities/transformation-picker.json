@@ -7,12 +7,10 @@
   ],
   "permissions": [
     "core:default",
-    "core:window:allow-close",
     "core:window:allow-hide",
     "core:window:allow-set-focus",
     "core:event:allow-emit",
     "core:event:allow-listen",
-    "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
     "notification:default",
     "notification:allow-is-permission-granted",

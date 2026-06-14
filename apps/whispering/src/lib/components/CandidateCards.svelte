@@ -23,18 +23,19 @@
 		candidates,
 		original,
 		selectedIndex = $bindable(0),
-		showDiff = $bindable(true),
 		onaccept,
 	}: {
 		candidates: CardCandidate[];
 		/** The text each candidate is diffed against. */
 		original: string;
 		selectedIndex?: number;
-		/** Show the word diff against the original, or the clean result text. */
-		showDiff?: boolean;
 		/** Accept the currently selected candidate (read it via `selectedIndex`). */
 		onaccept: () => void;
 	} = $props();
+
+	// Show the word diff against the original, or the clean result text. Local to
+	// this component; no caller controls it, so it is state, not a bindable prop.
+	let showDiff = $state(true);
 
 	let listEl = $state<HTMLElement | null>(null);
 

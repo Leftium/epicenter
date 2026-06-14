@@ -96,14 +96,18 @@
 	}
 
 	/**
-	 * Accept the highlighted candidate. `paste` replaces the selection in the
-	 * source app (the default) and leaves the clipboard untouched; `copy` puts the
-	 * result on the clipboard instead. Either way exactly one run is committed.
-	 * Post-hide feedback goes through an OS notification, not a toast: this window
-	 * hides before the clipboard/paste step, and the main window may be hidden too,
-	 * so a notification is the only surface guaranteed to reach the user.
+	 * Accept the highlighted candidate: commit exactly one run and put the result
+	 * on the clipboard. The picker deliberately does not paste in place. Pasting
+	 * would require handing keyboard focus back to the source app after this window
+	 * hides, which macOS does not do reliably while the main window is open (the
+	 * main window snatches focus, so the paste lands in the wrong place). So the
+	 * universal cross-app, cross-device path delivers to the clipboard and lets the
+	 * user paste; in-place insertion belongs to native integrations in the apps
+	 * Epicenter owns, not to this window. Feedback is an OS notification, not a
+	 * toast: this window hides before it confirms, and the main window may be
+	 * hidden too, so a notification is the only surface guaranteed to reach the user.
 	 */
-	async function accept(mode: 'paste' | 'copy') {
+	async function accept() {
 		if (accepting) return;
 		const candidate = candidates[selectedIndex];
 		if (!candidate) return;
@@ -125,27 +129,9 @@
 		});
 		void sound.playSoundIfEnabled('transformationComplete');
 
-		if (mode === 'copy') {
-			await services.text.copyToClipboard(output);
-			await pickerWindow.hide();
-			osNotify('Copied to clipboard', 'Press Cmd+V to paste it where you want.');
-			return;
-		}
-
-		// Paste: hide first so focus returns to the source app, then paste.
+		await services.text.copyToClipboard(output);
 		await pickerWindow.hide();
-		await new Promise((resolve) => setTimeout(resolve, 120));
-
-		const { error: writeError } = await services.text.writeToCursor(output);
-		if (writeError) {
-			// Couldn't paste (no Accessibility permission, or web): fall back to the
-			// clipboard so the result is never lost, and say so.
-			await services.text.copyToClipboard(output);
-			osNotify(
-				"Couldn't paste into the app",
-				'Your result is on the clipboard. Press Cmd+V to paste it.',
-			);
-		}
+		osNotify('Copied to clipboard', 'Press Cmd+V to paste it where you want.');
 	}
 
 	async function dismiss() {
@@ -200,7 +186,7 @@
 		} else if (event.key === 'Enter') {
 			event.preventDefault();
 			event.stopPropagation();
-			void accept(event.metaKey ? 'copy' : 'paste');
+			void accept();
 		}
 	}
 
@@ -292,7 +278,7 @@
 				{candidates}
 				original={input}
 				bind:selectedIndex
-				onaccept={() => accept('paste')}
+				onaccept={accept}
 			/>
 			<footer
 				class="flex flex-none flex-wrap items-center gap-x-4 gap-y-1 border-t pt-3 text-xs text-muted-foreground"
@@ -303,8 +289,7 @@
 				<span class="flex items-center gap-1">
 					<Kbd>&uarr;</Kbd><Kbd>&darr;</Kbd> pick
 				</span>
-				<span class="flex items-center gap-1"><Kbd>&crarr;</Kbd> paste</span>
-				<span class="flex items-center gap-1"><Kbd>&#8984;&crarr;</Kbd> copy</span>
+				<span class="flex items-center gap-1"><Kbd>&crarr;</Kbd> copy</span>
 				<span class="flex items-center gap-1"><Kbd>Esc</Kbd> dismiss</span>
 			</footer>
 		{/if}

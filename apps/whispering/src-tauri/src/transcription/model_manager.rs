@@ -22,9 +22,14 @@ enum Engine {
     Moonshine(MoonshineModel),
 }
 
-/// The (path, engine) pair is inseparable: engine X is always loaded from
-/// path Y. One mutex slot holds both.
-type Cached = Option<(PathBuf, Engine)>;
+/// The (path, identity, engine) triple is inseparable: engine X is always
+/// loaded from path Y, and `identity` fingerprints the bytes at Y at load time
+/// so the cache can notice the file changed underneath a stable path (a delete
+/// then re-download under the same name, or an external edit of the
+/// user-editable models folder). `None` identity means bytes could not be stat'd at load
+/// time, which never compares equal to a fresh read, so the cache reloads. One
+/// mutex slot holds all three.
+type Cached = Option<(PathBuf, Option<DiskIdentity>, Engine)>;
 
 /// Owns the resident engine's lifecycle and the state observers see while it
 /// runs. Cache + ambient config + policy + status snapshot + lifecycle event
@@ -514,7 +519,19 @@ impl ModelManager {
             return Ok(EnsureLoaded::Stale);
         }
 
-        let reuse = matches!(&*guard, Some((p, e)) if p == &model_path && can_reuse(e));
+        // Fingerprint the bytes on disk now and reuse only when they match what
+        // the resident engine was loaded from. A delete + re-download under the
+        // same name, or an external edit, changes the identity even though the
+        // path is unchanged, so the stale resident model is dropped and reloaded.
+        let current_identity = disk_identity(&model_path);
+        let reuse = matches!(
+            &*guard,
+            Some((p, id, e))
+                if p == &model_path
+                    && can_reuse(e)
+                    && current_identity.is_some()
+                    && &current_identity == id
+        );
 
         if !reuse {
             let _ = guard.take();
@@ -540,7 +557,7 @@ impl ModelManager {
                         if !self.is_current_model_generation(caller.generation()) {
                             return Ok(EnsureLoaded::Stale);
                         }
-                        *guard = Some((model_path, engine));
+                        *guard = Some((model_path, current_identity, engine));
                         let Some(()) = self.publish_if_current(
                             caller.generation(),
                             config,
@@ -551,7 +568,7 @@ impl ModelManager {
                             return Ok(EnsureLoaded::Stale);
                         };
                     } else {
-                        *guard = Some((model_path, engine));
+                        *guard = Some((model_path, current_identity, engine));
                         let _ = self.publish_if_current(
                             caller.generation(),
                             config,
@@ -602,7 +619,7 @@ impl ModelManager {
             EnsureLoaded::Stale => unreachable!("stale cache loads only abort preloads"),
         };
 
-        let (_, engine) = guard.as_mut().expect("cache slot populated above");
+        let (_, _, engine) = guard.as_mut().expect("cache slot populated above");
         let _ = self.publish_if_current(
             caller.generation(),
             config,
@@ -668,7 +685,7 @@ impl ModelManager {
         if generation.is_some_and(|generation| !self.is_current_model_generation(generation)) {
             return;
         }
-        if let Some((path, _engine)) = guard.take() {
+        if let Some((path, _identity, _engine)) = guard.take() {
             debug!(
                 "[Transcription] unloaded model ({:?}): {}",
                 reason,
@@ -719,7 +736,7 @@ impl ModelManager {
         let Ok(mut guard) = self.cached.try_lock() else {
             return;
         };
-        if let Some((path, _engine)) = guard.take() {
+        if let Some((path, _identity, _engine)) = guard.take() {
             let idle_secs = idle.as_secs();
             debug!(
                 "[Transcription] unloaded model (idle {}s): {}",
@@ -900,6 +917,55 @@ fn lock_cached(cached: &Mutex<Cached>) -> MutexGuard<'_, Cached> {
     })
 }
 
+/// Cheap fingerprint of the bytes a resident model was loaded from, used to
+/// notice when the file or directory at a stable path changed underneath the
+/// cache (a delete + re-download under the same name, or an external edit of
+/// the user-editable models folder). `len` catches a swap to a different model;
+/// `mtime` catches a same-size rewrite.
+#[derive(Clone, PartialEq, Eq, Debug)]
+struct DiskIdentity {
+    len: u64,
+    mtime: Option<SystemTime>,
+}
+
+/// Read the disk identity of a resolved model path, following symlinks so the
+/// identity reflects the bytes the engine loaders actually read. For a
+/// directory model the fields aggregate over the contained files (sum of sizes,
+/// latest mtime), because a file overwritten in place leaves the directory's
+/// own mtime untouched. Returns `None` when the path cannot be stat'd, which
+/// the cache treats as "cannot confirm reuse" and reloads.
+fn disk_identity(path: &Path) -> Option<DiskIdentity> {
+    let meta = std::fs::metadata(path).ok()?;
+    if !meta.is_dir() {
+        return Some(DiskIdentity {
+            len: meta.len(),
+            mtime: meta.modified().ok(),
+        });
+    }
+    let mut len = 0u64;
+    let mut mtime = meta.modified().ok();
+    let mut stack = vec![path.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let Ok(child) = entry.metadata() else {
+                continue;
+            };
+            if child.is_dir() {
+                stack.push(entry.path());
+            } else {
+                len = len.saturating_add(child.len());
+                if let Ok(t) = child.modified() {
+                    mtime = Some(mtime.map_or(t, |cur| cur.max(t)));
+                }
+            }
+        }
+    }
+    Some(DiskIdentity { len, mtime })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -944,6 +1010,79 @@ mod tests {
     fn parse_moonshine_variant_rejects_unknown_names() {
         assert!(parse_moonshine_variant("moonshine-large-en").is_err());
         assert!(parse_moonshine_variant("whisper-tiny").is_err());
+    }
+
+    #[test]
+    fn disk_identity_stable_when_unchanged() {
+        let dir =
+            std::env::temp_dir().join(format!("whispering-id-stable-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("model.bin");
+        std::fs::write(&path, b"steady").unwrap();
+
+        let a = disk_identity(&path).expect("identity for existing file");
+        let b = disk_identity(&path).expect("identity on second read");
+        assert_eq!(a, b, "identity is stable across reads when bytes are unchanged");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn disk_identity_changes_on_file_rewrite() {
+        let dir = std::env::temp_dir().join(format!("whispering-id-file-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("model.bin");
+
+        // A swap to a different model: a different size alone changes identity.
+        std::fs::write(&path, b"first").unwrap();
+        let first = disk_identity(&path).expect("identity");
+        std::fs::write(&path, b"second-and-longer").unwrap();
+        let second = disk_identity(&path).expect("identity after size change");
+        assert_ne!(first, second, "a size change changes identity");
+
+        // A same-size re-download a tick later: equal length, so only mtime can
+        // carry the difference. "thirdx-and-longer" matches "second-and-longer".
+        std::thread::sleep(Duration::from_millis(20));
+        std::fs::write(&path, b"thirdx-and-longer").unwrap();
+        let third = disk_identity(&path).expect("identity after same-size rewrite");
+        assert_eq!(
+            b"second-and-longer".len(),
+            b"thirdx-and-longer".len(),
+            "test fixture must be same-size to exercise the mtime path"
+        );
+        assert_ne!(second, third, "a same-size rewrite changes identity via mtime");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn disk_identity_detects_in_place_edit_in_directory_model() {
+        let root = std::env::temp_dir().join(format!("whispering-id-dir-{}", std::process::id()));
+        let model_dir = root.join("parakeet-model");
+        std::fs::create_dir_all(&model_dir).unwrap();
+        std::fs::write(model_dir.join("encoder.onnx"), b"enc").unwrap();
+        std::fs::write(model_dir.join("decoder.onnx"), b"dec").unwrap();
+
+        let before = disk_identity(&model_dir).expect("identity for directory model");
+
+        // Overwrite one contained file in place with same-length content: the
+        // directory's own mtime would not move, but the aggregated mtime must.
+        std::thread::sleep(Duration::from_millis(20));
+        std::fs::write(model_dir.join("encoder.onnx"), b"ENC").unwrap();
+        let after = disk_identity(&model_dir).expect("identity after in-place edit");
+        assert_ne!(
+            before, after,
+            "an in-place file edit changes the directory model's identity"
+        );
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn disk_identity_none_for_missing_path() {
+        let path = std::env::temp_dir().join("whispering-id-missing-does-not-exist");
+        std::fs::remove_file(&path).ok();
+        assert!(disk_identity(&path).is_none());
     }
 
     #[test]

@@ -52,8 +52,8 @@ export function attachFileSystemIndex(ydoc: Y.Doc, filesTable: Table<FileRow>) {
 
 	/**
 	 * Build all indexes from scratch with self-healing for circular refs
-	 * and orphans. Runs once during construction, before the observer
-	 * subscribes before registering the observer, so table mutations from the fix helpers don't re-enter
+	 * and orphans. Runs once during construction, before the observer is
+	 * registered, so table mutations from the fix helpers don't re-enter
 	 * processChanges.
 	 */
 	function buildInitialState() {
@@ -467,6 +467,14 @@ export function attachFileSystemIndex(ydoc: Y.Doc, filesTable: Table<FileRow>) {
 		/** Look up the FileId for a resolved absolute path. */
 		getIdByPath(path: string): FileId | undefined {
 			return pathToId.get(path);
+		},
+		/**
+		 * Look up the resolved absolute path for a FileId.
+		 * Returns `undefined` for trashed rows and rows whose parent chain
+		 * is unresolvable (cycle or depth beyond the cap).
+		 */
+		getPathById(id: FileId): string | undefined {
+			return idToPath.get(id);
 		},
 		/** Check whether a path exists in the index. */
 		hasPath(path: string): boolean {

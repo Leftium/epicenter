@@ -88,7 +88,7 @@
 					{:else}
 						{#each getDevicesQuery.data as device (device.id)}
 							<Command.Item
-								value={`device-${device.id} ${device.label}`}
+								value="device-{device.id} {device.label}"
 								onSelect={() => {
 									manualRecorderConfig.deviceId =
 										manualRecorderConfig.deviceId === device.id

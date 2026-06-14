@@ -15,17 +15,13 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import Type from 'typebox';
-import { Err, Ok, type Result } from 'wellcrafted/result';
+import { Err, Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import { defineMutation, defineQuery } from '../shared/actions.js';
 import {
-	type ActionInput,
-	type ActionOutput,
 	DispatchError,
 	interpretDispatchResult,
 	runInboundDispatch,
-	typedDispatch,
 } from './dispatch.js';
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -207,73 +203,3 @@ describe('DispatchError variant factory', () => {
 		expect(error?.message).toBe('Recipient "R_phone" is offline');
 	});
 });
-
-// ════════════════════════════════════════════════════════════════════════════
-// typedDispatch (typed overlay)
-// ════════════════════════════════════════════════════════════════════════════
-
-// ════════════════════════════════════════════════════════════════════════════
-// Type-level tests for ActionInput / ActionOutput
-// ════════════════════════════════════════════════════════════════════════════
-
-// `bun test` runs these as runtime no-ops; they exist for the TypeScript
-// compiler to enforce the type-level claims via assignability.
-
-type Equals<A, B> =
-	(<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
-		? true
-		: false;
-
-const _typeTests = () => {
-	const noInput = defineQuery({ handler: () => 'pong' });
-	const withInput = defineMutation({
-		input: Type.Object({ tabIds: Type.Array(Type.Number()) }),
-		handler: ({ tabIds }) => ({ closedCount: tabIds.length }),
-	});
-	const asyncRaw = defineQuery({ handler: async () => 42 });
-	const syncResult = defineMutation({
-		handler: () => Ok('done') as Result<'done', { name: 'AppError' }>,
-	});
-	const asyncResult = defineQuery({
-		handler: async () =>
-			Ok({ a: 1 }) as Result<{ a: number }, { name: 'AppError' }>,
-	});
-
-	// ActionInput
-	const _i1: Equals<ActionInput<typeof noInput>, { input?: never }> = true;
-	const _i2: Equals<
-		ActionInput<typeof withInput>,
-		{ input: { tabIds: number[] } }
-	> = true;
-
-	// ActionOutput: peels Promise and Result down to T.
-	const _o1: Equals<ActionOutput<typeof noInput>, string> = true;
-	const _o2: Equals<
-		ActionOutput<typeof withInput>,
-		{ closedCount: number }
-	> = true;
-	const _o3: Equals<ActionOutput<typeof asyncRaw>, number> = true;
-	const _o4: Equals<ActionOutput<typeof syncResult>, 'done'> = true;
-	const _o5: Equals<ActionOutput<typeof asyncResult>, { a: number }> = true;
-
-	// Call-site shape via the typed overlay.
-	const dx = typedDispatch<{
-		ping: typeof noInput;
-		tabs_close: typeof withInput;
-	}>(async () => Ok(undefined));
-
-	// No-input action: `input` field is forbidden.
-	void dx({ to: 'x', action: 'ping' });
-	// @ts-expect-error -- `input` not allowed on no-input action.
-	void dx({ to: 'x', action: 'ping', input: 'nope' });
-
-	// With-input action: `input` field is required and typed.
-	void dx({ to: 'x', action: 'tabs_close', input: { tabIds: [1, 2] } });
-	// @ts-expect-error -- missing required input.
-	void dx({ to: 'x', action: 'tabs_close' });
-
-	// Discourage `_typeTests` from being flagged as unused; the function is
-	// only evaluated by the TypeScript compiler.
-	return { _i1, _i2, _o1, _o2, _o3, _o4, _o5 };
-};
-void _typeTests;

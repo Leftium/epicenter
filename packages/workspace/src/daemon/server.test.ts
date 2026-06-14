@@ -1,13 +1,11 @@
 /**
  * Daemon Server Tests
  *
- * Verifies that `startDaemonServer` validates mount names, binds exactly one
- * socket for an already-claimed daemon lease, and exposes an idempotent close
- * operation.
+ * Verifies that `startDaemonServer` binds exactly one socket for an
+ * already-claimed daemon lease and exposes an idempotent close operation.
  *
  * Key behaviors:
  * - valid mounts are served over the daemon client
- * - invalid mount declarations fail before binding a socket
  * - close stops the listener, removes the socket file, and can run twice
  * - /run executes a real action handler over the Unix socket, and
  *   forwards peer calls when `to` is present
@@ -88,49 +86,6 @@ describe('startDaemonServer', () => {
 			expect(data).toEqual([]);
 		} finally {
 			if (serverResult.error === null) await serverResult.data.close();
-			lease.release();
-		}
-	});
-
-	test('returns MountNameRejected before binding duplicate mounts', async () => {
-		const lease = claimTestLease();
-		try {
-			const error = expectErr(
-				await startDaemonServer({
-					lease,
-					mounts: [
-						{ mount: 'demo', runtime: makeRuntime() },
-						{ mount: 'demo', runtime: makeRuntime() },
-					],
-				}),
-			);
-			expect(error).toMatchObject({
-				name: 'MountNameRejected',
-				mount: 'demo',
-				reason: 'duplicate',
-			});
-			expect(existsSync(lease.socketPath)).toBe(false);
-		} finally {
-			lease.release();
-		}
-	});
-
-	test('returns MountNameRejected before binding invalid mounts', async () => {
-		const lease = claimTestLease();
-		try {
-			const error = expectErr(
-				await startDaemonServer({
-					lease,
-					mounts: [{ mount: 'bad.mount', runtime: makeRuntime() }],
-				}),
-			);
-			expect(error).toMatchObject({
-				name: 'MountNameRejected',
-				mount: 'bad.mount',
-				reason: 'invalid',
-			});
-			expect(existsSync(lease.socketPath)).toBe(false);
-		} finally {
 			lease.release();
 		}
 	});

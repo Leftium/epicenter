@@ -6,6 +6,7 @@
  * the Y.Doc update log and SQLite mirror under `.epicenter/`.
  */
 
+import { join } from 'node:path';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { defineActions, defineWorkspace } from '@epicenter/workspace';
 import { defineSessionMount } from '@epicenter/workspace/daemon';
@@ -17,7 +18,6 @@ import {
 import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import {
 	attachMountInfrastructure,
-	mountMarkdownPath,
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
@@ -36,8 +36,6 @@ export function tabManager(opts: TabManagerMountOptions = {}) {
 
 			const workspace = createTabManager({ keyring: ctx.session.keyring });
 
-			const mdDir = mountMarkdownPath(epicenterRoot, mount);
-
 			const sqlite = attachBunSqliteMaterializer(workspace, {
 				filePath: sqlitePath(epicenterRoot, workspace.ydoc.guid),
 				fts: {
@@ -47,7 +45,7 @@ export function tabManager(opts: TabManagerMountOptions = {}) {
 				log: createLogger(`${mount}-sqlite`),
 			});
 			const markdown = attachMarkdownExport(workspace, {
-				dir: mdDir,
+				dir: epicenterRoot,
 				tables: {
 					bookmarks: {},
 					devices: {},
@@ -55,11 +53,13 @@ export function tabManager(opts: TabManagerMountOptions = {}) {
 				},
 			});
 			if (opts.git) {
-				attachGitAutosave({
-					ydoc: workspace.ydoc,
-					dir: mdDir,
-					config: opts.git,
-				});
+				for (const tableDir of ['bookmarks', 'devices', 'savedTabs']) {
+					attachGitAutosave({
+						ydoc: workspace.ydoc,
+						dir: join(epicenterRoot, tableDir),
+						config: opts.git,
+					});
+				}
 			}
 
 			const actions = defineActions({

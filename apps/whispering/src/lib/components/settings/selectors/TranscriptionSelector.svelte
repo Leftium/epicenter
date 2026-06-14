@@ -183,9 +183,7 @@
 							{@const modelName = getSelectedModelNameOrUrl(service)}
 
 							<Command.Item
-								value={`${service.id} ${service.label} ${service.description} ${
-									localServiceSearchKeywords[service.id]
-								}`}
+								value="{service.id} {service.label} {service.description} {localServiceSearchKeywords[service.id]}"
 								onSelect={() => {
 									settings.set('transcription.service', service.id);
 									combobox.closeAndFocusTrigger();
@@ -225,7 +223,7 @@
 
 						<!-- Service Header (clickable to expand) -->
 						<Command.Item
-							value={`${service.id} ${service.label} ${service.models.map((m) => m.name).join(' ')}`}
+							value="{service.id} {service.label} {service.models.map((m) => m.name).join(' ')}"
 							onSelect={() => toggleServiceExpanded(service.id)}
 							class="flex items-center gap-2 px-2 py-2 cursor-pointer hover:bg-accent/50"
 						>
@@ -261,7 +259,7 @@
 								{@const isModelSelected =
 									isSelected && currentSelectedModelName === model.name}
 								<Command.Item
-									value={`${service.id} ${service.label} ${model.name}`}
+									value="{service.id} {service.label} {model.name}"
 									onSelect={() => {
 										settings.set(
 											'transcription.service',
@@ -300,7 +298,7 @@
 						{@const serverUrl = getSelectedModelNameOrUrl(service)}
 
 						<Command.Item
-							value={`${service.id} ${service.label} self-hosted server`}
+							value="{service.id} {service.label} self-hosted server"
 							onSelect={() => {
 								settings.set('transcription.service', service.id);
 								combobox.closeAndFocusTrigger();

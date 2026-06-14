@@ -6,25 +6,35 @@
  *
  *  1. workspace root doc (encrypted tables + KV via createZhongwen)
  *  2. local storage + cloud sync for root (attachLocalStorage + openCollaboration)
+ *  3. runtime storage + sync around the per-conversation transcript child docs
  *
- * Zhongwen has no child docs and no daemon actions; the root doc is the
- * entire workspace surface. `openCollaboration` owns reconnect-on-auth-change
- * internally, so this file has no per-app onStateChange listener. The
- * bundle's `wipe()` drops every encrypted IDB database for this owner;
- * `Symbol.dispose` tears down the root Y.Doc without touching local storage.
+ * `openCollaboration` owns reconnect-on-auth-change internally, so this file
+ * has no per-app onStateChange listener. The bundle's `wipe()` drops every
+ * encrypted IDB database for this owner; `Symbol.dispose` tears down the root
+ * + cached child Y.Docs without touching local storage.
  */
 
 import type { SignedIn } from '@epicenter/svelte';
 import {
 	attachLocalStorage,
+	createDisposableCache,
 	type DeviceId,
 	defineWorkspace,
 	openCollaboration,
 	roomWsUrl,
 	wipeLocalStorage,
 } from '@epicenter/workspace';
-import { createZhongwen } from './zhongwen';
+import * as Y from 'yjs';
+import {
+	type ConversationId,
+	createZhongwen,
+	zhongwenConversationDocGuid,
+} from './zhongwen';
 
+/**
+ * Open Zhongwen in the browser with encrypted local storage, cloud sync, and
+ * the per-conversation transcript doc cache.
+ */
 export function openZhongwenBrowser({
 	signedIn,
 	deviceId,
@@ -52,19 +62,72 @@ export function openZhongwenBrowser({
 		actions: workspace.actions,
 	});
 
+	const conversationDocs = createDisposableCache(
+		(conversationId: ConversationId) => {
+			const ydoc = new Y.Doc({
+				guid: zhongwenConversationDocGuid(conversationId),
+				gc: true,
+			});
+			const childIdb = attachLocalStorage(ydoc, {
+				server: signedIn.server,
+				ownerId: signedIn.ownerId,
+				keyring: signedIn.keyring,
+			});
+			// Transcripts sync through Cloud: that is what lets the server
+			// generation actor stream assistant tokens into the doc and lets
+			// every signed-in device watch them live.
+			const childSync = openCollaboration(ydoc, {
+				url: roomWsUrl({
+					baseURL: signedIn.baseURL,
+					ownerId: signedIn.ownerId,
+					guid: ydoc.guid,
+					deviceId,
+				}),
+				openWebSocket: signedIn.openWebSocket,
+				onReconnectSignal: signedIn.onReconnectSignal,
+				waitFor: childIdb.whenLoaded,
+				actions: {},
+			});
+			return {
+				ydoc,
+				idb: childIdb,
+				sync: childSync,
+				/**
+				 * Child disposer rejections do not propagate; bundle.wipe() relies on
+				 * IDB's deleteDatabase native blocking as belt-and-suspenders for
+				 * storage deletion.
+				 */
+				[Symbol.dispose]() {
+					ydoc.destroy();
+				},
+			};
+		},
+	);
+
+	let docsTornDown = false;
+
+	function teardownDocs() {
+		if (docsTornDown) return;
+		docsTornDown = true;
+		conversationDocs[Symbol.dispose]();
+		workspace[Symbol.dispose]();
+	}
+
 	return defineWorkspace({
 		...workspace,
 		idb,
+		conversationDocs,
 		collaboration,
 		async wipe() {
-			workspace[Symbol.dispose]();
+			teardownDocs();
 			await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
 			await wipeLocalStorage({
 				server: signedIn.server,
 				ownerId: signedIn.ownerId,
 			});
 		},
+		[Symbol.dispose]() {
+			teardownDocs();
+		},
 	});
 }
-
-export type ZhongwenBrowser = ReturnType<typeof openZhongwenBrowser>;

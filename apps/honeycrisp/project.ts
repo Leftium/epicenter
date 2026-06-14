@@ -4,10 +4,11 @@
  * `honeycrisp(opts?)` returns the `Mount` that an
  * `epicenter.config.ts` default-exports. Disk paths follow the
  * Epicenter-root layout: the SQLite mirror at `.epicenter/sqlite/<id>.db`
- * (hidden) and the read-only markdown projection at `<epicenterRoot>/honeycrisp/`
- * (visible), a direct child of the Epicenter root.
+ * (hidden) and the read-only markdown projection under table-named folders in
+ * the app root.
  */
 
+import { join } from 'node:path';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { defineActions, defineWorkspace } from '@epicenter/workspace';
 import { defineSessionMount } from '@epicenter/workspace/daemon';
@@ -19,7 +20,6 @@ import {
 import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import {
 	attachMountInfrastructure,
-	mountMarkdownPath,
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
@@ -37,21 +37,19 @@ export function honeycrisp(opts: HoneycrispMountOptions = {}) {
 
 			const workspace = createHoneycrisp({ keyring: ctx.session.keyring });
 
-			const mdDir = mountMarkdownPath(epicenterRoot, mount);
-
 			const sqlite = attachBunSqliteMaterializer(workspace, {
 				filePath: sqlitePath(epicenterRoot, workspace.ydoc.guid),
 				log: createLogger(`${mount}-sqlite`),
 			});
 
 			const markdown = attachMarkdownExport(workspace, {
-				dir: mdDir,
+				dir: epicenterRoot,
 				tables: { notes: {} },
 			});
 			if (opts.git) {
 				attachGitAutosave({
 					ydoc: workspace.ydoc,
-					dir: mdDir,
+					dir: join(epicenterRoot, 'notes'),
 					config: opts.git,
 				});
 			}

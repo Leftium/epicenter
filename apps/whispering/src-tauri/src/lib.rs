@@ -68,6 +68,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             cancel_download,
             keyboard::commands::set_keyboard_shortcuts,
             keyboard::commands::set_keyboard_capturing,
+            keyboard::commands::start_keyboard_listener,
         ])
         // The FE listens through the generated `events` object. `collect_events!`
         // owns each topic name and pulls in the payload types
@@ -241,17 +242,14 @@ pub async fn run() {
             manager.start_idle_watcher();
             app.manage(manager);
 
-            // Desktop global keyboard trigger backend. The listener thread owns
-            // the rdev hook; `set_keyboard_shortcuts` (called by the FE on
-            // startup and on every change) pushes the user's bindings. On macOS
-            // the hook needs Accessibility; that prompt is wired in Wave 6, and
-            // until granted `rdev::listen` just logs and yields no events.
+            // Desktop global keyboard trigger backend. We construct and manage
+            // the listener here but do NOT start it: `rdev::listen` cannot tap
+            // the keyboard until macOS Accessibility is granted, so the FE calls
+            // `start_keyboard_listener` once it knows shortcuts are allowed (on
+            // macOS after the grant, on other desktops at launch). The listener
+            // is idempotent, so the FE can re-check freely.
             #[cfg(desktop)]
-            {
-                let listener = keyboard::KeyboardListener::new(app.handle().clone());
-                listener.start();
-                app.manage(listener);
-            }
+            app.manage(keyboard::KeyboardListener::new(app.handle().clone()));
 
             // Create the recording overlay as a non-activating NSPanel up front
             // (hidden); the frontend shows it when recording starts.

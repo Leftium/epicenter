@@ -54,13 +54,33 @@ jobs:
             artifactSuffix: 'macos-arm64'
             rustTargets: 'aarch64-apple-darwin'
 
-          - platform: 'ubuntu-24.04'
+          # macOS Intel (x86_64) PREVIEW-ONLY spike: cross-compiled from the Apple
+          # Silicon runner above. Neither Microsoft nor pyke publishes a prebuilt
+          # x86_64 macOS ONNX Runtime, so the ORT step below temporarily pulls a
+          # community build from Handy's blob purely to prove the cross-compile +
+          # dylib-bundle pipeline. Do NOT copy this row into release.whispering.yml
+          # until we host our own x86_64 ORT build (the third-party blob is not a
+          # durable release dependency).
+          - platform: 'blacksmith-6vcpu-macos-15'
+            os: 'macos'
+            tauriArgs: '--target x86_64-apple-darwin'
+            artifactSuffix: 'macos-intel'
+            rustTargets: 'x86_64-apple-darwin'
+
+          # Linux on Blacksmith: GA drop-in runner, same base image as GitHub-hosted
+          # ubuntu-24.04. `os: 'linux'` still drives every apt/Vulkan/FUSE step.
+          - platform: 'blacksmith-8vcpu-ubuntu-2404'
             os: 'linux'
             tauriArgs: ''
             artifactSuffix: 'linux'
             rustTargets: ''
 
-          - platform: 'windows-latest'
+          # Windows on Blacksmith: PREVIEW-ONLY beta-runner spike to cut the ~22m
+          # github-hosted build time. Windows Server 2025 image ships VS Build Tools
+          # 2022 (satisfies the MSVC dev-cmd step); Vulkan is still installed by the
+          # step below. `os: 'windows'` keeps driving every Windows-specific step.
+          # Release stays on github-hosted `windows-latest` until this is proven.
+          - platform: 'blacksmith-8vcpu-windows-2025'
             os: 'windows'
             tauriArgs: ''
             artifactSuffix: 'windows'
@@ -101,12 +121,10 @@ jobs:
           "VULKAN_SDK=C:\VulkanSDK\$env:VULKAN_SDK_VERSION" >> $env:GITHUB_ENV
           "C:\VulkanSDK\$env:VULKAN_SDK_VERSION\Bin" >> $env:GITHUB_PATH
 
-      - name: Setup MSVC developer command prompt (Windows)
-        if: ${{ matrix.os == 'windows' }}
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
+      # No msvc-dev-cmd step: cargo and the cc crate locate the MSVC toolchain
+      # via vswhere at build time, so sourcing vcvars is unnecessary for the x64
+      # build (Handy ships the same whisper-rs-sys on x64 Windows without it).
+      # Dropping it also avoids the unmaintained, node20-only action.
       - name: Configure Windows native build
         if: ${{ matrix.os == 'windows' }}
         shell: pwsh
@@ -115,6 +133,18 @@ jobs:
           $targetDir = Join-Path $drive "t"
           New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
           "CARGO_TARGET_DIR=$targetDir" >> $env:GITHUB_ENV
+
+      # whisper-rs-sys runs bindgen, which needs libclang. GitHub-hosted
+      # windows-latest preinstalls LLVM; the Blacksmith Windows image does not,
+      # so install it and point bindgen at it via LIBCLANG_PATH. Pin the version
+      # so a future LLVM release cannot silently break bindgen, matching the
+      # exact-version discipline of the Vulkan SDK step above.
+      - name: Install LLVM (Windows, libclang for bindgen)
+        if: ${{ matrix.os == 'windows' }}
+        shell: pwsh
+        run: |
+          choco install llvm --version=22.1.7 --no-progress -y
+          "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
 
       - name: setup bun
         uses: oven-sh/setup-bun@v2
@@ -144,6 +174,29 @@ jobs:
       - name: Build frontend
         run: bun --filter @epicenter/whispering build
 
+      # macOS Intel only: provision a dynamically linked x86_64 ONNX Runtime and
+      # bundle it into the .app. The `ort` crate (2.0.0-rc.12, via transcribe-rs)
+      # targets ONNX Runtime 1.24.2, but no official x86_64 macOS build exists, so
+      # this pulls a community build. ORT_LIB_LOCATION + ORT_PREFER_DYNAMIC_LINK
+      # make ort-sys link against it dynamically; the jq patch embeds the dylib in
+      # the bundle so it resolves at runtime. PREVIEW-ONLY: replace the blob source
+      # before any release use.
+      - name: Provision x86_64 ONNX Runtime (macOS Intel only)
+        if: ${{ matrix.artifactSuffix == 'macos-intel' }}
+        shell: bash
+        run: |
+          ORT_VERSION="1.24.2"
+          curl -fSL -o ort.tgz "https://blob.handy.computer/onnxruntime-osx-x86_64-${ORT_VERSION}.tgz"
+          tar xzf ort.tgz
+          ORT_DIR="$PWD/onnxruntime-osx-x86_64-${ORT_VERSION}"
+          echo "ORT_LIB_LOCATION=$ORT_DIR/lib" >> "$GITHUB_ENV"
+          echo "ORT_PREFER_DYNAMIC_LINK=1" >> "$GITHUB_ENV"
+          DYLIB="$ORT_DIR/lib/libonnxruntime.${ORT_VERSION}.dylib"
+          test -f "$DYLIB" || { echo "::error::expected dylib not found: $DYLIB"; ls -la "$ORT_DIR/lib"; exit 1; }
+          file "$DYLIB"
+          CONF="apps/whispering/src-tauri/tauri.conf.json"
+          jq --arg lib "$DYLIB" '.bundle.macOS.frameworks = [$lib]' "$CONF" > "$CONF.tmp" && mv "$CONF.tmp" "$CONF"
+
       # Preview builds are unsigned: --no-sign skips Apple codesigning,
       # Windows Authenticode, and Tauri updater signing. All bundle artifacts
       # (.dmg, .AppImage, .deb, .msi, .exe) are still produced normally.
@@ -157,6 +210,24 @@ jobs:
           projectPath: 'apps/whispering'
           tagName: ''
           args: '${{ matrix.tauriArgs }} --no-sign'
+
+      # macOS Intel only: confirm the build is actually x86_64 and that the
+      # onnxruntime dylib is both linked and bundled into the .app. Fails loudly
+      # if the cross-compile silently produced an arm64 binary or dropped the dylib.
+      - name: Verify x86_64 build and ONNX Runtime bundling (macOS Intel only)
+        if: ${{ matrix.artifactSuffix == 'macos-intel' }}
+        shell: bash
+        run: |
+          APP=$(find apps/whispering/src-tauri/target/x86_64-apple-darwin/release/bundle -name '*.app' -type d | head -1)
+          test -n "$APP" || { echo "::error::no .app bundle found for x86_64-apple-darwin"; exit 1; }
+          # Tauri names the executable after productName ("Whispering"), not the crate.
+          BIN="$APP/Contents/MacOS/Whispering"
+          echo "Binary architecture:"; file "$BIN"
+          file "$BIN" | grep -q 'x86_64' || { echo "::error::binary is not x86_64"; exit 1; }
+          echo "Frameworks bundled:"; ls -la "$APP/Contents/Frameworks/" || true
+          echo "onnxruntime linkage:"; otool -L "$BIN" | grep -i onnxruntime || { echo "::error::binary not linked against onnxruntime"; exit 1; }
+          ls "$APP/Contents/Frameworks/" | grep -qi onnxruntime || { echo "::error::onnxruntime dylib missing from Frameworks/"; exit 1; }
+          echo "macOS Intel ONNX Runtime bundling verified."
 
       - name: Copy Windows artifacts into workspace
         if: ${{ matrix.os == 'windows' }}

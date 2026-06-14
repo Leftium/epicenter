@@ -1,55 +1,29 @@
 <script lang="ts">
-	import { Button } from '@epicenter/ui/button';
 	import * as Chat from '@epicenter/ui/chat';
-	import { RefreshCwIcon } from '@lucide/svelte';
-	import type { UIMessage } from '@tanstack/ai-client';
+	import type { ChatDocMessage } from '@epicenter/workspace/ai';
 	import AssistantMessagePart from './AssistantMessagePart.svelte';
 
 	type Props = {
-		message: UIMessage;
+		message: ChatDocMessage;
 		showPinyin: boolean;
-		isStreaming?: boolean;
-		isLast?: boolean;
-		onRegenerate?: () => void;
 	};
 
-	let {
-		message,
-		showPinyin,
-		isStreaming = false,
-		isLast = false,
-		onRegenerate,
-	}: Props = $props();
+	let { message, showPinyin }: Props = $props();
 
 	const isUser = $derived(message.role === 'user');
 </script>
 
 <Chat.Bubble variant={isUser ? 'sent' : 'received'}>
 	<Chat.BubbleMessage>
-		<!-- Text-only by design: zhongwen configures no tools, and non-text
-			parts a model may stream (thinking, media) are deliberately not
-			rendered. Widen this dispatch before adding tools or media. -->
-		{#each message.parts as part}
-			{#if part.type === 'text'}
-				{#if isUser}
-					{part.content}
-				{:else}
-					<AssistantMessagePart content={part.content} {showPinyin} />
-				{/if}
-			{/if}
-		{/each}
+		<!-- Text-only by design: zhongwen chat docs carry a single Y.Text per
+			message; there are no tool or media parts to dispatch on. -->
+		{#if isUser}
+			{message.text}
+		{:else}
+			<AssistantMessagePart content={message.text} {showPinyin} />
+		{/if}
 	</Chat.BubbleMessage>
 </Chat.Bubble>
-{#if !isUser && isLast && !isStreaming && onRegenerate}
-	<div class="flex justify-start pl-2 pt-1">
-		<Button
-			variant="ghost"
-			size="sm"
-			class="h-7 gap-1 text-xs text-muted-foreground"
-			onclick={onRegenerate}
-		>
-			<RefreshCwIcon class="size-3" />
-			Regenerate
-		</Button>
-	</div>
+{#if message.finish?.kind === 'cancelled'}
+	<p class="pl-2 pt-1 text-xs text-muted-foreground">Stopped</p>
 {/if}

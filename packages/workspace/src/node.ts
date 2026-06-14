@@ -7,7 +7,6 @@
 
 export { connectDaemonActions } from './client/connect-daemon-actions.js';
 export type { DaemonActions } from './client/daemon-actions.js';
-export { buildDaemonActions } from './client/daemon-actions.js';
 export { findEpicenterRoot } from './client/find-epicenter-root.js';
 export { DEFAULT_EPICENTER_CONFIG_SOURCE } from './config/epicenter-config-source.js';
 export { EpicenterConfigError } from './config/load-epicenter-config.js';
@@ -46,7 +45,6 @@ export {
 	type DaemonMetadata,
 	enumerateDaemons,
 	readMetadata,
-	readMetadataFromPath,
 	unlinkMetadata,
 	writeMetadata,
 } from './daemon/metadata.js';
@@ -84,7 +82,6 @@ export {
 export { openWorkspaceSqlite } from './document/open-workspace-sqlite.js';
 export {
 	markdownPath,
-	mountMarkdownPath,
 	sqlitePath,
 	yjsPath,
 } from './document/workspace-paths.js';
@@ -94,6 +91,6 @@ export { WorkspaceAppError } from './workspace-apps/errors.js';
 export {
 	type InactiveMount,
 	type OpenEpicenterRootOptions,
-	type OpenedEpicenterRoot,
+	type OpenedMount,
 	openEpicenterRoot,
 } from './workspace-apps/open-epicenter-root.js';

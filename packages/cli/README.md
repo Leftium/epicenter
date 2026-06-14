@@ -74,60 +74,44 @@ Error text goes to stderr; machine-readable output (`--format json|jsonl`, table
 
 ## Epicenter Roots And Mounts
 
-`epicenter.config.ts` marks the Epicenter root and owns mount discovery. The default export is a `Mount[]`. App packages ship mount factories that return `Mount` values; each `Mount.name` owns the CLI prefix. The folder that holds `epicenter.config.ts` is your Epicenter folder: Epicenter owns its direct children, so each mount's visible markdown projection is a direct child folder named after the mount.
+`epicenter.config.ts` marks the Epicenter root and declares its mount. One folder is one app is one mount: the default export is a single `Mount`. App packages ship mount factories that return `Mount` values; `Mount.name` owns the CLI prefix. The folder that holds `epicenter.config.ts` is your Epicenter folder: Epicenter owns its direct children, so the mount's visible markdown projection is a direct child folder.
 
 ```ts
 import { fuji } from "@epicenter/fuji/project";
 
-export default [fuji()];
+export default fuji();
 ```
 
 The returned `Mount.name` is `fuji`, so the CLI addresses actions as `fuji.<action_key>` regardless of the Epicenter folder name.
 
-For Epicenter roots that host more than one mount, add more entries to the array:
-
-```ts
-import { fuji } from "@epicenter/fuji/project";
-import { honeycrisp } from "@epicenter/honeycrisp/project";
-
-export default [fuji(), honeycrisp()];
-```
-
-The folder that holds `epicenter.config.ts` is your Epicenter folder. `.epicenter/` and each mount's generated projection are direct children:
+The folder that holds `epicenter.config.ts` is your Epicenter folder. `.epicenter/` and the generated projection are direct children:
 
 ```
 repo/                      unreserved repo root
-└── epicenter/             Epicenter root (folder name is your choice)
+└── fuji/                  Epicenter root (folder name is your choice)
     ├── epicenter.config.ts   tracked, marks the Epicenter root
     ├── .epicenter/           ignored, machine state for this root
-    ├── fuji/                 ignored, generated Fuji projection
-    └── honeycrisp/           ignored, generated Honeycrisp projection
+    └── fuji/                 ignored, generated projection
 ```
 
-Put `epicenter.config.ts` in a folder dedicated to Epicenter, such as `epicenter/` or `apps/`, not at a repo root that already holds source. The marker is the config file, not the folder name; nothing reserves the name `apps`.
+Put `epicenter.config.ts` in a folder dedicated to one app. The marker is the config file, not the folder name. Run several apps by giving each its own folder, each its own root.
 
 Writing a custom mount inline uses `defineMount` from `@epicenter/workspace/daemon`:
 
 ```ts
 import { defineMount } from "@epicenter/workspace/daemon";
 
-export default [
-  defineMount({
-    name: "notes",
-    kind: "local",
-    async open({
-      epicenterRoot,
-      mount,
-    }) {
-      // Open the long-lived local runtime.
-      // `mount` is the canonical mount name carried on the Mount object.
-      // Return { actions, [Symbol.asyncDispose] }.
-    },
-  }),
-];
+export default defineMount({
+  name: "notes",
+  async open({ epicenterRoot, mount, session }) {
+    // Open the long-lived runtime.
+    // `mount` is the canonical mount name carried on the Mount object.
+    // Return { actions, [Symbol.asyncDispose] }, or `inactive(reason)`.
+  },
+});
 ```
 
-`Mount.name` is the CLI prefix. Two mounts in one Epicenter root must have distinct names; duplicates fail before any mount opens.
+`Mount.name` is the CLI prefix.
 
 `.epicenter/` holds the Epicenter root's generated machine state such as SQLite materializers, Yjs update logs, markdown materializers, and its generated `.gitignore`. It is not a registry. Runtime files live outside the Epicenter root: sockets and daemon metadata use the OS runtime directory, while daemon logs use the platform log directory from `env-paths`.
 

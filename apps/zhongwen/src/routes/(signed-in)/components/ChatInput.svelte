@@ -1,13 +1,18 @@
 <script lang="ts">
 	import { Button } from '@epicenter/ui/button';
 	import { Textarea } from '@epicenter/ui/textarea';
-	import type { ConversationHandle } from '../chat/chat-state.svelte';
 
-	type Props = {
-		handle: ConversationHandle;
-	};
-
-	let { handle }: Props = $props();
+	let {
+		value = $bindable(''),
+		isGenerating,
+		onSend,
+		onStop,
+	}: {
+		value?: string;
+		isGenerating: boolean;
+		onSend: (content: string) => void;
+		onStop: () => void;
+	} = $props();
 
 	function handleKeydown(e: KeyboardEvent) {
 		if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
@@ -17,31 +22,32 @@
 	}
 
 	function submit() {
-		const value = handle.inputValue.trim();
-		if (!value) return;
-		handle.sendMessage(value);
-		handle.inputValue = '';
+		const content = value.trim();
+		if (!content) return;
+		onSend(content);
+		value = '';
 	}
 </script>
 
 <form
 	class="flex gap-2 border-t p-4"
-	onsubmit={(e) => { e.preventDefault(); submit(); }}
+	onsubmit={(e) => {
+		e.preventDefault();
+		submit();
+	}}
 >
 	<Textarea
 		placeholder="Ask something in English..."
 		class="min-h-[44px] max-h-[120px] resize-none"
 		aria-label="Message input"
-		bind:value={handle.inputValue}
+		bind:value
 		onkeydown={handleKeydown}
-		disabled={handle.isLoading}
+		disabled={isGenerating}
 	/>
-	{#if handle.isLoading}
-		<Button type="button" variant="outline" onclick={() => handle.stop()}
-			>Stop</Button
-		>
+	{#if isGenerating}
+		<Button type="button" variant="outline" onclick={onStop}>Stop</Button>
 	{:else}
-		<Button type="submit" disabled={!handle.inputValue.trim()}>Send</Button>
+		<Button type="submit" disabled={!value.trim()}>Send</Button>
 	{/if}
 </form>
 <p class="px-4 pb-2 text-xs text-muted-foreground">

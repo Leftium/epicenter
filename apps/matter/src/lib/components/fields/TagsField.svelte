@@ -57,7 +57,7 @@
 			<button
 				type="button"
 				class="-mr-0.5 shrink-0 rounded-full p-0.5 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-				aria-label={`Remove ${tag}`}
+				aria-label="Remove {tag}"
 				onclick={() => remove(tag)}
 			>
 				<XIcon class="size-3" />

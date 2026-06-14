@@ -24,32 +24,46 @@ Apps activate the preset with `class="style-vega"` on their root element; the
 preset is a one-class swap (e.g. to `style-rhea`). Background and rationale:
 `specs/20260606T160000-ui-shadcn-cn-style-migration-vega.md`.
 
-### Dialog vs Modal Usage Guidelines
+### Surface Choice
 
-We use different component types based on the interaction pattern:
+Use the component whose interaction contract matches the job:
 
-**Use Dialog + AlertDialog for:**
+- `Dialog` or `AlertDialog`: confirmations, simple yes/no prompts,
+  display-only content, and simple action confirmations.
+- `ConfirmationDialog`: reusable simple confirmations before one-off alert
+  dialog markup.
+- `Modal`: forms, typing, dropdowns, multi-step input, or any workflow that
+  collects user data. `Modal` renders as a dialog on desktop and a drawer on
+  mobile.
+- `Sheet` or `Drawer`: secondary panels, mobile-friendly drawers, and side
+  surfaces.
+- `Command` or `CommandPalette`: command menus, filtered actions, and search
+  empty states.
+- `Item`, `SectionHeader`, `ButtonGroup`, `InputGroup`, `CopyButton`, and
+  `Sidebar.*`: repeated list rows, page sections, grouped controls, inline input
+  actions, copy actions, and app chrome.
 
-- Confirmations and simple yes/no prompts
-- Display-only content (viewing information)
-- Simple action confirmations (delete, cancel, etc.)
-- Non-interactive content presentation
+Dialog, Modal, Sheet, and Drawer surfaces need accessible titles. Use an
+`sr-only` title when the visual design already supplies equivalent context.
 
-**Use Modal for:**
+### Loading and Empty State Guidelines
 
-- Forms with user input (text fields, dropdowns, etc.)
-- Complex interactions requiring typing
-- Multi-step workflows with form data
-- Any component where users need to input data
+Use `Loading` for generic full-surface pending states that only need the
+standard spinner shell and an optional caption:
 
-**Decision Rule:** If the user needs to type or input data, use Modal. Otherwise, use Dialog/AlertDialog.
+```svelte
+<Loading class="h-dvh" label="Checking session" />
+<Loading class="flex-1" label="Loading tabs..." />
+<Loading class="h-full" />
+```
 
-**Examples:**
+`Loading` wraps the local `Empty.Root` plus `Spinner` structure, so it keeps the
+same centering, text alignment, and `aria-live="polite"` behavior without making
+every app hand-compose it.
 
-- `ConfirmationDialog` (just yes/no buttons)
-- `CreateWorkspaceModal` (multiple form inputs)
-- `EditRecordingModal` (text inputs and editing)
-- `DeleteWorkspaceButton` (uses AlertDialog for confirmation)
+Use `Empty.Root` directly for actual empty, error, or prompt states. Also keep
+`Empty.Root` for loading states that need a title, description, custom media,
+actions, or exact visual parity with a nearby empty/error branch.
 
 ## Key Differences from Standard shadcn-svelte
 
@@ -59,6 +73,7 @@ Apps import UI through the public package API:
 
 ```typescript
 import { Button } from '@epicenter/ui/button';
+import { Loading } from '@epicenter/ui/loading';
 import { cn } from '@epicenter/ui/utils';
 import '@epicenter/ui/app.css';
 ```
@@ -107,6 +122,10 @@ Our `package.json` exposes only the public API for app consumers:
 
 Consumers import components through the package API; UI source imports siblings
 with relative paths.
+
+Every `packages/ui/src/<folder>/index.ts` file is a public
+`@epicenter/ui/<folder>` subpath. Raw `.svelte` files are private to the package
+and should not be imported by apps.
 
 ### 3. Styling: the overlay, not inline overrides
 
@@ -171,7 +190,8 @@ on a re-vendor:
 | Handle base styling | `resizable/resizable-handle.svelte` | Vega has no `cn-resizable-handle` (only `-icon`) | until Vega defines it |
 | `<svelte:element>` span-or-anchor | `badge/badge.svelte` | structural (element choice) | yes |
 | `showOnHover` actions overlay | `item/item-actions.svelte` | structural (absolute overlay + gradient) | yes |
-| `tooltip` prop (wraps in `Tooltip`) | `button/button.svelte` | Epicenter feature; upstream Button has none | yes |
+| `tooltip` prop (wraps in `Tooltip`) | `button/button.svelte`, `link/link.svelte` | Epicenter feature; upstream Button and Link have none | yes |
+| Standard loading shell | `loading/loading.svelte` | Epicenter wrapper around `Empty.Root` + `Spinner` for generic pending panes | yes |
 
 Correctness wiring (making Vega work, not Epicenter style): `switch` and
 `alert-dialog` carry a `size` prop that emits `data-size`; sidebar menu and
@@ -225,6 +245,15 @@ packages/ui/
 ├── src/
 │   ├── button/
 │   │   ├── button.svelte
+│   │   └── index.ts
+│   ├── empty/
+│   │   ├── empty.svelte
+│   │   └── index.ts
+│   ├── loading/
+│   │   ├── loading.svelte
+│   │   └── index.ts
+│   ├── modal/
+│   │   ├── modal.svelte
 │   │   └── index.ts
 │   ├── styles/
 │   │   ├── shadcn-base.css        # vendored upstream base

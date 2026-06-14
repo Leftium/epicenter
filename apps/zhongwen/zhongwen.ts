@@ -16,13 +16,20 @@
  *  - `apps/zhongwen/project.ts` → `zhongwen()` mount factory
  */
 
-import { field, jsonValue } from '@epicenter/field';
+import {
+	SERVABLE_MODELS,
+	SERVABLE_PROVIDER_MODELS,
+	SERVABLE_PROVIDERS,
+	type ServableProvider,
+} from '@epicenter/constants/ai-providers';
+import { field } from '@epicenter/field';
 import {
 	createWorkspace,
 	defineActions,
 	defineKv,
 	defineTable,
 	defineWorkspace,
+	docGuid,
 	generateId,
 	type Id,
 	type InferTableRow,
@@ -40,24 +47,10 @@ export const ZHONGWEN_ID = 'epicenter-zhongwen';
 export type ConversationId = Id & Brand<'ConversationId'>;
 export const generateConversationId = (): ConversationId =>
 	generateId<ConversationId>();
-/**
- * Syntactic sugar for `value as ConversationId`. The constrained `string` parameter
- * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
- * The only place in the codebase where `as ConversationId` should appear.
- */
-export const asConversationId = (value: string): ConversationId =>
-	value as ConversationId;
 
-export type ChatMessageId = Id & Brand<'ChatMessageId'>;
-export const generateChatMessageId = (): ChatMessageId =>
-	generateId<ChatMessageId>();
-/**
- * Syntactic sugar for `value as ChatMessageId`. The constrained `string` parameter
- * is what earns it over a raw `as` cast (callers can't widen to `unknown`).
- * The only place in the codebase where `as ChatMessageId` should appear.
- */
-export const asChatMessageId = (value: string): ChatMessageId =>
-	value as ChatMessageId;
+export const ZHONGWEN_DEFAULT_PROVIDER = 'gemini' satisfies ServableProvider;
+export const ZHONGWEN_DEFAULT_MODEL =
+	'gemini-3.1-flash-lite-preview' satisfies (typeof SERVABLE_PROVIDER_MODELS)[typeof ZHONGWEN_DEFAULT_PROVIDER][number];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Table Definitions
@@ -66,33 +59,33 @@ export const asChatMessageId = (value: string): ChatMessageId =>
 const conversationsTable = defineTable({
 	id: field.string<ConversationId>(),
 	title: field.string(),
-	provider: field.string(),
-	model: field.string(),
+	provider: field.select(SERVABLE_PROVIDERS),
+	model: field.select(SERVABLE_MODELS),
 	createdAt: field.number(),
 	updatedAt: field.number(),
 });
 export type Conversation = InferTableRow<typeof conversationsTable>;
 
-const chatMessagesTable = defineTable({
-	id: field.string<ChatMessageId>(),
-	conversationId: field.string<ConversationId>(),
-	role: field.select(['user', 'assistant']),
-	parts: field.json(Type.Array(jsonValue)),
-	createdAt: field.number(),
-});
-export type ChatMessage = InferTableRow<typeof chatMessagesTable>;
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Workspace Factory
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function createZhongwen(opts: { keyring: () => Keyring }) {
+// Conversation transcripts are not a table: each lives in its own synced
+// child doc (see `zhongwenConversationDocGuid` and `@epicenter/workspace/ai`),
+// streamed into by the server generation actor. The conversations table is
+// only the cheap list.
+/**
+ * Build the isomorphic Zhongwen workspace definition.
+ *
+ * Browser and daemon wrappers attach storage, sync, and process lifecycle
+ * around this root; this factory owns only the durable schema.
+ */
+export function createZhongwen({ keyring }: { keyring: () => Keyring }) {
 	const workspace = createWorkspace({
 		id: ZHONGWEN_ID,
-		keyring: opts.keyring,
+		keyring,
 		tables: {
 			conversations: conversationsTable,
-			chatMessages: chatMessagesTable,
 		},
 		kv: {
 			showPinyin: defineKv(Type.Boolean(), () => true),
@@ -107,4 +100,19 @@ export function createZhongwen(opts: { keyring: () => Keyring }) {
 		},
 	});
 }
-export type ZhongwenWorkspace = ReturnType<typeof createZhongwen>;
+
+/**
+ * Deterministic guid of a conversation's transcript sub-doc.
+ *
+ * Browser chat UIs (which open and sync the doc) and the server generation
+ * actor (which receives this guid in the kickoff body) both name the same
+ * Y.Doc through this composition. The transcript layout inside the doc is
+ * owned by `@epicenter/workspace/ai` (`chat-doc.ts`).
+ */
+export const zhongwenConversationDocGuid = (conversationId: ConversationId) =>
+	docGuid({
+		workspaceId: ZHONGWEN_ID,
+		collection: 'conversations',
+		rowId: conversationId,
+		field: 'messages',
+	});

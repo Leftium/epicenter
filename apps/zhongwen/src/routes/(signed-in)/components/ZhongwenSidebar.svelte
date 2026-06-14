@@ -1,13 +1,23 @@
 <script lang="ts">
 	import * as Sidebar from '@epicenter/ui/sidebar';
-	import {
-		MessageSquarePlusIcon,
-		MessageSquareTextIcon,
-		TrashIcon,
-	} from '@lucide/svelte';
-	import type { ChatState } from '../chat/chat-state.svelte';
+	import type { Conversation, ConversationId } from '@epicenter/zhongwen';
+	import MessageSquarePlusIcon from '@lucide/svelte/icons/message-square-plus';
+	import MessageSquareTextIcon from '@lucide/svelte/icons/message-square-text';
+	import TrashIcon from '@lucide/svelte/icons/trash';
 
-	let { chatState }: { chatState: ChatState } = $props();
+	let {
+		conversations,
+		activeConversationId,
+		onCreate,
+		onSwitch,
+		onDelete,
+	}: {
+		conversations: Conversation[];
+		activeConversationId: ConversationId | undefined;
+		onCreate: () => void;
+		onSwitch: (conversationId: ConversationId) => void;
+		onDelete: (conversationId: ConversationId) => void;
+	} = $props();
 </script>
 
 <Sidebar.Root collapsible="icon">
@@ -16,7 +26,7 @@
 			<Sidebar.MenuItem>
 				<Sidebar.MenuButton
 					size="lg"
-					onclick={() => chatState.createConversation()}
+					onclick={onCreate}
 					tooltipContent="New conversation"
 					aria-label="New conversation"
 				>
@@ -32,11 +42,11 @@
 			<Sidebar.GroupLabel>Conversations</Sidebar.GroupLabel>
 			<Sidebar.GroupContent>
 				<Sidebar.Menu>
-					{#each chatState.conversationHandles as conv (conv.id)}
+					{#each conversations as conv (conv.id)}
 						<Sidebar.MenuItem>
 							<Sidebar.MenuButton
-								isActive={conv.id === chatState.activeConversationId}
-								onclick={() => chatState.switchTo(conv.id)}
+								isActive={conv.id === activeConversationId}
+								onclick={() => onSwitch(conv.id)}
 								tooltipContent={conv.title}
 							>
 								<MessageSquareTextIcon class="size-4" />
@@ -45,7 +55,7 @@
 							<Sidebar.MenuAction
 								showOnHover
 								aria-label="Delete conversation"
-								onclick={() => chatState.deleteConversation(conv.id)}
+								onclick={() => onDelete(conv.id)}
 							>
 								<TrashIcon class="size-3.5" />
 							</Sidebar.MenuAction>

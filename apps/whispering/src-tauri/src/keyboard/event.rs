@@ -17,8 +17,9 @@ pub enum TriggerState {
 /// the callback. Rust stays command-agnostic: it knows the id and the edge, not
 /// which states a given command cares about.
 ///
-/// A `tauri_specta::Event`, so the listener emits it with `trigger.emit(app)`
-/// and the FE listens through the generated `events.shortcutTriggerEvent`.
+/// A `tauri_specta::Event`, so the listener emits it with
+/// `trigger.emit_to(app, MAIN_WINDOW)` (targeting the main webview, not the
+/// overlay) and the FE listens through the generated `events.shortcutTriggerEvent`.
 #[derive(
     Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type, tauri_specta::Event,
 )]

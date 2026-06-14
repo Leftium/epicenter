@@ -32,15 +32,13 @@ export type AbsolutePath = string & Brand<'AbsolutePath'>;
 /**
  * The Epicenter root: the folder that holds `epicenter.config.ts`.
  *
- * This is where user-facing content lives: markdown projections, the config
- * file, and any content that should be version-controlled. Typically the
- * directory where the user runs their app from (`process.cwd()`). The folder
- * name is the user's choice; nothing reserves the name `apps`.
+ * This is where app source and generated projections live beside the config.
+ * Typically the directory where the user runs their app from (`process.cwd()`).
+ * The folder name is the user's choice; nothing reserves the name `apps`.
  *
  * @example
  * ```typescript
- * // The markdown projection for a mount is a direct child of the Epicenter root
- * const fujiDir = path.join(epicenterRoot, 'fuji');
+ * const entriesDir = path.join(epicenterRoot, 'entries');
  * ```
  */
 export type EpicenterRoot = AbsolutePath & Brand<'EpicenterRoot'>;

@@ -1,14 +1,13 @@
 /**
  * `epicenter daemon up`: start the long-lived foreground daemon for one Epicenter root.
  *
- * Loads every mount declared in `epicenter.config.ts`, opens each one in
- * parallel, and exposes a Unix-socket IPC channel for that root. `peers`,
- * `list`, and `run` dispatch to this daemon over IPC; without `daemon up`
- * they error with a hint pointing back here.
+ * Loads the mount declared in `epicenter.config.ts`, opens it, and exposes a
+ * Unix-socket IPC channel for that root. `peers`, `list`, and `run` dispatch to
+ * this daemon over IPC; without `daemon up` they error with a hint pointing
+ * back here.
  *
- * One daemon per Epicenter root; that daemon serves every configured mount.
- * Resource isolation between mounts is expressed by splitting them into
- * different roots, not by a flag.
+ * One daemon per Epicenter root; one folder declares one mount. Resource
+ * isolation between apps is expressed by separate folders, each its own root.
  *
  * Foreground by design; backgrounding is the user's job.
  */
@@ -51,8 +50,8 @@ function logSyncStatus(message: string): void {
 
 type UpOptions = {
 	/**
-	 * The Epicenter root (the folder that holds `epicenter.config.ts`,
-	 * whose direct children are the mount projections). The yargs `-C` option
+	 * The Epicenter root (the app folder that holds `epicenter.config.ts`). The
+	 * yargs `-C` option
 	 * resolves discovery (walking up to the nearest `epicenter.config.ts`) before
 	 * the handler runs; direct callers pass the root they already know.
 	 */
@@ -76,10 +75,10 @@ type UpOptions = {
  * startup, exercise the IPC handler in-process, and call `teardown()` to
  * release resources without spawning a child.
  *
- * - `mounts` is every started mount runtime the root declares; the daemon
- *   serves them all and routes IPC requests by mount name.
- * - `inactive` is every mount that returned `inactive(reason)` instead of a
- *   runtime (typically signed-out, keyring-backed mounts). They are not served.
+ * - `mounts` is the started mount runtime (zero or one); the daemon serves it
+ *   and routes IPC requests by mount name.
+ * - `inactive` is the mount if it returned `inactive(reason)` instead of a
+ *   runtime (typically a signed-out, keyring-backed mount). It is not served.
  * - `metadata` is what was written to disk.
  * - `teardown()` closes the server, asyncDisposes the runtimes, releases the
  *   lease, and unlinks metadata + socket. Idempotent.
@@ -92,16 +91,15 @@ type UpHandle = {
 };
 
 /**
- * Daemon body. Opens every configured mount (the root must already have an
+ * Daemon body. Opens the configured mount (the root must already have an
  * `epicenter.config.ts`; see `epicenter init`), binds the IPC socket, and
  * returns a handle. The yargs `handler` calls this,
  * prints the operator-facing banner, installs SIGINT/SIGTERM, and parks the
  * process; tests call it directly and assert on the returned handle.
  *
- * A SQLite daemon lease serializes startup before any mount opens. After that,
+ * A SQLite daemon lease serializes startup before the mount opens. After that,
  * `openEpicenterRoot` imports `epicenter.config.ts`, claims the Epicenter
- * folder, opens every configured mount, and `startDaemonServer` binds the
- * socket.
+ * folder, opens the mount, and `startDaemonServer` binds the socket.
  */
 export async function runUp(
 	options: UpOptions,
@@ -154,7 +152,9 @@ export async function runUp(
 
 	const startResult = await openEpicenterRoot({ epicenterRoot, auth });
 	if (startResult.error) return startResult;
-	const { started: mounts, inactive } = startResult.data;
+	const opened = startResult.data;
+	const mounts = opened.status === 'started' ? [opened.entry] : [];
+	const inactive = opened.status === 'inactive' ? [opened.entry] : [];
 	stack.defer(async () => {
 		await Promise.allSettled(
 			mounts.map((entry) => entry.runtime[Symbol.asyncDispose]()),
@@ -191,7 +191,7 @@ export async function runUp(
 export const upCommand = cmd({
 	command: 'up',
 	describe:
-		'Open every mount in epicenter.config.ts and serve them on the daemon socket (foreground).',
+		'Open the mount in epicenter.config.ts and serve it on the daemon socket (foreground).',
 	builder: {
 		C: epicenterRootOption,
 		quiet: {

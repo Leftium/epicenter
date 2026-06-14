@@ -36,8 +36,8 @@ import { asDeviceId } from '../document/device-id.js';
 import { openCollaboration } from '../document/open-collaboration.js';
 import { roomWsUrl } from '../document/transport.js';
 import { yjsPath } from '../document/workspace-paths.js';
-import { hashYDocClientId } from '../shared/client-id.js';
 import type { ActionRegistry } from '../shared/actions.js';
+import { hashYDocClientId } from '../shared/client-id.js';
 import type { SessionMountContext } from './define-mount.js';
 
 export type AttachMountInfrastructureOptions<TActions extends ActionRegistry> =

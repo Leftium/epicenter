@@ -1,11 +1,31 @@
+/**
+ * Todos Workspace Tests
+ *
+ * Verifies todo and context domain behavior across the workspace actions and
+ * the Svelte state view used by the app shell.
+ *
+ * Key behaviors:
+ * - Context slugs are stable, valid, and collision-resistant
+ * - Built-in contexts are code constants layered over user rows
+ * - Context rename and delete operations migrate todo references
+ */
 import { describe, expect, test } from 'bun:test';
 import type { CalendarDateString } from '@epicenter/field';
+import { createTodosState } from './src/lib/todos/state.svelte';
 import {
 	assertContextSlug,
 	BUILT_IN_CONTEXTS,
+	type ContextSlug,
 	createTodos,
 	generateContextSlug,
 } from './todos';
+
+// `bun test` runs `.svelte.ts` modules without the Svelte compiler. The state
+// test constructs the view after seeding data, so identity runes are enough.
+(globalThis as unknown as { $derived: <T>(value: T) => T }).$derived = (value) =>
+	value;
+(globalThis as unknown as { $state: <T>(value: T) => T }).$state = (value) =>
+	value;
 
 function seededTodo(name = 'Phone') {
 	const todos = createTodos();
@@ -127,6 +147,34 @@ describe('built-in contexts', () => {
 		expect(() =>
 			todos.actions.contexts_rename_slug({ from: slug, to: 'phone' }),
 		).toThrow();
+	});
+
+	test('state context list hides legacy rows that shadow built-in contexts', () => {
+		const todos = createTodos();
+		todos.tables.contexts.set({
+			id: 'errands' as ContextSlug,
+			name: 'Errands',
+			color: 'amber',
+			sortOrder: 0,
+		});
+		todos.tables.contexts.set({
+			id: 'phone' as ContextSlug,
+			name: 'Legacy Phone',
+			color: 'rose',
+			sortOrder: 99,
+		});
+		const state = createTodosState(todos);
+
+		try {
+			expect(state.contexts.map((context) => context.id)).toEqual([
+				'phone',
+				'desktop',
+				'home',
+				'errands',
+			]);
+		} finally {
+			state[Symbol.dispose]();
+		}
 	});
 });
 

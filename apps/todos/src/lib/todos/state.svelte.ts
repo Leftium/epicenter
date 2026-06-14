@@ -13,7 +13,9 @@ const builtInById = new Map(
 	BUILT_IN_CONTEXTS.map((context) => [context.id, context]),
 );
 
-export function createTodosState(todos: TodosBrowser) {
+type TodosStateWorkspace = Pick<TodosBrowser, 'actions' | 'tables'>;
+
+export function createTodosState(todos: TodosStateWorkspace) {
 	const todosMap = fromTable(todos.tables.todos);
 	const contextsMap = fromTable(todos.tables.contexts);
 	let selectedContextId = $state<ContextSlug | null>(null);
@@ -21,9 +23,9 @@ export function createTodosState(todos: TodosBrowser) {
 	// Built-in contexts are always present and sort first; user-created rows
 	// follow in their own sort order.
 	const userContexts = $derived(
-		[...contextsMap.values()].sort(
-			(a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name),
-		),
+		[...contextsMap.values()]
+			.filter((context) => !BUILT_IN_CONTEXT_IDS.has(context.id))
+			.sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
 	);
 	const contexts = $derived([...BUILT_IN_CONTEXTS, ...userContexts]);
 

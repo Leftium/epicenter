@@ -36,10 +36,6 @@
 			"tauri": "./src/lib/recording-overlay/index.tauri.ts",
 			"default": "./src/lib/recording-overlay/index.browser.ts"
 		},
-		"#platform/sound": {
-			"tauri": "./src/lib/services/sound/index.tauri.ts",
-			"default": "./src/lib/services/sound/index.browser.ts"
-		},
 		"#platform/text": {
 			"tauri": "./src/lib/services/text/index.tauri.ts",
 			"default": "./src/lib/services/text/index.browser.ts"

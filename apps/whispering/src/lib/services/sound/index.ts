@@ -1,6 +1,19 @@
-import { Ok, tryAsync } from 'wellcrafted/result';
+import {
+	defineErrors,
+	extractErrorMessage,
+	type InferErrors,
+} from 'wellcrafted/error';
+import { tryAsync } from 'wellcrafted/result';
 import type { WhisperingSoundNames } from '$lib/constants/sounds';
-import { type PlaySoundService, SoundError } from './types';
+import { soundSources } from './assets';
+
+export const SoundError = defineErrors({
+	Play: ({ cause }: { cause: unknown }) => ({
+		message: `Failed to play sound: ${extractErrorMessage(cause)}`,
+		cause,
+	}),
+});
+export type SoundError = InferErrors<typeof SoundError>;
 
 async function playSoundUrl(soundUrl: string) {
 	const context = new AudioContext();
@@ -46,23 +59,10 @@ async function playSoundUrl(soundUrl: string) {
 	}
 }
 
-export function createWebAudioPlaySoundService({
-	shouldPlay = () => true,
-	soundSources,
-}: {
-	shouldPlay?: () => boolean;
-	soundSources: Record<WhisperingSoundNames, string>;
-}): PlaySoundService {
-	return {
-		playSound: async (soundName) => {
-			if (!shouldPlay()) {
-				return Ok(undefined);
-			}
-
-			return tryAsync({
-				try: () => playSoundUrl(soundSources[soundName]),
-				catch: (error) => SoundError.Play({ cause: error }),
-			});
-		},
-	};
-}
+export const PlaySoundServiceLive = {
+	playSound: (soundName: WhisperingSoundNames) =>
+		tryAsync({
+			try: () => playSoundUrl(soundSources[soundName]),
+			catch: (error) => SoundError.Play({ cause: error }),
+		}),
+};

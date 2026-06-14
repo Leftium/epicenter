@@ -385,7 +385,6 @@
 		{#if settings.get('recording.mode') === 'manual'}
 			<p class="text-foreground/75 text-center text-sm">
 				Click the microphone or press
-				{' '}
 				<Link
 					tooltip="Go to local shortcut in settings"
 					href="/settings/shortcuts"
@@ -396,27 +395,23 @@
 						)}</Kbd.Root
 					>
 				</Link>
-				{' '}
 				to start recording here.
 			</p>
 			{#if tauri}
 				<p class="text-foreground/75 text-sm">
 					Press
-					{' '}
 					<Link
 						tooltip="Go to global shortcut in settings"
 						href="/settings/shortcuts"
 					>
 						<Kbd.Root>{globalToggleLabel}</Kbd.Root>
 					</Link>
-					{' '}
 					to start recording anywhere.
 				</p>
 			{/if}
 		{:else if settings.get('recording.mode') === 'vad'}
 			<p class="text-foreground/75 text-center text-sm">
 				Click the microphone or press
-				{' '}
 				<Link
 					tooltip="Go to local shortcut in settings"
 					href="/settings/shortcuts"
@@ -427,21 +422,18 @@
 						)}</Kbd.Root
 					>
 				</Link>
-				{' '}
 				to start a voice activated session.
 			</p>
 		{:else if settings.get('recording.mode') === 'upload'}
 			{#if tauri}
 				<p class="text-foreground/75 text-sm">
 					Press
-					{' '}
 					<Link
 						tooltip="Go to global shortcut in settings"
 						href="/settings/shortcuts"
 					>
 						<Kbd.Root>{globalToggleLabel}</Kbd.Root>
 					</Link>
-					{' '}
 					to start recording instead.
 				</p>
 			{/if}

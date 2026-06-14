@@ -55,8 +55,7 @@
 	<Separator class="my-6" />
 
 	{#if tauri}
-		{@const t = tauri}
-		<ShortcutTable type="global" tauri={t} />
+		<ShortcutTable type="global" {tauri} />
 	{:else}
 		<ShortcutTable type="local" />
 	{/if}

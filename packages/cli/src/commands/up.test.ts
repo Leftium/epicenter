@@ -124,15 +124,24 @@ function writeDemoConfig(): void {
 		[
 			"import demo from './workspaces/demo/daemon.ts';",
 			'',
-			'export default [demo];',
+			'export default demo;',
 			'',
 		].join('\n'),
 	);
 }
 
-function writeConfig(source: string): void {
-	writeFileSync(join(workDir, 'epicenter.config.ts'), source);
-}
+/**
+ * A minimal valid singular config: a local mount that opens with no session and
+ * serves nothing. Used by tests that only exercise namespace/gitignore
+ * scaffolding, where the empty `export default []` used to stand in.
+ */
+const TRIVIAL_MOUNT_CONFIG = [
+	'export default {',
+	"\tname: 'demo',",
+	'\topen: () => ({ actions: {}, async [Symbol.asyncDispose]() {} }),',
+	'};',
+	'',
+].join('\n');
 
 function writeRuntimeMount({
 	onImportMarker,
@@ -198,7 +207,7 @@ describe('runUp: happy path', () => {
 			expect(handle.mounts[0]?.mount).toBe('demo');
 			expect(
 				readFileSync(join(workDir, 'epicenter.config.ts'), 'utf8'),
-			).toContain('export default [demo]');
+			).toContain('export default demo');
 
 			const sockPath = socketPathFor(workDir);
 			expect(existsSync(sockPath)).toBe(true);
@@ -325,7 +334,7 @@ describe('runUp: failure cleanup', () => {
 	});
 
 	test('does not overwrite an existing config when provisioning root data', async () => {
-		const original = ['export default [];', '', '// keep me', ''].join('\n');
+		const original = `${TRIVIAL_MOUNT_CONFIG}\n// keep me\n`;
 		writeFileSync(join(workDir, 'epicenter.config.ts'), original);
 		const gitignore = 'custom-rule\n';
 		mkdirSync(join(workDir, '.epicenter'), { recursive: true });
@@ -352,7 +361,7 @@ describe('runUp: failure cleanup', () => {
 	});
 
 	test('scaffolds a root .gitignore that tracks only the config', async () => {
-		writeFileSync(join(workDir, 'epicenter.config.ts'), 'export default [];\n');
+		writeFileSync(join(workDir, 'epicenter.config.ts'), TRIVIAL_MOUNT_CONFIG);
 
 		const handle = expectOk(
 			await runUp({
@@ -375,7 +384,7 @@ describe('runUp: failure cleanup', () => {
 	});
 
 	test('does not overwrite an existing root .gitignore', async () => {
-		writeFileSync(join(workDir, 'epicenter.config.ts'), 'export default [];\n');
+		writeFileSync(join(workDir, 'epicenter.config.ts'), TRIVIAL_MOUNT_CONFIG);
 		const custom = '# mine\n/build\n';
 		writeFileSync(join(workDir, '.gitignore'), custom);
 
@@ -398,7 +407,7 @@ describe('runUp: failure cleanup', () => {
 		// `.epicenter/` present means a prior run already established the folder;
 		// a plain `up` must not retroactively write a `/*` rule into a folder the
 		// user may have turned into a git repo since.
-		writeFileSync(join(workDir, 'epicenter.config.ts'), 'export default [];\n');
+		writeFileSync(join(workDir, 'epicenter.config.ts'), TRIVIAL_MOUNT_CONFIG);
 		mkdirSync(join(workDir, '.epicenter'), { recursive: true });
 
 		const handle = expectOk(
@@ -457,64 +466,17 @@ describe('runUp: failure cleanup', () => {
 	});
 
 	test('keeps root .gitignore when mount startup fails after namespace claim', async () => {
-		const goodDir = join(workDir, 'workspaces', 'good');
-		const badDir = join(workDir, 'workspaces', 'bad');
-		mkdirSync(goodDir, { recursive: true });
-		mkdirSync(badDir, { recursive: true });
-		writeFileSync(
-			join(goodDir, 'daemon.ts'),
-			`
-				import { mkdirSync } from 'node:fs';
-				import { join } from 'node:path';
-
-				const collaboration = {
-					actions: {},
-					whenConnected: new Promise(() => {}),
-					status: { phase: 'connected' },
-					onStatusChange: () => () => {},
-					devices: {
-						list: () => [],
-						subscribe: () => () => {},
-					},
-					dispatch: async () => {
-						throw new Error('fixture does not dispatch');
-					},
-				};
-
-				export default {
-					name: 'good',
-					async open(ctx) {
-						mkdirSync(join(ctx.epicenterRoot, '.epicenter', 'sqlite'), {
-							recursive: true,
-						});
-						return {
-							collaboration,
-							async [Symbol.asyncDispose]() {},
-						};
-					},
-				};
-			`,
-		);
-		writeFileSync(
-			join(badDir, 'daemon.ts'),
-			`
-				export default {
-					name: 'bad',
-					async open() {
-						throw new Error('bad mount failed');
-					},
-				};
-			`,
-		);
-		writeConfig(
-			[
-				"import good from './workspaces/good/daemon.ts';",
-				"import bad from './workspaces/bad/daemon.ts';",
-				'',
-				'export default [good, bad];',
-				'',
-			].join('\n'),
-		);
+		// The folder is claimed (and its .gitignore written) before the mount
+		// opens, so a thrown open leaves the gitignore in place.
+		writeDemoMount(`
+			export default {
+				name: 'demo',
+				async open() {
+					throw new Error('mount failed');
+				},
+			};
+		`);
+		writeDemoConfig();
 
 		const error = expectErr(
 			await runUp({
@@ -526,7 +488,7 @@ describe('runUp: failure cleanup', () => {
 
 		expect(error).toMatchObject({
 			name: 'MountOpenFailed',
-			mount: 'bad',
+			mount: 'demo',
 		});
 		const rootGitignore = readFileSync(join(workDir, '.gitignore'), 'utf8');
 		expect(rootGitignore).toContain('/*');
@@ -535,50 +497,16 @@ describe('runUp: failure cleanup', () => {
 		lease.release();
 	});
 
-	test('disposes opened sibling mounts and leaves no socket or metadata when one mount fails', async () => {
-		const goodDir = join(workDir, 'workspaces', 'good');
-		const badDir = join(workDir, 'workspaces', 'bad');
-		mkdirSync(goodDir, { recursive: true });
-		mkdirSync(badDir, { recursive: true });
-		const disposeMarker = markerPath('good-dispose');
-		writeFileSync(
-			join(goodDir, 'daemon.ts'),
-			`
-				import { writeFileSync } from 'node:fs';
-
-				export default {
-					name: 'good',
-					async open() {
-						return {
-							actions: {},
-							async [Symbol.asyncDispose]() {
-								writeFileSync(${JSON.stringify(disposeMarker)}, 'disposed');
-							},
-						};
-					},
-				};
-			`,
-		);
-		writeFileSync(
-			join(badDir, 'daemon.ts'),
-			`
-				export default {
-					name: 'bad',
-					async open() {
-						throw new Error('bad mount failed');
-					},
-				};
-			`,
-		);
-		writeConfig(
-			[
-				"import good from './workspaces/good/daemon.ts';",
-				"import bad from './workspaces/bad/daemon.ts';",
-				'',
-				'export default [good, bad];',
-				'',
-			].join('\n'),
-		);
+	test('leaves no socket or metadata when the mount fails', async () => {
+		writeDemoMount(`
+			export default {
+				name: 'demo',
+				async open() {
+					throw new Error('mount failed');
+				},
+			};
+		`);
+		writeDemoConfig();
 
 		const error = expectErr(
 			await runUp({
@@ -590,9 +518,8 @@ describe('runUp: failure cleanup', () => {
 
 		expect(error).toMatchObject({
 			name: 'MountOpenFailed',
-			mount: 'bad',
+			mount: 'demo',
 		});
-		expect(readFileSync(disposeMarker, 'utf8')).toBe('disposed');
 		expect(existsSync(metadataPathFor(workDir))).toBe(false);
 		expect(existsSync(socketPathFor(workDir))).toBe(false);
 		const lease = expectOk(claimDaemonLease(workDir));

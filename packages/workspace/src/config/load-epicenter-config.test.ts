@@ -5,8 +5,9 @@
  * validated before daemon startup consumes the mount list.
  *
  * Invariant under test: `loadEpicenterConfig` is total. Every failure mode
- * (missing file, import/syntax error, wrong-shaped export) comes back as a
- * specific `EpicenterConfigError` variant in the error channel; it never throws.
+ * (missing file, import/syntax error, wrong-shaped export, bad mount name)
+ * comes back as a specific `EpicenterConfigError` variant in the error channel;
+ * it never throws. The config default-exports a single `Mount`.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -41,25 +42,15 @@ describe('loadEpicenterConfig', () => {
 		});
 	});
 
-	test('passes through a Mount[] default export', async () => {
-		writeConfig(
-			"export default [{ name: 'a', open() {} }, { name: 'b', open() {} }];\n",
-		);
+	test('passes through a single Mount default export', async () => {
+		writeConfig("export default { name: 'demo', open() {} };\n");
 
 		const { data, error } = await loadEpicenterConfig(epicenterRoot);
 		if (error !== null) throw new Error(error.message);
-		expect(data.map((mount) => mount.name)).toEqual(['a', 'b']);
+		expect(data.name).toBe('demo');
 	});
 
-	test('passes through an empty Mount[] default export', async () => {
-		writeConfig('export default [];\n');
-
-		const { data, error } = await loadEpicenterConfig(epicenterRoot);
-		if (error !== null) throw new Error(error.message);
-		expect(data).toEqual([]);
-	});
-
-	test('rejects a non-array default export', async () => {
+	test('rejects a non-Mount default export', async () => {
 		writeConfig('export default { notAMount: true };\n');
 
 		const { error } = await loadEpicenterConfig(epicenterRoot);
@@ -69,30 +60,33 @@ describe('loadEpicenterConfig', () => {
 		});
 	});
 
-	test('rejects a bare Mount that is not wrapped in an array', async () => {
-		writeConfig("export default { name: 'demo', open() {} };\n");
+	test('rejects a Mount[] with a pointer to export the mount directly', async () => {
+		writeConfig("export default [{ name: 'demo', open() {} }];\n");
 
 		const { error } = await loadEpicenterConfig(epicenterRoot);
 		expect(error).toMatchObject({
 			name: 'EpicenterConfigInvalid',
 			detail:
-				'the default export is a single Mount; wrap it in an array, for example `export default [fuji()]`',
+				'the default export is a Mount[]; one folder declares one mount, so export it directly, for example `export default fuji()`',
 		});
 	});
 
-	test('rejects a Mount[] containing a non-Mount value', async () => {
-		writeConfig("export default [{ name: 'demo', open() {} }, { open: 1 }];\n");
+	test('rejects a mount with a bad name', async () => {
+		writeConfig("export default { name: '__proto__', open() {} };\n");
 
 		const { error } = await loadEpicenterConfig(epicenterRoot);
-		expect(error?.name).toBe('EpicenterConfigInvalid');
+		expect(error).toMatchObject({
+			name: 'EpicenterConfigInvalid',
+			detail: expect.stringContaining('the mount name "__proto__" is invalid'),
+		});
 	});
 
 	test('accepts a mount with just name and open (no kind needed)', async () => {
-		writeConfig("export default [{ name: 'demo', open() {} }];\n");
+		writeConfig("export default { name: 'demo', open() {} };\n");
 
 		const { data, error } = await loadEpicenterConfig(epicenterRoot);
 		if (error !== null) throw new Error(error.message);
-		expect(data.map((mount) => mount.name)).toEqual(['demo']);
+		expect(data.name).toBe('demo');
 	});
 
 	test('rejects a config with no default export', async () => {

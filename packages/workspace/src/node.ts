@@ -92,6 +92,6 @@ export { WorkspaceAppError } from './workspace-apps/errors.js';
 export {
 	type InactiveMount,
 	type OpenEpicenterRootOptions,
-	type OpenedEpicenterRoot,
+	type OpenedMount,
 	openEpicenterRoot,
 } from './workspace-apps/open-epicenter-root.js';

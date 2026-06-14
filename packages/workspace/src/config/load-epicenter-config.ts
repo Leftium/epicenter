@@ -1,10 +1,10 @@
 /**
- * Load an Epicenter root's `epicenter.config.ts` and return its mount list.
+ * Load an Epicenter root's `epicenter.config.ts` and return its single mount.
  *
- * The config default-exports a `Mount[]`. One app is a list of one:
+ * One folder is one app is one mount: the config default-exports a single
+ * `Mount` declared directly.
  *
- *   `export default [fuji()];`
- *   `export default [fuji(), notes()];`
+ *   `export default fuji();`
  *
  * `epicenter.config.ts` is dynamically imported, so its default export crosses
  * a runtime boundary where TypeScript types are erased and nothing typechecks
@@ -13,6 +13,10 @@
  * consumes (`name: string`, `open: function`) so a malformed config fails with
  * a clear, structured error pointed at the file instead of a cryptic
  * `TypeError` deep in startup.
+ *
+ * The mount name is format-checked here too: this loader is the only place that
+ * can point a name error at the offending file, and a single-mount config has
+ * no cross-mount uniqueness to check elsewhere.
  *
  * Every failure is an `EpicenterConfigError` variant; this function never throws.
  */
@@ -29,6 +33,7 @@ import {
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 import type { Mount } from '../daemon/define-mount.js';
+import { isValidMountName } from '../daemon/mount-validation.js';
 import type { EpicenterRoot } from '../shared/types.js';
 import { EPICENTER_CONFIG_FILENAME } from './epicenter-config-source.js';
 
@@ -68,7 +73,7 @@ export type EpicenterConfigError = InferErrors<typeof EpicenterConfigError>;
 
 export async function loadEpicenterConfig(
 	epicenterRoot: EpicenterRoot | string,
-): Promise<Result<Mount[], EpicenterConfigError>> {
+): Promise<Result<Mount, EpicenterConfigError>> {
 	const epicenterConfigPath = join(
 		resolve(epicenterRoot),
 		EPICENTER_CONFIG_FILENAME,
@@ -93,19 +98,27 @@ export async function loadEpicenterConfig(
 	if (importError !== null) return Err(importError);
 
 	const value = module.default;
-	if (Array.isArray(value) && value.every(isMount)) return Ok(value);
-	if (isMount(value)) {
+	if (Array.isArray(value)) {
 		return EpicenterConfigError.EpicenterConfigInvalid({
 			epicenterConfigPath,
 			detail:
-				'the default export is a single Mount; wrap it in an array, for example `export default [fuji()]`',
+				'the default export is a Mount[]; one folder declares one mount, so export it directly, for example `export default fuji()`',
 		});
 	}
-	return EpicenterConfigError.EpicenterConfigInvalid({
-		epicenterConfigPath,
-		detail:
-			'the default export must be a Mount[] (each entry needs a string `name` and an `open` function)',
-	});
+	if (!isMount(value)) {
+		return EpicenterConfigError.EpicenterConfigInvalid({
+			epicenterConfigPath,
+			detail:
+				'the default export must be a Mount (a string `name` and an `open` function)',
+		});
+	}
+	if (!isValidMountName(value.name)) {
+		return EpicenterConfigError.EpicenterConfigInvalid({
+			epicenterConfigPath,
+			detail: `the mount name "${value.name}" is invalid: use letters, numbers, "_" or "-", starting with a letter or number`,
+		});
+	}
+	return Ok(value);
 }
 
 function isMount(value: unknown): value is Mount {

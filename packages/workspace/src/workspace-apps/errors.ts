@@ -1,12 +1,13 @@
 /**
- * Structured errors for mount registration and startup.
+ * Structured errors for mount startup.
  *
- * Mount-name validation surfaces `MountRejected` before any mount opens. A
- * bootstrap guard surfaces `MountFolderNotEmpty` when a not-yet-established
+ * A bootstrap guard surfaces `MountFolderNotEmpty` when a not-yet-established
  * Epicenter folder already has a populated mount folder. The namespace claim
- * surfaces `EpicenterFolderClaimFailed` before any mount opens. Startup wraps
- * any throw from a mount's `open(ctx)` in `MountOpenFailed` so callers can
- * dispose siblings on failure.
+ * surfaces `EpicenterFolderClaimFailed` before the mount opens. Startup wraps
+ * any throw from the mount's `open(ctx)` in `MountOpenFailed`.
+ *
+ * Mount-name format is validated upstream by `loadEpicenterConfig`, which
+ * surfaces a bad name as an `EpicenterConfigInvalid` pointed at the file.
  *
  * A mount that returns `inactive(reason)` is not an error: it is reported as an
  * inactive mount, not raised here.
@@ -17,17 +18,8 @@ import {
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
-import type { MountNameIssue } from '../daemon/mount-validation.js';
 
 export const WorkspaceAppError = defineErrors({
-	MountRejected: ({ mount, reason }: MountNameIssue) => ({
-		message:
-			reason === 'duplicate'
-				? `Duplicate mount "${mount}" in epicenter.config.ts.`
-				: `Invalid mount name "${mount}" in epicenter.config.ts: use letters, numbers, "_" or "-", and avoid reserved object keys.`,
-		mount,
-		reason,
-	}),
 	MountFolderNotEmpty: ({ mount, path }: { mount: string; path: string }) => ({
 		message:
 			`Refusing to start: "${path}" already has files, but this Epicenter folder has no .epicenter/ state yet. ` +

@@ -1,34 +1,31 @@
 /**
- * Pins `validateMountNames`, the gate that runs before any mount opens.
+ * Pins `isValidMountName`, the mount-name format rule.
  *
- * Mount names become `/list` manifest keys and daemon action paths
- * (`${mount}.${action}`) and, under the namespace-root layout, the names of
- * generated folders that are direct children of the Epicenter root. So the
- * pattern has to reject anything that would collide with a reserved sibling
+ * A mount name becomes `/list` manifest keys and daemon action paths
+ * (`${mount}.${action}`) and, under the Epicenter-folder layout, the name of a
+ * generated folder that is a direct child of the Epicenter root. So the pattern
+ * has to reject anything that would collide with a reserved sibling
  * (`.epicenter`, `epicenter.config.ts`), escape the root (`..`, `a/b`), or land
  * a dangerous object key (`__proto__`). These tests lock that in so a loosened
- * regex fails loudly here instead of in the daemon.
+ * regex fails loudly here. `loadEpicenterConfig` owns the call site and points
+ * a bad name at the offending file.
  */
 
 import { describe, expect, test } from 'bun:test';
-import { validateMountNames } from './mount-validation.js';
+import { isValidMountName } from './mount-validation.js';
 
-describe('validateMountNames', () => {
+describe('isValidMountName', () => {
 	test('accepts plain alphanumeric and dash/underscore names', () => {
-		expect(
-			validateMountNames([
-				'fuji',
-				'honeycrisp',
-				'tab-manager',
-				'note_1',
-				'A1',
-				'0',
-			]),
-		).toBeNull();
-	});
-
-	test('accepts an empty list', () => {
-		expect(validateMountNames([])).toBeNull();
+		for (const name of [
+			'fuji',
+			'honeycrisp',
+			'tab-manager',
+			'note_1',
+			'A1',
+			'0',
+		]) {
+			expect(isValidMountName(name)).toBe(true);
+		}
 	});
 
 	// Each of these would collide with a reserved sibling, escape the Epicenter
@@ -49,26 +46,7 @@ describe('validateMountNames', () => {
 	];
 	for (const name of invalidNames) {
 		test(`rejects ${JSON.stringify(name)} as invalid`, () => {
-			expect(validateMountNames([name])).toEqual({
-				mount: name,
-				reason: 'invalid',
-			});
+			expect(isValidMountName(name)).toBe(false);
 		});
 	}
-
-	test('flags the first duplicate name', () => {
-		expect(validateMountNames(['fuji', 'honeycrisp', 'fuji'])).toEqual({
-			mount: 'fuji',
-			reason: 'duplicate',
-		});
-	});
-
-	test('reports a duplicate before an invalid name later in the list', () => {
-		// Duplicate detection sweeps the whole list before any name-shape check,
-		// so the repeated valid name wins over the trailing invalid one.
-		expect(validateMountNames(['fuji', 'fuji', '__proto__'])).toEqual({
-			mount: 'fuji',
-			reason: 'duplicate',
-		});
-	});
 });

@@ -14,7 +14,7 @@
 
 import type { Modifier } from '$lib/tauri/commands';
 
-export type ReservedCheck = { ok: true } | { ok: false; reason: string };
+type ReservedCheck = { ok: true } | { ok: false; reason: string };
 
 /** A binding for validation: accepts the stored shape (`keys: string[]`). */
 type BindingLike = {

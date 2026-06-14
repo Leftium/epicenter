@@ -67,7 +67,7 @@
 	// Reject reserved or unsafe gestures before saving. Returns true when the
 	// binding is allowed; otherwise reports why and leaves the current binding
 	// untouched. Cancel is the one gesture allowed to be a bare Escape.
-	function isAllowed(next: KeyBinding): boolean {
+	function validateAndReport(next: KeyBinding): boolean {
 		const result = validateGlobalBinding(next, {
 			isCancel: command.id === 'cancelManualRecording',
 		});
@@ -89,7 +89,7 @@
 			keys: [...capturedKeys],
 		};
 		await stopCapture();
-		if (!isAllowed(next)) return;
+		if (!validateAndReport(next)) return;
 		await persist(next);
 		open = false;
 	}
@@ -127,7 +127,7 @@
 			});
 			return false;
 		}
-		if (!isAllowed(next)) return false;
+		if (!validateAndReport(next)) return false;
 		void persist(next).then(() => {
 			open = false;
 		});

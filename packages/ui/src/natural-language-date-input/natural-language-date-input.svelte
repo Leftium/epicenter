@@ -48,7 +48,7 @@
 	);
 </script>
 
-<Command.Root shouldFilter={false} class="border-border h-fit border">
+<Command.Root shouldFilter={false} class="h-fit">
 	<Command.Input {placeholder} bind:value />
 	<Command.List>
 		<Command.Group>

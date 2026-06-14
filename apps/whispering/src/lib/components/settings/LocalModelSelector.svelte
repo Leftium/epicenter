@@ -32,6 +32,10 @@
 	import { PROVIDERS } from '$lib/services/transcription/providers';
 	import { localModelDownloads } from '$lib/state/local-model-downloads.svelte';
 	import { tauri } from '#platform/tauri';
+	import {
+		announceModelDelete,
+		announceModelDownload,
+	} from './local-model-toasts';
 	import LocalModelDownloadCard from './LocalModelDownloadCard.svelte';
 
 	/**
@@ -131,20 +135,22 @@
 	}
 
 	async function downloadRecommendedModel() {
-		await recommendedDownload.download();
+		const entryName = announceModelDownload(await recommendedDownload.download());
+		if (!entryName) return;
+		value = entryName;
 		await refreshEntries();
 	}
 
-	async function activateRecommendedModel() {
-		recommendedDownload.activate();
-		await refreshEntries();
+	/** Point the engine's selection at an on-disk entry by name. */
+	function activate(name: string) {
+		value = name;
+		toast.success('Model activated');
 	}
 
-	// Rescan on mount, when the engine changes, and whenever the active model
-	// changes (e.g. a catalog download just landed in the folder).
+	// Rescan on mount and when the engine changes. Selection changes do not
+	// change disk; download/delete handlers refresh after they change the folder.
 	$effect(() => {
 		void engine;
-		void value;
 		refreshEntries();
 	});
 
@@ -165,22 +171,11 @@
 		});
 	}
 
-	function activateEntry(entry: LocalModelEntry) {
-		value = entry.name;
-		toast.success('Model activated');
-	}
-
 	async function removeEntry(entry: LocalModelEntry) {
-		const { error } = await deleteModelEntry({ engine, name: entry.name });
-		if (error) {
-			toast.error('Failed to delete model', {
-				description: error.message,
-			});
+		if (!announceModelDelete(await deleteModelEntry({ engine, name: entry.name })))
 			return;
-		}
 		if (value === entry.name) value = '';
 		await refreshEntries();
-		toast.success('Model deleted');
 	}
 </script>
 
@@ -238,7 +233,7 @@
 							</span>
 						</div>
 					{:else if recommendedState.type === 'ready'}
-						<Button onclick={activateRecommendedModel}>
+						<Button onclick={() => activate(modelEntryName(recommended))}>
 							Activate {recommended.name}
 						</Button>
 					{:else}
@@ -276,6 +271,7 @@
 				{#each models as model (model.id)}
 					<LocalModelDownloadCard
 						{model}
+						bind:value
 						recommended={models.length > 1 && model.id === recommended.id}
 						onDiskChange={refreshEntries}
 					/>
@@ -310,7 +306,7 @@
 								<Button
 									size="sm"
 									variant="outline"
-									onclick={() => activateEntry(entry)}
+									onclick={() => activate(entry.name)}
 								>
 									Activate
 								</Button>

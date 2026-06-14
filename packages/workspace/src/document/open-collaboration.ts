@@ -108,9 +108,11 @@ export type OpenCollaborationConfig<TActions extends ActionRegistry> = {
 	connectDeadlineMs?: number;
 	log?: Logger;
 	/**
-	 * Local action registry. Pass `{}` for content docs and consume-only
-	 * participants. When the registry is empty, inbound `dispatch_inbound`
-	 * frames always reply with `ActionNotFound`.
+	 * Injected local action registry. Collaboration publishes this registry to
+	 * peers and uses it for inbound dispatch, but the caller remains the
+	 * registry owner. Pass `{}` for content docs and consume-only participants.
+	 * When the registry is empty, inbound `dispatch_inbound` frames always reply
+	 * with `ActionNotFound`.
 	 */
 	actions: TActions;
 };

@@ -1,8 +1,7 @@
 /**
  * Minimal fixture: one mount with inline `defineQuery` / `defineMutation`
  * nodes grouped under `actions:`. No sqlite or encryption, no real WebSocket:
- * a hand-stubbed `collaboration` matches the daemon's structural contract so
- * mount startup accepts it.
+ * a hand-stubbed `collaboration` covers the peer-only fields.
  *
  * CLI paths are `demo.counter_{get,increment,set}`.
  */
@@ -61,6 +60,7 @@ const collaboration = {
 
 export const demoRuntime = {
 	workspaceId: ydoc.guid,
+	actions,
 	collaboration,
 	async [Symbol.asyncDispose]() {
 		ydoc.destroy();

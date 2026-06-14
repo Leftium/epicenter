@@ -54,7 +54,13 @@ export async function executeRun(
 	if (peer === undefined) {
 		return runLocal(mountRuntime, actionPath, localPath, actionInput);
 	}
-	return runOnPeer(mountRuntime, localPath, actionInput, peer);
+	const collaboration = mountRuntime.runtime.collaboration;
+	if (!collaboration) {
+		return RunError.UsageError({
+			message: `Mount "${mount}" does not expose collaboration, so "${actionPath}" cannot run on peer "${peer.to}".`,
+		});
+	}
+	return runOnPeer(collaboration, localPath, actionInput, peer);
 }
 
 /** Local run: this daemon's registry is the authority for action existence. */
@@ -64,7 +70,7 @@ async function runLocal(
 	localPath: string,
 	actionInput: unknown,
 ): Promise<Result<unknown, RunError>> {
-	const action = mountRuntime.runtime.collaboration.actions[localPath];
+	const action = mountRuntime.runtime.actions[localPath];
 	if (!action) {
 		const descendants = daemonActionSuggestionLines(mountRuntime, localPath);
 		if (descendants.length > 0) {
@@ -94,7 +100,7 @@ async function runLocal(
 
 /** Peer run: the recipient decides action existence, the relay reachability. */
 async function runOnPeer(
-	mountRuntime: DaemonServedMount,
+	collaboration: NonNullable<DaemonServedMount['runtime']['collaboration']>,
 	localPath: string,
 	actionInput: unknown,
 	{ to, waitMs }: NonNullable<RunRequest['peer']>,
@@ -106,9 +112,7 @@ async function runOnPeer(
 		});
 	}
 
-	const { runtime } = mountRuntime;
-
-	const result = await runtime.collaboration.dispatch({
+	const result = await collaboration.dispatch({
 		to,
 		action: localPath,
 		input: actionInput,
@@ -116,7 +120,7 @@ async function runOnPeer(
 	});
 
 	if (result.error !== null) {
-		const syncStatus = toPeerSyncStatus(runtime.collaboration.status);
+		const syncStatus = toPeerSyncStatus(collaboration.status);
 		switch (result.error.name) {
 			case 'RecipientOffline':
 				return RunError.PeerNotFound({
@@ -166,7 +170,7 @@ function daemonActionSuggestionLines(
 	mountRuntime: DaemonServedMount,
 	prefix: string,
 ): string[] {
-	return Object.entries(mountRuntime.runtime.collaboration.actions)
+	return Object.entries(mountRuntime.runtime.actions)
 		.filter(([path]) => !prefix || path.startsWith(prefix))
 		.map(
 			([path, action]) =>

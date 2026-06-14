@@ -8,7 +8,7 @@ Each verb is a one-line shell shortcut for one workspace primitive:
                  +------------+---------------------------------------------+
                  | Verb       | Workspace primitive                         |
                  +------------+---------------------------------------------+
-   Enumerate     | list       | Object.entries(collaboration.actions)       |
+   Enumerate     | list       | Object.entries(runtime.actions)             |
    Invoke        | run        | local daemon invoke                         |
    Dispatch      | run --peer | relay dispatch to a live peer               |
    Presence      | peers      | collaboration.devices.list()                |
@@ -114,18 +114,14 @@ import { defineMount } from "@epicenter/workspace/daemon";
 export default [
   defineMount({
     name: "notes",
+    kind: "local",
     async open({
-      keyring,
-      openWebSocket,
       epicenterRoot,
       mount,
-      ownerId,
-      deviceId,
-      yDocClientId,
     }) {
       // Open the long-lived local runtime.
       // `mount` is the canonical mount name carried on the Mount object.
-      // Return { collaboration, [Symbol.asyncDispose] }.
+      // Return { actions, [Symbol.asyncDispose] }.
     },
   }),
 ];

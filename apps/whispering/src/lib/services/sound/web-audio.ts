@@ -2,9 +2,7 @@ import { Ok, tryAsync } from 'wellcrafted/result';
 import type { WhisperingSoundNames } from '$lib/constants/sounds';
 import { type PlaySoundService, SoundError } from './types';
 
-type SoundSources = Record<WhisperingSoundNames, string>;
-
-async function playSoundSource(soundSource: string) {
+async function playSoundUrl(soundUrl: string) {
 	const context = new AudioContext();
 	try {
 		// A fresh context can start suspended under the browser autoplay policy
@@ -14,7 +12,7 @@ async function playSoundSource(soundSource: string) {
 			await context.resume();
 		}
 
-		const response = await fetch(soundSource);
+		const response = await fetch(soundUrl);
 		if (!response.ok) {
 			throw new Error(`Failed to fetch sound: ${response.statusText}`);
 		}
@@ -22,9 +20,9 @@ async function playSoundSource(soundSource: string) {
 			await response.arrayBuffer(),
 		);
 
-		const source = context.createBufferSource();
-		source.buffer = audioBuffer;
-		source.connect(context.destination);
+		const bufferSource = context.createBufferSource();
+		bufferSource.buffer = audioBuffer;
+		bufferSource.connect(context.destination);
 
 		await new Promise<void>((resolve) => {
 			// Close once the clip ends, but bound the wait: onended is not
@@ -32,11 +30,11 @@ async function playSoundSource(soundSource: string) {
 			// must always close the context so the app never lingers as the OS
 			// media target.
 			const fallback = setTimeout(resolve, audioBuffer.duration * 1000 + 250);
-			source.onended = () => {
+			bufferSource.onended = () => {
 				clearTimeout(fallback);
 				resolve();
 			};
-			source.start();
+			bufferSource.start();
 		});
 	} finally {
 		try {
@@ -53,7 +51,7 @@ export function createWebAudioPlaySoundService({
 	soundSources,
 }: {
 	shouldPlay?: () => boolean;
-	soundSources: SoundSources;
+	soundSources: Record<WhisperingSoundNames, string>;
 }): PlaySoundService {
 	return {
 		playSound: async (soundName) => {
@@ -62,7 +60,7 @@ export function createWebAudioPlaySoundService({
 			}
 
 			return tryAsync({
-				try: () => playSoundSource(soundSources[soundName]),
+				try: () => playSoundUrl(soundSources[soundName]),
 				catch: (error) => SoundError.Play({ cause: error }),
 			});
 		},

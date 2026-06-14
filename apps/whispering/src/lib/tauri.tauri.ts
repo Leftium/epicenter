@@ -349,6 +349,14 @@ const globalShortcuts = {
 		commands.setKeyboardShortcuts(bindings),
 
 	/**
+	 * Start the rdev listener (idempotent). The caller gates this on "global
+	 * shortcuts are allowed": on macOS once Accessibility is granted, on other
+	 * desktops at launch. Returns the outcome so the caller can tell the user
+	 * when shortcuts are unavailable (Wayland) instead of failing silently.
+	 */
+	start: () => commands.startKeyboardListener(),
+
+	/**
 	 * Subscribe to the rdev trigger event and dispatch each into the command
 	 * layer, filtered by the command's `on` array. Returns the unlisten fn. The
 	 * `on` filter is the same gate the old plugin registrar applied; keeping it

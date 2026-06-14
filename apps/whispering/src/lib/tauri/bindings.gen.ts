@@ -170,6 +170,14 @@ export const commands = {
 	 */
 	setKeyboardCapturing: (capturing: boolean) =>
 		__TAURI_INVOKE<void>('set_keyboard_capturing', { capturing }),
+	/**
+	 *  Start the rdev listener if it is not already running, returning whether it
+	 *  started (or why not). The FE calls this once it knows global shortcuts are
+	 *  allowed: on macOS after Accessibility is granted, on other desktops at
+	 *  launch. Idempotent, so re-checks on focus are safe.
+	 */
+	startKeyboardListener: () =>
+		__TAURI_INVOKE<ListenerStart>('start_keyboard_listener'),
 };
 
 /** Events */
@@ -310,6 +318,18 @@ export type KeyBinding = {
 };
 
 /**
+ *  Outcome of a `start` request, so the FE can tell the user when global
+ *  shortcuts are unavailable instead of relying on a Rust log nobody sees.
+ */
+export type ListenerStart =
+	/**  A listener thread was spawned. */
+	| 'started'
+	/**  A listener thread is already running; this call was a no-op. */
+	| 'alreadyRunning'
+	/**  Linux Wayland: rdev's tap never receives events, so nothing was spawned. */
+	| 'waylandUnsupported';
+
+/**
  *  Snapshot of everything observable about the resident model. Every event
  *  carries a full snapshot rather than a delta because `AppHandle::emit`
  *  does not replay to future windows: a window opened mid-load reads the
@@ -426,8 +446,9 @@ export type ShortcutCaptureEvent = {
  *  the callback. Rust stays command-agnostic: it knows the id and the edge, not
  *  which states a given command cares about.
  *
- *  A `tauri_specta::Event`, so the listener emits it with `trigger.emit(app)`
- *  and the FE listens through the generated `events.shortcutTriggerEvent`.
+ *  A `tauri_specta::Event`, so the listener emits it with
+ *  `trigger.emit_to(app, MAIN_WINDOW)` (targeting the main webview, not the
+ *  overlay) and the FE listens through the generated `events.shortcutTriggerEvent`.
  */
 export type ShortcutTriggerEvent = {
 	commandId: string;

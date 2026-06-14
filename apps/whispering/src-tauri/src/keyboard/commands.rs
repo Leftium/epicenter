@@ -2,7 +2,17 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use super::keys::KeyBinding;
-use super::KeyboardListener;
+use super::{KeyboardListener, ListenerStart};
+
+/// Start the rdev listener if it is not already running, returning whether it
+/// started (or why not). The FE calls this once it knows global shortcuts are
+/// allowed: on macOS after Accessibility is granted, on other desktops at
+/// launch. Idempotent, so re-checks on focus are safe.
+#[tauri::command]
+#[specta::specta]
+pub fn start_keyboard_listener(listener: State<'_, KeyboardListener>) -> ListenerStart {
+    listener.start()
+}
 
 /// One command's binding, as sent from the FE registrar. `command_id` is the
 /// id the trigger event is emitted under; the FE filters by that command's `on`

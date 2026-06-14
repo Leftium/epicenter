@@ -61,21 +61,24 @@ jobs:
             os: 'macos'
             tauriArgs: '--target aarch64-apple-darwin'
             rustTargets: 'aarch64-apple-darwin'
-            rustCacheWorkspaces: './apps/whispering/src-tauri -> target'
+
+          # macOS Intel-based
+          - platform: 'blacksmith-6vcpu-macos-15'
+            os: 'macos'
+            tauriArgs: '--target x86_64-apple-darwin'
+            rustTargets: 'x86_64-apple-darwin'
 
           # Linux (Ubuntu)
           - platform: 'ubuntu-24.04'
             os: 'linux'
             tauriArgs: ''  # No specific target needed for Linux
             rustTargets: ''
-            rustCacheWorkspaces: './apps/whispering/src-tauri -> target'
 
           # Windows
           - platform: 'windows-latest'
             os: 'windows'
             tauriArgs: ''  # No specific target needed for Windows
             rustTargets: ''
-            rustCacheWorkspaces: '. -> target'
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -169,7 +172,8 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           # Point to the Rust project directory
-          workspaces: ${{ matrix.rustCacheWorkspaces }}
+          workspaces: './apps/whispering/src-tauri -> target'
+          # Windows redirects CARGO_TARGET_DIR to a short drive-root path outside this workspace.
           cache-targets: ${{ matrix.os != 'windows' }}
 
       # Install all JavaScript dependencies

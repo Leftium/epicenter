@@ -53,21 +53,24 @@ jobs:
             tauriArgs: '--target aarch64-apple-darwin'
             artifactSuffix: 'macos-arm64'
             rustTargets: 'aarch64-apple-darwin'
-            rustCacheWorkspaces: './apps/whispering/src-tauri -> target'
+
+          - platform: 'blacksmith-6vcpu-macos-15'
+            os: 'macos'
+            tauriArgs: '--target x86_64-apple-darwin'
+            artifactSuffix: 'macos-intel'
+            rustTargets: 'x86_64-apple-darwin'
 
           - platform: 'ubuntu-24.04'
             os: 'linux'
             tauriArgs: ''
             artifactSuffix: 'linux'
             rustTargets: ''
-            rustCacheWorkspaces: './apps/whispering/src-tauri -> target'
 
           - platform: 'windows-latest'
             os: 'windows'
             tauriArgs: ''
             artifactSuffix: 'windows'
             rustTargets: ''
-            rustCacheWorkspaces: '. -> target'
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -137,7 +140,8 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: ${{ matrix.rustCacheWorkspaces }}
+          workspaces: './apps/whispering/src-tauri -> target'
+          # Windows redirects CARGO_TARGET_DIR to a short drive-root path outside this workspace.
           cache-targets: ${{ matrix.os != 'windows' }}
 
       - name: install frontend dependencies

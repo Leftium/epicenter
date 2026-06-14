@@ -122,7 +122,7 @@ export function resetLocalShortcutsToDefaultIfDuplicates(): boolean {
 						'Duplicate local shortcuts detected. All local shortcuts have been reset to defaults.',
 					action: {
 						label: 'Configure shortcuts',
-						onClick: () => goto('/settings/shortcuts/local'),
+						onClick: () => goto('/settings/shortcuts'),
 					},
 				});
 
@@ -155,7 +155,7 @@ export function resetGlobalShortcutsToDefaultIfDuplicates(): boolean {
 					'Duplicate global shortcuts detected. All global shortcuts have been reset to defaults.',
 				action: {
 					label: 'Configure shortcuts',
-					onClick: () => goto('/settings/shortcuts/global'),
+					onClick: () => goto('/settings/shortcuts'),
 				},
 			});
 

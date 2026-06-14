@@ -395,7 +395,7 @@
 				{' '}
 				<Link
 					tooltip="Go to local shortcut in settings"
-					href="/settings/shortcuts/local"
+					href="/settings/shortcuts"
 				>
 					<Kbd.Root
 						>{getShortcutDisplayLabel(
@@ -412,7 +412,7 @@
 					{' '}
 					<Link
 						tooltip="Go to global shortcut in settings"
-						href="/settings/shortcuts/global"
+						href="/settings/shortcuts"
 					>
 						<Kbd.Root>{globalToggleLabel}</Kbd.Root>
 					</Link>
@@ -426,7 +426,7 @@
 				{' '}
 				<Link
 					tooltip="Go to local shortcut in settings"
-					href="/settings/shortcuts/local"
+					href="/settings/shortcuts"
 				>
 					<Kbd.Root
 						>{getShortcutDisplayLabel(
@@ -447,7 +447,7 @@
 					{' '}
 					<Link
 						tooltip="Go to global shortcut in settings"
-						href="/settings/shortcuts/global"
+						href="/settings/shortcuts"
 					>
 						<Kbd.Root>{globalToggleLabel}</Kbd.Root>
 					</Link>

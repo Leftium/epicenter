@@ -15,7 +15,7 @@
 		{ title: 'Sound', href: '/settings/sound' },
 		{
 			title: 'Shortcuts',
-			href: '/settings/shortcuts/local',
+			href: '/settings/shortcuts',
 			activePathPrefix: '/settings/shortcuts',
 		},
 		{ title: 'Privacy & Analytics', href: '/settings/analytics' },

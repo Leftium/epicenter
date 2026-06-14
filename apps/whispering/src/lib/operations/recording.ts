@@ -93,6 +93,7 @@ export async function stopManualRecording() {
 	const { data: source, error } = await manualRecorder.stopRecording();
 
 	if (error) {
+		void recordingMedia.resume();
 		loading.reject({ cause: error });
 		return;
 	}
@@ -238,6 +239,7 @@ export async function stopVadRecording() {
 	});
 	const { error } = await vadRecorder.stopActiveListening();
 	if (error) {
+		void recordingMedia.resume();
 		loading.reject({ cause: error });
 		return;
 	}

@@ -138,14 +138,51 @@ cannot). This is a durable-format change, so it is a stop-and-decide:
   (same class of limitation the plugin has). Document the gap; do not pretend
   parity. Trigger: Wayland becomes a supported target.
 
+## Wave 1 Lock (signed off 2026-06-13)
+
+The spec choices are confirmed, plus one decision the prose left open: **a desktop
+binding matches in physical-key space, not character space.**
+
+rdev delivers both a physical `Key` (US-QWERTY position, modifier-independent) and
+a layout-dependent `name: Option<String>` (the produced character). The global
+desktop path binds on the **physical `Key`**. Consequences:
+
+- The macOS Option dead-key problem evaporates for the global path: rdev reports
+  `Key::KeyA` whether or not Option is held, so there is no `å` glyph to normalize.
+  This **deletes** the Option-normalization family for the global path rather than
+  porting it to Rust (it does not "move to Rust" as the original cross-cutting note
+  assumed; see below).
+- Refusal (the asymmetric cost): a non-US-layout user's global hotkey is labeled by
+  US-QWERTY position (their physical `A` on AZERTY reads as `Q`). Accepted: a global
+  hold-to-talk is a physical key you hold, not a mnemonic. The browser/local path
+  keeps `e.key` character matching and stays layout-aware and unchanged.
+
+Locked key model (mirrors `handy_keys`):
+
+```
+KeyBinding {
+  modifiers: bitflags { Ctrl, Alt, Shift, Meta, Fn },   // Fn is the new capability
+  keys:      Set<Key>,                                    // physical rdev keys; may be empty
+}
+```
+
+- Modifier-only = empty `keys` + non-empty `modifiers`. Single-key push-to-talk =
+  empty `modifiers` + one key. Fn = a modifier bit. The plugin could express none.
+- Matcher: track the held set from rdev down/up events; **Pressed** on the
+  transition into "fully satisfied", **Released** when any required key drops.
+- Left/right modifiers collapse (ControlLeft/Right -> Ctrl, etc.). Wayland gap is
+  documented, not closed.
+
 ## Cross-cutting notes
 
 - macOS Option-key normalization currently lives in `local-shortcut-manager`
-  (Option+A maps to `a`, not the dead-key glyph). With rdev, the desktop path gets
-  raw keys in Rust, so normalization for the global path moves to (or is duplicated
-  in) the Rust key model. See the prior analyses in `apps/whispering/specs/`
+  (Option+A maps to `a`, not the dead-key glyph). It stays there for the browser
+  path. The global path does **not** inherit it: by binding on rdev's physical
+  `Key` (Wave 1 Lock), the desktop path never sees the dead-key glyph, so there is
+  nothing to normalize. The prior analyses in `apps/whispering/specs/`
   (`...-alt-key-macos-option1-plan.md`, `...-macos-option-dead-keys-analysis.md`,
-  `...-keyboard-layout-code-analysis.md`) before implementing key mapping.
+  `...-keyboard-layout-code-analysis.md`) document why the browser path needs
+  normalization; physical-key matching is the reason the global path does not.
 - The recording trigger -> recording-start boundary is identical across platforms
   today (both converge at `startManualRecording`). This swap does not move that
   boundary; it only changes how the desktop trigger is detected.

@@ -6,7 +6,10 @@
 	"exports": {
 		".": "./src/index.ts"
 	},
-	"files": ["src", "!src/**/*.test.ts"],
+	"files": [
+		"src",
+		"!src/**/*.test.ts"
+	],
 	"license": "MIT",
 	"scripts": {
 		"typecheck": "tsc --noEmit",

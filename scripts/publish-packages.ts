@@ -48,7 +48,10 @@ type Package = { dir: string; name: string; version: string };
  * constants or cli is decoupled from auth. See spec 20260614T120000.
  */
 const DEFERRED = new Map<string, string>([
-	['@epicenter/cli', 'depends on @epicenter/auth -> private @epicenter/constants'],
+	[
+		'@epicenter/cli',
+		'depends on @epicenter/auth -> private @epicenter/constants',
+	],
 ]);
 
 const root = process.cwd();

@@ -181,14 +181,14 @@ async function removeQuietly(
 }
 
 /**
- * Download one file to disk through the native `download_file` command
- * (`reqwest` -> `tokio::fs` in Rust; no per-chunk IPC, follows redirects).
- * The transfer runs under `downloadId` so `cancel_download` can abort it
- * mid-flight. Writes to a sibling `.partial` first so a crash mid-download
- * never leaves a truncated file at the canonical path, then size-checks and
- * promotes it. Reports whole-file progress as 0-100.
+ * Stream one URL to `filePath` and size-check the result. `filePath` is always
+ * a caller-owned staging path, never the canonical install path, so a crash
+ * mid-download can only leave a truncated file in staging — which the caller
+ * discards. The transfer runs under `downloadId` so `cancel_download` can abort
+ * it mid-flight. Removes the file on any failure (a real error or a cancel,
+ * which surfaces as an aborted transfer). Reports whole-file progress as 0-100.
  */
-async function downloadFileTo({
+async function streamModelFile({
 	downloadId,
 	url,
 	sizeBytes,
@@ -200,11 +200,10 @@ async function downloadFileTo({
 	url: string;
 	/** Catalog size, used for progress when the response omits content-length. */
 	sizeBytes: number;
+	/** Staging path to stream into; the caller promotes it once it validates. */
 	filePath: string;
 	onProgress: (progress: number) => void;
 }): Promise<Result<void, LocalModelFolderError>> {
-	const partialPath = `${filePath}.partial`;
-
 	const onProgressChannel = new Channel<DownloadProgress>();
 	onProgressChannel.onmessage = ({ bytesReceived, totalBytes }) => {
 		// f64 fields arrive as `number | null` (specta guards non-finite floats);
@@ -220,44 +219,59 @@ async function downloadFileTo({
 	const { error: downloadError } = await commands.downloadFile(
 		downloadId,
 		url,
-		partialPath,
+		filePath,
 		onProgressChannel,
 	);
 	if (downloadError) {
 		// Covers both a real failure and a cancel (an aborted transfer surfaces
-		// as an error). Either way the partial is incomplete, so drop it; the
-		// state layer decides whether the error reaches the user.
-		await removeQuietly(partialPath);
+		// as an error). Either way the file is incomplete, so drop it; the state
+		// layer decides whether the error reaches the user.
+		await removeQuietly(filePath);
 		return LocalModelFolderError.DownloadFailed({ cause: downloadError });
 	}
 
 	// download_file streams to EOF without validating content-length, so a
 	// truncated-but-cleanly-closed response still resolves. This size re-check
-	// against the catalog size is the integrity gate before promoting the
-	// partial to its canonical path.
+	// against the catalog size is the integrity gate before the caller promotes.
 	const { data: stats, error: statError } = await tryAsync({
-		try: () => stat(partialPath),
+		try: () => stat(filePath),
 		catch: (error) => LocalModelFolderError.DownloadFailed({ cause: error }),
 	});
 	if (statError) {
-		await removeQuietly(partialPath);
+		await removeQuietly(filePath);
 		return Err(statError);
 	}
 	if (!isModelFileSizeValid(stats.size, sizeBytes)) {
-		await removeQuietly(partialPath);
+		await removeQuietly(filePath);
 		return LocalModelFolderError.DownloadIncomplete({
 			downloadedMb: Math.round(stats.size / 1_000_000),
 			expectedMb: Math.round(sizeBytes / 1_000_000),
 		});
 	}
+	return Ok(undefined);
+}
 
-	const { error: renameError } = await tryAsync({
-		try: () => rename(partialPath, filePath),
+/**
+ * Promote validated staging to its canonical path with a single rename,
+ * replacing any stale entry already there (only reached when no valid install
+ * exists). Clears staging if the rename fails. `recursive` matches the staging
+ * kind: a bare file for Whisper, a directory for multi-file engines.
+ */
+async function promoteStaging(
+	staging: string,
+	destination: string,
+	options?: { recursive?: boolean },
+): Promise<Result<void, LocalModelFolderError>> {
+	const { error } = await tryAsync({
+		try: async () => {
+			if (await exists(destination)) await remove(destination, options);
+			await rename(staging, destination);
+		},
 		catch: (error) => LocalModelFolderError.DownloadFailed({ cause: error }),
 	});
-	if (renameError) {
-		await removeQuietly(partialPath);
-		return Err(renameError);
+	if (error) {
+		await removeQuietly(staging, options);
+		return Err(error);
 	}
 	return Ok(undefined);
 }
@@ -358,10 +372,10 @@ export function createModelStorage(model: LocalModelConfig) {
 		 * to treat it as a clean stop. Defaults to never-cancelled for callers
 		 * that do not wire it.
 		 *
-		 * Multi-file engines stage the whole directory under a sibling
-		 * `.partial`, then promote it with a single rename, so an interrupted run
-		 * never leaves a half-built directory at the canonical path for the
-		 * selector to list.
+		 * Every engine stages under a sibling `.partial` (a bare file for Whisper,
+		 * a directory for multi-file engines) and promotes it with a single
+		 * rename, so an interrupted run never leaves a partial install at the
+		 * canonical path for the selector to list.
 		 */
 		async download({
 			downloadId,
@@ -392,21 +406,22 @@ export function createModelStorage(model: LocalModelConfig) {
 				});
 			}
 
+			const staging = `${destination}.partial`;
+
 			switch (model.engine) {
 				case 'whispercpp': {
-					const { error } = await downloadFileTo({
+					const { error } = await streamModelFile({
 						downloadId,
 						url: model.file.url,
 						sizeBytes: model.sizeBytes,
-						filePath: destination,
+						filePath: staging,
 						onProgress,
 					});
 					if (error) return Err(error);
-					return Ok(undefined);
+					return promoteStaging(staging, destination);
 				}
 				case 'parakeet':
 				case 'moonshine': {
-					const staging = `${destination}.partial`;
 					const { error: stagingError } = await tryAsync({
 						try: async () => {
 							// Clear any leftover staging from an interrupted run, then
@@ -441,7 +456,7 @@ export function createModelStorage(model: LocalModelConfig) {
 							await removeQuietly(staging, { recursive: true });
 							return Err(joinError);
 						}
-						const { error } = await downloadFileTo({
+						const { error } = await streamModelFile({
 							downloadId,
 							url: file.url,
 							sizeBytes: file.sizeBytes,
@@ -463,23 +478,7 @@ export function createModelStorage(model: LocalModelConfig) {
 						completedBytes += file.sizeBytes;
 					}
 
-					// Promote the staged directory atomically: replace any stale
-					// canonical directory, then rename staging into place.
-					const { error: promoteError } = await tryAsync({
-						try: async () => {
-							if (await exists(destination)) {
-								await remove(destination, { recursive: true });
-							}
-							await rename(staging, destination);
-						},
-						catch: (error) =>
-							LocalModelFolderError.DownloadFailed({ cause: error }),
-					});
-					if (promoteError) {
-						await removeQuietly(staging, { recursive: true });
-						return Err(promoteError);
-					}
-					return Ok(undefined);
+					return promoteStaging(staging, destination, { recursive: true });
 				}
 			}
 		},

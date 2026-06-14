@@ -1,6 +1,6 @@
 ---
 name: writing-voice
-description: 'Voice/tone rules for prose, UI text, tooltips, error messages. Use when: "fix the tone", "rewrite this", "sounds like AI", "sounds corporate", or writing user-facing text and docs.'
+description: 'Voice, tone, and punctuation rules for prose, UI text, tooltips, error messages, comments, JSDoc, markdown, commit messages, and docs. Use when: "fix the tone", "rewrite this", "sounds like AI", "sounds corporate", or deciding whether punctuation earns its emphasis.'
 metadata:
   author: epicenter
   version: '1.0'
@@ -20,6 +20,7 @@ Use this pattern when you need to:
 
 - Write user-facing text like UI copy, tooltips, error messages, or prose.
 - Rewrite text that sounds corporate, stilted, or AI-generated.
+- Decide punctuation style in prose, comments, JSDoc, markdown, or commit messages.
 - Explain technical concepts with concrete mechanisms instead of abstract claims.
 - Match the user's tone and pacing in responses.
 - Draft product/open-source writing with honest trade-offs and specifics.
@@ -51,15 +52,19 @@ Patterns that scream "AI wrote this":
 
 ## Punctuation
 
-No em dashes. No en dashes. This is a project-wide rule from `AGENTS.md` and it applies to prose, UI text, comments, error strings, and commit messages. If you reach for one, you are reaching for the wrong tool. Pick from this list instead.
+Punctuation should clarify the sentence, not decorate it. The house default is still to avoid em dash characters (`U+2014`), and `AGENTS.md` bans en dash characters (`U+2013`). If you reach for an em dash, prove that it earns the extra emphasis.
 
-| Prefer        | When                                                           |
-| ------------- | -------------------------------------------------------------- |
-| Period (.)    | Default choice. Two sentences are often clearer than one.      |
-| Colon (:)     | Introducing explanation: "Here's the thing: it doesn't work"   |
-| Semicolon (;) | Related independent clauses: "The code works; the tests pass"  |
-| Parens ( )    | Aside that the sentence could survive without                  |
-| Comma (,)     | Short qualifier inside a sentence                              |
+Prefer these first:
+
+| Prefer        | When                                                          |
+| ------------- | ------------------------------------------------------------- |
+| Period (.)    | Default choice. Two sentences are often clearer than one.     |
+| Colon (:)     | Introducing explanation: "Here's the thing: it doesn't work"  |
+| Semicolon (;) | Related independent clauses: "The code works; tests pass"     |
+| Parens ( )    | Aside that the sentence could survive without                 |
+| Comma (,)     | Short qualifier inside a sentence                             |
+
+An em dash earns itself only when it marks a real appositive, interruption, or parenthetical aside with more emphasis than commas or parentheses would carry. Do not use it as a fancy comma, a vague pause, or glue between two independent thoughts. In UI strings, tooltips, error messages, headings, docs tables, commit messages, comments, and JSDoc, default to a colon, period, comma, semicolon, or parentheses unless the dash is deliberately part of the voice.
 
 When in doubt, use a period. Two clear sentences beat one clever one.
 

@@ -19,7 +19,6 @@
 		open = $bindable(false),
 		title,
 		placeholder = 'Press a key combination',
-		autoFocus = true,
 		label,
 		isListening,
 		onStart,
@@ -37,7 +36,6 @@
 		open?: boolean;
 		title: string;
 		placeholder?: string;
-		autoFocus?: boolean;
 		/** Display label of the current binding, or null when unset. */
 		label: string | null;
 		isListening: boolean;
@@ -99,7 +97,7 @@
 				onStop();
 				isManualMode = false;
 			}
-			if (next && autoFocus && !isManualMode) {
+			if (next && !isManualMode) {
 				onStart();
 			}
 		}}

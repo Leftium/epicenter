@@ -19,12 +19,10 @@
 	const {
 		command,
 		placeholder,
-		autoFocus = true,
 		pressedKeys,
 	}: {
 		command: Command;
 		placeholder?: string;
-		autoFocus?: boolean;
 		pressedKeys: PressedKeys;
 	} = $props();
 
@@ -91,7 +89,6 @@
 <RecorderShell
 	title={command.title}
 	{placeholder}
-	{autoFocus}
 	{label}
 	isListening={keyRecorder.isListening}
 	onStart={() => keyRecorder.start()}

@@ -19,12 +19,10 @@
 	const {
 		command,
 		placeholder = 'Press a key combination',
-		autoFocus = true,
 		tauri,
 	}: {
 		command: Command;
 		placeholder?: string;
-		autoFocus?: boolean;
 		tauri: Tauri;
 	} = $props();
 
@@ -119,7 +117,6 @@
 	bind:open
 	title={command.title}
 	{placeholder}
-	{autoFocus}
 	{label}
 	{isListening}
 	onStart={() => void startCapture()}

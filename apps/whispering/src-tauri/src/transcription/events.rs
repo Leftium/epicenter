@@ -25,9 +25,6 @@ pub enum ModelStatus {
     /// No model resident and none loading. Initial state, and reached after
     /// `Unloaded`.
     Idle,
-    /// A different model is selected, but the manager is still draining the
-    /// previous resident model before the new model can start loading.
-    Switching,
     /// `with_engine` is currently inside the `load(&model_path)` call.
     Loading,
     /// A model is resident and not currently in use.
@@ -149,14 +146,6 @@ mod tests {
                 "kind": "idle",
                 "idleSecs": 30
             })
-        );
-    }
-
-    #[test]
-    fn switching_status_has_a_stable_wire_tag() {
-        assert_eq!(
-            serde_json::to_value(ModelStatus::Switching).unwrap(),
-            json!({ "kind": "switching" })
         );
     }
 }

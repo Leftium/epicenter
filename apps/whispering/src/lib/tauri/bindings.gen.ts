@@ -361,11 +361,6 @@ export type ModelStatus =
 	 *  `Unloaded`.
 	 */
 	| { kind: 'idle' }
-	/**
-	 *  A different model is selected, but the manager is still draining the
-	 *  previous resident model before the new model can start loading.
-	 */
-	| { kind: 'switching' }
 	/**  `with_engine` is currently inside the `load(&model_path)` call. */
 	| { kind: 'loading' }
 	/**  A model is resident and not currently in use. */

@@ -99,7 +99,6 @@ type _ModelStatusShape = Expect<
 	Equal<
 		ModelStatus,
 		| { kind: 'idle' }
-		| { kind: 'switching' }
 		| { kind: 'loading' }
 		| { kind: 'ready' }
 		| { kind: 'inferring' }

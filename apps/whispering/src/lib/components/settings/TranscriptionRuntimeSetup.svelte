@@ -125,7 +125,13 @@
 				<Select.Content>
 					{#each modelItems as item}
 						<Select.Item value={item.value} label={item.label}>
-							{@render renderModelOption({ item })}
+							<div class="flex flex-col gap-1 py-1">
+								<div class="font-medium">{item.name}</div>
+								<div class="text-sm text-muted-foreground">
+									{item.description}
+								</div>
+								<Badge variant="outline" class="text-xs">{item.cost}</Badge>
+							</div>
 						</Select.Item>
 					{/each}
 				</Select.Content>
@@ -486,19 +492,3 @@
 		</Field.Field>
 	{/if}
 </Field.Group>
-
-{#snippet renderModelOption({
-	item,
-}: {
-	item: {
-		name: string;
-		description: string;
-		cost: string;
-	};
-})}
-	<div class="flex flex-col gap-1 py-1">
-		<div class="font-medium">{item.name}</div>
-		<div class="text-sm text-muted-foreground">{item.description}</div>
-		<Badge variant="outline" class="text-xs">{item.cost}</Badge>
-	</div>
-{/snippet}

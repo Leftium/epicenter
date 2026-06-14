@@ -35,7 +35,6 @@ function createLocalModel() {
 		/** True while the model manager cannot start another local operation. */
 		get isBusy(): boolean {
 			return (
-				state.status.kind === 'switching' ||
 				state.status.kind === 'loading' ||
 				state.status.kind === 'inferring'
 			);

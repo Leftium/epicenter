@@ -81,9 +81,7 @@ describe('loadEpicenterConfig', () => {
 	});
 
 	test('rejects a Mount[] containing a non-Mount value', async () => {
-		writeConfig(
-			"export default [{ name: 'demo', open() {} }, { open: 1 }];\n",
-		);
+		writeConfig("export default [{ name: 'demo', open() {} }, { open: 1 }];\n");
 
 		const { error } = await loadEpicenterConfig(epicenterRoot);
 		expect(error?.name).toBe('EpicenterConfigInvalid');

@@ -92,7 +92,7 @@ export type { WorkspaceAuthClient } from './workspace-apps/auth-client.js';
 export { WorkspaceAppError } from './workspace-apps/errors.js';
 export {
 	type InactiveMount,
-	type OpenedEpicenterRoot,
 	type OpenEpicenterRootOptions,
+	type OpenedEpicenterRoot,
 	openEpicenterRoot,
 } from './workspace-apps/open-epicenter-root.js';

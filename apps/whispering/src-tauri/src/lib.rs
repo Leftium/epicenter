@@ -26,6 +26,12 @@ use command::open_accessibility_settings;
 pub mod markdown;
 use markdown::write_markdown_files;
 
+// Desktop global keyboard trigger backend (rdev listener + binding matcher).
+// Built in isolation in Wave 2; the FE registrar swap and listener start-up
+// land in Wave 3. Desktop-only because rdev is a desktop-only dependency.
+#[cfg(desktop)]
+pub mod keyboard;
+
 // The recording overlay is a non-activating NSPanel on macOS only; other
 // platforms create the overlay window from the frontend.
 #[cfg(target_os = "macos")]

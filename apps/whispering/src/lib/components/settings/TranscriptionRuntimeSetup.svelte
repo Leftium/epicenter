@@ -35,11 +35,14 @@
 		id = 'selected-transcription-service',
 		label = 'Transcription Service',
 		description,
+		showAdvanced = true,
 		class: className,
 	}: {
 		id?: string;
 		label?: string;
 		description?: string | Snippet;
+		/** When false, hide the advanced fields (unload policy, language, prompt). */
+		showAdvanced?: boolean;
 		class?: string;
 	} = $props();
 
@@ -394,7 +397,7 @@
 		</div>
 	{/if}
 
-	{#if !isSelectedServiceUnavailable}
+	{#if showAdvanced && !isSelectedServiceUnavailable}
 		{#if isLocalEngine}
 			<Field.Field>
 				<Field.Label for="local-model-unload-policy">

@@ -102,7 +102,3 @@ export function attachMountInfrastructure<TActions extends ActionRegistry>(
 		},
 	};
 }
-
-export type MountInfrastructure<TActions extends ActionRegistry> = ReturnType<
-	typeof attachMountInfrastructure<TActions>
->;

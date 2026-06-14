@@ -19,7 +19,6 @@ export { PeerSnapshot, RunRequest } from './daemon/app.js';
 export {
 	type AttachMountInfrastructureOptions,
 	attachMountInfrastructure,
-	type MountInfrastructure,
 } from './daemon/attach-mount-infrastructure.js';
 export {
 	type DaemonClient,

@@ -1,7 +1,6 @@
 export {
 	type AttachMountInfrastructureOptions,
 	attachMountInfrastructure,
-	type MountInfrastructure,
 } from './attach-mount-infrastructure.js';
 export {
 	defineMount,

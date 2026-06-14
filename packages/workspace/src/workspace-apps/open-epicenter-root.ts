@@ -71,8 +71,8 @@ export type OpenEpicenterRootOptions = {
 };
 
 type OpenOutcome =
-	| { kind: 'started'; mount: StartedMount }
-	| { kind: 'inactive'; mount: InactiveMount }
+	| { kind: 'started'; entry: StartedMount }
+	| { kind: 'inactive'; entry: InactiveMount }
 	| { kind: 'failed'; error: WorkspaceAppError };
 
 /**
@@ -137,9 +137,9 @@ export async function openEpicenterRoot(
 		if (outcome.kind === 'failed') {
 			firstError ??= outcome.error;
 		} else if (outcome.kind === 'inactive') {
-			inactive.push(outcome.mount);
+			inactive.push(outcome.entry);
 		} else {
-			started.push(outcome.mount);
+			started.push(outcome.entry);
 		}
 	}
 
@@ -166,10 +166,10 @@ async function openOneMount({
 		if (isInactive(result)) {
 			return {
 				kind: 'inactive',
-				mount: { mount: mount.name, reason: result.reason },
+				entry: { mount: mount.name, reason: result.reason },
 			};
 		}
-		return { kind: 'started', mount: { mount: mount.name, runtime: result } };
+		return { kind: 'started', entry: { mount: mount.name, runtime: result } };
 	} catch (cause) {
 		return {
 			kind: 'failed',

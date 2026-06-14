@@ -31,7 +31,6 @@ pub use keys::{Key, KeyBinding, Modifier};
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
@@ -76,11 +75,6 @@ pub struct KeyboardListener {
     /// `rdev::listen` (which would double-fire every trigger). Reset to false
     /// when the thread exits so a later `start` can retry.
     running: Arc<AtomicBool>,
-    /// Monotonic clock base. The matcher's pending-window logic runs on logical
-    /// millisecond timestamps; `base.elapsed()` is the single source of "now"
-    /// shared by the event callback and the pending-window timers. Created once
-    /// and reused across listener restarts so timestamps never go backwards.
-    base: Instant,
 }
 
 impl KeyboardListener {
@@ -89,7 +83,6 @@ impl KeyboardListener {
             app,
             matcher: Arc::new(Mutex::new(Matcher::new())),
             running: Arc::new(AtomicBool::new(false)),
-            base: Instant::now(),
         }
     }
 
@@ -135,7 +128,6 @@ impl KeyboardListener {
         let app = self.app.clone();
         let matcher = self.matcher.clone();
         let running = self.running.clone();
-        let base = self.base;
         std::thread::Builder::new()
             .name("rdev-keyboard-listener".into())
             .spawn(move || {
@@ -155,15 +147,14 @@ impl KeyboardListener {
                     let Some(input) = rdev_map::classify(key) else {
                         return;
                     };
-                    let now = base.elapsed().as_millis() as u64;
 
                     // Hold the lock only to resolve the event; emit after dropping
                     // it so a subscriber callback can never deadlock the listener.
-                    let outcome = {
+                    let triggers = {
                         let Ok(mut matcher) = matcher.lock() else {
                             return;
                         };
-                        let outcome = matcher.on_event(now, edge, input);
+                        let triggers = matcher.on_event(edge, input);
                         // In capture mode the recorder wants the live held combo,
                         // not command triggers (which `on_event` suppresses).
                         if matcher.is_capturing() {
@@ -172,39 +163,11 @@ impl KeyboardListener {
                             let _ = ShortcutCaptureEvent { binding }.emit_to(&app, MAIN_WINDOW);
                             return;
                         }
-                        outcome
+                        triggers
                     };
 
-                    for trigger in outcome.events {
+                    for trigger in triggers {
                         let _ = trigger.emit_to(&app, MAIN_WINDOW);
-                    }
-
-                    // A shorter binding entered its pending window. Schedule a
-                    // task to flush it once the window expires, in case no further
-                    // key event arrives to resolve it (the user just holds the
-                    // prefix). Runs on Tauri's async runtime (the crate idiom; see
-                    // model_manager) so the wait is a multiplexed timer, not an OS
-                    // thread parked per arm. `poll` is guarded by the deadline, so
-                    // a task that wakes after the window already resolved is a
-                    // no-op, which is also why a superseded window needs no abort.
-                    if let Some(deadline) = outcome.pending_until {
-                        let matcher = matcher.clone();
-                        let app = app.clone();
-                        tauri::async_runtime::spawn(async move {
-                            let now = base.elapsed().as_millis() as u64;
-                            tokio::time::sleep(Duration::from_millis(deadline.saturating_sub(now)))
-                                .await;
-                            // Take the lock only after the sleep; never across an await.
-                            let events = {
-                                let Ok(mut matcher) = matcher.lock() else {
-                                    return;
-                                };
-                                matcher.poll(base.elapsed().as_millis() as u64)
-                            };
-                            for ev in events {
-                                let _ = ev.emit_to(&app, MAIN_WINDOW);
-                            }
-                        });
                     }
                 });
                 if let Err(error) = result {

@@ -229,7 +229,8 @@ describe('openProject', () => {
 
 	test('adopts a populated mount folder once `.epicenter/` exists', async () => {
 		// `.epicenter/` means the namespace is established, so the folder is now
-		// Epicenter's to generate and rebuild.
+		// Epicenter's to generate and rebuild. The claim reserves declared mount
+		// folders even if a previous startup failed before projection generation.
 		mkdirSync(join(epicenterRoot, '.epicenter'));
 		mkdirSync(join(epicenterRoot, 'fuji'));
 		writeFileSync(join(epicenterRoot, 'fuji', 'note.md'), '# generated\n');

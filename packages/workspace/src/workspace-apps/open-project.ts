@@ -142,8 +142,9 @@ export async function openProject(
  * the namespace has not been established, so a non-empty `<root>/<mount>/` (a
  * direct child named after a declared mount) is the user's own data, not a
  * generated projection. Adopting it would let `markdown_rebuild` later sweep
- * those files. Once `.epicenter/` exists, the declared mount folders are
- * Epicenter's to generate and rebuild, so this guard stands down.
+ * those files. Once `.epicenter/` exists, the claim is about ownership, not
+ * proof that a projection has already been generated: declared mount folders
+ * are reserved for Epicenter to generate and rebuild, so this guard stands down.
  *
  * OS bookkeeping files (`.DS_Store`, `Thumbs.db`) do not count as content: a
  * folder a user merely browsed in Finder is not "populated by hand," and

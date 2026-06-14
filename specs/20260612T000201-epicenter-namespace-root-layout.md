@@ -452,6 +452,11 @@ ownership guard, so startup failure should release runtime resources but should
 not roll back the git boundary. This preserves the invariant that `.epicenter/`
 exists only after the root ignore has been handled.
 
+After this point, declared mount folders are reserved even if no projection was
+generated before the startup failure. The bootstrap guard protects files that
+predate the namespace claim; it does not make post-claim mount folders a safe
+place for hand-authored content.
+
 ### Mount removed from config
 
 1. `fuji()` is removed from `epicenter.config.ts`.

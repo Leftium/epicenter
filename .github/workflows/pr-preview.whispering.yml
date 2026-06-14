@@ -138,12 +138,14 @@ jobs:
 
       # whisper-rs-sys runs bindgen, which needs libclang. GitHub-hosted
       # windows-latest preinstalls LLVM; the Blacksmith Windows image does not,
-      # so install it and point bindgen at it via LIBCLANG_PATH.
+      # so install it and point bindgen at it via LIBCLANG_PATH. Pin the version
+      # so a future LLVM release cannot silently break bindgen, matching the
+      # exact-version discipline of the Vulkan SDK step above.
       - name: Install LLVM (Windows, libclang for bindgen)
         if: ${{ matrix.os == 'windows' }}
         shell: pwsh
         run: |
-          choco install llvm --no-progress -y
+          choco install llvm --version=22.1.7 --no-progress -y
           "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
 
       - name: setup bun

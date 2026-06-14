@@ -12,7 +12,9 @@
  * stand-in for a nominal type: it asserts the exact two members the daemon
  * consumes (`name: string`, `open: function`) so a malformed config fails with
  * a clear, structured error pointed at the file instead of a cryptic
- * `TypeError` deep in startup.
+ * `TypeError` deep in startup. The `kind` field is part of the startup
+ * contract because the daemon must know whether auth is required before it
+ * calls `open(ctx)`.
  *
  * Every failure is a `ProjectConfigError` variant; this function never throws.
  */
@@ -99,7 +101,7 @@ export async function loadProjectConfig(
 	return ProjectConfigError.ProjectConfigInvalid({
 		projectConfigPath,
 		detail:
-			'the default export must be a Mount[] (each entry needs a string `name` and an `open` function)',
+			'the default export must be a Mount[] (each entry needs a string `name`, `kind: "local" | "collaborative"`, and an `open` function)',
 	});
 }
 
@@ -109,6 +111,9 @@ function isMount(value: unknown): value is Mount {
 		value !== null &&
 		'name' in value &&
 		typeof (value as { name: unknown }).name === 'string' &&
+		'kind' in value &&
+		((value as { kind: unknown }).kind === 'local' ||
+			(value as { kind: unknown }).kind === 'collaborative') &&
 		'open' in value &&
 		typeof (value as { open: unknown }).open === 'function'
 	);

@@ -9,6 +9,7 @@ import { openNotes } from '../../../notes';
 
 export default defineMount({
 	name: 'notes',
+	kind: 'collaborative',
 	open: ({ ownerId, openWebSocket, onReconnectSignal }) =>
 		openNotes({
 			deviceId: 'notes-repro-peer-a',

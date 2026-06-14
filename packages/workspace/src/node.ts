@@ -29,9 +29,12 @@ export {
 	pingDaemon,
 } from './daemon/client.js';
 export {
+	type CollaborativeMount,
+	type CollaborativeMountContext,
 	defineMount,
+	type LocalMount,
+	type LocalMountContext,
 	type Mount,
-	type MountContext,
 } from './daemon/define-mount.js';
 export {
 	claimDaemonLease,

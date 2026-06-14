@@ -10,7 +10,7 @@
  * - if any sibling `open(ctx)` throws, the successfully opened runtimes are
  *   asyncDispose'd before the structured error propagates
  * - invalid mount names fail before any mount opens
- * - a signed-out auth refuses before any mount opens
+ * - collaborative mounts require auth before any mount opens
  *
  * Config-shape validation (single -> array, malformed export, syntax errors)
  * is pinned separately in `config/load-project-config.test.ts`.
@@ -22,6 +22,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { asOwnerId } from '@epicenter/identity';
+import { Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
 import type { WorkspaceAuthClient } from './auth-client.js';
@@ -54,12 +55,17 @@ function stubAuthClient(): WorkspaceAuthClient {
 	};
 }
 
+const stubLoadAuth = async () => Ok(stubAuthClient());
+
 /** A mount literal whose runtime disposes cleanly, written into a config. */
 const RUNTIME = '{ actions: {}, async [Symbol.asyncDispose]() {} }';
 
 describe('openProject', () => {
 	test('returns a structured not-found error instead of throwing', async () => {
-		const result = await openProject({ projectDir, auth: stubAuthClient() });
+		const result = await openProject({
+			projectDir,
+			loadAuth: stubLoadAuth,
+		});
 		const error = expectErr(result);
 		expect(error).toMatchObject({
 			name: 'ProjectConfigNotFound',
@@ -70,12 +76,15 @@ describe('openProject', () => {
 	test('imports the config and opens every declared mount', async () => {
 		writeConfig(
 			`export default [
-				{ name: 'alpha', open: () => (${RUNTIME}) },
-				{ name: 'beta', open: () => (${RUNTIME}) },
+				{ name: 'alpha', kind: 'collaborative', open: () => (${RUNTIME}) },
+				{ name: 'beta', kind: 'collaborative', open: () => (${RUNTIME}) },
 			];\n`,
 		);
 
-		const result = await openProject({ projectDir, auth: stubAuthClient() });
+		const result = await openProject({
+			projectDir,
+			loadAuth: stubLoadAuth,
+		});
 		const mounts = expectOk(result);
 		expect(
 			mounts
@@ -88,8 +97,34 @@ describe('openProject', () => {
 	test('opens nothing for an empty config', async () => {
 		writeConfig('export default [];\n');
 
-		const result = await openProject({ projectDir, auth: stubAuthClient() });
+		const result = await openProject({
+			projectDir,
+			loadAuth: () => {
+				throw new Error('must not load auth');
+			},
+		});
 		expect(expectOk(result)).toEqual([]);
+	});
+
+	test('opens local-only mounts without loading auth', async () => {
+		writeConfig(
+			`export default [
+				{ name: 'mirror', kind: 'local', open: () => (${RUNTIME}) },
+			];\n`,
+		);
+
+		let didLoadAuth = false;
+		const result = await openProject({
+			projectDir,
+			loadAuth: async () => {
+				didLoadAuth = true;
+				return Ok(stubAuthClient());
+			},
+		});
+
+		const mounts = expectOk(result);
+		expect(mounts.map((entry) => entry.mount)).toEqual(['mirror']);
+		expect(didLoadAuth).toBe(false);
 	});
 
 	test('disposes opened runtimes when a sibling open throws', async () => {
@@ -100,16 +135,17 @@ describe('openProject', () => {
 			export default [
 				{
 					name: 'good',
+					kind: 'local',
 					open: () => ({
 						actions: {},
 						async [Symbol.asyncDispose]() { writeFileSync(marker, 'disposed'); },
 					}),
 				},
-				{ name: 'bad', open() { throw new Error('boom'); } },
+				{ name: 'bad', kind: 'local', open() { throw new Error('boom'); } },
 			];\n`,
 		);
 
-		const result = await openProject({ projectDir, auth: stubAuthClient() });
+		const result = await openProject({ projectDir });
 		const error = expectErr(result);
 		expect(error).toMatchObject({ name: 'MountOpenFailed', mount: 'bad' });
 		expect(await Bun.file(join(projectDir, 'good.disposed')).exists()).toBe(
@@ -124,6 +160,7 @@ describe('openProject', () => {
 			export default [
 				{
 					name: '__proto__',
+					kind: 'local',
 					open: () => {
 						writeFileSync(join(import.meta.dirname, 'opened'), 'opened');
 						return ${RUNTIME};
@@ -132,7 +169,12 @@ describe('openProject', () => {
 			];\n`,
 		);
 
-		const result = await openProject({ projectDir, auth: stubAuthClient() });
+		const result = await openProject({
+			projectDir,
+			loadAuth: () => {
+				throw new Error('must not load auth');
+			},
+		});
 		expect(expectErr(result)).toMatchObject({
 			name: 'MountRejected',
 			mount: '__proto__',
@@ -141,15 +183,117 @@ describe('openProject', () => {
 		expect(await Bun.file(join(projectDir, 'opened')).exists()).toBe(false);
 	});
 
-	test('refuses startup when machine auth is signed out', async () => {
+	test('rejects invalid collaborative mount names before loading auth', async () => {
 		writeConfig(
-			`export default [{ name: 'alpha', open() { throw new Error('must not open'); } }];\n`,
+			`export default [
+				{
+					name: '__proto__',
+					kind: 'collaborative',
+					open() { throw new Error('must not open'); },
+				},
+			];\n`,
 		);
 
 		const result = await openProject({
 			projectDir,
-			auth: { state: { status: 'signed-out' } } as WorkspaceAuthClient,
+			loadAuth: () => {
+				throw new Error('must not load auth');
+			},
 		});
-		expect(expectErr(result).name).toBe('WorkspaceAuthSignedOut');
+		expect(expectErr(result)).toMatchObject({
+			name: 'MountRejected',
+			mount: '__proto__',
+			reason: 'invalid',
+		});
+	});
+
+	test('requires auth for collaborative mounts before opening any mount', async () => {
+		writeConfig(
+			`export default [{ name: 'alpha', kind: 'collaborative', open() { throw new Error('must not open'); } }];\n`,
+		);
+
+		const result = await openProject({
+			projectDir,
+			loadAuth: async () => Ok(null),
+		});
+		expect(expectErr(result)).toMatchObject({
+			name: 'ProjectAuthRequired',
+			mounts: ['alpha'],
+		});
+	});
+
+	test('requires auth when a collaborative mount has no auth loader', async () => {
+		writeConfig(
+			`export default [{ name: 'alpha', kind: 'collaborative', open() { throw new Error('must not open'); } }];\n`,
+		);
+
+		const result = await openProject({ projectDir });
+		expect(expectErr(result)).toMatchObject({
+			name: 'ProjectAuthRequired',
+			mounts: ['alpha'],
+		});
+	});
+
+	test('requires auth when a constructed auth client is signed out', async () => {
+		writeConfig(
+			`export default [{ name: 'alpha', kind: 'collaborative', open() { throw new Error('must not open'); } }];\n`,
+		);
+
+		const result = await openProject({
+			projectDir,
+			loadAuth: async () =>
+				Ok({ state: { status: 'signed-out' } } as WorkspaceAuthClient),
+		});
+		expect(expectErr(result)).toMatchObject({
+			name: 'ProjectAuthRequired',
+			mounts: ['alpha'],
+		});
+	});
+
+	test('refuses a mixed signed-out project before opening local siblings', async () => {
+		writeConfig(
+			`import { writeFileSync } from 'node:fs';
+			import { join } from 'node:path';
+			export default [
+				{
+					name: 'mirror',
+					kind: 'local',
+					open: () => {
+						writeFileSync(join(import.meta.dirname, 'opened'), 'opened');
+						return ${RUNTIME};
+					},
+				},
+				{ name: 'fuji', kind: 'collaborative', open() { throw new Error('must not open'); } },
+			];\n`,
+		);
+
+		const result = await openProject({
+			projectDir,
+			loadAuth: async () => Ok(null),
+		});
+		expect(expectErr(result)).toMatchObject({
+			name: 'ProjectAuthRequired',
+			mounts: ['fuji'],
+		});
+		expect(await Bun.file(join(projectDir, 'opened')).exists()).toBe(false);
+	});
+
+	test('opens mixed local and collaborative mounts when signed in', async () => {
+		writeConfig(
+			`export default [
+				{ name: 'mirror', kind: 'local', open: () => (${RUNTIME}) },
+				{ name: 'fuji', kind: 'collaborative', open: () => (${RUNTIME}) },
+			];\n`,
+		);
+
+		const result = await openProject({
+			projectDir,
+			loadAuth: stubLoadAuth,
+		});
+		expect(
+			expectOk(result)
+				.map((entry) => entry.mount)
+				.sort(),
+		).toEqual(['fuji', 'mirror']);
 	});
 });

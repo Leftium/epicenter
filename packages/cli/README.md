@@ -107,6 +107,7 @@ import { defineMount } from "@epicenter/workspace/daemon";
 export default [
   defineMount({
     name: "notes",
+    kind: "local",
     async open({
       projectDir,
       mount,
@@ -114,8 +115,6 @@ export default [
       // Open the long-lived local runtime.
       // `mount` is the canonical mount name carried on the Mount object.
       // Return { actions, [Symbol.asyncDispose] }.
-      // Add `collaboration` only when this mount participates in Yjs sync,
-      // presence, and peer dispatch.
     },
   }),
 ];

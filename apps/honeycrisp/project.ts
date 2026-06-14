@@ -31,6 +31,7 @@ export type HoneycrispMountOptions = {
 export function honeycrisp(opts: HoneycrispMountOptions = {}) {
 	return defineMount({
 		name: 'honeycrisp',
+		kind: 'collaborative',
 		open(ctx) {
 			const {
 				projectDir,

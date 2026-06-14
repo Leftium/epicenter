@@ -27,6 +27,7 @@ const SERVER_URL = 'https://api.epicenter.so';
 
 export default defineMount({
 	name: 'tabManager',
+	kind: 'collaborative',
 	async open({
 		projectDir,
 		yDocClientId,

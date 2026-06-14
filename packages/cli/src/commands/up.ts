@@ -32,7 +32,7 @@ import {
 	type WorkspaceAppError,
 	writeMetadata,
 } from '@epicenter/workspace/node';
-import { Ok, type Result, trySync } from 'wellcrafted/result';
+import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 import packageJson from '../../package.json' with { type: 'json' };
 import { cmd } from '../util/cmd.js';
 import { projectOption } from '../util/common-options.js';
@@ -133,12 +133,19 @@ export async function runUp(
 	stack.defer(() => lease.release());
 
 	const createAuthClient = options.createAuthClient ?? createMachineAuthClient;
-	const authResult = await createAuthClient();
-	if (authResult.error) return authResult;
-	const auth = authResult.data;
-	stack.defer(() => auth[Symbol.dispose]());
-
-	const startResult = await openProject({ projectDir, auth });
+	const startResult = await openProject({
+		projectDir,
+		loadAuth: async () => {
+			const authResult = await createAuthClient();
+			if (authResult.error) {
+				if (authResult.error.name === 'NoSavedSession') return Ok(null);
+				return Err(authResult.error);
+			}
+			const auth = authResult.data;
+			stack.defer(() => auth[Symbol.dispose]());
+			return Ok(auth);
+		},
+	});
 	if (startResult.error) return startResult;
 	const mounts = startResult.data;
 	ensureProjectGitignore(projectDir);

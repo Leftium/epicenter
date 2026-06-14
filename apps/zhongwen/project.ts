@@ -16,6 +16,7 @@ import { createZhongwen } from './zhongwen.js';
 export function zhongwen() {
 	return defineMount({
 		name: 'zhongwen',
+		kind: 'collaborative',
 		open(ctx) {
 			const workspace = createZhongwen({ keyring: ctx.keyring });
 			workspace.ydoc.clientID = ctx.yDocClientId;

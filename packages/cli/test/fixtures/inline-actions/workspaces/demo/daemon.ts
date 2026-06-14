@@ -70,5 +70,6 @@ export const demoRuntime = {
 
 export default defineMount({
 	name: 'demo',
+	kind: 'collaborative',
 	open: () => demoRuntime,
 });

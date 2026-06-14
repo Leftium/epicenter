@@ -5,10 +5,10 @@
  * They never spawn a child or call `process.exit`; each test owns a temp
  * project and temp runtime root.
  *
- * Auth is injected: every test passes a `createAuthClient` factory to
- * `runUp`. Happy paths return `STUB_AUTH`; the AuthFailed test returns a
- * factory that throws. The real `createMachineAuthClient` is not exercised
- * here, by design - it has its own unit tests in
+ * Auth is injected lazily: collaborative fixtures pass a `createAuthClient`
+ * factory to `runUp`, and local-only or config-failure paths use a factory
+ * that throws if startup reaches for auth. The real `createMachineAuthClient`
+ * is not exercised here. It has its own unit tests in
  * `@epicenter/auth/src/node/machine-auth.test.ts`.
  *
  * Key behaviors:
@@ -67,6 +67,9 @@ const STUB_AUTH = {
 } satisfies SyncAuthClient;
 
 const stubAuthFactory = async () => Ok(STUB_AUTH);
+const failIfAuthCreated = async () => {
+	throw new Error('must not create auth');
+};
 
 let originalRuntimeDir: string | undefined;
 let runtimeRoot: string;
@@ -150,6 +153,7 @@ function writeRuntimeMount({
 
 		export default {
 			name: 'demo',
+			kind: 'collaborative',
 			async open() {
 				return {
 					actions,
@@ -207,6 +211,7 @@ describe('runUp: happy path', () => {
 
 			export default {
 				name: 'mirror',
+				kind: 'local',
 				async open() {
 					return {
 						actions,
@@ -221,7 +226,7 @@ describe('runUp: happy path', () => {
 			await runUp({
 				projectDir: workDir,
 				quiet: true,
-				createAuthClient: stubAuthFactory,
+				createAuthClient: failIfAuthCreated,
 			}),
 		);
 		try {
@@ -245,7 +250,9 @@ describe('runUp: happy path', () => {
 });
 
 describe('runUp: failure cleanup', () => {
-	test('surfaces the auth error and releases the lease when createAuthClient returns Err', async () => {
+	test('requires auth and releases the lease when collaborative auth has no saved session', async () => {
+		writeRuntimeMount();
+
 		const error = expectErr(
 			await runUp({
 				projectDir: workDir,
@@ -260,8 +267,33 @@ describe('runUp: failure cleanup', () => {
 			}),
 		);
 
-		expect(error.name).toBe('NoSavedSession');
-		expect(error.message).toContain('no saved session');
+		expect(error).toMatchObject({
+			name: 'ProjectAuthRequired',
+			mounts: ['demo'],
+		});
+		const lease = expectOk(claimDaemonLease(workDir));
+		lease.release();
+	});
+
+	test('surfaces non-session auth errors and releases the lease', async () => {
+		writeRuntimeMount();
+
+		const error = expectErr(
+			await runUp({
+				projectDir: workDir,
+				quiet: true,
+				createAuthClient: async () =>
+					Err(
+						MachineAuthStorageError.PermissionsTooOpen({
+							filePath: '/tmp/fake-auth.json',
+							mode: 0o644,
+						}).error,
+					),
+			}),
+		);
+
+		expect(error.name).toBe('PermissionsTooOpen');
+		expect(error.message).toContain('too permissive');
 		const lease = expectOk(claimDaemonLease(workDir));
 		lease.release();
 	});
@@ -271,7 +303,7 @@ describe('runUp: failure cleanup', () => {
 			await runUp({
 				projectDir: workDir,
 				quiet: true,
-				createAuthClient: stubAuthFactory,
+				createAuthClient: failIfAuthCreated,
 			}),
 		);
 
@@ -294,7 +326,7 @@ describe('runUp: failure cleanup', () => {
 			await runUp({
 				projectDir: workDir,
 				quiet: true,
-				createAuthClient: stubAuthFactory,
+				createAuthClient: failIfAuthCreated,
 			}),
 		);
 
@@ -317,7 +349,7 @@ describe('runUp: failure cleanup', () => {
 			await runUp({
 				projectDir: workDir,
 				quiet: true,
-				createAuthClient: stubAuthFactory,
+				createAuthClient: failIfAuthCreated,
 			}),
 		);
 		expect(error.name).toBe('ProjectConfigImportFailed');
@@ -330,6 +362,7 @@ describe('runUp: failure cleanup', () => {
 		writeDemoMount(`
 			export default {
 				name: 'demo',
+				kind: 'local',
 				async open() {
 					throw new Error('mount failed');
 				},
@@ -341,7 +374,7 @@ describe('runUp: failure cleanup', () => {
 			await runUp({
 				projectDir: workDir,
 				quiet: true,
-				createAuthClient: stubAuthFactory,
+				createAuthClient: failIfAuthCreated,
 			}),
 		);
 
@@ -361,26 +394,12 @@ describe('runUp: failure cleanup', () => {
 			`
 				import { writeFileSync } from 'node:fs';
 
-				const collaboration = {
-					actions: {},
-					whenConnected: new Promise(() => {}),
-					status: { phase: 'connected' },
-					onStatusChange: () => () => {},
-					devices: {
-						list: () => [],
-						subscribe: () => () => {},
-					},
-					dispatch: async () => {
-						throw new Error('fixture does not dispatch');
-					},
-				};
-
 				export default {
 					name: 'good',
+					kind: 'local',
 					async open() {
 						return {
 							actions: {},
-							collaboration,
 							async [Symbol.asyncDispose]() {
 								writeFileSync(${JSON.stringify(disposeMarker)}, 'disposed');
 							},
@@ -394,6 +413,7 @@ describe('runUp: failure cleanup', () => {
 			`
 				export default {
 					name: 'bad',
+					kind: 'local',
 					async open() {
 						throw new Error('bad mount failed');
 					},
@@ -414,7 +434,7 @@ describe('runUp: failure cleanup', () => {
 			await runUp({
 				projectDir: workDir,
 				quiet: true,
-				createAuthClient: stubAuthFactory,
+				createAuthClient: failIfAuthCreated,
 			}),
 		);
 
@@ -459,7 +479,7 @@ describe('runUp: already running', () => {
 				await runUp({
 					projectDir: workDir,
 					quiet: true,
-					createAuthClient: stubAuthFactory,
+					createAuthClient: failIfAuthCreated,
 				}),
 			);
 

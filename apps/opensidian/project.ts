@@ -18,6 +18,7 @@ import { createOpensidian } from './opensidian.js';
 export function opensidian() {
 	return defineMount({
 		name: 'opensidian',
+		kind: 'collaborative',
 		open(ctx) {
 			const workspace = createOpensidian({ keyring: ctx.keyring });
 			workspace.ydoc.clientID = ctx.yDocClientId;

@@ -2,8 +2,9 @@
  * Structured errors for mount registration and startup.
  *
  * Mount-name validation surfaces `MountRejected` before any mount opens.
- * Startup wraps any throw from a mount's `open(ctx)` in `MountOpenFailed` so
- * callers can dispose siblings on failure.
+ * Collaborative auth gating names the mounts that require sign-in. Startup
+ * wraps any throw from a mount's `open(ctx)` in `MountOpenFailed` so callers
+ * can dispose siblings on failure.
  */
 
 import {
@@ -22,10 +23,16 @@ export const WorkspaceAppError = defineErrors({
 		mount,
 		reason,
 	}),
-	WorkspaceAuthSignedOut: () => ({
-		message:
-			'Cannot open mounts while machine auth is signed out. Run `epicenter auth login` first.',
-	}),
+	ProjectAuthRequired: ({ mounts }: { mounts: string[] }) => {
+		const mountList = mounts.map((mount) => `"${mount}"`).join(', ');
+		return {
+			message:
+				mounts.length === 1
+					? `Mount ${mountList} requires Epicenter auth. Run \`epicenter auth login\` first.`
+					: `Mounts ${mountList} require Epicenter auth. Run \`epicenter auth login\` first.`,
+			mounts,
+		};
+	},
 	MountOpenFailed: ({ mount, cause }: { mount: string; cause: unknown }) => ({
 		message: `Mount "${mount}" failed to open: ${extractErrorMessage(cause)}`,
 		mount,

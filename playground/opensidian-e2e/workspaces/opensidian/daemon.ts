@@ -18,7 +18,10 @@ import {
 	openCollaboration,
 	roomWsUrl,
 } from '@epicenter/workspace';
-import { defineMount, type MountContext } from '@epicenter/workspace/daemon';
+import {
+	defineMount,
+	type CollaborativeMountContext,
+} from '@epicenter/workspace/daemon';
 import { attachMarkdownMaterializer } from '@epicenter/workspace/document/materializer/markdown';
 import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import { toSlugFilename } from '@epicenter/workspace/markdown';
@@ -43,7 +46,7 @@ async function openOpensidianPlayground({
 	keyring,
 	openWebSocket,
 	onReconnectSignal,
-}: MountContext) {
+}: CollaborativeMountContext) {
 	const workspace = createOpensidian({ keyring });
 	workspace.ydoc.clientID = yDocClientId;
 	const { ydoc, tables, kv } = workspace;
@@ -173,5 +176,6 @@ export type OpensidianPlaygroundRuntime = Awaited<
 
 export default defineMount({
 	name: 'opensidian',
+	kind: 'collaborative',
 	open: openOpensidianPlayground,
 });

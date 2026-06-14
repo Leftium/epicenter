@@ -43,12 +43,16 @@ describe('loadProjectConfig', () => {
 
 	test('passes through a Mount[] default export', async () => {
 		writeConfig(
-			"export default [{ name: 'a', open() {} }, { name: 'b', open() {} }];\n",
+			"export default [{ name: 'a', kind: 'local', open() {} }, { name: 'b', kind: 'collaborative', open() {} }];\n",
 		);
 
 		const { data, error } = await loadProjectConfig(projectDir);
 		if (error !== null) throw new Error(error.message);
 		expect(data.map((mount) => mount.name)).toEqual(['a', 'b']);
+		expect(data.map((mount) => mount.kind)).toEqual([
+			'local',
+			'collaborative',
+		]);
 	});
 
 	test('passes through an empty Mount[] default export', async () => {
@@ -70,7 +74,7 @@ describe('loadProjectConfig', () => {
 	});
 
 	test('rejects a bare Mount that is not wrapped in an array', async () => {
-		writeConfig("export default { name: 'demo', open() {} };\n");
+		writeConfig("export default { name: 'demo', kind: 'local', open() {} };\n");
 
 		const { error } = await loadProjectConfig(projectDir);
 		expect(error).toMatchObject({
@@ -81,10 +85,36 @@ describe('loadProjectConfig', () => {
 	});
 
 	test('rejects a Mount[] containing a non-Mount value', async () => {
-		writeConfig("export default [{ name: 'demo', open() {} }, { open: 1 }];\n");
+		writeConfig(
+			"export default [{ name: 'demo', kind: 'local', open() {} }, { open: 1 }];\n",
+		);
 
 		const { error } = await loadProjectConfig(projectDir);
 		expect(error?.name).toBe('ProjectConfigInvalid');
+	});
+
+	test('rejects a mount missing kind', async () => {
+		writeConfig("export default [{ name: 'demo', open() {} }];\n");
+
+		const { error } = await loadProjectConfig(projectDir);
+		expect(error).toMatchObject({
+			name: 'ProjectConfigInvalid',
+			detail:
+				'the default export must be a Mount[] (each entry needs a string `name`, `kind: "local" | "collaborative"`, and an `open` function)',
+		});
+	});
+
+	test('rejects a mount with invalid kind', async () => {
+		writeConfig(
+			"export default [{ name: 'demo', kind: 'mirror', open() {} }];\n",
+		);
+
+		const { error } = await loadProjectConfig(projectDir);
+		expect(error).toMatchObject({
+			name: 'ProjectConfigInvalid',
+			detail:
+				'the default export must be a Mount[] (each entry needs a string `name`, `kind: "local" | "collaborative"`, and an `open` function)',
+		});
 	});
 
 	test('rejects a config with no default export', async () => {

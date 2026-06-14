@@ -48,6 +48,7 @@ export type FujiMountOptions = {
 export function fuji(opts: FujiMountOptions = {}) {
 	return defineMount({
 		name: 'fuji',
+		kind: 'collaborative',
 		open(ctx) {
 			const {
 				projectDir,

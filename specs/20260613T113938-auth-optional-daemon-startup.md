@@ -1,7 +1,7 @@
 # Auth-optional daemon startup
 
 **Date**: 2026-06-13
-**Status**: Draft
+**Status**: Implemented
 **Owner**: Epicenter maintainers
 **Branch**: codex/auth-optional-daemon-startup-spec
 **Builds on**: specs/20260613T100235-action-first-daemon-runtime.md
@@ -595,68 +595,68 @@ Also refuse:
 
 ### Phase 1: Mount Contract
 
-- [ ] **1.1** Replace the single `MountContext` with base and collaborative
+- [x] **1.1** Replace the single `MountContext` with base and collaborative
   contexts.
-- [ ] **1.2** Add required `kind: 'local' | 'collaborative'` to `Mount`.
-- [ ] **1.3** Make `defineMount` preserve the discriminated mount type.
-- [ ] **1.4** Add type coverage showing a local mount cannot read
+- [x] **1.2** Add required `kind: 'local' | 'collaborative'` to `Mount`.
+- [x] **1.3** Make `defineMount` preserve the discriminated mount type.
+- [x] **1.4** Add type coverage showing a local mount cannot read
   `ctx.keyring`, `ctx.ownerId`, `ctx.openWebSocket`, `ctx.fetch`,
   `ctx.onReconnectSignal`, `ctx.yDocClientId`, or `ctx.deviceId`.
-- [ ] **1.5** Update runtime config validation errors so a mount without `kind`
+- [x] **1.5** Update runtime config validation errors so a mount without `kind`
   is rejected with the new contract.
 
 ### Phase 2: Lazy Auth At OpenProject
 
-- [ ] **2.1** Change `openProject` to accept a lazy `loadAuth` callback instead
+- [x] **2.1** Change `openProject` to accept a lazy `loadAuth` callback instead
   of an eager auth client.
-- [ ] **2.2** Load config and validate mount names before calling `loadAuth`.
-- [ ] **2.3** Skip `loadAuth` entirely when every mount is local.
-- [ ] **2.4** When any mount is collaborative, call `loadAuth` once and build
+- [x] **2.2** Load config and validate mount names before calling `loadAuth`.
+- [x] **2.3** Skip `loadAuth` entirely when every mount is local.
+- [x] **2.4** When any mount is collaborative, call `loadAuth` once and build
   the collaborative context from the returned signed-in auth client.
-- [ ] **2.5** Return a structured project-auth-required error when auth is
+- [x] **2.5** Return a structured project-auth-required error when auth is
   missing or signed-out, naming every collaborative mount.
-- [ ] **2.6** Preserve the existing late-sign-out keyring guard for
+- [x] **2.6** Preserve the existing late-sign-out keyring guard for
   collaborative mounts.
 
 ### Phase 3: CLI Startup
 
-- [ ] **3.1** Move auth construction behind the lazy `loadAuth` callback passed
+- [x] **3.1** Move auth construction behind the lazy `loadAuth` callback passed
   to `openProject`.
-- [ ] **3.2** Convert `MachineAuthStorageError.NoSavedSession` to `Ok(null)`
+- [x] **3.2** Convert `MachineAuthStorageError.NoSavedSession` to `Ok(null)`
   inside the CLI callback.
-- [ ] **3.3** Preserve all other auth storage errors as real failures.
-- [ ] **3.4** Dispose the auth client only when it was actually constructed.
+- [x] **3.3** Preserve all other auth storage errors as real failures.
+- [x] **3.4** Dispose the auth client only when it was actually constructed.
 
 ### Phase 4: Migrate Mounts And Fixtures
 
-- [ ] **4.1** Mark Fuji, Honeycrisp, Opensidian, Zhongwen, Tab Manager, and the
+- [x] **4.1** Mark Fuji, Honeycrisp, Opensidian, Zhongwen, Tab Manager, and the
   cross-peer examples as `kind: 'collaborative'`.
-- [ ] **4.2** Mark local-only test fixtures as `kind: 'local'`.
-- [ ] **4.3** Update generated config examples to include `kind`.
-- [ ] **4.4** Grep for raw mount literals in tests and specs that should be
+- [x] **4.2** Mark local-only test fixtures as `kind: 'local'`.
+- [x] **4.3** Update generated config examples to include `kind`.
+- [x] **4.4** Grep for raw mount literals in tests and specs that should be
   updated or intentionally left historical.
 
 ### Phase 5: Verification
 
-- [ ] **5.1** `openProject` all-local project opens without calling
+- [x] **5.1** `openProject` all-local project opens without calling
   `loadAuth`.
-- [ ] **5.2** `runUp` all-local project opens without calling
+- [x] **5.2** `runUp` all-local project opens without calling
   `createAuthClient`; use a stub that throws if invoked.
-- [ ] **5.3** Collaborative signed-out startup returns
+- [x] **5.3** Collaborative signed-out startup returns
   `ProjectAuthRequired`, names every collaborative mount, opens no mount, and
   leaves no daemon socket or metadata.
-- [ ] **5.4** Saved-but-signed-out auth client takes the same
+- [x] **5.4** Saved-but-signed-out auth client takes the same
   `ProjectAuthRequired` path as missing auth.
-- [ ] **5.5** Mixed signed-out startup refuses the whole daemon before opening
+- [x] **5.5** Mixed signed-out startup refuses the whole daemon before opening
   the local sibling.
-- [ ] **5.6** Signed-in mixed startup opens both local and collaborative mounts.
-- [ ] **5.7** Type coverage proves a local mount cannot read `ctx.keyring`,
+- [x] **5.6** Signed-in mixed startup opens both local and collaborative mounts.
+- [x] **5.7** Type coverage proves a local mount cannot read `ctx.keyring`,
   `ctx.ownerId`, `ctx.openWebSocket`, `ctx.fetch`, `ctx.onReconnectSignal`,
   `ctx.yDocClientId`, or `ctx.deviceId`.
-- [ ] **5.8** Runtime config validation rejects mount objects with no `kind`.
-- [ ] **5.9** Run `bun run --cwd packages/workspace typecheck`.
-- [ ] **5.10** Run `bun run --cwd packages/cli typecheck`.
-- [ ] **5.11** Run app typechecks for migrated mount packages where they are
+- [x] **5.8** Runtime config validation rejects mount objects with no `kind`.
+- [x] **5.9** Run `bun run --cwd packages/workspace typecheck`.
+- [x] **5.10** Run `bun run --cwd packages/cli typecheck`.
+- [x] **5.11** Run app typechecks for migrated mount packages where they are
   already green enough to be meaningful.
 
 ## Edge Cases
@@ -745,19 +745,19 @@ until the daemon restarts with a different config or a different mount kind.
 
 ## Success Criteria
 
-- [ ] All-local project startup does not construct machine auth.
-- [ ] All-local project startup works with no saved Epicenter session.
-- [ ] Collaborative signed-out startup refuses before any mount opens.
-- [ ] A constructed auth client whose state is `signed-out` takes the same
+- [x] All-local project startup does not construct machine auth.
+- [x] All-local project startup works with no saved Epicenter session.
+- [x] Collaborative signed-out startup refuses before any mount opens.
+- [x] A constructed auth client whose state is `signed-out` takes the same
   refusal path as no saved Epicenter session.
-- [ ] Mixed signed-out startup refuses the whole project and disposes anything
+- [x] Mixed signed-out startup refuses the whole project and disposes anything
   already opened if an implementation accident opens early.
-- [ ] Error text names the collaborative mounts that require auth.
-- [ ] Local mount `open(ctx)` has no auth-derived context fields at the type
+- [x] Error text names the collaborative mounts that require auth.
+- [x] Local mount `open(ctx)` has no auth-derived context fields at the type
   level.
-- [ ] Existing workspace-backed mounts remain signed-in-only and continue to
+- [x] Existing workspace-backed mounts remain signed-in-only and continue to
   expose collaboration.
-- [ ] No dedicated mirror command exists.
+- [x] No dedicated mirror command exists.
 
 ## References
 
@@ -780,3 +780,54 @@ until the daemon restarts with a different config or a different mount kind.
   SQLite projection surface.
 - `packages/workspace/src/document/materializer/markdown/export.ts` - readable
   Markdown projection surface.
+
+## Review
+
+**Completed**: 2026-06-14
+**Branch**: codex/auth-optional-daemon-startup-spec
+
+### What Landed
+
+Mounts now declare `kind: 'local' | 'collaborative'`. Local mounts receive only
+`projectDir` and `mount`, while collaborative mounts receive the auth-derived
+context and must return hosted collaboration.
+
+`openProject` now loads project config first, validates mount names, then calls
+the lazy auth loader only if at least one collaborative mount is configured.
+`runUp` maps `MachineAuthStorageError.NoSavedSession` to `Ok(null)` and
+preserves other machine-auth storage errors.
+
+### Deviations and Discoveries
+
+- The implementation names the base context `LocalMountContext` rather than
+  `BaseMountContext`, because that is the public type local mount authors use.
+- `CollaborativeDaemonRuntime` requires the full `Collaboration<TActions>` a
+  workspace mount already returns. The daemon server still consumes the
+  narrowed served shape through `DaemonServedMount`.
+- Claude's review found no hard behavioral bug. It called out two worthwhile
+  test gaps, so the implementation added coverage for invalid collaborative
+  mount names before auth loading and for collaborative mounts with no auth
+  loader.
+- The inline-actions CLI e2e fixture stays collaborative because it exposes peer
+  fields and the e2e harness seeds machine auth.
+
+### Verification
+
+- `bun test packages/workspace/src/config/load-project-config.test.ts packages/workspace/src/workspace-apps/open-project.test.ts`
+- `bun test packages/cli/src/commands/up.test.ts`
+- `bun test packages/cli/test/e2e-up-cross-peer.test.ts`
+- `bun run --cwd packages/workspace typecheck`
+- `bun run --cwd packages/cli typecheck`
+- `bun run --cwd apps/fuji typecheck`
+- `bun run --cwd apps/honeycrisp typecheck`
+- `bun run --cwd apps/opensidian typecheck`
+- `bun run --cwd apps/tab-manager typecheck`
+- `bun run --cwd apps/zhongwen typecheck`
+
+### Follow-up Work
+
+- Gmail, QuickBooks, Every, Arc, and Rho source mirrors still need their own
+  specs for provider OAuth, local cache storage, and export format choices.
+- Partial startup for mixed projects remains intentionally refused. Revisit only
+  if a future product spec wants half-online daemons and accepts the extra
+  operator state.

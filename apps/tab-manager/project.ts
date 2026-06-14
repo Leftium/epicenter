@@ -31,6 +31,7 @@ export type TabManagerMountOptions = {
 export function tabManager(opts: TabManagerMountOptions = {}) {
 	return defineMount({
 		name: 'tab-manager',
+		kind: 'collaborative',
 		open(ctx) {
 			const {
 				projectDir,

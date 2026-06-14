@@ -16,7 +16,6 @@ import { Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 
 import { buildDaemonApp } from './app.js';
 import type { DaemonLease } from './lease.js';
-import { validateMountNames } from './mount-validation.js';
 import { unlinkSocketFile } from './runtime-files.js';
 import { StartupError } from './startup-errors.js';
 import type { DaemonServedMount } from './types.js';
@@ -61,8 +60,9 @@ export type DaemonServer = ReturnType<typeof createDaemonServer>;
 
 /**
  * Start a daemon server for already-started mounts. The caller must claim the
- * daemon lease before mount startup; this function owns only mount-name
- * validation and socket binding.
+ * daemon lease before mount startup; this function owns only socket binding.
+ * Mount names are validated upstream by `openEpicenterRoot` before any mount
+ * opens, so by the time mounts reach here they are already known-good.
  *
  * The lease (`lease.ts`) is the sole ownership primitive: holding it means no
  * other daemon is live, so any leftover socket file is stale and `Bun.serve`
@@ -73,11 +73,6 @@ export async function startDaemonServer({
 	mounts,
 }: DaemonServerOptions): Promise<Result<DaemonServer, StartupError>> {
 	const { socketPath } = lease;
-	const issue = validateMountNames(mounts.map((entry) => entry.mount));
-	if (issue !== null) {
-		return StartupError.MountNameRejected(issue);
-	}
-
 	const app = buildDaemonApp(mounts);
 	const bindResult = trySync({
 		try: () => bindUnixSocket({ socketPath, fetch: app.fetch }),

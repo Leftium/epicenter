@@ -4,17 +4,60 @@
 	import { Separator } from '@epicenter/ui/separator';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import { report } from '$lib/report';
+	import { os } from '#platform/os';
 	import { tauri } from '#platform/tauri';
+	import { whispering } from '#platform/whispering';
+	import {
+		type DeviceConfigKey,
+		deviceConfig,
+	} from '$lib/state/device-config.svelte';
+	import type { KeyBinding } from '$lib/tauri/commands';
+	import { createPressedKeys } from '$lib/utils/createPressedKeys.svelte';
+	import { keyBindingToLabel } from '$lib/utils/key-binding';
 	import {
 		resetGlobalShortcuts,
 		resetLocalShortcuts,
 	} from '$routes/(app)/_layout-utils/register-commands';
+	import GlobalKeyboardShortcutRecorder from './keyboard-shortcut-recorder/GlobalKeyboardShortcutRecorder.svelte';
+	import LocalKeyboardShortcutRecorder from './keyboard-shortcut-recorder/LocalKeyboardShortcutRecorder.svelte';
 	import ShortcutFormatHelp from './keyboard-shortcut-recorder/ShortcutFormatHelp.svelte';
 	import ShortcutTable from './keyboard-shortcut-recorder/ShortcutTable.svelte';
 
 	// One shortcut system per platform: the desktop app uses global (system-wide,
 	// rdev) shortcuts; the browser uses in-app (focused-tab) shortcuts. They never
 	// coexist, so this page shows whichever one this platform has.
+
+	// Browser-only: the local recorder records shortcuts from window keydown. On
+	// desktop the global recorder records through the rdev backend instead, so
+	// this (and its window keydown listener) is never created there. Its presence
+	// also marks local mode for the template below.
+	const pressedKeys = tauri
+		? undefined
+		: createPressedKeys({
+				onUnsupportedKey: (key) => {
+					report.info({
+						title: 'Unsupported key',
+						description: `The key "${key}" is not supported. Please try a different key.`,
+					});
+				},
+			});
+
+	/** The definition default for a local shortcut, formatted for display. */
+	function localDefault(commandId: string): string | null {
+		const getDefault = whispering.settings.getDefault as (
+			key: string,
+		) => unknown;
+		return (getDefault(`shortcut.${commandId}`) as string | null) ?? null;
+	}
+
+	/** The definition default for a global shortcut, formatted for display. */
+	function globalDefault(commandId: string): string | null {
+		const binding = deviceConfig.getDefault(
+			`shortcuts.global.${commandId}` as DeviceConfigKey,
+		) as KeyBinding | null;
+		return binding ? keyBindingToLabel(binding, os.isApple) : null;
+	}
+
 	function reset() {
 		if (tauri) resetGlobalShortcuts();
 		else resetLocalShortcuts();
@@ -56,8 +99,26 @@
 
 	{#if tauri}
 		{@const t = tauri}
-		<ShortcutTable type="global" tauri={t} />
-	{:else}
-		<ShortcutTable type="local" />
+		<ShortcutTable>
+			{#snippet row(command)}
+				{@const def = globalDefault(command.id)}
+				<GlobalKeyboardShortcutRecorder
+					{command}
+					placeholder={def ? `Default: ${def}` : 'Set shortcut'}
+					tauri={t}
+				/>
+			{/snippet}
+		</ShortcutTable>
+	{:else if pressedKeys}
+		<ShortcutTable>
+			{#snippet row(command)}
+				{@const def = localDefault(command.id)}
+				<LocalKeyboardShortcutRecorder
+					{command}
+					placeholder={def ? `Default: ${def}` : 'Set shortcut'}
+					{pressedKeys}
+				/>
+			{/snippet}
+		</ShortcutTable>
 	{/if}
 </section>

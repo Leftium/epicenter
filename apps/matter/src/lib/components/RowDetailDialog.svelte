@@ -1,8 +1,11 @@
 <script lang="ts">
 	import { Badge } from '@epicenter/ui/badge';
 	import * as Dialog from '@epicenter/ui/dialog';
+	import { Label } from '@epicenter/ui/label';
 	import * as Separator from '@epicenter/ui/separator';
+	import { Switch } from '@epicenter/ui/switch';
 	import type { RowConformance } from '$lib/core/conformance';
+	import { editorPreferences } from '$lib/editor/editor-preferences.svelte';
 	import MarkdownBodyEditor from './MarkdownBodyEditor.svelte';
 	import ModeledCell from './ModeledCell.svelte';
 
@@ -126,12 +129,22 @@
 				<Separator.Root />
 
 				<section class="grid gap-3">
-					<div>
+					<div class="flex items-center justify-between gap-3">
 						<h2 class="text-sm font-semibold">Body</h2>
+						<div class="flex items-center gap-2">
+							<Label for="matter-vim-mode" class="text-xs text-muted-foreground">Vim</Label>
+							<Switch
+								id="matter-vim-mode"
+								size="sm"
+								checked={editorPreferences.vimEnabled}
+								onCheckedChange={(checked) => editorPreferences.setVimEnabled(checked)}
+							/>
+						</div>
 					</div>
 					{#key row.fileName}
 						<MarkdownBodyEditor
 							body={row.body}
+							vimEnabled={editorPreferences.vimEnabled}
 							onCommit={(body) => onSaveBody(row.fileName, body)}
 						/>
 					{/key}

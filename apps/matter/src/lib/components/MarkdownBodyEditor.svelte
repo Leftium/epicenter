@@ -1,44 +1,64 @@
 <script lang="ts">
 	import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 	import { markdown } from '@codemirror/lang-markdown';
-	import { EditorState } from '@codemirror/state';
+	import { Compartment, EditorState } from '@codemirror/state';
 	import {
 		drawSelection,
 		EditorView,
 		keymap,
 		placeholder,
 	} from '@codemirror/view';
+	import { untrack } from 'svelte';
 	import { markdownLivePreview } from '$lib/editor/markdown-live-preview';
+	import { markdownShortcutKeymap } from '$lib/editor/markdown-shortcuts';
+	import { matterVimExtension } from '$lib/editor/vim-extension';
+
+	type ActiveEditor = {
+		view: EditorView;
+		vimCompartment: Compartment;
+		vimEnabled: boolean;
+	};
 
 	let {
 		body,
+		vimEnabled,
 		onCommit,
 	}: {
 		body: string;
+		vimEnabled: boolean;
 		onCommit: (body: string) => void;
 	} = $props();
 
 	let container: HTMLDivElement | undefined = $state();
-	// svelte-ignore state_referenced_locally
-	let draft = $state(body);
-	// svelte-ignore state_referenced_locally
-	let lastCommitted = $state(body);
-
-	function commit() {
-		if (draft === lastCommitted) return;
-		lastCommitted = draft;
-		onCommit(draft);
-	}
+	let editor: ActiveEditor | undefined;
 
 	$effect(() => {
 		if (!container) return;
 
-		const view = new EditorView({
+		// RowDetailDialog remounts this editor on file changes. These props seed
+		// one EditorView instance without making save echoes recreate it.
+		const initialBody = untrack(() => body);
+		const initialVimEnabled = untrack(() => vimEnabled);
+		const vimCompartment = new Compartment();
+		let draft = initialBody;
+		let lastCommitted = initialBody;
+
+		function commit() {
+			if (draft === lastCommitted) return;
+			lastCommitted = draft;
+			onCommit(draft);
+		}
+
+		const editorView = new EditorView({
 			parent: container,
 			state: EditorState.create({
-				doc: body,
+				doc: initialBody,
 				extensions: [
+					vimCompartment.of(
+						initialVimEnabled ? matterVimExtension() : [],
+					),
 					history(),
+					keymap.of(markdownShortcutKeymap),
 					keymap.of([...historyKeymap, ...defaultKeymap]),
 					drawSelection(),
 					EditorView.lineWrapping,
@@ -87,11 +107,29 @@
 				],
 			}),
 		});
+		editor = {
+			view: editorView,
+			vimCompartment,
+			vimEnabled: initialVimEnabled,
+		};
 
 		return () => {
 			commit();
-			view.destroy();
+			editorView.destroy();
+			if (editor?.view === editorView) editor = undefined;
 		};
+	});
+
+	$effect(() => {
+		const activeEditor = editor;
+		if (!activeEditor) return;
+		if (vimEnabled === activeEditor.vimEnabled) return;
+		activeEditor.vimEnabled = vimEnabled;
+		activeEditor.view.dispatch({
+			effects: activeEditor.vimCompartment.reconfigure(
+				vimEnabled ? matterVimExtension() : [],
+			),
+		});
 	});
 </script>
 

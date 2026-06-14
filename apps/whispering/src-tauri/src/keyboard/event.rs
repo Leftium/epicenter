@@ -6,6 +6,13 @@ use serde::{Deserialize, Serialize};
 /// `transcription://model-state` convention.
 pub const EVENT_CHANNEL: &str = "keyboard://shortcut-trigger";
 
+/// Channel the listener emits the currently-held combo on while the settings
+/// recorder is capturing a new binding. Recording goes through rdev (not the
+/// webview) because only rdev sees the Fn key and physical-key positions, so
+/// the captured binding is exactly what the matcher will later match. The FE
+/// accumulates these `KeyBinding` snapshots and commits when all keys release.
+pub const CAPTURE_CHANNEL: &str = "keyboard://shortcut-capture";
+
 /// Whether a binding just became fully held (`Pressed`) or stopped being fully
 /// held (`Released`). The variant names serialize verbatim to `"Pressed"` /
 /// `"Released"`, which is exactly the `ShortcutEventState` the Tauri

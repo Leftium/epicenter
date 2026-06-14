@@ -22,7 +22,7 @@ pub mod keys;
 pub mod matcher;
 mod rdev_map;
 
-pub use event::{ShortcutTriggerEvent, TriggerState, EVENT_CHANNEL};
+pub use event::{ShortcutTriggerEvent, TriggerState, CAPTURE_CHANNEL, EVENT_CHANNEL};
 pub use keys::{Key, KeyBinding, Modifier};
 
 use std::sync::{Arc, Mutex};
@@ -56,6 +56,15 @@ impl KeyboardListener {
         }
     }
 
+    /// Enter or leave capture mode. While capturing, the listener forwards the
+    /// held combo to the settings recorder on `CAPTURE_CHANNEL` instead of
+    /// matching registered bindings (see `Matcher::set_capturing`).
+    pub fn set_capturing(&self, capturing: bool) {
+        if let Ok(mut matcher) = self.matcher.lock() {
+            matcher.set_capturing(capturing);
+        }
+    }
+
     /// Spawn the rdev listener on its own thread. `rdev::listen` blocks for the
     /// process lifetime, so it cannot run on the main thread. It is a passive
     /// **listen** (not `grab`), so keystrokes still reach the foreground app.
@@ -78,12 +87,21 @@ impl KeyboardListener {
                     let Some(input) = rdev_map::classify(key) else {
                         return;
                     };
-                    let triggers = match matcher.lock() {
-                        Ok(mut matcher) => matcher.on_event(edge, input),
-                        Err(_) => return,
+                    let Ok(mut matcher) = matcher.lock() else {
+                        return;
                     };
-                    for trigger in triggers {
-                        let _ = app.emit(EVENT_CHANNEL, trigger);
+                    let triggers = matcher.on_event(edge, input);
+                    // In capture mode the recorder wants the live held combo, not
+                    // command triggers (which `on_event` suppresses anyway).
+                    if matcher.is_capturing() {
+                        let binding = matcher.held_binding();
+                        drop(matcher);
+                        let _ = app.emit(CAPTURE_CHANNEL, binding);
+                    } else {
+                        drop(matcher);
+                        for trigger in triggers {
+                            let _ = app.emit(EVENT_CHANNEL, trigger);
+                        }
                     }
                 });
                 if let Err(error) = result {

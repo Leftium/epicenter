@@ -43,6 +43,7 @@ pub struct Matcher {
     bindings: Vec<Registered>,
     held_modifiers: BTreeSet<Modifier>,
     held_keys: BTreeSet<Key>,
+    capturing: bool,
 }
 
 impl Matcher {
@@ -51,6 +52,30 @@ impl Matcher {
             bindings: Vec::new(),
             held_modifiers: BTreeSet::new(),
             held_keys: BTreeSet::new(),
+            capturing: false,
+        }
+    }
+
+    /// Enter or leave capture mode. While capturing, `on_event` updates the held
+    /// set but emits no triggers; the listener reads `held_binding` instead and
+    /// forwards it to the settings recorder. Resets `active` flags so no binding
+    /// is left half-fired across the mode switch.
+    pub fn set_capturing(&mut self, capturing: bool) {
+        self.capturing = capturing;
+        for binding in &mut self.bindings {
+            binding.active = false;
+        }
+    }
+
+    pub fn is_capturing(&self) -> bool {
+        self.capturing
+    }
+
+    /// The currently-held keys as a binding, for the recorder to accumulate.
+    pub fn held_binding(&self) -> KeyBinding {
+        KeyBinding {
+            modifiers: self.held_modifiers.iter().copied().collect(),
+            keys: self.held_keys.iter().copied().collect(),
         }
     }
 
@@ -91,6 +116,12 @@ impl Matcher {
             (Edge::Release, Input::Key(k)) => {
                 self.held_keys.remove(&k);
             }
+        }
+
+        // In capture mode the listener forwards `held_binding()` to the recorder;
+        // it does not match registered bindings.
+        if self.capturing {
+            return Vec::new();
         }
 
         let mut events = Vec::new();
@@ -225,6 +256,31 @@ mod tests {
             events,
             vec![("ptt".to_string(), Pressed), ("ptt".to_string(), Released)]
         );
+    }
+
+    #[test]
+    fn capture_mode_emits_no_triggers_and_held_binding_reflects_the_combo() {
+        let mut matcher = Matcher::new();
+        matcher.set_bindings([("ptt".to_string(), binding(&[], &[Key::Space]))]);
+        matcher.set_capturing(true);
+
+        // A registered binding must not fire while capturing.
+        let events = run(
+            &mut matcher,
+            &[(Press, M(Modifier::Fn)), (Press, K(Key::KeyD))],
+        );
+        assert!(events.is_empty());
+
+        // The held combo is what the recorder reads and commits (Fn + D, the
+        // kind of binding the webview could never capture).
+        let held = matcher.held_binding();
+        assert_eq!(held.modifiers, vec![Modifier::Fn]);
+        assert_eq!(held.keys, vec![Key::KeyD]);
+
+        // Leaving capture mode re-arms normal matching.
+        matcher.set_capturing(false);
+        let after = run(&mut matcher, &[(Release, M(Modifier::Fn))]);
+        assert!(after.is_empty());
     }
 
     #[test]

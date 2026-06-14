@@ -161,6 +161,14 @@ export const commands = {
 	 */
 	setKeyboardShortcuts: (bindings: CommandBinding[]) =>
 		__TAURI_INVOKE<void>('set_keyboard_shortcuts', { bindings }),
+	/**
+	 *  Enter or leave binding-capture mode for the settings recorder. While
+	 *  capturing, the listener emits the held combo on `CAPTURE_CHANNEL` (which the
+	 *  recorder accumulates) instead of firing command triggers, so the user can
+	 *  record Fn and physical-key bindings the webview cannot see.
+	 */
+	setKeyboardCapturing: (capturing: boolean) =>
+		__TAURI_INVOKE<void>('set_keyboard_capturing', { capturing }),
 };
 
 /* Types */

@@ -62,6 +62,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             set_transcription_config,
             get_transcription_state,
             keyboard::commands::set_keyboard_shortcuts,
+            keyboard::commands::set_keyboard_capturing,
         ])
         // The FE listens on these channels manually; only the payload types
         // need to be exported for `listen<...>(...)`. `ShortcutTriggerEvent`

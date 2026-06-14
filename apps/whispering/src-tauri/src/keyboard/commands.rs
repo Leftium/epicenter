@@ -32,3 +32,13 @@ pub fn set_keyboard_shortcuts(
             .collect(),
     );
 }
+
+/// Enter or leave binding-capture mode for the settings recorder. While
+/// capturing, the listener emits the held combo on `CAPTURE_CHANNEL` (which the
+/// recorder accumulates) instead of firing command triggers, so the user can
+/// record Fn and physical-key bindings the webview cannot see.
+#[tauri::command]
+#[specta::specta]
+pub fn set_keyboard_capturing(listener: State<'_, KeyboardListener>, capturing: bool) {
+    listener.set_capturing(capturing);
+}

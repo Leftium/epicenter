@@ -203,7 +203,10 @@ mod tests {
     fn single_key_push_to_talk_with_no_modifiers() {
         let mut matcher = Matcher::new();
         matcher.set_bindings([("ptt".to_string(), binding(&[], &[Key::Space]))]);
-        let events = run(&mut matcher, &[(Press, K(Key::Space)), (Release, K(Key::Space))]);
+        let events = run(
+            &mut matcher,
+            &[(Press, K(Key::Space)), (Release, K(Key::Space))],
+        );
         assert_eq!(
             events,
             vec![("ptt".to_string(), Pressed), ("ptt".to_string(), Released)]
@@ -253,11 +256,7 @@ mod tests {
         // longer equal {Meta}, so the binding releases (exact-match behavior).
         let events = run(
             &mut matcher,
-            &[
-                (Press, M(Meta)),
-                (Press, K(Key::KeyD)),
-                (Press, M(Shift)),
-            ],
+            &[(Press, M(Meta)), (Press, K(Key::KeyD)), (Press, M(Shift))],
         );
         assert_eq!(
             events,
@@ -271,7 +270,10 @@ mod tests {
         matcher.set_bindings([("noop".to_string(), binding(&[], &[]))]);
         // The all-released state must not be reported as a press for an empty
         // binding. Feeding an unrelated key produces nothing.
-        let events = run(&mut matcher, &[(Press, K(Key::KeyA)), (Release, K(Key::KeyA))]);
+        let events = run(
+            &mut matcher,
+            &[(Press, K(Key::KeyA)), (Release, K(Key::KeyA))],
+        );
         assert!(events.is_empty());
     }
 
@@ -286,9 +288,9 @@ mod tests {
             &mut matcher,
             &[
                 (Press, M(Meta)),
-                (Press, K(Key::KeyA)), // a fires
+                (Press, K(Key::KeyA)),   // a fires
                 (Release, K(Key::KeyA)), // a releases
-                (Press, K(Key::KeyB)), // b fires
+                (Press, K(Key::KeyB)),   // b fires
                 (Release, K(Key::KeyB)), // b releases
             ],
         );

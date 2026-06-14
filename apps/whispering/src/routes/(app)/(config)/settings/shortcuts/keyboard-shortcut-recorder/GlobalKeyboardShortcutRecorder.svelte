@@ -3,10 +3,8 @@
 	import type { KeyboardEventSupportedKey } from '$lib/constants/keyboard';
 	import { report } from '$lib/report';
 	import type { Tauri } from '#platform/tauri';
-	import {
-		type Accelerator,
-		pressedKeysToAccelerator,
-	} from '$lib/utils/accelerator';
+	import { pressedKeysToAccelerator } from '$lib/utils/accelerator';
+	import { syncGlobalShortcutsWithSettings } from '$routes/(app)/_layout-utils/register-commands';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { type PressedKeys } from '$lib/utils/createPressedKeys.svelte';
 	import { createKeyRecorder } from './create-key-recorder.svelte';
@@ -35,22 +33,6 @@
 	const keyRecorder = createKeyRecorder({
 		pressedKeys,
 		onRegister: async (keyCombination: KeyboardEventSupportedKey[]) => {
-			if (shortcutValue) {
-				const { error: unregisterError } =
-					await tauri.globalShortcuts.unregisterCommand({
-						accelerator: shortcutValue as Accelerator,
-					});
-
-				if (unregisterError) {
-					report.error({
-						title: 'Failed to unregister shortcut',
-						description:
-							'Could not unregister the global shortcut. It may already be in use by another application.',
-						cause: unregisterError,
-					});
-				}
-			}
-
 			const { data: accelerator, error: acceleratorError } =
 				pressedKeysToAccelerator(keyCombination);
 
@@ -63,37 +45,10 @@
 				return;
 			}
 
-			const { error: registerError } =
-				await tauri.globalShortcuts.registerCommand({
-					command,
-					accelerator,
-				});
-
-			if (registerError) {
-				switch (registerError.name) {
-					case 'InvalidFormat':
-					case 'NoKeyCode':
-					case 'MultipleKeyCodes':
-					case 'GeneratedInvalid':
-						report.error({
-							title: 'Invalid shortcut combination',
-							description: `The key combination "${keyCombination.join('+')}" is not valid. Please try a different combination.`,
-							cause: registerError,
-						});
-						break;
-					default:
-						report.error({
-							title: 'Failed to register shortcut',
-							description:
-								'Could not register the global shortcut. It may already be in use by another application.',
-							cause: registerError,
-						});
-						break;
-				}
-				return;
-			}
-
+			// Persist, then re-push the full set to the rdev backend. The backend
+			// is replace-all, so updating one shortcut means re-syncing the lot.
 			deviceConfig.set(`shortcuts.global.${command.id}`, accelerator);
+			await syncGlobalShortcutsWithSettings();
 
 			report.success({
 				title: `Global shortcut set to ${accelerator}`,
@@ -101,20 +56,8 @@
 			});
 		},
 		onClear: async () => {
-			const { error: unregisterError } =
-				await tauri.globalShortcuts.unregisterCommand({
-					accelerator: shortcutValue as Accelerator,
-				});
-
-			if (unregisterError) {
-				report.error({
-					title: 'Error clearing global shortcut',
-					description: 'Could not clear the global shortcut.',
-					cause: unregisterError,
-				});
-			}
-
 			deviceConfig.set(`shortcuts.global.${command.id}`, null);
+			await syncGlobalShortcutsWithSettings();
 
 			report.success({
 				title: 'Global shortcut cleared',

@@ -40,8 +40,9 @@
 			<Button
 				variant="outline"
 				size="sm"
-				onclick={async () => {
-					await t.globalShortcuts.unregisterAll();
+				onclick={() => {
+					// resetGlobalShortcuts writes the defaults and re-pushes the full
+					// replace-all set to the rdev backend, so no separate clear is needed.
 					resetGlobalShortcuts();
 					report.success({
 						title: 'Shortcuts reset',

@@ -12,9 +12,11 @@
 //! - `rdev_map` the only rdev-coupled code: `rdev::Key` -> matcher `Input`
 //! - `event`    the wire payload emitted to the FE
 //!
-//! Wave 2 builds this module in isolation; the FE registrar swap, the register
-//! commands, and starting the listener at launch land in Wave 3.
+//! Wave 2 built this module in isolation. Wave 3 wires it in: the
+//! `set_keyboard_shortcuts` command pushes the user's bindings, the listener
+//! starts at launch, and the FE registrar dispatches the emitted events.
 
+pub mod commands;
 pub mod event;
 pub mod keys;
 pub mod matcher;

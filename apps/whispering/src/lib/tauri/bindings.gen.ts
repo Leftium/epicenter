@@ -152,14 +152,143 @@ export const commands = {
 	 */
 	getTranscriptionState: () =>
 		__TAURI_INVOKE<LocalModelState>('get_transcription_state'),
+	/**
+	 *  Replace the full set of registered global shortcuts. The FE computes the
+	 *  complete list from device-config and pushes it on startup and on every
+	 *  change; the listener swaps its binding set atomically. Replace-all (not
+	 *  per-command register/unregister) keeps the FE the single source of truth for
+	 *  what is bound, with no add/remove bookkeeping to drift.
+	 */
+	setKeyboardShortcuts: (bindings: CommandBinding[]) =>
+		__TAURI_INVOKE<void>('set_keyboard_shortcuts', { bindings }),
 };
 
 /* Types */
+/**
+ *  One command's binding, as sent from the FE registrar. `command_id` is the
+ *  id the trigger event is emitted under; the FE filters by that command's `on`
+ *  array and dispatches the callback.
+ */
+export type CommandBinding = {
+	commandId: string;
+	binding: KeyBinding;
+};
+
 /**
  *  Local transcription engine. Wire tags match the frontend
  *  `transcription.service` enum (`whispercpp` / `parakeet` / `moonshine`).
  */
 export type Engine = 'whispercpp' | 'parakeet' | 'moonshine';
+
+/**
+ *  A non-modifier key, named by physical position (Wave 1 Lock: desktop binds
+ *  in physical-key space, not produced-character space). Variant names mirror
+ *  rdev's `Key` for the keys we support so the rdev mapping is near 1:1, but
+ *  this is our own stable enum: the persisted binding format must not depend on
+ *  rdev's enum names. `Unknown(u32)` carries rdev's platform scancode for keys
+ *  outside this set so a binding round-trips even when we have no name for it.
+ */
+export type Key =
+	| 'keyA'
+	| 'keyB'
+	| 'keyC'
+	| 'keyD'
+	| 'keyE'
+	| 'keyF'
+	| 'keyG'
+	| 'keyH'
+	| 'keyI'
+	| 'keyJ'
+	| 'keyK'
+	| 'keyL'
+	| 'keyM'
+	| 'keyN'
+	| 'keyO'
+	| 'keyP'
+	| 'keyQ'
+	| 'keyR'
+	| 'keyS'
+	| 'keyT'
+	| 'keyU'
+	| 'keyV'
+	| 'keyW'
+	| 'keyX'
+	| 'keyY'
+	| 'keyZ'
+	| 'num0'
+	| 'num1'
+	| 'num2'
+	| 'num3'
+	| 'num4'
+	| 'num5'
+	| 'num6'
+	| 'num7'
+	| 'num8'
+	| 'num9'
+	| 'f1'
+	| 'f2'
+	| 'f3'
+	| 'f4'
+	| 'f5'
+	| 'f6'
+	| 'f7'
+	| 'f8'
+	| 'f9'
+	| 'f10'
+	| 'f11'
+	| 'f12'
+	| 'f13'
+	| 'f14'
+	| 'f15'
+	| 'f16'
+	| 'f17'
+	| 'f18'
+	| 'f19'
+	| 'f20'
+	| 'f21'
+	| 'f22'
+	| 'f23'
+	| 'f24'
+	| 'space'
+	| 'return'
+	| 'tab'
+	| 'escape'
+	| 'backspace'
+	| 'delete'
+	| 'insert'
+	| 'upArrow'
+	| 'downArrow'
+	| 'leftArrow'
+	| 'rightArrow'
+	| 'home'
+	| 'end'
+	| 'pageUp'
+	| 'pageDown'
+	| 'minus'
+	| 'equal'
+	| 'leftBracket'
+	| 'rightBracket'
+	| 'semiColon'
+	| 'quote'
+	| 'backQuote'
+	| 'backSlash'
+	| 'comma'
+	| 'dot'
+	| 'slash'
+	| { unknown: number };
+
+/**
+ *  A desktop global binding. It fires when its modifiers and keys are held
+ *  exactly (see `Matcher`), matching the existing `arraysMatch` semantics of
+ *  `local-shortcut-manager` and the plugin's exact-modifier behavior. An empty
+ *  `keys` with non-empty `modifiers` is a modifier-only hold (for example hold
+ *  Meta); empty `modifiers` with one key is a bare single-key push-to-talk.
+ *  Both were impossible with the plugin.
+ */
+export type KeyBinding = {
+	modifiers: Modifier[];
+	keys: Key[];
+};
 
 /**
  *  Snapshot of everything observable about the resident model. Every event
@@ -233,6 +362,14 @@ export type ModelStatus =
 	| { kind: 'error'; message: string };
 
 /**
+ *  A logical modifier. Left and right are collapsed in v1 (ControlLeft and
+ *  ControlRight both become `Ctrl`); the Wayland and left/right gaps are
+ *  documented refusals in the spec. `Fn` is the capability the Tauri
+ *  global-shortcut plugin could never express.
+ */
+export type Modifier = 'ctrl' | 'alt' | 'shift' | 'meta' | 'fn';
+
+/**
  *  Serializable handle returned to the JS side. The id is the lookup key
  *  for every later operation; the rest is metadata the UI needs without
  *  having to read the file (duration for analytics, byteLength for artifact
@@ -253,6 +390,17 @@ export type RecordingArtifact = {
 	durationMs: number;
 	byteLength: number;
 	mimeType: string;
+};
+
+/**
+ *  Emitted on every binding transition. `command_id` is the id the binding was
+ *  registered under; the FE filters by that command's `on` array and dispatches
+ *  the callback. Rust stays command-agnostic: it knows the id and the edge, not
+ *  which states a given command cares about.
+ */
+export type ShortcutTriggerEvent = {
+	commandId: string;
+	state: TriggerState;
 };
 
 /**
@@ -292,6 +440,15 @@ export type TranscriptionError =
 	 *  Moonshine model path that does not match `moonshine-{variant}-{lang}`).
 	 */
 	| { name: 'ConfigError'; message: string };
+
+/**
+ *  Whether a binding just became fully held (`Pressed`) or stopped being fully
+ *  held (`Released`). The variant names serialize verbatim to `"Pressed"` /
+ *  `"Released"`, which is exactly the `ShortcutEventState` the Tauri
+ *  global-shortcut plugin used to deliver, so the command layer (`commands.ts`)
+ *  is unchanged: only the producer of these strings changes.
+ */
+export type TriggerState = 'Pressed' | 'Released';
 
 /**
  *  How long after the last transcription the resident model should be

@@ -11,7 +11,8 @@ import {
 } from '$lib/services/local-shortcut-manager';
 import { deviceConfig } from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
-import type { Accelerator } from '$lib/utils/accelerator';
+import type { CommandBinding } from '$lib/tauri/commands';
+import { acceleratorToKeyBinding } from '$lib/utils/accelerator';
 
 /** Default values for in-app (local) shortcuts. Keyed by command id string. */
 const DEFAULT_LOCAL_SHORTCUTS = {
@@ -80,40 +81,25 @@ export async function syncLocalShortcutsWithSettings() {
 }
 
 /**
- * Synchronizes global keyboard shortcuts with the current settings.
- * - Registers shortcuts that have key combinations defined in settings
- * - Unregisters shortcuts that don't have key combinations defined
- * - Shows error toast if any registration/unregistration fails
+ * Pushes the configured global shortcuts to the desktop rdev backend as the
+ * full replace-all set. Storage still holds Electron accelerator strings in
+ * this wave, so each is parsed to the structured `KeyBinding` the backend
+ * matches on; a string that is not expressible as an rdev binding is skipped
+ * (the Wave 4 migration normalizes storage and resets such entries to default).
  */
 export async function syncGlobalShortcutsWithSettings() {
 	if (!tauri) return;
-	const t = tauri; // Rebind for closures that lose the narrowing.
 
-	const commandsWithAccelerators = commands
-		.map((command) => {
-			const accelerator = deviceConfig.get(
-				getGlobalShortcutKey(command.id),
-			) as Accelerator | null;
-			if (!accelerator) return null;
-			return { command, accelerator };
-		})
-		.filter((item) => item !== null);
-
-	const results = await Promise.all(
-		commandsWithAccelerators.map((item) =>
-			t.globalShortcuts.registerCommand(item),
-		),
-	);
-	const { errs } = partitionResults(results);
-	if (errs.length > 0) {
-		report.error({
-			title: 'Error registering global commands',
-			cause: {
-				name: 'GlobalShortcutRegistrationFailed',
-				message: errs.map((err) => err.error.message).join('\n'),
-			},
-		});
+	const bindings: CommandBinding[] = [];
+	for (const command of commands) {
+		const accelerator = deviceConfig.get(getGlobalShortcutKey(command.id));
+		if (!accelerator) continue;
+		const binding = acceleratorToKeyBinding(accelerator);
+		if (!binding) continue;
+		bindings.push({ commandId: command.id, binding });
 	}
+
+	await tauri.globalShortcuts.setBindings(bindings);
 }
 
 /**

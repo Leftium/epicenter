@@ -30,30 +30,36 @@
 	import { syncIconWithRecorderState } from '../_layout-utils/syncIconWithRecorderState.svelte';
 
 	let cleanupAccessibilityPermission: (() => void) | undefined;
+	let cleanupShortcutListener: (() => void) | undefined;
 
 	onMount(() => {
 		// Sync operations - run immediately, these are fast
 		window.commands = commandCallbacks;
 		window.goto = goto;
-		syncLocalShortcutsWithSettings();
-		resetLocalShortcutsToDefaultIfDuplicates();
 		registerOnboarding();
 		cleanupAccessibilityPermission = registerAccessibilityPermission();
 
+		// One trigger backend per platform: desktop uses the rdev global
+		// listener exclusively, the browser uses in-app keydown exclusively.
+		// They never both bind on the same platform.
 		if (tauri) {
+			void tauri.globalShortcuts.startListening().then((unlisten) => {
+				cleanupShortcutListener = unlisten;
+			});
 			syncGlobalShortcutsWithSettings();
 			resetGlobalShortcutsToDefaultIfDuplicates();
 
 			// Desktop-only async check - fire and forget
 			void checkForUpdates();
 		} else {
-			// Browser extension context - notify that the Whispering tab is ready
-			// extension.notifyWhisperingTabReady(undefined);
+			syncLocalShortcutsWithSettings();
+			resetLocalShortcutsToDefaultIfDuplicates();
 		}
 	});
 
 	onDestroy(() => {
 		cleanupAccessibilityPermission?.();
+		cleanupShortcutListener?.();
 	});
 
 	if (tauri) {

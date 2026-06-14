@@ -38,6 +38,7 @@
  * See `specs/20260526T000140-collapse-tauri-only-services-into-namespace.md`.
  */
 
+import { listen } from '@tauri-apps/api/event';
 import { Menu, MenuItem } from '@tauri-apps/api/menu';
 import { basename, resolveResource } from '@tauri-apps/api/path';
 import { TrayIcon } from '@tauri-apps/api/tray';
@@ -48,33 +49,18 @@ import {
 	isEnabled as isAutostartEnabled,
 } from '@tauri-apps/plugin-autostart';
 import { readFile } from '@tauri-apps/plugin-fs';
-import {
-	isRegistered as tauriIsRegistered,
-	register as tauriRegister,
-	unregister as tauriUnregister,
-	unregisterAll as tauriUnregisterAll,
-} from '@tauri-apps/plugin-global-shortcut';
 import { exit } from '@tauri-apps/plugin-process';
 import mime from 'mime';
-import {
-	defineErrors,
-	extractErrorMessage,
-	type InferErrors,
-} from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 import { os } from '#platform/os';
 import { goto } from '$app/navigation';
-import type { Command, ShortcutEventState } from '$lib/commands';
+import type { ShortcutEventState } from '$lib/commands';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
 import { autostartKeys } from '$lib/tauri/autostart-keys';
 import { commands } from '$lib/tauri/commands';
-import {
-	type Accelerator,
-	AcceleratorError,
-	type InvalidAcceleratorError,
-	isValidElectronAccelerator,
-} from '$lib/utils/accelerator';
+import type { CommandBinding, ShortcutTriggerEvent } from '$lib/tauri/commands';
 
 // fs ----------------------------------------------------------------
 const FsError = defineErrors({
@@ -277,87 +263,15 @@ async function initTray() {
 }
 
 // globalShortcuts ---------------------------------------------------
-// Pure accelerator parsing/validation lives in `$lib/utils/accelerator`
-// since it has no Tauri runtime dependency. Only the registration ops
-// (which talk to Tauri's global-shortcut plugin) live here.
-const ShortcutError = defineErrors({
-	RegisterFailed: ({
-		accelerator,
-		cause,
-	}: {
-		accelerator: string;
-		cause: unknown;
-	}) => ({
-		message: `Failed to register global shortcut '${accelerator}': ${extractErrorMessage(cause)}`,
-		accelerator,
-		cause,
-	}),
-	UnregisterFailed: ({
-		accelerator,
-		cause,
-	}: {
-		accelerator: string;
-		cause: unknown;
-	}) => ({
-		message: `Failed to unregister global shortcut '${accelerator}': ${extractErrorMessage(cause)}`,
-		accelerator,
-		cause,
-	}),
-	UnregisterAllFailed: ({ cause }: { cause: unknown }) => ({
-		message: `Failed to unregister all global shortcuts: ${extractErrorMessage(cause)}`,
-		cause,
-	}),
-});
-type ShortcutError = InferErrors<typeof ShortcutError>;
+// The desktop trigger backend is the rdev listener in `src-tauri/src/keyboard`.
+// It emits a `{ commandId, state }` event on every binding transition; we push
+// the user's bindings down with `set_keyboard_shortcuts` and dispatch the
+// events back into the command layer (the single convergence point). No
+// accelerator strings cross this boundary: the registrar parses them to
+// `KeyBinding` before pushing (see `register-commands.ts`).
 
-async function registerShortcut({
-	accelerator,
-	callback,
-	on,
-}: {
-	accelerator: Accelerator;
-	callback: (state: ShortcutEventState) => void;
-	on: ShortcutEventState[];
-}): Promise<Result<void, InvalidAcceleratorError | ShortcutError>> {
-	const { error: unregisterError } = await unregisterShortcut(accelerator);
-	if (unregisterError) return Err(unregisterError);
-
-	if (!isValidElectronAccelerator(accelerator)) {
-		return AcceleratorError.InvalidFormat({ accelerator });
-	}
-
-	const { error: registerError } = await tryAsync({
-		try: () =>
-			tauriRegister(accelerator, (event) => {
-				if (on.includes(event.state)) callback(event.state);
-			}),
-		catch: (error) =>
-			ShortcutError.RegisterFailed({ accelerator, cause: error }),
-	});
-	// Tauri's platform layer sometimes returns "RegisterEventHotKey failed"
-	// even after a successful registration. We swallow that error to avoid
-	// an unhelpful toast; other valid shortcuts still register.
-	if (registerError) {
-		if (registerError.message.includes('RegisterEventHotKey failed')) {
-			return Ok(undefined);
-		}
-		return Err(registerError);
-	}
-	return Ok(undefined);
-}
-
-async function unregisterShortcut(
-	accelerator: Accelerator,
-): Promise<Result<void, ShortcutError>> {
-	const isRegistered = await tauriIsRegistered(accelerator);
-	if (!isRegistered) return Ok(undefined);
-
-	return tryAsync({
-		try: () => tauriUnregister(accelerator),
-		catch: (error) =>
-			ShortcutError.UnregisterFailed({ accelerator, cause: error }),
-	});
-}
+/** Mirrors `keyboard::EVENT_CHANNEL` in the Rust backend. */
+const KEYBOARD_TRIGGER_EVENT = 'keyboard://shortcut-trigger';
 
 // autostart ---------------------------------------------------------
 const AutostartError = defineErrors({
@@ -427,36 +341,38 @@ const tray = {
 };
 
 const globalShortcuts = {
-	async registerCommand({
-		command: cmd,
-		// Parameter may contain legacy "CommandOrControl" syntax.
-		// Legacy: "CommandOrControl+Shift+R" -> Modern: "Command+Shift+R"
-		// (macOS) or "Control+Shift+R" (Windows/Linux).
-		accelerator: legacyAcceleratorString,
-	}: {
-		command: Command;
-		accelerator: Accelerator;
-	}) {
-		const { commandCallbacks } = await import('$lib/commands');
-		const accel = legacyAcceleratorString.replace(
-			'CommandOrControl',
-			os.isApple ? 'Command' : 'Control',
-		) as Accelerator;
-		return registerShortcut({
-			accelerator: accel,
-			callback: commandCallbacks[cmd.id],
-			on: cmd.on,
-		});
+	/**
+	 * Replace the full set of registered global shortcuts on the rdev backend.
+	 * The registrar computes the complete list from device-config and pushes it
+	 * on startup and on every change; replace-all keeps the FE the single source
+	 * of truth with no add/remove bookkeeping.
+	 */
+	setBindings: (bindings: CommandBinding[]) =>
+		commands.setKeyboardShortcuts(bindings),
+
+	/**
+	 * Subscribe to the rdev trigger event and dispatch each into the command
+	 * layer, filtered by the command's `on` array. Returns the unlisten fn. The
+	 * `on` filter is the same gate the old plugin registrar applied; keeping it
+	 * here leaves `commands.ts` as the single convergence point.
+	 */
+	startListening: async () => {
+		const { commandCallbacks, commands: commandList } = await import(
+			'$lib/commands'
+		);
+		const onById = new Map<string, ShortcutEventState[]>(
+			commandList.map((command) => [command.id, command.on]),
+		);
+		return listen<ShortcutTriggerEvent>(
+			KEYBOARD_TRIGGER_EVENT,
+			({ payload: { commandId, state } }) => {
+				const on = onById.get(commandId);
+				const callback =
+					commandCallbacks[commandId as keyof typeof commandCallbacks];
+				if (on?.includes(state) && callback) callback(state);
+			},
+		);
 	},
-
-	unregisterCommand: ({ accelerator }: { accelerator: Accelerator }) =>
-		unregisterShortcut(accelerator),
-
-	unregisterAll: () =>
-		tryAsync({
-			try: () => tauriUnregisterAll(),
-			catch: (error) => ShortcutError.UnregisterAllFailed({ cause: error }),
-		}),
 };
 
 // barrel ------------------------------------------------------------

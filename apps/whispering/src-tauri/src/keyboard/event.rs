@@ -37,8 +37,14 @@ mod tests {
     fn trigger_state_serializes_to_the_plugins_pascalcase_strings() {
         // The whole point of matching this wire shape: `commands.ts` keeps
         // comparing against 'Pressed' | 'Released' with no change.
-        assert_eq!(serde_json::to_value(TriggerState::Pressed).unwrap(), json!("Pressed"));
-        assert_eq!(serde_json::to_value(TriggerState::Released).unwrap(), json!("Released"));
+        assert_eq!(
+            serde_json::to_value(TriggerState::Pressed).unwrap(),
+            json!("Pressed")
+        );
+        assert_eq!(
+            serde_json::to_value(TriggerState::Released).unwrap(),
+            json!("Released")
+        );
     }
 
     #[test]

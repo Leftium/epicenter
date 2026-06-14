@@ -105,11 +105,17 @@ export const commands = {
 };
 
 export type {
+	CommandBinding,
 	Engine,
+	Key,
+	KeyBinding,
 	LocalModelState,
 	ModelStateEvent,
 	ModelStatus,
+	Modifier,
 	RecordingArtifact,
+	ShortcutTriggerEvent,
 	TranscriptionConfig,
 	TranscriptionError,
+	TriggerState,
 } from './bindings.gen';

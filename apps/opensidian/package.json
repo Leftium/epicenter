@@ -51,7 +51,6 @@
 		"@codemirror/view": "^6.41.0",
 		"@epicenter/filesystem": "workspace:*",
 		"@epicenter/ui": "workspace:*",
-		"@epicenter/util": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@lezer/highlight": "^1.2.3",
 		"@lucide/svelte": "catalog:",

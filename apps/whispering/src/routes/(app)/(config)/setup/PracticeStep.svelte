@@ -3,11 +3,20 @@
 	import * as Alert from '@epicenter/ui/alert';
 	import MicIcon from '@lucide/svelte/icons/mic';
 	import type { RecordingMode } from '$lib/constants/audio';
+	import type { SetupReadiness } from '$lib/setup/setup-readiness';
 	import { settings } from '$lib/state/settings.svelte';
-	import PracticeDictation from '../PracticeDictation.svelte';
-	import { getReadiness, practice } from '../setup-state.svelte';
+	import PracticeDictation from './PracticeDictation.svelte';
 
-	const readiness = $derived(getReadiness());
+	let {
+		readiness,
+		practiceSucceeded,
+		onSuccess,
+	}: {
+		readiness: SetupReadiness;
+		practiceSucceeded: boolean;
+		onSuccess: () => void;
+	} = $props();
+
 	const selectedRecordingMode = $derived(settings.get('recording.mode'));
 	const canFinish = $derived(readiness.canFinish);
 	const canPractice = $derived(canFinish && selectedRecordingMode === 'manual');
@@ -26,7 +35,7 @@
 </script>
 
 <div class="space-y-4">
-	{#if canPractice && !practice.succeeded}
+	{#if canPractice && !practiceSucceeded}
 		<Alert.Root>
 			<MicIcon class="size-4" />
 			<Alert.Title>Try one sentence</Alert.Title>
@@ -58,6 +67,6 @@
 	<PracticeDictation
 		disabled={!canPractice}
 		{disabledReason}
-		onSuccess={() => practice.markSucceeded()}
+		{onSuccess}
 	/>
 </div>

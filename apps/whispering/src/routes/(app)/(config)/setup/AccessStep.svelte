@@ -11,10 +11,12 @@
 	import { asDeviceIdentifier } from '$lib/services/recorder/types';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
-	import ManualSelectRecordingDevice from '../../settings/recording/ManualSelectRecordingDevice.svelte';
-	import VadSelectRecordingDevice from '../../settings/recording/VadSelectRecordingDevice.svelte';
+	import ManualSelectRecordingDevice from '../settings/recording/ManualSelectRecordingDevice.svelte';
+	import VadSelectRecordingDevice from '../settings/recording/VadSelectRecordingDevice.svelte';
 	import type { SetupPermissionState } from '$lib/setup/setup-readiness';
-	import { permissions } from '../setup-state.svelte';
+	import type { SetupPermissions } from './setup-permissions.svelte';
+
+	let { permissions }: { permissions: SetupPermissions } = $props();
 
 	const needsDesktopPermissions = Boolean(tauri && os.isApple);
 	const selectedRecordingMode = $derived(settings.get('recording.mode'));

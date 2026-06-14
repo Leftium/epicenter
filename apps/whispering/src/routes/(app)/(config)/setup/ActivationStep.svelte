@@ -19,8 +19,8 @@
 	import { settings } from '$lib/state/settings.svelte';
 	import { createPressedKeys } from '$lib/utils/createPressedKeys.svelte';
 	import { tauri } from '#platform/tauri';
-	import GlobalKeyboardShortcutRecorder from '../../settings/shortcuts/keyboard-shortcut-recorder/GlobalKeyboardShortcutRecorder.svelte';
-	import LocalKeyboardShortcutRecorder from '../../settings/shortcuts/keyboard-shortcut-recorder/LocalKeyboardShortcutRecorder.svelte';
+	import GlobalKeyboardShortcutRecorder from '../settings/shortcuts/keyboard-shortcut-recorder/GlobalKeyboardShortcutRecorder.svelte';
+	import LocalKeyboardShortcutRecorder from '../settings/shortcuts/keyboard-shortcut-recorder/LocalKeyboardShortcutRecorder.svelte';
 
 	// Only the browser (local) recorder needs the shared pressed-keys tracker;
 	// the desktop recorder captures through the rdev backend itself.

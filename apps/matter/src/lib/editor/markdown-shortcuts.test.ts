@@ -1,3 +1,10 @@
+/**
+ * Markdown Shortcut Tests
+ *
+ * Verifies the document changes behind Matter's editor formatting shortcuts:
+ * wrapping, unwrapping, cursor insertion, nested markers, and multiple ranges.
+ */
+
 import { describe, expect, test } from 'bun:test';
 import {
 	EditorSelection,

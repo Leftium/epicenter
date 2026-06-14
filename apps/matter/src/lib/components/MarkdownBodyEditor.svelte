@@ -29,7 +29,7 @@
 		onCommit: (body: string) => void;
 	} = $props();
 
-	let container: HTMLDivElement | undefined = $state();
+	let container: HTMLDivElement | undefined;
 	let editor: ActiveEditor | undefined;
 
 	$effect(() => {

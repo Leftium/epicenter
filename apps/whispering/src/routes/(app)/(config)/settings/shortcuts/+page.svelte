@@ -81,9 +81,10 @@
 			</div>
 			<SectionHeader.Description>
 				{#if tauri}
-					System-wide gestures that trigger from anywhere, even when Whispering
-					is not focused. Hold the Fn key or a modifier chord; the recording
-					gestures resolve a hold against a hold-plus-key automatically.
+					System-wide gestures that fire from anywhere, even when Whispering is
+					not focused. Hold the Fn key or a modifier chord. Each gesture needs
+					its own keys, so the key you use for push-to-talk cannot be part of
+					another shortcut.
 				{:else}
 					Shortcuts that trigger while the Whispering tab is focused.
 				{/if}

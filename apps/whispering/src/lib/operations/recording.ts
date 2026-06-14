@@ -125,6 +125,10 @@ export function toggleManualRecording() {
 }
 
 export async function cancelRecording() {
+	// Note: distinct from the low-level Tauri `commands.cancelRecording()` (CPAL
+	// stream teardown). This is the user-facing command: it decides what "cancel"
+	// means across the manual and VAD recorders.
+	//
 	// Cancel aborts whichever capture is live, without touching `recording.mode`:
 	// the chosen input mode (manual vs VAD) is a deliberate preference, not
 	// something a cancel keystroke should flip, so cancelling in VAD mode leaves

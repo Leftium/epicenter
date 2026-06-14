@@ -312,6 +312,9 @@ const shortcuts = {
 		nullable(field.string()),
 		(): string | null => ' ',
 	),
+	// Renamed from `shortcut.cancelManualRecording` (cancel now aborts manual or
+	// VAD capture, so the "manual" qualifier is gone). No migration: pre-release,
+	// the old key is simply orphaned and this falls back to its default.
 	'shortcut.cancelRecording': defineKv(
 		nullable(field.string()),
 		(): string | null => 'c',

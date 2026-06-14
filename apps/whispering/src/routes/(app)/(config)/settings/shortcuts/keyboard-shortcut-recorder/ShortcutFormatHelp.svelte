@@ -45,9 +45,9 @@
 		},
 		{
 			binding: os.isApple
-				? { modifiers: ['fn'], keys: ['space'] }
-				: { modifiers: ['ctrl', 'meta'], keys: ['space'] },
-			desc: 'a modifier + key gesture (the toggle default)',
+				? { modifiers: ['meta', 'shift'], keys: ['space'] }
+				: { modifiers: ['ctrl', 'shift'], keys: ['space'] },
+			desc: 'a modifier chord plus a key (the toggle default)',
 		},
 	] satisfies { binding: { modifiers: Modifier[]; keys: string[] }; desc: string }[];
 </script>
@@ -166,7 +166,9 @@
 						Global shortcuts are held gestures that fire system-wide, so they
 						work from any app and can use keys the old shortcuts could not: the
 						Fn key or a modifier held on its own. Give every gesture a modifier
-						or Fn so it cannot fire on an ordinary keypress.
+						or Fn so it cannot fire on an ordinary keypress, and give each one its
+						own keys: a key bound to one gesture (like push-to-talk's Fn) cannot
+						be part of another.
 					</p>
 				</div>
 

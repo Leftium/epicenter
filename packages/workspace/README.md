@@ -1616,8 +1616,6 @@ import {
 	DispatchError,
 	type DispatchRequest,
 	type PresenceDevice,
-	type TypedDispatch,
-	typedDispatch,
 } from '@epicenter/workspace';
 ```
 
@@ -1629,7 +1627,6 @@ import {
 Cross-device calls:
 
 - `collaboration.dispatch(req)`: `Promise<Result<unknown, DispatchError>>`
-- `typedDispatch<TActions>(collaboration.dispatch)`: typed overlay for a known target registry
 
 ### Introspection
 

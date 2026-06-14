@@ -45,7 +45,7 @@ export function readMetadata(dir: string): DaemonMetadata | null {
 	return readMetadataFromPath(metadataPathFor(dir));
 }
 
-export function readMetadataFromPath(path: string): DaemonMetadata | null {
+function readMetadataFromPath(path: string): DaemonMetadata | null {
 	if (!existsSync(path)) return null;
 	try {
 		const raw = readFileSync(path, 'utf8');

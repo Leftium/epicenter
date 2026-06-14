@@ -66,11 +66,9 @@
 
 	// Reject reserved or unsafe gestures before saving. Returns true when the
 	// binding is allowed; otherwise reports why and leaves the current binding
-	// untouched. Cancel is the one gesture allowed to be a bare Escape.
+	// untouched.
 	function validateAndReport(next: KeyBinding): boolean {
-		const result = validateGlobalBinding(next, {
-			isCancel: command.id === 'cancelManualRecording',
-		});
+		const result = validateGlobalBinding(next);
 		if (result.ok) return true;
 		report.error({
 			title: 'That shortcut is not available',

@@ -30,18 +30,26 @@ const globalBinding = type({
 //   Windows: Ctrl+Win = push-to-talk,  Ctrl+Win + Space  = toggle
 //
 // Fn is a single physical key on Apple keyboards; elsewhere we reach for
-// Ctrl+Win, a held chord that no common OS shortcut claims. Cancel is a bare
-// Escape, registered only while a session is live (see the cancel-gating in
-// register-commands). Transformation gestures ship unbound: opt-in only.
-// Exported so the reset path in register-commands shares this one source of truth.
+// Ctrl+Win, a held chord that no common OS shortcut claims. Cancel is the
+// platform cancel chord (Cmd + . on macOS, the system cancel gesture since
+// classic Mac OS; Ctrl + Shift + . elsewhere). A modifier-carrying chord is
+// safe to hold globally, so cancel registers like any other gesture with no
+// session gating, and it deliberately avoids the push-to-talk prefix so it
+// never forces that hold into a pending window. Transformation gestures ship
+// unbound: opt-in only. Exported so the reset path in register-commands shares
+// this one source of truth.
 const PUSH_TO_TALK_MODIFIERS: KeyBinding['modifiers'] = os.isApple
 	? ['fn']
 	: ['ctrl', 'meta'];
 
+const CANCEL_MODIFIERS: KeyBinding['modifiers'] = os.isApple
+	? ['meta']
+	: ['ctrl', 'shift'];
+
 export const DEFAULT_GLOBAL_BINDINGS = {
 	pushToTalk: { modifiers: PUSH_TO_TALK_MODIFIERS, keys: [] },
 	toggleManualRecording: { modifiers: PUSH_TO_TALK_MODIFIERS, keys: ['space'] },
-	cancelManualRecording: { modifiers: [], keys: ['escape'] },
+	cancelManualRecording: { modifiers: CANCEL_MODIFIERS, keys: ['dot'] },
 	toggleVadRecording: null,
 	openTransformationPicker: null,
 	runTransformationOnClipboard: null,

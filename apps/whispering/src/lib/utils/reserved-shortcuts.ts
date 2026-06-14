@@ -7,9 +7,8 @@
  * shadowing something the OS or foreground app owns:
  * - A short list of common OS/app chords (reload, clipboard, undo/redo, close,
  *   quit, app switch, screenshots, system search) is refused outright.
- * - A non-cancel gesture must carry a modifier or Fn, so it cannot fire on an
- *   ordinary keypress.
- * - A bare Escape is allowed only for the cancel gesture (its one exception).
+ * - A gesture must carry a modifier or Fn, so it cannot fire on an ordinary
+ *   keypress.
  */
 
 import type { Modifier } from '$lib/tauri/commands';
@@ -108,13 +107,9 @@ function matchesReserved(binding: BindingLike, chord: ReservedChord): boolean {
  * Validate a desktop global gesture against the reserved-shortcut policy.
  *
  * An empty binding (no modifiers, no keys) is treated as "unset" and passes;
- * clearing a gesture is the caller's job, not this check's. `isCancel` relaxes
- * the bare-Escape rule for the cancel gesture only.
+ * clearing a gesture is the caller's job, not this check's.
  */
-export function validateGlobalBinding(
-	binding: BindingLike,
-	{ isCancel }: { isCancel: boolean },
-): ReservedCheck {
+export function validateGlobalBinding(binding: BindingLike): ReservedCheck {
 	const hasNothing =
 		binding.modifiers.length === 0 && binding.keys.length === 0;
 	if (hasNothing) return { ok: true };
@@ -126,18 +121,6 @@ export function validateGlobalBinding(
 				reason: `That combination is reserved by the system or app (${chord.label}). Pick another.`,
 			};
 		}
-	}
-
-	const isStandaloneEscape =
-		binding.modifiers.length === 0 &&
-		binding.keys.length === 1 &&
-		binding.keys[0] === 'escape';
-	if (isStandaloneEscape) {
-		if (isCancel) return { ok: true };
-		return {
-			ok: false,
-			reason: 'Escape on its own is reserved for canceling a recording.',
-		};
 	}
 
 	if (binding.modifiers.length === 0) {

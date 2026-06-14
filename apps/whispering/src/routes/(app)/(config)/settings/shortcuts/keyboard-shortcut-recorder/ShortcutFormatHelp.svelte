@@ -49,10 +49,6 @@
 				: { modifiers: ['ctrl', 'meta'], keys: ['space'] },
 			desc: 'a modifier + key gesture (the toggle default)',
 		},
-		{
-			binding: { modifiers: [], keys: ['escape'] },
-			desc: 'a bare Escape, allowed only for cancel',
-		},
 	] satisfies { binding: { modifiers: Modifier[]; keys: string[] }; desc: string }[];
 </script>
 
@@ -170,8 +166,7 @@
 						Global shortcuts are held gestures that fire system-wide, so they
 						work from any app and can use keys the old shortcuts could not: the
 						Fn key or a modifier held on its own. Give every gesture a modifier
-						or Fn so it cannot fire on an ordinary keypress. Bare Escape is
-						reserved for canceling.
+						or Fn so it cannot fire on an ordinary keypress.
 					</p>
 				</div>
 
@@ -190,7 +185,7 @@
 
 				<!-- The three shapes -->
 				<div>
-					<h4 class="text-sm font-semibold mb-1">Three kinds of shortcut</h4>
+					<h4 class="text-sm font-semibold mb-1">Two kinds of shortcut</h4>
 					<div class="space-y-2">
 						{#each GLOBAL_SHAPES as shape}
 							<div class="flex items-center gap-2">

@@ -94,12 +94,16 @@ This automatically handles installation and updates.
 | Architecture      | Download                                                                                                                          | Requirements     |
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
 | **Apple Silicon** | [Whispering_7.11.0_aarch64.dmg](https://github.com/EpicenterHQ/epicenter/releases/download/v7.11.0/Whispering_7.11.0_aarch64.dmg) | M1/M2/M3/M4 Macs |
+| **Intel**         | [Whispering_7.11.0_x64.dmg](https://github.com/EpicenterHQ/epicenter/releases/download/v7.11.0/Whispering_7.11.0_x64.dmg)         | Intel-based Macs |
 
-> **💡 Tip:** The direct macOS download is for Apple Silicon (M1/M2/M3/M4) Macs. Intel Mac builds are not currently published.
+> **💡 Tip:** Not sure which Mac you have? Click the Apple menu → About This Mac. Look for "Chip" or "Processor":
+>
+> - Apple M1/M2/M3/M4 → Use Apple Silicon version
+> - Intel Core → Use Intel version
 
 **Installation steps:**
 
-1. Download the `.dmg` file
+1. Download the `.dmg` file for your architecture
 2. Open the downloaded file
 3. Drag Whispering to your Applications folder
 4. Open Whispering from Applications
@@ -570,7 +574,7 @@ Yes - set up AI transformations to fix grammar, translate languages, or reformat
 
 ### What platforms work?
 
-Desktop: Apple Silicon Mac, Windows, Linux. Web: Any modern browser at [whispering.epicenter.so](https://whispering.epicenter.so).
+Desktop: Mac (Intel & Apple Silicon), Windows, Linux. Web: Any modern browser at [whispering.epicenter.so](https://whispering.epicenter.so).
 
 ### Found a bug?
 

@@ -84,23 +84,35 @@
 			});
 		},
 	});
+
+	const recorder = {
+		get isListening() {
+			return keyRecorder.isListening;
+		},
+		get label() {
+			return label;
+		},
+		get manualInitial() {
+			return shortcutValue ?? '';
+		},
+		start: () => keyRecorder.start(),
+		stop: () => keyRecorder.stop(),
+		clear: () => keyRecorder.clear(),
+		submitManual: (raw: string) =>
+			keyRecorder.register(raw.split('+') as KeyboardEventSupportedKey[]),
+	};
 </script>
 
 <RecorderShell
 	title={command.title}
-	{placeholder}
-	{label}
-	isListening={keyRecorder.isListening}
-	onStart={() => keyRecorder.start()}
-	onStop={() => keyRecorder.stop()}
-	onClear={() => keyRecorder.clear()}
-	onManualSubmit={(raw) =>
-		keyRecorder.register(raw.split('+') as KeyboardEventSupportedKey[])}
-	manualInitial={shortcutValue ?? ''}
-	recordHelp="Click to record or edit manually"
-	manualHelp="Enter shortcut manually (e.g., ctrl+shift+a)"
-	manualPlaceholder="e.g., ctrl+shift+a"
-	manualButtonLabel="Edit manually"
+	{recorder}
+	copy={{
+		placeholder,
+		recordHelp: 'Click to record or edit manually',
+		manualHelp: 'Enter shortcut manually (e.g., ctrl+shift+a)',
+		manualPlaceholder: 'e.g., ctrl+shift+a',
+		manualButtonLabel: 'Edit manually',
+	}}
 >
 	{#snippet warning()}
 		{#if os.isApple}

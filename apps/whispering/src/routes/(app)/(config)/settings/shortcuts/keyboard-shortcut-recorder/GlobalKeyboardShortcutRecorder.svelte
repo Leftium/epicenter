@@ -111,22 +111,34 @@
 		});
 		return true;
 	}
+
+	const recorder = {
+		get isListening() {
+			return isListening;
+		},
+		get label() {
+			return label;
+		},
+		get manualInitial() {
+			return label ?? '';
+		},
+		start: () => void startCapture(),
+		stop: () => void stopCapture(),
+		clear: () => void clear(),
+		submitManual,
+	};
 </script>
 
 <RecorderShell
 	bind:open
 	title={command.title}
-	{placeholder}
-	{label}
-	{isListening}
-	onStart={() => void startCapture()}
-	onStop={() => void stopCapture()}
-	onClear={() => void clear()}
-	onManualSubmit={submitManual}
-	manualInitial={label ?? ''}
-	recordHelp="Press a combination. Fn and modifier-only holds work here."
-	manualHelp="Type a combination (e.g. cmd+shift+d, fn+space)"
-	manualPlaceholder="e.g. cmd+shift+d"
-	manualButtonLabel="Type manually"
-	listeningHint="Release to set, Esc to cancel"
+	{recorder}
+	copy={{
+		placeholder,
+		recordHelp: 'Press a combination. Fn and modifier-only holds work here.',
+		manualHelp: 'Type a combination (e.g. cmd+shift+d, fn+space)',
+		manualPlaceholder: 'e.g. cmd+shift+d',
+		manualButtonLabel: 'Type manually',
+		listeningHint: 'Release to set, Esc to cancel',
+	}}
 />

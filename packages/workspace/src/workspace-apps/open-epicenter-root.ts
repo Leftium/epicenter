@@ -9,16 +9,17 @@
  *      validates that its default export is a `Mount[]`.
  *   2. Validate the configured mount names.
  *   3. Claim the Epicenter folder's generated-state boundary.
- *   4. Load the machine session once (it may be `null`: a logged-out daemon is
- *      a valid state), then open every mount with it.
+ *   4. Build one `MountSession` from the caller's auth client (or `null` when
+ *      signed out: a logged-out daemon is a valid state), then open every mount
+ *      with it.
  *
- * The daemon never gates on auth. It hands each mount a `session` (or `null`)
- * and lets the mount decide: a local mirror ignores it, a peer-plane mount uses
- * its socket, an encrypted-workspace mount uses its keyring or returns
- * `inactive("sign in ...")`. Mounts that open become `started`; mounts that
- * return `inactive` are reported but do not block their siblings. Only a config
- * error, a name collision, a folder-claim failure, or a thrown `open` aborts
- * startup.
+ * The daemon never gates on auth: it receives an auth client (or `null`) from
+ * the CLI, hands each mount the resulting `session`, and lets the mount decide.
+ * A local mirror ignores it, a peer-plane mount uses its socket, an
+ * encrypted-workspace mount uses its keyring or returns `inactive("sign in
+ * ...")`. Mounts that open become `started`; mounts that return `inactive` are
+ * reported but do not block their siblings. Only a config error, a name
+ * collision, a folder-claim failure, or a thrown `open` aborts startup.
  */
 
 import {
@@ -29,7 +30,6 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { Keyring } from '@epicenter/encryption';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 
 import {
@@ -43,9 +43,7 @@ import {
 } from '../daemon/define-mount.js';
 import { validateMountNames } from '../daemon/mount-validation.js';
 import type { StartedMount } from '../daemon/types.js';
-import { asDeviceId } from '../document/device-id.js';
 import { mountMarkdownPath } from '../document/workspace-paths.js';
-import { hashYDocClientId } from '../shared/client-id.js';
 import type { EpicenterRoot } from '../shared/types.js';
 import type { WorkspaceAuthClient } from './auth-client.js';
 import { WorkspaceAppError } from './errors.js';
@@ -62,13 +60,14 @@ export type OpenedEpicenterRoot = {
 	inactive: InactiveMount[];
 };
 
-export type OpenEpicenterRootOptions<TAuthError = never> = {
+export type OpenEpicenterRootOptions = {
 	epicenterRoot: EpicenterRoot | string;
 	/**
-	 * Load the machine session. Resolves to `null` when the user is signed out
-	 * (a valid, supported state). Only a genuine storage error aborts startup.
+	 * The machine auth client, or `null` when signed out (a valid, supported
+	 * state). The CLI owns loading it and mapping "no saved session" to `null`;
+	 * the daemon only reads its state to build each mount's `session`.
 	 */
-	loadSession?: () => Promise<Result<WorkspaceAuthClient | null, TAuthError>>;
+	auth: WorkspaceAuthClient | null;
 };
 
 type OpenOutcome =
@@ -85,13 +84,10 @@ type OpenOutcome =
  * throws, every successfully opened runtime is disposed before returning the
  * first failure.
  */
-export async function openEpicenterRoot<TAuthError = never>(
-	options: OpenEpicenterRootOptions<TAuthError>,
+export async function openEpicenterRoot(
+	options: OpenEpicenterRootOptions,
 ): Promise<
-	Result<
-		OpenedEpicenterRoot,
-		EpicenterConfigError | WorkspaceAppError | TAuthError
-	>
+	Result<OpenedEpicenterRoot, EpicenterConfigError | WorkspaceAppError>
 > {
 	const epicenterRoot = resolve(options.epicenterRoot) as EpicenterRoot;
 
@@ -116,14 +112,13 @@ export async function openEpicenterRoot<TAuthError = never>(
 	});
 	if (claimResult.error !== null) return Err(claimResult.error);
 
-	const sessionResult = options.loadSession
-		? await options.loadSession()
-		: Ok(null);
-	if (sessionResult.error) return Err(sessionResult.error);
-	const auth = sessionResult.data;
+	// One session for the whole root: it carries only auth-derived capabilities,
+	// so every mount shares it. Per-mount identity (clientID, device id) is
+	// derived from `epicenterRoot` / `mount` where it is used, not pinned here.
+	const session = buildMountSession(options.auth);
 
 	const settled = await Promise.allSettled(
-		mounts.map((mount) => openOneMount({ mount, epicenterRoot, auth })),
+		mounts.map((mount) => openOneMount({ mount, epicenterRoot, session })),
 	);
 
 	const started: StartedMount[] = [];
@@ -159,17 +154,13 @@ export async function openEpicenterRoot<TAuthError = never>(
 async function openOneMount({
 	mount,
 	epicenterRoot,
-	auth,
+	session,
 }: {
 	mount: Mount;
 	epicenterRoot: EpicenterRoot;
-	auth: WorkspaceAuthClient | null;
+	session: MountSession | null;
 }): Promise<OpenOutcome> {
-	const ctx = {
-		epicenterRoot,
-		mount: mount.name,
-		session: buildMountSession({ auth, epicenterRoot, mount: mount.name }),
-	};
+	const ctx = { epicenterRoot, mount: mount.name, session };
 	try {
 		const result = await mount.open(ctx);
 		if (isInactive(result)) {
@@ -189,47 +180,29 @@ async function openOneMount({
 }
 
 /**
- * Build the signed-in capability kit for one mount, or `null` when machine auth
- * is absent or signed out. The keyring reader re-checks `auth.state` on every
- * call so a late sign-out throws at the next encrypted write rather than
- * silently losing ciphertext.
+ * Build the signed-in capability kit, or `null` when machine auth is absent or
+ * signed out. The keyring reader re-checks `auth.state` on every call so a late
+ * sign-out throws at the next encrypted write rather than silently losing
+ * ciphertext.
  */
-function buildMountSession({
-	auth,
-	epicenterRoot,
-	mount,
-}: {
-	auth: WorkspaceAuthClient | null;
-	epicenterRoot: EpicenterRoot;
-	mount: string;
-}): MountSession | null {
+function buildMountSession(
+	auth: WorkspaceAuthClient | null,
+): MountSession | null {
 	if (auth === null || auth.state.status === 'signed-out') return null;
 	return {
 		ownerId: auth.state.ownerId,
-		deviceId: asDeviceId(`${mount}-daemon`),
-		yDocClientId: hashYDocClientId(epicenterRoot),
-		keyring: createMountKeyringReader({ auth, mount }),
+		keyring: () => {
+			if (auth.state.status === 'signed-out') {
+				throw new Error('Cannot read keyring: machine auth is signed out.');
+			}
+			return auth.state.keyring;
+		},
 		// `auth.openWebSocket` / `auth.fetch` / `auth.onStateChange` are
 		// closure-based on the auth client and do not read `this`, so passing the
 		// method reference directly is safe (no `.bind(auth)` needed).
 		openWebSocket: auth.openWebSocket,
 		onReconnectSignal: auth.onStateChange,
 		fetch: auth.fetch,
-	};
-}
-
-function createMountKeyringReader({
-	auth,
-	mount,
-}: {
-	auth: WorkspaceAuthClient;
-	mount: string;
-}): () => Keyring {
-	return () => {
-		if (auth.state.status === 'signed-out') {
-			throw new Error(`[${mount}-daemon] auth signed-out.`);
-		}
-		return auth.state.keyring;
 	};
 }
 

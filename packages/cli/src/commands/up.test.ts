@@ -67,6 +67,15 @@ const STUB_AUTH = {
 } satisfies SyncAuthClient;
 
 const stubAuthFactory = async () => Ok(STUB_AUTH);
+/** A machine with no saved session: the daemon runs with a `null` session. */
+const signedOutFactory = async () =>
+	Err(
+		MachineAuthStorageError.NoSavedSession({
+			filePath: '/tmp/fake-auth.json',
+			baseURL: 'https://example.com',
+		}).error,
+	);
+/** Used only where startup short-circuits before auth is ever loaded. */
 const failIfAuthCreated = async () => {
 	throw new Error('must not create auth');
 };
@@ -153,8 +162,10 @@ function writeRuntimeMount({
 
 		export default {
 			name: 'demo',
-			kind: 'collaborative',
-			async open() {
+			async open(ctx) {
+				if (!ctx.session) {
+					return { inactive: true, reason: 'sign in to enable demo' };
+				}
 				return {
 					actions,
 					collaboration,
@@ -211,7 +222,6 @@ describe('runUp: happy path', () => {
 
 			export default {
 				name: 'mirror',
-				kind: 'local',
 				async open() {
 					return {
 						actions,
@@ -226,7 +236,7 @@ describe('runUp: happy path', () => {
 			await runUp({
 				epicenterRoot: workDir,
 				quiet: true,
-				createAuthClient: failIfAuthCreated,
+				createAuthClient: signedOutFactory,
 			}),
 		);
 		try {
@@ -250,29 +260,28 @@ describe('runUp: happy path', () => {
 });
 
 describe('runUp: failure cleanup', () => {
-	test('requires auth and releases the lease when collaborative auth has no saved session', async () => {
+	test('reports a session mount as inactive when signed out, without serving it', async () => {
 		writeRuntimeMount();
 
-		const error = expectErr(
+		const handle = expectOk(
 			await runUp({
 				epicenterRoot: workDir,
 				quiet: true,
-				createAuthClient: async () =>
-					Err(
-						MachineAuthStorageError.NoSavedSession({
-							filePath: '/tmp/fake-auth.json',
-							baseURL: 'https://example.com',
-						}).error,
-					),
+				createAuthClient: signedOutFactory,
 			}),
 		);
 
-		expect(error).toMatchObject({
-			name: 'MountAuthRequired',
-			mounts: ['demo'],
-		});
-		const lease = expectOk(claimDaemonLease(workDir));
-		lease.release();
+		try {
+			expect(handle.mounts).toEqual([]);
+			expect(handle.inactive).toEqual([
+				{ mount: 'demo', reason: 'sign in to enable demo' },
+			]);
+			// The daemon still binds its socket: a signed-out daemon is running,
+			// it just has nothing to serve yet.
+			expect(await pingDaemon(socketPathFor(workDir), 1000)).toBe(true);
+		} finally {
+			await handle.teardown();
+		}
 	});
 
 	test('surfaces non-session auth errors and releases the lease', async () => {
@@ -303,7 +312,7 @@ describe('runUp: failure cleanup', () => {
 			await runUp({
 				epicenterRoot: workDir,
 				quiet: true,
-				createAuthClient: failIfAuthCreated,
+				createAuthClient: signedOutFactory,
 			}),
 		);
 
@@ -326,7 +335,7 @@ describe('runUp: failure cleanup', () => {
 			await runUp({
 				epicenterRoot: workDir,
 				quiet: true,
-				createAuthClient: failIfAuthCreated,
+				createAuthClient: signedOutFactory,
 			}),
 		);
 
@@ -414,7 +423,7 @@ describe('runUp: failure cleanup', () => {
 			await runUp({
 				epicenterRoot: workDir,
 				quiet: true,
-				createAuthClient: failIfAuthCreated,
+				createAuthClient: signedOutFactory,
 			}),
 		);
 		expect(error.name).toBe('EpicenterConfigImportFailed');
@@ -427,7 +436,6 @@ describe('runUp: failure cleanup', () => {
 		writeDemoMount(`
 			export default {
 				name: 'demo',
-				kind: 'local',
 				async open() {
 					throw new Error('mount failed');
 				},
@@ -439,7 +447,7 @@ describe('runUp: failure cleanup', () => {
 			await runUp({
 				epicenterRoot: workDir,
 				quiet: true,
-				createAuthClient: failIfAuthCreated,
+				createAuthClient: signedOutFactory,
 			}),
 		);
 
@@ -475,7 +483,6 @@ describe('runUp: failure cleanup', () => {
 
 				export default {
 					name: 'good',
-					kind: 'collaborative',
 					async open(ctx) {
 						mkdirSync(join(ctx.epicenterRoot, '.epicenter', 'sqlite'), {
 							recursive: true,
@@ -493,7 +500,6 @@ describe('runUp: failure cleanup', () => {
 			`
 				export default {
 					name: 'bad',
-					kind: 'collaborative',
 					async open() {
 						throw new Error('bad mount failed');
 					},
@@ -542,7 +548,6 @@ describe('runUp: failure cleanup', () => {
 
 				export default {
 					name: 'good',
-					kind: 'local',
 					async open() {
 						return {
 							actions: {},
@@ -559,7 +564,6 @@ describe('runUp: failure cleanup', () => {
 			`
 				export default {
 					name: 'bad',
-					kind: 'local',
 					async open() {
 						throw new Error('bad mount failed');
 					},
@@ -580,7 +584,7 @@ describe('runUp: failure cleanup', () => {
 			await runUp({
 				epicenterRoot: workDir,
 				quiet: true,
-				createAuthClient: failIfAuthCreated,
+				createAuthClient: signedOutFactory,
 			}),
 		);
 
@@ -625,6 +629,8 @@ describe('runUp: already running', () => {
 				await runUp({
 					epicenterRoot: workDir,
 					quiet: true,
+					// A held lease short-circuits before auth is ever loaded; this
+					// factory throws if startup reaches for it.
 					createAuthClient: failIfAuthCreated,
 				}),
 			);

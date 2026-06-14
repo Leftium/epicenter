@@ -7,8 +7,8 @@
  * - a missing config returns a structured `EpicenterConfigNotFound` Result
  * - a valid config opens every declared mount; the result splits into
  *   `started` and `inactive`
- * - the daemon never gates on auth: it loads a session (possibly null) and
- *   hands it to every mount, which decides for itself whether to run
+ * - the daemon never gates on auth: it receives an auth client (or `null`) and
+ *   hands the resulting session to every mount, which decides for itself
  * - a mount that returns `inactive(reason)` is reported but does not block
  *   its siblings
  * - if any sibling `open(ctx)` throws, the successfully opened runtimes are
@@ -17,7 +17,8 @@
  * - a populated mount folder blocks bootstrap until `.epicenter/` exists
  *
  * Config-shape validation is pinned separately in
- * `config/load-epicenter-config.test.ts`.
+ * `config/load-epicenter-config.test.ts`. Auth loading and its storage errors
+ * are the CLI's job, pinned in `packages/cli/src/commands/up.test.ts`.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -26,7 +27,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { asOwnerId } from '@epicenter/identity';
-import { Err, Ok } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
 import type { WorkspaceAuthClient } from './auth-client.js';
@@ -46,7 +46,7 @@ function writeConfig(source: string): void {
 	writeFileSync(join(epicenterRoot, 'epicenter.config.ts'), source);
 }
 
-function stubAuthClient(): WorkspaceAuthClient {
+function signedIn(): WorkspaceAuthClient {
 	return {
 		state: {
 			status: 'signed-in',
@@ -58,9 +58,6 @@ function stubAuthClient(): WorkspaceAuthClient {
 		onStateChange: () => () => {},
 	};
 }
-
-const signedIn = async () => Ok(stubAuthClient());
-const signedOut = async () => Ok(null);
 
 /** A runtime literal whose dispose is a no-op, written into a config. */
 const RUNTIME = '{ actions: {}, async [Symbol.asyncDispose]() {} }';
@@ -83,7 +80,7 @@ describe('openEpicenterRoot', () => {
 	test('returns a structured not-found error instead of throwing', async () => {
 		const result = await openEpicenterRoot({
 			epicenterRoot,
-			loadSession: signedIn,
+			auth: signedIn(),
 		});
 		const error = expectErr(result);
 		expect(error).toMatchObject({
@@ -100,7 +97,7 @@ describe('openEpicenterRoot', () => {
 			];\n`,
 		);
 
-		const result = await openEpicenterRoot({ epicenterRoot });
+		const result = await openEpicenterRoot({ epicenterRoot, auth: null });
 		const { started, inactive } = expectOk(result);
 		expect(
 			started
@@ -120,7 +117,7 @@ describe('openEpicenterRoot', () => {
 	test('opens nothing for an empty config', async () => {
 		writeConfig('export default [];\n');
 
-		const result = await openEpicenterRoot({ epicenterRoot });
+		const result = await openEpicenterRoot({ epicenterRoot, auth: null });
 		expect(expectOk(result)).toEqual({ started: [], inactive: [] });
 	});
 
@@ -129,10 +126,7 @@ describe('openEpicenterRoot', () => {
 			`export default [{ name: 'mirror', open: () => (${RUNTIME}) }];\n`,
 		);
 
-		const result = await openEpicenterRoot({
-			epicenterRoot,
-			loadSession: signedOut,
-		});
+		const result = await openEpicenterRoot({ epicenterRoot, auth: null });
 		const { started, inactive } = expectOk(result);
 		expect(started.map((entry) => entry.mount)).toEqual(['mirror']);
 		expect(inactive).toEqual([]);
@@ -146,10 +140,7 @@ describe('openEpicenterRoot', () => {
 			];\n`,
 		);
 
-		const result = await openEpicenterRoot({
-			epicenterRoot,
-			loadSession: signedOut,
-		});
+		const result = await openEpicenterRoot({ epicenterRoot, auth: null });
 		const { started, inactive } = expectOk(result);
 		expect(started.map((entry) => entry.mount)).toEqual(['mirror']);
 		expect(inactive).toEqual([
@@ -167,7 +158,7 @@ describe('openEpicenterRoot', () => {
 
 		const result = await openEpicenterRoot({
 			epicenterRoot,
-			loadSession: signedIn,
+			auth: signedIn(),
 		});
 		const { started, inactive } = expectOk(result);
 		expect(
@@ -196,24 +187,12 @@ describe('openEpicenterRoot', () => {
 			];\n`,
 		);
 
-		const result = await openEpicenterRoot({ epicenterRoot });
+		const result = await openEpicenterRoot({ epicenterRoot, auth: null });
 		const error = expectErr(result);
 		expect(error).toMatchObject({ name: 'MountOpenFailed', mount: 'bad' });
 		expect(await Bun.file(join(epicenterRoot, 'good.disposed')).exists()).toBe(
 			true,
 		);
-	});
-
-	test('propagates a genuine session-load error', async () => {
-		writeConfig(
-			`export default [{ name: 'mirror', open: () => (${RUNTIME}) }];\n`,
-		);
-
-		const result = await openEpicenterRoot({
-			epicenterRoot,
-			loadSession: async () => Err({ name: 'AuthFileUnreadable' } as const),
-		});
-		expect(expectErr(result)).toMatchObject({ name: 'AuthFileUnreadable' });
 	});
 
 	test('rejects invalid mount names before opening any mount', async () => {
@@ -231,7 +210,7 @@ describe('openEpicenterRoot', () => {
 			];\n`,
 		);
 
-		const result = await openEpicenterRoot({ epicenterRoot });
+		const result = await openEpicenterRoot({ epicenterRoot, auth: null });
 		expect(expectErr(result)).toMatchObject({
 			name: 'MountRejected',
 			mount: '__proto__',
@@ -260,7 +239,7 @@ describe('openEpicenterRoot', () => {
 			];\n`,
 		);
 
-		const result = await openEpicenterRoot({ epicenterRoot });
+		const result = await openEpicenterRoot({ epicenterRoot, auth: null });
 		expect(expectErr(result)).toMatchObject({
 			name: 'MountFolderNotEmpty',
 			mount: 'fuji',
@@ -291,7 +270,7 @@ describe('openEpicenterRoot', () => {
 			];\n`,
 		);
 
-		const result = await openEpicenterRoot({ epicenterRoot });
+		const result = await openEpicenterRoot({ epicenterRoot, auth: null });
 		expect(expectErr(result)).toMatchObject({
 			name: 'EpicenterFolderClaimFailed',
 			epicenterRoot,
@@ -307,7 +286,7 @@ describe('openEpicenterRoot', () => {
 			`export default [{ name: 'fuji', open: () => (${RUNTIME}) }];\n`,
 		);
 
-		const result = await openEpicenterRoot({ epicenterRoot });
+		const result = await openEpicenterRoot({ epicenterRoot, auth: null });
 		expect(expectOk(result).started).toHaveLength(1);
 	});
 
@@ -318,7 +297,7 @@ describe('openEpicenterRoot', () => {
 			`export default [{ name: 'fuji', open: () => (${RUNTIME}) }];\n`,
 		);
 
-		const result = await openEpicenterRoot({ epicenterRoot });
+		const result = await openEpicenterRoot({ epicenterRoot, auth: null });
 		expect(expectOk(result).started).toHaveLength(1);
 	});
 });

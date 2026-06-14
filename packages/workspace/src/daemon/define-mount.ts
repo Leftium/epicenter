@@ -12,16 +12,19 @@
  *   - return `inactive(reason)` to say "I cannot run right now," typically
  *     because it needs a signed-in `session` and there is none.
  *
- * There is no `local` vs `collaborative` kind. A mount asks `ctx.session` for
- * what it needs: a purely local mirror ignores it, a mount that wants the peer
- * plane (presence + remote dispatch) uses its socket, and a mount that stores
- * encrypted workspace data uses its keyring. The session is `null` when machine
- * auth is signed out, so the logged-out case is always in front of the author.
+ * There is no `local` vs `collaborative` kind. The context carries the Epicenter
+ * root, the mount name, and a nullable `session`. A purely local mirror ignores
+ * the session, a mount that wants the peer plane (presence + remote dispatch)
+ * uses its socket, and a mount that stores encrypted workspace data uses its
+ * keyring. The session is `null` when machine auth is signed out, so the
+ * logged-out case is always in front of the author.
+ *
+ * Most mounts need a session, so they declare with `defineSessionMount` and get
+ * a guaranteed-non-null `session` plus an automatic `inactive` when signed out.
  */
 
 import type { Keyring } from '@epicenter/encryption';
 import type { OwnerId } from '@epicenter/identity';
-import type { DeviceId } from '../document/device-id.js';
 import type {
 	OnReconnectSignal,
 	OpenWebSocketFn,
@@ -34,24 +37,21 @@ import type {
 import type { DaemonRuntime } from './types.js';
 
 /**
- * The signed-in capability kit a mount needs to join the peer plane or read its
- * encrypted workspace. Present on the context only while machine auth is
- * signed in.
+ * The signed-in capability kit: everything a mount needs that only exists once
+ * machine auth is signed in. Built once per Epicenter root and shared by every
+ * mount; `null` on the context while signed out.
  *
- * - `keyring` is the lazy reader for the current owner keyring. The host's
- *   closure throws on late sign-out so writes fail loud instead of silently
- *   losing ciphertext. Needed only by mounts that store encrypted data.
+ * - `ownerId` is the workspace owner the daemon syncs as.
+ * - `keyring` is the lazy reader for the owner keyring. It re-reads auth state
+ *   on every call so a late sign-out throws at the next encrypted write instead
+ *   of silently losing ciphertext. Needed only by mounts that store encrypted
+ *   data.
  * - `openWebSocket` / `onReconnectSignal` / `fetch` are the auth-owned transport
- *   refs forwarded into `openCollaboration` for sync, presence, and dispatch.
- * - `ownerId`, `deviceId`, and `yDocClientId` pin this mount's identity on the
- *   Y.Doc (`ydoc.clientID = session.yDocClientId`).
+ *   refs forwarded into `openCollaboration` for sync, presence, and dispatch,
+ *   and into one-shot HTTP reads.
  */
 export type MountSession = {
 	readonly ownerId: OwnerId;
-	/** Conventional collaboration WebSocket device id: `<mount>-daemon`. */
-	readonly deviceId: DeviceId;
-	/** Deterministic Y.Doc CRDT `clientID` for this daemon, from `epicenterRoot`. */
-	readonly yDocClientId: number;
 	keyring(): Keyring;
 	readonly openWebSocket: OpenWebSocketFn;
 	readonly onReconnectSignal: OnReconnectSignal;
@@ -63,15 +63,22 @@ export type MountSession = {
  *
  * - `epicenterRoot` is the resolved Epicenter root (the folder that holds
  *   `epicenter.config.ts`). Disk-writing helpers derive every absolute path
- *   from it.
+ *   from it, and the deterministic Y.Doc `clientID` is `hashYDocClientId` of
+ *   it.
  * - `mount` is the canonical mount name (`Mount.name`), pinned so handlers
- *   share one identifier with logs and local cache keys.
+ *   share one identifier with logs, local cache keys, and the conventional
+ *   `<mount>-daemon` collaboration device id.
  * - `session` is the signed-in capability kit, or `null` when signed out.
  */
 export type MountContext = {
 	readonly epicenterRoot: EpicenterRoot;
 	readonly mount: string;
 	readonly session: MountSession | null;
+};
+
+/** A `MountContext` whose `session` is known to be present. */
+export type SessionMountContext = MountContext & {
+	readonly session: MountSession;
 };
 
 /**
@@ -117,4 +124,27 @@ export type Mount = {
  */
 export function defineMount(mount: Mount): Mount {
 	return mount;
+}
+
+/**
+ * Define a mount that needs a signed-in session, which is the common case
+ * (every encrypted-workspace and peer-plane mount). The body receives a
+ * `SessionMountContext` with a guaranteed-non-null `session`; when machine auth
+ * is signed out the daemon reports `inactive("Sign in to enable <name>.")`
+ * without ever running the body.
+ *
+ * Local-only mirrors that can run signed out use `defineMount` instead and read
+ * `ctx.session` themselves.
+ */
+export function defineSessionMount(mount: {
+	name: string;
+	open(ctx: SessionMountContext): MaybePromise<DaemonRuntime>;
+}): Mount {
+	return {
+		name: mount.name,
+		open: (ctx) =>
+			ctx.session === null
+				? inactive(`Sign in to enable ${ctx.mount}.`)
+				: mount.open({ ...ctx, session: ctx.session }),
+	};
 }

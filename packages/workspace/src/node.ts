@@ -30,12 +30,14 @@ export {
 } from './daemon/client.js';
 export {
 	defineMount,
+	defineSessionMount,
 	inactive,
 	isInactive,
 	type Mount,
 	type MountContext,
 	type MountInactive,
 	type MountSession,
+	type SessionMountContext,
 } from './daemon/define-mount.js';
 export {
 	claimDaemonLease,

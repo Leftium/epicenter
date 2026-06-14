@@ -136,20 +136,23 @@ export async function runUp(
 	await using stack = new AsyncDisposableStack();
 	stack.defer(() => lease.release());
 
+	// Load the machine auth client up front. A signed-out machine ("no saved
+	// session") is a valid state: the daemon still serves local mounts and
+	// reports session-only mounts as inactive, so it maps to a `null` session.
+	// Any other storage error is fatal.
 	const createAuthClient = options.createAuthClient ?? createMachineAuthClient;
-	const startResult = await openEpicenterRoot({
-		epicenterRoot,
-		loadSession: async () => {
-			const authResult = await createAuthClient();
-			if (authResult.error) {
-				if (authResult.error.name === 'NoSavedSession') return Ok(null);
-				return Err(authResult.error);
-			}
-			const auth = authResult.data;
-			stack.defer(() => auth[Symbol.dispose]());
-			return Ok(auth);
-		},
-	});
+	const authResult = await createAuthClient();
+	let auth: SyncAuthClient | null = null;
+	if (authResult.error) {
+		if (authResult.error.name !== 'NoSavedSession')
+			return Err(authResult.error);
+	} else {
+		const client = authResult.data;
+		auth = client;
+		stack.defer(() => client[Symbol.dispose]());
+	}
+
+	const startResult = await openEpicenterRoot({ epicenterRoot, auth });
 	if (startResult.error) return startResult;
 	const { started: mounts, inactive } = startResult.data;
 	stack.defer(async () => {
@@ -212,6 +215,9 @@ export const upCommand = cmd({
 
 		const mountNames = handle.mounts.map((entry) => entry.mount).join(', ');
 		logSyncStatus(`online (mounts=[${mountNames}])`);
+		for (const declined of handle.inactive) {
+			logSyncStatus(`${declined.mount}: inactive (${declined.reason})`);
+		}
 
 		for (const entry of handle.mounts) {
 			printPeersSnapshot(entry);

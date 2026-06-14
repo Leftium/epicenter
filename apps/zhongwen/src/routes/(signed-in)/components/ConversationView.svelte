@@ -1,5 +1,5 @@
 <script module lang="ts">
-	import { createAiChatFetch } from '@epicenter/svelte';
+	import { createAiChatFetch } from '@epicenter/client';
 	import { auth } from '$platform/auth';
 
 	// auth is a module singleton, so the wrapped fetch is built once and shared

@@ -14,6 +14,8 @@ import type { ApiSessionResponse, AuthFetch } from '@epicenter/auth';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import type { OwnerId } from '@epicenter/identity';
 
+export { createAiChatFetch } from './ai-chat-fetch.js';
+
 export type EpicenterClientOptions = {
 	/** Base URL of the Epicenter server (no trailing slash required). */
 	baseURL: string;

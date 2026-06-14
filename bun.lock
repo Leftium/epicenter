@@ -260,6 +260,7 @@
         "@codemirror/autocomplete": "^6.20.1",
         "@epicenter/app-shell": "workspace:*",
         "@epicenter/auth": "workspace:*",
+        "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/skills": "workspace:*",
@@ -389,6 +390,7 @@
       "dependencies": {
         "@epicenter/app-shell": "workspace:*",
         "@epicenter/auth": "workspace:*",
+        "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/svelte": "workspace:*",
@@ -523,6 +525,7 @@
       "dependencies": {
         "@epicenter/app-shell": "workspace:*",
         "@epicenter/auth": "workspace:*",
+        "@epicenter/client": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/svelte": "workspace:*",
@@ -664,6 +667,7 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
         "@epicenter/identity": "workspace:*",
+        "wellcrafted": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "catalog:",
@@ -808,7 +812,6 @@
       "version": "0.3.0",
       "dependencies": {
         "@epicenter/auth": "workspace:*",
-        "@epicenter/constants": "workspace:*",
         "@epicenter/identity": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "arktype": "catalog:",

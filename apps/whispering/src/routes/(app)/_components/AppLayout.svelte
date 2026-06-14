@@ -31,6 +31,7 @@
 
 	let cleanupAccessibilityPermission: (() => void) | undefined;
 	let cleanupShortcutListener: (() => void) | undefined;
+	let shortcutListenerDestroyed = false;
 
 	onMount(() => {
 		// Sync operations - run immediately, these are fast
@@ -44,7 +45,10 @@
 		// They never both bind on the same platform.
 		if (tauri) {
 			void tauri.globalShortcuts.startListening().then((unlisten) => {
-				cleanupShortcutListener = unlisten;
+				// If we were destroyed before the listener resolved, drop it now;
+				// otherwise it leaks past unmount and a remount would double-fire.
+				if (shortcutListenerDestroyed) unlisten();
+				else cleanupShortcutListener = unlisten;
 			});
 			syncGlobalShortcutsWithSettings();
 			resetGlobalShortcutsToDefaultIfDuplicates();
@@ -59,6 +63,7 @@
 
 	onDestroy(() => {
 		cleanupAccessibilityPermission?.();
+		shortcutListenerDestroyed = true;
 		cleanupShortcutListener?.();
 	});
 

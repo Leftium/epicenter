@@ -4,15 +4,6 @@ import { type PlaySoundService, SoundError } from './types';
 
 type SoundSources = Record<WhisperingSoundNames, string>;
 
-async function closeContext(context: AudioContext) {
-	try {
-		await context.close();
-	} catch {
-		// Best effort cleanup. Playback success should not become a sound failure
-		// because the browser refused to close an already-ending context.
-	}
-}
-
 async function playSoundSource(soundSource: string) {
 	const context = new AudioContext();
 	try {
@@ -48,7 +39,12 @@ async function playSoundSource(soundSource: string) {
 			source.start();
 		});
 	} finally {
-		await closeContext(context);
+		try {
+			await context.close();
+		} catch {
+			// Best effort cleanup. Playback success should not become a sound failure
+			// because the browser refused to close an already-ending context.
+		}
 	}
 }
 

@@ -6,7 +6,6 @@ import { BITRATES_KBPS, DEFAULT_BITRATE_KBPS } from '$lib/constants/audio';
 import { LOCAL_MODEL_UNLOAD_POLICIES } from '$lib/constants/local-model-unload-policy';
 import { log, report } from '$lib/report';
 import type { KeyBinding } from '$lib/tauri/commands';
-import { acceleratorToKeyBinding } from '$lib/utils/legacy-accelerator';
 
 // ── Global shortcut binding shape ────────────────────────────────────────────
 
@@ -124,8 +123,9 @@ const DEVICE_DEFINITIONS = {
 	),
 
 	// ── Global OS shortcuts (device-specific, never synced) ───────────
-	// Structured KeyBinding (physical-key space) for the rdev backend. Legacy
-	// accelerator strings are migrated below.
+	// Structured KeyBinding (physical-key space) for the rdev backend. Old
+	// accelerator-string values are not migrated: they fail this schema and reset
+	// to the defaults (clean break, see the note below the singleton).
 	'shortcuts.global.toggleManualRecording': defineEntry(
 		globalBinding,
 		DEFAULT_GLOBAL_BINDINGS.toggleManualRecording,
@@ -194,26 +194,6 @@ function readLegacyString(key: string) {
 	}
 }
 
-const GLOBAL_SHORTCUT_IDS = [
-	'pushToTalk',
-	'toggleManualRecording',
-	'cancelManualRecording',
-	'toggleVadRecording',
-	'openTransformationPicker',
-	'runTransformationOnClipboard',
-] as const;
-
-// Capture legacy accelerator strings BEFORE createPersistedMap, which replaces
-// an unparseable stored value (the old "Command+Shift+D" shape) with the default
-// during construction. readLegacyString returns the value only while it is still
-// a string, so new-format (object) and unset entries read as null and skip.
-const LEGACY_GLOBAL_ACCELERATORS = new Map(
-	GLOBAL_SHORTCUT_IDS.map((id) => [
-		id,
-		readLegacyString(`shortcuts.global.${id}`),
-	]),
-);
-
 // ── Singleton ────────────────────────────────────────────────────────────────
 
 export const deviceConfig = createPersistedMap({
@@ -241,13 +221,7 @@ for (const migration of LEGACY_LOCAL_MODEL_SELECTIONS) {
 	if (entryName) deviceConfig.set(migration.to, entryName);
 }
 
-// One-time migration of global shortcuts from Electron accelerator strings to
-// the structured KeyBinding shape. Parse where expressible; reset to the default
-// where a token is not (device-local convenience state, safe to reset). The set
-// rewrites localStorage to the object shape, so the migration is idempotent.
-for (const [id, accelerator] of LEGACY_GLOBAL_ACCELERATORS) {
-	if (!accelerator) continue;
-	const binding =
-		acceleratorToKeyBinding(accelerator) ?? DEFAULT_GLOBAL_BINDINGS[id];
-	deviceConfig.set(`shortcuts.global.${id}`, binding);
-}
+// Global shortcuts are NOT migrated from the old accelerator-string format. A
+// clean break: a legacy value fails the `globalBinding` schema on read and falls
+// back to the default (see `createPersistedMap`), so upgrading users get the new
+// defaults. We refuse to carry a parser for a format nothing writes anymore.

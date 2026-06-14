@@ -14,8 +14,9 @@ real-device testing) remains. Not yet run on real hardware.
 - **Wave 3 (registrar swap)**: done. rdev listener dispatches into the command
   layer; the Tauri global-shortcut plugin is deleted (Rust dep, npm dep,
   capability, registration); desktop binds rdev only, browser binds local only.
-- **Wave 4 (config)**: done. `shortcuts.global.*` store structured `KeyBinding`;
-  one-time migration from accelerator strings.
+- **Wave 4 (config)**: done. `shortcuts.global.*` store structured `KeyBinding`.
+  No migration: old accelerator strings fail validation and reset to defaults
+  (clean break, owner released compatibility).
 - **Wave 5 (settings UI)**: done. Recorder uses rdev capture mode (records Fn,
   modifier-only, physical keys); Local/Global tabs collapsed to one page.
 - **Wave 6 (permissions + cross-platform)**: NOT done. Needs real-device tests
@@ -165,12 +166,25 @@ null                                                    // unbound
 - Rejected the canonical-string alternative: it keeps two shapes (string in
   storage, struct on the wire) and a parse/serialize grammar to define and test.
 
-One-time migration: read each existing accelerator string, parse modifiers
-(`Command/Control/Alt/Option/Shift/Super/Meta`) and the final key token
-(letter -> `keyX`, digit -> `numX`, punctuation -> named) into a `KeyBinding`;
-reset to the default where a token is not expressible. Reset is acceptable here:
-global shortcut config is device-local convenience state, not user content, and
-the defaults are unchanged in spirit.
+### Migration refusal (clean break, signed off 2026-06-14)
+
+An earlier pass shipped a one-time parser that converted old accelerator strings
+into `KeyBinding`s. That is refused.
+
+```txt
+Candidate:    migrate old `shortcuts.global.*` accelerator strings to KeyBinding
+Refusal:      no migration; old values fail the new schema and reset to defaults
+User loss:    users who customized global shortcuts before this change revert to
+              the new defaults (re-bind once)
+Decision:     refuse. Global shortcut config is device-local convenience state,
+              not user content, and the owner explicitly released compatibility.
+              `createPersistedMap` already falls back to the default on a failed
+              read, so the clean break is zero code: delete the parser and loop.
+Trigger to revisit: none. The accelerator format is gone for good.
+```
+
+This deletes `utils/legacy-accelerator.ts` entirely (its only consumer was the
+migration) and the migration loop in `device-config.svelte.ts`.
 
 ### Forced touch to the command layer (the one exception)
 
@@ -285,8 +299,8 @@ to one table per platform). It does **not** change the Wave 2 Rust module.
    `register-commands.ts` so desktop binds only rdev and stops binding local
    shortcuts (see "One system per platform"). Verify every existing command still
    fires (push-to-talk press/release, toggles, the picker on release).
-4. **Config migration**: new binding shape + one-time migration/reset of stored
-   global shortcuts.
+4. **Config (clean break)**: new `KeyBinding` shape; NO migration. Old accelerator
+   strings fail validation and reset to defaults.
 5. **Settings UI**: collapse the Local/Global duality into one "Keyboard
    Shortcuts" table per platform; capture Fn and single/modifier-only bindings in
    the desktop recorder; validation and help text.
@@ -303,8 +317,8 @@ to one table per platform). It does **not** change the Wave 2 Rust module.
   `commands.ts`.
 - The browser build is byte-for-byte unaffected in its shortcut behavior.
 - The Tauri global-shortcut plugin dependency is removed from the trigger path.
-- Existing global shortcut config migrates without error (or resets cleanly where
-  not expressible).
+- Existing global shortcut config is not migrated: old accelerator-string values
+  fail validation and reset to the new defaults (clean break).
 
 ## References
 

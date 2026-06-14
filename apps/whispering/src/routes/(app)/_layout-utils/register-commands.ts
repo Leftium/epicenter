@@ -1,4 +1,5 @@
-import { partitionResults } from 'wellcrafted/result';
+import { extractErrorMessage } from 'wellcrafted/error';
+import { Err, partitionResults, tryAsync } from 'wellcrafted/result';
 import { tauri } from '#platform/tauri';
 import { goto } from '$app/navigation';
 import { type Command, commands } from '$lib/commands';
@@ -89,6 +90,7 @@ export async function syncLocalShortcutsWithSettings() {
  */
 export async function syncGlobalShortcutsWithSettings() {
 	if (!tauri) return;
+	const { globalShortcuts } = tauri;
 
 	const bindings: CommandBinding[] = [];
 	for (const command of commands) {
@@ -99,7 +101,20 @@ export async function syncGlobalShortcutsWithSettings() {
 		bindings.push({ commandId: command.id, binding: binding as KeyBinding });
 	}
 
-	await tauri.globalShortcuts.setBindings(bindings);
+	// Keys are stored as plain strings and validated by Rust at the IPC boundary,
+	// so a single bad key fails the whole replace-all call. Surface it instead of
+	// letting every global shortcut silently go unregistered.
+	const { error } = await tryAsync({
+		try: () => globalShortcuts.setBindings(bindings),
+		catch: (cause) =>
+			Err({
+				name: 'GlobalShortcutRegistrationFailed',
+				message: extractErrorMessage(cause),
+			}),
+	});
+	if (error) {
+		report.error({ title: 'Error registering global shortcuts', cause: error });
+	}
 }
 
 /**

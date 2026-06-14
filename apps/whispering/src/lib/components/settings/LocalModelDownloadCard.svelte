@@ -12,6 +12,7 @@
 		modelEntryName,
 	} from '$lib/constants/local-models';
 	import { localModelDownloads } from '$lib/state/local-model-downloads.svelte';
+	import { announceModelDownload } from './announce-model-download';
 
 	let {
 		model,
@@ -38,22 +39,10 @@
 	const isActive = $derived(value === entryName && modelState.type === 'ready');
 
 	async function downloadModel() {
-		const result = await download.download();
-		if (!result) return;
-		if (result.error) {
-			toast.error('Failed to download model', {
-				description: result.error.message,
-			});
-			return;
-		}
-
-		value = result.data.entryName;
+		const entryName = announceModelDownload(await download.download());
+		if (!entryName) return;
+		value = entryName;
 		await onDiskChange();
-		toast.success(
-			result.data.outcome === 'already-installed'
-				? 'Model already downloaded and activated'
-				: 'Model downloaded and activated successfully',
-		);
 	}
 
 	async function deleteModel() {

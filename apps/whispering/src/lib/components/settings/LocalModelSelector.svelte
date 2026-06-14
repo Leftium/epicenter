@@ -32,6 +32,7 @@
 	import { PROVIDERS } from '$lib/services/transcription/providers';
 	import { localModelDownloads } from '$lib/state/local-model-downloads.svelte';
 	import { tauri } from '#platform/tauri';
+	import { announceModelDownload } from './announce-model-download';
 	import LocalModelDownloadCard from './LocalModelDownloadCard.svelte';
 
 	/**
@@ -131,26 +132,15 @@
 	}
 
 	async function downloadRecommendedModel() {
-		const result = await recommendedDownload.download();
-		if (!result) return;
-		if (result.error) {
-			toast.error('Failed to download model', {
-				description: result.error.message,
-			});
-			return;
-		}
-
-		value = result.data.entryName;
+		const entryName = announceModelDownload(await recommendedDownload.download());
+		if (!entryName) return;
+		value = entryName;
 		await refreshEntries();
-		toast.success(
-			result.data.outcome === 'already-installed'
-				? 'Model already downloaded and activated'
-				: 'Model downloaded and activated successfully',
-		);
 	}
 
-	async function activateRecommendedModel() {
-		value = modelEntryName(recommended);
+	/** Point the engine's selection at an on-disk entry by name. */
+	function activate(name: string) {
+		value = name;
 		toast.success('Model activated');
 	}
 
@@ -176,11 +166,6 @@
 				return Ok(undefined);
 			},
 		});
-	}
-
-	function activateEntry(entry: LocalModelEntry) {
-		value = entry.name;
-		toast.success('Model activated');
 	}
 
 	async function removeEntry(entry: LocalModelEntry) {
@@ -251,7 +236,7 @@
 							</span>
 						</div>
 					{:else if recommendedState.type === 'ready'}
-						<Button onclick={activateRecommendedModel}>
+						<Button onclick={() => activate(modelEntryName(recommended))}>
 							Activate {recommended.name}
 						</Button>
 					{:else}
@@ -324,7 +309,7 @@
 								<Button
 									size="sm"
 									variant="outline"
-									onclick={() => activateEntry(entry)}
+									onclick={() => activate(entry.name)}
 								>
 									Activate
 								</Button>

@@ -118,6 +118,15 @@ function createModelDownload(model: LocalModelConfig) {
 	};
 }
 
+/**
+ * The result of a catalog `download()`: the outcome plus the folder entry
+ * name to select on success, `Err` on failure, or `null` when the call was a
+ * no-op (a download was already in flight).
+ */
+export type ModelDownloadResult = Awaited<
+	ReturnType<ReturnType<typeof createModelDownload>['download']>
+>;
+
 function modelDownloadKey(model: LocalModelConfig) {
 	return `${model.engine}:${model.id}`;
 }

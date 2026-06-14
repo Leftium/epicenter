@@ -106,48 +106,6 @@ export const DispatchError = defineErrors({
 });
 export type DispatchError = InferErrors<typeof DispatchError>;
 
-/**
- * Project an action's handler parameters into the dispatch request's
- * `input` slot.
- *
- *   - Handler `() => R`           ->  `{ input?: never }` (field forbidden)
- *   - Handler `(i: I) => R`       ->  `{ input: I }`      (field required)
- *
- * Reads from the callable side of the action (`ActionHandler`'s variadic
- * tuple, which is `[input: Static<TInput>] | []`). Designed for object
- * spread into the typed dispatch request so the field is literally absent
- * at the call site when the action takes no argument.
- */
-// biome-ignore lint/suspicious/noExplicitAny: structural callable check.
-export type ActionInput<A extends (...args: any[]) => unknown> =
-	Parameters<A> extends []
-		? { input?: never }
-		: // biome-ignore lint/suspicious/noExplicitAny: rest spread.
-			Parameters<A> extends [infer I, ...any[]]
-			? { input: I }
-			: { input?: never };
-
-/**
- * Project an action's handler return type into the dispatch success
- * payload, peeling the `Result<T, E>` layer (sync or async) that the wire
- * boundary consumes.
- *
- *   - `() => T`                       ->  `T`
- *   - `() => Promise<T>`              ->  `T`
- *   - `() => Result<T, E>`            ->  `T`
- *   - `() => Promise<Result<T, E>>`   ->  `T`
- *
- * `runInboundDispatch` Ok-wraps raw returns, preserves existing Results,
- * and converts `Err(E)` -> `ActionFailed` over the wire. Successful
- * remote calls always carry the inner `T` in the `data` field, never a
- * doubly-nested `Result<Result<T, E>, DispatchError>`.
- */
-// biome-ignore lint/suspicious/noExplicitAny: structural callable for ReturnType.
-export type ActionOutput<A extends (...args: any[]) => unknown> =
-	Awaited<ReturnType<A>> extends Result<infer T, unknown>
-		? T
-		: Awaited<ReturnType<A>>;
-
 // ════════════════════════════════════════════════════════════════════════════
 // CALLER-SIDE DISPATCH
 // ════════════════════════════════════════════════════════════════════════════

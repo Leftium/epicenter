@@ -4,6 +4,7 @@
 	import { useCombobox } from '@epicenter/ui/hooks';
 	import * as Popover from '@epicenter/ui/popover';
 	import { cn } from '@epicenter/ui/utils';
+	import CaptionsIcon from '@lucide/svelte/icons/captions';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronRightIcon from '@lucide/svelte/icons/chevron-right';
 	import MicIcon from '@lucide/svelte/icons/mic';
@@ -22,9 +23,23 @@
 	import { settings } from '$lib/state/settings.svelte';
 	import { tauri } from '#platform/tauri';
 
-	let { class: className }: { class?: string } = $props();
+	let {
+		class: className,
+		triggerVariant = 'provider',
+	}: {
+		class?: string;
+		triggerVariant?: 'provider' | 'pipeline';
+	} = $props();
 
 	const selectedService = $derived(getSelectedTranscriptionService());
+	const isSelectedServiceReady = $derived(
+		selectedService ? isTranscriptionServiceConfigured(selectedService) : false,
+	);
+	const showConfigurationWarning = $derived(
+		triggerVariant === 'pipeline'
+			? !isSelectedServiceReady
+			: !!selectedService && !isSelectedServiceReady,
+	);
 
 	function getSelectedServiceId() {
 		return settings.get('transcription.service');
@@ -106,14 +121,20 @@
 				variant="ghost"
 				size="icon"
 			>
-				{#if selectedService}
+				{#if triggerVariant === 'pipeline'}
+					<CaptionsIcon
+						class={cn(
+							'size-5',
+							isSelectedServiceReady ? 'text-green-500' : 'text-warning',
+						)}
+					/>
+				{:else if selectedService}
 					<div
 						class={cn(
 							'size-4 flex items-center justify-center [&>svg]:size-full',
 							selectedService.invertInDarkMode &&
 								'dark:[&>svg]:invert dark:[&>svg]:brightness-90',
-							!isTranscriptionServiceConfigured(selectedService) &&
-								'opacity-60',
+							!isSelectedServiceReady && 'opacity-60',
 						)}
 					>
 						{@html selectedService.icon}
@@ -121,7 +142,7 @@
 				{:else}
 					<MicIcon class="size-4 text-muted-foreground" />
 				{/if}
-				{#if selectedService && !isTranscriptionServiceConfigured(selectedService)}
+				{#if showConfigurationWarning}
 					<span
 						class="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-warning before:absolute before:left-0 before:top-0 before:h-full before:w-full before:rounded-full before:bg-warning/50 before:animate-ping"
 					></span>

@@ -11,6 +11,10 @@
 	import { Link } from '@epicenter/ui/link';
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
+	import FileUpIcon from '@lucide/svelte/icons/file-up';
+	import MicIcon from '@lucide/svelte/icons/mic';
+	import RadioIcon from '@lucide/svelte/icons/radio';
+	import XIcon from '@lucide/svelte/icons/x';
 	import { createQuery } from '@tanstack/svelte-query';
 	import type { UnlistenFn } from '@tauri-apps/api/event';
 	import { onDestroy, onMount } from 'svelte';
@@ -27,7 +31,6 @@
 	import {
 		RECORDING_MODE_OPTIONS,
 		type RecordingMode,
-		VAD_STATE_TO_ICON,
 	} from '$lib/constants/audio';
 	import { getShortcutDisplayLabel } from '$lib/utils/keyboard';
 	import {
@@ -45,7 +48,15 @@
 	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
-	import ManualRecordingButton from './_components/ManualRecordingButton.svelte';
+	import CapturePipeline from './_components/CapturePipeline.svelte';
+	import ManualRecordingAction from './_components/ManualRecordingAction.svelte';
+	import VadRecordingAction from './_components/VadRecordingAction.svelte';
+
+	const MODE_ICON_BY_RECORDING_MODE = {
+		manual: MicIcon,
+		vad: RadioIcon,
+		upload: FileUpIcon,
+	} satisfies Record<RecordingMode, typeof MicIcon>;
 
 	const latestRecording = $derived(recordings.sorted[0]);
 	const PageError = defineErrors({
@@ -226,7 +237,7 @@
 <svelte:head> <title>Whispering</title> </svelte:head>
 
 <div
-	class="flex flex-1 flex-col items-center justify-center gap-4 w-full max-w-md mx-auto px-4"
+	class="flex flex-1 flex-col items-center justify-start gap-4 w-full max-w-lg mx-auto px-4 pt-6 pb-24 sm:justify-center sm:py-0"
 >
 	<SectionHeader.Root class="xs:flex hidden flex-col items-center gap-4">
 		<SectionHeader.Title
@@ -250,66 +261,56 @@
 		class="w-full"
 	>
 		{#each availableModes as option}
+			{@const ModeIcon = MODE_ICON_BY_RECORDING_MODE[option.value]}
 			<ToggleGroup.Item
 				value={option.value}
 				aria-label={`Switch to ${option.label.toLowerCase()} mode`}
 			>
-				{option.icon}
-				<span class="hidden sm:inline">{option.label}</span>
+				<ModeIcon class="size-4" />
+				<span class="hidden truncate sm:inline">{option.label}</span>
 			</ToggleGroup.Item>
 		{/each}
 	</ToggleGroup.Root>
 
+	{#snippet manualPipeline()}
+		<CapturePipeline>
+			<ManualDeviceSelector />
+			<TranscriptionSelector triggerVariant="pipeline" />
+			<TransformationSelector />
+		</CapturePipeline>
+	{/snippet}
+
+	{#snippet vadPipeline()}
+		<CapturePipeline>
+			<VadDeviceSelector />
+			<TranscriptionSelector triggerVariant="pipeline" />
+			<TransformationSelector />
+		</CapturePipeline>
+	{/snippet}
+
 	{#if settings.get('recording.mode') === 'manual'}
-		<!-- Container with relative positioning for the button and absolute selectors -->
-		<div class="relative">
-			<ManualRecordingButton />
+		<div class="flex w-full flex-col items-center gap-3">
+			<ManualRecordingAction
+				pipeline={manualPipeline}
+			/>
 			{#if manualRecorder.state === 'RECORDING'}
-				<div class="absolute -right-12 bottom-4 flex items-center">
-					<Button
-						tooltip="Cancel recording"
-						onclick={() => commandCallbacks.cancelManualRecording()}
-						variant="ghost"
-						size="icon"
-						style="view-transition-name: {viewTransition.global.cancel};"
-					>
-						🚫
-					</Button>
-				</div>
-			{:else}
-				<div class="absolute -right-32 bottom-4 flex items-center gap-0.5">
-					<ManualDeviceSelector />
-					<TranscriptionSelector />
-					<TransformationSelector />
-				</div>
+				<Button
+					tooltip="Cancel recording and discard audio"
+					onclick={() => commandCallbacks.cancelManualRecording()}
+					variant="ghost-destructive"
+					size="sm"
+					style="view-transition-name: {viewTransition.global.cancel};"
+				>
+					<XIcon class="size-4" />
+					Cancel
+				</Button>
 			{/if}
 		</div>
 	{:else if settings.get('recording.mode') === 'vad'}
-		<!-- Container with relative positioning for the button and absolute selectors -->
-		<div class="relative">
-			<Button
-				tooltip={vadRecorder.state === 'IDLE'
-					? 'Start voice activated session'
-					: 'Stop voice activated session'}
-				onclick={() => commandCallbacks.toggleVadRecording()}
-				variant="ghost"
-				class="shrink-0 size-32 sm:size-36 lg:size-40 xl:size-44 transform items-center justify-center overflow-hidden duration-300 ease-in-out"
-			>
-				<span
-					style="filter: drop-shadow(0px 2px 4px rgba(0, 0, 0, 0.5)); view-transition-name: {viewTransition
-						.global.microphone};"
-					class="text-[100px] sm:text-[110px] lg:text-[120px] xl:text-[130px] leading-none"
-				>
-					{VAD_STATE_TO_ICON[vadRecorder.state]}
-				</span>
-			</Button>
-			{#if vadRecorder.state === 'IDLE'}
-				<div class="absolute -right-32 bottom-4 flex items-center gap-0.5">
-					<VadDeviceSelector />
-					<TranscriptionSelector />
-					<TransformationSelector />
-				</div>
-			{/if}
+		<div class="flex w-full flex-col items-center gap-3">
+			<VadRecordingAction
+				pipeline={vadPipeline}
+			/>
 		</div>
 	{:else if settings.get('recording.mode') === 'upload'}
 		<div class="flex flex-col items-center gap-4 w-full">
@@ -333,10 +334,10 @@
 				}}
 				class="h-32 sm:h-36 lg:h-40 xl:h-44 w-full"
 			/>
-			<div class="flex items-center gap-1.5">
-				<TranscriptionSelector />
+			<CapturePipeline>
+				<TranscriptionSelector triggerVariant="pipeline" />
 				<TransformationSelector />
-			</div>
+			</CapturePipeline>
 		</div>
 	{/if}
 
@@ -379,22 +380,6 @@
 
 	<div class="xs:flex hidden flex-col items-center gap-3">
 		{#if settings.get('recording.mode') === 'manual'}
-			<p class="text-foreground/75 text-center text-sm">
-				Click the microphone or press
-				{' '}
-				<Link
-					tooltip="Go to local shortcut in settings"
-					href="/settings/shortcuts/local"
-				>
-					<Kbd.Root
-						>{getShortcutDisplayLabel(
-							settings.get('shortcut.toggleManualRecording'),
-						)}</Kbd.Root
-					>
-				</Link>
-				{' '}
-				to start recording here.
-			</p>
 			{#if tauri}
 				<p class="text-foreground/75 text-sm">
 					Press
@@ -413,27 +398,7 @@
 					to start recording anywhere.
 				</p>
 			{/if}
-		{:else if settings.get('recording.mode') === 'vad'}
-			<p class="text-foreground/75 text-center text-sm">
-				Click the microphone or press
-				{' '}
-				<Link
-					tooltip="Go to local shortcut in settings"
-					href="/settings/shortcuts/local"
-				>
-					<Kbd.Root
-						>{getShortcutDisplayLabel(
-							settings.get('shortcut.toggleVadRecording'),
-						)}</Kbd.Root
-					>
-				</Link>
-				{' '}
-				to start a voice activated session.
-			</p>
 		{:else if settings.get('recording.mode') === 'upload'}
-			<p class="text-foreground/75 text-center text-sm">
-				Drag files here or click to browse.
-			</p>
 			{#if tauri}
 				<p class="text-foreground/75 text-sm">
 					Press

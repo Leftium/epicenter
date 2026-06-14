@@ -1,0 +1,55 @@
+<script lang="ts">
+	import AudioLinesIcon from '@lucide/svelte/icons/audio-lines';
+	import RadioIcon from '@lucide/svelte/icons/radio';
+	import { createMutation } from '@tanstack/svelte-query';
+	import type { Snippet } from 'svelte';
+	import { toggleVadRecording } from '$lib/operations/recording';
+	import { settings } from '$lib/state/settings.svelte';
+	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
+	import { getShortcutDisplayLabel } from '$lib/utils/keyboard';
+	import RecordingActionCard from './RecordingActionCard.svelte';
+
+	let {
+		pipeline,
+	}: {
+		pipeline: Snippet;
+	} = $props();
+
+	const toggleMutation = createMutation(() => ({
+		mutationFn: toggleVadRecording,
+	}));
+
+	const isListening = $derived(vadRecorder.state !== 'IDLE');
+	const isSpeechDetected = $derived(vadRecorder.state === 'SPEECH_DETECTED');
+	const activeIcon = $derived(isSpeechDetected ? AudioLinesIcon : RadioIcon);
+	const shortcutLabel = $derived(
+		getShortcutDisplayLabel(settings.get('shortcut.toggleVadRecording')),
+	);
+	const label = $derived(isListening ? 'Stop listening' : 'Start listening');
+	const description = $derived.by(() => {
+		if (toggleMutation.isPending) return 'Updating voice activation';
+		if (isSpeechDetected) return 'Speech detected';
+		if (isListening) return 'Listening for speech';
+		return 'Listen for speech';
+	});
+	const tooltip = $derived(
+		toggleMutation.isPending
+			? 'Updating voice activated session'
+			: isListening
+				? 'Stop voice activated session'
+				: 'Start voice activated session',
+	);
+</script>
+
+<RecordingActionCard
+	active={isListening}
+	activeIcon={activeIcon}
+	{description}
+	footer={isListening ? undefined : pipeline}
+	icon={RadioIcon}
+	label={label}
+	pending={toggleMutation.isPending}
+	{shortcutLabel}
+	{tooltip}
+	onclick={() => toggleMutation.mutate()}
+/>

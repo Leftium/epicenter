@@ -80,7 +80,8 @@ export const commands = [
 		// in-app shortcut would never fire. The callback guard runs once, on release.
 		on: ['Pressed', 'Released'],
 		callback: (state?: ShortcutEventState) => {
-			if (state === 'Released' || state === undefined) openTransformationPicker();
+			if (state === 'Released' || state === undefined)
+				openTransformationPicker();
 		},
 	},
 	{

@@ -13,10 +13,44 @@
 	import { markdownShortcutKeymap } from '$lib/editor/markdown-shortcuts';
 	import { matterVimExtension } from '$lib/editor/vim-extension';
 
-	type ActiveEditor = {
+	const matterEditorTheme = EditorView.theme({
+		'&': {
+			minHeight: '22rem',
+			backgroundColor: 'transparent',
+			color: 'hsl(var(--foreground))',
+			fontSize: '14px',
+		},
+		'&.cm-focused': {
+			outline: 'none',
+		},
+		'.cm-scroller': {
+			fontFamily:
+				'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+			lineHeight: '1.65',
+			overflow: 'auto',
+		},
+		'.cm-content': {
+			minHeight: '22rem',
+			padding: '1rem',
+			caretColor: 'hsl(var(--foreground))',
+		},
+		'.cm-cursor': {
+			borderLeftColor: 'hsl(var(--foreground))',
+		},
+		'.cm-gutters': { display: 'none' },
+		'.cm-activeLine': { backgroundColor: 'transparent' },
+		'.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
+			backgroundColor: 'hsl(var(--primary) / 0.18)',
+		},
+		'.cm-placeholder': {
+			color: 'hsl(var(--muted-foreground))',
+		},
+	});
+
+	type MountedEditor = {
 		view: EditorView;
 		vimCompartment: Compartment;
-		vimEnabled: boolean;
+		appliedVimEnabled: boolean;
 	};
 
 	let {
@@ -30,7 +64,8 @@
 	} = $props();
 
 	let container: HTMLDivElement | undefined;
-	let editor: ActiveEditor | undefined;
+	// Plain JS handle: assigning it must not make the Vim reconfigure effect run.
+	let mountedEditor: MountedEditor | undefined;
 
 	$effect(() => {
 		if (!container) return;
@@ -40,13 +75,18 @@
 		const initialBody = untrack(() => body);
 		const initialVimEnabled = untrack(() => vimEnabled);
 		const vimCompartment = new Compartment();
-		let draft = initialBody;
-		let lastCommitted = initialBody;
+		const bodyBuffer = { draft: initialBody, committed: initialBody };
 
-		function commit() {
-			if (draft === lastCommitted) return;
-			lastCommitted = draft;
-			onCommit(draft);
+		/**
+		 * Flush the CodeMirror buffer to the parent once per changed body.
+		 *
+		 * Blur and teardown both call this. The committed snapshot dedupes the common
+		 * blur-then-destroy path while still saving a dirty editor on unmount.
+		 */
+		function commitCurrentBody(): void {
+			if (bodyBuffer.draft === bodyBuffer.committed) return;
+			bodyBuffer.committed = bodyBuffer.draft;
+			onCommit(bodyBuffer.draft);
 		}
 
 		const editorView = new EditorView({
@@ -66,67 +106,36 @@
 					markdownLivePreview(),
 					placeholder('Start writing'),
 					EditorView.updateListener.of((update) => {
-						if (update.docChanged) draft = update.state.doc.toString();
+						if (!update.docChanged) return;
+						bodyBuffer.draft = update.state.doc.toString();
 					}),
 					EditorView.domEventHandlers({
-						blur: commit,
+						blur: commitCurrentBody,
 					}),
-					EditorView.theme({
-						'&': {
-							minHeight: '22rem',
-							backgroundColor: 'transparent',
-							color: 'hsl(var(--foreground))',
-							fontSize: '14px',
-						},
-						'&.cm-focused': {
-							outline: 'none',
-						},
-						'.cm-scroller': {
-							fontFamily:
-								'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
-							lineHeight: '1.65',
-							overflow: 'auto',
-						},
-						'.cm-content': {
-							minHeight: '22rem',
-							padding: '1rem',
-							caretColor: 'hsl(var(--foreground))',
-						},
-						'.cm-cursor': {
-							borderLeftColor: 'hsl(var(--foreground))',
-						},
-						'.cm-gutters': { display: 'none' },
-						'.cm-activeLine': { backgroundColor: 'transparent' },
-						'.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
-							backgroundColor: 'hsl(var(--primary) / 0.18)',
-						},
-						'.cm-placeholder': {
-							color: 'hsl(var(--muted-foreground))',
-						},
-					}),
+					matterEditorTheme,
 				],
 			}),
 		});
-		editor = {
+		mountedEditor = {
 			view: editorView,
 			vimCompartment,
-			vimEnabled: initialVimEnabled,
+			appliedVimEnabled: initialVimEnabled,
 		};
 
 		return () => {
-			commit();
+			commitCurrentBody();
 			editorView.destroy();
-			if (editor?.view === editorView) editor = undefined;
+			if (mountedEditor?.view === editorView) mountedEditor = undefined;
 		};
 	});
 
 	$effect(() => {
-		const activeEditor = editor;
-		if (!activeEditor) return;
-		if (vimEnabled === activeEditor.vimEnabled) return;
-		activeEditor.vimEnabled = vimEnabled;
-		activeEditor.view.dispatch({
-			effects: activeEditor.vimCompartment.reconfigure(
+		const editor = mountedEditor;
+		if (!editor) return;
+		if (vimEnabled === editor.appliedVimEnabled) return;
+		editor.appliedVimEnabled = vimEnabled;
+		editor.view.dispatch({
+			effects: editor.vimCompartment.reconfigure(
 				vimEnabled ? matterVimExtension() : [],
 			),
 		});

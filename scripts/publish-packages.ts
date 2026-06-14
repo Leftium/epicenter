@@ -37,6 +37,20 @@ import { Glob } from 'bun';
 
 type Package = { dir: string; name: string; version: string };
 
+/**
+ * Public packages intentionally not published yet, mapped to the reason. They
+ * stay public and version in lockstep with the fixed group; they are only
+ * skipped from the gate and the upload until their closure is publishable.
+ *
+ * @epicenter/cli runtime-depends on @epicenter/auth, which depends on private
+ * @epicenter/constants (product config, kept internal by design), so cli's
+ * closure 404s on a clean install. Publish cli once auth is decoupled from
+ * constants or cli is decoupled from auth. See spec 20260614T120000.
+ */
+const DEFERRED = new Map<string, string>([
+	['@epicenter/cli', 'depends on @epicenter/auth -> private @epicenter/constants'],
+]);
+
 const root = process.cwd();
 const dryRun = process.argv.includes('--dry-run');
 
@@ -56,6 +70,7 @@ async function discoverPackages(): Promise<Package[]> {
 			console.error(`${match} is public but missing a name or version`);
 			process.exit(1);
 		}
+		if (DEFERRED.has(pkg.name)) continue;
 		packages.push({
 			dir: join(pkgPath, '..'),
 			name: pkg.name,
@@ -155,8 +170,11 @@ if (packages.length === 0) {
 	process.exit(1);
 }
 
+for (const [name, reason] of DEFERRED) {
+	console.log(`deferred ${name} (${reason})`);
+}
 console.log(
-	`${dryRun ? 'Verifying' : 'Releasing'} ${packages.length} package(s):\n`,
+	`\n${dryRun ? 'Verifying' : 'Releasing'} ${packages.length} package(s):\n`,
 );
 
 // Gate: no tarball with an unresolved protocol string or an unpublishable

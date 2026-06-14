@@ -1,6 +1,6 @@
 {
 	"name": "@epicenter/client",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"private": true,
 	"type": "module",
 	"description": "Typed HTTP client for the Epicenter server (assets, session, AI chat). Composes on @epicenter/auth's AuthFetch.",

@@ -151,6 +151,12 @@ export { generateGuid, generateId } from './shared/id';
 export { nullable } from './document/nullable';
 
 // ════════════════════════════════════════════════════════════════════════════
+// TIMING
+// ════════════════════════════════════════════════════════════════════════════
+
+export { debounce } from './shared/debounce.js';
+
+// ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT PRIMITIVES
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -177,10 +183,10 @@ export { docGuid } from './document/doc-guid.js';
 // `openCollaboration` session.
 export { readRoomOverHttp } from './document/http-room-sync.js';
 export type { SyncStatus } from './document/internal/sync-supervisor.js';
-export {
-	type InferKvValue,
-	type Kv,
-	type KvDefinitions,
+export type {
+	InferKvValue,
+	Kv,
+	KvDefinitions,
 } from './document/kv.js';
 export { onLocalUpdate } from './document/on-local-update.js';
 export {

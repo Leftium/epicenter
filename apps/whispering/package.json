@@ -1,7 +1,7 @@
 {
 	"name": "@epicenter/whispering",
 	"private": true,
-	"version": "7.11.0",
+	"version": "7.11.1",
 	"description": "Desktop and web speech-to-text with global shortcuts and AI transformations",
 	"exports": {
 		"./commands": "./src/lib/commands.ts",
@@ -73,7 +73,7 @@
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"typecheck:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"tauri": "tauri",
-		"deploy": "bun run build && wrangler deploy"
+		"deploy": "wrangler deploy"
 	},
 	"license": "AGPL-3.0-or-later",
 	"devDependencies": {
@@ -106,7 +106,6 @@
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/field": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
-		"@epicenter/util": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@google/generative-ai": "^0.24.1",
 		"@mistralai/mistralai": "^1.9.18",

@@ -9,8 +9,6 @@
  *
  * Call `.cancel()` to drop a pending run without firing it, e.g. from a
  * `[Symbol.dispose]` or other teardown path.
- *
- * @module
  */
 
 /**

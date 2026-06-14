@@ -22,6 +22,7 @@
 	import { syncWindowAlwaysOnTopWithRecorderState } from '../_layout-utils/alwaysOnTop.svelte';
 	import { checkForUpdates } from '../_layout-utils/check-for-updates';
 	import {
+		isSessionActive,
 		resetGlobalShortcutsToDefaultIfDuplicates,
 		resetLocalShortcutsToDefaultIfDuplicates,
 		syncGlobalShortcutsWithSettings,
@@ -96,6 +97,17 @@
 	if (tauri) {
 		syncWindowAlwaysOnTopWithRecorderState(tauri);
 		syncIconWithRecorderState(tauri);
+
+		// Re-push global bindings when session activity flips so the cancel
+		// gesture (a bare Escape) is registered only while a recording or VAD
+		// session is live. Depending on the derived boolean (not the raw recorder
+		// states) means we only re-push on the two transitions that change which
+		// bindings get sent, not on every intermediate sub-state.
+		const isSessionLive = $derived(isSessionActive());
+		$effect(() => {
+			isSessionLive;
+			void syncGlobalShortcutsWithSettings();
+		});
 	}
 
 	$effect(() => {

@@ -13,8 +13,24 @@ import {
 	DEFAULT_GLOBAL_BINDINGS,
 	deviceConfig,
 } from '$lib/state/device-config.svelte';
+import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 import { settings } from '$lib/state/settings.svelte';
+import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 import type { CommandBinding, KeyBinding } from '$lib/tauri/commands';
+
+/**
+ * Whether a recording or capture session is live. The cancel gesture (a bare
+ * Escape by default) is only registered while this holds, so Escape stays the
+ * system's own key everywhere else instead of firing a "nothing to cancel"
+ * no-op on every press.
+ */
+export function isSessionActive(): boolean {
+	return (
+		manualRecorder.state === 'RECORDING' ||
+		vadRecorder.state === 'LISTENING' ||
+		vadRecorder.state === 'SPEECH_DETECTED'
+	);
+}
 
 /** Default values for in-app (local) shortcuts. Keyed by command id string. */
 const DEFAULT_LOCAL_SHORTCUTS = {
@@ -92,10 +108,15 @@ export async function syncGlobalShortcutsWithSettings() {
 	if (!tauri) return;
 	const { globalShortcuts } = tauri;
 
+	const sessionActive = isSessionActive();
 	const bindings: CommandBinding[] = [];
 	for (const command of commands) {
 		const binding = deviceConfig.get(getGlobalShortcutKey(command.id));
 		if (!binding) continue;
+		// Cancel is active only while a session is live (see `isSessionActive`).
+		// Outside a session it is left unregistered so its bare Escape default
+		// never traps the key globally.
+		if (command.id === 'cancelManualRecording' && !sessionActive) continue;
 		// Storage validates keys as plain strings; Rust validates them by name on
 		// register. The cast bridges the stored `string[]` to the IPC `Key[]`.
 		bindings.push({ commandId: command.id, binding: binding as KeyBinding });

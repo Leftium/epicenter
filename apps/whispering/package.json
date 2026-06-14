@@ -66,6 +66,7 @@
 		"dev": "bun run dev:local",
 		"dev:local": "bun tauri dev --config '{\"identifier\": \"so.epicenter.whispering.dev\"}'",
 		"build": "NODE_ENV=production vite build",
+		"check": "bun run typecheck",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
 		"bindings:tauri": "cargo test --manifest-path src-tauri/Cargo.toml export_types",

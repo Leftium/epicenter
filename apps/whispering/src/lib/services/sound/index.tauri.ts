@@ -1,15 +1,8 @@
-import { tryAsync } from 'wellcrafted/result';
-import { audioElements } from './assets';
-import { type PlaySoundService, SoundError } from './types';
+import { soundSources } from './assets';
+import type { PlaySoundService } from './types';
+import { createWebAudioPlaySoundService } from './web-audio';
 
 export type { PlaySoundService, SoundError } from './types';
 
-export const PlaySoundServiceLive = {
-	playSound: async (soundName) =>
-		tryAsync({
-			try: async () => {
-				await audioElements[soundName].play();
-			},
-			catch: (error) => SoundError.Play({ cause: error }),
-		}),
-} satisfies PlaySoundService;
+export const PlaySoundServiceLive: PlaySoundService =
+	createWebAudioPlaySoundService({ soundSources });

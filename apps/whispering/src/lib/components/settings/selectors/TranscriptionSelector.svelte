@@ -25,7 +25,7 @@
 
 	let {
 		class: className,
-		triggerVariant = 'standalone',
+		triggerVariant,
 	}: {
 		class?: string;
 		/**
@@ -37,7 +37,7 @@
 		 * - `standalone`: a quick provider switcher. Shows the selected service's
 		 *   brand icon and warns only when a selected service is misconfigured.
 		 */
-		triggerVariant?: 'standalone' | 'pipeline';
+		triggerVariant: 'standalone' | 'pipeline';
 	} = $props();
 
 	const selectedService = $derived(getSelectedTranscriptionService());

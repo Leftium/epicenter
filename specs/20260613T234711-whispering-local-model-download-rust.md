@@ -88,17 +88,37 @@ Read directly from source. handy is the closest comparable (Tauri + whisper/para
 
 The `on_download` webview handler only exposes `Requested`/`Finished`, no granular progress, so it is unsuitable for a progress bar. **Tauri's own guidance: a custom Rust command using `reqwest` streaming to disk, emitting progress, is the efficient path.** For per-invocation streaming, Tauri v2 provides `tauri::ipc::Channel<T>`, which is scoped to the call (no global event name, no `model_id` filtering) and is the modern alternative to handy's global `emit`.
 
+### The official built-in: `tauri-plugin-upload` `download()` (DeepWiki, `tauri-apps/plugins-workspace`)
+
+There is an official plugin with a `download(url, filePath, onProgress, headers, body)` function. From source: it streams natively via `reqwest::Response::bytes_stream()` into a `tokio::fs::File` wrapped in a **`BufWriter`**, and reports progress through a scoped `Channel<ProgressPayload>` carrying `progress`, `progress_total`, `total`, and `transfer_speed`.
+
+| Capability | `plugin-upload` `download()` | Custom command (handy-style) |
+| --- | --- | --- |
+| Kill IPC-per-chunk (the main win) | Yes | Yes |
+| Write path | `tokio::fs` + `BufWriter` (good) | handy: blocking `std::fs`, unbuffered |
+| Progress + transfer speed | Yes (`Channel`) | Manual |
+| Resume (Range) | **No** | Yes |
+| Checksum | **No** | Yes |
+| Atomic `.partial` -> final | **No** (writes to final path) | Yes |
+| Multi-file aggregation | No (one file/call) | Yes (server-side) |
+
+**Key finding**: the plugin already does the efficient streaming core (better than handy's unbuffered loop), but it cannot resume, has no partial file to resume *from*, and does no integrity check. For 1.6GB models on flaky networks, resume is the feature we actually want, and it is structurally absent here.
+
+**Implication**: build a custom command (handy's reliability shape) but adopt the plugin's internals (`tokio::fs` + `BufWriter` + `Channel` with `transfer_speed`) over handy's blocking loop. Keep `plugin-upload` as the documented fallback if we ever choose to ship the 90% win without resume.
+
 ## Design Decisions
 
 | Decision | Class | Choice | Rationale |
 | --- | --- | --- | --- |
-| Where bytes are moved | 1 evidence | Native Rust command with `reqwest` `bytes_stream()` -> `write_all` | Tauri docs + handy source; removes per-chunk IPC |
+| Plugin vs custom command | 3 taste | **Custom command**, internals borrowed from `plugin-upload` | `plugin-upload` cannot resume and has no partial file; resume is the point for 1.6GB models. Constraint: more Rust to own. Revisit if resume proves unneeded |
+| Write path | 1 evidence | `tokio::fs::File` + `BufWriter` | `plugin-upload` source; fewer write syscalls than handy's unbuffered `std::fs` loop |
 | Catalog source of truth | 2 coherence | Stays in TS (`local-models.ts`); command receives a manifest | One catalog. Do not mirror it in Rust (handy does, and pays a dual-catalog cost) |
-| Progress transport | 1 evidence | `tauri::ipc::Channel<DownloadProgress>` arg on the command, throttled ~10/sec in Rust | Channel is per-invocation and scoped; verify the type exists in our Tauri version before building |
+| Progress transport | 1 evidence | `tauri::ipc::Channel<DownloadProgress>` arg, throttled ~10/sec, carries `transfer_speed` | `plugin-upload` proves the shape; scoped per-invocation. Verify Channel exists in our Tauri version |
 | Partial files + resume | 2 coherence | `{filename}.partial`, `Range` header, `200`-not-`206` -> restart | Matches handy; resumes large interrupted downloads |
 | Integrity: size | 2 coherence | Rust verifies final byte count equals expected before promoting | Replaces the JS 90%-size heuristic with an exact Rust check |
-| Integrity: SHA256 | Deferred | Add `sha256?` to catalog files, verify in `spawn_blocking` when present | Catalog has no hashes today; gathering and pinning them is its own task. Ship size-exact first, hashes when the catalog carries them |
+| Integrity: SHA256 | Deferred | Inline hash while streaming (single pass), verify on completion | Catalog has no hashes today; gathering them is its own task. Inline beats handy's second full-file read; see resume caveat in Improvements |
 | Multi-file models | 2 coherence | Command takes `files: [...]`, downloads each into the engine dir, aggregates progress by bytes | Parakeet/Moonshine are directories, not archives |
+| Multi-file concurrency | 3 taste | Bounded-concurrent file downloads, one shared `reqwest::Client` | Saturates bandwidth for 3-file parakeet/moonshine; handy never faced this (single archive). Constraint: progress aggregation is trickier. Revisit if sequential is fast enough |
 | `reqwest` dependency | 1 evidence | Add `reqwest` (rustls, stream features) to `src-tauri/Cargo.toml` | No HTTP client exists in Rust today (verified: no `reqwest` references) |
 | HTTP in webview | 2 coherence | Drop `@tauri-apps/plugin-http` for downloads | Bytes no longer transit the webview |
 
@@ -139,7 +159,7 @@ struct DownloadManifest {
 }
 
 #[derive(Serialize, Clone, specta::Type)]
-struct DownloadProgress { downloaded: u64, total: u64, percentage: f64 }
+struct DownloadProgress { downloaded: u64, total: u64, percentage: f64, transfer_speed: f64 }
 
 #[tauri::command]
 #[specta::specta]
@@ -151,6 +171,18 @@ async fn download_local_model(
 ```
 
 Registered in `make_specta_builder()` (`src-tauri/src/lib.rs:40`), bindings regenerated, surfaced through the command boundary file (`src/lib/tauri/commands.ts`). The webview never sees model bytes again.
+
+## Improvements over handy
+
+handy is the reliability reference, but it is not the efficiency ceiling. Where we can do better, grounded in `plugin-upload`'s source:
+
+1. **Buffered, async writes.** handy uses blocking `std::fs::File` + `write_all` (a syscall per chunk). Use `tokio::fs` + `BufWriter` like `plugin-upload`, so the async executor is not blocked and writes batch.
+2. **Single-pass inline hashing.** handy verifies SHA256 by reading the whole file again after download (a second full pass over up to 1.6GB). Feed each chunk into the hasher as it streams, so verification is free at completion.
+   - Caveat: a resumed download did not see the earlier bytes. On resume, either hash the existing `.partial` once before continuing, or fall back to a post-completion full read for that case. Keep the simple full-read path until hashes land in the catalog anyway.
+3. **Concurrent multi-file with a shared client.** Parakeet/Moonshine download 3 files; do them with bounded concurrency over one `reqwest::Client` (connection reuse, HTTP/2 to the host). handy ships a single archive and never parallelizes. Aggregate progress by summed bytes across files.
+4. **Transfer speed in the UI.** `plugin-upload`'s `ProgressPayload` carries `transfer_speed`; surface a speed/ETA the progress bar, which handy does not expose.
+
+Net: same reliability shape as handy (resume, `.partial`, size + hash), with `plugin-upload`'s tighter write loop and two wins neither has (inline hash, concurrent multi-file).
 
 ## Call sites: before and after
 
@@ -259,5 +291,6 @@ Build, Prove, Remove. Do not delete the JS path before the Rust path is proven.
 - `apps/whispering/src-tauri/src/lib.rs:40` - `make_specta_builder()` / `collect_commands!`
 - `apps/whispering/src-tauri/src/transcription/model_manager.rs:164` - `model_path_for` path resolution to reuse
 - `apps/whispering/src/lib/tauri/commands.ts` - command boundary file to keep in sync
-- `cjpais/handy` `src-tauri/src/managers/model.rs` `download_model` - reference implementation (resume, throttle, sha256, cancel)
+- `cjpais/handy` `src-tauri/src/managers/model.rs` `download_model` - reliability reference (resume, throttle, sha256, cancel)
+- `tauri-apps/plugins-workspace` `plugins/upload` `download()` - efficient streaming reference (`tokio::fs` + `BufWriter` + `Channel` with `transfer_speed`); documented fallback if we drop resume
 - Skills to load when implementing: `tauri`, `rust-errors`, `svelte`

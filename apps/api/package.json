@@ -2,7 +2,7 @@
 	"name": "@epicenter/api",
 	"description": "Epicenter Cloud Worker (hosted personal cloud): auth, sync, AI, billing, and dashboard SPA",
 	"private": true,
-	"version": "0.0.1",
+	"version": "0.0.2",
 	"type": "module",
 	"exports": {
 		".": "./worker/index.ts"

@@ -1,6 +1,6 @@
 {
 	"name": "@epicenter/filesystem",
-	"version": "0.1.0",
+	"version": "0.3.0",
 	"description": "Filesystem utilities for Epicenter. Markdown parsing, frontmatter handling, and file operations.",
 	"keywords": [
 		"local-first",

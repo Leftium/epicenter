@@ -1,11 +1,11 @@
 /**
- * Open a project: the single daemon entry point from `epicenter.config.ts` to
- * live mount runtimes.
+ * Open an Epicenter root: the single daemon entry point from
+ * `epicenter.config.ts` to live mount runtimes.
  *
- * `openProject()` is what `epicenter daemon up` calls. It owns the whole
+ * `openEpicenterRoot()` is what `epicenter daemon up` calls. It owns the whole
  * startup path:
  *
- *   1. `loadProjectConfig(epicenterRoot)` imports `epicenter.config.ts` and
+ *   1. `loadEpicenterConfig(epicenterRoot)` imports `epicenter.config.ts` and
  *      validates that its default export is a `Mount[]`.
  *   2. Refuse to start when machine auth is signed out, then validate the
  *      configured mount names.
@@ -34,9 +34,9 @@ import type { OwnerId } from '@epicenter/identity';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 
 import {
-	loadProjectConfig,
-	type ProjectConfigError,
-} from '../config/load-project-config.js';
+	loadEpicenterConfig,
+	type EpicenterConfigError,
+} from '../config/load-epicenter-config.js';
 import type { Mount, MountContext } from '../daemon/define-mount.js';
 import { validateMountNames } from '../daemon/mount-validation.js';
 import type { StartedMount } from '../daemon/types.js';
@@ -47,27 +47,28 @@ import type { EpicenterRoot } from '../shared/types.js';
 import type { WorkspaceAuthClient } from './auth-client.js';
 import { WorkspaceAppError } from './errors.js';
 
-export type OpenProjectOptions = {
+export type OpenEpicenterRootOptions = {
 	epicenterRoot: EpicenterRoot | string;
 	auth: WorkspaceAuthClient;
 };
 
 /**
- * Bring a project's daemon online: import its config, then open every mount it
- * declares. Returns the started mounts or the first config/startup error.
+ * Bring an Epicenter root's daemon online: import its config, then open every
+ * mount it declares. Returns the started mounts or the first config/startup
+ * error.
  *
  * Opens run in parallel because each mount owns its own resources. If any open
  * fails, every successfully opened runtime is disposed before returning the
  * first failure.
  */
-export async function openProject(
-	options: OpenProjectOptions,
-): Promise<Result<StartedMount[], ProjectConfigError | WorkspaceAppError>> {
+export async function openEpicenterRoot(
+	options: OpenEpicenterRootOptions,
+): Promise<Result<StartedMount[], EpicenterConfigError | WorkspaceAppError>> {
 	const { auth } = options;
 	const epicenterRoot = resolve(options.epicenterRoot) as EpicenterRoot;
 
 	const { data: mounts, error: configError } =
-		await loadProjectConfig(epicenterRoot);
+		await loadEpicenterConfig(epicenterRoot);
 	if (configError !== null) return Err(configError);
 
 	if (auth.state.status === 'signed-out') {
@@ -197,9 +198,9 @@ function claimEpicenterFolder(epicenterRoot: EpicenterRoot): void {
 		}
 	}
 
-	const projectDataDir = join(epicenterRoot, '.epicenter');
-	mkdirSync(projectDataDir, { recursive: true, mode: 0o700 });
-	const cacheGitignorePath = join(projectDataDir, '.gitignore');
+	const epicenterDataDir = join(epicenterRoot, '.epicenter');
+	mkdirSync(epicenterDataDir, { recursive: true, mode: 0o700 });
+	const cacheGitignorePath = join(epicenterDataDir, '.gitignore');
 	if (!existsSync(cacheGitignorePath)) {
 		writeFileSync(cacheGitignorePath, '*\n', { mode: 0o600 });
 	}

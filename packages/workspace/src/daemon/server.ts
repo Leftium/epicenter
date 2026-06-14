@@ -23,7 +23,7 @@ import type { DaemonServedMount } from './types.js';
 import { bindUnixSocket } from './unix-socket.js';
 
 export type DaemonServerOptions = {
-	/** Already-claimed project daemon lease. */
+	/** Already-claimed daemon lease. */
 	lease: DaemonLease;
 	/** Mounts served by the unix-socket app. */
 	mounts: readonly DaemonServedMount[];

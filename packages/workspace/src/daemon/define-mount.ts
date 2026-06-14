@@ -1,5 +1,5 @@
 /**
- * `defineMount`: typed entry contract for an app mount inside a project daemon.
+ * `defineMount`: typed entry contract for an app mount inside the daemon.
  *
  * `epicenter.config.ts` default-exports a `Mount[]`. Each mount carries its own
  * canonical `name`, which
@@ -71,7 +71,7 @@ export type MountContext = {
  * One app mount: a name plus an `open(ctx)` that returns a `DaemonRuntime`.
  *
  * Factories like `fuji()` return a `Mount`. The canonical mount name lives on
- * the value itself (`Mount.name`), so renaming a project folder never changes
+ * the value itself (`Mount.name`), so renaming an Epicenter folder never changes
  * the action namespace.
  */
 export type Mount<TRuntime extends DaemonRuntime = DaemonRuntime> = {

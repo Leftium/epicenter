@@ -10,11 +10,10 @@ import { runCommand } from './commands/run.js';
  * Create the Epicenter CLI instance.
  *
  * Introspect and invoke `defineQuery` / `defineMutation` actions exposed by
- * configured project mounts, either locally or on a peer that's online right
- * now.
+ * configured mounts, either locally or on a peer that's online right now.
  *
  *   - `auth`:  manage the local machine auth session (pre-workspace)
- *   - `init`:  scaffold epicenter.config.ts (explicit project creation)
+ *   - `init`:  scaffold epicenter.config.ts (explicit root creation)
  *   - `daemon`: operate daemon lifecycle commands
  *   - `list`:  runnable actions grouped by mount (local schema is authoritative)
  *   - `run`:   invoke one by mount-prefixed action path; `--peer` dispatches over RPC

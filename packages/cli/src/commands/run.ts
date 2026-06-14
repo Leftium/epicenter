@@ -9,7 +9,7 @@
  * shapes are one `/run` request (the optional `peer` object selects the
  * target and carries the wait budget).
  *
- * `epicenter run` requires a running daemon for the discovered project.
+ * `epicenter run` requires a running daemon for the discovered Epicenter root.
  * Without `daemon up`, the handler errors with a hint pointing at
  * `epicenter daemon up`.
  *
@@ -32,7 +32,7 @@ import { extractErrorMessage } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
 
 import { cmd } from '../util/cmd.js';
-import { projectOption } from '../util/common-options.js';
+import { epicenterRootOption } from '../util/common-options.js';
 import {
 	fail,
 	formatOptions,
@@ -56,7 +56,7 @@ export const runCommand = cmd({
 				type: 'string',
 				describe: 'Inline JSON or @file.json',
 			})
-			.option('C', projectOption)
+			.option('C', epicenterRootOption)
 			.option('peer', {
 				type: 'string',
 				description: 'Dispatch to a remote peer by peer id',

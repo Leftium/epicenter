@@ -1,6 +1,6 @@
 # @epicenter/cli
 
-> Introspect and invoke `defineQuery` / `defineMutation` actions exposed by configured project mounts, locally or on a currently online peer.
+> Introspect and invoke `defineQuery` / `defineMutation` actions exposed by configured mounts, locally or on a currently online peer.
 
 Each verb is a one-line shell shortcut for one workspace primitive:
 
@@ -36,7 +36,7 @@ The same env var and scripts apply to every command that talks to the API, inclu
 
 ## Commands
 
-`epicenter daemon up` opens every mount listed in the project's `epicenter.config.ts`. `list`, `run`, and `peers` dispatch to that local daemon over its Unix socket.
+`epicenter daemon up` opens every mount listed in the Epicenter root's `epicenter.config.ts`. `list`, `run`, and `peers` dispatch to that local daemon over its Unix socket.
 
 ```bash
 epicenter auth login
@@ -72,7 +72,7 @@ epicenter peers -C ~/workspace
 
 Error text goes to stderr; machine-readable output (`--format json|jsonl`, tables, and `run` results) goes to stdout.
 
-## Project Mounts
+## Epicenter Roots And Mounts
 
 `epicenter.config.ts` marks the Epicenter root and owns mount discovery. The default export is a `Mount[]`. App packages ship mount factories that return `Mount` values; each `Mount.name` owns the CLI prefix. The folder that holds `epicenter.config.ts` is your Epicenter folder: Epicenter owns its direct children, so each mount's visible markdown projection is a direct child folder named after the mount.
 
@@ -84,7 +84,7 @@ export default [fuji()];
 
 The returned `Mount.name` is `fuji`, so the CLI addresses actions as `fuji.<action_key>` regardless of the Epicenter folder name.
 
-For projects that host more than one mount, add more entries to the array:
+For Epicenter roots that host more than one mount, add more entries to the array:
 
 ```ts
 import { fuji } from "@epicenter/fuji/project";
@@ -131,7 +131,7 @@ export default [
 ];
 ```
 
-`Mount.name` is the CLI prefix. Two mounts in one project must have distinct names; duplicates fail before any mount opens.
+`Mount.name` is the CLI prefix. Two mounts in one Epicenter root must have distinct names; duplicates fail before any mount opens.
 
 `.epicenter/` holds the Epicenter root's generated machine state such as SQLite materializers, Yjs update logs, markdown materializers, and its generated `.gitignore`. It is not a registry. Runtime files live outside the Epicenter root: sockets and daemon metadata use the OS runtime directory, while daemon logs use the platform log directory from `env-paths`.
 

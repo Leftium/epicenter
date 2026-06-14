@@ -327,7 +327,7 @@ epicenter list -C vault/apps
 epicenter run -C vault/apps fuji.entries_update '{}'
 ```
 
-Running inside `vault/apps/fuji` still works because `findProjectRoot()` walks up to `vault/apps/epicenter.config.ts`.
+Running inside `vault/apps/fuji` still works because `findEpicenterRoot()` walks up to `vault/apps/epicenter.config.ts`.
 
 ## Implementation Plan
 
@@ -363,8 +363,8 @@ Running inside `vault/apps/fuji` still works because `findProjectRoot()` walks u
 
 ### Phase 5: CLI and provisioning
 
-- [ ] **5.1** Change command descriptions from "Project root" to "Epicenter namespace root."
-- [ ] **5.2** Keep `findProjectRoot()` upward-only for command execution.
+- [x] **5.1** Change command descriptions from "Project root" to "Epicenter root."
+- [x] **5.2** Keep `findEpicenterRoot()` upward-only for command execution.
 - [ ] **5.3** Change `daemon up` provisioning so a missing config is not accidentally created at a normal repo root. Prefer an explicit init flow or require `-C <namespace-dir>`.
 - [ ] **5.4** Add docs showing `epicenter daemon up -C apps` from a repo root.
 - [ ] **5.5** Add or update tests for provisioning, discovery, and error messages.
@@ -384,7 +384,7 @@ Running inside `vault/apps/fuji` still works because `findProjectRoot()` walks u
 - [ ] **7.2** Update `packages/cli/README.md`.
 - [ ] **7.3** Update `packages/workspace/README.md`.
 - [ ] **7.4** Mark older path specs as superseded where they teach repo-root config or `projectDir/apps/<mount>`.
-- [ ] **7.5** Search for `appsMarkdownPath`, `Project root`, `project root`, and `projectDir/apps`.
+- [ ] **7.5** Search for `appsMarkdownPath`, stale root/config API names, and `projectDir/apps`.
 
 ## Gitignore Model
 
@@ -408,8 +408,9 @@ If the namespace needs a tracked `AGENTS.md` or README:
 ```
 
 Do not ignore the namespace without unignoring the config. The config is the
-tracked boundary marker. `openProject()` claims the namespace after config,
-auth, mount-name, and populated-folder validation, but before any mount opens.
+tracked boundary marker. `openEpicenterRoot()` claims the namespace after
+config, auth, mount-name, and populated-folder validation, but before any mount
+opens.
 Fresh claims write the root ignore before creating `.epicenter/`, so
 `.epicenter/` remains the "already claimed" marker.
 
@@ -419,7 +420,7 @@ Fresh claims write the root ignore before creating `.epicenter/`, so
 
 1. User has `repo/apps/epicenter.config.ts`.
 2. User runs `epicenter list` from `repo/`.
-3. `findProjectRoot()` does not scan down.
+3. `findEpicenterRoot()` does not scan down.
 4. Command should fail with a clear message: run from `repo/apps`, pass `-C apps`, or initialize a namespace.
 
 This is deliberate for v1. A scan-down fallback can be added later only if ambiguity rules are clear.
@@ -444,7 +445,7 @@ Recommendation: first implementation should refuse this on bootstrap if `.epicen
 
 1. User creates `repo/apps/epicenter.config.ts` with multiple mounts.
 2. The populated-folder guard passes.
-3. `openProject()` writes `repo/apps/.gitignore`, then creates `repo/apps/.epicenter/`.
+3. `openEpicenterRoot()` writes `repo/apps/.gitignore`, then creates `repo/apps/.epicenter/`.
 4. One mount later fails while opening.
 
 Recommendation: keep the namespace claim. The folder has already passed the
@@ -501,7 +502,7 @@ Rejected for v1. A repo may contain several namespace roots. Upward-only discove
 
 ### Store `.epicenter/` inside each mount folder
 
-Rejected. `.epicenter/` is namespace state, not projection content. Putting it inside each mount makes every mount look like a separate project root and blurs the boundary.
+Rejected. `.epicenter/` is namespace state, not projection content. Putting it inside each mount makes every mount look like a separate Epicenter root and blurs the boundary.
 
 ### Round-trip editing of the projection (markdown as source)
 
@@ -545,9 +546,9 @@ The single write path is the app or the CLI. If editor ergonomics matter later, 
 
 - `packages/workspace/src/document/workspace-paths.ts` - current `appsMarkdownPath`, `markdownPath`, `sqlitePath`, and `yjsPath` helpers.
 - `packages/workspace/src/document/materializer/markdown/export.ts` - current markdown exporter, path joins, and rebuild sweep.
-- `packages/workspace/src/client/find-project-root.ts` - upward-only config discovery.
+- `packages/workspace/src/client/find-epicenter-root.ts` - upward-only config discovery.
 - `packages/cli/src/commands/up.ts` - current provisioning writes `epicenter.config.ts` and `.epicenter/`.
-- `packages/cli/src/util/common-options.ts` - CLI `-C` language currently says project root.
+- `packages/cli/src/util/common-options.ts` - CLI `-C` language for Epicenter-root discovery.
 - `apps/fuji/src/lib/workspace/project.ts` - first-party mount factory using `appsMarkdownPath`.
 - `apps/honeycrisp/project.ts` - first-party mount factory using `appsMarkdownPath`.
 - `apps/tab-manager/project.ts` - first-party mount factory using `appsMarkdownPath`.

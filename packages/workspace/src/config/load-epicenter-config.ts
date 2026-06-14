@@ -98,6 +98,13 @@ export async function loadEpicenterConfig(
 	if (importError !== null) return Err(importError);
 
 	const value = module.default;
+	if (value == null) {
+		return EpicenterConfigError.EpicenterConfigInvalid({
+			epicenterConfigPath,
+			detail:
+				'no mount is declared yet; default-export the mount your app factory returns, for example `export default fuji()`',
+		});
+	}
 	if (Array.isArray(value)) {
 		return EpicenterConfigError.EpicenterConfigInvalid({
 			epicenterConfigPath,

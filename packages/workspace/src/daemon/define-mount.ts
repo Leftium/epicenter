@@ -38,8 +38,8 @@ import type { DaemonRuntime } from './types.js';
 
 /**
  * The signed-in capability kit: everything a mount needs that only exists once
- * machine auth is signed in. Built once per Epicenter root and shared by every
- * mount; `null` on the context while signed out.
+ * machine auth is signed in. Built once per Epicenter root for its mount;
+ * `null` on the context while signed out.
  *
  * - `ownerId` is the workspace owner the daemon syncs as.
  * - `keyring` is the lazy reader for the owner keyring. It re-reads auth state

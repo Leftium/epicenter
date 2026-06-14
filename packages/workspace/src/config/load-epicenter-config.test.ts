@@ -71,6 +71,19 @@ describe('loadEpicenterConfig', () => {
 		});
 	});
 
+	test('reports a friendly "no mount declared" error for the init scaffold', async () => {
+		// The `epicenter init` scaffold is comment-only, so its default export is
+		// absent (undefined). A freshly scaffolded folder should say so, not give a
+		// generic shape error.
+		writeConfig('// no export yet\n');
+
+		const { error } = await loadEpicenterConfig(epicenterRoot);
+		expect(error).toMatchObject({
+			name: 'EpicenterConfigInvalid',
+			detail: expect.stringContaining('no mount is declared yet'),
+		});
+	});
+
 	test('rejects a mount with a bad name', async () => {
 		writeConfig("export default { name: '__proto__', open() {} };\n");
 

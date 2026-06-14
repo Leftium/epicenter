@@ -21,26 +21,30 @@ const globalBinding = type({
 	keys: 'string[]',
 }).or('null');
 
-// Default bindings as global gestures, not mnemonic app hotkeys. The push-to-talk
-// gesture and the toggle gesture share a prefix on purpose: the rdev gesture
-// resolver fires the shorter one (hold) unless the longer one (hold + Space)
-// completes inside a short window.
+// Default bindings as global gestures, not mnemonic app hotkeys. Every gesture
+// is a distinct, non-overlapping combo: the rdev matcher fires on exact set
+// equality with no prefix resolution, so no gesture's keys may be a subset of
+// another's (the shorter one would fire first and shadow the longer). That is
+// why push-to-talk gets its own dedicated key and nothing else reuses it.
 //
-//   macOS:   Fn = push-to-talk,        Fn + Space        = toggle
-//   Windows: Ctrl+Win = push-to-talk,  Ctrl+Win + Space  = toggle
+//   macOS:   Fn = push-to-talk,        Cmd + Shift + Space  = toggle
+//   Windows: Ctrl+Win = push-to-talk,  Ctrl + Shift + Space = toggle
 //
 // Fn is a single physical key on Apple keyboards; elsewhere we reach for
-// Ctrl+Win, a held chord that no common OS shortcut claims. Cancel is the
-// platform cancel chord (Cmd + . on macOS, the system cancel gesture since
-// classic Mac OS; Ctrl + Shift + . elsewhere). A modifier-carrying chord is
-// safe to hold globally, so cancel registers like any other gesture with no
-// session gating, and it deliberately avoids the push-to-talk prefix so it
-// never forces that hold into a pending window. Transformation gestures ship
-// unbound: opt-in only. Exported so the reset path in register-commands shares
-// this one source of truth.
+// Ctrl+Win, a held chord that no common OS shortcut claims. Toggle adds Shift
+// so it shares no prefix with push-to-talk while keeping Space as the "record"
+// affordance. Cancel is the platform cancel chord (Cmd + . on macOS, the system
+// cancel gesture since classic Mac OS; Ctrl + Shift + . elsewhere); it carries a
+// modifier so it is safe to hold globally and registers like any other gesture
+// with no session gating. Transformation gestures ship unbound: opt-in only.
+// Exported so the reset path in register-commands shares this one source of truth.
 const PUSH_TO_TALK_MODIFIERS: KeyBinding['modifiers'] = os.isApple
 	? ['fn']
 	: ['ctrl', 'meta'];
+
+const TOGGLE_MODIFIERS: KeyBinding['modifiers'] = os.isApple
+	? ['meta', 'shift']
+	: ['ctrl', 'shift'];
 
 const CANCEL_MODIFIERS: KeyBinding['modifiers'] = os.isApple
 	? ['meta']
@@ -48,7 +52,7 @@ const CANCEL_MODIFIERS: KeyBinding['modifiers'] = os.isApple
 
 export const DEFAULT_GLOBAL_BINDINGS = {
 	pushToTalk: { modifiers: PUSH_TO_TALK_MODIFIERS, keys: [] },
-	toggleManualRecording: { modifiers: PUSH_TO_TALK_MODIFIERS, keys: ['space'] },
+	toggleManualRecording: { modifiers: TOGGLE_MODIFIERS, keys: ['space'] },
 	cancelRecording: { modifiers: CANCEL_MODIFIERS, keys: ['dot'] },
 	toggleVadRecording: null,
 	openTransformationPicker: null,

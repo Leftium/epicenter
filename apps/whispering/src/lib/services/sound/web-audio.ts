@@ -1,34 +1,10 @@
 import { Ok, tryAsync } from 'wellcrafted/result';
+import type { WhisperingSoundNames } from '$lib/constants/sounds';
 import { type PlaySoundService, SoundError } from './types';
 
-type SoundName = Parameters<PlaySoundService['playSound']>[0];
-type SoundSources = Record<SoundName, string>;
+type SoundSources = Record<WhisperingSoundNames, string>;
 
-type SoundAudioSource = Pick<
-	AudioBufferSourceNode,
-	'buffer' | 'connect' | 'onended' | 'start'
->;
-
-export type WebAudioEnvironment = {
-	createAudioContext: () => Pick<
-		AudioContext,
-		'close' | 'decodeAudioData' | 'destination' | 'resume' | 'state'
-	> & {
-		createBufferSource: () => SoundAudioSource;
-	};
-	fetch: (
-		input: string,
-	) => Promise<Pick<Response, 'arrayBuffer' | 'ok' | 'statusText'>>;
-};
-
-const defaultEnvironment: WebAudioEnvironment = {
-	createAudioContext: () => new AudioContext(),
-	fetch: (input) => fetch(input),
-};
-
-async function closeContext(
-	context: ReturnType<WebAudioEnvironment['createAudioContext']>,
-) {
+async function closeContext(context: AudioContext) {
 	try {
 		await context.close();
 	} catch {
@@ -37,32 +13,21 @@ async function closeContext(
 	}
 }
 
-async function decodeSound(
-	environment: WebAudioEnvironment,
-	context: ReturnType<WebAudioEnvironment['createAudioContext']>,
-	soundSource: string,
-) {
-	const response = await environment.fetch(soundSource);
-	if (!response.ok) {
-		throw new Error(`Failed to fetch sound: ${response.statusText}`);
-	}
-	return context.decodeAudioData(await response.arrayBuffer());
-}
-
-async function playSoundSource({
-	environment,
-	soundSource,
-}: {
-	environment: WebAudioEnvironment;
-	soundSource: string;
-}) {
-	const context = environment.createAudioContext();
+async function playSoundSource(soundSource: string) {
+	const context = new AudioContext();
 	try {
 		if (context.state === 'suspended') {
 			await context.resume();
 		}
 
-		const audioBuffer = await decodeSound(environment, context, soundSource);
+		const response = await fetch(soundSource);
+		if (!response.ok) {
+			throw new Error(`Failed to fetch sound: ${response.statusText}`);
+		}
+		const audioBuffer = await context.decodeAudioData(
+			await response.arrayBuffer(),
+		);
+
 		const source = context.createBufferSource();
 		source.buffer = audioBuffer;
 		source.connect(context.destination);
@@ -77,11 +42,9 @@ async function playSoundSource({
 }
 
 export function createWebAudioPlaySoundService({
-	environment = defaultEnvironment,
 	shouldPlay = () => true,
 	soundSources,
 }: {
-	environment?: WebAudioEnvironment;
 	shouldPlay?: () => boolean;
 	soundSources: SoundSources;
 }): PlaySoundService {
@@ -92,11 +55,7 @@ export function createWebAudioPlaySoundService({
 			}
 
 			return tryAsync({
-				try: () =>
-					playSoundSource({
-						environment,
-						soundSource: soundSources[soundName],
-					}),
+				try: () => playSoundSource(soundSources[soundName]),
 				catch: (error) => SoundError.Play({ cause: error }),
 			});
 		},

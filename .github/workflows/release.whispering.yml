@@ -132,7 +132,7 @@ jobs:
         with:
           arch: x64
 
-      - name: Configure CMake for MSVC Ninja (Windows)
+      - name: Configure Windows native build
         if: ${{ matrix.os == 'windows' }}
         shell: pwsh
         run: |
@@ -149,6 +149,7 @@ jobs:
           "CC=cl" >> $env:GITHUB_ENV
           "CXX=cl" >> $env:GITHUB_ENV
           "RC=$resourceCompiler" >> $env:GITHUB_ENV
+          "CARGO_TARGET_DIR=$env:GITHUB_WORKSPACE\target" >> $env:GITHUB_ENV
 
       # Setup Bun package manager
       - name: setup bun

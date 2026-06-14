@@ -107,7 +107,7 @@ jobs:
         with:
           arch: x64
 
-      - name: Configure CMake for MSVC Ninja (Windows)
+      - name: Configure Windows native build
         if: ${{ matrix.os == 'windows' }}
         shell: pwsh
         run: |
@@ -124,6 +124,7 @@ jobs:
           "CC=cl" >> $env:GITHUB_ENV
           "CXX=cl" >> $env:GITHUB_ENV
           "RC=$resourceCompiler" >> $env:GITHUB_ENV
+          "CARGO_TARGET_DIR=$env:GITHUB_WORKSPACE\target" >> $env:GITHUB_ENV
 
       - name: setup bun
         uses: oven-sh/setup-bun@v2
@@ -215,4 +216,6 @@ jobs:
             apps/whispering/src-tauri/target/release/bundle/**/*.deb
             apps/whispering/src-tauri/target/release/bundle/**/*.exe
             apps/whispering/src-tauri/target/release/bundle/**/*.msi
+            target/release/bundle/**/*.exe
+            target/release/bundle/**/*.msi
           if-no-files-found: warn

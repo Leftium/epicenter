@@ -50,25 +50,6 @@ export const viewTransition = {
 	},
 
 	/**
-	 * Transition names for a transformation step run's UI elements.
-	 *
-	 * @example
-	 * ```svelte
-	 * <div style="view-transition-name: {viewTransition.stepRun(stepRunId).input}" />
-	 * ```
-	 */
-	stepRun(id: string) {
-		return {
-			/** The step input display */
-			input: `step-run-${id}-input`,
-			/** The step output display */
-			output: `step-run-${id}-output`,
-			/** The step error display */
-			error: `step-run-${id}-error`,
-		} as const;
-	},
-
-	/**
 	 * Global UI elements that persist across pages.
 	 * These have fixed names since they're singletons.
 	 */

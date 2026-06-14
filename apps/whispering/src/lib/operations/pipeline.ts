@@ -144,6 +144,7 @@ export async function processRecordingPipeline({
 
 	const transformNotice = await deliverTransformationResult({
 		text: transformedText,
+		recordingId,
 	});
 	transformLoading.resolve(transformNotice);
 }

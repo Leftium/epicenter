@@ -5,6 +5,13 @@
 **Owner**: Braden
 **Branch**: none yet
 
+> **Update (2026-06-12, transformation-engine collapse)**: superseded in part by
+> `20260612T210000-whispering-transformation-engine-collapse.md`. Candidates live
+> in memory; only the accepted candidate becomes a run (no per-candidate rows).
+> There is no `steps` table to relocate: a transformation is
+> `preReplacements[] + prompt? + postReplacements[]`, so "definitions =
+> transformations + steps + backends" now reads "transformations + backends."
+
 ## One Sentence
 
 Transformation definitions (transformations, steps, custom backends) become a
@@ -99,7 +106,8 @@ selection capture            NEW primitive: simulate Cmd+C, read clipboard,
                              /transform-clipboard window sidesteps this today
 parallel fan-out             NEW: today's runner is strictly sequential per run
 candidate cards UI           NEW: original on top, candidates diffed below,
-                             each candidate is just a transformationRun row
+                             candidates live in memory; the accepted candidate
+                             becomes a run
 picker window, shortcuts,    EXISTS
 delivery, run history        EXISTS
 ```
@@ -161,7 +169,7 @@ boundary move; the picker is an engine consumer and moves with it.
       named state app-side, never a crash or silent fallback.
 - [ ] Picker: select text in a third-party app, invoke by global shortcut, see
       2+ candidates diffed against the original, accept one, and it replaces
-      the selection; each candidate exists as a transformationRun row.
+      the selection; the accepted candidate becomes a run.
 - [ ] Seam 4 is gone: clipboard and selection runs do not offer
       "go to recordings."
 

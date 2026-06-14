@@ -16,7 +16,7 @@
 
 import { existsSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { DEFAULT_PROJECT_CONFIG_SOURCE } from '@epicenter/workspace/node';
+import { DEFAULT_EPICENTER_CONFIG_SOURCE } from '@epicenter/workspace/node';
 import { cmd } from '../util/cmd.js';
 
 export const initCommand = cmd({
@@ -31,14 +31,16 @@ export const initCommand = cmd({
 			coerce: (dir: string) => resolve(dir),
 		}),
 	handler: (argv) => {
-		const projectConfigPath = join(argv.dir, 'epicenter.config.ts');
-		if (existsSync(projectConfigPath)) {
-			process.stderr.write(`${projectConfigPath} already exists; left as is\n`);
+		const epicenterConfigPath = join(argv.dir, 'epicenter.config.ts');
+		if (existsSync(epicenterConfigPath)) {
+			process.stderr.write(
+				`${epicenterConfigPath} already exists; left as is\n`,
+			);
 			return;
 		}
-		writeFileSync(projectConfigPath, DEFAULT_PROJECT_CONFIG_SOURCE, {
+		writeFileSync(epicenterConfigPath, DEFAULT_EPICENTER_CONFIG_SOURCE, {
 			mode: 0o600,
 		});
-		process.stdout.write(`created ${projectConfigPath}\n`);
+		process.stdout.write(`created ${epicenterConfigPath}\n`);
 	},
 });

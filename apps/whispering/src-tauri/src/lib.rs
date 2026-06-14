@@ -40,6 +40,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
         .commands(tauri_specta::collect_commands![
             write_text,
             simulate_enter_keystroke,
+            simulate_copy_keystroke,
             get_current_recording_id,
             enumerate_recording_devices,
             init_recording_session,
@@ -351,6 +352,45 @@ async fn simulate_enter_keystroke() -> Result<(), String> {
     enigo
         .key(Key::Return, Direction::Click)
         .map_err(|e| format!("Failed to simulate Enter key: {}", e))?;
+
+    Ok(())
+}
+
+/// Simulates pressing the copy shortcut (Cmd+C on macOS, Ctrl+C elsewhere)
+///
+/// This copies the active selection in the foreground app to the clipboard. The
+/// frontend pairs it with a clipboard save/read/restore to capture the user's
+/// selection without clobbering their clipboard (see the text service's
+/// `captureSelection`).
+#[tauri::command]
+#[specta::specta]
+async fn simulate_copy_keystroke() -> Result<(), String> {
+    let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
+
+    // Use virtual key codes for C to work with any keyboard layout, matching the
+    // V codes in `write_text`.
+    #[cfg(target_os = "macos")]
+    let (modifier, c_key) = (Key::Meta, Key::Other(8)); // Virtual key code for C on macOS
+    #[cfg(target_os = "windows")]
+    let (modifier, c_key) = (Key::Control, Key::Other(0x43)); // VK_C on Windows
+    #[cfg(target_os = "linux")]
+    let (modifier, c_key) = (Key::Control, Key::Unicode('c')); // Fallback for Linux
+
+    // Press modifier + C
+    enigo
+        .key(modifier, Direction::Press)
+        .map_err(|e| format!("Failed to press modifier key: {}", e))?;
+    enigo
+        .key(c_key, Direction::Press)
+        .map_err(|e| format!("Failed to press C key: {}", e))?;
+
+    // Release C + modifier (in reverse order for proper cleanup)
+    enigo
+        .key(c_key, Direction::Release)
+        .map_err(|e| format!("Failed to release C key: {}", e))?;
+    enigo
+        .key(modifier, Direction::Release)
+        .map_err(|e| format!("Failed to release modifier key: {}", e))?;
 
     Ok(())
 }

@@ -263,7 +263,7 @@ repo root and siblings of namespaceRoot
 | Per-file manifest | 2 coherence | Reject | A manifest solves union folders. This design makes mount folders exclusive generated output. |
 | `apps/` name | 3 taste | Use as docs default for vault-style projects | It preserves the current visible path when config moves from `repo/` to `repo/apps/`. Revisit if `apps/` conflicts with source package directories. |
 | Project discovery from repo root | 3 taste | Keep upward-only discovery for commands, document `-C apps` | Scan-down adds ambiguity when a repo has multiple namespace roots. Revisit if the `-C` requirement becomes a daily paper cut. |
-| `projectDir` name in code | 3 taste | Keep for first implementation wave, redefine in docs | A full rename to `namespaceDir` is cleaner but wide. Revisit if the term keeps causing wrong config placement. |
+| Code boundary name | 2 coherence | Use `EpicenterRoot` / `epicenterRoot` in public code | The value is the folder marked by `epicenter.config.ts`. The branded name avoids repo-root and workspace-root confusion while staying less abstract than `namespaceDir`. |
 
 ## Call Sites: Before and After
 
@@ -283,7 +283,7 @@ const mdDir = mountMarkdownPath(projectDir, mount);
 // projectDir/<mount>
 ```
 
-Recommendation: add `mountMarkdownPath(projectDir, mountName)` and migrate first-party app factories to it. Keep `appsMarkdownPath` only as a temporary compatibility alias if removing it would force unrelated playground churn.
+Recommendation: use `mountMarkdownPath(epicenterRoot, mountName)` and migrate first-party app factories to it. Delete `appsMarkdownPath` instead of keeping a compatibility alias, so visible projections have one path shape.
 
 ### Vault layout
 
@@ -327,22 +327,22 @@ epicenter list -C vault/apps
 epicenter run -C vault/apps fuji.entries_update '{}'
 ```
 
-Running inside `vault/apps/fuji` still works because `findProjectRoot()` walks up to `vault/apps/epicenter.config.ts`.
+Running inside `vault/apps/fuji` still works because `findEpicenterRoot()` walks up to `vault/apps/epicenter.config.ts`.
 
 ## Implementation Plan
 
 ### Phase 1: Name the namespace boundary
 
-- [ ] **1.1** Update docs and JSDoc so `projectDir` means "Epicenter namespace root," not "repo root."
-- [ ] **1.2** Add `mountMarkdownPath(projectDir, mountName)` returning `join(projectDir, mountName)`.
-- [ ] **1.3** Add tests for `mountMarkdownPath` and reserved mount names.
-- [ ] **1.4** Decide whether `appsMarkdownPath` is deleted immediately or kept as a deprecated alias for one release.
+- [x] **1.1** Update live docs and JSDoc so the boundary is the Epicenter root, not the repo root.
+- [x] **1.2** Add `mountMarkdownPath(epicenterRoot, mountName)` returning `join(epicenterRoot, mountName)`.
+- [x] **1.3** Add tests for `mountMarkdownPath` and reserved mount names.
+- [x] **1.4** Delete `appsMarkdownPath` instead of keeping a deprecated alias.
 
 ### Phase 2: Move first-party vault mounts to direct children
 
-- [ ] **2.1** Change Fuji, Honeycrisp, and Tab Manager project factories to materialize markdown with `mountMarkdownPath(projectDir, mount)`.
-- [ ] **2.2** Keep yjs and sqlite under `projectDir/.epicenter/` using existing guid-keyed helpers.
-- [ ] **2.3** Update comments in first-party mount factories that still describe `appsMarkdownPath`.
+- [x] **2.1** Change Fuji, Honeycrisp, and Tab Manager project factories to materialize markdown with `mountMarkdownPath(epicenterRoot, mount)`.
+- [x] **2.2** Keep yjs and sqlite under `epicenterRoot/.epicenter/` using existing guid-keyed helpers.
+- [x] **2.3** Update comments in first-party mount factories that still describe `appsMarkdownPath`.
 - [ ] **2.4** Run focused tests for workspace paths and each changed app package.
 
 ### Phase 3: Make markdown export confinement true
@@ -363,11 +363,11 @@ Running inside `vault/apps/fuji` still works because `findProjectRoot()` walks u
 
 ### Phase 5: CLI and provisioning
 
-- [ ] **5.1** Change command descriptions from "Project root" to "Epicenter namespace root."
-- [ ] **5.2** Keep `findProjectRoot()` upward-only for command execution.
-- [ ] **5.3** Change `daemon up` provisioning so a missing config is not accidentally created at a normal repo root. Prefer an explicit init flow or require `-C <namespace-dir>`.
-- [ ] **5.4** Add docs showing `epicenter daemon up -C apps` from a repo root.
-- [ ] **5.5** Add or update tests for provisioning, discovery, and error messages.
+- [x] **5.1** Change command descriptions from "Project root" to "Epicenter root."
+- [x] **5.2** Keep `findEpicenterRoot()` upward-only for command execution.
+- [x] **5.3** Change `daemon up` provisioning so a missing config is not accidentally created at a normal repo root. `epicenter init` owns creation.
+- [x] **5.4** Add docs showing `epicenter daemon up -C apps` from a repo root.
+- [x] **5.5** Add or update tests for provisioning, discovery, and error messages.
 
 ### Phase 6: Vault migration
 
@@ -384,7 +384,7 @@ Running inside `vault/apps/fuji` still works because `findProjectRoot()` walks u
 - [ ] **7.2** Update `packages/cli/README.md`.
 - [ ] **7.3** Update `packages/workspace/README.md`.
 - [ ] **7.4** Mark older path specs as superseded where they teach repo-root config or `projectDir/apps/<mount>`.
-- [ ] **7.5** Search for `appsMarkdownPath`, `Project root`, `project root`, and `projectDir/apps`.
+- [ ] **7.5** Search for `appsMarkdownPath`, stale root/config API names, and `projectDir/apps`.
 
 ## Gitignore Model
 
@@ -408,8 +408,9 @@ If the namespace needs a tracked `AGENTS.md` or README:
 ```
 
 Do not ignore the namespace without unignoring the config. The config is the
-tracked boundary marker. `openProject()` claims the namespace after config,
-auth, mount-name, and populated-folder validation, but before any mount opens.
+tracked boundary marker. `openEpicenterRoot()` claims the namespace after
+config, auth, mount-name, and populated-folder validation, but before any mount
+opens.
 Fresh claims write the root ignore before creating `.epicenter/`, so
 `.epicenter/` remains the "already claimed" marker.
 
@@ -419,7 +420,7 @@ Fresh claims write the root ignore before creating `.epicenter/`, so
 
 1. User has `repo/apps/epicenter.config.ts`.
 2. User runs `epicenter list` from `repo/`.
-3. `findProjectRoot()` does not scan down.
+3. `findEpicenterRoot()` does not scan down.
 4. Command should fail with a clear message: run from `repo/apps`, pass `-C apps`, or initialize a namespace.
 
 This is deliberate for v1. A scan-down fallback can be added later only if ambiguity rules are clear.
@@ -444,7 +445,7 @@ Recommendation: first implementation should refuse this on bootstrap if `.epicen
 
 1. User creates `repo/apps/epicenter.config.ts` with multiple mounts.
 2. The populated-folder guard passes.
-3. `openProject()` writes `repo/apps/.gitignore`, then creates `repo/apps/.epicenter/`.
+3. `openEpicenterRoot()` writes `repo/apps/.gitignore`, then creates `repo/apps/.epicenter/`.
 4. One mount later fails while opening.
 
 Recommendation: keep the namespace claim. The folder has already passed the
@@ -501,7 +502,7 @@ Rejected for v1. A repo may contain several namespace roots. Upward-only discove
 
 ### Store `.epicenter/` inside each mount folder
 
-Rejected. `.epicenter/` is namespace state, not projection content. Putting it inside each mount makes every mount look like a separate project root and blurs the boundary.
+Rejected. `.epicenter/` is namespace state, not projection content. Putting it inside each mount makes every mount look like a separate Epicenter root and blurs the boundary.
 
 ### Round-trip editing of the projection (markdown as source)
 
@@ -516,8 +517,8 @@ The single write path is the app or the CLI. If editor ergonomics matter later, 
 1. **Should the default namespace folder be `apps/` or `epicenter/` in new docs?**
    - Recommendation: use `apps/` for vault-style projects because it preserves the current visible paths. Mention `epicenter/` as the escape hatch when `apps/` is already source-code territory.
 
-2. **Should `projectDir` be renamed to `namespaceDir` in public APIs?**
-   - Recommendation: defer the rename. First make the semantics true, then decide whether the name still misleads.
+2. **Should the code boundary be named `projectDir`, `namespaceDir`, or `epicenterRoot`?**
+   - Decision: use `epicenterRoot` / `EpicenterRoot` for live public APIs. "Epicenter root" is the canonical code term, "Epicenter folder" is the first-mention friendly prose, and "namespace root" remains architecture language.
 
 3. **Should `daemon up` create a namespace folder automatically?**
    - Recommendation: avoid implicit repo-root creation. Prefer an explicit init flow that writes `apps/epicenter.config.ts` or accepts the target namespace path.
@@ -531,33 +532,34 @@ The single write path is the app or the CLI. If editor ergonomics matter later, 
 
 ## Success Criteria
 
-- [ ] `projectDir` is documented as the Epicenter namespace root.
-- [ ] First-party visible markdown projections live at `projectDir/<mountName>`.
+- [x] `epicenterRoot` is documented as the Epicenter root.
+- [x] First-party visible markdown projections live at `epicenterRoot/<mountName>`.
 - [ ] The default vault layout keeps visible paths as `vault/apps/<mountName>` by moving the config to `vault/apps/epicenter.config.ts`.
-- [ ] `.epicenter/` lives next to `epicenter.config.ts`.
-- [ ] No per-mount sentinel or per-file manifest is introduced for the namespace-root model.
+- [x] `.epicenter/` lives next to `epicenter.config.ts`.
+- [x] No per-mount sentinel or per-file manifest is introduced for the namespace-root model.
 - [ ] `attachMarkdownExport` rejects table dirs and filenames that escape the export root.
 - [ ] `markdown_rebuild` cannot delete outside a declared mount projection.
-- [ ] CLI docs tell users to run from the namespace root or pass `-C <namespace-root>`.
-- [ ] Tests cover path helpers, discovery behavior, path confinement, and rebuild safety.
+- [x] CLI docs tell users to run from the Epicenter root or pass `-C <epicenter-root>`.
+- [x] Tests cover path helpers and discovery behavior.
+- [ ] Tests cover path confinement and rebuild safety.
 
 ## References
 
-- `packages/workspace/src/document/workspace-paths.ts` - current `appsMarkdownPath`, `markdownPath`, `sqlitePath`, and `yjsPath` helpers.
+- `packages/workspace/src/document/workspace-paths.ts` - current `mountMarkdownPath`, `markdownPath`, `sqlitePath`, and `yjsPath` helpers.
 - `packages/workspace/src/document/materializer/markdown/export.ts` - current markdown exporter, path joins, and rebuild sweep.
-- `packages/workspace/src/client/find-project-root.ts` - upward-only config discovery.
+- `packages/workspace/src/client/find-epicenter-root.ts` - upward-only config discovery.
 - `packages/cli/src/commands/up.ts` - current provisioning writes `epicenter.config.ts` and `.epicenter/`.
-- `packages/cli/src/util/common-options.ts` - CLI `-C` language currently says project root.
-- `apps/fuji/src/lib/workspace/project.ts` - first-party mount factory using `appsMarkdownPath`.
-- `apps/honeycrisp/project.ts` - first-party mount factory using `appsMarkdownPath`.
-- `apps/tab-manager/project.ts` - first-party mount factory using `appsMarkdownPath`.
+- `packages/cli/src/util/common-options.ts` - CLI `-C` language for Epicenter-root discovery.
+- `apps/fuji/src/lib/workspace/project.ts` - first-party mount factory using `mountMarkdownPath`.
+- `apps/honeycrisp/project.ts` - first-party mount factory using `mountMarkdownPath`.
+- `apps/tab-manager/project.ts` - first-party mount factory using `mountMarkdownPath`.
 - `specs/20260602T200000-vault-read-only-projection-agent-mutation.md` - previous visible `apps/` projection model.
 - `specs/20260522T220000-workspace-project-layout.md` - older project-root layout model.
 
 ## Decisions Log
 
-- Keep the code term `projectDir` for the first wave: this avoids a broad public rename while the layout changes.
-  Revisit when: docs still need to repeatedly explain that `projectDir` is not the repo root.
+- Use the code term `epicenterRoot` for the live public boundary: this avoids the old repo-root reading of `projectDir` and the abstract feel of `namespaceDir`.
+  Revisit when: the product stops using "Epicenter root" as the canonical code/API term.
 
 - Keep upward-only discovery for command execution: it is predictable and avoids choosing between several child namespace roots.
   Revisit when: users routinely run commands from repo roots that contain exactly one Epicenter namespace.

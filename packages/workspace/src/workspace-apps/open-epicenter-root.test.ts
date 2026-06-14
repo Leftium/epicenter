@@ -1,10 +1,10 @@
 /**
- * Tests for `openProject`, the single daemon entry point.
+ * Tests for `openEpicenterRoot`, the single daemon entry point.
  *
- * `openProject` imports `epicenter.config.ts`, claims the Epicenter folder, and
- * opens every mount it declares, so these tests drive it through real config
- * files on disk:
- * - a missing config returns a structured `ProjectConfigNotFound` Result
+ * `openEpicenterRoot` imports `epicenter.config.ts`, claims the Epicenter
+ * folder, and opens every mount it declares, so these tests drive it through
+ * real config files on disk:
+ * - a missing config returns a structured `EpicenterConfigNotFound` Result
  *   (not a throw), so the host surfaces it like any other startup error
  * - a valid config opens every declared mount in parallel
  * - an empty config opens nothing
@@ -14,7 +14,7 @@
  * - a signed-out auth refuses before any mount opens
  *
  * Config-shape validation (single -> array, malformed export, syntax errors)
- * is pinned separately in `config/load-project-config.test.ts`.
+ * is pinned separately in `config/load-epicenter-config.test.ts`.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -26,12 +26,12 @@ import { asOwnerId } from '@epicenter/identity';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
 import type { WorkspaceAuthClient } from './auth-client.js';
-import { openProject } from './open-project.js';
+import { openEpicenterRoot } from './open-epicenter-root.js';
 
 let epicenterRoot: string;
 
 beforeEach(() => {
-	epicenterRoot = mkdtempSync(join(tmpdir(), 'open-project-'));
+	epicenterRoot = mkdtempSync(join(tmpdir(), 'open-epicenter-root-'));
 });
 
 afterEach(() => {
@@ -58,13 +58,16 @@ function stubAuthClient(): WorkspaceAuthClient {
 /** A mount literal whose runtime disposes cleanly, written into a config. */
 const RUNTIME = '{ collaboration: {}, async [Symbol.asyncDispose]() {} }';
 
-describe('openProject', () => {
+describe('openEpicenterRoot', () => {
 	test('returns a structured not-found error instead of throwing', async () => {
-		const result = await openProject({ epicenterRoot, auth: stubAuthClient() });
+		const result = await openEpicenterRoot({
+			epicenterRoot,
+			auth: stubAuthClient(),
+		});
 		const error = expectErr(result);
 		expect(error).toMatchObject({
-			name: 'ProjectConfigNotFound',
-			projectConfigPath: join(epicenterRoot, 'epicenter.config.ts'),
+			name: 'EpicenterConfigNotFound',
+			epicenterConfigPath: join(epicenterRoot, 'epicenter.config.ts'),
 		});
 	});
 
@@ -76,7 +79,10 @@ describe('openProject', () => {
 			];\n`,
 		);
 
-		const result = await openProject({ epicenterRoot, auth: stubAuthClient() });
+		const result = await openEpicenterRoot({
+			epicenterRoot,
+			auth: stubAuthClient(),
+		});
 		const mounts = expectOk(result);
 		expect(
 			mounts
@@ -95,7 +101,10 @@ describe('openProject', () => {
 	test('opens nothing for an empty config', async () => {
 		writeConfig('export default [];\n');
 
-		const result = await openProject({ epicenterRoot, auth: stubAuthClient() });
+		const result = await openEpicenterRoot({
+			epicenterRoot,
+			auth: stubAuthClient(),
+		});
 		expect(expectOk(result)).toEqual([]);
 	});
 
@@ -116,7 +125,10 @@ describe('openProject', () => {
 			];\n`,
 		);
 
-		const result = await openProject({ epicenterRoot, auth: stubAuthClient() });
+		const result = await openEpicenterRoot({
+			epicenterRoot,
+			auth: stubAuthClient(),
+		});
 		const error = expectErr(result);
 		expect(error).toMatchObject({ name: 'MountOpenFailed', mount: 'bad' });
 		expect(await Bun.file(join(epicenterRoot, 'good.disposed')).exists()).toBe(
@@ -139,7 +151,10 @@ describe('openProject', () => {
 			];\n`,
 		);
 
-		const result = await openProject({ epicenterRoot, auth: stubAuthClient() });
+		const result = await openEpicenterRoot({
+			epicenterRoot,
+			auth: stubAuthClient(),
+		});
 		expect(expectErr(result)).toMatchObject({
 			name: 'MountRejected',
 			mount: '__proto__',
@@ -156,7 +171,7 @@ describe('openProject', () => {
 			`export default [{ name: 'alpha', open() { throw new Error('must not open'); } }];\n`,
 		);
 
-		const result = await openProject({
+		const result = await openEpicenterRoot({
 			epicenterRoot,
 			auth: { state: { status: 'signed-out' } } as WorkspaceAuthClient,
 		});
@@ -184,7 +199,10 @@ describe('openProject', () => {
 			];\n`,
 		);
 
-		const result = await openProject({ epicenterRoot, auth: stubAuthClient() });
+		const result = await openEpicenterRoot({
+			epicenterRoot,
+			auth: stubAuthClient(),
+		});
 		expect(expectErr(result)).toMatchObject({
 			name: 'MountFolderNotEmpty',
 			mount: 'fuji',
@@ -216,7 +234,10 @@ describe('openProject', () => {
 			];\n`,
 		);
 
-		const result = await openProject({ epicenterRoot, auth: stubAuthClient() });
+		const result = await openEpicenterRoot({
+			epicenterRoot,
+			auth: stubAuthClient(),
+		});
 		expect(expectErr(result)).toMatchObject({
 			name: 'EpicenterFolderClaimFailed',
 			epicenterRoot,
@@ -238,7 +259,10 @@ describe('openProject', () => {
 			`export default [{ name: 'fuji', open: () => (${RUNTIME}) }];\n`,
 		);
 
-		const result = await openProject({ epicenterRoot, auth: stubAuthClient() });
+		const result = await openEpicenterRoot({
+			epicenterRoot,
+			auth: stubAuthClient(),
+		});
 		expect(expectOk(result)).toHaveLength(1);
 	});
 
@@ -248,7 +272,10 @@ describe('openProject', () => {
 			`export default [{ name: 'fuji', open: () => (${RUNTIME}) }];\n`,
 		);
 
-		const result = await openProject({ epicenterRoot, auth: stubAuthClient() });
+		const result = await openEpicenterRoot({
+			epicenterRoot,
+			auth: stubAuthClient(),
+		});
 		expect(expectOk(result)).toHaveLength(1);
 	});
 
@@ -261,7 +288,10 @@ describe('openProject', () => {
 			`export default [{ name: 'fuji', open: () => (${RUNTIME}) }];\n`,
 		);
 
-		const result = await openProject({ epicenterRoot, auth: stubAuthClient() });
+		const result = await openEpicenterRoot({
+			epicenterRoot,
+			auth: stubAuthClient(),
+		});
 		expect(expectOk(result)).toHaveLength(1);
 	});
 });

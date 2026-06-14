@@ -20,16 +20,8 @@
 				count: () => whispering.tables.transformations.storedCount(),
 			},
 			{
-				label: 'Transformation Steps',
-				count: () => whispering.tables.transformationSteps.storedCount(),
-			},
-			{
 				label: 'Transformation Runs',
 				count: () => whispering.tables.transformationRuns.storedCount(),
-			},
-			{
-				label: 'Transformation Step Runs',
-				count: () => whispering.tables.transformationStepRuns.storedCount(),
 			},
 		] as const;
 

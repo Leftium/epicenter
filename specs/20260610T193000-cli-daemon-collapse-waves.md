@@ -14,14 +14,14 @@ dispatch, materializer projections).
 ## Experiment record
 
 Throwaway benchmark (`bench-oneshot.ts` at the repo root, untracked) drove
-the full one-shot path against a temp project mounting the real fuji app
+the full one-shot path against a temp Epicenter root mounting the real fuji app
 with stub signed-in auth and no relay: bun spawn, library import,
-`openProject`, invoke `entries_get_all_valid`, dispose.
+`openEpicenterRoot`, invoke `entries_get_all_valid`, dispose.
 
-| Scenario                          | openProject | total wall |
-| --------------------------------- | ----------- | ---------- |
-| Empty project                     | 41-53 ms    | 0.17-0.25 s |
-| 300 entries (2.8 MB Yjs log)      | 65-69 ms    | ~0.21 s    |
+| Scenario                          | openEpicenterRoot | total wall  |
+| --------------------------------- | ----------------- | ----------- |
+| Empty root                        | 41-53 ms          | 0.17-0.25 s |
+| 300 entries (2.8 MB Yjs log)      | 65-69 ms          | ~0.21 s     |
 
 Latency gate for daemonless `run` was "under ~1 s"; it passes by roughly 5x.
 `attachYjsLog` hydration is synchronous, dispose is clean, and the sync
@@ -39,9 +39,9 @@ zero body reads attempted across three subsequent opens.
 - Replaced the recursive tree renderer in `epicenter list` with mount-grouped
   flat output; action paths are exactly `mount.action_key`, so the tree was
   always two levels deep.
-- Moved project scaffolding out of `daemon up` into a new `epicenter init`.
+- Moved Epicenter-root scaffolding out of `daemon up` into a new `epicenter init`.
   `daemon up` no longer writes `epicenter.config.ts` or litters `.epicenter`
-  into non-project directories; on a missing config it fails with a hint
+  into non-Epicenter-root directories; on a missing config it fails with a hint
   pointing at `init`. Per-dir provisioning collapsed entirely: the attach
   primitives create their own data dirs on demand (verified by the benchmark,
   which never provisioned and still got `sqlite/` and `yjs/`), and
@@ -97,8 +97,8 @@ The fix, in three layers:
 ## Wave 3: daemonless `run` (deferred)
 
 Candidate:
-  `epicenter run`/`list` work without a running daemon: if the project
-  socket answers, route through it; otherwise open the project in-process
+  `epicenter run`/`list` work without a running daemon: if the root
+  socket answers, route through it; otherwise open the root in-process
   offline, run, dispose. The daemon remains for live-peer duties; `--peer`
   honestly requires it.
 

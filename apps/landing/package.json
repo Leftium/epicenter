@@ -10,7 +10,7 @@
 		"build": "astro build",
 		"preview": "astro preview",
 		"astro": "astro",
-		"deploy": "bun run build && wrangler deploy",
+		"deploy": "wrangler deploy",
 		"typecheck": "astro check && svelte-check --tsconfig ./tsconfig.json"
 	},
 	"dependencies": {

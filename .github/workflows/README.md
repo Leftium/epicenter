@@ -15,7 +15,7 @@ All workflows live flat in `.github/workflows/` (GitHub Actions requirement). We
 
 Tauri desktop apps get **separate per-app workflows** because builds run a 3-platform matrix (macOS Apple Silicon, Ubuntu, Windows) taking 20+ minutes. A PR touching only Whispering shouldn't trigger an Epicenter build.
 
-Web apps (Cloudflare Workers) deploy **together in one workflow** because deploys are fast (~2 min on a single runner) and share the same runtime setup. The deploy workflow builds only the targets it publishes; repo-wide lint, typecheck, and unrelated package builds belong to CI.
+Web apps (Cloudflare Workers) deploy **together in one workflow** because deploys are fast (~2 min on a single runner) and share the same runtime setup. Each worker's build lives in its own `wrangler.jsonc` `build.command`, which Wrangler runs for both `deploy` and `versions upload`, so production, previews, and local `wrangler deploy` build through one definition. Repo-wide lint, typecheck, and unrelated package builds belong to CI.
 
 ## Workflows
 
@@ -30,7 +30,7 @@ Web apps (Cloudflare Workers) deploy **together in one workflow** because deploy
 
 | File | Trigger | What it does |
 |---|---|---|
-| `deploy.cloudflare.yml` | Push to `main`, manual | Builds and deploys Whispering, Landing, and API to Cloudflare Workers. Each app builds itself immediately before its own deploy, so a deploy can never ship stale assets. Posts Discord notification. |
+| `deploy.cloudflare.yml` | Push to `main`, manual | Deploys Whispering, Landing, and API to Cloudflare Workers. Each `wrangler deploy` runs that worker's `build.command` first, so a deploy can never ship stale assets. Posts Discord notification. |
 | `deploy.cloudflare-preview.yml` | Pull requests touching `apps/whispering/**`, `apps/landing/**`, `packages/**` | Uploads preview versions via `wrangler versions upload --preview-alias`. Posts PR comment with preview URLs. No cleanup needed (aliases auto-expire at 1000). |
 
 ### CI

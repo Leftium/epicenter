@@ -13,7 +13,7 @@
 		"typecheck": "tsc --noEmit",
 		"dev": "bun scripts/dev.ts",
 		"dev:dashboard": "bun run --cwd ui build && bun scripts/dev.ts",
-		"deploy": "bun run --cwd ui build && wrangler deploy",
+		"deploy": "wrangler deploy",
 		"typegen": "wrangler types",
 		"auth:generate": "infisical run --env=prod --path=/ops --path=/api -- bun x @better-auth/cli generate --yes --config ./better-auth.config.ts --output ../../packages/server/src/db/schema/auth.ts",
 		"db:generate": "drizzle-kit generate",

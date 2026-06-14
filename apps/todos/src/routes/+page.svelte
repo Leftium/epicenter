@@ -6,7 +6,7 @@
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Empty from '@epicenter/ui/empty';
 	import { Input } from '@epicenter/ui/input';
-	import { NaturalLanguageDateInput } from '@epicenter/ui/natural-language-date-input';
+	import { NaturalLanguageCalendarDateInput } from '@epicenter/ui/natural-language-date-input';
 	import * as Popover from '@epicenter/ui/popover';
 	import { Textarea } from '@epicenter/ui/textarea';
 	import CalendarIcon from '@lucide/svelte/icons/calendar';
@@ -56,14 +56,6 @@
 
 	function dotClass(color: string | null | undefined): string {
 		return (color && COLOR_DOT[color]) || 'bg-muted-foreground';
-	}
-
-	function toCalendarDate(date: Date): CalendarDateString {
-		return new Intl.DateTimeFormat('en-CA', {
-			year: 'numeric',
-			month: '2-digit',
-			day: '2-digit',
-		}).format(date) as CalendarDateString;
 	}
 
 	function formatDueDate(value: string): string {
@@ -331,9 +323,9 @@
 								{dueDate ? formatDueDate(dueDate) : 'Due date'}
 							</Popover.Trigger>
 							<Popover.Content align="start" class="w-72 p-0">
-								<NaturalLanguageDateInput
+								<NaturalLanguageCalendarDateInput
 									onChoice={({ date }) => {
-										dueDate = toCalendarDate(date);
+										dueDate = date;
 										dueOpen = false;
 									}}
 								/>

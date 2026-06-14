@@ -54,7 +54,7 @@ jobs:
             artifactSuffix: 'macos-arm64'
             rustTargets: 'aarch64-apple-darwin'
 
-          - platform: 'blacksmith-6vcpu-macos-15'
+          - platform: 'macos-15-intel'
             os: 'macos'
             tauriArgs: '--target x86_64-apple-darwin'
             artifactSuffix: 'macos-intel'

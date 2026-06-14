@@ -63,7 +63,7 @@ jobs:
             rustTargets: 'aarch64-apple-darwin'
 
           # macOS Intel-based
-          - platform: 'blacksmith-6vcpu-macos-15'
+          - platform: 'macos-15-intel'
             os: 'macos'
             tauriArgs: '--target x86_64-apple-darwin'
             rustTargets: 'x86_64-apple-darwin'

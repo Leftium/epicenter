@@ -1,9 +1,31 @@
 # Whispering Desktop Trigger Backend: Replace the Tauri Global-Shortcut Plugin with a Single rdev Hook
 
 **Date**: 2026-06-13
-**Status**: Planned (execute after the transformation picker PR merges)
+**Status**: Waves 1-5 implemented; Wave 6 (permissions + cross-platform
+real-device testing) remains. Not yet run on real hardware.
 **Owner**: Braden
-**Branch**: TBD, its own branch off `main` once the picker work lands
+**Branch**: `feat/whispering-rdev-trigger-backend` off `main`
+
+## Execution status
+
+- **Wave 1 (spec lock)**: done. Physical-key model; one-system-per-platform.
+- **Wave 2 (Rust module)**: done. `src-tauri/src/keyboard/` (matcher + capture
+  mode), 13 synthetic-event unit tests.
+- **Wave 3 (registrar swap)**: done. rdev listener dispatches into the command
+  layer; the Tauri global-shortcut plugin is deleted (Rust dep, npm dep,
+  capability, registration); desktop binds rdev only, browser binds local only.
+- **Wave 4 (config)**: done. `shortcuts.global.*` store structured `KeyBinding`;
+  one-time migration from accelerator strings.
+- **Wave 5 (settings UI)**: done. Recorder uses rdev capture mode (records Fn,
+  modifier-only, physical keys); Local/Global tabs collapsed to one page.
+- **Wave 6 (permissions + cross-platform)**: NOT done. Needs real-device tests
+  on macOS / Windows / Linux. Known open item: the listener starts at launch and
+  errors silently if macOS Accessibility is not yet granted; it must (re)start
+  once permission is granted (today it requires an app restart). Wayland is a
+  documented gap, not parity.
+
+Verified so far: `cargo test` (43 pass) and `svelte-check` (0 errors). The
+desktop app has not been launched and exercised on hardware.
 
 ## One Sentence
 

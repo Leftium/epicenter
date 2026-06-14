@@ -44,19 +44,19 @@ startup contract those integrations need.
 
 ### Current State
 
-`openProject` requires a `WorkspaceAuthClient` before it even inspects whether
+`openEpicenterRoot` requires a `WorkspaceAuthClient` before it even inspects whether
 the project contains a collaborative mount.
 
 ```ts
 // packages/workspace/src/workspace-apps/open-project.ts:54
-export async function openProject(
-  options: OpenProjectOptions,
-): Promise<Result<StartedMount[], ProjectConfigError | WorkspaceAppError>> {
+export async function openEpicenterRoot(
+  options: OpenEpicenterRootOptions,
+): Promise<Result<StartedMount[], EpicenterConfigError | WorkspaceAppError>> {
   const { auth } = options;
-  const projectDir = resolve(options.projectDir) as ProjectDir;
+  const epicenterRoot = resolve(options.epicenterRoot) as EpicenterRoot;
 
   const { data: mounts, error: configError } =
-    await loadProjectConfig(projectDir);
+    await loadEpicenterConfig(epicenterRoot);
   if (configError !== null) return Err(configError);
 
   if (auth.state.status === 'signed-out') {
@@ -65,7 +65,7 @@ export async function openProject(
 }
 ```
 
-`runUp` constructs machine auth before calling `openProject`, so a missing saved
+`runUp` constructs machine auth before calling `openEpicenterRoot`, so a missing saved
 session fails before the project config is loaded.
 
 ```ts
@@ -76,7 +76,7 @@ if (authResult.error) return authResult;
 const auth = authResult.data;
 stack.defer(() => auth[Symbol.dispose]());
 
-const startResult = await openProject({ projectDir, auth });
+const startResult = await openEpicenterRoot({ epicenterRoot, auth });
 ```
 
 The mount context is also monolithic. Every mount receives auth-derived fields,
@@ -85,7 +85,7 @@ even a local mirror that should never call them.
 ```ts
 // packages/workspace/src/daemon/define-mount.ts:53
 export type MountContext = {
-  projectDir: ProjectDir;
+  epicenterRoot: EpicenterRoot;
   mount: string;
   yDocClientId: number;
   deviceId: DeviceId;
@@ -138,7 +138,7 @@ export function fuji(opts: FujiMountOptions = {}) {
     open(ctx) {
       const workspace = createFuji({ keyring: ctx.keyring });
       const infrastructure = attachProjectInfrastructure(workspace.ydoc, {
-        projectDir: ctx.projectDir,
+        epicenterRoot: ctx.epicenterRoot,
         ownerId: ctx.ownerId,
         deviceId: ctx.deviceId,
         openWebSocket: ctx.openWebSocket,
@@ -176,11 +176,11 @@ mount receives at `open(ctx)`.
 
 ### Auth Is Currently Both Startup Gate And Context Source
 
-`openProject` checks `auth.state.status` before it validates mount names or
+`openEpicenterRoot` checks `auth.state.status` before it validates mount names or
 opens anything. It also snapshots `ownerId` and builds `keyring`,
 `openWebSocket`, `fetch`, and `onReconnectSignal` into one `MountContext`.
 
-Implication: auth cannot stay as an eager `runUp` step. `openProject` must load
+Implication: auth cannot stay as an eager `runUp` step. `openEpicenterRoot` must load
 the config first, inspect declared mount kinds, and ask for auth only if a
 collaborative mount is present.
 
@@ -222,8 +222,8 @@ becomes the explicit release goal.
 | Decision | Class | Choice | Rationale |
 | --- | --- | --- | --- |
 | Startup product state | 2 coherence | Sanction signed-out daemon startup only for all-local projects | This follows the action-first runtime thesis without weakening collaborative startup guarantees. |
-| Mount declaration | 2 coherence | Add a required static `kind` discriminant | `openProject` needs to decide before calling `open(ctx)`, and TypeScript can prevent local mounts from reaching auth fields. |
-| Auth loading | 2 coherence | Replace eager `auth` with a lazy auth loader at the `openProject` boundary | Config import and mount-kind inspection must happen before auth construction. |
+| Mount declaration | 2 coherence | Add a required static `kind` discriminant | `openEpicenterRoot` needs to decide before calling `open(ctx)`, and TypeScript can prevent local mounts from reaching auth fields. |
+| Auth loading | 2 coherence | Replace eager `auth` with a lazy auth loader at the `openEpicenterRoot` boundary | Config import and mount-kind inspection must happen before auth construction. |
 | Mixed projects | 2 coherence | Refuse the entire daemon when signed-out and any mount is collaborative | One daemon serves one project. Partial startup creates a new half-online state. |
 | Local storage posture | 3 taste | Do not solve source-mirror encryption in this spec | Local mirrors are not Yjs workspaces. Future Gmail or finance specs can choose provider-token and local-cache security explicitly. |
 | Compatibility | 2 coherence | No missing-kind fallback | The codebase is still in a clean-break phase, and a fallback would preserve two mount shapes forever. |
@@ -235,7 +235,7 @@ becomes the explicit release goal.
 
 ```ts
 type BaseMountContext = {
-  projectDir: ProjectDir;
+  epicenterRoot: EpicenterRoot;
   mount: string;
 };
 
@@ -283,7 +283,7 @@ stay structural:
 
 ```txt
 BaseMountContext
-  projectDir
+  epicenterRoot
   mount
 
 CollaborativeMountContext
@@ -307,14 +307,14 @@ daemon contract should not make `collaboration.actions` the action source again.
 ```txt
 runUp
   -> claim daemon lease
-  -> openProject({ projectDir, loadAuth })
+  -> openEpicenterRoot({ epicenterRoot, loadAuth })
        -> load epicenter.config.ts
        -> validate mount names
        -> split mounts by kind
        -> if collaborative mounts exist:
             load auth
             if null or signed-out:
-              return ProjectAuthRequired(collaborative mount names)
+              return MountAuthRequired(collaborative mount names)
        -> open every mount with the matching context
        -> dispose opened runtimes if any sibling fails
   -> start daemon server
@@ -331,8 +331,8 @@ type LoadWorkspaceAuth<TAuthError> = () => Promise<
   Result<WorkspaceAuthClient | null, TAuthError>
 >;
 
-type OpenProjectOptions<TAuthError = never> = {
-  projectDir: ProjectDir | string;
+type OpenEpicenterRootOptions<TAuthError = never> = {
+  epicenterRoot: EpicenterRoot | string;
   loadAuth?: LoadWorkspaceAuth<TAuthError>;
 };
 ```
@@ -343,13 +343,13 @@ storage error propagate. `NoSavedSession` is the canonical
 `MachineAuthStorageError` variant name in
 `packages/auth/src/node/machine-auth.ts`.
 
-If `loadAuth` is omitted, `openProject` treats it as
+If `loadAuth` is omitted, `openEpicenterRoot` treats it as
 `async () => Ok(null)`. This collapses "no loader" and "no saved session" into
 one path instead of making a third startup branch.
 
-After a non-null auth client is returned, `openProject` must still inspect
+After a non-null auth client is returned, `openEpicenterRoot` must still inspect
 `auth.state.status`. A constructed client whose state is `signed-out` takes the
-same `ProjectAuthRequired` path as `null`.
+same `MountAuthRequired` path as `null`.
 
 `SyncAuthClient` is structurally assignable to `WorkspaceAuthClient`: it carries
 `state`, `openWebSocket`, `fetch`, and `onStateChange` plus extra methods the
@@ -358,22 +358,22 @@ workspace package does not read.
 ### Per-kind Open Branch
 
 The main type-system risk is not the discriminant itself. It is the `open`
-call. A union of mounts cannot be opened with one context object. `openProject`
+call. A union of mounts cannot be opened with one context object. `openEpicenterRoot`
 needs an explicit `kind` branch so TypeScript narrows both the mount and the
 context.
 
 ```ts
 async function openOneMount({
   mount,
-  projectDir,
+  epicenterRoot,
   auth,
 }: {
   mount: Mount;
-  projectDir: ProjectDir;
+  epicenterRoot: EpicenterRoot;
   auth: WorkspaceAuthClient | null;
 }): Promise<Result<StartedMount, WorkspaceAppError>> {
   const base = {
-    projectDir,
+    epicenterRoot,
     mount: mount.name,
   } satisfies BaseMountContext;
 
@@ -383,7 +383,7 @@ async function openOneMount({
       return Ok({ mount: mount.name, runtime });
     }
 
-    const signedIn = requireSignedInProjectAuth({
+    const signedIn = requireMountAuth({
       auth,
       mounts: [mount.name],
     });
@@ -391,7 +391,7 @@ async function openOneMount({
 
     const runtime = await mount.open({
       ...base,
-      yDocClientId: hashYDocClientId(projectDir),
+      yDocClientId: hashYDocClientId(epicenterRoot),
       deviceId: asDeviceId(`${mount.name}-daemon`),
       ownerId: signedIn.data.state.ownerId,
       keyring: createMountKeyringReader({ auth: signedIn.data, mount: mount.name }),
@@ -424,7 +424,7 @@ return defineMount({
   name: 'fuji',
   open(ctx) {
     const {
-      projectDir,
+      epicenterRoot,
       mount,
       yDocClientId,
       deviceId,
@@ -446,7 +446,7 @@ return defineMount({
   kind: 'collaborative',
   open(ctx) {
     const {
-      projectDir,
+      epicenterRoot,
       mount,
       yDocClientId,
       deviceId,
@@ -486,7 +486,7 @@ export default defineMount({
   name: 'mirror',
   kind: 'local',
   open(ctx) {
-    const dbPath = join(ctx.projectDir, '.epicenter', 'mirrors', ctx.mount);
+    const dbPath = join(ctx.epicenterRoot, '.epicenter', 'mirrors', ctx.mount);
     return {
       actions,
       async [Symbol.asyncDispose]() {},
@@ -510,7 +510,7 @@ if (authResult.error) return authResult;
 const auth = authResult.data;
 stack.defer(() => auth[Symbol.dispose]());
 
-const startResult = await openProject({ projectDir, auth });
+const startResult = await openEpicenterRoot({ epicenterRoot, auth });
 ```
 
 After:
@@ -519,8 +519,8 @@ After:
 const createAuthClient = options.createAuthClient ?? createMachineAuthClient;
 let auth: SyncAuthClient | null = null;
 
-const startResult = await openProject({
-  projectDir,
+const startResult = await openEpicenterRoot({
+  epicenterRoot,
   loadAuth: async () => {
     const authResult = await createAuthClient();
     if (authResult.error) {
@@ -605,9 +605,9 @@ Also refuse:
 - [x] **1.5** Update runtime config validation errors so a mount without `kind`
   is rejected with the new contract.
 
-### Phase 2: Lazy Auth At OpenProject
+### Phase 2: Lazy Auth At openEpicenterRoot
 
-- [x] **2.1** Change `openProject` to accept a lazy `loadAuth` callback instead
+- [x] **2.1** Change `openEpicenterRoot` to accept a lazy `loadAuth` callback instead
   of an eager auth client.
 - [x] **2.2** Load config and validate mount names before calling `loadAuth`.
 - [x] **2.3** Skip `loadAuth` entirely when every mount is local.
@@ -621,7 +621,7 @@ Also refuse:
 ### Phase 3: CLI Startup
 
 - [x] **3.1** Move auth construction behind the lazy `loadAuth` callback passed
-  to `openProject`.
+  to `openEpicenterRoot`.
 - [x] **3.2** Convert `MachineAuthStorageError.NoSavedSession` to `Ok(null)`
   inside the CLI callback.
 - [x] **3.3** Preserve all other auth storage errors as real failures.
@@ -638,15 +638,15 @@ Also refuse:
 
 ### Phase 5: Verification
 
-- [x] **5.1** `openProject` all-local project opens without calling
+- [x] **5.1** `openEpicenterRoot` all-local project opens without calling
   `loadAuth`.
 - [x] **5.2** `runUp` all-local project opens without calling
   `createAuthClient`; use a stub that throws if invoked.
 - [x] **5.3** Collaborative signed-out startup returns
-  `ProjectAuthRequired`, names every collaborative mount, opens no mount, and
+  `MountAuthRequired`, names every collaborative mount, opens no mount, and
   leaves no daemon socket or metadata.
 - [x] **5.4** Saved-but-signed-out auth client takes the same
-  `ProjectAuthRequired` path as missing auth.
+  `MountAuthRequired` path as missing auth.
 - [x] **5.5** Mixed signed-out startup refuses the whole daemon before opening
   the local sibling.
 - [x] **5.6** Signed-in mixed startup opens both local and collaborative mounts.
@@ -664,15 +664,15 @@ Also refuse:
 ### All-local project with no saved session
 
 1. Project config contains only `kind: 'local'` mounts.
-2. `runUp` passes a `loadAuth` callback, but `openProject` never calls it.
+2. `runUp` passes a `loadAuth` callback, but `openEpicenterRoot` never calls it.
 3. Daemon starts, `list` and local `run` work, `peers` returns no peers.
 
 ### Collaborative project with no saved session
 
 1. Project config contains at least one `kind: 'collaborative'` mount.
-2. `openProject` calls `loadAuth`.
+2. `openEpicenterRoot` calls `loadAuth`.
 3. The CLI maps `NoSavedSession` to `Ok(null)`.
-4. `openProject` returns `ProjectAuthRequired({ mounts })`.
+4. `openEpicenterRoot` returns `MountAuthRequired({ mounts })`.
 5. `runUp` releases the lease and leaves no socket or metadata.
 
 ### Collaborative project with a constructed signed-out auth client
@@ -680,14 +680,14 @@ Also refuse:
 1. Project config contains at least one `kind: 'collaborative'` mount.
 2. `loadAuth` returns a non-null auth client whose `state.status` is
    `signed-out`.
-3. `openProject` treats it the same as missing auth and returns
-   `ProjectAuthRequired({ mounts })`.
+3. `openEpicenterRoot` treats it the same as missing auth and returns
+   `MountAuthRequired({ mounts })`.
 4. No mount opens.
 
 ### Mixed project while signed-out
 
 1. Project config contains local and collaborative mounts.
-2. `openProject` refuses the entire daemon.
+2. `openEpicenterRoot` refuses the entire daemon.
 3. No local sibling is left running.
 
 This is intentional. If a user wants local mirrors while signed-out, those
@@ -789,10 +789,10 @@ until the daemon restarts with a different config or a different mount kind.
 ### What Landed
 
 Mounts now declare `kind: 'local' | 'collaborative'`. Local mounts receive only
-`projectDir` and `mount`, while collaborative mounts receive the auth-derived
+`epicenterRoot` and `mount`, while collaborative mounts receive the auth-derived
 context and must return hosted collaboration.
 
-`openProject` now loads project config first, validates mount names, then calls
+`openEpicenterRoot` now loads project config first, validates mount names, then calls
 the lazy auth loader only if at least one collaborative mount is configured.
 `runUp` maps `MachineAuthStorageError.NoSavedSession` to `Ok(null)` and
 preserves other machine-auth storage errors.

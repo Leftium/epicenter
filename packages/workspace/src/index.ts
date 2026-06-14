@@ -139,7 +139,7 @@ export type { EpicenterRoot } from './shared/types';
 // ID + DATE PRIMITIVES
 // ════════════════════════════════════════════════════════════════════════════
 
-export { DateTimeString } from '@epicenter/field';
+export { CalendarDateString, DateTimeString } from '@epicenter/field';
 export { IanaTimeZone } from './shared/iana-time-zone';
 export type { Guid, Id } from './shared/id';
 export { generateGuid, generateId } from './shared/id';

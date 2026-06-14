@@ -13,8 +13,7 @@
  * Foreground by design; backgrounding is the user's job.
  */
 
-import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { realpathSync } from 'node:fs';
 import type { SyncAuthClient } from '@epicenter/auth';
 import {
 	createMachineAuthClient,
@@ -90,15 +89,14 @@ type UpHandle = {
 
 /**
  * Daemon body. Opens every configured mount (the project must already have an
- * `epicenter.config.ts`; see `epicenter init`), ensures the `.epicenter`
- * cache gitignore, binds the IPC socket, and returns a handle. The yargs
- * `handler` calls this,
+ * `epicenter.config.ts`; see `epicenter init`), binds the IPC socket, and
+ * returns a handle. The yargs `handler` calls this,
  * prints the operator-facing banner, installs SIGINT/SIGTERM, and parks the
  * process; tests call it directly and assert on the returned handle.
  *
- * A SQLite daemon lease claims ownership before any mount opens. After that,
- * `openProject` imports `epicenter.config.ts` and opens every configured
- * mount, and `startDaemonServer` binds the socket.
+ * A SQLite daemon lease serializes startup before any mount opens. After that,
+ * `openProject` imports `epicenter.config.ts`, claims the Epicenter folder,
+ * opens every configured mount, and `startDaemonServer` binds the socket.
  */
 export async function runUp(
 	options: UpOptions,
@@ -142,7 +140,6 @@ export async function runUp(
 	const startResult = await openProject({ epicenterRoot, auth });
 	if (startResult.error) return startResult;
 	const mounts = startResult.data;
-	ensureProjectGitignore(epicenterRoot);
 	stack.defer(async () => {
 		await Promise.allSettled(
 			mounts.map((entry) => entry.runtime[Symbol.asyncDispose]()),
@@ -222,35 +219,6 @@ export const upCommand = cmd({
 		process.stdin.resume();
 	},
 });
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Ensure the Epicenter root's `.epicenter/` exists (0o700) and is fully
- * gitignored. `.epicenter/` is a direct child of the Epicenter root (a sibling
- * of `epicenter.config.ts` and of the generated mount folders), holding the
- * machine state for that root. The attach primitives (Yjs log, SQLite and
- * markdown materializers) create their own data dirs on demand, so the daemon's
- * only filesystem provisioning is the cache-dir ignore rule. `*` ignores
- * everything the runtime ever writes, including this file, so there is no
- * directory list to keep in sync.
- *
- * Creating the Epicenter folder itself (writing `epicenter.config.ts`) is
- * `epicenter init`; `daemon up` never scaffolds a config, so it cannot
- * accidentally claim a normal
- * repo root. On a directory without a config, discovery fails first with a hint,
- * and this function never runs.
- */
-function ensureProjectGitignore(epicenterRoot: string): void {
-	const projectDataDir = join(epicenterRoot, '.epicenter');
-	mkdirSync(projectDataDir, { recursive: true, mode: 0o700 });
-	const gitignorePath = join(projectDataDir, '.gitignore');
-	if (!existsSync(gitignorePath)) {
-		writeFileSync(gitignorePath, '*\n', { mode: 0o600 });
-	}
-}
 
 function printPeersSnapshot(entry: StartedMount): void {
 	const devices = entry.runtime.collaboration.devices.list();

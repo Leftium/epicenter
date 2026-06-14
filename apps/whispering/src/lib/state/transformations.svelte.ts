@@ -1,9 +1,9 @@
 /**
  * Reactive transformation state backed by Yjs workspace tables.
  *
- * Replaces TanStack Query + BlobStore for transformation CRUD. The workspace
- * model stores transformations as metadata rows (title, description) without
- * embedded steps. Steps live in a separate `transformationSteps` table.
+ * A transformation is a single self-contained row: title, description, and the
+ * fixed three-phase shape (`preReplacements`, `prompt`, `postReplacements`).
+ * There is no separate steps table.
  *
  * @example
  * ```typescript
@@ -22,8 +22,22 @@
 import { fromTable } from '@epicenter/svelte';
 import { nanoid } from 'nanoid/non-secure';
 import { whispering } from '#platform/whispering';
-import type { Transformation, TransformationStep } from '$lib/workspace';
-import { transformationSteps } from './transformation-steps.svelte';
+import type { Transformation, TransformationPrompt } from '$lib/workspace';
+
+/**
+ * A fresh prompt phase for when the user enables the AI prompt on a
+ * transformation: Google's fast model, no templates yet. A factory, not a shared
+ * constant, so each transformation owns its own prompt object and two can never
+ * alias the same one.
+ */
+export function createDefaultPrompt(): TransformationPrompt {
+	return {
+		inferenceProvider: 'Google',
+		model: 'gemini-2.5-flash',
+		systemPromptTemplate: '',
+		userPromptTemplate: '',
+	};
+}
 
 function createTransformations() {
 	const map = fromTable(whispering.tables.transformations);
@@ -97,10 +111,9 @@ if (import.meta.hot) {
 }
 
 /**
- * Generate a default transformation with sensible defaults.
- *
- * Includes `_v` so the returned value is a full `Transformation` ready
- * for workspace writes without any Omit gymnastics.
+ * Generate a default transformation: empty title and description, both
+ * replacement lists empty, and no prompt phase. Returns a full `Transformation`
+ * row ready to pass straight to `transformations.set()`.
  *
  * @example
  * ```typescript
@@ -113,38 +126,32 @@ export function generateDefaultTransformation(): Transformation {
 		id: nanoid(),
 		title: '',
 		description: '',
+		preReplacements: [],
+		prompt: null,
+		postReplacements: [],
 	};
 }
 
 /**
- * Atomically save a transformation and its steps in a single workspace batch.
- *
- * Works for both create and update:
- * - Deletes existing steps first (no-op on create since none exist yet),
- *   then re-inserts with correct ordering.
- *
- * Callers should pass `$state.snapshot()` values. This function takes plain data.
- *
- * @example
- * ```typescript
- * const snap = $state.snapshot(transformation);
- * const stepsSnap = $state.snapshot(steps);
- * saveTransformationWithSteps(snap, stepsSnap);
- * ```
+ * Whether a transformation has at least one phase to run: a pre-replacement, the
+ * prompt, or a post-replacement. This is the "runnable" invariant, shared by the
+ * runtime guard in `runTransformation` and the editor's run-button state.
  */
-export function saveTransformationWithSteps(
-	transformation: Transformation,
-	steps: TransformationStep[],
-) {
-	whispering.ydoc.transact(() => {
-		transformations.set(transformation);
-		transformationSteps.deleteByTransformationId(transformation.id);
-		for (const [order, step] of steps.entries()) {
-			transformationSteps.set({
-				...step,
-				transformationId: transformation.id,
-				order,
-			});
-		}
-	});
+export function transformationHasWork(transformation: Transformation): boolean {
+	return (
+		transformation.preReplacements.length > 0 ||
+		transformation.prompt !== null ||
+		transformation.postReplacements.length > 0
+	);
+}
+
+/**
+ * Save a transformation. Works for both create and update since the whole
+ * fixed-phase shape lives on the row itself, there is no child steps table to
+ * reconcile.
+ *
+ * Callers should pass a `$state.snapshot()` value. This function takes plain data.
+ */
+export function saveTransformation(transformation: Transformation) {
+	transformations.set(transformation);
 }

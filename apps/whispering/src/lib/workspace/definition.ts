@@ -9,14 +9,13 @@ import {
 	type InferTableRow,
 	nullable,
 } from '@epicenter/workspace';
-import { type TProperties, Type } from 'typebox';
+import { type Static, type TProperties, Type } from 'typebox';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
 
 import { ALWAYS_ON_TOP_MODES } from '$lib/constants/always-on-top';
 import { RECORDING_MODES } from '$lib/constants/audio/recording-modes';
 import { INFERENCE_PROVIDER_IDS } from '$lib/constants/inference';
-import { TRANSFORMATION_STEP_TYPES } from '$lib/constants/transformations';
 import {
 	PROVIDERS,
 	TRANSCRIPTION_SERVICE_IDS,
@@ -83,69 +82,73 @@ const recordings = defineTable({
 /** Recording row type inferred from the workspace table schema. */
 export type Recording = InferTableRow<typeof recordings>;
 
-/** User-defined transformation pipelines. Each transformation has ordered steps. */
+/**
+ * A single deterministic find/replace pair. A list of these runs offline (no API
+ * key) before the prompt (`preReplacements`) and after it (`postReplacements`):
+ * a small dictionary ("new paragraph" to a newline, filler stripping, proper-noun
+ * fixes) covers far more real-world cleanup than a single replacement each.
+ */
+const Replacement = Type.Object({
+	find: Type.String(),
+	replace: Type.String(),
+	useRegex: Type.Boolean(),
+});
+
+/** One find/replace pair within a transformation's pre/post phase. */
+export type Replacement = Static<typeof Replacement>;
+
+/**
+ * The one optional AI phase of a transformation: a single prompt template run
+ * against a single model on a single backend (inference provider). The backend
+ * and model live here, on the prompt, not on a separate step row.
+ */
+const TransformationPrompt = Type.Object({
+	inferenceProvider: field.select(INFERENCE_PROVIDER_IDS),
+	model: Type.String(),
+	systemPromptTemplate: Type.String(),
+	userPromptTemplate: Type.String(),
+});
+
+/** The single prompt phase of a transformation. */
+export type TransformationPrompt = Static<typeof TransformationPrompt>;
+
+/**
+ * User-defined transformations. A transformation is a fixed three-phase shape:
+ * deterministic `preReplacements`, one optional AI `prompt`, then deterministic
+ * `postReplacements`. At least one phase is present (enforced at write time, not
+ * by the schema). This replaces the old arbitrary N-step pipeline: there is no
+ * ordered `transformationSteps` table, no per-step model memory, no step editor.
+ */
 const transformations = defineTable({
 	id: field.string(),
 	title: field.string(),
 	description: field.string(),
+	preReplacements: field.json(Type.Array(Replacement)),
+	prompt: nullable(field.json(TransformationPrompt)),
+	postReplacements: field.json(Type.Array(Replacement)),
 });
 
 /** Transformation row type inferred from the workspace table schema. */
 export type Transformation = InferTableRow<typeof transformations>;
 
 /**
- * Individual steps within a transformation pipeline.
+ * Terminal outcome of a finished transformation run, carrying the produced
+ * `output` on success. Built from the shared `terminalOutcome` helper.
  *
- * Uses a flat row schema: all `prompt_transform` and `find_replace` fields are
- * present on every row, discriminated by the `type` field. This is intentional:
+ * Only terminal outcomes are stored. A run that is currently executing has no
+ * `result` (the column is null); liveness is derived from `startedAt` recency,
+ * never written. A stored `running` status would wedge on crash: the process
+ * that died can no longer write the terminal state, so the row would claim
+ * `running` forever. See
+ * docs/articles/20260612T190745-liveness-belongs-to-the-process-not-the-row.md.
  *
- * - `table.set()` replaces the entire row. A discriminated union would lose the
- *   inactive variant's data on every write. Flat rows preserve everything.
- * - Per-provider model memory: each inference provider's model selection is stored
- *   independently. Switching providers and switching back retains your choices.
- *
- * @see {@link https://github.com/EpicenterHQ/epicenter/blob/main/specs/20260312T170000-whispering-workspace-polish-and-migration.md | Spec Decision 1}
- */
-const transformationSteps = defineTable({
-	id: field.string(),
-	transformationId: field.string(),
-	order: field.number(),
-	type: field.select(TRANSFORMATION_STEP_TYPES),
-
-	// Prompt transform: active provider
-	inferenceProvider: field.select(INFERENCE_PROVIDER_IDS),
-
-	// Prompt transform: per-provider model memory
-	openaiModel: field.string(),
-	groqModel: field.string(),
-	anthropicModel: field.string(),
-	googleModel: field.string(),
-	openrouterModel: field.string(),
-	customModel: field.string(),
-
-	// Prompt transform: prompt templates
-	systemPromptTemplate: field.string(),
-	userPromptTemplate: field.string(),
-
-	// Find & replace
-	findText: field.string(),
-	replaceText: field.string(),
-	useRegex: field.boolean(),
-});
-
-/** Transformation step row type inferred from the workspace table schema. */
-export type TransformationStep = InferTableRow<typeof transformationSteps>;
-
-/**
- * Terminal outcome of a transformation run or step run, carrying the produced
- * `output` on success. Stored as one nullable JSON-encoded TEXT column
- * (`result`); nothing in the read path filters or sorts on these fields. Run
- * and step run share it.
+ * Storage is one nullable JSON-encoded TEXT column (`result`); nothing in the
+ * read path filters or sorts on these fields.
  */
 const TransformationRunResult = terminalOutcome({ output: Type.String() });
 
 /**
- * Execution records for transformation pipelines. One run per invocation.
+ * Execution records for transformations. One run per invocation.
  * State queries filter by top-level `recordingId` / `transformationId` and
  * sort by `startedAt`; the terminal outcome lives inside `result`, which is
  * null while the run is executing or if it was interrupted.
@@ -161,22 +164,6 @@ const transformationRuns = defineTable({
 
 /** Transformation run row type inferred from the workspace table schema. */
 export type TransformationRun = InferTableRow<typeof transformationRuns>;
-
-/** Per-step execution records within a transformation run. */
-const transformationStepRuns = defineTable({
-	id: field.string(),
-	transformationRunId: field.string(),
-	stepId: field.string(),
-	order: field.number(),
-	input: field.string(),
-	startedAt: field.instant(),
-	result: nullable(field.json(TransformationRunResult)),
-});
-
-/** Transformation step run row type inferred from the workspace table schema. */
-export type TransformationStepRun = InferTableRow<
-	typeof transformationStepRuns
->;
 
 /**
  * Synced settings stored as individual KV entries with last-write-wins resolution.
@@ -299,13 +286,9 @@ function defineTranscriptionSettings(
 }
 
 /**
- * Currently active transformation pipeline.
+ * Currently active transformation, used as the dictation default.
  *
  * `selectedId`: FK to `transformations` table. `null` = no transformation selected.
- *
- * Per-provider model defaults for new steps live in `generateDefaultStep`
- * (transformation-steps.svelte.ts), not as KV entries. Each step row carries
- * its own per-provider model memory, so a global default KV would be redundant.
  */
 const transformation = {
 	'transformation.selectedId': defineKv(
@@ -384,9 +367,7 @@ export function createWhispering({
 		tables: {
 			recordings,
 			transformations,
-			transformationSteps,
 			transformationRuns,
-			transformationStepRuns,
 		},
 		kv: kvDefinitions,
 	});

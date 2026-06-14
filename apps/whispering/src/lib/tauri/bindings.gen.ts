@@ -26,6 +26,16 @@ export const commands = {
 	 */
 	simulateEnterKeystroke: () =>
 		typedError<null, string>(__TAURI_INVOKE('simulate_enter_keystroke')),
+	/**
+	 *  Simulates pressing the copy shortcut (Cmd+C on macOS, Ctrl+C elsewhere)
+	 *
+	 *  This copies the active selection in the foreground app to the clipboard. The
+	 *  frontend pairs it with a clipboard save/read/restore to capture the user's
+	 *  selection without clobbering their clipboard (see the text service's
+	 *  `captureSelection`).
+	 */
+	simulateCopyKeystroke: () =>
+		typedError<null, string>(__TAURI_INVOKE('simulate_copy_keystroke')),
 	getCurrentRecordingId: () =>
 		typedError<string | null, string>(
 			__TAURI_INVOKE('get_current_recording_id'),

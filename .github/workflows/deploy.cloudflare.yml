@@ -32,48 +32,38 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Each deploy builds the app it publishes, then deploys it. Build and
-      # deploy stay coupled inside one block so a deploy can never ship stale
-      # assets, and the set of deployed targets lives in exactly one place.
-      # NODE_ENV is scoped to the step (not the job) so `bun install` above
-      # still resolves devDependencies.
-      - name: Build & Deploy Whispering
+      # Each `deploy` runs the worker's own `wrangler.jsonc` build.command first,
+      # so build stays coupled to deploy (no stale assets) without a separate
+      # build step here. The same build runs on local `wrangler deploy` and in
+      # the preview workflow's `versions upload`, so there is one build path.
+      - name: Deploy Whispering
         id: whispering
         uses: cloudflare/wrangler-action@v3
-        env:
-          NODE_ENV: production
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/whispering
           packageManager: bun
-          preCommands: bun run build
           command: deploy
 
-      - name: Build & Deploy Landing
+      - name: Deploy Landing
         id: landing
         uses: cloudflare/wrangler-action@v3
-        env:
-          NODE_ENV: production
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/landing
           packageManager: bun
-          preCommands: bun run build
           command: deploy
 
-      - name: Build & Deploy API
+      - name: Deploy API
         id: api
         uses: cloudflare/wrangler-action@v3
-        env:
-          NODE_ENV: production
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/api
           packageManager: bun
-          preCommands: bun run --cwd ui build
           command: deploy
 
       - name: Deployment summary

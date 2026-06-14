@@ -37,11 +37,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build previews
-        run: bun run --filter @epicenter/whispering --filter @epicenter/landing build
-        env:
-          NODE_ENV: production
-
+      # `versions upload` runs each worker's `wrangler.jsonc` build.command, so
+      # previews build through the same definition as production deploys. No
+      # separate build step needed.
       - name: Upload Whispering preview
         id: whispering
         uses: cloudflare/wrangler-action@v3

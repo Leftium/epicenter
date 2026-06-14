@@ -3,13 +3,14 @@
 	import * as Kbd from '@epicenter/ui/kbd';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import { cn } from '@epicenter/ui/utils';
-	import SquareIcon from '@lucide/svelte/icons/square';
 	import type { Component, Snippet } from 'svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 
+	// The caller owns its own state machine, so it resolves which glyph to show
+	// and hands us one `icon`. We only decide presentation: a spinner while
+	// pending, and the destructive "filled" treatment while `active`.
 	let {
 		active = false,
-		activeIcon: ActiveIcon = SquareIcon,
 		description,
 		footer,
 		icon: Icon,
@@ -20,7 +21,6 @@
 		tooltip,
 	}: {
 		active?: boolean;
-		activeIcon?: Component;
 		description: string;
 		footer?: Snippet;
 		icon: Component;
@@ -66,10 +66,10 @@
 		>
 			{#if pending}
 				<Spinner class="size-7" />
-			{:else if active}
-				<ActiveIcon class="size-6 fill-current stroke-[1.75]" />
 			{:else}
-				<Icon class="size-7" />
+				<Icon
+					class={cn('size-7', active && 'size-6 fill-current stroke-[1.75]')}
+				/>
 			{/if}
 		</span>
 		<span class="flex min-w-0 flex-1 flex-col gap-1">

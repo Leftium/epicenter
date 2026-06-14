@@ -21,7 +21,9 @@
 
 	const isListening = $derived(vadRecorder.state !== 'IDLE');
 	const isSpeechDetected = $derived(vadRecorder.state === 'SPEECH_DETECTED');
-	const activeIcon = $derived(isSpeechDetected ? AudioLinesIcon : RadioIcon);
+	// Idle and listening share the radio glyph (tone distinguishes them); only an
+	// active speech burst swaps to the waveform.
+	const icon = $derived(isSpeechDetected ? AudioLinesIcon : RadioIcon);
 	const shortcutLabel = $derived(
 		getShortcutDisplayLabel(settings.get('shortcut.toggleVadRecording')),
 	);
@@ -32,22 +34,19 @@
 		if (isListening) return 'Listening for speech';
 		return 'Listen for speech';
 	});
-	const tooltip = $derived(
-		toggleMutation.isPending
-			? 'Updating voice activated session'
-			: isListening
-				? 'Stop voice activated session'
-				: 'Start voice activated session',
-	);
+	const tooltip = $derived.by(() => {
+		if (toggleMutation.isPending) return 'Updating voice activated session';
+		if (isListening) return 'Stop voice activated session';
+		return 'Start voice activated session';
+	});
 </script>
 
 <RecordingActionCard
 	active={isListening}
-	activeIcon={activeIcon}
 	{description}
 	footer={isListening ? undefined : pipeline}
-	icon={RadioIcon}
-	label={label}
+	{icon}
+	{label}
 	pending={toggleMutation.isPending}
 	{shortcutLabel}
 	{tooltip}

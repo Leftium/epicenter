@@ -25,15 +25,24 @@
 
 	let {
 		class: className,
-		triggerVariant = 'provider',
+		triggerVariant = 'standalone',
 	}: {
 		class?: string;
-		triggerVariant?: 'provider' | 'pipeline';
+		/**
+		 * Where this selector is rendered, which determines how a missing or
+		 * unusable transcription service is treated:
+		 * - `pipeline`: a required capture stage. Shows a generic captions icon
+		 *   and warns whenever no usable service is configured (including a
+		 *   web user whose saved service is desktop-only).
+		 * - `standalone`: a quick provider switcher. Shows the selected service's
+		 *   brand icon and warns only when a selected service is misconfigured.
+		 */
+		triggerVariant?: 'standalone' | 'pipeline';
 	} = $props();
 
 	const selectedService = $derived(getSelectedTranscriptionService());
 	const isSelectedServiceReady = $derived(
-		selectedService ? isTranscriptionServiceConfigured(selectedService) : false,
+		!!selectedService && isTranscriptionServiceConfigured(selectedService),
 	);
 	const showConfigurationWarning = $derived(
 		triggerVariant === 'pipeline'

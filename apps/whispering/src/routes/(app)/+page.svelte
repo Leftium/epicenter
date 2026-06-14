@@ -11,9 +11,6 @@
 	import { Link } from '@epicenter/ui/link';
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
-	import FileUpIcon from '@lucide/svelte/icons/file-up';
-	import MicIcon from '@lucide/svelte/icons/mic';
-	import RadioIcon from '@lucide/svelte/icons/radio';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { createQuery } from '@tanstack/svelte-query';
 	import type { UnlistenFn } from '@tauri-apps/api/event';
@@ -29,6 +26,7 @@
 	import ManualDeviceSelector from '$lib/components/settings/selectors/ManualDeviceSelector.svelte';
 	import VadDeviceSelector from '$lib/components/settings/selectors/VadDeviceSelector.svelte';
 	import {
+		RECORDING_MODE_ICONS,
 		RECORDING_MODE_OPTIONS,
 		type RecordingMode,
 	} from '$lib/constants/audio';
@@ -51,12 +49,6 @@
 	import CapturePipeline from './_components/CapturePipeline.svelte';
 	import ManualRecordingAction from './_components/ManualRecordingAction.svelte';
 	import VadRecordingAction from './_components/VadRecordingAction.svelte';
-
-	const MODE_ICON_BY_RECORDING_MODE = {
-		manual: MicIcon,
-		vad: RadioIcon,
-		upload: FileUpIcon,
-	} satisfies Record<RecordingMode, typeof MicIcon>;
 
 	const latestRecording = $derived(recordings.sorted[0]);
 	const PageError = defineErrors({
@@ -261,7 +253,7 @@
 		class="w-full"
 	>
 		{#each availableModes as option}
-			{@const ModeIcon = MODE_ICON_BY_RECORDING_MODE[option.value]}
+			{@const ModeIcon = RECORDING_MODE_ICONS[option.value]}
 			<ToggleGroup.Item
 				value={option.value}
 				aria-label={`Switch to ${option.label.toLowerCase()} mode`}

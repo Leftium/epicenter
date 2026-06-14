@@ -30,7 +30,7 @@ Web apps (Cloudflare Workers) deploy **together in one workflow** because deploy
 
 | File | Trigger | What it does |
 |---|---|---|
-| `deploy.cloudflare.yml` | Push to `main`, manual | Builds Whispering, Landing, and the API dashboard, then deploys Whispering + Landing + API to Cloudflare Workers. Posts Discord notification. |
+| `deploy.cloudflare.yml` | Push to `main`, manual | Builds and deploys Whispering, Landing, and API to Cloudflare Workers. Each app builds itself immediately before its own deploy, so a deploy can never ship stale assets. Posts Discord notification. |
 | `deploy.cloudflare-preview.yml` | Pull requests touching `apps/whispering/**`, `apps/landing/**`, `packages/**` | Uploads preview versions via `wrangler versions upload --preview-alias`. Posts PR comment with preview URLs. No cleanup needed (aliases auto-expire at 1000). |
 
 ### CI

@@ -163,7 +163,7 @@ export const commands = {
 		__TAURI_INVOKE<void>('set_keyboard_shortcuts', { bindings }),
 	/**
 	 *  Enter or leave binding-capture mode for the settings recorder. While
-	 *  capturing, the listener emits the held combo on `CAPTURE_CHANNEL` (which the
+	 *  capturing, the listener emits the held combo on `CAPTURE_EVENT` (which the
 	 *  recorder accumulates) instead of firing command triggers, so the user can
 	 *  record Fn and physical-key bindings the webview cannot see.
 	 */
@@ -325,7 +325,7 @@ export type MarkdownFile = {
  *  is uniform: `switch (event.kind)`.
  *
  *  `lib.rs` exports this payload type directly because the FE listens on
- *  `EVENT_CHANNEL` manually.
+ *  `MODEL_STATE_EVENT` manually.
  */
 export type ModelStateEvent =
 	| { kind: 'loading_started'; state: LocalModelState }

@@ -1,6 +1,8 @@
 use super::config::{should_preload, Engine as EngineKind, TranscriptionConfig, UnloadPolicy};
 use super::error::TranscriptionError;
-use super::events::{LocalModelState, ModelStateEvent, ModelStatus, UnloadReason, EVENT_CHANNEL};
+use super::events::{
+    LocalModelState, ModelStateEvent, ModelStatus, UnloadReason, MODEL_STATE_EVENT,
+};
 use log::{debug, info, warn};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -737,7 +739,7 @@ impl ModelManager {
     // ── Event emission ────────────────────────────────────────────────
 
     fn emit(&self, event: ModelStateEvent) {
-        if let Err(err) = self.app.emit(EVENT_CHANNEL, &event) {
+        if let Err(err) = self.app.emit(MODEL_STATE_EVENT, &event) {
             warn!("[Transcription] failed to emit model-state event: {}", err);
         }
     }

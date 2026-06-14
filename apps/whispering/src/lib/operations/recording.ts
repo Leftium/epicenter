@@ -124,7 +124,7 @@ export function toggleManualRecording() {
 	return startManualRecording();
 }
 
-export async function cancelManualRecording() {
+export async function cancelRecording() {
 	// Cancel aborts whichever capture is live, without touching `recording.mode`:
 	// the chosen input mode (manual vs VAD) is a deliberate preference, not
 	// something a cancel keystroke should flip, so cancelling in VAD mode leaves

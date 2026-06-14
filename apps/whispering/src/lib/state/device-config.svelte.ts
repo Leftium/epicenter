@@ -49,7 +49,7 @@ const CANCEL_MODIFIERS: KeyBinding['modifiers'] = os.isApple
 export const DEFAULT_GLOBAL_BINDINGS = {
 	pushToTalk: { modifiers: PUSH_TO_TALK_MODIFIERS, keys: [] },
 	toggleManualRecording: { modifiers: PUSH_TO_TALK_MODIFIERS, keys: ['space'] },
-	cancelManualRecording: { modifiers: CANCEL_MODIFIERS, keys: ['dot'] },
+	cancelRecording: { modifiers: CANCEL_MODIFIERS, keys: ['dot'] },
 	toggleVadRecording: null,
 	openTransformationPicker: null,
 	runTransformationOnClipboard: null,
@@ -144,9 +144,9 @@ const DEVICE_DEFINITIONS = {
 		globalBinding,
 		DEFAULT_GLOBAL_BINDINGS.toggleManualRecording,
 	),
-	'shortcuts.global.cancelManualRecording': defineEntry(
+	'shortcuts.global.cancelRecording': defineEntry(
 		globalBinding,
-		DEFAULT_GLOBAL_BINDINGS.cancelManualRecording,
+		DEFAULT_GLOBAL_BINDINGS.cancelRecording,
 	),
 	'shortcuts.global.toggleVadRecording': defineEntry(
 		globalBinding,

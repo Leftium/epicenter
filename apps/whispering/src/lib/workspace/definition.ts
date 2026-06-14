@@ -312,7 +312,7 @@ const shortcuts = {
 		nullable(field.string()),
 		(): string | null => ' ',
 	),
-	'shortcut.cancelManualRecording': defineKv(
+	'shortcut.cancelRecording': defineKv(
 		nullable(field.string()),
 		(): string | null => 'c',
 	),

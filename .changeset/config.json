@@ -10,7 +10,10 @@
 			"@epicenter/filesystem",
 			"@epicenter/skills",
 			"@epicenter/ui",
-			"@epicenter/svelte"
+			"@epicenter/svelte",
+			"@epicenter/encryption",
+			"@epicenter/field",
+			"@epicenter/identity"
 		]
 	],
 	"linked": [],

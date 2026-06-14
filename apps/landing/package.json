@@ -3,14 +3,14 @@
 	"description": "Public landing site for Epicenter",
 	"private": true,
 	"type": "module",
-	"version": "0.0.1",
+	"version": "0.0.2",
 	"scripts": {
 		"dev": "bun run dev:local",
 		"dev:local": "astro dev",
 		"build": "astro build",
 		"preview": "astro preview",
 		"astro": "astro",
-		"deploy": "bun run build && wrangler deploy",
+		"deploy": "wrangler deploy",
 		"typecheck": "astro check && svelte-check --tsconfig ./tsconfig.json"
 	},
 	"dependencies": {

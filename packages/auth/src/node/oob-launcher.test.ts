@@ -15,11 +15,11 @@
  */
 
 import { expect, test } from 'bun:test';
-import { EPICENTER_OAUTH_SCOPE } from '@epicenter/constants/oauth';
 import type { Result } from 'wellcrafted/result';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 import type { AuthFetch } from '../auth-contract.js';
 import type { OAuthLaunchResult } from '../oauth-launchers/contract.js';
+import { EPICENTER_OAUTH_SCOPE } from '../oauth-defaults.js';
 import { createOobOAuthLauncher } from './oob-launcher.js';
 
 const NOW = 1_700_000_000_000;

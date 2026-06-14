@@ -21,7 +21,6 @@
 	"dependencies": {
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/constants": "workspace:*",
-		"@epicenter/api": "workspace:*",
 		"@epicenter/identity": "workspace:*",
 		"@epicenter/ui": "workspace:*",
 		"@epicenter/workspace": "workspace:*",

@@ -14,9 +14,6 @@
 
 import { spawn } from 'node:child_process';
 import * as readline from 'node:readline';
-import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import { EPICENTER_OAUTH_SCOPES } from '@epicenter/constants/oauth';
-import { OAUTH_ROUTES } from '@epicenter/constants/oauth-routes';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -28,7 +25,12 @@ import type {
 	OAuthLauncher,
 	OAuthLaunchResult,
 } from '../oauth-launchers/contract.js';
+import {
+	EPICENTER_API_URL,
+	EPICENTER_OAUTH_SCOPES,
+} from '../oauth-defaults.js';
 import { parseOAuthTokenGrant } from '../oauth-token-endpoints.js';
+import { OAUTH_ROUTES } from '../routes.js';
 
 /**
  * CLI transport failures before machine auth can persist a session.

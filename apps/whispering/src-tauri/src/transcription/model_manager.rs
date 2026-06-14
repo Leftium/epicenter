@@ -1,4 +1,4 @@
-use super::config::{should_preload, Engine as EngineKind, TranscriptionConfig, UnloadPolicy};
+use super::config::{Engine as EngineKind, TranscriptionConfig, UnloadPolicy};
 use super::error::TranscriptionError;
 use super::events::{LocalModelState, ModelStateEvent, ModelStatus, UnloadReason};
 use log::{debug, info, warn};
@@ -58,11 +58,6 @@ pub struct ModelManager {
     /// so snapshot never blocks behind a transcription.
     status: Arc<RwLock<ModelStatus>>,
 
-    /// Logical identity token for the selected `(engine, model_name)`. Older
-    /// operations may finish, but they must not publish state after a newer
-    /// model selection.
-    model_generation: Arc<AtomicU64>,
-
     /// Handle used for `Emitter::emit` on the lifecycle event channel.
     /// Constructed once in `setup` and cloned cheaply through `Clone` on
     /// the manager.
@@ -76,87 +71,56 @@ impl ModelManager {
             last_activity_ms: Arc::new(AtomicU64::new(now_millis())),
             config: Arc::new(RwLock::new(None)),
             status: Arc::new(RwLock::new(ModelStatus::Idle)),
-            model_generation: Arc::new(AtomicU64::new(0)),
             app,
         }
     }
 
     // ── Ambient config ────────────────────────────────────────────────
 
-    /// Push the FE-side configuration. If `(engine, model_name)` changed
-    /// since the last push, the previous resident model is dropped (with a
-    /// `ConfigChanged` unload event) and a background preload kicks off so
-    /// the next transcription does not pay cold-start latency. Other field
-    /// changes (language, prompt, policy) take effect on next transcription
-    /// without a reload.
+    /// Push the FE-side configuration. This only stores state: the model
+    /// loads lazily on the next transcription, so there is no background
+    /// preload to race and no generation token to track. A changed
+    /// `(engine, model_name)` drops the now-stale resident model if the cache
+    /// is free; the next transcription loads the new selection from disk.
+    /// Other field changes (language, prompt, policy) take effect on the next
+    /// transcription with no reload.
     pub fn set_transcription_config(&self, config: TranscriptionConfig) {
-        // Validate eagerly so a bad selection surfaces as a LoadingFailed
-        // event at push time instead of an error mid-transcription.
-        match self.model_path_for(&config) {
-            Ok(_) => {}
-            Err(message) => {
-                warn!("[Transcription] rejected local model config: {}", message);
-                {
-                    let mut guard = self.write_config();
-                    *guard = None;
-                }
-                self.evict_with_reason(UnloadReason::ConfigChanged);
-                self.set_status(ModelStatus::Error {
-                    message: message.clone(),
-                });
-                self.emit(ModelStateEvent::LoadingFailed {
-                    state: self.snapshot(),
-                    error: message,
-                });
-                return;
-            }
+        // Validate eagerly. This is a path check, not a model load, so it is
+        // cheap and surfaces a bad selection now instead of mid-transcription.
+        if let Err(message) = self.model_path_for(&config) {
+            warn!("[Transcription] rejected local model config: {}", message);
+            *self.write_config() = None;
+            self.evict(UnloadReason::ConfigChanged);
+            self.set_status(ModelStatus::Error {
+                message: message.clone(),
+            });
+            self.emit(ModelStateEvent::LoadingFailed {
+                state: self.snapshot(),
+                error: message,
+            });
+            return;
         }
 
-        let (preload_generation, selection_state) = {
+        let model_changed = {
             let mut guard = self.write_config();
-            let needs_preload = should_preload(guard.as_ref(), &config);
-            let was_waiting_for_previous_model = !matches!(self.read_status(), ModelStatus::Idle);
-            let generation =
-                needs_preload.then(|| self.model_generation.fetch_add(1, Ordering::SeqCst) + 1);
-            *guard = Some(config.clone());
-            let selection_state = needs_preload.then(|| {
-                let status = if was_waiting_for_previous_model {
-                    ModelStatus::Switching
-                } else {
-                    ModelStatus::Idle
-                };
-                self.set_status(status.clone());
-                state_for_config(&config, status)
+            let changed = guard.as_ref().is_none_or(|prev| {
+                prev.engine != config.engine || prev.model_name != config.model_name
             });
-            (generation, selection_state)
+            *guard = Some(config);
+            changed
         };
 
+        // A different model means the resident one is stale. Drop it (Idle,
+        // not loaded) so the FE reflects the new selection honestly; the next
+        // transcription loads it. `evict` skips a cache busy with an in-flight
+        // transcription, which the next transcription reloads anyway.
+        if model_changed {
+            self.evict(UnloadReason::ConfigChanged);
+        }
         // Always notify: SelectionChanged is the FE's signal to refresh model
         // identity displays even when the engine/path are the same.
         self.emit(ModelStateEvent::SelectionChanged {
-            state: selection_state.unwrap_or_else(|| self.snapshot()),
-        });
-
-        let Some(generation) = preload_generation else {
-            return;
-        };
-
-        // Hand off the eviction + preload to a background thread so this
-        // command returns immediately. The eviction itself takes the cache
-        // lock; if a transcribe is in-flight, the eviction waits for it
-        // (correct: don't yank a model out from under an active inference).
-        // The preload then loads the new model. The FE sees a sequence of
-        // events on `transcription://model-state`: Unloaded(ConfigChanged)
-        // → LoadingStarted → LoadingCompleted | LoadingFailed.
-        let this = self.clone();
-        tauri::async_runtime::spawn_blocking(move || {
-            if !this.is_current_model_generation(generation) {
-                return;
-            }
-            this.evict_with_reason_if_current(UnloadReason::ConfigChanged, Some(generation));
-            if let Err(err) = this.preload(config, generation) {
-                warn!("[Transcription] preload failed: {}", err);
-            }
+            state: self.snapshot(),
         });
     }
 
@@ -209,13 +173,6 @@ impl ModelManager {
             .unwrap_or_else(|poisoned| poisoned.into_inner().clone())
     }
 
-    fn read_config_with_generation(&self) -> Option<(TranscriptionConfig, u64)> {
-        let guard = self.read_config_guard();
-        let config = guard.clone()?;
-        let generation = self.model_generation.load(Ordering::SeqCst);
-        Some((config, generation))
-    }
-
     fn read_config_guard(&self) -> RwLockReadGuard<'_, Option<TranscriptionConfig>> {
         self.config
             .read()
@@ -264,7 +221,7 @@ impl ModelManager {
     /// validates the samples, then routes to the engine-specific path.
     /// Called from a blocking-pool thread.
     pub fn transcribe(&self, samples: Vec<f32>) -> Result<String, TranscriptionError> {
-        let Some((config, generation)) = self.read_config_with_generation() else {
+        let Some(config) = self.read_config() else {
             return Err(TranscriptionError::NoConfig {
                 message:
                     "Transcription config not set. The frontend must call setTranscriptionConfig first."
@@ -302,7 +259,7 @@ impl ModelManager {
                 params.suppress_non_speech_tokens = true;
                 params.no_speech_thold = 0.2;
 
-                self.with_whisper(&config, generation, model_path, |engine| {
+                self.with_whisper(&config, model_path, |engine| {
                     let result = engine
                         .transcribe_with(&samples, &params)
                         .map_err(transcription_err)?;
@@ -314,7 +271,7 @@ impl ModelManager {
                     timestamp_granularity: Some(TimestampGranularity::Segment),
                     ..Default::default()
                 };
-                self.with_parakeet(&config, generation, model_path, |engine| {
+                self.with_parakeet(&config, model_path, |engine| {
                     let result = engine
                         .transcribe_with(&samples, &params)
                         .map_err(transcription_err)?;
@@ -323,7 +280,7 @@ impl ModelManager {
             }
             EngineKind::Moonshine => {
                 let variant = parse_moonshine_variant(&config.model_name)?;
-                self.with_moonshine(&config, generation, model_path, variant, |engine| {
+                self.with_moonshine(&config, model_path, variant, |engine| {
                     let result = engine
                         .transcribe(&samples, &TranscribeOptions::default())
                         .map_err(transcription_err)?;
@@ -338,83 +295,8 @@ impl ModelManager {
             transcript.len(),
             inference_started.elapsed().as_millis(),
         );
-        self.evict_if_immediate(config.unload_policy, generation);
+        self.evict_if_immediate(config.unload_policy);
         Ok(transcript)
-    }
-
-    // ── Preload ───────────────────────────────────────────────────────
-
-    /// Load the configured model without running inference. Preload drives
-    /// loading events only; inference events are reserved for real
-    /// transcriptions.
-    fn preload(
-        &self,
-        config: TranscriptionConfig,
-        generation: u64,
-    ) -> Result<(), TranscriptionError> {
-        if !self.is_current_model_generation(generation) {
-            return Ok(());
-        }
-        let model_path = match self.model_path_for(&config) {
-            Ok(path) => path,
-            Err(message) => {
-                let _ = self.publish_if_current(
-                    generation,
-                    &config,
-                    ModelStatus::Error {
-                        message: message.clone(),
-                    },
-                    |state| ModelStateEvent::LoadingFailed {
-                        state,
-                        error: message.clone(),
-                    },
-                );
-                return Err(TranscriptionError::ModelLoadError { message });
-            }
-        };
-        match config.engine {
-            EngineKind::Whispercpp => {
-                self.ensure_loaded(
-                    &config,
-                    model_path,
-                    |e| matches!(e, Engine::Whisper(_)),
-                    |path| {
-                        WhisperEngine::load(path)
-                            .map(Engine::Whisper)
-                            .map_err(|e| format!("Failed to load Whisper model: {}", e))
-                    },
-                    LoadCaller::Preload { generation },
-                )?;
-            }
-            EngineKind::Parakeet => {
-                self.ensure_loaded(
-                    &config,
-                    model_path,
-                    |e| matches!(e, Engine::Parakeet(_)),
-                    |path| {
-                        ParakeetModel::load(path, &Quantization::Int8)
-                            .map(Engine::Parakeet)
-                            .map_err(|e| format!("Failed to load Parakeet model: {}", e))
-                    },
-                    LoadCaller::Preload { generation },
-                )?;
-            }
-            EngineKind::Moonshine => {
-                let variant = parse_moonshine_variant(&config.model_name)?;
-                self.ensure_loaded(
-                    &config,
-                    model_path,
-                    |e| matches!(e, Engine::Moonshine(_)),
-                    |path| {
-                        MoonshineModel::load(path, variant, &Quantization::default())
-                            .map(Engine::Moonshine)
-                            .map_err(|e| format!("Failed to load Moonshine model: {}", e))
-                    },
-                    LoadCaller::Preload { generation },
-                )?;
-            }
-        }
-        Ok(())
     }
 
     // ── Engine cache + eviction ───────────────────────────────────────
@@ -422,7 +304,6 @@ impl ModelManager {
     fn with_whisper<T>(
         &self,
         config: &TranscriptionConfig,
-        generation: u64,
         model_path: PathBuf,
         f: impl FnOnce(&mut WhisperEngine) -> Result<T, TranscriptionError>,
     ) -> Result<T, TranscriptionError> {
@@ -435,7 +316,6 @@ impl ModelManager {
                     .map(Engine::Whisper)
                     .map_err(|e| format!("Failed to load Whisper model: {}", e))
             },
-            LoadCaller::Transcription { generation },
             |engine| match engine {
                 Engine::Whisper(e) => f(e),
                 _ => unreachable!("can_reuse guarantees Whisper variant"),
@@ -446,7 +326,6 @@ impl ModelManager {
     fn with_parakeet<T>(
         &self,
         config: &TranscriptionConfig,
-        generation: u64,
         model_path: PathBuf,
         f: impl FnOnce(&mut ParakeetModel) -> Result<T, TranscriptionError>,
     ) -> Result<T, TranscriptionError> {
@@ -459,7 +338,6 @@ impl ModelManager {
                     .map(Engine::Parakeet)
                     .map_err(|e| format!("Failed to load Parakeet model: {}", e))
             },
-            LoadCaller::Transcription { generation },
             |engine| match engine {
                 Engine::Parakeet(e) => f(e),
                 _ => unreachable!("can_reuse guarantees Parakeet variant"),
@@ -470,7 +348,6 @@ impl ModelManager {
     fn with_moonshine<T>(
         &self,
         config: &TranscriptionConfig,
-        generation: u64,
         model_path: PathBuf,
         variant: MoonshineVariant,
         f: impl FnOnce(&mut MoonshineModel) -> Result<T, TranscriptionError>,
@@ -484,7 +361,6 @@ impl ModelManager {
                     .map(Engine::Moonshine)
                     .map_err(|e| format!("Failed to load Moonshine model: {}", e))
             },
-            LoadCaller::Transcription { generation },
             |engine| match engine {
                 Engine::Moonshine(e) => f(e),
                 _ => unreachable!("can_reuse guarantees Moonshine variant"),
@@ -492,11 +368,9 @@ impl ModelManager {
         )
     }
 
-    /// Hold the cache lock across load. If `(path, engine kind)` matches the
-    /// cache, reuse; otherwise drop and load fresh under the same lock.
-    /// Stale background preloads drop their loaded engine instead of
-    /// publishing or caching it; stale transcriptions keep their engine long
-    /// enough to preserve transcript behavior, but stop publishing state.
+    /// Hold the cache lock across load. If `(path, identity, engine kind)`
+    /// matches the cache, reuse; otherwise drop and load fresh under the same
+    /// lock. The model loads lazily here, on the transcription that needs it.
     ///
     /// Holding the cache lock across `emit` is safe: Tauri's emit is sync
     /// and FE handlers run on the JS event loop, so no Rust caller can
@@ -507,17 +381,8 @@ impl ModelManager {
         model_path: PathBuf,
         can_reuse: impl Fn(&Engine) -> bool,
         load: impl FnOnce(&Path) -> Result<Engine, String>,
-        caller: LoadCaller,
-    ) -> Result<EnsureLoaded<'_>, TranscriptionError> {
-        if caller.is_preload() && !self.is_current_model_generation(caller.generation()) {
-            return Ok(EnsureLoaded::Stale);
-        }
-
+    ) -> Result<MutexGuard<'_, Cached>, TranscriptionError> {
         let mut guard = lock_cached(&self.cached);
-
-        if caller.is_preload() && !self.is_current_model_generation(caller.generation()) {
-            return Ok(EnsureLoaded::Stale);
-        }
 
         // Fingerprint the bytes on disk now and reuse only when they match what
         // the resident engine was loaded from. A delete + re-download under the
@@ -535,15 +400,9 @@ impl ModelManager {
 
         if !reuse {
             let _ = guard.take();
-            let loading_started = self.publish_if_current(
-                caller.generation(),
-                config,
-                ModelStatus::Loading,
-                |state| ModelStateEvent::LoadingStarted { state },
-            );
-            if caller.is_preload() && loading_started.is_none() {
-                return Ok(EnsureLoaded::Stale);
-            }
+            self.publish(config, ModelStatus::Loading, |state| {
+                ModelStateEvent::LoadingStarted { state }
+            });
             let started = Instant::now();
             match load(&model_path) {
                 Ok(engine) => {
@@ -553,37 +412,13 @@ impl ModelManager {
                         model_path.display(),
                         elapsed_ms
                     );
-                    if caller.is_preload() {
-                        if !self.is_current_model_generation(caller.generation()) {
-                            return Ok(EnsureLoaded::Stale);
-                        }
-                        *guard = Some((model_path, current_identity, engine));
-                        let Some(()) = self.publish_if_current(
-                            caller.generation(),
-                            config,
-                            ModelStatus::Ready,
-                            |state| ModelStateEvent::LoadingCompleted { state, elapsed_ms },
-                        ) else {
-                            let _ = guard.take();
-                            return Ok(EnsureLoaded::Stale);
-                        };
-                    } else {
-                        *guard = Some((model_path, current_identity, engine));
-                        let _ = self.publish_if_current(
-                            caller.generation(),
-                            config,
-                            ModelStatus::Ready,
-                            |state| ModelStateEvent::LoadingCompleted { state, elapsed_ms },
-                        );
-                    }
+                    *guard = Some((model_path, current_identity, engine));
+                    self.publish(config, ModelStatus::Ready, |state| {
+                        ModelStateEvent::LoadingCompleted { state, elapsed_ms }
+                    });
                 }
                 Err(message) => {
-                    if caller.is_preload() && !self.is_current_model_generation(caller.generation())
-                    {
-                        return Ok(EnsureLoaded::Stale);
-                    }
-                    let _ = self.publish_if_current(
-                        caller.generation(),
+                    self.publish(
                         config,
                         ModelStatus::Error {
                             message: message.clone(),
@@ -598,46 +433,35 @@ impl ModelManager {
             }
         }
 
-        Ok(EnsureLoaded::Loaded(guard))
+        Ok(guard)
     }
 
-    /// Hold the cache lock across load and use. Preloading calls only
-    /// `ensure_loaded`; real transcriptions additionally emit semantic
-    /// inference events around the user closure.
+    /// Hold the cache lock across load and use, emitting semantic inference
+    /// events around the user closure.
     fn with_engine<T>(
         &self,
         config: &TranscriptionConfig,
         model_path: PathBuf,
         can_reuse: impl Fn(&Engine) -> bool,
         load: impl FnOnce(&Path) -> Result<Engine, String>,
-        caller: LoadCaller,
         use_engine: impl FnOnce(&mut Engine) -> Result<T, TranscriptionError>,
     ) -> Result<T, TranscriptionError> {
         self.touch_activity();
-        let mut guard = match self.ensure_loaded(config, model_path, can_reuse, load, caller)? {
-            EnsureLoaded::Loaded(guard) => guard,
-            EnsureLoaded::Stale => unreachable!("stale cache loads only abort preloads"),
-        };
+        let mut guard = self.ensure_loaded(config, model_path, can_reuse, load)?;
 
         let (_, _, engine) = guard.as_mut().expect("cache slot populated above");
-        let _ = self.publish_if_current(
-            caller.generation(),
-            config,
-            ModelStatus::Inferring,
-            |state| ModelStateEvent::InferenceStarted { state },
-        );
+        self.publish(config, ModelStatus::Inferring, |state| {
+            ModelStateEvent::InferenceStarted { state }
+        });
         let started = Instant::now();
         let result = use_engine(engine);
         let elapsed_ms = started.elapsed().as_millis() as u64;
         self.touch_activity();
         match &result {
             Ok(_) => {
-                let _ = self.publish_if_current(
-                    caller.generation(),
-                    config,
-                    ModelStatus::Ready,
-                    |state| ModelStateEvent::InferenceCompleted { state, elapsed_ms },
-                );
+                self.publish(config, ModelStatus::Ready, |state| {
+                    ModelStateEvent::InferenceCompleted { state, elapsed_ms }
+                });
             }
             Err(e) => {
                 // Don't clear the cache on inference failure: the engine is
@@ -645,8 +469,7 @@ impl ModelManager {
                 // or input issue). The status reflects the last result; a
                 // successful next call flips it back to Ready.
                 let message = e.to_string();
-                let _ = self.publish_if_current(
-                    caller.generation(),
+                self.publish(
                     config,
                     ModelStatus::Error {
                         message: message.clone(),
@@ -667,24 +490,22 @@ impl ModelManager {
 
     /// Drop the resident model now if the current policy is `Immediately`.
     /// Called at the end of every successful transcription.
-    fn evict_if_immediate(&self, policy: UnloadPolicy, generation: u64) {
+    fn evict_if_immediate(&self, policy: UnloadPolicy) {
         if matches!(policy, UnloadPolicy::Immediately) {
-            self.evict_with_reason_if_current(UnloadReason::Immediate, Some(generation));
+            self.evict(UnloadReason::Immediate);
         }
     }
 
     /// Drop the resident model and emit an `Unloaded` event with the given
-    /// reason. Idempotent: a no-op when the cache is already empty.
-    fn evict_with_reason(&self, reason: UnloadReason) {
-        self.evict_with_reason_if_current(reason, None);
-    }
-
-    fn evict_with_reason_if_current(&self, reason: UnloadReason, generation: Option<u64>) {
-        let mut guard = lock_cached(&self.cached);
-        let config_guard = self.read_config_guard();
-        if generation.is_some_and(|generation| !self.is_current_model_generation(generation)) {
+    /// reason, leaving status `Idle`. Uses `try_lock` so it never blocks behind
+    /// an in-flight transcription: a busy cache keeps its model, which the next
+    /// transcription reloads against the current config anyway. A no-op when the
+    /// cache is already empty.
+    fn evict(&self, reason: UnloadReason) {
+        let Ok(mut guard) = self.cached.try_lock() else {
             return;
-        }
+        };
+        let config_guard = self.read_config_guard();
         if let Some((path, _identity, _engine)) = guard.take() {
             debug!(
                 "[Transcription] unloaded model ({:?}): {}",
@@ -695,13 +516,8 @@ impl ModelManager {
             // on the cache lock (they should not lock it anyway, but defensive
             // ordering is cheap).
             drop(guard);
-            let status = if matches!(reason, UnloadReason::ConfigChanged) {
-                ModelStatus::Switching
-            } else {
-                ModelStatus::Idle
-            };
-            self.set_status(status.clone());
-            let state = state_for_config_option(config_guard.as_ref(), status);
+            self.set_status(ModelStatus::Idle);
+            let state = state_for_config_option(config_guard.as_ref(), ModelStatus::Idle);
             self.emit(ModelStateEvent::Unloaded { state, reason });
         }
     }
@@ -760,58 +576,17 @@ impl ModelManager {
         }
     }
 
-    fn is_current_model_generation(&self, generation: u64) -> bool {
-        self.model_generation.load(Ordering::SeqCst) == generation
-    }
-
-    fn with_current_model_generation<T>(
+    /// Set the resident status and emit the matching lifecycle event built
+    /// from the current config and that status.
+    fn publish(
         &self,
-        generation: u64,
-        f: impl FnOnce() -> T,
-    ) -> Option<T> {
-        // The read lock closes the check-then-publish gap against
-        // set_transcription_config, whose write lock bumps the generation.
-        let _guard = self.read_config_guard();
-        self.is_current_model_generation(generation).then(f)
-    }
-
-    fn publish_if_current(
-        &self,
-        generation: u64,
         config: &TranscriptionConfig,
         status: ModelStatus,
         build_event: impl FnOnce(LocalModelState) -> ModelStateEvent,
-    ) -> Option<()> {
-        self.with_current_model_generation(generation, || {
-            self.set_status(status.clone());
-            self.emit(build_event(state_for_config(config, status)));
-        })
+    ) {
+        self.set_status(status.clone());
+        self.emit(build_event(state_for_config(config, status)));
     }
-}
-
-#[derive(Clone, Copy)]
-enum LoadCaller {
-    Preload { generation: u64 },
-    Transcription { generation: u64 },
-}
-
-impl LoadCaller {
-    fn generation(self) -> u64 {
-        match self {
-            LoadCaller::Preload { generation } | LoadCaller::Transcription { generation } => {
-                generation
-            }
-        }
-    }
-
-    fn is_preload(self) -> bool {
-        matches!(self, LoadCaller::Preload { .. })
-    }
-}
-
-enum EnsureLoaded<'a> {
-    Loaded(MutexGuard<'a, Cached>),
-    Stale,
 }
 
 /// Replace NaN/Inf with 0.0 and cap length so a malformed sample buffer

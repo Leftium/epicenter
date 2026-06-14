@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 
 /// Ambient configuration the frontend pushes once per change. The Rust side
 /// reads this on every `transcribe_recording` call instead of receiving
-/// a per-call payload. Drift in `(engine, model_name)` triggers a preload;
-/// drift in other fields takes effect on the next transcription with no
-/// reload.
+/// a per-call payload. The model loads lazily on the next transcription, so a
+/// changed `(engine, model_name)` is picked up then; drift in other fields
+/// takes effect on the next transcription with no reload.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptionConfig {
@@ -52,14 +52,4 @@ pub enum UnloadPolicy {
 
 impl UnloadPolicy {
     pub const DEFAULT: Self = Self::AfterFiveMinutes;
-}
-
-/// True when the new config asks for a different resident model than the old
-/// one. Identity is `(engine, model_name)` only: language/prompt/policy
-/// changes never trigger a reload because they take effect on next inference.
-pub fn should_preload(old: Option<&TranscriptionConfig>, new: &TranscriptionConfig) -> bool {
-    match old {
-        None => true,
-        Some(prev) => prev.engine != new.engine || prev.model_name != new.model_name,
-    }
 }

@@ -139,19 +139,6 @@ jobs:
         if: ${{ matrix.os == 'windows' }}
         shell: pwsh
         run: |
-          if (-not $env:WindowsSdkVerBinPath) {
-            throw "WindowsSdkVerBinPath is not set"
-          }
-
-          $resourceCompiler = Join-Path $env:WindowsSdkVerBinPath "x64\rc.exe"
-          if (-not (Test-Path $resourceCompiler)) {
-            throw "Windows SDK rc.exe not found at $resourceCompiler"
-          }
-
-          "CMAKE_GENERATOR=Ninja" >> $env:GITHUB_ENV
-          "CC=cl" >> $env:GITHUB_ENV
-          "CXX=cl" >> $env:GITHUB_ENV
-          "RC=$resourceCompiler" >> $env:GITHUB_ENV
           "CARGO_TARGET_DIR=$env:GITHUB_WORKSPACE\target" >> $env:GITHUB_ENV
 
       # Setup Bun package manager

@@ -40,6 +40,6 @@ describe('projectOption', () => {
 				.exitProcess(false)
 				.option('C', projectOption)
 				.parseSync(['-C', root]),
-		).toThrow('findProjectRoot: no epicenter.config.ts found');
+		).toThrow('No epicenter.config.ts found');
 	});
 });

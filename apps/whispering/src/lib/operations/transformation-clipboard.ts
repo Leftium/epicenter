@@ -1,3 +1,4 @@
+import { InstantString } from '@epicenter/field';
 import { goto } from '$app/navigation';
 import { deliverTransformationResult } from '$lib/operations/delivery';
 import { sound } from '$lib/operations/sound';
@@ -73,7 +74,7 @@ export async function runTransformationOnClipboard() {
 
 	// Ad-hoc run: execute purely, then commit one completed row only on success.
 	// A failed quick-run never committed, so it leaves no record.
-	const startedAt = new Date().toISOString();
+	const startedAt = InstantString.now();
 	const { data: transformedText, error: transformError } =
 		await executeTransformation({ input: clipboardText, transformation });
 

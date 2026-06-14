@@ -211,6 +211,101 @@ describe('attachMarkdownExport', () => {
 		});
 	});
 
+	describe('path confinement', () => {
+		test('a filename escaping the export root is rejected, leaving disk untouched', async () => {
+			const workspace = createWorkspace({
+				id: 'export-escape-filename',
+				tables: tableDefinitions,
+				kv: {},
+			});
+			const exporter = attachMarkdownExport(workspace, {
+				dir: TEST_DIR,
+				tables: {
+					posts: { filename: () => '../../escape.md' },
+				},
+			});
+			await exporter.whenFlushed;
+
+			workspace.tables.posts.set({ id: 'a', title: 'alpha', published: true });
+			// The rebuild renders before touching disk; an escaping filename throws
+			// out of the render-and-write path instead of writing outside the root.
+			await expect(exporter.actions.markdown_rebuild({})).rejects.toThrow(
+				/resolves outside the export root/,
+			);
+
+			// Nothing was written two levels up from the export root.
+			const parentOfTestDir = join(TEST_DIR, '..', '..');
+			await expect(
+				readFile(join(parentOfTestDir, 'escape.md'), 'utf-8'),
+			).rejects.toThrow();
+
+			workspace[Symbol.dispose]();
+		});
+
+		test('an absolute filename is rejected', async () => {
+			const workspace = createWorkspace({
+				id: 'export-escape-absolute',
+				tables: tableDefinitions,
+				kv: {},
+			});
+			const exporter = attachMarkdownExport(workspace, {
+				dir: TEST_DIR,
+				tables: {
+					posts: { filename: () => '/tmp/epicenter-escape-absolute.md' },
+				},
+			});
+			await exporter.whenFlushed;
+
+			workspace.tables.posts.set({ id: 'a', title: 'alpha', published: true });
+			await expect(exporter.actions.markdown_rebuild({})).rejects.toThrow(
+				/resolves outside the export root/,
+			);
+
+			workspace[Symbol.dispose]();
+		});
+
+		test('a nested-but-confined filename writes under the export root', async () => {
+			const workspace = createWorkspace({
+				id: 'export-nested-confined',
+				tables: tableDefinitions,
+				kv: {},
+			});
+			const exporter = attachMarkdownExport(workspace, {
+				dir: TEST_DIR,
+				tables: {
+					posts: { filename: (row) => `archive/${row.id}.md` },
+				},
+			});
+			await exporter.whenFlushed;
+
+			workspace.tables.posts.set({ id: 'a', title: 'alpha', published: true });
+			await exporter.actions.markdown_rebuild({});
+
+			const files = await listDir('posts/archive');
+			expect(files).toContain('a.md');
+
+			workspace[Symbol.dispose]();
+		});
+
+		test('a table dir escaping the export root is rejected at flush', async () => {
+			const workspace = createWorkspace({
+				id: 'export-escape-dir',
+				tables: tableDefinitions,
+				kv: {},
+			});
+			const exporter = attachMarkdownExport(workspace, {
+				dir: TEST_DIR,
+				tables: { posts: { dir: '../escape-dir' } },
+			});
+
+			await expect(exporter.whenFlushed).rejects.toThrow(
+				/resolves outside the export root/,
+			);
+
+			workspace[Symbol.dispose]();
+		});
+	});
+
 	test('markdown_rebuild removes an orphan and rewrites rows', async () => {
 		const workspace = createWorkspace({
 			id: 'export-rebuild',

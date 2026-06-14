@@ -1,3 +1,4 @@
+import { InstantString } from '@epicenter/field';
 import { nanoid } from 'nanoid/non-secure';
 import type { Result } from 'wellcrafted/result';
 import {
@@ -23,7 +24,7 @@ export type Candidate = {
 	 * passes it straight to the persisted run's `startedAt`, so the run records
 	 * when the work actually started, not when the user pressed accept.
 	 */
-	startedAt: string;
+	startedAt: InstantString;
 	result: Promise<Result<string, TransformError>>;
 };
 
@@ -44,7 +45,7 @@ export function createCandidate({
 		id: nanoid(),
 		transformation,
 		input,
-		startedAt: new Date().toISOString(),
+		startedAt: InstantString.now(),
 		result: executeTransformation({ input, transformation }),
 	};
 }

@@ -4,11 +4,12 @@ import {
 	defineKv,
 	defineTable,
 	defineWorkspace,
+	type IanaTimeZone,
 	type InferKvValue,
 	type InferTableRow,
 	nullable,
 } from '@epicenter/workspace';
-import { type Static, Type } from 'typebox';
+import { type Static, type TProperties, Type } from 'typebox';
 
 // ── Constant imports ─────────────────────────────────────────────────────────
 
@@ -18,6 +19,7 @@ import { INFERENCE_PROVIDER_IDS } from '$lib/constants/inference';
 import {
 	PROVIDERS,
 	TRANSCRIPTION_SERVICE_IDS,
+	type TranscriptionServiceId,
 } from '$lib/services/transcription/providers';
 
 /**
@@ -25,28 +27,40 @@ import {
  * `table.set()`, there's no field-level merging. Schemas validate rows on read.
  */
 /**
- * Terminal outcome of transcribing a recording. Only finished states are
- * stored. A recording that is currently transcribing has no `transcription`
- * (the column is null); liveness comes from the in-flight transcription
- * mutation, never from durable state. A stored 'TRANSCRIBING' status would
+ * A terminal job outcome: `completed` or `failed`. Both variants carry the
+ * finish instant; `failed` adds the error message; `completed` carries whatever
+ * job-specific payload the caller declares through `completedExtra`.
+ *
+ * Only terminal states are ever stored. A job still in flight has no outcome
+ * (the storing column is null); liveness comes from the in-flight mutation,
+ * never from durable state. A stored 'running'/'transcribing' status would
  * wedge on crash: the process that died can no longer write the terminal
  * state. See
  * docs/articles/20260612T190745-liveness-belongs-to-the-process-not-the-row.md.
- *
- * The transcript text lives in its own `transcript` column, so a completed
- * outcome only records when it finished.
  */
-const TranscriptionOutcome = Type.Union([
-	Type.Object({
-		status: Type.Literal('completed'),
-		completedAt: Type.String(),
-	}),
-	Type.Object({
-		status: Type.Literal('failed'),
-		completedAt: Type.String(),
-		error: Type.String(),
-	}),
-]);
+function terminalOutcome<CompletedExtra extends TProperties>(
+	completedExtra: CompletedExtra,
+) {
+	return Type.Union([
+		Type.Object({
+			status: Type.Literal('completed'),
+			completedAt: field.instant(),
+			...completedExtra,
+		}),
+		Type.Object({
+			status: Type.Literal('failed'),
+			completedAt: field.instant(),
+			error: Type.String(),
+		}),
+	]);
+}
+
+/**
+ * Terminal outcome of transcribing a recording. The transcript text lives in
+ * its own `transcript` column, so the `completed` variant only records when it
+ * finished.
+ */
+const TranscriptionOutcome = terminalOutcome({});
 
 /**
  * Audio recordings captured by the user. One row per recording session.
@@ -58,8 +72,8 @@ const TranscriptionOutcome = Type.Union([
 const recordings = defineTable({
 	id: field.string(),
 	title: field.string(),
-	recordedAt: field.string(),
-	updatedAt: field.string(),
+	recordedAt: field.instant(),
+	recordedAtZone: field.string<IanaTimeZone>(),
 	transcript: field.string(),
 	duration: nullable(field.number()),
 	transcription: nullable(field.json(TranscriptionOutcome)),
@@ -109,8 +123,6 @@ const transformations = defineTable({
 	id: field.string(),
 	title: field.string(),
 	description: field.string(),
-	createdAt: field.string(),
-	updatedAt: field.string(),
 	preReplacements: field.json(Type.Array(Replacement)),
 	prompt: nullable(field.json(TransformationPrompt)),
 	postReplacements: field.json(Type.Array(Replacement)),
@@ -120,7 +132,8 @@ const transformations = defineTable({
 export type Transformation = InferTableRow<typeof transformations>;
 
 /**
- * Per-variant result shapes for a finished transformation run.
+ * Terminal outcome of a finished transformation run, carrying the produced
+ * `output` on success. Built from the shared `terminalOutcome` helper.
  *
  * Only terminal outcomes are stored. A run that is currently executing has no
  * `result` (the column is null); liveness is derived from `startedAt` recency,
@@ -132,20 +145,7 @@ export type Transformation = InferTableRow<typeof transformations>;
  * Storage is one nullable JSON-encoded TEXT column (`result`); nothing in the
  * read path filters or sorts on these fields.
  */
-const CompletedResult = Type.Object({
-	status: Type.Literal('completed'),
-	completedAt: Type.String(),
-	output: Type.String(),
-});
-
-const FailedResult = Type.Object({
-	status: Type.Literal('failed'),
-	completedAt: Type.String(),
-	error: Type.String(),
-});
-
-/** A terminal outcome. Absence (null) means the run never reached one. */
-const TransformationRunResult = Type.Union([CompletedResult, FailedResult]);
+const TransformationRunResult = terminalOutcome({ output: Type.String() });
 
 /**
  * Execution records for transformations. One run per invocation.
@@ -158,7 +158,7 @@ const transformationRuns = defineTable({
 	transformationId: field.string(),
 	recordingId: nullable(field.string()),
 	input: field.string(),
-	startedAt: field.string(),
+	startedAt: field.instant(),
 	result: nullable(field.json(TransformationRunResult)),
 });
 
@@ -252,34 +252,38 @@ const recording = {
  *
  * @see {@link https://github.com/EpicenterHQ/epicenter/blob/main/specs/20260312T170000-whispering-workspace-polish-and-migration.md | Spec Decision 2}
  */
-const transcription = {
-	'transcription.service': defineKv(
-		field.select(TRANSCRIPTION_SERVICE_IDS),
-		() => 'moonshine' as const,
-	),
-	'transcription.openai.model': defineKv(
-		field.string(),
-		() => PROVIDERS.OpenAI.defaultModel as string,
-	),
-	'transcription.groq.model': defineKv(
-		field.string(),
-		() => PROVIDERS.Groq.defaultModel as string,
-	),
-	'transcription.elevenlabs.model': defineKv(
-		field.string(),
-		() => PROVIDERS.ElevenLabs.defaultModel as string,
-	),
-	'transcription.deepgram.model': defineKv(
-		field.string(),
-		() => PROVIDERS.Deepgram.defaultModel as string,
-	),
-	'transcription.mistral.model': defineKv(
-		field.string(),
-		() => PROVIDERS.Mistral.defaultModel as string,
-	),
-	'transcription.language': defineKv(field.string(), () => 'auto'),
-	'transcription.prompt': defineKv(field.string(), () => ''),
-} as const;
+function defineTranscriptionSettings(
+	defaultTranscriptionService: TranscriptionServiceId,
+) {
+	return {
+		'transcription.service': defineKv(
+			field.select(TRANSCRIPTION_SERVICE_IDS),
+			() => defaultTranscriptionService,
+		),
+		'transcription.openai.model': defineKv(
+			field.string(),
+			() => PROVIDERS.OpenAI.defaultModel as string,
+		),
+		'transcription.groq.model': defineKv(
+			field.string(),
+			() => PROVIDERS.Groq.defaultModel as string,
+		),
+		'transcription.elevenlabs.model': defineKv(
+			field.string(),
+			() => PROVIDERS.ElevenLabs.defaultModel as string,
+		),
+		'transcription.deepgram.model': defineKv(
+			field.string(),
+			() => PROVIDERS.Deepgram.defaultModel as string,
+		),
+		'transcription.mistral.model': defineKv(
+			field.string(),
+			() => PROVIDERS.Mistral.defaultModel as string,
+		),
+		'transcription.language': defineKv(field.string(), () => 'auto'),
+		'transcription.prompt': defineKv(field.string(), () => ''),
+	} as const;
+}
 
 /**
  * Currently active transformation, used as the dictation default.
@@ -330,7 +334,13 @@ const shortcuts = {
 	),
 } as const;
 
-export function createWhispering() {
+type CreateWhisperingOptions = {
+	defaultTranscriptionService?: TranscriptionServiceId;
+};
+
+export function createWhispering({
+	defaultTranscriptionService = 'parakeet',
+}: CreateWhisperingOptions = {}) {
 	/**
 	 * Whispering KV schemas: ~40 entries for synced preferences. Defined locally
 	 * so the raw schema map is not a module-level export. Callers reach the
@@ -343,7 +353,7 @@ export function createWhispering() {
 		...ui,
 		...dataRetention,
 		...recording,
-		...transcription,
+		...defineTranscriptionSettings(defaultTranscriptionService),
 		...transformation,
 		...analytics,
 		...shortcuts,
@@ -351,6 +361,8 @@ export function createWhispering() {
 	type SettingKey = keyof typeof kvDefinitions & string;
 
 	const workspace = createWorkspace({
+		// Workspace/Y.Doc identity, not an OAuth client id or Tauri bundle id.
+		// This keys local storage and cloud rooms; change only with a data migration.
 		id: 'epicenter-whispering',
 		tables: {
 			recordings,

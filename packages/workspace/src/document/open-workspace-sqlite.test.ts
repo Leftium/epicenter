@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import type { ProjectDir } from '../shared/types.js';
+import type { EpicenterRoot } from '../shared/types.js';
 import { openWorkspaceSqlite } from './open-workspace-sqlite.js';
 import { sqlitePath } from './workspace-paths.js';
 
@@ -36,7 +36,7 @@ describe('openWorkspaceSqlite', () => {
 		writer.exec("INSERT INTO notes (body) VALUES ('hello')");
 		writer.close();
 
-		const db = openWorkspaceSqlite(workdir as ProjectDir, workspaceId);
+		const db = openWorkspaceSqlite(workdir as EpicenterRoot, workspaceId);
 		try {
 			const row = db.query('SELECT body FROM notes WHERE id = 1').get() as {
 				body: string;

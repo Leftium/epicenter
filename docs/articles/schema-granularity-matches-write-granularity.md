@@ -69,21 +69,22 @@ If Alice edits `title` and Bob edits `views` at the same time, one of their chan
 Here's how it looks in practice:
 
 ```typescript
-import { column, defineTable } from '@epicenter/workspace';
+import { field } from '@epicenter/field';
+import { defineTable } from '@epicenter/workspace';
 import Type from 'typebox';
 
 const posts = defineTable(
-	{ id: column.string(), title: column.string() },
+	{ id: field.string(), title: field.string() },
 	{
-		id: column.string(),
-		title: column.string(),
-		views: column.number(),
+		id: field.string(),
+		title: field.string(),
+		views: field.number(),
 	},
 	{
-		id: column.string(),
-		title: column.string(),
-		views: column.number(),
-		tags: column.json(Type.Array(Type.String())),
+		id: field.string(),
+		title: field.string(),
+		views: field.number(),
+		tags: field.json(Type.Array(Type.String())),
 	},
 ).migrate(({ value, version }) => {
 	switch (version) {
@@ -101,13 +102,14 @@ Each version is a positional argument to `defineTable(...)`. The `.migrate()` fu
 The same principle applies to key-value storage, though KV values don't carry a stored version stamp. They're validate-or-default: if the stored value fails validation, the entry falls back to the factory default:
 
 ```typescript
-import { column, defineKv } from '@epicenter/workspace';
+import { field } from '@epicenter/field';
+import { defineKv } from '@epicenter/workspace';
 import Type from 'typebox';
 
 const theme = defineKv(
 	Type.Object({
 		mode: Type.Union([Type.Literal('light'), Type.Literal('dark'), Type.Literal('system')]),
-		accentColor: column.string(),
+		accentColor: field.string(),
 	}),
 	() => ({ mode: 'light' as const, accentColor: '#3b82f6' }),
 );

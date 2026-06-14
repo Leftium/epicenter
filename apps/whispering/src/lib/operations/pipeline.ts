@@ -1,3 +1,5 @@
+import { InstantString } from '@epicenter/field';
+import { IanaTimeZone } from '@epicenter/workspace';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { goto } from '$app/navigation';
 import {
@@ -42,7 +44,7 @@ export async function processRecordingPipeline({
 	durationMs,
 	deliverySource = 'recording',
 }: PipelineInput) {
-	const now = new Date().toISOString();
+	const now = InstantString.now();
 	const recordingId =
 		source.kind === 'artifact' ? source.artifact.id : source.recordingId;
 
@@ -50,7 +52,7 @@ export async function processRecordingPipeline({
 		id: recordingId,
 		title: '',
 		recordedAt: now,
-		updatedAt: now,
+		recordedAtZone: IanaTimeZone.current(),
 		transcript: '',
 		duration: durationMs,
 		transcription: null,
@@ -69,7 +71,7 @@ export async function processRecordingPipeline({
 			recordings.update(recordingId, {
 				transcription: {
 					status: 'failed',
-					completedAt: new Date().toISOString(),
+					completedAt: InstantString.now(),
 					error: extractErrorMessage(saveError),
 				},
 			});

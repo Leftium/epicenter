@@ -54,26 +54,27 @@ migrate return value: the version is the argument position (1-indexed).
 Multi-version tables require `.migrate(({ value, version }) => ...)`:
 
 ```typescript
-import { column, defineTable } from '@epicenter/workspace';
+import { field } from '@epicenter/field';
+import { defineTable } from '@epicenter/workspace';
 
 const posts = defineTable(
 	// V1: original schema
 	{
-		id: column.string(),
-		title: column.string(),
+		id: field.string(),
+		title: field.string(),
 	},
 	// V2: added views counter
 	{
-		id: column.string(),
-		title: column.string(),
-		views: column.number(),
+		id: field.string(),
+		title: field.string(),
+		views: field.number(),
 	},
 	// V3: added tags
 	{
-		id: column.string(),
-		title: column.string(),
-		views: column.number(),
-		tags: column.json(Type.Array(Type.String())),
+		id: field.string(),
+		title: field.string(),
+		views: field.number(),
+		tags: field.json(Type.Array(Type.String())),
 	},
 ).migrate(({ value, version }) => {
 	// `value` is narrowed to the matching version's user-facing columns.
@@ -166,10 +167,11 @@ The trade-off is you must handle all versions yourself, but TypeScript helps ens
 KV stores don't use versioning or migration. They use validate-or-default semantics: if stored data fails validation, it falls back to the default value. The default is a factory (`() => value`) so every consumer gets a fresh instance:
 
 ```typescript
-import { column, defineKv } from '@epicenter/workspace';
+import { field } from '@epicenter/field';
+import { defineKv } from '@epicenter/workspace';
 
-const fontSize = defineKv(column.number(), () => 14);
-const mode = defineKv(column.enum(['light', 'dark', 'system']), () => 'light' as const);
+const fontSize = defineKv(field.number(), () => 14);
+const mode = defineKv(field.select(['light', 'dark', 'system']), () => 'light' as const);
 
 // Usage
 kv['fontSize'].set(16);

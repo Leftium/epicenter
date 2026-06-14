@@ -9,18 +9,16 @@ Mount names come from the `Mount.name` values default-exported by `epicenter.con
 ```ts
 import {
   connectDaemonActions,
-  findProjectRoot,
-  openSqliteReader,
+  findEpicenterRoot,
+  openWorkspaceSqlite,
 } from "@epicenter/workspace/node";
 import type { FujiActions } from "@epicenter/fuji";
-import { join } from "node:path";
 
-const projectDir = findProjectRoot();
+// the Epicenter root is the folder that holds epicenter.config.ts
+const epicenterRoot = findEpicenterRoot();
 
-// reads: open the materializer read-only
-const db = openSqliteReader({
-  filePath: join(projectDir, ".epicenter/sqlite.db"),
-});
+// reads: open the guid-keyed materializer read-only
+const db = openWorkspaceSqlite(epicenterRoot, "epicenter-fuji");
 const urgent = db
   .query(
     "SELECT * FROM entries WHERE EXISTS (SELECT 1 FROM json_each(entries.tags) WHERE value = ?)",
@@ -30,7 +28,7 @@ const urgent = db
 // writes: typed proxy over unix socket to the daemon
 const fuji = await connectDaemonActions<FujiActions>({
   mount: "fuji",
-  projectDir,
+  epicenterRoot,
 });
 for (const note of urgent) {
   await fuji.entries_update({ id: note.id, tags: ["triaged"] });
@@ -43,12 +41,12 @@ That is the whole API. No machine auth in the script process, no encryption setu
 
 ## Reads: the SQLite materializer
 
-Use `openSqliteReader({ filePath })` when a mount overrides its SQLite path, as
-the Fuji example does with `.epicenter/sqlite.db`. `openWorkspaceSqlite(projectDir,
-workspaceId)` only opens the convention path
-`.epicenter/sqlite/<workspaceId>.db`; it does not inspect `epicenter.config.ts` and
-is not override-aware. `.epicenter/` is generated project data, not a source layout
-or route registry. The daemon's `attachBunSqliteMaterializer` keeps that file fresh;
+`openWorkspaceSqlite(epicenterRoot, workspaceId)` opens the guid-keyed
+convention path `.epicenter/sqlite/<workspaceId>.db` read-only; first-party
+mounts like Fuji write there. A mount that passed a custom `filePath` to its
+materializer needs `openSqliteReader({ filePath })` with that same explicit
+path. Neither helper inspects `epicenter.config.ts`. `.epicenter/` is generated
+machine state, not a source layout or route registry. The daemon's `attachBunSqliteMaterializer` keeps that file fresh;
 the script opens it read-only with `PRAGMA query_only = 1`, so an errant `INSERT`
 fails at the driver instead of silently diverging.
 
@@ -61,7 +59,7 @@ npm package).
 
 ## Writes: typed invoke through the daemon
 
-`connectDaemonActions<TActions>({ mount, projectDir })` returns a typed proxy. `mount` is the mount name (`'fuji'` for the Fuji example); the proxy translates `fuji.entries_update({ ... })` into a `POST /run` over the daemon's Unix socket in the OS runtime directory. The daemon validates the input against the action's declared schema (invalid input comes back as a usage error), invokes the action in-process against the live Y.Doc, and returns a JSON `Result<T>`.
+`connectDaemonActions<TActions>({ mount, epicenterRoot })` returns a typed proxy. `mount` is the mount name (`'fuji'` for the Fuji example); the proxy translates `fuji.entries_update({ ... })` into a `POST /run` over the daemon's Unix socket in the OS runtime directory. The daemon validates the input against the action's declared schema (invalid input comes back as a usage error), invokes the action in-process against the live Y.Doc, and returns a JSON `Result<T>`.
 
 The mount name comes from each `Mount.name` in the `Mount[]` default-exported by `epicenter.config.ts`. App factories like `fuji()` return a mount whose name is `fuji`.
 
@@ -70,7 +68,7 @@ Two consequences fall out:
 - **Strong read-after-write happens inside the action.** If a script wants the side effect to be visible to its next read, it should await the action result rather than reading SQLite again immediately. The action handler sees fresh in-memory state; the materializer is eventually consistent.
 - **Type safety is opt-in.** `TActions` is the registry type the app's npm package exports (`FujiActions`, `HoneycrispActions`, etc.). The runtime never imports app code into the script process; only the type information flows across.
 
-`projectDir` defaults to `findProjectRoot()`, which walks up from `process.cwd()` looking for `epicenter.config.ts`. Pass an explicit `projectDir` to opt out (cron jobs that run from `/` should).
+`epicenterRoot` is your Epicenter folder (the folder that holds `epicenter.config.ts`). It defaults to `findEpicenterRoot()`, which walks up from `process.cwd()` looking for that config. Pass an explicit `epicenterRoot` to opt out (cron jobs that run from `/` should).
 
 ## What if the daemon is not running?
 

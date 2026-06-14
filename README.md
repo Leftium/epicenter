@@ -66,12 +66,13 @@ The hard problem with local-first apps is synchronization. If each device has it
 Alongside typed tables, local persistence, collaboration hooks, and validated actions, the package gives apps materializers, the writers that project state to disk.
 
 ```typescript
-import { column, createWorkspace, defineTable } from '@epicenter/workspace';
+import { field } from '@epicenter/field';
+import { createWorkspace, defineTable } from '@epicenter/workspace';
 
 const notes = defineTable({
-  id: column.string(),
-  title: column.string(),
-  body: column.string(),
+  id: field.string(),
+  title: field.string(),
+  body: field.string(),
 });
 
 const workspace = createWorkspace({

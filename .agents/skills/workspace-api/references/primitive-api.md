@@ -62,7 +62,13 @@ The builder is a plain function. For a cached, refcounted fan-out surface (share
 For the app's top-level workspace doc, never call `new Y.Doc` directly. Use `createWorkspace`:
 
 ```typescript
-import { createWorkspace, defineActions, defineWorkspace } from '@epicenter/workspace';
+import { field } from '@epicenter/field';
+import {
+  createWorkspace,
+  defineActions,
+  defineKv,
+  defineWorkspace,
+} from '@epicenter/workspace';
 import { foldersTable, notesTable } from './definition';
 
 // Encrypted app: pass a `keyring` accessor.
@@ -89,7 +95,7 @@ export function createWhisperingWorkspace() {
     id: 'whispering',
     tables: { recordings },
     kv: {
-      'ui.alwaysOnTop': defineKv(column.boolean(), () => false),
+      'ui.alwaysOnTop': defineKv(field.boolean(), () => false),
     },
   });
 

@@ -9,8 +9,8 @@ export default defineConfig({
 	output: 'static', // Keep static for now, can change to 'server' if needed
 	vite: {
 		plugins: [tailwindcss()],
-		ssr: {
-			noExternal: ['bits-ui'],
+		resolve: {
+			noExternal: ['bits-ui', 'runed', 'svelte-toolbelt'],
 		},
 	},
 	integrations: [svelte()],

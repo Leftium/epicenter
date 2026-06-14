@@ -13,8 +13,7 @@
  * Foreground by design; backgrounding is the user's job.
  */
 
-import { existsSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { realpathSync } from 'node:fs';
 import type { SyncAuthClient } from '@epicenter/auth';
 import {
 	createMachineAuthClient,
@@ -51,11 +50,12 @@ function logSyncStatus(message: string): void {
 
 type UpOptions = {
 	/**
-	 * The project root. The yargs `-C` option resolves discovery (walking up
-	 * to the nearest `epicenter.config.ts`) before the handler runs; direct
-	 * callers pass the root they already know.
+	 * The Epicenter root (the folder that holds `epicenter.config.ts`,
+	 * whose direct children are the mount projections). The yargs `-C` option
+	 * resolves discovery (walking up to the nearest `epicenter.config.ts`) before
+	 * the handler runs; direct callers pass the root they already know.
 	 */
-	projectDir: string;
+	epicenterRoot: string;
 	quiet: boolean;
 	cliVersion?: string;
 	/**
@@ -89,15 +89,14 @@ type UpHandle = {
 
 /**
  * Daemon body. Opens every configured mount (the project must already have an
- * `epicenter.config.ts`; see `epicenter init`), ensures the `.epicenter`
- * cache gitignore, binds the IPC socket, and returns a handle. The yargs
- * `handler` calls this,
+ * `epicenter.config.ts`; see `epicenter init`), binds the IPC socket, and
+ * returns a handle. The yargs `handler` calls this,
  * prints the operator-facing banner, installs SIGINT/SIGTERM, and parks the
  * process; tests call it directly and assert on the returned handle.
  *
- * A SQLite daemon lease claims ownership before any mount opens. After that,
- * `openProject` imports `epicenter.config.ts` and opens every configured
- * mount, and `startDaemonServer` binds the socket.
+ * A SQLite daemon lease serializes startup before any mount opens. After that,
+ * `openProject` imports `epicenter.config.ts`, claims the Epicenter folder,
+ * opens every configured mount, and `startDaemonServer` binds the socket.
  */
 export async function runUp(
 	options: UpOptions,
@@ -110,15 +109,15 @@ export async function runUp(
 		| MachineAuthStorageError
 	>
 > {
-	const projectDir = realpathSync(options.projectDir);
+	const epicenterRoot = realpathSync(options.epicenterRoot);
 
-	const leaseResult = claimDaemonLease(projectDir);
+	const leaseResult = claimDaemonLease(epicenterRoot);
 	if (leaseResult.error !== null) return leaseResult;
 	const lease = leaseResult.data;
 
 	const metadata: DaemonMetadata = {
 		pid: process.pid,
-		dir: projectDir,
+		dir: epicenterRoot,
 		startedAt: new Date().toISOString(),
 		cliVersion: options.cliVersion ?? CLI_VERSION,
 		discoveredAt: new Date().toISOString(),
@@ -138,10 +137,9 @@ export async function runUp(
 	const auth = authResult.data;
 	stack.defer(() => auth[Symbol.dispose]());
 
-	const startResult = await openProject({ projectDir, auth });
+	const startResult = await openProject({ epicenterRoot, auth });
 	if (startResult.error) return startResult;
 	const mounts = startResult.data;
-	ensureProjectGitignore(projectDir);
 	stack.defer(async () => {
 		await Promise.allSettled(
 			mounts.map((entry) => entry.runtime[Symbol.asyncDispose]()),
@@ -154,11 +152,11 @@ export async function runUp(
 	stack.defer(() => daemonServer.close());
 
 	const metadataResult = trySync({
-		try: () => writeMetadata(projectDir, metadata),
+		try: () => writeMetadata(epicenterRoot, metadata),
 		catch: (cause) => StartupError.MetadataWriteFailed({ cause }),
 	});
 	if (metadataResult.error) return metadataResult;
-	stack.defer(() => unlinkMetadata(projectDir));
+	stack.defer(() => unlinkMetadata(epicenterRoot));
 
 	const teardownStack = stack.move();
 	return Ok({
@@ -189,7 +187,7 @@ export const upCommand = cmd({
 	},
 	handler: async (argv) => {
 		const options: UpOptions = {
-			projectDir: argv.C,
+			epicenterRoot: argv.C,
 			quiet: argv.quiet,
 		};
 
@@ -221,29 +219,6 @@ export const upCommand = cmd({
 		process.stdin.resume();
 	},
 });
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Ensure `.epicenter/` exists (0o700) and is fully gitignored. The attach
- * primitives (Yjs log, SQLite and markdown materializers) create their own
- * data dirs on demand, so the daemon's only filesystem provisioning is the
- * cache-dir ignore rule. `*` ignores everything the runtime ever writes,
- * including this file, so there is no directory list to keep in sync.
- * Project creation itself (writing `epicenter.config.ts`) is `epicenter
- * init`; `daemon up` on a directory without a config fails with a hint
- * instead of silently scaffolding a project.
- */
-function ensureProjectGitignore(projectDir: string): void {
-	const projectDataDir = join(projectDir, '.epicenter');
-	mkdirSync(projectDataDir, { recursive: true, mode: 0o700 });
-	const gitignorePath = join(projectDataDir, '.gitignore');
-	if (!existsSync(gitignorePath)) {
-		writeFileSync(gitignorePath, '*\n', { mode: 0o600 });
-	}
-}
 
 function printPeersSnapshot(entry: StartedMount): void {
 	const devices = entry.runtime.collaboration.devices.list();

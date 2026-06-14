@@ -1,9 +1,9 @@
 /**
  * Reactive transformation state backed by Yjs workspace tables.
  *
- * A transformation is a single self-contained row: title, description,
- * timestamps, and the fixed three-phase shape (`preReplacements`, `prompt`,
- * `postReplacements`). There is no separate steps table.
+ * A transformation is a single self-contained row: title, description, and the
+ * fixed three-phase shape (`preReplacements`, `prompt`, `postReplacements`).
+ * There is no separate steps table.
  *
  * @example
  * ```typescript
@@ -122,13 +122,10 @@ if (import.meta.hot) {
  * ```
  */
 export function generateDefaultTransformation(): Transformation {
-	const now = new Date().toISOString();
 	return {
 		id: nanoid(),
 		title: '',
 		description: '',
-		createdAt: now,
-		updatedAt: now,
 		preReplacements: [],
 		prompt: null,
 		postReplacements: [],
@@ -149,15 +146,12 @@ export function transformationHasWork(transformation: Transformation): boolean {
 }
 
 /**
- * Save a transformation, stamping `updatedAt`. Works for both create and update
- * since the whole fixed-phase shape lives on the row itself, there is no child
- * steps table to reconcile.
+ * Save a transformation. Works for both create and update since the whole
+ * fixed-phase shape lives on the row itself, there is no child steps table to
+ * reconcile.
  *
  * Callers should pass a `$state.snapshot()` value. This function takes plain data.
  */
 export function saveTransformation(transformation: Transformation) {
-	transformations.set({
-		...transformation,
-		updatedAt: new Date().toISOString(),
-	});
+	transformations.set(transformation);
 }

@@ -26,7 +26,7 @@ Skip DeepWiki for Epicenter schema, action, migration, and attachment convention
 - `yjs`: Yjs CRDT patterns and shared types
 - `svelte`: reactive wrappers such as `fromTable` and `fromKv`, plus commit-on-blur workspace inputs
 - `attach-primitive`: the full contract and invariants every `attach*` function must follow
-- `typebox`: TypeBox primitives used by `column.*`, `defineKv`, and action input schemas
+- `typebox`: TypeBox primitives used by `field.*`, `defineKv`, and action input schemas
 
 ## When To Apply This Skill
 
@@ -45,7 +45,7 @@ Use this skill when you are:
 
 - Workspace action `defineQuery` / `defineMutation` factories are not Whispering `$lib/rpc` adapters from `wellcrafted/query`. Do not apply workspace action input-schema rules to Whispering RPC modules.
 - `_v` is library-managed. Never declare it as a column, never set it on a write, never read it off a row. Single-version tables drop the versioning surface entirely; multi-version tables expose it only inside the `migrate` function as `({ value, version })`.
-- Columns are TypeBox schemas. Prefer the `column.*` sugar (`column.string`, `column.number`, `column.boolean`, `column.enum`, `column.json`, `column.nullable`, `column.dateTime`, `column.ianaTimeZone`); raw `Type.X()` is allowed and the `FlatJsonTSchema` constraint enforces SQLite-mappable shapes either way.
+- Columns are TypeBox schemas. Prefer the `field.*` builders from `@epicenter/field` (`field.string`, `field.number`, `field.boolean`, `field.select`, `field.json`, `field.datetime`) plus the standalone `nullable` wrapper from `@epicenter/workspace` for the emptiness axis (an IANA timezone is just `field.string<IanaTimeZone>()`, no bespoke builder); raw `Type.X()` is allowed and the `FlatJsonTSchema` constraint enforces SQLite-mappable shapes either way.
 - Derive row types with `InferTableRow<typeof tableDefinition>` in the same module that defines the table. Consumers import the type from the workspace definition module.
 - Do not re-derive row types from runtime table methods or relay them through state files.
 - KV stores use `defineKv(schema, defaultValue)` where `defaultValue` is a **factory** `() => Static<S>`. Prefer one scalar per dot-namespaced key unless the value is a true atomic object.

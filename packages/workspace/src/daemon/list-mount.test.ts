@@ -9,7 +9,12 @@
 import { describe, expect, test } from 'bun:test';
 import type { Result } from 'wellcrafted/result';
 import { expectOk } from 'wellcrafted/testing';
-import { type ActionManifest, defineQuery } from '../shared/actions.js';
+import type { PresenceDevice } from '../document/presence-protocol.js';
+import {
+	type ActionManifest,
+	type ActionRegistry,
+	defineQuery,
+} from '../shared/actions.js';
 import { joinDaemonActionPath, parseDaemonActionPath } from './action-path.js';
 import { buildDaemonApp } from './app.js';
 import type { DaemonServedMount } from './types.js';
@@ -17,22 +22,27 @@ import type { DaemonServedMount } from './types.js';
 function makeMount({
 	mount,
 	actions,
+	collaboration = true,
+	devices = [],
 }: {
 	mount: string;
-	actions: DaemonServedMount['runtime']['collaboration']['actions'];
+	actions: ActionRegistry;
+	collaboration?: boolean;
+	devices?: PresenceDevice[];
 }): DaemonServedMount {
+	const runtime: DaemonServedMount['runtime'] = { actions };
+	if (collaboration) {
+		runtime.collaboration = {
+			devices: {
+				list: () => devices,
+			},
+			status: { phase: 'connected' },
+			dispatch: async () => ({ data: null, error: null }) as never,
+		};
+	}
 	return {
 		mount,
-		runtime: {
-			collaboration: {
-				actions,
-				devices: {
-					list: () => [],
-				},
-				status: { phase: 'connected' },
-				dispatch: async () => ({ data: null, error: null }) as never,
-			},
-		},
+		runtime,
 	};
 }
 
@@ -79,7 +89,7 @@ describe('/list route', () => {
 		expect(manifest['demo.counter_get']?.description).toBe('Read the counter');
 	});
 
-	test('returns an empty manifest when the collaboration has no actions', async () => {
+	test('returns an empty manifest when the mount has no actions', async () => {
 		const res = await buildDaemonApp([
 			makeMount({ mount: 'demo', actions: {} }),
 		]).request('/list', { method: 'POST' });
@@ -90,7 +100,28 @@ describe('/list route', () => {
 		expect(manifest).toEqual({});
 	});
 
-	test('prefixes actions from every mount', async () => {
+	test('returns actions from a mount without collaboration', async () => {
+		const res = await buildDaemonApp([
+			makeMount({
+				mount: 'mirror',
+				collaboration: false,
+				actions: {
+					sync: defineQuery({
+						description: 'Sync local mirror',
+						handler: () => null,
+					}),
+				},
+			}),
+		]).request('/list', { method: 'POST' });
+
+		const manifest = expectOk(
+			(await res.json()) as Result<ActionManifest, never>,
+		);
+		expect(Object.keys(manifest)).toEqual(['mirror.sync']);
+		expect(manifest['mirror.sync']?.description).toBe('Sync local mirror');
+	});
+
+	test('prefixes actions from collaborative and local-only mounts', async () => {
 		const res = await buildDaemonApp([
 			makeMount({
 				mount: 'notes',
@@ -100,6 +131,7 @@ describe('/list route', () => {
 			}),
 			makeMount({
 				mount: 'tasks',
+				collaboration: false,
 				actions: {
 					tasks_list: defineQuery({ handler: () => [] }),
 				},
@@ -113,5 +145,32 @@ describe('/list route', () => {
 			'notes.notes_add',
 			'tasks.tasks_list',
 		]);
+	});
+});
+
+describe('/peers route', () => {
+	test('skips mounts without collaboration', async () => {
+		const res = await buildDaemonApp([
+			makeMount({
+				mount: 'mirror',
+				collaboration: false,
+				actions: {
+					sync: defineQuery({ handler: () => null }),
+				},
+			}),
+			makeMount({
+				mount: 'notes',
+				actions: {},
+				devices: [{ deviceId: 'laptop', connectedAt: 1, actions: {} }],
+			}),
+		]).request('/peers', { method: 'POST' });
+
+		const peers = expectOk(
+			(await res.json()) as Result<
+				Array<{ mount: string; deviceId: string }>,
+				never
+			>,
+		);
+		expect(peers).toEqual([{ mount: 'notes', deviceId: 'laptop' }]);
 	});
 });

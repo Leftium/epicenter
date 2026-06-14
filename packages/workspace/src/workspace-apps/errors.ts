@@ -1,12 +1,15 @@
 /**
  * Structured errors for mount registration and startup.
  *
- * Mount-name validation surfaces `MountRejected` before any mount opens.
- * A bootstrap guard surfaces `MountFolderNotEmpty` when a not-yet-established
+ * Mount-name validation surfaces `MountRejected` before any mount opens. A
+ * bootstrap guard surfaces `MountFolderNotEmpty` when a not-yet-established
  * Epicenter folder already has a populated mount folder. The namespace claim
  * surfaces `EpicenterFolderClaimFailed` before any mount opens. Startup wraps
  * any throw from a mount's `open(ctx)` in `MountOpenFailed` so callers can
  * dispose siblings on failure.
+ *
+ * A mount that returns `inactive(reason)` is not an error: it is reported as an
+ * inactive mount, not raised here.
  */
 
 import {
@@ -24,10 +27,6 @@ export const WorkspaceAppError = defineErrors({
 				: `Invalid mount name "${mount}" in epicenter.config.ts: use letters, numbers, "_" or "-", and avoid reserved object keys.`,
 		mount,
 		reason,
-	}),
-	WorkspaceAuthSignedOut: () => ({
-		message:
-			'Cannot open mounts while machine auth is signed out. Run `epicenter auth login` first.',
 	}),
 	MountFolderNotEmpty: ({ mount, path }: { mount: string; path: string }) => ({
 		message:

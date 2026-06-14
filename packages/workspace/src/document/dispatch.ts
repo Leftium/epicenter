@@ -32,9 +32,6 @@ import {
 // PUBLIC TYPES
 // ════════════════════════════════════════════════════════════════════════════
 
-// `LiveDevice` is now `PresenceDevice` from `./presence-protocol.js`: the
-// wire schema is the single source of truth for the type. See that module.
-
 /**
  * Per-call options. Required: `to`, `action`. Optional: `input` (omit
  * for no-argument actions; `JSON.stringify` drops `undefined` keys, so

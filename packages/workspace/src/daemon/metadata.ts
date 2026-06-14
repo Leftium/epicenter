@@ -73,6 +73,10 @@ export function unlinkMetadata(dir: string): void {
 	}
 }
 
+/**
+ * Enumerate every running daemon by scanning the runtime dir for its
+ * `.meta.json` sidecars. Skips files that fail to parse.
+ */
 export function enumerateDaemons(): DaemonMetadata[] {
 	const root = runtimeDir();
 	if (!existsSync(root)) return [];

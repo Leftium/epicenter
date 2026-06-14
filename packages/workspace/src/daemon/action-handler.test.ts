@@ -31,26 +31,29 @@ function fakeEntry({
 	actions = {
 		tabs_list: defineQuery({ handler: () => [] }),
 	},
+	collaboration = true,
 	syncStatus = { phase: 'connected' },
 	dispatch = (async () => ({ data: null, error: null })) as FakeDispatch,
 }: {
 	mount?: string;
 	actions?: ActionRegistry;
+	collaboration?: boolean;
 	syncStatus?: SyncStatus;
 	dispatch?: FakeDispatch;
 } = {}): DaemonServedMount {
+	const runtime: DaemonServedMount['runtime'] = { actions };
+	if (collaboration) {
+		runtime.collaboration = {
+			status: syncStatus,
+			devices: {
+				list: () => [],
+			},
+			dispatch,
+		};
+	}
 	return {
 		mount,
-		runtime: {
-			collaboration: {
-				actions,
-				status: syncStatus,
-				devices: {
-					list: () => [],
-				},
-				dispatch,
-			},
-		},
+		runtime,
 	};
 }
 
@@ -166,6 +169,21 @@ describe('executeRun peer target', () => {
 		expectOk(result);
 		expect(invokedAction).toBe('peer_only_action');
 	});
+
+	test('rejects peer dispatch for a local-only mount', async () => {
+		const result = await executeRun([fakeEntry({ collaboration: false })], {
+			actionPath: 'demo.tabs_list',
+			input: undefined,
+			peer: { to: 'mac', waitMs: 25 },
+		});
+
+		const error = expectErr(result);
+		expect(error.name).toBe('UsageError');
+		if (error.name !== 'UsageError') {
+			throw new Error(`expected UsageError, got ${error.name}`);
+		}
+		expect(error.message).toContain('does not expose collaboration');
+	});
 });
 
 describe('executeRun mount-prefixed routing', () => {
@@ -249,5 +267,24 @@ describe('executeRun mount-prefixed routing', () => {
 		// A bad input is the caller's mistake (exit 1), not a handler crash (exit 2).
 		expect(error.name).toBe('UsageError');
 		expect(error.message).toContain('maxDeletes');
+	});
+
+	test('local action execution does not require collaboration', async () => {
+		const entry = fakeEntry({
+			collaboration: false,
+			mount: 'mirror',
+			actions: {
+				sync: defineMutation({
+					handler: () => ({ imported: 3 }),
+				}),
+			},
+		});
+
+		const result = await executeRun([entry], {
+			actionPath: 'mirror.sync',
+			input: {},
+		});
+
+		expect(expectOk(result)).toEqual({ imported: 3 });
 	});
 });

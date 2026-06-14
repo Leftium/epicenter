@@ -2,8 +2,9 @@
  * Daemon-side runtime types.
  *
  * `DaemonRuntime` is the contract every opened mount returns: async dispose
- * plus the hosted `Collaboration<TActions>` that owns identity, actions, sync,
- * and the live-device surface.
+ * plus the local action registry the daemon serves. Collaborative mounts may
+ * also expose a hosted `Collaboration<TActions>` for identity, sync, peer
+ * presence, and peer dispatch.
  *
  * `DaemonServedMount` is the narrowed mount-handler contract for the socket
  * app. `StartedMount` is the lifecycle-owning mount shape opened from a
@@ -19,13 +20,10 @@ import type { ActionRegistry } from '../shared/actions.js';
 import type { MaybePromise } from '../shared/types.js';
 
 /**
- * Collaboration fields the daemon socket app reads while serving `/peers`,
- * `/list`, and `/run`.
+ * Collaboration fields the daemon socket app reads while serving `/peers` and
+ * peer `/run`.
  */
-type DaemonServedCollaboration<
-	TActions extends ActionRegistry = ActionRegistry,
-> = {
-	actions: TActions;
+type DaemonServedCollaboration = {
 	devices: {
 		list(): PresenceDevice[];
 	};
@@ -44,7 +42,8 @@ export type DaemonServedMount<
 > = {
 	mount: string;
 	runtime: {
-		collaboration: DaemonServedCollaboration<TActions>;
+		actions: TActions;
+		collaboration?: DaemonServedCollaboration;
 	};
 };
 
@@ -56,10 +55,18 @@ export type DaemonRuntime<TActions extends ActionRegistry = ActionRegistry> = {
 	[Symbol.asyncDispose](): MaybePromise<void>;
 
 	/**
-	 * The hosted collaboration. Identity, action registry, sync status, and
-	 * the live-device surface for cross-mount dispatch all live here.
+	 * The action registry this daemon serves locally. When `collaboration` is
+	 * present, this must be the same registry handed to `openCollaboration`, so
+	 * local runs, peer manifests, and inbound peer dispatch stay in lockstep.
 	 */
-	readonly collaboration: Collaboration<TActions>;
+	readonly actions: TActions;
+
+	/**
+	 * Optional hosted collaboration. Identity, sync status, live-device
+	 * presence, and peer dispatch live here when the mount participates in a
+	 * collaborative Yjs workspace.
+	 */
+	readonly collaboration?: Collaboration<TActions>;
 };
 
 /** One configured mount runtime hosted by the daemon. */

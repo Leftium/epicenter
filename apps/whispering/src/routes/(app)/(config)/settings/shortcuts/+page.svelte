@@ -81,9 +81,9 @@
 			</div>
 			<SectionHeader.Description>
 				{#if tauri}
-					System-wide shortcuts that trigger from anywhere, even when Whispering
-					is not focused. The Fn key, modifier-only holds, and single keys all
-					work.
+					System-wide gestures that trigger from anywhere, even when Whispering
+					is not focused. Hold the Fn key or a modifier chord; the recording
+					gestures resolve a hold against a hold-plus-key automatically.
 				{:else}
 					Shortcuts that trigger while the Whispering tab is focused.
 				{/if}

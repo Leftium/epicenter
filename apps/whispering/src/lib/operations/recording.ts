@@ -125,36 +125,53 @@ export function toggleManualRecording() {
 }
 
 export async function cancelManualRecording() {
-	const loading = report.loading({
-		title: '⏸️ Canceling recording...',
-		description: 'Cleaning up recording session...',
-	});
+	// Cancel aborts whichever capture is live, without touching `recording.mode`:
+	// the chosen input mode (manual vs VAD) is a deliberate preference, not
+	// something a cancel keystroke should flip, so cancelling in VAD mode leaves
+	// you in VAD mode, idle and ready to listen again. This is also the global
+	// cancel chord (Cmd + . on macOS), which the rdev hook observes on every
+	// system press without swallowing it, so when nothing is live it stays silent
+	// rather than toasting on an unrelated press.
 
+	// A manual recording is the live capture: discard it.
 	const { data, error } = await manualRecorder.cancelRecording();
-
 	if (error) {
-		loading.reject({ cause: error });
+		report.error({ title: 'Failed to cancel recording', cause: error });
+		return;
+	}
+	if (data.status === 'cancelled') {
+		sound.playSoundIfEnabled('manual-cancel');
+		report.success({
+			title: '✅ Recording cancelled',
+			description: 'Recording cancelled successfully',
+		});
+		log.info('Recording cancelled');
 		return;
 	}
 
-	switch (data.status) {
-		case 'no-recording': {
-			loading.resolve({
-				title: 'No active recording',
-				description: 'There is no recording in progress to cancel.',
+	// No manual recording, but a VAD session may be the live capture instead.
+	const isVadActive =
+		vadRecorder.state === 'LISTENING' ||
+		vadRecorder.state === 'SPEECH_DETECTED';
+	if (isVadActive) {
+		const { error: vadError } = await vadRecorder.stopActiveListening();
+		if (vadError) {
+			report.error({
+				title: 'Failed to cancel voice activated capture',
+				cause: vadError,
 			});
-			break;
+			return;
 		}
-		case 'cancelled': {
-			loading.resolve({
-				title: '✅ All Done!',
-				description: 'Recording cancelled successfully',
-			});
-			sound.playSoundIfEnabled('manual-cancel');
-			log.info('Recording cancelled');
-			break;
-		}
+		sound.playSoundIfEnabled('manual-cancel');
+		report.success({
+			title: '✅ Voice activated capture cancelled',
+			description: 'Voice activated capture cancelled successfully',
+		});
+		log.info('Voice activated capture cancelled');
+		return;
 	}
+
+	// Nothing live: silent no-op (see the note above).
 }
 
 export async function startVadRecording() {

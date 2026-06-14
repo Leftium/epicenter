@@ -50,6 +50,12 @@ function handleDeviceAcquisitionOutcome(
 	}
 }
 
+function isVadRecordingActive() {
+	return (
+		vadRecorder.state === 'LISTENING' || vadRecorder.state === 'SPEECH_DETECTED'
+	);
+}
+
 export async function startManualRecording() {
 	settings.set('recording.mode', 'manual');
 
@@ -156,10 +162,7 @@ export async function cancelRecording() {
 	// stopActiveListening call, same end state, mode left on `vad`). So cancel a
 	// live VAD session by stopping it, rather than cloning the teardown with a
 	// second toast and a manual-recording sound. Nothing live: silent no-op.
-	const isVadActive =
-		vadRecorder.state === 'LISTENING' ||
-		vadRecorder.state === 'SPEECH_DETECTED';
-	if (isVadActive) await stopVadRecording();
+	if (isVadRecordingActive()) await stopVadRecording();
 }
 
 export async function startVadRecording() {
@@ -222,14 +225,23 @@ export async function startVadRecording() {
 }
 
 export async function stopVadRecording() {
+	if (!isVadRecordingActive()) return;
+
 	log.info('Stopping voice activated capture');
 	const loading = report.loading({
 		title: '⏸️ Stopping voice activated capture...',
 		description: 'Finalizing your voice activated capture...',
 	});
-	const { error } = await vadRecorder.stopActiveListening();
+	const { data, error } = await vadRecorder.stopActiveListening();
 	if (error) {
 		loading.reject({ cause: error });
+		return;
+	}
+	if (data.status === 'idle') {
+		loading.resolve({
+			title: '🎙️ Voice activated capture stopped',
+			description: 'Your voice activated capture has been stopped.',
+		});
 		return;
 	}
 	loading.resolve({

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { Command } from '$lib/commands';
+	import { onDestroy } from 'svelte';
+	import { type Command, commands } from '$lib/commands';
 	import { report } from '$lib/report';
 	import type { Tauri } from '#platform/tauri';
 	import { syncGlobalShortcutsWithSettings } from '$routes/(app)/_layout-utils/register-commands';
@@ -7,6 +8,7 @@
 	import type { Key, KeyBinding, Modifier } from '$lib/tauri/commands';
 	import { os } from '#platform/os';
 	import {
+		bindingsOverlap,
 		isEmptyBinding,
 		keyBindingToLabel,
 		parseManualBinding,
@@ -64,18 +66,42 @@
 		await tauri.globalShortcuts.setCapturing(false);
 	}
 
-	// Reject reserved or unsafe gestures before saving. Returns true when the
+	// If the recorder is torn down mid-capture (route change, or the popover
+	// dismissed by unmount rather than by onOpenChange), nothing else exits
+	// capture mode, so Rust would stay capturing and silently swallow every
+	// global shortcut. Always leave capture on destroy.
+	onDestroy(() => {
+		if (isListening) void stopCapture();
+	});
+
+	// A gesture's keys must be unique to it. The matcher fires on exact set
+	// equality with no prefix resolution, so a gesture that contains (or is
+	// contained by) another would shadow it or be unreachable. Refuse the overlap
+	// and name the gesture it collides with.
+	function overlapReason(next: KeyBinding): string | null {
+		for (const other of commands) {
+			if (other.id === command.id) continue;
+			const otherBinding = deviceConfig.get(`shortcuts.global.${other.id}`);
+			if (!otherBinding || isEmptyBinding(otherBinding)) continue;
+			if (bindingsOverlap(next, otherBinding)) {
+				return `Those keys are already part of the "${other.title}" gesture (${keyBindingToLabel(otherBinding, os.isApple)}). Each global gesture needs its own keys, so a key used by one gesture cannot be part of another.`;
+			}
+		}
+		return null;
+	}
+
+	// Reject reserved or overlapping gestures before saving. Returns true when the
 	// binding is allowed; otherwise reports why and leaves the current binding
 	// untouched.
 	function validateAndReport(next: KeyBinding): boolean {
-		const result = validateGlobalBinding(next);
-		if (result.ok) return true;
+		const reason = validateGlobalBinding(next) ?? overlapReason(next);
+		if (!reason) return true;
 		report.error({
 			title: 'That shortcut is not available',
-			description: result.reason,
+			description: reason,
 			cause: {
-				name: 'ReservedShortcut',
-				message: `${keyBindingToLabel(next, os.isApple)}: ${result.reason}`,
+				name: 'UnavailableShortcut',
+				message: `${keyBindingToLabel(next, os.isApple)}: ${reason}`,
 			},
 		});
 		return false;

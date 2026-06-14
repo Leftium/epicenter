@@ -12,14 +12,7 @@
  */
 
 import type { Modifier } from '$lib/tauri/commands';
-
-type ReservedCheck = { ok: true } | { ok: false; reason: string };
-
-/** A binding for validation: accepts the stored shape (`keys: string[]`). */
-type BindingLike = {
-	modifiers: readonly Modifier[];
-	keys: readonly string[];
-};
+import type { BindingLike } from '$lib/utils/key-binding';
 
 /**
  * `primary` stands for the platform's command modifier: Command on macOS,
@@ -105,31 +98,27 @@ function matchesReserved(binding: BindingLike, chord: ReservedChord): boolean {
 
 /**
  * Validate a desktop global gesture against the reserved-shortcut policy.
+ * Returns `null` when the gesture is allowed, or a human-readable reason when it
+ * is refused. (Domain state, not an operation failure, so a plain `string | null`
+ * rather than a `Result`.)
  *
  * An empty binding (no modifiers, no keys) is treated as "unset" and passes;
  * clearing a gesture is the caller's job, not this check's.
  */
-export function validateGlobalBinding(binding: BindingLike): ReservedCheck {
+export function validateGlobalBinding(binding: BindingLike): string | null {
 	const hasNothing =
 		binding.modifiers.length === 0 && binding.keys.length === 0;
-	if (hasNothing) return { ok: true };
+	if (hasNothing) return null;
 
 	for (const chord of RESERVED_CHORDS) {
 		if (matchesReserved(binding, chord)) {
-			return {
-				ok: false,
-				reason: `That combination is reserved by the system or app (${chord.label}). Pick another.`,
-			};
+			return `That combination is reserved by the system or app (${chord.label}). Pick another.`;
 		}
 	}
 
 	if (binding.modifiers.length === 0) {
-		return {
-			ok: false,
-			reason:
-				'Add a modifier or Fn so the gesture cannot fire on an ordinary keypress.',
-		};
+		return 'Add a modifier or Fn so the gesture cannot fire on an ordinary keypress.';
 	}
 
-	return { ok: true };
+	return null;
 }

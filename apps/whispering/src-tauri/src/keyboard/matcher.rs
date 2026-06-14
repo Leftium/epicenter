@@ -107,6 +107,13 @@ impl MatchOutcome {
             pending_until: None,
         }
     }
+
+    fn pending(deadline: u64) -> Self {
+        Self {
+            events: Vec::new(),
+            pending_until: Some(deadline),
+        }
+    }
 }
 
 impl Matcher {
@@ -165,10 +172,14 @@ impl Matcher {
     /// mid-window, so the prefix just needs a fresh press), and a gesture whose
     /// binding vanished cannot fire.
     pub fn set_bindings(&mut self, bindings: impl IntoIterator<Item = (String, KeyBinding)>) {
-        // Capture the active binding's identity before the swap; only a resolved
-        // gesture is carried (see the doc comment).
+        // Capture the active binding's match key before the swap; only a resolved
+        // gesture is carried across (see the doc comment), cloned so it can
+        // outlive the binding vec being replaced.
         let active = match self.gesture {
-            Gesture::Active { index } => Some(self.identity(index)),
+            Gesture::Active { index } => {
+                let b = &self.bindings[index];
+                Some((b.command_id.clone(), b.modifiers.clone(), b.keys.clone()))
+            }
             Gesture::Pending { .. } | Gesture::Idle => None,
         };
 
@@ -195,13 +206,6 @@ impl Matcher {
                 })
                 .map_or(Gesture::Idle, |index| Gesture::Active { index }),
         };
-    }
-
-    /// The (command, modifiers, keys) identity of a registered binding, cloned so
-    /// it can outlive a binding-set swap.
-    fn identity(&self, index: usize) -> (String, BTreeSet<Modifier>, BTreeSet<Key>) {
-        let b = &self.bindings[index];
-        (b.command_id.clone(), b.modifiers.clone(), b.keys.clone())
     }
 
     /// Feed one key event. Updates the held sets, then resolves the gesture.
@@ -249,10 +253,11 @@ impl Matcher {
         vec![self.press(index)]
     }
 
-    /// Deadline of the open pending window, if any. A read-only state query:
-    /// tests use it to assert a window armed, while production schedules off
-    /// `MatchOutcome::pending_until` returned by `on_event`.
-    pub fn pending_deadline(&self) -> Option<u64> {
+    /// Deadline of the open pending window, if any. Test-only state query used to
+    /// assert a window armed; production schedules off `MatchOutcome::pending_until`
+    /// returned by `on_event`, so this is compiled out of release builds.
+    #[cfg(test)]
+    fn pending_deadline(&self) -> Option<u64> {
         match self.gesture {
             Gesture::Pending { deadline, .. } => Some(deadline),
             _ => None,
@@ -328,10 +333,7 @@ impl Matcher {
         if self.has_extender(index) {
             let deadline = now + PENDING_WINDOW_MS;
             self.gesture = Gesture::Pending { index, deadline };
-            MatchOutcome {
-                events: Vec::new(),
-                pending_until: Some(deadline),
-            }
+            MatchOutcome::pending(deadline)
         } else {
             self.gesture = Gesture::Active { index };
             MatchOutcome::fired(vec![self.press(index)])

@@ -2,20 +2,34 @@
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import { Progress } from '@epicenter/ui/progress';
+	import { toast } from '@epicenter/ui/sonner';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import Download from '@lucide/svelte/icons/download';
 	import X from '@lucide/svelte/icons/x';
-	import { type LocalModelConfig } from '$lib/constants/local-models';
+	import {
+		type LocalModelConfig,
+		modelEntryName,
+	} from '$lib/constants/local-models';
 	import { localModelDownloads } from '$lib/state/local-model-downloads.svelte';
+	import {
+		announceModelDelete,
+		announceModelDownload,
+	} from './local-model-toasts';
 
 	let {
 		model,
+		value = $bindable(),
 		recommended = false,
+		onDiskChange,
 	}: {
 		model: LocalModelConfig;
+		/** Bindable selected folder entry name for this engine. */
+		value: string;
 		/** Show the Recommended badge; the selector decides when it guides a choice. */
 		recommended?: boolean;
+		/** Re-scan the parent selector after this card changes the models folder. */
+		onDiskChange: () => void | Promise<void>;
 	} = $props();
 
 	// Shared per-model handle: the selector hero reads the same one, so a
@@ -24,11 +38,30 @@
 
 	// Aliased so the template narrows the union per branch.
 	const modelState = $derived(download.state);
+	const entryName = $derived(modelEntryName(model));
+	const isActive = $derived(value === entryName && modelState.type === 'ready');
+
+	async function downloadModel() {
+		const entryName = announceModelDownload(await download.download());
+		if (!entryName) return;
+		value = entryName;
+		await onDiskChange();
+	}
+
+	async function deleteModel() {
+		if (!announceModelDelete(await download.delete())) return;
+		if (value === entryName) value = '';
+		await onDiskChange();
+	}
+
+	async function activateModel() {
+		value = entryName;
+		toast.success('Model activated');
+	}
 </script>
 
 <div
-	class="flex items-center gap-3 p-3 rounded-lg border {modelState.type ===
-	'active'
+	class="flex items-center gap-3 p-3 rounded-lg border {isActive
 		? 'border-primary bg-primary/5'
 		: ''}"
 >
@@ -38,7 +71,7 @@
 			{#if recommended}
 				<Badge variant="outline" class="text-xs">Recommended</Badge>
 			{/if}
-			{#if modelState.type === 'active'}
+			{#if isActive}
 				<Badge variant="default" class="text-xs">Active</Badge>
 			{:else if modelState.type === 'ready'}
 				<Badge variant="secondary" class="text-xs">Downloaded</Badge>
@@ -55,22 +88,21 @@
 				<span class="text-sm font-medium">{modelState.progress}%</span>
 			</div>
 		{:else if modelState.type === 'ready'}
-			<Button size="sm" variant="outline" onclick={() => download.activate()}>
-				Activate
-			</Button>
-			<Button size="sm" variant="ghost" onclick={() => download.delete()}>
-				<X class="size-4" />
-			</Button>
-		{:else if modelState.type === 'active'}
-			<Button size="sm" variant="default" disabled>
-				<CheckIcon class="size-4 mr-1" />
-				Activated
-			</Button>
-			<Button size="sm" variant="ghost" onclick={() => download.delete()}>
+			{#if isActive}
+				<Button size="sm" variant="default" disabled>
+					<CheckIcon class="size-4 mr-1" />
+					Activated
+				</Button>
+			{:else}
+				<Button size="sm" variant="outline" onclick={activateModel}>
+					Activate
+				</Button>
+			{/if}
+			<Button size="sm" variant="ghost" onclick={deleteModel}>
 				<X class="size-4" />
 			</Button>
 		{:else}
-			<Button size="sm" variant="outline" onclick={() => download.download()}>
+			<Button size="sm" variant="outline" onclick={downloadModel}>
 				<Download class="size-4" />
 				Download
 			</Button>

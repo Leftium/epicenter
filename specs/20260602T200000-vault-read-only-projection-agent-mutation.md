@@ -1,8 +1,10 @@
 # Vault as Read-Only Projection: Agent Mutation Through Actions
 
 **Date**: 2026-06-02
-**Status**: In Progress (monorepo Phases 1, 2, 5 implemented; vault Phases 3, 4 pending the monorepo code reaching the sibling `../epicenter` checkout the vault imports)
+**Status**: Superseded by 20260612T000201-epicenter-namespace-root-layout.md
 **Owner**: Braden
+
+> Superseded: the `projectDir/apps/<mount>` visible-projection model below is replaced by the namespace-root layout where `projectDir` is the Epicenter namespace root and mounts project to `projectDir/<mount>`. See `20260612T000201-epicenter-namespace-root-layout.md`.
 **Supersedes (in part)**: `20260602T120000-markdown-body-import-bidirectional.md`, `20260601T160000-markdown-sync-greenfield.md`, `20260601T120000-epicenter-apply-markdown-reconcile.md` (this spec refuses the disk to Yjs editing path those introduced, for app-owned data)
 
 ## One Sentence

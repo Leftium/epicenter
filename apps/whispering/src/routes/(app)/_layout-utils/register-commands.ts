@@ -1,17 +1,20 @@
-import { partitionResults } from 'wellcrafted/result';
+import { extractErrorMessage } from 'wellcrafted/error';
+import { Err, partitionResults, tryAsync } from 'wellcrafted/result';
 import { tauri } from '#platform/tauri';
 import { goto } from '$app/navigation';
 import { type Command, commands } from '$lib/commands';
-import { CommandOrAlt, CommandOrControl } from '$lib/constants/keyboard';
 import { localShortcuts } from '$lib/operations/shortcuts';
 import { report } from '$lib/report';
 import {
 	type CommandId,
 	shortcutStringToArray,
 } from '$lib/services/local-shortcut-manager';
-import { deviceConfig } from '$lib/state/device-config.svelte';
+import {
+	DEFAULT_GLOBAL_BINDINGS,
+	deviceConfig,
+} from '$lib/state/device-config.svelte';
 import { settings } from '$lib/state/settings.svelte';
-import type { Accelerator } from '$lib/utils/accelerator';
+import type { CommandBinding, KeyBinding } from '$lib/tauri/commands';
 
 /** Default values for in-app (local) shortcuts. Keyed by command id string. */
 const DEFAULT_LOCAL_SHORTCUTS = {
@@ -23,15 +26,16 @@ const DEFAULT_LOCAL_SHORTCUTS = {
 	runTransformationOnClipboard: 'r',
 } as const satisfies Record<Command['id'], string | null>;
 
-/** Default values for global OS shortcuts. Keyed by command id string. */
-const DEFAULT_GLOBAL_SHORTCUTS = {
-	pushToTalk: `${CommandOrAlt}+Shift+D`,
-	toggleManualRecording: `${CommandOrControl}+Shift+;`,
-	cancelManualRecording: `${CommandOrControl}+Shift+'`,
-	toggleVadRecording: null,
-	openTransformationPicker: `${CommandOrControl}+Shift+X`,
-	runTransformationOnClipboard: `${CommandOrControl}+Shift+R`,
-} as const satisfies Record<Command['id'], string | null>;
+/** Canonical string for a binding, so structurally-equal bindings dedupe. */
+function bindingKey(binding: {
+	modifiers: readonly string[];
+	keys: readonly string[];
+}): string {
+	return JSON.stringify({
+		modifiers: [...binding.modifiers].sort(),
+		keys: [...binding.keys].sort(),
+	});
+}
 
 type LocalShortcutKey = `shortcut.${Command['id']}`;
 type GlobalShortcutKey = `shortcuts.global.${Command['id']}`;
@@ -80,39 +84,36 @@ export async function syncLocalShortcutsWithSettings() {
 }
 
 /**
- * Synchronizes global keyboard shortcuts with the current settings.
- * - Registers shortcuts that have key combinations defined in settings
- * - Unregisters shortcuts that don't have key combinations defined
- * - Shows error toast if any registration/unregistration fails
+ * Pushes the configured global shortcuts to the desktop rdev backend as the
+ * full replace-all set. Storage holds structured `KeyBinding`s (physical-key
+ * space), so they go straight through with no parsing.
  */
 export async function syncGlobalShortcutsWithSettings() {
 	if (!tauri) return;
-	const t = tauri; // Rebind for closures that lose the narrowing.
+	const { globalShortcuts } = tauri;
 
-	const commandsWithAccelerators = commands
-		.map((command) => {
-			const accelerator = deviceConfig.get(
-				getGlobalShortcutKey(command.id),
-			) as Accelerator | null;
-			if (!accelerator) return null;
-			return { command, accelerator };
-		})
-		.filter((item) => item !== null);
+	const bindings: CommandBinding[] = [];
+	for (const command of commands) {
+		const binding = deviceConfig.get(getGlobalShortcutKey(command.id));
+		if (!binding) continue;
+		// Storage validates keys as plain strings; Rust validates them by name on
+		// register. The cast bridges the stored `string[]` to the IPC `Key[]`.
+		bindings.push({ commandId: command.id, binding: binding as KeyBinding });
+	}
 
-	const results = await Promise.all(
-		commandsWithAccelerators.map((item) =>
-			t.globalShortcuts.registerCommand(item),
-		),
-	);
-	const { errs } = partitionResults(results);
-	if (errs.length > 0) {
-		report.error({
-			title: 'Error registering global commands',
-			cause: {
+	// Keys are stored as plain strings and validated by Rust at the IPC boundary,
+	// so a single bad key fails the whole replace-all call. Surface it instead of
+	// letting every global shortcut silently go unregistered.
+	const { error } = await tryAsync({
+		try: () => globalShortcuts.setBindings(bindings),
+		catch: (cause) =>
+			Err({
 				name: 'GlobalShortcutRegistrationFailed',
-				message: errs.map((err) => err.error.message).join('\n'),
-			},
-		});
+				message: extractErrorMessage(cause),
+			}),
+	});
+	if (error) {
+		report.error({ title: 'Error registering global shortcuts', cause: error });
 	}
 }
 
@@ -136,7 +137,7 @@ export function resetLocalShortcutsToDefaultIfDuplicates(): boolean {
 						'Duplicate local shortcuts detected. All local shortcuts have been reset to defaults.',
 					action: {
 						label: 'Configure shortcuts',
-						onClick: () => goto('/settings/shortcuts/local'),
+						onClick: () => goto('/settings/shortcuts'),
 					},
 				});
 
@@ -153,29 +154,29 @@ export function resetLocalShortcutsToDefaultIfDuplicates(): boolean {
  * Returns true if duplicates were found and reset, false otherwise.
  */
 export function resetGlobalShortcutsToDefaultIfDuplicates(): boolean {
-	const globalShortcuts = new Map<string, string>();
+	const seen = new Map<string, string>();
 
-	// Check for duplicates
+	// Check for duplicates by canonical binding string.
 	for (const command of commands) {
-		const shortcut = deviceConfig.get(getGlobalShortcutKey(command.id));
-		if (shortcut) {
-			if (globalShortcuts.has(shortcut)) {
-				// If duplicates found, reset all global shortcuts to defaults
-				resetGlobalShortcuts();
-				report.success({
-					title: 'Shortcuts reset',
-					description:
-						'Duplicate global shortcuts detected. All global shortcuts have been reset to defaults.',
-					action: {
-						label: 'Configure shortcuts',
-						onClick: () => goto('/settings/shortcuts/global'),
-					},
-				});
+		const binding = deviceConfig.get(getGlobalShortcutKey(command.id));
+		if (!binding) continue;
+		const key = bindingKey(binding);
+		if (seen.has(key)) {
+			// If duplicates found, reset all global shortcuts to defaults
+			resetGlobalShortcuts();
+			report.success({
+				title: 'Shortcuts reset',
+				description:
+					'Duplicate global shortcuts detected. All global shortcuts have been reset to defaults.',
+				action: {
+					label: 'Configure shortcuts',
+					onClick: () => goto('/settings/shortcuts'),
+				},
+			});
 
-				return true;
-			}
-			globalShortcuts.set(shortcut, command.id);
+			return true;
 		}
+		seen.set(key, command.id);
 	}
 	return false;
 }
@@ -200,7 +201,7 @@ export function resetGlobalShortcuts() {
 	for (const command of commands) {
 		deviceConfig.set(
 			getGlobalShortcutKey(command.id),
-			DEFAULT_GLOBAL_SHORTCUTS[command.id] ?? null,
+			DEFAULT_GLOBAL_BINDINGS[command.id] ?? null,
 		);
 	}
 	void syncGlobalShortcutsWithSettings();

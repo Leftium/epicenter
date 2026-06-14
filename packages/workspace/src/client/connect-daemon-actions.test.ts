@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { DaemonError } from '../daemon/client.js';
-import type { ProjectDir } from '../shared/types.js';
+import type { EpicenterRoot } from '../shared/types.js';
 import { connectDaemonActions } from './connect-daemon-actions.js';
 
 let root: string;
@@ -30,7 +30,7 @@ describe('connectDaemonActions', () => {
 		try {
 			await connectDaemonActions({
 				mount: 'demo',
-				projectDir: root as ProjectDir,
+				epicenterRoot: root as EpicenterRoot,
 			});
 		} catch (err) {
 			caught = err;
@@ -38,6 +38,6 @@ describe('connectDaemonActions', () => {
 		expect(caught).toBeDefined();
 		const e = caught as Extract<DaemonError, { name: 'Required' }>;
 		expect(e.name).toBe('Required');
-		expect(e.projectDir).toBe(root);
+		expect(e.epicenterRoot).toBe(root);
 	});
 });

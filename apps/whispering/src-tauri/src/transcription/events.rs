@@ -1,10 +1,6 @@
 use super::config::Engine;
 use serde::{Deserialize, Serialize};
 
-/// Channel name for every model lifecycle event. The Rust emitter and the FE
-/// `listen<ModelStateEvent>(...)` call both key off this symbol.
-pub const EVENT_CHANNEL: &str = "transcription://model-state";
-
 /// Snapshot of everything observable about the resident model. Every event
 /// carries a full snapshot rather than a delta because `AppHandle::emit`
 /// does not replay to future windows: a window opened mid-load reads the
@@ -29,9 +25,6 @@ pub enum ModelStatus {
     /// No model resident and none loading. Initial state, and reached after
     /// `Unloaded`.
     Idle,
-    /// A different model is selected, but the manager is still draining the
-    /// previous resident model before the new model can start loading.
-    Switching,
     /// `with_engine` is currently inside the `load(&model_path)` call.
     Loading,
     /// A model is resident and not currently in use.
@@ -72,9 +65,10 @@ pub enum UnloadReason {
 /// `tag = "kind"` matches `ModelStatus` and `UnloadReason` so the FE pattern
 /// is uniform: `switch (event.kind)`.
 ///
-/// `lib.rs` exports this payload type directly because the FE listens on
-/// `EVENT_CHANNEL` manually.
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+/// Registered as a `tauri_specta::Event`, so the Rust emitter
+/// (`event.emit(&app)`) and the generated FE binding (`events.modelStateEvent`)
+/// share one generated topic name instead of a hand-mirrored string.
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type, tauri_specta::Event)]
 #[serde(
     tag = "kind",
     rename_all = "snake_case",
@@ -152,14 +146,6 @@ mod tests {
                 "kind": "idle",
                 "idleSecs": 30
             })
-        );
-    }
-
-    #[test]
-    fn switching_status_has_a_stable_wire_tag() {
-        assert_eq!(
-            serde_json::to_value(ModelStatus::Switching).unwrap(),
-            json!({ "kind": "switching" })
         );
     }
 }

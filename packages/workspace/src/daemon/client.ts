@@ -44,9 +44,9 @@ import { socketPathFor } from './paths.js';
  *   `Result` instead.
  */
 export const DaemonError = defineErrors({
-	Required: ({ projectDir }: { projectDir: string }) => ({
-		message: `no daemon running for ${projectDir}; start one with \`epicenter daemon up\` first`,
-		projectDir,
+	Required: ({ epicenterRoot }: { epicenterRoot: string }) => ({
+		message: `no daemon running for ${epicenterRoot}; start one with \`epicenter daemon up\` first`,
+		epicenterRoot,
 	}),
 	Timeout: ({
 		socketPath,
@@ -176,7 +176,7 @@ export function daemonClient(
 export type DaemonClient = ReturnType<typeof daemonClient>;
 
 /**
- * Resolve the daemon client for `projectDir`, or surface why we can't.
+ * Resolve the daemon client for `epicenterRoot`, or surface why we can't.
  *
  *   - `Required`: no daemon is running. Renderer prints the
  *     start-with-`daemon up` hint.
@@ -185,11 +185,11 @@ export type DaemonClient = ReturnType<typeof daemonClient>;
  * error they have a typed client to call.
  */
 export async function getDaemon(
-	projectDir: string,
+	epicenterRoot: string,
 ): Promise<Result<DaemonClient, DaemonError>> {
-	const sock = socketPathFor(projectDir);
+	const sock = socketPathFor(epicenterRoot);
 	if (!(await pingDaemon(sock))) {
-		return DaemonError.Required({ projectDir });
+		return DaemonError.Required({ epicenterRoot });
 	}
 	return Ok(daemonClient(sock));
 }

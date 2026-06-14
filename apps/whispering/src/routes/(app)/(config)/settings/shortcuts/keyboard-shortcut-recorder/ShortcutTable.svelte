@@ -2,51 +2,22 @@
 	import { Input } from '@epicenter/ui/input';
 	import * as Table from '@epicenter/ui/table';
 	import Search from '@lucide/svelte/icons/search';
-	import { commands } from '$lib/commands';
-	import { report } from '$lib/report';
-	import type { Tauri } from '#platform/tauri';
-	import {
-		type DeviceConfigKey,
-		deviceConfig,
-	} from '$lib/state/device-config.svelte';
-	import { createPressedKeys } from '$lib/utils/createPressedKeys.svelte';
-	import { whispering } from '#platform/whispering';
-	import GlobalKeyboardShortcutRecorder from './GlobalKeyboardShortcutRecorder.svelte';
-	import LocalKeyboardShortcutRecorder from './LocalKeyboardShortcutRecorder.svelte';
+	import type { Snippet } from 'svelte';
+	import { type Command, commands } from '$lib/commands';
 
-	// `tauri` is required when type === 'global' (the inner recorder needs it
-	// to register OS-level shortcuts). For type === 'local' it's ignored.
-	let { type, tauri }: { type: 'local' | 'global'; tauri?: Tauri } = $props();
+	// Platform-agnostic chrome: a searchable table of every command. The caller
+	// owns what a row's shortcut control is (the in-app local recorder or the
+	// rdev-backed global recorder) and supplies it through the `row` snippet, so
+	// this component holds no local/global discriminator.
+	let { row }: { row: Snippet<[Command]> } = $props();
 
 	let searchQuery = $state('');
-
-	/** Look up the definition default for a shortcut key from the correct store. */
-	function getDefaultShortcut(commandId: string): string | null {
-		if (type === 'local') {
-			const getDefault = whispering.settings.getDefault as (
-				key: string,
-			) => unknown;
-			return (getDefault(`shortcut.${commandId}`) as string | null) ?? null;
-		}
-		return deviceConfig.getDefault(
-			`shortcuts.global.${commandId}` as DeviceConfigKey,
-		);
-	}
 
 	const filteredCommands = $derived(
 		commands.filter((command) =>
 			command.title.toLowerCase().includes(searchQuery.toLowerCase()),
 		),
 	);
-
-	const pressedKeys = createPressedKeys({
-		onUnsupportedKey: (key) => {
-			report.info({
-				title: 'Unsupported key',
-				description: `The key "${key}" is not supported. Please try a different key.`,
-			});
-		},
-	});
 </script>
 
 <div class="space-y-4">
@@ -74,30 +45,12 @@
 			</Table.Header>
 			<Table.Body>
 				{#each filteredCommands as command}
-					{@const defaultShortcut = getDefaultShortcut(command.id)}
 					<Table.Row>
 						<Table.Cell class="font-medium">
 							<span class="block truncate pr-2">{command.title}</span>
 						</Table.Cell>
 						<Table.Cell class="text-right">
-							{#if type === 'local'}
-								<LocalKeyboardShortcutRecorder
-									{command}
-									placeholder={defaultShortcut
-										? `Default: ${defaultShortcut}`
-										: 'Set shortcut'}
-									{pressedKeys}
-								/>
-							{:else if tauri}
-								<GlobalKeyboardShortcutRecorder
-									{command}
-									placeholder={defaultShortcut
-										? `Default: ${defaultShortcut}`
-										: 'Set shortcut'}
-									{pressedKeys}
-									{tauri}
-								/>
-							{/if}
+							{@render row(command)}
 						</Table.Cell>
 					</Table.Row>
 				{/each}

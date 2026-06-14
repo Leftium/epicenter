@@ -41,8 +41,8 @@ describe('parseEpicenterLink', () => {
 	});
 
 	test('handles dots in workspace ids', () => {
-		expect(parseEpicenterLink('epicenter://epicenter-blog/posts/abc')).toEqual({
-			workspace: 'epicenter-blog',
+		expect(parseEpicenterLink('epicenter://epicenter.blog/posts/abc')).toEqual({
+			workspace: 'epicenter.blog',
 			table: 'posts',
 			id: 'abc',
 		});

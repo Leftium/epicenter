@@ -1,5 +1,5 @@
 import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager';
-import { Err, Ok, tryAsync } from 'wellcrafted/result';
+import { Ok, tryAsync } from 'wellcrafted/result';
 import { commands } from '$lib/tauri/commands';
 import type { TextService } from './types';
 import { TextError } from './types';
@@ -30,6 +30,12 @@ export const TextServiceLive = {
 
 	simulateEnterKeystroke: async () => {
 		const { error } = await commands.simulateEnterKeystroke();
+		if (error !== null) return TextError.SimulateKeystroke({ cause: error });
+		return Ok(undefined);
+	},
+
+	simulateCopyKeystroke: async () => {
+		const { error } = await commands.simulateCopyKeystroke();
 		if (error !== null) return TextError.SimulateKeystroke({ cause: error });
 		return Ok(undefined);
 	},

@@ -1,14 +1,14 @@
 /**
  * Unit-level tests for `epicenter daemon up`.
  *
- * These tests run `runUp` in-process against tiny project-mount fixtures.
+ * These tests run `runUp` in-process against tiny root-and-mount fixtures.
  * They never spawn a child or call `process.exit`; each test owns a temp
- * project and temp runtime root.
+ * Epicenter root and temp runtime root.
  *
- * Auth is injected: every test passes a `createAuthClient` factory to
- * `runUp`. Happy paths return `STUB_AUTH`; the AuthFailed test returns a
- * factory that throws. The real `createMachineAuthClient` is not exercised
- * here, by design - it has its own unit tests in
+ * Auth is injected lazily: collaborative fixtures pass a `createAuthClient`
+ * factory to `runUp`, and local-only or config-failure paths use a factory
+ * that throws if startup reaches for auth. The real `createMachineAuthClient`
+ * is not exercised here. It has its own unit tests in
  * `@epicenter/auth/src/node/machine-auth.test.ts`.
  *
  * Key behaviors:
@@ -34,6 +34,7 @@ import { MachineAuthStorageError } from '@epicenter/auth/node';
 import { asOwnerId } from '@epicenter/identity';
 import {
 	claimDaemonLease,
+	daemonClient,
 	metadataPathFor,
 	pingDaemon,
 	socketPathFor,
@@ -66,6 +67,18 @@ const STUB_AUTH = {
 } satisfies SyncAuthClient;
 
 const stubAuthFactory = async () => Ok(STUB_AUTH);
+/** A machine with no saved session: the daemon runs with a `null` session. */
+const signedOutFactory = async () =>
+	Err(
+		MachineAuthStorageError.NoSavedSession({
+			filePath: '/tmp/fake-auth.json',
+			baseURL: 'https://example.com',
+		}).error,
+	);
+/** Used only where startup short-circuits before auth is ever loaded. */
+const failIfAuthCreated = async () => {
+	throw new Error('must not create auth');
+};
 
 let originalRuntimeDir: string | undefined;
 let runtimeRoot: string;
@@ -149,8 +162,12 @@ function writeRuntimeMount({
 
 		export default {
 			name: 'demo',
-			async open() {
+			async open(ctx) {
+				if (!ctx.session) {
+					return { inactive: true, reason: 'sign in to enable demo' };
+				}
 				return {
+					actions,
 					collaboration,
 					async [Symbol.asyncDispose]() {
 						${onDisposeMarker ? `writeFileSync(${JSON.stringify(onDisposeMarker)}, 'disposed');` : ''}
@@ -168,7 +185,7 @@ describe('runUp: happy path', () => {
 
 		const handle = expectOk(
 			await runUp({
-				projectDir: workDir,
+				epicenterRoot: workDir,
 				quiet: true,
 				createAuthClient: stubAuthFactory,
 			}),
@@ -193,26 +210,99 @@ describe('runUp: happy path', () => {
 		expect(existsSync(metadataPathFor(workDir))).toBe(false);
 		expect(existsSync(socketPathFor(workDir))).toBe(false);
 	});
+
+	test('serves a local-only mount without collaboration', async () => {
+		writeDemoMount(`
+			const sync = () => ({ imported: 2 });
+			sync.type = 'query';
+			sync.description = 'Sync local mirror';
+			const actions = {
+				sync,
+			};
+
+			export default {
+				name: 'mirror',
+				async open() {
+					return {
+						actions,
+						async [Symbol.asyncDispose]() {},
+					};
+				},
+			};
+		`);
+		writeDemoConfig();
+
+		const handle = expectOk(
+			await runUp({
+				epicenterRoot: workDir,
+				quiet: true,
+				createAuthClient: signedOutFactory,
+			}),
+		);
+		try {
+			const client = daemonClient(socketPathFor(workDir));
+			const manifest = expectOk(await client.list());
+			expect(Object.keys(manifest)).toEqual(['mirror.sync']);
+			expect(manifest['mirror.sync']?.description).toBe('Sync local mirror');
+			expect(expectOk(await client.peers())).toEqual([]);
+			expect(
+				expectOk(
+					await client.run({
+						actionPath: 'mirror.sync',
+						input: null,
+					}),
+				),
+			).toEqual({ imported: 2 });
+		} finally {
+			await handle.teardown();
+		}
+	});
 });
 
 describe('runUp: failure cleanup', () => {
-	test('surfaces the auth error and releases the lease when createAuthClient returns Err', async () => {
+	test('reports a session mount as inactive when signed out, without serving it', async () => {
+		writeRuntimeMount();
+
+		const handle = expectOk(
+			await runUp({
+				epicenterRoot: workDir,
+				quiet: true,
+				createAuthClient: signedOutFactory,
+			}),
+		);
+
+		try {
+			expect(handle.mounts).toEqual([]);
+			expect(handle.inactive).toEqual([
+				{ mount: 'demo', reason: 'sign in to enable demo' },
+			]);
+			// The daemon still binds its socket: a signed-out daemon is running,
+			// it just has nothing to serve yet.
+			expect(await pingDaemon(socketPathFor(workDir), 1000)).toBe(true);
+		} finally {
+			await handle.teardown();
+		}
+	});
+
+	test('surfaces non-session auth errors and releases the lease', async () => {
+		writeRuntimeMount();
+
 		const error = expectErr(
 			await runUp({
-				projectDir: workDir,
+				epicenterRoot: workDir,
 				quiet: true,
 				createAuthClient: async () =>
 					Err(
-						MachineAuthStorageError.NoSavedSession({
+						MachineAuthStorageError.PermissionsTooOpen({
 							filePath: '/tmp/fake-auth.json',
-							baseURL: 'https://example.com',
+							mode: 0o644,
 						}).error,
 					),
 			}),
 		);
 
-		expect(error.name).toBe('NoSavedSession');
-		expect(error.message).toContain('no saved session');
+		expect(error.name).toBe('PermissionsTooOpen');
+		expect(error.message).toContain('too permissive');
 		const lease = expectOk(claimDaemonLease(workDir));
 		lease.release();
 	});
@@ -220,13 +310,13 @@ describe('runUp: failure cleanup', () => {
 	test('errors and scaffolds nothing when config is missing', async () => {
 		const error = expectErr(
 			await runUp({
-				projectDir: workDir,
+				epicenterRoot: workDir,
 				quiet: true,
-				createAuthClient: stubAuthFactory,
+				createAuthClient: signedOutFactory,
 			}),
 		);
 
-		expect(error.name).toBe('ProjectConfigNotFound');
+		expect(error.name).toBe('EpicenterConfigNotFound');
 		expect(existsSync(join(workDir, 'epicenter.config.ts'))).toBe(false);
 		expect(existsSync(join(workDir, '.epicenter'))).toBe(false);
 
@@ -234,7 +324,7 @@ describe('runUp: failure cleanup', () => {
 		lease.release();
 	});
 
-	test('does not overwrite an existing config when provisioning project data', async () => {
+	test('does not overwrite an existing config when provisioning root data', async () => {
 		const original = ['export default [];', '', '// keep me', ''].join('\n');
 		writeFileSync(join(workDir, 'epicenter.config.ts'), original);
 		const gitignore = 'custom-rule\n';
@@ -243,9 +333,9 @@ describe('runUp: failure cleanup', () => {
 
 		const handle = expectOk(
 			await runUp({
-				projectDir: workDir,
+				epicenterRoot: workDir,
 				quiet: true,
-				createAuthClient: stubAuthFactory,
+				createAuthClient: signedOutFactory,
 			}),
 		);
 
@@ -261,17 +351,82 @@ describe('runUp: failure cleanup', () => {
 		}
 	});
 
+	test('scaffolds a root .gitignore that tracks only the config', async () => {
+		writeFileSync(join(workDir, 'epicenter.config.ts'), 'export default [];\n');
+
+		const handle = expectOk(
+			await runUp({
+				epicenterRoot: workDir,
+				quiet: true,
+				createAuthClient: stubAuthFactory,
+			}),
+		);
+
+		try {
+			const rootGitignore = readFileSync(join(workDir, '.gitignore'), 'utf8');
+			// Ignore-all + allowlist: the config (and the ignore file) are tracked,
+			// every generated child folder is not.
+			expect(rootGitignore).toContain('/*');
+			expect(rootGitignore).toContain('!/.gitignore');
+			expect(rootGitignore).toContain('!/epicenter.config.ts');
+		} finally {
+			await handle.teardown();
+		}
+	});
+
+	test('does not overwrite an existing root .gitignore', async () => {
+		writeFileSync(join(workDir, 'epicenter.config.ts'), 'export default [];\n');
+		const custom = '# mine\n/build\n';
+		writeFileSync(join(workDir, '.gitignore'), custom);
+
+		const handle = expectOk(
+			await runUp({
+				epicenterRoot: workDir,
+				quiet: true,
+				createAuthClient: stubAuthFactory,
+			}),
+		);
+
+		try {
+			expect(readFileSync(join(workDir, '.gitignore'), 'utf8')).toBe(custom);
+		} finally {
+			await handle.teardown();
+		}
+	});
+
+	test('does not scaffold a root .gitignore once the namespace exists', async () => {
+		// `.epicenter/` present means a prior run already established the folder;
+		// a plain `up` must not retroactively write a `/*` rule into a folder the
+		// user may have turned into a git repo since.
+		writeFileSync(join(workDir, 'epicenter.config.ts'), 'export default [];\n');
+		mkdirSync(join(workDir, '.epicenter'), { recursive: true });
+
+		const handle = expectOk(
+			await runUp({
+				epicenterRoot: workDir,
+				quiet: true,
+				createAuthClient: stubAuthFactory,
+			}),
+		);
+
+		try {
+			expect(existsSync(join(workDir, '.gitignore'))).toBe(false);
+		} finally {
+			await handle.teardown();
+		}
+	});
+
 	test('releases the daemon lease when config loading fails', async () => {
 		writeFileSync(join(workDir, 'epicenter.config.ts'), 'export default {;\n');
 
 		const error = expectErr(
 			await runUp({
-				projectDir: workDir,
+				epicenterRoot: workDir,
 				quiet: true,
-				createAuthClient: stubAuthFactory,
+				createAuthClient: signedOutFactory,
 			}),
 		);
-		expect(error.name).toBe('ProjectConfigImportFailed');
+		expect(error.name).toBe('EpicenterConfigImportFailed');
 
 		const lease = expectOk(claimDaemonLease(workDir));
 		lease.release();
@@ -290,9 +445,9 @@ describe('runUp: failure cleanup', () => {
 
 		const error = expectErr(
 			await runUp({
-				projectDir: workDir,
+				epicenterRoot: workDir,
 				quiet: true,
-				createAuthClient: stubAuthFactory,
+				createAuthClient: signedOutFactory,
 			}),
 		);
 
@@ -301,16 +456,16 @@ describe('runUp: failure cleanup', () => {
 		lease.release();
 	});
 
-	test('disposes opened sibling mounts and leaves no socket or metadata when one mount fails', async () => {
+	test('keeps root .gitignore when mount startup fails after namespace claim', async () => {
 		const goodDir = join(workDir, 'workspaces', 'good');
 		const badDir = join(workDir, 'workspaces', 'bad');
 		mkdirSync(goodDir, { recursive: true });
 		mkdirSync(badDir, { recursive: true });
-		const disposeMarker = markerPath('good-dispose');
 		writeFileSync(
 			join(goodDir, 'daemon.ts'),
 			`
-				import { writeFileSync } from 'node:fs';
+				import { mkdirSync } from 'node:fs';
+				import { join } from 'node:path';
 
 				const collaboration = {
 					actions: {},
@@ -328,9 +483,74 @@ describe('runUp: failure cleanup', () => {
 
 				export default {
 					name: 'good',
-					async open() {
+					async open(ctx) {
+						mkdirSync(join(ctx.epicenterRoot, '.epicenter', 'sqlite'), {
+							recursive: true,
+						});
 						return {
 							collaboration,
+							async [Symbol.asyncDispose]() {},
+						};
+					},
+				};
+			`,
+		);
+		writeFileSync(
+			join(badDir, 'daemon.ts'),
+			`
+				export default {
+					name: 'bad',
+					async open() {
+						throw new Error('bad mount failed');
+					},
+				};
+			`,
+		);
+		writeConfig(
+			[
+				"import good from './workspaces/good/daemon.ts';",
+				"import bad from './workspaces/bad/daemon.ts';",
+				'',
+				'export default [good, bad];',
+				'',
+			].join('\n'),
+		);
+
+		const error = expectErr(
+			await runUp({
+				epicenterRoot: workDir,
+				quiet: true,
+				createAuthClient: stubAuthFactory,
+			}),
+		);
+
+		expect(error).toMatchObject({
+			name: 'MountOpenFailed',
+			mount: 'bad',
+		});
+		const rootGitignore = readFileSync(join(workDir, '.gitignore'), 'utf8');
+		expect(rootGitignore).toContain('/*');
+		expect(rootGitignore).toContain('!/epicenter.config.ts');
+		const lease = expectOk(claimDaemonLease(workDir));
+		lease.release();
+	});
+
+	test('disposes opened sibling mounts and leaves no socket or metadata when one mount fails', async () => {
+		const goodDir = join(workDir, 'workspaces', 'good');
+		const badDir = join(workDir, 'workspaces', 'bad');
+		mkdirSync(goodDir, { recursive: true });
+		mkdirSync(badDir, { recursive: true });
+		const disposeMarker = markerPath('good-dispose');
+		writeFileSync(
+			join(goodDir, 'daemon.ts'),
+			`
+				import { writeFileSync } from 'node:fs';
+
+				export default {
+					name: 'good',
+					async open() {
+						return {
+							actions: {},
 							async [Symbol.asyncDispose]() {
 								writeFileSync(${JSON.stringify(disposeMarker)}, 'disposed');
 							},
@@ -362,9 +582,9 @@ describe('runUp: failure cleanup', () => {
 
 		const error = expectErr(
 			await runUp({
-				projectDir: workDir,
+				epicenterRoot: workDir,
 				quiet: true,
-				createAuthClient: stubAuthFactory,
+				createAuthClient: signedOutFactory,
 			}),
 		);
 
@@ -385,7 +605,7 @@ describe('runUp: failure cleanup', () => {
 
 		const error = expectErr(
 			await runUp({
-				projectDir: workDir,
+				epicenterRoot: workDir,
 				quiet: true,
 				createAuthClient: stubAuthFactory,
 			}),
@@ -407,9 +627,11 @@ describe('runUp: already running', () => {
 		try {
 			const error = expectErr(
 				await runUp({
-					projectDir: workDir,
+					epicenterRoot: workDir,
 					quiet: true,
-					createAuthClient: stubAuthFactory,
+					// A held lease short-circuits before auth is ever loaded; this
+					// factory throws if startup reaches for it.
+					createAuthClient: failIfAuthCreated,
 				}),
 			);
 
@@ -438,7 +660,7 @@ describe('runUp: orphan path', () => {
 
 		const handle = expectOk(
 			await runUp({
-				projectDir: workDir,
+				epicenterRoot: workDir,
 				quiet: true,
 				createAuthClient: stubAuthFactory,
 			}),

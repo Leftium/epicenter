@@ -8,8 +8,9 @@
  * JS view of the folder: listing entries, streaming catalog downloads into
  * it, and deleting entries, never anything outside the folder.
  *
- * UI-free and settings-free. Activation (writing the model name into
- * `deviceConfig`) lives in `$lib/operations/local-models.ts`.
+ * UI-free and settings-free. Selection is parent-owned component state:
+ * settings bind to a folder entry name, and catalog/custom entries activate
+ * through that same `bind:value` path.
  *
  * Layout under the appdata root (see `$lib/services/fs-paths`):
  * - Whisper:   `models/whisper/{filename}` (a single .bin file)
@@ -22,32 +23,24 @@ import {
 	mkdir,
 	readDir,
 	remove,
+	rename,
 	stat,
-	writeFile,
 } from '@tauri-apps/plugin-fs';
-import { fetch } from '@tauri-apps/plugin-http';
+import { download } from '@tauri-apps/plugin-upload';
 import {
 	defineErrors,
 	extractErrorMessage,
 	type InferErrors,
 } from 'wellcrafted/error';
 import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
-import type { LocalModelConfig } from '$lib/constants/local-models';
+import {
+	type LocalModelConfig,
+	modelEntryName,
+} from '$lib/constants/local-models';
 import { PATHS } from '$lib/services/fs-paths';
 import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
 
 export const LocalModelFolderError = defineErrors({
-	DownloadRequestFailed: ({
-		url,
-		status,
-	}: {
-		url: string;
-		status: number;
-	}) => ({
-		message: `Failed to download: ${status}`,
-		url,
-		status,
-	}),
 	DownloadIncomplete: ({
 		downloadedMb,
 		expectedMb,
@@ -147,6 +140,7 @@ export async function deleteModelEntry({
 	const { data: found, error: readError } = await tryAsync({
 		try: async () => {
 			const modelsDir = await PATHS.MODELS[engine]();
+			if (!(await exists(modelsDir))) return null;
 			const entry = (await readDir(modelsDir)).find((e) => e.name === name);
 			if (!entry) return null;
 			return { entry, path: await join(modelsDir, name) };
@@ -171,9 +165,20 @@ export async function deleteModelEntry({
 	});
 }
 
+/** Remove a leftover partial file, ignoring any error. */
+async function removePartial(partialPath: string): Promise<void> {
+	await tryAsync({
+		try: () => remove(partialPath),
+		catch: () => Ok(undefined),
+	});
+}
+
 /**
- * Stream one file to disk, appending chunk by chunk so large models never
- * buffer fully in memory. Reports whole-file progress as 0-100.
+ * Download one file to disk through the upload plugin's native streaming
+ * download (`reqwest` -> `tokio::fs` in Rust; no per-chunk IPC, follows
+ * redirects). Writes to a sibling `.partial` first so a crash mid-download
+ * never leaves a truncated file at the canonical path, then size-checks and
+ * promotes it. Reports whole-file progress as 0-100.
  */
 async function downloadFileTo({
 	url,
@@ -182,64 +187,53 @@ async function downloadFileTo({
 	onProgress,
 }: {
 	url: string;
-	/** Catalog size, used when the response has no content-length header. */
+	/** Catalog size, used for progress when the response omits content-length. */
 	sizeBytes: number;
 	filePath: string;
 	onProgress: (progress: number) => void;
 }): Promise<Result<void, LocalModelFolderError>> {
-	const { data: response, error: fetchError } = await tryAsync({
-		try: () => fetch(url),
+	const partialPath = `${filePath}.partial`;
+
+	const { error: downloadError } = await tryAsync({
+		try: () =>
+			download(url, partialPath, ({ progressTotal, total }) => {
+				const expected = total > 0 ? total : sizeBytes;
+				onProgress(Math.round((progressTotal / expected) * 100));
+			}),
 		catch: (error) => LocalModelFolderError.DownloadFailed({ cause: error }),
 	});
-	if (fetchError) return Err(fetchError);
-	if (!response.ok) {
-		return LocalModelFolderError.DownloadRequestFailed({
-			url,
-			status: response.status,
+	if (downloadError) {
+		await removePartial(partialPath);
+		return Err(downloadError);
+	}
+
+	// The plugin streams to EOF without validating content-length, so a
+	// truncated-but-cleanly-closed response still resolves. This size re-check
+	// against the catalog size is the integrity gate before promoting the
+	// partial to its canonical path.
+	const { data: stats, error: statError } = await tryAsync({
+		try: () => stat(partialPath),
+		catch: (error) => LocalModelFolderError.DownloadFailed({ cause: error }),
+	});
+	if (statError) {
+		await removePartial(partialPath);
+		return Err(statError);
+	}
+	if (!isModelFileSizeValid(stats.size, sizeBytes)) {
+		await removePartial(partialPath);
+		return LocalModelFolderError.DownloadIncomplete({
+			downloadedMb: Math.round(stats.size / 1_000_000),
+			expectedMb: Math.round(sizeBytes / 1_000_000),
 		});
 	}
 
-	const contentLength = response.headers.get('content-length');
-	const totalBytes = contentLength
-		? Number.parseInt(contentLength, 10)
-		: sizeBytes;
-
-	const { data: downloadedBytes, error: streamError } = await tryAsync({
-		try: async () => {
-			const reader = response.body?.getReader();
-			if (!reader) {
-				throw new Error('Failed to read response body');
-			}
-
-			// Create or truncate the file first
-			await writeFile(filePath, new Uint8Array());
-
-			let bytes = 0;
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
-
-				// Write each chunk directly to disk using append mode
-				await writeFile(filePath, value, { append: true });
-
-				bytes += value.length;
-				onProgress(Math.round((bytes / totalBytes) * 100));
-			}
-			return bytes;
-		},
+	const { error: renameError } = await tryAsync({
+		try: () => rename(partialPath, filePath),
 		catch: (error) => LocalModelFolderError.DownloadFailed({ cause: error }),
 	});
-	if (streamError) return Err(streamError);
-
-	if (downloadedBytes < totalBytes) {
-		await tryAsync({
-			try: () => remove(filePath),
-			catch: () => Ok(undefined),
-		});
-		return LocalModelFolderError.DownloadIncomplete({
-			downloadedMb: Math.round(downloadedBytes / 1_000_000),
-			expectedMb: Math.round(totalBytes / 1_000_000),
-		});
+	if (renameError) {
+		await removePartial(partialPath);
+		return Err(renameError);
 	}
 	return Ok(undefined);
 }
@@ -260,34 +254,52 @@ export function createModelStorage(model: LocalModelConfig) {
 		}
 	}
 
+	async function hasListedSymlinkEntry(): Promise<boolean> {
+		const entries = await listModelEntries(model.engine);
+		return entries.some(
+			(entry) => entry.name === modelEntryName(model) && entry.isSymlink,
+		);
+	}
+
 	return {
 		/**
-		 * The canonical install path: a file for Whisper, a directory for
-		 * Parakeet and Moonshine. Pure path math; does not touch disk.
+		 * Whether a valid install exists in the folder. Every expected file
+		 * must exist with a plausible size (at least 90% of the catalog size),
+		 * so interrupted downloads read as not installed. Never rejects; any
+		 * filesystem or path error reads as not installed.
 		 */
-		getPath,
-
-		/**
-		 * The canonical path when a valid install exists there, else null.
-		 * Every expected file must exist with a plausible size (at least 90%
-		 * of the catalog size), so interrupted downloads read as missing.
-		 * Never rejects; any filesystem or path error reads as missing.
-		 */
-		async getInstalledPath(): Promise<string | null> {
+		async isInstalled(): Promise<boolean> {
 			const { data: installedPath } = await tryAsync({
 				try: async (): Promise<string | null> => {
 					const path = await getPath();
-					if (!(await exists(path))) return null;
+					const { data: pathExists } = await tryAsync({
+						try: () => exists(path),
+						catch: () => Ok(false),
+					});
+					if (!pathExists) return (await hasListedSymlinkEntry()) ? path : null;
+
 					switch (model.engine) {
 						case 'whispercpp': {
-							const stats = await stat(path);
+							const { data: stats } = await tryAsync({
+								try: () => stat(path),
+								catch: () => Ok(null),
+							});
+							if (!stats) {
+								return (await hasListedSymlinkEntry()) ? path : null;
+							}
 							return isModelFileSizeValid(stats.size, model.sizeBytes)
 								? path
 								: null;
 						}
 						case 'parakeet':
 						case 'moonshine': {
-							const dirStats = await stat(path);
+							const { data: dirStats } = await tryAsync({
+								try: () => stat(path),
+								catch: () => Ok(null),
+							});
+							if (!dirStats) {
+								return (await hasListedSymlinkEntry()) ? path : null;
+							}
 							if (!dirStats.isDirectory) return null;
 							for (const file of model.files) {
 								const filePath = await join(path, file.filename);
@@ -303,7 +315,7 @@ export function createModelStorage(model: LocalModelConfig) {
 				},
 				catch: () => Ok(null),
 			});
-			return installedPath ?? null;
+			return installedPath != null;
 		},
 
 		/**
@@ -316,7 +328,7 @@ export function createModelStorage(model: LocalModelConfig) {
 			onProgress,
 		}: {
 			onProgress: (progress: number) => void;
-		}): Promise<Result<{ path: string }, LocalModelFolderError>> {
+		}): Promise<Result<void, LocalModelFolderError>> {
 			const { data: path, error: prepareError } = await tryAsync({
 				try: async () => {
 					await mkdir(await PATHS.MODELS[model.engine](), { recursive: true });
@@ -373,27 +385,7 @@ export function createModelStorage(model: LocalModelConfig) {
 					break;
 				}
 			}
-			return Ok({ path });
-		},
-
-		/**
-		 * Remove the model's files from disk. Succeeds even when nothing is
-		 * installed, so callers can always reconcile settings afterwards.
-		 *
-		 * Only ever removes the model's canonical catalog path inside the
-		 * folder (`getPath`); nothing outside the folder is reachable.
-		 */
-		async delete(): Promise<Result<void, LocalModelFolderError>> {
-			return tryAsync({
-				try: async () => {
-					const path = await getPath();
-					if (await exists(path)) {
-						const isDirectory = model.engine !== 'whispercpp';
-						await remove(path, { recursive: isDirectory });
-					}
-				},
-				catch: (error) => LocalModelFolderError.DeleteFailed({ cause: error }),
-			});
+			return Ok(undefined);
 		},
 	};
 }

@@ -27,7 +27,7 @@ export default defineConfig(async () => ({
 	clearScreen: false,
 	// 2. tauri expects a fixed port, fail if that port is not available
 	server: {
-		port: APPS.AUDIO.port,
+		port: APPS.WHISPERING.port,
 		strictPort: true,
 		host: host || false,
 		hmr: host

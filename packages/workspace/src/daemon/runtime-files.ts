@@ -12,8 +12,8 @@ export function unlinkSocketFile(socketPath: string): void {
 	bestEffortSync(() => unlinkSync(socketPath));
 }
 
-/** Sweep runtime-dir files that identify a daemon for one project. */
-export function sweepDaemonRuntimeFiles(projectDir: string): void {
-	unlinkSocketFile(socketPathFor(projectDir));
-	unlinkMetadata(projectDir);
+/** Sweep runtime-dir files that identify a daemon for one Epicenter root. */
+export function sweepDaemonRuntimeFiles(epicenterRoot: string): void {
+	unlinkSocketFile(socketPathFor(epicenterRoot));
+	unlinkMetadata(epicenterRoot);
 }

@@ -8,7 +8,7 @@
 
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { defineActions, defineWorkspace } from '@epicenter/workspace';
-import { defineMount } from '@epicenter/workspace/daemon';
+import { defineSessionMount } from '@epicenter/workspace/daemon';
 import {
 	attachGitAutosave,
 	attachMarkdownExport,
@@ -16,8 +16,8 @@ import {
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import {
-	appsMarkdownPath,
-	attachProjectInfrastructure,
+	attachMountInfrastructure,
+	mountMarkdownPath,
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
@@ -29,28 +29,17 @@ export type TabManagerMountOptions = {
 };
 
 export function tabManager(opts: TabManagerMountOptions = {}) {
-	return defineMount({
+	return defineSessionMount({
 		name: 'tab-manager',
 		open(ctx) {
-			const {
-				projectDir,
-				mount,
-				yDocClientId,
-				deviceId,
-				ownerId,
-				keyring,
-				openWebSocket,
-				onReconnectSignal,
-			} = ctx;
+			const { epicenterRoot, mount } = ctx;
 
-			const workspace = createTabManager({ keyring });
-			workspace.ydoc.clientID = yDocClientId;
+			const workspace = createTabManager({ keyring: ctx.session.keyring });
 
-			const sqliteFile = sqlitePath(projectDir, workspace.ydoc.guid);
-			const mdDir = appsMarkdownPath(projectDir, mount);
+			const mdDir = mountMarkdownPath(epicenterRoot, mount);
 
 			const sqlite = attachBunSqliteMaterializer(workspace, {
-				filePath: sqliteFile,
+				filePath: sqlitePath(epicenterRoot, workspace.ydoc.guid),
 				fts: {
 					bookmarks: ['title', 'url'],
 					savedTabs: ['title', 'url'],
@@ -78,13 +67,8 @@ export function tabManager(opts: TabManagerMountOptions = {}) {
 				...markdown.actions,
 			});
 
-			const infrastructure = attachProjectInfrastructure(workspace.ydoc, {
+			const infrastructure = attachMountInfrastructure(workspace.ydoc, ctx, {
 				baseURL: EPICENTER_API_URL,
-				projectDir,
-				ownerId,
-				deviceId,
-				openWebSocket,
-				onReconnectSignal,
 				actions,
 				materializers: [sqlite, markdown],
 			});

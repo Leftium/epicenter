@@ -8,9 +8,9 @@ All app metadata lives in `APPS` inside `src/apps.ts`:
 
 ```typescript
 export const APPS = {
-  API:   { port: 8787, urls: ['https://api.epicenter.so'] },
-  SH:    { port: 5173, urls: ['https://epicenter.sh'] },
-  AUDIO: { port: 1420, urls: ['https://whispering.epicenter.so'] },
+  API: { port: 8787, url: 'https://api.epicenter.so' },
+  SH: { port: 5173, url: 'https://epicenter.sh' },
+  WHISPERING: { port: 1420, url: 'https://whispering.epicenter.so' },
 } as const;
 ```
 
@@ -45,7 +45,7 @@ const prodOrigins = Object.values(APPS).flatMap((a) => [
 const devOrigins = Object.values(APPS).map(a => `http://localhost:${a.port}`);
 
 // Dev server port:
-server: { port: APPS.AUDIO.port, strictPort: true }
+server: { port: APPS.WHISPERING.port, strictPort: true }
 
 // CLI tool: always local:
 const baseURL = `http://localhost:${APPS.API.port}`;
@@ -61,5 +61,5 @@ import { VERSION } from '@epicenter/constants/versions';
 
 ## Adding a new app
 
-1. Add an entry to `APPS` in `src/apps.ts` with `port` and `urls`.
+1. Add an entry to `APPS` in `src/apps.ts` with `port` and `url`.
 2. Every export picks it up automatically: TypeScript enforces completeness.

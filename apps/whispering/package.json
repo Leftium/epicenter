@@ -32,6 +32,10 @@
 			"tauri": "./src/lib/services/recorder/index.tauri.ts",
 			"default": "./src/lib/services/recorder/index.browser.ts"
 		},
+		"#platform/recording-overlay": {
+			"tauri": "./src/lib/recording-overlay/index.tauri.ts",
+			"default": "./src/lib/recording-overlay/index.browser.ts"
+		},
 		"#platform/sound": {
 			"tauri": "./src/lib/services/sound/index.tauri.ts",
 			"default": "./src/lib/services/sound/index.browser.ts"
@@ -60,7 +64,7 @@
 	"scripts": {
 		"dev:web": "vite dev",
 		"dev": "bun run dev:local",
-		"dev:local": "bun tauri dev --config '{\"identifier\": \"com.bradenwong.whispering.dev\"}'",
+		"dev:local": "bun tauri dev --config '{\"identifier\": \"so.epicenter.whispering.dev\"}'",
 		"build": "NODE_ENV=production vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
@@ -108,7 +112,6 @@
 		"@ricky0123/vad-web": "^0.0.24",
 		"@standard-schema/spec": "catalog:",
 		"@tanstack/svelte-query": "catalog:",
-		"@tanstack/svelte-query-devtools": "catalog:",
 		"@tanstack/svelte-table": "catalog:",
 		"@tanstack/table-core": "9.0.0-alpha.10",
 		"@tauri-apps/api": "catalog:",
@@ -116,7 +119,6 @@
 		"@tauri-apps/plugin-clipboard-manager": "^2.3.0",
 		"@tauri-apps/plugin-dialog": "^2.3.2",
 		"@tauri-apps/plugin-fs": "catalog:",
-		"@tauri-apps/plugin-global-shortcut": "^2.3.0",
 		"@tauri-apps/plugin-http": "2.5.4",
 		"@tauri-apps/plugin-log": "~2",
 		"@tauri-apps/plugin-notification": "^2.3.0",
@@ -124,6 +126,7 @@
 		"@tauri-apps/plugin-os": "^2.3.0",
 		"@tauri-apps/plugin-process": "^2.3.0",
 		"@tauri-apps/plugin-updater": "^2.9.0",
+		"@tauri-apps/plugin-upload": "~2",
 		"arkregex": "catalog:",
 		"arktype": "catalog:",
 		"audio-recorder-polyfill": "^0.4.1",

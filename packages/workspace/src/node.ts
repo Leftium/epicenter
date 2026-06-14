@@ -8,19 +8,18 @@
 export { connectDaemonActions } from './client/connect-daemon-actions.js';
 export type { DaemonActions } from './client/daemon-actions.js';
 export { buildDaemonActions } from './client/daemon-actions.js';
-export { findProjectRoot } from './client/find-project-root.js';
-export { ProjectConfigError } from './config/load-project-config.js';
-export { DEFAULT_PROJECT_CONFIG_SOURCE } from './config/project-config-source.js';
+export { findEpicenterRoot } from './client/find-epicenter-root.js';
+export { DEFAULT_EPICENTER_CONFIG_SOURCE } from './config/epicenter-config-source.js';
+export { EpicenterConfigError } from './config/load-epicenter-config.js';
 export {
 	type PeerSyncStatus,
 	RunError,
 } from './daemon/action-errors.js';
 export { PeerSnapshot, RunRequest } from './daemon/app.js';
 export {
-	type AttachProjectInfrastructureOptions,
-	attachProjectInfrastructure,
-	type ProjectInfrastructure,
-} from './daemon/attach-project-infrastructure.js';
+	type AttachMountInfrastructureOptions,
+	attachMountInfrastructure,
+} from './daemon/attach-mount-infrastructure.js';
 export {
 	type DaemonClient,
 	DaemonError,
@@ -30,8 +29,14 @@ export {
 } from './daemon/client.js';
 export {
 	defineMount,
+	defineSessionMount,
+	inactive,
+	isInactive,
 	type Mount,
 	type MountContext,
+	type MountInactive,
+	type MountSession,
+	type SessionMountContext,
 } from './daemon/define-mount.js';
 export {
 	claimDaemonLease,
@@ -78,8 +83,8 @@ export {
 } from './document/open-sqlite-reader.js';
 export { openWorkspaceSqlite } from './document/open-workspace-sqlite.js';
 export {
-	appsMarkdownPath,
 	markdownPath,
+	mountMarkdownPath,
 	sqlitePath,
 	yjsPath,
 } from './document/workspace-paths.js';
@@ -87,6 +92,8 @@ export { hashYDocClientId } from './shared/client-id.js';
 export type { WorkspaceAuthClient } from './workspace-apps/auth-client.js';
 export { WorkspaceAppError } from './workspace-apps/errors.js';
 export {
-	type OpenProjectOptions,
-	openProject,
-} from './workspace-apps/open-project.js';
+	type InactiveMount,
+	type OpenEpicenterRootOptions,
+	type OpenedEpicenterRoot,
+	openEpicenterRoot,
+} from './workspace-apps/open-epicenter-root.js';

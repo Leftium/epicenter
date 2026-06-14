@@ -11,6 +11,7 @@
 		keyBindingToLabel,
 		parseManualBinding,
 	} from '$lib/utils/key-binding';
+	import { validateGlobalBinding } from '$lib/utils/reserved-shortcuts';
 	import RecorderShell from './RecorderShell.svelte';
 
 	// `tauri` is passed non-null from the Tauri-gated global settings page; the
@@ -63,12 +64,32 @@
 		await tauri.globalShortcuts.setCapturing(false);
 	}
 
+	// Reject reserved or unsafe gestures before saving. Returns true when the
+	// binding is allowed; otherwise reports why and leaves the current binding
+	// untouched. Cancel is the one gesture allowed to be a bare Escape.
+	function isAllowed(next: KeyBinding): boolean {
+		const result = validateGlobalBinding(next, {
+			isCancel: command.id === 'cancelManualRecording',
+		});
+		if (result.ok) return true;
+		report.error({
+			title: 'That shortcut is not available',
+			description: result.reason,
+			cause: {
+				name: 'ReservedShortcut',
+				message: `${keyBindingToLabel(next, os.isApple)}: ${result.reason}`,
+			},
+		});
+		return false;
+	}
+
 	async function commitCapture() {
 		const next: KeyBinding = {
 			modifiers: [...capturedModifiers],
 			keys: [...capturedKeys],
 		};
 		await stopCapture();
+		if (!isAllowed(next)) return;
 		await persist(next);
 		open = false;
 	}
@@ -98,7 +119,7 @@
 			report.error({
 				title: 'Invalid shortcut',
 				description:
-					'Try e.g. cmd+shift+d, fn+space, or a modifier-only hold like cmd.',
+					'Try e.g. fn+space, ctrl+meta, or a modifier-only hold like fn.',
 				cause: {
 					name: 'InvalidManualShortcut',
 					message: `"${raw}" is not a valid combination.`,
@@ -106,6 +127,7 @@
 			});
 			return false;
 		}
+		if (!isAllowed(next)) return false;
 		void persist(next).then(() => {
 			open = false;
 		});
@@ -135,9 +157,9 @@
 	{recorder}
 	copy={{
 		placeholder,
-		recordHelp: 'Press a combination. Fn and modifier-only holds work here.',
-		manualHelp: 'Type a combination (e.g. cmd+shift+d, fn+space)',
-		manualPlaceholder: 'e.g. cmd+shift+d',
+		recordHelp: 'Press a gesture. Fn and modifier-only holds work here.',
+		manualHelp: 'Type a gesture (e.g. fn+space, ctrl+meta)',
+		manualPlaceholder: 'e.g. fn+space',
 		manualButtonLabel: 'Type manually',
 		listeningHint: 'Release to set, Esc to cancel',
 	}}

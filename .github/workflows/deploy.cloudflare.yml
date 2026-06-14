@@ -32,39 +32,48 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build deploy targets
-        run: bun run --filter @epicenter/whispering --filter @epicenter/landing --filter @epicenter/api-ui build
-        env:
-          NODE_ENV: production
-
-      - name: Deploy Whispering
+      # Each deploy builds the app it publishes, then deploys it. Build and
+      # deploy stay coupled inside one block so a deploy can never ship stale
+      # assets, and the set of deployed targets lives in exactly one place.
+      # NODE_ENV is scoped to the step (not the job) so `bun install` above
+      # still resolves devDependencies.
+      - name: Build & Deploy Whispering
         id: whispering
         uses: cloudflare/wrangler-action@v3
+        env:
+          NODE_ENV: production
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/whispering
           packageManager: bun
+          preCommands: bun run build
           command: deploy
 
-      - name: Deploy Landing
+      - name: Build & Deploy Landing
         id: landing
         uses: cloudflare/wrangler-action@v3
+        env:
+          NODE_ENV: production
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/landing
           packageManager: bun
+          preCommands: bun run build
           command: deploy
 
-      - name: Deploy API
+      - name: Build & Deploy API
         id: api
         uses: cloudflare/wrangler-action@v3
+        env:
+          NODE_ENV: production
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/api
           packageManager: bun
+          preCommands: bun run --cwd ui build
           command: deploy
 
       - name: Deployment summary

@@ -57,7 +57,7 @@
 		"tailwindcss": "catalog:",
 		"typescript": "catalog:",
 		"vite": "catalog:",
-		"wxt": "^0.20.8"
+		"wxt": "^0.20.26"
 	},
 	"license": "AGPL-3.0-or-later"
 }

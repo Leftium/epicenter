@@ -14,19 +14,19 @@
 		"typecheck": "astro check && svelte-check --tsconfig ./tsconfig.json"
 	},
 	"dependencies": {
-		"@astrojs/check": "0.9.7",
-		"@astrojs/svelte": "8.0.0",
+		"@astrojs/check": "0.9.9",
+		"@astrojs/svelte": "8.1.2",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/ui": "workspace:*",
 		"@tailwindcss/vite": "catalog:",
 		"arktype": "catalog:",
-		"astro": "6.0.4",
+		"astro": "6.4.6",
 		"posthog-js": "^1.258.5",
 		"svelte": "catalog:",
 		"tailwindcss": "catalog:"
 	},
 	"devDependencies": {
-		"@lucide/astro": "^0.536.0",
+		"@lucide/astro": "^1.18.0",
 		"@tailwindcss/typography": "catalog:",
 		"svelte-check": "catalog:",
 		"typescript": "catalog:"

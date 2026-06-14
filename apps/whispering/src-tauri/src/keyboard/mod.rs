@@ -12,14 +12,13 @@
 //! - `rdev_map` the only rdev-coupled code: `rdev::Key` -> matcher `Input`
 //! - `event`    the wire payload emitted to the FE
 //!
-//! Wave 2 built this module in isolation. Wave 3 wired it in: the
-//! `set_keyboard_shortcuts` command pushes the user's bindings and the FE
-//! registrar dispatches the emitted events. Wave 6 added the start lifecycle:
-//! the FE calls `start_keyboard_listener` once it knows global shortcuts are
-//! allowed (macOS Accessibility granted, or any non-macOS desktop), so the
-//! listener is never spawned before `rdev::listen` can actually tap the
-//! keyboard. This mirrors `cjpais/Handy`, which gates the listener on the
-//! frontend's permission check rather than polling `listen` from Rust.
+//! Wiring: the `set_keyboard_shortcuts` command pushes the user's bindings and
+//! the FE registrar dispatches the emitted events. The FE calls
+//! `start_keyboard_listener` once it knows global shortcuts are allowed (macOS
+//! Accessibility granted, or any non-macOS desktop), so the listener is never
+//! spawned before `rdev::listen` can actually tap the keyboard. This mirrors
+//! `cjpais/Handy`, which gates the listener on the frontend's permission check
+//! rather than polling `listen` from Rust.
 
 pub mod commands;
 pub mod event;
@@ -95,8 +94,8 @@ impl KeyboardListener {
     }
 
     /// Replace the full set of registered bindings. Called from the FE registrar
-    /// (Wave 3) whenever the user's configured global shortcuts change. Poisoned
-    /// lock is swallowed: a panicked matcher thread should not take the app down.
+    /// whenever the user's configured global shortcuts change. Poisoned lock is
+    /// swallowed: a panicked matcher thread should not take the app down.
     pub fn set_bindings(&self, bindings: Vec<(String, KeyBinding)>) {
         if let Ok(mut matcher) = self.matcher.lock() {
             matcher.set_bindings(bindings);
@@ -181,18 +180,21 @@ impl KeyboardListener {
                     }
 
                     // A shorter binding entered its pending window. Schedule a
-                    // timer to flush it once the window expires, in case no
-                    // further key event arrives to resolve it (the user just holds
-                    // the prefix). `poll` is guarded by the deadline, so a timer
-                    // that fires after the window already resolved is a no-op.
+                    // task to flush it once the window expires, in case no further
+                    // key event arrives to resolve it (the user just holds the
+                    // prefix). Runs on Tauri's async runtime (the crate idiom; see
+                    // model_manager) so the wait is a multiplexed timer, not an OS
+                    // thread parked per arm. `poll` is guarded by the deadline, so
+                    // a task that wakes after the window already resolved is a
+                    // no-op, which is also why a superseded window needs no abort.
                     if let Some(deadline) = outcome.pending_until {
                         let matcher = matcher.clone();
                         let app = app.clone();
-                        std::thread::spawn(move || {
+                        tauri::async_runtime::spawn(async move {
                             let now = base.elapsed().as_millis() as u64;
-                            if deadline > now {
-                                std::thread::sleep(Duration::from_millis(deadline - now));
-                            }
+                            tokio::time::sleep(Duration::from_millis(deadline.saturating_sub(now)))
+                                .await;
+                            // Take the lock only after the sleep; never across an await.
                             let events = {
                                 let Ok(mut matcher) = matcher.lock() else {
                                     return;

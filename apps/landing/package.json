@@ -21,7 +21,7 @@
 		"@tailwindcss/vite": "catalog:",
 		"arktype": "catalog:",
 		"astro": "6.4.6",
-		"posthog-js": "^1.258.5",
+		"posthog-js": "^1.386.6",
 		"svelte": "catalog:",
 		"tailwindcss": "catalog:"
 	},

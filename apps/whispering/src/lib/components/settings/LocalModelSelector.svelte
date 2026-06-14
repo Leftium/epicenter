@@ -151,15 +151,13 @@
 
 	async function activateRecommendedModel() {
 		value = modelEntryName(recommended);
-		await refreshEntries();
 		toast.success('Model activated');
 	}
 
-	// Rescan on mount, when the engine changes, and whenever the active model
-	// changes (e.g. a catalog download just landed in the folder).
+	// Rescan on mount and when the engine changes. Selection changes do not
+	// change disk; download/delete handlers refresh after they change the folder.
 	$effect(() => {
 		void engine;
-		void value;
 		refreshEntries();
 	});
 

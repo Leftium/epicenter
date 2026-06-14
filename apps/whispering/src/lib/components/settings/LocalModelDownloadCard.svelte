@@ -26,9 +26,9 @@
 		/** Select this model's folder entry through the parent bind:value. */
 		onActivate: () => void | Promise<void>;
 		/** Clear the parent selection after deleting the active entry. */
-		onClearSelection?: () => void | Promise<void>;
+		onClearSelection: () => void | Promise<void>;
 		/** Re-scan the parent selector after this card changes the models folder. */
-		onDiskChange?: () => void | Promise<void>;
+		onDiskChange: () => void | Promise<void>;
 	} = $props();
 
 	// Shared per-model handle: the selector hero reads the same one, so a
@@ -50,7 +50,7 @@
 		}
 
 		await onActivate();
-		await onDiskChange?.();
+		await onDiskChange();
 		toast.success(
 			result.data.outcome === 'already-installed'
 				? 'Model already downloaded and activated'
@@ -67,15 +67,14 @@
 			return;
 		}
 		if (active) {
-			await onClearSelection?.();
+			await onClearSelection();
 		}
-		await onDiskChange?.();
+		await onDiskChange();
 		toast.success('Model deleted');
 	}
 
 	async function activateModel() {
 		await onActivate();
-		await onDiskChange?.();
 		toast.success('Model activated');
 	}
 </script>

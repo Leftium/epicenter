@@ -120,11 +120,45 @@ strings (for example `Command+Shift+D`). rdev needs its own binding
 representation (it must express Fn and modifier-only, which the accelerator string
 cannot). This is a durable-format change, so it is a stop-and-decide:
 
-- Define a new binding shape that can represent Fn and modifier-only.
-- Ship a one-time migration that maps existing accelerator strings to the new
-  shape where they are expressible, and resets to defaults where they are not.
-  Reset is acceptable here: global shortcut config is device-local convenience
-  state, not user content, and the defaults are unchanged in spirit.
+### Binding shape lock (signed off 2026-06-13)
+
+The stored shape is the **structured `KeyBinding` object** the Rust register
+command already takes, one representation end to end, no accelerator strings left
+on the desktop path:
+
+```jsonc
+{ "modifiers": ["meta", "shift"], "keys": ["keyD"] }  // Cmd+Shift+D
+{ "modifiers": ["fn"], "keys": [] }                    // Fn alone (modifier-only)
+{ "modifiers": [], "keys": ["space"] }                 // bare Space push-to-talk
+null                                                    // unbound
+```
+
+- `modifiers`: `'ctrl' | 'alt' | 'shift' | 'meta' | 'fn'`. `keys`: physical key
+  names (`'keyA'`, `'f1'`, `'space'`, `'semiColon'`, ...), the camelCase of the
+  Rust `Key` variants exported by specta.
+- The six `shortcuts.global.<commandId>` device-config entries change from
+  `string | null` to `KeyBinding | null`; defaults are rewritten as objects.
+  Rust's specta `KeyBinding` type is the real validation boundary; device-config
+  validates the structure (modifiers enumerated, keys as strings Rust owns).
+- Rejected the canonical-string alternative: it keeps two shapes (string in
+  storage, struct on the wire) and a parse/serialize grammar to define and test.
+
+One-time migration: read each existing accelerator string, parse modifiers
+(`Command/Control/Alt/Option/Shift/Super/Meta`) and the final key token
+(letter -> `keyX`, digit -> `numX`, punctuation -> named) into a `KeyBinding`;
+reset to the default where a token is not expressible. Reset is acceptable here:
+global shortcut config is device-local convenience state, not user content, and
+the defaults are unchanged in spirit.
+
+### Forced touch to the command layer (the one exception)
+
+The command layer's behavior does not change, but `commands.ts` re-exports
+`ShortcutEventState` from `@tauri-apps/plugin-global-shortcut`
+(`ShortcutEvent['state']`). Deleting the plugin means that one type import must
+move: `ShortcutEventState` becomes the locally-defined `'Pressed' | 'Released'`
+(equivalently, the generated `TriggerState`). This is a type-source swap with
+zero behavior change; the command definitions, `on` arrays, and callbacks are
+untouched. It is the single unavoidable edit to `commands.ts`.
 
 ## Refused / deferred (record the refusals)
 

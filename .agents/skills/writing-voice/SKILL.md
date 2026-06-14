@@ -10,9 +10,22 @@ metadata:
 
 **Core principle**: Write for the ear, not just the eyes. Prose should be suitable to read out loud.
 
-For technical explanations where the user is trying to understand a system, combine this voice with [notebook-explanation](../notebook-explanation/SKILL.md): short working notes, code blocks, tiny definitions, ASCII diagrams, and durable rules.
+## Composition Rule
 
-For PR and commit text, combine this voice with [pull-request](../pull-request/SKILL.md): the voice rules here still apply, but the product and personal-voice sections further down (landing-page framing, "end with an invitation", first-person story openers) are for marketing and community writing, not for a reviewer-facing PR.
+This skill owns house voice, punctuation, anti-AI prose, and Braden's public voice. Other writing skills should own artifact shape, not a competing voice.
+
+Use the narrow artifact skill when the user asks for that artifact:
+
+| Skill | Owns |
+| --- | --- |
+| [notebook-explanation](../notebook-explanation/SKILL.md) | Private or semi-polished technical explanation shape: tiny definitions, flows, ownership maps, concrete rules. |
+| [technical-articles](../technical-articles/SKILL.md) | Public article shape: title as argument, opening, rhythm between prose and code, section claims, closing. |
+| [pull-request](../pull-request/SKILL.md) | PR title, PR body, changelog, issue links, merge strategy, durable reviewer context. |
+| [documentation](../documentation/SKILL.md) | Folder READMEs, JSDoc, and comments that explain why rather than restating code. |
+| [github-issues](../github-issues/SKILL.md) | Public issue and PR-thread replies with maintainer context. |
+| [discord-voice](../discord-voice/SKILL.md) | Casual team chat and Discord messages. |
+
+For PR and commit text, the voice rules here still apply, but the product and personal-voice sections further down (landing-page framing, "end with an invitation", first-person story openers) are for marketing and community writing, not for reviewer-facing PRs or commits.
 
 ## When to Apply This Skill
 

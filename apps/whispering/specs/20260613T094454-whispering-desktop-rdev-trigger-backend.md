@@ -25,6 +25,20 @@ real-device testing) remains. Not yet run on real hardware.
   once permission is granted (today it requires an app restart). Wayland is a
   documented gap, not parity.
 
+  Wave 6 design notes (from a post-implementation review grounded against
+  `cjpais/handy` and the Tauri v2 IPC docs):
+  - `rdev::listen` blocks un-interruptibly, so the listener thread cannot be
+    cleanly stopped or restarted (handy hits the same wall with `grab` on
+    Linux). Prefer spawning the listener once at launch and gating emission
+    behind an "enabled" flag flipped when Accessibility is granted, rather than
+    a stop/restart path. This sidesteps the "restart after permission" item
+    without needing to kill the thread.
+  - The matcher has no missed-release reconciliation: if a key-up is lost (for
+    example the app loses focus mid-chord), a modifier can stay stuck in the
+    held set until the next matching release. handy reconciles modifier state on
+    macOS; add a reconcile-or-clear path (for example on focus loss) during
+    real-device testing.
+
 Verified so far: `cargo test` (43 pass) and `svelte-check` (0 errors). The
 desktop app has not been launched and exercised on hardware.
 

@@ -28,6 +28,7 @@
 	 * reads the prop directly, it may see undefined and throw. Capturing
 	 * the ID here sidesteps the reactive teardown race entirely.
 	 */
+	// svelte-ignore state_referenced_locally -- intentional teardown handle; onDestroy must revoke the original row's URL.
 	const recordingIdForCleanup = recording.id;
 
 	let isDialogOpen = $state(false);

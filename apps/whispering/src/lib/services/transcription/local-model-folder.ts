@@ -110,6 +110,9 @@ export async function listModelEntries(
 			return dirEntries
 				.filter((entry) => {
 					if (entry.name.startsWith('.')) return false;
+					// In-flight or leftover download staging (a `.partial` file or
+					// directory) is never a selectable model.
+					if (entry.name.endsWith('.partial')) return false;
 					if (engine === 'whispercpp') {
 						const hasModelExtension = WHISPER_MODEL_EXTENSIONS.some((ext) =>
 							entry.name.endsWith(ext),
@@ -166,10 +169,13 @@ export async function deleteModelEntry({
 	});
 }
 
-/** Remove a leftover partial file, ignoring any error. */
-async function removePartial(partialPath: string): Promise<void> {
+/** Remove a leftover partial file or staging directory, ignoring any error. */
+async function removeQuietly(
+	path: string,
+	options?: { recursive?: boolean },
+): Promise<void> {
 	await tryAsync({
-		try: () => remove(partialPath),
+		try: () => remove(path, options),
 		catch: () => Ok(undefined),
 	});
 }
@@ -221,7 +227,7 @@ async function downloadFileTo({
 		// Covers both a real failure and a cancel (an aborted transfer surfaces
 		// as an error). Either way the partial is incomplete, so drop it; the
 		// state layer decides whether the error reaches the user.
-		await removePartial(partialPath);
+		await removeQuietly(partialPath);
 		return LocalModelFolderError.DownloadFailed({ cause: downloadError });
 	}
 
@@ -234,11 +240,11 @@ async function downloadFileTo({
 		catch: (error) => LocalModelFolderError.DownloadFailed({ cause: error }),
 	});
 	if (statError) {
-		await removePartial(partialPath);
+		await removeQuietly(partialPath);
 		return Err(statError);
 	}
 	if (!isModelFileSizeValid(stats.size, sizeBytes)) {
-		await removePartial(partialPath);
+		await removeQuietly(partialPath);
 		return LocalModelFolderError.DownloadIncomplete({
 			downloadedMb: Math.round(stats.size / 1_000_000),
 			expectedMb: Math.round(sizeBytes / 1_000_000),
@@ -250,7 +256,7 @@ async function downloadFileTo({
 		catch: (error) => LocalModelFolderError.DownloadFailed({ cause: error }),
 	});
 	if (renameError) {
-		await removePartial(partialPath);
+		await removeQuietly(partialPath);
 		return Err(renameError);
 	}
 	return Ok(undefined);
@@ -342,13 +348,20 @@ export function createModelStorage(model: LocalModelConfig) {
 		 * models. Does not check for an existing install; callers decide
 		 * whether to skip.
 		 *
-		 * Cancellation has two seams: `cancel()` aborts the in-flight transfer
-		 * in Rust (the active file's download then errors out), and the
-		 * `isCancelled` predicate is checked between files so a cancel that
-		 * lands in the gap between a multi-file engine's downloads still stops
-		 * the run. Either way the error reads as a plain failure here; the
-		 * caller that requested the cancel is what knows to treat it as a clean
-		 * stop. Defaults to never-cancelled for callers that do not wire it.
+		 * Cancellation has three seams: a pre-check before any transfer starts
+		 * (so a cancel that lands in the caller's install-check window is honored
+		 * for every engine), `cancel()` aborting the in-flight transfer in Rust
+		 * (the active file's download then errors out), and the `isCancelled`
+		 * predicate between files so a cancel in the gap between a multi-file
+		 * engine's downloads still stops the run. Either way the error reads as a
+		 * plain failure here; the caller that requested the cancel is what knows
+		 * to treat it as a clean stop. Defaults to never-cancelled for callers
+		 * that do not wire it.
+		 *
+		 * Multi-file engines stage the whole directory under a sibling
+		 * `.partial`, then promote it with a single rename, so an interrupted run
+		 * never leaves a half-built directory at the canonical path for the
+		 * selector to list.
 		 */
 		async download({
 			downloadId,
@@ -360,19 +373,24 @@ export function createModelStorage(model: LocalModelConfig) {
 			onProgress: (progress: number) => void;
 			isCancelled?: () => boolean;
 		}): Promise<Result<void, LocalModelFolderError>> {
-			const { data: path, error: prepareError } = await tryAsync({
+			const { data: destination, error: prepareError } = await tryAsync({
 				try: async () => {
 					await mkdir(await PATHS.MODELS[model.engine](), { recursive: true });
-					const destination = await getPath();
-					if (model.engine !== 'whispercpp') {
-						await mkdir(destination, { recursive: true });
-					}
-					return destination;
+					return getPath();
 				},
 				catch: (error) =>
 					LocalModelFolderError.DownloadFailed({ cause: error }),
 			});
 			if (prepareError) return Err(prepareError);
+
+			// A cancel that arrived before any transfer started (e.g. while the
+			// caller checked for an existing install) stops here, uniformly for
+			// every engine.
+			if (isCancelled()) {
+				return LocalModelFolderError.DownloadFailed({
+					cause: 'Download cancelled',
+				});
+			}
 
 			switch (model.engine) {
 				case 'whispercpp': {
@@ -380,14 +398,27 @@ export function createModelStorage(model: LocalModelConfig) {
 						downloadId,
 						url: model.file.url,
 						sizeBytes: model.sizeBytes,
-						filePath: path,
+						filePath: destination,
 						onProgress,
 					});
 					if (error) return Err(error);
-					break;
+					return Ok(undefined);
 				}
 				case 'parakeet':
 				case 'moonshine': {
+					const staging = `${destination}.partial`;
+					const { error: stagingError } = await tryAsync({
+						try: async () => {
+							// Clear any leftover staging from an interrupted run, then
+							// start clean.
+							await removeQuietly(staging, { recursive: true });
+							await mkdir(staging, { recursive: true });
+						},
+						catch: (error) =>
+							LocalModelFolderError.DownloadFailed({ cause: error }),
+					});
+					if (stagingError) return Err(stagingError);
+
 					const totalBytes = model.sizeBytes;
 					let completedBytes = 0;
 					for (const file of model.files) {
@@ -396,16 +427,20 @@ export function createModelStorage(model: LocalModelConfig) {
 						// next file would otherwise complete the install. The state
 						// layer maps this to a no-op (it knows it cancelled).
 						if (isCancelled()) {
+							await removeQuietly(staging, { recursive: true });
 							return LocalModelFolderError.DownloadFailed({
 								cause: 'Download cancelled',
 							});
 						}
 						const { data: filePath, error: joinError } = await tryAsync({
-							try: () => join(path, file.filename),
+							try: () => join(staging, file.filename),
 							catch: (error) =>
 								LocalModelFolderError.DownloadFailed({ cause: error }),
 						});
-						if (joinError) return Err(joinError);
+						if (joinError) {
+							await removeQuietly(staging, { recursive: true });
+							return Err(joinError);
+						}
 						const { error } = await downloadFileTo({
 							downloadId,
 							url: file.url,
@@ -421,13 +456,32 @@ export function createModelStorage(model: LocalModelConfig) {
 								);
 							},
 						});
-						if (error) return Err(error);
+						if (error) {
+							await removeQuietly(staging, { recursive: true });
+							return Err(error);
+						}
 						completedBytes += file.sizeBytes;
 					}
-					break;
+
+					// Promote the staged directory atomically: replace any stale
+					// canonical directory, then rename staging into place.
+					const { error: promoteError } = await tryAsync({
+						try: async () => {
+							if (await exists(destination)) {
+								await remove(destination, { recursive: true });
+							}
+							await rename(staging, destination);
+						},
+						catch: (error) =>
+							LocalModelFolderError.DownloadFailed({ cause: error }),
+					});
+					if (promoteError) {
+						await removeQuietly(staging, { recursive: true });
+						return Err(promoteError);
+					}
+					return Ok(undefined);
 				}
 			}
-			return Ok(undefined);
 		},
 
 		/**

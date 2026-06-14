@@ -22,7 +22,7 @@ pub mod keys;
 pub mod matcher;
 mod rdev_map;
 
-pub use event::{ShortcutTriggerEvent, TriggerState, CAPTURE_CHANNEL, EVENT_CHANNEL};
+pub use event::{ShortcutTriggerEvent, TriggerState, CAPTURE_EVENT, TRIGGER_EVENT};
 pub use keys::{Key, KeyBinding, Modifier};
 
 use std::sync::{Arc, Mutex};
@@ -57,7 +57,7 @@ impl KeyboardListener {
     }
 
     /// Enter or leave capture mode. While capturing, the listener forwards the
-    /// held combo to the settings recorder on `CAPTURE_CHANNEL` instead of
+    /// held combo to the settings recorder on `CAPTURE_EVENT` instead of
     /// matching registered bindings (see `Matcher::set_capturing`).
     pub fn set_capturing(&self, capturing: bool) {
         if let Ok(mut matcher) = self.matcher.lock() {
@@ -96,11 +96,11 @@ impl KeyboardListener {
                     if matcher.is_capturing() {
                         let binding = matcher.held_binding();
                         drop(matcher);
-                        let _ = app.emit(CAPTURE_CHANNEL, binding);
+                        let _ = app.emit(CAPTURE_EVENT, binding);
                     } else {
                         drop(matcher);
                         for trigger in triggers {
-                            let _ = app.emit(EVENT_CHANNEL, trigger);
+                            let _ = app.emit(TRIGGER_EVENT, trigger);
                         }
                     }
                 });

@@ -274,10 +274,10 @@ async function initTray() {
 // accelerator strings cross this boundary: the registrar parses them to
 // `KeyBinding` before pushing (see `register-commands.ts`).
 
-/** Mirrors `keyboard::EVENT_CHANNEL` in the Rust backend. */
+/** Mirrors `keyboard::TRIGGER_EVENT` in the Rust backend. */
 const KEYBOARD_TRIGGER_EVENT = 'keyboard://shortcut-trigger';
 
-/** Mirrors `keyboard::CAPTURE_CHANNEL` in the Rust backend. */
+/** Mirrors `keyboard::CAPTURE_EVENT` in the Rust backend. */
 const KEYBOARD_CAPTURE_EVENT = 'keyboard://shortcut-capture';
 
 // autostart ---------------------------------------------------------

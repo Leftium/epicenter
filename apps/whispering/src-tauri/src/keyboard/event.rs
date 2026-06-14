@@ -1,17 +1,18 @@
 use serde::{Deserialize, Serialize};
 
-/// Channel every desktop keyboard trigger is emitted on. The Rust listener
-/// emits here; the FE registrar (`listen<ShortcutTriggerEvent>(...)`, Wave 3)
-/// maps each event to `command.callback(state)`. Mirrors the
-/// `transcription://model-state` convention.
-pub const EVENT_CHANNEL: &str = "keyboard://shortcut-trigger";
+/// The event every desktop keyboard trigger is emitted on (an `app.emit` topic,
+/// not a `tauri::ipc::Channel`). The Rust listener emits here; the FE registrar
+/// (`listen<ShortcutTriggerEvent>(...)`, Wave 3) maps each event to
+/// `command.callback(state)`. Mirrors the `transcription://model-state`
+/// convention.
+pub const TRIGGER_EVENT: &str = "keyboard://shortcut-trigger";
 
-/// Channel the listener emits the currently-held combo on while the settings
+/// The event the listener emits the currently-held combo on while the settings
 /// recorder is capturing a new binding. Recording goes through rdev (not the
 /// webview) because only rdev sees the Fn key and physical-key positions, so
 /// the captured binding is exactly what the matcher will later match. The FE
 /// accumulates these `KeyBinding` snapshots and commits when all keys release.
-pub const CAPTURE_CHANNEL: &str = "keyboard://shortcut-capture";
+pub const CAPTURE_EVENT: &str = "keyboard://shortcut-capture";
 
 /// Whether a binding just became fully held (`Pressed`) or stopped being fully
 /// held (`Released`). The variant names serialize verbatim to `"Pressed"` /

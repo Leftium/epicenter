@@ -301,59 +301,51 @@ export function createModelStorage(model: LocalModelConfig) {
 
 	return {
 		/**
-		 * Whether a valid install exists in the folder. Every expected file
-		 * must exist with a plausible size (at least 90% of the catalog size),
-		 * so interrupted downloads read as not installed. Never rejects; any
-		 * filesystem or path error reads as not installed.
+		 * Whether a valid install exists in the folder. Two paths to true:
+		 *
+		 * 1. A listed symlink entry with this model's name *is* the install.
+		 *    The user manages the link, and its target may live outside appdata
+		 *    where the webview fs scope cannot stat it, so it is trusted as-is —
+		 *    never size-validated.
+		 * 2. Otherwise a real install: every expected file present at a plausible
+		 *    size (at least 90% of the catalog size), so an interrupted download
+		 *    reads as not installed.
+		 *
+		 * Never rejects; any filesystem or path error reads as not installed.
 		 */
 		async isInstalled(): Promise<boolean> {
-			const { data: installedPath } = await tryAsync({
-				try: async (): Promise<string | null> => {
-					const path = await getPath();
-					const { data: pathExists } = await tryAsync({
-						try: () => exists(path),
-						catch: () => Ok(false),
-					});
-					if (!pathExists) return (await hasListedSymlinkEntry()) ? path : null;
+			if (await hasListedSymlinkEntry()) return true;
 
+			// The symlink case is handled above, so any error here just means the
+			// real install is absent or unreadable: not installed.
+			const { data: valid } = await tryAsync({
+				try: async (): Promise<boolean> => {
+					const path = await getPath();
+					if (!(await exists(path))) return false;
 					switch (model.engine) {
 						case 'whispercpp': {
-							const { data: stats } = await tryAsync({
-								try: () => stat(path),
-								catch: () => Ok(null),
-							});
-							if (!stats) {
-								return (await hasListedSymlinkEntry()) ? path : null;
-							}
-							return isModelFileSizeValid(stats.size, model.sizeBytes)
-								? path
-								: null;
+							const stats = await stat(path);
+							return isModelFileSizeValid(stats.size, model.sizeBytes);
 						}
 						case 'parakeet':
 						case 'moonshine': {
-							const { data: dirStats } = await tryAsync({
-								try: () => stat(path),
-								catch: () => Ok(null),
-							});
-							if (!dirStats) {
-								return (await hasListedSymlinkEntry()) ? path : null;
-							}
-							if (!dirStats.isDirectory) return null;
+							const dirStats = await stat(path);
+							if (!dirStats.isDirectory) return false;
 							for (const file of model.files) {
 								const filePath = await join(path, file.filename);
-								if (!(await exists(filePath))) return null;
+								if (!(await exists(filePath))) return false;
 								const fileStats = await stat(filePath);
 								if (!isModelFileSizeValid(fileStats.size, file.sizeBytes)) {
-									return null;
+									return false;
 								}
 							}
-							return path;
+							return true;
 						}
 					}
 				},
-				catch: () => Ok(null),
+				catch: () => Ok(false),
 			});
-			return installedPath != null;
+			return valid ?? false;
 		},
 
 		/**

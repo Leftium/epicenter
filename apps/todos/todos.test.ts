@@ -1,14 +1,16 @@
 import { describe, expect, test } from 'bun:test';
-import { IanaTimeZone } from '@epicenter/workspace';
-import {
-	assertContextSlug,
-	createTodos,
-	generateContextSlug,
-	parseDue,
-	type TodoTimeString,
-} from './todos';
+import type { CalendarDateString } from '@epicenter/field';
+import { assertContextSlug, createTodos, generateContextSlug } from './todos';
 
-const zone = 'America/Los_Angeles' as IanaTimeZone;
+function seededTodo(name = 'Phone') {
+	const todos = createTodos();
+	const slug = todos.actions.contexts_create({ name });
+	const id = todos.actions.todos_create({
+		title: 'Call back',
+		contexts: [slug],
+	});
+	return { todos, slug, id };
+}
 
 describe('context slugs', () => {
 	test('accepts stable file-facing slugs', () => {
@@ -30,59 +32,20 @@ describe('context slugs', () => {
 	});
 });
 
-describe('due parsing', () => {
-	test('parses none, all-day, and timed due states', () => {
-		expect(
-			parseDue({ dueDate: null, dueTime: null, dueZone: null }),
-		).toEqual({ ok: true, due: { state: 'none' } });
-
-		expect(
-			parseDue({
-				dueDate: '2026-06-14',
-				dueTime: null,
-				dueZone: null,
-			}),
-		).toEqual({ ok: true, due: { state: 'all-day', date: '2026-06-14' } });
-
-		expect(
-			parseDue({
-				dueDate: '2026-06-14',
-				dueTime: '09:30' as TodoTimeString,
-				dueZone: zone,
-			}),
-		).toEqual({
-			ok: true,
-			due: {
-				state: 'timed',
-				date: '2026-06-14',
-				time: '09:30',
-				zone,
-			},
-		});
+describe('due dates', () => {
+	test('a todo has no due date by default', () => {
+		const todos = createTodos();
+		const id = todos.actions.todos_create({ title: 'Someday' });
+		expect(todos.tables.todos.get(id).data?.dueDate).toBeNull();
 	});
 
-	test('rejects impossible due states', () => {
-		expect(
-			parseDue({
-				dueDate: null,
-				dueTime: '09:30' as TodoTimeString,
-				dueZone: zone,
-			}).ok,
-		).toBe(false);
-		expect(
-			parseDue({
-				dueDate: '2026-06-14',
-				dueTime: '09:30' as TodoTimeString,
-				dueZone: null,
-			}).ok,
-		).toBe(false);
-		expect(
-			parseDue({
-				dueDate: '2026-06-14',
-				dueTime: null,
-				dueZone: zone,
-			}).ok,
-		).toBe(false);
+	test('an all-day due date round-trips through create', () => {
+		const todos = createTodos();
+		const id = todos.actions.todos_create({
+			title: 'Pay rent',
+			dueDate: '2026-07-01' as CalendarDateString,
+		});
+		expect(todos.tables.todos.get(id).data?.dueDate).toBe('2026-07-01');
 	});
 });
 
@@ -91,6 +54,16 @@ describe('todo write path', () => {
 		const todos = createTodos();
 		expect(todos.actions.contexts_create({ name: 'Phone' })).toBe('phone');
 		expect(todos.actions.contexts_create({ name: 'Phone' })).toBe('phone-2');
+	});
+
+	test('auto-assigns a distinct color per context', () => {
+		const todos = createTodos();
+		const a = todos.actions.contexts_create({ name: 'Phone' });
+		const b = todos.actions.contexts_create({ name: 'Home' });
+		const colorA = todos.tables.contexts.get(a).data?.color;
+		const colorB = todos.tables.contexts.get(b).data?.color;
+		expect(colorA).not.toBeNull();
+		expect(colorA).not.toBe(colorB);
 	});
 
 	test('creates, completes, and soft-deletes a todo through actions', () => {
@@ -111,5 +84,40 @@ describe('todo write path', () => {
 
 		todos.actions.todos_delete({ id });
 		expect(todos.tables.todos.get(id).data?.deletedAt).not.toBeNull();
+	});
+});
+
+describe('context management', () => {
+	test('renaming the label leaves the slug and todos untouched', () => {
+		const { todos, slug, id } = seededTodo();
+
+		todos.actions.contexts_update({ slug, name: 'Mobile' });
+
+		expect(todos.tables.contexts.get(slug).data?.name).toBe('Mobile');
+		expect(todos.tables.todos.get(id).data?.contexts).toEqual([slug]);
+	});
+
+	test('renaming the slug migrates todo references', () => {
+		const { todos, slug, id } = seededTodo();
+
+		const result = todos.actions.contexts_rename_slug({
+			from: slug,
+			to: 'mobile',
+		});
+
+		expect(result).toEqual({ contextRenamed: true, todosUpdated: 1 });
+		expect(todos.tables.contexts.get('mobile').data?.name).toBe('Phone');
+		expect(todos.tables.contexts.get(slug).data).toBeNull();
+		expect(todos.tables.todos.get(id).data?.contexts).toEqual(['mobile']);
+	});
+
+	test('deleting a context cascades removal from todos', () => {
+		const { todos, slug, id } = seededTodo();
+
+		const result = todos.actions.contexts_delete({ slug });
+
+		expect(result).toEqual({ contextDeleted: true, todosUpdated: 1 });
+		expect(todos.tables.contexts.get(slug).data).toBeNull();
+		expect(todos.tables.todos.get(id).data?.contexts).toEqual([]);
 	});
 });

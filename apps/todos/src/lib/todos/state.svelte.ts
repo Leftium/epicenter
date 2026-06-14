@@ -1,12 +1,9 @@
+import type { CalendarDateString } from '@epicenter/field';
 import { fromTable } from '@epicenter/svelte';
 import type { ContextSlug, Todo, TodoId } from '../../../todos';
 import type { TodosBrowser } from '../../../todos.browser';
 
-const defaultContexts = [
-	{ name: 'Phone', icon: 'phone', color: 'sky' },
-	{ name: 'Desktop', icon: 'monitor', color: 'violet' },
-	{ name: 'Home', icon: 'home', color: 'emerald' },
-] as const;
+const defaultContexts = ['Phone', 'Desktop', 'Home'];
 
 export function createTodosState(todos: TodosBrowser) {
 	const todosMap = fromTable(todos.tables.todos);
@@ -33,17 +30,13 @@ export function createTodosState(todos: TodosBrowser) {
 		notDeletedTodos.filter((todo) => todo.completedAt !== null),
 	);
 
-	const selectedOpenTodos = $derived.by(() => {
-		const contextId = selectedContextId;
-		if (contextId === null) return openTodos;
-		return openTodos.filter((todo) => todo.contexts.includes(contextId));
-	});
+	const inSelectedContext = (todo: Todo) =>
+		selectedContextId === null || todo.contexts.includes(selectedContextId);
 
-	const selectedCompletedTodos = $derived.by(() => {
-		const contextId = selectedContextId;
-		if (contextId === null) return completedTodos;
-		return completedTodos.filter((todo) => todo.contexts.includes(contextId));
-	});
+	const selectedOpenTodos = $derived(openTodos.filter(inSelectedContext));
+	const selectedCompletedTodos = $derived(
+		completedTodos.filter(inSelectedContext),
+	);
 
 	return {
 		[Symbol.dispose]() {
@@ -58,9 +51,6 @@ export function createTodosState(todos: TodosBrowser) {
 		},
 		get selectedOpenTodos() {
 			return selectedOpenTodos;
-		},
-		get completedTodos() {
-			return completedTodos;
 		},
 		get selectedCompletedTodos() {
 			return selectedCompletedTodos;
@@ -82,14 +72,19 @@ export function createTodosState(todos: TodosBrowser) {
 		},
 		ensureDefaultContexts() {
 			if (contextsMap.size > 0) return;
-			for (const context of defaultContexts) {
-				todos.actions.contexts_create(context);
+			for (const name of defaultContexts) {
+				todos.actions.contexts_create({ name });
 			}
 		},
-		createTodo(input: { title: string; body: string }) {
+		createTodo(input: {
+			title: string;
+			body: string;
+			dueDate: CalendarDateString | null;
+		}) {
 			return todos.actions.todos_create({
 				title: input.title,
 				body: input.body,
+				dueDate: input.dueDate,
 				contexts: selectedContextId ? [selectedContextId] : [],
 			});
 		},
@@ -106,6 +101,15 @@ export function createTodosState(todos: TodosBrowser) {
 			selectedContextId = id;
 			return id;
 		},
+		renameContext(slug: ContextSlug, name: string) {
+			const trimmedName = name.trim();
+			if (trimmedName === '') return;
+			todos.actions.contexts_update({ slug, name: trimmedName });
+		},
+		deleteContext(slug: ContextSlug) {
+			todos.actions.contexts_delete({ slug });
+			if (selectedContextId === slug) selectedContextId = null;
+		},
 	};
 }
 
@@ -114,11 +118,6 @@ function compareTodos(a: Todo, b: Todo): number {
 		if (a.dueDate === null) return 1;
 		if (b.dueDate === null) return -1;
 		return a.dueDate.localeCompare(b.dueDate);
-	}
-	if (a.dueTime !== b.dueTime) {
-		if (a.dueTime === null) return 1;
-		if (b.dueTime === null) return -1;
-		return a.dueTime.localeCompare(b.dueTime);
 	}
 	return a.createdAt.localeCompare(b.createdAt);
 }

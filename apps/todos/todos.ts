@@ -1,5 +1,5 @@
 import {
-	CalendarDateString,
+	type CalendarDateString,
 	field,
 	InstantString,
 } from '@epicenter/field';
@@ -10,9 +10,9 @@ import {
 	defineTable,
 	defineWorkspace,
 	generateId,
-	IanaTimeZone,
 	type InferTableRow,
 	nullable,
+	type Table,
 } from '@epicenter/workspace';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
@@ -84,12 +84,24 @@ function trimSlug(value: string, max = 48): string {
 	return value.slice(0, max).replace(/-+$/g, '') || 'context';
 }
 
-export type TodoTimeString = string & Brand<'TodoTimeString'>;
-const TODO_TIME_PATTERN = '^([01]\\d|2[0-3]):[0-5]\\d$';
-const todoTimePattern = new RegExp(TODO_TIME_PATTERN);
+/**
+ * Deterministic context color palette. A context is assigned a color by its
+ * creation order so every context (seeded or user-created) is visually
+ * distinct without a color picker. The UI maps each token to a Tailwind class.
+ */
+export const CONTEXT_COLORS = [
+	'sky',
+	'violet',
+	'emerald',
+	'amber',
+	'rose',
+	'cyan',
+	'indigo',
+	'lime',
+] as const;
 
-function isTodoTimeString(value: unknown): value is TodoTimeString {
-	return typeof value === 'string' && todoTimePattern.test(value);
+function pickContextColor(index: number): string {
+	return CONTEXT_COLORS[index % CONTEXT_COLORS.length] ?? CONTEXT_COLORS[0];
 }
 
 const contextSlugSchema = Type.Unsafe<ContextSlug>(
@@ -101,8 +113,6 @@ const todosTable = defineTable({
 	title: field.string({ minLength: 1 }),
 	body: field.string(),
 	dueDate: nullable(field.date()),
-	dueTime: nullable(field.string<TodoTimeString>({ pattern: TODO_TIME_PATTERN })),
-	dueZone: nullable(field.string<IanaTimeZone>()),
 	contexts: field.json(Type.Array(contextSlugSchema)),
 	completedAt: nullable(field.instant()),
 	deletedAt: nullable(field.instant()),
@@ -113,64 +123,10 @@ export type Todo = InferTableRow<typeof todosTable>;
 const contextsTable = defineTable({
 	id: field.string<ContextSlug>({ pattern: CONTEXT_SLUG_PATTERN }),
 	name: field.string({ minLength: 1 }),
-	icon: nullable(field.string()),
 	color: nullable(field.string()),
 	sortOrder: field.number(),
 });
 export type TodoContext = InferTableRow<typeof contextsTable>;
-
-export type Due =
-	| { state: 'none' }
-	| { state: 'all-day'; date: CalendarDateString }
-	| {
-			state: 'timed';
-			date: CalendarDateString;
-			time: TodoTimeString;
-			zone: IanaTimeZone;
-	  };
-
-export type DueParseResult =
-	| { ok: true; due: Due }
-	| { ok: false; reason: string };
-
-type DueFields = Pick<Todo, 'dueDate' | 'dueTime' | 'dueZone'>;
-
-export function parseDue(fields: DueFields): DueParseResult {
-	const { dueDate, dueTime, dueZone } = fields;
-
-	if (dueDate !== null && !CalendarDateString.is(dueDate)) {
-		return { ok: false, reason: 'dueDate must be an ISO calendar date' };
-	}
-	if (dueTime !== null && !isTodoTimeString(dueTime)) {
-		return { ok: false, reason: 'dueTime must be HH:mm' };
-	}
-	if (dueZone !== null && !IanaTimeZone.is(dueZone)) {
-		return { ok: false, reason: 'dueZone must be an IANA timezone' };
-	}
-
-	if (dueDate === null && dueTime === null && dueZone === null) {
-		return { ok: true, due: { state: 'none' } };
-	}
-	if (dueDate !== null && dueTime === null && dueZone === null) {
-		return { ok: true, due: { state: 'all-day', date: dueDate } };
-	}
-	if (dueDate !== null && dueTime !== null && dueZone !== null) {
-		return {
-			ok: true,
-			due: { state: 'timed', date: dueDate, time: dueTime, zone: dueZone },
-		};
-	}
-	if (dueTime !== null && dueDate === null) {
-		return { ok: false, reason: 'dueTime requires dueDate' };
-	}
-	return { ok: false, reason: 'dueTime and dueZone must exist together' };
-}
-
-function assertValidDue(fields: DueFields): Due {
-	const parsed = parseDue(fields);
-	if (!parsed.ok) throw new Error(parsed.reason);
-	return parsed.due;
-}
 
 function normalizeContextSlugs(slugs: readonly string[]): ContextSlug[] {
 	const unique = new Set<ContextSlug>();
@@ -182,8 +138,6 @@ type CreateTodoInput = {
 	title: string;
 	body?: string;
 	dueDate?: CalendarDateString | null;
-	dueTime?: TodoTimeString | null;
-	dueZone?: IanaTimeZone | null;
 	contexts?: readonly string[];
 	createdAt?: InstantString;
 };
@@ -191,20 +145,98 @@ type CreateTodoInput = {
 function createTodoRow(input: CreateTodoInput): Todo {
 	const title = input.title.trim();
 	if (title === '') throw new Error('Todo title is required');
-	const row: Todo = {
+	return {
 		id: generateTodoId(),
 		title,
 		body: input.body ?? '',
 		dueDate: input.dueDate ?? null,
-		dueTime: input.dueTime ?? null,
-		dueZone: input.dueZone ?? null,
 		contexts: normalizeContextSlugs(input.contexts ?? []),
 		completedAt: null,
 		deletedAt: null,
 		createdAt: input.createdAt ?? InstantString.now(),
 	};
-	assertValidDue(row);
-	return row;
+}
+
+type TodosTables = {
+	contexts: Pick<Table<TodoContext>, 'get' | 'set' | 'delete'>;
+	todos: Pick<Table<Todo>, 'scan' | 'update'>;
+};
+
+/**
+ * Rename a context slug and migrate every todo that references it. The slug is
+ * the durable file/URL token, so changing it is the rare, explicit O(todos)
+ * migration. Editing the display `name` (see `contexts_update`) is free and
+ * never touches todos.
+ */
+function renameContextSlug({
+	tables,
+	from,
+	to,
+}: {
+	tables: TodosTables;
+	from: string;
+	to: string;
+}): { contextRenamed: boolean; todosUpdated: number } {
+	const fromSlug = assertContextSlug(from);
+	const toSlug = assertContextSlug(to);
+	if (fromSlug === toSlug) return { contextRenamed: false, todosUpdated: 0 };
+
+	const sourceRead = tables.contexts.get(fromSlug);
+	if (sourceRead.error) throw sourceRead.error;
+	const source = sourceRead.data;
+	if (source === null) throw new Error(`Context not found: ${fromSlug}`);
+
+	const targetRead = tables.contexts.get(toSlug);
+	if (targetRead.error) throw targetRead.error;
+	if (targetRead.data !== null) {
+		throw new Error(`Context already exists: ${toSlug}`);
+	}
+
+	tables.contexts.set({ ...source, id: toSlug });
+	tables.contexts.delete(fromSlug);
+
+	let todosUpdated = 0;
+	for (const todo of tables.todos.scan().rows) {
+		if (!todo.contexts.includes(fromSlug)) continue;
+		const contexts = todo.contexts.map((slug) =>
+			slug === fromSlug ? toSlug : slug,
+		);
+		tables.todos.update(todo.id, { contexts: [...new Set(contexts)] });
+		todosUpdated += 1;
+	}
+
+	return { contextRenamed: true, todosUpdated };
+}
+
+/**
+ * Delete a context and cascade-remove its slug from every todo. A todo that
+ * still carries an unknown slug afterward (hand-edited file, mid-sync) renders
+ * as a neutral chip rather than breaking.
+ */
+function deleteContext({
+	tables,
+	slug,
+}: {
+	tables: TodosTables;
+	slug: string;
+}): { contextDeleted: boolean; todosUpdated: number } {
+	const targetSlug = assertContextSlug(slug);
+	const read = tables.contexts.get(targetSlug);
+	if (read.error) throw read.error;
+	if (read.data === null) return { contextDeleted: false, todosUpdated: 0 };
+
+	tables.contexts.delete(targetSlug);
+
+	let todosUpdated = 0;
+	for (const todo of tables.todos.scan().rows) {
+		if (!todo.contexts.includes(targetSlug)) continue;
+		tables.todos.update(todo.id, {
+			contexts: todo.contexts.filter((existing) => existing !== targetSlug),
+		});
+		todosUpdated += 1;
+	}
+
+	return { contextDeleted: true, todosUpdated };
 }
 
 export function createTodos() {
@@ -223,6 +255,7 @@ export function createTodos() {
 				input: Type.Object({
 					title: Type.String(),
 					body: Type.Optional(Type.String()),
+					dueDate: Type.Optional(Type.Union([field.date(), Type.Null()])),
 					contexts: Type.Optional(Type.Array(contextSlugSchema)),
 				}),
 				handler: (input) => {
@@ -254,7 +287,6 @@ export function createTodos() {
 				description: 'Create a context with a generated stable slug',
 				input: Type.Object({
 					name: Type.String(),
-					icon: Type.Optional(Type.String()),
 					color: Type.Optional(Type.String()),
 				}),
 				handler: (input) => {
@@ -268,13 +300,55 @@ export function createTodos() {
 					tables.contexts.set({
 						id,
 						name,
-						icon: input.icon ?? null,
-						color: input.color ?? null,
+						color: input.color ?? pickContextColor(existing.length),
 						sortOrder: existing.length,
 					});
 					return id;
 				},
 			}),
+			contexts_update: defineMutation({
+				description: 'Edit a context label or color (slug unchanged)',
+				input: Type.Object({
+					slug: contextSlugSchema,
+					name: Type.Optional(Type.String()),
+					color: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+				}),
+				handler: (input) => {
+					const read = tables.contexts.get(input.slug);
+					if (read.error) throw read.error;
+					const context = read.data;
+					if (context === null) {
+						throw new Error(`Context not found: ${input.slug}`);
+					}
+					const name =
+						input.name === undefined ? context.name : input.name.trim();
+					if (name === '') throw new Error('Context name is required');
+					tables.contexts.set({
+						...context,
+						name,
+						color: input.color === undefined ? context.color : input.color,
+					});
+				},
+			}),
+			contexts_rename_slug: defineMutation({
+				description: 'Rename a context slug and migrate todo references',
+				input: Type.Object({ from: Type.String(), to: Type.String() }),
+				handler: (input) =>
+					workspace.ydoc.transact(() =>
+						renameContextSlug({ tables, from: input.from, to: input.to }),
+					),
+			}),
+			contexts_delete: defineMutation({
+				description: 'Delete a context and remove it from all todos',
+				input: Type.Object({ slug: Type.String() }),
+				handler: (input) =>
+					workspace.ydoc.transact(() =>
+						deleteContext({ tables, slug: input.slug }),
+					),
+			}),
 		}),
 	});
 }
+
+export type TodosWorkspace = ReturnType<typeof createTodos>;
+export type TodosActions = TodosWorkspace['actions'];

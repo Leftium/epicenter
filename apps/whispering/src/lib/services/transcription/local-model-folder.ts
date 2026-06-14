@@ -200,12 +200,15 @@ async function downloadFileTo({
 	const partialPath = `${filePath}.partial`;
 
 	const onProgressChannel = new Channel<DownloadProgress>();
-	onProgressChannel.onmessage = ({ progressTotal, total }) => {
+	onProgressChannel.onmessage = ({ bytesReceived, totalBytes }) => {
 		// f64 fields arrive as `number | null` (specta guards non-finite floats);
 		// missing content-length is 0, so fall back to the catalog size.
-		const received = progressTotal ?? 0;
-		const expected = total && total > 0 ? total : sizeBytes;
-		onProgress(Math.round((received / expected) * 100));
+		const received = bytesReceived ?? 0;
+		const expected = totalBytes && totalBytes > 0 ? totalBytes : sizeBytes;
+		// Clamp: a file larger than its catalog size (or a content-length-less
+		// response) can push the ratio past 100, which the progress bar should
+		// never show.
+		onProgress(Math.min(100, Math.round((received / expected) * 100)));
 	};
 
 	const { error: downloadError } = await commands.downloadFile(
@@ -258,13 +261,6 @@ async function downloadFileTo({
  * safe to recreate freely.
  */
 export function createModelStorage(model: LocalModelConfig) {
-	/**
-	 * Cancellation key shared by `download` and `cancel`. The Rust registry is
-	 * single-flight per id, which holds because the UI never starts a second
-	 * download for the same model while one is running.
-	 */
-	const downloadId = `${model.engine}:${model.id}`;
-
 	async function getPath(): Promise<string> {
 		const dir = await PATHS.MODELS[model.engine]();
 		switch (model.engine) {
@@ -355,9 +351,12 @@ export function createModelStorage(model: LocalModelConfig) {
 		 * stop. Defaults to never-cancelled for callers that do not wire it.
 		 */
 		async download({
+			downloadId,
 			onProgress,
 			isCancelled = () => false,
 		}: {
+			/** Unique per attempt; `cancel(downloadId)` aborts this run's transfer. */
+			downloadId: string;
 			onProgress: (progress: number) => void;
 			isCancelled?: () => boolean;
 		}): Promise<Result<void, LocalModelFolderError>> {
@@ -432,11 +431,12 @@ export function createModelStorage(model: LocalModelConfig) {
 		},
 
 		/**
-		 * Abort an in-flight download of this model: the active `download()`
-		 * call's current file aborts in Rust and errors out, and `download`
-		 * then removes the partial. A no-op when nothing is downloading.
+		 * Abort the in-flight download attempt registered under `downloadId`:
+		 * the matching `download()` call's current file aborts in Rust and errors
+		 * out, and `download` then removes the partial. A no-op when nothing is
+		 * downloading under that id.
 		 */
-		async cancel(): Promise<void> {
+		async cancel(downloadId: string): Promise<void> {
 			await commands.cancelDownload(downloadId);
 		},
 	};

@@ -2,6 +2,7 @@
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button } from '@epicenter/ui/button';
 	import { Progress } from '@epicenter/ui/progress';
+	import { toast } from '@epicenter/ui/sonner';
 	import { Spinner } from '@epicenter/ui/spinner';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import Download from '@lucide/svelte/icons/download';
@@ -11,12 +12,21 @@
 
 	let {
 		model,
+		active = false,
 		recommended = false,
+		onActivate,
+		onClearSelection,
 		onDiskChange,
 	}: {
 		model: LocalModelConfig;
+		/** Whether this catalog model is the selected folder entry. */
+		active?: boolean;
 		/** Show the Recommended badge; the selector decides when it guides a choice. */
 		recommended?: boolean;
+		/** Select this model's folder entry through the parent bind:value. */
+		onActivate: () => void | Promise<void>;
+		/** Clear the parent selection after deleting the active entry. */
+		onClearSelection?: () => void | Promise<void>;
 		/** Re-scan the parent selector after this card changes the models folder. */
 		onDiskChange?: () => void | Promise<void>;
 	} = $props();
@@ -27,26 +37,51 @@
 
 	// Aliased so the template narrows the union per branch.
 	const modelState = $derived(download.state);
+	const isActive = $derived(active && modelState.type === 'ready');
 
 	async function downloadModel() {
-		await download.download();
+		const result = await download.download();
+		if (!result) return;
+		if (result.error) {
+			toast.error('Failed to download model', {
+				description: result.error.message,
+			});
+			return;
+		}
+
+		await onActivate();
 		await onDiskChange?.();
+		toast.success(
+			result.data.outcome === 'already-installed'
+				? 'Model already downloaded and activated'
+				: 'Model downloaded and activated successfully',
+		);
 	}
 
 	async function deleteModel() {
-		await download.delete();
+		const { error } = await download.delete();
+		if (error) {
+			toast.error('Failed to delete model', {
+				description: error.message,
+			});
+			return;
+		}
+		if (active) {
+			await onClearSelection?.();
+		}
 		await onDiskChange?.();
+		toast.success('Model deleted');
 	}
 
 	async function activateModel() {
-		download.activate();
+		await onActivate();
 		await onDiskChange?.();
+		toast.success('Model activated');
 	}
 </script>
 
 <div
-	class="flex items-center gap-3 p-3 rounded-lg border {modelState.type ===
-	'active'
+	class="flex items-center gap-3 p-3 rounded-lg border {isActive
 		? 'border-primary bg-primary/5'
 		: ''}"
 >
@@ -56,7 +91,7 @@
 			{#if recommended}
 				<Badge variant="outline" class="text-xs">Recommended</Badge>
 			{/if}
-			{#if modelState.type === 'active'}
+			{#if isActive}
 				<Badge variant="default" class="text-xs">Active</Badge>
 			{:else if modelState.type === 'ready'}
 				<Badge variant="secondary" class="text-xs">Downloaded</Badge>
@@ -73,17 +108,16 @@
 				<span class="text-sm font-medium">{modelState.progress}%</span>
 			</div>
 		{:else if modelState.type === 'ready'}
-			<Button size="sm" variant="outline" onclick={activateModel}>
-				Activate
-			</Button>
-			<Button size="sm" variant="ghost" onclick={deleteModel}>
-				<X class="size-4" />
-			</Button>
-		{:else if modelState.type === 'active'}
-			<Button size="sm" variant="default" disabled>
-				<CheckIcon class="size-4 mr-1" />
-				Activated
-			</Button>
+			{#if isActive}
+				<Button size="sm" variant="default" disabled>
+					<CheckIcon class="size-4 mr-1" />
+					Activated
+				</Button>
+			{:else}
+				<Button size="sm" variant="outline" onclick={activateModel}>
+					Activate
+				</Button>
+			{/if}
 			<Button size="sm" variant="ghost" onclick={deleteModel}>
 				<X class="size-4" />
 			</Button>

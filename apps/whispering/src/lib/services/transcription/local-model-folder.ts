@@ -8,8 +8,9 @@
  * JS view of the folder: listing entries, streaming catalog downloads into
  * it, and deleting entries, never anything outside the folder.
  *
- * UI-free and settings-free. Activation (writing the model name into
- * `deviceConfig`) lives in `$lib/operations/local-models.ts`.
+ * UI-free and settings-free. Selection is parent-owned component state:
+ * settings bind to a folder entry name, and catalog/custom entries activate
+ * through that same `bind:value` path.
  *
  * Layout under the appdata root (see `$lib/services/fs-paths`):
  * - Whisper:   `models/whisper/{filename}` (a single .bin file)

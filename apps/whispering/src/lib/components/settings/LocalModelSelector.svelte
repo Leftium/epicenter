@@ -131,13 +131,28 @@
 	}
 
 	async function downloadRecommendedModel() {
-		await recommendedDownload.download();
+		const result = await recommendedDownload.download();
+		if (!result) return;
+		if (result.error) {
+			toast.error('Failed to download model', {
+				description: result.error.message,
+			});
+			return;
+		}
+
+		value = result.data.entryName;
 		await refreshEntries();
+		toast.success(
+			result.data.outcome === 'already-installed'
+				? 'Model already downloaded and activated'
+				: 'Model downloaded and activated successfully',
+		);
 	}
 
 	async function activateRecommendedModel() {
-		recommendedDownload.activate();
+		value = modelEntryName(recommended);
 		await refreshEntries();
+		toast.success('Model activated');
 	}
 
 	// Rescan on mount, when the engine changes, and whenever the active model
@@ -274,9 +289,17 @@
 			</Collapsible.Trigger>
 			<Collapsible.Content class="space-y-3 pt-3">
 				{#each models as model (model.id)}
+					{@const entryName = modelEntryName(model)}
 					<LocalModelDownloadCard
 						{model}
+						active={value === entryName}
 						recommended={models.length > 1 && model.id === recommended.id}
+						onActivate={() => {
+							value = entryName;
+						}}
+						onClearSelection={() => {
+							if (value === entryName) value = '';
+						}}
 						onDiskChange={refreshEntries}
 					/>
 				{/each}

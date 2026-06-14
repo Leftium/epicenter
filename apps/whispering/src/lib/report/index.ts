@@ -79,15 +79,6 @@ export const log = {
 			data: data ?? error,
 		} satisfies LogEvent);
 	},
-	error(error: Error, data?: unknown): void {
-		consoleSink({
-			ts: Date.now(),
-			level: 'error',
-			source: SOURCE,
-			message: error.message,
-			data: data ?? error,
-		} satisfies LogEvent);
-	},
 } as const;
 
 // ── Internals ─────────────────────────────────────────────────────────────

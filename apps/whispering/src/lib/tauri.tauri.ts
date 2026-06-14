@@ -405,7 +405,7 @@ const globalShortcuts = {
 
 // media -------------------------------------------------------------
 const media = {
-	pauseActive: () => commands.pauseActiveMedia(),
+	pause: () => commands.pauseActiveMedia(),
 	resume: (players: MediaPlayer[]) => commands.resumeMedia(players),
 };
 

@@ -10,11 +10,8 @@ import type { Result } from 'wellcrafted/result';
 import type {
 	commands,
 	LocalModelState,
-	MediaControlFailure,
-	MediaPlayer,
 	ModelStateEvent,
 	ModelStatus,
-	PauseActiveMediaOutcome,
 	RecordingArtifact,
 	TranscriptionConfig,
 	TranscriptionError,
@@ -114,24 +111,6 @@ type _OpenAccessibilitySettings = Expect<
 	Equal<
 		ReturnType<typeof commands.openAccessibilitySettings>,
 		Promise<Result<null, string>>
-	>
->;
-
-type _PauseActiveMedia = Expect<
-	Equal<
-		ReturnType<typeof commands.pauseActiveMedia>,
-		Promise<Result<PauseActiveMediaOutcome, string>>
-	>
->;
-
-type _ResumeMediaArgs = Expect<
-	Equal<Parameters<typeof commands.resumeMedia>, [MediaPlayer[]]>
->;
-
-type _ResumeMediaResult = Expect<
-	Equal<
-		ReturnType<typeof commands.resumeMedia>,
-		Promise<Result<MediaControlFailure[], string>>
 	>
 >;
 

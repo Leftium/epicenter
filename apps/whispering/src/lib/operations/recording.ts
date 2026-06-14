@@ -59,13 +59,12 @@ export async function startManualRecording() {
 		description: 'Setting up your recording environment...',
 	});
 
-	const mediaSession = recordingMedia.startSession();
-	await recordingMedia.waitForPause(mediaSession);
+	recordingMedia.pause();
 
 	const { data: outcome, error } = await manualRecorder.startRecording();
 
 	if (error) {
-		await recordingMedia.resumeSession(mediaSession);
+		void recordingMedia.resume();
 		loading.reject({ cause: error });
 		return;
 	}
@@ -109,7 +108,7 @@ export async function stopManualRecording() {
 	});
 	log.info('Recording stopped');
 	sound.playSoundIfEnabled('manual-stop');
-	await recordingMedia.resumeActiveSession();
+	void recordingMedia.resume();
 
 	analytics.logEvent({
 		type: 'manual_recording_completed',
@@ -145,7 +144,7 @@ export async function cancelManualRecording() {
 
 	switch (data.status) {
 		case 'no-recording': {
-			await recordingMedia.resumeActiveSession();
+			void recordingMedia.resume();
 			loading.resolve({
 				title: 'No active recording',
 				description: 'There is no recording in progress to cancel.',
@@ -153,7 +152,7 @@ export async function cancelManualRecording() {
 			break;
 		}
 		case 'cancelled': {
-			await recordingMedia.resumeActiveSession();
+			void recordingMedia.resume();
 			loading.resolve({
 				title: '✅ All Done!',
 				description: 'Recording cancelled successfully',
@@ -174,8 +173,7 @@ export async function startVadRecording() {
 		description: 'Your voice activated capture is starting...',
 	});
 
-	const mediaSession = recordingMedia.startSession();
-	await recordingMedia.waitForPause(mediaSession);
+	recordingMedia.pause();
 
 	const { data: outcome, error } = await vadRecorder.startActiveListening({
 		onLevel: (level) => recordingOverlay.reportLevel(level),
@@ -211,7 +209,7 @@ export async function startVadRecording() {
 	});
 
 	if (error) {
-		await recordingMedia.resumeSession(mediaSession);
+		void recordingMedia.resume();
 		loading.reject({ cause: error });
 		return;
 	}
@@ -244,7 +242,7 @@ export async function stopVadRecording() {
 		description: 'Your voice activated capture has been stopped.',
 	});
 	sound.playSoundIfEnabled('vad-stop');
-	await recordingMedia.resumeActiveSession();
+	void recordingMedia.resume();
 }
 
 export function toggleVadRecording() {

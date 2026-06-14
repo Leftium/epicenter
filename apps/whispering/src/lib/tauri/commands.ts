@@ -116,7 +116,6 @@ export type {
 	ModelStateEvent,
 	ModelStatus,
 	Modifier,
-	PauseActiveMediaOutcome,
 	RecordingArtifact,
 	TranscriptionConfig,
 	TranscriptionError,

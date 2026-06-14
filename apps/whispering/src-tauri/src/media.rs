@@ -120,6 +120,9 @@ return "idle"
 
 #[cfg(target_os = "macos")]
 fn resume_player(player: MediaPlayer) -> Result<(), String> {
+    // The FE only asks us to resume players we actually paused, so this guard
+    // only fires when the user quit the app mid-recording. It still matters:
+    // `tell application "X" to play` would cold-launch a quit app otherwise.
     if !is_app_running(player.app_name()) {
         return Ok(());
     }
@@ -171,13 +174,15 @@ fn run_osascript(script: &str) -> Result<String, String> {
 
 #[cfg(target_os = "macos")]
 fn failure(player: MediaPlayer, message: String) -> MediaControlFailure {
+    // macOS Automation denial surfaces as "Not authorized to send Apple
+    // events ... (-1743)". Match only those two reliable markers: a looser
+    // "permission" substring would mislabel an unrelated error and then latch
+    // the one-time permission hint shut for the rest of the session.
     let lower = message.to_lowercase();
+    let permission_denied = lower.contains("not authorized") || lower.contains("-1743");
     MediaControlFailure {
         player,
-        permission_denied: lower.contains("not authorized")
-            || lower.contains("not permitted")
-            || lower.contains("privilege violation")
-            || lower.contains("permission"),
+        permission_denied,
         message,
     }
 }

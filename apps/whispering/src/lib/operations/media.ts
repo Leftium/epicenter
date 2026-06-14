@@ -4,14 +4,16 @@ import { log, report } from '$lib/report';
 import { settings } from '$lib/state/settings.svelte';
 import type { MediaControlFailure, MediaPlayer } from '$lib/tauri/commands';
 
-type RecordingMediaSession = {
-	id: number;
-	paused: Promise<MediaPlayer[]>;
-	resumed: boolean;
-};
+// The one best-effort macOS side effect for recording: pause Music/Spotify
+// while recording, resume them after. Recording never waits on this and never
+// fails because of it. `pause()` fires without awaiting; `resume()` waits for
+// that pause to settle, then restores exactly the players it paused.
+//
+// The pending pause promise is the entire state: it answers the only question
+// resume needs ("which players did I pause?") and doubles as the "currently
+// paused" flag.
 
-let activeSession: RecordingMediaSession | null = null;
-let nextSessionId = 0;
+let pausedPromise: Promise<MediaPlayer[]> | null = null;
 let didExplainPermissionDenied = false;
 
 function shouldPauseMedia(): boolean {
@@ -20,93 +22,72 @@ function shouldPauseMedia(): boolean {
 	);
 }
 
-function logFailures(
-	action: 'pause' | 'resume',
-	failures: MediaControlFailure[],
-) {
+/** Log every failure, and surface the permission hint once per session. */
+function reportFailures(failures: MediaControlFailure[]): void {
 	for (const failure of failures) {
 		log.warn(
-			new Error(`Failed to ${action} ${failure.player}: ${failure.message}`),
+			new Error(
+				`Media control failed for ${failure.player}: ${failure.message}`,
+			),
 			failure,
 		);
 	}
 
-	if (
-		failures.some((failure) => failure.permissionDenied) &&
-		!didExplainPermissionDenied
-	) {
-		didExplainPermissionDenied = true;
-		report.info({
-			title: 'Media control is blocked',
-			description:
-				'Allow Whispering to control Music or Spotify in macOS Automation settings.',
-		});
-	}
+	if (didExplainPermissionDenied) return;
+	if (!failures.some((failure) => failure.permissionDenied)) return;
+
+	didExplainPermissionDenied = true;
+	report.info({
+		title: 'Media control is blocked',
+		description:
+			'Allow Whispering to control Music or Spotify in macOS Automation settings.',
+	});
 }
 
 async function pauseActiveMedia(): Promise<MediaPlayer[]> {
 	if (!tauri) return [];
-
 	try {
-		const { data, error } = await tauri.media.pauseActive();
+		const { data, error } = await tauri.media.pause();
 		if (error !== null) {
-			log.warn(new Error(`Failed to pause active media: ${error}`));
+			log.warn(new Error(`Failed to pause media: ${error}`));
 			return [];
 		}
-
-		logFailures('pause', data.failures);
+		reportFailures(data.failures);
 		return data.paused;
 	} catch (error) {
-		log.warn(new Error(`Failed to pause active media: ${String(error)}`));
+		log.warn(new Error(`Failed to pause media: ${String(error)}`));
 		return [];
 	}
 }
 
 export const recordingMedia = {
-	startSession(): RecordingMediaSession | null {
-		if (!shouldPauseMedia()) return null;
-		if (activeSession) return activeSession;
-
-		const session = {
-			id: ++nextSessionId,
-			paused: pauseActiveMedia(),
-			resumed: false,
-		};
-		activeSession = session;
-		return session;
+	/** Pause active media if enabled. Fire-and-forget: recording never waits. */
+	pause(): void {
+		if (pausedPromise || !shouldPauseMedia()) return;
+		pausedPromise = pauseActiveMedia();
 	},
 
-	async waitForPause(session: RecordingMediaSession | null): Promise<void> {
-		await session?.paused;
-	},
+	/**
+	 * Resume whatever the matching `pause()` paused. A no-op when nothing was
+	 * paused, so every stop/cancel/start-failure path can call it blindly.
+	 */
+	async resume(): Promise<void> {
+		const pending = pausedPromise;
+		if (!pending) return;
+		pausedPromise = null;
 
-	async resumeSession(session: RecordingMediaSession | null): Promise<void> {
-		if (!session || session.resumed) return;
+		const paused = await pending;
+		if (!tauri || paused.length === 0) return;
 
-		session.resumed = true;
-
-		const paused = await session.paused;
-		if (paused.length > 0) {
-			if (tauri) {
-				try {
-					const { data, error } = await tauri.media.resume(paused);
-					if (error !== null) {
-						log.warn(new Error(`Failed to resume media: ${error}`));
-					} else {
-						logFailures('resume', data);
-					}
-				} catch (error) {
-					log.warn(new Error(`Failed to resume media: ${String(error)}`));
-				}
+		try {
+			const { data, error } = await tauri.media.resume(paused);
+			if (error !== null) {
+				log.warn(new Error(`Failed to resume media: ${error}`));
+				return;
 			}
+			reportFailures(data);
+		} catch (error) {
+			log.warn(new Error(`Failed to resume media: ${String(error)}`));
 		}
-
-		if (activeSession?.id === session.id) {
-			activeSession = null;
-		}
-	},
-
-	resumeActiveSession(): Promise<void> {
-		return this.resumeSession(activeSession);
 	},
 };

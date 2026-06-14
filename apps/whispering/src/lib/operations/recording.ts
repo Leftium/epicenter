@@ -141,37 +141,21 @@ export async function cancelManualRecording() {
 	}
 	if (data.status === 'cancelled') {
 		sound.playSoundIfEnabled('manual-cancel');
-		report.success({
-			title: '✅ Recording cancelled',
-			description: 'Recording cancelled successfully',
-		});
+		report.success({ title: '✅ Recording cancelled' });
 		log.info('Recording cancelled');
 		return;
 	}
 
-	// No manual recording, but a VAD session may be the live capture instead.
+	// No manual recording, but a VAD session may be live. VAD has no
+	// discard-vs-finalize split: tearing the session down is the only way to
+	// abort it, which is exactly what stopVadRecording already does (same
+	// stopActiveListening call, same end state, mode left on `vad`). So cancel a
+	// live VAD session by stopping it, rather than cloning the teardown with a
+	// second toast and a manual-recording sound. Nothing live: silent no-op.
 	const isVadActive =
 		vadRecorder.state === 'LISTENING' ||
 		vadRecorder.state === 'SPEECH_DETECTED';
-	if (isVadActive) {
-		const { error: vadError } = await vadRecorder.stopActiveListening();
-		if (vadError) {
-			report.error({
-				title: 'Failed to cancel voice activated capture',
-				cause: vadError,
-			});
-			return;
-		}
-		sound.playSoundIfEnabled('manual-cancel');
-		report.success({
-			title: '✅ Voice activated capture cancelled',
-			description: 'Voice activated capture cancelled successfully',
-		});
-		log.info('Voice activated capture cancelled');
-		return;
-	}
-
-	// Nothing live: silent no-op (see the note above).
+	if (isVadActive) await stopVadRecording();
 }
 
 export async function startVadRecording() {

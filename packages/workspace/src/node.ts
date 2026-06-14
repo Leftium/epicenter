@@ -9,8 +9,8 @@ export { connectDaemonActions } from './client/connect-daemon-actions.js';
 export type { DaemonActions } from './client/daemon-actions.js';
 export { buildDaemonActions } from './client/daemon-actions.js';
 export { findEpicenterRoot } from './client/find-epicenter-root.js';
-export { EpicenterConfigError } from './config/load-epicenter-config.js';
 export { DEFAULT_EPICENTER_CONFIG_SOURCE } from './config/epicenter-config-source.js';
+export { EpicenterConfigError } from './config/load-epicenter-config.js';
 export {
 	type PeerSyncStatus,
 	RunError,

@@ -23,8 +23,8 @@ import type { StartedMount } from '@epicenter/workspace/daemon';
 import {
 	claimDaemonLease,
 	type DaemonMetadata,
-	openEpicenterRoot,
 	type EpicenterConfigError,
+	openEpicenterRoot,
 	StartupError,
 	startDaemonServer,
 	unlinkMetadata,

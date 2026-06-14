@@ -74,7 +74,9 @@ export async function loadEpicenterConfig(
 		EPICENTER_CONFIG_FILENAME,
 	);
 	if (!existsSync(epicenterConfigPath)) {
-		return EpicenterConfigError.EpicenterConfigNotFound({ epicenterConfigPath });
+		return EpicenterConfigError.EpicenterConfigNotFound({
+			epicenterConfigPath,
+		});
 	}
 
 	const { data: module, error: importError } = await tryAsync({

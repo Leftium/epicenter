@@ -34,8 +34,8 @@ import type { OwnerId } from '@epicenter/identity';
 import { Err, Ok, type Result, trySync } from 'wellcrafted/result';
 
 import {
-	loadEpicenterConfig,
 	type EpicenterConfigError,
+	loadEpicenterConfig,
 } from '../config/load-epicenter-config.js';
 import type { Mount, MountContext } from '../daemon/define-mount.js';
 import { validateMountNames } from '../daemon/mount-validation.js';

@@ -33,7 +33,9 @@ export const initCommand = cmd({
 	handler: (argv) => {
 		const epicenterConfigPath = join(argv.dir, 'epicenter.config.ts');
 		if (existsSync(epicenterConfigPath)) {
-			process.stderr.write(`${epicenterConfigPath} already exists; left as is\n`);
+			process.stderr.write(
+				`${epicenterConfigPath} already exists; left as is\n`,
+			);
 			return;
 		}
 		writeFileSync(epicenterConfigPath, DEFAULT_EPICENTER_CONFIG_SOURCE, {

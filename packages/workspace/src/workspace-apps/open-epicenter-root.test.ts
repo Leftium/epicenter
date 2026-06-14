@@ -60,7 +60,10 @@ const RUNTIME = '{ collaboration: {}, async [Symbol.asyncDispose]() {} }';
 
 describe('openEpicenterRoot', () => {
 	test('returns a structured not-found error instead of throwing', async () => {
-		const result = await openEpicenterRoot({ epicenterRoot, auth: stubAuthClient() });
+		const result = await openEpicenterRoot({
+			epicenterRoot,
+			auth: stubAuthClient(),
+		});
 		const error = expectErr(result);
 		expect(error).toMatchObject({
 			name: 'EpicenterConfigNotFound',
@@ -76,7 +79,10 @@ describe('openEpicenterRoot', () => {
 			];\n`,
 		);
 
-		const result = await openEpicenterRoot({ epicenterRoot, auth: stubAuthClient() });
+		const result = await openEpicenterRoot({
+			epicenterRoot,
+			auth: stubAuthClient(),
+		});
 		const mounts = expectOk(result);
 		expect(
 			mounts
@@ -95,7 +101,10 @@ describe('openEpicenterRoot', () => {
 	test('opens nothing for an empty config', async () => {
 		writeConfig('export default [];\n');
 
-		const result = await openEpicenterRoot({ epicenterRoot, auth: stubAuthClient() });
+		const result = await openEpicenterRoot({
+			epicenterRoot,
+			auth: stubAuthClient(),
+		});
 		expect(expectOk(result)).toEqual([]);
 	});
 
@@ -116,7 +125,10 @@ describe('openEpicenterRoot', () => {
 			];\n`,
 		);
 
-		const result = await openEpicenterRoot({ epicenterRoot, auth: stubAuthClient() });
+		const result = await openEpicenterRoot({
+			epicenterRoot,
+			auth: stubAuthClient(),
+		});
 		const error = expectErr(result);
 		expect(error).toMatchObject({ name: 'MountOpenFailed', mount: 'bad' });
 		expect(await Bun.file(join(epicenterRoot, 'good.disposed')).exists()).toBe(
@@ -139,7 +151,10 @@ describe('openEpicenterRoot', () => {
 			];\n`,
 		);
 
-		const result = await openEpicenterRoot({ epicenterRoot, auth: stubAuthClient() });
+		const result = await openEpicenterRoot({
+			epicenterRoot,
+			auth: stubAuthClient(),
+		});
 		expect(expectErr(result)).toMatchObject({
 			name: 'MountRejected',
 			mount: '__proto__',

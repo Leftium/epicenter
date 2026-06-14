@@ -26,7 +26,9 @@ function tempEpicenterRoot() {
 describe('epicenterRootOption', () => {
 	test('discovers the nearest Epicenter root from a start directory', () => {
 		const { root, nested } = tempEpicenterRoot();
-		const argv = yargs().option('C', epicenterRootOption).parseSync(['-C', nested]);
+		const argv = yargs()
+			.option('C', epicenterRootOption)
+			.parseSync(['-C', nested]);
 
 		expect(argv.C).toBe(root as typeof argv.C);
 	});

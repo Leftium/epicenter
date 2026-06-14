@@ -21,14 +21,14 @@ import {
 } from 'wellcrafted/error';
 import { Err, Ok, type Result } from 'wellcrafted/result';
 import type { AuthFetch } from '../auth-contract.js';
-import type {
-	OAuthLauncher,
-	OAuthLaunchResult,
-} from '../oauth-launchers/contract.js';
 import {
 	EPICENTER_API_URL,
 	EPICENTER_OAUTH_SCOPES,
 } from '../oauth-defaults.js';
+import type {
+	OAuthLauncher,
+	OAuthLaunchResult,
+} from '../oauth-launchers/contract.js';
 import { parseOAuthTokenGrant } from '../oauth-token-endpoints.js';
 import { OAUTH_ROUTES } from '../routes.js';
 

@@ -14,12 +14,12 @@ import {
 	type OAuthTokenGrant,
 	type PersistedAuth,
 } from './auth-types.js';
+import { EPICENTER_API_URL } from './oauth-defaults.js';
 import type { OAuthLauncher } from './oauth-launchers/contract.js';
 import {
 	refreshOAuthTokenWithEndpoint,
 	revokeOAuthRefreshTokenWithEndpoint,
 } from './oauth-token-endpoints.js';
-import { EPICENTER_API_URL } from './oauth-defaults.js';
 import type { PersistedAuthStorage } from './persisted-auth-storage.js';
 import { API_ROUTES } from './routes.js';
 

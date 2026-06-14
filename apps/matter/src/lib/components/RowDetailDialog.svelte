@@ -1,8 +1,11 @@
 <script lang="ts">
 	import { Badge } from '@epicenter/ui/badge';
 	import * as Dialog from '@epicenter/ui/dialog';
+	import { Label } from '@epicenter/ui/label';
 	import * as Separator from '@epicenter/ui/separator';
+	import { Switch } from '@epicenter/ui/switch';
 	import type { RowConformance } from '$lib/core/conformance';
+	import { editorPreferences } from '$lib/editor/editor-preferences.svelte';
 	import MarkdownBodyEditor from './MarkdownBodyEditor.svelte';
 	import ModeledCell from './ModeledCell.svelte';
 
@@ -19,15 +22,20 @@
 	} = $props();
 
 	const row = $derived(conformance.row);
-	const filledCount = $derived(
-		conformance.cells.filter((cell) => cell.state === 'OK').length,
-	);
-	const invalidCount = $derived(
-		conformance.cells.filter((cell) => cell.state === 'INVALID').length,
-	);
-	const missingCount = $derived(
-		conformance.cells.filter((cell) => cell.state === 'MISSING_REQUIRED').length,
-	);
+	const cellCounts = $derived.by(() => {
+		const counts = { ok: 0, invalid: 0, missingRequired: 0 };
+		for (const cell of conformance.cells) {
+			if (cell.state === 'OK') counts.ok++;
+			else if (cell.state === 'INVALID') counts.invalid++;
+			else if (cell.state === 'MISSING_REQUIRED') counts.missingRequired++;
+		}
+		return counts;
+	});
+
+	function formatExtraValue(value: unknown): string {
+		if (typeof value !== 'object') return String(value);
+		return JSON.stringify(value) ?? '';
+	}
 </script>
 
 <Dialog.Root bind:open>
@@ -46,18 +54,18 @@
 								{conformance.rowValid ? 'Ready' : 'Needs attention'}
 							</Badge>
 							<Badge variant="secondary">
-								{filledCount} of {conformance.cells.length} fields filled
+								{cellCounts.ok} of {conformance.cells.length} fields filled
 							</Badge>
-							{#if missingCount}
+							{#if cellCounts.missingRequired}
 								<Badge
 									class="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400"
 									variant="outline"
 								>
-									{missingCount} missing
+									{cellCounts.missingRequired} missing
 								</Badge>
 							{/if}
-							{#if invalidCount}
-								<Badge variant="destructive">{invalidCount} invalid</Badge>
+							{#if cellCounts.invalid}
+								<Badge variant="destructive">{cellCounts.invalid} invalid</Badge>
 							{/if}
 							{#if conformance.extras.length}
 								<Badge variant="outline">{conformance.extras.length} extra keys</Badge>
@@ -113,9 +121,7 @@
 										{extra.key}
 									</span>
 									<code class="min-w-0 truncate text-xs">
-										{typeof extra.value === 'object'
-											? JSON.stringify(extra.value)
-											: String(extra.value)}
+										{formatExtraValue(extra.value)}
 									</code>
 								</div>
 							{/each}
@@ -126,13 +132,25 @@
 				<Separator.Root />
 
 				<section class="grid gap-3">
-					<div>
+					<div class="flex items-center justify-between gap-3">
 						<h2 class="text-sm font-semibold">Body</h2>
+						<div class="flex items-center gap-2">
+							<Label for="matter-vim-mode" class="text-xs text-muted-foreground">Vim</Label>
+							<Switch
+								id="matter-vim-mode"
+								size="sm"
+								checked={editorPreferences.vimEnabled}
+								onCheckedChange={(checked) => editorPreferences.setVimEnabled(checked)}
+							/>
+						</div>
 					</div>
 					{#key row.fileName}
+						<!-- Keep teardown saves pointed at this keyed editor instance's row. -->
+						{@const fileName = row.fileName}
 						<MarkdownBodyEditor
 							body={row.body}
-							onCommit={(body) => onSaveBody(row.fileName, body)}
+							vimEnabled={editorPreferences.vimEnabled}
+							onCommit={(body) => onSaveBody(fileName, body)}
 						/>
 					{/key}
 				</section>

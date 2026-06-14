@@ -5,11 +5,19 @@
 **Owner**: Braden
 **Branch**: (future; builds on the providers clean break)
 
+> **Update (2026-06-12, transformation-engine collapse)**: superseded in part by
+> `20260612T210000-whispering-transformation-engine-collapse.md`. The arbitrary
+> `transformationSteps` table is gone: a transformation is a fixed
+> `preReplacements[] + prompt? + postReplacements[]`. Everywhere this spec says a
+> "step" targets a backend and owns the model, read "the transformation's single
+> `prompt`." The co-location invariant is unchanged: `customBackends` lives in the
+> same workspace as `transformations`. Named step errors become named prompt errors.
+
 ## One Sentence
 
 Users define named OpenAI-compatible backends in a `customBackends` workspace
 table (name + endpoint), authenticate them per device through a
-`providers.custom.apiKeys` map, and a transformation step targets a backend by
+`providers.custom.apiKeys` map, and a transformation's prompt targets a backend by
 id instead of the single global Custom slot.
 
 ## Overview
@@ -64,9 +72,9 @@ deviceConfig (secrets never sync)
                               (createPersistedMap supports arbitrary arktype
                               schemas per key)
 
-transformationSteps (flat row)
-  customBackendId   field.string()   references customBackends.id
-  customModel       unchanged; the step owns the model
+transformations.prompt (the single prompt phase)
+  customBackendId   references customBackends.id
+  model             the prompt owns the model
 
 editor
   Provider select grows a "Custom backends" group listing backends by name.
@@ -76,12 +84,12 @@ editor
 
 transform.ts
   Custom entry resolves endpoint from the table row and apiKey from the device
-  map. A step pointing at a missing backend, or an authed backend with no key
-  on this device, fails with a named step error.
+  map. A prompt pointing at a missing backend, or an authed backend with no key
+  on this device, fails with a named prompt error.
 ```
 
 **Invariant**: `customBackends` lives in the same workspace as
-`transformationSteps`, wherever that workspace ends up. If transformation
+`transformations`, wherever that workspace ends up. If transformation
 definitions move to a library workspace later (see the pipelines boundary
 spec), the backends table moves with them. The schema above is unchanged under
 that move.

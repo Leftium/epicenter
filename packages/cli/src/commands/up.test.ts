@@ -1,9 +1,9 @@
 /**
  * Unit-level tests for `epicenter daemon up`.
  *
- * These tests run `runUp` in-process against tiny project-mount fixtures.
+ * These tests run `runUp` in-process against tiny root-and-mount fixtures.
  * They never spawn a child or call `process.exit`; each test owns a temp
- * project and temp runtime root.
+ * Epicenter root and temp runtime root.
  *
  * Auth is injected: every test passes a `createAuthClient` factory to
  * `runUp`. Happy paths return `STUB_AUTH`; the AuthFailed test returns a
@@ -226,7 +226,7 @@ describe('runUp: failure cleanup', () => {
 			}),
 		);
 
-		expect(error.name).toBe('ProjectConfigNotFound');
+		expect(error.name).toBe('EpicenterConfigNotFound');
 		expect(existsSync(join(workDir, 'epicenter.config.ts'))).toBe(false);
 		expect(existsSync(join(workDir, '.epicenter'))).toBe(false);
 
@@ -234,7 +234,7 @@ describe('runUp: failure cleanup', () => {
 		lease.release();
 	});
 
-	test('does not overwrite an existing config when provisioning project data', async () => {
+	test('does not overwrite an existing config when provisioning root data', async () => {
 		const original = ['export default [];', '', '// keep me', ''].join('\n');
 		writeFileSync(join(workDir, 'epicenter.config.ts'), original);
 		const gitignore = 'custom-rule\n';
@@ -261,6 +261,71 @@ describe('runUp: failure cleanup', () => {
 		}
 	});
 
+	test('scaffolds a root .gitignore that tracks only the config', async () => {
+		writeFileSync(join(workDir, 'epicenter.config.ts'), 'export default [];\n');
+
+		const handle = expectOk(
+			await runUp({
+				epicenterRoot: workDir,
+				quiet: true,
+				createAuthClient: stubAuthFactory,
+			}),
+		);
+
+		try {
+			const rootGitignore = readFileSync(join(workDir, '.gitignore'), 'utf8');
+			// Ignore-all + allowlist: the config (and the ignore file) are tracked,
+			// every generated child folder is not.
+			expect(rootGitignore).toContain('/*');
+			expect(rootGitignore).toContain('!/.gitignore');
+			expect(rootGitignore).toContain('!/epicenter.config.ts');
+		} finally {
+			await handle.teardown();
+		}
+	});
+
+	test('does not overwrite an existing root .gitignore', async () => {
+		writeFileSync(join(workDir, 'epicenter.config.ts'), 'export default [];\n');
+		const custom = '# mine\n/build\n';
+		writeFileSync(join(workDir, '.gitignore'), custom);
+
+		const handle = expectOk(
+			await runUp({
+				epicenterRoot: workDir,
+				quiet: true,
+				createAuthClient: stubAuthFactory,
+			}),
+		);
+
+		try {
+			expect(readFileSync(join(workDir, '.gitignore'), 'utf8')).toBe(custom);
+		} finally {
+			await handle.teardown();
+		}
+	});
+
+	test('does not scaffold a root .gitignore once the namespace exists', async () => {
+		// `.epicenter/` present means a prior run already established the folder;
+		// a plain `up` must not retroactively write a `/*` rule into a folder the
+		// user may have turned into a git repo since.
+		writeFileSync(join(workDir, 'epicenter.config.ts'), 'export default [];\n');
+		mkdirSync(join(workDir, '.epicenter'), { recursive: true });
+
+		const handle = expectOk(
+			await runUp({
+				epicenterRoot: workDir,
+				quiet: true,
+				createAuthClient: stubAuthFactory,
+			}),
+		);
+
+		try {
+			expect(existsSync(join(workDir, '.gitignore'))).toBe(false);
+		} finally {
+			await handle.teardown();
+		}
+	});
+
 	test('releases the daemon lease when config loading fails', async () => {
 		writeFileSync(join(workDir, 'epicenter.config.ts'), 'export default {;\n');
 
@@ -271,7 +336,7 @@ describe('runUp: failure cleanup', () => {
 				createAuthClient: stubAuthFactory,
 			}),
 		);
-		expect(error.name).toBe('ProjectConfigImportFailed');
+		expect(error.name).toBe('EpicenterConfigImportFailed');
 
 		const lease = expectOk(claimDaemonLease(workDir));
 		lease.release();
@@ -297,6 +362,85 @@ describe('runUp: failure cleanup', () => {
 		);
 
 		expect(error.name).toBe('MountOpenFailed');
+		const lease = expectOk(claimDaemonLease(workDir));
+		lease.release();
+	});
+
+	test('keeps root .gitignore when mount startup fails after namespace claim', async () => {
+		const goodDir = join(workDir, 'workspaces', 'good');
+		const badDir = join(workDir, 'workspaces', 'bad');
+		mkdirSync(goodDir, { recursive: true });
+		mkdirSync(badDir, { recursive: true });
+		writeFileSync(
+			join(goodDir, 'daemon.ts'),
+			`
+				import { mkdirSync } from 'node:fs';
+				import { join } from 'node:path';
+
+				const collaboration = {
+					actions: {},
+					whenConnected: new Promise(() => {}),
+					status: { phase: 'connected' },
+					onStatusChange: () => () => {},
+					devices: {
+						list: () => [],
+						subscribe: () => () => {},
+					},
+					dispatch: async () => {
+						throw new Error('fixture does not dispatch');
+					},
+				};
+
+				export default {
+					name: 'good',
+					async open(ctx) {
+						mkdirSync(join(ctx.epicenterRoot, '.epicenter', 'sqlite'), {
+							recursive: true,
+						});
+						return {
+							collaboration,
+							async [Symbol.asyncDispose]() {},
+						};
+					},
+				};
+			`,
+		);
+		writeFileSync(
+			join(badDir, 'daemon.ts'),
+			`
+				export default {
+					name: 'bad',
+					async open() {
+						throw new Error('bad mount failed');
+					},
+				};
+			`,
+		);
+		writeConfig(
+			[
+				"import good from './workspaces/good/daemon.ts';",
+				"import bad from './workspaces/bad/daemon.ts';",
+				'',
+				'export default [good, bad];',
+				'',
+			].join('\n'),
+		);
+
+		const error = expectErr(
+			await runUp({
+				epicenterRoot: workDir,
+				quiet: true,
+				createAuthClient: stubAuthFactory,
+			}),
+		);
+
+		expect(error).toMatchObject({
+			name: 'MountOpenFailed',
+			mount: 'bad',
+		});
+		const rootGitignore = readFileSync(join(workDir, '.gitignore'), 'utf8');
+		expect(rootGitignore).toContain('/*');
+		expect(rootGitignore).toContain('!/epicenter.config.ts');
 		const lease = expectOk(claimDaemonLease(workDir));
 		lease.release();
 	});

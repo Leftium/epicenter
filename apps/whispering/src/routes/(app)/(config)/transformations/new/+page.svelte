@@ -6,12 +6,10 @@
 	import { report } from '$lib/report';
 	import {
 		generateDefaultTransformation,
-		saveTransformationWithSteps,
+		saveTransformation,
 	} from '$lib/state/transformations.svelte';
-	import type { TransformationStep } from '$lib/workspace';
 
 	let transformation = $state(generateDefaultTransformation());
-	let steps = $state<TransformationStep[]>([]);
 </script>
 
 <Card.Root class="w-full max-w-4xl">
@@ -22,14 +20,11 @@
 		</Card.Description>
 	</Card.Header>
 	<Card.Content class="space-y-6">
-		<Editor bind:transformation bind:steps />
+		<Editor bind:transformation />
 		<Card.Footer class="flex justify-end gap-2">
 			<Button
 				onclick={() => {
-					saveTransformationWithSteps(
-						$state.snapshot(transformation),
-						$state.snapshot(steps),
-					);
+					saveTransformation($state.snapshot(transformation));
 					goto('/transformations');
 					report.success({
 						title: 'Created transformation!',

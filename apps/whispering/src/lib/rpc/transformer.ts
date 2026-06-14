@@ -2,6 +2,7 @@ import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { defineKeys } from 'wellcrafted/query';
 import type { Result } from 'wellcrafted/result';
 import {
+	executeTransformation,
 	runTransformation,
 	type TransformError,
 } from '$lib/operations/transform';
@@ -32,18 +33,23 @@ export const transformerKeys = defineKeys({
 });
 
 /**
- * Observed mutations around runTransformation. The pipeline logic lives in
- * $lib/operations/transform; this file just wraps it with TanStack mutation
- * surface for components that need pending state.
+ * Observed mutations around the transformation engine. The logic lives in
+ * $lib/operations/transform; this file wraps it with a TanStack mutation surface
+ * for components that need pending state.
  */
 export const transformer = {
+	/**
+	 * Non-persisting preview: runs the transformation purely and returns the
+	 * output without writing a run. The transformations editor's Test pane uses
+	 * this, so scratch previews never land in run history.
+	 */
 	transformInput: defineMutation({
 		mutationKey: transformerKeys.transformInput,
 		mutationFn: ({
 			input,
 			transformation,
 		}: TransformInputParams): Promise<Result<string, TransformError>> =>
-			runTransformation({ input, transformation, recordingId: null }),
+			executeTransformation({ input, transformation }),
 	}),
 
 	transformRecording: defineMutation({

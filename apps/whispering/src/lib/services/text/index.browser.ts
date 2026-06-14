@@ -41,4 +41,9 @@ export const TextServiceLive = {
 		TextError.NotSupported({
 			operation: 'Simulating keystrokes',
 		}),
+
+	simulateCopyKeystroke: async () =>
+		TextError.NotSupported({
+			operation: 'Simulating keystrokes',
+		}),
 } satisfies TextService;

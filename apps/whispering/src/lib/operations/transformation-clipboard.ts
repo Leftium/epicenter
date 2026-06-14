@@ -1,17 +1,22 @@
+import { InstantString } from '@epicenter/field';
 import { goto } from '$app/navigation';
 import { deliverTransformationResult } from '$lib/operations/delivery';
 import { sound } from '$lib/operations/sound';
-import { runTransformation } from '$lib/operations/transform';
+import {
+	executeTransformation,
+	persistCompletedRun,
+} from '$lib/operations/transform';
 import { report } from '$lib/report';
 import { services } from '$lib/services';
 import { settings } from '$lib/state/settings.svelte';
 import { transformations } from '$lib/state/transformations.svelte';
-import * as transformClipboardWindow from '$routes/transform-clipboard/transformClipboardWindow.tauri';
 
-export async function openTransformationPicker() {
-	await transformClipboardWindow.toggle();
-}
-
+/**
+ * Run the user's default transformation on the clipboard, no UI. The quick-run
+ * sibling of the transformation picker: copy text, hit the shortcut, get the
+ * result delivered. An ad-hoc run, so it commits one completed row only on
+ * success (see `persistCompletedRun`).
+ */
 export async function runTransformationOnClipboard() {
 	const transformationId = settings.get('transformation.selectedId');
 
@@ -67,22 +72,29 @@ export async function runTransformationOnClipboard() {
 		description: 'Transforming your clipboard text...',
 	});
 
+	// Ad-hoc run: execute purely, then commit one completed row only on success.
+	// A failed quick-run never committed, so it leaves no record.
+	const startedAt = InstantString.now();
 	const { data: transformedText, error: transformError } =
-		await runTransformation({
-			input: clipboardText,
-			transformation,
-			recordingId: null,
-		});
+		await executeTransformation({ input: clipboardText, transformation });
 
 	if (transformError) {
 		loading.reject({ cause: transformError });
 		return;
 	}
 
+	persistCompletedRun({
+		transformationId: transformation.id,
+		input: clipboardText,
+		output: transformedText,
+		startedAt,
+	});
+
 	sound.playSoundIfEnabled('transformationComplete');
 
 	const successNotice = await deliverTransformationResult({
 		text: transformedText,
+		recordingId: null,
 	});
 	loading.resolve(successNotice);
 }

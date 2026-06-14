@@ -16,7 +16,7 @@ import type { EpicenterRoot } from './types.js';
 
 /**
  * Create a fresh tmp directory and return it as `EpicenterRoot`. The cast
- * is honest in spirit (tests set up the project marker they need) and
+ * is honest in spirit (tests set up the config marker they need) and
  * contained to this helper.
  *
  * @example

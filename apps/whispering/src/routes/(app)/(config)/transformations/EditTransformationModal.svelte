@@ -3,15 +3,15 @@
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Modal from '@epicenter/ui/modal';
 	import { Separator } from '@epicenter/ui/separator';
+	import { untrack } from 'svelte';
 	import HistoryIcon from '@lucide/svelte/icons/history';
 	import EditIcon from '@lucide/svelte/icons/pencil';
 	import PlayIcon from '@lucide/svelte/icons/play';
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { Editor } from '$lib/components/transformations-editor';
 	import { report } from '$lib/report';
-	import { transformationSteps } from '$lib/state/transformation-steps.svelte';
 	import {
-		saveTransformationWithSteps,
+		saveTransformation,
 		transformations,
 	} from '$lib/state/transformations.svelte';
 	import type { Transformation } from '$lib/workspace';
@@ -25,26 +25,34 @@
 	let isDialogOpen = $state(false);
 
 	/**
-	 * Working copy of the transformation metadata. Resets when upstream data changes.
-	 * User edits the copy freely; only persisted to workspace on Save.
+	 * Independent edit buffer. Must be `$state`, not `$derived`: the user mutates
+	 * it freely (provider, model, replacements) and it has to survive arbitrary
+	 * reactivity until an explicit Save. A `$derived` would re-run and discard
+	 * those edits. Re-snapshotted from the saved row each time the modal opens, so
+	 * an abandoned edit never leaks into the next open.
 	 */
-	let workingCopy = $derived(transformation);
+	// svelte-ignore state_referenced_locally -- intentional initial seed; the
+	// effect below re-syncs from `transformation` each time the modal opens.
+	let workingCopy = $state($state.snapshot(transformation));
 
-	/**
-	 * Working copy of the transformation steps. Resets when upstream data changes.
-	 */
-	let workingSteps = $derived(
-		transformationSteps.getByTransformationId(transformation.id),
-	);
-
-	/**
-	 * Tracks whether the user has made changes to either working copy.
-	 * Resets to false when upstream transformation data changes.
-	 */
-	let isWorkingCopyDirty = $derived.by(() => {
-		transformation;
-		return false;
+	$effect(() => {
+		if (isDialogOpen) {
+			// untrack `transformation`: re-init only on open, never mid-edit (a
+			// background row update must not clobber unsaved changes).
+			untrack(() => {
+				workingCopy = $state.snapshot(transformation);
+			});
+		}
 	});
+
+	/**
+	 * Dirty is a true derivation: the buffer differs from the saved row. No
+	 * imperative flag to keep in sync. `updatedAt` only diverges at save time, by
+	 * which point the modal is closing, so it never reads as a spurious edit.
+	 */
+	let isWorkingCopyDirty = $derived(
+		JSON.stringify($state.snapshot(workingCopy)) !== JSON.stringify(transformation),
+	);
 
 	function promptUserConfirmLeave() {
 		if (!isWorkingCopyDirty) {
@@ -57,21 +65,14 @@
 			description: 'You have unsaved changes. Are you sure you want to leave?',
 			confirm: { text: 'Leave' },
 			onConfirm: () => {
-				workingCopy = transformation;
-				workingSteps = transformationSteps.getByTransformationId(
-					transformation.id,
-				);
-				isWorkingCopyDirty = false;
+				workingCopy = $state.snapshot(transformation);
 				isDialogOpen = false;
 			},
 		});
 	}
 
-	function saveTransformation() {
-		saveTransformationWithSteps(
-			$state.snapshot(workingCopy),
-			$state.snapshot(workingSteps),
-		);
+	function saveAndClose() {
+		saveTransformation($state.snapshot(workingCopy));
 
 		report.success({
 			title: 'Updated transformation!',
@@ -117,18 +118,7 @@
 			<Separator />
 		</Modal.Header>
 
-		<Editor
-			bind:transformation={() => workingCopy,
-				(v) => {
-					workingCopy = v;
-					isWorkingCopyDirty = true;
-				}}
-			bind:steps={() => workingSteps,
-				(v) => {
-					workingSteps = v;
-					isWorkingCopyDirty = true;
-				}}
-		/>
+		<Editor bind:transformation={() => workingCopy, (v) => (workingCopy = v)} />
 
 		<Modal.Footer>
 			<Button
@@ -138,9 +128,6 @@
 						description: 'Are you sure? This action cannot be undone.',
 						confirm: { text: 'Delete', variant: 'destructive' },
 						onConfirm: () => {
-							transformationSteps.deleteByTransformationId(
-								transformation.id,
-							);
 							transformations.delete(transformation.id);
 							isDialogOpen = false;
 							report.success({
@@ -162,7 +149,7 @@
 					Close
 				</Button>
 				<Button
-					onclick={() => saveTransformation()}
+					onclick={() => saveAndClose()}
 					disabled={!isWorkingCopyDirty}
 				>
 					Save

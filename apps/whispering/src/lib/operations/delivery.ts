@@ -29,19 +29,30 @@ export async function deliverTranscriptionResult({
 		text,
 		successCopy: TRANSCRIPTION_SUCCESS_COPY[source],
 		settingsScope: 'transcription',
+		// A transcription always belongs to a recording, so its history is reachable.
+		linkedRecording: true,
 	});
 }
 
 /**
  * Delivers transformed text to the user according to their text output
  * preferences. Returns the success Notice the caller passes to
- * `loading.resolve(...)`.
+ * `loading.resolve(...)`. `recordingId` is the run's link to a recording, or
+ * null for ad-hoc runs (clipboard, selection): only a recording-anchored run
+ * offers a "go to recordings" action, since an ad-hoc run has no history to open.
  */
-export async function deliverTransformationResult({ text }: { text: string }) {
+export async function deliverTransformationResult({
+	text,
+	recordingId,
+}: {
+	text: string;
+	recordingId: string | null;
+}) {
 	return deliverResult({
 		text,
 		successCopy: '🔄 Transformation complete',
 		settingsScope: 'transformation',
+		linkedRecording: recordingId !== null,
 	});
 }
 
@@ -49,15 +60,19 @@ async function deliverResult({
 	text,
 	successCopy,
 	settingsScope,
+	linkedRecording,
 }: {
 	text: string;
 	successCopy: string;
 	settingsScope: 'transcription' | 'transformation';
+	linkedRecording: boolean;
 }) {
-	const goToRecordings = {
-		label: 'Go to recordings',
-		onClick: () => goto(WHISPERING_RECORDINGS_PATHNAME),
-	};
+	const recordingsAction = linkedRecording
+		? {
+				label: 'Go to recordings',
+				onClick: () => goto(WHISPERING_RECORDINGS_PATHNAME),
+			}
+		: undefined;
 
 	const copyToClipboardAction = {
 		label: 'Copy to clipboard',
@@ -119,21 +134,21 @@ async function deliverResult({
 		return {
 			title: `${successCopy}, copied to clipboard, and written to cursor!`,
 			description: text,
-			action: goToRecordings,
+			action: recordingsAction,
 		};
 	}
 	if (copied) {
 		return {
 			title: `${successCopy} and copied to clipboard!`,
 			description: text,
-			action: goToRecordings,
+			action: recordingsAction,
 		};
 	}
 	if (written) {
 		return {
 			title: `${successCopy} and written to cursor!`,
 			description: text,
-			action: goToRecordings,
+			action: recordingsAction,
 		};
 	}
 	return {

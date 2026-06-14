@@ -1,5 +1,5 @@
 /**
- * Load a project's `epicenter.config.ts` and return its mount list.
+ * Load an Epicenter root's `epicenter.config.ts` and return its mount list.
  *
  * The config default-exports a `Mount[]`. One app is a list of one:
  *
@@ -14,7 +14,7 @@
  * a clear, structured error pointed at the file instead of a cryptic
  * `TypeError` deep in startup.
  *
- * Every failure is a `ProjectConfigError` variant; this function never throws.
+ * Every failure is an `EpicenterConfigError` variant; this function never throws.
  */
 
 import { existsSync } from 'node:fs';
@@ -30,61 +30,63 @@ import { Err, Ok, type Result, tryAsync } from 'wellcrafted/result';
 
 import type { Mount } from '../daemon/define-mount.js';
 import type { EpicenterRoot } from '../shared/types.js';
-import { PROJECT_CONFIG_FILENAME } from './project-config-source.js';
+import { EPICENTER_CONFIG_FILENAME } from './epicenter-config-source.js';
 
-export const ProjectConfigError = defineErrors({
-	ProjectConfigNotFound: ({
-		projectConfigPath,
+export const EpicenterConfigError = defineErrors({
+	EpicenterConfigNotFound: ({
+		epicenterConfigPath,
 	}: {
-		projectConfigPath: string;
+		epicenterConfigPath: string;
 	}) => ({
-		message: `Project config not found at ${projectConfigPath}`,
-		projectConfigPath,
+		message: `Epicenter config not found at ${epicenterConfigPath}`,
+		epicenterConfigPath,
 	}),
-	ProjectConfigImportFailed: ({
-		projectConfigPath,
+	EpicenterConfigImportFailed: ({
+		epicenterConfigPath,
 		cause,
 	}: {
-		projectConfigPath: string;
+		epicenterConfigPath: string;
 		cause: unknown;
 	}) => ({
-		message: `Failed to load project config at ${projectConfigPath}: ${extractErrorMessage(cause)}`,
-		projectConfigPath,
+		message: `Failed to load Epicenter config at ${epicenterConfigPath}: ${extractErrorMessage(cause)}`,
+		epicenterConfigPath,
 		cause,
 	}),
-	ProjectConfigInvalid: ({
-		projectConfigPath,
+	EpicenterConfigInvalid: ({
+		epicenterConfigPath,
 		detail,
 	}: {
-		projectConfigPath: string;
+		epicenterConfigPath: string;
 		detail: string;
 	}) => ({
-		message: `Invalid project config at ${projectConfigPath}: ${detail}.`,
-		projectConfigPath,
+		message: `Invalid Epicenter config at ${epicenterConfigPath}: ${detail}.`,
+		epicenterConfigPath,
 		detail,
 	}),
 });
-export type ProjectConfigError = InferErrors<typeof ProjectConfigError>;
+export type EpicenterConfigError = InferErrors<typeof EpicenterConfigError>;
 
-export async function loadProjectConfig(
+export async function loadEpicenterConfig(
 	epicenterRoot: EpicenterRoot | string,
-): Promise<Result<Mount[], ProjectConfigError>> {
-	const projectConfigPath = join(
+): Promise<Result<Mount[], EpicenterConfigError>> {
+	const epicenterConfigPath = join(
 		resolve(epicenterRoot),
-		PROJECT_CONFIG_FILENAME,
+		EPICENTER_CONFIG_FILENAME,
 	);
-	if (!existsSync(projectConfigPath)) {
-		return ProjectConfigError.ProjectConfigNotFound({ projectConfigPath });
+	if (!existsSync(epicenterConfigPath)) {
+		return EpicenterConfigError.EpicenterConfigNotFound({
+			epicenterConfigPath,
+		});
 	}
 
 	const { data: module, error: importError } = await tryAsync({
 		try: () =>
-			import(pathToFileURL(projectConfigPath).href) as Promise<{
+			import(pathToFileURL(epicenterConfigPath).href) as Promise<{
 				default?: unknown;
 			}>,
 		catch: (cause) =>
-			ProjectConfigError.ProjectConfigImportFailed({
-				projectConfigPath,
+			EpicenterConfigError.EpicenterConfigImportFailed({
+				epicenterConfigPath,
 				cause,
 			}),
 	});
@@ -93,14 +95,14 @@ export async function loadProjectConfig(
 	const value = module.default;
 	if (Array.isArray(value) && value.every(isMount)) return Ok(value);
 	if (isMount(value)) {
-		return ProjectConfigError.ProjectConfigInvalid({
-			projectConfigPath,
+		return EpicenterConfigError.EpicenterConfigInvalid({
+			epicenterConfigPath,
 			detail:
 				'the default export is a single Mount; wrap it in an array, for example `export default [fuji()]`',
 		});
 	}
-	return ProjectConfigError.ProjectConfigInvalid({
-		projectConfigPath,
+	return EpicenterConfigError.EpicenterConfigInvalid({
+		epicenterConfigPath,
 		detail:
 			'the default export must be a Mount[] (each entry needs a string `name` and an `open` function)',
 	});

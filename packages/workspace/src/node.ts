@@ -82,7 +82,6 @@ export {
 export { openWorkspaceSqlite } from './document/open-workspace-sqlite.js';
 export {
 	markdownPath,
-	mountMarkdownPath,
 	sqlitePath,
 	yjsPath,
 } from './document/workspace-paths.js';
@@ -92,6 +91,6 @@ export { WorkspaceAppError } from './workspace-apps/errors.js';
 export {
 	type InactiveMount,
 	type OpenEpicenterRootOptions,
-	type OpenedEpicenterRoot,
+	type OpenedMount,
 	openEpicenterRoot,
 } from './workspace-apps/open-epicenter-root.js';

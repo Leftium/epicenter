@@ -1,11 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import {
-	markdownPath,
-	mountMarkdownPath,
-	sqlitePath,
-	yjsPath,
-} from './workspace-paths.js';
+import { markdownPath, sqlitePath, yjsPath } from './workspace-paths.js';
 
 describe('document/workspace-paths', () => {
 	test('yjsPath places the update log under .epicenter/yjs/', () => {
@@ -27,10 +22,5 @@ describe('document/workspace-paths', () => {
 		expect(markdownPath(dir, 'epicenter-fuji')).toBe(
 			'/Users/me/vault/.epicenter/md/epicenter-fuji',
 		);
-	});
-
-	test('mountMarkdownPath is visible, keyed by mount name, a direct child of the Epicenter root', () => {
-		const dir = '/Users/me/my-epicenter';
-		expect(mountMarkdownPath(dir, 'fuji')).toBe('/Users/me/my-epicenter/fuji');
 	});
 });

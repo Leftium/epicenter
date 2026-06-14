@@ -1,7 +1,7 @@
 /**
  * `defineMount`: the entry contract for an app mount inside the daemon.
  *
- * `epicenter.config.ts` default-exports a `Mount[]`. Each mount carries its own
+ * `epicenter.config.ts` default-exports one `Mount`. The mount carries its own
  * canonical `name`, which becomes the CLI action prefix (`<name>.<action_key>`)
  * and is propagated into the mount context so handlers can use it for logging.
  *
@@ -38,8 +38,8 @@ import type { DaemonRuntime } from './types.js';
 
 /**
  * The signed-in capability kit: everything a mount needs that only exists once
- * machine auth is signed in. Built once per Epicenter root and shared by every
- * mount; `null` on the context while signed out.
+ * machine auth is signed in. Built once per Epicenter root for its mount;
+ * `null` on the context while signed out.
  *
  * - `ownerId` is the workspace owner the daemon syncs as.
  * - `keyring` is the lazy reader for the owner keyring. It re-reads auth state
@@ -84,8 +84,7 @@ export type SessionMountContext = MountContext & {
 /**
  * "I cannot run right now." A mount returns this from `open()` instead of a
  * runtime when a precondition (usually a signed-in `session`) is missing. The
- * daemon starts every sibling that did open and reports the inactive ones; it
- * is not a crash and does not abort startup.
+ * daemon reports this as inactive; it is not a crash and does not abort startup.
  */
 export type MountInactive = {
 	readonly inactive: true;

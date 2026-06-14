@@ -2,19 +2,16 @@
  * Tests for `openEpicenterRoot`, the single daemon entry point.
  *
  * `openEpicenterRoot` imports `epicenter.config.ts`, claims the Epicenter
- * folder, and opens every mount it declares, so these tests drive it through
+ * folder, and opens the one mount it declares, so these tests drive it through
  * real config files on disk:
  * - a missing config returns a structured `EpicenterConfigNotFound` Result
- * - a valid config opens every declared mount; the result splits into
- *   `started` and `inactive`
+ * - a valid config opens the declared mount; the result is `{ status:
+ *   'started' }` or `{ status: 'inactive' }`
  * - the daemon never gates on auth: it receives an auth client (or `null`) and
- *   hands the resulting session to every mount, which decides for itself
- * - a mount that returns `inactive(reason)` is reported but does not block
- *   its siblings
- * - if any sibling `open(ctx)` throws, the successfully opened runtimes are
- *   asyncDispose'd before the structured error propagates
- * - invalid mount names fail before any mount opens
- * - a populated mount folder blocks bootstrap until `.epicenter/` exists
+ *   hands the resulting session to the mount, which decides for itself
+ * - a mount that returns `inactive(reason)` is reported, not raised
+ * - a thrown `open(ctx)` becomes a structured `MountOpenFailed`
+ * - an invalid mount name fails at config load, before the folder is claimed
  *
  * Config-shape validation is pinned separately in
  * `config/load-epicenter-config.test.ts`. Auth loading and its storage errors
@@ -22,7 +19,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -89,132 +86,84 @@ describe('openEpicenterRoot', () => {
 		});
 	});
 
-	test('opens every declared mount and claims the folder', async () => {
+	test('opens the declared mount and claims the folder', async () => {
 		writeConfig(
-			`export default [
-				{ name: 'alpha', open: () => (${RUNTIME}) },
-				{ name: 'beta', open: () => (${RUNTIME}) },
-			];\n`,
+			`export default { name: 'alpha', open: () => (${RUNTIME}) };\n`,
 		);
 
 		const result = await openEpicenterRoot({ epicenterRoot, auth: null });
-		const { started, inactive } = expectOk(result);
-		expect(
-			started
-				.map((entry) => entry.mount)
-				.slice()
-				.sort(),
-		).toEqual(['alpha', 'beta']);
-		expect(inactive).toEqual([]);
-		expect(await Bun.file(join(epicenterRoot, '.gitignore')).exists()).toBe(
-			true,
-		);
+		const opened = expectOk(result);
+		expect(opened.status).toBe('started');
+		expect(opened.entry.mount).toBe('alpha');
 		expect(
 			await Bun.file(join(epicenterRoot, '.epicenter', '.gitignore')).exists(),
 		).toBe(true);
 	});
 
-	test('opens nothing for an empty config', async () => {
-		writeConfig('export default [];\n');
-
-		const result = await openEpicenterRoot({ epicenterRoot, auth: null });
-		expect(expectOk(result)).toEqual({ started: [], inactive: [] });
-	});
-
-	test('opens local mounts with a null session when signed out', async () => {
+	test('opens a local mount with a null session when signed out', async () => {
 		writeConfig(
-			`export default [{ name: 'mirror', open: () => (${RUNTIME}) }];\n`,
+			`export default { name: 'mirror', open: () => (${RUNTIME}) };\n`,
 		);
 
 		const result = await openEpicenterRoot({ epicenterRoot, auth: null });
-		const { started, inactive } = expectOk(result);
-		expect(started.map((entry) => entry.mount)).toEqual(['mirror']);
-		expect(inactive).toEqual([]);
+		const opened = expectOk(result);
+		expect(opened.status).toBe('started');
+		expect(opened.entry.mount).toBe('mirror');
 	});
 
-	test('reports an inactive mount without blocking its siblings', async () => {
-		writeConfig(
-			`export default [
-				{ name: 'mirror', open: () => (${RUNTIME}) },
-				${sessionMount('fuji')},
-			];\n`,
-		);
+	test('reports the mount as inactive when its session is missing', async () => {
+		writeConfig(`export default ${sessionMount('fuji')};\n`);
 
 		const result = await openEpicenterRoot({ epicenterRoot, auth: null });
-		const { started, inactive } = expectOk(result);
-		expect(started.map((entry) => entry.mount)).toEqual(['mirror']);
-		expect(inactive).toEqual([
-			{ mount: 'fuji', reason: 'sign in to enable fuji' },
-		]);
+		const opened = expectOk(result);
+		expect(opened.status).toBe('inactive');
+		expect(opened.entry).toEqual({
+			mount: 'fuji',
+			reason: 'sign in to enable fuji',
+		});
 	});
 
 	test('opens a session mount once signed in', async () => {
-		writeConfig(
-			`export default [
-				{ name: 'mirror', open: () => (${RUNTIME}) },
-				${sessionMount('fuji')},
-			];\n`,
-		);
+		writeConfig(`export default ${sessionMount('fuji')};\n`);
 
 		const result = await openEpicenterRoot({
 			epicenterRoot,
 			auth: signedIn(),
 		});
-		const { started, inactive } = expectOk(result);
-		expect(
-			started
-				.map((entry) => entry.mount)
-				.slice()
-				.sort(),
-		).toEqual(['fuji', 'mirror']);
-		expect(inactive).toEqual([]);
+		const opened = expectOk(result);
+		expect(opened.status).toBe('started');
+		expect(opened.entry.mount).toBe('fuji');
 	});
 
-	test('disposes opened runtimes when a sibling open throws', async () => {
+	test('wraps a thrown open in a structured MountOpenFailed', async () => {
 		writeConfig(
-			`import { writeFileSync } from 'node:fs';
-			import { join } from 'node:path';
-			const marker = join(import.meta.dirname, 'good.disposed');
-			export default [
-				{
-					name: 'good',
-					open: () => ({
-						actions: {},
-						async [Symbol.asyncDispose]() { writeFileSync(marker, 'disposed'); },
-					}),
-				},
-				{ name: 'bad', open() { throw new Error('boom'); } },
-			];\n`,
-		);
-
-		const result = await openEpicenterRoot({ epicenterRoot, auth: null });
-		const error = expectErr(result);
-		expect(error).toMatchObject({ name: 'MountOpenFailed', mount: 'bad' });
-		expect(await Bun.file(join(epicenterRoot, 'good.disposed')).exists()).toBe(
-			true,
-		);
-	});
-
-	test('rejects invalid mount names before opening any mount', async () => {
-		writeConfig(
-			`import { writeFileSync } from 'node:fs';
-			import { join } from 'node:path';
-			export default [
-				{
-					name: '__proto__',
-					open: () => {
-						writeFileSync(join(import.meta.dirname, 'opened'), 'opened');
-						return ${RUNTIME};
-					},
-				},
-			];\n`,
+			`export default { name: 'boom', open() { throw new Error('boom'); } };\n`,
 		);
 
 		const result = await openEpicenterRoot({ epicenterRoot, auth: null });
 		expect(expectErr(result)).toMatchObject({
-			name: 'MountRejected',
-			mount: '__proto__',
-			reason: 'invalid',
+			name: 'MountOpenFailed',
+			mount: 'boom',
+		});
+	});
+
+	test('rejects an invalid mount name before claiming the folder', async () => {
+		writeConfig(
+			`import { writeFileSync } from 'node:fs';
+			import { join } from 'node:path';
+			export default {
+				name: '__proto__',
+				open: () => {
+					writeFileSync(join(import.meta.dirname, 'opened'), 'opened');
+					return ${RUNTIME};
+				},
+			};\n`,
+		);
+
+		const result = await openEpicenterRoot({ epicenterRoot, auth: null });
+		expect(expectErr(result)).toMatchObject({
+			name: 'EpicenterConfigInvalid',
+			detail: expect.stringContaining('the mount name "__proto__" is invalid'),
 		});
 		expect(await Bun.file(join(epicenterRoot, 'opened')).exists()).toBe(false);
 		expect(await Bun.file(join(epicenterRoot, '.epicenter')).exists()).toBe(
@@ -222,52 +171,18 @@ describe('openEpicenterRoot', () => {
 		);
 	});
 
-	test('refuses bootstrap when a mount folder already has files', async () => {
-		mkdirSync(join(epicenterRoot, 'fuji'));
-		writeFileSync(join(epicenterRoot, 'fuji', 'note.md'), '# mine\n');
-		writeConfig(
-			`import { writeFileSync } from 'node:fs';
-			import { join } from 'node:path';
-			export default [
-				{
-					name: 'fuji',
-					open: () => {
-						writeFileSync(join(import.meta.dirname, 'opened'), 'opened');
-						return ${RUNTIME};
-					},
-				},
-			];\n`,
-		);
-
-		const result = await openEpicenterRoot({ epicenterRoot, auth: null });
-		expect(expectErr(result)).toMatchObject({
-			name: 'MountFolderNotEmpty',
-			mount: 'fuji',
-			path: join(epicenterRoot, 'fuji'),
-		});
-		expect(await Bun.file(join(epicenterRoot, 'opened')).exists()).toBe(false);
-		expect(await Bun.file(join(epicenterRoot, '.gitignore')).exists()).toBe(
-			false,
-		);
-		expect(await Bun.file(join(epicenterRoot, '.epicenter')).exists()).toBe(
-			false,
-		);
-	});
-
-	test('returns a structured claim error before opening mounts', async () => {
+	test('returns a structured claim error before opening the mount', async () => {
 		writeFileSync(join(epicenterRoot, '.epicenter'), 'not a directory');
 		writeConfig(
 			`import { writeFileSync } from 'node:fs';
 			import { join } from 'node:path';
-			export default [
-				{
-					name: 'fuji',
-					open: () => {
-						writeFileSync(join(import.meta.dirname, 'opened'), 'opened');
-						return ${RUNTIME};
-					},
+			export default {
+				name: 'fuji',
+				open: () => {
+					writeFileSync(join(import.meta.dirname, 'opened'), 'opened');
+					return ${RUNTIME};
 				},
-			];\n`,
+			};\n`,
 		);
 
 		const result = await openEpicenterRoot({ epicenterRoot, auth: null });
@@ -276,28 +191,5 @@ describe('openEpicenterRoot', () => {
 			epicenterRoot,
 		});
 		expect(await Bun.file(join(epicenterRoot, 'opened')).exists()).toBe(false);
-	});
-
-	test('adopts a populated mount folder once `.epicenter/` exists', async () => {
-		mkdirSync(join(epicenterRoot, '.epicenter'));
-		mkdirSync(join(epicenterRoot, 'fuji'));
-		writeFileSync(join(epicenterRoot, 'fuji', 'note.md'), '# generated\n');
-		writeConfig(
-			`export default [{ name: 'fuji', open: () => (${RUNTIME}) }];\n`,
-		);
-
-		const result = await openEpicenterRoot({ epicenterRoot, auth: null });
-		expect(expectOk(result).started).toHaveLength(1);
-	});
-
-	test('ignores OS bookkeeping files when deciding if a folder is populated', async () => {
-		mkdirSync(join(epicenterRoot, 'fuji'));
-		writeFileSync(join(epicenterRoot, 'fuji', '.DS_Store'), 'finder junk');
-		writeConfig(
-			`export default [{ name: 'fuji', open: () => (${RUNTIME}) }];\n`,
-		);
-
-		const result = await openEpicenterRoot({ epicenterRoot, auth: null });
-		expect(expectOk(result).started).toHaveLength(1);
 	});
 });

@@ -157,7 +157,7 @@ export function attachGitAutosave({
 		batch: readonly string[],
 		retried: boolean,
 	): Promise<void> {
-		const add = await $`git add -- ${batch}`
+		const add = await $`git add -f -- ${batch}`
 			.cwd(baseDir ?? '.')
 			.nothrow()
 			.quiet();

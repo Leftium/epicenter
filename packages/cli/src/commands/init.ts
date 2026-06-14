@@ -3,12 +3,9 @@
  *
  * Writes the default `epicenter.config.ts` into the target directory (the
  * literal directory given; no discovery, because init creates the Epicenter
- * root). That directory becomes your Epicenter folder: Epicenter owns its
- * direct children (the `.epicenter/` machine state and the generated mount
- * projections), so point init at a dedicated folder such as `epicenter/` or
- * `apps/`, not at a repo root that already holds source. The folder name is
- * your choice; nothing reserves the name `apps`. Idempotent: an existing config
- * is left untouched.
+ * root). That directory becomes one app folder: Epicenter stores machine state
+ * under `.epicenter/`, and app materializers may create their own generated
+ * output folders. Idempotent: an existing config is left untouched.
  *
  * Creating an Epicenter folder is an explicit user decision; `epicenter daemon
  * up` never scaffolds and instead points here when the config is missing.

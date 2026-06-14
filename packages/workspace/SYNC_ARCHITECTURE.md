@@ -177,21 +177,18 @@ The caller's `signal` (or a ~90 s caller-side ceiling) settles the promise if no
 
 Because the relay answers reachability inline (its `connections` Map decides, on the same socket that routes the call), callers that need to tell "addressed an offline install" apart from "the call reached the peer and failed" branch on `RecipientOffline` directly. There is no separate liveness pre-check, and no window where a client cache disagrees with the relay.
 
-For a type-narrowed success payload against a known target registry, lift through `typedDispatch`:
+`dispatch` returns `Result<unknown, DispatchError>`; the caller narrows the success payload against the shape the target action returns:
 
 ```ts
-import { typedDispatch } from '@epicenter/workspace';
-import type { TabManagerActions } from '@epicenter/tab-manager';
-
-const tabManager = typedDispatch<TabManagerActions>(collaboration.dispatch);
-const { data } = await tabManager({
+const { data } = await collaboration.dispatch({
     to: phone.deviceId,
     action: 'tabs_close',
     input: { tabIds: [1, 2] },
 });
+const closed = data as { tabIds: number[] };
 ```
 
-With manifests on the presence wire, the same narrowing is *runtime-verifiable*: walk `device.actions` and confirm the action key exists. The `typedDispatch` wrapper is ergonomic sugar; the wire payload is the ground truth.
+With manifests on the presence wire, that narrowing is *runtime-verifiable*: walk `device.actions` and confirm the action key exists before dispatching. The wire payload is the ground truth.
 
 The recipient side is `runInboundDispatch`: the supervisor routes inbound text frames to it, it looks up the action in the local registry, runs it, and emits the `dispatch_response`. A content doc with `actions: {}` always replies `ActionNotFound`.
 

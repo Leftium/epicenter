@@ -5,43 +5,65 @@
  * place shows its progress everywhere.
  *
  * The state machine is computed, not stored: `downloading` while a download
- * owns the handle, otherwise disk truth (`isInstalled`) plus the engine's
- * reactive model setting decide between not-downloaded, ready, and active.
+ * owns the handle, otherwise disk truth (`isInstalled`) decides between
+ * not-downloaded and ready. The selected entry name is parent-owned component
+ * state, so catalog models and custom folder entries activate through the
+ * same `bind:value` path.
+ *
  * The models folder is user-editable truth (entries can be dropped in or
- * deleted outside the app), so `refresh()` re-checks disk; the selector
- * calls it from the same window-focus rescan that refreshes folder entries.
+ * deleted outside the app), so `refresh()` re-checks disk; the selector calls
+ * it from the same window-focus rescan that refreshes folder entries.
  *
  * Shape mirrors `local-model.svelte.ts`: factory function with `$state`
  * closure variables and a return object exposing a reactive getter plus
  * operations.
  */
-import { toast } from '@epicenter/ui/sonner';
+import { Err, Ok, type Result } from 'wellcrafted/result';
 import {
 	type LocalModelConfig,
 	modelEntryName,
 } from '$lib/constants/local-models';
-import { createPrebuiltModel } from '$lib/operations/local-models';
-import { createModelStorage } from '$lib/services/transcription/local-model-folder';
+import {
+	createModelStorage,
+	deleteModelEntry,
+	type LocalModelFolderError,
+} from '$lib/services/transcription/local-model-folder';
 
 type ModelDownloadState =
 	| { type: 'not-downloaded' }
-	| { type: 'downloading'; progress: number }
-	| { type: 'ready' }
-	| { type: 'active' };
+	| { type: 'downloading'; progress: number; cancelling: boolean }
+	| { type: 'ready' };
 
 function createModelDownload(model: LocalModelConfig) {
 	const storage = createModelStorage(model);
-	const prebuiltModel = createPrebuiltModel(model);
-	const entryName = modelEntryName(model);
 
 	/** Disk truth: whether a valid install exists in the models folder. */
 	let isInstalled = $state(false);
 
-	/** Progress 0-100 while this handle owns a download, else null. */
-	let progress = $state<number | null>(null);
+	/**
+	 * The in-flight download attempt, or `null` when idle. This is the re-entry
+	 * gate: `download()` sets it when a run starts and clears it only when that
+	 * same run settles. `cancel()` flips `cancelling` but never clears it, so the
+	 * gate stays closed until the abort actually surfaces — a cancel can never
+	 * reopen the door for a second, overlapping `download_file` call on the same
+	 * partial path.
+	 *
+	 * `id` is unique per attempt, so the Rust registry maps it to exactly one
+	 * transfer for its whole lifetime. `cancelling` gates late progress callbacks
+	 * (so a flushed update cannot repaint after a cancel) and is the between-files
+	 * cancel signal passed to the storage layer.
+	 */
+	let active = $state<{
+		id: string;
+		progress: number;
+		cancelling: boolean;
+	} | null>(null);
+
+	/** Per-handle counter; pairs with the model key for a globally unique id. */
+	let attempts = 0;
 
 	async function refresh() {
-		isInstalled = (await storage.getInstalledPath()) !== null;
+		isInstalled = await storage.isInstalled();
 	}
 
 	void refresh();
@@ -52,15 +74,17 @@ function createModelDownload(model: LocalModelConfig) {
 		 * handles are created lazily from whichever component touches them
 		 * first, and a derived created inside a component's effect context
 		 * goes inert when that component is destroyed (`derived_inert`). The
-		 * computation is two comparisons; consumers that need caching or
-		 * narrowing alias it with a component-local `$derived`.
+		 * computation is one state read plus one null check; consumers that
+		 * need caching or narrowing alias it with a component-local `$derived`.
 		 */
 		get state(): ModelDownloadState {
-			if (progress !== null) return { type: 'downloading', progress };
-			if (!isInstalled) return { type: 'not-downloaded' };
-			return prebuiltModel.activeModelName === entryName
-				? { type: 'active' }
-				: { type: 'ready' };
+			if (active)
+				return {
+					type: 'downloading',
+					progress: active.progress,
+					cancelling: active.cancelling,
+				};
+			return isInstalled ? { type: 'ready' } : { type: 'not-downloaded' };
 		},
 
 		/**
@@ -72,60 +96,87 @@ function createModelDownload(model: LocalModelConfig) {
 		refresh,
 
 		/**
-		 * Download the model (skipping the download when a valid install
-		 * already exists) and activate it.
+		 * Download the model, skipping the download when a valid install
+		 * already exists. Selection is owned by the caller's bound value.
 		 */
-		async download() {
-			if (progress !== null) return;
-			progress = 0;
+		async download(): Promise<Result<
+			{ outcome: 'downloaded' | 'already-installed'; entryName: string },
+			LocalModelFolderError
+		> | null> {
+			if (active) return null;
+			const id = `${modelDownloadKey(model)}#${++attempts}`;
+			active = { id, progress: 0, cancelling: false };
 
-			const { data, error } = await prebuiltModel.downloadAndActivate({
-				onProgress: (value) => {
-					progress = value;
-				},
-			});
-			if (error) {
-				progress = null;
-				toast.error('Failed to download model', {
-					description: error.message,
+			if (await storage.isInstalled()) {
+				isInstalled = true;
+				active = null;
+				return Ok({
+					entryName: modelEntryName(model),
+					outcome: 'already-installed',
 				});
-				return;
 			}
 
-			// Refresh disk truth before releasing the downloading state so the
-			// computed machine lands directly on active.
-			await refresh();
-			progress = null;
-			toast.success(
-				data.outcome === 'already-installed'
-					? 'Model already downloaded and activated'
-					: 'Model downloaded and activated successfully',
-			);
-		},
+			const { error } = await storage.download({
+				downloadId: id,
+				// Write through `active` (the $state proxy) so the bar repaints; the
+				// gate keeps `active` pointing at this attempt for the whole run.
+				onProgress: (value) => {
+					if (active && !active.cancelling) active.progress = value;
+				},
+				isCancelled: () => active?.cancelling ?? false,
+			});
+			if (error) {
+				const wasCancelled = active?.cancelling ?? false;
+				active = null;
+				// If we asked to cancel, the abort is what produced this error: a
+				// clean stop, not a failure. Report it as a no-op (like an
+				// already-in-flight call) so callers raise no error toast.
+				return wasCancelled ? null : Err(error);
+			}
 
-		/** Point the engine's model setting at this model's entry name. */
-		activate() {
-			prebuiltModel.activate();
-			toast.success('Model activated');
+			// Refresh disk truth before releasing the gate so the computed machine
+			// lands directly on ready.
+			await refresh();
+			active = null;
+			return Ok({ entryName: modelEntryName(model), outcome: 'downloaded' });
 		},
 
 		/**
-		 * Remove the model from disk and, when it was the engine's active
-		 * model, clear the engine's model setting.
+		 * Request cancellation of an in-flight download. Marks the attempt as
+		 * cancelling (the UI shows "Cancelling…") and aborts its transfer in Rust;
+		 * the still-running `download()` drops back to `not-downloaded` and resolves
+		 * to a no-op once the abort surfaces. A no-op when nothing is downloading.
 		 */
-		async delete() {
-			const { error } = await prebuiltModel.delete();
-			if (error) {
-				toast.error('Failed to delete model', {
-					description: error.message,
-				});
-				return;
-			}
+		async cancel(): Promise<void> {
+			if (!active) return;
+			// Leave `active` set: the owning `download()` clears it when the abort
+			// surfaces. Until then the gate stays closed, so a re-download cannot
+			// start a second transfer over this one.
+			active.cancelling = true;
+			await storage.cancel(active.id);
+		},
+
+		/** Remove the catalog model from disk. Selection is cleared by callers. */
+		async delete(): Promise<Result<void, LocalModelFolderError>> {
+			const { error } = await deleteModelEntry({
+				engine: model.engine,
+				name: modelEntryName(model),
+			});
+			if (error) return Err(error);
 			isInstalled = false;
-			toast.success('Model deleted');
+			return Ok(undefined);
 		},
 	};
 }
+
+/**
+ * The result of a catalog `download()`: the outcome plus the folder entry
+ * name to select on success, `Err` on failure, or `null` when the call was a
+ * no-op (a download was already in flight).
+ */
+export type ModelDownloadResult = Awaited<
+	ReturnType<ReturnType<typeof createModelDownload>['download']>
+>;
 
 function modelDownloadKey(model: LocalModelConfig) {
 	return `${model.engine}:${model.id}`;

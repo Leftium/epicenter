@@ -8,24 +8,25 @@
  * JS view of the folder: listing entries, streaming catalog downloads into
  * it, and deleting entries, never anything outside the folder.
  *
- * UI-free and settings-free. Activation (writing the model name into
- * `deviceConfig`) lives in `$lib/operations/local-models.ts`.
+ * UI-free and settings-free. Selection is parent-owned component state:
+ * settings bind to a folder entry name, and catalog/custom entries activate
+ * through that same `bind:value` path.
  *
  * Layout under the appdata root (see `$lib/services/fs-paths`):
  * - Whisper:   `models/whisper/{filename}` (a single .bin file)
  * - Parakeet:  `models/parakeet/{directoryName}/` (multiple ONNX files)
  * - Moonshine: `models/moonshine/{directoryName}/` (multiple ONNX files)
  */
+import { Channel } from '@tauri-apps/api/core';
 import { join } from '@tauri-apps/api/path';
 import {
 	exists,
 	mkdir,
 	readDir,
 	remove,
+	rename,
 	stat,
-	writeFile,
 } from '@tauri-apps/plugin-fs';
-import { fetch } from '@tauri-apps/plugin-http';
 import {
 	defineErrors,
 	extractErrorMessage,
@@ -38,19 +39,9 @@ import {
 } from '$lib/constants/local-models';
 import { PATHS } from '$lib/services/fs-paths';
 import { isModelFileSizeValid } from '$lib/services/transcription/model-file';
+import { commands, type DownloadProgress } from '$lib/tauri/commands';
 
 export const LocalModelFolderError = defineErrors({
-	DownloadRequestFailed: ({
-		url,
-		status,
-	}: {
-		url: string;
-		status: number;
-	}) => ({
-		message: `Failed to download: ${status}`,
-		url,
-		status,
-	}),
 	DownloadIncomplete: ({
 		downloadedMb,
 		expectedMb,
@@ -119,6 +110,9 @@ export async function listModelEntries(
 			return dirEntries
 				.filter((entry) => {
 					if (entry.name.startsWith('.')) return false;
+					// In-flight or leftover download staging (a `.partial` file or
+					// directory) is never a selectable model.
+					if (entry.name.endsWith('.partial')) return false;
 					if (engine === 'whispercpp') {
 						const hasModelExtension = WHISPER_MODEL_EXTENSIONS.some((ext) =>
 							entry.name.endsWith(ext),
@@ -175,75 +169,109 @@ export async function deleteModelEntry({
 	});
 }
 
+/** Remove a leftover partial file or staging directory, ignoring any error. */
+async function removeQuietly(
+	path: string,
+	options?: { recursive?: boolean },
+): Promise<void> {
+	await tryAsync({
+		try: () => remove(path, options),
+		catch: () => Ok(undefined),
+	});
+}
+
 /**
- * Stream one file to disk, appending chunk by chunk so large models never
- * buffer fully in memory. Reports whole-file progress as 0-100.
+ * Stream one URL to `filePath` and size-check the result. `filePath` is always
+ * a caller-owned staging path, never the canonical install path, so a crash
+ * mid-download can only leave a truncated file in staging — which the caller
+ * discards. The transfer runs under `downloadId` so `cancel_download` can abort
+ * it mid-flight. Removes the file on any failure (a real error or a cancel,
+ * which surfaces as an aborted transfer). Reports whole-file progress as 0-100.
  */
-async function downloadFileTo({
+async function streamModelFile({
+	downloadId,
 	url,
 	sizeBytes,
 	filePath,
 	onProgress,
 }: {
+	/** Cancellation key; `cancelDownload(downloadId)` aborts this transfer. */
+	downloadId: string;
 	url: string;
-	/** Catalog size, used when the response has no content-length header. */
+	/** Catalog size, used for progress when the response omits content-length. */
 	sizeBytes: number;
+	/** Staging path to stream into; the caller promotes it once it validates. */
 	filePath: string;
 	onProgress: (progress: number) => void;
 }): Promise<Result<void, LocalModelFolderError>> {
-	const { data: response, error: fetchError } = await tryAsync({
-		try: () => fetch(url),
-		catch: (error) => LocalModelFolderError.DownloadFailed({ cause: error }),
-	});
-	if (fetchError) return Err(fetchError);
-	if (!response.ok) {
-		return LocalModelFolderError.DownloadRequestFailed({
-			url,
-			status: response.status,
-		});
+	const onProgressChannel = new Channel<DownloadProgress>();
+	onProgressChannel.onmessage = ({ bytesReceived, totalBytes }) => {
+		// f64 fields arrive as `number | null` (specta guards non-finite floats);
+		// missing content-length is 0, so fall back to the catalog size.
+		const received = bytesReceived ?? 0;
+		const expected = totalBytes && totalBytes > 0 ? totalBytes : sizeBytes;
+		// Clamp: a file larger than its catalog size (or a content-length-less
+		// response) can push the ratio past 100, which the progress bar should
+		// never show.
+		onProgress(Math.min(100, Math.round((received / expected) * 100)));
+	};
+
+	const { error: downloadError } = await commands.downloadFile(
+		downloadId,
+		url,
+		filePath,
+		onProgressChannel,
+	);
+	if (downloadError) {
+		// Covers both a real failure and a cancel (an aborted transfer surfaces
+		// as an error). Either way the file is incomplete, so drop it; the state
+		// layer decides whether the error reaches the user.
+		await removeQuietly(filePath);
+		return LocalModelFolderError.DownloadFailed({ cause: downloadError });
 	}
 
-	const contentLength = response.headers.get('content-length');
-	const totalBytes = contentLength
-		? Number.parseInt(contentLength, 10)
-		: sizeBytes;
+	// download_file streams to EOF without validating content-length, so a
+	// truncated-but-cleanly-closed response still resolves. This size re-check
+	// against the catalog size is the integrity gate before the caller promotes.
+	const { data: stats, error: statError } = await tryAsync({
+		try: () => stat(filePath),
+		catch: (error) => LocalModelFolderError.DownloadFailed({ cause: error }),
+	});
+	if (statError) {
+		await removeQuietly(filePath);
+		return Err(statError);
+	}
+	if (!isModelFileSizeValid(stats.size, sizeBytes)) {
+		await removeQuietly(filePath);
+		return LocalModelFolderError.DownloadIncomplete({
+			downloadedMb: Math.round(stats.size / 1_000_000),
+			expectedMb: Math.round(sizeBytes / 1_000_000),
+		});
+	}
+	return Ok(undefined);
+}
 
-	const { data: downloadedBytes, error: streamError } = await tryAsync({
+/**
+ * Promote validated staging to its canonical path with a single rename,
+ * replacing any stale entry already there (only reached when no valid install
+ * exists). Clears staging if the rename fails. `recursive` matches the staging
+ * kind: a bare file for Whisper, a directory for multi-file engines.
+ */
+async function promoteStaging(
+	staging: string,
+	destination: string,
+	options?: { recursive?: boolean },
+): Promise<Result<void, LocalModelFolderError>> {
+	const { error } = await tryAsync({
 		try: async () => {
-			const reader = response.body?.getReader();
-			if (!reader) {
-				throw new Error('Failed to read response body');
-			}
-
-			// Create or truncate the file first
-			await writeFile(filePath, new Uint8Array());
-
-			let bytes = 0;
-			while (true) {
-				const { done, value } = await reader.read();
-				if (done) break;
-
-				// Write each chunk directly to disk using append mode
-				await writeFile(filePath, value, { append: true });
-
-				bytes += value.length;
-				onProgress(Math.round((bytes / totalBytes) * 100));
-			}
-			return bytes;
+			if (await exists(destination)) await remove(destination, options);
+			await rename(staging, destination);
 		},
 		catch: (error) => LocalModelFolderError.DownloadFailed({ cause: error }),
 	});
-	if (streamError) return Err(streamError);
-
-	if (downloadedBytes < totalBytes) {
-		await tryAsync({
-			try: () => remove(filePath),
-			catch: () => Ok(undefined),
-		});
-		return LocalModelFolderError.DownloadIncomplete({
-			downloadedMb: Math.round(downloadedBytes / 1_000_000),
-			expectedMb: Math.round(totalBytes / 1_000_000),
-		});
+	if (error) {
+		await removeQuietly(staging, options);
+		return Err(error);
 	}
 	return Ok(undefined);
 }
@@ -273,65 +301,51 @@ export function createModelStorage(model: LocalModelConfig) {
 
 	return {
 		/**
-		 * The canonical install path: a file for Whisper, a directory for
-		 * Parakeet and Moonshine. Pure path math; does not touch disk.
+		 * Whether a valid install exists in the folder. Two paths to true:
+		 *
+		 * 1. A listed symlink entry with this model's name *is* the install.
+		 *    The user manages the link, and its target may live outside appdata
+		 *    where the webview fs scope cannot stat it, so it is trusted as-is —
+		 *    never size-validated.
+		 * 2. Otherwise a real install: every expected file present at a plausible
+		 *    size (at least 90% of the catalog size), so an interrupted download
+		 *    reads as not installed.
+		 *
+		 * Never rejects; any filesystem or path error reads as not installed.
 		 */
-		getPath,
+		async isInstalled(): Promise<boolean> {
+			if (await hasListedSymlinkEntry()) return true;
 
-		/**
-		 * The canonical path when a valid install exists there, else null.
-		 * Every expected file must exist with a plausible size (at least 90%
-		 * of the catalog size), so interrupted downloads read as missing.
-		 * Never rejects; any filesystem or path error reads as missing.
-		 */
-		async getInstalledPath(): Promise<string | null> {
-			const { data: installedPath } = await tryAsync({
-				try: async (): Promise<string | null> => {
+			// The symlink case is handled above, so any error here just means the
+			// real install is absent or unreadable: not installed.
+			const { data: valid } = await tryAsync({
+				try: async (): Promise<boolean> => {
 					const path = await getPath();
-					const { data: pathExists } = await tryAsync({
-						try: () => exists(path),
-						catch: () => Ok(false),
-					});
-					if (!pathExists) return (await hasListedSymlinkEntry()) ? path : null;
-
+					if (!(await exists(path))) return false;
 					switch (model.engine) {
 						case 'whispercpp': {
-							const { data: stats } = await tryAsync({
-								try: () => stat(path),
-								catch: () => Ok(null),
-							});
-							if (!stats) {
-								return (await hasListedSymlinkEntry()) ? path : null;
-							}
-							return isModelFileSizeValid(stats.size, model.sizeBytes)
-								? path
-								: null;
+							const stats = await stat(path);
+							return isModelFileSizeValid(stats.size, model.sizeBytes);
 						}
 						case 'parakeet':
 						case 'moonshine': {
-							const { data: dirStats } = await tryAsync({
-								try: () => stat(path),
-								catch: () => Ok(null),
-							});
-							if (!dirStats) {
-								return (await hasListedSymlinkEntry()) ? path : null;
-							}
-							if (!dirStats.isDirectory) return null;
+							const dirStats = await stat(path);
+							if (!dirStats.isDirectory) return false;
 							for (const file of model.files) {
 								const filePath = await join(path, file.filename);
-								if (!(await exists(filePath))) return null;
+								if (!(await exists(filePath))) return false;
 								const fileStats = await stat(filePath);
 								if (!isModelFileSizeValid(fileStats.size, file.sizeBytes)) {
-									return null;
+									return false;
 								}
 							}
-							return path;
+							return true;
 						}
 					}
 				},
-				catch: () => Ok(null),
+				catch: () => Ok(false),
 			});
-			return installedPath ?? null;
+			return valid ?? false;
 		},
 
 		/**
@@ -339,49 +353,103 @@ export function createModelStorage(model: LocalModelConfig) {
 		 * overall progress as 0-100, aggregated across files for multi-file
 		 * models. Does not check for an existing install; callers decide
 		 * whether to skip.
+		 *
+		 * Cancellation has three seams: a pre-check before any transfer starts
+		 * (so a cancel that lands in the caller's install-check window is honored
+		 * for every engine), `cancel()` aborting the in-flight transfer in Rust
+		 * (the active file's download then errors out), and the `isCancelled`
+		 * predicate between files so a cancel in the gap between a multi-file
+		 * engine's downloads still stops the run. Either way the error reads as a
+		 * plain failure here; the caller that requested the cancel is what knows
+		 * to treat it as a clean stop. Defaults to never-cancelled for callers
+		 * that do not wire it.
+		 *
+		 * Every engine stages under a sibling `.partial` (a bare file for Whisper,
+		 * a directory for multi-file engines) and promotes it with a single
+		 * rename, so an interrupted run never leaves a partial install at the
+		 * canonical path for the selector to list.
 		 */
 		async download({
+			downloadId,
 			onProgress,
+			isCancelled = () => false,
 		}: {
+			/** Unique per attempt; `cancel(downloadId)` aborts this run's transfer. */
+			downloadId: string;
 			onProgress: (progress: number) => void;
-		}): Promise<Result<{ path: string }, LocalModelFolderError>> {
-			const { data: path, error: prepareError } = await tryAsync({
+			isCancelled?: () => boolean;
+		}): Promise<Result<void, LocalModelFolderError>> {
+			const { data: destination, error: prepareError } = await tryAsync({
 				try: async () => {
 					await mkdir(await PATHS.MODELS[model.engine](), { recursive: true });
-					const destination = await getPath();
-					if (model.engine !== 'whispercpp') {
-						await mkdir(destination, { recursive: true });
-					}
-					return destination;
+					return getPath();
 				},
 				catch: (error) =>
 					LocalModelFolderError.DownloadFailed({ cause: error }),
 			});
 			if (prepareError) return Err(prepareError);
 
+			// A cancel that arrived before any transfer started (e.g. while the
+			// caller checked for an existing install) stops here, uniformly for
+			// every engine.
+			if (isCancelled()) {
+				return LocalModelFolderError.DownloadFailed({
+					cause: 'Download cancelled',
+				});
+			}
+
+			const staging = `${destination}.partial`;
+
 			switch (model.engine) {
 				case 'whispercpp': {
-					const { error } = await downloadFileTo({
+					const { error } = await streamModelFile({
+						downloadId,
 						url: model.file.url,
 						sizeBytes: model.sizeBytes,
-						filePath: path,
+						filePath: staging,
 						onProgress,
 					});
 					if (error) return Err(error);
-					break;
+					return promoteStaging(staging, destination);
 				}
 				case 'parakeet':
 				case 'moonshine': {
+					const { error: stagingError } = await tryAsync({
+						try: async () => {
+							// Clear any leftover staging from an interrupted run, then
+							// start clean.
+							await removeQuietly(staging, { recursive: true });
+							await mkdir(staging, { recursive: true });
+						},
+						catch: (error) =>
+							LocalModelFolderError.DownloadFailed({ cause: error }),
+					});
+					if (stagingError) return Err(stagingError);
+
 					const totalBytes = model.sizeBytes;
 					let completedBytes = 0;
 					for (const file of model.files) {
+						// A cancel that arrived between files (no transfer in flight
+						// for Rust to abort) still stops the run here, before the
+						// next file would otherwise complete the install. The state
+						// layer maps this to a no-op (it knows it cancelled).
+						if (isCancelled()) {
+							await removeQuietly(staging, { recursive: true });
+							return LocalModelFolderError.DownloadFailed({
+								cause: 'Download cancelled',
+							});
+						}
 						const { data: filePath, error: joinError } = await tryAsync({
-							try: () => join(path, file.filename),
+							try: () => join(staging, file.filename),
 							catch: (error) =>
 								LocalModelFolderError.DownloadFailed({ cause: error }),
 						});
-						if (joinError) return Err(joinError);
-						const { error } = await downloadFileTo({
+						if (joinError) {
+							await removeQuietly(staging, { recursive: true });
+							return Err(joinError);
+						}
+						const { error } = await streamModelFile({
+							downloadId,
 							url: file.url,
 							sizeBytes: file.sizeBytes,
 							filePath,
@@ -395,33 +463,26 @@ export function createModelStorage(model: LocalModelConfig) {
 								);
 							},
 						});
-						if (error) return Err(error);
+						if (error) {
+							await removeQuietly(staging, { recursive: true });
+							return Err(error);
+						}
 						completedBytes += file.sizeBytes;
 					}
-					break;
+
+					return promoteStaging(staging, destination, { recursive: true });
 				}
 			}
-			return Ok({ path });
 		},
 
 		/**
-		 * Remove the model's files from disk. Succeeds even when nothing is
-		 * installed, so callers can always reconcile settings afterwards.
-		 *
-		 * Only ever removes the model's canonical catalog path inside the
-		 * folder (`getPath`); nothing outside the folder is reachable.
+		 * Abort the in-flight download attempt registered under `downloadId`:
+		 * the matching `download()` call's current file aborts in Rust and errors
+		 * out, and `download` then removes the partial. A no-op when nothing is
+		 * downloading under that id.
 		 */
-		async delete(): Promise<Result<void, LocalModelFolderError>> {
-			return tryAsync({
-				try: async () => {
-					const path = await getPath();
-					if (await exists(path)) {
-						const isDirectory = model.engine !== 'whispercpp';
-						await remove(path, { recursive: isDirectory });
-					}
-				},
-				catch: (error) => LocalModelFolderError.DeleteFailed({ cause: error }),
-			});
+		async cancel(downloadId: string): Promise<void> {
+			await commands.cancelDownload(downloadId);
 		},
 	};
 }

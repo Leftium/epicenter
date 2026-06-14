@@ -1,5 +1,5 @@
-import { mkdir, readdir, unlink, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { mkdir, readdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { Type } from 'typebox';
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
@@ -66,6 +66,9 @@ type RegisteredTable = {
 	subdir: string;
 	unsubscribe?: () => void;
 };
+
+const GENERATED_DIRECTORY_GITIGNORE = '*\n';
+const IGNORED_GENERATED_DIRECTORY_ENTRIES = new Set(['.DS_Store', 'Thumbs.db']);
 
 /**
  * Attach a read-only markdown export to a workspace. Continuously materializes
@@ -354,8 +357,8 @@ const MaterializerWriteError = defineErrors({
  * root, not a hardcoded `apps/` segment, is the ownership claim. Every write and
  * every delete (initial flush, rename cleanup, and the `markdown_rebuild` sweep)
  * goes through here, so a `render` that returns `../../notes/x.md`, an absolute
- * path, or a table `dir` of `..` is rejected before it can touch disk outside the
- * mount projection (spec invariants 7 and 9).
+ * path, or a table `dir` of `..` is rejected before it can touch disk outside
+ * the table projection.
  *
  * Throws a plain `Error` (not a `defineErrors` variant): these propagate through
  * the same throw/catch path as the rest of the write code, and a `defineErrors`
@@ -382,6 +385,41 @@ function confineToDir(root: string, segment: string): string {
 		rel === '' || rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel);
 	if (escapes) reject();
 	return target;
+}
+
+async function claimGeneratedDirectory(directory: string): Promise<void> {
+	await mkdir(directory, { recursive: true });
+
+	const gitignorePath = join(directory, '.gitignore');
+	const marker = await readFile(gitignorePath, 'utf8').catch((cause) => {
+		if (isNotFoundError(cause)) return null;
+		throw cause;
+	});
+	if (marker === GENERATED_DIRECTORY_GITIGNORE) return;
+
+	const entries = await readdir(directory);
+	const userEntries = entries.filter(
+		(entry) =>
+			entry !== '.gitignore' && !IGNORED_GENERATED_DIRECTORY_ENTRIES.has(entry),
+	);
+	if (marker !== null || userEntries.length > 0) {
+		throw new Error(
+			`[markdown] refusing to claim "${directory}": it already has files but no Epicenter-generated .gitignore marker`,
+		);
+	}
+
+	await writeFile(gitignorePath, GENERATED_DIRECTORY_GITIGNORE, {
+		mode: 0o600,
+	});
+}
+
+function isNotFoundError(cause: unknown): boolean {
+	return (
+		typeof cause === 'object' &&
+		cause !== null &&
+		'code' in cause &&
+		cause.code === 'ENOENT'
+	);
 }
 
 /**
@@ -419,7 +457,7 @@ function logSkippedRows(
  * Best-effort unlink of a file under `directory`; a missing file or a failed
  * remove is ignored. The target is confined to `directory` first, so a rename
  * whose previous filename somehow escaped can never delete outside the mount
- * projection (`confineToDir` throws, which propagates past the best-effort
+ * export directory (`confineToDir` throws, which propagates past the best-effort
  * catch deliberately: an escaping delete is a bug, not a routine miss).
  */
 async function tryUnlink(directory: string, filename: string): Promise<void> {
@@ -473,7 +511,7 @@ async function materializeTable(opts: {
 }): Promise<() => void> {
 	const { table, directory, render, fileState, track, log } = opts;
 
-	await mkdir(directory, { recursive: true });
+	await claimGeneratedDirectory(directory);
 
 	// Write one valid row to disk, shared by the initial flush and the observer.
 	// The rename branch is a no-op on first write (`fileState` starts empty), so
@@ -557,6 +595,7 @@ async function rebuildTable(opts: {
 	const { table, directory, render, fileState, log } = opts;
 	let deleted = 0;
 	let written = 0;
+	await claimGeneratedDirectory(directory);
 
 	const scan = table.scan();
 	logSkippedRows(log, table.name, scan);
@@ -592,7 +631,6 @@ async function rebuildTable(opts: {
 	}
 
 	fileState.clear();
-	await mkdir(directory, { recursive: true });
 	for (const { id, filename, content } of rendered) {
 		await writeMarkdownFile(directory, filename, content);
 		fileState.set(id, { filename, content });

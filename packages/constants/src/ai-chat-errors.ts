@@ -63,6 +63,31 @@ export const AiChatError = defineErrors({
 		model,
 		credits,
 	}),
+	/**
+	 * Doc-as-wire kickoff replay: an assistant message with this generationId
+	 * already exists in the conversation doc. The retry is a no-op; nothing
+	 * was written and nothing was charged.
+	 */
+	GenerationAlreadyExists: ({ generationId }: { generationId: string }) => ({
+		message: `Generation ${generationId} already exists`,
+		generationId,
+	}),
+	/**
+	 * Doc-as-wire concurrency guard: the conversation has an assistant message
+	 * with no finish yet that is recent enough to still be live. One active
+	 * generation per conversation; retry after it finishes.
+	 */
+	GenerationInProgress: () => ({
+		message: 'A generation is already in progress for this conversation',
+	}),
+	/**
+	 * Doc-as-wire kickoff arrived before any user message synced into the
+	 * conversation doc. There is nothing to respond to; the client should
+	 * retry once its user message has synced.
+	 */
+	NoUserMessage: () => ({
+		message: 'The conversation has no user message to respond to',
+	}),
 });
 
 /**
@@ -101,6 +126,9 @@ export const AiChatErrorStatus = {
 	UnknownModel: 400,
 	InsufficientCredits: 402,
 	ModelRequiresPaidPlan: 403,
+	GenerationAlreadyExists: 409,
+	GenerationInProgress: 409,
+	NoUserMessage: 409,
 } as const satisfies Record<AiChatError['name'], number>;
 
 /**

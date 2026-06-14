@@ -1,5 +1,5 @@
 import { createPersistedState } from '@epicenter/svelte';
-import { debounce } from '@epicenter/util';
+import { debounce } from '@epicenter/workspace';
 import { type } from 'arktype';
 import type { OpensidianBrowser } from 'opensidian/browser';
 
@@ -132,7 +132,7 @@ export function createSidebarSearchState({
 			const rows = result.rows.map((row) => ({
 				fileId: row.file_id as string,
 				name: row.name as string,
-				path: (row.path as string) ?? null,
+				path: (row.path as string | null) ?? null,
 				snippet: row.snippet as string,
 			}));
 

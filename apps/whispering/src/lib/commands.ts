@@ -1,6 +1,5 @@
-import type { ShortcutEvent } from '@tauri-apps/plugin-global-shortcut';
 import {
-	cancelManualRecording,
+	cancelRecording,
 	startManualRecording,
 	stopManualRecording,
 	toggleManualRecording,
@@ -20,10 +19,13 @@ import { openTransformationPicker } from '$lib/operations/transformation-picker'
  */
 
 /**
- * The keyboard event state passed to callbacks.
- * Derived from Tauri's ShortcutEvent type for consistency.
+ * The keyboard event state passed to callbacks: a trigger backend reports
+ * either the press or the release edge. Both the desktop rdev backend (which
+ * emits the generated `TriggerState`) and the browser keydown backend speak
+ * this exact pair, so the command layer is the single point where they
+ * converge.
  */
-export type ShortcutEventState = ShortcutEvent['state'];
+export type ShortcutEventState = 'Pressed' | 'Released';
 
 type SatisfiedCommand = {
 	id: string;
@@ -58,10 +60,10 @@ export const commands = [
 		callback: () => toggleManualRecording(),
 	},
 	{
-		id: 'cancelManualRecording',
+		id: 'cancelRecording',
 		title: 'Cancel recording',
 		on: ['Pressed'],
-		callback: () => cancelManualRecording(),
+		callback: () => cancelRecording(),
 	},
 	{
 		id: 'toggleVadRecording',

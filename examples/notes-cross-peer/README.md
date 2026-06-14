@@ -2,9 +2,9 @@
 
 Two-peer minimal repro for the `system.describe` cross-peer fetch.
 
-Both Epicenter configs default-export a one-item `Mount[]` containing the `notes` mount from `workspaces/notes/daemon.ts`. `Mount.name` is the canonical CLI prefix. The two mount modules construct the same workspace (`epicenter-notes-repro`) with distinct peer ids, so each appears in the other's awareness.
+Both Epicenter configs default-export the `notes` mount from `workspaces/notes/daemon.ts`. `Mount.name` is the canonical CLI prefix. The two mount modules construct the same workspace (`epicenter-notes-repro`) with distinct peer ids, so each appears in the other's awareness.
 
-This example runs one daemon process per Epicenter root. In a normal root, one daemon can host many mounts (default-export `Mount[]`). This repro keeps peer-a and peer-b in separate Epicenter folders so they behave like two different machines.
+This example runs one daemon process per Epicenter root. Each root declares one mount. This repro keeps peer-a and peer-b in separate Epicenter folders so they behave like two different machines.
 
 Exercises `createRemoteClient({ awareness, rpc }).describe(peerId)` end-to-end against the deployed API.
 

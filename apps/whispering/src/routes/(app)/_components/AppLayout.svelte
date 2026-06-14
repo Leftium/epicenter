@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Dialog from '@epicenter/ui/dialog';
+	import { toast } from '@epicenter/ui/sonner';
 	// import { extension } from '@epicenter/extension';
 	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { commandCallbacks } from '$lib/commands';
+	import { os } from '#platform/os';
 	import MoreDetailsDialog from '$lib/components/MoreDetailsDialog.svelte';
 	import UpdateDialog from '$lib/components/UpdateDialog.svelte';
 	import {
@@ -30,30 +32,65 @@
 	import { syncIconWithRecorderState } from '../_layout-utils/syncIconWithRecorderState.svelte';
 
 	let cleanupAccessibilityPermission: (() => void) | undefined;
+	let cleanupShortcutListener: (() => void) | undefined;
+	let shortcutListenerDestroyed = false;
+
+	// Start the rdev global listener (idempotent). rdev::listen cannot tap the
+	// keyboard before macOS Accessibility is granted, so we only call this once
+	// shortcuts are allowed: on macOS from the accessibility-granted callback, on
+	// other desktops at launch. Wayland has no working listener; tell the user.
+	async function startGlobalListener() {
+		if (!tauri) return;
+		const status = await tauri.globalShortcuts.start();
+		if (status === 'waylandUnsupported') {
+			toast.warning('Global shortcuts unavailable on Wayland', {
+				description:
+					'Whispering needs an X11 session for global shortcuts. On Wayland, bind them through your desktop environment.',
+				duration: Number.POSITIVE_INFINITY,
+			});
+		}
+	}
 
 	onMount(() => {
 		// Sync operations - run immediately, these are fast
 		window.commands = commandCallbacks;
 		window.goto = goto;
-		syncLocalShortcutsWithSettings();
-		resetLocalShortcutsToDefaultIfDuplicates();
 		registerOnboarding();
-		cleanupAccessibilityPermission = registerAccessibilityPermission();
+		// On macOS the listener starts when Accessibility is granted (the single
+		// gate the whole dictation flow shares); this is its one subscriber.
+		cleanupAccessibilityPermission = registerAccessibilityPermission({
+			onGranted: () => void startGlobalListener(),
+		});
 
+		// One trigger backend per platform: desktop uses the rdev global
+		// listener exclusively, the browser uses in-app keydown exclusively.
+		// They never both bind on the same platform.
 		if (tauri) {
+			void tauri.globalShortcuts.startListening().then((unlisten) => {
+				// If we were destroyed before the listener resolved, drop it now;
+				// otherwise it leaks past unmount and a remount would double-fire.
+				if (shortcutListenerDestroyed) unlisten();
+				else cleanupShortcutListener = unlisten;
+			});
 			syncGlobalShortcutsWithSettings();
 			resetGlobalShortcutsToDefaultIfDuplicates();
+
+			// Non-macOS desktops have no Accessibility gate, so start the listener
+			// now (macOS waits for the grant, above).
+			if (!os.isApple) void startGlobalListener();
 
 			// Desktop-only async check - fire and forget
 			void checkForUpdates();
 		} else {
-			// Browser extension context - notify that the Whispering tab is ready
-			// extension.notifyWhisperingTabReady(undefined);
+			syncLocalShortcutsWithSettings();
+			resetLocalShortcutsToDefaultIfDuplicates();
 		}
 	});
 
 	onDestroy(() => {
 		cleanupAccessibilityPermission?.();
+		shortcutListenerDestroyed = true;
+		cleanupShortcutListener?.();
 	});
 
 	if (tauri) {

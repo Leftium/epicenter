@@ -1,9 +1,9 @@
 ---
 name: epicenter-ui
-description: Epicenter UI component selection and composition patterns for Svelte apps using packages/ui. Use when choosing or reviewing @epicenter/ui components, loading states, empty states, skeletons, spinners, command empty states, action pending UI, table/list no-row states, button tooltips, wrapper minimization, or replacing ad hoc UI such as Loading... text, custom loading dots, raw animate-pulse placeholders, or one-off centered status markup.
+description: Epicenter UI component selection and composition patterns for Svelte apps using @epicenter/ui. Use when choosing or reviewing local UI components, loading or empty states, skeletons, spinners, command empty states, action pending UI, table/list no-row states, button or link tooltips, modal/dialog/sheet/drawer surfaces, package import boundaries, wrapper minimization, or replacing ad hoc UI such as Loading... text, custom loading dots, raw animate-pulse placeholders, raw tooltip wrappers, or one-off centered status markup.
 metadata:
   author: epicenter
-  version: '1.0'
+  version: '1.1'
 ---
 
 # Epicenter UI
@@ -15,6 +15,24 @@ Related skills:
 - Use `svelte` for branch mechanics: `{#if}`, `{#await}`, derived state, query state, and component lifecycle.
 - Use `styling` for Tailwind details, wrapper element decisions, scroll traps, and disabled-state styling.
 - Use this skill for local component choice and composition.
+
+Read `packages/ui/README.md` when changing `packages/ui` internals, public exports, style hooks, overlay CSS, or shadcn-svelte vendored code. It is the source of truth for the package import boundary, `style-vega` activation, `cn-*` style hooks, Epicenter overlay deltas, and the component update workflow.
+
+## Package Boundary
+
+App code imports through the public package API:
+
+```svelte
+<script lang="ts">
+	import { Button } from '@epicenter/ui/button';
+	import { Loading } from '@epicenter/ui/loading';
+	import '@epicenter/ui/app.css';
+</script>
+```
+
+Files inside `packages/ui/src` import sibling UI files with relative paths, such as `../button/index.js` and `../utils.js`. Do not add app aliases or `kit.alias` entries that point at `packages/ui/src`.
+
+Apps need the preset active with `class="style-vega"` on their root element. Without that class, the scoped `cn-*` rules do not apply.
 
 ## Reference Repositories
 
@@ -33,7 +51,8 @@ Skip DeepWiki for local loading, empty, pending, and tooltip conventions already
 
 Pick the component by what the user is waiting for:
 
-- Full surface pending: use `Empty.Root` with `Spinner` when the whole surface is replaced.
+- Generic full-surface pending with only a spinner and optional caption: use `Loading`.
+- Full-surface pending with a title, description, custom media, actions, or exact parity with nearby empty/error markup: compose `Empty.Root` with `Spinner`.
 - Known progress: use `Progress`, not a spinner.
 - Content shape is known: use `Skeleton`, not raw `animate-pulse` divs.
 - Button action pending: disable the `Button` and put a small `Spinner` inside it.
@@ -45,16 +64,11 @@ Do not show plain text such as `Loading...` by itself. Pair status text with an 
 
 ## Composition And Wrappers
 
-Collapse wrapper elements whenever a component can own the layout directly. `Empty.Root` already centers content, lays out a column, sets text alignment, and accepts `class`, so full-surface pending, empty, and error states usually do not need an outer `div`.
+Collapse wrapper elements whenever a component can own the layout directly. `Loading` and `Empty.Root` both center content, lay out a column, set text alignment, and accept `class`, so full-surface pending, empty, and error states usually do not need an outer `div`.
 
 ```svelte
 <!-- Prefer this -->
-<Empty.Root class="h-dvh flex-none border-0" aria-live="polite">
-	<Empty.Media>
-		<Spinner class="size-5 text-muted-foreground" />
-	</Empty.Media>
-	<Empty.Title>Checking session</Empty.Title>
-</Empty.Root>
+<Loading class="h-dvh" label="Checking session" />
 
 <!-- Avoid this -->
 <div class="flex h-dvh items-center justify-center">
@@ -76,9 +90,20 @@ Use this boundary ladder before copying or forking component internals:
 
 Import compound components as namespaces, such as `import * as Dialog from '@epicenter/ui/dialog'`. Import single components by name, such as `import { Button } from '@epicenter/ui/button'`.
 
-Dialog, Sheet, and Drawer surfaces need accessible titles. Use an `sr-only` title when the visual design already supplies equivalent context. Form controls with validation state should expose `aria-invalid` or the local component equivalent.
+Dialog, Modal, Sheet, and Drawer surfaces need accessible titles. Use an `sr-only` title when the visual design already supplies equivalent context. Form controls with validation state should expose `aria-invalid` or the local component equivalent.
 
 Before pulling upstream shadcn-svelte component updates, commit local wrapper state. Then reconcile upstream changes against local deltas instead of overwriting the wrapper.
+
+## Surface Choice
+
+Use the component whose interaction contract matches the job:
+
+- `Dialog` or `AlertDialog`: confirmations, simple yes/no prompts, display-only content, and simple action confirmations.
+- `ConfirmationDialog`: reusable simple confirmations before one-off alert dialog markup.
+- `Modal`: forms, typing, dropdowns, multi-step input, or any workflow that collects user data.
+- `Sheet` or `Drawer`: secondary panels, mobile-friendly drawers, and side surfaces.
+- `Command` or `CommandPalette`: command menus, filtered actions, and search empty states.
+- `Item`, `SectionHeader`, `ButtonGroup`, `InputGroup`, `CopyButton`, and `Sidebar.*`: repeated list rows, page sections, grouped controls, inline input actions, copy actions, and app chrome.
 
 ## Empty States
 
@@ -103,21 +128,17 @@ Use `Empty.Content` when the state has an action button. Keep the title short an
 
 ## Pending Surfaces
 
-When pending replaces a whole pane or page, use the same structure you would use for the error branch. This keeps layout and alignment stable:
+When pending replaces a whole pane or page and only needs a spinner plus optional caption, use `Loading`. It wraps the standard `Empty.Root` plus `Spinner` structure and accepts sizing classes for the surrounding layout:
 
 ```svelte
 <script lang="ts">
-	import * as Empty from '@epicenter/ui/empty';
-	import { Spinner } from '@epicenter/ui/spinner';
+	import { Loading } from '@epicenter/ui/loading';
 </script>
 
-<Empty.Root class="h-dvh border-0" aria-live="polite">
-	<Empty.Media>
-		<Spinner class="size-5 text-muted-foreground" />
-	</Empty.Media>
-	<Empty.Title>Checking session</Empty.Title>
-</Empty.Root>
+<Loading class="h-dvh" label="Checking session" />
 ```
+
+`Loading` renders its `label` as supporting caption text. Use `Empty.Root` plus `Spinner` directly when the loading branch needs a title, description, custom media, actions, or exact structural parity with an error or empty branch.
 
 For inline pending inside an existing surface, keep the wrapper small and only use it when no existing element can take the layout classes:
 
@@ -147,9 +168,9 @@ For inline pending inside an existing surface, keep the wrapper small and only u
 
 Keep the label when the action needs context. Icon-only pending is fine for compact row actions where the button tooltip or surrounding label already names the action.
 
-## Button Tooltips
+## Tooltips
 
-`Button` has a built-in `tooltip` prop. Use it before hand-wrapping a button with `Tooltip.Root`, `Tooltip.Trigger`, and `Tooltip.Content`.
+`Button` and `Link` have built-in `tooltip` props. Use them before hand-wrapping with `Tooltip.Root`, `Tooltip.Trigger`, and `Tooltip.Content`.
 
 ```svelte
 <Button
@@ -162,7 +183,7 @@ Keep the label when the action needs context. Icon-only pending is fine for comp
 </Button>
 ```
 
-The built-in tooltip expects a parent `Tooltip.Provider` somewhere above the button. Hand-roll tooltip composition only when the trigger is not a `Button`, the content needs custom markup, or the interaction is not a simple button tooltip.
+The built-in tooltip expects a parent `Tooltip.Provider` somewhere above the trigger. Hand-roll tooltip composition only when the trigger is not a `Button` or `Link`, the content needs custom markup, or the interaction is not a simple tooltip.
 
 ## Table and List Empty States
 
@@ -186,17 +207,19 @@ Use different copy for true empty data and filtered empty data:
 ## Avoid
 
 - Plain `Loading...` text.
+- Hand-composed full-page `Empty.Root` plus `Spinner` when the standard `Loading` caption shell fits.
 - Raw `Loader2Icon`, `LoaderCircleIcon`, or custom `animate-spin` outside `packages/ui`. Use `Spinner`.
 - Raw `animate-pulse` placeholder blocks. Use `Skeleton`.
 - Loading dots outside chat messages.
 - Empty state copy inside an unstructured centered `div` when `Empty.*` would fit.
-- Tooltip wrappers around `Button` when the `tooltip` prop is enough.
+- Tooltip wrappers around `Button` or `Link` when the `tooltip` prop is enough.
 - Extra wrapper `div`s around `Empty.Root` just to center or stack content.
 - Duplicating component internals from shadcn-svelte or extras instead of importing the local `@epicenter/ui` wrapper.
+- App imports from `packages/ui/src` or aliases that bypass `@epicenter/ui/*`.
 
 ## Boundary With Svelte
 
-Svelte decides which branch renders: `{#if}`, `{#await}`, query status, or derived state. Epicenter UI decides what the branch looks like: `Spinner`, `Skeleton`, `Progress`, `Empty`, `Command.Empty`, `Button tooltip`, or chat typing state.
+Svelte decides which branch renders: `{#if}`, `{#await}`, query status, or derived state. Epicenter UI decides what the branch looks like: `Loading`, `Spinner`, `Skeleton`, `Progress`, `Empty`, `Command.Empty`, `Button` or `Link` tooltip, or chat typing state.
 
 ## Extras And Chat
 

@@ -1,6 +1,6 @@
 {
 	"name": "@epicenter/svelte",
-	"version": "0.1.0",
+	"version": "0.3.0",
 	"private": true,
 	"type": "module",
 	"description": "Svelte 5 utilities for Epicenter workspaces. Reactive state bindings, auth UI, and workspace gates.",

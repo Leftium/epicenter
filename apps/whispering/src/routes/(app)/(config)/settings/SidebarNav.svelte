@@ -15,7 +15,7 @@
 		{ title: 'Sound', href: '/settings/sound' },
 		{
 			title: 'Shortcuts',
-			href: '/settings/shortcuts/local',
+			href: '/settings/shortcuts',
 			activePathPrefix: '/settings/shortcuts',
 		},
 		{ title: 'Privacy & Analytics', href: '/settings/analytics' },
@@ -68,7 +68,7 @@
 	{/each}
 
 	<Button
-		href={`${APP_URLS.API}/dashboard`}
+		href="{APP_URLS.API}/dashboard"
 		target="_blank"
 		variant="ghost"
 		class="relative justify-start text-left font-normal text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"

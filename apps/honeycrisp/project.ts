@@ -4,13 +4,13 @@
  * `honeycrisp(opts?)` returns the `Mount` that an
  * `epicenter.config.ts` default-exports. Disk paths follow the
  * Epicenter-root layout: the SQLite mirror at `.epicenter/sqlite/<id>.db`
- * (hidden) and the read-only markdown projection at `<epicenterRoot>/honeycrisp/`
- * (visible), a direct child of the Epicenter root.
+ * (hidden) and the read-only markdown projection under table-named folders in
+ * the app root.
  */
 
-import { EPICENTER_API_URL } from '@epicenter/constants/apps';
+import { join } from 'node:path';
 import { defineActions, defineWorkspace } from '@epicenter/workspace';
-import { defineMount } from '@epicenter/workspace/daemon';
+import { defineSessionMount } from '@epicenter/workspace/daemon';
 import {
 	attachGitAutosave,
 	attachMarkdownExport,
@@ -18,8 +18,7 @@ import {
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import {
-	attachProjectInfrastructure,
-	mountMarkdownPath,
+	attachMountInfrastructure,
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
@@ -27,42 +26,38 @@ import { createHoneycrisp } from './honeycrisp.js';
 
 export type HoneycrispMountOptions = {
 	git?: GitAutosaveConfig;
+	/**
+	 * Base URL of the Epicenter cloud API used for sync.
+	 * Defaults to `process.env.EPICENTER_API_URL`, falling back to the hosted API.
+	 */
+	baseURL?: string;
 };
 
 export function honeycrisp(opts: HoneycrispMountOptions = {}) {
-	return defineMount({
+	return defineSessionMount({
 		name: 'honeycrisp',
 		open(ctx) {
-			const {
-				epicenterRoot,
-				mount,
-				yDocClientId,
-				deviceId,
-				ownerId,
-				keyring,
-				openWebSocket,
-				onReconnectSignal,
-			} = ctx;
+			const { epicenterRoot, mount } = ctx;
+			const baseURL =
+				opts.baseURL ||
+				process.env.EPICENTER_API_URL ||
+				'https://api.epicenter.so';
 
-			const workspace = createHoneycrisp({ keyring });
-			workspace.ydoc.clientID = yDocClientId;
-
-			const sqliteFile = sqlitePath(epicenterRoot, workspace.ydoc.guid);
-			const mdDir = mountMarkdownPath(epicenterRoot, mount);
+			const workspace = createHoneycrisp({ keyring: ctx.session.keyring });
 
 			const sqlite = attachBunSqliteMaterializer(workspace, {
-				filePath: sqliteFile,
+				filePath: sqlitePath(epicenterRoot, workspace.ydoc.guid),
 				log: createLogger(`${mount}-sqlite`),
 			});
 
 			const markdown = attachMarkdownExport(workspace, {
-				dir: mdDir,
+				dir: epicenterRoot,
 				tables: { notes: {} },
 			});
 			if (opts.git) {
 				attachGitAutosave({
 					ydoc: workspace.ydoc,
-					dir: mdDir,
+					dir: join(epicenterRoot, 'notes'),
 					config: opts.git,
 				});
 			}
@@ -73,13 +68,8 @@ export function honeycrisp(opts: HoneycrispMountOptions = {}) {
 				...markdown.actions,
 			});
 
-			const infrastructure = attachProjectInfrastructure(workspace.ydoc, {
-				baseURL: EPICENTER_API_URL,
-				epicenterRoot,
-				ownerId,
-				deviceId,
-				openWebSocket,
-				onReconnectSignal,
+			const infrastructure = attachMountInfrastructure(workspace.ydoc, ctx, {
+				baseURL,
 				actions,
 				materializers: [sqlite, markdown],
 			});

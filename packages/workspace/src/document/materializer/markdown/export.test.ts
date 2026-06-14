@@ -60,6 +60,7 @@ describe('attachMarkdownExport', () => {
 
 		const files = await listDir('posts');
 		expect(files).toContain('alpha-a.md');
+		expect(await readDir('posts/.gitignore')).toBe('*\n');
 
 		workspace[Symbol.dispose]();
 	});
@@ -238,6 +239,26 @@ describe('attachMarkdownExport', () => {
 			await expect(
 				readFile(join(parentOfTestDir, 'escape.md'), 'utf-8'),
 			).rejects.toThrow();
+
+			workspace[Symbol.dispose]();
+		});
+
+		test('refuses to claim a populated directory without an Epicenter marker', async () => {
+			await mkdir(join(TEST_DIR, 'posts'), { recursive: true });
+			await writeFile(join(TEST_DIR, 'posts', 'mine.md'), '# Mine\n', 'utf-8');
+			const workspace = createWorkspace({
+				id: 'export-refuse-populated',
+				tables: tableDefinitions,
+				kv: {},
+			});
+			const exporter = attachMarkdownExport(workspace, {
+				dir: TEST_DIR,
+				tables: { posts: {} },
+			});
+
+			await expect(exporter.whenFlushed).rejects.toThrow(
+				/already has files but no Epicenter-generated .gitignore marker/,
+			);
 
 			workspace[Symbol.dispose]();
 		});

@@ -151,6 +151,12 @@ export { generateGuid, generateId } from './shared/id';
 export { nullable } from './document/nullable';
 
 // ════════════════════════════════════════════════════════════════════════════
+// TIMING
+// ════════════════════════════════════════════════════════════════════════════
+
+export { debounce } from './shared/debounce.js';
+
+// ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT PRIMITIVES
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -170,8 +176,6 @@ export { defineTable } from './document/define-table.js';
 export {
 	DispatchError,
 	type DispatchRequest,
-	type TypedDispatch,
-	typedDispatch,
 } from './document/dispatch.js';
 export { docGuid } from './document/doc-guid.js';
 // One-shot HTTP read of a hosted room: GET the snapshot into a throwaway doc.

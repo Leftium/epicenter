@@ -45,7 +45,7 @@ export function readMetadata(dir: string): DaemonMetadata | null {
 	return readMetadataFromPath(metadataPathFor(dir));
 }
 
-export function readMetadataFromPath(path: string): DaemonMetadata | null {
+function readMetadataFromPath(path: string): DaemonMetadata | null {
 	if (!existsSync(path)) return null;
 	try {
 		const raw = readFileSync(path, 'utf8');
@@ -73,6 +73,10 @@ export function unlinkMetadata(dir: string): void {
 	}
 }
 
+/**
+ * Enumerate every running daemon by scanning the runtime dir for its
+ * `.meta.json` sidecars. Skips files that fail to parse.
+ */
 export function enumerateDaemons(): DaemonMetadata[] {
 	const root = runtimeDir();
 	if (!existsSync(root)) return [];

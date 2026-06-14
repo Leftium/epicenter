@@ -20,7 +20,7 @@ Rule of thumb: no computed behavior, no functions, no runtime schema objects. If
 ```
 constants/
 ├── audio/                  # Recording settings: bitrate, sample-rate, modes, state icons (folder + barrel)
-├── keyboard/               # Key vocabularies and types for accelerators and browser events (folder + barrel)
+├── keyboard/               # Key vocabularies and types for browser keyboard events (folder + barrel)
 ├── icons/                  # Provider brand SVG assets
 ├── always-on-top.ts        # Window always-on-top setting enum + options
 ├── inference.ts            # Text-completion provider/model registry

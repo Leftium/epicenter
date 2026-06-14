@@ -4,28 +4,28 @@
  * `fuji(opts?)` returns the `Mount` that an `epicenter.config.ts`
  * default-exports. Disk paths follow the Epicenter-root layout: the
  * SQLite mirror lives at `.epicenter/sqlite/<id>.db` (hidden, machine-queried)
- * and the markdown projection at `<epicenterRoot>/fuji/` (visible, human-read),
- * a direct child of the Epicenter root.
+ * and the markdown projection at table-named folders under the app root
+ * (`<epicenterRoot>/entries/` for Fuji).
  *
  * What this does:
  *   1. workspace root doc (encrypted tables + KV via createFuji)
  *   2. SQLite materializer at `sqlitePath(...)`
- *   3. Markdown export (read-only, one-way) at `mountMarkdownPath(epicenterRoot,
- *      mount)`; each entry's body is rendered from its content doc via
- *      `serializeEntryBody`, read fresh over the cloud per row and never
- *      persisted on the daemon. There is no import path: the only way to mutate
- *      an entry is through a validated action, never by editing the `.md`.
+ *   3. Markdown export (read-only, one-way) under the app root; each entry's
+ *      body is rendered from its content doc via `serializeEntryBody`, read
+ *      fresh over the cloud per row and never persisted on the daemon. There is
+ *      no import path: the only way to mutate an entry is through a validated
+ *      action, never by editing the `.md`.
  *   4. infrastructure: Yjs log persistence + cloud sync via
- *      `attachProjectInfrastructure`
+ *      `attachMountInfrastructure`
  */
 
-import { EPICENTER_API_URL } from '@epicenter/constants/apps';
+import { join } from 'node:path';
 import {
 	defineActions,
 	defineWorkspace,
 	readRoomOverHttp,
 } from '@epicenter/workspace';
-import { defineMount } from '@epicenter/workspace/daemon';
+import { defineSessionMount } from '@epicenter/workspace/daemon';
 import {
 	attachGitAutosave,
 	attachMarkdownExport,
@@ -33,8 +33,7 @@ import {
 } from '@epicenter/workspace/document/materializer/markdown';
 import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
 import {
-	attachProjectInfrastructure,
-	mountMarkdownPath,
+	attachMountInfrastructure,
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
@@ -44,32 +43,27 @@ import { createFuji, type Entry, entryContentDocGuid } from './index.js';
 export type FujiMountOptions = {
 	/** Enable per-materializer Git autosave for markdown output. */
 	git?: GitAutosaveConfig;
+	/**
+	 * Base URL of the Epicenter cloud API used for entry-body reads and sync.
+	 * Defaults to `process.env.EPICENTER_API_URL`, falling back to the hosted API.
+	 */
+	baseURL?: string;
 };
 
 export function fuji(opts: FujiMountOptions = {}) {
-	return defineMount({
+	return defineSessionMount({
 		name: 'fuji',
 		open(ctx) {
-			const {
-				epicenterRoot,
-				mount,
-				yDocClientId,
-				deviceId,
-				ownerId,
-				keyring,
-				openWebSocket,
-				onReconnectSignal,
-				fetch,
-			} = ctx;
+			const { epicenterRoot, mount, session } = ctx;
+			const baseURL =
+				opts.baseURL ||
+				process.env.EPICENTER_API_URL ||
+				'https://api.epicenter.so';
 
-			const workspace = createFuji({ keyring });
-			workspace.ydoc.clientID = yDocClientId;
-
-			const sqliteFile = sqlitePath(epicenterRoot, workspace.ydoc.guid);
-			const mdDir = mountMarkdownPath(epicenterRoot, mount);
+			const workspace = createFuji({ keyring: session.keyring });
 
 			const sqlite = attachBunSqliteMaterializer(workspace, {
-				filePath: sqliteFile,
+				filePath: sqlitePath(epicenterRoot, workspace.ydoc.guid),
 				log: createLogger(`${mount}-sqlite`),
 			});
 			/**
@@ -86,15 +80,15 @@ export function fuji(opts: FujiMountOptions = {}) {
 			 */
 			const readEntryBody = (entry: Entry): Promise<string> =>
 				readRoomOverHttp({
-					fetch,
-					baseURL: EPICENTER_API_URL,
-					ownerId,
+					fetch: session.fetch,
+					baseURL,
+					ownerId: session.ownerId,
 					guid: entryContentDocGuid(entry.id),
 					read: (ydoc) => serializeEntryBody(ydoc.getXmlFragment('content')),
 				});
 
 			const markdown = attachMarkdownExport(workspace, {
-				dir: mdDir,
+				dir: epicenterRoot,
 				log: createLogger(`${mount}-markdown`),
 				tables: {
 					entries: {
@@ -113,7 +107,7 @@ export function fuji(opts: FujiMountOptions = {}) {
 			if (opts.git) {
 				attachGitAutosave({
 					ydoc: workspace.ydoc,
-					dir: mdDir,
+					dir: join(epicenterRoot, 'entries'),
 					config: opts.git,
 				});
 			}
@@ -124,13 +118,8 @@ export function fuji(opts: FujiMountOptions = {}) {
 				...markdown.actions,
 			});
 
-			const infrastructure = attachProjectInfrastructure(workspace.ydoc, {
-				baseURL: EPICENTER_API_URL,
-				epicenterRoot,
-				ownerId,
-				deviceId,
-				openWebSocket,
-				onReconnectSignal,
+			const infrastructure = attachMountInfrastructure(workspace.ydoc, ctx, {
+				baseURL,
 				actions,
 				materializers: [sqlite, markdown],
 			});

@@ -32,6 +32,10 @@
 	import { PROVIDERS } from '$lib/services/transcription/providers';
 	import { localModelDownloads } from '$lib/state/local-model-downloads.svelte';
 	import { tauri } from '#platform/tauri';
+	import {
+		announceModelDelete,
+		announceModelDownload,
+	} from './local-model-toasts';
 	import LocalModelDownloadCard from './LocalModelDownloadCard.svelte';
 
 	/**
@@ -117,10 +121,10 @@
 		if (!tauri) return;
 		entries = await listModelEntries(engine);
 		// The folder is user-editable truth, so the catalog handles re-check
-		// disk on the same signal that rescans the folder.
-		for (const model of models) {
-			localModelDownloads.get(model).refresh();
-		}
+		// disk on the same signal that rescans the folder. Await the disk-stat
+		// so `isInstalled` (and the "Downloaded" badge it drives) is settled
+		// before the listing renders, instead of racing the next render.
+		await Promise.all(models.map((model) => localModelDownloads.get(model).refresh()));
 		// A user who already brought their own model gets the list, not a
 		// download pitch: when nothing is active and the first scan finds
 		// custom entries, start with the list open instead of the hero.
@@ -131,20 +135,26 @@
 	}
 
 	async function downloadRecommendedModel() {
-		await recommendedDownload.download();
+		const entryName = announceModelDownload(await recommendedDownload.download());
+		if (!entryName) return;
+		value = entryName;
 		await refreshEntries();
 	}
 
-	async function activateRecommendedModel() {
-		recommendedDownload.activate();
-		await refreshEntries();
+	async function cancelRecommendedDownload() {
+		await recommendedDownload.cancel();
 	}
 
-	// Rescan on mount, when the engine changes, and whenever the active model
-	// changes (e.g. a catalog download just landed in the folder).
+	/** Point the engine's selection at an on-disk entry by name. */
+	function activate(name: string) {
+		value = name;
+		toast.success('Model activated');
+	}
+
+	// Rescan on mount and when the engine changes. Selection changes do not
+	// change disk; download/delete handlers refresh after they change the folder.
 	$effect(() => {
 		void engine;
-		void value;
 		refreshEntries();
 	});
 
@@ -165,22 +175,11 @@
 		});
 	}
 
-	function activateEntry(entry: LocalModelEntry) {
-		value = entry.name;
-		toast.success('Model activated');
-	}
-
 	async function removeEntry(entry: LocalModelEntry) {
-		const { error } = await deleteModelEntry({ engine, name: entry.name });
-		if (error) {
-			toast.error('Failed to delete model', {
-				description: error.message,
-			});
+		if (!announceModelDelete(await deleteModelEntry({ engine, name: entry.name })))
 			return;
-		}
 		if (value === entry.name) value = '';
 		await refreshEntries();
-		toast.success('Model deleted');
 	}
 </script>
 
@@ -226,8 +225,8 @@
 				</Empty.Media>
 				<Empty.Title>No local model installed</Empty.Title>
 				<Empty.Description>
-					Download the recommended model to start local transcription on this
-					device.
+					Runs on this device — private, offline, and free. Download the
+					recommended model to start transcribing.
 				</Empty.Description>
 				<Empty.Content>
 					{#if recommendedState.type === 'downloading'}
@@ -236,9 +235,18 @@
 							<span class="text-sm text-muted-foreground">
 								Downloading {recommended.name}: {recommendedState.progress}%
 							</span>
+							<Button
+								variant="ghost"
+								size="sm"
+								onclick={cancelRecommendedDownload}
+								disabled={recommendedState.cancelling}
+							>
+								<X class="size-4" />
+								{recommendedState.cancelling ? 'Cancelling…' : 'Cancel'}
+							</Button>
 						</div>
 					{:else if recommendedState.type === 'ready'}
-						<Button onclick={activateRecommendedModel}>
+						<Button onclick={() => activate(modelEntryName(recommended))}>
 							Activate {recommended.name}
 						</Button>
 					{:else}
@@ -276,6 +284,7 @@
 				{#each models as model (model.id)}
 					<LocalModelDownloadCard
 						{model}
+						bind:value
 						recommended={models.length > 1 && model.id === recommended.id}
 						onDiskChange={refreshEntries}
 					/>
@@ -310,7 +319,7 @@
 								<Button
 									size="sm"
 									variant="outline"
-									onclick={() => activateEntry(entry)}
+									onclick={() => activate(entry.name)}
 								>
 									Activate
 								</Button>

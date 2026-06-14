@@ -24,6 +24,12 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
+# Cancelable model downloads (src/download.rs). reqwest with `stream` gives the
+# chunked `bytes_stream()`; futures-util drives it. Replaces the streaming the
+# (now removed) tauri-plugin-upload used to do, but under our own task so it can
+# be aborted.
+reqwest = { version = "0.12", features = ["stream"] }
+futures-util = "0.3"
 dotenvy_macro = "0.15"
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
@@ -87,9 +93,14 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", rev = "a3122e
 transcribe-rs = { version = "=0.3.8", features = ["whisper-cpp", "whisper-vulkan", "onnx"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
-tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
+# Low-level global keyboard listener for the desktop trigger backend
+# (`src/keyboard/`). The rustdesk fork (not the unmaintained upstream) is what
+# Handy uses: it sees the Fn key, modifier-only chords, and raw key down/up that
+# `tauri-plugin-global-shortcut` cannot. Pinned to a rev (like `tauri-nspanel`
+# above) so an accidental `cargo update` cannot drift it to a moving branch tip.
+rdev = { git = "https://github.com/rustdesk-org/rdev", rev = "a90dbe1172f8832f54c97c62e823c5a34af5fdfe" }
 
 [profile.dev]
 incremental = true # Compile your binary in smaller steps.

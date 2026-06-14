@@ -5,7 +5,7 @@
  *
  * Each route is a one-line shell shortcut for one daemon runtime primitive:
  *
- *   /peers  ->  collaboration.devices.list()                       all mounts
+ *   /peers  ->  collaboration.devices.list()              collaborative mounts
  *   /list   ->  flat manifest of `${mount}.${action_key}` -> meta  all mounts
  *   /run    ->  invokeAction(...) locally, or collab.dispatch(...)
  *               on a peer when `peer` is present                   mount-routed
@@ -83,7 +83,9 @@ export function buildDaemonApp(mounts: readonly DaemonServedMount[]) {
 		.post('/peers', (c) => {
 			const rows: PeerSnapshot[] = [];
 			for (const entry of mounts) {
-				for (const device of entry.runtime.collaboration.devices.list()) {
+				const collaboration = entry.runtime.collaboration;
+				if (!collaboration) continue;
+				for (const device of collaboration.devices.list()) {
 					rows.push({
 						mount: entry.mount,
 						deviceId: device.deviceId,
@@ -95,9 +97,7 @@ export function buildDaemonApp(mounts: readonly DaemonServedMount[]) {
 		.post('/list', (c) => {
 			const manifest: ActionManifest = {};
 			for (const entry of mounts) {
-				for (const [path, action] of Object.entries(
-					entry.runtime.collaboration.actions,
-				)) {
+				for (const [path, action] of Object.entries(entry.runtime.actions)) {
 					manifest[joinDaemonActionPath(entry.mount, path)] =
 						toActionMeta(action);
 				}

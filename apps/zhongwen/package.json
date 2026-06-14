@@ -2,10 +2,11 @@
 	"name": "@epicenter/zhongwen",
 	"description": "Bilingual Chinese-English chat app for learning Mandarin",
 	"private": true,
-	"version": "0.0.1",
+	"version": "0.0.2",
 	"type": "module",
 	"exports": {
 		".": "./zhongwen.ts",
+		"./browser": "./zhongwen.browser.ts",
 		"./project": "./project.ts"
 	},
 	"scripts": {
@@ -16,7 +17,7 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"test": "if find src -name '*.test.ts' -o -name '*.test.tsx' -o -name '*.spec.ts' | grep -q .; then bun test; fi",
 		"typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-		"deploy": "bun run build && wrangler deploy"
+		"deploy": "wrangler deploy"
 	},
 	"dependencies": {
 		"@epicenter/auth": "workspace:*",
@@ -26,12 +27,6 @@
 		"@epicenter/ui": "workspace:*",
 		"@epicenter/workspace": "workspace:*",
 		"@lucide/svelte": "catalog:",
-		"@tanstack/ai": "catalog:",
-		"@tanstack/ai-anthropic": "catalog:",
-		"@tanstack/ai-client": "^0.16.3",
-		"@tanstack/ai-gemini": "catalog:",
-		"@tanstack/ai-openai": "catalog:",
-		"@tanstack/ai-svelte": "^0.13.4",
 		"arktype": "catalog:",
 		"dompurify": "^3.3.3",
 		"marked": "^17.0.5",

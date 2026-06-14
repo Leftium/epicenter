@@ -110,13 +110,14 @@ export function openOpensidianBrowser({
 			return handle.content.read();
 		},
 	};
+	const fs = attachYjsFileSystem(ydoc, tables.files, fileContent);
 	const sqliteIndex = createSqliteIndex({
 		readContent: fileContent.read,
+		index: fs.index,
 	})({
 		tables,
 	});
 	const sqliteIndexExports = sqliteIndex.exports;
-	const fs = attachYjsFileSystem(ydoc, tables.files, fileContent);
 	const bash = new Bash({ fs, cwd: '/' });
 	const actions = defineActions({
 		...workspace.actions,

@@ -35,11 +35,14 @@
 		id = 'selected-transcription-service',
 		label = 'Transcription Service',
 		description,
+		showAdvanced = true,
 		class: className,
 	}: {
 		id?: string;
 		label?: string;
 		description?: string | Snippet;
+		/** When false, hide the advanced fields (unload policy, language, prompt). */
+		showAdvanced?: boolean;
 		class?: string;
 	} = $props();
 
@@ -122,7 +125,13 @@
 				<Select.Content>
 					{#each modelItems as item}
 						<Select.Item value={item.value} label={item.label}>
-							{@render renderModelOption({ item })}
+							<div class="flex flex-col gap-1 py-1">
+								<div class="font-medium">{item.name}</div>
+								<div class="text-sm text-muted-foreground">
+									{item.description}
+								</div>
+								<Badge variant="outline" class="text-xs">{item.cost}</Badge>
+							</div>
 						</Select.Item>
 					{/each}
 				</Select.Content>
@@ -308,7 +317,7 @@
 				>
 					{#snippet footer()}
 						<Field.Description>
-							Pre-built models are downloaded from{' '}
+							Pre-built models are downloaded from
 							<Link
 								href="https://huggingface.co/ggerganov/whisper.cpp"
 								target="_blank"
@@ -316,8 +325,8 @@
 							>
 								Hugging Face
 							</Link>
-							{' '}into the models folder. Quantized models (q5_0, q8_0)
-							offer smaller sizes with minimal quality loss.
+							into the models folder. Quantized models (q5_0, q8_0) offer
+							smaller sizes with minimal quality loss.
 						</Field.Description>
 					{/snippet}
 				</LocalModelSelector>
@@ -335,7 +344,7 @@
 				>
 					{#snippet footer()}
 						<Field.Description>
-							Pre-built models are downloaded from{' '}
+							Pre-built models are downloaded from
 							<Link
 								href="https://github.com/EpicenterHQ/epicenter/releases/tag/models/parakeet-tdt-0.6b-v3-int8"
 								target="_blank"
@@ -343,7 +352,7 @@
 							>
 								GitHub releases
 							</Link>
-							{' '}into the models folder. Parakeet models from{' '}
+							into the models folder. Parakeet models from
 							<Link
 								href="https://github.com/NVIDIA/NeMo"
 								target="_blank"
@@ -351,7 +360,7 @@
 							>
 								NVIDIA NeMo
 							</Link>
-							{' '}are directories containing ONNX files.
+							are directories containing ONNX files.
 						</Field.Description>
 					{/snippet}
 				</LocalModelSelector>
@@ -369,7 +378,7 @@
 				>
 					{#snippet footer()}
 						<Field.Description>
-							Pre-built models are downloaded from{' '}
+							Pre-built models are downloaded from
 							<Link
 								href="https://huggingface.co/UsefulSensors/moonshine"
 								target="_blank"
@@ -377,12 +386,12 @@
 							>
 								Hugging Face
 							</Link>
-							{' '}into the models folder. Your own Moonshine directory must
-							be named{' '}
+							into the models folder. Your own Moonshine directory must be
+							named
 							<code class="rounded bg-muted px-1 py-0.5 font-mono"
 								>moonshine-&#123;variant&#125;-&#123;lang&#125;</code
 							>
-							{' '}(e.g.{' '}
+							(e.g.
 							<code class="rounded bg-muted px-1 py-0.5 font-mono"
 								>moonshine-tiny-en</code
 							>); the variant (tiny/base) tells Whispering the model
@@ -394,7 +403,7 @@
 		</div>
 	{/if}
 
-	{#if !isSelectedServiceUnavailable}
+	{#if showAdvanced && !isSelectedServiceUnavailable}
 		{#if isLocalEngine}
 			<Field.Field>
 				<Field.Label for="local-model-unload-policy">
@@ -483,19 +492,3 @@
 		</Field.Field>
 	{/if}
 </Field.Group>
-
-{#snippet renderModelOption({
-	item,
-}: {
-	item: {
-		name: string;
-		description: string;
-		cost: string;
-	};
-})}
-	<div class="flex flex-col gap-1 py-1">
-		<div class="font-medium">{item.name}</div>
-		<div class="text-sm text-muted-foreground">{item.description}</div>
-		<Badge variant="outline" class="text-xs">{item.cost}</Badge>
-	</div>
-{/snippet}

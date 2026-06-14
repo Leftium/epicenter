@@ -187,37 +187,50 @@ Writing that at every call site would make the implementation harder to read. Th
 A concrete Epicenter example is a project mount. A mount is the small object a project config gives to the daemon:
 
 ```typescript
-type Mount<TRuntime extends DaemonRuntime = DaemonRuntime> = {
+type LocalMount<TRuntime extends LocalDaemonRuntime = LocalDaemonRuntime> = {
   name: string;
-  open(ctx: MountContext): MaybePromise<TRuntime>;
+  kind: 'local';
+  open(ctx: LocalMountContext): MaybePromise<TRuntime>;
 };
+
+type CollaborativeMount<
+  TRuntime extends CollaborativeDaemonRuntime = CollaborativeDaemonRuntime,
+> = {
+  name: string;
+  kind: 'collaborative';
+  open(ctx: CollaborativeMountContext): MaybePromise<TRuntime>;
+};
+
+type Mount = LocalMount | CollaborativeMount;
 ```
 
-Notice the generic has a default. That changes the call-site tradeoff. The type is generic internally, but a caller can still write `Mount` directly without spelling `Mount<SomeRuntime>`.
+Notice what the helper now earns. `kind` decides the `open(ctx)` type. A local mount should not see auth, keyring, sockets, or owner ids; a collaborative mount must see them.
 
-Helper does not earn it:
+Helper earns it:
 
 ```typescript
 return defineMount({
   name: 'fuji',
+  kind: 'collaborative',
   open(ctx) {
     return openFujiRuntime(ctx);
   },
 });
 ```
 
-If the contract is simple, let the object say it directly:
+The overload keeps `ctx` precise without making the caller spell the union branch. For a one-off object where the branch is already explicit, `satisfies` can still be enough:
 
 ```typescript
 return {
-  name: 'fuji',
+  name: 'notes',
+  kind: 'local',
   open(ctx) {
-    return openFujiRuntime(ctx);
+    return openNotesRuntime(ctx);
   },
-} satisfies Mount;
+} satisfies LocalMount;
 ```
 
-`satisfies Mount` gives the `open(ctx)` parameter its contextual type, checks the daemon contract, and keeps the returned object as the source of truth. The identity helper would only add another symbol to navigate through.
+`satisfies LocalMount` gives the `open(ctx)` parameter its contextual type, checks the daemon contract, and keeps the returned object as the source of truth. The helper is valuable when it removes union noise or pins overload-specific inference; it is not valuable just because a type exists.
 
 The rule is not "avoid helpers when a type has generics." The rule is sharper: avoid helpers when the generics are already hidden by useful defaults, or when the contract is simple enough to read inline. Reach for the helper when the caller would otherwise have to write the type machinery by hand.
 

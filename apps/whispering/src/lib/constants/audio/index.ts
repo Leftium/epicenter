@@ -8,9 +8,11 @@ export {
 	WHISPER_RECOMMENDED_MEDIA_TRACK_CONSTRAINTS,
 } from './media-constraints';
 export {
+	RECORDING_MODE_ICONS,
 	RECORDING_MODE_OPTIONS,
 	RECORDING_MODES,
 	type RecordingMode,
+	toggleCommandIdForMode,
 } from './recording-modes';
 export {
 	RECORDER_STATE_TO_ICON,

@@ -44,7 +44,7 @@ function createModelDownload(model: LocalModelConfig) {
 	let progress = $state<number | null>(null);
 
 	async function refresh() {
-		isInstalled = (await storage.getInstalledPath()) !== null;
+		isInstalled = await storage.isInstalled();
 	}
 
 	void refresh();
@@ -82,8 +82,7 @@ function createModelDownload(model: LocalModelConfig) {
 			if (progress !== null) return null;
 			progress = 0;
 
-			const installedPath = await storage.getInstalledPath();
-			if (installedPath) {
+			if (await storage.isInstalled()) {
 				isInstalled = true;
 				progress = null;
 				return Ok({

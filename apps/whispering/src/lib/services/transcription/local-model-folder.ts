@@ -263,12 +263,12 @@ export function createModelStorage(model: LocalModelConfig) {
 
 	return {
 		/**
-		 * The canonical path when a valid install exists there, else null.
-		 * Every expected file must exist with a plausible size (at least 90%
-		 * of the catalog size), so interrupted downloads read as missing.
-		 * Never rejects; any filesystem or path error reads as missing.
+		 * Whether a valid install exists in the folder. Every expected file
+		 * must exist with a plausible size (at least 90% of the catalog size),
+		 * so interrupted downloads read as not installed. Never rejects; any
+		 * filesystem or path error reads as not installed.
 		 */
-		async getInstalledPath(): Promise<string | null> {
+		async isInstalled(): Promise<boolean> {
 			const { data: installedPath } = await tryAsync({
 				try: async (): Promise<string | null> => {
 					const path = await getPath();
@@ -315,7 +315,7 @@ export function createModelStorage(model: LocalModelConfig) {
 				},
 				catch: () => Ok(null),
 			});
-			return installedPath ?? null;
+			return installedPath != null;
 		},
 
 		/**

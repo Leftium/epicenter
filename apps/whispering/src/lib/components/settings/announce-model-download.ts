@@ -7,7 +7,9 @@ import type { ModelDownloadResult } from '$lib/state/local-model-downloads.svelt
  * failed). The recommended-model hero and the catalog row present the same
  * download the same way, so both route their result through here.
  */
-export function announceModelDownload(result: ModelDownloadResult): string | null {
+export function announceModelDownload(
+	result: ModelDownloadResult,
+): string | null {
 	if (!result) return null;
 	if (result.error) {
 		toast.error('Failed to download model', {

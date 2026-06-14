@@ -3,7 +3,6 @@
 	import { Badge } from '@epicenter/ui/badge';
 	import { Button, buttonVariants } from '@epicenter/ui/button';
 	import { Checkbox } from '@epicenter/ui/checkbox';
-	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Empty from '@epicenter/ui/empty';
 	import { Input } from '@epicenter/ui/input';
 	import { NaturalLanguageCalendarDateInput } from '@epicenter/ui/natural-language-date-input';
@@ -12,13 +11,12 @@
 	import CalendarIcon from '@lucide/svelte/icons/calendar';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import InboxIcon from '@lucide/svelte/icons/inbox';
-	import PencilIcon from '@lucide/svelte/icons/pencil';
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TagIcon from '@lucide/svelte/icons/tag';
 	import Trash2Icon from '@lucide/svelte/icons/trash-2';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { todosState } from '$lib/todos/client';
-	import type { ContextSlug, Todo, TodoContext } from '../../todos';
+	import type { ContextSlug, Todo } from '../../todos';
 
 	let title = $state('');
 	let body = $state('');
@@ -26,9 +24,6 @@
 	let dueOpen = $state(false);
 	let pickedContexts = $state<ContextSlug[]>([]);
 	let contextOpen = $state(false);
-	let contextName = $state('');
-	let editingSlug = $state<ContextSlug | null>(null);
-	let editingName = $state('');
 
 	// Default a new todo's contexts to whichever context is being viewed, so
 	// adding a task from inside a context tags it; "All" starts with none.
@@ -47,11 +42,6 @@
 		sky: 'bg-sky-500',
 		violet: 'bg-violet-500',
 		emerald: 'bg-emerald-500',
-		amber: 'bg-amber-500',
-		rose: 'bg-rose-500',
-		cyan: 'bg-cyan-500',
-		indigo: 'bg-indigo-500',
-		lime: 'bg-lime-500',
 	};
 
 	function dotClass(color: string | null | undefined): string {
@@ -78,35 +68,6 @@
 			: [];
 	}
 
-	function createContext(event: SubmitEvent) {
-		event.preventDefault();
-		const name = contextName.trim();
-		if (!name) return;
-		todosState.createContext(name);
-		contextName = '';
-	}
-
-	function startEditContext(context: TodoContext) {
-		editingSlug = context.id;
-		editingName = context.name;
-	}
-
-	function saveEditContext(event: SubmitEvent) {
-		event.preventDefault();
-		if (editingSlug === null) return;
-		todosState.renameContext(editingSlug, editingName);
-		editingSlug = null;
-	}
-
-	function confirmDeleteContext(context: TodoContext) {
-		confirmationDialog.open({
-			title: `Delete "${context.name}"?`,
-			description:
-				'This removes the context from any todos that use it. The todos themselves stay.',
-			confirm: { text: 'Delete', variant: 'destructive' },
-			onConfirm: () => todosState.deleteContext(context.id),
-		});
-	}
 </script>
 
 {#snippet todoCard(todo: Todo, done: boolean)}
@@ -195,88 +156,23 @@
 					</span>
 				</Button>
 				{#each todosState.contexts as context (context.id)}
-					{#if editingSlug === context.id}
-						<form class="flex items-center gap-1" onsubmit={saveEditContext}>
-							<Input
-								bind:value={editingName}
-								aria-label="Context name"
-								class="h-8 text-sm"
-							/>
-							<Button type="submit" size="icon-sm" variant="ghost" tooltip="Save">
-								<CheckIcon class="size-4" />
-							</Button>
-							<Button
-								type="button"
-								size="icon-sm"
-								variant="ghost"
-								tooltip="Cancel"
-								onclick={() => (editingSlug = null)}
-							>
-								<XIcon class="size-4" />
-							</Button>
-						</form>
-					{:else}
-						<div class="group/ctx relative">
-							<Button
-								variant={todosState.selectedContextId === context.id
-									? 'secondary'
-									: 'ghost'}
-								class="h-9 w-full justify-start gap-2 pr-3"
-								onclick={() => todosState.selectContext(context.id)}
-							>
-								<span class="flex size-4 shrink-0 items-center justify-center">
-									<span class="size-2 rounded-full {dotClass(context.color)}"></span>
-								</span>
-								<span class="min-w-0 flex-1 truncate text-left">{context.name}</span>
-								<span
-									class="text-muted-foreground text-xs tabular-nums transition-opacity group-hover/ctx:opacity-0"
-								>
-									{todosState.contextCount(context.id)}
-								</span>
-							</Button>
-							{#if !todosState.isBuiltInContext(context.id)}
-								<div
-									class="absolute inset-y-0 right-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover/ctx:opacity-100 focus-within:opacity-100"
-								>
-									<Button
-										size="icon-sm"
-										variant="ghost"
-										tooltip="Rename"
-										onclick={() => startEditContext(context)}
-									>
-										<PencilIcon class="size-3.5" />
-									</Button>
-									<Button
-										size="icon-sm"
-										variant="ghost"
-										tooltip="Delete"
-										onclick={() => confirmDeleteContext(context)}
-									>
-										<Trash2Icon class="size-3.5" />
-									</Button>
-								</div>
-							{/if}
-						</div>
-					{/if}
+					<Button
+						variant={todosState.selectedContextId === context.id
+							? 'secondary'
+							: 'ghost'}
+						class="h-9 w-full justify-start gap-2"
+						onclick={() => todosState.selectContext(context.id)}
+					>
+						<span class="flex size-4 shrink-0 items-center justify-center">
+							<span class="size-2 rounded-full {dotClass(context.color)}"></span>
+						</span>
+						<span class="min-w-0 flex-1 truncate text-left">{context.name}</span>
+						<span class="text-muted-foreground text-xs tabular-nums">
+							{todosState.contextCount(context.id)}
+						</span>
+					</Button>
 				{/each}
 			</nav>
-
-			<form class="mt-3 flex items-center gap-1" onsubmit={createContext}>
-				<Input
-					bind:value={contextName}
-					placeholder="New context"
-					class="h-8 text-sm"
-				/>
-				<Button
-					type="submit"
-					size="icon-sm"
-					variant="ghost"
-					tooltip="Add context"
-					disabled={!contextName.trim()}
-				>
-					<PlusIcon class="size-4" />
-				</Button>
-			</form>
 		</aside>
 
 		<section class="mx-auto flex w-full max-w-2xl flex-col gap-5 p-4 sm:p-6">

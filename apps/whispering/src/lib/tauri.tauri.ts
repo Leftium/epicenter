@@ -59,12 +59,12 @@ import type { ShortcutEventState } from '$lib/commands';
 import type { WhisperingRecordingState } from '$lib/constants/audio';
 import { defineMutation, defineQuery, queryClient } from '$lib/rpc/client';
 import { autostartKeys } from '$lib/tauri/autostart-keys';
-import { commands } from '$lib/tauri/commands';
 import type {
 	CommandBinding,
 	KeyBinding,
 	ShortcutTriggerEvent,
 } from '$lib/tauri/commands';
+import { commands } from '$lib/tauri/commands';
 
 // fs ----------------------------------------------------------------
 const FsError = defineErrors({

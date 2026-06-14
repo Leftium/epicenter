@@ -6,7 +6,7 @@ import { BITRATES_KBPS, DEFAULT_BITRATE_KBPS } from '$lib/constants/audio';
 import { LOCAL_MODEL_UNLOAD_POLICIES } from '$lib/constants/local-model-unload-policy';
 import { log, report } from '$lib/report';
 import type { KeyBinding } from '$lib/tauri/commands';
-import { acceleratorToKeyBinding } from '$lib/utils/accelerator';
+import { acceleratorToKeyBinding } from '$lib/utils/legacy-accelerator';
 
 // ── Global shortcut binding shape ────────────────────────────────────────────
 

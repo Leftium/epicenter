@@ -25,6 +25,18 @@ function createPermissions() {
 	let accessibility = $state<PermissionStatus>('checking');
 	let microphone = $state<PermissionStatus>('checking');
 
+	// Dev-only override to exercise the Accessibility notice and guide without
+	// touching System Settings. `null` means "use the live OS value". The
+	// `import.meta.env.DEV` guard in `effectiveAccessibility` makes this dead in
+	// production (the real probe always wins), so it can never ship a bypass.
+	let accessibilityOverride = $state<PermissionStatus | null>(null);
+
+	/** The status callers see: the dev override when set, else the live probe. */
+	function effectiveAccessibility(): PermissionStatus {
+		if (import.meta.env.DEV && accessibilityOverride) return accessibilityOverride;
+		return accessibility;
+	}
+
 	// `tauri && os.isApple` is the only configuration with a real OS gate.
 	const isGated = Boolean(tauri && os.isApple);
 
@@ -46,13 +58,13 @@ function createPermissions() {
 
 	return {
 		get accessibility(): PermissionStatus {
-			return accessibility;
+			return effectiveAccessibility();
 		},
 		get microphone(): PermissionStatus {
 			return microphone;
 		},
 		get accessibilityGranted(): boolean {
-			return accessibility === 'granted';
+			return effectiveAccessibility() === 'granted';
 		},
 		get microphoneGranted(): boolean {
 			return microphone === 'granted';
@@ -60,6 +72,18 @@ function createPermissions() {
 
 		/** Re-probe both permissions. Called at launch and on every window focus. */
 		refresh,
+
+		/**
+		 * Dev-only: pin the Accessibility status (or `null` to resume the live
+		 * value) so the denied/granted UI can be toggled in real time. No-op in
+		 * production via the guard in `effectiveAccessibility`.
+		 */
+		get accessibilityOverride(): PermissionStatus | null {
+			return accessibilityOverride;
+		},
+		setAccessibilityOverride(status: PermissionStatus | null) {
+			accessibilityOverride = status;
+		},
 
 		/** Prompt for Accessibility (opens the system prompt / Settings). */
 		async requestAccessibility(): Promise<void> {

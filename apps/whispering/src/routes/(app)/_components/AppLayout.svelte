@@ -8,6 +8,7 @@
 	import { commandCallbacks } from '$lib/commands';
 	import { report } from '$lib/report';
 	import { os } from '#platform/os';
+	import DevAccessibilityToggle from '$lib/components/DevAccessibilityToggle.svelte';
 	import MacosAccessibilityGuideDialog from '$lib/components/MacosAccessibilityGuideDialog.svelte';
 	import MoreDetailsDialog from '$lib/components/MoreDetailsDialog.svelte';
 	import UpdateDialog from '$lib/components/UpdateDialog.svelte';
@@ -180,3 +181,7 @@
 <MacosAccessibilityGuideDialog />
 <MoreDetailsDialog />
 <UpdateDialog />
+
+{#if import.meta.env.DEV}
+	<DevAccessibilityToggle />
+{/if}

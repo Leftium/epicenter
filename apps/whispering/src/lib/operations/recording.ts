@@ -248,17 +248,15 @@ export async function stopVadRecording() {
 		loading.reject({ cause: error });
 		return;
 	}
-	if (data.status === 'idle') {
-		loading.resolve({
-			title: '🎙️ Voice activated capture stopped',
-			description: 'Your voice activated capture has been stopped.',
-		});
-		return;
-	}
-	loading.resolve({
+	const stoppedNotice = {
 		title: '🎙️ Voice activated capture stopped',
 		description: 'Your voice activated capture has been stopped.',
-	});
+	};
+	if (data.status === 'idle') {
+		loading.resolve(stoppedNotice);
+		return;
+	}
+	loading.resolve(stoppedNotice);
 	sound.playSoundIfEnabled('vad-stop');
 	void recordingMedia.resume();
 }

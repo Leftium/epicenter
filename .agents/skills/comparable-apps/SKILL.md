@@ -1,6 +1,6 @@
 ---
 name: comparable-apps
-description: List 3-5 comparable apps when planning a UX surface to find asymmetric wins. Use for "what do other apps do", identity, sync state, local-first design.
+description: List 3-5 comparable apps when planning a UX surface to test category fit and surface high-leverage refusals. Use for "what do other apps do", identity, sync state, local-first design.
 metadata:
   author: epicenter
   version: '1.0'

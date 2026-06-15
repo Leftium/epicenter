@@ -35,8 +35,6 @@ export type PageId = string & Brand<'PageId'>;
 /** Stable id of a user-defined type (a slug like `youtube_video`). */
 export type TypeId = string & Brand<'TypeId'>;
 
-export const asPageId = (value: string): PageId => value as PageId;
-
 /** A type id is a stable slug; it also becomes a SQL table-name segment. */
 export const TYPE_ID_PATTERN = /^[a-z0-9_]+$/;
 

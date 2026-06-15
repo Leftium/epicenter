@@ -66,7 +66,7 @@ The mount name comes from each `Mount.name` in the `Mount[]` default-exported by
 Two consequences fall out:
 
 - **Strong read-after-write happens inside the action.** If a script wants the side effect to be visible to its next read, it should await the action result rather than reading SQLite again immediately. The action handler sees fresh in-memory state; the materializer is eventually consistent.
-- **Type safety is opt-in.** `TActions` is the registry type the app's npm package exports (`FujiActions`, `HoneycrispActions`, etc.). The runtime never imports app code into the script process; only the type information flows across.
+- **Type safety is opt-in.** `TActions` is the app's action-registry type. The runtime never imports app code into the script process; only the type information flows across.
 
 `epicenterRoot` is your Epicenter folder (the folder that holds `epicenter.config.ts`). It defaults to `findEpicenterRoot()`, which walks up from `process.cwd()` looking for that config. Pass an explicit `epicenterRoot` to opt out (cron jobs that run from `/` should).
 

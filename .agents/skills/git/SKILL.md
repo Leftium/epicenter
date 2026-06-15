@@ -8,7 +8,7 @@ metadata:
 
 # Git Commit Guidelines
 
-> **Related Skills**: See [standalone-commits](../standalone-commits/SKILL.md) for making each commit reviewable and auditable. See [incremental-commits](../incremental-commits/SKILL.md) for breaking multi-file changes into ordered waves. See [pull-request](../pull-request/SKILL.md) for PR titles, descriptions, changelog entries, issue references, and merge guidance.
+> **Related Skills**: See [standalone-commits](../standalone-commits/SKILL.md) for making each commit reviewable and auditable and for ordering multi-file changes into dependency-ordered waves. See [pull-request](../pull-request/SKILL.md) for PR titles, descriptions, changelog entries, issue references, and merge guidance.
 
 ## Use This For
 

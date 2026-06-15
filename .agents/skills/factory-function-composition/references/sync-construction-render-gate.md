@@ -1,11 +1,3 @@
----
-name: sync-construction-async-property-ui-render-gate-pattern
-description: 'Sync construction with async property for module-exportable clients. Use when: "async init", "module-level async", or creating clients needing async init but synchronous UI use.'
-metadata:
-  author: epicenter
-  version: '1.0'
----
-
 # Sync Construction, Async Property
 
 > The initialization of the client is synchronous. The async work is stored as a property you can await, while passing the reference around.
@@ -177,8 +169,8 @@ Use `whenReady` when your client has sync methods that depend on initialized sta
 
 ## Related Patterns
 
-- [Lazy Singleton](../lazy-singleton/SKILL.md) : when you need race-condition-safe lazy initialization
-- [Don't Use Parallel Maps](../../docs/articles/instance-state-attachment-pattern.md) : attach state to instances instead of tracking separately
+- [Lazy Singleton](../../../../docs/articles/lazy-singleton-pattern.md) : when you need race-condition-safe lazy initialization
+- [Don't Use Parallel Maps](../../../../docs/articles/instance-state-attachment-pattern.md) : attach state to instances instead of tracking separately
 
 ## References
 

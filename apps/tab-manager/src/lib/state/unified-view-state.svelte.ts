@@ -28,7 +28,7 @@ import {
 	searchRegex,
 } from '$lib/state/search-preferences.svelte';
 import { normalizeUrl } from '$lib/utils/tab-helpers';
-import type { Bookmark, SavedTab } from '$lib/workspace';
+import type { Bookmark, SavedTab } from '$lib/workspace/definition';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types

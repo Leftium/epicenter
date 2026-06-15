@@ -15,7 +15,7 @@
 import { fromTable } from '@epicenter/svelte';
 import type { BrowserTab } from '$lib/state/browser-state.svelte';
 import type { TabManagerBrowser } from '$lib/tab-manager/extension';
-import type { SavedTab, SavedTabId } from '$lib/workspace';
+import type { SavedTab, SavedTabId } from '$lib/workspace/definition';
 
 export function createSavedTabState(tabManager: TabManagerBrowser) {
 	const tabsMap = fromTable(tabManager.tables.savedTabs);

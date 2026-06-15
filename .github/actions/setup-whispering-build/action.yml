@@ -92,6 +92,13 @@ runs:
         choco install llvm --version=22.1.7 --no-progress -y
         "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV
 
+    # Tags cut before .nvmrc was added (e.g. v7.11.0) check out a tree without
+    # the file, which would fail setup-node's node-version-file lookup. Fall
+    # back to a default so re-releasing historical tags still builds.
+    - name: Ensure .nvmrc exists
+      shell: bash
+      run: '[ -f .nvmrc ] || echo "24" > .nvmrc'
+
     - name: Setup Node
       uses: actions/setup-node@v6
       with:

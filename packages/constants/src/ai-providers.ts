@@ -27,15 +27,6 @@ export type AiModel =
 	| { id: GeminiModel; provider: 'gemini'; label: string; credits: number };
 
 /**
- * The provider that fulfils a model, as a stable id. This is the value that
- * crosses the billing wire and is persisted on usage events; the vendor display
- * name ('OpenAI', 'Google') is derived from it at the render edge, never stored
- * or sent. Keep it append-only: stop offering a provider's models before you
- * remove it, so historical events stay labelable.
- */
-export type AiProvider = AiModel['provider'];
-
-/**
  * The catalog, in display order. One credit = $0.01 at Pro overage
  * ($1 / 100 credits); prices hold margin against provider list prices for an
  * average chat call of 750 input and 1500 output tokens. `gemini-3.5-flash`

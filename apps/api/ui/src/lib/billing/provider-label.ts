@@ -1,4 +1,4 @@
-import type { AiProvider } from '@epicenter/constants/ai-providers';
+import type { AiModel } from '@epicenter/constants/ai-providers';
 
 /**
  * Vendor display name for a provider id. The dashboard's single source of truth
@@ -9,4 +9,4 @@ import type { AiProvider } from '@epicenter/constants/ai-providers';
 export const PROVIDER_LABEL = {
 	openai: 'OpenAI',
 	gemini: 'Google',
-} as const satisfies Record<AiProvider, string>;
+} as const satisfies Record<AiModel['provider'], string>;

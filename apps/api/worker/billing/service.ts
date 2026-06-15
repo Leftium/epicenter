@@ -27,7 +27,7 @@
 import type { UserId } from '@epicenter/auth';
 import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import {
-	type AiProvider,
+	type AiModel,
 	MODELS_BY_ID,
 	type ServableModel,
 } from '@epicenter/constants/ai-providers';
@@ -360,16 +360,17 @@ export function createBillingService(
 
 		const events: BillingEvent[] = (result.list ?? []).map((e) => {
 			const props = (e.properties ?? {}) as Record<string, unknown>;
-			// We wrote `provider` from the catalog entry at charge time, so a
-			// stored string is always an `AiProvider`. Autumn hands properties
-			// back untyped, so re-assert that invariant at this boundary.
+			// We wrote `provider` from the catalog entry at charge time
+			// (reserveAiChat destructures it from an `AiModel`), so a stored
+			// string is always a catalog provider. Autumn hands properties back
+			// untyped, so re-assert that invariant at this boundary.
 			return {
 				id: e.id,
 				timestampMs: e.timestamp,
 				model: typeof props.model === 'string' ? props.model : null,
 				provider:
 					typeof props.provider === 'string'
-						? (props.provider as AiProvider)
+						? (props.provider as AiModel['provider'])
 						: null,
 				credits: e.value,
 			};

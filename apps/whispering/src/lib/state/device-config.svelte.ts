@@ -40,7 +40,7 @@ const globalBinding = type({
 // since classic Mac OS; Ctrl + Shift + . elsewhere); it carries a modifier so it is
 // safe to hold globally and registers like any other gesture with no session
 // gating. Transformation gestures ship unbound: opt-in only. Exported so the reset
-// path in register-commands shares this one source of truth.
+// path in platform/shortcuts.tauri.ts shares this one source of truth.
 const RECORDING_MODIFIERS: KeyBinding['modifiers'] = os.isApple
 	? ['fn']
 	: ['ctrl', 'meta'];

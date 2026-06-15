@@ -270,7 +270,7 @@ async function initTray() {
 // the user's bindings down with `set_keyboard_shortcuts` and dispatch the
 // events back into the command layer (the single convergence point). No
 // accelerator strings cross this boundary: the registrar parses them to
-// `KeyBinding` before pushing (see `register-commands.ts`). The trigger and
+// `KeyBinding` before pushing (see `platform/shortcuts.tauri.ts`). The trigger and
 // capture topics are the generated `events.shortcutTriggerEvent` /
 // `events.shortcutCaptureEvent`, so no topic string is mirrored here.
 

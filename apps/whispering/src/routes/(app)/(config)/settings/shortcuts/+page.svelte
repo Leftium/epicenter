@@ -4,20 +4,9 @@
 	import { Separator } from '@epicenter/ui/separator';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import { report } from '$lib/report';
-	import { os } from '#platform/os';
+	import { shortcuts } from '#platform/shortcuts';
 	import { tauri } from '#platform/tauri';
-	import { whispering } from '#platform/whispering';
-	import {
-		type DeviceConfigKey,
-		deviceConfig,
-	} from '$lib/state/device-config.svelte';
-	import type { KeyBinding } from '$lib/tauri/commands';
 	import { createPressedKeys } from '$lib/utils/createPressedKeys.svelte';
-	import { keyBindingToLabel } from '$lib/utils/key-binding';
-	import {
-		resetGlobalShortcuts,
-		resetLocalShortcuts,
-	} from '$routes/(app)/_layout-utils/register-commands';
 	import GlobalKeyboardShortcutRecorder from './keyboard-shortcut-recorder/GlobalKeyboardShortcutRecorder.svelte';
 	import LocalKeyboardShortcutRecorder from './keyboard-shortcut-recorder/LocalKeyboardShortcutRecorder.svelte';
 	import ShortcutFormatHelp from './keyboard-shortcut-recorder/ShortcutFormatHelp.svelte';
@@ -42,25 +31,8 @@
 				},
 			});
 
-	/** The definition default for a local shortcut, formatted for display. */
-	function localDefault(commandId: string): string | null {
-		const getDefault = whispering.settings.getDefault as (
-			key: string,
-		) => unknown;
-		return (getDefault(`shortcut.${commandId}`) as string | null) ?? null;
-	}
-
-	/** The definition default for a global shortcut, formatted for display. */
-	function globalDefault(commandId: string): string | null {
-		const binding = deviceConfig.getDefault(
-			`shortcuts.global.${commandId}` as DeviceConfigKey,
-		) as KeyBinding | null;
-		return binding ? keyBindingToLabel(binding, os.isApple) : null;
-	}
-
 	function reset() {
-		if (tauri) resetGlobalShortcuts();
-		else resetLocalShortcuts();
+		shortcuts.reset();
 		report.success({
 			title: 'Shortcuts reset',
 			description: 'All shortcuts have been reset to defaults.',
@@ -102,7 +74,7 @@
 		{@const t = tauri}
 		<ShortcutTable>
 			{#snippet row(command)}
-				{@const def = globalDefault(command.id)}
+				{@const def = shortcuts.defaultLabel(command.id)}
 				<GlobalKeyboardShortcutRecorder
 					{command}
 					placeholder={def ? `Default: ${def}` : 'Set shortcut'}
@@ -113,7 +85,7 @@
 	{:else if pressedKeys}
 		<ShortcutTable>
 			{#snippet row(command)}
-				{@const def = localDefault(command.id)}
+				{@const def = shortcuts.defaultLabel(command.id)}
 				<LocalKeyboardShortcutRecorder
 					{command}
 					placeholder={def ? `Default: ${def}` : 'Set shortcut'}

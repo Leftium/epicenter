@@ -15,6 +15,7 @@
 		VAD_STATE_TO_ICON,
 	} from '$lib/constants/audio';
 	import { services } from '$lib/services';
+	import { shortcuts } from '#platform/shortcuts';
 	import { tauri } from '#platform/tauri';
 	import { getTranscriptionSetupReadiness } from '$lib/settings/transcription-validation';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
@@ -23,12 +24,6 @@
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { syncWindowAlwaysOnTopWithRecorderState } from '../_layout-utils/alwaysOnTop.svelte';
 	import { checkForUpdates } from '../_layout-utils/check-for-updates';
-	import {
-		resetGlobalShortcutsToDefaultIfDuplicates,
-		resetLocalShortcutsToDefaultIfDuplicates,
-		syncGlobalShortcutsWithSettings,
-		syncLocalShortcutsWithSettings,
-	} from '../_layout-utils/register-commands';
 	import { syncIconWithRecorderState } from '../_layout-utils/syncIconWithRecorderState.svelte';
 
 	let cleanupShortcutListener: (() => void) | undefined;
@@ -39,9 +34,16 @@
 		window.commands = commandCallbacks;
 		window.goto = goto;
 
-		// One trigger backend per platform: desktop uses the rdev global
-		// listener exclusively, the browser uses in-app keydown exclusively.
-		// They never both bind on the same platform.
+		// Push the configured bindings to whichever trigger backend this platform
+		// runs (desktop rdev or browser keydown) and self-heal duplicate bindings.
+		// Both are platform-agnostic through the #platform/shortcuts seam.
+		void shortcuts.sync();
+		shortcuts.resetIfDuplicates();
+
+		// Desktop only: subscribe the command layer to the rdev trigger stream
+		// (the browser attaches its keydown manager in the parent layout). The
+		// rdev thread's liveness (start on grant, restart on death) is owned by
+		// `globalListener`, attached in the parent layout next to permissions.
 		if (tauri) {
 			void tauri.globalShortcuts.startListening().then((unlisten) => {
 				// If we were destroyed before the listener resolved, drop it now;
@@ -49,17 +51,9 @@
 				if (shortcutListenerDestroyed) unlisten();
 				else cleanupShortcutListener = unlisten;
 			});
-			syncGlobalShortcutsWithSettings();
-			resetGlobalShortcutsToDefaultIfDuplicates();
-
-			// The rdev thread's liveness (start on grant, restart on death) is owned
-			// by `globalListener`, attached in the parent layout next to permissions.
 
 			// Desktop-only async check - fire and forget
 			void checkForUpdates();
-		} else {
-			syncLocalShortcutsWithSettings();
-			resetLocalShortcutsToDefaultIfDuplicates();
 		}
 	});
 

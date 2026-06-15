@@ -312,8 +312,9 @@ const analytics = {
  * `null` = unbound.
  */
 const shortcuts = {
-	// Push-to-talk ships unbound in-app (see register-commands for why); the
-	// in-app record button and the toggle below cover the focused-window case.
+	// Push-to-talk ships unbound in-app (see platform/shortcuts.browser.ts for
+	// why); the in-app record button and the toggle below cover the focused
+	// window. These KV defaults must agree with DEFAULT_LOCAL_SHORTCUTS there.
 	'shortcut.pushToTalk': defineKv(
 		nullable(field.string()),
 		(): string | null => null,

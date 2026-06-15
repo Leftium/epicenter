@@ -5,8 +5,8 @@
 	import { accessibilityGuide } from '$lib/components/MacosAccessibilityGuideDialog.svelte';
 	import { type Command, commands } from '$lib/commands';
 	import { report } from '$lib/report';
+	import { shortcuts } from '#platform/shortcuts';
 	import type { Tauri } from '#platform/tauri';
-	import { syncGlobalShortcutsWithSettings } from '$routes/(app)/_layout-utils/register-commands';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { permissions } from '$lib/state/permissions.svelte';
 	import type { Key, KeyBinding, Modifier } from '$lib/tauri/commands';
@@ -133,7 +133,7 @@
 
 	async function persist(next: KeyBinding) {
 		deviceConfig.set(`shortcuts.global.${command.id}`, next);
-		await syncGlobalShortcutsWithSettings();
+		await shortcuts.sync();
 		report.success({
 			title: `Global shortcut set to ${keyBindingToLabel(next, os.isApple)}`,
 			description: `Press the shortcut to trigger "${command.title}"`,
@@ -143,7 +143,7 @@
 	async function clear() {
 		await stopCapture();
 		deviceConfig.set(`shortcuts.global.${command.id}`, null);
-		await syncGlobalShortcutsWithSettings();
+		await shortcuts.sync();
 		report.success({
 			title: 'Global shortcut cleared',
 			description: `Set a new shortcut to trigger "${command.title}"`,

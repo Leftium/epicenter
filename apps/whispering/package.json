@@ -28,6 +28,10 @@
 			"tauri": "./src/lib/platform/os.tauri.ts",
 			"default": "./src/lib/platform/os.browser.ts"
 		},
+		"#platform/shortcuts": {
+			"tauri": "./src/lib/platform/shortcuts.tauri.ts",
+			"default": "./src/lib/platform/shortcuts.browser.ts"
+		},
 		"#platform/recorder": {
 			"tauri": "./src/lib/services/recorder/index.tauri.ts",
 			"default": "./src/lib/services/recorder/index.browser.ts"

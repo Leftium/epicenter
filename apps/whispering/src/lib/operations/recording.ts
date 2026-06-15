@@ -3,6 +3,7 @@ import { manualRecorderConfig } from '#platform/manual-recorder-config';
 import { recordingOverlay } from '#platform/recording-overlay';
 import { goto } from '$app/navigation';
 import { analytics } from '$lib/operations/analytics';
+import { recordingMedia } from '$lib/operations/media';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
 import { sound } from '$lib/operations/sound';
 import { log, type Notice, report } from '$lib/report';
@@ -64,9 +65,12 @@ export async function startManualRecording() {
 		description: 'Setting up your recording environment...',
 	});
 
+	recordingMedia.pause();
+
 	const { data: outcome, error } = await manualRecorder.startRecording();
 
 	if (error) {
+		void recordingMedia.resume();
 		loading.reject({ cause: error });
 		return;
 	}
@@ -95,6 +99,7 @@ export async function stopManualRecording() {
 	const { data: source, error } = await manualRecorder.stopRecording();
 
 	if (error) {
+		void recordingMedia.resume();
 		loading.reject({ cause: error });
 		return;
 	}
@@ -110,6 +115,7 @@ export async function stopManualRecording() {
 	});
 	log.info('Recording stopped');
 	sound.playSoundIfEnabled('manual-stop');
+	void recordingMedia.resume();
 
 	analytics.logEvent({
 		type: 'manual_recording_completed',
@@ -150,6 +156,7 @@ export async function cancelRecording() {
 		return;
 	}
 	if (data.status === 'cancelled') {
+		void recordingMedia.resume();
 		sound.playSoundIfEnabled('manual-cancel');
 		report.success({ title: '✅ Recording cancelled' });
 		log.info('Recording cancelled');
@@ -173,6 +180,8 @@ export async function startVadRecording() {
 		title: '🎙️ Starting voice activated capture',
 		description: 'Your voice activated capture is starting...',
 	});
+
+	recordingMedia.pause();
 
 	const { data: outcome, error } = await vadRecorder.startActiveListening({
 		onLevel: (level) => recordingOverlay.reportLevel(level),
@@ -208,6 +217,7 @@ export async function startVadRecording() {
 	});
 
 	if (error) {
+		void recordingMedia.resume();
 		loading.reject({ cause: error });
 		return;
 	}
@@ -234,6 +244,7 @@ export async function stopVadRecording() {
 	});
 	const { data, error } = await vadRecorder.stopActiveListening();
 	if (error) {
+		void recordingMedia.resume();
 		loading.reject({ cause: error });
 		return;
 	}
@@ -249,6 +260,7 @@ export async function stopVadRecording() {
 		description: 'Your voice activated capture has been stopped.',
 	});
 	sound.playSoundIfEnabled('vad-stop');
+	void recordingMedia.resume();
 }
 
 export function toggleVadRecording() {

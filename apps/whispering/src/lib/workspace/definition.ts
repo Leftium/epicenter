@@ -189,6 +189,7 @@ const sound = {
 	'sound.vadStop': defineKv(field.boolean(), () => true),
 	'sound.transcriptionComplete': defineKv(field.boolean(), () => true),
 	'sound.transformationComplete': defineKv(field.boolean(), () => true),
+	'sound.pauseMediaDuringRecording': defineKv(field.boolean(), () => false),
 } as const;
 
 /**

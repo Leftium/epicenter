@@ -17,19 +17,15 @@
 import type { SignedIn } from '@epicenter/svelte/auth';
 import {
 	attachLocalStorage,
-	createDisposableCache,
+	createChildDocs,
 	type DeviceId,
 	defineWorkspace,
 	openCollaboration,
 	roomWsUrl,
 	wipeLocalStorage,
 } from '@epicenter/workspace';
-import * as Y from 'yjs';
-import {
-	type ConversationId,
-	createZhongwen,
-	zhongwenConversationDocGuid,
-} from './zhongwen';
+import { attachChatTranscript } from '@epicenter/workspace/ai';
+import { createZhongwen } from './zhongwen';
 
 /**
  * Open Zhongwen in the browser with local storage, cloud sync, and the
@@ -61,45 +57,14 @@ export function openZhongwenBrowser({
 		actions: workspace.actions,
 	});
 
-	const conversationDocs = createDisposableCache(
-		(conversationId: ConversationId) => {
-			const ydoc = new Y.Doc({
-				guid: zhongwenConversationDocGuid(conversationId),
-				gc: true,
-			});
-			const childIdb = attachLocalStorage(ydoc, {
-				server: signedIn.server,
-				ownerId: signedIn.ownerId,
-			});
-			// Transcripts sync through Cloud: that is what lets the server
-			// generation actor stream assistant tokens into the doc and lets
-			// every signed-in device watch them live.
-			const childSync = openCollaboration(ydoc, {
-				url: roomWsUrl({
-					baseURL: signedIn.baseURL,
-					ownerId: signedIn.ownerId,
-					guid: ydoc.guid,
-					deviceId,
-				}),
-				openWebSocket: signedIn.openWebSocket,
-				onReconnectSignal: signedIn.onReconnectSignal,
-				waitFor: childIdb.whenLoaded,
-				actions: {},
-			});
-			return {
-				ydoc,
-				idb: childIdb,
-				sync: childSync,
-				/**
-				 * Child disposer rejections do not propagate; bundle.wipe() relies on
-				 * IDB's deleteDatabase native blocking as belt-and-suspenders for
-				 * storage deletion.
-				 */
-				[Symbol.dispose]() {
-					ydoc.destroy();
-				},
-			};
-		},
+	// Per-conversation transcript child docs: the bound runtime owns lifecycle
+	// (refcount + grace) and connection (local storage + cloud sync, the latter
+	// being what lets the server generation actor stream assistant tokens into
+	// the doc and every signed-in device watch them live). `attachChatTranscript`
+	// owns the transcript shape and the client writer policy. Keyed by guid; the
+	// consumer derives it from the conversation id via `zhongwenConversationDocGuid`.
+	const conversationDocs = createChildDocs({ ...signedIn, deviceId })(
+		attachChatTranscript,
 	);
 
 	let docsTornDown = false;

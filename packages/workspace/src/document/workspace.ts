@@ -36,7 +36,6 @@
  * @module
  */
 
-import type { Keyring } from '@epicenter/encryption';
 import * as Y from 'yjs';
 import { type ActionRegistry, defineActions } from '../shared/actions.js';
 import { assertSafeSegment } from '../shared/safe-segment.js';
@@ -92,12 +91,6 @@ export type CreateWorkspaceOptions<
 
 	/** KV definitions to materialize on the workspace root. Pass `{}` for none. */
 	kv: TKv;
-
-	/**
-	 * Retained during the trusted-relay migration so callers can be updated in a
-	 * later pass. `createWorkspace` no longer reads this callback.
-	 */
-	keyring?: () => Keyring;
 };
 
 /**

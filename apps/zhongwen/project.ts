@@ -35,7 +35,7 @@ export function zhongwen(opts: ZhongwenMountOptions = {}) {
 				process.env.EPICENTER_API_URL ||
 				'https://api.epicenter.so';
 
-			const workspace = createZhongwen({ keyring: ctx.session.keyring });
+			const workspace = createZhongwen();
 
 			const infrastructure = attachMountInfrastructure(workspace.ydoc, ctx, {
 				baseURL,

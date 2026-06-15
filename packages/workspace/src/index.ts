@@ -160,7 +160,6 @@ export { debounce } from './shared/debounce.js';
 // DOCUMENT PRIMITIVES
 // ════════════════════════════════════════════════════════════════════════════
 
-export type { Keyring } from '@epicenter/encryption';
 export {
 	createDisposableCache,
 	type DisposableCache,

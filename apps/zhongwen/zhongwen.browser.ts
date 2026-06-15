@@ -4,13 +4,13 @@
  * Single source of truth for "how Zhongwen mounts in a browser." Calls Tier 1
  * primitives inline so every line is visible top-to-bottom:
  *
- *  1. workspace root doc (encrypted tables + KV via createZhongwen)
+ *  1. workspace root doc (tables + KV via createZhongwen)
  *  2. local storage + cloud sync for root (attachLocalStorage + openCollaboration)
  *  3. runtime storage + sync around the per-conversation transcript child docs
  *
  * `openCollaboration` owns reconnect-on-auth-change internally, so this file
  * has no per-app onStateChange listener. The bundle's `wipe()` drops every
- * encrypted IDB database for this owner; `Symbol.dispose` tears down the root
+ * owner-scoped IDB database; `Symbol.dispose` tears down the root
  * + cached child Y.Docs without touching local storage.
  */
 
@@ -32,8 +32,8 @@ import {
 } from './zhongwen';
 
 /**
- * Open Zhongwen in the browser with encrypted local storage, cloud sync, and
- * the per-conversation transcript doc cache.
+ * Open Zhongwen in the browser with local storage, cloud sync, and the
+ * per-conversation transcript doc cache.
  */
 export function openZhongwenBrowser({
 	signedIn,
@@ -42,12 +42,11 @@ export function openZhongwenBrowser({
 	signedIn: SignedIn;
 	deviceId: DeviceId;
 }) {
-	const workspace = createZhongwen({ keyring: signedIn.keyring });
+	const workspace = createZhongwen();
 
 	const idb = attachLocalStorage(workspace.ydoc, {
 		server: signedIn.server,
 		ownerId: signedIn.ownerId,
-		keyring: signedIn.keyring,
 	});
 	const collaboration = openCollaboration(workspace.ydoc, {
 		url: roomWsUrl({
@@ -71,7 +70,6 @@ export function openZhongwenBrowser({
 			const childIdb = attachLocalStorage(ydoc, {
 				server: signedIn.server,
 				ownerId: signedIn.ownerId,
-				keyring: signedIn.keyring,
 			});
 			// Transcripts sync through Cloud: that is what lets the server
 			// generation actor stream assistant tokens into the doc and lets

@@ -20,7 +20,6 @@ import {
 	defineQuery,
 	defineWorkspace,
 	generateId,
-	type Keyring,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
@@ -73,14 +72,10 @@ const typeValuesInput = Type.Record(
 
 /**
  * Build a Wiki workspace: `{ ydoc, tables, kv, actions }`.
- *
- * `keyring` is optional (the headless slice runs without encryption); real
- * runtimes pass one, exactly as fuji does.
  */
-export function createWiki(opts?: { keyring?: () => Keyring }) {
+export function createWiki() {
 	const workspace = createWorkspace({
 		id: WIKI_ID,
-		keyring: opts?.keyring,
 		tables: wikiTableDefinitions,
 		kv: {},
 	});

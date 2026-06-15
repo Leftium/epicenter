@@ -92,13 +92,12 @@ export function openTabManagerBrowser({
 	signedIn: SignedIn;
 	deviceId: DeviceId;
 }) {
-	const workspace = createTabManager({ keyring: signedIn.keyring });
+	const workspace = createTabManager();
 	const { tables } = workspace;
 	const batch = (fn: () => void) => workspace.ydoc.transact(fn);
 	const idb = attachLocalStorage(workspace.ydoc, {
 		server: signedIn.server,
 		ownerId: signedIn.ownerId,
-		keyring: signedIn.keyring,
 	});
 
 	return {

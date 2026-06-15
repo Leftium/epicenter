@@ -60,7 +60,7 @@ export function fuji(opts: FujiMountOptions = {}) {
 				process.env.EPICENTER_API_URL ||
 				'https://api.epicenter.so';
 
-			const workspace = createFuji({ keyring: session.keyring });
+			const workspace = createFuji();
 
 			const sqlite = attachBunSqliteMaterializer(workspace, {
 				filePath: sqlitePath(epicenterRoot, workspace.ydoc.guid),

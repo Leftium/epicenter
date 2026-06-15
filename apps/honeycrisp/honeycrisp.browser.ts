@@ -4,14 +4,14 @@
  * Single source of truth for "how Honeycrisp mounts in a browser." Calls
  * Tier 1 primitives inline so every line is visible top-to-bottom:
  *
- *  1. workspace root doc (encrypted tables + KV via createHoneycrisp)
+ *  1. workspace root doc (tables + KV via createHoneycrisp)
  *  2. local storage + cloud sync for root (attachLocalStorage + openCollaboration)
  *  3. runtime storage + sync around the shared per-note child docs
  *
  * `openCollaboration` owns reconnect-on-auth-change internally, so this file
  * has no per-app onStateChange listener.
  *
- * The bundle's `wipe()` drops every encrypted IDB database for this owner;
+ * The bundle's `wipe()` drops every owner-scoped IDB database;
  * `Symbol.dispose` tears down the root + cached child Y.Docs without touching
  * local storage.
  */
@@ -35,12 +35,11 @@ export function openHoneycrispBrowser({
 	signedIn: SignedIn;
 	deviceId: DeviceId;
 }) {
-	const workspace = createHoneycrisp({ keyring: signedIn.keyring });
+	const workspace = createHoneycrisp();
 
 	const idb = attachLocalStorage(workspace.ydoc, {
 		server: signedIn.server,
 		ownerId: signedIn.ownerId,
-		keyring: signedIn.keyring,
 	});
 	const collaboration = openCollaboration(workspace.ydoc, {
 		url: roomWsUrl({
@@ -60,7 +59,6 @@ export function openHoneycrispBrowser({
 		const childIdb = attachLocalStorage(bodyDoc.ydoc, {
 			server: signedIn.server,
 			ownerId: signedIn.ownerId,
-			keyring: signedIn.keyring,
 		});
 		const childSync = openCollaboration(bodyDoc.ydoc, {
 			url: roomWsUrl({

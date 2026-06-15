@@ -41,28 +41,6 @@ describe('createWorkspace', () => {
 		workspace[Symbol.dispose]();
 	});
 
-	test('legacy keyring option is ignored during construction', () => {
-		const workspace = createWorkspace({
-			id: 'ws-legacy-keyring',
-			keyring: () => {
-				throw new Error('keyring should not be read');
-			},
-			tables: { notes: notesDefinition },
-			kv: { sortOrder: sortOrderDefinition },
-		});
-
-		workspace.tables.notes.set({ id: '1', title: 'plain' });
-		expect(workspace.tables.notes.get('1').data).toEqual({
-			id: '1',
-			title: 'plain',
-		});
-
-		workspace.kv.set('sortOrder', 'desc');
-		expect(workspace.kv.get('sortOrder')).toBe('desc');
-
-		workspace[Symbol.dispose]();
-	});
-
 	test('workspace.ydoc.guid equals options.id', () => {
 		const workspace = createWorkspace({
 			id: 'ws-identity',

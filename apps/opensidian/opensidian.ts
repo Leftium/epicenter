@@ -30,7 +30,6 @@ import {
 	generateId,
 	type Id,
 	type InferTableRow,
-	type Keyring,
 	nullable,
 	onLocalUpdate,
 } from '@epicenter/workspace';
@@ -149,13 +148,12 @@ export type ToolTrust = InferTableRow<typeof toolTrustTable>;
  * Combines the filesystem-backed notes table with the chat tables so the app
  * can store notes, conversations, messages, and tool approvals in one schema.
  *
- * Encrypted under the supplied keyring. Runtime openers attach persistence,
- * sync, browser services, materializers, and UI state around this shared model.
+ * Runtime openers attach persistence, sync, browser services, materializers,
+ * and UI state around this shared model.
  */
-export function createOpensidian(opts: { keyring: () => Keyring }) {
+export function createOpensidian() {
 	const workspace = createWorkspace({
 		id: OPENSIDIAN_ID,
-		keyring: opts.keyring,
 		tables: {
 			files: filesTable,
 			conversations: conversationsTable,

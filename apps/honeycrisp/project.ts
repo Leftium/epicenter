@@ -43,7 +43,7 @@ export function honeycrisp(opts: HoneycrispMountOptions = {}) {
 				process.env.EPICENTER_API_URL ||
 				'https://api.epicenter.so';
 
-			const workspace = createHoneycrisp({ keyring: ctx.session.keyring });
+			const workspace = createHoneycrisp();
 
 			const sqlite = attachBunSqliteMaterializer(workspace, {
 				filePath: sqlitePath(epicenterRoot, workspace.ydoc.guid),

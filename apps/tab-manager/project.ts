@@ -42,7 +42,7 @@ export function tabManager(opts: TabManagerMountOptions = {}) {
 				process.env.EPICENTER_API_URL ||
 				'https://api.epicenter.so';
 
-			const workspace = createTabManager({ keyring: ctx.session.keyring });
+			const workspace = createTabManager();
 
 			const sqlite = attachBunSqliteMaterializer(workspace, {
 				filePath: sqlitePath(epicenterRoot, workspace.ydoc.guid),

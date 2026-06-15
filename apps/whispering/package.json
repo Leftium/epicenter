@@ -105,7 +105,7 @@
 		"@epicenter/workspace": "workspace:*",
 		"@google/generative-ai": "^0.24.1",
 		"@mistralai/mistralai": "^1.9.18",
-		"@ricky0123/vad-web": "^0.0.24",
+		"@ricky0123/vad-web": "^0.0.30",
 		"@standard-schema/spec": "catalog:",
 		"@tanstack/svelte-query": "catalog:",
 		"@tanstack/svelte-table": "catalog:",

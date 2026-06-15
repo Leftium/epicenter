@@ -51,7 +51,63 @@
 				description:
 					'Whispering needs an X11 session for global shortcuts. On Wayland, bind them through your desktop environment.',
 			});
+			return;
 		}
+		// A live listener clears any standing "shortcuts stopped" notice the
+		// supervisor raised, so recovery (a re-grant, a refocus) self-heals the UI.
+		report.dismiss('global-shortcuts-stopped');
+	}
+
+	// Self-heal supervisor for the rdev listener. The accessibilityGranted effect
+	// below respawns the listener when the grant *transitions* to true, but a
+	// thread that dies while the grant value is unchanged (a transient tap break,
+	// or a stale post-update grant) leaves that effect silent and the shortcut
+	// dead. Rust now emits a stop event on every thread exit; on it we re-probe
+	// permissions and reconcile "should be running" against "just stopped":
+	//   - grant genuinely gone: refresh() flips accessibility to denied, so the
+	//     notice shows and the granted effect respawns once the user re-grants.
+	//     Nothing to do here.
+	//   - should still be running: restart with capped backoff, so a genuinely
+	//     broken tap cannot hot-loop; after the cap, surface one honest error.
+	// A death long after the previous one starts with a fresh restart budget.
+	let cleanupListenerStopped: (() => void) | undefined;
+	const LISTENER_RESTART_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000];
+	const LISTENER_RESTART_RESET_WINDOW_MS = 60_000;
+	let listenerRestartAttempt = 0;
+	let lastListenerStopAt = 0;
+	let listenerRestartTimer: ReturnType<typeof setTimeout> | undefined;
+
+	async function onListenerStopped() {
+		if (!tauri) return;
+		// Re-probe so accessibilityGranted reflects reality: a missing or stale
+		// grant flips to denied here, which both shows the notice and makes
+		// shouldRun false, so we correctly stop trying and wait for a re-grant.
+		await permissions.refresh();
+		const shouldRun = !os.isApple || permissions.accessibilityGranted;
+		if (!shouldRun) {
+			listenerRestartAttempt = 0;
+			return;
+		}
+		const now = Date.now();
+		if (now - lastListenerStopAt > LISTENER_RESTART_RESET_WINDOW_MS) {
+			listenerRestartAttempt = 0;
+		}
+		lastListenerStopAt = now;
+		if (listenerRestartAttempt >= LISTENER_RESTART_BACKOFF_MS.length) {
+			// A standing notice (not a one-shot error): it persists until a live
+			// listener dismisses it, and dedups so repeated failures never stack.
+			report.warning({
+				id: 'global-shortcuts-stopped',
+				title: 'Global shortcuts stopped',
+				description:
+					'Whispering could not restart the global shortcut listener. Restart the app to restore shortcuts.',
+			});
+			return;
+		}
+		const delay = LISTENER_RESTART_BACKOFF_MS[listenerRestartAttempt] ?? 16_000;
+		listenerRestartAttempt += 1;
+		clearTimeout(listenerRestartTimer);
+		listenerRestartTimer = setTimeout(() => void startGlobalListener(), delay);
 	}
 
 	onMount(() => {
@@ -69,6 +125,14 @@
 				if (shortcutListenerDestroyed) unlisten();
 				else cleanupShortcutListener = unlisten;
 			});
+			// Supervise the listener: respawn it (or surface the notice) whenever
+			// the rdev thread exits, so a mid-session death self-heals.
+			void tauri.globalShortcuts
+				.onListenerStopped(() => void onListenerStopped())
+				.then((unlisten) => {
+					if (shortcutListenerDestroyed) unlisten();
+					else cleanupListenerStopped = unlisten;
+				});
 			syncGlobalShortcutsWithSettings();
 			resetGlobalShortcutsToDefaultIfDuplicates();
 
@@ -87,6 +151,8 @@
 	onDestroy(() => {
 		shortcutListenerDestroyed = true;
 		cleanupShortcutListener?.();
+		cleanupListenerStopped?.();
+		clearTimeout(listenerRestartTimer);
 	});
 
 	if (tauri) {

@@ -26,7 +26,9 @@ pub mod keys;
 pub mod matcher;
 mod rdev_map;
 
-pub use event::{ShortcutCaptureEvent, ShortcutTriggerEvent, TriggerState};
+pub use event::{
+    KeyboardListenerStoppedEvent, ShortcutCaptureEvent, ShortcutTriggerEvent, TriggerState,
+};
 pub use keys::{Key, KeyBinding, Modifier};
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -138,6 +140,9 @@ impl KeyboardListener {
                     matcher.clear_held();
                 }
 
+                // `rdev::listen` moves `app` into its callback, so clone a handle
+                // for the post-exit stop event before it does.
+                let app_for_stop = app.clone();
                 let result = rdev::listen(move |event| {
                     let (edge, key) = match event.event_type {
                         rdev::EventType::KeyPress(key) => (Edge::Press, key),
@@ -170,12 +175,17 @@ impl KeyboardListener {
                         let _ = trigger.emit_to(&app, MAIN_WINDOW);
                     }
                 });
-                if let Err(error) = result {
-                    log::error!("rdev keyboard listener stopped: {error:?}");
+                let reason = result.err().map(|error| format!("{error:?}"));
+                if let Some(reason) = &reason {
+                    log::error!("rdev keyboard listener stopped: {reason}");
                 }
-                // Allow a later `start` (e.g. the FE re-checking on focus) to
-                // respawn after a transient exit.
+                // Reset the guard BEFORE announcing the stop, so the FE
+                // supervisor's restart sees `running == false` and actually
+                // respawns instead of getting `AlreadyRunning`. A later `start`
+                // (the FE re-checking on focus, or the stop-driven restart) can
+                // then respawn after this transient exit.
                 running.store(false, Ordering::SeqCst);
+                let _ = KeyboardListenerStoppedEvent { reason }.emit_to(&app_for_stop, MAIN_WINDOW);
             })
             .expect("failed to spawn rdev keyboard listener thread");
 

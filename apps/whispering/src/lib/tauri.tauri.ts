@@ -401,6 +401,19 @@ const globalShortcuts = {
 		events.shortcutCaptureEvent.listen(({ payload }) =>
 			onCombo(payload.binding),
 		),
+
+	/**
+	 * Subscribe to the listener's stop event: the rdev thread exited (a tap
+	 * break, or a missing/stale Accessibility grant). Returns the unlisten fn.
+	 * The caller (AppLayout) re-probes permissions and respawns when shortcuts
+	 * should still be running, which is the self-heal that neither the focus
+	 * re-check nor the `accessibilityGranted` effect provides for a death that
+	 * leaves the grant value unchanged (a thread that just died under it).
+	 */
+	onListenerStopped: (onStopped: (reason: string | null) => void) =>
+		events.keyboardListenerStoppedEvent.listen(({ payload }) =>
+			onStopped(payload.reason),
+		),
 };
 
 // media -------------------------------------------------------------

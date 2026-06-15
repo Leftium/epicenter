@@ -85,6 +85,7 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             ModelStateEvent,
             keyboard::ShortcutTriggerEvent,
             keyboard::ShortcutCaptureEvent,
+            keyboard::KeyboardListenerStoppedEvent,
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Result)
 }

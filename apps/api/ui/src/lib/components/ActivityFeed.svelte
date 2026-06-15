@@ -3,6 +3,7 @@
 	import * as Table from '@epicenter/ui/table';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { billing } from '$lib/billing/queries';
+	import { PROVIDER_LABEL } from '$lib/billing/provider-label';
 
 	const events = createQuery(() => billing.events({ limit: 50 }).options);
 
@@ -46,7 +47,7 @@
 						>{event.model ?? '-'}</Table.Cell
 					>
 					<Table.Cell class="text-xs text-muted-foreground">
-						{event.provider ?? '-'}
+						{event.provider ? PROVIDER_LABEL[event.provider] : '-'}
 					</Table.Cell>
 					<Table.Cell class="text-right tabular-nums">
 						{event.credits}

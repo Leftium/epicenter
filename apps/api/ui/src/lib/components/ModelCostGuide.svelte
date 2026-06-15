@@ -3,6 +3,7 @@
 	import * as Table from '@epicenter/ui/table';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { billing } from '$lib/billing/queries';
+	import { PROVIDER_LABEL } from '$lib/billing/provider-label';
 
 	const models = createQuery(() => billing.models.options);
 </script>
@@ -29,7 +30,7 @@
 				<Table.Row>
 					<Table.Cell class="font-mono text-xs">{row.model}</Table.Cell>
 					<Table.Cell class="text-muted-foreground text-xs">
-						{row.provider}
+						{PROVIDER_LABEL[row.provider]}
 					</Table.Cell>
 					<Table.Cell class="text-right tabular-nums">{row.credits}</Table.Cell>
 				</Table.Row>

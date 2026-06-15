@@ -13,6 +13,8 @@ Skills should encode repeatable project expertise: real conventions, recurring f
 
 Read [references/evaluation.md](references/evaluation.md) when tuning trigger descriptions, comparing skill versions, evaluating behavior, auditing imported skills, or checking source links.
 
+Read [references/composition-audit.md](references/composition-audit.md) when grilling how a *cluster* of skills composes rather than one skill: after extracting, merging, or renaming a skill, after adding a trigger phrase, or when routing feels ambiguous. It carries the role model (hub / move / mechanic / adapter), the mechanical detectors (routing collisions, duplicated bodies, dead links, coupling), and the continuous-grill loop.
+
 ## Compose With
 
 Use other skills for their owned domains:

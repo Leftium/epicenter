@@ -25,6 +25,7 @@
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { localModel } from '$lib/state/local-model.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
+	import { permissions } from '$lib/state/permissions.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { recordingOverlay } from '#platform/recording-overlay';
@@ -41,6 +42,7 @@
 	let unlistenLocalModel: UnlistenFn | null = null;
 	let unlistenOverlayAction: UnlistenFn | null = null;
 	let unlistenOverlayFocus: UnlistenFn | null = null;
+	let cleanupPermissions: (() => void) | undefined;
 
 	// Sidebar when wide, bottom bar on narrow viewports (phone, small window).
 	const isNarrow = new MediaQuery('(max-width: 767px)');
@@ -149,6 +151,8 @@
 			})();
 		});
 		unlistenLocalModel = await localModel.attach();
+		// Seed the OS-permission probe and start re-checking on window focus.
+		cleanupPermissions = permissions.attach();
 	});
 
 	onDestroy(() => {
@@ -156,6 +160,7 @@
 		unlistenLocalModel?.();
 		unlistenOverlayAction?.();
 		unlistenOverlayFocus?.();
+		cleanupPermissions?.();
 	});
 </script>
 

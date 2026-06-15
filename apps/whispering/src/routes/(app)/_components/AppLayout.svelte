@@ -5,6 +5,7 @@
 	// import { extension } from '@epicenter/extension';
 	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { commandCallbacks } from '$lib/commands';
 	import { os } from '#platform/os';
 	import MoreDetailsDialog from '$lib/components/MoreDetailsDialog.svelte';
@@ -15,6 +16,8 @@
 	} from '$lib/constants/audio';
 	import { services } from '$lib/services';
 	import { tauri } from '#platform/tauri';
+	import { getSetupReadiness } from '$lib/setup/setup-readiness';
+	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
 	import { settings } from '$lib/state/settings.svelte';
@@ -27,11 +30,9 @@
 		syncGlobalShortcutsWithSettings,
 		syncLocalShortcutsWithSettings,
 	} from '../_layout-utils/register-commands';
-	import { registerOnboarding } from '../_layout-utils/register-onboarding';
-	import { registerAccessibilityPermission } from '../_layout-utils/register-accessibility-permission';
+	import { permissions } from '$lib/state/permissions.svelte';
 	import { syncIconWithRecorderState } from '../_layout-utils/syncIconWithRecorderState.svelte';
 
-	let cleanupAccessibilityPermission: (() => void) | undefined;
 	let cleanupShortcutListener: (() => void) | undefined;
 	let shortcutListenerDestroyed = false;
 
@@ -55,12 +56,6 @@
 		// Sync operations - run immediately, these are fast
 		window.commands = commandCallbacks;
 		window.goto = goto;
-		registerOnboarding();
-		// On macOS the listener starts when Accessibility is granted (the single
-		// gate the whole dictation flow shares); this is its one subscriber.
-		cleanupAccessibilityPermission = registerAccessibilityPermission({
-			onGranted: () => void startGlobalListener(),
-		});
 
 		// One trigger backend per platform: desktop uses the rdev global
 		// listener exclusively, the browser uses in-app keydown exclusively.
@@ -88,7 +83,6 @@
 	});
 
 	onDestroy(() => {
-		cleanupAccessibilityPermission?.();
 		shortcutListenerDestroyed = true;
 		cleanupShortcutListener?.();
 	});
@@ -97,6 +91,68 @@
 		syncWindowAlwaysOnTopWithRecorderState(tauri);
 		syncIconWithRecorderState(tauri);
 	}
+
+	// macOS: Accessibility is the single gate for the rdev listener. Start it the
+	// moment the grant lands (the permissions owner re-checks on window focus, so
+	// returning from System Settings flips this without a restart). `start()` is
+	// idempotent, so re-running on the granted→true transition is safe.
+	$effect(() => {
+		if (!tauri || !os.isApple) return;
+		if (permissions.accessibilityGranted) void startGlobalListener();
+	});
+
+	// First-run gate. Until this device finishes setup, wall everything except the
+	// setup wizard and the Accessibility guide. `canFinish` doubles as the
+	// backfill: an existing user upgrading already has a model + permissions +
+	// activation, so they are marked done immediately and never see the wall.
+	// Once `setup.completed` is true it never flips back, so later breaking your
+	// config (clearing a model, losing a grant) does not re-wall you. Wait for the
+	// permission probe to settle so a granted user is never bounced mid-check.
+	$effect(() => {
+		if (permissions.accessibility === 'checking') return;
+		if (deviceConfig.get('setup.completed')) return;
+
+		const readiness = getSetupReadiness(permissions);
+		if (readiness.canFinish) {
+			deviceConfig.set('setup.completed', true);
+			return;
+		}
+
+		const path = page.url.pathname;
+		if (path.startsWith('/setup') || path === '/macos-enable-accessibility') {
+			return;
+		}
+		void goto('/setup');
+	});
+
+	// macOS: a returning user whose grant broke (e.g. ad-hoc-signed update churns
+	// the TCC identity) gets a standing nudge into the re-grant guide. Only after
+	// setup is complete (a first-run user is handled by the gate above), only on a
+	// real `denied` (never the initial `checking`), and not on a permission surface.
+	$effect(() => {
+		if (!tauri || !os.isApple) return;
+		const path = page.url.pathname;
+		const onPermissionSurface =
+			path === '/macos-enable-accessibility' || path.startsWith('/setup');
+		if (
+			permissions.accessibility !== 'denied' ||
+			!deviceConfig.get('setup.completed') ||
+			onPermissionSurface
+		) {
+			toast.dismiss('accessibility-regrant');
+			return;
+		}
+		toast.warning('Accessibility access needed', {
+			id: 'accessibility-regrant',
+			description:
+				'Whispering needs Accessibility access to listen for global shortcuts and paste transcripts.',
+			duration: Number.POSITIVE_INFINITY,
+			action: {
+				label: 'View Guide',
+				onClick: () => goto('/macos-enable-accessibility'),
+			},
+		});
+	});
 
 	$effect(() => {
 		const strategy = settings.get('retention.strategy');

@@ -147,11 +147,7 @@
  * @module
  */
 
-import {
-	defineErrors,
-	extractErrorMessage,
-	type InferErrors,
-} from 'wellcrafted/error';
+import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
 
 /** Errors surfaced by the cache's background disposal machinery. */
@@ -165,7 +161,6 @@ const DisposableCacheError = defineErrors({
 		cause,
 	}),
 });
-type DisposableCacheError = InferErrors<typeof DisposableCacheError>;
 
 /**
  * Refcounted cache returned by `createDisposableCache`. Itself `Disposable`:

@@ -100,9 +100,10 @@
 
 	$effect(() => {
 		const strategy = settings.get('retention.strategy');
-		if (strategy !== 'limit-count') return;
+		if (strategy === 'keep-forever') return;
 
-		const maxCount = settings.get('retention.maxCount');
+		const maxCount =
+			strategy === 'delete-all' ? 0 : settings.get('retention.maxCount');
 		const allRecordingIds = recordings.sorted.map((r) => r.id);
 		if (allRecordingIds.length <= maxCount) return;
 

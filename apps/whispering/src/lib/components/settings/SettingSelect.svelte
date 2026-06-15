@@ -1,6 +1,11 @@
 <script lang="ts" generics="K extends SelectSettingKey">
 	import * as Field from '@epicenter/ui/field';
 	import * as Select from '@epicenter/ui/select';
+	// Bound to the synced workspace `settings` store by design. Device-local
+	// selects (bitrate, sample rate on the recording page) stay bespoke on
+	// purpose: `deviceConfig` is a separate store with its own value map, and
+	// generalizing this component over both stores costs far more in generic
+	// machinery than the handful of duplicated `<Select.Root>` blocks it saves.
 	import {
 		type SelectSettingKey,
 		type SettingValue,

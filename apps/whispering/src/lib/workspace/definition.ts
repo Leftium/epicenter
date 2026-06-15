@@ -231,7 +231,7 @@ const ui = {
  */
 const dataRetention = {
 	'retention.strategy': defineKv(
-		field.select(['keep-forever', 'limit-count']),
+		field.select(['keep-forever', 'limit-count', 'delete-all']),
 		() => 'keep-forever' as const,
 	),
 	'retention.maxCount': defineKv(field.integer({ minimum: 1 }), () => 100),

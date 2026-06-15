@@ -12,10 +12,10 @@
 	const retentionItems = [
 		{ value: 'keep-forever', label: 'Keep All Recordings' },
 		{ value: 'limit-count', label: 'Keep Limited Number' },
+		{ value: 'delete-all', label: 'Never Save Recordings' },
 	] as const;
 
 	const maxRecordingItems = [
-		{ value: 0, label: '0 Recordings (Never Save)' },
 		{ value: 5, label: '5 Recordings' },
 		{ value: 10, label: '10 Recordings' },
 		{ value: 25, label: '25 Recordings' },

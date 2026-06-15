@@ -20,6 +20,7 @@
 	import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 	import 'prosemirror-view/style/prosemirror.css';
 	import { redo, undo, ySyncPlugin, yUndoPlugin } from 'y-prosemirror';
+	import { DateTimeString, onLocalUpdate } from '@epicenter/workspace';
 	import { requireFuji } from '$lib/session';
 	import type { EntryId } from '$lib/workspace';
 	import { entryBodySchema as schema } from '$lib/workspace/entry-body-schema';
@@ -34,8 +35,18 @@
 
 	const fuji = requireFuji();
 	// svelte-ignore state_referenced_locally - EntryEditor remounts this component by entry id
-	const contentDoc = fuji.entryBodies.open(entryId);
-	$effect(() => () => contentDoc[Symbol.dispose]());
+	const contentDoc = fuji.tables.entries.content.open(entryId);
+	const offLocalUpdate = onLocalUpdate(contentDoc.ydoc, () => {
+		fuji.tables.entries.update(entryId, {
+			updatedAt: DateTimeString.now(),
+		});
+	});
+	$effect(
+		() => () => {
+			offLocalUpdate();
+			contentDoc[Symbol.dispose]();
+		},
+	);
 
 	let element: HTMLDivElement | undefined = $state();
 

@@ -30,13 +30,13 @@
 
 import { field } from '@epicenter/field';
 import {
-	createWorkspace,
+	attachRichText,
 	DateTimeString,
 	defineActions,
 	defineMutation,
 	defineQuery,
 	defineTable,
-	defineWorkspaceBundle,
+	defineWorkspace,
 	docGuid,
 	generateId,
 	type IanaTimeZone,
@@ -73,28 +73,21 @@ const entriesTable = defineTable({
 	createdAt: field.datetime(),
 	updatedAt: field.datetime(),
 	rating: field.number(),
-});
+}).childDocs({ content: attachRichText });
 
 export type Entry = InferTableRow<typeof entriesTable>;
 
 /**
- * Build a Fuji workspace bundle: `{ ydoc, tables, kv, actions }`.
+ * Fuji's shared workspace definition.
  *
- * The same factory is used in both browser and daemon entrypoints. Entry bodies
- * are separate Y.Docs addressed by `entryContentDocGuid(id)` and opened by
- * runtime-specific code.
+ * Entry bodies are separate child Y.Docs declared on `entries.content`.
  */
-export function createFuji() {
-	const workspace = createWorkspace({
-		id: FUJI_ID,
-		tables: { entries: entriesTable },
-		kv: {},
-	});
-	const { tables } = workspace;
-
-	return defineWorkspaceBundle({
-		...workspace,
-		actions: defineActions({
+export const fujiWorkspace = defineWorkspace({
+	id: FUJI_ID,
+	tables: { entries: entriesTable },
+	kv: {},
+	actions: ({ tables }) =>
+		defineActions({
 			entries_get: defineQuery({
 				title: 'Get Entry',
 				description: 'Read one entry by ID from the Fuji workspace.',
@@ -334,12 +327,8 @@ export function createFuji() {
 				},
 			}),
 		}),
-		[Symbol.dispose]() {
-			workspace[Symbol.dispose]();
-		},
-	});
-}
-export type FujiWorkspace = ReturnType<typeof createFuji>;
+});
+export type FujiWorkspace = ReturnType<typeof fujiWorkspace.open>;
 
 /**
  * Deterministic guid of an entry's rich-text content sub-doc.

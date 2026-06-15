@@ -41,6 +41,7 @@ import { createChildDocs } from './create-child-docs.js';
 import { docGuid } from './doc-guid.js';
 import { KV_KEY, TableKey } from './keys.js';
 import { createKv, type Kv, type KvDefinitions } from './kv.js';
+import type { Collaboration } from './open-collaboration.js';
 import {
 	type ChildDocLayouts,
 	createTable,
@@ -124,6 +125,7 @@ export type DefineWorkspaceOptions<
 
 type ChildDocHandle<TLayout extends (ydoc: Y.Doc) => object> =
 	ReturnType<TLayout> & {
+		readonly ydoc: Y.Doc;
 		readonly guid: Guid;
 		readonly whenLoaded: Promise<unknown>;
 		[Symbol.dispose](): void;
@@ -162,7 +164,7 @@ export type ConnectedWorkspace<
 > = Omit<Workspace<TTables, TKv, TActions>, 'tables'> & {
 	readonly tables: ConnectedTables<TTables>;
 	readonly idb: ReturnType<typeof connectDoc>['idb'];
-	readonly collaboration: ReturnType<typeof connectDoc>['collaboration'];
+	readonly collaboration: Collaboration<TActions>;
 	wipe(): Promise<void>;
 };
 

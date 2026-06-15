@@ -57,10 +57,10 @@ export type ConnectionConfig = {
  * @returns `{ idb, collaboration }` - local persistence + sync handles, both
  *          disposed when `ydoc.destroy()` fires.
  */
-export function connectDoc(
+export function connectDoc<TActions extends ActionRegistry>(
 	ydoc: Y.Doc,
 	config: ConnectionConfig,
-	{ actions }: { actions: ActionRegistry },
+	{ actions }: { actions: TActions },
 ) {
 	const idb = attachLocalStorage(ydoc, {
 		server: config.server,

@@ -83,6 +83,8 @@ export function createChildDocs(connection: ConnectionConfig) {
 			const { idb } = connectDoc(ydoc, connection, { actions: {} });
 			return {
 				...layout(ydoc),
+				/** The underlying Y.Doc, exposed for runtime attachments like local-update observers. */
+				ydoc,
 				/** The doc's guid (the cache key); callers needing the room id read it here, not the raw `ydoc`. */
 				guid,
 				/** Resolves when local IndexedDB state has replayed into the doc. */

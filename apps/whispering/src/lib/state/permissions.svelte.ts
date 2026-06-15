@@ -41,7 +41,22 @@ function createPermissions() {
 	// `tauri && os.isApple` is the only configuration with a real OS gate.
 	const isGated = Boolean(tauri && os.isApple);
 
-	async function refresh() {
+	// Deduped on the in-flight probe: one window focus fans out to several
+	// callers (the permissions notice owner and the global-listener supervisor
+	// each re-check on focus), so they share a single pair of `check()` IPC calls
+	// instead of each firing its own. Cleared once the probe settles, so the next
+	// focus genuinely re-probes.
+	let probeInFlight: Promise<void> | null = null;
+
+	function refresh(): Promise<void> {
+		if (probeInFlight) return probeInFlight;
+		probeInFlight = probe().finally(() => {
+			probeInFlight = null;
+		});
+		return probeInFlight;
+	}
+
+	async function probe(): Promise<void> {
 		if (!tauri || !isGated) {
 			accessibility = 'granted';
 			microphone = 'granted';

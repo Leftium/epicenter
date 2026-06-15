@@ -63,7 +63,6 @@ function createGlobalListener() {
 	let status: ListenerStatus = 'idle';
 	let restartAttempt = 0;
 	let lastStopAt = 0;
-	let pollTicks = 0;
 	// One timer for the whole machine: the awaitingGrant poll and the recovering
 	// backoff are mutually exclusive states, so they can never both want it.
 	let timer: ReturnType<typeof setTimeout> | undefined;
@@ -170,27 +169,28 @@ function createGlobalListener() {
 	 * Window lost focus while awaiting the grant: the user is most likely in
 	 * System Settings toggling Accessibility now. Arm the bounded poll so the
 	 * flip lands live, since no focus event will fire while Settings holds focus.
+	 * The tick budget is local to this poll episode: it lives exactly as long as
+	 * the blur, and a fresh blur (guarded by the `timer` check) starts fresh.
 	 */
 	function onBlur() {
 		if (!tauri || detached || status !== 'awaitingGrant' || timer) return;
-		pollTicks = 0;
-		timer = setTimeout(pollTick, GRANT_POLL_INTERVAL_MS);
-	}
-
-	async function pollTick() {
-		pollTicks += 1;
-		await permissions.refresh();
-		if (detached || status !== 'awaitingGrant') return;
-		if (isGranted()) {
-			restartAttempt = 0;
-			await spawn();
-			return;
-		}
-		if (pollTicks >= GRANT_POLL_MAX_TICKS) {
-			clearTimer();
-			return;
-		}
-		timer = setTimeout(pollTick, GRANT_POLL_INTERVAL_MS);
+		let ticks = 0;
+		const tick = async () => {
+			ticks += 1;
+			await permissions.refresh();
+			if (detached || status !== 'awaitingGrant') return;
+			if (isGranted()) {
+				restartAttempt = 0;
+				await spawn();
+				return;
+			}
+			if (ticks >= GRANT_POLL_MAX_TICKS) {
+				clearTimer();
+				return;
+			}
+			timer = setTimeout(tick, GRANT_POLL_INTERVAL_MS);
+		};
+		timer = setTimeout(tick, GRANT_POLL_INTERVAL_MS);
 	}
 
 	return {

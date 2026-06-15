@@ -1,0 +1,21 @@
+{
+	"name": "@epicenter/vite-config",
+	"description": "Shared Vite dev-server config helpers for Epicenter workspace apps",
+	"private": true,
+	"version": "0.1.1",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"dependencies": {
+		"vite": "catalog:"
+	},
+	"devDependencies": {
+		"@types/node": "catalog:",
+		"typescript": "catalog:"
+	},
+	"scripts": {
+		"typecheck": "tsc --noEmit"
+	},
+	"license": "AGPL-3.0-or-later"
+}

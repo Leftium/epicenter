@@ -16,7 +16,6 @@
 		"./oauth-clients": "./src/oauth-clients.ts",
 		"./oauth-seed": "./src/oauth-seed.ts",
 		"./vite": "./src/vite.ts",
-		"./vite-config": "./src/vite-config.ts",
 		"./versions": "./src/versions.ts",
 		"./ai-chat-errors": "./src/ai-chat-errors.ts",
 		"./ai-providers": "./src/ai-providers.ts",

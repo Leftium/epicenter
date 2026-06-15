@@ -20,17 +20,17 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { getSetupReadiness } from '$lib/setup/setup-readiness';
+	import { permissions } from '$lib/state/permissions.svelte';
 	import AccessStep from './AccessStep.svelte';
 	import ActivationStep from './ActivationStep.svelte';
 	import EngineStep from './EngineStep.svelte';
 	import PracticeStep from './PracticeStep.svelte';
-	import { createSetupPermissions } from './setup-permissions.svelte';
 
 	const STEP_IDS = ['engine', 'access', 'activation', 'practice'] as const;
 	type StepId = (typeof STEP_IDS)[number];
 
-	// Wizard state, owned by this instance instead of a module singleton.
-	const permissions = createSetupPermissions();
+	// Permission truth is read from the app-wide owner (which re-checks on window
+	// focus); the wizard only adds its own practice-success flag on top.
 	let practiceSucceeded = $state(false);
 
 	const readiness = $derived(getSetupReadiness(permissions));
@@ -120,17 +120,14 @@
 		if (!isFirstStep) navigate(STEP_IDS[activeIndex - 1]!);
 	}
 
+	// Re-probe on entry; the owner already re-checks on window focus app-wide, so
+	// the wizard doesn't install its own focus listener.
 	onMount(() => {
 		void permissions.refresh();
 	});
 </script>
 
 <svelte:head> <title>Setup - Whispering</title> </svelte:head>
-<svelte:window
-	onfocus={() => {
-		void permissions.refresh();
-	}}
-/>
 
 <main class="mx-auto flex w-full max-w-xl flex-1 flex-col gap-6 px-4 py-8 sm:px-8">
 	<SectionHeader.Root class="space-y-1">

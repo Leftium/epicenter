@@ -6,18 +6,19 @@
 	import CheckCircle2Icon from '@lucide/svelte/icons/check-circle-2';
 	import MicIcon from '@lucide/svelte/icons/mic';
 	import { manualRecorderConfig } from '#platform/manual-recorder-config';
+	import MacosAccessibilityGuide from '$lib/components/MacosAccessibilityGuide.svelte';
 	import { asDeviceIdentifier } from '$lib/services/recorder/types';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import ManualSelectRecordingDevice from '../settings/recording/ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from '../settings/recording/VadSelectRecordingDevice.svelte';
-	import {
-		isAppleDesktop,
-		type SetupPermissionState,
-	} from '$lib/setup/setup-readiness';
-	import type { SetupPermissions } from './setup-permissions.svelte';
+	import { isAppleDesktop } from '$lib/setup/setup-readiness';
+	import type {
+		Permissions,
+		PermissionStatus,
+	} from '$lib/state/permissions.svelte';
 
-	let { permissions }: { permissions: SetupPermissions } = $props();
+	let { permissions }: { permissions: Permissions } = $props();
 
 	const selectedRecordingMode = $derived(settings.get('recording.mode'));
 </script>
@@ -38,9 +39,15 @@
 				state: permissions.accessibility,
 				actionLabel: 'Request access',
 				onclick: () => permissions.requestAccessibility(),
-				guideHref: '/macos-enable-accessibility',
 			})}
 		</div>
+
+		<!-- When Accessibility is still ungranted, the remove/re-add dance is
+		usually the fix; render the shared guide inline rather than sending a
+		first-run user off to a separate page. -->
+		{#if permissions.accessibility !== 'granted'}
+			<MacosAccessibilityGuide />
+		{/if}
 	{/if}
 
 	{#if selectedRecordingMode === 'manual'}
@@ -78,14 +85,12 @@
 	state,
 	actionLabel,
 	onclick,
-	guideHref,
 }: {
 	title: string;
 	description: string;
-	state: SetupPermissionState;
+	state: PermissionStatus;
 	actionLabel: string;
 	onclick: () => void | Promise<void>;
-	guideHref?: string;
 })}
 	<div class="rounded-lg border p-4">
 		<div class="flex items-start justify-between gap-3">
@@ -104,9 +109,6 @@
 				<Button size="sm" variant="outline" {onclick}>
 					{actionLabel}
 				</Button>
-				{#if guideHref}
-					<Button size="sm" variant="ghost" href={guideHref}>View guide</Button>
-				{/if}
 			</div>
 		{/if}
 	</div>

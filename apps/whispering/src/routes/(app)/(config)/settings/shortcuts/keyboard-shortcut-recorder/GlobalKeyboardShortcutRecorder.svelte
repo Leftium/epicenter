@@ -1,10 +1,13 @@
 <script lang="ts">
+	import { Button } from '@epicenter/ui/button';
+	import * as Kbd from '@epicenter/ui/kbd';
 	import { onDestroy } from 'svelte';
 	import { type Command, commands } from '$lib/commands';
 	import { report } from '$lib/report';
 	import type { Tauri } from '#platform/tauri';
 	import { syncGlobalShortcutsWithSettings } from '$routes/(app)/_layout-utils/register-commands';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
+	import { permissions } from '$lib/state/permissions.svelte';
 	import type { Key, KeyBinding, Modifier } from '$lib/tauri/commands';
 	import { os } from '#platform/os';
 	import {
@@ -32,6 +35,12 @@
 	const binding = $derived(deviceConfig.get(`shortcuts.global.${command.id}`));
 	const label = $derived(binding ? keyBindingToLabel(binding, os.isApple) : null);
 
+	// rdev cannot tap the keyboard until macOS Accessibility is granted, so a
+	// capture popover would open and silently receive nothing. Gate at the door:
+	// when ungranted, render a guide CTA instead of a dead recorder. Always true
+	// off macOS (no Accessibility gate there).
+	const canRecord = $derived(permissions.accessibilityGranted);
+
 	let open = $state(false);
 	let isListening = $state(false);
 
@@ -42,6 +51,9 @@
 	let unlisten: (() => void) | undefined;
 
 	async function startCapture() {
+		// Accessibility is already guaranteed: the capture UI only renders when
+		// `canRecord` (see template), so this is never reached ungranted.
+		await tauri.globalShortcuts.start();
 		isListening = true;
 		capturedModifiers = new Set();
 		capturedKeys = new Set();
@@ -175,16 +187,29 @@
 	};
 </script>
 
-<RecorderShell
-	bind:open
-	title={command.title}
-	{recorder}
-	copy={{
-		placeholder,
-		recordHelp: 'Press a gesture. Fn and modifier-only holds work here.',
-		manualHelp: 'Type a gesture (e.g. fn+space, ctrl+meta)',
-		manualPlaceholder: 'e.g. fn+space',
-		manualButtonLabel: 'Type manually',
-		listeningHint: 'Release to set, Esc to cancel',
-	}}
-/>
+{#if canRecord}
+	<RecorderShell
+		bind:open
+		title={command.title}
+		{recorder}
+		copy={{
+			placeholder,
+			recordHelp: 'Press a gesture. Fn and modifier-only holds work here.',
+			manualHelp: 'Type a gesture (e.g. fn+space, ctrl+meta)',
+			manualPlaceholder: 'e.g. fn+space',
+			manualButtonLabel: 'Type manually',
+			listeningHint: 'Release to set, Esc to cancel',
+		}}
+	/>
+{:else}
+	<!-- Accessibility ungranted: a recorder here would capture nothing. Show the
+	current binding read-only and route to the re-grant guide instead. -->
+	<div class="flex items-center justify-end gap-2">
+		{#if label}
+			<Kbd.Root>{label}</Kbd.Root>
+		{/if}
+		<Button variant="outline" size="sm" href="/macos-enable-accessibility">
+			Grant Accessibility to record
+		</Button>
+	</div>
+{/if}

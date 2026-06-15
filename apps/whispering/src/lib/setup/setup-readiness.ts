@@ -4,6 +4,7 @@ import type { Command } from '$lib/commands';
 import { toggleCommandIdForMode } from '$lib/constants/audio';
 import { getTranscriptionSetupReadiness } from '$lib/settings/transcription-validation';
 import { deviceConfig } from '$lib/state/device-config.svelte';
+import type { PermissionStatus } from '$lib/state/permissions.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { isEmptyBinding } from '$lib/utils/key-binding';
 
@@ -16,12 +17,10 @@ function hasGlobalBinding(id: Command['id']): boolean {
 	return binding != null && !isEmptyBinding(binding);
 }
 
-export type SetupPermissionState = 'checking' | 'granted' | 'denied';
-
-/** Probed macOS permission state, read from the wizard's permissions factory. */
+/** Probed macOS permission state, read from the permissions owner. */
 type ProbedPermissions = {
-	microphone: SetupPermissionState;
-	accessibility: SetupPermissionState;
+	microphone: PermissionStatus;
+	accessibility: PermissionStatus;
 };
 
 export type SetupReadiness = {

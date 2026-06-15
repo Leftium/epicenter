@@ -1,8 +1,8 @@
+import { OAUTH_ROUTES } from '@epicenter/constants/oauth-routes';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import type { AuthFetch } from './auth-contract.js';
 import type { OAuthTokenGrant } from './auth-types.js';
-import { OAUTH_ROUTES } from './routes.js';
 
 /**
  * Shape-level failures rejecting an OAuth token endpoint payload before it

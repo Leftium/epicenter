@@ -1,10 +1,10 @@
+import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { defineErrors } from 'wellcrafted/error';
 import { createLogger } from 'wellcrafted/logger';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import type { AuthClient, AuthFetch, AuthState } from './auth-contract.js';
 import { AuthError } from './auth-errors.js';
 import { ApiSessionResponse } from './auth-types.js';
-import { API_ROUTES } from './routes.js';
 
 /**
  * Construction inputs for the same-origin cookie auth client.

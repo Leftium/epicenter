@@ -651,6 +651,7 @@
       "name": "@epicenter/auth",
       "version": "0.1.1",
       "dependencies": {
+        "@epicenter/constants": "workspace:*",
         "@epicenter/encryption": "workspace:*",
         "@epicenter/identity": "workspace:*",
         "@epicenter/sync": "workspace:*",

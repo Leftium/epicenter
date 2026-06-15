@@ -150,14 +150,8 @@ fallback parsers for old shapes
 callbacks that mirror internal implementation steps
 decision callbacks that could be caller-owned composition
 single-file directories and pointless barrels
-near-identical sibling files or types
+near-identical sibling files or types (judge: cheap independence or latent coupling)
 ```
-
-Duplication is not automatically a defect. When two sibling files or types are
-byte-identical or nearly so, judge it: cheap independence between modules that
-should stay decoupled, or latent coupling that wants one source of truth? Name
-the call either way, and check that any stated rationale matches the code (a
-"these subsets genuinely differ" comment over two identical files is a tell).
 
 If a smell is repo-recurring, use `code-audit` for the relevant grep pattern. If
 the smell came from the refactor itself, use `refactoring` for the straggler

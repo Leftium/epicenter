@@ -14,7 +14,7 @@ open<App>Tauri()
   runtime-specific wiring
 
 createWorkspace()
-defineWorkspaceBundle()
+satisfiesWorkspace()
   lower-level primitives for internals, tests, and older app ports
 ```
 

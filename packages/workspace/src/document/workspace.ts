@@ -70,14 +70,15 @@ export type Workspace<
 };
 
 /**
- * Type-check a live workspace bundle while preserving its exact inferred type.
+ * `satisfies Workspace<...>` as a function: type-check a live workspace bundle
+ * while preserving its exact inferred type.
  *
  * Use this when a runtime opener returns `{ ...workspace, ...runtimeExtras }`
  * and direct `satisfies Workspace<...>` would force the caller to restate table,
  * KV, action, or runtime generics that TypeScript can infer from the object.
  * Runtime behavior is identity: the same object is returned unchanged.
  */
-export function defineWorkspaceBundle<
+export function satisfiesWorkspace<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
 	TActions extends ActionRegistry,
@@ -275,7 +276,7 @@ export function createWorkspace<
 
 	const kv = createKv(attachStore(KV_KEY), options.kv);
 
-	return defineWorkspaceBundle({
+	return satisfiesWorkspace({
 		ydoc,
 		tables,
 		kv,
@@ -294,7 +295,11 @@ export function createWorkspace<
  *
  * `open(connection)` additionally connects the root doc, wires `wipe()`, and
  * adds one child-doc opener to each table handle for every declared
- * `table.childDocs({ field: attachLayout })` layout.
+ * `table.childDocs({ field: attachLayout })` layout. It is the browser opener:
+ * the connection solders IndexedDB persistence and the WebSocket relay (see
+ * `connectDoc`). Non-browser runtimes (daemon, Node, tests) instead compose
+ * `createWorkspace` + their own storage/transport + `createChildDocs` directly,
+ * which is exactly what this path does under the hood.
  */
 export function defineWorkspace<
 	TTables extends TableDefinitions,
@@ -330,7 +335,7 @@ export function defineWorkspace<
 				: options.actions(workspace);
 
 		if (connection === undefined) {
-			return defineWorkspaceBundle({
+			return satisfiesWorkspace({
 				...workspace,
 				actions,
 				[Symbol.dispose]() {
@@ -365,7 +370,7 @@ export function defineWorkspace<
 			workspace[Symbol.dispose]();
 		}
 
-		return defineWorkspaceBundle({
+		return satisfiesWorkspace({
 			...workspace,
 			...runtime,
 			tables,

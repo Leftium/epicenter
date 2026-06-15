@@ -168,7 +168,7 @@ export {
 	createWorkspace,
 	type DefineWorkspaceOptions,
 	defineWorkspace,
-	defineWorkspaceBundle,
+	satisfiesWorkspace,
 	type Workspace,
 	type WorkspaceActionContext,
 	type WorkspaceDefinition,

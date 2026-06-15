@@ -9,7 +9,7 @@
  */
 
 import { join } from 'node:path';
-import { defineActions, defineWorkspaceBundle } from '@epicenter/workspace';
+import { defineActions, satisfiesWorkspace } from '@epicenter/workspace';
 import { defineSessionMount } from '@epicenter/workspace/daemon';
 import {
 	attachGitAutosave,
@@ -74,7 +74,7 @@ export function honeycrisp(opts: HoneycrispMountOptions = {}) {
 				materializers: [sqlite, markdown],
 			});
 
-			return defineWorkspaceBundle({
+			return satisfiesWorkspace({
 				...workspace,
 				...infrastructure,
 				markdown,

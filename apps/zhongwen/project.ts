@@ -7,7 +7,7 @@
  * sync.
  */
 
-import { defineWorkspaceBundle } from '@epicenter/workspace';
+import { satisfiesWorkspace } from '@epicenter/workspace';
 import { defineSessionMount } from '@epicenter/workspace/daemon';
 import { attachMountInfrastructure } from '@epicenter/workspace/node';
 import { zhongwenWorkspace } from './zhongwen.js';
@@ -42,7 +42,7 @@ export function zhongwen(opts: ZhongwenMountOptions = {}) {
 				actions: workspace.actions,
 			});
 
-			return defineWorkspaceBundle({
+			return satisfiesWorkspace({
 				...workspace,
 				...infrastructure,
 			});

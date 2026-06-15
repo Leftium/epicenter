@@ -22,7 +22,7 @@
 import { join } from 'node:path';
 import {
 	defineActions,
-	defineWorkspaceBundle,
+	satisfiesWorkspace,
 	readRoomOverHttp,
 } from '@epicenter/workspace';
 import { defineSessionMount } from '@epicenter/workspace/daemon';
@@ -124,7 +124,7 @@ export function fuji(opts: FujiMountOptions = {}) {
 				materializers: [sqlite, markdown],
 			});
 
-			return defineWorkspaceBundle({
+			return satisfiesWorkspace({
 				...workspace,
 				...infrastructure,
 				markdown,

@@ -37,7 +37,7 @@ open<App>Tauri()
 
 createWorkspace()
 createChildDocs()
-defineWorkspaceBundle()
+satisfiesWorkspace()
   lower-level primitives for package internals, tests, and older ports
 ```
 

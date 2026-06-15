@@ -12,7 +12,7 @@ import {
 	attachIndexedDb,
 	defineActions,
 	defineMutation,
-	defineWorkspaceBundle,
+	satisfiesWorkspace,
 } from '@epicenter/workspace';
 import { defineErrors, type InferErrors } from 'wellcrafted/error';
 import type { Result } from 'wellcrafted/result';
@@ -45,7 +45,7 @@ export function openWhispering() {
 	const idb = attachIndexedDb(workspace.ydoc);
 	attachBroadcastChannel(workspace.ydoc);
 
-	return defineWorkspaceBundle({
+	return satisfiesWorkspace({
 		...workspace,
 		actions: defineActions({
 			...workspace.actions,

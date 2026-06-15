@@ -1,5 +1,5 @@
 /**
- * Project daemon lease.
+ * Epicenter root daemon lease.
  *
  * The lease is the single ownership primitive for daemon startup and lifetime.
  * Sockets are IPC endpoints, metadata is diagnostics, and ping is liveness.

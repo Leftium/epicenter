@@ -1,7 +1,7 @@
 /**
  * Daemon-process path helpers.
  *
- * Per-project runtime files (socket, metadata sidecar, SQLite lease) live
+ * Per-Epicenter-root runtime files (socket, metadata sidecar, SQLite lease) live
  * under `runtimeDir()` (a per-user directory at `<dataDir>/run/`).
  * Persistent logs live under the env-paths log directory. Every file is
  * keyed by a hash of the daemon's Epicenter root so two daemons on the
@@ -39,7 +39,7 @@ const DEFAULT_LOG_DIR = process.env.EPICENTER_LOG_DIR ?? PATHS.log;
  * Default: `<dataDir>/run/`, mirroring the systemd/Docker `/run/` convention
  * for transient runtime state. The path stays short enough to fit under the
  * ~104-byte Unix-socket kernel limit on macOS, where `os.tmpdir()` (~48
- * bytes for `/var/folders/...`) is too long once the per-project socket
+ * bytes for `/var/folders/...`) is too long once the per-Epicenter-root socket
  * suffix is appended.
  *
  * `EPICENTER_RUNTIME_DIR` overrides the default. The env var is a workspace
@@ -58,8 +58,8 @@ export function runtimeDir(): string {
  * Truncated to 16 hex chars (64 bits) so the resulting socket path stays
  * comfortably under the 104-char Unix-socket limit on macOS. Symlinks are
  * resolved via `realpathSync` so two equivalent paths always hash the same.
- * The dir must exist; every production caller hashes a resolved project
- * directory that daemon discovery or project lookup has already accepted.
+ * The dir must exist; every production caller hashes a resolved Epicenter root
+ * directory that daemon discovery or Epicenter root lookup has already accepted.
  */
 export function dirHash(dir: string): string {
 	return createHash('sha256')

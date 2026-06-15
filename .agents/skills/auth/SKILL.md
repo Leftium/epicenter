@@ -421,7 +421,7 @@ export type SignedIn = {
 Use it against the real `createSession`:
 
 ```ts
-import { createSession, type SignedIn } from '@epicenter/svelte';
+import { createSession, type SignedIn } from '@epicenter/svelte/auth';
 
 export const session = createSession({
 	auth,

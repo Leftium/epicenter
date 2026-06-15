@@ -192,3 +192,45 @@ export function observeChatDocMessages(
 	target.observeDeep(observer);
 	return () => target.unobserveDeep(observer);
 }
+
+/**
+ * `attachChatTranscript(ydoc)`: the conversation layout as a handle (shape +
+ * client writer policy), for use with `createChildDocs`.
+ *
+ * This is the client surface of the transcript: read the messages, observe
+ * changes, and append a user message (the one write a browser client owns). The
+ * assistant-message writer is the server generation actor, which imports
+ * {@link appendAssistantMessage} directly; that writer policy is exactly why
+ * this handle exposes `appendUser` and not an assistant writer.
+ *
+ * The free functions above remain the implementation and the server's entry
+ * point; this handle is the boundary-respecting view a UI binds to (no raw
+ * `ydoc` reach). `findActiveChatDocGeneration` stays a free function: it is pure
+ * over a message snapshot and never touches the doc.
+ */
+export function attachChatTranscript(doc: Y.Doc) {
+	return {
+		/** Snapshot every message in transcript order. */
+		read(): ChatDocMessage[] {
+			return readChatDocMessages(doc);
+		},
+		/**
+		 * Observe transcript changes (new messages, token appends, finish writes).
+		 * Fires once per transaction; re-read with {@link read}. Returns unobserve.
+		 */
+		observe(callback: () => void): () => void {
+			return observeChatDocMessages(doc, callback);
+		},
+		/**
+		 * Append one user message. Single writer: the creating client mints the id
+		 * and never writes to the message again.
+		 */
+		appendUser(message: {
+			id: string;
+			content: string;
+			createdAt: number;
+		}): void {
+			appendUserMessage(doc, message);
+		},
+	};
+}

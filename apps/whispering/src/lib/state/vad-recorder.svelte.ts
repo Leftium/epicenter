@@ -5,7 +5,7 @@ import {
 	type InferErrors,
 } from 'wellcrafted/error';
 import { defineKeys } from 'wellcrafted/query';
-import { Err, Ok, tryAsync, trySync } from 'wellcrafted/result';
+import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import type { VadState } from '$lib/constants/audio';
 import { defineQuery } from '$lib/rpc/client';
 import {
@@ -158,7 +158,18 @@ function createVadRecorder() {
 				const { data: newVad, error: initializeVadError } = await tryAsync({
 					try: () =>
 						MicVAD.new({
-							stream,
+							// The recorder owns the stream lifecycle: it is acquired via
+							// getRecordingStream and released by stopActiveListening's
+							// cleanupRecordingStream below. MicVAD only borrows it, so
+							// pause is a no-op and resume hands back the same live stream.
+							// (Resume is never reached today: this app starts once and
+							// destroys on stop, but keeping it live keeps the three stream
+							// hooks mutually consistent rather than handing back a stopped
+							// stream.)
+							getStream: async () => stream,
+							pauseStream: async () => {},
+							resumeStream: async () => stream,
+							startOnLoad: false,
 							submitUserSpeechOnPause: true,
 							onSpeechStart: () => {
 								if (_session) _session.state = 'SPEECH_DETECTED';
@@ -189,15 +200,15 @@ function createVadRecorder() {
 				}
 
 				// Start listening
-				const { error: startError } = trySync({
-					try: () => newVad.start(),
+				const { error: startError } = await tryAsync({
+					try: async () => newVad.start(),
 					catch: (error) => VadRecorderError.StartFailed({ cause: error }),
 				});
 
 				if (startError) {
 					// Clean up everything on start error
-					trySync({
-						try: () => newVad.destroy(),
+					await tryAsync({
+						try: async () => newVad.destroy(),
 						catch: () => Ok(undefined),
 					});
 					cleanupRecordingStream(stream);
@@ -222,8 +233,8 @@ function createVadRecorder() {
 				});
 
 			const { vad, stream } = _session;
-			const { error: destroyError } = trySync({
-				try: () => vad.destroy(),
+			const { error: destroyError } = await tryAsync({
+				try: async () => vad.destroy(),
 				catch: (error) => VadRecorderError.StopFailed({ cause: error }),
 			});
 

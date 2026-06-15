@@ -57,7 +57,7 @@ Google sign-in via `@epicenter/svelte/auth-form`. The session is persisted acros
 | `icon` | `string` (optional) |
 | `sortOrder` | `number` |
 
-**`notes`** (v2, migrated from v1)
+**`notes`**
 | Field | Type |
 |---|---|
 | `id` | `NoteId` |
@@ -65,14 +65,12 @@ Google sign-in via `@epicenter/svelte/auth-form`. The session is persisted acros
 | `title` | `string` |
 | `preview` | `string` |
 | `pinned` | `boolean` |
-| `createdAt` | `number` |
-| `updatedAt` | `number` |
-| `deletedAt` | `number` (optional, soft delete) |
+| `createdAt` | `DateTimeString` |
+| `updatedAt` | `DateTimeString` |
+| `deletedAt` | `DateTimeString` (optional, soft delete) |
 | `wordCount` | `number` (optional) |
 
 Each note's body lives in a separate Y.Doc opened by `honeycrisp.tables.notes.body.open(noteId)`. The handle yields a `Y.XmlFragment` that ProseMirror binds to; editor logic refreshes title, preview, word count, and `updatedAt` on content changes.
-
-The v1→v2 migration adds `deletedAt` and `wordCount`.
 
 Honeycrisp currently has no workspace KV schema. View selection, sorting, and URL state live in the Svelte state layer.
 

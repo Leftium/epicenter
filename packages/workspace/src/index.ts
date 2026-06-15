@@ -11,89 +11,28 @@
  * @example
  * ```typescript
  * import {
- *   attachIndexedDb,
  *   attachRichText,
- *   createDeviceId,
- *   createDisposableCache,
- *   createWorkspace,
+ *   type ConnectionConfig,
  *   defineTable,
- *   docGuid,
- *   openCollaboration,
- *   roomWsUrl,
+ *   defineWorkspace,
  * } from '@epicenter/workspace';
  * import { field } from '@epicenter/field';
- * import type { AuthClient } from '@epicenter/auth';
- * import type { OwnerId } from '@epicenter/identity';
- * import * as Y from 'yjs';
  *
  * const posts = defineTable({
  *   id: field.string(),
  *   title: field.string(),
- * });
- * declare const auth: AuthClient;
- * declare const ownerId: OwnerId;
+ * }).childDocs({ body: attachRichText });
  *
- * const deviceId = createDeviceId({ storage: localStorage });
- *
- * // The workspace bundle owns the root Y.Doc, the tables, and the KV slot.
- * // `using` triggers cascade disposal of every store on scope exit.
- * using workspace = createWorkspace({
+ * const notesWorkspace = defineWorkspace({
  *   id: 'notes',
  *   tables: { posts },
  *   kv: {},
  * });
- * const idb = attachIndexedDb(workspace.ydoc);
- * const collaboration = openCollaboration(workspace.ydoc, {
- *   url: roomWsUrl({
- *     baseURL: auth.baseURL,
- *     ownerId,
- *     guid: workspace.ydoc.guid,
- *     deviceId,
- *   }),
- *   openWebSocket: auth.openWebSocket,
- *   onReconnectSignal: auth.onStateChange,
- *   waitFor: idb.whenLoaded,
- *   actions: {},
- * });
  *
- * // Content docs are per-row child Y.Docs constructed inline. Sub-doc
- * // primitives (attachRichText, etc.) take a raw Y.Doc, not a workspace.
- * const noteBodyDocs = createDisposableCache(
- *   (noteId: string) => {
- *     const bodyYdoc = new Y.Doc({
- *       guid: docGuid({
- *         workspaceId: workspace.ydoc.guid,
- *         collection: 'posts',
- *         rowId: noteId,
- *         field: 'body',
- *       }),
- *       gc: true,
- *     });
- *     const bodyIdb = attachIndexedDb(bodyYdoc);
- *     const bodySync = openCollaboration(bodyYdoc, {
- *       url: roomWsUrl({
- *         baseURL: auth.baseURL,
- *         ownerId,
- *         guid: bodyYdoc.guid,
- *         deviceId,
- *       }),
- *       openWebSocket: auth.openWebSocket,
- *       onReconnectSignal: auth.onStateChange,
- *       waitFor: bodyIdb.whenLoaded,
- *       actions: {},
- *     });
- *     return {
- *       ydoc: bodyYdoc,
- *       body: attachRichText(bodyYdoc),
- *       idb: bodyIdb,
- *       sync: bodySync,
- *       [Symbol.dispose]() {
- *         bodyYdoc.destroy();
- *       },
- *     };
- *   },
- *   { gcTime: 5_000 },
- * );
+ * declare const connection: ConnectionConfig;
+ * using workspace = notesWorkspace.open(connection);
+ * using body = workspace.tables.posts.body.open('post-1');
+ * await body.whenLoaded;
  * ```
  *
  * @packageDocumentation

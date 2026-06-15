@@ -300,11 +300,7 @@
 			{/if}
 		</div>
 	{:else if settings.get('recording.mode') === 'vad'}
-		<div class="flex w-full flex-col items-center gap-3">
-			<VadRecordingAction
-				pipeline={vadPipeline}
-			/>
-		</div>
+		<VadRecordingAction pipeline={vadPipeline} />
 	{:else if settings.get('recording.mode') === 'upload'}
 		<div class="flex flex-col items-center gap-4 w-full">
 			<FileDropZone

@@ -1,7 +1,6 @@
 {
 	"name": "@epicenter/constants",
 	"description": "Shared URLs, ports, and version info for the Epicenter monorepo",
-	"private": true,
 	"version": "0.1.1",
 	"type": "module",
 	"imports": {
@@ -28,14 +27,14 @@
 	},
 	"devDependencies": {
 		"@better-auth/oauth-provider": "catalog:",
+		"@tanstack/ai-gemini": "catalog:",
+		"@tanstack/ai-openai": "catalog:",
 		"@types/node": "catalog:",
 		"typescript": "catalog:",
 		"vite": "catalog:"
 	},
 	"dependencies": {
 		"@epicenter/identity": "workspace:*",
-		"@tanstack/ai-gemini": "catalog:",
-		"@tanstack/ai-openai": "catalog:",
 		"arktype": "catalog:",
 		"wellcrafted": "catalog:"
 	},

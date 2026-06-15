@@ -28,7 +28,6 @@ import {
 	generateId,
 	type Id,
 	type InferTableRow,
-	type Keyring,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
@@ -77,10 +76,9 @@ export type Conversation = InferTableRow<typeof conversationsTable>;
  * Browser and daemon wrappers attach storage, sync, and process lifecycle
  * around this root; this factory owns only the durable schema.
  */
-export function createZhongwen({ keyring }: { keyring: () => Keyring }) {
+export function createZhongwen() {
 	const workspace = createWorkspace({
 		id: ZHONGWEN_ID,
-		keyring,
 		tables: {
 			conversations: conversationsTable,
 		},

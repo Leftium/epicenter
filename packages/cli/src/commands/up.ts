@@ -78,7 +78,7 @@ type UpOptions = {
  * - `mounts` is the started mount runtime (zero or one); the daemon serves it
  *   and routes IPC requests by mount name.
  * - `inactive` is the mount if it returned `inactive(reason)` instead of a
- *   runtime (typically a signed-out, keyring-backed mount). It is not served.
+ *   runtime (typically a signed-out mount). It is not served.
  * - `metadata` is what was written to disk.
  * - `teardown()` closes the server, asyncDisposes the runtimes, releases the
  *   lease, and unlinks metadata + socket. Idempotent.

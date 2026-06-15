@@ -11,7 +11,7 @@
  * admin migration) passes the pair explicitly.
  *
  * Belt-and-suspenders with an explicit guid list is unnecessary: every
- * encrypted IDB database is created under the owner prefix, and the prefix
+ * owner-scoped IDB database is created under the owner prefix, and the prefix
  * scan catches all of them.
  *
  * No-ops gracefully when `indexedDB.databases()` is unavailable (older
@@ -25,7 +25,7 @@ import { clearDocument } from 'y-indexeddb';
 import { getOwnedYjsPrefix } from './local-yjs-key.js';
 
 /**
- * Delete every encrypted IndexedDB database owned by `(server, ownerId)` on
+ * Delete every IndexedDB database owned by `(server, ownerId)` on
  * this browser profile.
  *
  * @example

@@ -7,7 +7,6 @@
 	import { type TableParseError } from '@epicenter/workspace';
 	import ArrowUpCircleIcon from '@lucide/svelte/icons/arrow-up-circle';
 	import CircleCheckIcon from '@lucide/svelte/icons/circle-check';
-	import LockIcon from '@lucide/svelte/icons/lock';
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { requireFuji } from '$lib/session';
@@ -43,15 +42,14 @@
 		</span>
 	</div>
 
-	{#if entries.nonconforming.length === 0 && entries.newerWriter.length === 0 && entries.unreadable.length === 0}
+	{#if entries.nonconforming.length === 0 && entries.newerWriter.length === 0}
 		<Empty.Root class="flex-1">
 			<Empty.Media>
 				<CircleCheckIcon class="size-8 text-muted-foreground" />
 			</Empty.Media>
 			<Empty.Title>Every entry matches the schema</Empty.Title>
 			<Empty.Description>
-				Entries that fail the schema, come from a newer Fuji, or are encrypted
-				with a key this device does not have will appear here.
+				Entries that fail the schema or come from a newer Fuji will appear here.
 			</Empty.Description>
 		</Empty.Root>
 	{:else}
@@ -69,40 +67,6 @@
 						untouched; editing here is refused so the newer fields survive.
 					</Alert.Description>
 				</Alert.Root>
-			{/if}
-
-			{#if entries.unreadable.length > 0}
-				<Alert.Root variant="warning">
-					<LockIcon class="size-4" />
-					<Alert.Title>
-						{entries.unreadable.length}
-						{entries.unreadable.length === 1 ? 'entry is' : 'entries are'}
-						encrypted with a key this device does not have
-					</Alert.Title>
-					<Alert.Description>
-						Another device wrote them after a key change. Open Fuji where the
-						key lives to read them. They stay synced and untouched.
-					</Alert.Description>
-				</Alert.Root>
-
-				<Table.Root>
-					<Table.Header>
-						<Table.Row>
-							<Table.Head>Entry</Table.Head>
-							<Table.Head>Reason</Table.Head>
-						</Table.Row>
-					</Table.Header>
-					<Table.Body>
-						{#each entries.unreadable as error (error.id)}
-							<Table.Row>
-								<Table.Cell class="font-mono text-xs">{error.id}</Table.Cell>
-								<Table.Cell class="text-muted-foreground">
-									{error.reason}
-								</Table.Cell>
-							</Table.Row>
-						{/each}
-					</Table.Body>
-				</Table.Root>
 			{/if}
 
 			{#if entries.nonconforming.length > 0}

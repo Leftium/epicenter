@@ -4,7 +4,7 @@
  * Single source of truth for "how Opensidian mounts in a browser." Calls
  * Tier 1 primitives inline so every line is visible top-to-bottom:
  *
- *  1. workspace root doc (encrypted tables + KV via createOpensidian)
+ *  1. workspace root doc (tables + KV via createOpensidian)
  *  2. local storage + cloud sync for root (attachLocalStorage + openCollaboration)
  *  3. runtime storage + sync around the shared per-file child docs
  *  4. file system, sqlite index, bash, and action registry
@@ -13,7 +13,7 @@
  * `openCollaboration` owns reconnect-on-auth-change internally, so this file
  * has no per-app onStateChange listener.
  *
- * The bundle's `wipe()` drops every encrypted IDB database for this owner;
+ * The bundle's `wipe()` drops every owner-scoped IDB database;
  * `Symbol.dispose` tears down the root + cached child Y.Docs without touching
  * local storage.
  */
@@ -48,13 +48,12 @@ export function openOpensidianBrowser({
 	signedIn: SignedIn;
 	deviceId: DeviceId;
 }) {
-	const workspace = createOpensidian({ keyring: signedIn.keyring });
+	const workspace = createOpensidian();
 	const { ydoc, tables } = workspace;
 
 	const idb = attachLocalStorage(ydoc, {
 		server: signedIn.server,
 		ownerId: signedIn.ownerId,
-		keyring: signedIn.keyring,
 	});
 
 	const fileContentDocs = createDisposableCache((fileId: FileId) => {
@@ -62,7 +61,6 @@ export function openOpensidianBrowser({
 		const childIdb = attachLocalStorage(contentDoc.ydoc, {
 			server: signedIn.server,
 			ownerId: signedIn.ownerId,
-			keyring: signedIn.keyring,
 		});
 		// File bodies sync through Cloud so device loss doesn't drop the largest
 		// data class.

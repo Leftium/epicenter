@@ -3,8 +3,11 @@
 import { clearDocument, IndexeddbPersistence } from 'y-indexeddb';
 import type * as Y from 'yjs';
 
-export function attachIndexedDb(ydoc: Y.Doc) {
-	const databaseName = ydoc.guid;
+export function attachIndexedDb(
+	ydoc: Y.Doc,
+	options: { databaseName?: string } = {},
+) {
+	const databaseName = options.databaseName ?? ydoc.guid;
 	const idb = new IndexeddbPersistence(databaseName, ydoc);
 	// `IndexeddbPersistence`'s constructor binds `doc.on('destroy', this.destroy)`
 	// eagerly, and its `destroy()` has no top-level idempotency guard: two calls

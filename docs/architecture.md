@@ -66,7 +66,7 @@ const themeMode = defineKv(
 That purity is what makes cross-package reuse work. The same table and KV declarations can be imported by an app, a CLI tool, a migration utility, a test, or another package without dragging runtime side effects along for the ride.
 
 ### 2. `createWorkspace` is where the live bundle appears
-`createWorkspace({ id, tables, kv })` is the boundary where static meaning turns into live state. It allocates the `Y.Doc`, derives the encryption keyring (if a `keyring` is passed) once at construction, registers and activates every typed table and KV slot atomically, and returns a typed bundle. The bundle owns the Y.Doc lifecycle: `[Symbol.dispose]()` calls `ydoc.destroy()`, and cascade disposal tears every attached store down.
+`createWorkspace({ id, tables, kv })` is the boundary where static meaning turns into live state. It allocates the `Y.Doc`, registers and activates every typed table and KV slot atomically, and returns a typed bundle. The bundle owns the Y.Doc lifecycle: `[Symbol.dispose]()` calls `ydoc.destroy()`, and cascade disposal tears every attached store down.
 
 ```ts
 import { createWorkspace } from '@epicenter/workspace';
@@ -215,7 +215,7 @@ import {
 import { createOpensidian } from 'opensidian';
 
 export function openOpensidianBrowser() {
-	const workspace = createOpensidian({ keyring: signedIn.keyring });
+	const workspace = createOpensidian();
 	const idb = attachIndexedDb(workspace.ydoc);
 	const fs = attachYjsFileSystem(workspace.ydoc, workspace.tables.files, fileContent);
 	const sqliteIndex = createSqliteIndex({
@@ -243,10 +243,10 @@ export function openOpensidianBrowser() {
 }
 ```
 
-That bundle then feeds other middleware packages. `attachYjsFileSystem(workspace.ydoc, workspace.tables.files, fileContent)` turns the files table plus content docs into a real virtual filesystem, and its `fs.index` is the single owner of path validity that the sqlite mirror converges to; `actionsToAiTools(workspace)` from `@epicenter/workspace/ai` turns workspace actions into chat tools; per-row content docs use sub-doc primitives like `attachRichText`; `createCookieAuth()` or `createBearerAuth()` from `@epicenter/svelte/auth` coordinates identity, fetch, and WebSocket auth while `@epicenter/auth` provides the signed-in identity used by lazy encryption key callbacks.
+That bundle then feeds other middleware packages. `attachYjsFileSystem(workspace.ydoc, workspace.tables.files, fileContent)` turns the files table plus content docs into a real virtual filesystem, and its `fs.index` is the single owner of path validity that the sqlite mirror converges to; `actionsToAiTools(workspace)` from `@epicenter/workspace/ai` turns workspace actions into chat tools; per-row content docs use sub-doc primitives like `attachRichText`; `createCookieAuth()` or `createBearerAuth()` from `@epicenter/svelte/auth` coordinates identity, fetch, and WebSocket auth while `@epicenter/auth` provides the signed-in identity that supplies `ownerId` and the WebSocket transport.
 
 ```text
-createOpensidian({ keyring })
+createOpensidian()
     |
     +-- workspace.ydoc, workspace.tables, workspace.kv
     +-- attachIndexedDb(workspace.ydoc)
@@ -263,13 +263,13 @@ createOpensidian({ keyring })
 That is the whole monorepo in miniature. The app is mostly composition code because the packages under it already agree on the same runtime shape.
 
 ## The sync philosophy is dumb server, smart client
-The server is a relay, not the authority. Clients own schema meaning, table helpers, migrations, encryption activation, action handlers, and most of the user-facing behavior.
+The server is a relay, not the authority. Clients own schema meaning, table helpers, migrations, action handlers, and most of the user-facing behavior.
 
 `@epicenter/sync` reflects that philosophy in its API. It exports protocol encode/decode functions, while `openCollaboration` plugs those primitives into a live workspace that already knows how to read and write its own data.
 
 That means the server does not need to understand your tables. It forwards Yjs sync messages. Presence is server state: the relay owns the `connections` map and pushes a `presence` text frame, the full list of connected installs, on every change. Cross-device dispatch is a plain HTTP POST the relay routes to the recipient's socket. Neither rides the CRDT, and neither needs the server to decode your data.
 
-This is what "smart client" means here. The client can boot locally, read persisted state, apply encryption keys, expose actions, open document timelines, and keep working offline before the network helps at all.
+This is what "smart client" means here. The client can boot locally, read persisted state, expose actions, open document timelines, and keep working offline before the network helps at all.
 
 This is what "dumb server" means here. The server helps peers find each other and exchange updates, but it is not where the data model becomes valid or meaningful.
 

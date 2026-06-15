@@ -3,7 +3,7 @@
  *
  * `zhongwen()` returns the `Mount` that a project's `epicenter.config.ts`
  * default-exports. Zhongwen has no daemon actions and no materializers today;
- * the daemon's only job is to host the encrypted Y.Doc on disk and bridge
+ * the daemon's only job is to host the Y.Doc on disk and bridge
  * sync.
  */
 
@@ -23,7 +23,7 @@ export type ZhongwenMountOptions = {
 /**
  * Mount Zhongwen in an Epicenter project daemon.
  *
- * The daemon hosts the encrypted root Y.Doc and sync bridge. Browser-only
+ * The daemon hosts the root Y.Doc and sync bridge. Browser-only
  * transcript docs stay in `openZhongwenBrowser()`.
  */
 export function zhongwen(opts: ZhongwenMountOptions = {}) {
@@ -35,7 +35,7 @@ export function zhongwen(opts: ZhongwenMountOptions = {}) {
 				process.env.EPICENTER_API_URL ||
 				'https://api.epicenter.so';
 
-			const workspace = createZhongwen({ keyring: ctx.session.keyring });
+			const workspace = createZhongwen();
 
 			const infrastructure = attachMountInfrastructure(workspace.ydoc, ctx, {
 				baseURL,

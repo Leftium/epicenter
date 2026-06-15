@@ -21,7 +21,6 @@ import * as path from 'node:path';
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth-clients';
-import type { Keyring } from '@epicenter/encryption';
 import envPaths from 'env-paths';
 import {
 	defineErrors,
@@ -213,7 +212,6 @@ async function saveMachineTokens(
  */
 type MachineIdentity = {
 	user: { id: UserId; email: string };
-	keyring: Keyring;
 };
 
 type CommonConfig = {
@@ -316,7 +314,6 @@ export async function loginWithOob({
 		grant,
 		userId: session.user.id,
 		ownerId: session.ownerId,
-		keyring: session.keyring,
 	} satisfies PersistedAuth;
 	const saved = await saveMachineTokens(cell, { filePath: authFilePath });
 	if (saved.error) return Err(saved.error);
@@ -324,7 +321,6 @@ export async function loginWithOob({
 	return Ok({
 		identity: {
 			user: { id: session.user.id, email: session.user.email },
-			keyring: session.keyring,
 		},
 	});
 }
@@ -354,14 +350,13 @@ export async function status({
 	if (!loaded.data) return Ok({ status: 'signedOut' as const });
 	const cachedCell = loaded.data;
 
-	// Cell may still be valid for local decrypt when the server is unreachable;
+	// Cell may still be valid for local use when the server is unreachable;
 	// the underlying auth client wipes it on same-owner mismatch or
 	// reauth-required. Email is unknown without /api/session.
 	const unverifiedFromCache = {
 		status: 'unverified' as const,
 		identity: {
 			user: { id: cachedCell.userId, email: '' },
-			keyring: cachedCell.keyring,
 		},
 	};
 
@@ -400,7 +395,6 @@ export async function status({
 			status: 'valid' as const,
 			identity: {
 				user: { id: session.user.id, email: session.user.email },
-				keyring: session.keyring,
 			},
 		});
 	}

@@ -48,7 +48,6 @@ function signedIn(): WorkspaceAuthClient {
 		state: {
 			status: 'signed-in',
 			ownerId: asOwnerId('test-user'),
-			keyring: [] as never,
 		},
 		openWebSocket: () => Promise.resolve({} as WebSocket),
 		fetch: () => Promise.resolve(new Response()),

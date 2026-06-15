@@ -166,7 +166,7 @@
 				signal: controller.signal,
 			});
 			// The kickoff resolving (200) IS the finish signal for the requester.
-			// The server cannot write the per-value-encrypted conversations table,
+			// The relay only syncs the conversations table; it never writes it,
 			// and a completed reply only lands while this requester is alive, so
 			// the requester owns the list-recency bump on completion.
 			zhongwen.tables.conversations.update(conversationId, {

@@ -2,8 +2,8 @@
  * Owner derivations: every durable string for both modes.
  *
  * The point of these tests is to pin the wire formats. If any of these
- * strings change, every existing DO, R2 object, and locally-encrypted
- * blob keyed on the old shape becomes orphaned. They are contracts.
+ * strings change, every existing DO, R2 object, and owner-scoped local
+ * database keyed on the old shape becomes orphaned. They are contracts.
  *
  * Personal mode and shared mode share the same shape; in personal mode
  * `ownerId` is the signed-in user's id, in shared mode it is the literal

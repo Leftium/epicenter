@@ -38,7 +38,7 @@ defineWorkspace()
   preserves the inferred bundle shape after composition
 ```
 
-Fuji's browser workspace is built once per signed-in session by `createSession`. `openFujiBrowser()` calls `createFuji({ keyring })`, attaches browser storage and sync, then builds `entryBodies`, the app-owned cache for entry content docs. The session module receives a `SignedIn` from `createSession` and passes it into the browser factory. `SignedIn` carries the stable owner, keyring reader, server URL, and auth transport functions.
+Fuji's browser workspace is built once per signed-in session by `createSession`. `openFujiBrowser()` calls `createFuji()`, attaches browser storage and sync, then builds `entryBodies`, the app-owned cache for entry content docs. The session module receives a `SignedIn` from `createSession` and passes it into the browser factory. `SignedIn` carries the stable owner, server URL, and auth transport functions.
 
 ```ts
 import { openFujiBrowser } from "$lib/browser";
@@ -66,12 +66,11 @@ export function openFujiBrowser({
   signedIn: SignedIn;
   deviceId: DeviceId;
 }) {
-  const workspace = createFuji({ keyring: signedIn.keyring });
+  const workspace = createFuji();
 
   const idb = attachLocalStorage(workspace.ydoc, {
     server: signedIn.server,
     ownerId: signedIn.ownerId,
-    keyring: signedIn.keyring,
   });
   const collaboration = openCollaboration(workspace.ydoc, {
     url: roomWsUrl({
@@ -108,9 +107,9 @@ export function openFujiBrowser({
 }
 ```
 
-`createFuji({ keyring })` is the per-app helper that wraps `createWorkspace({ id: FUJI_ID, keyring, tables: { entries: entriesTable }, kv })`, adds `workspace.actions`, and returns the standard `{ ydoc, tables, kv, actions, [Symbol.dispose] }` bundle through `defineWorkspace()`.
+`createFuji()` is the per-app helper that wraps `createWorkspace({ id: FUJI_ID, tables: { entries: entriesTable }, kv })`, adds `workspace.actions`, and returns the standard `{ ydoc, tables, kv, actions, [Symbol.dispose] }` bundle through `defineWorkspace()`.
 
-The browser bundle exposes concrete resources like `idb`, `collaboration`, and `entryBodies`. Auth state flows through `session.current`; when present, it carries the Fuji bundle, and pages reach it via the module-level `requireFuji()` exported from `$lib/session` (throws if called without an authenticated session). Local cleanup runs through `bundle.wipe()`, which destroys the live Y.Docs and then calls `wipeLocalStorage({ server: signedIn.server, ownerId: signedIn.ownerId })` to drop every encrypted IDB database for that owner. It is a separate explicit action, not part of sign-out.
+The browser bundle exposes concrete resources like `idb`, `collaboration`, and `entryBodies`. Auth state flows through `session.current`; when present, it carries the Fuji bundle, and pages reach it via the module-level `requireFuji()` exported from `$lib/session` (throws if called without an authenticated session). Local cleanup runs through `bundle.wipe()`, which destroys the live Y.Docs and then calls `wipeLocalStorage({ server: signedIn.server, ownerId: signedIn.ownerId })` to drop every IDB database for that owner. It is a separate explicit action, not part of sign-out.
 
 For a sibling example of the same pattern with Tauri runtime wiring, see `apps/whispering/src/lib/whispering/whispering.tauri.ts`.
 

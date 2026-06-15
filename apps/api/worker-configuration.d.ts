@@ -13,7 +13,6 @@ declare namespace Cloudflare {
 		ASSETS: Fetcher;
 		ADMIN_USER_IDS: '';
 		BETTER_AUTH_SECRET: string;
-		ENCRYPTION_SECRETS: string;
 		GOOGLE_CLIENT_ID: string;
 		GOOGLE_CLIENT_SECRET: string;
 		GITHUB_CLIENT_ID?: string;
@@ -37,7 +36,6 @@ declare namespace NodeJS {
 				Cloudflare.Env,
 				| 'ADMIN_USER_IDS'
 				| 'BETTER_AUTH_SECRET'
-				| 'ENCRYPTION_SECRETS'
 				| 'GOOGLE_CLIENT_ID'
 				| 'GOOGLE_CLIENT_SECRET'
 				| 'OPENAI_API_KEY'

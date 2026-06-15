@@ -40,13 +40,6 @@ const BASE_URL = 'http://localhost:8787';
 const CLIENT_ID = 'epicenter-cli';
 const NOW = 1_700_000_000_000;
 
-const keyring = [
-	{
-		version: 1,
-		keyBytesBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
-	},
-] as const;
-
 const cleanupPaths: string[] = [];
 const cleanupDirs: string[] = [];
 
@@ -169,7 +162,6 @@ function apiSessionOk(userId = 'user-1'): Route {
 		jsonResponse({
 			user: { id: userId, email: `${userId}@example.com` },
 			ownerId: userId,
-			keyring: [...keyring],
 		});
 }
 
@@ -221,12 +213,6 @@ test('loginWithOob writes PersistedAuth and returns identity', async () => {
 		},
 		userId: asUserId('user-1'),
 		ownerId: asOwnerId('user-1'),
-		keyring: [
-			{
-				version: 1,
-				keyBytesBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
-			},
-		],
 	});
 
 	if (process.platform !== 'win32') {
@@ -296,12 +282,6 @@ async function preWriteCell(filePath: string, userId = 'user-1') {
 		},
 		userId: asUserId(userId),
 		ownerId: asOwnerId(userId),
-		keyring: [
-			{
-				version: 1,
-				keyBytesBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
-			},
-		],
 	};
 	await writeCell(filePath, cell);
 	return cell;
@@ -538,7 +518,6 @@ test('createMachineAuthClient loads file and attaches Bearer after gate', async 
 			return jsonResponse({
 				user: { id: 'user-1', email: 'user-1@example.com' },
 				ownerId: 'user-1',
-				keyring: [...keyring],
 			});
 		}
 		if (url.endsWith('/api/something')) {

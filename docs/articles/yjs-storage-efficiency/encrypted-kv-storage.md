@@ -113,21 +113,14 @@ Unique client IDs. Each device that has ever written to the doc leaves a small f
 
 One thing that does *not* make storage grow with `gc:true`: operation history. Edits, deletes, and re-inserts are absorbed by garbage collection. The doc tracks what exists now, not what happened before.
 
-## Run the Benchmarks
+## Historical Note
 
-Both benchmarks are standalone scripts with no dependencies beyond Bun and the workspace package:
-
-```bash
-# Per-entry overhead, tombstone behavior, update costs
-bun run docs/articles/yjs-storage-efficiency/encrypted-kv-benchmark.ts
-
-# 10-year simulation: growing collection, heavy churn, add-then-delete
-bun run docs/articles/yjs-storage-efficiency/encrypted-kv-longevity.ts
-```
+The encrypted benchmark scripts that produced these numbers were removed when
+Epicenter moved to a trusted relay and deleted the client-side encryption layer.
+The results remain here as historical context for the old design.
 
 ---
 
-_Benchmark code: [encrypted-kv-benchmark.ts](./encrypted-kv-benchmark.ts), [encrypted-kv-longevity.ts](./encrypted-kv-longevity.ts)_
 _Tested with: Bun, YJS 13.6.x, XChaCha20-Poly1305 via @noble/ciphers_
 
 **Related:**

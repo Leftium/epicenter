@@ -3,8 +3,8 @@
  *
  * `@epicenter/workspace` attaches typed primitives: tables, KV, plain/rich
  * text, timeline, and an action registry to a `Y.Doc`, then wires the
- * result to IndexedDB persistence, end-to-end encryption, and WebSocket
- * sync via `openCollaboration`. `openCollaboration` also consumes the
+ * result to IndexedDB persistence and WebSocket sync via
+ * `openCollaboration`. `openCollaboration` also consumes the
  * server-owned presence channel and exposes the live-device surface
  * (`devices.list()`) plus socket-backed `dispatch()` for cross-device calls.
  *
@@ -160,7 +160,6 @@ export { debounce } from './shared/debounce.js';
 // DOCUMENT PRIMITIVES
 // ════════════════════════════════════════════════════════════════════════════
 
-export type { Keyring } from '@epicenter/encryption';
 export {
 	createDisposableCache,
 	type DisposableCache,
@@ -207,7 +206,6 @@ export {
 	type TableReadError,
 	type TableScan,
 	type Tables,
-	TableUnreadableError,
 	TableWriteError,
 } from './document/table.js';
 // Transport URL builder.

@@ -48,12 +48,6 @@ const STUB_AUTH = {
 	state: {
 		status: 'signed-in',
 		ownerId: asOwnerId('user-1'),
-		keyring: [
-			{
-				version: 1,
-				keyBytesBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
-			},
-		],
 	},
 	baseURL: 'http://localhost:8787',
 	onStateChange: () => () => {},

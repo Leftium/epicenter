@@ -65,8 +65,8 @@ const SameOriginAuthError = defineErrors({
  * There is no OAuth grant, refresh token, or persisted cell: the browser owns
  * the cookie. Because the httpOnly cookie is invisible to JS, the client cannot
  * know synchronously whether it is signed in; it reads `/api/session` once at
- * construction to confirm, and that response also supplies the `ownerId` and
- * `keyring` the public `AuthState` carries.
+ * construction to confirm, and that response also supplies the `ownerId` the
+ * public `AuthState` carries.
  *
  * This is the cookie-credential sibling of {@link createOAuthAppAuth}, not a
  * mode flag on it: the two are different credential models. Cross-origin and
@@ -102,8 +102,8 @@ export function createSameOriginCookieAuth({
 
 	/**
 	 * Confirm the session by reading `/api/session` with the cookie. A 401/403 is
-	 * signed-out; a 200 installs `signed-in` with the response's `ownerId` and
-	 * `keyring`. Network or parse failures leave the current state, so an offline
+	 * signed-out; a 200 installs `signed-in` with the response's `ownerId`.
+	 * Network or parse failures leave the current state, so an offline
 	 * load keeps the last known projection.
 	 */
 	async function confirmSession() {
@@ -126,7 +126,6 @@ export function createSameOriginCookieAuth({
 			setState({
 				status: 'signed-in',
 				ownerId: session.ownerId,
-				keyring: session.keyring,
 			});
 		} catch {
 			// Malformed body: leave the current state rather than guessing.
@@ -176,10 +175,9 @@ export function createSameOriginCookieAuth({
 				credentials: 'include',
 			});
 			// A 401 means the cookie is gone or expired: go straight to signed-out.
-			// This client never emits `reauth-required`; that state exists to keep a
-			// workspace keyring mounted while an OAuth grant re-authenticates, and a
-			// cookie surface has no keyring to preserve and no separate "reconnect"
-			// path (re-auth is the same hosted sign-in as a fresh login).
+			// This client never emits `reauth-required`; it has no separate
+			// "reconnect" path because re-auth is the same hosted sign-in as a fresh
+			// login.
 			if (response.status === 401 && state.status === 'signed-in') {
 				setState({ status: 'signed-out' });
 			}

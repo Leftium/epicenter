@@ -23,7 +23,6 @@
         "@better-auth/oauth-provider": "catalog:",
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
-        "@epicenter/encryption": "workspace:*",
         "@epicenter/server": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@epicenter/workspace": "workspace:*",
@@ -94,7 +93,6 @@
         "@epicenter/app-shell": "workspace:*",
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
-        "@epicenter/encryption": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/workspace": "workspace:*",
@@ -151,7 +149,6 @@
         "@epicenter/app-shell": "workspace:*",
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
-        "@epicenter/encryption": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/svelte": "workspace:*",
         "@epicenter/workspace": "workspace:*",
@@ -655,7 +652,6 @@
       "version": "0.1.1",
       "dependencies": {
         "@epicenter/constants": "workspace:*",
-        "@epicenter/encryption": "workspace:*",
         "@epicenter/identity": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "arktype": "catalog:",
@@ -728,20 +724,6 @@
         "vite": "catalog:",
       },
     },
-    "packages/encryption": {
-      "name": "@epicenter/encryption",
-      "version": "0.3.0",
-      "dependencies": {
-        "@noble/ciphers": "^2.1.1",
-        "@noble/hashes": "^2.0.1",
-        "arktype": "catalog:",
-        "wellcrafted": "catalog:",
-      },
-      "devDependencies": {
-        "@types/bun": "catalog:",
-        "typescript": "catalog:",
-      },
-    },
     "packages/field": {
       "name": "@epicenter/field",
       "version": "0.3.0",
@@ -780,7 +762,6 @@
       "name": "@epicenter/identity",
       "version": "0.3.0",
       "dependencies": {
-        "@epicenter/encryption": "workspace:*",
         "arktype": "catalog:",
         "wellcrafted": "catalog:",
       },
@@ -797,7 +778,6 @@
         "@better-auth/oauth-provider": "catalog:",
         "@epicenter/auth": "workspace:*",
         "@epicenter/constants": "workspace:*",
-        "@epicenter/encryption": "workspace:*",
         "@epicenter/identity": "workspace:*",
         "@epicenter/sync": "workspace:*",
         "@epicenter/workspace": "workspace:*",
@@ -933,7 +913,6 @@
       "name": "@epicenter/workspace",
       "version": "0.3.0",
       "dependencies": {
-        "@epicenter/encryption": "workspace:*",
         "@epicenter/field": "workspace:*",
         "@epicenter/identity": "workspace:*",
         "@epicenter/sync": "workspace:*",
@@ -1281,8 +1260,6 @@
     "@epicenter/client": ["@epicenter/client@workspace:packages/client"],
 
     "@epicenter/constants": ["@epicenter/constants@workspace:packages/constants"],
-
-    "@epicenter/encryption": ["@epicenter/encryption@workspace:packages/encryption"],
 
     "@epicenter/field": ["@epicenter/field@workspace:packages/field"],
 

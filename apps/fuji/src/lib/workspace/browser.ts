@@ -4,14 +4,14 @@
  * Single source of truth for "how Fuji mounts in a browser." Calls Tier 1
  * primitives inline so every line is visible top-to-bottom:
  *
- *  1. workspace root doc (encrypted tables + KV via createFuji)
+ *  1. workspace root doc (tables + KV via createFuji)
  *  2. local storage + cloud sync for root (attachLocalStorage + openCollaboration)
  *  3. app-owned, typed body cache for per-entry child docs
  *
  * `openCollaboration` owns reconnect-on-auth-change internally, so this file
  * has no per-app onStateChange listener.
  *
- * The bundle's `wipe()` drops every encrypted IDB database for this owner;
+ * The bundle's `wipe()` drops every owner-scoped IDB database;
  * `Symbol.dispose` tears down the root + cached child Y.Docs without touching
  * local storage.
  */
@@ -40,10 +40,10 @@ export function openFujiBrowser({
 	signedIn: SignedIn;
 	deviceId: DeviceId;
 }) {
-	const workspace = createFuji({ keyring: signedIn.keyring });
+	const workspace = createFuji();
 
 	/**
-	 * Attach the browser's local-first providers to a doc: encrypted IndexedDB
+	 * Attach the browser's local-first providers to a doc: IndexedDB
 	 * storage plus a cloud-sync session that waits for local replay before it
 	 * connects (so it never re-uploads a doc before local state has loaded).
 	 * Closes over the signed-in identity and device; the caller passes only the
@@ -56,7 +56,6 @@ export function openFujiBrowser({
 		const idb = attachLocalStorage(ydoc, {
 			server: signedIn.server,
 			ownerId: signedIn.ownerId,
-			keyring: signedIn.keyring,
 		});
 		const collaboration = openCollaboration(ydoc, {
 			url: roomWsUrl({

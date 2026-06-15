@@ -18,7 +18,6 @@ import {
 	generateId,
 	type Id,
 	type InferTableRow,
-	type Keyring,
 	nullable,
 } from '@epicenter/workspace';
 import type { Brand } from 'wellcrafted/brand';
@@ -155,14 +154,10 @@ const toolTrustTable = defineTable({
 	id: field.string(),
 });
 
-/**
- * Build the Tab Manager workspace bundle. Encrypted under the supplied
- * keyring; used by extension entrypoint and the e2e playground daemon.
- */
-export function createTabManager(opts: { keyring: () => Keyring }) {
+/** Build the Tab Manager workspace bundle for the extension and daemon. */
+export function createTabManager() {
 	return createWorkspace({
 		id: TAB_MANAGER_ID,
-		keyring: opts.keyring,
 		tables: {
 			devices: devicesTable,
 			savedTabs: savedTabsTable,

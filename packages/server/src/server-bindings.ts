@@ -25,7 +25,6 @@ export interface ServerBindings {
 	ROOM: DurableObjectNamespace<Room>;
 	ASSETS_BUCKET: R2Bucket;
 	SESSION_KV: KVNamespace;
-	ENCRYPTION_SECRETS: string;
 	BETTER_AUTH_SECRET: string;
 	GOOGLE_CLIENT_ID: string;
 	GOOGLE_CLIENT_SECRET: string;

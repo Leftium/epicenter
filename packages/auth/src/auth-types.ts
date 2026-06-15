@@ -1,4 +1,3 @@
-import { Keyring } from '@epicenter/encryption';
 import { OwnerId } from '@epicenter/identity';
 import { type } from 'arktype';
 import type { Brand } from 'wellcrafted/brand';
@@ -66,10 +65,9 @@ export type OAuthTokenGrant = typeof OAuthTokenGrant.infer;
  * Profile data is intentionally absent; application surfaces fetch it when
  * they display it.
  *
- * `userId`, `ownerId`, and `keyring` are persisted separately from the OAuth
- * grant because they remain useful offline. The grant lets the app call the
- * server; the rest let the app select and decrypt this user's local
- * workspace data.
+ * `userId` and `ownerId` are persisted separately from the OAuth grant because
+ * they remain useful offline. The grant lets the app call the server; the ids
+ * let the app select this user's local workspace data.
  *
  * `userId` is stored explicitly (rather than synthesised from `ownerId`) so
  * the daemon can read it directly in shared mode, where `ownerId` is the
@@ -82,7 +80,6 @@ export const PersistedAuth = type({
 	grant: OAuthTokenGrant,
 	userId: UserId,
 	ownerId: OwnerId,
-	keyring: Keyring,
 });
 
 export type PersistedAuth = typeof PersistedAuth.infer;
@@ -94,13 +91,9 @@ export type PersistedAuth = typeof PersistedAuth.infer;
  *
  * Flat by design: `user` is the Better Auth profile slice displayed in
  * account UI; `ownerId` is the partition key clients use to key local
- * storage and server-side identifiers; `keyring` decrypts local workspace
- * data.
- *
- * `ownerId` and `keyring` are intentionally not nested under an `owner`
- * object: grouping them adds an indirection without earning it, and any
- * future presentational owner facts (display name, avatar, quota) live in
- * dedicated endpoints rather than the session boot manifest.
+ * storage and server-side identifiers. Future presentational owner facts
+ * (display name, avatar, quota) live in dedicated endpoints rather than the
+ * session boot manifest.
  *
  * Deployment shape (personal vs shared) is not carried on the wire; the server
  * is configured with it at construction. Carrying it twice created a
@@ -111,7 +104,6 @@ export const ApiSessionResponse = type({
 	'+': 'delete',
 	user: AuthUser,
 	ownerId: OwnerId,
-	keyring: Keyring,
 });
 
 export type ApiSessionResponse = typeof ApiSessionResponse.infer;

@@ -14,12 +14,6 @@ const cell = PersistedAuth.assert({
 	},
 	userId: 'user-1',
 	ownerId: 'user-1',
-	keyring: [
-		{
-			version: 1,
-			keyBytesBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
-		},
-	],
 });
 
 describe('createWebStoragePersistedAuthStorage', () => {

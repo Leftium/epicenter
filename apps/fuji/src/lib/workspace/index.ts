@@ -41,7 +41,6 @@ import {
 	generateId,
 	type IanaTimeZone,
 	type InferTableRow,
-	type Keyring,
 	nullable,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
@@ -81,14 +80,13 @@ export type Entry = InferTableRow<typeof entriesTable>;
 /**
  * Build a Fuji workspace bundle: `{ ydoc, tables, kv, actions }`.
  *
- * Encrypted under the supplied keyring; the same factory is used in both
- * browser and daemon entrypoints. Entry bodies are separate Y.Docs addressed by
- * `entryContentDocGuid(id)` and opened by runtime-specific code.
+ * The same factory is used in both browser and daemon entrypoints. Entry bodies
+ * are separate Y.Docs addressed by `entryContentDocGuid(id)` and opened by
+ * runtime-specific code.
  */
-export function createFuji(opts: { keyring: () => Keyring }) {
+export function createFuji() {
 	const workspace = createWorkspace({
 		id: FUJI_ID,
-		keyring: opts.keyring,
 		tables: { entries: entriesTable },
 		kv: {},
 	});

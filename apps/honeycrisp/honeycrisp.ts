@@ -27,7 +27,6 @@ import {
 	docGuid,
 	generateId,
 	type InferTableRow,
-	type Keyring,
 	nullable,
 	onLocalUpdate,
 } from '@epicenter/workspace';
@@ -122,13 +121,12 @@ export type Note = InferTableRow<typeof notesTable>;
  * Build a Honeycrisp workspace bundle:
  * `{ ydoc, tables, kv, actions, noteBodyDocs }`.
  *
- * Encrypted under the supplied keyring. Runtime openers attach persistence,
- * sync, materializers, and UI state around this shared model.
+ * Runtime openers attach persistence, sync, materializers, and UI state around
+ * this shared model.
  */
-export function createHoneycrisp(opts: { keyring: () => Keyring }) {
+export function createHoneycrisp() {
 	const workspace = createWorkspace({
 		id: HONEYCRISP_ID,
-		keyring: opts.keyring,
 		tables: { folders: foldersTable, notes: notesTable },
 		kv: {},
 	});

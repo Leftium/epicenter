@@ -324,26 +324,23 @@ const MaterializerWriteError = defineErrors({
 	}),
 	/**
 	 * A `scan()` over a table surfaced entries that will not materialize: rows
-	 * the binary cannot parse, rows from a newer writer, or undecryptable rows.
-	 * The export projects only `scan().rows`; this records what it skipped so the
-	 * gap is in the log rather than silent.
+	 * the binary cannot parse or rows from a newer writer. The export projects
+	 * only `scan().rows`; this records what it skipped so the gap is in the log
+	 * rather than silent.
 	 */
 	NonconformingRowsSkipped: ({
 		tableName,
 		nonconforming,
 		newerWriter,
-		unreadable,
 	}: {
 		tableName: string;
 		nonconforming: number;
 		newerWriter: number;
-		unreadable: number;
 	}) => ({
-		message: `[markdown] "${tableName}" skipped rows that did not materialize: ${nonconforming} nonconforming, ${newerWriter} from a newer writer, ${unreadable} unreadable`,
+		message: `[markdown] "${tableName}" skipped rows that did not materialize: ${nonconforming} nonconforming, ${newerWriter} from a newer writer`,
 		tableName,
 		nonconforming,
 		newerWriter,
-		unreadable,
 	}),
 });
 
@@ -433,14 +430,9 @@ function logSkippedRows(
 	scan: {
 		nonconforming: readonly unknown[];
 		newerWriter: readonly unknown[];
-		unreadable: readonly unknown[];
 	},
 ): void {
-	if (
-		scan.nonconforming.length === 0 &&
-		scan.newerWriter.length === 0 &&
-		scan.unreadable.length === 0
-	) {
+	if (scan.nonconforming.length === 0 && scan.newerWriter.length === 0) {
 		return;
 	}
 	log.warn(
@@ -448,7 +440,6 @@ function logSkippedRows(
 			tableName,
 			nonconforming: scan.nonconforming.length,
 			newerWriter: scan.newerWriter.length,
-			unreadable: scan.unreadable.length,
 		}),
 	);
 }

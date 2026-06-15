@@ -18,6 +18,20 @@ export type BooleanSettingKey = {
 	[K in keyof SettingsValues]: SettingsValues[K] extends boolean ? K : never;
 }[keyof SettingsValues];
 
+/** The stored value type for a given setting key. */
+export type SettingValue<K extends keyof SettingsValues> = SettingsValues[K];
+
+/**
+ * Setting keys whose stored value is a string or number: the keys a
+ * `<SettingSelect>` can drive from a list of options. Boolean keys use
+ * `<SettingSwitch>`; nullable and object-valued keys are not plain dropdowns.
+ */
+export type SelectSettingKey = {
+	[K in keyof SettingsValues]: SettingsValues[K] extends string | number
+		? K
+		: never;
+}[keyof SettingsValues];
+
 function createSettings() {
 	const map = new SvelteMap<string, unknown>();
 

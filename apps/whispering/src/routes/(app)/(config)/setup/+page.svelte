@@ -28,22 +28,24 @@
 
 	const runtime = $derived(getTranscriptionSetupReadiness());
 
-	// Desktop dictation is triggered by the global toggle shortcut, bound by
-	// default. Surface it on the way out so the first thing a finished user
+	// Desktop dictation is triggered by the global push-to-talk shortcut, bound
+	// by default. Surface it on the way out so the first thing a finished user
 	// learns is how to start dictating without coming back to the window.
-	const globalToggleBinding = $derived(
-		deviceConfig.get('shortcuts.global.toggleManualRecording'),
+	const globalRecordingBinding = $derived(
+		deviceConfig.get('shortcuts.global.pushToTalk'),
 	);
-	const globalToggleLabel = $derived(
-		globalToggleBinding ? keyBindingToLabel(globalToggleBinding, os.isApple) : '',
+	const globalRecordingLabel = $derived(
+		globalRecordingBinding
+			? keyBindingToLabel(globalRecordingBinding, os.isApple)
+			: '',
 	);
 
 	function finish() {
 		report.success({
 			title: "You're all set",
 			description:
-				tauri && globalToggleLabel
-					? `Press ${globalToggleLabel} anywhere to dictate.`
+				tauri && globalRecordingLabel
+					? `Hold ${globalRecordingLabel} anywhere to dictate.`
 					: 'Whispering is ready on this device.',
 		});
 		void goto('/');

@@ -1,6 +1,8 @@
 import {
 	cancelRecording,
-	manualRecordingShortcut,
+	startManualRecording,
+	stopManualRecording,
+	toggleManualRecording,
 	toggleVadRecording,
 } from '$lib/operations/recording';
 import { runTransformationOnClipboard } from '$lib/operations/transformation-clipboard';
@@ -40,14 +42,28 @@ type SatisfiedCommand = {
 
 export const commands = [
 	{
-		id: 'toggleManualRecording',
-		title: 'Recording',
-		// One key, both models: tap to toggle, hold to talk. Recording starts on
-		// the press (no latency); the release edge classifies tap vs hold. A click
-		// from an in-app button arrives with no edge (`undefined`), which is the
-		// plain toggle. The state machine lives in $lib/operations/recording.
+		id: 'pushToTalk',
+		title: 'Push to talk',
+		// Hold to record, release to stop. Recording starts on the press and stops
+		// on the release; both the desktop rdev backend and the browser keydown
+		// backend emit this Pressed/Released pair. Stateless: the edges are the
+		// whole state machine, so the routing is glue that lives with the command,
+		// not an operation. Default global key is Fn (macOS) / Ctrl+Win (else).
 		on: ['Pressed', 'Released'],
-		callback: (state?: ShortcutEventState) => manualRecordingShortcut(state),
+		callback: (state?: ShortcutEventState) => {
+			if (state === 'Pressed') return startManualRecording();
+			if (state === 'Released') return stopManualRecording();
+		},
+	},
+	{
+		id: 'toggleManualRecording',
+		title: 'Toggle recording',
+		// Tap to start, tap to stop. This is also what the in-app record button
+		// fires (a click arrives with no edge). Unbound globally by default:
+		// push-to-talk owns the default recording key. Bind a key here for a
+		// hands-free toggle, e.g. for long-form dictation.
+		on: ['Pressed'],
+		callback: () => toggleManualRecording(),
 	},
 	{
 		id: 'cancelRecording',

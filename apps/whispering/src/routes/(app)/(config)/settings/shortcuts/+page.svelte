@@ -82,7 +82,7 @@
 			<SectionHeader.Description class="mt-2">
 				{#if tauri}
 					System-wide gestures that fire from anywhere, even when Whispering is
-					not focused. Tap your recording key to toggle, or hold it to talk.
+					not focused. Hold your recording key to talk, then release to stop.
 					Each gesture needs its own keys, so the recording key cannot be part
 					of another shortcut.
 				{:else}

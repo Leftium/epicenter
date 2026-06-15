@@ -18,6 +18,10 @@ import type { CommandBinding, KeyBinding } from '$lib/tauri/commands';
 
 /** Default values for in-app (local) shortcuts. Keyed by command id string. */
 const DEFAULT_LOCAL_SHORTCUTS = {
+	// Push-to-talk ships unbound in-app: a stray Space-style tap would fire
+	// start+immediate-stop and feed a junk recording to the pipeline, so the safe
+	// in-app default is the toggle below. Bind push-to-talk here if you want it.
+	pushToTalk: null,
 	toggleManualRecording: ' ',
 	cancelRecording: 'c',
 	toggleVadRecording: 'v',

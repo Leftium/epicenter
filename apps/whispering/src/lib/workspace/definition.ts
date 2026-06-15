@@ -312,6 +312,12 @@ const analytics = {
  * `null` = unbound.
  */
 const shortcuts = {
+	// Push-to-talk ships unbound in-app (see register-commands for why); the
+	// in-app record button and the toggle below cover the focused-window case.
+	'shortcut.pushToTalk': defineKv(
+		nullable(field.string()),
+		(): string | null => null,
+	),
 	'shortcut.toggleManualRecording': defineKv(
 		nullable(field.string()),
 		(): string | null => ' ',

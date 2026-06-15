@@ -26,14 +26,15 @@ const globalBinding = type({
 // be a subset of another's (the shorter would fire first and shadow the longer):
 // every default below is a distinct, non-overlapping combo.
 //
-// Recording is ONE key that serves both interaction models: tap it to toggle, hold
-// it to talk. The press/release timing is classified in $lib/operations/recording,
-// so the binding itself is just a single key with no start latency. On Apple
-// keyboards that key is Fn (a single physical key no common shortcut claims);
-// elsewhere it is Ctrl+Win, a held chord that is likewise unclaimed.
+// Push-to-talk is the default recording key: hold it to record, release to stop.
+// It is a single physical key with no start latency. On Apple keyboards that key
+// is Fn (a single physical key no common shortcut claims); elsewhere it is
+// Ctrl+Win, a held chord that is likewise unclaimed. Tap-to-toggle is a separate
+// command that ships unbound (the in-app record button is its home); bind a key
+// for it in settings if you want a hands-free toggle.
 //
-//   macOS:   Fn = recording,        Cmd + .          = cancel
-//   Windows: Ctrl+Win = recording,  Ctrl + Shift + . = cancel
+//   macOS:   Fn = push-to-talk,        Cmd + .          = cancel
+//   Windows: Ctrl+Win = push-to-talk,  Ctrl + Shift + . = cancel
 //
 // Cancel is the platform cancel chord (Cmd + . on macOS, the system cancel gesture
 // since classic Mac OS; Ctrl + Shift + . elsewhere); it carries a modifier so it is
@@ -49,7 +50,8 @@ const CANCEL_MODIFIERS: KeyBinding['modifiers'] = os.isApple
 	: ['ctrl', 'shift'];
 
 export const DEFAULT_GLOBAL_BINDINGS = {
-	toggleManualRecording: { modifiers: RECORDING_MODIFIERS, keys: [] },
+	pushToTalk: { modifiers: RECORDING_MODIFIERS, keys: [] },
+	toggleManualRecording: null,
 	cancelRecording: { modifiers: CANCEL_MODIFIERS, keys: ['dot'] },
 	toggleVadRecording: null,
 	openTransformationPicker: null,
@@ -141,6 +143,10 @@ const DEVICE_DEFINITIONS = {
 	// Structured KeyBinding (physical-key space) for the rdev backend. Old
 	// accelerator-string values are not migrated: they fail this schema and reset
 	// to the defaults (clean break, see the note below the singleton).
+	'shortcuts.global.pushToTalk': defineEntry(
+		globalBinding,
+		DEFAULT_GLOBAL_BINDINGS.pushToTalk,
+	),
 	'shortcuts.global.toggleManualRecording': defineEntry(
 		globalBinding,
 		DEFAULT_GLOBAL_BINDINGS.toggleManualRecording,

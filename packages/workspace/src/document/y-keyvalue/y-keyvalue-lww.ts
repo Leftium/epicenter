@@ -151,7 +151,7 @@
 import type * as Y from 'yjs';
 import { lazy } from './lazy.js';
 import type {
-	KvRead,
+	KvEntry,
 	KvStoreChange,
 	KvStoreChangeHandler,
 	ObservableKvStore,
@@ -163,8 +163,8 @@ import type {
  * Field names are intentionally short (`val`, `ts`) to minimize serialized storage size -
  * these entries are persisted and synced.
  *
- * Storage-only type: `ts` is internal. The public `ObservableKvStore.reads()`
- * surfaces only `val` (wrapped in a `present` read), never `ts`.
+ * Storage-only type: `ts` is internal. The public `ObservableKvStore.entries()`
+ * surfaces only `key` and `val`.
  */
 export type YKeyValueLwwEntry<T> = { key: string; val: T; ts: number };
 
@@ -194,7 +194,7 @@ export type YKeyValueLwwEntry<T> = { key: string; val: T; ts: number };
  * conflicts. `delete()` and `bulkDelete()` only remove entries, so there are no conflicts.
  * DEDUP_ORIGIN is only relevant for the conflict-resolution path.
  *
- * Follows the same pattern as REENCRYPT_ORIGIN in the encrypted wrapper.
+ * Keeps the observer from re-processing its own cleanup transaction.
  */
 const DEDUP_ORIGIN = Symbol('dedup');
 
@@ -211,9 +211,9 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	/**
 	 * Read-only view of the in-memory index for O(1) key lookups.
 	 *
-	 * Written exclusively by the observer and constructor. External consumers
-	 * (e.g. the encrypted wrapper) read via iteration, `.get()`, and `.size`.
-	 * The `set()` method never writes to this map. The observer is the sole writer.
+	 * Written exclusively by the observer and constructor. External consumers read
+	 * via iteration, `.get()`, and `.size`. The `set()` method never writes to
+	 * this map. The observer is the sole writer.
 	 *
 	 * @see pending for how immediate reads work after `set()`
 	 */
@@ -721,8 +721,8 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	 *
 	 * Removes from `pending` immediately and triggers Y.Array deletion.
 	 * The observer will update `map` when the deletion is processed.
-	 * Adds the key to `pendingDeletes` so that `read()`, `get()`, `has()`, and
-	 * `reads()` return correct results before the observer fires.
+	 * Adds the key to `pendingDeletes` so that `get()`, `has()`, and `entries()`
+	 * return correct results before the observer fires.
 	 */
 	delete(key: string): void {
 		// Remove from pending if present. If it was pending, the entry is in the
@@ -795,73 +795,56 @@ export class YKeyValueLww<T> implements ObservableKvStore<T>, Disposable {
 	}
 
 	/**
-	 * Resolve a key into `absent` or `present`. O(1) via in-memory Map.
+	 * Get value by key. O(1) via in-memory Map.
 	 *
-	 * A plaintext store has no encryption layer, so it never returns
-	 * `unreadable`: every stored entry yields its value. Checks `pendingDeletes`
-	 * first (a key deleted but not yet observed reads `absent`, even if a stale
-	 * write still sits in `pending`), then `pending` (values written by `set()`
-	 * but not yet processed by the observer), then `map` (the authoritative
-	 * cache). `get()` and `has()` derive from this.
+	 * Checks `pendingDeletes` first (a key deleted but not yet observed reads
+	 * absent, even if a stale write still sits in `pending`), then `pending`
+	 * (values written by `set()` but not yet processed by the observer), then
+	 * `map` (the authoritative cache).
 	 */
-	read(key: string): KvRead<T> {
+	get(key: string): T | undefined {
 		// Deleted but observer hasn't fired yet.
-		if (this.pendingDeletes.has(key)) return { state: 'absent' };
+		if (this.pendingDeletes.has(key)) return undefined;
 
 		// Written by set() but observer hasn't fired yet.
 		const pending = this.pending.get(key);
-		if (pending) return { state: 'present', val: pending.val };
+		if (pending) return pending.val;
 
 		const entry = this._map.get(key);
-		if (entry) return { state: 'present', val: entry.val };
-
-		return { state: 'absent' };
+		return entry?.val;
 	}
 
-	/** Get value by key. O(1). The `present` value of {@link read}, else `undefined`. */
-	get(key: string): T | undefined {
-		const read = this.read(key);
-		return read.state === 'present' ? read.val : undefined;
-	}
-
-	/**
-	 * Whether a key is stored. O(1). Raw existence: "not `absent`" per
-	 * {@link read}. Plaintext stores have no `unreadable` state, so this is
-	 * simply "present," and it agrees with `size`.
-	 */
+	/** Whether a key has a stored value. O(1). Equivalent to `get(key) !== undefined`. */
 	has(key: string): boolean {
-		return this.read(key).state !== 'absent';
+		return this.get(key) !== undefined;
 	}
 
 	/**
-	 * Walk every stored entry (both pending and confirmed), each `present`. A
-	 * plaintext store has no encryption layer, so it never yields `unreadable`;
-	 * the return type narrows to `present` only, which the encrypted wrapper
-	 * relies on when it composes over this store (every inner value is a value,
-	 * never a missing key). `pending` takes precedence over `map` for keys in
-	 * both, so reads inside an open transaction see just-written values.
+	 * Walk every stored entry (both pending and confirmed). `pending` takes
+	 * precedence over `map` for keys in both, so reads inside an open transaction
+	 * see just-written values.
 	 *
 	 * @example
 	 * ```typescript
-	 * for (const [key, read] of kv.reads()) {
-	 *   console.log(key, read.val);
+	 * for (const { key, val } of kv.entries()) {
+	 *   console.log(key, val);
 	 * }
 	 * ```
 	 */
-	*reads(): IterableIterator<[string, { state: 'present'; val: T }]> {
+	*entries(): IterableIterator<KvEntry<T>> {
 		// Track keys we've already yielded from pending
 		const yieldedKeys = new Set<string>();
 
 		// Yield pending entries first (they take precedence)
 		for (const [key, entry] of this.pending) {
 			yieldedKeys.add(key);
-			yield [key, { state: 'present', val: entry.val }];
+			yield { key, val: entry.val };
 		}
 
 		// Yield map entries that weren't in pending and aren't pending delete
 		for (const [key, entry] of this._map) {
 			if (!yieldedKeys.has(key) && !this.pendingDeletes.has(key)) {
-				yield [key, { state: 'present', val: entry.val }];
+				yield { key, val: entry.val };
 			}
 		}
 	}

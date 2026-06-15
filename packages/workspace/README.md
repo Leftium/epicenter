@@ -790,8 +790,8 @@ if (error) {
 
 | Method | Return type | Notes |
 | --- | --- | --- |
-| `get(id)` | `Result<TRow \| null, TableReadError>` | `data: null` for "not found"; `error` for a parse failure, a newer-writer row, or an unreadable (undecryptable) row |
-| `scan()` | `TableScan<TRow>` | Classified read: `{ rows, nonconforming, newerWriter, unreadable }`; the four buckets sum to `storedCount()` |
+| `get(id)` | `Result<TRow \| null, TableReadError>` | `data: null` for "not found"; `error` for a parse failure or a newer-writer row |
+| `scan()` | `TableScan<TRow>` | Classified read: `{ rows, nonconforming, newerWriter }`; the three buckets sum to `storedCount()` |
 | `findValid(predicate)` | `TRow \| undefined` | First valid match |
 | `has(id)` | `boolean` | Existence only |
 | `storedCount()` | `number` | Counts every stored row |
@@ -804,8 +804,7 @@ if (error) {
 	console.log(row.title);
 }
 
-const { rows, nonconforming, newerWriter, unreadable } =
-	workspace.tables.posts.scan();
+const { rows, nonconforming, newerWriter } = workspace.tables.posts.scan();
 const published = rows.filter((row) => row.published);
 const firstPublished = workspace.tables.posts.findValid((row) => row.published);
 const hasPostTwo = workspace.tables.posts.has('2');

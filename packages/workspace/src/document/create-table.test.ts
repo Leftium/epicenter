@@ -133,11 +133,10 @@ describe('createTable', () => {
 			yarray.push([{ key: '2', val: { id: '2', name: 999, _v: 1 }, ts: 0 }]); // invalid: name type
 			yarray.push([{ key: '3', val: { id: '3', _v: 1 }, ts: 0 }]); // invalid: missing name
 
-			const { rows, nonconforming, newerWriter, unreadable } = helper.scan();
+			const { rows, nonconforming, newerWriter } = helper.scan();
 			expect(rows).toEqual([{ id: '1', name: 'Valid' }]);
 			expect(nonconforming.map((r) => r.id).sort()).toEqual(['2', '3']);
 			expect(newerWriter).toEqual([]);
-			expect(unreadable).toEqual([]);
 		});
 	});
 

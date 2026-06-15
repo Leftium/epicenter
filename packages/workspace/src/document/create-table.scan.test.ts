@@ -2,9 +2,9 @@
  * Classified Scan Surface Tests
  *
  * Verifies `scan()`: the single O(n) read that resolves every stored entry
- * into one of four buckets (`rows`, `nonconforming`, `newerWriter`,
- * `unreadable`). Rows never silently vanish into a valid-only skip branch; the
- * issue buckets ride along in the same return value.
+ * into one of three buckets (`rows`, `nonconforming`, `newerWriter`). Rows
+ * never silently vanish into a valid-only skip branch; the issue buckets ride
+ * along in the same return value.
  *
  * Key behaviors:
  * - conforming rows land in `rows`; the issue buckets stay empty
@@ -45,7 +45,7 @@ describe('scan', () => {
 		table.set({ id: '1', title: 'a' });
 		table.set({ id: '2', title: 'b' });
 
-		const { rows, nonconforming, newerWriter, unreadable } = table.scan();
+		const { rows, nonconforming, newerWriter } = table.scan();
 
 		expect(rows).toEqual([
 			{ id: '1', title: 'a' },
@@ -53,7 +53,6 @@ describe('scan', () => {
 		]);
 		expect(nonconforming).toEqual([]);
 		expect(newerWriter).toEqual([]);
-		expect(unreadable).toEqual([]);
 	});
 
 	test('validation failures land in nonconforming with the raw row attached', () => {

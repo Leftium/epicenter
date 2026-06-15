@@ -59,26 +59,23 @@ const SqliteMaterializerError = defineErrors({
 	}),
 	/**
 	 * A full-load `scan()` surfaced entries that will not mirror into SQLite:
-	 * rows the binary cannot parse, rows from a newer writer, or undecryptable
-	 * rows. The full load mirrors only `scan().rows`; this records what it
-	 * skipped so the gap is in the log rather than silent.
+	 * rows the binary cannot parse or rows from a newer writer. The full load
+	 * mirrors only `scan().rows`; this records what it skipped so the gap is in
+	 * the log rather than silent.
 	 */
 	NonconformingRowsSkipped: ({
 		tableName,
 		nonconforming,
 		newerWriter,
-		unreadable,
 	}: {
 		tableName: string;
 		nonconforming: number;
 		newerWriter: number;
-		unreadable: number;
 	}) => ({
-		message: `[sqlite-materializer] "${tableName}" skipped rows that did not mirror: ${nonconforming} nonconforming, ${newerWriter} from a newer writer, ${unreadable} unreadable`,
+		message: `[sqlite-materializer] "${tableName}" skipped rows that did not mirror: ${nonconforming} nonconforming, ${newerWriter} from a newer writer`,
 		tableName,
 		nonconforming,
 		newerWriter,
-		unreadable,
 	}),
 });
 
@@ -190,17 +187,12 @@ export function attachSqliteMaterializerCore<
 
 	async function fullLoadTable(tableName: string, table: AnyTable) {
 		const scan = table.scan();
-		if (
-			scan.nonconforming.length > 0 ||
-			scan.newerWriter.length > 0 ||
-			scan.unreadable.length > 0
-		) {
+		if (scan.nonconforming.length > 0 || scan.newerWriter.length > 0) {
 			log.warn(
 				SqliteMaterializerError.NonconformingRowsSkipped({
 					tableName,
 					nonconforming: scan.nonconforming.length,
 					newerWriter: scan.newerWriter.length,
-					unreadable: scan.unreadable.length,
 				}),
 			);
 		}

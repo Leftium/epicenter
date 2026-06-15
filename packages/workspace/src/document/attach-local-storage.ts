@@ -22,6 +22,7 @@
  * @module
  */
 
+import type { Keyring } from '@epicenter/encryption';
 import type { OwnerId } from '@epicenter/identity';
 import type * as Y from 'yjs';
 import { attachBroadcastChannel } from './attach-broadcast-channel.js';
@@ -53,6 +54,12 @@ export function attachLocalStorage(
 	options: {
 		server: string;
 		ownerId: OwnerId;
+		/**
+		 * Retained during the trusted-relay migration so callers can be updated
+		 * in a later pass. Persistence is plaintext now; this callback is no
+		 * longer read.
+		 */
+		keyring?: () => Keyring;
 	},
 ): IndexedDbAttachment {
 	const databaseName = createOwnedYjsKey(

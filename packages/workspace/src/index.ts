@@ -207,7 +207,6 @@ export {
 	type TableReadError,
 	type TableScan,
 	type Tables,
-	TableUnreadableError,
 	TableWriteError,
 } from './document/table.js';
 // Transport URL builder.

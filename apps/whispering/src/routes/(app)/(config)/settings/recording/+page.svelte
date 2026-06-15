@@ -3,7 +3,6 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Field from '@epicenter/ui/field';
 	import { Link } from '@epicenter/ui/link';
-	import * as Select from '@epicenter/ui/select';
 	import InfoIcon from '@lucide/svelte/icons/info';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { mutationOptions } from 'wellcrafted/query';
@@ -24,19 +23,6 @@
 	import ManualSelectRecordingDevice from './ManualSelectRecordingDevice.svelte';
 	import VadSelectRecordingDevice from './VadSelectRecordingDevice.svelte';
 
-	// Derived labels for select triggers
-	const sampleRateLabel = $derived(
-		SAMPLE_RATE_OPTIONS.find(
-			(o) => o.value === deviceConfig.get('recording.cpal.sampleRate'),
-		)?.label,
-	);
-
-	const bitrateLabel = $derived(
-		BITRATE_OPTIONS.find(
-			(o) => o.value === deviceConfig.get('recording.navigator.bitrateKbps'),
-		)?.label,
-	);
-
 	const exportMarkdown = createMutation(() =>
 		mutationOptions({
 			mutationKey: ['recordings', 'exportMarkdown'],
@@ -55,6 +41,7 @@
 	<Field.Separator />
 	<Field.Group>
 		<SettingSelect
+			store={settings}
 			key="recording.mode"
 			label="Recording Mode"
 			items={RECORDING_MODE_OPTIONS}
@@ -166,57 +153,21 @@
 
 		{#if settings.get('recording.mode') === 'manual'}
 			{#if !tauri}
-				<Field.Field>
-					<Field.Label for="bit-rate">Bitrate</Field.Label>
-					<Select.Root
-						type="single"
-						bind:value={() => deviceConfig.get('recording.navigator.bitrateKbps'),
-							(selected) => {
-								if (selected)
-									deviceConfig.set(
-										'recording.navigator.bitrateKbps',
-										selected,
-									);
-							}}
-					>
-						<Select.Trigger id="bit-rate" class="w-full">
-							{bitrateLabel ?? 'Select a bitrate'}
-						</Select.Trigger>
-						<Select.Content>
-							{#each BITRATE_OPTIONS as item}
-								<Select.Item value={item.value} label={item.label} />
-							{/each}
-						</Select.Content>
-					</Select.Root>
-					<Field.Description>
-						The bitrate of the recording. Higher values mean better quality but
-						larger file sizes.
-					</Field.Description>
-				</Field.Field>
+				<SettingSelect
+					store={deviceConfig}
+					key="recording.navigator.bitrateKbps"
+					label="Bitrate"
+					items={BITRATE_OPTIONS}
+					description="The bitrate of the recording. Higher values mean better quality but larger file sizes."
+				/>
 			{:else}
-				<Field.Field>
-					<Field.Label for="sample-rate">Sample Rate</Field.Label>
-					<Select.Root
-						type="single"
-						bind:value={() => deviceConfig.get('recording.cpal.sampleRate'),
-							(selected) => {
-								if (selected)
-									deviceConfig.set('recording.cpal.sampleRate', selected);
-							}}
-					>
-						<Select.Trigger id="sample-rate" class="w-full">
-							{sampleRateLabel ?? 'Select sample rate'}
-						</Select.Trigger>
-						<Select.Content>
-							{#each SAMPLE_RATE_OPTIONS as item}
-								<Select.Item value={item.value} label={item.label} />
-							{/each}
-						</Select.Content>
-					</Select.Root>
-					<Field.Description>
-						Higher sample rates provide better quality but create larger files
-					</Field.Description>
-				</Field.Field>
+				<SettingSelect
+					store={deviceConfig}
+					key="recording.cpal.sampleRate"
+					label="Sample Rate"
+					items={SAMPLE_RATE_OPTIONS}
+					description="Higher sample rates provide better quality but create larger files"
+				/>
 			{/if}
 		{/if}
 	</Field.Group>

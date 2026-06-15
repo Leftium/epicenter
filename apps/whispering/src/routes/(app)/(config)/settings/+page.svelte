@@ -29,13 +29,15 @@
 		}
 	});
 
-	const maxRecordingItems = [
+	// Values stay `number` (not literals): `retention.maxCount` is a
+	// `field.integer`, so SettingSelect infers its value type from these options.
+	const maxRecordingItems: { value: number; label: string }[] = [
 		{ value: 5, label: '5 Recordings' },
 		{ value: 10, label: '10 Recordings' },
 		{ value: 25, label: '25 Recordings' },
 		{ value: 50, label: '50 Recordings' },
 		{ value: 100, label: '100 Recordings' },
-	] as const;
+	];
 
 	// Autostart is Tauri-only; on web `tauri` is null and the query stays
 	// disabled (default value `false`).
@@ -131,6 +133,7 @@
 		<Field.Separator />
 
 		<SettingSelect
+			store={settings}
 			key="retention.strategy"
 			label="Auto Delete Recordings"
 			items={retentionItems}
@@ -139,6 +142,7 @@
 
 		{#if settings.get('retention.strategy') === 'limit-count'}
 			<SettingSelect
+				store={settings}
 				key="retention.maxCount"
 				label="Maximum Recordings"
 				items={maxRecordingItems}
@@ -173,6 +177,7 @@
 				/>
 			</Field.Field>
 			<SettingSelect
+				store={settings}
 				key="ui.alwaysOnTop"
 				label="Always On Top"
 				items={ALWAYS_ON_TOP_MODE_OPTIONS}

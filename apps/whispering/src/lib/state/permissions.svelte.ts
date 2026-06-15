@@ -1,4 +1,5 @@
 import { on } from 'svelte/events';
+import { Ok } from 'wellcrafted/result';
 import { os } from '#platform/os';
 import { tauri } from '#platform/tauri';
 import { report } from '$lib/report';
@@ -71,6 +72,16 @@ function createPermissions() {
 				return;
 			}
 			accessibility = data ? 'granted' : 'denied';
+		},
+
+		/**
+		 * Open System Settings to the Accessibility pane. A pass-through to the
+		 * platform (no state change); returns the Result so callers can fall back
+		 * to manual instructions when the deep-link fails.
+		 */
+		openAccessibilitySettings() {
+			if (!tauri) return Ok(undefined);
+			return tauri.permissions.accessibility.openSettings();
 		},
 
 		/** Prompt for Microphone. */

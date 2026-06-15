@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Dialog from '@epicenter/ui/dialog';
-	import { toast } from '@epicenter/ui/sonner';
 	// import { extension } from '@epicenter/extension';
 	import { onDestroy, onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { commandCallbacks } from '$lib/commands';
+	import { report } from '$lib/report';
 	import { os } from '#platform/os';
 	import MoreDetailsDialog from '$lib/components/MoreDetailsDialog.svelte';
 	import UpdateDialog from '$lib/components/UpdateDialog.svelte';
@@ -44,10 +44,11 @@
 		if (!tauri) return;
 		const status = await tauri.globalShortcuts.start();
 		if (status === 'waylandUnsupported') {
-			toast.warning('Global shortcuts unavailable on Wayland', {
+			report.warning({
+				id: 'wayland-unsupported',
+				title: 'Global shortcuts unavailable on Wayland',
 				description:
 					'Whispering needs an X11 session for global shortcuts. On Wayland, bind them through your desktop environment.',
-				duration: Number.POSITIVE_INFINITY,
 			});
 		}
 	}
@@ -112,7 +113,7 @@
 		if (permissions.accessibility === 'checking') return;
 		if (deviceConfig.get('setup.completed')) return;
 
-		const readiness = getSetupReadiness(permissions);
+		const readiness = getSetupReadiness();
 		if (readiness.canFinish) {
 			deviceConfig.set('setup.completed', true);
 			return;
@@ -139,14 +140,14 @@
 			!deviceConfig.get('setup.completed') ||
 			onPermissionSurface
 		) {
-			toast.dismiss('accessibility-regrant');
+			report.dismiss('accessibility-regrant');
 			return;
 		}
-		toast.warning('Accessibility access needed', {
+		report.warning({
 			id: 'accessibility-regrant',
+			title: 'Accessibility access needed',
 			description:
 				'Whispering needs Accessibility access to listen for global shortcuts and paste transcripts.',
-			duration: Number.POSITIVE_INFINITY,
 			action: {
 				label: 'View Guide',
 				onClick: () => goto('/macos-enable-accessibility'),

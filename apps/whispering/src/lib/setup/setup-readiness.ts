@@ -4,7 +4,7 @@ import type { Command } from '$lib/commands';
 import { toggleCommandIdForMode } from '$lib/constants/audio';
 import { getTranscriptionSetupReadiness } from '$lib/settings/transcription-validation';
 import { deviceConfig } from '$lib/state/device-config.svelte';
-import type { PermissionStatus } from '$lib/state/permissions.svelte';
+import { permissions } from '$lib/state/permissions.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { isEmptyBinding } from '$lib/utils/key-binding';
 
@@ -17,12 +17,6 @@ function hasGlobalBinding(id: Command['id']): boolean {
 	return binding != null && !isEmptyBinding(binding);
 }
 
-/** Probed macOS permission state, read from the permissions owner. */
-type ProbedPermissions = {
-	microphone: PermissionStatus;
-	accessibility: PermissionStatus;
-};
-
 export type SetupReadiness = {
 	runtimeReady: boolean;
 	accessReady: boolean;
@@ -34,12 +28,10 @@ export type SetupReadiness = {
 
 /**
  * Whether each setup step is satisfied, plus the one issue worth surfacing.
- * Permissions are passed in (not read here) so this stays a pure function of the
- * wizard's reactive probe state.
+ * Reads the live settings, device config, and permission owner; safe to call
+ * inside an effect since every input is reactive.
  */
-export function getSetupReadiness(
-	permissions: ProbedPermissions,
-): SetupReadiness {
+export function getSetupReadiness(): SetupReadiness {
 	const runtime = getTranscriptionSetupReadiness();
 	const runtimeReady = runtime.isReady;
 

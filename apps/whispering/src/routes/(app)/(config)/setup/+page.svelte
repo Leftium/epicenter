@@ -33,7 +33,7 @@
 	// focus); the wizard only adds its own practice-success flag on top.
 	let practiceSucceeded = $state(false);
 
-	const readiness = $derived(getSetupReadiness(permissions));
+	const readiness = $derived(getSetupReadiness());
 
 	const steps = $derived([
 		{

@@ -9,7 +9,6 @@
 	import { goto } from '$app/navigation';
 	import MacosAccessibilityGuide from '$lib/components/MacosAccessibilityGuide.svelte';
 	import { permissions } from '$lib/state/permissions.svelte';
-	import { tauri } from '#platform/tauri';
 
 	// Read the live grant from the owner: it re-checks on window focus, so this
 	// page flips to the granted state the moment the user returns from System
@@ -17,9 +16,8 @@
 	const isGranted = $derived(permissions.accessibilityGranted);
 
 	async function openSystemSettings() {
-		if (!tauri) return;
 		const { error: commandError } =
-			await tauri.permissions.accessibility.openSettings();
+			await permissions.openAccessibilitySettings();
 
 		if (commandError) {
 			console.error('Failed to open System Settings:', commandError);

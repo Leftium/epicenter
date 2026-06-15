@@ -14,4 +14,5 @@ export const APP_MODELS = [
 	'gpt-5.5',
 ] as const satisfies readonly ServableModel[];
 
-export const DEFAULT_MODEL = 'gpt-5.4-mini' satisfies ServableModel;
+/** The model a new conversation starts on: the first offered model. */
+export const DEFAULT_MODEL = APP_MODELS[0];

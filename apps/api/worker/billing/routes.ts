@@ -8,7 +8,7 @@
  * be mounted without it.
  */
 
-import { MODEL_CREDITS, providerOf } from '@epicenter/constants/ai-providers';
+import { AI_MODELS, providerOf } from '@epicenter/constants/ai-providers';
 import type { Env } from '@epicenter/server';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
@@ -90,13 +90,11 @@ billingRoutes.post(
 billingRoutes.get('/plans', async (c) => c.json(await svc(c).listPlans()));
 
 billingRoutes.get('/models', (c) => {
-	const models = Object.entries(MODEL_CREDITS)
-		.map(([model, credits]) => ({
-			model,
-			provider: providerOf(model),
-			credits,
-		}))
-		.sort((a, b) => a.credits - b.credits || a.model.localeCompare(b.model));
+	const models = AI_MODELS.map((entry) => ({
+		model: entry.id,
+		provider: providerOf(entry.id),
+		credits: entry.credits,
+	})).sort((a, b) => a.credits - b.credits || a.model.localeCompare(b.model));
 	return c.json({ models } satisfies ModelCostGuide);
 });
 

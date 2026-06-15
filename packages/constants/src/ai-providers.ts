@@ -12,9 +12,6 @@
 import type { GeminiTextModels } from '@tanstack/ai-gemini';
 import type { OPENAI_CHAT_MODELS } from '@tanstack/ai-openai';
 
-export const SERVABLE_PROVIDERS = ['openai', 'gemini'] as const;
-export type ServableProvider = (typeof SERVABLE_PROVIDERS)[number];
-
 type OpenAiModel = (typeof OPENAI_CHAT_MODELS)[number];
 type GeminiModel = (typeof GeminiTextModels)[number];
 
@@ -54,19 +51,9 @@ export const MODELS_BY_ID = Object.fromEntries(
 	AI_MODELS.map((model) => [model.id, model]),
 ) as Record<ServableModel, AiModel>;
 
-/** Per-model credit cost. Models absent from this map are not servable. */
-export const MODEL_CREDITS = Object.fromEntries(
-	AI_MODELS.map((model) => [model.id, model.credits]),
-) as Record<ServableModel, number>;
-
-/** Per-model provider, for adapter routing and usage grouping. */
-export const MODEL_PROVIDERS = Object.fromEntries(
-	AI_MODELS.map((model) => [model.id, model.provider]),
-) as Record<ServableModel, ServableProvider>;
-
-/** Coarse provider classification used by the dashboard model-cost table. */
+/** Coarse provider label for the dashboard model-cost table. */
 export function providerOf(model: string): 'OpenAI' | 'Google' | 'Unknown' {
-	const provider = MODEL_PROVIDERS[model as ServableModel];
+	const provider = MODELS_BY_ID[model as ServableModel]?.provider;
 	if (provider === 'openai') return 'OpenAI';
 	if (provider === 'gemini') return 'Google';
 	return 'Unknown';

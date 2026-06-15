@@ -15,7 +15,7 @@ import {
 } from 'opensidian';
 import type { OpensidianBrowser } from 'opensidian/browser';
 import { SvelteMap } from 'svelte/reactivity';
-import { DEFAULT_MODEL } from '$lib/chat/providers';
+import { DEFAULT_MODEL } from '$lib/chat/models';
 import {
 	buildGlobalSkillsPrompt,
 	buildVaultSkillsPrompt,

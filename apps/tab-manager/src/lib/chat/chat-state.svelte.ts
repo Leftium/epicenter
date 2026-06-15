@@ -35,7 +35,7 @@ import {
 	type ModelChoice,
 	setModelChoice,
 } from '$lib/chat/persistence';
-import { DEFAULT_MODEL } from '$lib/chat/providers';
+import { DEFAULT_MODEL } from '$lib/chat/models';
 import {
 	buildDeviceConstraints,
 	TAB_MANAGER_SYSTEM_PROMPT,

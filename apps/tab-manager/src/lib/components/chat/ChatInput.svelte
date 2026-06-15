@@ -5,7 +5,7 @@
 	import { Textarea } from '@epicenter/ui/textarea';
 	import SendIcon from '@lucide/svelte/icons/send';
 	import SquareIcon from '@lucide/svelte/icons/square';
-	import { APP_MODELS } from '$lib/chat/providers';
+	import { APP_MODELS } from '$lib/chat/models';
 	import type { ConversationHandle } from '$lib/chat/chat-state.svelte';
 
 	let {

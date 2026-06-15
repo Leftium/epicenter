@@ -30,18 +30,15 @@ We want self-hosting adapters. The plan is to stabilize the API surface on Durab
 
 Better Auth handles identity: email/password and Google OAuth for sign-in, plus an OAuth provider plugin that turns the hub into a standards-compliant OAuth server. Desktop and mobile clients authenticate via OAuth/PKCE flows, get a token, and use it for all subsequent API calls and WebSocket connections.
 
-## Encryption and trust model
+## Trust model
 
-Workspace data is encrypted at the CRDT level using XChaCha20-Poly1305 via @noble/ciphers (audited by Cure53). The encryption wraps YKeyValueLww, a synchronous layer that encrypts individual values within the data structure itself. Durable Objects see the CRDT skeleton (key names like `tab-1`, timestamps for conflict resolution) but every value is an opaque ciphertext blob: `[formatVersion(1) ‖ keyVersion(1) ‖ nonce(24) ‖ ciphertext ‖ tag(16)]`. Yjs `writeAny` serializes `Uint8Array` natively as binary (type tag 116), so there is no base64 overhead.
+Epicenter Cloud is operated by Epicenter, so Epicenter infrastructure is inside
+the trust boundary for hosted data. `BETTER_AUTH_SECRET` signs auth cookies,
+tokens, and OAuth state; it is not a workspace encryption root.
 
-The workspace encryption key derives from `ENCRYPTION_SECRETS`, not from Better Auth's auth secret. This is server-managed, deployment-level encryption: the same model used by Notion, Linear, and most SaaS products, but applied deeper (individual CRDT values rather than database-level). Better Auth keeps using `BETTER_AUTH_SECRET` for auth cookies, tokens, and OAuth state. The server can decrypt workspace data to power search indexing, AI summarization, and password recovery.
-
-| Deployment | Key source | Who can decrypt | Trade-off |
-|---|---|---|---|
-| Epicenter Cloud | Derived from deployment secret | Epicenter infrastructure | Enables search, AI, password reset, device migration |
-| Self-hosted | Same derivation, your secret | Only you | Functionally zero-knowledge. The key never leaves your infra |
-
-Self-hosting makes this zero-knowledge in practice. The encryption key sits on a machine you control; Epicenter never sees it. Same binary, same API surface. The deployment is the trust boundary.
+Self-hosted deployments move the trust boundary to infrastructure the deployer
+operates. Epicenter never holds or sees data stored in a self-hosted deployment,
+so self-hosting is functionally zero-knowledge against Epicenter.
 
 ### Why not zero-knowledge?
 

@@ -9,7 +9,6 @@
 			"@epicenter/sync",
 			"@epicenter/filesystem",
 			"@epicenter/skills",
-			"@epicenter/encryption",
 			"@epicenter/field",
 			"@epicenter/identity"
 		]

@@ -16,41 +16,11 @@ on:
         type: string
 
 jobs:
-  # Job to clean up existing release assets before building
-  cleanup-release:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
-    permissions:
-      contents: write
-    steps:
-      - name: Delete existing release assets
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.event.inputs.tag || github.ref_name }}
-          REPO: ${{ github.repository }}
-        run: |
-          echo "Cleaning up assets for release: $TAG"
-
-          # Get release ID
-          RELEASE_ID=$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.id' 2>/dev/null || echo "")
-
-          if [ -n "$RELEASE_ID" ]; then
-            echo "Found release ID: $RELEASE_ID"
-
-            # Get all assets and delete them
-            ASSETS=$(gh api "repos/$REPO/releases/$RELEASE_ID/assets" --jq '.[].id' 2>/dev/null || echo "")
-
-            for ASSET_ID in $ASSETS; do
-              echo "Deleting asset: $ASSET_ID"
-              gh api -X DELETE "repos/$REPO/releases/assets/$ASSET_ID" || true
-            done
-
-            echo "Cleanup complete"
-          else
-            echo "No existing release found for $TAG, skipping cleanup"
-          fi
-
+  # tauri-action (below) overwrites same-named assets after each successful
+  # build, so re-running a release replaces its assets in place. We deliberately
+  # do NOT pre-delete assets in a separate job: that would strand the release
+  # with zero downloads if any later build step (e.g. notarization) failed.
   publish-tauri:
-    needs: cleanup-release
     # Required permissions to create releases and upload assets
     permissions:
       contents: write

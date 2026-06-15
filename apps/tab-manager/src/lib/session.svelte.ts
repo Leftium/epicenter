@@ -1,5 +1,5 @@
 import type { SyncAuthClient } from '@epicenter/auth';
-import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth';
+import { EPICENTER_TAB_MANAGER_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth-clients';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createOAuthAppAuth, createSession } from '@epicenter/svelte/auth';
 import { openCollaboration, roomWsUrl } from '@epicenter/workspace';

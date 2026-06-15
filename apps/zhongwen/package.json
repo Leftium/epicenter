@@ -40,6 +40,7 @@
 		"yjs": "catalog:"
 	},
 	"devDependencies": {
+		"@epicenter/vite-config": "workspace:*",
 		"@sveltejs/adapter-static": "catalog:",
 		"@sveltejs/kit": "catalog:",
 		"@sveltejs/vite-plugin-svelte": "catalog:",

@@ -171,6 +171,10 @@ export { attachPlainText } from './document/attach-plain-text.js';
 export { attachRichText } from './document/attach-rich-text.js';
 export { attachTimeline } from './document/attach-timeline/index.js';
 export {
+	type BoundChildDocs,
+	bindChildDocs,
+} from './document/bind-child-docs.js';
+export {
 	type ChildDocConnection,
 	createChildDocs,
 } from './document/create-child-docs.js';

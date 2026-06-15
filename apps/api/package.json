@@ -55,7 +55,7 @@
 		"@cloudflare/workers-types": "^4.20260405.1",
 		"@types/bun": "catalog:",
 		"@types/pg": "^8.18.0",
-		"atmn": "^1.1.5",
+		"atmn": "^1.1.9",
 		"drizzle-kit": "catalog:",
 		"jsonc-parser": "^3.3.1",
 		"typescript": "catalog:",

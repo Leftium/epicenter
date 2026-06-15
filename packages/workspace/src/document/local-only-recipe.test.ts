@@ -3,14 +3,13 @@
  *
  * Pins the composition a local-only consumer (desktop notes app, offline
  * CLI, test fixture) is meant to use. The recipe constructs a plaintext
- * workspace (no `keyring`) and pairs it with plain IDB + plain
- * BroadcastChannel. No `attachLocalStorage`: that's the owner-scoped
- * composite for authenticated browser workspaces.
+ * workspace and pairs it with plain IDB + plain BroadcastChannel. No
+ * `attachLocalStorage`: that's the owner-scoped composite for authenticated
+ * browser workspaces.
  *
- * If this file ever needs to import from `@epicenter/auth` or
- * `@epicenter/encryption`, the primitives have drifted away from the
- * local-only ergonomic that motivated the workspace split. Either rename
- * the test, or fix the primitive.
+ * If this file ever needs auth or encryption imports, the primitives have
+ * drifted away from the local-only ergonomic that motivated the workspace
+ * split. Either rename the test, or fix the primitive.
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';

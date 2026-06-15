@@ -7,17 +7,9 @@ import { createSession } from './session.svelte.js';
 (globalThis as unknown as { $state: <T>(value: T) => T }).$state = (value) =>
 	value;
 
-const keyring = [
-	{
-		version: 1,
-		keyBytesBase64: 'AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=',
-	},
-] as const;
-
 const signedIn = (id: string): AuthState => ({
 	status: 'signed-in',
 	ownerId: asOwnerId(id),
-	keyring: [...keyring],
 });
 
 const ownerLabel = (state: AuthState) =>
@@ -59,8 +51,6 @@ test('build receives signedIn with projected fields and explicit auth capabiliti
 			expect(received.server).toBe('api.test');
 			expect(received.baseURL).toBe(auth.baseURL);
 			expect(received.ownerId).toBe(asOwnerId('alice'));
-			expect(typeof received.keyring).toBe('function');
-			expect(received.keyring()).toEqual([...keyring]);
 			expect(received.openWebSocket).toBe(auth.openWebSocket);
 			expect(received.onReconnectSignal).toBe(auth.onStateChange);
 			expect(ownerLabel(auth.state)).toBe(asOwnerId('alice'));

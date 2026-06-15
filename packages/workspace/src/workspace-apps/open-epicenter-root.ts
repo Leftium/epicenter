@@ -14,11 +14,10 @@
  *
  * One folder declares one mount. The daemon never gates on auth: it receives an
  * auth client (or `null`) from the CLI, hands the mount the resulting
- * `session`, and lets the mount decide. A local mirror ignores it, a peer-plane
- * mount uses its socket, an encrypted-workspace mount uses its keyring or
- * returns `inactive("sign in ...")`. The mount either becomes `started` or is
- * reported `inactive`. Only a config error, a folder-claim failure, or a thrown
- * `open` aborts startup.
+ * `session`, and lets the mount decide. A local mirror ignores it, while a
+ * peer-plane mount uses its socket or returns `inactive("sign in ...")`. The
+ * mount either becomes `started` or is reported `inactive`. Only a config error,
+ * a folder-claim failure, or a thrown `open` aborts startup.
  */
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -104,9 +103,7 @@ export async function openEpicenterRoot(
 
 /**
  * Build the signed-in capability kit, or `null` when machine auth is absent or
- * signed out. The keyring reader re-checks `auth.state` on every call so a late
- * sign-out throws at the next encrypted write rather than silently losing
- * ciphertext.
+ * signed out.
  */
 function buildMountSession(
 	auth: WorkspaceAuthClient | null,
@@ -114,12 +111,6 @@ function buildMountSession(
 	if (auth === null || auth.state.status === 'signed-out') return null;
 	return {
 		ownerId: auth.state.ownerId,
-		keyring: () => {
-			if (auth.state.status === 'signed-out') {
-				throw new Error('Cannot read keyring: machine auth is signed out.');
-			}
-			return auth.state.keyring;
-		},
 		// `auth.openWebSocket` / `auth.fetch` / `auth.onStateChange` are
 		// closure-based on the auth client and do not read `this`, so passing the
 		// method reference directly is safe (no `.bind(auth)` needed).

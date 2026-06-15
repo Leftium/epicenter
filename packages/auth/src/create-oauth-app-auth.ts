@@ -1,6 +1,5 @@
 import { API_ROUTES } from '@epicenter/constants/api-routes';
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
-import { keyringsEqual } from '@epicenter/encryption';
 import { BEARER_SUBPROTOCOL_PREFIX } from '@epicenter/sync';
 import {
 	defineErrors,
@@ -124,10 +123,10 @@ type ApiSessionRequestResult = Result<
  * Use this once per runtime around one persisted auth record. The returned
  * client exposes capabilities (`fetch`, `openWebSocket`) instead of raw tokens:
  * it refreshes grants, verifies `/api/session` before attaching a bearer, and
- * keeps the cached `ownerId` and `keyring` available when network auth pauses.
- * That preserves the local-first invariant: offline workspace boot can continue,
- * but server access fails closed until the current persisted auth has been
- * verified by the API.
+ * keeps the cached `ownerId` available when network auth pauses. That preserves
+ * the local-first invariant: offline workspace boot can continue, but server
+ * access fails closed until the current persisted auth has been verified by the
+ * API.
  */
 export function createOAuthAppAuth({
 	baseURL = EPICENTER_API_URL,
@@ -201,7 +200,6 @@ export function createOAuthAppAuth({
 					grant,
 					userId: startedFrom.userId,
 					ownerId: startedFrom.ownerId,
-					keyring: startedFrom.keyring,
 				} satisfies PersistedAuth;
 				await authSession.write(next);
 				if (authSession.persistedAuth !== startedFrom) return false;
@@ -256,10 +254,9 @@ export function createOAuthAppAuth({
 
 	/**
 	 * Verify `/api/session` against the current persisted auth. Marks it
-	 * verified; rewrites the persisted cell only when the keyring actually
-	 * changed. Wipes storage on same-owner-guard mismatch (different
-	 * `ownerId`). Single-flight: concurrent callers for the same persisted
-	 * auth share the in-flight promise.
+	 * verified and wipes storage on same-owner-guard mismatch (different
+	 * `ownerId`). Single-flight: concurrent callers for the same persisted auth
+	 * share the in-flight promise.
 	 */
 	async function verifyPersistedAuthForNetwork(
 		startedFrom: PersistedAuth,
@@ -288,12 +285,11 @@ export function createOAuthAppAuth({
 				return Ok(session);
 			}
 
-			if (!keyringsEqual(current.keyring, session.keyring)) {
+			if (current.userId !== session.user.id) {
 				const next = {
 					grant: current.grant,
 					userId: session.user.id,
 					ownerId: session.ownerId,
-					keyring: session.keyring,
 				} satisfies PersistedAuth;
 				await authSession.write(next);
 				if (authSession.persistedAuth !== startedFrom) return Ok(session);
@@ -319,7 +315,7 @@ export function createOAuthAppAuth({
 	 * Refuses to attach unless `/api/session` has confirmed the current persisted
 	 * auth in this runtime. Cold boot online: refresh grant if
 	 * stale, call `/api/session`, then attach. Offline: fails closed; local
-	 * workspace decrypt continues via the cached `keyring`.
+	 * workspace boot continues via the cached owner id.
 	 */
 	async function bearerForNetwork(force: boolean): Promise<string | null> {
 		if (authSession.persistedAuth === null || authSession.networkAuthPaused) {
@@ -390,7 +386,6 @@ export function createOAuthAppAuth({
 			grant,
 			userId: session.user.id,
 			ownerId: session.ownerId,
-			keyring: session.keyring,
 		} satisfies PersistedAuth;
 		await authSession.write(next);
 		if (!isCurrentSignIn(generation)) return Ok(undefined);
@@ -602,13 +597,11 @@ function publicStateFromRuntime(runtimeState: RuntimeAuthState): AuthState {
 		return {
 			status: 'reauth-required',
 			ownerId: runtimeState.persistedAuth.ownerId,
-			keyring: runtimeState.persistedAuth.keyring,
 		};
 	}
 	return {
 		status: 'signed-in',
 		ownerId: runtimeState.persistedAuth.ownerId,
-		keyring: runtimeState.persistedAuth.keyring,
 	};
 }
 
@@ -616,9 +609,7 @@ function authStatesEqual(left: AuthState, right: AuthState) {
 	if (left.status !== right.status) return false;
 	if (left.status === 'signed-out') return true;
 	if (right.status === 'signed-out') return false;
-	return (
-		left.ownerId === right.ownerId && keyringsEqual(left.keyring, right.keyring)
-	);
+	return left.ownerId === right.ownerId;
 }
 
 /**

@@ -60,9 +60,9 @@ import type { Env } from '../types.js';
  * network auth over a transient server blip.
  *
  * The API origin (`c.var.authBaseURL`) is the resource audience; the same
- * origin plus `/auth` is the issuer. Cheap by design: skips owner keyring
- * derivation, since only the calling user is needed once the token proves
- * issuer, audience, signature, expiration, and subject.
+ * origin plus `/auth` is the issuer. Cheap by design: only the calling user
+ * is needed once the token proves issuer, audience, signature, expiration,
+ * and subject.
  */
 async function resolveRequestOAuthUser(
 	c: Context<Env>,

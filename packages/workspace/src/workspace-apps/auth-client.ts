@@ -6,12 +6,11 @@ import type { AuthedFetch } from '../shared/types.js';
  * matches (notably `@epicenter/auth`'s `AuthClient`) can be passed to
  * `openEpicenterRoot`.
  *
- * Workspace reads four surfaces: the discriminated `state` (to gate startup
- * on signed-in and to derive the lazy keyring reader), `openWebSocket` (for
- * collaboration sockets with the bearer subprotocol attached), `fetch` (the
- * authed `fetch` for one-shot HTTP to the relay), and `onStateChange` (for the
- * reconnect signal). The narrow contract is what lets this package compile
- * without depending on `@epicenter/auth`.
+ * Workspace reads four surfaces: the discriminated `state` (to gate startup on
+ * signed-in), `openWebSocket` (for collaboration sockets with the bearer
+ * subprotocol attached), `fetch` (the authed `fetch` for one-shot HTTP to the
+ * relay), and `onStateChange` (for the reconnect signal). The narrow contract
+ * is what lets this package compile without depending on `@epicenter/auth`.
  */
 export type WorkspaceAuthClient = {
 	state: AuthState;

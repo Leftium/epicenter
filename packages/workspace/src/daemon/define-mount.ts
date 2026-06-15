@@ -15,15 +15,13 @@
  * There is no `local` vs `collaborative` kind. The context carries the Epicenter
  * root, the mount name, and a nullable `session`. A purely local mirror ignores
  * the session, a mount that wants the peer plane (presence + remote dispatch)
- * uses its socket, and a mount that stores encrypted workspace data uses its
- * keyring. The session is `null` when machine auth is signed out, so the
- * logged-out case is always in front of the author.
+ * uses its socket. The session is `null` when machine auth is signed out, so
+ * the logged-out case is always in front of the author.
  *
  * Most mounts need a session, so they declare with `defineSessionMount` and get
  * a guaranteed-non-null `session` plus an automatic `inactive` when signed out.
  */
 
-import type { Keyring } from '@epicenter/encryption';
 import type { OwnerId } from '@epicenter/identity';
 import type {
 	OnReconnectSignal,
@@ -42,17 +40,12 @@ import type { DaemonRuntime } from './types.js';
  * `null` on the context while signed out.
  *
  * - `ownerId` is the workspace owner the daemon syncs as.
- * - `keyring` is the lazy reader for the owner keyring. It re-reads auth state
- *   on every call so a late sign-out throws at the next encrypted write instead
- *   of silently losing ciphertext. Needed only by mounts that store encrypted
- *   data.
  * - `openWebSocket` / `onReconnectSignal` / `fetch` are the auth-owned transport
  *   refs forwarded into `openCollaboration` for sync, presence, and dispatch,
  *   and into one-shot HTTP reads.
  */
 export type MountSession = {
 	readonly ownerId: OwnerId;
-	keyring(): Keyring;
 	readonly openWebSocket: OpenWebSocketFn;
 	readonly onReconnectSignal: OnReconnectSignal;
 	readonly fetch: AuthedFetch;
@@ -126,8 +119,7 @@ export function defineMount(mount: Mount): Mount {
 }
 
 /**
- * Define a mount that needs a signed-in session, which is the common case
- * (every encrypted-workspace and peer-plane mount). The body receives a
+ * Define a mount that needs a signed-in session. The body receives a
  * `SessionMountContext` with a guaranteed-non-null `session`; when machine auth
  * is signed out the daemon reports `inactive("Sign in to enable <name>.")`
  * without ever running the body.

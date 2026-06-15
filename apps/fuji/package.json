@@ -52,7 +52,6 @@
 		"@epicenter/app-shell": "workspace:*",
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/constants": "workspace:*",
-		"@epicenter/encryption": "workspace:*",
 		"@epicenter/field": "workspace:*",
 		"@epicenter/svelte": "workspace:*",
 		"@epicenter/workspace": "workspace:*",

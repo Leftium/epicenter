@@ -2,7 +2,7 @@
  * Compile-time tests for `defineMount` / `defineSessionMount`.
  *
  * Every mount receives one context: `epicenterRoot`, `mount`, and a nullable
- * `session`. The signed-in capabilities (keyring, socket, identity) live under
+ * `session`. The signed-in capabilities (socket, fetch, identity) live under
  * `session`, so the logged-out case is in front of the author at the type level
  * and cannot be reached without a null check. `defineSessionMount` does that
  * null check once and hands the body a non-null `session`.
@@ -26,8 +26,6 @@ export const localMount = defineMount({
 		// @ts-expect-error: the device id is derived from `mount`, not on ctx
 		ctx.deviceId;
 		// @ts-expect-error: signed-in capabilities live under `session`, not on ctx
-		ctx.keyring;
-		// @ts-expect-error: signed-in capabilities live under `session`, not on ctx
 		ctx.openWebSocket;
 
 		return {
@@ -41,14 +39,13 @@ export const sessionAwareMount = defineMount({
 	name: 'fuji',
 	open(ctx) {
 		// @ts-expect-error: session may be null, so it must be narrowed first
-		ctx.session.keyring();
+		ctx.session.openWebSocket;
 
 		if (ctx.session === null) {
 			return inactive('sign in to enable fuji');
 		}
 
 		// Narrowed: the full capability kit is available.
-		ctx.session.keyring();
 		ctx.session.openWebSocket;
 		ctx.session.onReconnectSignal;
 		ctx.session.fetch;
@@ -65,7 +62,6 @@ export const sessionMount = defineSessionMount({
 	name: 'fuji',
 	open(ctx) {
 		// No null check: the body only runs with a present session.
-		ctx.session.keyring();
 		ctx.session.openWebSocket;
 		ctx.session.ownerId;
 		ctx.epicenterRoot;

@@ -1,3 +1,6 @@
+// Mirror of @epicenter/constants/{apps,oauth}. Vendored here so @epicenter/auth
+// can publish without a runtime dependency on the private @epicenter/constants
+// package. Keep both copies in sync until auth owns this surface outright.
 const PRODUCTION_API_URL = 'https://api.epicenter.so';
 
 export const EPICENTER_API_URL =

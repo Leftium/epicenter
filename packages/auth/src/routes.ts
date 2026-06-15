@@ -1,3 +1,7 @@
+// Mirror of @epicenter/constants/{api-routes,oauth-routes}. Vendored here so
+// @epicenter/auth can publish without a runtime dependency on the private
+// @epicenter/constants package. These are protocol endpoints shared with the
+// server; keep both copies in sync until auth owns this surface outright.
 const stripTrailing = (s: string) => s.replace(/\/+$/, '');
 
 export const API_ROUTES = {

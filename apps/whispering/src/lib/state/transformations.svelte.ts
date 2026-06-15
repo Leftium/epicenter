@@ -144,4 +144,3 @@ export function transformationHasWork(transformation: Transformation): boolean {
 		transformation.postReplacements.length > 0
 	);
 }
-

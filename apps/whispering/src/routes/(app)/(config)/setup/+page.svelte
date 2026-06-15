@@ -18,8 +18,34 @@
 	import { goto } from '$app/navigation';
 	import TranscriptionRuntimeSetup from '$lib/components/settings/TranscriptionRuntimeSetup.svelte';
 	import { getTranscriptionSetupReadiness } from '$lib/settings/transcription-validation';
+	import { os } from '#platform/os';
+	import { tauri } from '#platform/tauri';
+	import { report } from '$lib/report';
+	import { deviceConfig } from '$lib/state/device-config.svelte';
+	import { keyBindingToLabel } from '$lib/utils/key-binding';
 
 	const runtime = $derived(getTranscriptionSetupReadiness());
+
+	// Desktop dictation is triggered by the global toggle shortcut, bound by
+	// default. Surface it on the way out so the first thing a finished user
+	// learns is how to start dictating without coming back to the window.
+	const globalToggleBinding = $derived(
+		deviceConfig.get('shortcuts.global.toggleManualRecording'),
+	);
+	const globalToggleLabel = $derived(
+		globalToggleBinding ? keyBindingToLabel(globalToggleBinding, os.isApple) : '',
+	);
+
+	function finish() {
+		report.success({
+			title: "You're all set",
+			description:
+				tauri && globalToggleLabel
+					? `Press ${globalToggleLabel} anywhere to dictate.`
+					: 'Whispering is ready on this device.',
+		});
+		void goto('/');
+	}
 </script>
 
 <svelte:head> <title>Setup - Whispering</title> </svelte:head>
@@ -67,7 +93,7 @@
 	</div>
 
 	<div class="flex justify-end">
-		<Button disabled={!runtime.isReady} onclick={() => goto('/')}>
+		<Button disabled={!runtime.isReady} onclick={finish}>
 			Start using Whispering
 			<ArrowRightIcon class="size-4" />
 		</Button>

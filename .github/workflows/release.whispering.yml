@@ -99,7 +99,8 @@ jobs:
           } >> $GITHUB_OUTPUT
 
       # Main Tauri build and release action
-      - uses: tauri-apps/tauri-action@v0
+      - id: tauri-build
+        uses: tauri-apps/tauri-action@v0
         env:
           # Set CI environment variable to help with DMG bundling
           CI: true
@@ -149,6 +150,25 @@ jobs:
 
           # Platform-specific build arguments (e.g., --target for macOS)
           args: ${{ matrix.tauriArgs }}
+
+      # tauri-action notarizes and staples the .app but only signs the .dmg it
+      # wraps around it afterwards, so the downloaded .dmg is "Unnotarized
+      # Developer ID" and fails Gatekeeper's open assessment. This notarizes,
+      # staples, and verifies the .dmg itself, then replaces the draft's asset
+      # with the stapled copy before anyone can publish or download it. The
+      # release id and upload URL come from the tauri-build step's outputs so the
+      # asset swap addresses the draft directly instead of resolving it by tag.
+      # @main rather than ./ for the same reason as the setup action above.
+      - name: Notarize Whispering DMG (macOS only)
+        if: ${{ matrix.os == 'macos' }}
+        uses: EpicenterHQ/epicenter/.github/actions/notarize-whispering-dmg@main
+        with:
+          apple-id: ${{ secrets.APPLE_ID }}
+          apple-password: ${{ secrets.APPLE_PASSWORD }}
+          apple-team-id: ${{ secrets.APPLE_TEAM_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          release-id: ${{ steps.tauri-build.outputs.releaseId }}
+          upload-url: ${{ steps.tauri-build.outputs.releaseUploadUrl }}
 
       # @main rather than ./ for the same reason as the setup action above.
       - name: Process AppImage (Linux only)

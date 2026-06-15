@@ -264,10 +264,7 @@ export async function stopVadRecording() {
 }
 
 export function toggleVadRecording() {
-	if (
-		vadRecorder.state === 'LISTENING' ||
-		vadRecorder.state === 'SPEECH_DETECTED'
-	) {
+	if (isVadRecordingActive()) {
 		return stopVadRecording();
 	}
 	return startVadRecording();

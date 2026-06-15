@@ -331,8 +331,22 @@ export type MigrateInput<
  * projections can open one content doc for one row and destroy it after reading.
  * The table schema does not declare or store body docs.
  */
+/**
+ * A map of child-doc layout declarations, keyed by field name. Each value is an
+ * `attach*(ydoc)` layout that owns a collaborative body's CRDT shape and writer
+ * policy (e.g. `attachRichText`, `attachPlainText`). Declared on a table via
+ * {@link TableDefinition.childDocs}; the field name becomes the guid's `field`
+ * segment, so each row owns one derived child doc per declared name (1:1).
+ *
+ * The layouts are pure functions of a `Y.Doc` and carry no connection: the
+ * declaration is isomorphic, and `bindChildDocs` marries it to a connection at
+ * the runtime layer.
+ */
+export type ChildDocLayouts = Record<string, (ydoc: Y.Doc) => object>;
+
 export type TableDefinition<
 	TVersions extends readonly VersionedColumns[] = readonly VersionedColumns[],
+	TChildDocs extends ChildDocLayouts = ChildDocLayouts,
 > = {
 	/** The original variadic versions, in declaration order. */
 	versions: TVersions;
@@ -357,6 +371,30 @@ export type TableDefinition<
 	schema: TObject<LastVersion<TVersions>>;
 	/** Upgrade any stored version to the current row in one step. */
 	migrate: (input: MigrateInput<TVersions>) => RowOf<LastVersion<TVersions>>;
+	/**
+	 * Child-doc layouts declared on this table, keyed by field name. `{}` unless
+	 * {@link childDocs} was called. Read by `bindChildDocs` at the runtime layer
+	 * to wire one guid-keyed cache per declared body; never carries a connection
+	 * itself, since the declaration is isomorphic.
+	 */
+	childDocLayouts: TChildDocs;
+	/**
+	 * Declare collaborative child-doc bodies on this table. Each row owns one
+	 * child doc per name (derived-1:1), addressed by a guid derived from the row
+	 * id, so nothing is stored in a cell and the body cascades when the row is
+	 * deleted (the derived guid simply stops being reachable).
+	 *
+	 * Call AFTER {@link migrate} on multi-version tables: the version tuple is
+	 * positional, so child docs are a separate builder step, not another version.
+	 *
+	 * ```ts
+	 * defineTable({ id: field.string(), title: field.string() })
+	 *   .childDocs({ content: attachRichText });
+	 * ```
+	 */
+	childDocs<TLayouts extends ChildDocLayouts>(
+		layouts: TLayouts,
+	): TableDefinition<TVersions, TLayouts>;
 };
 
 /**
@@ -376,7 +414,7 @@ export type InferTableRow<T> =
 export type TableDefinitions = Record<
 	string,
 	// biome-ignore lint/suspicious/noExplicitAny: variance-friendly map type
-	TableDefinition<any>
+	TableDefinition<any, any>
 >;
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -397,11 +435,25 @@ export function createTableDefinition<
 	migrate: (input: unknown) => RowOf<LastVersion<TVersions>>,
 ): TableDefinition<TVersions> {
 	const latestColumns = versions[versions.length - 1] as LastVersion<TVersions>;
-	return {
+	const schema = Type.Object(latestColumns);
+	const migrateFn = migrate as TableDefinition<TVersions>['migrate'];
+
+	/**
+	 * Build the definition with a given child-doc declaration. `childDocs(...)`
+	 * recurses through the same builder, so the declaration is the only thing
+	 * that changes; versions, schema, and migrate are fixed.
+	 */
+	const build = <TLayouts extends ChildDocLayouts>(
+		childDocLayouts: TLayouts,
+	): TableDefinition<TVersions, TLayouts> => ({
 		versions,
-		schema: Type.Object(latestColumns),
-		migrate: migrate as TableDefinition<TVersions>['migrate'],
-	};
+		schema,
+		migrate: migrateFn,
+		childDocLayouts,
+		childDocs: (layouts) => build(layouts),
+	});
+
+	return build({});
 }
 
 // ════════════════════════════════════════════════════════════════════════════

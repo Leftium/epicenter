@@ -6,7 +6,7 @@
 	import { report } from '$lib/report';
 	import {
 		generateDefaultTransformation,
-		saveTransformation,
+		transformations,
 	} from '$lib/state/transformations.svelte';
 
 	let transformation = $state(generateDefaultTransformation());
@@ -24,7 +24,7 @@
 		<Card.Footer class="flex justify-end gap-2">
 			<Button
 				onclick={() => {
-					saveTransformation($state.snapshot(transformation));
+					transformations.set($state.snapshot(transformation));
 					goto('/transformations');
 					report.success({
 						title: 'Created transformation!',

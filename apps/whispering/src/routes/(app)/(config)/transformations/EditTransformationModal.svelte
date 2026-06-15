@@ -10,10 +10,7 @@
 	import TrashIcon from '@lucide/svelte/icons/trash-2';
 	import { Editor } from '$lib/components/transformations-editor';
 	import { report } from '$lib/report';
-	import {
-		saveTransformation,
-		transformations,
-	} from '$lib/state/transformations.svelte';
+	import { transformations } from '$lib/state/transformations.svelte';
 	import type { Transformation } from '$lib/workspace';
 	import MarkTransformationActiveButton from './MarkTransformationActiveButton.svelte';
 
@@ -72,7 +69,7 @@
 	}
 
 	function saveAndClose() {
-		saveTransformation($state.snapshot(workingCopy));
+		transformations.set($state.snapshot(workingCopy));
 
 		report.success({
 			title: 'Updated transformation!',

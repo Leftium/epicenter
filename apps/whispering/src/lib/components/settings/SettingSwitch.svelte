@@ -6,7 +6,18 @@
 		settings,
 	} from '$lib/state/settings.svelte';
 
-	let { key, label }: { key: K; label: string } = $props();
+	let {
+		key,
+		label,
+		description,
+		onCheckedChange,
+	}: {
+		key: K;
+		label: string;
+		description?: string;
+		/** Runs after the setting is written, e.g. to log the change. */
+		onCheckedChange?: (checked: boolean) => void;
+	} = $props();
 
 	// Opaque, generated id wired into both `for` and `id` from one source. The
 	// id has no external consumer, so it carries no meaning by design: there is
@@ -15,9 +26,20 @@
 </script>
 
 <Field.Field orientation="horizontal">
-	<Field.Label for={id}>{label}</Field.Label>
+	<Field.Content>
+		<Field.Label for={id}>{label}</Field.Label>
+		{#if description}
+			<Field.Description>{description}</Field.Description>
+		{/if}
+	</Field.Content>
 	<Switch
 		{id}
-		bind:checked={() => settings.get(key), (checked) => settings.set(key, checked)}
+		bind:checked={
+			() => settings.get(key),
+			(checked) => {
+				settings.set(key, checked);
+				onCheckedChange?.(checked);
+			}
+		}
 	/>
 </Field.Field>

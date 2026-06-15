@@ -1,9 +1,8 @@
 <script lang="ts">
 	import { Badge } from '@epicenter/ui/badge';
 	import * as Card from '@epicenter/ui/card';
-	import { Label } from '@epicenter/ui/label';
 	import * as SectionHeader from '@epicenter/ui/section-header';
-	import { Switch } from '@epicenter/ui/switch';
+	import { SettingSwitch } from '$lib/components/settings';
 	import { analytics } from '$lib/operations/analytics';
 	import { settings } from '$lib/state/settings.svelte';
 </script>
@@ -37,41 +36,18 @@
 		</SectionHeader.Description>
 	</SectionHeader.Root>
 
-	<!-- Main Toggle Section -->
-	<Card.Root class="transition-colors duration-200">
-		<Card.Content>
-			<div class="flex items-start justify-between gap-4">
-				<div class="space-y-2 flex-1">
-					<Label
-						for="analytics-toggle"
-						class="text-base font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-					>
-						Share anonymized events
-					</Label>
-					<p class="text-sm text-muted-foreground leading-relaxed">
-						We log simple events like "recording started" or "transcription
-						completed". No personal data is attached to any of these events.
-					</p>
-				</div>
-				<Switch
-					id="analytics-toggle"
-					bind:checked={() => settings.get('analytics.enabled'),
-						(checked) => {
-							settings.set('analytics.enabled', checked);
-
-							// Log the change (will only send if analytics is now enabled)
-							if (checked) {
-								analytics.logEvent({
-									type: 'settings_changed',
-									section: 'analytics',
-								});
-							}
-						}}
-					class="shrink-0"
-				/>
-			</div>
-		</Card.Content>
-	</Card.Root>
+	<!-- Main Toggle -->
+	<SettingSwitch
+		key="analytics.enabled"
+		label="Share anonymized events"
+		description={'We log simple events like "recording started" or "transcription completed". No personal data is attached to any of these events.'}
+		onCheckedChange={(checked) => {
+			// Log the change (only actually sends if analytics is now enabled).
+			if (checked) {
+				analytics.logEvent({ type: 'settings_changed', section: 'analytics' });
+			}
+		}}
+	/>
 
 	<!-- Data Collection Information -->
 	<div class="grid gap-4 md:grid-cols-2">

@@ -8,18 +8,13 @@
  * be mounted without it.
  */
 
-import { AI_MODELS } from '@epicenter/constants/ai-providers';
 import type { Env } from '@epicenter/server';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
 import { isProviderError, mapAutumnError } from './autumn.js';
 import { CHECKOUT_PLAN_IDS } from './catalog.js';
-import {
-	eventsQuerySchema,
-	type ModelCostGuide,
-	usageQuerySchema,
-} from './contracts.js';
+import { eventsQuerySchema, usageQuerySchema } from './contracts.js';
 import { createBillingService } from './service.js';
 
 /** Single source for the billing URL prefix. The auth glob and the route mount
@@ -88,15 +83,6 @@ billingRoutes.post(
 );
 
 billingRoutes.get('/plans', async (c) => c.json(await svc(c).listPlans()));
-
-billingRoutes.get('/models', (c) => {
-	const models = AI_MODELS.map((entry) => ({
-		model: entry.id,
-		provider: entry.provider,
-		credits: entry.credits,
-	})).sort((a, b) => a.credits - b.credits || a.model.localeCompare(b.model));
-	return c.json({ models } satisfies ModelCostGuide);
-});
 
 billingRoutes.post(
 	'/preview',

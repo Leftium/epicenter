@@ -144,16 +144,6 @@ export type PortalSession = {
 	portalUrl: string;
 };
 
-/** Static cost guide for the dashboard's model table. `provider` is the stable
- *  id, parallel to `model`; the dashboard renders the vendor name from it. */
-export type ModelCostGuide = {
-	models: Array<{
-		model: string;
-		provider: AiProvider;
-		credits: number;
-	}>;
-};
-
 // ---------------------------------------------------------------------
 // Request shapes (dashboard -> server)
 // ---------------------------------------------------------------------

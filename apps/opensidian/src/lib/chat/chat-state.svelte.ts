@@ -1,7 +1,8 @@
 import type { AuthClient } from '@epicenter/auth';
+import { createAiChatFetch } from '@epicenter/client';
 import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
 import { APP_URLS } from '@epicenter/constants/vite';
-import { createAiChatFetch, fromTable } from '@epicenter/svelte';
+import { fromTable } from '@epicenter/svelte';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import {

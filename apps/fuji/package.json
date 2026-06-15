@@ -48,6 +48,7 @@
 		"vite": "catalog:"
 	},
 	"dependencies": {
+		"@epicenter/app-shell": "workspace:*",
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/encryption": "workspace:*",

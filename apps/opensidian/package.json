@@ -22,7 +22,9 @@
 	},
 	"dependencies": {
 		"@codemirror/autocomplete": "^6.20.1",
+		"@epicenter/app-shell": "workspace:*",
 		"@epicenter/auth": "workspace:*",
+		"@epicenter/client": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/field": "workspace:*",
 		"@epicenter/skills": "workspace:*",

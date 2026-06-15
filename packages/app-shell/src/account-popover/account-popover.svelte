@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { AuthClient } from '@epicenter/auth';
+	import { createEpicenterClient } from '@epicenter/client';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import * as Popover from '@epicenter/ui/popover';
@@ -27,13 +28,6 @@
 			},
 		},
 	});
-
-	type AccountProfile = {
-		user: {
-			id: string;
-			email: string;
-		};
-	};
 
 	/**
 	 * Shared account popover.
@@ -80,16 +74,16 @@
 	const accountCacheKey = $derived(
 		auth.state.status === 'signed-out' ? null : auth.state.ownerId,
 	);
+	// The typed client owns the `/api/session` route and `ApiSessionResponse`
+	// shape; TanStack Query owns reactive caching here, so `refresh()` skips the
+	// client's own one-shot cache and re-reads under the current owner key.
+	const client = $derived(
+		createEpicenterClient({ baseURL: auth.baseURL, fetch: auth.fetch }),
+	);
 	const profile = createQuery(
 		() => ({
 			queryKey: ['account-profile', accountCacheKey],
-			queryFn: async (): Promise<AccountProfile> => {
-				const response = await auth.fetch('/api/session');
-				if (!response.ok) {
-					throw new Error(`Failed to load account (${response.status}).`);
-				}
-				return (await response.json()) as AccountProfile;
-			},
+			queryFn: () => client.session.refresh(),
 			enabled: auth.state.status !== 'signed-out',
 			staleTime: Infinity,
 		}),

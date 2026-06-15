@@ -1,4 +1,3 @@
-import { EPICENTER_OAUTH_SCOPE } from '@epicenter/constants/oauth';
 import * as oauth from 'oauth4webapi';
 import {
 	defineErrors,
@@ -8,6 +7,7 @@ import {
 import { Ok, type Result } from 'wellcrafted/result';
 import type { AuthFetch } from '../auth-contract.js';
 import type { OAuthTokenGrant } from '../auth-types.js';
+import { EPICENTER_OAUTH_SCOPE } from '../oauth-defaults.js';
 import { parseOAuthTokenGrant } from '../oauth-token-endpoints.js';
 
 /**

@@ -20,7 +20,9 @@
 		"deploy": "wrangler deploy"
 	},
 	"dependencies": {
+		"@epicenter/app-shell": "workspace:*",
 		"@epicenter/auth": "workspace:*",
+		"@epicenter/client": "workspace:*",
 		"@epicenter/constants": "workspace:*",
 		"@epicenter/field": "workspace:*",
 		"@epicenter/svelte": "workspace:*",

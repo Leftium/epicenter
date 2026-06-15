@@ -12,7 +12,7 @@
 	@example
 	```svelte
 	<script lang="ts">
-		import { WorkspaceGate } from '@epicenter/svelte/workspace-gate';
+		import { WorkspaceGate } from '@epicenter/app-shell/workspace-gate';
 		import { auth, fuji } from '$lib/fuji/client';
 	</script>
 

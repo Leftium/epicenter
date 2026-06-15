@@ -13,7 +13,8 @@
 	"dependencies": {
 		"@epicenter/auth": "workspace:*",
 		"@epicenter/constants": "workspace:*",
-		"@epicenter/identity": "workspace:*"
+		"@epicenter/identity": "workspace:*",
+		"wellcrafted": "catalog:"
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:",

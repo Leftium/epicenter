@@ -1,6 +1,6 @@
 ---
 name: greenfield-clean-breaks
-description: Greenfield clean-break review for refusing compatibility, finding inconsistent ownership, and deleting unearned branches, fallback states, duplicate paths, and premature abstractions. Use when the user says greenfield, no users, clean break, refuse compatibility, remove slop, simplify the design, or asks whether a system should be redesigned from the ideal shape.
+description: Greenfield clean-break review for refusing compatibility, finding inconsistent ownership, and deleting unearned branches, fallback states, duplicate paths, and premature abstractions. Use when the user explicitly releases compatibility pressure with phrases like greenfield, no users, clean break, refuse compatibility, remove slop, or asks whether a system should be redesigned from the ideal shape.
 ---
 
 # Greenfield Clean Breaks
@@ -25,10 +25,17 @@ Delete the slop.
 Would we add this if we started today?
 ```
 
-This skill does not replace `cohesive-clean-breaks` or `collapse-pass`. It gives agents a sharper trigger for clean-break review when compatibility pressure has been released or was never earned.
+This skill does not replace `cohesive-clean-breaks` or `collapse-pass`. It
+gives agents a sharper trigger for clean-break review when compatibility
+pressure has been released or was never earned.
+
+Compose with `fresh-eyes-grill` when the user asks for fresh eyes, a subagent,
+or adversarial review of a concrete diff. This skill owns the compatibility
+stance, not reviewer orchestration.
 
 ```txt
-cohesive-clean-breaks   broad redesign and asymmetric wins
+cohesive-clean-breaks   broad redesign and breaking-change mechanics
+asymmetric-wins         refuse a feature to collapse a code family
 collapse-pass           repeated deletion loop
 greenfield-clean-breaks compatibility refusal and ideal-shape review
 ```
@@ -144,15 +151,10 @@ Decision:
 
 In greenfield mode, any extra Go-to-Def hop has to earn its keep. A developer pressing Go-to-Def from a call site should land on the actual source of truth, not on an alias, a re-export, or a behavior-free wrapper. If nothing earns the hop, delete it.
 
-Greenfield-specific Go-to-Def smells:
-
-- Re-export chains across packages where each hop adds nothing.
-- Adapter or proxy that wraps a real function with no behavior change.
-- Module-level object destructure-re-exported, so Go-to-Def lands on the destructuring line instead of the real export.
-- Type annotation form that obscures the value's identity (`const fn: typeof Real = unreachable` instead of `const fn = unreachable satisfies typeof Real`).
-- Public types hand-written over a factory's return shape, so Go-to-Def lands on the alias instead of the returned member.
-
-See `typescript` and `cohesive-clean-breaks` for the per-change mechanics.
+The smell catalog (re-export chains, no-op adapters, destructure-re-exports,
+identity-obscuring annotations, hand-written aliases over a factory's return
+shape) lives in [typescript](../typescript/SKILL.md) "Go-to-Definition
+Awareness". Apply it, then delete any hop greenfield mode does not need.
 
 ## Earned Trigger Test
 

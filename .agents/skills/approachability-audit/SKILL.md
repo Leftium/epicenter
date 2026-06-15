@@ -1,6 +1,6 @@
 ---
 name: approachability-audit
-description: Review code as a new TypeScript developer. Use when code feels indirect, clever, hard to follow, or needs a pass on abstractions, names, first-read clarity.
+description: First-read approachability lens. Read code as a newly onboarded TypeScript developer to surface indirection, misleading names, type-system-only tricks, and wrong-owner boundaries. Cited by post-implementation-review and collapse-pass as their readability pass; also use directly when code feels clever or hard to follow on first read.
 ---
 
 # Approachability Audit
@@ -103,14 +103,11 @@ If a library forces a type trick, keep it local and name it as a bridge.
 
 A new developer's first read of a foreign symbol is Go-to-Def. Treat it as the canonical readability tool: pressing it from a call site should land on the actual source of truth in as few hops as possible. Counting hops (review method, step 3) means counting Go-to-Def hops.
 
-Smells that bloat the hop count:
-
-- Re-export chains where each intermediate file adds nothing.
-- Module-level objects that get destructure-re-exported, so the cursor lands on the destructuring line.
-- Adapter / proxy that wraps a real function without changing behavior.
-- Type annotation forms that obscure the underlying value (see `typescript` "Go-to-Definition Awareness").
-
-Each extra hop has to earn its keep. If a layer doesn't own a real invariant, doesn't name non-obvious domain behavior, and doesn't isolate unsafe input, collapse it.
+The smell catalog that bloats the hop count (re-export chains,
+destructure-re-exports, no-op adapters, identity-obscuring annotations) lives in
+[typescript](../typescript/SKILL.md) "Go-to-Definition Awareness". Each extra hop
+has to earn its keep: if a layer doesn't own a real invariant, name non-obvious
+domain behavior, or isolate unsafe input, collapse it.
 
 ## Success Criteria
 

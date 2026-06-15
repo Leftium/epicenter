@@ -16,6 +16,8 @@ Related skills: use [cohesive-clean-breaks](../cohesive-clean-breaks/SKILL.md)
 when the radical option changes public contracts, package boundaries, or
 migration strategy. Use [one-sentence-test](../one-sentence-test/SKILL.md) to
 name the system before auditing it. Use
+[asymmetric-wins](../asymmetric-wins/SKILL.md) for the refuse-one-shape-to-
+delete-a-code-family decision. Use
 [approachability-audit](../approachability-audit/SKILL.md) when the problem is
 mostly first-read clarity.
 
@@ -139,25 +141,15 @@ The goal is not a larger diff. The goal is a smaller explanation.
 
 ## Asymmetric Option Check
 
-Look for one refusal that deletes a whole code family.
+Look for one refusal that deletes a whole code family: an old shape, rare mode,
+fallback, alias, fast path, or provider-specific behavior whose removal collapses
+adapters, unions, flags, docs branches, tests, UI states, migration code, and
+defensive checks.
 
-```txt
-Can we refuse one old shape, rare mode, fallback, alias, fast path, or
-provider-specific behavior?
-
-If yes, what disappears?
-  adapters
-  unions
-  feature flags
-  docs branches
-  tests
-  UI states
-  migration code
-  defensive runtime checks
-```
-
-Default toward refusal when the product sentence survives and the deletion prize
-is large. Keep the behavior when the user loss is load-bearing.
+This is the asymmetric wins move. [asymmetric-wins](../asymmetric-wins/SKILL.md)
+owns the candidate list, procedure, and decision template. Default toward refusal
+when the product sentence survives and the deletion prize is large; keep the
+behavior when the user loss is load-bearing.
 
 ## Decision Rules
 

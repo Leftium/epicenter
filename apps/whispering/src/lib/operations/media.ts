@@ -6,14 +6,17 @@ import type { MediaControlFailure, MediaPlayer } from '$lib/tauri/commands';
 
 // The one best-effort macOS side effect for recording: pause Music/Spotify
 // while recording, resume them after. Recording never waits on this and never
-// fails because of it. `pause()` fires without awaiting; `resume()` waits for
-// that pause to settle, then restores exactly the players it paused.
+// fails because of it.
 //
-// The pending pause promise is the entire state: it answers the only question
-// resume needs ("which players did I pause?") and doubles as the "currently
-// paused" flag.
+// `chain` is the entire state: a promise resolving to the players we currently
+// have paused (`[]` when nothing is paused). Every pause/resume tacks itself
+// onto the tail, so the AppleScript calls run strictly one after another: a
+// late resume can never race a fresh pause from a quick stop-then-restart. The
+// resolved value answers the only question resume needs ("which players did I
+// pause?") and doubles as the "currently paused" flag. Both helpers always
+// resolve, so the chain never wedges.
 
-let pausedPromise: Promise<MediaPlayer[]> | null = null;
+let chain: Promise<MediaPlayer[]> = Promise.resolve([]);
 let didExplainPermissionDenied = false;
 
 function shouldPauseMedia(): boolean {
@@ -60,34 +63,38 @@ async function pauseActiveMedia(): Promise<MediaPlayer[]> {
 	}
 }
 
+async function resumeMedia(players: MediaPlayer[]): Promise<void> {
+	if (!tauri || players.length === 0) return;
+	try {
+		const { data, error } = await tauri.media.resume(players);
+		if (error !== null) {
+			log.warn(new Error(`Failed to resume media: ${error}`));
+			return;
+		}
+		reportFailures(data);
+	} catch (error) {
+		log.warn(new Error(`Failed to resume media: ${String(error)}`));
+	}
+}
+
 export const recordingMedia = {
 	/** Pause active media if enabled. Fire-and-forget: recording never waits. */
 	pause(): void {
-		if (pausedPromise || !shouldPauseMedia()) return;
-		pausedPromise = pauseActiveMedia();
+		if (!shouldPauseMedia()) return;
+		// Already paused? Keep that set; otherwise pause what's playing now.
+		chain = chain.then((paused) =>
+			paused.length > 0 ? paused : pauseActiveMedia(),
+		);
 	},
 
 	/**
 	 * Resume whatever the matching `pause()` paused. A no-op when nothing was
 	 * paused, so every stop/cancel/start-failure path can call it blindly.
 	 */
-	async resume(): Promise<void> {
-		const pending = pausedPromise;
-		if (!pending) return;
-		pausedPromise = null;
-
-		const paused = await pending;
-		if (!tauri || paused.length === 0) return;
-
-		try {
-			const { data, error } = await tauri.media.resume(paused);
-			if (error !== null) {
-				log.warn(new Error(`Failed to resume media: ${error}`));
-				return;
-			}
-			reportFailures(data);
-		} catch (error) {
-			log.warn(new Error(`Failed to resume media: ${String(error)}`));
-		}
+	resume(): void {
+		chain = chain.then(async (paused) => {
+			await resumeMedia(paused);
+			return [];
+		});
 	},
 };

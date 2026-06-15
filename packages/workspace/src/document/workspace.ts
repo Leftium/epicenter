@@ -184,26 +184,28 @@ export type ConnectedWorkspaceContext<
 	readonly tables: ConnectedTables<TTables>;
 };
 
+/**
+ * What an `open(connection, compose)` runtime builder returns: the final action
+ * registry plus any runtime-only handles the app wants on the bundle.
+ *
+ * `actions` is required, not optional: a runtime builder is exactly where
+ * browser-only actions get layered onto the base registry, and that returned
+ * registry is the one collaboration serves for cross-device dispatch. Returning
+ * `{ actions: workspace.actions }` (the base, unchanged) is the explicit way to
+ * say "no new actions" — there is no implicit fallback to guess at.
+ */
 export type WorkspaceRuntimeExtension<
 	TActions extends ActionRegistry = ActionRegistry,
 > = {
-	readonly actions?: TActions;
+	readonly actions: TActions;
 	[Symbol.dispose]?(): void;
 };
-
-type RuntimeActions<
-	TActions extends ActionRegistry,
-	TRuntime extends WorkspaceRuntimeExtension,
-> = TRuntime extends { actions: infer TNextActions extends ActionRegistry }
-	? TNextActions
-	: TActions;
 
 type ConnectedWorkspaceWithRuntime<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
-	TActions extends ActionRegistry,
 	TRuntime extends WorkspaceRuntimeExtension,
-> = ConnectedWorkspace<TTables, TKv, RuntimeActions<TActions, TRuntime>> &
+> = ConnectedWorkspace<TTables, TKv, TRuntime['actions']> &
 	Omit<TRuntime, 'actions' | typeof Symbol.dispose>;
 
 export type WorkspaceDefinition<
@@ -223,7 +225,7 @@ export type WorkspaceDefinition<
 		compose: (
 			workspace: ConnectedWorkspaceContext<TTables, TKv, TActions>,
 		) => TRuntime,
-	): ConnectedWorkspaceWithRuntime<TTables, TKv, TActions, TRuntime>;
+	): ConnectedWorkspaceWithRuntime<TTables, TKv, TRuntime>;
 };
 
 /** The unconnected root workspace returned by `definition.open()`. */
@@ -325,7 +327,7 @@ export function defineWorkspace<
 		compose: (
 			workspace: ConnectedWorkspaceContext<TTables, TKv, TActions>,
 		) => TRuntime,
-	): ConnectedWorkspaceWithRuntime<TTables, TKv, TActions, TRuntime>;
+	): ConnectedWorkspaceWithRuntime<TTables, TKv, TRuntime>;
 	function open(
 		connection?: ConnectionConfig,
 		compose?: (
@@ -358,13 +360,12 @@ export function defineWorkspace<
 			definitions: options.tables,
 			connection,
 		});
-		const runtime =
-			compose?.({
-				...workspace,
-				tables,
-				actions,
-			}) ?? {};
-		const connectedActions = runtime.actions ?? actions;
+		const runtime = compose?.({
+			...workspace,
+			tables,
+			actions,
+		}) ?? { actions };
+		const connectedActions = runtime.actions;
 		const { idb, collaboration } = connectDoc(workspace.ydoc, connection, {
 			actions: connectedActions,
 		});

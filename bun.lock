@@ -611,6 +611,7 @@
         "@epicenter/auth": "workspace:*",
         "@epicenter/cli": "workspace:*",
         "@epicenter/constants": "workspace:*",
+        "@epicenter/field": "workspace:*",
         "@epicenter/identity": "workspace:*",
         "@epicenter/workspace": "workspace:*",
         "arktype": "catalog:",

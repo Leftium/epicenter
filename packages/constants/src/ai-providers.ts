@@ -50,11 +50,3 @@ export const SERVABLE_MODELS = AI_MODELS.map((model) => model.id) as [
 export const MODELS_BY_ID = Object.fromEntries(
 	AI_MODELS.map((model) => [model.id, model]),
 ) as Record<ServableModel, AiModel>;
-
-/** Coarse provider label for the dashboard model-cost table. */
-export function providerOf(model: string): 'OpenAI' | 'Google' | 'Unknown' {
-	const provider = MODELS_BY_ID[model as ServableModel]?.provider;
-	if (provider === 'openai') return 'OpenAI';
-	if (provider === 'gemini') return 'Google';
-	return 'Unknown';
-}

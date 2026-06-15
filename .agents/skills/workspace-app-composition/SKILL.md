@@ -86,7 +86,7 @@ add a `./browser` export to the rest for symmetry's sake.
 
 | Layer | File | Shape | Job | Returns |
 | --- | --- | --- | --- | --- |
-| Iso factory | `<app>.ts` / `workspace/index.ts` | A + B | `create<App>({ keyring })`: pure doc construction | workspace (`ydoc`, tables, kv, actions) |
+| Iso factory | `<app>.ts` / `workspace/index.ts` | A + B | `create<App>()`: pure doc construction | workspace (`ydoc`, tables, kv, actions) |
 | Browser factory | `<app>.browser.ts` / `workspace/browser.ts` | A + B | `open<App>Browser({ signedIn, deviceId })`: bind to browser persistence + sync | iso bundle plus IndexedDB/local storage, collaboration |
 | Extension / tauri factory | `<app>.extension.ts` etc. | B | bind to chrome.storage / Tauri APIs | iso bundle plus runtime resources |
 | Mount factory | `project.ts` / `workspace/project.ts` | A + B | `<app>(opts?)`: returns the `Mount` a project's `epicenter.config.ts` default-exports | `Mount` (node persistence, materializers) |
@@ -99,16 +99,15 @@ persisted state, network) live only in the session singleton (`src/lib/session.t
 
 ## Iso Factory
 
-`create<App>({ keyring })` builds the document and returns the workspace. It is
-the package `.` export and the wire contract for sync: every browser, mount, and
-test consumer imports it, and forking a table column shape breaks sync
-compatibility with peers running the canonical schema.
+`create<App>()` builds the document and returns the workspace. It is the package
+`.` export and the wire contract for sync: every browser, mount, and test
+consumer imports it, and forking a table column shape breaks sync compatibility
+with peers running the canonical schema.
 
 ```ts
-export function createHoneycrisp(opts: { keyring: () => Keyring }) {
+export function createHoneycrisp() {
 	const workspace = createWorkspace({
 		id: HONEYCRISP_ID,
-		keyring: opts.keyring,
 		tables: { /* ... */ },
 		kv: {},
 	});
@@ -145,11 +144,10 @@ export function openHoneycrispBrowser({
 	signedIn: SignedIn;
 	deviceId: DeviceId;
 }) {
-	const workspace = createHoneycrisp({ keyring: signedIn.keyring });
+	const workspace = createHoneycrisp();
 	const idb = attachLocalStorage(workspace.ydoc, {
 		server: signedIn.server,
 		ownerId: signedIn.ownerId,
-		keyring: signedIn.keyring,
 	});
 	const collaboration = openCollaboration(workspace.ydoc, { /* ... */ });
 	return { ...workspace, idb, collaboration };

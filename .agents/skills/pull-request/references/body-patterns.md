@@ -93,18 +93,16 @@ const server = createServer(client, { actions });
 Open with the architectural pressure, not a file list. Show before and after, then a small ownership tree (see [visual-patterns.md](visual-patterns.md)) when composition changed:
 
 ````md
-The old encryption path had five moving parts to answer one question: does this workspace have encryption keys?
+The workspace encryption layer answered a question we stopped asking: can the relay read this data? The trusted-relay direction answers it at the topology instead of per row, so client-side encryption comes out.
 
 ```ts
-// Before: three steps, async unlock, runtime state machine
-const encryption = attachEncryption(ydoc, { encryptionKeys });
-const tables = encryption.attachTables(defs);
-await encryption.unlock(keys);
+// Before: keyring threads from auth into construction
+const workspace = createWorkspace({ id, keyring: signedIn.keyring, tables, kv });
 ```
 
 ```ts
-// After: keys are read during workspace construction
-const workspace = createWorkspace({ id, keyring, tables: defs, kv: {} });
+// After: plaintext stores, no keyring to thread
+const workspace = createWorkspace({ id, tables, kv });
 ```
 ````
 

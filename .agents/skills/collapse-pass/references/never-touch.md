@@ -4,18 +4,7 @@ Codebase-specific facts that the collapse pass must respect. These strings, shap
 
 ## Durable strings: never change without explicit product decision
 
-These appear in encrypted blobs, on-disk paths, sync wire format, or schemas other apps validate against. They are part of the durable vocabulary of Epicenter.
-
-### HKDF info labels
-
-```
-"owner:{label}"        // packages/encryption/src/derivation.ts
-"workspace:{workspaceId}"  // packages/encryption/src/derivation.ts
-```
-
-Used by the encryption package to derive per-owner keyrings and then per-workspace keys. Changing either label rotates every derived key in every deployment.
-
-History: the first label was `"subject:{subject}"` before commit `af31c870b` (Owner partition collapse) and `926ef1b37` (HKDF prefix rename). Do not revive that vocabulary.
+These appear in on-disk paths, sync wire format, or schemas other apps validate against. They are part of the durable vocabulary of Epicenter.
 
 ### IndexedDB and BroadcastChannel key
 
@@ -35,21 +24,12 @@ Used by the sync hub to address rooms (`packages/server/src/owner.ts`, `doName()
 
 In personal mode `ownerId` is the signed-in user's id; in shared mode it is the literal `SHARED_OWNER_ID` (`'shared'`). The path is uniform across modes.
 
-### EncryptedBlob format bytes
-
-- `blob[0] = 1` (format version)
-- `blob[1] = key version`
-
-Both bytes are part of the on-disk and on-wire encryption envelope. Bumping them is a migration, not a refactor.
-
 ### Public arktype schemas
 
 Other apps validate inputs against these by name and shape. Renaming a field or changing a brand silently invalidates their parsers.
 
 - `PersistedAuth` (`packages/auth/src/auth-types.ts`)
 - `ApiSessionResponse` (`packages/auth/src/auth-types.ts`)
-- `Keyring` (`packages/encryption/src/keys.ts`, formerly `SubjectKeyring` before `af31c870b`)
-- `RootKeyring` (`packages/encryption/src/secrets.ts`)
 - `OwnerId`, `SHARED_OWNER_ID` (`packages/identity/src/identity.ts`); `UserId` (`packages/auth`)
 
 The ownership rule (`OwnershipRule` in `packages/server/src/ownership.ts`, a
@@ -80,11 +60,10 @@ The collapse pass should stop and surface to the user (not silently proceed) whe
 Default collapse-pass targets, narrowest to widest:
 
 1. `packages/auth`
-2. `packages/encryption`
-3. `packages/workspace`
-4. `packages/svelte-utils`
-5. `packages/cli`
-6. `apps/api`
+2. `packages/workspace`
+3. `packages/svelte-utils`
+4. `packages/cli`
+5. `apps/api`
 
 Out of scope without an explicit pass declaration:
 

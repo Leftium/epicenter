@@ -34,14 +34,14 @@ session model.
 Use this composition sentence when explaining the architecture:
 
 ```txt
-Epicenter uses Better Auth for auth-server machinery, OAuth for the app/resource boundary, and AuthState{ownerId,keyring} for workspace boot.
+Epicenter uses Better Auth for auth-server machinery, OAuth for the app/resource boundary, and AuthState{ownerId} for workspace boot.
 ```
 
 That means Better Auth owns users, account cookies, login, consent, token
 issuing, revocation, JWKS, and metadata. Epicenter clients store
 `PersistedAuth`, not Better Auth sessions. `/api/session` is the adapter that
-verifies an OAuth access token, resolves the request to an `ownerId`, derives
-the per-owner workspace keyring, and returns `ApiSessionResponse`.
+verifies an OAuth access token, resolves the request to an `ownerId`, and
+returns `ApiSessionResponse`.
 
 When the user asks whether this is idiomatic Better Auth, be precise:
 
@@ -135,12 +135,10 @@ export type AuthState =
 	| {
 			status: 'signed-in';
 			ownerId: OwnerId;
-			keyring: Keyring;
 	  }
 	| {
 			status: 'reauth-required';
 			ownerId: OwnerId;
-			keyring: Keyring;
 	  };
 
 export type AuthClient = {
@@ -155,13 +153,12 @@ export type AuthClient = {
 };
 ```
 
-`AuthState` arms carry `ownerId` and `keyring` directly. There is no nested
+`AuthState` arms carry `ownerId` directly. There is no nested
 identity object and no `user` field in state: profile (user/email) is fetched
-by surfaces that display it, not held in state. `ownerId` and `keyring` are
-present in `signed-in` and `reauth-required` because they belong to local
+by surfaces that display it, not held in state. `ownerId` is
+present in `signed-in` and `reauth-required` because it belongs to local
 workspace operations: even when the OAuth grant needs reauth, the cached owner
-id picks the right local storage partition and the keyring can still decrypt
-local workspace data.
+id picks the right local storage partition.
 
 Read `auth.state` synchronously. Use `auth.onStateChange(fn)` for future
 changes only; it does not replay. Consumers that need bootstrap behavior must
@@ -191,7 +188,6 @@ export const PersistedAuth = type({
 	grant: OAuthTokenGrant,
 	userId: UserId,
 	ownerId: OwnerId,
-	keyring: Keyring,
 });
 
 export type PersistedAuth = typeof PersistedAuth.infer;
@@ -200,7 +196,6 @@ export const ApiSessionResponse = type({
 	'+': 'delete',
 	user: AuthUser,
 	ownerId: OwnerId,
-	keyring: Keyring,
 });
 
 export type ApiSessionResponse = typeof ApiSessionResponse.infer;
@@ -213,11 +208,10 @@ PersistedAuth
   grant: { accessToken, refreshToken, accessTokenExpiresAt }  -> online-only server access
   userId   -> stored explicitly so the shared daemon can read it
   ownerId  -> local storage partition selection
-  keyring  -> local decrypt (offline-useful)
 ```
 
 The grant lets the app call the server and is useless offline on its own.
-`userId` / `ownerId` / `keyring` remain useful offline: they select and decrypt
+`userId` / `ownerId` remain useful offline: they select
 this user's local workspace data. `userId` is stored explicitly rather than
 synthesised from `ownerId` so the shared daemon can read it when
 `ownerId === SHARED_OWNER_ID` (in shared mode `ownerId` is the literal shared id
@@ -225,8 +219,9 @@ and is structurally not a `UserId`). Profile data is intentionally absent;
 application surfaces fetch it when they display it.
 
 The app can boot from a cached `PersistedAuth` without calling the network.
-Refresh failure must preserve the cached `ownerId` and `keyring` so local
-workspace data can remain available.
+Refresh failure must preserve the cached `ownerId` so local workspace data can
+remain available. The cached owner id selects the local storage partition; it
+does not decrypt anything.
 
 ## Network Gate (local-first invariant)
 
@@ -246,13 +241,13 @@ refresh stale grant        -> if refresh fails, no bearer (offline = fail closed
 unverified -> call /api/session
   ok                       -> mark verified, attach bearer
   AuthRejected (401/403)   -> pauseNetworkAuth() -> reauth-required
-  Unavailable (offline)    -> no bearer; local decrypt continues via cached keyring
+  Unavailable (offline)    -> no bearer; local workspace boot can continue by ownerId
 ```
 
 Fail closed offline: server access is refused until the current persisted auth
 has been verified by the API, but local workspace boot continues because the
-keyring is cached. A different-`ownerId` `/api/session` response wipes the
-local cell (same-owner guard); a changed keyring rewrites the cell.
+cached `ownerId` selects the right local partition. A different-`ownerId`
+`/api/session` response wipes the local cell (same-owner guard).
 
 `auth.fetch` layers retry on top of the gate: verify-before-attach,
 `credentials: 'omit'`, one forced-refresh retry on a 401, and
@@ -412,7 +407,6 @@ export type SignedIn = {
 	server: string;
 	baseURL: string;
 	ownerId: OwnerId;
-	keyring: () => Keyring;
 	openWebSocket: AuthClient['openWebSocket'];
 	onReconnectSignal: AuthClient['onStateChange'];
 };
@@ -428,14 +422,12 @@ export const session = createSession({
 	build: (signedIn: SignedIn) => {
 		const workspace = createWorkspace({
 			id: workspaceId,
-			keyring: signedIn.keyring(),
 			tables,
 			kv,
 		});
 		const idb = attachLocalStorage(workspace.ydoc, {
 			server: signedIn.server,
 			ownerId: signedIn.ownerId,
-			keyring: signedIn.keyring(),
 		});
 		const collaboration = openCollaboration(workspace.ydoc, {
 			url: roomWsUrl({
@@ -459,11 +451,8 @@ export const session = createSession({
 });
 ```
 
-`keyring` is a callback because the same-owner keyring can rotate
-(reauth-required to identity-bearing) without a rebuild; it reads the live
-`auth.state.keyring`. `server` is the API host alone (local-storage partition
-names); `baseURL` is the full origin (`roomWsUrl` wants the scheme for the
-`wss://` upgrade).
+`server` is the API host alone (local-storage partition names); `baseURL` is
+the full origin (`roomWsUrl` wants the scheme for the `wss://` upgrade).
 
 `createSession` owns workspace lifecycle. A sign-out disposes the payload. A
 `reauth-required` transition keeps the existing payload mounted (OAuth sessions
@@ -479,8 +468,7 @@ Yjs or local storage is a separate destructive user action.
 `/api/session` is mounted via `mountSessionApp(app, { ownership })`, which wires
 `requireCookieOrBearerUser` (the endpoint serves both browser apps and API
 clients) plus `createRequireOwnership`, then mounts the handler. The handler
-returns `{ user: { id, email }, ownerId, keyring }` where the keyring comes from
-`deriveKeyring(ownerId)`.
+returns `{ user: { id, email }, ownerId }`.
 
 External-only protected routes (AI chat, rooms) use `requireBearerUser`, which
 skips the cookie path and always answers 401 with a standard OAuth
@@ -516,9 +504,7 @@ mode returns the user's id branded as `OwnerId` (`ownerId === userId`). Shared
 mode runs the admission predicate and returns the literal `SHARED_OWNER_ID`, or
 `RequestGuardError.NotAdmitted` (403) for rejected users. `createRequireOwnership`
 sets `c.var.ownerId` and, on routes with a `:ownerId` segment, rejects a URL
-mismatch with `OwnerMismatch` (403). The keyring derivation's HKDF label IS the
-`ownerId`: personal owners get a per-user keyring, every member of a shared
-deployment shares one keyring.
+mismatch with `OwnerMismatch` (403).
 
 Note: the same-origin dashboard SPA (`apps/api/ui`) uses
 `createSameOriginCookieAuth`, not PKCE. Served same-origin by the API, it already
@@ -526,9 +512,9 @@ holds a first-party Better Auth session cookie after Google sign-in, so minting 
 bearer (and an unused `offline_access` refresh token) via PKCE against its own
 origin would be redundant. The cookie client uses that cookie directly
 (`credentials: 'include'`, no `Authorization`), reads `/api/session` once for
-`ownerId`/`keyring`, and is a plain `AuthClient` (no `openWebSocket`: a billing
-surface has no sync). It is the cookie-credential sibling of `createOAuthAppAuth`,
-not a mode flag on it.
+`ownerId`, and is a plain `AuthClient` (no `openWebSocket`: a billing surface
+has no sync). It is the cookie-credential sibling of `createOAuthAppAuth`, not a
+mode flag on it.
 
 ## Common Pitfalls
 
@@ -540,8 +526,8 @@ not a mode flag on it.
 - Do not treat `startSignIn()` resolving as signed-in. State is the source of
   truth; `startSignIn` takes no args.
 - Do not clear local workspace data on refresh failure. Move to
-  `reauth-required` (the runtime pauses network auth) and keep `ownerId` and
-  `keyring` available.
+  `reauth-required` (the runtime pauses network auth) and keep `ownerId`
+  available for local partition selection.
 - Do not let `accessTokenExpiresAt` decide local identity state. It is a
   transport refresh hint only; the resource server is the source of truth for
   token validity.
@@ -549,6 +535,7 @@ not a mode flag on it.
   `singleCredential` rejects ambiguity before Better Auth sees it.
 - Do not hide persistence failures in storage adapters. If `set` cannot save
   the refreshed cell, the failure must propagate, not silently look saved.
-- Do not import `requireSignedIn`, `InferSignedIn`, `openFuji`, or
-  `encryptionKeys` / `EncryptionKeys`. They do not exist. The term is `keyring`
-  / `Keyring`, and workspace binding goes through `createSession` / `SignedIn`.
+- Do not import `requireSignedIn`, `InferSignedIn`, `openFuji`,
+  `encryptionKeys`, `EncryptionKeys`, `keyring`, or `Keyring`. They do not
+  exist in Epicenter workspace auth. Workspace binding goes through
+  `createSession` / `SignedIn`.

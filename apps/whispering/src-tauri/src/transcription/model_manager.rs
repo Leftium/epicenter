@@ -589,10 +589,7 @@ impl ModelManager {
     }
 }
 
-/// Replace NaN/Inf with 0.0 and cap length so a malformed sample buffer
-/// never reaches whisper.cpp's FFI boundary (where a `GGML_ASSERT` would
-/// abort the process and bypass any Rust-level recovery). Cheap insurance
-/// against the most common abort class.
+/// Build a `LocalModelState` from a known (non-optional) config and status.
 fn state_for_config(config: &TranscriptionConfig, status: ModelStatus) -> LocalModelState {
     state_for_config_option(Some(config), status)
 }
@@ -608,6 +605,10 @@ fn state_for_config_option(
     }
 }
 
+/// Replace NaN/Inf with 0.0 and cap length so a malformed sample buffer
+/// never reaches whisper.cpp's FFI boundary (where a `GGML_ASSERT` would
+/// abort the process and bypass any Rust-level recovery). Cheap insurance
+/// against the most common abort class.
 fn sanitize_samples(mut samples: Vec<f32>) -> Vec<f32> {
     // Cap at one hour of mono 16kHz audio. Beyond this we don't run
     // inference reliably anyway and the FE imposes its own caps; this

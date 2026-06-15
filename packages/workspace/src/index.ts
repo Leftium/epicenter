@@ -224,6 +224,7 @@ export { wipeLocalStorage } from './document/wipe-local-storage.js';
 export {
 	type ConnectedTables,
 	type ConnectedWorkspace,
+	type ConnectedWorkspaceContext,
 	type CreateWorkspaceOptions,
 	createWorkspace,
 	type DefineWorkspaceOptions,
@@ -232,4 +233,6 @@ export {
 	type Workspace,
 	type WorkspaceActionContext,
 	type WorkspaceDefinition,
+	type WorkspaceFromDefinition,
+	type WorkspaceRuntimeExtension,
 } from './document/workspace.js';

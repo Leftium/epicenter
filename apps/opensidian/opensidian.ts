@@ -25,6 +25,7 @@ import {
 	type Id,
 	type InferTableRow,
 	nullable,
+	type WorkspaceFromDefinition,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
@@ -153,4 +154,6 @@ export const opensidianWorkspace = defineWorkspace({
 	kv: {},
 	actions: () => defineActions({}),
 });
-export type OpensidianWorkspace = ReturnType<typeof opensidianWorkspace.open>;
+export type OpensidianWorkspace = WorkspaceFromDefinition<
+	typeof opensidianWorkspace
+>;

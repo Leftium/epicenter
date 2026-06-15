@@ -24,6 +24,7 @@ import {
 	generateId,
 	type InferTableRow,
 	nullable,
+	type WorkspaceFromDefinition,
 } from '@epicenter/workspace';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
@@ -145,4 +146,6 @@ export const honeycrispWorkspace = defineWorkspace({
 			}),
 		}),
 });
-export type HoneycrispWorkspace = ReturnType<typeof honeycrispWorkspace.open>;
+export type HoneycrispWorkspace = WorkspaceFromDefinition<
+	typeof honeycrispWorkspace
+>;

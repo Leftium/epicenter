@@ -218,6 +218,16 @@ export type WorkspaceDefinition<
 	): ConnectedWorkspaceWithRuntime<TTables, TKv, TActions, TRuntime>;
 };
 
+/** The unconnected root workspace returned by `definition.open()`. */
+export type WorkspaceFromDefinition<TDefinition> =
+	TDefinition extends WorkspaceDefinition<
+		infer TTables,
+		infer TKv,
+		infer TActions
+	>
+		? Workspace<TTables, TKv, TActions>
+		: never;
+
 /**
  * Build a fully wired workspace bundle:
  * `{ ydoc, tables, kv, actions, [Symbol.dispose] }`.

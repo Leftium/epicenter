@@ -42,6 +42,7 @@ import {
 	type IanaTimeZone,
 	type InferTableRow,
 	nullable,
+	type WorkspaceFromDefinition,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
@@ -328,7 +329,7 @@ export const fujiWorkspace = defineWorkspace({
 			}),
 		}),
 });
-export type FujiWorkspace = ReturnType<typeof fujiWorkspace.open>;
+export type FujiWorkspace = WorkspaceFromDefinition<typeof fujiWorkspace>;
 
 /**
  * Deterministic guid of an entry's rich-text content sub-doc.

@@ -143,7 +143,7 @@ export type PortalSession = {
 export type ModelCostGuide = {
 	models: Array<{
 		model: string;
-		provider: 'OpenAI' | 'Google' | 'Unknown';
+		provider: 'OpenAI' | 'Google';
 		credits: number;
 	}>;
 };

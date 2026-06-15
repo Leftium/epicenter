@@ -7,11 +7,18 @@
  * sync.
  */
 
-import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { defineWorkspace } from '@epicenter/workspace';
 import { defineSessionMount } from '@epicenter/workspace/daemon';
 import { attachMountInfrastructure } from '@epicenter/workspace/node';
 import { createZhongwen } from './zhongwen.js';
+
+export type ZhongwenMountOptions = {
+	/**
+	 * Base URL of the Epicenter cloud API used for sync.
+	 * Defaults to `process.env.EPICENTER_API_URL`, falling back to the hosted API.
+	 */
+	baseURL?: string;
+};
 
 /**
  * Mount Zhongwen in an Epicenter project daemon.
@@ -19,14 +26,19 @@ import { createZhongwen } from './zhongwen.js';
  * The daemon hosts the encrypted root Y.Doc and sync bridge. Browser-only
  * transcript docs stay in `openZhongwenBrowser()`.
  */
-export function zhongwen() {
+export function zhongwen(opts: ZhongwenMountOptions = {}) {
 	return defineSessionMount({
 		name: 'zhongwen',
 		open(ctx) {
+			const baseURL =
+				opts.baseURL ||
+				process.env.EPICENTER_API_URL ||
+				'https://api.epicenter.so';
+
 			const workspace = createZhongwen({ keyring: ctx.session.keyring });
 
 			const infrastructure = attachMountInfrastructure(workspace.ydoc, ctx, {
-				baseURL: EPICENTER_API_URL,
+				baseURL,
 				actions: workspace.actions,
 			});
 

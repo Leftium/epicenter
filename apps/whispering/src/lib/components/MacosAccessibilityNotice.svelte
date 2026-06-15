@@ -17,7 +17,7 @@
 
 {#if isLocked}
 	<Alert.Root class="w-full text-left">
-		<WandSparklesIcon class="size-4" />
+		<WandSparklesIcon class="size-4" aria-hidden="true" />
 		<Alert.Title>Dictate into any app, hands-free</Alert.Title>
 		<Alert.Description>
 			Grant Accessibility to start recording with your global shortcut and paste

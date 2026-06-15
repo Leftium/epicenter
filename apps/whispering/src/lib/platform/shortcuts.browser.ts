@@ -1,5 +1,5 @@
-import { goto } from '$app/navigation';
 import { partitionResults } from 'wellcrafted/result';
+import { goto } from '$app/navigation';
 import { type Command, commands } from '$lib/commands';
 import { localShortcuts } from '$lib/operations/shortcuts';
 import { report } from '$lib/report';

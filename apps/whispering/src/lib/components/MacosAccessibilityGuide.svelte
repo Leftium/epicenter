@@ -17,7 +17,7 @@
 	<video
 		class="max-w-md rounded-lg border"
 		src={GUIDE_VIDEO_URL}
-		autoplay
+		aria-label="macOS Accessibility walkthrough"
 		loop
 		controls
 		muted

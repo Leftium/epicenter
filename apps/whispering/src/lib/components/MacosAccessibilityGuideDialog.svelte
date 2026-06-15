@@ -81,7 +81,7 @@
 		<Dialog.Footer>
 			{#if isGranted}
 				<Badge variant="success">
-					<CheckIcon class="size-4" />
+					<CheckIcon class="size-4" aria-hidden="true" />
 					Accessibility granted
 				</Badge>
 				<Button variant="outline" onclick={() => accessibilityGuide.close()}>
@@ -89,7 +89,7 @@
 				</Button>
 			{:else}
 				<Button variant="outline" onclick={openSystemSettings}>
-					<SettingsIcon class="size-4" />
+					<SettingsIcon class="size-4" aria-hidden="true" />
 					Open System Settings
 				</Button>
 				<Button onclick={() => permissions.requestAccessibility()}>

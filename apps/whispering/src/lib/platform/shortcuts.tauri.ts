@@ -1,15 +1,15 @@
-import { goto } from '$app/navigation';
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, tryAsync } from 'wellcrafted/result';
 import { os } from '#platform/os';
+import { goto } from '$app/navigation';
 import { type Command, commands } from '$lib/commands';
 import { report } from '$lib/report';
 import {
 	DEFAULT_GLOBAL_BINDINGS,
 	deviceConfig,
 } from '$lib/state/device-config.svelte';
-import { tauriOnly } from '$lib/tauri.tauri';
 import type { CommandBinding, KeyBinding } from '$lib/tauri/commands';
+import { tauriOnly } from '$lib/tauri.tauri';
 import { keyBindingToLabel } from '$lib/utils/key-binding';
 import type { Shortcuts } from './types';
 

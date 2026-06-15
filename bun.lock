@@ -760,7 +760,6 @@
         "@epicenter/workspace": "workspace:*",
         "@libsql/client": "^0.14.0",
         "@libsql/client-wasm": "^0.14.0",
-        "drizzle-orm": "^0.45.2",
         "just-bash": "^2.9.7",
         "prosemirror-markdown": "^1.13.4",
         "wellcrafted": "catalog:",

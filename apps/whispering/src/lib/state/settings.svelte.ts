@@ -3,6 +3,21 @@ import { whispering } from '#platform/whispering';
 
 type Kv = typeof whispering.kv;
 
+/** Every setting's value type, keyed by setting key. */
+type SettingsValues = ReturnType<Kv['getAll']>;
+
+/**
+ * Setting keys whose stored value is a boolean.
+ *
+ * The `<SettingSwitch>` component constrains its `key` prop to these, so the
+ * generic flows through `settings.get`/`settings.set` and a non-boolean key
+ * (a number like `retention.maxCount`, an enum like `ui.alwaysOnTop`) is a
+ * compile error instead of a silently-broken toggle.
+ */
+export type BooleanSettingKey = {
+	[K in keyof SettingsValues]: SettingsValues[K] extends boolean ? K : never;
+}[keyof SettingsValues];
+
 function createSettings() {
 	const map = new SvelteMap<string, unknown>();
 

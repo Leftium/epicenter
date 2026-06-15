@@ -5,6 +5,7 @@ export {
 	type ProviderConfigId,
 } from './ProviderConfigFields.svelte';
 // Shared components
+export { default as SettingSwitch } from './SettingSwitch.svelte';
 export { default as ManualDeviceSelector } from './selectors/ManualDeviceSelector.svelte';
 // Selector components
 export { default as RecordingModeSelector } from './selectors/RecordingModeSelector.svelte';

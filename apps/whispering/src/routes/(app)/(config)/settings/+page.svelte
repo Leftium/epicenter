@@ -1,9 +1,9 @@
 <script lang="ts">
 	import * as Field from '@epicenter/ui/field';
-	import * as RadioGroup from '@epicenter/ui/radio-group';
 	import * as Select from '@epicenter/ui/select';
 	import { Switch } from '@epicenter/ui/switch';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { SettingSwitch } from '$lib/components/settings';
 	import { ALWAYS_ON_TOP_MODE_OPTIONS } from '$lib/constants/always-on-top';
 	import { report } from '$lib/report';
 	import { autostartKeys } from '$lib/tauri/autostart-keys';
@@ -86,39 +86,21 @@
 				Applies immediately after an audio transcription finishes.
 			</Field.Description>
 			<Field.Group>
-				<Field.Field orientation="horizontal">
-					<Switch
-						id="transcription.copyToClipboardOnSuccess"
-						bind:checked={() => settings.get('output.transcription.clipboard'),
-							(v) => settings.set('output.transcription.clipboard', v)}
-					/>
-					<Field.Label for="transcription.copyToClipboardOnSuccess">
-						Copy transcript to clipboard
-					</Field.Label>
-				</Field.Field>
+				<SettingSwitch
+					key="output.transcription.clipboard"
+					label="Copy transcript to clipboard"
+				/>
 
-				<Field.Field orientation="horizontal">
-					<Switch
-						id="transcription.writeToCursorOnSuccess"
-						bind:checked={() => settings.get('output.transcription.cursor'),
-							(v) => settings.set('output.transcription.cursor', v)}
-					/>
-					<Field.Label for="transcription.writeToCursorOnSuccess">
-						Paste transcript at cursor
-					</Field.Label>
-				</Field.Field>
+				<SettingSwitch
+					key="output.transcription.cursor"
+					label="Paste transcript at cursor"
+				/>
 
 				{#if tauri && settings.get('output.transcription.cursor')}
-					<Field.Field orientation="horizontal">
-						<Switch
-							id="transcription.simulateEnterAfterOutput"
-							bind:checked={() => settings.get('output.transcription.enter'),
-								(v) => settings.set('output.transcription.enter', v)}
-						/>
-						<Field.Label for="transcription.simulateEnterAfterOutput">
-							Press Enter after pasting transcript
-						</Field.Label>
-					</Field.Field>
+					<SettingSwitch
+						key="output.transcription.enter"
+						label="Press Enter after pasting transcript"
+					/>
 				{/if}
 			</Field.Group>
 		</Field.Set>
@@ -131,39 +113,21 @@
 				Applies after you run a saved transformation on a transcription.
 			</Field.Description>
 			<Field.Group>
-				<Field.Field orientation="horizontal">
-					<Switch
-						id="transformation.copyToClipboardOnSuccess"
-						bind:checked={() => settings.get('output.transformation.clipboard'),
-							(v) => settings.set('output.transformation.clipboard', v)}
-					/>
-					<Field.Label for="transformation.copyToClipboardOnSuccess">
-						Copy transformed text to clipboard
-					</Field.Label>
-				</Field.Field>
+				<SettingSwitch
+					key="output.transformation.clipboard"
+					label="Copy transformed text to clipboard"
+				/>
 
-				<Field.Field orientation="horizontal">
-					<Switch
-						id="transformation.writeToCursorOnSuccess"
-						bind:checked={() => settings.get('output.transformation.cursor'),
-							(v) => settings.set('output.transformation.cursor', v)}
-					/>
-					<Field.Label for="transformation.writeToCursorOnSuccess">
-						Paste transformed text at cursor
-					</Field.Label>
-				</Field.Field>
+				<SettingSwitch
+					key="output.transformation.cursor"
+					label="Paste transformed text at cursor"
+				/>
 
 				{#if tauri && settings.get('output.transformation.cursor')}
-					<Field.Field orientation="horizontal">
-						<Switch
-							id="transformation.simulateEnterAfterOutput"
-							bind:checked={() => settings.get('output.transformation.enter'),
-								(v) => settings.set('output.transformation.enter', v)}
-						/>
-						<Field.Label for="transformation.simulateEnterAfterOutput">
-							Press Enter after pasting transformed text
-						</Field.Label>
-					</Field.Field>
+					<SettingSwitch
+						key="output.transformation.enter"
+						label="Press Enter after pasting transformed text"
+					/>
 				{/if}
 			</Field.Group>
 		</Field.Set>

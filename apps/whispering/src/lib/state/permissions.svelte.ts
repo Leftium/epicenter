@@ -10,8 +10,9 @@ export type PermissionStatus = 'checking' | 'granted' | 'denied';
  * Single owner of the macOS OS-permission facts the desktop dictation flow
  * depends on: Accessibility (the gate for the rdev global listener and
  * paste-back) and Microphone. One app-wide instance — the always-on listener
- * starter, the setup wizard, the recorder, and the guide page all READ this
- * instead of each calling `tauri.permissions.*.check()` on their own.
+ * starter, the home Accessibility notice, the shortcut recorder, and the guide
+ * page all READ this instead of each calling `tauri.permissions.*.check()` on
+ * their own.
  *
  * Re-check policy (no steady-state poll): seed once at `attach()`, then
  * re-check whenever the window regains focus. Returning from System Settings

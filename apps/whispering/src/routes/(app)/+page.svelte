@@ -49,6 +49,7 @@
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
 	import { viewTransition } from '$lib/utils/viewTransitions';
 	import CapturePipeline from './_components/CapturePipeline.svelte';
+	import MacosAccessibilityNotice from './_components/MacosAccessibilityNotice.svelte';
 	import ManualRecordingAction from './_components/ManualRecordingAction.svelte';
 	import VadRecordingAction from './_components/VadRecordingAction.svelte';
 
@@ -253,6 +254,8 @@
 			Press shortcut → speak → get text. Free and open source ❤️
 		</SectionHeader.Description>
 	</SectionHeader.Root>
+
+	<MacosAccessibilityNotice />
 
 	<ToggleGroup.Root
 		type="single"

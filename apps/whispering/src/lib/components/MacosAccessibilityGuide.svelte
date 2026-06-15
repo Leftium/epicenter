@@ -1,8 +1,9 @@
 <script lang="ts">
 	// Single source of the macOS Accessibility remove/re-add instructions: a
-	// screen recording plus the written steps. Both the standalone re-grant page
-	// and the setup wizard's access step render this, so the instructions live in
-	// exactly one place.
+	// screen recording plus the written steps, rendered by the standalone
+	// re-grant page (`/macos-enable-accessibility`). Kept as one component so the
+	// home Accessibility notice and any future surface can link to or embed the
+	// same instructions instead of restating them.
 	//
 	// The video streams from the GitHub release `_assets` rather than shipping in
 	// the app: keeping a multi-MB binary out of the bundle (and out of git) is

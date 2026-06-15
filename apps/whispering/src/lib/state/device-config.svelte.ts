@@ -140,13 +140,6 @@ const DEVICE_DEFINITIONS = {
 		'after_5_minutes',
 	),
 
-	// ── First-run setup ───────────────────────────────────────────────
-	// Whether this device has finished (or been backfilled past) the setup
-	// wizard. Per-device, never synced: permissions and the local model are
-	// physical facts of this install. Once true it never flips back, so the
-	// first-run gate never re-walls a returning user (see AppLayout).
-	'setup.completed': defineEntry(type('boolean'), false),
-
 	// ── Global OS shortcuts (device-specific, never synced) ───────────
 	// Structured KeyBinding (physical-key space) for the rdev backend. Old
 	// accelerator-string values are not migrated: they fail this schema and reset

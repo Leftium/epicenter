@@ -16,8 +16,7 @@
 	} from '$lib/constants/audio';
 	import { services } from '$lib/services';
 	import { tauri } from '#platform/tauri';
-	import { getSetupReadiness } from '$lib/setup/setup-readiness';
-	import { deviceConfig } from '$lib/state/device-config.svelte';
+	import { getTranscriptionSetupReadiness } from '$lib/settings/transcription-validation';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
 	import { settings } from '$lib/state/settings.svelte';
@@ -102,57 +101,19 @@
 		if (permissions.accessibilityGranted) void startGlobalListener();
 	});
 
-	// First-run gate. Until this device finishes setup, wall everything except the
-	// setup wizard and the Accessibility guide. `canFinish` doubles as the
-	// backfill: an existing user upgrading already has a model + permissions +
-	// activation, so they are marked done immediately and never see the wall.
-	// Once `setup.completed` is true it never flips back, so later breaking your
-	// config (clearing a model, losing a grant) does not re-wall you. Wait for the
-	// permission probe to settle so a granted user is never bounced mid-check.
+	// First-run gate. The one precondition with no fallback is a transcription
+	// runtime: without a model or API key, audio cannot become text. Everything
+	// else has a default (the global shortcut), prompts at point of use (the
+	// microphone), or degrades to the clipboard behind an in-app notice
+	// (Accessibility), so none of it walls. This reads a pure synchronous
+	// condition and stores nothing, so a returning user is only ever sent back
+	// here by deleting their last runtime, where landing on the picker is correct
+	// rather than hostile.
 	$effect(() => {
-		if (permissions.accessibility === 'checking') return;
-		if (deviceConfig.get('setup.completed')) return;
-
-		const readiness = getSetupReadiness();
-		if (readiness.canFinish) {
-			deviceConfig.set('setup.completed', true);
-			return;
-		}
-
+		if (getTranscriptionSetupReadiness().isReady) return;
 		const path = page.url.pathname;
-		if (path.startsWith('/setup') || path === '/macos-enable-accessibility') {
-			return;
-		}
+		if (path.startsWith('/setup') || path === '/macos-enable-accessibility') return;
 		void goto('/setup');
-	});
-
-	// macOS: a returning user whose grant broke (e.g. ad-hoc-signed update churns
-	// the TCC identity) gets a standing nudge into the re-grant guide. Only after
-	// setup is complete (a first-run user is handled by the gate above), only on a
-	// real `denied` (never the initial `checking`), and not on a permission surface.
-	$effect(() => {
-		if (!tauri || !os.isApple) return;
-		const path = page.url.pathname;
-		const onPermissionSurface =
-			path === '/macos-enable-accessibility' || path.startsWith('/setup');
-		if (
-			permissions.accessibility !== 'denied' ||
-			!deviceConfig.get('setup.completed') ||
-			onPermissionSurface
-		) {
-			report.dismiss('accessibility-regrant');
-			return;
-		}
-		report.warning({
-			id: 'accessibility-regrant',
-			title: 'Accessibility access needed',
-			description:
-				'Whispering needs Accessibility access to listen for global shortcuts and paste transcripts.',
-			action: {
-				label: 'View Guide',
-				onClick: () => goto('/macos-enable-accessibility'),
-			},
-		});
 	});
 
 	$effect(() => {

@@ -1,130 +1,25 @@
 <!--
-	Setup wizard. One route owns the whole flow: the step lives in the URL as
-	`?step=<id>` (so back/forward, deep links, and refresh all work), while the
-	shared state — permission probing, practice success — lives on this single
-	component instance. SvelteKit preserves the instance across query-only
-	navigation, so that state survives every step change without a module
-	singleton. Each step body is a child component under this folder.
+	Engine setup. The one hard precondition with no fallback: a transcription
+	runtime. Without a model or API key, audio cannot become text. The AppLayout
+	gate routes here whenever no runtime is configured, and stops the moment one
+	is. Permissions and shortcuts are deliberately not gated here: the global
+	shortcut ships with a default, the microphone prompts at first record, and
+	Accessibility degrades to the clipboard behind an in-app notice on the home
+	screen. So setup is one screen, not a wizard.
 -->
 <script lang="ts">
+	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
+	import { Link } from '@epicenter/ui/link';
 	import * as SectionHeader from '@epicenter/ui/section-header';
-	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
+	import AlertCircleIcon from '@lucide/svelte/icons/alert-circle';
 	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
 	import CheckCircle2Icon from '@lucide/svelte/icons/check-circle-2';
-	import CircleIcon from '@lucide/svelte/icons/circle';
-	import { onMount } from 'svelte';
-	import { MediaQuery } from 'svelte/reactivity';
-	import { cubicOut } from 'svelte/easing';
-	import { fly } from 'svelte/transition';
 	import { goto } from '$app/navigation';
-	import { page } from '$app/state';
-	import { getSetupReadiness } from '$lib/setup/setup-readiness';
-	import { permissions } from '$lib/state/permissions.svelte';
-	import AccessStep from './AccessStep.svelte';
-	import ActivationStep from './ActivationStep.svelte';
-	import EngineStep from './EngineStep.svelte';
-	import PracticeStep from './PracticeStep.svelte';
+	import TranscriptionRuntimeSetup from '$lib/components/settings/TranscriptionRuntimeSetup.svelte';
+	import { getTranscriptionSetupReadiness } from '$lib/settings/transcription-validation';
 
-	const STEP_IDS = ['engine', 'access', 'activation', 'practice'] as const;
-	type StepId = (typeof STEP_IDS)[number];
-
-	// Permission truth is read from the app-wide owner (which re-checks on window
-	// focus); the wizard only adds its own practice-success flag on top.
-	let practiceSucceeded = $state(false);
-
-	const readiness = $derived(getSetupReadiness());
-
-	const steps = $derived([
-		{
-			id: 'engine',
-			label: 'Engine',
-			title: 'Transcription engine',
-			helper:
-				'Parakeet runs locally on this device — no account or API key needed. Prefer a cloud provider? Pick it below.',
-			status: readiness.runtimeReady ? 'ready' : 'blocked',
-		},
-		{
-			id: 'access',
-			label: 'Access',
-			title: 'Recording access',
-			helper: readiness.needsDesktopPermissions
-				? 'Grant microphone and accessibility access so Whispering can hear you and type for you.'
-				: 'Confirm Whispering can reach your microphone.',
-			status: readiness.accessReady ? 'ready' : 'blocked',
-		},
-		{
-			id: 'activation',
-			label: 'Activation',
-			title: 'Activation',
-			helper:
-				'Choose how you start a recording — a shortcut, push to talk, or file upload.',
-			status: readiness.activationReady ? 'ready' : 'blocked',
-		},
-		{
-			id: 'practice',
-			label: 'Practice',
-			title: 'First dictation',
-			helper: 'Record one short phrase to confirm everything works end to end.',
-			status: practiceSucceeded ? 'ready' : 'blocked',
-		},
-	] as const);
-
-	/** Step from the URL; defaults to the first step when absent or unknown. */
-	function parseStep(value: string | null): StepId {
-		return STEP_IDS.find((id) => id === value) ?? 'engine';
-	}
-	const activeStep = $derived(parseStep(page.url.searchParams.get('step')));
-	const activeIndex = $derived(STEP_IDS.indexOf(activeStep));
-	const currentStep = $derived(steps[activeIndex]!);
-
-	const isFirstStep = $derived(activeIndex === 0);
-	const isLastStep = $derived(activeIndex === STEP_IDS.length - 1);
-
-	const primaryLabel = $derived(
-		isLastStep
-			? practiceSucceeded
-				? 'Start using Whispering'
-				: 'Finish without practice'
-			: 'Continue',
-	);
-	const primaryDisabled = $derived(
-		isLastStep ? !readiness.canFinish : currentStep.status !== 'ready',
-	);
-
-	// Slide direction for the step transition: forward (+1) or back (-1).
-	let direction = $state(1);
-
-	// Honor the OS "reduce motion" setting: no slide, no duration.
-	const reducedMotion = new MediaQuery('(prefers-reduced-motion: reduce)');
-
-	function navigate(id: StepId) {
-		direction = STEP_IDS.indexOf(id) < activeIndex ? -1 : 1;
-		void goto(`?step=${id}`, { keepFocus: true, noScroll: true });
-	}
-
-	/** Reachable if already passed, or individually ready. */
-	function isReachable(index: number) {
-		return index <= activeIndex || steps[index]?.status === 'ready';
-	}
-
-	function handlePrimary() {
-		if (isLastStep) {
-			void goto('/');
-			return;
-		}
-		navigate(STEP_IDS[activeIndex + 1]!);
-	}
-
-	function handleBack() {
-		if (!isFirstStep) navigate(STEP_IDS[activeIndex - 1]!);
-	}
-
-	// Re-probe on entry; the owner already re-checks on window focus app-wide, so
-	// the wizard doesn't install its own focus listener.
-	onMount(() => {
-		void permissions.refresh();
-	});
+	const runtime = $derived(getTranscriptionSetupReadiness());
 </script>
 
 <svelte:head> <title>Setup - Whispering</title> </svelte:head>
@@ -135,87 +30,46 @@
 			Set up Whispering
 		</SectionHeader.Title>
 		<SectionHeader.Description>
-			Get to one successful dictation on this device.
+			Choose how Whispering turns your voice into text. It is the only thing you
+			need before your first dictation.
 		</SectionHeader.Description>
 	</SectionHeader.Root>
 
-	<!-- Progress stepper: the only progress indicator on the page. -->
-	<nav class="flex items-stretch gap-2" aria-label="Setup progress">
-		{#each steps as step, index (step.id)}
-			{@const done = step.status === 'ready'}
-			{@const current = index === activeIndex}
-			<button
-				type="button"
-				disabled={!isReachable(index)}
-				aria-current={current ? 'step' : undefined}
-				onclick={() => navigate(step.id)}
-				class="flex flex-1 flex-col gap-1.5 rounded-md text-left transition disabled:cursor-default"
-				class:opacity-50={!current && !done}
-			>
-				<span
-					class="h-1 w-full rounded-full transition-colors"
-					class:bg-green-500={done}
-					class:bg-foreground={current && !done}
-					class:bg-border={!current && !done}
-				></span>
-				<span class="flex items-center gap-1.5 text-xs font-medium">
-					{#if done}
-						<CheckCircle2Icon class="size-3.5 text-green-500" />
-					{:else}
-						<CircleIcon
-							class="size-3.5 {current
-								? 'text-foreground'
-								: 'text-muted-foreground'}"
-						/>
-					{/if}
-					<span class={current || done ? 'text-foreground' : 'text-muted-foreground'}>
-						{index + 1}. {step.label}
-					</span>
-				</span>
-			</button>
-		{/each}
-	</nav>
+	<div class="space-y-4">
+		<TranscriptionRuntimeSetup
+			id="setup-transcription-service"
+			label="Runtime"
+			showAdvanced={false}
+		/>
 
-	{#key activeStep}
-		<div
-			class="flex flex-col gap-5"
-			in:fly={{
-				x: reducedMotion.current ? 0 : 12 * direction,
-				duration: reducedMotion.current ? 0 : 150,
-				easing: cubicOut,
-			}}
-		>
-			<div class="space-y-1">
-				<h2 class="text-base font-medium">{currentStep.title}</h2>
-				<p class="text-sm text-muted-foreground">{currentStep.helper}</p>
-			</div>
+		{#if runtime.isReady}
+			<Alert.Root>
+				<CheckCircle2Icon class="size-4 text-green-500" />
+				<Alert.Title>Transcription is configured</Alert.Title>
+				<Alert.Description>
+					{runtime.service?.label ?? 'Your runtime'} is ready on this device.
+				</Alert.Description>
+			</Alert.Root>
+		{:else}
+			<Alert.Root variant="warning">
+				<AlertCircleIcon class="size-4" />
+				<Alert.Title>Transcription needs setup</Alert.Title>
+				<Alert.Description>
+					{runtime.primaryIssue ??
+						'Choose a runtime and fill in the required fields.'}
+				</Alert.Description>
+			</Alert.Root>
+		{/if}
 
-			{#if activeStep === 'engine'}
-				<EngineStep />
-			{:else if activeStep === 'access'}
-				<AccessStep {permissions} />
-			{:else if activeStep === 'activation'}
-				<ActivationStep />
-			{:else if activeStep === 'practice'}
-				<PracticeStep
-					{readiness}
-					{practiceSucceeded}
-					onSuccess={() => (practiceSucceeded = true)}
-				/>
-			{/if}
-		</div>
-	{/key}
+		<Link href="/settings/transcription" class="text-sm text-muted-foreground">
+			Advanced transcription settings
+		</Link>
+	</div>
 
-	<div class="flex items-center justify-between">
-		<Button variant="outline" disabled={isFirstStep} onclick={handleBack}>
-			<ArrowLeftIcon class="size-4" />
-			Back
-		</Button>
-		<Button disabled={primaryDisabled} onclick={handlePrimary}>
-			{primaryLabel}
-			{#if !isLastStep}
-				<ArrowRightIcon class="size-4" />
-			{/if}
+	<div class="flex justify-end">
+		<Button disabled={!runtime.isReady} onclick={() => goto('/')}>
+			Start using Whispering
+			<ArrowRightIcon class="size-4" />
 		</Button>
 	</div>
 </main>

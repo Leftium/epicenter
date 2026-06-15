@@ -8,11 +8,11 @@
  * be mounted without it.
  */
 
+import { MODEL_CREDITS, providerOf } from '@epicenter/constants/ai-providers';
 import type { Env } from '@epicenter/server';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
 import { type Context, Hono, type MiddlewareHandler } from 'hono';
-import { MODEL_CREDITS, providerOf } from './ai-model-pricing.js';
 import { isProviderError, mapAutumnError } from './autumn.js';
 import { CHECKOUT_PLAN_IDS } from './catalog.js';
 import {

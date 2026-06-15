@@ -26,9 +26,12 @@
 
 import type { UserId } from '@epicenter/auth';
 import { AiChatError } from '@epicenter/constants/ai-chat-errors';
+import {
+	MODEL_CREDITS,
+	MODEL_PROVIDERS,
+} from '@epicenter/constants/ai-providers';
 import { AssetError } from '@epicenter/constants/asset-errors';
 import { Err, Ok, type Result } from 'wellcrafted/result';
-import { MODEL_CREDITS } from './ai-model-pricing.js';
 import { createAutumnClient, tryAutumn } from './autumn.js';
 import {
 	type CheckoutPlanId,
@@ -108,12 +111,17 @@ export function createBillingService(
 	 */
 	async function reserveAiChat(input: {
 		model: string;
-		provider: string | undefined;
 	}): Promise<Result<Reservation, AiChatError | BillingError>> {
 		const credits = MODEL_CREDITS[input.model as keyof typeof MODEL_CREDITS];
 		if (credits === undefined) {
 			return AiChatError.UnknownModel({ model: input.model });
 		}
+		// The catalog owns the model -> provider mapping; record it on the usage
+		// event so the dashboard can group spend by provider without the client
+		// asserting it. `credits !== undefined` proves the model is servable, so
+		// the lookup is total here.
+		const provider =
+			MODEL_PROVIDERS[input.model as keyof typeof MODEL_PROVIDERS];
 
 		// Resolve the active plan from a single customer fetch. A billing-provider
 		// outage fails closed: entitlement cannot be verified, so deny.
@@ -137,7 +145,7 @@ export function createBillingService(
 		// so a failed call never permanently consumes credits.
 		const { data: check, error: checkError } = await reserveAiCreditsWithLock({
 			credits,
-			properties: { model: input.model, provider: input.provider },
+			properties: { model: input.model, provider },
 		});
 		if (checkError) return Err(checkError);
 		if (!check.allowed) {

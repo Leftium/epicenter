@@ -16,12 +16,7 @@
  *  - `apps/zhongwen/project.ts` → `zhongwen()` mount factory
  */
 
-import {
-	SERVABLE_MODELS,
-	SERVABLE_PROVIDER_MODELS,
-	SERVABLE_PROVIDERS,
-	type ServableProvider,
-} from '@epicenter/constants/ai-providers';
+import type { ServableModel } from '@epicenter/constants/ai-providers';
 import { field } from '@epicenter/field';
 import {
 	createWorkspace,
@@ -48,9 +43,13 @@ export type ConversationId = Id & Brand<'ConversationId'>;
 export const generateConversationId = (): ConversationId =>
 	generateId<ConversationId>();
 
-export const ZHONGWEN_DEFAULT_PROVIDER = 'gemini' satisfies ServableProvider;
-export const ZHONGWEN_DEFAULT_MODEL =
-	'gemini-3.1-flash-lite-preview' satisfies (typeof SERVABLE_PROVIDER_MODELS)[typeof ZHONGWEN_DEFAULT_PROVIDER][number];
+/**
+ * Zhongwen runs a single Chinese-tuned model. It is an app constant, not a
+ * per-conversation choice, so it is never stored on the conversation row; the
+ * send path passes it to the server, which derives the provider from the
+ * catalog.
+ */
+export const ZHONGWEN_MODEL = 'gemini-3.5-flash' satisfies ServableModel;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Table Definitions
@@ -59,8 +58,6 @@ export const ZHONGWEN_DEFAULT_MODEL =
 const conversationsTable = defineTable({
 	id: field.string<ConversationId>(),
 	title: field.string(),
-	provider: field.select(SERVABLE_PROVIDERS),
-	model: field.select(SERVABLE_MODELS),
 	createdAt: field.number(),
 	updatedAt: field.number(),
 });

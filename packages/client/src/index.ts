@@ -61,13 +61,11 @@ export type SetVisibilityResponse = {
 // AI chat types (matches packages/server/src/routes/ai.ts request body)
 // ---------------------------------------------------------------------------
 
-export type AiChatProvider =
-	| { provider: 'openai'; model: string }
-	| { provider: 'gemini'; model: string };
-
 export type AiChatBody = {
 	messages: ReadonlyArray<unknown>;
-	data: AiChatProvider & {
+	data: {
+		/** Servable model id; the server derives the provider from the catalog. */
+		model: string;
 		systemPrompts?: ReadonlyArray<string>;
 		temperature?: number;
 		maxTokens?: number;

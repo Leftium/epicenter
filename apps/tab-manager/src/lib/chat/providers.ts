@@ -1,17 +1,17 @@
 /**
- * Provider and model configuration for AI chat.
+ * Model configuration for AI chat.
  *
- * Pure data: no Svelte runes, no side effects. The provider and model set is
- * the shared servable registry (`@epicenter/constants/ai-providers`), so the
- * picker can only offer what the `/api/ai` server validator accepts.
+ * Pure data: no Svelte runes, no side effects. The app curates a subset of the
+ * shared catalog (`@epicenter/constants/ai-providers`); the provider is derived
+ * from the model on the server, never chosen here.
  */
 
-import { SERVABLE_PROVIDER_MODELS } from '@epicenter/constants/ai-providers';
+import type { ServableModel } from '@epicenter/constants/ai-providers';
 
-export const PROVIDER_MODELS = SERVABLE_PROVIDER_MODELS;
+/** Models this app offers, in display order. */
+export const APP_MODELS = [
+	'gpt-5.4-mini',
+	'gpt-5.5',
+] as const satisfies readonly ServableModel[];
 
-export type Provider = keyof typeof PROVIDER_MODELS;
-
-export const DEFAULT_PROVIDER = 'openai' satisfies Provider;
-export const DEFAULT_MODEL = PROVIDER_MODELS[DEFAULT_PROVIDER][0];
-export const AVAILABLE_PROVIDERS = Object.keys(PROVIDER_MODELS) as Provider[];
+export const DEFAULT_MODEL = 'gpt-5.4-mini' satisfies ServableModel;

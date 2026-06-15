@@ -30,11 +30,7 @@
 		observeChatDocMessages,
 		readChatDocMessages,
 	} from '@epicenter/workspace/ai';
-	import {
-		type ConversationId,
-		ZHONGWEN_DEFAULT_MODEL,
-		ZHONGWEN_DEFAULT_PROVIDER,
-	} from '@epicenter/zhongwen';
+	import { type ConversationId, ZHONGWEN_MODEL } from '@epicenter/zhongwen';
 	import { onDestroy } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
 	import { requireZhongwen } from '$lib/session';
@@ -54,9 +50,8 @@
 		name?: AiChatError['name'];
 	};
 
-	// The durable conversation row (provider/model/title) is read at action
-	// time inside the send/kickoff handlers, never in the template (the header
-	// owns its reactive display), so a plain read suffices here.
+	// The durable conversation row (title) is read at action time inside the
+	// send handler, never in the template, so a plain read suffices here.
 	function readRow() {
 		return zhongwen.tables.conversations.get(conversationId).data;
 	}
@@ -156,7 +151,6 @@
 		kickoffController = controller;
 		sendError = null;
 		dismissedError = false;
-		const row = readRow();
 		try {
 			await aiChatFetch(API_ROUTES.ai.chatDoc.url(APP_URLS.API), {
 				method: 'POST',
@@ -165,8 +159,7 @@
 					guid: docHandle.ydoc.guid,
 					generationId: generateId(),
 					data: {
-						provider: row?.provider ?? ZHONGWEN_DEFAULT_PROVIDER,
-						model: row?.model ?? ZHONGWEN_DEFAULT_MODEL,
+						model: ZHONGWEN_MODEL,
 						systemPrompts: [ZHONGWEN_SYSTEM_PROMPT],
 					},
 				}),

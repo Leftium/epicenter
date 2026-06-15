@@ -1,13 +1,12 @@
 /**
- * AI model catalog for hosted chat: the tiny curated set of models the hosted
- * apps sell, with per-call credit prices.
+ * AI provider registry and model catalog for hosted chat.
  *
- * Single source of truth shared by server validation, hosted billing, and the
- * client model pickers. The catalog IS the servable set: there are no hidden,
+ * `AI_PROVIDERS` owns durable provider ids and labels for persisted billing
+ * events. `AI_MODELS` owns the currently servable set: there are no hidden,
  * legacy, or compatibility models, and provider is never a user-facing choice.
- * A model id is always a member of the provider SDK's model union
- * (`@tanstack/ai-*`), so a typo or a model the SDK cannot route is a compile
- * error here rather than a runtime 400.
+ * A model id is always a member of the matching provider SDK's model union, so a
+ * typo or a model the SDK cannot route is a compile error here rather than a
+ * runtime 400.
  */
 import type { GeminiTextModels } from '@tanstack/ai-gemini';
 import type { OPENAI_CHAT_MODELS } from '@tanstack/ai-openai';
@@ -16,15 +15,46 @@ type OpenAiModel = (typeof OPENAI_CHAT_MODELS)[number];
 type GeminiModel = (typeof GeminiTextModels)[number];
 
 /**
+ * Durable provider ids and display names. Provider ids are persisted on billing
+ * events, so this registry can outlive the currently servable model catalog.
+ */
+export const AI_PROVIDERS = {
+	openai: { label: 'OpenAI' },
+	gemini: { label: 'Google' },
+} as const;
+
+export type AiProvider = keyof typeof AI_PROVIDERS;
+
+export function isAiProvider(value: string): value is AiProvider {
+	return Object.hasOwn(AI_PROVIDERS, value);
+}
+
+const SERVABLE_PROVIDER_IDS = [
+	'openai',
+	'gemini',
+] as const satisfies readonly AiProvider[];
+type ServableProvider = (typeof SERVABLE_PROVIDER_IDS)[number];
+
+type ModelIdByProvider = {
+	openai: OpenAiModel;
+	gemini: GeminiModel;
+};
+
+/**
  * One sellable model. `label` is the product role shown in the picker (Fast,
  * Best), not a vendor name. Discriminated on `provider` so that switching on it
  * narrows `id` to the matching SDK model union: a consumer routing to an
  * adapter gets the right id type with no cast, and a gemini id can never be
  * paired with `provider: 'openai'`.
  */
-export type AiModel =
-	| { id: OpenAiModel; provider: 'openai'; label: string; credits: number }
-	| { id: GeminiModel; provider: 'gemini'; label: string; credits: number };
+export type AiModel = {
+	[P in ServableProvider]: {
+		id: ModelIdByProvider[P];
+		provider: P;
+		label: string;
+		credits: number;
+	};
+}[ServableProvider];
 
 /**
  * The catalog, in display order. One credit = $0.01 at Pro overage

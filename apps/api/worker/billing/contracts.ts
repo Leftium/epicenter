@@ -13,7 +13,7 @@
  * returns `{ portalUrl: string }` rather than a vendor envelope.
  */
 
-import type { AiModel } from '@epicenter/constants/ai-providers';
+import type { AiProvider } from '@epicenter/constants/ai-providers';
 import { type } from 'arktype';
 
 /** Snapshot of the customer's current plan and credit balance. */
@@ -113,7 +113,7 @@ export type BillingEvent = {
 	model: string | null;
 	/** Provider that produced the charge, as a stable id; null for refunds
 	 *  without metadata. The dashboard renders the vendor name from it. */
-	provider: AiModel['provider'] | null;
+	provider: AiProvider | null;
 	/** Credits deducted on this event. Negative values are refunds. */
 	credits: number;
 };
@@ -146,7 +146,7 @@ export type PortalSession = {
 export type ModelCostGuide = {
 	models: Array<{
 		model: string;
-		provider: AiModel['provider'];
+		provider: AiProvider;
 		credits: number;
 	}>;
 };

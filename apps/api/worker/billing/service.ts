@@ -27,7 +27,8 @@
 import type { UserId } from '@epicenter/auth';
 import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import {
-	type AiModel,
+	type AiProvider,
+	isAiProvider,
 	MODELS_BY_ID,
 	type ServableModel,
 } from '@epicenter/constants/ai-providers';
@@ -360,18 +361,11 @@ export function createBillingService(
 
 		const events: BillingEvent[] = (result.list ?? []).map((e) => {
 			const props = (e.properties ?? {}) as Record<string, unknown>;
-			// We wrote `provider` from the catalog entry at charge time
-			// (reserveAiChat destructures it from an `AiModel`), so a stored
-			// string is always a catalog provider. Autumn hands properties back
-			// untyped, so re-assert that invariant at this boundary.
 			return {
 				id: e.id,
 				timestampMs: e.timestamp,
 				model: typeof props.model === 'string' ? props.model : null,
-				provider:
-					typeof props.provider === 'string'
-						? (props.provider as AiModel['provider'])
-						: null,
+				provider: readEventProvider(props.provider),
 				credits: e.value,
 			};
 		});
@@ -512,6 +506,12 @@ export function createBillingService(
 		checkoutTopUp,
 		openPortal,
 	};
+}
+
+function readEventProvider(value: unknown): AiProvider | null {
+	if (typeof value !== 'string') return null;
+	if (isAiProvider(value)) return value;
+	throw new Error(`Unknown AI provider on billing event: ${value}`);
 }
 
 function formatUsd(amount: number): string {

@@ -1,9 +1,9 @@
 <script lang="ts">
+	import { AI_PROVIDERS } from '@epicenter/constants/ai-providers';
 	import { Skeleton } from '@epicenter/ui/skeleton';
 	import * as Table from '@epicenter/ui/table';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { billing } from '$lib/billing/queries';
-	import { PROVIDER_LABEL } from '$lib/billing/provider-label';
 
 	const events = createQuery(() => billing.events({ limit: 50 }).options);
 
@@ -47,7 +47,7 @@
 						>{event.model ?? '-'}</Table.Cell
 					>
 					<Table.Cell class="text-xs text-muted-foreground">
-						{event.provider ? PROVIDER_LABEL[event.provider] : '-'}
+						{event.provider ? AI_PROVIDERS[event.provider].label : '-'}
 					</Table.Cell>
 					<Table.Cell class="text-right tabular-nums">
 						{event.credits}

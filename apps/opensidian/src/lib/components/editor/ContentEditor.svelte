@@ -3,6 +3,7 @@
 	import { asFileId, type FileId } from '@epicenter/filesystem';
 	import { fromDisposableCache } from '@epicenter/svelte';
 	import { Loading } from '@epicenter/ui/loading';
+	import { onLocalUpdate } from '@epicenter/workspace';
 	import { requireOpensidian } from '$lib/session';
 	import CodeMirrorEditor from './CodeMirrorEditor.svelte';
 	import { linkDecorations } from './extensions/link-decorations';
@@ -22,7 +23,14 @@
 		filename.endsWith('.md') || !filename.includes('.'),
 	);
 
-	const doc = fromDisposableCache(opensidian.fileContentDocs, () => fileId);
+	const doc = fromDisposableCache(opensidian.tables.files.content, () => fileId);
+
+	$effect(() => {
+		const current = doc.current;
+		return onLocalUpdate(current.ydoc, () => {
+			opensidian.tables.files.update(fileId, { updatedAt: Date.now() });
+		});
+	});
 
 	const sharedLinkDecorations = linkDecorations({
 		onNavigate: (ref) => opensidian.state.files.selectFile(asFileId(ref.id)),
@@ -54,11 +62,11 @@
 	and can corrupt the timeline (phantom text entry alongside the real
 	stored entries).
 -->
-{#await doc.current.idb.whenLoaded}
+{#await doc.current.whenLoaded}
 	<Loading class="h-full" />
 {:then}
 	<CodeMirrorEditor
-		ytext={doc.current.content.asText()}
+		ytext={doc.current.asText()}
 		{extensions}
 		{filename}
 	/>

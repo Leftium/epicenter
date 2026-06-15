@@ -8,6 +8,7 @@ import { field } from '@epicenter/field';
 import { asOwnerId } from '@epicenter/identity';
 import { IDBKeyRange, indexedDB } from 'fake-indexeddb';
 import { Type } from 'typebox';
+import { defineActions, defineQuery } from '../shared/actions.js';
 import { attachPlainText } from './attach-plain-text.js';
 import type { ConnectionConfig } from './connect-doc.js';
 import { defineKv } from './define-kv.js';
@@ -142,5 +143,32 @@ describe('defineWorkspace', () => {
 			body[Symbol.dispose]();
 			workspace[Symbol.dispose]();
 		}
+	});
+
+	test('open(connection, compose) publishes runtime actions and disposes runtime extras', () => {
+		let runtimeDisposed = false;
+		const workspace = defineWorkspace({
+			id: 'ws-definition-runtime',
+			tables: { notes: notesDefinition },
+			kv: {},
+		}).open(connection, ({ tables, actions }) => ({
+			runtimeLabel: 'browser-only',
+			actions: defineActions({
+				...actions,
+				notes_count: defineQuery({
+					description: 'Count notes.',
+					handler: () => tables.notes.storedCount(),
+				}),
+			}),
+			[Symbol.dispose]() {
+				runtimeDisposed = true;
+			},
+		}));
+
+		workspace.tables.notes.set({ id: '1', title: 'hello' });
+		expect(workspace.runtimeLabel).toBe('browser-only');
+		expect(workspace.collaboration.actions.notes_count()).toBe(1);
+		workspace[Symbol.dispose]();
+		expect(runtimeDisposed).toBe(true);
 	});
 });

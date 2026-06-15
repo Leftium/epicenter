@@ -168,6 +168,36 @@ export type ConnectedWorkspace<
 	wipe(): Promise<void>;
 };
 
+export type ConnectedWorkspaceContext<
+	TTables extends TableDefinitions,
+	TKv extends KvDefinitions,
+	TActions extends ActionRegistry = ActionRegistry,
+> = Omit<Workspace<TTables, TKv, TActions>, 'tables'> & {
+	readonly tables: ConnectedTables<TTables>;
+};
+
+export type WorkspaceRuntimeExtension<
+	TActions extends ActionRegistry = ActionRegistry,
+> = {
+	readonly actions?: TActions;
+	[Symbol.dispose]?(): void;
+};
+
+type RuntimeActions<
+	TActions extends ActionRegistry,
+	TRuntime extends WorkspaceRuntimeExtension,
+> = TRuntime extends { actions: infer TNextActions extends ActionRegistry }
+	? TNextActions
+	: TActions;
+
+type ConnectedWorkspaceWithRuntime<
+	TTables extends TableDefinitions,
+	TKv extends KvDefinitions,
+	TActions extends ActionRegistry,
+	TRuntime extends WorkspaceRuntimeExtension,
+> = ConnectedWorkspace<TTables, TKv, RuntimeActions<TActions, TRuntime>> &
+	Omit<TRuntime, 'actions' | typeof Symbol.dispose>;
+
 export type WorkspaceDefinition<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
@@ -180,6 +210,12 @@ export type WorkspaceDefinition<
 	open(
 		connection: ConnectionConfig,
 	): ConnectedWorkspace<TTables, TKv, TActions>;
+	open<TRuntime extends WorkspaceRuntimeExtension>(
+		connection: ConnectionConfig,
+		compose: (
+			workspace: ConnectedWorkspaceContext<TTables, TKv, TActions>,
+		) => TRuntime,
+	): ConnectedWorkspaceWithRuntime<TTables, TKv, TActions, TRuntime>;
 };
 
 /**
@@ -261,13 +297,27 @@ export function defineWorkspace<
 	function open(
 		connection: ConnectionConfig,
 	): ConnectedWorkspace<TTables, TKv, TActions>;
-	function open(connection?: ConnectionConfig) {
+	function open<TRuntime extends WorkspaceRuntimeExtension>(
+		connection: ConnectionConfig,
+		compose: (
+			workspace: ConnectedWorkspaceContext<TTables, TKv, TActions>,
+		) => TRuntime,
+	): ConnectedWorkspaceWithRuntime<TTables, TKv, TActions, TRuntime>;
+	function open(
+		connection?: ConnectionConfig,
+		compose?: (
+			workspace: ConnectedWorkspaceContext<TTables, TKv, TActions>,
+		) => WorkspaceRuntimeExtension,
+	) {
 		const workspace = createWorkspace({
 			id: options.id,
 			tables: options.tables,
 			kv: options.kv,
 		});
-		const actions = options.actions?.(workspace) ?? defineActions({});
+		const actions =
+			options.actions === undefined
+				? ({} as TActions)
+				: options.actions(workspace);
 
 		if (connection === undefined) {
 			return defineWorkspaceBundle({
@@ -279,28 +329,37 @@ export function defineWorkspace<
 			});
 		}
 
-		const { idb, collaboration } = connectDoc(workspace.ydoc, connection, {
-			actions,
-		});
 		const { tables, disposeChildDocs } = connectTableChildDocs({
 			workspaceId: options.id,
 			tables: workspace.tables,
 			definitions: options.tables,
 			connection,
 		});
+		const runtime =
+			compose?.({
+				...workspace,
+				tables,
+				actions,
+			}) ?? {};
+		const connectedActions = runtime.actions ?? actions;
+		const { idb, collaboration } = connectDoc(workspace.ydoc, connection, {
+			actions: connectedActions,
+		});
 
 		let disposed = false;
 		function dispose() {
 			if (disposed) return;
 			disposed = true;
+			runtime[Symbol.dispose]?.();
 			disposeChildDocs();
 			workspace[Symbol.dispose]();
 		}
 
 		return defineWorkspaceBundle({
 			...workspace,
+			...runtime,
 			tables,
-			actions,
+			actions: connectedActions,
 			idb,
 			collaboration,
 			async wipe() {

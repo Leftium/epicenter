@@ -12,7 +12,7 @@
 import { defineWorkspaceBundle } from '@epicenter/workspace';
 import { defineSessionMount } from '@epicenter/workspace/daemon';
 import { attachMountInfrastructure } from '@epicenter/workspace/node';
-import { createOpensidian } from './opensidian.js';
+import { opensidianWorkspace } from './opensidian.js';
 
 export type OpensidianMountOptions = {
 	/**
@@ -31,7 +31,7 @@ export function opensidian(opts: OpensidianMountOptions = {}) {
 				process.env.EPICENTER_API_URL ||
 				'https://api.epicenter.so';
 
-			const workspace = createOpensidian();
+			const workspace = opensidianWorkspace.open();
 
 			const infrastructure = attachMountInfrastructure(workspace.ydoc, ctx, {
 				baseURL,

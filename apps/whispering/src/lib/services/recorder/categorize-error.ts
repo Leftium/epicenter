@@ -6,10 +6,10 @@ import { RecorderError } from './types';
  * variant (already wrapped in Err). Callers fall back to a generic variant
  * (InitFailed, StartFailed, StreamAcquisition, etc.) when this returns null.
  *
- * Mirrors the Rust-side helpers in src-tauri/src/recorder/recorder.rs
- * (`is_microphone_access_denied`, `is_no_input_device_error`), and also
- * handles browser DOMException names from getUserMedia and wellcrafted
- * tagged errors from device-stream.
+ * Mirrors the raw permission-denied and no-input-device string patterns that
+ * cpal emits on the Rust side, and also handles browser DOMException names
+ * from getUserMedia and wellcrafted tagged errors from device-stream. The
+ * string patterns matched below are the real contract.
  *
  * Inspired by Handy (MIT licensed):
  * https://github.com/cjpais/Handy/blob/main/src-tauri/src/audio_toolkit/audio/recorder.rs

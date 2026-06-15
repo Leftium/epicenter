@@ -1,6 +1,6 @@
 {
 	"name": "@epicenter/vite-config",
-	"description": "Shared Vite dev-server config helpers for Epicenter workspace apps",
+	"description": "Shared Vite config for Epicenter workspace apps",
 	"private": true,
 	"version": "0.1.1",
 	"type": "module",
@@ -8,6 +8,8 @@
 		".": "./src/index.ts"
 	},
 	"dependencies": {
+		"@sveltejs/kit": "catalog:",
+		"@tailwindcss/vite": "catalog:",
 		"vite": "catalog:"
 	},
 	"devDependencies": {

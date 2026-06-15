@@ -917,6 +917,8 @@
       "name": "@epicenter/vite-config",
       "version": "0.1.1",
       "dependencies": {
+        "@sveltejs/kit": "catalog:",
+        "@tailwindcss/vite": "catalog:",
         "vite": "catalog:",
       },
       "devDependencies": {

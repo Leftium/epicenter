@@ -1,17 +1,26 @@
-import { searchForWorkspaceRoot } from 'vite';
+import { sveltekit } from '@sveltejs/kit/vite';
+import tailwindcss from '@tailwindcss/vite';
+import { searchForWorkspaceRoot, type UserConfig } from 'vite';
 
 /**
- * `server.fs.allow` for a workspace app whose package contract (`<app>.ts`)
- * and browser composition (`<app>.browser.ts`) live at the app root, outside
- * `src/`, as the app's `.` / `./browser` package exports.
+ * Base Vite config for SvelteKit workspace apps whose package contract and
+ * browser composition live at the app root, outside `src/`.
  *
- * SvelteKit's default fs.allow does not reach app-root files, so dev requests
- * for them (e.g. `/<app>.browser.ts`) are denied with a 403 Restricted without
- * this entry. Note: setting `allow` REPLACES the default, so it must also span
- * sibling workspace package source served over `/@fs`; the workspace root
- * covers both. Narrowing to just the app dir (`process.cwd()`) serves the
- * app-root modules but re-breaks sibling packages, so use the workspace root.
+ * The `yjs` dedupe is load-bearing for CRDT identity. The `fs.allow` entry is
+ * also load-bearing: setting it replaces Vite's default workspace-root
+ * detection, so we recover that root explicitly to keep app-root exports and
+ * sibling package source available in dev.
  */
-export function workspaceAppFsAllow(): string[] {
-	return [searchForWorkspaceRoot(process.cwd())];
+export function workspaceAppViteConfig(app: { port: number }): UserConfig {
+	return {
+		plugins: [sveltekit(), tailwindcss()],
+		resolve: {
+			dedupe: ['yjs'],
+		},
+		server: {
+			port: app.port,
+			strictPort: true,
+			fs: { allow: [searchForWorkspaceRoot(process.cwd())] },
+		},
+	};
 }

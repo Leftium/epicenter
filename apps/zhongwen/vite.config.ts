@@ -1,14 +1,5 @@
 import { APPS } from '@epicenter/constants/apps';
-import { workspaceAppFsAllow } from '@epicenter/vite-config';
-import { sveltekit } from '@sveltejs/kit/vite';
-import tailwindcss from '@tailwindcss/vite';
+import { workspaceAppViteConfig } from '@epicenter/vite-config';
 import { defineConfig } from 'vite';
 
-export default defineConfig({
-	plugins: [sveltekit(), tailwindcss()],
-	server: {
-		port: APPS.ZHONGWEN.port,
-		strictPort: true,
-		fs: { allow: workspaceAppFsAllow() },
-	},
-});
+export default defineConfig(workspaceAppViteConfig(APPS.ZHONGWEN));

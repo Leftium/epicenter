@@ -146,7 +146,7 @@ and mount lifetime.
 
 ## Related
 
-- The `sync-construction-async-property-ui-render-gate-pattern` skill covers the service-layer equivalent for clients with async-ready properties.
+- The sync-construction / async-ready-property / UI-render-gate pattern (see `factory-function-composition`, `references/sync-construction-render-gate.md`) covers the service-layer equivalent for clients with async-ready properties.
 - `docs/articles/svelte-5-createsubscriber-pattern.md` covers `createSubscriber` for wrapping external event sources into reactive values: a different job than component-scoped handles.
 - `docs/articles/20260420T160000-state-handle-null-is-the-component-lifecycle-in-disguise.md` walks through why this rule exists and when Pattern B is still correct.
 

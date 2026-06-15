@@ -45,8 +45,8 @@ Audit the thesis against each surface:
   collapse 80-90 percent of complexity?
 
 After the surface audit, run an asymmetric wins check. This skill only detects
-the opportunity; [cohesive-clean-breaks](../cohesive-clean-breaks/SKILL.md)
-owns the decision.
+the opportunity; [asymmetric-wins](../asymmetric-wins/SKILL.md) owns the
+decision, candidate list, and refusal template.
 
 ```txt
 1. List the convenience features, rare modes, old shapes, and fast paths.

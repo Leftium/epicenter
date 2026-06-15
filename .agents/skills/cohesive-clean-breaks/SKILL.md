@@ -1,6 +1,6 @@
 ---
 name: cohesive-clean-breaks
-description: "Asymmetric-wins pass for decisions that change public shape, package boundaries, runtime contracts, naming, config structure, lifecycle ownership, or migration strategy. Refuse 10-20% of functionality to collapse 80-90% of complexity. Use when proposing a breaking change, replacing an API, redesigning ownership, planning a multi-wave replacement, or deciding whether to keep both old and new paths alive."
+description: "Breaking-change and clean-break mechanics for decisions that change public shape, package boundaries, runtime contracts, naming, config structure, lifecycle ownership, or migration strategy: wave ordering, hybrid-API rejection, boundary movement, ownership tests, and deleting old paths instead of aliasing them. Use when proposing a breaking change, replacing an API, redesigning ownership, planning a multi-wave replacement, or deciding whether to keep both old and new paths alive. For the refuse-a-feature-to-collapse-complexity move on its own, use asymmetric-wins."
 ---
 
 # Cohesive Clean Breaks
@@ -13,10 +13,12 @@ The goal is not to minimize diff size. The goal is to make the final system
 easy to explain, hard to misuse, and free of half-old, half-new behavior.
 
 Related skills: use [one-sentence-test](../one-sentence-test/SKILL.md) to state
-the thesis, [refactoring](../refactoring/SKILL.md) for caller counting and
-straggler sweeps, [approachability-audit](../approachability-audit/SKILL.md) for
-first-read clarity, [change-proposal](../change-proposal/SKILL.md) when showing
-current and proposed trees before editing, and
+the thesis, [asymmetric-wins](../asymmetric-wins/SKILL.md) for the refuse-a-
+feature-to-collapse-a-code-family decision, [refactoring](../refactoring/SKILL.md)
+for caller counting, the mental inlining pass, and straggler sweeps,
+[approachability-audit](../approachability-audit/SKILL.md) for first-read clarity,
+[change-proposal](../change-proposal/SKILL.md) when showing current and proposed
+trees before editing, and
 [post-implementation-review](../post-implementation-review/SKILL.md) after
 implementation.
 
@@ -24,7 +26,6 @@ implementation.
 
 Load these on demand based on the clean-break surface:
 
-- If working with **asymmetric wins or feature refusal examples**, read [references/asymmetric-wins.md](references/asymmetric-wins.md).
 - If planning a **multi-wave replacement, rollback point, or old-path deletion**, read [references/wave-ordering.md](references/wave-ordering.md).
 
 ## One Sentence First
@@ -106,60 +107,14 @@ into one deterministic teardown).
 
 ## Asymmetric Wins Pass
 
-Before installing a new invariant, ask whether an asymmetric win is available:
-can you refuse 10-20 percent of functionality and collapse 80-90 percent of
-the implementation complexity?
+Before installing a new invariant, run the asymmetric wins pass: can you refuse
+10-20 percent of functionality to collapse 80-90 percent of the implementation
+complexity? Find the small promise that owns a disproportionate code family,
+then decide whether refusing it leaves the product sentence intact.
 
-This is not a quota. Do not remove arbitrary features. Find the small promise
-that owns a disproportionate implementation graph, then decide whether refusing
-that exact promise leaves the product sentence intact.
-
-Run this pass when the design adds:
-
-- a fast path beside the canonical path
-- a provider-specific SDK wrapper beside a standard protocol
-- a fallback parser for an old shape
-- a second transport for one environment's nicer UX
-- a compatibility alias nobody explicitly asked for
-- an option that only preserves an old mental model
-- a partial reflection API that makes callers ask which surfaces are real
-
-Follow this procedure:
-
-```txt
-1. Name the product sentence that must remain true.
-2. List candidate refusal points: fast paths, old shapes, rare modes, provider
-   exceptions, compatibility aliases, fallback parsers, partial reflection.
-3. For each candidate, list the code family it forces: methods, adapters,
-   unions, error variants, tests, docs branches, UI states, migrations.
-4. Pick the candidate with the largest code family, not the most visible name.
-5. Ask who loses what if that behavior is refused.
-6. If the loss is a small convenience and the deletion removes a second shape,
-   refuse the behavior and write that refusal into the spec.
-```
-
-Use this output shape in specs and design notes:
-
-```txt
-Product sentence:
-  ...
-
-Candidate refusal:
-  ...
-
-Code family it deletes:
-  ...
-
-User loss:
-  ...
-
-Decision:
-  Refuse it / keep it because ...
-```
-
-The rule is deliberately pushy: if the product sentence survives and the code
-family disappears, default to refusal. Keep the feature only when the user loss
-is load-bearing.
+This move lives in [asymmetric-wins](../asymmetric-wins/SKILL.md): it owns the
+candidate list, the procedure, the decision template, and the worked example.
+Run it before adding any new invariant, then return here to execute the break.
 
 ## Scratch Redesign Pass
 
@@ -186,21 +141,11 @@ important policy, the abstraction is too soft.
 ## Mental Inlining Pass
 
 Before preserving a helper, layer, file, option, adapter, or component boundary,
-mentally inline it into its caller.
-
-Ask:
-
-```txt
-What does this layer actually add?
-Would the caller be easier to understand if this code lived inline?
-Is the name hiding simple control flow?
-Is the abstraction preserving a stale boundary from an old design?
-Does it exist because the current file tree made it convenient?
-```
-
-Keep the layer only when it owns a real invariant, names non-obvious domain
-behavior, isolates unsafe input, or has enough callers to earn a stable
-contract.
+run the [radical-options](../radical-options/SKILL.md) "Mental Inlining Pass":
+inline it into its caller, then keep the layer only when it earns its place. The
+per-change mechanics (caller counts, the inline-vs-keep decision table,
+single-caller families) live in [refactoring](../refactoring/SKILL.md). Use both,
+then decide ownership here.
 
 ## Dependency Injection and Inversion of Control
 
@@ -289,16 +234,16 @@ The best cleanup often moves a boundary instead of shortening a function.
 
 ## Go-to-Definition Awareness
 
-A clean public shape is also a navigable one. When choosing how to expose types and values across a package boundary, always consider Go-to-Definition: a caller pressing Go-to-Def should land on the actual source of truth, not on an alias, a re-export hop, or a passthrough wrapper. If a design choice forces an extra navigation hop, name what it earns (real validation, published contract, multi-impl port). If nothing earns it, collapse the hop.
+A clean public shape is also a navigable one. A caller pressing Go-to-Def should
+land on the actual source of truth, not on an alias, a re-export hop, or a
+passthrough wrapper. If a design choice forces an extra navigation hop, name what
+it earns (real validation, published contract, multi-impl port); otherwise
+collapse the hop.
 
-Specific regressions worth flagging during a clean-break review:
-
-- Re-export chains across packages where each hop adds nothing.
-- Adapter / proxy boundaries that wrap a real function with no behavior change.
-- Module-level objects that get destructure-re-exported, so Go-to-Def lands on the destructuring line.
-- Public type aliases hand-written over what is structurally the factory's return shape (prefer `ReturnType<typeof createThing>` so navigation lands on the returned member).
-
-See `typescript` "Go-to-Definition Awareness" for the per-file mechanics.
+The smell catalog (re-export chains, destructure-re-exports, no-op adapters,
+hand-written aliases over a factory's return shape) and the per-file mechanics
+live in `typescript` "Go-to-Definition Awareness". Apply them when a clean break
+changes how a type or value is exposed across a package boundary.
 
 ## Consumer Ergonomics Test
 

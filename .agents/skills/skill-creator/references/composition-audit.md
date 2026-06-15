@@ -1,0 +1,176 @@
+# Composition Audit
+
+Load this when grilling how a *cluster* of skills composes, not a single skill:
+routing collisions, duplicated bodies, dead links, and unclear roles. Run it
+after extracting or merging a skill, after adding a description trigger, or on a
+cadence over a named cluster (for example the review/simplify cluster:
+`post-implementation-review`, `collapse-pass`, `fresh-eyes-grill`,
+`cohesive-clean-breaks`, `greenfield-clean-breaks`,
+`radical-options`, `asymmetric-wins`, `approachability-audit`,
+`one-sentence-test`).
+
+This complements, does not replace:
+
+- `references/evaluation.md` owns single-skill trigger evals and traces.
+- `agent-instruction-hygiene` owns placement (AGENTS.md vs skill vs reference vs
+  delete) for one instruction.
+- This file owns the *system* view: do these skills route cleanly and avoid
+  re-teaching each other's bodies.
+
+## Role Model
+
+Classify every skill in the cluster as exactly one role. A skill that cannot pick
+one is the finding.
+
+```txt
+hub        orchestrates an ordered pass, delegates moves   (post-implementation-review, collapse-pass)
+move       one named cognitive step, triggered by a phrase (one-sentence-test, asymmetric-wins)
+mechanic   reusable per-change craft other skills cite     (refactoring, typescript, code-audit)
+adapter    thin wrapper adding inputs/IO to another skill   (rare; fold into the base skill unless the IO is substantial)
+```
+
+A move should own its phrase and delegate execution. A hub should not inline a
+move's full body. A mechanic should be cited, not copied. If two skills claim the
+same role for the same surface, one of them is redundant.
+
+## Mechanical Detectors
+
+Run these from `.agents/skills`. They are cheap; run them every pass. Each one
+maps to a failure I have actually shipped.
+
+### 1. Routing collision (the headline check)
+
+For each phrase you say out loud as a trigger, exactly one description should
+claim it. More than one is an over-trigger.
+
+```bash
+PHRASE="asymmetric wins"
+for d in */SKILL.md; do
+  sed -n '/^description:/,/^---$/p' "$d" | grep -qi "$PHRASE" && echo "$PHRASE -> $d"
+done
+```
+
+Two or more hits = collision. Fix by narrowing every description except the one
+true owner: do not let a hub or manual *open* with a move's name. (This check
+catches the case where a manual was branded "Asymmetric-wins pass" while a
+dedicated `asymmetric-wins` move also existed.)
+
+### 2. Duplicated bodies
+
+Same `## Heading` living in many skills usually means a copied essay.
+
+```bash
+grep -rh '^## ' */SKILL.md | sed 's/^## //' | sort | uniq -c | sort -rn | awk '$1>1'
+```
+
+Ignore structural repeats (`Output Shape`, `References`, `Compose With`). Treat
+content repeats (`Mental Inlining Pass`, `Asymmetric Wins Pass`,
+`Go-to-Definition Awareness`) as candidates to collapse into one owner that the
+rest link to.
+
+This detector counts headings, not bodies, so it stays red after a correct
+collapse: the heading survives in every skill, but only the owner keeps the
+essay and the rest become one-paragraph pointers (`run X "Pass"`). Before
+treating a repeat as a finding, open each section and confirm whether the
+non-owners already delegate. A delegating repeat is resolved, not a smell.
+
+### 3. Dead and orphan links
+
+```bash
+# broken reference links — match real markdown links ](...) only, keep the
+# ../skill/ prefix, and resolve relative to the linking file's dir. Matching the
+# bare `references/x.md` tail (and dropping the prefix) gives false DEAD hits for
+# valid cross-skill links like ](../workspace-api/references/x.md) and for
+# backtick-wrapped prose like `references/api-errors.md`.
+grep -rnoE '\]\((\.\./[a-z0-9-]+/)*references/[a-z0-9-]+\.md\)' */SKILL.md | while IFS=: read -r f n match; do
+  link="${match#']('}"; link="${link%')'}"
+  [ -f "$(dirname "$f")/$link" ] || echo "DEAD REF: $f:$n -> $link"
+done
+# broken ../skill/SKILL.md cross-links
+grep -rho '\.\./[a-z0-9-]*/SKILL\.md' */SKILL.md | sort -u | while read -r l; do
+  [ -f "${l#../}" ] || echo "DEAD LINK: $l"
+done
+# skill dirs missing a SKILL.md (stubs/orphans)
+for d in */; do [ -f "${d}SKILL.md" ] || echo "NO SKILL.md: $d"; done
+```
+
+### 4. Inbound-link count (coupling)
+
+```bash
+for s in $(ls -d */ | sed 's#/##'); do
+  c=$(grep -rl "\.\./$s/SKILL\.md" */SKILL.md | grep -v "^$s/" | wc -l | tr -d ' ')
+  printf '%3d  %s\n' "$c" "$s"
+done | sort -n
+```
+
+Read the result by role: a `hub` with 0 inbound links is fine (it is a front
+door). A `move` with 0 inbound is suspicious (nothing delegates to it: is its
+phrase real?). A `move` with exactly 1 inbound is tightly coupled (could it just
+be a section of that one caller?). Many inbound = a healthy shared move.
+
+## Judgment Grill
+
+After the mechanical pass, ask the skill-creator questions per skill, then two
+cluster questions the single-skill eval cannot see:
+
+```txt
+Per skill (from skill-creator):
+  What repeated failure does this prevent?
+  Which spoken phrase should trigger it?
+  Which near-miss phrase must not?
+  Does it own a workflow, or only a lens already owned elsewhere?
+
+Per cluster:
+  If I say each trigger phrase, does exactly one skill answer? (run detector 1)
+  Does any hub re-teach a move's body instead of delegating? (run detector 2)
+```
+
+When a collision or a near-miss is in doubt, escalate to
+`references/evaluation.md`: run the 2-3 should-trigger and 1-2 should-not prompts
+three times each and track the trigger rate. Do not trust one run.
+
+## Output Shape
+
+```txt
+Cluster: <name> (<N> skills)
+
+Roles
+  skill            role      owns
+  asymmetric-wins  move      "asymmetric wins" phrase + refusal template
+
+Collisions
+  "<phrase>" claimed by: <skill A>, <skill B>   -> narrow <B>
+
+Duplicated bodies
+  "<heading>" in <skills>   -> single owner <skill>, others link
+
+Dead/orphan
+  <findings or none>
+
+Verdict
+  keep / narrow / merge / demote, one concrete reason each
+```
+
+## Run It Continuously
+
+This is a reflection loop, not a one-shot. Two cadences:
+
+- Event-driven: run detectors 1-3 immediately after any extract, merge, rename,
+  or description edit in the cluster. They are seconds to run and catch the
+  collision before it ships.
+- Periodic: self-paced sweep of one cluster, fix or file each finding, stop when
+  a pass yields nothing new.
+
+A self-paced loop invocation:
+
+```txt
+/loop Audit the review/simplify skill cluster for composition health.
+Load skill-creator and read references/composition-audit.md. Run detectors 1-4,
+then the judgment grill. Report findings in the output shape and fix only
+mechanical, grounded ones (collisions, dead links, copied bodies). Escalate
+ambiguous triggers to references/evaluation.md. Stop when a full pass finds
+nothing new.
+```
+
+Let the loop self-pace: there is no external state to poll, so re-run only when
+the cluster changes, not on a timer.

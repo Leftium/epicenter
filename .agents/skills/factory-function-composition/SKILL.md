@@ -328,3 +328,8 @@ See the full articles for more details:
 - [The Factory Function Pattern](../../docs/articles/factory-function-pattern.md): detailed explanation
 - [Factory Method Patterns](../../docs/articles/factory-method-patterns.md): separating options and method patterns
 - [Closures Are Better Privacy Than Keywords](../../docs/articles/closures-are-better-privacy-than-keywords.md): internal anatomy and why closures beat class keywords
+
+Load on demand:
+
+- [references/single-or-array-pattern.md](references/single-or-array-pattern.md): when a factory or CRUD entry point should accept either a single item or an array.
+- [references/sync-construction-render-gate.md](references/sync-construction-render-gate.md): when a client's synchronous methods depend on async-initialized state and the UI must gate render on readiness.

@@ -1,6 +1,6 @@
 ---
 name: collapse-pass
-description: "Run a continuous collapse-and-simplify pass that surgically removes indirection failing to earn its boundary. Use when the user says 'collapse pass', 'simplify pass', 'reduce indirection', 'shrink the surface', 'find what to delete', when asking to audit a package for dead abstractions, or when the goal is a sequence of small refactor commits that delete more than they add. Pairs with code-audit (smell catalog), refactoring (per-change mechanics), one-sentence-test (cohesion gate), cohesive-clean-breaks (deep redesigns), approachability-audit (first-read sanity), and post-implementation-review (second-read after each commit)."
+description: "Run a continuous collapse-and-simplify pass that surgically removes indirection failing to earn its boundary. Use when the user says 'collapse pass', 'simplify pass', 'reduce indirection', 'shrink the surface', 'find what to delete', when asking to audit a package for dead abstractions, when reviewing a pull request, branch, or recent merged change for simplification (isolated in a worktree), or when the goal is a sequence of small refactor commits that delete more than they add. Pairs with code-audit (smell catalog), refactoring (per-change mechanics), one-sentence-test (cohesion gate), cohesive-clean-breaks (deep redesigns), approachability-audit (first-read sanity), and post-implementation-review (second-read after each commit)."
 metadata:
   author: epicenter
   version: '1.0'
@@ -111,3 +111,34 @@ A goal that invokes this skill should say:
 - **Starting target**: usually the narrowest surface first (e.g. `packages/auth` before `apps/api`)
 
 Everything else (the ritual, gate, finding format, never-touch list, report shape) is in this skill.
+
+## On a PR or branch diff
+
+When the target is a pull request, a branch, or a recent merged change rather
+than a working package, the ritual above is unchanged; only the scoping differs.
+
+1. Isolate the change in a worktree by default. Do not reset the user's active
+   checkout.
+
+   ```bash
+   # GitHub PR number
+   git fetch origin pull/<number>/head:pr-<number>-collapse
+   git worktree add ../epicenter-pr-<number>-collapse pr-<number>-collapse
+   # or a named branch (slug: replace slashes with hyphens)
+   git fetch origin <branch>:<branch>-collapse
+   git worktree add ../epicenter-<branch-slug>-collapse <branch>-collapse
+   ```
+
+2. Compute scope with `git diff --name-only <base>...HEAD`. Infer the base from
+   PR metadata, the upstream tracking branch, or `origin/main`, in that order.
+3. Read changed files first, then direct callers and tests. Run the
+   per-iteration ritual and anti-cosmetic gate exactly as above. List every file
+   read as an ASCII tree before analysis.
+4. Do not stage, commit, push, or open a PR unless the user asks. Do not leave
+   the worktree dirty without reporting its path and state.
+5. Finish with [post-implementation-review](../post-implementation-review/SKILL.md)
+   and targeted `bun test` / `bun run typecheck` on impacted packages.
+
+For a second model's judgment on the findings or the final diff, see
+[claude-code-consult](../claude-code-consult/SKILL.md): prefer two small consults
+(a pre-edit risk pass, a post-edit diff pass) over one broad one.

@@ -1,11 +1,3 @@
----
-name: single-or-array-pattern
-description: Pattern for functions accepting a single item or array. Use when creating CRUD operations, batch processing APIs, or factories handling one or many inputs.
-metadata:
-  author: epicenter
-  version: '1.0'
----
-
 # Single-or-Array Pattern
 
 Accept both single items and arrays, normalize at the top, process uniformly.
@@ -165,4 +157,4 @@ function create(itemOrItems: T | T[]) {
 
 ## References
 
-- [Full article](../../docs/articles/single-or-array-overload-pattern.md) : detailed explanation with more examples
+- [Full article](../../../../docs/articles/single-or-array-overload-pattern.md) : detailed explanation with more examples

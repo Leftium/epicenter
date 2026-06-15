@@ -57,6 +57,7 @@ Load only the skills that match the touched surface:
 collapse-pass            continuous deletion of unearned indirection
 cohesive-clean-breaks    public API, package boundary, config, lifecycle, naming, or ownership change
 greenfield-clean-breaks  compatibility refusal and ideal-shape review
+asymmetric-wins          refuse a feature to collapse a disproportionate code family
 refactoring              caller counts, inlining, dead exports, stale imports, straggler sweep
 approachability-audit    too many hops, misleading names, clever types, first-read confusion
 code-audit               recurring repo smells and grep-based checks
@@ -95,21 +96,13 @@ packages/foo/
 ## Mental Inlining Pass
 
 Mentally inline every helper, wrapper, component, prop bundle, adapter, file,
-factory, compartment, and extracted function back into its call sites.
+factory, compartment, and extracted function back into its call sites, then keep
+a layer only when it earns its place.
 
-Ask:
-
-```txt
-Would the raw call site be easier to read without this layer?
-Does the helper own an invariant, or only rename simple control flow?
-Does the wrapper hide a branch that every caller already knows?
-Does the file split make the concept clearer, or preserve an old boundary?
-Does this component prop exist for real reuse, or only to pass through values?
-```
-
-Keep indirection when it owns a real invariant, isolates unsafe input, names
-non-obvious domain behavior, supports several real callers, or protects a public
-contract. Otherwise, mark it as inlineable.
+For the full ask-block and the keep-vs-inline criteria, use
+[radical-options](../radical-options/SKILL.md) "Mental Inlining Pass". The
+ownership check below applies the same test to runtime, durable, and
+user-visible state.
 
 ## Ownership And Collapse Check
 

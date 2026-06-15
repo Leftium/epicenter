@@ -1,12 +1,4 @@
----
-name: incremental-commits
-description: Break multi-file changes into atomic commits ordered by dependency. Use for "split this into commits", "commit strategy", "break this up", refactors.
-metadata:
-  author: epicenter
-  version: '1.0'
----
-
-# Incremental Commits
+# Splitting Commits Into Ordered Waves
 
 When a feature touches multiple files, implement in **waves**. Each wave is one logical concern, one standalone commit, ordered by dependency. This creates a clean git history that reviewers can audit one commit at a time.
 

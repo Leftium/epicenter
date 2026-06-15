@@ -23,7 +23,7 @@ Use the narrow artifact skill when the user asks for that artifact:
 | [pull-request](../pull-request/SKILL.md) | PR title, PR body, changelog, issue links, merge strategy, durable reviewer context. |
 | [documentation](../documentation/SKILL.md) | Folder READMEs, JSDoc, and comments that explain why rather than restating code. |
 | [github-issues](../github-issues/SKILL.md) | Public issue and PR-thread replies with maintainer context. |
-| [discord-voice](../discord-voice/SKILL.md) | Casual team chat and Discord messages. |
+| [references/discord-voice.md](references/discord-voice.md) | Casual team chat and Discord messages. |
 
 For PR and commit text, the voice rules here still apply, but the product and personal-voice sections further down (landing-page framing, "end with an invitation", first-person story openers) are for marketing and community writing, not for reviewer-facing PRs or commits.
 

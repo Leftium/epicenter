@@ -1,6 +1,6 @@
 ---
 name: fresh-eyes-grill
-description: Fresh-context adversarial review for staged diffs, state machines, type shapes, lifecycle boundaries, and confusing abstractions. Use when the user says "fresh eyes", "grill this", "why not simpler", "state-machine audit", "does this type shape earn it", or asks for a new-developer review through a subagent.
+description: Fresh-context adversarial review for staged diffs, state machines, type shapes, lifecycle boundaries, and confusing abstractions. Use when the user says "fresh eyes", "grill this", "why not simpler", "state-machine audit", "does this type shape earn it", or asks for a new-developer review through a subagent. Compose with greenfield-clean-breaks only when compatibility pressure has been explicitly released.
 ---
 
 # Fresh Eyes Grill
@@ -34,6 +34,9 @@ Always load the relevant local skills before reviewing:
 - `approachability-audit` for first-read clarity
 - `refactoring` for caller counts and helper inlining
 - `cohesive-clean-breaks` for refusing low-value behavior or states
+- `greenfield-clean-breaks` when the user says "greenfield", "no users",
+  "clean break", "refuse compatibility", or asks whether old behavior can be
+  deleted
 - `define-errors` and `error-handling` when `Result`, `Err`, `Ok`, or
   `defineErrors` shapes are involved
 - `collapse-pass` when the user asks to shrink indirection or delete state
@@ -53,7 +56,8 @@ Ask these questions in order:
 3. Which layer owns each invariant?
 4. What would a new developer misunderstand on the first read?
 5. What is the simplest design that would still satisfy the hard invariants?
-6. What behavior can we refuse to delete a whole code family?
+6. If compatibility pressure has been released, what behavior can we refuse to
+   delete a whole code family?
 7. Which helpers have one caller, and do they earn their names?
 8. Which type aliases are real contracts, and which are local ceremony?
 9. Would `Result` plus `defineErrors` say this better than a custom union?
@@ -169,7 +173,7 @@ Lifecycle
 ...
 
 Findings
-1. [P1] file:line Problem, why it matters, greenfield correction.
+1. [severity] file:line Problem, why it matters, correction.
 
 Would simplify
 - ...
@@ -191,7 +195,9 @@ Findings must lead. Do not bury bugs under prose.
 If the user asks you to act on the grill:
 
 1. Add or adjust focused tests first.
-2. Make the greenfield correction that resolves the problem at its real owner.
+2. Make the correction that resolves the problem at its real owner. Use
+   `greenfield-clean-breaks` only when compatibility pressure has been
+   explicitly released.
 3. Re-read every touched file.
 4. Run package typecheck and tests.
 5. Stage only the files you touched when the user asks for staging.

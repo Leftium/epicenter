@@ -1,11 +1,6 @@
----
-name: discord-voice
-description: Discord and casual chat voice for team conversations, PR feedback, and contributor interactions. Use when drafting Discord messages, chat replies, or any informal team communication.
----
-
 # Discord Voice
 
-Follow [writing-voice](../writing-voice/SKILL.md) as the base. This skill adapts it for Discord and casual chat contexts.
+Follow [writing-voice](../SKILL.md) as the base. This skill adapts it for Discord and casual chat contexts.
 
 ## Multi-Message Format
 

@@ -183,7 +183,7 @@ You do not have to create one commit per wave. Use the commit shape that best fi
 | One wave contains multiple independently reviewable changes | Split it into logical commits |
 | The user wants one large commit | Keep intermediate working checkpoints, then create one final commit |
 
-Follow `git` and `incremental-commits` skill conventions:
+Follow `git` and `standalone-commits` skill conventions:
 
 ```
 feat(scope): wave description, what this wave accomplishes

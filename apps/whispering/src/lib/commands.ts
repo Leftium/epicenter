@@ -81,16 +81,10 @@ export const commands = [
 		id: 'openTransformationPicker',
 		title: 'Open transformation picker',
 		// Fire on release, not press: the global accelerator carries a Cmd/Ctrl+Shift
-		// chord, and capturing on press synthesizes Cmd/Ctrl+C while that chord is
+		// chord, and acting on the press synthesizes Cmd/Ctrl+C while that chord is
 		// still held, so the foreground app sees Cmd+Shift+C instead of a clean copy.
-		// Register both states (not Released-only) because the local shortcut manager
-		// only arms a command on keydown when `on` includes 'Pressed'; without it the
-		// in-app shortcut would never fire. The callback guard runs once, on release.
-		on: ['Pressed', 'Released'],
-		callback: (state?: ShortcutEventState) => {
-			if (state === 'Released' || state === undefined)
-				openTransformationPicker();
-		},
+		on: ['Released'],
+		callback: () => openTransformationPicker(),
 	},
 	{
 		id: 'runTransformationOnClipboard',
@@ -111,3 +105,28 @@ export const commandCallbacks = commands.reduce<CommandCallbacks>(
 	},
 	{} as CommandCallbacks,
 );
+
+type TriggerTarget = {
+	on: readonly ShortcutEventState[];
+	callback: (state?: ShortcutEventState) => void;
+};
+const triggerTargetById = new Map<string, TriggerTarget>(
+	commands.map((c) => [c.id, { on: c.on, callback: c.callback }]),
+);
+
+/**
+ * The single convergence point for trigger backends. The desktop rdev listener
+ * and the browser keydown manager both emit raw `(commandId, edge)` pairs into
+ * here, so neither reimplements the `on` filter: an edge the command does not
+ * subscribe to is dropped, the rest reach the callback. Direct invocations
+ * (command palette, in-app buttons) bypass this and call `commandCallbacks`
+ * with no edge.
+ */
+export function dispatchCommandTrigger(
+	commandId: string,
+	state: ShortcutEventState,
+) {
+	const target = triggerTargetById.get(commandId);
+	if (!target?.on.includes(state)) return;
+	target.callback(state);
+}

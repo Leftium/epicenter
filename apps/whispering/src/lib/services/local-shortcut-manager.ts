@@ -35,14 +35,13 @@ type LocalShortcutError = InferErrors<typeof LocalShortcutError>;
 
 export type CommandId = string & Brand<'CommandId'>;
 
-const shortcuts = new Map<
-	CommandId,
-	{
-		on: ShortcutEventState[];
-		keyCombination: KeyboardEventSupportedKey[];
-		callback: (state: ShortcutEventState) => void;
-	}
->();
+/**
+ * Registered combos by command id. The manager only matches physical keys and
+ * tracks press/release edges; it does not own which edges a command cares about
+ * (the `on` filter) or what the command does (the callback). Both live in the
+ * command layer, reached through the `onTrigger` sink passed to `listen`.
+ */
+const shortcuts = new Map<CommandId, KeyboardEventSupportedKey[]>();
 
 /**
  * Type representing the local shortcut manager instance.
@@ -65,9 +64,12 @@ export const LocalShortcutManagerLive = {
 	 * - Provides special handling for modifier keys to prevent stuck keys
 	 * - Automatically cleans up state when window loses focus or visibility
 	 *
+	 * @param onTrigger - sink for matched edges; the command layer applies the
+	 *   `on` filter and runs the callback. Called with `'Pressed'` when a combo
+	 *   becomes fully held and `'Released'` when it stops being held.
 	 * @returns Cleanup function that removes all event listeners when called
 	 */
-	listen() {
+	listen(onTrigger: (id: CommandId, state: ShortcutEventState) => void) {
 		/**
 		 * Array tracking currently pressed keys in lowercase format.
 		 * Maintains real-time state of which keys are physically held down.
@@ -120,21 +122,21 @@ export const LocalShortcutManagerLive = {
 			if (!pressedKeys.includes(key)) pressedKeys.push(key);
 
 			// Check all registered shortcuts for matches
-			for (const [
-				id,
-				{ callback, keyCombination, on },
-			] of shortcuts.entries()) {
+			for (const [id, keyCombination] of shortcuts.entries()) {
 				if (!arraysMatch(pressedKeys, keyCombination)) continue;
 
 				// Always prevent default for matching shortcuts
 				e.preventDefault();
 
-				// Only trigger callback if shortcut not already active
-				// This is the key anti-spam mechanism: if the shortcut ID is already
-				// in activeShortcuts, we know it's been triggered and should not fire again
-				if (!activeShortcuts.has(id) && on.includes('Pressed')) {
-					activeShortcuts.add(id); // Mark as active BEFORE calling callback
-					callback('Pressed');
+				// Arm on the first full match and emit 'Pressed'. activeShortcuts is
+				// the anti-spam latch: while a combo stays held, OS key repeat fires
+				// keydown many times a second, but it emits 'Pressed' exactly once.
+				// Arm regardless of which edges the command wants; the dispatcher
+				// drops a 'Pressed' the command did not subscribe to, and arming is
+				// what lets a release-only command still emit 'Released' on keyup.
+				if (!activeShortcuts.has(id)) {
+					activeShortcuts.add(id);
+					onTrigger(id, 'Pressed');
 				}
 			}
 		});
@@ -168,14 +170,13 @@ export const LocalShortcutManagerLive = {
 			}
 
 			// Check all registered shortcuts for matches on release BEFORE removing the key
-			for (const [
-				id,
-				{ callback, keyCombination, on },
-			] of shortcuts.entries()) {
+			for (const [id, keyCombination] of shortcuts.entries()) {
 				if (!arraysMatch(pressedKeys, keyCombination)) continue;
-				if (activeShortcuts.has(id) && on.includes('Released')) {
+				// Emit 'Released' for any combo that was armed; the dispatcher drops
+				// it for commands that only subscribe to 'Pressed'.
+				if (activeShortcuts.has(id)) {
 					e.preventDefault();
-					callback('Released');
+					onTrigger(id, 'Released');
 					activeShortcuts.delete(id);
 				}
 			}
@@ -220,15 +221,11 @@ export const LocalShortcutManagerLive = {
 	async register({
 		id,
 		keyCombination,
-		callback,
-		on,
 	}: {
 		id: CommandId;
 		keyCombination: KeyboardEventSupportedKey[];
-		callback: (state: ShortcutEventState) => void;
-		on: ShortcutEventState[];
 	}): Promise<Result<void, LocalShortcutError>> {
-		shortcuts.set(id, { keyCombination, callback, on });
+		shortcuts.set(id, keyCombination);
 		return Ok(undefined);
 	},
 

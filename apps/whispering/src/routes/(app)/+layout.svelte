@@ -5,6 +5,7 @@
 	import { onDestroy, onMount } from 'svelte';
 	import { MediaQuery } from 'svelte/reactivity';
 	import { goto } from '$app/navigation';
+	import { dispatchCommandTrigger } from '$lib/commands';
 	import { analytics } from '$lib/operations/analytics';
 	import { services } from '$lib/services';
 	import {
@@ -23,6 +24,7 @@
 		type RecordingOverlayStatus,
 	} from '$lib/recording-overlay/events';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
+	import { globalListener } from '$lib/state/global-listener.svelte';
 	import { localModel } from '$lib/state/local-model.svelte';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { permissions } from '$lib/state/permissions.svelte';
@@ -43,12 +45,13 @@
 	let unlistenOverlayAction: UnlistenFn | null = null;
 	let unlistenOverlayFocus: UnlistenFn | null = null;
 	let cleanupPermissions: (() => void) | undefined;
+	let cleanupGlobalListener: (() => void) | undefined;
 
 	// Sidebar when wide, bottom bar on narrow viewports (phone, small window).
 	const isNarrow = new MediaQuery('(max-width: 767px)');
 
 	$effect(() => {
-		const unlisten = services.localShortcutManager.listen();
+		const unlisten = services.localShortcutManager.listen(dispatchCommandTrigger);
 		return () => unlisten();
 	});
 
@@ -153,6 +156,9 @@
 		unlistenLocalModel = await localModel.attach();
 		// Seed the OS-permission probe and start re-checking on window focus.
 		cleanupPermissions = permissions.attach();
+		// Supervise the rdev listener's liveness: start it once the grant allows,
+		// restart it on an unexpected death, and surface a notice when it cannot.
+		cleanupGlobalListener = globalListener.attach();
 	});
 
 	onDestroy(() => {
@@ -161,6 +167,7 @@
 		unlistenOverlayAction?.();
 		unlistenOverlayFocus?.();
 		cleanupPermissions?.();
+		cleanupGlobalListener?.();
 	});
 </script>
 

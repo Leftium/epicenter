@@ -1,4 +1,4 @@
-import { type Command, commandCallbacks } from '$lib/commands';
+import type { Command } from '$lib/commands';
 import type { KeyboardEventSupportedKey } from '$lib/constants/keyboard';
 import { services } from '$lib/services';
 import type { CommandId } from '$lib/services/local-shortcut-manager';
@@ -18,8 +18,6 @@ export const localShortcuts = {
 		services.localShortcutManager.register({
 			id: command.id as CommandId,
 			keyCombination,
-			callback: commandCallbacks[command.id],
-			on: command.on,
 		}),
 
 	unregisterCommand: async ({ commandId }: { commandId: CommandId }) =>

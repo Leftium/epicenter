@@ -29,10 +29,7 @@
 	// omit it and members bring their own key per request (BYOK). A house-key
 	// request for a missing key gets 503 ProviderNotConfigured.
 	"secrets": {
-		"required": [
-			"BETTER_AUTH_SECRET",
-			"GOOGLE_CLIENT_SECRET"
-		]
+		"required": ["BETTER_AUTH_SECRET", "GOOGLE_CLIENT_SECRET"]
 	},
 
 	// --- KV: Session cache (Better Auth SecondaryStorage) ---

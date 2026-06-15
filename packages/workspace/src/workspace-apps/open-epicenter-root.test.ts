@@ -45,10 +45,10 @@ function writeConfig(source: string): void {
 
 function signedIn(): WorkspaceAuthClient {
 	return {
-			state: {
-				status: 'signed-in',
-				ownerId: asOwnerId('test-user'),
-			},
+		state: {
+			status: 'signed-in',
+			ownerId: asOwnerId('test-user'),
+		},
 		openWebSocket: () => Promise.resolve({} as WebSocket),
 		fetch: () => Promise.resolve(new Response()),
 		onStateChange: () => () => {},

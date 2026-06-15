@@ -20,6 +20,7 @@
 	import { Decoration, DecorationSet, EditorView } from 'prosemirror-view';
 	import 'prosemirror-view/style/prosemirror.css';
 	import { redo, undo, ySyncPlugin, yUndoPlugin } from 'y-prosemirror';
+	import { fromDisposableCache } from '@epicenter/svelte';
 	import { DateTimeString, onLocalUpdate } from '@epicenter/workspace';
 	import { requireFuji } from '$lib/session';
 	import type { EntryId } from '$lib/workspace';
@@ -34,19 +35,15 @@
 	} = $props();
 
 	const fuji = requireFuji();
-	// svelte-ignore state_referenced_locally - EntryEditor remounts this component by entry id
-	const contentDoc = fuji.tables.entries.docs.content.open(entryId);
-	const offLocalUpdate = onLocalUpdate(contentDoc.ydoc, () => {
-		fuji.tables.entries.update(entryId, {
-			updatedAt: DateTimeString.now(),
+	const doc = fromDisposableCache(fuji.tables.entries.docs.content, () => entryId);
+	$effect(() => {
+		const current = doc.current;
+		return onLocalUpdate(current.ydoc, () => {
+			fuji.tables.entries.update(entryId, {
+				updatedAt: DateTimeString.now(),
+			});
 		});
 	});
-	$effect(
-		() => () => {
-			offLocalUpdate();
-			contentDoc[Symbol.dispose]();
-		},
-	);
 
 	let element: HTMLDivElement | undefined = $state();
 
@@ -101,7 +98,7 @@
 			state: EditorState.create({
 				schema,
 				plugins: [
-					ySyncPlugin(contentDoc.binding),
+					ySyncPlugin(doc.current.binding),
 					yUndoPlugin(),
 					placeholderPlugin,
 					keymap({
@@ -154,7 +151,7 @@
 	});
 </script>
 
-{#await contentDoc.whenLoaded}
+{#await doc.current.whenLoaded}
 	<Loading class="flex-1" />
 {:then _}
 	<div bind:this={element} class="flex-1 overflow-y-auto px-6 py-4"></div>

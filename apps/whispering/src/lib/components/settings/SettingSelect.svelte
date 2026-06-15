@@ -12,13 +12,11 @@
 		label,
 		items,
 		description,
-		placeholder = 'Select an option',
 	}: {
 		key: K;
 		label: string;
 		items: readonly { value: SettingValue<K>; label: string }[];
 		description?: string;
-		placeholder?: string;
 	} = $props();
 
 	// Opaque, generated id wired into both `for` and the trigger from one source.
@@ -44,7 +42,7 @@
 		}
 	>
 		<Select.Trigger {id} class="w-full">
-			{selectedLabel ?? placeholder}
+			{selectedLabel ?? 'Select an option'}
 		</Select.Trigger>
 		<Select.Content>
 			{#each items as item}

@@ -36,74 +36,48 @@
 		</SectionHeader.Description>
 	</SectionHeader.Root>
 
-	<!-- Main Toggle -->
-	<SettingSwitch
-		key="analytics.enabled"
-		label="Share anonymized events"
-		description={'We log simple events like "recording started" or "transcription completed". No personal data is attached to any of these events.'}
-		onCheckedChange={(checked) => {
-			// Log the change (only actually sends if analytics is now enabled).
-			if (checked) {
-				analytics.logEvent({ type: 'settings_changed', section: 'analytics' });
-			}
-		}}
-	/>
+	<Card.Root>
+		<Card.Content class="py-2">
+			<SettingSwitch
+				key="analytics.enabled"
+				label="Share anonymized events"
+				description='We log simple events like "recording started" or "transcription completed". No personal data is attached to any of these events.'
+				onCheckedChange={(checked) => {
+					// Log the change (only actually sends if analytics is now enabled).
+					if (checked) {
+						analytics.logEvent({
+							type: 'settings_changed',
+							section: 'analytics',
+						});
+					}
+				}}
+			/>
+		</Card.Content>
+	</Card.Root>
 
-	<!-- Data Collection Information -->
-	<div class="grid gap-4 md:grid-cols-2">
-		<Card.Root class="border-green-100 dark:border-green-900/20">
-			<Card.Header>
-				<Card.Title
-					class="text-sm font-medium text-green-700 dark:text-green-400 flex items-center gap-2"
-				>
-					<div class="w-2 h-2 bg-green-500 rounded-full"></div>
-					Events we log
-				</Card.Title>
-			</Card.Header>
-			<Card.Content>
-				<ul class="text-sm text-muted-foreground space-y-1.5 leading-relaxed">
-					<li class="flex items-start gap-2">
-						<span class="text-green-500 mt-1">•</span>
-						<span>Button clicks (which features you use)</span>
-					</li>
-					<li class="flex items-start gap-2">
-						<span class="text-green-500 mt-1">•</span>
-						<span>Completion times (how long things take)</span>
-					</li>
-					<li class="flex items-start gap-2">
-						<span class="text-green-500 mt-1">•</span>
-						<span>Error messages (when something fails)</span>
-					</li>
-				</ul>
-			</Card.Content>
-		</Card.Root>
-
-		<Card.Root class="border-warning dark:border-warning/20">
-			<Card.Header>
-				<Card.Title
-					class="text-sm font-medium text-warning dark:text-warning flex items-center gap-2"
-				>
-					<div class="w-2 h-2 bg-warning rounded-full"></div>
-					Never collected
-				</Card.Title>
-			</Card.Header>
-			<Card.Content>
-				<ul class="text-sm text-muted-foreground space-y-1.5 leading-relaxed">
-					<li class="flex items-start gap-2">
-						<span class="text-warning mt-1">•</span>
-						<span>Your actual transcriptions or recordings</span>
-					</li>
-					<li class="flex items-start gap-2">
-						<span class="text-warning mt-1">•</span>
-						<span>Device IDs or user identifiers</span>
-					</li>
-					<li class="flex items-start gap-2">
-						<span class="text-warning mt-1">•</span>
-						<span>API keys or any personal data</span>
-					</li>
-				</ul>
-			</Card.Content>
-		</Card.Root>
+	<div class="grid gap-x-8 gap-y-6 px-1 sm:grid-cols-2">
+		<div class="space-y-2">
+			<p
+				class="text-xs font-medium uppercase tracking-wide text-green-700 dark:text-green-400"
+			>
+				Events we log
+			</p>
+			<ul class="text-sm text-muted-foreground space-y-1 leading-relaxed">
+				<li>Button clicks (which features you use)</li>
+				<li>Completion times (how long things take)</li>
+				<li>Error messages (when something fails)</li>
+			</ul>
+		</div>
+		<div class="space-y-2">
+			<p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+				Never collected
+			</p>
+			<ul class="text-sm text-muted-foreground space-y-1 leading-relaxed">
+				<li>Your actual transcriptions or recordings</li>
+				<li>Device IDs or user identifiers</li>
+				<li>API keys or any personal data</li>
+			</ul>
+		</div>
 	</div>
 
 	<!-- Transparency Section -->

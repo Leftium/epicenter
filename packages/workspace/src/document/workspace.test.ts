@@ -131,7 +131,7 @@ describe('defineWorkspace', () => {
 		});
 
 		const workspace = workspaceDefinition.open(connection);
-		const body = workspace.tables.notes.body.open('note-1');
+		const body = workspace.tables.notes.docs.body.open('note-1');
 		try {
 			body.write('body text');
 			expect(body.read()).toBe('body text');
@@ -145,21 +145,26 @@ describe('defineWorkspace', () => {
 		}
 	});
 
-	test('open(connection) rejects child docs that would overwrite table methods', () => {
-		const unsafeNotesDefinition = notesDefinition.childDocs({
-			set: attachPlainText,
-		} as never);
+	test('open(connection) namespaces child docs under .docs so field names never collide', () => {
+		// `set` would collide with `table.set` if openers were spread flat; under
+		// `.docs` it is just another field name. The guid still derives from the
+		// field, and the row CRUD method is untouched.
 		const workspaceDefinition = defineWorkspace({
-			id: 'ws-definition-reserved-child-doc',
+			id: 'ws-definition-docs-namespace',
 			tables: {
-				notes: unsafeNotesDefinition,
+				notes: notesDefinition.childDocs({ set: attachPlainText }),
 			},
 			kv: {},
 		});
 
-		expect(() => workspaceDefinition.open(connection)).toThrow(
-			'Child doc field "set" on table "notes" conflicts with the table API.',
-		);
+		const workspace = workspaceDefinition.open(connection);
+		try {
+			expect(typeof workspace.tables.notes.set).toBe('function');
+			using body = workspace.tables.notes.docs.set.open('note-1');
+			expect(String(body.guid)).toBe('ws-definition-docs-namespace.notes.note-1.set');
+		} finally {
+			workspace[Symbol.dispose]();
+		}
 	});
 
 	test('open(connection, compose) publishes runtime actions and disposes runtime extras', () => {

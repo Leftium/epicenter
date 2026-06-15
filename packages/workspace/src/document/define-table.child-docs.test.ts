@@ -42,16 +42,16 @@ describe('defineTable().childDocs', () => {
 		expect(entries.childDocLayouts.snippet).toBe(code);
 	});
 
-	test('childDocs rejects names that conflict with table methods at compile time', () => {
+	test('childDocs accepts any field name, including table method names', () => {
+		// Field names live under the runtime `.docs` namespace, one level below the
+		// table's CRUD methods, so a layout named `set` or `open` is fine: it can
+		// never collide with `table.set`.
 		const entries = defineTable({
 			id: field.string(),
 			title: field.string(),
-		});
-		if (false) {
-			// @ts-expect-error child-doc fields are spread onto the table handle.
-			entries.childDocs({ set: body });
-		}
-		expect(entries.childDocLayouts).toEqual({});
+		}).childDocs({ set: body, open: code });
+		expect(entries.childDocLayouts.set).toBe(body);
+		expect(entries.childDocLayouts.open).toBe(code);
 	});
 
 	test('childDocs preserves the schema and versions', () => {

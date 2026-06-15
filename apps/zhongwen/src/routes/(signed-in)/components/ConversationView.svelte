@@ -62,7 +62,8 @@
 	// back-and-forth switching. conversationId is the keyed identity and never
 	// changes within one instance, so a one-time read is intentional.
 	// svelte-ignore state_referenced_locally
-	const docHandle = zhongwen.tables.conversations.messages.open(conversationId);
+	const docHandle =
+		zhongwen.tables.conversations.docs.messages.open(conversationId);
 
 	const initialMessages = docHandle.read();
 	const mountedAt = Date.now();

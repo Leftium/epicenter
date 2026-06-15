@@ -35,7 +35,7 @@
 
 	const fuji = requireFuji();
 	// svelte-ignore state_referenced_locally - EntryEditor remounts this component by entry id
-	const contentDoc = fuji.tables.entries.content.open(entryId);
+	const contentDoc = fuji.tables.entries.docs.content.open(entryId);
 	const offLocalUpdate = onLocalUpdate(contentDoc.ydoc, () => {
 		fuji.tables.entries.update(entryId, {
 			updatedAt: DateTimeString.now(),

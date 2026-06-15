@@ -23,7 +23,7 @@
 		filename.endsWith('.md') || !filename.includes('.'),
 	);
 
-	const doc = fromDisposableCache(opensidian.tables.files.content, () => fileId);
+	const doc = fromDisposableCache(opensidian.tables.files.docs.content, () => fileId);
 
 	$effect(() => {
 		const current = doc.current;

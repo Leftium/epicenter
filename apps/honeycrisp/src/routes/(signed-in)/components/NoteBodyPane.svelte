@@ -9,7 +9,7 @@
 
 	let { noteId }: { noteId: NoteId } = $props();
 
-	const doc = fromDisposableCache(honeycrisp.tables.notes.body, () => noteId);
+	const doc = fromDisposableCache(honeycrisp.tables.notes.docs.body, () => noteId);
 </script>
 
 {#await doc.current.whenLoaded}

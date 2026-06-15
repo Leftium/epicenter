@@ -344,28 +344,6 @@ export type MigrateInput<
  */
 export type ChildDocLayouts = Record<string, (ydoc: Y.Doc) => object>;
 
-type ReservedTableChildDocName =
-	| 'name'
-	| 'definition'
-	| 'schema'
-	| 'get'
-	| 'scan'
-	| 'findValid'
-	| 'observe'
-	| 'storedCount'
-	| 'has'
-	| 'set'
-	| 'bulkSet'
-	| 'update'
-	| 'delete'
-	| 'bulkDelete'
-	| 'clear';
-
-type SafeChildDocLayouts<TLayouts extends ChildDocLayouts> =
-	Extract<keyof TLayouts, ReservedTableChildDocName> extends never
-		? TLayouts
-		: never;
-
 export type TableDefinition<
 	TVersions extends readonly VersionedColumns[] = readonly VersionedColumns[],
 	TChildDocs extends ChildDocLayouts = {},
@@ -406,6 +384,11 @@ export type TableDefinition<
 	 * id, so nothing is stored in a cell and the body cascades when the row is
 	 * deleted (the derived guid simply stops being reachable).
 	 *
+	 * The runtime surfaces these under a dedicated `.docs` namespace on the table
+	 * handle (`workspace.tables.notes.docs.content.open(rowId)`), so field names
+	 * live one level below the table's CRUD methods and can never collide with
+	 * them. Any field name is safe, including `set` or `open`.
+	 *
 	 * Call AFTER {@link migrate} on multi-version tables: the version tuple is
 	 * positional, so child docs are a separate builder step, not another version.
 	 *
@@ -415,7 +398,7 @@ export type TableDefinition<
 	 * ```
 	 */
 	childDocs<TLayouts extends ChildDocLayouts>(
-		layouts: SafeChildDocLayouts<TLayouts>,
+		layouts: TLayouts,
 	): TableDefinition<TVersions, TLayouts>;
 };
 

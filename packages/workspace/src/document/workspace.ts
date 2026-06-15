@@ -140,7 +140,13 @@ type RowChildDocCache<
 	[Symbol.dispose](): void;
 };
 
-type TableChildDocs<TTableDefinition extends TableDefinition<any, any>> =
+/**
+ * The `.docs` namespace a connected table handle gains: one row child-doc cache
+ * per declared layout, keyed by field name. Lives one level below the table's
+ * CRUD methods, so field names never collide with `set`, `open`, etc. Empty
+ * `{}` for a table that declared no child docs.
+ */
+type TableDocs<TTableDefinition extends TableDefinition<any, any>> =
 	TTableDefinition extends TableDefinition<
 		any,
 		infer TLayouts extends ChildDocLayouts
@@ -154,8 +160,9 @@ type TableChildDocs<TTableDefinition extends TableDefinition<any, any>> =
 		: {};
 
 export type ConnectedTables<TTableDefinitions extends TableDefinitions> = {
-	[K in keyof TTableDefinitions]: Tables<TTableDefinitions>[K] &
-		TableChildDocs<TTableDefinitions[K]>;
+	[K in keyof TTableDefinitions]: Tables<TTableDefinitions>[K] & {
+		readonly docs: TableDocs<TTableDefinitions[K]>;
+	};
 };
 
 export type ConnectedWorkspace<
@@ -294,9 +301,10 @@ export function createWorkspace<
  * can then attach disk-backed infrastructure around that root.
  *
  * `open(connection)` additionally connects the root doc, wires `wipe()`, and
- * adds one child-doc opener to each table handle for every declared
- * `table.childDocs({ field: attachLayout })` layout. It is the browser opener:
- * the connection solders IndexedDB persistence and the WebSocket relay (see
+ * gives each table handle a `.docs` namespace with one opener per declared
+ * `table.childDocs({ field: attachLayout })` layout
+ * (`tables.notes.docs.body.open(rowId)`). It is the browser opener: the
+ * connection solders IndexedDB persistence and the WebSocket relay (see
  * `connectDoc`). Non-browser runtimes (daemon, Node, tests) instead compose
  * `createWorkspace` + their own storage/transport + `createChildDocs` directly,
  * which is exactly what this path does under the hood.
@@ -417,19 +425,14 @@ function connectTableChildDocs<TTableDefinitions extends TableDefinitions>({
 
 	for (const [collection, table] of Object.entries(tables)) {
 		const definition = definitions[collection as keyof TTableDefinitions]!;
-		const childDocEntries: Record<string, unknown> = {};
+		const docs: Record<string, unknown> = {};
 
 		for (const [field, layout] of Object.entries(
 			definition.childDocLayouts,
 		) as [string, (ydoc: Y.Doc) => object][]) {
-			if (RESERVED_TABLE_CHILD_DOC_NAMES.has(field)) {
-				throw new Error(
-					`Child doc field "${field}" on table "${collection}" conflicts with the table API.`,
-				);
-			}
 			const cache = childDocs(layout);
 			disposables.push(cache);
-			childDocEntries[field] = {
+			docs[field] = {
 				open(rowId: string) {
 					return cache.open(
 						docGuid({
@@ -448,7 +451,7 @@ function connectTableChildDocs<TTableDefinitions extends TableDefinitions>({
 
 		connectedTables[collection] = {
 			...table,
-			...childDocEntries,
+			docs,
 		};
 	}
 
@@ -461,21 +464,3 @@ function connectTableChildDocs<TTableDefinitions extends TableDefinitions>({
 		},
 	};
 }
-
-const RESERVED_TABLE_CHILD_DOC_NAMES = new Set<string>([
-	'name',
-	'definition',
-	'schema',
-	'get',
-	'scan',
-	'findValid',
-	'observe',
-	'storedCount',
-	'has',
-	'set',
-	'bulkSet',
-	'update',
-	'delete',
-	'bulkDelete',
-	'clear',
-]);

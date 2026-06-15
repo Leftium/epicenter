@@ -43,7 +43,7 @@ export function openOpensidianBrowser({
 	return opensidianWorkspace.open({ ...signedIn, deviceId }, (workspace) => {
 		const { ydoc, tables } = workspace;
 		function openFileContent(fileId: FileId) {
-			const handle = tables.files.content.open(fileId);
+			const handle = tables.files.docs.content.open(fileId);
 			const offLocalUpdate = onLocalUpdate(handle.ydoc, () => {
 				tables.files.update(fileId, { updatedAt: Date.now() });
 			});

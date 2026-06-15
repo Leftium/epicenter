@@ -73,17 +73,17 @@ export function openOpensidianBrowser(connection) {
   return opensidianWorkspace.open(connection, (workspace) => {
     const fileContent = {
       read: async (fileId) => {
-        using handle = workspace.tables.files.content.open(fileId);
+        using handle = workspace.tables.files.docs.content.open(fileId);
         await handle.whenLoaded;
         return handle.read();
       },
       write: async (fileId, text) => {
-        using handle = workspace.tables.files.content.open(fileId);
+        using handle = workspace.tables.files.docs.content.open(fileId);
         await handle.whenLoaded;
         handle.write(text);
       },
       append: async (fileId, text) => {
-        using handle = workspace.tables.files.content.open(fileId);
+        using handle = workspace.tables.files.docs.content.open(fileId);
         await handle.whenLoaded;
         handle.appendText(text);
         return handle.read();

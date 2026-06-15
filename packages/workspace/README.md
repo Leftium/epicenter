@@ -226,8 +226,9 @@ export const session = createSession({
 ```
 
 `open(connection)` pairs owner-scoped IndexedDB with a BroadcastChannel, opens
-root collaboration, wires `wipe()`, and adds row child-doc openers such as
-`workspace.tables.items.body.open(itemId)`. Two tabs of the same owner share
+root collaboration, wires `wipe()`, and gives each table handle a `.docs`
+namespace of row child-doc openers such as
+`workspace.tables.items.docs.body.open(itemId)`. Two tabs of the same owner share
 both persisted state and live updates, while two different owners on the same
 browser profile never see each other's data.
 
@@ -408,7 +409,7 @@ Yjs supports multiple providers simultaneously. A phone can connect to desktop, 
 2. Export a `defineWorkspace({ id, tables, kv, actions })` value beside the schema.
 3. For singleton apps: call `definition.open()` once at module scope. For cloud
    browser apps: call `definition.open(connection)`. For browser child documents:
-   declare them with `table.childDocs(...)` and call `tables.<table>.<field>.open(rowId)`.
+   declare them with `table.childDocs(...)` and call `tables.<table>.docs.<field>.open(rowId)`.
    For one-shot Node operations: derive the same child-doc guid and read the room directly.
 4. Await the right readiness signal before reading persisted state. There are two shapes here, and the choice is load-bearing:
    - **One subsystem to wait on.** Expose the subsystem (`idb`, `persistence`, ...) on the bundle root and let consumers reach through: `await bundle.idb.whenLoaded`. Do not alias `whenLoaded`/`whenReady` flat at the bundle root just to save a `.idb`; the alias lies about composition.
@@ -510,7 +511,7 @@ cache primitive.
 
   let { fileId }: { fileId: string } = $props();
 
-  const handle = workspace.tables.files.content.open(fileId);
+  const handle = workspace.tables.files.docs.content.open(fileId);
   $effect(() => () => handle[Symbol.dispose]());
 </script>
 
@@ -690,7 +691,7 @@ async function documentExample(connection: ConnectionConfig) {
 	});
 
 	// Load a content handle for the row. Dispose when done.
-	using handle = workspace.tables.files.content.open('file-1');
+	using handle = workspace.tables.files.docs.content.open('file-1');
 	await handle.whenLoaded;
 	const offLocalUpdate = onLocalUpdate(handle.ydoc, () => {
 		workspace.tables.files.update('file-1', { updatedAt: Date.now() });
@@ -1353,7 +1354,7 @@ const filesWorkspace = defineWorkspace({
 declare const connection: ConnectionConfig;
 const workspace = filesWorkspace.open(connection);
 
-using handle = workspace.tables.files.content.open('file-1');
+using handle = workspace.tables.files.docs.content.open('file-1');
 await handle.whenLoaded;
 ```
 
@@ -1487,7 +1488,7 @@ Pick the attachment that matches the content shape:
 - `attachTimeline(ydoc)`: a polymorphic timeline that can project as text, rich text, or a sheet. Exposes `read() / write(text) / appendText(text) / asText() / asRichText() / asSheet() / currentType / observe(...) / restoreFromSnapshot(binary)`.
 
 The connected table child opener stores these by `rowId`, so multiple browser
-consumers share one Y.Doc. Use `workspace.tables.<table>.<field>.open(id)` and
+consumers share one Y.Doc. Use `workspace.tables.<table>.docs.<field>.open(id)` and
 `handle[Symbol.dispose]()` to manage lifecycle.
 
 ### Local-update filter

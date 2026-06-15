@@ -72,7 +72,7 @@ export function openFujiBrowser({
 
 `fujiWorkspace` is the per-app definition built with `defineWorkspace({ id: FUJI_ID, tables: { entries: entriesTable }, kv, actions })`. The `actions` factory runs after tables are live, so handlers close over `tables.entries` without a second wrapping helper.
 
-The browser bundle exposes concrete resources like `idb`, `collaboration`, and `tables.entries.content.open(entryId)`. Auth state flows through `session.current`; when present, it carries the Fuji bundle, and pages reach it via the module-level `requireFuji()` exported from `$lib/session` (throws if called without an authenticated session). Local cleanup runs through `bundle.wipe()`, which destroys the live Y.Docs and then drops every IDB database for that owner. It is a separate explicit action, not part of sign-out.
+The browser bundle exposes concrete resources like `idb`, `collaboration`, and `tables.entries.docs.content.open(entryId)`. Auth state flows through `session.current`; when present, it carries the Fuji bundle, and pages reach it via the module-level `requireFuji()` exported from `$lib/session` (throws if called without an authenticated session). Local cleanup runs through `bundle.wipe()`, which destroys the live Y.Docs and then drops every IDB database for that owner. It is a separate explicit action, not part of sign-out.
 
 For a sibling example of the same pattern with Tauri runtime wiring, see `apps/whispering/src/lib/whispering/whispering.tauri.ts`.
 

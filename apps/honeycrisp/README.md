@@ -31,7 +31,7 @@ The Svelte app mounts the browser runtime through `createSession`, so the worksp
 
 ### Rich-text editing
 
-Each note's body is a `Y.XmlFragment` in the `notes.body` child doc declared by `honeycrispWorkspace`. The browser opener attaches storage and sync around child docs, and `NoteBodyPane.svelte` opens the active note body through `honeycrisp.tables.notes.body.open(noteId)`. ProseMirror binds to the fragment via `y-prosemirror`, giving collaborative editing for free. The editor schema covers paragraphs, headings, lists, task lists, underline, and strikethrough. Every ProseMirror transaction extracts a title, preview snippet, word count, and update timestamp, which are written back to the note's table row.
+Each note's body is a `Y.XmlFragment` in the `notes.body` child doc declared by `honeycrispWorkspace`. The browser opener attaches storage and sync around child docs, and `NoteBodyPane.svelte` opens the active note body through `honeycrisp.tables.notes.docs.body.open(noteId)`. ProseMirror binds to the fragment via `y-prosemirror`, giving collaborative editing for free. The editor schema covers paragraphs, headings, lists, task lists, underline, and strikethrough. Every ProseMirror transaction extracts a title, preview snippet, word count, and update timestamp, which are written back to the note's table row.
 
 ### Soft deletion
 
@@ -70,7 +70,7 @@ Google sign-in via `@epicenter/svelte/auth-form`. The session is persisted acros
 | `deletedAt` | `DateTimeString` (optional, soft delete) |
 | `wordCount` | `number` (optional) |
 
-Each note's body lives in a separate Y.Doc opened by `honeycrisp.tables.notes.body.open(noteId)`. The handle yields a `Y.XmlFragment` that ProseMirror binds to; editor logic refreshes title, preview, word count, and `updatedAt` on content changes.
+Each note's body lives in a separate Y.Doc opened by `honeycrisp.tables.notes.docs.body.open(noteId)`. The handle yields a `Y.XmlFragment` that ProseMirror binds to; editor logic refreshes title, preview, word count, and `updatedAt` on content changes.
 
 Honeycrisp currently has no workspace KV schema. View selection, sorting, and URL state live in the Svelte state layer.
 

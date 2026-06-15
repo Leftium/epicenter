@@ -8,7 +8,7 @@ Bilingual Chinese-English chat app for learning Mandarin. Users ask questions in
 
 **Markdown + pinyin**: Assistant messages are parsed with `marked` (GFM, breaks enabled) into HTML, then `annotateHtml()` in `src/lib/pinyin/annotate.ts` walks text nodes (splitting on HTML tags via regex) and wraps CJK runs with `<ruby>` pinyin tags using `pinyin-pro`. Output is sanitized with DOMPurify (allowing ruby/rt/rp), memoized via `$derived` in `AssistantMessagePart.svelte`, and rendered via `{@html}` inside `<div class="prose prose-sm">`.
 
-**Workspace state**: `zhongwenWorkspace` in `zhongwen.ts` is the shared isomorphic definition. It defines `epicenter-zhongwen`, the `conversations` table (the cheap list: title and timestamps), the `conversations.messages` child doc layout, the `showPinyin` KV value, and the Zhongwen model constant. Transcripts are not a table; they are per-conversation child docs opened as `zhongwen.tables.conversations.messages.open(conversationId)`. `openZhongwenBrowser()` opens the definition with the signed-in browser connection, which attaches local storage, root collaboration, and the child-doc runtime.
+**Workspace state**: `zhongwenWorkspace` in `zhongwen.ts` is the shared isomorphic definition. It defines `epicenter-zhongwen`, the `conversations` table (the cheap list: title and timestamps), the `conversations.messages` child doc layout, the `showPinyin` KV value, and the Zhongwen model constant. Transcripts are not a table; they are per-conversation child docs opened as `zhongwen.tables.conversations.docs.messages.open(conversationId)`. `openZhongwenBrowser()` opens the definition with the signed-in browser connection, which attaches local storage, root collaboration, and the child-doc runtime.
 
 ```txt
 defineWorkspace()

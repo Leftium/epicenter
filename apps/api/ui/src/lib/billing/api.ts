@@ -18,7 +18,6 @@ import type {
 	BillingPlansView,
 	CheckoutResult,
 	EventsQuery,
-	ModelCostGuide,
 	PlanChangePreview,
 	PortalSession,
 	UsageQuery,
@@ -133,8 +132,6 @@ export const billingApi = {
 		post<EventsQuery, BillingEventsPage>('/api/billing/events', params),
 
 	plans: () => get<BillingPlansView>('/api/billing/plans'),
-
-	models: () => get<ModelCostGuide>('/api/billing/models'),
 
 	previewPlanChange: (params: { planId: string }) =>
 		post<{ planId: string }, PlanChangePreview>('/api/billing/preview', params),

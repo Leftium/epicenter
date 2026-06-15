@@ -9,20 +9,32 @@
  * just-bash) and are added only by the browser runtime.
  */
 
-import { EPICENTER_API_URL } from '@epicenter/constants/apps';
 import { defineWorkspace } from '@epicenter/workspace';
 import { defineSessionMount } from '@epicenter/workspace/daemon';
 import { attachMountInfrastructure } from '@epicenter/workspace/node';
 import { createOpensidian } from './opensidian.js';
 
-export function opensidian() {
+export type OpensidianMountOptions = {
+	/**
+	 * Base URL of the Epicenter cloud API used for sync.
+	 * Defaults to `process.env.EPICENTER_API_URL`, falling back to the hosted API.
+	 */
+	baseURL?: string;
+};
+
+export function opensidian(opts: OpensidianMountOptions = {}) {
 	return defineSessionMount({
 		name: 'opensidian',
 		open(ctx) {
+			const baseURL =
+				opts.baseURL ||
+				process.env.EPICENTER_API_URL ||
+				'https://api.epicenter.so';
+
 			const workspace = createOpensidian({ keyring: ctx.session.keyring });
 
 			const infrastructure = attachMountInfrastructure(workspace.ydoc, ctx, {
-				baseURL: EPICENTER_API_URL,
+				baseURL,
 				actions: workspace.actions,
 			});
 
@@ -33,5 +45,3 @@ export function opensidian() {
 		},
 	});
 }
-
-export type OpensidianMount = ReturnType<typeof opensidian>;

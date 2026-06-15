@@ -36,8 +36,6 @@ export type DaemonMetadata = {
 	/** ISO 8601 timestamp. */
 	startedAt: string;
 	cliVersion: string;
-	/** ISO 8601 timestamp for the extension discovery pass. */
-	discoveredAt: string;
 };
 
 /** Read metadata for `dir`, or `null` if the sidecar is absent or unreadable. */

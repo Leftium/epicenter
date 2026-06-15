@@ -1,3 +1,4 @@
+import type { AuthFetch } from '@epicenter/auth';
 import {
 	type AiChatError,
 	AiChatHttpError,
@@ -48,12 +49,7 @@ import { Ok, tryAsync } from 'wellcrafted/result';
  * }
  * ```
  */
-type FetchFn = (
-	input: RequestInfo | URL,
-	init?: RequestInit,
-) => Promise<Response>;
-
-export function createAiChatFetch(authFetch: FetchFn): typeof fetch {
+export function createAiChatFetch(authFetch: AuthFetch): typeof fetch {
 	const fetchClient = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const response = await authFetch(input, init);
 		if (response.ok) return response;

@@ -144,14 +144,3 @@ export function transformationHasWork(transformation: Transformation): boolean {
 		transformation.postReplacements.length > 0
 	);
 }
-
-/**
- * Save a transformation. Works for both create and update since the whole
- * fixed-phase shape lives on the row itself, there is no child steps table to
- * reconcile.
- *
- * Callers should pass a `$state.snapshot()` value. This function takes plain data.
- */
-export function saveTransformation(transformation: Transformation) {
-	transformations.set(transformation);
-}

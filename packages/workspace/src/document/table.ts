@@ -574,12 +574,6 @@ export type Tables<TTableDefinitions extends TableDefinitions> = {
 	[K in keyof TTableDefinitions]: Table<InferTableRow<TTableDefinitions[K]>>;
 };
 
-export type ReadonlyTables<TTableDefinitions extends TableDefinitions> = {
-	[K in keyof TTableDefinitions]: ReadonlyTable<
-		InferTableRow<TTableDefinitions[K]>
-	>;
-};
-
 // ════════════════════════════════════════════════════════════════════════════
 // INTERNAL: attach (used by package-local benchmarks + tests; NOT exported
 // from the public barrel: public callers go through `createWorkspace`)

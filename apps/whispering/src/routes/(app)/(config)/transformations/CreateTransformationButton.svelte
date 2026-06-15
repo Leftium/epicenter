@@ -8,7 +8,7 @@
 	import { report } from '$lib/report';
 	import {
 		generateDefaultTransformation,
-		saveTransformation,
+		transformations,
 	} from '$lib/state/transformations.svelte';
 
 	let isModalOpen = $state(false);
@@ -26,7 +26,7 @@
 	}
 
 	function createTransformation() {
-		saveTransformation($state.snapshot(transformation));
+		transformations.set($state.snapshot(transformation));
 
 		isModalOpen = false;
 		transformation = generateDefaultTransformation();

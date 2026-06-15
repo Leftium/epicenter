@@ -3,7 +3,7 @@
  *
  * `DaemonRuntime` is the contract every opened mount returns: async dispose
  * plus the local action registry the daemon serves. Collaborative mounts may
- * also expose a hosted `Collaboration<TActions>` for identity, sync, peer
+ * also expose a hosted `Collaboration` for identity, sync, peer
  * presence, and peer dispatch.
  *
  * `DaemonServedMount` is the narrowed mount-handler contract for the socket
@@ -37,12 +37,10 @@ type DaemonServedCollaboration = {
  * Full started mounts can pass through structurally, but mount handlers do
  * not depend on lifecycle fields such as async disposal.
  */
-export type DaemonServedMount<
-	TActions extends ActionRegistry = ActionRegistry,
-> = {
+export type DaemonServedMount = {
 	mount: string;
 	runtime: {
-		actions: TActions;
+		actions: ActionRegistry;
 		collaboration?: DaemonServedCollaboration;
 	};
 };
@@ -50,7 +48,7 @@ export type DaemonServedMount<
 /**
  * Fields the daemon looks at on each started runtime.
  */
-export type DaemonRuntime<TActions extends ActionRegistry = ActionRegistry> = {
+export type DaemonRuntime = {
 	/** Called by the daemon at exit. */
 	[Symbol.asyncDispose](): MaybePromise<void>;
 
@@ -59,14 +57,14 @@ export type DaemonRuntime<TActions extends ActionRegistry = ActionRegistry> = {
 	 * present, this must be the same registry handed to `openCollaboration`, so
 	 * local runs, peer manifests, and inbound peer dispatch stay in lockstep.
 	 */
-	readonly actions: TActions;
+	readonly actions: ActionRegistry;
 
 	/**
 	 * Optional hosted collaboration. Identity, sync status, live-device
 	 * presence, and peer dispatch live here when the mount participates in a
 	 * collaborative Yjs workspace.
 	 */
-	readonly collaboration?: Collaboration<TActions>;
+	readonly collaboration?: Collaboration<ActionRegistry>;
 };
 
 /** One configured mount runtime hosted by the daemon. */

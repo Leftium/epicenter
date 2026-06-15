@@ -16,7 +16,6 @@ export const billingKeys = defineKeys({
 	usage: (params: UsageQuery) => ['billing', 'usage', params] as const,
 	events: (params: EventsQuery) => ['billing', 'events', params] as const,
 	plans: ['billing', 'plans'],
-	models: ['billing', 'models'],
 	topUp: ['billing', 'top-up'],
 	preview: ['billing', 'preview'],
 	checkoutPlan: ['billing', 'checkout-plan'],
@@ -45,11 +44,6 @@ export const billing = {
 	plans: defineQuery({
 		queryKey: billingKeys.plans,
 		queryFn: () => billingApi.plans(),
-	}),
-
-	models: defineQuery({
-		queryKey: billingKeys.models,
-		queryFn: () => billingApi.models(),
 	}),
 
 	topUp: defineMutation({

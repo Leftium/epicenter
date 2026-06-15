@@ -294,4 +294,3 @@ export function openOpensidianBrowser({
 }
 
 export type OpensidianBrowser = ReturnType<typeof openOpensidianBrowser>;
-export type OpensidianActions = OpensidianBrowser['actions'];

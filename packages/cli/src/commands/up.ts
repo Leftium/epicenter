@@ -123,7 +123,6 @@ export async function runUp(
 		dir: epicenterRoot,
 		startedAt: new Date().toISOString(),
 		cliVersion: options.cliVersion ?? CLI_VERSION,
-		discoveredAt: new Date().toISOString(),
 	};
 
 	// Ordered unwinding for partially-completed startup. Each resource

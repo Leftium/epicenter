@@ -8,8 +8,8 @@
  *   merging transport and domain failures into one tagged union the
  *   renderer narrows by `error.name`.
  * - {@link getDaemon}: dispatch decision for `run` / `list` / `peers`.
- *   Returns a typed client on success, or `Required` when the project has no
- *   live daemon.
+ *   Returns a typed client on success, or `Required` when the Epicenter root
+ *   has no live daemon.
  *
  * The wire protocol is dead simple: POST a JSON body to a path on the unix
  * socket, get back a `Result<T, DomainErr>` JSON envelope from the handler.

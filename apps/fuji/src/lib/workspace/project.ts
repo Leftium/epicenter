@@ -133,5 +133,3 @@ export function fuji(opts: FujiMountOptions = {}) {
 		},
 	});
 }
-
-export type FujiMount = ReturnType<typeof fuji>;

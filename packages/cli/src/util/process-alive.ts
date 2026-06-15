@@ -5,9 +5,8 @@
  * `EPERM` means the process exists but is owned by another user, so it is
  * still alive. A dead pid raises `ESRCH`, which returns `false`.
  *
- * Single source of truth for `daemon down` (SIGTERM target guard) and
- * `daemon ps` (liveness column); the `EPERM`-means-alive branch is subtle
- * enough that it must not be re-typed per command.
+ * Owned by `daemon down` (SIGTERM target guard); the `EPERM`-means-alive
+ * branch is subtle enough that it should not be re-typed at the call site.
  */
 export function isProcessAlive(pid: number): boolean {
 	try {

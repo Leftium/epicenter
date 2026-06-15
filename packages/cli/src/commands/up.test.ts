@@ -201,7 +201,6 @@ describe('runUp: happy path', () => {
 		try {
 			expect(existsSync(metadataPathFor(workDir))).toBe(true);
 			expect(handle.metadata.pid).toBe(process.pid);
-			expect(handle.metadata.discoveredAt).toEqual(expect.any(String));
 			expect(handle.mounts).toHaveLength(1);
 			expect(handle.mounts[0]?.mount).toBe('demo');
 			expect(
@@ -574,7 +573,6 @@ describe('runUp: orphan path', () => {
 			dir: workDir,
 			startedAt: new Date().toISOString(),
 			cliVersion: '0.0.0',
-			discoveredAt: new Date().toISOString(),
 		});
 		writeRuntimeMount();
 

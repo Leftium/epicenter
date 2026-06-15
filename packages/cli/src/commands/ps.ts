@@ -25,7 +25,6 @@ type PsRow = {
 	dir: string;
 	pid: number;
 	uptime: string;
-	discoveredAt: string;
 };
 
 function humanUptime(startedAt: string): string {
@@ -58,7 +57,6 @@ export const psCommand = cmd({
 				dir: meta.dir,
 				pid: meta.pid,
 				uptime: humanUptime(meta.startedAt),
-				discoveredAt: meta.discoveredAt,
 			});
 		}
 

@@ -7,7 +7,7 @@ import {
 /**
  * Tagged-error variants for daemon startup.
  *
- * - `AlreadyRunning`: another daemon owns this project lease or answers ping.
+ * - `AlreadyRunning`: another daemon owns this Epicenter root lease or answers ping.
  * - `LeaseFailed`: the SQLite lease could not be opened or locked.
  * - `BindFailed`: `Bun.serve` raised on an unrecoverable bind error.
  * - `MetadataWriteFailed`: startup could not publish its metadata sidecar.

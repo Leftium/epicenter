@@ -13,7 +13,6 @@
  * returns `{ portalUrl: string }` rather than a vendor envelope.
  */
 
-import type { AiProvider } from '@epicenter/constants/ai-providers';
 import { type } from 'arktype';
 
 /** Snapshot of the customer's current plan and credit balance. */
@@ -142,16 +141,6 @@ export type PlanChangePreview = {
 /** Portal session for managing payment methods and invoices. */
 export type PortalSession = {
 	portalUrl: string;
-};
-
-/** Static cost guide for the dashboard's model table. `provider` is the stable
- *  id, parallel to `model`; the dashboard renders the vendor name from it. */
-export type ModelCostGuide = {
-	models: Array<{
-		model: string;
-		provider: AiProvider;
-		credits: number;
-	}>;
 };
 
 // ---------------------------------------------------------------------

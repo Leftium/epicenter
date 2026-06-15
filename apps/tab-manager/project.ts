@@ -90,5 +90,3 @@ export function tabManager(opts: TabManagerMountOptions = {}) {
 		},
 	});
 }
-
-export type TabManagerMount = ReturnType<typeof tabManager>;

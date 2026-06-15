@@ -40,7 +40,6 @@ const sampleMeta = (
 	dir: workDir,
 	startedAt: new Date(0).toISOString(),
 	cliVersion: '0.0.0-test',
-	discoveredAt: new Date(0).toISOString(),
 	...overrides,
 });
 

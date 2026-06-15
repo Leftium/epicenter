@@ -9,9 +9,9 @@
  */
 
 import { EPICENTER_API_URL } from '@epicenter/constants/apps';
+import { field } from '@epicenter/field';
 import type { OwnerId } from '@epicenter/identity';
 import {
-	column,
 	createWorkspace,
 	defineMutation,
 	defineQuery,
@@ -26,8 +26,8 @@ import Type from 'typebox';
 const WORKSPACE_ID = 'epicenter-notes-repro';
 
 const Note = defineTable({
-	id: column.string(),
-	body: column.string(),
+	id: field.string(),
+	body: field.string(),
 });
 
 export function openNotes({

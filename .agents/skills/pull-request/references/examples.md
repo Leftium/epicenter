@@ -57,40 +57,41 @@ Move per-runtime command definitions into the shared action map, then mount that
 ## Refactor Or Architecture Guide
 
 ````md
-The old encryption system had five moving parts to answer one question: does this workspace have encryption keys? You called `.withEncryption()` on the builder, then `unlock(keys)` asynchronously, an IndexedDB key store persisted crypto separately from auth, and a runtime state machine kept activate and deactivate in sync. All of that tracked a single boolean.
+The workspace encryption layer answered a question we stopped asking: can the relay read this data? A `@epicenter/encryption` package derived a per-owner keyring with HKDF, `/api/session` served that keyring on every sign-in, `createWorkspace` took it as a parameter, and an encrypted key-value wrapper ciphered every row on its way into Yjs. All of that protected workspace data from a relay we now trust.
+
+The trusted-relay direction answers the question once, at the topology instead of per row: either Epicenter runs the relay and reads plaintext, or you run your own anchor and nobody else sees it. Client-side encryption stopped earning its place, so it comes out.
 
 ```ts
-// Before: three steps, async unlock, runtime state machine
-const encryption = attachEncryption(ydoc, { encryptionKeys });
-const tables = encryption.attachTables(defs);
-await encryption.unlock(keys);
+// Before: keyring threads from auth into construction
+const workspace = createWorkspace({ id, keyring: signedIn.keyring, tables, kv });
 ```
 
 ```ts
-// After: keys are read during construction, registration is atomic
-const workspace = createWorkspace({ id, keyring, tables: defs, kv: {} });
+// After: plaintext stores, no keyring to thread
+const workspace = createWorkspace({ id, tables, kv });
 ```
 
-The encrypted map no longer keeps a decrypted cache beside the encrypted Yjs state. It encrypts on write and decrypts on read, one direction each way.
+The deletion cascades past the call site. The keyring no longer rides through `PersistedAuth`, `ApiSessionResponse`, or the `SignedIn` payload, and the encrypted-row read state goes with it.
 
 ```txt
-Before: attachEncryption(ydoc)
-  |-- encryption runtime state machine
-  |-- IndexedDB key persistence
-  `-- encrypted map dual cache
+Before: @epicenter/encryption
+  |-- HKDF keyring derivation
+  |-- /api/session keyring serving
+  |-- createWorkspace({ keyring }) parameter
+  `-- encrypted key-value wrapper + unreadable read state
 
-After: createWorkspace({ keyring })
-  `-- encrypted stores read keyring once at construction
+After: (deleted)
+  `-- createWorkspace({ id, tables, kv }) writes plaintext rows
 ```
 
-The trade-off is that same-owner key rotation now needs a fresh `createWorkspace` call. That matches the auth lifecycle, which already rebuilds the signed-in session. One improvement came along for the ride: cached session boot now applies persisted keys before the network roundtrip, so encrypted content no longer flashes empty on load.
+The trade-off is explicit: workspace data now sits in plaintext wherever the relay stores it, so the privacy guarantee rests on who runs the anchor rather than on a key the client holds. That is the trusted-relay bet, written down. One simplification came along for the ride: table `scan()` drops from four buckets to three, because the `unreadable` bucket only ever modeled a row encrypted with a key this device lacked.
 
-Net change across 26 files: about 1700 lines deleted, 900 net lines removed.
+Net change across 44 files: about 1,000 lines deleted.
 ````
 
 - **Pattern:** disproportionate complexity, before and after, composition tree, came along for the ride, casual closing stats.
-- **Why it works:** opens with the absurd contrast (five parts for one boolean), shows code before the prose gets abstract, names the trade-off instead of hiding it, subordinates the bonus, closes with scope after the story.
-- **Imitate when:** a refactor collapses machinery without changing public behavior.
+- **Why it works:** opens by naming the question the machinery answered and why it stopped mattering, shows code before the prose gets abstract, names the trade-off instead of hiding it, subordinates the bonus, closes with scope after the story.
+- **Imitate when:** a refactor or a deletion collapses machinery and the reader needs to know what guarantee changed.
 
 ## Feature PR
 

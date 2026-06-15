@@ -147,7 +147,6 @@ export const PersistedAuth = type({
 	grant: OAuthTokenGrant,
 	userId: UserId,
 	ownerId: OwnerId,
-	keyring: Keyring,
 	mode: OwnershipMode,
 });
 

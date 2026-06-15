@@ -240,14 +240,14 @@ When an arktype schema exports both a runtime value and its inferred type with t
 
 ```typescript
 // Good: one import covers both namespaces
-import { EncryptionKeys } from '@epicenter/encryption';
+import { WorkspaceId } from './workspace-id';
 
 const Session = type({
-	encryptionKeys: EncryptionKeys,
+	workspaceId: WorkspaceId,
 });
 
 type SessionResponse = {
-	encryptionKeys: EncryptionKeys;
+	workspaceId: WorkspaceId;
 };
 ```
 
@@ -256,12 +256,12 @@ Avoid aliasing the runtime schema just to make room for the type import.
 ```typescript
 // Bad: duplicates the name with an artificial Schema suffix
 import {
-	EncryptionKeys as EncryptionKeysSchema,
-	type EncryptionKeys,
-} from '@epicenter/encryption';
+	WorkspaceId as WorkspaceIdSchema,
+	type WorkspaceId,
+} from './workspace-id';
 
 const Session = type({
-	encryptionKeys: EncryptionKeysSchema,
+	workspaceId: WorkspaceIdSchema,
 });
 ```
 

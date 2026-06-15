@@ -32,10 +32,10 @@ Full surface:
 table.get(id)                       // Result<TRow | null, TableReadError>  : Ok(null) = absent
 table.scan()                        // TableScan<TRow>     : the one classified bulk read
 table.findValid(predicate)          // TRow | undefined    : first conforming match, short-circuits
-table.has(id)                       // boolean             : a stored entry exists (any of the four states)
+table.has(id)                       // boolean             : a stored entry exists (any of the three states)
 table.storedCount()                 // number              : count of every stored entry, O(1)
 
-table.set(row)                      // Result<void, TableWriteError>  : upsert, refuses unreadable rows
+table.set(row)                      // Result<void, TableWriteError>  : upsert, refuses newer-writer rows
 table.bulkSet(rows, { chunkSize?, onProgress? })   // Promise<{ refused: TableWriteError[] }>
 table.update(id, partial)           // Result<TRow | null, TableReadError>
 table.delete(id)                    // remove row (unguarded)
@@ -48,22 +48,20 @@ table.clear()                       // { refused: TableWriteError[] }  : skips r
 ### The classified scan
 
 There is one bulk read, and it never silently drops data. `scan()` walks every
-stored entry and resolves each into exactly one of four buckets whose lengths
+stored entry and resolves each into exactly one of three buckets whose lengths
 sum to `storedCount()`:
 
 ```typescript
-const { rows, nonconforming, newerWriter, unreadable } = table.scan();
+const { rows, nonconforming, newerWriter } = table.scan();
 
 rows           // TRow[]                    : parse and validate to the latest schema
 nonconforming  // TableParseError[]         : this binary should parse them but cannot
 newerWriter    // TableNewerWriterError[]   : a newer binary wrote them (update the app)
-unreadable     // TableUnreadableError[]    : encrypted with a key this device lacks
 
-// storedCount() === rows.length + nonconforming.length
-//                 + newerWriter.length + unreadable.length
+// storedCount() === rows.length + nonconforming.length + newerWriter.length
 ```
 
-`scan().rows` is the conforming payload almost every caller wants; the three
+`scan().rows` is the conforming payload almost every caller wants; the two
 issue buckets ride along so a caller can log, surface, or deliberately ignore
 them rather than hiding them by default. For "the first row matching p" without
 building all four buckets, use `findValid(p)` (it short-circuits). For an

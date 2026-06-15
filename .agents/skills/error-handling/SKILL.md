@@ -322,14 +322,14 @@ Never assert on console output. Use `memorySink()` and inspect the events array 
 ```ts
 import { createLogger, memorySink } from 'wellcrafted/logger';
 
-test('logs a decrypt failure when the keyring is missing the version', () => {
+test('logs a warning when the materializer write fails', () => {
   const { sink, events } = memorySink();
-  const log = createLogger('encrypted-kv', sink);
+  const log = createLogger('sqlite-materializer', sink);
   // ... trigger the path ...
   expect(events).toContainEqual(
     expect.objectContaining({
       level: 'warn',
-      data: expect.objectContaining({ name: 'DecryptFailed' }),
+      data: expect.objectContaining({ name: 'TableWriteFailed' }),
     }),
   );
 });

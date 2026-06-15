@@ -16,23 +16,6 @@ import type { Shortcuts } from './types';
  * by the browser keydown manager, stored in workspace KV under `shortcut.*`.
  */
 
-/**
- * Default in-app shortcuts, keyed by command id. `null` = unbound. These mirror
- * the `shortcut.*` KV defaults in the workspace definition (the storage schema
- * is the other copy); the two must agree.
- */
-const DEFAULT_LOCAL_SHORTCUTS = {
-	// Push-to-talk ships unbound in-app: a stray Space-style tap would fire
-	// start+immediate-stop and feed a junk recording to the pipeline, so the safe
-	// in-app default is the toggle below. Bind push-to-talk here if you want it.
-	pushToTalk: null,
-	toggleManualRecording: ' ',
-	cancelRecording: 'c',
-	toggleVadRecording: 'v',
-	openTransformationPicker: 't',
-	runTransformationOnClipboard: 'r',
-} as const satisfies Record<Command['id'], string | null>;
-
 const localKey = (id: Command['id']) => `shortcut.${id}` as const;
 
 async function sync(): Promise<void> {
@@ -66,7 +49,8 @@ async function sync(): Promise<void> {
 
 function reset(): void {
 	for (const command of commands) {
-		settings.set(localKey(command.id), DEFAULT_LOCAL_SHORTCUTS[command.id]);
+		const key = localKey(command.id);
+		settings.set(key, settings.getDefault(key));
 	}
 	void sync();
 }
@@ -95,7 +79,7 @@ function resetIfDuplicates(): boolean {
 }
 
 function defaultLabel(commandId: Command['id']): string {
-	return getShortcutDisplayLabel(DEFAULT_LOCAL_SHORTCUTS[commandId]);
+	return getShortcutDisplayLabel(settings.getDefault(localKey(commandId)));
 }
 
 export const shortcuts: Shortcuts = {

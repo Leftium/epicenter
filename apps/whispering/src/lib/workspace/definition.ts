@@ -312,9 +312,14 @@ const analytics = {
  * `null` = unbound.
  */
 const shortcuts = {
-	// Push-to-talk ships unbound in-app (see platform/shortcuts.browser.ts for
-	// why); the in-app record button and the toggle below cover the focused
-	// window. These KV defaults must agree with DEFAULT_LOCAL_SHORTCUTS there.
+	// These getDefault thunks are the single source for the in-app shortcut
+	// defaults. The web backend (platform/shortcuts.browser.ts) reads them back
+	// through `settings.getDefault('shortcut.*')` instead of redeclaring them, so
+	// the schema and the backend can never drift.
+	//
+	// Push-to-talk ships unbound in-app: a stray Space-style tap would fire
+	// start+immediate-stop and feed a junk recording to the pipeline, so the safe
+	// in-app default is the toggle below.
 	'shortcut.pushToTalk': defineKv(
 		nullable(field.string()),
 		(): string | null => null,

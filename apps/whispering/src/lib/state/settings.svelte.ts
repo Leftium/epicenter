@@ -56,6 +56,13 @@ function createSettings() {
 		set: whispering.kv.set,
 
 		/**
+		 * The default value for a setting key (factory-evaluated, per-key typed).
+		 * Reads straight from the KV schema, so the schema stays the single source
+		 * of defaults; callers never redeclare them.
+		 */
+		getDefault: whispering.settings.getDefault,
+
+		/**
 		 * Reset all workspace settings to their default values in a single
 		 * Yjs transaction.
 		 */

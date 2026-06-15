@@ -70,16 +70,16 @@
 
 <svelte:head> <title>Keyboard Shortcuts - Whispering</title> </svelte:head>
 
-<section>
+<section class="mx-auto max-w-4xl py-6">
 	<div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
 		<SectionHeader.Root>
 			<div class="flex items-center gap-2">
-				<SectionHeader.Title level={2} class="text-xl tracking-tight sm:text-2xl">
-					{tauri ? 'Global Shortcuts' : 'In-App Shortcuts'}
+				<SectionHeader.Title level={1} class="text-3xl">
+					Keyboard Shortcuts
 				</SectionHeader.Title>
 				<ShortcutFormatHelp type={tauri ? 'global' : 'local'} />
 			</div>
-			<SectionHeader.Description>
+			<SectionHeader.Description class="mt-2">
 				{#if tauri}
 					System-wide gestures that fire from anywhere, even when Whispering is
 					not focused. Hold the Fn key or a modifier chord. Each gesture needs
@@ -92,7 +92,7 @@
 		</SectionHeader.Root>
 		<Button variant="outline" size="sm" onclick={reset} class="shrink-0">
 			<RotateCcw class="size-4" />
-			Reset to defaults
+			Reset shortcuts
 		</Button>
 	</div>
 

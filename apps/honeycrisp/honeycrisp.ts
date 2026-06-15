@@ -203,5 +203,3 @@ export function noteBodyDocGuid(noteId: NoteId): string {
 		field: 'body',
 	});
 }
-
-export type HoneycrispActions = HoneycrispWorkspace['actions'];

@@ -83,5 +83,3 @@ export function honeycrisp(opts: HoneycrispMountOptions = {}) {
 		},
 	});
 }
-
-export type HoneycrispMount = ReturnType<typeof honeycrisp>;

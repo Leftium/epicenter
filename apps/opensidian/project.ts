@@ -33,5 +33,3 @@ export function opensidian() {
 		},
 	});
 }
-
-export type OpensidianMount = ReturnType<typeof opensidian>;

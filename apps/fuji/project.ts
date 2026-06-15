@@ -5,8 +5,4 @@
  * `../epicenter/apps/fuji/project.ts`, matching the other app packages.
  */
 
-export {
-	type FujiMount,
-	type FujiMountOptions,
-	fuji,
-} from './src/lib/workspace/project.js';
+export { fuji } from './src/lib/workspace/project.js';

@@ -8,6 +8,7 @@
 	import { commandCallbacks } from '$lib/commands';
 	import { report } from '$lib/report';
 	import { os } from '#platform/os';
+	import MacosAccessibilityGuideDialog from '$lib/components/MacosAccessibilityGuideDialog.svelte';
 	import MoreDetailsDialog from '$lib/components/MoreDetailsDialog.svelte';
 	import UpdateDialog from '$lib/components/UpdateDialog.svelte';
 	import {
@@ -112,7 +113,7 @@
 	$effect(() => {
 		if (getTranscriptionSetupReadiness().isReady) return;
 		const path = page.url.pathname;
-		if (path.startsWith('/setup') || path === '/macos-enable-accessibility') return;
+		if (path.startsWith('/setup')) return;
 		void goto('/setup');
 	});
 
@@ -176,5 +177,6 @@
 </div>
 
 <ConfirmationDialog />
+<MacosAccessibilityGuideDialog />
 <MoreDetailsDialog />
 <UpdateDialog />

@@ -1,11 +1,12 @@
 <!--
-	Engine setup. The one hard precondition with no fallback: a transcription
-	runtime. Without a model or API key, audio cannot become text. The AppLayout
-	gate routes here whenever no runtime is configured, and stops the moment one
-	is. Permissions and shortcuts are deliberately not gated here: the global
-	shortcut ships with a default, the microphone prompts at first record, and
-	Accessibility degrades to the clipboard behind an in-app notice on the home
-	screen. So setup is one screen, not a wizard.
+	First-run setup. The one hard precondition with no fallback is a transcription
+	runtime: without a model or API key, audio cannot become text, so the AppLayout
+	gate routes here until one is configured and stops the moment it is. macOS
+	Accessibility is presented here too (the notice below), because the global
+	shortcut is the headline way to dictate, but it never blocks finishing: it is a
+	revocable OS grant with a clipboard fallback, surfaced as a reactive notice
+	rather than a wall. The microphone prompts at first record. So setup is one
+	screen, not a wizard.
 -->
 <script lang="ts">
 	import * as Alert from '@epicenter/ui/alert';
@@ -16,6 +17,7 @@
 	import ArrowRightIcon from '@lucide/svelte/icons/arrow-right';
 	import CheckCircle2Icon from '@lucide/svelte/icons/check-circle-2';
 	import { goto } from '$app/navigation';
+	import MacosAccessibilityNotice from '$lib/components/MacosAccessibilityNotice.svelte';
 	import TranscriptionRuntimeSetup from '$lib/components/settings/TranscriptionRuntimeSetup.svelte';
 	import { getTranscriptionSetupReadiness } from '$lib/settings/transcription-validation';
 	import { os } from '#platform/os';
@@ -91,6 +93,10 @@
 			Advanced transcription settings
 		</Link>
 	</div>
+
+	<!-- Presented, never required: only renders on macOS with the grant off, and
+	does not gate the finish button. The runtime above is the one hard wall. -->
+	<MacosAccessibilityNotice />
 
 	<div class="flex justify-end">
 		<Button disabled={!runtime.isReady} onclick={finish}>

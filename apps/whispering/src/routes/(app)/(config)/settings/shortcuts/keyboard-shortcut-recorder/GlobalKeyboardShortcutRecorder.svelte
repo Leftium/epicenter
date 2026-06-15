@@ -2,6 +2,7 @@
 	import { Button } from '@epicenter/ui/button';
 	import * as Kbd from '@epicenter/ui/kbd';
 	import { onDestroy } from 'svelte';
+	import { accessibilityGuide } from '$lib/components/MacosAccessibilityGuideDialog.svelte';
 	import { type Command, commands } from '$lib/commands';
 	import { report } from '$lib/report';
 	import type { Tauri } from '#platform/tauri';
@@ -208,7 +209,11 @@
 		{#if label}
 			<Kbd.Root>{label}</Kbd.Root>
 		{/if}
-		<Button variant="outline" size="sm" href="/macos-enable-accessibility">
+		<Button
+			variant="outline"
+			size="sm"
+			onclick={() => accessibilityGuide.open()}
+		>
 			Grant Accessibility to record
 		</Button>
 	</div>

@@ -24,6 +24,7 @@ import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
 import { APP_URLS } from '@epicenter/constants/vite';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
 import { SvelteMap } from 'svelte/reactivity';
+import { DEFAULT_MODEL } from '$lib/chat/models';
 import {
 	asConversationId,
 	type ConversationId,
@@ -35,7 +36,6 @@ import {
 	type ModelChoice,
 	setModelChoice,
 } from '$lib/chat/persistence';
-import { DEFAULT_MODEL } from '$lib/chat/models';
 import {
 	buildDeviceConstraints,
 	TAB_MANAGER_SYSTEM_PROMPT,

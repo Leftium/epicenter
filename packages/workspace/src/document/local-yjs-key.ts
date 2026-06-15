@@ -34,8 +34,7 @@ export function getOwnedYjsPrefix(server: string, ownerId: OwnerId): string {
  *
  * The `server` and `ownerId` arguments scope local data on shared browser
  * profiles. This key is a local runtime name only; it does not change
- * `ydoc.guid`, sync room names, child document GUIDs, or the encryption
- * workspace labels.
+ * `ydoc.guid`, sync room names, or child document GUIDs.
  */
 export function createOwnedYjsKey(
 	server: string,

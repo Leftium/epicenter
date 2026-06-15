@@ -107,7 +107,7 @@ bun run zip            # Package for Chrome Web Store
 bun run zip:firefox    # Package for Firefox Add-ons
 ```
 
-Auth uses Google OAuth via `browser.identity`. Encryption keys are applied on login.
+Auth uses Google OAuth via `browser.identity`. The workspace mounts once a signed-in identity is available.
 
 ---
 

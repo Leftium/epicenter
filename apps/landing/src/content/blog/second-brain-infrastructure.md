@@ -59,13 +59,13 @@ const workspace = createWorkspace({
 
 That `folder` field can only be `raw`, `wiki`, or `outputs`. If the AI tries to write `inbox`, it fails at the schema level. Drift doesn't happen silently.
 
-Encryption is XChaCha20-Poly1305 with HKDF key derivation. The sync server:which you can self-host:is a relay. It passes encrypted blobs between your devices but never sees the content. The keys never leave your machines.
+The sync server:which you can self-host:is a relay that passes updates between your devices. Run it on Epicenter Cloud and we hold your data; self-host it and the only machines holding your notes are yours.
 
 ## The honest trade-off
 
 Karpathy's system is simpler. Three folders and a text file. Anyone can set it up in five minutes. Epicenter adds a library, a sync server, a CLI, a schema definition. That's real complexity. If you're one person on one laptop who never needs structured queries and never puts anything sensitive in your notes, Karpathy's system is probably the right call.
 
-But I have a phone and a laptop. I want to search my notes by date and tag, not just by keyword. I have notes I'd rather not store in plaintext. And I definitely want to automate things:a weekly digest, a health check, a script that surfaces stuff I've forgotten about. For me, the infrastructure overhead is worth it because the alternative is doing all of that by hand, badly, forever.
+But I have a phone and a laptop. I want to search my notes by date and tag, not just by keyword. I have notes I'd rather keep on infrastructure I control. And I definitely want to automate things:a weekly digest, a health check, a script that surfaces stuff I've forgotten about. For me, the infrastructure overhead is worth it because the alternative is doing all of that by hand, badly, forever.
 
 The markdown files are still there. You can still grep them. You can still open them in Obsidian. The CRDT layer is invisible until you need it:and then it's exactly what you needed.
 

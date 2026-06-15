@@ -51,12 +51,12 @@ and child document guid policy.
 
 ## Quick Start: local-only workspace
 
-The recipe below ships a workspace with no auth, no encryption, no cloud
+The recipe below ships a workspace with no auth, no cloud
 sync. It is the right shape for a single-user desktop notes app, an
-offline CLI, a test fixture, or any consumer whose data has no remote
-adversary. Cloud-synced workspaces pass a `keyring` to `createWorkspace` and
-swap `attachIndexedDb` + `attachBroadcastChannel` for the owner-scoped
-`attachLocalStorage` composite; see [Plaintext vs encrypted](#plaintext-vs-encrypted).
+offline CLI, a test fixture, or any consumer whose data stays on the
+device. Cloud-synced workspaces swap `attachIndexedDb` + `attachBroadcastChannel`
+for the owner-scoped `attachLocalStorage` composite; see
+[Local-only vs cloud-synced](#local-only-vs-cloud-synced).
 
 ```bash
 bun add @epicenter/workspace @epicenter/field
@@ -151,12 +151,11 @@ user owns construction; the cache owns identity keyed by id,
 refcounting, and the `gcTime` grace period between last dispose and teardown.
 `.open(id)` returns a disposable handle.
 
-### Plaintext vs encrypted
+### Local-only vs cloud-synced
 
-Both variants ship from this package. Pick by adversary: plaintext for
-data that never leaves the device, encrypted for data the server stores.
+Both shapes ship from this package, and the workspace factory is the same for each.
 
-One factory, both modes. `createWorkspace({ id, tables, kv, keyring? })` constructs the root Y.Doc, materializes the table and KV stores onto it, and registers cascade disposal. Pass a `keyring: () => Keyring` callback to encrypt every store under the owner keyring narrowed to `id` (one HKDF derivation, shared across stores); omit it for plaintext. Same-owner key rotation requires a fresh `createWorkspace` call (and therefore a fresh Y.Doc) to take effect.
+`createWorkspace({ id, tables, kv })` constructs the root Y.Doc, materializes the table and KV stores onto it, and registers cascade disposal. Local-only docs attach `attachIndexedDb`; cloud-synced docs attach the owner-scoped `attachLocalStorage` composite and `openCollaboration`. The relay is trusted and reads plaintext, so there is no client-side encryption to configure.
 
 Apps usually wrap `createWorkspace` in a per-app factory next to their schema so the table set, id constant, actions, and deterministic child-doc guid helpers live in one place:
 
@@ -169,10 +168,9 @@ import {
 	defineWorkspace,
 } from '@epicenter/workspace';
 
-export function createMyAppWorkspace(opts: { keyring: () => Keyring }) {
+export function createMyAppWorkspace() {
 	const workspace = createWorkspace({
 		id: 'epicenter.my-app',
-		keyring: opts.keyring,
 		tables: myAppTables,
 		kv: {},
 	});
@@ -193,7 +191,7 @@ export function createMyAppWorkspace(opts: { keyring: () => Keyring }) {
 }
 ```
 
-Minimal encrypted browser workspace: encryption + owner-scoped IndexedDB + cross-tab + collaboration (sync + presence + dispatch) wired together:
+Minimal cloud browser workspace: owner-scoped IndexedDB + cross-tab + collaboration (sync + presence + dispatch) wired together:
 
 ```typescript
 import {
@@ -215,13 +213,12 @@ export function openApp({
 	signedIn: SignedIn;
 	deviceId: string;
 }) {
-	const workspace = createMyAppWorkspace({ keyring: signedIn.keyring });
+	const workspace = createMyAppWorkspace();
 
-	// Server + owner scoped encrypted IDB + cross-tab BroadcastChannel in one call.
+	// Server + owner scoped IDB + cross-tab BroadcastChannel in one call.
 	const idb = attachLocalStorage(workspace.ydoc, {
 		server: signedIn.server,
 		ownerId: signedIn.ownerId,
-		keyring: signedIn.keyring,
 	});
 
 	const collaboration = openCollaboration(workspace.ydoc, {
@@ -262,7 +259,7 @@ export const session = createSession({
 });
 ```
 
-`attachLocalStorage(ydoc, { server, ownerId, keyring })` pairs the encrypted IndexedDB store with an owner-scoped BroadcastChannel: two tabs of the same owner share both persisted state and live updates, while two different owners on the same browser profile never see each other's data. On sign-out, call `wipeLocalStorage({ server, ownerId })` to delete every owner-scoped local database.
+`attachLocalStorage(ydoc, { server, ownerId })` pairs the owner-scoped IndexedDB store with an owner-scoped BroadcastChannel: two tabs of the same owner share both persisted state and live updates, while two different owners on the same browser profile never see each other's data. On sign-out, call `wipeLocalStorage({ server, ownerId })` to delete every owner-scoped local database.
 
 `openCollaboration` is the workspace primitive: it wraps the sync supervisor, mirrors the relay's server-owned presence channel as `collaboration.devices`, and runs inbound dispatch frames against the local action registry. Find an online install with `workspace.collaboration.devices.list().find((d) => d.deviceId === deviceId)`, then call it with `workspace.collaboration.dispatch(...)`. Content documents use the same primitive with `actions: {}`. See [SYNC_ARCHITECTURE.md](./SYNC_ARCHITECTURE.md) for the full model.
 
@@ -882,15 +879,15 @@ import { attachYjsLog } from '@epicenter/workspace/node';
 
 ### Persistence
 
-Browser apps use `attachIndexedDb(ydoc)` for unauthenticated docs, or `attachLocalStorage(ydoc, { server, ownerId, keyring })` for an authenticated workspace that needs encrypted persistence plus cross-tab pairing. Bun/Node daemons use `attachYjsLog(ydoc, { filePath })`. All bind to the Y.Doc and tear down on `ydoc.destroy()`.
+Browser apps use `attachIndexedDb(ydoc)` for unauthenticated docs, or `attachLocalStorage(ydoc, { server, ownerId })` for an authenticated workspace that needs owner-scoped persistence plus cross-tab pairing. Bun/Node daemons use `attachYjsLog(ydoc, { filePath })`. All bind to the Y.Doc and tear down on `ydoc.destroy()`.
 
 | Primitive | Runtime | Barrier | Other | Purpose |
 |---|---|---|---|---|
 | `attachIndexedDb(ydoc)` | browser | `whenLoaded`, `whenDisposed` | `clearLocal()` | Local Yjs persistence via `y-indexeddb` |
-| `attachLocalStorage(ydoc, { server, ownerId, keyring })` | browser | `whenLoaded`, `whenDisposed` | paired BroadcastChannel | Owner-scoped encrypted IDB plus cross-tab pairing |
+| `attachLocalStorage(ydoc, { server, ownerId })` | browser | `whenLoaded`, `whenDisposed` | paired BroadcastChannel | Owner-scoped IDB plus cross-tab pairing |
 | `attachYjsLog(ydoc, { filePath })` | Bun/Node | `whenDisposed` (sync replay; no `whenLoaded` needed) | `clearLocal()` | Append-log SQLite file the daemon writes |
 
-For authenticated apps, call `await wipeLocalStorage({ server, ownerId })` after disposing the bundle to delete every owner-scoped encrypted IDB database on the current browser profile (sign-out, "delete my local data", account switch).
+For authenticated apps, call `await wipeLocalStorage({ server, ownerId })` after disposing the bundle to delete every owner-scoped IDB database on the current browser profile (sign-out, "delete my local data", account switch).
 
 `attachBunSqliteMaterializer` and `attachMarkdownExport` are not persistence: they project workspace rows into queryable SQLite tables or `.md` files. They are read surfaces, not write surfaces. Projection actions such as `sqlite_rebuild`, `sqlite_search`, and `markdown_rebuild` maintain or query the projection; app data mutations stay in app-defined actions. See the materializer subsections below.
 
@@ -925,7 +922,7 @@ void openNotes;
 
 ### Sync
 
-One primitive wraps the WebSocket transport: `openCollaboration`. The workspace document passes a real `actions` registry; content documents that only need bytes-on-the-wire pass `actions: {}`. Compose it with `attachBroadcastChannel(ydoc)` for unauthenticated local-only documents. Authenticated browser workspaces use `attachLocalStorage(ydoc, { server, ownerId, keyring })`, which pairs encrypted IDB with an owner-scoped BroadcastChannel in one call.
+One primitive wraps the WebSocket transport: `openCollaboration`. The workspace document passes a real `actions` registry; content documents that only need bytes-on-the-wire pass `actions: {}`. Compose it with `attachBroadcastChannel(ydoc)` for unauthenticated local-only documents. Authenticated browser workspaces use `attachLocalStorage(ydoc, { server, ownerId })`, which pairs owner-scoped IDB with an owner-scoped BroadcastChannel in one call.
 
 ```typescript
 import { field } from '@epicenter/field';
@@ -1339,7 +1336,7 @@ browser-safe entry point.
 
 | Import path | What it exports | Public today |
 | --- | --- | --- |
-| `@epicenter/workspace` | `createDisposableCache`, `defineTable`, `defineKv`, browser-safe `attach*` (tables, kv, indexeddb, broadcast-channel, encryption, rich-text, plain-text, timeline), `openCollaboration`, `roomWsUrl`, action helpers, `onLocalUpdate`, `docGuid`, ids, dates, types | Yes |
+| `@epicenter/workspace` | `createDisposableCache`, `defineTable`, `defineKv`, browser-safe `attach*` (tables, kv, indexeddb, broadcast-channel, rich-text, plain-text, timeline), `openCollaboration`, `roomWsUrl`, action helpers, `onLocalUpdate`, `docGuid`, ids, dates, types | Yes |
 | `@epicenter/workspace/node` | Bun/Node `attach*` and `open*` (`attachYjsLog`, `attachYjsLogReader`, `openSqliteReader`, `openWorkspaceSqlite`), daemon clients (`connectDaemonActions`, `findEpicenterRoot`), workspace paths | Yes |
 | `@epicenter/workspace/document/materializer/markdown` | `attachMarkdownExport`, `attachGitAutosave`, `MarkdownShape` | Yes |
 | `@epicenter/workspace/document/materializer/sqlite` | `attachBunSqliteMaterializer`, `generateDdl`, types | Yes |
@@ -1517,7 +1514,6 @@ Everything below is a *convention*: the builder is free to expose more or less. 
 - `kv`
 - `idb` (or `sqlite`)
 - `collaboration` (from `openCollaboration`)
-- `encryption` (when encrypted)
 - `actions`
 - `batch(fn)`
 - `whenReady` (only when composed from 2+ subsystem signals; otherwise consumers await `idb.whenLoaded` directly)

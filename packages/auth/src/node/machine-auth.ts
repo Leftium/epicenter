@@ -350,7 +350,7 @@ export async function status({
 	if (!loaded.data) return Ok({ status: 'signedOut' as const });
 	const cachedCell = loaded.data;
 
-	// Cell may still be valid for local decrypt when the server is unreachable;
+	// Cell may still be valid for local use when the server is unreachable;
 	// the underlying auth client wipes it on same-owner mismatch or
 	// reauth-required. Email is unknown without /api/session.
 	const unverifiedFromCache = {

@@ -21,13 +21,13 @@ createHoneycrisp()
   shared isomorphic model: id, tables, actions, note body docs
 
 openHoneycrispBrowser()
-  browser runtime: encrypted local storage, sync, child-doc storage and sync
+  browser runtime: local storage, sync, child-doc storage and sync
 
 honeycrisp() (project mount)
   daemon runtime: Yjs log, sync, SQLite mirror, markdown materializer
 ```
 
-The Svelte app mounts the browser runtime through `createSession`, so the workspace is only created after signed-in identity and encryption keys are available.
+The Svelte app mounts the browser runtime through `createSession`, so the workspace is only created after a signed-in identity provides `ownerId` and sync transport.
 
 ### Rich-text editing
 
@@ -39,7 +39,7 @@ Notes are never removed from the CRDT. They're soft-deleted with a `deletedAt` t
 
 ### Auth
 
-Google sign-in via `@epicenter/svelte/auth-form`. The session is persisted across reloads. Encryption keys are applied on login before the workspace connects.
+Google sign-in via `@epicenter/svelte/auth-form`. The session is persisted across reloads. The workspace connects once a signed-in identity is available.
 
 ---
 
@@ -112,7 +112,7 @@ This starts the app dev server on port 5175. Auth and sync expect the local API 
 - [Yjs](https://yjs.dev): CRDT engine (Y.Doc, Y.XmlFragment)
 - [Tailwind CSS](https://tailwindcss.com): styling
 - [Better Auth](https://better-auth.com): authentication
-- `@epicenter/workspace`: CRDT-backed tables, versioning, E2E encryption
+- `@epicenter/workspace`: CRDT-backed tables, versioning, sync
 - `@epicenter/svelte`: auth, workspace gate, reactive table/KV bindings
 - `@epicenter/ui`: shadcn-svelte component library
 

@@ -8,7 +8,7 @@
  * (`<epicenterRoot>/entries/` for Fuji).
  *
  * What this does:
- *   1. workspace root doc (encrypted tables + KV via createFuji)
+ *   1. workspace root doc (tables + KV via createFuji)
  *   2. SQLite materializer at `sqlitePath(...)`
  *   3. Markdown export (read-only, one-way) under the app root; each entry's
  *      body is rendered from its content doc via `serializeEntryBody`, read

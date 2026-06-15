@@ -44,18 +44,15 @@ so self-hosting is functionally zero-knowledge against Epicenter.
 
 Zero-knowledge means the server can't read your data. The cost: password recovery doesn't work (the server can't re-derive your key), search doesn't work (the server can't index ciphertext), AI doesn't work (the server can't read your notes to summarize them), and device migration requires a key transfer ceremony.
 
-PGP has been trying to make key management practical for thirty years. Signal works because messaging is one-dimensional. The server is a relay that never processes content. Most apps aren't relays. Epicenter needs to search documents, run AI against notes, and let users reset passwords without losing everything.
-
-### Overhead
-
-Encryption adds a fixed 42 bytes per value (2-byte header + 24-byte nonce + 16-byte Poly1305 auth tag) with zero proportional expansion. Blobs are stored as raw `Uint8Array` via Yjs binary serialization. For typical workspace data (100 to 2000 byte values), total overhead is 2 to 42%. Performance impact is negligible. XChaCha20-Poly1305 via @noble/ciphers encrypts 1 KB in about 0.01 ms, and decrypting an entire workspace (500 entries) takes under 5 ms.
+PGP has been trying to make key management practical for thirty years. Signal works because messaging is one-dimensional. The server is a relay that never processes content. Most apps aren't relays. Epicenter needs to search documents, run AI against notes, and let users reset passwords without losing everything. The relay reads plaintext, which is what makes those features possible; if you want a server that can't read your data, self-host it.
 
 For the full argument:
 
+- [Trust model](/docs/encryption.md): what the relay sees and the two tiers
+- [Don't Encrypt the Data, Don't Hold It](/docs/articles/20260615T140000-dont-encrypt-the-data-dont-hold-it.md): why the encryption layer was removed and the anchor direction
 - [Why E2E Encryption Keeps Failing](/docs/articles/why-e2e-encryption-keeps-failing.md): PGP, Signal, and the structural problem
 - [Let the Server Handle Encryption](/docs/articles/let-the-server-handle-encryption.md): the pragmatic alternative
 - [If You Don't Trust the Server, Become the Server](/docs/articles/if-you-dont-trust-the-server-become-the-server.md): self-hosting as the clean answer
-- [Encrypted Workspace Storage spec](/specs/20260213T005300-encrypted-workspace-storage.md): implementation details
 
 ## Architecture
 

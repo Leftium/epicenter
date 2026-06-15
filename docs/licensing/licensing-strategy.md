@@ -39,11 +39,11 @@ Scenario 4 (a hosted competitor) is the one where the license is most load-beari
 
 ### Tier 1: MIT
 
-**Applies to:** the embeddable toolkit libraries: `packages/workspace`, `packages/ui`, `packages/filesystem`, `packages/sync`, plus the toolkit-internal packages `packages/util`, `packages/encryption`, and `packages/identity`.
+**Applies to:** the embeddable toolkit libraries: `packages/workspace`, `packages/ui`, `packages/filesystem`, `packages/sync`, plus the toolkit-internal packages `packages/util` and `packages/identity`.
 
 **Rationale:**
 - Libraries: we want developers to embed `@epicenter/workspace` in their own projects with zero friction. AGPL would forbid that for closed-source consumers, killing adoption. The library is not what we sell.
-- Toolkit-internal packages (`util`, `encryption`, `identity`): these are dependencies bundled into the MIT toolkit libraries, so they must be MIT-compatible for the toolkit to stay distributable as MIT. `@epicenter/identity` owns the capability and identity vocabulary shared by the MIT toolkit and the AGPL auth layer. They are not separately marketed.
+- Toolkit-internal packages (`util`, `identity`): these are dependencies bundled into the MIT toolkit libraries, so they must be MIT-compatible for the toolkit to stay distributable as MIT. `@epicenter/identity` owns the capability and identity vocabulary shared by the MIT toolkit and the AGPL auth layer. They are not separately marketed.
 - MIT-clean closure: the toolkit no longer depends on any AGPL package. `OwnerId` and `AuthState` live in `@epicenter/identity`; the room route and bearer subprotocol moved to the now-MIT `@epicenter/sync`; and the daemon takes its API base URL as config instead of importing the hosted constant. `bun run check:licenses` enforces this. `cli` stays AGPL because it also pulls AGPL `auth`.
 
 ### Tier 2: AGPL-3.0
@@ -115,7 +115,6 @@ All apps are AGPL-3.0. MIT is reserved for the embeddable toolkit libraries.
 | `packages/ui` | MIT | shadcn-svelte components (toolkit) |
 | `packages/filesystem` | MIT | POSIX layer over Yjs (toolkit) |
 | `packages/util` | MIT | Framework-agnostic runtime utilities (toolkit-internal) |
-| `packages/encryption` | MIT | HKDF + blob crypto primitives (toolkit-internal; a dependency of the MIT `workspace`) |
 | `packages/identity` | MIT | Capability and identity vocabulary shared by the MIT toolkit and AGPL auth layer |
 | `packages/sync` | MIT | Yjs sync protocol primitives: wire format, room route, auth subprotocol (toolkit) |
 | `packages/auth` | AGPL-3.0 | Framework-agnostic auth core (private, internal) |

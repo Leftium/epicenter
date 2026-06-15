@@ -8,7 +8,7 @@ import {
 /**
  * Benchmark-only ergonomic: attach every table in a definitions map to an
  * externally-constructed Y.Doc. Production callers go through
- * `createWorkspace`, which owns the Y.Doc and the encryption layer; the
+ * `createWorkspace`, which owns the Y.Doc; the
  * benchmarks in `src/__benchmarks__` construct fresh Y.Docs themselves to
  * measure binary size, GC behavior, and reload cost, so they need a lower
  * primitive than `createWorkspace` exposes.

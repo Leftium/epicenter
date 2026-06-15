@@ -77,7 +77,9 @@ yjs                      CRDT documents, shared types, transactions, conflict be
 5. Run the ownership and collapse check.
 6. Run the smell and invariant checks.
 7. Review API shape, naming, and file organization.
-8. Run diagnostics and tests appropriate to the changed lane.
+8. Run diagnostics and tests appropriate to the changed lane. Reproduce any
+   failure on clean HEAD before blaming the change; separate pre-existing red
+   from regressions you introduced.
 9. Report findings before making cleanup edits unless the issue is a direct
    compile or test failure.
 
@@ -148,7 +150,14 @@ fallback parsers for old shapes
 callbacks that mirror internal implementation steps
 decision callbacks that could be caller-owned composition
 single-file directories and pointless barrels
+near-identical sibling files or types
 ```
+
+Duplication is not automatically a defect. When two sibling files or types are
+byte-identical or nearly so, judge it: cheap independence between modules that
+should stay decoupled, or latent coupling that wants one source of truth? Name
+the call either way, and check that any stated rationale matches the code (a
+"these subsets genuinely differ" comment over two identical files is a tell).
 
 If a smell is repo-recurring, use `code-audit` for the relevant grep pattern. If
 the smell came from the refactor itself, use `refactoring` for the straggler
@@ -236,7 +245,8 @@ Would leave alone
 [Indirection or duplication that earns its keep]
 
 Verification
-[Commands run and result, or why not run]
+[Commands run and result, or why not run. For any failure, note whether it
+ reproduces on clean HEAD so pre-existing red is not misread as a regression.]
 ```
 
 For an implementation pass, make the cleanup edits after reporting the issue in

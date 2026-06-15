@@ -1,22 +1,14 @@
 /**
- * createWorkspace tests: encrypted and plaintext construction, identity
- * agreement between `id` and `ydoc.guid`, and cascade disposal via
- * `using` syntax.
+ * createWorkspace tests: plaintext construction, identity agreement between
+ * `id` and `ydoc.guid`, and cascade disposal via `using` syntax.
  */
 
 import { describe, expect, test } from 'bun:test';
-import type { Keyring } from '@epicenter/encryption';
-import { bytesToBase64 } from '@epicenter/encryption';
 import { field } from '@epicenter/field';
-import { randomBytes } from '@noble/ciphers/utils.js';
 import { Type } from 'typebox';
 import { defineKv } from './define-kv.js';
 import { defineTable } from './define-table.js';
 import { createWorkspace } from './workspace.js';
-
-function toKeyring(key: Uint8Array): Keyring {
-	return [{ version: 1, keyBytesBase64: bytesToBase64(key) }];
-}
 
 const notesDefinition = defineTable({
 	id: field.string(),
@@ -49,19 +41,20 @@ describe('createWorkspace', () => {
 		workspace[Symbol.dispose]();
 	});
 
-	test('encrypted construction reads and writes', () => {
-		const keyring = toKeyring(randomBytes(32));
+	test('legacy keyring option is ignored during construction', () => {
 		const workspace = createWorkspace({
-			id: 'ws-encrypted',
-			keyring: () => keyring,
+			id: 'ws-legacy-keyring',
+			keyring: () => {
+				throw new Error('keyring should not be read');
+			},
 			tables: { notes: notesDefinition },
 			kv: { sortOrder: sortOrderDefinition },
 		});
 
-		workspace.tables.notes.set({ id: '1', title: 'secret' });
+		workspace.tables.notes.set({ id: '1', title: 'plain' });
 		expect(workspace.tables.notes.get('1').data).toEqual({
 			id: '1',
-			title: 'secret',
+			title: 'plain',
 		});
 
 		workspace.kv.set('sortOrder', 'desc');
@@ -93,19 +86,6 @@ describe('createWorkspace', () => {
 			});
 		}
 		expect(destroyed).toBe(true);
-	});
-
-	test('keyring callback throwing surfaces at construction', () => {
-		expect(() =>
-			createWorkspace({
-				id: 'ws-no-keys',
-				keyring: () => {
-					throw new Error('not signed-in');
-				},
-				tables: { notes: notesDefinition },
-				kv: {},
-			}),
-		).toThrow('not signed-in');
 	});
 
 	test('empty tables and empty kv are coherent', () => {

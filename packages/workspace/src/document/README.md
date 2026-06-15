@@ -6,7 +6,7 @@ A typed interface over Y.js for apps that need to evolve their data schema over 
 
 This is a wrapper around Y.js that handles schema versioning. Local-first apps can't run migration scripts, so data has to evolve gracefully. Old data coexists with new. The Workspace API bakes that into the design: define your schemas once with versions, write a migration function, and everything else is typed.
 
-The pattern: `createWorkspace({ id, tables, kv, keyring? })` constructs the low-level workspace `Y.Doc` with tables and KV mounted. Apps wrap that in `create<App>()` to define the shared isomorphic model: id, tables, actions, deterministic child docs, and disposal. Runtime openers such as `open<App>Browser()`, `open<App>Daemon()`, and `open<App>Tauri()` compose additional `attach*` / `open*` primitives around that model and return the exact shape the runtime needs. Use `defineWorkspace()` when returning a composed bundle so TypeScript preserves the inferred shape after spreads.
+The pattern: `createWorkspace({ id, tables, kv })` constructs the low-level workspace `Y.Doc` with tables and KV mounted. Apps wrap that in `create<App>()` to define the shared isomorphic model: id, tables, actions, deterministic child docs, and disposal. Runtime openers such as `open<App>Browser()`, `open<App>Daemon()`, and `open<App>Tauri()` compose additional `attach*` / `open*` primitives around that model and return the exact shape the runtime needs. Use `defineWorkspace()` when returning a composed bundle so TypeScript preserves the inferred shape after spreads.
 
 ```
 +----------------------------------------------------------------+
@@ -15,10 +15,10 @@ The pattern: `createWorkspace({ id, tables, kv, keyring? })` constructs the low-
 | create<App>(): shared model                                    |
 | open<App>Browser/Daemon/Tauri(): runtime attachments              |
 +----------------------------------------------------------------+
-| createWorkspace({ id, tables, kv, keyring? })                  |
+| createWorkspace({ id, tables, kv })                            |
 |   -> { ydoc, tables, kv, actions, [Symbol.dispose] }           |
 | attachIndexedDb / attachYjsLog / attachBroadcastChannel        |
-| attachLocalStorage(ydoc, { server, ownerId, keyring })  // encrypted IDB + scoped BC |
+| attachLocalStorage(ydoc, { server, ownerId })  // scoped IDB + scoped BC |
 | wipeLocalStorage({ server, ownerId })           // delete local data for owner |
 | openCollaboration (sync + presence + dispatch)                 |
 | attachBunSqliteMaterializer / attachMarkdownExport             |
@@ -66,30 +66,13 @@ workspace.tables.posts.set({ id: '1', title: 'Hello' });
 
 The factory body is where you wire everything. Because you own the return shape, you can expose whatever handles your app needs.
 
-### Encryption (server-managed value encryption)
-
-Pass a `keyring: () => Keyring` callback to `createWorkspace`. The keyring is read once at construction, narrowed to `id` via HKDF, and shared across every table and the KV store. Omit it for plaintext.
-
-```typescript
-import { createWorkspace, type Keyring } from '@epicenter/workspace';
-
-function openBlog({ keyring }: { keyring: () => Keyring }) {
-  return createWorkspace({
-    id: 'blog',
-    keyring,
-    tables: myTables,
-    kv: myKv,
-  });
-}
-```
-
 ### Persistence + collaboration
 
 Auth belongs to the app. The workspace factory receives the signed-in identity
-(`ownerId` + `keyring` + transport functions) and a WebSocket opener, then passes them to
-`attachLocalStorage` and `openCollaboration`. `openCollaboration` wraps the
-sync supervisor, mirrors the relay's server-owned presence channel as
-`devices`, and runs inbound dispatch frames against the local action registry.
+(`ownerId` + transport functions) and a WebSocket opener, then passes them to
+`attachLocalStorage` and `openCollaboration`. `openCollaboration` wraps the sync
+supervisor, mirrors the relay's server-owned presence channel as `devices`, and
+runs inbound dispatch frames against the local action registry.
 
 ```typescript
 import type { SignedIn } from '@epicenter/svelte/auth';
@@ -110,16 +93,14 @@ function openBlog({
 }) {
   const workspace = createWorkspace({
     id: 'blog',
-    keyring: signedIn.keyring,
     tables: myTables,
     kv: {},
   });
 
-  // Server + owner scoped encrypted IDB + cross-tab BroadcastChannel in one call.
+  // Server + owner scoped IDB + cross-tab BroadcastChannel in one call.
   const idb = attachLocalStorage(workspace.ydoc, {
     server: signedIn.server,
     ownerId: signedIn.ownerId,
-    keyring: signedIn.keyring,
   });
 
   const collaboration = openCollaboration(workspace.ydoc, {
@@ -151,12 +132,11 @@ function openBlog({
 }
 ```
 
-`attachLocalStorage(ydoc, { server, ownerId, keyring })` derives the IDB
-database name and BroadcastChannel key from `server` + `ownerId` + `ydoc.guid`
-under a single durable prefix, so two signed-in owners on the same browser
-profile never share local storage or exchange plaintext cross-tab updates.
-`wipeLocalStorage` deletes every database under that prefix in one call: no
-explicit guid list to maintain.
+`attachLocalStorage(ydoc, { server, ownerId })` derives the IDB database name
+and BroadcastChannel key from `server` + `ownerId` + `ydoc.guid` under a single
+durable prefix, so two signed-in owners on the same browser profile never share
+local storage or exchange cross-tab updates. `wipeLocalStorage` deletes every
+database under that prefix in one call: no explicit guid list to maintain.
 
 For content documents (rich-text bodies, attachments) that only need bytes-on-the-wire, use `openCollaboration` with an empty `actions: {}` registry. Inbound dispatch frames reply `ActionNotFound`; the byte transport and presence channel are identical.
 

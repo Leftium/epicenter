@@ -17,21 +17,20 @@
  * - storedCount() includes nonconforming rows; scan().rows excludes them
  *
  * See also:
- * - `create-table.unreadable.test.ts` for the unreadable bucket and the
- *   four-bucket sum identity
  * - `create-table.write-guard.test.ts` for the write-side refusals
  */
 
 import { describe, expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
 import * as Y from 'yjs';
-import { createEncryptedYkvLww } from '../shared/y-keyvalue/y-keyvalue-lww-encrypted.js';
 import { defineTable } from './define-table.js';
 import { createReadonlyTable, createTable } from './table.js';
+import { YKeyValueLww, type YKeyValueLwwEntry } from './y-keyvalue/index.js';
 
 function setup() {
 	const ydoc = new Y.Doc();
-	const ykv = createEncryptedYkvLww<unknown>(ydoc, 'test-table');
+	const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('test-table');
+	const ykv = new YKeyValueLww<unknown>(yarray);
 	const definition = defineTable({
 		id: field.string(),
 		title: field.string(),
@@ -75,7 +74,8 @@ describe('scan', () => {
 
 	test('migration failures land in nonconforming', () => {
 		const ydoc = new Y.Doc();
-		const ykv = createEncryptedYkvLww<unknown>(ydoc, 'test-table');
+		const yarray = ydoc.getArray<YKeyValueLwwEntry<unknown>>('test-table');
+		const ykv = new YKeyValueLww<unknown>(yarray);
 		const definition = defineTable(
 			{ id: field.string(), title: field.string() },
 			{ id: field.string(), title: field.string(), views: field.number() },

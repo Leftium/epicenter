@@ -4,9 +4,8 @@
  * Pins the composition a local-only consumer (desktop notes app, offline
  * CLI, test fixture) is meant to use. The recipe constructs a plaintext
  * workspace (no `keyring`) and pairs it with plain IDB + plain
- * BroadcastChannel. No `attachLocalStorage`: that's the cloud-synced
- * composite that requires an owner-scoped keyring. Local-only data has no
- * cloud adversary.
+ * BroadcastChannel. No `attachLocalStorage`: that's the owner-scoped
+ * composite for authenticated browser workspaces.
  *
  * If this file ever needs to import from `@epicenter/auth` or
  * `@epicenter/encryption`, the primitives have drifted away from the

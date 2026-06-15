@@ -4,8 +4,7 @@
  * - {@link YKeyValue}: positional (rightmost-wins) conflict resolution.
  * - {@link YKeyValueLww}: timestamp-based last-write-wins.
  *
- * Both are unencrypted Yjs primitives. The encrypted wrapper composes
- * over `YKeyValueLww` and lives in `@epicenter/workspace`.
+ * Both are unencrypted Yjs primitives.
  *
  * Both implement the shared {@link ObservableKvStore} interface, which is what
  * consumers like `createTable` / `createKv` depend on.

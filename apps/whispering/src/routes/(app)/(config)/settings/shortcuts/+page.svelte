@@ -56,9 +56,11 @@
 					System-wide gestures that fire from anywhere, even when Whispering is
 					not focused. Hold your recording key to talk, then release to stop.
 					Each gesture needs its own keys, so the recording key cannot be part
-					of another shortcut.
+					of another shortcut. These are set per computer, so they stay on this
+					device.
 				{:else}
-					Shortcuts that trigger while the Whispering tab is focused.
+					Shortcuts that trigger while the Whispering tab is focused. They sync
+					across your devices.
 				{/if}
 			</SectionHeader.Description>
 		</SectionHeader.Root>

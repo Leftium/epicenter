@@ -22,7 +22,7 @@ import {
 	sqlitePath,
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
-import { createHoneycrisp } from './honeycrisp.js';
+import { honeycrispWorkspace } from './honeycrisp.js';
 
 export type HoneycrispMountOptions = {
 	git?: GitAutosaveConfig;
@@ -43,7 +43,7 @@ export function honeycrisp(opts: HoneycrispMountOptions = {}) {
 				process.env.EPICENTER_API_URL ||
 				'https://api.epicenter.so';
 
-			const workspace = createHoneycrisp();
+			const workspace = honeycrispWorkspace.open();
 
 			const sqlite = attachBunSqliteMaterializer(workspace, {
 				filePath: sqlitePath(epicenterRoot, workspace.ydoc.guid),

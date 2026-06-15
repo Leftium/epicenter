@@ -248,7 +248,12 @@ export function createNotes({
 				wordCount: number;
 			},
 		) {
-			honeycrisp.tables.notes.update(noteId, { title, preview, wordCount });
+			honeycrisp.tables.notes.update(noteId, {
+				title,
+				preview,
+				wordCount,
+				updatedAt: DateTimeString.now(),
+			});
 		},
 	};
 }

@@ -17,22 +17,16 @@
 import { field } from '@epicenter/field';
 import {
 	attachRichText,
-	createDisposableCache,
-	createWorkspace,
-	DateTimeString,
 	defineActions,
 	defineMutation,
 	defineTable,
-	defineWorkspaceBundle,
-	docGuid,
+	defineWorkspace,
 	generateId,
 	type InferTableRow,
 	nullable,
-	onLocalUpdate,
 } from '@epicenter/workspace';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
-import * as Y from 'yjs';
 
 export const HONEYCRISP_ID = 'epicenter-honeycrisp';
 
@@ -98,9 +92,8 @@ export type Folder = InferTableRow<typeof foldersTable>;
  * `deletedAt` is `null` for active notes and a `DateTimeString` for deleted
  * notes. `wordCount` is computed on each editor update.
  *
- * The Y.XmlFragment document (`body`) lives in a separate Y.Doc per note.
- * The workspace factory constructs the plain child-doc model and each runtime
- * opener attaches its own persistence and sync.
+ * The Y.XmlFragment document (`body`) lives in a separate Y.Doc per note,
+ * declared as a child doc on this table.
  */
 const notesTable = defineTable({
 	id: field.string<NoteId>(),
@@ -112,50 +105,23 @@ const notesTable = defineTable({
 	updatedAt: field.datetime(),
 	deletedAt: nullable(field.datetime()),
 	wordCount: nullable(field.number()),
-});
+}).childDocs({ body: attachRichText });
 export type Note = InferTableRow<typeof notesTable>;
 
 // ─── Workspace factory ────────────────────────────────────────────────────────
 
 /**
- * Build a Honeycrisp workspace bundle:
- * `{ ydoc, tables, kv, actions, noteBodyDocs }`.
+ * Honeycrisp's shared workspace definition.
  *
  * Runtime openers attach persistence, sync, materializers, and UI state around
  * this shared model.
  */
-export function createHoneycrisp() {
-	const workspace = createWorkspace({
-		id: HONEYCRISP_ID,
-		tables: { folders: foldersTable, notes: notesTable },
-		kv: {},
-	});
-	const { tables } = workspace;
-	const noteBodyDocs = createDisposableCache((noteId: NoteId) => {
-		const childYdoc = new Y.Doc({
-			guid: noteBodyDocGuid(noteId),
-			gc: true,
-		});
-		const body = attachRichText(childYdoc);
-
-		onLocalUpdate(childYdoc, () => {
-			workspace.tables.notes.update(noteId, {
-				updatedAt: DateTimeString.now(),
-			});
-		});
-
-		return {
-			ydoc: childYdoc,
-			body,
-			[Symbol.dispose]() {
-				childYdoc.destroy();
-			},
-		};
-	});
-
-	return defineWorkspaceBundle({
-		...workspace,
-		actions: defineActions({
+export const honeycrispWorkspace = defineWorkspace({
+	id: HONEYCRISP_ID,
+	tables: { folders: foldersTable, notes: notesTable },
+	kv: {},
+	actions: ({ tables }) =>
+		defineActions({
 			/**
 			 * Delete a folder and move all its notes to unfiled.
 			 *
@@ -178,26 +144,5 @@ export function createHoneycrisp() {
 				},
 			}),
 		}),
-		noteBodyDocs,
-		[Symbol.dispose]() {
-			noteBodyDocs[Symbol.dispose]();
-			workspace[Symbol.dispose]();
-		},
-	});
-}
-export type HoneycrispWorkspace = ReturnType<typeof createHoneycrisp>;
-
-/**
- * Deterministic guid of a note's rich-text body sub-doc.
- *
- * Browser editors, daemon materializers, and wipe paths reach this same
- * function so every layer points at the same Y.Doc identity.
- */
-export function noteBodyDocGuid(noteId: NoteId): string {
-	return docGuid({
-		workspaceId: HONEYCRISP_ID,
-		collection: 'notes',
-		rowId: noteId,
-		field: 'body',
-	});
-}
+});
+export type HoneycrispWorkspace = ReturnType<typeof honeycrispWorkspace.open>;

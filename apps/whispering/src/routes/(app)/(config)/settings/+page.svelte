@@ -15,14 +15,19 @@
 		{ value: 'keep-none', label: "Don't Keep Recordings" },
 	] as const;
 
-	// `keep-none` deletes existing recordings the moment it is enabled, not just
-	// future ones, so the description has to say so. Other strategies are
-	// self-explanatory from their label.
-	const retentionDescription = $derived(
-		settings.get('retention.strategy') === 'keep-none'
-			? 'Recordings are deleted right after transcription. Turning this on also deletes recordings you already have.'
-			: undefined,
-	);
+	// Both pruning strategies act retroactively: they delete recordings you
+	// already have, not just future ones. The label alone reads as forward-only,
+	// so the description has to say otherwise.
+	const retentionDescription = $derived.by(() => {
+		switch (settings.get('retention.strategy')) {
+			case 'keep-none':
+				return 'Recordings are deleted right after transcription. Turning this on also deletes recordings you already have.';
+			case 'limit-count':
+				return 'Older recordings beyond your limit are deleted automatically, including ones you already have.';
+			case 'keep-forever':
+				return undefined;
+		}
+	});
 
 	const maxRecordingItems = [
 		{ value: 5, label: '5 Recordings' },

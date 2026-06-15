@@ -69,7 +69,7 @@ The long-form narrative, for surfaces with room to breathe (landing page body, l
 
 Most tools store your data in their own silo. Epicenter gives purpose-built apps a shared local-first workspace: app data can be browsed as Markdown, queried through SQLite, and curated into folders you control. Your folders are ordinary Markdown: grep them, open them in Obsidian, version them with Git, publish them with whatever static site stack you like. Your transcripts can inform your notes. Your saved tabs can become drafts. Good captures graduate into your long-term workspace instead of staying trapped in the app that caught them.
 
-Under the hood, app-owned state lives in Yjs, materializes to SQLite for fast queries, and materializes to Markdown for human-readable projections. Sync happens over the Yjs protocol when you turn it on. Sync sends encrypted CRDT values. Hosted Epicenter manages keys for you; self-hosting keeps key management in infrastructure you control.
+Under the hood, app-owned state lives in Yjs, materializes to SQLite for fast queries, and materializes to Markdown for human-readable projections. Sync happens over the Yjs protocol when you turn it on, through a relay that reads your data in plaintext: hosted Epicenter holds it, and self-hosting puts it on infrastructure you control. Privacy is a topology choice, not an encryption layer.
 
 ## The Proof Line
 
@@ -103,7 +103,7 @@ Do not use hype words: `AI-native`, `agentic`, `next-gen`, `revolutionary`, `red
 - An **open-source, local-first workspace**: purpose-built apps plus Markdown folders you own
 - A **TypeScript library** (`@epicenter/workspace`) for building CRDT-backed apps with typed schemas, materializers, and actions
 - A **CLI** (`epicenter`) for listing and invoking validated app actions, locally or on a currently online peer
-- A **sync server** (AGPL, self-hostable) that relays encrypted CRDT updates between devices
+- A **sync server** (AGPL, self-hostable) that relays CRDT updates between your devices
 
 ## What Epicenter Is Not
 
@@ -121,8 +121,8 @@ Every claim we make publicly should be provable by inspecting the repo:
 | "Readable Markdown and queryable SQLite" | Markdown materializers write `.md` files with YAML frontmatter. SQLite materializers keep rebuildable query mirrors. |
 | "A workspace you own" | The local project layout separates user-owned folders from generated app projections and hidden machine state. |
 | "CRDT-powered sync" | App-owned live state uses Yjs documents; sync uses the Yjs protocol over WebSocket. |
-| "Encrypted CRDT values" | `XChaCha20-Poly1305` via `@noble/ciphers`; HKDF-SHA256 key derivation. Workspace values are encrypted before they enter the synced Yjs document. |
-| "Self-hostable" | Sync server is open source under AGPL. Run it on your infrastructure, control the encryption keys. |
+| "Trusted relay, not an encryption layer" | The relay runs Yjs and reads plaintext. Privacy comes from who holds the data, not from a key we ship. See `docs/encryption.md`. |
+| "Self-hostable" | Sync server is open source under AGPL. Run it on your infrastructure, so Epicenter never holds your data. |
 | "Bring your own model" | AI features use user-provided API keys. No middleman, no proxy required. |
 
 ## Competitor Positioning
@@ -142,11 +142,11 @@ Every claim we make publicly should be provable by inspecting the repo:
 ### vs Logseq
 > Logseq is an outliner-first app. Epicenter is the structured local-first storage engine that can power outline UIs without trapping data in a single app.
 
-- **Win**: SQL plus structured schemas. Purpose-built capture tools can project into a workspace you control. Encrypted CRDT values for sync.
+- **Win**: SQL plus structured schemas. Purpose-built capture tools can project into a workspace you control. Self-hostable CRDT sync.
 - **Lose**: Logseq's block/journal UX is more native. Larger community.
 
 ### vs Standard Notes
-> Standard Notes secures your notes. Epicenter secures a whole local-first workspace that multiple apps share, with CRDTs, schemas, and materialized exports.
+> Standard Notes encrypts your notes. Epicenter is a whole local-first workspace that multiple apps share, with CRDTs, schemas, and materialized exports.
 
 - **Win**: Platform, not just "notes." Structured data with schemas. Materialized to files you can inspect.
 - **Lose**: Standard Notes' encryption UX is simpler to communicate. They've earned trust over years.
@@ -160,9 +160,9 @@ Every claim we make publicly should be provable by inspecting the repo:
 ### vs Karpathy's "Second Brain" System
 > Karpathy showed the folder. Epicenter is the local-first app layer around it.
 
-Karpathy's "second brain" post is the strongest entry point: three folders of Markdown, a schema file, and AI organizing everything. Epicenter keeps that philosophy and adds sync, schemas, encryption, and CLI actions.
+Karpathy's "second brain" post is the strongest entry point: three folders of Markdown, a schema file, and AI organizing everything. Epicenter keeps that philosophy and adds sync, schemas, and CLI actions.
 
-- **Win**: CRDT sync across devices, typed schemas, encryption, CLI automation: everything raw folders can't do.
+- **Win**: CRDT sync across devices, typed schemas, CLI automation: everything raw folders can't do.
 - **Lose**: Karpathy's system wins on simplicity. A folder of markdown files needs zero infrastructure.
 
 ### vs Jazz

@@ -6,7 +6,7 @@ This directory contains knowledge articles, guides, and reference materials for 
 
 - [Positioning](positioning.md): canonical public claims and vocabulary rules.
 - [Architecture](architecture.md): the repo's main server, app, package, and deployment boundaries.
-- [Encryption](encryption.md): the signed-in sync trust model and key boundaries.
+- [Trust model](encryption.md): what the trusted relay reads, the two tiers, and where the anchor is heading.
 
 ## Directory Structure
 

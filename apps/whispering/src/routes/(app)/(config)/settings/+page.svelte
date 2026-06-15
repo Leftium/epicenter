@@ -12,8 +12,17 @@
 	const retentionItems = [
 		{ value: 'keep-forever', label: 'Keep All Recordings' },
 		{ value: 'limit-count', label: 'Keep Limited Number' },
-		{ value: 'delete-all', label: 'Never Save Recordings' },
+		{ value: 'keep-none', label: "Don't Keep Recordings" },
 	] as const;
+
+	// `keep-none` deletes existing recordings the moment it is enabled, not just
+	// future ones, so the description has to say so. Other strategies are
+	// self-explanatory from their label.
+	const retentionDescription = $derived(
+		settings.get('retention.strategy') === 'keep-none'
+			? 'Recordings are deleted right after transcription. Turning this on also deletes recordings you already have.'
+			: undefined,
+	);
 
 	const maxRecordingItems = [
 		{ value: 5, label: '5 Recordings' },
@@ -120,6 +129,7 @@
 			key="retention.strategy"
 			label="Auto Delete Recordings"
 			items={retentionItems}
+			description={retentionDescription}
 		/>
 
 		{#if settings.get('retention.strategy') === 'limit-count'}

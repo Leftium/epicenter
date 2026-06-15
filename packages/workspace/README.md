@@ -653,8 +653,10 @@ separate from this server-owned presence channel.
 Per-row content (one Y.Doc per file/note/entry) is declared on the table and
 opened from the connected table handle. The root workspace holds the metadata
 row; `open(connection)` owns live content Y.Docs, local storage, sync, and wipe.
-Daemon one-shot readers can still derive the same guid with `docGuid(...)` when
-they need an HTTP snapshot.
+The workspace owns guid derivation: every `.docs.<field>` exposes
+`guid(rowId)`, available on the unconnected root too, so a daemon one-shot
+reader derives the same guid with `workspace.tables.files.docs.content.guid(id)`
+when it needs an HTTP snapshot.
 
 ```typescript
 import { field } from '@epicenter/field';

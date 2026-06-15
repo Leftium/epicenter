@@ -1,30 +1,27 @@
 /**
- * Tests for Fuji schema helpers that pin durable document identifiers.
+ * Tests for Fuji's durable document identifiers.
+ *
+ * The entry content child-doc guid is a sync-wire identity: browser editors,
+ * daemon markdown rendering, and wipe paths must all resolve the same string,
+ * and it must never change. It is derived by the workspace from the table name
+ * and child-doc field, reachable on the unconnected root too.
  */
 
 import { describe, expect, test } from 'bun:test';
-import { docGuid } from '@epicenter/workspace';
-import { asEntryId, entryContentDocGuid, FUJI_ID } from './index.js';
+import { asEntryId, fujiWorkspace } from './index.js';
 
-describe('Fuji schema helpers', () => {
-	test('entryContentDocGuid is deterministic per entry id', () => {
-		const a = entryContentDocGuid(asEntryId('entry-1'));
-		const b = entryContentDocGuid(asEntryId('entry-1'));
-		const c = entryContentDocGuid(asEntryId('entry-2'));
-		expect(a).toBe(b);
-		expect(a).not.toBe(c);
-		expect(a.length).toBeGreaterThan(0);
-	});
+describe('Fuji durable identifiers', () => {
+	test('entry content child-doc guid is the durable wire identifier', () => {
+		using workspace = fujiWorkspace.open();
+		const docs = workspace.tables.entries.docs.content;
 
-	test('entryContentDocGuid matches the generic docGuid shape', () => {
-		const id = asEntryId('entry-1');
-		expect(entryContentDocGuid(id)).toBe(
-			docGuid({
-				workspaceId: FUJI_ID,
-				collection: 'entries',
-				rowId: id,
-				field: 'content',
-			}),
+		expect(String(docs.guid(asEntryId('entry-1')))).toBe(
+			'epicenter-fuji.entries.entry-1.content',
+		);
+		// Deterministic per id; distinct ids never collide.
+		expect(docs.guid(asEntryId('entry-1'))).toBe(docs.guid(asEntryId('entry-1')));
+		expect(docs.guid(asEntryId('entry-1'))).not.toBe(
+			docs.guid(asEntryId('entry-2')),
 		);
 	});
 });

@@ -38,7 +38,7 @@ import {
 } from '@epicenter/workspace/node';
 import { createLogger } from 'wellcrafted/logger';
 import { serializeEntryBody } from './entry-body-markdown.js';
-import { type Entry, entryContentDocGuid, fujiWorkspace } from './index.js';
+import { type Entry, fujiWorkspace } from './index.js';
 
 export type FujiMountOptions = {
 	/** Enable per-materializer Git autosave for markdown output. */
@@ -68,11 +68,11 @@ export function fuji(opts: FujiMountOptions = {}) {
 			});
 			/**
 			 * Render one entry's body from its content doc for the read-only
-			 * projection. The body lives in a separate cloud doc addressed by
-			 * `entryContentDocGuid(id)`; the daemon does not mirror it, so we GET its
-			 * current snapshot over one-shot HTTP and serialize that (see
-			 * `readRoomOverHttp` for why HTTP, not a socket). No local persistence: a
-			 * body read is a read, not a second on-disk copy.
+			 * projection. The body lives in a separate cloud doc whose guid the
+			 * workspace derives (`tables.entries.docs.content.guid(id)`); the daemon
+			 * does not mirror it, so we GET its current snapshot over one-shot HTTP and
+			 * serialize that (see `readRoomOverHttp` for why HTTP, not a socket). No
+			 * local persistence: a body read is a read, not a second on-disk copy.
 			 *
 			 * Throws on a failed or timed-out GET so the materializer skips the write
 			 * and leaves the existing `.md` intact rather than clobbering it with an
@@ -83,7 +83,7 @@ export function fuji(opts: FujiMountOptions = {}) {
 					fetch: session.fetch,
 					baseURL,
 					ownerId: session.ownerId,
-					guid: entryContentDocGuid(entry.id),
+					guid: workspace.tables.entries.docs.content.guid(entry.id),
 					read: (ydoc) => serializeEntryBody(ydoc.getXmlFragment('content')),
 				});
 

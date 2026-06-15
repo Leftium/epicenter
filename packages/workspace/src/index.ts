@@ -171,4 +171,5 @@ export {
 	type WorkspaceDefinition,
 	type WorkspaceFromDefinition,
 	type WorkspaceRuntimeExtension,
+	type WorkspaceTables,
 } from './document/workspace.js';

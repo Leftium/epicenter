@@ -63,7 +63,7 @@ export type Workspace<
 	TActions extends ActionRegistry = ActionRegistry,
 > = {
 	readonly ydoc: Y.Doc;
-	readonly tables: Tables<TTables>;
+	readonly tables: WorkspaceTables<TTables>;
 	readonly kv: Kv<TKv>;
 	readonly actions: TActions;
 	[Symbol.dispose](): void;
@@ -132,19 +132,44 @@ type ChildDocHandle<TLayout extends (ydoc: Y.Doc) => object> =
 		[Symbol.dispose](): void;
 	};
 
+/**
+ * The guid-only entry every `.docs.<field>` exposes: derive a row's child-doc
+ * guid without a connection. Pure (workspace id + table + row id + field), so it
+ * is available on the unconnected root too, and a daemon reading one body over
+ * HTTP derives the same guid the browser opener uses.
+ */
+type RowDocGuid<TRowId extends string> = {
+	guid(rowId: TRowId): Guid;
+};
+
 type RowChildDocCache<
 	TRowId extends string,
 	TLayout extends (ydoc: Y.Doc) => object,
-> = {
+> = RowDocGuid<TRowId> & {
 	open(rowId: TRowId): ChildDocHandle<TLayout>;
 	[Symbol.dispose](): void;
 };
 
 /**
+ * The guid-only `.docs` namespace present on every table handle, connected or
+ * not. `{}` for a table that declared no child docs.
+ */
+type TableDocGuids<TTableDefinition extends TableDefinition<any, any>> =
+	TTableDefinition extends TableDefinition<
+		any,
+		infer TLayouts extends ChildDocLayouts
+	>
+		? {
+				[K in keyof TLayouts]: RowDocGuid<InferTableRow<TTableDefinition>['id']>;
+			}
+		: {};
+
+/**
  * The `.docs` namespace a connected table handle gains: one row child-doc cache
- * per declared layout, keyed by field name. Lives one level below the table's
- * CRUD methods, so field names never collide with `set`, `open`, etc. Empty
- * `{}` for a table that declared no child docs.
+ * per declared layout, keyed by field name. Each entry adds `open`/dispose to
+ * the guid deriver. Lives one level below the table's CRUD methods, so field
+ * names never collide with `set`, `open`, etc. Empty `{}` for a table that
+ * declared no child docs.
  */
 type TableDocs<TTableDefinition extends TableDefinition<any, any>> =
 	TTableDefinition extends TableDefinition<
@@ -158,6 +183,17 @@ type TableDocs<TTableDefinition extends TableDefinition<any, any>> =
 				>;
 			}
 		: {};
+
+/**
+ * The root table map: each table handle plus its guid-only `.docs` namespace.
+ * `defineWorkspace(...).open(connection)` upgrades each `.docs.<field>` with
+ * `open`/dispose (see {@link ConnectedTables}).
+ */
+export type WorkspaceTables<TTableDefinitions extends TableDefinitions> = {
+	[K in keyof TTableDefinitions]: Tables<TTableDefinitions>[K] & {
+		readonly docs: TableDocGuids<TTableDefinitions[K]>;
+	};
+};
 
 export type ConnectedTables<TTableDefinitions extends TableDefinitions> = {
 	[K in keyof TTableDefinitions]: Tables<TTableDefinitions>[K] & {
@@ -277,11 +313,21 @@ export function createWorkspace<
 	}
 
 	const tables = Object.fromEntries(
-		Object.entries(options.tables).map(([name, definition]) => [
-			name,
-			createTable(attachStore(TableKey(name)), definition, name),
-		]),
-	) as Tables<TTables>;
+		Object.entries(options.tables).map(([name, definition]) => {
+			const table = createTable(attachStore(TableKey(name)), definition, name);
+			// `.docs` carries one guid deriver per declared child-doc field, so the
+			// workspace owns guid derivation end-to-end. The connected opener layers
+			// `open`/dispose onto these same entries (see `connectTableChildDocs`).
+			const docs: Record<string, unknown> = {};
+			for (const field of Object.keys(definition.childDocLayouts)) {
+				docs[field] = {
+					guid: (rowId: string): Guid =>
+						docGuid({ workspaceId: options.id, collection: name, rowId, field }),
+				};
+			}
+			return [name, { ...table, docs }];
+		}),
+	) as WorkspaceTables<TTables>;
 
 	const kv = createKv(attachStore(KV_KEY), options.kv);
 
@@ -433,16 +479,12 @@ function connectTableChildDocs<TTableDefinitions extends TableDefinitions>({
 		) as [string, (ydoc: Y.Doc) => object][]) {
 			const cache = childDocs(layout);
 			disposables.push(cache);
+			const guid = (rowId: string): Guid =>
+				docGuid({ workspaceId, collection, rowId, field });
 			docs[field] = {
+				guid,
 				open(rowId: string) {
-					return cache.open(
-						docGuid({
-							workspaceId,
-							collection,
-							rowId,
-							field,
-						}),
-					);
+					return cache.open(guid(rowId));
 				},
 				[Symbol.dispose]() {
 					cache[Symbol.dispose]();

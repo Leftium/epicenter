@@ -37,7 +37,6 @@ import {
 	defineQuery,
 	defineTable,
 	defineWorkspace,
-	docGuid,
 	generateId,
 	type IanaTimeZone,
 	type InferTableRow,
@@ -330,20 +329,5 @@ export const fujiWorkspace = defineWorkspace({
 		}),
 });
 export type FujiWorkspace = WorkspaceFromDefinition<typeof fujiWorkspace>;
-
-/**
- * Deterministic guid of an entry's rich-text content sub-doc.
- *
- * Browser editors, daemon materializers, and wipe paths reach this same
- * function so every layer points at the same Y.Doc identity.
- */
-export function entryContentDocGuid(entryId: EntryId): string {
-	return docGuid({
-		workspaceId: FUJI_ID,
-		collection: 'entries',
-		rowId: entryId,
-		field: 'content',
-	});
-}
 
 export type FujiActions = FujiWorkspace['actions'];

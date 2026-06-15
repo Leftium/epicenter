@@ -13,7 +13,8 @@
 	"exports": {
 		"./apps": "./src/apps.ts",
 		"./auth": "./src/auth.ts",
-		"./oauth": "./src/oauth.ts",
+		"./oauth-clients": "./src/oauth-clients.ts",
+		"./oauth-seed": "./src/oauth-seed.ts",
 		"./vite": "./src/vite.ts",
 		"./vite-config": "./src/vite-config.ts",
 		"./versions": "./src/versions.ts",

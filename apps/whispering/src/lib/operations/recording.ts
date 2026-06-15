@@ -2,6 +2,7 @@ import { nanoid } from 'nanoid/non-secure';
 import { manualRecorderConfig } from '#platform/manual-recorder-config';
 import { recordingOverlay } from '#platform/recording-overlay';
 import { goto } from '$app/navigation';
+import type { ShortcutEventState } from '$lib/commands';
 import { analytics } from '$lib/operations/analytics';
 import { recordingMedia } from '$lib/operations/media';
 import { processRecordingPipeline } from '$lib/operations/pipeline';
@@ -134,6 +135,65 @@ export function toggleManualRecording() {
 		return stopManualRecording();
 	}
 	return startManualRecording();
+}
+
+// ── Recording shortcut: one key, tap to toggle or hold to talk ────────────────
+//
+// The recording shortcut is a single binding (default Fn on macOS) that serves
+// both interaction models off the press/release edges, with NO start latency:
+// recording always begins on the press. Only the STOP decision is deferred to
+// the release, where the hold duration classifies what the user meant:
+//
+//   hold (>= HOLD_THRESHOLD_MS): stop on release    (push-to-talk)
+//   tap  (<  HOLD_THRESHOLD_MS): keep recording      (toggle on; next tap stops)
+//
+// A click on an in-app record button calls the command with no edge
+// (`undefined`), which is the plain toggle; press/release edges only ever arrive
+// from a keyboard backend.
+
+const HOLD_THRESHOLD_MS = 300;
+
+type ManualShortcutPhase = 'idle' | 'capturing' | 'latched';
+let manualShortcutPhase: ManualShortcutPhase = 'idle';
+let manualPressedAt = 0;
+
+export function manualRecordingShortcut(state?: ShortcutEventState) {
+	// A click (no press/release edge) is a plain toggle, never push-to-talk.
+	if (state === undefined) {
+		void toggleManualRecording();
+		return;
+	}
+
+	if (state === 'Pressed') {
+		// A press while latched is the second tap: it stops the toggled session.
+		if (manualShortcutPhase === 'latched') {
+			manualShortcutPhase = 'idle';
+			void stopManualRecording();
+			return;
+		}
+		// Otherwise begin capture immediately, before we know tap from hold.
+		manualShortcutPhase = 'capturing';
+		manualPressedAt = performance.now();
+		void startManualRecording();
+		return;
+	}
+
+	// state === 'Released'. Only meaningful while a press is being classified; the
+	// release that ends a stopping tap lands in `idle` and is correctly ignored.
+	if (manualShortcutPhase !== 'capturing') return;
+	const heldMs = performance.now() - manualPressedAt;
+	if (heldMs >= HOLD_THRESHOLD_MS) {
+		// Held long enough to read as push-to-talk: stop now, on release. Stop
+		// unconditionally and do NOT gate on `manualRecorder.state`: that flips to
+		// RECORDING only after start's async device acquisition resolves, so a hold
+		// released before that lag clears would read as not-recording and the
+		// session would never stop. We started the capture, so we own the stop.
+		manualShortcutPhase = 'idle';
+		void stopManualRecording();
+	} else {
+		// A quick tap: leave recording running and wait for the next tap to stop.
+		manualShortcutPhase = 'latched';
+	}
 }
 
 export async function cancelRecording() {

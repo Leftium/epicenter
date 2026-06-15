@@ -21,38 +21,35 @@ const globalBinding = type({
 	keys: 'string[]',
 }).or('null');
 
-// Default bindings as global gestures, not mnemonic app hotkeys. Every gesture
-// is a distinct, non-overlapping combo: the rdev matcher fires on exact set
-// equality with no prefix resolution, so no gesture's keys may be a subset of
-// another's (the shorter one would fire first and shadow the longer). That is
-// why push-to-talk gets its own dedicated key and nothing else reuses it.
+// Default bindings as global gestures, not mnemonic app hotkeys. The rdev matcher
+// fires on exact set equality with no prefix resolution, so no gesture's keys may
+// be a subset of another's (the shorter would fire first and shadow the longer):
+// every default below is a distinct, non-overlapping combo.
 //
-//   macOS:   Fn = push-to-talk,        Cmd + Shift + Space  = toggle
-//   Windows: Ctrl+Win = push-to-talk,  Ctrl + Shift + Space = toggle
+// Recording is ONE key that serves both interaction models: tap it to toggle, hold
+// it to talk. The press/release timing is classified in $lib/operations/recording,
+// so the binding itself is just a single key with no start latency. On Apple
+// keyboards that key is Fn (a single physical key no common shortcut claims);
+// elsewhere it is Ctrl+Win, a held chord that is likewise unclaimed.
 //
-// Fn is a single physical key on Apple keyboards; elsewhere we reach for
-// Ctrl+Win, a held chord that no common OS shortcut claims. Toggle adds Shift
-// so it shares no prefix with push-to-talk while keeping Space as the "record"
-// affordance. Cancel is the platform cancel chord (Cmd + . on macOS, the system
-// cancel gesture since classic Mac OS; Ctrl + Shift + . elsewhere); it carries a
-// modifier so it is safe to hold globally and registers like any other gesture
-// with no session gating. Transformation gestures ship unbound: opt-in only.
-// Exported so the reset path in register-commands shares this one source of truth.
-const PUSH_TO_TALK_MODIFIERS: KeyBinding['modifiers'] = os.isApple
+//   macOS:   Fn = recording,        Cmd + .          = cancel
+//   Windows: Ctrl+Win = recording,  Ctrl + Shift + . = cancel
+//
+// Cancel is the platform cancel chord (Cmd + . on macOS, the system cancel gesture
+// since classic Mac OS; Ctrl + Shift + . elsewhere); it carries a modifier so it is
+// safe to hold globally and registers like any other gesture with no session
+// gating. Transformation gestures ship unbound: opt-in only. Exported so the reset
+// path in register-commands shares this one source of truth.
+const RECORDING_MODIFIERS: KeyBinding['modifiers'] = os.isApple
 	? ['fn']
 	: ['ctrl', 'meta'];
-
-const TOGGLE_MODIFIERS: KeyBinding['modifiers'] = os.isApple
-	? ['meta', 'shift']
-	: ['ctrl', 'shift'];
 
 const CANCEL_MODIFIERS: KeyBinding['modifiers'] = os.isApple
 	? ['meta']
 	: ['ctrl', 'shift'];
 
 export const DEFAULT_GLOBAL_BINDINGS = {
-	pushToTalk: { modifiers: PUSH_TO_TALK_MODIFIERS, keys: [] },
-	toggleManualRecording: { modifiers: TOGGLE_MODIFIERS, keys: ['space'] },
+	toggleManualRecording: { modifiers: RECORDING_MODIFIERS, keys: [] },
 	cancelRecording: { modifiers: CANCEL_MODIFIERS, keys: ['dot'] },
 	toggleVadRecording: null,
 	openTransformationPicker: null,
@@ -155,10 +152,6 @@ const DEVICE_DEFINITIONS = {
 	'shortcuts.global.toggleVadRecording': defineEntry(
 		globalBinding,
 		DEFAULT_GLOBAL_BINDINGS.toggleVadRecording,
-	),
-	'shortcuts.global.pushToTalk': defineEntry(
-		globalBinding,
-		DEFAULT_GLOBAL_BINDINGS.pushToTalk,
 	),
 	'shortcuts.global.openTransformationPicker': defineEntry(
 		globalBinding,

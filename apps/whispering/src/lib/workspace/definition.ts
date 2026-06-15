@@ -327,10 +327,6 @@ const shortcuts = {
 		nullable(field.string()),
 		(): string | null => 'v',
 	),
-	'shortcut.pushToTalk': defineKv(
-		nullable(field.string()),
-		(): string | null => 'p',
-	),
 	'shortcut.openTransformationPicker': defineKv(
 		nullable(field.string()),
 		(): string | null => 't',

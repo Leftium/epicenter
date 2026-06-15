@@ -1,8 +1,6 @@
 import {
 	cancelRecording,
-	startManualRecording,
-	stopManualRecording,
-	toggleManualRecording,
+	manualRecordingShortcut,
 	toggleVadRecording,
 } from '$lib/operations/recording';
 import { runTransformationOnClipboard } from '$lib/operations/transformation-clipboard';
@@ -42,22 +40,14 @@ type SatisfiedCommand = {
 
 export const commands = [
 	{
-		id: 'pushToTalk',
-		title: 'Push to talk',
-		on: ['Pressed', 'Released'],
-		callback: (state?: ShortcutEventState) => {
-			if (state === 'Pressed') {
-				startManualRecording();
-			} else if (state === 'Released') {
-				stopManualRecording();
-			}
-		},
-	},
-	{
 		id: 'toggleManualRecording',
-		title: 'Toggle recording',
-		on: ['Pressed'],
-		callback: () => toggleManualRecording(),
+		title: 'Recording',
+		// One key, both models: tap to toggle, hold to talk. Recording starts on
+		// the press (no latency); the release edge classifies tap vs hold. A click
+		// from an in-app button arrives with no edge (`undefined`), which is the
+		// plain toggle. The state machine lives in $lib/operations/recording.
+		on: ['Pressed', 'Released'],
+		callback: (state?: ShortcutEventState) => manualRecordingShortcut(state),
 	},
 	{
 		id: 'cancelRecording',

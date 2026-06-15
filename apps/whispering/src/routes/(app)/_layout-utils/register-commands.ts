@@ -18,7 +18,6 @@ import type { CommandBinding, KeyBinding } from '$lib/tauri/commands';
 
 /** Default values for in-app (local) shortcuts. Keyed by command id string. */
 const DEFAULT_LOCAL_SHORTCUTS = {
-	pushToTalk: 'p',
 	toggleManualRecording: ' ',
 	cancelRecording: 'c',
 	toggleVadRecording: 'v',

@@ -41,13 +41,13 @@
 			binding: os.isApple
 				? { modifiers: ['fn'], keys: [] }
 				: { modifiers: ['ctrl', 'meta'], keys: [] },
-			desc: 'a modifier held on its own (the push-to-talk default)',
+			desc: 'a single key held on its own (the recording default)',
 		},
 		{
 			binding: os.isApple
-				? { modifiers: ['meta', 'shift'], keys: ['space'] }
-				: { modifiers: ['ctrl', 'shift'], keys: ['space'] },
-			desc: 'a modifier chord plus a key (the toggle default)',
+				? { modifiers: ['meta'], keys: ['dot'] }
+				: { modifiers: ['ctrl', 'shift'], keys: ['dot'] },
+			desc: 'a modifier chord plus a key (the cancel default)',
 		},
 	] satisfies { binding: { modifiers: Modifier[]; keys: string[] }; desc: string }[];
 </script>
@@ -167,8 +167,8 @@
 						work from any app and can use keys the old shortcuts could not: the
 						Fn key or a modifier held on its own. Give every gesture a modifier
 						or Fn so it cannot fire on an ordinary keypress, and give each one its
-						own keys: a key bound to one gesture (like push-to-talk's Fn) cannot
-						be part of another.
+						own keys: a key bound to one gesture (like the recording key's Fn)
+						cannot be part of another.
 					</p>
 				</div>
 
@@ -201,7 +201,7 @@
 				<p class="text-xs text-muted-foreground">
 					Keys match by physical position, so on a non-US layout the label may
 					differ from the printed character. Record a gesture by pressing it, or
-					type one like <code class="font-mono text-xs">fn+space</code> or
+					type one like <code class="font-mono text-xs">fn</code> or
 					<code class="font-mono text-xs">ctrl+meta</code>.
 				</p>
 			{/if}

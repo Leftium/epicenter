@@ -7,26 +7,14 @@
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import SettingsIcon from '@lucide/svelte/icons/settings';
 	import { goto } from '$app/navigation';
+	import MacosAccessibilityGuide from '$lib/components/MacosAccessibilityGuide.svelte';
+	import { permissions } from '$lib/state/permissions.svelte';
 	import { tauri } from '#platform/tauri';
-	import { commands } from '$lib/tauri/commands';
-	import type { PageData } from './$types';
 
-	let { data } = $props();
-
-	async function requestPermissionOrShowGuidance() {
-		if (!tauri) return;
-		const { error } = await tauri.permissions.accessibility.request();
-
-		if (error) {
-			toast.error('Failed to open accessibility settings', {
-				description: error.message,
-				action: {
-					label: 'Open Accessibility Settings',
-					onClick: () => openSystemSettings(),
-				},
-			});
-		}
-	}
+	// Read the live grant from the owner: it re-checks on window focus, so this
+	// page flips to the granted state the moment the user returns from System
+	// Settings, without a reload.
+	const isGranted = $derived(permissions.accessibilityGranted);
 
 	async function openSystemSettings() {
 		if (!tauri) return;
@@ -36,7 +24,7 @@
 		if (commandError) {
 			console.error('Failed to open System Settings:', commandError);
 
-			// Fallback: Show detailed instructions
+			// Fallback: show detailed instructions.
 			toast.info('Open System Settings Manually', {
 				description:
 					'Click Apple menu → System Settings → Privacy & Security → Accessibility',
@@ -45,7 +33,6 @@
 			return;
 		}
 
-		// Show helpful toast since we can't open directly to accessibility
 		toast.info('System Settings Opened', {
 			description:
 				'Navigate to Privacy & Security > Accessibility to grant permissions.',
@@ -62,77 +49,15 @@
 			<Card.Title class="text-xl">MacOS Accessibility</Card.Title>
 			<Card.Description class="leading-7">
 				Follow the steps below to re-enable Whispering in your macOS
-				Accessibility settings. This often is needed after installing new
-				versions of Whispering due to a macOS bug.
+				Accessibility settings. This is usually needed after an app update
+				changes how macOS identifies Whispering.
 			</Card.Description>
 		</Card.Header>
 		<Card.Content>
-			<div class="flex flex-col items-center gap-2">
-				{#if tauri}
-					<!-- YouTube embed for Tauri app (external videos don't work well) -->
-					<iframe
-						class="max-w-md rounded-lg border"
-						width="560"
-						height="315"
-						src="https://www.youtube.com/embed/FJRktNkr1Fs"
-						title="macOS Accessibility Settings Guide"
-						frameborder="0"
-						allow="
-							accelerometer;
-							autoplay;
-							clipboard-write;
-							encrypted-media;
-							gyroscope;
-							picture-in-picture;
-						"
-						allowfullscreen
-					></iframe>
-				{:else}
-					<!-- Direct video for web version -->
-					<video
-						class="max-w-md rounded-lg border"
-						src="https://github.com/EpicenterHQ/epicenter/releases/download/_assets/macos_enable_accessibility.mp4"
-						autoplay
-						loop
-						controls
-						muted
-						playsinline
-					>
-						<p class="text-muted-foreground text-sm">
-							Video guide not available. Please follow the written instructions
-							below.
-						</p>
-					</video>
-				{/if}
-				<ol
-					class="text-muted-foreground list-inside list-decimal space-y-1 text-sm leading-7"
-				>
-					<li>
-						Go to
-						<span class="text-primary font-semibold tracking-tight">
-							System Settings > Privacy & Security > Accessibility
-						</span>
-						or click the button below.
-					</li>
-
-					<li>
-						Click on
-						<span class="text-primary font-semibold tracking-tight"
-							>🎙️ Whispering</span
-						>
-						and remove it using the minus icon (-).
-					</li>
-					<li>
-						Re-add Whispering by pressing the plus icon (+) and selecting
-						<span class="text-primary font-semibold tracking-tight"
-							>🎙️ Whispering.app</span
-						>
-					</li>
-				</ol>
-			</div>
+			<MacosAccessibilityGuide />
 		</Card.Content>
 		<Card.Footer>
-			{#if !data.isAccessibilityGranted}
+			{#if !isGranted}
 				<div class="flex gap-3 w-full">
 					<Button
 						variant="outline"
@@ -143,7 +68,7 @@
 						Back to Home
 					</Button>
 					<Button
-						onclick={() => requestPermissionOrShowGuidance()}
+						onclick={() => permissions.requestAccessibility()}
 						class="flex-1 text-sm"
 					>
 						<SettingsIcon class="size-4" />

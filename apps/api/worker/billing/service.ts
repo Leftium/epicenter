@@ -362,6 +362,11 @@ export function createBillingService(
 			return {
 				id: e.id,
 				timestampMs: e.timestamp,
+				// Both are best-effort historical ids read off the persisted Autumn
+				// event, not validated against the live catalog: an id this deploy
+				// no longer serves (or does not yet know) still renders, resolved to
+				// a label at the dashboard edge. Missing metadata (refunds, older
+				// provider-less events) is null.
 				model: typeof props.model === 'string' ? props.model : null,
 				provider: typeof props.provider === 'string' ? props.provider : null,
 				credits: e.value,

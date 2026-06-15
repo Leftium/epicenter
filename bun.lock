@@ -721,6 +721,7 @@
         "@better-auth/oauth-provider": "catalog:",
         "@tanstack/ai-gemini": "catalog:",
         "@tanstack/ai-openai": "catalog:",
+        "@types/bun": "catalog:",
         "@types/node": "catalog:",
         "typescript": "catalog:",
         "vite": "catalog:",

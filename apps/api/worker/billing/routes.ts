@@ -8,7 +8,7 @@
  * be mounted without it.
  */
 
-import { AI_MODELS, type AiModel } from '@epicenter/constants/ai-providers';
+import { AI_MODELS } from '@epicenter/constants/ai-providers';
 import type { Env } from '@epicenter/server';
 import { sValidator } from '@hono/standard-validator';
 import { type } from 'arktype';
@@ -89,18 +89,10 @@ billingRoutes.post(
 
 billingRoutes.get('/plans', async (c) => c.json(await svc(c).listPlans()));
 
-// Display label for the dashboard cost table, keyed on the catalog's own
-// provider discriminator. Adding a provider to `AiModel` is a compile error
-// here until its label is supplied.
-const PROVIDER_LABEL = {
-	openai: 'OpenAI',
-	gemini: 'Google',
-} as const satisfies Record<AiModel['provider'], string>;
-
 billingRoutes.get('/models', (c) => {
 	const models = AI_MODELS.map((entry) => ({
 		model: entry.id,
-		provider: PROVIDER_LABEL[entry.provider],
+		provider: entry.provider,
 		credits: entry.credits,
 	})).sort((a, b) => a.credits - b.credits || a.model.localeCompare(b.model));
 	return c.json({ models } satisfies ModelCostGuide);

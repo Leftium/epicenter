@@ -1,12 +1,13 @@
 /**
- * AI model catalog for hosted chat: the tiny curated set of models the hosted
- * apps sell, with per-call credit prices.
+ * AI provider registry and model catalog for hosted chat.
  *
- * Single source of truth shared by server validation, hosted billing, and the
- * client model pickers. The catalog IS the servable set: there are no hidden,
- * legacy, or compatibility models, and provider is never a user-facing choice.
- * A model id is always a member of the provider SDK's model union
- * (`@tanstack/ai-*`), so a typo or a model the SDK cannot route is a compile
+ * `AI_MODELS` is the single source of the live provider vocabulary: `AiProvider`
+ * is derived from it, and `AI_PROVIDERS` must carry a label for every provider
+ * it serves, enforced at compile time. There is no separate durable provider
+ * registry: a provider retired from the catalog drops out of the vocabulary, and
+ * `providerLabel` degrades its historical id to raw text at the render edge
+ * rather than throwing. A model id is always a member of the matching provider
+ * SDK's model union, so a typo or a model the SDK cannot route is a compile
  * error here rather than a runtime 400.
  */
 import type { GeminiTextModels } from '@tanstack/ai-gemini';
@@ -25,6 +26,34 @@ type GeminiModel = (typeof GeminiTextModels)[number];
 export type AiModel =
 	| { id: OpenAiModel; provider: 'openai'; label: string; credits: number }
 	| { id: GeminiModel; provider: 'gemini'; label: string; credits: number };
+
+/** A provider the live catalog serves. Derived from the model union, so
+ *  `AI_MODELS` is the single source of the provider vocabulary. */
+export type AiProvider = AiModel['provider'];
+
+/**
+ * Vendor display names, keyed by provider id. `satisfies Record<AiProvider>`
+ * forces a label for every live provider: add a provider to the catalog and
+ * forget its label here, and this stops compiling at the missing key. Internal:
+ * callers resolve a label through `providerLabel`, which tolerates ids this code
+ * does not recognize, so a stray historical id degrades to one literal cell.
+ */
+const AI_PROVIDERS = {
+	openai: { label: 'OpenAI' },
+	gemini: { label: 'Google' },
+} as const satisfies Record<AiProvider, { label: string }>;
+
+/**
+ * Resolve a persisted provider id to its vendor label for display, falling back
+ * to the raw id when this deploy does not recognize it. The live cost guide
+ * always passes a known `AiProvider`; the activity feed may pass an arbitrary
+ * historical string, so one unrecognized id never fails the whole read.
+ */
+export function providerLabel(id: string): string {
+	return Object.hasOwn(AI_PROVIDERS, id)
+		? AI_PROVIDERS[id as AiProvider].label
+		: id;
+}
 
 /**
  * The catalog, in display order. One credit = $0.01 at Pro overage

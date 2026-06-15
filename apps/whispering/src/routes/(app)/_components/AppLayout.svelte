@@ -6,8 +6,6 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { commandCallbacks } from '$lib/commands';
-	import { report } from '$lib/report';
-	import { os } from '#platform/os';
 	import DevAccessibilityToggle from '$lib/components/DevAccessibilityToggle.svelte';
 	import MacosAccessibilityGuideDialog from '$lib/components/MacosAccessibilityGuideDialog.svelte';
 	import MoreDetailsDialog from '$lib/components/MoreDetailsDialog.svelte';
@@ -31,84 +29,10 @@
 		syncGlobalShortcutsWithSettings,
 		syncLocalShortcutsWithSettings,
 	} from '../_layout-utils/register-commands';
-	import { permissions } from '$lib/state/permissions.svelte';
 	import { syncIconWithRecorderState } from '../_layout-utils/syncIconWithRecorderState.svelte';
 
 	let cleanupShortcutListener: (() => void) | undefined;
 	let shortcutListenerDestroyed = false;
-
-	// Start the rdev global listener (idempotent). rdev::listen cannot tap the
-	// keyboard before macOS Accessibility is granted, so we only call this once
-	// shortcuts are allowed: on macOS from the accessibility-granted callback, on
-	// other desktops at launch. Wayland has no working listener; tell the user.
-	async function startGlobalListener() {
-		if (!tauri) return;
-		const status = await tauri.globalShortcuts.start();
-		if (status === 'waylandUnsupported') {
-			report.warning({
-				id: 'wayland-unsupported',
-				title: 'Global shortcuts unavailable on Wayland',
-				description:
-					'Whispering needs an X11 session for global shortcuts. On Wayland, bind them through your desktop environment.',
-			});
-			return;
-		}
-		// A live listener clears any standing "shortcuts stopped" notice the
-		// supervisor raised, so recovery (a re-grant, a refocus) self-heals the UI.
-		report.dismiss('global-shortcuts-stopped');
-	}
-
-	// Self-heal supervisor for the rdev listener. The accessibilityGranted effect
-	// below respawns the listener when the grant *transitions* to true, but a
-	// thread that dies while the grant value is unchanged (a transient tap break,
-	// or a stale post-update grant) leaves that effect silent and the shortcut
-	// dead. Rust now emits a stop event on every thread exit; on it we re-probe
-	// permissions and reconcile "should be running" against "just stopped":
-	//   - grant genuinely gone: refresh() flips accessibility to denied, so the
-	//     notice shows and the granted effect respawns once the user re-grants.
-	//     Nothing to do here.
-	//   - should still be running: restart with capped backoff, so a genuinely
-	//     broken tap cannot hot-loop; after the cap, surface one honest error.
-	// A death long after the previous one starts with a fresh restart budget.
-	let cleanupListenerStopped: (() => void) | undefined;
-	const LISTENER_RESTART_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000, 16_000];
-	const LISTENER_RESTART_RESET_WINDOW_MS = 60_000;
-	let listenerRestartAttempt = 0;
-	let lastListenerStopAt = 0;
-	let listenerRestartTimer: ReturnType<typeof setTimeout> | undefined;
-
-	async function onListenerStopped() {
-		if (!tauri) return;
-		// Re-probe so accessibilityGranted reflects reality: a missing or stale
-		// grant flips to denied here, which both shows the notice and makes
-		// shouldRun false, so we correctly stop trying and wait for a re-grant.
-		await permissions.refresh();
-		const shouldRun = !os.isApple || permissions.accessibilityGranted;
-		if (!shouldRun) {
-			listenerRestartAttempt = 0;
-			return;
-		}
-		const now = Date.now();
-		if (now - lastListenerStopAt > LISTENER_RESTART_RESET_WINDOW_MS) {
-			listenerRestartAttempt = 0;
-		}
-		lastListenerStopAt = now;
-		if (listenerRestartAttempt >= LISTENER_RESTART_BACKOFF_MS.length) {
-			// A standing notice (not a one-shot error): it persists until a live
-			// listener dismisses it, and dedups so repeated failures never stack.
-			report.warning({
-				id: 'global-shortcuts-stopped',
-				title: 'Global shortcuts stopped',
-				description:
-					'Whispering could not restart the global shortcut listener. Restart the app to restore shortcuts.',
-			});
-			return;
-		}
-		const delay = LISTENER_RESTART_BACKOFF_MS[listenerRestartAttempt] ?? 16_000;
-		listenerRestartAttempt += 1;
-		clearTimeout(listenerRestartTimer);
-		listenerRestartTimer = setTimeout(() => void startGlobalListener(), delay);
-	}
 
 	onMount(() => {
 		// Sync operations - run immediately, these are fast
@@ -125,20 +49,11 @@
 				if (shortcutListenerDestroyed) unlisten();
 				else cleanupShortcutListener = unlisten;
 			});
-			// Supervise the listener: respawn it (or surface the notice) whenever
-			// the rdev thread exits, so a mid-session death self-heals.
-			void tauri.globalShortcuts
-				.onListenerStopped(() => void onListenerStopped())
-				.then((unlisten) => {
-					if (shortcutListenerDestroyed) unlisten();
-					else cleanupListenerStopped = unlisten;
-				});
 			syncGlobalShortcutsWithSettings();
 			resetGlobalShortcutsToDefaultIfDuplicates();
 
-			// Non-macOS desktops have no Accessibility gate, so start the listener
-			// now (macOS waits for the grant, above).
-			if (!os.isApple) void startGlobalListener();
+			// The rdev thread's liveness (start on grant, restart on death) is owned
+			// by `globalListener`, attached in the parent layout next to permissions.
 
 			// Desktop-only async check - fire and forget
 			void checkForUpdates();
@@ -151,23 +66,12 @@
 	onDestroy(() => {
 		shortcutListenerDestroyed = true;
 		cleanupShortcutListener?.();
-		cleanupListenerStopped?.();
-		clearTimeout(listenerRestartTimer);
 	});
 
 	if (tauri) {
 		syncWindowAlwaysOnTopWithRecorderState(tauri);
 		syncIconWithRecorderState(tauri);
 	}
-
-	// macOS: Accessibility is the single gate for the rdev listener. Start it the
-	// moment the grant lands (the permissions owner re-checks on window focus, so
-	// returning from System Settings flips this without a restart). `start()` is
-	// idempotent, so re-running on the granted→true transition is safe.
-	$effect(() => {
-		if (!tauri || !os.isApple) return;
-		if (permissions.accessibilityGranted) void startGlobalListener();
-	});
 
 	// First-run gate. The one precondition with no fallback is a transcription
 	// runtime: without a model or API key, audio cannot become text. Everything

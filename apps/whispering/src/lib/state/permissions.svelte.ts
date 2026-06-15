@@ -33,7 +33,8 @@ function createPermissions() {
 
 	/** The status callers see: the dev override when set, else the live probe. */
 	function effectiveAccessibility(): PermissionStatus {
-		if (import.meta.env.DEV && accessibilityOverride) return accessibilityOverride;
+		if (import.meta.env.DEV && accessibilityOverride)
+			return accessibilityOverride;
 		return accessibility;
 	}
 
@@ -54,6 +55,52 @@ function createPermissions() {
 		// silently start a listener that can never see keys.
 		accessibility = acc.data ? 'granted' : 'denied';
 		microphone = mic.data ? 'granted' : 'denied';
+	}
+
+	// Bounded grant-flow poll. This is NOT the steady-state 1 Hz timer the policy
+	// above rejects: it runs only while the user is actively granting
+	// Accessibility (right after the native prompt or the Settings deep-link),
+	// because the toggle can flip while System Settings holds focus, where the
+	// window-focus re-check would not catch it until the user tabs back. Polling
+	// the live probe for a short window lands the grant the instant the user
+	// flips it, so the AppLayout effect that watches `accessibilityGranted`
+	// spawns the rdev listener with nothing left to click. It stops on the first
+	// granted read, on timeout, when a newer grant attempt supersedes it, or at
+	// teardown, so it can never outlive the flow. It only flips denied -> granted;
+	// revocation stays the focus re-check's job.
+	const GRANT_POLL_INTERVAL_MS = 1_000;
+	const GRANT_POLL_MAX_TICKS = 60;
+	let cancelGrantPoll: (() => void) | null = null;
+
+	function pollUntilAccessibilityGranted() {
+		if (!tauri || !isGated) return;
+		const t = tauri;
+		// Supersede any in-flight poll so overlapping grant attempts collapse to a
+		// single timer instead of stacking.
+		cancelGrantPoll?.();
+		let ticks = 0;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const stop = () => {
+			if (timer) clearTimeout(timer);
+			if (cancelGrantPoll === stop) cancelGrantPoll = null;
+		};
+		cancelGrantPoll = stop;
+		const tick = async () => {
+			const { data } = await t.permissions.accessibility.check();
+			// A superseding poll or a teardown replaced us mid-await: drop this tick.
+			if (cancelGrantPoll !== stop) return;
+			if (data) {
+				accessibility = 'granted';
+				stop();
+				return;
+			}
+			if (++ticks >= GRANT_POLL_MAX_TICKS) {
+				stop();
+				return;
+			}
+			timer = setTimeout(tick, GRANT_POLL_INTERVAL_MS);
+		};
+		timer = setTimeout(tick, GRANT_POLL_INTERVAL_MS);
 	}
 
 	return {
@@ -97,6 +144,10 @@ function createPermissions() {
 				return;
 			}
 			accessibility = data ? 'granted' : 'denied';
+			// The native prompt cannot grant in place: the user flips the toggle in
+			// System Settings next. Poll so that landing flips us live (and spawns
+			// the listener) without waiting for the window to regain focus.
+			if (!data) pollUntilAccessibilityGranted();
 		},
 
 		/**
@@ -106,6 +157,9 @@ function createPermissions() {
 		 */
 		openAccessibilitySettings() {
 			if (!tauri) return Ok(undefined);
+			// Same grant flow as the native prompt: the user is heading to Settings
+			// to flip the toggle, so poll to catch the grant the moment it lands.
+			if (accessibility !== 'granted') pollUntilAccessibilityGranted();
 			return tauri.permissions.accessibility.openSettings();
 		},
 
@@ -129,7 +183,11 @@ function createPermissions() {
 		attach(): () => void {
 			void refresh();
 			if (!isGated) return () => {};
-			return on(window, 'focus', () => void refresh());
+			const removeFocusListener = on(window, 'focus', () => void refresh());
+			return () => {
+				removeFocusListener();
+				cancelGrantPoll?.();
+			};
 		},
 	};
 }

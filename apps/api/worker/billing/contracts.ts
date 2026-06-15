@@ -13,7 +13,6 @@
  * returns `{ portalUrl: string }` rather than a vendor envelope.
  */
 
-import type { AiProvider } from '@epicenter/constants/ai-providers';
 import { type } from 'arktype';
 
 /** Snapshot of the customer's current plan and credit balance. */

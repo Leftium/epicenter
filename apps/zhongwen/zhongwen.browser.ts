@@ -19,7 +19,7 @@ import {
 	attachLocalStorage,
 	createChildDocs,
 	type DeviceId,
-	defineWorkspace,
+	defineWorkspaceBundle,
 	openCollaboration,
 	roomWsUrl,
 	wipeLocalStorage,
@@ -76,7 +76,7 @@ export function openZhongwenBrowser({
 		workspace[Symbol.dispose]();
 	}
 
-	return defineWorkspace({
+	return defineWorkspaceBundle({
 		...workspace,
 		idb,
 		conversationDocs,

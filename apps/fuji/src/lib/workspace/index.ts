@@ -36,7 +36,7 @@ import {
 	defineMutation,
 	defineQuery,
 	defineTable,
-	defineWorkspace,
+	defineWorkspaceBundle,
 	docGuid,
 	generateId,
 	type IanaTimeZone,
@@ -92,7 +92,7 @@ export function createFuji() {
 	});
 	const { tables } = workspace;
 
-	return defineWorkspace({
+	return defineWorkspaceBundle({
 		...workspace,
 		actions: defineActions({
 			entries_get: defineQuery({

@@ -7,7 +7,7 @@
  *
  * ```ts
  * using workspace = createWorkspace({ id, tables, kv });
- * return defineWorkspace({
+ * return defineWorkspaceBundle({
  *   ...workspace,
  *   actions: defineActions({ ... }),
  *   [Symbol.dispose]() {
@@ -68,7 +68,7 @@ export type Workspace<
  * KV, action, or runtime generics that TypeScript can infer from the object.
  * Runtime behavior is identity: the same object is returned unchanged.
  */
-export function defineWorkspace<
+export function defineWorkspaceBundle<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
 	TActions extends ActionRegistry,
@@ -140,7 +140,7 @@ export function createWorkspace<
 
 	const kv = createKv(attachStore(KV_KEY), options.kv);
 
-	return defineWorkspace({
+	return defineWorkspaceBundle({
 		ydoc,
 		tables,
 		kv,

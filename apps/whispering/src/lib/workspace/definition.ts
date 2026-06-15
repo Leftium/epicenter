@@ -3,7 +3,7 @@ import {
 	createWorkspace,
 	defineKv,
 	defineTable,
-	defineWorkspace,
+	defineWorkspaceBundle,
 	type IanaTimeZone,
 	type InferKvValue,
 	type InferTableRow,
@@ -381,7 +381,7 @@ export function createWhispering({
 
 	const settingKeys = Object.keys(kvDefinitions) as SettingKey[];
 
-	return defineWorkspace({
+	return defineWorkspaceBundle({
 		...workspace,
 		/**
 		 * Synced setting metadata for the Whispering workspace.

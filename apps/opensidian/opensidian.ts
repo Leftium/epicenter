@@ -26,7 +26,7 @@ import {
 	createWorkspace,
 	defineActions,
 	defineTable,
-	defineWorkspace,
+	defineWorkspaceBundle,
 	generateId,
 	type Id,
 	type InferTableRow,
@@ -181,7 +181,7 @@ export function createOpensidian() {
 		};
 	});
 
-	return defineWorkspace({
+	return defineWorkspaceBundle({
 		...workspace,
 		actions: defineActions({}),
 		fileContentDocs,

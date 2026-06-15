@@ -23,7 +23,7 @@ import {
 	defineActions,
 	defineKv,
 	defineTable,
-	defineWorkspace,
+	defineWorkspaceBundle,
 	docGuid,
 	generateId,
 	type Id,
@@ -87,7 +87,7 @@ export function createZhongwen() {
 		},
 	});
 
-	return defineWorkspace({
+	return defineWorkspaceBundle({
 		...workspace,
 		actions: defineActions({}),
 		[Symbol.dispose]() {

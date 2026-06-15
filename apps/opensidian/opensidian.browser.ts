@@ -31,7 +31,7 @@ import {
 	defineActions,
 	defineMutation,
 	defineQuery,
-	defineWorkspace,
+	defineWorkspaceBundle,
 	openCollaboration,
 	roomWsUrl,
 	wipeLocalStorage,
@@ -268,7 +268,7 @@ export function openOpensidianBrowser({
 		workspace[Symbol.dispose]();
 	}
 
-	return defineWorkspace({
+	return defineWorkspaceBundle({
 		...workspace,
 		idb,
 		fileContentDocs,

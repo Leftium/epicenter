@@ -18,7 +18,7 @@ import {
 	defineActions,
 	defineMutation,
 	defineQuery,
-	defineWorkspace,
+	defineWorkspaceBundle,
 	generateId,
 } from '@epicenter/workspace';
 import { Type } from 'typebox';
@@ -177,7 +177,7 @@ export function createWiki() {
 		}),
 	});
 
-	return defineWorkspace({
+	return defineWorkspaceBundle({
 		...workspace,
 		actions,
 		[Symbol.dispose]() {

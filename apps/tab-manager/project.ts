@@ -7,7 +7,7 @@
  */
 
 import { join } from 'node:path';
-import { defineActions, defineWorkspace } from '@epicenter/workspace';
+import { defineActions, defineWorkspaceBundle } from '@epicenter/workspace';
 import { defineSessionMount } from '@epicenter/workspace/daemon';
 import {
 	attachGitAutosave,
@@ -81,7 +81,7 @@ export function tabManager(opts: TabManagerMountOptions = {}) {
 				materializers: [sqlite, markdown],
 			});
 
-			return defineWorkspace({
+			return defineWorkspaceBundle({
 				...workspace,
 				...infrastructure,
 				markdown,

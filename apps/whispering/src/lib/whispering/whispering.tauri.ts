@@ -10,7 +10,7 @@ import {
 	attachIndexedDb,
 	defineActions,
 	defineMutation,
-	defineWorkspace,
+	defineWorkspaceBundle,
 } from '@epicenter/workspace';
 import { open } from '@tauri-apps/plugin-dialog';
 import yaml from 'js-yaml';
@@ -51,7 +51,7 @@ export function openWhispering() {
 	const idb = attachIndexedDb(workspace.ydoc);
 	attachBroadcastChannel(workspace.ydoc);
 
-	return defineWorkspace({
+	return defineWorkspaceBundle({
 		...workspace,
 		actions: defineActions({
 			...workspace.actions,

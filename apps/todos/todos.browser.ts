@@ -1,7 +1,7 @@
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
-	defineWorkspace,
+	defineWorkspaceBundle,
 } from '@epicenter/workspace';
 import { createTodos } from './todos';
 
@@ -10,7 +10,7 @@ export function openTodosBrowser() {
 	const idb = attachIndexedDb(workspace.ydoc);
 	attachBroadcastChannel(workspace.ydoc);
 
-	return defineWorkspace({
+	return defineWorkspaceBundle({
 		...workspace,
 		idb,
 		whenReady: idb.whenLoaded,

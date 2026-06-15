@@ -9,7 +9,7 @@
  * just-bash) and are added only by the browser runtime.
  */
 
-import { defineWorkspace } from '@epicenter/workspace';
+import { defineWorkspaceBundle } from '@epicenter/workspace';
 import { defineSessionMount } from '@epicenter/workspace/daemon';
 import { attachMountInfrastructure } from '@epicenter/workspace/node';
 import { createOpensidian } from './opensidian.js';
@@ -38,7 +38,7 @@ export function opensidian(opts: OpensidianMountOptions = {}) {
 				actions: workspace.actions,
 			});
 
-			return defineWorkspace({
+			return defineWorkspaceBundle({
 				...workspace,
 				...infrastructure,
 			});

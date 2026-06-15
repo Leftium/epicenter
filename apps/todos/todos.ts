@@ -4,7 +4,7 @@ import {
 	defineActions,
 	defineMutation,
 	defineTable,
-	defineWorkspace,
+	defineWorkspaceBundle,
 	generateId,
 	type InferTableRow,
 	nullable,
@@ -78,7 +78,7 @@ export function createTodos() {
 	});
 	const { tables } = workspace;
 
-	return defineWorkspace({
+	return defineWorkspaceBundle({
 		...workspace,
 		actions: defineActions({
 			todos_create: defineMutation({

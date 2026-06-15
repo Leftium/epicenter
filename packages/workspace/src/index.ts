@@ -224,6 +224,6 @@ export { wipeLocalStorage } from './document/wipe-local-storage.js';
 export {
 	type CreateWorkspaceOptions,
 	createWorkspace,
-	defineWorkspace,
+	defineWorkspaceBundle,
 	type Workspace,
 } from './document/workspace.js';

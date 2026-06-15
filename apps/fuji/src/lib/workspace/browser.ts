@@ -24,7 +24,7 @@ import {
 	createDisposableCache,
 	DateTimeString,
 	type DeviceId,
-	defineWorkspace,
+	defineWorkspaceBundle,
 	onLocalUpdate,
 	openCollaboration,
 	roomWsUrl,
@@ -99,7 +99,7 @@ export function openFujiBrowser({
 		};
 	});
 
-	return defineWorkspace({
+	return defineWorkspaceBundle({
 		...workspace,
 		idb,
 		entryBodies,

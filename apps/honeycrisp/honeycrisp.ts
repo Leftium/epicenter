@@ -23,7 +23,7 @@ import {
 	defineActions,
 	defineMutation,
 	defineTable,
-	defineWorkspace,
+	defineWorkspaceBundle,
 	docGuid,
 	generateId,
 	type InferTableRow,
@@ -153,7 +153,7 @@ export function createHoneycrisp() {
 		};
 	});
 
-	return defineWorkspace({
+	return defineWorkspaceBundle({
 		...workspace,
 		actions: defineActions({
 			/**

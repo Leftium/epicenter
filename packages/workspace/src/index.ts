@@ -170,6 +170,7 @@ export { attachLocalStorage } from './document/attach-local-storage.js';
 export { attachPlainText } from './document/attach-plain-text.js';
 export { attachRichText } from './document/attach-rich-text.js';
 export { attachTimeline } from './document/attach-timeline/index.js';
+export { type ConnectionConfig, connectDoc } from './document/connect-doc.js';
 export {
 	type ChildDocConnection,
 	createChildDocs,

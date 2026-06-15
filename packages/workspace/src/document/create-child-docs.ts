@@ -42,39 +42,17 @@
  * @module
  */
 
-import type { OwnerId } from '@epicenter/identity';
 import * as Y from 'yjs';
 import { createDisposableCache } from '../cache/disposable-cache.js';
 import type { Guid } from '../shared/id.js';
-import { attachLocalStorage } from './attach-local-storage.js';
-import type { DeviceId } from './device-id.js';
-import {
-	type OnReconnectSignal,
-	type OpenWebSocketFn,
-	openCollaboration,
-} from './open-collaboration.js';
-import { roomWsUrl } from './transport.js';
+import { type ConnectionConfig, connectDoc } from './connect-doc.js';
 
 /**
- * Everything `createChildDocs` needs to connect a child doc to local storage
- * and cloud sync. Structurally a superset of the auth `SignedIn` payload plus
- * the per-client `deviceId`; typed against workspace-native types so the
- * runtime never imports from the auth/Svelte layer.
- *
- * Pass `{ ...signedIn, deviceId }` at the call site.
+ * Alias kept while the row-declared runtime migrates onto the shared
+ * {@link ConnectionConfig}. Same shape; the `ChildDoc`-specific name retires
+ * once `defineWorkspace(...).open(connection)` owns the connection.
  */
-export type ChildDocConnection = {
-	/** API origin host (e.g. `api.epicenter.so`); partitions local storage. */
-	server: string;
-	/** Full API origin URL (e.g. `https://api.epicenter.so`); scheme upgrades to `wss://`. */
-	baseURL: string;
-	ownerId: OwnerId;
-	/** Bearer-attached WebSocket opener (`auth.openWebSocket`). */
-	openWebSocket: OpenWebSocketFn;
-	/** Auth state-change publication; sync reconnects after token refreshes. */
-	onReconnectSignal: OnReconnectSignal;
-	deviceId: DeviceId;
-};
+export type ChildDocConnection = ConnectionConfig;
 
 /**
  * Bind the connection once and return a `childDocs(layout)` factory.
@@ -83,7 +61,7 @@ export type ChildDocConnection = {
  *                       onReconnectSignal, deviceId)`, pre-bound into every
  *                      child doc this runtime opens.
  */
-export function createChildDocs(connection: ChildDocConnection) {
+export function createChildDocs(connection: ConnectionConfig) {
 	/**
 	 * Create a guid-keyed cache of child docs shaped by `layout`. The connection
 	 * is already bound; the cache lazily opens each doc on first `open(guid)` and
@@ -99,25 +77,10 @@ export function createChildDocs(connection: ChildDocConnection) {
 	) {
 		return createDisposableCache((guid: Guid) => {
 			const ydoc = new Y.Doc({ guid, gc: true });
-			const idb = attachLocalStorage(ydoc, {
-				server: connection.server,
-				ownerId: connection.ownerId,
-			});
-			// Sync is opened for its side effect: it lets the server generation
-			// actor stream into the doc and every signed-in device watch live. The
-			// handle is orphaned on purpose; teardown cascades from `ydoc.destroy()`.
-			openCollaboration(ydoc, {
-				url: roomWsUrl({
-					baseURL: connection.baseURL,
-					ownerId: connection.ownerId,
-					guid,
-					deviceId: connection.deviceId,
-				}),
-				openWebSocket: connection.openWebSocket,
-				onReconnectSignal: connection.onReconnectSignal,
-				waitFor: idb.whenLoaded,
-				actions: {},
-			});
+			// A body is a doc like any other; `connectDoc` is the same wiring the
+			// root uses. No action registry: the body's only writers are the
+			// `attach*` layout and the server generation actor streaming in.
+			const { idb } = connectDoc(ydoc, connection, { actions: {} });
 			return {
 				...layout(ydoc),
 				/** The doc's guid (the cache key); callers needing the room id read it here, not the raw `ydoc`. */

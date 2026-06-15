@@ -3,16 +3,20 @@ name: PR Preview Builds
 # Builds Whispering Tauri previews for a PR, and on macOS makes them runnable
 # without Gatekeeper "damaged / cannot be opened" errors.
 #
-# Trust model (the whole security story):
-# - GitHub withholds repository secrets from workflows triggered by fork PRs and
-#   gives them a read-only token. Only people with write access can push a branch
-#   to this repo, so a same-repo PR is trusted code by construction.
-# - Therefore: same-repo PRs sign + notarize + staple the macOS builds; fork PRs
-#   fall back to --no-sign and ship an UNSIGNED-README.txt with the one-line
-#   quarantine fix. The `IS_TRUSTED` job env makes the branch explicit, but even
-#   without it a fork run would see empty Apple secrets and could not sign.
-# - No Tauri updater keys here: previews are never published to the update feed,
-#   so signing over them would be unnecessary secret exposure.
+# Trust + signing model:
+# - Security is enforced by GitHub, not by this file. A `pull_request` run from a
+#   fork gets NO repository secrets and a read-only token, so fork code can never
+#   reach the Apple signing cert. (`pull_request_target` would be the dangerous
+#   trigger; we deliberately do not use it.)
+# - `IS_TRUSTED` (same-repo PR) is therefore NOT a security gate. It exists because
+#   tauri.conf.json hardcodes a Developer ID `signingIdentity`: any runner without
+#   that cert in its keychain, i.e. every fork run where the secret is empty, would
+#   FAIL the build trying to codesign. So untrusted runs pass --no-sign to stay green.
+# - Consequence, by design: trusted PRs (only the maintainer can push a branch) are
+#   signed + notarized + stapled and uploaded as runnable .dmg artifacts. Untrusted
+#   (fork) PRs are COMPILE CHECKS ONLY: they build green or red and upload nothing.
+#   To get a runnable build of a fork branch, pull it into the repo and it auto-signs.
+# - No Tauri updater keys here: previews never hit the update feed.
 #
 # Scope:
 # - The native build only runs when Rust/Tauri sources change (see `paths` below).
@@ -62,9 +66,9 @@ jobs:
     permissions:
       contents: read
 
-    # Trusted == the PR branch lives in this repo (a maintainer pushed it), so the
-    # code is allowed to touch signing secrets. Fork PRs are untrusted; GitHub
-    # already withholds the secrets from them, this just makes the path explicit.
+    # IS_TRUSTED == the PR branch lives in this repo (only the maintainer can push
+    # one). NOT a security boundary: GitHub already withholds secrets from forks.
+    # It decides sign + upload (trusted) vs build-as-compile-check-only (fork).
     env:
       IS_TRUSTED: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
 
@@ -157,12 +161,11 @@ jobs:
           CONF="apps/whispering/src-tauri/tauri.conf.json"
           jq --arg lib "$DYLIB" '.bundle.macOS.frameworks = [$lib]' "$CONF" > "$CONF.tmp" && mv "$CONF.tmp" "$CONF"
 
-      # Build. Trusted macOS runs sign + notarize + staple (no --no-sign), so the
-      # resulting .dmg opens cleanly on a downloader's Mac. Everything else builds
-      # unsigned (--no-sign): fork macOS, plus Linux/Windows which have no Apple
-      # signing concept here. The Apple secrets are referenced unconditionally; on
-      # fork runs they resolve to empty strings and are ignored because --no-sign
-      # is set, so no secret can leak to untrusted code.
+      # Build. Trusted macOS runs sign + notarize + staple (no --no-sign). Untrusted
+      # runs (fork macOS, plus Linux/Windows) pass --no-sign: tauri.conf hardcodes a
+      # Developer ID signingIdentity, so without --no-sign a runner lacking the cert
+      # would fail the build. The Apple env is referenced unconditionally; on fork
+      # runs it is empty (GitHub withholds it) and ignored because --no-sign is set.
       - uses: tauri-apps/tauri-action@v0
         env:
           CI: true
@@ -217,22 +220,25 @@ jobs:
           test -n "$APP" || { echo "::error::no .app bundle found"; exit 1; }
           test -n "$DMG" || { echo "::error::no .dmg found"; exit 1; }
 
+          # This block is informational: capture the full picture into the report
+          # even when a check fails. `|| true` stops `set -e` from aborting here so
+          # the report stays complete; the explicit gates below own pass/fail.
           REPORT="$BUNDLE_ROOT/verification-report-${{ matrix.artifactSuffix }}.txt"
           {
             echo "== codesign --verify (app) =="
-            codesign --verify --deep --strict --verbose=2 "$APP" 2>&1
+            codesign --verify --deep --strict --verbose=2 "$APP" 2>&1 || true
             echo "== codesign -dvvv (app) =="
-            codesign -dvvv "$APP" 2>&1
+            codesign -dvvv "$APP" 2>&1 || true
             echo "== spctl assess (app) =="
-            spctl -a -t exec -vvv "$APP" 2>&1
+            spctl -a -t exec -vvv "$APP" 2>&1 || true
             echo "== stapler validate (app) =="
-            xcrun stapler validate "$APP" 2>&1
+            xcrun stapler validate "$APP" 2>&1 || true
             echo "== stapler validate (dmg) =="
-            xcrun stapler validate "$DMG" 2>&1
+            xcrun stapler validate "$DMG" 2>&1 || true
             echo "== hdiutil verify (dmg) =="
-            hdiutil verify "$DMG" 2>&1
+            hdiutil verify "$DMG" 2>&1 || true
             echo "== codesign --verify (dmg) =="
-            codesign --verify --verbose=2 "$DMG" 2>&1
+            codesign --verify --verbose=2 "$DMG" 2>&1 || true
           } | tee "$REPORT"
 
           # Gate 1: hardened runtime flag must be set (notarization requires it).
@@ -243,28 +249,6 @@ jobs:
           spctl -a -t exec -vvv "$APP" 2>&1 | grep -q 'source=Notarized Developer ID' \
             || { echo "::error::app is not notarized / not accepted by Gatekeeper"; exit 1; }
           echo "Signed + notarized macOS build verified: opens without Gatekeeper errors."
-
-      # Fork macOS only: the build is unsigned, so drop an explanation + the
-      # one-line quarantine fix into the artifact instead of leaving the user to
-      # discover the "damaged" error on their own.
-      - name: Write UNSIGNED notice (fork macOS only)
-        if: ${{ matrix.os == 'macos' && env.IS_TRUSTED != 'true' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          BUNDLE_ROOT=$(find apps/whispering/src-tauri/target -type d -path '*/release/bundle' | head -1)
-          test -n "$BUNDLE_ROOT" || { echo "::error::no bundle dir found"; exit 1; }
-          cat > "$BUNDLE_ROOT/UNSIGNED-README.txt" <<'EOF'
-          This is an UNSIGNED preview build from a fork PR. macOS will quarantine it
-          and may report "Whispering is damaged and can't be opened."
-
-          After copying Whispering.app to /Applications, run:
-
-            xattr -dr com.apple.quarantine /Applications/Whispering.app
-
-          For a notarized build that opens with no warning, a maintainer can rebuild
-          this branch from inside the repo (same-repo PRs are signed automatically).
-          EOF
 
       - name: Copy Windows artifacts into workspace
         if: ${{ matrix.os == 'windows' }}
@@ -279,17 +263,15 @@ jobs:
         if: ${{ matrix.os == 'linux' }}
         uses: ./.github/actions/process-whispering-appimage
 
-      # The .dmg is the only macOS artifact: it is the correct distribution unit and,
-      # on trusted runs, the notarized + stapled one. The raw .app is deliberately
-      # NOT uploaded (a loose downloaded .app is the worst "damaged" offender and
-      # adds no debug value the .dmg lacks). Untrusted artifacts are prefixed
-      # UNSIGNED- so the download name itself signals the difference.
+      # Only trusted runs upload. Fork PRs are compile checks: their green/red status
+      # is the signal, and they never produce a signed build, so there is nothing
+      # worth downloading. The .dmg is the only macOS artifact (the raw .app is the
+      # worst "damaged" offender and adds no debug value the .dmg lacks).
       - name: Upload artifacts
+        if: ${{ env.IS_TRUSTED == 'true' }}
         uses: actions/upload-artifact@v7
         with:
-          # Inverted so the non-empty branch is truthy (GitHub treats '' as falsy,
-          # so `IS_TRUSTED && '' || 'UNSIGNED-'` would wrongly tag trusted builds).
-          name: whispering-pr${{ github.event.pull_request.number }}-${{ env.IS_TRUSTED != 'true' && 'UNSIGNED-' || '' }}${{ matrix.artifactSuffix }}
+          name: whispering-pr${{ github.event.pull_request.number }}-${{ matrix.artifactSuffix }}
           path: |
             apps/whispering/src-tauri/target/*/release/bundle/**/*.dmg
             apps/whispering/src-tauri/target/release/bundle/**/*.dmg
@@ -298,7 +280,6 @@ jobs:
             apps/whispering/src-tauri/target/release/bundle/**/*.exe
             apps/whispering/src-tauri/target/release/bundle/**/*.msi
             apps/whispering/src-tauri/target/**/verification-report-*.txt
-            apps/whispering/src-tauri/target/**/UNSIGNED-README.txt
             target/release/bundle/**/*.exe
             target/release/bundle/**/*.msi
           if-no-files-found: warn

@@ -145,6 +145,23 @@ describe('defineWorkspace', () => {
 		}
 	});
 
+	test('open(connection) rejects child docs that would overwrite table methods', () => {
+		const unsafeNotesDefinition = notesDefinition.childDocs({
+			set: attachPlainText,
+		} as never);
+		const workspaceDefinition = defineWorkspace({
+			id: 'ws-definition-reserved-child-doc',
+			tables: {
+				notes: unsafeNotesDefinition,
+			},
+			kv: {},
+		});
+
+		expect(() => workspaceDefinition.open(connection)).toThrow(
+			'Child doc field "set" on table "notes" conflicts with the table API.',
+		);
+	});
+
 	test('open(connection, compose) publishes runtime actions and disposes runtime extras', () => {
 		let runtimeDisposed = false;
 		const workspace = defineWorkspace({

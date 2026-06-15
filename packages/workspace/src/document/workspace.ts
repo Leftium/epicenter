@@ -407,6 +407,11 @@ function connectTableChildDocs<TTableDefinitions extends TableDefinitions>({
 		for (const [field, layout] of Object.entries(
 			definition.childDocLayouts,
 		) as [string, (ydoc: Y.Doc) => object][]) {
+			if (RESERVED_TABLE_CHILD_DOC_NAMES.has(field)) {
+				throw new Error(
+					`Child doc field "${field}" on table "${collection}" conflicts with the table API.`,
+				);
+			}
 			const cache = childDocs(layout);
 			disposables.push(cache);
 			childDocEntries[field] = {
@@ -441,3 +446,21 @@ function connectTableChildDocs<TTableDefinitions extends TableDefinitions>({
 		},
 	};
 }
+
+const RESERVED_TABLE_CHILD_DOC_NAMES = new Set<string>([
+	'name',
+	'definition',
+	'schema',
+	'get',
+	'scan',
+	'findValid',
+	'observe',
+	'storedCount',
+	'has',
+	'set',
+	'bulkSet',
+	'update',
+	'delete',
+	'bulkDelete',
+	'clear',
+]);

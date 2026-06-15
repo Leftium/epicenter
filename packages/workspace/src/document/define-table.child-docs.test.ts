@@ -42,6 +42,18 @@ describe('defineTable().childDocs', () => {
 		expect(entries.childDocLayouts.snippet).toBe(code);
 	});
 
+	test('childDocs rejects names that conflict with table methods at compile time', () => {
+		const entries = defineTable({
+			id: field.string(),
+			title: field.string(),
+		});
+		if (false) {
+			// @ts-expect-error child-doc fields are spread onto the table handle.
+			entries.childDocs({ set: body });
+		}
+		expect(entries.childDocLayouts).toEqual({});
+	});
+
 	test('childDocs preserves the schema and versions', () => {
 		const entries = defineTable({
 			id: field.string(),

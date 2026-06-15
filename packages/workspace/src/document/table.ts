@@ -344,6 +344,28 @@ export type MigrateInput<
  */
 export type ChildDocLayouts = Record<string, (ydoc: Y.Doc) => object>;
 
+type ReservedTableChildDocName =
+	| 'name'
+	| 'definition'
+	| 'schema'
+	| 'get'
+	| 'scan'
+	| 'findValid'
+	| 'observe'
+	| 'storedCount'
+	| 'has'
+	| 'set'
+	| 'bulkSet'
+	| 'update'
+	| 'delete'
+	| 'bulkDelete'
+	| 'clear';
+
+type SafeChildDocLayouts<TLayouts extends ChildDocLayouts> =
+	Extract<keyof TLayouts, ReservedTableChildDocName> extends never
+		? TLayouts
+		: never;
+
 export type TableDefinition<
 	TVersions extends readonly VersionedColumns[] = readonly VersionedColumns[],
 	TChildDocs extends ChildDocLayouts = {},
@@ -393,7 +415,7 @@ export type TableDefinition<
 	 * ```
 	 */
 	childDocs<TLayouts extends ChildDocLayouts>(
-		layouts: TLayouts,
+		layouts: SafeChildDocLayouts<TLayouts>,
 	): TableDefinition<TVersions, TLayouts>;
 };
 

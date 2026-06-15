@@ -14,10 +14,8 @@ import { asOwnerId } from '@epicenter/identity';
 import { IDBKeyRange, indexedDB } from 'fake-indexeddb';
 import type { Guid } from '../shared/id.js';
 import { attachPlainText } from './attach-plain-text.js';
-import {
-	type ChildDocConnection,
-	createChildDocs,
-} from './create-child-docs.js';
+import type { ConnectionConfig } from './connect-doc.js';
+import { createChildDocs } from './create-child-docs.js';
 import { asDeviceId } from './device-id.js';
 
 Object.assign(globalThis, { indexedDB, IDBKeyRange });
@@ -40,7 +38,7 @@ function fakeWebSocket(): Promise<WebSocket> {
 	return Promise.resolve(ws as unknown as WebSocket);
 }
 
-const connection: ChildDocConnection = {
+const connection: ConnectionConfig = {
 	server: 'api.test.invalid',
 	baseURL: 'https://api.test.invalid',
 	ownerId: asOwnerId('owner-1'),

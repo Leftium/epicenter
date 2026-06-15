@@ -48,13 +48,6 @@ import type { Guid } from '../shared/id.js';
 import { type ConnectionConfig, connectDoc } from './connect-doc.js';
 
 /**
- * Alias kept while the row-declared runtime migrates onto the shared
- * {@link ConnectionConfig}. Same shape; the `ChildDoc`-specific name retires
- * once `defineWorkspace(...).open(connection)` owns the connection.
- */
-export type ChildDocConnection = ConnectionConfig;
-
-/**
  * Bind the connection once and return a `childDocs(layout)` factory.
  *
  * @param connection - `(server, baseURL, ownerId, openWebSocket,

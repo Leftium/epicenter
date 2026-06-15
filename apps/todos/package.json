@@ -28,6 +28,7 @@
 	},
 	"devDependencies": {
 		"@epicenter/constants": "workspace:*",
+		"@epicenter/vite-config": "workspace:*",
 		"@types/bun": "catalog:",
 		"@sveltejs/adapter-static": "catalog:",
 		"@sveltejs/kit": "catalog:",

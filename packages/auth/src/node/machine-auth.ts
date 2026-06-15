@@ -18,6 +18,9 @@
 
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
+import { API_ROUTES } from '@epicenter/constants/api-routes';
+import { EPICENTER_API_URL } from '@epicenter/constants/apps';
+import { EPICENTER_CLI_OAUTH_CLIENT_ID } from '@epicenter/constants/oauth-clients';
 import type { Keyring } from '@epicenter/encryption';
 import envPaths from 'env-paths';
 import {
@@ -34,12 +37,7 @@ import {
 	type UserId,
 } from '../auth-types.js';
 import { createOAuthAppAuth } from '../create-oauth-app-auth.js';
-import {
-	EPICENTER_API_URL,
-	EPICENTER_CLI_OAUTH_CLIENT_ID,
-} from '../oauth-defaults.js';
 import { serializePersistedAuth } from '../persisted-auth-storage.js';
-import { API_ROUTES } from '../routes.js';
 import { createOobOAuthLauncher } from './oob-launcher.js';
 
 /**

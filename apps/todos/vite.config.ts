@@ -1,17 +1,5 @@
 import { APPS } from '@epicenter/constants/apps';
-import { workspaceAppFsAllow } from '@epicenter/constants/vite-config';
-import { sveltekit } from '@sveltejs/kit/vite';
-import tailwindcss from '@tailwindcss/vite';
+import { workspaceAppViteConfig } from '@epicenter/vite-config';
 import { defineConfig } from 'vite';
 
-export default defineConfig({
-	plugins: [sveltekit(), tailwindcss()],
-	resolve: {
-		dedupe: ['yjs'],
-	},
-	server: {
-		port: APPS.TODOS.port,
-		strictPort: true,
-		fs: { allow: workspaceAppFsAllow() },
-	},
-});
+export default defineConfig(workspaceAppViteConfig(APPS.TODOS));

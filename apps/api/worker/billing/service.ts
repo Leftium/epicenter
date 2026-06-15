@@ -27,8 +27,6 @@
 import type { UserId } from '@epicenter/auth';
 import { AiChatError } from '@epicenter/constants/ai-chat-errors';
 import {
-	type AiProvider,
-	isAiProvider,
 	MODELS_BY_ID,
 	type ServableModel,
 } from '@epicenter/constants/ai-providers';
@@ -364,8 +362,13 @@ export function createBillingService(
 			return {
 				id: e.id,
 				timestampMs: e.timestamp,
+				// Both are best-effort historical ids read off the persisted Autumn
+				// event, not validated against the live catalog: an id this deploy
+				// no longer serves (or does not yet know) still renders, resolved to
+				// a label at the dashboard edge. Missing metadata (refunds, older
+				// provider-less events) is null.
 				model: typeof props.model === 'string' ? props.model : null,
-				provider: readEventProvider(props.provider),
+				provider: typeof props.provider === 'string' ? props.provider : null,
 				credits: e.value,
 			};
 		});
@@ -506,12 +509,6 @@ export function createBillingService(
 		checkoutTopUp,
 		openPortal,
 	};
-}
-
-function readEventProvider(value: unknown): AiProvider | null {
-	if (typeof value !== 'string') return null;
-	if (isAiProvider(value)) return value;
-	throw new Error(`Unknown AI provider on billing event: ${value}`);
 }
 
 function formatUsd(amount: number): string {

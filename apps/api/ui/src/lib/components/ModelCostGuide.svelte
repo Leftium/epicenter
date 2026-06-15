@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AI_PROVIDERS } from '@epicenter/constants/ai-providers';
+	import { providerLabel } from '@epicenter/constants/ai-providers';
 	import { Skeleton } from '@epicenter/ui/skeleton';
 	import * as Table from '@epicenter/ui/table';
 	import { createQuery } from '@tanstack/svelte-query';
@@ -30,7 +30,7 @@
 				<Table.Row>
 					<Table.Cell class="font-mono text-xs">{row.model}</Table.Cell>
 					<Table.Cell class="text-muted-foreground text-xs">
-						{AI_PROVIDERS[row.provider].label}
+						{providerLabel(row.provider)}
 					</Table.Cell>
 					<Table.Cell class="text-right tabular-nums">{row.credits}</Table.Cell>
 				</Table.Row>

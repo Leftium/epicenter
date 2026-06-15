@@ -111,9 +111,12 @@ export type BillingEvent = {
 	timestampMs: number;
 	/** Model that produced the charge; null for refunds without metadata. */
 	model: string | null;
-	/** Provider that produced the charge, as a stable id; null for refunds
-	 *  without metadata. The dashboard renders the vendor name from it. */
-	provider: AiProvider | null;
+	/** Provider that produced the charge, as the stable id persisted on the
+	 *  event; null for refunds without metadata. A best-effort historical id,
+	 *  not constrained to the live `AiProvider` vocabulary: the dashboard
+	 *  resolves the vendor label via `providerLabel`, falling back to the raw
+	 *  id for a provider this deploy does not recognize. Parallel to `model`. */
+	provider: string | null;
 	/** Credits deducted on this event. Negative values are refunds. */
 	credits: number;
 };

@@ -222,8 +222,14 @@ export {
 export { type RoomWsUrlOptions, roomWsUrl } from './document/transport.js';
 export { wipeLocalStorage } from './document/wipe-local-storage.js';
 export {
+	type ConnectedTables,
+	type ConnectedWorkspace,
 	type CreateWorkspaceOptions,
 	createWorkspace,
+	type DefineWorkspaceOptions,
+	defineWorkspace,
 	defineWorkspaceBundle,
 	type Workspace,
+	type WorkspaceActionContext,
+	type WorkspaceDefinition,
 } from './document/workspace.js';

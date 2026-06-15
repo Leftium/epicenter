@@ -30,7 +30,6 @@
 	import {
 		type ConversationId,
 		ZHONGWEN_MODEL,
-		zhongwenConversationDocGuid,
 	} from '@epicenter/zhongwen';
 	import { onDestroy } from 'svelte';
 	import { extractErrorMessage } from 'wellcrafted/error';
@@ -63,9 +62,7 @@
 	// back-and-forth switching. conversationId is the keyed identity and never
 	// changes within one instance, so a one-time read is intentional.
 	// svelte-ignore state_referenced_locally
-	const docHandle = zhongwen.conversationDocs.open(
-		zhongwenConversationDocGuid(conversationId),
-	);
+	const docHandle = zhongwen.tables.conversations.messages.open(conversationId);
 
 	const initialMessages = docHandle.read();
 	const mountedAt = Date.now();

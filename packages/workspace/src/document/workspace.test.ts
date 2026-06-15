@@ -1,14 +1,43 @@
 /**
- * createWorkspace tests: plaintext construction, identity agreement between
- * `id` and `ydoc.guid`, and cascade disposal via `using` syntax.
+ * Workspace construction tests: low-level root docs via `createWorkspace`, and
+ * app-facing definitions via `defineWorkspace(...).open(...)`.
  */
 
 import { describe, expect, test } from 'bun:test';
 import { field } from '@epicenter/field';
+import { asOwnerId } from '@epicenter/identity';
+import { IDBKeyRange, indexedDB } from 'fake-indexeddb';
 import { Type } from 'typebox';
+import { attachPlainText } from './attach-plain-text.js';
+import type { ConnectionConfig } from './connect-doc.js';
 import { defineKv } from './define-kv.js';
 import { defineTable } from './define-table.js';
-import { createWorkspace } from './workspace.js';
+import { asDeviceId } from './device-id.js';
+import { createWorkspace, defineWorkspace } from './workspace.js';
+
+Object.assign(globalThis, { indexedDB, IDBKeyRange });
+
+function fakeWebSocket(): Promise<WebSocket> {
+	const ws = {
+		readyState: 0,
+		onclose: null as ((e: CloseEvent) => void) | null,
+		close() {
+			if (ws.readyState === 3) return;
+			ws.readyState = 3;
+			ws.onclose?.({ code: 1000, reason: '' } as CloseEvent);
+		},
+	};
+	return Promise.resolve(ws as unknown as WebSocket);
+}
+
+const connection: ConnectionConfig = {
+	server: 'api.test.invalid',
+	baseURL: 'https://api.test.invalid',
+	ownerId: asOwnerId('owner-1'),
+	openWebSocket: fakeWebSocket,
+	onReconnectSignal: () => () => {},
+	deviceId: asDeviceId('device-1'),
+};
 
 const notesDefinition = defineTable({
 	id: field.string(),
@@ -75,5 +104,43 @@ describe('createWorkspace', () => {
 		expect(workspace.ydoc.guid).toBe('ws-empty');
 		expect(Object.keys(workspace.tables)).toEqual([]);
 		workspace[Symbol.dispose]();
+	});
+});
+
+describe('defineWorkspace', () => {
+	test('open() builds an unconnected root workspace', () => {
+		using workspace = defineWorkspace({
+			id: 'ws-definition-local',
+			tables: { notes: notesDefinition },
+			kv: { sortOrder: sortOrderDefinition },
+		}).open();
+
+		workspace.tables.notes.set({ id: '1', title: 'hello' });
+		expect(workspace.tables.notes.get('1').data?.title).toBe('hello');
+		expect(workspace.kv.get('sortOrder')).toBe('asc');
+	});
+
+	test('open(connection) wires root sync and row child-doc handles', async () => {
+		const workspaceDefinition = defineWorkspace({
+			id: 'ws-definition-connected',
+			tables: {
+				notes: notesDefinition.childDocs({ body: attachPlainText }),
+			},
+			kv: {},
+		});
+
+		const workspace = workspaceDefinition.open(connection);
+		const body = workspace.tables.notes.body.open('note-1');
+		try {
+			body.write('body text');
+			expect(body.read()).toBe('body text');
+			expect(String(body.guid)).toBe(
+				'ws-definition-connected.notes.note-1.body',
+			);
+			await Promise.all([workspace.idb.whenLoaded, body.whenLoaded]);
+		} finally {
+			body[Symbol.dispose]();
+			workspace[Symbol.dispose]();
+		}
 	});
 });

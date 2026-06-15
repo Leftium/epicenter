@@ -8,20 +8,20 @@ Bilingual Chinese-English chat app for learning Mandarin. Users ask questions in
 
 **Markdown + pinyin**: Assistant messages are parsed with `marked` (GFM, breaks enabled) into HTML, then `annotateHtml()` in `src/lib/pinyin/annotate.ts` walks text nodes (splitting on HTML tags via regex) and wraps CJK runs with `<ruby>` pinyin tags using `pinyin-pro`. Output is sanitized with DOMPurify (allowing ruby/rt/rp), memoized via `$derived` in `AssistantMessagePart.svelte`, and rendered via `{@html}` inside `<div class="prose prose-sm">`.
 
-**Workspace state**: `createZhongwen()` in `zhongwen.ts` is the shared isomorphic model. It defines `epicenter-zhongwen`, the `conversations` table (the cheap list: title, provider, model, timestamps), the Zhongwen default provider/model, the `showPinyin` KV value, the app action registry, and the `zhongwenConversationDocGuid(id)` naming helper. Transcripts are not a table; they are per-conversation child docs. `openZhongwenBrowser()` attaches local storage and collaboration around the root doc and owns the disposable cache that opens each transcript doc.
+**Workspace state**: `zhongwenWorkspace` in `zhongwen.ts` is the shared isomorphic definition. It defines `epicenter-zhongwen`, the `conversations` table (the cheap list: title and timestamps), the `conversations.messages` child doc layout, the `showPinyin` KV value, and the Zhongwen model constant. Transcripts are not a table; they are per-conversation child docs opened as `zhongwen.tables.conversations.messages.open(conversationId)`. `openZhongwenBrowser()` opens the definition with the signed-in browser connection, which attaches local storage, root collaboration, and the child-doc runtime.
 
 ```txt
-createWorkspace()
-  -> createZhongwen()
-    -> openZhongwenBrowser()
-    -> zhongwen() (project mount)
+defineWorkspace()
+  -> zhongwenWorkspace
+    -> openZhongwenBrowser() opens with a browser connection
+    -> zhongwen() opens without a browser connection, then adds daemon infrastructure
 ```
 
-**UI state**: split by lifetime. `src/routes/(signed-in)/+page.svelte` owns the page-local root-doc concerns: the conversation list (the `conversations` table), which conversation is active, CRUD, and the active row's provider/model selection. The per-conversation runtime lives in `ConversationView.svelte`, mounted via `{#key activeConversationId}`, so the transcript doc gets a real component lifecycle (opened in setup, disposed in `onDestroy`). `ConversationView` opens the active conversation's doc (IDB + websocket), renders messages from a doc observer, and derives liveness from update recency, never stored: a trailing assistant message with no `finish` and recent updates is streaming, the same message gone quiet past a ~3s grace window is interrupted (offer retry), and the terminal outcome is the message's write-once `finish` key. `ModelPicker` reads/writes provider/model on the conversation row directly (durable fields, not runtime state).
+**UI state**: split by lifetime. `src/routes/(signed-in)/+page.svelte` owns the page-local root-doc concerns: the conversation list (the `conversations` table), which conversation is active, and CRUD. The per-conversation runtime lives in `ConversationView.svelte`, mounted via `{#key activeConversationId}`, so the transcript doc gets a real component lifecycle (opened in setup, disposed in `onDestroy`). `ConversationView` opens the active conversation's `messages` child doc (IDB + websocket), renders messages from a doc observer, and derives liveness from update recency, never stored: a trailing assistant message with no `finish` and recent updates is streaming, the same message gone quiet past a ~3s grace window is interrupted (offer retry), and the terminal outcome is the message's write-once `finish` key.
 
 **Auth**: Google OAuth through the shared Epicenter auth/session path. The browser runtime is built through `createSession`, so storage and sync only mount after a signed-in identity provides `ownerId` and WebSocket transport functions.
 
-**Providers**: `@epicenter/constants/ai-providers` owns the shared servable model registry. `zhongwen.ts` owns Zhongwen's default Gemini model. Provider/model is per-conversation and configurable in the UI.
+**Providers**: `@epicenter/constants/ai-providers` owns the shared servable model registry. `zhongwen.ts` owns Zhongwen's Gemini model.
 
 ## File map
 
@@ -44,7 +44,6 @@ src/
         ChatMessage.svelte       # Renders one ChatDocMessage; delegates assistant text to AssistantMessagePart
         AssistantMessagePart.svelte # Markdown parse + pinyin annotate + DOMPurify, memoized via $derived
         ChatInput.svelte         # Textarea + send button, Enter to submit
-        ModelPicker.svelte       # Provider/model selects bound to the conversation row
         ZhongwenSidebar.svelte   # Sidebar conversation list with create/switch/delete
 zhongwen.ts                    # Shared isomorphic model (tables, KV, conversation child docs)
 zhongwen.browser.ts            # openZhongwenBrowser runtime wiring

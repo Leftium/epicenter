@@ -326,10 +326,10 @@ export type MigrateInput<
  * `defineTable(v1, v2, ...).migrate(fn)` (multi-version).
  *
  * For per-row content (rich text, long-form body), keep the row lean (ids and
- * metadata) and derive the content-doc guid in app code. Browser runtimes can
- * pair the table with a `createDisposableCache(builder)` keyed by row id; daemon
- * projections can open one content doc for one row and destroy it after reading.
- * The table schema does not declare or store body docs.
+ * metadata) and declare child docs with `.childDocs({ body: attachLayout })`.
+ * The table schema never stores body docs; `defineWorkspace(...).open(connection)`
+ * derives each content-doc guid from the workspace id, table name, row id, and
+ * child-doc field.
  */
 /**
  * A map of child-doc layout declarations, keyed by field name. Each value is an
@@ -339,14 +339,14 @@ export type MigrateInput<
  * segment, so each row owns one derived child doc per declared name (1:1).
  *
  * The layouts are pure functions of a `Y.Doc` and carry no connection: the
- * declaration is isomorphic, and `bindChildDocs` marries it to a connection at
- * the runtime layer.
+ * declaration is isomorphic, and `defineWorkspace(...).open(connection)` marries
+ * it to a connection at the runtime layer.
  */
 export type ChildDocLayouts = Record<string, (ydoc: Y.Doc) => object>;
 
 export type TableDefinition<
 	TVersions extends readonly VersionedColumns[] = readonly VersionedColumns[],
-	TChildDocs extends ChildDocLayouts = ChildDocLayouts,
+	TChildDocs extends ChildDocLayouts = {},
 > = {
 	/** The original variadic versions, in declaration order. */
 	versions: TVersions;
@@ -373,7 +373,7 @@ export type TableDefinition<
 	migrate: (input: MigrateInput<TVersions>) => RowOf<LastVersion<TVersions>>;
 	/**
 	 * Child-doc layouts declared on this table, keyed by field name. `{}` unless
-	 * {@link childDocs} was called. Read by `bindChildDocs` at the runtime layer
+	 * {@link childDocs} was called. Read by `defineWorkspace(...).open(connection)`
 	 * to wire one guid-keyed cache per declared body; never carries a connection
 	 * itself, since the declaration is isomorphic.
 	 */

@@ -19,16 +19,14 @@
 import type { ServableModel } from '@epicenter/constants/ai-providers';
 import { field } from '@epicenter/field';
 import {
-	createWorkspace,
-	defineActions,
 	defineKv,
 	defineTable,
-	defineWorkspaceBundle,
-	docGuid,
+	defineWorkspace,
 	generateId,
 	type Id,
 	type InferTableRow,
 } from '@epicenter/workspace';
+import { attachChatTranscript } from '@epicenter/workspace/ai';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 
@@ -59,55 +57,26 @@ const conversationsTable = defineTable({
 	title: field.string(),
 	createdAt: field.number(),
 	updatedAt: field.number(),
-});
+}).childDocs({ messages: attachChatTranscript });
 export type Conversation = InferTableRow<typeof conversationsTable>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Workspace Factory
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Conversation transcripts are not a table: each lives in its own synced
-// child doc (see `zhongwenConversationDocGuid` and `@epicenter/workspace/ai`),
-// streamed into by the server generation actor. The conversations table is
-// only the cheap list.
 /**
- * Build the isomorphic Zhongwen workspace definition.
+ * The isomorphic Zhongwen workspace definition.
  *
- * Browser and daemon wrappers attach storage, sync, and process lifecycle
- * around this root; this factory owns only the durable schema.
+ * Conversation transcripts are not rows: each `conversations.messages` handle
+ * opens a synced child doc derived from the conversation id and streamed into
+ * by the server generation actor.
  */
-export function createZhongwen() {
-	const workspace = createWorkspace({
-		id: ZHONGWEN_ID,
-		tables: {
-			conversations: conversationsTable,
-		},
-		kv: {
-			showPinyin: defineKv(Type.Boolean(), () => true),
-		},
-	});
-
-	return defineWorkspaceBundle({
-		...workspace,
-		actions: defineActions({}),
-		[Symbol.dispose]() {
-			workspace[Symbol.dispose]();
-		},
-	});
-}
-
-/**
- * Deterministic guid of a conversation's transcript sub-doc.
- *
- * Browser chat UIs (which open and sync the doc) and the server generation
- * actor (which receives this guid in the kickoff body) both name the same
- * Y.Doc through this composition. The transcript layout inside the doc is
- * owned by `@epicenter/workspace/ai` (`chat-doc.ts`).
- */
-export const zhongwenConversationDocGuid = (conversationId: ConversationId) =>
-	docGuid({
-		workspaceId: ZHONGWEN_ID,
-		collection: 'conversations',
-		rowId: conversationId,
-		field: 'messages',
-	});
+export const zhongwenWorkspace = defineWorkspace({
+	id: ZHONGWEN_ID,
+	tables: {
+		conversations: conversationsTable,
+	},
+	kv: {
+		showPinyin: defineKv(Type.Boolean(), () => true),
+	},
+});

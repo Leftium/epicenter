@@ -1,19 +1,15 @@
 /**
- * `createWorkspace`: the canonical entry point for opening a workspace-backed
- * Y.Doc.
+ * Workspace definitions and root Y.Doc construction.
  *
- * Subsumes the low-level Y.Doc and store wiring every browser/daemon mount used
- * to repeat. Callers now open the workspace directly:
+ * `defineWorkspace({ id, tables, kv }).open()` is the app-facing entry point:
+ * no connection opens only the root doc for daemon composition, while a browser
+ * connection also attaches local storage, sync, wipe, and row child-doc openers.
+ *
+ * `createWorkspace({ id, tables, kv })` remains the low-level root constructor
+ * for package internals and tests:
  *
  * ```ts
  * using workspace = createWorkspace({ id, tables, kv });
- * return defineWorkspaceBundle({
- *   ...workspace,
- *   actions: defineActions({ ... }),
- *   [Symbol.dispose]() {
- *     workspace[Symbol.dispose]();
- *   },
- * });
  * ```
  *
  * ## Storage
@@ -38,10 +34,22 @@
 
 import * as Y from 'yjs';
 import { type ActionRegistry, defineActions } from '../shared/actions.js';
+import type { Guid } from '../shared/id.js';
 import { assertSafeSegment } from '../shared/safe-segment.js';
+import { type ConnectionConfig, connectDoc } from './connect-doc.js';
+import { createChildDocs } from './create-child-docs.js';
+import { docGuid } from './doc-guid.js';
 import { KV_KEY, TableKey } from './keys.js';
 import { createKv, type Kv, type KvDefinitions } from './kv.js';
-import { createTable, type TableDefinitions, type Tables } from './table.js';
+import {
+	type ChildDocLayouts,
+	createTable,
+	type InferTableRow,
+	type TableDefinition,
+	type TableDefinitions,
+	type Tables,
+} from './table.js';
+import { wipeLocalStorage } from './wipe-local-storage.js';
 import {
 	type ObservableKvStore,
 	YKeyValueLww,
@@ -91,6 +99,85 @@ export type CreateWorkspaceOptions<
 
 	/** KV definitions to materialize on the workspace root. Pass `{}` for none. */
 	kv: TKv;
+};
+
+export type WorkspaceActionContext<
+	TTables extends TableDefinitions,
+	TKv extends KvDefinitions,
+> = {
+	readonly ydoc: Y.Doc;
+	readonly tables: Tables<TTables>;
+	readonly kv: Kv<TKv>;
+};
+
+export type DefineWorkspaceOptions<
+	TTables extends TableDefinitions,
+	TKv extends KvDefinitions,
+	TActions extends ActionRegistry,
+> = CreateWorkspaceOptions<TTables, TKv> & {
+	/**
+	 * Build the action registry after tables and KV are live, so handlers can
+	 * close over the handles they query or mutate.
+	 */
+	actions?: (workspace: WorkspaceActionContext<TTables, TKv>) => TActions;
+};
+
+type ChildDocHandle<TLayout extends (ydoc: Y.Doc) => object> =
+	ReturnType<TLayout> & {
+		readonly guid: Guid;
+		readonly whenLoaded: Promise<unknown>;
+		[Symbol.dispose](): void;
+	};
+
+type RowChildDocCache<
+	TRowId extends string,
+	TLayout extends (ydoc: Y.Doc) => object,
+> = {
+	open(rowId: TRowId): ChildDocHandle<TLayout>;
+	[Symbol.dispose](): void;
+};
+
+type TableChildDocs<TTableDefinition extends TableDefinition<any, any>> =
+	TTableDefinition extends TableDefinition<
+		any,
+		infer TLayouts extends ChildDocLayouts
+	>
+		? {
+				[K in keyof TLayouts]: RowChildDocCache<
+					InferTableRow<TTableDefinition>['id'],
+					TLayouts[K]
+				>;
+			}
+		: {};
+
+export type ConnectedTables<TTableDefinitions extends TableDefinitions> = {
+	[K in keyof TTableDefinitions]: Tables<TTableDefinitions>[K] &
+		TableChildDocs<TTableDefinitions[K]>;
+};
+
+export type ConnectedWorkspace<
+	TTables extends TableDefinitions,
+	TKv extends KvDefinitions,
+	TActions extends ActionRegistry = ActionRegistry,
+> = Omit<Workspace<TTables, TKv, TActions>, 'tables'> & {
+	readonly tables: ConnectedTables<TTables>;
+	readonly idb: ReturnType<typeof connectDoc>['idb'];
+	readonly collaboration: ReturnType<typeof connectDoc>['collaboration'];
+	wipe(): Promise<void>;
+};
+
+export type WorkspaceDefinition<
+	TTables extends TableDefinitions,
+	TKv extends KvDefinitions,
+	TActions extends ActionRegistry = ActionRegistry,
+> = {
+	readonly id: string;
+	readonly tables: TTables;
+	readonly kv: TKv;
+	open(): Workspace<TTables, TKv, TActions>;
+	open(
+		connection: ConnectionConfig,
+	): ConnectedWorkspace<TTables, TKv, TActions>;
 };
 
 /**
@@ -149,4 +236,147 @@ export function createWorkspace<
 			ydoc.destroy();
 		},
 	});
+}
+
+/**
+ * Define an isomorphic workspace model and open it for a runtime.
+ *
+ * `open()` builds only the root Y.Doc, tables, KV, and actions. Daemon mounts
+ * can then attach disk-backed infrastructure around that root.
+ *
+ * `open(connection)` additionally connects the root doc, wires `wipe()`, and
+ * adds one child-doc opener to each table handle for every declared
+ * `table.childDocs({ field: attachLayout })` layout.
+ */
+export function defineWorkspace<
+	TTables extends TableDefinitions,
+	TKv extends KvDefinitions,
+	TActions extends ActionRegistry = {},
+>(
+	options: DefineWorkspaceOptions<TTables, TKv, TActions>,
+): WorkspaceDefinition<TTables, TKv, TActions> {
+	function open(): Workspace<TTables, TKv, TActions>;
+	function open(
+		connection: ConnectionConfig,
+	): ConnectedWorkspace<TTables, TKv, TActions>;
+	function open(connection?: ConnectionConfig) {
+		const workspace = createWorkspace({
+			id: options.id,
+			tables: options.tables,
+			kv: options.kv,
+		});
+		const actions = options.actions?.(workspace) ?? defineActions({});
+
+		if (connection === undefined) {
+			return defineWorkspaceBundle({
+				...workspace,
+				actions,
+				[Symbol.dispose]() {
+					workspace[Symbol.dispose]();
+				},
+			});
+		}
+
+		const { idb, collaboration } = connectDoc(workspace.ydoc, connection, {
+			actions,
+		});
+		const { tables, disposeChildDocs } = connectTableChildDocs({
+			workspaceId: options.id,
+			tables: workspace.tables,
+			definitions: options.tables,
+			connection,
+		});
+
+		let disposed = false;
+		function dispose() {
+			if (disposed) return;
+			disposed = true;
+			disposeChildDocs();
+			workspace[Symbol.dispose]();
+		}
+
+		return defineWorkspaceBundle({
+			...workspace,
+			tables,
+			actions,
+			idb,
+			collaboration,
+			async wipe() {
+				dispose();
+				await Promise.all([idb.whenDisposed, collaboration.whenDisposed]);
+				await wipeLocalStorage({
+					server: connection.server,
+					ownerId: connection.ownerId,
+				});
+			},
+			[Symbol.dispose]: dispose,
+		});
+	}
+
+	return {
+		id: options.id,
+		tables: options.tables,
+		kv: options.kv,
+		open,
+	};
+}
+
+function connectTableChildDocs<TTableDefinitions extends TableDefinitions>({
+	workspaceId,
+	tables,
+	definitions,
+	connection,
+}: {
+	workspaceId: string;
+	tables: Tables<TTableDefinitions>;
+	definitions: TTableDefinitions;
+	connection: ConnectionConfig;
+}): {
+	tables: ConnectedTables<TTableDefinitions>;
+	disposeChildDocs(): void;
+} {
+	const childDocs = createChildDocs(connection);
+	const disposables: Disposable[] = [];
+	const connectedTables: Record<string, unknown> = {};
+
+	for (const [collection, table] of Object.entries(tables)) {
+		const definition = definitions[collection as keyof TTableDefinitions]!;
+		const childDocEntries: Record<string, unknown> = {};
+
+		for (const [field, layout] of Object.entries(
+			definition.childDocLayouts,
+		) as [string, (ydoc: Y.Doc) => object][]) {
+			const cache = childDocs(layout);
+			disposables.push(cache);
+			childDocEntries[field] = {
+				open(rowId: string) {
+					return cache.open(
+						docGuid({
+							workspaceId,
+							collection,
+							rowId,
+							field,
+						}),
+					);
+				},
+				[Symbol.dispose]() {
+					cache[Symbol.dispose]();
+				},
+			};
+		}
+
+		connectedTables[collection] = {
+			...table,
+			...childDocEntries,
+		};
+	}
+
+	return {
+		tables: connectedTables as ConnectedTables<TTableDefinitions>,
+		disposeChildDocs() {
+			for (const disposable of disposables) {
+				disposable[Symbol.dispose]();
+			}
+		},
+	};
 }

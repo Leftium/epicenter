@@ -23,7 +23,7 @@ The root export is intentionally runtime-neutral. It is safe to use from
 browser apps, Node scripts, and package-level tests because it does not import
 IndexedDB or file-system APIs.
 
-`openSkills()` builds the shared encrypted Y.Doc, tables, KV, and batch helper.
+`openSkills()` builds the shared Y.Doc, tables, KV, and batch helper.
 It does not create instruction or reference document caches, because those
 caches own runtime persistence and browser cleanup.
 

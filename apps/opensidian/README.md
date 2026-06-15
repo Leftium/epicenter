@@ -14,7 +14,7 @@ Part of the [Epicenter](https://github.com/EpicenterHQ/epicenter) monorepo. MIT 
 ├──────────────────────────────────────────────────────────┤
 │  @epicenter/filesystem (POSIX ops, file tree, soft del)  │
 ├──────────────────────────────────────────────────────────┤
-│  @epicenter/workspace (Yjs CRDTs, versioned tables, E2E) │
+│  @epicenter/workspace (Yjs CRDTs, versioned tables)      │
 ├──────────────────────────────────────────────────────────┤
 │  Extensions: IndexedDB, WebSocket sync, SQLite FTS,      │
 │  markdown materializer                                   │

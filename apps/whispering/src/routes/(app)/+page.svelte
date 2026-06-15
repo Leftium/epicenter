@@ -7,7 +7,6 @@
 		FileDropZone,
 		MEGABYTE,
 	} from '@epicenter/ui/file-drop-zone';
-	import * as Kbd from '@epicenter/ui/kbd';
 	import { Link } from '@epicenter/ui/link';
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
@@ -30,7 +29,6 @@
 		RECORDING_MODE_OPTIONS,
 		type RecordingMode,
 	} from '$lib/constants/audio';
-	import { getEffectiveShortcutLabel } from '$lib/utils/effective-shortcut';
 	import {
 		stopManualRecording,
 		stopVadRecording,
@@ -52,13 +50,6 @@
 
 	const latestRecording = $derived(recordings.sorted[0]);
 
-	// The recording shortcuts as they actually fire on this platform: the global
-	// rdev gesture on desktop, the in-app shortcut in the browser. One label each,
-	// so the hint text never shows the other platform's inert binding.
-	const toggleManualLabel = $derived(
-		getEffectiveShortcutLabel('toggleManualRecording'),
-	);
-	const toggleVadLabel = $derived(getEffectiveShortcutLabel('toggleVadRecording'));
 	const PageError = defineErrors({
 		SetupDragDropFailed: ({ cause }: { cause: unknown }) => ({
 			message: `Failed to set up drag drop listener: ${extractErrorMessage(cause)}`,
@@ -380,54 +371,19 @@
 		</div>
 	{/if}
 
-	<div class="xs:flex hidden flex-col items-center gap-3">
-		{#if settings.get('recording.mode') === 'manual'}
-			<p class="text-foreground/75 text-center text-sm">
-				{#if toggleManualLabel}
-					Click the microphone or press
-					<Link tooltip="Go to shortcut settings" href="/settings/shortcuts">
-						<Kbd.Root>{toggleManualLabel}</Kbd.Root>
-					</Link>
-					to start recording {tauri ? 'anywhere' : 'here'}.
-				{:else}
-					Click the microphone to start recording.
-				{/if}
-			</p>
-		{:else if settings.get('recording.mode') === 'vad'}
-			<p class="text-foreground/75 text-center text-sm">
-				{#if toggleVadLabel}
-					Click the microphone or press
-					<Link tooltip="Go to shortcut settings" href="/settings/shortcuts">
-						<Kbd.Root>{toggleVadLabel}</Kbd.Root>
-					</Link>
-					to start a voice activated session{tauri ? ' anywhere' : ''}.
-				{:else}
-					Click the microphone to start a voice activated session.
-				{/if}
-			</p>
-		{:else if settings.get('recording.mode') === 'upload'}
-			{#if toggleManualLabel}
-				<p class="text-foreground/75 text-sm">
-					Press
-					<Link tooltip="Go to shortcut settings" href="/settings/shortcuts">
-						<Kbd.Root>{toggleManualLabel}</Kbd.Root>
-					</Link>
-					to start recording instead.
-				</p>
-			{/if}
-		{/if}
-		<p class="text-muted-foreground text-center text-sm font-light">
-			{#if !tauri}
-				Tired of switching tabs?
-				<Link
-					tooltip="Get Whispering for desktop"
-					href="https://epicenter.so/whispering"
-					target="_blank"
-					rel="noopener noreferrer"
-				>
-					Get the native desktop app
-				</Link>
-			{/if}
+	{#if !tauri}
+		<p
+			class="text-muted-foreground xs:block hidden text-center text-sm font-light"
+		>
+			Tired of switching tabs?
+			<Link
+				tooltip="Get Whispering for desktop"
+				href="https://epicenter.so/whispering"
+				target="_blank"
+				rel="noopener noreferrer"
+			>
+				Get the native desktop app
+			</Link>
 		</p>
-	</div>
+	{/if}
 </div>

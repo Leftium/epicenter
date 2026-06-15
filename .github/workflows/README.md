@@ -26,6 +26,23 @@ Web apps (Cloudflare Workers) deploy **together in one workflow** because deploy
 | `release.whispering.yml` | `v*` tags, manual | Builds Whispering for 3 platforms, publishes to GitHub Releases as draft. Includes code signing, notarization, and release notes from `docs/release-notes/`. |
 | `pr-preview.whispering.yml` | Pull requests | Builds Whispering for 3 platforms, uploads as PR artifacts. Cancels previous builds via concurrency groups. |
 
+#### macOS release invariant: the `.app` and the `.dmg` must both be notarized
+
+`tauri-action` notarizes and staples the `.app`, then builds the `.dmg` around it and only signs that `.dmg`. So the file users download (the `.dmg`) is "Unnotarized Developer ID" and fails Gatekeeper's open check even though the app inside it passes. The `notarize-whispering-dmg` action closes that gap: after `tauri-action` uploads, it notarizes, staples, and verifies the `.dmg`, then replaces the draft's asset with the stapled copy. It addresses the draft by the `releaseId` and `releaseUploadUrl` that `tauri-action` outputs, not by tag, because `gh release upload <tag>` resolves tags through an endpoint that 404s for drafts. Because the release is a draft, no one can download the unstapled file first, and because `latest.json` references the `.app.tar.gz` updater bundle rather than the `.dmg`, replacing the `.dmg` leaves the updater signature untouched.
+
+Both of these must pass on a release `.dmg` (run against the exact uploaded file, not a local rebuild):
+
+```bash
+xcrun stapler validate -v Whispering_*.dmg
+spctl -a -vvv -t open --context context:primary-signature Whispering_*.dmg   # accepted, Notarized Developer ID
+```
+
+And the app inside it must still pass once the `.dmg` is mounted:
+
+```bash
+spctl -a -vvv -t execute /Volumes/Whispering/Whispering.app                  # accepted, Notarized Developer ID
+```
+
 ### Web Deployment (Cloudflare Workers)
 
 | File | Trigger | What it does |

@@ -36,5 +36,6 @@ This fixture is a committed markdown projection for a Fuji mount:
     bun x epicenter daemon up
 
 The daemon materializes `.epicenter/yjs/epicenter-fuji.db` and
-`.epicenter/sqlite.db` on first run. Inspect the SQLite mirror with
-`sqlite3 .epicenter/sqlite.db` for queryable access to the same data.
+`.epicenter/sqlite/epicenter-fuji.db` on first run. Inspect the SQLite mirror
+with `sqlite3 .epicenter/sqlite/epicenter-fuji.db` for queryable access to the
+same data.

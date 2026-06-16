@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 import { join } from 'node:path';
 /**
- * Rebuild the committed raster derivatives in `generated/` from the canonical
- * SVGs in `source/`. PNG is used so the outputs carry alpha and work as app
- * icons, favicons, and social previews everywhere.
+ * Rebuild the raster derivatives in `generated/` from the canonical SVGs in
+ * `source/`. PNG is used so the outputs carry alpha and work as app icons,
+ * favicons, and social previews everywhere.
  *
  * Usage:  bun run logos/generate.ts
  *
@@ -17,11 +17,15 @@ const root = import.meta.dir;
 const source = join(root, 'source');
 const generated = join(root, 'generated');
 
-/** Long-edge pixel size for every committed raster. */
+/** Long-edge pixel size for every generated raster. */
 const SIZE = 1024;
 
 /** Pure-shape sources that rasterize with ImageMagick alone (no fonts). */
-const icons = ['epicenter-icon', 'epicenter-icon-squircle'] as const;
+const icons = [
+	'epicenter-icon',
+	'epicenter-icon-square',
+	'epicenter-icon-squircle',
+] as const;
 
 await $`mkdir -p ${generated}`;
 

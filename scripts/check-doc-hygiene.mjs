@@ -7,7 +7,9 @@
 //      in-flight only (Draft | In Progress); "done" is deletion. A terminal
 //      status means the spec should have been harvested into docs/adr/ and
 //      deleted. (Smell #1 is mostly designed out by the two-state enum; this
-//      catches stragglers and regressions.)
+//      catches stragglers and regressions.) The whole file is scanned, not just
+//      the header: this corpus routinely declares "**Status**: Implemented" as a
+//      trailing line, so a head-only window would miss the real stragglers.
 //
 //   2. A Proposed ADR that no in-tree spec references. That means its spec was
 //      deleted, i.e. the work landed, so the ADR should be Accepted (or, if the
@@ -30,14 +32,29 @@ function head(path, n = 15) {
   try { return readFileSync(path, "utf8").split("\n").slice(0, n).join("\n"); }
   catch { return ""; }
 }
+function whole(path) {
+  try { return readFileSync(path, "utf8"); }
+  catch { return ""; }
+}
+// A spec's own status, minus fenced code blocks. Example data (a YAML fixture
+// with `status: completed`, a TS field `status: string`) lives inside fences and
+// must not be read as the spec's declared status.
+function specProse(path) {
+  return whole(path).replace(/```[\s\S]*?```/g, "");
+}
 
 const flags = [];
 
 // --- Smell 1: terminal-status specs still in the tree ----------------------
-const TERMINAL = /^\s*\**status\**\s*[:=]\s*\**\s*(implemented|complete|completed|done|shipped|landed|merged|accepted|approved|superseded|replaced|archived|obsolete|retrospective|reversed)\b/im;
+// The status VALUE must START with a terminal word (after optional ~~/** markdown
+// wrappers), so "Partially superseded" and "Draft (not yet implemented)" do not
+// trip; only an unambiguous done/superseded does.
+// Horizontal whitespace only ([ \t], never \s): the match must stay on the
+// status line so a paragraph several lines below "Status:" cannot cross-match.
+const TERMINAL = /^[ \t]*[*~]*status[*~]*[ \t]*[:=][ \t]*[*~]*[ \t]*(implemented|complete|completed|done|shipped|landed|merged|accepted|approved|superseded|replaced|archived|obsolete|retrospective|reversed)\b/im;
 const specFiles = tracked("'*specs/*.md'").filter((p) => !p.endsWith("/README.md"));
 for (const f of specFiles) {
-  if (TERMINAL.test(head(f))) {
+  if (TERMINAL.test(specProse(f))) {
     flags.push(`SPEC TERMINAL STATUS  ${f}\n    -> harvest its decision into docs/adr/ and delete the spec (git keeps it).`);
   }
 }

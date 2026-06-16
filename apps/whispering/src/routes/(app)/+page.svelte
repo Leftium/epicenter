@@ -1,4 +1,9 @@
+<!--
+	Owns the home capture surface: first-run runtime selection when transcription
+	is not ready, and the recorder once a runtime is configured.
+-->
 <script lang="ts">
+	import * as Alert from '@epicenter/ui/alert';
 	import { Button } from '@epicenter/ui/button';
 	import { confirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import {
@@ -10,6 +15,7 @@
 	import { Link } from '@epicenter/ui/link';
 	import * as SectionHeader from '@epicenter/ui/section-header';
 	import * as ToggleGroup from '@epicenter/ui/toggle-group';
+	import AlertCircleIcon from '@lucide/svelte/icons/alert-circle';
 	import XIcon from '@lucide/svelte/icons/x';
 	import { createQuery } from '@tanstack/svelte-query';
 	import type { UnlistenFn } from '@tauri-apps/api/event';
@@ -22,6 +28,7 @@
 		TranscriptionSelector,
 		TransformationSelector,
 	} from '$lib/components/settings';
+	import TranscriptionRuntimeSetup from '$lib/components/settings/TranscriptionRuntimeSetup.svelte';
 	import ManualDeviceSelector from '$lib/components/settings/selectors/ManualDeviceSelector.svelte';
 	import VadDeviceSelector from '$lib/components/settings/selectors/VadDeviceSelector.svelte';
 	import {
@@ -37,6 +44,7 @@
 	import { report } from '$lib/report';
 	import { rpc } from '$lib/rpc';
 	import { services } from '$lib/services';
+	import { getTranscriptionSetupReadiness } from '$lib/settings/transcription-validation';
 	import { tauri } from '#platform/tauri';
 	import { manualRecorder } from '$lib/state/manual-recorder.svelte';
 	import { recordings } from '$lib/state/recordings.svelte';
@@ -49,6 +57,7 @@
 	import VadRecordingAction from './_components/VadRecordingAction.svelte';
 
 	const latestRecording = $derived(recordings.sorted[0]);
+	const runtime = $derived(getTranscriptionSetupReadiness());
 
 	const PageError = defineErrors({
 		SetupDragDropFailed: ({ cause }: { cause: unknown }) => ({
@@ -244,6 +253,28 @@
 
 	<MacosAccessibilityNotice />
 
+	{#if !runtime.isReady}
+		<div class="w-full space-y-4">
+			<TranscriptionRuntimeSetup
+				id="home-transcription-service"
+				label="Runtime"
+				showAdvanced={false}
+			/>
+
+			<Alert.Root variant="warning">
+				<AlertCircleIcon class="size-4" aria-hidden="true" />
+				<Alert.Title>Transcription needs setup</Alert.Title>
+				<Alert.Description>
+					{runtime.primaryIssue ??
+						'Choose a runtime and fill in the required fields.'}
+				</Alert.Description>
+			</Alert.Root>
+
+			<Link href="/settings/transcription" class="text-sm text-muted-foreground">
+				Advanced transcription settings
+			</Link>
+		</div>
+	{:else}
 	<ToggleGroup.Root
 		type="single"
 		bind:value={() => settings.get('recording.mode'),
@@ -365,6 +396,7 @@
 				></audio>
 			{/if}
 		</div>
+	{/if}
 	{/if}
 
 	{#if !tauri}

@@ -8,6 +8,7 @@ import { field } from '@epicenter/field';
 import { asOwnerId } from '@epicenter/identity';
 import { IDBKeyRange, indexedDB } from 'fake-indexeddb';
 import { Type } from 'typebox';
+import * as Y from 'yjs';
 import { defineActions, defineQuery } from '../shared/actions.js';
 import { attachPlainText } from './attach-plain-text.js';
 import type { ConnectionConfig } from './connect-doc.js';
@@ -161,7 +162,54 @@ describe('defineWorkspace', () => {
 		try {
 			expect(typeof workspace.tables.notes.set).toBe('function');
 			using body = workspace.tables.notes.docs.set.open('note-1');
-			expect(String(body.guid)).toBe('ws-definition-docs-namespace.notes.note-1.set');
+			expect(String(body.guid)).toBe(
+				'ws-definition-docs-namespace.notes.note-1.set',
+			);
+		} finally {
+			workspace[Symbol.dispose]();
+		}
+	});
+
+	test('childDocs onLocalEdit bumps the row on local edits, not on synced ones', () => {
+		const recencyNotes = defineTable({
+			id: field.string(),
+			title: field.string(),
+			updatedAt: field.string(),
+		}).childDocs({
+			body: {
+				layout: attachPlainText,
+				onLocalEdit: () => ({ updatedAt: 'bumped' }),
+			},
+		});
+
+		const workspace = defineWorkspace({
+			id: 'ws-onlocaledit',
+			tables: { notes: recencyNotes },
+			kv: {},
+		}).open(connection);
+
+		try {
+			workspace.tables.notes.set({
+				id: 'note-1',
+				title: 't',
+				updatedAt: 'init',
+			});
+			using body = workspace.tables.notes.docs.body.open('note-1');
+
+			// A local edit fires onLocalEdit, which bumps the row's recency column.
+			body.write('hello');
+			expect(workspace.tables.notes.get('note-1').data?.updatedAt).toBe(
+				'bumped',
+			);
+
+			// A synced update (`tx.local === false`) must NOT bump: reset the column,
+			// apply a remote update to the body doc, and confirm the row is untouched.
+			workspace.tables.notes.update('note-1', { updatedAt: 'init' });
+			const remote = new Y.Doc();
+			remote.getText('content').insert(0, 'from another device');
+			Y.applyUpdate(body.ydoc, Y.encodeStateAsUpdate(remote));
+			expect(body.read()).toContain('from another device');
+			expect(workspace.tables.notes.get('note-1').data?.updatedAt).toBe('init');
 		} finally {
 			workspace[Symbol.dispose]();
 		}

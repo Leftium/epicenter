@@ -66,7 +66,19 @@ export function createChildDocs(connection: ConnectionConfig) {
 	 */
 	return function childDocs<TLayout extends object>(
 		layout: (ydoc: Y.Doc) => TLayout,
-		options: { gcTime?: number } = {},
+		{
+			onBuild,
+			...options
+		}: {
+			gcTime?: number;
+			/**
+			 * Run once when a body's `Y.Doc` is first built (one call per shared
+			 * doc, not per `open`). Its returned teardown runs when the cache evicts
+			 * the doc, before `ydoc.destroy()`. The runtime uses this to register a
+			 * single local-update observer per body (see `connectTableChildDocs`).
+			 */
+			onBuild?: (ydoc: Y.Doc, guid: Guid) => (() => void) | void;
+		} = {},
 	) {
 		return createDisposableCache((guid: Guid) => {
 			const ydoc = new Y.Doc({ guid, gc: true });
@@ -74,6 +86,7 @@ export function createChildDocs(connection: ConnectionConfig) {
 			// root uses. No action registry: the body's only writers are the
 			// `attach*` layout and the server generation actor streaming in.
 			const { idb } = connectDoc(ydoc, connection, { actions: {} });
+			const offBuild = onBuild?.(ydoc, guid);
 			return {
 				...layout(ydoc),
 				/** The underlying Y.Doc, exposed for runtime attachments like local-update observers. */
@@ -83,6 +96,7 @@ export function createChildDocs(connection: ConnectionConfig) {
 				/** Resolves when local IndexedDB state has replayed into the doc. */
 				whenLoaded: idb.whenLoaded,
 				[Symbol.dispose]() {
+					offBuild?.();
 					ydoc.destroy();
 				},
 			};

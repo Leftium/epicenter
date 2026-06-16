@@ -38,14 +38,17 @@ import type { Guid } from '../shared/id.js';
 import { assertSafeSegment } from '../shared/safe-segment.js';
 import { type ConnectionConfig, connectDoc } from './connect-doc.js';
 import { createChildDocs } from './create-child-docs.js';
-import { docGuid } from './doc-guid.js';
+import { docGuid, docGuidRowId } from './doc-guid.js';
 import { KV_KEY, TableKey } from './keys.js';
 import { createKv, type Kv, type KvDefinitions } from './kv.js';
+import { onLocalUpdate } from './on-local-update.js';
 import type { Collaboration } from './open-collaboration.js';
 import {
-	type ChildDocLayouts,
+	type ChildDocDeclaration,
+	type ChildDocDeclarations,
 	createTable,
 	type InferTableRow,
+	type LayoutOf,
 	type TableDefinition,
 	type TableDefinitions,
 	type Tables,
@@ -164,10 +167,10 @@ type RowChildDocCache<
 type TableDocGuids<TTableDefinition extends TableDefinition<any, any>> =
 	TTableDefinition extends TableDefinition<
 		any,
-		infer TLayouts extends ChildDocLayouts
+		infer TDecls extends ChildDocDeclarations
 	>
 		? {
-				[K in keyof TLayouts]: RowDocGuid<InferTableRow<TTableDefinition>['id']>;
+				[K in keyof TDecls]: RowDocGuid<InferTableRow<TTableDefinition>['id']>;
 			}
 		: {};
 
@@ -181,12 +184,12 @@ type TableDocGuids<TTableDefinition extends TableDefinition<any, any>> =
 type TableDocs<TTableDefinition extends TableDefinition<any, any>> =
 	TTableDefinition extends TableDefinition<
 		any,
-		infer TLayouts extends ChildDocLayouts
+		infer TDecls extends ChildDocDeclarations
 	>
 		? {
-				[K in keyof TLayouts]: RowChildDocCache<
+				[K in keyof TDecls]: RowChildDocCache<
 					InferTableRow<TTableDefinition>['id'],
-					TLayouts[K]
+					LayoutOf<TDecls[K]>
 				>;
 			}
 		: {};
@@ -326,10 +329,15 @@ export function createWorkspace<
 			// workspace owns guid derivation end-to-end. The connected opener layers
 			// `open`/dispose onto these same entries (see `connectTableChildDocs`).
 			const docs: Record<string, unknown> = {};
-			for (const field of Object.keys(definition.childDocLayouts)) {
+			for (const field of Object.keys(definition.childDocDecls)) {
 				docs[field] = {
 					guid: (rowId: string): Guid =>
-						docGuid({ workspaceId: options.id, collection: name, rowId, field }),
+						docGuid({
+							workspaceId: options.id,
+							collection: name,
+							rowId,
+							field,
+						}),
 				};
 			}
 			return [name, { ...table, docs }];
@@ -350,19 +358,28 @@ export function createWorkspace<
 }
 
 /**
- * Define an isomorphic workspace model and open it for a runtime.
+ * Define an isomorphic workspace model, then open it for a runtime.
  *
- * `open()` builds only the root Y.Doc, tables, KV, and actions. Daemon mounts
- * can then attach disk-backed infrastructure around that root.
+ * Three products, selected by arity:
  *
- * `open(connection)` additionally connects the root doc, wires `wipe()`, and
- * gives each table handle a `.docs` namespace with one opener per declared
- * `table.childDocs({ field: attachLayout })` layout
- * (`tables.notes.docs.body.open(rowId)`). It is the browser opener: the
- * connection solders IndexedDB persistence and the WebSocket relay (see
- * `connectDoc`). Non-browser runtimes (daemon, Node, tests) instead compose
- * `createWorkspace` + their own storage/transport + `createChildDocs` directly,
- * which is exactly what this path does under the hood.
+ *   open()                    Bare root: Y.Doc + tables + KV + actions. No
+ *                             persistence, no sync, no child-doc openers. Daemon
+ *                             and test runtimes take this and attach their own
+ *                             storage/transport around it.
+ *   open(connection)          The browser preset: the bare root plus IndexedDB
+ *                             persistence, the WebSocket relay (see `connectDoc`),
+ *                             per-row child-doc openers
+ *                             (`tables.notes.docs.body.open(rowId)`), and `wipe()`.
+ *   open(connection, compose) The browser preset plus a runtime layer. `compose`
+ *                             runs after the doc and child docs are built but
+ *                             before collaboration wires, so the action registry
+ *                             it returns is the one served for cross-device
+ *                             dispatch. That ordering is why `compose` is a
+ *                             callback here, not a step you run after `open()`.
+ *
+ * The connected path is a curated bundle of the lower primitives
+ * (`createWorkspace` + `connectTableChildDocs` + `connectDoc` + `createChildDocs`).
+ * Non-browser runtimes compose those directly instead of taking the preset.
  */
 export function defineWorkspace<
 	TTables extends TableDefinitions,
@@ -387,6 +404,7 @@ export function defineWorkspace<
 			workspace: ConnectedWorkspaceContext<TTables, TKv, TActions>,
 		) => WorkspaceRuntimeExtension,
 	) {
+		// Phase A: build the parts. Runs for every overload.
 		const workspace = createWorkspace({
 			id: options.id,
 			tables: options.tables,
@@ -397,6 +415,7 @@ export function defineWorkspace<
 				? ({} as TActions)
 				: options.actions(workspace);
 
+		// open(): bare root. Non-browser runtimes wrap this with their own infra.
 		if (connection === undefined) {
 			return satisfiesWorkspace({
 				...workspace,
@@ -407,6 +426,9 @@ export function defineWorkspace<
 			});
 		}
 
+		// Phase B: connect the per-row child-doc openers, then run the caller's
+		// composer. compose sees live tables/ydoc/base actions; the `actions` it
+		// returns is final. No composer means serve the base actions unchanged.
 		const { tables, disposeChildDocs } = connectTableChildDocs({
 			tables: workspace.tables,
 			definitions: options.tables,
@@ -418,6 +440,8 @@ export function defineWorkspace<
 			actions,
 		}) ?? { actions };
 		const connectedActions = runtime.actions;
+		// Phase C: solder infrastructure on top of what compose returned.
+		// connectDoc serves `connectedActions` to peers, so it must run after compose.
 		const { idb, collaboration } = connectDoc(workspace.ydoc, connection, {
 			actions: connectedActions,
 		});
@@ -477,12 +501,40 @@ function connectTableChildDocs<TTableDefinitions extends TableDefinitions>({
 	for (const [collection, table] of Object.entries(tables)) {
 		const definition = definitions[collection as keyof TTableDefinitions]!;
 		const guidDerivers = table.docs as Record<string, RowDocGuid<string>>;
+		// A body's only cross-doc writer: a local edit bumps a recency column on
+		// the row. Typed loosely here because the loop has erased the per-table row
+		// type; `onLocalEdit` is checked against the real row at the `.childDocs(...)`
+		// call site.
+		const updateRow = (
+			table as { update: (id: string, patch: object) => unknown }
+		).update;
 		const docs: Record<string, unknown> = {};
 
-		for (const [field, layout] of Object.entries(
-			definition.childDocLayouts,
-		) as [string, (ydoc: Y.Doc) => object][]) {
-			const cache = childDocs(layout);
+		for (const [field, declaration] of Object.entries(
+			definition.childDocDecls,
+		) as [string, ChildDocDeclaration][]) {
+			const layout =
+				typeof declaration === 'function' ? declaration : declaration.layout;
+			const onLocalEdit =
+				typeof declaration === 'function' ? undefined : declaration.onLocalEdit;
+			// Register the recency observer once per shared body Y.Doc (in `onBuild`,
+			// not per `open`), torn down when the cache evicts the doc. `tx.local`
+			// scopes it to local edits, so remote/hydrated updates never bump the
+			// row; writing the root row can't re-trigger this child-doc observer, so
+			// there is no loop.
+			const cache = childDocs(
+				layout,
+				onLocalEdit
+					? {
+							onBuild: (ydoc, guid) => {
+								const rowId = docGuidRowId(guid);
+								return onLocalUpdate(ydoc, () => {
+									updateRow(rowId, onLocalEdit(rowId));
+								});
+							},
+						}
+					: undefined,
+			);
 			disposables.push(cache);
 			// Reuse the guid deriver the unconnected root already built for this
 			// field; the connected handle only ADDS `open`/dispose lifecycle. One

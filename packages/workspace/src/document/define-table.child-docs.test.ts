@@ -16,12 +16,24 @@ const body = (ydoc: Y.Doc) => ({ text: ydoc.getText('body') });
 const code = (ydoc: Y.Doc) => ({ text: ydoc.getText('code') });
 
 describe('defineTable().childDocs', () => {
-	test('a table with no declaration has empty childDocLayouts', () => {
+	test('a table with no declaration has empty childDocDecls', () => {
 		const entries = defineTable({
 			id: field.string(),
 			title: field.string(),
 		});
-		expect(entries.childDocLayouts).toEqual({});
+		expect(entries.childDocDecls).toEqual({});
+	});
+
+	test('childDocs stores the object form (layout + onLocalEdit) verbatim', () => {
+		const onLocalEdit = () => ({ title: 'touched' });
+		const entries = defineTable({
+			id: field.string(),
+			title: field.string(),
+		}).childDocs({ content: { layout: body, onLocalEdit } });
+		expect(entries.childDocDecls.content).toEqual({
+			layout: body,
+			onLocalEdit,
+		});
 	});
 
 	test('childDocs stores the declared layouts by name', () => {
@@ -29,8 +41,8 @@ describe('defineTable().childDocs', () => {
 			id: field.string(),
 			title: field.string(),
 		}).childDocs({ content: body });
-		expect(Object.keys(entries.childDocLayouts)).toEqual(['content']);
-		expect(entries.childDocLayouts.content).toBe(body);
+		expect(Object.keys(entries.childDocDecls)).toEqual(['content']);
+		expect(entries.childDocDecls.content).toBe(body);
 	});
 
 	test('childDocs declares multiple bodies on one table', () => {
@@ -38,8 +50,8 @@ describe('defineTable().childDocs', () => {
 			id: field.string(),
 			title: field.string(),
 		}).childDocs({ content: body, snippet: code });
-		expect(entries.childDocLayouts.content).toBe(body);
-		expect(entries.childDocLayouts.snippet).toBe(code);
+		expect(entries.childDocDecls.content).toBe(body);
+		expect(entries.childDocDecls.snippet).toBe(code);
 	});
 
 	test('childDocs accepts any field name, including table method names', () => {
@@ -50,8 +62,8 @@ describe('defineTable().childDocs', () => {
 			id: field.string(),
 			title: field.string(),
 		}).childDocs({ set: body, open: code });
-		expect(entries.childDocLayouts.set).toBe(body);
-		expect(entries.childDocLayouts.open).toBe(code);
+		expect(entries.childDocDecls.set).toBe(body);
+		expect(entries.childDocDecls.open).toBe(code);
 	});
 
 	test('childDocs preserves the schema and versions', () => {
@@ -72,7 +84,7 @@ describe('defineTable().childDocs', () => {
 				version === 1 ? { ...value, pinned: false } : value,
 			)
 			.childDocs({ content: body });
-		expect(notes.childDocLayouts.content).toBe(body);
+		expect(notes.childDocDecls.content).toBe(body);
 		expect(notes.versions.length).toBe(2);
 		expect(notes.schema.properties.pinned).toBeDefined();
 	});

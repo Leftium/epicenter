@@ -332,21 +332,52 @@ export type MigrateInput<
  * child-doc field.
  */
 /**
- * A map of child-doc layout declarations, keyed by field name. Each value is an
- * `attach*(ydoc)` layout that owns a collaborative body's CRDT shape and writer
- * policy (e.g. `attachRichText`, `attachPlainText`). Declared on a table via
- * {@link TableDefinition.childDocs}; the field name becomes the guid's `field`
- * segment, so each row owns one derived child doc per declared name (1:1).
- *
- * The layouts are pure functions of a `Y.Doc` and carry no connection: the
- * declaration is isomorphic, and `defineWorkspace(...).open(connection)` marries
- * it to a connection at the runtime layer.
+ * A child-doc's CRDT shape: a pure function of a `Y.Doc` that owns a
+ * collaborative body's layout and writer policy (e.g. `attachRichText`,
+ * `attachPlainText`). Carries no connection, so the declaration is isomorphic;
+ * `defineWorkspace(...).open(connection)` marries it to a connection at runtime.
  */
-export type ChildDocLayouts = Record<string, (ydoc: Y.Doc) => object>;
+export type ChildDocLayout = (ydoc: Y.Doc) => object;
+
+/**
+ * One child-doc field declaration. Either a bare {@link ChildDocLayout} (no
+ * per-field policy) or a layout paired with optional policy. The object form is
+ * the single extension point for future per-field concerns (e.g. debounce, a
+ * per-field `gcTime`); adding a key never breaks the bare form.
+ *
+ * `onLocalEdit` fires ONLY on local edits to the body doc (Yjs `tx.local`),
+ * never on synced or hydrated updates, and returns a row patch the runtime
+ * applies through the row's own `update`. It receives the row id, not the live
+ * `Y.Doc`, so the declaration stays isomorphic. Typical use: bump a recency
+ * column when the body is edited, e.g. `() => ({ updatedAt: DateTimeString.now() })`.
+ */
+export type ChildDocDeclaration<TRow extends BaseRow = BaseRow> =
+	| ChildDocLayout
+	| {
+			layout: ChildDocLayout;
+			onLocalEdit?: (rowId: string) => Partial<Omit<TRow, 'id'>>;
+	  };
+
+/**
+ * A map of child-doc declarations, keyed by field name. The field name becomes
+ * the guid's `field` segment, so each row owns one derived child doc per
+ * declared name (1:1). Declared on a table via {@link TableDefinition.childDocs}.
+ */
+export type ChildDocDeclarations<TRow extends BaseRow = BaseRow> = Record<
+	string,
+	ChildDocDeclaration<TRow>
+>;
+
+/** Extract the {@link ChildDocLayout} from either declaration form. */
+export type LayoutOf<TDeclaration> = TDeclaration extends ChildDocLayout
+	? TDeclaration
+	: TDeclaration extends { layout: infer TLayout extends ChildDocLayout }
+		? TLayout
+		: never;
 
 export type TableDefinition<
 	TVersions extends readonly VersionedColumns[] = readonly VersionedColumns[],
-	TChildDocs extends ChildDocLayouts = {},
+	TChildDocs extends ChildDocDeclarations = {},
 > = {
 	/** The original variadic versions, in declaration order. */
 	versions: TVersions;
@@ -372,12 +403,12 @@ export type TableDefinition<
 	/** Upgrade any stored version to the current row in one step. */
 	migrate: (input: MigrateInput<TVersions>) => RowOf<LastVersion<TVersions>>;
 	/**
-	 * Child-doc layouts declared on this table, keyed by field name. `{}` unless
+	 * Child-doc declarations on this table, keyed by field name. `{}` unless
 	 * {@link childDocs} was called. Read by `defineWorkspace(...).open(connection)`
 	 * to wire one guid-keyed cache per declared body; never carries a connection
 	 * itself, since the declaration is isomorphic.
 	 */
-	childDocLayouts: TChildDocs;
+	childDocDecls: TChildDocs;
 	/**
 	 * Declare collaborative child-doc bodies on this table. Each row owns one
 	 * child doc per name (derived-1:1), addressed by a guid derived from the row
@@ -392,14 +423,27 @@ export type TableDefinition<
 	 * Call AFTER {@link migrate} on multi-version tables: the version tuple is
 	 * positional, so child docs are a separate builder step, not another version.
 	 *
+	 * Pass a bare layout for a body with no per-field policy, or
+	 * `{ layout, onLocalEdit }` to also bump a recency column when the body is
+	 * edited locally (see {@link ChildDocDeclaration}):
+	 *
 	 * ```ts
 	 * defineTable({ id: field.string(), title: field.string() })
-	 *   .childDocs({ content: attachRichText });
+	 *   .childDocs({
+	 *     content: {
+	 *       layout: attachRichText,
+	 *       onLocalEdit: () => ({ updatedAt: DateTimeString.now() }),
+	 *     },
+	 *     // a bare layout still works for bodies that need no policy:
+	 *     // transcript: attachChatTranscript,
+	 *   });
 	 * ```
 	 */
-	childDocs<TLayouts extends ChildDocLayouts>(
-		layouts: TLayouts,
-	): TableDefinition<TVersions, TLayouts>;
+	childDocs<
+		TDecls extends ChildDocDeclarations<
+			RowOf<LastVersion<TVersions>> & BaseRow
+		>,
+	>(decls: TDecls): TableDefinition<TVersions, TDecls>;
 };
 
 /**
@@ -448,14 +492,14 @@ export function createTableDefinition<
 	 * recurses through the same builder, so the declaration is the only thing
 	 * that changes; versions, schema, and migrate are fixed.
 	 */
-	const build = <TLayouts extends ChildDocLayouts>(
-		childDocLayouts: TLayouts,
-	): TableDefinition<TVersions, TLayouts> => ({
+	const build = <TDecls extends ChildDocDeclarations>(
+		childDocDecls: TDecls,
+	): TableDefinition<TVersions, TDecls> => ({
 		versions,
 		schema,
 		migrate: migrateFn,
-		childDocLayouts,
-		childDocs: (layouts) => build(layouts),
+		childDocDecls,
+		childDocs: (decls) => build(decls),
 	});
 
 	return build({});

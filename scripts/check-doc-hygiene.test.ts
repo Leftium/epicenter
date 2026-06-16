@@ -81,7 +81,11 @@ test('clean repo (Draft spec, no ADRs) passes', () => {
 
 test('smell 1: a terminal-status spec is flagged', () => {
 	withRepo((dir) => {
-		write(dir, 'specs/20260101T000000-x.md', '# X\n\n**Status**: Implemented\n');
+		write(
+			dir,
+			'specs/20260101T000000-x.md',
+			'# X\n\n**Status**: Implemented\n',
+		);
 		commitAll(dir);
 		const { code, out } = run(dir);
 		expect(code).toBe(1);

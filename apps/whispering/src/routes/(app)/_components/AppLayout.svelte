@@ -19,17 +19,17 @@
 	import { recordings } from '$lib/state/recordings.svelte';
 	import { settings } from '$lib/state/settings.svelte';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
-	import { syncWindowAlwaysOnTopWithRecorderState } from '../_layout-utils/alwaysOnTop.svelte';
-	import { checkForUpdates } from '../_layout-utils/check-for-updates';
+	import { syncWindowAlwaysOnTopWithRecorderState } from '../_runtime/alwaysOnTop.svelte';
+	import { checkForUpdates } from '../_runtime/check-for-updates';
 	import {
 		resetGlobalShortcutsToDefaultIfDuplicates,
 		resetLocalShortcutsToDefaultIfDuplicates,
 		syncGlobalShortcutsWithSettings,
 		syncLocalShortcutsWithSettings,
-	} from '../_layout-utils/register-commands';
-	import { registerOnboarding } from '../_layout-utils/register-onboarding';
-	import { registerAccessibilityPermission } from '../_layout-utils/register-accessibility-permission';
-	import { syncIconWithRecorderState } from '../_layout-utils/syncIconWithRecorderState.svelte';
+	} from '../_runtime/register-commands';
+	import { registerOnboarding } from '../_runtime/register-onboarding';
+	import { registerAccessibilityPermission } from '../_runtime/register-accessibility-permission';
+	import { syncIconWithRecorderState } from '../_runtime/syncIconWithRecorderState.svelte';
 
 	let cleanupAccessibilityPermission: (() => void) | undefined;
 	let cleanupShortcutListener: (() => void) | undefined;

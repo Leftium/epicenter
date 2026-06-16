@@ -15,13 +15,16 @@
 >
 > **Regenerate (idempotent, lossless):** `bun scripts/generate-spec-history.mjs`
 
-**1254 specs ever** (583 still in tree, 671 removed).
+**1257 specs ever** (572 still in tree, 685 removed).
 
 
 ## 2026
 
 | Date | Spec | State | Path |
 |------|------|-------|------|
+| 2026-06-16 | rust-owns-models-folder | removed | apps/whispering/specs/20260616T170000-rust-owns-models-folder.md |
+| 2026-06-16 | settings-registry-and-vault-handoff | removed | specs/20260616T120000-settings-registry-and-vault-handoff.md |
+| 2026-06-16 | production-secret-vault-build | removed | specs/20260616T160000-production-secret-vault-build.md |
 | 2026-06-15 | row-childdocs-greenfield-redesign | removed | specs/20260615T210000-row-childdocs-greenfield-redesign.md |
 | 2026-06-15 | vocab-generic-app-design-pass | removed | specs/20260615T193000-vocab-generic-app-design-pass.md |
 | 2026-06-15 | trusted-relay-and-collaborative-fields | in tree | specs/20260615T120000-trusted-relay-and-collaborative-fields.md |
@@ -426,7 +429,7 @@
 | 2026-04-07 | launch-readiness | in tree | specs/20260407T120000-launch-readiness.md |
 | 2026-04-07 | structured-ai-chat-errors | in tree | specs/20260407T165605-structured-ai-chat-errors.md |
 | 2026-04-07 | opensidian-toolbar-redesign | in tree | specs/20260407T180000-opensidian-toolbar-redesign.md |
-| 2026-04-06 | opensidian-internal-links-handoff | in tree | docs/specs/20260406T150000 opensidian-internal-links-handoff.md |
+| 2026-04-06 | opensidian-internal-links-handoff | removed | docs/specs/20260406T150000 opensidian-internal-links-handoff.md |
 | 2026-04-06 | opensidian-ai-integration | removed | specs/20260406T120000-opensidian-ai-integration.md |
 | 2026-04-06 | tiptap-to-prosemirror-migration | removed | specs/20260406T163000 tiptap-to-prosemirror-migration.md |
 | 2026-04-06 | r2-blob-storage-handoff | in tree | specs/20260406T180000-r2-blob-storage-handoff.md |
@@ -494,7 +497,7 @@
 | 2026-03-19 | rewrite-how-to-monetize | in tree | specs/20260319T002657-rewrite-how-to-monetize.md |
 | 2026-03-19 | pr-1507-quality-and-cla-followup | in tree | specs/20260319T100044-pr-1507-quality-and-cla-followup.md |
 | 2026-03-19 | autumn-billing-ui | in tree | specs/20260319T105618-autumn-billing-ui.md |
-| 2026-03-19 | browser-state-chrome-authority | in tree | specs/20260319T120000-browser-state-chrome-authority.md |
+| 2026-03-19 | browser-state-chrome-authority | removed | specs/20260319T120000-browser-state-chrome-authority.md |
 | 2026-03-19 | skill-authoring-model | in tree | specs/20260319T120000-skill-authoring-model.md |
 | 2026-03-19 | autumn-billing-overview | in tree | specs/20260319T140000-autumn-billing-overview.md |
 | 2026-03-19 | autumn-phase1-ai-chat-gating | in tree | specs/20260319T140001-autumn-phase1-ai-chat-gating.md |
@@ -561,11 +564,11 @@
 | 2026-03-13 | three-tier-extension-api | removed | specs/20260313T000200-three-tier-extension-api.md |
 | 2026-03-13 | workspace-architecture-decisions | in tree | specs/20260313T063000-workspace-architecture-decisions.md |
 | 2026-03-13 | definekv-defaults | removed | specs/20260313T070000-definekv-defaults.md |
-| 2026-03-13 | add-cla-infrastructure | in tree | specs/20260313T071500-add-cla-infrastructure.md |
+| 2026-03-13 | add-cla-infrastructure | removed | specs/20260313T071500-add-cla-infrastructure.md |
 | 2026-03-13 | chat-architecture-redesign | removed | specs/20260313T080000-chat-architecture-redesign.md |
-| 2026-03-13 | rename-fs-explorer-to-opensidian | in tree | specs/20260313T101639-rename-fs-explorer-to-opensidian.md |
+| 2026-03-13 | rename-fs-explorer-to-opensidian | removed | specs/20260313T101639-rename-fs-explorer-to-opensidian.md |
 | 2026-03-13 | remove-kv-migration | removed | specs/20260313T130000-remove-kv-migration.md |
-| 2026-03-13 | encryption-docs-refresh | in tree | specs/20260313T140000-encryption-docs-refresh.md |
+| 2026-03-13 | encryption-docs-refresh | removed | specs/20260313T140000-encryption-docs-refresh.md |
 | 2026-03-13 | honeycrisp-overhaul | removed | specs/20260313T141500-honeycrisp-overhaul.md |
 | 2026-03-13 | opensidian-sqlite-index-extension | in tree | specs/20260313T143000-opensidian-sqlite-index-extension.md |
 | 2026-03-13 | opensidian-ui-idiomaticity | removed | specs/20260313T143100-opensidian-ui-idiomaticity.md |
@@ -632,7 +635,7 @@
 | 2026-03-07 | remove-server-remote-standalone | removed | specs/20260307T000000-remove-server-remote-standalone.md |
 | 2026-03-07 | room-isolation-and-sharing | removed | specs/20260307T000002-room-isolation-and-sharing.md |
 | 2026-03-07 | workspace-document-room-split | in tree | specs/20260307T010000-workspace-document-room-split.md |
-| 2026-03-05 | cloudflare-module-env-refactor | in tree | specs/20260305T120000-cloudflare-module-env-refactor.md |
+| 2026-03-05 | cloudflare-module-env-refactor | removed | specs/20260305T120000-cloudflare-module-env-refactor.md |
 | 2026-03-05 | server-package-consolidation | removed | specs/20260305T120000-server-package-consolidation.md |
 | 2026-03-05 | neon-to-planetscale-hyperdrive | removed | specs/20260305T180000-neon-to-planetscale-hyperdrive.md |
 | 2026-03-05 | server-remote-adapter-architecture | removed | specs/20260305T180000-server-remote-adapter-architecture.md |
@@ -715,7 +718,7 @@
 | 2026-02-20 | unify-extension-lifecycle | removed | packages/epicenter/specs/20260220T195900-unify-extension-lifecycle.md |
 | 2026-02-20 | collapse-sync-routes | removed | packages/server/specs/20260220T223633 collapse-sync-routes.md |
 | 2026-02-19 | migrate-filesystem-to-document-binding | removed | specs/20260219T094400-migrate-filesystem-to-document-binding.md |
-| 2026-02-19 | document-extension-api | in tree | specs/20260219T195800-document-extension-api.md |
+| 2026-02-19 | document-extension-api | removed | specs/20260219T195800-document-extension-api.md |
 | 2026-02-19 | server-architecture-rethink | in tree | specs/20260219T195800-server-architecture-rethink.md |
 | 2026-02-19 | standalone-sync-server | removed | specs/20260219T195846-standalone-sync-server.md |
 | 2026-02-19 | standalone-sync-server | removed | specs/20260219T195900-standalone-sync-server.md |
@@ -872,7 +875,7 @@
 | 2026-01-21 | createclient-builder-api | removed | packages/epicenter/specs/20260121T112000-createclient-builder-api.md |
 | 2026-01-19 | workspace-storage-architecture | in tree | specs/20260119T150426-workspace-storage-architecture.md |
 | 2026-01-19 | resilient-client-architecture | removed | specs/20260119T231252-resilient-client-architecture.md |
-| 2026-01-18 | table-api-simplification | in tree | specs/20260118T112600-table-api-simplification.md |
+| 2026-01-18 | table-api-simplification | removed | specs/20260118T112600-table-api-simplification.md |
 | 2026-01-17 | workspace-input-normalization | in tree | specs/20260117T004421-workspace-input-normalization.md |
 | 2026-01-17 | remove-slug-use-human-readable-id | in tree | specs/20260117T104719-remove-slug-use-human-readable-id.md |
 | 2026-01-17 | workspace-api-simplification | removed | specs/20260117T160800-workspace-api-simplification.md |
@@ -889,7 +892,7 @@
 | 2026-01-09 | opencode-integration-architecture | in tree | specs/20260109T140700-opencode-integration-architecture.md |
 | 2026-01-09 | epicenter-app-three-fetch-migration | in tree | specs/20260109T174900-epicenter-app-three-fetch-migration.md |
 | 2026-01-08 | cli-architecture-cleanup | in tree | specs/20260108T000000-cli-architecture-cleanup.md |
-| 2026-01-08 | workspace-create-accepts-capabilities | in tree | specs/20260108T001900-workspace-create-accepts-capabilities.md |
+| 2026-01-08 | workspace-create-accepts-capabilities | removed | specs/20260108T001900-workspace-create-accepts-capabilities.md |
 | 2026-01-08 | two-layer-sidebar-architecture | in tree | specs/20260108T015500-two-layer-sidebar-architecture.md |
 | 2026-01-08 | turso-wasm-vector-search | in tree | specs/20260108T053000-turso-wasm-vector-search.md |
 | 2026-01-08 | ymap-native-storage-architecture | removed | specs/20260108T084500-ymap-native-storage-architecture.md |
@@ -1019,7 +1022,7 @@
 | 2025-11-06 | settings-ui-clarity | removed | docs/specs/20251106T174230 settings-ui-clarity.md |
 | 2025-11-06 | reposition-migration-button | removed | docs/specs/20251106T150000 reposition-migration-button.md |
 | 2025-11-06 | fix-migration-cleanup | removed | docs/specs/20251106T140000 fix-migration-cleanup.md |
-| 2025-11-05 | _error-handling-pattern-unknown-errors | in tree | specs/20251105T000000_error-handling-pattern-unknown-errors.md |
+| 2025-11-05 | _error-handling-pattern-unknown-errors | removed | specs/20251105T000000_error-handling-pattern-unknown-errors.md |
 | 2025-11-05 | _subpath-exports | in tree | specs/20251105T150000_subpath-exports.md |
 | 2025-11-05 | _error-handling-pattern-unknown-errors | removed | docs/specs/20251105T000000_error-handling-pattern-unknown-errors.md |
 | 2025-11-05 | _subpath-exports | removed | docs/specs/20251105T150000_subpath-exports.md |
@@ -1043,7 +1046,7 @@
 | 2025-11-03 | config-relative-path-resolution | removed | docs/specs/20251103T175503 config-relative-path-resolution.md |
 | 2025-11-02 | content-hub-workspace-restructuring | in tree | specs/20251102T000000 content-hub-workspace-restructuring.md |
 | 2025-11-02 | content-hub-workspace-restructuring | removed | docs/specs/20251102T000000 content-hub-workspace-restructuring.md |
-| 2025-11-01 | migrate-yjs-datewithtimezone-to-string | in tree | specs/20251101T000000 migrate-yjs-datewithtimezone-to-string.md |
+| 2025-11-01 | migrate-yjs-datewithtimezone-to-string | removed | specs/20251101T000000 migrate-yjs-datewithtimezone-to-string.md |
 | 2025-11-01 | table-helpers-query-mutations | in tree | specs/20251101T120000 table-helpers-query-mutations.md |
 | 2025-11-01 | table-helpers-query-mutations | removed | docs/specs/20251101T120000 table-helpers-query-mutations.md |
 | 2025-11-01 | migrate-yjs-datewithtimezone-to-string | removed | docs/specs/20251101T000000 migrate-yjs-datewithtimezone-to-string.md |

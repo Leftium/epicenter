@@ -4,10 +4,10 @@ import {
 	defineActions,
 	defineMutation,
 	defineTable,
-	satisfiesWorkspace,
 	generateId,
 	type InferTableRow,
 	nullable,
+	satisfiesWorkspace,
 } from '@epicenter/workspace';
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';

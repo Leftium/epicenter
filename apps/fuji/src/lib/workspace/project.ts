@@ -22,8 +22,8 @@
 import { join } from 'node:path';
 import {
 	defineActions,
-	satisfiesWorkspace,
 	readRoomOverHttp,
+	satisfiesWorkspace,
 } from '@epicenter/workspace';
 import { defineSessionMount } from '@epicenter/workspace/daemon';
 import {

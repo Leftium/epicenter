@@ -19,7 +19,9 @@ describe('Fuji durable identifiers', () => {
 			'epicenter-fuji.entries.entry-1.content',
 		);
 		// Deterministic per id; distinct ids never collide.
-		expect(docs.guid(asEntryId('entry-1'))).toBe(docs.guid(asEntryId('entry-1')));
+		expect(docs.guid(asEntryId('entry-1'))).toBe(
+			docs.guid(asEntryId('entry-1')),
+		);
 		expect(docs.guid(asEntryId('entry-1'))).not.toBe(
 			docs.guid(asEntryId('entry-2')),
 		);

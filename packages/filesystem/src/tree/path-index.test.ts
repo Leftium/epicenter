@@ -184,7 +184,10 @@ describe('attachFileSystemIndex', () => {
 	test('trashed files are excluded from paths and children', () => {
 		const { files, ydoc } = setup();
 		files.set(makeRow('f1', 'active.txt'));
-		files.set({ ...makeRow('f2', 'trashed.txt'), trashedAt: InstantString.now() });
+		files.set({
+			...makeRow('f2', 'trashed.txt'),
+			trashedAt: InstantString.now(),
+		});
 		const index = attachFileSystemIndex(ydoc, files);
 
 		expect(index.getIdByPath('/active.txt')).toBe(fid('f1'));
@@ -212,7 +215,10 @@ describe('attachFileSystemIndex', () => {
 
 	test('trashing a file frees its name for other files', () => {
 		const { files, ydoc } = setup();
-		files.set({ ...makeRow('f1', 'report.txt'), trashedAt: InstantString.now() });
+		files.set({
+			...makeRow('f1', 'report.txt'),
+			trashedAt: InstantString.now(),
+		});
 		files.set(makeRow('f2', 'report.txt'));
 		const index = attachFileSystemIndex(ydoc, files);
 
@@ -369,9 +375,18 @@ describe('attachFileSystemIndex', () => {
 		// C has latest updatedAt → C moved to root
 		// After fix: C.parentId = null, B.parentId = A, A.parentId = C
 		// Tree: root→C→A→B
-		files.set({ ...makeRow('a', 'node-a', 'c', 'folder'), updatedAt: at(1000) });
-		files.set({ ...makeRow('b', 'node-b', 'a', 'folder'), updatedAt: at(2000) });
-		files.set({ ...makeRow('c', 'node-c', 'b', 'folder'), updatedAt: at(3000) });
+		files.set({
+			...makeRow('a', 'node-a', 'c', 'folder'),
+			updatedAt: at(1000),
+		});
+		files.set({
+			...makeRow('b', 'node-b', 'a', 'folder'),
+			updatedAt: at(2000),
+		});
+		files.set({
+			...makeRow('c', 'node-c', 'b', 'folder'),
+			updatedAt: at(3000),
+		});
 		const index = attachFileSystemIndex(ydoc, files);
 
 		expect(files.get('c').data?.parentId).toBeNull();
@@ -386,8 +401,14 @@ describe('attachFileSystemIndex', () => {
 		const { files, ydoc } = setup();
 		files.set(makeRow('clean', 'clean.txt'));
 		// Cycle: x→y→x
-		files.set({ ...makeRow('x', 'x-file', 'y', 'folder'), updatedAt: at(1000) });
-		files.set({ ...makeRow('y', 'y-file', 'x', 'folder'), updatedAt: at(2000) });
+		files.set({
+			...makeRow('x', 'x-file', 'y', 'folder'),
+			updatedAt: at(1000),
+		});
+		files.set({
+			...makeRow('y', 'y-file', 'x', 'folder'),
+			updatedAt: at(2000),
+		});
 		const index = attachFileSystemIndex(ydoc, files);
 
 		expect(index.getIdByPath('/clean.txt')).toBe(fid('clean'));
@@ -466,8 +487,16 @@ describe('attachFileSystemIndex', () => {
 
 	test('disambiguation: two files with same name', () => {
 		const { files, ydoc } = setup();
-		files.set({ ...makeRow('a', 'foo.txt'), createdAt: at(1000), updatedAt: at(1000) });
-		files.set({ ...makeRow('b', 'foo.txt'), createdAt: at(2000), updatedAt: at(2000) });
+		files.set({
+			...makeRow('a', 'foo.txt'),
+			createdAt: at(1000),
+			updatedAt: at(1000),
+		});
+		files.set({
+			...makeRow('b', 'foo.txt'),
+			createdAt: at(2000),
+			updatedAt: at(2000),
+		});
 		const index = attachFileSystemIndex(ydoc, files);
 
 		expect(index.getIdByPath('/foo.txt')).toBe(fid('a'));
@@ -602,7 +631,10 @@ describe('attachFileSystemIndex', () => {
 	test('orphan moved to root gets disambiguated with existing root file', () => {
 		const { files, ydoc } = setup();
 		files.set({ ...makeRow('f1', 'conflict.txt'), createdAt: at(1000) });
-		files.set({ ...makeRow('f2', 'conflict.txt', 'missing'), createdAt: at(2000) });
+		files.set({
+			...makeRow('f2', 'conflict.txt', 'missing'),
+			createdAt: at(2000),
+		});
 		const index = attachFileSystemIndex(ydoc, files);
 
 		expect(files.get('f2').data?.parentId).toBeNull();

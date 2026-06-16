@@ -3,11 +3,11 @@ import {
 	createWorkspace,
 	defineKv,
 	defineTable,
-	satisfiesWorkspace,
 	type IanaTimeZone,
 	type InferKvValue,
 	type InferTableRow,
 	nullable,
+	satisfiesWorkspace,
 } from '@epicenter/workspace';
 import { type Static, type TProperties, Type } from 'typebox';
 

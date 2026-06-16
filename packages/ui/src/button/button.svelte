@@ -75,11 +75,12 @@
 
 {#snippet buttonContent(tooltipProps?: Record<string, unknown>)}
 	<!--
-		When this button is itself the child of another trigger (e.g. a
-		Popover.Trigger passes its props in via restProps), both sets of trigger
-		props land on one element. Spreading them sequentially clobbers colliding
-		event handlers, ids, and ref callbacks, which silently breaks the tooltip
-		anchor. mergeProps composes them instead. See bits-ui's merge-props util.
+		When this button is also the child of another trigger, e.g. Popover.Trigger,
+		the outer trigger props and tooltip trigger props land on the same element.
+		Plain sequential spreads replace colliding handlers and ref attachments.
+		mergeProps composes handlers and function props, merges class/style, and
+		preserves distinct Svelte attachment keys. Plain attributes like id/data-state
+		remain last-wins.
 	-->
 	{@const mergedProps = tooltipProps
 		? mergeProps(restProps, tooltipProps)

@@ -39,11 +39,11 @@ import { Err, Ok, type Result, tryAsync, trySync } from 'wellcrafted/result';
 import { isInactive, type MountSession } from '../daemon/define-mount.js';
 import type { StartedMount } from '../daemon/types.js';
 import type { AuthedFetch, EpicenterRoot } from '../shared/types.js';
+import { resolveDaemonNodeId } from './daemon-node-id.js';
 import {
 	type EpicenterConfigError,
 	loadEpicenterConfig,
 } from './load-epicenter-config.js';
-import { resolveDaemonNodeId } from './daemon-node-id.js';
 
 /**
  * Workspace's structural view of an auth client. Any object whose shape

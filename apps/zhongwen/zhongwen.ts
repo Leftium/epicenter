@@ -30,8 +30,6 @@ import { attachChatTranscript } from '@epicenter/workspace/ai';
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 
-export const ZHONGWEN_ID = 'epicenter-zhongwen';
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Branded ID Types
 // ─────────────────────────────────────────────────────────────────────────────
@@ -72,7 +70,7 @@ export type Conversation = InferTableRow<typeof conversationsTable>;
  * by the server generation actor.
  */
 export const zhongwenWorkspace = defineWorkspace({
-	id: ZHONGWEN_ID,
+	id: 'epicenter-zhongwen',
 	name: 'zhongwen',
 	tables: {
 		conversations: conversationsTable,

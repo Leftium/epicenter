@@ -1,8 +1,8 @@
 /**
  * Workspace definitions and root Y.Doc construction.
  *
- * `defineWorkspace({ name, tables, kv })` is the app-facing entry point and the
- * one handle every runtime shares:
+ * `defineWorkspace({ id, name, tables, kv })` is the app-facing entry point and
+ * the one handle every runtime shares:
  *
  *   .create()            bare isomorphic doc for tests and advanced runtimes
  *   .connect(connection) browser runtime: local storage, sync, wipe, row
@@ -32,10 +32,11 @@
  *
  * ## Identity
  *
- * `createWorkspace` takes `id` directly; `defineWorkspace` takes `name` and
- * derives `id` as `epicenter-${name}` (overridable). Either way
- * `workspace.ydoc.guid` is the canonical read: by construction it equals the
- * resolved id, and downstream code should read `workspace.ydoc.guid` only.
+ * `options.id` is the identity input for both constructors, stamped onto the
+ * Y.Doc as `guid`; `defineWorkspace` adds a display-only `name`. The app owns
+ * its `id` namespace (e.g. `epicenter-fuji`), so this library never derives or
+ * prefixes it. `workspace.ydoc.guid` is the canonical read, and downstream code
+ * should read it rather than re-deriving the id.
  *
  * @module
  */
@@ -143,21 +144,15 @@ export type DefineWorkspaceOptions<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
 	TActions extends ActionRegistry,
-> = Omit<CreateWorkspaceOptions<TTables, TKv>, 'id'> & {
+> = CreateWorkspaceOptions<TTables, TKv> & {
 	/**
-	 * The workspace name, and the one identity input. It is both the human-facing
-	 * mount label (`epicenter list`'s header, the `${name}-*` materializer logger
-	 * prefix, the "Sign in to enable <name>." message) and the seed for the
-	 * stable id, which defaults to `epicenter-${name}`. Asserted as a safe guid
-	 * segment because it now reaches disk through that derived id.
+	 * Human-facing display label: `epicenter list`'s header, the `${name}-*`
+	 * materializer logger prefix, and the "Sign in to enable <name>." message. A
+	 * display name only, not an identity seed: it never feeds the guid, the node
+	 * id, the Y.Doc `clientID`, or the action namespace, so the app's `id` owns
+	 * the namespace and the `name` is free to be a friendly label.
 	 */
 	name: string;
-	/**
-	 * Explicit id override. Defaults to `epicenter-${name}`, and every app relies
-	 * on that default; a literal here is for tests and migrations that must pin a
-	 * specific guid. Stamped onto the Y.Doc as `guid`.
-	 */
-	id?: string;
 	/**
 	 * Build the action registry after tables and KV are live, so handlers can
 	 * close over the handles they query or mutate.
@@ -534,12 +529,6 @@ export function defineWorkspace<
 >(
 	options: DefineWorkspaceOptions<TTables, TKv, TActions>,
 ): WorkspaceDefinition<TTables, TKv, TActions> {
-	assertSafeSegment(options.name, 'workspace name');
-	// `name` is the one identity input; `id` defaults to `epicenter-${name}` and
-	// is overridable only for tests and migrations. Derived once so `create()`,
-	// the returned `id`, and the mount label all read the same resolved value.
-	const id = options.id ?? `epicenter-${options.name}`;
-
 	/**
 	 * Bare root: Y.Doc + tables + KV + actions. No persistence, no sync, no
 	 * child-doc openers. Daemon and test runtimes attach their own
@@ -553,7 +542,7 @@ export function defineWorkspace<
 	 */
 	function create(): Workspace<TTables, TKv, TActions> {
 		const root = createWorkspace({
-			id,
+			id: options.id,
 			tables: options.tables,
 			kv: options.kv,
 		});
@@ -642,8 +631,8 @@ export function defineWorkspace<
 	 * `workspace.actions` with no materializers, or return an explicit
 	 * `{ actions }` after attaching materializers, which enroll their own drain.
 	 *
-	 * The mount's display label is the definition's `name`, declared once where
-	 * identity lives rather than restated at every call site.
+	 * The mount's display label is the definition's `name`, declared once on the
+	 * definition rather than restated at every call site.
 	 */
 	function mount<TRuntimeActions extends ActionRegistry = TActions>(
 		mountOptions: MountOptions<TTables, TKv, TActions, TRuntimeActions>,
@@ -699,7 +688,7 @@ export function defineWorkspace<
 	}
 
 	return {
-		id,
+		id: options.id,
 		tables: options.tables,
 		kv: options.kv,
 		create,

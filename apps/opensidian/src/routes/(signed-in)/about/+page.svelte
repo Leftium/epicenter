@@ -65,6 +65,7 @@ import { attachTimeline, defineWorkspace } from '@epicenter/workspace';
 
 const opensidianWorkspace = defineWorkspace({
   id: 'opensidian',
+  name: 'opensidian',
   tables: { files: filesTable.docs({ content: attachTimeline }) },
   kv: {},
 });

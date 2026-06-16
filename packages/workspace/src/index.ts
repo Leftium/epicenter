@@ -25,6 +25,7 @@
  *
  * const notesWorkspace = defineWorkspace({
  *   id: 'notes',
+ *   name: 'notes',
  *   tables: { posts },
  *   kv: {},
  * });

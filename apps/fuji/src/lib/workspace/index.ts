@@ -46,8 +46,6 @@ import {
 import { Type } from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 
-export const FUJI_ID = 'epicenter-fuji';
-
 export type EntryId = string & Brand<'EntryId'>;
 
 /**
@@ -88,7 +86,7 @@ export type Entry = InferTableRow<typeof entriesTable>;
  * Entry bodies are separate child Y.Docs declared on `entries.content`.
  */
 export const fujiWorkspace = defineWorkspace({
-	id: FUJI_ID,
+	id: 'epicenter-fuji',
 	name: 'fuji',
 	tables: { entries: entriesTable },
 	kv: {},

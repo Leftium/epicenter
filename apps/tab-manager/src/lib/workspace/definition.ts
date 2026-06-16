@@ -22,8 +22,6 @@ import {
 } from '@epicenter/workspace';
 import type { Brand } from 'wellcrafted/brand';
 
-export const TAB_MANAGER_ID = 'epicenter-tab-manager';
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Branded ID Types
 // ─────────────────────────────────────────────────────────────────────────────
@@ -158,7 +156,7 @@ const toolTrustTable = defineTable({
  * daemon mounts it via `.mount()`.
  */
 export const tabManagerWorkspace = defineWorkspace({
-	id: TAB_MANAGER_ID,
+	id: 'epicenter-tab-manager',
 	name: 'tab-manager',
 	tables: {
 		devices: devicesTable,

@@ -29,8 +29,6 @@ import {
 import Type from 'typebox';
 import type { Brand } from 'wellcrafted/brand';
 
-export const HONEYCRISP_ID = 'epicenter-honeycrisp';
-
 // ─── Branded IDs ──────────────────────────────────────────────────────────────
 
 /**
@@ -123,7 +121,7 @@ export type Note = InferTableRow<typeof notesTable>;
  * this shared model.
  */
 export const honeycrispWorkspace = defineWorkspace({
-	id: HONEYCRISP_ID,
+	id: 'epicenter-honeycrisp',
 	name: 'honeycrisp',
 	tables: { folders: foldersTable, notes: notesTable },
 	kv: {},

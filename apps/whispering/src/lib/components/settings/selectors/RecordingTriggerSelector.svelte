@@ -10,23 +10,14 @@
 		RECORDING_TRIGGER_OPTIONS,
 		type RecordingTrigger,
 	} from '$lib/constants/audio';
-	import { tauri } from '#platform/tauri';
 	import { settings } from '$lib/state/settings.svelte';
 
 	let { class: className }: { class?: string } = $props();
 
 	const combobox = useCombobox();
 
-	const availableTriggers = $derived(
-		RECORDING_TRIGGER_OPTIONS.filter((trigger) => {
-			if (!trigger.desktopOnly) return true;
-			// Desktop only, only show if Tauri is available
-			return !!tauri;
-		}),
-	);
-
 	const currentTrigger = $derived(
-		availableTriggers.find(
+		RECORDING_TRIGGER_OPTIONS.find(
 			(trigger) => trigger.value === settings.get('recording.trigger'),
 		),
 	);
@@ -54,7 +45,7 @@
 		<Command.Root loop>
 			<Command.List>
 				<Command.Group>
-					{#each availableTriggers as trigger (trigger.value)}
+					{#each RECORDING_TRIGGER_OPTIONS as trigger (trigger.value)}
 						{@const isSelected =
 							settings.get('recording.trigger') === trigger.value}
 						<Command.Item

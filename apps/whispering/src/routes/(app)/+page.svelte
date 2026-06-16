@@ -85,14 +85,6 @@
 		enabled: !!latestRecording?.id,
 	}));
 
-	const availableTriggers = $derived(
-		RECORDING_TRIGGER_OPTIONS.filter((trigger) => {
-			if (!trigger.desktopOnly) return true;
-			// Desktop only, only show if Tauri is available
-			return !!tauri;
-		}),
-	);
-
 	const AUDIO_EXTENSIONS = [
 		'mp3',
 		'wav',
@@ -262,7 +254,7 @@
 			}}
 		class="w-full"
 	>
-		{#each availableTriggers as option}
+		{#each RECORDING_TRIGGER_OPTIONS as option}
 			{@const TriggerIcon = RECORDING_TRIGGER_ICONS[option.value]}
 			<ToggleGroup.Item
 				value={option.value}

@@ -20,15 +20,14 @@ export const RECORDING_TRIGGERS = [
 export type RecordingTrigger = (typeof RECORDING_TRIGGERS)[number];
 
 export const RECORDING_TRIGGER_OPTIONS = [
-	{ label: 'Manual', value: 'manual', icon: '🎙️', desktopOnly: false },
-	{ label: 'Voice Activated', value: 'vad', icon: '🎤', desktopOnly: false },
-	// { label: 'Live', value: 'live', icon: '🎬', desktopOnly: false },
-	// { label: 'CPAL', value: 'cpal', icon: '🔊', desktopOnly: true },
+	{ label: 'Manual', value: 'manual', icon: '🎙️' },
+	{ label: 'Voice Activated', value: 'vad', icon: '🎤' },
+	// { label: 'Live', value: 'live', icon: '🎬' },
+	// { label: 'CPAL', value: 'cpal', icon: '🔊' },
 ] as const satisfies {
 	label: string;
 	value: RecordingTrigger;
 	icon: string;
-	desktopOnly: boolean;
 }[];
 
 /**

@@ -62,7 +62,7 @@ export const skillsTable = defineTable({
 	compatibility: nullable(field.string()),
 	metadata: nullable(field.string()),
 	allowedTools: nullable(field.string()),
-	updatedAt: field.number(),
+	updatedAt: field.instant(),
 }).docs({ instructions: attachPlainText });
 
 /**
@@ -93,7 +93,7 @@ export const referencesTable = defineTable({
 	id: field.string(),
 	skillId: field.string(),
 	path: field.string(),
-	updatedAt: field.number(),
+	updatedAt: field.instant(),
 }).docs({ content: attachPlainText });
 
 export type Skill = InferTableRow<typeof skillsTable>;

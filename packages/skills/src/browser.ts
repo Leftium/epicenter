@@ -28,6 +28,7 @@ import {
 	attachIndexedDb,
 	attachPlainText,
 	createDisposableCache,
+	InstantString,
 	onLocalUpdate,
 } from '@epicenter/workspace';
 import { clearDocument } from 'y-indexeddb';
@@ -55,7 +56,7 @@ export function openSkillsBrowser() {
 			gc: true,
 		});
 		onLocalUpdate(ydoc, () =>
-			doc.tables.skills.update(skillId, { updatedAt: Date.now() }),
+			doc.tables.skills.update(skillId, { updatedAt: InstantString.now() }),
 		);
 		const childIdb = attachIndexedDb(ydoc);
 		return {
@@ -78,7 +79,9 @@ export function openSkillsBrowser() {
 			gc: true,
 		});
 		onLocalUpdate(ydoc, () =>
-			doc.tables.references.update(referenceId, { updatedAt: Date.now() }),
+			doc.tables.references.update(referenceId, {
+				updatedAt: InstantString.now(),
+			}),
 		);
 		const childIdb = attachIndexedDb(ydoc);
 		return {
@@ -123,13 +126,19 @@ export function openSkillsBrowser() {
 			await idb.whenDisposed;
 			await Promise.all([
 				// Skill instruction docs use their own IndexedDB document names.
-				...doc.tables.skills.scan().rows.map((skill) =>
-					clearDocument(doc.tables.skills.docs.instructions.guid(skill.id)),
-				),
+				...doc.tables.skills
+					.scan()
+					.rows.map((skill) =>
+						clearDocument(doc.tables.skills.docs.instructions.guid(skill.id)),
+					),
 				// Reference content docs use their own IndexedDB document names.
-				...doc.tables.references.scan().rows.map((reference) =>
-					clearDocument(doc.tables.references.docs.content.guid(reference.id)),
-				),
+				...doc.tables.references
+					.scan()
+					.rows.map((reference) =>
+						clearDocument(
+							doc.tables.references.docs.content.guid(reference.id),
+						),
+					),
 				// The workspace IndexedDB helper only clears the root doc.
 				idb.clearLocal(),
 			]);

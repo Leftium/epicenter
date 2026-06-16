@@ -8,6 +8,7 @@
  * @module
  */
 
+import { InstantString } from '@epicenter/field';
 import { parse as parseYaml } from 'yaml';
 import type { Skill } from './tables.js';
 
@@ -97,7 +98,7 @@ export function parseSkillMd(
 				typeof frontmatter['allowed-tools'] === 'string'
 					? frontmatter['allowed-tools']
 					: null,
-			updatedAt: Date.now(),
+			updatedAt: InstantString.now(),
 		},
 		instructions: body,
 	};

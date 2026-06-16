@@ -17,7 +17,6 @@
 import { field, jsonValue } from '@epicenter/field';
 import { type FileId, filesTable } from '@epicenter/filesystem';
 import {
-	attachTimeline,
 	defineActions,
 	defineTable,
 	defineWorkspace,
@@ -146,12 +145,7 @@ export type ToolTrust = InferTableRow<typeof toolTrustTable>;
 export const opensidianWorkspace = defineWorkspace({
 	id: OPENSIDIAN_ID,
 	tables: {
-		files: filesTable.childDocs({
-			content: {
-				layout: attachTimeline,
-				onLocalEdit: () => ({ updatedAt: Date.now() }),
-			},
-		}),
+		files: filesTable,
 		conversations: conversationsTable,
 		chatMessages: chatMessagesTable,
 		toolTrust: toolTrustTable,

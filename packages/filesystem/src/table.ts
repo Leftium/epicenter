@@ -16,7 +16,14 @@ export const filesTable = defineTable({
 	createdAt: field.number(),
 	updatedAt: field.number(),
 	trashedAt: nullable(field.number()),
-}).childDocs({ content: attachTimeline });
+}).childDocs({
+	content: {
+		layout: attachTimeline,
+		// Body edits bypass the tree API, so bump `updatedAt` here to keep the
+		// same modification-time invariant the file operations already maintain.
+		onLocalEdit: () => ({ updatedAt: Date.now() }),
+	},
+});
 
 /** File metadata row derived from the files table definition */
 export type FileRow = InferTableRow<typeof filesTable>;

@@ -16,7 +16,7 @@ export async function importFiles({ files }: { files: File[] }): Promise<void> {
 			const audioBlob = new Blob([arrayBuffer], { type: file.type });
 
 			analytics.logEvent({
-				type: 'file_uploaded',
+				type: 'file_import_completed',
 				blob_size: audioBlob.size,
 			});
 

@@ -74,7 +74,7 @@
 
 		{#if runtime.isReady}
 			<Alert.Root>
-				<CheckCircle2Icon class="size-4 text-green-500" />
+				<CheckCircle2Icon class="size-4 text-green-500" aria-hidden="true" />
 				<Alert.Title>Transcription is configured</Alert.Title>
 				<Alert.Description>
 					{runtime.service?.label ?? 'Your runtime'} is ready on this device.
@@ -82,7 +82,7 @@
 			</Alert.Root>
 		{:else}
 			<Alert.Root variant="warning">
-				<AlertCircleIcon class="size-4" />
+				<AlertCircleIcon class="size-4" aria-hidden="true" />
 				<Alert.Title>Transcription needs setup</Alert.Title>
 				<Alert.Description>
 					{runtime.primaryIssue ??

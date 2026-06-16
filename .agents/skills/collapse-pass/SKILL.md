@@ -139,6 +139,6 @@ than a working package, the ritual above is unchanged; only the scoping differs.
 5. Finish with [post-implementation-review](../post-implementation-review/SKILL.md)
    and targeted `bun test` / `bun run typecheck` on impacted packages.
 
-For a second model's judgment on the findings or the final diff, see
-[claude-code-consult](../claude-code-consult/SKILL.md): prefer two small consults
-(a pre-edit risk pass, a post-edit diff pass) over one broad one.
+When the user asks for an outside review prompt, use
+[handoff](../handoff/SKILL.md) to draft one bounded question with the exact diff
+or file paths the reviewer needs.

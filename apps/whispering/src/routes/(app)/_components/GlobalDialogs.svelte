@@ -1,6 +1,3 @@
-<!--
-	Owns app-wide singleton dialogs that must mount once at the session root.
--->
 <script lang="ts">
 	import { ConfirmationDialog } from '@epicenter/ui/confirmation-dialog';
 	import DevAccessibilityToggle from '$lib/components/DevAccessibilityToggle.svelte';
@@ -16,14 +13,9 @@
 	tears a dialog down mid-interaction.
 -->
 <ConfirmationDialog />
+<MacosAccessibilityGuideDialog />
 <MoreDetailsDialog />
 <UpdateDialog />
-<!--
-	The macOS Accessibility guide is a singleton opened from anywhere (the
-	home notice, the shortcut recorder) through the `accessibilityGuide`
-	store, so it mounts here once like the other app-wide dialogs.
--->
-<MacosAccessibilityGuideDialog />
 
 {#if import.meta.env.DEV}
 	<DevAccessibilityToggle />

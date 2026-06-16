@@ -9,11 +9,13 @@ metadata:
 
 # Handoff
 
-Draft a self-contained prompt that can be pasted into a fresh agent thread.
+Draft a self-contained prompt that can be pasted into a fresh agent thread or separate session.
 
 Return the prompt directly in the conversation. The user can copy it from there.
 
 The recipient has no thread context. Include only what they need to continue correctly.
+
+Do not launch, supervise, or automate the recipient. This skill produces the prompt only.
 
 ## Include
 
@@ -24,6 +26,14 @@ The recipient has no thread context. Include only what they need to continue cor
 - Constraints: repo rules, commands, style rules, and things to avoid.
 - Next steps: ordered, concrete actions.
 - Verification: commands already run and commands still needed.
+
+For a bounded review prompt, make the goal one concrete question. Include exact
+file paths, short snippets, or the diff command to run, and say what answer shape
+will be useful.
+
+If the prompt asks the recipient to edit files, direct that work to a disposable
+git worktree on its own branch. The final diff still needs local review before
+it lands.
 
 ## Write It For A Cold Reader
 

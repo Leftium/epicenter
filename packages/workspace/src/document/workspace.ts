@@ -1,10 +1,16 @@
 /**
  * Workspace definitions and root Y.Doc construction.
  *
- * `defineWorkspace({ id, tables, kv })` is the app-facing entry point.
- * `.create()` builds the bare root for daemon composition; `.connect(connection)`
- * connects it for the browser with local storage, sync, wipe, and row child-doc
- * openers.
+ * `defineWorkspace({ id, name, tables, kv })` is the app-facing entry point and
+ * the one handle every runtime shares:
+ *
+ *   .create()            bare isomorphic doc for tests and advanced runtimes
+ *   .connect(connection) browser runtime: local storage, sync, wipe, row
+ *                        child-doc openers
+ *   .mount(options)      daemon runtime: the same root plus Yjs-log persistence,
+ *                        cloud sync, and materializers, with every node
+ *                        dependency injected through `options.runtime`
+ *                        (`nodeMountRuntime()` from `@epicenter/workspace/node`)
  *
  * `createWorkspace({ id, tables, kv })` remains the low-level root constructor
  * for package internals and tests:
@@ -26,9 +32,11 @@
  *
  * ## Identity
  *
- * `options.id` is the constructor input; `workspace.ydoc.guid` is the
- * canonical read. By construction they agree, and downstream code should read
- * `workspace.ydoc.guid` only.
+ * `options.id` is the identity input for both constructors, stamped onto the
+ * Y.Doc as `guid`; `defineWorkspace` adds a display-only `name`. The app owns
+ * its `id` namespace (e.g. `epicenter-fuji`), so this library never derives or
+ * prefixes it. `workspace.ydoc.guid` is the canonical read, and downstream code
+ * should read it rather than re-deriving the id.
  *
  * @module
  */
@@ -36,10 +44,17 @@
 import { InstantString } from '@epicenter/field';
 import * as Y from 'yjs';
 import { createDisposableCache } from '../cache/disposable-cache.js';
+// Type-only daemon imports: `verbatimModuleSyntax` erases them, so the browser
+// barrel never traverses the node-only mount runtime. `.mount()` is a pure
+// coordinator that receives every node capability through its `runtime`
+// argument (built by `nodeMountRuntime()` from `@epicenter/workspace/node`).
+import type { Mount, SessionMountContext } from '../daemon/define-mount.js';
+import type { NodeMountRuntime } from '../daemon/mount-runtime.js';
 import { type ActionRegistry, defineActions } from '../shared/actions.js';
 import type { Guid } from '../shared/id.js';
 import { once } from '../shared/once.js';
 import { assertSafeSegment } from '../shared/safe-segment.js';
+import type { Drainable } from '../shared/types.js';
 import { type ConnectionConfig, connectDoc } from './connect-doc.js';
 import { docGuid } from './doc-guid.js';
 import { KV_KEY, TableKey } from './keys.js';
@@ -47,11 +62,13 @@ import { createKv, type Kv, type KvDefinitions } from './kv.js';
 import { onLocalUpdate } from './on-local-update.js';
 import type { Collaboration } from './open-collaboration.js';
 import {
+	type BaseRow,
 	type ChildDocDeclaration,
 	type ChildDocDeclarations,
 	createTable,
 	type InferTableRow,
 	type LayoutOf,
+	type Table,
 	type TableDefinition,
 	type TableDefinitions,
 	type Tables,
@@ -130,6 +147,14 @@ export type DefineWorkspaceOptions<
 	TKv extends KvDefinitions,
 	TActions extends ActionRegistry,
 > = CreateWorkspaceOptions<TTables, TKv> & {
+	/**
+	 * Human-facing display label: `epicenter list`'s header, the `${name}-*`
+	 * materializer logger prefix, and the "Sign in to enable <name>." message. A
+	 * display name only, not an identity seed: it never feeds the guid, the node
+	 * id, the Y.Doc `clientID`, or the action namespace, so the app's `id` owns
+	 * the namespace and the `name` is free to be a friendly label.
+	 */
+	name: string;
 	/**
 	 * Build the action registry after tables and KV are live, so handlers can
 	 * close over the handles they query or mutate.
@@ -220,6 +245,13 @@ export type ConnectedTables<TTableDefinitions extends TableDefinitions> = {
  * guid-only ({@link WorkspaceTables}) to connected ({@link ConnectedTables}), so
  * every richer connected type builds additively on top of it instead of
  * re-omitting `tables` again.
+ *
+ * Receive-side twin of {@link MountComposeContext}, but deliberately not shaped
+ * to rhyme with it: this *is* the connected workspace (it also bases
+ * {@link ConnectedWorkspace}), so the composer extends it, whereas a mount
+ * composer receives the workspace wrapped in a `{ workspace, scope }` bag. The
+ * names rhyme only where the shapes do, on the return twins
+ * {@link ConnectComposition} / {@link MountComposition}.
  */
 export type ConnectedWorkspaceContext<
 	TTables extends TableDefinitions,
@@ -248,7 +280,9 @@ export type ConnectedWorkspace<
 
 /**
  * What a `connect(connection, compose)` runtime builder returns: the final action
- * registry plus any runtime-only handles the app wants on the bundle.
+ * registry plus any runtime-only handles the app wants on the bundle. The
+ * browser twin of {@link MountComposition}: both are "what the compose callback
+ * composes," one for the browser runtime, one for the daemon.
  *
  * `actions` is required, not optional: a runtime builder is exactly where
  * browser-only actions get layered onto the base registry, and that returned
@@ -256,7 +290,7 @@ export type ConnectedWorkspace<
  * `{ actions: workspace.actions }` (the base, unchanged) is the explicit way to
  * say "no new actions" — there is no implicit fallback to guess at.
  */
-export type WorkspaceRuntimeExtension<
+export type ConnectComposition<
 	TActions extends ActionRegistry = ActionRegistry,
 > = {
 	readonly actions: TActions;
@@ -266,9 +300,111 @@ export type WorkspaceRuntimeExtension<
 type ConnectedWorkspaceWithRuntime<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
-	TRuntime extends WorkspaceRuntimeExtension,
+	TRuntime extends ConnectComposition,
 > = ConnectedWorkspace<TTables, TKv, TRuntime['actions']> &
 	Omit<TRuntime, 'actions' | typeof Symbol.dispose>;
+
+/**
+ * The ambient capabilities a mount's `open()` hands its `compose` body: the
+ * signed-in session `ctx` (durable node id, resolved Epicenter root, transport
+ * refs), the resolved sync `baseURL`, and `registerDrain`, the lifecycle sink
+ * that enrolls a materializer's teardown barrier for ordered drain on shutdown.
+ *
+ * `registerDrain` is what makes a dropped projection write impossible to cause
+ * by hand. `attachMountSqlite` / `attachMountMarkdown` call it when they attach,
+ * so a `compose` body never lists materializers and cannot forget to drain one:
+ * the obligation is discharged by the same call that creates the side effect.
+ * It is plain data (a closure over an array the coordinator owns), so the
+ * browser barrel that ships `.mount()` stays free of any node import.
+ */
+export type MountComposeScope = {
+	readonly ctx: SessionMountContext;
+	readonly baseURL: string;
+	readonly registerDrain: (drainable: Drainable) => void;
+};
+
+/**
+ * What a mount's `compose` callback sees: the bare daemon root `workspace` and
+ * the ambient `scope` (session ctx, resolved baseURL, drain sink).
+ *
+ * Materializers are attached by the body itself: a mount's `compose` is node
+ * code, so it imports `attachMountSqlite` / `attachMountMarkdown` from
+ * `@epicenter/workspace/node` and calls them with `scope` (for ctx and drain
+ * registration) and `workspace` (the subject to project). The coordinator never
+ * touches a materializer, which is why it stays browser-safe.
+ *
+ * `workspace` is the unconnected root, so `workspace.tables.<t>.docs.<f>.guid`
+ * is the same guid deriver the browser opener uses, letting a daemon read a
+ * child-doc body over HTTP at the address the browser writes it.
+ *
+ * Receive-side twin of {@link ConnectedWorkspaceContext}, but deliberately not
+ * shaped to rhyme: that one *is* the connected workspace, while this one wraps
+ * the unconnected root in a `{ workspace, scope }` bag, since a mount composer
+ * attaches its own materializers rather than extending the workspace. The rhyme
+ * lives on the return twins {@link MountComposition} / {@link ConnectComposition}.
+ */
+export type MountComposeContext<
+	TTables extends TableDefinitions,
+	TKv extends KvDefinitions,
+	TActions extends ActionRegistry,
+> = {
+	readonly workspace: Workspace<TTables, TKv, TActions>;
+	readonly scope: MountComposeScope;
+};
+
+/**
+ * What a mount's `compose` callback returns: the action registry the daemon
+ * serves. The daemon twin of {@link ConnectComposition}.
+ *
+ * `actions` is the explicit served set, exactly as the browser `connect`
+ * composer is: this is where the daemon refuses browser-only actions and admits
+ * its materializer actions. Materializer teardown is deliberately not returned
+ * here: each `attachMount*` helper enrolls its own drain through
+ * `scope.registerDrain`, so the served-action choice is the only decision a body
+ * makes. The asymmetry is the point: draining a materializer is an obligation
+ * (always wanted), while which actions to serve is a policy (the body's call).
+ */
+export type MountComposition<TActions extends ActionRegistry> = {
+	readonly actions: TActions;
+};
+
+/**
+ * Options for `definition.mount(...)`, the daemon runtime. The mount's display
+ * label comes from the definition's `name` (see `defineWorkspace`), so the only
+ * per-mount inputs are the sync base URL, the injected node runtime, and the
+ * optional composer.
+ *
+ * `runtime` is the injected node bag from `nodeMountRuntime()`; `.mount()`
+ * itself imports no node module. `compose` is optional: omit it to serve the
+ * workspace's base actions with no materializers (a pure sync-and-persist
+ * mirror); provide it to attach materializers (each enrolling its own drain
+ * through `scope.registerDrain`) and choose the served action set.
+ *
+ * `compose` returns `MountComposition<ActionRegistry>`: the served set is its
+ * own decision and never surfaces on the returned non-generic {@link Mount}, so
+ * the option carries no `TRuntimeActions` generic and the coordinator reads both
+ * the compose and no-compose branches as one composition type, no cast.
+ */
+export type MountOptions<
+	TTables extends TableDefinitions,
+	TKv extends KvDefinitions,
+	TActions extends ActionRegistry,
+> = {
+	/**
+	 * Explicit sync base URL. Omit to fall back through `EPICENTER_API_URL` to
+	 * the hosted API (resolved by `runtime.resolveBaseURL`).
+	 */
+	readonly baseURL?: string;
+	/** Injected node runtime, built by `nodeMountRuntime()`. */
+	readonly runtime: NodeMountRuntime;
+	/**
+	 * Attach materializers and select the served actions. Omit for a pure
+	 * sync-and-persist mirror. See {@link MountComposition}.
+	 */
+	readonly compose?: (
+		context: MountComposeContext<TTables, TKv, TActions>,
+	) => MountComposition<ActionRegistry>;
+};
 
 export type WorkspaceDefinition<
 	TTables extends TableDefinitions,
@@ -282,12 +418,13 @@ export type WorkspaceDefinition<
 	connect(
 		connection: ConnectionConfig,
 	): ConnectedWorkspace<TTables, TKv, TActions>;
-	connect<TRuntime extends WorkspaceRuntimeExtension>(
+	connect<TRuntime extends ConnectComposition>(
 		connection: ConnectionConfig,
 		compose: (
 			workspace: ConnectedWorkspaceContext<TTables, TKv, TActions>,
 		) => TRuntime,
 	): ConnectedWorkspaceWithRuntime<TTables, TKv, TRuntime>;
+	mount(options: MountOptions<TTables, TKv, TActions>): Mount;
 };
 
 /** The unconnected root workspace returned by `definition.create()`. */
@@ -344,18 +481,20 @@ export function createWorkspace<
 			// `.docs` carries one guid deriver per declared child-doc field, so the
 			// workspace owns guid derivation end-to-end. The connected opener layers
 			// `open(rowId)` onto these same entries (see `connectTableChildDocs`).
-			const docs: Record<string, unknown> = {};
-			for (const field of Object.keys(definition.docDecls)) {
-				docs[field] = {
-					guid: (rowId: string): Guid =>
-						docGuid({
-							workspaceId: options.id,
-							collection: name,
-							rowId,
-							field,
-						}),
-				};
-			}
+			const docs = Object.fromEntries(
+				Object.keys(definition.docDecls).map((field) => [
+					field,
+					{
+						guid: (rowId: string): Guid =>
+							docGuid({
+								workspaceId: options.id,
+								collection: name,
+								rowId,
+								field,
+							}),
+					},
+				]),
+			);
 			return [name, { ...table, docs }];
 		}),
 	) as WorkspaceTables<TTables>;
@@ -392,10 +531,17 @@ export function createWorkspace<
  *                                it returns is the one served for cross-node
  *                                dispatch. That ordering is why `compose` is a
  *                                callback here, not a step you run after `connect()`.
+ *   mount(options)               The daemon preset: `create()` plus Yjs-log
+ *                                persistence, cloud sync, and materializers, with
+ *                                node dependencies injected through
+ *                                `options.runtime`. Its `compose` mirrors the
+ *                                browser one (select daemon actions, attach
+ *                                materializers); see `mount` below.
  *
  * `connect(connection)` is `create()` plus the browser storage/transport bundle
- * (`connectTableChildDocs` + `connectDoc`). Non-browser runtimes call `create()`
- * and compose their own infrastructure instead of taking the preset.
+ * (`connectTableChildDocs` + `connectDoc`). `mount(options)` is `create()` plus
+ * the daemon storage/transport bundle, coordinated over injected node functions
+ * so the browser barrel that ships this definition never imports a node module.
  */
 export function defineWorkspace<
 	TTables extends TableDefinitions,
@@ -429,7 +575,7 @@ export function defineWorkspace<
 	function connect(
 		connection: ConnectionConfig,
 	): ConnectedWorkspace<TTables, TKv, TActions>;
-	function connect<TRuntime extends WorkspaceRuntimeExtension>(
+	function connect<TRuntime extends ConnectComposition>(
 		connection: ConnectionConfig,
 		compose: (
 			workspace: ConnectedWorkspaceContext<TTables, TKv, TActions>,
@@ -439,7 +585,7 @@ export function defineWorkspace<
 		connection: ConnectionConfig,
 		compose: (
 			workspace: ConnectedWorkspaceContext<TTables, TKv, TActions>,
-		) => WorkspaceRuntimeExtension = (workspace) => ({
+		) => ConnectComposition = (workspace) => ({
 			actions: workspace.actions,
 		}),
 	) {
@@ -493,12 +639,78 @@ export function defineWorkspace<
 		});
 	}
 
+	/**
+	 * Daemon runtime: the bare root plus disk persistence, cloud sync, and
+	 * materializers. A pure coordinator over the injected `options.runtime`, so
+	 * this method (and the browser barrel that ships it) never imports a node
+	 * module. It collapses the ritual every mount used to repeat by hand: wrap in
+	 * `defineSessionMount`, resolve the base URL, `create()` the root, run the
+	 * caller's `compose`, attach mount infrastructure, and assemble the runtime.
+	 *
+	 * `compose` is the one place daemon actions are chosen, so a mount cannot
+	 * accidentally serve browser-only actions: omit it to serve the base
+	 * `workspace.actions` with no materializers, or return an explicit
+	 * `{ actions }` after attaching materializers, which enroll their own drain.
+	 *
+	 * The mount's display label is the definition's `name`, declared once on the
+	 * definition rather than restated at every call site.
+	 */
+	function mount(mountOptions: MountOptions<TTables, TKv, TActions>): Mount {
+		const { runtime } = mountOptions;
+		return runtime.defineSessionMount({
+			name: options.name,
+			open(ctx) {
+				const baseURL = runtime.resolveBaseURL(mountOptions.baseURL);
+				const workspace = create();
+				// The coordinator owns the drain registry for this open(): the
+				// `scope.registerDrain` it hands compose pushes here, and the
+				// collected barriers go to infrastructure so a shutdown awaits every
+				// materializer's pending projection write. compose never returns
+				// materializers; the attach helpers enroll themselves.
+				const drains: Drainable[] = [];
+				const scope: MountComposeScope = {
+					ctx,
+					baseURL,
+					registerDrain: (drainable) => {
+						drains.push(drainable);
+					},
+				};
+				// Both branches are one composition type: compose returns
+				// `MountComposition<ActionRegistry>`, and the no-compose fallback's
+				// `workspace.actions` (`TActions`) widens to the same. No generic to
+				// bridge, so no cast.
+				const composition: MountComposition<ActionRegistry> =
+					mountOptions.compose
+						? mountOptions.compose({ workspace, scope })
+						: { actions: workspace.actions };
+				// `attachInfrastructure` serves `composition.actions` to peers and
+				// drains every registered materializer in order on shutdown, so it
+				// runs after compose has registered them.
+				const infrastructure = runtime.attachInfrastructure(
+					workspace.ydoc,
+					ctx,
+					{
+						baseURL,
+						actions: composition.actions,
+						materializers: drains,
+					},
+				);
+				return {
+					...workspace,
+					...infrastructure,
+					actions: composition.actions,
+				};
+			},
+		});
+	}
+
 	return {
 		id: options.id,
 		tables: options.tables,
 		kv: options.kv,
 		create,
 		connect,
+		mount,
 	};
 }
 
@@ -548,14 +760,14 @@ function connectTableChildDocs<TTableDefinitions extends TableDefinitions>({
 		const definition = definitions[collection as keyof TTableDefinitions]!;
 		const guidDerivers = table.docs as Record<string, RowDocGuid<string>>;
 		// A body's only cross-doc writer: a local edit stamps a declared instant
-		// column on the row. Typed loosely here because the loop has erased the
-		// per-table row type; `touch` is checked against the real row at the
-		// `.docs(...)` call site. The returned `Result` is intentionally dropped:
-		// a recency bump is best-effort and a rejected patch must not break the
-		// edit it followed.
-		const updateRow = (
-			table as { update: (id: string, patch: object) => unknown }
-		).update;
+		// column on the row. Read through `Table<BaseRow>` (not a hand-written
+		// `{ update }` shape): `Object.entries` erased the per-table row type, and
+		// the base-row view's `update` accepts a `Partial<{}>` patch, which is
+		// exactly the dynamic `{ [touch]: instant }` we build here. `touch` is
+		// checked against the real row type at the `.docs(...)` call site. The
+		// returned `Result` is intentionally dropped: a recency bump is best-effort
+		// and a rejected patch must not break the edit it followed.
+		const { update: updateRow } = table as Table<BaseRow>;
 		const docs: Record<string, unknown> = {};
 
 		for (const [field, declaration] of Object.entries(definition.docDecls) as [

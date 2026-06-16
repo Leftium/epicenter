@@ -4,7 +4,7 @@
  * Single source of truth for "how Tab Manager mounts in a browser extension."
  * Calls Tier 1 primitives inline so every line is visible top-to-bottom:
  *
- *  1. workspace root doc (tables + KV via createTabManager)
+ *  1. workspace root doc (tables + KV via tabManagerWorkspace.create())
  *  2. local storage for the root (attachLocalStorage)
  *  3. actions wired against tables + Y.Doc transaction batching
  *
@@ -36,9 +36,9 @@ import {
 } from 'wellcrafted/error';
 import { Err, Ok, tryAsync } from 'wellcrafted/result';
 import {
-	createTabManager,
 	generateBookmarkId,
 	generateSavedTabId,
+	tabManagerWorkspace,
 } from '$lib/workspace/definition';
 
 const TabError = defineErrors({
@@ -93,7 +93,7 @@ export function openTabManagerBrowser({
 	signedIn: SignedIn;
 	nodeId: NodeId;
 }) {
-	const workspace = createTabManager();
+	const workspace = tabManagerWorkspace.create();
 	const { tables } = workspace;
 	const batch = (fn: () => void) => workspace.ydoc.transact(fn);
 	const idb = attachLocalStorage(workspace.ydoc, {

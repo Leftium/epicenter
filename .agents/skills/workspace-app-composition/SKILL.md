@@ -39,7 +39,7 @@ apps/<app>/
 |- <app>.ts                  iso schema + create<App>() factory   (package "." export)
 |- <app>.browser.ts          browser env factory open<App>Browser()
 |- <app>.test.ts             tests
-|- project.ts                mount factory <app>()                (package "./project" export)
+|- mount.ts                  mount factory <app>()                (package "./mount" export)
 `- src/lib/
    |- session.ts             the session singleton (NOT session.svelte.ts)
    `- platform/auth/         auth client construction
@@ -55,25 +55,26 @@ apps/<app>/
    |  |- index.ts            iso schema + create<App>() factory   (package "." export)
    |  |- browser.ts          browser env factory open<App>Browser()
    |  |- index.test.ts       tests
-   |  `- project.ts          mount factory <app>()                (package "./project" export)
+   |  `- mount.ts            mount factory <app>()                (package "./mount" export)
    |- session.ts             the session singleton
    `- platform/              #platform/* impls (X.browser.ts / X.tauri.ts) + types.ts contract
 ```
 
 Package exports follow the file's actual owner. Every app exports the iso
-factory as `.` and the mount factory as `./project`:
+factory as `.` and the mount factory as `./mount`:
 
 ```jsonc
 // honeycrisp / zhongwen (flat root)
 "exports": {
   ".": "./honeycrisp.ts",
-  "./project": "./project.ts"
+  "./mount": "./mount.ts"
 }
 
-// fuji (nested)
+// fuji (nested): the export points straight at the implementation; there is
+// no root re-export wrapper.
 "exports": {
   ".": "./src/lib/workspace/index.ts",
-  "./project": "./src/lib/workspace/project.ts"
+  "./mount": "./src/lib/workspace/mount.ts"
 }
 ```
 
@@ -89,7 +90,7 @@ add a `./browser` export to the rest for symmetry's sake.
 | Iso factory | `<app>.ts` / `workspace/index.ts` | A + B | `create<App>()`: pure doc construction | workspace (`ydoc`, tables, kv, actions) |
 | Browser factory | `<app>.browser.ts` / `workspace/browser.ts` | A + B | `open<App>Browser({ signedIn, nodeId })`: bind to browser persistence + sync | iso bundle plus IndexedDB/local storage, collaboration |
 | Extension / tauri factory | `<app>.extension.ts` etc. | B | bind to chrome.storage / Tauri APIs | iso bundle plus runtime resources |
-| Mount factory | `project.ts` / `workspace/project.ts` | A + B | `<app>(opts?)`: returns the `Mount` a project's `epicenter.config.ts` default-exports | `Mount` (node persistence, materializers) |
+| Mount factory | `mount.ts` / `workspace/mount.ts` | A + B | `<app>(opts?)`: calls `<app>Workspace.mount({ runtime: nodeMountRuntime(), ... })` and returns the `Mount` a project's `epicenter.config.ts` default-exports | `Mount` (node persistence, materializers) |
 | Session singleton | `src/lib/session.ts` | A | `createSession({ ... })`: owns workspace lifecycle, side effects | `session`, `session.require` |
 | Auth | `src/lib/platform/auth/` (or `#platform/auth`) | A | auth client construction | `auth` |
 
@@ -267,7 +268,7 @@ export default defineConfig({
 });
 ```
 
-The daemon imports the app's mount factory (the `./project` export) to construct
+The daemon imports the app's mount factory (the `./mount` export) to construct
 its `Mount`. `epicenter.config.ts` marks the Epicenter root and is the route
 registry; `.epicenter/` is machine state under that root, not a discovery marker. The public
 lifecycle command is `epicenter daemon up`, not `epicenter serve`.

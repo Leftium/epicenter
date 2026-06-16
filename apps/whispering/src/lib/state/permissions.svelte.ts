@@ -42,7 +42,7 @@ function createPermissions() {
 	const isGated = Boolean(tauri && os.isApple);
 
 	// Deduped on the in-flight probe: one window focus fans out to several
-	// callers (the permissions notice owner and the shortcut backend supervisor
+	// callers (the permissions notice owner and the global-listener supervisor
 	// each re-check on focus), so they share a single pair of `check()` IPC calls
 	// instead of each firing its own. Cleared once the probe settles, so the next
 	// focus genuinely re-probes.

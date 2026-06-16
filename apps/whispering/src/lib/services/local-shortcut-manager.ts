@@ -1,8 +1,3 @@
-/**
- * Owns focused-window shortcut matching: registered key combinations, key edge
- * tracking, text-input suppression, and browser listener cleanup.
- */
-
 import { on } from 'svelte/events';
 import type { Brand } from 'wellcrafted/brand';
 import {
@@ -12,7 +7,7 @@ import {
 } from 'wellcrafted/error';
 import { Ok, type Result } from 'wellcrafted/result';
 import { os } from '#platform/os';
-import type { Command, ShortcutEventState } from '$lib/commands';
+import { type Command, type ShortcutEventState } from '$lib/commands';
 import {
 	type KeyboardEventPossibleKey,
 	type KeyboardEventSupportedKey,
@@ -233,16 +228,6 @@ export const LocalShortcutManagerLive = {
 		shortcuts.set(id, keyCombination);
 		return Ok(undefined);
 	},
-	registerCommand({
-		command,
-		keyCombination,
-	}: {
-		command: Command;
-		keyCombination: KeyboardEventSupportedKey[];
-	}): Promise<Result<void, LocalShortcutError>> {
-		shortcuts.set(command.id as CommandId, keyCombination);
-		return Promise.resolve(Ok(undefined));
-	},
 
 	/**
 	 * Unregisters a local shortcut by ID.
@@ -252,10 +237,6 @@ export const LocalShortcutManagerLive = {
 	async unregister(id: CommandId): Promise<Result<void, LocalShortcutError>> {
 		shortcuts.delete(id);
 		return Ok(undefined);
-	},
-	unregisterCommand(id: CommandId): Promise<Result<void, LocalShortcutError>> {
-		shortcuts.delete(id);
-		return Promise.resolve(Ok(undefined));
 	},
 
 	/**
@@ -267,6 +248,27 @@ export const LocalShortcutManagerLive = {
 		shortcuts.clear();
 		return Ok(undefined);
 	},
+};
+
+/**
+ * Local shortcuts: cross-platform browser keyboard events, used by the web app
+ * and the in-window recorder UI.
+ */
+export const localShortcuts = {
+	registerCommand: ({
+		command,
+		keyCombination,
+	}: {
+		command: Command;
+		keyCombination: KeyboardEventSupportedKey[];
+	}) =>
+		LocalShortcutManagerLive.register({
+			id: command.id as CommandId,
+			keyCombination,
+		}),
+
+	unregisterCommand: async ({ commandId }: { commandId: CommandId }) =>
+		LocalShortcutManagerLive.unregister(commandId),
 };
 
 /**

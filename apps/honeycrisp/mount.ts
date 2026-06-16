@@ -8,20 +8,13 @@
  * the app root.
  */
 
-import { join } from 'node:path';
-import { defineActions, satisfiesWorkspace } from '@epicenter/workspace';
-import { defineSessionMount } from '@epicenter/workspace/daemon';
+import { defineActions } from '@epicenter/workspace';
+import type { GitAutosaveConfig } from '@epicenter/workspace/document/materializer/markdown';
 import {
-	attachGitAutosave,
-	attachMarkdownExport,
-	type GitAutosaveConfig,
-} from '@epicenter/workspace/document/materializer/markdown';
-import { attachBunSqliteMaterializer } from '@epicenter/workspace/document/materializer/sqlite';
-import {
-	attachMountInfrastructure,
-	sqlitePath,
+	attachMountMarkdown,
+	attachMountSqlite,
+	nodeMountRuntime,
 } from '@epicenter/workspace/node';
-import { createLogger } from 'wellcrafted/logger';
 import { honeycrispWorkspace } from './honeycrisp.js';
 
 export type HoneycrispMountOptions = {
@@ -33,53 +26,26 @@ export type HoneycrispMountOptions = {
 	baseURL?: string;
 };
 
-export function honeycrisp(opts: HoneycrispMountOptions = {}) {
-	return defineSessionMount({
-		name: 'honeycrisp',
-		open(ctx) {
-			const { epicenterRoot, mount } = ctx;
-			const baseURL =
-				opts.baseURL ||
-				process.env.EPICENTER_API_URL ||
-				'https://api.epicenter.so';
-
-			const workspace = honeycrispWorkspace.create();
-
-			const sqlite = attachBunSqliteMaterializer(workspace, {
-				filePath: sqlitePath(epicenterRoot, workspace.ydoc.guid),
-				log: createLogger(`${mount}-sqlite`),
-			});
-
-			const markdown = attachMarkdownExport(workspace, {
-				dir: epicenterRoot,
+export function honeycrisp({
+	git = false,
+	baseURL,
+}: HoneycrispMountOptions = {}) {
+	return honeycrispWorkspace.mount({
+		baseURL,
+		runtime: nodeMountRuntime(),
+		compose({ workspace, scope }) {
+			const sqlite = attachMountSqlite(scope, workspace);
+			const markdown = attachMountMarkdown(scope, workspace, {
 				tables: { notes: {} },
+				git,
 			});
-			if (opts.git) {
-				attachGitAutosave({
-					ydoc: workspace.ydoc,
-					dir: join(epicenterRoot, 'notes'),
-					config: opts.git,
-				});
-			}
-
-			const actions = defineActions({
-				...workspace.actions,
-				...sqlite.actions,
-				...markdown.actions,
-			});
-
-			const infrastructure = attachMountInfrastructure(workspace.ydoc, ctx, {
-				baseURL,
-				actions,
-				materializers: [sqlite, markdown],
-			});
-
-			return satisfiesWorkspace({
-				...workspace,
-				...infrastructure,
-				markdown,
-				actions,
-			});
+			return {
+				actions: defineActions({
+					...workspace.actions,
+					...sqlite.actions,
+					...markdown.actions,
+				}),
+			};
 		},
 	});
 }

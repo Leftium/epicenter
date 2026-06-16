@@ -113,6 +113,7 @@ describe('defineWorkspace', () => {
 	test('create() builds an unconnected root workspace', () => {
 		using workspace = defineWorkspace({
 			id: 'ws-definition-local',
+			name: 'ws-definition-local',
 			tables: { notes: notesDefinition },
 			kv: { sortOrder: sortOrderDefinition },
 		}).create();
@@ -125,6 +126,7 @@ describe('defineWorkspace', () => {
 	test('open(connection) wires root sync and row child-doc handles', async () => {
 		const workspaceDefinition = defineWorkspace({
 			id: 'ws-definition-connected',
+			name: 'ws-definition-connected',
 			tables: {
 				notes: notesDefinition.docs({ body: attachPlainText }),
 			},
@@ -152,6 +154,7 @@ describe('defineWorkspace', () => {
 		// field, and the row CRUD method is untouched.
 		const workspaceDefinition = defineWorkspace({
 			id: 'ws-definition-docs-namespace',
+			name: 'ws-definition-docs-namespace',
 			tables: {
 				notes: notesDefinition.docs({ set: attachPlainText }),
 			},
@@ -173,6 +176,7 @@ describe('defineWorkspace', () => {
 	test('open(connection) child docs dedup by rowId: same rowId shares one Y.Doc', () => {
 		const workspace = defineWorkspace({
 			id: 'ws-childdoc-dedup',
+			name: 'ws-childdoc-dedup',
 			tables: { notes: notesDefinition.docs({ body: attachPlainText }) },
 			kv: {},
 		}).connect(connection);
@@ -194,6 +198,7 @@ describe('defineWorkspace', () => {
 	test('open(connection) child docs refcount: one holder disposing keeps the doc alive for the other', () => {
 		const workspace = defineWorkspace({
 			id: 'ws-childdoc-refcount',
+			name: 'ws-childdoc-refcount',
 			tables: { notes: notesDefinition.docs({ body: attachPlainText }) },
 			kv: {},
 		}).connect(connection);
@@ -217,6 +222,7 @@ describe('defineWorkspace', () => {
 	test('open(connection) child docs are independent across rowIds', () => {
 		const workspace = defineWorkspace({
 			id: 'ws-childdoc-independent',
+			name: 'ws-childdoc-independent',
 			tables: { notes: notesDefinition.docs({ body: attachPlainText }) },
 			kv: {},
 		}).connect(connection);
@@ -247,6 +253,7 @@ describe('defineWorkspace', () => {
 
 		const workspace = defineWorkspace({
 			id: 'ws-touch-on-edit',
+			name: 'ws-touch-on-edit',
 			tables: { notes: recencyNotes },
 			kv: {},
 		}).connect(connection);
@@ -287,6 +294,7 @@ describe('defineWorkspace', () => {
 		let runtimeDisposed = false;
 		const workspace = defineWorkspace({
 			id: 'ws-definition-runtime',
+			name: 'ws-definition-runtime',
 			tables: { notes: notesDefinition },
 			kv: {},
 		}).connect(connection, ({ tables, actions }) => ({

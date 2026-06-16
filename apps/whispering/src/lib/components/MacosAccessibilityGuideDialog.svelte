@@ -1,7 +1,3 @@
-<!--
-	Owns the global macOS Accessibility guide dialog and the shared open-settings
-	action used by Accessibility surfaces.
--->
 <script module lang="ts">
 	import { toast } from '@epicenter/ui/sonner';
 	import { permissions } from '$lib/state/permissions.svelte';
@@ -10,7 +6,7 @@
 	 * Global opener for the macOS Accessibility guide. Mirrors the
 	 * `confirmationDialog` idiom: mount `<MacosAccessibilityGuideDialog />` once at
 	 * the app root, then call `accessibilityGuide.open()` from anywhere (the
-	 * home notice, the shortcut recorder) to surface the remove/re-add
+	 * home/setup notice, the shortcut recorder) to surface the remove/re-add
 	 * walkthrough. The guide content is fixed, so the store carries no payload: it
 	 * is open or closed and nothing else.
 	 *

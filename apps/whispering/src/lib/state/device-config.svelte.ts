@@ -1,8 +1,3 @@
-/**
- * Owns device-local configuration: secrets, hardware identifiers, local model
- * names, and global shortcut bindings that must never sync across devices.
- */
-
 import { createPersistedMap, defineEntry } from '@epicenter/svelte';
 import { type } from 'arktype';
 import { extractErrorMessage } from 'wellcrafted/error';
@@ -54,7 +49,7 @@ const CANCEL_MODIFIERS: KeyBinding['modifiers'] = os.isApple
 	? ['meta']
 	: ['ctrl', 'shift'];
 
-const DEFAULT_GLOBAL_BINDINGS = {
+export const DEFAULT_GLOBAL_BINDINGS = {
 	pushToTalk: { modifiers: RECORDING_MODIFIERS, keys: [] },
 	toggleManualRecording: null,
 	cancelRecording: { modifiers: CANCEL_MODIFIERS, keys: ['dot'] },

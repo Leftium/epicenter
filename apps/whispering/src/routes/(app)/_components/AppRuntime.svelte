@@ -1,16 +1,14 @@
-<!--
-	App-session runtime root. This component owns only the launch boundary: it
-	mounts once in the app layout and attaches each runtime owner exactly once.
--->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import { runtimeOwners } from '../_runtime/runtime-owners.js';
+	import { runtimeOwners } from '../_runtime/runtime-owners';
 
-	const cleanups = runtimeOwners
-		.map((owner) => owner.attach())
-		.filter((cleanup): cleanup is () => void => typeof cleanup === 'function');
+	// Headless component: the single, stable owner of everything that starts when
+	// Whispering starts. It mounts once at the session root, outside the
+	// responsive nav branch, so crossing a layout breakpoint never re-runs any
+	// runtime owner.
+	const detachRuntimeOwners = runtimeOwners.map((owner) => owner.attach());
 
 	onDestroy(() => {
-		for (const cleanup of cleanups.toReversed()) cleanup();
+		for (const detach of detachRuntimeOwners.toReversed()) detach();
 	});
 </script>

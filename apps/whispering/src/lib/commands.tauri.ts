@@ -1,4 +1,4 @@
-import type { SatisfiedCommand } from '$lib/commands';
+import type { SatisfiedCommand, ShortcutEventState } from '$lib/commands';
 import { openTransformationPicker } from '$lib/operations/transformation-picker';
 
 /**
@@ -12,13 +12,15 @@ export const platformCommands = [
 		id: 'openTransformationPicker',
 		title: 'Open transformation picker',
 		// Fire on release, not press: the global accelerator carries a Cmd/Ctrl+Shift
-		// chord, and acting on the press synthesizes Cmd/Ctrl+C while that chord is
+		// chord, and capturing on press synthesizes Cmd/Ctrl+C while that chord is
 		// still held, so the foreground app sees Cmd+Shift+C instead of a clean copy.
-		// `dispatchCommandTrigger` forwards only the edges named in `on`, so a
-		// release-only subscription is enough: the press edge never reaches the
-		// callback, and this command is desktop-only (the rdev backend is its sole
-		// trigger source), so there is no in-app keydown path to account for.
-		on: ['Released'],
-		callback: () => openTransformationPicker(),
+		// Register both states (not Released-only) because the local shortcut manager
+		// only arms a command on keydown when `on` includes 'Pressed'; without it the
+		// in-app shortcut would never fire. The callback guard runs once, on release.
+		on: ['Pressed', 'Released'],
+		callback: (state?: ShortcutEventState) => {
+			if (state === 'Released' || state === undefined)
+				openTransformationPicker();
+		},
 	},
 ] as const satisfies SatisfiedCommand[];

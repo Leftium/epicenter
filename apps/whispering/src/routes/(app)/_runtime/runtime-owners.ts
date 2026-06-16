@@ -1,30 +1,22 @@
-/**
- * Owns the app-session runtime registry: each owner starts once because
- * `AppRuntime` mounts once at the app layout root.
- */
+import { attachAnalytics } from './attach-analytics.svelte';
+import { attachDebugCommands } from './attach-debug-commands';
+import { attachDesktopEvents } from './attach-desktop-events.svelte';
+import { attachGlobalShortcuts } from './attach-global-shortcuts';
+import { attachLocalShortcutListener } from './attach-local-shortcut-listener.svelte';
+import { attachRecordingOverlay } from './attach-recording-overlay.svelte';
+import { attachRecordingRetention } from './attach-recording-retention.svelte';
+import { attachTranscriptionConfig } from './attach-transcription-config.svelte';
+import { attachSyncIconWithRecorderState } from './sync-icon-with-recorder-state.svelte';
+import type { RuntimeOwner } from './types';
 
-import { shortcuts } from '#platform/shortcuts';
-import { permissions } from '$lib/state/permissions.svelte';
-import { appStartedRuntime } from './app-started.js';
-import { debugGlobalsRuntime } from './debug-globals.js';
-import { nativeRuntime } from './native-runtime.js';
-import { recordingOverlayRuntime } from './recording-overlay.svelte.js';
-import { retentionPruningRuntime } from './retention-pruning.svelte.js';
-import { syncIconWithRecorderStateRuntime } from './sync-icon-with-recorder-state.svelte.js';
-import { transcriptionConfigRuntime } from './transcription-config.svelte.js';
-
-export type RuntimeOwner = {
-	attach(): void | (() => void);
-};
-
-export const runtimeOwners: RuntimeOwner[] = [
-	debugGlobalsRuntime,
-	appStartedRuntime,
-	permissions,
-	shortcuts,
-	syncIconWithRecorderStateRuntime,
-	recordingOverlayRuntime,
-	transcriptionConfigRuntime,
-	retentionPruningRuntime,
-	nativeRuntime,
-];
+export const runtimeOwners = [
+	{ attach: attachDebugCommands },
+	{ attach: attachAnalytics },
+	{ attach: attachLocalShortcutListener },
+	{ attach: attachGlobalShortcuts },
+	{ attach: attachSyncIconWithRecorderState },
+	{ attach: attachRecordingOverlay },
+	{ attach: attachTranscriptionConfig },
+	{ attach: attachRecordingRetention },
+	{ attach: attachDesktopEvents },
+] satisfies RuntimeOwner[];

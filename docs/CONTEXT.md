@@ -50,3 +50,18 @@ shapes, see `docs/adr/`.
   collisions) versus synced settings (local shortcuts). The asymmetry is deliberate.
 - **Vault**: an encrypted, shared workspace for secrets only. Blind relay;
   passphrase derives the key via Argon2.
+
+## CLI and daemon
+
+- **Epicenter root**: a directory whose `epicenter.config.ts` declares one mount.
+  Discovery walks up to the nearest one. One root, one daemon.
+- **Daemon**: the long-lived foreground process started by `epicenter daemon up`.
+  It opens the root's mount and exposes it over a Unix socket as a callable peer.
+- **Mesh peer**: a device whose daemon is online and reachable. `run --peer <id>`
+  dispatches RPC to a remote peer; `peers` lists connected peers (presence).
+- **Mandatory-daemon commands**: `run`, `list`, `peers`. They require a live local
+  daemon (`getDaemon` returns `Required` otherwise); there is no cold-path
+  fallback (see `docs/adr/`).
+- **Library script**: a `bun ./script.ts` that opens a workspace directly and
+  composes/loops/dispatches RPC. The automation surface; the CLI is a one-shot
+  shell shortcut, not a place to build automation.

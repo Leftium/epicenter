@@ -19,12 +19,14 @@
  * The materializer helpers ({@link attachMountSqlite}, {@link
  * attachMountMarkdown}) are NOT on that bag. A mount's `compose` body is itself
  * node code (the app's `mount.ts` already imports `@epicenter/workspace/node`),
- * so it imports and calls them directly, passing the open's `ctx`. They fill the
- * deterministic disk path and the `${ctx.mount}-*` logger so a call site supplies
+ * so it imports and calls them directly, passing the `scope` and the
+ * `workspace`. They fill the deterministic disk path and the `${ctx.mount}-*`
+ * logger from `scope.ctx`, and enroll their own teardown through
+ * `scope.registerDrain` so a daemon shutdown drains them. A call site supplies
  * only what is genuinely its own (FTS columns, the table export config, git
- * autosave). Keeping them off the injected bag is what lets the coordinator stay
- * a pure pass-through: it never touches a materializer, only the `{ actions,
- * materializers }` the body returns.
+ * autosave) and spreads the result's `.actions`. Keeping them off the injected
+ * bag is what lets the coordinator stay a pure pass-through: it never touches a
+ * materializer, only the `{ actions }` the body returns.
  *
  * Browser bundles import `WorkspaceDefinition.mount` as a type and never reach
  * this module: the daemon runtime they would call it with is constructed here,
@@ -42,18 +44,16 @@ import {
 	type GitAutosaveConfig,
 	type MarkdownExport,
 } from '../document/materializer/markdown/index.js';
-import type { FtsConfig } from '../document/materializer/sqlite/core.js';
-import { attachBunSqliteMaterializer } from '../document/materializer/sqlite/index.js';
 import type {
 	MaterializerInput,
 	TablesRecord,
 } from '../document/materializer/shared.js';
+import type { FtsConfig } from '../document/materializer/sqlite/core.js';
+import { attachBunSqliteMaterializer } from '../document/materializer/sqlite/index.js';
+import type { MountComposeScope } from '../document/workspace.js';
 import { sqlitePath } from '../document/workspace-paths.js';
 import { attachMountInfrastructure } from './attach-mount-infrastructure.js';
-import {
-	defineSessionMount,
-	type SessionMountContext,
-} from './define-mount.js';
+import { defineSessionMount } from './define-mount.js';
 
 const HOSTED_API_URL = 'https://api.epicenter.so';
 
@@ -88,41 +88,48 @@ export type MarkdownMountOptions<TTables extends TablesRecord> = {
 
 /**
  * Attach the daemon-side SQLite mirror for a mount's workspace. Call it from a
- * mount's `compose` body, list the result under `materializers`, and spread its
- * `.actions` into the served registry.
+ * mount's `compose` body with the `scope` and the `workspace`; it enrolls its
+ * own teardown through `scope.registerDrain`, so you only spread its `.actions`
+ * into the served registry. There is no materializer list to remember: forgetting
+ * to drain is not expressible.
  *
- * The file path and logger are derived from `ctx`, so the call site passes only
- * its own FTS config.
+ * The file path and logger are derived from `scope.ctx`, so the call site passes
+ * only its own FTS config.
  */
 export function attachMountSqlite<
 	TTables extends TablesRecord,
 	TFts extends FtsConfig<TTables> | undefined = undefined,
 >(
-	ctx: SessionMountContext,
+	scope: MountComposeScope,
 	workspace: MaterializerInput<TTables>,
 	options?: SqliteMountOptions<TTables, TFts>,
 ): ReturnType<typeof attachBunSqliteMaterializer<TTables, TFts>> {
-	return attachBunSqliteMaterializer<TTables, TFts>(workspace, {
+	const { ctx, registerDrain } = scope;
+	const materializer = attachBunSqliteMaterializer<TTables, TFts>(workspace, {
 		filePath: sqlitePath(ctx.epicenterRoot, workspace.ydoc.guid),
 		fts: options?.fts,
 		log: createLogger(`${ctx.mount}-sqlite`),
 	});
+	registerDrain(materializer);
+	return materializer;
 }
 
 /**
  * Attach the daemon-side markdown export for a mount's workspace, optionally
  * git-autosaving each exported subdirectory. Call it from a mount's `compose`
- * body, list the result under `materializers`, and spread its `.actions` into
- * the served registry.
+ * body with the `scope` and the `workspace`; it enrolls its own teardown through
+ * `scope.registerDrain`, so you only spread its `.actions` into the served
+ * registry.
  *
- * The base directory and logger are derived from `ctx`, so the call site passes
- * only the per-table export config and git policy.
+ * The base directory and logger are derived from `scope.ctx`, so the call site
+ * passes only the per-table export config and git policy.
  */
 export function attachMountMarkdown<TTables extends TablesRecord>(
-	ctx: SessionMountContext,
+	scope: MountComposeScope,
 	workspace: MaterializerInput<TTables>,
 	{ tables, git }: MarkdownMountOptions<TTables>,
 ): MarkdownExport {
+	const { ctx, registerDrain } = scope;
 	const markdown = attachMarkdownExport<TTables>(workspace, {
 		dir: ctx.epicenterRoot,
 		tables,
@@ -142,6 +149,7 @@ export function attachMountMarkdown<TTables extends TablesRecord>(
 			});
 		}
 	}
+	registerDrain(markdown);
 	return markdown;
 }
 

@@ -44,9 +44,10 @@ export function fuji({ git = false, baseURL }: FujiMountOptions = {}) {
 	return fujiWorkspace.mount({
 		baseURL,
 		runtime: nodeMountRuntime(),
-		compose({ workspace, ctx, baseURL }) {
-			const sqlite = attachMountSqlite(ctx, workspace);
-			const markdown = attachMountMarkdown(ctx, workspace, {
+		compose({ workspace, scope }) {
+			const { ctx, baseURL } = scope;
+			const sqlite = attachMountSqlite(scope, workspace);
+			const markdown = attachMountMarkdown(scope, workspace, {
 				tables: {
 					entries: {
 						// One-way render: frontmatter is the row, body is the entry's
@@ -76,7 +77,6 @@ export function fuji({ git = false, baseURL }: FujiMountOptions = {}) {
 				git,
 			});
 			return {
-				materializers: [sqlite, markdown],
 				actions: defineActions({
 					...workspace.actions,
 					...sqlite.actions,

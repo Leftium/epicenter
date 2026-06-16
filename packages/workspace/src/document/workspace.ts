@@ -301,14 +301,33 @@ type ConnectedWorkspaceWithRuntime<
 	Omit<TRuntime, 'actions' | typeof Symbol.dispose>;
 
 /**
- * What a mount's `compose` callback sees: the bare daemon root, the open's
- * `ctx` (signed-in session, durable node id, resolved Epicenter root), and the
- * resolved sync `baseURL`.
+ * The ambient capabilities a mount's `open()` hands its `compose` body: the
+ * signed-in session `ctx` (durable node id, resolved Epicenter root, transport
+ * refs), the resolved sync `baseURL`, and `registerDrain`, the lifecycle sink
+ * that enrolls a materializer's teardown barrier for ordered drain on shutdown.
+ *
+ * `registerDrain` is what makes a dropped projection write impossible to cause
+ * by hand. `attachMountSqlite` / `attachMountMarkdown` call it when they attach,
+ * so a `compose` body never lists materializers and cannot forget to drain one:
+ * the obligation is discharged by the same call that creates the side effect.
+ * It is plain data (a closure over an array the coordinator owns), so the
+ * browser barrel that ships `.mount()` stays free of any node import.
+ */
+export type MountComposeScope = {
+	readonly ctx: SessionMountContext;
+	readonly baseURL: string;
+	readonly registerDrain: (drainable: Drainable) => void;
+};
+
+/**
+ * What a mount's `compose` callback sees: the bare daemon root `workspace` and
+ * the ambient `scope` (session ctx, resolved baseURL, drain sink).
  *
  * Materializers are attached by the body itself: a mount's `compose` is node
  * code, so it imports `attachMountSqlite` / `attachMountMarkdown` from
- * `@epicenter/workspace/node` and calls them with this `ctx`. The coordinator
- * never touches a materializer, which is why it stays browser-safe.
+ * `@epicenter/workspace/node` and calls them with `scope` (for ctx and drain
+ * registration) and `workspace` (the subject to project). The coordinator never
+ * touches a materializer, which is why it stays browser-safe.
  *
  * `workspace` is the unconnected root, so `workspace.tables.<t>.docs.<f>.guid`
  * is the same guid deriver the browser opener uses, letting a daemon read a
@@ -320,24 +339,23 @@ export type MountComposeContext<
 	TActions extends ActionRegistry,
 > = {
 	readonly workspace: Workspace<TTables, TKv, TActions>;
-	readonly ctx: SessionMountContext;
-	readonly baseURL: string;
+	readonly scope: MountComposeScope;
 };
 
 /**
  * What a mount's `compose` callback returns: the action registry the daemon
- * serves and the materializers whose teardown is awaited on shutdown. The daemon
- * twin of {@link ConnectComposition}.
+ * serves. The daemon twin of {@link ConnectComposition}.
  *
  * `actions` is the explicit served set, exactly as the browser `connect`
  * composer is: this is where the daemon refuses browser-only actions and admits
- * its materializer actions. `materializers` lists the attachments
- * `attachInfrastructure` drains in order so a shutdown cannot drop a projection
- * write mid-flight.
+ * its materializer actions. Materializer teardown is deliberately not returned
+ * here: each `attachMount*` helper enrolls its own drain through
+ * `scope.registerDrain`, so the served-action choice is the only decision a body
+ * makes. The asymmetry is the point: draining a materializer is an obligation
+ * (always wanted), while which actions to serve is a policy (the body's call).
  */
 export type MountComposition<TActions extends ActionRegistry> = {
 	readonly actions: TActions;
-	readonly materializers?: ReadonlyArray<Drainable>;
 };
 
 /**
@@ -452,7 +470,12 @@ export function createWorkspace<
 					field,
 					{
 						guid: (rowId: string): Guid =>
-							docGuid({ workspaceId: options.id, collection: name, rowId, field }),
+							docGuid({
+								workspaceId: options.id,
+								collection: name,
+								rowId,
+								field,
+							}),
 					},
 				]),
 			);
@@ -614,10 +637,10 @@ export function defineWorkspace<
 	 * `defineSessionMount`, resolve the base URL, `create()` the root, run the
 	 * caller's `compose`, attach mount infrastructure, and assemble the runtime.
 	 *
-	 * `compose` is the one place daemon actions and materializers are chosen, so
-	 * a mount cannot accidentally serve browser-only actions: omit it to serve
-	 * the base `workspace.actions` with no materializers, or return an explicit
-	 * `{ actions, materializers }`.
+	 * `compose` is the one place daemon actions are chosen, so a mount cannot
+	 * accidentally serve browser-only actions: omit it to serve the base
+	 * `workspace.actions` with no materializers, or return an explicit
+	 * `{ actions }` after attaching materializers, which enroll their own drain.
 	 *
 	 * The mount's display label is the definition's `name`, declared once where
 	 * identity lives rather than restated at every call site.
@@ -631,9 +654,22 @@ export function defineWorkspace<
 			open(ctx) {
 				const baseURL = runtime.resolveBaseURL(mountOptions.baseURL);
 				const workspace = create();
+				// The coordinator owns the drain registry for this open(): the
+				// `scope.registerDrain` it hands compose pushes here, and the
+				// collected barriers go to infrastructure so a shutdown awaits every
+				// materializer's pending projection write. compose never returns
+				// materializers; the attach helpers enroll themselves.
+				const drains: Drainable[] = [];
+				const scope: MountComposeScope = {
+					ctx,
+					baseURL,
+					registerDrain: (drainable) => {
+						drains.push(drainable);
+					},
+				};
 				const composition: MountComposition<TRuntimeActions> =
 					mountOptions.compose
-						? mountOptions.compose({ workspace, ctx, baseURL })
+						? mountOptions.compose({ workspace, scope })
 						: // No compose: serve the base actions, no materializers. Reached
 							// only when `TRuntimeActions` defaults to `TActions`, so the
 							// base registry is the served one; the cast bridges the generic
@@ -642,15 +678,15 @@ export function defineWorkspace<
 								actions: workspace.actions,
 							} as unknown as MountComposition<TRuntimeActions>);
 				// `attachInfrastructure` serves `composition.actions` to peers and
-				// drains every listed materializer in order on shutdown, so it runs
-				// after compose has both.
+				// drains every registered materializer in order on shutdown, so it
+				// runs after compose has registered them.
 				const infrastructure = runtime.attachInfrastructure(
 					workspace.ydoc,
 					ctx,
 					{
 						baseURL,
 						actions: composition.actions,
-						materializers: composition.materializers ?? [],
+						materializers: drains,
 					},
 				);
 				return {

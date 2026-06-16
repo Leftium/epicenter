@@ -34,14 +34,14 @@ export function tabManager({
 	return tabManagerWorkspace.mount({
 		baseURL,
 		runtime: nodeMountRuntime(),
-		compose({ workspace, ctx }) {
-			const sqlite = attachMountSqlite(ctx, workspace, {
+		compose({ workspace, scope }) {
+			const sqlite = attachMountSqlite(scope, workspace, {
 				fts: {
 					bookmarks: ['title', 'url'],
 					savedTabs: ['title', 'url'],
 				},
 			});
-			const markdown = attachMountMarkdown(ctx, workspace, {
+			const markdown = attachMountMarkdown(scope, workspace, {
 				tables: {
 					bookmarks: {},
 					devices: {},
@@ -50,7 +50,6 @@ export function tabManager({
 				git,
 			});
 			return {
-				materializers: [sqlite, markdown],
 				actions: defineActions({
 					...workspace.actions,
 					...sqlite.actions,

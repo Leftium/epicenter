@@ -117,10 +117,14 @@ describe('definition.mount', () => {
 		const mount = demoWorkspace.mount({
 			baseURL: 'https://explicit.example',
 			runtime: stubRuntime(spy),
-			compose: ({ workspace }) => {
+			compose: ({ workspace, scope }) => {
 				// The real body would call `attachMountSqlite` / `attachMountMarkdown`
-				// here; stub them as drainables with one-action registries so the
-				// merge into the served set is observable without touching disk.
+				// here, which enroll their own drain through `scope.registerDrain`.
+				// Stub them as drainables with one-action registries and register them
+				// by hand, so both the merge into the served set and the coordinator's
+				// drain collection are observable without touching disk. Note the
+				// return carries `actions` only: the materializers reach teardown
+				// purely through registration, never through the returned object.
 				const rebuild = defineQuery({
 					description: 'rebuild',
 					handler: () => null,
@@ -133,8 +137,9 @@ describe('definition.mount', () => {
 					whenDisposed: Promise.resolve(),
 					actions: { markdown_rebuild: rebuild },
 				};
+				scope.registerDrain(sqlite);
+				scope.registerDrain(markdown);
 				return {
-					materializers: [sqlite, markdown],
 					actions: defineActions({
 						...workspace.actions,
 						...sqlite.actions,

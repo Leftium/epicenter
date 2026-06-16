@@ -33,14 +33,13 @@ export function honeycrisp({
 	return honeycrispWorkspace.mount({
 		baseURL,
 		runtime: nodeMountRuntime(),
-		compose({ workspace, ctx }) {
-			const sqlite = attachMountSqlite(ctx, workspace);
-			const markdown = attachMountMarkdown(ctx, workspace, {
+		compose({ workspace, scope }) {
+			const sqlite = attachMountSqlite(scope, workspace);
+			const markdown = attachMountMarkdown(scope, workspace, {
 				tables: { notes: {} },
 				git,
 			});
 			return {
-				materializers: [sqlite, markdown],
 				actions: defineActions({
 					...workspace.actions,
 					...sqlite.actions,

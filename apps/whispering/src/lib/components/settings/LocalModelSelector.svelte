@@ -204,6 +204,15 @@
 			sourcePath: selected,
 		});
 		if (error) {
+			// A name collision is the common dedup case: an external copy shares the
+			// model's canonical name with one already installed. Name it and point at
+			// the fix, since the colliding entry is right here in this list.
+			if (error.name === 'EntryExists') {
+				toast.error(`You already have "${error.entry}"`, {
+					description: `Delete the existing "${error.entry}" from the list below first, then link this one in its place.`,
+				});
+				return;
+			}
 			toast.error('Could not link that model', { description: error.message });
 			return;
 		}

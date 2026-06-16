@@ -34,6 +34,14 @@ pub enum ModelImportError {
     #[error("{message}")]
     InvalidEntryName { message: String },
 
+    /// A real, app-managed model with the chosen name already occupies the
+    /// folder. Refused rather than clobbered so linking never deletes
+    /// downloaded bytes. Carries the colliding name (`entry`, not `name`, which
+    /// is the serde discriminant) so the UI can guide the user to delete that
+    /// existing entry first.
+    #[error("\"{entry}\" already exists in Whispering")]
+    EntryExists { entry: String },
+
     /// The picked file/directory does not have the exact shape the engine's
     /// loader needs.
     #[error("{message}")]
@@ -175,11 +183,12 @@ fn clear_link_path(link: &Path) -> Result<(), ModelImportError> {
             message: format!("replace existing link: {e}"),
         });
     }
-    Err(ModelImportError::InvalidEntryName {
-        message: format!(
-            "A model named \"{}\" already exists in the folder. Delete it first or rename your model.",
-            link.file_name().and_then(|n| n.to_str()).unwrap_or_default()
-        ),
+    Err(ModelImportError::EntryExists {
+        entry: link
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default()
+            .to_string(),
     })
 }
 
@@ -353,7 +362,11 @@ mod tests {
         let dir = tmp();
         let real = dir.join("downloaded.bin");
         fs::write(&real, b"bytes").unwrap();
-        assert!(clear_link_path(&real).is_err());
+        let err = clear_link_path(&real).unwrap_err();
+        assert!(
+            matches!(err, ModelImportError::EntryExists { ref entry } if entry == "downloaded.bin"),
+            "collision must surface as EntryExists carrying the name, got {err:?}"
+        );
         assert!(
             real.is_file(),
             "a real download must never be deleted by linking"

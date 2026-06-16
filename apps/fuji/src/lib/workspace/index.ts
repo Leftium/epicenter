@@ -73,7 +73,12 @@ const entriesTable = defineTable({
 	createdAt: field.datetime(),
 	updatedAt: field.datetime(),
 	rating: field.number(),
-}).childDocs({ content: attachRichText });
+}).childDocs({
+	content: {
+		layout: attachRichText,
+		onLocalEdit: () => ({ updatedAt: DateTimeString.now() }),
+	},
+});
 
 export type Entry = InferTableRow<typeof entriesTable>;
 

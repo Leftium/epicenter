@@ -21,7 +21,6 @@
 	import 'prosemirror-view/style/prosemirror.css';
 	import { redo, undo, ySyncPlugin, yUndoPlugin } from 'y-prosemirror';
 	import { fromDisposableCache } from '@epicenter/svelte';
-	import { DateTimeString, onLocalUpdate } from '@epicenter/workspace';
 	import { requireFuji } from '$lib/session';
 	import type { EntryId } from '$lib/workspace';
 	import { entryBodySchema as schema } from '$lib/workspace/entry-body-schema';
@@ -36,14 +35,6 @@
 
 	const fuji = requireFuji();
 	const doc = fromDisposableCache(fuji.tables.entries.docs.content, () => entryId);
-	$effect(() => {
-		const current = doc.current;
-		return onLocalUpdate(current.ydoc, () => {
-			fuji.tables.entries.update(entryId, {
-				updatedAt: DateTimeString.now(),
-			});
-		});
-	});
 
 	let element: HTMLDivElement | undefined = $state();
 

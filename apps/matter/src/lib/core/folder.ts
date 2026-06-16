@@ -5,7 +5,7 @@
  * optional `matter.json` text), it produces the readable rows, the unreadable
  * files (kept separate, never dropped), and EITHER a modeled classification (a
  * valid `matter.json` was supplied) OR a raw untyped view (no model, or junk
- * model). The actual disk listing lives at the boundary (`vault.svelte.ts` in
+ * model). The actual disk listing lives at the boundary (`table.svelte.ts` in
  * the app, `src/cli/check.ts` in the headless command), so this transform is
  * testable without any filesystem.
  *

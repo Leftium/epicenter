@@ -1,8 +1,8 @@
 /**
- * A live view over a folder on disk.
+ * A live Table: one folder on disk, read as one typed table.
  *
  * The folder is the truth and other processes write it (agents, your editor, git),
- * so the vault is not a one-shot read: a single `watch_folder` command arms a
+ * so the table is not a one-shot read: a single `watch_folder` command arms a
  * native folder watcher (backed by `notify`), pushes the folder's current
  * contents as a first batch, then streams a batch per debounced change. Each
  * pushed delta is self-contained ({@link FileDelta}: a file name plus the file's
@@ -10,13 +10,15 @@
  * updates, the seed scan, AND the app's own successful writes all flow through
  * ONE path (`applyDeltas`) into ONE `SvelteMap`.
  *
- * Lifecycle: opening a vault IS observing it, so the watcher starts at
+ * Lifecycle: opening a table IS observing it, so the watcher starts at
  * construction. `whenReady` resolves once it is armed (the seed scan has run, so
  * the store holds the folder's current contents) and rejects if it cannot be, which
  * the UI gates on with `{#await}`. `dispose()` stops the OS watch. The keyed route
- * component (`/vault/[id]`) owns one vault's lifetime, constructing it on mount and
+ * component (`/vault/[id]`) owns one table's lifetime, constructing it on mount and
  * disposing it on destroy, so no module singleton or standing effect drives the
- * watcher; the set of open vaults is just a persisted list (`open-vaults.svelte.ts`).
+ * watcher; the set of open tabs is just a persisted list (`open-vaults.svelte.ts`).
+ * A Vault that composes many tables (one per child folder) is the next layer up;
+ * see the vault-as-relational-unit spec.
  *
  * Desktop-only: it talks to Tauri directly (no platform seam). Develop with
  * `bun run tauri dev`.
@@ -41,15 +43,15 @@ import { parseEntry, type Row } from './core/parse';
 import { editBody, editField } from './core/serialize';
 import { MIRROR_TABLE, projectToSqlite, quoteIdent } from './core/sqlite';
 
-/** The vault's own folder name (its basename). Per-file paths are Rust's. */
+/** The table's own folder name (its basename). Per-file paths are Rust's. */
 const basename = (path: string) => path.split(/[/\\]/).pop() ?? path;
 
 /**
- * Open `path` as a live vault. Synchronous and IO-free: the store starts empty
+ * Open `path` as a live table. Synchronous and IO-free: the store starts empty
  * and fills from the first pushed batch once `watch()` runs, so there is no
  * separate initial read and no read-then-watch gap.
  */
-export function createVault(path: string) {
+export function createTable(path: string) {
 	const folderName = basename(path);
 
 	// ONE store, keyed by filename: each entry is a `Result` that is either a
@@ -303,18 +305,18 @@ export function createVault(path: string) {
 	};
 }
 
-export type Vault = ReturnType<typeof createVault>;
+export type TableHandle = ReturnType<typeof createTable>;
 
 /**
- * The slice of a {@link Vault} the grid renders from: the folder name, the
+ * The slice of a {@link TableHandle} the grid renders from: the folder name, the
  * classified read, and the two save commands. This is the dependency boundary
- * `FolderGrid` depends on, NOT the full vault, so anything that can produce a
- * classified folder and accept edits can drive the grid. The live vault satisfies
- * it for free (it is a `Pick` of it); the demo vault satisfies it WITHOUT faking
+ * `FolderGrid` depends on, NOT the full table handle, so anything that can produce a
+ * classified folder and accept edits can drive the grid. The live table satisfies
+ * it for free (it is a `Pick` of it); the demo table satisfies it WITHOUT faking
  * the disk lifecycle (`whenReady` / `dispose` / `path`), so the demo is an honest
- * drop-in rather than a vault pretending to watch a folder.
+ * drop-in rather than a table pretending to watch a folder.
  */
-export type FolderGridVault = Pick<
-	Vault,
+export type TableView = Pick<
+	TableHandle,
 	'folderName' | 'read' | 'saveField' | 'saveBody'
 >;

@@ -10,7 +10,7 @@
  *
  * Replaces the old `vaultSession` singleton: where that held ONE `current` vault and
  * drove its lifetime, this holds only the list of tabs and the open/close actions.
- * SvelteKit's router owns everything else, so there is no `Map<id, Vault>`, no
+ * SvelteKit's router owns everything else, so there is no `Map<id, TableHandle>`, no
  * `activeId`, and no manual dispose policy here.
  *
  * Single-context: the list is read once at construction and written on each change,

@@ -14,27 +14,27 @@
 	import TriangleAlertIcon from '@lucide/svelte/icons/triangle-alert';
 	import type { Kind } from '@epicenter/field';
 	import type { Cell } from '$lib/core/conformance';
-	import type { FolderGridVault } from '$lib/vault.svelte';
+	import type { TableView } from '$lib/table.svelte';
 	import type { WhereFilter } from '$lib/where-filter.svelte';
 	import ModeledCell from './ModeledCell.svelte';
 	import RowDetailDialog from './RowDetailDialog.svelte';
 
-	// The grid renders from any {@link FolderGridVault}: the live disk vault or the
-	// in-memory demo vault, injected by the route. The narrow getters are bound once
+	// The grid renders from any {@link TableView}: the live disk table or the
+	// in-memory demo table, injected by the route. The narrow getters are bound once
 	// here so the template reads `read` / `folder` / `onSave*` exactly as before, and a
-	// vault swap (open another folder) flows through these derivations.
-	// `filter` is the tab's WHERE filter (the live vault provides one; the demo does not).
+	// table swap (open another folder) flows through these derivations.
+	// `filter` is the tab's WHERE filter (the live table provides one; the demo does not).
 	// The grid renders its input in the header and narrows rows to the names it matched;
 	// `undefined` (no filter, or an empty clause) means show every row.
-	let { vault, filter }: { vault: FolderGridVault; filter?: WhereFilter } = $props();
+	let { table, filter }: { table: TableView; filter?: WhereFilter } = $props();
 
 	// The file names the WHERE clause matched, or undefined when no clause is active.
 	const matchedFileNames = $derived(filter?.matchedFileNames);
 
-	const read = $derived(vault.read);
-	const folder = $derived(vault.folderName);
-	const onSaveField = $derived(vault.saveField);
-	const onSaveBody = $derived(vault.saveBody);
+	const read = $derived(table.read);
+	const folder = $derived(table.folderName);
+	const onSaveField = $derived(table.saveField);
+	const onSaveBody = $derived(table.saveBody);
 	const view = $derived(read.view);
 
 	type RowFilter = 'all' | 'attention' | 'ready';

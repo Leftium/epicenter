@@ -440,18 +440,15 @@ export function createWorkspace<
 			// `.docs` carries one guid deriver per declared child-doc field, so the
 			// workspace owns guid derivation end-to-end. The connected opener layers
 			// `open(rowId)` onto these same entries (see `connectTableChildDocs`).
-			const docs: Record<string, unknown> = {};
-			for (const field of Object.keys(definition.docDecls)) {
-				docs[field] = {
-					guid: (rowId: string): Guid =>
-						docGuid({
-							workspaceId: options.id,
-							collection: name,
-							rowId,
-							field,
-						}),
-				};
-			}
+			const docs = Object.fromEntries(
+				Object.keys(definition.docDecls).map((field) => [
+					field,
+					{
+						guid: (rowId: string): Guid =>
+							docGuid({ workspaceId: options.id, collection: name, rowId, field }),
+					},
+				]),
+			);
 			return [name, { ...table, docs }];
 		}),
 	) as WorkspaceTables<TTables>;

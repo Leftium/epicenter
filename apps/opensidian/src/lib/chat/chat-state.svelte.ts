@@ -2,6 +2,7 @@ import type { AuthClient } from '@epicenter/auth';
 import { createAiChatFetch } from '@epicenter/client';
 import { AiChatHttpError } from '@epicenter/constants/ai-chat-errors';
 import { APP_URLS } from '@epicenter/constants/vite';
+import { InstantString } from '@epicenter/field';
 import { fromTable } from '@epicenter/svelte';
 import { actionsToAiTools } from '@epicenter/workspace/ai';
 import { createChat, fetchServerSentEvents } from '@tanstack/ai-svelte';
@@ -15,6 +16,11 @@ import {
 } from 'opensidian';
 import type { OpensidianBrowser } from 'opensidian/browser';
 import { SvelteMap } from 'svelte/reactivity';
+import {
+	compareInstantAsc,
+	compareInstantDesc,
+	dateToInstant,
+} from '$lib/chat/instants';
 import { DEFAULT_MODEL } from '$lib/chat/models';
 import {
 	buildGlobalSkillsPrompt,
@@ -42,14 +48,16 @@ export function createAiChatState({
 	const sessionAiTools = actionsToAiTools(workspace.collaboration.actions);
 	const conversationsMap = fromTable(workspace.tables.conversations);
 	const conversations = $derived(
-		[...conversationsMap.values()].sort((a, b) => b.updatedAt - a.updatedAt),
+		[...conversationsMap.values()].sort((a, b) =>
+			compareInstantDesc(a.updatedAt, b.updatedAt),
+		),
 	);
 
 	function ensureDefaultConversation(): ConversationId | undefined {
 		if (conversations.length > 0) return undefined;
 
 		const id = generateConversationId();
-		const now = Date.now();
+		const now = InstantString.now();
 
 		workspace.tables.conversations.set({
 			id,
@@ -71,7 +79,7 @@ export function createAiChatState({
 	) {
 		workspace.tables.conversations.update(conversationId, {
 			...patch,
-			updatedAt: Date.now(),
+			updatedAt: InstantString.now(),
 		});
 	}
 
@@ -79,7 +87,7 @@ export function createAiChatState({
 		return workspace.tables.chatMessages
 			.scan()
 			.rows.filter((message) => message.conversationId === conversationId)
-			.sort((a, b) => a.createdAt - b.createdAt)
+			.sort((a, b) => compareInstantAsc(a.createdAt, b.createdAt))
 			.map(toUiMessage);
 	}
 
@@ -127,7 +135,9 @@ export function createAiChatState({
 					conversationId,
 					role: 'assistant',
 					parts: toPersistedParts(message.parts),
-					createdAt: message.createdAt?.getTime() ?? Date.now(),
+					createdAt: message.createdAt
+						? dateToInstant(message.createdAt)
+						: InstantString.now(),
 				});
 
 				updateConversation(conversationId, {});
@@ -167,11 +177,11 @@ export function createAiChatState({
 			},
 
 			get createdAt() {
-				return metadata?.createdAt ?? 0;
+				return metadata?.createdAt;
 			},
 
 			get updatedAt() {
-				return metadata?.updatedAt ?? 0;
+				return metadata?.updatedAt;
 			},
 
 			get messages() {
@@ -219,7 +229,7 @@ export function createAiChatState({
 					conversationId,
 					role: 'user',
 					parts: toPersistedParts([{ type: 'text', content }]),
-					createdAt: Date.now(),
+					createdAt: InstantString.now(),
 				});
 
 				const currentTitle = metadata?.title ?? 'New Chat';
@@ -322,7 +332,7 @@ export function createAiChatState({
 
 	function newConversation() {
 		const id = generateConversationId();
-		const now = Date.now();
+		const now = InstantString.now();
 		const active = handles.get(activeConversationId);
 
 		workspace.tables.conversations.set({

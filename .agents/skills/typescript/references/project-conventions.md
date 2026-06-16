@@ -57,6 +57,61 @@ Detailed examples for the baseline TypeScript rules used across Epicenter.
   `docs/articles/copied-types-are-boundary-leaks.md` for the full review
   pattern.
 
+- **Compose types upward, never subtract-and-replace**: Build a richer type by
+  intersecting a base with additive members, not by `Omit`-ing a field and
+  re-adding it under a new type. `Omit<Base, 'k'> & { k: U }` is the
+  structural-typing equivalent of overriding an inherited field; writing it in
+  two sibling types is copy-paste override. Define the smaller shape first, then
+  grow it.
+
+  ```typescript
+  // Bad: the same retype is subtracted and re-added in both types.
+  type Connected =
+    Omit<Workspace, 'tables'> & { tables: ConnectedTables };
+  type ConnectedWithInfra =
+    Omit<Workspace, 'tables'> & {
+      tables: ConnectedTables;
+      idb: Idb;
+      wipe(): Promise<void>;
+    };
+
+  // Good: the retype happens once; the richer type is additive.
+  type Connected =
+    Omit<Workspace, 'tables'> & { tables: ConnectedTables };
+  type ConnectedWithInfra = Connected & {
+    idb: Idb;
+    wipe(): Promise<void>;
+  };
+  ```
+
+  The single surviving `Omit` sits where the field genuinely changes type; every
+  richer shape builds on top of it, so Go to Definition chains to one source and
+  a future change to that retype lands in one place.
+
+  The same principle inverts for *removing* a capability. A builder that must be
+  called at most once should return a base type that never declared the method,
+  so a second call is a compile error instead of a silent overwrite. Reach for
+  the base type, not `Omit<Self, 'method'>`.
+
+  ```typescript
+  // Bad: childDocs returns the same type, so it chains forever; a second
+  // call silently replaces the first declaration.
+  type Table = {
+    childDocs(decls: ChildDocDecls): Table;
+  };
+
+  // Good: build up from a base that has no childDocs, then add it once.
+  // Calling it hands back the base, so the method is gone afterward.
+  type Table = { /* schema, migrate, ... no childDocs */ };
+  type ChildDocCapableTable = Table & {
+    childDocs(decls: ChildDocDecls): Table;
+  };
+  function defineTable(): ChildDocCapableTable { /* ... */ }
+
+  defineTable().childDocs(a);            // ok
+  defineTable().childDocs(a).childDocs(b); // compile error: childDocs is gone
+  ```
+
 - Always use `type` instead of `interface` in TypeScript.
 - **`readonly` only for arrays and maps**: Never use `readonly` on primitive properties or object properties. The modifier is shallow and provides little protection for non-collection types. Use it only where mutation is a realistic footgun:
 

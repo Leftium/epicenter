@@ -1,4 +1,4 @@
-import { field } from '@epicenter/field';
+import { field, InstantString } from '@epicenter/field';
 import {
 	attachTimeline,
 	defineTable,
@@ -13,15 +13,18 @@ export const filesTable = defineTable({
 	parentId: nullable(field.string<FileId>()),
 	type: field.select(['file', 'folder']),
 	size: field.number(),
-	createdAt: field.number(),
-	updatedAt: field.number(),
-	trashedAt: nullable(field.number()),
+	// Timestamps are canonical UTC instants, not raw millis: a fixed-width
+	// instant sorts chronologically as TEXT (the SQLite mirror and the
+	// recency index both rely on this) and stays readable in the CRDT.
+	createdAt: field.instant(),
+	updatedAt: field.instant(),
+	trashedAt: nullable(field.instant()),
 }).docs({
 	content: {
 		layout: attachTimeline,
 		// Body edits bypass the tree API, so bump `updatedAt` here to keep the
 		// same modification-time invariant the file operations already maintain.
-		onLocalEdit: () => ({ updatedAt: Date.now() }),
+		onLocalEdit: () => ({ updatedAt: InstantString.now() }),
 	},
 });
 

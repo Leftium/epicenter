@@ -10,6 +10,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { InstantString } from '@epicenter/field';
 import { createWorkspace } from '@epicenter/workspace';
 import { asFileId } from '../ids.js';
 import { filesTable } from '../table.js';
@@ -38,11 +39,14 @@ function makeRow(
 		parentId: parentId === null ? null : fid(parentId),
 		type,
 		size: 0,
-		createdAt: Date.now(),
-		updatedAt: Date.now(),
+		createdAt: InstantString.now(),
+		updatedAt: InstantString.now(),
 		trashedAt: null,
 	};
 }
+
+/** Millis -> canonical instant, for fixtures that pin a creation/update order. */
+const at = (ms: number) => InstantString.fromDate(new Date(ms));
 
 describe('attachFileSystemIndex', () => {
 	// ═══════════════════════════════════════════════════════════════════════
@@ -147,8 +151,8 @@ describe('attachFileSystemIndex', () => {
 
 	test('getPathById returns the disambiguated display path', () => {
 		const { files, ydoc } = setup();
-		files.set({ ...makeRow('a', 'foo.txt'), createdAt: 1000 });
-		files.set({ ...makeRow('b', 'foo.txt'), createdAt: 2000 });
+		files.set({ ...makeRow('a', 'foo.txt'), createdAt: at(1000) });
+		files.set({ ...makeRow('b', 'foo.txt'), createdAt: at(2000) });
 		const index = attachFileSystemIndex(ydoc, files);
 
 		expect(index.getPathById(fid('a'))).toBe('/foo.txt');
@@ -160,14 +164,14 @@ describe('attachFileSystemIndex', () => {
 	test('getPathById returns undefined for trashed and unknown rows', () => {
 		const { files, ydoc } = setup();
 		files.set(makeRow('f1', 'alive.txt'));
-		files.set({ ...makeRow('f2', 'gone.txt'), trashedAt: Date.now() });
+		files.set({ ...makeRow('f2', 'gone.txt'), trashedAt: InstantString.now() });
 		const index = attachFileSystemIndex(ydoc, files);
 
 		expect(index.getPathById(fid('f1'))).toBe('/alive.txt');
 		expect(index.getPathById(fid('f2'))).toBeUndefined();
 		expect(index.getPathById(fid('missing'))).toBeUndefined();
 
-		files.update('f1', { trashedAt: Date.now() });
+		files.update('f1', { trashedAt: InstantString.now() });
 		expect(index.getPathById(fid('f1'))).toBeUndefined();
 
 		ydoc.destroy();
@@ -180,7 +184,7 @@ describe('attachFileSystemIndex', () => {
 	test('trashed files are excluded from paths and children', () => {
 		const { files, ydoc } = setup();
 		files.set(makeRow('f1', 'active.txt'));
-		files.set({ ...makeRow('f2', 'trashed.txt'), trashedAt: Date.now() });
+		files.set({ ...makeRow('f2', 'trashed.txt'), trashedAt: InstantString.now() });
 		const index = attachFileSystemIndex(ydoc, files);
 
 		expect(index.getIdByPath('/active.txt')).toBe(fid('f1'));
@@ -194,7 +198,7 @@ describe('attachFileSystemIndex', () => {
 		const { files, ydoc } = setup();
 		files.set({
 			...makeRow('d1', 'docs', null, 'folder'),
-			trashedAt: Date.now(),
+			trashedAt: InstantString.now(),
 		});
 		files.set(makeRow('f1', 'readme.md', 'd1'));
 		const index = attachFileSystemIndex(ydoc, files);
@@ -208,7 +212,7 @@ describe('attachFileSystemIndex', () => {
 
 	test('trashing a file frees its name for other files', () => {
 		const { files, ydoc } = setup();
-		files.set({ ...makeRow('f1', 'report.txt'), trashedAt: Date.now() });
+		files.set({ ...makeRow('f1', 'report.txt'), trashedAt: InstantString.now() });
 		files.set(makeRow('f2', 'report.txt'));
 		const index = attachFileSystemIndex(ydoc, files);
 
@@ -242,7 +246,7 @@ describe('attachFileSystemIndex', () => {
 
 		expect(index.getIdByPath('/hello.txt')).toBe(fid('f1'));
 
-		files.update('f1', { trashedAt: Date.now() });
+		files.update('f1', { trashedAt: InstantString.now() });
 
 		expect(index.hasPath('/hello.txt')).toBe(false);
 
@@ -346,8 +350,8 @@ describe('attachFileSystemIndex', () => {
 		// A.parentId = B, B.parentId = A: cycle
 		// B has later updatedAt so B gets moved to root
 		// After fix: B.parentId = null, A.parentId = B → tree is root→B→A
-		files.set({ ...makeRow('a', 'alpha', 'b', 'folder'), updatedAt: 1000 });
-		files.set({ ...makeRow('b', 'beta', 'a', 'folder'), updatedAt: 2000 });
+		files.set({ ...makeRow('a', 'alpha', 'b', 'folder'), updatedAt: at(1000) });
+		files.set({ ...makeRow('b', 'beta', 'a', 'folder'), updatedAt: at(2000) });
 		const index = attachFileSystemIndex(ydoc, files);
 
 		expect(files.get('b').data?.parentId).toBeNull();
@@ -365,9 +369,9 @@ describe('attachFileSystemIndex', () => {
 		// C has latest updatedAt → C moved to root
 		// After fix: C.parentId = null, B.parentId = A, A.parentId = C
 		// Tree: root→C→A→B
-		files.set({ ...makeRow('a', 'node-a', 'c', 'folder'), updatedAt: 1000 });
-		files.set({ ...makeRow('b', 'node-b', 'a', 'folder'), updatedAt: 2000 });
-		files.set({ ...makeRow('c', 'node-c', 'b', 'folder'), updatedAt: 3000 });
+		files.set({ ...makeRow('a', 'node-a', 'c', 'folder'), updatedAt: at(1000) });
+		files.set({ ...makeRow('b', 'node-b', 'a', 'folder'), updatedAt: at(2000) });
+		files.set({ ...makeRow('c', 'node-c', 'b', 'folder'), updatedAt: at(3000) });
 		const index = attachFileSystemIndex(ydoc, files);
 
 		expect(files.get('c').data?.parentId).toBeNull();
@@ -382,8 +386,8 @@ describe('attachFileSystemIndex', () => {
 		const { files, ydoc } = setup();
 		files.set(makeRow('clean', 'clean.txt'));
 		// Cycle: x→y→x
-		files.set({ ...makeRow('x', 'x-file', 'y', 'folder'), updatedAt: 1000 });
-		files.set({ ...makeRow('y', 'y-file', 'x', 'folder'), updatedAt: 2000 });
+		files.set({ ...makeRow('x', 'x-file', 'y', 'folder'), updatedAt: at(1000) });
+		files.set({ ...makeRow('y', 'y-file', 'x', 'folder'), updatedAt: at(2000) });
 		const index = attachFileSystemIndex(ydoc, files);
 
 		expect(index.getIdByPath('/clean.txt')).toBe(fid('clean'));
@@ -411,7 +415,7 @@ describe('attachFileSystemIndex', () => {
 		const { files, ydoc } = setup();
 		files.set({
 			...makeRow('d1', 'trashed-folder', null, 'folder'),
-			trashedAt: Date.now(),
+			trashedAt: InstantString.now(),
 		});
 		files.set(makeRow('f1', 'child.txt', 'd1'));
 		const index = attachFileSystemIndex(ydoc, files);
@@ -462,8 +466,8 @@ describe('attachFileSystemIndex', () => {
 
 	test('disambiguation: two files with same name', () => {
 		const { files, ydoc } = setup();
-		files.set({ ...makeRow('a', 'foo.txt'), createdAt: 1000, updatedAt: 1000 });
-		files.set({ ...makeRow('b', 'foo.txt'), createdAt: 2000, updatedAt: 2000 });
+		files.set({ ...makeRow('a', 'foo.txt'), createdAt: at(1000), updatedAt: at(1000) });
+		files.set({ ...makeRow('b', 'foo.txt'), createdAt: at(2000), updatedAt: at(2000) });
 		const index = attachFileSystemIndex(ydoc, files);
 
 		expect(index.getIdByPath('/foo.txt')).toBe(fid('a'));
@@ -474,9 +478,9 @@ describe('attachFileSystemIndex', () => {
 
 	test('disambiguation: three files with same name', () => {
 		const { files, ydoc } = setup();
-		files.set({ ...makeRow('a', 'doc.md'), createdAt: 1000 });
-		files.set({ ...makeRow('b', 'doc.md'), createdAt: 2000 });
-		files.set({ ...makeRow('c', 'doc.md'), createdAt: 3000 });
+		files.set({ ...makeRow('a', 'doc.md'), createdAt: at(1000) });
+		files.set({ ...makeRow('b', 'doc.md'), createdAt: at(2000) });
+		files.set({ ...makeRow('c', 'doc.md'), createdAt: at(3000) });
 		const index = attachFileSystemIndex(ydoc, files);
 
 		expect(index.getIdByPath('/doc.md')).toBe(fid('a'));
@@ -488,8 +492,8 @@ describe('attachFileSystemIndex', () => {
 
 	test('disambiguation: files without extensions', () => {
 		const { files, ydoc } = setup();
-		files.set({ ...makeRow('a', 'Makefile'), createdAt: 1000 });
-		files.set({ ...makeRow('b', 'Makefile'), createdAt: 2000 });
+		files.set({ ...makeRow('a', 'Makefile'), createdAt: at(1000) });
+		files.set({ ...makeRow('b', 'Makefile'), createdAt: at(2000) });
 		const index = attachFileSystemIndex(ydoc, files);
 
 		expect(index.getIdByPath('/Makefile')).toBe(fid('a'));
@@ -500,8 +504,8 @@ describe('attachFileSystemIndex', () => {
 
 	test('disambiguation: duplicate folder names propagate to children paths', () => {
 		const { files, ydoc } = setup();
-		files.set({ ...makeRow('d1', 'src', null, 'folder'), createdAt: 1000 });
-		files.set({ ...makeRow('d2', 'src', null, 'folder'), createdAt: 2000 });
+		files.set({ ...makeRow('d1', 'src', null, 'folder'), createdAt: at(1000) });
+		files.set({ ...makeRow('d2', 'src', null, 'folder'), createdAt: at(2000) });
 		files.set(makeRow('f1', 'index.ts', 'd1'));
 		files.set(makeRow('f2', 'index.ts', 'd2'));
 		const index = attachFileSystemIndex(ydoc, files);
@@ -597,8 +601,8 @@ describe('attachFileSystemIndex', () => {
 
 	test('orphan moved to root gets disambiguated with existing root file', () => {
 		const { files, ydoc } = setup();
-		files.set({ ...makeRow('f1', 'conflict.txt'), createdAt: 1000 });
-		files.set({ ...makeRow('f2', 'conflict.txt', 'missing'), createdAt: 2000 });
+		files.set({ ...makeRow('f1', 'conflict.txt'), createdAt: at(1000) });
+		files.set({ ...makeRow('f2', 'conflict.txt', 'missing'), createdAt: at(2000) });
 		const index = attachFileSystemIndex(ydoc, files);
 
 		expect(files.get('f2').data?.parentId).toBeNull();

@@ -10,6 +10,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { InstantString } from '@epicenter/field';
 import {
 	attachTimeline,
 	createDisposableCache,
@@ -40,7 +41,7 @@ function setup() {
 				gc: true,
 			});
 			onLocalUpdate(contentYdoc, () =>
-				ws.tables.files.update(fileId, { updatedAt: Date.now() }),
+				ws.tables.files.update(fileId, { updatedAt: InstantString.now() }),
 			);
 			return {
 				ydoc: contentYdoc,
@@ -422,7 +423,7 @@ describe('ydoc destroy lifecycle', () => {
 
 		// Mutate the underlying table directly, bypassing fs (which uses
 		// contentDocs that are now torn down).
-		const now = Date.now();
+		const now = InstantString.now();
 		ws.tables.files.set({
 			id: generateFileId(),
 			name: 'after.txt',

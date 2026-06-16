@@ -12,6 +12,7 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { InstantString } from '@epicenter/field';
 import { createWorkspace } from '@epicenter/workspace';
 import { asFileId } from '../../ids.js';
 import { filesTable } from '../../table.js';
@@ -19,6 +20,8 @@ import { attachFileSystemIndex } from '../../tree/path-index.js';
 import { createSqliteIndex, type SqliteIndex } from './index.js';
 
 const fid = (s: string) => asFileId(s);
+/** Millis -> canonical instant, for fixtures that pin a creation order. */
+const at = (ms: number) => InstantString.fromDate(new Date(ms));
 
 function makeRow(
 	id: string,
@@ -32,8 +35,8 @@ function makeRow(
 		parentId: parentId === null ? null : fid(parentId),
 		type,
 		size: 0,
-		createdAt: Date.now(),
-		updatedAt: Date.now(),
+		createdAt: InstantString.now(),
+		updatedAt: InstantString.now(),
 		trashedAt: null,
 	};
 }
@@ -93,8 +96,8 @@ describe('createSqliteIndex', () => {
 		const { files, sqlite, teardown } = setup();
 		files.set(makeRow('d1', 'docs', null, 'folder'));
 		files.set(makeRow('f1', 'api.md', 'd1'));
-		files.set({ ...makeRow('a', 'foo.txt'), createdAt: 1000 });
-		files.set({ ...makeRow('b', 'foo.txt'), createdAt: 2000 });
+		files.set({ ...makeRow('a', 'foo.txt'), createdAt: at(1000) });
+		files.set({ ...makeRow('b', 'foo.txt'), createdAt: at(2000) });
 		await sqlite.exports.whenReady;
 
 		const paths = await mirroredPaths(sqlite);
@@ -111,7 +114,7 @@ describe('createSqliteIndex', () => {
 		files.set(makeRow('f1', 'note.md'));
 		await sqlite.exports.whenReady;
 
-		files.update('f1', { trashedAt: Date.now() });
+		files.update('f1', { trashedAt: InstantString.now() });
 
 		await eventually(async () => {
 			const paths = await mirroredPaths(sqlite);
@@ -143,11 +146,11 @@ describe('createSqliteIndex', () => {
 
 	test('trashing a duplicate converges the surviving sibling path', async () => {
 		const { files, sqlite, teardown } = setup();
-		files.set({ ...makeRow('a', 'foo.txt'), createdAt: 1000 });
-		files.set({ ...makeRow('b', 'foo.txt'), createdAt: 2000 });
+		files.set({ ...makeRow('a', 'foo.txt'), createdAt: at(1000) });
+		files.set({ ...makeRow('b', 'foo.txt'), createdAt: at(2000) });
 		await sqlite.exports.whenReady;
 
-		files.update('a', { trashedAt: Date.now() });
+		files.update('a', { trashedAt: InstantString.now() });
 
 		await eventually(async () => {
 			const paths = await mirroredPaths(sqlite);
@@ -175,8 +178,8 @@ describe('createSqliteIndex', () => {
 
 	test('search returns index paths usable for filesystem reads', async () => {
 		const { files, sqlite, teardown } = setup();
-		files.set({ ...makeRow('a', 'meeting.md'), createdAt: 1000 });
-		files.set({ ...makeRow('b', 'meeting.md'), createdAt: 2000 });
+		files.set({ ...makeRow('a', 'meeting.md'), createdAt: at(1000) });
+		files.set({ ...makeRow('b', 'meeting.md'), createdAt: at(2000) });
 		await sqlite.exports.whenReady;
 
 		const results = await sqlite.exports.search('meeting');

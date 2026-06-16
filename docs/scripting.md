@@ -2,7 +2,7 @@
 
 A script is a Bun file that reads the local SQLite materializer and writes through `connectDaemonActions`. There is no `script.ts` recipe to copy. The daemon is the single writer; the script is a short-lived reader plus an IPC client.
 
-The Epicenter root is the folder that holds `epicenter.config.ts`. That config default-exports one `Mount`; one foreground daemon serves that mount over the root's Unix socket. The mount name is still the public action prefix for CLI display (`fuji.entries_update`), but scripts that already connect to a root call actions by their bare keys through `connectDaemonActions`.
+The Epicenter root is the folder that holds `epicenter.config.ts`. That config default-exports one `Mount`; one foreground daemon serves that mount over the root's Unix socket. The CLI addresses actions by their bare key (`epicenter run entries_update`): the daemon serves one mount, so the key alone is unambiguous, and the mount name is just the header `epicenter list` prints. Scripts likewise call actions by their bare keys through `connectDaemonActions`.
 
 ## The whole shape
 
@@ -60,7 +60,7 @@ npm package).
 
 `connectDaemonActions<TActions>({ epicenterRoot })` returns a typed proxy. The proxy translates `fuji.entries_update({ ... })` into a `POST /run` over the daemon's Unix socket in the OS runtime directory. The daemon validates the input against the action's declared schema (invalid input comes back as a usage error), invokes the action in-process against the live Y.Doc, and returns a JSON `Result<T>`.
 
-The mount name comes from the single `Mount.name` default-exported by `epicenter.config.ts`. App factories like `fuji()` return a mount whose name is `fuji`; the CLI uses that label when it renders or accepts `<mount>.<action>` paths.
+The mount name comes from the single `Mount.name` default-exported by `epicenter.config.ts`. App factories like `fuji()` return a mount whose name is `fuji`; the CLI prints that label as the header for `epicenter list`.
 
 Two consequences fall out:
 

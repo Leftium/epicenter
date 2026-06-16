@@ -12,7 +12,7 @@ result is always a `Result<T, DispatchError>`.
    Same process, direct function call, no wrapping.
 
 2. ADAPTER
-   epicenter run app.tabs_close
+   epicenter run tabs_close
    LLM calls tabs_close tool
    In process, adapter formats the handler result for its surface.
 

@@ -109,7 +109,7 @@ import { fuji } from "@epicenter/fuji/mount";
 export default fuji();
 ```
 
-`fuji()` returns a `Mount` whose `name` is `fuji`; `Mount.name` is the CLI prefix. `epicenter.config.ts` default-exports one mount. Disk paths follow the app-folder layout: the read-only markdown projection lands in table-named generated folders such as `<epicenterRoot>/entries/`, while the guid-keyed SQLite mirror stays under `.epicenter/sqlite/<id>.db` (hidden). The materialized `.md` is read-only; mutate entries through actions (`epicenter run fuji.<action>`), never by editing the files.
+`fuji()` returns a `Mount` whose `name` is `fuji`; `Mount.name` is the header `epicenter list` prints. `epicenter.config.ts` default-exports one mount. Disk paths follow the app-folder layout: the read-only markdown projection lands in table-named generated folders such as `<epicenterRoot>/entries/`, while the guid-keyed SQLite mirror stays under `.epicenter/sqlite/<id>.db` (hidden). The materialized `.md` is read-only; mutate entries through actions (`epicenter run <action>`), never by editing the files.
 
 `epicenter daemon up -C <epicenter-root>` starts the mount declared in `epicenter.config.ts`. It creates `.epicenter/` for generated machine state when it is missing, but sockets and daemon logs live in platform user paths instead of inside the root.
 

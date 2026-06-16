@@ -92,7 +92,7 @@ export function createWhisperingWorkspace() {
     id: 'whispering',
     tables: { recordings },
     kv: {
-      'ui.alwaysOnTop': defineKv(field.boolean(), () => false),
+      'output.transcription.clipboard': defineKv(field.boolean(), () => true),
     },
   });
 

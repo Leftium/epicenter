@@ -1,3 +1,4 @@
+import { platformCommands } from '#platform/commands';
 import {
 	cancelRecording,
 	startManualRecording,
@@ -6,7 +7,6 @@ import {
 	toggleVadRecording,
 } from '$lib/operations/recording';
 import { runTransformationOnClipboard } from '$lib/operations/transformation-clipboard';
-import { platformCommands } from '#platform/commands';
 
 /**
  * Registry of available commands in the application.

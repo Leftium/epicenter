@@ -7703,6 +7703,7 @@ dependencies = [
  "tracing",
  "transcribe-rs",
  "windows 0.62.2",
+ "zbus",
 ]
 
 [[package]]

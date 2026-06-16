@@ -46,7 +46,11 @@ Grounding (DeepWiki + web, 2026-06-16) confirmed every platform verdict:
   Windows code on a macOS host; the full crate can't cross-check because
   transcribe-rs's Windows build scripts don't run on darwin). COM init runs on a
   freshly spawned MTA thread; async ops resolved with `join()`.
-- [ ] **Wave 3** — Linux zbus MPRIS
+- [x] **Wave 3** — Linux zbus MPRIS (`media/linux.rs`, `zbus` v5 pure-Rust,
+  `tokio` feature). Verified by isolating the module and
+  `cargo check --target x86_64-unknown-linux-gnu`. Async D-Bus, 2s cap so a
+  stalled player can't wedge the chain; CanPause-respecting; resolves players
+  by exact bus name (instance suffix preserved).
 - [ ] **Wave 4** — macOS MediaRemote Tier 2, delete AppleScript
 
 ## Product sentence

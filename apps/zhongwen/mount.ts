@@ -1,20 +1,18 @@
 /**
- * Opensidian project mount.
+ * Zhongwen mount.
  *
- * `opensidian()` returns the `Mount` that a project's `epicenter.config.ts`
- * default-exports.
- *
- * The shared workspace currently exposes no daemon actions. Opensidian's file
- * and shell actions need browser services (Yjs filesystem, in-browser SQLite,
- * just-bash) and are added only by the browser runtime.
+ * `zhongwen()` returns the `Mount` that an `epicenter.config.ts`
+ * default-exports. Zhongwen has no daemon actions and no materializers today;
+ * the daemon's only job is to host the Y.Doc on disk and bridge
+ * sync.
  */
 
 import { satisfiesWorkspace } from '@epicenter/workspace';
 import { defineSessionMount } from '@epicenter/workspace/daemon';
 import { attachMountInfrastructure } from '@epicenter/workspace/node';
-import { opensidianWorkspace } from './opensidian.js';
+import { zhongwenWorkspace } from './zhongwen.js';
 
-export type OpensidianMountOptions = {
+export type ZhongwenMountOptions = {
 	/**
 	 * Base URL of the Epicenter cloud API used for sync.
 	 * Defaults to `process.env.EPICENTER_API_URL`, falling back to the hosted API.
@@ -22,16 +20,22 @@ export type OpensidianMountOptions = {
 	baseURL?: string;
 };
 
-export function opensidian(opts: OpensidianMountOptions = {}) {
+/**
+ * Mount Zhongwen in an Epicenter daemon.
+ *
+ * The daemon hosts the root Y.Doc and sync bridge. Transcript child docs are
+ * opened on demand by browser UI or server generation actors.
+ */
+export function zhongwen(opts: ZhongwenMountOptions = {}) {
 	return defineSessionMount({
-		name: 'opensidian',
+		name: 'zhongwen',
 		open(ctx) {
 			const baseURL =
 				opts.baseURL ||
 				process.env.EPICENTER_API_URL ||
 				'https://api.epicenter.so';
 
-			const workspace = opensidianWorkspace.create();
+			const workspace = zhongwenWorkspace.create();
 
 			const infrastructure = attachMountInfrastructure(workspace.ydoc, ctx, {
 				baseURL,

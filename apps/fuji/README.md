@@ -104,7 +104,7 @@ This starts the app dev server on port 5174. Auth and sync expect the local API 
 Fuji's mount is registered from the Epicenter root (the folder that holds `epicenter.config.ts`). It is not discovered from `.epicenter/` or any source folder. A folder that wants the Fuji mount needs an `epicenter.config.ts` like this:
 
 ```ts
-import { fuji } from "@epicenter/fuji/project";
+import { fuji } from "@epicenter/fuji/mount";
 
 export default fuji();
 ```

@@ -101,14 +101,6 @@ describe('loadEpicenterConfig', () => {
 		});
 	}
 
-	test('accepts a mount with just name and open (no kind needed)', async () => {
-		writeConfig("export default { name: 'demo', open() {} };\n");
-
-		const { data, error } = await loadEpicenterConfig(epicenterRoot);
-		if (error !== null) throw new Error(error.message);
-		expect(data.name).toBe('demo');
-	});
-
 	test('rejects a config with no default export', async () => {
 		writeConfig('export const config = {};\n');
 

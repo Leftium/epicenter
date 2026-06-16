@@ -1,5 +1,5 @@
 /**
- * Fuji project mount.
+ * Fuji mount.
  *
  * `fuji(opts?)` returns the `Mount` that an `epicenter.config.ts`
  * default-exports. Disk paths follow the Epicenter-root layout: the

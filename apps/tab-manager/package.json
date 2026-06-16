@@ -6,7 +6,7 @@
 	"private": true,
 	"exports": {
 		".": "./src/lib/workspace/index.ts",
-		"./project": "./project.ts"
+		"./mount": "./mount.ts"
 	},
 	"scripts": {
 		"dev": "bun run dev:local",

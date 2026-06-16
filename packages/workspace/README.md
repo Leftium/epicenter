@@ -527,7 +527,7 @@ same row and share one underlying Y.Doc safely; the workspace-owned cache handle
 construction, refcounting, and `gcTime`-delayed teardown.
 
 Reference implementations: `apps/opensidian/opensidian.browser.ts`,
-`apps/fuji/src/lib/workspace/browser.ts`, `apps/fuji/src/lib/workspace/project.ts`,
+`apps/fuji/src/lib/workspace/browser.ts`, `apps/fuji/src/lib/workspace/mount.ts`,
 and `apps/honeycrisp/honeycrisp.browser.ts`.
 
 ## Schema definition

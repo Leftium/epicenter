@@ -7,7 +7,7 @@
  * § "Acceptance criteria". Each line below cites the criterion and the test
  * that exercises it (or the infra gap that blocks coverage).
  *
- *   [ok] `daemon up` prints "online (mounts=[...])" on stderr,
+ *   [ok] `daemon up` prints "online (mount=...)" on stderr,
  *        followed by the initial peers snapshot.
  *        Covered by `daemon up lifecycle: online banner + peers snapshot + clean exit`.
  *   [ok] Ctrl-C / SIGTERM exits cleanly with no orphan socket / metadata.

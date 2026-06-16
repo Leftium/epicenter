@@ -20,8 +20,8 @@
  *
  * Composition lives elsewhere:
  *  - `src/lib/workspace/browser.ts` → `openFujiBrowser({ signedIn, deviceId })`
- *  - `src/lib/workspace/project.ts` → `fuji(opts?)` mount factory
- *  - `examples/fuji/epicenter.config.ts` → canonical project layout composition
+ *  - `src/lib/workspace/mount.ts` → `fuji(opts?)` mount factory
+ *  - `examples/fuji/epicenter.config.ts` → canonical Epicenter folder composition
  *
  * The workspace factory returns actions under `workspace.actions`; runtime
  * openers pass that registry to collaboration and can layer runtime-specific

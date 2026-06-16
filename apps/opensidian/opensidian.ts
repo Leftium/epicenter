@@ -11,7 +11,7 @@
  *
  * Composition lives elsewhere:
  *  - `apps/opensidian/opensidian.browser.ts` -> `openOpensidianBrowser({ signedIn, deviceId })`
- *  - `apps/opensidian/project.ts`                    -> `opensidian()` mount factory
+ *  - `apps/opensidian/mount.ts`                      -> `opensidian()` mount factory
  */
 
 import { field, jsonValue } from '@epicenter/field';

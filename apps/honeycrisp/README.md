@@ -23,7 +23,7 @@ honeycrispWorkspace
 openHoneycrispBrowser()
   browser runtime: local storage, sync, child-doc storage and sync
 
-honeycrisp() (project mount)
+honeycrisp() (mount)
   daemon runtime: Yjs log, sync, SQLite mirror, markdown materializer
 ```
 

@@ -18,7 +18,6 @@ import {
 } from '@epicenter/workspace';
 import { Bash } from 'just-bash';
 import * as Y from 'yjs';
-import { fileContentDocGuid } from './file-content-docs.js';
 import { attachYjsFileSystem, type YjsFileSystem } from './file-system.js';
 import { type FileId, generateFileId } from './ids.js';
 import { filesTable } from './table.js';
@@ -37,7 +36,7 @@ function setup() {
 	const contentDocs = createDisposableCache(
 		(fileId: FileId) => {
 			const contentYdoc = new Y.Doc({
-				guid: fileContentDocGuid({ workspaceId: ws.id, fileId }),
+				guid: ws.tables.files.docs.content.guid(fileId),
 				gc: true,
 			});
 			onLocalUpdate(contentYdoc, () =>

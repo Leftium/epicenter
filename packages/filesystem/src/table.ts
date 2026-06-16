@@ -1,5 +1,6 @@
 import { field } from '@epicenter/field';
 import {
+	attachTimeline,
 	defineTable,
 	type InferTableRow,
 	nullable,
@@ -15,7 +16,7 @@ export const filesTable = defineTable({
 	createdAt: field.number(),
 	updatedAt: field.number(),
 	trashedAt: nullable(field.number()),
-});
+}).childDocs({ content: attachTimeline });
 
 /** File metadata row derived from the files table definition */
 export type FileRow = InferTableRow<typeof filesTable>;

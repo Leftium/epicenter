@@ -20,7 +20,7 @@ import { execSync } from "node:child_process";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 
 const STALE_DAYS = 21;
-const TODAY = new Date("2026-06-16");
+const TODAY = new Date();
 
 function tracked(glob) {
   return execSync(`git ls-files ${glob}`, { encoding: "utf8" })

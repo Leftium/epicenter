@@ -6,10 +6,7 @@
 	import { cn } from '@epicenter/ui/utils';
 	import CheckIcon from '@lucide/svelte/icons/check';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
-	import {
-		RECORDING_TRIGGER_OPTIONS,
-		type RecordingTrigger,
-	} from '$lib/constants/audio';
+	import { RECORDING_TRIGGER_OPTIONS } from '$lib/constants/audio';
 	import { settings } from '$lib/state/settings.svelte';
 
 	let { class: className }: { class?: string } = $props();
@@ -51,10 +48,7 @@
 						<Command.Item
 							value={trigger.value}
 							onSelect={async () => {
-								settings.set(
-									'recording.trigger',
-									trigger.value as RecordingTrigger,
-								);
+								settings.set('recording.trigger', trigger.value);
 								combobox.closeAndFocusTrigger();
 							}}
 							class="flex items-center gap-2 px-2 py-2"

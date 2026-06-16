@@ -20,7 +20,9 @@
 //   2. A Proposed ADR that no in-tree spec references. That means its spec was
 //      deleted, i.e. the work landed, so the ADR should be Accepted (or, if the
 //      work was abandoned, superseded). This is a structural signal, not a
-//      heuristic. Age is a secondary, softer signal.
+//      heuristic. Age is a secondary, softer signal. This guard never fires on
+//      the real repo (every ADR so far was born Accepted), so it is exercised
+//      against fixture repos in check-doc-hygiene.test.ts; keep that test green.
 //
 // Exit non-zero if anything is flagged so a review step or CI can gate on it.
 // Run from repo root: bun scripts/check-doc-hygiene.mjs

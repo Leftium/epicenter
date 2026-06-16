@@ -161,6 +161,21 @@ jobs:
           CONF="apps/whispering/src-tauri/tauri.conf.json"
           jq --arg lib "$DYLIB" '.bundle.macOS.frameworks = [$lib]' "$CONF" > "$CONF.tmp" && mv "$CONF.tmp" "$CONF"
 
+      # Previews never hit the update feed (see the workflow header), so no preview
+      # should produce updater artifacts. tauri.conf turns createUpdaterArtifacts on
+      # for releases; left on here, a signed macOS preview tries to sign the updater
+      # bundle with TAURI_SIGNING_PRIVATE_KEY (deliberately absent from previews) and
+      # fails right after notarization. Only macOS signs, so it is the only platform
+      # this currently rescues, but "previews do not auto-update" holds for all of
+      # them, so disable it unconditionally rather than special-casing macOS. On
+      # Linux and Windows this is a verified no-op (their deb/rpm/AppImage and
+      # msi/nsis bundles are unchanged). Same jq-on-config pattern as the ONNX step.
+      - name: Disable updater artifacts (previews never auto-update)
+        shell: bash
+        run: |
+          CONF="apps/whispering/src-tauri/tauri.conf.json"
+          jq '.bundle.createUpdaterArtifacts = false' "$CONF" > "$CONF.tmp" && mv "$CONF.tmp" "$CONF"
+
       # Build. Trusted macOS runs sign + notarize + staple (no --no-sign). Untrusted
       # runs (fork macOS, plus Linux/Windows) pass --no-sign: tauri.conf hardcodes a
       # Developer ID signingIdentity, so without --no-sign a runner lacking the cert

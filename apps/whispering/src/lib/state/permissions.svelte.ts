@@ -2,28 +2,26 @@ import { on } from 'svelte/events';
 import { Ok } from 'wellcrafted/result';
 import { os } from '#platform/os';
 import { tauri } from '#platform/tauri';
-import { report } from '$lib/report';
 
 export type PermissionStatus = 'checking' | 'granted' | 'denied';
 
 /**
- * Single owner of the macOS OS-permission facts the desktop dictation flow
- * depends on: Accessibility (the gate for the rdev global listener and
- * paste-back) and Microphone. One app-wide instance — the always-on listener
- * starter, the Accessibility notice, the shortcut recorder, and the guide
- * dialog all READ this instead of each calling `tauri.permissions.*.check()` on
- * their own.
+ * Single owner of the macOS Accessibility grant the desktop dictation flow
+ * depends on: the gate for the rdev global listener and paste-back. One app-wide
+ * instance — the always-on listener starter, the Accessibility notice, the
+ * shortcut recorder, and the guide dialog all READ this instead of each calling
+ * `tauri.permissions.accessibility.check()` on their own. (Microphone is
+ * request-on-demand at the recorder, so it is not owned here.)
  *
  * Re-check policy (no steady-state poll): seed once at `attach()`, then
  * re-check whenever the window regains focus. Returning from System Settings
  * is a window-focus event, which is the only moment a grant realistically
  * flips, so a 1 Hz timer would only burn cycles to catch a transition the OS
- * already announces for free. Off macOS desktop there is no gate, so both
- * facts read `granted` and the focus listener is never installed.
+ * already announces for free. Off macOS desktop there is no gate, so the grant
+ * reads `granted` and the focus listener is never installed.
  */
 function createPermissions() {
 	let accessibility = $state<PermissionStatus>('checking');
-	let microphone = $state<PermissionStatus>('checking');
 
 	// Dev-only override to exercise the Accessibility notice and guide without
 	// touching System Settings. `null` means "use the live OS value". The
@@ -59,34 +57,23 @@ function createPermissions() {
 	async function probe(): Promise<void> {
 		if (!tauri || !isGated) {
 			accessibility = 'granted';
-			microphone = 'granted';
 			return;
 		}
-		const [acc, mic] = await Promise.all([
-			tauri.permissions.accessibility.check(),
-			tauri.permissions.microphone.check(),
-		]);
+		const acc = await tauri.permissions.accessibility.check();
 		// A failed check reads as denied: we would rather guide the user than
 		// silently start a listener that can never see keys.
 		accessibility = acc.data ? 'granted' : 'denied';
-		microphone = mic.data ? 'granted' : 'denied';
 	}
 
 	return {
 		get accessibility(): PermissionStatus {
 			return effectiveAccessibility();
 		},
-		get microphone(): PermissionStatus {
-			return microphone;
-		},
 		get accessibilityGranted(): boolean {
 			return effectiveAccessibility() === 'granted';
 		},
-		get microphoneGranted(): boolean {
-			return microphone === 'granted';
-		},
 
-		/** Re-probe both permissions. Called at launch and on every window focus. */
+		/** Re-probe the Accessibility grant. Called at launch and on every window focus. */
 		refresh,
 
 		/**
@@ -122,17 +109,6 @@ function createPermissions() {
 			return tauri.permissions.accessibility.openSettings();
 		},
 
-		/** Prompt for Microphone. */
-		async requestMicrophone(): Promise<void> {
-			if (!tauri) return;
-			const { data, error } = await tauri.permissions.microphone.request();
-			if (error) {
-				report.error({ title: 'Microphone permission failed', cause: error });
-				return;
-			}
-			microphone = data ? 'granted' : 'denied';
-		},
-
 		/**
 		 * Seed the initial probe and re-check on every window focus. Returns a
 		 * cleanup that removes the focus listener. Call once from the root layout
@@ -148,6 +124,3 @@ function createPermissions() {
 }
 
 export const permissions = createPermissions();
-
-/** The permissions owner's public shape (for consumers that take it by prop). */
-export type Permissions = ReturnType<typeof createPermissions>;

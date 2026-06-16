@@ -62,6 +62,8 @@ shapes, see `docs/adr/`.
 - **Mandatory-daemon commands**: `run`, `list`, `peers`. They require a live local
   daemon (`getDaemon` returns `Required` otherwise); there is no cold-path
   fallback (see `docs/adr/`).
-- **Library script**: a `bun ./script.ts` that opens a workspace directly and
-  composes/loops/dispatches RPC. The automation surface; the CLI is a one-shot
-  shell shortcut, not a place to build automation.
+- **Library script**: a `bun ./script.ts` that calls a running daemon's actions
+  through `connectDaemonActions` (a type-only proxy: it holds no Y.Doc and runs no
+  workspace code) and composes/loops/dispatches RPC. Reads default to query
+  actions; bulk reads drop to the read-only SQLite materializer. The automation
+  surface; the CLI is a one-shot shell shortcut, not a place to build automation.

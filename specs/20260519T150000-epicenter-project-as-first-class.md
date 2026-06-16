@@ -2,10 +2,11 @@
 
 **Status**: Worth committing
 
-> Historical note: this spec predates the current mount-list config shape.
-> Current project loading is: `epicenter.config.ts` default-exports a
-> `Mount[]` from app package factories such as `fuji()`. The mount `name` owns
-> the CLI prefix, and `workspaces/` is only a source-layout convention.
+> Historical note: this spec predates the current single-mount config shape.
+> Current project loading is: `epicenter.config.ts` default-exports one `Mount`
+> from an app package factory such as `fuji()` (`export default fuji()`). The
+> mount `name` owns the CLI prefix, and `workspaces/` is only a source-layout
+> convention.
 
 **Path policy (2026-05-22)**: Aligned with `specs/20260522T203209-top-level-epicenter-path-cleanup.md`. The `~/.epicenter/` references in this spec argue for _deleting_ that directory; user-global state lives under `env-paths('epicenter')` and daemon runtime files use the OS runtime dir. No new top-level `~/.epicenter/` writes are introduced.
 

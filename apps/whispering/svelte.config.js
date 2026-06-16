@@ -22,12 +22,16 @@ const config = {
 
 	vitePlugin: {
 		inspector: {
+			// This block owns dev-tooling behavior, not geometry. The toggle
+			// inherits the plugin default 'top-right', the corner left free by
+			// the current chrome (sidebar on the left, full-width BottomNav at
+			// the bottom). The app must never reposition #svelte-inspector-host:
+			// earlier CSS overrides keyed to nav z-index broke twice when the nav
+			// changed. To move or disable it per-machine, set an env var instead
+			// (the plugin gives it top precedence), e.g.
+			// SVELTE_INSPECTOR_OPTIONS='{"toggleButtonPos":"top-left"}'
 			holdMode: true,
 			showToggleButton: 'always',
-			// Using 'bottom-left' as base position, but CSS overrides in
-			// src/routes/+layout.svelte move it to bottom-center to avoid
-			// conflicts with devtools (bottom-left) and toasts (bottom-right)
-			toggleButtonPos: 'bottom-left',
 			toggleKeyCombo: 'alt-x',
 		},
 	},

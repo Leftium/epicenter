@@ -179,8 +179,6 @@ subpath imports. This is the canonical mechanism. It replaced the old
 `resolve.extensions` / `moduleSuffixes` suffix trick (see "Why not suffixes"
 below).
 
-Reference: `specs/20260529T230000-platform-dependency-injection-subpath-imports.md`.
-
 **1. Declare the seam in `package.json` "imports".** Each seam maps a bare
 specifier to a Tauri impl and a default (browser) impl:
 

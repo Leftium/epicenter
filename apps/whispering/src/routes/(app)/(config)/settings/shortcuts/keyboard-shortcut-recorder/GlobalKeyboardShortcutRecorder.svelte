@@ -3,7 +3,7 @@
 	import { type Command, commands } from '$lib/commands';
 	import { report } from '$lib/report';
 	import type { Tauri } from '#platform/tauri';
-	import { syncGlobalShortcutsWithSettings } from '$routes/(app)/_layout-utils/register-commands';
+	import { syncGlobalShortcutsWithSettings } from '$lib/operations/shortcuts';
 	import { deviceConfig } from '$lib/state/device-config.svelte';
 	import type { Key, KeyBinding, Modifier } from '$lib/tauri/commands';
 	import { os } from '#platform/os';

@@ -1,7 +1,12 @@
 /**
  * Daemon-side handler for `/run`.
  *
- * One entry point, two execution targets selected by `peer`:
+ * A daemon serves the one mount its `epicenter.config.ts` declares. The action
+ * path still carries that mount as its first segment (`<mount>.<action_key>`):
+ * the mount name is the canonical app identity, stable across folder renames, so
+ * a path stays self-describing wherever it is typed, logged, or copied. The
+ * handler verifies the path's mount segment against the served mount, then picks
+ * one of two execution targets by `peer`:
  *
  *   `peer` absent  -> local run: this daemon's action registry decides action
  *                     existence, then `invokeAction` executes the handler.
@@ -38,26 +43,31 @@ import type { DaemonServedMount } from './types.js';
 export const DEFAULT_PEER_WAIT_MS = 5000;
 
 export async function executeRun(
-	mounts: readonly DaemonServedMount[],
+	mount: DaemonServedMount | null,
 	{ actionPath, input: actionInput, peer }: RunRequest,
 ): Promise<Result<unknown, RunError>> {
-	const { mount, localPath } = parseDaemonActionPath(actionPath);
-	const mountRuntime = mounts.find((candidate) => candidate.mount === mount);
-	if (!mountRuntime) {
-		const available = mounts.map((candidate) => candidate.mount);
+	const { mount: requestedMount, localPath } =
+		parseDaemonActionPath(actionPath);
+
+	if (mount === null) {
 		return RunError.UsageError({
-			message: `No mount "${mount}". Available: ${available.join(', ')}`,
-			suggestions: available.map((name) => `  ${name}`),
+			message: `This daemon has no active mount, so "${actionPath}" cannot run. The mount may be signed out; check \`epicenter list\`.`,
+		});
+	}
+
+	if (requestedMount !== mount.mount) {
+		return RunError.UsageError({
+			message: `This daemon serves mount "${mount.mount}", not "${requestedMount}". Did you mean "${joinDaemonActionPath(mount.mount, localPath)}", or are you in the wrong Epicenter folder?`,
 		});
 	}
 
 	if (peer === undefined) {
-		return runLocal(mountRuntime, actionPath, localPath, actionInput);
+		return runLocal(mount, actionPath, localPath, actionInput);
 	}
-	const collaboration = mountRuntime.runtime.collaboration;
+	const collaboration = mount.runtime.collaboration;
 	if (!collaboration) {
 		return RunError.UsageError({
-			message: `Mount "${mount}" does not expose collaboration, so "${actionPath}" cannot run on peer "${peer.to}".`,
+			message: `Mount "${mount.mount}" does not expose collaboration, so "${actionPath}" cannot run on peer "${peer.to}".`,
 		});
 	}
 	return runOnPeer(collaboration, localPath, actionInput, peer);

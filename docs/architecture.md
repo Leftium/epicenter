@@ -89,7 +89,7 @@ Apps wrap `createWorkspace` in a per-app factory. That is where the app id, tabl
 createWorkspace()
   -> createFuji()
     -> openFujiBrowser()
-    -> fuji() (project mount)
+    -> fuji() (mount)
 ```
 
 Use `defineWorkspace()` when returning the composed object so TypeScript keeps the exact inferred bundle shape after spreads.

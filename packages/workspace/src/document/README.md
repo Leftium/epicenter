@@ -100,7 +100,7 @@ those guids. Browser runtimes use `tables.notes.docs.body.open(noteId)` when a
 surface needs the content doc. Daemon projections can derive the same guid,
 read one doc for one row, and destroy it.
 See `apps/fuji/src/lib/workspace/browser.ts` and
-`apps/fuji/src/lib/workspace/project.ts` for the Fuji pattern.
+`apps/fuji/src/lib/workspace/mount.ts` for the Fuji pattern.
 
 ## Design Decisions
 
@@ -126,6 +126,6 @@ Tests live in `*.test.ts` next to the implementation. Use `createWorkspace({ id:
 
 - `apps/whispering/src/lib/whispering/whispering.tauri.ts`: IndexedDB + BroadcastChannel + recording markdown export
 - `apps/fuji/src/lib/workspace/browser.ts`: IndexedDB + sync + server-owned presence
-- `apps/fuji/src/lib/workspace/project.ts`: daemon materializers and per-row body doc reads
+- `apps/fuji/src/lib/workspace/mount.ts`: daemon materializers and per-row body doc reads
 - `packages/workspace/README.md`: quick start
 - `packages/workspace/SYNC_ARCHITECTURE.md`: multi-device sync design

@@ -1,20 +1,31 @@
 name: PR Preview Builds
 
-# This workflow builds Tauri applications for all platforms when a PR is opened or updated.
-# It automatically cancels previous builds to save CI minutes in two scenarios:
+# Builds Whispering Tauri previews for a PR, and on macOS makes them runnable
+# without Gatekeeper "damaged / cannot be opened" errors.
 #
-# 1. When new commits are pushed to the PR (synchronize event):
-#    - Cancels the previous build for the same PR
-#    - Starts a new build with the latest code
+# Trust + signing model:
+# - Security is enforced by GitHub, not by this file. A `pull_request` run from a
+#   fork gets NO repository secrets and a read-only token, so fork code can never
+#   reach the Apple signing cert. (`pull_request_target` would be the dangerous
+#   trigger; we deliberately do not use it.)
+# - `IS_TRUSTED` (same-repo PR) is therefore NOT a security gate. It exists because
+#   tauri.conf.json hardcodes a Developer ID `signingIdentity`: any runner without
+#   that cert in its keychain, i.e. every fork run where the secret is empty, would
+#   FAIL the build trying to codesign. So untrusted runs pass --no-sign to stay green.
+# - Consequence, by design: trusted PRs (only the maintainer can push a branch) are
+#   signed + notarized + stapled and uploaded as runnable .dmg artifacts. Untrusted
+#   (fork) PRs are COMPILE CHECKS ONLY: they build green or red and upload nothing.
+#   To get a runnable build of a fork branch, pull it into the repo and it auto-signs.
+# - No Tauri updater keys here: previews never hit the update feed.
 #
-# 2. When the PR is merged or closed:
-#    - Cancels any in-progress builds for that PR
-#    - Runs a lightweight job that triggers the cancellation via concurrency groups
+# Scope:
+# - The native build only runs when Rust/Tauri sources change (see `paths` below).
+#   Frontend-only PRs are covered by the web deploy preview; the native macOS
+#   shell does not change when only the SvelteKit frontend does.
 #
-# How it works:
-# - All workflow runs for the same PR share the same concurrency group (keyed by PR number)
-# - When a new run starts, GitHub Actions automatically cancels previous runs in that group
-# - The 'closed' trigger activates a fast dummy job that joins the concurrency group and triggers cancellation
+# Concurrency: all runs for the same PR share one group; a new run cancels the
+# previous one. The `closed` event runs a fast dummy job that joins the group and
+# triggers cancellation of any in-progress build.
 #
 # The shared toolchain/dependency setup lives in .github/actions/setup-whispering-build
 # so this preview workflow and release.whispering.yml configure the build identically.
@@ -22,6 +33,15 @@ name: PR Preview Builds
 on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
+    # Only build the native app when something that affects it changes. This is a
+    # preview, not a required check, so skipping frontend-only PRs is safe.
+    paths:
+      - 'apps/whispering/src-tauri/**'
+      - 'apps/whispering/**/Cargo.toml'
+      - 'apps/whispering/**/Cargo.lock'
+      - '.github/workflows/pr-preview.whispering.yml'
+      - '.github/actions/setup-whispering-build/**'
+      - '.github/actions/process-whispering-appimage/**'
 
 concurrency:
   # Group all runs for the same PR together
@@ -45,7 +65,12 @@ jobs:
     if: github.event.action != 'closed'
     permissions:
       contents: read
-      pull-requests: write
+
+    # IS_TRUSTED == the PR branch lives in this repo (only the maintainer can push
+    # one). NOT a security boundary: GitHub already withholds secrets from forks.
+    # It decides sign + upload (trusted) vs build-as-compile-check-only (fork).
+    env:
+      IS_TRUSTED: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
 
     strategy:
       fail-fast: false
@@ -57,13 +82,14 @@ jobs:
             artifactSuffix: 'macos-arm64'
             rustTargets: 'aarch64-apple-darwin'
 
-          # macOS Intel (x86_64) PREVIEW-ONLY spike: cross-compiled from the Apple
-          # Silicon runner above. Neither Microsoft nor pyke publishes a prebuilt
-          # x86_64 macOS ONNX Runtime, so the ORT step below temporarily pulls a
-          # community build from Handy's blob purely to prove the cross-compile +
-          # dylib-bundle pipeline. Do NOT copy this row into release.whispering.yml
-          # until we host our own x86_64 ORT build (the third-party blob is not a
-          # durable release dependency).
+          # macOS Intel (x86_64): cross-compiled from the Apple Silicon runner
+          # above. Neither Microsoft nor pyke publishes a prebuilt x86_64 macOS
+          # ONNX Runtime, so the ORT step below pulls a community build from
+          # Handy's blob. Because trusted runs SIGN AND NOTARIZE this build (our
+          # Developer ID vouches for the bundled dylib to Gatekeeper), the blob is
+          # pinned by SHA-256 below: we attest to specific verified bytes, not to
+          # whatever that URL serves on a given day. Do NOT copy this row into
+          # release.whispering.yml until we host our own verified x86_64 ORT build.
           - platform: 'blacksmith-6vcpu-macos-15'
             os: 'macos'
             tauriArgs: '--target x86_64-apple-darwin'
@@ -103,14 +129,28 @@ jobs:
       # targets ONNX Runtime 1.24.2, but no official x86_64 macOS build exists, so
       # this pulls a community build. ORT_LIB_LOCATION + ORT_PREFER_DYNAMIC_LINK
       # make ort-sys link against it dynamically; the jq patch embeds the dylib in
-      # the bundle so it resolves at runtime. PREVIEW-ONLY: replace the blob source
-      # before any release use.
+      # the bundle so it resolves at runtime.
+      #
+      # The blob is pinned by SHA-256 and verified fail-closed before use: a trusted
+      # run signs and notarizes over this dylib, so we only ever sign bytes we have
+      # vouched for. To roll the version, download the new tarball, run
+      # `shasum -a 256`, and update EXPECTED_ORT_SHA256.
       - name: Provision x86_64 ONNX Runtime (macOS Intel only)
         if: ${{ matrix.artifactSuffix == 'macos-intel' }}
         shell: bash
+        env:
+          ORT_VERSION: '1.24.2'
+          EXPECTED_ORT_SHA256: '590cee05699047b85e4a8115b4cec792073c2972ce78de383356a552a296a9c4'
         run: |
-          ORT_VERSION="1.24.2"
-          curl -fSL -o ort.tgz "https://blob.handy.computer/onnxruntime-osx-x86_64-${ORT_VERSION}.tgz"
+          set -euo pipefail
+          URL="https://blob.handy.computer/onnxruntime-osx-x86_64-${ORT_VERSION}.tgz"
+          curl -fSL -o ort.tgz "$URL"
+          ACTUAL=$(shasum -a 256 ort.tgz | awk '{print $1}')
+          if [ "$ACTUAL" != "$EXPECTED_ORT_SHA256" ]; then
+            echo "::error::ORT blob hash mismatch; refusing to sign unverified bytes. expected=$EXPECTED_ORT_SHA256 actual=$ACTUAL"
+            exit 1
+          fi
+          echo "ORT blob verified against pinned SHA-256."
           tar xzf ort.tgz
           ORT_DIR="$PWD/onnxruntime-osx-x86_64-${ORT_VERSION}"
           echo "ORT_LIB_LOCATION=$ORT_DIR/lib" >> "$GITHUB_ENV"
@@ -121,19 +161,45 @@ jobs:
           CONF="apps/whispering/src-tauri/tauri.conf.json"
           jq --arg lib "$DYLIB" '.bundle.macOS.frameworks = [$lib]' "$CONF" > "$CONF.tmp" && mv "$CONF.tmp" "$CONF"
 
-      # Preview builds are unsigned: --no-sign skips Apple codesigning,
-      # Windows Authenticode, and Tauri updater signing. All bundle artifacts
-      # (.dmg, .AppImage, .deb, .msi, .exe) are still produced normally.
-      # This avoids exposing signing secrets in PR workflows (especially forks).
+      # Previews never hit the update feed (see the workflow header), so no preview
+      # should produce updater artifacts. tauri.conf turns createUpdaterArtifacts on
+      # for releases; left on here, a signed macOS preview tries to sign the updater
+      # bundle with TAURI_SIGNING_PRIVATE_KEY (deliberately absent from previews) and
+      # fails right after notarization. Only macOS signs, so it is the only platform
+      # this currently rescues, but "previews do not auto-update" holds for all of
+      # them, so disable it unconditionally rather than special-casing macOS. On
+      # Linux and Windows this is a verified no-op (their deb/rpm/AppImage and
+      # msi/nsis bundles are unchanged). Same jq-on-config pattern as the ONNX step.
+      - name: Disable updater artifacts (previews never auto-update)
+        shell: bash
+        run: |
+          CONF="apps/whispering/src-tauri/tauri.conf.json"
+          jq '.bundle.createUpdaterArtifacts = false' "$CONF" > "$CONF.tmp" && mv "$CONF.tmp" "$CONF"
+
+      # Build. Trusted macOS runs sign + notarize + staple (no --no-sign). Untrusted
+      # runs (fork macOS, plus Linux/Windows) pass --no-sign: tauri.conf hardcodes a
+      # Developer ID signingIdentity, so without --no-sign a runner lacking the cert
+      # would fail the build. The Apple env is referenced unconditionally; on fork
+      # runs it is empty (GitHub withholds it) and ignored because --no-sign is set.
       - uses: tauri-apps/tauri-action@v0
         env:
           CI: true
           APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
           CMAKE_POLICY_VERSION_MINIMUM: '3.5'
+          # macOS Developer ID signing + notarization. Empty on fork PRs.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           projectPath: 'apps/whispering'
           tagName: ''
-          args: '${{ matrix.tauriArgs }} --no-sign'
+          # Append --no-sign unless this is a trusted macOS run. The condition is
+          # written so the truthy branch is the non-empty string (GitHub treats ''
+          # as falsy, which would break the usual `cond && '' || x` form).
+          args: ${{ matrix.tauriArgs }} ${{ (matrix.os != 'macos' || env.IS_TRUSTED != 'true') && '--no-sign' || '' }}
 
       # macOS Intel only: confirm the build is actually x86_64 and that the
       # onnxruntime dylib is both linked and bundled into the .app. Fails loudly
@@ -153,6 +219,52 @@ jobs:
           ls "$APP/Contents/Frameworks/" | grep -qi onnxruntime || { echo "::error::onnxruntime dylib missing from Frameworks/"; exit 1; }
           echo "macOS Intel ONNX Runtime bundling verified."
 
+      # Trusted macOS only: prove the build will actually open on a downloader's
+      # Mac. This is the gate that prevents a "looks signed but isn't notarized"
+      # artifact from shipping. Any failure fails the job (fail-closed) and the
+      # captured report is uploaded alongside the .dmg.
+      - name: Verify signing + notarization (signed macOS only)
+        if: ${{ matrix.os == 'macos' && env.IS_TRUSTED == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUNDLE_ROOT=$(find apps/whispering/src-tauri/target -type d -path '*/release/bundle' | head -1)
+          test -n "$BUNDLE_ROOT" || { echo "::error::no bundle dir found"; exit 1; }
+          APP=$(find "$BUNDLE_ROOT" -name '*.app' -type d | head -1)
+          DMG=$(find "$BUNDLE_ROOT" -name '*.dmg' | head -1)
+          test -n "$APP" || { echo "::error::no .app bundle found"; exit 1; }
+          test -n "$DMG" || { echo "::error::no .dmg found"; exit 1; }
+
+          # This block is informational: capture the full picture into the report
+          # even when a check fails. `|| true` stops `set -e` from aborting here so
+          # the report stays complete; the explicit gates below own pass/fail.
+          REPORT="$BUNDLE_ROOT/verification-report-${{ matrix.artifactSuffix }}.txt"
+          {
+            echo "== codesign --verify (app) =="
+            codesign --verify --deep --strict --verbose=2 "$APP" 2>&1 || true
+            echo "== codesign -dvvv (app) =="
+            codesign -dvvv "$APP" 2>&1 || true
+            echo "== spctl assess (app) =="
+            spctl -a -t exec -vvv "$APP" 2>&1 || true
+            echo "== stapler validate (app) =="
+            xcrun stapler validate "$APP" 2>&1 || true
+            echo "== stapler validate (dmg) =="
+            xcrun stapler validate "$DMG" 2>&1 || true
+            echo "== hdiutil verify (dmg) =="
+            hdiutil verify "$DMG" 2>&1 || true
+            echo "== codesign --verify (dmg) =="
+            codesign --verify --verbose=2 "$DMG" 2>&1 || true
+          } | tee "$REPORT"
+
+          # Gate 1: hardened runtime flag must be set (notarization requires it).
+          codesign -dvvv "$APP" 2>&1 | grep -q 'flags=.*runtime' \
+            || { echo "::error::hardened runtime flag missing on app"; exit 1; }
+          # Gate 2: Gatekeeper must accept it as a notarized Developer ID build.
+          # This exact source string is what guarantees no "damaged" on download.
+          spctl -a -t exec -vvv "$APP" 2>&1 | grep -q 'source=Notarized Developer ID' \
+            || { echo "::error::app is not notarized / not accepted by Gatekeeper"; exit 1; }
+          echo "Signed + notarized macOS build verified: opens without Gatekeeper errors."
+
       - name: Copy Windows artifacts into workspace
         if: ${{ matrix.os == 'windows' }}
         shell: pwsh
@@ -166,19 +278,23 @@ jobs:
         if: ${{ matrix.os == 'linux' }}
         uses: ./.github/actions/process-whispering-appimage
 
+      # Only trusted runs upload. Fork PRs are compile checks: their green/red status
+      # is the signal, and they never produce a signed build, so there is nothing
+      # worth downloading. The .dmg is the only macOS artifact (the raw .app is the
+      # worst "damaged" offender and adds no debug value the .dmg lacks).
       - name: Upload artifacts
+        if: ${{ env.IS_TRUSTED == 'true' }}
         uses: actions/upload-artifact@v7
         with:
           name: whispering-pr${{ github.event.pull_request.number }}-${{ matrix.artifactSuffix }}
           path: |
             apps/whispering/src-tauri/target/*/release/bundle/**/*.dmg
-            apps/whispering/src-tauri/target/*/release/bundle/**/*.app
             apps/whispering/src-tauri/target/release/bundle/**/*.dmg
-            apps/whispering/src-tauri/target/release/bundle/**/*.app
             apps/whispering/src-tauri/target/release/bundle/**/*.AppImage
             apps/whispering/src-tauri/target/release/bundle/**/*.deb
             apps/whispering/src-tauri/target/release/bundle/**/*.exe
             apps/whispering/src-tauri/target/release/bundle/**/*.msi
+            apps/whispering/src-tauri/target/**/verification-report-*.txt
             target/release/bundle/**/*.exe
             target/release/bundle/**/*.msi
           if-no-files-found: warn

@@ -2,7 +2,7 @@
 
 **Status**: Archived for future reference
 **Date**: 2026-02-01
-**Related Spec**: `specs/20260201T120000-simple-definition-first-workspace.md`
+**Related work**: the simple definition-first workspace API that replaced HeadDoc for basic use cases.
 
 This document preserves the HeadDoc and Registry patterns from the original three-document architecture. These patterns are valuable for implementing versioned workspaces with epoch-based time travel in the future.
 
@@ -474,7 +474,7 @@ await workspace.restoreSnapshot(snapshot);
 
 ## Related Documents
 
-- **Specification**: `specs/20260201T120000-simple-definition-first-workspace.md` - The simple workspace API that replaces HeadDoc for basic use cases
+- **Specification**: the simple workspace API that replaces HeadDoc for basic use cases
 - **Handoff Prompt**: `specs/20260201T120000-simple-definition-first-workspace-handoff.md` - Agent execution prompt
 - **GC Decision Guide**: `docs/articles/ykeyvalue-vs-ymap-decision-guide.md` - Why GC setting determines data structure
 - **GC Deep Dive**: `docs/articles/ykeyvalue-gc-the-hidden-variable.md` - Storage implications

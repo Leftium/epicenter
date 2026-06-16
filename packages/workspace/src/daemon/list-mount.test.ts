@@ -1,7 +1,7 @@
 /**
  * Coverage for the `/list` manifest projection.
  *
- * `/list` describes every hosted mount and prefixes each action key with the
+ * `/list` describes the daemon's one mount and prefixes each action key with the
  * mount name. The shared action path helpers are covered here because `/list`
  * and action execution both rely on the same mount qualifier rules.
  */
@@ -70,7 +70,7 @@ describe('daemon action path helpers', () => {
 
 describe('/list route', () => {
 	test('returns mount-prefixed paths under the action root', async () => {
-		const res = await buildDaemonApp([
+		const res = await buildDaemonApp(
 			makeMount({
 				mount: 'demo',
 				actions: {
@@ -80,7 +80,7 @@ describe('/list route', () => {
 					}),
 				},
 			}),
-		]).request('/list', { method: 'POST' });
+		).request('/list', { method: 'POST' });
 
 		const manifest = expectOk(
 			(await res.json()) as Result<ActionManifest, never>,
@@ -90,9 +90,9 @@ describe('/list route', () => {
 	});
 
 	test('returns an empty manifest when the mount has no actions', async () => {
-		const res = await buildDaemonApp([
+		const res = await buildDaemonApp(
 			makeMount({ mount: 'demo', actions: {} }),
-		]).request('/list', { method: 'POST' });
+		).request('/list', { method: 'POST' });
 
 		const manifest = expectOk(
 			(await res.json()) as Result<ActionManifest, never>,
@@ -101,7 +101,7 @@ describe('/list route', () => {
 	});
 
 	test('returns actions from a mount without collaboration', async () => {
-		const res = await buildDaemonApp([
+		const res = await buildDaemonApp(
 			makeMount({
 				mount: 'mirror',
 				collaboration: false,
@@ -112,7 +112,7 @@ describe('/list route', () => {
 					}),
 				},
 			}),
-		]).request('/list', { method: 'POST' });
+		).request('/list', { method: 'POST' });
 
 		const manifest = expectOk(
 			(await res.json()) as Result<ActionManifest, never>,
@@ -121,49 +121,27 @@ describe('/list route', () => {
 		expect(manifest['mirror.sync']?.description).toBe('Sync local mirror');
 	});
 
-	test('prefixes actions from collaborative and local-only mounts', async () => {
-		const res = await buildDaemonApp([
-			makeMount({
-				mount: 'notes',
-				actions: {
-					notes_add: defineQuery({ handler: () => null }),
-				},
-			}),
-			makeMount({
-				mount: 'tasks',
-				collaboration: false,
-				actions: {
-					tasks_list: defineQuery({ handler: () => [] }),
-				},
-			}),
-		]).request('/list', { method: 'POST' });
+	test('returns an empty manifest when the daemon has no active mount', async () => {
+		const res = await buildDaemonApp(null).request('/list', {
+			method: 'POST',
+		});
 
 		const manifest = expectOk(
 			(await res.json()) as Result<ActionManifest, never>,
 		);
-		expect(Object.keys(manifest).sort()).toEqual([
-			'notes.notes_add',
-			'tasks.tasks_list',
-		]);
+		expect(manifest).toEqual({});
 	});
 });
 
 describe('/peers route', () => {
-	test('skips mounts without collaboration', async () => {
-		const res = await buildDaemonApp([
-			makeMount({
-				mount: 'mirror',
-				collaboration: false,
-				actions: {
-					sync: defineQuery({ handler: () => null }),
-				},
-			}),
+	test('lists the connected devices for the collaborative mount', async () => {
+		const res = await buildDaemonApp(
 			makeMount({
 				mount: 'notes',
 				actions: {},
 				devices: [{ deviceId: 'laptop', connectedAt: 1, actions: {} }],
 			}),
-		]).request('/peers', { method: 'POST' });
+		).request('/peers', { method: 'POST' });
 
 		const peers = expectOk(
 			(await res.json()) as Result<
@@ -172,5 +150,25 @@ describe('/peers route', () => {
 			>,
 		);
 		expect(peers).toEqual([{ mount: 'notes', deviceId: 'laptop' }]);
+	});
+
+	test('returns no peers for a mount without collaboration', async () => {
+		const res = await buildDaemonApp(
+			makeMount({
+				mount: 'mirror',
+				collaboration: false,
+				actions: {
+					sync: defineQuery({ handler: () => null }),
+				},
+			}),
+		).request('/peers', { method: 'POST' });
+
+		const peers = expectOk(
+			(await res.json()) as Result<
+				Array<{ mount: string; deviceId: string }>,
+				never
+			>,
+		);
+		expect(peers).toEqual([]);
 	});
 });

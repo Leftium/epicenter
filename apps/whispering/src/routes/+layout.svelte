@@ -30,7 +30,7 @@
 
 <Toaster
 	offset={16}
-	class="xs:block hidden"
+	class="block"
 	duration={5000}
 	visibleToasts={5}
 	closeButton

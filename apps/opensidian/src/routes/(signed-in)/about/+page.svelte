@@ -70,7 +70,7 @@ const opensidianWorkspace = defineWorkspace({
 });
 
 export function openOpensidianBrowser(connection) {
-  return opensidianWorkspace.open(connection, (workspace) => {
+  return opensidianWorkspace.connect(connection, (workspace) => {
     const fileContent = {
       read: async (fileId) => {
         using handle = workspace.tables.files.docs.content.open(fileId);

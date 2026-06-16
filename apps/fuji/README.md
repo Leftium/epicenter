@@ -35,7 +35,7 @@ fuji()
   runtime-specific openers (browser connection, daemon mount factory)
 
 defineWorkspace()
-  builds the definition and owns .open(...)
+  builds the definition and owns .connect(...)
 ```
 
 Fuji's browser workspace is built once per signed-in session by `createSession`. `openFujiBrowser()` opens `fujiWorkspace` with the signed-in browser connection, which attaches browser storage, root sync, and the `entries.content` child-doc runtime. The session module receives a `SignedIn` from `createSession` and passes it into the browser factory. `SignedIn` carries the stable owner, server URL, and auth transport functions.
@@ -66,7 +66,7 @@ export function openFujiBrowser({
   signedIn: SignedIn;
   deviceId: DeviceId;
 }) {
-  return fujiWorkspace.open({ ...signedIn, deviceId });
+  return fujiWorkspace.connect({ ...signedIn, deviceId });
 }
 ```
 

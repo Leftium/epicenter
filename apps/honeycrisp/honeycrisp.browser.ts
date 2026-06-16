@@ -24,7 +24,7 @@ export function openHoneycrispBrowser({
 	signedIn: SignedIn;
 	deviceId: DeviceId;
 }) {
-	return honeycrispWorkspace.open({ ...signedIn, deviceId });
+	return honeycrispWorkspace.connect({ ...signedIn, deviceId });
 }
 
 export type HoneycrispBrowser = ReturnType<typeof openHoneycrispBrowser>;

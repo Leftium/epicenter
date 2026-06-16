@@ -1,6 +1,6 @@
 /**
  * Workspace construction tests: low-level root docs via `createWorkspace`, and
- * app-facing definitions via `defineWorkspace(...).open(...)`.
+ * app-facing definitions via `defineWorkspace(...).connect(...)`.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -131,7 +131,7 @@ describe('defineWorkspace', () => {
 			kv: {},
 		});
 
-		const workspace = workspaceDefinition.open(connection);
+		const workspace = workspaceDefinition.connect(connection);
 		const body = workspace.tables.notes.docs.body.open('note-1');
 		try {
 			body.write('body text');
@@ -158,7 +158,7 @@ describe('defineWorkspace', () => {
 			kv: {},
 		});
 
-		const workspace = workspaceDefinition.open(connection);
+		const workspace = workspaceDefinition.connect(connection);
 		try {
 			expect(typeof workspace.tables.notes.set).toBe('function');
 			using body = workspace.tables.notes.docs.set.open('note-1');
@@ -175,7 +175,7 @@ describe('defineWorkspace', () => {
 			id: 'ws-childdoc-dedup',
 			tables: { notes: notesDefinition.childDocs({ body: attachPlainText }) },
 			kv: {},
-		}).open(connection);
+		}).connect(connection);
 		const a = workspace.tables.notes.docs.body.open('note-1');
 		const b = workspace.tables.notes.docs.body.open('note-1');
 		try {
@@ -196,7 +196,7 @@ describe('defineWorkspace', () => {
 			id: 'ws-childdoc-refcount',
 			tables: { notes: notesDefinition.childDocs({ body: attachPlainText }) },
 			kv: {},
-		}).open(connection);
+		}).connect(connection);
 		try {
 			const a = workspace.tables.notes.docs.body.open('note-1');
 			a.write('persisted');
@@ -219,7 +219,7 @@ describe('defineWorkspace', () => {
 			id: 'ws-childdoc-independent',
 			tables: { notes: notesDefinition.childDocs({ body: attachPlainText }) },
 			kv: {},
-		}).open(connection);
+		}).connect(connection);
 		const one = workspace.tables.notes.docs.body.open('note-1');
 		const two = workspace.tables.notes.docs.body.open('note-2');
 		try {
@@ -249,7 +249,7 @@ describe('defineWorkspace', () => {
 			id: 'ws-onlocaledit',
 			tables: { notes: recencyNotes },
 			kv: {},
-		}).open(connection);
+		}).connect(connection);
 
 		try {
 			workspace.tables.notes.set({
@@ -284,7 +284,7 @@ describe('defineWorkspace', () => {
 			id: 'ws-definition-runtime',
 			tables: { notes: notesDefinition },
 			kv: {},
-		}).open(connection, ({ tables, actions }) => ({
+		}).connect(connection, ({ tables, actions }) => ({
 			runtimeLabel: 'browser-only',
 			actions: defineActions({
 				...actions,

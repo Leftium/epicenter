@@ -2,7 +2,7 @@
  * Workspace definitions and root Y.Doc construction.
  *
  * `defineWorkspace({ id, tables, kv })` is the app-facing entry point.
- * `.create()` builds the bare root for daemon composition; `.open(connection)`
+ * `.create()` builds the bare root for daemon composition; `.connect(connection)`
  * connects it for the browser with local storage, sync, wipe, and row child-doc
  * openers.
  *
@@ -197,7 +197,7 @@ type TableDocs<TTableDefinition extends TableDefinition<any, any>> =
 
 /**
  * The root table map: each table handle plus its guid-only `.docs` namespace.
- * `defineWorkspace(...).open(connection)` upgrades each `.docs.<field>` with
+ * `defineWorkspace(...).connect(connection)` upgrades each `.docs.<field>` with
  * `open`/dispose (see {@link ConnectedTables}).
  */
 export type WorkspaceTables<TTableDefinitions extends TableDefinitions> = {
@@ -212,27 +212,40 @@ export type ConnectedTables<TTableDefinitions extends TableDefinitions> = {
 	};
 };
 
-export type ConnectedWorkspace<
-	TTables extends TableDefinitions,
-	TKv extends KvDefinitions,
-	TActions extends ActionRegistry = ActionRegistry,
-> = Omit<Workspace<TTables, TKv, TActions>, 'tables'> & {
-	readonly tables: ConnectedTables<TTables>;
-	readonly idb: ReturnType<typeof connectDoc>['idb'];
-	readonly collaboration: Collaboration<TActions>;
-	wipe(): Promise<void>;
-};
-
+/**
+ * What a runtime `compose` callback sees: the connected workspace before its
+ * infrastructure is soldered on. This is the one place `tables` is retyped from
+ * guid-only ({@link WorkspaceTables}) to connected ({@link ConnectedTables}), so
+ * every richer connected type builds additively on top of it instead of
+ * re-omitting `tables` again.
+ */
 export type ConnectedWorkspaceContext<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
 	TActions extends ActionRegistry = ActionRegistry,
 > = Omit<Workspace<TTables, TKv, TActions>, 'tables'> & {
-  readonly tables: ConnectedTables<TTables>;
+	readonly tables: ConnectedTables<TTables>;
 };
 
 /**
- * What an `open(connection, compose)` runtime builder returns: the final action
+ * The browser-connected workspace `connect()` returns: the connected context
+ * plus its soldered-on infrastructure (local IndexedDB persistence, the
+ * collaboration relay, and `wipe()`). Defined as `context + infra` to mirror
+ * what `connect()` does at runtime: take the context, bolt on the connection
+ * handles.
+ */
+export type ConnectedWorkspace<
+	TTables extends TableDefinitions,
+	TKv extends KvDefinitions,
+	TActions extends ActionRegistry = ActionRegistry,
+> = ConnectedWorkspaceContext<TTables, TKv, TActions> & {
+	readonly idb: ReturnType<typeof connectDoc>['idb'];
+	readonly collaboration: Collaboration<TActions>;
+	wipe(): Promise<void>;
+};
+
+/**
+ * What a `connect(connection, compose)` runtime builder returns: the final action
  * registry plus any runtime-only handles the app wants on the bundle.
  *
  * `actions` is required, not optional: a runtime builder is exactly where
@@ -264,10 +277,10 @@ export type WorkspaceDefinition<
 	readonly tables: TTables;
 	readonly kv: TKv;
 	create(): Workspace<TTables, TKv, TActions>;
-	open(
+	connect(
 		connection: ConnectionConfig,
 	): ConnectedWorkspace<TTables, TKv, TActions>;
-	open<TRuntime extends WorkspaceRuntimeExtension>(
+	connect<TRuntime extends WorkspaceRuntimeExtension>(
 		connection: ConnectionConfig,
 		compose: (
 			workspace: ConnectedWorkspaceContext<TTables, TKv, TActions>,
@@ -361,24 +374,24 @@ export function createWorkspace<
 /**
  * Define an isomorphic workspace model, then construct or connect it.
  *
- * `create()` constructs; `open()` connects:
+ * `create()` constructs; `connect()` connects:
  *
- *   create()                  Bare root: Y.Doc + tables + KV + actions. No
- *                             persistence, no sync, no child-doc openers. Daemon
- *                             and test runtimes attach their own storage and
- *                             transport around it.
- *   open(connection)          The browser preset: the bare root plus IndexedDB
- *                             persistence, the WebSocket relay (see `connectDoc`),
- *                             per-row child-doc openers
- *                             (`tables.notes.docs.body.open(rowId)`), and `wipe()`.
- *   open(connection, compose) The browser preset plus a runtime layer. `compose`
- *                             runs after the doc and child docs are built but
- *                             before collaboration wires, so the action registry
- *                             it returns is the one served for cross-device
- *                             dispatch. That ordering is why `compose` is a
- *                             callback here, not a step you run after `open()`.
+ *   create()                     Bare root: Y.Doc + tables + KV + actions. No
+ *                                persistence, no sync, no child-doc openers. Daemon
+ *                                and test runtimes attach their own storage and
+ *                                transport around it.
+ *   connect(connection)          The browser preset: the bare root plus IndexedDB
+ *                                persistence, the WebSocket relay (see `connectDoc`),
+ *                                per-row child-doc openers
+ *                                (`tables.notes.docs.body.open(rowId)`), and `wipe()`.
+ *   connect(connection, compose) The browser preset plus a runtime layer. `compose`
+ *                                runs after the doc and child docs are built but
+ *                                before collaboration wires, so the action registry
+ *                                it returns is the one served for cross-device
+ *                                dispatch. That ordering is why `compose` is a
+ *                                callback here, not a step you run after `connect()`.
  *
- * `open(connection)` is `create()` plus the browser storage/transport bundle
+ * `connect(connection)` is `create()` plus the browser storage/transport bundle
  * (`connectTableChildDocs` + `connectDoc`). Non-browser runtimes call `create()`
  * and compose their own infrastructure instead of taking the preset.
  */
@@ -389,7 +402,7 @@ export function defineWorkspace<
 >(
 	options: DefineWorkspaceOptions<TTables, TKv, TActions>,
 ): WorkspaceDefinition<TTables, TKv, TActions> {
-	// Phase A, shared by create() and open(): build the root doc, tables, KV,
+	// Phase A, shared by create() and connect(): build the root doc, tables, KV,
 	// and base actions. No connection.
 	function buildRoot() {
 		const workspace = createWorkspace({
@@ -420,16 +433,16 @@ export function defineWorkspace<
 		});
 	}
 
-	function open(
+	function connect(
 		connection: ConnectionConfig,
 	): ConnectedWorkspace<TTables, TKv, TActions>;
-	function open<TRuntime extends WorkspaceRuntimeExtension>(
+	function connect<TRuntime extends WorkspaceRuntimeExtension>(
 		connection: ConnectionConfig,
 		compose: (
 			workspace: ConnectedWorkspaceContext<TTables, TKv, TActions>,
 		) => TRuntime,
 	): ConnectedWorkspaceWithRuntime<TTables, TKv, TRuntime>;
-	function open(
+	function connect(
 		connection: ConnectionConfig,
 		compose: (
 			workspace: ConnectedWorkspaceContext<TTables, TKv, TActions>,
@@ -493,7 +506,7 @@ export function defineWorkspace<
 		tables: options.tables,
 		kv: options.kv,
 		create,
-		open,
+		connect,
 	};
 }
 

@@ -30,7 +30,7 @@
  * });
  *
  * declare const connection: ConnectionConfig;
- * using workspace = notesWorkspace.open(connection);
+ * using workspace = notesWorkspace.connect(connection);
  * using body = workspace.tables.posts.docs.body.open('post-1');
  * await body.whenLoaded;
  * ```

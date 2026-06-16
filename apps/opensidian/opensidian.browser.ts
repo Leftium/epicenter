@@ -39,7 +39,7 @@ export function openOpensidianBrowser({
 	signedIn: SignedIn;
 	deviceId: DeviceId;
 }) {
-	return opensidianWorkspace.open({ ...signedIn, deviceId }, (workspace) => {
+	return opensidianWorkspace.connect({ ...signedIn, deviceId }, (workspace) => {
 		const { ydoc, tables } = workspace;
 		// The runtime bumps `files.updatedAt` on local body edits (declared via
 		// `onLocalEdit` on the files table), so these openers read/write the content

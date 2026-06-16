@@ -41,7 +41,7 @@ satisfiesWorkspace()
   lower-level primitives for package internals, tests, and older ports
 ```
 
-The app-facing path is `defineWorkspace({ id, tables, kv, actions }).open(...)`.
+The app-facing path is `defineWorkspace({ id, tables, kv, actions }).connect(...)`.
 `open()` returns only the root document for daemon composition. `open(connection)`
 adds owner-scoped browser storage, root sync, wipe, and table child-doc openers.
 `open(connection, compose)` lets a runtime add extras and publish its final action
@@ -83,7 +83,7 @@ const blogWorkspace = defineWorkspace({
 });
 
 export function openBlog() {
-	const workspace = blogWorkspace.open();
+	const workspace = blogWorkspace.connect();
 	const idb = attachIndexedDb(workspace.ydoc);
 	// Cross-tab broadcast keyed by ydoc.guid. Skip this line for a Tauri
 	// or Electron app that only ever runs one window.
@@ -121,7 +121,7 @@ void quickStart;
 That example uses the current public API end to end:
 
 - `defineTable(...)` with a real schema
-- a direct `openBlog()` builder function that calls `blogWorkspace.open()`
+- a direct `openBlog()` builder function that calls `blogWorkspace.connect()`
 - `defineWorkspace(...)` for the shared contract and `open()` for the live root
 - direct property access via `blog.tables.posts`
 - `set`, `get`, `update`, `delete`, `scan`, and `observe`
@@ -212,7 +212,7 @@ export function openMyAppBrowser({
 	signedIn: SignedIn;
 	deviceId: DeviceId;
 }) {
-	return myAppWorkspace.open({ ...signedIn, deviceId });
+	return myAppWorkspace.connect({ ...signedIn, deviceId });
 }
 
 export const session = createSession({
@@ -239,7 +239,7 @@ action registry. See [SYNC_ARCHITECTURE.md](./SYNC_ARCHITECTURE.md) for the full
 model.
 
 The `id` you pass to `defineWorkspace(...)` becomes `workspace.ydoc.guid` when
-you call `.open(...)`. Namespace it to your app (e.g. `epicenter.my-app`) to
+you call `.connect(...)`. Namespace it to your app (e.g. `epicenter.my-app`) to
 avoid collisions when multiple apps share the same IndexedDB origin. Cloud sync
 targets the single uniform shape `/api/owners/:ownerId/rooms/:roomId` in both
 modes: build the URL with
@@ -277,7 +277,7 @@ collaboration starts:
 
 ```typescript
 function openBlog(connection: ConnectionConfig) {
-	return blogWorkspace.open(connection, (workspace) => {
+	return blogWorkspace.connect(connection, (workspace) => {
 		const search = createBlogSearch(workspace.tables.posts);
 		const actions = defineActions({
 			...workspace.actions,
@@ -302,7 +302,7 @@ Daemon and test paths can use `open()` to compose root-only infrastructure:
 
 ```typescript
 function openBlogDaemon() {
-	const workspace = blogWorkspace.open();
+	const workspace = blogWorkspace.connect();
 	const collaboration = openCollaboration(workspace.ydoc, {
 		url,
 		openWebSocket,
@@ -407,8 +407,8 @@ Yjs supports multiple providers simultaneously. A phone can connect to desktop, 
 
 1. Define tables and KV entries with `defineTable` and `defineKv`.
 2. Export a `defineWorkspace({ id, tables, kv, actions })` value beside the schema.
-3. For singleton apps: call `definition.open()` once at module scope. For cloud
-   browser apps: call `definition.open(connection)`. For browser child documents:
+3. For singleton apps: call `definition.connect()` once at module scope. For cloud
+   browser apps: call `definition.connect(connection)`. For browser child documents:
    declare them with `table.childDocs(...)` and call `tables.<table>.docs.<field>.open(rowId)`.
    For one-shot Node operations: derive the same child-doc guid and read the room directly.
 4. Await the right readiness signal before reading persisted state. There are two shapes here, and the choice is load-bearing:
@@ -497,7 +497,7 @@ Handlers close over `tables`, `kv`, and anything else the builder has in scope t
 For browser apps where each row has its own rich-text, plain-text, or timeline
 content (files, notes, skills, entries), declare that content on the table:
 `.childDocs({ body: attachPlainText })`. The root workspace holds metadata rows;
-`definition.open(connection)` owns live per-row content identity, refcounting,
+`definition.connect(connection)` owns live per-row content identity, refcounting,
 storage, sync, and wipe.
 
 Each `.open(rowId)` returns a handle. Multiple consumers (editor, actions,
@@ -681,7 +681,7 @@ export const filesWorkspace = defineWorkspace({
 });
 
 export function openFilesBrowser(connection: ConnectionConfig) {
-	return filesWorkspace.open(connection);
+	return filesWorkspace.connect(connection);
 }
 
 async function documentExample(connection: ConnectionConfig) {
@@ -1335,7 +1335,7 @@ Two composition shapes, one builder contract.
 │     kv: {},                                               │
 │     actions: ({ tables }) => defineActions({ ... }),      │
 │ });                                                       │
-│ export const workspace = appWorkspace.open();             │
+│ export const workspace = appWorkspace.connect();             │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -1354,7 +1354,7 @@ const filesWorkspace = defineWorkspace({
 });
 
 declare const connection: ConnectionConfig;
-const workspace = filesWorkspace.open(connection);
+const workspace = filesWorkspace.connect(connection);
 
 using handle = workspace.tables.files.docs.content.open('file-1');
 await handle.whenLoaded;

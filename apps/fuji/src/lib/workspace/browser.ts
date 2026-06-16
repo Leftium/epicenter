@@ -24,7 +24,7 @@ export function openFujiBrowser({
 	signedIn: SignedIn;
 	deviceId: DeviceId;
 }) {
-	return fujiWorkspace.open({ ...signedIn, deviceId });
+	return fujiWorkspace.connect({ ...signedIn, deviceId });
 }
 
 export type FujiBrowser = ReturnType<typeof openFujiBrowser>;

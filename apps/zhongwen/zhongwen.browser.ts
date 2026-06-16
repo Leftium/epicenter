@@ -28,5 +28,5 @@ export function openZhongwenBrowser({
 	signedIn: SignedIn;
 	deviceId: DeviceId;
 }) {
-	return zhongwenWorkspace.open({ ...signedIn, deviceId });
+	return zhongwenWorkspace.connect({ ...signedIn, deviceId });
 }

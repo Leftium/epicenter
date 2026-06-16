@@ -6,7 +6,7 @@ A typed interface over Y.js for apps that need to evolve their data schema over 
 
 This is a wrapper around Y.js that handles schema versioning. Local-first apps can't run migration scripts, so data has to evolve gracefully. Old data coexists with new. The Workspace API bakes that into the design: define your schemas once with versions, write a migration function, and everything else is typed.
 
-The pattern: `defineWorkspace({ id, tables, kv, actions })` declares the shared isomorphic model. `definition.create()` builds the unconnected root doc for daemon composition. `definition.open(connection)` creates the browser runtime with owner-scoped local storage, root sync, wipe, and table child-doc openers. `definition.open(connection, compose)` lets a runtime add extras and publish its final action registry before collaboration starts. `createWorkspace({ id, tables, kv })` and `satisfiesWorkspace(...)` remain lower-level primitives for internals, tests, and ports that have not moved to definitions yet.
+The pattern: `defineWorkspace({ id, tables, kv, actions })` declares the shared isomorphic model. `definition.create()` builds the unconnected root doc for daemon composition. `definition.connect(connection)` creates the browser runtime with owner-scoped local storage, root sync, wipe, and table child-doc openers. `definition.connect(connection, compose)` lets a runtime add extras and publish its final action registry before collaboration starts. `createWorkspace({ id, tables, kv })` and `satisfiesWorkspace(...)` remain lower-level primitives for internals, tests, and ports that have not moved to definitions yet.
 
 ```
 +----------------------------------------------------------------+
@@ -15,7 +15,7 @@ The pattern: `defineWorkspace({ id, tables, kv, actions })` declares the shared 
 | defineWorkspace(...): shared definition                        |
 | open<App>Browser/Daemon/Tauri(): runtime attachments              |
 +----------------------------------------------------------------+
-| defineWorkspace({ id, tables, kv, actions }).open(...)         |
+| defineWorkspace({ id, tables, kv, actions }).connect(...)         |
 |   -> { ydoc, tables, kv, actions, child-doc openers, ... }     |
 | attachIndexedDb / attachYjsLog / attachBroadcastChannel        |
 | attachLocalStorage(ydoc, { server, ownerId })  // scoped IDB + scoped BC |
@@ -54,7 +54,7 @@ const blogWorkspace = defineWorkspace({
   kv: {},
 });
 
-using workspace = blogWorkspace.open();
+using workspace = blogWorkspace.connect();
 workspace.tables.posts.set({ id: '1', title: 'Hello' });
 ```
 
@@ -66,7 +66,7 @@ to open only the root doc or attach browser storage, sync, and runtime extras.
 ### Persistence + collaboration
 
 Auth belongs to the app. The browser opener receives the signed-in identity plus
-`deviceId`, then passes that connection into `definition.open(connection)`.
+`deviceId`, then passes that connection into `definition.connect(connection)`.
 
 ```typescript
 import type { SignedIn } from '@epicenter/svelte/auth';
@@ -79,7 +79,7 @@ function openBlog({
   signedIn: SignedIn;
   deviceId: DeviceId;
 }) {
-  return blogWorkspace.open({ ...signedIn, deviceId });
+  return blogWorkspace.connect({ ...signedIn, deviceId });
 }
 ```
 

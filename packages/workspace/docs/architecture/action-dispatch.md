@@ -299,7 +299,6 @@ For browser -> server, HTTP is simpler. Use the requests table when you need to 
 
 ## Related Documentation
 
-- [Request Dispatch Spec](../../../../specs/20260213T103000-request-dispatch.md): Implementation spec with tab-manager examples
 - [Device Identity](./device-identity.md): How devices identify themselves
 - [Network Topology](./network-topology.md): Connection patterns
 - [SYNC_ARCHITECTURE.md](../../SYNC_ARCHITECTURE.md): Multi-device sync details

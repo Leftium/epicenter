@@ -47,7 +47,7 @@ function buildMyDoc(id: string) {
 }
 ```
 
-Consumers await readiness through the attached subsystem (`handle.idb.whenLoaded`) rather than a flat `whenReady` alias. Add a top-level `whenReady` only when it composes two or more subsystem signals into one `Promise.all` (see `specs/20260506T020000-expose-attachments-not-aliases.md`).
+Consumers await readiness through the attached subsystem (`handle.idb.whenLoaded`) rather than a flat `whenReady` alias. Add a top-level `whenReady` only when it composes two or more subsystem signals into one `Promise.all`.
 
 Everything you need is in Yjs itself:
 
@@ -199,7 +199,6 @@ export const entryContentDocs = createDisposableCache((entryId: EntryId) => {
     // (e.g. `Promise.all([persistence.whenLoaded,
     // collaboration.whenConnected])`). A flat `whenReady: idb.whenLoaded`
     // alias lies about composition; expose the subsystem instead.
-    // See specs/20260506T020000-expose-attachments-not-aliases.md.
     [Symbol.dispose]() { ydoc.destroy(); },
   };
 });
@@ -246,7 +245,7 @@ async function readInstructions(id: SkillId): Promise<string> {
 }
 ```
 
-`whenReady` is an optional `Promise<unknown>` field on the returned bundle. It earns its place only when it composes two or more attachment signals into one barrier (`Promise.all([...])`). When a bundle has a single async subsystem, expose the subsystem (`idb`, `persistence`, ...) and let consumers reach through (`handle.idb.whenLoaded`); a flat `whenReady: idb.whenLoaded` alias lies about composition and is the anti-pattern called out in `specs/20260506T020000-expose-attachments-not-aliases.md`. Composed `whenReady` fields are consumed by the CLI's `run` command, Whispering's migrations, `@epicenter/filesystem` ops, the sqlite-index materializer, and editor `{#await}` gates. Builders with nothing async to wait on can omit the field entirely. Consumers can pick a more specific gate at the call site:
+`whenReady` is an optional `Promise<unknown>` field on the returned bundle. It earns its place only when it composes two or more attachment signals into one barrier (`Promise.all([...])`). When a bundle has a single async subsystem, expose the subsystem (`idb`, `persistence`, ...) and let consumers reach through (`handle.idb.whenLoaded`); a flat `whenReady: idb.whenLoaded` alias lies about composition and is the anti-pattern to avoid. Composed `whenReady` fields are consumed by the CLI's `run` command, Whispering's migrations, `@epicenter/filesystem` ops, the sqlite-index materializer, and editor `{#await}` gates. Builders with nothing async to wait on can omit the field entirely. Consumers can pick a more specific gate at the call site:
 
 ```typescript
 using h = docs.open(id);

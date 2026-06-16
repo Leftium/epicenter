@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { join } from 'node:path';
 /**
  * Rebuild the committed raster derivatives in `generated/` from the canonical
  * SVGs in `source/`. PNG is used so the outputs carry alpha and work as app
@@ -10,18 +11,17 @@
  * rasterized here because its text needs the Manrope font, which is not
  * resolvable offline; see README.md for the opt-in command.
  */
-import { $ } from "bun";
-import { join } from "node:path";
+import { $ } from 'bun';
 
 const root = import.meta.dir;
-const source = join(root, "source");
-const generated = join(root, "generated");
+const source = join(root, 'source');
+const generated = join(root, 'generated');
 
 /** Long-edge pixel size for every committed raster. */
 const SIZE = 1024;
 
 /** Pure-shape sources that rasterize with ImageMagick alone (no fonts). */
-const icons = ["epicenter-icon", "epicenter-icon-squircle"] as const;
+const icons = ['epicenter-icon', 'epicenter-icon-squircle'] as const;
 
 await $`mkdir -p ${generated}`;
 
@@ -33,6 +33,8 @@ for (const name of icons) {
 	// -colorspace sRGB + TrueColorAlpha forces 8-bit RGBA for broad
 	// compatibility (otherwise ImageMagick emits 16-bit grayscale).
 	await $`magick -background none -density 600 ${src} -resize ${SIZE}x${SIZE} -colorspace sRGB -type TrueColorAlpha -depth 8 ${out}`;
-	const dimensions = (await $`magick identify -format "%wx%h" ${out}`.text()).trim();
+	const dimensions = (
+		await $`magick identify -format "%wx%h" ${out}`.text()
+	).trim();
 	console.log(`✓ ${name}-${SIZE}.png  (${dimensions})`);
 }

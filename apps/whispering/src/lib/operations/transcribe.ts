@@ -34,6 +34,15 @@ import { recordings } from '$lib/state/recordings.svelte';
 import { settings } from '$lib/state/settings.svelte';
 import { commands } from '$lib/tauri/commands';
 
+/**
+ * The error any transcription path can surface. Deliberately `AnyTaggedError`
+ * rather than the concrete provider-error union: every consumer (toast,
+ * failed-row tooltip, practice view, analytics) presents these by `.message`,
+ * and none discriminate on `.name`. The user-facing message is curated where
+ * the context lives, in each service's `defineErrors` constructors, so this
+ * boundary only needs to promise `{ name, message }`. Widening to the full
+ * union would add error variants no consumer reads.
+ */
 export type TranscriptionError = AnyTaggedError;
 
 const TranscriptionOperationError = defineErrors({
@@ -164,8 +173,8 @@ export async function transcribeAudio(
 
 	const transcriptionResult =
 		PROVIDERS[selectedService].location === 'local'
-			? await dispatchLocalTranscription(recordingId, selectedService)
-			: await dispatchUploadTranscription(recordingId, selectedService);
+			? await transcribeLocally(recordingId, selectedService)
+			: await transcribeViaUpload(recordingId, selectedService);
 
 	const duration = Date.now() - startTime;
 	if (transcriptionResult.error) {
@@ -245,7 +254,7 @@ async function checkWhisperTruncation(
 	return Ok(undefined);
 }
 
-async function dispatchLocalTranscription(
+async function transcribeLocally(
 	recordingId: string,
 	selectedService: TranscriptionServiceId,
 ): Promise<Result<string, TranscriptionError>> {
@@ -282,7 +291,7 @@ async function dispatchLocalTranscription(
 	return commands.transcribeRecording(recordingId);
 }
 
-async function dispatchUploadTranscription(
+async function transcribeViaUpload(
 	recordingId: string,
 	selectedService: TranscriptionServiceId,
 ): Promise<Result<string, TranscriptionError>> {

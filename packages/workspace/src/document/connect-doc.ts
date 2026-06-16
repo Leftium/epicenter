@@ -52,15 +52,15 @@ export type ConnectionConfig = {
  *
  * @param ydoc    - the doc to connect (its `guid` selects the room).
  * @param config  - connection coordinates, pre-bound once per workspace.
- * @param actions - the doc's action registry (`{}` for body child docs; the
- *                  workspace's registry for the root).
+ * @param actions - the doc's action registry. Defaults to `{}`, which is what
+ *                  every body child doc wants; the root passes its own registry.
  * @returns `{ idb, collaboration }` - local persistence + sync handles, both
  *          disposed when `ydoc.destroy()` fires.
  */
-export function connectDoc<TActions extends ActionRegistry>(
+export function connectDoc<TActions extends ActionRegistry = ActionRegistry>(
 	ydoc: Y.Doc,
 	config: ConnectionConfig,
-	{ actions }: { actions: TActions },
+	{ actions = {} as TActions }: { actions?: TActions } = {},
 ) {
 	const idb = attachLocalStorage(ydoc, {
 		server: config.server,

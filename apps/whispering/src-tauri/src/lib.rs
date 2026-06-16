@@ -26,9 +26,6 @@ use command::open_accessibility_settings;
 pub mod download;
 use download::{cancel_download, download_file, DownloadManager};
 
-pub mod markdown;
-use markdown::write_markdown_files;
-
 pub mod media;
 use media::{pause_active_media, resume_media};
 
@@ -64,7 +61,6 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             clear_recording_artifacts,
             transcribe_recording,
             open_accessibility_settings,
-            write_markdown_files,
             set_transcription_config,
             get_transcription_state,
             download_file,

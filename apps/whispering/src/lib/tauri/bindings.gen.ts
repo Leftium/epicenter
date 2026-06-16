@@ -114,22 +114,6 @@ export const commands = {
 	openAccessibilitySettings: () =>
 		typedError<null, string>(__TAURI_INVOKE('open_accessibility_settings')),
 	/**
-	 *  Writes markdown files to disk atomically using a temporary file plus persist.
-	 *  Validates all filenames upfront. No files are written if any name is invalid.
-	 *
-	 *  # Arguments
-	 *  * `directory` - Absolute path to the output directory
-	 *  * `files` - Array of `{ filename, content }` pairs to write
-	 *
-	 *  # Returns
-	 *  * `Ok(())` - All files written successfully
-	 *  * `Err(String)` - Error if any write fails (earlier files may already be on disk)
-	 */
-	writeMarkdownFiles: (directory: string, files: MarkdownFile[]) =>
-		typedError<null, string>(
-			__TAURI_INVOKE('write_markdown_files', { directory, files }),
-		),
-	/**
 	 *  Push the ambient transcription configuration. Replaces the per-call
 	 *  `config` argument that `transcribe_recording` used to take. The FE
 	 *  invokes this once at startup and on every subsequent change to
@@ -425,11 +409,6 @@ export type LocalModelState = {
 	 */
 	modelName: string | null;
 	status: ModelStatus;
-};
-
-export type MarkdownFile = {
-	filename: string;
-	content: string;
 };
 
 export type MediaControlFailure = {

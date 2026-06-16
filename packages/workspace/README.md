@@ -177,7 +177,7 @@ const items = defineTable({
 	id: field.string(),
 	title: field.string(),
 	archived: field.boolean(),
-}).childDocs({ body: attachPlainText });
+}).docs({ body: attachPlainText });
 
 export const myAppWorkspace = defineWorkspace({
 	id: 'epicenter.my-app',
@@ -409,7 +409,7 @@ Yjs supports multiple providers simultaneously. A phone can connect to desktop, 
 2. Export a `defineWorkspace({ id, tables, kv, actions })` value beside the schema.
 3. For singleton apps: call `definition.connect()` once at module scope. For cloud
    browser apps: call `definition.connect(connection)`. For browser child documents:
-   declare them with `table.childDocs(...)` and call `tables.<table>.docs.<field>.open(rowId)`.
+   declare them with `table.docs(...)` and call `tables.<table>.docs.<field>.open(rowId)`.
    For one-shot Node operations: derive the same child-doc guid and read the room directly.
 4. Await the right readiness signal before reading persisted state. There are two shapes here, and the choice is load-bearing:
    - **One subsystem to wait on.** Expose the subsystem (`idb`, `persistence`, ...) on the bundle root and let consumers reach through: `await bundle.idb.whenLoaded`. Do not alias `whenLoaded`/`whenReady` flat at the bundle root just to save a `.idb`; the alias lies about composition.
@@ -496,7 +496,7 @@ Handlers close over `tables`, `kv`, and anything else the builder has in scope t
 
 For browser apps where each row has its own rich-text, plain-text, or timeline
 content (files, notes, skills, entries), declare that content on the table:
-`.childDocs({ body: attachPlainText })`. The root workspace holds metadata rows;
+`.docs({ body: attachPlainText })`. The root workspace holds metadata rows;
 `definition.connect(connection)` owns live per-row content identity, refcounting,
 storage, sync, and wipe.
 
@@ -672,7 +672,7 @@ const files = defineTable({
 	id: field.string(),
 	name: field.string(),
 	updatedAt: field.number(),
-}).childDocs({ content: attachPlainText });
+}).docs({ content: attachPlainText });
 
 export const filesWorkspace = defineWorkspace({
 	id: 'epicenter.files',
@@ -1345,7 +1345,7 @@ Two composition shapes, one builder contract.
 const files = defineTable({
 	id: field.string(),
 	name: field.string(),
-}).childDocs({ content: attachPlainText });
+}).docs({ content: attachPlainText });
 
 const filesWorkspace = defineWorkspace({
 	id: 'epicenter.files',

@@ -94,7 +94,7 @@ the wire, the opener uses the same collaboration primitive with an empty
 ### Per-row content documents
 
 Tables stay lean (ids, titles, metadata). Rich content lives in table-declared
-child docs: `.childDocs({ body: attachRichText })`. The opener derives each doc
+child docs: `.docs({ body: attachRichText })`. The opener derives each doc
 guid from the workspace id, table name, row id, and field; rows do not store
 those guids. Browser runtimes use `tables.notes.docs.body.open(noteId)` when a
 surface needs the content doc. Daemon projections can derive the same guid,

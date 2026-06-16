@@ -65,7 +65,7 @@ import { attachTimeline, defineWorkspace } from '@epicenter/workspace';
 
 const opensidianWorkspace = defineWorkspace({
   id: 'opensidian',
-  tables: { files: filesTable.childDocs({ content: attachTimeline }) },
+  tables: { files: filesTable.docs({ content: attachTimeline }) },
   kv: {},
 });
 
@@ -107,7 +107,7 @@ export function openOpensidianBrowser(connection) {
 		},
 		{
 			id: 'define-workspace',
-			line: "defineWorkspace({ id: 'opensidian', tables: { files: filesTable.childDocs(...) }, kv: {} })",
+			line: "defineWorkspace({ id: 'opensidian', tables: { files: filesTable.docs(...) }, kv: {} })",
 			explanation:
 				'Declares the durable workspace shape: a root doc, the typed `files` table, and one synced `content` child doc per file row.',
 		},

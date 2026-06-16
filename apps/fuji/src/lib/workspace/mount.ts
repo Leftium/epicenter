@@ -40,9 +40,9 @@ export type FujiMountOptions = {
 	baseURL?: string;
 };
 
-export function fuji(opts: FujiMountOptions = {}) {
+export function fuji({ git = false, baseURL }: FujiMountOptions = {}) {
 	return fujiWorkspace.mount({
-		baseURL: opts.baseURL,
+		baseURL,
 		runtime: nodeMountRuntime(),
 		compose({ workspace, ctx, baseURL }) {
 			const sqlite = attachMountSqlite(ctx, workspace);
@@ -73,7 +73,7 @@ export function fuji(opts: FujiMountOptions = {}) {
 						}),
 					},
 				},
-				git: opts.git ?? false,
+				git,
 			});
 			return {
 				materializers: [sqlite, markdown],

@@ -20,9 +20,9 @@ export type ZhongwenMountOptions = {
 	baseURL?: string;
 };
 
-export function zhongwen(opts: ZhongwenMountOptions = {}) {
+export function zhongwen({ baseURL }: ZhongwenMountOptions = {}) {
 	return zhongwenWorkspace.mount({
-		baseURL: opts.baseURL,
+		baseURL,
 		runtime: nodeMountRuntime(),
 	});
 }

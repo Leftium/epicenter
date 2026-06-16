@@ -27,9 +27,12 @@ export type TabManagerMountOptions = {
 	baseURL?: string;
 };
 
-export function tabManager(opts: TabManagerMountOptions = {}) {
+export function tabManager({
+	git = false,
+	baseURL,
+}: TabManagerMountOptions = {}) {
 	return tabManagerWorkspace.mount({
-		baseURL: opts.baseURL,
+		baseURL,
 		runtime: nodeMountRuntime(),
 		compose({ workspace, ctx }) {
 			const sqlite = attachMountSqlite(ctx, workspace, {
@@ -44,7 +47,7 @@ export function tabManager(opts: TabManagerMountOptions = {}) {
 					devices: {},
 					savedTabs: {},
 				},
-				git: opts.git ?? false,
+				git,
 			});
 			return {
 				materializers: [sqlite, markdown],

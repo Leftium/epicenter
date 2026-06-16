@@ -21,9 +21,9 @@ export type OpensidianMountOptions = {
 	baseURL?: string;
 };
 
-export function opensidian(opts: OpensidianMountOptions = {}) {
+export function opensidian({ baseURL }: OpensidianMountOptions = {}) {
 	return opensidianWorkspace.mount({
-		baseURL: opts.baseURL,
+		baseURL,
 		runtime: nodeMountRuntime(),
 	});
 }

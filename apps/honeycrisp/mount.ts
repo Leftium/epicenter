@@ -26,15 +26,18 @@ export type HoneycrispMountOptions = {
 	baseURL?: string;
 };
 
-export function honeycrisp(opts: HoneycrispMountOptions = {}) {
+export function honeycrisp({
+	git = false,
+	baseURL,
+}: HoneycrispMountOptions = {}) {
 	return honeycrispWorkspace.mount({
-		baseURL: opts.baseURL,
+		baseURL,
 		runtime: nodeMountRuntime(),
 		compose({ workspace, ctx }) {
 			const sqlite = attachMountSqlite(ctx, workspace);
 			const markdown = attachMountMarkdown(ctx, workspace, {
 				tables: { notes: {} },
-				git: opts.git ?? false,
+				git,
 			});
 			return {
 				materializers: [sqlite, markdown],

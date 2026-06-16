@@ -17,6 +17,7 @@
 import { field } from '@epicenter/field';
 import {
 	attachRichText,
+	DateTimeString,
 	defineActions,
 	defineMutation,
 	defineTable,
@@ -106,7 +107,12 @@ const notesTable = defineTable({
 	updatedAt: field.datetime(),
 	deletedAt: nullable(field.datetime()),
 	wordCount: nullable(field.number()),
-}).childDocs({ body: attachRichText });
+}).childDocs({
+	body: {
+		layout: attachRichText,
+		onLocalEdit: () => ({ updatedAt: DateTimeString.now() }),
+	},
+});
 export type Note = InferTableRow<typeof notesTable>;
 
 // ─── Workspace factory ────────────────────────────────────────────────────────

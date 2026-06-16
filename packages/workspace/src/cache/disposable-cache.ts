@@ -149,6 +149,7 @@
 
 import { defineErrors, extractErrorMessage } from 'wellcrafted/error';
 import { createLogger, type Logger } from 'wellcrafted/logger';
+import { once } from '../shared/once.js';
 
 /** Errors surfaced by the cache's background disposal machinery. */
 const DisposableCacheError = defineErrors({
@@ -258,10 +259,11 @@ export function createDisposableCache<
 			}
 			entry.openCount++;
 
-			let handleDisposed = false;
-			const dispose = (): void => {
-				if (handleDisposed) return;
-				handleDisposed = true;
+			// `once` makes this handle's release idempotent (N disposes of the same
+			// handle decrement the refcount once). `entry.disposed` is the separate
+			// liveness check: the shared entry may already be gone via a sibling
+			// handle or `cache[Symbol.dispose]()`.
+			const dispose = once((): void => {
 				if (entry.disposed) return;
 				entry.openCount--;
 				if (entry.openCount !== 0) return;
@@ -278,7 +280,7 @@ export function createDisposableCache<
 					entry.gcTimer = null;
 					disposeEntry(id, entry);
 				}, gcTime);
-			};
+			});
 
 			// Spread shallow wrapper. Each handle is a new object with the
 			// underlying value's own enumerable properties copied onto it.

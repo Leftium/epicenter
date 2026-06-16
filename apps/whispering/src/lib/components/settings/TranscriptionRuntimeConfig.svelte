@@ -154,7 +154,7 @@
 		<div class="space-y-4">
 			<Card.Root>
 				<Card.Header>
-					<Card.Title class="text-lg">Speaches Setup</Card.Title>
+					<Card.Title class="text-lg">Speaches</Card.Title>
 					<Card.Description>
 						Install Speaches server and configure Whispering. Speaches is the
 						successor to faster-whisper-server with improved features and
@@ -176,7 +176,7 @@
 							target="_blank"
 							rel="noopener noreferrer"
 						>
-							Speech-to-Text Setup
+							Speech-to-Text Guide
 						</Button>
 					</div>
 

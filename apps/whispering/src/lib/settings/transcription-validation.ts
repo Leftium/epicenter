@@ -61,7 +61,7 @@ export function isTranscriptionServiceConfigured(
 	}
 }
 
-export type TranscriptionSetupReadiness = {
+export type TranscriptionReadiness = {
 	service: TranscriptionProviderEntry | undefined;
 	isServiceAvailable: boolean;
 	isRuntimeConfigured: boolean;
@@ -69,7 +69,7 @@ export type TranscriptionSetupReadiness = {
 	primaryIssue: string | null;
 };
 
-export function getTranscriptionSetupReadiness(): TranscriptionSetupReadiness {
+export function getTranscriptionReadiness(): TranscriptionReadiness {
 	const service = getSelectedTranscriptionProvider();
 	const isServiceAvailable = service
 		? isTranscriptionServiceAvailable(service)

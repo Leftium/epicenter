@@ -21,7 +21,7 @@
 	import TranscriptDialog from '$lib/components/copyable/TranscriptDialog.svelte';
 	import {
 		TranscriptionSelector,
-		TranscriptionRuntimeSetup,
+		TranscriptionRuntimeConfig,
 		TransformationSelector,
 	} from '$lib/components/settings';
 	import ManualDeviceSelector from '$lib/components/settings/selectors/ManualDeviceSelector.svelte';
@@ -31,7 +31,7 @@
 		RECORDING_MODE_OPTIONS,
 		type RecordingMode,
 	} from '$lib/constants/audio';
-	import { getTranscriptionSetupReadiness } from '$lib/settings/transcription-validation';
+	import { getTranscriptionReadiness } from '$lib/settings/transcription-validation';
 	import { getShortcutDisplayLabel } from '$lib/utils/keyboard';
 	import { keyBindingToLabel } from '$lib/utils/key-binding';
 	import { os } from '#platform/os';
@@ -56,7 +56,7 @@
 	import VadRecordingAction from './_components/VadRecordingAction.svelte';
 
 	const latestRecording = $derived(recordings.sorted[0]);
-	const transcriptionReadiness = $derived(getTranscriptionSetupReadiness());
+	const transcriptionReadiness = $derived(getTranscriptionReadiness());
 	const globalToggleBinding = $derived(
 		deviceConfig.get('shortcuts.global.toggleManualRecording'),
 	);
@@ -65,7 +65,7 @@
 	);
 
 	const PageError = defineErrors({
-		SetupDragDropFailed: ({ cause }: { cause: unknown }) => ({
+		DragDropListenerFailed: ({ cause }: { cause: unknown }) => ({
 			message: `Failed to set up drag drop listener: ${extractErrorMessage(cause)}`,
 			cause,
 		}),
@@ -185,7 +185,7 @@
 				);
 			},
 			catch: (error) =>
-				PageError.SetupDragDropFailed({
+				PageError.DragDropListenerFailed({
 					cause: error,
 				}),
 		});
@@ -260,7 +260,7 @@
 
 	{#if !transcriptionReadiness.isReady}
 		<div class="w-full">
-			<TranscriptionRuntimeSetup
+			<TranscriptionRuntimeConfig
 				id="home-transcription-service"
 				label="Runtime"
 				description={transcriptionReadiness.primaryIssue ??

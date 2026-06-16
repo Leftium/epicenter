@@ -28,24 +28,11 @@ async function appDataPath(...segments: string[]) {
 
 export const PATHS = {
 	/**
-	 * Local transcription model directories under `models/`, keyed by engine
-	 * id so consumers can index with `PATHS.MODELS[engine]()`. The directory
-	 * names are durable contracts within the active appdata root, which is why
-	 * `whispercpp` maps to `whisper`.
+	 * Filesystem storage for recording audio blobs: `recordings/{id}.{ext}`.
+	 * The models folder is not here: Rust owns it end to end (see
+	 * `src-tauri/src/transcription/model_folder.rs`), so JS never resolves a
+	 * model path.
 	 */
-	MODELS: {
-		async whispercpp() {
-			return appDataPath('models', 'whisper');
-		},
-		async parakeet() {
-			return appDataPath('models', 'parakeet');
-		},
-		async moonshine() {
-			return appDataPath('models', 'moonshine');
-		},
-	},
-
-	/** Filesystem storage for recording audio blobs: `recordings/{id}.{ext}`. */
 	DB: {
 		/** `recordings/` directory containing audio files. */
 		async RECORDINGS() {

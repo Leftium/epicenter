@@ -15,21 +15,18 @@
 	import HardDriveDownload from '@lucide/svelte/icons/hard-drive-download';
 	import Link from '@lucide/svelte/icons/link';
 	import X from '@lucide/svelte/icons/x';
-	import { mkdir } from '@tauri-apps/plugin-fs';
 	import type { Snippet } from 'svelte';
-	import { extractErrorMessage } from 'wellcrafted/error';
-	import { Ok, tryAsync } from 'wellcrafted/result';
 	import {
 		type LocalModelConfig,
 		modelEntryName,
 		RECOMMENDED_MODELS,
 	} from '$lib/constants/local-models';
-	import { PATHS } from '$lib/services/fs-paths';
 	import {
 		deleteModelEntry,
 		linkModelEntry,
 		listModelEntries,
-		type LocalModelEntry,
+		type ModelEntry,
+		revealModelsFolder,
 	} from '$lib/services/transcription/local-model-folder';
 	import { PROVIDERS } from '$lib/services/transcription/providers';
 	import { localModelDownloads } from '$lib/state/local-model-downloads.svelte';
@@ -82,7 +79,7 @@
 	/** Folder entry names the catalog cards already represent. */
 	const catalogNames = $derived(new Set(models.map(modelEntryName)));
 
-	let entries = $state<LocalModelEntry[] | null>(null);
+	let entries = $state<ModelEntry[] | null>(null);
 
 	const customEntries = $derived(
 		(entries ?? []).filter((entry) => !catalogNames.has(entry.name)),
@@ -161,20 +158,12 @@
 	});
 
 	async function openModelsFolder() {
-		await tryAsync({
-			try: async () => {
-				const modelsDir = await PATHS.MODELS[engine]();
-				await mkdir(modelsDir, { recursive: true });
-				const { openPath } = await import('@tauri-apps/plugin-opener');
-				await openPath(modelsDir);
-			},
-			catch: (error) => {
-				toast.error('Failed to open models folder', {
-					description: extractErrorMessage(error),
-				});
-				return Ok(undefined);
-			},
-		});
+		const { error } = await revealModelsFolder(engine);
+		if (error) {
+			toast.error('Failed to open models folder', {
+				description: error.message,
+			});
+		}
 	}
 
 	/**
@@ -228,7 +217,7 @@
 		});
 	}
 
-	async function removeEntry(entry: LocalModelEntry) {
+	async function removeEntry(entry: ModelEntry) {
 		if (!announceModelDelete(await deleteModelEntry({ engine, name: entry.name })))
 			return;
 		if (value === entry.name) value = '';
@@ -253,7 +242,7 @@
 					<Item.Description>
 						{#if activeCatalogModel}
 							{activeCatalogModel.size}
-						{:else if activeCustomEntry?.isSymlink}
+						{:else if activeCustomEntry?.linked}
 							Your model (linked)
 						{:else}
 							Your model
@@ -358,7 +347,7 @@
 								{/if}
 							</div>
 							<div class="text-sm text-muted-foreground">
-								{entry.isSymlink ? 'Your model (linked)' : 'Your model'}
+								{entry.linked ? 'Your model (linked)' : 'Your model'}
 							</div>
 						</div>
 

@@ -142,15 +142,7 @@ impl ModelManager {
                 name
             ));
         }
-        let app_data_dir = self
-            .app
-            .path()
-            .app_data_dir()
-            .map_err(|e| format!("resolve app data directory: {}", e))?;
-        let path = app_data_dir
-            .join("models")
-            .join(engine_models_dir(config.engine))
-            .join(name);
+        let path = engine_models_path(&self.app, config.engine)?.join(name);
         if !path.exists() {
             return Err(format!(
                 "The model \"{}\" is no longer in the models folder. Download it again or add it back, then select it in settings.",
@@ -640,6 +632,19 @@ pub(crate) fn engine_models_dir(engine: EngineKind) -> &'static str {
         EngineKind::Parakeet => "parakeet",
         EngineKind::Moonshine => "moonshine",
     }
+}
+
+/// Absolute path to an engine's models folder, `{app_data}/models/{engine}`.
+/// The one place that joins the appdata root onto the engine folder name, so
+/// the loader (`model_path_for`), the link importer, and the webview-facing
+/// folder surface (`model_folder.rs`) all resolve the same directory.
+pub(crate) fn engine_models_path(app: &AppHandle, engine: EngineKind) -> Result<PathBuf, String> {
+    Ok(app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("resolve app data directory: {}", e))?
+        .join("models")
+        .join(engine_models_dir(engine)))
 }
 
 /// Whether `name` stays within a single models-folder entry: no path

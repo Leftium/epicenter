@@ -16,15 +16,16 @@ use recorder::recorder::Recorder;
 
 pub mod transcription;
 use transcription::{
-    get_transcription_state, link_local_model, set_transcription_config, transcribe_recording,
-    ModelManager, ModelStateEvent,
+    delete_model_entry, download_model, get_transcription_state, link_local_model,
+    list_model_entries, resolve_model_file_sizes, reveal_models_folder, set_transcription_config,
+    transcribe_recording, ModelManager, ModelStateEvent,
 };
 
 pub mod command;
 use command::open_accessibility_settings;
 
 pub mod download;
-use download::{cancel_download, download_file, DownloadManager};
+use download::{cancel_download, DownloadManager};
 
 pub mod markdown;
 use markdown::write_markdown_files;
@@ -68,7 +69,11 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             set_transcription_config,
             get_transcription_state,
             link_local_model,
-            download_file,
+            list_model_entries,
+            delete_model_entry,
+            resolve_model_file_sizes,
+            download_model,
+            reveal_models_folder,
             cancel_download,
             pause_active_media,
             resume_media,

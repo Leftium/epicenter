@@ -16,17 +16,16 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use thiserror::Error;
 
 use super::config::Engine;
-use super::model_manager::{
-    engine_models_dir, is_contained_entry_name, parse_moonshine_variant,
-};
+use super::model_manager::{engine_models_path, is_contained_entry_name, parse_moonshine_variant};
 
-/// Extensions a Whisper model file may carry. Mirrors the frontend's
-/// `WHISPER_MODEL_EXTENSIONS` listing filter; whisper.cpp accepts GGML/GGUF.
-const WHISPER_EXTENSIONS: [&str; 3] = ["bin", "gguf", "ggml"];
+/// Extensions a Whisper model file may carry. The single source of truth for
+/// the listing filter (`model_folder::list_model_entries`) and import-time
+/// shape validation; whisper.cpp accepts GGML/GGUF.
+pub(crate) const WHISPER_EXTENSIONS: [&str; 3] = ["bin", "gguf", "ggml"];
 
 #[derive(Error, Debug, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "name")]
@@ -161,8 +160,9 @@ fn validate_source_shape(engine: Engine, source: &Path) -> Result<(), ModelImpor
 
 /// Unlink a symlink entry without touching its target. On unix `remove_file`
 /// unlinks a symlink even when it points at a directory; on Windows a directory
-/// symlink needs `remove_dir`, so try the file form first and fall back.
-fn unlink_symlink(link: &Path) -> std::io::Result<()> {
+/// symlink needs `remove_dir`, so try the file form first and fall back. Shared
+/// with `model_folder::delete_model_entry`, which unlinks the same way.
+pub(crate) fn unlink_symlink(link: &Path) -> std::io::Result<()> {
     #[cfg(windows)]
     {
         std::fs::remove_file(link).or_else(|_| std::fs::remove_dir(link))
@@ -230,14 +230,10 @@ pub fn link_local_model(
     validate_entry_name(engine, &entry_name)?;
     validate_source_shape(engine, &source)?;
 
-    let models_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| ModelImportError::LinkFailed {
-            message: format!("resolve app data directory: {e}"),
-        })?
-        .join("models")
-        .join(engine_models_dir(engine));
+    let models_dir =
+        engine_models_path(&app_handle, engine).map_err(|message| ModelImportError::LinkFailed {
+            message,
+        })?;
     std::fs::create_dir_all(&models_dir).map_err(|e| ModelImportError::LinkFailed {
         message: format!("create models folder: {e}"),
     })?;

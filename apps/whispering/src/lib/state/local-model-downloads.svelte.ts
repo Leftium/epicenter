@@ -26,7 +26,7 @@ import {
 import {
 	createModelStorage,
 	deleteModelEntry,
-	type LocalModelFolderError,
+	type ModelFolderError,
 } from '$lib/services/transcription/local-model-folder';
 
 type ModelDownloadState =
@@ -50,8 +50,9 @@ function createModelDownload(model: LocalModelConfig) {
 	 *
 	 * `id` is unique per attempt, so the Rust registry maps it to exactly one
 	 * transfer for its whole lifetime. `cancelling` gates late progress callbacks
-	 * (so a flushed update cannot repaint after a cancel) and is the between-files
-	 * cancel signal passed to the storage layer.
+	 * (so a flushed Channel update cannot repaint after a cancel); the cancel
+	 * itself, including the gap between a multi-file engine's files, is now
+	 * enforced in Rust (the aborted task stops the whole staged download).
 	 */
 	let active = $state<{
 		id: string;
@@ -101,7 +102,7 @@ function createModelDownload(model: LocalModelConfig) {
 		 */
 		async download(): Promise<Result<
 			{ outcome: 'downloaded' | 'already-installed'; entryName: string },
-			LocalModelFolderError
+			ModelFolderError
 		> | null> {
 			if (active) return null;
 			const id = `${modelDownloadKey(model)}#${++attempts}`;
@@ -116,6 +117,14 @@ function createModelDownload(model: LocalModelConfig) {
 				});
 			}
 
+			// A cancel that arrived during the install check (before any transfer
+			// started, so there is no Rust task to abort yet) stops here. Report it
+			// as a no-op, like an already-in-flight call.
+			if (active.cancelling) {
+				active = null;
+				return null;
+			}
+
 			const { error } = await storage.download({
 				downloadId: id,
 				// Write through `active` (the $state proxy) so the bar repaints; the
@@ -123,7 +132,6 @@ function createModelDownload(model: LocalModelConfig) {
 				onProgress: (value) => {
 					if (active && !active.cancelling) active.progress = value;
 				},
-				isCancelled: () => active?.cancelling ?? false,
 			});
 			if (error) {
 				const wasCancelled = active?.cancelling ?? false;
@@ -157,7 +165,7 @@ function createModelDownload(model: LocalModelConfig) {
 		},
 
 		/** Remove the catalog model from disk. Selection is cleared by callers. */
-		async delete(): Promise<Result<void, LocalModelFolderError>> {
+		async delete(): Promise<Result<void, ModelFolderError>> {
 			const { error } = await deleteModelEntry({
 				engine: model.engine,
 				name: modelEntryName(model),

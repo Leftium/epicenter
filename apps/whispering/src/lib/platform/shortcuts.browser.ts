@@ -1,5 +1,4 @@
 import { partitionResults } from 'wellcrafted/result';
-import { goto } from '$app/navigation';
 import { type Command, commands } from '$lib/commands';
 import { report } from '$lib/report';
 import {
@@ -55,33 +54,6 @@ function reset(): void {
 	void sync();
 }
 
-function resetIfDuplicates(): boolean {
-	const seen = new Map<string, string>();
-	for (const command of commands) {
-		const shortcut = settings.get(localKey(command.id));
-		if (!shortcut) continue;
-		if (seen.has(String(shortcut))) {
-			reset();
-			report.success({
-				title: 'Shortcuts reset',
-				description:
-					'Duplicate local shortcuts detected. All local shortcuts have been reset to defaults.',
-				action: {
-					label: 'Configure shortcuts',
-					onClick: () => goto('/settings/shortcuts'),
-				},
-			});
-			return true;
-		}
-		seen.set(String(shortcut), command.id);
-	}
-	return false;
-}
-
-function label(commandId: Command['id']): string {
-	return getShortcutDisplayLabel(settings.get(localKey(commandId)));
-}
-
 function defaultLabel(commandId: Command['id']): string {
 	return getShortcutDisplayLabel(settings.getDefault(localKey(commandId)));
 }
@@ -93,8 +65,6 @@ function currentLabel(commandId: Command['id']): string {
 export const shortcuts: Shortcuts = {
 	sync,
 	reset,
-	resetIfDuplicates,
-	label,
 	defaultLabel,
 	currentLabel,
 };

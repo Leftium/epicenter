@@ -1,7 +1,6 @@
 import { extractErrorMessage } from 'wellcrafted/error';
 import { Err, tryAsync } from 'wellcrafted/result';
 import { os } from '#platform/os';
-import { goto } from '$app/navigation';
 import { type Command, commands } from '$lib/commands';
 import { report } from '$lib/report';
 import {
@@ -21,17 +20,6 @@ import type { Shortcuts } from './types';
  */
 
 const globalKey = (id: Command['id']) => `shortcuts.global.${id}` as const;
-
-/** Canonical string for a binding, so structurally-equal bindings dedupe. */
-function bindingKey(binding: {
-	modifiers: readonly string[];
-	keys: readonly string[];
-}): string {
-	return JSON.stringify({
-		modifiers: [...binding.modifiers].sort(),
-		keys: [...binding.keys].sort(),
-	});
-}
 
 async function sync(): Promise<void> {
 	const bindings: CommandBinding[] = [];
@@ -67,35 +55,6 @@ function reset(): void {
 	void sync();
 }
 
-function resetIfDuplicates(): boolean {
-	const seen = new Map<string, string>();
-	for (const command of commands) {
-		const binding = deviceConfig.get(globalKey(command.id));
-		if (!binding) continue;
-		const key = bindingKey(binding);
-		if (seen.has(key)) {
-			reset();
-			report.success({
-				title: 'Shortcuts reset',
-				description:
-					'Duplicate global shortcuts detected. All global shortcuts have been reset to defaults.',
-				action: {
-					label: 'Configure shortcuts',
-					onClick: () => goto('/settings/shortcuts'),
-				},
-			});
-			return true;
-		}
-		seen.set(key, command.id);
-	}
-	return false;
-}
-
-function label(commandId: Command['id']): string {
-	const binding = deviceConfig.get(globalKey(commandId));
-	return binding ? keyBindingToLabel(binding, os.isApple) : '';
-}
-
 function defaultLabel(commandId: Command['id']): string {
 	const binding = DEFAULT_GLOBAL_BINDINGS[commandId];
 	return binding ? keyBindingToLabel(binding, os.isApple) : '';
@@ -109,8 +68,6 @@ function currentLabel(commandId: Command['id']): string {
 export const shortcuts: Shortcuts = {
 	sync,
 	reset,
-	resetIfDuplicates,
-	label,
 	defaultLabel,
 	currentLabel,
 };

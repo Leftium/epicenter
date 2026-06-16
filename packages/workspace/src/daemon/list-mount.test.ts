@@ -2,8 +2,8 @@
  * Coverage for the `/list` manifest projection.
  *
  * `/list` describes the one hosted mount with a mount label and bare action
- * keys. Mount-prefixed public addressing belongs to clients such as the CLI,
- * not to the daemon wire.
+ * keys. The mount label is a display header for clients such as the CLI;
+ * actions are addressed by their bare key on the wire and in the CLI alike.
  */
 
 import { describe, expect, test } from 'bun:test';

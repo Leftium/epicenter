@@ -108,7 +108,7 @@ There is no stale-request hazard to design around: dispatch is live, so a node t
 ## Where This Runs
 
 - **In an app (browser, extension, Tauri):** `openCollaboration(...)` returns the `collaboration` handle with `peers` and `dispatch` above.
-- **On the CLI daemon:** the same handle is surfaced as two commands. `epicenter peers` prints `collaboration.peers.list()`; `epicenter run <mount>.<action> --peer <nodeId>` calls `collaboration.dispatch(...)`. A peer that is not reachable surfaces as `PeerNotFound` (the daemon's name for `RecipientOffline`).
+- **On the CLI daemon:** the same handle is surfaced as two commands. `epicenter peers` prints `collaboration.peers.list()`; `epicenter run <action> --peer <nodeId>` calls `collaboration.dispatch(...)`. A peer that is not reachable surfaces as `PeerNotFound` (the daemon's name for `RecipientOffline`).
 
 ## Related Documentation
 

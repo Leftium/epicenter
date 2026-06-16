@@ -1,22 +1,22 @@
 /**
- * `epicenter run <mount.action_key> [input]`: invoke a `defineQuery` or
- * `defineMutation` by mount-prefixed CLI path through the local
+ * `epicenter run <action_key> [input]`: invoke a `defineQuery` or
+ * `defineMutation` by its bare action key through the local
  * `epicenter daemon up` daemon.
  *
  * `input` is JSON: inline positional, `@file.json` (curl convention), or stdin.
- * The CLI owns the `<mount>.` prefix for public addressing, then sends the
- * daemon the bare action key. With `--peer <target>`, the daemon dispatches
- * the run over its RPC channel to a remote peer instead of running locally;
- * both shapes are one `/run` request (the optional `peer` object selects the
- * target and carries the wait budget).
+ * The daemon serves one mount, so the action key alone addresses the action;
+ * the CLI forwards it to the daemon verbatim. With `--peer <target>`, the
+ * daemon dispatches the run over its RPC channel to a remote peer instead of
+ * running locally; both shapes are one `/run` request (the optional `peer`
+ * object selects the target and carries the wait budget).
  *
  * `epicenter run` requires a running daemon for the discovered Epicenter root.
  * Without `daemon up`, the handler errors with a hint pointing at
  * `epicenter daemon up`.
  *
  * Exit codes:
- *   1: usage error (unknown mount, unknown action, action input that fails the
- *      action's schema, invalid input for `--peer`), or no daemon (`Required`,
+ *   1: usage error (unknown action, action input that fails the action's
+ *      schema, invalid input for `--peer`), or no daemon (`Required`,
  *      transport error)
  *   2: runtime error (local action returned Err, or remote RPC failed)
  *   3: peer not found (`--peer <target>` did not resolve within `--wait`)
@@ -51,7 +51,7 @@ export const runCommand = cmd({
 			.positional('action', {
 				type: 'string',
 				demandOption: true,
-				describe: 'Mount-prefixed action path, e.g. notes.notes_add',
+				describe: 'Action key, e.g. notes_add',
 			})
 			.positional('input', {
 				type: 'string',
@@ -85,24 +85,14 @@ export const runCommand = cmd({
 			return;
 		}
 
-		const { data: list, error: listError } = await daemon.list();
-		if (listError) {
-			fail(listError.message);
-			return;
-		}
-		const { data: actionPath, error: actionPathError } = resolveDaemonRunPath(
-			list.mount,
-			argv.action,
-		);
-		if (actionPathError) {
-			fail(actionPathError.message, { details: actionPathError.suggestions });
-			return;
-		}
-
+		// One mount per root, so the bare action key is the address. An unknown
+		// key surfaces from the daemon's `runLocal` as a `UsageError` with
+		// sibling suggestions, rendered below.
+		//
 		// A `peer` key with an `undefined` value drops out of the JSON wire
 		// body, so a local run sends no peer fields at all.
 		const result = await daemon.run({
-			actionPath,
+			actionPath: argv.action,
 			input: actionInput,
 			peer:
 				argv.peer === undefined
@@ -112,35 +102,6 @@ export const runCommand = cmd({
 		renderRunResult(result, argv.format);
 	},
 });
-
-function resolveDaemonRunPath(
-	mount: string,
-	cliAction: string,
-): Result<string, { message: string; suggestions?: string[] }> {
-	const prefix = `${mount}.`;
-	if (cliAction.startsWith(prefix)) {
-		const localPath = cliAction.slice(prefix.length);
-		if (localPath.length > 0) return { data: localPath, error: null };
-		return {
-			data: null,
-			error: {
-				message: `"${cliAction}" is not a runnable action.`,
-				suggestions: [`  ${mount}.<action_key>`],
-			},
-		};
-	}
-
-	const requestedMount = cliAction.includes('.')
-		? cliAction.slice(0, cliAction.indexOf('.'))
-		: cliAction;
-	return {
-		data: null,
-		error: {
-			message: `No mount "${requestedMount}". Available: ${mount}`,
-			suggestions: [`  ${mount}`],
-		},
-	};
-}
 
 function renderRunResult(
 	result: Result<unknown, RunError | DaemonError>,

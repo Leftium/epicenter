@@ -82,14 +82,18 @@ surface; `model_import.rs` keeps linking, `model_manager.rs` keeps the loader):
 - `delete_model_entry(engine, name) -> Result<(), _>`. Unlinks a symlink
   without touching its target (shares `unlink_symlink` with `model_import`) and
   removes a real entry; succeeds when already gone. Fixes the can't-unlink wart.
-- `resolve_model_file_sizes(engine, name, filenames) -> Result<Vec<Option<u64>>, _>`.
-  Resolves the entry **through any link** and stats. Empty `filenames` means
-  "the entry is itself the file" (Whisper) and returns one element; otherwise
-  one element per filename (directory engines). `None` = missing/unstattable.
-  JS keeps the threshold (`isModelFileSizeValid`). Serves **both** `isInstalled`
-  and the Whisper truncation check, so `resolveModelPath` deletes outright. This
-  one command closes the dead-link bug: a dead link stats to `None` -> not
-  installed.
+- `resolve_model_files(engine, name, filenames, expected_sizes) -> Result<Vec<ModelFileStatus>, _>`.
+  Resolves the entry **through any link**, stats each file, and returns
+  `{ size, complete }` per file. JS passes the catalog's expected sizes; the 90%
+  completeness rule lives in Rust next to the stat (shared with the download
+  integrity check via `is_size_complete`), so the threshold has one owner instead
+  of a copy on each side of the IPC boundary. Empty `filenames` means "the entry
+  is itself the file" (Whisper) and returns one element; otherwise one element per
+  filename (directory engines). A missing/dead-link file reports
+  `size: None, complete: false`. Serves **both** `isInstalled` and the Whisper
+  truncation check (which reads `size` only for its MB error message), so
+  `resolveModelPath` deletes outright. This one command closes the dead-link bug:
+  a dead link is never complete -> not installed.
 - `download_model(engine, entry_name, files, download_id, on_progress) -> Result<(), _>`.
   Orchestrates the whole download natively on top of the existing streaming +
   cancel + `Channel` primitives: `create_dir_all`, stage under
@@ -118,11 +122,12 @@ surface; `model_import.rs` keeps linking, `model_manager.rs` keeps the loader):
   list command; `isInstalled`'s `hasListedSymlinkEntry` special path is gone
   (linked and real installs validate through one path), closing the dead-link
   bug.
-- `createModelStorage.isInstalled` becomes: ask Rust for sizes, compare to the
-  catalog. `download`/`cancel` become command wrappers (the `Channel` and the
+- `createModelStorage.isInstalled` becomes: pass the catalog's expected sizes,
+  ask Rust for the per-file completeness verdict, and require every file complete.
+  `download`/`cancel` become command wrappers (the `Channel` and the
   percent math live in the wrapper; the Svelte machine is unchanged except it
   no longer needs `isCancelled`, since between-files cancel is now in Rust).
-- `transcribe.ts` truncation check calls `resolve_model_file_sizes` instead of
+- `transcribe.ts` truncation check calls `resolve_model_files` instead of
   `resolveModelPath` + `stat`; its `plugin-fs` import goes.
 - `LocalModelSelector.openModelsFolder` calls `reveal_models_folder`; its
   `plugin-fs` + `PATHS.MODELS` use goes.
@@ -138,7 +143,13 @@ surface; `model_import.rs` keeps linking, `model_manager.rs` keeps the loader):
   `active` re-entry gate, `cancelling`, the computed
   not-downloaded/downloading/ready states. This is UI state, not filesystem,
   and it consumes a `Channel` either way.
-- The size-validity threshold (`isModelFileSizeValid`, the 90% rule).
+
+The 90% size-validity rule does **not** stay in JS: an earlier draft kept it
+(`isModelFileSizeValid`), but the download path must validate natively before it
+promotes, so the constant ended up copied on both sides. "What counts as a
+complete file on disk" is validity truth, not catalog policy, so it moves fully
+to Rust (`is_size_complete`), and `model-file.ts` is deleted. JS keeps only the
+expected *sizes* (catalog data) and passes them down.
 
 ## Risks and open questions
 
@@ -152,7 +163,7 @@ surface; `model_import.rs` keeps linking, `model_manager.rs` keeps the loader):
   after the `isInstalled` await and before calling the command, bail if
   `active.cancelling` is set. The remaining window (set-active -> task-registers)
   is sub-millisecond and already unhandled today.
-- **`resolve_model_file_sizes` empty-list contract.** Empty `filenames` = stat
+- **`resolve_model_files` empty-list contract.** Empty `filenames` = stat
   the entry itself (Whisper). Document it on the command; it's the one subtle
   rule in the seam.
 - **Bindings regen.** New + removed commands require `bun run bindings:tauri`,

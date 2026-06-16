@@ -116,6 +116,7 @@ export type {
 	MediaPlayer,
 	ModelEntry,
 	ModelFileDownload,
+	ModelFileStatus,
 	ModelFolderError,
 	ModelImportError,
 	ModelStateEvent,

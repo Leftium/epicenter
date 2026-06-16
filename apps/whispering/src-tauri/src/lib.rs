@@ -28,7 +28,7 @@ pub mod download;
 use download::{cancel_download, DownloadManager};
 
 pub mod media;
-use media::{pause_active_media, resume_media};
+use media::{pause_playback, resume_playback};
 
 // Flag-gated (`WHISPERING_TIMING`) latency instrumentation for the desktop
 // audio pipeline. The `timing_note!` macro it exports is used across the
@@ -77,8 +77,8 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             download_model,
             reveal_models_folder,
             cancel_download,
-            pause_active_media,
-            resume_media,
+            pause_playback,
+            resume_playback,
             keyboard::commands::set_keyboard_shortcuts,
             keyboard::commands::set_keyboard_capturing,
             keyboard::commands::get_dictation_capability,

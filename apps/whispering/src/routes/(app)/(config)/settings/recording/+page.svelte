@@ -6,7 +6,7 @@
 	import InfoIcon from '@lucide/svelte/icons/info';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { mutationOptions } from 'wellcrafted/query';
-	import { SettingSelect } from '$lib/components/settings';
+	import { SettingSelect, SettingSwitch } from '$lib/components/settings';
 	import {
 		BITRATE_OPTIONS,
 		RECORDING_TRIGGER_OPTIONS,
@@ -48,6 +48,12 @@
 			description="Choose how recording starts: {RECORDING_TRIGGER_OPTIONS.map(
 				(option) => option.label.toLowerCase(),
 			).join(', ')}"
+		/>
+
+		<SettingSwitch
+			key="recording.pausePlayback"
+			label="Pause playback while recording"
+			description="When recording starts, Whispering pauses media playing on your computer (music, video, browser tabs) and resumes it when you stop. Works with most apps that appear in your system media controls; a few apps can't be paused this way."
 		/>
 
 		{#if settings.get('recording.trigger') === 'manual'}

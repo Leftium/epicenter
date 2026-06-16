@@ -188,7 +188,6 @@ const sound = {
 	'sound.vadStop': defineKv(field.boolean(), () => true),
 	'sound.transcriptionComplete': defineKv(field.boolean(), () => true),
 	'sound.transformationComplete': defineKv(field.boolean(), () => true),
-	'sound.pauseMediaDuringRecording': defineKv(field.boolean(), () => false),
 } as const;
 
 /**
@@ -243,6 +242,10 @@ const recording = {
 		field.select(RECORDING_TRIGGERS),
 		() => 'manual' as const,
 	),
+	// Pause system media playback while capturing, resume it when capture ends.
+	// A capture-quality preference (reduce background-audio contamination), so it
+	// roams like the sound toggles even though the pause capability is per-device.
+	'recording.pausePlayback': defineKv(field.boolean(), () => false),
 } as const;
 
 /**

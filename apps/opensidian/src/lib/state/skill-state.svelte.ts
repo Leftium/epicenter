@@ -1,9 +1,4 @@
-import {
-	createSkills,
-	createSkillsActions,
-	referenceContentDocGuid,
-	skillInstructionsDocGuid,
-} from '@epicenter/skills';
+import { createSkills, createSkillsActions } from '@epicenter/skills';
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
@@ -162,10 +157,7 @@ function openGlobalSkills() {
 
 	const instructionsDocs = createDisposableCache((skillId: string) => {
 		const ydoc = new Y.Doc({
-			guid: skillInstructionsDocGuid({
-				workspaceId: doc.ydoc.guid,
-				skillId,
-			}),
+			guid: doc.tables.skills.docs.instructions.guid(skillId),
 			gc: true,
 		});
 		onLocalUpdate(ydoc, () =>
@@ -184,10 +176,7 @@ function openGlobalSkills() {
 
 	const referenceDocs = createDisposableCache((referenceId: string) => {
 		const ydoc = new Y.Doc({
-			guid: referenceContentDocGuid({
-				workspaceId: doc.ydoc.guid,
-				referenceId,
-			}),
+			guid: doc.tables.references.docs.content.guid(referenceId),
 			gc: true,
 		});
 		onLocalUpdate(ydoc, () =>

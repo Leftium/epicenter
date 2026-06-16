@@ -11,6 +11,7 @@
 
 import { field } from '@epicenter/field';
 import {
+	attachPlainText,
 	defineTable,
 	type InferTableRow,
 	nullable,
@@ -59,7 +60,7 @@ export const skillsTable = defineTable({
 	metadata: nullable(field.string()),
 	allowedTools: nullable(field.string()),
 	updatedAt: field.number(),
-});
+}).childDocs({ instructions: attachPlainText });
 
 /**
  * References table, one row per markdown file in a skill's `references/` directory.
@@ -89,7 +90,7 @@ export const referencesTable = defineTable({
 	skillId: field.string(),
 	path: field.string(),
 	updatedAt: field.number(),
-});
+}).childDocs({ content: attachPlainText });
 
 export type Skill = InferTableRow<typeof skillsTable>;
 export type Reference = InferTableRow<typeof referencesTable>;

@@ -39,9 +39,7 @@ import {
 import { Ok, tryAsync } from 'wellcrafted/result';
 import * as Y from 'yjs';
 import { parseSkillMd } from './parse.js';
-import { referenceContentDocGuid } from './reference-content-docs.js';
 import { serializeSkillMd } from './serialize.js';
-import { skillInstructionsDocGuid } from './skill-instructions-docs.js';
 import { createSkillsActions } from './skills-actions.js';
 import type { Skill } from './tables.js';
 import { createSkills } from './workspace.js';
@@ -80,7 +78,7 @@ export function openSkillsNode({ workspaceId }: { workspaceId: string }) {
 
 	function openInstructionsDoc(skillId: string) {
 		const ydoc = new Y.Doc({
-			guid: skillInstructionsDocGuid({ workspaceId, skillId }),
+			guid: tables.skills.docs.instructions.guid(skillId),
 			gc: true,
 		});
 		onLocalUpdate(ydoc, () =>
@@ -98,7 +96,7 @@ export function openSkillsNode({ workspaceId }: { workspaceId: string }) {
 
 	function openReferenceDoc(referenceId: string) {
 		const ydoc = new Y.Doc({
-			guid: referenceContentDocGuid({ workspaceId, referenceId }),
+			guid: tables.references.docs.content.guid(referenceId),
 			gc: true,
 		});
 		onLocalUpdate(ydoc, () =>

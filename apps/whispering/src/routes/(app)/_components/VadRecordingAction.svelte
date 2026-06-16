@@ -5,7 +5,7 @@
 	import type { Snippet } from 'svelte';
 	import { toggleVadRecording } from '$lib/operations/recording';
 	import { vadRecorder } from '$lib/state/vad-recorder.svelte';
-	import { getEffectiveShortcutLabel } from '$lib/utils/effective-shortcut';
+	import { shortcuts } from '#platform/shortcuts';
 	import RecordingActionCard from './RecordingActionCard.svelte';
 
 	let {
@@ -23,9 +23,7 @@
 	// Idle and listening share the radio glyph (tone distinguishes them); only an
 	// active speech burst swaps to the waveform.
 	const icon = $derived(isSpeechDetected ? AudioLinesIcon : RadioIcon);
-	const shortcutLabel = $derived(
-		getEffectiveShortcutLabel('toggleVadRecording'),
-	);
+	const shortcutLabel = $derived(shortcuts.label('toggleVadRecording'));
 	const label = $derived(isListening ? 'Stop listening' : 'Start listening');
 	const description = $derived.by(() => {
 		if (toggleMutation.isPending) return 'Updating voice activation';

@@ -37,7 +37,7 @@ The top of a spec should answer:
 
 ```txt
 What is this?
-Is it active, implemented, superseded, or historical?
+Is it Draft or In Progress? (those are the only two states; a finished spec is deleted, not marked)
 What is the current shape?
 What is the target shape?
 What proves the change is done?
@@ -52,8 +52,7 @@ Use this header shape for new specs:
 **Status**: Draft | In Progress
 **Owner**: [Name/team responsible for decisions]
 **Branch**: [optional branch name]
-**Supersedes**: [optional spec paths]
-**Superseded by**: [optional spec path]
+**Supersedes**: [optional: prior spec or ADR this design grows from]
 
 ## One Sentence
 

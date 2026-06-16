@@ -1,8 +1,8 @@
 /**
  * `epicenter list [mount.action_key]`: render actions exposed by this root.
  *
- * The daemon returns mount-prefixed action paths for every opened
- * mount. The CLI only filters and renders that manifest.
+ * The daemon returns mount-prefixed action paths for the one mount it serves.
+ * The CLI only filters and renders that manifest.
  *
  * Per-peer schema introspection is a script concern. The CLI lists the local
  * daemon's mount-prefixed action surface only.
@@ -28,7 +28,7 @@ import {
 
 export const listCommand = cmd({
 	command: 'list [path]',
-	describe: 'List exposed queries and mutations on this device, by mount',
+	describe: 'List the queries and mutations this daemon exposes',
 	builder: (yargs) =>
 		yargs
 			.positional('path', {
@@ -116,7 +116,7 @@ function renderText(entries: ActionManifest, path: string): void {
 		printActionDetail(path, leaf);
 		return;
 	}
-	printGroupedByMount(subset);
+	printMountActions(subset);
 }
 
 function filterByPath(entries: ActionManifest, path: string): ActionManifest {
@@ -148,29 +148,21 @@ function toActionDescriptor(
 
 /**
  * Action paths are exactly `mount.action_key` (mount names reject dots, action
- * keys are snake_case), so the manifest is two levels deep by construction.
- * Render one mount header per group with its actions indented underneath.
+ * keys are snake_case), and a daemon serves one mount, so every path shares the
+ * mount segment. Print the mount name once as the canonical app identity, then
+ * its actions indented underneath. Callers pass a non-empty manifest.
  */
-function printGroupedByMount(entries: ActionManifest): void {
-	const byMount = new Map<string, [string, ActionManifest[string]][]>();
+function printMountActions(entries: ActionManifest): void {
+	const [firstPath = ''] = Object.keys(entries);
+	const mountDot = firstPath.indexOf('.');
+	const mount = mountDot === -1 ? firstPath : firstPath.slice(0, mountDot);
+
+	console.log(mount);
 	for (const [path, action] of Object.entries(entries)) {
 		const dot = path.indexOf('.');
-		const mount = dot === -1 ? path : path.slice(0, dot);
-		const key = dot === -1 ? '' : path.slice(dot + 1);
-		const group = byMount.get(mount);
-		if (group) group.push([key, action]);
-		else byMount.set(mount, [[key, action]]);
-	}
-
-	let first = true;
-	for (const [mount, group] of byMount) {
-		if (!first) console.log('');
-		first = false;
-		console.log(mount);
-		for (const [key, action] of group) {
-			const desc = action.description ? `  ${action.description}` : '';
-			console.log(`  ${key}  (${action.type})${desc}`);
-		}
+		const key = dot === -1 ? path : path.slice(dot + 1);
+		const desc = action.description ? `  ${action.description}` : '';
+		console.log(`  ${key}  (${action.type})${desc}`);
 	}
 }
 

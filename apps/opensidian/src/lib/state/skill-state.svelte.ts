@@ -1,14 +1,6 @@
-import { createSkills, createSkillsActions } from '@epicenter/skills';
-import {
-	attachBroadcastChannel,
-	attachIndexedDb,
-	attachPlainText,
-	createDisposableCache,
-	onLocalUpdate,
-} from '@epicenter/workspace';
+import { openSkillsBrowser } from '@epicenter/skills/browser';
 import type { OpensidianBrowser } from 'opensidian/browser';
 import { Ok, tryAsync } from 'wellcrafted/result';
-import * as Y from 'yjs';
 
 /** A global skill loaded from the @epicenter/skills workspace. */
 type GlobalSkill = { name: string; instructions: string };
@@ -55,7 +47,7 @@ export function createSkillState({
 }: {
 	workspace: OpensidianBrowser;
 }) {
-	const globalSkillsDoc = openGlobalSkills();
+	const globalSkillsDoc = openSkillsBrowser();
 	let globalSkills = $state<GlobalSkill[]>([]);
 	let vaultSkills = $state<VaultSkill[]>([]);
 	let loading = $state(false);
@@ -149,72 +141,3 @@ export function createSkillState({
 }
 
 export type SkillState = ReturnType<typeof createSkillState>;
-
-function openGlobalSkills() {
-	const doc = createSkills();
-	const idb = attachIndexedDb(doc.ydoc);
-	attachBroadcastChannel(doc.ydoc);
-
-	const instructionsDocs = createDisposableCache((skillId: string) => {
-		const ydoc = new Y.Doc({
-			guid: doc.tables.skills.docs.instructions.guid(skillId),
-			gc: true,
-		});
-		onLocalUpdate(ydoc, () =>
-			doc.tables.skills.update(skillId, { updatedAt: Date.now() }),
-		);
-		const childIdb = attachIndexedDb(ydoc);
-		return {
-			ydoc,
-			instructions: attachPlainText(ydoc),
-			idb: childIdb,
-			[Symbol.dispose]() {
-				ydoc.destroy();
-			},
-		};
-	});
-
-	const referenceDocs = createDisposableCache((referenceId: string) => {
-		const ydoc = new Y.Doc({
-			guid: doc.tables.references.docs.content.guid(referenceId),
-			gc: true,
-		});
-		onLocalUpdate(ydoc, () =>
-			doc.tables.references.update(referenceId, { updatedAt: Date.now() }),
-		);
-		const childIdb = attachIndexedDb(ydoc);
-		return {
-			ydoc,
-			content: attachPlainText(ydoc),
-			idb: childIdb,
-			[Symbol.dispose]() {
-				ydoc.destroy();
-			},
-		};
-	});
-
-	const actions = createSkillsActions({
-		tables: doc.tables,
-		async readInstructions(skillId) {
-			using handle = instructionsDocs.open(skillId);
-			await handle.idb.whenLoaded;
-			return handle.instructions.read();
-		},
-		async readReference(referenceId) {
-			using handle = referenceDocs.open(referenceId);
-			await handle.idb.whenLoaded;
-			return handle.content.read();
-		},
-	});
-
-	return {
-		...doc,
-		idb,
-		actions,
-		[Symbol.dispose]() {
-			instructionsDocs[Symbol.dispose]();
-			referenceDocs[Symbol.dispose]();
-			doc[Symbol.dispose]();
-		},
-	};
-}

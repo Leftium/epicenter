@@ -1,4 +1,28 @@
-import { createSkillsActions } from '@epicenter/skills';
+/**
+ * @fileoverview Browser entry for the shared skills workspace.
+ *
+ * Exports `openSkillsBrowser`: a browser workspace opener with IndexedDB
+ * persistence and a BroadcastChannel for cross-tab sync. Instruction and
+ * reference bodies are opened lazily through guid-keyed disposable caches,
+ * each child doc backed by its own IndexedDB database.
+ *
+ * Uses the same `SKILLS_WORKSPACE_ID` guid as the node entry, so data authored
+ * on either side targets the same logical Y.Doc.
+ *
+ * @example
+ * ```typescript
+ * using skills = openSkillsBrowser();
+ * await skills.idb.whenLoaded;
+ * const catalog = skills.actions.list_skills();
+ *
+ * // Editor binding (e.g. via @epicenter/svelte `fromDisposableCache`):
+ * using handle = skills.instructionsDocs.open(skillId);
+ * editor.bind(handle.instructions.binding);
+ * ```
+ *
+ * @module
+ */
+
 import {
 	attachBroadcastChannel,
 	attachIndexedDb,
@@ -8,8 +32,18 @@ import {
 } from '@epicenter/workspace';
 import { clearDocument } from 'y-indexeddb';
 import * as Y from 'yjs';
-import { createSkills } from './index.js';
+import { createSkillsActions } from './skills-actions.js';
+import { createSkills } from './workspace.js';
 
+/**
+ * Open the shared skills workspace for a browser runtime.
+ *
+ * The root doc gets IndexedDB persistence plus a BroadcastChannel for cross-tab
+ * sync. Instruction and reference bodies are child docs whose guids the
+ * workspace owns (`tables.skills.docs.instructions.guid`,
+ * `tables.references.docs.content.guid`); each is opened lazily through its own
+ * guid-keyed cache and backed by a per-doc IndexedDB database.
+ */
 export function openSkillsBrowser() {
 	const doc = createSkills();
 	const idb = attachIndexedDb(doc.ydoc);

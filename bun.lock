@@ -812,6 +812,7 @@
         "@epicenter/workspace": "workspace:*",
         "typebox": "catalog:",
         "wellcrafted": "catalog:",
+        "y-indexeddb": "catalog:",
         "yaml": "^2.8.0",
       },
       "devDependencies": {

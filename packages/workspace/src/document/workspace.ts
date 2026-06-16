@@ -108,7 +108,14 @@ export type WorkspaceActionContext<
 	TKv extends KvDefinitions,
 > = {
 	readonly ydoc: Y.Doc;
-	readonly tables: Tables<TTables>;
+	/**
+	 * The root table handles, each carrying its `.docs.<field>.guid(rowId)`
+	 * deriver. Action handlers close over the same guid-owning table path the
+	 * rest of the workspace uses, so an action never re-derives a child-doc guid
+	 * by hand. No `open`: actions run before any connection, so only the pure
+	 * guid half is reachable here (the connected opener is layered later).
+	 */
+	readonly tables: WorkspaceTables<TTables>;
 	readonly kv: Kv<TKv>;
 };
 
@@ -401,7 +408,6 @@ export function defineWorkspace<
 		}
 
 		const { tables, disposeChildDocs } = connectTableChildDocs({
-			workspaceId: options.id,
 			tables: workspace.tables,
 			definitions: options.tables,
 			connection,
@@ -453,13 +459,11 @@ export function defineWorkspace<
 }
 
 function connectTableChildDocs<TTableDefinitions extends TableDefinitions>({
-	workspaceId,
 	tables,
 	definitions,
 	connection,
 }: {
-	workspaceId: string;
-	tables: Tables<TTableDefinitions>;
+	tables: WorkspaceTables<TTableDefinitions>;
 	definitions: TTableDefinitions;
 	connection: ConnectionConfig;
 }): {
@@ -472,6 +476,7 @@ function connectTableChildDocs<TTableDefinitions extends TableDefinitions>({
 
 	for (const [collection, table] of Object.entries(tables)) {
 		const definition = definitions[collection as keyof TTableDefinitions]!;
+		const guidDerivers = table.docs as Record<string, RowDocGuid<string>>;
 		const docs: Record<string, unknown> = {};
 
 		for (const [field, layout] of Object.entries(
@@ -479,12 +484,14 @@ function connectTableChildDocs<TTableDefinitions extends TableDefinitions>({
 		) as [string, (ydoc: Y.Doc) => object][]) {
 			const cache = childDocs(layout);
 			disposables.push(cache);
-			const guid = (rowId: string): Guid =>
-				docGuid({ workspaceId, collection, rowId, field });
+			// Reuse the guid deriver the unconnected root already built for this
+			// field; the connected handle only ADDS `open`/dispose lifecycle. One
+			// owner of derivation end to end: `createWorkspace` (see its `.docs` loop).
+			const guidEntry = guidDerivers[field]!;
 			docs[field] = {
-				guid,
+				...guidEntry,
 				open(rowId: string) {
-					return cache.open(guid(rowId));
+					return cache.open(guidEntry.guid(rowId));
 				},
 				[Symbol.dispose]() {
 					cache[Symbol.dispose]();

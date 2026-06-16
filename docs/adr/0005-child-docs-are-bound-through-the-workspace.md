@@ -15,7 +15,7 @@ guard family existed only to police a namespace the workspace should own outrigh
 
 ## Decision
 
-Child docs are declared on the table with a `.childDocs({ field: layout })` builder
+Child docs are declared on the table with a `.docs({ field: layout })` builder
 and reached through a bound accessor, `ws.tables.X.docs.field.open(rowId)`. The
 workspace owns guid derivation; the app no longer computes it. The reserved-name
 guard family is deleted. A field's `layout` is a closed palette (the field is a

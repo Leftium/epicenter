@@ -1,4 +1,7 @@
-# Stored entries reconcile to three visible states
+# 0003. Stored entries reconcile to three visible states
+
+- **Status:** Accepted
+- **Date:** 2026-06-15
 
 Supersedes [ADR-0002](0002-four-visible-read-states.md). It also amends the
 bucket list in [ADR-0001](0001-classified-scan-read-surface.md): `scan()` now

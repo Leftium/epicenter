@@ -126,7 +126,7 @@ describe('defineWorkspace', () => {
 		const workspaceDefinition = defineWorkspace({
 			id: 'ws-definition-connected',
 			tables: {
-				notes: notesDefinition.childDocs({ body: attachPlainText }),
+				notes: notesDefinition.docs({ body: attachPlainText }),
 			},
 			kv: {},
 		});
@@ -153,7 +153,7 @@ describe('defineWorkspace', () => {
 		const workspaceDefinition = defineWorkspace({
 			id: 'ws-definition-docs-namespace',
 			tables: {
-				notes: notesDefinition.childDocs({ set: attachPlainText }),
+				notes: notesDefinition.docs({ set: attachPlainText }),
 			},
 			kv: {},
 		});
@@ -173,7 +173,7 @@ describe('defineWorkspace', () => {
 	test('open(connection) child docs dedup by rowId: same rowId shares one Y.Doc', () => {
 		const workspace = defineWorkspace({
 			id: 'ws-childdoc-dedup',
-			tables: { notes: notesDefinition.childDocs({ body: attachPlainText }) },
+			tables: { notes: notesDefinition.docs({ body: attachPlainText }) },
 			kv: {},
 		}).connect(connection);
 		const a = workspace.tables.notes.docs.body.open('note-1');
@@ -194,7 +194,7 @@ describe('defineWorkspace', () => {
 	test('open(connection) child docs refcount: one holder disposing keeps the doc alive for the other', () => {
 		const workspace = defineWorkspace({
 			id: 'ws-childdoc-refcount',
-			tables: { notes: notesDefinition.childDocs({ body: attachPlainText }) },
+			tables: { notes: notesDefinition.docs({ body: attachPlainText }) },
 			kv: {},
 		}).connect(connection);
 		try {
@@ -217,7 +217,7 @@ describe('defineWorkspace', () => {
 	test('open(connection) child docs are independent across rowIds', () => {
 		const workspace = defineWorkspace({
 			id: 'ws-childdoc-independent',
-			tables: { notes: notesDefinition.childDocs({ body: attachPlainText }) },
+			tables: { notes: notesDefinition.docs({ body: attachPlainText }) },
 			kv: {},
 		}).connect(connection);
 		const one = workspace.tables.notes.docs.body.open('note-1');
@@ -233,12 +233,12 @@ describe('defineWorkspace', () => {
 		}
 	});
 
-	test('childDocs onLocalEdit bumps the row on local edits, not on synced ones', () => {
+	test('docs onLocalEdit bumps the row on local edits, not on synced ones', () => {
 		const recencyNotes = defineTable({
 			id: field.string(),
 			title: field.string(),
 			updatedAt: field.string(),
-		}).childDocs({
+		}).docs({
 			body: {
 				layout: attachPlainText,
 				onLocalEdit: () => ({ updatedAt: 'bumped' }),

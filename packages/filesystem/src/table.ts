@@ -16,7 +16,7 @@ export const filesTable = defineTable({
 	createdAt: field.number(),
 	updatedAt: field.number(),
 	trashedAt: nullable(field.number()),
-}).childDocs({
+}).docs({
 	content: {
 		layout: attachTimeline,
 		// Body edits bypass the tree API, so bump `updatedAt` here to keep the

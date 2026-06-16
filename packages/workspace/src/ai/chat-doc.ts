@@ -196,7 +196,7 @@ export function observeChatDocMessages(
 /**
  * `attachChatTranscript(ydoc)`: the conversation layout as a handle (shape +
  * client writer policy), declared as a child-doc layout via
- * `table.childDocs({ messages: attachChatTranscript })`.
+ * `table.docs({ messages: attachChatTranscript })`.
  *
  * This is the client surface of the transcript: read the messages, observe
  * changes, and append a user message (the one write a browser client owns). The

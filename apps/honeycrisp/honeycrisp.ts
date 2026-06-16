@@ -107,7 +107,7 @@ const notesTable = defineTable({
 	updatedAt: field.datetime(),
 	deletedAt: nullable(field.datetime()),
 	wordCount: nullable(field.number()),
-}).childDocs({
+}).docs({
 	body: {
 		layout: attachRichText,
 		onLocalEdit: () => ({ updatedAt: DateTimeString.now() }),

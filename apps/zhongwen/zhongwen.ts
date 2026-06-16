@@ -57,7 +57,7 @@ const conversationsTable = defineTable({
 	title: field.string(),
 	createdAt: field.number(),
 	updatedAt: field.number(),
-}).childDocs({ messages: attachChatTranscript });
+}).docs({ messages: attachChatTranscript });
 export type Conversation = InferTableRow<typeof conversationsTable>;
 
 // ─────────────────────────────────────────────────────────────────────────────

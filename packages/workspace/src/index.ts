@@ -21,7 +21,7 @@
  * const posts = defineTable({
  *   id: field.string(),
  *   title: field.string(),
- * }).childDocs({ body: attachRichText });
+ * }).docs({ body: attachRichText });
  *
  * const notesWorkspace = defineWorkspace({
  *   id: 'notes',
@@ -94,6 +94,7 @@ export { nullable } from './document/nullable';
 // ════════════════════════════════════════════════════════════════════════════
 
 export { debounce } from './shared/debounce.js';
+export { once } from './shared/once.js';
 
 // ════════════════════════════════════════════════════════════════════════════
 // DOCUMENT PRIMITIVES

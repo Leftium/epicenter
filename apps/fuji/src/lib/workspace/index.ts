@@ -73,7 +73,7 @@ const entriesTable = defineTable({
 	createdAt: field.datetime(),
 	updatedAt: field.datetime(),
 	rating: field.number(),
-}).childDocs({
+}).docs({
 	content: {
 		layout: attachRichText,
 		onLocalEdit: () => ({ updatedAt: DateTimeString.now() }),

@@ -4,7 +4,7 @@
  * Maps the [agentskills.io](https://agentskills.io/specification) skill
  * package format to Yjs CRDT-backed tables. Each frontmatter field becomes
  * a column; the markdown instruction body is a child doc the table declares
- * with `.childDocs({ instructions: attachPlainText })`, so the workspace owns
+ * with `.docs({ instructions: attachPlainText })`, so the workspace owns
  * its guid (`tables.skills.docs.instructions.guid(id)`). Apps open the live
  * handle through their own cache layered over that guid.
  *
@@ -23,7 +23,7 @@ import {
  * Skills table, one row per skill, 1:1 mapping to SKILL.md.
  *
  * Frontmatter fields map to columns. The markdown instructions live in the
- * `instructions` child doc declared via `.childDocs` below; the workspace
+ * `instructions` child doc declared via `.docs` below; the workspace
  * derives its guid and apps open the live handle for collaborative Y.Text
  * editing in browser-based editors.
  *
@@ -63,14 +63,14 @@ export const skillsTable = defineTable({
 	metadata: nullable(field.string()),
 	allowedTools: nullable(field.string()),
 	updatedAt: field.number(),
-}).childDocs({ instructions: attachPlainText });
+}).docs({ instructions: attachPlainText });
 
 /**
  * References table, one row per markdown file in a skill's `references/` directory.
  *
  * References are additional documentation loaded on demand (tier 3 in the
  * progressive disclosure model). Each reference file's body is the `content`
- * child doc declared via `.childDocs` below; the workspace derives its guid
+ * child doc declared via `.docs` below; the workspace derives its guid
  * and apps open the live handle for collaborative editing.
  *
  * The `path` column stores the filename relative to the `references/` directory
@@ -94,7 +94,7 @@ export const referencesTable = defineTable({
 	skillId: field.string(),
 	path: field.string(),
 	updatedAt: field.number(),
-}).childDocs({ content: attachPlainText });
+}).docs({ content: attachPlainText });
 
 export type Skill = InferTableRow<typeof skillsTable>;
 export type Reference = InferTableRow<typeof referencesTable>;

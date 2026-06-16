@@ -37,6 +37,7 @@ import * as Y from 'yjs';
 import { createDisposableCache } from '../cache/disposable-cache.js';
 import { type ActionRegistry, defineActions } from '../shared/actions.js';
 import type { Guid } from '../shared/id.js';
+import { once } from '../shared/once.js';
 import { assertSafeSegment } from '../shared/safe-segment.js';
 import { type ConnectionConfig, connectDoc } from './connect-doc.js';
 import { docGuid } from './doc-guid.js';
@@ -158,7 +159,6 @@ type RowChildDocCache<
 	TLayout extends (ydoc: Y.Doc) => object,
 > = RowDocGuid<TRowId> & {
 	open(rowId: TRowId): ChildDocHandle<TLayout>;
-	[Symbol.dispose](): void;
 };
 
 /**
@@ -177,10 +177,11 @@ type TableDocGuids<TTableDefinition extends TableDefinition<any, any>> =
 
 /**
  * The `.docs` namespace a connected table handle gains: one row child-doc cache
- * per declared layout, keyed by field name. Each entry adds `open`/dispose to
- * the guid deriver. Lives one level below the table's CRUD methods, so field
- * names never collide with `set`, `open`, etc. Empty `{}` for a table that
- * declared no child docs.
+ * per declared layout, keyed by field name. Each entry adds `open(rowId)` to the
+ * field's existing guid deriver. Lives one level below the table's CRUD methods,
+ * so field names never collide with `set`, `open`, etc. Empty `{}` for a table
+ * that declared no child docs. Teardown is owned by the workspace, not the
+ * field: every cache cascades off the root `ydoc.destroy()`.
  */
 type TableDocs<TTableDefinition extends TableDefinition<any, any>> =
 	TTableDefinition extends TableDefinition<
@@ -198,7 +199,7 @@ type TableDocs<TTableDefinition extends TableDefinition<any, any>> =
 /**
  * The root table map: each table handle plus its guid-only `.docs` namespace.
  * `defineWorkspace(...).connect(connection)` upgrades each `.docs.<field>` with
- * `open`/dispose (see {@link ConnectedTables}).
+ * an `open(rowId)` opener (see {@link ConnectedTables}).
  */
 export type WorkspaceTables<TTableDefinitions extends TableDefinitions> = {
 	[K in keyof TTableDefinitions]: Tables<TTableDefinitions>[K] & {
@@ -341,9 +342,9 @@ export function createWorkspace<
 			const table = createTable(attachStore(TableKey(name)), definition, name);
 			// `.docs` carries one guid deriver per declared child-doc field, so the
 			// workspace owns guid derivation end-to-end. The connected opener layers
-			// `open`/dispose onto these same entries (see `connectTableChildDocs`).
+			// `open(rowId)` onto these same entries (see `connectTableChildDocs`).
 			const docs: Record<string, unknown> = {};
-			for (const field of Object.keys(definition.childDocDecls)) {
+			for (const field of Object.keys(definition.docDecls)) {
 				docs[field] = {
 					guid: (rowId: string): Guid =>
 						docGuid({
@@ -402,35 +403,26 @@ export function defineWorkspace<
 >(
 	options: DefineWorkspaceOptions<TTables, TKv, TActions>,
 ): WorkspaceDefinition<TTables, TKv, TActions> {
-	// Phase A, shared by create() and connect(): build the root doc, tables, KV,
-	// and base actions. No connection.
-	function buildRoot() {
-		const workspace = createWorkspace({
+	/**
+	 * Bare root: Y.Doc + tables + KV + actions. No persistence, no sync, no
+	 * child-doc openers. Daemon and test runtimes attach their own
+	 * storage/transport around it (see each app's `project.ts`).
+	 *
+	 * `createWorkspace` builds the doc, tables, and KV with an empty action
+	 * registry; the action builder closes over that live root and the result is
+	 * merged back onto the same object (which already owns `[Symbol.dispose]`).
+	 * `connect()` reuses this as its root, so the action registry has exactly one
+	 * construction site.
+	 */
+	function create(): Workspace<TTables, TKv, TActions> {
+		const root = createWorkspace({
 			id: options.id,
 			tables: options.tables,
 			kv: options.kv,
 		});
 		const actions =
-			options.actions === undefined
-				? ({} as TActions)
-				: options.actions(workspace);
-		return { workspace, actions };
-	}
-
-	/**
-	 * Bare root: Y.Doc + tables + KV + actions. No persistence, no sync, no
-	 * child-doc openers. Daemon and test runtimes attach their own
-	 * storage/transport around it (see each app's `project.ts`).
-	 */
-	function create(): Workspace<TTables, TKv, TActions> {
-		const { workspace, actions } = buildRoot();
-		return satisfiesWorkspace({
-			...workspace,
-			actions,
-			[Symbol.dispose]() {
-				workspace[Symbol.dispose]();
-			},
-		});
+			options.actions === undefined ? ({} as TActions) : options.actions(root);
+		return satisfiesWorkspace({ ...root, actions });
 	}
 
 	function connect(
@@ -450,43 +442,41 @@ export function defineWorkspace<
 			actions: workspace.actions,
 		}),
 	) {
-		const { workspace, actions } = buildRoot();
+		const workspace = create();
 
-		// Phase B: connect the per-row child-doc openers, then run the caller's
-		// composer. compose sees live tables/ydoc/base actions; the `actions` it
-		// returns is final. Omitting it runs the default, which serves the base
-		// actions unchanged.
-		const { tables, disposeChildDocs } = connectTableChildDocs({
+		// Connect the per-row child-doc openers, then run the caller's composer.
+		// compose sees live tables/ydoc and the base actions (carried on
+		// `workspace.actions`); the `actions` it returns is final. Omitting it runs
+		// the default, which serves the base actions unchanged. The child-doc caches
+		// cascade off the root `ydoc.destroy()`, so there is no teardown handle to
+		// thread back here.
+		const tables = connectTableChildDocs({
+			ydoc: workspace.ydoc,
 			tables: workspace.tables,
 			definitions: options.tables,
 			connection,
 		});
-		const runtime = compose({
-			...workspace,
-			tables,
-			actions,
-		});
-		const connectedActions = runtime.actions;
-		// Phase C: solder infrastructure on top of what compose returned.
-		// connectDoc serves `connectedActions` to peers, so it must run after compose.
+		const runtime = compose({ ...workspace, tables });
+		// Solder infrastructure on top of what compose returned. connectDoc serves
+		// `runtime.actions` to peers, so it must run after compose.
 		const { idb, collaboration } = connectDoc(workspace.ydoc, connection, {
-			actions: connectedActions,
+			actions: runtime.actions,
 		});
 
-		let disposed = false;
-		function dispose() {
-			if (disposed) return;
-			disposed = true;
+		// Idempotent: `wipe()` calls dispose() explicitly, and a `using` binding
+		// calls it again at scope exit. The root `ydoc.destroy()` is the only
+		// non-idempotent callee (its destroy hooks use `.once`, but the app's
+		// `runtime[Symbol.dispose]` may not be), so the wrapper guards both.
+		const dispose = once(() => {
 			runtime[Symbol.dispose]?.();
-			disposeChildDocs();
 			workspace[Symbol.dispose]();
-		}
+		});
 
 		return satisfiesWorkspace({
 			...workspace,
 			...runtime,
 			tables,
-			actions: connectedActions,
+			actions: runtime.actions,
 			idb,
 			collaboration,
 			async wipe() {
@@ -511,7 +501,7 @@ export function defineWorkspace<
 }
 
 /**
- * The bound child-doc runtime: give every declared `table.childDocs({ field })`
+ * The bound child-doc runtime: give every declared `table.docs({ field })`
  * a connected `open(rowId)` opener layered onto the field's existing guid
  * deriver.
  *
@@ -533,20 +523,23 @@ export function defineWorkspace<
  * The guid is only the room address: the cache keys by `rowId`, and the address
  * is derived through the field's existing {@link RowDocGuid} so derivation stays
  * single-owner (`createWorkspace`'s `.docs` loop), never re-grammared here.
+ *
+ * Teardown mirrors how the root's own stores release: each cache registers on
+ * `ydoc.once('destroy', ...)`, so a single root `ydoc.destroy()` flushes every
+ * child-doc cache alongside the tables and KV. There is no separate teardown
+ * handle to return and thread through `connect()`.
  */
 function connectTableChildDocs<TTableDefinitions extends TableDefinitions>({
+	ydoc,
 	tables,
 	definitions,
 	connection,
 }: {
+	ydoc: Y.Doc;
 	tables: WorkspaceTables<TTableDefinitions>;
 	definitions: TTableDefinitions;
 	connection: ConnectionConfig;
-}): {
-	tables: ConnectedTables<TTableDefinitions>;
-	disposeChildDocs(): void;
-} {
-	const disposables: Disposable[] = [];
+}): ConnectedTables<TTableDefinitions> {
 	const connectedTables: Record<string, unknown> = {};
 
 	for (const [collection, table] of Object.entries(tables)) {
@@ -554,63 +547,66 @@ function connectTableChildDocs<TTableDefinitions extends TableDefinitions>({
 		const guidDerivers = table.docs as Record<string, RowDocGuid<string>>;
 		// A body's only cross-doc writer: a local edit bumps a recency column on
 		// the row. Typed loosely here because the loop has erased the per-table row
-		// type; `onLocalEdit` is checked against the real row at the `.childDocs(...)`
-		// call site.
+		// type; `onLocalEdit` is checked against the real row at the `.docs(...)`
+		// call site. The returned `Result` is intentionally dropped: a recency bump
+		// is best-effort and a rejected patch must not break the edit it followed.
 		const updateRow = (
 			table as { update: (id: string, patch: object) => unknown }
 		).update;
 		const docs: Record<string, unknown> = {};
 
 		for (const [field, declaration] of Object.entries(
-			definition.childDocDecls,
+			definition.docDecls,
 		) as [string, ChildDocDeclaration][]) {
-			const layout =
-				typeof declaration === 'function' ? declaration : declaration.layout;
-			const onLocalEdit =
-				typeof declaration === 'function' ? undefined : declaration.onLocalEdit;
+			// Normalize the two declaration forms once: a bare layout function is
+			// sugar for `{ layout, onLocalEdit: undefined }`.
+			const { layout, onLocalEdit } =
+				typeof declaration === 'function'
+					? { layout: declaration, onLocalEdit: undefined }
+					: declaration;
 			// Reuse the guid deriver the unconnected root already built for this
 			// field, so derivation stays single-owner (`createWorkspace`'s `.docs`
 			// loop). The cache keys by `rowId`; the guid is only the room address.
 			const guidEntry = guidDerivers[field]!;
 			const cache = createDisposableCache((rowId: string) => {
 				const guid = guidEntry.guid(rowId);
-				const ydoc = new Y.Doc({ guid, gc: true });
+				const bodyDoc = new Y.Doc({ guid, gc: true });
 				// A body is a doc like any other; `connectDoc` is the same wiring the
 				// root uses. No action registry: the body's only writers are the
 				// `attach*` layout and the server generation actor streaming in.
-				const { idb } = connectDoc(ydoc, connection, { actions: {} });
+				const { idb } = connectDoc(bodyDoc, connection);
 				// Recency: a local edit bumps a column on the row. One observer per
 				// shared body Y.Doc (built here, not per `open`), torn down on
 				// eviction. `tx.local` scopes it to local edits, so remote/hydrated
 				// updates never bump the row; writing the root row can't re-trigger
 				// this child-doc observer, so there is no loop.
 				const offLocalEdit = onLocalEdit
-					? onLocalUpdate(ydoc, () => updateRow(rowId, onLocalEdit(rowId)))
+					? onLocalUpdate(bodyDoc, () => updateRow(rowId, onLocalEdit(rowId)))
 					: undefined;
 				return {
-					...layout(ydoc),
+					...layout(bodyDoc),
 					/** The underlying Y.Doc, exposed for runtime attachments. */
-					ydoc,
+					ydoc: bodyDoc,
 					/** The doc's guid (its room id). */
 					guid,
 					/** Resolves when local IndexedDB state has replayed into the doc. */
 					whenLoaded: idb.whenLoaded,
 					[Symbol.dispose]() {
 						offLocalEdit?.();
-						ydoc.destroy();
+						bodyDoc.destroy();
 					},
 				};
 			});
-			disposables.push(cache);
-			// The connected handle only ADDS `open`/dispose lifecycle to the field's
-			// existing guid deriver; `open(rowId)` keys the cache by `rowId` directly.
+			// Flush this field's cache when the root doc is destroyed, exactly as
+			// `createWorkspace` releases each table/KV store. The root never holds
+			// these body docs as subdocs, so the hook is what cascades teardown.
+			ydoc.once('destroy', () => cache[Symbol.dispose]());
+			// The connected handle only ADDS `open(rowId)` to the field's existing
+			// guid deriver; `open(rowId)` keys the cache by `rowId` directly.
 			docs[field] = {
 				...guidEntry,
 				open(rowId: string) {
 					return cache.open(rowId);
-				},
-				[Symbol.dispose]() {
-					cache[Symbol.dispose]();
 				},
 			};
 		}
@@ -621,12 +617,5 @@ function connectTableChildDocs<TTableDefinitions extends TableDefinitions>({
 		};
 	}
 
-	return {
-		tables: connectedTables as ConnectedTables<TTableDefinitions>,
-		disposeChildDocs() {
-			for (const disposable of disposables) {
-				disposable[Symbol.dispose]();
-			}
-		},
-	};
+	return connectedTables as ConnectedTables<TTableDefinitions>;
 }

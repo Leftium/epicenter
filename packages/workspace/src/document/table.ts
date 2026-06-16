@@ -326,7 +326,7 @@ export type MigrateInput<
  * `defineTable(v1, v2, ...).migrate(fn)` (multi-version).
  *
  * For per-row content (rich text, long-form body), keep the row lean (ids and
- * metadata) and declare child docs with `.childDocs({ body: attachLayout })`.
+ * metadata) and declare child docs with `.docs({ body: attachLayout })`.
  * The table schema never stores body docs; `defineWorkspace(...).connect(connection)`
  * derives each content-doc guid from the workspace id, table name, row id, and
  * child-doc field.
@@ -361,7 +361,7 @@ export type ChildDocDeclaration<TRow extends BaseRow = BaseRow> =
 /**
  * A map of child-doc declarations, keyed by field name. The field name becomes
  * the guid's `field` segment, so each row owns one derived child doc per
- * declared name (1:1). Declared on a table via {@link DeclarableTableDefinition.childDocs}.
+ * declared name (1:1). Declared on a table via {@link DeclarableTableDefinition.docs}.
  */
 export type ChildDocDeclarations<TRow extends BaseRow = BaseRow> = Record<
 	string,
@@ -404,23 +404,23 @@ export type TableDefinition<
 	migrate: (input: MigrateInput<TVersions>) => RowOf<LastVersion<TVersions>>;
 	/**
 	 * Child-doc declarations on this table, keyed by field name. `{}` unless
-	 * {@link DeclarableTableDefinition.childDocs} was called. Read by
+	 * {@link DeclarableTableDefinition.docs} was called. Read by
 	 * `defineWorkspace(...).connect(connection)`
 	 * to wire one guid-keyed cache per declared body; never carries a connection
 	 * itself, since the declaration is isomorphic.
 	 */
-	childDocDecls: TChildDocs;
+	docDecls: TChildDocs;
 };
 
 /**
  * A fresh {@link TableDefinition} that has not yet declared its child docs and
- * so still carries the one-shot {@link DeclarableTableDefinition.childDocs}
+ * so still carries the one-shot {@link DeclarableTableDefinition.docs}
  * builder. Returned by `defineTable(...)` (and by `.migrate(...)` on a
  * multi-version table).
  *
  * Composed UPWARD from the base: a plain `TableDefinition` (the post-declaration
- * shape every downstream consumer holds) intersected with the `childDocs`
- * method. `childDocs` returns the base `TableDefinition`, which has no such
+ * shape every downstream consumer holds) intersected with the `docs`
+ * method. `docs` returns the base `TableDefinition`, which has no such
  * method, so a second call is a compile error rather than a silent overwrite.
  * Declaring child docs is therefore call-once by construction; there is no
  * `Omit` stripping the method back off.
@@ -444,7 +444,7 @@ export type DeclarableTableDefinition<
 	 * another version.
 	 *
 	 * Declaring is call-once: the result is a plain {@link TableDefinition} with
-	 * no `childDocs` method, so you cannot re-declare and accidentally discard the
+	 * no `docs` method, so you cannot re-declare and accidentally discard the
 	 * original layout or `onLocalEdit`. Declare every child doc for a table in one
 	 * call, co-located with the table definition, and push per-field policy into
 	 * that authoritative declaration.
@@ -455,7 +455,7 @@ export type DeclarableTableDefinition<
 	 *
 	 * ```ts
 	 * defineTable({ id: field.string(), title: field.string() })
-	 *   .childDocs({
+	 *   .docs({
 	 *     content: {
 	 *       layout: attachRichText,
 	 *       onLocalEdit: () => ({ updatedAt: DateTimeString.now() }),
@@ -465,7 +465,7 @@ export type DeclarableTableDefinition<
 	 *   });
 	 * ```
 	 */
-	childDocs<
+	docs<
 		TDecls extends ChildDocDeclarations<
 			RowOf<LastVersion<TVersions>> & BaseRow
 		>,
@@ -516,24 +516,24 @@ export function createTableDefinition<
 
 	/**
 	 * Build the immutable base definition for a given declaration. The base
-	 * carries no `childDocs` method, so `childDocs(...)` below returns something
+	 * carries no `docs` method, so `docs(...)` below returns something
 	 * that cannot declare again; versions, schema, and migrate are fixed.
 	 */
 	const buildBase = <TDecls extends ChildDocDeclarations>(
-		childDocDecls: TDecls,
+		docDecls: TDecls,
 	): TableDefinition<TVersions, TDecls> => ({
 		versions,
 		schema,
 		migrate: migrateFn,
-		childDocDecls,
+		docDecls,
 	});
 
-	// Layer the one-shot builder onto a fresh, undeclared base. `childDocs`
+	// Layer the one-shot builder onto a fresh, undeclared base. `docs`
 	// returns a bare base, so a second call is a compile error and is impossible
 	// at runtime too (the returned object has no such method).
 	return {
 		...buildBase({}),
-		childDocs: (decls) => buildBase(decls),
+		docs: (decls) => buildBase(decls),
 	};
 }
 

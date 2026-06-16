@@ -114,43 +114,6 @@
 			/>
 		{/if}
 
-		{#if settings.get('recording.mode') === 'manual' || settings.get('recording.mode') === 'vad'}
-			{#if tauri}
-				<Field.Field>
-					<Field.Label>Recording markdown export</Field.Label>
-					<Button
-						variant="outline"
-						onclick={() => {
-							exportMarkdown.mutate(undefined, {
-								onSuccess: (data) => {
-									if (data.status === 'cancelled') return;
-
-									report.success({
-										title: 'Recording markdown exported',
-										description: `Wrote ${data.written} ${data.written === 1 ? 'file' : 'files'} to ${data.dir}.`,
-									});
-								},
-								onError: (error) => {
-									report.error({
-										title: 'Recording markdown export failed',
-										cause: error,
-									});
-								},
-							});
-						}}
-						disabled={exportMarkdown.isPending}
-					>
-						{exportMarkdown.isPending ? 'Exporting...' : 'Export markdown...'}
-					</Button>
-					<Field.Description>
-						Write every current recording's transcript to a folder you choose.
-						The files are snapshots: later edits in Whispering do not update
-						them. Run the export again to refresh.
-					</Field.Description>
-				</Field.Field>
-			{/if}
-		{/if}
-
 		{#if settings.get('recording.mode') === 'manual'}
 			{#if !tauri}
 				<SettingSelect
@@ -170,5 +133,45 @@
 				/>
 			{/if}
 		{/if}
+
+		<Field.Field>
+			<Field.Label>Export recordings</Field.Label>
+			<Button
+				variant="outline"
+				class="w-fit"
+				onclick={() => {
+					exportMarkdown.mutate(undefined, {
+						onSuccess: (data) => {
+							if (data.written === 0) {
+								report.info({
+									title: 'Nothing to export',
+									description: 'You have no recordings yet.',
+								});
+								return;
+							}
+							report.success({
+								title: 'Recordings exported',
+								description: `Saved ${data.written} ${data.written === 1 ? 'recording' : 'recordings'} to recordings.zip.`,
+							});
+						},
+						onError: (error) => {
+							// Cancelling the Save dialog is not a failure.
+							if (error.name === 'SaveCancelled') return;
+							report.error({
+								title: 'Export failed',
+								cause: error,
+							});
+						},
+					});
+				}}
+				disabled={exportMarkdown.isPending}
+			>
+				{exportMarkdown.isPending ? 'Exporting...' : 'Export recordings (.zip)'}
+			</Button>
+			<Field.Description>
+				Download every recording as a zip of Markdown files. This is a
+				snapshot: later edits in Whispering do not change the downloaded file.
+			</Field.Description>
+		</Field.Field>
 	</Field.Group>
 </Field.Set>

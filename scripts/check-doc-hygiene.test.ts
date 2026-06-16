@@ -20,7 +20,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const scriptPath = fileURLToPath(
-	new URL('./check-doc-hygiene.mjs', import.meta.url),
+	new URL('./check-doc-hygiene.ts', import.meta.url),
 );
 
 function git(cwd: string, args: string[], date?: string): void {

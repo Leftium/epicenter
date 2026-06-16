@@ -8,7 +8,7 @@
 // Scope is every `specs/` directory repo-wide (top-level plus per-app and
 // per-package), by design: all of them share one dated-scaffolding convention
 // and one decision home (docs/adr/), so the timeline and the hygiene gate
-// (check-doc-hygiene.mjs) govern the same corpus.
+// (check-doc-hygiene.ts) govern the same corpus.
 //
 // Ref-sensitivity caveat: the source is `git log --all`, so "every spec that
 // ever existed" means "on a ref this clone can see." A clone with extra local
@@ -21,40 +21,46 @@
 // rots; "is this current?" is answered by docs/adr/, not by this index. The only
 // state shown is the factual, never-rotting "in tree" vs "removed".
 //
-// Run from repo root: bun scripts/generate-spec-history.mjs
-import { execSync } from 'node:child_process';
+// Run from repo root: bun scripts/generate-spec-history.ts
+import { execFileSync } from 'node:child_process';
 import { existsSync, writeFileSync } from 'node:fs';
+import { basename } from 'node:path';
 
-const raw = execSync(
-	'git log --all --diff-filter=A --name-status --date=short --pretty=format:@@@%ad',
+const raw = execFileSync(
+	'git',
+	[
+		'log',
+		'--all',
+		'--diff-filter=A',
+		'--name-status',
+		'--date=short',
+		'--pretty=format:@@@%ad',
+	],
 	{ encoding: 'utf8', maxBuffer: 512 * 1024 * 1024 },
 );
 
-const isSpec = (p) =>
+const isSpec = (p: string): boolean =>
 	/(^|\/)specs\/.*\.md$/.test(p) && !p.endsWith('/README.md');
 
 // git log lists newest first, so the last add we see for a path is its earliest.
-let curDate = null;
-const firstAdd = new Map();
+let curDate: string | null = null;
+const firstAdd = new Map<string, string | null>();
 for (const line of raw.split('\n')) {
 	if (line.startsWith('@@@')) {
 		curDate = line.slice(3).trim();
 		continue;
 	}
-	const m = line.match(/^A\t(.+)$/);
-	if (m && isSpec(m[1])) firstAdd.set(m[1], curDate);
+	const path = line.match(/^A\t(.+)$/)?.[1];
+	if (path && isSpec(path)) firstAdd.set(path, curDate);
 }
 
-function dateOf(path) {
-	const base = path.split('/').pop();
-	const m = base.match(/^(\d{4})(\d{2})(\d{2})/); // prefer the spec's own dated name
+function dateOf(path: string): string | null {
+	const m = basename(path).match(/^(\d{4})(\d{2})(\d{2})/); // prefer the spec's own dated name
 	return m ? `${m[1]}-${m[2]}-${m[3]}` : firstAdd.get(path) || null;
 }
-function titleOf(path) {
+function titleOf(path: string): string {
 	return (
-		path
-			.split('/')
-			.pop()
+		basename(path)
 			.replace(/\.md$/, '')
 			.replace(/^\d{8}T?\d{0,6}/, '')
 			.replace(/^[-\s]+/, '')
@@ -62,7 +68,15 @@ function titleOf(path) {
 	);
 }
 
-const rows = [...firstAdd.keys()].map((path) => ({
+type Row = {
+	date: string | null;
+	title: string;
+	path: string;
+	present: boolean;
+};
+type YearGroup = { year: string; rows: Row[] };
+
+const rows: Row[] = [...firstAdd.keys()].map((path) => ({
 	date: dateOf(path),
 	title: titleOf(path),
 	path,
@@ -76,11 +90,22 @@ rows.sort((a, b) => {
 });
 
 const present = rows.filter((r) => r.present).length;
-const byYear = rows.reduce((m, r) => {
-	const y = r.date ? r.date.slice(0, 4) : 'undated';
-	(m[y] ||= []).push(r);
-	return m;
-}, {});
+
+// rows are already sorted (newest date first, undated last), so grouping in
+// first-encounter order yields year sections newest-first with "undated"
+// trailing: no separate year sort, no Record index that could be undefined.
+const groups: YearGroup[] = [];
+const groupByYear = new Map<string, YearGroup>();
+for (const r of rows) {
+	const year = r.date ? r.date.slice(0, 4) : 'undated';
+	let group = groupByYear.get(year);
+	if (!group) {
+		group = { year, rows: [] };
+		groupByYear.set(year, group);
+		groups.push(group);
+	}
+	group.rows.push(r);
+}
 
 let out = `# Spec History (design timeline)
 
@@ -98,20 +123,15 @@ let out = `# Spec History (design timeline)
 > status is unreliable, so currentness is owned by \`docs/adr/\`. "State" is the
 > only fact shown: whether the spec is still in the working tree.
 >
-> **Regenerate (deterministic per ref set, lossless):** \`bun scripts/generate-spec-history.mjs\`. The totals track the refs this clone can see; \`--all\` is deliberate so the timeline recovers specs that only lived on unmerged or deleted branches.
+> **Regenerate (deterministic per ref set, lossless):** \`bun scripts/generate-spec-history.ts\`. The totals track the refs this clone can see; \`--all\` is deliberate so the timeline recovers specs that only lived on unmerged or deleted branches.
 
 **${rows.length} specs ever** (${present} still in tree, ${rows.length - present} removed).
 
 `;
 
-const years = Object.keys(byYear)
-	.filter((y) => y !== 'undated')
-	.sort()
-	.reverse();
-if (byYear.undated) years.push('undated');
-for (const year of years) {
+for (const { year, rows: yearRows } of groups) {
 	out += `\n## ${year}\n\n| Date | Spec | State | Path |\n|------|------|-------|------|\n`;
-	for (const r of byYear[year]) {
+	for (const r of yearRows) {
 		out += `| ${r.date || ''} | ${r.title.replace(/\|/g, '\\|')} | ${r.present ? 'in tree' : 'removed'} | ${r.path} |\n`;
 	}
 }

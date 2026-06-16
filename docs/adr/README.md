@@ -26,7 +26,7 @@ accepted ADR, the ADR wins.
   crystallizes during design; flip it to `Accepted` when the work lands. A
   `Proposed` ADR that no in-tree spec references means its spec was deleted (the
   work landed): flip it, or supersede it if abandoned. `bun
-  scripts/check-doc-hygiene.mjs` flags orphaned and stale `Proposed` ADRs.
+  scripts/check-doc-hygiene.ts` flags orphaned and stale `Proposed` ADRs.
 
 ## Numbering
 

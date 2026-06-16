@@ -1,7 +1,7 @@
 // Doc-hygiene check. Deterministic, fixable-in-loop, CI-optional.
 //
 // Scope is every `specs/` directory repo-wide (top-level plus per-app and
-// per-package), matching generate-spec-history.mjs: all share one
+// per-package), matching generate-spec-history.ts: all share one
 // dated-scaffolding convention and one decision home (docs/adr/), so the same
 // two-state lifecycle governs them all. The glob below ('*specs/*.md') is that
 // repo-wide intent, not an accident.
@@ -25,41 +25,39 @@
 //      against fixture repos in check-doc-hygiene.test.ts; keep that test green.
 //
 // Exit non-zero if anything is flagged so a review step or CI can gate on it.
-// Run from repo root: bun scripts/check-doc-hygiene.mjs
-import { execSync } from 'node:child_process';
+// Run from repo root: bun scripts/check-doc-hygiene.ts
+import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 
 const STALE_DAYS = 21;
 const TODAY = new Date();
 
-function tracked(glob) {
-	return execSync(`git ls-files ${glob}`, { encoding: 'utf8' })
+// git ls-files: tracked files only, so untracked scratch specs never trip the
+// gate. execFileSync (no shell) passes the '*specs/*.md' pathspec to git
+// verbatim, with no shell glob expansion to quote around.
+function tracked(...pathspecs: string[]): string[] {
+	return execFileSync('git', ['ls-files', ...pathspecs], { encoding: 'utf8' })
 		.split('\n')
 		.map((s) => s.trim())
 		.filter(Boolean);
 }
-function head(path, n = 15) {
-	try {
-		return readFileSync(path, 'utf8').split('\n').slice(0, n).join('\n');
-	} catch {
-		return '';
-	}
-}
-function whole(path) {
+// Read a file, "" if it cannot be read: the gate treats unreadable as empty
+// rather than crashing mid-scan.
+function read(path: string): string {
 	try {
 		return readFileSync(path, 'utf8');
 	} catch {
 		return '';
 	}
 }
-// A spec's own status, minus fenced code blocks. Example data (a YAML fixture
-// with `status: completed`, a TS field `status: string`) lives inside fences and
-// must not be read as the spec's declared status.
-function specProse(path) {
-	return whole(path).replace(/```[\s\S]*?```/g, '');
+// A spec's own status text, minus fenced code blocks. Example data (a YAML
+// fixture with `status: completed`, a TS field `status: string`) lives inside
+// fences and must not be read as the spec's declared status.
+function specProse(path: string): string {
+	return read(path).replace(/```[\s\S]*?```/g, '');
 }
 
-const flags = [];
+const flags: string[] = [];
 
 // --- Smell 1: terminal-status specs still in the tree ----------------------
 // The status VALUE must START with a terminal word (after optional ~~/** markdown
@@ -69,7 +67,7 @@ const flags = [];
 // status line so a paragraph several lines below "Status:" cannot cross-match.
 const TERMINAL =
 	/^[ \t]*[*~]*status[*~]*[ \t]*[:=][ \t]*[*~]*[ \t]*(implemented|complete|completed|done|shipped|landed|merged|accepted|approved|superseded|replaced|archived|obsolete|retrospective|reversed)\b/im;
-const specFiles = tracked("'*specs/*.md'").filter(
+const specFiles = tracked('*specs/*.md').filter(
 	(p) => !p.endsWith('/README.md'),
 );
 for (const f of specFiles) {
@@ -82,21 +80,17 @@ for (const f of specFiles) {
 
 // --- Smell 2: orphaned / stale Proposed ADRs -------------------------------
 const adrDir = 'docs/adr';
-const allSpecText = specFiles
-	.map((f) => {
-		try {
-			return readFileSync(f, 'utf8');
-		} catch {
-			return '';
-		}
-	})
-	.join('\n');
+const allSpecText = specFiles.map(read).join('\n');
 const adrs = existsSync(adrDir)
 	? readdirSync(adrDir).filter((n) => /^\d{4}.*\.md$/.test(n))
 	: [];
 for (const name of adrs) {
 	const path = `${adrDir}/${name}`;
-	if (!/^\s*-?\s*\**status\**\s*[:=]\s*\**\s*proposed\b/im.test(head(path)))
+	// ADR status lives in the header block (template line 3); scan only the head
+	// so a "Status: Accepted" mentioned later in prose or alternatives cannot
+	// false-match the spec's own declared status.
+	const adrHead = read(path).split('\n').slice(0, 15).join('\n');
+	if (!/^\s*-?\s*\**status\**\s*[:=]\s*\**\s*proposed\b/im.test(adrHead))
 		continue;
 	const num = name.slice(0, 4);
 	const base = name.replace(/\.md$/, '');
@@ -104,15 +98,26 @@ for (const name of adrs) {
 		allSpecText.includes(base) ||
 		allSpecText.includes(`ADR-${num}`) ||
 		allSpecText.includes(`adr/${num}`);
-	let addDate = null;
+	let addDate: string | null = null;
 	try {
-		addDate = execSync(
-			`git log --diff-filter=A -1 --format=%ad --date=short -- "${path}"`,
+		addDate = execFileSync(
+			'git',
+			[
+				'log',
+				'--diff-filter=A',
+				'-1',
+				'--format=%ad',
+				'--date=short',
+				'--',
+				path,
+			],
 			{ encoding: 'utf8' },
 		).trim();
-	} catch {}
+	} catch {
+		// No add date (e.g. not yet committed): leave addDate null, skip staleness.
+	}
 	const ageDays = addDate
-		? Math.round((TODAY - new Date(addDate)) / 86400000)
+		? Math.round((TODAY.getTime() - new Date(addDate).getTime()) / 86400000)
 		: null;
 	if (!referenced) {
 		flags.push(

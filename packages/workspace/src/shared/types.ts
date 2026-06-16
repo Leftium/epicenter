@@ -22,6 +22,15 @@ export type AuthedFetch = (
 export type Simplify<T> = { [K in keyof T]: T[K] } & {};
 
 /**
+ * A teardown barrier: anything whose pending work can be awaited on shutdown.
+ *
+ * The daemon drains these in order on dispose (collaboration, the Yjs log, each
+ * materializer) so a shutdown cannot drop an in-flight projection write. Any
+ * handle that exposes a `whenDisposed` promise satisfies it.
+ */
+export type Drainable = { readonly whenDisposed: Promise<void> };
+
+/**
  * Branded type for absolute filesystem paths.
  *
  * Ensures paths have been resolved to absolute paths at the type level,

@@ -58,7 +58,8 @@ export {
 	writeMetadata,
 } from './daemon/metadata.js';
 export {
-	type BoundMountRuntime,
+	attachMountMarkdown,
+	attachMountSqlite,
 	type MarkdownMountOptions,
 	type NodeMountRuntime,
 	nodeMountRuntime,

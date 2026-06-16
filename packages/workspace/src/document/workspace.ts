@@ -47,14 +47,12 @@ import { createDisposableCache } from '../cache/disposable-cache.js';
 // coordinator that receives every node capability through its `runtime`
 // argument (built by `nodeMountRuntime()` from `@epicenter/workspace/node`).
 import type { Mount, SessionMountContext } from '../daemon/define-mount.js';
-import type {
-	BoundMountRuntime,
-	NodeMountRuntime,
-} from '../daemon/mount-runtime.js';
+import type { NodeMountRuntime } from '../daemon/mount-runtime.js';
 import { type ActionRegistry, defineActions } from '../shared/actions.js';
 import type { Guid } from '../shared/id.js';
 import { once } from '../shared/once.js';
 import { assertSafeSegment } from '../shared/safe-segment.js';
+import type { Drainable } from '../shared/types.js';
 import { type ConnectionConfig, connectDoc } from './connect-doc.js';
 import { docGuid } from './doc-guid.js';
 import { KV_KEY, TableKey } from './keys.js';
@@ -145,6 +143,14 @@ export type DefineWorkspaceOptions<
 	TKv extends KvDefinitions,
 	TActions extends ActionRegistry,
 > = CreateWorkspaceOptions<TTables, TKv> & {
+	/**
+	 * Human-facing mount label: `epicenter list`'s header, the `${name}-*`
+	 * materializer logger prefix, and the "Sign in to enable <name>." message.
+	 * A display name only, not an identity seed: it never feeds the node id, the
+	 * Y.Doc `clientID`, or the action namespace. Defaults to `id` when omitted
+	 * (so a bare definition still labels its mount, just with the prefixed guid).
+	 */
+	name?: string;
 	/**
 	 * Build the action registry after tables and KV are live, so handlers can
 	 * close over the handles they query or mutate.
@@ -263,7 +269,9 @@ export type ConnectedWorkspace<
 
 /**
  * What a `connect(connection, compose)` runtime builder returns: the final action
- * registry plus any runtime-only handles the app wants on the bundle.
+ * registry plus any runtime-only handles the app wants on the bundle. The
+ * browser twin of {@link MountComposition}: both are "what the compose callback
+ * composes," one for the browser runtime, one for the daemon.
  *
  * `actions` is required, not optional: a runtime builder is exactly where
  * browser-only actions get layered onto the base registry, and that returned
@@ -271,7 +279,7 @@ export type ConnectedWorkspace<
  * `{ actions: workspace.actions }` (the base, unchanged) is the explicit way to
  * say "no new actions" — there is no implicit fallback to guess at.
  */
-export type WorkspaceRuntimeExtension<
+export type ConnectComposition<
 	TActions extends ActionRegistry = ActionRegistry,
 > = {
 	readonly actions: TActions;
@@ -281,15 +289,19 @@ export type WorkspaceRuntimeExtension<
 type ConnectedWorkspaceWithRuntime<
 	TTables extends TableDefinitions,
 	TKv extends KvDefinitions,
-	TRuntime extends WorkspaceRuntimeExtension,
+	TRuntime extends ConnectComposition,
 > = ConnectedWorkspace<TTables, TKv, TRuntime['actions']> &
 	Omit<TRuntime, 'actions' | typeof Symbol.dispose>;
 
 /**
  * What a mount's `compose` callback sees: the bare daemon root, the open's
- * `ctx` (signed-in session, durable node id, resolved Epicenter root), the
- * resolved sync `baseURL`, and the ctx-bound materializer helpers
- * (`runtime.sqlite(...)`, `runtime.markdown(...)`).
+ * `ctx` (signed-in session, durable node id, resolved Epicenter root), and the
+ * resolved sync `baseURL`.
+ *
+ * Materializers are attached by the body itself: a mount's `compose` is node
+ * code, so it imports `attachMountSqlite` / `attachMountMarkdown` from
+ * `@epicenter/workspace/node` and calls them with this `ctx`. The coordinator
+ * never touches a materializer, which is why it stays browser-safe.
  *
  * `workspace` is the unconnected root, so `workspace.tables.<t>.docs.<f>.guid`
  * is the same guid deriver the browser opener uses, letting a daemon read a
@@ -303,32 +315,29 @@ export type MountComposeContext<
 	readonly workspace: Workspace<TTables, TKv, TActions>;
 	readonly ctx: SessionMountContext;
 	readonly baseURL: string;
-	readonly runtime: BoundMountRuntime;
 };
 
 /**
  * What a mount's `compose` callback returns: the action registry the daemon
- * serves, the materializers whose teardown is awaited on shutdown, and any
- * extra handles to surface on the daemon runtime.
+ * serves and the materializers whose teardown is awaited on shutdown. The daemon
+ * twin of {@link ConnectComposition}.
  *
  * `actions` is the explicit served set, exactly as the browser `connect`
  * composer is: this is where the daemon refuses browser-only actions and admits
  * its materializer actions. `materializers` lists the attachments
  * `attachInfrastructure` drains in order so a shutdown cannot drop a projection
- * write mid-flight. `expose` is spread onto the returned runtime for daemon-side
- * consumers (e.g. raw SQL via `sqlite.client`).
+ * write mid-flight.
  */
-export type MountComposition<
-	TActions extends ActionRegistry,
-	TExpose extends object,
-> = {
+export type MountComposition<TActions extends ActionRegistry> = {
 	readonly actions: TActions;
-	readonly materializers?: ReadonlyArray<{ whenDisposed: Promise<void> }>;
-	readonly expose?: TExpose;
+	readonly materializers?: ReadonlyArray<Drainable>;
 };
 
 /**
- * Options for `definition.mount(...)`, the daemon runtime.
+ * Options for `definition.mount(...)`, the daemon runtime. The mount's display
+ * label comes from the definition's `name` (see `defineWorkspace`), so the only
+ * per-mount inputs are the sync base URL, the injected node runtime, and the
+ * optional composer.
  *
  * `runtime` is the injected node bag from `nodeMountRuntime()`; `.mount()`
  * itself imports no node module. `compose` is optional: omit it to serve the
@@ -340,10 +349,7 @@ export type MountOptions<
 	TKv extends KvDefinitions,
 	TActions extends ActionRegistry,
 	TRuntimeActions extends ActionRegistry,
-	TExpose extends object,
 > = {
-	/** Canonical mount name (`Mount.name`); owns the daemon action namespace. */
-	readonly name: string;
 	/**
 	 * Explicit sync base URL. Omit to fall back through `EPICENTER_API_URL` to
 	 * the hosted API (resolved by `runtime.resolveBaseURL`).
@@ -354,7 +360,7 @@ export type MountOptions<
 	/** Attach materializers and select the served actions. See {@link MountComposition}. */
 	readonly compose?: (
 		context: MountComposeContext<TTables, TKv, TActions>,
-	) => MountComposition<TRuntimeActions, TExpose>;
+	) => MountComposition<TRuntimeActions>;
 };
 
 export type WorkspaceDefinition<
@@ -369,17 +375,14 @@ export type WorkspaceDefinition<
 	connect(
 		connection: ConnectionConfig,
 	): ConnectedWorkspace<TTables, TKv, TActions>;
-	connect<TRuntime extends WorkspaceRuntimeExtension>(
+	connect<TRuntime extends ConnectComposition>(
 		connection: ConnectionConfig,
 		compose: (
 			workspace: ConnectedWorkspaceContext<TTables, TKv, TActions>,
 		) => TRuntime,
 	): ConnectedWorkspaceWithRuntime<TTables, TKv, TRuntime>;
-	mount<
-		TRuntimeActions extends ActionRegistry = TActions,
-		TExpose extends object = {},
-	>(
-		options: MountOptions<TTables, TKv, TActions, TRuntimeActions, TExpose>,
+	mount<TRuntimeActions extends ActionRegistry = TActions>(
+		options: MountOptions<TTables, TKv, TActions, TRuntimeActions>,
 	): Mount;
 };
 
@@ -529,7 +532,7 @@ export function defineWorkspace<
 	function connect(
 		connection: ConnectionConfig,
 	): ConnectedWorkspace<TTables, TKv, TActions>;
-	function connect<TRuntime extends WorkspaceRuntimeExtension>(
+	function connect<TRuntime extends ConnectComposition>(
 		connection: ConnectionConfig,
 		compose: (
 			workspace: ConnectedWorkspaceContext<TTables, TKv, TActions>,
@@ -539,7 +542,7 @@ export function defineWorkspace<
 		connection: ConnectionConfig,
 		compose: (
 			workspace: ConnectedWorkspaceContext<TTables, TKv, TActions>,
-		) => WorkspaceRuntimeExtension = (workspace) => ({
+		) => ConnectComposition = (workspace) => ({
 			actions: workspace.actions,
 		}),
 	) {
@@ -604,36 +607,30 @@ export function defineWorkspace<
 	 * `compose` is the one place daemon actions and materializers are chosen, so
 	 * a mount cannot accidentally serve browser-only actions: omit it to serve
 	 * the base `workspace.actions` with no materializers, or return an explicit
-	 * `{ actions, materializers, expose }`.
+	 * `{ actions, materializers }`.
+	 *
+	 * The mount's display label is the definition's `name` (defaulting to `id`),
+	 * declared once where identity lives rather than restated at every call site.
 	 */
-	function mount<
-		TRuntimeActions extends ActionRegistry = TActions,
-		TExpose extends object = {},
-	>(
-		options: MountOptions<TTables, TKv, TActions, TRuntimeActions, TExpose>,
+	function mount<TRuntimeActions extends ActionRegistry = TActions>(
+		mountOptions: MountOptions<TTables, TKv, TActions, TRuntimeActions>,
 	): Mount {
-		const { runtime } = options;
+		const { runtime } = mountOptions;
 		return runtime.defineSessionMount({
-			name: options.name,
+			name: options.name ?? options.id,
 			open(ctx) {
-				const baseURL = runtime.resolveBaseURL(options.baseURL);
+				const baseURL = runtime.resolveBaseURL(mountOptions.baseURL);
 				const workspace = create();
-				const composition: MountComposition<TRuntimeActions, TExpose> =
-					options.compose
-						? options.compose({
-								workspace,
-								ctx,
-								baseURL,
-								runtime: runtime.bind(ctx),
-							})
+				const composition: MountComposition<TRuntimeActions> =
+					mountOptions.compose
+						? mountOptions.compose({ workspace, ctx, baseURL })
 						: // No compose: serve the base actions, no materializers. Reached
 							// only when `TRuntimeActions` defaults to `TActions`, so the
 							// base registry is the served one; the cast bridges the generic
 							// the body can't otherwise prove.
-							({ actions: workspace.actions } as unknown as MountComposition<
-								TRuntimeActions,
-								TExpose
-							>);
+							({
+								actions: workspace.actions,
+							} as unknown as MountComposition<TRuntimeActions>);
 				// `attachInfrastructure` serves `composition.actions` to peers and
 				// drains every listed materializer in order on shutdown, so it runs
 				// after compose has both.
@@ -649,7 +646,6 @@ export function defineWorkspace<
 				return {
 					...workspace,
 					...infrastructure,
-					...(composition.expose ?? ({} as TExpose)),
 					actions: composition.actions,
 				};
 			},

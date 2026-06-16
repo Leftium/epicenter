@@ -105,9 +105,11 @@ export function isInactive(
  * One app mount: a name and an `open(ctx)` that returns a daemon runtime or
  * `inactive(reason)`.
  *
- * Factories like `fuji()` return a `Mount`. The canonical mount name lives on
- * the value itself (`Mount.name`), so renaming an Epicenter folder never
- * changes the action namespace.
+ * Factories like `fuji()` return a `Mount`. `name` is a display label only: it
+ * heads the `epicenter list` output and prefixes the mount's loggers and its
+ * "Sign in to enable <name>." message. Daemon actions are addressed by bare
+ * key, so the name never namespaces them and renaming an Epicenter folder never
+ * changes how an action is called.
  */
 export type Mount = {
 	name: string;

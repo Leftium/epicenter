@@ -38,6 +38,7 @@ import { roomWsUrl } from '../document/transport.js';
 import { yjsPath } from '../document/workspace-paths.js';
 import type { ActionRegistry } from '../shared/actions.js';
 import { hashYDocClientId } from '../shared/client-id.js';
+import type { Drainable } from '../shared/types.js';
 import type { SessionMountContext } from './define-mount.js';
 
 export type AttachMountInfrastructureOptions<TActions extends ActionRegistry> =
@@ -51,7 +52,7 @@ export type AttachMountInfrastructureOptions<TActions extends ActionRegistry> =
 		 * shutdown cannot drop projection writes mid-flight. Each drain is bounded
 		 * by the materializer's own `disposeTimeoutMs`.
 		 */
-		materializers?: ReadonlyArray<{ whenDisposed: Promise<void> }>;
+		materializers?: ReadonlyArray<Drainable>;
 	};
 
 export function attachMountInfrastructure<TActions extends ActionRegistry>(

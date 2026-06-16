@@ -1,10 +1,12 @@
 /**
- * The node runtime for `WorkspaceDefinition.mount(...)`.
+ * The node runtime for `WorkspaceDefinition.mount(...)`, plus the daemon-side
+ * materializer helpers a mount's `compose` callback reaches for directly.
  *
  * `WorkspaceDefinition.mount(...)` lives in the browser-safe root barrel, so it
- * is a pure coordinator: it never imports a `node:*` or `bun:*` module. Every
- * node-only capability a daemon mount needs is injected through the `runtime`
- * argument, and `nodeMountRuntime()` is the one bag that supplies them:
+ * is a pure coordinator: it never imports a `node:*` or `bun:*` module. The
+ * node-only capabilities the coordinator itself needs are injected through the
+ * `runtime` argument, and `nodeMountRuntime()` is the one bag that supplies
+ * them:
  *
  *  - `defineSessionMount` wraps the mount so a signed-out daemon reports
  *    `inactive` instead of running the body.
@@ -13,11 +15,16 @@
  *    cloud room, and owns the ordered async teardown.
  *  - `resolveBaseURL` collapses the `opts.baseURL || EPICENTER_API_URL ||
  *    hosted` fallback every mount used to repeat.
- *  - `bind(ctx)` returns the ctx-bound materializer helpers a mount's `compose`
- *    callback uses (`runtime.sqlite(...)`, `runtime.markdown(...)`). They close
- *    over `ctx.epicenterRoot` and `ctx.mount` so a call site passes only the
- *    workspace and the parts that are genuinely its own (FTS columns, the table
- *    export config, git autosave).
+ *
+ * The materializer helpers ({@link attachMountSqlite}, {@link
+ * attachMountMarkdown}) are NOT on that bag. A mount's `compose` body is itself
+ * node code (the app's `mount.ts` already imports `@epicenter/workspace/node`),
+ * so it imports and calls them directly, passing the open's `ctx`. They fill the
+ * deterministic disk path and the `${ctx.mount}-*` logger so a call site supplies
+ * only what is genuinely its own (FTS columns, the table export config, git
+ * autosave). Keeping them off the injected bag is what lets the coordinator stay
+ * a pure pass-through: it never touches a materializer, only the `{ actions,
+ * materializers }` the body returns.
  *
  * Browser bundles import `WorkspaceDefinition.mount` as a type and never reach
  * this module: the daemon runtime they would call it with is constructed here,
@@ -35,12 +42,12 @@ import {
 	type GitAutosaveConfig,
 	type MarkdownExport,
 } from '../document/materializer/markdown/index.js';
+import type { FtsConfig } from '../document/materializer/sqlite/core.js';
+import { attachBunSqliteMaterializer } from '../document/materializer/sqlite/index.js';
 import type {
 	MaterializerInput,
 	TablesRecord,
 } from '../document/materializer/shared.js';
-import type { FtsConfig } from '../document/materializer/sqlite/core.js';
-import { attachBunSqliteMaterializer } from '../document/materializer/sqlite/index.js';
 import { sqlitePath } from '../document/workspace-paths.js';
 import { attachMountInfrastructure } from './attach-mount-infrastructure.js';
 import {
@@ -51,9 +58,9 @@ import {
 const HOSTED_API_URL = 'https://api.epicenter.so';
 
 /**
- * Options for the ctx-bound sqlite helper. The runtime fills the file path
- * (`sqlitePath(epicenterRoot, guid)`) and the `${mount}-sqlite` logger; a call
- * site supplies only what is its own.
+ * Options for {@link attachMountSqlite}. The helper fills the file path
+ * (`sqlitePath(ctx.epicenterRoot, guid)`) and the `${ctx.mount}-sqlite` logger;
+ * a call site supplies only what is its own.
  */
 export type SqliteMountOptions<
 	TTables extends TablesRecord,
@@ -64,8 +71,8 @@ export type SqliteMountOptions<
 };
 
 /**
- * Options for the ctx-bound markdown helper. The runtime fills the base
- * directory (`epicenterRoot`) and the `${mount}-markdown` logger.
+ * Options for {@link attachMountMarkdown}. The helper fills the base directory
+ * (`ctx.epicenterRoot`) and the `${ctx.mount}-markdown` logger.
  */
 export type MarkdownMountOptions<TTables extends TablesRecord> = {
 	/** Per-table export config keyed by `workspace.tables` name; presence selects. */
@@ -80,28 +87,70 @@ export type MarkdownMountOptions<TTables extends TablesRecord> = {
 };
 
 /**
- * The ctx-bound materializer helpers a mount's `compose` callback receives as
- * `runtime`. Each builds a daemon-side materializer over the workspace's tables;
- * the call site spreads the result's `.actions` into the served registry and
- * lists it under `materializers` for ordered teardown.
+ * Attach the daemon-side SQLite mirror for a mount's workspace. Call it from a
+ * mount's `compose` body, list the result under `materializers`, and spread its
+ * `.actions` into the served registry.
+ *
+ * The file path and logger are derived from `ctx`, so the call site passes only
+ * its own FTS config.
  */
-export type BoundMountRuntime = {
-	sqlite<
-		TTables extends TablesRecord,
-		TFts extends FtsConfig<TTables> | undefined = undefined,
-	>(
-		workspace: MaterializerInput<TTables>,
-		options?: SqliteMountOptions<TTables, TFts>,
-	): ReturnType<typeof attachBunSqliteMaterializer<TTables, TFts>>;
-	markdown<TTables extends TablesRecord>(
-		workspace: MaterializerInput<TTables>,
-		options: MarkdownMountOptions<TTables>,
-	): MarkdownExport;
-};
+export function attachMountSqlite<
+	TTables extends TablesRecord,
+	TFts extends FtsConfig<TTables> | undefined = undefined,
+>(
+	ctx: SessionMountContext,
+	workspace: MaterializerInput<TTables>,
+	options?: SqliteMountOptions<TTables, TFts>,
+): ReturnType<typeof attachBunSqliteMaterializer<TTables, TFts>> {
+	return attachBunSqliteMaterializer<TTables, TFts>(workspace, {
+		filePath: sqlitePath(ctx.epicenterRoot, workspace.ydoc.guid),
+		fts: options?.fts,
+		log: createLogger(`${ctx.mount}-sqlite`),
+	});
+}
+
+/**
+ * Attach the daemon-side markdown export for a mount's workspace, optionally
+ * git-autosaving each exported subdirectory. Call it from a mount's `compose`
+ * body, list the result under `materializers`, and spread its `.actions` into
+ * the served registry.
+ *
+ * The base directory and logger are derived from `ctx`, so the call site passes
+ * only the per-table export config and git policy.
+ */
+export function attachMountMarkdown<TTables extends TablesRecord>(
+	ctx: SessionMountContext,
+	workspace: MaterializerInput<TTables>,
+	{ tables, git }: MarkdownMountOptions<TTables>,
+): MarkdownExport {
+	const markdown = attachMarkdownExport<TTables>(workspace, {
+		dir: ctx.epicenterRoot,
+		tables,
+		log: createLogger(`${ctx.mount}-markdown`),
+	});
+	if (git) {
+		// Autosave the export's own subdirs: one per selected table, the same
+		// `config.dir ?? name` the export writes to.
+		for (const [name, config] of Object.entries(tables) as [
+			string,
+			{ dir?: string } | undefined,
+		][]) {
+			attachGitAutosave({
+				ydoc: workspace.ydoc,
+				dir: join(ctx.epicenterRoot, config?.dir ?? name),
+				config: git,
+			});
+		}
+	}
+	return markdown;
+}
 
 /**
  * The injected node runtime `WorkspaceDefinition.mount(...)` coordinates. Build
- * one with {@link nodeMountRuntime} and pass it as `runtime`.
+ * one with {@link nodeMountRuntime} and pass it as `runtime`. It holds only the
+ * capabilities the browser-safe coordinator itself calls; materializer helpers
+ * ({@link attachMountSqlite}, {@link attachMountMarkdown}) are imported directly
+ * by the mount body instead.
  */
 export type NodeMountRuntime = {
 	defineSessionMount: typeof defineSessionMount;
@@ -111,14 +160,12 @@ export type NodeMountRuntime = {
 	 * `EPICENTER_API_URL`, then the hosted API.
 	 */
 	resolveBaseURL(explicit?: string): string;
-	/** Bind the materializer helpers to one open's `ctx`. */
-	bind(ctx: SessionMountContext): BoundMountRuntime;
 };
 
 /**
  * Build the node runtime for `WorkspaceDefinition.mount(...)`.
  *
- * Lives in node-only code (it imports the bun:sqlite and filesystem
+ * Lives in node-only code (this module imports the bun:sqlite and filesystem
  * materializers); call it from a mount factory and hand the result to `.mount`:
  *
  * ```ts
@@ -126,7 +173,6 @@ export type NodeMountRuntime = {
  *
  * export function zhongwen(opts: ZhongwenMountOptions = {}) {
  *   return zhongwenWorkspace.mount({
- *     name: 'zhongwen',
  *     baseURL: opts.baseURL,
  *     runtime: nodeMountRuntime(),
  *   });
@@ -139,45 +185,5 @@ export function nodeMountRuntime(): NodeMountRuntime {
 		attachInfrastructure: attachMountInfrastructure,
 		resolveBaseURL: (explicit) =>
 			explicit || process.env.EPICENTER_API_URL || HOSTED_API_URL,
-		bind: (ctx) => ({
-			sqlite<
-				TTables extends TablesRecord,
-				TFts extends FtsConfig<TTables> | undefined = undefined,
-			>(
-				workspace: MaterializerInput<TTables>,
-				options?: SqliteMountOptions<TTables, TFts>,
-			) {
-				return attachBunSqliteMaterializer<TTables, TFts>(workspace, {
-					filePath: sqlitePath(ctx.epicenterRoot, workspace.ydoc.guid),
-					fts: options?.fts,
-					log: createLogger(`${ctx.mount}-sqlite`),
-				});
-			},
-			markdown<TTables extends TablesRecord>(
-				workspace: MaterializerInput<TTables>,
-				{ tables, git }: MarkdownMountOptions<TTables>,
-			) {
-				const markdown = attachMarkdownExport<TTables>(workspace, {
-					dir: ctx.epicenterRoot,
-					tables,
-					log: createLogger(`${ctx.mount}-markdown`),
-				});
-				if (git) {
-					// Autosave the export's own subdirs: one per selected table, the
-					// same `config.dir ?? name` the export writes to.
-					for (const [name, config] of Object.entries(tables) as [
-						string,
-						{ dir?: string } | undefined,
-					][]) {
-						attachGitAutosave({
-							ydoc: workspace.ydoc,
-							dir: join(ctx.epicenterRoot, config?.dir ?? name),
-							config: git,
-						});
-					}
-				}
-				return markdown;
-			},
-		}),
 	};
 }

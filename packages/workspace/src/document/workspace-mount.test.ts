@@ -4,8 +4,8 @@
  * `.mount()` is a pure coordinator over an injected node runtime, so these
  * tests inject a stub `NodeMountRuntime` and assert what the coordinator hands
  * the runtime: the resolved base URL, the *composed* action set (never the base
- * actions when `compose` selects others), the materializer list drained on
- * teardown, and the exposed handles. No node:* or bun:* modules are touched.
+ * actions when `compose` selects others), and the materializer list drained on
+ * teardown. No node:* or bun:* modules are touched.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -18,6 +18,7 @@ import { defineWorkspace } from './workspace.js';
 
 const demoWorkspace = defineWorkspace({
 	id: 'epicenter-demo',
+	name: 'demo',
 	tables: {
 		items: defineTable({ id: field.string(), label: field.string() }),
 	},
@@ -72,17 +73,6 @@ function stubRuntime(spy: AttachSpy): NodeMountRuntime {
 				},
 			};
 		},
-		bind: () => ({
-			sqlite: () => ({
-				whenDisposed: Promise.resolve(),
-				actions: { sqlite_rebuild: {} },
-				client: {},
-			}),
-			markdown: () => ({
-				whenDisposed: Promise.resolve(),
-				actions: { markdown_rebuild: {} },
-			}),
-		}),
 		// The stub is intentionally looser than the real runtime types.
 	} as unknown as NodeMountRuntime;
 }
@@ -108,10 +98,10 @@ describe('definition.mount', () => {
 	test('without compose: serves base actions, no materializers, falls back to hosted URL', () => {
 		const spy: AttachSpy = {};
 		const mount = demoWorkspace.mount({
-			name: 'demo',
 			runtime: stubRuntime(spy),
 		});
 
+		// The mount label is the definition's `name`, not a per-mount field.
 		expect(mount.name).toBe('demo');
 		const runtime = open(mount);
 
@@ -122,17 +112,28 @@ describe('definition.mount', () => {
 		expect(typeof runtime[Symbol.asyncDispose]).toBe('function');
 	});
 
-	test('with compose: serves the composed action set, tracks materializers, exposes handles', () => {
+	test('with compose: serves the composed action set, tracks materializers', () => {
 		const spy: AttachSpy = {};
 		const mount = demoWorkspace.mount({
-			name: 'demo',
 			baseURL: 'https://explicit.example',
 			runtime: stubRuntime(spy),
-			compose: ({ workspace, runtime }) => {
-				const sqlite = runtime.sqlite(workspace);
-				const markdown = runtime.markdown(workspace, { tables: { items: {} } });
+			compose: ({ workspace }) => {
+				// The real body would call `attachMountSqlite` / `attachMountMarkdown`
+				// here; stub them as drainables with one-action registries so the
+				// merge into the served set is observable without touching disk.
+				const rebuild = defineQuery({
+					description: 'rebuild',
+					handler: () => null,
+				});
+				const sqlite = {
+					whenDisposed: Promise.resolve(),
+					actions: { sqlite_rebuild: rebuild },
+				};
+				const markdown = {
+					whenDisposed: Promise.resolve(),
+					actions: { markdown_rebuild: rebuild },
+				};
 				return {
-					expose: { markdown },
 					materializers: [sqlite, markdown],
 					actions: defineActions({
 						...workspace.actions,
@@ -155,8 +156,6 @@ describe('definition.mount', () => {
 		]);
 		// Both materializers are listed for ordered teardown.
 		expect(spy.materializers).toHaveLength(2);
-		// `expose` is surfaced on the daemon runtime.
-		expect(runtime.markdown).toBeDefined();
 		// The runtime serves exactly what infrastructure was handed.
 		expect(runtime.actions).toBe(spy.actions);
 	});

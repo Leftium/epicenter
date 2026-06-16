@@ -9,7 +9,7 @@
  * Without `daemon up`, the handler errors with a hint pointing at
  * `epicenter daemon up`.
  *
- * Prints `no peers connected` to stderr when every workspace is empty (text
+ * Prints `no peers connected` to stderr when no peers are connected (text
  * mode only; JSON mode always emits a valid array, even if empty).
  */
 
@@ -51,27 +51,18 @@ function emit(rows: PeerSnapshot[], format: OutputFormat | undefined): void {
 		return;
 	}
 
-	if (rows.length === 0) {
+	const [first] = rows;
+	if (!first) {
 		console.error('no peers connected');
 		return;
 	}
 
-	const byMount = new Map<string, PeerSnapshot[]>();
-	for (const row of rows) {
-		const list = byMount.get(row.mount);
-		if (list) list.push(row);
-		else byMount.set(row.mount, [row]);
-	}
-
-	let i = 0;
-	for (const [mount, group] of byMount) {
-		if (i > 0) console.log('');
-		console.log(mount);
-		console.table(
-			group
-				.map((snap) => ({ deviceId: snap.deviceId }))
-				.sort((a, b) => a.deviceId.localeCompare(b.deviceId)),
-		);
-		i++;
-	}
+	// One daemon serves one mount, so every row shares its mount name: print it
+	// once as the canonical app identity, then the connected devices.
+	console.log(first.mount);
+	console.table(
+		rows
+			.map((snap) => ({ deviceId: snap.deviceId }))
+			.sort((a, b) => a.deviceId.localeCompare(b.deviceId)),
+	);
 }

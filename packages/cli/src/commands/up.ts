@@ -75,17 +75,17 @@ type UpOptions = {
  * startup, exercise the IPC handler in-process, and call `teardown()` to
  * release resources without spawning a child.
  *
- * - `mounts` is the started mount runtime (zero or one); the daemon serves it
- *   and routes IPC requests by mount name.
+ * - `mount` is the started mount runtime, or `null` when the configured mount
+ *   declined to start (see `inactive`).
  * - `inactive` is the mount if it returned `inactive(reason)` instead of a
- *   runtime (typically a signed-out mount). It is not served.
+ *   runtime (typically a signed-out mount), else `null`. It is not served.
  * - `metadata` is what was written to disk.
- * - `teardown()` closes the server, asyncDisposes the runtimes, releases the
+ * - `teardown()` closes the server, asyncDisposes the runtime, releases the
  *   lease, and unlinks metadata + socket. Idempotent.
  */
 type UpHandle = {
-	mounts: StartedMount[];
-	inactive: InactiveMount[];
+	mount: StartedMount | null;
+	inactive: InactiveMount | null;
 	metadata: DaemonMetadata;
 	teardown: () => Promise<void>;
 };
@@ -152,15 +152,17 @@ export async function runUp(
 	const startResult = await openEpicenterRoot({ epicenterRoot, auth });
 	if (startResult.error) return startResult;
 	const opened = startResult.data;
-	const mounts = opened.status === 'started' ? [opened.entry] : [];
-	const inactive = opened.status === 'inactive' ? [opened.entry] : [];
+	const mount = opened.status === 'started' ? opened.entry : null;
+	const inactive = opened.status === 'inactive' ? opened.entry : null;
 	stack.defer(async () => {
-		await Promise.allSettled(
-			mounts.map((entry) => entry.runtime[Symbol.asyncDispose]()),
-		);
+		if (mount) {
+			await Promise.allSettled([
+				Promise.resolve(mount.runtime[Symbol.asyncDispose]()),
+			]);
+		}
 	});
 
-	const serverResult = await startDaemonServer({ lease, mounts });
+	const serverResult = await startDaemonServer({ lease, mount });
 	if (serverResult.error) return serverResult;
 	const daemonServer = serverResult.data;
 	stack.defer(() => daemonServer.close());
@@ -174,7 +176,7 @@ export async function runUp(
 
 	const teardownStack = stack.move();
 	return Ok({
-		mounts,
+		mount,
 		inactive,
 		metadata,
 		teardown: () => teardownStack.disposeAsync(),
@@ -212,16 +214,21 @@ export const upCommand = cmd({
 			process.exit(1);
 		}
 
-		const mountNames = handle.mounts.map((entry) => entry.mount).join(', ');
-		logSyncStatus(`online (mounts=[${mountNames}])`);
-		for (const declined of handle.inactive) {
-			logSyncStatus(`${declined.mount}: inactive (${declined.reason})`);
+		if (handle.mount) {
+			logSyncStatus(`online (mount=${handle.mount.mount})`);
+		} else {
+			logSyncStatus('online (no active mount)');
+		}
+		if (handle.inactive) {
+			logSyncStatus(
+				`${handle.inactive.mount}: inactive (${handle.inactive.reason})`,
+			);
 		}
 
-		for (const entry of handle.mounts) {
-			printPeersSnapshot(entry);
-			subscribePeers(entry, options.quiet);
-			subscribeSyncStatus(entry);
+		if (handle.mount) {
+			printPeersSnapshot(handle.mount);
+			subscribePeers(handle.mount, options.quiet);
+			subscribeSyncStatus(handle.mount);
 		}
 
 		const onSignal = () => {

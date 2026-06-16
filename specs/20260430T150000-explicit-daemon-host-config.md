@@ -5,11 +5,11 @@
 **Author**: AI-assisted
 **Branch**: codex/daemon-transport-supervisor-integration
 
-**Superseded By**: Mount-list project config (`export default [fuji()]`)
+**Superseded By**: Single-mount project config (`export default fuji()`)
 
-This spec records the host-definition step that preceded mount-list project
-config. The active code default-exports a `Mount[]`; app package factories like
-`fuji()` return mounts, and the mount `name` owns the CLI prefix.
+This spec records the host-definition step that preceded single-mount project
+config. The active code default-exports one `Mount`; an app package factory like
+`fuji()` returns that mount, and the mount `name` owns the CLI prefix.
 
 ## Overview
 

@@ -11,6 +11,14 @@ export { findEpicenterRoot } from './client/find-epicenter-root.js';
 export { DEFAULT_EPICENTER_CONFIG_SOURCE } from './config/epicenter-config-source.js';
 export { EpicenterConfigError } from './config/load-epicenter-config.js';
 export {
+	type InactiveMount,
+	type OpenEpicenterRootOptions,
+	type OpenedMount,
+	openEpicenterRoot,
+	WorkspaceAppError,
+	type WorkspaceAuthClient,
+} from './config/open-epicenter-root.js';
+export {
 	type PeerSyncStatus,
 	RunError,
 } from './daemon/action-errors.js';
@@ -86,11 +94,4 @@ export {
 	yjsPath,
 } from './document/workspace-paths.js';
 export { hashYDocClientId } from './shared/client-id.js';
-export type { WorkspaceAuthClient } from './workspace-apps/auth-client.js';
-export { WorkspaceAppError } from './workspace-apps/errors.js';
-export {
-	type InactiveMount,
-	type OpenEpicenterRootOptions,
-	type OpenedMount,
-	openEpicenterRoot,
-} from './workspace-apps/open-epicenter-root.js';
+export type { EpicenterRoot } from './shared/types.js';

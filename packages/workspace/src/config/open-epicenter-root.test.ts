@@ -26,8 +26,10 @@ import { join } from 'node:path';
 import { asOwnerId } from '@epicenter/identity';
 import { expectErr, expectOk } from 'wellcrafted/testing';
 
-import type { WorkspaceAuthClient } from './auth-client.js';
-import { openEpicenterRoot } from './open-epicenter-root.js';
+import {
+	openEpicenterRoot,
+	type WorkspaceAuthClient,
+} from './open-epicenter-root.js';
 
 let epicenterRoot: string;
 

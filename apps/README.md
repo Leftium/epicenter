@@ -46,6 +46,6 @@ Browser and desktop code open the same definition with runtime-specific composit
 1. Add `apps/<app>/workspace.ts` or `apps/<app>/src/lib/workspace.ts`, following the package's existing layout.
 2. Point `package.json` `exports["."]` at the workspace contract file.
 3. Add an exported `defineWorkspace({ id, tables, kv, actions })` value. Declare row child docs with `table.docs(...)`.
-4. Add `apps/<app>/project.ts` exporting `<app>(opts?)`, a factory that returns `defineMount({ name, kind: 'collaborative', open })`.
+4. Add `apps/<app>/project.ts` exporting `<app>(opts?)`, a factory that returns `defineSessionMount({ name, open })` (or `defineMount` for a mount that can run signed out).
 5. Point `package.json` `exports["./project"]` at `./project.ts`.
 6. Run `epicenter daemon up -C <epicenter-root>` and confirm the mount appears in `epicenter list`.

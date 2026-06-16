@@ -60,19 +60,10 @@ export {
 	createDeviceIdAsync,
 } from './document/device-id.js';
 
-// ════════════════════════════════════════════════════════════════════════════
-// EPICENTER CONFIG (browser-safe surface)
-// ════════════════════════════════════════════════════════════════════════════
-
-// Node-only helpers that resolve real paths (`findEpicenterRoot`,
-// `openEpicenterRoot`, etc.) import `node:fs`, `node:path`, or `node:os`
-// at module top level. They are exported from `@epicenter/workspace/node`;
-// keeping them out of this root barrel stops browser bundles (fuji,
-// whispering, etc.) from traversing `node:*` modules. Daemon runtime and
-// log paths live in `@epicenter/workspace/daemon/paths.ts`.
-export { DEFAULT_EPICENTER_CONFIG_SOURCE } from './config/epicenter-config-source.js';
-export { defineMount } from './daemon/define-mount.js';
-export type { EpicenterRoot } from './shared/types';
+// Daemon, config, and Epicenter-root surfaces are node-only (they resolve real
+// paths or sit on the mount contract) and ship from `@epicenter/workspace/node`
+// and `@epicenter/workspace/daemon`. Keeping them out of this root barrel stops
+// browser bundles (fuji, whispering, etc.) from traversing `node:*` modules.
 
 // ════════════════════════════════════════════════════════════════════════════
 // ID + DATE PRIMITIVES

@@ -2,7 +2,7 @@
 
 A script is a Bun file that reads the local SQLite materializer and writes through `connectDaemonActions`. There is no `script.ts` recipe to copy. The daemon is the single writer; the script is a short-lived reader plus an IPC client.
 
-Mount names come from the `Mount.name` values default-exported by `epicenter.config.ts`, not from project folders or local module filenames. One daemon process can serve many mounts, and the script chooses one with `connectDaemonActions({ mount })`.
+A mount name comes from the `Mount.name` of the single mount `epicenter.config.ts` default-exports, not from a project folder or a local module filename. One folder declares one mount, and the script addresses it with `connectDaemonActions({ mount })`.
 
 ## The whole shape
 
@@ -61,7 +61,7 @@ npm package).
 
 `connectDaemonActions<TActions>({ mount, epicenterRoot })` returns a typed proxy. `mount` is the mount name (`'fuji'` for the Fuji example); the proxy translates `fuji.entries_update({ ... })` into a `POST /run` over the daemon's Unix socket in the OS runtime directory. The daemon validates the input against the action's declared schema (invalid input comes back as a usage error), invokes the action in-process against the live Y.Doc, and returns a JSON `Result<T>`.
 
-The mount name comes from each `Mount.name` in the `Mount[]` default-exported by `epicenter.config.ts`. App factories like `fuji()` return a mount whose name is `fuji`.
+The mount name comes from the `Mount.name` of the single `Mount` default-exported by `epicenter.config.ts`. App factories like `fuji()` return a mount whose name is `fuji`.
 
 Two consequences fall out:
 

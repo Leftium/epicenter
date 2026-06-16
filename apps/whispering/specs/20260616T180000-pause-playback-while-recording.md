@@ -51,7 +51,27 @@ Grounding (DeepWiki + web, 2026-06-16) confirmed every platform verdict:
   `cargo check --target x86_64-unknown-linux-gnu`. Async D-Bus, 2s cap so a
   stalled player can't wedge the chain; CanPause-respecting; resolves players
   by exact bus name (instance suffix preserved).
-- [ ] **Wave 4** — macOS MediaRemote Tier 2, delete AppleScript
+- [x] **Wave 4** — macOS MediaRemote Tier 2, delete AppleScript
+  (`media/macos.rs`). Verified: full macOS build links via `cargo test
+  export_types`; smoke-tested on macOS 15.3 that the framework loads and
+  `MRMediaRemoteSendCommand` resolves (symbol-resolution only — a live pause
+  command would touch the user's playback, so the behavioral confirmation is the
+  user's to run). Deleted the `MediaPlayer` enum, AppleScript, `osascript`, and
+  `pgrep`.
+  > **Deviation (resolves a spec self-contradiction):** the Tier-2 line says
+  > `dlopen` while the Wave-4 line says `#[link(name="MediaRemote")]`. Chose
+  > **dlopen**: a hard link against a *private* framework would make the whole app
+  > fail to launch if a future macOS removed MediaRemote, whereas dlopen degrades
+  > to the silent no-op the Tier-3 design requires. It also avoids the
+  > private-framework link-search-path and is gentler on notarization (no recorded
+  > private-framework dependency; loading a system-signed framework needs no
+  > entitlement). `dlopen`/`dlsym` are declared as plain externs (libSystem), no
+  > new crate.
+  > **Consequence:** macOS ends this pass at **pause-only, no auto-resume** (Tier
+  > 2 has no read path to remember a set). This trades the old AppleScript's
+  > Music/Spotify resume for whole-system coverage (browsers/YouTube). Resume
+  > returns in the deferred Wave 5 (read shim). This is the spec's documented
+  > "narrower promise on macOS."
 
 ## Product sentence
 
